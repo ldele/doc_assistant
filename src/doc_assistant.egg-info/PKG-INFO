@@ -1,4 +1,40 @@
 Metadata-Version: 2.4
 Name: doc-assistant
 Version: 0.1.0
+Author: ldele
+License: MIT
+Keywords: rag,llm,document-search,local-first
+Classifier: Development Status :: 3 - Alpha
+Classifier: Intended Audience :: End Users/Desktop
+Classifier: Intended Audience :: Science/Research
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Programming Language :: Python :: 3.10
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Programming Language :: Python :: 3.12
+Classifier: Topic :: Text Processing :: Indexing
 Requires-Python: >=3.10
+Description-Content-Type: text/markdown
+Requires-Dist: python-dotenv>=1.0.0
+Requires-Dist: langchain<2.0,>=1.0
+Requires-Dist: langchain-core<2.0,>=1.0
+Requires-Dist: langchain-classic<2.0,>=1.0
+Requires-Dist: langchain-community<1.0,>=0.4
+Requires-Dist: langchain-text-splitters<2.0,>=1.0
+Requires-Dist: langchain-chroma<2.0,>=1.0
+Requires-Dist: langchain-huggingface<2.0,>=1.0
+Requires-Dist: langchain-anthropic<2.0,>=1.0
+Requires-Dist: langchain-ollama<2.0,>=1.0
+Requires-Dist: chromadb>=0.5
+Requires-Dist: sentence-transformers>=3.0
+Requires-Dist: pymupdf4llm>=0.0.17
+Requires-Dist: pymupdf>=1.24
+Requires-Dist: ebooklib>=0.18
+Requires-Dist: beautifulsoup4>=4.12
+Requires-Dist: lxml>=5.0
+Requires-Dist: python-docx>=1.0
+Requires-Dist: rank_bm25>=0.2.2
+Requires-Dist: chainlit<3.0,>=2.0
+Requires-Dist: tqdm>=4.66
+Provides-Extra: dev
+Requires-Dist: pytest>=8.0; extra == "dev"
+Requires-Dist: pytest-cov>=5.0; extra == "dev"

@@ -9,4 +9,6 @@ src/doc_assistant/tracking.py
 src/doc_assistant.egg-info/PKG-INFO
 src/doc_assistant.egg-info/SOURCES.txt
 src/doc_assistant.egg-info/dependency_links.txt
+src/doc_assistant.egg-info/entry_points.txt
+src/doc_assistant.egg-info/requires.txt
 src/doc_assistant.egg-info/top_level.txt

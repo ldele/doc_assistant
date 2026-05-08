@@ -1,13 +1,23 @@
-# Virtual environment
-.venv/
+# Python
 __pycache__/
 *.pyc
+*.pyo
+*.egg-info/
+.pytest_cache/
+.coverage
+
+# Editor
+.vscode/
+.idea/
 
 # Secrets
 .env
 
-# Runtime data (not committed)
+# Runtime data
 data/cache/
 data/chroma/
-# Example docs ?
 data/sources/
+
+# OS
+.DS_Store
+Thumbs.db

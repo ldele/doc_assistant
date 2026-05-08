@@ -1,7 +1,8 @@
 """CLI version."""
 from doc_assistant.pipeline import RAGPipeline, format_citation
 
-if __name__ == "__main__":
+
+def main():
     rag = RAGPipeline()
     history = []
     
@@ -30,3 +31,7 @@ if __name__ == "__main__":
         
         history.append({"role": "user", "content": question})
         history.append({"role": "assistant", "content": full_answer})
+
+
+if __name__ == "__main__":
+    main()

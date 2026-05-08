@@ -1,0 +1,13 @@
+# Virtual environment
+.venv/
+__pycache__/
+*.pyc
+
+# Secrets
+.env
+
+# Runtime data (not committed)
+data/cache/
+data/chroma/
+# Example docs ?
+data/sources/

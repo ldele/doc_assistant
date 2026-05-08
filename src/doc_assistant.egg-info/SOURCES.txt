@@ -1,0 +1,12 @@
+pyproject.toml
+src/doc_assistant/__init__.py
+src/doc_assistant/config.py
+src/doc_assistant/extractors.py
+src/doc_assistant/ingest.py
+src/doc_assistant/pipeline.py
+src/doc_assistant/prompts.py
+src/doc_assistant/tracking.py
+src/doc_assistant.egg-info/PKG-INFO
+src/doc_assistant.egg-info/SOURCES.txt
+src/doc_assistant.egg-info/dependency_links.txt
+src/doc_assistant.egg-info/top_level.txt

@@ -34,4 +34,6 @@ def main():
 
 
 if __name__ == "__main__":
+    # Required for current pyproject.toml to work
+    # Also wanted this for debugging
     main()

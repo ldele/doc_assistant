@@ -96,6 +96,50 @@ Working but evolving. Things on the roadmap:
 - Semantic chunking
 - Persisted conversations across sessions
 
+---
+
+## Running with Docker
+
+If you have Docker Desktop installed, you can run the app without installing Python or any dependencies on your machine.
+
+```bash
+# 1. Configure
+cp .env.example .env             # then edit .env with your API key
+
+# 2. Add documents
+mkdir -p data/sources
+cp ~/your-papers/*.pdf data/sources/
+
+# 3. Build the image (one-time, ~5 minutes first run)
+docker compose build
+
+# 4. Ingest your documents (one-time per new batch)
+docker compose run --rm doc-assistant python -m doc_assistant.ingest
+
+# 5. Launch
+docker compose up
+```
+
+Open `http://localhost:8000`.
+
+### Local LLM via Ollama
+
+If you set `LLM_MODE=local` in your `.env` and have Ollama running on your **host machine** (not in the container), the container reaches it via `host.docker.internal`. No extra config needed on Docker Desktop for Windows or macOS.
+
+On Linux, make sure Ollama listens on all interfaces:
+```bash
+OLLAMA_HOST=0.0.0.0 ollama serve
+```
+
+### Stopping and cleaning up
+
+```bash
+docker compose down            # stop, keep data and model cache
+docker compose down -v         # stop, also delete the model cache volume
+```
+
+Documents in `data/` should always be preserved on the host.
+
 ## License
 
 MIT

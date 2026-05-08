@@ -1,0 +1,33 @@
+services:
+  doc-assistant:
+    build: .
+    container_name: doc-assistant
+    ports:
+      - "8000:8000"
+    volumes:
+      # Documents, cache, and chroma DB live on host
+      - ./data:/app/data
+
+      # Persist HuggingFace model downloads across container restarts.
+      # Avoids re-download of embedding  and reranker every run.
+      - hf-cache:/root/.cache/huggingface
+
+    environment:
+      - LLM_MODE=${LLM_MODE:-api}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+
+      # For local Ollama to work.
+      - OLLAMA_HOST=${OLLAMA_HOST:-http://host.docker.internal:11434}
+
+      - PDF_EXTRACTOR=${PDF_EXTRACTOR:-pymupdf}
+      - HF_TOKEN=${HF_TOKEN:-}
+
+    env_file:
+      - .env
+
+    # Required for Linux users (for host.docker.internal to resolve).
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+volumes:
+  hf-cache:

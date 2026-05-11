@@ -23,10 +23,17 @@ class RAGPipeline:
         all_docs = [
             Document(page_content=text, metadata=meta or {})
             for text, meta in zip(data["documents"], data["metadatas"])
+            if not (meta and meta.get("keep_for_retrieval") is False)
         ]
+        print(f"  BM25 index excludes {len(data['documents']) - len(all_docs)} non-retrievable chunks")
         bm25 = BM25Retriever.from_documents(all_docs)
         bm25.k = 10
-        vector = self.db.as_retriever(search_kwargs={"k": 10})
+        vector = self.db.as_retriever(
+        search_kwargs={
+            "k": 10,
+            "filter": {"keep_for_retrieval": {"$ne": False}},
+        }
+)
         self.ensemble = EnsembleRetriever(retrievers=[bm25, vector], weights=[0.4, 0.6])
 
         print("Loading reranker...")

@@ -115,10 +115,10 @@
         "modularity",
         "contactome"
       ],
-      "expected_sources": ["Koonce et al. - elife-103977-v1.pdf"],
+      "expected_sources": ["elife-103977-v1.pdf"],
       "category": "methodology",
       "difficulty": "medium",
-      "notes": "Should retrieve from methods section. VERIFY FILENAME AFTER INGEST."
+      "notes": "Should retrieve from methods section."
     },
     {
       "id": "cphate_001",
@@ -130,10 +130,10 @@
         "3D embedding",
         "CytoSHOW"
       ],
-      "expected_sources": ["Koonce et al. - elife-103977-v1.pdf"],
+      "expected_sources": ["elife-103977-v1.pdf"],
       "category": "methodology",
       "difficulty": "medium",
-      "notes": "Should retrieve from methods or analysis pipeline sections. VERIFY FILENAME AFTER INGEST."
+      "notes": "Should retrieve from methods or analysis pipeline sections."
     },
     {
       "id": "shadmehr_001",
@@ -149,7 +149,7 @@
       "expected_sources": ["nihms-66884.pdf"],
       "category": "factual_recall",
       "difficulty": "medium",
-      "notes": "Three-part factual question — each region maps to a specific role. VERIFY FILENAME (may have been renamed to shadmehr_krakauer_2008-nihms-66884.pdf)."
+      "notes": "Three-part factual question — each region maps to a specific role."
     },
     {
       "id": "shadmehr_002",

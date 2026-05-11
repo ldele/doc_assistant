@@ -1,0 +1,211 @@
+{
+  "version": 1,
+  "description": "Eval set for doc-assistant. Measures retrieval recall, answer faithfulness, and answer correctness.",
+  "entries": [
+    {
+      "id": "hh_001",
+      "question": "What mathematical model did Hodgkin and Huxley propose for the action potential?",
+      "expected_answer_contains": [
+        "voltage-clamp",
+        "sodium",
+        "potassium",
+        "conductance"
+      ],
+      "expected_sources": ["hodgkin_huxley_1952.pdf"],
+      "category": "factual_recall",
+      "difficulty": "easy",
+      "notes": "Should retrieve from Abstract or Methods. Key model components: voltage-dependent conductances for Na+ and K+. VERIFY AFTER MARKER INGEST."
+    },
+    {
+      "id": "hh_002",
+      "question": "Summarize the experimental methodology used by Hodgkin and Huxley to study membrane current.",
+      "expected_answer_contains": [
+        "squid giant axon",
+        "voltage clamp"
+      ],
+      "expected_sources": ["hodgkin_huxley_1952.pdf"],
+      "category": "methodology",
+      "difficulty": "medium",
+      "notes": "Tests methodology archetype. Key: voltage clamp on squid giant axon. VERIFY AFTER MARKER INGEST."
+    },
+    {
+      "id": "hw_001",
+      "question": "What did Hubel and Wiesel discover about the receptive fields of neurons in the cat's striate cortex?",
+      "expected_answer_contains": [
+        "orientation",
+        "edge",
+        "bar"
+      ],
+      "expected_sources": ["hubel_wiesel_1959.pdf"],
+      "category": "factual_recall",
+      "difficulty": "easy",
+      "notes": "Orientation-selective cells. May also mention simple vs complex cells. VERIFY AFTER MARKER INGEST."
+    },
+    {
+      "id": "rizz_001",
+      "question": "What is the key finding about premotor cortex neurons in Rizzolatti's mirror neuron paper?",
+      "expected_answer_contains": [
+        "observe",
+        "execute",
+        "action"
+      ],
+      "expected_sources": ["rizzolatti_1996.pdf"],
+      "category": "factual_recall",
+      "difficulty": "easy",
+      "notes": "Mirror neurons: fire during both action execution and observation of action. VERIFY AFTER MARKER INGEST."
+    },
+    {
+      "id": "neg_001",
+      "question": "What does my library say about CRISPR gene editing techniques in plants?",
+      "expected_answer_contains": [],
+      "expected_sources": [],
+      "category": "negative",
+      "difficulty": "easy",
+      "notes": "Should be answered as 'not in library'. Tests calibration / honesty."
+    },
+    {
+      "id": "fakhar_001",
+      "question": "What is the main conclusion of the study about brain communication?",
+      "expected_answer_contains": [
+        "broadcasting",
+        "network structure",
+        "parallel pathways",
+        "hub"
+      ],
+      "expected_sources": ["elife-101780-v1.pdf"],
+      "category": "factual_recall",
+      "difficulty": "easy",
+      "notes": "Main conclusion — should come from abstract, introduction, or discussion. Hub regions: precuneus, prefrontal cortex."
+    },
+    {
+      "id": "fakhar_002",
+      "question": "Why do the authors argue that broadcasting is a better communication model than shortest-path routing?",
+      "expected_answer_contains": [
+        "broadcasting",
+        "shortest path",
+        "no complete knowledge",
+        "decay"
+      ],
+      "expected_sources": ["elife-101780-v1.pdf"],
+      "category": "factual_recall",
+      "difficulty": "medium",
+      "notes": "Conceptual comparison — should retrieve from discussion or model description sections."
+    },
+    {
+      "id": "fakhar_003",
+      "question": "What are some limitations of the framework proposed in the study?",
+      "expected_answer_contains": [
+        "computational cost",
+        "virtual lesion",
+        "homogeneous",
+        "future research"
+      ],
+      "expected_sources": ["elife-101780-v1.pdf"],
+      "category": "factual_recall",
+      "difficulty": "hard",
+      "notes": "Critical reading — limitations often spread across the discussion."
+    },
+    {
+      "id": "dc_001",
+      "question": "What is diffusion condensation (DC) and why was it used in this study?",
+      "expected_answer_contains": [
+        "diffusion condensation",
+        "high-dimensional",
+        "smoothing",
+        "modularity",
+        "contactome"
+      ],
+      "expected_sources": ["Koonce et al. - elife-103977-v1.pdf"],
+      "category": "methodology",
+      "difficulty": "medium",
+      "notes": "Should retrieve from methods section. VERIFY FILENAME AFTER INGEST."
+    },
+    {
+      "id": "cphate_001",
+      "question": "What is the purpose of C-PHATE in the analysis pipeline?",
+      "expected_answer_contains": [
+        "C-PHATE",
+        "visualization",
+        "dimensionality reduction",
+        "3D embedding",
+        "CytoSHOW"
+      ],
+      "expected_sources": ["Koonce et al. - elife-103977-v1.pdf"],
+      "category": "methodology",
+      "difficulty": "medium",
+      "notes": "Should retrieve from methods or analysis pipeline sections. VERIFY FILENAME AFTER INGEST."
+    },
+    {
+      "id": "shadmehr_001",
+      "question": "According to the computational framework described in the paper, what are the roles of the cerebellum, parietal cortex, and basal ganglia in motor control?",
+      "expected_answer_contains": [
+        "cerebellum",
+        "system identification",
+        "parietal cortex",
+        "state estimation",
+        "basal ganglia",
+        "optimal control"
+      ],
+      "expected_sources": ["nihms-66884.pdf"],
+      "category": "factual_recall",
+      "difficulty": "medium",
+      "notes": "Three-part factual question — each region maps to a specific role. VERIFY FILENAME (may have been renamed to shadmehr_krakauer_2008-nihms-66884.pdf)."
+    },
+    {
+      "id": "shadmehr_002",
+      "question": "Why are internal models important for motor control and movement adaptation?",
+      "expected_answer_contains": [
+        "internal model",
+        "predict",
+        "sensory",
+        "adapt",
+        "motor command"
+      ],
+      "expected_sources": ["nihms-66884.pdf"],
+      "category": "factual_recall",
+      "difficulty": "easy",
+      "notes": "Foundational concept. VERIFY FILENAME."
+    },
+    {
+      "id": "cajal_001",
+      "question": "What is the principle of dynamic polarization described by Cajal?",
+      "expected_answer_contains": [
+        "dendrites",
+        "cell body",
+        "axon",
+        "directional"
+      ],
+      "expected_sources": ["cajal-lecture.pdf"],
+      "category": "factual_recall",
+      "difficulty": "easy",
+      "notes": "Signals flow toward cell body via dendrites, away via axon. VERIFY AFTER MARKER INGEST."
+    },
+    {
+      "id": "cajal_002",
+      "question": "How does Cajal distinguish his view of neuronal connections from the reticular theory?",
+      "expected_answer_contains": [
+        "contiguity",
+        "continuity",
+        "discrete",
+        "contact"
+      ],
+      "expected_sources": ["cajal-lecture.pdf"],
+      "category": "factual_recall",
+      "difficulty": "medium",
+      "notes": "'Contiguity but not continuity' is the literal phrase. VERIFY AFTER MARKER INGEST."
+    },
+    {
+      "id": "cajal_003",
+      "question": "What does Cajal describe about the growth and regeneration of nerve fibers?",
+      "expected_answer_contains": [
+        "growth cone",
+        "regeneration",
+        "fiber"
+      ],
+      "expected_sources": ["cajal-lecture.pdf"],
+      "category": "factual_recall",
+      "difficulty": "medium",
+      "notes": "Growth cones are a key concept. VERIFY AFTER MARKER INGEST."
+    }
+  ]
+}

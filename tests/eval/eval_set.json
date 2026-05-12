@@ -14,7 +14,14 @@
       "expected_sources": ["hodgkin_huxley_1952.pdf"],
       "category": "factual_recall",
       "difficulty": "easy",
-      "notes": "Should retrieve from Abstract or Methods. Key model components: voltage-dependent conductances for Na+ and K+. VERIFY AFTER MARKER INGEST."
+      "notes": "Should retrieve from Abstract or Methods. Key model components: voltage-dependent conductances for Na+ and K+. VERIFY AFTER MARKER INGEST.",
+      "regression": {
+        "first_observed": "2026-05-12",
+        "baseline_correctness": 3,
+        "baseline_faithfulness": 4,
+        "failure_mode": "Marker-extracted historical PDF retrieves the document but lands on chunks that don't contain the model description.",
+        "target_correctness": 4
+      }
     },
     {
       "id": "hh_002",
@@ -26,7 +33,14 @@
       "expected_sources": ["hodgkin_huxley_1952.pdf"],
       "category": "methodology",
       "difficulty": "medium",
-      "notes": "Tests methodology archetype. Key: voltage clamp on squid giant axon. VERIFY AFTER MARKER INGEST."
+      "notes": "Tests methodology archetype. Key: voltage clamp on squid giant axon. VERIFY AFTER MARKER INGEST.",
+      "regression": {
+        "first_observed": "2026-05-12",
+        "baseline_correctness": 2,
+        "baseline_faithfulness": 3,
+        "failure_mode": "Marker-extracted historical PDF retrieves the document but lands on chunks that don't contain the model description.",
+        "target_correctness": 4
+      }
     },
     {
       "id": "hw_001",
@@ -39,20 +53,14 @@
       "expected_sources": ["hubel_wiesel_1959.pdf"],
       "category": "factual_recall",
       "difficulty": "easy",
-      "notes": "Orientation-selective cells. May also mention simple vs complex cells. VERIFY AFTER MARKER INGEST."
-    },
-    {
-      "id": "rizz_001",
-      "question": "What is the key finding about premotor cortex neurons in Rizzolatti's mirror neuron paper?",
-      "expected_answer_contains": [
-        "observe",
-        "execute",
-        "action"
-      ],
-      "expected_sources": ["rizzolatti_1996.pdf"],
-      "category": "factual_recall",
-      "difficulty": "easy",
-      "notes": "Mirror neurons: fire during both action execution and observation of action. VERIFY AFTER MARKER INGEST."
+      "notes": "Orientation-selective cells. May also mention simple vs complex cells. VERIFY AFTER MARKER INGEST.",
+      "regression": {
+        "first_observed": "2026-05-12",
+        "baseline_correctness": 2,
+        "baseline_faithfulness": 3,
+        "failure_mode": "Marker-extracted historical PDF retrieves the document but lands on chunks that don't contain the model description.",
+        "target_correctness": 4
+      }
     },
     {
       "id": "neg_001",
@@ -72,7 +80,7 @@
         "parallel pathways",
         "hub"
       ],
-      "expected_sources": ["elife-101780-v1.pdf"],
+      "expected_sources": ["Fakhar et al. - elife-101780-v1.pdf"],
       "category": "factual_recall",
       "difficulty": "easy",
       "notes": "Main conclusion — should come from abstract, introduction, or discussion. Hub regions: precuneus, prefrontal cortex."
@@ -86,10 +94,17 @@
         "no complete knowledge",
         "decay"
       ],
-      "expected_sources": ["elife-101780-v1.pdf"],
+      "expected_sources": ["Fakhar et al. - elife-101780-v1.pdf"],
       "category": "factual_recall",
       "difficulty": "medium",
-      "notes": "Conceptual comparison — should retrieve from discussion or model description sections."
+      "notes": "Conceptual comparison — should retrieve from discussion or model description sections.",
+      "regression": {
+        "first_observed": "2026-05-12",
+        "baseline_correctness": 2,
+        "baseline_faithfulness": 2,
+        "failure_mode": "Unknown error",
+        "target_correctness": 4
+      }
     },
     {
       "id": "fakhar_003",
@@ -100,10 +115,17 @@
         "homogeneous",
         "future research"
       ],
-      "expected_sources": ["elife-101780-v1.pdf"],
+      "expected_sources": ["Fakhar et al. - elife-101780-v1.pdf"],
       "category": "factual_recall",
       "difficulty": "hard",
-      "notes": "Critical reading — limitations often spread across the discussion."
+      "notes": "Critical reading — limitations often spread across the discussion.",
+      "regression": {
+        "first_observed": "2026-05-12",
+        "baseline_correctness": 3,
+        "baseline_faithfulness": 3,
+        "failure_mode": "Unknown error",
+        "target_correctness": 4
+      }
     },
     {
       "id": "dc_001",
@@ -205,7 +227,77 @@
       "expected_sources": ["cajal-lecture.pdf"],
       "category": "factual_recall",
       "difficulty": "medium",
-      "notes": "Growth cones are a key concept. VERIFY AFTER MARKER INGEST."
+      "notes": "Growth cones are a key concept. VERIFY AFTER MARKER INGEST.",
+      "regression": {
+        "first_observed": "2026-05-12",
+        "baseline_correctness": 3,
+        "baseline_faithfulness": 3,
+        "failure_mode": "Unknown error",
+        "target_correctness": 4
+      }
+    },
+    {
+      "id": "hh_003",
+      "question": "In the Hodgkin-Huxley model, what are the two main ionic currents that contribute to the action potential?",
+      "expected_answer_contains": ["sodium", "potassium", "ionic current"],
+      "expected_sources": ["hodgkin_huxley_1952.pdf"],
+      "category": "factual_recall",
+      "difficulty": "easy",
+      "notes": "Core result. Should retrieve model description chunks. Sharper companion to hh_001."
+    },
+    {
+      "id": "hh_004",
+      "question": "What preparation did Hodgkin and Huxley use to measure ionic currents across the nerve membrane?",
+      "expected_answer_contains": ["squid", "giant axon"],
+      "expected_sources": ["hodgkin_huxley_1952.pdf"],
+      "category": "methodology",
+      "difficulty": "easy",
+      "notes": "Classic methodology question. Highly distinctive phrases."
+    },
+    {
+      "id": "hw_002",
+      "question": "How did Hubel and Wiesel stimulate the visual system in their cat experiments?",
+      "expected_answer_contains": ["light", "screen", "anesthetized"],
+      "expected_sources": ["hubel_wiesel_1959.pdf"],
+      "category": "methodology",
+      "difficulty": "easy",
+      "notes": "Verify the 'screen' and 'anesthetized' phrasing in cache before relying on this."
+    },
+    {
+      "id": "hw_003",
+      "question": "According to Hubel and Wiesel, what stimulus property best activates neurons in the cat's striate cortex?",
+      "expected_answer_contains": ["orientation", "line", "edge"],
+      "expected_sources": ["hubel_wiesel_1959.pdf"],
+      "category": "factual_recall",
+      "difficulty": "easy",
+      "notes": "Central finding. Sharper companion to hw_001."
+    },
+    {
+      "id": "fakhar_004",
+      "question": "What is the main computational challenge mentioned in the study, and why is it difficult?",
+      "expected_answer_contains": ["virtual lesion", "combinations", "computational"],
+      "expected_sources": ["Fakhar et al. - elife-101780-v1.pdf"],
+      "category": "factual_recall",
+      "difficulty": "medium",
+      "notes": "Focused version of fakhar_003. Specific failure mode (computational cost) rather than the broad 'limitations' question."
+    },
+    {
+      "id": "cajal_004",
+      "question": "What is a growth cone, according to Cajal's description?",
+      "expected_answer_contains": ["growth cone", "tip", "developing"],
+      "expected_sources": ["cajal-lecture.pdf"],
+      "category": "factual_recall",
+      "difficulty": "easy",
+      "notes": "Cajal's signature contribution. Sharper companion to cajal_003."
+    },
+    {
+      "id": "cajal_005",
+      "question": "What does Cajal observe about the ability of nerve fibers to regenerate after damage?",
+      "expected_answer_contains": ["regeneration", "damage", "fiber"],
+      "expected_sources": ["cajal-lecture.pdf"],
+      "category": "factual_recall",
+      "difficulty": "medium",
+      "notes": "Splits regeneration from growth cones (was bundled in cajal_003)."
     }
   ]
 }

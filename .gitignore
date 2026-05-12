@@ -16,7 +16,12 @@ __pycache__/
 # Runtime data
 data/cache/
 data/chroma/
+data/chroma_pc/
 data/sources/
+data/issues/
+
+# Test artifacts
+tests/eval/results_*.json
 
 # OS
 .DS_Store

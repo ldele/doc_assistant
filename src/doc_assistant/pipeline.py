@@ -6,7 +6,7 @@ from langchain_classic.retrievers import EnsembleRetriever
 from langchain_core.documents import Document
 from sentence_transformers import CrossEncoder
 
-from doc_assistant.config import LLM_MODE, OLLAMA_HOST, ANTHROPIC_API_KEY, CHROMA_PATH
+from doc_assistant.config import USE_PARENT_CHILD, LLM_MODE, OLLAMA_HOST, ANTHROPIC_API_KEY, CHROMA_PATH, PC_CHROMA_PATH
 from doc_assistant.prompts import REWRITE_PROMPT, ANSWER_PROMPT
 
 
@@ -16,7 +16,9 @@ class RAGPipeline:
         self.embeddings = HuggingFaceEmbeddings(model_name="BAAI/bge-base-en-v1.5")
 
         print("Loading vector store...")
-        self.db = Chroma(persist_directory=CHROMA_PATH, embedding_function=self.embeddings)
+        chroma_path = PC_CHROMA_PATH if USE_PARENT_CHILD else CHROMA_PATH # set chroma mode
+        print(f"Using vector store: {chroma_path}")
+        self.db = Chroma(persist_directory=chroma_path, embedding_function=self.embeddings)
 
         print("Building keyword index...")
         data = self.db.get(include=["documents", "metadatas"])
@@ -46,7 +48,7 @@ class RAGPipeline:
         if LLM_MODE == "api":
             from langchain_anthropic import ChatAnthropic
             return ChatAnthropic(
-                model="claude-haiku-4-5",
+                model="claude-haiku-4-5-20251001",
                 api_key=ANTHROPIC_API_KEY,
                 max_tokens=1024,
                 streaming=True,
@@ -61,7 +63,27 @@ class RAGPipeline:
         pairs = [[query, doc.page_content] for doc in candidates]
         scores = self.reranker.predict(pairs)
         ranked = sorted(zip(candidates, scores), key=lambda x: x[1], reverse=True)
-        return [doc for doc, _ in ranked[:top_k]]
+        top_docs = [doc for doc, _ in ranked[:top_k]]
+
+        # Parent-child swap: replace child text with parent text for LLM context
+        if USE_PARENT_CHILD:
+            seen_parents = set()
+            deduped = []
+            for doc in top_docs:
+                parent_text = doc.metadata.get("parent_text")
+                parent_key = (doc.metadata.get("filename"), doc.metadata.get("parent_index"))
+                
+                if parent_text and parent_key not in seen_parents:
+                    seen_parents.add(parent_key)
+                    # Construct a new Document with parent text but child's metadata
+                    new_doc = Document(
+                        page_content=parent_text,
+                        metadata={k: v for k, v in doc.metadata.items() if k != "parent_text"},
+                    )
+                    deduped.append(new_doc)
+            return deduped
+        
+        return top_docs
 
     def rewrite(self, question: str, history: list[dict], counter=None) -> str:
         if not history:

@@ -25,6 +25,7 @@ DATA_PATH = PROJECT_ROOT / "data"
 DOCS_PATH = DATA_PATH / "sources"
 CACHE_PATH = DATA_PATH / "cache"
 CHROMA_PATH = str(DATA_PATH / "chroma")  # Chroma wants a string, not Path
+PC_CHROMA_PATH = str(DATA_PATH / "chroma_pc") # Parent - Child
 
 
 # ============================================================
@@ -50,3 +51,11 @@ PDF_EXTRACTOR = os.getenv("PDF_EXTRACTOR", "pymupdf")
 HF_TOKEN = os.getenv("HF_TOKEN")
 if HF_TOKEN:
     os.environ["HUGGING_FACE_HUB_TOKEN"] = HF_TOKEN
+
+
+# ============================================================
+# Experimental flags
+# ============================================================
+
+# Use parent-child retrieval: small chunks for retrieval precision
+USE_PARENT_CHILD = os.getenv("USE_PARENT_CHILD", "true").lower() == "true" # Enabled by default -> better perf in testing

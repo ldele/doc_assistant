@@ -1,0 +1,445 @@
+{
+  "summary": {
+    "total_questions": 21,
+    "overall": {
+      "recall": 0.9,
+      "correctness": 3.48,
+      "faithfulness": 3.9,
+      "latency_s": 5.24
+    },
+    "by_category": {
+      "negative": {
+        "count": 1,
+        "recall": 0.0,
+        "correctness": 5,
+        "faithfulness": null
+      },
+      "factual_recall": {
+        "count": 15,
+        "recall": 0.93,
+        "correctness": 3.53,
+        "faithfulness": 4.07
+      },
+      "methodology": {
+        "count": 5,
+        "recall": 1.0,
+        "correctness": 3,
+        "faithfulness": 3.4
+      }
+    },
+    "by_difficulty": {
+      "easy": {
+        "count": 11,
+        "correctness": 3.64
+      },
+      "medium": {
+        "count": 9,
+        "correctness": 3.44
+      },
+      "hard": {
+        "count": 1,
+        "correctness": 2
+      }
+    }
+  },
+  "results": [
+    {
+      "id": "hh_001",
+      "question": "What mathematical model did Hodgkin and Huxley propose for the action potential?",
+      "category": "factual_recall",
+      "difficulty": "easy",
+      "answer": "Based on the sources provided, I can give you a partial answer:\n\nAccording to [Source 1], Hodgkin and Huxley's 1952 paper \"A QUANTITATIVE DESCRIPTION OF MEMBRANE CURRENT AND ITS APPLICATION TO CONDUCTION AND EXCITATION IN NERVE\" had the general object of \"discuss[ing] the results of the preceding papers (Part I), to put them into mathematical form (Part II) and to show that they will account for conduction and excitation in quantitative terms (Part III).\"\n\nThe sources indicate that their model involved mathematical descriptions of membrane currents and included parameters such as:\n- Membrane potential (V) [Source 2]\n- Sodium ion channel variables (h) related to inactivation, with rate constants \u03b1h and \u03b2h [Sources 4-5]\n- Steady-state relationships between gating variables and membrane potential [Sources 4-5]\n\nHowever, the sources provided do not contain the actual complete mathematical equations or detailed description of the full Hodgkin-Huxley model itself. To give you a comprehensive answer about the specific mathematical formulation of their action potential model, I would need access to more complete sections of the original 1952 paper, particularly Part II where they \"put them into mathematical form.\"",
+      "retrieved_sources": [
+        "elife-33281-v2.pdf",
+        "hodgkin_huxley_1952.pdf"
+      ],
+      "expected_sources": [
+        "hodgkin_huxley_1952.pdf"
+      ],
+      "recall": 1.0,
+      "correctness": 2,
+      "faithfulness": 4,
+      "latency_s": 6.57,
+      "judge_response": "CORRECTNESS: 2\n\nFAITHFULNESS: 4\n\nThe answer correctly identifies some elements from the context (membrane potential V, sodium variables h, rate constants \u03b1h and \u03b2h) but fails to address most of the expected key concepts. Specifically:\n\n- **Voltage-clamp**: Not mentioned, though the context references \"voltage-clamp\" methodology in the paper title and discusses measurements derived from voltage-clamp experiments.\n- **Sodium and potassium conductance**: The answer mentions sodium (h variable) but does not discuss conductance as a central component of the model. The context shows conductance-based equations are used (\"conductance based neuron of Hodgkin-Huxley type\") but the answer doesn't explain this.\n- **Potassium**: Not mentioned at all, despite being a key ion in the Hodgkin-Huxley model.\n\nThe answer is overly caut"
+    },
+    {
+      "id": "hh_002",
+      "question": "Summarize the experimental methodology used by Hodgkin and Huxley to study membrane current.",
+      "category": "methodology",
+      "difficulty": "medium",
+      "answer": "# Experimental Methodology of Hodgkin and Huxley\n\nBased on the provided sources, the following experimental methodology can be identified:\n\n## Primary Preparation\nHodgkin and Huxley studied [the flow of electric current through the surface membrane of a giant nerve fibre][1], which allowed them to make detailed measurements of membrane properties.\n\n## Measurement Techniques\nThe researchers measured several key parameters:\n\n1. **Membrane potential measurements**: They measured the relationship between membrane potential (V) and various membrane properties across different conditions [3]\n\n2. **Rate constants**: They obtained experimental values of rate constants (such as \u03b1h and \u03b2h for sodium inactivation) [3], using two different methods - direct measurement from data and calculation from derived values of time constants and steady-state parameters [3]\n\n3. **Ionic and capacity currents**: They measured ionic currents and capacity currents, examining them under conditions where dV = 0 and where I = 0 to demonstrate that these currents operate in parallel [4]\n\n## Experimental Conditions\nThe experiments were conducted across [multiple axon preparations (Axons 37, 38, 39, and 39*) at different temperatures ranging from 3\u00b0C to 19\u00b0C][3], with temperature corrections applied using a Q\u2081\u2080 of 3 [3].\n\n## Analysis Approach\nThe results were then [put into mathematical form and used to account for conduction and excitation in quantitative terms][1].",
+      "retrieved_sources": [
+        "elife-33281-v2.pdf",
+        "hodgkin_huxley_1952.pdf"
+      ],
+      "expected_sources": [
+        "hodgkin_huxley_1952.pdf"
+      ],
+      "recall": 1.0,
+      "correctness": 2,
+      "faithfulness": 2,
+      "latency_s": 7.96,
+      "judge_response": "CORRECTNESS: 2\n\nFAITHFULNESS: 2\n\nThe answer fails to adequately address the question because it does not mention the **voltage clamp**, which is one of the two expected key concepts explicitly listed in the evaluation criteria. While the answer correctly identifies the squid giant axon preparation and provides some details about measurements, it misses the fundamental experimental technique that enabled Hodgkin and Huxley's work.\n\nThe retrieved context mentions \"voltage clamp\" is not present in the provided passages. The context discusses their mathematical formulation and analysis of results, but does not explicitly describe the voltage clamp methodology or experimental setup. The answer attempts to infer experimental methods from the mathematical descriptions and data analysis sections, but this is insufficient given that a core methodological component (voltage clamp) is missing from both the context and the answer.\n\nAdditionally, several claims in the answer go beyond what the context explicitly supports. For example, the statement about \""
+    },
+    {
+      "id": "hw_001",
+      "question": "What did Hubel and Wiesel discover about the receptive fields of neurons in the cat's striate cortex?",
+      "category": "factual_recall",
+      "difficulty": "easy",
+      "answer": "# Hubel and Wiesel's Discoveries About Receptive Fields in the Cat's Striate Cortex\n\nHubel and Wiesel made several key discoveries about receptive fields of neurons in the cat's striate cortex [1]:\n\n## Structure and Organization\nThe receptive fields of most cortical cells were **divided into separate excitatory and inhibitory regions** (also called 'on' and 'off' areas) [3]. While this organization resembled retinal ganglion cells, **the shape and arrangement of these regions differed strikingly from the concentric pattern found in retinal ganglion cells** [3].\n\n## Response Patterns\n- **Large stimuli were ineffective**: Most cortical units showed little or no response to stimulation with large spots of light covering the entire receptive field [2]. This was due to pronounced antagonism between the excitatory and inhibitory areas [2].\n\n- **Small, localized stimuli were more effective**: Small spots of light shone in restricted retinal regions often evoked brisk responses [5].\n\n- **Moving stimuli were particularly effective**: Moving spots of light often produced stronger responses than stationary ones, and sometimes a moving spot gave more activation for one direction than the opposite [5].\n\n## Binocular Properties\nSome cortical cells could be activated from either eye, and the researchers studied binocular interaction in these cells [3].\n\nThese findings were based on recordings from single cells in the striate cortex of lightly anesthetized cats [4].",
+      "retrieved_sources": [
+        "hubel_wiesel_1959.pdf"
+      ],
+      "expected_sources": [
+        "hubel_wiesel_1959.pdf"
+      ],
+      "recall": 1.0,
+      "correctness": 2,
+      "faithfulness": 2,
+      "latency_s": 4.31,
+      "judge_response": "CORRECTNESS: 2\n\nFAITHFULNESS: 2\n\nThe answer fails to address the question adequately because it does not mention the three key concepts specified: **orientation**, **edge**, or **bar**. While the retrieved context discusses receptive field structure (excitatory/inhibitory regions, responses to spots and moving stimuli), it does not contain information about orientation selectivity, edge detection, or bar-shaped stimuli\u2014which are the hallmark discoveries of Hubel and Wiesel's work on the striate cortex.\n\nThe answer accurately summarizes what IS in the provided context (receptive field organization, antagonism between regions, responses to different stimulus sizes and movements), but the context itself appears to be from an earlier paper that does not yet describe the orientation and edge-detection properties that became famous from their later work. The answer cannot receive credit for mentioning the expected key concepts because they are not present in the retrieved context, and"
+    },
+    {
+      "id": "neg_001",
+      "question": "What does my library say about CRISPR gene editing techniques in plants?",
+      "category": "negative",
+      "difficulty": "easy",
+      "answer": "Based on the sources provided, I cannot find any information about CRISPR gene editing techniques in plants. \n\nThe sources focus on viral tools and techniques for neuroscience research, including adeno-associated viral vectors, gene therapy approaches, and neuroanatomical methods in animal models (primarily rodents and primates). There is no content related to plant genetic engineering or CRISPR applications in plants.",
+      "retrieved_sources": [
+        "fnana-09-00080.pdf",
+        "elife-88824-v1.pdf"
+      ],
+      "expected_sources": [],
+      "recall": 0.0,
+      "correctness": 5,
+      "faithfulness": null,
+      "latency_s": 3.75,
+      "judge_response": "HONESTY: 5"
+    },
+    {
+      "id": "fakhar_001",
+      "question": "What is the main conclusion of the study about brain communication?",
+      "category": "factual_recall",
+      "difficulty": "easy",
+      "answer": "Based on the sources provided, the main conclusion of the Fakhar et al. study about brain communication is:\n\nThe study concludes that **optimal brain communication operates in a broadcasting regime where regions maximize their influence over one another by leveraging multiple parallel channels for information dissemination** [Source 5]. Specifically, the researchers found that **the brain's most influential regions are its rich-club hubs, which exploit their topological advantage by broadcasting across numerous pathways to enhance their reach, even when underlying connections are weak** [Source 5].\n\nMore broadly, the study provides **a rigorous framework for characterizing optimal brain communication by considering how brain regions should interact given the constraints imposed by the structural connectome and the behavior of other regions, with the objective of maximizing signaling efficiency** [Source 3]. The framework defines optimality as **an equilibrium point where no region can increase its influence on others any further** [Source 3].",
+      "retrieved_sources": [
+        "elife-33281-v2.pdf",
+        "Fornito_15_NRN.pdf",
+        "Fakhar et al. - elife-101780-v1.pdf"
+      ],
+      "expected_sources": [
+        "Fakhar et al. - elife-101780-v1.pdf"
+      ],
+      "recall": 1.0,
+      "correctness": 5,
+      "faithfulness": 5,
+      "latency_s": 4.57,
+      "judge_response": "CORRECTNESS: 5\nFAITHFULNESS: 5"
+    },
+    {
+      "id": "fakhar_002",
+      "question": "Why do the authors argue that broadcasting is a better communication model than shortest-path routing?",
+      "category": "factual_recall",
+      "difficulty": "medium",
+      "answer": "# Why Broadcasting is a Better Communication Model Than Shortest-Path Routing\n\nThe authors present several arguments for why broadcasting is superior to shortest-path routing:\n\n1. **Solves the global information problem**: A key limitation of shortest-path routing is that \"nodes would have to find the shortest path to every other node in the network without access to global information on the network organization.\" [3] Broadcasting circumvents this problem because \"nodes simply transmit their signal via their outgoing connections in every direction.\" [3]\n\n2. **Naturally emerges through signal degradation**: \"Navigation along the shortest path emerges naturally and without a need for centralized routing strategies, simply because the closest node receives more signal compared to the farther ones.\" [1] This means shortest paths are still prioritized without requiring explicit routing logic.\n\n3. **Empirical support**: The broadcasting model showed superior predictive accuracy\u2014\"closeness centrality predicted the influential nodes with such great accuracy compared to other centrality measures.\" [1]\n\n4. **Better alignment with biological mechanisms**: In neuroscience, \"the broadcasting conceptualization is argued to be a better model of information propagation in social networks compared to a random-walker-based navigation,\" [2] and the broadcasting model bears \"qualitative resemblance with concepts such as traveling waves of excitation.\" [2]\n\nIn essence, broadcasting is more efficient because it works without requiring global network knowledge while still naturally prioritizing shortest paths through signal degradation.",
+      "retrieved_sources": [
+        "Fakhar et al. - elife-101780-v1.pdf"
+      ],
+      "expected_sources": [
+        "Fakhar et al. - elife-101780-v1.pdf"
+      ],
+      "recall": 1.0,
+      "correctness": 4,
+      "faithfulness": 4,
+      "latency_s": 4.86,
+      "judge_response": "CORRECTNESS: 4\nFAITHFULNESS: 4\n\nThe answer addresses the main question well and captures most expected concepts. The system correctly identifies the key argument about global information (concept: \"no complete knowledge\"), signal decay (concept: \"decay\"), and how broadcasting naturally prioritizes shortest paths. The answer is well-supported by the retrieved context.\n\nMinor issues:\n- The answer includes a point about \"empirical support\" and closeness centrality that, while mentioned in the context, doesn't directly address *why* broadcasting is better than shortest-path routing\u2014it's more of a supporting observation about the broadcasting model's accuracy.\n- The biological mechanisms point (point 4) goes slightly beyond the core argument about why broadcasting is better as a communication model compared to shortest-path routing specifically, though it is present in the context.\n- The answer could have more explicitly mentioned that broadcasting accounts for \"paths of all length\" (mentioned in context as a"
+    },
+    {
+      "id": "fakhar_003",
+      "question": "What are some limitations of the framework proposed in the study?",
+      "category": "factual_recall",
+      "difficulty": "hard",
+      "answer": "# Limitations of the Framework\n\nBased on the sources provided, here are the key limitations identified:\n\n## Computational Cost\nThe framework has significant technical limitations related to computational expense. Specifically, it requires potentially simulating millions of in-silico lesion combinations for each target node. For example, in one study, researchers performed around half a billion lesion simulations for just one game using a linear model on the human connectome. This intensive computational requirement means the analysis cannot be performed on a standard laptop and represents a \"brute-force approach\" that provides rigorous results at the expense of high computational effort [Source 3].\n\n## In Vivo Application\nThe framework has not yet been used in vivo (in living subjects), which limits its real-world applicability [Source 3].\n\n## Data Aggregation Issues\nWhen using brain data, there are limitations stemming from the aggregated and derived nature of the data. Using three independent datasets from different study cohorts to fuse invasive neurophysiology with MRI and PET-based neuroimaging severely limits the generalizability of results, despite the independence of source data potentially serving as a form of validation [Source 4].",
+      "retrieved_sources": [
+        "elife-97184-v1.pdf",
+        "hebb_1949.pdf",
+        "nihms-66884.pdf",
+        "Fakhar et al. - elife-101780-v1.pdf"
+      ],
+      "expected_sources": [
+        "Fakhar et al. - elife-101780-v1.pdf"
+      ],
+      "recall": 1.0,
+      "correctness": 2,
+      "faithfulness": 3,
+      "latency_s": 4.13,
+      "judge_response": "CORRECTNESS: 2\n\nFAITHFULNESS: 3\n\nThe answer addresses some limitations mentioned in the context (computational cost and in vivo application), but it fails to address the expected key concepts of \"virtual lesion\" and \"homogeneous,\" and provides no discussion of \"future research.\" The answer also includes a section on \"Data Aggregation Issues\" that appears to come from a different study (Chikermane et al., eLife 2024) and is not clearly part of the framework being evaluated. Additionally, the context does mention a limitation about timescales of adaptation versus optimization, which the answer omits entirely.\n\nFAITHFULNESS: The claims about computational cost and in vivo application are directly supported by the context. However, the \"Data Aggregation Issues\" section, while present in the retrieved context, appears to be from a different paper and study, making it questionable whether this is actually a limitation of \"the framework proposed"
+    },
+    {
+      "id": "dc_001",
+      "question": "What is diffusion condensation (DC) and why was it used in this study?",
+      "category": "methodology",
+      "difficulty": "medium",
+      "answer": "# Diffusion Condensation (DC): Definition and Purpose\n\n## What is Diffusion Condensation?\n\nDiffusion Condensation is a data science technique designed to create multiscale representations of high-dimensional data. Specifically, DC is \"a dynamic, time-inhomogeneous process designed to create a sequence of multiscale data representations by condensing information over time\" [2]. The technique works by iteratively applying diffusion operators that adapt to evolving data representations, effectively summarizing data at multiple scales [2].\n\nThe DC process begins with raw or preprocessed high-dimensional data, from which a diffusion operator (a matrix derived from a similarity matrix) is constructed to reflect the local geometry of the data [2].\n\n## Why Was DC Used in This Study?\n\nDC was used as a key data science approach to achieve dimensionality reduction of neuronal relationships in connectomics research [1]. Specifically, the technique \"resulted in reduced dimensionality of the neuronal relationships, revealing architectural motifs across various scales of granularity, from individual neurons within circuits, to individual circuits within the neuropil\" [1]. \n\nThe resulting DC graphs enabled \"exploration of these computationally identified groups\" [1]. However, the researchers note that while \"DC/C-PHATE graphs are powerful tools, they have yet to be integrated to connectomics datasets to enable explorations of the underlying cell biological features,\" which limited their effectiveness for hypothesis generation and comparative analyses across connectomes [1].",
+      "retrieved_sources": [
+        "nihms-326467.pdf",
+        "elife-103977-v1.pdf"
+      ],
+      "expected_sources": [
+        "elife-103977-v1.pdf"
+      ],
+      "recall": 1.0,
+      "correctness": 4,
+      "faithfulness": 5,
+      "latency_s": 6.45,
+      "judge_response": "CORRECTNESS: 4\nFAITHFULNESS: 5"
+    },
+    {
+      "id": "cphate_001",
+      "question": "What is the purpose of C-PHATE in the analysis pipeline?",
+      "category": "methodology",
+      "difficulty": "medium",
+      "answer": "Based on the sources provided, C-PHATE serves several purposes in the analysis pipeline:\n\n1. **Handling and visualizing high-dimensional biological data**: C-PHATE is specifically designed to handle compositional data\u2014datasets where components represent parts of a whole and are inherently constrained [1].\n\n2. **Capturing non-linear relationships**: It learns the intrinsic manifold of the data, effectively capturing non-linear relationships and structures that are not apparent with traditional methods like PCA or t-SNE [1].\n\n3. **Identifying developmental changes in neurons**: In the specific application described, C-PHATE representations are used to identify neurons that undergo changes in their contactome during development [5].\n\n4. **Facilitating exploration of neuronal relationships**: The analysis pipeline uses C-PHATE to facilitate exploration of neuronal relationships, leading to insights on structural features of the connectome [5].\n\nIn the pipeline, C-PHATE operates by loading affinity matrices from the Diffusion Condensation (DC) algorithm, normalizing them into kernel matrices, and building a connectivity matrix to generate low-dimensional embeddings that can be visualized in 3D [1][3].",
+      "retrieved_sources": [
+        "elife-103977-v1.pdf"
+      ],
+      "expected_sources": [
+        "elife-103977-v1.pdf"
+      ],
+      "recall": 1.0,
+      "correctness": 5,
+      "faithfulness": 5,
+      "latency_s": 4.96,
+      "judge_response": "CORRECTNESS: 5\nFAITHFULNESS: 5"
+    },
+    {
+      "id": "shadmehr_001",
+      "question": "According to the computational framework described in the paper, what are the roles of the cerebellum, parietal cortex, and basal ganglia in motor control?",
+      "category": "factual_recall",
+      "difficulty": "medium",
+      "answer": "According to the computational framework described in the paper, the roles of these brain structures in motor control are as follows [1][2]:\n\n**Cerebellum:** Functions in system identification by building internal models that predict the sensory outcomes of motor commands and correcting motor commands through internal feedback. Specifically, it predicts the sensory consequences of motor commands, including expected changes in proprioceptive and visual feedback [1][2].\n\n**Parietal Cortex:** Functions in state estimation by integrating predicted proprioceptive and visual outcomes with actual sensory feedback to form a belief about how motor commands affected the states of the body and the environment. It combines expected sensory feedback with actual sensory feedback to compute beliefs about current proprioceptive and visual states [1][2].\n\n**Basal Ganglia:** Functions related to optimal control by learning the costs and rewards associated with sensory states and estimating the \"cost-to-go\" during execution of a motor task. They help form the expected costs of motor commands and the expected rewards of predicted sensory states [1][2].\n\nTogether, these structures work with the premotor and primary motor cortex, which use the information from these areas to assign feedback gains and transform beliefs about states into motor commands [1].",
+      "retrieved_sources": [
+        "download-pdf-ebooks.org-1532770904Pb4J8.pdf",
+        "nihms-66884.pdf"
+      ],
+      "expected_sources": [
+        "nihms-66884.pdf"
+      ],
+      "recall": 1.0,
+      "correctness": 5,
+      "faithfulness": 5,
+      "latency_s": 3.57,
+      "judge_response": "CORRECTNESS: 5\nFAITHFULNESS: 5"
+    },
+    {
+      "id": "shadmehr_002",
+      "question": "Why are internal models important for motor control and movement adaptation?",
+      "category": "factual_recall",
+      "difficulty": "easy",
+      "answer": "# Why Internal Models Are Important for Motor Control and Movement Adaptation\n\nInternal models are important for motor control and movement adaptation for several key reasons:\n\n1. **Enabling accurate predictions**: Internal models allow the brain to predict the sensory consequences of motor commands. This is crucial because our muscles and limbs respond variably depending on factors like fatigue state and the weight of objects being held [1].\n\n2. **Supporting optimal control**: Optimal control can only be effective if internal models are accurate. As the sources state, \"we cannot hope to maximize reward unless our predictions about the behavior of our body generally agree with the sensory feedback\" [3]. Inaccurate internal models would bias observations and prevent the nervous system from optimizing movement.\n\n3. **Enabling adaptation**: The brain learns from sensory feedback and adapts its internal model to maintain accuracy in predictions. This adaptation can involve simple parameter adjustments or more complex structural changes to the model [1].\n\n4. **Providing rapid feedback control**: Internal models can generate predictions long before actual sensory feedback arrives from receptors, enabling very rapid movements. This is particularly important for fast movements like saccades that depend entirely on internal feedback [5].\n\n5. **Combining multiple feedback sources**: For longer movements, internal predictions from models are combined with sensory feedback to form accurate beliefs about the body's state [5].\n\nIn essence, internal models are fundamental to allowing the motor system to relate motor commands to their outcomes and to continuously refine motor behavior.",
+      "retrieved_sources": [
+        "nihms-66884.pdf"
+      ],
+      "expected_sources": [
+        "nihms-66884.pdf"
+      ],
+      "recall": 1.0,
+      "correctness": 5,
+      "faithfulness": 5,
+      "latency_s": 5.71,
+      "judge_response": "CORRECTNESS: 5\nFAITHFULNESS: 5"
+    },
+    {
+      "id": "cajal_001",
+      "question": "What is the principle of dynamic polarization described by Cajal?",
+      "category": "factual_recall",
+      "difficulty": "easy",
+      "answer": "# The Principle of Dynamic Polarization\n\nAccording to Cajal, the principle of dynamic polarization of neurons describes the directional flow of nervous impulses in different parts of a neuron [1][2]:\n\n- **In dendrites and protoplasmic expansions**: Nervous movement flows **towards the cell or axon**\n- **In axons**: Nervous movement flows **away from the cell**\n\nCajal notes that this formula originated from \"numerous morphological facts\" and was developed by Van Gehuchten and himself [1][2]. The principle is further supported by the discovery that the neurofibrillar framework constitutes a continuous reticulum (network) extending from the dendrites and cell body through to the axon and its peripheral termination [1][2].\n\nThis principle established the directional organization of neural information flow within individual neurons, forming a foundational concept in neuroscience.",
+      "retrieved_sources": [
+        "cajal-lecture.pdf",
+        "hebb_1949.pdf",
+        "hodgkin_huxley_1952.pdf"
+      ],
+      "expected_sources": [
+        "cajal-lecture.pdf"
+      ],
+      "recall": 1.0,
+      "correctness": 5,
+      "faithfulness": 5,
+      "latency_s": 4.13,
+      "judge_response": "CORRECTNESS: 5\nFAITHFULNESS: 5\n\nThe answer accurately captures all key concepts from the retrieved context: dendrites, cell body, axon, and the directional nature of nervous impulses. It correctly states that impulses move towards the cell/axon in dendrites and away from the cell in axons. The answer properly attributes the principle to Cajal and Van Gehuchten, notes it was based on morphological facts, and mentions the neurofibrillar framework. All claims are directly supported by the provided passage."
+    },
+    {
+      "id": "cajal_002",
+      "question": "How does Cajal distinguish his view of neuronal connections from the reticular theory?",
+      "category": "factual_recall",
+      "difficulty": "medium",
+      "answer": "# Cajal's Distinction from Reticular Theory\n\nBased on the sources provided, Cajal distinguishes his neuronal doctrine from the reticular theory primarily through his assertion that the brain is **not** composed of a continuous network of filaments connecting all nerve centers.\n\nIn Source 3, Cajal directly addresses and rejects the reticular theory's premise, stating:\n\n> \"We cannot reject, a priori, the possibility that the inextricable forest of the brain...does not still possess some enigmatic system of filaments binding the neuronal whole, as creepers attach the trees of tropical forests...Unfortunately, nature seems unaware of our intellectual need for convenience and unity, and very often takes delight in complication and diversity.\" [3]\n\nCajal emphasizes that while a continuous intermediary network between motor, sensory, and sensitive nerves would be intellectually convenient, this is not how nature actually organized the nervous system. Instead, he advocates for the **neuronal doctrine of His and of Forel**, which posits that neurons are discrete, individual units rather than components of a continuous reticulum [1].\n\nHowever, Cajal also shows intellectual humility in Source 1, acknowledging that future techniques might reveal \"new and more intimate connexions between neurons thought to be in contact,\" suggesting that his current conclusions, while well-founded, are limited by contemporary methods [1].",
+      "retrieved_sources": [
+        "fnana-09-00080.pdf",
+        "cajal-lecture.pdf"
+      ],
+      "expected_sources": [
+        "cajal-lecture.pdf"
+      ],
+      "recall": 1.0,
+      "correctness": 2,
+      "faithfulness": 2,
+      "latency_s": 4.8,
+      "judge_response": "CORRECTNESS: 2\n\nFAITHFULNESS: 2"
+    },
+    {
+      "id": "cajal_003",
+      "question": "What does Cajal describe about the growth and regeneration of nerve fibers?",
+      "category": "factual_recall",
+      "difficulty": "medium",
+      "answer": "# Cajal's Descriptions of Nerve Fiber Growth and Regeneration\n\nBased on the sources provided, Cajal describes several aspects of nerve fiber growth and regeneration:\n\n## Growth of Developing Nerve Fibers\n\nCajal observed that in the final branches of motor and sensory roots, each fiber ends freely with a \"developing-bouton\" (terminal swelling), which is identical to structures seen in degenerating nerve tubes. He also noted that young fibers show dichotomous divisions and complicated ramifications, and that these very thin peripheral branches (being recent/young) never contain traces of cellular chains or terminal corpuscles [3].\n\n## Regeneration Process\n\nRegarding regeneration, Cajal noted the \"tip of nerve fibres in process of regeneration\" and observed the neurofibrillar reticulum (network structure) present in these regenerating nerve endings [1]. The sources indicate that Cajal was among those who studied the morphological aspects of nerve regeneration and the changes that occur during this process.\n\n## Synaptic Growth and Learning\n\nCajal also conjectured that changes at the synapse during learning involve \"an ameboid outgrowth of the cell,\" suggesting he theorized that nerve cells could undergo growth processes as part of learning mechanisms [4].\n\nHowever, the sources do not provide extensive detail about all aspects of Cajal's theories on nerve regeneration mechanisms.",
+      "retrieved_sources": [
+        "fnana-09-00080.pdf",
+        "download-pdf-ebooks.org-1532770904Pb4J8.pdf",
+        "cajal-lecture.pdf",
+        "hebb_1949.pdf"
+      ],
+      "expected_sources": [
+        "cajal-lecture.pdf"
+      ],
+      "recall": 1.0,
+      "correctness": 2,
+      "faithfulness": 3,
+      "latency_s": 5.48,
+      "judge_response": "CORRECTNESS: 2\n\nFAITHFULNESS: 3\n\n**Reasoning:**\n\n**Correctness Issues:**\n- The answer mentions \"growth cone\" is an expected key concept, but the retrieved context never uses this term. The context mentions \"developing-bouton\" and \"tip of nerve fibres in process of regeneration,\" but doesn't explicitly describe a growth cone structure.\n- The answer claims Cajal described \"dichotomous divisions and complicated ramifications\" of young fibers, which is supported, but this is a minor detail rather than a core description of growth/regeneration mechanisms.\n- The answer lacks substantive description of the actual regeneration mechanism. The context clearly states that \"regeneration of the nerve fibers takes place by the downgrowth of axons from the central end of the nerve\" and that \"proliferated nuclei in the peripheral portions\" form scaffolding\u2014but the answer doesn't capture this key"
+    },
+    {
+      "id": "hh_003",
+      "question": "In the Hodgkin-Huxley model, what are the two main ionic currents that contribute to the action potential?",
+      "category": "factual_recall",
+      "difficulty": "easy",
+      "answer": "Based on the sources provided, the two main ionic currents that contribute to the action potential in the Hodgkin-Huxley model are:\n\n1. **Sodium current (INa)** - carried by sodium ions\n2. **Potassium current (IK)** - carried by potassium ions\n\nThis is explicitly stated in Source 1, which indicates that \"the ionic current can be made by splitting the membrane current into components carried by sodium ions (INa), potassium ions (IK) and other ions\" [1]. The model also accounts for other ionic currents, but sodium and potassium are the primary contributors examined in the analysis [1][4].",
+      "retrieved_sources": [
+        "hodgkin_huxley_1952.pdf"
+      ],
+      "expected_sources": [
+        "hodgkin_huxley_1952.pdf"
+      ],
+      "recall": 1.0,
+      "correctness": 5,
+      "faithfulness": 5,
+      "latency_s": 4.51,
+      "judge_response": "CORRECTNESS: 5\nFAITHFULNESS: 5"
+    },
+    {
+      "id": "hh_004",
+      "question": "What preparation did Hodgkin and Huxley use to measure ionic currents across the nerve membrane?",
+      "category": "methodology",
+      "difficulty": "easy",
+      "answer": "Based on the sources provided, Hodgkin and Huxley used a **giant nerve fibre** as their preparation to measure ionic currents across the nerve membrane [2].\n\nHowever, the sources do not provide more specific details about which organism or nerve fiber was used. Source 4 mentions that Keynes (1951) conducted comparable experiments on \"Sepia axons\" (squid axons), and Source 5 references \"Axon 38\" and \"Axon 39\" in their measurements, but the sources don't explicitly state the specific biological preparation used by Hodgkin and Huxley themselves for their ionic current measurements.",
+      "retrieved_sources": [
+        "hodgkin_huxley_1952.pdf"
+      ],
+      "expected_sources": [
+        "hodgkin_huxley_1952.pdf"
+      ],
+      "recall": 1.0,
+      "correctness": 2,
+      "faithfulness": 3,
+      "latency_s": 5.54,
+      "judge_response": "CORRECTNESS: 2\nFAITHFULNESS: 3\n\nThe answer correctly identifies that Hodgkin and Huxley used a \"giant nerve fibre\" as their preparation, which is supported by the context (\"the flow of electric current through the surface membrane of a giant nerve fibre\"). However, the answer fails to address the expected key concept of \"squid\" and \"giant axon\" specifically. While the context mentions \"Sepia axons\" (squid) in reference to Keynes's work and mentions \"Axon 38\" and \"Axon 39\" in measurements, the answer acknowledges these are not explicitly stated as Hodgkin and Huxley's own preparation. The answer is incomplete because it doesn't definitively identify the squid giant axon as the preparation used, which appears to be the expected answer based on the question's framing. The answer also somewhat hedges by saying \"the"
+    },
+    {
+      "id": "hw_002",
+      "question": "How did Hubel and Wiesel stimulate the visual system in their cat experiments?",
+      "category": "methodology",
+      "difficulty": "easy",
+      "answer": "# Hubel and Wiesel's Visual Stimulation Methods\n\nHubel and Wiesel used several approaches to stimulate the visual system in their cat experiments:\n\n## Primary Stimulation Setup\n[Source 2] describes their main method: \"The animal faced a large screen covering most of the visual field. On this screen light spots of various sizes and shapes were projected. The light source was a tungsten filament projector mounted on an adjustable tripod. Stimuli could be moved across the screen in various directions and with different speeds.\"\n\n## Stimulus Specifications\nThe researchers used light spots of varying sizes, with [Source 2] noting that \"Spots subtending an angle as small as 12 min of arc at the cat's eyes could be obtained, but generally 0.5-1\u00b0 spots were used for mapping receptive fields.\" They also controlled spot intensities and background illumination during experiments.\n\n## Key Finding About Effective Stimuli\nImportantly, [Source 5] indicates that small, moving spots were most effective: \"In the freely moving light-adapted cat it was found that the great majority of cortical cells studied gave little or no response to light stimuli covering most of the animal's visual field, whereas small spots shone in a restricted retinal region often evoked brisk responses. A moving spot of light often produced stronger responses than a stationary one, and sometimes a moving spot gave more activation for one direction than for the opposite.\"",
+      "retrieved_sources": [
+        "hubel_wiesel_1959.pdf"
+      ],
+      "expected_sources": [
+        "hubel_wiesel_1959.pdf"
+      ],
+      "recall": 1.0,
+      "correctness": 2,
+      "faithfulness": 2,
+      "latency_s": 5.36,
+      "judge_response": "CORRECTNESS: 2\n\nFAITHFULNESS: 2\n\nThe answer fails to address a critical expected concept: the context explicitly states the experiments were conducted on \"acute preparations\" and mentions \"anesthetized\" is an expected key concept, yet the answer describes \"freely moving light-adapted cat\" without acknowledging the anesthetized state. More importantly, the answer claims the cat was \"freely moving,\" which directly contradicts the experimental setup described in the context (acute preparations with controlled recording conditions). The answer does correctly identify light and screen as stimulation methods, but misrepresents the experimental conditions by emphasizing freely moving animals when the context indicates acute (anesthetized) preparations. The answer also selectively uses only one passage about freely moving cats while ignoring the primary methodological description that applies to the acute preparation studies that form the main focus of the paper."
+    },
+    {
+      "id": "hw_003",
+      "question": "According to Hubel and Wiesel, what stimulus property best activates neurons in the cat's striate cortex?",
+      "category": "factual_recall",
+      "difficulty": "easy",
+      "answer": "Based on the sources provided, Hubel and Wiesel do not explicitly state a single stimulus property that \"best activates\" neurons in the cat's striate cortex in a direct way. However, the sources indicate what is **not** most effective:\n\nThe sources clearly show that large spots of light covering the entire receptive field are **relatively ineffective** at driving most cortical units [1][4]. This is because cortical receptive fields contain separate excitatory and inhibitory regions that antagonize each other, so \"a stimulus combining the two is always less effective\" [1].\n\nThe sources indicate that cortical cells have \"restricted retinal areas which on illumination influenced the firing of single cortical units\" called receptive fields [5], and these are subdivided into \"mutually antagonistic excitatory and inhibitory regions\" [5]. This suggests that stimuli activating only the excitatory regions (rather than the entire field) would be more effective, but the sources do not explicitly state the optimal stimulus property.\n\nTo fully answer what stimulus properties **best** activate these neurons, one would need additional information from the Hubel and Wiesel paper beyond what is provided in these excerpts.",
+      "retrieved_sources": [
+        "hubel_wiesel_1959.pdf"
+      ],
+      "expected_sources": [
+        "hubel_wiesel_1959.pdf"
+      ],
+      "recall": 1.0,
+      "correctness": 2,
+      "faithfulness": 4,
+      "latency_s": 5.46,
+      "judge_response": "CORRECTNESS: 2\n\nFAITHFULNESS: 4\n\nThe answer correctly identifies what the context says about what is NOT effective (large spots), but it fails to address the question about what stimulus property BEST activates the neurons. The expected key concepts (orientation, line, edge) are not mentioned anywhere in the retrieved context provided to the system. The answer appropriately acknowledges this limitation, but this means it doesn't answer the question as asked. The answer is largely incomplete rather than incorrect\u2014it identifies a gap in the context rather than providing the expected information about optimal stimulus properties."
+    },
+    {
+      "id": "fakhar_004",
+      "question": "What is the main computational challenge mentioned in the study, and why is it difficult?",
+      "category": "factual_recall",
+      "difficulty": "medium",
+      "answer": "# Main Computational Challenge\n\nBased on the sources provided, the primary computational challenge mentioned is **the sheer scale of brain connectivity data** [1].\n\nSpecifically, the human brain comprises an estimated 8.6 \u00d7 10\u00b9\u00b9 neurons and approximately 10\u00b9\u2074 synapses [1]. The difficulty arises because creating a digital atlas of all this connectivity information would require more memory than is needed to store all the written information present in the world today [1].\n\nThis massive data scale creates significant difficulties for analysis and interpretation, even when using mathematical approaches like graph theory to model brain networks [1].\n\nAdditionally, the sources point to a related conceptual challenge: understanding the **computational organization of the motor and nervous systems** requires working across multiple levels of analysis\u2014from understanding the computational problem (the driving purpose and logic of actions), to the algorithmic level (how computations are represented and implemented), to the implementation level (the physical neuronal machinery that realizes these algorithms) [2][4]. This multi-level analysis requirement adds complexity to neuroscientific research.",
+      "retrieved_sources": [
+        "hebb_1949.pdf",
+        "Fornito_15_NRN.pdf",
+        "nihms-66884.pdf"
+      ],
+      "expected_sources": [
+        "Fakhar et al. - elife-101780-v1.pdf"
+      ],
+      "recall": 0.0,
+      "correctness": 2,
+      "faithfulness": 4,
+      "latency_s": 5.37,
+      "judge_response": "CORRECTNESS: 2\nFAITHFULNESS: 4\n\nThe answer addresses computational challenges but fails to address the specific concepts mentioned in the expected key concepts list. The question asks about \"the main computational challenge mentioned in the study\" with expected concepts including \"virtual lesion, combinations, computational.\"\n\nThe retrieved context does not mention virtual lesions or combinations at all. The answer correctly identifies the scale of brain connectivity data as a computational challenge (which is supported by the context), but this appears to be only a partial answer to what the question is asking for. The answer also introduces discussion of multi-level analysis in motor systems, which is present in the context but doesn't directly address the expected key concepts about virtual lesions and combinations.\n\nThe faithfulness score is high (4) because the claims made are supported by the context\u2014the scale of brain data and the need for graph theory analysis are clearly stated. However, the answer is incomplete relative to what the question seems to"
+    },
+    {
+      "id": "cajal_004",
+      "question": "What is a growth cone, according to Cajal's description?",
+      "category": "factual_recall",
+      "difficulty": "easy",
+      "answer": "# Growth Cone According to Cajal\n\nBased on Cajal's description in the sources, a growth cone is the developing terminal region of a nerve fiber characterized by the following features [1][3]:\n\n1. **Structure**: It is a terminal mass at the end of the developing axon (primordial prolongation) that contains neurofibrils organized \"like a paint brush\" - they converge to a point at the tip.\n\n2. **Composition**: Beyond the neurofibrillar brush point, the growth cone contains \"an unstained plasma substance disposed in sheets and in diverging spines\" [1][3].\n\n3. **Terminal ending**: Each fiber ends freely by means of a \"developing-bouton\" (developing terminal button) [4].\n\n4. **Appearance**: In very young, thin peripheral nerve branches, the growth cone appears as a freely ending structure without cellular chains or terminal corpuscles [4].\n\nIn essence, Cajal described the growth cone as the actively developing tip of a growing nerve fiber, characterized by its distinctive brush-like neurofibrillar arrangement and plasma substance, which serves as the means by which the nerve fiber extends and makes connections.",
+      "retrieved_sources": [
+        "elife-33281-v2.pdf",
+        "cajal-lecture.pdf",
+        "hebb_1949.pdf"
+      ],
+      "expected_sources": [
+        "cajal-lecture.pdf"
+      ],
+      "recall": 1.0,
+      "correctness": 5,
+      "faithfulness": 5,
+      "latency_s": 7.24,
+      "judge_response": "CORRECTNESS: 5\nFAITHFULNESS: 5"
+    },
+    {
+      "id": "cajal_005",
+      "question": "What does Cajal observe about the ability of nerve fibers to regenerate after damage?",
+      "category": "factual_recall",
+      "difficulty": "medium",
+      "answer": "Based on the sources provided, Cajal makes several key observations about nerve fiber regeneration after damage:\n\n1. **Neurons can regenerate independently**: Cajal observes that \"ball corpuscles give a striking demonstration of the regenerative autonomy of adult neurons, and their capacity to produce new fibres by simple budding, and without the help of the Schwann cells.\" [3]\n\n2. **Neurofibrils actively grow during regeneration**: In crushed nerves, Cajal observes that \"the neurofibrils in process of regeneration can be seen, in B, penetrating the interior of the necrotic segment of the axon where they terminate in free handle-like projections; and in C a necrosed portion of the axis cylinder, invaded by branched neurofibrils, in the process of development.\" [4]\n\n3. **Peripheral segments can regenerate significantly**: When obstacles are placed between cut nerve fragments to prevent immediate reunion, Cajal notes that \"a very advanced regeneration of the peripheral segment can often (but not always) be observed three or four months after the operation.\" [5]\n\n4. **Regeneration involves complex structural responses**: Cajal describes unusual phenomena including \"branched neurofibrils, budding from an axon irritated by the trauma, spiral around the axon which also shows unravelling, and longitudinal vacuoles.\" [4]\n\nOverall, Cajal's observations demonstrate that nerve fibers possess significant regenerative capacity following injury, though the process is complex and not always complete.",
+      "retrieved_sources": [
+        "fnana-09-00080.pdf",
+        "cajal-lecture.pdf",
+        "download-pdf-ebooks.org-1532770904Pb4J8.pdf"
+      ],
+      "expected_sources": [
+        "cajal-lecture.pdf"
+      ],
+      "recall": 1.0,
+      "correctness": 5,
+      "faithfulness": 5,
+      "latency_s": 5.24,
+      "judge_response": "CORRECTNESS: 5\nFAITHFULNESS: 5"
+    }
+  ]
+}

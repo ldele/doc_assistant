@@ -4,6 +4,27 @@ This document contains the *why* behind my choices, and the planned evolution of
 
 ---
 
+## About This Project
+
+This project implements and evaluates established RAG techniques on a personal 
+document library. It does not introduce new algorithms or methods.
+
+- Hybrid retrieval (BM25 + dense vectors): standard practice since 2023.
+- Cross-encoder reranking: standard practice, originally popularized by Microsoft 
+  research and Sentence-Transformers.
+- Parent-child retrieval: a LangChain pattern, predates this project.
+- Section-aware chunking: a common refinement, not unique here.
+- Query rewriting / HyDE: documented techniques from the literature.
+
+What this project does contribute is:
+- An end-to-end working system over real research documents.
+- A measurement harness that lets us compare these techniques empirically.
+- Documented design decisions for a specific domain (personal academic libraries).
+- Practical engineering: caching, streaming ingest, metadata cleanup, regression 
+  tracking.
+
+---
+
 ## Core Decisions
 
 ### Local-first by default
@@ -71,6 +92,31 @@ Current:
 
 Reasoning: the goal is to improve retrieval quality while not always re-running ingest which is costly. 
 It only needs to be done once for each document, so it is extra worth it to run a cleanup on the files.
+
+### Parent-child retrieval is the default (for now)
+
+According to literature and testing, this choice should improve performance.
+
+Measurement with strict judge (temperature=0, tight rubric):
+
+|---|---|---|
+| Retrieval recall | 0.90 | 0.95 |
+| Correctness | 3.48 / 5 | 4.10 / 5 |
+| Faithfulness | 3.90 / 5 | 4.35 / 5 |
+| Methodology correctness | 3.00 | 4.40 |
+| Latency | 5.24s | 4.52s |
+
+A +0.62 correctness improvement with a strict judge is a substantial real
+effect. Methodology questions in particular benefit (+1.40), because they
+require procedural context that small chunks can't convey.
+
+The mechanism: child chunks (~400 chars) are embedded and used for precise 
+retrieval. When a child is retrieved, its containing parent passage 
+(~2000 chars) is passed to the LLM instead. This gives the LLM richer 
+context per retrieved item without sacrificing retrieval precision.
+
+The baseline (single-chunk) retrieval remains available via 
+`USE_PARENT_CHILD=false` in the environment.
 
 ---
 

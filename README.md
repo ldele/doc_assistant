@@ -7,6 +7,9 @@ Built for researchers or students who wants to actually search the *content* of 
 
 ## What's inside
 
+A personal-scale RAG system that integrates established techniques and 
+measures them empirically.
+
 - **Multi-format ingestion** — PDF, EPUB, HTML, DOCX, Markdown, plain text
 - **Hybrid retrieval** — BM25 keyword search ensembled with vector similarity
 - **Cross-encoder reranking** — BGE reranker for precision on top of recall

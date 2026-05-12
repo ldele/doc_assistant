@@ -8,7 +8,7 @@ from langchain_core.documents import Document
 from sentence_transformers import CrossEncoder
 from langchain_core.callbacks import BaseCallbackHandler
 
-from config import LLM_MODE, OLLAMA_HOST, ANTHROPIC_API_KEY, CHROMA_PATH
+from config import LLM_MODE, OLLAMA_HOST, ANTHROPIC_API_KEY, CHROMA_PATH, TOP_K
 
 
 # ============================================================
@@ -119,7 +119,7 @@ class RAGPipeline:
         from langchain_ollama import OllamaLLM
         return OllamaLLM(model="llama3", base_url=OLLAMA_HOST)
 
-    def retrieve(self, query: str, top_k: int = 5):
+    def retrieve(self, query: str, top_k: int = TOP_K):
         candidates = self.ensemble.invoke(query)
         if not candidates:
             return []

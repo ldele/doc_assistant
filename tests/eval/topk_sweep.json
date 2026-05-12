@@ -1,0 +1,174 @@
+{
+  "8": {
+    "total_questions": 19,
+    "overall": {
+      "recall": 0.95,
+      "correctness": 4.42,
+      "faithfulness": 4.72,
+      "latency_s": 5.89
+    },
+    "by_category": {
+      "factual_recall": {
+        "count": 14,
+        "recall": 1.0,
+        "correctness": 4.29,
+        "faithfulness": 4.64
+      },
+      "negative": {
+        "count": 1,
+        "recall": 0.0,
+        "correctness": 5,
+        "faithfulness": null
+      },
+      "methodology": {
+        "count": 4,
+        "recall": 1.0,
+        "correctness": 4.75,
+        "faithfulness": 5
+      }
+    },
+    "by_difficulty": {
+      "easy": {
+        "count": 10,
+        "correctness": 4.7
+      },
+      "medium": {
+        "count": 8,
+        "correctness": 4.38
+      },
+      "hard": {
+        "count": 1,
+        "correctness": 2
+      }
+    }
+  },
+  "10": {
+    "total_questions": 20,
+    "overall": {
+      "recall": 0.95,
+      "correctness": 4.55,
+      "faithfulness": 4.74,
+      "latency_s": 10.94
+    },
+    "by_category": {
+      "factual_recall": {
+        "count": 14,
+        "recall": 1.0,
+        "correctness": 4.5,
+        "faithfulness": 4.71
+      },
+      "methodology": {
+        "count": 5,
+        "recall": 1.0,
+        "correctness": 4.6,
+        "faithfulness": 4.8
+      },
+      "negative": {
+        "count": 1,
+        "recall": 0.0,
+        "correctness": 5,
+        "faithfulness": null
+      }
+    },
+    "by_difficulty": {
+      "medium": {
+        "count": 9,
+        "correctness": 4.56
+      },
+      "easy": {
+        "count": 10,
+        "correctness": 4.6
+      },
+      "hard": {
+        "count": 1,
+        "correctness": 4
+      }
+    }
+  },
+  "12": {
+    "total_questions": 21,
+    "overall": {
+      "recall": 0.95,
+      "correctness": 4.43,
+      "faithfulness": 4.55,
+      "latency_s": 11.72
+    },
+    "by_category": {
+      "methodology": {
+        "count": 5,
+        "recall": 1.0,
+        "correctness": 4.6,
+        "faithfulness": 4.8
+      },
+      "factual_recall": {
+        "count": 15,
+        "recall": 1.0,
+        "correctness": 4.33,
+        "faithfulness": 4.47
+      },
+      "negative": {
+        "count": 1,
+        "recall": 0.0,
+        "correctness": 5,
+        "faithfulness": null
+      }
+    },
+    "by_difficulty": {
+      "easy": {
+        "count": 11,
+        "correctness": 4.64
+      },
+      "hard": {
+        "count": 1,
+        "correctness": 2
+      },
+      "medium": {
+        "count": 9,
+        "correctness": 4.44
+      }
+    }
+  },
+  "15": {
+    "total_questions": 21,
+    "overall": {
+      "recall": 0.95,
+      "correctness": 4.33,
+      "faithfulness": 4.45,
+      "latency_s": 13.19
+    },
+    "by_category": {
+      "factual_recall": {
+        "count": 15,
+        "recall": 1.0,
+        "correctness": 4.07,
+        "faithfulness": 4.27
+      },
+      "negative": {
+        "count": 1,
+        "recall": 0.0,
+        "correctness": 5,
+        "faithfulness": null
+      },
+      "methodology": {
+        "count": 5,
+        "recall": 1.0,
+        "correctness": 5,
+        "faithfulness": 5
+      }
+    },
+    "by_difficulty": {
+      "easy": {
+        "count": 11,
+        "correctness": 4.55
+      },
+      "hard": {
+        "count": 1,
+        "correctness": 2
+      },
+      "medium": {
+        "count": 9,
+        "correctness": 4.33
+      }
+    }
+  }
+}

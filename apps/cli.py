@@ -15,7 +15,7 @@ def main():
             continue
         
         standalone = rag.rewrite(question, history)
-        docs = rag.retrieve(standalone, top_k=5)
+        docs = rag.retrieve(standalone)
         
         print("\nAnswer: ", end="", flush=True)
         full_answer = ""

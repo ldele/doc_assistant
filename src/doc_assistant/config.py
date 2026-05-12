@@ -54,8 +54,14 @@ if HF_TOKEN:
 
 
 # ============================================================
-# Experimental flags
+# Experimental flags (Default set to best results)
 # ============================================================
 
 # Use parent-child retrieval: small chunks for retrieval precision
 USE_PARENT_CHILD = os.getenv("USE_PARENT_CHILD", "true").lower() == "true" # Enabled by default -> better perf in testing
+
+# Multi-query expansion
+USE_MULTI_QUERY = os.getenv("USE_MULTI_QUERY", "false").lower() == "true"
+
+# Number of chunks/parents passed to the LLM at query time
+TOP_K = int(os.getenv("TOP_K", "10"))

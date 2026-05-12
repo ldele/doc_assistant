@@ -20,7 +20,10 @@ from statistics import mean
 from langchain_anthropic import ChatAnthropic
 from langchain_core.messages import HumanMessage, SystemMessage
 
-from doc_assistant.config import ANTHROPIC_API_KEY
+if sys.platform == "win32":
+    sys.stdout.reconfigure(encoding="utf-8")
+
+from doc_assistant.config import ANTHROPIC_API_KEY, USE_PARENT_CHILD, USE_MULTI_QUERY, TOP_K
 from doc_assistant.pipeline import RAGPipeline
 
 
@@ -106,11 +109,26 @@ def parse_judge_score(text: str, label: str) -> int | None:
     return int(match.group(1)) if match else None
 
 
+def _invoke_with_retry(judge, messages, max_retries=3):
+    """Call the judge with exponential backoff on rate limit errors."""
+    for attempt in range(max_retries):
+        try:
+            return judge.invoke(messages)
+        except Exception as exc:
+            if "rate_limit" in str(exc).lower() and attempt < max_retries - 1:
+                wait = 30 * (attempt + 1)
+                print(f"  Rate limit hit, waiting {wait}s before retry...", flush=True)
+                time.sleep(wait)
+            else:
+                raise
+    return None
+
+
 # ============================================================
 # Single-question evaluation
 # ============================================================
 
-def evaluate_entry(entry: dict, rag: RAGPipeline, judge, k: int) -> dict:
+def evaluate_entry(entry: dict, rag: RAGPipeline, judge, k: int=TOP_K) -> dict:
     """Run one eval entry through the pipeline and score it."""
     question = entry["question"]
     expected_sources = set(entry.get("expected_sources", []))
@@ -139,10 +157,10 @@ def evaluate_entry(entry: dict, rag: RAGPipeline, judge, k: int) -> dict:
         if category == "negative":
             human = _NEGATIVE_JUDGE_PROMPT.format(question=question, answer=answer)
             msgs = _judge_messages(_NEGATIVE_JUDGE_SYSTEM, human)
-            judge_response = judge.invoke(msgs).content
+            response = _invoke_with_retry(judge, msgs)   # was: judge.invoke(msgs)
+            judge_response = response.content
             honesty = parse_judge_score(judge_response, "HONESTY")
             correctness = honesty
-            # faithfulness is not applicable for negative entries
         else:
             expected_phrases = ", ".join(entry.get("expected_answer_contains", []))
             human = _JUDGE_PROMPT.format(
@@ -152,7 +170,8 @@ def evaluate_entry(entry: dict, rag: RAGPipeline, judge, k: int) -> dict:
                 answer=answer,
             )
             msgs = _judge_messages(_JUDGE_SYSTEM, human)
-            judge_response = judge.invoke(msgs).content
+            response = _invoke_with_retry(judge, msgs)   # was: judge.invoke(msgs)
+            judge_response = response.content
             correctness = parse_judge_score(judge_response, "CORRECTNESS")
             faithfulness = parse_judge_score(judge_response, "FAITHFULNESS")
     except Exception as exc:
@@ -275,7 +294,7 @@ def print_report(summary: dict, results: list[dict]):
 
     print(f"\nPer-question results:")
     for r in results:
-        marker = "✓" if (r["correctness"] or 0) >= 4 else "✗"
+        marker = "OK " if (r["correctness"] or 0) >= 4 else "BAD"
         print(f"  {marker} [{r['id']:14s}] correct={r['correctness']}  "
               f"recall={r['recall']}  faith={r['faithfulness']}  "
               f"({r['latency_s']}s)")
@@ -284,21 +303,26 @@ def print_report(summary: dict, results: list[dict]):
 def print_regression_report(regression_report: dict):
     if not regression_report:
         return
-    
+
     print(f"\nRegression tracking:")
     resolved = sum(1 for r in regression_report.values() if r["resolved"])
     improved = sum(1 for r in regression_report.values() if r["improved"])
-    
-    print(f"  {resolved}/{len(regression_report)} resolved (≥ target)")
+
+    print(f"  {resolved}/{len(regression_report)} resolved (>= target)")
     print(f"  {improved}/{len(regression_report)} improved over baseline")
     print(f"\n  Per-regression detail:")
-    
+
     for entry_id, r in regression_report.items():
         baseline = r["baseline_correctness"]
         current = r["current_correctness"]
         target = r["target"]
-        status = "✓ resolved" if r["resolved"] else ("↑ improved" if r["improved"] else "  same/worse")
-        delta = f"{baseline} → {current}" if baseline else f"-> {current}"
+        if r["resolved"]:
+            status = "[RESOLVED]"
+        elif r["improved"]:
+            status = "[IMPROVED]"
+        else:
+            status = "[no change]"
+        delta = f"{baseline} -> {current}" if baseline else f"-> {current}"
         print(f"    [{entry_id:14s}] {delta} (target: {target})  {status}")
         print(f"      mode: {r['failure_mode'][:80]}")
 
@@ -311,7 +335,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--category", help="Run only entries with this category")
     parser.add_argument("--ids", help="Comma-separated list of entry IDs to run")
-    parser.add_argument("--k", type=int, default=5, help="Top-K retrieval (default 5)")
+    parser.add_argument("--k", type=int, default=TOP_K, help="Top-K retrieval (default 5)")
     parser.add_argument("--eval-file", default="tests/eval/eval_set.json")
     parser.add_argument("--workers", type=int, default=2, help="Parallel judge workers (default 2)")
     args = parser.parse_args()
@@ -336,6 +360,13 @@ def main():
         return
 
     print(f"Running {len(entries)} eval entries with {args.workers} workers...\n")
+
+    print("\n=== Configuration ===")
+    print(f"  USE_PARENT_CHILD: {USE_PARENT_CHILD}")
+    print(f"  USE_MULTI_QUERY:  {USE_MULTI_QUERY}")
+    print(f"  Workers:          {args.workers if hasattr(args, 'workers') else 2}")
+    print(f"  Top-K:            {args.k}")
+    print()
 
     rag = RAGPipeline()
     judge = ChatAnthropic(
@@ -379,8 +410,18 @@ def main():
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     out_path = Path(f"tests/eval/results_{timestamp}.json")
     out_path.parent.mkdir(parents=True, exist_ok=True)
+    output = {
+        "summary": summary,
+        "results": results,
+        "configuration": {
+            "use_parent_child": USE_PARENT_CHILD,
+            "use_multi_query": USE_MULTI_QUERY,
+            "top_k": args.k,
+            "timestamp": timestamp,
+        },
+    }
     with open(out_path, "w", encoding="utf-8") as f:
-        json.dump({"summary": summary, "results": results}, f, indent=2)
+        json.dump(output, f, indent=2)
     print(f"\nResults saved to {out_path}")
 
 

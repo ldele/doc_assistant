@@ -201,7 +201,7 @@ Goal: working end-to-end RAG over personal documents.
 - Chainlit web UI + CLI fallback
 - Docker support
 
-### 🔄 Phase 2: Quality Foundation (in progress)
+### ✅ Phase 2: Quality Foundation (in progress)
 
 Goal: make the existing Q&A measurably smarter. No quality improvement is 
 worth claiming without a metric.
@@ -221,7 +221,7 @@ worth claiming without a metric.
 
 Deliverable: a measurable improvement in answer quality, with numbers.
 
-### Phase 3: Document Store + Library UI
+### 🔄 Phase 3: Document Store + Library UI
 
 Goal: treat the library as a first-class object. Browse, upload, organize, 
 inspect, and control how documents are processed.

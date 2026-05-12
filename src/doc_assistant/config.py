@@ -26,6 +26,8 @@ DOCS_PATH = DATA_PATH / "sources"
 CACHE_PATH = DATA_PATH / "cache"
 CHROMA_PATH = str(DATA_PATH / "chroma")  # Chroma wants a string, not Path
 PC_CHROMA_PATH = str(DATA_PATH / "chroma_pc") # Parent - Child
+SQLITE_PATH = str(DATA_PATH / "library.db")
+SQLITE_URL = f"sqlite:///{SQLITE_PATH}"
 
 
 # ============================================================

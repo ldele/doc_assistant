@@ -31,7 +31,7 @@ async def on_message(message: cl.Message):
         standalone = user_question
 
     async with cl.Step(name="Searching documents", type="retrieval") as step:
-        docs = rag.retrieve(standalone, top_k=5)
+        docs = rag.retrieve(standalone)
         step.output = f"Found {len(docs)} relevant passages"
 
     source_elements = []

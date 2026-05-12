@@ -93,7 +93,7 @@ Current:
 Reasoning: the goal is to improve retrieval quality while not always re-running ingest which is costly. 
 It only needs to be done once for each document, so it is extra worth it to run a cleanup on the files.
 
-### Parent-child retrieval is the default (for now)
+### Parent-child retrieval is the default
 
 According to literature and testing, this choice should improve performance.
 
@@ -117,6 +117,66 @@ context per retrieved item without sacrificing retrieval precision.
 
 The baseline (single-chunk) retrieval remains available via 
 `USE_PARENT_CHILD=false` in the environment.
+
+### TOP_K tuning — adopted at TOP_K=8
+
+Hypothesis: increasing the number of retrieved chunks would help when the 
+correct content was being found but not all of it made the top-5 cutoff.
+
+Measurement swept TOP_K over [3, 5, 8, 10, 12, 15] to find optimal value
+(strict judge, parent-child enabled):
+
+| K | Correctness | Faithfulness | Latency | Notes |
+|---|---|---|---|---|
+| 3 | 3.57 | 3.95 | 4.3s | Too little context |
+| 5 | 3.81 | 4.05 | 4.8s | Previous default, undertuned |
+| 8 | 4.42 | 4.72 | 5.9s | Previously considered optimum |
+| 10 | **4.55** | **4.74** | 10.9s | Peak on both metrics |
+| 12 | 4.43 | 4.55 | 11.7s | Past peak, faithfulness drops |
+| 15 | 4.33 | 4.45 | 13.2s | Clearly past optimum |
+
+Decision: K=10 adopted. Both correctness and faithfulness peak there, with
+clear declines on both sides. The +0.13 correctness over K=8 comes at +5s
+latency, accepted as worthwhile for a research tool.
+
+Outcome: substantial improvement across all measures except latency.
+Five of six known regressions resolved, including all three historical PDF
+failures that previous experiments couldn't fix (scanned documents).
+
+Mechanism: the reranker's 6th, 7th, and 8th choices are still highly 
+relevant (cutting at 5 was removing relevant context).
+
+Trade-offs:
+- Going below K=10 loses retrieval breadth on distributed-information questions
+- Going above K=10 dilutes the LLM's context with marginally-relevant chunks
+- The faithfulness drop past K=10 confirms this is the inflection point, not noise
+
+### Multi-Query expansion — tested twice, not adopted
+
+Hypothesis: generating 3 variations of each query and combining retrieval 
+results would improve recall on ambiguous or distributed-information questions.
+
+Two prompt variants tested:
+- Variant A: paraphrase + narrower + broader
+- Variant B: paraphrases only (no scope shifts)
+
+Both regressed against the no-MQ baseline:
+
+| Metric | TOP_K=8 alone | TOP_K=8 + MQ-A | TOP_K=8 + MQ-B |
+|---|---|---|---|
+| Correctness | 4.29 | 3.62 | 4.00 |
+| Faithfulness | 4.55 | 4.25 | 4.30 |
+| Regressions resolved | 5/6 | 2/6 | 2/6 |
+
+Mechanism of failure: query variations multiply the number of candidates 
+the reranker has to discriminate among. Even when variations stay tightly 
+scoped (paraphrase-only), they dilute the reranker's selection of the 
+top-K positions. The highest-relevance chunks survive, but the marginal 
+positions (6th-8th) get displaced by slightly-less-relevant candidates 
+from variations.
+
+In phase 2 and for current testing corpus, the cost outweighs 
+the benefit. The MQ code remains available but disabled by default.
 
 ---
 
@@ -289,3 +349,40 @@ Decisions I haven't made yet:
     Redesign of db architecture needed. 
 
 - **Citation extraction quality vs. external API quality.** TBD
+
+---
+
+## Deferred Improvements
+
+### Better document pre-processing
+
+Current extraction (PyMuPDF4LLM + Marker for scanned) produces usable but 
+imperfect markdown. Specific issues observed:
+
+- Mid-word breaks from PDF columns ("M isregistration", "W ith")
+- Figure captions captured as headings
+- Equations rendered inconsistently
+- Tables sometimes lose structure
+- Reference list parsing varies by paper format
+
+A dedicated pre-processing pass — between extraction and chunking — could 
+clean these systematically. Possible techniques: regex-based artifact repair, 
+LLM-based "did this extract correctly?" check, format-specific cleaners.
+
+Cost: might not be worth the cost but worth trying. LLM-based could be costly.
+
+### Domain-aware tokenization / keyword embedding
+
+Standard embedding models treat all tokens equivalently. Scientific text has 
+*disproportionately important keywords* — drug names, protein names, technique 
+names, mathematical operators — that carry most of the meaning of a sentence.
+
+A potential improvement: identify a vocabulary of high-signal scientific terms 
+(via TF-IDF on the corpus, or pre-built domain dictionaries like UMLS for 
+biomedical), then either:
+
+1. Boost their weight in BM25 retrieval
+2. Generate auxiliary embeddings that emphasize these terms
+3. Use them as explicit metadata for hybrid retrieval
+
+Cost: medium. Value: probably real for technical scientific corpora.

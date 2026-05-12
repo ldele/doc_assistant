@@ -6,8 +6,9 @@ from langchain_classic.retrievers import EnsembleRetriever
 from langchain_core.documents import Document
 from sentence_transformers import CrossEncoder
 
-from doc_assistant.config import USE_PARENT_CHILD, LLM_MODE, OLLAMA_HOST, ANTHROPIC_API_KEY, CHROMA_PATH, PC_CHROMA_PATH
-from doc_assistant.prompts import REWRITE_PROMPT, ANSWER_PROMPT
+from doc_assistant.config import USE_PARENT_CHILD, LLM_MODE, OLLAMA_HOST, ANTHROPIC_API_KEY, \
+    CHROMA_PATH, PC_CHROMA_PATH, USE_MULTI_QUERY, TOP_K
+from doc_assistant.prompts import REWRITE_PROMPT, ANSWER_PROMPT, MULTI_QUERY_PROMPT
 
 
 class RAGPipeline:
@@ -56,34 +57,50 @@ class RAGPipeline:
         from langchain_ollama import OllamaLLM
         return OllamaLLM(model="llama3", base_url=OLLAMA_HOST)
 
-    def retrieve(self, query: str, top_k: int = 5):
-        candidates = self.ensemble.invoke(query)
-        if not candidates:
+    def retrieve(self, query: str, top_k: int = TOP_K):
+        # Multi-Query: generate variations if enabled
+        queries = self.expand_query(query) if USE_MULTI_QUERY else [query]
+        
+        # Collect candidates from all queries
+        all_candidates = []
+        seen_ids = set()
+        for q in queries:
+            candidates = self.ensemble.invoke(q)
+            for doc in candidates:
+                doc_id = doc.metadata.get("doc_hash", "") + "_" + doc.page_content[:50]
+                if doc_id not in seen_ids:
+                    seen_ids.add(doc_id)
+                    all_candidates.append(doc)
+        
+        if not all_candidates:
             return []
-        pairs = [[query, doc.page_content] for doc in candidates]
+        
+        # Rerank against the original query
+        pairs = [[query, doc.page_content] for doc in all_candidates]
         scores = self.reranker.predict(pairs)
-        ranked = sorted(zip(candidates, scores), key=lambda x: x[1], reverse=True)
-        top_docs = [doc for doc, _ in ranked[:top_k]]
-
-        # Parent-child swap: replace child text with parent text for LLM context
+        ranked = sorted(zip(all_candidates, scores), key=lambda x: x[1], reverse=True)
+        
+        # Parent-child: dedup by parent BEFORE applying top_k
         if USE_PARENT_CHILD:
             seen_parents = set()
             deduped = []
-            for doc in top_docs:
+            for doc, _ in ranked:
                 parent_text = doc.metadata.get("parent_text")
                 parent_key = (doc.metadata.get("filename"), doc.metadata.get("parent_index"))
                 
                 if parent_text and parent_key not in seen_parents:
                     seen_parents.add(parent_key)
-                    # Construct a new Document with parent text but child's metadata
                     new_doc = Document(
                         page_content=parent_text,
                         metadata={k: v for k, v in doc.metadata.items() if k != "parent_text"},
                     )
                     deduped.append(new_doc)
+                    if len(deduped) >= top_k:
+                        break
             return deduped
         
-        return top_docs
+        # No parent-child: just take top_k
+        return [doc for doc, _ in ranked[:top_k]]
 
     def rewrite(self, question: str, history: list[dict], counter=None) -> str:
         if not history:
@@ -108,6 +125,35 @@ class RAGPipeline:
 
     def chunk_count(self) -> int:
         return len(self.db.get(include=[])["ids"])
+    
+    def expand_query(self, query: str) -> list[str]:
+        """Generate 3 alternative phrasings of the query.
+        Returns a list including the original plus 3 variations.
+        """
+        chain = MULTI_QUERY_PROMPT | self.llm
+        response = chain.invoke({"question": query})
+        text = response.content if hasattr(response, "content") else str(response)
+        
+        # Parse the JSON array. Be defensive — LLMs sometimes wrap in markdown.
+        text = text.strip()
+        if text.startswith("```"):
+            text = text.split("```")[1]
+            if text.startswith("json"):
+                text = text[4:]
+            text = text.strip()
+        
+        try:
+            import json
+            variations = json.loads(text)
+            if not isinstance(variations, list):
+                variations = [query]
+        except (json.JSONDecodeError, ValueError):
+            # If parsing fails, fall back to just the original query
+            print(f"  Warning: MQ JSON parse failed, using original query only")
+            variations = []
+        
+        # Always include the original query
+        return [query] + [v for v in variations if isinstance(v, str) and v.strip()]
 
 
 # ============================================================

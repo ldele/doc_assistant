@@ -93,9 +93,32 @@ def extract_docx(docx_path: Path) -> str:
     return "\n\n".join(parts)
 
 
+def extract_rtf(rtf_path: Path) -> str:
+    """Extract rtf to markdown."""
+    from striprtf.striprtf import rtf_to_text
+    
+    text = rtf_path.read_text(encoding="utf-8", errors="ignore")
+    return rtf_to_text(text)
+
+
+def extract_odt(odt_path: Path) -> str:
+    """Extract odt to markdown."""
+    from odf.opendocument import load
+    from odf.text import P
+    
+    doc = load(str(odt_path))
+    paragraphs = []
+    for p in doc.getElementsByType(P):
+        para_text = "".join(node.data for node in p.childNodes if hasattr(node, "data"))
+        if para_text.strip():
+            paragraphs.append(para_text)
+    return "\n\n".join(paragraphs)
+
+
 def extract_text(path: Path) -> str:
     """Plain text or markdown — read as-is."""
     return path.read_text(encoding="utf-8", errors="ignore")
+
 
 
 # Dispatch table
@@ -105,6 +128,8 @@ EXTRACTORS = {
     ".html": extract_html,
     ".htm": extract_html,
     ".docx": extract_docx,
+    ".odt": extract_odt,
+    ".rtf": extract_rtf,
     ".md": extract_text,
     ".txt": extract_text,
 }
@@ -124,3 +149,16 @@ def extract_to_markdown(path: Path, pdf_extractor: str = "pymupdf") -> str:
 
 def is_supported(path: Path) -> bool:
     return path.suffix.lower() in EXTRACTORS
+
+
+def get_format_status(path: Path) -> tuple[bool, str | None]:
+    """Returns (supported, advisory_message)."""
+    ext = path.suffix.lower()
+    if ext in EXTRACTORS:
+        return True, None
+    advice = {
+        ".doc": "DOC format is not supported. Convert to DOCX or PDF first.",
+        ".tex": "LaTeX is not supported yet. Compile to PDF first.",
+        ".mobi": "Kindle MOBI is not supported. Try EPUB instead.",
+    }
+    return False, advice.get(ext, f"Format {ext} is not supported.")

@@ -6,6 +6,8 @@ __pycache__/
 .pytest_cache/
 .coverage
 
+.files/
+
 # Editor
 .vscode/
 .idea/
@@ -19,6 +21,9 @@ data/chroma/
 data/chroma_pc/
 data/sources/
 data/issues/
+
+# Backups
+backups/
 
 # Test artifacts
 tests/eval/results_*.json

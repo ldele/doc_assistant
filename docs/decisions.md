@@ -118,7 +118,10 @@ context per retrieved item without sacrificing retrieval precision.
 The baseline (single-chunk) retrieval remains available via 
 `USE_PARENT_CHILD=false` in the environment.
 
-### TOP_K tuning — adopted at TOP_K=8
+Note: This setting is for what I currently have in my library.
+What matters is that I can quickly check the performance of the settings.
+
+### TOP_K tuning — adopted at TOP_K=10
 
 Hypothesis: increasing the number of retrieved chunks would help when the 
 correct content was being found but not all of it made the top-5 cutoff.
@@ -151,6 +154,9 @@ Trade-offs:
 - Going above K=10 dilutes the LLM's context with marginally-relevant chunks
 - The faithfulness drop past K=10 confirms this is the inflection point, not noise
 
+Note: This setting is for what I currently have in my library.
+What matters is that I can quickly check the performance of the settings.
+
 ### Multi-Query expansion — tested twice, not adopted
 
 Hypothesis: generating 3 variations of each query and combining retrieval 
@@ -175,8 +181,61 @@ top-K positions. The highest-relevance chunks survive, but the marginal
 positions (6th-8th) get displaced by slightly-less-relevant candidates 
 from variations.
 
-In phase 2 and for current testing corpus, the cost outweighs 
-the benefit. The MQ code remains available but disabled by default.
+Note: This setting is for what I currently have in my library.
+What matters is that I can quickly check the performance of the settings.
+As of phase 2, the cost outweighs the benefits. 
+
+The MQ code remains available but disabled by default.
+
+### Document health tracking
+
+Health classification implemented as a pure-Python scoring model in 
+`src/doc_assistant/health.py`. Each document is classified as healthy, 
+marginal, or broken based on observable signals at ingest time:
+
+- Chunk count and chunks-per-page ratio
+- Average chunk length
+- Section detection rate
+- PDF page marker presence
+- Reference-flagged chunk ratio
+
+Score ≥75 = healthy, ≥40 = marginal, <40 = broken.
+
+The classification is informational, not blocking: broken documents are 
+still retrievable, but visually flagged for the user's attention.
+Broken document content might still be valuable. 
+
+Known limitations:
+- Some documents might be classified as marginal. (Issues with some pdf formats)
+  Not blocking; accepted as a known issue.
+- Section detection regex now strips markdown formatting from heading 
+  text to prevent future occurrences. 
+  (Might have to build something more robust after further testing).
+
+To resolve some edge cases, added a dedup script (`scripts/dedupe_documents.py`) 
+to resolve all duplicate Document rows from the path+content hash drift.
+Might be an artifact from chroma to sqllite migration.
+
+### Library browser via chat commands
+
+Implementation pattern: `/library` command renders all documents as a 
+structured Chainlit message. Chosen for implementation simplicity and 
+reliability within Chainlit's native message API.
+
+Known scaling limit: this pattern works well for libraries up to ~100 
+documents. Beyond that, rendering hundreds of cards in a single message 
+becomes unwieldy and slow.
+
+Future migration path when needed:
+1. Add pagination (Phase 6): `/library page:2` for 20-doc pages
+2. Or migrate to a real sidebar/separate UI (Phase 6+) if Chainlit gets 
+   better layout support, or migrate the whole app to Streamlit/Reflex 
+   with proper navigation
+3. The data layer in `library.py` is independent of the UI — switching 
+   UI frameworks doesn't require redesigning queries
+
+The library.py abstraction is specifically designed so that any UI 
+change is a UI change, not a data layer rewrite.
 
 ---
 
@@ -253,8 +312,8 @@ different documents need different treatments.
 - Persistent ingestion log
 
 Rationale: this experience was discovered the hard way — historical PDFs 
-(Hodgkin & Huxley, Hubel & Wiesel, Rizzolatti) extracted to 1-10 chunks each 
-because they lack proper text layers. We had to manually diagnose and fix this. 
+(Hodgkin & Huxley, Hubel & Wiesel) extracted to 1-10 chunks each 
+because they lack proper text layers.
 A non-technical user wouldn't have noticed until eval results were inexplicable.
 
 ### Phase 4: Citation Graph

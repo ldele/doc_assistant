@@ -143,6 +143,67 @@ docker compose down -v         # stop, also delete the model cache volume
 
 Documents in `data/` should always be preserved on the host.
 
+---
+
+## Ingest, Verify, and Toggle Workflow
+
+The system maintains two Chroma stores in parallel: `data/chroma` (baseline 
+single-chunk) and `data/chroma_pc` (parent-child). Most operations 
+automatically update both.
+
+### Adding new documents
+
+Drop files into `data/sources/`, then run:
+
+```bash
+python -m doc_assistant.ingest
+```
+
+This processes new files, skips already-indexed ones, removes orphans whose 
+source file was deleted, and updates both Chroma stores plus SQLite.
+
+### Verifying integrity
+
+After any ingest, you can verify that the stores are in sync:
+
+```bash
+python -m scripts.verify_chroma_sync
+```
+
+This checks:
+- Both Chroma stores contain the same set of documents
+- SQLite has a row for every document in Chroma
+- Chunk counts agree between SQLite and Chroma
+
+### Switching retrieval mode
+
+The retrieval mode is controlled by an environment variable, not a config 
+file (so you can switch without modifying code):
+
+```bash
+# Use parent-child retrieval (default, higher quality, slower)
+$env:USE_PARENT_CHILD = "true"
+
+# Use single-chunk baseline (faster, lower quality)
+$env:USE_PARENT_CHILD = "false"
+```
+
+The active mode is logged at the top of every eval run and Chainlit session.
+
+### Cleanup utilities
+
+If verification surfaces issues:
+
+```bash
+# Remove chunks for documents no longer tracked in SQLite
+python -m scripts.cleanup_stale_chunks --apply
+
+# Merge duplicate SQLite rows (rarely needed)
+python -m scripts.dedupe_documents --apply
+```
+
+---
+
 ## License
 
 MIT

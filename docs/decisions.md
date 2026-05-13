@@ -357,6 +357,7 @@ Goal: design pass on everything built so far.
 - Better empty states, loading states, error states
 - Demo recording for portfolio / sharing
 - Onboarding flow for new users
+- Content hashing
 
 ### Phase 7: Literature Review Generation
 
@@ -445,3 +446,35 @@ biomedical), then either:
 3. Use them as explicit metadata for hybrid retrieval
 
 Cost: medium. Value: probably real for technical scientific corpora.
+
+### Known data integrity edge cases
+
+At Phase 3 schema migration and Marker re-extraction work, some documents
+remain in an inconsistent state.
+
+These are artifacts of the path+content hashing scheme
+interacting with multiple re-extraction passes. They do not affect 
+retrieval quality or user experience.
+
+Phase 3.4 added duplicate-prevention guard in `process_one_document` to 
+prevent this from happening to newly-ingested documents.
+
+Permanent fix deferred to Phase 6: migrate to content-only hashing, which 
+makes the system robust to path changes and re-extractions.
+
+### Phase 3.3 cleanup: dedup heuristic limitation
+
+The dedupe_documents.py script uses "highest chunk_count wins" as its
+deduplication heuristic when multiple SQLite Document rows exist for the
+same source path. This heuristic failed once during Phase 3.3 cleanup for
+cajal-lecture.pdf, where the higher-chunk-count row was the older PyMuPDF
+extraction, not the preferred newer Marker extraction.
+
+Resolved manually by deleting the older row and its baseline Chroma chunks.
+
+The underlying problem (path+content hashing produces a new "document" on
+every re-extraction) is Phase 6 deferred work. Once content-only hashing is
+implemented, this dedup category cannot occur.
+
+For the time being, after re-extracting documents with different extractors,
+manually verify the dedup outcome before --apply.

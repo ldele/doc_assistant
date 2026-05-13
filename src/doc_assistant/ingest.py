@@ -349,6 +349,11 @@ def process_one_document(path: Path, db: Chroma, pc_db: Chroma, splitter, indexe
             doc.metadata["document_id"] = document_id
             doc.metadata["health"] = health.status
 
+
+        existing_baseline = db.get(where={"doc_hash": h}, include=[])
+        if existing_baseline["ids"]:
+            print(f"  Removing {len(existing_baseline['ids'])} existing baseline chunks for hash {h}")
+            db.delete(ids=existing_baseline["ids"])
         db.add_documents(documents)
 
         pc_chunks = build_parent_child_chunks(text, {
@@ -360,6 +365,11 @@ def process_one_document(path: Path, db: Chroma, pc_db: Chroma, splitter, indexe
             "document_id": document_id,
             "health": health.status,
         })
+
+        existing_pc = pc_db.get(where={"doc_hash": h}, include=[])
+        if existing_pc["ids"]:
+            print(f"  Removing {len(existing_pc['ids'])} existing pc chunks for hash {h}")
+            pc_db.delete(ids=existing_pc["ids"])
         pc_db.add_documents(pc_chunks)
 
         indexed.add(h)

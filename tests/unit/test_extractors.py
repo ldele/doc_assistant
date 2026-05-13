@@ -6,13 +6,24 @@ from doc_assistant.extractors import extract_to_markdown, is_supported
 
 
 def test_supported_formats():
+    assert is_supported(Path("test.txt"))
+    assert is_supported(Path("test.rtf"))
+    assert is_supported(Path("test.odt"))
     assert is_supported(Path("paper.pdf"))
     assert is_supported(Path("book.epub"))
     assert is_supported(Path("notes.md"))
     assert is_supported(Path("report.docx"))
+
+def test_unsupported_formats():
+    assert not is_supported(Path("test.doc"))
+    assert not is_supported(Path("test.tex"))
+    assert not is_supported(Path("test.mobi"))
     assert not is_supported(Path("malware.exe"))
     assert not is_supported(Path("photo.jpg"))
 
+def test_case_insensitive():
+    assert is_supported(Path("test.PDF"))
+    assert is_supported(Path("test.EPUB"))
 
 def test_text_extraction(tmp_path):
     file = tmp_path / "sample.txt"

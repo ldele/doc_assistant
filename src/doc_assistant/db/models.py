@@ -26,6 +26,10 @@ from sqlalchemy import (
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
+def _utcnow() -> datetime:
+    return datetime.now(timezone.utc)
+
+
 class Base(DeclarativeBase):
     pass
 
@@ -76,7 +80,7 @@ class Folder(Base):
     parent_folder_id: Mapped[str | None] = mapped_column(
         String, ForeignKey("folders.id", ondelete="SET NULL"), nullable=True
     )
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
 
     parent: Mapped["Folder | None"] = relationship(
         "Folder", remote_side=[id], back_populates="children"
@@ -100,7 +104,7 @@ class Tag(Base):
     id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid4()))
     name: Mapped[str] = mapped_column(String, nullable=False, unique=True, index=True)
     color: Mapped[str | None] = mapped_column(String, nullable=True)  # for UI
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
 
     documents: Mapped[list["Document"]] = relationship(
         "Document", secondary=document_tags, back_populates="tags"
@@ -122,7 +126,7 @@ class Keyword(Base):
     source: Mapped[str | None] = mapped_column(
         String, nullable=True
     )  # "author", "extracted", "manual"
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
 
     documents: Mapped[list["Document"]] = relationship(
         "Document", secondary=document_keywords, back_populates="keywords"
@@ -160,9 +164,9 @@ class Document(Base):
     extracted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     # Lifecycle
-    added_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+    added_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc)
+        DateTime, default=_utcnow, onupdate=_utcnow
     )
     is_archived: Mapped[bool] = mapped_column(Boolean, default=False)
 
@@ -274,7 +278,7 @@ class IngestionEvent(Base):
     document_id: Mapped[str] = mapped_column(
         String, ForeignKey("documents.id", ondelete="CASCADE"), nullable=False, index=True
     )
-    timestamp: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+    timestamp: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
     event_type: Mapped[str] = mapped_column(String)
     extractor: Mapped[str | None] = mapped_column(String, nullable=True)
     chunks_produced: Mapped[int | None] = mapped_column(Integer, nullable=True)

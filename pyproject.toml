@@ -138,9 +138,3 @@ module = [
     "sqlalchemy.*",
 ]
 ignore_missing_imports = true
-
-# --- Bandit ---
-[tool.bandit]
-targets = ["src"]
-exclude_dirs = ["tests"]
-skips = []

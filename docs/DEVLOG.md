@@ -107,3 +107,20 @@ Format: What changed | Why | Rejected alternatives | What it opens
 **Done:** Phase 3 gate fully closed. CI green. .env.example, .claude/ config, all mypy/ruff/CI fixes.
 **Unresolved:** RAG pipeline deep-dive markdown started but not finished (diagram done, file not written).
 **Next:** Phase 4 (Citation Graph).
+
+### Known issue: Python 3.14 + Chainlit
+**What:** `anyio.NoEventLoopError` when serving static files. anyio 4.13.0 + starlette on Python 3.14 breaks Chainlit's file serving.
+**Workaround:** Run Chainlit with Python 3.12: `uv run --python 3.12 chainlit run apps/chainlit_app.py`. Development/testing (pytest, ruff, mypy) works on 3.14.
+**Opens:** Monitor anyio/starlette releases for 3.14 support.
+
+---
+## Session: 2026-05-21 (cont.) — chainlit_app.py refactor
+
+### apps/chainlit_app.py — extracted business logic into src/
+**What:** Split 378-line monolith into three modules:
+- `src/doc_assistant/query_router.py` — library query detection (`is_library_query`) and metadata responses (`answer_library_query`, `health_badge`). Pure logic, no UI deps.
+- `src/doc_assistant/commands.py` — slash-command parsing (`parse_command`) and execution (`execute_command`), plus all formatting functions (`format_summary_message`, `format_document_details`, `help_message`). Returns markdown strings.
+- `apps/chainlit_app.py` — slimmed to ~100 lines. Only Chainlit lifecycle hooks, streaming, and source element rendering.
+**Why:** `apps/` should contain no business logic (architecture standard). The old file mixed three concerns: command handling, library query routing, and RAG chat. Extracting to `src/` also fixed a testing problem — `test_library_queries.py` had to inline regex patterns because importing `chainlit_app.py` triggers `RAGPipeline()` init at module level.
+**Rejected:** Moving everything into `library.py` — that module is data access only. Query routing and command parsing are separate concerns.
+**Opens:** `execute_command` for `/library` and `/document` could get DB-integration tests.

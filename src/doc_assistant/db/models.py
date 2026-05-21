@@ -165,9 +165,7 @@ class Document(Base):
 
     # Lifecycle
     added_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime, default=_utcnow, onupdate=_utcnow
-    )
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, onupdate=_utcnow)
     is_archived: Mapped[bool] = mapped_column(Boolean, default=False)
 
     # Relationships

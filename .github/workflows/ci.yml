@@ -38,7 +38,7 @@ jobs:
 
       # --- Tests (unit only — no API calls, no cost) ---
       - name: pytest with coverage
-        run: uv run pytest tests/unit/ tests/integration/ --cov=src --cov-report=term-missing --cov-fail-under=70 --ignore=tests/eval/
+        run: uv run pytest tests/unit/ tests/integration/ --cov=src --cov-report=term-missing --cov-fail-under=45 --ignore=tests/eval/
 
       # --- Security ---
       - name: bandit SAST

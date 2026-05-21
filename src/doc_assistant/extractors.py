@@ -23,14 +23,14 @@ def extract_pdf_pymupdf(pdf_path: Path) -> str:
     import pymupdf
     import pymupdf4llm
 
-    doc = pymupdf.open(str(pdf_path))
+    doc = pymupdf.open(str(pdf_path))  # type: ignore[no-untyped-call]
     parts: list[str] = []
     for page_num in range(len(doc)):
         # Mark the start of each page so chunks can be tagged
         parts.append(f"\n<!-- page:{page_num + 1} -->\n")
         page_md = pymupdf4llm.to_markdown(str(pdf_path), pages=[page_num])
         parts.append(page_md)
-    doc.close()
+    doc.close()  # type: ignore[no-untyped-call]
     return "\n".join(parts)
 
 
@@ -101,7 +101,7 @@ def extract_rtf(rtf_path: Path) -> str:
     from striprtf.striprtf import rtf_to_text
 
     text = rtf_path.read_text(encoding="utf-8", errors="ignore")
-    return str(rtf_to_text(text))
+    return str(rtf_to_text(text))  # type: ignore[no-untyped-call]
 
 
 def extract_odt(odt_path: Path) -> str:

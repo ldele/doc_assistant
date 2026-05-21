@@ -61,10 +61,12 @@ class RAGPipeline:
     def _build_llm(self) -> Any:
         if LLM_MODE == "api":
             from langchain_anthropic import ChatAnthropic
+            from pydantic import SecretStr
 
-            return ChatAnthropic(
+            secret_key = SecretStr(ANTHROPIC_API_KEY or "")
+            return ChatAnthropic(  # type: ignore[call-arg]
                 model="claude-haiku-4-5-20251001",
-                api_key=ANTHROPIC_API_KEY,
+                api_key=secret_key,
                 max_tokens=1024,
                 streaming=True,
             )

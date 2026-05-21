@@ -5,7 +5,7 @@ from typing import Any
 from langchain_core.callbacks import BaseCallbackHandler
 
 
-class TokenCounter(BaseCallbackHandler):  # type: ignore[misc]
+class TokenCounter(BaseCallbackHandler):  # type: ignore[misc,unused-ignore]
     """Tracks tokens across all LLM calls in a session."""
 
     def __init__(self) -> None:

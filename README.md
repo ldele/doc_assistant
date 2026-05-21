@@ -37,7 +37,9 @@ Built for researchers and students who want to actually search the *content* of 
 ## Setup
 
 ```bash
-# Prerequisites: Python 3.12+, uv
+# Prerequisites: Python 3.12, uv
+# Note: Python 3.14 works for development/testing but Chainlit
+# requires 3.12 at runtime (anyio event loop incompatibility).
 git clone <your-repo-url> doc-assistant
 cd doc-assistant
 uv sync

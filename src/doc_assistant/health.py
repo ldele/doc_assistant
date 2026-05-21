@@ -5,19 +5,21 @@ A document is classified as:
 - "marginal": something's off but probably usable
 - "broken": extraction failed, probably needs re-extraction
 
-The classification is heuristic and based on observable signals at ingest 
+The classification is heuristic and based on observable signals at ingest
 time. It's a useful rough sort, not a precise judgment.
 """
+
 from dataclasses import dataclass
-from typing import Optional
+from typing import Any
 
 
 @dataclass
 class HealthReport:
     """The result of classifying a document's extraction health."""
+
     status: str  # "healthy" | "marginal" | "broken"
     score: int  # 0-100, higher is healthier
-    signals: dict  # raw measurements
+    signals: dict[str, Any]  # raw measurements
     reasons: list[str]  # human-readable explanations of penalties
 
     def __str__(self) -> str:
@@ -27,7 +29,7 @@ class HealthReport:
 def classify_document_health(
     chunk_count: int,
     avg_chunk_length: float,
-    page_count: Optional[int],
+    page_count: int | None,
     section_detection_rate: float,
     format: str,
     reference_flagged_ratio: float = 0.0,
@@ -46,15 +48,22 @@ def classify_document_health(
         HealthReport with status, score, signals, and reasons.
     """
     score = 100
-    reasons = []
+    reasons: list[str] = []
 
     # Catastrophic failure: 0 or 1 chunks
     if chunk_count <= 1:
         score -= 100
         reasons.append(f"only {chunk_count} chunk(s) produced")
-        # Don't bother with other signals; this is decisively broken
-        return _finalize(score, chunk_count, avg_chunk_length, page_count,
-                         section_detection_rate, format, reference_flagged_ratio, reasons)
+        return _finalize(
+            score,
+            chunk_count,
+            avg_chunk_length,
+            page_count,
+            section_detection_rate,
+            format,
+            reference_flagged_ratio,
+            reasons,
+        )
 
     # Very few chunks for any document
     if chunk_count <= 3:
@@ -91,12 +100,28 @@ def classify_document_health(
         score -= 30
         reasons.append(f"references make up {reference_flagged_ratio:.0%} of chunks")
 
-    return _finalize(score, chunk_count, avg_chunk_length, page_count,
-                     section_detection_rate, format, reference_flagged_ratio, reasons)
+    return _finalize(
+        score,
+        chunk_count,
+        avg_chunk_length,
+        page_count,
+        section_detection_rate,
+        format,
+        reference_flagged_ratio,
+        reasons,
+    )
 
 
-def _finalize(score, chunk_count, avg_chunk_length, page_count,
-              section_detection_rate, format, reference_flagged_ratio, reasons):
+def _finalize(
+    score: int,
+    chunk_count: int,
+    avg_chunk_length: float,
+    page_count: int | None,
+    section_detection_rate: float,
+    format: str,
+    reference_flagged_ratio: float,
+    reasons: list[str],
+) -> HealthReport:
     """Build the final report."""
     score = max(0, score)  # clamp to 0
     if score >= 75:

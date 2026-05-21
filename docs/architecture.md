@@ -47,7 +47,7 @@ LLM (Claude or local Ollama) → streamed answer with citations
 
 Both tiers are independent: changing the chunking strategy invalidates embeddings but not extraction. Rebuild with `python -m doc_assistant.ingest --rebuild`.
 
-**Known issue:** current hashing uses path + content. Path changes on re-extraction produce duplicate Document rows. Fix: content-only hashing (targeted for Phase 3 completion — see decisions.md).
+Hashing is content-only (SHA-256 of extracted markdown, truncated to 16 hex chars). Documents survive path changes and re-extractions without creating orphan rows. Migration from the old path+content scheme: `scripts/migrate_to_content_hash.py`.
 
 ## Document health model
 
@@ -78,6 +78,9 @@ Hooks: ruff (lint + format), mypy, bandit, detect-secrets, standard file hygiene
 ### Logging
 Structured JSON logging in staging/production via `structlog`. Development uses pretty console output. No `print()` in `src/`. Log entries include: level, timestamp, module, event, and operation-specific context fields. Secrets and PII are never logged.
 
+### Development log
+Maintain `docs/DEVLOG.md` — append one entry per logical change (what / why / rejected / opens). See dev-log skill for format. Append only, never edit past entries.
+
 ### Error handling
 Exception hierarchy rooted at `DocAssistantError`. Domain errors (ExtractionError, IngestError, PipelineError) are typed and documented. Infrastructure errors (StorageError, ExternalServiceError) propagate with context via `raise X from e`. User-facing errors are translated at the UI boundary; internal traces go to logs only.
 
@@ -94,4 +97,9 @@ tests/
     └── eval_set.json
 ```
 
-Unit tests run on every commit (pre-commit). Full suite (unit + integration) runs in CI. Eval harness runs manually at phase checkpoints.
+Unit tests run on every commit (pre-commit). Full suite (unit + integration) runs in CI — free, no API calls. Eval harness runs manually at phase checkpoints and costs money (Anthropic API for the LLM judge).
+
+Run commands:
+- `uv run pytest tests/unit/ tests/integration/` — free, fast, CI default
+- `uv run python -m tests.eval.run_eval` — manual, costs API tokens
+- `uv run pytest -m api` — any future tests marked with `@pytest.mark.api`

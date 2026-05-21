@@ -1,6 +1,8 @@
 """Project configuration. All paths and runtime settings live here."""
+
 import os
 from pathlib import Path
+
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -25,7 +27,7 @@ DATA_PATH = PROJECT_ROOT / "data"
 DOCS_PATH = DATA_PATH / "sources"
 CACHE_PATH = DATA_PATH / "cache"
 CHROMA_PATH = str(DATA_PATH / "chroma")  # Chroma wants a string, not Path
-PC_CHROMA_PATH = str(DATA_PATH / "chroma_pc") # Parent - Child
+PC_CHROMA_PATH = str(DATA_PATH / "chroma_pc")  # Parent - Child
 SQLITE_PATH = str(DATA_PATH / "library.db")
 SQLITE_URL = f"sqlite:///{SQLITE_PATH}"
 
@@ -60,7 +62,9 @@ if HF_TOKEN:
 # ============================================================
 
 # Use parent-child retrieval: small chunks for retrieval precision
-USE_PARENT_CHILD = os.getenv("USE_PARENT_CHILD", "true").lower() == "true" # Enabled by default -> better perf in testing
+USE_PARENT_CHILD = (
+    os.getenv("USE_PARENT_CHILD", "true").lower() == "true"
+)  # Enabled by default -> better perf in testing
 
 # Multi-query expansion
 USE_MULTI_QUERY = os.getenv("USE_MULTI_QUERY", "false").lower() == "true"

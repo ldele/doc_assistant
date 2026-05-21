@@ -6,12 +6,22 @@ Design principles:
 - Both reference each other via document.id (stable UUID).
 - Schema supports Phase 4 (citations) and beyond; unused fields stay NULL.
 """
-from datetime import datetime
+
+from datetime import datetime, timezone
 from uuid import uuid4
 
 from sqlalchemy import (
-    Column, ForeignKey, String, Integer, Text, DateTime, Boolean, Float,
-    Table, UniqueConstraint, Index
+    Boolean,
+    Column,
+    DateTime,
+    Float,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Table,
+    Text,
+    UniqueConstraint,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
@@ -27,21 +37,27 @@ class Base(DeclarativeBase):
 document_folders = Table(
     "document_folders",
     Base.metadata,
-    Column("document_id", String, ForeignKey("documents.id", ondelete="CASCADE"), primary_key=True),
+    Column(
+        "document_id", String, ForeignKey("documents.id", ondelete="CASCADE"), primary_key=True
+    ),
     Column("folder_id", String, ForeignKey("folders.id", ondelete="CASCADE"), primary_key=True),
 )
 
 document_tags = Table(
     "document_tags",
     Base.metadata,
-    Column("document_id", String, ForeignKey("documents.id", ondelete="CASCADE"), primary_key=True),
+    Column(
+        "document_id", String, ForeignKey("documents.id", ondelete="CASCADE"), primary_key=True
+    ),
     Column("tag_id", String, ForeignKey("tags.id", ondelete="CASCADE"), primary_key=True),
 )
 
 document_keywords = Table(
     "document_keywords",
     Base.metadata,
-    Column("document_id", String, ForeignKey("documents.id", ondelete="CASCADE"), primary_key=True),
+    Column(
+        "document_id", String, ForeignKey("documents.id", ondelete="CASCADE"), primary_key=True
+    ),
     Column("keyword_id", String, ForeignKey("keywords.id", ondelete="CASCADE"), primary_key=True),
 )
 
@@ -49,6 +65,7 @@ document_keywords = Table(
 # ============================================================
 # Folder — hierarchical, but UI starts flat
 # ============================================================
+
 
 class Folder(Base):
     __tablename__ = "folders"
@@ -59,7 +76,7 @@ class Folder(Base):
     parent_folder_id: Mapped[str | None] = mapped_column(
         String, ForeignKey("folders.id", ondelete="SET NULL"), nullable=True
     )
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     parent: Mapped["Folder | None"] = relationship(
         "Folder", remote_side=[id], back_populates="children"
@@ -69,14 +86,13 @@ class Folder(Base):
         "Document", secondary=document_folders, back_populates="folders"
     )
 
-    __table_args__ = (
-        UniqueConstraint("name", "parent_folder_id", name="uq_folder_name_parent"),
-    )
+    __table_args__ = (UniqueConstraint("name", "parent_folder_id", name="uq_folder_name_parent"),)
 
 
 # ============================================================
 # Tag — user-applied organizational labels
 # ============================================================
+
 
 class Tag(Base):
     __tablename__ = "tags"
@@ -84,7 +100,7 @@ class Tag(Base):
     id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid4()))
     name: Mapped[str] = mapped_column(String, nullable=False, unique=True, index=True)
     color: Mapped[str | None] = mapped_column(String, nullable=True)  # for UI
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     documents: Mapped[list["Document"]] = relationship(
         "Document", secondary=document_tags, back_populates="tags"
@@ -97,13 +113,16 @@ class Tag(Base):
 # keywords describe what the document is about.
 # ============================================================
 
+
 class Keyword(Base):
     __tablename__ = "keywords"
 
     id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid4()))
     name: Mapped[str] = mapped_column(String, nullable=False, unique=True, index=True)
-    source: Mapped[str | None] = mapped_column(String, nullable=True)  # "author", "extracted", "manual"
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    source: Mapped[str | None] = mapped_column(
+        String, nullable=True
+    )  # "author", "extracted", "manual"
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     documents: Mapped[list["Document"]] = relationship(
         "Document", secondary=document_keywords, back_populates="keywords"
@@ -113,6 +132,7 @@ class Keyword(Base):
 # ============================================================
 # Document
 # ============================================================
+
 
 class Document(Base):
     __tablename__ = "documents"
@@ -140,9 +160,9 @@ class Document(Base):
     extracted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     # Lifecycle
-    added_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    added_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+        DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc)
     )
     is_archived: Mapped[bool] = mapped_column(Boolean, default=False)
 
@@ -157,26 +177,32 @@ class Document(Base):
         "Keyword", secondary=document_keywords, back_populates="documents"
     )
     parts: Mapped[list["DocumentPart"]] = relationship(
-        "DocumentPart", back_populates="document",
-        cascade="all, delete-orphan", order_by="DocumentPart.order_index"
+        "DocumentPart",
+        back_populates="document",
+        cascade="all, delete-orphan",
+        order_by="DocumentPart.order_index",
     )
     citations_out: Mapped[list["Citation"]] = relationship(
-        "Citation", foreign_keys="[Citation.source_document_id]",
-        back_populates="source_document", cascade="all, delete-orphan"
+        "Citation",
+        foreign_keys="[Citation.source_document_id]",
+        back_populates="source_document",
+        cascade="all, delete-orphan",
     )
     citations_in: Mapped[list["Citation"]] = relationship(
-        "Citation", foreign_keys="[Citation.target_document_id]",
-        back_populates="target_document"
+        "Citation", foreign_keys="[Citation.target_document_id]", back_populates="target_document"
     )
     ingestion_events: Mapped[list["IngestionEvent"]] = relationship(
-        "IngestionEvent", back_populates="document",
-        cascade="all, delete-orphan", order_by="IngestionEvent.timestamp.desc()"
+        "IngestionEvent",
+        back_populates="document",
+        cascade="all, delete-orphan",
+        order_by="IngestionEvent.timestamp.desc()",
     )
 
 
 # ============================================================
 # DocumentPart — sections, chapters, etc.
 # ============================================================
+
 
 class DocumentPart(Base):
     __tablename__ = "document_parts"
@@ -196,14 +222,13 @@ class DocumentPart(Base):
     parent: Mapped["DocumentPart | None"] = relationship(
         "DocumentPart", remote_side=[id], back_populates="children"
     )
-    children: Mapped[list["DocumentPart"]] = relationship(
-        "DocumentPart", back_populates="parent"
-    )
+    children: Mapped[list["DocumentPart"]] = relationship("DocumentPart", back_populates="parent")
 
 
 # ============================================================
 # Citation — Phase 4 territory, scaffolded now.
 # ============================================================
+
 
 class Citation(Base):
     __tablename__ = "citations"
@@ -241,6 +266,7 @@ class Citation(Base):
 # IngestionEvent — health audit trail
 # ============================================================
 
+
 class IngestionEvent(Base):
     __tablename__ = "ingestion_events"
 
@@ -248,7 +274,7 @@ class IngestionEvent(Base):
     document_id: Mapped[str] = mapped_column(
         String, ForeignKey("documents.id", ondelete="CASCADE"), nullable=False, index=True
     )
-    timestamp: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    timestamp: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
     event_type: Mapped[str] = mapped_column(String)
     extractor: Mapped[str | None] = mapped_column(String, nullable=True)
     chunks_produced: Mapped[int | None] = mapped_column(Integer, nullable=True)

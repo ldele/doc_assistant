@@ -1,4 +1,5 @@
 """Tests for citation and document formatting helpers."""
+
 from langchain_core.documents import Document
 
 from doc_assistant.pipeline import format_citation, format_docs_for_prompt

@@ -5,17 +5,18 @@ Each child carries its parent text in metadata, passed to the LLM at query time.
 
 Run once to build, then pipeline switches between baseline and pc index via config.
 """
+
 import hashlib
 import shutil
 from pathlib import Path
 
 from langchain_chroma import Chroma
+from langchain_core.documents import Document
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain_core.documents import Document
 from tqdm import tqdm
 
-from doc_assistant.config import DATA_PATH, CACHE_PATH
+from doc_assistant.config import CACHE_PATH, DATA_PATH
 
 # Where to store the new index. Sibling to data/chroma/.
 PC_CHROMA_PATH = str(DATA_PATH / "chroma_pc")
@@ -39,10 +40,9 @@ _child_splitter = RecursiveCharacterTextSplitter(
 )
 
 
-def doc_hash(text: str, source: str) -> str:
+def doc_hash(text: str) -> str:
+    """Content-only hash. Path-independent so documents survive moves/renames."""
     h = hashlib.sha256()
-    h.update(source.encode("utf-8"))
-    h.update(b"\x00")
     h.update(text.encode("utf-8"))
     return h.hexdigest()[:16]
 
@@ -56,11 +56,13 @@ def build_parent_child_chunks(text: str, doc_metadata: dict) -> list[Document]:
         children = _child_splitter.split_text(parent_text)
         for child_idx, child_text in enumerate(children):
             meta = dict(doc_metadata)
-            meta.update({
-                "parent_text": parent_text,
-                "parent_index": parent_idx,
-                "child_index": child_idx,
-            })
+            meta.update(
+                {
+                    "parent_text": parent_text,
+                    "parent_index": parent_idx,
+                    "child_index": child_idx,
+                }
+            )
             all_children.append(Document(page_content=child_text, metadata=meta))
 
     return all_children
@@ -98,7 +100,7 @@ def main():
                 "filename": cache_path.stem + ".pdf",
                 "source_original": str(original_path),
                 "source_cache": str(cache_path),
-                "doc_hash": doc_hash(text, str(original_path)),
+                "doc_hash": doc_hash(text),
                 "format": "pdf",
             }
 

@@ -1,23 +1,35 @@
 """RAG pipeline: retrieval, reranking, and answer generation."""
+
+from collections.abc import Generator
+from typing import Any
+
 from langchain_chroma import Chroma
-from langchain_huggingface import HuggingFaceEmbeddings
-from langchain_community.retrievers import BM25Retriever
 from langchain_classic.retrievers import EnsembleRetriever
+from langchain_community.retrievers import BM25Retriever
 from langchain_core.documents import Document
+from langchain_huggingface import HuggingFaceEmbeddings
 from sentence_transformers import CrossEncoder
 
-from doc_assistant.config import USE_PARENT_CHILD, LLM_MODE, OLLAMA_HOST, ANTHROPIC_API_KEY, \
-    CHROMA_PATH, PC_CHROMA_PATH, USE_MULTI_QUERY, TOP_K
-from doc_assistant.prompts import REWRITE_PROMPT, ANSWER_PROMPT, MULTI_QUERY_PROMPT
+from doc_assistant.config import (
+    ANTHROPIC_API_KEY,
+    CHROMA_PATH,
+    LLM_MODE,
+    OLLAMA_HOST,
+    PC_CHROMA_PATH,
+    TOP_K,
+    USE_MULTI_QUERY,
+    USE_PARENT_CHILD,
+)
+from doc_assistant.prompts import ANSWER_PROMPT, MULTI_QUERY_PROMPT, REWRITE_PROMPT
 
 
 class RAGPipeline:
-    def __init__(self):
+    def __init__(self) -> None:
         print("Loading embeddings...")
         self.embeddings = HuggingFaceEmbeddings(model_name="BAAI/bge-base-en-v1.5")
 
         print("Loading vector store...")
-        chroma_path = PC_CHROMA_PATH if USE_PARENT_CHILD else CHROMA_PATH # set chroma mode
+        chroma_path = PC_CHROMA_PATH if USE_PARENT_CHILD else CHROMA_PATH
         print(f"Using vector store: {chroma_path}")
         self.db = Chroma(persist_directory=chroma_path, embedding_function=self.embeddings)
 
@@ -25,18 +37,19 @@ class RAGPipeline:
         data = self.db.get(include=["documents", "metadatas"])
         all_docs = [
             Document(page_content=text, metadata=meta or {})
-            for text, meta in zip(data["documents"], data["metadatas"])
+            for text, meta in zip(data["documents"], data["metadatas"], strict=True)
             if not (meta and meta.get("keep_for_retrieval") is False)
         ]
-        print(f"  BM25 index excludes {len(data['documents']) - len(all_docs)} non-retrievable chunks")
+        excluded = len(data["documents"]) - len(all_docs)
+        print(f"  BM25 index excludes {excluded} non-retrievable chunks")
         bm25 = BM25Retriever.from_documents(all_docs)
         bm25.k = 10
         vector = self.db.as_retriever(
-        search_kwargs={
-            "k": 10,
-            "filter": {"keep_for_retrieval": {"$ne": False}},
-        }
-)
+            search_kwargs={
+                "k": 10,
+                "filter": {"keep_for_retrieval": {"$ne": False}},
+            }
+        )
         self.ensemble = EnsembleRetriever(retrievers=[bm25, vector], weights=[0.4, 0.6])
 
         print("Loading reranker...")
@@ -45,9 +58,10 @@ class RAGPipeline:
         print("Loading LLM...")
         self.llm = self._build_llm()
 
-    def _build_llm(self):
+    def _build_llm(self) -> Any:
         if LLM_MODE == "api":
             from langchain_anthropic import ChatAnthropic
+
             return ChatAnthropic(
                 model="claude-haiku-4-5-20251001",
                 api_key=ANTHROPIC_API_KEY,
@@ -55,15 +69,16 @@ class RAGPipeline:
                 streaming=True,
             )
         from langchain_ollama import OllamaLLM
+
         return OllamaLLM(model="llama3", base_url=OLLAMA_HOST)
 
-    def retrieve(self, query: str, top_k: int = TOP_K):
+    def retrieve(self, query: str, top_k: int = TOP_K) -> list[Document]:
         # Multi-Query: generate variations if enabled
         queries = self.expand_query(query) if USE_MULTI_QUERY else [query]
-        
+
         # Collect candidates from all queries
-        all_candidates = []
-        seen_ids = set()
+        all_candidates: list[Document] = []
+        seen_ids: set[str] = set()
         for q in queries:
             candidates = self.ensemble.invoke(q)
             for doc in candidates:
@@ -71,23 +86,30 @@ class RAGPipeline:
                 if doc_id not in seen_ids:
                     seen_ids.add(doc_id)
                     all_candidates.append(doc)
-        
+
         if not all_candidates:
             return []
-        
+
         # Rerank against the original query
         pairs = [[query, doc.page_content] for doc in all_candidates]
         scores = self.reranker.predict(pairs)
-        ranked = sorted(zip(all_candidates, scores), key=lambda x: x[1], reverse=True)
-        
+        ranked = sorted(
+            zip(all_candidates, scores, strict=True),
+            key=lambda x: x[1],
+            reverse=True,
+        )
+
         # Parent-child: dedup by parent BEFORE applying top_k
         if USE_PARENT_CHILD:
-            seen_parents = set()
-            deduped = []
+            seen_parents: set[tuple[Any, ...]] = set()
+            deduped: list[Document] = []
             for doc, _ in ranked:
                 parent_text = doc.metadata.get("parent_text")
-                parent_key = (doc.metadata.get("filename"), doc.metadata.get("parent_index"))
-                
+                parent_key = (
+                    doc.metadata.get("filename"),
+                    doc.metadata.get("parent_index"),
+                )
+
                 if parent_text and parent_key not in seen_parents:
                     seen_parents.add(parent_key)
                     new_doc = Document(
@@ -98,11 +120,16 @@ class RAGPipeline:
                     if len(deduped) >= top_k:
                         break
             return deduped
-        
+
         # No parent-child: just take top_k
         return [doc for doc, _ in ranked[:top_k]]
 
-    def rewrite(self, question: str, history: list[dict], counter=None) -> str:
+    def rewrite(
+        self,
+        question: str,
+        history: list[dict[str, str]],
+        counter: Any = None,
+    ) -> str:
         if not history:
             return question
         chain = REWRITE_PROMPT | self.llm
@@ -113,7 +140,12 @@ class RAGPipeline:
         )
         return result.content if hasattr(result, "content") else str(result)
 
-    def stream_answer(self, question: str, docs, counter=None):
+    def stream_answer(
+        self,
+        question: str,
+        docs: list[Document],
+        counter: Any = None,
+    ) -> Generator[str, None, None]:
         context = format_docs_for_prompt(docs)
         chain = ANSWER_PROMPT | self.llm
         callbacks = [counter] if counter else []
@@ -125,7 +157,7 @@ class RAGPipeline:
 
     def chunk_count(self) -> int:
         return len(self.db.get(include=[])["ids"])
-    
+
     def expand_query(self, query: str) -> list[str]:
         """Generate 3 alternative phrasings of the query.
         Returns a list including the original plus 3 variations.
@@ -133,25 +165,26 @@ class RAGPipeline:
         chain = MULTI_QUERY_PROMPT | self.llm
         response = chain.invoke({"question": query})
         text = response.content if hasattr(response, "content") else str(response)
-        
-        # Parse the JSON array. Be defensive — LLMs sometimes wrap in markdown.
+
+        # Parse the JSON array. Be defensive -- LLMs sometimes wrap in markdown.
         text = text.strip()
         if text.startswith("```"):
             text = text.split("```")[1]
             if text.startswith("json"):
                 text = text[4:]
             text = text.strip()
-        
+
         try:
             import json
+
             variations = json.loads(text)
             if not isinstance(variations, list):
                 variations = [query]
         except (json.JSONDecodeError, ValueError):
             # If parsing fails, fall back to just the original query
-            print(f"  Warning: MQ JSON parse failed, using original query only")
+            print("  Warning: MQ JSON parse failed, using original query only")
             variations = []
-        
+
         # Always include the original query
         return [query] + [v for v in variations if isinstance(v, str) and v.strip()]
 
@@ -159,6 +192,7 @@ class RAGPipeline:
 # ============================================================
 # Formatting helpers
 # ============================================================
+
 
 def format_citation(doc: Document, idx: int) -> str:
     name = doc.metadata.get("filename", "unknown")
@@ -169,11 +203,11 @@ def format_citation(doc: Document, idx: int) -> str:
         parts.append(f"p.{page}")
     if section:
         parts.append(f'"{section}"')
-    return " · ".join(parts)
+    return " \xb7 ".join(parts)
 
 
-def format_docs_for_prompt(docs):
-    parts = []
+def format_docs_for_prompt(docs: list[Document]) -> str:
+    parts: list[str] = []
     for i, doc in enumerate(docs):
         filename = doc.metadata.get("filename", "unknown")
         page = doc.metadata.get("page")
@@ -185,10 +219,7 @@ def format_docs_for_prompt(docs):
     return "\n\n---\n\n".join(parts)
 
 
-def format_history(messages: list[dict]) -> str:
+def format_history(messages: list[dict[str, str]]) -> str:
     if not messages:
         return "(no prior messages)"
-    return "\n".join(
-        f"{m['role'].capitalize()}: {m['content']}"
-        for m in messages[-6:]
-    )
+    return "\n".join(f"{m['role'].capitalize()}: {m['content']}" for m in messages[-6:])

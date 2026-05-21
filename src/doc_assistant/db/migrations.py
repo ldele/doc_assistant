@@ -1,8 +1,9 @@
 """Database schema creation and migrations.
 
-For Phase 3, we just have schema creation. As the schema evolves in later 
+For Phase 3, we just have schema creation. As the schema evolves in later
 phases, this module grows to include actual migrations.
 """
+
 from pathlib import Path
 
 from doc_assistant.config import SQLITE_PATH
@@ -30,6 +31,7 @@ def init_db(reset: bool = False) -> None:
 
     # Verify
     from sqlalchemy import inspect
+
     inspector = inspect(engine)
     tables = inspector.get_table_names()
     print(f"Tables present: {sorted(tables)}")
@@ -37,8 +39,10 @@ def init_db(reset: bool = False) -> None:
 
 if __name__ == "__main__":
     import argparse
+
     parser = argparse.ArgumentParser()
-    parser.add_argument("--reset", action="store_true",
-                        help="Drop all tables before creating. Destroys data.")
+    parser.add_argument(
+        "--reset", action="store_true", help="Drop all tables before creating. Destroys data."
+    )
     args = parser.parse_args()
     init_db(reset=args.reset)

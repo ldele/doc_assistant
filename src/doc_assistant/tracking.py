@@ -1,16 +1,19 @@
 """Token usage tracking for LLM calls."""
+
+from typing import Any
+
 from langchain_core.callbacks import BaseCallbackHandler
 
 
-class TokenCounter(BaseCallbackHandler):
+class TokenCounter(BaseCallbackHandler):  # type: ignore[misc]
     """Tracks tokens across all LLM calls in a session."""
 
-    def __init__(self):
-        self.input_tokens = 0
-        self.output_tokens = 0
-        self.calls = 0
+    def __init__(self) -> None:
+        self.input_tokens: int = 0
+        self.output_tokens: int = 0
+        self.calls: int = 0
 
-    def on_llm_end(self, response, **kwargs):
+    def on_llm_end(self, response: Any, **kwargs: Any) -> None:
         self.calls += 1
         for gen_list in response.generations:
             for gen in gen_list:
@@ -26,7 +29,7 @@ class TokenCounter(BaseCallbackHandler):
         """Cost in USD. Rates are per 1M tokens. Defaults to Haiku 4.5 pricing."""
         return (self.input_tokens * input_rate + self.output_tokens * output_rate) / 1_000_000
 
-    def reset(self):
+    def reset(self) -> None:
         self.input_tokens = 0
         self.output_tokens = 0
         self.calls = 0

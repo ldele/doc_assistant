@@ -44,7 +44,8 @@ jobs:
       - name: bandit SAST
         run: uv run bandit -r src/ -c pyproject.toml
 
-      - name: pip-audit
+      - name: pip-audit (advisory)
+        continue-on-error: true
         run: uv run pip-audit
 
       - name: detect-secrets

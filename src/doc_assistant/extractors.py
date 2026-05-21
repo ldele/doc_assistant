@@ -1,5 +1,8 @@
 """Format-specific extractors. Each returns markdown text."""
+
+from collections.abc import Callable
 from pathlib import Path
+
 from bs4 import BeautifulSoup
 
 
@@ -12,16 +15,16 @@ def extract_pdf_marker(pdf_path: Path) -> str:
     converter = PdfConverter(artifact_dict=create_model_dict())
     rendered = converter(str(pdf_path))
     text, _, _ = text_from_rendered(rendered)
-    return text
+    return str(text)
 
 
 def extract_pdf_pymupdf(pdf_path: Path) -> str:
     """PDF extraction with page markers preserved as HTML comments."""
-    import pymupdf4llm
     import pymupdf
+    import pymupdf4llm
 
     doc = pymupdf.open(str(pdf_path))
-    parts = []
+    parts: list[str] = []
     for page_num in range(len(doc)):
         # Mark the start of each page so chunks can be tagged
         parts.append(f"\n<!-- page:{page_num + 1} -->\n")
@@ -33,10 +36,10 @@ def extract_pdf_pymupdf(pdf_path: Path) -> str:
 
 def extract_epub(epub_path: Path) -> str:
     """Extract EPUB to markdown by parsing inner HTML."""
-    from ebooklib import epub, ITEM_DOCUMENT
+    from ebooklib import ITEM_DOCUMENT, epub
 
     book = epub.read_epub(str(epub_path))
-    parts = []
+    parts: list[str] = []
 
     # Add title if available
     title = book.get_metadata("DC", "title")
@@ -75,7 +78,7 @@ def extract_docx(docx_path: Path) -> str:
     from docx import Document as DocxDocument
 
     doc = DocxDocument(str(docx_path))
-    parts = []
+    parts: list[str] = []
     for para in doc.paragraphs:
         text = para.text.strip()
         if not text:
@@ -96,18 +99,18 @@ def extract_docx(docx_path: Path) -> str:
 def extract_rtf(rtf_path: Path) -> str:
     """Extract rtf to markdown."""
     from striprtf.striprtf import rtf_to_text
-    
+
     text = rtf_path.read_text(encoding="utf-8", errors="ignore")
-    return rtf_to_text(text)
+    return str(rtf_to_text(text))
 
 
 def extract_odt(odt_path: Path) -> str:
     """Extract odt to markdown."""
     from odf.opendocument import load
     from odf.text import P
-    
+
     doc = load(str(odt_path))
-    paragraphs = []
+    paragraphs: list[str] = []
     for p in doc.getElementsByType(P):
         para_text = "".join(node.data for node in p.childNodes if hasattr(node, "data"))
         if para_text.strip():
@@ -116,14 +119,12 @@ def extract_odt(odt_path: Path) -> str:
 
 
 def extract_text(path: Path) -> str:
-    """Plain text or markdown — read as-is."""
+    """Plain text or markdown -- read as-is."""
     return path.read_text(encoding="utf-8", errors="ignore")
 
 
-
-# Dispatch table
-EXTRACTORS = {
-    ".pdf": "pdf",  # special-cased to choose marker vs pymupdf
+# Dispatch table (excludes PDF which is special-cased)
+_EXTRACTORS: dict[str, Callable[[Path], str]] = {
     ".epub": extract_epub,
     ".html": extract_html,
     ".htm": extract_html,
@@ -134,27 +135,33 @@ EXTRACTORS = {
     ".txt": extract_text,
 }
 
+# All supported extensions (including PDF)
+SUPPORTED_EXTENSIONS: set[str] = {".pdf", *_EXTRACTORS}
+
 
 def extract_to_markdown(path: Path, pdf_extractor: str = "pymupdf") -> str:
     """Main entry point: extract any supported file to markdown."""
     suffix = path.suffix.lower()
-    if suffix not in EXTRACTORS:
-        raise ValueError(f"Unsupported format: {suffix}")
 
     if suffix == ".pdf":
-        return extract_pdf_marker(path) if pdf_extractor == "marker" else extract_pdf_pymupdf(path)
+        if pdf_extractor == "marker":
+            return extract_pdf_marker(path)
+        return extract_pdf_pymupdf(path)
 
-    return EXTRACTORS[suffix](path)
+    extractor = _EXTRACTORS.get(suffix)
+    if extractor is None:
+        raise ValueError(f"Unsupported format: {suffix}")
+    return extractor(path)
 
 
 def is_supported(path: Path) -> bool:
-    return path.suffix.lower() in EXTRACTORS
+    return path.suffix.lower() in SUPPORTED_EXTENSIONS
 
 
 def get_format_status(path: Path) -> tuple[bool, str | None]:
     """Returns (supported, advisory_message)."""
     ext = path.suffix.lower()
-    if ext in EXTRACTORS:
+    if ext in SUPPORTED_EXTENSIONS:
         return True, None
     advice = {
         ".doc": "DOC format is not supported. Convert to DOCX or PDF first.",

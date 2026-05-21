@@ -278,14 +278,24 @@ Secrets and PII are never logged. Context binding per-request for the web UI.
 `PipelineError`, `StorageError`, `ExternalServiceError`. Exceptions chain with
 `raise X from e` to preserve tracebacks. User-facing messages translated at UI boundary.
 
-### Content-only hashing (moved from Phase 6 to Phase 3 completion criteria)
+### Content-only hashing — implemented
 
-Current path+content hashing causes duplicate Document rows on re-extraction.
-This is a data integrity issue, not polish. It must be resolved before Phase 4
-(citation graph) which depends on stable document identity.
+Previous path+content hashing caused duplicate Document rows whenever a file
+was moved, renamed, or re-extracted with a different extractor. This was a
+data integrity issue blocking Phase 4 (citation graph depends on stable
+document identity).
 
-Migration: hash on file content only. Documents survive path changes and
-re-extractions without creating orphan rows.
+Change: `doc_hash(text, source)` → `doc_hash(text)`. SHA-256 of the extracted
+markdown content only, truncated to 16 hex chars. Path is no longer part of
+the identity.
+
+Migration script: `scripts/migrate_to_content_hash.py` (dry-run + --apply).
+Recomputes hashes in SQLite and both Chroma stores. Handles dedup collisions
+when two paths had identical content by merging into the row with the highest
+chunk count.
+
+This also obsoletes `scripts/dedupe_documents.py` — the root cause (path
+changes creating new hashes) no longer exists.
 
 ---
 
@@ -411,7 +421,7 @@ Goal: design pass on everything built so far.
 - Demo recording for portfolio / sharing
 - Onboarding flow for new users
 
-Note: content-only hashing moved to Phase 3 completion gate (data integrity requirement).
+Note: content-only hashing completed in Phase 3 (was moved from Phase 6 to Phase 3 completion gate).
 
 ### Phase 7: Literature Review Generation
 
@@ -501,34 +511,9 @@ biomedical), then either:
 
 Cost: medium. Value: probably real for technical scientific corpora.
 
-### Known data integrity edge cases
+### ~~Known data integrity edge cases~~ — resolved
 
-At Phase 3 schema migration and Marker re-extraction work, some documents
-remain in an inconsistent state.
-
-These are artifacts of the path+content hashing scheme
-interacting with multiple re-extraction passes. They do not affect 
-retrieval quality or user experience.
-
-Phase 3.4 added duplicate-prevention guard in `process_one_document` to 
-prevent this from happening to newly-ingested documents.
-
-Permanent fix deferred to Phase 6: migrate to content-only hashing, which 
-makes the system robust to path changes and re-extractions.
-
-### Phase 3.3 cleanup: dedup heuristic limitation
-
-The dedupe_documents.py script uses "highest chunk_count wins" as its
-deduplication heuristic when multiple SQLite Document rows exist for the
-same source path. This heuristic failed once during Phase 3.3 cleanup for
-cajal-lecture.pdf, where the higher-chunk-count row was the older PyMuPDF
-extraction, not the preferred newer Marker extraction.
-
-Resolved manually by deleting the older row and its baseline Chroma chunks.
-
-The underlying problem (path+content hashing produces a new "document" on
-every re-extraction) is Phase 6 deferred work. Once content-only hashing is
-implemented, this dedup category cannot occur.
-
-For the time being, after re-extracting documents with different extractors,
-manually verify the dedup outcome before --apply.
+Resolved by content-only hashing. Documents no longer produce new hashes
+when moved or re-extracted. The `dedupe_documents.py` script is obsolete;
+the migration script `scripts/migrate_to_content_hash.py` handles any
+remaining inconsistencies from the old scheme.

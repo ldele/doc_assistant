@@ -3,9 +3,12 @@ __pycache__/
 *.pyc
 *.pyo
 *.egg-info/
+dist/
+build/
+.venv/
 .pytest_cache/
 .coverage
-
+.mypy_cache/
 .files/
 
 # Editor
@@ -14,7 +17,10 @@ __pycache__/
 
 # Secrets
 .env
+
+# Claude (local-only, not committed)
 CLAUDE.md
+.claude/
 
 # Runtime data
 data/cache/
@@ -22,6 +28,7 @@ data/chroma/
 data/chroma_pc/
 data/sources/
 data/issues/
+data/library.db
 
 # Backups
 backups/

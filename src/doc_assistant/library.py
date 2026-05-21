@@ -8,25 +8,26 @@ changes.
 All functions return plain dataclasses, not SQLAlchemy models. This
 keeps the UI layer free of session lifecycle concerns.
 """
+
 from collections import Counter
 from dataclasses import dataclass, field
 from datetime import datetime
+from typing import Any
 
-from sqlalchemy import select, func
+from sqlalchemy import func, select
 
-from doc_assistant.db.models import (
-    Document, IngestionEvent, Folder, Tag, Keyword
-)
+from doc_assistant.db.models import Document, Folder, Tag
 from doc_assistant.db.session import session_scope
-
 
 # ============================================================
 # Data classes (returned to UI)
 # ============================================================
 
+
 @dataclass
 class DocumentSummary:
     """One row in the library list."""
+
     id: str
     filename: str
     title: str | None
@@ -43,6 +44,7 @@ class DocumentSummary:
 @dataclass
 class DocumentDetails:
     """Full details for one document."""
+
     id: str
     filename: str
     title: str | None
@@ -64,12 +66,13 @@ class DocumentDetails:
     folders: list[str] = field(default_factory=list)
     tags: list[str] = field(default_factory=list)
     keywords: list[str] = field(default_factory=list)
-    ingestion_history: list[dict] = field(default_factory=list)
+    ingestion_history: list[dict[str, Any]] = field(default_factory=list)
 
 
 @dataclass
 class LibrarySummary:
     """High-level counts for the whole library."""
+
     total_documents: int
     total_chunks: int
     by_health: dict[str, int]
@@ -79,6 +82,7 @@ class LibrarySummary:
 # ============================================================
 # Query functions
 # ============================================================
+
 
 def list_documents(
     health: str | None = None,
@@ -92,7 +96,7 @@ def list_documents(
     Filters are combined with AND.
     """
     with session_scope() as session:
-        query = select(Document).where(Document.is_archived == False)
+        query = select(Document).where(Document.is_archived.is_(False))
 
         if health:
             query = query.where(Document.extraction_health == health)
@@ -127,9 +131,7 @@ def list_documents(
 def get_document_details(doc_id: str) -> DocumentDetails | None:
     """Return everything we know about a single document."""
     with session_scope() as session:
-        doc = session.execute(
-            select(Document).where(Document.id == doc_id)
-        ).scalar_one_or_none()
+        doc = session.execute(select(Document).where(Document.id == doc_id)).scalar_one_or_none()
         if not doc:
             return None
 
@@ -174,18 +176,21 @@ def get_document_details(doc_id: str) -> DocumentDetails | None:
 def library_summary() -> LibrarySummary:
     """Return high-level counts for the library."""
     with session_scope() as session:
-        total_docs = session.execute(
-            select(func.count(Document.id)).where(Document.is_archived == False)
-        ).scalar() or 0
+        total_docs = (
+            session.execute(
+                select(func.count(Document.id)).where(Document.is_archived.is_(False))
+            ).scalar()
+            or 0
+        )
 
         total_chunks_query = select(func.coalesce(func.sum(Document.chunk_count), 0))
-        total_chunks_query = total_chunks_query.where(Document.is_archived == False)
+        total_chunks_query = total_chunks_query.where(Document.is_archived.is_(False))
         total_chunks = session.execute(total_chunks_query).scalar() or 0
 
-        by_health = Counter()
-        by_format = Counter()
+        by_health: Counter[str] = Counter()
+        by_format: Counter[str] = Counter()
         for doc in session.execute(
-            select(Document).where(Document.is_archived == False)
+            select(Document).where(Document.is_archived.is_(False))
         ).scalars():
             by_health[doc.extraction_health or "unknown"] += 1
             by_format[doc.format] += 1
@@ -204,9 +209,11 @@ def find_document_by_short_id(short_id: str) -> str | None:
     Returns the full UUID if exactly one match, else None.
     """
     with session_scope() as session:
-        matches = session.execute(
-            select(Document.id).where(Document.id.like(f"{short_id}%"))
-        ).scalars().all()
+        matches = (
+            session.execute(select(Document.id).where(Document.id.like(f"{short_id}%")))
+            .scalars()
+            .all()
+        )
         if len(matches) == 1:
-            return matches[0]
+            return str(matches[0])
         return None

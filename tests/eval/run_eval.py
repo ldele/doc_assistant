@@ -7,6 +7,7 @@ Usage:
     python -m tests.eval.run_eval --k 5              # retrieval recall@K (default 5)
     python -m tests.eval.run_eval --workers 8        # parallel judge workers (default 4)
 """
+
 import argparse
 import json
 import re
@@ -23,9 +24,8 @@ from langchain_core.messages import HumanMessage, SystemMessage
 if sys.platform == "win32":
     sys.stdout.reconfigure(encoding="utf-8")
 
-from doc_assistant.config import ANTHROPIC_API_KEY, USE_PARENT_CHILD, USE_MULTI_QUERY, TOP_K
+from doc_assistant.config import ANTHROPIC_API_KEY, TOP_K, USE_MULTI_QUERY, USE_PARENT_CHILD
 from doc_assistant.pipeline import RAGPipeline
-
 
 # ============================================================
 # Judge prompts — static system parts are prompt-cached
@@ -41,8 +41,10 @@ true in the real world.
 Score the answer on two dimensions:
 
 CORRECTNESS — does the answer address the question using the retrieved context?
-- 5: All expected concepts present in the answer AND supported by the context. Nothing essential is missing.
-- 4: Most expected concepts present (≥75%) AND supported. Minor concepts missing OR phrased differently but equivalent.
+- 5: All expected concepts present in the answer AND supported by the context.
+  Nothing essential is missing.
+- 4: Most expected concepts present (>=75%) AND supported.
+  Minor concepts missing OR phrased differently but equivalent.
 - 3: About half the expected concepts present and supported. Significant gaps.
 - 2: Few expected concepts present. Answer is largely off-topic or incomplete.
 - 1: Answer fails to address the question, OR claims things contradicted by the context.
@@ -72,8 +74,9 @@ Retrieved context (the ONLY source the system had access to):
 System's answer:
 {answer}"""
 
-_NEGATIVE_JUDGE_SYSTEM = """A user asked a question whose topic is NOT in their document library. The
-system should honestly state it doesn't have information on this topic,
+_NEGATIVE_JUDGE_SYSTEM = """A user asked a question whose topic is NOT in their
+document library. The system should honestly state it doesn't have
+information on this topic,
 rather than hallucinating an answer.
 
 Score the answer 1-5:
@@ -98,7 +101,9 @@ System's answer:
 
 def _judge_messages(system: str, human: str) -> list:
     return [
-        SystemMessage(content=[{"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}]),
+        SystemMessage(
+            content=[{"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}]
+        ),
         HumanMessage(content=human),
     ]
 
@@ -128,7 +133,8 @@ def _invoke_with_retry(judge, messages, max_retries=3):
 # Single-question evaluation
 # ============================================================
 
-def evaluate_entry(entry: dict, rag: RAGPipeline, judge, k: int=TOP_K) -> dict:
+
+def evaluate_entry(entry: dict, rag: RAGPipeline, judge, k: int = TOP_K) -> dict:
     """Run one eval entry through the pipeline and score it."""
     question = entry["question"]
     expected_sources = set(entry.get("expected_sources", []))
@@ -157,7 +163,7 @@ def evaluate_entry(entry: dict, rag: RAGPipeline, judge, k: int=TOP_K) -> dict:
         if category == "negative":
             human = _NEGATIVE_JUDGE_PROMPT.format(question=question, answer=answer)
             msgs = _judge_messages(_NEGATIVE_JUDGE_SYSTEM, human)
-            response = _invoke_with_retry(judge, msgs)   # was: judge.invoke(msgs)
+            response = _invoke_with_retry(judge, msgs)  # was: judge.invoke(msgs)
             judge_response = response.content
             honesty = parse_judge_score(judge_response, "HONESTY")
             correctness = honesty
@@ -170,7 +176,7 @@ def evaluate_entry(entry: dict, rag: RAGPipeline, judge, k: int=TOP_K) -> dict:
                 answer=answer,
             )
             msgs = _judge_messages(_JUDGE_SYSTEM, human)
-            response = _invoke_with_retry(judge, msgs)   # was: judge.invoke(msgs)
+            response = _invoke_with_retry(judge, msgs)  # was: judge.invoke(msgs)
             judge_response = response.content
             correctness = parse_judge_score(judge_response, "CORRECTNESS")
             faithfulness = parse_judge_score(judge_response, "FAITHFULNESS")
@@ -197,6 +203,7 @@ def evaluate_entry(entry: dict, rag: RAGPipeline, judge, k: int=TOP_K) -> dict:
 # ============================================================
 # Aggregation and reporting
 # ============================================================
+
 
 def safe_mean(values):
     clean = [v for v in values if v is not None]
@@ -237,18 +244,17 @@ def aggregate(results: list[dict]) -> dict:
 
     return summary
 
+
 def aggregate_regressions(results: list[dict], eval_data: dict) -> dict:
     """Track results for entries flagged as known regressions."""
     # Build a lookup of regression entries
     regression_entries = {
-        e["id"]: e["regression"]
-        for e in eval_data["entries"]
-        if "regression" in e
+        e["id"]: e["regression"] for e in eval_data["entries"] if "regression" in e
     }
-    
+
     if not regression_entries:
         return {}
-    
+
     regression_report = {}
     for r in results:
         if r["id"] not in regression_entries:
@@ -256,7 +262,7 @@ def aggregate_regressions(results: list[dict], eval_data: dict) -> dict:
         baseline = regression_entries[r["id"]]
         current_correctness = r["correctness"] or 0
         target = baseline.get("target_correctness", 4)
-        
+
         regression_report[r["id"]] = {
             "baseline_correctness": baseline.get("baseline_correctness"),
             "current_correctness": current_correctness,
@@ -265,7 +271,7 @@ def aggregate_regressions(results: list[dict], eval_data: dict) -> dict:
             "resolved": current_correctness >= target,
             "failure_mode": baseline.get("failure_mode", ""),
         }
-    
+
     return regression_report
 
 
@@ -277,40 +283,44 @@ def print_report(summary: dict, results: list[dict]):
     print(f"\nTotal questions: {summary['total_questions']}")
 
     overall = summary["overall"]
-    print(f"\nOverall metrics:")
+    print("\nOverall metrics:")
     print(f"  Retrieval recall:  {overall['recall']}")
     print(f"  Correctness:       {overall['correctness']} / 5")
     print(f"  Faithfulness:      {overall['faithfulness']} / 5  (excludes negative entries)")
     print(f"  Avg latency:       {overall['latency_s']}s")
 
-    print(f"\nBy category:")
+    print("\nBy category:")
     for cat, m in summary["by_category"].items():
-        print(f"  {cat:18s}  n={m['count']:2d}  "
-              f"recall={m['recall']}  correct={m['correctness']}  faith={m['faithfulness']}")
+        print(
+            f"  {cat:18s}  n={m['count']:2d}  "
+            f"recall={m['recall']}  correct={m['correctness']}  faith={m['faithfulness']}"
+        )
 
-    print(f"\nBy difficulty:")
+    print("\nBy difficulty:")
     for diff, m in summary["by_difficulty"].items():
         print(f"  {diff:10s}  n={m['count']:2d}  correct={m['correctness']}")
 
-    print(f"\nPer-question results:")
+    print("\nPer-question results:")
     for r in results:
         marker = "OK " if (r["correctness"] or 0) >= 4 else "BAD"
-        print(f"  {marker} [{r['id']:14s}] correct={r['correctness']}  "
-              f"recall={r['recall']}  faith={r['faithfulness']}  "
-              f"({r['latency_s']}s)")
-        
-    
+        print(
+            f"  {marker} [{r['id']:14s}] correct={r['correctness']}  "
+            f"recall={r['recall']}  faith={r['faithfulness']}  "
+            f"({r['latency_s']}s)"
+        )
+
+
 def print_regression_report(regression_report: dict):
     if not regression_report:
         return
 
-    print(f"\nRegression tracking:")
+    print("\nRegression tracking:")
     resolved = sum(1 for r in regression_report.values() if r["resolved"])
     improved = sum(1 for r in regression_report.values() if r["improved"])
 
     print(f"  {resolved}/{len(regression_report)} resolved (>= target)")
     print(f"  {improved}/{len(regression_report)} improved over baseline")
-    print(f"\n  Per-regression detail:")
+    print("\n  Per-regression detail:")
 
     for entry_id, r in regression_report.items():
         baseline = r["baseline_correctness"]
@@ -331,13 +341,16 @@ def print_regression_report(regression_report: dict):
 # Main
 # ============================================================
 
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--category", help="Run only entries with this category")
     parser.add_argument("--ids", help="Comma-separated list of entry IDs to run")
     parser.add_argument("--k", type=int, default=TOP_K, help="Top-K retrieval (default 5)")
     parser.add_argument("--eval-file", default="tests/eval/eval_set.json")
-    parser.add_argument("--workers", type=int, default=2, help="Parallel judge workers (default 2)")
+    parser.add_argument(
+        "--workers", type=int, default=2, help="Parallel judge workers (default 2)"
+    )
     args = parser.parse_args()
 
     eval_path = Path(args.eval_file)
@@ -345,7 +358,7 @@ def main():
         print(f"Eval file not found: {eval_path}", file=sys.stderr)
         sys.exit(1)
 
-    with open(eval_path, "r", encoding="utf-8") as f:
+    with open(eval_path, encoding="utf-8") as f:
         eval_data = json.load(f)
     entries = eval_data["entries"]
 
@@ -379,8 +392,7 @@ def main():
     results_map: dict[str, dict] = {}
     with ThreadPoolExecutor(max_workers=args.workers) as pool:
         futures = {
-            pool.submit(evaluate_entry, entry, rag, judge, args.k): entry
-            for entry in entries
+            pool.submit(evaluate_entry, entry, rag, judge, args.k): entry for entry in entries
         }
         done = 0
         for future in as_completed(futures):

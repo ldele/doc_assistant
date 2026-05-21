@@ -1,13 +1,14 @@
 """SQLAlchemy engine and session management."""
+
+from collections.abc import Generator
 from contextlib import contextmanager
-from pathlib import Path
+from typing import Any
 
 from sqlalchemy import create_engine, event
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
-from doc_assistant.config import SQLITE_URL, SQLITE_PATH
-
+from doc_assistant.config import SQLITE_URL
 
 # Engine — created once at import time
 _engine = create_engine(
@@ -23,7 +24,7 @@ _SessionLocal = sessionmaker(bind=_engine, autoflush=False, autocommit=False, fu
 # Enable foreign key constraints on every connection.
 # SQLite has FKs off by default; we have to enable them per-connection.
 @event.listens_for(Engine, "connect")
-def _set_sqlite_pragma(dbapi_connection, connection_record):
+def _set_sqlite_pragma(dbapi_connection: Any, connection_record: Any) -> None:
     cursor = dbapi_connection.cursor()
     cursor.execute("PRAGMA foreign_keys=ON")
     cursor.close()
@@ -34,7 +35,7 @@ def get_engine() -> Engine:
 
 
 @contextmanager
-def session_scope():
+def session_scope() -> Generator[Session, None, None]:
     """Provide a transactional scope around a series of operations.
 
     Usage:

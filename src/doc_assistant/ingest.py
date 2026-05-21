@@ -1,19 +1,27 @@
 import hashlib
+import re
 import shutil
+from datetime import datetime, timezone
 from pathlib import Path
-from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain_huggingface import HuggingFaceEmbeddings
+from typing import Any
+
 from langchain_chroma import Chroma
 from langchain_core.documents import Document
+from langchain_huggingface import HuggingFaceEmbeddings
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+from sqlalchemy import delete, select
 from tqdm import tqdm
-import re
-from datetime import datetime, UTC
-from sqlalchemy import select
 
-from doc_assistant.db.models import Document as DBDocument, IngestionEvent
+from doc_assistant.config import (
+    CACHE_PATH,
+    CHROMA_PATH,
+    DOCS_PATH,
+    PC_CHROMA_PATH,
+    PDF_EXTRACTOR,
+)
+from doc_assistant.db.models import Document as DBDocument
+from doc_assistant.db.models import IngestionEvent
 from doc_assistant.db.session import session_scope
-
-from doc_assistant.config import DOCS_PATH, CACHE_PATH, CHROMA_PATH, PC_CHROMA_PATH, PDF_EXTRACTOR
 from doc_assistant.extractors import extract_to_markdown, is_supported
 
 PAGE_MARKER = re.compile(r"<!--\s*page:(\d+)\s*-->")
@@ -54,10 +62,9 @@ def load_or_extract(original: Path) -> str:
     return text
 
 
-def doc_hash(text: str, source: str) -> str:
+def doc_hash(text: str) -> str:
+    """Content-only hash. Path-independent so documents survive moves/renames."""
     h = hashlib.sha256()
-    h.update(source.encode("utf-8"))
-    h.update(b"\x00")
     h.update(text.encode("utf-8"))
     return h.hexdigest()[:16]
 
@@ -66,17 +73,18 @@ def get_indexed_hashes(db: Chroma) -> set[str]:
     data = db.get(include=["metadatas"])
     return {m.get("doc_hash") for m in data["metadatas"] if m and m.get("doc_hash")}
 
+
 def cleanup_orphans_sqlite(db_for_metadata: Chroma) -> list[str]:
     """Remove SQLite rows for documents whose source files are gone.
     Returns the list of orphan hashes (for downstream Chroma cleanup).
     """
     data = db_for_metadata.get(include=["metadatas"])
-    hash_to_meta = {}
+    hash_to_meta: dict[str, dict[str, Any]] = {}
     for meta in data["metadatas"]:
         if meta and meta.get("doc_hash"):
             hash_to_meta[meta["doc_hash"]] = meta
 
-    orphan_hashes = []
+    orphan_hashes: list[str] = []
     for h, meta in hash_to_meta.items():
         original_path = Path(meta.get("source_original", ""))
         if not original_path.exists():
@@ -97,13 +105,14 @@ def cleanup_orphans_sqlite(db_for_metadata: Chroma) -> list[str]:
     return orphan_hashes
 
 
-def cleanup_orphans_chroma(db: Chroma, orphan_hashes: list[str], 
-                            also_clean_cache: bool = False) -> None:
+def cleanup_orphans_chroma(
+    db: Chroma, orphan_hashes: list[str], also_clean_cache: bool = False
+) -> None:
     """Delete chunks for orphan documents from a Chroma store."""
     if not orphan_hashes:
         return
-    
-    orphan_caches = []
+
+    orphan_caches: list[Path] = []
     if also_clean_cache:
         data = db.get(include=["metadatas"])
         for meta in data["metadatas"]:
@@ -111,10 +120,10 @@ def cleanup_orphans_chroma(db: Chroma, orphan_hashes: list[str],
                 cache_path = Path(meta.get("source_cache", ""))
                 if cache_path.exists():
                     orphan_caches.append(cache_path)
-    
+
     for h in orphan_hashes:
         db.delete(where={"doc_hash": h})
-    
+
     if also_clean_cache:
         for cache_path in set(orphan_caches):
             try:
@@ -125,7 +134,7 @@ def cleanup_orphans_chroma(db: Chroma, orphan_hashes: list[str],
 
 
 def load_documents() -> list[Document]:
-    documents = []
+    documents: list[Document] = []
     files = [p for p in DOCS_PATH.rglob("*") if p.is_file() and is_supported(p)]
     print(f"Found {len(files)} supported files")
 
@@ -136,30 +145,35 @@ def load_documents() -> list[Document]:
                 print(f"  Skipping empty: {path.name}")
                 continue
 
-            documents.append(Document(
-                page_content=text,
-                metadata={
-                    "source_original": str(path),
-                    "source_cache": str(get_cache_path(path)),
-                    "filename": path.name,
-                    "format": path.suffix.lower().lstrip("."),
-                    "doc_hash": doc_hash(text, str(path)),
-                }
-            ))
+            documents.append(
+                Document(
+                    page_content=text,
+                    metadata={
+                        "source_original": str(path),
+                        "source_cache": str(get_cache_path(path)),
+                        "filename": path.name,
+                        "format": path.suffix.lower().lstrip("."),
+                        "doc_hash": doc_hash(text),
+                    },
+                )
+            )
         except Exception as e:
             print(f"  Error on {path.name}: {e}")
 
     return documents
 
 
-def extract_chunk_metadata(chunk_text: str, full_text: str, chunk_start: int) -> dict:
+def extract_chunk_metadata(
+    chunk_text: str, full_text: str, chunk_start: int
+) -> dict[str, int | str | None]:
     """Find the nearest preceding heading and current page number."""
-    # Find page number — last page marker at or before this chunk's start
-    text_before = full_text[:chunk_start + len(chunk_text)]
+    # Find page number -- last page marker at or before this chunk's start
+    text_before = full_text[: chunk_start + len(chunk_text)]
     page_matches = list(PAGE_MARKER.finditer(text_before))
-    page = int(page_matches[-1].group(1)) if page_matches else None
+    page: int | None = int(page_matches[-1].group(1)) if page_matches else None
 
     heading_matches = list(HEADING_MARKER.finditer(text_before))
+    section: str | None
     if heading_matches:
         raw_section = heading_matches[-1].group(2).strip()
         section = re.sub(r"[*_`]+", "", raw_section).strip()
@@ -170,7 +184,8 @@ def extract_chunk_metadata(chunk_text: str, full_text: str, chunk_start: int) ->
 
     return {"page": page, "section": section}
 
-def compute_health_signals(documents: list[Document], full_text: str) -> dict:
+
+def compute_health_signals(documents: list[Document], full_text: str) -> dict[str, int | float]:
     """Compute signals for health classification from a list of chunks."""
     if not documents:
         return {
@@ -179,22 +194,22 @@ def compute_health_signals(documents: list[Document], full_text: str) -> dict:
             "section_detection_rate": 0.0,
             "reference_flagged_ratio": 0.0,
         }
-    
+
     chunk_lengths = [len(d.page_content) for d in documents]
     sections_detected = sum(1 for d in documents if d.metadata.get("section"))
-    # Reference flagging happens later in cleanup; not available at ingest time.
-    # We'll leave this at 0 for now and compute it post-cleanup.
-    
+
     return {
         "chunk_count": len(documents),
         "avg_chunk_length": sum(chunk_lengths) / len(chunk_lengths),
         "section_detection_rate": sections_detected / len(documents),
-        "reference_flagged_ratio": 0.0,  # post-cleanup signal, not used at ingest
+        "reference_flagged_ratio": 0.0,
     }
+
 
 def clean_chunk_text(text: str) -> str:
     """Remove page markers from displayed text (keep them only for metadata)."""
     return PAGE_MARKER.sub("", text).strip()
+
 
 def upsert_document_in_sqlite(
     filename: str,
@@ -209,7 +224,7 @@ def upsert_document_in_sqlite(
 ) -> str:
     """Create or update a Document row in SQLite. Returns the document's UUID.
 
-    If a document with the same doc_hash exists, return its ID and log a 
+    If a document with the same doc_hash exists, return its ID and log a
     re-ingestion event. Otherwise create a new Document row.
     """
     with session_scope() as session:
@@ -221,7 +236,7 @@ def upsert_document_in_sqlite(
             # Re-ingestion of an existing document
             existing.chunk_count = chunk_count
             existing.extractor_used = extractor_used
-            existing.extracted_at = datetime.now(UTC)
+            existing.extracted_at = datetime.now(timezone.utc)
             if page_count is not None:
                 existing.page_count = page_count
 
@@ -233,7 +248,7 @@ def upsert_document_in_sqlite(
                 health_status=extraction_health,
             )
             session.add(event)
-            return existing.id
+            return str(existing.id)
         else:
             # New document
             document = DBDocument(
@@ -246,7 +261,7 @@ def upsert_document_in_sqlite(
                 extraction_health=extraction_health,
                 chunk_count=chunk_count,
                 page_count=page_count,
-                extracted_at=datetime.now(UTC),
+                extracted_at=datetime.now(timezone.utc),
             )
             session.add(document)
             session.flush()  # generate the UUID
@@ -259,37 +274,47 @@ def upsert_document_in_sqlite(
                 health_status=extraction_health,
             )
             session.add(event)
-            return document.id
+            return str(document.id)
 
 
-def build_parent_child_chunks(text: str, base_metadata: dict) -> list[Document]:
+def build_parent_child_chunks(text: str, base_metadata: dict[str, Any]) -> list[Document]:
     """Produce child chunks each carrying its parent text in metadata."""
     parents = _pc_parent_splitter.split_text(text)
-    children = []
+    children: list[Document] = []
     for parent_idx, parent_text in enumerate(parents):
         for child_idx, child_text in enumerate(_pc_child_splitter.split_text(parent_text)):
-            meta = {**base_metadata, "parent_text": parent_text, "parent_index": parent_idx, "child_index": child_idx}
+            meta = {
+                **base_metadata,
+                "parent_text": parent_text,
+                "parent_index": parent_idx,
+                "child_index": child_idx,
+            }
             children.append(Document(page_content=child_text, metadata=meta))
     return children
 
 
-def process_one_document(path: Path, db: Chroma, pc_db: Chroma, splitter, indexed: set[str]) -> str:
+def process_one_document(
+    path: Path,
+    db: Chroma,
+    pc_db: Chroma,
+    splitter: RecursiveCharacterTextSplitter,
+    indexed: set[str],
+) -> str:
     try:
         text = load_or_extract(path)
         if not text.strip():
             return "skipped"
 
-        h = doc_hash(text, str(path))
+        h = doc_hash(text)
         if h in indexed:
-            # sync_sqlite_with_chroma(h, db)
             return "skipped"
 
         # Split with positions tracked
-        raw_chunks = splitter.split_text(text)
+        raw_chunks: list[str] = splitter.split_text(text)
         if not raw_chunks:
             return "skipped"
 
-        documents = []
+        documents: list[Document] = []
         cursor = 0
         for i, chunk_text in enumerate(raw_chunks):
             chunk_start = text.find(chunk_text, cursor)
@@ -299,33 +324,36 @@ def process_one_document(path: Path, db: Chroma, pc_db: Chroma, splitter, indexe
 
             extra = extract_chunk_metadata(chunk_text, text, chunk_start)
 
-            documents.append(Document(
-                page_content=clean_chunk_text(chunk_text),
-                metadata={
-                    "source_original": str(path),
-                    "source_cache": str(get_cache_path(path)),
-                    "filename": path.name,
-                    "format": path.suffix.lower().lstrip("."),
-                    "doc_hash": h,
-                    "chunk_index": i,
-                    "page": extra["page"],
-                    "section": extra["section"],
-                }
-            ))
+            documents.append(
+                Document(
+                    page_content=clean_chunk_text(chunk_text),
+                    metadata={
+                        "source_original": str(path),
+                        "source_cache": str(get_cache_path(path)),
+                        "filename": path.name,
+                        "format": path.suffix.lower().lstrip("."),
+                        "doc_hash": h,
+                        "chunk_index": i,
+                        "page": extra["page"],
+                        "section": extra["section"],
+                    },
+                )
+            )
 
         pages = [int(m.group(1)) for m in PAGE_MARKER.finditer(text)]
         page_count = max(pages) if pages else None
 
         # Compute health classification
         from doc_assistant.health import classify_document_health
+
         signals = compute_health_signals(documents, text)
         health = classify_document_health(
-            chunk_count=signals["chunk_count"],
-            avg_chunk_length=signals["avg_chunk_length"],
+            chunk_count=int(signals["chunk_count"]),
+            avg_chunk_length=float(signals["avg_chunk_length"]),
             page_count=page_count,
-            section_detection_rate=signals["section_detection_rate"],
+            section_detection_rate=float(signals["section_detection_rate"]),
             format=path.suffix.lower().lstrip("."),
-            reference_flagged_ratio=signals["reference_flagged_ratio"],
+            reference_flagged_ratio=float(signals["reference_flagged_ratio"]),
         )
 
         document_id = upsert_document_in_sqlite(
@@ -349,22 +377,26 @@ def process_one_document(path: Path, db: Chroma, pc_db: Chroma, splitter, indexe
             doc.metadata["document_id"] = document_id
             doc.metadata["health"] = health.status
 
-
         existing_baseline = db.get(where={"doc_hash": h}, include=[])
         if existing_baseline["ids"]:
-            print(f"  Removing {len(existing_baseline['ids'])} existing baseline chunks for hash {h}")
+            print(
+                f"  Removing {len(existing_baseline['ids'])} existing baseline chunks for hash {h}"
+            )
             db.delete(ids=existing_baseline["ids"])
         db.add_documents(documents)
 
-        pc_chunks = build_parent_child_chunks(text, {
-            "source_original": str(path),
-            "source_cache": str(get_cache_path(path)),
-            "filename": path.name,
-            "format": path.suffix.lower().lstrip("."),
-            "doc_hash": h,
-            "document_id": document_id,
-            "health": health.status,
-        })
+        pc_chunks = build_parent_child_chunks(
+            text,
+            {
+                "source_original": str(path),
+                "source_cache": str(get_cache_path(path)),
+                "filename": path.name,
+                "format": path.suffix.lower().lstrip("."),
+                "doc_hash": h,
+                "document_id": document_id,
+                "health": health.status,
+            },
+        )
 
         existing_pc = pc_db.get(where={"doc_hash": h}, include=[])
         if existing_pc["ids"]:
@@ -379,7 +411,7 @@ def process_one_document(path: Path, db: Chroma, pc_db: Chroma, splitter, indexe
         return "error"
 
 
-def main(force_rebuild: bool = False, skip_cleanup: bool = False):
+def main(force_rebuild: bool = False, skip_cleanup: bool = False) -> None:
     CACHE_PATH.mkdir(exist_ok=True)
     Path(CHROMA_PATH).mkdir(exist_ok=True)
     Path(PC_CHROMA_PATH).mkdir(exist_ok=True)
@@ -396,9 +428,7 @@ def main(force_rebuild: bool = False, skip_cleanup: bool = False):
         Path(CHROMA_PATH).mkdir(exist_ok=True)
         Path(PC_CHROMA_PATH).mkdir(exist_ok=True)
         with session_scope() as session:
-            # Raw delete; relies on database-level ON DELETE CASCADE
-            # to clear IngestionEvents, Citations, etc.
-            session.execute(DBDocument.__table__.delete())
+            session.execute(delete(DBDocument))
 
     db = Chroma(persist_directory=CHROMA_PATH, embedding_function=embeddings)
     pc_db = Chroma(persist_directory=PC_CHROMA_PATH, embedding_function=embeddings)
@@ -420,7 +450,7 @@ def main(force_rebuild: bool = False, skip_cleanup: bool = False):
     files = [p for p in DOCS_PATH.rglob("*") if p.is_file() and is_supported(p)]
     print(f"Found {len(files)} supported files")
 
-    stats = {"added": 0, "skipped": 0, "error": 0}
+    stats: dict[str, int] = {"added": 0, "skipped": 0, "error": 0}
     for path in tqdm(files, desc="Processing"):
         result = process_one_document(path, db, pc_db, splitter, indexed)
         stats[result] += 1
@@ -430,10 +460,17 @@ def main(force_rebuild: bool = False, skip_cleanup: bool = False):
 
 if __name__ == "__main__":
     import argparse
+
     parser = argparse.ArgumentParser()
-    parser.add_argument("--rebuild", action="store_true",
-                        help="Wipe the vector store and re-embed everything")
-    parser.add_argument("--skip-cleanup", action="store_true",
-                        help="Skip the orphan cleanup pass")
+    parser.add_argument(
+        "--rebuild",
+        action="store_true",
+        help="Wipe the vector store and re-embed everything",
+    )
+    parser.add_argument(
+        "--skip-cleanup",
+        action="store_true",
+        help="Skip the orphan cleanup pass",
+    )
     args = parser.parse_args()
     main(force_rebuild=args.rebuild, skip_cleanup=args.skip_cleanup)

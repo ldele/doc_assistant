@@ -242,6 +242,53 @@ change is a UI change, not a data layer rewrite.
 ## Roadmap
 
 
+---
+
+## Production Engineering Standards
+
+These apply across all phases. They are not deferred to Phase 6.
+
+### CI/CD (GitHub Actions)
+
+Every push and PR runs: ruff → mypy → pytest (coverage ≥70%) → bandit → pip-audit.
+Merging on a red pipeline is never allowed. Branch protection enforced on `main`.
+
+Rationale: mechanical checks before human review. Catching lint/type/security issues in CI is 10x cheaper than finding them in code review or production.
+
+### Security tooling
+
+- `bandit`: SAST on `src/`. HIGH findings block merge. MEDIUM acknowledged in PR.
+- `pip-audit`: dependency CVE scan on every push. CVEs require fix or documented exception.
+- `detect-secrets`: baseline committed. Pre-commit hook diffs against it. No secrets ever enter git history.
+
+### Pre-commit (mandatory)
+
+Hooks: ruff (lint + format), mypy, bandit, detect-secrets, file hygiene. Not optional.
+`no-commit-to-branch` on `main` forces all changes through PRs.
+
+### Structured logging
+
+`structlog` with JSON output in staging/production. No `print()` in `src/`.
+Every log entry carries: level, timestamp, module, event, and operation context.
+Secrets and PII are never logged. Context binding per-request for the web UI.
+
+### Exception hierarchy
+
+`DocAssistantError` as base. Typed subclasses: `ExtractionError`, `IngestError`,
+`PipelineError`, `StorageError`, `ExternalServiceError`. Exceptions chain with
+`raise X from e` to preserve tracebacks. User-facing messages translated at UI boundary.
+
+### Content-only hashing (moved from Phase 6 to Phase 3 completion criteria)
+
+Current path+content hashing causes duplicate Document rows on re-extraction.
+This is a data integrity issue, not polish. It must be resolved before Phase 4
+(citation graph) which depends on stable document identity.
+
+Migration: hash on file content only. Documents survive path changes and
+re-extractions without creating orphan rows.
+
+---
+
 ### ✅ Phase 1: Core RAG (complete)
 
 Goal: working end-to-end RAG over personal documents.
@@ -316,6 +363,12 @@ Rationale: this experience was discovered the hard way — historical PDFs
 because they lack proper text layers.
 A non-technical user wouldn't have noticed until eval results were inexplicable.
 
+**Phase 3 completion gate (non-negotiable before Phase 4):**
+- Content-only hashing implemented and migrated (data integrity prerequisite for citation graph)
+- CI pipeline green (ruff, mypy, pytest ≥70%, bandit, pip-audit)
+- Pre-commit hooks installed and baseline clean
+- `.env.example` committed with all required vars documented
+
 ### Phase 4: Citation Graph
 
 Goal: model relationships between documents. Both explicit (citations) and 
@@ -357,7 +410,8 @@ Goal: design pass on everything built so far.
 - Better empty states, loading states, error states
 - Demo recording for portfolio / sharing
 - Onboarding flow for new users
-- Content hashing
+
+Note: content-only hashing moved to Phase 3 completion gate (data integrity requirement).
 
 ### Phase 7: Literature Review Generation
 

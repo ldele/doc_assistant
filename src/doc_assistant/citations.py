@@ -383,8 +383,7 @@ def _first_author_surname(authors: str | None) -> str | None:
     tokens = text.split()
     cands = [t.rstrip(",.") for t in tokens]
     non_init = [
-        t for t in cands
-        if not re.match(r"^[A-Z]\.?[A-Z]?\.?[A-Z]?\.?$", t) and len(t) >= 3
+        t for t in cands if not re.match(r"^[A-Z]\.?[A-Z]?\.?[A-Z]?\.?$", t) and len(t) >= 3
     ]
     if non_init:
         return _normalize_for_match(non_init[-1]) or None
@@ -424,24 +423,24 @@ def match_to_library(
 
         surname = _first_author_surname(parsed.authors)
         if surname and parsed.year is not None:
-            stmt = select(Document.id, Document.authors, Document.year).where(
+            author_year_stmt = select(Document.id, Document.authors, Document.year).where(
                 Document.is_archived.is_(False),
                 Document.year == parsed.year,
                 Document.authors.is_not(None),
             )
-            for doc_id, doc_authors, _ in session.execute(stmt).all():
+            for doc_id, doc_authors, _ in session.execute(author_year_stmt).all():
                 doc_surname = _first_author_surname(doc_authors)
                 if doc_surname and doc_surname == surname:
                     return str(doc_id)
 
         if parsed.title and len(parsed.title) >= 10:
-            stmt = select(Document.id, Document.title).where(
+            title_stmt = select(Document.id, Document.title).where(
                 Document.is_archived.is_(False),
                 Document.title.is_not(None),
             )
             best_id: str | None = None
             best_score = 0.0
-            for doc_id, doc_title in session.execute(stmt).all():
+            for doc_id, doc_title in session.execute(title_stmt).all():
                 score = _title_similarity(parsed.title, doc_title)
                 if score > best_score:
                     best_score = score

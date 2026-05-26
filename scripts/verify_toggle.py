@@ -10,33 +10,33 @@ import sys
 def check_with(use_pc: bool):
     # Set env var before importing
     os.environ["USE_PARENT_CHILD"] = "true" if use_pc else "false"
-    
+
     # Force re-import of config and pipeline
     for mod in list(sys.modules.keys()):
         if "doc_assistant" in mod:
             del sys.modules[mod]
-    
+
     from doc_assistant.config import CHROMA_PATH, PC_CHROMA_PATH, USE_PARENT_CHILD
     from doc_assistant.pipeline import RAGPipeline
-    
-    assert USE_PARENT_CHILD == use_pc, f"Config didn't pick up env var: {USE_PARENT_CHILD}"
-    
+
+    assert use_pc == USE_PARENT_CHILD, f"Config didn't pick up env var: {USE_PARENT_CHILD}"
+
     rag = RAGPipeline()
-    
+
     # Inspect the active store path
     active_path = rag.db._collection._client._system.settings.persist_directory \
         if hasattr(rag.db, '_collection') else None
-    
+
     # Simpler check: see how many chunks are in the active store
     chunk_count = rag.chunk_count() if hasattr(rag, 'chunk_count') else None
-    
+
     expected_path = PC_CHROMA_PATH if use_pc else CHROMA_PATH
-    
+
     print(f"\nWith USE_PARENT_CHILD={use_pc}:")
     print(f"  Expected store: {expected_path}")
     print(f"  Active path:    {active_path}")
     print(f"  Chunk count:    {chunk_count}")
-    
+
     # Try a sample retrieval
     test_query = "neuron"
     docs = rag.retrieve(test_query, top_k=3)
@@ -52,10 +52,10 @@ def main():
     print("=" * 60)
     print("Toggle verification")
     print("=" * 60)
-    
+
     check_with(use_pc=False)
     check_with(use_pc=True)
-    
+
     print("\n" + "=" * 60)
     print("Both modes inspected. Check that:")
     print("  1. The active path matches the expected path for each mode")

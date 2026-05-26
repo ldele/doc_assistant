@@ -124,3 +124,91 @@ Format: What changed | Why | Rejected alternatives | What it opens
 **Why:** `apps/` should contain no business logic (architecture standard). The old file mixed three concerns: command handling, library query routing, and RAG chat. Extracting to `src/` also fixed a testing problem — `test_library_queries.py` had to inline regex patterns because importing `chainlit_app.py` triggers `RAGPipeline()` init at module level.
 **Rejected:** Moving everything into `library.py` — that module is data access only. Query routing and command parsing are separate concerns.
 **Opens:** `execute_command` for `/library` and `/document` could get DB-integration tests.
+
+---
+## Session: 2026-05-26 — Phase 4 kickoff (Citation Graph)
+
+**Starting from:** Phase 3 closed (hash migration applied — 27 docs, all 16-char content-only hashes). `citations` table already exists in schema (source/target FKs, raw_text, DOI/title/authors/year, extraction_method, confidence). Empty.
+**Goal this session:** Open Phase 4. Decide extractor approach, build tier-1 regex extractor + internal matcher + batch CLI runner, measure recall on the corpus, decide on tier-2 LLM fallback.
+
+### CLAUDE.md + docs/decisions.md — Phase 3 → Phase 4 status sync
+**What:** Marked Phase 3 ✅ complete in both files. Replaced "hash migration pending" known-issue with note that `reference_flagged_ratio` health signal is wired in schema but hardcoded to 0.0 in `ingest.py` — Phase 4 extractor will populate it as a side effect.
+**Why:** Status was stale. Memory and DB state confirmed migration was applied; CLAUDE.md hadn't been updated.
+**Rejected:** Removing the `reference_flagged_ratio` note entirely — keeping it as visible context for the Phase 4 wiring step.
+
+### docs/decisions.md — Phase 4 extractor decision recorded
+**What:** Replaced "GROBID for academic papers, regex/LLM for others" with the two-tier decision: tier-1 regex on the References section of extracted markdown, tier-2 LLM fallback only for docs where tier-1 yields <5 refs. GROBID and refextract evaluated and deferred until data shows tier-1+2 misses too much. Matching strategy noted: DOI → first-author-last+year → fuzzy title.
+**Why:** Corpus is 27 academic neuroscience PDFs already extracted to markdown — most have parseable References sections. GROBID is heavy operationally (Docker + Java service, ~2GB image, ~1GB RAM live). refextract adds a pure-Python dep but only marginally better than regex on this domain. Measure before escalating.
+**Rejected:** GROBID upfront (heavy install, premature); refextract (marginal gain on neuroscience corpus, adds dep needing approval); single-tier regex only (won't catch messy formats); citation extraction inside `ingest.py` (couples re-extraction to re-embedding, slows ingest).
+**Opens:** Tier-1 recall measurement decides tier-2. If tier-1+2 still misses too much, GROBID escalation is the next step.
+
+
+---
+## Session: 2026-05-26 — Phase 4 (Citation Graph) core
+
+**Starting from:** Phase 3 closed (hash migration applied; 27 docs all 16-char content-only hashes). `citations` table existed in schema, empty. CLAUDE.md and decisions.md were stale on Phase 3 status.
+**Goal this session:** Build the Phase 4 data layer — citation extraction, doc-level metadata extraction, internal matching, slash commands. Measure recall.
+
+### docs/decisions.md + CLAUDE.md (both repos) — Phase 3 → Phase 4 status sync
+**What:** Marked Phase 3 ✅ complete. Updated known-issues block (removed "hash migration pending"; added `reference_flagged_ratio` wiring note). Recorded the Phase 4 extractor decision in decisions.md: two-tier regex + LLM, deferred GROBID/refextract.
+**Why:** Memory and DB state confirmed Phase 3 was actually done. Status had drifted.
+**Rejected:** GROBID (heavy operationally — Docker + Java service); refextract (marginal gain on neuroscience corpus, adds dep).
+**Opens:** Tier-1 recall measurement decides whether tier-2 LLM fallback is needed.
+
+### src/doc_assistant/citations.py (new)
+**What:** Tier-1 regex citation extractor. Detects References section (handles References/Bibliography/Works Cited/Literature Cited aliases, all heading levels, bold variants), splits into refs (bullet/numbered/multi-column-inline fallback), parses each ref into ParsedCitation (raw, doi, title, authors, year, extraction_method, confidence). Internal matcher: DOI → first-author-surname+year → fuzzy title via stdlib SequenceMatcher.
+**Why:** Pure-stdlib regex is enough for ~80% of the academic-paper corpus. Keeps the dependency surface flat (no new CVEs added to the existing 28).
+**Rejected:** GROBID upfront; LLM-on-everything (cost without measurement). Inline regex (split into named helpers for testability instead).
+**Opens:** Tier-2 LLM fallback for messy formats (LNCS colon-separators, multi-column extraction artifacts). Some titles still mis-extracted for year-mid-text-then-italics formats.
+
+### src/doc_assistant/metadata_extractor.py (new)
+**What:** Doc-level metadata extractor (title / authors / year / DOI) over the first 3k chars of extracted markdown. H1-preference for title (skips journal-citation H2s like "J. Physiol. (1952)"). Permissive author detector handles bold-with-affiliation-brackets, heading-as-authors, "By X and Y" formats. ArXiv ID detection from filename for year fallback.
+**Why:** Discovered mid-session: all 27 library Documents had NULL title/authors/year/DOI — internal citation matching had nothing to match against. Without this, /cites works but /cited-by is dead. This was an unplanned but blocking gap.
+**Rejected:** Adding metadata extraction to ingest.py (touches Phase 3 code, risks re-ingest); deferring to Phase 5 (kills /cited-by until then).
+**Opens:** Coverage 27/27 title, 26/27 authors, 23/27 year, 7/27 DOI. Year extraction misfires on a few papers where the first 4-digit string in the head is an in-text citation year. DOI presence is corpus-dependent.
+
+### scripts/extract_citations.py + scripts/extract_doc_metadata.py (new)
+**What:** Two CLI runners. extract_doc_metadata: backfill title/authors/year/doi on existing docs (--dry-run / --apply / --force / --doc <hash>). extract_citations: extract refs from each doc, run matcher, persist Citation rows (idempotent — skips docs that already have citations unless --force).
+**Why:** Phase 4 data extraction must be re-runnable as the extractor improves. Keeps Phase 3 ingest untouched.
+**Rejected:** Inline extraction in chainlit lifecycle (would couple UI to slow operations).
+**Opens:** Library write from sandbox throws disk-I/O on the mounted SQLite — backfill must be run from a real shell, not the sandbox.
+
+### src/doc_assistant/library.py — Phase 4 query API
+**What:** Added CitationEdge dataclass and three functions: cites_out(doc_id) for outgoing refs (joins to Document for resolved targets), cited_by(doc_id) for incoming, graph_subgraph(doc_id, depth=1) for node/edge subgraph centered on a doc.
+**Why:** UI-agnostic query layer. Slash commands and any future graph viz consume the same API.
+**Rejected:** Returning SQLAlchemy ORM objects (would leak session lifecycle into UI).
+**Opens:** Similarity-edge query (mean-pool doc vectors) deferred to next session.
+
+### src/doc_assistant/commands.py — /cites, /cited-by, /graph
+**What:** Added formatters (format_cites_out, format_cited_by, format_graph) and dispatcher cases. /graph emits inline Mermaid for ≤25-node subgraphs; for larger graphs, points the user at the data API.
+**Why:** "Data layer + CLI/slash for debugging/fallback" was the locked Phase 4 deliverable shape. Real interactive graph viz waits for the Phase 6 UI-framework decision.
+**Rejected:** Standing up a separate FastAPI route just for the graph (forces UI-framework choice prematurely).
+**Opens:** Self-citing-only docs render as "no internal edges" because the graph check excludes single-node graphs — cosmetic, low priority.
+
+### Tier-1 recall measurement on 27-doc corpus
+**What:** 22/27 docs (81%) had a detectable References section. 1,234 citations parsed. 1 tier-2 candidate (<5 refs). 5 docs had no detectable refs section (textbooks, lectures, multi-column artifacts).
+**Why:** Decision gate from the Phase 4 plan: measure before building tier-2 LLM. Decision: tier-1 is enough for the data layer to ship. Tier-2 deferred until corpus grows.
+**Rejected:** Building tier-2 LLM eagerly (no signal it's needed yet).
+**Opens:** Tier-2 LLM fallback if the 5 no-section docs become problematic; GROBID escalation if tier-1+2 still misses too much.
+
+### Internal-matching recall on 27-doc corpus
+**What:** 5/1234 internal matches. All are self-citations (authors citing their own earlier work). Cross-citation rate is structurally low on this corpus: mostly recent (2015+) papers citing classics not in the library.
+**Why:** Architecturally correct; data-sparse. The 1,229 external citations become Phase 5 territory (recommendation candidates — "known unknowns").
+**Rejected:** Treating this as a bug. The matcher works; the corpus doesn't have many internal cross-references.
+
+### tests/unit/test_citations.py + test_metadata_extractor.py (new)
+**What:** 45 unit tests total. Section detection, splitting, field extraction, surname extraction, title similarity, end-to-end on synthetic markdown for citations. Title / DOI / year / author-line detection plus arxiv year hint for metadata.
+**Why:** Project rule — coverage ≥45%. New code must be testable without DB.
+**Opens:** Integration test against a real DB fixture for /cites pipeline — deferred.
+
+### Sandbox file-sync issue (recurring, in feedback memory)
+**What:** Edit-tool writes to Windows side often fail to fully sync to the bash sandbox view, causing partial files and stale .pyc bytecode. Workarounds used this session: `touch` to force re-read; full rewrites via bash heredocs and python scripts.
+**Why:** Known issue documented in [[feedback_sandbox_sync]]. Worth logging as a known issue in the project if it persists.
+
+### Session end
+**Done:** Citation extraction (tier-1), doc-level metadata extraction, internal matcher (DOI/author+year/fuzzy title), CLI runners for both, three slash commands, 45 unit tests, recall measured.
+**Unresolved:**
+- Apply the metadata backfill and citation extraction on the user's local DB (sandbox can't write — must run from a real shell).
+- Mean-pool doc-level similarity edges (task 9 deferred to next session).
+- LNCS colon-separator format and multi-column extraction artifacts are known tier-1 weaknesses.
+**Next:** Similarity edges → Phase 5 (Gap Detection / Cartography).

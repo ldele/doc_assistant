@@ -6,7 +6,6 @@ Two-pass process:
 
 Safe to run repeatedly. Operates on metadata only — no re-embedding.
 """
-import sys
 print("Script starting...", flush=True)
 import argparse
 import re
@@ -178,10 +177,10 @@ def main():
             pending_updates.append((chunk_id, updates))
 
     # Report
-    print(f"\n=== Cleanup report ===")
+    print("\n=== Cleanup report ===")
     print(f"Total chunks:           {total}")
     print(f"Chunks needing updates: {len(pending_updates)}")
-    print(f"\nBreakdown:")
+    print("\nBreakdown:")
     for issue, count in issue_counts.most_common():
         pct = 100 * count / total
         print(f"  {issue:25s} {count:5d} ({pct:.1f}%)")
@@ -189,7 +188,7 @@ def main():
     if not pending_updates:
         print("\nNothing to do.")
         return
-    
+
     # Cleanup state
     print("\nCleanup state:")
     flagged = sum(1 for m in metadatas if m and m.get("keep_for_retrieval") is False)
@@ -201,8 +200,8 @@ def main():
             print(f"    {issue:25s} {count}")
 
     if not args.apply:
-        print(f"\n--- DRY RUN: no changes applied. ---")
-        print(f"Re-run with --apply to actually update metadata.")
+        print("\n--- DRY RUN: no changes applied. ---")
+        print("Re-run with --apply to actually update metadata.")
 
         # Show a few examples of each issue type for sanity-checking
         examples_by_issue = defaultdict(list)
@@ -216,7 +215,7 @@ def main():
                     "updates": updates,
                 })
 
-        print(f"\n--- Sample changes ---")
+        print("\n--- Sample changes ---")
         for issue, examples in examples_by_issue.items():
             print(f"\n[{issue}]")
             for ex in examples:

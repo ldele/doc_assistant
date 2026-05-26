@@ -1,8 +1,8 @@
 """Audit metadata coverage across the chunk store."""
-import sys
 print("Script starting...", flush=True)
 
 from collections import Counter
+
 from langchain_chroma import Chroma
 from langchain_huggingface import HuggingFaceEmbeddings
 

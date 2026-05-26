@@ -6,7 +6,7 @@ This script merges duplicates by keeping the row with more chunks.
 """
 from collections import defaultdict
 
-from sqlalchemy import select, func
+from sqlalchemy import select
 
 from doc_assistant.db.models import Document, IngestionEvent
 from doc_assistant.db.session import session_scope

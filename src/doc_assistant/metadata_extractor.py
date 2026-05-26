@@ -114,9 +114,7 @@ def _is_skippable_heading(text: str) -> bool:
         normalized,
     ):
         return True
-    if _JOURNAL_HEADER.match(normalized):
-        return True
-    return False
+    return bool(_JOURNAL_HEADER.match(normalized))
 
 
 def _extract_title(head: str) -> str | None:

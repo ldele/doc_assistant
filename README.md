@@ -13,6 +13,7 @@ Built for researchers and students who want to actually search the *content* of 
 - **Parent-child retrieval** — small chunks for retrieval accuracy, large passages for LLM context
 - **Document health scoring** — automatic extraction quality assessment per document
 - **Library management** — SQLite-backed document store with folders, tags, and ingestion history
+- **Citation graph** — extracts references from each document, resolves them against the library, exposes incoming/outgoing edges and small subgraphs
 - **Two-tier caching** — markdown extraction cache + embedding cache, both auto-invalidated
 - **Streaming ingest** — constant memory regardless of library size
 - **Conversation memory** — follow-up questions understand context
@@ -71,6 +72,30 @@ To rebuild from scratch (after changing chunking strategy, for example):
 uv run python -m doc_assistant.ingest --rebuild
 ```
 
+### Citation graph (Phase 4)
+
+After ingestion, two post-passes populate the citation graph:
+
+```bash
+# Pull title / authors / year / DOI off each document header
+uv run python -m scripts.extract_doc_metadata --apply
+
+# Parse References sections, match to library docs, persist edges
+uv run python -m scripts.extract_citations --apply
+```
+
+Both scripts are idempotent and accept `--doc <hash-prefix>` to scope to a
+single document, and `--force` to overwrite.
+
+From the chat UI or CLI, ask:
+
+```
+/library                  show all documents (use first 8 chars of ID below)
+/cites <doc-id>           papers this document cites (internal + external)
+/cited-by <doc-id>        library documents that cite this one
+/graph <doc-id>           Mermaid subgraph of internal citation edges
+```
+
 ## Project layout
 
 ```
@@ -119,9 +144,9 @@ docker compose down -v         # stop, delete model cache volume
 
 ## Status
 
-Phase 3 complete. Active development.
+Phase 4 in progress — citation graph data layer + slash commands shipped; doc-level similarity edges deferred to Phase 5 prep.
 
-Roadmap: citation graph extraction → gap detection → literature review generation. See [`docs/decisions.md`](docs/decisions.md) for the full roadmap.
+Roadmap: gap detection (Phase 5) → UI polish (Phase 6) → literature review generation (Phase 7). See [`docs/decisions.md`](docs/decisions.md) for the full roadmap.
 
 ---
 

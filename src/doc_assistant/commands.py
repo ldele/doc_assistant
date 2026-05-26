@@ -8,6 +8,7 @@ No UI framework imports in this module.
 
 from doc_assistant.library import (
     CitationEdge,
+    CitationGraph,
     DocumentDetails,
     DocumentSummary,
     LibrarySummary,
@@ -175,10 +176,7 @@ def _ref_one_line(e: CitationEdge) -> str:
     if e.target_doi:
         parts.append(f"[doi:{e.target_doi}]")
     line = " ".join(parts) if parts else (e.raw_text or "(unparsed)")
-    if e.target_document_id:
-        line = f"🔗 **`{e.target_document_id[:8]}`** {line}"
-    else:
-        line = f"  {line}"
+    line = f"🔗 **`{e.target_document_id[:8]}`** {line}" if e.target_document_id else f"  {line}"
     return f"- {line}"
 
 
@@ -194,9 +192,7 @@ def format_cites_out(filename: str, edges: list[CitationEdge]) -> str:
     external = [e for e in edges if not e.target_document_id]
 
     lines = [f"## {filename} cites {len(edges)} works"]
-    lines.append(
-        f"_{len(internal)} resolved to library docs · {len(external)} external_"
-    )
+    lines.append(f"_{len(internal)} resolved to library docs · {len(external)} external_")
     lines.append("")
 
     if internal:
@@ -234,41 +230,33 @@ def format_cited_by(filename: str, rows: list[tuple[str, str, str | None]]) -> s
     return "\n".join(lines)
 
 
-def format_graph(filename: str, graph: dict[str, object]) -> str:
+def format_graph(filename: str, graph: CitationGraph) -> str:
     """Build markdown for `/graph <id>` — Mermaid subgraph for small N."""
-    nodes_obj = graph.get("nodes", [])
-    edges_obj = graph.get("edges", [])
-    assert isinstance(nodes_obj, list) and isinstance(edges_obj, list)
-
-    if not nodes_obj or len(nodes_obj) == 1:
+    if not graph.nodes or len(graph.nodes) == 1:
         return (
             f"**{filename}** has no internal citation edges yet. "
             "Once `scripts/extract_citations.py --apply` is run and resolves "
             "library-internal citations, this graph will populate."
         )
 
-    if len(nodes_obj) > 25:
+    if len(graph.nodes) > 25:
         return (
             f"## {filename} — citation subgraph\n\n"
-            f"_{len(nodes_obj)} nodes, {len(edges_obj)} edges._ "
+            f"_{len(graph.nodes)} nodes, {len(graph.edges)} edges._ "
             "Too large for inline rendering. Use the data API "
             "(`library.graph_subgraph`) for visualization."
         )
 
     lines = [f"## {filename} — citation subgraph", "", "```mermaid", "graph LR"]
-    for n in nodes_obj:
-        assert isinstance(n, dict)
-        nid = str(n["id"])[:8]
-        label = str(n.get("filename") or "")[:30].replace('"', "'")
-        if n.get("is_center"):
+    for n in graph.nodes:
+        nid = n.id[:8]
+        label = (n.filename or "")[:30].replace('"', "'")
+        if n.is_center:
             lines.append(f'  {nid}["**{label}**"]:::center')
         else:
             lines.append(f'  {nid}["{label}"]')
-    for e in edges_obj:
-        assert isinstance(e, dict)
-        src = str(e["source"])[:8]
-        tgt = str(e["target"])[:8]
-        lines.append(f"  {src} --> {tgt}")
+    for e in graph.edges:
+        lines.append(f"  {e.source[:8]} --> {e.target[:8]}")
     lines.append("  classDef center fill:#fef3c7,stroke:#92400e,stroke-width:2px;")
     lines.append("```")
     return "\n".join(lines)

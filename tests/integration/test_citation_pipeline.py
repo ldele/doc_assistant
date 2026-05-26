@@ -14,8 +14,8 @@ DOI / author+year / fuzzy-title fallback chain against a real DB.
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from pathlib import Path
-from typing import Iterator
 
 import pytest
 from sqlalchemy import create_engine, func, select
@@ -26,7 +26,6 @@ from sqlalchemy.orm import sessionmaker
 import doc_assistant.db.session as session_mod
 from doc_assistant.db.models import Base, Citation, Document
 from doc_assistant.metadata_extractor import extract_metadata
-
 from tests.fixtures.synthetic_corpus import (
     FakePaper,
     chain_scenario,
@@ -35,7 +34,6 @@ from tests.fixtures.synthetic_corpus import (
     mixed_format_scenario,
     render_corpus,
 )
-
 
 # ============================================================
 # Per-test temp DB
@@ -131,9 +129,9 @@ def _internal_edges(paper_id_to_doc_id: dict[str, str]) -> set[tuple[str, str]]:
 
     doc_id_to_paper = {v: k for k, v in paper_id_to_doc_id.items()}
     with session_scope() as session:
-        stmt = select(
-            Citation.source_document_id, Citation.target_document_id
-        ).where(Citation.target_document_id.is_not(None))
+        stmt = select(Citation.source_document_id, Citation.target_document_id).where(
+            Citation.target_document_id.is_not(None)
+        )
         return {
             (doc_id_to_paper[src], doc_id_to_paper[tgt])
             for src, tgt in session.execute(stmt).all()
@@ -223,7 +221,5 @@ def test_match_to_library_against_empty_db_returns_none(temp_db: Path) -> None:
     """Matcher must not blow up when there's nothing in the library."""
     from doc_assistant.citations import ParsedCitation, match_to_library
 
-    c = ParsedCitation(
-        raw_text="some text", doi="10.0/x", title="t", authors="Foo", year=2020
-    )
+    c = ParsedCitation(raw_text="some text", doi="10.0/x", title="t", authors="Foo", year=2020)
     assert match_to_library(c) is None

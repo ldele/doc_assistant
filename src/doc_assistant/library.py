@@ -225,6 +225,32 @@ def find_document_by_short_id(short_id: str) -> str | None:
 
 
 @dataclass
+class GraphNode:
+    """One node in a citation subgraph."""
+
+    id: str
+    filename: str
+    title: str | None
+    is_center: bool
+
+
+@dataclass
+class GraphEdge:
+    """One directed edge in a citation subgraph."""
+
+    source: str
+    target: str
+
+
+@dataclass
+class CitationGraph:
+    """Result of `graph_subgraph` — typed alternative to dict[str, Any]."""
+
+    nodes: list[GraphNode] = field(default_factory=list)
+    edges: list[GraphEdge] = field(default_factory=list)
+
+
+@dataclass
 class CitationEdge:
     """A single citation edge — source -> target, internal or external."""
 
@@ -295,19 +321,12 @@ def cited_by(doc_id: str) -> list[tuple[str, str, str | None]]:
         return [(str(r[0]), str(r[1]), r[2]) for r in session.execute(stmt).all()]
 
 
-def graph_subgraph(doc_id: str, depth: int = 1) -> dict[str, Any]:
-    """Return a node/edge subgraph centered on doc_id, internal edges only.
-
-    Returns:
-      {
-        "nodes": [{"id": str, "filename": str, "title": str|None, "is_center": bool}, ...],
-        "edges": [{"source": str, "target": str}, ...],
-      }
-    """
+def graph_subgraph(doc_id: str, depth: int = 1) -> CitationGraph:
+    """Return a CitationGraph centered on doc_id (internal edges only)."""
     from doc_assistant.db.models import Citation
 
-    nodes: dict[str, dict[str, Any]] = {}
-    edges: list[dict[str, str]] = []
+    nodes: dict[str, GraphNode] = {}
+    edges: list[GraphEdge] = []
     frontier = {doc_id}
     visited: set[str] = set()
 
@@ -316,13 +335,10 @@ def graph_subgraph(doc_id: str, depth: int = 1) -> dict[str, Any]:
             select(Document.id, Document.filename, Document.title).where(Document.id == doc_id)
         ).first()
         if center is None:
-            return {"nodes": [], "edges": []}
-        nodes[doc_id] = {
-            "id": doc_id,
-            "filename": center.filename,
-            "title": center.title,
-            "is_center": True,
-        }
+            return CitationGraph()
+        nodes[doc_id] = GraphNode(
+            id=doc_id, filename=center.filename, title=center.title, is_center=True
+        )
 
         for _ in range(depth):
             next_frontier: set[str] = set()
@@ -330,7 +346,6 @@ def graph_subgraph(doc_id: str, depth: int = 1) -> dict[str, Any]:
                 if nid in visited:
                     continue
                 visited.add(nid)
-                # outgoing internal edges
                 outs = session.execute(
                     select(
                         Citation.target_document_id,
@@ -343,15 +358,11 @@ def graph_subgraph(doc_id: str, depth: int = 1) -> dict[str, Any]:
                 ).all()
                 for tgt_id, tgt_fn, tgt_title in outs:
                     if tgt_id not in nodes:
-                        nodes[tgt_id] = {
-                            "id": tgt_id,
-                            "filename": tgt_fn,
-                            "title": tgt_title,
-                            "is_center": False,
-                        }
+                        nodes[tgt_id] = GraphNode(
+                            id=tgt_id, filename=tgt_fn, title=tgt_title, is_center=False
+                        )
                         next_frontier.add(tgt_id)
-                    edges.append({"source": nid, "target": tgt_id})
-                # incoming internal edges
+                    edges.append(GraphEdge(source=nid, target=tgt_id))
                 ins = session.execute(
                     select(
                         Citation.source_document_id,
@@ -363,24 +374,20 @@ def graph_subgraph(doc_id: str, depth: int = 1) -> dict[str, Any]:
                 ).all()
                 for src_id, src_fn, src_title in ins:
                     if src_id not in nodes:
-                        nodes[src_id] = {
-                            "id": src_id,
-                            "filename": src_fn,
-                            "title": src_title,
-                            "is_center": False,
-                        }
+                        nodes[src_id] = GraphNode(
+                            id=src_id, filename=src_fn, title=src_title, is_center=False
+                        )
                         next_frontier.add(src_id)
-                    edges.append({"source": src_id, "target": nid})
+                    edges.append(GraphEdge(source=src_id, target=nid))
             frontier = next_frontier
             if not frontier:
                 break
 
-    # Deduplicate edges
-    edge_keys = set()
-    deduped: list[dict[str, str]] = []
+    edge_keys: set[tuple[str, str]] = set()
+    deduped: list[GraphEdge] = []
     for e in edges:
-        key = (e["source"], e["target"])
+        key = (e.source, e.target)
         if key not in edge_keys:
             edge_keys.add(key)
             deduped.append(e)
-    return {"nodes": list(nodes.values()), "edges": deduped}
+    return CitationGraph(nodes=list(nodes.values()), edges=deduped)

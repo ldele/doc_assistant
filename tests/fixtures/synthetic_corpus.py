@@ -96,18 +96,14 @@ def _render_refs_section(
     if fmt == "no_heading":
         # No "References" heading at all — tier-1 should NOT detect this.
         # Refs still appear as numbered list at the document tail.
-        lines = [
-            f"{i + 1}. {_render_ref_minimal(p)}"
-            for i, p in enumerate(cited_papers)
-        ]
+        lines = [f"{i + 1}. {_render_ref_minimal(p)}" for i, p in enumerate(cited_papers)]
         return "\n\n".join(lines) + "\n"
 
     if fmt == "multi_column":
         # Refs concatenated on a single line, mimicking PDF multi-column extraction.
         # Tier-1 has an `_INLINE_REF_BREAK` fallback for exactly this case.
         numbered = " ".join(
-            f"{i + 1}. {_render_ref_minimal(p)}"
-            for i, p in enumerate(cited_papers)
+            f"{i + 1}. {_render_ref_minimal(p)}" for i, p in enumerate(cited_papers)
         )
         return f"## References\n\n{numbered}\n"
 
@@ -158,15 +154,27 @@ def chain_scenario() -> list[FakePaper]:
     return [
         FakePaper("paper_a", "Foundations of Foo", "Alpha, A.", 2010, "10.9999/a"),
         FakePaper(
-            "paper_b", "Extensions to Foo", "Beta, B.", 2015, "10.9999/b",
+            "paper_b",
+            "Extensions to Foo",
+            "Beta, B.",
+            2015,
+            "10.9999/b",
             cites=["paper_a"],
         ),
         FakePaper(
-            "paper_c", "Applications of Foo", "Gamma, G.", 2020, "10.9999/c",
+            "paper_c",
+            "Applications of Foo",
+            "Gamma, G.",
+            2020,
+            "10.9999/c",
             cites=["paper_b"],
         ),
         FakePaper(
-            "paper_d", "Surveys of Foo", "Delta, D.", 2024, "10.9999/d",
+            "paper_d",
+            "Surveys of Foo",
+            "Delta, D.",
+            2024,
+            "10.9999/d",
             cites=["paper_c"],
         ),
     ]
@@ -176,15 +184,27 @@ def cycle_scenario() -> list[FakePaper]:
     """Two papers citing each other plus a third citing both. Tests dedup + bidirectional."""
     return [
         FakePaper(
-            "ring_x", "Ring Theory X", "Xavier, X.", 2018, "10.9999/x",
+            "ring_x",
+            "Ring Theory X",
+            "Xavier, X.",
+            2018,
+            "10.9999/x",
             cites=["ring_y"],
         ),
         FakePaper(
-            "ring_y", "Ring Theory Y", "Yorke, Y.", 2019, "10.9999/y",
+            "ring_y",
+            "Ring Theory Y",
+            "Yorke, Y.",
+            2019,
+            "10.9999/y",
             cites=["ring_x"],
         ),
         FakePaper(
-            "ring_z", "Ring Theory Survey", "Zane, Z.", 2022, "10.9999/z",
+            "ring_z",
+            "Ring Theory Survey",
+            "Zane, Z.",
+            2022,
+            "10.9999/z",
             cites=["ring_x", "ring_y"],
         ),
     ]
@@ -196,20 +216,40 @@ def mixed_format_scenario() -> list[FakePaper]:
     return [
         FakePaper("paper_a", "The Original", "Origin, O.", 2005, "10.9999/orig"),
         FakePaper(
-            "paper_clean", "Clean Style", "Clean, C.", 2020, "10.9999/clean",
-            cites=base_cites, ref_format="clean_apa",
+            "paper_clean",
+            "Clean Style",
+            "Clean, C.",
+            2020,
+            "10.9999/clean",
+            cites=base_cites,
+            ref_format="clean_apa",
         ),
         FakePaper(
-            "paper_lncs", "LNCS Style", "Lncs, L.", 2020, "10.9999/lncs",
-            cites=base_cites, ref_format="lncs_colon",
+            "paper_lncs",
+            "LNCS Style",
+            "Lncs, L.",
+            2020,
+            "10.9999/lncs",
+            cites=base_cites,
+            ref_format="lncs_colon",
         ),
         FakePaper(
-            "paper_mcol", "Multi Column", "Mcol, M.", 2020, "10.9999/mcol",
-            cites=base_cites, ref_format="multi_column",
+            "paper_mcol",
+            "Multi Column",
+            "Mcol, M.",
+            2020,
+            "10.9999/mcol",
+            cites=base_cites,
+            ref_format="multi_column",
         ),
         FakePaper(
-            "paper_nohdr", "No Heading", "Nohdr, N.", 2020, "10.9999/nohdr",
-            cites=base_cites, ref_format="no_heading",
+            "paper_nohdr",
+            "No Heading",
+            "Nohdr, N.",
+            2020,
+            "10.9999/nohdr",
+            cites=base_cites,
+            ref_format="no_heading",
         ),
     ]
 

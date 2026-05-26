@@ -64,7 +64,7 @@ def main():
 
             classified += 1
             by_status[health.status] += 1
-            
+
             marker = {"healthy": "  ", "marginal": "~ ", "broken": "! "}[health.status]
             print(f"{marker}{doc.filename:50s} {health.status:8s} score={health.score:3d}")
             if health.reasons:

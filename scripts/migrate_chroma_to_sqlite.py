@@ -25,7 +25,7 @@ def migrate_chroma(chroma_path: str, label: str) -> None:
     print(f"\n=== Migrating {label}: {chroma_path} ===")
 
     if not Path(chroma_path).exists():
-        print(f"  Skipped: path does not exist")
+        print("  Skipped: path does not exist")
         return
 
     embeddings = HuggingFaceEmbeddings(model_name="BAAI/bge-base-en-v1.5")

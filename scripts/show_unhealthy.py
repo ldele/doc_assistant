@@ -1,8 +1,8 @@
 """Show documents that aren't classified as healthy."""
-from sqlalchemy import select, desc
+from sqlalchemy import desc, select
 
-from doc_assistant.db.session import session_scope
 from doc_assistant.db.models import Document, IngestionEvent
+from doc_assistant.db.session import session_scope
 
 
 def main():

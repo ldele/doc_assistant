@@ -1,17 +1,21 @@
 """Slash-command parsing and response formatting.
 
-Handles /library, /document, /help commands. Returns markdown strings —
-the UI layer decides how to display them.
+Handles /library, /document, /help, /cites, /cited-by, /graph commands.
+Returns markdown strings — the UI layer decides how to display them.
 
 No UI framework imports in this module.
 """
 
 from doc_assistant.library import (
+    CitationEdge,
     DocumentDetails,
     DocumentSummary,
     LibrarySummary,
+    cited_by,
+    cites_out,
     find_document_by_short_id,
     get_document_details,
+    graph_subgraph,
     library_summary,
     list_documents,
 )
@@ -41,7 +45,6 @@ def format_summary_message(
     lines.append(f"Formats: {format_strs}")
     lines.append("")
 
-    # Group docs by health for readability
     groups: dict[str, list[DocumentSummary]] = {
         "broken": [],
         "marginal": [],
@@ -144,6 +147,9 @@ def help_message() -> str:
 - `/library healthy` — show only healthy documents
 - `/library pdf` (or epub, etc.) — show documents of a specific format
 - `/document <id>` — full details for one document (use first 8 chars of ID)
+- `/cites <id>` — citations this document makes (Phase 4)
+- `/cited-by <id>` — documents in the library that cite this one (Phase 4)
+- `/graph <id>` — small citation subgraph around this document (Phase 4)
 - `/help` — this message
 
 Anything else is treated as a normal question to the library.
@@ -151,18 +157,132 @@ Anything else is treated as a normal question to the library.
 
 
 # ============================================================
+# Phase 4 citation formatters
+# ============================================================
+
+
+def _ref_one_line(e: CitationEdge) -> str:
+    """One-line markdown for an outgoing citation."""
+    parts: list[str] = []
+    if e.target_authors:
+        a = e.target_authors[:50] + ("…" if len(e.target_authors) > 50 else "")
+        parts.append(a)
+    if e.target_year is not None:
+        parts.append(f"({e.target_year})")
+    if e.target_title:
+        t = e.target_title[:80] + ("…" if len(e.target_title) > 80 else "")
+        parts.append(f"*{t}*")
+    if e.target_doi:
+        parts.append(f"[doi:{e.target_doi}]")
+    line = " ".join(parts) if parts else (e.raw_text or "(unparsed)")
+    if e.target_document_id:
+        line = f"🔗 **`{e.target_document_id[:8]}`** {line}"
+    else:
+        line = f"  {line}"
+    return f"- {line}"
+
+
+def format_cites_out(filename: str, edges: list[CitationEdge]) -> str:
+    """Build markdown for `/cites <id>`."""
+    if not edges:
+        return (
+            f"**{filename}** — no citations extracted yet. "
+            "Run `python -m scripts.extract_citations --apply`."
+        )
+
+    internal = [e for e in edges if e.target_document_id]
+    external = [e for e in edges if not e.target_document_id]
+
+    lines = [f"## {filename} cites {len(edges)} works"]
+    lines.append(
+        f"_{len(internal)} resolved to library docs · {len(external)} external_"
+    )
+    lines.append("")
+
+    if internal:
+        lines.append(f"### 🔗 In library ({len(internal)})")
+        lines.append("")
+        for e in internal:
+            lines.append(_ref_one_line(e))
+        lines.append("")
+
+    cap = 30
+    if external:
+        lines.append(f"### 📄 External ({len(external)})")
+        lines.append("")
+        for e in external[:cap]:
+            lines.append(_ref_one_line(e))
+        if len(external) > cap:
+            lines.append(f"_…and {len(external) - cap} more._")
+
+    return "\n".join(lines)
+
+
+def format_cited_by(filename: str, rows: list[tuple[str, str, str | None]]) -> str:
+    """Build markdown for `/cited-by <id>`."""
+    if not rows:
+        return (
+            f"**{filename}** — no library documents cite this one yet. "
+            "Either no internal citations have been resolved, or extraction "
+            "hasn't been run. Try `python -m scripts.extract_citations --apply`."
+        )
+    lines = [f"## {len(rows)} library document(s) cite {filename}"]
+    lines.append("")
+    for src_id, src_fn, raw in rows:
+        snippet = (raw or "")[:120] + ("…" if raw and len(raw) > 120 else "")
+        lines.append(f"- `{src_id[:8]}` **{src_fn}** — {snippet}")
+    return "\n".join(lines)
+
+
+def format_graph(filename: str, graph: dict[str, object]) -> str:
+    """Build markdown for `/graph <id>` — Mermaid subgraph for small N."""
+    nodes_obj = graph.get("nodes", [])
+    edges_obj = graph.get("edges", [])
+    assert isinstance(nodes_obj, list) and isinstance(edges_obj, list)
+
+    if not nodes_obj or len(nodes_obj) == 1:
+        return (
+            f"**{filename}** has no internal citation edges yet. "
+            "Once `scripts/extract_citations.py --apply` is run and resolves "
+            "library-internal citations, this graph will populate."
+        )
+
+    if len(nodes_obj) > 25:
+        return (
+            f"## {filename} — citation subgraph\n\n"
+            f"_{len(nodes_obj)} nodes, {len(edges_obj)} edges._ "
+            "Too large for inline rendering. Use the data API "
+            "(`library.graph_subgraph`) for visualization."
+        )
+
+    lines = [f"## {filename} — citation subgraph", "", "```mermaid", "graph LR"]
+    for n in nodes_obj:
+        assert isinstance(n, dict)
+        nid = str(n["id"])[:8]
+        label = str(n.get("filename") or "")[:30].replace('"', "'")
+        if n.get("is_center"):
+            lines.append(f'  {nid}["**{label}**"]:::center')
+        else:
+            lines.append(f'  {nid}["{label}"]')
+    for e in edges_obj:
+        assert isinstance(e, dict)
+        src = str(e["source"])[:8]
+        tgt = str(e["target"])[:8]
+        lines.append(f"  {src} --> {tgt}")
+    lines.append("  classDef center fill:#fef3c7,stroke:#92400e,stroke-width:2px;")
+    lines.append("```")
+    return "\n".join(lines)
+
+
+# ============================================================
 # Command dispatcher
 # ============================================================
 
-# Valid format filters for the /library command
 _FORMAT_FILTERS = frozenset(["pdf", "epub", "html", "htm", "docx", "txt", "md", "odt", "rtf"])
 
 
 def parse_command(message: str) -> tuple[str, str] | None:
-    """Parse a slash command from the message.
-
-    Returns (command, arg) if the message is a command, else None.
-    """
+    """Parse a slash command. Returns (command, arg) or None."""
     msg = message.strip()
     if not msg.startswith("/"):
         return None
@@ -173,7 +293,7 @@ def parse_command(message: str) -> tuple[str, str] | None:
 
 
 def execute_command(cmd: str, arg: str) -> str:
-    """Execute a parsed command, returning the markdown response."""
+    """Execute a parsed command, returning a markdown response."""
     if cmd == "help":
         return help_message()
 
@@ -207,5 +327,20 @@ def execute_command(cmd: str, arg: str) -> str:
         if not details:
             return f"Could not load details for `{arg}`."
         return format_document_details(details)
+
+    if cmd in ("cites", "cited-by", "cited_by", "graph"):
+        if not arg:
+            return f"Usage: `/{cmd} <id>` — provide the document ID prefix."
+        full_id = find_document_by_short_id(arg) if len(arg) < 36 else arg
+        if not full_id:
+            return f"No document found matching `{arg}`. Try `/library` to see IDs."
+        details = get_document_details(full_id)
+        filename = details.filename if details else arg
+        if cmd == "cites":
+            return format_cites_out(filename, cites_out(full_id))
+        if cmd in ("cited-by", "cited_by"):
+            return format_cited_by(filename, cited_by(full_id))
+        if cmd == "graph":
+            return format_graph(filename, graph_subgraph(full_id, depth=1))
 
     return f"Unknown command: `/{cmd}`. Try `/help`."

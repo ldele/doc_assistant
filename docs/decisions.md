@@ -486,6 +486,23 @@ Decisions I haven't made yet:
 
 ## Deferred Improvements
 
+### CI coverage floor — raise from 40% over time
+
+Current `--cov-fail-under=40` in `.github/workflows/ci.yml`. Was 70% pre-Phase-3,
+lowered to 45% then 40% as `pipeline.py` and `ingest.py` are I/O-heavy and
+hard to test without a real Chroma/SQLite/embeddings stack. Phase 4 added
+~52 tests against pure-logic citations + metadata modules.
+
+Path to raise:
+- Each new phase: add at least one integration test that hits a real (temp)
+  DB or Chroma store. Phase 4 added one (`tests/integration/test_citation_pipeline.py`).
+- Phase 5 work on retrieval-side gap detection — add tests that exercise
+  `pipeline.retrieve` with a small frozen Chroma fixture.
+- Raise floor in 5%-point increments after each phase ships, never lower it.
+
+Target: 60% by end of Phase 6. Not a strict deadline — coverage is a lagging
+indicator of "did we write the tests we should have", not a goal in itself.
+
 ### Better document pre-processing
 
 Current extraction (PyMuPDF4LLM + Marker for scanned) produces usable but 

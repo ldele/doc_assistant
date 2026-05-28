@@ -357,6 +357,48 @@ class AnswerRecord(Base):
 
 
 # ============================================================
+# AnswerReview — Phase 6 / Integrity Chunk 2b (reviewer agent).
+# ============================================================
+
+
+class AnswerReview(Base):
+    """One review of an AnswerRecord — typically by an LLM judge.
+
+    One-to-many with AnswerRecord: an answer may be reviewed multiple
+    times (different reviewers, different models, manual re-review).
+    Schema is reviewer-kind-agnostic so a future human review path
+    can reuse the same row shape.
+    """
+
+    __tablename__ = "answer_reviews"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid4()))
+    answer_record_id: Mapped[str] = mapped_column(
+        String,
+        ForeignKey("answer_records.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    # Identifies the review path. Examples: "llm_haiku", "llm_sonnet",
+    # "human", "heuristic". Lets future reviewers coexist.
+    reviewer_kind: Mapped[str] = mapped_column(String, nullable=False)
+    # The specific model id (None for human or heuristic reviews).
+    model_name: Mapped[str | None] = mapped_column(String, nullable=True)
+
+    # Rubric — 1-5 integers, nullable so partial reviews (e.g., the
+    # parse failed on one dimension) don't lose the dimensions that did succeed.
+    faithfulness: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    citation_density: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    hedging_adequacy: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    unsupported_claims_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, index=True)
+
+
+# ============================================================
 # IngestionEvent — health audit trail
 # ============================================================
 

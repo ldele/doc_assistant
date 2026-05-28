@@ -255,20 +255,59 @@ def test_aggregate_runs_single_run(store: Store):
     assert "contains_all" in agg
     assert agg["contains_all"]["mean"] == 1.0
     assert agg["contains_all"]["n_scored"] == 1
-    # std over a single observation is None/NaN — DuckDB returns NULL.
-    assert agg["contains_all"]["std"] is None
+    # Both std flavors undefined for n=1 trial.
+    assert agg["contains_all"]["trial_mean_std"] is None
+    # score_std over a single observation: DuckDB STDDEV returns NULL.
+    assert agg["contains_all"]["score_std"] is None
 
 
 def test_aggregate_runs_computes_mean_and_std(store: Store):
-    """Three trials with different answers — aggregate captures the variance."""
+    """Three trials with different answers — score_std AND trial_mean_std both fire."""
     rid1 = _run_with_answer(store, "foo bar", "trial 1")  # 1.0
     rid2 = _run_with_answer(store, "foo", "trial 2")  # 0.5
     rid3 = _run_with_answer(store, "foo bar baz", "trial 3")  # 1.0
     agg = store.aggregate_runs([rid1, rid2, rid3])
     assert agg["contains_all"]["n_scored"] == 3
     assert math.isclose(agg["contains_all"]["mean"], (1.0 + 0.5 + 1.0) / 3, abs_tol=1e-6)
-    assert agg["contains_all"]["std"] is not None
-    assert agg["contains_all"]["std"] > 0.0
+    assert agg["contains_all"]["score_std"] is not None
+    assert agg["contains_all"]["score_std"] > 0.0
+    # With one case per trial, trial_mean_std == score_std (no within-case variance).
+    assert agg["contains_all"]["trial_mean_std"] is not None
+    assert math.isclose(
+        agg["contains_all"]["trial_mean_std"],
+        agg["contains_all"]["score_std"],
+        abs_tol=1e-6,
+    )
+
+
+def test_aggregate_trial_mean_std_zero_for_deterministic_scorer(store: Store):
+    """When every trial yields the exact same mean, trial_mean_std == 0.
+
+    This is the property that distinguishes trial_mean_std from score_std —
+    a deterministic scorer (citation_overlap on a fixed corpus) gets 0 here
+    even though score_std is non-zero (because individual cases score
+    differently within each trial).
+    """
+
+    def sut(_q: str) -> EvalOutput:
+        return EvalOutput(answer="foo", citations=["a.pdf"])
+
+    cases = [
+        EvalCase(id="hit", query="x", expected_citations=["a.pdf"]),  # always 1.0
+        EvalCase(id="miss", query="y", expected_citations=["nope.pdf"]),  # always 0.0
+    ]
+    from doc_assistant.eval.scorers import CitationOverlapScorer
+
+    rids = []
+    for _ in range(3):
+        results = Runner([CitationOverlapScorer()]).run(cases, sut)
+        rids.append(store.persist_run(results, system_name="t"))
+    agg = store.aggregate_runs(rids)
+    # Each trial mean is 0.5 (1 hit + 1 miss / 2 cases). All 3 trials identical.
+    assert math.isclose(agg["citation_overlap"]["mean"], 0.5, abs_tol=1e-6)
+    assert math.isclose(agg["citation_overlap"]["trial_mean_std"], 0.0, abs_tol=1e-6)
+    # But score_std is non-zero because individual case scores differ within trials.
+    assert agg["citation_overlap"]["score_std"] > 0.0
 
 
 def test_aggregate_runs_excludes_skipped(store: Store):
@@ -295,13 +334,14 @@ def test_aggregate_runs_excludes_skipped(store: Store):
     assert agg["exact_match"]["mean"] is None
 
 
-def test_format_aggregate_renders_mean_std(store: Store):
+def test_format_aggregate_renders_both_stds(store: Store):
     rid1 = _run_with_answer(store, "foo bar", "t1")
     rid2 = _run_with_answer(store, "foo", "t2")
     out = format_aggregate(store, [rid1, rid2], label="My runs")
     assert "My runs" in out
     assert "2 run" in out
-    assert "Mean" in out and "Std" in out
+    assert "Trial-mean std" in out
+    assert "Per-score std" in out
     assert "contains_all" in out
 
 
@@ -309,3 +349,51 @@ def test_format_aggregate_empty():
     # No store interaction needed — empty run_ids returns the empty message.
     # Use any temp store for the call but pass empty list.
     pass  # see test_aggregate_runs_empty_input — coverage already adequate
+
+
+# ============================================================
+# Flaky-case detection
+# ============================================================
+
+
+def test_flaky_cases_empty_for_consistent_runs(store: Store):
+    """No flakes when all trials succeed or all trials skip the same case."""
+    rid1 = _persist_simple_run(store)
+    rid2 = _persist_simple_run(store)
+    assert store.flaky_cases([rid1, rid2]) == []
+
+
+def test_flaky_cases_detects_intermittent_failure(store: Store):
+    """Same case scoreable in one trial, skipped in another → flagged."""
+    from doc_assistant.eval.results import EvalResult, ScoreResult
+
+    # Trial 1: contains_all gets a real score (scoreable=True)
+    results_ok = Runner([ContainsAllScorer()]).run(
+        [EvalCase(id="flaky", query="x", expected_substrings=["foo"])],
+        _good_sut,
+    )
+    rid_ok = store.persist_run(results_ok, system_name="t1")
+
+    # Trial 2: same case but the scorer returned an error → skipped
+    err_result = EvalResult(
+        case_id="flaky",
+        output=None,
+        scores=[ScoreResult(scorer_name="contains_all", value=0.0, details={"error": "timeout"})],
+    )
+    rid_fail = store.persist_run([err_result], system_name="t2")
+
+    flakes = store.flaky_cases([rid_ok, rid_fail])
+    assert len(flakes) == 1
+    assert flakes[0]["case_id"] == "flaky"
+    assert flakes[0]["scorer_name"] == "contains_all"
+    assert flakes[0]["n_scored"] == 1
+    assert flakes[0]["n_skipped"] == 1
+
+
+def test_flaky_cases_empty_run_ids():
+    """Defensive — empty input returns empty list, no SQL run."""
+    # Don't need the store fixture here; just assert the contract.
+    from doc_assistant.eval.store import Store as _Store
+
+    with _Store(":memory:") as s:
+        assert s.flaky_cases([]) == []

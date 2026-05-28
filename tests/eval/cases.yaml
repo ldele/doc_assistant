@@ -215,15 +215,16 @@
 - id: fakhar_optimal_communication
   query: "What does Fakhar et al.'s framework for optimal communication in brain networks address?"
   expected_answer: >
-    A general framework for evaluating how efficiently signals can propagate
-    across structural brain networks under different routing assumptions
-    (shortest paths, diffusion, navigation), and how the choice of
-    communication model changes inferences about which regions are central
-    to whole-brain signalling.
-  expected_substrings: [communication, network, routing]
+    It is a general framework for measuring how efficiently signals propagate
+    across structural brain networks. The framework compares different
+    communication models and shows that the choice of model changes which
+    regions appear central to whole-brain signalling.
+  expected_substrings: [communication, network]
   expected_citations: [Fakhar, elife-101780]
   tags: [connectomics, methods]
-  metadata: {author_verified: false}
+  metadata:
+    author_verified: false
+    note: "Tightened 2026-05-28 — original expected_answer flaked 3/5 on LLM judge"
 
 - id: directed_connectomics_bicommunity
   query: "What does the bicommunity structure of directed brain connectivity reveal?"

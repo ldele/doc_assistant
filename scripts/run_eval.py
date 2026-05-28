@@ -35,7 +35,7 @@ from doc_assistant.eval import (
     load_cases_yaml,
 )
 from doc_assistant.eval.adapters import embedding_callable, rag_pipeline_adapter
-from doc_assistant.eval.report import format_aggregate, format_run_summary
+from doc_assistant.eval.report import format_aggregate, format_flaky_cases, format_run_summary
 
 if sys.platform == "win32":
     sys.stdout.reconfigure(encoding="utf-8")
@@ -65,9 +65,7 @@ def _build_scorers(
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument(
-        "--cases", type=str, default=str(DEFAULT_CASES), help="Path to cases YAML"
-    )
+    parser.add_argument("--cases", type=str, default=str(DEFAULT_CASES), help="Path to cases YAML")
     parser.add_argument(
         "--db", type=str, default=str(DEFAULT_DB), help="DuckDB path for persistence"
     )
@@ -163,6 +161,8 @@ def main() -> int:
                     label=f"Aggregate ({get_active_model_name()}, n={args.repeat})",
                 )
             )
+            print()
+            print(format_flaky_cases(store.flaky_cases(run_ids)))
             print()
         print(f"DuckDB: {Path(args.db).resolve()}")
         print(f"Run ids ({len(run_ids)}): {', '.join(rid[:8] for rid in run_ids)}")

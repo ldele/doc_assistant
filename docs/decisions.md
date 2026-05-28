@@ -307,12 +307,20 @@ retrieval-derived uncertainty markers). Per-claim accept/reject/edit,
 persisted on the answer record. Pre-interpretation checkpoint (coverage + 
 citation density + faithfulness) warns the user before generating.
 
-**Chunk 2b — Reviewer agent (Phase 6).** Separate, cheaper LLM call after 
-the generator. Returns structured JSON via Anthropic tool-use against a 
-fixed rubric (faithfulness, citation density, hedging adequacy, claims 
-without sources). Populates the uncertainty markers. No auto-retry in v1. 
-The rubric is identical in shape to a deterministic eval scorer, so the 
-same code can be re-targeted at the eval harness.
+**Chunk 2b — Reviewer agent (Phase 6).** ✅ Done (2026-05-28).
+`src/doc_assistant/reviewer.py` + `answer_reviews` sidecar table.
+Reviewer defaults to Haiku, runs ONLY when PR 5.1's heuristic 
+confidence flags fire (cost discipline). 4-dim rubric: 
+faithfulness, citation_density, hedging_adequacy (1-5 each) + 
+unsupported_claims_count. **Reference-FREE**: judges answer vs 
+retrieved evidence, not vs a ground-truth reference — distinct from 
+the eval harness's `LLMJudgeScorer` which compares against expected 
+answers. `temperature=0`, single-turn, no system prompt — same 
+isolation contract as the eval judge. JSON-in-prompt (no tool-use; 
+keeps consistency with eval judge). No auto-retry. `/review <id>` 
+slash command for manual re-review. 14 unit tests. Schema is 
+reviewer-kind-agnostic so a future human-review path slots into the 
+same table.
 
 **Chunk 3 — PRISMA-trAIce export (Phase 9).** When the literature review 
 generator produces a review, it also produces a structured trAIce-aligned 
@@ -791,14 +799,6 @@ vs shared from day one.
 **When to revisit:** the moment a workflow emerges that involves >1 person 
 on the same corpus. Until then, the cost of designing for it now exceeds 
 the cost of deferring.
-
-### Why these are in `decisions.md`, not a separate trajectory doc
-
-They influence design choices that are happening *now*. PR 5 (provenance 
-card) needs to capture token cost in a queryable shape — that's the cost 
-discipline section informing the schema. The decision to use UUIDs for 
-`AnswerRecord.id` is informed by the multi-user section. Forward-looking 
-considerations belong next to the decisions they're shaping.
 
 ---
 

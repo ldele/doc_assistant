@@ -29,6 +29,7 @@ data/chroma_pc/
 data/sources/
 data/issues/
 data/library.db
+data/eval.duckdb.wal
 
 # Backups
 backups/

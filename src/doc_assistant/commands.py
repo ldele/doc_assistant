@@ -157,6 +157,7 @@ def help_message() -> str:
 - `/bibtex` — render the whole library as BibTeX (writes to `docs/library.bib` from the CLI)
 - `/export-record <id>` — export the full provenance record for one answer as JSON (Phase 5)
 - `/records` — list the most recent answer records
+- `/review <id>` — run the LLM reviewer on any past answer (Phase 6)
 - `/help` — this message
 
 Anything else is treated as a normal question to the library.
@@ -358,6 +359,37 @@ def execute_command(cmd: str, arg: str) -> str:
             q = (r.query or "")[:80] + ("…" if r.query and len(r.query) > 80 else "")
             lines.append(f"- `{r.id[:8]}` · {ts} · {q}")
         return "\n".join(lines)
+
+    if cmd == "review":
+        from doc_assistant.config import ANTHROPIC_API_KEY
+        from doc_assistant.provenance import find_record_by_short_id, get_record
+        from doc_assistant.reviewer import persist_review, review_answer
+
+        if not arg:
+            return "Usage: `/review <id>` — id is the 8-char prefix from a provenance card."
+        if not ANTHROPIC_API_KEY:
+            return "`/review` needs `ANTHROPIC_API_KEY` set — the reviewer is an LLM call."
+        prov = get_record(arg) if len(arg) >= 36 else find_record_by_short_id(arg)
+        if prov is None:
+            return f"No answer record matching `{arg}`. Try `/records` to list recent answers."
+        try:
+            from anthropic import Anthropic
+
+            result = review_answer(prov, Anthropic(api_key=ANTHROPIC_API_KEY))
+            persist_review(prov.id, result, reviewer_kind="llm_haiku", model_name="haiku")
+        except Exception as e:
+            return f"Reviewer failed: {type(e).__name__}: {e}"
+        if result.error:
+            return f"Reviewer error: {result.error}"
+        notes = f"\n\n> {result.notes}" if result.notes else ""
+        return (
+            f"## Reviewer assessment for `{prov.id[:8]}`\n\n"
+            f"- **faithfulness:** {result.faithfulness}/5\n"
+            f"- **citation density:** {result.citation_density}/5\n"
+            f"- **hedging adequacy:** {result.hedging_adequacy}/5\n"
+            f"- **unsupported claims:** {result.unsupported_claims_count}"
+            f"{notes}"
+        )
 
     if cmd == "library":
         health = format_filter = None

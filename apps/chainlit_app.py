@@ -12,7 +12,7 @@ import time
 import chainlit as cl
 
 from doc_assistant.commands import execute_command, parse_command
-from doc_assistant.config import TOP_K, USE_PARENT_CHILD
+from doc_assistant.config import ANTHROPIC_API_KEY, TOP_K, USE_PARENT_CHILD
 from doc_assistant.embeddings import get_active_model_name
 from doc_assistant.pipeline import RAGPipeline, format_citation
 from doc_assistant.prompts import ANSWER_PROMPT
@@ -26,6 +26,7 @@ from doc_assistant.provenance import (
     template_hash,
 )
 from doc_assistant.query_router import answer_library_query, is_library_query
+from doc_assistant.reviewer import ReviewResult, persist_review, review_answer
 from doc_assistant.tracking import TokenCounter
 
 rag = RAGPipeline()
@@ -53,8 +54,28 @@ async def on_chat_start() -> None:
 # ============================================================
 
 
+def _format_review_block(review: ReviewResult | None) -> str:
+    """Render the reviewer's verdict as a sub-section of the provenance card."""
+    if review is None:
+        return ""
+    if review.error:
+        return f"\n\n**Reviewer:** _failed — {review.error}_"
+    bits = [
+        f"faithfulness `{review.faithfulness}/5`",
+        f"citation density `{review.citation_density}/5`",
+        f"hedging `{review.hedging_adequacy}/5`",
+        f"unsupported claims: `{review.unsupported_claims_count}`",
+    ]
+    notes = f"  \n_Reviewer notes:_ {review.notes}" if review.notes else ""
+    return "\n\n**Reviewer assessment:** " + " · ".join(bits) + notes
+
+
 def _format_provenance_card(
-    prov: AnswerProvenance, signals: ConfidenceSignals, *, expanded: bool
+    prov: AnswerProvenance,
+    signals: ConfidenceSignals,
+    *,
+    expanded: bool,
+    review: ReviewResult | None = None,
 ) -> str:
     """Render an AnswerProvenance as a collapsible markdown card.
 
@@ -92,6 +113,8 @@ def _format_provenance_card(
 
     open_attr = " open" if expanded else ""
 
+    review_block = _format_review_block(review)
+
     return (
         f"\n\n<details{open_attr}>\n<summary>{summary_prefix} — "
         f"<code>{prov.id[:8]}</code> · {latency_s:.1f}s · "
@@ -102,7 +125,8 @@ def _format_provenance_card(
         f"**parent-child:** {prov.use_parent_child}  \n"
         f"**Prompt version:** `{prov.prompt_version or '?'}`  \n"
         f"**Tokens:** {cost_in:,} in + {cost_out:,} out"
-        f"{signals_block}\n\n"
+        f"{signals_block}"
+        f"{review_block}\n\n"
         "**Retrieved chunks (with reranker scores):**\n\n"
         + "\n".join(chunks_lines)
         + f"\n\n_Export full record:_ `/export-record {prov.id[:8]}`\n\n"
@@ -226,8 +250,22 @@ async def on_message(message: cl.Message) -> None:
         signals = compute_confidence_signals(prov)
         # PR 5.1 — quiet UI on clean answers, loud on flagged ones.
         # Record always persists (visible via /records and /export-record).
+        review: ReviewResult | None = None
         if signals.any():
-            provenance_block = _format_provenance_card(prov, signals, expanded=True)
+            # PR 6 — when heuristic flags fire AND we have API access, run
+            # the LLM reviewer to add depth. ~$0.001 + ~1-2s per flagged
+            # answer. Clean answers skip the call entirely.
+            if ANTHROPIC_API_KEY:
+                try:
+                    from anthropic import Anthropic
+
+                    review = review_answer(prov, Anthropic(api_key=ANTHROPIC_API_KEY))
+                    persist_review(
+                        record_id, review, reviewer_kind="llm_haiku", model_name="haiku"
+                    )
+                except Exception as e:
+                    review = ReviewResult(error=f"reviewer setup failed: {e}")
+            provenance_block = _format_provenance_card(prov, signals, expanded=True, review=review)
         else:
             provenance_block = ""
     except Exception as e:

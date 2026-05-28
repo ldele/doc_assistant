@@ -12,6 +12,7 @@ Pure formatting + arithmetic; the store does all DB access.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
 
 from doc_assistant.eval.store import Store
 
@@ -70,23 +71,58 @@ def diff_runs(store: Store, run_a_id: str, run_b_id: str) -> list[RunDiffRow]:
 
 
 def format_aggregate(store: Store, run_ids: list[str], *, label: str = "Aggregate") -> str:
-    """Markdown table of mean ± std per scorer across N runs."""
+    """Markdown table of mean + two std columns per scorer across N runs.
+
+    ``trial_mean_std`` is what you want for measurement reliability —
+    how different is the mean if you rerun the whole eval?
+    ``score_std`` is the per-(case, trial) spread; dominated by
+    cross-case variance, less useful for comparison across runs.
+    """
     stats = store.aggregate_runs(run_ids)
     if not stats:
         return f"{label}: no scores in the {len(run_ids)} run(s)."
     lines = [
         f"## {label} over {len(run_ids)} run(s)",
         "",
-        "| Scorer | Mean | Std | n_scored | n_skipped |",
-        "|---|---:|---:|---:|---:|",
+        "| Scorer | Mean | Trial-mean std | Per-score std | n_scored | n_skipped |",
+        "|---|---:|---:|---:|---:|---:|",
     ]
     for scorer_name, s in sorted(stats.items()):
         mean = s["mean"]
-        std = s["std"]
+        tms = s.get("trial_mean_std")
+        sds = s.get("score_std")
         mean_cell = f"{mean:.3f}" if isinstance(mean, float) else "-"
-        std_cell = f"{std:.3f}" if isinstance(std, float) else "-"
+        tms_cell = f"{tms:.3f}" if isinstance(tms, float) else "-"
+        sds_cell = f"{sds:.3f}" if isinstance(sds, float) else "-"
         lines.append(
-            f"| {scorer_name} | {mean_cell} | {std_cell} | {s['n_scored']} | {s['n_skipped']} |"
+            f"| {scorer_name} | {mean_cell} | {tms_cell} | {sds_cell} | "
+            f"{s['n_scored']} | {s['n_skipped']} |"
+        )
+    lines.append("")
+    lines.append(
+        "_Trial-mean std answers 'how different would the mean be on a rerun'. "
+        "Per-score std is dominated by per-case spread and is less useful for "
+        "cross-run comparison._"
+    )
+    return "\n".join(lines)
+
+
+def format_flaky_cases(rows: list[dict[str, Any]]) -> str:
+    """Markdown list of cases that failed intermittently across trials."""
+    if not rows:
+        return "_No intermittent failures across trials._"
+    lines = [
+        f"## {len(rows)} flaky (case, scorer) pair(s)",
+        "",
+        "_Cases that scored in some trials and were skipped in others — "
+        "usually an API timeout or judge parse failure on edge-case prompts._",
+        "",
+        "| Scorer | Case | Scored | Skipped |",
+        "|---|---|---:|---:|",
+    ]
+    for r in rows:
+        lines.append(
+            f"| {r['scorer_name']} | {r['case_id']} | {r['n_scored']} | {r['n_skipped']} |"
         )
     return "\n".join(lines)
 

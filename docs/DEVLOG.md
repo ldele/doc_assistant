@@ -630,3 +630,153 @@ Format: What changed | Why | Rejected alternatives | What it opens
 - The `/records` command lists 20 by default — pagination not yet implemented. Will matter once usage piles up.
 - No retention policy on the answer_records table. Long-running personal use will accumulate. Could add a `--archive-older-than` script later.
 **Next:** Phase 6 — pick from Feature 4a (pdfplumber tables, simplest), Chunk 2a (dual interpretation, biggest UX impact), or Chunk 2b (reviewer agent — natural extension of Chunk 1's provenance work). Reviewer agent has the most natural sequencing since it reuses the provenance schema we just shipped.
+
+---
+
+## Session: 2026-05-28 (cont.) — PR 5.1: Heuristic confidence signals
+
+**Starting from:** PR 5 (provenance card) shipped. User flagged a real concern: "Provenance is a stepping stone for next steps and in accordance to scientific vision, but for personal use not the best. Might be interesting to signal problematic answers." This is exactly the uncertainty-markers idea from Phase 6 Chunk 2a in the roadmap — and we can do a cheap version of it using only the data we already capture.
+
+**Goal this session:** Compute heuristic confidence flags from each AnswerRecord, hide the provenance card on clean answers, surface it loudly when something looks off. No new LLM calls. No new schema. ~1 evening of work to validate that the provenance data carries enough signal to warn the user.
+
+### src/doc_assistant/provenance.py — `ConfidenceSignals` + computation
+**What:** New `ConfidenceSignals` dataclass with three boolean flags plus numeric details. `compute_confidence_signals(prov)` is a pure function over `AnswerProvenance.retrieved_chunks` — no DB, no I/O. Three flags:
+- `weak_retrieval`: `max(reranker_score) < 0.3` — best chunk wasn't very relevant.
+- `score_cluster_concern`: top-3 score span < 0.05 AND max in [0.3, 0.7] — multiple medium-confidence chunks, system can't pick a winner. Deliberately suppressed when scores are high-and-clustered (consensus, not ambiguity) or when weak_retrieval already fires (avoid double-flagging).
+- `single_source_risk`: ≤2 unique source filenames in retrieved chunks — answer concentrated on 1-2 papers, no cross-confirmation.
+
+Constants live in the module (WEAK_RETRIEVAL_THRESHOLD, SCORE_CLUSTER_SPAN, SCORE_CLUSTER_MAX, SINGLE_SOURCE_MAX_DOCS) so tuning later is grep-able. `compute_confidence_signals()` accepts keyword overrides so future per-folder or per-query-type thresholds don't need a code change.
+**Why:** This is the "retrieval-derived uncertainty markers" path from Phase 6 Chunk 2a, made cheap by using the data PR 5 already captures. No self-reported LLM confidence (which the roadmap explicitly rejects); no extra LLM calls. The flags answer "should the user be suspicious of this answer" using observable signals.
+**Rejected:** LLM-as-judge per answer at this stage (that's Chunk 2b — heavier, costs per turn, deserves its own PR). A single combined "confidence score" (loses interpretability — the flags carry different information about what's wrong). Computing flags inside the AnswerRecord write path and persisting them (current design recomputes on read; cheap, and lets threshold tuning take effect retroactively without a DB migration).
+**Opens:** Thresholds were chosen by intuition for bge-reranker-base scores; need calibration against real usage. Eventually want a small "false-positive rate" eval — answers that flagged as low-confidence but actually got the right answer.
+
+### apps/chainlit_app.py — conditional rendering
+**What:** After `record_answer`, compute confidence signals. If `signals.any()` is False → no provenance block in the rendered message at all (record still in DB, still listed by `/records`, still exportable via `/export-record`). If any flag fires → render the card expanded by default with a `⚠ Low confidence: <reasons>` summary chip and an extra "Confidence signals" sub-block showing the raw numbers (max_score, top3_span, unique_sources) with per-flag `⚠` markers next to each offending number.
+**Why:** The user's concern was that an always-visible card is friction for personal use. This makes the card earn its space: invisible when there's nothing to worry about, prominent when there is. The architectural goal (every answer carries a record) is preserved — the UI change is purely about presentation.
+**Rejected:** Always-show, just visually de-emphasised (still adds a line of text per turn — defeats the purpose). Showing a tiny "🔍" pin that opens the card on click (Chainlit's markdown rendering doesn't easily support this; the `<details>` solution is cleaner). Persisting the flags in AnswerRecord (would require a schema migration; recomputation is cheap and means a future threshold tweak applies to old records too).
+
+### tests/unit/test_confidence_signals.py — 16 unit tests
+**What:** Per-flag positive + negative cases, boundary tests at the exact threshold values, the "high-and-clustered = consensus" suppression case, the "weak-and-clustered" non-double-firing case, multi-flag combination, threshold override path, missing-score graceful handling.
+**Why:** This logic is small but high-leverage — it's what the user sees first when an answer is weak. Wrong-direction flags would erode trust faster than no flags at all.
+
+### Quality gate
+**What:** ruff format clean (57 files), ruff check clean across src/tests/apps, mypy strict clean (29 source files), 246 tests pass (up from 230 — 16 new signal tests), coverage 63.02% (up from 62.29%).
+
+### Session end
+**Done:** PR 5.1 — heuristic confidence signals shipped. Provenance card now only appears when something might be wrong; otherwise the chat reads clean. The signals reuse the PR 5 schema with zero changes.
+**Unresolved:**
+- Thresholds are intuited, not calibrated. Once the user has 20-50 real answer records, worth a small audit: pick 10 answers, manually rate them, check whether the flags correlate with "this is actually wrong".
+- No way to manually override the signals (e.g., "show me the provenance even though it's clean") — currently you'd type `/records` then `/export-record <id>`. Acceptable; the discoverability is fine for the audit use case.
+- The single-source threshold of ≤2 might be too aggressive for some legitimate queries (e.g., very specific questions about one paper). Will see real-world false-positive rate with use.
+**Next:** Phase 6. Three options remain on the table — Reviewer Agent (Chunk 2b), Dual Interpretation (Chunk 2a), pdfplumber tables (Feature 4a). Reviewer Agent now has the natural sequencing: it would write rubric scores against the same AnswerRecord rows, and its judgment can be compared to the heuristic flags to see where they agree and disagree (which is itself a signal about both).
+
+---
+
+## Session: 2026-05-28 (cont.) — PR 6: Reviewer agent (Phase 6 / Integrity Chunk 2b)
+
+**Starting from:** PR 5.1 shipped. Heuristic confidence signals quiet the UI on clean answers and loudly flag weak ones. Natural sequel per the roadmap and per the previous session's analysis: the LLM reviewer agent should re-judge flagged answers with a richer rubric, persist its findings alongside, and let us compare its judgment against the cheap heuristics over time.
+
+**Goal this session:** Ship Chunk 2b — the reviewer agent. Tight cost discipline: reviewer runs only when heuristics already flagged the answer (no API spend on clean answers). Schema separation: reviews are their own sidecar table, not extra columns on AnswerRecord.
+
+### Locked design choices
+**When does the reviewer run?** Only when `compute_confidence_signals(prov).any()` is True AND `ANTHROPIC_API_KEY` is set. Background-running on every answer would waste spend; on-demand only (manual `/review`) would lose calibration data. Flag-triggered is the right tradeoff.
+
+**Where do scores go?** New sidecar `answer_reviews` table, one-to-many with `answer_records`. Allows multiple reviews per answer (different models, re-review, future human review). Not extra columns on AnswerRecord because (1) the schema needs to differ between LLM and human reviewers and (2) one-to-many lets us add reviewers without migrations.
+
+**Reference-FREE prompt.** The reviewer's contract is "judge the answer against the retrieved evidence" — not against a ground-truth answer. This is fundamentally different from `eval/scorers.py`'s `LLMJudgeScorer`, which compares to `expected_answer`. The reviewer is what the user *actually* cares about in production ("is this answer supported by the chunks I retrieved?"), while the eval judge is what the developer cares about during regression testing ("is this answer aligned with what we expect?"). Kept as separate modules with different prompts.
+
+**Rubric (per roadmap):** 4 dimensions — `faithfulness`, `citation_density`, `hedging_adequacy` (1-5 each) plus `unsupported_claims_count` (int) plus a 1-2 sentence `notes` field for the lowest-scoring dimension. Same isolation contract as the eval judge: `temperature=0`, single-turn, no system prompt, fresh API request per call.
+
+### src/doc_assistant/db/models.py — `AnswerReview`
+**What:** New sidecar table. Columns: UUID id, `answer_record_id` (FK, indexed), `reviewer_kind` (string discriminator: `llm_haiku` / `llm_sonnet` / `human` / `heuristic`), `model_name` (nullable), 4 rubric fields (nullable so partial reviews from parse errors don't lose successful dimensions), `notes`, `error` (for review failures we still want to record), `created_at`.
+**Why:** One-to-many shape. Reviewer-kind-agnostic so a future human-review path can write to the same table without schema change. Foreign-key CASCADE on `answer_record_id` so archiving an answer cleans up its reviews.
+
+### src/doc_assistant/reviewer.py (new)
+**What:** Three exported functions plus a `ReviewResult` dataclass. `review_answer(prov, client)` formats the prompt with retrieved chunks rendered as labelled `[i] filename p.N "section"\n<excerpt>` blocks, makes the Anthropic call, parses JSON (markdown-fence-tolerant), returns the result with `error` set on any failure rather than raising. `persist_review(answer_id, result, *, reviewer_kind, model_name)` writes one row. `get_reviews(answer_id)` reads all reviews for an answer, most-recent first.
+**Why:** Tight, focused module. Anthropic client injection (no SDK import at module level) mirrors the eval `LLMJudgeScorer`. The `ReviewResult.error` field means failed reviews are still recorded as rows (not lost), which is useful for debugging API issues without re-running.
+**Rejected:** Auto-retry on transient failures (cost discipline — user decides whether to re-trigger via `/review`). Streaming the reviewer's response (no UX value at 200-400 token output). Anthropic tool-use for structured output (works but adds complexity; JSON-in-prompt has been reliable for the eval judge over thousands of calls so far).
+
+### apps/chainlit_app.py — flag-triggered reviewer + card integration
+**What:** After computing confidence signals, if `signals.any()` is True AND `ANTHROPIC_API_KEY` is set, construct an Anthropic client, call `review_answer`, `persist_review`, and pass the result to `_format_provenance_card(...)` as a new `review=` kwarg. The card grows a "Reviewer assessment" sub-section showing the 4-dim scores in a compact line plus the reviewer's notes. Failure paths (no API key, reviewer raises, parse fails) all degrade gracefully — the card still renders, just with a `_Reviewer: failed — <reason>_` line instead of scores.
+**Why:** The reviewer is value-add, not load-bearing. The answer streams normally; the card just gets richer on flagged turns. Cost is bounded: clean answers skip the call entirely; flagged answers spend ~$0.001 + ~1-2s.
+
+### src/doc_assistant/commands.py — `/review` slash command
+**What:** `/review <id>` looks up the AnswerRecord by short id, runs the reviewer, persists, and returns a markdown summary. Errors and missing-API-key cases produce helpful messages rather than tracebacks.
+**Why:** Lets the user re-review any past answer (not just flagged ones), or re-trigger a review after fixing a prompt or retrieval bug. Pairs with `/records` for discoverability.
+
+### tests/unit/test_reviewer.py — 14 unit tests
+**What:** Prompt-content assertions (mentions EVIDENCE, all 4 dimensions, "prior knowledge" instruction, NOT "ground truth"). `_format_evidence` shape tests (empty + populated). `review_answer` parsing: clean JSON, markdown-fenced JSON, broken JSON, missing field, isolation properties (no system, single-turn, temperature=0). Persistence roundtrip via `temp_db` fixture (same pattern as `test_provenance.py`): persist + read, multiple reviews per answer ordered desc, error reviews still persist, empty case.
+**Why:** Reviewer logic is small but high-stakes — wrong scores would mislead the user worse than no scores. Mocking Anthropic keeps the tests free + fast.
+
+### Quality gate
+**What:** ruff format clean (59 files), ruff check clean across src/tests/apps (3 errors fixed: 1 line-too-long in commands.py help text, 2 import-order in tests). mypy strict clean (30 source files), 260 tests pass (up from 246 — 14 new reviewer tests), coverage 63.70% (up from 63.02%).
+
+### Migration
+**What:** `uv run python -m doc_assistant.db.migrations` — picks up the new `AnswerReview` model. `answer_reviews` now live in the SQLite alongside `answer_records` and the existing 10 tables.
+
+### Session end
+**Done:** PR 6 (Phase 6 / Integrity Chunk 2b) fully shipped. Reviewer agent runs automatically on flagged answers, manually via `/review`, persists to its own sidecar table. Schema is forward-compat for human review or alternative reviewer models. Cost is bounded by the heuristic-flag gate.
+**Unresolved:**
+- No comparison view yet: would be nice to see, across many answers, where the heuristic flags AGREE with the reviewer (high precision/recall on weak answers) vs DISAGREE (heuristic false positives or reviewer mis-judgments). A `/review-audit` command or a small DuckDB-style aggregation could surface this. Defer until we have ~30+ flagged answers to look at.
+- The reviewer adds ~1-2s latency to flagged answers. UX could be improved by streaming the card without the review block first, then updating once review returns. Not critical.
+- Reviewer model is hardcoded to Haiku. Could be configurable via env var (`REVIEWER_MODEL`) — straightforward small follow-up.
+**Next:** Phase 6 remaining work — Chunk 2a (Dual Interpretation, biggest UX shift; SYNTHESIS_MODE flag, evidence vs interpretation layers) or Feature 4a (pdfplumber tables, smallest, independent). With both PR 5.1 (heuristics) and PR 6 (reviewer) shipped, Chunk 2a now has the full integrity stack to build on: heuristic flags + LLM reviewer + dual-layer presentation = the complete picture.
+
+---
+
+## Session: 2026-05-28 (cont.) — PR 4.2: aggregator stats fix + flaky-case detection
+
+**Starting from:** User ran the eval at `--repeat 5` on BGE. The aggregate output reported `Std: 0.266` for `citation_overlap` — but citation_overlap is fully deterministic (max → reranker → top-K is fixed-input), and every trial returned exactly 0.907. The reported "std" was telling the wrong story.
+
+**Goal this session:** Fix the misleading std, add detection for cases that fail intermittently across trials, identify which case actually flaked in the user's 5-trial run.
+
+### The bug
+**What was wrong:** `Store.aggregate_runs` computed `STDDEV(value)` over ALL per-(case, trial) score rows. For a 5-trial × 35-case run that's 170-175 rows of individual scores. The result conflates two different sources of variance:
+1. "Different cases score differently" (huge — the negative-control gets 0, easy cases get 1)
+2. "The same case scores differently across trials" (small for deterministic scorers, modest for LLM scorers)
+
+(1) dominates, so the reported "std" doesn't tell the user what they actually want to know about run-to-run reliability. For citation_overlap (deterministic), (2) is 0 and (1) is 0.266 — reporting (1) made retrieval look noisy when it isn't.
+
+**The right answer:** **trial-mean std** — the sample std of N per-trial means. Quantifies "if I rerun this whole eval, how different will the headline mean be?" For deterministic scorers it's exactly 0.0; for stochastic scorers it's small but real.
+
+### Store.aggregate_runs — both stds, named explicitly
+**What:** Replaced `std` with two keys: `score_std` (kept the original semantics — per-(case, trial) sample std) and `trial_mean_std` (new — sample std of per-trial means, computed in Python from a per-trial-per-scorer mean query because DuckDB doesn't easily nest aggregates). Both nullable; `trial_mean_std` is `None` when only one trial.
+**Why:** Both numbers are useful, just for different questions. Naming them explicitly avoids the previous confusion.
+**Rejected:** Single combined "noise" metric (loses interpretability). Doing both stds in one nested SQL query (DuckDB CTE works but is harder to read; two queries combined in Python is clearer).
+
+### Store.flaky_cases — intermittent-failure detection
+**What:** New method returning `[{scorer_name, case_id, n_scored, n_skipped}]` for any (scorer, case) pair where some trials produced a scoreable result and others didn't. Surfaces the difference between "this case always fails" (probably an unsupported scorer) and "this case sometimes fails" (probably an API timeout or judge parse error on edge-case prompts).
+**Why:** When the user's trial 5 had 2 llm_judge skips vs 1 in the other trials, we couldn't easily tell whether the same case was flaking or whether different cases were rolling random failures. This makes that diagnosis a single query.
+
+### Report + CLI integration
+**What:** `format_aggregate` now renders a 5-column table (Mean / Trial-mean std / Per-score std / n_scored / n_skipped) with an explanatory caption below clarifying what each std answers. New `format_flaky_cases` reporter. CLI runner prints both after multi-trial runs.
+
+### Identifying the user's actual flake
+**What:** Ran `Store.flaky_cases` against the user's 5 run_ids. Result:
+- `llm_judge / fakhar_optimal_communication` — scored 2, skipped 3 (the structural flake)
+- `llm_judge / directed_connectomics_bicommunity` — scored 4, skipped 1 (random)
+- `llm_judge / liu_axonal_projections` — scored 4, skipped 1 (random)
+- `llm_judge / rajpurkar_arrhythmia` — scored 4, skipped 1 (random)
+
+`fakhar_optimal_communication` is the case to look at — its expected_answer has multi-clause structure with parentheses and technical jargon that's plausibly tripping the JSON parser or hitting max_tokens. Other 3 are 1-in-5 noise, not worth chasing.
+
+### Tests updated
+**What:** Existing tests migrated from `std` → `score_std`. New tests for `trial_mean_std` (deterministic-scorer case proves trial_mean_std = 0 even when score_std > 0; multi-trial case proves both stds non-zero). New `flaky_cases` tests — empty-input defensive check, consistent-runs-have-no-flakes, intermittent-failure-is-detected. 27 tests in the eval_runner_store file, all green; 264 total project tests.
+
+### Corrected interpretation of the user's BGE-vs-SPECTER2 result
+**What:** With proper trial_mean_std:
+
+| Scorer | BGE n=5 mean | BGE trial_mean_std | SPECTER2 n=1 | Gap | In stds |
+|---|---:|---:|---:|---:|---:|
+| citation_overlap | 0.907 | **0.000** | 0.887 | +0.020 | — (deterministic) |
+| contains_all | 0.804 | **0.013** | 0.757 | +0.047 | ~3.6σ |
+| llm_judge | 2.209 | **0.053** | 2.088 | +0.121 | ~2.3σ |
+
+Both downstream gaps are several standard deviations — the BGE > SPECTER2 result is robust. Direction was right before; magnitude is now properly bounded.
+
+### Session end
+**Done:** PR 4.2 — aggregator stats now answer the right question, flaky-case detection lets us isolate structural vs random failures, the user's BGE n=5 result is properly characterised.
+**Unresolved:**
+- The `fakhar_optimal_communication` case's expected_answer should be tightened — likely simplification of structure will eliminate the JSON parsing flake.
+- Asymmetric comparison: BGE has n=5, SPECTER2 still has n=1. User to re-run SPECTER2 at `--repeat 5` for the symmetric comparison. Cost: ~$1, ~30 min.
+**Next:** User runs SPECTER2 n=5; then Phase 6 remaining work (Chunk 2a — dual interpretation, or Feature 4a — pdfplumber tables).

@@ -7,7 +7,6 @@ from typing import Any
 
 from langchain_chroma import Chroma
 from langchain_core.documents import Document
-from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from sqlalchemy import delete, select
 from tqdm import tqdm
@@ -22,6 +21,11 @@ from doc_assistant.config import (
 from doc_assistant.db.models import Document as DBDocument
 from doc_assistant.db.models import IngestionEvent
 from doc_assistant.db.session import session_scope
+from doc_assistant.embeddings import (
+    get_active_model_name,
+    get_collection_name,
+    get_embeddings,
+)
 from doc_assistant.extractors import extract_to_markdown, is_supported
 
 PAGE_MARKER = re.compile(r"<!--\s*page:(\d+)\s*-->")
@@ -438,10 +442,10 @@ def main(
     Path(CHROMA_PATH).mkdir(exist_ok=True)
     Path(PC_CHROMA_PATH).mkdir(exist_ok=True)
 
-    embeddings = HuggingFaceEmbeddings(
-        model_name="BAAI/bge-base-en-v1.5",
-        encode_kwargs={"batch_size": 32, "normalize_embeddings": True},
-    )
+    active_model = get_active_model_name()
+    collection = get_collection_name(active_model)
+    print(f"Embedding model: {active_model} (collection: {collection})")
+    embeddings = get_embeddings(active_model)
 
     if force_rebuild:
         if scope is not None:
@@ -454,8 +458,16 @@ def main(
         with session_scope() as session:
             session.execute(delete(DBDocument))
 
-    db = Chroma(persist_directory=CHROMA_PATH, embedding_function=embeddings)
-    pc_db = Chroma(persist_directory=PC_CHROMA_PATH, embedding_function=embeddings)
+    db = Chroma(
+        persist_directory=CHROMA_PATH,
+        embedding_function=embeddings,
+        collection_name=collection,
+    )
+    pc_db = Chroma(
+        persist_directory=PC_CHROMA_PATH,
+        embedding_function=embeddings,
+        collection_name=collection,
+    )
 
     # Orphan cleanup is global by design — skip when scoping to a subset,
     # otherwise a partial walk would falsely flag everything outside the

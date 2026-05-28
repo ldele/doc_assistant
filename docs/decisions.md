@@ -551,9 +551,11 @@ the first deliverable of the Research Integrity Layer.
 
 See `docs/doc-assistant-roadmap.md` for the source of intent.
 
-- **Feature 1** — Config-driven embedding layer. `EMBEDDING_MODEL` env var. 
-  Initial options: `bge-base` (current default), `specter2` (academic). 
-  Embedding factory; one Chroma collection per model.
+- **Feature 1** — ✅ Done (2026-05-28). `EMBEDDING_MODEL` env var; 
+  `src/doc_assistant/embeddings.py` registry + factory. Initial options: 
+  `bge-base` (default → legacy `"langchain"` collection name for zero-migration 
+  upgrade), `specter2` (academic, uses its own collection). 15 unit tests. 
+  Per-folder routing (Feature 1b) gated on Feature 3 measurement.
 - **Feature 2** — Eval harness v0 inside `src/doc_assistant/eval/`. 
   Generic runner / scorers / DuckDB store / report; doc_assistant-specific 
   adapter. Everything except the adapter imports nothing from 

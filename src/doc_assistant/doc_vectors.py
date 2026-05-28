@@ -34,6 +34,7 @@ from sqlalchemy import select
 from doc_assistant.config import CHROMA_PATH
 from doc_assistant.db.models import Document
 from doc_assistant.db.session import session_scope
+from doc_assistant.embeddings import get_active_model_name, get_collection_name
 
 log = logging.getLogger(__name__)
 
@@ -42,7 +43,11 @@ log = logging.getLogger(__name__)
 # Constants
 # ============================================================
 
-EMBEDDING_MODEL_NAME = "bge-base-en-v1.5"
+# Persisted tag for `DocSimilarity.embedding_model` rows. Defaults to the
+# active model's registry key; PR 1 wrote the literal HF id ("bge-base-en-v1.5"),
+# so existing rows under that tag stay queryable via the kwarg on
+# `library.similar_docs(embedding_model=...)`.
+EMBEDDING_MODEL_NAME = get_active_model_name()
 DEFAULT_TOP_K = 10
 DEFAULT_THRESHOLD = 0.5
 
@@ -164,10 +169,13 @@ def load_chunk_embeddings_by_document() -> dict[str, list[np.ndarray]]:
         raise RuntimeError("chromadb is required to read embeddings") from e
 
     client = chromadb.PersistentClient(path=CHROMA_PATH)
+    collection_name = get_collection_name()
     try:
-        coll = client.get_collection("langchain")
+        coll = client.get_collection(collection_name)
     except Exception:
-        log.warning("No 'langchain' collection at %s — run ingest first", CHROMA_PATH)
+        log.warning(
+            "No '%s' collection at %s — run ingest first", collection_name, CHROMA_PATH
+        )
         return {}
 
     data = coll.get(include=["embeddings", "metadatas"])

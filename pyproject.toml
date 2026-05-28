@@ -48,6 +48,7 @@ dependencies = [
     "chainlit>=2.0,<3.0",
     "tqdm>=4.66",
     "sqlalchemy>=2.0",
+    "duckdb>=1.5.3",
 ]
 
 [project.optional-dependencies]

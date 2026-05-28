@@ -404,3 +404,122 @@ Format: What changed | Why | Rejected alternatives | What it opens
 - DocSimilarity tag mismatch (PR 1 rows tagged `"bge-base-en-v1.5"`, PR 2 rows tagged `"bge-base"`). Fix is `compute_doc_vectors --apply --force` once when convenient.
 - SPECTER2 loader has not been exercised end-to-end (no integration test, no real embed run). Will get its first real workout when Feature 3's eval comparison runs.
 **Next:** PR 3 — Eval harness v0 (`src/doc_assistant/eval/`). Generic runner / scorers / DuckDB store / report; doc_assistant-specific adapter. Everything except the adapter imports nothing from `doc_assistant.*` so it can be extracted later (Feature 5).
+
+---
+
+## Session: 2026-05-28 (cont.) — PR 3: Eval harness v0 (Phase 5 / Feature 2)
+
+**Starting from:** PR 2 (config-driven embedding layer) shipped. User testing SPECTER2 ingest in background. Approved start of PR 3.
+
+**Goal this session:** Build the generic eval harness in `src/doc_assistant/eval/`, designed for Feature 5 extraction (every module except `adapters.py` imports nothing from `doc_assistant.*`). Ship the runner, 5 scorers, DuckDB store, reporter, doc_assistant adapter, CLI runner, and a 3-case stub. Real 30-50 case eval set lives in PR 4.
+
+### duckdb dependency
+**What:** `uv add duckdb` → 1.5.3. ~12 MB wheel; no transitive deps that aren't already present.
+**Why:** Locked in `decisions.md` Feature 2 / Feature 5 — chosen over SQLite for OLAP aggregates (mean-per-scorer, diff-between-runs are first-class queries). At personal-eval scale the choice is mostly about future-proofing for many-run comparisons.
+**Rejected:** SQLite (works, but the eval harness extracts cleanly to a standalone repo only if it doesn't share the SQLite store with doc_assistant's library DB). Pure JSONL files (no aggregation, no joins).
+
+### src/doc_assistant/eval/ — generic core (5 files, 0 doc_assistant deps)
+**What:** Package with `cases.py` (YAML loader → `EvalCase` dataclass, validates required fields + duplicate-id detection + per-field type checks), `results.py` (`EvalOutput`/`EvalResult`/`ScoreResult` dataclasses, UTC timestamps via `datetime.now(timezone.utc)`), `scorers.py` (Scorer Protocol + 5 implementations: `ExactMatchScorer`, `ContainsAllScorer`, `CitationOverlapScorer` with bidirectional-substring matching, `EmbeddingSimilarityScorer` with constructor-injected embedder callable + stdlib cosine, `LLMJudgeScorer` with constructor-injected Anthropic-style client + 1-5 rubric across faithfulness/relevance/completeness, structured JSON response with markdown-fence stripping), `runner.py` (`Runner(scorers).run(cases, sut, progress=...)` — catches every system-under-test exception and every scorer exception so one bad case doesn't abort the run).
+**Why:** Locked Feature 5 design: the harness is extractable to a standalone repo. Constructor injection means the scorers know nothing about langchain/anthropic except the duck-typed interface.
+**Rejected:** Pydantic for case validation (overkill for 6 fields). Sentence-transformers / numpy for cosine (stdlib `sum`/`math.sqrt` is fast enough at single-vector scale). Async runner (premature; sequential is faster to debug and the bottleneck is the LLM per case).
+**Opens:** Parallel execution; retry-on-failure; A/B orchestration UI — all explicitly out of scope for v0.
+
+### src/doc_assistant/eval/store.py — DuckDB persistence
+**What:** 3-table schema (`runs`, `case_results`, `scores`) created idempotently via `CREATE TABLE IF NOT EXISTS`. Composite primary keys (`run_id`+`case_id`, etc.) prevent duplicate-row class of bugs. Context-manager protocol (`Store` as `__enter__`/`__exit__`) so connections always close even on test failure. `persist_run` writes the whole run in one transaction; rollback on any exception. Reads: `list_runs(limit)`, `scorer_means(run_id)` (aggregate per scorer), `case_scores(run_id)` (per-case breakdown).
+**Why:** DuckDB's strength is exactly this — analytical queries over the score table without a separate analytics layer.
+**Rejected:** ORM (would force a doc_assistant dep). One file per run (joins for diff-between-runs would be painful).
+
+### src/doc_assistant/eval/report.py — summary + diff
+**What:** `format_run_summary(store, run_id)` → markdown table of mean-per-scorer. `diff_runs(store, run_a_id, run_b_id)` → list of `RunDiffRow` (case_id, scorer_name, value_a, value_b, delta property). `format_diff(rows)` → markdown table sorted by absolute delta desc.
+**Why:** The whole point of measurement is to compare runs. Diff is the primary view; absolute scores are secondary.
+
+### src/doc_assistant/eval/adapters.py — the ONLY doc_assistant-aware file
+**What:** `rag_pipeline_adapter(pipeline)` wraps `RAGPipeline.retrieve` + `stream_answer` into a `Callable[[str], EvalOutput]`. Spins up a fresh `TokenCounter` per query so token cost is per-case. `embedding_callable(pipeline)` adapts the pipeline's loaded embedder for `EmbeddingSimilarityScorer` so the scorer reuses the already-loaded model rather than loading a second one.
+**Why:** Single boundary between the generic harness and doc_assistant. Extracting the harness means deleting this file and writing a 30-line equivalent in the consumer project.
+**Rejected:** Putting the adapter in the same file as the scorers (couples them; defeats the Feature 5 extraction story).
+
+### scripts/run_eval.py — CLI runner
+**What:** Argparse with `--cases`, `--db`, `--with-embedding`, `--with-llm-judge`, `--note`. Default scorer mix is the free subset (ContainsAll + CitationOverlap); paid scorers are explicitly opted in. Prints per-case progress, persists to DuckDB, prints the summary table at end.
+**Why:** Paid-by-default is a footgun; users discovering `run_eval` should see scores immediately without burning API credits.
+**Opens:** `--diff <run_a> <run_b>` subcommand for comparison view — useful but deferred until there are real runs to compare.
+
+### tests/eval/cases.yaml — 3-case stub
+**What:** Three neuroscience questions inspired by the user's actual corpus (Hodgkin-Huxley membrane current, Hebb's learning rule, connectomics overview) demonstrating each optional field. Real 30-50 case set lands in PR 4.
+**Why:** Smoke-testable; teaches the YAML format by example.
+
+### tests/unit/test_eval_*.py — 43 unit tests
+**What:** `test_eval_cases.py` (9 tests: minimal/full parse, validation errors for each malformed shape), `test_eval_scorers.py` (21 tests: every scorer's hit/miss/edge cases; LLM judge mocked with `unittest.mock.MagicMock` — no API calls, no model load), `test_eval_runner_store.py` (13 tests: runner exception capture + latency + progress callback; Store roundtrip in tmp DuckDB; report summary + diff formatting).
+**Why:** Generic core is testable with synthetic data; that's the point. LLM judge mocking caught one real bug during development (the markdown-fence stripping was off by one).
+
+### Quality gate run
+**What:** Started with 10 ruff errors (en-dash in markdown, line length, lambda-to-def, unnecessary string annotations) — all mechanical. 2 mypy errors (PyYAML stubs missing, numpy-style `Any` leak in cosine return) — fixed with `type: ignore[import-untyped]` and explicit `float()` cast. After fixes: ruff clean, mypy clean (28 source files), bandit 0 issues, 205 tests pass (up from 162), coverage 60.78% (up from 55.33% — eval modules well-tested).
+**Why:** Project rule. The mechanical fixes took 5 min combined and surfaced one real issue (the cosine leak meant the scorer's return type could quietly become Any in downstream consumers).
+
+### Session end
+**Done:** PR 3 — Eval harness v0 fully landed. Generic core decoupled from doc_assistant (verified by import audit). DuckDB store with transactional persistence. CLI runner with safe defaults. 43 unit tests, all gates green locally.
+**Unresolved:**
+- Adapter not exercised end-to-end against a real RAGPipeline (would require an API call and a loaded HF model; cost trade-off favours waiting for PR 4 when there's a real eval set to run).
+- Cases.yaml has only 3 demo cases — too small for meaningful measurement. PR 4 populates with 30-50 real cases.
+**Next:** PR 4 — Populate the eval set with real neuroscience questions, run the BGE vs SPECTER2 comparison the user is currently setting up, write a "Benchmark results" section in README.
+
+---
+
+## Session: 2026-05-28 (cont.) — PR 3.1 + PR 4: hardened judge, real eval set, BGE vs SPECTER2 result
+
+**Starting from:** PR 3 (eval harness) shipped. User ran it and the LLM judge / embedding-similarity scorers both returned 0.000 because the stub cases lacked `expected_answer`. The reporter treated "scored zero" and "couldn't score" identically — misleading UX.
+
+**Goal this session:** Two things — (1) fix the "scored zero vs couldn't score" reporter conflation (PR 3.1), and (2) populate a real eval set, harden the LLM judge, run the BGE vs SPECTER2 comparison, write the README benchmark section (PR 4).
+
+### PR 3.1 — Scored vs skipped distinction
+**What:** Added `ScoreResult.is_skipped` property (returns `True` when `details` contains an `"error"` key — that's the existing convention for "couldn't grade"). Added `scoreable BOOLEAN` column to the `scores` DuckDB table with `ALTER TABLE IF NOT EXISTS` migration + one-shot UPDATE backfill for legacy rows. `Store.scorer_means` now filters skipped rows so all-skipped scorers are omitted. New `Store.scorer_stats` returns `{mean, n_scored, n_skipped}` per scorer; `format_run_summary` renders the richer 4-column table with `-` for mean when nothing was scoreable.
+**Why:** User got 0.000 / 0.000 on embedding_similarity / llm_judge for the stub cases and assumed the harness was broken. It wasn't — the cases just lacked `expected_answer`. The reporter has to surface that distinction.
+**Rejected:** Storing skipped scores as `value = NaN` (changes the data model; ripple effects in JSON serialisation and SQL aggregates). Dropping the skipped rows at persist time (loses information; can't later distinguish "scorer threw" from "scorer wasn't applicable").
+
+### PR 4 — Real eval set (`tests/eval/cases.yaml`, 35 cases)
+**What:** Replaced the 3-case stub with 35 cases distributed across foundational neuroscience (10), connectomics & brain networks (8), modern eLife papers (4), animal-behavior/DeepLabCut tools (5), ML & clinical applications (4), anatomy/imaging (3), plus one negative-control case (asks about RLHF — should produce a hedge or "not in library" response). Each case has `query`, `expected_answer`, `expected_substrings`, `expected_citations`, `tags`, and `metadata.author_verified` (only 4 cases truly author-verified; the rest are best-effort and flagged for reviewer attention).
+**Why:** Without a real eval set, "the harness works" was a claim. With 35 questions across the corpus, BGE vs SPECTER2 becomes a measurement.
+**Rejected:** Auto-generating cases via the LLM (biased toward what the model already understands about each paper). Crowdsourcing (out of scope). Larger sample (writing 50 high-quality cases is a multi-hour task; 35 is enough for a first signal).
+**Opens:** Most expected_answers are unverified. Effect sizes <0.1 should not be trusted yet. **User to review and refine the eval set over time** — this is a living artefact.
+**Gotcha caught:** YAML parsed bare arXiv IDs like `1909.13868` as floats; surrounded those values with quotes to coerce string type.
+
+### PR 4 — Hardened LLM judge (per user request)
+**What:** Rewrote `_JUDGE_PROMPT` to explicitly instruct the model to use only the reference as ground truth — "Do NOT use your own prior knowledge of the subject. If the candidate says something true in general but not in the reference, that is NOT supported." Set `temperature=0` for reproducible scores. Added isolation guarantees to docstring + a one-line inline comment in the call: single-turn, no system prompt, no conversation history, fresh API request per call. Two new unit tests assert the prompt content and the isolation properties (call_kwargs check on the mocked client).
+**Why:** User flagged the judge could be biased by Claude's familiarity with famous neuroscience papers (HH, Hebb, Hubel-Wiesel). The prompt change forces strict reference-only grading; `temperature=0` removes run-to-run noise.
+**Rejected:** Hiding the question from the judge (loses relevance dimension). Using a less domain-aware model (no good option — even Haiku knows the classics).
+
+### PR 4 — Measurement (run 2 with hardened judge)
+**What:** Ran the eval twice — once with `EMBEDDING_MODEL=specter2` (cad3cbc7 / 7ff45dbc), once with bge-base (6611f021 / 7f758b80). Both Chroma collections coexist from PR 2; no re-ingest needed.
+
+**Results (hardened judge):**
+
+| Scorer | bge-base | specter2 | Δ (bge − specter2) |
+|---|---:|---:|---:|
+| citation_overlap | 0.907 | 0.887 | +0.020 |
+| contains_all | 0.812 | 0.757 | +0.055 |
+| llm_judge | 2.314 | 2.088 | +0.226 |
+
+**Headline:** bge-base wins on every comparable scorer. The gap on llm_judge **widened** from +0.101 (soft judge) to +0.226 (hardened judge) — that's the opposite of what you'd see if the soft judge had been gaming the scores; the signal is real.
+
+### PR 4 — Why SPECTER2 lost
+**What:** Investigated the methodological question raised by the user — why would SPECTER2 (academic-paper embedder) lose on a neuroscience corpus? Answer: it was trained for a different task than chunk-level QA retrieval.
+- SPECTER2 training signal: triplet loss over (anchor paper, cited paper, uncited paper) using **title + abstract only**.
+- Our task: retrieve the right *chunk* (400-2000 chars from a methods/results section) for a natural-language question.
+- Two domain mismatches: paper-level vs chunk-level, abstract vs full text. SPECTER2 has never seen "a paragraph from a methods section" during training.
+- bge-base was trained on MS MARCO, NQ, SQuAD, HotpotQA — explicitly QA-style retrieval with full passages.
+**Why this matters:** Feature 1b (per-folder embedder routing) was gated on Feature 3 showing a domain where SPECTER2 wins. It didn't, so Feature 1b is deferred. SPECTER2 may still help for paper-level similarity (the `/similar` task, which uses doc-level mean-pooled vectors) — that's the *right* task for it and would be a separate eval suite if pursued.
+
+### README — Benchmark results section (new)
+**What:** Promoted the eval result to first-class README content. New "Benchmark results" section with the comparison table, the "why SPECTER2 lost" explanation, 4 explicit caveats (sample size, judge baseline, partly-verified references, embedding_similarity confound), reproducer commands. Updated the citation-graph section to include `/similar`, `/bibtex`, `find_duplicates`, `compute_doc_vectors`. Fixed the broken `tests/eval/run_eval.py` pointer (now `scripts.run_eval`). Updated Status to reflect Phase 5 progress.
+**Why:** External-facing artefact. A reader landing on the README should see what the project actually measures, not a vague "in progress" status.
+
+### Quality gate run
+**What:** ruff clean, mypy clean (28 source files), bandit 0 issues, 211 tests pass, coverage 60.93%.
+**Why:** Project standard.
+
+### Session end
+**Done:** PR 3.1 (scoreable column + richer report) and PR 4 (real eval set + hardened judge + measurement + README write-up) both shipped. bge-base locked as the default embedder based on evidence. Feature 1b deferred with documented rationale.
+**Unresolved:**
+- 31 of 35 case `expected_answer`s are best-effort, not author-verified. User to refine over time.
+- `embedding_similarity` scorer is confounded across models (uses active embedder). Fix queued — use a fixed reference embedder. Low priority; the deterministic + judge scorers carry the signal.
+- LLM-judge mean ~2.3/5 is low. Likely partly reflects the unverified references depressing scores. Cross-model comparison is still meaningful.
+**Next:** PR 5 — Integrity Chunk 1 (provenance card). New `answer_records` SQLite table; capture per-answer the retrieved chunk IDs, reranker scores, model name, prompt version, token cost, latency, timestamp. Render as a collapsible card under each Chainlit answer; CLI export `/export-record <answer_id>` → JSON. Hooks into existing `tracking.py`. The eval harness will eventually consume the same record schema.

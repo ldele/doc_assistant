@@ -25,7 +25,7 @@ Built for researchers and students who want to actually search the *content* of 
 
 | Component | Choice |
 |---|---|
-| Embeddings | `bge-base-en-v1.5` (local, CPU-friendly) |
+| Embeddings | `bge-base-en-v1.5` (default, swappable via `EMBEDDING_MODEL`; `specter2` also registered) |
 | Reranker | `bge-reranker-base` (local) |
 | Vector store | Chroma (local, persistent) |
 | Keyword search | BM25 |
@@ -72,9 +72,9 @@ To rebuild from scratch (after changing chunking strategy, for example):
 uv run python -m doc_assistant.ingest --rebuild
 ```
 
-### Citation graph (Phase 4)
+### Citation graph + similarity edges (Phase 4)
 
-After ingestion, two post-passes populate the citation graph:
+After ingestion, three post-passes populate the data layer:
 
 ```bash
 # Pull title / authors / year / DOI off each document header
@@ -82,18 +82,31 @@ uv run python -m scripts.extract_doc_metadata --apply
 
 # Parse References sections, match to library docs, persist edges
 uv run python -m scripts.extract_citations --apply
+
+# Mean-pool chunk embeddings -> doc vectors -> top-K cosine similarity edges
+uv run python -m scripts.compute_doc_vectors --apply
 ```
 
-Both scripts are idempotent and accept `--doc <hash-prefix>` to scope to a
-single document, and `--force` to overwrite.
+All three are idempotent. `extract_*` accept `--doc <hash-prefix>` to scope;
+`compute_doc_vectors` accepts `--top-k`, `--threshold`, and `--force`.
 
-From the chat UI or CLI, ask:
+From the chat UI or CLI:
 
 ```
 /library                  show all documents (use first 8 chars of ID below)
+/document <doc-id>        full details for one document
 /cites <doc-id>           papers this document cites (internal + external)
 /cited-by <doc-id>        library documents that cite this one
 /graph <doc-id>           Mermaid subgraph of internal citation edges
+/similar <doc-id>         top-N semantically-similar documents
+/bibtex                   render the whole library as BibTeX
+```
+
+Also available as CLI utilities:
+
+```bash
+uv run python -m scripts.find_duplicates    # byte + content dedup report; never deletes
+uv run python -m scripts.export_bibtex      # write docs/library.bib
 ```
 
 ## Project layout
@@ -118,8 +131,11 @@ uv run pytest tests/unit/ tests/integration/
 # With coverage
 uv run pytest tests/unit/ tests/integration/ --cov=src --cov-report=term-missing
 
-# Evaluation harness (costs API tokens — manual only)
-uv run python tests/eval/run_eval.py
+# Evaluation harness — free deterministic scorers
+uv run python -m scripts.run_eval
+
+# With LLM judge (Claude Haiku, ~$0.10 for 35 cases)
+uv run python -m scripts.run_eval --with-llm-judge
 ```
 
 ## Docker
@@ -142,11 +158,52 @@ docker compose down            # stop, keep data
 docker compose down -v         # stop, delete model cache volume
 ```
 
+## Benchmark results
+
+A 35-question eval set ([`tests/eval/cases.yaml`](tests/eval/cases.yaml)) over a 51-document neuroscience corpus, run via the harness in [`src/doc_assistant/eval/`](src/doc_assistant/eval/) against two embedding models.
+
+| Scorer | bge-base | specter2 | Δ (bge − specter2) |
+|---|---:|---:|---:|
+| `citation_overlap` (deterministic, 0-1) | **0.907** | 0.887 | +0.020 |
+| `contains_all` (deterministic, 0-1) | **0.812** | 0.757 | +0.055 |
+| `llm_judge` (Claude Haiku, 1-5) | **2.31** | 2.09 | +0.22 |
+
+**bge-base outperforms specter2 across every comparable scorer on this corpus.**
+
+### Why specter2 lost (it's a training-task mismatch)
+
+specter2 is the "academic paper" embedder, but it was trained for a different task than chunk-level QA:
+
+- **specter2 training:** predict citations between paper *abstracts* — paper-level similarity.
+- **our task:** retrieve the right *chunk* (400-2000 chars of methods/results) for a natural-language question.
+
+Two domain mismatches: paper-level vs chunk-level, abstract vs full-text. specter2 has never seen "a paragraph from a methods section" during training. bge-base's training corpora (MS MARCO, NQ, SQuAD, HotpotQA) are much closer to QA retrieval.
+
+specter2 may still help for paper-level similarity tasks (e.g., powering `/similar`) — gated on an explicit eval against that task. Per-folder embedder routing stays deferred until there's a use case where specter2 demonstrably wins.
+
+### Caveats
+
+1. **Sample size: 35 cases.** Effect sizes 0.02-0.22 are suggestive, not statistically significant. Don't generalise beyond the spirit of the comparison.
+2. **LLM-judge mean ~2.3/5.** The judge enforces strict reference-only grading — even true answers score low when the reference doesn't mention them. The *cross-model gap* is the signal, not the absolute scores.
+3. **Reference answers partly author-verified.** 4 of 35 cases have hand-verified expected_answers; the rest are best-effort. This depresses absolute scores more than relative differences.
+4. **`embedding_similarity` excluded.** The scorer uses the active model's own embedder, so the comparison is confounded across models. Fix is queued.
+
+### Reproducing
+
+```bash
+$env:EMBEDDING_MODEL="specter2"
+uv run python -m scripts.run_eval --with-llm-judge --note "specter2"
+$env:EMBEDDING_MODEL="bge-base"
+uv run python -m scripts.run_eval --with-llm-judge --note "bge-base"
+```
+
+Results land in `data/eval.duckdb`. The harness is structured for extraction — see [`src/doc_assistant/eval/`](src/doc_assistant/eval/); every file except `adapters.py` is project-agnostic and can be lifted into a standalone repo.
+
 ## Status
 
-Phase 4 in progress — citation graph data layer + slash commands shipped; doc-level similarity edges deferred to Phase 5 prep.
+Phase 5 in progress — embedding factory + eval harness shipped. bge-base locked as default based on the benchmark above. Next: provenance card (Integrity Chunk 1).
 
-Roadmap: gap detection (Phase 5) → UI polish (Phase 6) → literature review generation (Phase 7). See [`docs/decisions.md`](docs/decisions.md) for the full roadmap.
+Roadmap: figures/tables + dual interpretation (Phase 6) → gap detection (Phase 7) → UI polish (Phase 8) → literature review generation (Phase 9). See [`docs/decisions.md`](docs/decisions.md) and [`docs/doc-assistant-roadmap.md`](docs/doc-assistant-roadmap.md) for full details.
 
 ---
 

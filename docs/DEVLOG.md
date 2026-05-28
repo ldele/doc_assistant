@@ -357,3 +357,50 @@ Format: What changed | Why | Rejected alternatives | What it opens
 - 24-ish files in `data/sources/` not yet in the DB — `uv run python -m doc_assistant.ingest` will pick them up incrementally.
 - BibTeX output exposes 2 pre-existing metadata-extractor quirks (author-surname picker on space-separated names; NIH PMC boilerplate title misextraction). Not blocking for PR 1.5; could become a small follow-up.
 **Next:** Phase 5 — PR 2 (config-driven embedding layer).
+
+---
+
+## Session: 2026-05-28 (cont.) — PR 2: Config-driven embedding layer (Phase 5 / Feature 1)
+
+**Starting from:** PR 1 + PR 1.5 shipped, tested, reviewed. User cleaned up duplicates and re-ingested to 51 docs. Approved start of Phase 5.
+
+**Goal this session:** Make the embedding model swappable via env config so Feature 3's BGE-vs-SPECTER2 comparison can happen later without touching the runtime code. Single-PR scope; per-folder routing (Feature 1b) gated on measurement.
+
+### src/doc_assistant/embeddings.py (new) — registry + factory
+**What:** `EmbeddingModelConfig` dataclass (name, hf_id, dimension, normalize, description). `MODELS` registry seeded with `bge-base` (BAAI/bge-base-en-v1.5) and `specter2` (allenai/specter2_base). Public functions: `get_active_model_name()` reads `EMBEDDING_MODEL` env var; `get_model_config(name=None)` validates + returns; `get_embeddings(name=None)` constructs `HuggingFaceEmbeddings` lazily; `get_collection_name(name=None)` returns the Chroma collection name.
+**Why:** Phase 5 / Feature 1 locked in `decisions.md`. The factory pattern keeps swappability surgical — one import, no caller has to know which model is active.
+**Rejected:** Hardcoding the model id in three call sites (creates drift). Holding a singleton `Embeddings` instance in this module (HF model is expensive to construct, but callers manage lifecycle — `ingest.py` and `pipeline.py` create one per process and reuse).
+
+### Collection naming — legacy alias for `bge-base`
+**What:** `get_collection_name("bge-base")` returns the literal `"langchain"` (the langchain_chroma default that the existing 51-doc corpus was indexed under). All other models use their registry key as the collection name (`specter2` → `"specter2"`).
+**Why:** A renaming migration on the existing Chroma store would have meant ~5 min of re-ingest and a migration script with its own bug surface. A two-line shim achieves the same outcome with zero data movement. Documented as a deliberate carry-over in the module docstring.
+**Rejected:** One-shot rename migration (more code than the problem warranted at single-corpus scale). Forcing `--rebuild` on upgrade (disruptive; nothing about Feature 1 logically requires re-embedding).
+
+### src/doc_assistant/config.py — `EMBEDDING_MODEL` constant
+**What:** Reads `EMBEDDING_MODEL` env var at import time. Exists for ergonomic access in log lines / UI surfaces; the authoritative source for the active model is `embeddings.get_active_model_name()` (re-reads the env, so monkey-patched tests work).
+**Why:** Keeps the config module's role unchanged — single place to see what env vars the project consumes.
+
+### src/doc_assistant/ingest.py, pipeline.py, doc_vectors.py — wire through factory
+**What:** Three call sites that previously hardcoded `HuggingFaceEmbeddings(model_name="BAAI/bge-base-en-v1.5")` and the implicit `"langchain"` collection name now route through `get_embeddings()` + `get_collection_name()`. `ingest.py` and `pipeline.py` pass `collection_name=collection` to the `Chroma(...)` constructor. `doc_vectors.py`'s `load_chunk_embeddings_by_document` reads from `get_collection_name()` instead of the literal string. `EMBEDDING_MODEL_NAME` (used as the persisted tag on `DocSimilarity` rows) becomes `get_active_model_name()` so the tag tracks the active model.
+**Why:** Single source of truth. Future model additions need to touch only `embeddings.py`.
+**Opens:** Existing `DocSimilarity` rows were written by PR 1 with `embedding_model = "bge-base-en-v1.5"` (the HF id), while new rows will be tagged `"bge-base"` (the registry key). `similar_docs(embedding_model=None)` defaults to no filter, so both tag values surface — minor double-counting if both exist. Fix: re-run `compute_doc_vectors --apply --force` once, which wipes and re-inserts with the new tag.
+
+### .env.example — `EMBEDDING_MODEL` documented
+**What:** New "Embedding model (Phase 5, Feature 1)" section. Lists both options with one-line descriptions and the explicit warning that switching points retrieval at an empty collection until re-ingest.
+**Why:** Engineering standard — every env var the project reads must be in `.env.example`.
+
+### tests/unit/test_embeddings.py (new) — 15 unit tests
+**What:** Registry shape (default exists, entries self-consistent, includes both bge-base and specter2). Active model resolution (default when env unset, reads env, passes invalid through to lookup). `get_model_config` (explicit name, defaults to active, raises on unknown with valid options listed in the error). Collection naming (legacy alias for bge-base, registry key for others, defaults to active, raises on unknown).
+**Why:** The factory is small enough to unit-test exhaustively. Loader is intentionally NOT exercised — calling `get_embeddings()` triggers a HuggingFace model download, which belongs in integration not unit.
+**Rejected:** Integration test that loads both BGE and SPECTER2 and embeds a sentence (1-2 GB of downloads on a clean cache; pays off once Feature 3 lands, not before).
+
+### Quality gate run
+**What:** ruff (one line-length fix in the test), mypy strict (clean), pytest 162 passed / coverage 55.33% (up from 54.83% in PR 1.5), bandit 0 issues.
+**Why:** Project rule. Mechanical checks before any docs work.
+
+### Session end
+**Done:** PR 2 shipped. Embedding model is now config-driven. Pipeline, ingest, and doc-vector enrichment all route through the factory. Backward-compat shim preserves the existing 51-doc corpus.
+**Unresolved:**
+- DocSimilarity tag mismatch (PR 1 rows tagged `"bge-base-en-v1.5"`, PR 2 rows tagged `"bge-base"`). Fix is `compute_doc_vectors --apply --force` once when convenient.
+- SPECTER2 loader has not been exercised end-to-end (no integration test, no real embed run). Will get its first real workout when Feature 3's eval comparison runs.
+**Next:** PR 3 — Eval harness v0 (`src/doc_assistant/eval/`). Generic runner / scorers / DuckDB store / report; doc_assistant-specific adapter. Everything except the adapter imports nothing from `doc_assistant.*` so it can be extracted later (Feature 5).

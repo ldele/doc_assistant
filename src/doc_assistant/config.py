@@ -58,6 +58,15 @@ if HF_TOKEN:
 
 
 # ============================================================
+# Embedding model (Phase 5, Feature 1)
+# ============================================================
+# Active model is resolved by `doc_assistant.embeddings.get_active_model_name()`.
+# This constant is the env-var read at import time, kept for ergonomic access
+# in places where the model name is part of a log line or a UI surface.
+EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "bge-base")
+
+
+# ============================================================
 # Experimental flags (Default set to best results)
 # ============================================================
 

@@ -7,7 +7,6 @@ from langchain_chroma import Chroma
 from langchain_classic.retrievers import EnsembleRetriever
 from langchain_community.retrievers import BM25Retriever
 from langchain_core.documents import Document
-from langchain_huggingface import HuggingFaceEmbeddings
 from sentence_transformers import CrossEncoder
 
 from doc_assistant.config import (
@@ -20,18 +19,29 @@ from doc_assistant.config import (
     USE_MULTI_QUERY,
     USE_PARENT_CHILD,
 )
+from doc_assistant.embeddings import (
+    get_active_model_name,
+    get_collection_name,
+    get_embeddings,
+)
 from doc_assistant.prompts import ANSWER_PROMPT, MULTI_QUERY_PROMPT, REWRITE_PROMPT
 
 
 class RAGPipeline:
     def __init__(self) -> None:
-        print("Loading embeddings...")
-        self.embeddings = HuggingFaceEmbeddings(model_name="BAAI/bge-base-en-v1.5")
+        active_model = get_active_model_name()
+        collection = get_collection_name(active_model)
+        print(f"Loading embeddings ({active_model})...")
+        self.embeddings = get_embeddings(active_model)
 
         print("Loading vector store...")
         chroma_path = PC_CHROMA_PATH if USE_PARENT_CHILD else CHROMA_PATH
-        print(f"Using vector store: {chroma_path}")
-        self.db = Chroma(persist_directory=chroma_path, embedding_function=self.embeddings)
+        print(f"Using vector store: {chroma_path} (collection: {collection})")
+        self.db = Chroma(
+            persist_directory=chroma_path,
+            embedding_function=self.embeddings,
+            collection_name=collection,
+        )
 
         print("Building keyword index...")
         data = self.db.get(include=["documents", "metadatas"])

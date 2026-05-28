@@ -227,8 +227,8 @@ documents. Beyond that, rendering hundreds of cards in a single message
 becomes unwieldy and slow.
 
 Future migration path when needed:
-1. Add pagination (Phase 6): `/library page:2` for 20-doc pages
-2. Or migrate to a real sidebar/separate UI (Phase 6+) if Chainlit gets 
+1. Add pagination (Phase 8): `/library page:2` for 20-doc pages
+2. Or migrate to a real sidebar/separate UI (Phase 8+) if Chainlit gets 
    better layout support, or migrate the whole app to Streamlit/Reflex 
    with proper navigation
 3. The data layer in `library.py` is independent of the UI — switching 
@@ -237,10 +237,104 @@ Future migration path when needed:
 The library.py abstraction is specifically designed so that any UI 
 change is a UI change, not a data layer rewrite.
 
+### Enrichment-Layer Pattern (post-ingest, idempotent, sidecar by default)
+
+Established by Phase 4 (`citations.py`, `metadata_extractor.py`) and adopted
+as the standing pattern for all further data enrichment.
+
+Primary ingest (Phase 1–3) is locked: extract → markdown → chunk → embed →
+store. Any new derived data — citations, figures, tables, doc-level
+vectors, future enrichments — ships as a **separate module + CLI runner**
+that reads from the markdown cache (and the PDF source where needed) and
+writes to its own sidecar table or manifest.
+
+Rules:
+
+- One module per enrichment kind (`citations.py`, `metadata_extractor.py`, 
+  `figures.py`, `tables.py`, `doc_vectors.py`, ...).
+- One CLI runner per module under `scripts/extract_*.py` with 
+  `--dry-run` / `--apply` / `--force` / `--doc <hash>` flags.
+- Idempotent: re-running on the same input produces the same output. Skip 
+  docs that already have results unless `--force`.
+- Sidecar by default. Splicing back into the markdown is only allowed when 
+  the enrichment is *text-shaped* (e.g., tables). Binary artifacts (figures, 
+  embeddings) live outside the markdown.
+- No mutation of the primary chunk store from an enrichment module.
+
+Trade-offs:
+
+- Re-runnability is the goal. As extractors improve, every enrichment can 
+  be re-run without touching primary ingest.
+- Cost: small duplication of scaffolding (one CLI per module). Accepted.
+- Risk: enrichment results can drift from the underlying markdown if the 
+  cache is regenerated. Mitigated by content-only hashing — re-extraction 
+  produces the same hash if the content is unchanged.
+
+### Research Integrity Layer
+
+A cross-cutting layer that records how each answer was produced and 
+separates *evidence* from *AI interpretation* in synthesis-mode answers. 
+Ships in three chunks across Phases 5, 6, and 9.
+
+**Sources (influences, not specs):**
+
+- AI Usage Cards (arXiv 2303.03886) — provenance card schema.
+- PRISMA-trAIce (PMC12694947) — Phase 9 export target for AI-assisted 
+  literature reviews.
+- BE WISE framework (Frontiers, April 2026) — influence on the `human` 
+  synthesis mode. Treated as a vendor framework, not adopted as a spec.
+- Nature Methods — disclosure norm; satisfied as a byproduct of trAIce 
+  export.
+
+**Chunk 1 — Provenance card (Phase 5).** New `answer_records` table stores
+query, retrieved chunk IDs + scores, reranker scores, model name, prompt 
+version, token cost, latency, timestamp. Rendered as a collapsible card 
+under each answer. CLI export `/export-record <answer_id>` → JSON. The 
+eval harness consumes the same record schema.
+
+**Chunk 2a — Dual interpretation layer (Phase 6).** Synthesis-mode answers
+return two layers: *evidence* (retrieved passages, faithfulness-scored, no
+synthesis) and *interpretation* (LLM synthesis, clearly labeled, with 
+retrieval-derived uncertainty markers). Per-claim accept/reject/edit, 
+persisted on the answer record. Pre-interpretation checkpoint (coverage + 
+citation density + faithfulness) warns the user before generating.
+
+**Chunk 2b — Reviewer agent (Phase 6).** Separate, cheaper LLM call after 
+the generator. Returns structured JSON via Anthropic tool-use against a 
+fixed rubric (faithfulness, citation density, hedging adequacy, claims 
+without sources). Populates the uncertainty markers. No auto-retry in v1. 
+The rubric is identical in shape to a deterministic eval scorer, so the 
+same code can be re-targeted at the eval harness.
+
+**Chunk 3 — PRISMA-trAIce export (Phase 9).** When the literature review 
+generator produces a review, it also produces a structured trAIce-aligned 
+disclosure (JSON + markdown). Pulls from `answer_records` and the 
+adjudication log; no new instrumentation needed.
+
+**Mode flag.** `SYNTHESIS_MODE = human | ai` (default `ai`).
+
+- `human` — AI returns evidence only; interpretation is the user's. 
+  BE WISE-influenced path.
+- `ai` — dual-layer with reviewer scoring.
+
+Both modes share the same pipeline; the flag selects the output template.
+
+**Why retrieval-derived uncertainty markers, not self-reported confidence.**
+LLMs are systematically overconfident and the mapping between 
+self-reported scores and actual correctness is non-linear and 
+model-dependent. Building a calibration model (Platt scaling or similar) 
+requires a labeled dataset and ongoing maintenance — out of scope for a 
+single-user tool. Retrieval-derived markers (citation density, source 
+diversity, reranker score spread) are observable, not self-reported, and 
+map to instrumentation that already exists.
+
 ---
 
 ## Roadmap
 
+Phases renumbered to absorb the doc-assistant-roadmap.md additions. See 
+that document for the source of intent; this section records the locked 
+phase plan.
 
 ---
 
@@ -381,28 +475,90 @@ A non-technical user wouldn't have noticed until eval results were inexplicable.
 - ✅ Library metadata routing extracted to `query_router.py`
 - ✅ `chainlit_app.py` refactored to thin shell; business logic in `query_router.py` + `commands.py`
 
-### 🔄 Phase 4: Citation Graph (in progress)
+### 🔄 Phase 4: Citation Graph (close out)
 
 Goal: model relationships between documents. Both explicit (citations) and 
 implicit (semantic similarity). Surface the structure of the literature.
 
-- Citation extraction — **decision (2026-05-26):** two-tier extractor in a
-  separate post-ingest pipeline. Tier 1: regex over the extracted markdown's
-  References section. Tier 2: LLM fallback for docs where tier 1 yields <5
-  refs. GROBID and refextract evaluated and deferred — measure tier-1+2 recall
-  on the 27-doc corpus first, escalate to GROBID only if data warrants the
-  operational cost (Docker + Java service).
-- Internal citation matching: when paper A cites paper B *and B is in the 
-  library*, create an explicit edge. Matching strategy: exact DOI → normalized
-  (first-author-last + year) → fuzzy title.
-- External citation tracking: when A cites B but B isn't in the library, that's 
-  a known unknown — surface as a recommendation candidate
-- Semantic similarity edges between documents (embedded with a doc-level vector)
-- Interactive graph visualization (Obsidian-style): nodes are papers, edges 
-  are citations or strong similarity
-- Cluster detection — automatic topical groupings
+**Done (2026-05-26 session):**
+- Tier-1 regex citation extractor (`src/doc_assistant/citations.py`). 
+  Two-tier design with LLM fallback was the locked decision; tier-1 
+  measured at 22/27 docs (81%) on the existing corpus, 1,234 citations 
+  parsed. Tier-2 LLM fallback deferred — measure first, escalate when 
+  data warrants.
+- Doc-level metadata extractor (`src/doc_assistant/metadata_extractor.py`) 
+  for title / authors / year / DOI. Coverage on the 27-doc corpus: 27/27 
+  title, 26/27 authors, 23/27 year, 7/27 DOI.
+- Internal citation matcher (DOI → first-author-surname + year → fuzzy 
+  title via stdlib `SequenceMatcher`). Cross-citation rate is 
+  structurally low on the current corpus (mostly recent papers citing 
+  classics not in the library).
+- CLI runners: `scripts/extract_citations.py`, `scripts/extract_doc_metadata.py`. 
+  Both idempotent (skip already-processed docs unless `--force`).
+- Slash commands: `/cites`, `/cited-by`, `/graph` (Mermaid for ≤25-node 
+  subgraphs).
+- 45 unit tests across citations + metadata.
+- GROBID and refextract evaluated and deferred — Docker + Java service 
+  cost not justified by the recall data so far.
 
-### Phase 5: Gap Detection and Cartography
+**Remaining to close the phase:**
+- Apply metadata backfill and citation extraction on the local DB (CLI 
+  runners exist; sandbox cannot write — must be run from a real shell).
+- Mean-pool doc-level vectors → similarity edges. The only Phase 4 
+  deliverable still flagged "deferred to next session" in DEVLOG.
+- LNCS colon-separator format and multi-column extraction artifacts are 
+  known tier-1 weaknesses; cosmetic, deferred.
+
+Effort to close: 1 evening + a 15-minute CLI run.
+
+### Phase 5: Embedding & Eval Foundation
+
+Goal: domain-aware retrieval backed by reproducible measurement, plus 
+the first deliverable of the Research Integrity Layer.
+
+See `docs/doc-assistant-roadmap.md` for the source of intent.
+
+- **Feature 1** — Config-driven embedding layer. `EMBEDDING_MODEL` env var. 
+  Initial options: `bge-base` (current default), `specter2` (academic). 
+  Embedding factory; one Chroma collection per model.
+- **Feature 2** — Eval harness v0 inside `src/doc_assistant/eval/`. 
+  Generic runner / scorers / DuckDB store / report; doc_assistant-specific 
+  adapter. Everything except the adapter imports nothing from 
+  `doc_assistant.*` so it can be extracted later (Feature 5).
+- **Feature 3** — Golden eval set (`tests/eval/cases.yaml`, 30–50 questions) 
+  + measured BGE vs SPECTER2 comparison. Results in README.
+- **Integrity Chunk 1** — Provenance card. `answer_records` table; 
+  collapsible card under each answer; `/export-record <id>` → JSON. 
+  Hooks into existing `tracking.py`.
+
+### Phase 6: Per-project routing + Figures & Tables + Dual-layer interpretation
+
+Goal: turn the static embedding config into per-corpus routing; promote 
+figures and tables to first-class content; ship the dual-layer 
+interpretation + reviewer agent.
+
+- **Feature 1b** — Per-project embedder routing. **Gated on Feature 3 
+  results.** `Folder.embedding_model` column. Collection naming 
+  `{folder_id}__{model_name}`. Cross-folder queries hit each collection 
+  independently and the cross-encoder reranker resolves the mixed-space 
+  merge.
+- **Feature 4a** — pdfplumber table extraction pass. Spliced inline into 
+  the markdown cache with `<!-- table-extracted-by: pdfplumber -->` 
+  marker.
+- **Feature 4b** — Figure region detection + caption pairing (OpenCV, 
+  no LLM cost). Sidecar `figures` table; images on disk under 
+  `data/figures/{doc_hash}/`. Caption text stays in the markdown.
+- **Feature 4c** — VLM figure description (gated). Anthropic tool-use 
+  with Pydantic-validated schema. `caption + VLM description` embedded as 
+  a chunk with `chunk_type='figure'`. `MAX_VLM_CALLS_PER_DOC` budget.
+- **Integrity Chunk 2a** — Dual interpretation layer. `SYNTHESIS_MODE 
+  = human | ai` (default `ai`). Evidence + interpretation as separate 
+  output sections. Per-claim adjudication.
+- **Integrity Chunk 2b** — Reviewer agent. Cheaper LLM scores the 
+  interpretation against a structured rubric (faithfulness, citation 
+  density, hedging adequacy, claims-without-sources). No auto-retry.
+
+### Phase 7: Gap Detection and Cartography
 
 Goal: quantitative view of what the library knows vs what the field knows.
 This is the distinguishing capability — most existing tools stop short of this.
@@ -419,28 +575,31 @@ This is the distinguishing capability — most existing tools stop short of this
 - Knowledge map dashboard: bubble plot or similar, clusters sized by coverage, 
   recency color-coded, gaps visible at a glance
 
-### Phase 6: UI Polish
+### Phase 8: UI Polish
 
 Goal: design pass on everything built so far.
 
 - Visual design refinement
 - Animations and micro-interactions
 - Better empty states, loading states, error states
-- Demo recording for portfolio / sharing
+- Demo recording
 - Onboarding flow for new users
+- Polish on the adjudication UI from Chunk 2a if it shipped rough.
 
-Note: content-only hashing completed in Phase 3 (was moved from Phase 6 to Phase 3 completion gate).
+Note: content-only hashing completed in Phase 3 (was moved from Phase 8 to Phase 3 completion gate).
 
-### Phase 7: Literature Review Generation
+### Phase 9: Literature Review Generation
 
 Goal: synthesize a structured review across documents in the library on a 
 chosen topic. The endgame feature.
 
-Requires everything from Phases 2-5 to work well:
+Requires everything from Phases 2–7 to work well:
 - Reliable multi-document retrieval (Phase 2)
 - Document and section structure as data (Phase 3)
 - Citation graph for grounding (Phase 4)
-- Coverage awareness so the system knows what it's missing (Phase 5)
+- Domain-aware retrieval + eval-backed quality (Phase 5)
+- Structured figures + dual-layer interpretation (Phase 6)
+- Coverage awareness so the system knows what it's missing (Phase 7)
 
 Capabilities:
 - Per-paper synthesis: what does each paper contribute on the topic?
@@ -450,6 +609,9 @@ Capabilities:
   open questions, references
 - Configurable scope: by folder, by topic, by date range, by document set
 - Export: markdown, PDF, or BibTeX-aware Word document
+- **Integrity Chunk 3** — PRISMA-trAIce export. Structured methodology 
+  disclosure alongside the generated review, pulled from `answer_records` 
+  and the adjudication log.
 
 ---
 
@@ -480,7 +642,12 @@ Decisions I haven't made yet:
 - **Multi-user support.** Currently single-user. Multi-user suppport in the future ?
     Redesign of db architecture needed. 
 
-- **Citation extraction quality vs. external API quality.** TBD
+- **Citation extraction quality vs. external API quality.** TBD — revisit 
+  during Phase 7 (Gap Detection) when Semantic Scholar / OpenAlex / arXiv 
+  integrations land and can provide a ground-truth comparison.
+
+- **Tier-2 LLM citation fallback.** Deferred until corpus grows or 
+  no-section docs become problematic.
 
 ---
 
@@ -520,19 +687,11 @@ LLM-based "did this extract correctly?" check, format-specific cleaners.
 
 Cost: might not be worth the cost but worth trying. LLM-based could be costly.
 
-### pdfplumber for table extraction
+### ~~pdfplumber for table extraction~~ — promoted to Phase 6 (Feature 4a)
 
-Current PDF extractors (PyMuPDF4LLM, Marker) lose table structure regularly.
-`pdfplumber` is best-in-class for extracting tabular data from PDFs — it
-reconstructs rows/columns from the PDF's line objects rather than guessing
-from text positions.
-
-Integration path: use pdfplumber as a supplementary pass after primary
-extraction. Detect table regions, extract with pdfplumber, splice the
-structured markdown table back into the extraction output. Not a replacement
-for PyMuPDF4LLM — a targeted fix for the table problem only.
-
-Cost: low. Value: high for any library with data-heavy papers.
+Was deferred; now scheduled as Feature 4a under the Phase 6 enrichment layer.
+See `docs/doc-assistant-roadmap.md` and the Phase 6 entry above for the
+implementation plan.
 
 ### Domain-aware tokenization / keyword embedding
 

@@ -212,3 +212,49 @@ Format: What changed | Why | Rejected alternatives | What it opens
 - Mean-pool doc-level similarity edges (task 9 deferred to next session).
 - LNCS colon-separator format and multi-column extraction artifacts are known tier-1 weaknesses.
 **Next:** Similarity edges → Phase 5 (Gap Detection / Cartography).
+
+---
+
+## Session: 2026-05-28 — Roadmap restructure (Phases 5–9)
+
+**Starting from:** Phase 4 ~90% done. A new roadmap addition (`docs/doc-assistant-roadmap.md`) had been drafted in a separate session with portfolio/Risklick framing that needed to be stripped, plus a research-integrity layer the user wanted folded in. Decision-time only — no code changes this session.
+
+**Goal this session:** Renumber phases to absorb the new work; integrate Research Integrity Layer; clean vendor/portfolio framing; produce a PR-by-PR execution order for Claude Code.
+
+### docs/doc-assistant-roadmap.md — full rewrite
+**What:** Stripped all "portfolio" / "Risklick" / "interview" framing. Restructured around three engineering goals (domain-aware retrieval, eval methodology, figures/tables) plus a fourth (research-integrity layer). Renumbered phases: 5 = Embedding & Eval Foundation, 6 = Per-project routing + Figures & Tables + Dual-layer interpretation, 7 = Gap Detection, 8 = UI Polish, 9 = Literature Review. Added a PR-by-PR execution table at the bottom for Claude Code (13 PRs, each scoped, each pointing at its `decisions.md` dependency).
+**Why:** GitHub repo is the canonical project; vendor/portfolio framing leaks. Claude Code needs a single linear order with file lists and decision references.
+**Rejected:** Inserting the new work as Phase 4.5 (would have left Phase 4 in limbo with 1 evening of work remaining). Per-file PRs (too granular for the project's DEVLOG cadence).
+**Opens:** None — execution is Claude Code's job from here.
+
+### docs/decisions.md — Roadmap + Core Decisions additions
+**What:** Added two new Core Decisions sections: **Enrichment-Layer Pattern** (codifies the post-ingest, idempotent, sidecar-by-default pattern established by `citations.py` and `metadata_extractor.py`) and **Research Integrity Layer** (Chunks 1/2a/2b/3 + `SYNTHESIS_MODE` flag + retrieval-derived uncertainty markers rationale). Rewrote the Roadmap section: Phase 4 marked as close-out with specific remaining work, Phases 5–9 populated with locked feature lists pointing at the roadmap doc. Promoted pdfplumber out of Deferred Improvements (it's now Feature 4a in Phase 6). Removed the "Demo recording for portfolio" line from Phase 8.
+**Why:** `decisions.md` is the locked architectural truth. Every Phase 5+ feature needs a subsection so Claude Code can `Read` one file for context.
+**Rejected:** Empty placeholder subsections for upcoming experiments (BGE vs SPECTER2, etc.) — placeholders rot. Claude Code will append experiment tables when data exists, following the existing Phase 2 pattern.
+**Opens:** Tier-2 LLM citation fallback; biomedical embedding models — both gated on corpus need.
+
+### CLAUDE.md (GitHub canonical) — status + Claude Code section
+**What:** Updated **Current Status** to reflect that Phase 4 is ~90% done (not "build citations.py" — the file exists, the data layer ships, only doc-vector similarity edges + the backfill run remain). Added new **For Claude Code** section pointing at the three docs in priority order. Rewrote phase roadmap table with the new numbering. Added **Enrichment-Layer Pattern** to engineering standards. Updated Open Questions and Known Issues. Added the recurring sandbox file-sync issue to Known Issues.
+**Why:** CLAUDE.md was telling future sessions the wrong next priority. Claude Code needs explicit "read this first" routing.
+**Rejected:** Removing the locked-settings table (still useful as a fast-reference for what *not* to retune).
+**Opens:** UI framework decision still deferred to Phase 8 — Chainlit will hit limits on the adjudication UI in Chunk 2a.
+
+### CLAUDE.md (Cowork project folder mirror)
+**What:** Mirrored the canonical CLAUDE.md to `C:\Users\LDELEZ\Documents\Claude\Projects\Documentation Assistant\CLAUDE.md`. Both files are now identical.
+**Why:** Cowork sessions read this copy; GitHub is canonical. Drift between them is what made this session necessary in the first place.
+**Opens:** Manual sync each time canonical changes. Could automate later; not blocking.
+
+### Sources referenced
+**What:** Research integrity layer designed against published sources, not a single vendor framework. Cited in roadmap + decisions.md as influences:
+- AI Usage Cards (arXiv 2303.03886) → provenance card schema (Chunk 1).
+- PRISMA-trAIce (PMC12694947) → Phase 9 export target (Chunk 3).
+- BE WISE framework (Frontiers, April 2026) → influence on `SYNTHESIS_MODE=human` path; treated as vendor framework, not standard.
+- Nature Methods → AI disclosure norm satisfied as a byproduct of trAIce export.
+**Why:** Web search showed BE WISE has no independent academic citations yet (publisher-issued, brand-new). Binding the project's config flags to vendor branding would age badly. Used vendor-neutral naming (`SYNTHESIS_MODE = human | ai`) instead.
+
+### Session end
+**Done:** Five docs updated in one writing pass — `docs/doc-assistant-roadmap.md` (rewrite), `docs/decisions.md` (Core Decisions + Roadmap edits + Deferred Improvements cleanup), `CLAUDE.md` × 2 (canonical + mirror), `docs/DEVLOG.md` (this entry). No code changes.
+**Unresolved:**
+- Mean-pool doc vectors (PR 1) still pending — execution moves to Claude Code.
+- The Cowork-side CLAUDE.md mirror is hand-synced; could be automated later.
+**Next:** Claude Code picks up PR 1 (close Phase 4: doc vectors + backfill).

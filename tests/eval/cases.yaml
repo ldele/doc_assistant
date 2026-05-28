@@ -1,0 +1,474 @@
+# Eval cases — first real set (PR 4 stub for measurement).
+#
+# 35 cases over the user's 51-doc neuroscience corpus, organized by topic:
+#   A. Foundational neuroscience      (10 cases)
+#   B. Connectomics & brain networks  (8 cases)
+#   C. Modern eLife papers            (4 cases)
+#   D. Animal-behavior / DeepLabCut   (5 cases)
+#   E. ML & clinical applications     (4 cases)
+#   F. Anatomy / imaging              (3 cases)
+#   G. Negative-control case          (1 case — should fail or hedge)
+#
+# Authoring conventions
+# ---------------------
+# * `query` reads naturally — phrased like a user, not a test prompt.
+# * `expected_answer` is a 1-3 sentence reference; the LLM judge compares
+#   the system's answer against it. Marked `author_verified: false` when
+#   the author is working from general knowledge of the paper, not a
+#   re-read. **Review before relying on llm_judge / embedding_similarity
+#   numbers.**
+# * `expected_substrings` are canonical terms likely to appear in any
+#   good answer regardless of phrasing.
+# * `expected_citations` are filename fragments — the matcher does
+#   bidirectional substring, so `hodgkin_huxley_1952` matches
+#   `hodgkin_huxley_1952.pdf`.
+# * `tags` allow slicing aggregates per topic.
+
+# ============================================================
+# A. Foundational neuroscience
+# ============================================================
+
+- id: hh_voltage_clamp
+  query: "What technique did Hodgkin and Huxley use to measure ionic currents across the squid axon membrane?"
+  expected_answer: >
+    They used the voltage-clamp technique, which holds the membrane potential
+    at a chosen value while measuring the ionic current required to maintain
+    it. This let them separate sodium and potassium current contributions over
+    time and voltage.
+  expected_substrings: [voltage, clamp, sodium, potassium]
+  expected_citations: [hodgkin_huxley_1952]
+  tags: [foundational, mechanism]
+  metadata: {author_verified: true}
+
+- id: hh_conductance_separation
+  query: "How did Hodgkin and Huxley separate sodium from potassium contributions to the action potential?"
+  expected_answer: >
+    By exploiting the different time courses and voltage dependences of the
+    two currents, and by manipulating extracellular sodium concentration to
+    isolate the sodium contribution. The remaining current after sodium
+    removal was attributed to potassium.
+  expected_substrings: [sodium, potassium, time, voltage]
+  expected_citations: [hodgkin_huxley_1952]
+  tags: [foundational, mechanism]
+  metadata: {author_verified: true}
+
+- id: hebb_learning_rule
+  query: "What is Hebb's learning rule?"
+  expected_answer: >
+    When one neuron repeatedly takes part in firing another, the synaptic
+    connection between them is strengthened. The popular shorthand is "cells
+    that fire together, wire together".
+  expected_substrings: [fire, together, synap]
+  expected_citations: [hebb_1949]
+  tags: [foundational, learning]
+  metadata: {author_verified: true}
+
+- id: hebb_cell_assembly
+  query: "What did Hebb mean by a 'cell assembly'?"
+  expected_answer: >
+    A cell assembly is a group of neurons whose interconnections have been
+    strengthened by repeated co-activation, such that activation of part of
+    the group tends to reactivate the rest. Cell assemblies were Hebb's
+    proposed unit of distributed mental representation.
+  expected_substrings: [assembly, neurons]
+  expected_citations: [hebb_1949]
+  tags: [foundational, learning]
+  metadata: {author_verified: true}
+
+- id: hubel_wiesel_receptive_fields
+  query: "What did Hubel and Wiesel discover about receptive fields in the cat striate cortex?"
+  expected_answer: >
+    They found that cortical neurons in V1 respond preferentially to
+    oriented bar or edge stimuli at specific positions in the visual field,
+    rather than to spots of light. Different neurons preferred different
+    orientations.
+  expected_substrings: [receptive, field, orient, cortex]
+  expected_citations: [hubel_wiesel_1959]
+  tags: [foundational, vision]
+  metadata: {author_verified: true}
+
+- id: hubel_wiesel_simple_complex
+  query: "What is the difference between simple and complex cells in primary visual cortex?"
+  expected_answer: >
+    Simple cells have spatially-segregated excitatory and inhibitory sub-regions
+    and respond strongly to oriented stimuli at a specific position. Complex
+    cells respond to oriented stimuli anywhere within a larger receptive field
+    and lack the position specificity of simple cells.
+  expected_substrings: [simple, complex, orient]
+  expected_citations: [hubel_wiesel_1959]
+  tags: [foundational, vision]
+  metadata: {author_verified: true}
+
+- id: cajal_neuron_doctrine
+  query: "What was Cajal's neuron doctrine?"
+  expected_answer: >
+    The nervous system is composed of discrete, individual cells (neurons)
+    that communicate by contact rather than continuity, contradicting the
+    rival reticular theory. Each neuron is a separate metabolic and signalling
+    unit.
+  expected_substrings: [neuron, cell]
+  expected_citations: [cajal-lecture]
+  tags: [foundational, anatomy]
+  metadata: {author_verified: true}
+
+- id: cajal_method
+  query: "What staining method made Cajal's work on neuronal structure possible?"
+  expected_answer: >
+    The Golgi silver-impregnation stain, which Cajal refined and applied
+    systematically. It stains only a sparse subset of neurons, revealing the
+    complete morphology of individual cells against an otherwise clear
+    background.
+  expected_substrings: [Golgi, stain]
+  expected_citations: [cajal-lecture]
+  tags: [foundational, method]
+  metadata: {author_verified: true}
+
+- id: middleton_frontal_subcortical
+  query: "What are frontal-subcortical circuits and why do they matter for behaviour?"
+  expected_answer: >
+    They are parallel loops connecting prefrontal cortex with the basal
+    ganglia and thalamus, organised into motor, oculomotor, dorsolateral
+    prefrontal, lateral orbitofrontal, and anterior cingulate channels.
+    Dysfunction of these circuits is implicated in movement disorders and
+    neuropsychiatric symptoms.
+  expected_substrings: [frontal, subcortical, basal ganglia]
+  expected_citations: [middleton-2001]
+  tags: [foundational, anatomy]
+  metadata: {author_verified: true}
+
+- id: shadmehr_motor_control
+  query: "What computational framework do Shadmehr and Krakauer propose for motor control?"
+  expected_answer: >
+    They describe motor control as a closed-loop system involving internal
+    forward models that predict sensory consequences of actions, comparison
+    of predicted vs actual feedback to compute errors, and updating of
+    motor commands accordingly.
+  expected_substrings: [motor, forward model, prediction]
+  expected_citations: [nihms-66884]
+  tags: [foundational, motor, computational]
+  metadata: {author_verified: false}
+
+# ============================================================
+# B. Connectomics & brain networks
+# ============================================================
+
+- id: connectomics_brain_disorders
+  query: "What does the connectomics of brain disorders study?"
+  expected_answer: >
+    How psychiatric and neurological disorders correspond to disruptions in
+    the topology of large-scale brain networks. Uses graph-theoretic
+    measures applied to structural and functional connectivity data to
+    characterise altered connectivity patterns.
+  expected_substrings: [brain, network, connect]
+  expected_citations: [Fornito]
+  tags: [connectomics, review]
+  metadata: {author_verified: false}
+
+- id: comparative_connectomics
+  query: "What is comparative connectomics?"
+  expected_answer: >
+    The study of how brain network organisation varies across species and
+    what that variation reveals about evolutionary pressures, conserved
+    architectural principles, and the relationship between connectivity
+    and behaviour.
+  expected_substrings: [comparative, species, network]
+  expected_citations: [van den Heuvel]
+  tags: [connectomics, review]
+  metadata: {author_verified: false}
+
+- id: brain_network_hubs
+  query: "What is the rich-club organisation of the brain?"
+  expected_answer: >
+    A network property where the most highly-connected hub regions of the
+    brain are also densely interconnected with each other, forming a
+    backbone that is thought to support global communication and
+    integration across functionally distinct modules.
+  expected_substrings: [hub, connect]
+  expected_citations: [van den Heuvel, nihms-326467]
+  tags: [connectomics, mechanism]
+  metadata: {author_verified: false}
+
+- id: friston_computational_neuroanatomy
+  query: "What does Friston's computational neuroanatomy framework cover?"
+  expected_answer: >
+    A formal treatment of how brain anatomy can be analysed quantitatively
+    using neuroimaging data, including voxel-based morphometry, statistical
+    parametric mapping, and the mathematical underpinnings of measuring
+    structural differences across subjects and conditions.
+  expected_substrings: [anatomy, imaging]
+  expected_citations: [Computational_neuroanatomy]
+  tags: [connectomics, anatomy]
+  metadata: {author_verified: false}
+
+- id: suarez_mammal_taxonomy
+  query: "Suarez and colleagues proposed a taxonomy of mammals based on what?"
+  expected_answer: >
+    Connectomes — specifically the structural connectivity profiles of
+    mammalian brains. They argued that connectome-based grouping captures
+    relationships between species that traditional anatomical or genetic
+    taxonomies miss.
+  expected_substrings: [connect, mammal, taxonomy]
+  expected_citations: [elife-78635]
+  tags: [connectomics, comparative]
+  metadata: {author_verified: false}
+
+- id: fakhar_optimal_communication
+  query: "What does Fakhar et al.'s framework for optimal communication in brain networks address?"
+  expected_answer: >
+    A general framework for evaluating how efficiently signals can propagate
+    across structural brain networks under different routing assumptions
+    (shortest paths, diffusion, navigation), and how the choice of
+    communication model changes inferences about which regions are central
+    to whole-brain signalling.
+  expected_substrings: [communication, network, routing]
+  expected_citations: [Fakhar, elife-101780]
+  tags: [connectomics, methods]
+  metadata: {author_verified: false}
+
+- id: directed_connectomics_bicommunity
+  query: "What does the bicommunity structure of directed brain connectivity reveal?"
+  expected_answer: >
+    A pair of overlapping communities arising from directional connectivity
+    patterns — sender-dominated vs receiver-dominated groupings of regions —
+    that reflect distinct functional roles invisible in undirected
+    connectivity analyses.
+  expected_substrings: [directed, community]
+  expected_citations: ["2026.02.25.707616"]
+  tags: [connectomics, methods]
+  metadata: {author_verified: false}
+
+- id: jonas_kording_cell_types
+  query: "How did Jonas and Kording approach automatic discovery of cell types from connectomics?"
+  expected_answer: >
+    They applied unsupervised clustering to connectivity patterns extracted
+    from neural reconstructions, arguing that morphology-plus-connectivity
+    features can recover known cell type distinctions without manual
+    labelling and may reveal novel subtypes.
+  expected_substrings: [cell type, cluster, connect]
+  expected_citations: [elife-04250]
+  tags: [connectomics, methods]
+  metadata: {author_verified: false}
+
+# ============================================================
+# C. Modern eLife papers
+# ============================================================
+
+- id: ferrario_probabilistic_connectivity
+  query: "What is Ferrario et al.'s probabilistic model of neuronal connectivity describing?"
+  expected_answer: >
+    The synaptic connectivity of the spinal locomotor circuit in young Xenopus
+    tadpoles, modelled probabilistically from anatomical data and shown to
+    reproduce realistic patterns of activity during swimming.
+  expected_substrings: [probabilistic, connect, locomot]
+  expected_citations: [elife-33281]
+  tags: [elife, circuit]
+  metadata: {author_verified: false}
+
+- id: gruber_drosophila_olfactory
+  query: "What is special about the synaptic circuitry of the olfactory glomeruli described in Gruber et al.?"
+  expected_answer: >
+    Specialised glomeruli in the Drosophila antennal lobe have distinctive
+    synaptic architectures compared to generalist glomeruli — including
+    differences in connection density and the involvement of specific
+    interneuron classes — reflecting their role in processing biologically
+    salient odours.
+  expected_substrings: [Drosophila, glomeruli, olfact]
+  expected_citations: [elife-88824]
+  tags: [elife, circuit, invertebrate]
+  metadata: {author_verified: false}
+
+- id: chikermane_beta_dopamine
+  query: "What did Chikermane et al. show about cortical beta oscillations and dopamine?"
+  expected_answer: >
+    Cortical beta-frequency oscillations are modulated by dopamine and map to
+    a shared brain network across Parkinson's disease patients receiving deep
+    brain stimulation. The findings link a circuit-level oscillatory signature
+    to dopaminergic state.
+  expected_substrings: [beta, oscillat, dopamine]
+  expected_citations: [elife-97184]
+  tags: [elife, oscillations, clinical]
+  metadata: {author_verified: false}
+
+- id: liu_axonal_projections
+  query: "What did Liu et al. find about long-range axonal projections in mouse somatosensory cortex?"
+  expected_answer: >
+    Cell-class-specific patterns of long-range axonal projection from
+    whisker-related somatosensory cortex, with different excitatory
+    projection classes targeting distinct downstream regions in a stereotyped
+    manner.
+  expected_substrings: [axonal, projection, somatosensory]
+  expected_citations: [elife-97602]
+  tags: [elife, anatomy, circuit]
+  metadata: {author_verified: false}
+
+# ============================================================
+# D. Animal behavior / DeepLabCut tools
+# ============================================================
+
+- id: deeplabcut_overview
+  query: "What is DeepLabCut and what problem does it solve?"
+  expected_answer: >
+    DeepLabCut is a markerless pose-estimation toolkit that uses transfer
+    learning on deep convolutional networks to track user-defined body parts
+    in video, replacing physical markers traditionally needed for motion
+    capture in animal behaviour experiments.
+  expected_substrings: [pose, marker, deep learning]
+  expected_citations: ["1909.13868", 2021.04.30.442096, s41592-022-01443-0]
+  tags: [animal_behavior, tools]
+  metadata: {author_verified: false}
+
+- id: multi_animal_deeplabcut
+  query: "How does multi-animal DeepLabCut handle identity tracking across frames?"
+  expected_answer: >
+    By combining keypoint detection with assembly into per-animal skeletons
+    and an identity-tracking step that links assemblies across frames using
+    appearance and motion cues, so that individuals remain distinguishable
+    even in close interactions.
+  expected_substrings: [identity, track]
+  expected_citations: ["2021.04.30.442096", s41592-022-01443-0]
+  tags: [animal_behavior, tools]
+  metadata: {author_verified: false}
+
+- id: cebra_embeddings
+  query: "What is CEBRA and what does it do?"
+  expected_answer: >
+    CEBRA learns latent embeddings that jointly represent neural activity
+    and behavioural variables using contrastive learning. The embeddings
+    allow alignment of neural data across sessions, animals, or conditions
+    in a common latent space.
+  expected_substrings: [latent, embedding, contrastive]
+  expected_citations: ["2204.00673"]
+  tags: [animal_behavior, ml]
+  metadata: {author_verified: false}
+
+- id: superanimal_pretrained
+  query: "What is the SuperAnimal pose-estimation approach?"
+  expected_answer: >
+    Pretrained pose-estimation models that generalise across animal species
+    without requiring per-project labelling, by training on large diverse
+    datasets so the same model handles new species or contexts with little
+    or no fine-tuning.
+  expected_substrings: [pose, pretrain, animal]
+  expected_citations: ["2203.07436"]
+  tags: [animal_behavior, tools]
+  metadata: {author_verified: false}
+
+- id: amadeusgpt_interface
+  query: "What does AmadeusGPT enable for animal behaviour analysis?"
+  expected_answer: >
+    A natural-language interface for interactive analysis of animal
+    behaviour data, letting users query and manipulate behavioural datasets
+    through dialogue rather than scripting.
+  expected_substrings: [natural language, behavior]
+  expected_citations: [amadeusgpt, NeurIPS-2023]
+  tags: [animal_behavior, tools]
+  metadata: {author_verified: false}
+
+# ============================================================
+# E. ML & clinical applications
+# ============================================================
+
+- id: rajpurkar_arrhythmia
+  query: "What did Rajpurkar et al. show about CNN-based arrhythmia detection from ECG?"
+  expected_answer: >
+    A deep convolutional network trained on a large dataset of single-lead
+    ECG recordings can classify arrhythmias with accuracy comparable to
+    board-certified cardiologists across multiple rhythm categories.
+  expected_substrings: [arrhythm, ECG, convolutional]
+  expected_citations: ["1707.01836"]
+  tags: [ml, clinical]
+  metadata: {author_verified: true}
+
+- id: mamba_hidden_attention
+  query: "What is the 'hidden attention' interpretation of Mamba models?"
+  expected_answer: >
+    Mamba's state-space layers can be reformulated to expose an implicit
+    attention-like computation, suggesting that the architecture's
+    selective state updates correspond to data-dependent attention patterns
+    despite the model lacking explicit attention layers.
+  expected_substrings: [Mamba, attention, state]
+  expected_citations: ["2403.01590"]
+  tags: [ml, theory]
+  metadata: {author_verified: false}
+
+- id: chazal_ecg_classification
+  query: "What features did de Chazal et al. use to classify heartbeats from ECG?"
+  expected_answer: >
+    A combination of ECG morphology features (the shape of QRS complexes
+    and ST segments) and heartbeat interval features (RR intervals before
+    and after each beat). Combining the two feature classes improved
+    classification accuracy.
+  expected_substrings: [ECG, morphology, interval]
+  expected_citations: [chazal_2004]
+  tags: [ml, clinical]
+  metadata: {author_verified: false}
+
+- id: hypothalamic_stimulation_aggression
+  query: "What did Gouveia et al. find from multi-centre analysis of hypothalamic deep brain stimulation for aggression?"
+  expected_answer: >
+    A common network of brain regions and a set of associated genes are
+    modulated by hypothalamic DBS in patients treated for severe
+    pathological aggression, with stimulation efficacy linked to engagement
+    of that network.
+  expected_substrings: [hypothalam, stimulation, network]
+  expected_citations: [elife-84566]
+  tags: [clinical, dbs]
+  metadata: {author_verified: false}
+
+# ============================================================
+# F. Anatomy / imaging
+# ============================================================
+
+- id: mri_neuroanatomy_primer
+  query: "What does the structural-imaging primer (Lerch et al.) cover?"
+  expected_answer: >
+    A practical introduction to studying neuroanatomy with MRI — covering
+    acquisition modalities, segmentation, volumetric and surface-based
+    analyses, and the trade-offs that influence what questions different
+    imaging pipelines can answer.
+  expected_substrings: [MRI, anatomy]
+  expected_citations: [NNstructuralimagingprimer]
+  tags: [anatomy, imaging, review]
+  metadata: {author_verified: false}
+
+- id: language_neuroanatomy
+  query: "What is the functional neuroanatomy of language?"
+  expected_answer: >
+    A distributed left-hemisphere-dominant network including inferior
+    frontal cortex (Broca's region) for production, posterior temporal
+    cortex (Wernicke's region) for comprehension, and the arcuate
+    fasciculus connecting them, with additional contributions from
+    bilateral temporal regions for semantics.
+  expected_substrings: [language, Broca, Wernicke]
+  expected_citations: [nihms133032]
+  tags: [anatomy, language]
+  metadata: {author_verified: false}
+
+- id: viral_tracing_neuroanatomy
+  query: "How do viral tracers contribute to modern neuroanatomy?"
+  expected_answer: >
+    Genetically modified viruses (e.g. rabies, AAV, HSV variants) can be
+    used to label specific neuron populations and trace mono- or
+    polysynaptic connections, allowing cell-type-specific dissection of
+    circuits in a way classical tracers cannot.
+  expected_substrings: [viral, trace, circuit]
+  expected_citations: [fnana-09-00080]
+  tags: [anatomy, methods]
+  metadata: {author_verified: false}
+
+# ============================================================
+# G. Negative control — answer NOT in the library
+# ============================================================
+
+- id: not_in_library_rlhf
+  query: "How does reinforcement learning from human feedback (RLHF) shape large language model behaviour?"
+  expected_answer: >
+    No documents in this library cover RLHF. A correct response should
+    acknowledge that the topic isn't represented in the corpus rather than
+    fabricating an answer from general knowledge.
+  expected_substrings: [no document, not, library]
+  expected_citations: []
+  tags: [negative_control]
+  metadata:
+    author_verified: true
+    note: "Tests system hedging behaviour — most RAG systems hallucinate here."

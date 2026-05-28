@@ -556,12 +556,39 @@ See `docs/doc-assistant-roadmap.md` for the source of intent.
   `bge-base` (default → legacy `"langchain"` collection name for zero-migration 
   upgrade), `specter2` (academic, uses its own collection). 15 unit tests. 
   Per-folder routing (Feature 1b) gated on Feature 3 measurement.
-- **Feature 2** — Eval harness v0 inside `src/doc_assistant/eval/`. 
-  Generic runner / scorers / DuckDB store / report; doc_assistant-specific 
-  adapter. Everything except the adapter imports nothing from 
-  `doc_assistant.*` so it can be extracted later (Feature 5).
-- **Feature 3** — Golden eval set (`tests/eval/cases.yaml`, 30–50 questions) 
-  + measured BGE vs SPECTER2 comparison. Results in README.
+- **Feature 2** — ✅ Done (2026-05-28). `src/doc_assistant/eval/` 
+  package: `cases.py` (YAML loader), `results.py` (dataclasses), 
+  `scorers.py` (5 scorers: ExactMatch, ContainsAll, CitationOverlap, 
+  EmbeddingSimilarity, LLMJudge), `runner.py` (Runner with progress 
+  callback + exception capture), `store.py` (DuckDB, 3-table schema, 
+  context-manager), `report.py` (summary + diff), `adapters.py` 
+  (RAGPipeline wrapper — only file with doc_assistant deps; 
+  extractable per Feature 5). CLI `scripts/run_eval.py` with paid 
+  scorers gated behind explicit flags. 43 unit tests; coverage 61%.
+- **Feature 3** — ✅ Done (2026-05-28). 35-case eval set in 
+  `tests/eval/cases.yaml` covering foundational neuro / connectomics / 
+  modern eLife / animal-behavior tools / clinical / ML / anatomy plus 
+  one negative-control case. Measured BGE vs SPECTER2 with hardened 
+  reference-only LLM judge (temperature=0). **Result: bge-base wins on 
+  every comparable scorer.** `citation_overlap` +0.020, `contains_all` 
+  +0.055, `llm_judge` +0.22. See README "Benchmark results" section.
+  
+  **Key finding — SPECTER2 lost because of training-task mismatch.** 
+  SPECTER2 was trained for paper-level citation prediction over 
+  abstracts; our task is chunk-level QA retrieval over full text. 
+  bge-base's training corpora (MS MARCO, NQ, SQuAD, HotpotQA) are 
+  much closer to QA retrieval. **Implication:** lock bge-base as 
+  default; defer Feature 1b (per-folder embedder routing) until a 
+  workflow emerges where SPECTER2's strengths apply (e.g., the 
+  `/similar` paper-level task). Locked in `embeddings.py` registry; 
+  re-confirmed empirically.
+  
+  **Methodology caveats (recorded in README):** 35 cases is small; 
+  effect sizes are suggestive not significant. LLM-judge mean ~2.3/5 
+  because the rubric is strict — absolute scores are not directly 
+  interpretable; the cross-model gap is the signal. `embedding_similarity` 
+  scorer is confounded across models (uses the active embedder); 
+  excluded from the comparison pending a fix.
 - **Integrity Chunk 1** — Provenance card. `answer_records` table; 
   collapsible card under each answer; `/export-record <id>` → JSON. 
   Hooks into existing `tracking.py`.

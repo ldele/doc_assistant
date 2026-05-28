@@ -173,9 +173,7 @@ def load_chunk_embeddings_by_document() -> dict[str, list[np.ndarray]]:
     try:
         coll = client.get_collection(collection_name)
     except Exception:
-        log.warning(
-            "No '%s' collection at %s — run ingest first", collection_name, CHROMA_PATH
-        )
+        log.warning("No '%s' collection at %s — run ingest first", collection_name, CHROMA_PATH)
         return {}
 
     data = coll.get(include=["embeddings", "metadatas"])

@@ -298,6 +298,65 @@ class DocSimilarity(Base):
 
 
 # ============================================================
+# AnswerRecord — Phase 5 / Integrity Chunk 1 (provenance card).
+# ============================================================
+
+
+class AnswerRecord(Base):
+    """One record per generated answer — the provenance card backing store.
+
+    Every chat turn that produces an answer writes one row here. Captures
+    everything needed to reproduce or audit the answer: the query, the
+    retrieved chunks (with scores), the model + prompt config that
+    produced the answer, token cost, latency.
+
+    Designed forward-compat for:
+    * **Multi-user** — `id` and `session_id` are UUIDs, never auto-increments.
+    * **Future threading / sessions** — `session_id` is nullable now; the
+      column exists so per-session aggregates don't need a schema migration.
+    * **Cost tiering** — `model_name` + `token_input` / `token_output` make
+      cost-by-model queries trivial. Phase 6+ reviewer agent can re-target
+      the same schema for its own records.
+    * **Eval harness reuse** — the eval harness will eventually consume this
+      schema; same shape of (query, retrieved_chunks, answer, scores).
+    """
+
+    __tablename__ = "answer_records"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid4()))
+    session_id: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+
+    # The question, post-rewrite (what the pipeline actually retrieved on).
+    query: Mapped[str] = mapped_column(Text, nullable=False)
+    # The raw question if it was rewritten from history; else None.
+    original_query: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # The generated answer text, streamed to completion.
+    answer: Mapped[str] = mapped_column(Text, nullable=False)
+
+    # JSON: list of {filename, doc_id, page, section, reranker_score, chunk_excerpt}.
+    # JSON-as-text avoids a new column type and keeps the schema portable.
+    retrieved_chunks_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
+
+    # Configuration that produced this answer (forward-compat for cost analysis + diffing).
+    model_name: Mapped[str | None] = mapped_column(String, nullable=True)
+    embedding_model: Mapped[str | None] = mapped_column(String, nullable=True)
+    prompt_version: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    top_k: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    use_parent_child: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+
+    # Cost + latency telemetry.
+    token_input: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    token_output: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    latency_ms: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+    # Failure mode capture.
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, index=True)
+
+
+# ============================================================
 # IngestionEvent — health audit trail
 # ============================================================
 

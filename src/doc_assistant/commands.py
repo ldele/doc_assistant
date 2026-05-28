@@ -155,6 +155,8 @@ def help_message() -> str:
 - `/graph <id>` — small citation subgraph around this document (Phase 4)
 - `/similar <id>` — top-N semantically-similar documents (Phase 4)
 - `/bibtex` — render the whole library as BibTeX (writes to `docs/library.bib` from the CLI)
+- `/export-record <id>` — export the full provenance record for one answer as JSON (Phase 5)
+- `/records` — list the most recent answer records
 - `/help` — this message
 
 Anything else is treated as a normal question to the library.
@@ -323,6 +325,39 @@ def execute_command(cmd: str, arg: str) -> str:
             "```\n"
             "_Run `python -m scripts.export_bibtex` to write this to `docs/library.bib`._"
         )
+
+    if cmd in ("export-record", "export_record"):
+        import json as _json
+
+        from doc_assistant.provenance import find_record_by_short_id, get_record
+
+        if not arg:
+            return (
+                "Usage: `/export-record <id>` — id is the 8-char prefix "
+                "from any answer's provenance card."
+            )
+        prov = get_record(arg) if len(arg) >= 36 else find_record_by_short_id(arg)
+        if prov is None:
+            return f"No answer record matching `{arg}`. Try `/records` to list recent answers."
+        return (
+            f"### Answer record `{prov.id[:8]}`\n\n"
+            "```json\n"
+            f"{_json.dumps(prov.to_json_dict(), indent=2, ensure_ascii=False)}\n"
+            "```"
+        )
+
+    if cmd == "records":
+        from doc_assistant.provenance import list_recent_records
+
+        records = list_recent_records(limit=20)
+        if not records:
+            return "No answer records yet. Ask a content question to generate one."
+        lines = [f"## {len(records)} recent answer record(s)\n"]
+        for r in records:
+            ts = r.created_at.strftime("%Y-%m-%d %H:%M") if r.created_at else "?"
+            q = (r.query or "")[:80] + ("…" if r.query and len(r.query) > 80 else "")
+            lines.append(f"- `{r.id[:8]}` · {ts} · {q}")
+        return "\n".join(lines)
 
     if cmd == "library":
         health = format_filter = None

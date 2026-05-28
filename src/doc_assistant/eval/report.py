@@ -49,9 +49,7 @@ def format_run_summary(store: Store, run_id: str) -> str:
     for scorer_name, s in sorted(stats.items()):
         mean = s["mean"]
         mean_cell = f"{mean:.3f}" if isinstance(mean, float) else "-"
-        lines.append(
-            f"| {scorer_name} | {mean_cell} | {s['n_scored']} | {s['n_skipped']} |"
-        )
+        lines.append(f"| {scorer_name} | {mean_cell} | {s['n_scored']} | {s['n_skipped']} |")
     return "\n".join(lines)
 
 
@@ -69,6 +67,28 @@ def diff_runs(store: Store, run_a_id: str, run_b_id: str) -> list[RunDiffRow]:
         )
         for cid, scorer in shared
     ]
+
+
+def format_aggregate(store: Store, run_ids: list[str], *, label: str = "Aggregate") -> str:
+    """Markdown table of mean ± std per scorer across N runs."""
+    stats = store.aggregate_runs(run_ids)
+    if not stats:
+        return f"{label}: no scores in the {len(run_ids)} run(s)."
+    lines = [
+        f"## {label} over {len(run_ids)} run(s)",
+        "",
+        "| Scorer | Mean | Std | n_scored | n_skipped |",
+        "|---|---:|---:|---:|---:|",
+    ]
+    for scorer_name, s in sorted(stats.items()):
+        mean = s["mean"]
+        std = s["std"]
+        mean_cell = f"{mean:.3f}" if isinstance(mean, float) else "-"
+        std_cell = f"{std:.3f}" if isinstance(std, float) else "-"
+        lines.append(
+            f"| {scorer_name} | {mean_cell} | {std_cell} | {s['n_scored']} | {s['n_skipped']} |"
+        )
+    return "\n".join(lines)
 
 
 def format_diff(rows: list[RunDiffRow], *, run_a_label: str = "A", run_b_label: str = "B") -> str:

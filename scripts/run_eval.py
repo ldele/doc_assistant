@@ -35,7 +35,7 @@ from doc_assistant.eval import (
     load_cases_yaml,
 )
 from doc_assistant.eval.adapters import embedding_callable, rag_pipeline_adapter
-from doc_assistant.eval.report import format_run_summary
+from doc_assistant.eval.report import format_aggregate, format_run_summary
 
 if sys.platform == "win32":
     sys.stdout.reconfigure(encoding="utf-8")
@@ -84,7 +84,21 @@ def main() -> int:
     parser.add_argument(
         "--note", type=str, default=None, help="Optional note recorded on the run row"
     )
+    parser.add_argument(
+        "--repeat",
+        type=int,
+        default=1,
+        help=(
+            "Run the eval N times and aggregate mean ± std per scorer. "
+            "Each trial is a separate run in DuckDB; the CLI also prints the "
+            "aggregate. Use this to measure variance from the answer-generation "
+            "LLM (which runs at default temperature). Default: 1."
+        ),
+    )
     args = parser.parse_args()
+    if args.repeat < 1:
+        print("--repeat must be >= 1")
+        return 1
 
     cases = load_cases_yaml(args.cases)
     if not cases:
@@ -106,29 +120,52 @@ def main() -> int:
     print(f"Scorers: {scorer_names}")
 
     runner = Runner(scorers)
-    print(f"Running {len(cases)} cases...")
 
     def _progress(i: int, total: int, case: object) -> None:
         print(f"  [{i + 1:>2}/{total}] {getattr(case, 'id', '?')}")
 
-    results = runner.run(cases, sut, progress=_progress)  # type: ignore[arg-type]
-
     with Store(args.db) as store:
-        run_id = store.persist_run(
-            results,
-            system_name=f"doc_assistant/{get_active_model_name()}",
-            config={
-                "embedding_model": get_active_model_name(),
-                "n_cases": len(cases),
-                "scorers": [s.name for s in scorers],
-            },
-            note=args.note,
-        )
+        run_ids: list[str] = []
+        for trial in range(args.repeat):
+            if args.repeat > 1:
+                print(f"\n=== Trial {trial + 1}/{args.repeat} ===")
+            print(f"Running {len(cases)} cases...")
+            results = runner.run(cases, sut, progress=_progress)  # type: ignore[arg-type]
+
+            trial_note = args.note
+            if args.repeat > 1:
+                tag = f"[trial {trial + 1}/{args.repeat}]"
+                trial_note = f"{args.note} {tag}" if args.note else tag
+
+            run_id = store.persist_run(
+                results,
+                system_name=f"doc_assistant/{get_active_model_name()}",
+                config={
+                    "embedding_model": get_active_model_name(),
+                    "n_cases": len(cases),
+                    "scorers": [s.name for s in scorers],
+                    "trial_index": trial,
+                    "n_trials": args.repeat,
+                },
+                note=trial_note,
+            )
+            run_ids.append(run_id)
+            print()
+            print(format_run_summary(store, run_id))
+            print(f"Trial run id: {run_id}")
+
         print()
-        print(format_run_summary(store, run_id))
-        print()
-        print(f"Run id: {run_id}")
+        if args.repeat > 1:
+            print(
+                format_aggregate(
+                    store,
+                    run_ids,
+                    label=f"Aggregate ({get_active_model_name()}, n={args.repeat})",
+                )
+            )
+            print()
         print(f"DuckDB: {Path(args.db).resolve()}")
+        print(f"Run ids ({len(run_ids)}): {', '.join(rid[:8] for rid in run_ids)}")
     return 0
 
 

@@ -265,6 +265,39 @@ class Citation(Base):
 
 
 # ============================================================
+# DocSimilarity — Phase 4 close-out (sidecar table).
+# ============================================================
+
+
+class DocSimilarity(Base):
+    """A directed semantic-similarity edge between two documents.
+
+    Populated by `doc_vectors.py` from mean-pooled chunk embeddings.
+    Directed by convention: `(source, target, score)` means "target is in
+    source's top-K nearest neighbours under `embedding_model`". The
+    relation is symmetric mathematically, but the top-K trim makes the
+    persisted edge set asymmetric.
+    """
+
+    __tablename__ = "doc_similarities"
+
+    source_document_id: Mapped[str] = mapped_column(
+        String, ForeignKey("documents.id", ondelete="CASCADE"), primary_key=True
+    )
+    target_document_id: Mapped[str] = mapped_column(
+        String, ForeignKey("documents.id", ondelete="CASCADE"), primary_key=True
+    )
+    embedding_model: Mapped[str] = mapped_column(String, primary_key=True)
+    score: Mapped[float] = mapped_column(Float, nullable=False)
+    computed_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
+
+    __table_args__ = (
+        Index("idx_doc_sim_source", "source_document_id", "embedding_model"),
+        Index("idx_doc_sim_target", "target_document_id", "embedding_model"),
+    )
+
+
+# ============================================================
 # IngestionEvent — health audit trail
 # ============================================================
 

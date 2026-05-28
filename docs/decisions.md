@@ -475,12 +475,12 @@ A non-technical user wouldn't have noticed until eval results were inexplicable.
 - ✅ Library metadata routing extracted to `query_router.py`
 - ✅ `chainlit_app.py` refactored to thin shell; business logic in `query_router.py` + `commands.py`
 
-### 🔄 Phase 4: Citation Graph (close out)
+### ✅ Phase 4: Citation Graph
 
 Goal: model relationships between documents. Both explicit (citations) and 
 implicit (semantic similarity). Surface the structure of the literature.
 
-**Done (2026-05-26 session):**
+**Done (2026-05-26 session — explicit edges):**
 - Tier-1 regex citation extractor (`src/doc_assistant/citations.py`). 
   Two-tier design with LLM fallback was the locked decision; tier-1 
   measured at 22/27 docs (81%) on the existing corpus, 1,234 citations 
@@ -501,15 +501,48 @@ implicit (semantic similarity). Surface the structure of the literature.
 - GROBID and refextract evaluated and deferred — Docker + Java service 
   cost not justified by the recall data so far.
 
-**Remaining to close the phase:**
-- Apply metadata backfill and citation extraction on the local DB (CLI 
-  runners exist; sandbox cannot write — must be run from a real shell).
-- Mean-pool doc-level vectors → similarity edges. The only Phase 4 
-  deliverable still flagged "deferred to next session" in DEVLOG.
+**Done (2026-05-28 session — implicit edges):**
+- Doc-level vector enrichment (`src/doc_assistant/doc_vectors.py`). 
+  Mean-pools chunk embeddings from the baseline Chroma store per 
+  document, L2-normalises, and computes pairwise cosine similarity. 
+  Returns directed top-K=10 nearest-neighbour edges per source above a 
+  0.5 cosine threshold.
+- Sidecar table `doc_similarities (source_document_id, target_document_id, 
+  embedding_model, score, computed_at)` — composite PK so future Phase 5 
+  embedder swaps (Feature 1) don't collide with existing rows.
+- CLI runner `scripts/compute_doc_vectors.py` — `--dry-run` / `--apply` / 
+  `--force` / `--doc <prefix>` / `--top-k` / `--threshold` flags. 
+  Idempotent: refuses to overwrite without `--force`.
+- `library.similar_docs(doc_id, limit=10, embedding_model=...)` query 
+  joined to Document for filenames/titles.
+- `/similar <id>` slash command in `commands.py`.
+- 15 unit tests over the pure-numpy core (mean-pool, edge computation, 
+  threshold + top-K behaviour).
+
+**Locked design choices for doc vectors:**
+- Persist edges only, not the mean-pooled vectors themselves. Vectors 
+  are recomputed from Chroma on demand. Rationale: at personal-library 
+  scale (10s–100s of docs) the recompute is seconds; a separate vector 
+  table is bloat with no measurable benefit. Rejected: persist vectors 
+  for incremental updates (premature at this scale).
+- Source store: baseline Chroma (`CHROMA_PATH`), not PC. Fewer, larger 
+  chunks per doc, simpler iteration, equivalent mean-pool semantics. 
+  Rejected: PC child store (finer granularity but more chunks per doc; 
+  no signal it improves the doc-level vector).
+- Directed top-K, asymmetric. The cosine relation is symmetric but the 
+  top-K trim makes the persisted edge set directional. Gives a stable 
+  "most similar to A" UX. Consumers wanting symmetric edges can union 
+  both directions. Rejected: undirected edges (loses "top-K of A" 
+  intuition; would need an arbitrary disambiguation rule).
+- O(N²) similarity is fine for the current scale. Rejected: ANN index 
+  (premature; Phase 7 if and when the library grows past ~1000 docs).
+
+**Remaining (operational, not architectural):**
+- Apply the citation extraction, metadata backfill, and doc-vector 
+  computation on the local DB. All three CLI runners exist; this is the 
+  15-minute shell run flagged in CLAUDE.md.
 - LNCS colon-separator format and multi-column extraction artifacts are 
   known tier-1 weaknesses; cosmetic, deferred.
-
-Effort to close: 1 evening + a 15-minute CLI run.
 
 ### Phase 5: Embedding & Eval Foundation
 

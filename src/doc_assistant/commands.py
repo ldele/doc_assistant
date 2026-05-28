@@ -12,6 +12,7 @@ from doc_assistant.library import (
     DocumentDetails,
     DocumentSummary,
     LibrarySummary,
+    SimilarDoc,
     cited_by,
     cites_out,
     find_document_by_short_id,
@@ -19,6 +20,7 @@ from doc_assistant.library import (
     graph_subgraph,
     library_summary,
     list_documents,
+    similar_docs,
 )
 from doc_assistant.query_router import health_badge
 
@@ -151,9 +153,15 @@ def help_message() -> str:
 - `/cites <id>` — citations this document makes (Phase 4)
 - `/cited-by <id>` — documents in the library that cite this one (Phase 4)
 - `/graph <id>` — small citation subgraph around this document (Phase 4)
+- `/similar <id>` — top-N semantically-similar documents (Phase 4)
+- `/bibtex` — render the whole library as BibTeX (writes to `docs/library.bib` from the CLI)
 - `/help` — this message
 
 Anything else is treated as a normal question to the library.
+
+_One command per message — chaining (e.g. `/cites X then /similar X`)
+is not supported; the parser treats everything after the command as a
+single argument._
 """
 
 
@@ -230,6 +238,24 @@ def format_cited_by(filename: str, rows: list[tuple[str, str, str | None]]) -> s
     return "\n".join(lines)
 
 
+def format_similar(filename: str, neighbours: list[SimilarDoc]) -> str:
+    """Build markdown for `/similar <id>`."""
+    if not neighbours:
+        return (
+            f"**{filename}** — no similarity edges yet. "
+            "Run `python -m scripts.compute_doc_vectors --apply`."
+        )
+    lines = [f"## {len(neighbours)} document(s) most similar to {filename}"]
+    lines.append("")
+    for n in neighbours:
+        title = f" — *{n.target_title}*" if n.target_title else ""
+        lines.append(
+            f"- `{n.target_document_id[:8]}` **{n.target_filename}**{title}  "
+            f"(cosine {n.score:.3f})"
+        )
+    return "\n".join(lines)
+
+
 def format_graph(filename: str, graph: CitationGraph) -> str:
     """Build markdown for `/graph <id>` — Mermaid subgraph for small N."""
     if not graph.nodes or len(graph.nodes) == 1:
@@ -285,6 +311,19 @@ def execute_command(cmd: str, arg: str) -> str:
     if cmd == "help":
         return help_message()
 
+    if cmd == "bibtex":
+        from doc_assistant.bibtex import export_bibtex
+
+        text = export_bibtex()
+        entry_count = text.count("\n@")
+        return (
+            f"### BibTeX export — {entry_count} entries\n\n"
+            "```bibtex\n"
+            f"{text}"
+            "```\n"
+            "_Run `python -m scripts.export_bibtex` to write this to `docs/library.bib`._"
+        )
+
     if cmd == "library":
         health = format_filter = None
         if arg in ("broken", "marginal", "healthy"):
@@ -316,7 +355,7 @@ def execute_command(cmd: str, arg: str) -> str:
             return f"Could not load details for `{arg}`."
         return format_document_details(details)
 
-    if cmd in ("cites", "cited-by", "cited_by", "graph"):
+    if cmd in ("cites", "cited-by", "cited_by", "graph", "similar"):
         if not arg:
             return f"Usage: `/{cmd} <id>` — provide the document ID prefix."
         full_id = find_document_by_short_id(arg) if len(arg) < 36 else arg
@@ -330,5 +369,7 @@ def execute_command(cmd: str, arg: str) -> str:
             return format_cited_by(filename, cited_by(full_id))
         if cmd == "graph":
             return format_graph(filename, graph_subgraph(full_id, depth=1))
+        if cmd == "similar":
+            return format_similar(filename, similar_docs(full_id))
 
     return f"Unknown command: `/{cmd}`. Try `/help`."

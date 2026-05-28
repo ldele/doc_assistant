@@ -391,3 +391,57 @@ def graph_subgraph(doc_id: str, depth: int = 1) -> CitationGraph:
             edge_keys.add(key)
             deduped.append(e)
     return CitationGraph(nodes=list(nodes.values()), edges=deduped)
+
+
+# ============================================================
+# Similarity queries (Phase 4 close-out)
+# ============================================================
+
+
+@dataclass
+class SimilarDoc:
+    """One neighbour returned by `similar_docs`."""
+
+    target_document_id: str
+    target_filename: str
+    target_title: str | None
+    score: float
+
+
+def similar_docs(
+    doc_id: str,
+    *,
+    limit: int = 10,
+    embedding_model: str | None = None,
+) -> list[SimilarDoc]:
+    """Return the top-N most similar documents to ``doc_id``.
+
+    Reads pre-computed edges from the ``doc_similarities`` sidecar
+    table. Empty list if no edges exist (run
+    ``scripts/compute_doc_vectors.py --apply``).
+    """
+    from doc_assistant.db.models import DocSimilarity
+
+    with session_scope() as session:
+        stmt = (
+            select(
+                DocSimilarity.target_document_id,
+                Document.filename,
+                Document.title,
+                DocSimilarity.score,
+            )
+            .join(Document, Document.id == DocSimilarity.target_document_id)
+            .where(DocSimilarity.source_document_id == doc_id)
+        )
+        if embedding_model is not None:
+            stmt = stmt.where(DocSimilarity.embedding_model == embedding_model)
+        stmt = stmt.order_by(DocSimilarity.score.desc()).limit(limit)
+        return [
+            SimilarDoc(
+                target_document_id=str(target_id),
+                target_filename=str(filename),
+                target_title=title,
+                score=float(score),
+            )
+            for target_id, filename, title, score in session.execute(stmt).all()
+        ]

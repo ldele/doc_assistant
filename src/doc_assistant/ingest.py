@@ -411,7 +411,29 @@ def process_one_document(
         return "error"
 
 
-def main(force_rebuild: bool = False, skip_cleanup: bool = False) -> None:
+def _resolve_walk_root(scope: str | None) -> Path:
+    """Map a --path argument to a directory or file to walk.
+
+    Accepts an absolute path, a path relative to the CWD, or a path
+    relative to DOCS_PATH. Returns the resolved path. Raises FileNotFoundError
+    if nothing matches.
+    """
+    if scope is None:
+        return DOCS_PATH
+    candidates = [Path(scope), Path.cwd() / scope, DOCS_PATH / scope]
+    for c in candidates:
+        if c.exists():
+            return c.resolve()
+    raise FileNotFoundError(
+        f"--path '{scope}' not found (tried absolute, cwd-relative, and DOCS_PATH-relative)"
+    )
+
+
+def main(
+    force_rebuild: bool = False,
+    skip_cleanup: bool = False,
+    scope: str | None = None,
+) -> None:
     CACHE_PATH.mkdir(exist_ok=True)
     Path(CHROMA_PATH).mkdir(exist_ok=True)
     Path(PC_CHROMA_PATH).mkdir(exist_ok=True)
@@ -422,6 +444,8 @@ def main(force_rebuild: bool = False, skip_cleanup: bool = False) -> None:
     )
 
     if force_rebuild:
+        if scope is not None:
+            raise ValueError("--rebuild and --path are mutually exclusive (rebuild is global)")
         print("Force rebuild: clearing vector stores and SQLite document records...")
         shutil.rmtree(CHROMA_PATH, ignore_errors=True)
         shutil.rmtree(PC_CHROMA_PATH, ignore_errors=True)
@@ -433,7 +457,10 @@ def main(force_rebuild: bool = False, skip_cleanup: bool = False) -> None:
     db = Chroma(persist_directory=CHROMA_PATH, embedding_function=embeddings)
     pc_db = Chroma(persist_directory=PC_CHROMA_PATH, embedding_function=embeddings)
 
-    if not skip_cleanup and not force_rebuild:
+    # Orphan cleanup is global by design — skip when scoping to a subset,
+    # otherwise a partial walk would falsely flag everything outside the
+    # scope as missing-on-disk.
+    if not skip_cleanup and not force_rebuild and scope is None:
         orphan_hashes = cleanup_orphans_sqlite(db)
         cleanup_orphans_chroma(db, orphan_hashes, also_clean_cache=True)
         cleanup_orphans_chroma(pc_db, orphan_hashes, also_clean_cache=False)
@@ -447,8 +474,13 @@ def main(force_rebuild: bool = False, skip_cleanup: bool = False) -> None:
         separators=["\n## ", "\n### ", "\n#### ", "\n\n", "\n", ". ", " "],
     )
 
-    files = [p for p in DOCS_PATH.rglob("*") if p.is_file() and is_supported(p)]
-    print(f"Found {len(files)} supported files")
+    walk_root = _resolve_walk_root(scope)
+    if walk_root.is_file():
+        files = [walk_root] if is_supported(walk_root) else []
+    else:
+        files = [p for p in walk_root.rglob("*") if p.is_file() and is_supported(p)]
+    scope_desc = f" under {walk_root}" if scope is not None else ""
+    print(f"Found {len(files)} supported files{scope_desc}")
 
     stats: dict[str, int] = {"added": 0, "skipped": 0, "error": 0}
     for path in tqdm(files, desc="Processing"):
@@ -472,5 +504,15 @@ if __name__ == "__main__":
         action="store_true",
         help="Skip the orphan cleanup pass",
     )
+    parser.add_argument(
+        "--path",
+        type=str,
+        default=None,
+        help=(
+            "Limit ingest to one file or subdirectory. Accepts an absolute path, "
+            "a path relative to CWD, or a path relative to DOCS_PATH. "
+            "Orphan cleanup is skipped when --path is set."
+        ),
+    )
     args = parser.parse_args()
-    main(force_rebuild=args.rebuild, skip_cleanup=args.skip_cleanup)
+    main(force_rebuild=args.rebuild, skip_cleanup=args.skip_cleanup, scope=args.path)

@@ -258,3 +258,102 @@ Format: What changed | Why | Rejected alternatives | What it opens
 - Mean-pool doc vectors (PR 1) still pending — execution moves to Claude Code.
 - The Cowork-side CLAUDE.md mirror is hand-synced; could be automated later.
 **Next:** Claude Code picks up PR 1 (close Phase 4: doc vectors + backfill).
+
+---
+
+## Session: 2026-05-28 (cont.) — Phase 4 close-out (PR 1: doc vectors + similarity edges)
+
+**Starting from:** Phase 4 ~90% done. Explicit citation graph shipped 2026-05-26. Doc-vector similarity edges were the only deliverable still flagged "deferred to next session" in DEVLOG. Roadmap PR 1 in `doc-assistant-roadmap.md` scoped the work: new `doc_vectors.py` module, library similarity-edge query, CLI runner, sidecar table.
+
+**Goal this session:** Ship PR 1. Mean-pool doc-level vectors from existing chunk embeddings, persist directed top-K cosine edges to a sidecar table, surface via library API + slash command. Pure-code session — applying the backfill is a separate shell run.
+
+### src/doc_assistant/db/models.py — `DocSimilarity` sidecar table
+**What:** New ORM model with composite PK `(source_document_id, target_document_id, embedding_model)`. Float `score`, `computed_at` timestamp, CASCADE on both FKs. Two compound indexes on `(source, embedding_model)` and `(target, embedding_model)`.
+**Why:** Sidecar table follows the locked Enrichment-Layer Pattern. `embedding_model` in the PK is forward-compat for Phase 5 Feature 1 (swappable embedders) — `bge-base` and a future `specter2` can coexist without collision.
+**Rejected:** Persisting the mean-pooled vectors themselves (premature at 27-doc scale; recompute from Chroma is seconds). Single global PK with embedding_model as a non-key column (would force unique-constraint juggling on multi-model rows).
+**Opens:** Schema picked up by `Base.metadata.create_all()` — no explicit migration script needed yet.
+
+### src/doc_assistant/doc_vectors.py (new) — pure-numpy enrichment module
+**What:** Three-stage pipeline. `load_chunk_embeddings_by_document()` reads the baseline Chroma collection directly via the `chromadb` client (no HF model loaded), groups chunks by `document_id` (falling back to `doc_hash` → DB lookup for older chunks missing the field). `compute_doc_vectors()` mean-pools per doc and L2-normalises. `compute_similarity_edges()` stacks into a matrix, computes pairwise dot product, fills the diagonal with -1 to skip self-links, returns directed top-K=10 `SimilarityEdge` per source above threshold=0.5.
+**Why:** Splitting Chroma I/O from numpy core keeps the math testable without a fixture. The cosine relation is symmetric but the persisted edge set is asymmetric by design — "top-K most similar to A" is a stable UX concept, and consumers wanting symmetric edges can union both directions.
+**Rejected:** PC child store as the embedding source (more chunks per doc, no signal it improves the mean-pool). Persisting vectors alongside edges (bloat with no payoff at scale). ANN index (premature — O(N²) is fine until ~1000 docs; Phase 7 problem). Per-document Chroma queries instead of one batched `get()` (10× slower for no gain).
+**Opens:** Threshold 0.5 / top-K 10 are first-pass guesses. Once the eval harness lands in Phase 5, these become measurable choices.
+
+### scripts/compute_doc_vectors.py (new) — CLI runner
+**What:** Mirrors the `extract_citations.py` shape — argparse with `--apply`/`--force`/`--doc`/`--top-k`/`--threshold`, dry-run by default. Idempotent: refuses to write if edges already exist for the current `embedding_model` unless `--force` clears them first. `--doc <prefix>` filters the report to one source doc's edges (computation is always global since pairwise needs everyone).
+**Why:** Operational re-runnability is a project standard. The 15-minute shell-run that closes Phase 4 in practice is this command + the two existing extractors.
+**Rejected:** `--doc` limiting computation (breaks the global pairwise semantics for marginal report-shaping benefit). Inline overwrite-without-prompt (silent destruction of edges on rerun).
+
+### src/doc_assistant/library.py — `similar_docs()` query
+**What:** Added `SimilarDoc` dataclass and `similar_docs(doc_id, limit=10, embedding_model=None)`. Joins `DocSimilarity` to `Document` for filenames/titles. Sorted by score desc, capped at limit.
+**Why:** UI-agnostic data access layer is the locked architecture. Slash command and any future graph viz consume the same API.
+
+### src/doc_assistant/commands.py — `/similar <id>` slash command
+**What:** New `format_similar()` formatter; dispatcher case routes `/similar` to `library.similar_docs()`. Falls into the same "no data yet → suggest the CLI" pattern as `/cites` and `/cited-by`.
+**Why:** Surface the new edges the same way the existing graph edges are surfaced. Lowest-friction UI for inspecting results.
+
+### tests/unit/test_doc_vectors.py (new) — 15 unit tests
+**What:** Pure-logic coverage of the numpy core. mean_pool: basic case, renormalisation after averaging non-collinear vectors, empty input raises, 1-D input rejected, degenerate zero-mean returned as-is. compute_doc_vectors: skips empty entries. compute_similarity_edges: empty/single-doc inputs, identical vectors score 1.0, orthogonal vectors filtered by threshold, no self-links, top-K trimming, sort order per source, threshold boundary behaviour.
+**Why:** Project rule — coverage ≥40% (CI floor). This PR raises total coverage from ~52% to 53%.
+**Rejected:** Integration test against a real Chroma fixture (too costly for what's mostly a numpy module; the CLI itself is an end-to-end smoke test against the local store).
+
+### Quality gate run
+**What:** `ruff check` + `ruff format` on all changed files (3 minor fixes: en-dash in docstring → hyphen, unused loop var → `_src`, shadowed `e` from lambda capture → renamed `edge`). `mypy src/` strict (2 numpy `Any`-return casts via `np.asarray`, 1 metadata-value coercion via `str(...)`). Bandit clean, 0 issues. Full `pytest tests/unit/ tests/integration/` — 126 passed in 15.51s, coverage 53.03%.
+**Why:** prod-engineering skill loaded explicitly this session; mechanical checks before docs work catches issues 10× cheaper than at PR review.
+
+### Session end
+**Done:** PR 1 of the roadmap shipped — `doc_vectors.py` + `DocSimilarity` table + CLI runner + `similar_docs()` query + `/similar` command + 15 unit tests. Phase 4 architecturally complete. All quality gates green locally.
+**Unresolved:**
+- Backfill not yet run on the local DB (`compute_doc_vectors.py --apply`, plus the two existing extractors). 15-minute shell run, not a code change.
+- The `reference_flagged_ratio` health signal still hardcoded `0.0` in `ingest.py` — the citation extractor now produces the data, integration into the health score remains pending.
+**Next:** Phase 5 — PR 2 (config-driven embedding layer: env-controlled `EMBEDDING_MODEL`, factory, per-model Chroma collections).
+
+---
+
+## Session: 2026-05-28 (cont.) — PR 1.5: scoped ingest, duplicate detection, BibTeX export
+
+**Starting from:** PR 1 shipped (doc-vector similarity edges). User asked for four quality-of-life features at once: chunked/incremental ingest, duplicate detection that signals rather than deletes, a generated document list, and BibTeX export with note-vs-paper classification. Scope locked as PR 1.5 (insert before Phase 5); notes classified by file-extension heuristic (no schema change).
+
+**Goal this session:** Ship all four as a single coherent PR. Follow the enrichment-layer pattern — pure functions + CLI runners + optional slash command, no chunk-store mutation, idempotent.
+
+### src/doc_assistant/ingest.py — `--path` flag
+**What:** New `--path` CLI arg accepts absolute, cwd-relative, or DOCS_PATH-relative paths. Walk is constrained to that file or subdirectory. `_resolve_walk_root()` does the search-order resolution; `--rebuild` becomes mutually exclusive with `--path` (rebuild is intrinsically global). Orphan cleanup is skipped when `--path` is set — otherwise a partial walk would falsely flag every file outside the scope as missing-on-disk.
+**Why:** User asked for "ingest by chunk instead of every new paper at once". Ingest is already incremental by content hash, but the *trigger* was all-or-nothing. `--path` lets the user point at one new paper or one new subfolder without re-walking the entire 53-file tree.
+**Rejected:** A `--batch N` flag (less useful — what would "first N" even mean when the walk order isn't user-controllable). A `--files file1.pdf file2.pdf` list (more typing for the common case of "this one new paper").
+**Opens:** Could later add `--since <date>` for "ingest files newer than X".
+
+### scripts/find_duplicates.py (new) — duplicate detector
+**What:** Walks DOCS_PATH, computes SHA-256 of each supported file's raw bytes (streaming 1-MiB reads), groups by hash. For files with a fresh extraction cache, additionally hashes the cached markdown so that two files producing identical extracted content (different scans / OCR artifacts of the same paper) surface as a second class of duplicate. Cross-references hash groups against the DB to mark the canonical row and suggest which files to delete. Pure read-only — never deletes. `--json` flag for machine-readable output.
+**Why:** User asked for "detect duplicates and signal to delete". Content-only hashing already collapses duplicates inside the DB (same content → same Document row), but the user has no UI signal that they have orphan duplicate files on disk. This surfaces them.
+**Rejected:** Auto-deletion (irreversible; not the user's ask). A `/duplicates` slash command (filesystem walk from a chat handler is a smell — make it explicit CLI).
+**Opens:** First run on real data found 2 byte-identical groups (`(1).pdf` browser-rename pattern) and revealed that 53 files live in `data/sources` but only 27 are in the DB — flagged in chat for the user to re-run ingest.
+
+### src/doc_assistant/bibtex.py (new) — BibTeX projector
+**What:** Pure-function module that projects `Document` rows into BibTeX. Three-way entry classification: `@article` for `(format ∈ {pdf, epub, html}) AND authors AND year`; `@misc` with `howpublished={Personal note}` for `.md`/`.txt`; `@misc` with filename-as-title for everything else. Citation key generation: `<surname>_<year>` for papers via the existing `_first_author_surname` from `citations.py`; `note_<safe_filename_stem>` for notes; `misc_<short_id>` fallback. Collisions resolved with `a`/`b`/`c`... suffixes in document-id order. LaTeX escaping wraps values in `{...}` and escapes any embedded `{` or `}`; newlines collapse to single spaces (multi-line fields confuse downstream consumers). Helpful that `&`, `%`, `$`, `#`, `_` are all safe inside `{...}` per BibTeX semantics, so no further escaping needed.
+**Why:** User asked for a "document list generated" with "sources in BibTeX" for papers/books and a note-with-filename entry for notes. One module, two consumers (CLI + slash command).
+**Rejected:** `bibtexparser` dependency (overkill for the project's scale; adds CVE surface). Per-author parsing into separate `{Surname, F.}` fields (the DB stores `authors` as an opaque string; restructuring requires the metadata extractor to do better first).
+**Opens:** Surfacing pre-existing metadata-extractor quirks — `andrew_2017` should be `rajpurkar_2017` (author string lacks separators; surname picker falls back to last name, documented limitation in `citations.py:362`); a few NIH PMC PDFs misextract the boilerplate "Published in final edited form as:" as the title.
+
+### scripts/export_bibtex.py (new) — CLI runner
+**What:** Calls `export_bibtex()`, writes `docs/library.bib` by default; `--stdout` and `--out <path>` for alternatives. Always regenerates the file wholesale on each run.
+**Why:** Standard pattern (matches existing scripts). Smoke-tested against the live DB: 39 entries written in <1s.
+
+### src/doc_assistant/commands.py — `/bibtex` slash command + `/help` update
+**What:** Added `/bibtex` dispatch case (lazy-imports `bibtex` to avoid forcing the import at command-module load). Renders the full BibTeX inline in a fenced ```bibtex block. Listed in `/help`. Also added a one-line note in `/help` clarifying "one command per message" (followup to user question — chaining like `/cites X then /similar X` isn't supported).
+**Why:** Same surfacing pattern as `/similar` and `/graph`. The inline render works at 27-doc scale; if the corpus grows past ~200 entries the block will become unwieldy, at which point the CLI is the right path.
+
+### tests/unit/test_bibtex.py (new) — 21 unit tests
+**What:** Pure-function coverage. `escape_bibtex` (normal text, braces, newlines, empty, LaTeX metachars). `_safe_key_fragment`. `_citation_key` (paper, note, misc fallback, surname-only when year missing). `_dedupe_keys` (passthrough, a/b/c suffixes with stable field preservation). `_build_entry` (paper → @article, note → @misc + howpublished, untyped PDF → @misc, paper missing year falls back to misc, brace-in-title escaping). End-to-end (corpus de-duplication, header emission, sort order, valid BibTeX structure).
+**Why:** Mostly a formatting module — easy to test, expensive to debug downstream if wrong.
+
+### Quality gate run
+**What:** `ruff check` + `ruff format` (1 import cleanup in doc_vectors.py — `typing.Any` left over from earlier; one help-message line-length fix in commands.py). `mypy src/` strict — 0 issues. Full `pytest tests/unit/ tests/integration/` — 147 passed in 36.42s, coverage 54.83% (up from 53.03% in PR 1).
+**Why:** Project rule. Mechanical checks before docs work.
+
+### Session end
+**Done:** PR 1.5 — `--path` ingest flag, duplicate detector, BibTeX exporter, `/bibtex` command, 21 new unit tests. All quality gates green locally. `docs/library.bib` generated with 39 entries.
+**Surfaced for the user:**
+- 2 byte-identical file duplicates (`(1).pdf` browser-rename pattern).
+- 24-ish files in `data/sources/` not yet in the DB — `uv run python -m doc_assistant.ingest` will pick them up incrementally.
+- BibTeX output exposes 2 pre-existing metadata-extractor quirks (author-surname picker on space-separated names; NIH PMC boilerplate title misextraction). Not blocking for PR 1.5; could become a small follow-up.
+**Next:** Phase 5 — PR 2 (config-driven embedding layer).

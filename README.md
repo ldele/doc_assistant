@@ -160,17 +160,19 @@ docker compose down -v         # stop, delete model cache volume
 
 ## Benchmark results
 
-A 35-question eval set ([`tests/eval/cases.yaml`](tests/eval/cases.yaml)) over a 51-document neuroscience corpus, run via the harness in [`src/doc_assistant/eval/`](src/doc_assistant/eval/) against two embedding models.
+A 35-question eval set ([`tests/eval/cases.yaml`](tests/eval/cases.yaml)) over a 51-document neuroscience corpus, run via the harness in [`src/doc_assistant/eval/`](src/doc_assistant/eval/) against two embedding models. **5 trials per model** (`--repeat 5`); reported as **mean ± trial-mean std** so the rerun-reliability is visible.
 
-| Scorer | bge-base | specter2 | Δ (bge − specter2) |
-|---|---:|---:|---:|
-| `citation_overlap` (deterministic, 0-1) | **0.907** | 0.887 | +0.020 |
-| `contains_all` (deterministic, 0-1) | **0.812** | 0.757 | +0.055 |
-| `llm_judge` (Claude Haiku, 1-5) | **2.31** | 2.09 | +0.22 |
+**Why those two embedders ?** Specter2 is expected to perform well on academic papers (on which my testings are done). BGE-base is more flexible and works well on a vast array of documents (generalist).
 
-**bge-base outperforms specter2 across every comparable scorer on this corpus.**
+| Scorer | bge-base (n=5) | specter2 (n=5) | Δ (bge − specter2) | Verdict |
+|---|---:|---:|---:|---|
+| `citation_overlap` (0-1) | **0.907 ± 0.000** | 0.887 ± 0.002 | +0.020 | Real (deterministic gap) |
+| `contains_all` (0-1) | **0.804 ± 0.013** | 0.767 ± 0.014 | +0.037 | Real (~4σ) |
+| `llm_judge` (1-5) | 2.209 ± 0.053 | 2.224 ± 0.092 | −0.015 | **Tied** (~0.3σ — within noise) |
 
-### Why specter2 lost (it's a training-task mismatch)
+**bge-base wins on retrieval-side signals; bge-base and specter2 are tied on the LLM judge.** The cross-encoder reranker and the answer LLM together level out the embedder differential at the chunk level — what matters is which documents got retrieved (where bge-base wins by 0.02) and whether the answer surfaces the expected keywords (where bge-base wins by 0.04). The judge's faithfulness/relevance/completeness rubric over the resulting answers doesn't see a meaningful difference.
+
+### Why specter2 doesn't beat bge-base here (training-task mismatch)
 
 specter2 is the "academic paper" embedder, but it was trained for a different task than chunk-level QA:
 
@@ -183,21 +185,22 @@ specter2 may still help for paper-level similarity tasks (e.g., powering `/simil
 
 ### Caveats
 
-1. **Sample size: 35 cases.** Effect sizes 0.02-0.22 are suggestive, not statistically significant. Don't generalise beyond the spirit of the comparison.
-2. **LLM-judge mean ~2.3/5.** The judge enforces strict reference-only grading — even true answers score low when the reference doesn't mention them. The *cross-model gap* is the signal, not the absolute scores.
-3. **Reference answers partly author-verified.** 4 of 35 cases have hand-verified expected_answers; the rest are best-effort. This depresses absolute scores more than relative differences.
+1. **Sample size: 35 cases × 5 trials.** With trial-mean-std bounds in single-digit-percent territory, the deterministic and contains_all gaps are statistically real; the llm_judge gap is within noise.
+2. **LLM-judge mean ~2.2/5 across both models.** The judge enforces strict reference-only grading — even true answers score low when the reference doesn't mention them. Cross-model *gap* is the signal, not absolute scores.
+3. **Reference answers partly author-verified.** 4 of 35 cases have hand-verified expected_answers; the rest are best-effort. Affects absolute scores symmetrically; doesn't bias the gap.
 4. **`embedding_similarity` excluded.** The scorer uses the active model's own embedder, so the comparison is confounded across models. Fix is queued.
+5. **The project has still features in development**. The benchmark gives a taste on how the pipeline interacts with those two embedders. For now (Phase 5), this is enough. Testings will need to be redone and more cases built to reflect the end-usage of the application.
 
 ### Reproducing
 
-```bash
-$env:EMBEDDING_MODEL="specter2"
-uv run python -m scripts.run_eval --with-llm-judge --note "specter2"
+```powershell
 $env:EMBEDDING_MODEL="bge-base"
-uv run python -m scripts.run_eval --with-llm-judge --note "bge-base"
+uv run python -m scripts.run_eval --with-llm-judge --repeat 5 --note "bge n=5"
+$env:EMBEDDING_MODEL="specter2"
+uv run python -m scripts.run_eval --with-llm-judge --repeat 5 --note "specter2 n=5"
 ```
 
-Results land in `data/eval.duckdb`. The harness is structured for extraction — see [`src/doc_assistant/eval/`](src/doc_assistant/eval/); every file except `adapters.py` is project-agnostic and can be lifted into a standalone repo.
+Cost: ~$1 per model run. Results land in `data/eval.duckdb`. The harness is structured for extraction — see [`src/doc_assistant/eval/`](src/doc_assistant/eval/); every file except `adapters.py` is project-agnostic and can be lifted into a standalone repo.
 
 ## Status
 

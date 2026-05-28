@@ -523,3 +523,110 @@ Format: What changed | Why | Rejected alternatives | What it opens
 - `embedding_similarity` scorer is confounded across models (uses active embedder). Fix queued — use a fixed reference embedder. Low priority; the deterministic + judge scorers carry the signal.
 - LLM-judge mean ~2.3/5 is low. Likely partly reflects the unverified references depressing scores. Cross-model comparison is still meaningful.
 **Next:** PR 5 — Integrity Chunk 1 (provenance card). New `answer_records` SQLite table; capture per-answer the retrieved chunk IDs, reranker scores, model name, prompt version, token cost, latency, timestamp. Render as a collapsible card under each Chainlit answer; CLI export `/export-record <answer_id>` → JSON. Hooks into existing `tracking.py`. The eval harness will eventually consume the same record schema.
+
+---
+
+## Session: 2026-05-28 (cont.) — PR 4.1: --repeat for variance measurement + SPECTER2 TODO
+
+**Starting from:** PR 4 closed with the BGE>SPECTER2 finding from a single run per model. User asked the right methodology question: "Was our testing good enough? Don't we need 10x and average?" Also flagged that paper-level similarity is a real research need that shouldn't be lost.
+
+**Goal this session:** Two surgical additions — (1) `--repeat N` on the eval CLI so future runs can measure mean ± std with one flag, (2) record the SPECTER2-for-paper-similarity design sketch in `decisions.md` deferred-improvements.
+
+### scripts/run_eval.py — `--repeat N` flag
+**What:** CLI loops the runner N times, persisting each iteration as a separate run in DuckDB with auto-suffixed notes (`<user-note> [trial K/N]`). After the loop, queries the N run_ids and prints an aggregate summary (mean ± std per scorer). Default is `--repeat 1` (unchanged behaviour). Each trial is independently inspectable by run_id; aggregation is purely a read-side concern.
+**Why:** The hardened LLM judge runs at temperature=0 (deterministic per call), but the answer-generation LLM runs at default temperature (~1), so contains_all and llm_judge have real run-to-run variance. The flag makes that variance measurable without forcing it on every run. Citation_overlap is deterministic (retrieval-only) and its mean across N trials should equal a single-trial value — useful as a sanity check.
+**Rejected:** Adding a `trial_index` column to the existing `scores` PK (DuckDB ALTER PRIMARY KEY is awkward; backward-compat migration would be ugly). Aggregating in-memory across one run with N trials (loses per-trial inspectability). Sample standard deviation vs population standard deviation (DuckDB `STDDEV` defaults to sample; correct choice for inferring noise from a small N).
+**Opens:** No flag to filter `aggregate_runs` to a subset of cases or scorers — easy add when needed. The aggregate doesn't compute paired tests (Wilcoxon, t-test) — out of scope; can be done via DuckDB ad-hoc queries.
+
+### src/doc_assistant/eval/store.py — `Store.aggregate_runs(run_ids)`
+**What:** New method returning `{scorer_name: {mean, std, n_scored, n_skipped}}` aggregated across one or more runs. Filters to `scoreable = TRUE` (so skipped scores don't pull down the mean). `std` is sample standard deviation via DuckDB `STDDEV` aggregate (returns `NULL` for n=1, which is the right thing — undefined for a single observation).
+**Why:** Locked design — aggregation lives in the store, formatting lives in `report.py`. Same separation as `scorer_means` / `format_run_summary`.
+
+### src/doc_assistant/eval/report.py — `format_aggregate`
+**What:** Markdown table with `Scorer | Mean | Std | n_scored | n_skipped` columns. Renders `-` for undefined std (single trial). Used by the CLI when `--repeat > 1`.
+**Why:** Reuses the same pattern as `format_run_summary` — single-shot per-scorer view, just richer.
+
+### tests/unit/test_eval_runner_store.py — 6 new tests
+**What:** `aggregate_runs` empty input, single run (std=None), three trials with varying answers (real mean+std), skipped scores excluded from aggregation. `format_aggregate` rendering with label.
+**Why:** The aggregation logic is small but error-prone (FILTER WHERE clauses, NULL handling for n=1 std). Cheap to lock down with tests.
+
+### decisions.md — SPECTER2-for-paper-similarity deferred improvement
+**What:** New "Deferred Improvements" entry documenting why SPECTER2 lost the bench (training-task mismatch), why it's still useful for the paper-level `/similar` task, and a four-step implementation sketch: abstract extractor → per-model `doc_vectors.py` strategy → run with `EMBEDDING_MODEL=specter2` → `/similar` chooses or merges. Gate: SPECTER2-for-similarity ships only when paper-level `/similar` becomes a regular workflow.
+**Why:** User explicitly said paper-similarity matters as a research feature. Locking the architectural sketch in `decisions.md` means future sessions can pick it up without re-discovering the design.
+
+### Quality gate
+**What:** ruff clean on touched files, mypy clean (28 src files), 217 tests pass (up from 211 — 6 new aggregation tests), coverage 61.22% (up from 60.93%).
+**Why:** Project rule.
+
+### Session end
+**Done:** `--repeat N` shipped. SPECTER2-for-paper-similarity sketch recorded. Eval harness now produces variance-aware comparisons in one CLI invocation.
+**Unresolved:**
+- BGE vs SPECTER2 comparison was N=1 per model. Could re-run with `--repeat 5` for proper confidence intervals (~$5, ~30 min) before locking the result in a publishable form. Not needed for project-internal decision-making.
+- `embedding_similarity` scorer still confounded across models (uses active embedder). Low priority; deferred.
+**Next:** PR 5 — Integrity Chunk 1 (provenance card). The eval harness will eventually consume the same record schema, so getting the schema right matters for PR 5+.
+
+---
+
+## Session: 2026-05-28 (cont.) — PR 4.1 audit + PR 5: Integrity Chunk 1 (provenance card)
+
+**Starting from:** PR 4.1 (`--repeat` flag) shipped, GitHub CI failed on `ruff format --check` for 3 files I had locally lint-checked but not format-checked. User flagged the CI failure and asked whether prior measurements (parent-child, hybrid retrieval) had the same methodological gap that PR 4 surfaced.
+
+**Goal this session:** (1) Fix the CI ruff-format gap, (2) audit the four legacy locked-settings measurements in decisions.md, (3) add a forward-looking section covering scale / cost / UI / multi-user trajectory, (4) ship PR 5 (provenance card).
+
+### CI fix — ruff format gap
+**What:** Ran `uv run ruff format` on `doc_vectors.py`, `eval/report.py`, `eval/scorers.py`, then on `test_eval_runner_store.py` (a fourth file the broader check caught). 4 files reformatted; `ruff format --check src/ tests/` now passes.
+**Why:** I'd been running `ruff check` (the linter) but not `ruff format --check` (the formatter) as part of my local gate. CI runs both. Adding format-check to my routine going forward.
+**Opens:** Should add `ruff format --check` to the prod-engineering skill's quality-gate checklist so this gap doesn't recur.
+
+### Methodology audit on decisions.md
+**What:** Reviewed the four legacy locked-settings measurements (parent-child, TOP_K=10, multi-query, hybrid weights). All four predate the eval harness. Added a "Methodology rigor" note to each, with honest categorisation: hybrid weights = ✗ no numbers at all ("vibes-locked"); parent-child + TOP_K = ⚠ moderate (point estimates, no N/std, but trend shapes are convincing); multi-query = ✓ acceptable (two independent prompt designs both regressed → convergent).
+**Why:** Future readers (including future-me) should know which locked settings have real evidence and which are operating on assumption. The PR 4 setup is now the project's first measurement with proper infrastructure (committed eval set, DuckDB persistence, reproducer commands, `--repeat` for variance).
+**Rejected:** Re-measuring all four with the new harness (~2 hours, ~$5) — not worth doing now because the settings are working; better to re-measure each one if/when it's challenged by a proposed change.
+
+### `decisions.md` — Forward-looking considerations section
+**What:** New section between "Production Engineering Standards" and "Open Questions". Covers five trajectory axes: (1) eval set as living artefact (grows with use), (2) cost discipline (provenance card enables answer cache + tiered LLM routing), (3) database scale story (50 → 500 → 5k → 50k docs), (4) UI ceiling (Chainlit limits + replacement candidates), (5) multi-user collaboration (deferred; minimal single-user assumptions baked in by design).
+**Why:** User explicitly asked for this. The considerations influence design choices happening *now* — e.g., AnswerRecord.id being a UUID (multi-user ready), session_id column being reserved (forward-compat for threading). Putting the considerations in `decisions.md` keeps them next to the decisions they're shaping.
+
+### PR 5 — `AnswerRecord` sidecar table (new in `db/models.py`)
+**What:** SQLAlchemy model with UUID `id`, `session_id` (nullable, reserved), `query`, `original_query` (when rewritten from history), `answer`, `retrieved_chunks_json` (variable-shape data as JSON-as-text), `model_name`, `embedding_model`, `prompt_version`, `top_k`, `use_parent_child`, `token_input`, `token_output`, `latency_ms`, `error`, `created_at`. Indexes on `session_id`, `prompt_version`, `created_at`.
+**Why:** One row per generated answer. Sidecar to chunk store per the Enrichment-Layer Pattern. Schema designed forward-compat per the trajectory considerations: UUIDs for multi-user, session_id for threading, model+embedding+prompt_version for cost analysis + reproducibility, reserved `error` field for failed-answer capture.
+**Rejected:** Separate normalised tables for retrieved_chunks (joins for marginal benefit at single-user / single-corpus scale). Auto-increment integer IDs (would block future multi-user expansion).
+
+### PR 5 — `src/doc_assistant/provenance.py` (new module)
+**What:** UI-agnostic interface to the AnswerRecord table. Dataclasses: `RetrievedChunk`, `AnswerProvenance`. Functions: `record_answer(...)`, `get_record(id)`, `find_record_by_short_id(prefix)`, `list_recent_records(limit)`, `prompt_version_hash(template_hash, top_k, use_parent_child, embedding_model)` → stable 12-char sha256, `template_hash(template)`. `AnswerProvenance.to_json_dict()` for the `/export-record` slash command.
+**Why:** Same UI-agnostic pattern as `library.py`. The Chainlit card and the slash command consume identical dataclasses.
+
+### PR 5 — `pipeline.retrieve_with_scores()`
+**What:** New method exposing the per-chunk reranker score alongside the Document. Existing `retrieve()` becomes a thin wrapper that discards scores — zero behaviour change for callers that don't care about provenance.
+**Why:** The provenance card needs reranker scores; the pipeline used to drop them on the floor. Also useful for Phase 6 Chunk 2a (dual interpretation gating uses reranker confidence as an uncertainty marker).
+**Rejected:** Always returning scores from `retrieve()` (breaking change for the eval adapter and other callers). A class-level `last_scores` attribute (stateful; thread-unsafe; harder to reason about).
+
+### PR 5 — Chainlit capture + collapsible card
+**What:** `apps/chainlit_app.py` now wraps the answer flow with `time.monotonic()` for latency, captures the active model + embedding + prompt-version hash, and persists an AnswerRecord after each stream completes. A collapsible markdown `<details>` card renders below the answer with: record id (8 chars), latency, total tokens, model + embedding + config, per-chunk attribution (filename · page · section · reranker score). Card collapse defaults closed — doesn't clutter the conversation but is always one click away.
+**Why:** The provenance card is the user-facing manifestation of Integrity Chunk 1. It's where "every answer carries a record of how it was produced" becomes visible.
+**Failure mode:** Provenance capture wrapped in `try/except` — a DB write failure shows an inline warning but never breaks the answer. The answer-generation path stays the primary concern.
+
+### PR 5 — `/export-record` and `/records` slash commands
+**What:** `/export-record <id-prefix>` returns the full provenance as a fenced JSON block (uses `AnswerProvenance.to_json_dict()`). `/records` lists the 20 most recent answers with id + timestamp + query preview. Both follow the existing slash-command pattern (lazy imports of provenance to keep `commands.py` lightweight).
+**Why:** The card has the 8-char id and points at `/export-record` for the full payload. `/records` is the entry point — "what answers do I have records for?".
+
+### PR 5 — `tests/unit/test_provenance.py` — 13 tests
+**What:** Pure helpers (template_hash stability + length, prompt_version_hash determinism + sensitivity to each input field, AnswerProvenance.to_json_dict handles datetime + None). Persistence roundtrip via a `temp_db` fixture that builds a fresh SQLite engine bound to a tmp_path file and monkeypatches `session_mod._engine` + `_SessionLocal` for the test's scope. Covers record_answer + get_record + find_record_by_short_id (unique match + no match) + list_recent_records (order + limit).
+**Why:** Pure helpers are cheap to lock down; persistence path is where bugs hide. The temp_db fixture is reusable for future tests of any sidecar-table module.
+**Opens:** The chunk-deserialisation path (JSON→RetrievedChunk dataclass) isn't tested with malformed JSON — currently the loader would raise. Acceptable given we always write through our own code; pathological inputs would only matter if external systems wrote to the table.
+
+### Quality gate
+**What:** ruff format clean (56 files), ruff lint clean (after fixing 1 long-line + 1 import-order), mypy strict clean (29 source files), bandit 0 HIGH (1 pre-existing MEDIUM), 230 tests pass (up from 217), coverage 62.29% (up from 60.93%).
+**Why:** Project rule.
+
+### Migration run
+**What:** `uv run python -m doc_assistant.db.migrations` — picks up the new `AnswerRecord` model via SQLAlchemy `Base.metadata.create_all`. `answer_records` now present in the live SQLite alongside the existing 11 tables.
+**Why:** Live UI needs the table to exist before the first turn writes a record.
+
+### Session end
+**Done:** CI ruff-format issue fixed. Methodology audit complete with honest "rigor" tags on every legacy measurement. Forward-looking trajectory considerations recorded in decisions.md. PR 5 (Integrity Chunk 1, provenance card) fully shipped — schema + module + pipeline wiring + Chainlit card + 2 slash commands + 13 tests + live migration.
+**Unresolved:**
+- The reviewer agent (Chunk 2b) will eventually write its own rubric scores to a new table — the AnswerRecord schema doesn't include rubric fields. When 2b lands, decide: extend AnswerRecord or new sidecar table. Probably the latter (cleaner separation of "what the system did" vs "what the reviewer thought").
+- The `/records` command lists 20 by default — pagination not yet implemented. Will matter once usage piles up.
+- No retention policy on the answer_records table. Long-running personal use will accumulate. Could add a `--archive-older-than` script later.
+**Next:** Phase 6 — pick from Feature 4a (pdfplumber tables, simplest), Chunk 2a (dual interpretation, biggest UX impact), or Chunk 2b (reviewer agent — natural extension of Chunk 1's provenance work). Reviewer agent has the most natural sequencing since it reuses the provenance schema we just shipped.

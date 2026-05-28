@@ -58,6 +58,8 @@ Extraction is far slower than embedding. Caching only embeddings means re-extrac
 
 Vector search loses on exact terms (author surnames, equation labels, library function names). BM25 loses on paraphrased questions. Ensemble retrieval at weights `[0.4, 0.6]` (keyword:vector) gave better hits during testing on technical documents.
 
+**Methodology rigor: ⚠ vibes-locked, no numbers behind the weights.** "Gave better hits during testing" was a qualitative impression from before the eval harness existed. The *architectural* choice (hybrid retrieval) is well-justified by the asymmetric failure modes of pure-vector vs pure-BM25; the *specific weights* (0.4/0.6) are essentially arbitrary. Re-measure via `scripts/run_eval.py` with a weight sweep when the `--bm25-weight` flag exists (small follow-up). Citation_overlap alone (deterministic, free) is enough for this; no answer-LLM needed.
+
 ### Cross-encoder reranking on top of retrieval
 
 Embedding-based retrieval is fast but not perfect. The reranker is slower per item 
@@ -121,6 +123,8 @@ The baseline (single-chunk) retrieval remains available via
 Note: This setting is for what I currently have in my library.
 What matters is that I can quickly check the performance of the settings.
 
+**Methodology rigor: ⚠ moderate. Point estimates, no error bars.** The original measurement predates the eval harness; sample size (N), variance, and the case set are all unrecorded. The +1.40 lift on methodology questions is too large to be pure noise even at small N, so direction is trustworthy; magnitude is not. To re-validate, toggle `USE_PARENT_CHILD` and run `uv run python -m scripts.run_eval --with-llm-judge --repeat 3` against the current 35-case set — would give a defensible mean ± std comparison.
+
 ### TOP_K tuning — adopted at TOP_K=10
 
 Hypothesis: increasing the number of retrieved chunks would help when the 
@@ -157,6 +161,8 @@ Trade-offs:
 Note: This setting is for what I currently have in my library.
 What matters is that I can quickly check the performance of the settings.
 
+**Methodology rigor: ⚠ moderate. Strong shape, weak error bars.** The 3 → 5 → 8 → 10 → 12 → 15 sweep with a clear peak on *both* correctness and faithfulness is hard to attribute to noise (an accidental peak would not be coherent across two independent metrics). Sample size, variance, and the case set are unrecorded. To re-validate, the easiest path is a script-driven sweep over `TOP_K` values, persisting per-K runs in DuckDB and aggregating via `Store.aggregate_runs`. Existing `scripts/run_topk_sweep.py` is a pre-harness artefact and should be rewritten on top of the new harness.
+
 ### Multi-Query expansion — tested twice, not adopted
 
 Hypothesis: generating 3 variations of each query and combining retrieval 
@@ -186,6 +192,8 @@ What matters is that I can quickly check the performance of the settings.
 As of phase 2, the cost outweighs the benefits. 
 
 The MQ code remains available but disabled by default.
+
+**Methodology rigor: ✓ acceptable.** Two independent prompt designs both regressed against the same baseline — convergent evidence that the regression is mechanistic, not noise. Sample size is still unrecorded, but the qualitative consistency carries the conclusion. Re-validation low priority; if revisited, the bar is "show that MQ wins on *some* sub-population of questions" (e.g., genuinely ambiguous queries), which would imply a different design — query-type-conditional MQ rather than always-on.
 
 ### Document health tracking
 
@@ -689,6 +697,111 @@ Keywords: *personal*, *local-first*, *literature graph*, *knowledge gaps*, *what
 
 ---
 
+## Forward-looking considerations (added 2026-05-28)
+
+The architecture is well-positioned for the current ~50-doc personal-library 
+scale and handles ~500 docs without changes. Several trajectory questions are 
+worth keeping in view as the project grows; none requires action now, but 
+none should be silently undermined by short-term decisions either.
+
+### Eval set as a living artefact
+
+`tests/eval/cases.yaml` ships with 35 cases. The expected pattern: every real 
+question the user asks the system in earnest is a candidate eval case. The 
+file should grow with use — 100 cases by Phase 6, 200+ by Phase 9. Each new 
+case is a regression test against future PRs. The harness (`scripts/run_eval.py` 
+with `--repeat`) is built to scale linearly with the case count.
+
+**Risk:** authored expected_answers go stale as the corpus changes or as 
+the user's understanding sharpens. Periodic review needed — the 
+`metadata.author_verified: false` flag is the marker.
+
+### Cost discipline
+
+Once `/chat` is in daily use, Haiku token spend matters. The provenance 
+card (PR 5, Integrity Chunk 1) is the data primitive that makes cost 
+analysis evidence-based — every answer carries its token cost. Options 
+that become available once the records exist:
+
+1. **Answer cache** keyed by `(query_hash, retrieved_chunk_ids, model, prompt_version)`. 
+   Same question with the same context returns the same answer for free.
+2. **Tiered LLM routing**: Haiku for simple lookups, Sonnet for hard 
+   synthesis, Ollama for routine queries. The reviewer agent in 
+   Chunk 2b will need this anyway (cheap model judges expensive model's 
+   output).
+3. **Per-session cost budgets**: warn at $X, hard-stop at $Y.
+
+None of these is built yet; the schema for PR 5 should make all three 
+feasible later without re-instrumenting.
+
+### Database scale story
+
+| Library size | What works | What needs work |
+|---|---|---|
+| **~50 docs** (now) | Everything | — |
+| **~500 docs** | Chunk retrieval, BM25 in-memory, O(N²) doc similarity | None |
+| **~2-3k docs** | Chunk retrieval still fine (Chroma) | BM25 rebuild slow; O(N²) similarity edges (~5M pairs) becoming uncomfortable |
+| **~5k+ docs** | Chroma + reranker still scale | BM25 needs persistence; similarity needs ANN index (FAISS, hnswlib); SQLite joins start to feel slow |
+| **~50k+ docs** | None of the current architecture as-is | Need Postgres or sharded SQLite; persistent BM25 (Tantivy / Lucene); ANN; possibly distributed |
+
+**Architectural invariants to preserve so the scale-up isn't a rewrite:**
+
+- `Document.id` is a UUID, not an auto-increment — works across multiple DBs / shards.
+- Sidecar tables (`citations`, `doc_similarities`, soon `answer_records`) decouple from the chunk store — can be migrated independently.
+- All retrieval goes through `pipeline.retrieve()` — single chokepoint to swap from in-memory BM25 to a persistent index.
+- Embedding factory routes model choice through one function — adding ANN-backed collections is a Chroma-config change, not a pipeline rewrite.
+
+**What would actually trigger a database redesign:** multi-user (next section).
+
+### UI ceiling
+
+Chainlit covers chat well. It will hit limits at:
+
+- **Graph visualisation** (Phase 6+) — citation subgraphs beyond ~25 nodes are already at the inline-Mermaid limit.
+- **Adjudication UI** for Chunk 2a (Phase 6) — per-claim accept/reject/edit needs richer interaction than Chainlit's element API supports cleanly.
+- **Library browser** with filters, sorting, bulk actions.
+
+Decision deferred to Phase 8. Three plausible directions:
+
+1. **Reflex** — Python full-stack, lowest migration cost.
+2. **FastAPI + custom React frontend** — most flexible, most work.
+3. **Streamlit** — quickest to prototype, weakest at custom interactions.
+
+The data layer (`library.py`, `commands.py`, `pipeline.py`) is UI-agnostic precisely so this swap doesn't ripple. Keep it that way.
+
+### Multi-user collaboration
+
+Currently single-user assumptions are baked in only minimally:
+- One SQLite DB
+- No auth
+- One `data/` directory
+- No notion of "who created this tag / who adjudicated this answer"
+
+Going multi-user requires:
+1. **Auth** (out of scope until needed — could be a Reflex/FastAPI add-on, not a from-scratch design).
+2. **Per-user scoping** on Documents, Folders, Tags, AnswerRecords (the things that *belong* to a user) — vs *shared* Documents (a lab corpus).
+3. **DB redesign**: SQLite is single-writer; multi-user concurrent edits need either WAL-mode tuning, server-mode (`sqld`), or a switch to Postgres.
+4. **`created_by` and `modified_by` columns** on every mutable table.
+
+**Don't bake in single-user assumptions you can't reverse.** The current 
+schema mostly avoids this — UUIDs everywhere, sidecar tables. The 
+`/folders` and `/tags` features (when added) need to think about per-user 
+vs shared from day one.
+
+**When to revisit:** the moment a workflow emerges that involves >1 person 
+on the same corpus. Until then, the cost of designing for it now exceeds 
+the cost of deferring.
+
+### Why these are in `decisions.md`, not a separate trajectory doc
+
+They influence design choices that are happening *now*. PR 5 (provenance 
+card) needs to capture token cost in a queryable shape — that's the cost 
+discipline section informing the schema. The decision to use UUIDs for 
+`AnswerRecord.id` is informed by the multi-user section. Forward-looking 
+considerations belong next to the decisions they're shaping.
+
+---
+
 ## Open Questions
 
 Decisions I haven't made yet:
@@ -754,6 +867,34 @@ Cost: might not be worth the cost but worth trying. LLM-based could be costly.
 Was deferred; now scheduled as Feature 4a under the Phase 6 enrichment layer.
 See `docs/doc-assistant-roadmap.md` and the Phase 6 entry above for the
 implementation plan.
+
+### SPECTER2 for paper-level similarity (gated on use case)
+
+Phase 5 / Feature 3 measurement showed SPECTER2 loses to bge-base on
+chunk-level QA retrieval — a training-task mismatch (SPECTER2 was
+trained for paper-level citation prediction over abstracts; we feed it
+chunks of methods/results text). SPECTER2 stays registered but unused
+by default.
+
+**However**, paper-level similarity (the `/similar` task) is a useful
+research feature — finding related papers to one you're reading is
+exactly what SPECTER2 was built for. Implementation sketch when the
+workflow becomes worth it:
+
+1. Add an abstract extractor to `metadata_extractor.py` (regex/heuristic
+   over the markdown cache; LLM fallback for failures).
+2. Extend `doc_vectors.py` with a per-model strategy: BGE mean-pools
+   chunks (current); SPECTER2 embeds `title + abstract` directly.
+3. Run `compute_doc_vectors --apply --force` with
+   `EMBEDDING_MODEL=specter2`. SPECTER2-similarity edges live alongside
+   the BGE ones thanks to the existing `embedding_model` PK column.
+4. `/similar` chooses which set to surface (or shows both side-by-side
+   for comparison).
+
+**Gate:** ship only when paper-level `/similar` is a regular workflow
+worth optimising. Effort: 1 evening + measurement to verify
+SPECTER2-on-abstracts beats BGE-mean-pooled-chunks for this task.
+Currently no evidence either way.
 
 ### Domain-aware tokenization / keyword embedding
 

@@ -263,3 +263,42 @@ class Store:
             [run_id],
         ).fetchall()
         return [{"case_id": r[0], "scorer_name": r[1], "value": float(r[2])} for r in rows]
+
+    def aggregate_runs(self, run_ids: list[str]) -> dict[str, dict[str, float | int | None]]:
+        """Aggregate scoreable scores across multiple runs (e.g., N trials of the same eval).
+
+        Returns ``{scorer_name: {mean, std, n_scored, n_skipped}}``. ``std`` is the
+        sample standard deviation across all (case, trial) scoreable rows. ``n_scored``
+        and ``n_skipped`` are totals across all runs. Mean and std are ``None`` when
+        no scoreable rows exist for the scorer.
+
+        Use case: ``--repeat N`` runs the eval N times, then aggregates the N
+        run_ids to get a stable mean ± std per scorer.
+        """
+        if not run_ids:
+            return {}
+        placeholders = ",".join(["?"] * len(run_ids))
+        rows = self.conn.execute(
+            f"""
+            SELECT
+                scorer_name,
+                AVG(value)    FILTER (WHERE scoreable = TRUE) AS mean,
+                STDDEV(value) FILTER (WHERE scoreable = TRUE) AS std,
+                COUNT(*)      FILTER (WHERE scoreable = TRUE) AS n_scored,
+                COUNT(*)      FILTER (WHERE scoreable = FALSE) AS n_skipped
+            FROM scores
+            WHERE run_id IN ({placeholders})
+            GROUP BY scorer_name
+            ORDER BY scorer_name
+            """,
+            run_ids,
+        ).fetchall()
+        return {
+            r[0]: {
+                "mean": float(r[1]) if r[1] is not None else None,
+                "std": float(r[2]) if r[2] is not None else None,
+                "n_scored": int(r[3]),
+                "n_skipped": int(r[4]),
+            }
+            for r in rows
+        }

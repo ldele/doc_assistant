@@ -121,10 +121,14 @@ class CitationOverlapScorer:
             {
                 "matched": hits,
                 "missing": [c for c in case.expected_citations if c not in hits],
-                "extra": [c for c in output.citations if not any(
-                    e.lower() in c.lower() or c.lower() in e.lower()
-                    for e in case.expected_citations
-                )],
+                "extra": [
+                    c
+                    for c in output.citations
+                    if not any(
+                        e.lower() in c.lower() or c.lower() in e.lower()
+                        for e in case.expected_citations
+                    )
+                ],
             },
         )
 

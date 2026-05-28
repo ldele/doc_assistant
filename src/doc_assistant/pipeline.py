@@ -85,6 +85,16 @@ class RAGPipeline:
         return OllamaLLM(model="llama3", base_url=OLLAMA_HOST)
 
     def retrieve(self, query: str, top_k: int = TOP_K) -> list[Document]:
+        """Retrieve top-k documents for `query`. Reranker scores discarded."""
+        return [doc for doc, _ in self.retrieve_with_scores(query, top_k)]
+
+    def retrieve_with_scores(self, query: str, top_k: int = TOP_K) -> list[tuple[Document, float]]:
+        """Retrieve top-k as ``(doc, reranker_score)`` pairs.
+
+        Used by the provenance card to record per-chunk attribution and
+        by anything that wants to inspect reranker confidence (e.g.,
+        Phase 6 dual-interpretation gating).
+        """
         # Multi-Query: generate variations if enabled
         queries = self.expand_query(query) if USE_MULTI_QUERY else [query]
 
@@ -105,17 +115,19 @@ class RAGPipeline:
         # Rerank against the original query
         pairs = [[query, doc.page_content] for doc in all_candidates]
         scores = self.reranker.predict(pairs)
-        ranked = sorted(
+        ranked: list[tuple[Document, float]] = sorted(
             zip(all_candidates, scores, strict=True),
             key=lambda x: x[1],
             reverse=True,
         )
 
-        # Parent-child: dedup by parent BEFORE applying top_k
+        # Parent-child: dedup by parent BEFORE applying top_k. The
+        # reranker_score we return is the *child*'s score that won — the
+        # parent is the LLM context, the child is the retrieval evidence.
         if USE_PARENT_CHILD:
             seen_parents: set[tuple[Any, ...]] = set()
-            deduped: list[Document] = []
-            for doc, _ in ranked:
+            deduped: list[tuple[Document, float]] = []
+            for doc, score in ranked:
                 parent_text = doc.metadata.get("parent_text")
                 parent_key = (
                     doc.metadata.get("filename"),
@@ -128,13 +140,13 @@ class RAGPipeline:
                         page_content=parent_text,
                         metadata={k: v for k, v in doc.metadata.items() if k != "parent_text"},
                     )
-                    deduped.append(new_doc)
+                    deduped.append((new_doc, float(score)))
                     if len(deduped) >= top_k:
                         break
             return deduped
 
         # No parent-child: just take top_k
-        return [doc for doc, _ in ranked[:top_k]]
+        return [(doc, float(score)) for doc, score in ranked[:top_k]]
 
     def rewrite(
         self,

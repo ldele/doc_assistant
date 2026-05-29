@@ -608,6 +608,7 @@ See `docs/doc-assistant-roadmap.md` for the source of intent.
 - **Integrity Chunk 1** — Provenance card. `answer_records` table; 
   collapsible card under each answer; `/export-record <id>` → JSON. 
   Hooks into existing `tracking.py`.
+- **Provider layer (generation side of Feature 1)** — the config-driven-provider pattern Feature 1 applied to embeddings extends to generation. A normalized `LLMClient.complete()` protocol (`src/doc_assistant/llm.py`) with Anthropic + Ollama adapters backs the reviewer and the eval judge; the streaming chat path stays LangChain but reads `LLM_PROVIDER`/`LLM_MODEL`. **Hard requirement: the app runs fully locally** — analysis + reviewer on Ollama with no `ANTHROPIC_API_KEY`. Reviewer context isolation (evidence-only prompt, separate instance) is pinned by a guard test. Full design: `docs/specs/llm-provider-isolation.md`.
 
 ### Phase 6: Per-project routing + Figures & Tables + Dual-layer interpretation
 

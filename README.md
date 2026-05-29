@@ -1,25 +1,24 @@
 # Document Assistant
 
-A local RAG (retrieval-augmented generation) assistant over personal document libraries — PDFs, EPUBs, HTML, DOCX, Markdown.
-Ask questions in natural language, get answers grounded in citations from your own files.
+A local-first RAG assistant over your own research library (PDF, EPUB, HTML, DOCX, Markdown) that answers questions with inline, page-level citations — and measures whether those answers are any good. Built for researchers and students who need to search the *content* of their documents, with retrieval quality treated as an engineering problem, not a vibe.
 
-Built for researchers and students who want to actually search the *content* of their documents, not just titles.
+Not a chatbot wrapper: the goal is reliable, grounded answers with the measurement and provenance to back them up.
+
+## Why this is interesting (engineering)
+
+- **Decisions are measured, not guessed.** TOP_K, parent-child retrieval, and BM25/vector weights were each chosen from experiments; an in-repo eval harness scores the pipeline and tracks it over time. Every non-obvious choice — and what lost — is in [`docs/decisions.md`](docs/decisions.md).
+- **Honest benchmarks, including a negative result.** A 35-case eval set over a 51-doc corpus, 5 trials per model, reported as mean ± trial-mean std with caveats stated up front — and the "academic" embedder does **not** win (see [Benchmark results](#benchmark-results)).
+- **Research-integrity layer.** Every answer carries a provenance record (retrieved chunks, model, cost); a separate-context reviewer agent re-grades flagged answers; confidence signals keep the UI quiet on clean answers. Built so AI-assisted output is auditable.
+- **Architecture that scales by addition.** Enrichment layers (citations, doc-vectors, tables) are sidecar modules + idempotent CLI runners that never mutate the chunk store — new capability is a new module, not a rewrite.
 
 ## What it does
 
-- **Multi-format ingestion** — PDF, EPUB, HTML, DOCX, Markdown, RTF, ODT, plain text
-- **Hybrid retrieval** — BM25 keyword search + vector similarity ensemble
-- **Cross-encoder reranking** — precision scoring on top of recall
-- **Parent-child retrieval** — small chunks for retrieval accuracy, large passages for LLM context
-- **Document health scoring** — automatic extraction quality assessment per document
-- **Library management** — SQLite-backed document store with folders, tags, and ingestion history
-- **Citation graph** — extracts references from each document, resolves them against the library, exposes incoming/outgoing edges and small subgraphs
-- **Two-tier caching** — markdown extraction cache + embedding cache, both auto-invalidated
-- **Streaming ingest** — constant memory regardless of library size
-- **Conversation memory** — follow-up questions understand context
-- **Inline citations** — every answer backed by inspectable passages with page numbers and sections
-- **Token tracking** — real-time cost transparency per turn and per session
-- **Pluggable LLM** — Anthropic API by default, Ollama for fully offline use
+- **Grounded answers with inline citations** — page numbers and sections, every passage inspectable.
+- **Hybrid retrieval + reranking** — BM25 + vector ensemble, cross-encoder reranker, parent-child chunks.
+- **Citation graph** — extracts references, resolves them against your library, exposes in/out edges.
+- **Measurable quality** — eval harness with 5 scorers and a DuckDB result store.
+- **Local-first and pluggable** — Chroma + SQLite on disk; Claude API or local Ollama.
+- **Cost transparency** — per-turn and per-session token tracking.
 
 ## Stack
 
@@ -204,9 +203,13 @@ Cost: ~$1 per model run. Results land in `data/eval.duckdb`. The harness is stru
 
 ## Status
 
-Phase 5 in progress — embedding factory + eval harness shipped. bge-base locked as default based on the benchmark above. Next: provenance card (Integrity Chunk 1).
+**Phase 6 in progress.** Shipped: core RAG (Phase 1); measured quality + eval harness (Phases 2 & 5); document store + library UI (Phase 3); citation graph + doc-similarity edges (Phase 4); and the research-integrity layer — provenance card, heuristic confidence signals, and a separate-context LLM reviewer agent. **264 tests · ~64% coverage · ruff / mypy / bandit clean.**
 
-Roadmap: figures/tables + dual interpretation (Phase 6) → gap detection (Phase 7) → UI polish (Phase 8) → literature review generation (Phase 9). See [`docs/decisions.md`](docs/decisions.md) and [`docs/doc-assistant-roadmap.md`](docs/doc-assistant-roadmap.md) for full details.
+`bge-base` is locked as the default embedder on the strength of the benchmark above.
+
+**Next (independent, spec'd):** a normalized LLM-provider protocol for fully-local runs (analysis *and* reviewer on Ollama, no API key — [`docs/specs/llm-provider-isolation.md`](docs/specs/llm-provider-isolation.md)), dual-layer evidence/interpretation answers, and pdfplumber table extraction. Full rationale and roadmap: [`docs/decisions.md`](docs/decisions.md), [`docs/doc-assistant-roadmap.md`](docs/doc-assistant-roadmap.md).
+
+A 60-second walkthrough for first-time readers: [`docs/DEMO.md`](docs/DEMO.md).
 
 ---
 

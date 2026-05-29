@@ -63,6 +63,8 @@ Make the embedding model swappable via env config instead of hardcoded.
 
 **Effort:** 1–2 evenings.
 
+**Generation side — LLM provider protocol (locally runnable).** Feature 1 also covers the generation layer, the sibling of the embedding factory. A normalized `LLMClient.complete(messages, *, temperature, max_tokens) -> str` protocol (`src/doc_assistant/llm.py`) with `AnthropicClient` + `OllamaClient` adapters backs the reviewer and the eval judge; `pipeline._build_llm()` becomes `LLM_PROVIDER`/`LLM_MODEL`-driven while staying a streaming LangChain model. **Hard requirement: fully local** (Ollama analysis + reviewer, no API key). Independent of all other features. Full spec + build node + guard test: `docs/specs/llm-provider-isolation.md`.
+
 ### Feature 2 — Eval harness module (v0)
 
 A module inside doc_assistant that runs the RAG pipeline against a versioned eval set, scores outputs, and tracks results over time.
@@ -320,6 +322,8 @@ Each row is one PR. Each PR scopes to one chunk, with the files and the `decisio
 | 11 | Integrity Chunk 2b: reviewer agent | `src/doc_assistant/reviewer.py` (new), Pydantic rubric schema, integration in `pipeline.py` | 1 evening | PR 10 |
 | 12 | Integrity Chunk 3: PRISMA-trAIce export | `scripts/export_review_traice.py` (new) | 1 day | Phase 9 work; PRs 5 + 10 |
 | 13 | Feature 5: extract eval harness to standalone repo | New repo | 1 weekend | PR 4 + at least one real measurement run |
+
+**Provider protocol (generation side of Feature 1).** Folded into the Feature 1 provider theme — not a new numbered PR. Independent, near-term, no dependency. Files, build node, and guard test: `docs/specs/llm-provider-isolation.md`.
 
 ---
 

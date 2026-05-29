@@ -18,8 +18,10 @@ build/
 # Secrets
 .env
 
-# Claude (local-only, not committed)
-CLAUDE.md
+# Claude
+# CLAUDE.md is COMMITTED — shared, public-safe agent instructions (a portfolio plus).
+# Personal/transient notes go in CLAUDE.local.md (gitignored); .claude/ work dir stays local.
+CLAUDE.local.md
 .claude/
 
 # Runtime data
@@ -45,3 +47,6 @@ Thumbs.db
 chainlit.md
 core.py
 HANDOFF.md
+
+# private: interview-prep, not for the public repo
+docs/STUDY_PLAN.md

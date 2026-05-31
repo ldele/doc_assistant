@@ -13,6 +13,8 @@ This document is the **source of intent**. `docs/decisions.md` records the locke
 3. Promote figures and tables from "lossy text artifacts" to first-class structured content.
 4. Add a research-integrity layer: every answer carries a provenance record; synthesis is split into evidence and interpretation layers; an LLM reviewer scores each interpretation against a rubric.
 5. Position the project against published standards (PRISMA-trAIce, AI Usage Cards, BE WISE) without binding to any single vendor framework.
+6. Close the self-improvement loop: aggregate reviewer verdicts over time, distinguish reviewer bias from systemic faults by anchoring against the golden eval set, and surface recurring failure patterns as actionable fixes.
+7. Add a self-organizing markdown "wiki" synthesis layer over the corpus — distilled, linked, cited topic notes that make knowledge gaps computable. Feeds Phase 7 gap detection and Phase 9 review generation. (Inspired by the Karpathy LLM-wiki pattern proven out in the cross-project atlas; here it sits *on top of* RAG, not as a replacement.)
 
 ---
 
@@ -24,8 +26,8 @@ The new work integrates into the existing phase plan as follows. The full phase 
 |-------|---------|--------------------|
 | 4 | Citation Graph — close out | Existing roadmap |
 | 5 | Embedding & Eval Foundation | Features 1, 2, 3 + Integrity Chunk 1 |
-| 6 | Per-project routing + Figures & Tables + Dual-layer interpretation | Features 1b, 4a, 4b, 4c + Integrity Chunks 2a, 2b |
-| 7 | Gap Detection (was Phase 5) | Existing roadmap |
+| 6 | Per-project routing + Figures & Tables + Dual-layer interpretation + self-improvement loop | Features 1b, 4a, 4b, 4c + Integrity Chunks 2a, 2b, 2c + chunking sweep |
+| 7 | Gap Detection (was Phase 5) | Existing roadmap + Feature 6 (wiki/synthesis layer) |
 | 8 | UI Polish (was Phase 6) | Existing roadmap |
 | 9 | Literature Review Generation (was Phase 7) | Existing roadmap + Integrity Chunk 3 |
 | — | Extract eval harness to standalone repo (Feature 5) | Post-Phase 5, no phase number |
@@ -252,11 +254,64 @@ Separate LLM call after the generator. Cheaper model (Haiku/Sonnet, not Opus). R
 
 **Effort:** 1 evening on top of Chunk 2a.
 
+### Engineering — chunking sweep (reopens Phase 2.4) ✅ infra shipped 2026-05-31
+
+Chunk *sizes* (`parent 2000/200`, `child 400/50`, `baseline 1000/200`) were never measured — only the parent-child *structure* was. They lived as hardcoded constants in `ingest.py`.
+
+**Shipped:** sizes are now config-driven (`PARENT/CHILD/BASELINE_CHUNK_SIZE` env vars; defaults behaviour-preserving), with `scripts/sweep_chunking.py` driving `ingest --rebuild` + `run_eval` across a size grid, tagging each run for comparison in `data/eval.duckdb`. Guard tests pin "config-driven, defaults unchanged."
+
+**Remaining (measurement, runs locally):** run the sweep on a representative corpus, pick the winner, update the locked-settings tables in `decisions.md` + `CLAUDE.md` with the numbers, and change the config defaults. A later `CHUNK_STRATEGY` flag (semantic vs fixed) is deferred until sizing is settled.
+
+**Effort:** measurement run is ~½ day of mostly-unattended compute + interpretation.
+
+### Integrity Chunk 2c — Reviewer aggregation & self-improvement loop
+
+Turn the per-answer reviewer (Chunk 2b) and provenance records (Chunk 1) into a feedback loop: mine reviewer verdicts for *systematic* failure modes, then act on them.
+
+**Why.** A reviewer that runs and is then forgotten is a cost with no compounding return. Aggregating its verdicts is where the self-improvement actually lives — recurring low scores on one dimension point at either a fixable system fault or a biased reviewer.
+
+**The core hazard, designed around.** The reviewer is a *biased sampler* (it runs only on already-flagged answers per Chunk 2b's gate) **and** an LLM with its own systematic tilts (a prompt that rewards citation density will ding citation density everywhere). So a recurring suggestion is ambiguous by construction. Resolving it requires a ground-truth anchor:
+
+- Periodically run the reviewer against the golden eval set (Feature 3), where answer quality is already known.
+- If it flags cases verified as good → **reviewer bias** (fix the rubric/prompt).
+- If flagged cases correlate with low eval correctness → **real system fault** (fix retrieval, chunking, or prompting).
+
+Without this anchor, "pattern in the suggestions" is unfalsifiable — it must not ship without it.
+
+**Deliverables.**
+
+- Add a categorical `failure_tag` enum to the reviewer rubric (`missing_citation`, `overclaim`, `evidence_contradiction`, `no_hedge`, …) alongside the existing free-text `notes`. Free text stays as human-readable detail; the enum makes patterns *countable*.
+- Aggregation module + CLI over the `AnswerReview` table — counts per `failure_tag`, per `prompt_version`, over time. Reuses the eval harness's existing aggregate/flaky-case machinery rather than re-implementing it.
+- Bias-vs-fault report: the eval-anchored comparison above, emitted as a short markdown summary.
+- (Optional, gated) surface the top recurring fault to the user/devlog as a suggested fix; **no auto-remediation** — same cost-discipline rule as no-auto-retry.
+
+**Architecture:** read-only aggregation over existing sidecar tables. No mutation of the chunk store. Enrichment-Layer Pattern.
+
+**Effort:** 1 weekend (the `failure_tag` schema change is the only write; the rest is read + report).
+
 ---
 
 ## Phase 7 — Gap Detection
 
-No additions from this roadmap. See `docs/decisions.md`.
+### Feature 6 — Self-organizing wiki / synthesis layer
+
+A derived, human-readable markdown layer over the RAG corpus: per-topic notes (summary + tags + `[[links]]` + source citations) distilled from retrieved chunks. The Karpathy LLM-wiki pattern — proven in the cross-project atlas — applied *on top of* RAG, not as a replacement for it.
+
+**Why.** RAG and a wiki solve different problems: RAG retrieves over a large corpus you didn't author and won't edit; a wiki is a small, authored, evolving distillation. Over a research library too big to read directly, a synthesis layer gives a cheap, LLM-native, browsable index — and, critically, makes **knowledge gaps computable**: a topic note with three thin citations and no `[[links]]` is a structural gap signal, not just an LLM opinion. This is the mechanism Phase 7 (gap detection) needs and the living precursor to Phase 9 (literature review generation, which becomes a *living* artifact instead of a one-shot export).
+
+**Architecture:** post-ingest enrichment layer, same pattern as `citations.py`/`metadata_extractor.py`. Sidecar markdown files (`data/wiki/`), idempotent, never mutates the chunk store. Notes are regenerated from current retrieval + provenance, so they stay in sync with the corpus.
+
+**Deliverables (cheap → expensive).**
+
+- 6a — Topic note generator: cluster the library (existing doc vectors / citation graph), emit one markdown note per topic with summary, tags, citations, and `[[links]]` to related notes. Sidecar `data/wiki/`.
+- 6b — Gap signals: compute structural gap markers per note (citation thinness, missing links, single-source claims) — reuses the confidence-signal heuristics already in `provenance.py`.
+- 6c — Refresh + drift: regenerate notes on re-ingest; flag notes whose underlying sources changed.
+
+**What NOT to do.** Don't fold this into a separate project, and don't let it tempt a move away from RAG — it's an additive layer. Don't hand-author the notes (that's a normal wiki); they're *derived* and regenerable.
+
+**Effort:** 6a is 1 weekend; 6b/6c 1 evening each.
+
+See also `docs/decisions.md` for the existing Phase 7 gap-detection intent.
 
 ---
 
@@ -320,8 +375,11 @@ Each row is one PR. Each PR scopes to one chunk, with the files and the `decisio
 | 9 | Feature 4c: VLM figure description (gated) | `src/doc_assistant/figures.py` (VLM call), Pydantic schema, `MAX_VLM_CALLS_PER_DOC` config | 1 weekend | PR 8 |
 | 10 | Integrity Chunk 2a: dual interpretation + adjudication | `src/doc_assistant/pipeline.py`, `src/doc_assistant/prompts.py`, `src/doc_assistant/config.py` (`SYNTHESIS_MODE`), UI surface for accept/reject/edit | 1 weekend | PR 5 |
 | 11 | Integrity Chunk 2b: reviewer agent | `src/doc_assistant/reviewer.py` (new), Pydantic rubric schema, integration in `pipeline.py` | 1 evening | PR 10 |
-| 12 | Integrity Chunk 3: PRISMA-trAIce export | `scripts/export_review_traice.py` (new) | 1 day | Phase 9 work; PRs 5 + 10 |
-| 13 | Feature 5: extract eval harness to standalone repo | New repo | 1 weekend | PR 4 + at least one real measurement run |
+| 11.5 | Chunking sweep infra (Phase 2.4 reopened) ✅ shipped 2026-05-31 | `src/doc_assistant/config.py`, `src/doc_assistant/ingest.py`, `scripts/sweep_chunking.py` (new), `tests/unit/test_chunking_config.py` (new) | done (infra) + ½-day measurement run | PR 3 (eval harness) |
+| 12 | Integrity Chunk 2c: reviewer aggregation & self-improvement loop | `src/doc_assistant/reviewer.py` (`failure_tag` enum), `src/doc_assistant/db/models.py` (AnswerReview column + migration), aggregation module + CLI, eval-anchored bias-vs-fault report | 1 weekend | PR 11 + PR 4 (golden set for the anchor) |
+| 13 | Feature 6: self-organizing wiki / synthesis layer | `src/doc_assistant/wiki.py` (new), `scripts/build_wiki.py` (new), gap signals reuse `provenance.py` | 1 weekend (6a) + 1 evening each (6b/6c) | PR 1 (doc vectors) + PR 5 (provenance) |
+| 14 | Integrity Chunk 3: PRISMA-trAIce export | `scripts/export_review_traice.py` (new) | 1 day | Phase 9 work; PRs 5 + 10 |
+| 15 | Feature 5: extract eval harness to standalone repo | New repo | 1 weekend | PR 4 + at least one real measurement run |
 
 **Provider protocol (generation side of Feature 1).** Folded into the Feature 1 provider theme — not a new numbered PR. Independent, near-term, no dependency. Files, build node, and guard test: `docs/specs/llm-provider-isolation.md`.
 
@@ -338,6 +396,12 @@ Each row is one PR. Each PR scopes to one chunk, with the files and the `decisio
 - Don't show self-reported LLM confidence scores. Use retrieval-derived uncertainty markers + reviewer rubric output instead.
 - Don't auto-retry on reviewer-flagged issues. Surface them; the user decides.
 - Don't bind the project's identity to a single vendor framework (BE WISE, etc.). Reference standards as influences; keep config flags vendor-neutral.
+- Don't mine reviewer suggestions for "patterns" without the eval-set anchor (Chunk 2c). The reviewer only runs on flagged answers and has its own biases; an unanchored pattern can't distinguish reviewer fault from system fault.
+- Don't auto-remediate from the self-improvement loop. Surface the recurring fault; a human decides the fix. Same discipline as no-auto-retry.
+- Don't sweep chunking without re-embedding. A size change invalidates the embedding cache; in-place comparison is meaningless.
+- Don't change chunk-size defaults from a single run. Use `--repeat` and beat the control (current default) by more than its variance before re-locking.
+- Don't hand-author the wiki notes (Feature 6). They're derived from retrieval + provenance and regenerable; a hand-edited note drifts and defeats gap detection.
+- Don't treat the wiki layer as a RAG replacement. It's an additive synthesis/index layer on top of the chunk store.
 
 ---
 
@@ -347,3 +411,4 @@ Each row is one PR. Each PR scopes to one chunk, with the files and the `decisio
 - PRISMA-trAIce — PMC12694947 (Phase 9 export target)
 - BE WISE framework — Frontiers, April 2026 (influence on dual-layer / `SYNTHESIS_MODE=human`)
 - Nature Methods — disclosure norm satisfied as a byproduct of PRISMA-trAIce export
+- Karpathy LLM-wiki pattern — structured markdown as an LLM-queryable knowledge base (influence on Feature 6; proven in the cross-project atlas). Note: the widely-cited "70x more efficient than RAG" framing is marketing, not a benchmark — Feature 6 layers a wiki *on top of* RAG rather than replacing it.

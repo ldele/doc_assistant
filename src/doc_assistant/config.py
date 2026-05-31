@@ -80,3 +80,30 @@ USE_MULTI_QUERY = os.getenv("USE_MULTI_QUERY", "false").lower() == "true"
 
 # Number of chunks/parents passed to the LLM at query time
 TOP_K = int(os.getenv("TOP_K", "10"))
+
+
+# ============================================================
+# Chunking configuration (Phase 6 — chunking experiment)
+# ============================================================
+# These sizes were the variable under test in Phase 2.4 but were never
+# measured — they lived as hardcoded constants in ingest.py. Making them
+# env-driven is the prerequisite for sweeping chunk strategies through the
+# eval harness without editing source (see scripts/sweep_chunking.py).
+#
+# Defaults reproduce the historical hardcoded values exactly, so this change
+# is behaviour-preserving until an experiment justifies new values.
+#
+# NOTE: changing any of these invalidates the embedding cache — a sweep
+# re-embeds the corpus per config. Budget accordingly.
+
+# Parent chunks: large passages sent to the LLM at query time.
+PARENT_CHUNK_SIZE = int(os.getenv("PARENT_CHUNK_SIZE", "2000"))
+PARENT_CHUNK_OVERLAP = int(os.getenv("PARENT_CHUNK_OVERLAP", "200"))
+
+# Child chunks: small passages embedded for retrieval precision.
+CHILD_CHUNK_SIZE = int(os.getenv("CHILD_CHUNK_SIZE", "400"))
+CHILD_CHUNK_OVERLAP = int(os.getenv("CHILD_CHUNK_OVERLAP", "50"))
+
+# Baseline (single-chunk) retrieval store, used when USE_PARENT_CHILD is off.
+BASELINE_CHUNK_SIZE = int(os.getenv("BASELINE_CHUNK_SIZE", "1000"))
+BASELINE_CHUNK_OVERLAP = int(os.getenv("BASELINE_CHUNK_OVERLAP", "200"))

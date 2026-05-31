@@ -438,7 +438,11 @@ worth claiming without a metric.
 - 2.2 Metrics: retrieval recall@K, answer faithfulness, answer correctness,
   latency, token cost
 - 2.3 Baseline measurement
-- 2.4 Experiment: semantic chunking
+- 2.4 Experiment: semantic chunking — **reopened 2026-05-31.** Chunk *sizes*
+  were never measured (only parent-child structure was). Sizes are now
+  config-driven (`PARENT/CHILD/BASELINE_CHUNK_SIZE`); sweep via
+  `scripts/sweep_chunking.py` through the Phase 5 eval harness. Update the
+  locked-settings table with the winning config once measured.
 - 2.5 Experiment: parent-child retrieval
 - 2.6 Experiment: section-aware retrieval
 - 2.7 Experiment: query rewriting / HyDE
@@ -636,6 +640,19 @@ interpretation + reviewer agent.
 - **Integrity Chunk 2b** — Reviewer agent. Cheaper LLM scores the 
   interpretation against a structured rubric (faithfulness, citation 
   density, hedging adequacy, claims-without-sources). No auto-retry.
+- **Integrity Chunk 2c** — Reviewer aggregation & self-improvement loop.
+  Adds a categorical `failure_tag` enum to the reviewer (countable
+  patterns alongside free-text notes), aggregates `AnswerReview` over
+  time, and resolves the central ambiguity — *reviewer bias vs system
+  fault* — by anchoring against the golden eval set (flagged-but-verified-
+  good ⇒ reviewer bias; flagged-and-low-correctness ⇒ system fault).
+  Read-only aggregation, Enrichment-Layer Pattern, no auto-remediation.
+  An unanchored "pattern in suggestions" must not ship — it can't tell
+  reviewer fault from system fault. See roadmap Chunk 2c.
+- **Engineering: chunking sweep** (reopens Phase 2.4). Chunk sizes are now
+  config-driven (`PARENT/CHILD/BASELINE_CHUNK_SIZE`, shipped 2026-05-31);
+  `scripts/sweep_chunking.py` measures size grids through the eval harness.
+  Defaults are historical, not measured — lock from the sweep result.
 
 ### Phase 7: Gap Detection and Cartography
 
@@ -653,6 +670,15 @@ This is the distinguishing capability — most existing tools stop short of this
 - "What to read next" recommendations, ranked
 - Knowledge map dashboard: bubble plot or similar, clusters sized by coverage, 
   recency color-coded, gaps visible at a glance
+- **Feature 6 — Self-organizing wiki / synthesis layer.** A derived markdown
+  layer over the corpus: per-topic notes (summary + tags + `[[links]]` +
+  citations) distilled from retrieval, regenerable, sidecar `data/wiki/`.
+  The Karpathy LLM-wiki pattern (proven in the cross-project atlas) applied
+  *on top of* RAG, not as a replacement. Its real payoff here is making gap
+  detection computable — a note with thin citations and no links is a
+  structural gap signal (reuses `provenance.py` confidence heuristics), not
+  just an LLM opinion. Living precursor to the Phase 9 review generator. See
+  roadmap Feature 6.
 
 ### Phase 8: UI Polish
 

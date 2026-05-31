@@ -160,6 +160,7 @@ Post-ingest enrichment layers (citations, metadata, figures/tables coming in Pha
 | Parent-child retrieval | enabled | +0.62 correctness vs single-chunk baseline |
 | Multi-query expansion | disabled | Dilutes reranker; tested twice, regressed both times |
 | Embedding model | BGE-base-en-v1.5 | Stable; Phase 5 makes it swappable; SPECTER2 comparison gates Phase 6 routing |
+| Chunk sizes | parent 2000/200, child 400/50, baseline 1000/200 | Config-driven since 2026-05-31 (`*_CHUNK_SIZE` env vars). **Defaults are historical, never measured** — sweep with `scripts/sweep_chunking.py` before trusting as optimal |
 
 ---
 

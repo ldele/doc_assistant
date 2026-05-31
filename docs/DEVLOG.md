@@ -780,3 +780,45 @@ Both downstream gaps are several standard deviations — the BGE > SPECTER2 resu
 - The `fakhar_optimal_communication` case's expected_answer should be tightened — likely simplification of structure will eliminate the JSON parsing flake.
 - Asymmetric comparison: BGE has n=5, SPECTER2 still has n=1. User to re-run SPECTER2 at `--repeat 5` for the symmetric comparison. Cost: ~$1, ~30 min.
 **Next:** User runs SPECTER2 n=5; then Phase 6 remaining work (Chunk 2a — dual interpretation, or Feature 4a — pdfplumber tables).
+
+---
+## Session: 2026-05-31 — Chunking made config-driven (reopens Phase 2.4)
+
+**Starting from:** Phase 6 in progress. Provenance card + reviewer agent shipped. Chunk sizes (`2000/200` parent, `400/50` child, `1000/200` baseline) lived as hardcoded constants in `ingest.py` — listed as "Phase 2.4 semantic chunking experiment" in decisions but never actually measured, and not in the locked-settings table because no number was ever produced.
+**Goal this session:** Unblock a rigorous chunking experiment by making the sizes config-driven and wiring a sweep through the existing Phase 5 eval harness. No behaviour change.
+
+### src/doc_assistant/config.py — chunking config block (new)
+**What:** Added `PARENT_CHUNK_SIZE/OVERLAP`, `CHILD_CHUNK_SIZE/OVERLAP`, `BASELINE_CHUNK_SIZE/OVERLAP` as env-var-backed ints. Defaults reproduce the historical hardcoded values exactly.
+**Why:** The chunk size was the variable under test but lived in source — you can't sweep it without editing code. Mirrors the `EMBEDDING_MODEL` config-swap pattern that made the embedder experiment clean.
+**Rejected:** A single `CHUNK_STRATEGY` enum — premature; the real first question is sizing, and sizing is six independent ints. Semantic-vs-fixed strategy is a later flag once sizing is settled.
+
+### src/doc_assistant/ingest.py — splitter factories
+**What:** Replaced the three hardcoded `RecursiveCharacterTextSplitter` constructions with `_make_parent_splitter()`, `_make_child_splitter()`, `_make_baseline_splitter()` that read `config` at call time. Module-level `_pc_parent_splitter`/`_pc_child_splitter` singletons preserved (built from the factories) so the hot path is unchanged; `main()`'s baseline splitter now comes from the factory.
+**Why:** Factories reading `config` at call time are monkeypatch-testable and pick up env overrides in a fresh subprocess (how the sweep drives them). Separators unchanged.
+**Rejected:** Reading the env directly in `ingest` — `config` is the single source of truth for runtime settings; bypassing it would split the knob across two files.
+
+### tests/unit/test_chunking_config.py (new)
+**What:** Guard tests: (1) env-var defaults equal the historical sizes (behaviour-preserving), (2) each factory reflects monkeypatched config (no re-hardcoding), (3) child < parent sanity.
+**Why:** Locks the "config-driven, defaults unchanged" contract so a future edit can't silently hardcode a size or drift the default.
+
+### scripts/sweep_chunking.py (new)
+**What:** Experiment driver. Iterates a small grid of chunk configs; per config sets the chunk env vars, runs `ingest --rebuild` (mandatory re-embed), then `scripts.run_eval` tagged with a `--note` encoding the config. Reuses the eval harness for all scoring/aggregation — invents none of its own. `--dry-run`, `--with-embedding`, `--with-llm-judge`, `--repeat N` passthrough.
+**Why:** Turns "test chunking more" into a repeatable, measured sweep instead of ad-hoc edits. Notes make each config's runs identifiable in `data/eval.duckdb`.
+**Rejected:** In-process re-ingest between configs — module-level singletons + the embedding cache make in-process config changes unreliable; a fresh subprocess per config is the clean isolation boundary.
+
+### Docs
+**What:** `.env.example` gains the six chunk knobs with a "sweep before changing" note. `decisions.md` Phase 2.4 marked reopened with the proper harness. `CLAUDE.md` locked-settings table notes chunk sizes are config-driven and unmeasured.
+
+### Session end
+**Done:** Chunking is config-driven, behaviour-preserving, test-guarded, and sweepable. The experiment can now be run without touching source.
+**Unresolved / handoff (sandbox can't run the 3.12 suite or the corpus):**
+- Run locally before merge: `uv run ruff format . && uv run ruff check . && uv run mypy src && uv run pytest`.
+- Run the sweep on a representative corpus: `uv run python -m scripts.sweep_chunking --with-embedding --repeat 3` (add `--with-llm-judge` for the correctness signal; budget the API cost). Compare configs via the eval aggregate filtered on the `chunk-sweep | ...` notes.
+- If a non-default config wins, update the `decisions.md` locked-settings table + the `CLAUDE.md` table with the measured numbers, and change the `.env.example`/config defaults.
+**Next:** Either lock chunking from the sweep result, or return to the self-improvement loop / wiki-synthesis-layer threads discussed this session.
+
+### Roadmap — captured self-improvement loop + wiki/synthesis layer (planning)
+**What:** Added two future-work threads to `doc-assistant-roadmap.md` (source of intent) and mirrored them in `decisions.md`: (1) **Integrity Chunk 2c** — reviewer aggregation & self-improvement loop, with a `failure_tag` enum and an eval-set bias-vs-fault anchor; (2) **Feature 6** — self-organizing wiki/synthesis layer (Karpathy LLM-wiki pattern on top of RAG, feeding Phase 7 gap detection). Also recorded the shipped chunking-sweep infra as PR 11.5, updated Goals (6, 7), the phase table, the PR table (renumbered 12→14, 13→15), What-NOT-to-do, and References.
+**Why:** The two threads came out of this session's strategy discussion; capturing them in the source-of-intent doc keeps them from evaporating and gives Claude Code scoped PRs to pick up.
+**Rejected:** Building either now — both depend on the chunking sweep result and (for 2c) the golden set being the anchor. Planning-only this pass.
+**What it opens:** Chunk 2c (after the reviewer + golden set) and Feature 6 (after doc vectors + provenance) are now PR-scoped with dependencies and explicit guardrails (no unanchored pattern-mining; no auto-remediation; wiki is additive, not a RAG replacement).

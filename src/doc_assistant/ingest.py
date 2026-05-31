@@ -11,6 +11,7 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from sqlalchemy import delete, select
 from tqdm import tqdm
 
+from doc_assistant import config
 from doc_assistant.config import (
     CACHE_PATH,
     CHROMA_PATH,
@@ -31,16 +32,42 @@ from doc_assistant.extractors import extract_to_markdown, is_supported
 PAGE_MARKER = re.compile(r"<!--\s*page:(\d+)\s*-->")
 HEADING_MARKER = re.compile(r"^(#{1,6})\s+(.+?)$", re.MULTILINE)
 
-_pc_parent_splitter = RecursiveCharacterTextSplitter(
-    chunk_size=2000,
-    chunk_overlap=200,
-    separators=["\n## ", "\n### ", "\n\n", "\n", ". ", " "],
-)
-_pc_child_splitter = RecursiveCharacterTextSplitter(
-    chunk_size=400,
-    chunk_overlap=50,
-    separators=["\n\n", "\n", ". ", " "],
-)
+# Splitter sizes are config-driven (see config.PARENT_CHUNK_SIZE etc.) so a
+# chunking sweep can vary them via env without editing source. The factories
+# read ``config`` attributes at call time, which keeps them monkeypatch-able
+# in tests; the module-level singletons below preserve the original import-time
+# construction for the hot path.
+
+
+def _make_parent_splitter() -> RecursiveCharacterTextSplitter:
+    """Large-passage splitter for parent chunks (sent to the LLM)."""
+    return RecursiveCharacterTextSplitter(
+        chunk_size=config.PARENT_CHUNK_SIZE,
+        chunk_overlap=config.PARENT_CHUNK_OVERLAP,
+        separators=["\n## ", "\n### ", "\n\n", "\n", ". ", " "],
+    )
+
+
+def _make_child_splitter() -> RecursiveCharacterTextSplitter:
+    """Small-passage splitter for child chunks (embedded for retrieval)."""
+    return RecursiveCharacterTextSplitter(
+        chunk_size=config.CHILD_CHUNK_SIZE,
+        chunk_overlap=config.CHILD_CHUNK_OVERLAP,
+        separators=["\n\n", "\n", ". ", " "],
+    )
+
+
+def _make_baseline_splitter() -> RecursiveCharacterTextSplitter:
+    """Single-chunk splitter for the baseline (non parent-child) store."""
+    return RecursiveCharacterTextSplitter(
+        chunk_size=config.BASELINE_CHUNK_SIZE,
+        chunk_overlap=config.BASELINE_CHUNK_OVERLAP,
+        separators=["\n## ", "\n### ", "\n#### ", "\n\n", "\n", ". ", " "],
+    )
+
+
+_pc_parent_splitter = _make_parent_splitter()
+_pc_child_splitter = _make_child_splitter()
 
 
 def get_cache_path(original: Path) -> Path:
@@ -480,11 +507,7 @@ def main(
     indexed = get_indexed_hashes(db) & get_indexed_hashes(pc_db)
     print(f"Already indexed in both stores: {len(indexed)} unique documents")
 
-    splitter = RecursiveCharacterTextSplitter(
-        chunk_size=1000,
-        chunk_overlap=200,
-        separators=["\n## ", "\n### ", "\n#### ", "\n\n", "\n", ". ", " "],
-    )
+    splitter = _make_baseline_splitter()
 
     walk_root = _resolve_walk_root(scope)
     if walk_root.is_file():

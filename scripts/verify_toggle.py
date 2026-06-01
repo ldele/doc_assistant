@@ -1,8 +1,9 @@
 """Verify that USE_PARENT_CHILD actually routes retrieval to the right store.
 
-We force the config value, instantiate the pipeline, and inspect which 
+We force the config value, instantiate the pipeline, and inspect which
 store it loaded.
 """
+
 import os
 import sys
 
@@ -24,11 +25,14 @@ def check_with(use_pc: bool):
     rag = RAGPipeline()
 
     # Inspect the active store path
-    active_path = rag.db._collection._client._system.settings.persist_directory \
-        if hasattr(rag.db, '_collection') else None
+    active_path = (
+        rag.db._collection._client._system.settings.persist_directory
+        if hasattr(rag.db, "_collection")
+        else None
+    )
 
     # Simpler check: see how many chunks are in the active store
-    chunk_count = rag.chunk_count() if hasattr(rag, 'chunk_count') else None
+    chunk_count = rag.chunk_count() if hasattr(rag, "chunk_count") else None
 
     expected_path = PC_CHROMA_PATH if use_pc else CHROMA_PATH
 

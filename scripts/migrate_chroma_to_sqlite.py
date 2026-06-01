@@ -1,12 +1,13 @@
 """One-time migration: populate SQLite from existing Chroma metadata.
 
-Reads chunks from Chroma, groups by filename, creates one Document row 
-per unique file. Updates Chroma chunks in place to add `document_id` 
+Reads chunks from Chroma, groups by filename, creates one Document row
+per unique file. Updates Chroma chunks in place to add `document_id`
 linking back to SQLite.
 
-Idempotent: safe to run multiple times. Documents that already exist 
+Idempotent: safe to run multiple times. Documents that already exist
 in SQLite (by doc_hash) are skipped.
 """
+
 from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
@@ -111,7 +112,7 @@ def migrate_chroma(chroma_path: str, label: str) -> None:
         print(f"  Updating {len(chunk_updates)} chunks with document_id...")
         batch_size = 500
         for i in range(0, len(chunk_updates), batch_size):
-            batch = chunk_updates[i:i + batch_size]
+            batch = chunk_updates[i : i + batch_size]
             batch_ids = [cid for cid, _ in batch]
             batch_metas = [m for _, m in batch]
             db._collection.update(ids=batch_ids, metadatas=batch_metas)

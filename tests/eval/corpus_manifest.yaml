@@ -1,0 +1,169 @@
+# Public corpus manifest — the literature behind doc_assistant
+#
+# A self-referential demo corpus: the papers whose methods this project implements
+# (RAG, dense retrieval, sentence embeddings, the BGE + SPECTER2 embedders, BERT
+# re-ranking, ColBERT, HyDE, LLM-as-a-judge, AI Usage Cards). It powers the
+# clone-and-run public eval (tests/eval/cases.public.yaml).
+#
+# DOWNLOAD-ONLY. Every paper is on arXiv. scripts/download_corpus.py fetches each
+# pinned-version PDF straight from arXiv. Nothing is re-hosted in this repo, so the
+# arXiv non-exclusive license is not an issue — you reference and download, not
+# redistribute. sha256 pins the exact bytes used when the cases were authored;
+# arXiv occasionally re-renders a PDF, so a mismatch is a warning, not an error.
+#
+# This is NOT the project's benchmark corpus. The 35-case neuroscience benchmark
+# (cases.yaml) runs on the user's private library, which is mostly copyrighted and
+# not redistributable. That benchmark is unchanged; this corpus is a separate,
+# fully-shareable demonstration set.
+
+documents:
+  - filename: "rag_lewis_2020.pdf"
+    title: "Retrieval-Augmented Generation for Knowledge-Intensive NLP Tasks"
+    authors: "Lewis et al."
+    year: 2020
+    arxiv_id: "2005.11401"
+    version: "v4"
+    url: "https://arxiv.org/pdf/2005.11401v4.pdf"
+    abstract_url: "https://arxiv.org/abs/2005.11401v4"
+    license: "arXiv.org non-exclusive license — download-only, not re-hosted"
+    tier: arxiv
+    direct_pdf: true
+    committed: false
+    referenced_by_eval: true
+    sha256: 23e3249e9a1e75418d82efecab0ea8c4d033b89c93742f63208d47ce01f21233
+    bytes: 885323
+  - filename: "dpr_karpukhin_2020.pdf"
+    title: "Dense Passage Retrieval for Open-Domain Question Answering"
+    authors: "Karpukhin et al."
+    year: 2020
+    arxiv_id: "2004.04906"
+    version: "v3"
+    url: "https://arxiv.org/pdf/2004.04906v3.pdf"
+    abstract_url: "https://arxiv.org/abs/2004.04906v3"
+    license: "arXiv.org non-exclusive license — download-only, not re-hosted"
+    tier: arxiv
+    direct_pdf: true
+    committed: false
+    referenced_by_eval: true
+    sha256: 3e67fc1a9977715acf722d85f0b7d124b03715e975f6310a4d6c12094190912f
+    bytes: 383508
+  - filename: "sbert_reimers_2019.pdf"
+    title: "Sentence-BERT: Sentence Embeddings using Siamese BERT-Networks"
+    authors: "Reimers & Gurevych"
+    year: 2019
+    arxiv_id: "1908.10084"
+    version: "v1"
+    url: "https://arxiv.org/pdf/1908.10084v1.pdf"
+    abstract_url: "https://arxiv.org/abs/1908.10084v1"
+    license: "arXiv.org non-exclusive license — download-only, not re-hosted"
+    tier: arxiv
+    direct_pdf: true
+    committed: false
+    referenced_by_eval: true
+    sha256: 92366d22fc0521350d6cbe0ad72bcee754f90e88181d7b4a8e2adb1e7e594fec
+    bytes: 548961
+  - filename: "bge_cpack_xiao_2023.pdf"
+    title: "C-Pack: Packed Resources For General Chinese Embeddings"
+    authors: "Xiao et al."
+    year: 2023
+    arxiv_id: "2309.07597"
+    version: "v4"
+    url: "https://arxiv.org/pdf/2309.07597v4.pdf"
+    abstract_url: "https://arxiv.org/abs/2309.07597v4"
+    license: "arXiv.org non-exclusive license — download-only, not re-hosted"
+    tier: arxiv
+    direct_pdf: true
+    committed: false
+    referenced_by_eval: true
+    sha256: 6b738c256e8ce2ccd17c1f60bb000044b7e58625265330b0c70114f04ab1915f
+    bytes: 1332241
+  - filename: "specter2_scirepeval_singh_2022.pdf"
+    title: "SciRepEval: A Multi-Format Benchmark for Scientific Document Representations"
+    authors: "Singh et al."
+    year: 2022
+    arxiv_id: "2211.13308"
+    version: "v3"
+    url: "https://arxiv.org/pdf/2211.13308v3.pdf"
+    abstract_url: "https://arxiv.org/abs/2211.13308v3"
+    license: "arXiv.org non-exclusive license — download-only, not re-hosted"
+    tier: arxiv
+    direct_pdf: true
+    committed: false
+    referenced_by_eval: true
+    sha256: 18ebe06cb40e19321bcea3cc6900db83546cb35083cece1cd6f0132434837219
+    bytes: 887557
+  - filename: "reranking_bert_nogueira_2019.pdf"
+    title: "Passage Re-ranking with BERT"
+    authors: "Nogueira & Cho"
+    year: 2019
+    arxiv_id: "1901.04085"
+    version: "v5"
+    url: "https://arxiv.org/pdf/1901.04085v5.pdf"
+    abstract_url: "https://arxiv.org/abs/1901.04085v5"
+    license: "arXiv.org non-exclusive license — download-only, not re-hosted"
+    tier: arxiv
+    direct_pdf: true
+    committed: false
+    referenced_by_eval: true
+    sha256: b3f05b72d6d24b00761fb0a7363b6e7a10dac22b7f0abfaf4f5025bea7f8e22e
+    bytes: 179659
+  - filename: "colbert_khattab_2020.pdf"
+    title: "ColBERT: Efficient and Effective Passage Search via Contextualized Late Interaction over BERT"
+    authors: "Khattab & Zaharia"
+    year: 2020
+    arxiv_id: "2004.12832"
+    version: "v2"
+    url: "https://arxiv.org/pdf/2004.12832v2.pdf"
+    abstract_url: "https://arxiv.org/abs/2004.12832v2"
+    license: "arXiv.org non-exclusive license — download-only, not re-hosted"
+    tier: arxiv
+    direct_pdf: true
+    committed: false
+    referenced_by_eval: true
+    sha256: 2e487d9b96e3c2e5e286d843e98a066adc0442faa3a6e8ddbd1771221bf9ae14
+    bytes: 4918165
+  - filename: "hyde_gao_2022.pdf"
+    title: "Precise Zero-Shot Dense Retrieval without Relevance Labels (HyDE)"
+    authors: "Gao et al."
+    year: 2022
+    arxiv_id: "2212.10496"
+    version: "v1"
+    url: "https://arxiv.org/pdf/2212.10496v1.pdf"
+    abstract_url: "https://arxiv.org/abs/2212.10496v1"
+    license: "arXiv.org non-exclusive license — download-only, not re-hosted"
+    tier: arxiv
+    direct_pdf: true
+    committed: false
+    referenced_by_eval: true
+    sha256: dc0ae3c5584ed146beee122e6a9ad9c48547dde048d53e9be8435d8f1d354531
+    bytes: 424964
+  - filename: "llm_judge_zheng_2023.pdf"
+    title: "Judging LLM-as-a-Judge with MT-Bench and Chatbot Arena"
+    authors: "Zheng et al."
+    year: 2023
+    arxiv_id: "2306.05685"
+    version: "v4"
+    url: "https://arxiv.org/pdf/2306.05685v4.pdf"
+    abstract_url: "https://arxiv.org/abs/2306.05685v4"
+    license: "arXiv.org non-exclusive license — download-only, not re-hosted"
+    tier: arxiv
+    direct_pdf: true
+    committed: false
+    referenced_by_eval: true
+    sha256: 1574982845157569b85c1214bfa9987000384d7a5e3b5fbdcc5a29afec59cb81
+    bytes: 1580141
+  - filename: "ai_usage_cards_2023.pdf"
+    title: "AI Usage Cards: Responsibly Reporting AI-Generated Content"
+    authors: "Wahle et al."
+    year: 2023
+    arxiv_id: "2303.03886"
+    version: "v2"
+    url: "https://arxiv.org/pdf/2303.03886v2.pdf"
+    abstract_url: "https://arxiv.org/abs/2303.03886v2"
+    license: "arXiv.org non-exclusive license — download-only, not re-hosted"
+    tier: arxiv
+    direct_pdf: true
+    committed: false
+    referenced_by_eval: true
+    sha256: 68f2d462e7b7379e90dc58d37d2f454e3bee2088fd25c03de20a9a2cef4dfe77
+    bytes: 1171674

@@ -822,3 +822,149 @@ Both downstream gaps are several standard deviations — the BGE > SPECTER2 resu
 **Why:** The two threads came out of this session's strategy discussion; capturing them in the source-of-intent doc keeps them from evaporating and gives Claude Code scoped PRs to pick up.
 **Rejected:** Building either now — both depend on the chunking sweep result and (for 2c) the golden set being the anchor. Planning-only this pass.
 **What it opens:** Chunk 2c (after the reviewer + golden set) and Feature 6 (after doc vectors + provenance) are now PR-scoped with dependencies and explicit guardrails (no unanchored pattern-mining; no auto-remediation; wiki is additive, not a RAG replacement).
+
+---
+
+## Session: 2026-06-01 — Shareable evaluation corpus (reproducibility) + integrity-docs backlog
+
+**Starting from:** Chunking sweep infra shipped (2026-05-31); its commit left an explicit TODO — "add doc examples for test repeatability." `data/sources/` (51 PDFs, ~299 MB) is gitignored and local-only, so nobody else could reconstruct the corpus to re-run the sweep or the eval. Packaging-only session (Cowork lane); no `src/` changes.
+**Goal this session:** Make the evaluation corpus reproducible by a third party without redistributing copyrighted material.
+
+### tests/eval/corpus_manifest.yaml (new)
+**What:** One entry per source doc (all 51), generated from `library.db`: filename, title, year, DOI, best-effort download URL, `direct_pdf` flag, publisher, license, tier (`open` / `open-repo` / `restricted`), `committed`, `referenced_by_eval`, sha256, bytes. Tally: 18 CC-BY (eLife/Frontiers), 13 open-repo (arXiv/bioRxiv/NeurIPS/PMC), 20 restricted (Springer/Nature, Elsevier/Cell, IEEE, books/historical).
+**Why:** The manifest is the authoritative, legally-clean record of what the corpus *is*. sha256 lets a re-fetch confirm byte-identity with the locked measurements. License/tier classification keeps redistribution honest.
+**Rejected:** Guessing licenses from filenames — pulled DOIs/titles from `library.db` and verified the CC-BY claim on every committed file by grepping the PDF first page for the Creative Commons statement.
+
+### tests/eval/corpus/ (new — 6 PDFs + LICENSES.md)
+**What:** The only documents committed to the repo: 6 verified CC-BY 4.0 papers (5 eLife + 1 Frontiers), all referenced by an eval case, ~28.9 MB total. `LICENSES.md` carries full per-file citation + CC-BY attribution (redistribution requirement).
+**Why:** Lets the public eval run on a fresh clone with zero downloads. CC-BY is the only license that permits redistribution; everything else is referenced, not shipped. Path is outside `data/sources/`, so it escapes the gitignore without un-ignoring runtime data.
+**Rejected:** Committing all eval-referenced docs (~33, incl. the two 16 MB eLife and copyrighted foundational papers) — illegal for the copyrighted ones and bloats the repo. Kept the committed set small, CC-BY-only, and case-covering.
+
+### tests/eval/cases.public.yaml (new)
+**What:** 6-case subset of `cases.yaml` — exactly the cases whose `expected_citations` are fully satisfied by the committed CC-BY docs (one per committed doc). Verbatim copies of the source cases with a header noting `cases.yaml` stays the source of truth.
+**Why:** A clone-and-run smoke/eval set that needs no corpus assembly. Verified: 0 orphan citations against the committed subset.
+
+### scripts/download_corpus.py (new)
+**What:** Rebuilds the corpus from the manifest into `data/sources/`. Committed docs copied from the repo; `direct_pdf` docs (arXiv/bioRxiv) downloaded via stdlib urllib; other open-access docs printed as manual links (landing pages, not direct PDFs — avoids saving HTML as `.pdf`); restricted docs skipped with their DOI printed. Every fetch sha256-checked against the manifest (mismatch = warning, since publishers re-render PDFs). Flags: `--public-only`, `--verify-only`, `--dry-run`.
+**Why:** Turns the manifest into one-command corpus reconstruction without shipping copyrighted bytes. Dry-run accounting: 6 committed + 6 direct-PDF + 19 manual-open + 20 restricted = 51, 0 failures.
+**Rejected:** Auto-downloading eLife/Frontiers PDFs from landing-page URLs — no stable direct-PDF pattern; would silently save HTML. Only arXiv/bioRxiv get a real direct-PDF URL; the rest are honest manual links.
+
+### Docs
+**What:** README `Reproducing` section rewritten with a 4-step flow (get corpus → public eval → full benchmark → chunking sweep) and a public-eval line added to `Running tests`. Roadmap chunking-sweep section marks the repeatability TODO closed (2026-06-01). Added a **deferred backlog note** under Integrity Chunk 2a: surface research integrity as a first-class README + `docs/research-integrity.md` pillar **only after Chunk 2a ships** (docs should describe real behaviour, not aspiration) — per user intent that integrity show up both in docs and in how the AI behaves at answer time.
+**Why:** Reproducibility is only real if it's documented end-to-end. The integrity-docs work is intentionally backlogged behind the implementation, not done now.
+
+### Session end
+**Done:** Corpus is reproducible by a third party with zero copyright exposure — committed CC-BY subset + manifest + download script + public case set. All verification green (hashes match, no restricted PDFs staged, no orphan citations).
+**Unresolved / handoff (sandbox can't run uv/3.12):**
+- Run locally before merge: `uv run ruff format . && uv run ruff check . && uv run mypy src` (new script), and `uv run pytest`.
+- Sanity-check `download_corpus.py` against the live network locally (sandbox has no general egress): confirm arXiv/bioRxiv direct URLs resolve and the manual-link list is accurate.
+- Optional: spot-verify a couple of `open-repo` (arXiv/bioRxiv) licenses before relying on the `license` field for any redistribution beyond the committed CC-BY set.
+**Next:** Backlogged — research-integrity docs pillar (after Chunk 2a). Unchanged priorities otherwise: LLM-provider protocol, Chunk 2a, Feature 4a; plus the local chunking-sweep measurement run.
+
+---
+
+## Session: 2026-06-01 (cont.) — Public corpus reworked to the project's own literature (RAG/LLM)
+
+**Starting from:** Earlier today the public corpus was a 6-doc CC-BY subset of the neuroscience library. User asked for two changes: bump the count (~5 → ~10) and re-theme the corpus to the literature *behind the project* (RAG, embedders, rerankers, LLM eval). Packaging-only; no `src/` changes.
+
+**Decision — public corpus = the papers this project implements, download-only from arXiv.**
+The neuroscience 35-case set stays as the private measured benchmark (the README BGE-vs-SPECTER2 numbers depend on it). The RAG-literature set becomes a *separate* clone-and-run demo corpus with its own standalone cases — it is NOT a subset of `cases.yaml`. Re-themeing means new cases are mandatory: the old neuroscience questions cannot score against CS papers.
+**Why download-only:** all 10 are on arXiv under the arXiv non-exclusive license, which permits downloading but not re-hosting. Fetching from arXiv (vs committing PDFs) sidesteps every per-paper license question — verified RAG (2005.11401) and DPR (2004.04906) are `nonexclusive-distrib`; none of the 10 print a CC license. So nothing is committed; the script downloads.
+**Rejected:** committing the PDFs (re-hosting risk, and unnecessary since arXiv direct-PDF download is reliable — confirmed end-to-end in-sandbox, 10/10, all sha256 match).
+
+### tests/eval/corpus_manifest.yaml — rewritten (10 arXiv papers)
+**What:** Replaced the 51-doc neuroscience manifest with 10 entries: RAG (Lewis 2020), DPR (Karpukhin 2020), SBERT (Reimers 2019), C-Pack/BGE (Xiao 2023), SciRepEval/SPECTER2 (Singh 2022), BERT re-ranking (Nogueira 2019), ColBERT (Khattab 2020), HyDE (Gao 2022), LLM-as-a-judge (Zheng 2023), AI Usage Cards (Wahle 2023). Each: pinned arXiv id+version, title, authors, year, direct-PDF url, abstract url, sha256, bytes, `tier: arxiv`, `direct_pdf: true`, `committed: false`. Total 12.3 MB.
+**Why:** Self-referential demo — the RAG assistant answering questions about the papers that define RAG. sha256 pins the exact bytes the cases were authored against.
+
+### tests/eval/corpus/ — neuroscience PDFs removed, replaced with README
+**What:** Deleted the 6 committed eLife/Frontiers PDFs + `LICENSES.md`; added `README.md` explaining the corpus is download-only from arXiv and is a demo set separate from the private benchmark.
+**Why:** Nothing is re-hosted anymore, so the committed-PDF dir is obsolete.
+
+### tests/eval/cases.public.yaml — 10 new cases (rewritten)
+**What:** One grounded case per paper (question + best-effort `expected_answer` from the abstract + `expected_substrings` + `expected_citations` = arXiv filename fragment + tags). `author_verified: true` — each answer is checked against the paper's abstract. Standalone; header states it is not a subset of `cases.yaml`. Verified: 0 orphan citations against the manifest.
+
+### scripts/download_corpus.py — simplified to the arXiv reality
+**What:** Dropped `--public-only` (no committed subset to gate on). Downloads `direct_pdf` arXiv URLs; `_check` now skips when `sha256` is absent and treats a mismatch as a warning (arXiv re-renders); `_download` rejects non-PDF bodies (landing-page guard). Kept the `committed:` branch as forward-compat for any future CC-licensed in-repo paper. **End-to-end verified in-sandbox:** `--dest /tmp` downloaded all 10 from arXiv, all sha256 matched, `--verify-only` re-confirmed.
+
+### Docs
+**What:** README `Reproducing` rewritten — two corpora (private benchmark vs public arXiv demo), public eval is now download-from-arXiv + `cases.public.yaml`; `Running tests` public-eval block updated; step numbering fixed. Roadmap repeatability note updated from the neuroscience-subset wording to the arXiv download-only approach.
+
+### Session end
+**Done:** Public corpus is now 10 arXiv papers on the project's own methods, download-only (zero re-hosting / zero license exposure), with a standalone 10-case eval. Script proven end-to-end against live arXiv. Private neuroscience benchmark untouched.
+**Unresolved / handoff:**
+- Run locally before merge: `uv run ruff check src/ tests/`, `uv run mypy src`, `uv run pytest` (CI does not lint `scripts/`, but `download_corpus.py` is clean).
+- First real public-eval run: `download_corpus` → `ingest` → `run_eval --cases tests/eval/cases.public.yaml`. Ingesting these into `data/sources/` mixes them with any existing library — point `--dest`/a scratch index at a clean dir if you want the public corpus isolated from your neuroscience library.
+- `expected_answer` wording is abstract-grounded but author-phrased; tighten if the LLM-judge scores look off.
+**Next:** Unchanged priorities — LLM-provider protocol, Chunk 2a, Feature 4a; local chunking-sweep measurement; research-integrity docs pillar still backlogged behind Chunk 2a.
+
+---
+
+## Session: 2026-06-01 (cont.) — Public demo eval: first real run + LLM judge wired into docs
+
+**What:** Ran the new public eval end-to-end on a real machine (Windows, bge-base): `download_corpus` (10/10 from arXiv, sha256 all match) → `ingest` (10 added, 51 skipped) → `run_eval --cases tests/eval/cases.public.yaml`. Deterministic scorers only.
+
+**Result (run `baa60303`, deterministic):**
+- `citation_overlap` = **1.000** (10/10) — retrieval cited the correct paper for every case.
+- `contains_all` = **0.917** — ~92% of expected keywords present; small gap is substring strictness, not a retrieval miss.
+
+**Decisions:**
+- Documented public-eval command now includes `--with-llm-judge` (README `Running tests` + Reproducing step 1), with a note that it needs `ANTHROPIC_API_KEY` and costs ~cents for 10 cases.
+- Cases kept **strict** (per user) — not loosened to force 1.0. A demo eval that always scores perfect looks rigged; the honest deterministic numbers stand.
+- Recorded the deterministic run as a baseline table in README with a `+ LLM judge` column left `_tbd_`, to be filled from the judge run and compared.
+
+**Why:** `citation_overlap` and `contains_all` only prove the right doc was retrieved and keywords appeared. The LLM judge is the answer-quality read; capturing the deterministic baseline first makes the judge's added signal (and any divergence) legible.
+
+**Next:** Run `... --cases tests/eval/cases.public.yaml --with-llm-judge`, fill the `_tbd_` cells, and note whether judge scores track the deterministic signals or diverge (divergence usually means strict substrings under-credit a correct-but-differently-worded answer).
+
+---
+
+## Session: 2026-06-01 (cont.) — Public demo eval: LLM-judge run + deterministic-vs-judge diff
+
+**What:** Ran `run_eval --cases tests/eval/cases.public.yaml --with-llm-judge` (bge-base, run `2e8b7de4`).
+
+**Result vs the deterministic baseline (`baa60303`):**
+
+| Scorer | Deterministic | + LLM judge |
+|---|---:|---:|
+| citation_overlap | 1.000 | 1.000 |
+| contains_all | 0.917 | 0.883 |
+| llm_judge (1-5) | — | 3.867 |
+
+**Reading:**
+- `citation_overlap` stable at 1.000 — depends only on retrieval, which is solid across both runs.
+- `contains_all` moved 0.917 → 0.883 between runs. It scores the *generated* answer, which is stochastic, so it has run-to-run variance; this is noise, not a regression. (`--repeat N` would quantify it as mean ± std, as the neuroscience benchmark does.)
+- `llm_judge` = 3.867/5 — answers are genuinely good. Confirms the `contains_all` shortfall is wording, not correctness: judge rates the answers well even when strict substrings miss.
+- Higher than the neuroscience benchmark's ~2.2/5 because the public cases have abstract-grounded `expected_answer`s (author_verified:true), whereas most neuroscience references are best-effort — the reference-only judge credits good references.
+
+**Decision:** Filled the README baseline table with both run ids and the variance caveat. Cases stay strict.
+
+**Next (optional):** `--repeat 5` on the public set for mean ± std on `contains_all`/`llm_judge`, to put a confidence interval on the single-run numbers.
+
+---
+
+## Session: 2026-06-01 (cont.) — Eval run log: gitignore the binary, commit a readable baseline
+
+**What:** `data/eval.duckdb` (the harness run log) was tracked by git — a 5.5 MB binary rewritten on every run. Added it to `.gitignore` (the `.wal` was already ignored; the DB itself wasn't). Created `tests/eval/baselines/public_eval_baseline_2026-06-01.md` as the committed, human-readable reference for the public eval (mirrors the README table), matching the existing `tests/eval/baselines/*.json` convention. Added a "Where runs are stored" note to the README reproducing section.
+**Why:** Reproducibility comes from inputs + code (corpus manifest, cases, pinned config, harness), not from committing the output DB. A binary that churns every run is unreviewable in PRs and bloats history. The right split: live DuckDB = gitignored scratch; a small text snapshot = the committed reference to diff against.
+**Rejected:** Committing the DuckDB (user's first instinct) — conflates "store results" with "reproduce results"; the snapshot gives the visible-in-repo reference without the binary-in-git problems.
+**Handoff:** `data/eval.duckdb` is still in the index — run `git rm --cached data/eval.duckdb` (keeps the local file) and commit alongside the `.gitignore` change. The binary remains in git history; purge with `git filter-repo` only if repo size matters.
+
+---
+
+## Session: 2026-06-01 (cont.) — Public eval n=5: locked the baseline numbers
+
+**What:** Ran the public eval at `--repeat 5`, with judge and deterministic-only. Updated the README table and `tests/eval/baselines/public_eval_baseline_2026-06-01.md` from single-run samples to mean ± trial-mean std.
+
+**Measurement (bge-base, n=5):**
+- `citation_overlap` = 1.000 ± 0.000 (50/50)
+- `contains_all` = 0.927 ± 0.034 (50/50); deterministic-only batch agrees at 0.927 ± 0.014
+- `llm_judge` = 3.894 ± 0.075 (47/50)
+
+**Findings:**
+- The earlier single runs (contains_all 0.883/0.917, judge 3.867) were unlucky/representative draws; the n=5 means are 0.927 and 3.894 with small std — pipeline is consistent. This is why single-run numbers were labeled provisional.
+- `citation_overlap` has literally zero variance — retrieval is deterministic and correct on all 10 cases.
+- **Flaky:** judge call on `sbert_motivation` skipped 3/5 trials (API timeout / JSON parse). Recorded as a known caveat in the baseline; llm_judge mean is over 47 scores. Candidate for KNOWN_ISSUES if it recurs.
+
+**Why it matters:** the baseline is now a measurement with a confidence interval, not a single sample — defensible as the public reference. Cases stayed strict.
+
+**Next:** if the `sbert_motivation` judge flakiness recurs, log it in `.claude/KNOWN_ISSUES.md` and check the judge's JSON-parse path for that prompt.

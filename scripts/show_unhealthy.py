@@ -1,4 +1,5 @@
 """Show documents that aren't classified as healthy."""
+
 from sqlalchemy import desc, select
 
 from doc_assistant.db.models import Document, IngestionEvent
@@ -7,9 +8,13 @@ from doc_assistant.db.session import session_scope
 
 def main():
     with session_scope() as session:
-        docs = session.execute(
-            select(Document).where(Document.extraction_health.in_(["broken", "marginal"]))
-        ).scalars().all()
+        docs = (
+            session.execute(
+                select(Document).where(Document.extraction_health.in_(["broken", "marginal"]))
+            )
+            .scalars()
+            .all()
+        )
 
         if not docs:
             print("No broken or marginal documents found.")

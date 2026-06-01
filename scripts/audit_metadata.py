@@ -1,4 +1,5 @@
 """Audit metadata coverage across the chunk store."""
+
 print("Script starting...", flush=True)
 
 from collections import Counter
@@ -37,9 +38,11 @@ def main():
     print("\nUnique documents:")
     docs = Counter(m.get("filename", "?") for m in metadatas if m)
     print(f"  Total: {len(docs)}")
-    print(f"  Chunks per doc: min={min(docs.values())}, "
-          f"max={max(docs.values())}, "
-          f"avg={sum(docs.values()) / len(docs):.1f}")
+    print(
+        f"  Chunks per doc: min={min(docs.values())}, "
+        f"max={max(docs.values())}, "
+        f"avg={sum(docs.values()) / len(docs):.1f}"
+    )
 
     # Section coverage examples
     print("\nMost common sections (top 15):")

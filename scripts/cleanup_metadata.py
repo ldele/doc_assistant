@@ -6,6 +6,7 @@ Two-pass process:
 
 Safe to run repeatedly. Operates on metadata only — no re-embedding.
 """
+
 print("Script starting...", flush=True)
 import argparse
 import re
@@ -21,8 +22,8 @@ from doc_assistant.config import CHROMA_PATH
 # ============================================================
 
 REFERENCE_KEYWORDS = [
-    "reference",       # "References", "References Cited"
-    "bibliograph",     # "Bibliography"
+    "reference",  # "References", "References Cited"
+    "bibliograph",  # "Bibliography"
     "works cited",
     "literature cited",
     "citations",
@@ -100,6 +101,7 @@ def find_title_sections(chunks_by_doc: dict) -> dict:
 # ============================================================
 # Cleanup logic
 # ============================================================
+
 
 def classify_chunk(meta: dict, title_sections: dict) -> dict:
     """Return updates to apply to this chunk's metadata."""
@@ -209,11 +211,13 @@ def main():
             issue = updates.get("section_issue", "unknown")
             if len(examples_by_issue[issue]) < 3:
                 idx = ids.index(chunk_id)
-                examples_by_issue[issue].append({
-                    "filename": metadatas[idx].get("filename"),
-                    "section": metadatas[idx].get("section"),
-                    "updates": updates,
-                })
+                examples_by_issue[issue].append(
+                    {
+                        "filename": metadatas[idx].get("filename"),
+                        "section": metadatas[idx].get("section"),
+                        "updates": updates,
+                    }
+                )
 
         print("\n--- Sample changes ---")
         for issue, examples in examples_by_issue.items():
@@ -230,7 +234,7 @@ def main():
     print(f"\nApplying {len(pending_updates)} updates...")
     batch_size = 500
     for i in range(0, len(pending_updates), batch_size):
-        batch = pending_updates[i:i + batch_size]
+        batch = pending_updates[i : i + batch_size]
         batch_ids = [chunk_id for chunk_id, _ in batch]
         # Build updated metadata for each chunk: start from existing, apply changes
         batch_metadatas = []
@@ -246,6 +250,7 @@ def main():
 
     print("\nUpdates done.", flush=True)
     return
+
 
 if __name__ == "__main__":
     main()

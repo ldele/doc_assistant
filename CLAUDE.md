@@ -44,6 +44,12 @@ Always check `decisions.md` before suggesting architectural changes. Most non-ob
 
 **Snapshot:** 264 tests · 63.9% coverage · ruff format/check + mypy + bandit clean.
 
+**Since the PR table (2026-05-31 → 06-01):**
+- **Chunking sweep infra** (reopened Phase 2.4): config-driven `*_CHUNK_SIZE`, `scripts/sweep_chunking.py`, guard tests. Measurement run still pending.
+- **Public reproducibility corpus**: 10 arXiv papers behind the project's own methods (RAG, dense retrieval, SBERT, BGE, SPECTER2/SciRepEval, BERT re-ranking, ColBERT, HyDE, LLM-as-judge, AI Usage Cards). Download-only via `scripts/download_corpus.py` + `tests/eval/corpus_manifest.yaml` (nothing re-hosted; arXiv license safe). Standalone `tests/eval/cases.public.yaml` (10 cases). Separate from the private, mostly-copyrighted neuroscience benchmark (`cases.yaml`).
+- **Public eval baseline** (bge-base, n=5): `citation_overlap` 1.000 ± 0.000, `contains_all` 0.927 ± 0.034, `llm_judge` 3.894 ± 0.075. Recorded in `tests/eval/baselines/public_eval_baseline_2026-06-01.md`.
+- **`data/eval.duckdb` now gitignored** (live run log, regenerated on run; committed reference results live in `tests/eval/baselines/`).
+
 **Operational TODOs (don't need code changes):**
 - Re-run SPECTER2 at `--repeat 5` for the symmetric BGE-vs-SPECTER2 confidence-interval comparison.
 - Most `expected_answer` fields in `tests/eval/cases.yaml` are best-effort (`author_verified: false`) — refine over time.
@@ -214,6 +220,7 @@ Full roadmap with sub-tasks and deferred improvements in `docs/decisions.md`. PR
 - **`reference_flagged_ratio` health signal not wired.** Defined in `health.py`/`models.py` but `ingest.py` hardcodes `0.0`. Phase 4 citation extractor populates the data needed to wire it; pending integration into the health score.
 - **Sandbox file-sync issue (recurring).** Edit-tool writes to Windows side sometimes fail to fully sync to the bash sandbox view, causing partial files and stale `.pyc` bytecode. Workarounds: `touch` to force re-read; full rewrites via bash heredocs.
 - **pip-audit:** 28 CVEs in transitive deps (torch, transformers, ollama, joblib, pyjwt, langchain-community). All upstream, none in our code. CI set to `continue-on-error`.
+- **Flaky LLM-judge call on `sbert_motivation`** (public eval). Skipped ~3/5 trials (API timeout / JSON parse failure on that prompt); `llm_judge` mean is over scored trials, not all 50. Non-blocking; inspect the judge JSON-parse path if it persists.
 
 ### Resolved
 - ~~Path+content hash drift~~ → content-only hashing implemented and migrated (27 docs).

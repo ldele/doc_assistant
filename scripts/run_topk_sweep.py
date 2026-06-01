@@ -2,6 +2,7 @@
 
 Runs the eval suite once per K value, collects metrics, prints a comparison.
 """
+
 import json
 import os
 import subprocess
@@ -14,9 +15,9 @@ RESULTS_DIR = Path("tests/eval")
 
 def run_one(k: int):
     """Run the eval with a specific K value. Returns the result file path."""
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"Running TOP_K = {k}")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
 
     env = os.environ.copy()
     env["USE_PARENT_CHILD"] = "true"
@@ -64,20 +65,24 @@ def main():
         sweep_results[k] = load_summary(result_path)
 
     # Print comparison table
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print("SWEEP SUMMARY")
-    print(f"{'='*60}")
-    print(f"\n{'K':>4} | {'Correctness':>12} | {'Faithfulness':>12} | {'Recall':>8} | {'Latency':>8}")
-    print(f"{'-'*4} | {'-'*12} | {'-'*12} | {'-'*8} | {'-'*8}")
+    print(f"{'=' * 60}")
+    print(
+        f"\n{'K':>4} | {'Correctness':>12} | {'Faithfulness':>12} | {'Recall':>8} | {'Latency':>8}"
+    )
+    print(f"{'-' * 4} | {'-' * 12} | {'-' * 12} | {'-' * 8} | {'-' * 8}")
     for k in K_VALUES:
         if k not in sweep_results:
             continue
         s = sweep_results[k]["overall"]
-        print(f"{k:>4} | "
-              f"{s['correctness']:>12} | "
-              f"{s['faithfulness']:>12} | "
-              f"{s['recall']:>8} | "
-              f"{s['latency_s']:>7}s")
+        print(
+            f"{k:>4} | "
+            f"{s['correctness']:>12} | "
+            f"{s['faithfulness']:>12} | "
+            f"{s['recall']:>8} | "
+            f"{s['latency_s']:>7}s"
+        )
 
     print()
 

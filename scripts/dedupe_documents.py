@@ -4,6 +4,7 @@ When a document is re-extracted with different content (e.g., switching from
 PyMuPDF to Marker), it gets a new doc_hash and a second SQLite row appears.
 This script merges duplicates by keeping the row with more chunks.
 """
+
 from collections import defaultdict
 
 from sqlalchemy import select
@@ -34,11 +35,15 @@ def main(apply: bool = False):
             keeper = rows[0]
             stale = rows[1:]
 
-            print(f"    KEEP:   id={keeper.id[:8]}  chunks={keeper.chunk_count}  "
-                  f"health={keeper.extraction_health}  hash={keeper.doc_hash}")
+            print(
+                f"    KEEP:   id={keeper.id[:8]}  chunks={keeper.chunk_count}  "
+                f"health={keeper.extraction_health}  hash={keeper.doc_hash}"
+            )
             for s in stale:
-                print(f"    REMOVE: id={s.id[:8]}  chunks={s.chunk_count}  "
-                      f"health={s.extraction_health}  hash={s.doc_hash}")
+                print(
+                    f"    REMOVE: id={s.id[:8]}  chunks={s.chunk_count}  "
+                    f"health={s.extraction_health}  hash={s.doc_hash}"
+                )
             print()
 
         if not apply:
@@ -56,7 +61,7 @@ def main(apply: bool = False):
                     document_id=keeper.id,
                     event_type="dedupe_merge",
                     notes=f"Merged stale row {stale.id[:8]} (hash={stale.doc_hash}, "
-                          f"chunks={stale.chunk_count}, health={stale.extraction_health})",
+                    f"chunks={stale.chunk_count}, health={stale.extraction_health})",
                 )
                 session.add(event)
                 session.delete(stale)
@@ -66,8 +71,12 @@ def main(apply: bool = False):
 
 if __name__ == "__main__":
     import argparse
+
     parser = argparse.ArgumentParser()
-    parser.add_argument("--apply", action="store_true",
-                        help="Actually delete stale rows. Without this flag, only reports.")
+    parser.add_argument(
+        "--apply",
+        action="store_true",
+        help="Actually delete stale rows. Without this flag, only reports.",
+    )
     args = parser.parse_args()
     main(apply=args.apply)

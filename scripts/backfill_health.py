@@ -1,4 +1,5 @@
 """One-time script: classify health for documents already in the library."""
+
 from collections import defaultdict
 
 from langchain_chroma import Chroma

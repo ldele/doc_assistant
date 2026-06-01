@@ -240,6 +240,8 @@ Both modes coexist in the same pipeline; the flag selects the output template. N
 
 **Effort:** 1 weekend. Touches `pipeline.py`, `prompts.py`, UI surface for adjudication.
 
+> **Backlog (docs, deferred until this ships) — research-integrity pillar.** The integrity work is currently scattered across Chunks 1/2a/2b/3 and buried in `decisions.md`. Once Chunk 2a lands (evidence-vs-interpretation is the conceptual core), surface research integrity as a first-class, named pillar: a dedicated section in `README.md` and a short standalone `docs/research-integrity.md`, plus a line in `CLAUDE.md` status. **Do not write these docs before the implementation lands** — the docs should describe behaviour the system actually has, not aspiration. Intent (per user, 2026-06-01): integrity should be visible both in the docs *and* in how the AI behaves at answer time (the dual-layer split is that behaviour).
+
 ### Integrity Chunk 2b — Reviewer agent
 
 Separate LLM call after the generator. Cheaper model (Haiku/Sonnet, not Opus). Returns structured JSON via Anthropic tool-use.
@@ -261,6 +263,8 @@ Chunk *sizes* (`parent 2000/200`, `child 400/50`, `baseline 1000/200`) were neve
 **Shipped:** sizes are now config-driven (`PARENT/CHILD/BASELINE_CHUNK_SIZE` env vars; defaults behaviour-preserving), with `scripts/sweep_chunking.py` driving `ingest --rebuild` + `run_eval` across a size grid, tagging each run for comparison in `data/eval.duckdb`. Guard tests pin "config-driven, defaults unchanged."
 
 **Remaining (measurement, runs locally):** run the sweep on a representative corpus, pick the winner, update the locked-settings tables in `decisions.md` + `CLAUDE.md` with the numbers, and change the config defaults. A later `CHUNK_STRATEGY` flag (semantic vs fixed) is deferred until sizing is settled.
+
+**Repeatability (closed 2026-06-01):** the "add doc examples for test repeatability" TODO is addressed by a shareable **public demo corpus** — the 10 arXiv papers behind the project's own methods (RAG, dense retrieval, SBERT, BGE, SPECTER2/SciRepEval, BERT re-ranking, ColBERT, HyDE, LLM-as-a-judge, AI Usage Cards). `tests/eval/corpus_manifest.yaml` pins arXiv IDs + sha256; `scripts/download_corpus.py` fetches them from arXiv (download-only, nothing re-hosted); `tests/eval/cases.public.yaml` is a standalone 10-case eval over them. This is separate from the private neuroscience benchmark (`cases.yaml`), which is mostly copyrighted and stays unredistributable. Anyone can now reconstruct the public corpus and re-run the sweep/eval against a known-good set.
 
 **Effort:** measurement run is ~½ day of mostly-unattended compute + interpretation.
 

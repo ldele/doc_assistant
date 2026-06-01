@@ -1,0 +1,197 @@
+# Public eval cases — runs on the RAG-literature demo corpus.
+#
+# One case per paper in tests/eval/corpus_manifest.yaml (the literature behind
+# this project's own methods). Standalone — NOT a subset of cases.yaml (that is
+# the neuroscience benchmark over a different, private corpus).
+#
+# To run:
+#   uv run python -m scripts.download_corpus      # fetch the 10 papers from arXiv
+#   uv run python -m doc_assistant.ingest
+#   uv run python -m scripts.run_eval --cases tests/eval/cases.public.yaml
+#
+# Conventions match cases.yaml: expected_citations are filename fragments
+# (bidirectional substring match). expected_answer wording is the author's,
+# grounded in each paper's abstract.
+
+- id: rag_two_formulations
+  query: What are the two RAG formulations introduced by Lewis et al., and how do they differ?
+  expected_answer: RAG combines a pretrained parametric seq2seq model with a non-parametric
+    dense vector index of Wikipedia accessed by a neural retriever. The two formulations are
+    RAG-Sequence, which conditions on the same retrieved passage(s) for the entire generated
+    sequence, and RAG-Token, which can attend to a different retrieved passage for each generated
+    token.
+  expected_substrings:
+  - sequence
+  - token
+  - retriev
+  - passage
+  expected_citations:
+  - rag_lewis_2020
+  tags:
+  - rag
+  - generation
+  metadata:
+    author_verified: true
+- id: dpr_vs_bm25
+  query: How does Dense Passage Retrieval compare to BM25 for open-domain question answering?
+  expected_answer: DPR learns dense passage embeddings with a simple dual-encoder framework
+    trained on relatively few question-passage pairs. It outperforms a strong Lucene-BM25
+    system by roughly 9-19% absolute in top-20 passage retrieval accuracy and helps set new
+    state-of-the-art on several open-domain QA benchmarks.
+  expected_substrings:
+  - dense
+  - dual
+  - BM25
+  - retriev
+  expected_citations:
+  - dpr_karpukhin_2020
+  tags:
+  - retrieval
+  - dense
+  metadata:
+    author_verified: true
+- id: sbert_motivation
+  query: Why is vanilla BERT impractical for semantic similarity search, and how does Sentence-BERT
+    address it?
+  expected_answer: Vanilla BERT must process both sentences together (a cross-encoder), so
+    finding the most similar pair in a large collection requires a combinatorial number of
+    forward passes. Sentence-BERT adds siamese and triplet network structures to produce fixed
+    sentence embeddings that can be compared with cosine similarity, cutting pairwise search
+    from hours to seconds while preserving accuracy.
+  expected_substrings:
+  - siamese
+  - cosine
+  - sentence
+  - embedding
+  expected_citations:
+  - sbert_reimers_2019
+  tags:
+  - embeddings
+  - sentence-transformers
+  metadata:
+    author_verified: true
+- id: cpack_resources
+  query: What three resources make up C-Pack, the package behind the BGE embedding models?
+  expected_answer: 'C-Pack releases three resources: C-MTP, a large-scale text-embedding training
+    dataset; C-MTEB, a comprehensive Chinese text-embedding benchmark covering multiple tasks
+    and datasets; and BGE, a family of embedding models in several sizes. The BGE models achieve
+    state-of-the-art results on MTEB-style benchmarks.'
+  expected_substrings:
+  - C-MTP
+  - C-MTEB
+  - BGE
+  expected_citations:
+  - bge_cpack_xiao_2023
+  tags:
+  - embeddings
+  - bge
+  metadata:
+    author_verified: true
+- id: scirepeval_multi_embedding
+  query: What does SciRepEval introduce, and what approach improves scientific document representations?
+  expected_answer: SciRepEval is a multi-format benchmark of 24 tasks across classification,
+    regression, ranking, and search for scientific document representations. The paper shows
+    that models like SPECTER and SciNCL struggle to generalize across formats, and that learning
+    multiple embeddings per document, each tailored to a task format, improves generalization.
+  expected_substrings:
+  - SciRepEval
+  - benchmark
+  - multiple
+  - embedding
+  expected_citations:
+  - specter2_scirepeval_singh_2022
+  tags:
+  - embeddings
+  - evaluation
+  - specter2
+  metadata:
+    author_verified: true
+- id: bert_passage_reranking
+  query: How do Nogueira and Cho use BERT for passage ranking?
+  expected_answer: 'They use BERT as a re-ranker: a first-stage BM25 retriever returns candidate
+    passages, and BERT scores each query-passage pair as a cross-encoder to re-order them.
+    This re-ranking yields large improvements in MRR on MS MARCO and TREC-CAR.'
+  expected_substrings:
+  - re-rank
+  - BERT
+  - BM25
+  - passage
+  expected_citations:
+  - reranking_bert_nogueira_2019
+  tags:
+  - reranking
+  - cross-encoder
+  metadata:
+    author_verified: true
+- id: colbert_late_interaction
+  query: What is ColBERT's late interaction mechanism and why is it efficient?
+  expected_answer: ColBERT encodes the query and document into token-level (contextualized)
+    embeddings and computes relevance with a MaxSim late-interaction operator that sums each
+    query token's maximum similarity over document tokens. Because document embeddings can
+    be precomputed and indexed offline, it keeps BERT-quality ranking while scaling to large
+    collections.
+  expected_substrings:
+  - late interaction
+  - MaxSim
+  - token
+  expected_citations:
+  - colbert_khattab_2020
+  tags:
+  - retrieval
+  - reranking
+  metadata:
+    author_verified: true
+- id: hyde_zero_shot
+  query: How does HyDE perform zero-shot dense retrieval without any relevance labels?
+  expected_answer: HyDE prompts an instruction-following language model to generate a hypothetical
+    document answering the query, then encodes that document with an unsupervised contrastive
+    encoder. The resulting embedding identifies a neighborhood of real documents retrieved
+    by vector similarity, giving effective dense retrieval with no relevance labels.
+  expected_substrings:
+  - hypothetical
+  - zero-shot
+  - embedding
+  - document
+  expected_citations:
+  - hyde_gao_2022
+  tags:
+  - retrieval
+  - zero-shot
+  metadata:
+    author_verified: true
+- id: llm_judge_biases
+  query: What biases of LLM-as-a-judge do Zheng et al. identify, and how well do strong LLM
+    judges agree with humans?
+  expected_answer: They identify position bias, verbosity bias, and self-enhancement bias,
+    along with limited reasoning ability. Despite these, strong judges such as GPT-4 reach
+    over 80% agreement with human preferences on MT-Bench and Chatbot Arena, comparable to
+    the agreement between human annotators.
+  expected_substrings:
+  - position
+  - verbosity
+  - self-enhancement
+  - agreement
+  expected_citations:
+  - llm_judge_zheng_2023
+  tags:
+  - evaluation
+  - llm-judge
+  metadata:
+    author_verified: true
+- id: ai_usage_cards_dimensions
+  query: What three dimensions define responsible AI use in the AI Usage Cards framework?
+  expected_answer: 'The framework defines responsible AI use along three dimensions: transparency,
+    integrity, and accountability. On top of this model, AI Usage Cards provide a standardized
+    way to report how AI was used in scientific research so others can trace, compare, and
+    question it.'
+  expected_substrings:
+  - transparency
+  - integrity
+  - accountability
+  expected_citations:
+  - ai_usage_cards_2023
+  tags:
+  - integrity
+  - provenance
+  metadata:
+    author_verified: true

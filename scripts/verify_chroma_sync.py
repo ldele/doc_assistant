@@ -8,6 +8,7 @@ Checks:
 
 Run periodically and after any operation that touches both stores.
 """
+
 from collections import Counter
 
 from langchain_chroma import Chroma
@@ -50,7 +51,9 @@ def main():
     baseline_hashes, baseline_counts, baseline_ids = hashes_in_store(CHROMA_PATH, "baseline")
     pc_hashes, pc_counts, pc_ids = hashes_in_store(PC_CHROMA_PATH, "parent-child")
 
-    print(f"\nBaseline:     {len(baseline_hashes)} documents, {sum(baseline_counts.values())} chunks")
+    print(
+        f"\nBaseline:     {len(baseline_hashes)} documents, {sum(baseline_counts.values())} chunks"
+    )
     print(f"Parent-child: {len(pc_hashes)} documents, {sum(pc_counts.values())} chunks")
 
     # Check 1: same set of documents
@@ -84,7 +87,9 @@ def main():
     if id_mismatches:
         print(f"\n⚠ {len(id_mismatches)} documents have different document_ids between stores:")
         for h, bid, pid in id_mismatches[:5]:
-            print(f"    {h[:8]}...: baseline={bid[:8] if bid else 'None'}  pc={pid[:8] if pid else 'None'}")
+            print(
+                f"    {h[:8]}...: baseline={bid[:8] if bid else 'None'}  pc={pid[:8] if pid else 'None'}"
+            )
         issues += 1
     else:
         print("OK document_id linkage consistent across stores")

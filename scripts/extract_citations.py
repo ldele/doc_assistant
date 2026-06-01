@@ -77,16 +77,12 @@ def _persist(doc_id: str, result: ExtractionResult, *, force: bool) -> int:
     inserted = 0
     with session_scope() as session:
         existing = session.execute(
-            select(func.count()).select_from(Citation).where(
-                Citation.source_document_id == doc_id
-            )
+            select(func.count()).select_from(Citation).where(Citation.source_document_id == doc_id)
         ).scalar_one()
         if existing and not force:
             return 0
         if existing and force:
-            session.execute(
-                delete(Citation).where(Citation.source_document_id == doc_id)
-            )
+            session.execute(delete(Citation).where(Citation.source_document_id == doc_id))
 
         for parsed in result.citations:
             target_id = match_to_library(parsed)
@@ -174,9 +170,7 @@ def _format_report(rows: list[dict[str, object]], *, apply: bool) -> str:
         out.append(f"Citation rows inserted:    {inserted_total}")
     out.append("=" * 76)
     out.append("")
-    out.append(
-        f"{'filename':<55} {'status':<10} {'refs':>5} {'match':>6} {'note'}"
-    )
+    out.append(f"{'filename':<55} {'status':<10} {'refs':>5} {'match':>6} {'note'}")
     out.append("-" * 76)
     for r in sorted(rows, key=lambda x: (-int(x["refs_parsed"]), str(x["filename"]))):
         out.append(

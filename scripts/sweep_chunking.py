@@ -82,7 +82,7 @@ def _run(cmd: list[str], env: dict[str, str], *, dry_run: bool) -> int:
         print(f"    [dry-run] {printable}")
         return 0
     print(f"    $ {printable}")
-    proc = subprocess.run(cmd, env=env)  # noqa: S603 — fixed argv, no shell
+    proc = subprocess.run(cmd, env=env)
     return proc.returncode
 
 
@@ -142,7 +142,9 @@ def main() -> int:
             failures.append(cfg.note)
         print()
 
-    print("Sweep complete." if not failures else f"Sweep finished with {len(failures)} failure(s):")
+    print(
+        "Sweep complete." if not failures else f"Sweep finished with {len(failures)} failure(s):"
+    )
     for f in failures:
         print(f"  - {f}")
     print("\nCompare configs via the eval harness aggregate, filtering on the notes above")

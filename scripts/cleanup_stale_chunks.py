@@ -4,6 +4,7 @@ These are stale artifacts from earlier extractions (e.g., before re-running
 with Marker, or before dedup_documents.py). The SQLite row was removed but
 the chunks were left behind.
 """
+
 import argparse
 from collections import Counter
 
@@ -57,8 +58,11 @@ def clean_store(path: str, label: str, apply: bool) -> int:
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--apply", action="store_true",
-                        help="Actually delete stale chunks. Without this, dry-run only.")
+    parser.add_argument(
+        "--apply",
+        action="store_true",
+        help="Actually delete stale chunks. Without this, dry-run only.",
+    )
     args = parser.parse_args()
 
     print("Cleaning stale chunks from Chroma stores")

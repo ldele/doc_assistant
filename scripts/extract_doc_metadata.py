@@ -76,9 +76,7 @@ def _persist(
         return {}
 
     with session_scope() as session:
-        session.execute(
-            update(Document).where(Document.id == doc_id).values(**changes)
-        )
+        session.execute(update(Document).where(Document.id == doc_id).values(**changes))
     return changes
 
 
@@ -105,9 +103,7 @@ def _run_one(
 
     metadata = extract_metadata(text, filename=filename)
     fields_filled = sum(
-        1
-        for v in (metadata.title, metadata.authors, metadata.year, metadata.doi)
-        if v
+        1 for v in (metadata.title, metadata.authors, metadata.year, metadata.doi) if v
     )
 
     changes: dict[str, object] = {}
@@ -140,9 +136,7 @@ def _format_report(rows: list[dict[str, object]], *, apply: bool) -> str:
         out.append(f"Total field updates: {total_changes}")
     out.append("=" * 78)
     out.append("")
-    out.append(
-        f"{'filename':<44} {'conf':>5} {'fill':>5} {'changes'}"
-    )
+    out.append(f"{'filename':<44} {'conf':>5} {'fill':>5} {'changes'}")
     out.append("-" * 78)
     for r in sorted(rows, key=lambda x: (-float(x.get("confidence", 0)), str(x["filename"]))):
         ch = r.get("changes", {})
@@ -159,9 +153,7 @@ def _format_report(rows: list[dict[str, object]], *, apply: bool) -> str:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--apply", action="store_true", help="Write changes to DB")
-    parser.add_argument(
-        "--force", action="store_true", help="Overwrite non-null fields"
-    )
+    parser.add_argument("--force", action="store_true", help="Overwrite non-null fields")
     parser.add_argument("--doc", type=str, help="Limit to one doc_hash or id prefix")
     args = parser.parse_args()
 
@@ -184,17 +176,19 @@ def main() -> int:
         print("No documents matched.")
         return 1
 
-    print(
-        f"Processing {len(docs)} document(s)... "
-        f"(apply={args.apply}, force={args.force})"
-    )
+    print(f"Processing {len(docs)} document(s)... (apply={args.apply}, force={args.force})")
     rows: list[dict[str, object]] = []
     for doc_id, fn, src_cache, src_orig, t, a, y, d in docs:
         current = {"title": t, "authors": a, "year": y, "doi": d}
         rows.append(
             _run_one(
-                doc_id, fn, src_cache, src_orig, current,
-                apply=args.apply, force=args.force,
+                doc_id,
+                fn,
+                src_cache,
+                src_orig,
+                current,
+                apply=args.apply,
+                force=args.force,
             )
         )
 

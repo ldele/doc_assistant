@@ -135,6 +135,11 @@ uv run python -m scripts.run_eval
 
 # With LLM judge (Claude Haiku, ~$0.10 for 35 cases)
 uv run python -m scripts.run_eval --with-llm-judge
+
+# Public eval — 10 cases on the RAG-literature demo corpus (see Reproducing)
+uv run python -m scripts.download_corpus           # fetches 10 papers from arXiv
+uv run python -m doc_assistant.ingest
+uv run python -m scripts.run_eval --cases tests/eval/cases.public.yaml --with-llm-judge
 ```
 
 ## Docker
@@ -192,6 +197,35 @@ specter2 may still help for paper-level similarity tasks (e.g., powering `/simil
 
 ### Reproducing
 
+The project ships two corpora. The **benchmark** below (35 cases) runs on a private neuroscience library that is mostly copyrighted and not redistributable. The **public demo corpus** is fully reproducible: the 10 papers behind this project's own methods (RAG, dense retrieval, sentence embeddings, BGE/SPECTER2, BERT re-ranking, ColBERT, HyDE, LLM-as-a-judge, AI Usage Cards), all on arXiv.
+
+**1. Public demo eval — reproducible by anyone.** [`tests/eval/corpus_manifest.yaml`](tests/eval/corpus_manifest.yaml) lists the 10 papers (pinned arXiv versions + SHA-256); `download_corpus.py` fetches them from arXiv (nothing is re-hosted, so arXiv's license is not an issue). [`tests/eval/cases.public.yaml`](tests/eval/cases.public.yaml) is a standalone 10-case set written against them.
+
+```bash
+uv run python -m scripts.download_corpus            # 10 PDFs from arXiv -> data/sources/
+uv run python -m scripts.download_corpus --verify-only  # checksum against the manifest
+uv run python -m doc_assistant.ingest
+uv run python -m scripts.run_eval --cases tests/eval/cases.public.yaml --with-llm-judge
+```
+
+`--with-llm-judge` adds the reference-graded answer-quality score (Claude Haiku); it needs an `ANTHROPIC_API_KEY` in `.env` and costs a few cents for 10 cases. Drop the flag for a free, deterministic-only run (retrieval + keyword scorers).
+
+5 trials on bge-base (`--repeat 5`), reported as mean ± trial-mean std:
+
+| Scorer | Mean (n=5) | Trial-mean std |
+|---|---:|---:|
+| `citation_overlap` (0-1) | **1.000** | 0.000 |
+| `contains_all` (0-1) | **0.927** | 0.034 |
+| `llm_judge` (1-5) | **3.894** | 0.075 |
+
+`citation_overlap` is **1.000 with zero variance** — retrieval cites the correct paper in all 10 cases, every trial (it depends only on retrieval, which is deterministic). `contains_all` averages 0.927 with low cross-run spread; it scores the stochastic generated answer, so single runs wobble (0.88–0.98) around that mean. `llm_judge` **3.894/5** confirms the answers are genuinely good — the `contains_all` shortfall is phrasing, not correctness. (The private neuroscience benchmark scores ~2.2/5 on `llm_judge`, where reference answers are mostly best-effort; these public cases are abstract-grounded, so the judge rates them higher — not evidence the pipeline is "better" on CS papers.)
+
+One honest caveat: the judge call on `sbert_motivation` is flaky — it was skipped in 3 of 5 trials (API timeout / JSON parse), so the `llm_judge` mean is over 47 of 50 scores.
+
+**Where runs are stored.** Every `run_eval` invocation appends to `data/eval.duckdb` — a binary working log, **gitignored** and regenerated on first run, not a source artifact (don't commit it; a fresh run rewrites it). Committed, human-readable reference results live in [`tests/eval/baselines/`](tests/eval/baselines/) — that's what to diff a new run against, not the binary DB. The table above mirrors [`tests/eval/baselines/public_eval_baseline_2026-06-01.md`](tests/eval/baselines/public_eval_baseline_2026-06-01.md).
+
+**2. Full benchmark** (the private neuroscience corpus + `cases.yaml`; not redistributable):
+
 ```powershell
 $env:EMBEDDING_MODEL="bge-base"
 uv run python -m scripts.run_eval --with-llm-judge --repeat 5 --note "bge n=5"
@@ -200,6 +234,13 @@ uv run python -m scripts.run_eval --with-llm-judge --repeat 5 --note "specter2 n
 ```
 
 Cost: ~$1 per model run. Results land in `data/eval.duckdb`. The harness is structured for extraction — see [`src/doc_assistant/eval/`](src/doc_assistant/eval/); every file except `adapters.py` is project-agnostic and can be lifted into a standalone repo.
+
+**3. Chunking sweep** (re-embeds the corpus per config — slow; run against a representative subset):
+
+```bash
+uv run python -m scripts.sweep_chunking --dry-run            # print the grid + commands
+uv run python -m scripts.sweep_chunking --with-embedding --repeat 3
+```
 
 ## Status
 

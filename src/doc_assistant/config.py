@@ -40,6 +40,27 @@ LLM_MODE = os.getenv("LLM_MODE", "api")
 OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://localhost:11434")
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
 
+# ---- Provider selection (Phase 6 — Feature 1, generation side) ----
+# Two call shapes, configured independently:
+#   * Analysis / chat (streaming LangChain model) → LLM_PROVIDER / LLM_MODEL
+#   * One-shot reviewer + eval judge (normalized LLMClient.complete) →
+#     REVIEWER_* / JUDGE_*
+# LLM_MODE is kept for back-compat and derives the analysis provider default.
+# The generator targets fully local (Ollama, no API key); the reviewer and
+# judge default to a pinned reference model so cross-run numbers stay
+# comparable (see tests/eval/TESTING.md → "The judge is a pinned instrument").
+_REFERENCE_MODEL = "claude-haiku-4-5-20251001"
+
+LLM_PROVIDER = os.getenv("LLM_PROVIDER", "anthropic" if LLM_MODE == "api" else "ollama")
+# Analysis-model default is provider-dependent so historical behaviour is
+# preserved exactly: api → haiku (ChatAnthropic), ollama → llama3 (OllamaLLM).
+_DEFAULT_ANALYSIS_MODEL = _REFERENCE_MODEL if LLM_PROVIDER == "anthropic" else "llama3"
+LLM_MODEL = os.getenv("LLM_MODEL", _DEFAULT_ANALYSIS_MODEL)
+REVIEWER_PROVIDER = os.getenv("REVIEWER_PROVIDER", LLM_PROVIDER)
+REVIEWER_MODEL = os.getenv("REVIEWER_MODEL", _REFERENCE_MODEL)
+JUDGE_PROVIDER = os.getenv("JUDGE_PROVIDER", LLM_PROVIDER)
+JUDGE_MODEL = os.getenv("JUDGE_MODEL", _REFERENCE_MODEL)
+
 
 # ============================================================
 # Extraction configuration

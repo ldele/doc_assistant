@@ -172,19 +172,15 @@ def test_cosine_handles_zero_vector():
 # ============================================================
 
 
-def _mock_anthropic(response_text: str) -> Any:
-    """Mock that mimics anthropic.Anthropic().messages.create(...).content[0].text."""
+def _mock_client(response_text: str) -> Any:
+    """An ``LLMClient``-shaped mock: ``.complete(...)`` returns the text."""
     client = MagicMock()
-    text_block = MagicMock()
-    text_block.text = response_text
-    response = MagicMock()
-    response.content = [text_block]
-    client.messages.create.return_value = response
+    client.complete.return_value = response_text
     return client
 
 
 def test_llm_judge_parses_clean_json():
-    client = _mock_anthropic('{"faithfulness": 4, "relevance": 5, "completeness": 3}')
+    client = _mock_client('{"faithfulness": 4, "relevance": 5, "completeness": 3}')
     scorer = LLMJudgeScorer(client)
     r = scorer(_case(expected_answer="ref"), _out("answer"))
     assert math.isclose(r.value, 4.0, abs_tol=1e-6)
@@ -194,16 +190,14 @@ def test_llm_judge_parses_clean_json():
 
 
 def test_llm_judge_handles_markdown_fenced_json():
-    client = _mock_anthropic(
-        '```json\n{"faithfulness": 3, "relevance": 3, "completeness": 3}\n```'
-    )
+    client = _mock_client('```json\n{"faithfulness": 3, "relevance": 3, "completeness": 3}\n```')
     scorer = LLMJudgeScorer(client)
     r = scorer(_case(expected_answer="ref"), _out("answer"))
     assert math.isclose(r.value, 3.0, abs_tol=1e-6)
 
 
 def test_llm_judge_handles_broken_json():
-    client = _mock_anthropic("not json at all")
+    client = _mock_client("not json at all")
     scorer = LLMJudgeScorer(client)
     r = scorer(_case(expected_answer="ref"), _out("answer"))
     assert r.value == 0.0
@@ -211,7 +205,7 @@ def test_llm_judge_handles_broken_json():
 
 
 def test_llm_judge_handles_missing_field():
-    client = _mock_anthropic('{"faithfulness": 4, "relevance": 5}')
+    client = _mock_client('{"faithfulness": 4, "relevance": 5}')
     scorer = LLMJudgeScorer(client)
     r = scorer(_case(expected_answer="ref"), _out("answer"))
     assert r.value == 0.0
@@ -219,27 +213,28 @@ def test_llm_judge_handles_missing_field():
 
 
 def test_llm_judge_no_expected():
-    client = _mock_anthropic('{"faithfulness": 4, "relevance": 5, "completeness": 3}')
+    client = _mock_client('{"faithfulness": 4, "relevance": 5, "completeness": 3}')
     scorer = LLMJudgeScorer(client)
     r = scorer(_case(), _out("answer"))
     assert r.value == 0.0
     # Should not even have called the client.
-    client.messages.create.assert_not_called()
+    client.complete.assert_not_called()
 
 
 def test_llm_judge_call_is_isolated():
     """No system prompt, no history, temperature=0 — each call is reproducible."""
-    client = _mock_anthropic('{"faithfulness": 5, "relevance": 5, "completeness": 5}')
+    client = _mock_client('{"faithfulness": 5, "relevance": 5, "completeness": 5}')
     scorer = LLMJudgeScorer(client)
     scorer(_case(expected_answer="ref"), _out("answer"))
 
-    call_kwargs = client.messages.create.call_args.kwargs
-    # Single-turn: exactly one user message, no system field.
-    assert call_kwargs.get("system") in (None, "")
-    assert len(call_kwargs["messages"]) == 1
-    assert call_kwargs["messages"][0]["role"] == "user"
+    call = client.complete.call_args
+    messages = call.args[0]
+    # Single-turn: exactly one user message, no system message.
+    assert len(messages) == 1
+    assert messages[0]["role"] == "user"
+    assert not any(m["role"] == "system" for m in messages)
     # Deterministic: temperature pinned to 0.
-    assert call_kwargs.get("temperature") == 0.0
+    assert call.kwargs.get("temperature") == 0.0
 
 
 def test_llm_judge_prompt_instructs_reference_only_grading():

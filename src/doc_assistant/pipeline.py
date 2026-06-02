@@ -12,7 +12,8 @@ from sentence_transformers import CrossEncoder
 from doc_assistant.config import (
     ANTHROPIC_API_KEY,
     CHROMA_PATH,
-    LLM_MODE,
+    LLM_MODEL,
+    LLM_PROVIDER,
     OLLAMA_HOST,
     PC_CHROMA_PATH,
     TOP_K,
@@ -69,20 +70,26 @@ class RAGPipeline:
         self.llm = self._build_llm()
 
     def _build_llm(self) -> Any:
-        if LLM_MODE == "api":
+        """Build the streaming analysis model from ``LLM_PROVIDER``/``LLM_MODEL``.
+
+        Intentionally separate from ``llm.LLMClient``: the chat path streams
+        tokens through a LangChain model, a different contract from the
+        one-shot ``complete()`` used by the reviewer and eval judge.
+        """
+        if LLM_PROVIDER.lower() == "anthropic":
             from langchain_anthropic import ChatAnthropic
             from pydantic import SecretStr
 
             secret_key = SecretStr(ANTHROPIC_API_KEY or "")
             return ChatAnthropic(  # type: ignore[call-arg]
-                model="claude-haiku-4-5-20251001",
+                model=LLM_MODEL,
                 api_key=secret_key,
                 max_tokens=1024,
                 streaming=True,
             )
         from langchain_ollama import OllamaLLM
 
-        return OllamaLLM(model="llama3", base_url=OLLAMA_HOST)
+        return OllamaLLM(model=LLM_MODEL, base_url=OLLAMA_HOST)
 
     def retrieve(self, query: str, top_k: int = TOP_K) -> list[Document]:
         """Retrieve top-k documents for `query`. Reranker scores discarded."""

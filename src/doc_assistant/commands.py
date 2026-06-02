@@ -361,22 +361,25 @@ def execute_command(cmd: str, arg: str) -> str:
         return "\n".join(lines)
 
     if cmd == "review":
-        from doc_assistant.config import ANTHROPIC_API_KEY
+        from doc_assistant.config import REVIEWER_MODEL, REVIEWER_PROVIDER
+        from doc_assistant.llm import get_reviewer_client, reviewer_available
         from doc_assistant.provenance import find_record_by_short_id, get_record
         from doc_assistant.reviewer import persist_review, review_answer
 
         if not arg:
             return "Usage: `/review <id>` — id is the 8-char prefix from a provenance card."
-        if not ANTHROPIC_API_KEY:
-            return "`/review` needs `ANTHROPIC_API_KEY` set — the reviewer is an LLM call."
+        if not reviewer_available():
+            return (
+                f"`/review` needs `ANTHROPIC_API_KEY` set — the reviewer "
+                f"(`{REVIEWER_PROVIDER}`) is an LLM call. Set `REVIEWER_PROVIDER=ollama` "
+                f"to review locally without a key."
+            )
         prov = get_record(arg) if len(arg) >= 36 else find_record_by_short_id(arg)
         if prov is None:
             return f"No answer record matching `{arg}`. Try `/records` to list recent answers."
         try:
-            from anthropic import Anthropic
-
-            result = review_answer(prov, Anthropic(api_key=ANTHROPIC_API_KEY))
-            persist_review(prov.id, result, reviewer_kind="llm_haiku", model_name="haiku")
+            result = review_answer(prov, get_reviewer_client())
+            persist_review(prov.id, result, reviewer_kind="llm_haiku", model_name=REVIEWER_MODEL)
         except Exception as e:
             return f"Reviewer failed: {type(e).__name__}: {e}"
         if result.error:

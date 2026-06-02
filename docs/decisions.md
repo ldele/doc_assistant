@@ -321,6 +321,11 @@ keeps consistency with eval judge). No auto-retry. `/review <id>`
 slash command for manual re-review. 14 unit tests. Schema is 
 reviewer-kind-agnostic so a future human-review path slots into the 
 same table.
+*Deferred (idea, 2026-06-02):* the trigger policy is currently fixed —
+auto-run on heuristically-flagged answers + manual `/review`. A later
+option could expose the trigger as a user setting (e.g. `REVIEW_MODE =
+flagged | always | manual`). Current behaviour is the wanted default;
+this is an opt-in knob, not a change to it.
 
 **Chunk 2c — Reviewer aggregation & self-improvement loop (Phase 6).** Counts
 a categorical `failure_tag` enum across reviewer verdicts to find *systematic*

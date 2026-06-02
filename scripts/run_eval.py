@@ -22,7 +22,7 @@ import argparse
 import sys
 from pathlib import Path
 
-from doc_assistant.config import ANTHROPIC_API_KEY, PROJECT_ROOT
+from doc_assistant.config import ANTHROPIC_API_KEY, JUDGE_PROVIDER, PROJECT_ROOT
 from doc_assistant.embeddings import get_active_model_name
 from doc_assistant.eval import (
     CitationOverlapScorer,
@@ -55,11 +55,14 @@ def _build_scorers(
     if with_embedding:
         scorers.append(EmbeddingSimilarityScorer(embedding_callable(pipeline)))  # type: ignore[arg-type]
     if with_llm_judge:
-        if not ANTHROPIC_API_KEY:
-            raise RuntimeError("--with-llm-judge requires ANTHROPIC_API_KEY in the env")
-        from anthropic import Anthropic
+        if JUDGE_PROVIDER.lower() == "anthropic" and not ANTHROPIC_API_KEY:
+            raise RuntimeError(
+                "--with-llm-judge with JUDGE_PROVIDER=anthropic requires "
+                "ANTHROPIC_API_KEY in the env (or set JUDGE_PROVIDER=ollama)"
+            )
+        from doc_assistant.llm import get_judge_client
 
-        scorers.append(LLMJudgeScorer(Anthropic(api_key=ANTHROPIC_API_KEY)))
+        scorers.append(LLMJudgeScorer(get_judge_client()))
     return scorers
 
 

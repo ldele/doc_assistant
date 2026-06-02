@@ -36,6 +36,10 @@ dependencies = [
     "langchain-ollama>=1.0,<2.0",
     "chromadb>=0.5",
     "sentence-transformers>=3.0",
+    # torch is pulled in by sentence-transformers; declared explicitly so the
+    # Windows CUDA source in [tool.uv.sources] binds (uv only applies sources to
+    # direct deps). Non-Windows platforms resolve the default PyPI (CPU) wheel.
+    "torch>=2.12",
     "pymupdf4llm>=0.0.17",
     "pymupdf>=1.24",
     "ebooklib>=0.18",
@@ -140,3 +144,20 @@ module = [
     "sqlalchemy.*",
 ]
 ignore_missing_imports = true
+
+# --- uv: PyTorch CUDA backend (local GPU, Windows only) -----------------
+# torch is a transitive dep (sentence-transformers / transformers). On Windows
+# it resolves to the CUDA 13.0 build so the RTX GPU drives embeddings + the
+# cross-encoder reranker. The `sys_platform == 'win32'` marker scopes the
+# override: on every other platform (incl. Linux CI) it doesn't match, so torch
+# falls back to the default PyPI (CPU) wheel and cross-platform `uv sync` is
+# unchanged. See docs/DEVLOG.md (2026-06-02).
+[[tool.uv.index]]
+name = "pytorch-cu130"
+url = "https://download.pytorch.org/whl/cu130"
+explicit = true
+
+[tool.uv.sources]
+torch = [
+    { index = "pytorch-cu130", marker = "sys_platform == 'win32'" },
+]

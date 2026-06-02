@@ -74,67 +74,77 @@ def _format_review_block(review: ReviewResult | None) -> str:
     return "\n\n**Reviewer assessment:** " + " · ".join(bits) + notes
 
 
+def _token_suffix(prov: AnswerProvenance) -> str:
+    """Header token tag — provider-aware. Local models report no usage, so a
+    `0 tokens` figure would be misleading; show `local` instead."""
+    if LLM_PROVIDER.lower() == "ollama":
+        return " · local"
+    total = (prov.token_input or 0) + (prov.token_output or 0)
+    return f" · {total:,} tokens"
+
+
 def _format_provenance_card(
     prov: AnswerProvenance,
     signals: ConfidenceSignals,
     *,
-    expanded: bool,
     review: ReviewResult | None = None,
 ) -> str:
-    """Render an AnswerProvenance as a collapsible markdown card.
+    """Render an AnswerProvenance as a plain-markdown card (no raw HTML).
 
-    When ``signals.any()`` is True, the summary line leads with a ⚠
-    chip listing the fired reasons and the card opens expanded by
-    default. Otherwise it stays collapsed with a neutral summary.
+    Clean answers get a compact three-line block; when a confidence signal
+    fires the block expands with the signal breakdown, the reviewer verdict,
+    and the full per-source reranker scores, led by a ⚠ chip. Filenames are
+    not repeated — they live in the always-visible "Sources:" block; the card
+    keys scores by source number. Full per-chunk metadata is in the DB /
+    `/export-record`.
     """
-    # Scores only, keyed by source number — the filename/page/section for each
-    # [N] is already in the always-visible "Sources:" block, so we don't repeat
-    # it here. Full per-chunk metadata still lives in the DB / `/export-record`.
-    chunks_lines = []
-    for i, c in enumerate(prov.retrieved_chunks):
-        score = f"{c.reranker_score:.3f}" if c.reranker_score is not None else "-"
-        chunks_lines.append(f"- **[{i + 1}]** reranker `{score}`")
-
-    cost_in = prov.token_input or 0
-    cost_out = prov.token_output or 0
+    id8 = prov.id[:8]
     latency_s = (prov.latency_ms or 0.0) / 1000.0
+    meta = (
+        f"**Model** `{prov.model_name or '?'}` · "
+        f"**Embedding** `{prov.embedding_model or '?'}` · "
+        f"**top_k** {prov.top_k} · **parent-child** {prov.use_parent_child}"
+    )
+    hint = f"_Review:_ `/review {id8}` · _Export:_ `/export-record {id8}`"
 
-    if signals.any():
-        summary_prefix = f"⚠ <b>Low confidence</b>: {', '.join(signals.reasons)}"
-        signals_block = (
-            "\n\n**Confidence signals:**  \n"
-            f"- max reranker score: `{signals.max_score:.3f}`"
-            f"{' ⚠' if signals.weak_retrieval else ''}  \n"
-            f"- top-3 score span: `{signals.top3_span:.3f}`"
-            f"{' ⚠' if signals.score_cluster_concern else ''}  \n"
-            f"- unique source documents: `{signals.unique_sources}`"
-            f"{' ⚠' if signals.single_source_risk else ''}"
+    if not signals.any():
+        top = (
+            f" · **top reranker** `{signals.max_score:.3f}`"
+            if signals.max_score is not None
+            else ""
         )
-    else:
-        summary_prefix = "🔍 <b>Provenance</b>"
-        signals_block = ""
+        return (
+            f"\n\n---\n"
+            f"🔍 **Provenance** — `{id8}` · {latency_s:.1f}s{_token_suffix(prov)}{top}  \n"
+            f"{meta}  \n"
+            f"{hint}"
+        )
 
-    open_attr = " open" if expanded else ""
-
+    sig_lines = (
+        f"- max reranker score: `{signals.max_score:.3f}`"
+        f"{' ⚠' if signals.weak_retrieval else ''}  \n"
+        f"- top-3 score span: `{signals.top3_span:.3f}`"
+        f"{' ⚠' if signals.score_cluster_concern else ''}  \n"
+        f"- unique source documents: `{signals.unique_sources}`"
+        f"{' ⚠' if signals.single_source_risk else ''}"
+    )
+    score_lines = "\n".join(
+        f"- [{i + 1}] reranker `{c.reranker_score:.3f}`"
+        if c.reranker_score is not None
+        else f"- [{i + 1}] reranker `-`"
+        for i, c in enumerate(prov.retrieved_chunks)
+    )
     review_block = _format_review_block(review)
-
     return (
-        f"\n\n<details{open_attr}>\n<summary>{summary_prefix} — "
-        f"<code>{prov.id[:8]}</code> · {latency_s:.1f}s · "
-        f"{cost_in + cost_out:,} tokens</summary>\n\n"
-        f"**Model:** `{prov.model_name or '?'}` · "
-        f"**Embedding:** `{prov.embedding_model or '?'}` · "
-        f"**top_k:** {prov.top_k} · "
-        f"**parent-child:** {prov.use_parent_child}  \n"
-        f"**Prompt version:** `{prov.prompt_version or '?'}`  \n"
-        f"**Tokens:** {cost_in:,} in + {cost_out:,} out"
-        f"{signals_block}"
+        f"\n\n---\n"
+        f"⚠ **Low confidence: {', '.join(signals.reasons)}** — "
+        f"`{id8}` · {latency_s:.1f}s{_token_suffix(prov)}  \n"
+        f"{meta}  \n"
+        f"**Prompt version** `{prov.prompt_version or '?'}`\n\n"
+        f"**Confidence signals**  \n{sig_lines}"
         f"{review_block}\n\n"
-        "**Reranker scores** (by source number above):\n\n"
-        + "\n".join(chunks_lines)
-        + f"\n\n_Review or export this answer:_ "
-        f"`/review {prov.id[:8]}` · `/export-record {prov.id[:8]}`\n\n"
-        "</details>"
+        f"**Reranker scores** (by source number above)\n{score_lines}\n\n"
+        f"{hint}"
     )
 
 
@@ -253,10 +263,9 @@ async def on_message(message: cl.Message) -> None:
         )
         signals = compute_confidence_signals(prov)
         # PR 5.1 — quiet UI on clean answers, loud on flagged ones. The card
-        # ALWAYS renders so the answer's provenance id (needed for `/review`
-        # and `/export-record`) and the active model are visible on every
-        # answer. It stays COLLAPSED + neutral on clean answers and opens
-        # EXPANDED with a ⚠ chip when a confidence signal fires.
+        # ALWAYS renders (so the provenance id for `/review`/`/export-record`
+        # and the active model are visible on every answer): a compact neutral
+        # line on clean answers, a full ⚠ block when a confidence signal fires.
         review: ReviewResult | None = None
         if signals.any():
             # PR 6 — when heuristic flags fire AND a reviewer is available,
@@ -274,9 +283,7 @@ async def on_message(message: cl.Message) -> None:
                     )
                 except Exception as e:
                     review = ReviewResult(error=f"reviewer setup failed: {e}")
-        provenance_block = _format_provenance_card(
-            prov, signals, expanded=signals.any(), review=review
-        )
+        provenance_block = _format_provenance_card(prov, signals, review=review)
     except Exception as e:
         # Never let provenance failure break the answer.
         provenance_block = f"\n\n_⚠ Provenance capture failed: {e}_"
@@ -285,14 +292,25 @@ async def on_message(message: cl.Message) -> None:
         format_citation(doc, i + 1) for i, doc in enumerate(docs)
     )
 
-    usage_block = (
-        f"\n\n---\n"
-        f"📊 **This turn:** {turn_in:,} in + {turn_out:,} out "
-        f"= {turn_total:,} tokens "
-        f"(~${(turn_in * 1.0 + turn_out * 5.0) / 1_000_000:.4f})  \n"
-        f"**Session total:** {counter.total():,} tokens "
-        f"(~${counter.cost_usd():.4f})"
-    )
+    if LLM_PROVIDER.lower() == "ollama":
+        # Local models report no token usage to the LangChain callback, so the
+        # real counts are zero — showing "0 tokens / $0.0000" reads as broken.
+        # Be honest: no metered cost, with a rough output estimate from text.
+        est_out = max(0, len(full_answer) // 4)
+        usage_block = (
+            f"\n\n---\n"
+            f"🖥 **Local model** (`{LLM_PROVIDER}/{LLM_MODEL}`) — no metered token "
+            f"cost; provider reports no usage. (~{est_out:,} output tokens, estimated.)"
+        )
+    else:
+        usage_block = (
+            f"\n\n---\n"
+            f"📊 **This turn:** {turn_in:,} in + {turn_out:,} out "
+            f"= {turn_total:,} tokens "
+            f"(~${(turn_in * 1.0 + turn_out * 5.0) / 1_000_000:.4f})  \n"
+            f"**Session total:** {counter.total():,} tokens "
+            f"(~${counter.cost_usd():.4f})"
+        )
 
     msg.content = full_answer + sources_block + usage_block + provenance_block
     await msg.update()

@@ -117,25 +117,38 @@ class OllamaClient:
     No API key. ``host`` defaults to ``config.OLLAMA_HOST``. Messages are
     passed as ``(role, content)`` tuples, which LangChain maps to its
     message types reliably.
+
+    Per-call ``temperature`` / ``max_tokens`` are applied as **model
+    attributes** at construction (``temperature`` / ``num_predict``), NOT
+    as ``invoke`` kwargs. langchain_ollama only folds its *known* params
+    into Ollama's ``options`` dict when they are model attributes; passing
+    them to ``invoke`` leaks them as raw kwargs to the ollama
+    ``Client.chat()``, which rejects ``temperature`` (``TypeError:
+    Client.chat() got an unexpected keyword argument 'temperature'``).
+    A fresh client per call is cheap — construction does no network I/O.
     """
 
     def __init__(self, model: str, *, host: str | None = None) -> None:
-        from langchain_ollama import ChatOllama
-
         self.model = model
-        self._client = ChatOllama(
-            model=model,
-            base_url=host or config.OLLAMA_HOST,
-            temperature=0.0,
-        )
+        self._host = host or config.OLLAMA_HOST
 
     def complete(self, messages: list[Message], *, temperature: float, max_tokens: int) -> str:
-        lc_messages = [(m["role"], m["content"]) for m in messages]
-        result = self._client.invoke(
-            lc_messages,
+        from langchain_ollama import ChatOllama
+
+        client = ChatOllama(
+            model=self.model,
+            base_url=self._host,
             temperature=temperature,
             num_predict=max_tokens,
+            # This adapter serves only the one-shot JSON path (reviewer + eval
+            # judge — see module docstring). Local models are far less reliable
+            # than the API at returning a bare JSON object; Ollama's native JSON
+            # mode constrains the output to valid JSON so the caller's
+            # json.loads doesn't choke on prose or an empty completion.
+            format="json",
         )
+        lc_messages = [(m["role"], m["content"]) for m in messages]
+        result = client.invoke(lc_messages)
         content = getattr(result, "content", result)
         if isinstance(content, list):
             content = " ".join(str(c) for c in content)

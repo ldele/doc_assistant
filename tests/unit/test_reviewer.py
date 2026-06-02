@@ -112,6 +112,22 @@ def test_review_answer_handles_broken_json():
     result = review_answer(_prov(), client)
     assert result.error is not None
     assert "reviewer call failed" in result.error
+    # The raw output is captured so an opaque local-model failure is debuggable.
+    assert result.raw_response == "not json at all"
+
+
+def test_review_answer_extracts_json_from_surrounding_prose():
+    """Local models often wrap the object in prose; extract the brace span."""
+    client = _mock_client(
+        "Here is my assessment:\n"
+        '{"faithfulness": 2, "citation_density": 2, "hedging_adequacy": 2, '
+        '"unsupported_claims_count": 3, "notes": "weak"}\n'
+        "Hope that helps!"
+    )
+    result = review_answer(_prov(), client)
+    assert result.error is None
+    assert result.faithfulness == 2
+    assert result.unsupported_claims_count == 3
 
 
 def test_review_answer_handles_missing_field():

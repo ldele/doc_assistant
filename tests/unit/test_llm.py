@@ -156,6 +156,23 @@ def test_ollama_complete_passes_role_content_tuples(patched_sdks: None):
     assert sent == [("system", "S"), ("user", "U")]
 
 
+def test_ollama_complete_sets_params_on_model_not_invoke(patched_sdks: None):
+    """Regression: temperature/num_predict must be set as model attributes,
+    not passed to invoke(). Passing them to invoke leaks them to the ollama
+    Client.chat() call, which raises
+    ``TypeError: Client.chat() got an unexpected keyword argument 'temperature'``.
+    """
+    client = llm.make_client("ollama", "llama3")
+    client.complete([{"role": "user", "content": "hi"}], temperature=0.3, max_tokens=77)
+    init = _FakeChatOllama.last_init
+    assert init["temperature"] == 0.3
+    assert init["num_predict"] == 77
+    assert init["model"] == "llama3"
+    # invoke() must NOT carry these — that is exactly what broke against a
+    # live ollama server.
+    assert _FakeChatOllama.last_invoke["kwargs"] == {}
+
+
 # ============================================================
 # Config-driven reviewer / judge selection
 # ============================================================

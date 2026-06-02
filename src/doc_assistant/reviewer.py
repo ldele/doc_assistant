@@ -139,6 +139,25 @@ def _strip_fence(text: str) -> str:
     return "\n".join(lines)
 
 
+def _extract_json(text: str) -> str:
+    """Best-effort: pull a JSON object out of an LLM response.
+
+    Strips a leading/trailing markdown fence, then — if the result still
+    isn't a bare object — takes the outermost ``{...}`` span. Local models
+    (Ollama) are far less reliable than the API at returning clean JSON
+    even with ``format="json"``; the API path is unaffected (its output is
+    already a bare object, so both transforms are no-ops).
+    """
+    t = text.strip()
+    if t.startswith("```"):
+        t = _strip_fence(t).strip()
+    if not t.startswith("{"):
+        start, end = t.find("{"), t.rfind("}")
+        if 0 <= start < end:
+            t = t[start : end + 1]
+    return t
+
+
 def review_answer(
     prov: AnswerProvenance,
     client: LLMClient,
@@ -154,15 +173,21 @@ def review_answer(
     prompt = build_reviewer_prompt(prov)
     messages: list[Message] = [{"role": "user", "content": prompt}]
 
+    raw = ""
     try:
         # Single-turn, no system prompt, no history, temperature=0 —
         # same isolation contract as the eval LLM judge.
-        text = client.complete(messages, temperature=0.0, max_tokens=max_tokens).strip()
-        if text.startswith("```"):
-            text = _strip_fence(text)
+        raw = client.complete(messages, temperature=0.0, max_tokens=max_tokens).strip()
+        text = _extract_json(raw)
         parsed = json.loads(text)
     except Exception as e:
-        return ReviewResult(error=f"reviewer call failed: {type(e).__name__}: {e}")
+        # Keeps the "reviewer call failed" prefix (transport + parse share it)
+        # but now also captures the raw model output for debugging — empty or
+        # non-JSON completions from local models are otherwise opaque.
+        return ReviewResult(
+            error=f"reviewer call failed: {type(e).__name__}: {e}",
+            raw_response=raw or None,
+        )
 
     try:
         return ReviewResult(

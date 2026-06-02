@@ -25,7 +25,7 @@ Deterministic-only n=5 (no judge) agrees: `citation_overlap` 1.000 ± 0.000,
 **Reading**
 - `citation_overlap` = 1.000 ± 0.000: retrieval cites the correct paper for all 10 cases, every trial. Depends only on retrieval, so it has no run-to-run variance.
 - `contains_all` = 0.927: scores the stochastic generated answer, so individual runs range ~0.88–0.98; the mean is stable and the std is small.
-- `llm_judge` = 3.894/5: answers are genuinely good; the `contains_all` shortfall is wording, not correctness. Higher than the private neuroscience benchmark (~2.2/5) because these references are abstract-grounded, not best-effort — not a sign the pipeline is better on CS papers.
+- `llm_judge` = 3.894/5: answers are genuinely good; the `contains_all` shortfall is wording, not correctness. The score is high because these references are abstract-grounded (not best-effort), which the reference-only judge credits — not a sign the pipeline is better on these papers than others.
 
 **Known caveat**
 - Flaky judge call on `sbert_motivation`: skipped in 3 of 5 trials (API timeout / JSON parse failure on that prompt). `llm_judge` mean is over 47 of 50 scores. Re-run to confirm; investigate if it persists.

@@ -2,18 +2,20 @@
 
 Engineering quality additions on top of the existing phase plan in `docs/decisions.md`. Purpose: domain-aware retrieval, reproducible evaluation, structured handling of figures and tables, and an explicit research-integrity layer that records how each answer was produced.
 
-This document is the **source of intent**. `docs/decisions.md` records the locked design choices. `CLAUDE.md` points at both.
+This document is the **source of intent**. `docs/decisions.md` records the locked design choices; `CLAUDE.md` points at both. The evaluation strategy, scorer limitations, and the verified-10 benchmark rule live in [`tests/eval/TESTING.md`](../tests/eval/TESTING.md).
+
+The asset these additions build is the *testing and observability architecture* — a reusable harness with clearly documented scorers and known limitations — not a set of impressive numbers. Every published number comes from the verified 10-case public corpus, and only that set. The app already works well enough in daily use; the research-integrity layer is the instrument that exposes where it actually fails, so the system's real ceiling only becomes visible once that layer is in place (Chunks 2a→2c). The features below are sequenced to build that instrument before leaning on what it measures.
 
 ---
 
 ## Goals
 
-1. Make the embedding layer swappable and per-project routable, with measured comparisons across models.
+1. Make the embedding layer swappable, with measured comparisons across models. (Per-project *routing* is deferred until a model beats `bge-base` on an identifiable sub-corpus — Feature 3 measured no such win yet; the factory stays, the routing layer waits.)
 2. Build a reproducible eval harness inside the project, designed to be extractable later.
 3. Promote figures and tables from "lossy text artifacts" to first-class structured content.
 4. Add a research-integrity layer: every answer carries a provenance record; synthesis is split into evidence and interpretation layers; an LLM reviewer scores each interpretation against a rubric.
 5. Position the project against published standards (PRISMA-trAIce, AI Usage Cards, BE WISE) without binding to any single vendor framework.
-6. Close the self-improvement loop: aggregate reviewer verdicts over time, distinguish reviewer bias from systemic faults by anchoring against the golden eval set, and surface recurring failure patterns as actionable fixes.
+6. Close the self-improvement loop: aggregate reviewer verdicts over time, distinguish reviewer bias from systemic faults by anchoring against the verified eval set, and surface recurring failure patterns as actionable fixes — but only once they clear a minimum-N gate (`MIN_FAILURE_TAG_COUNT`/`MIN_FAILURE_TAG_DOCS`, tunable), with counts always shown against their denominator. Below the gate: instrumentation, not action.
 7. Add a self-organizing markdown "wiki" synthesis layer over the corpus — distilled, linked, cited topic notes that make knowledge gaps computable. Feeds Phase 7 gap detection and Phase 9 review generation. (Inspired by the Karpathy LLM-wiki pattern proven out in the cross-project atlas; here it sits *on top of* RAG, not as a replacement.)
 
 ---
@@ -65,7 +67,7 @@ Make the embedding model swappable via env config instead of hardcoded.
 
 **Effort:** 1–2 evenings.
 
-**Generation side — LLM provider protocol (locally runnable).** Feature 1 also covers the generation layer, the sibling of the embedding factory. A normalized `LLMClient.complete(messages, *, temperature, max_tokens) -> str` protocol (`src/doc_assistant/llm.py`) with `AnthropicClient` + `OllamaClient` adapters backs the reviewer and the eval judge; `pipeline._build_llm()` becomes `LLM_PROVIDER`/`LLM_MODEL`-driven while staying a streaming LangChain model. **Hard requirement: fully local** (Ollama analysis + reviewer, no API key). Independent of all other features. Full spec + build node + guard test: `docs/specs/llm-provider-isolation.md`.
+**Generation side — LLM provider protocol (locally runnable).** Feature 1 also covers the generation layer, the sibling of the embedding factory. A normalized `LLMClient.complete(messages, *, temperature, max_tokens) -> str` protocol (`src/doc_assistant/llm.py`) with `AnthropicClient` + `OllamaClient` adapters backs the reviewer and the eval judge; `pipeline._build_llm()` becomes `LLM_PROVIDER`/`LLM_MODEL`-driven while staying a streaming LangChain model. **Local-first is the end goal, hybrid today.** The *generator* targets fully local (Ollama analysis + chat, no API key). The *judge and reviewer are pinned instruments* — fixed, version-recorded reference model by default; they move to local only after the local-judge calibration gate passes (`tests/eval/TESTING.md`). Feature 4c's VLM is API-only, outside the local path. Independent of all other features. Full spec + build node + guard test: `docs/specs/llm-provider-isolation.md`.
 
 ### Feature 2 — Eval harness module (v0)
 
@@ -132,7 +134,7 @@ Every answer carries a record of how it was produced.
 
 ### Feature 1b — Per-project embedder routing
 
-**Gate:** Ship only after Feature 3 results exist. Otherwise it is a switch with no evidence behind it.
+**Gate: deferred — no embedder beats `bge-base` on a sub-corpus yet.** Routing is only worth its machinery once some model wins somewhere; Feature 3 measured `bge-base` ahead of `specter2` on every retrieval-side signal, a training-task mismatch (SPECTER2 predicts paper-level citations over abstracts; doc_assistant does chunk-level QA over full text). Until a model beats `bge-base` on an identifiable sub-corpus by more than the confidence intervals overlap, routing is a switch with nothing to switch *to* — so it waits (re-run SPECTER2 at `--repeat 5` for a clean CI first). The Feature 1 factory is independent of this and stays; only the routing layer below waits. If no model ever wins on a sub-corpus, 1b leaves Phase 6 entirely. The design is kept here for when that evidence exists.
 
 Let each user-defined project (Folder) declare its own embedding model. Ingest and retrieval automatically use the right embedder for the project a document belongs to.
 
@@ -264,7 +266,7 @@ Chunk *sizes* (`parent 2000/200`, `child 400/50`, `baseline 1000/200`) were neve
 
 **Remaining (measurement, runs locally):** run the sweep on a representative corpus, pick the winner, update the locked-settings tables in `decisions.md` + `CLAUDE.md` with the numbers, and change the config defaults. A later `CHUNK_STRATEGY` flag (semantic vs fixed) is deferred until sizing is settled.
 
-**Repeatability (closed 2026-06-01):** the "add doc examples for test repeatability" TODO is addressed by a shareable **public demo corpus** — the 10 arXiv papers behind the project's own methods (RAG, dense retrieval, SBERT, BGE, SPECTER2/SciRepEval, BERT re-ranking, ColBERT, HyDE, LLM-as-a-judge, AI Usage Cards). `tests/eval/corpus_manifest.yaml` pins arXiv IDs + sha256; `scripts/download_corpus.py` fetches them from arXiv (download-only, nothing re-hosted); `tests/eval/cases.public.yaml` is a standalone 10-case eval over them. This is separate from the private neuroscience benchmark (`cases.yaml`), which is mostly copyrighted and stays unredistributable. Anyone can now reconstruct the public corpus and re-run the sweep/eval against a known-good set.
+**Repeatability (closed 2026-06-01):** the "add doc examples for test repeatability" TODO is addressed by a shareable **public demo corpus** — the 10 arXiv papers behind the project's own methods (RAG, dense retrieval, SBERT, BGE, SPECTER2/SciRepEval, BERT re-ranking, ColBERT, HyDE, LLM-as-a-judge, AI Usage Cards). `tests/eval/corpus_manifest.yaml` pins arXiv IDs + sha256; `scripts/download_corpus.py` fetches them from arXiv (download-only, nothing re-hosted); `tests/eval/cases.public.yaml` is a standalone 10-case eval over them. Anyone can now reconstruct the public corpus and re-run the sweep/eval against a known-good set. Testing strategy is documented in `tests/eval/TESTING.md`.
 
 **Effort:** measurement run is ~½ day of mostly-unattended compute + interpretation.
 
@@ -286,8 +288,9 @@ Without this anchor, "pattern in the suggestions" is unfalsifiable — it must n
 
 - Add a categorical `failure_tag` enum to the reviewer rubric (`missing_citation`, `overclaim`, `evidence_contradiction`, `no_hedge`, …) alongside the existing free-text `notes`. Free text stays as human-readable detail; the enum makes patterns *countable*.
 - Aggregation module + CLI over the `AnswerReview` table — counts per `failure_tag`, per `prompt_version`, over time. Reuses the eval harness's existing aggregate/flaky-case machinery rather than re-implementing it.
-- Bias-vs-fault report: the eval-anchored comparison above, emitted as a short markdown summary.
-- (Optional, gated) surface the top recurring fault to the user/devlog as a suggested fix; **no auto-remediation** — same cost-discipline rule as no-auto-retry.
+- Bias-vs-fault report: the eval-anchored comparison above, emitted as a short markdown summary. Anchor against the **verified** eval set only (the public 10); a best-effort reference cannot adjudicate bias vs fault.
+- **Minimum-N gate (locked).** The reviewer is a biased sampler over a small corpus, so a raw count is noise with a label. A `failure_tag` is not reported as actionable until it clears `MIN_FAILURE_TAG_COUNT` occurrences across `MIN_FAILURE_TAG_DOCS` distinct documents (config-driven, user-tunable; ~10/5 default, tune on the first real distribution). Below the gate the report reads "insufficient evidence." Counts always carry their denominator ("4 / 7 flagged"), never bare. The judge/reviewer used here is the pinned reference instrument, not a swappable local model — otherwise the anchor drifts.
+- (Optional, gated) surface the top recurring fault to the user/devlog as a suggested fix; **no auto-remediation** — same cost-discipline rule as no-auto-retry. v1 is instrumentation, not action; the action layer waits until accumulated records clear the gate.
 
 **Architecture:** read-only aggregation over existing sidecar tables. No mutation of the chunk store. Enrichment-Layer Pattern.
 
@@ -373,14 +376,14 @@ Each row is one PR. Each PR scopes to one chunk, with the files and the `decisio
 | 3 | Feature 2: eval harness v0 | `src/doc_assistant/eval/` (new module), `tests/eval/cases.yaml` (stub) | 1 weekend | PR 2 |
 | 4 | Feature 3: golden set + BGE vs SPECTER2 | `tests/eval/cases.yaml` (populated), README "Benchmark results" section | 1 day | PR 3 |
 | 5 | Integrity Chunk 1: provenance card | `src/doc_assistant/db/models.py` (new `AnswerRecord`), `src/doc_assistant/db/migrations.py`, `src/doc_assistant/tracking.py`, `src/doc_assistant/commands.py` (`/export-record`), `apps/chainlit_app.py` (card render) | 1 evening | PR 2 |
-| 6 | Feature 1b: per-project embedder routing | `src/doc_assistant/db/models.py` (Folder.embedding_model), `src/doc_assistant/ingest.py`, `src/doc_assistant/pipeline.py`, UI surface | 2 evenings | PR 4 (must have Feature 3 numbers first) |
+| 6 | Feature 1b: per-project embedder routing — **DEFERRED** (no model beats bge-base on a sub-corpus yet) | `src/doc_assistant/db/models.py` (Folder.embedding_model), `src/doc_assistant/ingest.py`, `src/doc_assistant/pipeline.py`, UI surface | 2 evenings | Blocked until a per-sub-corpus winner exists (re-run SPECTER2 `--repeat 5` first) |
 | 7 | Feature 4a: pdfplumber table pass | `src/doc_assistant/tables.py` (new), `scripts/extract_tables.py` (new) | 1 evening | PR 1 (Phase 4 closed) |
 | 8 | Feature 4b: figure detection + manifest | `src/doc_assistant/figures.py` (new), `scripts/extract_figures.py` (new), `src/doc_assistant/db/models.py` (Figure table) | 1 weekend | PR 7 |
 | 9 | Feature 4c: VLM figure description (gated) | `src/doc_assistant/figures.py` (VLM call), Pydantic schema, `MAX_VLM_CALLS_PER_DOC` config | 1 weekend | PR 8 |
 | 10 | Integrity Chunk 2a: dual interpretation + adjudication | `src/doc_assistant/pipeline.py`, `src/doc_assistant/prompts.py`, `src/doc_assistant/config.py` (`SYNTHESIS_MODE`), UI surface for accept/reject/edit | 1 weekend | PR 5 |
 | 11 | Integrity Chunk 2b: reviewer agent | `src/doc_assistant/reviewer.py` (new), Pydantic rubric schema, integration in `pipeline.py` | 1 evening | PR 10 |
 | 11.5 | Chunking sweep infra (Phase 2.4 reopened) ✅ shipped 2026-05-31 | `src/doc_assistant/config.py`, `src/doc_assistant/ingest.py`, `scripts/sweep_chunking.py` (new), `tests/unit/test_chunking_config.py` (new) | done (infra) + ½-day measurement run | PR 3 (eval harness) |
-| 12 | Integrity Chunk 2c: reviewer aggregation & self-improvement loop | `src/doc_assistant/reviewer.py` (`failure_tag` enum), `src/doc_assistant/db/models.py` (AnswerReview column + migration), aggregation module + CLI, eval-anchored bias-vs-fault report | 1 weekend | PR 11 + PR 4 (golden set for the anchor) |
+| 12 | Integrity Chunk 2c: reviewer aggregation & self-improvement loop (min-N gated; instrumentation-first) | `src/doc_assistant/reviewer.py` (`failure_tag` enum), `src/doc_assistant/db/models.py` (AnswerReview column + migration), `config.py` (`MIN_FAILURE_TAG_COUNT`/`_DOCS`), aggregation module + CLI, eval-anchored bias-vs-fault report | 1 weekend | PR 11 + PR 4 (verified golden set as the anchor) |
 | 13 | Feature 6: self-organizing wiki / synthesis layer | `src/doc_assistant/wiki.py` (new), `scripts/build_wiki.py` (new), gap signals reuse `provenance.py` | 1 weekend (6a) + 1 evening each (6b/6c) | PR 1 (doc vectors) + PR 5 (provenance) |
 | 14 | Integrity Chunk 3: PRISMA-trAIce export | `scripts/export_review_traice.py` (new) | 1 day | Phase 9 work; PRs 5 + 10 |
 | 15 | Feature 5: extract eval harness to standalone repo | New repo | 1 weekend | PR 4 + at least one real measurement run |

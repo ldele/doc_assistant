@@ -225,9 +225,13 @@ Return JSON only, no prose, no markdown fence:
 class LLMJudgeScorer:
     """LLM-as-judge rubric scorer (faithfulness/relevance/completeness, 1-5).
 
-    Takes an Anthropic-style client via constructor injection. The
-    scorer's ``value`` is the mean of the three sub-scores in [1.0, 5.0].
-    Individual dimension scores land in ``details`` for analysis.
+    Takes an ``LLMClient`` (something with ``.complete(messages, *,
+    temperature, max_tokens) -> str``) via constructor injection. Typed
+    ``Any`` deliberately: this module imports nothing from ``doc_assistant``
+    so the harness stays extractable (Feature 5). The model is owned by the
+    injected client. The scorer's ``value`` is the mean of the three
+    sub-scores in [1.0, 5.0]; individual dimension scores land in
+    ``details``.
 
     Isolation guarantees
     --------------------
@@ -240,9 +244,8 @@ class LLMJudgeScorer:
       model to ignore this and grade only against the reference;
       enforcement is best-effort because there's no way to truly
       blindfold an LLM.
-    * The Anthropic client's own retry/cache behaviour. With the default
-      SDK, each ``messages.create`` is a fresh API request — no
-      cross-call context.
+    * The client's own retry/cache behaviour. Each ``complete`` is a fresh
+      request — no cross-call context.
     """
 
     name = "llm_judge"
@@ -250,11 +253,9 @@ class LLMJudgeScorer:
     def __init__(
         self,
         client: Any,
-        model: str = "claude-haiku-4-5-20251001",
         max_tokens: int = 200,
     ) -> None:
         self.client = client
-        self.model = model
         self.max_tokens = max_tokens
 
     def __call__(self, case: EvalCase, output: EvalOutput | None) -> ScoreResult:
@@ -272,13 +273,11 @@ class LLMJudgeScorer:
             # Single-turn, no system prompt, no conversation history — each
             # call is fully isolated from every other. temperature=0 so the
             # same (case, candidate) pair yields the same score on re-runs.
-            response = self.client.messages.create(
-                model=self.model,
-                max_tokens=self.max_tokens,
+            text = self.client.complete(
+                [{"role": "user", "content": prompt}],
                 temperature=0.0,
-                messages=[{"role": "user", "content": prompt}],
-            )
-            text = _extract_text(response).strip()
+                max_tokens=self.max_tokens,
+            ).strip()
             if text.startswith("```"):
                 text = _strip_fence(text)
             parsed = json.loads(text)
@@ -302,22 +301,6 @@ class LLMJudgeScorer:
             mean,
             {"faithfulness": f, "relevance": r, "completeness": c},
         )
-
-
-def _extract_text(response: Any) -> str:
-    """Pull text from an Anthropic Messages response. Tolerates SDK shape drift."""
-    content = getattr(response, "content", None)
-    if content is None and isinstance(response, dict):
-        content = response.get("content")
-    if isinstance(content, list) and content:
-        first = content[0]
-        if hasattr(first, "text"):
-            return str(first.text)
-        if isinstance(first, dict):
-            return str(first.get("text", ""))
-    if isinstance(content, str):
-        return content
-    return str(response)
 
 
 def _strip_fence(text: str) -> str:

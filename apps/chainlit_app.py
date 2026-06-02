@@ -12,7 +12,7 @@ import time
 import chainlit as cl
 
 from doc_assistant.commands import execute_command, parse_command
-from doc_assistant.config import ANTHROPIC_API_KEY, TOP_K, USE_PARENT_CHILD
+from doc_assistant.config import TOP_K, USE_PARENT_CHILD
 from doc_assistant.embeddings import get_active_model_name
 from doc_assistant.pipeline import RAGPipeline, format_citation
 from doc_assistant.prompts import ANSWER_PROMPT
@@ -252,16 +252,18 @@ async def on_message(message: cl.Message) -> None:
         # Record always persists (visible via /records and /export-record).
         review: ReviewResult | None = None
         if signals.any():
-            # PR 6 — when heuristic flags fire AND we have API access, run
-            # the LLM reviewer to add depth. ~$0.001 + ~1-2s per flagged
-            # answer. Clean answers skip the call entirely.
-            if ANTHROPIC_API_KEY:
-                try:
-                    from anthropic import Anthropic
+            # PR 6 — when heuristic flags fire AND a reviewer is available,
+            # run the LLM reviewer to add depth. ~$0.001 + ~1-2s per flagged
+            # answer (free + local under Ollama). Clean answers skip the call.
+            from doc_assistant.llm import get_reviewer_client, reviewer_available
 
-                    review = review_answer(prov, Anthropic(api_key=ANTHROPIC_API_KEY))
+            if reviewer_available():
+                try:
+                    from doc_assistant.config import REVIEWER_MODEL
+
+                    review = review_answer(prov, get_reviewer_client())
                     persist_review(
-                        record_id, review, reviewer_kind="llm_haiku", model_name="haiku"
+                        record_id, review, reviewer_kind="llm_haiku", model_name=REVIEWER_MODEL
                     )
                 except Exception as e:
                     review = ReviewResult(error=f"reviewer setup failed: {e}")

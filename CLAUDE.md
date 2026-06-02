@@ -42,7 +42,12 @@ Always check `decisions.md` before suggesting architectural changes. Most non-ob
 | 5.1 | Heuristic confidence signals — quiet UI on clean answers, ⚠ on flagged |
 | 6 | Reviewer agent (Integrity Chunk 2b): `/review`, runs only on flagged answers |
 
-**Snapshot:** 264 tests · 63.9% coverage · ruff format/check + mypy + bandit clean.
+**Snapshot:** 288 tests · ruff format/check + mypy --strict + bandit clean.
+
+**LLM provider protocol (2026-06-02, pending review — folded into Feature 1, generation side):**
+- `src/doc_assistant/llm.py` — `LLMClient.complete()` protocol + `AnthropicClient`/`OllamaClient` adapters + `make_client`/`get_reviewer_client`/`get_judge_client`/`reviewer_available`. The one-shot path (reviewer + eval judge) is now provider-agnostic; the streaming analysis path stays LangChain but reads `LLM_PROVIDER`/`LLM_MODEL`.
+- `/review` and auto-review gate on `reviewer_available()` (Ollama needs no key), not a bare `ANTHROPIC_API_KEY` check — so review works fully local.
+- Spec: `docs/specs/llm-provider-isolation.md`. ⚠ **Local end-to-end NOT yet verified against a live Ollama server** — see operational TODOs.
 
 **Since the PR table (2026-05-31 → 06-01):**
 - **Chunking sweep infra** (reopened Phase 2.4): config-driven `*_CHUNK_SIZE`, `scripts/sweep_chunking.py`, guard tests. Measurement run still pending.
@@ -51,11 +56,12 @@ Always check `decisions.md` before suggesting architectural changes. Most non-ob
 - **`data/eval.duckdb` now gitignored** (live run log, regenerated on run; committed reference results live in `tests/eval/baselines/`).
 
 **Operational TODOs (don't need code changes):**
+- **⚠ Re-test fully-local Ollama path on the RTX (GPU) second machine.** The provider protocol's local acceptance (generator + reviewer on Ollama, `ANTHROPIC_API_KEY` unset, end-to-end query + `/review` producing a verdict) is **only unit-mocked so far** — never exercised against a live Ollama server. Must be run on the RTX box specifically before the DoD's local-acceptance bullet can be claimed. Pick the local model(s) there via `LLM_MODEL`/`REVIEWER_MODEL`.
 - Re-run SPECTER2 at `--repeat 5` for the symmetric BGE-vs-SPECTER2 confidence-interval comparison.
 - Most `expected_answer` fields in `tests/eval/cases.yaml` are best-effort (`author_verified: false`) — refine over time.
 - LNCS colon-separator format + multi-column PDF extraction: known tier-1 citation-extractor weaknesses; cosmetic, deferred.
 
-**Next priority:** three independent, ready nodes — **LLM provider protocol** (normalized `complete()` + Anthropic/Ollama adapters; makes the app fully local; spec'd in `docs/specs/llm-provider-isolation.md`, no deps), **Chunk 2a** (Dual Interpretation, biggest UX shift; `SYNTHESIS_MODE` flag, evidence vs interpretation layers), or **Feature 4a** (pdfplumber tables, smallest). File sets are disjoint except `pipeline.py`/`config.py`.
+**Next priority:** with the LLM provider protocol landed, two independent ready nodes remain — **Chunk 2a** (Dual Interpretation, biggest UX shift; `SYNTHESIS_MODE` flag, evidence vs interpretation layers) or **Feature 4a** (pdfplumber tables, smallest). File sets are disjoint except `pipeline.py`/`config.py`.
 
 ---
 
@@ -107,6 +113,7 @@ src/doc_assistant/
 ├── doc_vectors.py        # Phase 4: mean-pool doc vectors + similarity edges
 ├── bibtex.py             # PR 1.5: BibTeX export from Document rows
 ├── embeddings.py         # Phase 5 / Feature 1: model registry + factory
+├── llm.py                # Phase 6 / Feature 1 (gen side): LLMClient protocol + Anthropic/Ollama adapters (one-shot complete())
 ├── eval/                 # Phase 5 / Feature 2: generic eval harness
 │   ├── cases.py          # YAML loader
 │   ├── results.py        # dataclasses
@@ -167,6 +174,22 @@ Post-ingest enrichment layers (citations, metadata, figures/tables coming in Pha
 | Multi-query expansion | disabled | Dilutes reranker; tested twice, regressed both times |
 | Embedding model | BGE-base-en-v1.5 | Stable; Phase 5 makes it swappable; SPECTER2 comparison gates Phase 6 routing |
 | Chunk sizes | parent 2000/200, child 400/50, baseline 1000/200 | Config-driven since 2026-05-31 (`*_CHUNK_SIZE` env vars). **Defaults are historical, never measured** — sweep with `scripts/sweep_chunking.py` before trusting as optimal |
+
+---
+
+## LLM provider configuration (user's choice — not locked)
+
+The model is the user's call; these are just defaults that reproduce historical behaviour when unset. All selectable in `.env` (see `.env.example`):
+
+| Call shape | Provider var | Model var | Default (provider / model) |
+|---|---|---|---|
+| Analysis / chat (streaming) | `LLM_PROVIDER` | `LLM_MODEL` | from `LLM_MODE` / `haiku` (anthropic) or `llama3` (ollama) |
+| Reviewer agent (`/review`, auto-review) | `REVIEWER_PROVIDER` | `REVIEWER_MODEL` | = `LLM_PROVIDER` / `haiku` |
+| Eval LLM-judge | `JUDGE_PROVIDER` | `JUDGE_MODEL` | = `LLM_PROVIDER` / `haiku` |
+
+- Provider is `anthropic` or `ollama`. Adding a backend = one adapter in `src/doc_assistant/llm.py`.
+- **Fully local:** set all three providers to `ollama`, pick local models, leave `ANTHROPIC_API_KEY` empty. `.env.example` has a ready-to-uncomment block. Reviewer/judge defaults stay on the pinned reference model for comparable eval numbers, but you can point them at a local model too (gate: `tests/eval/TESTING.md`).
+- **Not yet verified on a live Ollama server** — see the RTX re-test in operational TODOs.
 
 ---
 

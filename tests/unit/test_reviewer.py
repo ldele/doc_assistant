@@ -16,19 +16,17 @@ from doc_assistant.reviewer import (
     _REVIEWER_PROMPT,
     ReviewResult,
     _format_evidence,
+    build_reviewer_prompt,
     get_reviews,
     persist_review,
     review_answer,
 )
 
 
-def _mock_anthropic(response_text: str) -> MagicMock:
+def _mock_client(response_text: str) -> MagicMock:
+    """An ``LLMClient``-shaped mock: ``.complete(...)`` returns the text."""
     client = MagicMock()
-    text_block = MagicMock()
-    text_block.text = response_text
-    response = MagicMock()
-    response.content = [text_block]
-    client.messages.create.return_value = response
+    client.complete.return_value = response_text
     return client
 
 
@@ -86,7 +84,7 @@ def test_format_evidence_includes_header_per_chunk():
 
 
 def test_review_answer_parses_clean_json():
-    client = _mock_anthropic(
+    client = _mock_client(
         '{"faithfulness": 4, "citation_density": 3, "hedging_adequacy": 5, '
         '"unsupported_claims_count": 1, "notes": "minor extrapolation"}'
     )
@@ -100,7 +98,7 @@ def test_review_answer_parses_clean_json():
 
 
 def test_review_answer_handles_markdown_fence():
-    client = _mock_anthropic(
+    client = _mock_client(
         '```json\n{"faithfulness": 3, "citation_density": 3, '
         '"hedging_adequacy": 3, "unsupported_claims_count": 0, "notes": "ok"}\n```'
     )
@@ -110,14 +108,14 @@ def test_review_answer_handles_markdown_fence():
 
 
 def test_review_answer_handles_broken_json():
-    client = _mock_anthropic("not json at all")
+    client = _mock_client("not json at all")
     result = review_answer(_prov(), client)
     assert result.error is not None
     assert "reviewer call failed" in result.error
 
 
 def test_review_answer_handles_missing_field():
-    client = _mock_anthropic('{"faithfulness": 4}')
+    client = _mock_client('{"faithfulness": 4}')
     result = review_answer(_prov(), client)
     assert result.error is not None
     assert "bad reviewer response" in result.error
@@ -125,16 +123,31 @@ def test_review_answer_handles_missing_field():
 
 def test_review_answer_is_isolated():
     """Single user message, no system, temperature=0 — same contract as the eval judge."""
-    client = _mock_anthropic(
+    client = _mock_client(
         '{"faithfulness": 4, "citation_density": 4, "hedging_adequacy": 4, '
         '"unsupported_claims_count": 0, "notes": ""}'
     )
     review_answer(_prov(), client)
-    call_kwargs = client.messages.create.call_args.kwargs
-    assert call_kwargs.get("system") in (None, "")
-    assert len(call_kwargs["messages"]) == 1
-    assert call_kwargs["messages"][0]["role"] == "user"
-    assert call_kwargs.get("temperature") == 0.0
+    call = client.complete.call_args
+    messages = call.args[0]
+    assert len(messages) == 1
+    assert messages[0]["role"] == "user"
+    assert not any(m["role"] == "system" for m in messages)
+    assert call.kwargs.get("temperature") == 0.0
+
+
+def test_build_reviewer_prompt_is_evidence_only():
+    """The reviewer prompt carries the evidence + answer, no ground-truth reference."""
+    prov = AnswerProvenance(
+        id="x",
+        query="Q",
+        answer="ANSWER_TOKEN",
+        retrieved_chunks=[RetrievedChunk(filename="p.pdf", chunk_excerpt="EVIDENCE_TOKEN")],
+    )
+    prompt = build_reviewer_prompt(prov)
+    assert "EVIDENCE_TOKEN" in prompt
+    assert "ANSWER_TOKEN" in prompt
+    assert "Q" in prompt
 
 
 # ============================================================

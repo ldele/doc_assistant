@@ -15,8 +15,9 @@ Locked design choices
 * **No auto-retry.** If the reviewer flags issues, surface them; the
   user decides whether to regenerate. Cost discipline.
 * **DI on the client.** No SDK imports at module level; the caller
-  passes the Anthropic client. Mirrors the eval LLMJudgeScorer
-  pattern.
+  passes an ``LLMClient`` (``llm.get_reviewer_client()``). The client
+  owns the provider + model, so a fully-local reviewer is a config flip.
+  Mirrors the eval LLMJudgeScorer pattern.
 * **One sidecar row per review.** Re-reviewing an answer (different
   model, different prompt, later in time) inserts another row rather
   than overwriting.
@@ -27,12 +28,12 @@ from __future__ import annotations
 import json
 import logging
 from dataclasses import dataclass
-from typing import Any
 
 from sqlalchemy import select
 
 from doc_assistant.db.models import AnswerReview
 from doc_assistant.db.session import session_scope
+from doc_assistant.llm import LLMClient, Message
 from doc_assistant.provenance import AnswerProvenance, RetrievedChunk
 
 log = logging.getLogger(__name__)
@@ -114,20 +115,19 @@ def _format_evidence(chunks: list[RetrievedChunk]) -> str:
     return "\n\n---\n\n".join(parts)
 
 
-def _extract_text(response: Any) -> str:
-    """Pull text from an Anthropic Messages response. Same as eval scorer's helper."""
-    content = getattr(response, "content", None)
-    if content is None and isinstance(response, dict):
-        content = response.get("content")
-    if isinstance(content, list) and content:
-        first = content[0]
-        if hasattr(first, "text"):
-            return str(first.text)
-        if isinstance(first, dict):
-            return str(first.get("text", ""))
-    if isinstance(content, str):
-        return content
-    return str(response)
+def build_reviewer_prompt(prov: AnswerProvenance) -> str:
+    """Render the reviewer prompt for one answer.
+
+    The reviewer sees exactly the question, the retrieved evidence, and
+    the answer under review — never a ground-truth reference and never the
+    analysis conversation. Extracted so the isolation guard test can assert
+    the prompt surface without an LLM call.
+    """
+    return _REVIEWER_PROMPT.format(
+        question=prov.query,
+        evidence=_format_evidence(prov.retrieved_chunks),
+        answer=prov.answer,
+    )
 
 
 def _strip_fence(text: str) -> str:
@@ -141,32 +141,23 @@ def _strip_fence(text: str) -> str:
 
 def review_answer(
     prov: AnswerProvenance,
-    client: Any,
+    client: LLMClient,
     *,
-    model: str = "claude-haiku-4-5-20251001",
     max_tokens: int = 400,
 ) -> ReviewResult:
     """Run the reviewer on one AnswerProvenance. Returns parsed scores or an error.
 
-    ``client`` is an Anthropic-style client; injected so this module
-    has zero vendor SDK imports at module load.
+    ``client`` is an ``LLMClient`` (``llm.get_reviewer_client()``); injected
+    so this module has zero vendor SDK imports at module load and the
+    provider/model are chosen by config. The model is owned by the client.
     """
-    prompt = _REVIEWER_PROMPT.format(
-        question=prov.query,
-        evidence=_format_evidence(prov.retrieved_chunks),
-        answer=prov.answer,
-    )
+    prompt = build_reviewer_prompt(prov)
+    messages: list[Message] = [{"role": "user", "content": prompt}]
 
     try:
         # Single-turn, no system prompt, no history, temperature=0 —
         # same isolation contract as the eval LLM judge.
-        response = client.messages.create(
-            model=model,
-            max_tokens=max_tokens,
-            temperature=0.0,
-            messages=[{"role": "user", "content": prompt}],
-        )
-        text = _extract_text(response).strip()
+        text = client.complete(messages, temperature=0.0, max_tokens=max_tokens).strip()
         if text.startswith("```"):
             text = _strip_fence(text)
         parsed = json.loads(text)

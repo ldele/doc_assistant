@@ -1005,3 +1005,35 @@ The neuroscience 35-case set stays as the private measured benchmark (the README
 **Why:** user asked where the scorer info came from, why it's good enough, and what else exists — wanted the answer captured in the doc, briefly.
 **Rejected:** a full "wider landscape" section enumerating RAGAS/TruLens/DeepEval metrics — overkill for a doc just trimmed; named them in one line instead. Adding MRR/nDCG now — flagged as a cheap option, not done (no request to implement).
 **Opens:** MRR/nDCG retrieval scorer is the highest-value cheap addition if reranker tuning ever needs numbers.
+
+---
+
+## Session: 2026-06-02 (cont.) — LLM provider protocol + local-capable reviewer/judge (spec: llm-provider-isolation.md)
+
+**Starting from:** Phase 6 in progress; provider protocol was the only ready node with a full code-level spec. Working tree clean.
+**Goal:** make the one-shot LLM path (reviewer + eval judge) provider-agnostic so a fully-local reviewer is a config flip, without disturbing the streaming analysis path.
+
+### src/doc_assistant/llm.py (new)
+**What:** `Message` alias + `LLMClient` Protocol (`complete(messages, *, temperature, max_tokens) -> str`), `AnthropicClient` and `OllamaClient` adapters, `make_client(provider, model)` factory (ValueError on unknown — mirrors `embeddings.get_model_config`), `get_reviewer_client()`/`get_judge_client()` (read `REVIEWER_*`/`JUDGE_*`), and `reviewer_available()`. Moved Anthropic-response text extraction here as `_extract_anthropic_text` (vendor-specific). `AnthropicClient.complete` hoists `system` messages into the SDK's top-level `system` kwarg; `OllamaClient.complete` passes `(role, content)` tuples to `ChatOllama.invoke`. Vendor SDKs imported lazily inside each adapter — module import stays SDK-free.
+**Why:** the codebase has two LLM call shapes. A single `make_llm()` can't serve both (a LangChain chat model has no `.messages.create`; the old reviewer call was Anthropic-only, so `REVIEWER_PROVIDER=ollama` would crash). Splitting by call shape — LangChain for streaming chat, normalized `complete()` for one-shot JSON — is what unlocks a local reviewer/judge.
+**Rejected:** (1) one LangChain factory for both; (2) keep reviewer Anthropic-only with just a configurable model — both foreclose the local-first endgame. Chose normalized `complete()` per the spec's ADR.
+
+### config.py
+**What:** Added `LLM_PROVIDER`/`LLM_MODEL`, `REVIEWER_PROVIDER`/`REVIEWER_MODEL`, `JUDGE_PROVIDER`/`JUDGE_MODEL`. `LLM_PROVIDER` derives from `LLM_MODE` for back-compat. Reviewer/judge default to a pinned `_REFERENCE_MODEL` (haiku).
+**Why:** independent config per call shape; pinned instruments keep cross-run eval numbers comparable.
+**Deviation from spec (deliberate):** the spec's literal `LLM_MODEL = getenv(..., "claude-haiku-...")` would have regressed the Ollama analysis branch (historically `llama3`). Made the analysis-model default provider-dependent (`haiku` for anthropic, `llama3` for ollama) so the DoD "defaults reproduce today's behaviour exactly" holds for both branches.
+
+### reviewer.py / eval/scorers.py
+**What:** reviewer — extracted `build_reviewer_prompt(prov)`; `review_answer(prov, client: LLMClient, *, max_tokens)` now calls `client.complete(...)` (dropped the `model=` kwarg — model lives in the client) and dropped its local `_extract_text`. scorers — `LLMJudgeScorer` takes a `complete()`-shaped client (typed `Any` to keep the eval harness import-free per the Feature-5 extraction rule), dropped its `model` param and `_extract_text`.
+**Why:** route both one-shot callers through the protocol; preserve the harness's "imports nothing from doc_assistant" invariant.
+
+### Call sites — chainlit_app.py / commands.py / scripts/run_eval.py / pipeline.py
+**What:** auto-review and `/review` now build the client via `get_reviewer_client()` and gate on `reviewer_available()` (provider-aware: Ollama needs no key) instead of a bare `ANTHROPIC_API_KEY` check, so `/review` works fully local. `run_eval` builds the judge via `get_judge_client()` and only requires a key when `JUDGE_PROVIDER=anthropic`. `pipeline._build_llm()` reads `LLM_PROVIDER`/`LLM_MODEL`, preserving `streaming=True`/`max_tokens=1024` (anthropic) and `base_url` (ollama). Persisted `model_name` is now `REVIEWER_MODEL`, not the hardcoded "haiku".
+**Why:** close the gap the spec names — the local-first endgame was unreachable on the one-shot path because both call sites hardcoded the key check and the SDK.
+
+### Tests + .env.example
+**What:** new `tests/unit/test_llm.py` (factory, both adapters' `complete` incl. system hoisting + tuple passing, config-driven selection, `reviewer_available`) and `tests/unit/test_reviewer_isolation.py` (prompt is evidence-only; reviewer client configured independently of the analysis model). Updated `test_reviewer.py` + `test_eval_scorers.py` to the `complete()` mock shape. `.env.example` gained a provider block + a commented fully-local stanza.
+**Gates:** 288 passed · ruff format/check clean · mypy --strict clean (31 files) · bandit no HIGH.
+**Note on the spec guard test:** the spec sketch referenced a non-existent `get_active_llm()`; reworked that assertion to check `get_reviewer_client().model` follows `REVIEWER_MODEL` and differs from `LLM_MODEL`, which is the real invariant.
+
+**Opens:** fully-local *acceptance* (live Ollama end-to-end with `ANTHROPIC_API_KEY` unset) is unit-mocked here, not run against a live server — verify on a machine with Ollama before claiming the DoD's local-acceptance bullet. Optional `tach` layer-locking (spec's follow-up) not done — separate PR.

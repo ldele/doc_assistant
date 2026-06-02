@@ -33,6 +33,7 @@ data/issues/
 data/library.db
 data/eval.duckdb
 data/eval.duckdb.wal
+data/tables_debug/
 
 # Backups
 backups/

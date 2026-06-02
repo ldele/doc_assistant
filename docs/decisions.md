@@ -670,9 +670,46 @@ interpretation + reviewer agent.
   `{folder_id}__{model_name}`. Cross-folder queries hit each collection 
   independently and the cross-encoder reranker resolves the mixed-space 
   merge.
-- **Feature 4a** — pdfplumber table extraction pass. Spliced inline into 
-  the markdown cache with `<!-- table-extracted-by: pdfplumber -->` 
-  marker.
+- **Feature 4a** — table extraction pass. 🔄 In progress (2026-06-02);
+  splice mechanics + extraction done, **extraction engine not yet final.**
+  `src/doc_assistant/tables.py` + `scripts/extract_tables.py`. Tables go in
+  one demarcated block appended to the cached `.md` (`<!-- tables:pdfplumber:begin
+  … :end -->`), each tagged `<!-- table-extracted-by: pdfplumber page=N table=M -->`.
+  Idempotent (re-splice replaces the block). Enters retrieval on the next
+  re-ingest; never touches the chunk store.
+  - **Detection is a shared page classifier (`regions.py`), not a table
+    detector (locked).** A visual check (`scripts/debug_tables.py`) showed
+    geometric detectors (pdfplumber, pymupdf `find_tables`) mis-read
+    scientific *figures* as tables (a bar-chart grid → 13 "tables") and
+    both mis-fire on shaded *prose*. Root-cause fix: classify each page
+    once — table / chart / photo / figure / text — from three measured
+    signals and route. (1) **"Table N" caption** (figures say "Figure N",
+    prose has none); (2) **vector curve-density** — charts are 1k-78k
+    curves vs 8-187 on table/text pages; (3) **raster image-area fraction**
+    — figures cover 0.09-0.60 of the page vs 0 on table/text. A page is a
+    table-candidate only if it has a table caption AND is neither
+    chart- nor image-dominated, so a chart with a stray "Table" mention is
+    not mis-routed. `tables.py` extracts only on classified table pages;
+    content guards (`MAX_CELL_CHARS`, ≥`MIN_COLS` non-empty cols) are the
+    second line of defence. Validated: no-table paper → 0; Table-1 paper →
+    Table 1. This same classifier is the **Feature 4b foundation** (its
+    chart/photo/figure verdict + image-area signal feed figure handling);
+    v1 is page-level, per-region bbox splitting is the deeper 4b step.
+    Thresholds (`CHART_CURVE_MIN`, `IMAGE_AREA_MIN`) measured on 2 eLife
+    docs — tunable, validate on a wider corpus.
+  - **Engine eval pending (RTX machine).** pdfplumber fragments multi-part
+    tables and misses some the geometric detector doesn't see. Marker
+    (ML-based, GPU-friendly, not a default dep) is the candidate better
+    engine; `scripts/eval_marker_tables.py` compares them on the
+    caption-gated pages. Run on the RTX box; then pick the engine.
+  - **De-dup pending.** pymupdf4llm already emits a *lossy* inline copy of
+    each table; once the engine is chosen, strip the inline copy (regex over
+    the `<!-- page:N -->`-marked region) so the cache holds one clean table,
+    not two. (User: "we don't need duplicate tables.")
+  - **Verification (planned).** A table-retrieval eval case (ask a table
+    question → assert the table chunk is retrieved post-ingest) is the
+    chosen check; a hand-verified gold-set fidelity scorer is a roadmap
+    future, not built now.
 - **Feature 4b** — Figure region detection + caption pairing (OpenCV, 
   no LLM cost). Sidecar `figures` table; images on disk under 
   `data/figures/{doc_hash}/`. Caption text stays in the markdown.

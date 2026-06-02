@@ -17,6 +17,7 @@ Not a general-purpose chatbot. The goal is: reliable answers grounded in *your* 
 - **[`docs/architecture.md`](docs/architecture.md)** — pipeline flow, module responsibilities, public contracts, engineering standards (CI, security, logging, errors, testing layout)
 - **[`docs/decisions.md`](docs/decisions.md)** — all design decisions with rationale, full phase roadmap, deferred improvements, open questions
 - **[`docs/doc-assistant-roadmap.md`](docs/doc-assistant-roadmap.md)** — source of intent for Phase 5+ additions (embedding layer, eval harness, figures/tables, research integrity layer) and the Claude Code PR execution order
+- **[`docs/figures-and-tables.md`](docs/figures-and-tables.md)** — Feature 4 detection layer: the page content classifier (`regions.py`), caption + curve-density + image-area signals, table extraction/splice, tooling, and the pdfplumber/Marker decision
 
 Always check `decisions.md` before suggesting architectural changes. Most non-obvious decisions are already there with the reasoning.
 
@@ -24,7 +25,7 @@ Always check `decisions.md` before suggesting architectural changes. Most non-ob
 
 ## Current Status
 
-**Active phase:** Phase 6 in progress — Integrity Chunk 2b (reviewer agent) shipped 2026-05-28. Chunk 2a (dual interpretation) and Feature 4a (pdfplumber tables) remain.
+**Active phase:** Phase 6 in progress — reviewer agent (2026-05-28) and LLM provider protocol (2026-06-02) shipped. Feature 4 detection foundation in progress: `regions.py` classifies each page (table/chart/photo/figure/text) from caption + curve-density + image-area signals, and `tables.py` extracts only on classified table pages (fixes figure-as-table at the root; gives 4b its figure signal). **Open:** extraction-engine choice (Marker vs pdfplumber-crop) pending on the RTX machine (`scripts/eval_marker_tables.py`); then inline de-dup + a retrieval eval-hook; region-level (multi-region-per-page) splitting is the proper 4b build on top of this classifier. Chunk 2a (dual interpretation) is the other main remaining node.
 
 **Shipped this session (per-PR detail in `docs/DEVLOG.md`):**
 
@@ -42,9 +43,9 @@ Always check `decisions.md` before suggesting architectural changes. Most non-ob
 | 5.1 | Heuristic confidence signals — quiet UI on clean answers, ⚠ on flagged |
 | 6 | Reviewer agent (Integrity Chunk 2b): `/review`, runs only on flagged answers |
 
-**Snapshot:** 288 tests · ruff format/check + mypy --strict + bandit clean.
+**Snapshot:** 316 tests · ruff format/check + mypy --strict + bandit clean.
 
-**LLM provider protocol (2026-06-02, pending review — folded into Feature 1, generation side):**
+**LLM provider protocol (2026-06-02, committed `37dcbdc` — folded into Feature 1, generation side):**
 - `src/doc_assistant/llm.py` — `LLMClient.complete()` protocol + `AnthropicClient`/`OllamaClient` adapters + `make_client`/`get_reviewer_client`/`get_judge_client`/`reviewer_available`. The one-shot path (reviewer + eval judge) is now provider-agnostic; the streaming analysis path stays LangChain but reads `LLM_PROVIDER`/`LLM_MODEL`.
 - `/review` and auto-review gate on `reviewer_available()` (Ollama needs no key), not a bare `ANTHROPIC_API_KEY` check — so review works fully local.
 - Spec: `docs/specs/llm-provider-isolation.md`. ⚠ **Local end-to-end NOT yet verified against a live Ollama server** — see operational TODOs.
@@ -61,7 +62,7 @@ Always check `decisions.md` before suggesting architectural changes. Most non-ob
 - Most `expected_answer` fields in `tests/eval/cases.yaml` are best-effort (`author_verified: false`) — refine over time.
 - LNCS colon-separator format + multi-column PDF extraction: known tier-1 citation-extractor weaknesses; cosmetic, deferred.
 
-**Next priority:** with the LLM provider protocol landed, two independent ready nodes remain — **Chunk 2a** (Dual Interpretation, biggest UX shift; `SYNTHESIS_MODE` flag, evidence vs interpretation layers) or **Feature 4a** (pdfplumber tables, smallest). File sets are disjoint except `pipeline.py`/`config.py`.
+**Next priority:** finish **Feature 4a** — run `scripts/eval_marker_tables.py` on the RTX machine to pick the extraction engine (Marker vs pdfplumber-crop), then inline de-dup + the table-retrieval eval-hook. In parallel, **Chunk 2a** (Dual Interpretation, biggest UX shift; `SYNTHESIS_MODE` flag, evidence vs interpretation layers) is the other main Phase 6 node — no code-level spec yet, so drafting one first is an option. Feature 4b (figure detection) is unblocked once 4a's engine is settled.
 
 ---
 
@@ -122,6 +123,8 @@ src/doc_assistant/
 │   ├── store.py          # DuckDB persistence + aggregation
 │   ├── report.py         # summary + diff + aggregate
 │   └── adapters.py       # the only doc_assistant-aware file
+├── regions.py            # Phase 6 / Feature 4: page content classifier (table/chart/photo/figure/text) — shared detection layer
+├── tables.py             # Phase 6 / Feature 4a: pdfplumber table extraction on classified table pages, spliced into the markdown cache
 ├── provenance.py         # Phase 5 / Integrity Chunk 1: per-answer audit record + confidence signals
 ├── reviewer.py           # Phase 6 / Integrity Chunk 2b: LLM reviewer agent (faithfulness/citation/hedging rubric)
 └── db/
@@ -146,6 +149,9 @@ scripts/
 ├── find_duplicates.py        # PR 1.5: report byte-identical and content-identical source files
 ├── export_bibtex.py          # PR 1.5: write docs/library.bib from Document rows
 ├── run_eval.py               # PR 3: drive the eval harness over the RAG pipeline
+├── extract_tables.py         # PR 7 / Feature 4a: caption-gated tables → spliced into markdown cache
+├── debug_tables.py           # PR 7 / Feature 4a: visual table-detection debug (overlay PNGs; dev tool)
+├── eval_marker_tables.py     # PR 7 / Feature 4a: Marker-vs-pdfplumber engine eval (RTX machine)
 └── migrate_to_content_hash.py # one-shot migration (Phase 3, completed)
 
 tests/
@@ -217,8 +223,8 @@ Full standards in `docs/architecture.md` → Engineering standards section.
 | 2 — Quality Foundation | ✅ Complete | Measurable quality, experiments |
 | 3 — Document Store + Library UI | ✅ Complete | Library as first-class object |
 | 4 — Citation Graph | ✅ Complete | Explicit + implicit document relationships |
-| 5 — Embedding & Eval Foundation | 🔄 In progress | Feature 1 ✅; eval harness + provenance card next |
-| 6 — Per-project routing + Figures & Tables + Dual interpretation | 🔄 In progress | Chunk 2b (reviewer agent) ✅; Chunk 2a + Feature 4a next |
+| 5 — Embedding & Eval Foundation | ✅ Complete | Embedding factory, eval harness, golden set (BGE > SPECTER2), provenance card all shipped |
+| 6 — Per-project routing + Figures & Tables + Dual interpretation | 🔄 In progress | Reviewer agent ✅ + LLM provider protocol ✅; Feature 4 detection layer (`regions.py`) in progress (engine eval pending); Chunk 2a + figure extraction (4b) next |
 | 7 — Gap Detection | ⬜ | What the library knows vs the field |
 | 8 — UI Polish | ⬜ | Design pass |
 | 9 — Literature Review Generation | ⬜ | End-game synthesis + PRISMA-trAIce export |

@@ -211,6 +211,8 @@ Sidecar manifest, not spliced.
 
 **Eval hook.** Add a "figure retrieval" scorer to the eval harness: given a held-out caption, does the system retrieve the right figure?
 
+**4a verification (decided 2026-06-02).** Two checks for table extraction: (1) **chosen** — a table-retrieval eval case (ask a question whose answer lives in a known table → assert the spliced table chunk is retrieved after re-ingest); built once the 4a engine is final. (2) **roadmap future** — a hand-verified gold table set + a deterministic extraction-fidelity scorer (cells/rows match the source PDF). Higher rigor, deferred; only worth it if the eval case shows table quality matters to answers. The caption-gating + the visual debug tool (`scripts/debug_tables.py`) are the precision instruments in the meantime.
+
 **Trade-offs.**
 
 - Markdown-as-universal-intermediate is preserved; the figure manifest is a sidecar, not a replacement.

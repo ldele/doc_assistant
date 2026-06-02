@@ -25,7 +25,7 @@ Always check `decisions.md` before suggesting architectural changes. Most non-ob
 
 ## Current Status
 
-**Active phase:** Phase 6 in progress — reviewer agent (2026-05-28) and LLM provider protocol (2026-06-02) shipped. Feature 4 detection foundation in progress: `regions.py` classifies each page (table/chart/photo/figure/text) from caption + curve-density + image-area signals, and `tables.py` extracts only on classified table pages (fixes figure-as-table at the root; gives 4b its figure signal). **Open:** extraction-engine choice (Marker vs pdfplumber-crop) pending on the RTX machine (`scripts/eval_marker_tables.py`); then inline de-dup + a retrieval eval-hook; region-level (multi-region-per-page) splitting is the proper 4b build on top of this classifier. Chunk 2a (dual interpretation) is the other main remaining node.
+**Active phase:** Phase 6 in progress — reviewer agent (2026-05-28) and LLM provider protocol (2026-06-02) shipped. Feature 4 detection foundation in progress: `regions.py` classifies each page (table/chart/photo/figure/text) from caption + curve-density + image-area signals, and `tables.py` extracts only on classified table pages (fixes figure-as-table at the root; gives 4b its figure signal). **Engine decision MADE (2026-06-02, RTX eval):** **Marker wins; default pdfplumber dropped as primary.** Measured on the arXiv corpus — pdfplumber recall on borderless/booktabs tables is unreliable (DPR 0/6, SPECTER2 0/6; SBERT extracts but collapses rows), while Marker reproduced all 7 DPR tables faithfully (columns, multi-row cells, bold). **Constraint:** marker-pdf can't co-resolve with our langchain/transformers/torch stack, so it must run **out-of-process in an isolated env** (`uvx marker_single`), gated to `regions.table_candidate_pages` via `--page_range`, as a sidecar enrichment step — never an in-process import. **Open (the 4a build):** wire that isolated-Marker ingest path + parse/splice its markdown tables + inline de-dup of pymupdf4llm's lossy tables + a table-retrieval eval-hook; also fix `eval_marker_tables.py` (its in-process `import marker` can't work — shell out instead). Region-level (multi-region-per-page) splitting is the proper 4b build. Chunk 2a (dual interpretation) is the other main remaining node.
 
 **Shipped this session (per-PR detail in `docs/DEVLOG.md`):**
 
@@ -43,7 +43,7 @@ Always check `decisions.md` before suggesting architectural changes. Most non-ob
 | 5.1 | Heuristic confidence signals — quiet UI on clean answers, ⚠ on flagged |
 | 6 | Reviewer agent (Integrity Chunk 2b): `/review`, runs only on flagged answers |
 
-**Snapshot:** 316 tests · ruff format/check + mypy --strict + bandit clean.
+**Snapshot:** 318 tests green (unit+integration; +2 regression tests this session) · ruff format/check + mypy --strict + bandit clean · **CUDA/GPU enabled on the RTX box** (Windows; embeddings + reranker on `cuda:0`, retrieve+rerank ~68 ms).
 
 **LLM provider protocol (2026-06-02, committed `37dcbdc` — folded into Feature 1, generation side):**
 - `src/doc_assistant/llm.py` — `LLMClient.complete()` protocol + `AnthropicClient`/`OllamaClient` adapters + `make_client`/`get_reviewer_client`/`get_judge_client`/`reviewer_available`. The one-shot path (reviewer + eval judge) is now provider-agnostic; the streaming analysis path stays LangChain but reads `LLM_PROVIDER`/`LLM_MODEL`.
@@ -63,7 +63,13 @@ Always check `decisions.md` before suggesting architectural changes. Most non-ob
 - Most `expected_answer` fields in `tests/eval/cases.yaml` are best-effort (`author_verified: false`) — refine over time.
 - LNCS colon-separator format + multi-column PDF extraction: known tier-1 citation-extractor weaknesses; cosmetic, deferred.
 
-**Next priority:** finish **Feature 4a** — run `scripts/eval_marker_tables.py` on the RTX machine to pick the extraction engine (Marker vs pdfplumber-crop), then inline de-dup + the table-retrieval eval-hook. In parallel, **Chunk 2a** (Dual Interpretation, biggest UX shift; `SYNTHESIS_MODE` flag, evidence vs interpretation layers) is the other main Phase 6 node — no code-level spec yet, so drafting one first is an option. Feature 4b (figure detection) is unblocked once 4a's engine is settled.
+**Next priority (RESUME HERE — 2026-06-03):** Feature 4a's engine decision is **DONE** — Marker wins, run isolated (see the Active-phase paragraph above + the DEVLOG 2026-06-02 "engine decision" entry for the measured evidence). The remaining 4a *build* is the next PR, in order:
+1. Fix `scripts/eval_marker_tables.py` — replace its in-process `import marker` with a subprocess call to `marker_single` (the current coupling can't resolve; this is also the smallest first step).
+2. Ingest path: gate on `regions.table_candidate_pages` → shell out to isolated `uvx --from marker-pdf marker_single --page_range <those pages>` → parse Marker's markdown tables → splice into the `.md` cache (Enrichment-Layer pattern, mirrors `extract_tables.py`).
+3. Inline de-dup of pymupdf4llm's lossy inline tables.
+4. Table-retrieval eval-hook.
+
+**Lighter alternatives** if not starting the build: a **demo dry-run** of the 7-question script (in Notion: "Demo Script — doc_assistant", under the doc-assistant page) — verify Q7 actually trips the ⚠ low-confidence path; or the **measurement runs** that are cheap now with GPU (chunking sweep, SPECTER2 `--repeat 5`). A working-app **demo is upcoming** (runs on Anthropic API; `.env` already configured — key present locally, gitignored). **Chunk 2a** (Dual Interpretation; `SYNTHESIS_MODE`, evidence vs interpretation) remains the other main Phase 6 node — needs a code-level spec first. Feature 4b (figure detection / region-level splitting) is unblocked once the 4a build lands.
 
 ---
 

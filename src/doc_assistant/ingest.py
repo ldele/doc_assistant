@@ -19,6 +19,7 @@ from doc_assistant.config import (
     PC_CHROMA_PATH,
     PDF_EXTRACTOR,
 )
+from doc_assistant.db.migrations import init_db
 from doc_assistant.db.models import Document as DBDocument
 from doc_assistant.db.models import IngestionEvent
 from doc_assistant.db.session import session_scope
@@ -465,6 +466,11 @@ def main(
     skip_cleanup: bool = False,
     scope: str | None = None,
 ) -> None:
+    # Ensure the SQLite schema exists. Idempotent (create_all no-ops when the
+    # tables are already present), so this is safe on every run and removes the
+    # fresh-clone footgun of having to run migrations manually before ingest.
+    init_db()
+
     CACHE_PATH.mkdir(exist_ok=True)
     Path(CHROMA_PATH).mkdir(exist_ok=True)
     Path(PC_CHROMA_PATH).mkdir(exist_ok=True)

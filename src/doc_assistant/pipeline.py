@@ -53,15 +53,23 @@ class RAGPipeline:
         ]
         excluded = len(data["documents"]) - len(all_docs)
         print(f"  BM25 index excludes {excluded} non-retrievable chunks")
-        bm25 = BM25Retriever.from_documents(all_docs)
-        bm25.k = 10
         vector = self.db.as_retriever(
             search_kwargs={
                 "k": 10,
                 "filter": {"keep_for_retrieval": {"$ne": False}},
             }
         )
-        self.ensemble = EnsembleRetriever(retrievers=[bm25, vector], weights=[0.4, 0.6])
+        if all_docs:
+            bm25 = BM25Retriever.from_documents(all_docs)
+            bm25.k = 10
+            self.ensemble = EnsembleRetriever(retrievers=[bm25, vector], weights=[0.4, 0.6])
+        else:
+            # Empty library (fresh install / nothing ingested): BM25Retriever
+            # cannot be built from zero documents, so fall back to a vector-only
+            # ensemble. The app still launches; retrieval simply returns nothing
+            # until documents are ingested.
+            print("  no retrievable chunks; starting with an empty (vector-only) index")
+            self.ensemble = EnsembleRetriever(retrievers=[vector], weights=[1.0])
 
         print("Loading reranker...")
         self.reranker = CrossEncoder("BAAI/bge-reranker-base")

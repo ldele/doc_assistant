@@ -48,7 +48,7 @@ Always check `decisions.md` before suggesting architectural changes. Most non-ob
 **LLM provider protocol (2026-06-02, committed `37dcbdc` — folded into Feature 1, generation side):**
 - `src/doc_assistant/llm.py` — `LLMClient.complete()` protocol + `AnthropicClient`/`OllamaClient` adapters + `make_client`/`get_reviewer_client`/`get_judge_client`/`reviewer_available`. The one-shot path (reviewer + eval judge) is now provider-agnostic; the streaming analysis path stays LangChain but reads `LLM_PROVIDER`/`LLM_MODEL`.
 - `/review` and auto-review gate on `reviewer_available()` (Ollama needs no key), not a bare `ANTHROPIC_API_KEY` check — so review works fully local.
-- Spec: `docs/specs/llm-provider-isolation.md`. ⚠ **Local end-to-end NOT yet verified against a live Ollama server** — see operational TODOs.
+- Spec: `docs/specs/llm-provider-isolation.md`. ✅ **Generator path verified live on a real Ollama server (RTX box, 2026-06-02)** — fully-local query end-to-end on `llama3.1:8b`, `ANTHROPIC_API_KEY` empty, grounded + correctly-cited answers. ⚠ Reviewer (`/review`) + eval-judge on Ollama still unverified live — see operational TODOs.
 
 **Since the PR table (2026-05-31 → 06-01):**
 - **Chunking sweep infra** (reopened Phase 2.4): config-driven `*_CHUNK_SIZE`, `scripts/sweep_chunking.py`, guard tests. Measurement run still pending.
@@ -57,7 +57,8 @@ Always check `decisions.md` before suggesting architectural changes. Most non-ob
 - **`data/eval.duckdb` now gitignored** (live run log, regenerated on run; committed reference results live in `tests/eval/baselines/`).
 
 **Operational TODOs (don't need code changes):**
-- **⚠ Re-test fully-local Ollama path on the RTX (GPU) second machine.** The provider protocol's local acceptance (generator + reviewer on Ollama, `ANTHROPIC_API_KEY` unset, end-to-end query + `/review` producing a verdict) is **only unit-mocked so far** — never exercised against a live Ollama server. Must be run on the RTX box specifically before the DoD's local-acceptance bullet can be claimed. Pick the local model(s) there via `LLM_MODEL`/`REVIEWER_MODEL`.
+- **Fully-local Ollama path — generator + reviewer verified live on the RTX (GPU) box (2026-06-02).** ✅ **Generator**: ingested the 10-paper public corpus and ran real queries end-to-end on `llama3.1:8b`, `ANTHROPIC_API_KEY` empty — grounded, correctly-cited answers. ✅ **Reviewer**: `/review` returns a real verdict on Ollama (live run: faithfulness 5 · citation 3 · hedging 4 · unsupported 0). Two transport bugs found and fixed getting there — `OllamaClient` passed `temperature` as an `invoke` kwarg (`TypeError` from `Client.chat()`), and the reviewer choked on llama's non-JSON output (now `format="json"` + tolerant `_extract_json`); both have regression tests. ⚠ Remaining for the DoD bullet: the **eval-judge** on Ollama (`tests/eval/TESTING.md` calibration gate). Pick the local model(s) via `LLM_MODEL`/`REVIEWER_MODEL`.
+- **Wire CUDA/GPU for embeddings + reranker on the RTX box.** sentence-transformers logs "No device provided, using cpu" — ingest/rerank run on CPU despite the GPU. A real speedup; currently no device flag is passed.
 - Re-run SPECTER2 at `--repeat 5` for the symmetric BGE-vs-SPECTER2 confidence-interval comparison.
 - Most `expected_answer` fields in `tests/eval/cases.yaml` are best-effort (`author_verified: false`) — refine over time.
 - LNCS colon-separator format + multi-column PDF extraction: known tier-1 citation-extractor weaknesses; cosmetic, deferred.
@@ -250,8 +251,11 @@ Full roadmap with sub-tasks and deferred improvements in `docs/decisions.md`. PR
 - **Sandbox file-sync issue (recurring).** Edit-tool writes to Windows side sometimes fail to fully sync to the bash sandbox view, causing partial files and stale `.pyc` bytecode. Workarounds: `touch` to force re-read; full rewrites via bash heredocs.
 - **pip-audit:** 28 CVEs in transitive deps (torch, transformers, ollama, joblib, pyjwt, langchain-community). All upstream, none in our code. CI set to `continue-on-error`.
 - **Flaky LLM-judge call on `sbert_motivation`** (public eval). Skipped ~3/5 trials (API timeout / JSON parse failure on that prompt); `llm_judge` mean is over scored trials, not all 50. Non-blocking; inspect the judge JSON-parse path if it persists.
+- **Token/cost tracking is meaningless under Ollama.** `TokenCounter` hooks Anthropic-style callbacks; the local Ollama path reports no usage, so per-turn/session token counts and the provenance card's token line read `0 in / 0 out / $0.0000`. Cosmetic on the local path. Fix options: estimate tokens from text length, or hide the usage block when `LLM_PROVIDER=ollama`.
 
 ### Resolved
+- ~~App hard-crashed on a fresh install with an empty library~~ → `pipeline.py` falls back to a vector-only ensemble when there are 0 retrievable chunks (2026-06-02).
+- ~~First ingest on a fresh clone died with `no such table: documents`~~ → `ingest.main()` now calls `init_db()` idempotently at startup; the documented `uv sync → ingest → run` flow works as-written (2026-06-02).
 - ~~Path+content hash drift~~ → content-only hashing implemented and migrated (27 docs).
 - ~~`dedupe_documents.py` failed for `cajal-lecture.pdf`~~ → root cause eliminated by content-only hashing.
 - ~~CLAUDE.md said "Next priority: build citations.py"~~ → built; status now reflects actual Phase 4 close-out work.

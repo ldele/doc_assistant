@@ -157,7 +157,7 @@ def help_message() -> str:
 - `/bibtex` — render the whole library as BibTeX (writes to `docs/library.bib` from the CLI)
 - `/export-record <id>` — export the full provenance record for one answer as JSON (Phase 5)
 - `/records` — list the most recent answer records
-- `/review <id>` — run the LLM reviewer on any past answer (Phase 6)
+- `/review [id]` — run the LLM reviewer on a past answer; no id reviews the most recent (Phase 6)
 - `/help` — this message
 
 Anything else is treated as a normal question to the library.
@@ -363,20 +363,32 @@ def execute_command(cmd: str, arg: str) -> str:
     if cmd == "review":
         from doc_assistant.config import REVIEWER_MODEL, REVIEWER_PROVIDER
         from doc_assistant.llm import get_reviewer_client, reviewer_available
-        from doc_assistant.provenance import find_record_by_short_id, get_record
+        from doc_assistant.provenance import (
+            find_record_by_short_id,
+            get_record,
+            list_recent_records,
+        )
         from doc_assistant.reviewer import persist_review, review_answer
 
-        if not arg:
-            return "Usage: `/review <id>` — id is the 8-char prefix from a provenance card."
         if not reviewer_available():
             return (
                 f"`/review` needs `ANTHROPIC_API_KEY` set — the reviewer "
                 f"(`{REVIEWER_PROVIDER}`) is an LLM call. Set `REVIEWER_PROVIDER=ollama` "
                 f"to review locally without a key."
             )
-        prov = get_record(arg) if len(arg) >= 36 else find_record_by_short_id(arg)
-        if prov is None:
-            return f"No answer record matching `{arg}`. Try `/records` to list recent answers."
+        if not arg:
+            # No id → review the most recent answer.
+            recent = list_recent_records(limit=1)
+            if not recent:
+                return (
+                    "No answers to review yet. Ask a question first, then run "
+                    "`/review` (or `/review <id>` to target a specific answer)."
+                )
+            prov = recent[0]
+        else:
+            prov = get_record(arg) if len(arg) >= 36 else find_record_by_short_id(arg)
+            if prov is None:
+                return f"No answer record matching `{arg}`. Try `/records` to list recent answers."
         try:
             result = review_answer(prov, get_reviewer_client())
             persist_review(prov.id, result, reviewer_kind="llm_haiku", model_name=REVIEWER_MODEL)

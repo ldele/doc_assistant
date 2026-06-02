@@ -12,7 +12,7 @@ import time
 import chainlit as cl
 
 from doc_assistant.commands import execute_command, parse_command
-from doc_assistant.config import TOP_K, USE_PARENT_CHILD
+from doc_assistant.config import LLM_MODEL, LLM_PROVIDER, TOP_K, USE_PARENT_CHILD
 from doc_assistant.embeddings import get_active_model_name
 from doc_assistant.pipeline import RAGPipeline, format_citation
 from doc_assistant.prompts import ANSWER_PROMPT
@@ -45,7 +45,11 @@ async def on_chat_start() -> None:
     cl.user_session.set("history", [])
     cl.user_session.set("counter", TokenCounter())
     await cl.Message(
-        content=(f"📚 **Document assistant ready.** {rag.chunk_count()} chunks indexed."),
+        content=(
+            f"📚 **Document assistant ready.** {rag.chunk_count()} chunks indexed.  \n"
+            f"🤖 Generation model: `{LLM_PROVIDER}/{LLM_MODEL}` · "
+            f"🧬 Embeddings: `{get_active_model_name()}`"
+        ),
     ).send()
 
 
@@ -83,14 +87,13 @@ def _format_provenance_card(
     chip listing the fired reasons and the card opens expanded by
     default. Otherwise it stays collapsed with a neutral summary.
     """
+    # Scores only, keyed by source number — the filename/page/section for each
+    # [N] is already in the always-visible "Sources:" block, so we don't repeat
+    # it here. Full per-chunk metadata still lives in the DB / `/export-record`.
     chunks_lines = []
     for i, c in enumerate(prov.retrieved_chunks):
         score = f"{c.reranker_score:.3f}" if c.reranker_score is not None else "-"
-        page = f" p.{c.page}" if c.page is not None else ""
-        section = f' "{c.section}"' if c.section else ""
-        chunks_lines.append(
-            f"- **[{i + 1}]** `{score}` · {c.filename or 'unknown'}{page}{section}"
-        )
+        chunks_lines.append(f"- **[{i + 1}]** reranker `{score}`")
 
     cost_in = prov.token_input or 0
     cost_out = prov.token_output or 0
@@ -127,9 +130,10 @@ def _format_provenance_card(
         f"**Tokens:** {cost_in:,} in + {cost_out:,} out"
         f"{signals_block}"
         f"{review_block}\n\n"
-        "**Retrieved chunks (with reranker scores):**\n\n"
+        "**Reranker scores** (by source number above):\n\n"
         + "\n".join(chunks_lines)
-        + f"\n\n_Export full record:_ `/export-record {prov.id[:8]}`\n\n"
+        + f"\n\n_Review or export this answer:_ "
+        f"`/review {prov.id[:8]}` · `/export-record {prov.id[:8]}`\n\n"
         "</details>"
     )
 
@@ -248,8 +252,11 @@ async def on_message(message: cl.Message) -> None:
             latency_ms=latency_ms,
         )
         signals = compute_confidence_signals(prov)
-        # PR 5.1 — quiet UI on clean answers, loud on flagged ones.
-        # Record always persists (visible via /records and /export-record).
+        # PR 5.1 — quiet UI on clean answers, loud on flagged ones. The card
+        # ALWAYS renders so the answer's provenance id (needed for `/review`
+        # and `/export-record`) and the active model are visible on every
+        # answer. It stays COLLAPSED + neutral on clean answers and opens
+        # EXPANDED with a ⚠ chip when a confidence signal fires.
         review: ReviewResult | None = None
         if signals.any():
             # PR 6 — when heuristic flags fire AND a reviewer is available,
@@ -267,9 +274,9 @@ async def on_message(message: cl.Message) -> None:
                     )
                 except Exception as e:
                     review = ReviewResult(error=f"reviewer setup failed: {e}")
-            provenance_block = _format_provenance_card(prov, signals, expanded=True, review=review)
-        else:
-            provenance_block = ""
+        provenance_block = _format_provenance_card(
+            prov, signals, expanded=signals.any(), review=review
+        )
     except Exception as e:
         # Never let provenance failure break the answer.
         provenance_block = f"\n\n_⚠ Provenance capture failed: {e}_"

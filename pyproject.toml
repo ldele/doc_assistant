@@ -49,6 +49,7 @@ dependencies = [
     "tqdm>=4.66",
     "sqlalchemy>=2.0",
     "duckdb>=1.5.3",
+    "pdfplumber>=0.11.9",
 ]
 
 [project.optional-dependencies]
@@ -126,8 +127,8 @@ module = [
     "sentence_transformers.*",
     "pymupdf4llm.*",
     "pymupdf.*",
+    "pdfplumber.*",
     "fitz.*",
-    "marker.*",
     "ebooklib.*",
     "bs4.*",
     "docx.*",

@@ -1037,3 +1037,91 @@ The neuroscience 35-case set stays as the private measured benchmark (the README
 **Note on the spec guard test:** the spec sketch referenced a non-existent `get_active_llm()`; reworked that assertion to check `get_reviewer_client().model` follows `REVIEWER_MODEL` and differs from `LLM_MODEL`, which is the real invariant.
 
 **Opens:** fully-local *acceptance* (live Ollama end-to-end with `ANTHROPIC_API_KEY` unset) is unit-mocked here, not run against a live server — verify on a machine with Ollama before claiming the DoD's local-acceptance bullet. Optional `tach` layer-locking (spec's follow-up) not done — separate PR.
+
+---
+
+## Session: 2026-06-02 (cont.) — Feature 4a: pdfplumber table extraction, spliced into the markdown cache (PR 7)
+
+**Starting from:** LLM provider protocol pushed (37dcbdc). Next ready node chosen: Feature 4a (smallest, depends on Phase 4 which is closed).
+**Goal:** promote PDF tables from flattened text to structured markdown, as a post-ingest enrichment layer that splices into the `.md` cache — the one sanctioned exception to "sidecar by default" (tables are text-shaped).
+
+### src/doc_assistant/tables.py (new)
+**What:** Pure-ish enrichment module. `ExtractedTable` dataclass (page, doc-wide index, rows). `extract_tables(pdf_path)` is the only impure fn (lazy-imports pdfplumber, opens the PDF). Rendering/splicing are plain string transforms: `render_table_markdown` (GitHub table + per-table marker `<!-- table-extracted-by: pdfplumber page=N table=M -->`), `splice_tables`/`strip_spliced_tables`/`has_spliced_tables`. All tables live in ONE demarcated block (`<!-- tables:pdfplumber:begin … :end -->`) appended to the markdown; re-splicing replaces the block, so `splice == splice∘splice` (idempotent, safe `--force`).
+**Why:** mirrors `citations.py` (pure extractor + dataclasses, persistence/IO in the caller) so the logic is unit-testable without real PDFs. Bounded block + markers give traceability and clean re-runnability per decisions.md.
+**Quality guards (added after a real-corpus smoke test):** a dry run over the library showed pdfplumber's default detector mis-classifying a single-column Methods section as a "50x2 table" with one multi-thousand-char run-together cell. Added two filters in `_is_meaningful`: reject any table with a cell > `MAX_CELL_CHARS` (500) — prose, not data — and require data in ≥`MIN_COLS` distinct non-empty columns. Re-validated: the prose false-positive drops to 0; elife-88824's 11 genuine tables (3x3 … 8x8) are kept. The filter errs toward under-splicing (a borderline 2x2 was also dropped) rather than polluting retrieval — heuristics are tunable module constants.
+**Rejected:** splicing each table inline at its page location (markdown carries no reliable page offsets — fragile); a sidecar table store (tables are text-shaped, and a sidecar breaks the "open the .md and see everything" property); tuning pdfplumber `table_settings` (corpus-dependent; the cell-length + column-spread heuristic is simpler and robust).
+
+### scripts/extract_tables.py (new)
+**What:** PDF-only CLI runner (`--apply`/`--force`/`--doc`), same shape as `extract_citations.py`. Resolves source PDF + cached `.md` (cross-host tolerant), skips docs already spliced unless `--force`, writes the spliced `.md`, prints a per-doc report. Reminds the user to re-`ingest` to pull tables into retrieval.
+**Why:** Enrichment-Layer Pattern — one CLI per module, idempotent, writes the cache only, never the chunk store.
+
+### Deps / config
+**What:** `uv add pdfplumber` (+ pdfminer-six, pypdfium2, pillow transitively). Added `pdfplumber.*` to mypy ignore-missing-imports overrides (ships untyped).
+
+### Tests
+**What:** `tests/unit/test_tables.py` — 14 tests: render correctness + ragged padding, splice idempotency / re-splice-replaces / strip round-trip / empty-clears-block, and `extract_tables` filtering (small/empty, prose-as-table, single-populated-column) + cell cleaning (newlines, None, pipe-escape) + doc-wide indexing across pages, via a monkeypatched `pdfplumber.open`.
+**Gates:** 302 passed · ruff + format clean · mypy --strict clean (32 files) · bandit 0.
+
+**Opens:** (1) tables enter retrieval only on the next `ingest` re-read of the cache — existing ingested docs need a re-ingest; standard enrichment behaviour, noted in the CLI output. (2) A large tables block can be split mid-table by the recursive chunker at re-ingest — structure is preserved in the markdown but a single chunk may not hold a whole table; acceptable for v1. (3) Conservative filters may drop genuine tiny tables (the 2x2 case) — tune `MAX_CELL_CHARS`/`MIN_COLS` if false negatives matter. (4) Not yet run with `--apply` on the real library (writes the cache) — left for the user, same as the other enrichment CLIs.
+
+---
+
+## Session: 2026-06-02 (cont.) — Feature 4a, take 2: visual debug exposed figure-as-table false positives → caption-gated extraction
+
+**Correction to the previous 4a entry:** that entry claimed "11 genuine tables kept" for elife-88824 and treated the appended-block extraction as shippable. **Both were wrong**, caught by a visual check (user's call). Findings, with rendered overlays:
+- Tables were NOT ignored before 4a — the primary extractor (pymupdf4llm) already emits markdown pipe-tables, just *lossy* (`<br>`-jammed cells, collapsed columns). Figures, by contrast, *are* dropped (write_images=False); only their captions survive.
+- pdfplumber's default detector massively over-fires on scientific **figures**: page 9 of elife-88824 (Figure 3, a 4x5 bar-chart grid) → 13 "tables"; page 7 of elife-33281 (Figure 3 plots) → 1. pymupdf's detector is conservative (0 on those) but BOTH mis-fire on shaded **prose** boxes (elife-33281 appendix pp.22-27; elife-88824 Figure 2). So the "11 tables" were mostly figure panels, and the content guards (MAX_CELL_CHARS, column-spread) don't catch figure panels (short gridded axis labels look tabular).
+
+### scripts/debug_tables.py (new) — the instrument that caught it
+**What:** renders per-page PNGs with pdfplumber's table-finder overlay + a pdfplumber-vs-pymupdf count table. Dev/inspection tool; writes to `data/tables_debug/{stem}/`, never the cache/DB. Used it to *see* the false positives.
+
+### tables.py — caption-gated extraction (the fix)
+**What:** added `find_table_candidates(pdf_path)` (PyMuPDF): a page is a candidate **iff it carries a "Table N" caption** (`TABLE_CAPTION_RE`). Figures ("Figure N") and caption-less shaded prose are excluded by construction. Split extraction into `extract_tables_from_pages(pdf_path, pages)` (pdfplumber, page-gated) and `extract_tables(pdf_path)` = candidates ∘ page-extraction. `TableCandidate` dataclass records the figure-caption flag + pymupdf detector count for diagnostics.
+**Why:** the caption is the precision lever — validated on the corpus: elife-33281 (no "Table N" anywhere) → **0** tables (was figure/prose noise); elife-88824 → candidate pages [7, 14], extracts the real **Table 1** data (`2012, 2727, 4652…`) instead of 11 figure panels. It is also engine-independent: it scopes any expensive engine (Marker) to ~2 pages instead of 37.
+**Known residue:** pdfplumber fragments Table 1 into two pieces (8x8 + 5x8); it misses Table 2 on p14 (pymupdf detector=0 there) — the recall gap where a better engine earns its keep.
+
+### scripts/eval_marker_tables.py (new) — RTX-machine engine eval
+**What:** for one doc, emits (1) caption-gated candidate pages, (2) pdfplumber tables as markdown, (3) Marker's markdown (if `marker-pdf` installed) — for side-by-side fidelity comparison on the candidate pages. Marker is NOT a default dep (multi-GB models, GPU-friendly); the script import-guards it and instructs `uv add marker-pdf` on the RTX box. Reuses the existing `extractors.extract_pdf_marker`.
+
+### Tests / gates
+**What:** test_tables.py reworked to the split API (21 tests): page-gated extraction (incl. "only requested pages" + empty-list no-op), caption-gating (`find_table_candidates` gates on Table caption, records figure flag, rejects figure-only/prose), and orchestration (extract_tables only touches candidate pages). 309 passed · ruff + format clean · mypy --strict clean (32 files, two pymupdf `no-untyped-call` ignores matching extractors.py) · bandit 0.
+
+**Decisions taken with the user:** (a) de-duplication — don't keep both pymupdf's mangled inline table AND the clean one; strip the inline copy (regex over the `<!-- page:N -->`-marked region) — **deferred until the engine is chosen.** (b) Verification — add a table-retrieval eval-hook (option 2) and put a gold-set fidelity scorer (option 3) on the roadmap as a future.
+
+**Opens / next:** (1) Run `eval_marker_tables` on the RTX machine to decide engine (Marker vs pdfplumber-crop). (2) Then finalize: extractor choice + inline de-dup + splice. (3) Then the table-retrieval eval case. (4) Current `extract_tables`/CLI are safe to keep (caption-gated, no figure noise) but NOT yet run with `--apply` on the library. The appended-block splice path is unchanged and still correct.
+
+---
+
+## Session: 2026-06-02 (cont.) — Feature 4 foundation: unified page content classifier (regions.py), tables routed through it
+
+**Direction (user):** instead of detecting tables in isolation, extract/classify *all* content regions and split tables from charts/images. Marker on hold. This is the 4a+4b shared detection layer.
+
+**Evidence that made it cheap (measured, ~50 pages / 2 docs):** the three classes separate by orders of magnitude — charts are vector paths (curve_count 1k-78k vs 8-187 on table/text pages); raster figures cover a large image-area fraction (0.09-0.60 vs 0 on table/text); tables carry a "Table N" caption with near-zero curves. So no ML / no Marker is needed for routing. (Corrected an earlier wrong assumption: in eLife, figures ARE large raster images — image-area fraction is a clean signal, not logo noise.)
+
+### src/doc_assistant/regions.py (new)
+**What:** `PageSignals` (curve_count, image_area_fraction, table/figure caption flags) + `PageClassification` (kind: table|chart|photo|figure|text, is_table_candidate, is_figure, reason). Pure `classify_page(signals)` is the router; `page_signals`/`analyze_pages`/`table_candidate_pages` are the PyMuPDF-backed signal extraction. Thresholds `CHART_CURVE_MIN=1000`, `IMAGE_AREA_MIN=0.05` measured from the corpus, documented as tunable.
+**Why:** geometric detectors (pdfplumber, pymupdf find_tables) confuse figures/charts/tables because they're all gridded bounded regions; classifying page content once and routing fixes figure-as-table at the root and gives 4b its figure signal for free.
+**Scope (v1) = page-level.** A page mixing a table and a chart is labelled by the dominant signal, not split into regions. True per-region bbox splitting is the deeper 4b step; page-level already fixes the routing problem.
+
+### tables.py — now a consumer of the classifier
+**What:** deleted `TableCandidate` + the pymupdf caption-scanning `find_table_candidates` (moved/superseded by regions). `extract_tables` now calls `regions.table_candidate_pages`; `extract_tables_from_pages` unchanged. The caption regexes moved to regions.py.
+**Why:** one detection layer, not two. tables.py keeps only extraction (pdfplumber), rendering, and the idempotent splice.
+
+### Validation (real corpus)
+- elife-33281 (no data tables): 18 text + 9 **photo** pages → 0 table pages → 0 tables.
+- elife-88824: 27 text, 6 **chart**, 2 **table** (p7, p14), 1 figure, 1 photo → extracts Table 1. The figure-as-table noise (was "11 tables") is gone.
+
+### Tests / scripts / gates
+**What:** new `tests/unit/test_regions.py` (exhaustive pure routing matrix incl. boundary thresholds + "table caption but chart/image => not a table"; analyze_pages/table_candidate_pages with a monkeypatched pymupdf doc). `test_tables.py` trimmed to extraction/splice + a delegation test (extract_tables uses regions.table_candidate_pages). `scripts/eval_marker_tables.py` updated to print per-page classification (kind + reason). 316 passed · ruff + format clean · mypy --strict clean (33 files) · bandit 0.
+
+**Opens / next (unchanged plan):** (1) engine eval (Marker vs pdfplumber-crop) still pending on the RTX machine — now scoped to classified table pages. (2) inline de-dup of pymupdf4llm's lossy tables. (3) table-retrieval eval-hook. (4) region-level (multi-region-per-page) splitting + figure extraction = the proper 4b build, for which this classifier is the foundation. (5) thresholds measured on 2 eLife docs — validate on a wider corpus before trusting as universal.
+
+---
+
+## Session: 2026-06-02 (cont.) — Removed the dormant Marker extraction path from production
+
+**What:** deleted `extractors.extract_pdf_marker` and the `PDF_EXTRACTOR=marker` branch; `extract_to_markdown` now raises a clear `ValueError` for any non-`pymupdf` PDF extractor instead of the old latent `ImportError` (marker-pdf was never a dependency, so selecting it crashed). Dropped the `marker.*` mypy override and the "/ Marker" mention in `tables.py`. Made `scripts/eval_marker_tables.py` self-contained: the Marker→markdown call (`_marker_to_markdown`, import-guarded) now lives in the eval script, the only place that uses Marker, and only when installed on the RTX/GPU box.
+**Why (user decision):** Marker is PDF-only, heavy (multi-GB ML models), and not installed — keep the tree clean and re-add it to production *only if* the RTX engine eval proves it beats pymupdf/pdfplumber. pdfplumber stays as the table-cell engine pending that same eval. (Also clarified: non-PDF figure extraction will use native parsers — ebooklib/python-docx/BeautifulSoup — not Marker.)
+**Kept:** `pymupdf`/`pymupdf4llm` (default extractor + `regions.py` classifier signals) and `pdfplumber` (table cells). `PDF_EXTRACTOR` config stays (provenance label; currently only `pymupdf` is valid).
+**Gates:** 316 passed · ruff + mypy --strict clean (33 files). `eval_marker_tables --skip-marker` verified still works and now prints per-page classification.
+**Opens:** the Marker-vs-pdfplumber eval is still the decision point; if Marker wins, re-add a production path (and reconsider pdfplumber).

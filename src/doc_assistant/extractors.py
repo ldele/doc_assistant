@@ -6,18 +6,6 @@ from pathlib import Path
 from bs4 import BeautifulSoup
 
 
-def extract_pdf_marker(pdf_path: Path) -> str:
-    """High-quality PDF extraction with Marker (slower, needs models)."""
-    from marker.converters.pdf import PdfConverter
-    from marker.models import create_model_dict
-    from marker.output import text_from_rendered
-
-    converter = PdfConverter(artifact_dict=create_model_dict())
-    rendered = converter(str(pdf_path))
-    text, _, _ = text_from_rendered(rendered)
-    return str(text)
-
-
 def extract_pdf_pymupdf(pdf_path: Path) -> str:
     """PDF extraction with page markers preserved as HTML comments."""
     import pymupdf
@@ -144,8 +132,14 @@ def extract_to_markdown(path: Path, pdf_extractor: str = "pymupdf") -> str:
     suffix = path.suffix.lower()
 
     if suffix == ".pdf":
-        if pdf_extractor == "marker":
-            return extract_pdf_marker(path)
+        # Marker (ML-based) was removed from the production path pending the
+        # RTX engine eval (scripts/eval_marker_tables.py). Surface a clear
+        # error instead of silently using a different extractor.
+        if pdf_extractor != "pymupdf":
+            raise ValueError(
+                f"Unsupported PDF extractor '{pdf_extractor}'. Only 'pymupdf' is "
+                "available; Marker support was removed (see scripts/eval_marker_tables.py)."
+            )
         return extract_pdf_pymupdf(path)
 
     extractor = _EXTRACTORS.get(suffix)

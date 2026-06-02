@@ -17,6 +17,6 @@ See `tests/eval/corpus_manifest.yaml` for the 10 papers (pinned versions,
 sha256, abstract links) and `tests/eval/cases.public.yaml` for the eval cases
 written against them.
 
-This is a shareable *demo* corpus, separate from the project's private 35-case
-neuroscience benchmark (`tests/eval/cases.yaml`), which is mostly copyrighted
-and not redistributable.
+This is the project's reproducible benchmark corpus. See
+`tests/eval/TESTING.md` for the testing strategy — what each scorer measures
+and why.

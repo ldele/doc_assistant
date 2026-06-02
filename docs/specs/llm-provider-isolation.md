@@ -4,7 +4,7 @@
 **Owner of execution:** Claude Code (code + tests). Cowork wrote this spec.
 **Pattern reference:** `claude-skills` → `prod-engineering/references/provider-isolation.md`.
 
-**Hard requirement (locked):** the app must run **fully locally** — analysis *and* reviewer working on Ollama with **no `ANTHROPIC_API_KEY` set**. Any design that makes a remote API mandatory is rejected.
+**Requirement:** local-first is the **end goal**; the app is **hybrid today**. The *generator* (RAG analysis / chat) must run **fully locally** — Ollama, no `ANTHROPIC_API_KEY`; any design that makes a remote API mandatory *for generation* is rejected. The *reviewer and eval judge are pinned measurement instruments*, not generators: they default to a fixed, version-recorded reference model so cross-run numbers stay comparable, and move to local only after the local-judge calibration gate passes (see `tests/eval/TESTING.md` → "The judge is a pinned instrument"). The provider protocol + adapters below are still built in full so a local reviewer is a config flip once calibrated — the abstraction is mandatory, the local-reviewer *default* is not.
 
 ---
 
@@ -26,11 +26,11 @@ A single `make_llm() -> BaseChatModel` cannot serve both — a LangChain model h
 
 ## ADR — normalized one-shot LLM protocol + isolated reviewer
 
-**Context.** Provider selection is ad-hoc: `pipeline._build_llm()` hardcodes `claude-haiku-4-5-20251001` / `llama3`; the reviewer and the eval judge each take an injected `Anthropic()` client and call `messages.create` (constructed at `apps/chainlit_app.py:262` and `commands.py:378`). Nothing lets the reviewer run on a local model, so "fully local" is currently false.
+**Context.** Provider selection is ad-hoc: `pipeline._build_llm()` hardcodes `claude-haiku-4-5-20251001` / `llama3`; the reviewer and the eval judge each take an injected `Anthropic()` client and call `messages.create` (constructed at `apps/chainlit_app.py:262` and `commands.py:378`). Nothing lets the reviewer or judge run on a local model, so the local-first endgame is unreachable on the one-shot path.
 
 **Decision.** Add `src/doc_assistant/llm.py` defining an `LLMClient` Protocol with one method, `complete(messages, *, temperature, max_tokens) -> str`, plus `AnthropicClient` and `OllamaClient` adapters and a `make_client(provider, model)` factory. Refactor the reviewer and the eval judge to depend on `LLMClient.complete` instead of `client.messages.create`. Generalize `pipeline._build_llm()` to read `LLM_PROVIDER`/`LLM_MODEL` while staying a streaming LangChain model. Lock the reviewer's context isolation (already structurally true) with a guard test.
 
-**Options considered.** (1) One LangChain factory for both — rejected, the reviewer needs `messages.create`, not a chat model, and Ollama review would break. (2) Keep the reviewer Anthropic-only, make only the model configurable — rejected, violates the fully-local hard requirement. (3) Normalized `complete()` for one-shot calls + LangChain for streaming — chosen.
+**Options considered.** (1) One LangChain factory for both — rejected, the reviewer needs `messages.create`, not a chat model, and Ollama review would break. (2) Keep the reviewer Anthropic-only, make only the model configurable — rejected, it forecloses the local-first endgame (no Ollama path for review). (3) Normalized `complete()` for one-shot calls + LangChain for streaming — chosen.
 
 **Consequences.** One swap point per call shape. Adding a backend = one adapter. The reviewer and eval judge share the factory (consolidation). The chat path keeps token streaming. Fully-local mode needs no API key.
 

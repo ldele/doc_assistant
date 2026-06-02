@@ -7,7 +7,7 @@ Not a chatbot wrapper: the goal is reliable, grounded answers with the measureme
 ## Why this is interesting (engineering)
 
 - **Decisions are measured, not guessed.** TOP_K, parent-child retrieval, and BM25/vector weights were each chosen from experiments; an in-repo eval harness scores the pipeline and tracks it over time. Every non-obvious choice — and what lost — is in [`docs/decisions.md`](docs/decisions.md).
-- **Honest benchmarks, including a negative result.** A 35-case eval set over a 51-doc corpus, 5 trials per model, reported as mean ± trial-mean std with caveats stated up front — and the "academic" embedder does **not** win (see [Benchmark results](#benchmark-results)).
+- **Honest, reproducible benchmarks.** A public eval set runs over a corpus anyone can reconstruct from arXiv, 5 trials, reported as mean ± trial-mean std with caveats stated up front (see [Benchmarks](#benchmarks)). The strategy — what each scorer measures and why — is in [`tests/eval/TESTING.md`](tests/eval/TESTING.md).
 - **Research-integrity layer.** Every answer carries a provenance record (retrieved chunks, model, cost); a separate-context reviewer agent re-grades flagged answers; confidence signals keep the UI quiet on clean answers. Built so AI-assisted output is auditable.
 - **Architecture that scales by addition.** Enrichment layers (citations, doc-vectors, tables) are sidecar modules + idempotent CLI runners that never mutate the chunk store — new capability is a new module, not a rewrite.
 
@@ -162,44 +162,29 @@ docker compose down            # stop, keep data
 docker compose down -v         # stop, delete model cache volume
 ```
 
-## Benchmark results
+## Benchmarks
 
-A 35-question eval set ([`tests/eval/cases.yaml`](tests/eval/cases.yaml)) over a 51-document neuroscience corpus, run via the harness in [`src/doc_assistant/eval/`](src/doc_assistant/eval/) against two embedding models. **5 trials per model** (`--repeat 5`); reported as **mean ± trial-mean std** so the rerun-reliability is visible.
+Quality is measured, not asserted. The eval harness ([`src/doc_assistant/eval/`](src/doc_assistant/eval/)) runs the full RAG pipeline — retrieve, rerank, generate — over a fixed question set and scores each answer on retrieval and answer-quality signals. The full strategy (test tiers, what each scorer measures and why, the reproducibility stance) is documented in **[`tests/eval/TESTING.md`](tests/eval/TESTING.md)**.
 
-**Why those two embedders ?** Specter2 is expected to perform well on academic papers (on which my testings are done). BGE-base is more flexible and works well on a vast array of documents (generalist).
+The headline benchmark is **reproducible by anyone**: a public demo corpus of the 10 arXiv papers behind this project's own methods (RAG, dense retrieval, sentence embeddings, the BGE and SPECTER2 embedders, BERT re-ranking, ColBERT, HyDE, LLM-as-a-judge, AI Usage Cards). Nothing is re-hosted — [`corpus_manifest.yaml`](tests/eval/corpus_manifest.yaml) pins each paper's arXiv ID + SHA-256 and a script fetches the PDFs.
 
-| Scorer | bge-base (n=5) | specter2 (n=5) | Δ (bge − specter2) | Verdict |
-|---|---:|---:|---:|---|
-| `citation_overlap` (0-1) | **0.907 ± 0.000** | 0.887 ± 0.002 | +0.020 | Real (deterministic gap) |
-| `contains_all` (0-1) | **0.804 ± 0.013** | 0.767 ± 0.014 | +0.037 | Real (~4σ) |
-| `llm_judge` (1-5) | 2.209 ± 0.053 | 2.224 ± 0.092 | −0.015 | **Tied** (~0.3σ — within noise) |
+5 trials on `bge-base` (`--repeat 5`), reported as mean ± trial-mean std:
 
-**bge-base wins on retrieval-side signals; bge-base and specter2 are tied on the LLM judge.** The cross-encoder reranker and the answer LLM together level out the embedder differential at the chunk level — what matters is which documents got retrieved (where bge-base wins by 0.02) and whether the answer surfaces the expected keywords (where bge-base wins by 0.04). The judge's faithfulness/relevance/completeness rubric over the resulting answers doesn't see a meaningful difference.
+| Scorer | Mean (n=5) | Trial-mean std | What it measures |
+|---|---:|---:|---|
+| `citation_overlap` (0-1) | **1.000** | 0.000 | retrieval cited the correct source |
+| `contains_all` (0-1) | **0.927** | 0.034 | answer surfaces the required facts |
+| `llm_judge` (1-5) | **3.894** | 0.075 | reference-graded answer quality |
 
-### Why specter2 doesn't beat bge-base here (training-task mismatch)
+`citation_overlap` is **1.000 with zero variance** — retrieval depends only on the deterministic index, so it cites the right paper in all 10 cases, every trial. `contains_all` scores the stochastic generated answer, so single runs wobble (0.88–0.98) around a stable 0.927 mean. `llm_judge` **3.894/5** confirms the answers are genuinely good — the `contains_all` shortfall is phrasing, not correctness. Cases are deliberately strict, not tuned to score 1.0. Committed reference results live in [`tests/eval/baselines/`](tests/eval/baselines/).
 
-specter2 is the "academic paper" embedder, but it was trained for a different task than chunk-level QA:
+One honest caveat: the judge call on `sbert_motivation` is flaky — skipped in 3 of 5 trials (API timeout / JSON parse), so the `llm_judge` mean is over 47 of 50 scores.
 
-- **specter2 training:** predict citations between paper *abstracts* — paper-level similarity.
-- **our task:** retrieve the right *chunk* (400-2000 chars of methods/results) for a natural-language question.
-
-Two domain mismatches: paper-level vs chunk-level, abstract vs full-text. specter2 has never seen "a paragraph from a methods section" during training. bge-base's training corpora (MS MARCO, NQ, SQuAD, HotpotQA) are much closer to QA retrieval.
-
-specter2 may still help for paper-level similarity tasks (e.g., powering `/similar`) — gated on an explicit eval against that task. Per-folder embedder routing stays deferred until there's a use case where specter2 demonstrably wins.
-
-### Caveats
-
-1. **Sample size: 35 cases × 5 trials.** With trial-mean-std bounds in single-digit-percent territory, the deterministic and contains_all gaps are statistically real; the llm_judge gap is within noise.
-2. **LLM-judge mean ~2.2/5 across both models.** The judge enforces strict reference-only grading — even true answers score low when the reference doesn't mention them. Cross-model *gap* is the signal, not absolute scores.
-3. **Reference answers partly author-verified.** 4 of 35 cases have hand-verified expected_answers; the rest are best-effort. Affects absolute scores symmetrically; doesn't bias the gap.
-4. **`embedding_similarity` excluded.** The scorer uses the active model's own embedder, so the comparison is confounded across models. Fix is queued.
-5. **The project has still features in development**. The benchmark gives a taste on how the pipeline interacts with those two embedders. For now (Phase 5), this is enough. Testings will need to be redone and more cases built to reflect the end-usage of the application.
+> The embedder choice (`bge-base` vs `specter2`) was settled on a separate, non-redistributable corpus and is recorded in [`docs/decisions.md`](docs/decisions.md) → Phase 5 / Feature 3. That comparison is queued to be re-run on this public corpus so the embedder evidence is reproducible too.
 
 ### Reproducing
 
-The project ships two corpora. The **benchmark** below (35 cases) runs on a private neuroscience library that is mostly copyrighted and not redistributable. The **public demo corpus** is fully reproducible: the 10 papers behind this project's own methods (RAG, dense retrieval, sentence embeddings, BGE/SPECTER2, BERT re-ranking, ColBERT, HyDE, LLM-as-a-judge, AI Usage Cards), all on arXiv.
-
-**1. Public demo eval — reproducible by anyone.** [`tests/eval/corpus_manifest.yaml`](tests/eval/corpus_manifest.yaml) lists the 10 papers (pinned arXiv versions + SHA-256); `download_corpus.py` fetches them from arXiv (nothing is re-hosted, so arXiv's license is not an issue). [`tests/eval/cases.public.yaml`](tests/eval/cases.public.yaml) is a standalone 10-case set written against them.
+[`tests/eval/corpus_manifest.yaml`](tests/eval/corpus_manifest.yaml) lists the 10 papers (pinned arXiv versions + SHA-256); `download_corpus.py` fetches them from arXiv (download-only, so arXiv's license is not an issue). [`tests/eval/cases.public.yaml`](tests/eval/cases.public.yaml) is a standalone 10-case set written against them.
 
 ```bash
 uv run python -m scripts.download_corpus            # 10 PDFs from arXiv -> data/sources/
@@ -210,32 +195,9 @@ uv run python -m scripts.run_eval --cases tests/eval/cases.public.yaml --with-ll
 
 `--with-llm-judge` adds the reference-graded answer-quality score (Claude Haiku); it needs an `ANTHROPIC_API_KEY` in `.env` and costs a few cents for 10 cases. Drop the flag for a free, deterministic-only run (retrieval + keyword scorers).
 
-5 trials on bge-base (`--repeat 5`), reported as mean ± trial-mean std:
+**Where runs are stored.** Every `run_eval` invocation appends to `data/eval.duckdb` — a binary working log, **gitignored** and regenerated on first run, not a source artifact. Committed, human-readable reference results live in [`tests/eval/baselines/`](tests/eval/baselines/) — diff a new run against those, not the binary DB. The harness is structured for extraction: every file except `adapters.py` is project-agnostic and can be lifted into a standalone repo.
 
-| Scorer | Mean (n=5) | Trial-mean std |
-|---|---:|---:|
-| `citation_overlap` (0-1) | **1.000** | 0.000 |
-| `contains_all` (0-1) | **0.927** | 0.034 |
-| `llm_judge` (1-5) | **3.894** | 0.075 |
-
-`citation_overlap` is **1.000 with zero variance** — retrieval cites the correct paper in all 10 cases, every trial (it depends only on retrieval, which is deterministic). `contains_all` averages 0.927 with low cross-run spread; it scores the stochastic generated answer, so single runs wobble (0.88–0.98) around that mean. `llm_judge` **3.894/5** confirms the answers are genuinely good — the `contains_all` shortfall is phrasing, not correctness. (The private neuroscience benchmark scores ~2.2/5 on `llm_judge`, where reference answers are mostly best-effort; these public cases are abstract-grounded, so the judge rates them higher — not evidence the pipeline is "better" on CS papers.)
-
-One honest caveat: the judge call on `sbert_motivation` is flaky — it was skipped in 3 of 5 trials (API timeout / JSON parse), so the `llm_judge` mean is over 47 of 50 scores.
-
-**Where runs are stored.** Every `run_eval` invocation appends to `data/eval.duckdb` — a binary working log, **gitignored** and regenerated on first run, not a source artifact (don't commit it; a fresh run rewrites it). Committed, human-readable reference results live in [`tests/eval/baselines/`](tests/eval/baselines/) — that's what to diff a new run against, not the binary DB. The table above mirrors [`tests/eval/baselines/public_eval_baseline_2026-06-01.md`](tests/eval/baselines/public_eval_baseline_2026-06-01.md).
-
-**2. Full benchmark** (the private neuroscience corpus + `cases.yaml`; not redistributable):
-
-```powershell
-$env:EMBEDDING_MODEL="bge-base"
-uv run python -m scripts.run_eval --with-llm-judge --repeat 5 --note "bge n=5"
-$env:EMBEDDING_MODEL="specter2"
-uv run python -m scripts.run_eval --with-llm-judge --repeat 5 --note "specter2 n=5"
-```
-
-Cost: ~$1 per model run. Results land in `data/eval.duckdb`. The harness is structured for extraction — see [`src/doc_assistant/eval/`](src/doc_assistant/eval/); every file except `adapters.py` is project-agnostic and can be lifted into a standalone repo.
-
-**3. Chunking sweep** (re-embeds the corpus per config — slow; run against a representative subset):
+**Chunking sweep** (re-embeds the corpus per config — slow; run against a representative subset):
 
 ```bash
 uv run python -m scripts.sweep_chunking --dry-run            # print the grid + commands
@@ -246,7 +208,7 @@ uv run python -m scripts.sweep_chunking --with-embedding --repeat 3
 
 **Phase 6 in progress.** Shipped: core RAG (Phase 1); measured quality + eval harness (Phases 2 & 5); document store + library UI (Phase 3); citation graph + doc-similarity edges (Phase 4); and the research-integrity layer — provenance card, heuristic confidence signals, and a separate-context LLM reviewer agent. **264 tests · ~64% coverage · ruff / mypy / bandit clean.**
 
-`bge-base` is locked as the default embedder on the strength of the benchmark above.
+`bge-base` is locked as the default embedder; the comparison that settled it is in [`docs/decisions.md`](docs/decisions.md) → Phase 5 / Feature 3.
 
 **Next (independent, spec'd):** a normalized LLM-provider protocol for fully-local runs (analysis *and* reviewer on Ollama, no API key — [`docs/specs/llm-provider-isolation.md`](docs/specs/llm-provider-isolation.md)), dual-layer evidence/interpretation answers, and pdfplumber table extraction. Full rationale and roadmap: [`docs/decisions.md`](docs/decisions.md), [`docs/doc-assistant-roadmap.md`](docs/doc-assistant-roadmap.md).
 

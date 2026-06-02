@@ -968,3 +968,40 @@ The neuroscience 35-case set stays as the private measured benchmark (the README
 **Why it matters:** the baseline is now a measurement with a confidence interval, not a single sample — defensible as the public reference. Cases stayed strict.
 
 **Next:** if the `sbert_motivation` judge flakiness recurs, log it in `.claude/KNOWN_ISSUES.md` and check the judge's JSON-parse path for that prompt.
+
+---
+
+## Session: 2026-06-02 — TESTING.md: wrote the pinned-instrument / local-judge calibration gate section
+
+**What:** Added the "The judge is a pinned instrument" section + "local-judge calibration gate" subsection to `tests/eval/TESTING.md`. Specifies what "pinned" means operationally (model+version recorded per run, swapping is a logged event) and the gate a local judge must clear before it is trusted to rank: decision agreement (≥0.9 pairwise-winner match, binding), Spearman/Kendall rank correlation, and per-case MAD (≤0.5), all over `--repeat ≥3` on the verified-10. Until pass: local judge runs in shadow, ranking uses the pinned reference judge.
+**Why:** `decisions.md` line ~344 already pointed at TESTING.md as the home of "the local-judge calibration gate," but the section was absent (only a stale stub header in the bash sandbox view; canonical file had nothing). Three references, zero spec. The gate is the one piece standing between the project and trustworthy *local* generator ranking, so the dangling reference was real doc-debt. Calibration targets decisions/gaps, not absolute scores — consistent with the existing "the gap is the signal, not the raw number" rule for the reference-only judge.
+**Rejected:** A full Platt-scaling calibration model (decisions.md already rules it out for a single-user tool) — the gate is an agreement check against the pinned reference, not a learned recalibration. Also rejected leaving it as a tracked known-issue (user chose to write the section now).
+**Opens:** Thresholds (0.9 / 0.5) are first-pass defaults — tune on the first real local-vs-reference distribution. No code yet; this is the spec the Chunk 2c / LLM-provider work will implement against.
+
+---
+
+## Session: 2026-06-02 (cont.) — TESTING.md: corrected duplicate + documented judge inputs
+
+**Correction to previous entry:** the previous entry's claim that "canonical file had nothing" was wrong — a stale bash-sandbox view (the recurring sync bug) hid an existing `## The judge is a pinned instrument, not a generator` section. The prior append therefore created a *duplicate* pinned-instrument section, not a new one.
+**What:** (1) Removed the duplicated section. (2) Merged the concrete calibration protocol (decision agreement ≥0.9 binding / Spearman-Kendall rank correlation / MAD ≤0.5, over `--repeat ≥3`) into the *existing* "Local judge — gated, not assumed" subsection, replacing its vague "rank correlation / Cohen's κ" placeholder. (3) Added a new `### What the judge is given — and what it is not` subsection under "What the eval harness measures": the judge receives exactly `case.query` + `case.expected_answer` (reference) + `output.answer` (candidate), and **not** the retrieved passages — the verified reference stands in for the sources. Spelled out the contrast: generator sees `query + reranked passages`; eval judge sees `query + reference + candidate`; Chunk 2b runtime reviewer sees `answer + retrieved passages` (no reference). Same word "faithfulness," three different denominators.
+**Why:** user flagged the duplication and asked for the judge's input contract to be explicit (parallel to the generator's). Grounded the subsection in `src/doc_assistant/eval/scorers.py` (`_JUDGE_PROMPT`, `LLMJudgeScorer`) — three sub-scores faithfulness/relevance/completeness 1–5, value = mean, default model `claude-haiku-4-5`, temp 0, single-turn isolated.
+**Rejected:** editing the prior (inaccurate) entry — DEVLOG is append-only, so corrected forward instead.
+**Opens:** none new. Verify the dedup on the committed file, not the bash view (sync bug); `grep -c` from the sandbox under-reports.
+
+---
+
+## Session: 2026-06-02 (cont.) — TESTING.md overhaul: cut ~40% length, killed cross-section repetition
+
+**What:** Full rewrite, 211 → ~135 lines. The limitations section had been re-stating the scorer descriptions; "the gap is the signal," "reference-only," and the `embedding_similarity`/`citation_overlap` caveats each appeared three times. Converted the verbose 5-scorer bullet list and the judge/generator/reviewer asymmetry into two tables (scorer table; "what each component sees + faithful-to-what" table), which compress better and read faster than the prose did. Collapsed "Reproducibility" + "Verified ground truth" into one **verified-10 rule** section. Cut the limitations list from six bullets to three (small-N, conservative-judge, answer-quality≠product-ceiling); the dropped three were scorer-specific caveats now living once, in the scorer table. Kept all factual specifics: scorer names/ranges, judge inputs + model pin (`claude-haiku-4-5`), calibration-gate thresholds (0.9 / 0.5, `--repeat ≥3`), verified-10 corpus + manifest/download mechanics, run commands.
+**Why:** user review flagged TESTING.md as the weakest project doc — "too much on some parts, too little on others," too long. The redundancy was real and the asymmetry content (judge vs generator vs reviewer inputs) was buried in prose; tables surface it.
+**Rejected:** asking which sections felt thin — directive was clear (overhaul, shorten); acted and noted judgment calls instead. Kept the calibration gate and judge-input contract at near-full detail (recent high-value additions); the cuts came from the redundant limitations/scorer prose.
+**Opens:** if any of the three retained limitations or the dropped scorer caveats matter more than judged, easy to restore from git history.
+
+---
+
+## Session: 2026-06-02 (cont.) — TESTING.md: added scorer provenance + landscape note
+
+**What:** Added a short "Provenance and scope" note to the Scorers section: the five scorers are bespoke (`src/doc_assistant/eval/scorers.py`), not from RAGAS/TruLens/DeepEval; they're proportionate to a single-user verified-10 harness; and two known gaps — retrieval scored by presence not rank (no MRR/nDCG), and no reference-free groundedness scorer at test time (the Chunk 2b runtime reviewer covers it online). Notes that closing gap 1 is cheap (deterministic, over existing `expected_citations`) but adopting a framework is not (breaks no-deps / $0 / reproducibility).
+**Why:** user asked where the scorer info came from, why it's good enough, and what else exists — wanted the answer captured in the doc, briefly.
+**Rejected:** a full "wider landscape" section enumerating RAGAS/TruLens/DeepEval metrics — overkill for a doc just trimmed; named them in one line instead. Adding MRR/nDCG now — flagged as a cheap option, not done (no request to implement).
+**Opens:** MRR/nDCG retrieval scorer is the highest-value cheap addition if reranker tuning ever needs numbers.

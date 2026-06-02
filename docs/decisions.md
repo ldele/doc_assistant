@@ -322,6 +322,28 @@ slash command for manual re-review. 14 unit tests. Schema is
 reviewer-kind-agnostic so a future human-review path slots into the 
 same table.
 
+**Chunk 2c — Reviewer aggregation & self-improvement loop (Phase 6).** Counts
+a categorical `failure_tag` enum across reviewer verdicts to find *systematic*
+failure modes, anchored against the verified eval set to separate reviewer bias
+from real system fault. **Minimum-N gate (locked).** The reviewer is a biased
+sampler (runs only on flagged answers) over a small corpus, so a raw count is
+noise with a label. A `failure_tag` is **not reported as actionable** until it
+clears `MIN_FAILURE_TAG_COUNT` occurrences across `MIN_FAILURE_TAG_DOCS` distinct
+documents (config-driven and user-tunable, with conservative defaults ~10/5
+tuned on the first real distribution). Below the gate the aggregation reports
+"insufficient evidence," never a suggested fix. Counts are always shown with
+their denominator ("4 / 7 flagged"), never bare. v1 is instrumentation, not
+auto-action; the action layer waits until accumulated answer records clear the
+gate. Read-only aggregation, Enrichment-Layer Pattern.
+
+**Judge/reviewer are pinned instruments.** The eval `LLMJudgeScorer` and the
+Chunk 2b reviewer are measurement instruments, not generators: their model +
+version are pinned and recorded per run, and swapping is an explicit logged
+event. Chunk 2c's bias-vs-fault anchor is only falsifiable if the instrument
+does not drift. The full evaluation strategy, scorer limitations, verified-10
+headline rule, and the local-judge calibration gate live in
+[`tests/eval/TESTING.md`](../tests/eval/TESTING.md).
+
 **Chunk 3 — PRISMA-trAIce export (Phase 9).** When the literature review 
 generator produces a review, it also produces a structured trAIce-aligned 
 disclosure (JSON + markdown). Pulls from `answer_records` and the 
@@ -585,14 +607,24 @@ See `docs/doc-assistant-roadmap.md` for the source of intent.
   (RAGPipeline wrapper — only file with doc_assistant deps; 
   extractable per Feature 5). CLI `scripts/run_eval.py` with paid 
   scorers gated behind explicit flags. 43 unit tests; coverage 61%.
-- **Feature 3** — ✅ Done (2026-05-28). 35-case eval set in 
-  `tests/eval/cases.yaml` covering foundational neuro / connectomics / 
-  modern eLife / animal-behavior tools / clinical / ML / anatomy plus 
-  one negative-control case. Measured BGE vs SPECTER2 with hardened 
-  reference-only LLM judge (temperature=0). **Result: bge-base wins on 
-  every comparable scorer.** `citation_overlap` +0.020, `contains_all` 
-  +0.055, `llm_judge` +0.22. See README "Benchmark results" section.
-  
+- **Feature 3** — ✅ Done (2026-05-28). 35-case eval set, run via the 
+  harness against two embedders (BGE vs SPECTER2) with a hardened 
+  reference-only LLM judge (`temperature=0`). 5 trials per model 
+  (`--repeat 5`); reported as mean ± trial-mean std. **Result: bge-base 
+  wins on the retrieval-side signals; the two are tied on the LLM judge.**
+
+  | Scorer | bge-base (n=5) | specter2 (n=5) | Δ (bge − specter2) | Verdict |
+  |---|---:|---:|---:|---|
+  | `citation_overlap` (0-1) | **0.907 ± 0.000** | 0.887 ± 0.002 | +0.020 | Real (deterministic gap) |
+  | `contains_all` (0-1) | **0.804 ± 0.013** | 0.767 ± 0.014 | +0.037 | Real (~4σ) |
+  | `llm_judge` (1-5) | 2.209 ± 0.053 | 2.224 ± 0.092 | −0.015 | Tied (within noise) |
+
+  The cross-encoder reranker and the answer LLM together level out the 
+  embedder differential at the chunk level: what matters is which 
+  documents got retrieved (bge wins) and whether the answer surfaces the 
+  expected keywords (bge wins); the judge's rubric over the resulting 
+  answers sees no meaningful difference.
+
   **Key finding — SPECTER2 lost because of training-task mismatch.** 
   SPECTER2 was trained for paper-level citation prediction over 
   abstracts; our task is chunk-level QA retrieval over full text. 
@@ -602,17 +634,25 @@ See `docs/doc-assistant-roadmap.md` for the source of intent.
   workflow emerges where SPECTER2's strengths apply (e.g., the 
   `/similar` paper-level task). Locked in `embeddings.py` registry; 
   re-confirmed empirically.
-  
-  **Methodology caveats (recorded in README):** 35 cases is small; 
-  effect sizes are suggestive not significant. LLM-judge mean ~2.3/5 
-  because the rubric is strict — absolute scores are not directly 
-  interpretable; the cross-model gap is the signal. `embedding_similarity` 
-  scorer is confounded across models (uses the active embedder); 
-  excluded from the comparison pending a fix.
+
+  **Provenance + reproducibility.** This comparison was measured on a 
+  private, non-redistributable corpus, so the numbers above are kept 
+  here as the record but cannot be reproduced by a third party. It is 
+  **queued to be re-run on the public demo corpus** 
+  (`tests/eval/cases.public.yaml` + `corpus_manifest.yaml`) so the 
+  embedder evidence becomes reproducible alongside the rest of the 
+  benchmark. Until then, treat the embedder verdict as provisional.
+
+  **Methodology caveats:** 35 cases is small — effect sizes are 
+  suggestive, not significant. LLM-judge means are low (~2.2/5) because 
+  the rubric is strict reference-only grading; absolute scores are not 
+  directly interpretable, the cross-model gap is the signal. 
+  `embedding_similarity` is excluded — it uses the active embedder, so 
+  the comparison is confounded across models (fix pending).
 - **Integrity Chunk 1** — Provenance card. `answer_records` table; 
   collapsible card under each answer; `/export-record <id>` → JSON. 
   Hooks into existing `tracking.py`.
-- **Provider layer (generation side of Feature 1)** — the config-driven-provider pattern Feature 1 applied to embeddings extends to generation. A normalized `LLMClient.complete()` protocol (`src/doc_assistant/llm.py`) with Anthropic + Ollama adapters backs the reviewer and the eval judge; the streaming chat path stays LangChain but reads `LLM_PROVIDER`/`LLM_MODEL`. **Hard requirement: the app runs fully locally** — analysis + reviewer on Ollama with no `ANTHROPIC_API_KEY`. Reviewer context isolation (evidence-only prompt, separate instance) is pinned by a guard test. Full design: `docs/specs/llm-provider-isolation.md`.
+- **Provider layer (generation side of Feature 1)** — the config-driven-provider pattern Feature 1 applied to embeddings extends to generation. A normalized `LLMClient.complete()` protocol (`src/doc_assistant/llm.py`) with Anthropic + Ollama adapters backs the reviewer and the eval judge; the streaming chat path stays LangChain but reads `LLM_PROVIDER`/`LLM_MODEL`. **Local-first is the end goal, hybrid today** — the *generator* should run fully local (analysis + chat on Ollama, no `ANTHROPIC_API_KEY`). The *judge and reviewer are pinned instruments*, not generators: they default to a fixed, version-recorded reference model and only move to local once the local-judge calibration gate passes (see `tests/eval/TESTING.md`). Note: Feature 4c's VLM figure description is API-only and not part of the local path. Reviewer context isolation (evidence-only prompt, separate instance) is pinned by a guard test. Full design: `docs/specs/llm-provider-isolation.md`.
 
 ### Phase 6: Per-project routing + Figures & Tables + Dual-layer interpretation
 
@@ -648,7 +688,11 @@ interpretation + reviewer agent.
   good ⇒ reviewer bias; flagged-and-low-correctness ⇒ system fault).
   Read-only aggregation, Enrichment-Layer Pattern, no auto-remediation.
   An unanchored "pattern in suggestions" must not ship — it can't tell
-  reviewer fault from system fault. See roadmap Chunk 2c.
+  reviewer fault from system fault. **Minimum-N gate:** a tag is actionable
+  only past `MIN_FAILURE_TAG_COUNT` / `MIN_FAILURE_TAG_DOCS` (tunable;
+  ~10/5 default); below that it reads "insufficient evidence." Counts always
+  carry their denominator. v1 is instrumentation, not auto-action. See the
+  Research Integrity Layer subsection above and roadmap Chunk 2c.
 - **Engineering: chunking sweep** (reopens Phase 2.4). Chunk sizes are now
   config-driven (`PARENT/CHILD/BASELINE_CHUNK_SIZE`, shipped 2026-05-31);
   `scripts/sweep_chunking.py` measures size grids through the eval harness.

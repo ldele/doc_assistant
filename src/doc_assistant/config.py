@@ -5,7 +5,12 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-load_dotenv()
+# override=True: .env is this app's config source of truth. Some host
+# environments (e.g. the Claude Code session env) export an *empty*
+# ANTHROPIC_API_KEY; with the python-dotenv default (override=False) that
+# empty value would shadow the real key in .env and break API mode. Letting
+# .env win is the least-surprising behaviour for a local-first, single-user app.
+load_dotenv(override=True)
 
 
 # ============================================================

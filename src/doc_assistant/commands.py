@@ -158,6 +158,7 @@ def help_message() -> str:
 - `/export-record <id>` — export the full provenance record for one answer as JSON (Phase 5)
 - `/records` — list the most recent answer records
 - `/review [id]` — run the LLM reviewer on a past answer; no id reviews the most recent (Phase 6)
+- `/synthesis` — show the current synthesis mode (`human` evidence-only vs `ai` dual-layer)
 - `/help` — this message
 
 Anything else is treated as a normal question to the library.
@@ -313,6 +314,22 @@ def execute_command(cmd: str, arg: str) -> str:
     """Execute a parsed command, returning a markdown response."""
     if cmd == "help":
         return help_message()
+
+    if cmd == "synthesis":
+        from doc_assistant.config import SYNTHESIS_MODE
+
+        if SYNTHESIS_MODE == "human":
+            return (
+                "**Synthesis mode: `human`** — the assistant returns the *evidence* "
+                "(retrieved passages) only; the interpretation is yours. No AI synthesis "
+                "is generated. Set `SYNTHESIS_MODE=ai` in `.env` for dual-layer answers."
+            )
+        return (
+            "**Synthesis mode: `ai`** — dual-layer answers: deterministic *evidence* plus "
+            "a labelled AI *interpretation* segmented into claims you can accept / reject / "
+            "edit (flagged claims carry retrieval-derived markers). Set `SYNTHESIS_MODE=human` "
+            "in `.env` for evidence-only."
+        )
 
     if cmd == "bibtex":
         from doc_assistant.bibtex import export_bibtex

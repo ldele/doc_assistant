@@ -7,12 +7,13 @@ All business logic lives in src/doc_assistant/. This file only does:
 4. Provenance capture (per-answer record + collapsible card)
 """
 
+import contextlib
 import time
 
 import chainlit as cl
 
 from doc_assistant.commands import execute_command, parse_command
-from doc_assistant.config import LLM_MODEL, LLM_PROVIDER, TOP_K, USE_PARENT_CHILD
+from doc_assistant.config import LLM_MODEL, LLM_PROVIDER, SYNTHESIS_MODE, TOP_K, USE_PARENT_CHILD
 from doc_assistant.embeddings import get_active_model_name
 from doc_assistant.pipeline import RAGPipeline, format_citation
 from doc_assistant.prompts import ANSWER_PROMPT
@@ -20,13 +21,21 @@ from doc_assistant.provenance import (
     AnswerProvenance,
     ConfidenceSignals,
     RetrievedChunk,
+    adjudicate_claim,
     compute_confidence_signals,
     prompt_version_hash,
     record_answer,
+    record_claims,
     template_hash,
 )
 from doc_assistant.query_router import answer_library_query, is_library_query
 from doc_assistant.reviewer import ReviewResult, persist_review, review_answer
+from doc_assistant.synthesis import (
+    MARKER_OK,
+    Claim,
+    render_evidence_markdown,
+    segment_claims,
+)
 from doc_assistant.tracking import TokenCounter
 
 rag = RAGPipeline()
@@ -149,6 +158,86 @@ def _format_provenance_card(
 
 
 # ============================================================
+# Chunk 2a — dual interpretation (evidence vs AI synthesis)
+# ============================================================
+
+
+def _build_retrieved_chunks(scored: list[tuple[object, float]]) -> list[RetrievedChunk]:
+    """Build the provenance RetrievedChunk list from (doc, score) pairs."""
+    chunks: list[RetrievedChunk] = []
+    for doc, score in scored:
+        meta = doc.metadata  # type: ignore[attr-defined]
+        chunks.append(
+            RetrievedChunk(
+                filename=meta.get("filename"),
+                doc_id=meta.get("document_id") or meta.get("doc_hash"),
+                page=meta.get("page"),
+                section=meta.get("section"),
+                reranker_score=float(score),
+                chunk_excerpt=doc.page_content[:300],  # type: ignore[attr-defined]
+            )
+        )
+    return chunks
+
+
+def _build_claim_review(claims: list[Claim], claim_ids: list[str]) -> tuple[str, list[cl.Action]]:
+    """Render the adjudication section + per-claim buttons for *flagged* claims only.
+
+    Quiet on clean answers (UX: inform, don't clutter): claims marked ``ok`` get
+    no buttons; only ``weak``/``unsupported`` claims surface accept/reject/edit.
+    All claims are persisted regardless (the eager adjudication log).
+    """
+    flagged = [(c, cid) for c, cid in zip(claims, claim_ids, strict=True) if c.marker != MARKER_OK]
+    if not flagged:
+        return (
+            f"\n\n---\n🔎 **Interpretation** — all {len(claims)} claim(s) grounded "
+            "in cited evidence.",
+            [],
+        )
+    lines = [f"\n\n---\n⚠ **{len(flagged)} claim(s) to review** (evidence vs interpretation):"]
+    actions: list[cl.Action] = []
+    for c, cid in flagged:
+        n = c.claim_index + 1
+        badge = "unsupported" if c.marker != "weak" else "weakly grounded"
+        lines.append(f"- **#{n}** {c.text}  _({badge})_")
+        actions.append(
+            cl.Action(name="claim_accept", payload={"id": cid, "n": n}, label=f"✓ #{n}")
+        )
+        actions.append(
+            cl.Action(name="claim_reject", payload={"id": cid, "n": n}, label=f"✗ #{n}")
+        )
+        actions.append(cl.Action(name="claim_edit", payload={"id": cid, "n": n}, label=f"✎ #{n}"))
+    return "\n".join(lines), actions
+
+
+async def _resolve_claim(action: cl.Action, decision: str) -> None:
+    p = action.payload
+    try:
+        adjudicate_claim(str(p["id"]), decision)
+        mark = "✓ accepted" if decision == "accepted" else "✗ rejected"
+        await cl.Message(content=f"Claim #{p['n']} {mark}.").send()
+    except Exception as e:
+        await cl.Message(content=f"⚠ Could not record claim #{p['n']}: {e}").send()
+
+
+@cl.action_callback("claim_accept")
+async def _on_claim_accept(action: cl.Action) -> None:
+    await _resolve_claim(action, "accepted")
+
+
+@cl.action_callback("claim_reject")
+async def _on_claim_reject(action: cl.Action) -> None:
+    await _resolve_claim(action, "rejected")
+
+
+@cl.action_callback("claim_edit")
+async def _on_claim_edit(action: cl.Action) -> None:
+    p = action.payload
+    cl.user_session.set("awaiting_edit", {"id": str(p["id"]), "n": p["n"]})
+    await cl.Message(content=f"✏️ Send the corrected text for claim #{p['n']}.").send()
+
+
+# ============================================================
 # Message handler
 # ============================================================
 
@@ -161,6 +250,17 @@ async def on_message(message: cl.Message) -> None:
         cmd, arg = parsed
         response = execute_command(cmd, arg)
         await cl.Message(content=response).send()
+        return
+
+    # --- Chunk 2a: claim edit follow-up (a prior "✎ Edit" set this) ---
+    pending_edit = cl.user_session.get("awaiting_edit")
+    if pending_edit is not None:
+        cl.user_session.set("awaiting_edit", None)
+        try:
+            adjudicate_claim(pending_edit["id"], "edited", edited_text=message.content)
+            await cl.Message(content=f"✏️ Claim #{pending_edit['n']} updated.").send()
+        except Exception as e:
+            await cl.Message(content=f"⚠ Edit failed: {e}").send()
         return
 
     # --- Library metadata questions (answered from SQLite) ---
@@ -201,6 +301,33 @@ async def on_message(message: cl.Message) -> None:
             )
         )
 
+    retrieved_chunks = _build_retrieved_chunks(scored)
+
+    # --- SYNTHESIS_MODE=human: evidence only; skip the interpretation call ---
+    if SYNTHESIS_MODE == "human":
+        with contextlib.suppress(Exception):  # provenance is a sidecar, never blocks
+            record_answer(
+                query=standalone,
+                original_query=user_question if standalone != user_question else None,
+                answer="(human synthesis mode — evidence only; no AI interpretation)",
+                retrieved_chunks=retrieved_chunks,
+                embedding_model=get_active_model_name(),
+                top_k=TOP_K,
+                use_parent_child=USE_PARENT_CHILD,
+                latency_ms=(time.monotonic() - turn_start) * 1000.0,
+            )
+        await cl.Message(
+            content=(
+                "🧑 **Human synthesis mode** — evidence only; the interpretation is yours.\n\n"
+                + render_evidence_markdown(retrieved_chunks)
+            ),
+            elements=source_elements,
+        ).send()
+        history.append({"role": "user", "content": user_question})
+        history.append({"role": "assistant", "content": "(human mode: evidence only)"})
+        cl.user_session.set("history", history)
+        return
+
     msg = cl.Message(content="", elements=source_elements)
     full_answer = ""
     for token in rag.stream_answer(standalone, docs, counter=counter):
@@ -220,17 +347,7 @@ async def on_message(message: cl.Message) -> None:
         use_parent_child=USE_PARENT_CHILD,
         embedding_model=embedding_model,
     )
-    retrieved_chunks = [
-        RetrievedChunk(
-            filename=doc.metadata.get("filename"),
-            doc_id=doc.metadata.get("document_id") or doc.metadata.get("doc_hash"),
-            page=doc.metadata.get("page"),
-            section=doc.metadata.get("section"),
-            reranker_score=float(score),
-            chunk_excerpt=doc.page_content[:300],
-        )
-        for doc, score in scored
-    ]
+    record_id: str | None = None
     try:
         record_id = record_answer(
             query=standalone,
@@ -312,7 +429,19 @@ async def on_message(message: cl.Message) -> None:
             f"(~${counter.cost_usd():.4f})"
         )
 
-    msg.content = full_answer + sources_block + usage_block + provenance_block
+    # --- Chunk 2a: segment + eager-persist claims; surface flagged ones with buttons ---
+    review_block = ""
+    if record_id is not None:
+        try:
+            claims = segment_claims(full_answer, retrieved_chunks)
+            claim_ids = record_claims(record_id, claims)
+            review_block, claim_actions = _build_claim_review(claims, claim_ids)
+            if claim_actions:
+                msg.actions = claim_actions
+        except Exception as e:
+            review_block = f"\n\n_⚠ Claim adjudication unavailable: {e}_"
+
+    msg.content = full_answer + sources_block + usage_block + provenance_block + review_block
     await msg.update()
 
     history.append({"role": "user", "content": user_question})

@@ -27,13 +27,16 @@ from __future__ import annotations
 import hashlib
 import json
 from dataclasses import asdict, dataclass, field
-from datetime import datetime
-from typing import Any
+from datetime import datetime, timezone
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import select
 
-from doc_assistant.db.models import AnswerRecord
+from doc_assistant.db.models import AnswerClaim, AnswerRecord
 from doc_assistant.db.session import session_scope
+
+if TYPE_CHECKING:
+    from doc_assistant.synthesis import Claim
 
 
 @dataclass
@@ -159,6 +162,89 @@ def record_answer(
         session.add(record)
         session.flush()
         return str(record.id)
+
+
+# ============================================================
+# Chunk 2a — adjudication log (answer_claims sidecar)
+# ============================================================
+
+VALID_DECISIONS = ("pending", "accepted", "rejected", "edited")
+
+
+@dataclass
+class PersistedClaim:
+    """One adjudication-log row, detached for UI / export (Chunk 3)."""
+
+    id: str
+    claim_index: int
+    claim_text: str
+    citations: list[dict[str, Any]]
+    marker: str
+    decision: str
+    edited_text: str | None
+
+
+def _claim_citations_json(claim: Claim) -> str:
+    return json.dumps(
+        [
+            {"source_number": c.source_number, "filename": c.filename, "page": c.page}
+            for c in claim.citations
+        ]
+    )
+
+
+def record_claims(answer_record_id: str, claims: list[Claim]) -> list[str]:
+    """Eager-insert the segmented claims as ``pending``. Returns the new ids in order."""
+    ids: list[str] = []
+    with session_scope() as session:
+        for claim in claims:
+            row = AnswerClaim(
+                answer_record_id=answer_record_id,
+                claim_index=claim.claim_index,
+                claim_text=claim.text,
+                citations_json=_claim_citations_json(claim),
+                marker=claim.marker,
+                decision="pending",
+            )
+            session.add(row)
+            session.flush()
+            ids.append(str(row.id))
+    return ids
+
+
+def adjudicate_claim(claim_id: str, decision: str, edited_text: str | None = None) -> None:
+    """Record the user's verdict on one claim. ``edited_text`` only for ``edited``."""
+    if decision not in VALID_DECISIONS:
+        raise ValueError(f"decision must be one of {VALID_DECISIONS}, got {decision!r}")
+    with session_scope() as session:
+        row = session.get(AnswerClaim, claim_id)
+        if row is None:
+            raise KeyError(f"no answer_claim with id {claim_id!r}")
+        row.decision = decision
+        row.edited_text = edited_text if decision == "edited" else None
+        row.decided_at = datetime.now(timezone.utc)
+
+
+def get_claims(answer_record_id: str) -> list[PersistedClaim]:
+    """Return the adjudication log for one answer, ordered by claim_index."""
+    with session_scope() as session:
+        rows = session.scalars(
+            select(AnswerClaim)
+            .where(AnswerClaim.answer_record_id == answer_record_id)
+            .order_by(AnswerClaim.claim_index)
+        ).all()
+        return [
+            PersistedClaim(
+                id=str(r.id),
+                claim_index=r.claim_index,
+                claim_text=r.claim_text,
+                citations=json.loads(r.citations_json or "[]"),
+                marker=r.marker,
+                decision=r.decision,
+                edited_text=r.edited_text,
+            )
+            for r in rows
+        ]
 
 
 def _row_to_provenance(row: AnswerRecord) -> AnswerProvenance:

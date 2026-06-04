@@ -107,6 +107,18 @@ USE_MULTI_QUERY = os.getenv("USE_MULTI_QUERY", "false").lower() == "true"
 # Number of chunks/parents passed to the LLM at query time
 TOP_K = int(os.getenv("TOP_K", "10"))
 
+# Synthesis mode (Phase 6 / Integrity Chunk 2a — dual interpretation).
+#   ai    -> dual-layer: deterministic evidence + labelled AI interpretation,
+#            segmented into adjudicable (accept/reject/edit) claims.
+#   human -> evidence layer only; the interpretation is the user's. The
+#            interpretation LLM call is skipped (BE WISE-influenced path).
+VALID_SYNTHESIS_MODES = ("ai", "human")
+SYNTHESIS_MODE = os.getenv("SYNTHESIS_MODE", "ai").lower()
+if SYNTHESIS_MODE not in VALID_SYNTHESIS_MODES:
+    raise ValueError(
+        f"SYNTHESIS_MODE must be one of {VALID_SYNTHESIS_MODES}, got {SYNTHESIS_MODE!r}"
+    )
+
 
 # ============================================================
 # Chunking configuration (Phase 6 — chunking experiment)

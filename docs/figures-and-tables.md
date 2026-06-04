@@ -142,8 +142,8 @@ gone).
 | Library | Role | Kept? |
 |---|---|---|
 | `pymupdf` / `pymupdf4llm` | default PDF→markdown extractor **and** the `regions.py` classifier signals | core — yes |
-| `pdfplumber` | table *cell* extraction | yes, pending the engine eval |
-| Marker | removed from the production path (PDF-only, heavy ML, was uninstalled/dead); lives only behind `eval_marker_tables.py` | re-add only if the eval wins |
+| **Marker** (isolated, `uvx --from marker-pdf marker_single`) | **primary table engine** (engine eval won 2026-06-02). Run out-of-process by `scripts/extract_tables_marker.py` (parse + page-anchored inline splice in `tables_marker.py`); never imported in-process | yes — primary |
+| `pdfplumber` | table *cell* extraction — **frozen no-dep fallback** (lossy on borderless/booktabs; ruled tables only). `scripts/extract_tables.py`; Marker supersedes it | yes — fallback |
 
 Non-PDF figure extraction (EPUB/DOCX/HTML) will use **native parsers**
 (`ebooklib`, `python-docx`, `BeautifulSoup`) — not Marker, not pdfplumber.

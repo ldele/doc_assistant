@@ -84,16 +84,19 @@ cheap, *observable* signal — derived from retrieval, never from the model rati
 own confidence (language models are systematically over-confident, which is the whole
 reason we don't use self-reported scores).
 
-## Why the claim-splitting is rough — and why `edit` exists
+## How claims are split — and why you can edit them
 
-Claims are split on sentence boundaries: simple and deterministic, but imperfect. One
-sentence can carry two assertions; one assertion can span two sentences (the claim,
-then its statistic — the case above); a heading or a transition can be treated as a
-"claim." That roughness is a deliberate trade-off — using a model to extract "clean"
-claims would re-introduce the very model-judgment this layer exists to keep out (and
-cost an extra call). The price is imperfect boundaries; the remedy is **edit** — you
-can rewrite any claim's text, and your edit is what gets logged. The machine does the
-cheap, reproducible part; you make the call.
+So you can review the answer point by point, it's broken into separate claims —
+roughly one per sentence. The split is kept deliberately simple: the app decides where
+the breaks go by sentence, rather than asking the AI to decide what counts as a claim.
+The upside is that it's predictable; the downside is that it isn't always tidy — a
+single sentence can make two points, one point can run across two sentences (a claim
+and then its supporting number, as in the example above), or a heading can end up as
+its own "claim."
+
+When a claim comes out cut awkwardly — or just needs rewording — you can **edit** it.
+Your version replaces the original and is saved with the answer, so the record shows
+what you actually settled on, not the AI's first draft.
 
 ## The deeper check
 

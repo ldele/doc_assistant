@@ -21,7 +21,7 @@ from statistics import mean
 from langchain_anthropic import ChatAnthropic
 from langchain_core.messages import HumanMessage, SystemMessage
 
-if sys.platform == "win32":
+if sys.platform == "win32" and hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
 
 from doc_assistant.config import ANTHROPIC_API_KEY, TOP_K, USE_MULTI_QUERY, USE_PARENT_CHILD

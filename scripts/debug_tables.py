@@ -27,7 +27,7 @@ from doc_assistant.db.models import Document
 from doc_assistant.db.session import session_scope
 from scripts.extract_tables import _resolve_pdf_path
 
-if sys.platform == "win32":
+if sys.platform == "win32" and hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
 
 DEBUG_DIR = DATA_PATH / "tables_debug"

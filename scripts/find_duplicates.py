@@ -34,7 +34,7 @@ from doc_assistant.db.session import session_scope
 from doc_assistant.extractors import is_supported
 from doc_assistant.ingest import get_cache_path, is_cache_fresh
 
-if sys.platform == "win32":
+if sys.platform == "win32" and hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
 
 _CHUNK_BYTES = 1024 * 1024  # 1 MiB streaming read

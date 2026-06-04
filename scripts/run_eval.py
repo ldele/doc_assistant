@@ -37,7 +37,7 @@ from doc_assistant.eval import (
 from doc_assistant.eval.adapters import embedding_callable, rag_pipeline_adapter
 from doc_assistant.eval.report import format_aggregate, format_flaky_cases, format_run_summary
 
-if sys.platform == "win32":
+if sys.platform == "win32" and hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
 
 

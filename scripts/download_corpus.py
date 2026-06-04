@@ -40,7 +40,7 @@ import yaml
 
 from doc_assistant.config import DOCS_PATH, PROJECT_ROOT
 
-if sys.platform == "win32":
+if sys.platform == "win32" and hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
 
 MANIFEST = PROJECT_ROOT / "tests" / "eval" / "corpus_manifest.yaml"

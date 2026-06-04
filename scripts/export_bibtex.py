@@ -23,7 +23,7 @@ from pathlib import Path
 from doc_assistant.bibtex import export_bibtex
 from doc_assistant.config import PROJECT_ROOT
 
-if sys.platform == "win32":
+if sys.platform == "win32" and hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
 
 

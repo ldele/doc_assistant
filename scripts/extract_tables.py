@@ -37,7 +37,7 @@ from doc_assistant.tables import (
     splice_tables,
 )
 
-if sys.platform == "win32":
+if sys.platform == "win32" and hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
 
 

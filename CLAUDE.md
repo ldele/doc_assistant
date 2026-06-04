@@ -25,7 +25,7 @@ Always check `decisions.md` before suggesting architectural changes. Most non-ob
 
 ## Current Status
 
-**Active phase:** Phase 6 in progress — reviewer agent (2026-05-28) and LLM provider protocol (2026-06-02) shipped. Feature 4 detection foundation in progress: `regions.py` classifies each page (table/chart/photo/figure/text) from caption + curve-density + image-area signals, and `tables.py` extracts only on classified table pages (fixes figure-as-table at the root; gives 4b its figure signal). **Engine decision MADE (2026-06-02, RTX eval):** **Marker wins; default pdfplumber dropped as primary.** Measured on the arXiv corpus — pdfplumber recall on borderless/booktabs tables is unreliable (DPR 0/6, SPECTER2 0/6; SBERT extracts but collapses rows), while Marker reproduced all 7 DPR tables faithfully (columns, multi-row cells, bold). **Constraint:** marker-pdf can't co-resolve with our langchain/transformers/torch stack, so it must run **out-of-process in an isolated env** (`uvx marker_single`), gated to `regions.table_candidate_pages` via `--page_range`, as a sidecar enrichment step — never an in-process import. **Open (the 4a build):** wire that isolated-Marker ingest path + parse/splice its markdown tables + inline de-dup of pymupdf4llm's lossy tables + a table-retrieval eval-hook; also fix `eval_marker_tables.py` (its in-process `import marker` can't work — shell out instead). Region-level (multi-region-per-page) splitting is the proper 4b build. Chunk 2a (dual interpretation) is the other main remaining node.
+**Active phase:** Phase 6 in progress — reviewer agent (2026-05-28) and LLM provider protocol (2026-06-02) shipped. Feature 4 detection foundation in progress: `regions.py` classifies each page (table/chart/photo/figure/text) from caption + curve-density + image-area signals, and `tables.py` extracts only on classified table pages (fixes figure-as-table at the root; gives 4b its figure signal). **Engine decision MADE (2026-06-02, RTX eval):** **Marker wins; default pdfplumber dropped as primary.** Measured on the arXiv corpus — pdfplumber recall on borderless/booktabs tables is unreliable (DPR 0/6, SPECTER2 0/6; SBERT extracts but collapses rows), while Marker reproduced all 7 DPR tables faithfully (columns, multi-row cells, bold). **Constraint:** marker-pdf can't co-resolve with our langchain/transformers/torch stack, so it must run **out-of-process in an isolated env** (`uvx marker_single`), gated to `regions.table_candidate_pages` via `--page_range`, as a sidecar enrichment step — never an in-process import. **Open (the 4a build):** wire that isolated-Marker ingest path + parse/splice its markdown tables + inline de-dup of pymupdf4llm's lossy tables + a table-retrieval eval-hook. (✅ `eval_marker_tables.py` fixed 2026-06-04 — now shells out to isolated `marker_single` with 1-based→0-based page-range mapping; this was 4a step 1.) Region-level (multi-region-per-page) splitting is the proper 4b build. Chunk 2a (dual interpretation) is the other main remaining node.
 
 **Shipped this session (per-PR detail in `docs/DEVLOG.md`):**
 
@@ -56,18 +56,28 @@ Always check `decisions.md` before suggesting architectural changes. Most non-ob
 - **Public eval baseline** (bge-base, n=5): `citation_overlap` 1.000 ± 0.000, `contains_all` 0.927 ± 0.034, `llm_judge` 3.894 ± 0.075. Recorded in `tests/eval/baselines/public_eval_baseline_2026-06-01.md`.
 - **`data/eval.duckdb` now gitignored** (live run log, regenerated on run; committed reference results live in `tests/eval/baselines/`).
 
+**Benchmarks locked (2026-06-04, primary CPU box):**
+- **Blocker found + fixed:** the locked `cu130` torch build **segfaults on model inference on the CPU box** (no GPU; correct only on the RTX box). Unblocked locally with a forced CPU torch install + **`uv run --no-sync`** — committed lock untouched, RTX box stays on GPU. See Known issues + memory `cpu-box-torch-cu130-segfault`. Proper fix (GPU as an opt-in uv extra) deferred.
+- **Public baseline reproduced** (bge, n=5): `citation_overlap` 1.000 ± 0.000, `contains_all` 0.927 ± 0.027, `llm_judge` 3.738 ± 0.093 — matches the 2026-06-01 reference (judge within noise; same `sbert_motivation` flaky case). Recorded in `public_eval_baseline_2026-06-01.md`. **Locked.**
+- **BGE > SPECTER2, symmetric on the public corpus** (n=5): specter2's collection was stale (0 of the 10 public papers); an incremental `EMBEDDING_MODEL=specter2 ingest --skip-cleanup` added just those 10 (both now 61 docs / 27168 chunks). BGE wins all three scorers (citation 1.000 vs 0.900, contains_all 0.927 vs 0.800, judge 3.738 vs 3.447). `bge-base` stays default. Recorded in `bge_vs_specter2_public_2026-06-04.md`. **Locked.**
+- **Chunking sweep: deferred to the RTX box.** Each config's re-embed is ~45 min on CPU (×6 ≈ 5h); minutes on GPU. Config 1 (control = current defaults) run on CPU as a preview; configs 2–6 → RTX. One-command resume + restore steps in [`docs/chunking-sweep-rtx-resume.md`](docs/chunking-sweep-rtx-resume.md). Sweep `--cases` passthrough added so it runs on the public verified-10 set.
+
 **Operational TODOs (don't need code changes):**
 - **Fully-local Ollama path — generator + reviewer verified live on the RTX (GPU) box (2026-06-02).** ✅ **Generator**: ingested the 10-paper public corpus and ran real queries end-to-end on `llama3.1:8b`, `ANTHROPIC_API_KEY` empty — grounded, correctly-cited answers. ✅ **Reviewer**: `/review` returns a real verdict on Ollama (live run: faithfulness 5 · citation 3 · hedging 4 · unsupported 0). Two transport bugs found and fixed getting there — `OllamaClient` passed `temperature` as an `invoke` kwarg (`TypeError` from `Client.chat()`), and the reviewer choked on llama's non-JSON output (now `format="json"` + tolerant `_extract_json`); both have regression tests. ⚠ Remaining for the DoD bullet: the **eval-judge** on Ollama (`tests/eval/TESTING.md` calibration gate). Pick the local model(s) via `LLM_MODEL`/`REVIEWER_MODEL`.
 - ✅ **CUDA/GPU enabled on the RTX box (2026-06-02).** torch now resolves to `2.12.0+cu130` on Windows via a `[[tool.uv.index]]` + win32-scoped `[tool.uv.sources]` in `pyproject.toml`; embeddings + reranker run on the RTX 4070 (`cuda:0`), retrieve+rerank ~68 ms (was CPU-seconds). No app-code change — sentence-transformers auto-detects CUDA. The `sys_platform == 'win32'` marker keeps Linux/CI on the default CPU wheel. (Watch the next CI run to confirm the lock resolves cleanly on Linux.)
-- Re-run SPECTER2 at `--repeat 5` for the symmetric BGE-vs-SPECTER2 confidence-interval comparison.
+- ✅ **SPECTER2 re-run at `--repeat 5` done (2026-06-04).** Symmetric BGE-vs-SPECTER2 on the public corpus — BGE wins all scorers (see Benchmarks-locked block above). bge-base stays default.
+- **Chunking sweep configs 2–6: run on the RTX box.** See [`docs/chunking-sweep-rtx-resume.md`](docs/chunking-sweep-rtx-resume.md) (one command + the destructive-rebuild restore step). Then record the winner and update the Locked-settings chunk-sizes row.
 - Most `expected_answer` fields in `tests/eval/cases.yaml` are best-effort (`author_verified: false`) — refine over time.
 - LNCS colon-separator format + multi-column PDF extraction: known tier-1 citation-extractor weaknesses; cosmetic, deferred.
 
-**Next priority (RESUME HERE — 2026-06-03):** Feature 4a's engine decision is **DONE** — Marker wins, run isolated (see the Active-phase paragraph above + the DEVLOG 2026-06-02 "engine decision" entry for the measured evidence). The remaining 4a *build* is the next PR, in order:
-1. Fix `scripts/eval_marker_tables.py` — replace its in-process `import marker` with a subprocess call to `marker_single` (the current coupling can't resolve; this is also the smallest first step).
-2. Ingest path: gate on `regions.table_candidate_pages` → shell out to isolated `uvx --from marker-pdf marker_single --page_range <those pages>` → parse Marker's markdown tables → splice into the `.md` cache (Enrichment-Layer pattern, mirrors `extract_tables.py`).
-3. Inline de-dup of pymupdf4llm's lossy inline tables.
-4. Table-retrieval eval-hook.
+**Next priority (RESUME HERE — 2026-06-04):** benchmarks locked except the chunking sweep (deferred to RTX). Two open threads:
+
+**A. Chunking sweep on the RTX box** — configs 2–6, one command + restore step in [`docs/chunking-sweep-rtx-resume.md`](docs/chunking-sweep-rtx-resume.md). Then record the winner / confirm defaults and update the Locked-settings chunk-sizes row.
+
+**B. Feature 4a build** — step 1 (`eval_marker_tables.py` → isolated `marker_single`) is ✅ done (2026-06-04). Remaining, in order:
+1. Ingest path: gate on `regions.table_candidate_pages` → shell out to isolated `uvx --from marker-pdf marker_single --page_range <those pages>` → parse Marker's markdown tables → splice into the `.md` cache (Enrichment-Layer pattern, mirrors `extract_tables.py`).
+2. Inline de-dup of pymupdf4llm's lossy inline tables.
+3. Table-retrieval eval-hook.
 
 **Lighter alternatives** if not starting the build: a **demo dry-run** of the 7-question script (in Notion: "Demo Script — doc_assistant", under the doc-assistant page) — verify Q7 actually trips the ⚠ low-confidence path; or the **measurement runs** that are cheap now with GPU (chunking sweep, SPECTER2 `--repeat 5`). A working-app **demo is upcoming** (runs on Anthropic API; `.env` already configured — key present locally, gitignored). **Chunk 2a** (Dual Interpretation; `SYNTHESIS_MODE`, evidence vs interpretation) remains the other main Phase 6 node — needs a code-level spec first. Feature 4b (figure detection / region-level splitting) is unblocked once the 4a build lands.
 
@@ -186,7 +196,7 @@ Post-ingest enrichment layers (citations, metadata, figures/tables coming in Pha
 | Parent-child retrieval | enabled | +0.62 correctness vs single-chunk baseline |
 | Multi-query expansion | disabled | Dilutes reranker; tested twice, regressed both times |
 | Embedding model | BGE-base-en-v1.5 | Stable; Phase 5 makes it swappable; SPECTER2 comparison gates Phase 6 routing |
-| Chunk sizes | parent 2000/200, child 400/50, baseline 1000/200 | Config-driven since 2026-05-31 (`*_CHUNK_SIZE` env vars). **Defaults are historical, never measured** — sweep with `scripts/sweep_chunking.py` before trusting as optimal |
+| Chunk sizes | parent 2000/200, child 400/50, baseline 1000/200 | Config-driven since 2026-05-31 (`*_CHUNK_SIZE` env vars). **Defaults still not fully measured** — sweep (`scripts/sweep_chunking.py`) deferred to the RTX box (configs 2–6); control config previewed on CPU 2026-06-04. See [`docs/chunking-sweep-rtx-resume.md`](docs/chunking-sweep-rtx-resume.md) |
 
 ---
 
@@ -251,12 +261,13 @@ Full roadmap with sub-tasks and deferred improvements in `docs/decisions.md`. PR
 
 ## Known issues
 
+- **Locked `cu130` torch segfaults on the CPU dev box.** The lock pins `torch==2.12.0+cu130` for *all* win32 machines (`sys_platform=='win32'` source) — right for the RTX box, but on the GPU-less CPU box `torch.cuda.is_available()` is False and the **transformer forward pass segfaults** (exit 139) on any eval/sweep. Workaround (committed lock untouched): `uv pip install "torch==2.12.0+cpu" --index-url https://download.pytorch.org/whl/cpu --reinstall-package torch`, then run everything with **`uv run --no-sync`** (a bare `uv run` re-syncs and reverts to `+cu130`). Proper cross-machine fix (GPU as an opt-in uv extra, CPU default everywhere) deferred. Memory: `cpu-box-torch-cu130-segfault`.
 - **Python 3.14 + Chainlit incompatible.** anyio 4.13.0 + starlette breaks Chainlit's static file serving on 3.14 (`NoEventLoopError`). Workaround: `uv run --python 3.12 chainlit run apps/chainlit_app.py`. Dev tools (pytest, ruff, mypy) work fine on 3.14.
 - Section detection regex may misclassify some PDF formats as marginal health — known, non-blocking.
 - **`reference_flagged_ratio` health signal not wired.** Defined in `health.py`/`models.py` but `ingest.py` hardcodes `0.0`. Phase 4 citation extractor populates the data needed to wire it; pending integration into the health score.
 - **Sandbox file-sync issue (recurring).** Edit-tool writes to Windows side sometimes fail to fully sync to the bash sandbox view, causing partial files and stale `.pyc` bytecode. Workarounds: `touch` to force re-read; full rewrites via bash heredocs.
 - **pip-audit:** 28 CVEs in transitive deps (torch, transformers, ollama, joblib, pyjwt, langchain-community). All upstream, none in our code. CI set to `continue-on-error`.
-- **Flaky LLM-judge call on `sbert_motivation`** (public eval). Skipped ~3/5 trials (API timeout / JSON parse failure on that prompt); `llm_judge` mean is over scored trials, not all 50. Non-blocking; inspect the judge JSON-parse path if it persists.
+- **Flaky LLM-judge call on `sbert_motivation`** (public eval). Skipped ~3/5 trials (API timeout / JSON parse failure on that prompt); `llm_judge` mean is over scored trials, not all 50. Non-blocking. **Confirmed still flaky on the 2026-06-04 bge re-run** (scored 2/5) — if it keeps recurring, inspect the judge JSON-parse/timeout path for that specific prompt.
 - **Token/cost tracking is provider-dependent.** `TokenCounter` hooks Anthropic-style callbacks, so real token/cost numbers appear only on the Anthropic path. The Ollama path reports no usage; rather than the old misleading `0 in / 0 out / $0.0000`, the UI now shows an honest "local model — no metered cost (~N output tokens, estimated)" note (chainlit_app, 2026-06-02). True local token counts would need an Ollama-native usage hook.
 
 ### Resolved

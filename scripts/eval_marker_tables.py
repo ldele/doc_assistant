@@ -71,12 +71,18 @@ def _to_marker_page_range(pages: list[int]) -> str:
     return ",".join(str(p - 1) for p in sorted(set(pages)))
 
 
-def _marker_to_markdown(pdf_path: Path, pages: list[int], out_dir: Path) -> str:
+def _marker_to_markdown(
+    pdf_path: Path, pages: list[int], out_dir: Path, *, paginate: bool = False
+) -> str:
     """Run isolated Marker on the gated ``pages`` → markdown.
 
     Shells out to ``marker_single`` (never imports ``marker``), confined to the
     caption-gated candidate pages via ``--page_range``. Returns the markdown
     Marker wrote; raises ``RuntimeError`` if Marker is unavailable or fails.
+
+    ``paginate`` adds ``--paginate_output`` so per-page boundaries survive (the 4a
+    ingest path needs them for page attribution). NOTE: confirm the flag name
+    against the pinned marker-pdf version at build time (see the 4a spec).
     """
     base = _marker_command()
     if base is None:
@@ -93,6 +99,8 @@ def _marker_to_markdown(pdf_path: Path, pages: list[int], out_dir: Path) -> str:
         "--page_range",
         _to_marker_page_range(pages),
     ]
+    if paginate:
+        cmd.append("--paginate_output")
     print("  $ " + " ".join(cmd))
     proc = subprocess.run(cmd, timeout=_MARKER_TIMEOUT_S, check=False)
     if proc.returncode != 0:

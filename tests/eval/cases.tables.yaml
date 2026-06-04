@@ -1,0 +1,33 @@
+# Table-retrieval eval cases — Feature 4a (OPT-IN; NOT part of the headline public eval).
+#
+# These ask questions whose answers live in a TABLE, so they only pass once the
+# Marker table pass has spliced that table into the cache. They are deliberately
+# kept out of cases.public.yaml so the headline eval stays one-command reproducible
+# (no uvx/Marker dependency).
+#
+# To run (on the GPU/RTX box, where Marker runs):
+#   uv run python -m scripts.download_corpus               # the public corpus
+#   uv run python -m doc_assistant.ingest
+#   uv run python -m scripts.extract_tables_marker --apply # splice Marker tables
+#   uv run python -m doc_assistant.ingest                  # pull tables into retrieval
+#   uv run python -m scripts.run_eval --cases tests/eval/cases.tables.yaml --with-llm-judge
+#
+# Conventions match cases.public.yaml. expected_substrings here are TABLE values —
+# verify them against the actual table after the first real Marker pass (the engine
+# eval reproduced DPR's Table 2 faithfully; exact cell values may need a tweak).
+
+- id: dpr_topk_accuracy_table
+  query: On Natural Questions, what is DPR's top-20 and top-100 retrieval accuracy?
+  expected_answer: On the Natural Questions test set, Dense Passage Retrieval reaches roughly
+    78-79% top-20 retrieval accuracy and roughly 85-86% top-100 accuracy, substantially above
+    the BM25 baseline. These figures come from DPR's retrieval results table.
+  expected_substrings:
+  - "78"
+  - "85"
+  - top-20
+  - top-100
+  expected_citations:
+  - dpr_karpukhin_2020
+  tags:
+  - tables
+  - opt-in

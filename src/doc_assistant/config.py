@@ -119,6 +119,11 @@ if SYNTHESIS_MODE not in VALID_SYNTHESIS_MODES:
         f"SYNTHESIS_MODE must be one of {VALID_SYNTHESIS_MODES}, got {SYNTHESIS_MODE!r}"
     )
 
+# Marker table-ingest (Phase 6 / Feature 4a). Concurrent `marker_single`
+# subprocesses in the post-ingest CLI; each loads multi-GB surya models, so the
+# bound is memory, not cores. Raise on a big-VRAM/RAM box; drop to 1 on OOM.
+MARKER_MAX_WORKERS = int(os.getenv("MARKER_MAX_WORKERS", "2"))
+
 
 # ============================================================
 # Chunking configuration (Phase 6 — chunking experiment)

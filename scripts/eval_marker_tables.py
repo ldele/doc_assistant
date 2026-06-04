@@ -32,7 +32,7 @@ from pathlib import Path
 
 from sqlalchemy import select
 
-from doc_assistant.config import DATA_PATH
+from doc_assistant.config import DATA_PATH, MARKER_PYTHON
 from doc_assistant.db.models import Document
 from doc_assistant.db.session import session_scope
 from doc_assistant.regions import analyze_pages
@@ -62,7 +62,7 @@ def _marker_command() -> list[str] | None:
         return [local]
     uvx = shutil.which("uvx")
     if uvx is not None:
-        return [uvx, "--from", "marker-pdf", "marker_single"]
+        return [uvx, "--python", MARKER_PYTHON, "--from", "marker-pdf", "marker_single"]
     return None
 
 

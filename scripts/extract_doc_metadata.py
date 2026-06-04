@@ -24,7 +24,7 @@ from doc_assistant.db.models import Document
 from doc_assistant.db.session import session_scope
 from doc_assistant.metadata_extractor import DocMetadata, extract_metadata
 
-if sys.platform == "win32":
+if sys.platform == "win32" and hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
 
 

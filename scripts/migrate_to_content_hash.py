@@ -25,7 +25,7 @@ from doc_assistant.config import CACHE_PATH, CHROMA_PATH, DOCS_PATH, PC_CHROMA_P
 from doc_assistant.db.models import Document, IngestionEvent
 from doc_assistant.db.session import session_scope
 
-if sys.platform == "win32":
+if sys.platform == "win32" and hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
 
 

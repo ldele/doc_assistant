@@ -35,7 +35,7 @@ from doc_assistant.doc_vectors import (
     load_chunk_embeddings_by_document,
 )
 
-if sys.platform == "win32":
+if sys.platform == "win32" and hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
 
 

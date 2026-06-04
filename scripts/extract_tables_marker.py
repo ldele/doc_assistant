@@ -47,7 +47,7 @@ from doc_assistant.tables_marker import (
 from scripts.eval_marker_tables import _marker_command, _marker_to_markdown
 from scripts.extract_tables import _resolve_cache_path, _resolve_pdf_path
 
-if sys.platform == "win32":
+if sys.platform == "win32" and hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
 
 _OUT_ROOT = DATA_PATH / "tables_debug"

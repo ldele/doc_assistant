@@ -39,7 +39,7 @@ from doc_assistant.regions import analyze_pages
 from doc_assistant.tables import extract_tables_from_pages, render_table_markdown
 from scripts.extract_tables import _resolve_pdf_path
 
-if sys.platform == "win32":
+if sys.platform == "win32" and hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
 
 OUT_DIR = DATA_PATH / "tables_debug"

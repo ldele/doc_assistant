@@ -124,6 +124,12 @@ if SYNTHESIS_MODE not in VALID_SYNTHESIS_MODES:
 # bound is memory, not cores. Raise on a big-VRAM/RAM box; drop to 1 on OOM.
 MARKER_MAX_WORKERS = int(os.getenv("MARKER_MAX_WORKERS", "2"))
 
+# Python version `uvx` resolves the isolated Marker env against. marker-pdf pins
+# deps (e.g. pillow==10.4.0) that have no cp313/cp314 wheels, so a newer default
+# interpreter forces a from-source build that fails. 3.12 has wheels for the whole
+# stack. Only applies to the `uvx` path (an on-PATH `marker_single` is used as-is).
+MARKER_PYTHON = os.getenv("MARKER_PYTHON", "3.12")
+
 
 # ============================================================
 # Chunking configuration (Phase 6 — chunking experiment)

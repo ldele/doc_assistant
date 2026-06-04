@@ -15,6 +15,7 @@ Not a chatbot wrapper: the goal is reliable, grounded answers with the measureme
 ## What it does
 
 - **Grounded answers with inline citations** — page numbers and sections, every passage inspectable.
+- **Evidence vs. interpretation** — each answer separates what your sources actually say from the AI's synthesis (clearly labelled, with per-claim grounding markers you can accept / reject / edit), so an inference is never mistaken for a fact. See [how answers work](docs/how-answers-work.md).
 - **Hybrid retrieval + reranking** — BM25 + vector ensemble, cross-encoder reranker, parent-child chunks.
 - **Citation graph** — extracts references, resolves them against your library, exposes in/out edges.
 - **Measurable quality** — eval harness with 5 scorers and a DuckDB result store.

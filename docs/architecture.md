@@ -20,6 +20,55 @@ Cross-encoder reranker → top 5 passages (parent context returned)
 LLM (Claude or local Ollama) → streamed answer with citations
 ```
 
+### Full pipeline (Mermaid)
+
+The ingest path, the post-ingest enrichment layers, and the query→answer path,
+with the stores they read/write:
+
+```mermaid
+flowchart TD
+    subgraph ING["Ingest (incremental)"]
+        SRC["Sources<br/>PDF · EPUB · HTML · DOCX · MD"] --> EXT["extractors.py"]
+        EXT --> CACHE[("Markdown cache<br/>data/cache")]
+        CACHE --> CHUNK["ingest.py<br/>parent–child chunker"]
+        CHUNK --> EMB["embeddings.py<br/>BGE-base"]
+    end
+
+    subgraph ENR["Enrichment layers — post-ingest · idempotent · sidecar"]
+        REG["regions.py<br/>page classifier"] --> TBL["tables_marker.py / tables.py<br/>Marker · pdfplumber"]
+        CIT["citations.py"]
+        MD["metadata_extractor.py"]
+        DV["doc_vectors.py"]
+    end
+
+    subgraph ST["Stores"]
+        CHROMA[("Chroma<br/>vectors")]
+        SQL[("SQLite<br/>Document · Citation · DocSimilarity<br/>AnswerRecord · AnswerClaim · AnswerReview")]
+    end
+
+    subgraph QRY["Query → Answer"]
+        Q["User query"] --> ROUTE["query_router.py<br/>library vs content"]
+        ROUTE -->|content| RET["pipeline.retrieve<br/>BM25 0.4 + vector 0.6 → top-10"]
+        RET --> RR["cross-encoder rerank<br/>→ top-5 parents (+ scores)"]
+        RR --> GEN["LLM generate<br/>Claude / Ollama (cited)"]
+        GEN --> SYN["synthesis.py — Chunk 2a<br/>evidence (deterministic) + AI interpretation<br/>per-claim markers from rerank scores"]
+        SYN --> PROV["provenance.py<br/>answer record + confidence signals"]
+        PROV -->|flagged only| REV["reviewer.py<br/>LLM reviewer"]
+    end
+
+    EMB --> CHROMA
+    CHUNK --> SQL
+    CIT --> SQL
+    MD --> SQL
+    DV --> SQL
+    TBL -. splices tables .-> CACHE
+    CHROMA --> RET
+    SQL --> ROUTE
+    RR --> PROV
+    SYN --> SQL
+    REV --> SQL
+```
+
 ## Module responsibilities
 
 | Module | Role | Public contract |

@@ -35,3 +35,23 @@ Deterministic-only n=5 (no judge) agrees: `citation_overlap` 1.000 ± 0.000,
 - Deterministic (n=5): 02e31c7c, bf1676d2, 0a99e974, 89300c11, 47238288
 
 Cases are deliberately strict — not tuned to score 1.0.
+
+---
+
+## Reproduced 2026-06-04 (primary CPU box) — baseline locked
+
+Re-ran with the same setup (bge-base, defaults, `--with-llm-judge --repeat 5`,
+judge `claude-haiku-4-5`) on the primary CPU dev box (CPU torch; see DEVLOG
+2026-06-04 for the `cu130`→`+cpu` unblock). Result confirms the reference:
+
+| Scorer | 2026-06-04 mean | Trial-mean std | n_scored | vs 2026-06-01 |
+|---|---:|---:|---:|---|
+| `citation_overlap` | 1.000 | 0.000 | 50 / 50 | exact match |
+| `contains_all` | 0.927 | 0.027 | 50 / 50 | exact match |
+| `llm_judge` | 3.738 | 0.093 | 47 / 50 | −0.16 (judge noise) |
+
+`citation_overlap` and `contains_all` reproduce exactly. `llm_judge` is 0.16
+lower, within run-to-run judge variance; the **same** `sbert_motivation` judge
+call remains flaky (scored 2/5, skipped 3/5 — transient API timeout / JSON
+parse, not a regression). The 2026-06-01 numbers above stand as the locked
+reference. Run ids (`data/eval.duckdb`): e217759f, 6b4cbb1f, c8b534f8, 723eb410, ebc4a9a0.

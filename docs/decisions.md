@@ -981,6 +981,27 @@ Was deferred; now scheduled as Feature 4a under the Phase 6 enrichment layer.
 See `docs/doc-assistant-roadmap.md` and the Phase 6 entry above for the
 implementation plan.
 
+### Expose remaining retrieval knobs — toward a config-complete RAG sandbox
+
+Most of the pipeline is already config-swappable (embedder, chunk sizes, `TOP_K`,
+parent-child, multi-query, PDF extractor, LLM/reviewer/judge backends) and the eval
+harness can measure the effect — so the project already *functions as* a local RAG
+sandbox. Three knobs are still hardcoded, which is exactly what keeps that
+description qualified rather than absolute:
+
+1. **BM25 / vector weights** — literal `[0.4, 0.6]` in `pipeline.py` (`EnsembleRetriever`).
+   Expose as `BM25_WEIGHT` / `VECTOR_WEIGHT` (or a single `HYBRID_WEIGHTS`) env knob.
+2. **Reranker** — `BAAI/bge-reranker-base` hardcoded in `pipeline.py`, always-on. Give
+   it a registry + factory (mirror `embeddings.py`) and a `USE_RERANKER` toggle.
+3. **General config sweep** — only `sweep_chunking.py` exists. Generalize it into a
+   grid runner over any of the above (TOP_K, weights, reranker, toggles), reusing the
+   eval harness, so "vary X and measure" isn't manual for everything but chunking.
+
+Each is a small extension of an existing pattern (the embedder registry and the chunk
+sweep already prove it). Sequence them behind the higher-priority Phase 6 nodes;
+landing all three makes the "local RAG sandbox" claim in the README unqualified.
+Noted 2026-06-04.
+
 ### SPECTER2 for paper-level similarity (gated on use case)
 
 Phase 5 / Feature 3 measurement showed SPECTER2 loses to bge-base on

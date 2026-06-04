@@ -6,10 +6,11 @@ Not a chatbot wrapper: the goal is reliable, grounded answers with the measureme
 
 ## Why this is interesting (engineering)
 
-- **Decisions are measured, not guessed.** TOP_K, parent-child retrieval, and BM25/vector weights were each chosen from experiments; an in-repo eval harness scores the pipeline and tracks it over time. Every non-obvious choice — and what lost — is in [`docs/decisions.md`](docs/decisions.md).
-- **Honest, reproducible benchmarks.** A public eval set runs over a corpus anyone can reconstruct from arXiv, 5 trials, reported as mean ± trial-mean std with caveats stated up front (see [Benchmarks](#benchmarks)). The strategy — what each scorer measures and why — is in [`tests/eval/TESTING.md`](tests/eval/TESTING.md).
-- **Research-integrity layer.** Every answer carries a provenance record (retrieved chunks, model, cost); a separate-context reviewer agent re-grades flagged answers; confidence signals keep the UI quiet on clean answers. Built so AI-assisted output is auditable.
-- **Architecture that scales by addition.** Enrichment layers (citations, doc-vectors, tables) are sidecar modules + idempotent CLI runners that never mutate the chunk store — new capability is a new module, not a rewrite.
+- **Choices come from experiments, not just intuition.** TOP_K, parent-child retrieval, and the BM25/vector mix were each picked by trying them and measuring; an in-repo eval harness scores the pipeline so changes can be tracked over time. The reasoning behind each non-obvious choice — and what didn't make the cut — is in [`docs/decisions.md`](docs/decisions.md).
+- **Reproducible benchmarks.** A public eval set runs over a corpus anyone can rebuild from arXiv — 5 trials, reported as mean ± trial-mean std with the caveats stated alongside (see [Benchmarks](#benchmarks)). What each scorer measures and why is in [`tests/eval/TESTING.md`](tests/eval/TESTING.md).
+- **A research-integrity layer.** Every answer carries a provenance record (retrieved chunks, model, cost); a separate-context reviewer agent can re-grade flagged answers; confidence signals keep the UI quiet on clean ones — the aim being to make AI-assisted output auditable.
+- **Architecture that grows by addition.** Enrichment layers (citations, doc-vectors, tables) are sidecar modules with idempotent CLI runners that don't mutate the chunk store — new capability tends to be a new module rather than a rewrite.
+- **Functions as a local RAG sandbox.** The embedder, chunking, `TOP_K`, parent-child and multi-query retrieval, and the LLM backend (Claude API or local Ollama) are config-swappable, with the eval harness on hand to measure what each change does.
 
 ## What it does
 
@@ -32,7 +33,7 @@ Not a chatbot wrapper: the goal is reliable, grounded answers with the measureme
 | Orchestration | LangChain |
 | Document store | SQLite (via SQLAlchemy) |
 | UI | Chainlit (web) + CLI |
-| PDF extraction | PyMuPDF4LLM (default) or Marker (high-quality fallback) |
+| PDF / table extraction | PyMuPDF4LLM (full-text, default); Marker for tables, run isolated out-of-process (chosen by measurement; ingest wiring in progress) |
 
 ## Setup
 
@@ -176,11 +177,32 @@ The headline benchmark is **reproducible by anyone**: a public demo corpus of th
 | `contains_all` (0-1) | **0.927** | 0.034 | answer surfaces the required facts |
 | `llm_judge` (1-5) | **3.894** | 0.075 | reference-graded answer quality |
 
-`citation_overlap` is **1.000 with zero variance** — retrieval depends only on the deterministic index, so it cites the right paper in all 10 cases, every trial. `contains_all` scores the stochastic generated answer, so single runs wobble (0.88–0.98) around a stable 0.927 mean. `llm_judge` **3.894/5** confirms the answers are genuinely good — the `contains_all` shortfall is phrasing, not correctness. Cases are deliberately strict, not tuned to score 1.0. Committed reference results live in [`tests/eval/baselines/`](tests/eval/baselines/).
+`citation_overlap` is **1.000 with zero variance** — retrieval depends only on the deterministic index, so it cites the right paper in all 10 cases, every trial. `contains_all` scores the stochastic generated answer, so single runs wobble (0.88–0.98) around a stable 0.927 mean. `llm_judge` **3.894/5** suggests the answers hold up — the `contains_all` shortfall looks more like phrasing than missing content. Cases are deliberately strict, not tuned to score 1.0. Committed reference results live in [`tests/eval/baselines/`](tests/eval/baselines/).
 
 One honest caveat: the judge call on `sbert_motivation` is flaky — skipped in 3 of 5 trials (API timeout / JSON parse), so the `llm_judge` mean is over 47 of 50 scores.
 
-> The embedder choice (`bge-base` vs `specter2`) was settled on a separate, non-redistributable corpus and is recorded in [`docs/decisions.md`](docs/decisions.md) → Phase 5 / Feature 3. That comparison is queued to be re-run on this public corpus so the embedder evidence is reproducible too.
+### Embedder comparison — `bge-base` vs `specter2`
+
+`bge-base` is the default because it performed better here — though the better embedder
+depends on the corpus and the setup (these runs index full-document markdown chunks,
+not just abstracts). `specter2` is tuned for scientific papers, which the public corpus
+is, so it seemed worth a look. Same corpus, `--repeat 5`:
+
+| Scorer | `bge-base` | `specter2` |
+|---|---:|---:|
+| `citation_overlap` | 1.000 ± 0.000 | 0.900 ± 0.000 |
+| `contains_all` | 0.927 ± 0.027 | 0.800 ± 0.031 |
+| `llm_judge` | 3.738 ± 0.093 | 3.447 ± 0.090 |
+
+Reproduce the `specter2` arm (the `bge-base` arm is the default run):
+
+```bash
+EMBEDDING_MODEL=specter2 uv run python -m doc_assistant.ingest
+EMBEDDING_MODEL=specter2 uv run python -m scripts.run_eval \
+    --cases tests/eval/cases.public.yaml --with-llm-judge --repeat 5
+```
+
+Numbers + run ids: [`tests/eval/baselines/bge_vs_specter2_public_2026-06-04.md`](tests/eval/baselines/bge_vs_specter2_public_2026-06-04.md).
 
 ### Reproducing
 
@@ -206,11 +228,11 @@ uv run python -m scripts.sweep_chunking --with-embedding --repeat 3
 
 ## Status
 
-**Phase 6 in progress.** Shipped: core RAG (Phase 1); measured quality + eval harness (Phases 2 & 5); document store + library UI (Phase 3); citation graph + doc-similarity edges (Phase 4); and the research-integrity layer — provenance card, heuristic confidence signals, and a separate-context LLM reviewer agent. **264 tests · ~64% coverage · ruff / mypy / bandit clean.**
+**Phase 6 in progress.** Shipped: core RAG (Phase 1); measured quality + eval harness (Phases 2 & 5); document store + library UI (Phase 3); citation graph + doc-similarity edges (Phase 4); the research-integrity layer — provenance card, heuristic confidence signals, and a separate-context LLM reviewer agent; and a provider-agnostic LLM layer (Claude API *or* fully-local Ollama for analysis, reviewer, and judge). **318 tests · ruff / mypy --strict / bandit clean.**
 
-`bge-base` is locked as the default embedder; the comparison that settled it is in [`docs/decisions.md`](docs/decisions.md) → Phase 5 / Feature 3.
+`bge-base` is the default embedder — it performed better in our comparisons, though the better choice depends on the corpus ([`docs/decisions.md`](docs/decisions.md) → Phase 5 / Feature 3; re-checked on the public corpus, see [Benchmarks](#benchmarks)).
 
-**Next (independent, spec'd):** a normalized LLM-provider protocol for fully-local runs (analysis *and* reviewer on Ollama, no API key — [`docs/specs/llm-provider-isolation.md`](docs/specs/llm-provider-isolation.md)), dual-layer evidence/interpretation answers, and pdfplumber table extraction. Full rationale and roadmap: [`docs/decisions.md`](docs/decisions.md), [`docs/doc-assistant-roadmap.md`](docs/doc-assistant-roadmap.md).
+**Next:** figures & tables extraction (Marker as an isolated out-of-process sidecar, gated to detected table pages — engine chosen by measurement) and dual-layer evidence/interpretation answers. The provider-agnostic LLM layer ([`docs/specs/llm-provider-isolation.md`](docs/specs/llm-provider-isolation.md)) has since shipped. Full rationale and roadmap: [`docs/decisions.md`](docs/decisions.md), [`docs/doc-assistant-roadmap.md`](docs/doc-assistant-roadmap.md).
 
 A 60-second walkthrough for first-time readers: [`docs/DEMO.md`](docs/DEMO.md).
 

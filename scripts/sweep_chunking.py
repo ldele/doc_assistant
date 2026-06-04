@@ -40,7 +40,7 @@ from dataclasses import dataclass
 
 @dataclass(frozen=True)
 class ChunkConfig:
-    """One point in the chunking grid. Overlaps default to ~10–12% of size."""
+    """One point in the chunking grid. Overlaps default to ~10-12% of size."""
 
     parent_size: int
     parent_overlap: int
@@ -86,8 +86,12 @@ def _run(cmd: list[str], env: dict[str, str], *, dry_run: bool) -> int:
     return proc.returncode
 
 
-def _eval_cmd(note: str, *, with_embedding: bool, with_llm_judge: bool, repeat: int) -> list[str]:
+def _eval_cmd(
+    note: str, *, cases: str | None, with_embedding: bool, with_llm_judge: bool, repeat: int
+) -> list[str]:
     cmd = [sys.executable, "-m", "scripts.run_eval", "--note", note, "--repeat", str(repeat)]
+    if cases is not None:
+        cmd.extend(["--cases", cases])
     if with_embedding:
         cmd.append("--with-embedding")
     if with_llm_judge:
@@ -103,6 +107,13 @@ def main() -> int:
     )
     parser.add_argument(
         "--repeat", type=int, default=1, help="Eval trials per config (variance). Default 1."
+    )
+    parser.add_argument(
+        "--cases",
+        type=str,
+        default=None,
+        help="Cases YAML passed to run_eval (default: run_eval's own default). "
+        "Use tests/eval/cases.public.yaml to keep the sweep in the verified-10 public regime.",
     )
     parser.add_argument(
         "--dry-run", action="store_true", help="Print the plan without ingesting or evaluating"
@@ -132,6 +143,7 @@ def main() -> int:
 
         eval_cmd = _eval_cmd(
             cfg.note,
+            cases=args.cases,
             with_embedding=args.with_embedding,
             with_llm_judge=args.with_llm_judge,
             repeat=args.repeat,

@@ -326,9 +326,26 @@ See also `docs/decisions.md` for the existing Phase 7 gap-detection intent.
 
 ## Phase 8 — UI Polish
 
-No additions from this roadmap. See `docs/decisions.md`.
-
 If Chunk 2a's adjudication UI shipped rough, this is where it gets polished.
+
+### Settings page — expose the RAG "sandbox" knobs to the user (added 2026-06-04)
+
+Surface the pipeline's config knobs in a GUI settings page so a user can experiment
+without editing `.env`: embedder choice, chunk strategy, `TOP_K`, parent-child and
+multi-query toggles, BM25/vector weights, reranker (model + on/off), and the LLM
+backend (Claude API vs local Ollama). **The benchmarked defaults stay the default** —
+the page presents the alternatives with the measured recommendation pre-selected, not
+a blank slate, so a curious user can try the sandbox without losing the tuned setup.
+
+- **Depends on backend config-exposure first.** Today only some of these are env-driven;
+  BM25/vector weights, the reranker, and a general sweep are still hardcoded (see
+  `decisions.md` → Deferred Improvements → "Expose remaining retrieval knobs — toward a
+  config-complete RAG sandbox"). Wire each knob through `config.py` before surfacing it.
+- **Framework caveat.** A real settings page — alongside the Chunk 2a adjudication UI and
+  the citation-graph view — is part of what forces the Chainlit-vs-X decision (Open
+  Questions in `decisions.md`); Chainlit may not carry it.
+
+Otherwise no additions from this roadmap — see `docs/decisions.md`.
 
 ---
 

@@ -90,7 +90,7 @@ Execution is happening in Claude Code. Source of truth for what to build, in wha
 1. `docs/doc-assistant-roadmap.md` — Implementation order (PR-by-PR) table at the bottom. Each PR is scoped to one chunk with file lists and decision-doc references.
 2. `docs/decisions.md` — locked architectural choices. Every Phase 5+ feature has a subsection. Read the relevant section before starting a PR.
 3. `docs/DEVLOG.md` — append-only log. Add one entry per logical change per project rule.
-4. `docs/specs/` — ready, code-level build specs (file lists, contracts, guard tests) for individual nodes. Currently: `llm-provider-isolation.md`.
+4. `docs/specs/` — ready, code-level build specs (file lists, contracts, guard tests) for individual nodes. Currently: `llm-provider-isolation.md`; `feature-4a-marker-table-ingest.md` (Marker table ingest, grilled 2026-06-04); `chunk-2a-dual-interpretation.md` (dual evidence/interpretation layer, grilled 2026-06-04).
 
 PR-by-PR cadence. Do not bundle multiple PRs. Do not start a PR without reading its `decisions.md` dependency.
 

@@ -1000,6 +1000,8 @@ description qualified rather than absolute:
 Each is a small extension of an existing pattern (the embedder registry and the chunk
 sweep already prove it). Sequence them behind the higher-priority Phase 6 nodes;
 landing all three makes the "local RAG sandbox" claim in the README unqualified.
+Once exposed, these knobs feed the **Phase 8 settings page** (user-facing sandbox, with
+the benchmarked default pre-selected — see `doc-assistant-roadmap.md` → Phase 8).
 Noted 2026-06-04.
 
 ### SPECTER2 for paper-level similarity (gated on use case)

@@ -31,6 +31,15 @@ class TestExecuteCommand:
         result = execute_command("help", "")
         assert "Available commands" in result
 
+    def test_synthesis_reports_mode(self):
+        result = execute_command("synthesis", "")
+        # Reports whichever mode is active (default ai) and explains the modes.
+        assert "Synthesis mode" in result
+        assert "`ai`" in result or "`human`" in result
+
+    def test_help_lists_synthesis(self):
+        assert "/synthesis" in execute_command("help", "")
+
     def test_unknown_command(self):
         result = execute_command("foobar", "")
         assert "Unknown command" in result

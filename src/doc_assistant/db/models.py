@@ -399,6 +399,48 @@ class AnswerReview(Base):
 
 
 # ============================================================
+# AnswerClaim — Phase 6 / Integrity Chunk 2a (dual interpretation).
+# ============================================================
+
+
+class AnswerClaim(Base):
+    """One adjudicable claim segmented from an ``ai``-mode interpretation answer.
+
+    Chunk 2a splits the AI interpretation into citation-anchored claims; each
+    becomes one row here, eager-inserted as ``pending`` when the answer is
+    produced and updated as the user accepts / rejects / edits it. Chunk 3
+    (PRISMA-trAIce) reads this as the human-AI adjudication log.
+
+    One-to-many with AnswerRecord (an answer has N claims).
+    """
+
+    __tablename__ = "answer_claims"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid4()))
+    answer_record_id: Mapped[str] = mapped_column(
+        String,
+        ForeignKey("answer_records.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    # Order of the claim within the answer (0-based).
+    claim_index: Mapped[int] = mapped_column(Integer, nullable=False)
+    claim_text: Mapped[str] = mapped_column(Text, nullable=False)
+    # JSON list of {source_number, filename, page} the claim cites.
+    # Empty list = uncited => an "unsupported" claim.
+    citations_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
+    # Retrieval-derived uncertainty marker: "ok" | "weak" | "unsupported".
+    marker: Mapped[str] = mapped_column(String, nullable=False, default="ok")
+
+    # Adjudication — "pending" until the user acts; then accepted | rejected | edited.
+    decision: Mapped[str] = mapped_column(String, nullable=False, default="pending")
+    edited_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, index=True)
+
+
+# ============================================================
 # IngestionEvent — health audit trail
 # ============================================================
 

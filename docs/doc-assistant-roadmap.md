@@ -315,12 +315,27 @@ A derived, human-readable markdown layer over the RAG corpus: per-topic notes (s
 - 6a — Topic note generator: cluster the library (existing doc vectors / citation graph), emit one markdown note per topic with summary, tags, citations, and `[[links]]` to related notes. Sidecar `data/wiki/`.
 - 6b — Gap signals: compute structural gap markers per note (citation thinness, missing links, single-source claims) — reuses the confidence-signal heuristics already in `provenance.py`.
 - 6c — Refresh + drift: regenerate notes on re-ingest; flag notes whose underlying sources changed.
+- 6d — Obsidian-compatible export: emit `data/wiki/` with YAML frontmatter + `[[wikilinks]]` + a folder-per-community layout so it opens directly as, or merges into, an existing Obsidian vault (the stated complement). A target on the existing generator, not a new layer.
 
 **What NOT to do.** Don't fold this into a separate project, and don't let it tempt a move away from RAG — it's an additive layer. Don't hand-author the notes (that's a normal wiki); they're *derived* and regenerable.
 
 **Effort:** 6a is 1 weekend; 6b/6c 1 evening each.
 
 See also `docs/decisions.md` for the existing Phase 7 gap-detection intent.
+
+### Feature 7 — cross-document concept graph (priority)
+
+A concept/entity graph across the library: nodes = concepts/entities, edges = relations, clustered (Leiden) into communities with high-degree "god nodes" surfaced. Feature 6 clusters *documents* and writes topic notes; this relates *concepts across* documents — the layer that powers real gap detection and gives Feature 6's notes their `[[links]]` automatically. The most important addition from the Graphify review.
+
+**Architecture:** post-ingest enrichment sidecar (same pattern as `citations.py` / `metadata_extractor.py`), NetworkX + graspologic → a `graph.json` artifact. **Not** a graph database (Stonebraker: graph DBMS are rarely the performant choice; this is build-time structure, not a query server). Every edge tagged `EXTRACTED` / `INFERRED` / `AMBIGUOUS`, reusing the integrity layer — no self-reported confidence. Extraction runs on local Ollama (provider protocol) to hold the local-first promise.
+
+**Deliverables (cheap → expensive).**
+
+- 7a — Node/edge extraction per document, merged into a corpus graph (sidecar `data/graph/`), edges integrity-tagged.
+- 7b — Leiden communities + god-node ranking; feed community membership back to Feature 6 as `[[links]]`.
+- 7c — Graph-structure gap signals (isolated nodes, thin bridges) — complements Feature 6's citation-thinness signals.
+
+Depends on PR 1 (doc vectors) + PR 13 (Feature 6).
 
 ---
 
@@ -384,6 +399,17 @@ When the literature review generator produces a review, it also produces a publi
 
 ---
 
+## Ingestion adapters — Zotero / Calibre (later)
+
+Inbound bridges to the libraries doc_assistant complements. **Deferred to near the end of the roadmap** — useful, not urgent; the core RAG + synthesis + concept-graph layers come first.
+
+- **Zotero** — read a BetterBibTeX export (or the Zotero SQLite) → ingest PDFs with title/authors/year/DOI/tags mapped to existing metadata. You already export BibTeX; this is the inbound direction.
+- **Calibre** — *candidate, not committed.* Calibre library = folder + `metadata.db`; same adapter shape if it turns out to be the right fit. Decide when we get here.
+
+One extractor/adapter each; markdown-intermediate means no downstream change. Vendor-neutral, config-gated.
+
+---
+
 ## Implementation order (Claude Code PR-by-PR)
 
 Each row is one PR. Each PR scopes to one chunk, with the files and the `decisions.md` section it depends on. Claude Code can `Read` the referenced section to get full architectural context.
@@ -406,6 +432,8 @@ Each row is one PR. Each PR scopes to one chunk, with the files and the `decisio
 | 13 | Feature 6: self-organizing wiki / synthesis layer | `src/doc_assistant/wiki.py` (new), `scripts/build_wiki.py` (new), gap signals reuse `provenance.py` | 1 weekend (6a) + 1 evening each (6b/6c) | PR 1 (doc vectors) + PR 5 (provenance) |
 | 14 | Integrity Chunk 3: PRISMA-trAIce export | `scripts/export_review_traice.py` (new) | 1 day | Phase 9 work; PRs 5 + 10 |
 | 15 | Feature 5: extract eval harness to standalone repo | New repo | 1 weekend | PR 4 + at least one real measurement run |
+| 16 | Feature 7: cross-document concept graph | `src/doc_assistant/concept_graph.py` (new), `scripts/build_concept_graph.py` (new) | — | PR 1 + PR 13 |
+| 17 | Ingestion adapters: Zotero (Calibre TBD) — later | `src/doc_assistant/extractors.py`, `src/doc_assistant/ingest.py`, `scripts/import_zotero.py` (new) | — | PR 2 |
 
 **Provider protocol (generation side of Feature 1).** Folded into the Feature 1 provider theme — not a new numbered PR. Independent, near-term, no dependency. Files, build node, and guard test: `docs/specs/llm-provider-isolation.md`.
 
@@ -428,6 +456,8 @@ Each row is one PR. Each PR scopes to one chunk, with the files and the `decisio
 - Don't change chunk-size defaults from a single run. Use `--repeat` and beat the control (current default) by more than its variance before re-locking.
 - Don't hand-author the wiki notes (Feature 6). They're derived from retrieval + provenance and regenerable; a hand-edited note drifts and defeats gap detection.
 - Don't treat the wiki layer as a RAG replacement. It's an additive synthesis/index layer on top of the chunk store.
+- Don't make the concept graph (Feature 7) a graph database. NetworkX + a file artifact; no Neo4j/server — it's build-time structure, not a query store.
+- Don't let the Zotero/Calibre adapters leak vendor specifics past the extractor boundary — everything normalizes to the existing metadata schema.
 
 ---
 

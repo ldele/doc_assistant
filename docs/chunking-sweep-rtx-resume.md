@@ -1,5 +1,11 @@
 # Chunking sweep — resume on the RTX box
 
+> ✅ **DONE (2026-06-06).** Full 6-config sweep run on the RTX box (public corpus, n=3,
+> judge). **Defaults confirmed** — no config beats `2000/200 · 400/50`. Results +
+> per-config run-ids: [`tests/eval/baselines/chunking_sweep_public_2026-06-06.md`](../tests/eval/baselines/chunking_sweep_public_2026-06-06.md).
+> CLAUDE.md Locked-settings chunk-sizes row updated. The notes below are retained for
+> historical context / re-run instructions.
+
 **Status (2026-06-04):** deferred to the RTX/GPU box. On the CPU dev box each
 config's re-embed is ~45 min (×6 ≈ 5 h); on the RTX box it's minutes. We ran
 **config 1 (control, the current defaults 2000/200 · 400/50)** on CPU as a preview

@@ -17,6 +17,13 @@ correct. They cannot tell you whether an answer is *good* — only that one come
 back without crashing. That is the eval tier's job, which is why it is separate:
 judging answer quality needs a real corpus, real retrieval, and a real judge.
 
+**Opt-in: table retrieval.** [`cases.tables.yaml`](cases.tables.yaml) is a separate,
+opt-in eval (not part of the one-command public run) that guards table-grounded
+answers — it asks for a value that lives only inside a table and checks the answer
+contains it. It depends on the out-of-process Marker pass, so it's run manually
+after `extract_tables_marker --apply` + `ingest`. It's the regression gate for the
+table-aware chunking described in [`docs/figures-and-tables.md`](../../docs/figures-and-tables.md).
+
 ## Scorers
 
 The harness ([`src/doc_assistant/eval/`](../../src/doc_assistant/eval/)) runs the

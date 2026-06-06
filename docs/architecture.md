@@ -30,7 +30,7 @@ flowchart TD
     subgraph ING["Ingest (incremental)"]
         SRC["Sources<br/>PDF · EPUB · HTML · DOCX · MD"] --> EXT["extractors.py"]
         EXT --> CACHE[("Markdown cache<br/>data/cache")]
-        CACHE --> CHUNK["ingest.py<br/>parent–child chunker"]
+        CACHE --> CHUNK["ingest.py<br/>table-aware parent–child chunker"]
         CHUNK --> EMB["embeddings.py<br/>BGE-base"]
     end
 

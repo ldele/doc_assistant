@@ -34,11 +34,26 @@ _PAGE_DELIM_RE = re.compile(r"\n*\{?\d+\}?-{6,}\n*")
 # A GFM separator row: |---|:--:|---| etc.
 _SEP_ROW_RE = re.compile(r"^\s*\|?\s*:?-{1,}:?\s*(\|\s*:?-{1,}:?\s*)+\|?\s*$")
 
+# A table caption begins a line with "Table N" (optionally headed/bolded). The splice
+# anchors the grid right after it so the caption — the natural query magnet — and the
+# numeric grid stay in one retrievable parent (see ``_place_block_in_span``).
+_CAPTION_RE = re.compile(r"(?im)^[ \t]{0,3}(?:#{1,6}[ \t]*)?(?:\*+[ \t]*)?Table[ \t]+\d+\b")
+
 # Idempotent splice-block wrapper (per page).
 _BLOCK_BEGIN = "<!-- table:{engine}:page={page}:begin -->"
 _BLOCK_END = "<!-- table:{engine}:page={page}:end -->"
 _MARKER_BLOCK_RE = re.compile(
     r"\n*<!--\s*table:marker:page=\d+:begin\s*-->.*?<!--\s*table:marker:page=\d+:end\s*-->\n*",
+    re.DOTALL,
+)
+
+# The atomic span of one spliced per-page table block (begin..end), without the
+# surrounding-newline padding ``_MARKER_BLOCK_RE`` uses for stripping. The chunker
+# (``ingest.build_parent_child_chunks``) keeps this whole so a wide table's header
+# row and numeric data rows never split across parents. Engine-generic: matches any
+# ``table:<engine>:page=N`` block following the ``_BLOCK_BEGIN`` convention.
+TABLE_BLOCK_RE = re.compile(
+    r"<!--\s*table:\w+:page=\d+:begin\s*-->.*?<!--\s*table:\w+:page=\d+:end\s*-->",
     re.DOTALL,
 )
 
@@ -168,15 +183,39 @@ def _page_span(markdown: str, page: int) -> tuple[int, int] | None:
     return start, end
 
 
+def _place_block_in_span(span_text: str, block: str) -> str:
+    """Return ``span_text`` with ``block`` placed at its table's caption.
+
+    The block is attached to the caption with a **single** newline (no blank line in
+    between) so the chunker keeps caption + grid in one parent — the caption is the
+    natural query magnet, the grid holds the values, and they must retrieve together.
+    If no ``Table N`` caption is found in the span the block is appended at the end
+    after a blank line (its own atomic parent), preserving the prior behaviour.
+    """
+    m = _CAPTION_RE.search(span_text)
+    if m is None:
+        return span_text.rstrip() + "\n\n" + block + "\n"
+    para_end = span_text.find("\n\n", m.end())
+    if para_end == -1:  # caption is the last paragraph in the span
+        return span_text.rstrip() + "\n" + block + "\n"
+    before = span_text[:para_end].rstrip()  # up to and including the caption paragraph
+    after = span_text[para_end:].strip()  # remaining page prose
+    return f"{before}\n{block}\n\n{after}\n" if after else f"{before}\n{block}\n"
+
+
 def splice_tables_inline(
     markdown: str, tables: list[MarkerTable], *, engine: str = "marker"
 ) -> str:
     """Splice Marker tables inline at their page region; de-dup the lossy twin.
 
     For each page with tables: strip pymupdf4llm's GFM table(s) within that page's
-    span only, then append the wrapped Marker block at the end of the span. Pages
-    Marker did not process are untouched. Idempotent (prior Marker blocks stripped
-    first). If a page marker is missing, the block is appended at the document end.
+    span only, then place the wrapped Marker block **right after the table caption**
+    (``Table N: ...``), falling back to the span end when no caption is present. The
+    caption is the natural query magnet, so anchoring the grid to it keeps the two in
+    one retrievable parent (the chunker keeps the block whole and absorbs the attached
+    caption). Pages Marker did not process are untouched. Idempotent (prior Marker
+    blocks stripped first). If a page marker is missing, the block is appended at the
+    document end.
     """
     markdown = strip_marker_tables(markdown)
     by_page: dict[int, list[MarkerTable]] = {}
@@ -191,7 +230,7 @@ def splice_tables_inline(
             markdown = markdown.rstrip() + "\n\n" + block + "\n"
             continue
         start, end = span
-        span_text = _strip_gfm_tables_text(markdown[start:end]).rstrip()
-        new_span = span_text + "\n\n" + block + "\n"
+        span_text = _strip_gfm_tables_text(markdown[start:end])
+        new_span = _place_block_in_span(span_text, block)
         markdown = markdown[:start] + new_span + markdown[end:]
     return markdown

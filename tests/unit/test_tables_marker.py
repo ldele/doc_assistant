@@ -126,6 +126,53 @@ def test_splice_places_table_within_its_page_region() -> None:
     assert p2 < blk < p3
 
 
+# A page where the caption sits far above the data: caption near the top, then a wall
+# of prose, then (in the source) the grid. The splice must anchor the grid to the
+# caption, not dump it at the span end — otherwise caption and grid land in different
+# parents and the values become unretrievable (the DPR Table-2 failure, #4a).
+CACHE_MD_CAPTION_FAR = """<!-- page:5 -->
+Table 2: Top-20 & Top-100 retrieval accuracy on test sets.
+
+| Model | Acc |
+| --- | --- |
+| BM25 | 42 |
+
+Lots of intervening prose about training schemes and efficiency here.
+
+## 5.2 Ablation Study
+To understand further how options affect results.
+
+<!-- page:6 -->
+## Conclusion
+"""
+
+MARKER_MD_WIDE = """| Training | Top-20 | Top-100 |
+| --- | --- | --- |
+| DPR | 78.4 | 85.4 |
+"""
+
+
+def test_splice_anchors_block_to_caption_not_span_end() -> None:
+    tables = parse_marker_tables(MARKER_MD_WIDE, [5])
+    out = splice_tables_inline(CACHE_MD_CAPTION_FAR, tables)
+    cap = out.index("Table 2: Top-20 & Top-100")
+    blk = out.index("<!-- table:marker:page=5:begin -->")
+    ablation = out.index("## 5.2 Ablation Study")
+    # Grid is anchored right after the caption — before the intervening prose/heading,
+    # not appended at the end of the page span.
+    assert cap < blk < ablation
+
+
+def test_splice_no_caption_falls_back_to_span_end() -> None:
+    md = "<!-- page:1 -->\nSome prose, no table caption.\n\n<!-- page:2 -->\nEnd.\n"
+    out = splice_tables_inline(md, parse_marker_tables(MARKER_MD_WIDE, [1]))
+    # No "Table N" caption on page 1 → block appended at the span end (own parent).
+    prose = out.index("Some prose")
+    blk = out.index("<!-- table:marker:page=1:begin -->")
+    p2 = out.index("<!-- page:2 -->")
+    assert prose < blk < p2
+
+
 # --- helpers -----------------------------------------------------------------
 
 

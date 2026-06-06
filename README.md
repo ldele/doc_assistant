@@ -50,6 +50,24 @@ uv sync
 cp .env.example .env   # then fill in your API key
 ```
 
+> **Hardware — a GPU is strongly recommended.** The embedder (`bge-base`) and the cross-encoder
+> reranker run **locally** on every ingest and query, so they benefit a lot from GPU acceleration.
+> No device configuration is needed — `sentence-transformers` auto-selects CUDA → MPS → CPU:
+>
+> - **NVIDIA / CUDA** — best supported and the only path benchmarked here: retrieve + rerank ~70 ms
+>   on an RTX 4070. Recommended.
+> - **Apple Silicon (M-series)** — PyTorch's MPS (Metal) backend is auto-detected, so the embedder
+>   and reranker use the Mac's GPU with no config change. Faster than CPU, though generally slower
+>   than a discrete CUDA card and **not benchmarked here** (MPS also occasionally falls back to CPU
+>   for unsupported ops).
+> - **CPU-only** — works (Linux and CI use the CPU PyTorch wheel), so a GPU isn't required — but the
+>   same step is seconds per query, and re-embedding a corpus (ingest / `--rebuild` / the chunking
+>   sweep) is dramatically slower.
+>
+> (The chat LLM is separate — Claude API or local Ollama — so this is about the local embedder +
+> reranker, not the generation model. For local-LLM hardware, see
+> [System requirements](#system-requirements).)
+
 ## Usage
 
 ```bash
@@ -205,6 +223,16 @@ EMBEDDING_MODEL=specter2 uv run python -m scripts.run_eval \
 
 Numbers + run ids: [`tests/eval/baselines/bge_vs_specter2_public_2026-06-04.md`](tests/eval/baselines/bge_vs_specter2_public_2026-06-04.md).
 
+### Chunk sizes
+
+The parent/child chunk sizes are the locked default `2000/200 · 400/50`. A 6-config sweep on
+the public corpus (`--repeat 3`, with judge) checked whether any alternative beats them —
+**none does**: the default is tied-best on `contains_all` (0.933) and best on `llm_judge`
+(3.951), and `citation_overlap` saturates at 1.000 across every config. A larger parent
+(3000/300) was weakest on the judge; a smaller `256/32` child matched the default with lower
+variance but didn't exceed it. So the defaults stand on measurement, not assumption. Full grid
++ run ids: [`tests/eval/baselines/chunking_sweep_public_2026-06-06.md`](tests/eval/baselines/chunking_sweep_public_2026-06-06.md).
+
 ### Reproducing
 
 [`tests/eval/corpus_manifest.yaml`](tests/eval/corpus_manifest.yaml) lists the 10 papers (pinned arXiv versions + SHA-256); `download_corpus.py` fetches them from arXiv (download-only, so arXiv's license is not an issue). [`tests/eval/cases.public.yaml`](tests/eval/cases.public.yaml) is a standalone 10-case set written against them.
@@ -220,11 +248,12 @@ uv run python -m scripts.run_eval --cases tests/eval/cases.public.yaml --with-ll
 
 **Where runs are stored.** Every `run_eval` invocation appends to `data/eval.duckdb` — a binary working log, **gitignored** and regenerated on first run, not a source artifact. Committed, human-readable reference results live in [`tests/eval/baselines/`](tests/eval/baselines/) — diff a new run against those, not the binary DB. The harness is structured for extraction: every file except `adapters.py` is project-agnostic and can be lifted into a standalone repo.
 
-**Chunking sweep** (re-embeds the corpus per config — slow; run against a representative subset):
+**Chunking sweep** (re-embeds the corpus per config — slow; GPU recommended) — the result is
+under [Chunk sizes](#chunk-sizes) above; this reproduces it:
 
 ```bash
 uv run python -m scripts.sweep_chunking --dry-run            # print the grid + commands
-uv run python -m scripts.sweep_chunking --with-embedding --repeat 3
+uv run python -m scripts.sweep_chunking --cases tests/eval/cases.public.yaml --repeat 3 --with-llm-judge
 ```
 
 ## Status
@@ -236,6 +265,34 @@ uv run python -m scripts.sweep_chunking --with-embedding --repeat 3
 **Next:** figures & tables extraction (Marker as an isolated out-of-process sidecar, gated to detected table pages — engine chosen by measurement) and dual-layer evidence/interpretation answers. The provider-agnostic LLM layer ([`docs/specs/llm-provider-isolation.md`](docs/specs/llm-provider-isolation.md)) has since shipped. Full rationale and roadmap: [`docs/decisions.md`](docs/decisions.md), [`docs/doc-assistant-roadmap.md`](docs/doc-assistant-roadmap.md).
 
 A 60-second walkthrough for first-time readers: [`docs/DEMO.md`](docs/DEMO.md).
+
+---
+
+## System requirements
+
+Two workloads can run on your machine: the **retrieval models** — the `bge-base` embedder and the
+cross-encoder reranker — **always** run locally (see the [hardware note](#setup) in Setup), and the
+**chat LLM** runs locally too *if* you choose [Ollama](https://ollama.com) instead of the Claude API.
+With the default API path, only the retrieval models run on your hardware.
+
+If you go fully local, here's the spec for the LLM side, game-spec style. doc_assistant's local
+default is an 8B model (e.g. `llama3.1:8b`, 4-bit quantized):
+
+| Local LLM (Ollama) | Minimum — runs, slow | Recommended — smooth |
+|---|---|---|
+| Compute | x86-64 CPU only | NVIDIA GPU (CUDA, compute capability ≥ 5.0), AMD ROCm, or Apple Silicon (Metal) |
+| VRAM | — (CPU inference) | ≥ 8 GB (an 8B 4-bit model ≈ 5–6 GB) |
+| System RAM | 8 GB | 16 GB |
+| Free disk | ~6 GB (8B weights) | ~10 GB+ |
+
+Bigger models scale up — Ollama's rough rule of thumb is **~8 GB RAM per 7–8B, 16 GB per 13B, 32 GB
+per 33B** (a quantized model that fits entirely in VRAM runs far faster than one spilling to RAM/CPU).
+For the authoritative, current GPU list — NVIDIA compute capability, AMD ROCm cards, Apple Metal — see
+**Ollama's GPU docs: <https://docs.ollama.com/gpu>**.
+
+> **Both at once?** On a single 12 GB consumer card (the RTX 4070 used here), the embedder + reranker
+> (~1.5 GB) and an 8B 4-bit model (~6 GB) coexist comfortably — so the whole pipeline, retrieval *and*
+> generation, runs on one GPU with no cloud calls.
 
 ---
 

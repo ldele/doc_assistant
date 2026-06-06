@@ -29,9 +29,15 @@ from doc_assistant.embeddings import (
     get_embeddings,
 )
 from doc_assistant.extractors import extract_to_markdown, is_supported
+from doc_assistant.tables_marker import TABLE_BLOCK_RE
 
 PAGE_MARKER = re.compile(r"<!--\s*page:(\d+)\s*-->")
 HEADING_MARKER = re.compile(r"^(#{1,6})\s+(.+?)$", re.MULTILINE)
+
+# A table caption is short; never pull a large block of prose into a table's parent
+# when absorbing the caption attached immediately before a spliced table block.
+_MAX_ABSORBED_CAPTION_CHARS = 1000
+_BLANK_LINE_RE = re.compile(r"\n[ \t]*\n")
 
 # Splitter sizes are config-driven (see config.PARENT_CHUNK_SIZE etc.) so a
 # chunking sweep can vary them via env without editing source. The factories
@@ -309,9 +315,60 @@ def upsert_document_in_sqlite(
             return str(document.id)
 
 
+def _split_trailing_paragraph(text: str) -> tuple[str, str]:
+    """Split ``text`` into ``(head, trailing_paragraph)`` at the last blank line.
+
+    The trailing paragraph is everything after the final blank line — the caption the
+    splice attaches (single newline) immediately before a table block. ``head`` is the
+    rest. With no blank line the whole input is the trailing paragraph.
+    """
+    matches = list(_BLANK_LINE_RE.finditer(text))
+    if not matches:
+        return "", text
+    boundary = matches[-1]
+    return text[: boundary.end()], text[boundary.end() :]
+
+
+def _table_aware_parents(text: str) -> list[str]:
+    """Split ``text`` into parent passages, keeping spliced tables retrievable.
+
+    Each spliced table block (``<!-- table:<engine>:page=N:begin -->`` … ``:end -->``)
+    is kept **whole** as a single parent and is **co-located with its caption** (the
+    caption paragraph the splice attached right before it). A wide table otherwise both
+    (a) splits mid-grid across parents and (b) is orphaned from its caption: the
+    caption (e.g. "Table 2: Top-20 & Top-100 retrieval accuracy …") is the natural
+    query magnet, so retrieval surfaces the caption parent while the grid parent — the
+    one holding the numbers — ranks below the candidate pool and never reaches the LLM.
+    Binding caption + grid into one atomic parent makes the caption child map straight
+    back to the values. Non-table prose is chunked normally. See docs/DEVLOG.md
+    2026-06-06.
+    """
+    parents: list[str] = []
+    cursor = 0
+    for m in TABLE_BLOCK_RE.finditer(text):
+        head, caption = _split_trailing_paragraph(text[cursor : m.start()])
+        if len(caption.strip()) > _MAX_ABSORBED_CAPTION_CHARS:
+            head, caption = head + caption, ""  # too long to be a caption — leave it
+        if head.strip():
+            parents.extend(_pc_parent_splitter.split_text(head))
+        block = (caption + m.group(0)).strip()
+        if block:
+            parents.append(block)
+        cursor = m.end()
+    tail = text[cursor:]
+    if tail.strip():
+        parents.extend(_pc_parent_splitter.split_text(tail))
+    return parents
+
+
 def build_parent_child_chunks(text: str, base_metadata: dict[str, Any]) -> list[Document]:
-    """Produce child chunks each carrying its parent text in metadata."""
-    parents = _pc_parent_splitter.split_text(text)
+    """Produce child chunks each carrying its parent text in metadata.
+
+    Table-aware (see ``_table_aware_parents``): spliced table blocks stay whole and
+    travel with their caption, so a wide table's values stay retrievable. Documents
+    without spliced tables chunk exactly as before.
+    """
+    parents = _table_aware_parents(text)
     children: list[Document] = []
     for parent_idx, parent_text in enumerate(parents):
         for child_idx, child_text in enumerate(_pc_child_splitter.split_text(parent_text)):

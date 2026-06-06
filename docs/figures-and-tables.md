@@ -125,6 +125,20 @@ Validated end-to-end: a paper with no `Table N` caption → 0 tables; a paper
 with Table 1 → the real Table 1 data (the prior figure-as-table noise is
 gone).
 
+### Tables are indexed whole, with their caption
+
+A spliced table only helps if its values come back at query time. During
+ingestion, a detected table and its caption (e.g. *"Table 2: …"*) are kept as
+**one retrievable unit** rather than being broken up by the generic text chunker.
+Before this, a wide table could be split so its column labels and its numbers
+landed in different pieces — a question like *"what is the top-100 accuracy?"*
+would match the caption but miss the piece holding the value, so the answer came
+back incomplete. Keeping the caption and the table body together means a table's
+numbers are retrieved alongside the words people actually search for, so
+table-grounded answers are complete. The chunk **sizes** are unchanged (the locked
+`2000/200 · 400/50`); only the grouping is table-aware. Guarded by the opt-in
+[`cases.tables.yaml`](../tests/eval/cases.tables.yaml).
+
 ---
 
 ## Tooling

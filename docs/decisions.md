@@ -937,6 +937,17 @@ Decisions I haven't made yet:
 - **Tier-2 LLM citation fallback.** Deferred until corpus grows or 
   no-section docs become problematic.
 
+- **MCP server interface (external tool access).** Open / unscheduled.
+  Expose the RAG pipeline as an MCP server so external MCP hosts — Claude
+  Desktop, claude.ai connectors — can call the local library as a tool (e.g.
+  a `search_library` / `ask` tool), letting a paid Claude subscription query
+  the user's own documents. Architecturally low-friction: another **thin
+  entrypoint** (`apps/mcp_server.py`) over `pipeline.py`, no core changes,
+  consistent with the `apps/` boundary rule. Open nuance: Claude Desktop can
+  talk to a local **stdio** MCP server directly, but claude.ai **connectors**
+  need a reachable HTTP endpoint + auth — a real consideration for a
+  local-first app. Not yet scoped to a phase.
+
 ---
 
 ## Deferred Improvements

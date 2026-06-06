@@ -410,6 +410,12 @@ One extractor/adapter each; markdown-intermediate means no downstream change. Ve
 
 ---
 
+## External interface — MCP server (later / open)
+
+The outbound counterpart to the ingestion adapters above: expose the RAG pipeline **as** an MCP server so external MCP hosts — Claude Desktop, claude.ai connectors — can call the local library as a tool (e.g. `search_library` / `ask`), letting a paid Claude subscription query the user's own documents. Another **thin entrypoint** (`apps/mcp_server.py`) over `pipeline.py` — no core changes, consistent with the `apps/` boundary rule. Open nuance: Claude Desktop can use a local **stdio** server directly; claude.ai **connectors** need a reachable HTTP endpoint + auth — a real consideration for a local-first app. **Open / unscheduled** — see `decisions.md` → Open Questions.
+
+---
+
 ## Implementation order (Claude Code PR-by-PR)
 
 Each row is one PR. Each PR scopes to one chunk, with the files and the `decisions.md` section it depends on. Claude Code can `Read` the referenced section to get full architectural context.

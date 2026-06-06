@@ -46,7 +46,6 @@ tests/eval/results_*.json
 Thumbs.db
 
 # Other
-chainlit.md
 core.py
 HANDOFF.md
 

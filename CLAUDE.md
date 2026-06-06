@@ -255,6 +255,7 @@ Full roadmap with sub-tasks and deferred improvements in `docs/decisions.md`. PR
 - Embedding model upgrade: BGE-base-en-v1.5 vs SPECTER2 measurement is the gate for Phase 6 per-project routing.
 - Multi-user support: single-user architecture; multi-user needs a DB redesign.
 - Tier-2 LLM citation fallback: deferred until corpus grows or no-section docs become problematic.
+- **MCP server interface (open / unscheduled):** expose the RAG pipeline as an MCP server so external MCP hosts — Claude Desktop, claude.ai connectors — can call the local library as a tool (e.g. `search_library` / `ask`), letting a paid Claude subscription query your documents. Fits the thin-entrypoint pattern (a new `apps/mcp_server.py` over `pipeline.py`, no core changes). Nuance: Claude Desktop can talk to a local stdio server directly, but claude.ai connectors need a reachable HTTP endpoint + auth (a real consideration for a local-first app). Not yet scoped to a phase.
 
 ---
 

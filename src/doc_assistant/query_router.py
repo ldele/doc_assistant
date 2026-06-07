@@ -17,13 +17,24 @@ from doc_assistant.library import library_summary, list_documents
 # Detection patterns
 # ============================================================
 
+# A trailing topical qualifier turns a metadata query into a *content* query:
+# "show my papers" (list the library) vs "show my papers about RAG" (answer from
+# content). When this negative lookahead matches, the pattern declines so the
+# message falls through to the RAG pipeline and gets a real answer by default.
+_TOPIC_WORDS = (
+    "about|on|regarding|concerning|related to|discussing|"
+    "covering|mentioning|that|which|with|where|involving"
+)
+_NOT_TOPICAL = rf"(?!\s+(?:{_TOPIC_WORDS})\b)"
+
 _LIBRARY_PATTERNS = [
     re.compile(p, re.IGNORECASE)
     for p in [
         r"(latest|newest|recent|last)\s+(document|file|paper|pdf)",
         r"how many\s+(document|file|paper|pdf|chunk)",
-        r"(list|show|display)\s+(all\s+)?(my\s+)?(document|file|paper|pdf)",
-        r"what('s| is) in (my |the )?(library|database|collection)",
+        r"(list|show|display)\s+(all\s+)?(my\s+)?(?:documents?|files?|papers?|pdfs?)\b"
+        + _NOT_TOPICAL,
+        r"what('s| is) in (?:my |the )?(?:library|database|collection)\b" + _NOT_TOPICAL,
         r"(library|database|collection)\s+(stats|statistics|summary|overview|status)",
         r"(broken|marginal|unhealthy)\s+(document|file|paper|pdf)",
         r"(document|file|paper)\s+(count|total|number)",
@@ -75,9 +86,7 @@ def answer_library_query(text: str) -> str:
                 key=lambda d: d.added_at or datetime.min,
             )
             date_str = (
-                latest.added_at.strftime("%Y-%m-%d %H:%M")  # type: ignore[union-attr]
-                if latest.added_at
-                else "unknown"
+                latest.added_at.strftime("%Y-%m-%d %H:%M") if latest.added_at else "unknown"
             )
             return (
                 f"**Most recently added:** `{latest.filename}` "

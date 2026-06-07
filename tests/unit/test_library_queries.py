@@ -86,6 +86,21 @@ class TestIsLibraryQuery:
     def test_ignores_content_queries(self, query):
         assert not is_library_query(query), f"Should NOT detect: {query!r}"
 
+    @pytest.mark.parametrize(
+        "query",
+        [
+            # Topic-bearing "list/show" queries are CONTENT questions, not a
+            # request to dump the library — they must fall through to RAG.
+            "show my papers about deep learning",
+            "list my pdfs on retrieval augmented generation",
+            "display all my documents regarding action potentials",
+            "what's in my library about embeddings",
+            "show me papers discussing BM25",
+        ],
+    )
+    def test_topical_list_queries_route_to_content(self, query):
+        assert not is_library_query(query), f"Should NOT detect (topical): {query!r}"
+
 
 # ============================================================
 # Response tests — need DB

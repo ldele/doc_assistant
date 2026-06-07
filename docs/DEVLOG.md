@@ -1362,3 +1362,37 @@ The neuroscience 35-case set stays as the private measured benchmark (the README
 **Verified (RTX, GPU):** re-ran `extract_tables_marker --apply --force --doc <dpr>` (Marker, 44 s, 7 tables, faithful 78.4/85.4) → `ingest --rebuild` → the table parent (caption + 78.4 + 85.4, len 1810) now retrieves at **rank 2 (0.983)**. `run_eval --cases cases.tables.yaml --with-llm-judge`: **`contains_all` 0.750 → 1.000, `llm_judge` 2.333 → 5.000**, `citation_overlap` 1.000. Public eval unchanged (n=1: citation 1.000, contains_all 0.942, judge 3.867 — within the locked bge baseline). 356 unit+integration tests green (+3: caption-anchor splice, no-caption fallback, caption+values-in-one-parent regression in the 4a CI gate).
 **Rejected:** (a) keeping the grid at the span end but emitting a header/caption-enriched child (Option 3) — denormalizes child content and embeddings, more invasive, and the prose caption could still win retrieval; (b) embedding a *copy* of the caption inside the block — risks the prose caption out-ranking the block copy (values still missed) and clutters the cached `.md`. Anchoring + absorbing the original caption needs no duplication.
 **Opens:** the splice anchors on the first `Table N` caption in a page span — fine for one-table pages and the common case; multi-table pages or a caption on the adjacent page fall back to span-end (own atomic parent, still whole, just not caption-co-located). Feature 4b (figure detection / region-level splitting) can refine per-region placement. Nothing committed — awaiting review.
+
+---
+## Session: 2026-06-07 — Retrieval cleanups (Zotero-comparison spillover) + script audit
+
+**Starting from:** comparison of three open-source Zotero RAG projects (papersgpt, aaron-freedman/zotero-rag, Quiet-Signals-Lab/RAG-Assistant). Surfaced borrowable ideas + a code review of our own pipeline.
+**Goal this session:** land the low-risk fixes the review found; audit dead scripts; add the diagnostic that gates the per-source diversity-cap idea.
+
+### scripts/diagnose_crowding.py (new)
+**What:** read-only diagnostic. Runs an eval set through `retrieve` and reports, per query, how many top-k parents come from the same source (histogram + verdict). No store writes.
+**Why:** tests the *premise* behind a proposed per-source diversity cap (RAG-Assistant-for-Zotero borrow) BEFORE building it. Parent-child dedup already gives one passage per parent, so the cap only helps if same-paper crowding actually occurs. Measure first.
+**Opens:** if crowding is common, build the cap with a focused/broad split (a flat cap regresses single-paper-deep questions); if rare, drop the idea. RTX run pending.
+
+### src/doc_assistant/pipeline.py — pin reranker to sigmoid output (Issue A)
+**What:** `CrossEncoder("BAAI/bge-reranker-base")` → now passes a sigmoid activation, resolved from the constructor signature (`_sigmoid_activation_kwarg`: `activation_fn` on ST v4/v5, `default_activation_function` on v3).
+**Why:** the whole integrity layer (provenance thresholds 0.3/0.7, Chunk 2a markers) assumes reranker scores ∈ [0,1]. bge-reranker-base *currently* defaults to sigmoid (confirmed live: `[0.913, 0.050]`), but nothing pinned it — a sentence-transformers upgrade could switch it to raw logits and silently miscalibrate every marker.
+**Rejected:** hardcoding the kwarg name (would `TypeError` on the other ST major); applying sigmoid at `predict()` time (risks double-sigmoid). Regression test added: `tests/integration/test_reranker_scores.py`.
+
+### src/doc_assistant/{config,pipeline}.py — split CANDIDATE_K from TOP_K (Issue C)
+**What:** new `CANDIDATE_K` (default 20, env-driven, guarded `>= TOP_K` at import). Vector retriever `k` and `bm25.k` were hardcoded `10 == TOP_K`; both now read `CANDIDATE_K`.
+**Why:** with the pool == the final cut, the reranker had ~no headroom to reorder. Standard practice: fetch a wider pool, rerank down to TOP_K.
+**Rejected:** defaulting CANDIDATE_K=10 (behaviour-preserving but pointless). **NOTE:** widening the pool CHANGES retrieval output — must be re-measured on the public eval before locking; `CANDIDATE_K=10` reproduces the old behaviour exactly. Guard test: `tests/unit/test_retrieval_config.py`.
+
+### src/doc_assistant/query_router.py — de-misroute topical list queries (Issue B)
+**What:** added a `_NOT_TOPICAL` negative-lookahead to the `list/show/display ... papers` and `what's in my library` patterns. "show my papers about RAG" / "what's in my library about embeddings" no longer match → fall through to the RAG pipeline and get a real answer.
+**Why:** topic-bearing phrasings were being captured by library-metadata detection and answered with a document dump instead of content. Tests added to `test_library_queries.py` (5 topical cases; existing positives still detected).
+
+### CLAUDE.md — structure sync (Issue D)
+**What:** added `tables_marker.py` and `synthesis.py` to the project-structure block; marked `tables.py` (pdfplumber) as LEGACY/fallback, superseded as primary by Marker.
+
+### scripts/ — dead-code audit (12 of 25 orphaned)
+**What:** audited every `scripts/*.py` for references. To DELETE (obsolete/one-off): `run_topk_sweep` (pre-harness artefact), `cleanup_metadata`, `cleanup_stale_chunks`, `dedupe_documents`, `backfill_health`. To ARCHIVE (completed one-time migrations): `migrate_chroma_to_sqlite`, `build_parent_child_index`, `migrate_to_content_hash`. KEPT: dev utilities (`audit_metadata`, `show_unhealthy`, `verify_chroma_sync`, `verify_toggle`, `debug_metadata`). No dead `src/` modules.
+**Opens:** deletes/archive moves staged as explicit commands for review (not executed here — sandbox mount was mid-desync; run on the box).
+
+**Caveat:** edits made via the file tools (authoritative, Windows-side). The bash sandbox mount was stale this session (the recurring sync issue), so `py_compile`/`pytest` could not be trusted here — run `ruff check`, `mypy --strict`, `pytest` on the box to confirm green before commit. Nothing committed.

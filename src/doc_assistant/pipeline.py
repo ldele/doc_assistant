@@ -11,6 +11,7 @@ from sentence_transformers import CrossEncoder
 
 from doc_assistant.config import (
     ANTHROPIC_API_KEY,
+    CANDIDATE_K,
     CHROMA_PATH,
     LLM_MODEL,
     LLM_PROVIDER,
@@ -26,6 +27,29 @@ from doc_assistant.embeddings import (
     get_embeddings,
 )
 from doc_assistant.prompts import ANSWER_PROMPT, MULTI_QUERY_PROMPT, REWRITE_PROMPT
+
+
+def _sigmoid_activation_kwarg() -> dict[str, Any]:
+    """Pin the cross-encoder to sigmoid output ([0, 1]) across sentence-transformers
+    versions.
+
+    The integrity layer (provenance thresholds, Chunk 2a markers) assumes reranker
+    scores are sigmoid-bounded. bge-reranker-base happens to default to sigmoid, but
+    we set it explicitly so a library upgrade can't silently switch it to raw logits
+    and miscalibrate every confidence marker. The constructor kwarg was renamed
+    (``activation_fn`` in ST v4/v5, ``default_activation_function`` in v3), so resolve
+    it from the signature instead of hardcoding a name that could raise ``TypeError``.
+    """
+    import inspect
+
+    from torch import nn
+
+    params = inspect.signature(CrossEncoder.__init__).parameters
+    if "activation_fn" in params:
+        return {"activation_fn": nn.Sigmoid()}
+    if "default_activation_function" in params:
+        return {"default_activation_function": nn.Sigmoid()}
+    return {}
 
 
 class RAGPipeline:
@@ -55,13 +79,13 @@ class RAGPipeline:
         print(f"  BM25 index excludes {excluded} non-retrievable chunks")
         vector = self.db.as_retriever(
             search_kwargs={
-                "k": 10,
+                "k": CANDIDATE_K,
                 "filter": {"keep_for_retrieval": {"$ne": False}},
             }
         )
         if all_docs:
             bm25 = BM25Retriever.from_documents(all_docs)
-            bm25.k = 10
+            bm25.k = CANDIDATE_K
             self.ensemble = EnsembleRetriever(retrievers=[bm25, vector], weights=[0.4, 0.6])
         else:
             # Empty library (fresh install / nothing ingested): BM25Retriever
@@ -72,7 +96,7 @@ class RAGPipeline:
             self.ensemble = EnsembleRetriever(retrievers=[vector], weights=[1.0])
 
         print("Loading reranker...")
-        self.reranker = CrossEncoder("BAAI/bge-reranker-base")
+        self.reranker = CrossEncoder("BAAI/bge-reranker-base", **_sigmoid_activation_kwarg())
 
         print("Loading LLM...")
         self.llm = self._build_llm()

@@ -104,8 +104,19 @@ USE_PARENT_CHILD = (
 # Multi-query expansion
 USE_MULTI_QUERY = os.getenv("USE_MULTI_QUERY", "false").lower() == "true"
 
-# Number of chunks/parents passed to the LLM at query time
+# Number of chunks/parents passed to the LLM at query time (final rerank cut).
 TOP_K = int(os.getenv("TOP_K", "10"))
+
+# Candidate pool size fetched from EACH retriever (vector + BM25) BEFORE
+# reranking. The cross-encoder needs more candidates than it returns to have
+# room to reorder; this was previously hardcoded to 10 == TOP_K in pipeline.py,
+# leaving the reranker almost nothing to do. CANDIDATE_K >= TOP_K is required
+# (guarded below). NOTE: widening this changes retrieval output, so it must be
+# re-measured on the eval harness before being locked. Set CANDIDATE_K=10 to
+# reproduce the pre-split behaviour exactly.
+CANDIDATE_K = int(os.getenv("CANDIDATE_K", "20"))
+if CANDIDATE_K < TOP_K:
+    raise ValueError(f"CANDIDATE_K ({CANDIDATE_K}) must be >= TOP_K ({TOP_K})")
 
 # Synthesis mode (Phase 6 / Integrity Chunk 2a — dual interpretation).
 #   ai    -> dual-layer: deterministic evidence + labelled AI interpretation,

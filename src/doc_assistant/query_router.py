@@ -85,9 +85,7 @@ def answer_library_query(text: str) -> str:
                 with_dates,
                 key=lambda d: d.added_at or datetime.min,
             )
-            date_str = (
-                latest.added_at.strftime("%Y-%m-%d %H:%M") if latest.added_at else "unknown"
-            )
+            date_str = latest.added_at.strftime("%Y-%m-%d %H:%M") if latest.added_at else "unknown"
             return (
                 f"**Most recently added:** `{latest.filename}` "
                 f"({latest.format.upper()}, "

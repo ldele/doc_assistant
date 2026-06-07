@@ -91,6 +91,9 @@ filterwarnings = [
 target-version = "py310"
 src = ["src", "tests"]
 line-length = 99
+# Retained one-time migration scripts, kept for reference only — not maintained,
+# not run. CI lints src/ + tests/ only; excluding here keeps `ruff check .` clean too.
+extend-exclude = ["scripts/archive"]
 
 [tool.ruff.lint]
 select = [
@@ -103,6 +106,11 @@ select = [
     "SIM",  # flake8-simplify
     "RUF",  # ruff-specific
 ]
+
+[tool.ruff.lint.per-file-ignores]
+# audit_metadata prints a "starting" line before its slow langchain imports on
+# purpose (feedback before the multi-second import cost). Allow the early import.
+"scripts/audit_metadata.py" = ["E402"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["doc_assistant"]

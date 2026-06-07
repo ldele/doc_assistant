@@ -87,9 +87,9 @@ def main():
     if id_mismatches:
         print(f"\n⚠ {len(id_mismatches)} documents have different document_ids between stores:")
         for h, bid, pid in id_mismatches[:5]:
-            print(
-                f"    {h[:8]}...: baseline={bid[:8] if bid else 'None'}  pc={pid[:8] if pid else 'None'}"
-            )
+            base = bid[:8] if bid else "None"
+            pc = pid[:8] if pid else "None"
+            print(f"    {h[:8]}...: baseline={base}  pc={pc}")
         issues += 1
     else:
         print("OK document_id linkage consistent across stores")

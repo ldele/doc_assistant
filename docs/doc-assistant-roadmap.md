@@ -334,8 +334,9 @@ A concept/entity graph across the library: nodes = concepts/entities, edges = re
 - 7a — Node/edge extraction per document, merged into a corpus graph (sidecar `data/graph/`), edges integrity-tagged.
 - 7b — Leiden communities + god-node ranking; feed community membership back to Feature 6 as `[[links]]`.
 - 7c — Graph-structure gap signals (isolated nodes, thin bridges) — complements Feature 6's citation-thinness signals.
+- 7d — Knowledge-currency / claim-corroboration layer: claim-level structural weights (corroboration, contradiction, supersession direction — **age is not an input**), projected onto chunks as a `chunk_epistemics` sidecar, surfaced as Chunk 2a evidence markers (`contested`, `superseded_trend`) + a reviewer `contested_evidence` tag. Unique-source claims are neutral, never penalized; no retrieval-rank integration in v1 (eval-gated if ever). Spec: `docs/specs/feature-7d-knowledge-currency.md` (designed 2026-06-10).
 
-Depends on PR 1 (doc vectors) + PR 13 (Feature 6).
+Depends on PR 1 (doc vectors) + PR 13 (Feature 6). 7d additionally depends on 7a–7c + Chunk 2a/2b (shipped).
 
 ---
 

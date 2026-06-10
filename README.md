@@ -68,6 +68,19 @@ cp .env.example .env   # then fill in your API key
 > reranker, not the generation model. For local-LLM hardware, see
 > [System requirements](#system-requirements).)
 
+> **Windows troubleshooting — SSL crash on `uv`-managed Python.** On some Windows machines the
+> app dies instantly with no traceback (`OPENSSL_Uplink(...): no OPENSSL_Applink`) the first time it
+> opens an HTTPS connection — a Claude API call, Ollama, or any networked test. The cause is the
+> OpenSSL in uv's bundled (python-build-standalone) interpreter; an official CPython is unaffected.
+> Fix by rebuilding the venv on an official Python 3.12:
+> ```bash
+> py install 3.12                                                   # official python.org build
+> uv venv --clear --python "$(py -3.12 -c 'import sys;print(sys.executable)')"
+> uv sync --all-extras
+> ```
+> (Behind a TLS-inspecting proxy, prefix uv commands with `UV_NATIVE_TLS=1` so uv trusts the
+> Windows certificate store.) Offline work — ingest, embeddings, retrieval — is unaffected either way.
+
 ## Usage
 
 ```bash

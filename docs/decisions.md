@@ -392,6 +392,36 @@ Merging on a red pipeline is never allowed. Branch protection enforced on `main`
 
 Rationale: mechanical checks before human review. Catching lint/type/security issues in CI is 10x cheaper than finding them in code review or production.
 
+### Cross-machine toolchain — torch backend auto-detect, interpreter left to the box (added 2026-06-10)
+
+The project must run unchanged on a GPU box (RTX, CUDA) and a CPU-only box. Two
+toolchain hazards surfaced; one is fixed in-repo, the other is deliberately left
+to the machine.
+
+**Torch backend — `torch-backend = "auto"`, not a platform pin.** Earlier the uv
+lock pinned `torch==2.12.0+cu130` for *all* `sys_platform == 'win32'`. That forced
+the CUDA wheel onto CPU-only Windows boxes, where the transformer forward pass
+segfaults (exit 139). Replaced with `[tool.uv] torch-backend = "auto"` (drop the
+explicit `pytorch-cu130` index + the `[tool.uv.sources] torch` marker): uv probes
+each machine's accelerator at sync time and resolves the CUDA wheel on the GPU box,
+the CPU wheel everywhere else (incl. CI). One `uv sync` works on every machine; no
+per-box torch swap. Rejected: (a) keeping the win32 pin + a documented manual CPU
+swap (the prior workaround — recurring friction, easy to forget); (b) a GPU-opt-in
+extra (`uv sync --extra gpu`) — explicit and deterministic, but adds a flag the GPU
+box must remember; auto-detect needs nothing. Validated CPU-side (lock resolved the
+`+cpu` wheel, full suite green); GPU-side wants one confirming `uv sync` on the RTX box.
+
+**Interpreter OpenSSL — not pinned in-repo (deliberate).** Separately, the
+uv-managed **Astral python-build-standalone** interpreter ships an OpenSSL that
+hard-crashes (`no OPENSSL_Applink`) on *some* Windows boxes the moment any real SSL
+client is built (`ssl.create_default_context`) — taking down every HTTPS call
+(Anthropic, Ollama) and the SSL-touching tests. An official python.org CPython is
+unaffected; the fix is to rebuild the venv on one. We did **not** encode this as a
+repo-level `python-preference = "system"` + `.python-version`, because the GPU box
+runs fine on the managed build and forcing system-Python resolution could break it.
+Decision: keep it a documented remedy (`.claude/KNOWN_ISSUES.md` + README setup
+note), not an enforced toolchain change — revisit only if more boxes hit it.
+
 ### Security tooling
 
 - `bandit`: SAST on `src/`. HIGH findings block merge. MEDIUM acknowledged in PR.

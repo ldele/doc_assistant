@@ -70,7 +70,7 @@ def main() -> int:
     for case in cases:
         docs = pipe.retrieve(case.query, top_k=args.top_k)
         counts = Counter(_source_key(d.metadata) for d in docs)
-        top_source, top_count = (counts.most_common(1)[0] if counts else ("<none>", 0))
+        top_source, top_count = counts.most_common(1)[0] if counts else ("<none>", 0)
         max_per_query.append(top_count)
         crowded = top_count >= args.threshold
         crowded_queries += int(crowded)

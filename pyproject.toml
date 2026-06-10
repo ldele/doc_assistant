@@ -153,19 +153,13 @@ module = [
 ]
 ignore_missing_imports = true
 
-# --- uv: PyTorch CUDA backend (local GPU, Windows only) -----------------
-# torch is a transitive dep (sentence-transformers / transformers). On Windows
-# it resolves to the CUDA 13.0 build so the RTX GPU drives embeddings + the
-# cross-encoder reranker. The `sys_platform == 'win32'` marker scopes the
-# override: on every other platform (incl. Linux CI) it doesn't match, so torch
-# falls back to the default PyPI (CPU) wheel and cross-platform `uv sync` is
-# unchanged. See docs/DEVLOG.md (2026-06-02).
-[[tool.uv.index]]
-name = "pytorch-cu130"
-url = "https://download.pytorch.org/whl/cu130"
-explicit = true
-
-[tool.uv.sources]
-torch = [
-    { index = "pytorch-cu130", marker = "sys_platform == 'win32'" },
-]
+# --- uv: PyTorch backend auto-detection (per machine) -------------------
+# torch is a transitive dep (sentence-transformers / transformers). `torch-backend
+# = "auto"` makes uv probe each machine's accelerator at sync time and pick the
+# matching wheel: the CUDA build on the RTX GPU box (so embeddings + the
+# cross-encoder reranker run on the GPU), the CPU build on non-GPU boxes and CI.
+# One `uv sync` works everywhere — no win32 pin, no per-machine torch swap.
+# Supersedes the blanket `sys_platform == 'win32'` cu130 pin (DEVLOG 2026-06-02),
+# which forced the CUDA wheel onto CPU-only Windows boxes and segfaulted there.
+[tool.uv]
+torch-backend = "auto"

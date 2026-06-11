@@ -138,8 +138,8 @@ Format: What changed | Why | Rejected alternatives | What it opens
 
 ### docs/decisions.md — Phase 4 extractor decision recorded
 **What:** Replaced "GROBID for academic papers, regex/LLM for others" with the two-tier decision: tier-1 regex on the References section of extracted markdown, tier-2 LLM fallback only for docs where tier-1 yields <5 refs. GROBID and refextract evaluated and deferred until data shows tier-1+2 misses too much. Matching strategy noted: DOI → first-author-last+year → fuzzy title.
-**Why:** Corpus is 27 academic neuroscience PDFs already extracted to markdown — most have parseable References sections. GROBID is heavy operationally (Docker + Java service, ~2GB image, ~1GB RAM live). refextract adds a pure-Python dep but only marginally better than regex on this domain. Measure before escalating.
-**Rejected:** GROBID upfront (heavy install, premature); refextract (marginal gain on neuroscience corpus, adds dep needing approval); single-tier regex only (won't catch messy formats); citation extraction inside `ingest.py` (couples re-extraction to re-embedding, slows ingest).
+**Why:** Corpus is 27 academic PDFs already extracted to markdown — most have parseable References sections. GROBID is heavy operationally (Docker + Java service, ~2GB image, ~1GB RAM live). refextract adds a pure-Python dep but only marginally better than regex on this domain. Measure before escalating.
+**Rejected:** GROBID upfront (heavy install, premature); refextract (marginal gain on domain corpus, adds dep needing approval); single-tier regex only (won't catch messy formats); citation extraction inside `ingest.py` (couples re-extraction to re-embedding, slows ingest).
 **Opens:** Tier-1 recall measurement decides tier-2. If tier-1+2 still misses too much, GROBID escalation is the next step.
 
 
@@ -152,7 +152,7 @@ Format: What changed | Why | Rejected alternatives | What it opens
 ### docs/decisions.md + CLAUDE.md (both repos) — Phase 3 → Phase 4 status sync
 **What:** Marked Phase 3 ✅ complete. Updated known-issues block (removed "hash migration pending"; added `reference_flagged_ratio` wiring note). Recorded the Phase 4 extractor decision in decisions.md: two-tier regex + LLM, deferred GROBID/refextract.
 **Why:** Memory and DB state confirmed Phase 3 was actually done. Status had drifted.
-**Rejected:** GROBID (heavy operationally — Docker + Java service); refextract (marginal gain on neuroscience corpus, adds dep).
+**Rejected:** GROBID (heavy operationally — Docker + Java service); refextract (marginal gain on domain corpus, adds dep).
 **Opens:** Tier-1 recall measurement decides whether tier-2 LLM fallback is needed.
 
 ### src/doc_assistant/citations.py (new)
@@ -240,7 +240,7 @@ Format: What changed | Why | Rejected alternatives | What it opens
 **Opens:** UI framework decision still deferred to Phase 8 — Chainlit will hit limits on the adjudication UI in Chunk 2a.
 
 ### CLAUDE.md (Cowork project folder mirror)
-**What:** Mirrored the canonical CLAUDE.md to `C:\Users\LDELEZ\Documents\Claude\Projects\Documentation Assistant\CLAUDE.md`. Both files are now identical.
+**What:** Mirrored the canonical CLAUDE.md to `<cowork-mirror>/CLAUDE.md`. Both files are now identical.
 **Why:** Cowork sessions read this copy; GitHub is canonical. Drift between them is what made this session necessary in the first place.
 **Opens:** Manual sync each time canonical changes. Could automate later; not blocking.
 
@@ -332,7 +332,7 @@ Format: What changed | Why | Rejected alternatives | What it opens
 **What:** Pure-function module that projects `Document` rows into BibTeX. Three-way entry classification: `@article` for `(format ∈ {pdf, epub, html}) AND authors AND year`; `@misc` with `howpublished={Personal note}` for `.md`/`.txt`; `@misc` with filename-as-title for everything else. Citation key generation: `<surname>_<year>` for papers via the existing `_first_author_surname` from `citations.py`; `note_<safe_filename_stem>` for notes; `misc_<short_id>` fallback. Collisions resolved with `a`/`b`/`c`... suffixes in document-id order. LaTeX escaping wraps values in `{...}` and escapes any embedded `{` or `}`; newlines collapse to single spaces (multi-line fields confuse downstream consumers). Helpful that `&`, `%`, `$`, `#`, `_` are all safe inside `{...}` per BibTeX semantics, so no further escaping needed.
 **Why:** User asked for a "document list generated" with "sources in BibTeX" for papers/books and a note-with-filename entry for notes. One module, two consumers (CLI + slash command).
 **Rejected:** `bibtexparser` dependency (overkill for the project's scale; adds CVE surface). Per-author parsing into separate `{Surname, F.}` fields (the DB stores `authors` as an opaque string; restructuring requires the metadata extractor to do better first).
-**Opens:** Surfacing pre-existing metadata-extractor quirks — `andrew_2017` should be `rajpurkar_2017` (author string lacks separators; surname picker falls back to last name, documented limitation in `citations.py:362`); a few NIH PMC PDFs misextract the boilerplate "Published in final edited form as:" as the title.
+**Opens:** Surfacing pre-existing metadata-extractor quirks — a misparsed author surname (e.g. `surname_2017` mismatch) (author string lacks separators; surname picker falls back to last name, documented limitation in `citations.py:362`); a few NIH PMC PDFs misextract the boilerplate "Published in final edited form as:" as the title.
 
 ### scripts/export_bibtex.py (new) — CLI runner
 **What:** Calls `export_bibtex()`, writes `docs/library.bib` by default; `--stdout` and `--out <path>` for alternatives. Always regenerates the file wholesale on each run.
@@ -444,7 +444,7 @@ Format: What changed | Why | Rejected alternatives | What it opens
 **Opens:** `--diff <run_a> <run_b>` subcommand for comparison view — useful but deferred until there are real runs to compare.
 
 ### tests/eval/cases.yaml — 3-case stub
-**What:** Three neuroscience questions inspired by the user's actual corpus (Hodgkin-Huxley membrane current, Hebb's learning rule, connectomics overview) demonstrating each optional field. Real 30-50 case set lands in PR 4.
+**What:** Three domain questions inspired by the user's actual corpus (three representative domain topics) demonstrating each optional field. Real 30-50 case set lands in PR 4.
 **Why:** Smoke-testable; teaches the YAML format by example.
 
 ### tests/unit/test_eval_*.py — 43 unit tests
@@ -460,7 +460,7 @@ Format: What changed | Why | Rejected alternatives | What it opens
 **Unresolved:**
 - Adapter not exercised end-to-end against a real RAGPipeline (would require an API call and a loaded HF model; cost trade-off favours waiting for PR 4 when there's a real eval set to run).
 - Cases.yaml has only 3 demo cases — too small for meaningful measurement. PR 4 populates with 30-50 real cases.
-**Next:** PR 4 — Populate the eval set with real neuroscience questions, run the BGE vs SPECTER2 comparison the user is currently setting up, write a "Benchmark results" section in README.
+**Next:** PR 4 — Populate the eval set with real domain questions, run the BGE vs SPECTER2 comparison the user is currently setting up, write a "Benchmark results" section in README.
 
 ---
 
@@ -476,7 +476,7 @@ Format: What changed | Why | Rejected alternatives | What it opens
 **Rejected:** Storing skipped scores as `value = NaN` (changes the data model; ripple effects in JSON serialisation and SQL aggregates). Dropping the skipped rows at persist time (loses information; can't later distinguish "scorer threw" from "scorer wasn't applicable").
 
 ### PR 4 — Real eval set (`tests/eval/cases.yaml`, 35 cases)
-**What:** Replaced the 3-case stub with 35 cases distributed across foundational neuroscience (10), connectomics & brain networks (8), modern eLife papers (4), animal-behavior/DeepLabCut tools (5), ML & clinical applications (4), anatomy/imaging (3), plus one negative-control case (asks about RLHF — should produce a hedge or "not in library" response). Each case has `query`, `expected_answer`, `expected_substrings`, `expected_citations`, `tags`, and `metadata.author_verified` (only 4 cases truly author-verified; the rest are best-effort and flagged for reviewer attention).
+**What:** Replaced the 3-case stub with 35 cases distributed across foundational domain topics (10), sub-domain A (8), modern eLife papers (4), tooling topics (5), applied topics (4), sub-domain B (3), plus one negative-control case (asks about RLHF — should produce a hedge or "not in library" response). Each case has `query`, `expected_answer`, `expected_substrings`, `expected_citations`, `tags`, and `metadata.author_verified` (only 4 cases truly author-verified; the rest are best-effort and flagged for reviewer attention).
 **Why:** Without a real eval set, "the harness works" was a claim. With 35 questions across the corpus, BGE vs SPECTER2 becomes a measurement.
 **Rejected:** Auto-generating cases via the LLM (biased toward what the model already understands about each paper). Crowdsourcing (out of scope). Larger sample (writing 50 high-quality cases is a multi-hour task; 35 is enough for a first signal).
 **Opens:** Most expected_answers are unverified. Effect sizes <0.1 should not be trusted yet. **User to review and refine the eval set over time** — this is a living artefact.
@@ -484,7 +484,7 @@ Format: What changed | Why | Rejected alternatives | What it opens
 
 ### PR 4 — Hardened LLM judge (per user request)
 **What:** Rewrote `_JUDGE_PROMPT` to explicitly instruct the model to use only the reference as ground truth — "Do NOT use your own prior knowledge of the subject. If the candidate says something true in general but not in the reference, that is NOT supported." Set `temperature=0` for reproducible scores. Added isolation guarantees to docstring + a one-line inline comment in the call: single-turn, no system prompt, no conversation history, fresh API request per call. Two new unit tests assert the prompt content and the isolation properties (call_kwargs check on the mocked client).
-**Why:** User flagged the judge could be biased by Claude's familiarity with famous neuroscience papers (HH, Hebb, Hubel-Wiesel). The prompt change forces strict reference-only grading; `temperature=0` removes run-to-run noise.
+**Why:** User flagged the judge could be biased by Claude's familiarity with famous domain papers (well-known foundational works). The prompt change forces strict reference-only grading; `temperature=0` removes run-to-run noise.
 **Rejected:** Hiding the question from the judge (loses relevance dimension). Using a less domain-aware model (no good option — even Haiku knows the classics).
 
 ### PR 4 — Measurement (run 2 with hardened judge)
@@ -501,7 +501,7 @@ Format: What changed | Why | Rejected alternatives | What it opens
 **Headline:** bge-base wins on every comparable scorer. The gap on llm_judge **widened** from +0.101 (soft judge) to +0.226 (hardened judge) — that's the opposite of what you'd see if the soft judge had been gaming the scores; the signal is real.
 
 ### PR 4 — Why SPECTER2 lost
-**What:** Investigated the methodological question raised by the user — why would SPECTER2 (academic-paper embedder) lose on a neuroscience corpus? Answer: it was trained for a different task than chunk-level QA retrieval.
+**What:** Investigated the methodological question raised by the user — why would SPECTER2 (academic-paper embedder) lose on a domain corpus? Answer: it was trained for a different task than chunk-level QA retrieval.
 - SPECTER2 training signal: triplet loss over (anchor paper, cited paper, uncited paper) using **title + abstract only**.
 - Our task: retrieve the right *chunk* (400-2000 chars from a methods/results section) for a natural-language question.
 - Two domain mismatches: paper-level vs chunk-level, abstract vs full text. SPECTER2 has never seen "a paragraph from a methods section" during training.
@@ -754,7 +754,7 @@ Constants live in the module (WEAK_RETRIEVAL_THRESHOLD, SCORE_CLUSTER_SPAN, SCOR
 ### Identifying the user's actual flake
 **What:** Ran `Store.flaky_cases` against the user's 5 run_ids. Result:
 - `llm_judge / fakhar_optimal_communication` — scored 2, skipped 3 (the structural flake)
-- `llm_judge / directed_connectomics_bicommunity` — scored 4, skipped 1 (random)
+- `llm_judge / directed_subdomain_case` — scored 4, skipped 1 (random)
 - `llm_judge / liu_axonal_projections` — scored 4, skipped 1 (random)
 - `llm_judge / rajpurkar_arrhythmia` — scored 4, skipped 1 (random)
 
@@ -831,14 +831,14 @@ Both downstream gaps are several standard deviations — the BGE > SPECTER2 resu
 **Goal this session:** Make the evaluation corpus reproducible by a third party without redistributing copyrighted material.
 
 ### tests/eval/corpus_manifest.yaml (new)
-**What:** One entry per source doc (all 51), generated from `library.db`: filename, title, year, DOI, best-effort download URL, `direct_pdf` flag, publisher, license, tier (`open` / `open-repo` / `restricted`), `committed`, `referenced_by_eval`, sha256, bytes. Tally: 18 CC-BY (eLife/Frontiers), 13 open-repo (arXiv/bioRxiv/NeurIPS/PMC), 20 restricted (Springer/Nature, Elsevier/Cell, IEEE, books/historical).
+**What:** One entry per source doc (all 51), generated from `library.db`: filename, title, year, DOI, best-effort download URL, `direct_pdf` flag, publisher, license, tier (`open` / `open-repo` / `restricted`), `committed`, `referenced_by_eval`, sha256, bytes. Tally: a mix of CC-BY, open-repo, and restricted-license sources.
 **Why:** The manifest is the authoritative, legally-clean record of what the corpus *is*. sha256 lets a re-fetch confirm byte-identity with the locked measurements. License/tier classification keeps redistribution honest.
 **Rejected:** Guessing licenses from filenames — pulled DOIs/titles from `library.db` and verified the CC-BY claim on every committed file by grepping the PDF first page for the Creative Commons statement.
 
 ### tests/eval/corpus/ (new — 6 PDFs + LICENSES.md)
-**What:** The only documents committed to the repo: 6 verified CC-BY 4.0 papers (5 eLife + 1 Frontiers), all referenced by an eval case, ~28.9 MB total. `LICENSES.md` carries full per-file citation + CC-BY attribution (redistribution requirement).
+**What:** The only documents committed to the repo: 6 verified CC-BY 4.0 papers, all referenced by an eval case, ~28.9 MB total. `LICENSES.md` carries full per-file citation + CC-BY attribution (redistribution requirement).
 **Why:** Lets the public eval run on a fresh clone with zero downloads. CC-BY is the only license that permits redistribution; everything else is referenced, not shipped. Path is outside `data/sources/`, so it escapes the gitignore without un-ignoring runtime data.
-**Rejected:** Committing all eval-referenced docs (~33, incl. the two 16 MB eLife and copyrighted foundational papers) — illegal for the copyrighted ones and bloats the repo. Kept the committed set small, CC-BY-only, and case-covering.
+**Rejected:** Committing all eval-referenced docs (~33, incl. the larger and copyrighted foundational papers) — illegal for the copyrighted ones and bloats the repo. Kept the committed set small, CC-BY-only, and case-covering.
 
 ### tests/eval/cases.public.yaml (new)
 **What:** 6-case subset of `cases.yaml` — exactly the cases whose `expected_citations` are fully satisfied by the committed CC-BY docs (one per committed doc). Verbatim copies of the source cases with a header noting `cases.yaml` stays the source of truth.
@@ -847,7 +847,7 @@ Both downstream gaps are several standard deviations — the BGE > SPECTER2 resu
 ### scripts/download_corpus.py (new)
 **What:** Rebuilds the corpus from the manifest into `data/sources/`. Committed docs copied from the repo; `direct_pdf` docs (arXiv/bioRxiv) downloaded via stdlib urllib; other open-access docs printed as manual links (landing pages, not direct PDFs — avoids saving HTML as `.pdf`); restricted docs skipped with their DOI printed. Every fetch sha256-checked against the manifest (mismatch = warning, since publishers re-render PDFs). Flags: `--public-only`, `--verify-only`, `--dry-run`.
 **Why:** Turns the manifest into one-command corpus reconstruction without shipping copyrighted bytes. Dry-run accounting: 6 committed + 6 direct-PDF + 19 manual-open + 20 restricted = 51, 0 failures.
-**Rejected:** Auto-downloading eLife/Frontiers PDFs from landing-page URLs — no stable direct-PDF pattern; would silently save HTML. Only arXiv/bioRxiv get a real direct-PDF URL; the rest are honest manual links.
+**Rejected:** Auto-downloading restricted-publisher PDFs from landing-page URLs — no stable direct-PDF pattern; would silently save HTML. Only arXiv/bioRxiv get a real direct-PDF URL; the rest are honest manual links.
 
 ### Docs
 **What:** README `Reproducing` section rewritten with a 4-step flow (get corpus → public eval → full benchmark → chunking sweep) and a public-eval line added to `Running tests`. Roadmap chunking-sweep section marks the repeatability TODO closed (2026-06-01). Added a **deferred backlog note** under Integrity Chunk 2a: surface research integrity as a first-class README + `docs/research-integrity.md` pillar **only after Chunk 2a ships** (docs should describe real behaviour, not aspiration) — per user intent that integrity show up both in docs and in how the AI behaves at answer time.
@@ -865,19 +865,19 @@ Both downstream gaps are several standard deviations — the BGE > SPECTER2 resu
 
 ## Session: 2026-06-01 (cont.) — Public corpus reworked to the project's own literature (RAG/LLM)
 
-**Starting from:** Earlier today the public corpus was a 6-doc CC-BY subset of the neuroscience library. User asked for two changes: bump the count (~5 → ~10) and re-theme the corpus to the literature *behind the project* (RAG, embedders, rerankers, LLM eval). Packaging-only; no `src/` changes.
+**Starting from:** Earlier today the public corpus was a 6-doc CC-BY subset of the document library. User asked for two changes: bump the count (~5 → ~10) and re-theme the corpus to the literature *behind the project* (RAG, embedders, rerankers, LLM eval). Packaging-only; no `src/` changes.
 
 **Decision — public corpus = the papers this project implements, download-only from arXiv.**
-The neuroscience 35-case set stays as the private measured benchmark (the README BGE-vs-SPECTER2 numbers depend on it). The RAG-literature set becomes a *separate* clone-and-run demo corpus with its own standalone cases — it is NOT a subset of `cases.yaml`. Re-themeing means new cases are mandatory: the old neuroscience questions cannot score against CS papers.
+The 35-case set stays as the private measured benchmark (the README BGE-vs-SPECTER2 numbers depend on it). The RAG-literature set becomes a *separate* clone-and-run demo corpus with its own standalone cases — it is NOT a subset of `cases.yaml`. Re-themeing means new cases are mandatory: the old domain questions cannot score against CS papers.
 **Why download-only:** all 10 are on arXiv under the arXiv non-exclusive license, which permits downloading but not re-hosting. Fetching from arXiv (vs committing PDFs) sidesteps every per-paper license question — verified RAG (2005.11401) and DPR (2004.04906) are `nonexclusive-distrib`; none of the 10 print a CC license. So nothing is committed; the script downloads.
 **Rejected:** committing the PDFs (re-hosting risk, and unnecessary since arXiv direct-PDF download is reliable — confirmed end-to-end in-sandbox, 10/10, all sha256 match).
 
 ### tests/eval/corpus_manifest.yaml — rewritten (10 arXiv papers)
-**What:** Replaced the 51-doc neuroscience manifest with 10 entries: RAG (Lewis 2020), DPR (Karpukhin 2020), SBERT (Reimers 2019), C-Pack/BGE (Xiao 2023), SciRepEval/SPECTER2 (Singh 2022), BERT re-ranking (Nogueira 2019), ColBERT (Khattab 2020), HyDE (Gao 2022), LLM-as-a-judge (Zheng 2023), AI Usage Cards (Wahle 2023). Each: pinned arXiv id+version, title, authors, year, direct-PDF url, abstract url, sha256, bytes, `tier: arxiv`, `direct_pdf: true`, `committed: false`. Total 12.3 MB.
+**What:** Replaced the 51-doc domain manifest with 10 entries: RAG (Lewis 2020), DPR (Karpukhin 2020), SBERT (Reimers 2019), C-Pack/BGE (Xiao 2023), SciRepEval/SPECTER2 (Singh 2022), BERT re-ranking (Nogueira 2019), ColBERT (Khattab 2020), HyDE (Gao 2022), LLM-as-a-judge (Zheng 2023), AI Usage Cards (Wahle 2023). Each: pinned arXiv id+version, title, authors, year, direct-PDF url, abstract url, sha256, bytes, `tier: arxiv`, `direct_pdf: true`, `committed: false`. Total 12.3 MB.
 **Why:** Self-referential demo — the RAG assistant answering questions about the papers that define RAG. sha256 pins the exact bytes the cases were authored against.
 
-### tests/eval/corpus/ — neuroscience PDFs removed, replaced with README
-**What:** Deleted the 6 committed eLife/Frontiers PDFs + `LICENSES.md`; added `README.md` explaining the corpus is download-only from arXiv and is a demo set separate from the private benchmark.
+### tests/eval/corpus/ — corpus PDFs removed, replaced with README
+**What:** Deleted the 6 committed CC-BY PDFs + `LICENSES.md`; added `README.md` explaining the corpus is download-only from arXiv and is a demo set separate from the private benchmark.
 **Why:** Nothing is re-hosted anymore, so the committed-PDF dir is obsolete.
 
 ### tests/eval/cases.public.yaml — 10 new cases (rewritten)
@@ -887,13 +887,13 @@ The neuroscience 35-case set stays as the private measured benchmark (the README
 **What:** Dropped `--public-only` (no committed subset to gate on). Downloads `direct_pdf` arXiv URLs; `_check` now skips when `sha256` is absent and treats a mismatch as a warning (arXiv re-renders); `_download` rejects non-PDF bodies (landing-page guard). Kept the `committed:` branch as forward-compat for any future CC-licensed in-repo paper. **End-to-end verified in-sandbox:** `--dest /tmp` downloaded all 10 from arXiv, all sha256 matched, `--verify-only` re-confirmed.
 
 ### Docs
-**What:** README `Reproducing` rewritten — two corpora (private benchmark vs public arXiv demo), public eval is now download-from-arXiv + `cases.public.yaml`; `Running tests` public-eval block updated; step numbering fixed. Roadmap repeatability note updated from the neuroscience-subset wording to the arXiv download-only approach.
+**What:** README `Reproducing` rewritten — two corpora (private benchmark vs public arXiv demo), public eval is now download-from-arXiv + `cases.public.yaml`; `Running tests` public-eval block updated; step numbering fixed. Roadmap repeatability note updated from the private-subset wording to the arXiv download-only approach.
 
 ### Session end
-**Done:** Public corpus is now 10 arXiv papers on the project's own methods, download-only (zero re-hosting / zero license exposure), with a standalone 10-case eval. Script proven end-to-end against live arXiv. Private neuroscience benchmark untouched.
+**Done:** Public corpus is now 10 arXiv papers on the project's own methods, download-only (zero re-hosting / zero license exposure), with a standalone 10-case eval. Script proven end-to-end against live arXiv. Private private benchmark untouched.
 **Unresolved / handoff:**
 - Run locally before merge: `uv run ruff check src/ tests/`, `uv run mypy src`, `uv run pytest` (CI does not lint `scripts/`, but `download_corpus.py` is clean).
-- First real public-eval run: `download_corpus` → `ingest` → `run_eval --cases tests/eval/cases.public.yaml`. Ingesting these into `data/sources/` mixes them with any existing library — point `--dest`/a scratch index at a clean dir if you want the public corpus isolated from your neuroscience library.
+- First real public-eval run: `download_corpus` → `ingest` → `run_eval --cases tests/eval/cases.public.yaml`. Ingesting these into `data/sources/` mixes them with any existing library — point `--dest`/a scratch index at a clean dir if you want the public corpus isolated from your document library.
 - `expected_answer` wording is abstract-grounded but author-phrased; tighten if the LLM-judge scores look off.
 **Next:** Unchanged priorities — LLM-provider protocol, Chunk 2a, Feature 4a; local chunking-sweep measurement; research-integrity docs pillar still backlogged behind Chunk 2a.
 
@@ -932,9 +932,9 @@ The neuroscience 35-case set stays as the private measured benchmark (the README
 
 **Reading:**
 - `citation_overlap` stable at 1.000 — depends only on retrieval, which is solid across both runs.
-- `contains_all` moved 0.917 → 0.883 between runs. It scores the *generated* answer, which is stochastic, so it has run-to-run variance; this is noise, not a regression. (`--repeat N` would quantify it as mean ± std, as the neuroscience benchmark does.)
+- `contains_all` moved 0.917 → 0.883 between runs. It scores the *generated* answer, which is stochastic, so it has run-to-run variance; this is noise, not a regression. (`--repeat N` would quantify it as mean ± std, as the private benchmark does.)
 - `llm_judge` = 3.867/5 — answers are genuinely good. Confirms the `contains_all` shortfall is wording, not correctness: judge rates the answers well even when strict substrings miss.
-- Higher than the neuroscience benchmark's ~2.2/5 because the public cases have abstract-grounded `expected_answer`s (author_verified:true), whereas most neuroscience references are best-effort — the reference-only judge credits good references.
+- Higher than the private benchmark's ~2.2/5 because the public cases have abstract-grounded `expected_answer`s (author_verified:true), whereas most domain references are best-effort — the reference-only judge credits good references.
 
 **Decision:** Filled the README baseline table with both run ids and the variance caveat. Cases stay strict.
 
@@ -1048,7 +1048,7 @@ The neuroscience 35-case set stays as the private measured benchmark (the README
 ### src/doc_assistant/tables.py (new)
 **What:** Pure-ish enrichment module. `ExtractedTable` dataclass (page, doc-wide index, rows). `extract_tables(pdf_path)` is the only impure fn (lazy-imports pdfplumber, opens the PDF). Rendering/splicing are plain string transforms: `render_table_markdown` (GitHub table + per-table marker `<!-- table-extracted-by: pdfplumber page=N table=M -->`), `splice_tables`/`strip_spliced_tables`/`has_spliced_tables`. All tables live in ONE demarcated block (`<!-- tables:pdfplumber:begin … :end -->`) appended to the markdown; re-splicing replaces the block, so `splice == splice∘splice` (idempotent, safe `--force`).
 **Why:** mirrors `citations.py` (pure extractor + dataclasses, persistence/IO in the caller) so the logic is unit-testable without real PDFs. Bounded block + markers give traceability and clean re-runnability per decisions.md.
-**Quality guards (added after a real-corpus smoke test):** a dry run over the library showed pdfplumber's default detector mis-classifying a single-column Methods section as a "50x2 table" with one multi-thousand-char run-together cell. Added two filters in `_is_meaningful`: reject any table with a cell > `MAX_CELL_CHARS` (500) — prose, not data — and require data in ≥`MIN_COLS` distinct non-empty columns. Re-validated: the prose false-positive drops to 0; elife-88824's 11 genuine tables (3x3 … 8x8) are kept. The filter errs toward under-splicing (a borderline 2x2 was also dropped) rather than polluting retrieval — heuristics are tunable module constants.
+**Quality guards (added after a real-corpus smoke test):** a dry run over the library showed pdfplumber's default detector mis-classifying a single-column Methods section as a "50x2 table" with one multi-thousand-char run-together cell. Added two filters in `_is_meaningful`: reject any table with a cell > `MAX_CELL_CHARS` (500) — prose, not data — and require data in ≥`MIN_COLS` distinct non-empty columns. Re-validated: the prose false-positive drops to 0; sample-doc-A's 11 genuine tables (3x3 … 8x8) are kept. The filter errs toward under-splicing (a borderline 2x2 was also dropped) rather than polluting retrieval — heuristics are tunable module constants.
 **Rejected:** splicing each table inline at its page location (markdown carries no reliable page offsets — fragile); a sidecar table store (tables are text-shaped, and a sidecar breaks the "open the .md and see everything" property); tuning pdfplumber `table_settings` (corpus-dependent; the cell-length + column-spread heuristic is simpler and robust).
 
 ### scripts/extract_tables.py (new)
@@ -1068,27 +1068,27 @@ The neuroscience 35-case set stays as the private measured benchmark (the README
 
 ## Session: 2026-06-02 (cont.) — Feature 4a, take 2: visual debug exposed figure-as-table false positives → caption-gated extraction
 
-**Correction to the previous 4a entry:** that entry claimed "11 genuine tables kept" for elife-88824 and treated the appended-block extraction as shippable. **Both were wrong**, caught by a visual check (user's call). Findings, with rendered overlays:
+**Correction to the previous 4a entry:** that entry claimed "11 genuine tables kept" for sample-doc-A and treated the appended-block extraction as shippable. **Both were wrong**, caught by a visual check (user's call). Findings, with rendered overlays:
 - Tables were NOT ignored before 4a — the primary extractor (pymupdf4llm) already emits markdown pipe-tables, just *lossy* (`<br>`-jammed cells, collapsed columns). Figures, by contrast, *are* dropped (write_images=False); only their captions survive.
-- pdfplumber's default detector massively over-fires on scientific **figures**: page 9 of elife-88824 (Figure 3, a 4x5 bar-chart grid) → 13 "tables"; page 7 of elife-33281 (Figure 3 plots) → 1. pymupdf's detector is conservative (0 on those) but BOTH mis-fire on shaded **prose** boxes (elife-33281 appendix pp.22-27; elife-88824 Figure 2). So the "11 tables" were mostly figure panels, and the content guards (MAX_CELL_CHARS, column-spread) don't catch figure panels (short gridded axis labels look tabular).
+- pdfplumber's default detector massively over-fires on scientific **figures**: page 9 of sample-doc-A (Figure 3, a 4x5 bar-chart grid) → 13 "tables"; page 7 of sample-doc-B (Figure 3 plots) → 1. pymupdf's detector is conservative (0 on those) but BOTH mis-fire on shaded **prose** boxes (sample-doc-B appendix pp.22-27; sample-doc-A Figure 2). So the "11 tables" were mostly figure panels, and the content guards (MAX_CELL_CHARS, column-spread) don't catch figure panels (short gridded axis labels look tabular).
 
 ### scripts/debug_tables.py (new) — the instrument that caught it
 **What:** renders per-page PNGs with pdfplumber's table-finder overlay + a pdfplumber-vs-pymupdf count table. Dev/inspection tool; writes to `data/tables_debug/{stem}/`, never the cache/DB. Used it to *see* the false positives.
 
 ### tables.py — caption-gated extraction (the fix)
 **What:** added `find_table_candidates(pdf_path)` (PyMuPDF): a page is a candidate **iff it carries a "Table N" caption** (`TABLE_CAPTION_RE`). Figures ("Figure N") and caption-less shaded prose are excluded by construction. Split extraction into `extract_tables_from_pages(pdf_path, pages)` (pdfplumber, page-gated) and `extract_tables(pdf_path)` = candidates ∘ page-extraction. `TableCandidate` dataclass records the figure-caption flag + pymupdf detector count for diagnostics.
-**Why:** the caption is the precision lever — validated on the corpus: elife-33281 (no "Table N" anywhere) → **0** tables (was figure/prose noise); elife-88824 → candidate pages [7, 14], extracts the real **Table 1** data (`2012, 2727, 4652…`) instead of 11 figure panels. It is also engine-independent: it scopes any expensive engine (Marker) to ~2 pages instead of 37.
+**Why:** the caption is the precision lever — validated on the corpus: sample-doc-B (no "Table N" anywhere) → **0** tables (was figure/prose noise); sample-doc-A → candidate pages [7, 14], extracts the real **Table 1** data (`2012, 2727, 4652…`) instead of 11 figure panels. It is also engine-independent: it scopes any expensive engine (Marker) to ~2 pages instead of 37.
 **Known residue:** pdfplumber fragments Table 1 into two pieces (8x8 + 5x8); it misses Table 2 on p14 (pymupdf detector=0 there) — the recall gap where a better engine earns its keep.
 
-### scripts/eval_marker_tables.py (new) — RTX-machine engine eval
-**What:** for one doc, emits (1) caption-gated candidate pages, (2) pdfplumber tables as markdown, (3) Marker's markdown (if `marker-pdf` installed) — for side-by-side fidelity comparison on the candidate pages. Marker is NOT a default dep (multi-GB models, GPU-friendly); the script import-guards it and instructs `uv add marker-pdf` on the RTX box. Reuses the existing `extractors.extract_pdf_marker`.
+### scripts/eval_marker_tables.py (new) — GPU-machine engine eval
+**What:** for one doc, emits (1) caption-gated candidate pages, (2) pdfplumber tables as markdown, (3) Marker's markdown (if `marker-pdf` installed) — for side-by-side fidelity comparison on the candidate pages. Marker is NOT a default dep (multi-GB models, GPU-friendly); the script import-guards it and instructs `uv add marker-pdf` on the GPU machine. Reuses the existing `extractors.extract_pdf_marker`.
 
 ### Tests / gates
 **What:** test_tables.py reworked to the split API (21 tests): page-gated extraction (incl. "only requested pages" + empty-list no-op), caption-gating (`find_table_candidates` gates on Table caption, records figure flag, rejects figure-only/prose), and orchestration (extract_tables only touches candidate pages). 309 passed · ruff + format clean · mypy --strict clean (32 files, two pymupdf `no-untyped-call` ignores matching extractors.py) · bandit 0.
 
 **Decisions taken with the user:** (a) de-duplication — don't keep both pymupdf's mangled inline table AND the clean one; strip the inline copy (regex over the `<!-- page:N -->`-marked region) — **deferred until the engine is chosen.** (b) Verification — add a table-retrieval eval-hook (option 2) and put a gold-set fidelity scorer (option 3) on the roadmap as a future.
 
-**Opens / next:** (1) Run `eval_marker_tables` on the RTX machine to decide engine (Marker vs pdfplumber-crop). (2) Then finalize: extractor choice + inline de-dup + splice. (3) Then the table-retrieval eval case. (4) Current `extract_tables`/CLI are safe to keep (caption-gated, no figure noise) but NOT yet run with `--apply` on the library. The appended-block splice path is unchanged and still correct.
+**Opens / next:** (1) Run `eval_marker_tables` on the GPU machine to decide engine (Marker vs pdfplumber-crop). (2) Then finalize: extractor choice + inline de-dup + splice. (3) Then the table-retrieval eval case. (4) Current `extract_tables`/CLI are safe to keep (caption-gated, no figure noise) but NOT yet run with `--apply` on the library. The appended-block splice path is unchanged and still correct.
 
 ---
 
@@ -1096,7 +1096,7 @@ The neuroscience 35-case set stays as the private measured benchmark (the README
 
 **Direction (user):** instead of detecting tables in isolation, extract/classify *all* content regions and split tables from charts/images. Marker on hold. This is the 4a+4b shared detection layer.
 
-**Evidence that made it cheap (measured, ~50 pages / 2 docs):** the three classes separate by orders of magnitude — charts are vector paths (curve_count 1k-78k vs 8-187 on table/text pages); raster figures cover a large image-area fraction (0.09-0.60 vs 0 on table/text); tables carry a "Table N" caption with near-zero curves. So no ML / no Marker is needed for routing. (Corrected an earlier wrong assumption: in eLife, figures ARE large raster images — image-area fraction is a clean signal, not logo noise.)
+**Evidence that made it cheap (measured, ~50 pages / 2 docs):** the three classes separate by orders of magnitude — charts are vector paths (curve_count 1k-78k vs 8-187 on table/text pages); raster figures cover a large image-area fraction (0.09-0.60 vs 0 on table/text); tables carry a "Table N" caption with near-zero curves. So no ML / no Marker is needed for routing. (Corrected an earlier wrong assumption: in this publisher set, figures ARE large raster images — image-area fraction is a clean signal, not logo noise.)
 
 ### src/doc_assistant/regions.py (new)
 **What:** `PageSignals` (curve_count, image_area_fraction, table/figure caption flags) + `PageClassification` (kind: table|chart|photo|figure|text, is_table_candidate, is_figure, reason). Pure `classify_page(signals)` is the router; `page_signals`/`analyze_pages`/`table_candidate_pages` are the PyMuPDF-backed signal extraction. Thresholds `CHART_CURVE_MIN=1000`, `IMAGE_AREA_MIN=0.05` measured from the corpus, documented as tunable.
@@ -1108,32 +1108,32 @@ The neuroscience 35-case set stays as the private measured benchmark (the README
 **Why:** one detection layer, not two. tables.py keeps only extraction (pdfplumber), rendering, and the idempotent splice.
 
 ### Validation (real corpus)
-- elife-33281 (no data tables): 18 text + 9 **photo** pages → 0 table pages → 0 tables.
-- elife-88824: 27 text, 6 **chart**, 2 **table** (p7, p14), 1 figure, 1 photo → extracts Table 1. The figure-as-table noise (was "11 tables") is gone.
+- sample-doc-B (no data tables): 18 text + 9 **photo** pages → 0 table pages → 0 tables.
+- sample-doc-A: 27 text, 6 **chart**, 2 **table** (p7, p14), 1 figure, 1 photo → extracts Table 1. The figure-as-table noise (was "11 tables") is gone.
 
 ### Tests / scripts / gates
 **What:** new `tests/unit/test_regions.py` (exhaustive pure routing matrix incl. boundary thresholds + "table caption but chart/image => not a table"; analyze_pages/table_candidate_pages with a monkeypatched pymupdf doc). `test_tables.py` trimmed to extraction/splice + a delegation test (extract_tables uses regions.table_candidate_pages). `scripts/eval_marker_tables.py` updated to print per-page classification (kind + reason). 316 passed · ruff + format clean · mypy --strict clean (33 files) · bandit 0.
 
-**Opens / next (unchanged plan):** (1) engine eval (Marker vs pdfplumber-crop) still pending on the RTX machine — now scoped to classified table pages. (2) inline de-dup of pymupdf4llm's lossy tables. (3) table-retrieval eval-hook. (4) region-level (multi-region-per-page) splitting + figure extraction = the proper 4b build, for which this classifier is the foundation. (5) thresholds measured on 2 eLife docs — validate on a wider corpus before trusting as universal.
+**Opens / next (unchanged plan):** (1) engine eval (Marker vs pdfplumber-crop) still pending on the GPU machine — now scoped to classified table pages. (2) inline de-dup of pymupdf4llm's lossy tables. (3) table-retrieval eval-hook. (4) region-level (multi-region-per-page) splitting + figure extraction = the proper 4b build, for which this classifier is the foundation. (5) thresholds measured on 2 sample docs — validate on a wider corpus before trusting as universal.
 
 ---
 
 ## Session: 2026-06-02 (cont.) — Removed the dormant Marker extraction path from production
 
-**What:** deleted `extractors.extract_pdf_marker` and the `PDF_EXTRACTOR=marker` branch; `extract_to_markdown` now raises a clear `ValueError` for any non-`pymupdf` PDF extractor instead of the old latent `ImportError` (marker-pdf was never a dependency, so selecting it crashed). Dropped the `marker.*` mypy override and the "/ Marker" mention in `tables.py`. Made `scripts/eval_marker_tables.py` self-contained: the Marker→markdown call (`_marker_to_markdown`, import-guarded) now lives in the eval script, the only place that uses Marker, and only when installed on the RTX/GPU box.
-**Why (user decision):** Marker is PDF-only, heavy (multi-GB ML models), and not installed — keep the tree clean and re-add it to production *only if* the RTX engine eval proves it beats pymupdf/pdfplumber. pdfplumber stays as the table-cell engine pending that same eval. (Also clarified: non-PDF figure extraction will use native parsers — ebooklib/python-docx/BeautifulSoup — not Marker.)
+**What:** deleted `extractors.extract_pdf_marker` and the `PDF_EXTRACTOR=marker` branch; `extract_to_markdown` now raises a clear `ValueError` for any non-`pymupdf` PDF extractor instead of the old latent `ImportError` (marker-pdf was never a dependency, so selecting it crashed). Dropped the `marker.*` mypy override and the "/ Marker" mention in `tables.py`. Made `scripts/eval_marker_tables.py` self-contained: the Marker→markdown call (`_marker_to_markdown`, import-guarded) now lives in the eval script, the only place that uses Marker, and only when installed on the GPU/GPU box.
+**Why (user decision):** Marker is PDF-only, heavy (multi-GB ML models), and not installed — keep the tree clean and re-add it to production *only if* the GPU engine eval proves it beats pymupdf/pdfplumber. pdfplumber stays as the table-cell engine pending that same eval. (Also clarified: non-PDF figure extraction will use native parsers — ebooklib/python-docx/BeautifulSoup — not Marker.)
 **Kept:** `pymupdf`/`pymupdf4llm` (default extractor + `regions.py` classifier signals) and `pdfplumber` (table cells). `PDF_EXTRACTOR` config stays (provenance label; currently only `pymupdf` is valid).
 **Gates:** 316 passed · ruff + mypy --strict clean (33 files). `eval_marker_tables --skip-marker` verified still works and now prints per-page classification.
 **Opens:** the Marker-vs-pdfplumber eval is still the decision point; if Marker wins, re-add a production path (and reconsider pdfplumber).
 
 ---
 
-## Session: 2026-06-02 (cont.) — First live local-Ollama run on the RTX box: fresh-install hardening + provenance/model surfacing + `/review` ergonomics
+## Session: 2026-06-02 (cont.) — First live local-Ollama run on the GPU machine: fresh-install hardening + provenance/model surfacing + `/review` ergonomics
 
-**Starting from:** Phase 6 in progress. First time running the app from a clean checkout on the second (RTX/GPU) machine — no `data/`, no `.env`, empty corpus. Ollama up locally with `llama3.1:8b` + `qwen2.5-coder:7b`.
+**Starting from:** Phase 6 in progress. First time running the app from a clean checkout on the second (GPU/GPU) machine — no `data/`, no `.env`, empty corpus. Ollama up locally with `llama3.1:8b` + `qwen2.5-coder:7b`.
 **Goal this session:** get the app running locally end-to-end (fully-local Ollama), and fix whatever a real fresh install surfaces.
 
-**Operational milestone (no code):** the **fully-local Ollama generation path is now verified end-to-end on the RTX box** — `.env` with all three providers = `ollama`, `LLM_MODEL=llama3.1:8b`, `ANTHROPIC_API_KEY` empty; ingested the 10-paper public corpus (`download_corpus` → `ingest`, 10 added / 0 errors); real queries ("what is dense passage retrieval?", "what is a retriever?") returned grounded, correctly-cited answers through `llama3.1:8b`. This retires the **generator** half of the long-standing "local end-to-end NOT yet verified against a live Ollama server" TODO. Still open: a live `/review` verdict on Ollama (reviewer half) and the eval judge.
+**Operational milestone (no code):** the **fully-local Ollama generation path is now verified end-to-end on the GPU machine** — `.env` with all three providers = `ollama`, `LLM_MODEL=llama3.1:8b`, `ANTHROPIC_API_KEY` empty; ingested the 10-paper public corpus (`download_corpus` → `ingest`, 10 added / 0 errors); real queries ("what is dense passage retrieval?", "what is a retriever?") returned grounded, correctly-cited answers through `llama3.1:8b`. This retires the **generator** half of the long-standing "local end-to-end NOT yet verified against a live Ollama server" TODO. Still open: a live `/review` verdict on Ollama (reviewer half) and the eval judge.
 
 ### src/doc_assistant/pipeline.py — empty-library guard
 **What:** `RAGPipeline.__init__` built the BM25 index unconditionally; on an empty store `BM25Retriever.from_documents([])` raises `ValueError: not enough values to unpack (expected 3, got 0)` at import time, so the app could not even start on a fresh install. Now: build the vector retriever first; if there are retrievable chunks, build the BM25+vector ensemble as before; otherwise fall back to a **vector-only** ensemble (`weights=[1.0]`) and print a one-line notice. App launches empty; retrieval just returns nothing until docs are ingested.
@@ -1148,7 +1148,7 @@ The neuroscience 35-case set stays as the private measured benchmark (the README
 **Opens:** none functionally; DB schema versioning is still create-only (real migrations arrive when the schema next changes).
 
 ### apps/chainlit_app.py — provenance id + active model on every answer; slimmer card
-**What:** four UI changes, all driven by real use on the RTX box:
+**What:** four UI changes, all driven by real use on the GPU machine:
 1. **Provenance card now renders on *every* answer**, not just flagged ones. Was: `if signals.any(): render card; else: ""` — so clean answers showed no id, and the user had nothing to pass to `/review`. Now the card always renders, **collapsed + neutral** (`🔍 Provenance — <id8> · …`) on clean answers and **expanded + ⚠** on flagged ones; the LLM reviewer call stays gated to flagged answers only (clean answers remain free/fast). PR 5.1's "quiet on clean" intent is preserved via the collapse, while the id + model become visible everywhere.
 2. **Active model in the startup welcome:** `🤖 Generation model: {LLM_PROVIDER}/{LLM_MODEL} · 🧬 Embeddings: {get_active_model_name()}`.
 3. **Card footer** now offers `/review <id8>` alongside `/export-record <id8>`.
@@ -1165,12 +1165,12 @@ The neuroscience 35-case set stays as the private measured benchmark (the README
 
 **Gates:** ruff format + check clean and mypy `--strict` clean on every changed `src/` file (`pipeline.py`, `ingest.py`, `commands.py`); `apps/` is outside the CI mypy scope (`mypy src/`) as before. Full unit suite re-run to confirm no regressions. **No new tests added this session** — the four "Opens" above name the gaps; they're the test-coverage follow-up.
 
-**Cross-project:** recorded the fresh-install lesson in the atlas (`entries/2026-06-02-fresh-install-no-corpus-crashes-empty-library-and-schema-init.md`) — "first-run/zero-state is a code path your populated dev env and green unit tests never exercise; run a fresh install on another machine before any release."
+**Cross-project:** recorded the fresh-install lesson in the atlas (`entries/<fresh-install-lesson>.md`) — "first-run/zero-state is a code path your populated dev env and green unit tests never exercise; run a fresh install on another machine before any release."
 
 **Doc updates:** this entry; CLAUDE.md status + operational TODOs + Known issues (Ollama token-count, fresh-install fixes). README setup unchanged — the documented `uv sync → ingest → run` flow now works as-written on a fresh clone thanks to the ingest auto-init.
 
 ### src/doc_assistant/llm.py — fix `OllamaClient` reviewer/judge crash against a live server
-**What:** `/review` on the live RTX Ollama server failed with `TypeError: Client.chat() got an unexpected keyword argument 'temperature'`. `OllamaClient.complete()` passed `temperature`/`num_predict` as **`invoke()` kwargs**; langchain_ollama forwards unrecognized runtime kwargs straight to the ollama `Client.chat()`, which takes `temperature` only inside an `options` dict, not as a top-level arg. Fix: set them as **model attributes** at construction (`ChatOllama(temperature=…, num_predict=…)`) and call `invoke(messages)` with no extra kwargs — langchain folds its known model attributes into ollama's `options` correctly. `OllamaClient` now stores `model`/`host` and builds a fresh `ChatOllama` per `complete()` (construction does no network I/O, so it's cheap); dropped the cached `self._client`.
+**What:** `/review` on the live GPU Ollama server failed with `TypeError: Client.chat() got an unexpected keyword argument 'temperature'`. `OllamaClient.complete()` passed `temperature`/`num_predict` as **`invoke()` kwargs**; langchain_ollama forwards unrecognized runtime kwargs straight to the ollama `Client.chat()`, which takes `temperature` only inside an `options` dict, not as a top-level arg. Fix: set them as **model attributes** at construction (`ChatOllama(temperature=…, num_predict=…)`) and call `invoke(messages)` with no extra kwargs — langchain folds its known model attributes into ollama's `options` correctly. `OllamaClient` now stores `model`/`host` and builds a fresh `ChatOllama` per `complete()` (construction does no network I/O, so it's cheap); dropped the cached `self._client`.
 **Why:** this was a pure-transport bug that only fired against a real server — the unit mocks (`_FakeChatOllama.invoke(**kwargs)`) accepted anything, so it passed CI but crashed live. It blocked the reviewer half of the local-acceptance DoD.
 **Rejected:** binding params via `self._client.bind(...)` (same leak path); hardcoding `temperature=0` on the constructor and ignoring the per-call arg (silently drops the protocol's `temperature`/`max_tokens` contract — the judge may want different values).
 **Tests:** added `test_ollama_complete_sets_params_on_model_not_invoke` — asserts `temperature`/`num_predict`/`model` land in the construction kwargs and that `invoke()` receives **no** kwargs (the exact thing that broke live). `test_llm.py` + `test_reviewer*` green (33 passed); ruff + mypy --strict clean.
@@ -1207,14 +1207,14 @@ The neuroscience 35-case set stays as the private measured benchmark (the README
 **Opens:** GPU/CUDA for embeddings+reranker still pending (CPU; lower priority now that generation is API). Eval-judge on Ollama still unconfirmed live. Demo narrative (self-referential corpus) is prep, not code.
 
 ### GPU enablement (Windows) — PyTorch CUDA build via a uv index (no app-code change)
-**What:** the venv shipped `torch 2.12.0+cpu`, so embeddings + the cross-encoder reranker ran on CPU despite the RTX 4070. Enabled CUDA with **zero application-code change** — sentence-transformers / `CrossEncoder` auto-select `cuda` when torch reports it, so the torch *build* is the only lever. Mechanics: uv only applies `[tool.uv.sources]` to **direct** deps, but torch is transitive (via sentence-transformers), so it had no effect at first. Fix: declared `torch>=2.12` directly in `[project.dependencies]`, added an explicit `[[tool.uv.index]] name="pytorch-cu130"` and `[tool.uv.sources] torch = { index = "pytorch-cu130", marker = "sys_platform == 'win32'" }`. `uv lock` + `uv sync` then install `torch==2.12.0+cu130` on Windows; the `win32` marker leaves every other platform (incl. Linux CI) on the default PyPI CPU wheel, so cross-platform sync is unchanged.
+**What:** the venv shipped `torch 2.12.0+cpu`, so embeddings + the cross-encoder reranker ran on CPU despite the GPU 4070. Enabled CUDA with **zero application-code change** — sentence-transformers / `CrossEncoder` auto-select `cuda` when torch reports it, so the torch *build* is the only lever. Mechanics: uv only applies `[tool.uv.sources]` to **direct** deps, but torch is transitive (via sentence-transformers), so it had no effect at first. Fix: declared `torch>=2.12` directly in `[project.dependencies]`, added an explicit `[[tool.uv.index]] name="pytorch-cu130"` and `[tool.uv.sources] torch = { index = "pytorch-cu130", marker = "sys_platform == 'win32'" }`. `uv lock` + `uv sync` then install `torch==2.12.0+cu130` on Windows; the `win32` marker leaves every other platform (incl. Linux CI) on the default PyPI CPU wheel, so cross-platform sync is unchanged.
 **Why a lockfile change, not `uv pip install`:** `uv run` auto-syncs to the lock on *every* invocation — a manually `uv pip install`-ed CUDA wheel was silently uninstalled and the locked CPU build restored on the next `uv run`. Persisting the CUDA backend requires it to be *in the lock* (i.e. via pyproject), which is what the index+source achieve.
-**Verified:** `torch.cuda.is_available()` True; device `NVIDIA GeForce RTX 4070`; reranker on `cuda:0`; **retrieve+rerank dropped from CPU-seconds to ~68 ms** (avg of 3); app startup log now `using cuda:0` for both models. 311 unit tests pass.
+**Verified:** `torch.cuda.is_available()` True; device `NVIDIA GeForce GPU 4070`; reranker on `cuda:0`; **retrieve+rerank dropped from CPU-seconds to ~68 ms** (avg of 3); app startup log now `using cuda:0` for both models. 311 unit tests pass.
 **Files:** `pyproject.toml` (+`torch` direct dep, +`pytorch-cu130` index, +win32 source) and `uv.lock` (re-resolved, 286 pkgs). No `src/` changes. cu130 chosen to match the driver (CUDA 13.2; 595.97).
 **Opens / caveats:** (1) CI is Linux — the `win32` marker keeps it on the CPU wheel, but **watch the next CI run** to confirm the universal lock resolves cleanly there (standard uv pattern; low risk). (2) `uv sync` without `--extra dev` drops the dev toolchain (expected uv behaviour) — use `uv sync --extra dev` for ruff/mypy/pytest. (3) GPU now serves the whole local stack (embeddings, reranker) even though generation is on the API; if generation later moves back to local Ollama, that runs in Ollama's own process/GPU, independent of this torch build.
 
 ### Feature 4a — table-extraction engine decision: **Marker** (pdfplumber default insufficient)
-**What:** ran the engine eval on the RTX box over the public arXiv corpus (the long-pending 4a gate). Measured:
+**What:** ran the engine eval on the GPU machine over the public arXiv corpus (the long-pending 4a gate). Measured:
 - `regions.py` classifier correctly identifies table pages on all 10 docs (e.g. DPR [4,5,6,8,12,13], SPECTER2 [4,7,8,15,16,17]).
 - **pdfplumber (default, line-based) recall is unreliable on academic borderless/booktabs tables:** DPR **0/6** pages → 0 tables; SPECTER2 **0/6** → 0; SBERT 5 pages → 7 tables but with **rows collapsed** (multiple model rows merged into one cell, intra-token spaces stripped) — plausible-looking but semantically scrambled, arguably worse than nothing for retrieval.
 - **Marker** (surya layout + table recognition; isolated `uvx marker_single`, CPU ~10 min for DPR's 14 pages) reproduced **all 7 DPR tables faithfully**: correct column structure, multi-row cells via `<br>`, preserved bold/emphasis, values aligned to columns (Table 2's Top-20/100 accuracy matrix is correct). Minor OCR diacritic artifacts (`ŴQ`).
@@ -1225,17 +1225,17 @@ The neuroscience 35-case set stays as the private measured benchmark (the README
 
 ### Session close — 2026-06-02
 **Shipped today (all detailed above):** fresh-install hardening (empty-library guard, idempotent `init_db`); provenance id + active model on every answer; slim markdown provenance card (HTML removed); `/review` with no id → most recent; fully-local Ollama path verified live (generator + reviewer) incl. two reviewer transport fixes (`temperature` kwarg, `format="json"` + tolerant JSON parse); demo switched to Anthropic API; `load_dotenv(override=True)` fix; provider-aware token display; **CUDA/GPU enabled** (torch cu130 via win32-scoped uv index); **Feature 4a engine decision = Marker (run isolated)**. 318 tests green.
-**Repo state:** earlier code (config/chainlit/llm/reviewer/tests/pyproject/uv.lock) committed by the user mid-session; at close, only `CLAUDE.md` + `docs/DEVLOG.md` are modified (this entry + the 4a decision record) — ready to commit. `.env` is gitignored (API key local only). Atlas (separate repo `C:\Projects\atlas`): 3 new lessons added this session (dotenv override, uv auto-sync, out-of-process tool isolation) + the earlier fresh-install lesson — all uncommitted there, for separate review.
+**Repo state:** earlier code (config/chainlit/llm/reviewer/tests/pyproject/uv.lock) committed by the user mid-session; at close, only `CLAUDE.md` + `docs/DEVLOG.md` are modified (this entry + the 4a decision record) — ready to commit. `.env` is gitignored (API key local only). Atlas (separate repo `<atlas-repo>`): 3 new lessons added this session (dotenv override, uv auto-sync, out-of-process tool isolation) + the earlier fresh-install lesson — all uncommitted there, for separate review.
 **RESUME TOMORROW:** see CLAUDE.md → "Next priority (RESUME HERE)". Short version: build the isolated-Marker ingest path, starting with fixing `scripts/eval_marker_tables.py` to subprocess `marker_single`. Demo is upcoming (API generation; `.env` ready). App runs via `uv run --python 3.12 chainlit run apps/chainlit_app.py`.
 
 ---
 ## Session: 2026-06-04 — Lock benchmarks (CPU box) + Feature 4a step 1
 
-**Starting from:** clean `main` @ 3595080, 318 tests. Back on the **primary CPU dev box** (not the RTX/GPU box where the prior session ran). Goal: lock the pending benchmarks (public baseline, SPECTER2-vs-BGE, chunking sweep) and start the 4a Marker build.
+**Starting from:** clean `main` @ 3595080, 318 tests. Back on the **primary CPU dev box** (not the GPU/GPU box where the prior session ran). Goal: lock the pending benchmarks (public baseline, SPECTER2-vs-BGE, chunking sweep) and start the 4a Marker build.
 
 ### Operational — locked `cu130` torch segfaults on the CPU box (blocker for all evals)
-**What:** the first eval run died with **exit 139 (segfault)** right after the reranker loaded, before any query. Diagnosed (not guessed): `torch.cuda.is_available()` is False here (`cudaErrorNotSupported`), basic matmul/linear work, but the **transformer forward pass segfaults** (`embed_query`). Root cause: the committed lock pins `torch==2.12.0+cu130` for *all* win32 machines via the `sys_platform=='win32'` uv source — correct for the RTX box, broken on this GPU-less box. Fix (local, non-invasive): `uv pip install "torch==2.12.0+cpu" --index-url https://download.pytorch.org/whl/cpu --reinstall-package torch`, then run everything with **`uv run --no-sync`** (a bare `uv run` re-syncs to the lock and reverts to `+cu130`). Verified: embed (dim 768) + cross-encoder rerank both run on CPU torch. The committed lock/`uv.lock` are untouched, so the RTX box stays on GPU.
-**Why no lock change:** uv markers can't distinguish "win32 with GPU" from "win32 without"; changing the pin would break the RTX box. The proper cross-machine fix (GPU as an opt-in uv extra, CPU default everywhere) is deferred.
+**What:** the first eval run died with **exit 139 (segfault)** right after the reranker loaded, before any query. Diagnosed (not guessed): `torch.cuda.is_available()` is False here (`cudaErrorNotSupported`), basic matmul/linear work, but the **transformer forward pass segfaults** (`embed_query`). Root cause: the committed lock pins `torch==2.12.0+cu130` for *all* win32 machines via the `sys_platform=='win32'` uv source — correct for the GPU machine, broken on this GPU-less box. Fix (local, non-invasive): `uv pip install "torch==2.12.0+cpu" --index-url https://download.pytorch.org/whl/cpu --reinstall-package torch`, then run everything with **`uv run --no-sync`** (a bare `uv run` re-syncs to the lock and reverts to `+cu130`). Verified: embed (dim 768) + cross-encoder rerank both run on CPU torch. The committed lock/`uv.lock` are untouched, so the GPU machine stays on GPU.
+**Why no lock change:** uv markers can't distinguish "win32 with GPU" from "win32 without"; changing the pin would break the GPU machine. The proper cross-machine fix (GPU as an opt-in uv extra, CPU default everywhere) is deferred.
 **Opens:** the deferred pyproject refactor; also Linux CI still on the CPU wheel via the same marker (unaffected).
 
 ### scripts/eval_marker_tables.py — shell out to isolated `marker_single` (Feature 4a, step 1)
@@ -1260,8 +1260,8 @@ The neuroscience 35-case set stays as the private measured benchmark (the README
 **Why:** the sweep previously hardcoded the private default cases; a benchmark meant to be locked/published should run on the public reproducible set.
 **Opens:** sweep result (benchmark lock 3/3) pending — it's a ~2h CPU run (6 configs × full re-embed + eval). The sweep's `--rebuild` wipes both chroma collections + SQLite, so after it lands the store must be restored to defaults (`ingest --rebuild` with no chunk env vars).
 
-### Chunking sweep — config 1 previewed on CPU, configs 2–6 deferred to RTX
-**What:** the per-config CPU re-embed turned out far slower than estimated (~45 min/config, full 6-config run ≈ 5h, not the ~2h first quoted — large papers embed at 55–90s each on CPU). Per the user's call, ran **only config 1 (control = current defaults 2000/200 · 400/50)** as a preview, then stopped. Config 1 (public cases, n=3): `citation_overlap` 1.000 ± 0.000 · `contains_all` 0.917 ± 0.000 · `llm_judge` 3.889 ± 0.159 — reproduces the locked bge baseline, i.e. the defaults are a sound control. Configs 2–6 → RTX box (re-embeds are minutes there). One-command resume + the destructive-rebuild restore in `docs/chunking-sweep-rtx-resume.md`. Recommend running the **full** grid on RTX (not 2–6) so all configs share one machine — the CPU config-1 number is a preview, not part of the locked comparison.
+### Chunking sweep — config 1 previewed on CPU, configs 2–6 deferred to GPU
+**What:** the per-config CPU re-embed turned out far slower than estimated (~45 min/config, full 6-config run ≈ 5h, not the ~2h first quoted — large papers embed at 55–90s each on CPU). Per the user's call, ran **only config 1 (control = current defaults 2000/200 · 400/50)** as a preview, then stopped. Config 1 (public cases, n=3): `citation_overlap` 1.000 ± 0.000 · `contains_all` 0.917 ± 0.000 · `llm_judge` 3.889 ± 0.159 — reproduces the locked bge baseline, i.e. the defaults are a sound control. Configs 2–6 → GPU machine (re-embeds are minutes there). One-command resume + the destructive-rebuild restore in `docs/chunking-sweep-rtx-resume.md`. Recommend running the **full** grid on GPU (not 2–6) so all configs share one machine — the CPU config-1 number is a preview, not part of the locked comparison.
 **Why:** the open question is whether configs 2–6 *beat* the control, and that's a clean-machine measurement better done where re-embeds are cheap.
 **Store impact:** config 2 had begun (wiped chroma_pc + SQLite, re-embedding at 256/32) before the stop — so a clean `ingest --rebuild` at defaults restored the bge store (61 docs / 27168 chunks, verified). The `specter2` collection was a casualty of the wipe and was *not* rebuilt (experiment collection; resume doc has the one-liner). 318 unit+integration tests still green (`318 passed in 14.43s`).
 
@@ -1313,38 +1313,38 @@ The neuroscience 35-case set stays as the private measured benchmark (the README
 - **`scripts/extract_tables_marker.py` (new)** — parallel post-ingest CLI: `ThreadPoolExecutor(MARKER_MAX_WORKERS)` over docs, each gated on `regions.table_candidate_pages` → isolated `_marker_to_markdown(..., paginate=True)` → parse → `strip_pdfplumber_block` → `splice_tables_inline` → write cache (on `--apply`). `--apply/--force/--doc/--workers`, per-doc isolation, mirrors `extract_tables.py`'s report. `eval_marker_tables._marker_to_markdown` gained a `paginate` flag (adds `--paginate_output`).
 - **`tests/integration/test_marker_table_retrieval.py` (new, CI gate)** — deterministic splice → `ingest.build_parent_child_chunks` → assert the Marker table value reaches a chunk and the lossy twin is gone (2 tests). **No Marker/Chroma dependency.**
 - **`tests/eval/cases.tables.yaml` (new)** — opt-in table-retrieval eval (DPR Top-20/100), documented to run after a real Marker `--apply`. `docs/figures-and-tables.md` engine table updated (Marker primary / pdfplumber frozen fallback).
-**Why this shape:** Marker is slow + isolation-bound, so it's a parallel *post-ingest* CLI (Enrichment-Layer), not inline in ingest; page-anchored splice solves de-dup + placement in one move using the cache's existing page markers; verification is split into a CPU CI gate (mechanism) + an opt-in RTX eval (quality) so the headline public eval stays one-command reproducible.
+**Why this shape:** Marker is slow + isolation-bound, so it's a parallel *post-ingest* CLI (Enrichment-Layer), not inline in ingest; page-anchored splice solves de-dup + placement in one move using the cache's existing page markers; verification is split into a CPU CI gate (mechanism) + an opt-in GPU eval (quality) so the headline public eval stays one-command reproducible.
 **Rejected:** parsing the page number out of Marker's delimiter (attribute by requested order instead — robust to its semantics); an end-block splice (loses placement + needs a separate de-dup); migrating pdfplumber onto the inline splice (it's a frozen fallback, not worth it).
 **Tests/gates:** 353 unit+integration passed (+12); ruff/format/mypy --strict/bandit clean (CPU box, `uv run --no-sync`).
-**Deferred to RTX (no more CPU code):** live `extract_tables_marker --apply` (uvx + surya models); **confirm `--paginate_output` flag/delimiter against the pinned marker-pdf** (deterministic tests pass regardless, but the live parse depends on it); verify `cases.tables.yaml` values vs the real DPR table. Next code node: **Feature 4b** (figures + ordered objects-manifest on 4a's page-locatability).
+**Deferred to GPU (no more CPU code):** live `extract_tables_marker --apply` (uvx + surya models); **confirm `--paginate_output` flag/delimiter against the pinned marker-pdf** (deterministic tests pass regardless, but the live parse depends on it); verify `cases.tables.yaml` values vs the real DPR table. Next code node: **Feature 4b** (figures + ordered objects-manifest on 4a's page-locatability).
 
-### Feature 4a — Marker now runs + validated on the CPU box (2 fixes); RTX no longer a correctness gate
+### Feature 4a — Marker now runs + validated on the CPU box (2 fixes); GPU no longer a correctness gate
 **What:** ran Marker end-to-end on the CPU dev box for the first time (out of a gitignored marker-playground notebook) and fixed two blockers found doing so.
 - **Notebook-import fix** — every `scripts/*.py` (+ `tests/eval/run_eval.py`) called `sys.stdout.reconfigure("utf-8")` unconditionally on win32. In a Jupyter kernel `sys.stdout` is an ipykernel `OutStream` with no `reconfigure` → `AttributeError` on import. Guarded all 13 with `hasattr(sys.stdout, "reconfigure")` (terminals unchanged; notebooks skip it).
 - **Marker Python-pin fix** — bare `uvx --from marker-pdf marker_single` resolved against the box default **Python 3.14**, where marker-pdf's pinned `pillow==10.4.0` has no cp314 wheel → from-source build → `exit 1`. Added `config.MARKER_PYTHON` (default `"3.12"`) and `eval_marker_tables._marker_command()` now passes `--python {MARKER_PYTHON}` on the `uvx` path. 3.12 has wheels for the whole marker stack.
 - **Delimiter/flag validation (live, CPU)** — ran Marker on 2 paginated pages of a real corpus PDF. Confirmed: `--page_range`/`--output_format`/`--output_dir`/`--paginate_output` all valid in the pinned marker-pdf; the paginated separator is `\n\n{N}` + `'-'*48` with a **0-based** `{N}` *before* each page's content. Verified against `tables_marker`: `_PAGE_DELIM_RE` matches it (the `{N}` digit prefix is present), the empty pre-`{0}` section is dropped by the strip-filter, and N requested pages → exactly N sections in order. **No regex/parser change needed.**
-**Why it matters:** the two 4a items written as "deferred to RTX — confirm the `--paginate_output` flag/delimiter" are now **cleared on real output**, on CPU. The Marker path is no longer RTX-dependent for *correctness* — only for *wall-clock* (CPU is minutes/page). Genuinely RTX/corpus-deferred now: just the full-corpus `--apply` run and verifying `cases.tables.yaml`'s expected numbers against the real DPR table (both CPU-runnable, just slow).
+**Why it matters:** the two 4a items written as "deferred to GPU — confirm the `--paginate_output` flag/delimiter" are now **cleared on real output**, on CPU. The Marker path is no longer GPU-dependent for *correctness* — only for *wall-clock* (CPU is minutes/page). Genuinely GPU/corpus-deferred now: just the full-corpus `--apply` run and verifying `cases.tables.yaml`'s expected numbers against the real DPR table (both CPU-runnable, just slow).
 **Rejected:** adding jupyterlab to `pyproject`/lock (installed venv-only via `uv pip install` — keeps the production suite + lock clean; jupyter stays out of CI/deploy and off the `+cu130` torch lock).
 **Tests/gates:** no new tests (mechanical fixes to scripts + a config var). Test count unchanged at 353. Changes uncommitted, for review.
 **Opens:** commit the two fixes; then the 4a close-out (`--apply` + `cases.tables.yaml`) and **Feature 4b** remain the open Phase-6 nodes. Per-project routing (1b) is evidence-gated out (no model beats `bge-base`).
 
 ---
-## Session: 2026-06-06 — RTX box: chunking sweep + Marker GPU path + 4a close-out
+## Session: 2026-06-06 — GPU machine: chunking sweep + Marker GPU path + 4a close-out
 
-**Starting from:** RTX/GPU box (torch `2.12.0+cu130`, CUDA active). Two open threads: the deferred chunking sweep, and the live Marker `--apply` + `cases.tables.yaml` verification.
+**Starting from:** GPU/GPU box (torch `2.12.0+cu130`, CUDA active). Two open threads: the deferred chunking sweep, and the live Marker `--apply` + `cases.tables.yaml` verification.
 
 ### Chunking sweep — measured, defaults confirmed
-**What:** ran the full 6-config grid (`scripts/sweep_chunking.py`, public corpus, `--repeat 3 --with-llm-judge`) on the RTX box. **No config beats the locked default `2000/200 · 400/50`** — it's tied-best on `contains_all` (0.933) and best on `llm_judge` (3.951); `citation_overlap` saturates at 1.000 across all configs (can't discriminate). Larger parent (3000/300) was the *worst* on judge; the smaller `256/32` child matched the control with tighter variance but didn't exceed it. Results + run-ids: `tests/eval/baselines/chunking_sweep_public_2026-06-06.md`. Updated the CLAUDE.md Locked-settings chunk-sizes row ("never measured" → measured/confirmed) and the resume doc (DONE banner).
+**What:** ran the full 6-config grid (`scripts/sweep_chunking.py`, public corpus, `--repeat 3 --with-llm-judge`) on the GPU machine. **No config beats the locked default `2000/200 · 400/50`** — it's tied-best on `contains_all` (0.933) and best on `llm_judge` (3.951); `citation_overlap` saturates at 1.000 across all configs (can't discriminate). Larger parent (3000/300) was the *worst* on judge; the smaller `256/32` child matched the control with tighter variance but didn't exceed it. Results + run-ids: `tests/eval/baselines/chunking_sweep_public_2026-06-06.md`. Updated the CLAUDE.md Locked-settings chunk-sizes row ("never measured" → measured/confirmed) and the resume doc (DONE banner).
 **Why it matters:** closes the long-standing "defaults never measured" caveat with real numbers; the locked chunk sizes now have measured backing.
 **Provenance note:** the first background sweep was terminated mid-config-5 (no Windows Event-ID-1000 crash signature → transient external/OOM kill, not a config bug); configs 5–6 re-ran identically and reproduced config 5 past the stop point. All six configs are one machine / one torch build / one judge.
 
 ### README — hardware guidance (GPU + local-LLM system requirements)
-**What:** added a **Setup** blockquote recommending a GPU for the always-local embedder + reranker, with three tiers — CUDA (recommended, measured ~70 ms retrieve+rerank on the RTX 4070), Apple Silicon/MPS (auto-detected via `sentence-transformers` 5.5.1's `cuda→mps→cpu` device order; **not benchmarked here**), CPU (works, slow). Added a bottom **System requirements** section (game-spec Minimum/Recommended table) for the optional **Ollama** local-LLM path, with Ollama's official GPU doc (`docs.ollama.com/gpu`, NVIDIA compute capability ≥ 5.0) and the RAM rule-of-thumb (≈8 GB/7–8B, 16/13B, 32/33B). Centered the recommendation on the app's actual local default (an 8B model, e.g. `llama3.1:8b`).
+**What:** added a **Setup** blockquote recommending a GPU for the always-local embedder + reranker, with three tiers — CUDA (recommended, measured ~70 ms retrieve+rerank on the GPU 4070), Apple Silicon/MPS (auto-detected via `sentence-transformers` 5.5.1's `cuda→mps→cpu` device order; **not benchmarked here**), CPU (works, slow). Added a bottom **System requirements** section (game-spec Minimum/Recommended table) for the optional **Ollama** local-LLM path, with Ollama's official GPU doc (`docs.ollama.com/gpu`, NVIDIA compute capability ≥ 5.0) and the RAM rule-of-thumb (≈8 GB/7–8B, 16/13B, 32/33B). Centered the recommendation on the app's actual local default (an 8B model, e.g. `llama3.1:8b`).
 **Why:** the local models' performance depends heavily on the device; users should know before ingesting. Verified the MPS claim by reading the installed sentence-transformers' `get_device_name` rather than asserting from memory.
 
 ### Marker now runs on the **GPU** via `UV_TORCH_BACKEND=auto`
-**What:** the isolated `uvx --from marker-pdf` env resolves its *own* torch — on Windows that defaults to the **CPU** wheel, so Marker ran CPU-only (GPU idle at 0%, ~50 s/it on text recognition). Setting `UV_TORCH_BACKEND=auto` (uv 0.11.14, experimental) makes uvx resolve `torch 2.12.0+cu130` (`cuda_available True`) for Marker's env — no code change, and the cu130 wheel was already in uv's cache (no 2.5 GB download). Marker then ran on the RTX (83% util, 7.9 GB VRAM, ~1.5 s/it — **~30× faster**).
-**Why it matters:** the project docs said the RTX doesn't help Marker ("only wall-clock"); this shows it *can*, via the uv torch-backend env var. Worth wiring into the Marker CLI/docs as an opt-in.
+**What:** the isolated `uvx --from marker-pdf` env resolves its *own* torch — on Windows that defaults to the **CPU** wheel, so Marker ran CPU-only (GPU idle at 0%, ~50 s/it on text recognition). Setting `UV_TORCH_BACKEND=auto` (uv 0.11.14, experimental) makes uvx resolve `torch 2.12.0+cu130` (`cuda_available True`) for Marker's env — no code change, and the cu130 wheel was already in uv's cache (no 2.5 GB download). Marker then ran on the GPU (83% util, 7.9 GB VRAM, ~1.5 s/it — **~30× faster**).
+**Why it matters:** the project docs said the GPU doesn't help Marker ("only wall-clock"); this shows it *can*, via the uv torch-backend env var. Worth wiring into the Marker CLI/docs as an opt-in.
 **Rejected:** changing the project's own torch (kept `--no-sync` so our cu130 env is untouched — the env var only affects Marker's ephemeral uvx env).
 
 ### Feature 4a — live Marker `--apply` (DPR) + `cases.tables.yaml`: faithful splice, retrieval gap found
@@ -1359,7 +1359,7 @@ The neuroscience 35-case set stays as the private measured benchmark (the README
 - `tables_marker.splice_tables_inline` / new `_place_block_in_span` (+ `_CAPTION_RE`): the per-page Marker block is now placed **immediately after its `Table N:` caption** (attached with a single newline), not dumped at the page-span end. Falls back to span-end append when no caption is found. Idempotent and page-anchored as before.
 - `ingest.build_parent_child_chunks` is now **table-aware** (new `_table_aware_parents` + `_split_trailing_paragraph`, using `tables_marker.TABLE_BLOCK_RE`): each spliced table block is kept **whole** as one parent and **absorbs the caption paragraph attached right before it** (guarded at 1000 chars so it can't swallow real prose). Docs without spliced tables chunk byte-for-byte as before.
 **Why:** the real root cause (probed via live retrieval, not the earlier guess) was that the **caption** — "Table 2: Top-20 & Top-100 retrieval accuracy …", the natural query magnet — sat in a *different* parent from the numeric grid (caption near the top of page 5, grid appended at the span end under "## 5.2 Ablation Study"). Retrieval surfaced the caption parent (no values); the grid parent's children never even entered the candidate pool. Co-locating caption + grid in one atomic parent makes the caption child map straight back to the values.
-**Verified (RTX, GPU):** re-ran `extract_tables_marker --apply --force --doc <dpr>` (Marker, 44 s, 7 tables, faithful 78.4/85.4) → `ingest --rebuild` → the table parent (caption + 78.4 + 85.4, len 1810) now retrieves at **rank 2 (0.983)**. `run_eval --cases cases.tables.yaml --with-llm-judge`: **`contains_all` 0.750 → 1.000, `llm_judge` 2.333 → 5.000**, `citation_overlap` 1.000. Public eval unchanged (n=1: citation 1.000, contains_all 0.942, judge 3.867 — within the locked bge baseline). 356 unit+integration tests green (+3: caption-anchor splice, no-caption fallback, caption+values-in-one-parent regression in the 4a CI gate).
+**Verified (GPU, GPU):** re-ran `extract_tables_marker --apply --force --doc <dpr>` (Marker, 44 s, 7 tables, faithful 78.4/85.4) → `ingest --rebuild` → the table parent (caption + 78.4 + 85.4, len 1810) now retrieves at **rank 2 (0.983)**. `run_eval --cases cases.tables.yaml --with-llm-judge`: **`contains_all` 0.750 → 1.000, `llm_judge` 2.333 → 5.000**, `citation_overlap` 1.000. Public eval unchanged (n=1: citation 1.000, contains_all 0.942, judge 3.867 — within the locked bge baseline). 356 unit+integration tests green (+3: caption-anchor splice, no-caption fallback, caption+values-in-one-parent regression in the 4a CI gate).
 **Rejected:** (a) keeping the grid at the span end but emitting a header/caption-enriched child (Option 3) — denormalizes child content and embeddings, more invasive, and the prose caption could still win retrieval; (b) embedding a *copy* of the caption inside the block — risks the prose caption out-ranking the block copy (values still missed) and clutters the cached `.md`. Anchoring + absorbing the original caption needs no duplication.
 **Opens:** the splice anchors on the first `Table N` caption in a page span — fine for one-table pages and the common case; multi-table pages or a caption on the adjacent page fall back to span-end (own atomic parent, still whole, just not caption-co-located). Feature 4b (figure detection / region-level splitting) can refine per-region placement. Nothing committed — awaiting review.
 
@@ -1372,7 +1372,7 @@ The neuroscience 35-case set stays as the private measured benchmark (the README
 ### scripts/diagnose_crowding.py (new)
 **What:** read-only diagnostic. Runs an eval set through `retrieve` and reports, per query, how many top-k parents come from the same source (histogram + verdict). No store writes.
 **Why:** tests the *premise* behind a proposed per-source diversity cap (RAG-Assistant-for-Zotero borrow) BEFORE building it. Parent-child dedup already gives one passage per parent, so the cap only helps if same-paper crowding actually occurs. Measure first.
-**Opens:** if crowding is common, build the cap with a focused/broad split (a flat cap regresses single-paper-deep questions); if rare, drop the idea. RTX run pending.
+**Opens:** if crowding is common, build the cap with a focused/broad split (a flat cap regresses single-paper-deep questions); if rare, drop the idea. GPU run pending.
 
 ### src/doc_assistant/pipeline.py — pin reranker to sigmoid output (Issue A)
 **What:** `CrossEncoder("BAAI/bge-reranker-base")` → now passes a sigmoid activation, resolved from the constructor signature (`_sigmoid_activation_kwarg`: `activation_fn` on ST v4/v5, `default_activation_function` on v3).
@@ -1416,16 +1416,16 @@ The neuroscience 35-case set stays as the private measured benchmark (the README
 ---
 ## Session: 2026-06-10 — Cross-machine portability: torch backend + Windows SSL crash (Claude Code)
 
-**Starting from:** picking up on a non-RTX (CPU-only) Windows box. Goal was to run the quality gate; turned into a portability fix so doc_assistant runs unchanged on GPU and non-GPU machines.
+**Starting from:** picking up on a non-GPU (CPU-only) Windows box. Goal was to run the quality gate; turned into a portability fix so doc_assistant runs unchanged on GPU and non-GPU machines.
 
 ### pyproject.toml — torch backend auto-detect (committed `c81774d`)
 **What:** replaced `[tool.uv.sources] torch = { index = "pytorch-cu130", marker = "sys_platform == 'win32'" }` + the explicit `pytorch-cu130` index with `[tool.uv] torch-backend = "auto"`. Regenerated `uv.lock`.
-**Why:** the blanket win32 pin forced the CUDA `+cu130` wheel onto *every* Windows box, GPU or not — and on a CPU-only box the transformer forward pass segfaults (exit 139). `torch-backend = "auto"` makes uv probe the accelerator at sync time: CUDA wheel on the RTX box, CPU wheel everywhere else, from one `uv sync`.
-**Verified:** on this CPU box `uv lock` resolved `torch 2.12.0` and `uv sync` swapped `+cu130 → +cpu`; embeddings/retrieval + full suite then ran. GPU side still wants one confirming `uv sync` on the RTX box. ADR: `docs/decisions.md` → "Cross-machine toolchain". **Committed by user as `c81774d "torch compatibility"` (pyproject + uv.lock + a stray `diagnose_crowding.py` format fix), pushed to `origin/main`.**
+**Why:** the blanket win32 pin forced the CUDA `+cu130` wheel onto *every* Windows box, GPU or not — and on a CPU-only box the transformer forward pass segfaults (exit 139). `torch-backend = "auto"` makes uv probe the accelerator at sync time: CUDA wheel on the GPU machine, CPU wheel everywhere else, from one `uv sync`.
+**Verified:** on this CPU box `uv lock` resolved `torch 2.12.0` and `uv sync` swapped `+cu130 → +cpu`; embeddings/retrieval + full suite then ran. GPU side still wants one confirming `uv sync` on the GPU machine. ADR: `docs/decisions.md` → "Cross-machine toolchain". **Committed by user as `c81774d "torch compatibility"` (pyproject + uv.lock + a stray `diagnose_crowding.py` format fix), pushed to `origin/main`.**
 **Rejected:** GPU-opt-in extra (`uv sync --extra gpu`) — explicit/deterministic but adds a flag the GPU box must remember; auto-detect needs none.
 
 ### Windows SSL hard-crash — diagnosed, fixed on this box (no repo change)
 **What:** the test suite hard-crashed (no traceback) at the first SSL-touching test — `OPENSSL_Uplink(...): no OPENSSL_Applink`. Traced it end to end: not torch, not project code, not Git's mingw64 OpenSSL DLLs (PATH-strip changed nothing; Python 3.8+ ignores PATH for ext DLLs). Root cause is the **uv-managed Astral python-build-standalone** interpreter's OpenSSL — `ssl.create_default_context()` crashes on Astral 3.12.13 *and* 3.14.4, but works on an official python.org CPython. Crash is also non-deterministic between equivalent call forms, so `truststore` / `SSL_CERT_FILE` / an app shim can't fix it reliably.
 **Fix (this box, env only — `.venv` is gitignored):** `py install 3.12` (official 3.12.10) → `uv venv --clear --python <pythoncore-3.12-64>` → `uv sync --all-extras --dev`. Full gate then green: ruff ✓ · ruff format ✓ · mypy ✓ · **pytest 364 passed / 1 skipped / 70.32% cov** ✓ · bandit ✓.
 **Rejected:** repo-level `python-preference = "system"` + `.python-version` — most system-agnostic but could break the GPU box (runs fine on the managed build) and depends on a system 3.12 existing. Chose document-only: KNOWN_ISSUES entry + a README setup note.
-**Opens:** confirm `uv sync` pulls the CUDA wheel on the RTX box (torch change); if more boxes hit the Astral-OpenSSL crash, reconsider pinning a system interpreter. Network here also needs `UV_NATIVE_TLS=1` (corporate cert wall). Memory: `cpu-box-torch-cu130-segfault`, `openssl-applink-git-mingw-crash`.
+**Opens:** confirm `uv sync` pulls the CUDA wheel on the GPU machine (torch change); if more boxes hit the Astral-OpenSSL crash, reconsider pinning a system interpreter. Network here also needs `UV_NATIVE_TLS=1` (corporate cert wall). Memory: `cpu-box-torch-cu130-segfault`, `openssl-applink-git-mingw-crash`.

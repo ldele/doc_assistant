@@ -9,9 +9,10 @@ table's page region — de-duping pymupdf4llm's lossy inline table and supersedi
 any pdfplumber block.
 
 Enrichment-Layer Pattern: PDF-only, idempotent, writes the cache only — never the
-chunk store. Tables enter retrieval on the next ``ingest --rebuild`` (use ``--rebuild``,
-not plain incremental ``ingest``: a splice changes the content hash, and incremental
-ingest leaves the pre-splice old-hash chunks behind). Marker is slow and loads
+chunk store. Tables enter retrieval on the next ``ingest`` — incremental is fine: the
+orphan sweep re-hashes each source and drops the pre-splice old-hash chunks
+(``ingest._find_orphan_hashes``). A content change drops that doc's sidecar enrichment,
+so re-run the citation + doc-vector enrichment afterwards. Marker is slow and loads
 multi-GB models, so docs run in a **bounded pool** (``MARKER_MAX_WORKERS``); failures
 are isolated per document.
 
@@ -174,9 +175,9 @@ def main() -> int:
         "\nDry run. Pass --apply to write spliced markdown."
         if not args.apply
         else (
-            "\nNote: re-run `ingest --rebuild` to pull the spliced tables into retrieval. "
-            "Use --rebuild, not plain `ingest`: a splice changes the document's content hash, "
-            "and incremental ingest leaves the pre-splice (old-hash) chunks behind as orphans."
+            "\nNote: re-run `ingest` to pull the spliced tables into retrieval. "
+            "Incremental ingest now self-cleans the pre-splice (old-hash) chunks. "
+            "A content change drops the doc's citations/doc_similarities — re-run those enrichments after."
         )
     )
     return 0

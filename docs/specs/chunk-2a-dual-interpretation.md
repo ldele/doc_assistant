@@ -1,6 +1,6 @@
 # Spec — Integrity Chunk 2a: dual interpretation layer
 
-**Status:** Designed 2026-06-04 (grilled with user, verified against code). Ready for Claude Code execution.
+**Status:** ✅ SHIPPED (Phase 6). Designed 2026-06-04 (grilled with user, verified against code); implemented and merged — `synthesis.py` + `SYNTHESIS_MODE` + `AnswerClaim` + Chainlit adjudication landed (see DEVLOG entries around L1274-1284). This spec is now the historical design-of-record, not a pending work item.
 **Owner of execution:** Claude Code (code + tests).
 **Pattern reference:** Research Integrity Layer (`docs/decisions.md` → Chunk 2a); reuses `provenance.compute_confidence_signals` (PR 5.1) and the existing `pipeline.stream_answer`.
 
@@ -42,13 +42,13 @@
 
 Pure functions over already-retrieved data + the generated answer.
 
-- `segment_claims(answer: str, sources: list[RetrievedChunk]) -> list[Claim]` — split on inline `[N]` markers (confirm the exact regex against `prompts.ANSWER_PROMPT`/`format_docs_for_prompt`: `[Source N: …]` ↔ `[N]`). Each `Claim` = `text`, `claim_index`, `source_numbers: list[int]`, `citations` (resolved filename+page), `marker: "ok"|"weak"|"unsupported"`.
-- `claim_marker(claim, sources) -> str` — uncited → `unsupported`; cited → `weak` if the cited chunk's reranker score < the PR 5.1 weak-score threshold, else `ok`. Deterministic.
+- `segment_claims(answer: str, sources: list[RetrievedChunk]) -> list[Claim]` — split on inline `[N]` markers (confirm the exact regex against `prompts.ANSWER_PROMPT`/`format_docs_for_prompt`: `[Source N: …]` ↔ `[N]`). Each `Claim` = `claim_index`, `text`, `citations` (list of `ClaimCitation`), `marker`; `source_numbers` is a **derived `@property`** over `citations`, not a stored field.
+- `claim_marker(citations: list[ClaimCitation], sources: list[RetrievedChunk], *, weak_threshold=WEAK_RETRIEVAL_THRESHOLD) -> str` — takes the citation list (not a `Claim`). Uncited → `unsupported`; cited → `weak` if the cited chunk's reranker score < threshold, else `ok`; **cited a real source but no reranker score available → `weak`**. Deterministic.
 - `render_dual_layer(evidence, interpretation_claims, signals, mode) -> ...` — assemble the evidence block (passages + provenance + `ConfidenceSignals` banner) and, in `ai` mode, the interpretation block (claims with per-claim markers). `human` mode returns evidence only.
 
-## Contract — `db/models.py` + `db/migrations.py`
+## Contract — `db/models.py` (table picked up by `db/migrations.py:init_db` via `create_all`)
 
-New `AnswerClaim` (`answer_claims`): `id · answer_record_id (FK answer_records, indexed) · claim_index · claim_text · citations (JSON) · decision (str: pending|accepted|rejected|edited, default "pending") · edited_text (nullable) · decided_at (nullable)`. Migration registered in `migrations.py` (idempotent versioning).
+New `AnswerClaim` (`answer_claims`): `id · answer_record_id (FK answer_records ON DELETE CASCADE, indexed) · claim_index · claim_text · citations_json (JSON text, default '[]') · marker (str: ok|weak|unsupported, default 'ok') · decision (str: pending|accepted|rejected|edited, default 'pending') · edited_text (nullable) · decided_at (nullable) · created_at (indexed)`. Table created declaratively via `Base.metadata.create_all` in `db/migrations.py:init_db` (idempotent — no versioned migration framework exists yet; adding the model is sufficient).
 
 ## config.py additions
 - `SYNTHESIS_MODE = os.getenv("SYNTHESIS_MODE", "ai")` — `human` | `ai`; `ValueError` otherwise (mirror `embeddings.get_model_config`).
@@ -64,8 +64,8 @@ New `AnswerClaim` (`answer_claims`): `id · answer_record_id (FK answer_records,
 ## Build node
 
 **Depends on:** none structurally (reuses shipped provenance + pipeline). Independent of Feature 4a.
-**Files owned:** `src/doc_assistant/synthesis.py` (new), `src/doc_assistant/db/models.py`, `src/doc_assistant/db/migrations.py`, `src/doc_assistant/config.py`, `src/doc_assistant/pipeline.py` (mode branch / claim hand-off), `apps/chainlit_app.py`, `src/doc_assistant/commands.py` (adjudication handlers + a `/synthesis` mode display), `tests/unit/test_synthesis.py` (new), `tests/integration/test_adjudication_persistence.py` (new), `.env.example`.
-**Status:** pending.
+**Files owned (as shipped):** `src/doc_assistant/synthesis.py` (new), `src/doc_assistant/db/models.py` (`AnswerClaim`), `src/doc_assistant/config.py`, `apps/chainlit_app.py` (mode branch + claim hand-off + `cl.action_callback` adjudication handlers + persistence via `provenance.record_claims`/`adjudicate_claim`/`get_claims`), `src/doc_assistant/commands.py` (**read-only `/synthesis` mode display only**), `tests/unit/test_synthesis.py` (new), `tests/integration/test_adjudication_persistence.py` (new), `.env.example`. (`pipeline.py` was **not** modified for 2a — the mode branch and claim hand-off live in `chainlit_app.py`; `db/migrations.py` only picks up the table via `create_all`.)
+**Status:** ✅ shipped (Phase 6). `synthesis.py` (16 unit tests) + `SYNTHESIS_MODE` + `AnswerClaim`/`answer_claims` + Chainlit adjudication (5 integration tests) all landed.
 
 ### Unit test — `tests/unit/test_synthesis.py`
 `segment_claims` on a fixed answer with `[1][2]` + an uncited sentence → correct claim count, source mapping, and markers (`unsupported` for the uncited span; `weak` when the cited chunk's reranker score is below threshold). `human`-vs-`ai` render branch. Pure, no DB/LLM.

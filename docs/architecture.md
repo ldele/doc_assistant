@@ -13,9 +13,9 @@ Embeddings (BGE-base) → Chroma vector store (data/chroma/)
              ↕
          SQLite document store (Folder → Document → Part → Chunk)
 ↓
-Hybrid retrieval (BM25 + vector, weights 0.4/0.6) → top 10 candidates
+Hybrid retrieval (BM25 + vector, weights 0.4/0.6) → CANDIDATE_K (default 20) candidates per retriever
 ↓
-Cross-encoder reranker → top 5 passages (parent context returned)
+Cross-encoder reranker → TOP_K (default 10) parents (parent context returned)
 ↓
 LLM (Claude or local Ollama) → streamed answer with citations
 ```
@@ -48,8 +48,8 @@ flowchart TD
 
     subgraph QRY["Query → Answer"]
         Q["User query"] --> ROUTE["query_router.py<br/>library vs content"]
-        ROUTE -->|content| RET["pipeline.retrieve<br/>BM25 0.4 + vector 0.6 → top-10"]
-        RET --> RR["cross-encoder rerank<br/>→ top-5 parents (+ scores)"]
+        ROUTE -->|content| RET["pipeline.retrieve<br/>BM25 0.4 + vector 0.6 → CANDIDATE_K=20 candidates/retriever"]
+        RET --> RR["cross-encoder rerank<br/>→ TOP_K=10 parents (+ scores)"]
         RR --> GEN["LLM generate<br/>Claude / Ollama (cited)"]
         GEN --> SYN["synthesis.py — Chunk 2a<br/>evidence (deterministic) + AI interpretation<br/>per-claim markers from rerank scores"]
         SYN --> PROV["provenance.py<br/>answer record + confidence signals"]
@@ -85,6 +85,8 @@ flowchart TD
 | `apps/chainlit_app.py` | Web chat UI | Thin entrypoint; no business logic |
 | `scripts/` | One-off maintenance scripts | Not part of the importable package |
 
+This table is non-exhaustive — it covers the core ingest/runtime modules. The research-integrity and enrichment layer (`query_router`, `synthesis`, `provenance`, `reviewer`, `citations`, `metadata_extractor`, `doc_vectors`, `regions`, `tables`, `tables_marker`, `embeddings`, `bibtex`, `commands`, `llm`) is shown in the Mermaid diagram above.
+
 **Boundary rule:** `apps/` contains no business logic. All logic lives in `src/doc_assistant/`. The UI layer calls the library layer; never the reverse.
 
 ## Two-tier caching
@@ -96,7 +98,7 @@ flowchart TD
 
 Both tiers are independent: changing the chunking strategy invalidates embeddings but not extraction. Rebuild with `python -m doc_assistant.ingest --rebuild`.
 
-Hashing is content-only (SHA-256 of extracted markdown, truncated to 16 hex chars). Documents survive path changes and re-extractions without creating orphan rows. Migration from the old path+content scheme: `scripts/migrate_to_content_hash.py`.
+Hashing is content-only (SHA-256 of extracted markdown, truncated to 16 hex chars). Documents survive path changes and re-extractions without creating orphan rows. Migration from the old path+content scheme: `scripts/archive/migrate_to_content_hash.py`.
 
 ## Document health model
 
@@ -117,9 +119,9 @@ Classification is informational, never blocking. Broken documents remain queryab
 - `detect-secrets` baseline committed; hook runs in pre-commit.
 
 ### CI/CD
-- GitHub Actions: ruff → mypy → pytest with coverage → bandit → pip-audit on every push and PR.
+- GitHub Actions on every push and PR: ruff lint + format-check → mypy → pytest with coverage (fail-under 40) → bandit → pip-audit (advisory, non-blocking) → detect-secrets.
 - Merging on red pipeline is never allowed.
-- Coverage floor: 70% (CI-enforced). Target: 85% for core pipeline and ingest logic.
+- Coverage floor: 40% (CI-enforced; `--cov-fail-under=40` in ci.yml). Raise toward 45%+ as integration tests land. Target: 85% for core pipeline and ingest logic.
 
 ### Pre-commit (mandatory)
 Hooks: ruff (lint + format), mypy, bandit, detect-secrets, standard file hygiene.
@@ -136,14 +138,16 @@ Exception hierarchy rooted at `DocAssistantError`. Domain errors (ExtractionErro
 ### Testing
 ```
 tests/
-├── conftest.py           # shared fixtures
-├── test_smoke.py         # import sanity
+├── fixtures/             # shared fixtures (synthetic_corpus.py)
 ├── unit/                 # fast, no I/O, no LLM
 │   └── test_<module>.py
 ├── integration/          # cross-module, may use temp files, mocked LLM
 │   └── test_<flow>.py
 └── eval/                 # RAG evaluation harness (not part of standard CI run)
-    └── eval_set.json
+    ├── run_eval.py       # harness entrypoint
+    ├── cases.yaml / cases.public.yaml
+    ├── TESTING.md        # what each tier and scorer measures
+    └── baselines/        # recorded eval baselines
 ```
 
 Unit tests run on every commit (pre-commit). Full suite (unit + integration) runs in CI — free, no API calls. Eval harness runs manually at phase checkpoints and costs money (Anthropic API for the LLM judge).

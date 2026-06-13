@@ -16,6 +16,8 @@ Read on session start, in this order:
 
 Also: `.claude/KNOWN_ISSUES.md` — open weaknesses, recurring failures, workarounds.
 
+Note: `.claude/` is gitignored local working state — these files are absent in a fresh clone.
+
 Human-destined docs live in `docs/` and the repo root (README). Don't put LLM-coordination state there.
 
 ## Key documents
@@ -74,4 +76,4 @@ End of any non-trivial session: **append** a baton entry to `.claude/SESSION.md`
 
 ## Setup
 
-See `README.md` (Python 3.12 + uv: `uv sync` → `.env` → ingest → Chainlit or CLI). Runtime quirks (3.14/Chainlit, cu130 segfault on the CPU box, sandbox sync) live in `.claude/KNOWN_ISSUES.md`.
+See `README.md` (Python 3.12 + uv: `uv sync` → `.env` → ingest → Chainlit or CLI). Runtime quirks (3.14/Chainlit; the former win32 cu130 segfault, now resolved via `torch-backend = "auto"`; sandbox sync) live in `.claude/KNOWN_ISSUES.md`.

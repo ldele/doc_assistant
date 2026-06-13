@@ -7,7 +7,7 @@ What to run, what to ask, and what to look at so a first-time reader sees the po
 ```bash
 git clone <repo> && cd doc_assistant
 uv sync
-cp .env.example .env          # add ANTHROPIC_API_KEY (local-only mode via Ollama is spec'd, not yet shipped)
+cp .env.example .env          # add ANTHROPIC_API_KEY (or run fully local — uncomment the Ollama stanza in .env.example, no key needed)
 # drop a few PDFs in data/sources/ (any public papers work)
 uv run python -m doc_assistant.ingest      # extract -> chunk -> embed -> store (incremental after first run)
 uv run --python 3.12 chainlit run apps/chainlit_app.py   # web UI  (or: uv run python apps/cli.py)

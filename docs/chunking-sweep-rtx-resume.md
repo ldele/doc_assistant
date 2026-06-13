@@ -3,7 +3,7 @@
 > ✅ **DONE (2026-06-06).** Full 6-config sweep run on the RTX box (public corpus, n=3,
 > judge). **Defaults confirmed** — no config beats `2000/200 · 400/50`. Results +
 > per-config run-ids: [`tests/eval/baselines/chunking_sweep_public_2026-06-06.md`](../tests/eval/baselines/chunking_sweep_public_2026-06-06.md).
-> CLAUDE.md Locked-settings chunk-sizes row updated. The notes below are retained for
+> The Locked-settings chunk-sizes row in `.claude/CONTEXT.md` (local-only working-dir file) was updated. The notes below are retained for
 > historical context / re-run instructions.
 
 **Status (2026-06-04):** deferred to the RTX/GPU box. On the CPU dev box each
@@ -18,11 +18,11 @@ reproduces the locked bge baseline (1.000 / 0.927 / 3.738 at n=5). The open ques
 the RTX run answers is whether **configs 2–6 beat this control**, not whether the
 defaults are sane (they are).
 
-## What to run on the RTX box
+## How the sweep was run (for reproduction)
 
 ```bash
 git pull                                  # get the sweep's --cases passthrough (2026-06-04)
-uv sync --extra dev                        # restores the cu130 GPU torch on the RTX box
+uv sync                                    # torch-backend="auto" auto-selects the CUDA wheel on the GPU box
 # Full 6-config grid, public corpus, repeat 3, with judge:
 uv run --python 3.12 python -m scripts.sweep_chunking \
     --cases tests/eval/cases.public.yaml --repeat 3 --with-llm-judge
@@ -63,6 +63,7 @@ Each config's runs are tagged in `data/eval.duckdb` with its
 `chunk-sweep | parent=… child=…` note. Compare with the harness aggregate report
 (filter by note). The discriminating signals for chunking are `contains_all` and
 `llm_judge`; `citation_overlap` may saturate at 1.000 across configs (then it can't
-rank them). Record the winner (or "defaults confirmed") in
-`tests/eval/baselines/` and update the **Locked settings** chunk-sizes row in
-`CLAUDE.md` — those defaults are currently marked "never measured".
+rank them). The sweep recorded the result in
+[`tests/eval/baselines/chunking_sweep_public_2026-06-06.md`](../tests/eval/baselines/chunking_sweep_public_2026-06-06.md)
+(defaults confirmed) and the **Locked settings** chunk-sizes row in `.claude/CONTEXT.md`
+was updated from "never measured" to measured/confirmed on 2026-06-06.

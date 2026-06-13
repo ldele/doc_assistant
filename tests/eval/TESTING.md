@@ -73,7 +73,7 @@ The verified reference stands in for the source documents. That makes the three
 | Chunk 2b reviewer (runtime) | answer + retrieved passages | the retrieved text |
 
 The judge returns faithfulness, relevance, and completeness (1–5 each, defined in
-`_JUDGE_PROMPT`); `llm_judge` is their mean. Default model `claude-haiku-4-5`,
+`_JUDGE_PROMPT`); `llm_judge` is their mean. Default model `claude-haiku-4-5-20251001`,
 pinned (see below).
 
 ## The verified-10 rule
@@ -99,6 +99,12 @@ Committed, human-readable reference results live in [`baselines/`](baselines/) �
 diff a fresh run against those. The live log `data/eval.duckdb` is gitignored and
 regenerated each run.
 
+**Note (retrieval split, 2026-06-07).** Retrieval now fetches `CANDIDATE_K` (default
+20) candidates per retriever before the reranker cuts to `TOP_K` (10). `CANDIDATE_K`
+is **provisional** and the committed baselines were measured *before* this split
+(`CANDIDATE_K=10` reproduces them) — re-measure before treating post-split numbers as
+locked.
+
 ## The judge is a pinned instrument
 
 The generator can be any model — local-first is the goal, and a weak generator
@@ -107,19 +113,20 @@ drift, or cross-run numbers stop being comparable. So the judge model + version
 are **pinned and recorded per run**; swapping is an explicit, logged event. Same
 contract for the Chunk 2b reviewer.
 
-**Local judge — gated, not assumed.** A local judge is cheaper but a weaker
-grader. Before it is trusted for headline numbers or the Chunk 2c loop, it must
-reproduce the reference judge's *decisions* (not its scores) on the verified 10,
-at `--repeat ≥ 3`:
+**Local judge — gated, not assumed (planned, not yet implemented).** A local judge
+is cheaper but a weaker grader. Before it is trusted for headline numbers or the
+Chunk 2c loop, it must reproduce the reference judge's *decisions* (not its scores) on
+the verified 10, at `--repeat ≥ 3`:
 
 - **Decision agreement (binding)** — same winner on each config pair the
-  reference ranks. Default ≥ 0.9.
+  reference ranks. Proposed ≥ 0.9.
 - **Rank correlation** — Spearman/Kendall on per-case scores.
 - **Per-case deviation** — MAD on the 1–5 scale ≤ 0.5.
 
-Thresholds are config-driven defaults, tuned on the first real distribution; a
-candidate passes only across repeats. Until then the reference judge stays
-authoritative and the local model runs in shadow.
+These are **proposed** thresholds, to be made config-driven and tuned on the first
+real distribution when the local-judge harness lands (not built yet — `config.py`
+exposes only `JUDGE_PROVIDER`/`JUDGE_MODEL`, no agreement/MAD gate). Until then the
+reference judge stays authoritative and the local model runs in shadow.
 
 ## Limitations
 
@@ -146,6 +153,8 @@ uv run python -m scripts.run_eval --cases tests/eval/cases.public.yaml --with-ll
 
 `--with-llm-judge` needs an `ANTHROPIC_API_KEY` and costs a few cents for 10
 cases; drop it for a free deterministic-only run. The `bge-base` vs `specter2`
-embedder comparison was settled on a separate corpus
-([`docs/decisions.md`](../../docs/decisions.md) → Phase 5 / Feature 3) and is
-queued to re-run here for reproducibility.
+embedder comparison was first settled on a separate corpus
+([`docs/decisions.md`](../../docs/decisions.md) → Phase 5 / Feature 3) and has since
+been reproduced on this public corpus at `--repeat 5` — see
+[`baselines/bge_vs_specter2_public_2026-06-04.md`](baselines/bge_vs_specter2_public_2026-06-04.md)
+(bge-base stays the default).

@@ -10,7 +10,7 @@ Not a chatbot wrapper: the goal is reliable, grounded answers with the measureme
 - **Reproducible benchmarks.** A public eval set runs over a corpus anyone can rebuild from arXiv — 5 trials, reported as mean ± trial-mean std with the caveats stated alongside (see [Benchmarks](#benchmarks)). What each scorer measures and why is in [`tests/eval/TESTING.md`](tests/eval/TESTING.md).
 - **A research-integrity layer.** Every answer carries a provenance record (retrieved chunks, model, cost); a separate-context reviewer agent can re-grade flagged answers; confidence signals keep the UI quiet on clean ones — the aim being to make AI-assisted output auditable.
 - **Architecture that grows by addition.** Enrichment layers (citations, doc-vectors, tables) are sidecar modules with idempotent CLI runners that don't mutate the chunk store — new capability tends to be a new module rather than a rewrite.
-- **Functions as a local RAG sandbox.** The embedder, chunking, `TOP_K`, parent-child and multi-query retrieval, and the LLM backend (Claude API or local Ollama) are config-swappable, with the eval harness on hand to measure what each change does.
+- **Functions as a local RAG sandbox.** The embedder, chunking, the retrieval candidate pool (`CANDIDATE_K`) and final cut (`TOP_K`), parent-child and multi-query retrieval, and the LLM backend (Claude API or local Ollama) are config-swappable, with the eval harness on hand to measure what each change does.
 
 ## What it does
 
@@ -34,7 +34,7 @@ Not a chatbot wrapper: the goal is reliable, grounded answers with the measureme
 | Orchestration | LangChain |
 | Document store | SQLite (via SQLAlchemy) |
 | UI | Chainlit (web) + CLI |
-| PDF / table extraction | PyMuPDF4LLM (full-text, default); Marker for tables, run isolated out-of-process (chosen by measurement; ingest wiring in progress) |
+| PDF / table extraction | PyMuPDF4LLM (full-text, default); Marker for high-fidelity tables, run isolated out-of-process on caption-detected table pages (chosen by measurement) — a separate idempotent post-ingest pass; tables enter retrieval on the next ingest |
 
 ## Setup
 
@@ -271,11 +271,11 @@ uv run python -m scripts.sweep_chunking --cases tests/eval/cases.public.yaml --r
 
 ## Status
 
-**Phase 6 in progress.** Shipped: core RAG (Phase 1); measured quality + eval harness (Phases 2 & 5); document store + library UI (Phase 3); citation graph + doc-similarity edges (Phase 4); the research-integrity layer — provenance card, heuristic confidence signals, and a separate-context LLM reviewer agent; and a provider-agnostic LLM layer (Claude API *or* fully-local Ollama for analysis, reviewer, and judge). **318 tests · ruff / mypy --strict / bandit clean.**
+**Phase 6 in progress.** Shipped: core RAG (Phase 1); measured quality + eval harness (Phases 2 & 5); document store + library UI (Phase 3); citation graph + doc-similarity edges (Phase 4); the research-integrity layer — provenance card, heuristic confidence signals, and a separate-context LLM reviewer agent; and a provider-agnostic LLM layer (Claude API *or* fully-local Ollama for analysis, reviewer, and judge). **365 tests · ruff / mypy --strict / bandit clean.**
 
 `bge-base` is the default embedder — it performed better in our comparisons, though the better choice depends on the corpus ([`docs/decisions.md`](docs/decisions.md) → Phase 5 / Feature 3; re-checked on the public corpus, see [Benchmarks](#benchmarks)).
 
-**Next:** figures & tables extraction (Marker as an isolated out-of-process sidecar, gated to detected table pages — engine chosen by measurement) and dual-layer evidence/interpretation answers. The provider-agnostic LLM layer ([`docs/specs/llm-provider-isolation.md`](docs/specs/llm-provider-isolation.md)) has since shipped. Full rationale and roadmap: [`docs/decisions.md`](docs/decisions.md), [`docs/doc-assistant-roadmap.md`](docs/doc-assistant-roadmap.md).
+**Recently shipped:** Marker table extraction (isolated out-of-process sidecar, gated to caption-detected table pages — engine chosen by measurement), dual-layer evidence/interpretation answers, and the provider-agnostic LLM layer ([`docs/specs/llm-provider-isolation.md`](docs/specs/llm-provider-isolation.md)). **Next:** the knowledge-currency layer ([`docs/specs/feature-7d-knowledge-currency.md`](docs/specs/feature-7d-knowledge-currency.md)) and figure region detection (Feature 4b). Full rationale and roadmap: [`docs/decisions.md`](docs/decisions.md), [`docs/doc-assistant-roadmap.md`](docs/doc-assistant-roadmap.md).
 
 A 60-second walkthrough for first-time readers: [`docs/DEMO.md`](docs/DEMO.md).
 

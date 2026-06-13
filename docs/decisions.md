@@ -437,6 +437,23 @@ extra (`uv sync --extra gpu`) — explicit and deterministic, but adds a flag th
 box must remember; auto-detect needs nothing. Validated CPU-side (lock resolved the
 `+cpu` wheel, full suite green); GPU-side wants one confirming `uv sync` on the RTX box.
 
+> ⚠ **Update (2026-06-13) — `auto` does NOT deliver per-machine CUDA; superseded by a spec.**
+> Verified on the RTX box + uv docs: `torch-backend` / `UV_TORCH_BACKEND` is honored **only by
+> `uv pip`** — a no-op for `uv lock` / `uv sync` / `uv run`. So the committed lock pins a single
+> wheel (`+cpu`) and the GPU box **silently runs CPU torch** (`cuda.is_available() == False`)
+> despite the 4070; the "GPU box resolves the CUDA wheel" claim above is wrong. Rejected option
+> (b) above (the `--extra gpu` pattern) is in fact the *correct* mechanism. The durable fix —
+> mutually-exclusive `cpu` / `cu130` extras bound to explicit PyTorch indexes (`uv sync --extra
+> cu130` on the GPU box, `--extra cpu` on CPU/CI) — is specced in
+> [`docs/specs/torch-backend-per-machine.md`](specs/torch-backend-per-machine.md) and **✅
+> implemented 2026-06-13**: `pyproject.toml` now has the `cpu`/`cu130` extras, two explicit
+> `[[tool.uv.index]]` entries, `[tool.uv.sources] torch`, and `[tool.uv] conflicts`; `uv.lock`
+> carries both wheels; CI pins `uv sync --locked --extra cpu --extra dev` + `UV_NO_SYNC=1`.
+> Verified on the RTX box: `--extra cu130` → `cuda True`, `--extra cpu` → `+cpu`, and
+> `--extra cpu --extra cu130` errors (conflict guard). Per-machine: `uv sync --extra cu130`
+> (GPU) / `--extra cpu` (everywhere else, the safe default); add `--extra dev` for the
+> toolchain, and prefix run commands on the GPU box (`uv run --extra cu130 …`).
+
 **Interpreter OpenSSL — not pinned in-repo (deliberate).** Separately, the
 uv-managed **Astral python-build-standalone** interpreter ships an OpenSSL that
 hard-crashes (`no OPENSSL_Applink`) on *some* Windows boxes the moment any real SSL

@@ -44,23 +44,34 @@ Not a chatbot wrapper: the goal is reliable, grounded answers with the measureme
 # requires 3.12 at runtime (anyio event loop incompatibility).
 git clone <your-repo-url> doc-assistant
 cd doc-assistant
-uv sync
+
+# Pick ONE torch backend extra for your machine (they are mutually exclusive):
+uv sync --extra cu130   # NVIDIA GPU box (CUDA) — GPU-accelerated embedder + reranker
+# uv sync --extra cpu   # CPU-only box (and CI) — the +cu130 wheel SEGFAULTS without a usable GPU
+# add `--extra dev` for the test/lint toolchain, e.g.  uv sync --extra cu130 --extra dev
+# on the GPU box, prefix run commands too, e.g.        uv run --extra cu130 python -m doc_assistant.ingest
 
 # Configure
 cp .env.example .env   # then fill in your API key
 ```
 
+> **Why an `--extra`?** uv's `torch-backend` auto-detect is `uv pip`-only (a no-op for
+> `uv lock`/`uv sync`/`uv run`), and two same-OS machines can't be distinguished by a lock
+> marker — so the torch variant is chosen per machine by a mutually-exclusive extra
+> (`cpu` vs `cu130`). Full rationale: [`docs/specs/torch-backend-per-machine.md`](docs/specs/torch-backend-per-machine.md).
+
 > **Hardware — a GPU is strongly recommended.** The embedder (`bge-base`) and the cross-encoder
 > reranker run **locally** on every ingest and query, so they benefit a lot from GPU acceleration.
-> No device configuration is needed — `sentence-transformers` auto-selects CUDA → MPS → CPU:
+> Install the matching torch extra (Setup above: `--extra cu130` for NVIDIA, `--extra cpu` otherwise);
+> `sentence-transformers` then auto-selects the device at runtime (CUDA → MPS → CPU):
 >
-> - **NVIDIA / CUDA** — best supported and the only path benchmarked here: retrieve + rerank ~70 ms
->   on an RTX 4070. Recommended.
+> - **NVIDIA / CUDA** — `uv sync --extra cu130`. Best supported and the only path benchmarked here:
+>   retrieve + rerank ~70 ms on an RTX 4070. Recommended.
 > - **Apple Silicon (M-series)** — PyTorch's MPS (Metal) backend is auto-detected, so the embedder
 >   and reranker use the Mac's GPU with no config change. Faster than CPU, though generally slower
 >   than a discrete CUDA card and **not benchmarked here** (MPS also occasionally falls back to CPU
 >   for unsupported ops).
-> - **CPU-only** — works (Linux and CI use the CPU PyTorch wheel), so a GPU isn't required — but the
+> - **CPU-only** — `uv sync --extra cpu` (Linux and CI too). Works, so a GPU isn't required — but the
 >   same step is seconds per query, and re-embedding a corpus (ingest / `--rebuild` / the chunking
 >   sweep) is dramatically slower.
 >

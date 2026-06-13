@@ -26,7 +26,7 @@ Human-destined docs live in `docs/` and the repo root (README). Don't put LLM-co
 - `docs/decisions.md` — every design decision with rationale; this project's ADR home (no `.claude/ADRs/`). **Always check before suggesting architectural changes.**
 - `docs/doc-assistant-roadmap.md` — Phase 5+ source of intent; PR-by-PR implementation order at the bottom.
 - `docs/figures-and-tables.md` — Feature 4 detection layer (regions, tables, the Marker decision).
-- `docs/specs/` — code-level build specs: `llm-provider-isolation.md` · `feature-4a-marker-table-ingest.md` · `chunk-2a-dual-interpretation.md` · `feature-7d-knowledge-currency.md` (design-locked, blocked on PR 13 + PR 16).
+- `docs/specs/` — code-level build specs: `llm-provider-isolation.md` · `feature-4a-marker-table-ingest.md` · `chunk-2a-dual-interpretation.md` · `feature-7d-knowledge-currency.md` (design-locked, blocked on PR 13 + PR 16) · `torch-backend-per-machine.md` (per-machine CUDA/CPU torch via conflicting extras; designed, not yet implemented).
 
 ## Tool split
 

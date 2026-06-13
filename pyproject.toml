@@ -36,10 +36,11 @@ dependencies = [
     "langchain-ollama>=1.0,<2.0",
     "chromadb>=0.5",
     "sentence-transformers>=3.0",
-    # torch is pulled in by sentence-transformers; declared explicitly so the
-    # Windows CUDA source in [tool.uv.sources] binds (uv only applies sources to
-    # direct deps). Non-Windows platforms resolve the default PyPI (CPU) wheel.
-    "torch>=2.12",
+    # torch is NOT a base dep — it's declared in the mutually-exclusive `cpu`/`cu130`
+    # extras below (each bound to its PyTorch index in [tool.uv.sources]). Pick one per
+    # machine: `uv sync --extra cu130` (GPU) or `uv sync --extra cpu` (CPU/CI). See
+    # docs/specs/torch-backend-per-machine.md. sentence-transformers still needs torch
+    # transitively; the chosen extra selects which wheel variant installs.
     "pymupdf4llm>=0.0.17",
     "pymupdf>=1.24",
     "ebooklib>=0.18",
@@ -68,6 +69,15 @@ dev = [
     "pre-commit>=3.8.0",
     "structlog>=24.0.0",
 ]
+
+# PyTorch backend variants — mutually exclusive (see [tool.uv] conflicts). Pick
+# exactly ONE per machine at sync time:
+#   GPU box (RTX, CUDA):  uv sync --extra cu130
+#   CPU-only box + CI:    uv sync --extra cpu    <- safe default; the +cu130 wheel
+#                                                   SEGFAULTS (exit 139) on a box with
+#                                                   no usable GPU.
+cpu = ["torch>=2.12"]
+cu130 = ["torch>=2.12"]
 
 [project.scripts]
 doc-cli = "apps.cli:main"
@@ -153,13 +163,31 @@ module = [
 ]
 ignore_missing_imports = true
 
-# --- uv: PyTorch backend auto-detection (per machine) -------------------
-# torch is a transitive dep (sentence-transformers / transformers). `torch-backend
-# = "auto"` makes uv probe each machine's accelerator at sync time and pick the
-# matching wheel: the CUDA build on the RTX GPU box (so embeddings + the
-# cross-encoder reranker run on the GPU), the CPU build on non-GPU boxes and CI.
-# One `uv sync` works everywhere — no win32 pin, no per-machine torch swap.
-# Supersedes the blanket `sys_platform == 'win32'` cu130 pin (DEVLOG 2026-06-02),
-# which forced the CUDA wheel onto CPU-only Windows boxes and segfaulted there.
+# --- uv: per-machine PyTorch backend via conflicting extras --------------
+# torch-backend / UV_TORCH_BACKEND is uv-pip-only (a no-op for lock/sync/run), so a
+# single committed lock can't auto-pick CUDA vs CPU, and two same-OS (win32) boxes
+# can't be split by any PEP 508 marker. Instead: the `cpu`/`cu130` extras (above)
+# each bind torch to an explicit PyTorch index; one shared uv.lock carries BOTH
+# wheels and the `--extra` flag selects which installs per machine. `conflicts`
+# makes enabling both error out (guards the CPU-box-never-cu130 invariant).
+# Full rationale: docs/specs/torch-backend-per-machine.md.
 [tool.uv]
-torch-backend = "auto"
+conflicts = [
+    [{ extra = "cpu" }, { extra = "cu130" }],
+]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true        # only torch* resolves here; everything else stays on PyPI
+
+[[tool.uv.index]]
+name = "pytorch-cu130"
+url = "https://download.pytorch.org/whl/cu130"
+explicit = true
+
+[tool.uv.sources]
+torch = [
+    { index = "pytorch-cpu", extra = "cpu" },
+    { index = "pytorch-cu130", extra = "cu130" },
+]

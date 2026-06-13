@@ -11,6 +11,14 @@ jobs:
     name: Lint / Type / Test / Security
     runs-on: ubuntu-latest
 
+    env:
+      # Sync ONCE explicitly below (with --extra cpu, --locked); UV_NO_SYNC then keeps
+      # every `uv run` step on that exact, lock-verified env. Without it, a plain
+      # `uv run` on Linux re-resolves torch WITHOUT the cpu extra and pulls the heavy
+      # PyPI CUDA wheel. CI MUST stay on +cpu and MUST NEVER select --extra cu130
+      # (the cu130 wheel segfaults on a GPU-less box). See docs/specs/torch-backend-per-machine.md.
+      UV_NO_SYNC: "1"
+
     steps:
       - uses: actions/checkout@v4
 
@@ -23,7 +31,9 @@ jobs:
         run: uv python install
 
       - name: Install dependencies
-        run: uv sync --frozen --extra dev
+        # --extra cpu → the lean +cpu torch wheel from the pytorch-cpu index (never cu130).
+        # --locked → fail if uv.lock is stale vs pyproject (no silent re-resolve in CI).
+        run: uv sync --locked --extra cpu --extra dev
 
       # --- Lint ---
       - name: Ruff lint

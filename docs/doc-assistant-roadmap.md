@@ -282,15 +282,16 @@ Chunk *sizes* (`parent 2000/200`, `child 400/50`, `baseline 1000/200`) were orig
 
 ### Engineering — retrieval K split (commit `09115c8`, 2026-06-07)
 
-`CANDIDATE_K` (=20, **provisional, not locked**) is the candidate pool fetched per
-retriever before rerank; `TOP_K` (=10) is the final post-rerank cut passed to the LLM.
-Previously the pool was hardcoded to `10 == TOP_K`, leaving the cross-encoder no
-headroom to reorder. Widening the pool changes retrieval output and is queued for
-re-measurement on the public *and* private (neuroscience) eval before locking;
-`CANDIDATE_K=10` reproduces the exact pre-split behaviour. A guard requires
-`CANDIDATE_K >= TOP_K`. See `config.py:107-119`, `pipeline.py:82,88`, and
-`tests/unit/test_retrieval_config.py`. Re-measure needs the full neuroscience corpus —
-it runs on the RTX/other machines, not the CPU box.
+`CANDIDATE_K` (=20) is the candidate pool fetched per retriever before rerank; `TOP_K`
+(=10) is the final post-rerank cut passed to the LLM. Previously the pool was hardcoded
+to `10 == TOP_K`, leaving the cross-encoder no headroom to reorder. **Public-corpus A/B
+(2026-06-13, `--repeat 3` + judge): a tie — no regression vs the pre-split `CANDIDATE_K=10`**
+([`tests/eval/baselines/candidate_k_public_2026-06-13.md`](../tests/eval/baselines/candidate_k_public_2026-06-13.md)).
+So `CANDIDATE_K=20` is a **safe default**, not yet a *measured win*: the public set is
+one-paper-per-topic and can't exercise the cross-paper crowding the wider pool targets —
+that wants a re-run on the private neuroscience corpus (`cases.yaml`). `CANDIDATE_K=10`
+reproduces the exact pre-split behaviour; a guard requires `CANDIDATE_K >= TOP_K`. See
+`config.py:107-119`, `pipeline.py:82,88`, and `tests/unit/test_retrieval_config.py`.
 
 ### Integrity Chunk 2c — Reviewer aggregation & self-improvement loop
 

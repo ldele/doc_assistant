@@ -127,7 +127,9 @@ they're text-shaped, so they splice back into the markdown cache.
   Idempotent: re-splicing **replaces** the block (`splice == splice∘splice`),
   so the CLI's `--force` is safe.
 - **Retrieval:** the splice writes the cache only; tables enter retrieval on
-  the next `ingest` run that re-reads the cache.
+  the next **`ingest --rebuild`** that re-reads the cache. Use `--rebuild`, not plain
+  incremental `ingest`: a splice changes the doc's content hash, and incremental ingest
+  leaves the pre-splice (old-hash) chunks behind as orphans.
 
 Validated end-to-end: a paper with no `Table N` caption → 0 tables; a paper
 with Table 1 → the real Table 1 data (the prior figure-as-table noise is
@@ -156,7 +158,7 @@ table-grounded answers are complete. The chunk **sizes** are unchanged (the lock
 | [`scripts/extract_tables.py`](../scripts/extract_tables.py) | The enrichment CLI: `--apply` / `--force` / `--doc`. PDF-only; resolves source PDF + cached `.md`, splices, writes. Reminds you to re-`ingest`. |
 | [`scripts/debug_tables.py`](../scripts/debug_tables.py) | **Visual inspector.** Renders per-page PNGs with pdfplumber's detection overlay + a pdfplumber-vs-PyMuPDF count comparison, to `data/tables_debug/{stem}/` (gitignored). Reach for this when detection quality is uncertain — *before* trusting counts. |
 | [`scripts/eval_marker_tables.py`](../scripts/eval_marker_tables.py) | Engine eval: emits candidate pages + pdfplumber tables + (if installed) Marker's markdown, for a side-by-side fidelity comparison. Self-contained Marker call; meant for the GPU/RTX machine. |
-| [`scripts/extract_tables_marker.py`](../scripts/extract_tables_marker.py) | **The primary table CLI.** Runs isolated Marker (`uvx --from marker-pdf marker_single`) on the caption-gated candidate pages in a bounded pool, parses the paginated markdown, splices inline + de-dups pymupdf4llm's twin, supersedes any pdfplumber block. `--apply` / `--force` / `--doc` / `--workers`. Re-`ingest` after. GPU/RTX box. |
+| [`scripts/extract_tables_marker.py`](../scripts/extract_tables_marker.py) | **The primary table CLI.** Runs isolated Marker (`uvx --from marker-pdf marker_single`) on the caption-gated candidate pages in a bounded pool, parses the paginated markdown, splices inline + de-dups pymupdf4llm's twin, supersedes any pdfplumber block. `--apply` / `--force` / `--doc` / `--workers`. Re-`ingest --rebuild` after. GPU/RTX box. |
 
 ---
 

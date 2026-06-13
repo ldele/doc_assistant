@@ -151,12 +151,24 @@ now only the *final* rerank cut — the parents passed to the LLM. A new `CANDID
 (=20) is the candidate pool fetched from *each* retriever (vector + BM25) before
 reranking; previously this was hardcoded to `10 == TOP_K`, leaving the cross-encoder
 no headroom to reorder. The sweep table above predates the split (it ran with pool ==
-cut == 10). **`CANDIDATE_K=20` is provisional / not locked** — it changes retrieval
-output and must be re-measured on the public *and* private (neuroscience) eval before
-locking; `CANDIDATE_K=10` reproduces the exact pre-split behaviour. A guard requires
+cut == 10). **`CANDIDATE_K=20`: public-confirmed (no regression); private arm pending.** It changes
+retrieval output, so it went through the eval harness. **Public-corpus A/B (2026-06-13,
+`--repeat 3` + judge): a tie — no regression vs the pre-split `CANDIDATE_K=10`**
+(`contains_all` 0.933 vs 0.931, `llm_judge` 3.74 vs 3.83 — both within trial-mean std;
+`citation_overlap` saturates at 1.000 so it can't discriminate). Record:
+[`tests/eval/baselines/candidate_k_public_2026-06-13.md`](../tests/eval/baselines/candidate_k_public_2026-06-13.md).
+The public set is one-paper-per-topic, so it cannot exercise the cross-paper *crowding* the
+wider pool targets — that benefit still wants a re-run on the private neuroscience corpus
+(`cases.yaml`, multi-paper-per-topic) before `CANDIDATE_K=20` is a *measured win* rather than a
+safe default. `CANDIDATE_K=10` reproduces the exact pre-split behaviour; a guard requires
 `CANDIDATE_K >= TOP_K`. See `config.py:107-119`, `pipeline.py:82,88`, and
-`tests/unit/test_retrieval_config.py`. Re-measure needs the full neuroscience corpus,
-so it runs on the RTX/other machines, not the CPU box.
+`tests/unit/test_retrieval_config.py`.
+
+> ⚠ **RETEST NEEDED (TODO).** The 2026-06-13 A/B is a *weak* signal — 10 cases over a
+> 10-doc, one-paper-per-topic corpus is too small to reliably rank `CANDIDATE_K`. Treat
+> the "no regression / keep 20" verdict as **unvalidated**, not settled. Re-run on a
+> larger, multi-paper corpus (the private neuroscience `cases.yaml`, and/or an expanded
+> public set) before drawing any firm conclusion or locking `CANDIDATE_K`.
 
 Outcome: substantial improvement across all measures except latency.
 Five of six known regressions resolved, including all three historical PDF

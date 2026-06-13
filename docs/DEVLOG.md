@@ -1512,3 +1512,35 @@ No scorer moves beyond its trial-mean std; the `llm_judge` gap is smaller than e
 **Verified:** full suite **367 passed in ~26s** (was 365; +2 from `test_ingest_orphan_cleanup.py`). No regressions.
 **Closed the inverted follow-up:** reverted the now-wrong "use `ingest --rebuild` after a splice" guidance — incremental `ingest` self-cleans the pre-splice chunks now, so `scripts/extract_tables_marker.py` (docstring + CLI note) and `docs/figures-and-tables.md` (Retrieval note + Marker CLI row) now say "re-run `ingest` (incremental is fine); then re-run the citation + doc-vector enrichment, since a content change drops the doc's sidecar edges."
 **Opens:** those 2 doc/script edits are uncommitted — awaiting review. `CANDIDATE_K=20` retest (larger corpus) and the CPU-torch-on-RTX re-sync remain open from earlier entries.
+
+---
+## Session: 2026-06-13 — Per-machine torch backend (cu130 vs cpu) design spec (Claude Code)
+
+**Starting from:** the CPU-torch-on-RTX open. User wants CUDA on the RTX box, CPU on the other, from one shared repo — and asked whether an explicit per-machine setting beats `torch-backend = "auto"`. Spec'd it (chose "proper design fix" over a quick footgun).
+
+**Root cause (verified — uv docs + on-box, via a research workflow):** `torch-backend` / `UV_TORCH_BACKEND` is honored **only by `uv pip`** — a **no-op for `uv lock`/`uv sync`/`uv run`** (uv settings reference + PyTorch-uv guide, verbatim; uv issues #12994/#18157 track the gap). So the committed `uv.lock` pins ONE torch variant (`+cpu` here) and `uv sync`/`uv run` enforce it everywhere — the RTX box silently ran CPU torch. `uv pip install`+cu130 works but plain `uv run` auto-syncs and reverts it. Two same-OS (win32) boxes can't be split by any PEP 508 marker, so a single universal lock can only route via a **user-selected extra**.
+
+**Decision (specced, NOT implemented):** adopt uv's official multi-backend pattern — mutually-exclusive `cpu`/`cu130` optional-dependency extras, each bound to an explicit PyTorch index (`[[tool.uv.index]]` + `[tool.uv.sources]`), declared incompatible via `[tool.uv] conflicts`. One shared lock carries both wheels; `uv sync --extra cu130` (GPU box) vs `--extra cpu` (CPU box + CI) selects per-machine — durable across `git pull`. `cpu` stays the safe default; CPU-box-never-cu130 is the locked invariant. Full doc: [`docs/specs/torch-backend-per-machine.md`](specs/torch-backend-per-machine.md).
+**Rejected:** `UV_NO_SYNC` + manual cu130 (drift-prone stopgap, retained as documented emergency only); splitting torch out of the lock (loses lock coverage); `environments`/marker approaches (can't split two win32 boxes — same dead end as the old win32 cu130 pin); waiting for project-level `--torch-backend` (#12994 unshipped).
+**Did now:** wrote the spec; flagged the superseded "auto works" claim in `decisions.md` §Cross-machine with a forward-pointer; added the spec to CLAUDE.md's spec index; set a persistent `UV_TORCH_BACKEND=cu130` (User env) on the RTX box; verified cu130 runs (`torch 2.12.0+cu130`, `cuda True`, RTX 4070) via `uv run --no-sync`.
+**Opens:** implement the spec (one reviewed PR: pyproject extras+conflicts+indexes, regenerate `uv.lock`, CI `--extra cpu --locked`, README/.env.example/KNOWN_ISSUES, optional justfile). Until then the RTX box uses the stopgap. uv default-extra (#10360) would remove the remember-the-flag friction. Nothing committed — awaiting review.
+
+---
+## Session: 2026-06-13 — Implemented the per-machine torch backend spec (Claude Code)
+
+**What:** implemented [`docs/specs/torch-backend-per-machine.md`] in the working tree.
+- **`pyproject.toml`:** removed `torch>=2.12` from `[project.dependencies]` and the `[tool.uv] torch-backend = "auto"` block (+ misleading comment); added `cpu`/`cu130` optional-dependency extras (each `torch>=2.12`), `[tool.uv] conflicts = [[{extra="cpu"},{extra="cu130"}]]`, two `[[tool.uv.index]]` (pytorch-cpu / pytorch-cu130, both `explicit = true`), and `[tool.uv.sources] torch` mapping each extra to its index.
+- **`uv.lock`:** `UV_SYSTEM_CERTS=1 uv lock` → now carries `torch 2.12.0+cpu` **and** `2.12.0+cu130` (one shared universal lock; the `--extra` selects per machine).
+- **`.github/workflows/ci.yml`:** job-level `UV_NO_SYNC: "1"` + `uv sync --locked --extra cpu --extra dev` (was `--frozen --extra dev`). Refines the spec's "never UV_NO_SYNC in CI": it's REQUIRED — one explicit locked sync, then every `uv run` step reuses that exact env (a plain `uv run` on Linux would otherwise re-pull the heavy PyPI CUDA torch). `uv sync` ignores `UV_NO_SYNC`, so the explicit sync still runs.
+- **README** Setup + Hardware note (bare `uv sync` → per-machine `--extra cu130`/`--extra cpu`; corrected the "auto-selects CUDA" implication — the *wheel* gates CUDA, chosen by the extra). **`.env.example`:** note that torch backend is an install-time extra, not a `TORCH_*` env. **`decisions.md`** §Cross-machine: flipped the forward-pointer to "✅ implemented". **`justfile`** (new): recipes read `DOC_TORCH` (env, default `cpu`) so a per-machine `DOC_TORCH=cu130` makes `just sync`/`ingest`/`eval`/`chat`/`test` use cu130 with no remembered flag.
+
+**Verified on the RTX box:**
+- `uv sync --extra cu130` → `torch 2.12.0+cu130`, `cuda True` (RTX 4070); persists under `uv run --extra cu130` (no revert).
+- `uv sync --extra cpu` → `2.12.0+cpu`, `cuda False`.
+- `uv sync --extra cpu --extra cu130` → **exit 2, "Extras `cpu` and `cu130` are incompatible with the declared conflicts"** (invariant guard fires).
+- `uv sync --extra cpu --extra dev` + full suite → **367 passed**.
+- Left the box GPU-ready (`--extra cu130 --extra dev`) and set persistent `DOC_TORCH=cu130` (User env). `UV_TORCH_BACKEND=cu130` from the prior session is now moot (uv-pip-only) — harmless, left set.
+
+**Key learning beyond the spec:** `uv sync --extra cu130` *alone* drops the `dev` tools — dev/CI need **both** extras (`--extra cu130|cpu --extra dev`); and the GPU box needs `--extra cu130` on every `uv run` (a plain `uv run` reverts to the base/+cpu wheel) — hence `DOC_TORCH` + the justfile.
+
+**Opens:** uv default-extra (#10360) would let the GPU box skip the per-run flag entirely. macOS guard (no CUDA wheels) deferred — both boxes are Windows. `.claude/KNOWN_ISSUES.md` torch entry not added (`.claude/` is gitignored/absent here; captured in the `rtx-box-venv-cpu-torch` memory + this entry instead). Nothing committed — staged for review; `uv.lock` + CI are the high-blast-radius bits.

@@ -3,13 +3,14 @@
 How doc_assistant promotes tables (and, later, figures) from lossy text into
 structured, retrievable content — and, just as important, how it *avoids
 mistaking figures for tables*. This is the reference for `regions.py`,
-`tables.py`, and the three `scripts/*table*` tools. Locked decisions live in
+`tables.py`, `tables_marker.py`, and the four `scripts/*table*` tools. Locked decisions live in
 [`decisions.md`](decisions.md) (Feature 4a); per-change history in
 [`DEVLOG.md`](DEVLOG.md).
 
-> **Status (2026-06-02):** detection foundation built and validated. The
-> extraction *engine* (pdfplumber vs Marker) is not final — see
-> [Open questions](#open-questions).
+> **Status (2026-06-06):** detection + extraction shipped. Marker is the primary
+> table engine (RTX engine eval won 2026-06-02; ingest path designed/locked
+> 2026-06-04; splice fidelity measured 2026-06-06). pdfplumber is the frozen no-dep
+> fallback.
 
 ---
 
@@ -47,10 +48,11 @@ PDF ─► regions.analyze_pages() ─► per-page PageClassification
         ┌────────────────────────────┼─────────────────────────────┐
         ▼                            ▼                              ▼
    kind = "table"            kind = "chart"/"photo"/"figure"    kind = "text"
-   tables.extract_…()        (feeds Feature 4b — figures)       (ignored)
+   tables_marker (primary)   (feeds Feature 4b — figures)       (ignored)
+   tables.py (fallback)
         │
         ▼
-   splice into the cached .md (idempotent, marked)
+   caption-anchored inline splice into the .md (idempotent, marked, de-duped)
         │
         ▼
    next `ingest` run → table becomes retrievable chunk content
@@ -95,7 +97,13 @@ what figure handling will consume).
 
 ---
 
-## Table extraction ([`tables.py`](../src/doc_assistant/tables.py))
+## Table extraction — pdfplumber fallback ([`tables.py`](../src/doc_assistant/tables.py))
+
+> This is the **frozen no-dep fallback**; the primary engine is **Marker** (see
+> [`tables_marker.py`](../src/doc_assistant/tables_marker.py)), which splices
+> page-anchored inline blocks `<!-- table:marker:page=N:begin/end -->` at the caption
+> and strips pymupdf4llm's lossy inline twin. The rest of this section describes the
+> pdfplumber path verbatim.
 
 A post-ingest **enrichment layer** (see "Enrichment-Layer Pattern" in
 `decisions.md`): separate module + CLI, idempotent, never mutates the chunk
@@ -148,6 +156,7 @@ table-grounded answers are complete. The chunk **sizes** are unchanged (the lock
 | [`scripts/extract_tables.py`](../scripts/extract_tables.py) | The enrichment CLI: `--apply` / `--force` / `--doc`. PDF-only; resolves source PDF + cached `.md`, splices, writes. Reminds you to re-`ingest`. |
 | [`scripts/debug_tables.py`](../scripts/debug_tables.py) | **Visual inspector.** Renders per-page PNGs with pdfplumber's detection overlay + a pdfplumber-vs-PyMuPDF count comparison, to `data/tables_debug/{stem}/` (gitignored). Reach for this when detection quality is uncertain — *before* trusting counts. |
 | [`scripts/eval_marker_tables.py`](../scripts/eval_marker_tables.py) | Engine eval: emits candidate pages + pdfplumber tables + (if installed) Marker's markdown, for a side-by-side fidelity comparison. Self-contained Marker call; meant for the GPU/RTX machine. |
+| [`scripts/extract_tables_marker.py`](../scripts/extract_tables_marker.py) | **The primary table CLI.** Runs isolated Marker (`uvx --from marker-pdf marker_single`) on the caption-gated candidate pages in a bounded pool, parses the paginated markdown, splices inline + de-dups pymupdf4llm's twin, supersedes any pdfplumber block. `--apply` / `--force` / `--doc` / `--workers`. Re-`ingest` after. GPU/RTX box. |
 
 ---
 
@@ -166,17 +175,18 @@ Non-PDF figure extraction (EPUB/DOCX/HTML) will use **native parsers**
 
 ## Open questions
 
-1. **Extraction engine.** pdfplumber fragments multi-part tables (split
-   Table 1 into two pieces) and misses tables the geometric detector can't
-   see. Run `eval_marker_tables.py` on the RTX machine to decide
-   Marker-vs-pdfplumber; if Marker wins, reconsider keeping pdfplumber.
-2. **Inline de-dup.** `pymupdf4llm`'s lossy inline tables still sit in the
-   cache alongside the clean spliced copy. Once the engine is chosen, strip
-   the inline copy (regex over the `<!-- page:N -->`-marked region) so there's
-   one clean table, not two.
-3. **Verification.** Chosen: a table-retrieval eval case (ask a table
-   question → assert the table chunk is retrieved post-ingest). Roadmap
-   future: a hand-verified gold table set + a deterministic fidelity scorer.
+1. **Extraction engine — ✅ RESOLVED (2026-06-02).** Marker won the RTX engine
+   eval; the isolated Marker ingest path shipped 2026-06-04 (`tables_marker.py` +
+   `scripts/extract_tables_marker.py`). pdfplumber is retained frozen as the no-dep
+   fallback (`tables_marker.strip_pdfplumber_block` supersedes its block when Marker runs).
+2. **Inline de-dup — ✅ RESOLVED.** `tables_marker.splice_tables_inline` strips
+   `pymupdf4llm`'s lossy GFM table(s) within each page span (`_strip_gfm_tables_text`)
+   before inserting Marker's block, so there is one clean table, not two.
+3. **Verification — ✅ Built.** A table-retrieval eval case
+   ([`cases.tables.yaml`](../tests/eval/cases.tables.yaml), `dpr_topk_accuracy_table`)
+   plus the CI mechanism gate `tests/integration/test_marker_table_retrieval.py`;
+   measured 2026-06-06 (DPR Table 2: Top-20 78.4, Top-100 85.4). Roadmap future: a
+   hand-verified gold table set + a deterministic cell-exact fidelity scorer (still deferred).
 4. **Thresholds** were measured on 2 eLife docs — validate on a wider corpus
    before trusting as universal.
 5. **Region-level splitting** (multiple regions on one page) + figure image

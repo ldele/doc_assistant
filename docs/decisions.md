@@ -146,6 +146,18 @@ Decision: K=10 adopted. Both correctness and faithfulness peak there, with
 clear declines on both sides. The +0.13 correctness over K=8 comes at +5s
 latency, accepted as worthwhile for a research tool.
 
+**Update (2026-06-07, commit `09115c8`): retrieval K was split.** `TOP_K` (=10) is
+now only the *final* rerank cut — the parents passed to the LLM. A new `CANDIDATE_K`
+(=20) is the candidate pool fetched from *each* retriever (vector + BM25) before
+reranking; previously this was hardcoded to `10 == TOP_K`, leaving the cross-encoder
+no headroom to reorder. The sweep table above predates the split (it ran with pool ==
+cut == 10). **`CANDIDATE_K=20` is provisional / not locked** — it changes retrieval
+output and must be re-measured on the public *and* private (neuroscience) eval before
+locking; `CANDIDATE_K=10` reproduces the exact pre-split behaviour. A guard requires
+`CANDIDATE_K >= TOP_K`. See `config.py:107-119`, `pipeline.py:82,88`, and
+`tests/unit/test_retrieval_config.py`. Re-measure needs the full neuroscience corpus,
+so it runs on the RTX/other machines, not the CPU box.
+
 Outcome: substantial improvement across all measures except latency.
 Five of six known regressions resolved, including all three historical PDF
 failures that previous experiments couldn't fix (scanned documents).
@@ -161,7 +173,7 @@ Trade-offs:
 Note: This setting is for what I currently have in my library.
 What matters is that I can quickly check the performance of the settings.
 
-**Methodology rigor: ⚠ moderate. Strong shape, weak error bars.** The 3 → 5 → 8 → 10 → 12 → 15 sweep with a clear peak on *both* correctness and faithfulness is hard to attribute to noise (an accidental peak would not be coherent across two independent metrics). Sample size, variance, and the case set are unrecorded. To re-validate, the easiest path is a script-driven sweep over `TOP_K` values, persisting per-K runs in DuckDB and aggregating via `Store.aggregate_runs`. Existing `scripts/run_topk_sweep.py` is a pre-harness artefact and should be rewritten on top of the new harness.
+**Methodology rigor: ⚠ moderate. Strong shape, weak error bars.** The 3 → 5 → 8 → 10 → 12 → 15 sweep with a clear peak on *both* correctness and faithfulness is hard to attribute to noise (an accidental peak would not be coherent across two independent metrics). Sample size, variance, and the case set are unrecorded. To re-validate, run a script-driven sweep over `TOP_K` (and now `CANDIDATE_K`) values, persisting per-K runs in DuckDB and aggregating via `Store.aggregate_runs`. The old `scripts/run_topk_sweep.py` was a pre-harness artefact and was deleted in the 2026-06-07 dead-code audit (commit `09115c8`); a new sweep would reuse the eval harness (cf. `scripts/sweep_chunking.py`).
 
 ### Multi-Query expansion — tested twice, not adopted
 
@@ -220,9 +232,11 @@ Known limitations:
   text to prevent future occurrences. 
   (Might have to build something more robust after further testing).
 
-To resolve some edge cases, added a dedup script (`scripts/dedupe_documents.py`) 
-to resolve all duplicate Document rows from the path+content hash drift.
-Might be an artifact from chroma to sqllite migration.
+To resolve some edge cases, a dedup script (`scripts/dedupe_documents.py`) existed 
+that formerly cleared duplicate Document rows from the path+content hash drift
+(likely an artifact of the chroma→sqlite migration). It was deleted in the
+2026-06-07 dead-code audit once content-only hashing removed the root cause — see
+the Content-only hashing section below.
 
 ### Library browser via chat commands
 
@@ -318,7 +332,7 @@ the eval harness's `LLMJudgeScorer` which compares against expected
 answers. `temperature=0`, single-turn, no system prompt — same 
 isolation contract as the eval judge. JSON-in-prompt (no tool-use; 
 keeps consistency with eval judge). No auto-retry. `/review <id>` 
-slash command for manual re-review. 14 unit tests. Schema is 
+slash command for manual re-review. 16 unit tests (+ 3 isolation tests in `test_reviewer_isolation.py`). Schema is 
 reviewer-kind-agnostic so a future human-review path slots into the 
 same table.
 *Deferred (idea, 2026-06-02):* the trigger policy is currently fixed —
@@ -387,7 +401,7 @@ These apply across all phases. They are not deferred to Phase 6.
 
 ### CI/CD (GitHub Actions)
 
-Every push and PR runs: ruff → mypy → pytest (coverage ≥70%) → bandit → pip-audit.
+Every push and PR runs: ruff → mypy → pytest (coverage ≥40%) → bandit → pip-audit.
 Merging on a red pipeline is never allowed. Branch protection enforced on `main`.
 
 Rationale: mechanical checks before human review. Catching lint/type/security issues in CI is 10x cheaper than finding them in code review or production.
@@ -456,7 +470,7 @@ Change: `doc_hash(text, source)` → `doc_hash(text)`. SHA-256 of the extracted
 markdown content only, truncated to 16 hex chars. Path is no longer part of
 the identity.
 
-Migration script: `scripts/migrate_to_content_hash.py` (dry-run + --apply).
+Migration script (archived after the one-time run): `scripts/archive/migrate_to_content_hash.py` (dry-run + --apply).
 Recomputes hashes in SQLite and both Chroma stores. Handles dedup collisions
 when two paths had identical content by merging into the row with the highest
 chunk count.
@@ -495,11 +509,12 @@ worth claiming without a metric.
 - 2.2 Metrics: retrieval recall@K, answer faithfulness, answer correctness,
   latency, token cost
 - 2.3 Baseline measurement
-- 2.4 Experiment: semantic chunking — **reopened 2026-05-31.** Chunk *sizes*
-  were never measured (only parent-child structure was). Sizes are now
-  config-driven (`PARENT/CHILD/BASELINE_CHUNK_SIZE`); sweep via
-  `scripts/sweep_chunking.py` through the Phase 5 eval harness. Update the
-  locked-settings table with the winning config once measured.
+- 2.4 Experiment: chunk sizes — **✅ DONE 2026-06-06 (RTX/GPU).** Sizes are
+  config-driven (`PARENT/CHILD/BASELINE_CHUNK_SIZE`, `config.py:160-169`) and were
+  swept over 6 parent/child configs via `scripts/sweep_chunking.py` through the eval
+  harness on the public corpus. Result: defaults `2000/200 · 400/50` confirmed best —
+  no config beats the control. Record:
+  [`tests/eval/baselines/chunking_sweep_public_2026-06-06.md`](../tests/eval/baselines/chunking_sweep_public_2026-06-06.md).
 - 2.5 Experiment: parent-child retrieval
 - 2.6 Experiment: section-aware retrieval
 - 2.7 Experiment: query rewriting / HyDE
@@ -546,7 +561,7 @@ A non-technical user wouldn't have noticed until eval results were inexplicable.
 
 **Phase 3 completion gate — all done (2026-05-21):**
 - ✅ Content-only hashing implemented and migrated (27 docs, all 16-char content-only hashes)
-- ✅ CI pipeline green (ruff, mypy strict, pytest ≥45% — was 70%, lowered to 45% pending integration tests, bandit, pip-audit advisory)
+- ✅ CI pipeline green (ruff, mypy strict, pytest ≥40% — was 70% pre-Phase-3, lowered to 45% then 40% pending integration tests, bandit, pip-audit advisory)
 - ✅ Pre-commit hooks installed and baseline clean
 - ✅ `.env.example` committed with all 8 env vars documented
 - ✅ Library metadata routing extracted to `query_router.py`
@@ -641,7 +656,7 @@ See `docs/doc-assistant-roadmap.md` for the source of intent.
   context-manager), `report.py` (summary + diff), `adapters.py` 
   (RAGPipeline wrapper — only file with doc_assistant deps; 
   extractable per Feature 5). CLI `scripts/run_eval.py` with paid 
-  scorers gated behind explicit flags. 43 unit tests; coverage 61%.
+  scorers gated behind explicit flags. 59 unit tests (cases 9 + runner/store 27 + scorers 23).
 - **Feature 3** — ✅ Done (2026-05-28). 35-case eval set, run via the 
   harness against two embedders (BGE vs SPECTER2) with a hardened 
   reference-only LLM judge (`temperature=0`). 5 trials per model 
@@ -700,13 +715,16 @@ interpretation + reviewer agent.
   `{folder_id}__{model_name}`. Cross-folder queries hit each collection 
   independently and the cross-encoder reranker resolves the mixed-space 
   merge.
-- **Feature 4a** — table extraction pass. 🔄 In progress (2026-06-02);
-  splice mechanics + extraction done, **extraction engine not yet final.**
-  `src/doc_assistant/tables.py` + `scripts/extract_tables.py`. Tables go in
-  one demarcated block appended to the cached `.md` (`<!-- tables:pdfplumber:begin
-  … :end -->`), each tagged `<!-- table-extracted-by: pdfplumber page=N table=M -->`.
-  Idempotent (re-splice replaces the block). Enters retrieval on the next
-  re-ingest; never touches the chunk store.
+- **Feature 4a** — table extraction pass. ✅ **Engine decision LOCKED 2026-06-02**
+  (RTX eval): **Marker** wins, run out-of-process (`uvx --from marker-pdf
+  marker_single`, never imported). Implemented: `src/doc_assistant/tables_marker.py`
+  + `scripts/extract_tables_marker.py` — Marker tables are spliced inline,
+  **caption-anchored**, into the cached `.md` (`<!-- table:marker:page=N:begin …
+  :end -->`), de-duping pymupdf4llm's lossy inline twin and placing the block in one
+  move. **pdfplumber is frozen as an explicit no-dep fallback** (`tables.py` /
+  `extract_tables.py`). Idempotent; enters retrieval on the next re-ingest; never
+  touches the chunk store. 12 unit + 3 integration tests. Remaining: optional
+  full-corpus `extract_tables_marker --apply` on the GPU box.
   - **Detection is a shared page classifier (`regions.py`), not a table
     detector (locked).** A visual check (`scripts/debug_tables.py`) showed
     geometric detectors (pdfplumber, pymupdf `find_tables`) mis-read
@@ -727,19 +745,17 @@ interpretation + reviewer agent.
     v1 is page-level, per-region bbox splitting is the deeper 4b step.
     Thresholds (`CHART_CURVE_MIN`, `IMAGE_AREA_MIN`) measured on 2 eLife
     docs — tunable, validate on a wider corpus.
-  - **Engine eval pending (RTX machine).** pdfplumber fragments multi-part
-    tables and misses some the geometric detector doesn't see. Marker
-    (ML-based, GPU-friendly, not a default dep) is the candidate better
-    engine; `scripts/eval_marker_tables.py` compares them on the
-    caption-gated pages. Run on the RTX box; then pick the engine.
-  - **De-dup pending.** pymupdf4llm already emits a *lossy* inline copy of
-    each table; once the engine is chosen, strip the inline copy (regex over
-    the `<!-- page:N -->`-marked region) so the cache holds one clean table,
-    not two. (User: "we don't need duplicate tables.")
-  - **Verification (planned).** A table-retrieval eval case (ask a table
-    question → assert the table chunk is retrieved post-ingest) is the
-    chosen check; a hand-verified gold-set fidelity scorer is a roadmap
-    future, not built now.
+  - **Engine eval — ✅ resolved 2026-06-02 (RTX).** Marker won; pdfplumber
+    (which fragments multi-part tables) is retained frozen as the no-dep
+    fallback. `scripts/eval_marker_tables.py` was the comparison harness.
+  - **De-dup — ✅ done.** `tables_marker.splice_tables_inline` strips
+    pymupdf4llm's lossy GFM table(s) within each page span (`_strip_gfm_tables_text`)
+    before inserting Marker's block, so the cache holds one clean table, not two.
+  - **Verification — ✅ built.** A table-retrieval eval case
+    (`tests/eval/cases.tables.yaml`, `dpr_topk_accuracy_table`) plus the CI
+    mechanism gate `tests/integration/test_marker_table_retrieval.py`; measured
+    2026-06-06 (DPR Table 2: Top-20 78.4, Top-100 85.4). A hand-verified gold-set
+    cell-exact fidelity scorer remains a roadmap future, not built now.
 - **Feature 4b** — Figure region detection + caption pairing (OpenCV, 
   no LLM cost). Sidecar `figures` table; images on disk under 
   `data/figures/{doc_hash}/`. Caption text stays in the markdown.
@@ -765,10 +781,12 @@ interpretation + reviewer agent.
   ~10/5 default); below that it reads "insufficient evidence." Counts always
   carry their denominator. v1 is instrumentation, not auto-action. See the
   Research Integrity Layer subsection above and roadmap Chunk 2c.
-- **Engineering: chunking sweep** (reopens Phase 2.4). Chunk sizes are now
-  config-driven (`PARENT/CHILD/BASELINE_CHUNK_SIZE`, shipped 2026-05-31);
-  `scripts/sweep_chunking.py` measures size grids through the eval harness.
-  Defaults are historical, not measured — lock from the sweep result.
+- **Engineering: chunking sweep** (reopens Phase 2.4). ✅ **Done 2026-06-06.** Chunk
+  sizes are config-driven (`PARENT/CHILD/BASELINE_CHUNK_SIZE`, shipped 2026-05-31);
+  `scripts/sweep_chunking.py` measured size grids through the eval harness on the
+  public corpus (RTX/GPU): the historical defaults `2000/200 · 400/50` were measured
+  and confirmed best — no config beats the control. Record:
+  [`tests/eval/baselines/chunking_sweep_public_2026-06-06.md`](../tests/eval/baselines/chunking_sweep_public_2026-06-06.md).
 
 ### Phase 7: Gap Detection and Cartography
 
@@ -987,7 +1005,7 @@ Decisions I haven't made yet:
 Current `--cov-fail-under=40` in `.github/workflows/ci.yml`. Was 70% pre-Phase-3,
 lowered to 45% then 40% as `pipeline.py` and `ingest.py` are I/O-heavy and
 hard to test without a real Chroma/SQLite/embeddings stack. Phase 4 added
-~52 tests against pure-logic citations + metadata modules.
+45 tests against pure-logic citations + metadata modules.
 
 Path to raise:
 - Each new phase: add at least one integration test that hits a real (temp)

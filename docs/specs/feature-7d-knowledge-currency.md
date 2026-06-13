@@ -49,7 +49,7 @@
 - `project_chunk_weights(graph, weights) -> list[ChunkEpistemics]` — aggregate node weights onto the chunks referenced by back-pointers. Pure.
 - CLI runner `scripts/compute_epistemics.py` — idempotent, sidecar-only, re-runnable after every graph rebuild. Enrichment-Layer Pattern.
 
-### `db/models.py` + `db/migrations.py`
+### `src/doc_assistant/db/models.py` + `src/doc_assistant/db/migrations.py`
 - New `ChunkEpistemics` (`chunk_epistemics`): `chunk_id (indexed) · n_claims · n_contested · n_superseded_trend · coverage_summary (JSON) · graph_version · computed_at`. Sidecar; regenerable; dropped + rebuilt with the graph.
 
 ### Surfacing
@@ -61,7 +61,7 @@
 ## Build node
 
 **Depends on:** PR 16 (Feature 7 7a–7c: graph + Leiden + gap signals), PR 13 (Feature 6 wiki — for the global-query routing target), Chunk 2a (marker surface, shipped), Chunk 2b (reviewer, shipped). External-velocity sub-signal additionally depends on the Phase 7 DOI-lookup work.
-**Files owned:** `src/doc_assistant/concept_graph.py` (edge schema + node weights), `src/doc_assistant/epistemics.py` (new), `scripts/compute_epistemics.py` (new), `db/models.py` + `db/migrations.py` (`chunk_epistemics`), `src/doc_assistant/pipeline.py`/`synthesis.py` (marker join), `src/doc_assistant/reviewer.py` (failure tag), `src/doc_assistant/query_router.py` (router seam, with Feature 6/7), tests as below.
+**Files owned:** `src/doc_assistant/concept_graph.py` (edge schema + node weights), `src/doc_assistant/epistemics.py` (new), `scripts/compute_epistemics.py` (new), `src/doc_assistant/db/models.py` + `src/doc_assistant/db/migrations.py` (`chunk_epistemics`), `src/doc_assistant/pipeline.py`/`synthesis.py` (marker join), `src/doc_assistant/reviewer.py` (failure tag), `src/doc_assistant/query_router.py` (router seam, with Feature 6/7), tests as below.
 **Status:** blocked (design-locked).
 
 ### Guard tests (written with the build)

@@ -17,6 +17,7 @@ See `tests/eval/corpus_manifest.yaml` for the 10 papers (pinned versions,
 sha256, abstract links) and `tests/eval/cases.public.yaml` for the eval cases
 written against them.
 
-This is the project's reproducible benchmark corpus. See
+This is the project's reproducible, fully-shareable demo corpus (the private
+neuroscience set in `tests/eval/cases.yaml` is the headline benchmark). See
 `tests/eval/TESTING.md` for the testing strategy — what each scorer measures
 and why.

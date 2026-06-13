@@ -41,7 +41,7 @@ The new work integrates into the existing phase plan as follows. The full phase 
 What is left:
 
 - Apply metadata backfill and citation extraction on the local DB (CLI runners exist; sandbox cannot write).
-- Mean-pool doc-level vectors → similarity edges (the only Phase 4 deliverable still flagged "deferred to next session").
+- ✅ Mean-pool doc-level vectors → similarity edges — **done** (`src/doc_assistant/doc_vectors.py` + `scripts/compute_doc_vectors.py` + `library.similar_docs`, exposed as the `/similar` command).
 - LNCS colon-separator format and multi-column extraction artifacts are known tier-1 weaknesses; cosmetic, deferred.
 
 Effort to close: 1 evening + a 15-minute CLI run.
@@ -173,9 +173,17 @@ Make figures, charts, and tables in scientific papers first-class, searchable co
 
 Three independent sub-features, ordered cheap → expensive:
 
-#### 4a — pdfplumber pass for tables
+#### 4a — table extraction pass ✅ shipped (Marker primary, 2026-06-02..06)
 
 Spliced inline into the markdown cache.
+
+> **Update:** the 2026-06-02 RTX engine eval selected **Marker** as the primary table
+> engine, with **pdfplumber frozen as the no-dep fallback**. The caption-anchored,
+> page-anchored inline splice (+ de-dup of pymupdf4llm's lossy twin) lives in
+> [`tables_marker.py`](../src/doc_assistant/tables_marker.py), run out-of-process by
+> [`scripts/extract_tables_marker.py`](../scripts/extract_tables_marker.py). The
+> pdfplumber description below is the original plan / retained fallback. See
+> `docs/figures-and-tables.md` and `docs/specs/feature-4a-marker-table-ingest.md`.
 
 - Detect table regions after primary extraction, extract with pdfplumber, splice structured markdown tables back into the cached `.md` file.
 - Mark with `<!-- table-extracted-by: pdfplumber -->` for traceability and re-runnability.
@@ -262,15 +270,27 @@ Separate LLM call after the generator. Cheaper model (Haiku/Sonnet, not Opus). R
 
 ### Engineering — chunking sweep (reopens Phase 2.4) ✅ infra shipped 2026-05-31
 
-Chunk *sizes* (`parent 2000/200`, `child 400/50`, `baseline 1000/200`) were never measured — only the parent-child *structure* was. They lived as hardcoded constants in `ingest.py`.
+Chunk *sizes* (`parent 2000/200`, `child 400/50`, `baseline 1000/200`) were originally hardcoded in `ingest.py` and unmeasured — only the parent-child *structure* had been tested. They are now config-driven (`config.py`) and have been swept (see below).
 
 **Shipped:** sizes are now config-driven (`PARENT/CHILD/BASELINE_CHUNK_SIZE` env vars; defaults behaviour-preserving), with `scripts/sweep_chunking.py` driving `ingest --rebuild` + `run_eval` across a size grid, tagging each run for comparison in `data/eval.duckdb`. Guard tests pin "config-driven, defaults unchanged."
 
-**Remaining (measurement, runs locally):** run the sweep on a representative corpus, pick the winner, update the locked-settings tables in `decisions.md` + `CLAUDE.md` with the numbers, and change the config defaults. A later `CHUNK_STRATEGY` flag (semantic vs fixed) is deferred until sizing is settled.
+**Measurement done (2026-06-06, RTX/GPU):** a 6-config parent/child sweep on the public corpus through the eval harness confirmed the defaults `parent 2000/200 · child 400/50` — no config beats the control. Record: [`tests/eval/baselines/chunking_sweep_public_2026-06-06.md`](../tests/eval/baselines/chunking_sweep_public_2026-06-06.md). Defaults stand; no change needed. A later `CHUNK_STRATEGY` flag (semantic vs fixed) is still deferred.
 
 **Repeatability (closed 2026-06-01):** the "add doc examples for test repeatability" TODO is addressed by a shareable **public demo corpus** — the 10 arXiv papers behind the project's own methods (RAG, dense retrieval, SBERT, BGE, SPECTER2/SciRepEval, BERT re-ranking, ColBERT, HyDE, LLM-as-a-judge, AI Usage Cards). `tests/eval/corpus_manifest.yaml` pins arXiv IDs + sha256; `scripts/download_corpus.py` fetches them from arXiv (download-only, nothing re-hosted); `tests/eval/cases.public.yaml` is a standalone 10-case eval over them. Anyone can now reconstruct the public corpus and re-run the sweep/eval against a known-good set. Testing strategy is documented in `tests/eval/TESTING.md`.
 
-**Effort:** measurement run is ~½ day of mostly-unattended compute + interpretation.
+**Effort:** the measurement run took ~½ day of mostly-unattended compute + interpretation (done 2026-06-06).
+
+### Engineering — retrieval K split (commit `09115c8`, 2026-06-07)
+
+`CANDIDATE_K` (=20, **provisional, not locked**) is the candidate pool fetched per
+retriever before rerank; `TOP_K` (=10) is the final post-rerank cut passed to the LLM.
+Previously the pool was hardcoded to `10 == TOP_K`, leaving the cross-encoder no
+headroom to reorder. Widening the pool changes retrieval output and is queued for
+re-measurement on the public *and* private (neuroscience) eval before locking;
+`CANDIDATE_K=10` reproduces the exact pre-split behaviour. A guard requires
+`CANDIDATE_K >= TOP_K`. See `config.py:107-119`, `pipeline.py:82,88`, and
+`tests/unit/test_retrieval_config.py`. Re-measure needs the full neuroscience corpus —
+it runs on the RTX/other machines, not the CPU box.
 
 ### Integrity Chunk 2c — Reviewer aggregation & self-improvement loop
 
@@ -347,9 +367,10 @@ If Chunk 2a's adjudication UI shipped rough, this is where it gets polished.
 ### Settings page — expose the RAG "sandbox" knobs to the user (added 2026-06-04)
 
 Surface the pipeline's config knobs in a GUI settings page so a user can experiment
-without editing `.env`: embedder choice, chunk strategy, `TOP_K`, parent-child and
-multi-query toggles, BM25/vector weights, reranker (model + on/off), and the LLM
-backend (Claude API vs local Ollama). **The benchmarked defaults stay the default** —
+without editing `.env`: embedder choice, chunk strategy, the retrieval candidate pool
+(`CANDIDATE_K`) and final cut (`TOP_K`), parent-child and multi-query toggles,
+BM25/vector weights, reranker (model + on/off), and the LLM backend (Claude API vs
+local Ollama). **The benchmarked defaults stay the default** —
 the page presents the alternatives with the measured recommendation pre-selected, not
 a blank slate, so a curious user can try the sandbox without losing the tuned setup.
 
@@ -429,7 +450,7 @@ Each row is one PR. Each PR scopes to one chunk, with the files and the `decisio
 | 4 | Feature 3: golden set + BGE vs SPECTER2 | `tests/eval/cases.yaml` (populated), README "Benchmark results" section | 1 day | PR 3 |
 | 5 | Integrity Chunk 1: provenance card | `src/doc_assistant/db/models.py` (new `AnswerRecord`), `src/doc_assistant/db/migrations.py`, `src/doc_assistant/tracking.py`, `src/doc_assistant/commands.py` (`/export-record`), `apps/chainlit_app.py` (card render) | 1 evening | PR 2 |
 | 6 | Feature 1b: per-project embedder routing — **DEFERRED** (no model beats bge-base on a sub-corpus yet) | `src/doc_assistant/db/models.py` (Folder.embedding_model), `src/doc_assistant/ingest.py`, `src/doc_assistant/pipeline.py`, UI surface | 2 evenings | Blocked until a per-sub-corpus winner exists (re-run SPECTER2 `--repeat 5` first) |
-| 7 | Feature 4a: pdfplumber table pass | `src/doc_assistant/tables.py` (new), `scripts/extract_tables.py` (new) | 1 evening | PR 1 (Phase 4 closed) |
+| 7 | Feature 4a: table pass (Marker primary, pdfplumber fallback) ✅ | `src/doc_assistant/tables_marker.py` (new, primary), `scripts/extract_tables_marker.py` (new), `src/doc_assistant/tables.py` (pdfplumber fallback), `scripts/extract_tables.py` | 1 evening | PR 1 (Phase 4 closed) |
 | 8 | Feature 4b: figure detection + manifest | `src/doc_assistant/figures.py` (new), `scripts/extract_figures.py` (new), `src/doc_assistant/db/models.py` (Figure table) | 1 weekend | PR 7 |
 | 9 | Feature 4c: VLM figure description (gated) | `src/doc_assistant/figures.py` (VLM call), Pydantic schema, `MAX_VLM_CALLS_PER_DOC` config | 1 weekend | PR 8 |
 | 10 | Integrity Chunk 2a: dual interpretation + adjudication | `src/doc_assistant/pipeline.py`, `src/doc_assistant/prompts.py`, `src/doc_assistant/config.py` (`SYNTHESIS_MODE`), UI surface for accept/reject/edit | 1 weekend | PR 5 |

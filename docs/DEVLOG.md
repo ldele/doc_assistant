@@ -1429,3 +1429,25 @@ The 35-case set stays as the private measured benchmark (the README BGE-vs-SPECT
 **Fix (this box, env only — `.venv` is gitignored):** `py install 3.12` (official 3.12.10) → `uv venv --clear --python <pythoncore-3.12-64>` → `uv sync --all-extras --dev`. Full gate then green: ruff ✓ · ruff format ✓ · mypy ✓ · **pytest 364 passed / 1 skipped / 70.32% cov** ✓ · bandit ✓.
 **Rejected:** repo-level `python-preference = "system"` + `.python-version` — most system-agnostic but could break the GPU box (runs fine on the managed build) and depends on a system 3.12 existing. Chose document-only: KNOWN_ISSUES entry + a README setup note.
 **Opens:** confirm `uv sync` pulls the CUDA wheel on the GPU machine (torch change); if more boxes hit the Astral-OpenSSL crash, reconsider pinning a system interpreter. Network here also needs `UV_NATIVE_TLS=1` (corporate cert wall). Memory: `cpu-box-torch-cu130-segfault`, `openssl-applink-git-mingw-crash`.
+
+---
+## Session: 2026-06-13 — Documentation staleness audit + sync (Claude Code)
+
+**Starting from:** user flagged `decisions.md` as out of date — test claims, the K/Top-K change, the chunking experiment. Ran a full per-doc audit (16 human-facing docs, each finding adversarially verified against the live code/tests/config @ `0bfda04`) and fixed the confirmed drift. **Docs only — no code change.**
+
+**What:**
+- **K/Top-K split now documented everywhere.** `decisions.md` "TOP_K tuning", `architecture.md` (flow box + Mermaid), `doc-assistant-roadmap.md`, `tests/eval/TESTING.md`, and `README.md` now describe `CANDIDATE_K` (=20, per-retriever pool) vs `TOP_K` (=10, final rerank cut) from commit `09115c8`, flagged **provisional / not locked** pending a full-corpus (neuroscience, RTX) re-measure. The architecture flow had read "top 10 candidates → top 5 passages" — wrong on both numbers post-split.
+- **Chunking sweep marked DONE (2026-06-06).** `decisions.md` (Phase 2.4 + Phase 6 engineering), roadmap, and the resume doc no longer say "never measured / lock from the sweep result" — defaults `2000/200·400/50` confirmed best, no config beats control.
+- **Coverage floor reconciled to 40%.** `decisions.md` (was 70% in the CI/CD section, 45% in the Phase-3 gate) and `architecture.md` (was 70%) now match `ci.yml --cov-fail-under=40`.
+- **Test counts refreshed:** README 318→365 (collected; last gate 364 passed + 1 skipped); decisions.md reviewer 14→16, eval 43→59, Phase-4 ~52→45.
+- **Deleted/relocated scripts fixed:** `run_topk_sweep.py` + `dedupe_documents.py` (both deleted in the 2026-06-07 audit) past-tensed; `migrate_to_content_hash.py` path → `scripts/archive/`.
+- **Feature 4a (Marker) shown as shipped** in decisions.md, figures-and-tables.md, roadmap, and its spec (was "in progress / engine not final / pending"); splice corrected to **caption-anchored**; `MARKER_PYTHON` documented; `parse_marker_tables` signature fixed.
+- **Specs marked shipped, not pending:** chunk-2a (`synthesis.py`) and llm-provider-isolation (`llm.py`) status banners; files-owned/contract drift corrected (adjudication lives in `chainlit_app.py` not `pipeline.py`; `create_all` not a migration framework; provider-dependent `LLM_MODEL` default). feature-7d `db/` paths prefixed `src/doc_assistant/`.
+- **Local-Ollama mode shown as shipped** in DEMO.md (was "spec'd, not yet shipped"); TESTING.md bge-vs-specter2 marked reproduced (was "queued"); local-judge gate marked not-yet-built; corpus README "benchmark"→"demo corpus".
+- **CLAUDE.md:** cu130 segfault reframed as resolved (`torch-backend = "auto"`); added a `.claude/`-is-gitignored note (the coordination triad is absent in a fresh clone).
+
+**Method:** background Workflow — one auditor per doc cross-checking claims against code, then an adversarial verifier confirming each change-recommended finding against the cited `file:line`. ~60 findings confirmed/adjusted, 1 rejected.
+
+**Rejected:** deleting `chunking-sweep-rtx-resume.md` (retains real reproduction value + already self-labels as a historical record — fixed in place); expanding `architecture.md`'s module table to all 22 modules (added a "non-exhaustive, see Mermaid" note instead); editing DEVLOG history or the committed `tests/eval/baselines/` records (correct as historical snapshots).
+
+**Opens:** the *code* drift the 2026-06-10 audit logged in KNOWN_ISSUES (structlog/`print`, `core.py`, mypy 3.12) is untouched here — docs only. `CANDIDATE_K=20` still needs its RTX/full-corpus re-measure before the docs can call it locked. Nothing committed — awaiting review.

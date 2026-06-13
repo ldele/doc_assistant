@@ -1,8 +1,10 @@
 # Spec — LLM provider protocol + reviewer context isolation
 
-**Status:** Designed in Cowork 2026-05-29 (rev 2, verified against code). Ready for Claude Code execution.
+**Status:** Designed in Cowork 2026-05-29 (rev 2, verified against code). Executed by Claude Code (commits `37dcbdc`, `70b083e`); kept as the design record.
 **Owner of execution:** Claude Code (code + tests). Cowork wrote this spec.
 **Pattern reference:** `claude-skills` → `prod-engineering/references/provider-isolation.md`.
+
+> **Post-refactor note.** The line references in the "Why rev 2" table and the ADR Context below describe the **pre-refactor** code. As shipped, the one-shot seam is `llm.py:110` (`AnthropicClient.complete`), with `reviewer.py:180` / `eval/scorers.py:276` calling `client.complete`, and `pipeline._build_llm` at `pipeline.py:104-124`. `reviewer._extract_text` moved to `llm.py:64` as `_extract_anthropic_text`.
 
 **Requirement:** local-first is the **end goal**; the app is **hybrid today**. The *generator* (RAG analysis / chat) must run **fully locally** — Ollama, no `ANTHROPIC_API_KEY`; any design that makes a remote API mandatory *for generation* is rejected. The *reviewer and eval judge are pinned measurement instruments*, not generators: they default to a fixed, version-recorded reference model so cross-run numbers stay comparable, and move to local only after the local-judge calibration gate passes (see `tests/eval/TESTING.md` → "The judge is a pinned instrument"). The provider protocol + adapters below are still built in full so a local reviewer is a config flip once calibrated — the abstraction is mandatory, the local-reviewer *default* is not.
 
@@ -50,7 +52,7 @@ class LLMClient(Protocol):
 - **Input:** non-empty `messages`; `temperature >= 0`; `max_tokens >= 1`.
 - **Output:** the model's text. Never `None`; raises on transport failure (caller records the error, as `review_answer` already does).
 - **Adapters:**
-  - `AnthropicClient(model)` — wraps `anthropic.Anthropic()`; `complete` calls `messages.create` and extracts text (move `reviewer._extract_text` here — it is Anthropic-response-specific).
+  - `AnthropicClient(model)` — wraps `anthropic.Anthropic()`; `complete` calls `messages.create` and extracts text (`reviewer._extract_text` was moved here as `_extract_anthropic_text` (`llm.py:64`) — it is Anthropic-response-specific).
   - `OllamaClient(model, host=OLLAMA_HOST)` — wraps `langchain_ollama.ChatOllama` (already a dep); `complete` invokes with the messages and returns `.content`. No API key.
 - **Factory:** `make_client(provider, model) -> LLMClient` (`anthropic` | `ollama`; `ValueError` otherwise — mirror `embeddings.get_model_config`).
 - `get_reviewer_client()` reads `REVIEWER_PROVIDER` / `REVIEWER_MODEL`.
@@ -64,7 +66,7 @@ The analysis path keeps its own builder: `pipeline._build_llm()` reads `LLM_PROV
 
 ```python
 LLM_PROVIDER      = os.getenv("LLM_PROVIDER", "anthropic" if LLM_MODE == "api" else "ollama")
-LLM_MODEL         = os.getenv("LLM_MODEL", "claude-haiku-4-5-20251001")
+LLM_MODEL         = os.getenv("LLM_MODEL", "claude-haiku-4-5-20251001" if LLM_PROVIDER == "anthropic" else "llama3")  # analysis default is provider-dependent (ollama → llama3)
 REVIEWER_PROVIDER = os.getenv("REVIEWER_PROVIDER", LLM_PROVIDER)
 REVIEWER_MODEL    = os.getenv("REVIEWER_MODEL", "claude-haiku-4-5-20251001")
 JUDGE_PROVIDER    = os.getenv("JUDGE_PROVIDER", LLM_PROVIDER)   # eval harness
@@ -79,13 +81,13 @@ JUDGE_MODEL       = os.getenv("JUDGE_MODEL", "claude-haiku-4-5-20251001")
 
 ### Node — LLM protocol + local-capable reviewer
 **Depends on:** none (independent of Chunk 2a and Feature 4a)
-**Files owned:** `src/doc_assistant/llm.py`, `src/doc_assistant/config.py`, `src/doc_assistant/pipeline.py`, `src/doc_assistant/reviewer.py`, `src/doc_assistant/eval/scorers.py`, `apps/chainlit_app.py`, `src/doc_assistant/commands.py`, `tests/unit/test_llm.py`, `tests/unit/test_reviewer_isolation.py`, `.env.example`
-**Status:** pending
+**Files owned:** `src/doc_assistant/llm.py`, `src/doc_assistant/config.py`, `src/doc_assistant/pipeline.py`, `src/doc_assistant/reviewer.py`, `src/doc_assistant/eval/scorers.py`, `scripts/run_eval.py`, `apps/chainlit_app.py`, `src/doc_assistant/commands.py`, `tests/unit/test_llm.py`, `tests/unit/test_reviewer_isolation.py`, `.env.example`
+**Status:** ✅ done (shipped commits `37dcbdc` + `70b083e`). `llm.py`, the reviewer/judge refactor, config knobs, `.env.example`, and both test files all landed.
 
 1. **`llm.py`** — `Message`, `LLMClient` Protocol, `AnthropicClient`, `OllamaClient`, `make_client`, `get_reviewer_client`, `get_judge_client`. Move `_extract_text` into `AnthropicClient`.
 2. **`reviewer.py`** — extract `build_reviewer_prompt(prov) -> str` from the inline `_REVIEWER_PROMPT.format(question=prov.query, evidence=_format_evidence(prov.retrieved_chunks), answer=prov.answer)`. Change `review_answer(prov, client, ...)` to type `client: LLMClient` and call `client.complete(build_messages(prompt), temperature=0.0, max_tokens=max_tokens)` instead of `client.messages.create`. Keep `_strip_fence` + JSON parse (model-agnostic).
 3. **`eval/scorers.py`** — `LLMJudgeScorer` takes an `LLMClient`, calls `.complete(...)`. Same isolation contract.
-4. **Call sites** — `apps/chainlit_app.py:262` and `commands.py:378`: replace `Anthropic(api_key=ANTHROPIC_API_KEY)` with `get_reviewer_client()`. Eval runner: build the judge via `make_client(JUDGE_PROVIDER, JUDGE_MODEL)`.
+4. **Call sites** — *(Done — they now use `get_reviewer_client()` / `reviewer_available()`: `apps/chainlit_app.py:391-397`, `commands.py:382-410`.)* The pre-refactor sites (`apps/chainlit_app.py:262`, `commands.py:378`) constructed `Anthropic(api_key=ANTHROPIC_API_KEY)` directly. Eval runner (`scripts/run_eval.py`): builds the judge via `get_judge_client()` (which wraps `make_client(JUDGE_PROVIDER, JUDGE_MODEL)`).
 5. **`pipeline._build_llm()`** — read `LLM_PROVIDER`/`LLM_MODEL`; preserve `streaming=True` and `max_tokens=1024` for the Anthropic branch; `base_url=OLLAMA_HOST` for Ollama.
 6. **Tests** (below) + `.env.example`.
 

@@ -111,8 +111,10 @@ TOP_K = int(os.getenv("TOP_K", "10"))
 # reranking. The cross-encoder needs more candidates than it returns to have
 # room to reorder; this was previously hardcoded to 10 == TOP_K in pipeline.py,
 # leaving the reranker almost nothing to do. CANDIDATE_K >= TOP_K is required
-# (guarded below). NOTE: widening this changes retrieval output, so it must be
-# re-measured on the eval harness before being locked. Set CANDIDATE_K=10 to
+# (guarded below). NOTE: widening this changes retrieval output. Public-corpus A/B
+# (2026-06-13, tests/eval/baselines/candidate_k_public_2026-06-13.md): no regression vs
+# CANDIDATE_K=10, so 20 is kept as a safe default; the cross-paper crowding benefit still
+# wants the private neuroscience arm to be a measured win. Set CANDIDATE_K=10 to
 # reproduce the pre-split behaviour exactly.
 CANDIDATE_K = int(os.getenv("CANDIDATE_K", "20"))
 if CANDIDATE_K < TOP_K:

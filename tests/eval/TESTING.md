@@ -100,10 +100,12 @@ diff a fresh run against those. The live log `data/eval.duckdb` is gitignored an
 regenerated each run.
 
 **Note (retrieval split, 2026-06-07).** Retrieval now fetches `CANDIDATE_K` (default
-20) candidates per retriever before the reranker cuts to `TOP_K` (10). `CANDIDATE_K`
-is **provisional** and the committed baselines were measured *before* this split
-(`CANDIDATE_K=10` reproduces them) — re-measure before treating post-split numbers as
-locked.
+20) candidates per retriever before the reranker cuts to `TOP_K` (10). The committed
+baselines above were measured *before* this split (`CANDIDATE_K=10` reproduces them).
+A public-corpus A/B (2026-06-13) found **`CANDIDATE_K=20` a tie vs `CANDIDATE_K=10` — no
+regression** ([`baselines/candidate_k_public_2026-06-13.md`](baselines/candidate_k_public_2026-06-13.md)),
+so the public numbers above still stand. The cross-paper crowding benefit of the wider pool
+needs the private neuroscience corpus to be a *measured win* — pending.
 
 ## The judge is a pinned instrument
 

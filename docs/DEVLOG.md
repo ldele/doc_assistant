@@ -1451,3 +1451,55 @@ The 35-case set stays as the private measured benchmark (the README BGE-vs-SPECT
 **Rejected:** deleting `chunking-sweep-rtx-resume.md` (retains real reproduction value + already self-labels as a historical record — fixed in place); expanding `architecture.md`'s module table to all 22 modules (added a "non-exhaustive, see Mermaid" note instead); editing DEVLOG history or the committed `tests/eval/baselines/` records (correct as historical snapshots).
 
 **Opens:** the *code* drift the 2026-06-10 audit logged in KNOWN_ISSUES (structlog/`print`, `core.py`, mypy 3.12) is untouched here — docs only. `CANDIDATE_K=20` still needs its RTX/full-corpus re-measure before the docs can call it locked. Nothing committed — awaiting review.
+
+---
+## Session: 2026-06-13 — CANDIDATE_K=20 vs 10 A/B (public corpus, CPU box) (Claude Code)
+
+**Starting from:** the doc-audit "open" above — `CANDIDATE_K=20` (the 2026-06-07 retrieval split, commit `09115c8`) shipped as the default but was flagged provisional/unmeasured. On the **CPU box** with the **public 10-paper corpus** ingested (the private neuroscience library is on another machine). `CANDIDATE_K` is query-time only — no re-embed — so the A/B runs fine on CPU; no GPU needed.
+
+**What:** ran `run_eval --cases cases.public.yaml --repeat 3 --with-llm-judge` twice — `CANDIDATE_K=10` (pre-split control) vs `CANDIDATE_K=20` (current default), judge `claude-haiku-4-5-20251001`.
+
+**Result — statistical tie, no regression:**
+| Scorer | candk10 | candk20 | Δ |
+|---|---:|---:|---:|
+| `citation_overlap` | 1.000 ± 0.000 | 1.000 ± 0.000 | 0.000 (saturated) |
+| `contains_all` | 0.931 ± 0.019 | 0.933 ± 0.014 | +0.002 |
+| `llm_judge` | 3.833 ± 0.173 | 3.736 ± 0.193 | −0.097 (within noise) |
+
+No scorer moves beyond its trial-mean std; the `llm_judge` gap is smaller than either std and partly an artifact of the flaky `sbert_motivation` judge call. Control arm reproduced the locked pre-split baseline (`public_eval_baseline_2026-06-01.md`), validating the run.
+
+**Decision:** **keep `CANDIDATE_K=20`** — *safe* (no public-corpus regression) and architecturally motivated (reranker headroom). **Not yet a measured win:** the public set is one-paper-per-topic so `citation_overlap` saturates and the wider pool can't surface extra papers — the cross-paper crowding benefit needs the private neuroscience corpus. Baseline: `tests/eval/baselines/candidate_k_public_2026-06-13.md`. Updated decisions.md / roadmap / TESTING.md / `config.py` comment from "provisional / not locked" → "public-confirmed (no regression); private arm pending."
+**Rejected:** reverting to `CANDIDATE_K=10` (no regression shown, and the public corpus structurally can't test the wider pool's benefit — reverting would discard a sound change on a corpus that can't measure it).
+
+**Opens:** re-run this A/B on the private neuroscience `cases.yaml` (RTX box) to turn "no-regression default" into a measured win-or-revert. Step 2 (full-corpus Marker `--apply`) is GPU-gated — impractical on this CPU box (~min→hours/doc). Nothing committed — awaiting review.
+
+---
+## Session: 2026-06-13 — Full-corpus Marker table extraction + re-ingest (step 2) (Claude Code)
+
+**Correction to the entry above:** the box is actually the **RTX 4070 machine** (user confirmed), not a CPU box — but its project `.venv` currently has the **CPU torch wheel** (`torch.cuda.is_available()` False), so the main pipeline runs on CPU. Marker sidesteps this via its isolated `uvx` env (own CUDA torch). The CANDIDATE_K A/B above therefore ran CPU-side embeddings/reranker on this GPU box.
+
+**What:** ran `extract_tables_marker --apply --workers 1` over the public corpus with `UV_TORCH_BACKEND=auto` so the isolated `uvx --from marker-pdf marker_single` env resolved a **CUDA** torch (confirmed: 100% GPU util, ~6.8 GB VRAM, surya models loaded). **54 Marker tables spliced across 8 docs, 0 errors** (llm_judge 15, specter2 11, rag_lewis 7, sbert 7, bge_cpack 5, colbert 4, hyde 4, reranking_bert 1; DPR skipped — already spliced; ai_usage_cards — no table-candidate pages). Then re-ingested so the tables enter retrieval.
+
+**Gotcha (logged):** the first re-ingest used **incremental `ingest`** (what the CLI note + figures-and-tables.md suggest) — *wrong* after a splice. Splicing changes the content hash, so incremental ingest **added** the 8 new-hash docs but **left the 8 old-hash chunk sets orphaned** (its orphan cleanup only removes deleted *source files*, not content-changed docs) → 18 hashes for 10 files in both Chroma stores + SQLite. Fixed with **`ingest --rebuild`** (the path the 2026-06-06 DPR work used). Safe here: `citations`/`doc_similarities` were empty (no Phase-4 enrichment on the public corpus to lose). **Doc fix needed:** the "re-run `ingest`" guidance in `figures-and-tables.md` / the `extract_tables_marker` docstring should say **`ingest --rebuild`** after a splice.
+
+**Result (verified):** clean store — **10 docs / 10 hashes** in `chroma_pc` (2349→2420 chunks), `chroma` (908→957), and SQLite (10 documents). DPR table eval still green deterministic-only (`contains_all` 1.000, `citation_overlap` 1.000). All 8 newly-spliced docs have table-bearing chunks in the PC store (4–66 each). Marker run id artefacts under `data/tables_debug/<stem>/marker_out/`.
+
+**Opens:**
+- **CPU-torch on the RTX box (real perf bug).** `torch-backend = "auto"` resolved the `+cpu` wheel in this venv on a CUDA machine → embeddings/reranker run on CPU. Fix is a torch re-sync to the CUDA wheel (e.g. `UV_TORCH_BACKEND=auto uv sync`, confirm `torch.cuda.is_available()`), but it's an env change — left for the user to OK. Until then ingest/rebuild are CPU-slow.
+- Doc fix: "ingest" → "ingest --rebuild" after a Marker splice (figures-and-tables.md + CLI docstring).
+- `UV_NATIVE_TLS` is deprecated → use `UV_SYSTEM_CERTS` (the Marker CLI / docs reference the old name).
+- Nothing committed — awaiting review.
+
+---
+## Session: 2026-06-13 — Content-aware orphan cleanup on incremental ingest (Claude Code)
+
+**Starting from:** the step-2 entry above. After a Marker `--apply` splice, plain `python -m doc_assistant.ingest` left the pre-splice (old-hash) chunks beside the new ones — 18 hashes for 10 files in both Chroma stores + SQLite — because orphan cleanup only removed hashes whose *source file was gone*, not hashes whose source still exists but now hashes differently. Workaround was `ingest --rebuild` (full wipe + re-embed; slow on CPU torch).
+
+### src/doc_assistant/ingest.py — orphan sweep now removes content-changed hashes
+**What:** new `_find_orphan_hashes(hash_to_meta) -> (gone, stale)` classifies each stored `doc_hash`: `gone` = source file deleted (the old behaviour); `stale` = source present but its current cache-backed content re-hashes differently (the splice case). It groups stored hashes by `source_original` and re-hashes each surviving source once via `load_or_extract` (cache-backed → cheap when the cache is fresh, which it is right after a splice). `cleanup_orphans_sqlite` now deletes `gone + stale` and prints an enrichment-recompute warning when any `stale` are found. `cleanup_orphans_chroma` cache deletion is re-gated on **source existence** (not orphan-ness) so a content-changed doc never deletes the live `.md` its new hash re-ingests from. Still global-only — `main` already skips the sweep under `--path`/`--rebuild`.
+**Why:** document identity is `doc_hash(text)`; a content change mints a new hash, so an incremental add-only ingest can't know the old hash is now a duplicate unless the sweep recomputes the current hash set. Detecting `stale` makes incremental ingest self-clean after a splice — no `--rebuild` needed, and only the changed docs re-embed (not the whole corpus).
+**Sidecar enrichment caveat:** a content change deletes the old `document_id` row; with `PRAGMA foreign_keys=ON` (always set) that FK-cascades the doc's outbound `citations` + `doc_similarities` and NULLs inbound citation targets. The new content starts a fresh `document_id` with **no** enrichment, and other docs' edges that pointed at the old id are dropped/NULLed — so **re-run the citation + doc-vector enrichment after a content-change ingest**. The runtime warning says as much; documented here rather than auto-recomputed (enrichment is a separate runner per the Enrichment-Layer Pattern).
+**Conservative-by-design:** a source that can't be read, or extracts empty, is left untouched — a transient extract failure must never delete live chunks.
+**Rejected:** a single unified "stored − current_hashes = orphan" set (simplest, but would have deleted the live cache for content-changed docs, since old + new share one `source_cache` path — hence the source-existence gate on cache removal); auto-recomputing enrichment inline (couples ingest to the enrichment runners; violates the sidecar separation).
+**Test:** `tests/integration/test_ingest_orphan_cleanup.py` (new) — fake embedder + isolated temp DB/Chroma. `test_content_change_leaves_exactly_one_hash` ingests, rewrites the cache (simulated splice), re-ingests incrementally, asserts exactly one Document + one hash per store == the **new** hash, and that the live cache survives. `test_deleted_source_still_cleaned_and_cache_removed` proves the original gone-source path (incl. cache removal) still holds. Verified the content-change test **fails** under a simulated pre-fix (`stale` ignored), confirming it catches the bug. Gate: ruff ✓ · ruff format ✓ · mypy ✓.
+**Opens:** the step-2 "doc fix: ingest → ingest --rebuild after a splice" open is now **inverted** — incremental ingest is the correct path post-splice (plus an enrichment re-run); `figures-and-tables.md` + the `extract_tables_marker` docstring guidance should be updated to say so (left as a doc-only follow-up, those files are mid-edit in the working tree). Nothing committed — awaiting review.

@@ -1068,6 +1068,32 @@ Decisions I haven't made yet:
 
 ## Deferred Improvements
 
+### Feature 6 wiki clustering — absolute-cosine threshold is the wrong primitive (use relative / community clustering)
+
+**Status (2026-06-14):** Feature 6 (PR 13) clusters the library via connected
+components over `DocSimilarity` edges at/above `WIKI_MIN_SIMILARITY` (absolute
+cosine). Building it surfaced that this primitive is **ill-posed for same-domain
+corpora**: mean-pooled BGE doc vectors of the public 10-paper RAG corpus all sit
+at **~0.88–0.96 cosine**, so the original 0.55 default collapsed all 10 papers
+into one blob, and meaningful sub-topics only appeared at ~0.93–0.95 — a
+threshold that is *corpus-specific*, not a universal constant. Bumped the default
+to 0.90 and documented `--min-similarity` tuning, but a fixed absolute threshold
+can't generalize.
+
+**The proper fix** is *relative* / threshold-free clustering: use each document's
+top-K nearest neighbours (which `compute_doc_vectors` already produces) or graph
+community detection (modularity / **Leiden**) so the cut adapts to the corpus's
+own similarity distribution instead of an absolute number. This is exactly the
+NetworkX/graspologic machinery **Feature 7** (cross-document concept graph, PR 16)
+introduces — so Feature 6's clustering should be re-pointed at Feature 7's
+community detection once that lands, rather than growing its own. Until then, the
+absolute threshold is a documented, tunable v1 and the wiki is most useful on a
+*multi-domain* library (where doc vectors actually separate) — on a tight
+single-domain corpus it produces one big topic plus a few outliers.
+
+**Atlas:** recorded as a cross-project lesson (mean-pooled doc-vector similarity
+saturates within a domain; cluster relatively, not by absolute cosine).
+
 ### Chunk 2c self-improvement loop — built, but its payoff is scale-gated (revisit on server deploy or local-model oddities)
 
 **Status (2026-06-14):** the reviewer aggregation / bias-vs-fault loop (PR 12) is

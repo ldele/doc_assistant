@@ -325,7 +325,7 @@ Without this anchor, "pattern in the suggestions" is unfalsifiable — it must n
 
 ## Phase 7 — Gap Detection
 
-### Feature 6 — Self-organizing wiki / synthesis layer
+### Feature 6 — Self-organizing wiki / synthesis layer — ✅ **shipped (PR 13, 2026-06-14; 6a–6d)**
 
 A derived, human-readable markdown layer over the RAG corpus: per-topic notes (summary + tags + `[[links]]` + source citations) distilled from retrieved chunks. The Karpathy LLM-wiki pattern — proven in the cross-project atlas — applied *on top of* RAG, not as a replacement for it.
 
@@ -460,7 +460,7 @@ Each row is one PR. Each PR scopes to one chunk, with the files and the `decisio
 | 11 | Integrity Chunk 2b: reviewer agent | `src/doc_assistant/reviewer.py` (new), Pydantic rubric schema, integration in `pipeline.py` | 1 evening | PR 10 |
 | 11.5 | Chunking sweep infra (Phase 2.4 reopened) ✅ shipped 2026-05-31 | `src/doc_assistant/config.py`, `src/doc_assistant/ingest.py`, `scripts/sweep_chunking.py` (new), `tests/unit/test_chunking_config.py` (new) | done (infra) + ½-day measurement run | PR 3 (eval harness) |
 | 12 | ✅ Integrity Chunk 2c: reviewer aggregation & self-improvement loop (min-N gated; instrumentation-first) — shipped 2026-06-14 (paid anchor run pending) | `reviewer.py` (`FAILURE_TAGS` enum), `db/models.py` (`AnswerReview.failure_tag`) + `db/migrations.py` (additive `ALTER TABLE`), `config.py` (`MIN_FAILURE_TAG_COUNT`/`_DOCS`), `reviewer_aggregate.py` (new) + `scripts/reviewer_report.py` (new, `--anchor`) | 1 weekend | PR 11 + PR 4 (verified golden set as the anchor) |
-| 13 | Feature 6: self-organizing wiki / synthesis layer | `src/doc_assistant/wiki.py` (new), `scripts/build_wiki.py` (new), gap signals reuse `provenance.py` | 1 weekend (6a) + 1 evening each (6b/6c) | PR 1 (doc vectors) + PR 5 (provenance) |
+| 13 | ✅ Feature 6: self-organizing wiki / synthesis layer (6a–6d) — shipped 2026-06-14 | `src/doc_assistant/wiki.py` (new), `scripts/build_wiki.py` (new), `config.py` (`WIKI_*`), gap signals mirror `provenance.py` | 1 weekend (6a) + 1 evening each (6b/6c) | PR 1 (doc vectors) + PR 5 (provenance) |
 | 14 | Integrity Chunk 3: PRISMA-trAIce export | `scripts/export_review_traice.py` (new) | 1 day | Phase 9 work; PRs 5 + 10 |
 | 15 | Feature 5: extract eval harness to standalone repo | New repo | 1 weekend | PR 4 + at least one real measurement run |
 | 16 | Feature 7: cross-document concept graph | `src/doc_assistant/concept_graph.py` (new), `scripts/build_concept_graph.py` (new) | — | PR 1 + PR 13 |

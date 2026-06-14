@@ -133,6 +133,59 @@ class CitationOverlapScorer:
         )
 
 
+class FigureRetrievalScorer:
+    """1.0 if a figure chunk for ``case.metadata['expected_figure']`` was retrieved.
+
+    The Feature 4c eval hook: given a query about a figure, did retrieval surface
+    the right figure chunk? Reads the retrieved-chunk descriptors the adapter
+    places in ``output.raw['retrieved']`` (each a dict with ``chunk_type`` /
+    ``filename`` / ``page`` / ``figure_id``) and the expected figure spec in
+    ``case.metadata['expected_figure']`` (``{filename, page?, figure_id?}``).
+
+    Match precedence: an exact ``figure_id`` if the case provides one, else
+    ``filename`` (case-insensitive substring) plus ``page`` when ``page`` is given.
+    Stays generic — pure dict inspection, no ``doc_assistant`` import — so the
+    harness remains extractable (Feature 5).
+    """
+
+    name = "figure_retrieval"
+
+    def __call__(self, case: EvalCase, output: EvalOutput | None) -> ScoreResult:
+        if output is None:
+            return ScoreResult(self.name, 0.0, {"error": "no output"})
+        expected = case.metadata.get("expected_figure")
+        if not isinstance(expected, dict) or not (
+            expected.get("filename") or expected.get("figure_id")
+        ):
+            return ScoreResult(self.name, 0.0, {"error": "case has no expected_figure"})
+
+        retrieved = output.raw.get("retrieved") or []
+        figure_chunks = [
+            c for c in retrieved if isinstance(c, dict) and c.get("chunk_type") == "figure"
+        ]
+        exp_id = expected.get("figure_id")
+        exp_file = str(expected.get("filename") or "").lower()
+        exp_page = expected.get("page")
+
+        for chunk in figure_chunks:
+            if exp_id is not None:
+                if str(chunk.get("figure_id")) == str(exp_id):
+                    return ScoreResult(self.name, 1.0, {"matched": chunk})
+                continue
+            filename = str(chunk.get("filename") or "").lower()
+            if exp_file and exp_file not in filename and filename not in exp_file:
+                continue
+            if exp_page is not None and chunk.get("page") != exp_page:
+                continue
+            return ScoreResult(self.name, 1.0, {"matched": chunk})
+
+        return ScoreResult(
+            self.name,
+            0.0,
+            {"expected": expected, "n_figure_chunks": len(figure_chunks)},
+        )
+
+
 # ============================================================
 # Embedding similarity scorer
 # ============================================================

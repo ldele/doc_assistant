@@ -1575,3 +1575,34 @@ No scorer moves beyond its trial-mean std; the `llm_judge` gap is smaller than e
 **Real-corpus run (RTX box, public 10-paper corpus):** `extract_figures --apply --force` → **45 regions, 44 PNGs + 1 caption-only, 0 errors, every region caption-paired**; DB rows (45) match PNGs on disk (44 + 1 caption-only); all four extraction methods exercised (`image_block` 15, `largest_block` 28, `drawing_union` 1, `caption_only` 1). A second plain `--apply` skipped all 10 (idempotent).
 
 **Opens:** Feature 4c (PR 9) — VLM description fills the `vlm_*` columns + emits `chunk_type='figure'` chunks (then re-ingest matters); a figure-retrieval eval scorer lands with it. OpenCV contour refinement stays the deferred ADR-1 lever (no measured bbox-quality gap yet). Non-PDF figure extraction (EPUB/DOCX/HTML) out of scope v1. Nothing committed — staged for review.
+
+---
+## Session: 2026-06-14 — Feature 4c: VLM figure description + figure-chunk emission + eval scorer (PR 9, full) (Claude Code)
+
+**Starting from:** PR 8 (4b) shipped — `Figure` rows + PNG crops exist. User chose **full 4c in one PR** (not just the roadmap-table's VLM-only scope) and **build + offline tests, then ask before the paid run**. Consulted the `claude-api` skill for the vision + forced-tool-use shape and current vision-capable model IDs before writing the call.
+
+### src/doc_assistant/figures.py — VLM core (schema, gating, the Anthropic call)
+**What:** `FigureDescription` (Pydantic: `figure_type`/`summary`/`key_quantities`/`axes`/`trend`, `.to_text()`) — **no confidence field** (roadmap "don't surface self-reported LLM confidence"). Pure helpers: `should_describe` (gate: no-image / caption-sufficient / else describe), `figure_chunk_text` (caption + description), `build_vlm_messages` (image block + prompt), `extract_tool_use_input` (pulls the `tool_use` block input, tolerates SDK objects *and* dicts like `llm._extract_anthropic_text`), `figure_tool` (tool def whose `input_schema` is the Pydantic schema). Impure: `FigureDescriber` Protocol + `AnthropicVisionDescriber` (vision + **forced `tool_choice`**, lazy `anthropic` import) + `describe_figure` (reads PNG → base64 → describer).
+**Why DI on the describer:** mirrors `reviewer.py` / `llm.LLMClient` — zero vendor SDK import at module load, and tests inject a fake describer (no API, no key). Anthropic-only by decision (4c is API-only; no Ollama path needed).
+**mypy note:** the SDK `messages.create` is fully typed, so the loose `tools`/`tool_choice` dicts fail its overloads — built a `kwargs: dict[str, Any]` and expanded (`create(**kwargs)`), the exact trick `llm.AnthropicClient.complete` uses.
+
+### scripts/describe_figures.py (new) — the gated, paid enrichment CLI
+**What:** `--apply`/`--force`/`--doc`/`--max-calls`/`--model`. Per doc: load figure rows → gate each (`should_describe`) → describe under a **per-doc budget** (`MAX_VLM_CALLS_PER_DOC`) → write `Figure.vlm_description` / `vlm_call_skipped_reason`. API calls happen outside the DB session (slow); updates land in one transaction. Dry-run by default (no API); `--apply` refuses without `ANTHROPIC_API_KEY`. Per-figure isolation (one bad call records `error: …` and the doc continues).
+**Why:** Enrichment-Layer — writes the `Figure` sidecar only, never the chunk store. Every skip is auditable; the budget is the cost ceiling.
+
+### src/doc_assistant/ingest.py — emit `chunk_type='figure'` chunks (the architecture call)
+**What:** new `figure_units(document_id)` queries *described* figures and returns `(caption+description, page, figure_id)`; `process_one_document` appends one figure chunk per described figure to **both** stores — baseline, and parent-child as a self-contained `parent==child` unit (like a kept-whole table).
+**Why (ADR — how figure chunks reach retrieval):** the Enrichment-Layer rule forbids enrichment from writing the chunk store, but figure chunks must be *in* it to be retrievable. Resolved exactly like tables: the enrichment writes a sidecar; **ingest** (the one chunk-store writer) materialises it. So 4c never touches Chroma; the flow is `extract_figures` → `describe_figures` → re-`ingest`. Only described figures become chunks (a bare caption is already in the text chunks — no duplication).
+**Rejected:** 4c writing figure chunks straight into Chroma (violates "never mutate the primary chunk store"); a separate figures collection (adds a cross-collection retrieval-merge for no v1 benefit).
+
+### src/doc_assistant/eval/ — figure-retrieval scorer + adapter enrichment
+**What:** `scorers.py:FigureRetrievalScorer` — given `case.metadata['expected_figure']` (`{filename, page?, figure_id?}`), 1.0 iff a retrieved `chunk_type=='figure'` chunk matches (figure_id exact, else filename+page). `adapters.py` now puts per-chunk descriptors (`filename`/`page`/`chunk_type`/`figure_id`) in `EvalOutput.raw['retrieved']` so a retrieval-shape scorer can see chunk *kind*, not just filenames. Both stay generic (plain dicts, no `doc_assistant` import) so the harness stays extractable (Feature 5).
+
+### config.py
+**What:** `FIGURE_VLM_MODEL` (default `claude-haiku-4-5` — vision-capable, cheapest, matching the reviewer/judge cost convention; bump to Sonnet/Opus via env), `MAX_VLM_CALLS_PER_DOC=30`, `FIGURE_CAPTION_DESC_MIN_CHARS=300`.
+
+**Tests:** +26 (unit: gating, schema-has-no-confidence, `to_text`, tool-use parse for object *and* dict blocks, chunk text, `build_vlm_messages`, 6 `FigureRetrievalScorer` cases; integration `test_describe_figures.py`: fake describer drives the gating matrix — describe/caption_sufficient/no_image/budget_exhausted/image_missing — idempotency, force, and `figure_units` materialisation). **Gate: ruff ✓ · ruff format ✓ · mypy --strict src ✓ · bandit 0 high/med ✓ · 415 passed (was 389, +26), coverage 76.7% (floor 40), `figures.py` 92% / `scorers.py` 96%.** No real API in any test.
+
+**Dry-run on the real corpus (zero cost):** `describe_figures` (no `--apply`) over the 45 figures → **38 would-describe, 7 skipped as `caption_sufficient`, 0 errors** — gating behaves sensibly on real captions.
+
+**Opens:** the **one paid validation run** (`describe_figures --apply` → re-ingest → a real `FigureRetrievalScorer` eval) is deferred to the user's OK (the user chose "build + offline tests, then ask"). The caption-only **embedding-similarity** gate the roadmap mentions is deferred — length + budget are the v1 gates (a pre-call similarity gate needs a reference that doesn't exist yet). Nothing committed — staged for review.

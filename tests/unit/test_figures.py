@@ -10,9 +10,17 @@ by ``tests/integration/test_figures_extract.py``.
 from __future__ import annotations
 
 from doc_assistant.figures import (
+    SKIP_CAPTION_SUFFICIENT,
+    SKIP_NO_IMAGE,
+    FigureDescription,
+    build_vlm_messages,
+    extract_tool_use_input,
+    figure_chunk_text,
     figure_image_path,
+    figure_tool,
     pair_caption,
     select_region_bboxes,
+    should_describe,
 )
 
 # A region near the top of a 100x100 page; y increases downward.
@@ -149,3 +157,107 @@ def test_zero_height_sliver_is_not_emitted():
     sliver = (10.0, 50.0, 90.0, 50.0)
     out = select_region_bboxes([], [sliver], kind="figure", page_bbox=PAGE)
     assert out == [(None, "caption_only")]
+
+
+# ============================================================
+# Feature 4c — VLM gating, schema, chunk text, tool-use parsing (pure)
+# ============================================================
+
+
+def test_should_describe_skips_caption_only_figure():
+    assert should_describe("Figure 1: anything", None) == (False, SKIP_NO_IMAGE)
+
+
+def test_should_describe_skips_long_caption():
+    assert should_describe("x" * 300, "/p/fig.png", min_caption_chars=300) == (
+        False,
+        SKIP_CAPTION_SUFFICIENT,
+    )
+
+
+def test_should_describe_runs_on_thin_caption():
+    assert should_describe("Figure 1.", "/p/fig.png", min_caption_chars=300) == (True, None)
+
+
+def test_should_describe_zero_threshold_never_skips_for_length():
+    # min_caption_chars=0 disables the caption-length skip (the >=1 guard).
+    assert should_describe("x" * 999, "/p/fig.png", min_caption_chars=0) == (True, None)
+
+
+def test_figure_chunk_text_joins_caption_and_description():
+    assert figure_chunk_text("Figure 1: foo", "A bar chart.") == "Figure 1: foo\n\nA bar chart."
+
+
+def test_figure_chunk_text_description_only_when_no_caption():
+    assert figure_chunk_text(None, "A bar chart.") == "A bar chart."
+    assert figure_chunk_text("Figure 1", "") == "Figure 1"
+
+
+def test_figure_description_to_text_renders_all_fields():
+    fd = FigureDescription(
+        figure_type="line plot",
+        summary="Accuracy rises with k.",
+        key_quantities=["top-20: 78%", "top-100: 85%"],
+        axes="x: k, y: accuracy",
+        trend="monotonic increase",
+    )
+    text = fd.to_text()
+    assert "Accuracy rises with k." in text
+    assert "Figure type: line plot." in text
+    assert "Axes: x: k, y: accuracy." in text
+    assert "Trend: monotonic increase." in text
+    assert "top-20: 78%; top-100: 85%" in text
+
+
+def test_figure_description_to_text_omits_null_optional_fields():
+    fd = FigureDescription(figure_type="micrograph", summary="A cell image.")
+    text = fd.to_text()
+    assert text == "A cell image. Figure type: micrograph."
+
+
+def test_figure_description_schema_has_no_confidence_field():
+    # The project never surfaces self-reported LLM confidence.
+    props = FigureDescription.model_json_schema()["properties"]
+    assert "confidence" not in props
+    assert set(props) == {"figure_type", "summary", "key_quantities", "axes", "trend"}
+
+
+def test_figure_tool_wraps_the_schema():
+    tool = figure_tool()
+    assert tool["name"] == "record_figure_description"
+    assert tool["input_schema"]["type"] == "object"
+    assert "summary" in tool["input_schema"]["properties"]
+
+
+def test_build_vlm_messages_has_image_then_text():
+    msgs = build_vlm_messages("BASE64DATA", "image/png", "Figure 2: caption")
+    content = msgs[0]["content"]
+    assert content[0]["type"] == "image"
+    assert content[0]["source"]["data"] == "BASE64DATA"
+    assert content[0]["source"]["media_type"] == "image/png"
+    assert content[1]["type"] == "text"
+    assert "Figure 2: caption" in content[1]["text"]
+
+
+def test_extract_tool_use_input_from_dict_blocks():
+    blocks = [
+        {"type": "text", "text": "ignore me"},
+        {"type": "tool_use", "name": "record_figure_description", "input": {"summary": "ok"}},
+    ]
+    assert extract_tool_use_input(blocks) == {"summary": "ok"}
+
+
+def test_extract_tool_use_input_from_object_blocks():
+    class _Block:
+        def __init__(self, **kw: object) -> None:
+            self.__dict__.update(kw)
+
+    blocks = [_Block(type="tool_use", input={"summary": "ok"})]
+    assert extract_tool_use_input(blocks) == {"summary": "ok"}
+
+
+def test_extract_tool_use_input_raises_without_tool_use():
+    import pytest
+
+    with pytest.raises(ValueError, match="no tool_use"):
+        extract_tool_use_input([{"type": "text", "text": "nope"}])

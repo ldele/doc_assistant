@@ -27,13 +27,21 @@ with no I/O, behind a thin impure PyMuPDF boundary (``detect_figure_regions``,
 
 from __future__ import annotations
 
+import base64
 import logging
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
 
-from doc_assistant.config import FIGURE_DIR, FIGURE_MIN_AREA_FRACTION
+from pydantic import BaseModel, Field
+
+from doc_assistant import config
+from doc_assistant.config import (
+    FIGURE_CAPTION_DESC_MIN_CHARS,
+    FIGURE_DIR,
+    FIGURE_MIN_AREA_FRACTION,
+)
 from doc_assistant.regions import FIGURE_CAPTION_RE, RegionKind, analyze_pages
 
 log = logging.getLogger(__name__)
@@ -319,3 +327,205 @@ def render_region(page: object, bbox: BBox, out_path: Path, *, dpi: int) -> None
     rect = pymupdf.Rect(bbox)  # type: ignore[no-untyped-call]
     pix = page.get_pixmap(clip=rect, dpi=dpi)  # type: ignore[attr-defined]
     pix.save(str(out_path))
+
+
+# ============================================================
+# Feature 4c — VLM figure description (gated, Anthropic-only)
+# ============================================================
+# Turns a 4b `Figure` (caption + PNG crop) into a structured description, so
+# `caption + description` becomes a retrievable `chunk_type='figure'` chunk.
+# Cost-gated: only figures with a rendered PNG and a thin caption, under a
+# per-doc budget (see `scripts/extract_figures` vs `scripts/describe_figures`).
+
+
+class FigureDescription(BaseModel):
+    """Schema-first VLM output for one figure (Anthropic tool-use validates it).
+
+    Deliberately carries **no confidence field** — the project surfaces
+    retrieval-derived uncertainty markers, never self-reported LLM confidence
+    (see the roadmap's "What NOT to do"). ``axes`` / ``trend`` are nullable for
+    non-plot figures (micrographs, diagrams, photos).
+    """
+
+    figure_type: str = Field(
+        description="Kind of figure, e.g. 'bar chart', 'line plot', 'micrograph', "
+        "'diagram', 'photo', 'schematic'."
+    )
+    summary: str = Field(
+        description="1-3 sentence description of what the figure shows and conveys."
+    )
+    key_quantities: list[str] = Field(
+        default_factory=list,
+        description="Notable values, labels, or units visible in the figure (may be empty).",
+    )
+    axes: str | None = Field(
+        default=None, description="x and y axis meaning if this is a plot, else null."
+    )
+    trend: str | None = Field(
+        default=None, description="Main trend or relationship shown, if any, else null."
+    )
+
+    def to_text(self) -> str:
+        """Render to a single natural-language string for embedding."""
+        parts = [self.summary.strip(), f"Figure type: {self.figure_type.strip()}."]
+        if self.axes:
+            parts.append(f"Axes: {self.axes.strip()}.")
+        if self.trend:
+            parts.append(f"Trend: {self.trend.strip()}.")
+        if self.key_quantities:
+            quantities = "; ".join(q.strip() for q in self.key_quantities if q.strip())
+            if quantities:
+                parts.append(f"Key quantities: {quantities}.")
+        return " ".join(p for p in parts if p).strip()
+
+
+# Skip-reason vocabulary persisted to `Figure.vlm_call_skipped_reason`.
+SKIP_NO_IMAGE = "no_image"
+SKIP_CAPTION_SUFFICIENT = "caption_sufficient"
+SKIP_BUDGET_EXHAUSTED = "budget_exhausted"
+SKIP_IMAGE_MISSING = "image_missing"
+
+
+def should_describe(
+    caption: str | None,
+    image_path: str | None,
+    *,
+    min_caption_chars: int = FIGURE_CAPTION_DESC_MIN_CHARS,
+) -> tuple[bool, str | None]:
+    """Gate one figure (pure). Returns ``(describe?, skip_reason | None)``.
+
+    Skips a caption-only figure (no PNG to look at) and a figure whose caption is
+    already long enough to be self-describing. The per-doc budget is enforced by
+    the caller, not here.
+    """
+    if not image_path:
+        return False, SKIP_NO_IMAGE
+    if caption and len(caption.strip()) >= min_caption_chars >= 1:
+        return False, SKIP_CAPTION_SUFFICIENT
+    return True, None
+
+
+def figure_chunk_text(caption: str | None, vlm_description: str) -> str:
+    """Compose the retrievable text for a figure chunk (pure): caption + description."""
+    cap = (caption or "").strip()
+    desc = vlm_description.strip()
+    if cap and desc:
+        return f"{cap}\n\n{desc}"
+    return desc or cap
+
+
+# ---- The VLM call (impure boundary) ----------------------------------------
+
+_FIGURE_TOOL_NAME = "record_figure_description"
+
+_VLM_PROMPT = (
+    "You are describing a figure cropped from a scientific paper, for a retrieval "
+    "index. Describe ONLY what is visibly in the image — do not invent values. "
+    "Use the caption for context but describe the figure itself.\n\n"
+    "Caption: {caption}\n\n"
+    "Call the {tool} tool with a structured description."
+)
+
+
+def figure_tool() -> dict[str, Any]:
+    """The Anthropic tool definition whose input schema is ``FigureDescription``."""
+    return {
+        "name": _FIGURE_TOOL_NAME,
+        "description": "Record a structured description of the scientific figure.",
+        "input_schema": FigureDescription.model_json_schema(),
+    }
+
+
+def build_vlm_messages(image_b64: str, media_type: str, caption: str) -> list[dict[str, Any]]:
+    """Build the Anthropic ``messages`` payload (pure): an image block + a text prompt."""
+    prompt = _VLM_PROMPT.format(caption=caption or "(no caption)", tool=_FIGURE_TOOL_NAME)
+    return [
+        {
+            "role": "user",
+            "content": [
+                {
+                    "type": "image",
+                    "source": {"type": "base64", "media_type": media_type, "data": image_b64},
+                },
+                {"type": "text", "text": prompt},
+            ],
+        }
+    ]
+
+
+def extract_tool_use_input(content: Any) -> dict[str, Any]:
+    """Pull the ``tool_use`` block's ``input`` from a Messages response (pure).
+
+    Tolerates both SDK block objects and plain dicts, mirroring
+    ``llm._extract_anthropic_text``. Raises ``ValueError`` if no tool_use block.
+    """
+    for block in content or []:
+        btype = getattr(block, "type", None)
+        if btype is None and isinstance(block, dict):
+            btype = block.get("type")
+        if btype != "tool_use":
+            continue
+        data = getattr(block, "input", None)
+        if data is None and isinstance(block, dict):
+            data = block.get("input")
+        if isinstance(data, dict):
+            return data
+    raise ValueError("no tool_use block in VLM response")
+
+
+class FigureDescriber(Protocol):
+    """A provider-agnostic vision describer (DI seam, mirrors ``llm.LLMClient``)."""
+
+    def describe(
+        self, *, image_b64: str, media_type: str, caption: str, model: str, max_tokens: int
+    ) -> FigureDescription: ...
+
+
+class AnthropicVisionDescriber:
+    """``FigureDescriber`` over the raw Anthropic SDK (vision + forced tool-use).
+
+    Forces ``tool_choice`` to the figure tool so the model must return a
+    schema-shaped ``tool_use`` block; the result is validated by Pydantic. No
+    vendor SDK import at module load — ``anthropic`` is imported lazily here.
+    """
+
+    def __init__(self, *, api_key: str | None = None) -> None:
+        from anthropic import Anthropic
+
+        self._client = Anthropic(api_key=api_key or config.ANTHROPIC_API_KEY)
+        self._tool = figure_tool()
+
+    def describe(
+        self, *, image_b64: str, media_type: str, caption: str, model: str, max_tokens: int
+    ) -> FigureDescription:
+        # Build kwargs as a plain dict and expand — same trick as
+        # llm.AnthropicClient.complete — so the loose tool/tool_choice dicts
+        # don't have to satisfy the SDK's typed-overload signatures.
+        kwargs: dict[str, Any] = {
+            "model": model,
+            "max_tokens": max_tokens,
+            "tools": [self._tool],
+            "tool_choice": {"type": "tool", "name": _FIGURE_TOOL_NAME},
+            "messages": build_vlm_messages(image_b64, media_type, caption),
+        }
+        response: Any = self._client.messages.create(**kwargs)
+        return FigureDescription.model_validate(extract_tool_use_input(response.content))
+
+
+def describe_figure(
+    image_path: Path,
+    caption: str | None,
+    describer: FigureDescriber,
+    *,
+    model: str,
+    max_tokens: int = 1024,
+) -> FigureDescription:
+    """Read a figure PNG, base64-encode it, and describe it via ``describer``. Impure."""
+    image_b64 = base64.standard_b64encode(image_path.read_bytes()).decode("utf-8")
+    return describer.describe(
+        image_b64=image_b64,
+        media_type="image/png",
+        caption=caption or "",
+        model=model,
+        max_tokens=max_tokens,
+    )

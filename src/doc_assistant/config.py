@@ -191,3 +191,30 @@ FIGURE_RENDER_DPI = int(os.getenv("FIGURE_RENDER_DPI", "150"))
 # `regions.IMAGE_AREA_MIN` (0.05), which is the page-dominance threshold for
 # classifying a whole page as a photo; this is the smaller per-region floor.
 FIGURE_MIN_AREA_FRACTION = float(os.getenv("FIGURE_MIN_AREA_FRACTION", "0.02"))
+
+
+# ============================================================
+# Figure VLM description (Phase 6 / Feature 4c — gated, API-only)
+# ============================================================
+# 4c turns the 4b `Figure` rows into VLM-described, retrievable figure chunks.
+# This is the project's only API-only, *paid* enrichment, so it is gated three
+# ways: a caption-length skip (a well-captioned figure needs no VLM), a per-doc
+# call budget, and the 4b precondition that only figures with a rendered PNG are
+# eligible. Anthropic-only by decision (vision + tool-use); no local path.
+
+# Vision model for figure description. Defaults to Haiku 4.5 — vision-capable and
+# the cheapest tier — matching this project's cost-gated instrument convention
+# (the reviewer/judge also default to a Haiku reference model). Bump to
+# `claude-sonnet-4-6` or `claude-opus-4-8` via env for higher-fidelity crops.
+FIGURE_VLM_MODEL = os.getenv("FIGURE_VLM_MODEL", "claude-haiku-4-5")
+
+# Hard ceiling on VLM calls per document — the cost ceiling for one paper. A
+# figure page beyond this many figures records `vlm_call_skipped_reason=
+# "budget_exhausted"` rather than calling. Raise for figure-dense papers.
+MAX_VLM_CALLS_PER_DOC = int(os.getenv("MAX_VLM_CALLS_PER_DOC", "30"))
+
+# A caption at/above this many characters is treated as already self-describing,
+# so the figure is skipped (`vlm_call_skipped_reason="caption_sufficient"`) — the
+# VLM is a quality lever for thinly-captioned figures, not every figure. Set to 0
+# to describe every eligible figure regardless of caption length.
+FIGURE_CAPTION_DESC_MIN_CHARS = int(os.getenv("FIGURE_CAPTION_DESC_MIN_CHARS", "300"))

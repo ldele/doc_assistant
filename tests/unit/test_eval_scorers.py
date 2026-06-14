@@ -17,6 +17,7 @@ from doc_assistant.eval.scorers import (
     ContainsAllScorer,
     EmbeddingSimilarityScorer,
     ExactMatchScorer,
+    FigureRetrievalScorer,
     LLMJudgeScorer,
     _cosine,
 )
@@ -249,3 +250,71 @@ def test_llm_judge_prompt_instructs_reference_only_grading():
     assert "faithfulness" in _JUDGE_PROMPT.lower()
     assert "relevance" in _JUDGE_PROMPT.lower()
     assert "completeness" in _JUDGE_PROMPT.lower()
+
+
+# ============================================================
+# FigureRetrievalScorer (Feature 4c)
+# ============================================================
+
+
+def _out_retrieved(retrieved: list[dict[str, Any]]) -> EvalOutput:
+    return EvalOutput(answer="", raw={"retrieved": retrieved})
+
+
+def test_figure_retrieval_hit_by_filename_and_page():
+    out = _out_retrieved(
+        [
+            {"filename": "dpr.pdf", "page": 3, "chunk_type": "text"},
+            {
+                "filename": "rag_lewis_2020.pdf",
+                "page": 4,
+                "chunk_type": "figure",
+                "figure_id": "f1",
+            },
+        ]
+    )
+    case = _case(metadata={"expected_figure": {"filename": "rag_lewis_2020.pdf", "page": 4}})
+    r = FigureRetrievalScorer()(case, out)
+    assert r.value == 1.0
+    assert r.details["matched"]["figure_id"] == "f1"
+
+
+def test_figure_retrieval_miss_wrong_page():
+    out = _out_retrieved(
+        [{"filename": "rag_lewis_2020.pdf", "page": 9, "chunk_type": "figure", "figure_id": "f1"}]
+    )
+    case = _case(metadata={"expected_figure": {"filename": "rag_lewis_2020.pdf", "page": 4}})
+    r = FigureRetrievalScorer()(case, out)
+    assert r.value == 0.0
+    assert r.details["n_figure_chunks"] == 1
+
+
+def test_figure_retrieval_ignores_text_chunks_of_right_doc():
+    # The right paper came back, but only as a text chunk — not a figure hit.
+    out = _out_retrieved([{"filename": "rag_lewis_2020.pdf", "page": 4, "chunk_type": "text"}])
+    case = _case(metadata={"expected_figure": {"filename": "rag_lewis_2020.pdf", "page": 4}})
+    r = FigureRetrievalScorer()(case, out)
+    assert r.value == 0.0
+    assert r.details["n_figure_chunks"] == 0
+
+
+def test_figure_retrieval_by_figure_id_exact():
+    out = _out_retrieved(
+        [{"filename": "x.pdf", "page": 2, "chunk_type": "figure", "figure_id": "abc-123"}]
+    )
+    case = _case(metadata={"expected_figure": {"figure_id": "abc-123"}})
+    assert FigureRetrievalScorer()(case, out).value == 1.0
+
+
+def test_figure_retrieval_no_expected_figure_is_skipped():
+    r = FigureRetrievalScorer()(_case(), _out_retrieved([]))
+    assert r.value == 0.0
+    assert "expected_figure" in r.details["error"]
+    assert r.is_skipped
+
+
+def test_figure_retrieval_no_output():
+    case = _case(metadata={"expected_figure": {"filename": "x.pdf"}})
+    r = FigureRetrievalScorer()(case, None)
+    assert r.value == 0.0
+    assert "no output" in r.details["error"]

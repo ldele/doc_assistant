@@ -785,9 +785,19 @@ interpretation + reviewer agent.
     mechanism gate `tests/integration/test_marker_table_retrieval.py`; measured
     2026-06-06 (DPR Table 2: Top-20 78.4, Top-100 85.4). A hand-verified gold-set
     cell-exact fidelity scorer remains a roadmap future, not built now.
-- **Feature 4b** — Figure region detection + caption pairing (OpenCV, 
-  no LLM cost). Sidecar `figures` table; images on disk under 
-  `data/figures/{doc_hash}/`. Caption text stays in the markdown.
+- **Feature 4b** — Figure region detection + caption pairing — ✅ **shipped (PR 8,
+  2026-06-14)**, spec `docs/specs/feature-4b-figure-detection.md`. No LLM cost.
+  Sidecar `figures` table (`src/doc_assistant/figures.py` +
+  `scripts/extract_figures.py`); PNG crops on disk under `data/figures/{doc_hash}/`;
+  caption text stays in the markdown (additive, never spliced — ADR-2). v1 derives
+  region bboxes from **PyMuPDF geometry** built on the shipped `regions.py`
+  classifier — raster image blocks for photos, the drawing-rect union for charts,
+  largest-block / caption-only fallback otherwise (ADR-1). **OpenCV refinement
+  deferred** (the classifier already does the chart/photo/figure discrimination).
+  Idempotent, `--force`-gated, per-doc isolated; the additive `create_all` mints
+  the table (no Alembic). Runs on either machine (no torch/Marker/GPU). Public
+  corpus run (10 papers): 45 regions, 44 PNGs + 1 caption-only, every region
+  caption-paired. Feature 4c turns these rows into VLM-described retrievable chunks.
 - **Feature 4c** — VLM figure description (gated). Anthropic tool-use 
   with Pydantic-validated schema. `caption + VLM description` embedded as 
   a chunk with `chunk_type='figure'`. `MAX_VLM_CALLS_PER_DOC` budget.

@@ -1544,3 +1544,34 @@ No scorer moves beyond its trial-mean std; the `llm_judge` gap is smaller than e
 **Key learning beyond the spec:** `uv sync --extra cu130` *alone* drops the `dev` tools — dev/CI need **both** extras (`--extra cu130|cpu --extra dev`); and the GPU box needs `--extra cu130` on every `uv run` (a plain `uv run` reverts to the base/+cpu wheel) — hence `DOC_TORCH` + the justfile.
 
 **Opens:** uv default-extra (#10360) would let the GPU box skip the per-run flag entirely. macOS guard (no CUDA wheels) deferred — both boxes are Windows. `.claude/KNOWN_ISSUES.md` torch entry not added (`.claude/` is gitignored/absent here; captured in the `rtx-box-venv-cpu-torch` memory + this entry instead). Nothing committed — staged for review; `uv.lock` + CI are the high-blast-radius bits.
+
+---
+## Session: 2026-06-14 — Feature 4b: figure region detection + caption pairing (PR 8) (Claude Code)
+
+**Starting from:** the roadmap PR-by-PR table + the design-locked spec [`docs/specs/feature-4b-figure-detection.md`] (Cowork, 2026-06-13). PR 7 (4a / `regions.py` classifier) shipped; 4b promotes the classifier's page-level `is_figure` verdict to region-level bboxes + cropped PNGs + a `figures` sidecar. No LLM, no Marker, no GPU.
+
+### src/doc_assistant/figures.py (new) — pure geometry core + thin PyMuPDF boundary
+**What:** `FigureRegion` dataclass; pure `pair_caption` (nearest `Figure N:` block by vertical gap, below-preferred, no double-assignment), `select_region_bboxes` (ADR-1 chooser: raster image blocks → `image_block`; chart drawing-rect union → `drawing_union`; largest non-text block → `largest_block`; else `caption_only` with `bbox=None`), `figure_image_path`/`figure_dir` (stable → idempotent filenames); impure `detect_figure_regions` (gates to `regions.analyze_pages` `is_figure` pages, no second detector) + `render_region` (`get_pixmap(clip=Rect, dpi=).save()`).
+**Why:** mirrors the `regions.py` pure/impure split so the heart of the feature (caption pairing, region choice) is exhaustively unit-testable with no PDF. ADR-1 keeps OpenCV out of v1 — the classifier already does chart/photo/figure discrimination, leaving only bbox extraction, which PyMuPDF geometry covers "well enough to crop a readable PNG."
+**Build-time confirms (PyMuPDF 1.27.2 on the RTX box):** `get_drawings()` items each carry a `"rect"` (`pymupdf.Rect`); `get_pixmap` honors `clip=` + `dpi=` (no `matrix=` zoom fallback needed); `get_text("dict")` blocks tag `type==1` raster / `type==0` text.
+**Renderability guard (added after a real-PDF fault):** the first `--apply` on the corpus raised PyMuPDF `Invalid bandwriter header dimensions` on a degenerate region — an inverted/zero-dimension drawing rect that an `abs()`-based area check let through. Added `_is_renderable` (signed width AND height ≥ `MIN_REGION_DIM=1.0`, not `abs()` area) and applied it in `select_region_bboxes` + the `_page_geometry` drawing filter, so detection never emits a bbox the cropper can fault on. Guarded by `test_inverted_rect_is_not_emitted` / `test_zero_height_sliver_is_not_emitted`.
+**Rejected:** OpenCV contour detection as the primary region finder (heavy wheel for a refinement the classifier covers — ADR-1, deferred lever); splicing figures into the markdown (binary → destroys the human-readable cache — ADR-2, sidecar only).
+
+### src/doc_assistant/db/models.py — `Figure` sidecar table (additive)
+**What:** new `Figure(Base)` — `{id, document_id→documents CASCADE, doc_hash, page, bbox_x0/y0/x1/y1, kind, caption, image_path, extraction_method, vlm_description=None, vlm_call_skipped_reason=None, extracted_at}` + `Document.figures` relationship (`cascade="all, delete-orphan"`), indexes on `(document_id)` and `(doc_hash)`.
+**Why:** sidecar substrate for 4b; the `vlm_*` columns ship present-but-null so Feature 4c (PR 9) fills them with no schema migration. `doc_hash` denormalised onto the row makes a content-changed (stale) figure detectable without a join.
+**Migration:** no Alembic — `init_db()` `create_all` is additive/idempotent; adding the class *is* the migration. Ran `python -m doc_assistant.db.migrations` against the real `library.db` → `figures` created, all 14 prior tables intact.
+
+### scripts/extract_figures.py (new) — the 4b enrichment CLI
+**What:** mirrors `scripts/extract_tables.py` + `compute_doc_vectors.py`. `--apply` (default dry-run report) / `--force` / `--doc <hash|id-prefix>` / `--dpi`. Per doc: resolve source PDF (skip non-PDF with a reason) → skip if rows exist and not `--force` → `detect_figure_regions` → on `--apply` render each non-null bbox via per-page reading-order index and upsert `Figure` rows in one `session_scope` transaction; `--force` clears the doc's PNG dir + rows first.
+**Why:** same two-step UX as citations/tables (`ingest` then enrich), idempotent, sidecar-only — writes `Figure` rows + PNGs under `data/figures/{doc_hash}/`, never the chunk store / markdown / `Document` columns.
+**Per-doc isolation (fixed after the same real-PDF fault):** isolation initially wrapped only detection; a render fault aborted the whole batch. Widened the `try/except` to cover `_apply_figures` too — one bad PDF errors its own row, the run continues (the apply transaction rolls back, so a partial render leaves no rows for that doc), satisfying the DoD.
+
+### config.py / .gitignore
+**What:** `FIGURE_DIR = DATA_PATH/"figures"`, `FIGURE_RENDER_DPI=150`, `FIGURE_MIN_AREA_FRACTION=0.02` (per-region floor — distinct from `regions.IMAGE_AREA_MIN=0.05`, the page-dominance threshold). `.gitignore`: `data/figures/` (binary, like `data/tables_debug/`).
+
+**Tests:** `tests/unit/test_figures.py` (16 — caption pairing incl. below/above/tie/adjacent/none/no-double-assign, path stability, the ADR-1 chooser incl. degenerate/inverted filtering) + `tests/integration/test_figures_extract.py` (6 — in-test fixture PDF; detection + pairing; `--apply` writes 1 PNG + 1 row; idempotent skip; `--force` re-renders without duplicating; Enrichment-Layer guard: no `Document`/chunk-store mutation, no Chroma dir). **Gate: ruff ✓ · ruff format ✓ · mypy --strict src ✓ · bandit 0 high/med ✓ · 389 passed (was 367, +22), coverage 76% (floor 40), `figures.py` 93%.**
+
+**Real-corpus run (RTX box, public 10-paper corpus):** `extract_figures --apply --force` → **45 regions, 44 PNGs + 1 caption-only, 0 errors, every region caption-paired**; DB rows (45) match PNGs on disk (44 + 1 caption-only); all four extraction methods exercised (`image_block` 15, `largest_block` 28, `drawing_union` 1, `caption_only` 1). A second plain `--apply` skipped all 10 (idempotent).
+
+**Opens:** Feature 4c (PR 9) — VLM description fills the `vlm_*` columns + emits `chunk_type='figure'` chunks (then re-ingest matters); a figure-retrieval eval scorer lands with it. OpenCV contour refinement stays the deferred ADR-1 lever (no measured bbox-quality gap yet). Non-PDF figure extraction (EPUB/DOCX/HTML) out of scope v1. Nothing committed — staged for review.

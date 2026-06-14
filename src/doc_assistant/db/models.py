@@ -199,6 +199,11 @@ class Document(Base):
         cascade="all, delete-orphan",
         order_by="IngestionEvent.timestamp.desc()",
     )
+    figures: Mapped[list["Figure"]] = relationship(
+        "Figure",
+        back_populates="document",
+        cascade="all, delete-orphan",
+    )
 
 
 # ============================================================
@@ -294,6 +299,69 @@ class DocSimilarity(Base):
     __table_args__ = (
         Index("idx_doc_sim_source", "source_document_id", "embedding_model"),
         Index("idx_doc_sim_target", "target_document_id", "embedding_model"),
+    )
+
+
+# ============================================================
+# Figure — Phase 6 / Feature 4b (figure detection sidecar).
+# ============================================================
+
+
+class Figure(Base):
+    """One detected figure region — a sidecar record, never spliced.
+
+    Populated by `figures.py` / `scripts/extract_figures.py` from PyMuPDF
+    geometry (image blocks plus the drawing-bbox union), gated to figure pages by
+    `regions.py`. Each row points at a cropped PNG under
+    `data/figures/{doc_hash}/`; the caption text stays in the markdown
+    (figures are additive, not substituting). Binary artifacts are sidecar
+    by the Enrichment-Layer rule — tables are the one text-shaped exception.
+
+    The `vlm_*` columns ship present-but-null: Feature 4c (PR 9) fills them
+    with a VLM description and turns each figure into a retrievable chunk.
+    A caption-only row (no detectable region) carries `bbox_* = None` and
+    `image_path = None` — still a useful 4c baseline.
+
+    `doc_hash` is denormalised onto the row so a content change (which mints
+    a new `doc_hash`) makes a stale figure detectable without a join, exactly
+    like the citation/table enrichment drift story.
+    """
+
+    __tablename__ = "figures"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid4()))
+    document_id: Mapped[str] = mapped_column(
+        String, ForeignKey("documents.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    doc_hash: Mapped[str] = mapped_column(String, nullable=False, index=True)
+
+    page: Mapped[int] = mapped_column(Integer, nullable=False)  # 1-based
+    # Region bbox in PDF points; all four NULL for a caption-only figure.
+    bbox_x0: Mapped[float | None] = mapped_column(Float, nullable=True)
+    bbox_y0: Mapped[float | None] = mapped_column(Float, nullable=True)
+    bbox_x1: Mapped[float | None] = mapped_column(Float, nullable=True)
+    bbox_y1: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+    # The `regions.py` page verdict: "chart" | "photo" | "figure".
+    kind: Mapped[str] = mapped_column(String, nullable=False)
+    caption: Mapped[str | None] = mapped_column(Text, nullable=True)
+    image_path: Mapped[str | None] = mapped_column(String, nullable=True)
+    # "image_block" | "drawing_union" | "largest_block" | "caption_only".
+    extraction_method: Mapped[str | None] = mapped_column(String, nullable=True)
+
+    # Feature 4c (VLM) populates these; present-but-null after 4b.
+    vlm_description: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+    vlm_call_skipped_reason: Mapped[str | None] = mapped_column(
+        String, nullable=True, default=None
+    )
+
+    extracted_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
+
+    document: Mapped[Document] = relationship("Document", back_populates="figures")
+
+    __table_args__ = (
+        Index("idx_figures_document", "document_id"),
+        Index("idx_figures_doc_hash", "doc_hash"),
     )
 
 

@@ -295,7 +295,7 @@ that wants a re-run on the private neuroscience corpus (`cases.yaml`). `CANDIDAT
 reproduces the exact pre-split behaviour; a guard requires `CANDIDATE_K >= TOP_K`. See
 `config.py:107-119`, `pipeline.py:82,88`, and `tests/unit/test_retrieval_config.py`.
 
-### Integrity Chunk 2c — Reviewer aggregation & self-improvement loop
+### Integrity Chunk 2c — Reviewer aggregation & self-improvement loop — ✅ **code shipped (PR 12, 2026-06-14)**
 
 Turn the per-answer reviewer (Chunk 2b) and provenance records (Chunk 1) into a feedback loop: mine reviewer verdicts for *systematic* failure modes, then act on them.
 
@@ -459,7 +459,7 @@ Each row is one PR. Each PR scopes to one chunk, with the files and the `decisio
 | 10 | Integrity Chunk 2a: dual interpretation + adjudication | `src/doc_assistant/pipeline.py`, `src/doc_assistant/prompts.py`, `src/doc_assistant/config.py` (`SYNTHESIS_MODE`), UI surface for accept/reject/edit | 1 weekend | PR 5 |
 | 11 | Integrity Chunk 2b: reviewer agent | `src/doc_assistant/reviewer.py` (new), Pydantic rubric schema, integration in `pipeline.py` | 1 evening | PR 10 |
 | 11.5 | Chunking sweep infra (Phase 2.4 reopened) ✅ shipped 2026-05-31 | `src/doc_assistant/config.py`, `src/doc_assistant/ingest.py`, `scripts/sweep_chunking.py` (new), `tests/unit/test_chunking_config.py` (new) | done (infra) + ½-day measurement run | PR 3 (eval harness) |
-| 12 | Integrity Chunk 2c: reviewer aggregation & self-improvement loop (min-N gated; instrumentation-first) | `src/doc_assistant/reviewer.py` (`failure_tag` enum), `src/doc_assistant/db/models.py` (AnswerReview column + migration), `config.py` (`MIN_FAILURE_TAG_COUNT`/`_DOCS`), aggregation module + CLI, eval-anchored bias-vs-fault report | 1 weekend | PR 11 + PR 4 (verified golden set as the anchor) |
+| 12 | ✅ Integrity Chunk 2c: reviewer aggregation & self-improvement loop (min-N gated; instrumentation-first) — shipped 2026-06-14 (paid anchor run pending) | `reviewer.py` (`FAILURE_TAGS` enum), `db/models.py` (`AnswerReview.failure_tag`) + `db/migrations.py` (additive `ALTER TABLE`), `config.py` (`MIN_FAILURE_TAG_COUNT`/`_DOCS`), `reviewer_aggregate.py` (new) + `scripts/reviewer_report.py` (new, `--anchor`) | 1 weekend | PR 11 + PR 4 (verified golden set as the anchor) |
 | 13 | Feature 6: self-organizing wiki / synthesis layer | `src/doc_assistant/wiki.py` (new), `scripts/build_wiki.py` (new), gap signals reuse `provenance.py` | 1 weekend (6a) + 1 evening each (6b/6c) | PR 1 (doc vectors) + PR 5 (provenance) |
 | 14 | Integrity Chunk 3: PRISMA-trAIce export | `scripts/export_review_traice.py` (new) | 1 day | Phase 9 work; PRs 5 + 10 |
 | 15 | Feature 5: extract eval harness to standalone repo | New repo | 1 weekend | PR 4 + at least one real measurement run |

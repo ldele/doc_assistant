@@ -14,7 +14,9 @@ import pytest
 from doc_assistant.provenance import AnswerProvenance, RetrievedChunk
 from doc_assistant.reviewer import (
     _REVIEWER_PROMPT,
+    FAILURE_TAGS,
     ReviewResult,
+    _coerce_failure_tag,
     _format_evidence,
     build_reviewer_prompt,
     get_reviews,
@@ -62,6 +64,59 @@ def test_reviewer_prompt_lists_all_four_dimensions():
 
 def test_reviewer_prompt_instructs_no_prior_knowledge():
     assert "prior knowledge" in _REVIEWER_PROMPT.lower()
+
+
+def test_reviewer_prompt_offers_the_failure_tag_enum():
+    assert "failure_tag" in _REVIEWER_PROMPT
+    # every non-neutral tag is offered to the model
+    for tag in FAILURE_TAGS:
+        assert tag in _REVIEWER_PROMPT
+
+
+# ============================================================
+# failure_tag (Chunk 2c)
+# ============================================================
+
+
+def test_coerce_failure_tag_accepts_known_and_normalises():
+    assert _coerce_failure_tag("overclaim") == "overclaim"
+    assert _coerce_failure_tag("  No_Hedge ") == "no_hedge"
+
+
+def test_coerce_failure_tag_falls_back_to_none():
+    assert _coerce_failure_tag("made_up_tag") == "none"
+    assert _coerce_failure_tag(None) == "none"
+    assert _coerce_failure_tag(42) == "none"
+
+
+def test_review_answer_parses_failure_tag():
+    client = _mock_client(
+        '{"faithfulness": 2, "citation_density": 2, "hedging_adequacy": 2, '
+        '"unsupported_claims_count": 3, "failure_tag": "overclaim", "notes": "weak"}'
+    )
+    result = review_answer(_prov(), client)
+    assert result.error is None
+    assert result.failure_tag == "overclaim"
+
+
+def test_review_answer_defaults_missing_failure_tag_to_none():
+    # failure_tag omitted but all required fields present → parses, tag = "none".
+    client = _mock_client(
+        '{"faithfulness": 5, "citation_density": 5, "hedging_adequacy": 5, '
+        '"unsupported_claims_count": 0, "notes": "clean"}'
+    )
+    result = review_answer(_prov(), client)
+    assert result.error is None
+    assert result.failure_tag == "none"
+
+
+def test_review_answer_coerces_unknown_failure_tag():
+    client = _mock_client(
+        '{"faithfulness": 3, "citation_density": 3, "hedging_adequacy": 3, '
+        '"unsupported_claims_count": 0, "failure_tag": "vibes", "notes": "x"}'
+    )
+    result = review_answer(_prov(), client)
+    assert result.failure_tag == "none"
 
 
 def test_format_evidence_handles_empty():
@@ -262,3 +317,22 @@ def test_persist_error_review(temp_db: Path):
 
 def test_get_reviews_empty_for_unknown_answer(temp_db: Path):
     assert get_reviews("does-not-exist") == []
+
+
+def test_failure_tag_round_trips(temp_db: Path):
+    from doc_assistant.provenance import record_answer
+
+    answer_id = record_answer(query="q", answer="a", retrieved_chunks=[])
+    persist_review(
+        answer_id,
+        ReviewResult(
+            faithfulness=2,
+            citation_density=2,
+            hedging_adequacy=3,
+            unsupported_claims_count=2,
+            failure_tag="missing_citation",
+            notes="n",
+        ),
+        reviewer_kind="llm_haiku",
+    )
+    assert get_reviews(answer_id)[0].failure_tag == "missing_citation"

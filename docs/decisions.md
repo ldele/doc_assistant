@@ -823,19 +823,27 @@ interpretation + reviewer agent.
 - **Integrity Chunk 2b** — Reviewer agent. Cheaper LLM scores the 
   interpretation against a structured rubric (faithfulness, citation 
   density, hedging adequacy, claims-without-sources). No auto-retry.
-- **Integrity Chunk 2c** — Reviewer aggregation & self-improvement loop.
-  Adds a categorical `failure_tag` enum to the reviewer (countable
-  patterns alongside free-text notes), aggregates `AnswerReview` over
-  time, and resolves the central ambiguity — *reviewer bias vs system
-  fault* — by anchoring against the golden eval set (flagged-but-verified-
-  good ⇒ reviewer bias; flagged-and-low-correctness ⇒ system fault).
-  Read-only aggregation, Enrichment-Layer Pattern, no auto-remediation.
-  An unanchored "pattern in suggestions" must not ship — it can't tell
-  reviewer fault from system fault. **Minimum-N gate:** a tag is actionable
-  only past `MIN_FAILURE_TAG_COUNT` / `MIN_FAILURE_TAG_DOCS` (tunable;
-  ~10/5 default); below that it reads "insufficient evidence." Counts always
-  carry their denominator. v1 is instrumentation, not auto-action. See the
-  Research Integrity Layer subsection above and roadmap Chunk 2c.
+- **Integrity Chunk 2c** — Reviewer aggregation & self-improvement loop —
+  ✅ **code shipped (PR 12, 2026-06-14; one paid anchor run pending)**.
+  Adds a categorical `failure_tag` enum to the reviewer (`reviewer.FAILURE_TAGS`,
+  `none`/`missing_citation`/`overclaim`/`evidence_contradiction`/`no_hedge`/
+  `unsupported_claim`) — countable patterns alongside the free-text `notes`,
+  persisted on a new `AnswerReview.failure_tag` column. `reviewer_aggregate.py`
+  (+ `scripts/reviewer_report.py`) reads `answer_reviews` and resolves the central
+  ambiguity — *reviewer bias vs system fault* — by anchoring against the golden
+  eval set (the reviewer also flags verified-good golden answers ⇒ bias; flags
+  production but not golden ⇒ system fault). Read-only aggregation,
+  Enrichment-Layer Pattern, no auto-remediation. An unanchored "pattern in
+  suggestions" must not ship — so without the anchor the report says
+  "unanchored", never bias-vs-fault. **Minimum-N gate:** a tag is actionable only
+  past `MIN_FAILURE_TAG_COUNT` / `MIN_FAILURE_TAG_DOCS` (tunable; 10/5 default,
+  `MIN_FAILURE_TAG_DOCS` = distinct **answer records**, so one re-reviewed answer
+  can't trip it); below that it reads "insufficient evidence." Counts always carry
+  their denominator. v1 is instrumentation, not auto-action. **Migration note:**
+  the `failure_tag` column is added to the *pre-existing* `answer_reviews` table by
+  an explicit idempotent `ALTER TABLE` in `db/migrations.py` (`create_all` makes
+  new tables but never alters an existing one — the one place an additive column
+  needs more than `create_all`). See the Research Integrity Layer subsection above.
 - **Engineering: chunking sweep** (reopens Phase 2.4). ✅ **Done 2026-06-06.** Chunk
   sizes are config-driven (`PARENT/CHILD/BASELINE_CHUNK_SIZE`, shipped 2026-05-31);
   `scripts/sweep_chunking.py` measured size grids through the eval harness on the

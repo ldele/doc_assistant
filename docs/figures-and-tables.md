@@ -7,10 +7,13 @@ mistaking figures for tables*. This is the reference for `regions.py`,
 [`decisions.md`](decisions.md) (Feature 4a); per-change history in
 [`DEVLOG.md`](DEVLOG.md).
 
-> **Status (2026-06-06):** detection + extraction shipped. Marker is the primary
-> table engine (RTX engine eval won 2026-06-02; ingest path designed/locked
-> 2026-06-04; splice fidelity measured 2026-06-06). pdfplumber is the frozen no-dep
-> fallback.
+> **Status (2026-06-14):** detection + extraction shipped for both tables and
+> figures. Marker is the primary table engine (RTX engine eval won 2026-06-02;
+> ingest path designed/locked 2026-06-04; splice fidelity measured 2026-06-06);
+> pdfplumber is the frozen no-dep fallback. **Feature 4b (figure region detection
+> + caption pairing) shipped 2026-06-14** — `regions.py`'s page-level figure
+> verdict promoted to region-level bboxes, cropped to PNGs, persisted as a
+> `figures` sidecar (no LLM, no GPU). See "Figure extraction (4b)" below.
 
 ---
 
@@ -87,13 +90,13 @@ Thresholds (in `regions.py`, tunable): `CHART_CURVE_MIN = 1000`,
 `analyze_pages(pdf_path)` / `table_candidate_pages(pdf_path)` do the PyMuPDF
 signal extraction.
 
-### Scope (v1): page-level
+### Scope: classifier is page-level; 4b adds region bboxes
 
-Signals are aggregated per page. A page mixing a table *and* a chart is
-labelled by the dominant signal, not split into regions. True per-region
-bbox splitting is the deeper **Feature 4b** step; this classifier is its
-foundation (its chart/photo/figure verdict + image-area signal are exactly
-what figure handling will consume).
+The *classifier* aggregates signals per page — a page mixing a table *and* a
+chart is labelled by the dominant signal. Per-region bbox extraction is
+**Feature 4b** (shipped 2026-06-14), which consumes this classifier's
+`is_figure` verdict and image-area signal to locate the figure bbox(es) on each
+figure page. See "Figure extraction (4b)" below.
 
 ---
 
@@ -152,11 +155,46 @@ table-grounded answers are complete. The chunk **sizes** are unchanged (the lock
 
 ---
 
+## Figure extraction — region detection (4b)
+
+A post-ingest **enrichment layer**, but — unlike tables — a **sidecar, never
+spliced** (ADR-2). Figures are binary: embedding base64 in the markdown destroys
+the human-readable cache, and a placeholder without the image is noise. So the
+caption text stays in the markdown untouched, and each figure region persists as
+a `Figure` row plus a cropped PNG under `data/figures/{doc_hash}/`.
+[`figures.py`](../src/doc_assistant/figures.py) is the pure core + thin PyMuPDF
+boundary; [`scripts/extract_figures.py`](../scripts/extract_figures.py) is the CLI.
+
+- **Gated by the classifier.** Only `regions.analyze_pages` `is_figure` pages are
+  scanned — no second detector.
+- **Region geometry is PyMuPDF-native (ADR-1).** Raster image blocks
+  (`block.type == 1`) each become a region (`image_block`); a vector-chart page's
+  drawing rects merge into one region (`drawing_union`); otherwise the largest
+  non-text block (`largest_block`), else a `caption_only` row with `bbox = None`.
+  **OpenCV refinement is deferred** — the classifier already does the chart/
+  photo/figure discrimination OpenCV was slated for. Degenerate/inverted/sliver
+  bboxes are filtered (signed width/height, not `abs()` area) so the PNG writer
+  can't fault on a zero-pixel crop; tiny decorative images fall below
+  `FIGURE_MIN_AREA_FRACTION`.
+- **Caption pairing** (`pair_caption`, pure) matches each region to its nearest
+  `Figure N:` text block by vertical gap, below-preferred, no double-assignment.
+- **Idempotent, `--force`-gated, per-doc isolated.** A doc with rows is skipped
+  unless `--force` (which clears its rows + PNG dir, then re-renders); one bad PDF
+  errors its own row and the run continues. The `figures` table is created by the
+  additive `init_db()` `create_all` (no Alembic).
+- **No re-ingest needed.** Figures are a sidecar — re-ingest only matters once
+  Feature 4c turns them into retrievable `chunk_type='figure'` chunks. The
+  `vlm_description` / `vlm_call_skipped_reason` columns ship present-but-null for 4c.
+
+Validated on the public corpus (10 papers): 45 regions, 44 PNGs + 1 caption-only,
+every region caption-paired; all four extraction methods exercised.
+
 ## Tooling
 
 | Script | Purpose |
 |---|---|
 | [`scripts/extract_tables.py`](../scripts/extract_tables.py) | The enrichment CLI: `--apply` / `--force` / `--doc`. PDF-only; resolves source PDF + cached `.md`, splices, writes. Reminds you to re-`ingest`. |
+| [`scripts/extract_figures.py`](../scripts/extract_figures.py) | **The figure (4b) CLI.** `--apply` / `--force` / `--doc` / `--dpi`. PDF-only; detects regions on figure pages, renders PNGs to `data/figures/{doc_hash}/`, writes `Figure` rows. Sidecar — no re-`ingest` needed. |
 | [`scripts/debug_tables.py`](../scripts/debug_tables.py) | **Visual inspector.** Renders per-page PNGs with pdfplumber's detection overlay + a pdfplumber-vs-PyMuPDF count comparison, to `data/tables_debug/{stem}/` (gitignored). Reach for this when detection quality is uncertain — *before* trusting counts. |
 | [`scripts/eval_marker_tables.py`](../scripts/eval_marker_tables.py) | Engine eval: emits candidate pages + pdfplumber tables + (if installed) Marker's markdown, for a side-by-side fidelity comparison. Self-contained Marker call; meant for the GPU/RTX machine. |
 | [`scripts/extract_tables_marker.py`](../scripts/extract_tables_marker.py) | **The primary table CLI.** Runs isolated Marker (`uvx --from marker-pdf marker_single`) on the caption-gated candidate pages in a bounded pool, parses the paginated markdown, splices inline + de-dups pymupdf4llm's twin, supersedes any pdfplumber block. `--apply` / `--force` / `--doc` / `--workers`. Re-`ingest` after (then re-run enrichment). GPU/RTX box. |
@@ -192,5 +230,8 @@ Non-PDF figure extraction (EPUB/DOCX/HTML) will use **native parsers**
    hand-verified gold table set + a deterministic cell-exact fidelity scorer (still deferred).
 4. **Thresholds** were measured on 2 eLife docs — validate on a wider corpus
    before trusting as universal.
-5. **Region-level splitting** (multiple regions on one page) + figure image
-   extraction = the proper **Feature 4b** build on top of this classifier.
+5. **Region-level splitting + figure extraction — ✅ RESOLVED (2026-06-14).**
+   Feature 4b (`figures.py` + `scripts/extract_figures.py`) builds region bboxes
+   on this classifier — one region per image block, one merged region per chart.
+   True multi-region splitting of a mixed table+figure page beyond that is
+   best-effort in v1; OpenCV contour refinement stays the deferred lever (ADR-1).

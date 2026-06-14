@@ -193,7 +193,9 @@ Spliced inline into the markdown cache.
 
 **Effort:** 1 evening.
 
-#### 4b — Figure region detection + caption pairing (OpenCV, no LLM cost)
+#### 4b — Figure region detection + caption pairing (no LLM cost) — ✅ **shipped (PR 8, 2026-06-14)**
+
+> **Spec:** [`docs/specs/feature-4b-figure-detection.md`](specs/feature-4b-figure-detection.md) is the code-level contract (files, contracts, guard tests, DoD). Two design calls made there: v1 derives region bboxes from **PyMuPDF geometry** (image blocks + drawing-bbox union), with **OpenCV refinement deferred** — `regions.py` already does the chart/photo/figure *discrimination* OpenCV was slated for, leaving only bbox extraction (ADR-1); and the `Figure` table is created by the additive `create_all` (no Alembic). Runs on **either machine** (no torch/Marker/GPU).
 
 Sidecar manifest, not spliced.
 
@@ -452,8 +454,8 @@ Each row is one PR. Each PR scopes to one chunk, with the files and the `decisio
 | 5 | Integrity Chunk 1: provenance card | `src/doc_assistant/db/models.py` (new `AnswerRecord`), `src/doc_assistant/db/migrations.py`, `src/doc_assistant/tracking.py`, `src/doc_assistant/commands.py` (`/export-record`), `apps/chainlit_app.py` (card render) | 1 evening | PR 2 |
 | 6 | Feature 1b: per-project embedder routing — **DEFERRED** (no model beats bge-base on a sub-corpus yet) | `src/doc_assistant/db/models.py` (Folder.embedding_model), `src/doc_assistant/ingest.py`, `src/doc_assistant/pipeline.py`, UI surface | 2 evenings | Blocked until a per-sub-corpus winner exists (re-run SPECTER2 `--repeat 5` first) |
 | 7 | Feature 4a: table pass (Marker primary, pdfplumber fallback) ✅ | `src/doc_assistant/tables_marker.py` (new, primary), `scripts/extract_tables_marker.py` (new), `src/doc_assistant/tables.py` (pdfplumber fallback), `scripts/extract_tables.py` | 1 evening | PR 1 (Phase 4 closed) |
-| 8 | Feature 4b: figure detection + manifest | `src/doc_assistant/figures.py` (new), `scripts/extract_figures.py` (new), `src/doc_assistant/db/models.py` (Figure table) | 1 weekend | PR 7 |
-| 9 | Feature 4c: VLM figure description (gated) | `src/doc_assistant/figures.py` (VLM call), Pydantic schema, `MAX_VLM_CALLS_PER_DOC` config | 1 weekend | PR 8 |
+| 8 | ✅ Feature 4b: figure detection + manifest (shipped 2026-06-14) — spec: [`docs/specs/feature-4b-figure-detection.md`](specs/feature-4b-figure-detection.md) | `src/doc_assistant/figures.py` (new), `scripts/extract_figures.py` (new), `src/doc_assistant/db/models.py` (Figure table), `config.py`, `.gitignore` | 1 weekend | PR 7 ✅ (regions.py shipped) |
+| 9 | **▶ NEXT** — Feature 4c: VLM figure description (gated) | `src/doc_assistant/figures.py` (VLM call), Pydantic schema, `MAX_VLM_CALLS_PER_DOC` config | 1 weekend | PR 8 ✅ |
 | 10 | Integrity Chunk 2a: dual interpretation + adjudication | `src/doc_assistant/pipeline.py`, `src/doc_assistant/prompts.py`, `src/doc_assistant/config.py` (`SYNTHESIS_MODE`), UI surface for accept/reject/edit | 1 weekend | PR 5 |
 | 11 | Integrity Chunk 2b: reviewer agent | `src/doc_assistant/reviewer.py` (new), Pydantic rubric schema, integration in `pipeline.py` | 1 evening | PR 10 |
 | 11.5 | Chunking sweep infra (Phase 2.4 reopened) ✅ shipped 2026-05-31 | `src/doc_assistant/config.py`, `src/doc_assistant/ingest.py`, `scripts/sweep_chunking.py` (new), `tests/unit/test_chunking_config.py` (new) | done (infra) + ½-day measurement run | PR 3 (eval harness) |

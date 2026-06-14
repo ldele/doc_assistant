@@ -169,3 +169,25 @@ CHILD_CHUNK_OVERLAP = int(os.getenv("CHILD_CHUNK_OVERLAP", "50"))
 # Baseline (single-chunk) retrieval store, used when USE_PARENT_CHILD is off.
 BASELINE_CHUNK_SIZE = int(os.getenv("BASELINE_CHUNK_SIZE", "1000"))
 BASELINE_CHUNK_OVERLAP = int(os.getenv("BASELINE_CHUNK_OVERLAP", "200"))
+
+
+# ============================================================
+# Figures (Phase 6 / Feature 4b — figure region detection)
+# ============================================================
+# Figures are binary, so — unlike tables — they are NOT spliced into the
+# markdown cache. Each detected figure region persists as a `Figure` sidecar
+# row plus a cropped PNG under FIGURE_DIR (Enrichment-Layer "sidecar by
+# default"). See docs/specs/feature-4b-figure-detection.md.
+
+# Sidecar PNG root, alongside chroma/ and library.db. Gitignored (binary).
+FIGURE_DIR = DATA_PATH / "figures"
+
+# Crop resolution for the per-region PNG. Raise for VLM-quality crops (4c),
+# lower to save disk.
+FIGURE_RENDER_DPI = int(os.getenv("FIGURE_RENDER_DPI", "150"))
+
+# Per-region page-area floor: skip decorative images/icons below this fraction
+# of the page so a logo never becomes a Figure row. Distinct from
+# `regions.IMAGE_AREA_MIN` (0.05), which is the page-dominance threshold for
+# classifying a whole page as a photo; this is the smaller per-region floor.
+FIGURE_MIN_AREA_FRACTION = float(os.getenv("FIGURE_MIN_AREA_FRACTION", "0.02"))

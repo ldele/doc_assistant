@@ -460,6 +460,11 @@ class AnswerReview(Base):
     hedging_adequacy: Mapped[int | None] = mapped_column(Integer, nullable=True)
     unsupported_claims_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
+    # Chunk 2c — a categorical failure tag from a fixed enum (reviewer.FAILURE_TAGS)
+    # alongside the free-text `notes`. The enum is what makes patterns *countable*
+    # for the self-improvement loop; "none" / NULL means no dominant fault.
+    failure_tag: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
 

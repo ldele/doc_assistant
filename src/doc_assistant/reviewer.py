@@ -38,6 +38,19 @@ from doc_assistant.provenance import AnswerProvenance, RetrievedChunk
 
 log = logging.getLogger(__name__)
 
+# Chunk 2c — the fixed failure-tag vocabulary the reviewer chooses from. A
+# categorical tag (alongside the free-text `notes`) is what makes recurring
+# faults *countable* for the self-improvement loop. "none" = no dominant fault.
+# Keep this list stable: changing a label re-buckets historical aggregates.
+FAILURE_TAGS: tuple[str, ...] = (
+    "none",
+    "missing_citation",  # claims present, but not tied to a retrieved source
+    "overclaim",  # asserts more than the evidence supports
+    "evidence_contradiction",  # answer contradicts a retrieved passage
+    "no_hedge",  # over-confident given weak/conflicting evidence
+    "unsupported_claim",  # a distinct claim with no traceable source
+)
+
 
 @dataclass
 class ReviewResult:
@@ -47,6 +60,8 @@ class ReviewResult:
     citation_density: int | None = None
     hedging_adequacy: int | None = None
     unsupported_claims_count: int | None = None
+    # Chunk 2c — the dominant fault from FAILURE_TAGS ("none" if no dominant fault).
+    failure_tag: str | None = None
     notes: str | None = None
     error: str | None = None
     raw_response: str | None = None  # for debugging when parsing fails
@@ -89,11 +104,21 @@ Also count:
 * unsupported_claims_count: integer ≥ 0. How many distinct claims in the
   answer cannot be traced to any retrieved chunk.
 
+Also pick the single DOMINANT failure mode of this answer as ``failure_tag``,
+exactly one of: none | missing_citation | overclaim | evidence_contradiction |
+no_hedge | unsupported_claim. Use "none" if the answer has no notable fault.
+* missing_citation — claims are made but not tied to any retrieved source.
+* overclaim — asserts more than the evidence supports.
+* evidence_contradiction — the answer contradicts a retrieved passage.
+* no_hedge — over-confident given weak or conflicting evidence.
+* unsupported_claim — a distinct claim with no traceable source.
+
 Add a short ``notes`` field (1-2 sentences max) explaining the lowest score.
 
 Return JSON only, no prose, no markdown fence:
 {{"faithfulness": <int>, "citation_density": <int>, "hedging_adequacy": <int>, \
-"unsupported_claims_count": <int>, "notes": "<short string>"}}"""
+"unsupported_claims_count": <int>, "failure_tag": "<one tag>", \
+"notes": "<short string>"}}"""
 
 
 def _format_evidence(chunks: list[RetrievedChunk]) -> str:
@@ -137,6 +162,18 @@ def _strip_fence(text: str) -> str:
     if lines and lines[-1].startswith("```"):
         lines = lines[:-1]
     return "\n".join(lines)
+
+
+def _coerce_failure_tag(value: object) -> str:
+    """Validate a model-supplied failure tag against ``FAILURE_TAGS``.
+
+    Unknown / missing values fall back to ``"none"`` so a malformed tag never
+    invents a new bucket in the aggregate. Case- and whitespace-insensitive.
+    """
+    if not isinstance(value, str):
+        return "none"
+    tag = value.strip().lower()
+    return tag if tag in FAILURE_TAGS else "none"
 
 
 def _extract_json(text: str) -> str:
@@ -195,6 +232,7 @@ def review_answer(
             citation_density=int(parsed["citation_density"]),
             hedging_adequacy=int(parsed["hedging_adequacy"]),
             unsupported_claims_count=int(parsed["unsupported_claims_count"]),
+            failure_tag=_coerce_failure_tag(parsed.get("failure_tag")),
             notes=str(parsed.get("notes") or "").strip() or None,
             raw_response=text,
         )
@@ -228,6 +266,7 @@ def persist_review(
             citation_density=result.citation_density,
             hedging_adequacy=result.hedging_adequacy,
             unsupported_claims_count=result.unsupported_claims_count,
+            failure_tag=result.failure_tag,
             notes=result.notes,
             error=result.error,
         )
@@ -258,6 +297,7 @@ def get_reviews(answer_record_id: str) -> list[ReviewResult]:
                 citation_density=r.citation_density,
                 hedging_adequacy=r.hedging_adequacy,
                 unsupported_claims_count=r.unsupported_claims_count,
+                failure_tag=r.failure_tag,
                 notes=r.notes,
                 error=r.error,
             )

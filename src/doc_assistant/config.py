@@ -218,3 +218,22 @@ MAX_VLM_CALLS_PER_DOC = int(os.getenv("MAX_VLM_CALLS_PER_DOC", "30"))
 # VLM is a quality lever for thinly-captioned figures, not every figure. Set to 0
 # to describe every eligible figure regardless of caption length.
 FIGURE_CAPTION_DESC_MIN_CHARS = int(os.getenv("FIGURE_CAPTION_DESC_MIN_CHARS", "300"))
+
+
+# ============================================================
+# Reviewer self-improvement loop (Phase 6 / Integrity Chunk 2c)
+# ============================================================
+# The per-answer reviewer (Chunk 2b) is a biased sampler (it runs only on
+# already-flagged answers) AND an LLM with its own tilts, so a recurring
+# `failure_tag` is ambiguous by construction. The minimum-N gate keeps a raw
+# count from being read as a finding: a tag is "actionable" only once it clears
+# BOTH thresholds, and counts are always shown against their denominator. Below
+# the gate the report reads "insufficient evidence." Tune on the first real
+# distribution (see docs/decisions.md → Integrity Chunk 2c).
+
+# A `failure_tag` must occur at least this many times to be reported as actionable.
+MIN_FAILURE_TAG_COUNT = int(os.getenv("MIN_FAILURE_TAG_COUNT", "10"))
+
+# ...and across at least this many *distinct answer records* (so one heavily
+# re-reviewed answer can't trip the gate on its own).
+MIN_FAILURE_TAG_DOCS = int(os.getenv("MIN_FAILURE_TAG_DOCS", "5"))

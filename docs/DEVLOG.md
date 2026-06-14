@@ -1606,3 +1606,36 @@ No scorer moves beyond its trial-mean std; the `llm_judge` gap is smaller than e
 **Dry-run on the real corpus (zero cost):** `describe_figures` (no `--apply`) over the 45 figures → **38 would-describe, 7 skipped as `caption_sufficient`, 0 errors** — gating behaves sensibly on real captions.
 
 **Opens:** the **one paid validation run** (`describe_figures --apply` → re-ingest → a real `FigureRetrievalScorer` eval) is deferred to the user's OK (the user chose "build + offline tests, then ask"). The caption-only **embedding-similarity** gate the roadmap mentions is deferred — length + budget are the v1 gates (a pre-call similarity gate needs a reference that doesn't exist yet). Nothing committed — staged for review.
+
+---
+## Session: 2026-06-14 — Integrity Chunk 2c: reviewer aggregation & self-improvement loop (PR 12) (Claude Code)
+
+**Starting from:** PR 9 (4c) committed + pushed (`2163ffc`). PR 12 is the next unbuilt roadmap PR. Built from the roadmap §Chunk 2c (no standalone spec). The conceptual core: turn the per-answer reviewer (Chunk 2b) into a self-improvement loop that mines `failure_tag`s for *systematic* faults — designed around the hazard that the reviewer is a biased sampler (runs only on flagged answers) AND an LLM with its own tilts, so a raw count is "noise with a label" without two guards.
+
+### src/doc_assistant/reviewer.py — `failure_tag` enum on the reviewer
+**What:** `FAILURE_TAGS = (none, missing_citation, overclaim, evidence_contradiction, no_hedge, unsupported_claim)`; the reviewer prompt now asks for the single dominant `failure_tag`; `ReviewResult.failure_tag`; `_coerce_failure_tag` (validates against the enum, unknown/missing → "none" so a malformed tag never invents a bucket); `persist_review`/`get_reviews` carry it.
+**Why:** the free-text `notes` stays for humans; the enum is what makes patterns *countable*. Keeping the list stable matters — renaming a label re-buckets historical aggregates (noted in-code).
+
+### src/doc_assistant/db/models.py + db/migrations.py — the additive column (the real migration)
+**What:** `AnswerReview.failure_tag` (indexed, nullable). **`create_all` does NOT add a column to a pre-existing table** (it only makes missing tables — that's why `figures` "just worked" in PR 8), and `answer_reviews` already existed, so this needs a real migration: `migrations._apply_additive_columns` runs an idempotent `ALTER TABLE answer_reviews ADD COLUMN failure_tag` (+ index), guarded by a live-schema check (SQLite has no `ADD COLUMN IF NOT EXISTS`). Append-only `_ADDITIVE_COLUMNS` list. Verified on the real `library.db` (`+ added column answer_reviews.failure_tag`).
+**Rejected:** pretending `create_all` covers it (it silently doesn't — the CLI 400s with "no such column" until the ALTER runs); Alembic (the project has none, and one guarded ALTER is far less machinery).
+
+### src/doc_assistant/reviewer_aggregate.py (new) — min-N aggregation + eval-anchored bias-vs-fault
+**What:** pure core — `aggregate_tags` (count per tag + the *distinct-answer* denominator), `is_actionable` (the min-N gate), `golden_tag_rates` (the anchor), `classify_bias_vs_fault`, and markdown formatters. Plus a thin `load_review_tags` (joins `answer_reviews`→`answer_records` for `prompt_version`; drops error reviews).
+**The two guards (the heart of 2c):**
+1. **Min-N gate** — a tag is actionable only past `MIN_FAILURE_TAG_COUNT` occurrences across `MIN_FAILURE_TAG_DOCS` distinct **answer records** (so one re-reviewed answer can't manufacture a pattern). Below the gate the report literally reads "insufficient evidence"; every count is shown against its denominator, never bare.
+2. **Eval-anchored bias-vs-fault** — `classify_bias_vs_fault(stats, total, golden_rates)`: with no anchor (`golden_rates=None`) every verdict is **"unanchored"** (the roadmap forbids asserting bias-vs-fault without the anchor); with the anchor, a tag the reviewer also assigns to ≥`DEFAULT_BIAS_RATE` (0.2) of known-good golden answers is **reviewer_bias** (fix the rubric), else **system_fault** (fix retrieval/chunking/prompt).
+**Interpretation locked:** `MIN_FAILURE_TAG_DOCS` = distinct answer records (an answer isn't tied to one source document; this is the closest available unit). Documented in config + module.
+**Architecture:** read-only over the sidecar tables, no chunk-store mutation (Enrichment-Layer). Instrumentation, not action — no auto-remediation (same discipline as no-auto-retry).
+
+### scripts/reviewer_report.py (new) — the CLI
+**What:** default = free, read-only production aggregation (tag report + per-`prompt_version` + an unanchored bias-vs-fault note). `--anchor` runs the **paid** golden-set pass: pipeline `retrieve_with_scores` + `stream_answer` per golden case → `AnswerProvenance` → `review_answer` → golden tag rates → the anchored bias-vs-fault adjudication. API-key gated; per-case isolation.
+
+### config.py
+**What:** `MIN_FAILURE_TAG_COUNT=10`, `MIN_FAILURE_TAG_DOCS=5`.
+
+**Tests:** +27 (unit: `failure_tag` parse/coerce/default in `test_reviewer.py`; `test_reviewer_aggregate.py` — aggregate, gate both-thresholds, neutral-tag-never-fires, unanchored/bias/fault classification, golden rates, all formatters incl. the anchored table, `load_review_tags` join/error-exclusion on a temp DB; `test_migrations.py` — the additive `ALTER` adds the column, is idempotent, and no-ops on an absent table). **Gate: ruff ✓ · ruff format ✓ · mypy --strict src ✓ · bandit 0 high/med ✓ · 442 passed (was 415, +27), coverage 77.5% (floor 40), `reviewer.py` 100% / `reviewer_aggregate.py` 99%.** No real API in any test.
+
+**Real-DB smoke (free):** ran the migration (column added) + `reviewer_report` (read-only) → correctly reports **"insufficient evidence"** (the real `answer_reviews` has no tagged verdicts yet — the gate behaving exactly as designed; the tag only populates going forward as the Chainlit reviewer runs).
+
+**Opens:** the **paid golden-anchor run** (`reviewer_report --anchor`) is deferred — it needs accumulated production reviewer verdicts to aggregate (currently ~none) *and* spends on a golden-set pipeline+reviewer pass; it becomes meaningful once real `failure_tag`s accrue. Surfacing the top recurring fault in the Chainlit UI is the roadmap's optional, gated step — deferred (v1 is the aggregation instrument). "over time" bucketing of the tag counts is a trivial extension (rows carry `created_at`). Nothing committed — staged for review.

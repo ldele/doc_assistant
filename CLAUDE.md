@@ -26,7 +26,7 @@ Human-destined docs live in `docs/` and the repo root (README). Don't put LLM-co
 - `docs/decisions.md` — every design decision with rationale; this project's ADR home (no `.claude/ADRs/`). **Always check before suggesting architectural changes.**
 - `docs/doc-assistant-roadmap.md` — Phase 5+ source of intent; PR-by-PR implementation order at the bottom.
 - `docs/figures-and-tables.md` — Feature 4 detection layer (regions, tables, the Marker decision).
-- `docs/specs/` — code-level build specs: `feature-4b-figure-detection.md` (✅ built — PR 8, 2026-06-14) · `llm-provider-isolation.md` · `feature-4a-marker-table-ingest.md` · `chunk-2a-dual-interpretation.md` · `feature-7d-knowledge-currency.md` (design-locked, blocked on PR 13 + PR 16) · `torch-backend-per-machine.md` (per-machine CUDA/CPU torch via conflicting extras; ✅ implemented `423cbfa`). **PR 9 — Feature 4c (full: VLM description + figure-chunk emission + eval scorer) ✅ built 2026-06-14 (one paid validation run pending). Next PR: 12 — Integrity Chunk 2c (reviewer aggregation / self-improvement loop).**
+- `docs/specs/` — code-level build specs: `feature-4b-figure-detection.md` (✅ built — PR 8, 2026-06-14) · `llm-provider-isolation.md` · `feature-4a-marker-table-ingest.md` · `chunk-2a-dual-interpretation.md` · `feature-7d-knowledge-currency.md` (design-locked, blocked on PR 13 + PR 16) · `torch-backend-per-machine.md` (per-machine CUDA/CPU torch via conflicting extras; ✅ implemented `423cbfa`). **PR 9 — Feature 4c (full) ✅ built 2026-06-14 (paid validation run pending). PR 12 — Integrity Chunk 2c (reviewer aggregation / self-improvement loop) ✅ built 2026-06-14 (paid golden-anchor run pending). Next PR: 13 — Feature 6 (self-organizing wiki / synthesis layer).**
 
 ## Tool split
 

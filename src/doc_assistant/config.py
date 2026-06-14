@@ -237,3 +237,38 @@ MIN_FAILURE_TAG_COUNT = int(os.getenv("MIN_FAILURE_TAG_COUNT", "10"))
 # ...and across at least this many *distinct answer records* (so one heavily
 # re-reviewed answer can't trip the gate on its own).
 MIN_FAILURE_TAG_DOCS = int(os.getenv("MIN_FAILURE_TAG_DOCS", "5"))
+
+
+# ============================================================
+# Self-organizing wiki / synthesis layer (Phase 7 / Feature 6)
+# ============================================================
+# A derived, human-readable markdown layer over the corpus: cluster the library,
+# emit one topic note per cluster (summary + tags + [[links]] + citations), as a
+# sidecar under WIKI_DIR. Enrichment-Layer Pattern — idempotent, regenerable,
+# never mutates the chunk store. See docs/doc-assistant-roadmap.md → Feature 6.
+
+# Sidecar markdown root (Obsidian-compatible). Gitignored (derived, regenerable).
+WIKI_DIR = DATA_PATH / "wiki"
+
+# Topic summarization is the *generator* role (not a pinned instrument), so it
+# defaults to the analysis provider/model and is fully local-capable via Ollama.
+# Point at a local model (WIKI_LLM_PROVIDER=ollama) to keep the wiki build free.
+WIKI_LLM_PROVIDER = os.getenv("WIKI_LLM_PROVIDER", LLM_PROVIDER)
+WIKI_LLM_MODEL = os.getenv("WIKI_LLM_MODEL", LLM_MODEL)
+
+# Clustering: two documents share a topic when a DocSimilarity edge between them
+# is at/above this cosine score (connected components). **Corpus-dependent — tune
+# via --min-similarity.** Mean-pooled doc vectors of a same-domain library sit very
+# tight (the public 10-paper RAG corpus is all ~0.88-0.96 cosine), so a low absolute
+# threshold collapses everything into one blob; meaningful sub-topics there need
+# ~0.93+. Default 0.90 is a realistic starting point, NOT a universal constant.
+# The proper fix (relative / community clustering, threshold-free) folds into
+# Feature 7's NetworkX/Leiden work — see docs/decisions.md → Deferred Improvements.
+WIKI_MIN_SIMILARITY = float(os.getenv("WIKI_MIN_SIMILARITY", "0.90"))
+
+# Gap signal: a topic note backed by fewer than this many source documents is
+# flagged "citation-thin" (a structural knowledge-gap marker, not an LLM opinion).
+WIKI_MIN_CITATIONS = int(os.getenv("WIKI_MIN_CITATIONS", "3"))
+
+# How many chunk excerpts to sample per document as grounding for the summary.
+WIKI_CHUNK_SAMPLE = int(os.getenv("WIKI_CHUNK_SAMPLE", "3"))

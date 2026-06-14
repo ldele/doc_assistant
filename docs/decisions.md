@@ -844,6 +844,11 @@ interpretation + reviewer agent.
   an explicit idempotent `ALTER TABLE` in `db/migrations.py` (`create_all` makes
   new tables but never alters an existing one — the one place an additive column
   needs more than `create_all`). See the Research Integrity Layer subsection above.
+  **Scale caveat (honest cost/benefit):** this loop is over-engineered for a solo,
+  single-user tool and will mostly report "insufficient evidence" until usage
+  volume accrues — its payoff is gated on a server/multi-user deploy or on using it
+  to diagnose local-model oddities. See *Deferred Improvements → "Chunk 2c
+  self-improvement loop — built, but its payoff is scale-gated"*.
 - **Engineering: chunking sweep** (reopens Phase 2.4). ✅ **Done 2026-06-06.** Chunk
   sizes are config-driven (`PARENT/CHILD/BASELINE_CHUNK_SIZE`, shipped 2026-05-31);
   `scripts/sweep_chunking.py` measured size grids through the eval harness on the
@@ -1062,6 +1067,54 @@ Decisions I haven't made yet:
 ---
 
 ## Deferred Improvements
+
+### Chunk 2c self-improvement loop — built, but its payoff is scale-gated (revisit on server deploy or local-model oddities)
+
+**Status (2026-06-14):** the reviewer aggregation / bias-vs-fault loop (PR 12) is
+*implemented and tested*, but an honest cost/benefit review concluded it is
+**over-engineered for a solo, local, single-user tool** and is parked here as a
+deferred-*payoff* item — the code exists; the conditions that make it useful do
+not yet.
+
+**Why it under-delivers at current scale.** The reviewer only runs on
+already-flagged answers in the Chainlit app, so `failure_tag` verdicts accrue
+slowly; the `MIN_FAILURE_TAG_COUNT` / `MIN_FAILURE_TAG_DOCS` gate (10 across 5
+distinct answers) then correctly reports **"insufficient evidence"** until a lot
+of real usage piles up. So it's a well-built instrument pointed at a near-empty
+table. At one-user scale, `SELECT failure_tag, COUNT(*) … GROUP BY failure_tag` +
+eyeballs covers most of the practical value; the elaborate aggregation earns its
+keep only with volume. The cheap, unambiguously-worth-it part was the
+`failure_tag` *column* itself (makes faults countable, forward-compatible); the
+machinery on top is architecture/discipline demonstration more than daily-use ROI.
+
+**Known validity caveat of the bias-vs-fault anchor.** It assumes the pipeline's
+*generated* answers on the golden set are good (so a reviewer flag there = a false
+positive = reviewer bias). What's actually verified is the *reference* answer, not
+the generated one — the pipeline can genuinely produce a weak answer on a golden
+question. So the anchor *nudges* the bias-vs-fault split; it doesn't prove it.
+
+**When to revisit (the triggers that flip the cost/benefit):**
+- **Server / multi-user deployment.** Real traffic from multiple users makes
+  reviewer verdicts accumulate fast enough to clear the min-N gate, at which point
+  the aggregation + per-`prompt_version` slicing + the eval-anchored bias-vs-fault
+  report start producing actionable signal instead of "insufficient evidence."
+  This is also when closing the loop operationally is worth it: a scheduled
+  `reviewer_report` run (the `/schedule` cron path) and surfacing the top
+  above-gate fault — the deliberately-open action layer.
+- **"Strange things" when running local models.** If the reviewer/judge or the
+  generator is moved to local Ollama (the local-first end goal) and answers start
+  behaving oddly, `scripts/reviewer_report.py` + `--anchor` become a real
+  diagnostic: the bias-vs-fault split is exactly the tool for "is my local
+  *reviewer* mis-scoring, or is my local *generator* actually worse?" — provided
+  the anchor stays on the **pinned** reference instrument, not the same local model
+  under suspicion (otherwise the anchor drifts with the thing it's measuring).
+
+**MLOps framing (for context).** This implements the *capture → evaluate →
+aggregate* spine of an LLM-observability feedback loop and deliberately stops
+before the operational half (no orchestration / dashboards / alerting / automated
+remediation — "instrumentation, not action"). Roughly a third of a real MLOps
+feedback stack by surface area; its above-average trait is the *discipline*
+(gated counts with denominators, "anchor or don't claim") rather than the tooling.
 
 ### CI coverage floor — raise from 40% over time
 

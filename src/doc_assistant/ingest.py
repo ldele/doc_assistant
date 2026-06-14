@@ -21,7 +21,7 @@ from doc_assistant.config import (
 )
 from doc_assistant.db.migrations import init_db
 from doc_assistant.db.models import Document as DBDocument
-from doc_assistant.db.models import IngestionEvent
+from doc_assistant.db.models import Figure, IngestionEvent
 from doc_assistant.db.session import session_scope
 from doc_assistant.embeddings import (
     get_active_model_name,
@@ -29,6 +29,7 @@ from doc_assistant.embeddings import (
     get_embeddings,
 )
 from doc_assistant.extractors import extract_to_markdown, is_supported
+from doc_assistant.figures import figure_chunk_text
 from doc_assistant.tables_marker import TABLE_BLOCK_RE
 
 PAGE_MARKER = re.compile(r"<!--\s*page:(\d+)\s*-->")
@@ -449,6 +450,29 @@ def build_parent_child_chunks(text: str, base_metadata: dict[str, Any]) -> list[
     return children
 
 
+def figure_units(document_id: str) -> list[tuple[str, int, str]]:
+    """Return ``(chunk_text, page, figure_id)`` for a doc's *described* figures.
+
+    Feature 4c: a figure becomes a retrievable chunk only once a VLM description
+    exists (the caption alone is already in the markdown text chunks). The
+    ``Figure`` sidecar is written by ``scripts/describe_figures``; ingest — the
+    one component allowed to write the chunk store — materialises it here, the
+    same separation tables use (4a writes the markdown, ingest reads it).
+    """
+    with session_scope() as session:
+        rows = session.execute(
+            select(Figure.id, Figure.page, Figure.caption, Figure.vlm_description)
+            .where(Figure.document_id == document_id, Figure.vlm_description.is_not(None))
+            .order_by(Figure.page, Figure.id)
+        ).all()
+    units: list[tuple[str, int, str]] = []
+    for fig_id, page, caption, vlm in rows:
+        text = figure_chunk_text(caption, vlm or "")
+        if text.strip():
+            units.append((text, int(page), str(fig_id)))
+    return units
+
+
 def process_one_document(
     path: Path,
     db: Chroma,
@@ -533,6 +557,33 @@ def process_one_document(
             doc.metadata["document_id"] = document_id
             doc.metadata["health"] = health.status
 
+        # Feature 4c: append described figures as `chunk_type='figure'` chunks
+        # (caption + VLM description). No-op until describe_figures has run.
+        fig_units = figure_units(document_id)
+        pc_base_metadata = {
+            "source_original": str(path),
+            "source_cache": str(get_cache_path(path)),
+            "filename": path.name,
+            "format": path.suffix.lower().lstrip("."),
+            "doc_hash": h,
+            "document_id": document_id,
+            "health": health.status,
+        }
+        for j, (fig_text, fig_page, fig_id) in enumerate(fig_units):
+            documents.append(
+                Document(
+                    page_content=fig_text,
+                    metadata={
+                        **pc_base_metadata,
+                        "chunk_index": len(raw_chunks) + j,
+                        "page": fig_page,
+                        "section": None,
+                        "chunk_type": "figure",
+                        "figure_id": fig_id,
+                    },
+                )
+            )
+
         existing_baseline = db.get(where={"doc_hash": h}, include=[])
         if existing_baseline["ids"]:
             print(
@@ -541,18 +592,26 @@ def process_one_document(
             db.delete(ids=existing_baseline["ids"])
         db.add_documents(documents)
 
-        pc_chunks = build_parent_child_chunks(
-            text,
-            {
-                "source_original": str(path),
-                "source_cache": str(get_cache_path(path)),
-                "filename": path.name,
-                "format": path.suffix.lower().lstrip("."),
-                "doc_hash": h,
-                "document_id": document_id,
-                "health": health.status,
-            },
-        )
+        pc_chunks = build_parent_child_chunks(text, pc_base_metadata)
+
+        # A figure is an atomic retrieval unit (like a kept-whole table): one
+        # self-contained parent==child chunk each, appended after the prose parents.
+        next_parent = max((c.metadata["parent_index"] for c in pc_chunks), default=-1) + 1
+        for j, (fig_text, fig_page, fig_id) in enumerate(fig_units):
+            pc_chunks.append(
+                Document(
+                    page_content=fig_text,
+                    metadata={
+                        **pc_base_metadata,
+                        "parent_text": fig_text,
+                        "parent_index": next_parent + j,
+                        "child_index": 0,
+                        "page": fig_page,
+                        "chunk_type": "figure",
+                        "figure_id": fig_id,
+                    },
+                )
+            )
 
         existing_pc = pc_db.get(where={"doc_hash": h}, include=[])
         if existing_pc["ids"]:

@@ -798,9 +798,25 @@ interpretation + reviewer agent.
   the table (no Alembic). Runs on either machine (no torch/Marker/GPU). Public
   corpus run (10 papers): 45 regions, 44 PNGs + 1 caption-only, every region
   caption-paired. Feature 4c turns these rows into VLM-described retrievable chunks.
-- **Feature 4c** — VLM figure description (gated). Anthropic tool-use 
-  with Pydantic-validated schema. `caption + VLM description` embedded as 
-  a chunk with `chunk_type='figure'`. `MAX_VLM_CALLS_PER_DOC` budget.
+- **Feature 4c** — VLM figure description (gated) — ✅ **code shipped (PR 9,
+  2026-06-14; one paid validation run pending user OK)**. Anthropic vision +
+  forced tool-use with a Pydantic-validated `FigureDescription` schema
+  (`figure_type`/`summary`/`key_quantities`/`axes`/`trend` — **no confidence
+  field**, per "don't surface self-reported LLM confidence"). The gated
+  enrichment (`scripts/describe_figures.py`) writes `Figure.vlm_description`;
+  ingest then materialises `caption + description` as a `chunk_type='figure'`
+  retrieval chunk in **both** stores. The enrichment is the only paid, API-only
+  layer and is **Anthropic-only by decision** (no local path); model is the
+  `FIGURE_VLM_MODEL` knob (default `claude-haiku-4-5`, matching the project's
+  cost-gated instrument convention). Three gates: caption-only figures skipped
+  (no PNG), self-describing captions skipped (`FIGURE_CAPTION_DESC_MIN_CHARS`),
+  and `MAX_VLM_CALLS_PER_DOC` budget; every skip records a
+  `vlm_call_skipped_reason`. **Chunk-emission decision (ADR):** figure chunks
+  enter retrieval through *ingest reading the sidecar* (the only chunk-store
+  writer), exactly like spliced tables — the 4c enrichment never touches Chroma,
+  preserving the Enrichment-Layer rule. Eval hook: `FigureRetrievalScorer`
+  (held-out figure spec → was its figure chunk retrieved?). Dry-run on the public
+  10-paper corpus: 38 of 45 figures eligible, 7 skipped as well-captioned.
 - **Integrity Chunk 2a** — Dual interpretation layer. `SYNTHESIS_MODE 
   = human | ai` (default `ai`). Evidence + interpretation as separate 
   output sections. Per-claim adjudication.

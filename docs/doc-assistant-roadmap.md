@@ -209,7 +209,7 @@ Sidecar manifest, not spliced.
 
 **Effort:** 1 weekend.
 
-#### 4c — VLM figure description (gated)
+#### 4c — VLM figure description (gated) — ✅ **code shipped (PR 9, 2026-06-14)**
 
 - For each figure in the manifest, call Claude vision with a schema-first prompt: `{figure_type, summary, key_quantities, axes, trend}` (Pydantic-validated, Anthropic tool-use).
 - Embed `caption + VLM description` as a chunk linked back to the figure's bbox. Chunk metadata: `chunk_type='figure'`.
@@ -455,7 +455,7 @@ Each row is one PR. Each PR scopes to one chunk, with the files and the `decisio
 | 6 | Feature 1b: per-project embedder routing — **DEFERRED** (no model beats bge-base on a sub-corpus yet) | `src/doc_assistant/db/models.py` (Folder.embedding_model), `src/doc_assistant/ingest.py`, `src/doc_assistant/pipeline.py`, UI surface | 2 evenings | Blocked until a per-sub-corpus winner exists (re-run SPECTER2 `--repeat 5` first) |
 | 7 | Feature 4a: table pass (Marker primary, pdfplumber fallback) ✅ | `src/doc_assistant/tables_marker.py` (new, primary), `scripts/extract_tables_marker.py` (new), `src/doc_assistant/tables.py` (pdfplumber fallback), `scripts/extract_tables.py` | 1 evening | PR 1 (Phase 4 closed) |
 | 8 | ✅ Feature 4b: figure detection + manifest (shipped 2026-06-14) — spec: [`docs/specs/feature-4b-figure-detection.md`](specs/feature-4b-figure-detection.md) | `src/doc_assistant/figures.py` (new), `scripts/extract_figures.py` (new), `src/doc_assistant/db/models.py` (Figure table), `config.py`, `.gitignore` | 1 weekend | PR 7 ✅ (regions.py shipped) |
-| 9 | **▶ NEXT** — Feature 4c: VLM figure description (gated) | `src/doc_assistant/figures.py` (VLM call), Pydantic schema, `MAX_VLM_CALLS_PER_DOC` config | 1 weekend | PR 8 ✅ |
+| 9 | ✅ Feature 4c: VLM figure description (gated) **+ figure-chunk emission + eval scorer** (full 4c, shipped 2026-06-14; one paid run pending) | `figures.py` (VLM call/schema/gating), `scripts/describe_figures.py` (new), `ingest.py` (`figure_units` → `chunk_type='figure'`), `eval/scorers.py` (`FigureRetrievalScorer`), `eval/adapters.py`, `config.py` | 1 weekend | PR 8 ✅ |
 | 10 | Integrity Chunk 2a: dual interpretation + adjudication | `src/doc_assistant/pipeline.py`, `src/doc_assistant/prompts.py`, `src/doc_assistant/config.py` (`SYNTHESIS_MODE`), UI surface for accept/reject/edit | 1 weekend | PR 5 |
 | 11 | Integrity Chunk 2b: reviewer agent | `src/doc_assistant/reviewer.py` (new), Pydantic rubric schema, integration in `pipeline.py` | 1 evening | PR 10 |
 | 11.5 | Chunking sweep infra (Phase 2.4 reopened) ✅ shipped 2026-05-31 | `src/doc_assistant/config.py`, `src/doc_assistant/ingest.py`, `scripts/sweep_chunking.py` (new), `tests/unit/test_chunking_config.py` (new) | done (infra) + ½-day measurement run | PR 3 (eval harness) |

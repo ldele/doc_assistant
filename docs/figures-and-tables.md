@@ -189,12 +189,45 @@ boundary; [`scripts/extract_figures.py`](../scripts/extract_figures.py) is the C
 Validated on the public corpus (10 papers): 45 regions, 44 PNGs + 1 caption-only,
 every region caption-paired; all four extraction methods exercised.
 
+## Figure description — VLM (4c)
+
+The quality lever on top of 4b: a **gated, paid, Anthropic-only** pass that turns
+a figure crop into retrievable content. [`scripts/describe_figures.py`](../scripts/describe_figures.py)
+calls Claude vision with **forced tool-use** against a Pydantic schema
+(`FigureDescription`: `figure_type` / `summary` / `key_quantities` / `axes` /
+`trend` — deliberately **no confidence field**), writes the rendered description
+to `Figure.vlm_description`, and the next `ingest` materialises
+`caption + description` as a `chunk_type='figure'` chunk in both stores.
+
+- **How figure chunks reach retrieval (ADR).** The 4c enrichment writes only the
+  `Figure` sidecar; **ingest** — the one component allowed to write the chunk
+  store — reads described figures and emits the chunks (`ingest.figure_units`).
+  This is the same split as tables (4a writes the markdown, ingest reads it) and
+  keeps the Enrichment-Layer "never mutate the chunk store from enrichment" rule
+  intact. So the flow is: `extract_figures --apply` → `describe_figures --apply`
+  → re-`ingest`.
+- **Three cost gates.** Caption-only figures (no PNG) are skipped; a figure whose
+  caption already clears `FIGURE_CAPTION_DESC_MIN_CHARS` is skipped as
+  self-describing; and `MAX_VLM_CALLS_PER_DOC` caps spend per paper. Every skip
+  records an auditable `vlm_call_skipped_reason`
+  (`no_image` / `caption_sufficient` / `budget_exhausted` / `image_missing`).
+- **Model** is the `FIGURE_VLM_MODEL` knob (default `claude-haiku-4-5` — vision-
+  capable and cheapest, matching the reviewer/judge cost convention; bump to
+  Sonnet/Opus for higher fidelity). Anthropic-only by decision — no local path.
+- **Eval hook.** `eval/scorers.py:FigureRetrievalScorer` answers "given a query
+  about a figure, did its figure chunk come back?" (reads the per-chunk
+  descriptors the eval adapter now exposes in `EvalOutput.raw["retrieved"]`).
+
+Dry-run on the public corpus (zero cost): 38 of 45 figures eligible to describe,
+7 skipped as already well-captioned.
+
 ## Tooling
 
 | Script | Purpose |
 |---|---|
 | [`scripts/extract_tables.py`](../scripts/extract_tables.py) | The enrichment CLI: `--apply` / `--force` / `--doc`. PDF-only; resolves source PDF + cached `.md`, splices, writes. Reminds you to re-`ingest`. |
 | [`scripts/extract_figures.py`](../scripts/extract_figures.py) | **The figure (4b) CLI.** `--apply` / `--force` / `--doc` / `--dpi`. PDF-only; detects regions on figure pages, renders PNGs to `data/figures/{doc_hash}/`, writes `Figure` rows. Sidecar — no re-`ingest` needed. |
+| [`scripts/describe_figures.py`](../scripts/describe_figures.py) | **The figure-description (4c) CLI.** `--apply` / `--force` / `--doc` / `--max-calls` / `--model`. Gated, **paid** Claude-vision pass; writes `Figure.vlm_description`. Re-`ingest` after to pull figure chunks into retrieval. Dry-run by default; `--apply` needs `ANTHROPIC_API_KEY`. |
 | [`scripts/debug_tables.py`](../scripts/debug_tables.py) | **Visual inspector.** Renders per-page PNGs with pdfplumber's detection overlay + a pdfplumber-vs-PyMuPDF count comparison, to `data/tables_debug/{stem}/` (gitignored). Reach for this when detection quality is uncertain — *before* trusting counts. |
 | [`scripts/eval_marker_tables.py`](../scripts/eval_marker_tables.py) | Engine eval: emits candidate pages + pdfplumber tables + (if installed) Marker's markdown, for a side-by-side fidelity comparison. Self-contained Marker call; meant for the GPU/RTX machine. |
 | [`scripts/extract_tables_marker.py`](../scripts/extract_tables_marker.py) | **The primary table CLI.** Runs isolated Marker (`uvx --from marker-pdf marker_single`) on the caption-gated candidate pages in a bounded pool, parses the paginated markdown, splices inline + de-dups pymupdf4llm's twin, supersedes any pdfplumber block. `--apply` / `--force` / `--doc` / `--workers`. Re-`ingest` after (then re-run enrichment). GPU/RTX box. |

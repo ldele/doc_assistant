@@ -45,6 +45,19 @@ def rag_pipeline_adapter(pipeline: RAGPipeline) -> Callable[[str], EvalOutput]:
                 seen.add(filename)
                 citations.append(str(filename))
 
+        # Per-chunk descriptors so a retrieval-shape scorer (e.g. the Feature 4c
+        # FigureRetrievalScorer) can see *what kind* of chunk came back, not just
+        # the filenames. Kept generic — plain dicts, no doc_assistant types.
+        retrieved = [
+            {
+                "filename": doc.metadata.get("filename"),
+                "page": doc.metadata.get("page"),
+                "chunk_type": doc.metadata.get("chunk_type"),
+                "figure_id": doc.metadata.get("figure_id"),
+            }
+            for doc in docs
+        ]
+
         chunks: list[str] = []
         for chunk in pipeline.stream_answer(query, docs, counter=counter):
             chunks.append(chunk)
@@ -55,7 +68,7 @@ def rag_pipeline_adapter(pipeline: RAGPipeline) -> Callable[[str], EvalOutput]:
             citations=citations,
             token_input=counter.input_tokens or None,
             token_output=counter.output_tokens or None,
-            raw={"query": query, "n_retrieved": len(docs)},
+            raw={"query": query, "n_retrieved": len(docs), "retrieved": retrieved},
         )
 
     return _call

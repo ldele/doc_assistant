@@ -455,6 +455,155 @@ single-user tool. Retrieval-derived markers (citation density, source
 diversity, reranker score spread) are observable, not self-reported, and 
 map to instrumentation that already exists.
 
+### Feature 7 — cross-document concept graph: design decisions (PR 16)
+
+Concept/entity graph over the library (nodes = concepts, edges = relations),
+clustered into communities with high-degree "god nodes" surfaced. Post-ingest
+**Enrichment-Layer** sidecar (`data/graph/graph.json` + `.manifest.json`), never
+mutates the chunk store. Full code-level contract:
+[`docs/specs/feature-7-concept-graph.md`](specs/feature-7-concept-graph.md);
+resolutions + reopens-if in the `.claude/SESSION.md` baton (2026-06-15). Scope =
+7a (extraction) + 7b (communities + god-nodes) + 7c (gap signals) in one PR; **7d
+(knowledge-currency) is out** — it consumes this graph.
+
+**ADR-1 — Community detection: NetworkX Louvain, not Leiden/graspologic.** The
+roadmap named "Leiden (graspologic)"; both were verified unusable against the
+live venv (networkx 3.6.1 / numpy 2.4.6). `networkx.leiden_communities` **raises
+`NotImplementedError`** — it is a backend-dispatch stub with no bundled backend.
+`graspologic` hard-pins `numpy<2.0` (+ a Rust wheel, gensim, POT, umap-learn,
+statsmodels, Python<3.13), so installing it — even as an extra — forces a numpy
+1.x downgrade that breaks the locked torch/sentence-transformers/chromadb stack
+on both machines and corrupts `uv.lock`. **Decision:** use
+`networkx.louvain_communities(weight="weight", resolution=…, seed=42)` — same
+modularity family, ships in the installed networkx, **bit-deterministic with a
+fixed seed** (verified). Keep a `detect_communities(algorithm="louvain")` seam
+for a future numpy-2-compatible Leiden (`leidenalg`/igraph). Only new declared
+dep: `networkx>=3.4` (pure-Python, already transitively present; floor is >=3.4
+not >=3.6 because `requires-python>=3.10` and networkx ≥3.6 drops 3.10 — uv
+resolves 3.6.x on the 3.12 runtime via markers). *Reopens if a
+numpy-2 Leiden backend lands.*
+
+**ADR-2 — Extraction provider: API-on-this-box, local-first stays the goal.** The
+primary dev box has no Ollama (verified only on the RTX box —
+[[rtx-machine-ollama-testing]]). `GRAPH_LLM_PROVIDER`/`MODEL` cascade from
+`LLM_*` like `WIKI_LLM_PROVIDER`; validation here runs on `anthropic`/Haiku
+(cheapest, matches the reviewer/VLM convention), free on Ollama on the RTX box.
+**Consequence:** 7a is a modest *paid* run on this box;
+`GRAPH_MAX_LLM_CALLS_PER_DOC` doubles as a cost cap. Local-first is held where a
+local model exists, not abandoned. *Reopens if a local model lands on the dev
+box.*
+
+**ADR-3 — Node canonicalization: deterministic string + cosine over the existing
+BGE embedder.** Feature 6 proved this corpus saturates (same-domain BGE vectors
+~0.88–0.96); a noisy extractor fragments concepts ("Transformer" vs "the
+transformer"), degrading community quality. **Decision:** `canonical_key`
+(casefold/NFKC/strip) then merge near-duplicate *labels* by cosine over the
+existing `embeddings.py` BGE factory (no new model/API, deterministic), above
+`GRAPH_NODE_MERGE_SIMILARITY`. Rejected: string-only (ships a fragmented graph);
+LLM-assisted dedup (cost + nondeterminism breaks idempotency). The merge
+threshold is **provisional — tune on the first real run**; it is the top quality
+risk.
+
+**ADR-4 — Back-pointers use a deterministic composite chunk key, not a Chroma
+id.** 7d needs `source_chunk_ids` so each claim is one hop from its evidence, but
+`ingest.py` calls `add_documents()` with no `ids=` — Chroma generates UUIDs
+**regenerated on every re-ingest**. There is no stable chunk id to reference (the
+roadmap's "stable chunk ids" assumption was wrong). **Decision:** back-pointers
+are the deterministic composite `{document_id}:p{parent_index}` (all
+content-deterministic, survives re-ingest); the field keeps 7d's name, only the
+value scheme is fixed. No chunk-store schema change. *Reopens if ingest later
+stamps a stable persisted chunk id.*
+
+**Deferred to 7d (persisted nullable now for forward-compat):** edge `polarity ∈
+{supports,contradicts,refines,supersedes}` and `year` — no PR 16 feature reads
+edge labels, and stance extraction is noisier on a small model and needs the
+relative-year ordering 7d owns. PR 16 extracts a plain concept-`relation` verb
+only. **JSON-only, no SQLite graph table** — 7d's `compute_node_weights(graph)`
+takes the graph object and 7d owns its own `chunk_epistemics` table.
+
+### Pipeline assembly via a serializable profile (added 2026-06-16)
+
+A single `PipelineProfile` dataclass becomes the one object that selects every
+swappable stage of a run — embedder, collection, LLM provider/model,
+parent-child, reviewer, synthesis mode. `RAGPipeline.__init__` takes a profile
+instead of reading module-level globals. Env vars become *the default profile*,
+not the only configuration path.
+
+**Context.** The four "stages" the UI will eventually expose — embedder,
+classifier (`query_router.py`), analysis LLM, reviewer — are already
+independently swappable, but selection is scattered across env vars read at
+import time (`EMBEDDING_MODEL`, `LLM_PROVIDER`, `LLM_MODEL`, `USE_PARENT_CHILD`,
+`USE_MULTI_QUERY`). There is no single object that says "*this* run uses
+bge-base + folder `X`'s collection + Anthropic + reviewer-on." This blocks two
+things: the parked **projects** feature (a project = a `Folder`; selecting one
+must select its embedder + collection + scope in one move) and the eventual
+**Chainlit replacement** (a new UI should configure *one profile object*, not
+re-derive five globals).
+
+The trigger was looking at flow/orchestration tools (Langflow). **Rejected**:
+Langflow is a visual authoring *platform* (React Flow canvas, component
+registry, its own API/MCP server). Adopting it means replacing the whole
+front-of-house to gain one concept — formalized stage wiring — that is a single
+dataclass here. LangGraph and Haystack pipelines were rejected for the same
+reason: a runtime dependency to solve a wiring problem. The one idea worth
+taking from that class of tool is the *principle*: **a pipeline is declarative
+config, not imperative construction** (Langflow flows are JSON). We take the
+serialization insight, not the software.
+
+**Decision.**
+
+- Introduce `PipelineProfile` (frozen dataclass) carrying: `embedder` (registry
+  key → `embeddings.py`), `collection` (the resolved Chroma collection name),
+  `llm_provider`, `llm_model`, `use_parent_child`, `use_reviewer`,
+  `synthesis_mode`. It is plain data — serializable to/from dict/JSON.
+- `RAGPipeline.__init__(profile: PipelineProfile)`. A
+  `PipelineProfile.from_env()` constructor reproduces today's behaviour exactly,
+  so the refactor is contract-preserving (existing callers get the env profile
+  by default).
+- **Do not invent a collection key.** The model×project axis is *already locked*
+  by Feature 1b as `{folder_id}__{model_name}` (see Phase 6 → Feature 1b, and
+  `embeddings.get_collection_name` for the model axis the default already
+  proves). The profile's `collection` field *holds the resolved name*; it does
+  not redefine the scheme. When projects ship, "select project" =
+  `Folder` row → `(folder_id, folder.embedding_model)` → existing key →
+  profile.
+- **Granularity is the one genuinely new axis.** "User selects Documents or
+  Concepts" means the collection key gains a third dimension only if Concepts
+  become independently retrievable. Today the concept graph (`concept_graph.py`,
+  PR 16) is a sidecar, not a retrieval store. Treat Concepts-as-retrievable as a
+  *future* profile field (`granularity: "documents" | "concepts"`) gated on that
+  store existing — not built now, but the profile is where it lands.
+
+**Sequencing (hard dependency).** This sits *on top of* the LLM provider
+protocol (`docs/specs/llm-provider-isolation.md`), which must land first.
+`pipeline._build_llm()` (streaming, LangChain) and `llm.LLMClient` (one-shot
+`complete()`) are two separate construction doors today (intentional — different
+contracts). Formalizing assembly before unifying provider construction would
+bake a two-door wiring into the profile. Order: **provider protocol → profile
+assembler → (later) projects UI over profiles**.
+
+**Consequences.**
+
+- The parked projects feature becomes a thin mapping (`Folder` → profile), not a
+  pipeline rewrite. Aligns with the UI-agnostic data layer already mandated for
+  the Chainlit swap (Open Questions → UI ceiling): the new UI becomes a view
+  over profiles.
+- Eval gains a clean handle — a run is a profile; per-project eval (Feature 1b
+  trade-off) is "iterate profiles," not new harness code.
+- Cost: one dataclass + one constructor + threading `profile` through
+  `RAGPipeline`. No new dependency. Module-level flag reads in `pipeline.py`
+  move into `from_env()`.
+- Risk: profile and the locked-settings table (`.claude/CONTEXT.md`) could
+  drift. Mitigation: `from_env()` is the *only* place env→profile mapping
+  lives, so the table stays the single source for defaults.
+
+**Status:** design recorded; not built. Blocked on the provider protocol PR.
+Not a standalone PR yet — fold the `PipelineProfile` introduction into the
+provider-isolation work or the first projects PR, whichever lands first. No
+code-level spec in `docs/specs/` until the collection-key granularity question
+(Concepts-as-retrievable) is decided, which is itself gated on PR 16 maturing
+past sidecar.
+
 ---
 
 ## Roadmap
@@ -1221,6 +1370,16 @@ separate) — on a tight single-domain corpus it produces one big topic plus out
 
 **Atlas:** recorded as a cross-project lesson (mean-pooled doc-vector similarity
 saturates within a domain; cluster relatively, not by absolute cosine).
+
+**Resolution path (2026-06-15, PR 16 spec).** Feature 7 supplies the relative /
+community clustering this note asked for, via **NetworkX Louvain** (not Leiden —
+`leiden_communities` is a non-functional dispatch stub and graspologic conflicts
+with numpy 2; see ADR-1 above). PR 16 lands the re-point **read-only and inert by
+default**: `wiki.load_communities()` + a guarded branch in `_assemble_notes`
+behind `WIKI_USE_CONCEPT_COMMUNITIES=false` and a `graph.json` freshness check,
+with `cluster_documents()` (the absolute-cosine union-find) kept as the live
+fallback so shipped 6a–6d is byte-identical. The default flips to concept
+communities in a later checkpoint, once the re-cluster is validated on data.
 
 ### Chunk 2c self-improvement loop — built, but its payoff is scale-gated (revisit on server deploy or local-model oddities)
 

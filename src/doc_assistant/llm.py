@@ -34,6 +34,9 @@ Locked design choices
 
 from __future__ import annotations
 
+import os
+import sys
+import time
 from typing import Any, Protocol, runtime_checkable
 
 from doc_assistant import config
@@ -194,3 +197,84 @@ def reviewer_available() -> bool:
     if config.REVIEWER_PROVIDER.lower() == "anthropic":
         return bool(config.ANTHROPIC_API_KEY)
     return True
+
+
+# ============================================================
+# Enrichment-CLI cost guard (the 2026-06-15 credit-burn footgun)
+# ============================================================
+# Provider *behaviour* lives here next to make_client/reviewer_available; the
+# *policy* (which providers bill money) is config.PAID_PROVIDERS. Every
+# enrichment CLI that does a ``--apply`` run routes through this one helper so a
+# run the user believes is "local" can never silently spend on the API.
+
+
+class ProviderCostError(RuntimeError):
+    """A paid-provider ``--apply`` run cannot proceed (e.g. missing API key).
+
+    Carries a user-facing, already-translated message; CLIs print it and exit
+    non-zero rather than letting the failure surface deep in the vendor SDK.
+    """
+
+
+def _assume_yes() -> bool:
+    """Whether to skip the interactive abort window (automation / CI)."""
+    return os.getenv("DOC_ASSUME_YES", "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def assert_provider_intent(
+    provider: str,
+    *,
+    operation: str,
+    apply: bool = True,
+    model: str | None = None,
+    scope: str | None = None,
+    abort_seconds: float = 3.0,
+) -> None:
+    """Guard a CLI enrichment run from *silently* spending API credits.
+
+    No-op when ``apply`` is False (dry runs never bill) or when ``provider`` is
+    local/free (not in :data:`config.PAID_PROVIDERS` — e.g. ``ollama``). For a
+    **paid** provider it makes the spend impossible-to-miss:
+
+    * raises :class:`ProviderCostError` if the provider's credential is missing
+      (currently: ``anthropic`` without ``ANTHROPIC_API_KEY``), so ``--apply``
+      fails loudly up front instead of erroring mid-batch in the SDK;
+    * otherwise prints a bordered cost banner to **stderr** — naming the
+      operation, provider, model and scope — then sleeps ``abort_seconds`` so a
+      ``Ctrl-C`` cleanly aborts *before* any call. Set ``DOC_ASSUME_YES=1`` (or
+      pass ``abort_seconds=0``) to skip only the pause in automation; the banner
+      still prints.
+
+    Generalises the inline guard first shipped in ``build_concept_graph``
+    (Feature 7) so every enrichment CLI shares one code path. ASCII-only output
+    (Windows stderr may be cp1252; an emoji would raise UnicodeEncodeError).
+    """
+    if not apply:
+        return
+    key = provider.strip().lower()
+    if key not in config.PAID_PROVIDERS:
+        return  # local / free — nothing to spend
+
+    if key == "anthropic" and not config.ANTHROPIC_API_KEY:
+        raise ProviderCostError(
+            f"{operation}: --apply with --provider anthropic needs ANTHROPIC_API_KEY "
+            "in your .env (or run a local provider, e.g. --provider ollama)."
+        )
+
+    border = "=" * 72
+    lines = [
+        "",
+        border,
+        f"  WARNING: PAID API RUN -- {operation}",
+        f"  Provider : {key}" + (f"   Model: {model}" if model else ""),
+    ]
+    if scope:
+        lines.append(f"  Scope    : {scope}")
+    lines.append("  This spends real Anthropic credits. A local provider (ollama) is free.")
+    if abort_seconds > 0 and not _assume_yes():
+        lines.append(f"  Ctrl-C now to abort -- continuing in {abort_seconds:.0f}s...")
+    lines.append(border)
+    print("\n".join(lines), file=sys.stderr, flush=True)
+
+    if abort_seconds > 0 and not _assume_yes():
+        time.sleep(abort_seconds)

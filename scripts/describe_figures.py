@@ -32,7 +32,7 @@ from pathlib import Path
 
 from sqlalchemy import or_, select, update
 
-from doc_assistant.config import ANTHROPIC_API_KEY, FIGURE_VLM_MODEL, MAX_VLM_CALLS_PER_DOC
+from doc_assistant.config import FIGURE_VLM_MODEL, MAX_VLM_CALLS_PER_DOC
 from doc_assistant.db.models import Document, Figure
 from doc_assistant.db.session import session_scope
 from doc_assistant.figures import (
@@ -185,9 +185,22 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    if args.apply and not ANTHROPIC_API_KEY:
-        print("ANTHROPIC_API_KEY is not set — cannot run --apply. Set it in .env first.")
-        return 1
+    if args.apply:
+        # The VLM is Anthropic-only by ADR (vision + tool-use; no local path), so
+        # this run always bills. Route it through the shared cost guard for the
+        # loud warning + abort window it otherwise lacked.
+        from doc_assistant.llm import ProviderCostError, assert_provider_intent
+
+        try:
+            assert_provider_intent(
+                "anthropic",
+                operation="figure VLM description (paid, API-only)",
+                model=args.model,
+                scope="each eligible figure (caption- and budget-gated)",
+            )
+        except ProviderCostError:
+            print("ANTHROPIC_API_KEY is not set — cannot run --apply. Set it in .env first.")
+            return 1
 
     with session_scope() as session:
         stmt = (

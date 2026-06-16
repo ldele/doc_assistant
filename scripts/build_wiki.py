@@ -79,14 +79,18 @@ def main() -> int:
 
     client = None
     if args.apply:
-        if args.provider.lower() == "anthropic":
-            from doc_assistant.config import ANTHROPIC_API_KEY
+        from doc_assistant.llm import ProviderCostError, assert_provider_intent, make_client
 
-            if not ANTHROPIC_API_KEY:
-                print("--apply with --provider anthropic needs ANTHROPIC_API_KEY (or use ollama).")
-                return 1
-        from doc_assistant.llm import make_client
-
+        try:
+            assert_provider_intent(
+                args.provider,
+                operation="wiki topic summarisation",
+                model=args.model,
+                scope="every topic cluster",
+            )
+        except ProviderCostError as e:
+            print(e)
+            return 1
         client = make_client(args.provider, args.model)
         print(f"Summarising topics with {args.provider}/{args.model}...")
 

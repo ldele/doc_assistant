@@ -7,6 +7,7 @@ system-message hoisting, and the config-driven reviewer/judge selection.
 
 from __future__ import annotations
 
+import os
 from typing import Any, ClassVar
 
 import pytest
@@ -211,3 +212,107 @@ def test_reviewer_available_ollama_needs_no_key(monkeypatch: pytest.MonkeyPatch)
     monkeypatch.setattr(config, "REVIEWER_PROVIDER", "ollama")
     monkeypatch.setattr(config, "ANTHROPIC_API_KEY", None)
     assert llm.reviewer_available() is True
+
+
+# ============================================================
+# Enrichment-CLI cost guard (assert_provider_intent)
+# ============================================================
+
+
+@pytest.fixture
+def no_sleep(monkeypatch: pytest.MonkeyPatch) -> list[float]:
+    """Capture abort-window sleeps instead of actually sleeping."""
+    calls: list[float] = []
+    monkeypatch.setattr(llm.time, "sleep", lambda s: calls.append(s))
+    monkeypatch.delenv("DOC_ASSUME_YES", raising=False)
+    return calls
+
+
+def test_paid_providers_policy() -> None:
+    # Declarative policy: anthropic bills, ollama is local/free.
+    assert "anthropic" in config.PAID_PROVIDERS
+    assert "ollama" not in config.PAID_PROVIDERS
+
+
+@pytest.mark.skipif(
+    os.getenv("WIKI_LLM_PROVIDER") is not None or os.getenv("WIKI_LLM_MODEL") is not None,
+    reason="env override set — default not observable",
+)
+def test_wiki_defaults_to_local_not_inherited() -> None:
+    # The footgun fix: the wiki generator defaults to local Ollama explicitly,
+    # NOT to LLM_PROVIDER/LLM_MODEL (which are anthropic/haiku in api mode).
+    assert config.WIKI_LLM_PROVIDER == "ollama"
+    assert config.WIKI_LLM_MODEL == "llama3"
+
+
+def test_guard_dry_run_is_noop(
+    monkeypatch: pytest.MonkeyPatch, no_sleep: list[float], capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(config, "ANTHROPIC_API_KEY", None)
+    # apply=False never bills — even anthropic with no key is a silent no-op.
+    llm.assert_provider_intent("anthropic", operation="x", apply=False)
+    assert capsys.readouterr().err == ""
+    assert no_sleep == []
+
+
+def test_guard_local_provider_is_noop(
+    monkeypatch: pytest.MonkeyPatch, no_sleep: list[float], capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(config, "ANTHROPIC_API_KEY", None)
+    llm.assert_provider_intent("ollama", operation="wiki", apply=True)
+    assert capsys.readouterr().err == ""
+    assert no_sleep == []
+
+
+def test_guard_paid_missing_key_raises(monkeypatch: pytest.MonkeyPatch, no_sleep: list[float]):
+    monkeypatch.setattr(config, "ANTHROPIC_API_KEY", None)
+    with pytest.raises(llm.ProviderCostError, match="ANTHROPIC_API_KEY"):
+        llm.assert_provider_intent("anthropic", operation="my op", apply=True)
+    assert no_sleep == []  # never reaches the warn/sleep path
+
+
+def test_guard_paid_with_key_warns_and_aborts(
+    monkeypatch: pytest.MonkeyPatch, no_sleep: list[float], capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(config, "ANTHROPIC_API_KEY", "k")
+    llm.assert_provider_intent(
+        "anthropic", operation="wiki topic summarisation", model="claude-haiku-4-5", scope="all"
+    )
+    err = capsys.readouterr().err
+    assert "PAID API RUN" in err
+    assert "wiki topic summarisation" in err
+    assert "claude-haiku-4-5" in err
+    assert "Ctrl-C" in err
+    assert no_sleep == [3.0]  # default abort window slept
+
+
+def test_guard_case_insensitive_provider(
+    monkeypatch: pytest.MonkeyPatch, no_sleep: list[float], capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(config, "ANTHROPIC_API_KEY", "k")
+    llm.assert_provider_intent("Anthropic", operation="op")
+    assert "PAID API RUN" in capsys.readouterr().err
+    assert no_sleep == [3.0]
+
+
+def test_guard_abort_seconds_zero_warns_without_sleeping(
+    monkeypatch: pytest.MonkeyPatch, no_sleep: list[float], capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(config, "ANTHROPIC_API_KEY", "k")
+    llm.assert_provider_intent("anthropic", operation="op", abort_seconds=0)
+    err = capsys.readouterr().err
+    assert "PAID API RUN" in err
+    assert "Ctrl-C" not in err  # no abort-window line when there is no window
+    assert no_sleep == []
+
+
+def test_guard_assume_yes_skips_abort_window(
+    monkeypatch: pytest.MonkeyPatch, no_sleep: list[float], capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(config, "ANTHROPIC_API_KEY", "k")
+    monkeypatch.setenv("DOC_ASSUME_YES", "1")
+    llm.assert_provider_intent("anthropic", operation="op")
+    err = capsys.readouterr().err
+    assert "PAID API RUN" in err  # banner still prints (never silent)
+    assert "Ctrl-C" not in err
+    assert no_sleep == []  # automation: no interactive pause

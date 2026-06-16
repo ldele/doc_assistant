@@ -346,7 +346,7 @@ A derived, human-readable markdown layer over the RAG corpus: per-topic notes (s
 
 See also `docs/decisions.md` for the existing Phase 7 gap-detection intent.
 
-### Feature 7 — cross-document concept graph (priority)
+### Feature 7 — cross-document concept graph (✅ 7a–7c shipped PR 16, 2026-06-15)
 
 A concept/entity graph across the library: nodes = concepts/entities, edges = relations, clustered (Leiden) into communities with high-degree "god nodes" surfaced. Feature 6 clusters *documents* and writes topic notes; this relates *concepts across* documents — the layer that powers real gap detection and gives Feature 6's notes their `[[links]]` automatically. The most important addition from the Graphify review.
 
@@ -354,9 +354,9 @@ A concept/entity graph across the library: nodes = concepts/entities, edges = re
 
 **Deliverables (cheap → expensive).**
 
-- 7a — Node/edge extraction per document, merged into a corpus graph (sidecar `data/graph/`), edges integrity-tagged.
-- 7b — Leiden communities + god-node ranking; feed community membership back to Feature 6 as `[[links]]`.
-- 7c — Graph-structure gap signals (isolated nodes, thin bridges) — complements Feature 6's citation-thinness signals.
+- 7a — ✅ Node/edge extraction per document, merged into a corpus graph (sidecar `data/graph/graph.json` + per-doc cache), edges integrity-tagged EXTRACTED/INFERRED/AMBIGUOUS. Extraction defaults to **local Ollama explicitly** (credit-safe-by-default).
+- 7b — ✅ **Louvain** communities (networkx-native; Leiden deferred for Windows-wheel safety) + god-node ranking. The bridge back to Feature 6 (`concept_graph.doc_clusters_from_graph`) is built; re-pointing `build_wiki`'s `[[links]]` at it is a deferred follow-up PR.
+- 7c — ✅ Graph-structure gap signals (isolated nodes, thin bridges) — complements Feature 6's citation-thinness signals.
 - 7d — Knowledge-currency / claim-corroboration layer: claim-level structural weights (corroboration, contradiction, supersession direction — **age is not an input**), projected onto chunks as a `chunk_epistemics` sidecar, surfaced as Chunk 2a evidence markers (`contested`, `superseded_trend`) + a reviewer `contested_evidence` tag. Unique-source claims are neutral, never penalized; no retrieval-rank integration in v1 (eval-gated if ever). Spec: `docs/specs/feature-7d-knowledge-currency.md` (designed 2026-06-10).
 
 Depends on PR 1 (doc vectors) + PR 13 (Feature 6). 7d additionally depends on 7a–7c + Chunk 2a/2b (shipped).
@@ -463,7 +463,7 @@ Each row is one PR. Each PR scopes to one chunk, with the files and the `decisio
 | 13 | ✅ Feature 6: self-organizing wiki / synthesis layer (6a–6d) — shipped 2026-06-14 | `src/doc_assistant/wiki.py` (new), `scripts/build_wiki.py` (new), `config.py` (`WIKI_*`), gap signals mirror `provenance.py` | 1 weekend (6a) + 1 evening each (6b/6c) | PR 1 (doc vectors) + PR 5 (provenance) |
 | 14 | Integrity Chunk 3: PRISMA-trAIce export | `scripts/export_review_traice.py` (new) | 1 day | Phase 9 work; PRs 5 + 10 |
 | 15 | Feature 5: extract eval harness to standalone repo | New repo | 1 weekend | PR 4 + at least one real measurement run |
-| 16 | Feature 7: cross-document concept graph | `src/doc_assistant/concept_graph.py` (new), `scripts/build_concept_graph.py` (new) | — | PR 1 + PR 13 |
+| 16 | ✅ Feature 7: cross-document concept graph (7a–7c) — shipped 2026-06-15, validated free on local Ollama | `src/doc_assistant/concept_graph.py` (new), `scripts/build_concept_graph.py` (new), `config.py` (`CONCEPT_GRAPH_*`), `pyproject.toml` (networkx) | done | PR 1 + PR 13 ✅ |
 | 17 | Ingestion adapters: Zotero (Calibre TBD) — later | `src/doc_assistant/extractors.py`, `src/doc_assistant/ingest.py`, `scripts/import_zotero.py` (new) | — | PR 2 |
 
 **Provider protocol (generation side of Feature 1).** Folded into the Feature 1 provider theme — not a new numbered PR. Independent, near-term, no dependency. Files, build node, and guard test: `docs/specs/llm-provider-isolation.md`.

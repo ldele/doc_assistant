@@ -304,6 +304,64 @@ Trade-offs:
   cache is regenerated. Mitigated by content-only hashing — re-extraction 
   produces the same hash if the content is unchanged.
 
+### Enrichment provider-intent guard — no `--apply` CLI can *silently* spend (added 2026-06-15)
+
+**Context — the footgun.** The `.env` here is all-Anthropic (`LLM_MODE=api` →
+`LLM_PROVIDER=anthropic`, with `ANTHROPIC_API_KEY` set), and the generation
+providers default to inheriting it (`WIKI_LLM_PROVIDER`/`REVIEWER_PROVIDER`/
+`JUDGE_PROVIDER = LLM_PROVIDER`). So an enrichment run the user believed was
+"local" — Ollama is installed and GPU-ready — silently billed the API. This
+caused a real credit burn (2026-06-15). PR 16 (Feature 7) fixed it *for the
+concept graph only* by defaulting `CONCEPT_GRAPH_LLM_PROVIDER` to `"ollama"`
+explicitly and gating an Anthropic run behind a warning + abort window. This ADR
+**generalises that fix** so the next enrichment CLI can't reintroduce the footgun.
+
+**Decision.** Two complementary mechanisms, kept deliberately small:
+
+1. **One shared guard — `llm.assert_provider_intent(provider, *, operation, apply,
+   model, scope, abort_seconds=3)`.** A no-op for dry runs (`apply=False` never
+   bills) and for local/free providers. For a **paid** provider (the single source
+   of truth is the declarative `config.PAID_PROVIDERS = {"anthropic"}`) it makes
+   the spend impossible to miss: it raises `ProviderCostError` if the credential
+   is missing (so `--apply` fails up front, not deep in the SDK mid-batch), else
+   prints a bordered cost banner to **stderr** (operation / provider / model /
+   scope) and sleeps a Ctrl-C abort window. `DOC_ASSUME_YES=1` skips only the
+   pause (automation/CI); the banner still prints — it is never silent. Every
+   `--apply` enrichment CLI routes through this one helper (`build_wiki`,
+   `describe_figures`, and `build_concept_graph`, whose hand-rolled inline guard
+   was refactored onto it). ASCII-only output — Windows stderr may be cp1252.
+2. **Generator-role enrichment defaults to LOCAL, not `LLM_PROVIDER`.** Following
+   the concept-graph precedent, `WIKI_LLM_PROVIDER`/`WIKI_LLM_MODEL` now default to
+   `ollama`/`llama3` **explicitly** instead of inheriting the analysis provider —
+   the wiki summariser is a per-cluster batch generator with the same silent-spend
+   profile as concept extraction. So `build_wiki --apply` is free by default and
+   `--provider anthropic` is the opt-in (which then hits the banner above).
+
+**Why the guard lives in `llm.py`, not `config.py`** (despite the helper being
+imagined as `config.assert_provider_intent`): `config.py` is pure declarative
+data with no I/O; provider *behaviour* already lives in `llm.py` next to
+`make_client` / `reviewer_available`. So the **policy** (which providers bill) is
+a config constant; the **behaviour** that reads it is in `llm.py`.
+
+**Scope — pinned instruments left unchanged.** The reviewer and eval judge
+(`REVIEWER_*` / `JUDGE_*`) keep inheriting `LLM_PROVIDER` *by design* — they are
+pinned measurement instruments (cross-run comparability), and their CLIs
+(`reviewer_report --anchor`, `run_eval --with-llm-judge`) are already explicit,
+key-gated, documented-as-paid opt-ins — i.e. not *silent*. Routing their warning
+through the same guard is a one-line extension if desired, but flipping their
+*defaults* would break comparability, so it is out of scope here. This supersedes
+the "deliberate departure from the wiki's inherit-the-default convention" note in
+the Feature 7 ADRs above: the wiki now shares the concept-graph's default-local
+stance, and both share one guard.
+
+**Rejected alternatives.** (a) Warning-only with no default flip — leaves
+`build_wiki`'s default paid, so the common path still surprises. (b) Default-flip
+only — a stray `WIKI_LLM_PROVIDER=anthropic` in the env would still spend with no
+warning; the guard is the backstop that fires regardless of *how* the provider was
+chosen. (c) An interactive `input()` confirm — hangs in non-interactive/CI runs;
+a printed banner + timed Ctrl-C window (mirroring the shipped concept-graph
+pattern) is automation-safe.
+
 ### Research Integrity Layer
 
 A cross-cutting layer that records how each answer was produced and 
@@ -882,6 +940,72 @@ This is the distinguishing capability — most existing tools stop short of this
   just an LLM opinion. Living precursor to the Phase 9 review generator. See
   roadmap Feature 6.
 
+- **Feature 7 — Cross-document concept graph.** ✅ **Shipped (PR 16, 2026-06-15;
+  7a–7c). Validated free on local Ollama (`llama3.1:8b`).** A concept/entity graph
+  *across* the library — nodes = concepts, edges = relations, Louvain communities,
+  high-degree "god nodes", graph-gap signals — as a sidecar `data/graph/graph.json`
+  + a per-doc extraction cache. `src/doc_assistant/concept_graph.py` (pure core +
+  impure boundary) + `scripts/build_concept_graph.py`. Where Feature 6 clusters
+  *documents*, this relates the *concepts inside* them; it is the threshold-free
+  clustering primitive Feature 6 should re-point at (see Deferred Improvements).
+  Four decisions, recorded here as ADRs:
+  - **ADR — extraction defaults to LOCAL Ollama explicitly, not `LLM_PROVIDER`.**
+    Extraction runs an LLM over *every* document — the exact batch op that silently
+    bills Anthropic if it inherits the analysis-provider default (`LLM_MODE=api` →
+    `LLM_PROVIDER=anthropic`, which `WIKI_/REVIEWER_/JUDGE_*` all inherit — the
+    footgun that burned credits on 2026-06-15). So `CONCEPT_GRAPH_LLM_PROVIDER`
+    defaults to `"ollama"` *directly*; `--provider anthropic` is opt-in, API-key-
+    gated, with a paid-run warning. Originally a deliberate departure from the
+    wiki's inherit-the-default convention; **generalised on 2026-06-15** — the wiki
+    now shares this default-local stance and both route their paid opt-in through
+    one shared guard. See Core Decisions → "Enrichment provider-intent guard".
+  - **ADR — Louvain (networkx-native) over Leiden (igraph/leidenalg/graspologic)
+    for v1.** Same modularity-optimisation family and the threshold-free clustering
+    the corpus needs (mean-pooled doc vectors saturate at ~0.9 cosine within a
+    domain — the Feature 6 finding); `networkx>=3.2` ships `louvain_communities`
+    pure-Python, with zero compiled-extension risk on the Windows boxes (igraph
+    wheels are historically flaky here). Leiden is a drop-in upgrade if a clean
+    wheel proves reliable. User-confirmed choice.
+  - **ADR — edges integrity-tagged structurally, never self-reported confidence**
+    (reuses the `provenance`/`reviewer` discipline; `INTEGRITY_TAGS` will be reused
+    by 7d). `EXTRACTED` = stated + relation-phrase-consistent across docs;
+    `AMBIGUOUS` = same pair, ≥2 conflicting relation phrases; `INFERRED` = no stated
+    triple but co-occurs in ≥ `CONCEPT_GRAPH_MIN_COOCCURRENCE` docs.
+  - **ADR — sidecar JSON, NOT a graph DB.** Roadmap-explicit (Stonebraker: a graph
+    DBMS is rarely the performant choice; this is build-time structure, not a query
+    server). Idempotent per-doc cache keyed by `doc_hash` → content change
+    re-extracts; re-runs rebuild the graph with zero LLM calls. Enrichment-Layer
+    Pattern — never mutates the chunk store. See roadmap Feature 7.
+
+- **Feature 7 — design notes salvaged from the parallel `feature/pr16-concept-graph`
+  branch (deleted 2026-06-15, tip `cd6cec0`).** A second, fuller PR-16 attempt was
+  built on a branch the same day (1445-LOC module, spec, 4 ADRs) but ran extraction
+  on the **Anthropic API by default** (`GRAPH_LLM_PROVIDER` inheriting `LLM_PROVIDER`)
+  — the cause of the afternoon credit burn. We kept main's credit-safe-by-default
+  version and salvaged the worthwhile pieces; the branch was then removed. Reasoning
+  worth keeping:
+  - **Louvain is not just preferred over Leiden — Leiden is unavailable here.** The
+    branch tested both against the live venv: `networkx.algorithms.community.leiden_communities`
+    **exists but raises `NotImplementedError`** (a backend-dispatch stub, no backend
+    installed), and `graspologic` hard-pins `numpy<2.0`, conflicting with the locked
+    numpy-2 stack. So `louvain_communities` is the only working modularity detector
+    without a native igraph build. (Strengthens the Louvain ADR above.)
+  - **Salvaged into main now (the "quality bundle"):** `snap_relation` (closed
+    `RELATION_VERBS` vocab → fewer spurious `AMBIGUOUS`; **tradeoff:** the narrow vocab
+    collapses most edges to `related_to`, flattening relation labels — widen the vocab
+    or add a raw-phrase field if richer labels are wanted), a truncation-tolerant JSON
+    salvage parser (`_scan_objects`/`_salvage_array` — recovers complete leading
+    elements from a cut-off local-model completion), and membership-hashed community
+    keys (`community_id_for`, drift-stable, mirrors `wiki.topic_id_for`).
+  - **Deferred salvage candidate — semantic node-merge (branch ADR-3):** cosine-merge
+    concept *labels* via the BGE `embeddings.py` factory above ~0.88 would fold
+    "transformer" / "transformer architecture" into one node — the fix for main's
+    isolated/noisy-concept tail (86 degree-0 nodes on the public run). Not yet ported.
+  - **Chunk-id instability (branch ADR-4), important for 7d:** `ingest.py` adds Chroma
+    chunks with **no `ids=`**, so the LangChain wrapper regenerates UUIDs on every
+    re-ingest — there is no stable chunk id. 7d back-pointers must use a deterministic
+    composite key (`{document_id}:p{parent_index}`), not a Chroma id.
+
 ### Phase 8: UI Polish
 
 Goal: design pass on everything built so far.
@@ -1080,16 +1204,20 @@ threshold that is *corpus-specific*, not a universal constant. Bumped the defaul
 to 0.90 and documented `--min-similarity` tuning, but a fixed absolute threshold
 can't generalize.
 
-**The proper fix** is *relative* / threshold-free clustering: use each document's
-top-K nearest neighbours (which `compute_doc_vectors` already produces) or graph
-community detection (modularity / **Leiden**) so the cut adapts to the corpus's
-own similarity distribution instead of an absolute number. This is exactly the
-NetworkX/graspologic machinery **Feature 7** (cross-document concept graph, PR 16)
-introduces — so Feature 6's clustering should be re-pointed at Feature 7's
-community detection once that lands, rather than growing its own. Until then, the
-absolute threshold is a documented, tunable v1 and the wiki is most useful on a
-*multi-domain* library (where doc vectors actually separate) — on a tight
-single-domain corpus it produces one big topic plus a few outliers.
+**The proper fix** is *relative* / threshold-free clustering: graph community
+detection (modularity) so the cut adapts to the corpus's own similarity
+distribution instead of an absolute number. **Feature 7 (PR 16) shipped this**
+(2026-06-15) — `concept_graph.analyze_graph` runs **Louvain** community detection
+(networkx-native; Leiden/graspologic deferred for Windows-wheel safety — see the
+Feature 7 ADRs above), and `concept_graph.doc_clusters_from_graph(graph,
+extractions)` exposes the threshold-free, document-level grouping (docs grouped by
+the concept-community they most belong to) as a **drop-in replacement** for
+`wiki.cluster_documents`. **Remaining step (its own follow-up PR, per one-PR-per-
+session):** re-point `build_wiki` at `doc_clusters_from_graph` so the wiki's
+`[[links]]` come from concept communities rather than the absolute cosine
+threshold. Until that lands, `WIKI_MIN_SIMILARITY` stays a documented, tunable v1
+and the wiki is most useful on a *multi-domain* library (where doc vectors actually
+separate) — on a tight single-domain corpus it produces one big topic plus outliers.
 
 **Atlas:** recorded as a cross-project lesson (mean-pooled doc-vector similarity
 saturates within a domain; cluster relatively, not by absolute cosine).

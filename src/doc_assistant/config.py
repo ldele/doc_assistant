@@ -66,6 +66,16 @@ REVIEWER_MODEL = os.getenv("REVIEWER_MODEL", _REFERENCE_MODEL)
 JUDGE_PROVIDER = os.getenv("JUDGE_PROVIDER", LLM_PROVIDER)
 JUDGE_MODEL = os.getenv("JUDGE_MODEL", _REFERENCE_MODEL)
 
+# Providers that bill real money per call. The single source of truth for the
+# enrichment-CLI cost guard (`doc_assistant.llm.assert_provider_intent`): a
+# `--apply` enrichment run resolving to one of these prints a loud cost warning
+# + abort window (key present) or fails loudly (key missing), so a run the user
+# believes is "local" can never *silently* spend — the 2026-06-15 credit-burn
+# footgun. Ollama is local/free and absent here by design. Extend if a new paid
+# provider is added. (Declarative policy data lives here; the behaviour that
+# reads it lives in llm.py, next to make_client/reviewer_available.)
+PAID_PROVIDERS = frozenset({"anthropic"})
+
 
 # ============================================================
 # Extraction configuration
@@ -250,11 +260,16 @@ MIN_FAILURE_TAG_DOCS = int(os.getenv("MIN_FAILURE_TAG_DOCS", "5"))
 # Sidecar markdown root (Obsidian-compatible). Gitignored (derived, regenerable).
 WIKI_DIR = DATA_PATH / "wiki"
 
-# Topic summarization is the *generator* role (not a pinned instrument), so it
-# defaults to the analysis provider/model and is fully local-capable via Ollama.
-# Point at a local model (WIKI_LLM_PROVIDER=ollama) to keep the wiki build free.
-WIKI_LLM_PROVIDER = os.getenv("WIKI_LLM_PROVIDER", LLM_PROVIDER)
-WIKI_LLM_MODEL = os.getenv("WIKI_LLM_MODEL", LLM_MODEL)
+# Topic summarization is the *generator* role (not a pinned instrument) and a
+# per-cluster batch op — the same silent-spend profile as concept extraction. So,
+# like CONCEPT_GRAPH_LLM_PROVIDER (Feature 7), it defaults to LOCAL Ollama
+# *explicitly*, NOT to LLM_PROVIDER. This keeps `build_wiki --apply` free by
+# default; `--provider anthropic` is opt-in and routes through the cost guard
+# (`llm.assert_provider_intent`). Changed 2026-06-15 (was: inherit LLM_PROVIDER/
+# LLM_MODEL — the footgun that billed a "local" run). See decisions.md → the
+# "Enrichment provider-intent guard" ADR.
+WIKI_LLM_PROVIDER = os.getenv("WIKI_LLM_PROVIDER", "ollama")
+WIKI_LLM_MODEL = os.getenv("WIKI_LLM_MODEL", "llama3")
 
 # Clustering: two documents share a topic when a DocSimilarity edge between them
 # is at/above this cosine score (connected components). **Corpus-dependent — tune
@@ -272,3 +287,51 @@ WIKI_MIN_CITATIONS = int(os.getenv("WIKI_MIN_CITATIONS", "3"))
 
 # How many chunk excerpts to sample per document as grounding for the summary.
 WIKI_CHUNK_SAMPLE = int(os.getenv("WIKI_CHUNK_SAMPLE", "3"))
+
+
+# ============================================================
+# Cross-document concept graph (Phase 7 / Feature 7, PR 16)
+# ============================================================
+# A concept/entity graph across the library: nodes = concepts, edges = relations
+# (integrity-tagged EXTRACTED|INFERRED|AMBIGUOUS — no self-reported confidence),
+# clustered into communities (Louvain) with high-degree "god nodes" surfaced. A
+# sidecar artifact under CONCEPT_GRAPH_DIR (graph.json + per-doc extraction cache)
+# — NOT a graph database. Enrichment-Layer Pattern: idempotent, regenerable, never
+# mutates the chunk store. See docs/doc-assistant-roadmap.md → Feature 7 and
+# docs/decisions.md → Feature 7.
+
+# Sidecar root: data/graph/graph.json + data/graph/extractions/{doc_hash}.json.
+# Gitignored (derived, regenerable).
+CONCEPT_GRAPH_DIR = DATA_PATH / "graph"
+
+# Concept extraction runs an LLM over EVERY document — a per-document batch op, and
+# exactly the operation that silently burns API credits if it inherits the analysis
+# provider default (LLM_MODE=api → LLM_PROVIDER=anthropic). So — unlike the wiki
+# summarizer — it defaults to LOCAL Ollama *explicitly*, NOT to LLM_PROVIDER, to
+# hold the local-first promise by default. Override with --provider / the env vars
+# (an Anthropic run is opt-in and prints a cost warning). See decisions.md → the
+# Feature 7 "default-Ollama extraction" ADR.
+CONCEPT_GRAPH_LLM_PROVIDER = os.getenv("CONCEPT_GRAPH_LLM_PROVIDER", "ollama")
+CONCEPT_GRAPH_LLM_MODEL = os.getenv("CONCEPT_GRAPH_LLM_MODEL", "llama3.1:8b")
+
+# Per-document extraction grounding: up to this many chunk excerpts, each truncated
+# to this many characters, are concatenated as the extraction prompt's material.
+CONCEPT_GRAPH_CHUNK_SAMPLE = int(os.getenv("CONCEPT_GRAPH_CHUNK_SAMPLE", "12"))
+CONCEPT_GRAPH_CHUNK_CHARS = int(os.getenv("CONCEPT_GRAPH_CHUNK_CHARS", "600"))
+
+# Output-token budget for one document's extraction (Ollama num_predict / Anthropic
+# max_tokens). Enough for ~15-30 triples; raise for concept-dense papers.
+CONCEPT_GRAPH_MAX_TOKENS = int(os.getenv("CONCEPT_GRAPH_MAX_TOKENS", "1500"))
+
+# INFERRED co-occurrence edges: two concepts co-mentioned in at least this many
+# distinct documents (but never explicitly related by an extracted triple) get an
+# INFERRED edge — "these travel together across the corpus, though no single paper
+# stated the link." >=2 keeps the graph from exploding with one-off co-occurrences.
+CONCEPT_GRAPH_MIN_COOCCURRENCE = int(os.getenv("CONCEPT_GRAPH_MIN_COOCCURRENCE", "2"))
+
+# How many highest-degree hub concepts to surface as "god nodes".
+CONCEPT_GRAPH_GOD_NODES = int(os.getenv("CONCEPT_GRAPH_GOD_NODES", "10"))
+
+# Louvain is randomized; a fixed seed makes community assignment reproducible so the
+# graph artifact is deterministic for a given set of extractions.
+CONCEPT_GRAPH_SEED = int(os.getenv("CONCEPT_GRAPH_SEED", "42"))

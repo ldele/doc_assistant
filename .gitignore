@@ -36,6 +36,7 @@ data/eval.duckdb.wal
 data/tables_debug/
 data/figures/
 data/wiki/
+data/graph/
 
 # Backups
 backups/

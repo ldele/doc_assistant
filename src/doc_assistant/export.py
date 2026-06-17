@@ -60,6 +60,7 @@ class ExportTurn:
     sources: list[ExportSource] = field(default_factory=list)
     reviewer_summary: str | None = None  # e.g. "faithfulness 4/5 · hedging 3/5"
     failure_tag: str | None = None
+    verdict: str | None = None  # self-eval roll-up, e.g. "pass — faithfulness 4/5"
     token_input: int | None = None
     token_output: int | None = None
     latency_ms: float | None = None
@@ -105,6 +106,9 @@ def render_turn_markdown(turn: ExportTurn, *, index: int | None = None, dev: boo
     # --- dev bundle ---
     rid = f" · record `{turn.record_id[:8]}`" if turn.record_id else ""
     parts.append(f"## Turn{n}{rid}")
+    if turn.verdict:
+        parts.append(f"**Verdict:** {turn.verdict}")
+        parts.append("")
     parts.append(f"**You asked:** {turn.question}")
     if turn.standalone_query and turn.standalone_query != turn.question:
         parts.append(f"_rewritten →_ `{turn.standalone_query}`")
@@ -158,6 +162,20 @@ def render_conversation_markdown(
     if not turns:
         header.append("_No turns to export yet._")
         return "\n".join(header) + "\n"
+
+    # Verdict roll-up (dev only) — the at-a-glance judgement across the run.
+    if dev and any(t.verdict for t in turns):
+        header += [
+            "## Verdict summary",
+            "",
+            "| # | verdict | question |",
+            "|---|---------|----------|",
+        ]
+        for i, t in enumerate(turns):
+            q = t.question if len(t.question) <= 60 else t.question[:57] + "..."
+            header.append(f"| {i + 1} | {t.verdict or '—'} | {q} |")
+        header.append("")
+
     body = "\n\n---\n\n".join(
         render_turn_markdown(t, index=i + 1, dev=dev) for i, t in enumerate(turns)
     )

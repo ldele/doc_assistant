@@ -90,6 +90,18 @@ def test_render_conversation_header_and_empty():
     assert "No turns to export yet" in empty
 
 
+def test_verdict_renders_in_dev_and_rolls_up_in_summary():
+    t = _turn()
+    t.verdict = "pass — faithfulness 4/5"
+    # per-turn dev render shows the verdict line
+    assert "**Verdict:** pass — faithfulness 4/5" in render_turn_markdown(t, dev=True)
+    # the conversation header carries a verdict roll-up table (dev only)
+    convo = render_conversation_markdown([t], title="S", dev=True)
+    assert "## Verdict summary" in convo and "pass — faithfulness 4/5" in convo
+    # ...but the clean user transcript stays verdict-free
+    assert "Verdict summary" not in render_conversation_markdown([t], dev=False)
+
+
 # ============================================================
 # Structured log event
 # ============================================================

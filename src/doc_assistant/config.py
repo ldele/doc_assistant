@@ -36,6 +36,12 @@ PC_CHROMA_PATH = str(DATA_PATH / "chroma_pc")  # Parent - Child
 SQLITE_PATH = str(DATA_PATH / "library.db")
 SQLITE_URL = f"sqlite:///{SQLITE_PATH}"
 
+# Conversation + debug exports (markdown transcripts, dev bundles, per-turn JSONL
+# logs). Gitignored, regenerable — written by `doc_assistant.export`. A user
+# downloads a clean transcript; a dev grabs the full bundle (sources + scores +
+# figures + reviewer) plus the session log to iterate quickly.
+EXPORT_DIR = DATA_PATH / "exports"
+
 
 # ============================================================
 # LLM configuration

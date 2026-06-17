@@ -37,6 +37,7 @@ data/tables_debug/
 data/figures/
 data/wiki/
 data/graph/
+data/exports/
 
 # Backups
 backups/

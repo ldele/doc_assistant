@@ -156,6 +156,8 @@ def help_message() -> str:
 - `/similar <id>` — top-N semantically-similar documents (Phase 4)
 - `/bibtex` — render the whole library as BibTeX (writes to `docs/library.bib` from the CLI)
 - `/export-record <id>` — export the full provenance record for one answer as JSON (Phase 5)
+- `/export` — download this conversation as a clean markdown transcript
+- `/export-debug` — dev bundle (sources + scores + figures + reviewer + log) → `data/exports/`
 - `/records` — list the most recent answer records
 - `/review [id]` — run the LLM reviewer on a past answer; no id reviews the most recent (Phase 6)
 - `/synthesis` — show the current synthesis mode (`human` evidence-only vs `ai` dual-layer)

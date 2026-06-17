@@ -12,9 +12,11 @@ import time
 
 import chainlit as cl
 
+from doc_assistant import export
 from doc_assistant.commands import execute_command, parse_command
 from doc_assistant.config import LLM_MODEL, LLM_PROVIDER, SYNTHESIS_MODE, TOP_K, USE_PARENT_CHILD
 from doc_assistant.embeddings import get_active_model_name
+from doc_assistant.figures import load_figure_image_paths
 from doc_assistant.pipeline import RAGPipeline, format_citation
 from doc_assistant.prompts import ANSWER_PROMPT
 from doc_assistant.provenance import (
@@ -53,11 +55,15 @@ _ANSWER_TEMPLATE_HASH = template_hash(str(ANSWER_PROMPT))
 async def on_chat_start() -> None:
     cl.user_session.set("history", [])
     cl.user_session.set("counter", TokenCounter())
+    cl.user_session.set("export_turns", [])
+    cl.user_session.set("session_id", time.strftime("%Y%m%d-%H%M%S"))
     await cl.Message(
         content=(
             f"📚 **Document assistant ready.** {rag.chunk_count()} chunks indexed.  \n"
             f"🤖 Generation model: `{LLM_PROVIDER}/{LLM_MODEL}` · "
-            f"🧬 Embeddings: `{get_active_model_name()}`"
+            f"🧬 Embeddings: `{get_active_model_name()}`  \n"
+            "_Tip: `/export` downloads this conversation; `/export-debug` writes a dev "
+            "bundle (sources + scores + figures + log) to `data/exports/`._"
         ),
     ).send()
 
@@ -238,6 +244,77 @@ async def _on_claim_edit(action: cl.Action) -> None:
 
 
 # ============================================================
+# Export — markdown transcript (user) + dev bundle + per-turn log
+# ============================================================
+
+
+def _export_sources(
+    scored: list[tuple[object, float]], fig_paths: dict[str, str]
+) -> list[export.ExportSource]:
+    """Map (doc, score) pairs to the export's source view (figure paths attached)."""
+    sources: list[export.ExportSource] = []
+    for i, (doc, score) in enumerate(scored):
+        meta = doc.metadata  # type: ignore[attr-defined]
+        fig_id = meta.get("figure_id", "")
+        is_figure = meta.get("chunk_type") == "figure"
+        sources.append(
+            export.ExportSource(
+                n=i + 1,
+                filename=meta.get("filename"),
+                page=meta.get("page"),
+                section=meta.get("section"),
+                reranker_score=float(score),
+                is_figure=is_figure,
+                image_path=fig_paths.get(fig_id) if is_figure else None,
+                excerpt=doc.page_content[:300],  # type: ignore[attr-defined]
+            )
+        )
+    return sources
+
+
+def _append_export_turn(turn: export.ExportTurn) -> None:
+    """Stash a turn in the session transcript and append its event to the session log."""
+    turns = cl.user_session.get("export_turns") or []
+    turns.append(turn)
+    cl.user_session.set("export_turns", turns)
+    session_id = cl.user_session.get("session_id") or "session"
+    with contextlib.suppress(Exception):  # the log is a sidecar — never break a turn
+        export.append_log_event(session_id, export.log_event(turn))
+
+
+async def _send_conversation_export(*, dev: bool) -> None:
+    """Render the session's turns to markdown, write to data/exports/, offer download."""
+    turns = cl.user_session.get("export_turns") or []
+    if not turns:
+        await cl.Message(content="Nothing to export yet — ask a question first.").send()
+        return
+    session_id = cl.user_session.get("session_id") or "session"
+    flavour = "debug" if dev else "transcript"
+    md = export.render_conversation_markdown(
+        turns, title=f"doc_assistant session {session_id}", dev=dev
+    )
+    path = export.write_markdown(f"{session_id}-{flavour}.md", md)
+    await cl.Message(
+        content=f"📄 Exported {len(turns)} turn(s) — {flavour}. Saved to `{path}`.",
+        elements=[cl.File(name=path.name, path=str(path), display="inline")],
+    ).send()
+
+
+@cl.action_callback("export_conversation")
+async def _on_export(action: cl.Action) -> None:
+    await _send_conversation_export(dev=bool(action.payload.get("dev", False)))
+
+
+def _export_action() -> cl.Action:
+    return cl.Action(
+        name="export_conversation",
+        payload={"dev": False},
+        label="⬇ Export chat",
+        tooltip="Download this conversation as markdown",
+    )
+
+
+# ============================================================
 # Message handler
 # ============================================================
 
@@ -248,6 +325,14 @@ async def on_message(message: cl.Message) -> None:
     parsed = parse_command(message.content)
     if parsed is not None:
         cmd, arg = parsed
+        # Export commands need the live session transcript, so they're handled here
+        # (stateful) rather than in the stateless commands.execute_command dispatcher.
+        if cmd in ("export", "export-conversation", "export_conversation"):
+            await _send_conversation_export(dev=False)
+            return
+        if cmd in ("export-debug", "export_debug"):
+            await _send_conversation_export(dev=True)
+            return
         response = execute_command(cmd, arg)
         await cl.Message(content=response).send()
         return
@@ -290,7 +375,17 @@ async def on_message(message: cl.Message) -> None:
 
     docs = [doc for doc, _ in scored]
 
-    source_elements = []
+    # Feature 4c: a retrieved figure chunk (chunk_type='figure') carries the Figure
+    # sidecar id — render its cropped PNG inline beside the text card so figures are
+    # visible, not just described. Batch the path lookup (one DB read for the turn).
+    fig_ids = [
+        fid
+        for doc in docs
+        if doc.metadata.get("chunk_type") == "figure" and (fid := doc.metadata.get("figure_id"))
+    ]
+    fig_paths = load_figure_image_paths(fig_ids) if fig_ids else {}
+
+    source_elements: list[cl.Text | cl.Image] = []
     for i, doc in enumerate(docs):
         preview = doc.page_content[:800] + ("..." if len(doc.page_content) > 800 else "")
         source_elements.append(
@@ -300,6 +395,11 @@ async def on_message(message: cl.Message) -> None:
                 display="side",
             )
         )
+        fig_path = fig_paths.get(doc.metadata.get("figure_id", ""))
+        if fig_path:
+            source_elements.append(
+                cl.Image(name=f"[{i + 1}] figure", path=fig_path, display="inline", size="medium")
+            )
 
     retrieved_chunks = _build_retrieved_chunks(scored)
 
@@ -322,7 +422,17 @@ async def on_message(message: cl.Message) -> None:
                 + render_evidence_markdown(retrieved_chunks)
             ),
             elements=source_elements,
+            actions=[_export_action()],
         ).send()
+        _append_export_turn(
+            export.ExportTurn(
+                question=user_question,
+                answer="(human synthesis mode — evidence only; no AI interpretation)",
+                standalone_query=standalone,
+                sources=_export_sources(scored, fig_paths),
+                embedding_model=get_active_model_name(),
+            )
+        )
         history.append({"role": "user", "content": user_question})
         history.append({"role": "assistant", "content": "(human mode: evidence only)"})
         cl.user_session.set("history", history)
@@ -348,6 +458,7 @@ async def on_message(message: cl.Message) -> None:
         embedding_model=embedding_model,
     )
     record_id: str | None = None
+    review: ReviewResult | None = None
     try:
         record_id = record_answer(
             query=standalone,
@@ -383,7 +494,6 @@ async def on_message(message: cl.Message) -> None:
         # ALWAYS renders (so the provenance id for `/review`/`/export-record`
         # and the active model are visible on every answer): a compact neutral
         # line on clean answers, a full ⚠ block when a confidence signal fires.
-        review: ReviewResult | None = None
         if signals.any():
             # PR 6 — when heuristic flags fire AND a reviewer is available,
             # run the LLM reviewer to add depth. ~$0.001 + ~1-2s per flagged
@@ -431,18 +541,43 @@ async def on_message(message: cl.Message) -> None:
 
     # --- Chunk 2a: segment + eager-persist claims; surface flagged ones with buttons ---
     review_block = ""
+    actions: list[cl.Action] = []
     if record_id is not None:
         try:
             claims = segment_claims(full_answer, retrieved_chunks)
             claim_ids = record_claims(record_id, claims)
-            review_block, claim_actions = _build_claim_review(claims, claim_ids)
-            if claim_actions:
-                msg.actions = claim_actions
+            review_block, actions = _build_claim_review(claims, claim_ids)
         except Exception as e:
             review_block = f"\n\n_⚠ Claim adjudication unavailable: {e}_"
+    actions.append(_export_action())  # always offer the download button
+    msg.actions = actions
 
     msg.content = full_answer + sources_block + usage_block + provenance_block + review_block
     await msg.update()
+
+    # --- Export: stash this turn + append the per-turn debug log event ---
+    reviewer_summary = None
+    if review is not None and not review.error:
+        reviewer_summary = (
+            f"faithfulness {review.faithfulness}/5 · citation {review.citation_density}/5 · "
+            f"hedging {review.hedging_adequacy}/5"
+        )
+    _append_export_turn(
+        export.ExportTurn(
+            question=user_question,
+            answer=full_answer,
+            standalone_query=standalone,
+            sources=_export_sources(scored, fig_paths),
+            reviewer_summary=reviewer_summary,
+            failure_tag=(review.failure_tag if review is not None else None),
+            token_input=turn_in,
+            token_output=turn_out,
+            latency_ms=latency_ms,
+            model_name=getattr(rag.llm, "model", None) or getattr(rag.llm, "model_name", None),
+            embedding_model=embedding_model,
+            record_id=record_id,
+        )
+    )
 
     history.append({"role": "user", "content": user_question})
     history.append({"role": "assistant", "content": full_answer})

@@ -1793,3 +1793,28 @@ Per answer (both AI + human-synthesis paths) builds an `ExportTurn` from data al
 **Validated FREE (no LLM):** a retrieval-only demo built a real dev bundle on the live corpus -> `data/exports/DEMO-debug.md` with the per-source reranker-score table (4 figures flagged) + 4 embedded figure images with their real VLM captions, plus `session-DEMO.jsonl`. App relaunched clean at http://localhost:8000 (task `be9gshp32`) with the export feature live.
 
 **Opens / deferred:** export currently snapshots the session in-memory (resets per chat session) - persisting/reloading past sessions from AnswerRecords is a later nicety. The dev bundle references figure PNGs by absolute path (renders locally / in Obsidian); copying them into a portable bundle folder is a future option. Could also fold the print()->structlog KNOWN_ISSUE into this logging seam later. Nothing committed - working tree, NOT on main per user.
+
+---
+## Session: 2026-06-17 - Self-eval harness: run convs locally + verdict + export (Claude Code, RTX box)
+
+**Starting from:** user wants me to run conversations myself, judge the outputs, and export them - using the LOCAL model. GPU/Ollama busy on another task, so: build + offline-test now, defer the actual run.
+
+**Feasibility (checked):** mostly assembly. The reviewer (`review_answer`) already gives a *reference-free* verdict (rubric vs the answer's own retrieved evidence); `make_client(ollama,...)` forces a local reviewer; export.py renders it. The one missing piece was forcing LOCAL *generation* without editing `.env` (which uses `override=True`).
+
+### src/doc_assistant/pipeline.py - build_chat_model(provider, model)
+Extracted the LangChain chat-model builder out of `RAGPipeline._build_llm` into a module-level, parameterized `build_chat_model` (anthropic->ChatAnthropic, else OllamaLLM). Construction makes no API call, so a caller can do `rag.llm = build_chat_model("ollama", model)` to force free local generation off the hot path. `_build_llm` now delegates.
+
+### src/doc_assistant/reviewer.py - verdict_from_review(review) -> (label, reason)
+Pure roll-up over the rubric: **fail** (reviewer errored / hard tag evidence_contradiction|unsupported_claim / faithfulness<=2), **concern** (any other tag / faithfulness==3 / no score), **pass** (faithfulness>=4, no fault). Reference-free, so it works on any conv without a golden answer.
+
+### src/doc_assistant/export.py - ExportTurn.verdict
+New `verdict` field; rendered as a prominent line in the dev bundle, and a **Verdict summary** roll-up table at the top of `render_conversation_markdown` (dev only - the clean user transcript stays verdict-free).
+
+### scripts/self_eval.py (new) - the harness
+Drives a question set (built-in corpus-relevant default; `--questions <file>`) through retrieve -> generate (local) -> reviewer verdict, builds an ExportTurn per question (sources + scores + figures + reviewer + verdict), writes a dev bundle + per-turn JSONL log to `data/exports/`, and prints a pass/concern/fail tally. **Defaults `--provider ollama` `--model llama3.1:8b`**, routed through the cost guard (anthropic warns). Read-only over the corpus; no DB writes.
+
+**Tests:** +8 (verdict_from_review pass/concern/fail/error/hard-tag; build_chat_model ollama|anthropic type, no network; ExportTurn.verdict render + roll-up table). **Gate green:** ruff (src+tests+scripts+chainlit) OK . mypy --strict src OK (41 files) . bandit 0 high/med OK . **545 passed (was 537, +8)**.
+
+**NOT run (per user - GPU/Ollama busy):** the real local run is deferred. When the GPU is free: `uv run --extra cu130 --python 3.12 python -m scripts.self_eval` (free, Ollama). `--help` smoke confirmed the script imports + parses with NO pipeline construction (heavy imports deferred inside main()), so it touched no GPU.
+
+**Opens:** built-in question set is generic - point `--questions` at a curated set for real signal. The verdict is reviewer-rubric-based (reference-free); a reference-based pass would use the existing `eval/` harness + cases.yaml. Nothing committed - working tree, NOT on main per user.

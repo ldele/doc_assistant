@@ -70,6 +70,35 @@ class ReviewResult:
     raw_response: str | None = None  # for debugging when parsing fails
 
 
+#: failure tags severe enough to fail an answer outright (not merely flag a concern).
+_HARD_FAILURE_TAGS: frozenset[str] = frozenset({"evidence_contradiction", "unsupported_claim"})
+
+
+def verdict_from_review(review: ReviewResult) -> tuple[str, str]:
+    """A crisp ``pass`` / ``concern`` / ``fail`` verdict over a reviewer rubric (pure).
+
+    Reference-free — it grades the answer against its *own* retrieved evidence, so it
+    works on any conversation without a golden answer (the self-eval use). ``fail`` =
+    the reviewer errored, a hard failure tag fired, or faithfulness <= 2; ``concern`` =
+    any other failure tag or middling faithfulness (== 3); ``pass`` = faithfulness >= 4
+    with no flagged fault. Returns ``(label, reason)``."""
+    if review.error:
+        return "fail", "reviewer call failed"
+    tag = review.failure_tag or "none"
+    faith = review.faithfulness
+    if faith is not None and faith <= 2:
+        return "fail", f"low faithfulness {faith}/5"
+    if tag in _HARD_FAILURE_TAGS:
+        return "fail", f"failure tag `{tag}`"
+    if tag != "none":
+        return "concern", f"failure tag `{tag}`"
+    if faith == 3:
+        return "concern", "moderate faithfulness 3/5"
+    if faith is None:
+        return "concern", "no faithfulness score"
+    return "pass", f"faithfulness {faith}/5, no flagged fault"
+
+
 _REVIEWER_PROMPT = """You are reviewing a retrieval-augmented answer for a research \
 assistant. Your job: rate the ANSWER against the EVIDENCE the system retrieved.
 

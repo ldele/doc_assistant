@@ -1,0 +1,18 @@
+# Curated self-eval question set — 5 papers from the public corpus, 5 question kinds.
+# Used by: python -m scripts.self_eval --questions tests/eval/self_eval_questions.txt
+# One question per line; lines starting with '#' are comments (skipped).
+
+# [1] DPR (dpr_karpukhin_2020) — CONCEPT DEFINITION
+What is Dense Passage Retrieval (DPR), and how does its dual-encoder represent questions and passages for retrieval?
+
+# [2] RAG (rag_lewis_2020) — SUMMARY
+Summarize the Retrieval-Augmented Generation (RAG) paper: what limitation of parametric language models does it target, and what are its main contributions?
+
+# [3] ColBERT (colbert_khattab_2020) — METHODOLOGY / HOW IT WORKS
+How does ColBERT's late-interaction (MaxSim) mechanism score query-document relevance, and why does it scale better than a full cross-encoder?
+
+# [4] HyDE (hyde_gao_2022) — SPECIFIC CONTENT / FACTUAL DETAIL
+In HyDE, how is the hypothetical document produced and used for retrieval, and does the method require any relevance labels or training?
+
+# [5] LLM-as-a-judge (llm_judge_zheng_2023) — CRITICAL FINDINGS / EVALUATION
+What biases of using an LLM as a judge does the MT-Bench / Chatbot Arena paper identify, and how well does GPT-4's judgment agree with human preferences?

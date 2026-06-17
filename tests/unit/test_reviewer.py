@@ -22,6 +22,7 @@ from doc_assistant.reviewer import (
     get_reviews,
     persist_review,
     review_answer,
+    verdict_from_review,
 )
 
 
@@ -95,6 +96,42 @@ def test_contested_evidence_tag_is_available_and_appended():
     assert "contested_evidence" in FAILURE_TAGS
     assert FAILURE_TAGS[-1] == "contested_evidence"
     assert _coerce_failure_tag("Contested_Evidence") == "contested_evidence"
+
+
+# ============================================================
+# verdict_from_review (self-eval roll-up)
+# ============================================================
+
+
+def test_verdict_pass_on_clean_high_faithfulness():
+    label, _ = verdict_from_review(
+        ReviewResult(faithfulness=5, citation_density=4, hedging_adequacy=4, failure_tag="none")
+    )
+    assert label == "pass"
+
+
+def test_verdict_fail_on_reviewer_error():
+    label, reason = verdict_from_review(ReviewResult(error="boom"))
+    assert label == "fail" and "failed" in reason
+
+
+def test_verdict_fail_on_low_faithfulness():
+    assert verdict_from_review(ReviewResult(faithfulness=2, failure_tag="none"))[0] == "fail"
+
+
+def test_verdict_fail_on_hard_failure_tag():
+    # A hard tag fails even if faithfulness reads okay (the answer contradicts evidence).
+    label, _ = verdict_from_review(
+        ReviewResult(faithfulness=4, failure_tag="evidence_contradiction")
+    )
+    assert label == "fail"
+
+
+def test_verdict_concern_on_soft_tag_and_on_mid_faithfulness():
+    assert (
+        verdict_from_review(ReviewResult(faithfulness=5, failure_tag="no_hedge"))[0] == "concern"
+    )
+    assert verdict_from_review(ReviewResult(faithfulness=3, failure_tag="none"))[0] == "concern"
 
 
 def test_review_answer_parses_failure_tag():

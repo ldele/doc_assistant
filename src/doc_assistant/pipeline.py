@@ -52,6 +52,31 @@ def _sigmoid_activation_kwarg() -> dict[str, Any]:
     return {}
 
 
+def build_chat_model(provider: str, model: str) -> Any:
+    """Build a streaming LangChain chat model for ``provider``/``model``.
+
+    Parameterized (not config-bound) so a caller can force a specific backend — e.g.
+    local Ollama for a free self-eval run — without editing ``.env``. Constructing
+    the object makes **no** API call, so this is safe to build off the hot path.
+
+    Intentionally separate from ``llm.LLMClient``: the chat path streams tokens
+    through a LangChain model, a different contract from the one-shot ``complete()``
+    used by the reviewer and eval judge."""
+    if provider.lower() == "anthropic":
+        from langchain_anthropic import ChatAnthropic
+        from pydantic import SecretStr
+
+        return ChatAnthropic(  # type: ignore[call-arg]
+            model=model,
+            api_key=SecretStr(ANTHROPIC_API_KEY or ""),
+            max_tokens=1024,
+            streaming=True,
+        )
+    from langchain_ollama import OllamaLLM
+
+    return OllamaLLM(model=model, base_url=OLLAMA_HOST)
+
+
 class RAGPipeline:
     def __init__(self) -> None:
         active_model = get_active_model_name()
@@ -102,26 +127,8 @@ class RAGPipeline:
         self.llm = self._build_llm()
 
     def _build_llm(self) -> Any:
-        """Build the streaming analysis model from ``LLM_PROVIDER``/``LLM_MODEL``.
-
-        Intentionally separate from ``llm.LLMClient``: the chat path streams
-        tokens through a LangChain model, a different contract from the
-        one-shot ``complete()`` used by the reviewer and eval judge.
-        """
-        if LLM_PROVIDER.lower() == "anthropic":
-            from langchain_anthropic import ChatAnthropic
-            from pydantic import SecretStr
-
-            secret_key = SecretStr(ANTHROPIC_API_KEY or "")
-            return ChatAnthropic(  # type: ignore[call-arg]
-                model=LLM_MODEL,
-                api_key=secret_key,
-                max_tokens=1024,
-                streaming=True,
-            )
-        from langchain_ollama import OllamaLLM
-
-        return OllamaLLM(model=LLM_MODEL, base_url=OLLAMA_HOST)
+        """Build the streaming analysis model from ``LLM_PROVIDER``/``LLM_MODEL``."""
+        return build_chat_model(LLM_PROVIDER, LLM_MODEL)
 
     def retrieve(self, query: str, top_k: int = TOP_K) -> list[Document]:
         """Retrieve top-k documents for `query`. Reranker scores discarded."""

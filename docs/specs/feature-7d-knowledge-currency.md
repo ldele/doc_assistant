@@ -1,6 +1,6 @@
 # Spec — Feature 7d: knowledge-currency / claim-corroboration layer
 
-**Status:** Designed 2026-06-10 (Cowork design session). **Blocked on PR 13 (Feature 6 wiki) + PR 16 (Feature 7 concept graph 7a–7c).** Design-locked; not ready for execution until its dependencies ship.
+**Status:** ✅ **Engine BUILT 2026-06-17** (Claude Code, RTX box), validated free on local Ollama. Designed 2026-06-10 (Cowork). Dependencies (PR 13 wiki + PR 16 concept graph 7a–7c) shipped. **Shipped this PR:** `concept_graph.py` polarity + `EdgeSupport` + `compute_node_weights`; new `epistemics.py` (structural chunk projection + markers) + `scripts/compute_epistemics.py`; `chunk_epistemics` table; reviewer `contested_evidence` tag; guard tests + a free real run (748 chunk rows; 169/198 nodes `unique` → neutral; 0 `superseded_trend`; contested signal local-model-noisy). **Deferred to follow-ups (see "Build node" + decisions.md → Feature 7d ADRs):** live answer-time marker injection into `synthesis.py`/`pipeline.py` (needs a stable chunk key plumbed into `RetrievedChunk`; synthesis untouched this PR → eval byte-identical with markers off) and the `query_router.py` seam (Decision 8). Per-claim character-span back-pointers replaced by structural label-in-text attribution.
 **Owner of execution:** Claude Code (code + tests), when Phase 7 is active.
 **Pattern reference:** Enrichment-Layer Pattern (`docs/decisions.md`); Research Integrity Layer (Chunk 2a markers, Chunk 2b reviewer); Feature 7 concept graph (roadmap).
 

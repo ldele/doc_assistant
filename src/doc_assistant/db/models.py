@@ -366,6 +366,52 @@ class Figure(Base):
 
 
 # ============================================================
+# ChunkEpistemics — Phase 7 / Feature 7d (knowledge-currency sidecar).
+# ============================================================
+
+
+class ChunkEpistemics(Base):
+    """Per-chunk projected epistemic weights (Feature 7d) — a regenerable sidecar.
+
+    Written by `epistemics.py` / `scripts/compute_epistemics.py` by projecting the
+    concept graph's node corroboration weights onto the chunks whose text mentions
+    each concept (structural attribution, never an LLM judgement). Keyed by the stable
+    composite `(document_id, chunk_index)` — Chroma's own ids are auto-generated UUIDs,
+    unstable across re-ingest. The whole table is replaced on each `compute_epistemics`
+    run (regenerable, dropped + rebuilt with the graph); it is never part of retrieval
+    and never mutates the chunk store. A chunk with no weighted claim gets no row.
+
+    `coverage_summary` is JSON `{"corroborated": n, "unique": n, "contested": n}`
+    (JSON-as-text, like `AnswerRecord.retrieved_chunks_json`). The unique-source rule
+    lives upstream in `compute_node_weights`: a sole-source claim is `unique`, never
+    contested, so its chunk is never marked.
+    """
+
+    __tablename__ = "chunk_epistemics"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid4()))
+    document_id: Mapped[str] = mapped_column(
+        String, ForeignKey("documents.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    chunk_index: Mapped[int] = mapped_column(Integer, nullable=False)
+
+    n_claims: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    n_contested: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    n_superseded_trend: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    # JSON: {"corroborated": int, "unique": int, "contested": int}.
+    coverage_summary: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    # Structural fingerprint of the graph this projection came from (staleness check).
+    graph_version: Mapped[str | None] = mapped_column(String, nullable=True)
+
+    computed_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
+
+    __table_args__ = (
+        Index("idx_chunk_epistemics_document", "document_id"),
+        Index("idx_chunk_epistemics_chunk", "document_id", "chunk_index"),
+    )
+
+
+# ============================================================
 # AnswerRecord — Phase 5 / Integrity Chunk 1 (provenance card).
 # ============================================================
 

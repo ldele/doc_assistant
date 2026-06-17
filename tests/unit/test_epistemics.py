@@ -1,0 +1,151 @@
+"""Tests for the pure core of ``doc_assistant.epistemics`` (Feature 7d).
+
+Structural concept→chunk attribution, projection of node weights onto chunks, marker
+derivation, and the read-side marker join — all with plain data, no DB / Chroma / LLM.
+The impure build path is covered by ``tests/integration/test_compute_epistemics.py``.
+"""
+
+from __future__ import annotations
+
+from doc_assistant.concept_graph import (
+    DocExtraction,
+    NodeWeight,
+    Triple,
+    assemble_graph,
+    canonical_key,
+    compute_node_weights,
+    snap_polarity,
+    snap_relation,
+)
+from doc_assistant.epistemics import (
+    MARKER_CONTESTED,
+    MARKER_SUPERSEDED,
+    concepts_in_text,
+    derive_markers,
+    markers_for_chunk_keys,
+    project_chunk,
+    project_chunk_weights,
+)
+
+
+def _exp(
+    doc: str,
+    concepts: list[str],
+    triples: list[tuple[str, str, str, str]],
+    *,
+    year: int | None = None,
+) -> DocExtraction:
+    return DocExtraction(
+        doc_id=doc,
+        doc_hash=f"h{doc}",
+        filename=f"{doc}.pdf",
+        concepts=[canonical_key(c) for c in concepts],
+        triples=[
+            Triple(canonical_key(s), snap_relation(r), canonical_key(o), polarity=snap_polarity(p))
+            for s, r, o, p in triples
+        ],
+        year=year,
+    )
+
+
+# ============================================================
+# Structural attribution
+# ============================================================
+
+
+def test_concepts_in_text_word_boundary_match():
+    present = concepts_in_text(
+        "RAG combines BM25 with dense retrieval.",
+        ["rag", "bm25", "dense retrieval", "missing"],
+    )
+    assert present == ["rag", "bm25", "dense retrieval"]
+
+
+def test_concepts_in_text_skips_short_and_avoids_substring_false_positive():
+    # "ir" is too short to attribute; "rag" must NOT match inside "storage".
+    assert concepts_in_text("cloud storage for ir systems", ["rag", "ir"]) == []
+
+
+def test_concepts_in_text_dedupes_repeats():
+    assert concepts_in_text("bm25 bm25 bm25", ["bm25", "bm25"]) == ["bm25"]
+
+
+# ============================================================
+# Marker derivation
+# ============================================================
+
+
+def test_derive_markers():
+    assert derive_markers(0, 0) == []
+    assert derive_markers(2, 0) == [MARKER_CONTESTED]
+    assert derive_markers(0, 1) == [MARKER_SUPERSEDED]
+    assert derive_markers(1, 1) == [MARKER_CONTESTED, MARKER_SUPERSEDED]
+
+
+# ============================================================
+# Projection
+# ============================================================
+
+
+def test_project_chunk_aggregates_coverage_and_marks_contested():
+    weights = {
+        "bm25": NodeWeight("bm25", 1, 1, 0.5, "contested", "contested"),
+        "rag": NodeWeight("rag", 3, 0, 1.0, "stable", "corroborated"),
+    }
+    row = project_chunk("doc1", 2, ["bm25", "rag"], weights)
+    assert row.chunk_key == "doc1:2"
+    assert row.n_claims == 2
+    assert row.n_contested == 1
+    assert row.coverage_summary == {"corroborated": 1, "unique": 0, "contested": 1}
+    assert row.markers == [MARKER_CONTESTED]
+
+
+def test_project_chunk_unique_source_stays_quiet():
+    weights = {"hyde": NodeWeight("hyde", 1, 0, 1.0, "stable", "unique")}
+    row = project_chunk("doc1", 0, ["hyde"], weights)
+    assert row.n_claims == 1
+    assert row.coverage_summary["unique"] == 1
+    assert row.markers == []  # the only source on its topic is never marked
+
+
+def test_project_chunk_weights_maps_to_right_chunks_and_omits_empty():
+    exs = [
+        _exp(
+            "old", ["colbert", "ranking"], [("colbert", "uses", "ranking", "supports")], year=2005
+        ),
+        _exp(
+            "new",
+            ["colbert", "ranking"],
+            [("colbert", "uses", "ranking", "supersedes")],
+            year=2022,
+        ),
+        _exp("z", ["hyde", "prompting"], [("hyde", "uses", "prompting", "supports")], year=2020),
+    ]
+    graph = assemble_graph(exs)
+    weights = compute_node_weights(graph)
+    doc_chunks = [
+        ("doc-colbert", 0, "this chunk explains colbert and ranking together"),
+        ("doc-hyde", 0, "a hyde prompting trick that nobody else covers"),
+        ("doc-empty", 0, "totally unrelated prose with none of the concepts"),
+    ]
+    rows = project_chunk_weights(graph, weights, doc_chunks)
+    by_key = {r.chunk_key: r for r in rows}
+
+    # colbert is newer-disputed → superseded_trend → its chunk is marked.
+    assert MARKER_SUPERSEDED in by_key["doc-colbert:0"].markers
+    # hyde is a sole source → its chunk has a claim but stays quiet.
+    assert by_key["doc-hyde:0"].n_claims >= 1
+    assert by_key["doc-hyde:0"].markers == []
+    # a chunk with no weighted concept gets no row at all.
+    assert "doc-empty:0" not in by_key
+
+
+# ============================================================
+# Read-side marker join (the deferred live-surfacing seam)
+# ============================================================
+
+
+def test_markers_for_chunk_keys_returns_only_marked():
+    index = {"d:1": [MARKER_CONTESTED], "d:2": []}
+    out = markers_for_chunk_keys(["d:1", "d:2", "d:3"], index)
+    assert out == {"d:1": [MARKER_CONTESTED]}  # clean + unknown keys stay quiet

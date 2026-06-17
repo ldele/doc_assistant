@@ -529,3 +529,25 @@ def describe_figure(
         model=model,
         max_tokens=max_tokens,
     )
+
+
+def load_figure_image_paths(figure_ids: list[str]) -> dict[str, str]:
+    """Map ``figure_id`` → on-disk PNG path for the given figures (impure, DB read).
+
+    Only figures whose ``image_path`` is set **and** the file still exists are
+    returned — a caption-only figure (no rendered region) has no image to show. Used
+    by the UI to render a retrieved ``chunk_type='figure'`` chunk's PNG as an image
+    element; keeping the lookup here keeps ``apps/`` a thin shell."""
+    if not figure_ids:
+        return {}
+
+    from sqlalchemy import select
+
+    from doc_assistant.db.models import Figure
+    from doc_assistant.db.session import session_scope
+
+    with session_scope() as session:
+        rows = session.execute(
+            select(Figure.id, Figure.image_path).where(Figure.id.in_(figure_ids))
+        ).all()
+    return {str(fid): str(path) for fid, path in rows if path and Path(path).exists()}

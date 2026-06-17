@@ -1756,3 +1756,40 @@ New `ChunkEpistemics` table (created by `create_all`; `coverage_summary` JSON-as
 **Validated FREE on local Ollama (`llama3.1:8b`):** re-extracted the public 10-paper graph WITH polarity (`build_concept_graph --apply --force --provider ollama`, free) -> `compute_epistemics --apply` -> **748 chunk_epistemics rows, idempotent (748->748 on re-apply)**. Node distribution: **169/198 unique (neutral), 26 contested, 3 corroborated; 0 superseded_trend**; 97/108 edges carry support (11 INFERRED correctly empty). **Finding:** the 8B model is noisy on polarity (inflates `contradicts`; no clean newer-supersedes-older surfaced) - structural machinery correct, signal quality tracks extraction quality (same lesson as PR 16). The unique-source rule held on real data.
 
 **Opens / deferred (own PRs, in decisions.md -> Feature 7d ADRs):** (1) live answer-time marker surfacing in synthesis/pipeline + chunk-key plumbing into `RetrievedChunk` (retrieval uses the parent-child store -> `(parent_index, child_index)`, not `chunk_index`); (2) `query_router.py` seam; (3) tighter polarity prompt / stronger extractor to de-noise contested; (4) per-claim spans, external citation velocity, adjudication-log trust (v2). Nothing committed - working tree (NOT on main per user).
+
+---
+## Session: 2026-06-17 - Figure access: deferred 4c paid run + figure-image UI (Claude Code, RTX box)
+
+**Starting from:** user verifying the running app asked "still no access to figures and tables?" Investigated the real index: tables ARE accessible (Marker spliced 64/957 chunks contain markdown tables); figures were NOT (45 Figure rows, captions present, but **0 vlm_description** -> the PR 9 paid 4c run was never executed -> 0 figure chunks; and the UI rendered sources as `cl.Text` only). User: "Let's do both" -> run the paid 4c + reingest, and build figure-image rendering.
+
+### Paid 4c run (authorized) + targeted reingest
+`describe_figures --apply` (DOC_ASSUME_YES=1, Haiku vision, <$1): **35 figures described**, 7 gated, 3 transport errors, across 9 docs. Then materialized them WITHOUT the destructive `--rebuild` (which `delete(DBDocument)` -> would cascade-wipe the Figure sidecar): dropped the 9 described-fig docs' chunks from both Chroma stores (keeping SQLite Document+Figure rows -> stable `document_id`), then `ingest --skip-cleanup` re-emitted prose + `chunk_type='figure'` chunks. Result: **35 figure chunks** in each store (baseline 957 text + 35 figure; pc 2420 + 35).
+
+### src/doc_assistant/figures.py - load_figure_image_paths
+New impure helper: `figure_id -> on-disk PNG path`, returning only figures whose `image_path` is set AND the file exists (caption-only / missing-file figures excluded). Lives in figures.py so `apps/` stays a thin shell.
+
+### apps/chainlit_app.py - figure images in the source panel
+In the source-element build, a retrieved `chunk_type='figure'` chunk now adds a `cl.Image` (its cropped PNG, inline) beside the text card. Batched one DB read per turn via `load_figure_image_paths`. Covers both the normal and human-synthesis-mode paths (shared `source_elements`). No retrieval/pipeline change.
+
+**Tests:** +1 (`test_load_figure_image_paths_returns_only_existing_files` in test_figures_extract.py - existing-file vs missing vs caption-only). **Gate green:** ruff (src+tests+chainlit_app) OK . mypy --strict figures.py OK . **530 passed (was 529, +1)**. (apps/chainlit_app.py's mypy noise is pre-existing untyped-chainlit, outside CI's `src` scope.)
+
+**Validated FREE (no LLM):** built RAGPipeline, retrieved 3 figure-oriented queries -> 4/3/1 figure chunks in top-10; **every** retrieved figure_id resolved to an on-disk PNG (the exact path the UI renders). App relaunched clean at http://localhost:8000.
+
+**State / opens:** tables = accessible as markdown text (not styled tables - a possible future nicety). Figures = retrievable + rendered as images now. 7 figures stayed caption-gated + 3 had transport errors (re-runnable with `describe_figures --apply --force`). The 7d epistemics markers are still not wired into the live answer (separate deferred). Real-data changes (Figure.vlm_description, figure chunks) are gitignored/local. Code (figures.py, chainlit_app.py, test) uncommitted in the working tree (still NOT on main, per user).
+
+---
+## Session: 2026-06-17 - Conversation + dev export (markdown + figures + per-turn log) (Claude Code, RTX box)
+
+**Starting from:** user asked for a markdown export to iterate faster - a dev bundle (markdown + figures + log) AND a user-facing conversation export. Grounded it in the existing provenance layer (`/export-record` already dumps one answer as JSON; AnswerRecord captures query/answer/chunks+scores/claims/reviewer/tokens/latency). Chose (user): button + slash commands; per-turn JSONL log + rendered provenance.
+
+### src/doc_assistant/export.py (new) - the shared substrate
+`ExportSource`/`ExportTurn` view models (decoupled from the DB). Pure renderers: `render_turn_markdown(dev=False -> clean Q/A + source list; dev=True -> rewritten query, per-source reranker-score table, embedded figures `![cap](png)`, reviewer summary + failure_tag, telemetry)`, `render_conversation_markdown`, `log_event` (flat grep-able dict). Impure boundary: `write_markdown`, `append_log_event` (JSONL, ISO-ts stamped at write so log_event stays pure) -> `data/exports/`. config `EXPORT_DIR` + `.gitignore data/exports/`. Sidecar - never touches the chunk store.
+
+### apps/chainlit_app.py - wired (thin shell)
+Per answer (both AI + human-synthesis paths) builds an `ExportTurn` from data already in hand (scored docs + figure paths + reviewer + tokens) -> stashed in the session + appended to `session-<id>.jsonl`. `/export` (clean transcript) + `/export-debug` (dev bundle) intercepted in on_message (they need live session state, so handled in the app, not the stateless commands dispatcher). A persistent `cl.Action` "Export chat" button on every answer + `@cl.action_callback` -> writes the file + offers a `cl.File` download. `/help` lists both. `review` hoisted before the provenance try so the export turn always has it.
+
+**Tests:** +7 (`tests/unit/test_export.py` - user-clean vs dev-verbose render, conversation header/empty, log_event shape, write/append IO on tmp). **Gate green:** ruff (src+tests+chainlit) OK . mypy --strict src OK (41 files) . bandit 0 high/med OK . **537 passed (was 530, +7)**.
+
+**Validated FREE (no LLM):** a retrieval-only demo built a real dev bundle on the live corpus -> `data/exports/DEMO-debug.md` with the per-source reranker-score table (4 figures flagged) + 4 embedded figure images with their real VLM captions, plus `session-DEMO.jsonl`. App relaunched clean at http://localhost:8000 (task `be9gshp32`) with the export feature live.
+
+**Opens / deferred:** export currently snapshots the session in-memory (resets per chat session) - persisting/reloading past sessions from AnswerRecords is a later nicety. The dev bundle references figure PNGs by absolute path (renders locally / in Obsidian); copying them into a portable bundle folder is a future option. Could also fold the print()->structlog KNOWN_ISSUE into this logging seam later. Nothing committed - working tree, NOT on main per user.

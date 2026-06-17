@@ -205,3 +205,31 @@ def test_no_document_or_chunk_store_mutation(env: SimpleNamespace) -> None:
     # No vector store is created by the figure pass (it never imports chromadb).
     assert not (env.tmp / "chroma").exists()
     assert not (env.tmp / "chroma_pc").exists()
+
+
+def test_load_figure_image_paths_returns_only_existing_files(env: SimpleNamespace) -> None:
+    """The UI lookup yields a path only for figures whose PNG is actually on disk."""
+    doc_id = _seed_document(env.pdf)
+    real_png = env.tmp / "real.png"
+    real_png.write_bytes(b"\x89PNG\r\n")  # bytes are irrelevant — only existence is checked
+    with session_scope() as session:
+        present = Figure(
+            document_id=doc_id, doc_hash=DOC_HASH, page=1, kind="figure", image_path=str(real_png)
+        )
+        gone = Figure(
+            document_id=doc_id,
+            doc_hash=DOC_HASH,
+            page=2,
+            kind="figure",
+            image_path=str(env.tmp / "gone.png"),
+        )
+        caption_only = Figure(
+            document_id=doc_id, doc_hash=DOC_HASH, page=3, kind="figure", image_path=None
+        )
+        session.add_all([present, gone, caption_only])
+        session.flush()
+        pid, gid, cid = str(present.id), str(gone.id), str(caption_only.id)
+
+    paths = figures.load_figure_image_paths([pid, gid, cid])
+    assert paths == {pid: str(real_png)}  # missing-file and caption-only excluded
+    assert figures.load_figure_image_paths([]) == {}  # empty input → no DB hit

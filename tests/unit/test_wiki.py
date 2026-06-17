@@ -249,3 +249,22 @@ def test_assemble_notes_dry_run_has_no_summary():
     )
     assert notes[0].summary == ""
     assert notes[0].title == "Retrieval"  # fallback from keyword
+
+
+def test_assemble_notes_concept_clusters_override_cosine():
+    """When concept_clusters is given, it replaces cosine union-find clustering."""
+    docs = [_doc("a"), _doc("b"), _doc("c")]
+    # A strong a-b cosine edge would group {a,b} via cluster_documents...
+    edges = [SimEdge("a", "b", 0.95)]
+    # ...but the concept communities say {a,c} and {b} instead. The override wins.
+    notes = _assemble_notes(
+        docs,
+        edges,
+        min_similarity=0.55,
+        min_citations=3,
+        summarize=None,
+        per_doc_chunks=2,
+        concept_clusters=[["a", "c"], ["b"]],
+    )
+    members = sorted(sorted(d.doc_id for d in n.docs) for n in notes)
+    assert members == [["a", "c"], ["b"]]

@@ -39,6 +39,7 @@ from doc_assistant.config import (
     WIKI_DIR,
     WIKI_MIN_CITATIONS,
     WIKI_MIN_SIMILARITY,
+    WIKI_USE_CONCEPT_COMMUNITIES,
 )
 
 log = logging.getLogger(__name__)
@@ -352,6 +353,69 @@ def load_doc_graph(embedding_model: str | None = None) -> tuple[list[DocRef], li
     return docs, edges
 
 
+def load_communities(
+    docs: list[DocRef], *, graph_dir: Path | None = None
+) -> list[list[str]] | None:
+    """Document clusters from the Feature 7 concept-graph sidecar — or ``None``.
+
+    The threshold-free replacement for ``cluster_documents``: reads
+    ``CONCEPT_GRAPH_DIR/graph.json`` (Louvain communities, written by
+    ``build_concept_graph``) plus the per-doc extraction cache, and returns the
+    document grouping ``concept_graph.doc_clusters_from_graph`` derives from it —
+    docs grouped by the concept-community they most belong to. Same return shape as
+    ``cluster_documents`` (``list[list[doc_id]]``), so it drops straight into
+    ``_assemble_notes``.
+
+    Returns ``None`` (→ the caller falls back to absolute-cosine clustering) when
+    the graph can't be trusted for the *current* corpus:
+
+    * ``graph.json`` is absent or unreadable, or
+    * **stale** — some non-archived document has no cached extraction for its
+      *current* ``doc_hash`` (a content change since the last ``build_concept_graph
+      --apply`` re-keys the cache, so the missing entry reads as stale).
+
+    Read-only: never extracts, never calls an LLM, never writes the sidecar.
+    """
+    from doc_assistant import concept_graph as cg
+    from doc_assistant.config import CONCEPT_GRAPH_DIR
+
+    root = graph_dir or CONCEPT_GRAPH_DIR
+    graph_path = root / cg.GRAPH_NAME
+    if not graph_path.exists():
+        log.info(
+            "concept-graph clustering on, but %s is absent — using cosine clustering", graph_path
+        )
+        return None
+    try:
+        graph = cg.graph_from_dict(json.loads(graph_path.read_text(encoding="utf-8")))
+    except Exception as e:
+        log.warning("concept graph unreadable (%s) — using cosine clustering", e)
+        return None
+
+    extractions: list[cg.DocExtraction] = []
+    missing: list[str] = []
+    for d in docs:
+        ex = cg.load_cached_extraction(root, d.doc_hash)
+        if ex is None:
+            missing.append(d.filename)
+            continue
+        # The cache stores the doc_id at extraction time; realign to the current PK
+        # so the returned clusters reference live doc_ids regardless of any reassign.
+        ex.doc_id = d.doc_id
+        extractions.append(ex)
+    if missing:
+        log.info(
+            "concept graph stale: %d/%d document(s) lack a current extraction (e.g. %s) "
+            "— run `build_concept_graph --apply`; using cosine clustering",
+            len(missing),
+            len(docs),
+            ", ".join(missing[:3]),
+        )
+        return None
+
+    return cg.doc_clusters_from_graph(graph, extractions)
+
+
 def sample_chunks(doc_ids: list[str], *, per_doc: int = WIKI_CHUNK_SAMPLE) -> dict[str, list[str]]:
     """Sample up to ``per_doc`` chunk excerpts per document from the baseline store."""
     from doc_assistant.config import CHROMA_PATH
@@ -458,6 +522,11 @@ class WikiBuildResult:
     written: int
     removed_files: int
     applied: bool
+    #: Which clustering primitive produced the topics this run — ``"concept-graph"``
+    #: (Feature 7 communities) or ``"cosine-threshold"`` (the absolute-cosine
+    #: fallback). Lets the CLI report which path ran, since the concept path silently
+    #: falls back when the sidecar is absent/stale.
+    clustering: str = "cosine-threshold"
 
 
 def _assemble_notes(
@@ -468,10 +537,22 @@ def _assemble_notes(
     min_citations: int,
     summarize: Any | None,
     per_doc_chunks: int,
+    concept_clusters: list[list[str]] | None = None,
 ) -> list[TopicNote]:
-    """Cluster + (optionally) summarise into ``TopicNote``s. ``summarize`` None = dry-run."""
+    """Cluster + (optionally) summarise into ``TopicNote``s. ``summarize`` None = dry-run.
+
+    ``concept_clusters`` (the Feature 7 community grouping, when present) replaces
+    the absolute-cosine ``cluster_documents`` — the re-point's one behavioural
+    branch. ``[[links]]`` still derive from the stored similarity edges crossing the
+    chosen clusters, so a corpus with no ``DocSimilarity`` edges simply yields no
+    links (see decisions.md → Deferred Improvements for the concept-edge follow-up).
+    """
     by_id = {d.doc_id: d for d in docs}
-    clusters = cluster_documents([d.doc_id for d in docs], edges, min_similarity=min_similarity)
+    clusters = (
+        concept_clusters
+        if concept_clusters is not None
+        else cluster_documents([d.doc_id for d in docs], edges, min_similarity=min_similarity)
+    )
     links_by_idx = compute_links(clusters, edges)
 
     # Pre-compute each cluster's topic_id + title so links can resolve titles.
@@ -517,7 +598,9 @@ def build_wiki(
     min_citations: int = WIKI_MIN_CITATIONS,
     per_doc_chunks: int = WIKI_CHUNK_SAMPLE,
     embedding_model: str | None = None,
+    use_concept_communities: bool = WIKI_USE_CONCEPT_COMMUNITIES,
     wiki_dir: Path | None = None,
+    graph_dir: Path | None = None,
 ) -> WikiBuildResult:
     """Cluster the library into topic notes; write the sidecar on ``apply``.
 
@@ -525,9 +608,19 @@ def build_wiki(
     LLM call. ``apply`` with a ``client`` summarises each topic, writes
     ``WIKI_DIR/{topic_id}.md`` + the manifest, reports drift, and removes orphan
     notes. Never touches the chunk store.
+
+    Clustering primitive: ``use_concept_communities`` (default off) groups documents
+    by the Feature 7 concept-graph communities instead of the absolute-cosine
+    threshold — but only if that sidecar is present and fresh; otherwise it silently
+    falls back to ``cluster_documents`` so the run never fails for a missing graph.
     """
     root = wiki_dir or WIKI_DIR
     docs, edges = load_doc_graph(embedding_model)
+
+    concept_clusters = (
+        load_communities(docs, graph_dir=graph_dir) if use_concept_communities else None
+    )
+    clustering = "concept-graph" if concept_clusters is not None else "cosine-threshold"
 
     summarize = (
         partial(summarize_cluster, client=client) if (apply and client is not None) else None
@@ -540,6 +633,7 @@ def build_wiki(
         min_citations=min_citations,
         summarize=summarize,
         per_doc_chunks=per_doc_chunks,
+        concept_clusters=concept_clusters,
     )
 
     old_manifest = _read_manifest(root)
@@ -563,7 +657,12 @@ def build_wiki(
         _write_manifest(root, new_manifest)
 
     return WikiBuildResult(
-        notes=notes, drift=drift, written=written, removed_files=removed, applied=apply
+        notes=notes,
+        drift=drift,
+        written=written,
+        removed_files=removed,
+        applied=apply,
+        clustering=clustering,
     )
 
 

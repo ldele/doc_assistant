@@ -649,6 +649,64 @@ def graph_to_dict(graph: ConceptGraph) -> dict[str, Any]:
     }
 
 
+def graph_from_dict(data: dict[str, Any]) -> ConceptGraph:
+    """Load a ``ConceptGraph`` from a ``graph.json`` payload (inverse of
+    ``graph_to_dict``). Tolerant of partials / missing keys.
+
+    The persisted ``communities[].key`` (a ``community_id_for`` membership hash) is
+    a render-only field with no ``Community`` attribute, so it is ignored on load;
+    ``meta.integrity_summary`` is a derived view and is dropped (the property
+    recomputes it). Nodes/edges/communities/god_nodes/gaps round-trip exactly."""
+    nodes = [
+        ConceptNode(
+            id=str(n.get("id", "")),
+            label=str(n.get("label", n.get("id", ""))),
+            doc_ids=[str(x) for x in n.get("doc_ids") or []],
+            mentions=int(n.get("mentions", 0)),
+            degree=int(n.get("degree", 0)),
+            community=int(n.get("community", -1)),
+            god_node=bool(n.get("god_node", False)),
+        )
+        for n in data.get("nodes") or []
+    ]
+    edges = [
+        ConceptEdge(
+            source=str(e.get("source", "")),
+            target=str(e.get("target", "")),
+            relations=[str(r) for r in e.get("relations") or []],
+            doc_ids=[str(x) for x in e.get("doc_ids") or []],
+            weight=int(e.get("weight", 0)),
+            integrity=str(e.get("integrity", "")),
+        )
+        for e in data.get("edges") or []
+    ]
+    communities = [
+        Community(
+            id=int(c.get("id", -1)),
+            label=str(c.get("label", "")),
+            node_ids=[str(x) for x in c.get("node_ids") or []],
+            size=int(c.get("size", 0)),
+        )
+        for c in data.get("communities") or []
+    ]
+    gaps_d = data.get("gaps") or {}
+    gaps = GraphGaps(
+        isolated_nodes=[str(x) for x in gaps_d.get("isolated_nodes") or []],
+        thin_bridges=[
+            (str(b[0]), str(b[1])) for b in gaps_d.get("thin_bridges") or [] if len(b) == 2
+        ],
+    )
+    meta = {k: v for k, v in (data.get("meta") or {}).items() if k != "integrity_summary"}
+    return ConceptGraph(
+        nodes=nodes,
+        edges=edges,
+        communities=communities,
+        god_nodes=[str(x) for x in data.get("god_nodes") or []],
+        gaps=gaps,
+        meta=meta,
+    )
+
+
 def extraction_to_dict(ex: DocExtraction) -> dict[str, Any]:
     """Serialize a ``DocExtraction`` to the per-doc extraction-cache JSON payload."""
     return {

@@ -1374,12 +1374,42 @@ saturates within a domain; cluster relatively, not by absolute cosine).
 **Resolution path (2026-06-15, PR 16 spec).** Feature 7 supplies the relative /
 community clustering this note asked for, via **NetworkX Louvain** (not Leiden —
 `leiden_communities` is a non-functional dispatch stub and graspologic conflicts
-with numpy 2; see ADR-1 above). PR 16 lands the re-point **read-only and inert by
+with numpy 2; see ADR-1 above). The re-point lands **read-only and inert by
 default**: `wiki.load_communities()` + a guarded branch in `_assemble_notes`
 behind `WIKI_USE_CONCEPT_COMMUNITIES=false` and a `graph.json` freshness check,
 with `cluster_documents()` (the absolute-cosine union-find) kept as the live
 fallback so shipped 6a–6d is byte-identical. The default flips to concept
 communities in a later checkpoint, once the re-cluster is validated on data.
+
+**✅ Landed (2026-06-17, its own PR).** PR 16 *deferred* the re-point (it kept
+main's credit-safe concept graph and salvaged a quality bundle; the gated wiki
+re-point was explicitly held). This PR ships it as designed above:
+- `concept_graph.graph_from_dict` — the missing inverse of `graph_to_dict`, so the
+  wiki can reload the persisted `graph.json` (round-trip tested).
+- `wiki.load_communities(docs, *, graph_dir=None)` — reads `data/graph/graph.json`
+  (Louvain communities) + the per-doc extraction cache, **freshness-checks by
+  `doc_hash`** (every non-archived doc must have a current cached extraction; a
+  content change since the last `build_concept_graph --apply` re-keys the cache and
+  reads as stale), realigns cached `doc_id`s to live PKs, and returns
+  `concept_graph.doc_clusters_from_graph` — the threshold-free document grouping.
+  Returns `None` (→ caller falls back to cosine) when the sidecar is absent,
+  unreadable, or stale. Read-only: never extracts, never calls an LLM, never writes.
+- `build_wiki(..., use_concept_communities=WIKI_USE_CONCEPT_COMMUNITIES)` → one
+  branch in `_assemble_notes` swaps the clusters; `WikiBuildResult.clustering`
+  records which primitive ran. `scripts/build_wiki.py` exposes
+  `--use-concept-communities/--no-…` and reports the fallback.
+- **Validated FREE** (two dry runs, zero LLM cost) on the real 10-paper sidecar:
+  cosine@0.90 → **2 topics** (a 9-paper blob + 1 outlier — the saturation failure);
+  concept communities → **9 topics** (threshold-free, each paper to its dominant
+  community). Default-off run still reports `cosine-threshold` (inert).
+- **Deferred (next refinement):** `[[links]]` still derive from `DocSimilarity`
+  edges crossing the chosen clusters (`compute_links`), so on a saturated
+  same-domain corpus the cross-cluster sim graph is dense — the concept run above
+  shows ~8 links per small cluster. The honest fix is to derive links from
+  *inter-community concept edges* in `graph.json` rather than doc-cosine edges; left
+  out to keep this PR a minimal, inert-by-default clustering swap (one-PR rule).
+  Flipping `WIKI_USE_CONCEPT_COMMUNITIES` to default-`true` is also deferred until
+  the re-cluster + the links refinement are validated together.
 
 ### Chunk 2c self-improvement loop — built, but its payoff is scale-gated (revisit on server deploy or local-model oddities)
 

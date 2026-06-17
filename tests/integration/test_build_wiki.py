@@ -11,6 +11,7 @@ Deterministic + offline: no network, no real LLM, no Chroma.
 
 from __future__ import annotations
 
+import json
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -19,10 +20,11 @@ from sqlalchemy import create_engine, delete
 from sqlalchemy.orm import sessionmaker
 
 import doc_assistant.db.session as session_mod
+from doc_assistant import concept_graph as cg
 from doc_assistant import wiki
 from doc_assistant.db.models import Base, DocSimilarity, Document
 from doc_assistant.db.session import session_scope
-from doc_assistant.wiki import build_wiki, topic_id_for
+from doc_assistant.wiki import build_wiki, load_communities, load_doc_graph, topic_id_for
 
 
 class _FakeClient:
@@ -91,6 +93,49 @@ def _seed() -> dict[str, str]:
 
 def _wiki_files(root: Path) -> set[str]:
     return {p.name for p in root.glob("topic-*.md")}
+
+
+def _write_concept_graph(
+    root: Path,
+    specs: list[tuple[str, str, list[str], list[tuple[str, str, str]]]],
+) -> None:
+    """Materialize a Feature 7 sidecar (graph.json + per-doc extraction cache).
+
+    ``specs`` = ``(doc_hash, filename, concepts, triples)`` per document. The
+    cache's stored doc_id is set to the hash (``load_communities`` realigns it to
+    the live SQLite PK), so only the doc_hash needs to match the seeded corpus.
+    """
+    extractions = [
+        cg.DocExtraction(
+            doc_id=doc_hash,
+            doc_hash=doc_hash,
+            filename=filename,
+            concepts=[cg.canonical_key(c) for c in concepts],
+            triples=[
+                cg.Triple(cg.canonical_key(s), cg.snap_relation(r), cg.canonical_key(o))
+                for s, r, o in triples
+            ],
+        )
+        for doc_hash, filename, concepts, triples in specs
+    ]
+    graph = cg.assemble_graph(extractions)
+    root.mkdir(parents=True, exist_ok=True)
+    (root / cg.GRAPH_NAME).write_text(json.dumps(cg.graph_to_dict(graph)), encoding="utf-8")
+    ext_dir = root / cg.EXTRACTIONS_DIRNAME
+    ext_dir.mkdir(parents=True, exist_ok=True)
+    for ex in extractions:
+        (ext_dir / f"{ex.doc_hash}.json").write_text(
+            json.dumps(cg.extraction_to_dict(ex)), encoding="utf-8"
+        )
+
+
+# Two concept communities: {a,b} share rag/dpr, c stands alone on bm25/sparse —
+# a grouping the absolute-cosine path can't produce at the 0.90 default (a-b=0.70).
+_GRAPH_SPECS = [
+    ("ha", "a.pdf", ["rag", "dpr"], [("rag", "uses", "dpr")]),
+    ("hb", "b.pdf", ["rag", "dpr"], [("rag", "uses", "dpr")]),
+    ("hc", "c.pdf", ["bm25", "sparse retrieval"], [("bm25", "compares to", "sparse retrieval")]),
+]
 
 
 def test_apply_writes_clustered_notes_and_manifest(env: Path) -> None:
@@ -167,3 +212,79 @@ def test_no_document_mutation_and_no_chroma_dir(env: Path) -> None:
 
         doc_count = session.execute(select(func.count()).select_from(Document)).scalar_one()
     assert doc_count == 3  # unchanged
+
+
+# ============================================================
+# Concept-community clustering (the Feature 6 re-point, PR follow-up)
+# ============================================================
+
+
+def test_load_communities_groups_docs_by_concept_community(env: Path) -> None:
+    ids = _seed()
+    graph_dir = env / "graph"
+    _write_concept_graph(graph_dir, _GRAPH_SPECS)
+
+    docs, _ = load_doc_graph()
+    clusters = load_communities(docs, graph_dir=graph_dir)
+    assert clusters is not None
+    cluster_sets = [set(c) for c in clusters]
+    # a,b share a community; c stands alone — and the returned ids are live PKs.
+    assert {ids["a"], ids["b"]} in cluster_sets
+    assert {ids["c"]} in cluster_sets
+
+
+def test_load_communities_none_when_graph_absent(env: Path) -> None:
+    _seed()
+    docs, _ = load_doc_graph()
+    # No sidecar written at all → fall back signalled by None.
+    assert load_communities(docs, graph_dir=env / "graph") is None
+
+
+def test_load_communities_none_when_stale(env: Path) -> None:
+    _seed()
+    graph_dir = env / "graph"
+    _write_concept_graph(graph_dir, _GRAPH_SPECS)
+    # Drop one doc's cached extraction → its current hash is unrepresented → stale.
+    (graph_dir / cg.EXTRACTIONS_DIRNAME / "hc.json").unlink()
+
+    docs, _ = load_doc_graph()
+    assert load_communities(docs, graph_dir=graph_dir) is None
+
+
+def test_build_wiki_uses_concept_communities_when_fresh(env: Path) -> None:
+    _seed()
+    root = env / "wiki"
+    graph_dir = env / "graph"
+    _write_concept_graph(graph_dir, _GRAPH_SPECS)
+
+    # Default cosine threshold (0.90) would make a,b,c all singletons (a-b is 0.70);
+    # concept communities group {a,b}. Getting a 2-doc topic proves communities drove it.
+    result = build_wiki(
+        apply=True,
+        client=_FakeClient(),
+        wiki_dir=root,
+        use_concept_communities=True,
+        graph_dir=graph_dir,
+    )
+    assert result.clustering == "concept-graph"
+    assert sorted(len(n.docs) for n in result.notes) == [1, 2]
+
+
+def test_build_wiki_falls_back_to_cosine_when_graph_absent(env: Path) -> None:
+    _seed()
+    root = env / "wiki"
+    # Same cosine run, once implicitly (flag off) and once with the flag on but no
+    # sidecar present: the on-with-no-graph run must be byte-identical to the off run.
+    baseline = build_wiki(apply=True, client=_FakeClient(), min_similarity=0.55, wiki_dir=root)
+    assert baseline.clustering == "cosine-threshold"
+
+    fallback = build_wiki(
+        apply=True,
+        client=_FakeClient(),
+        min_similarity=0.55,
+        wiki_dir=root,
+        use_concept_communities=True,
+        graph_dir=env / "graph",  # never created
+    )
+    assert fallback.clustering == "cosine-threshold"
+    assert {n.topic_id for n in fallback.notes} == {n.topic_id for n in baseline.notes}

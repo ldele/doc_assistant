@@ -49,6 +49,9 @@ class RetrievedChunk:
     section: str | None = None
     reranker_score: float | None = None
     chunk_excerpt: str | None = None  # first ~300 chars, for display
+    # Wider grounding text the reviewer/judge sees (REVIEWER_EVIDENCE_CHARS). Transient:
+    # excluded from the persisted JSON and the UI card — only the reviewer reads it.
+    full_text: str | None = None
 
 
 @dataclass
@@ -141,7 +144,11 @@ def record_answer(
     error: str | None = None,
 ) -> str:
     """Persist one answer record. Returns the new ``id``."""
-    chunks_json = json.dumps([asdict(c) for c in retrieved_chunks])
+    # Exclude the transient reviewer-only `full_text` — the persisted card keeps the
+    # compact display excerpt, not the wide grounding text.
+    chunks_json = json.dumps(
+        [{k: v for k, v in asdict(c).items() if k != "full_text"} for c in retrieved_chunks]
+    )
     with session_scope() as session:
         record = AnswerRecord(
             session_id=session_id,

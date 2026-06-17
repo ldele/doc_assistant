@@ -61,6 +61,7 @@ class ExportTurn:
     reviewer_summary: str | None = None  # e.g. "faithfulness 4/5 · hedging 3/5"
     failure_tag: str | None = None
     verdict: str | None = None  # self-eval roll-up, e.g. "pass — faithfulness 4/5"
+    citation_note: str | None = None  # structural citation audit (synthesis.audit_citations)
     token_input: int | None = None
     token_output: int | None = None
     latency_ms: float | None = None
@@ -142,6 +143,10 @@ def render_turn_markdown(turn: ExportTurn, *, index: int | None = None, dev: boo
         tag = f" · failure_tag `{turn.failure_tag}`" if turn.failure_tag else ""
         parts.append("")
         parts.append(f"**Reviewer:** {turn.reviewer_summary or '—'}{tag}")
+
+    if turn.citation_note:
+        parts.append("")
+        parts.append(f"**Citations:** {turn.citation_note}")
 
     parts.append("")
     parts.append(

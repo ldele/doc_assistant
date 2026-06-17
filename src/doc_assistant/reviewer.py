@@ -70,18 +70,25 @@ class ReviewResult:
     raw_response: str | None = None  # for debugging when parsing fails
 
 
-#: failure tags severe enough to fail an answer outright (not merely flag a concern).
-_HARD_FAILURE_TAGS: frozenset[str] = frozenset({"evidence_contradiction", "unsupported_claim"})
+#: failure tags severe enough to fail an answer *regardless of its faithfulness score*.
+#: Only `evidence_contradiction` (the answer actively contradicts the evidence) qualifies
+#: — it's a correctness red flag. `unsupported_claim` is deliberately NOT here: it should
+#: not override a high faithfulness score (observed 2026-06-17 — a 4/5-faithful, 4/5-cited
+#: answer was hard-failed on a single unsupported-claim tag; faithfulness is the primary
+#: signal, so such a case is a `concern`, not a `fail`).
+_HARD_FAILURE_TAGS: frozenset[str] = frozenset({"evidence_contradiction"})
 
 
 def verdict_from_review(review: ReviewResult) -> tuple[str, str]:
     """A crisp ``pass`` / ``concern`` / ``fail`` verdict over a reviewer rubric (pure).
 
     Reference-free — it grades the answer against its *own* retrieved evidence, so it
-    works on any conversation without a golden answer (the self-eval use). ``fail`` =
-    the reviewer errored, a hard failure tag fired, or faithfulness <= 2; ``concern`` =
-    any other failure tag or middling faithfulness (== 3); ``pass`` = faithfulness >= 4
-    with no flagged fault. Returns ``(label, reason)``."""
+    works on any conversation without a golden answer (the self-eval use). Faithfulness
+    is the primary signal: ``fail`` = the reviewer errored, faithfulness <= 2, or an
+    ``evidence_contradiction`` (actively wrong); ``pass`` = faithfulness >= 4 with no
+    flagged fault; ``concern`` = everything in between — a non-contradiction failure tag
+    (e.g. ``unsupported_claim``, ``missing_citation``) even at high faithfulness, or
+    middling faithfulness (== 3). Returns ``(label, reason)``."""
     if review.error:
         return "fail", "reviewer call failed"
     tag = review.failure_tag or "none"
@@ -170,7 +177,8 @@ def _format_evidence(chunks: list[RetrievedChunk]) -> str:
         if c.section:
             header_bits.append(f'"{c.section}"')
         header = " ".join(header_bits)
-        excerpt = (c.chunk_excerpt or "").strip()
+        # Prefer the wider reviewer-grounding text; fall back to the display excerpt.
+        excerpt = (c.full_text or c.chunk_excerpt or "").strip()
         parts.append(f"{header}\n{excerpt}")
     return "\n\n---\n\n".join(parts)
 
@@ -235,27 +243,46 @@ def review_answer(
     client: LLMClient,
     *,
     max_tokens: int = 400,
+    attempts: int = 3,
 ) -> ReviewResult:
     """Run the reviewer on one AnswerProvenance. Returns parsed scores or an error.
 
     ``client`` is an ``LLMClient`` (``llm.get_reviewer_client()``); injected
     so this module has zero vendor SDK imports at module load and the
     provider/model are chosen by config. The model is owned by the client.
+
+    A transient **transport** failure (network blip, rate limit) is retried up to
+    ``attempts`` times, so one flaky call no longer reads as a hard verdict failure
+    (observed 2026-06-17: one judge call errored mid-batch and was scored "fail").
+    A non-JSON completion is **not** retried — the reviewer runs at temperature 0,
+    so a parse failure is deterministic; it returns the raw output for debugging.
     """
     prompt = build_reviewer_prompt(prov)
     messages: list[Message] = [{"role": "user", "content": prompt}]
 
+    # Single-turn, no system prompt, no history, temperature=0 — same isolation
+    # contract as the eval LLM judge. Only the transport call is retried.
     raw = ""
+    last_error: Exception | None = None
+    for _ in range(max(1, attempts)):
+        try:
+            raw = client.complete(messages, temperature=0.0, max_tokens=max_tokens).strip()
+            last_error = None
+            break
+        except Exception as e:  # transient transport error — retry
+            last_error = e
+    if last_error is not None:
+        return ReviewResult(
+            error=f"reviewer call failed: {type(last_error).__name__}: {last_error}",
+            raw_response=raw or None,
+        )
+
     try:
-        # Single-turn, no system prompt, no history, temperature=0 —
-        # same isolation contract as the eval LLM judge.
-        raw = client.complete(messages, temperature=0.0, max_tokens=max_tokens).strip()
         text = _extract_json(raw)
         parsed = json.loads(text)
     except Exception as e:
-        # Keeps the "reviewer call failed" prefix (transport + parse share it)
-        # but now also captures the raw model output for debugging — empty or
-        # non-JSON completions from local models are otherwise opaque.
+        # Non-JSON completion — deterministic at temperature 0, so not retried;
+        # captured raw so an opaque local-model failure stays debuggable.
         return ReviewResult(
             error=f"reviewer call failed: {type(e).__name__}: {e}",
             raw_response=raw or None,

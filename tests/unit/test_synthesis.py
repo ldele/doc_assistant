@@ -7,6 +7,7 @@ from doc_assistant.synthesis import (
     MARKER_OK,
     MARKER_UNSUPPORTED,
     MARKER_WEAK,
+    audit_citations,
     claim_marker,
     format_banner,
     render_evidence_markdown,
@@ -18,6 +19,38 @@ from doc_assistant.synthesis import (
 
 def _src(num_score: float | None, filename: str = "paper.pdf", page: int = 1) -> RetrievedChunk:
     return RetrievedChunk(filename=filename, page=page, reranker_score=num_score)
+
+
+# --- audit_citations ---------------------------------------------------------
+
+
+def test_audit_citations_clean_answer() -> None:
+    a = audit_citations("DPR uses dual encoders [1]. It beats BM25 [2].", n_sources=5)
+    assert a.valid == [1, 2]
+    assert a.clean and not a.out_of_range and not a.malformed
+    assert a.n_sentences == 2 and a.n_uncited_sentences == 0
+
+
+def test_audit_citations_flags_out_of_range() -> None:
+    a = audit_citations("A claim [1]. Another [11].", n_sources=5)
+    assert a.valid == [1] and a.out_of_range == [11]
+    assert not a.clean
+
+
+def test_audit_citations_flags_malformed_key_and_filename() -> None:
+    # The two real failure forms: a BibTeX-ish key and an inline filename — both
+    # invisible to the [n] parser, so the audit is what surfaces them.
+    a = audit_citations("DPR per [karp2020dense]. See (dpr_kumar_2020.pdf) and [1].", n_sources=3)
+    assert a.valid == [1]
+    assert any("karp2020dense" in m for m in a.malformed)
+    assert any("dpr_kumar_2020.pdf" in m for m in a.malformed)
+    assert not a.clean
+    assert "malformed" in a.note()
+
+
+def test_audit_citations_counts_uncited_sentences() -> None:
+    a = audit_citations("Cited claim [1]. Uncited framing sentence here.", n_sources=2)
+    assert a.n_uncited_sentences == 1 and a.clean  # uncited != unclean
 
 
 # --- split_sentences ---------------------------------------------------------

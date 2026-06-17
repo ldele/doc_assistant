@@ -123,6 +123,75 @@ def segment_claims(answer: str, sources: list[RetrievedChunk]) -> list[Claim]:
 
 
 # ============================================================
+# Post-hoc citation audit (Integrity Chunk 2a, surfacing layer)
+# ============================================================
+# A bracket token that ISN'T a bare number — the model citing in a disallowed form
+# ([Smith2020], [karp2020dense], [Source 1]) which the [n] parser silently drops, so
+# the claim merely looks "uncited". Surfacing it tells us the model *tried* to cite.
+_MALFORMED_BRACKET_RE = re.compile(r"\[[^\]]*[A-Za-z][^\]]*\]")
+# A file name cited inline in parentheses: (paper.pdf), (dpr_kumar_2020.pdf).
+_FILENAME_CITE_RE = re.compile(r"\([^()\s]*\.(?:pdf|md|epub|docx?|html?|txt)\)", re.IGNORECASE)
+
+
+@dataclass
+class CitationAudit:
+    """Structural audit of an answer's inline citations vs the retrieved sources."""
+
+    valid: list[int]  # distinct in-range source numbers actually cited
+    out_of_range: list[int]  # numeric citations outside 1..n_sources (hallucinated)
+    malformed: list[str]  # non-numeric citation attempts the [n] parser ignores
+    n_sentences: int
+    n_uncited_sentences: int
+
+    @property
+    def clean(self) -> bool:
+        """No hallucinated numbers and no malformed citation attempts."""
+        return not self.out_of_range and not self.malformed
+
+    @property
+    def reasons(self) -> list[str]:
+        out: list[str] = []
+        if self.out_of_range:
+            out.append(f"out-of-range citations {self.out_of_range}")
+        if self.malformed:
+            shown = ", ".join(self.malformed[:3])
+            out.append(f"{len(self.malformed)} malformed citation(s): {shown}")
+        return out
+
+    def note(self) -> str:
+        """One-line human summary (for the dev bundle / a UI notice)."""
+        base = (
+            f"{len(self.valid)} valid citation(s); "
+            f"{self.n_uncited_sentences}/{self.n_sentences} sentences uncited"
+        )
+        return base + (f"; {'; '.join(self.reasons)}" if self.reasons else "")
+
+
+def audit_citations(answer: str, n_sources: int) -> CitationAudit:
+    """Audit an answer's inline citations against the retrieved sources (pure).
+
+    Surfaces — never rewrites (surface-don't-mutate) — what the ``[n]`` parser can't:
+    valid in-range citations, out-of-range numbers, malformed citation *attempts*
+    ([Smith2020], (paper.pdf)) that otherwise read as plain uncited text, and how many
+    sentences carry no citation. Deterministic."""
+    sentences = split_sentences(answer)
+    nums = [int(x) for x in _CITATION_RE.findall(answer)]
+    valid = sorted({n for n in nums if 1 <= n <= n_sources})
+    out_of_range = sorted({n for n in nums if n < 1 or n > n_sources})
+    malformed = list(
+        dict.fromkeys(_MALFORMED_BRACKET_RE.findall(answer) + _FILENAME_CITE_RE.findall(answer))
+    )
+    n_uncited = sum(1 for s in sentences if not _CITATION_RE.search(s))
+    return CitationAudit(
+        valid=valid,
+        out_of_range=out_of_range,
+        malformed=malformed,
+        n_sentences=len(sentences),
+        n_uncited_sentences=n_uncited,
+    )
+
+
+# ============================================================
 # Rendering — markdown for each layer. Kept here (not apps/) so the UI stays a
 # thin shell. Quiet on clean claims (UX: inform, don't clutter).
 # ============================================================

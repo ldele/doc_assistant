@@ -254,6 +254,14 @@ MIN_FAILURE_TAG_COUNT = int(os.getenv("MIN_FAILURE_TAG_COUNT", "10"))
 # re-reviewed answer can't trip the gate on its own).
 MIN_FAILURE_TAG_DOCS = int(os.getenv("MIN_FAILURE_TAG_DOCS", "5"))
 
+# How many characters of each retrieved chunk the reviewer/judge sees as evidence.
+# Distinct from the ~300-char display excerpt on the provenance card: a faithfulness
+# judge needs to actually *find* a claim's support, and 300 chars of a ~2000-char
+# parent starves it into false "unsupported_claim" verdicts (observed 2026-06-17,
+# self-eval: a capable judge failed well-grounded answers it simply couldn't verify).
+# Wider = fairer judgement but more judge tokens; 1500 is a balance. Not persisted.
+REVIEWER_EVIDENCE_CHARS = int(os.getenv("REVIEWER_EVIDENCE_CHARS", "1500"))
+
 
 # ============================================================
 # Self-organizing wiki / synthesis layer (Phase 7 / Feature 6)

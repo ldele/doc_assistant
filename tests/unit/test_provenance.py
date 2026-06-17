@@ -168,6 +168,31 @@ def test_record_answer_roundtrip(temp_db: Path):
     assert prov.retrieved_chunks[0].reranker_score == 0.87
 
 
+def test_record_answer_excludes_full_text_from_persistence(temp_db: Path):
+    """The wide reviewer-only ``full_text`` is never written to the DB (display
+    excerpt is); persisting it would bloat every record with parent-sized text."""
+    from sqlalchemy import select
+
+    from doc_assistant.db.models import AnswerRecord
+    from doc_assistant.db.session import session_scope
+
+    rid = record_answer(
+        query="q",
+        answer="a",
+        retrieved_chunks=[
+            RetrievedChunk(
+                filename="p.pdf", chunk_excerpt="short display", full_text="WIDE GROUNDING TEXT"
+            )
+        ],
+    )
+    with session_scope() as session:
+        raw = session.execute(
+            select(AnswerRecord.retrieved_chunks_json).where(AnswerRecord.id == rid)
+        ).scalar_one()
+    assert "short display" in raw  # the display excerpt is persisted
+    assert "WIDE GROUNDING TEXT" not in raw and "full_text" not in raw  # the wide text is not
+
+
 def test_get_record_returns_none_for_missing(temp_db: Path):
     assert get_record("does-not-exist") is None
 

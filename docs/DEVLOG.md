@@ -1818,3 +1818,80 @@ Drives a question set (built-in corpus-relevant default; `--questions <file>`) t
 **NOT run (per user - GPU/Ollama busy):** the real local run is deferred. When the GPU is free: `uv run --extra cu130 --python 3.12 python -m scripts.self_eval` (free, Ollama). `--help` smoke confirmed the script imports + parses with NO pipeline construction (heavy imports deferred inside main()), so it touched no GPU.
 
 **Opens:** built-in question set is generic - point `--questions` at a curated set for real signal. The verdict is reviewer-rubric-based (reference-free); a reference-based pass would use the existing `eval/` harness + cases.yaml. Nothing committed - working tree, NOT on main per user.
+
+---
+## Session: 2026-06-17 - Reviewer evidence window: fix the evidence-starved judge (Claude Code, RTX box)
+
+**Finding (from the 3-judge self-eval comparison):** the reviewer judged faithfulness against the **300-char display excerpt** (`RetrievedChunk.chunk_excerpt`), ~15% of a ~2000-char parent. A capable judge (Haiku) then failed well-grounded answers it simply could not verify -> uniform `unsupported_claim` / faithfulness 2/5; the lenient local 8B judge masked it with uniform 5/5. Affected the live app reviewer too, not just self-eval.
+
+### The fix - decoupled reviewer evidence from display
+- **`provenance.RetrievedChunk`** gained a transient `full_text` field (wider grounding for the reviewer; **excluded from the persisted JSON** in `record_answer` and never shown on the card - no DB/UI bloat).
+- **`reviewer._format_evidence`** now prefers `full_text or chunk_excerpt`.
+- **`config.REVIEWER_EVIDENCE_CHARS`** (default 1500) - single knob; comment cites the 2026-06-17 finding.
+- Callers populate it: **`scripts/self_eval.py`** (`_build_turn`) + **`apps/chainlit_app.py`** (`_build_retrieved_chunks`) set `full_text=doc.page_content[:REVIEWER_EVIDENCE_CHARS]`; display excerpt stays 300.
+- **`scripts/self_eval.py`** also gained `--reviewer-provider`/`--reviewer-model` so the judge can differ from the (local) generator; resolves the pinned Anthropic reference judge when `--reviewer-provider anthropic`; both providers cost-guarded independently.
+
+**Tests:** +2 (reviewer prefers full_text; record_answer excludes full_text from persistence). **Gate green:** ruff/mypy --strict src (41)/bandit OK . **547 passed (+2)**.
+
+**Validated (paid, ~5 cheap Haiku judge calls, cost-guard active no bypass) - the verdict loop is now trustworthy:** same 5 questions, local generation, three judges:
+- local llama3.1:8b -> 5/5 PASS (rubber stamp).
+- Haiku @ 300-char evidence -> 5/5 FAIL (starved).
+- **Haiku @ 1500-char evidence -> 3 PASS / 2 FAIL** - discriminating AND correct: fails = DPR (mischaracterized passage encoder as a "Document Index" + fabricated cite key) and ColBERT (invented "O(n^2)->O(n)" complexity claim); passes = RAG, HyDE, LLM-judge (genuinely grounded + cited). Matches the manual read.
+
+**Takeaway:** retrieval is strong; the weak link under local generation is answer grounding/citation discipline (fabricated cite keys, invented specifics) - now reliably caught once the judge can see enough evidence. Bundles: `data/exports/self-eval-20260617-21{2104,3209}.md`.
+
+**Opens:** the reviewer still has no retry (one Haiku call errored in the 300-char run -> read as fail; option 2 from the offer). Local generation citation discipline could use a prompt tweak. Nothing committed by me - working tree (user commits).
+
+---
+## Session: 2026-06-17 - Reviewer transport retry (one flaky judge call != fail) (Claude Code, RTX box)
+
+**Why:** in the 300-char self-eval run one Haiku judge call errored mid-batch and was scored a hard "fail" (no retry). Follow-up to the reviewer-evidence-window fix.
+
+### reviewer.review_answer - retry the transport call only
+`attempts: int = 3` param. The loop retries `client.complete` on any exception (transient transport / rate limit), breaking on first success; an exhausted loop returns the existing `reviewer call failed` error. The **parse** is NOT retried - at temperature 0 a non-JSON completion is deterministic, so retrying wastes (paid) calls; it returns the raw output for debugging as before. Preserves the temp-0 isolation contract (no temperature bump on retry).
+
+**Tests:** +3 (transient error then recover -> call_count 2, error None; exhausts `attempts` -> fail; parse failure NOT retried -> call_count 1). Existing broken-json/parse tests unchanged. **Gate green:** ruff/mypy --strict src (41)/bandit OK . **550 passed (+3)**. No new paid run needed (retry is exercised with mocks).
+
+**Opens:** local-generation citation discipline (fabricated cite keys / invented specifics) remains the real answer-quality weak link - a generation-prompt tweak is the next candidate. Nothing committed by me - working tree.
+
+---
+## Session: 2026-06-17 - Citation-discipline prompt + verdict recalibration (measured via self-eval) (Claude Code, RTX box)
+
+**Goal:** the self-eval loop kept surfacing local-generation citation problems (fabricated cite keys `[karp2020dense]`, invented specifics `O(n^2)->O(n)`). Tighten the answer prompt, then measure with the trustworthy verdict loop. The measurement surfaced two more fixes.
+
+### prompts.ANSWER_PROMPT - citation discipline
+Rewrote the citation instructions: cite EVERY substantive claim with a bracketed source number `[n]` (the parser `synthesis._CITATION_RE = \[(\d+)\]` only recognises bare `[n]`, so a fabricated key/filename parses as *uncited*); when citing use ONLY `[n]` - never an author/year/BibTeX key or filename; never state a figure/percentage/complexity claim absent from the sources. **v1** ("NEVER invent a citation") over-corrected - the 8B stopped citing at all - so **rebalanced** to lead with the positive requirement + the real consequence ("a claim with no [n] is treated as unsupported, so cite as you write") and narrow the prohibition to "when you cite, use only [n]".
+
+**Effect (observed, local llama3.1:8b):** fabricated keys + invented big-O **gone**; citation discipline restored (RAG answer cited `[1]`..`[8]`, citation 4/5; ColBERT faithfulness 2->5). No test pins the prompt (template_hash tests use literals) so the change is free of test impact; provenance prompt_version hash rolls (intended).
+
+### reviewer.verdict_from_review - recalibration
+**Bug the measurement exposed:** a 4/5-faithful, 4/5-cited RAG answer was hard-FAILED on a single `unsupported_claim` tag. `_HARD_FAILURE_TAGS` narrowed from `{evidence_contradiction, unsupported_claim}` to `{evidence_contradiction}` only - faithfulness is the primary signal, so a non-contradiction tag at high faithfulness is now a `concern`, not a `fail`. (faith<=2 or evidence_contradiction still fail.)
+
+**Free re-derivation** (pure fn over the recorded run, no new LLM calls): rebalanced-prompt run `215207` goes from **3 fail / 1 concern / 1 pass -> 1 fail / 3 concern / 1 pass** - only the genuinely-weak DPR (faith 2/5) fails; the well-grounded RAG/ColBERT/LLM-judge become concern; HyDE passes. Matches reality.
+
+**Key methodological finding:** single-run self-eval on a non-deterministic local generator is **noise-dominated** - RAG & LLM-judge flipped pass<->fail across "identical" runs purely from generation variance. You cannot attribute a verdict change to a prompt tweak at n=1; a real measurement needs --repeat + variance (rigor-gate) or a deterministic/stronger generator. So I did NOT tune further on single runs.
+
+**Tests:** +1 (verdict: unsupported_claim @ high faithfulness -> concern; evidence_contradiction still fail; low-faith still fail). **Gate green:** ruff/mypy --strict src (41)/bandit OK . **551 passed**. 3 paid Haiku self-eval runs total this thread (~15 cheap judge calls).
+
+**Opens:** real levers for local-gen quality are a stronger generator or post-hoc citation enforcement, NOT more prompt wording (variance swamps it). A proper --repeat eval would quantify the prompt delta if wanted. Nothing committed by me - working tree.
+
+---
+## Session: 2026-06-17 - Post-hoc citation audit + self_eval --repeat (Claude Code, RTX box)
+
+**Context:** user asked (a) is the small public corpus the problem, (b) add --repeat if needed, (c) post-hoc citation enforcement. Corpus answer: the verdict NOISE is generation non-determinism (Ollama default temp ~0.8), not corpus size; but the 10-paper corpus does under-test retrieval (every Q maps to one obvious paper) and pads top-K with off-topic chunks (the RAG mis-cite). Fabrication is the 8B, not the corpus.
+
+### synthesis.audit_citations (new) - structural citation enforcement (surface, don't mutate)
+`audit_citations(answer, n_sources) -> CitationAudit`: valid in-range `[n]`, **out-of-range** numbers, **malformed** citation attempts the `[n]` parser silently drops (`[karp2020dense]`, `(paper.pdf)` - via `_MALFORMED_BRACKET_RE` + `_FILENAME_CITE_RE`), uncited-sentence count, `clean` flag, `note()`. Pure/deterministic. Fills the gap segment_claims left: a malformed cite previously just looked "uncited". +4 tests.
+
+### Surfaced two ways
+- **self_eval dev bundle**: `ExportTurn.citation_note` rendered per turn (export.py).
+- **Live app**: a QUIET `Citation check` block appended only when `not clean` (out-of-range/malformed) - surface-don't-mutate, quiet-on-clean.
+
+### self_eval --repeat N (variance-aware)
+Runs each question N times, prints per-question pass-rate (`2/2 pass {...}`) + aggregate. Directly addresses the n=1 noise finding. Title/bundle note the Nx.
+
+**Tests:** +4 (audit_citations clean/out-of-range/malformed/uncited). **Gate green:** ruff/mypy --strict src (41)/bandit OK . **555 passed (+4)**.
+
+**Free validation (local ollama judge, --repeat 2 --limit 2 - no paid calls):** --repeat aggregation works. The citation audit immediately caught what the rubber-stamping local judge (all 5/5 pass) missed: DPR answers cited NOTHING ("0 valid; 16/16 uncited", "0 valid; 9/9 uncited") and one RAG answer hallucinated **out-of-range [24, 29]** (only 10 sources). Deterministic + free - more reliable than the LLM verdict on the citation axis.
+
+**Opens:** the citation audit is the free structural signal; pair with --repeat + a strong judge for the semantic axis. Generation-temperature lever (lower temp -> less noise + less fabrication) is still untried (would change live behaviour). Nothing committed by me - working tree.

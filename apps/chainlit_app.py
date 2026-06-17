@@ -14,7 +14,14 @@ import chainlit as cl
 
 from doc_assistant import export
 from doc_assistant.commands import execute_command, parse_command
-from doc_assistant.config import LLM_MODEL, LLM_PROVIDER, SYNTHESIS_MODE, TOP_K, USE_PARENT_CHILD
+from doc_assistant.config import (
+    LLM_MODEL,
+    LLM_PROVIDER,
+    REVIEWER_EVIDENCE_CHARS,
+    SYNTHESIS_MODE,
+    TOP_K,
+    USE_PARENT_CHILD,
+)
 from doc_assistant.embeddings import get_active_model_name
 from doc_assistant.figures import load_figure_image_paths
 from doc_assistant.pipeline import RAGPipeline, format_citation
@@ -35,6 +42,7 @@ from doc_assistant.reviewer import ReviewResult, persist_review, review_answer
 from doc_assistant.synthesis import (
     MARKER_OK,
     Claim,
+    audit_citations,
     render_evidence_markdown,
     segment_claims,
 )
@@ -181,6 +189,8 @@ def _build_retrieved_chunks(scored: list[tuple[object, float]]) -> list[Retrieve
                 section=meta.get("section"),
                 reranker_score=float(score),
                 chunk_excerpt=doc.page_content[:300],  # type: ignore[attr-defined]
+                # Wider grounding for the reviewer (not persisted/displayed).
+                full_text=doc.page_content[:REVIEWER_EVIDENCE_CHARS],  # type: ignore[attr-defined]
             )
         )
     return chunks
@@ -552,7 +562,19 @@ async def on_message(message: cl.Message) -> None:
     actions.append(_export_action())  # always offer the download button
     msg.actions = actions
 
-    msg.content = full_answer + sources_block + usage_block + provenance_block + review_block
+    # Post-hoc citation audit — quiet unless the model cited badly (out-of-range
+    # numbers or malformed forms the [n] parser silently drops). Surface, don't rewrite.
+    citation = audit_citations(full_answer, len(docs))
+    citation_block = "" if citation.clean else f"\n\n---\n⚠ **Citation check:** {citation.note()}"
+
+    msg.content = (
+        full_answer
+        + sources_block
+        + usage_block
+        + provenance_block
+        + review_block
+        + citation_block
+    )
     await msg.update()
 
     # --- Export: stash this turn + append the per-turn debug log event ---
@@ -570,6 +592,7 @@ async def on_message(message: cl.Message) -> None:
             sources=_export_sources(scored, fig_paths),
             reviewer_summary=reviewer_summary,
             failure_tag=(review.failure_tag if review is not None else None),
+            citation_note=citation.note(),
             token_input=turn_in,
             token_output=turn_out,
             latency_ms=latency_ms,

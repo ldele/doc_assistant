@@ -134,6 +134,25 @@ def test_verdict_concern_on_soft_tag_and_on_mid_faithfulness():
     assert verdict_from_review(ReviewResult(faithfulness=3, failure_tag="none"))[0] == "concern"
 
 
+def test_verdict_unsupported_claim_with_high_faithfulness_is_concern_not_fail():
+    # 2026-06-17 recalibration: a single unsupported-claim tag must NOT hard-fail an
+    # otherwise well-grounded answer (faithfulness is the primary signal).
+    label, _ = verdict_from_review(
+        ReviewResult(faithfulness=4, citation_density=4, failure_tag="unsupported_claim")
+    )
+    assert label == "concern"
+    # ...but evidence_contradiction (actively wrong) still fails regardless of score.
+    assert (
+        verdict_from_review(ReviewResult(faithfulness=4, failure_tag="evidence_contradiction"))[0]
+        == "fail"
+    )
+    # ...and a low faithfulness still fails whatever the tag.
+    assert (
+        verdict_from_review(ReviewResult(faithfulness=2, failure_tag="unsupported_claim"))[0]
+        == "fail"
+    )
+
+
 def test_review_answer_parses_failure_tag():
     client = _mock_client(
         '{"faithfulness": 2, "citation_density": 2, "hedging_adequacy": 2, '
@@ -178,6 +197,14 @@ def test_format_evidence_includes_header_per_chunk():
     assert "[2]" in out and "b.pdf" in out
 
 
+def test_format_evidence_prefers_full_text_over_display_excerpt():
+    # The judge sees the wider grounding text, not the 300-char display excerpt
+    # (the fix for the evidence-starved-judge finding, 2026-06-17).
+    chunks = [RetrievedChunk(filename="a.pdf", chunk_excerpt="short", full_text="WIDE grounding")]
+    out = _format_evidence(chunks)
+    assert "WIDE grounding" in out and "short" not in out
+
+
 # ============================================================
 # review_answer — parsing
 # ============================================================
@@ -214,6 +241,40 @@ def test_review_answer_handles_broken_json():
     assert "reviewer call failed" in result.error
     # The raw output is captured so an opaque local-model failure is debuggable.
     assert result.raw_response == "not json at all"
+
+
+# ============================================================
+# review_answer — transport retry (2026-06-17)
+# ============================================================
+
+_GOOD_JSON = (
+    '{"faithfulness": 4, "citation_density": 3, "hedging_adequacy": 5, '
+    '"unsupported_claims_count": 0, "failure_tag": "none", "notes": "ok"}'
+)
+
+
+def test_review_answer_retries_transient_transport_error_then_recovers():
+    client = MagicMock()
+    client.complete.side_effect = [ConnectionError("blip"), _GOOD_JSON]
+    result = review_answer(_prov(), client, attempts=3)
+    assert result.error is None and result.faithfulness == 4
+    assert client.complete.call_count == 2  # failed once, succeeded on retry
+
+
+def test_review_answer_exhausts_retries_then_fails():
+    client = MagicMock()
+    client.complete.side_effect = ConnectionError("down")
+    result = review_answer(_prov(), client, attempts=2)
+    assert result.error is not None and "reviewer call failed" in result.error
+    assert client.complete.call_count == 2  # tried exactly `attempts` times
+
+
+def test_review_answer_does_not_retry_parse_failure():
+    # A non-JSON completion is deterministic at temp 0 → retrying wastes calls.
+    client = _mock_client("not json at all")
+    result = review_answer(_prov(), client, attempts=3)
+    assert result.error is not None
+    assert client.complete.call_count == 1  # parse failure is NOT retried
 
 
 def test_review_answer_extracts_json_from_surrounding_prose():

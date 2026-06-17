@@ -89,6 +89,14 @@ def test_coerce_failure_tag_falls_back_to_none():
     assert _coerce_failure_tag(42) == "none"
 
 
+def test_contested_evidence_tag_is_available_and_appended():
+    # Feature 7d added contested_evidence — present, accepted, and appended last so it
+    # never re-buckets historical aggregates.
+    assert "contested_evidence" in FAILURE_TAGS
+    assert FAILURE_TAGS[-1] == "contested_evidence"
+    assert _coerce_failure_tag("Contested_Evidence") == "contested_evidence"
+
+
 def test_review_answer_parses_failure_tag():
     client = _mock_client(
         '{"faithfulness": 2, "citation_density": 2, "hedging_adequacy": 2, '

@@ -19,6 +19,7 @@ from doc_assistant.concept_graph import (
     build_nodes_edges,
     canonical_key,
     community_id_for,
+    compute_node_weights,
     doc_clusters_from_graph,
     extraction_from_dict,
     extraction_to_dict,
@@ -26,8 +27,30 @@ from doc_assistant.concept_graph import (
     graph_to_dict,
     normalize_relation,
     parse_extraction,
+    snap_polarity,
     snap_relation,
 )
+
+
+def _exp(
+    doc: str,
+    concepts: list[str],
+    triples: list[tuple[str, str, str, str]],
+    *,
+    year: int | None = None,
+) -> DocExtraction:
+    """An extraction with explicit (subject, relation, object, polarity) + year (7d)."""
+    return DocExtraction(
+        doc_id=doc,
+        doc_hash=f"h{doc}",
+        filename=f"{doc}.pdf",
+        concepts=[canonical_key(c) for c in concepts],
+        triples=[
+            Triple(canonical_key(s), snap_relation(r), canonical_key(o), polarity=snap_polarity(p))
+            for s, r, o, p in triples
+        ],
+        year=year,
+    )
 
 
 def _ex(
@@ -299,3 +322,104 @@ def test_graph_dict_round_trip():
     assert back.meta == {"provider": "ollama", "model": "llama3.1:8b"}
     # Re-serialising the reloaded graph reproduces the persisted dict exactly.
     assert graph_to_dict(back) == graph_to_dict(g)
+
+
+# ============================================================
+# Claim-corroboration node weights (Feature 7d)
+# ============================================================
+
+
+def test_snap_polarity_vocab_and_synonyms():
+    assert snap_polarity("supports") == "supports"
+    assert snap_polarity("CONTRADICTS") == "contradicts"
+    assert snap_polarity("disputes") == "contradicts"
+    assert snap_polarity("replaces") == "supersedes"
+    assert snap_polarity("improves") == "refines"
+    assert snap_polarity("") == "supports"  # neutral default — noise never invents a dispute
+    assert snap_polarity("frobnicates") == "supports"
+
+
+def test_edge_support_records_carry_polarity_and_year():
+    exs = [
+        _exp("a", ["rag", "dpr"], [("rag", "uses", "dpr", "supports")], year=2020),
+        _exp("b", ["rag", "dpr"], [("rag", "uses", "dpr", "contradicts")], year=2021),
+    ]
+    _, edges = build_nodes_edges(exs)
+    edge = next(e for e in edges if {e.source, e.target} == {"rag", "dpr"})
+    stances = {(s.doc_id, s.polarity, s.year) for s in edge.support}
+    assert stances == {("a", "supports", 2020), ("b", "contradicts", 2021)}
+
+
+def test_node_weights_corroborated_stable():
+    exs = [
+        _exp("a", ["rag", "dpr"], [("rag", "uses", "dpr", "supports")], year=2020),
+        _exp("b", ["rag", "dpr"], [("rag", "uses", "dpr", "supports")], year=2021),
+    ]
+    w = compute_node_weights(assemble_graph(exs))
+    assert w["rag"].coverage == "corroborated"
+    assert w["rag"].direction == "stable"
+    assert (w["rag"].n_supporting_sources, w["rag"].n_contradicting_sources) == (2, 0)
+
+
+def test_node_weights_contested_when_disputed_not_newer():
+    exs = [
+        _exp("a", ["bm25", "dense"], [("bm25", "compares to", "dense", "supports")], year=2019),
+        _exp("b", ["bm25", "dense"], [("bm25", "compares to", "dense", "contradicts")], year=2018),
+    ]
+    w = compute_node_weights(assemble_graph(exs))
+    assert w["bm25"].coverage == "contested"
+    assert w["bm25"].direction == "contested"  # the disputing source is older, not newer
+    assert w["bm25"].n_contradicting_sources == 1
+
+
+def test_node_weights_superseded_trend_when_dispute_is_newer():
+    exs = [
+        _exp(
+            "old", ["colbert", "ranking"], [("colbert", "uses", "ranking", "supports")], year=2005
+        ),
+        _exp(
+            "new",
+            ["colbert", "ranking"],
+            [("colbert", "uses", "ranking", "supersedes")],
+            year=2022,
+        ),
+    ]
+    w = compute_node_weights(assemble_graph(exs))
+    assert w["colbert"].coverage == "contested"
+    assert w["colbert"].direction == "superseded_trend"  # newer source disputes the older
+
+
+def test_node_weights_unique_source_is_neutral():
+    """The regression that matters most: a sole-source claim is unique, never penalized."""
+    exs = [
+        _exp("z", ["hyde", "prompting"], [("hyde", "uses", "prompting", "supports")], year=2020)
+    ]
+    w = compute_node_weights(assemble_graph(exs))
+    assert w["hyde"].coverage == "unique"
+    assert w["hyde"].direction == "stable"
+    assert w["hyde"].n_contradicting_sources == 0
+    assert w["hyde"].agreement_ratio == 1.0
+
+
+def test_node_weights_isolated_node_is_neutral():
+    """A concept with no stated claim (only mentioned) is unique/stable, not down-weighted."""
+    exs = [_exp("a", ["loner"], [])]
+    w = compute_node_weights(assemble_graph(exs))
+    assert w["loner"].coverage == "unique"
+    assert w["loner"].direction == "stable"
+    assert w["loner"].n_supporting_sources == 0
+
+
+def test_node_weights_age_alone_does_not_penalize():
+    """Decision 1: an old but uncontradicted claim keeps full weight — age is not an input."""
+    exs = [
+        _exp(
+            "ancient", ["tfidf", "ranking"], [("tfidf", "uses", "ranking", "supports")], year=1975
+        ),
+        _exp(
+            "recent", ["tfidf", "ranking"], [("tfidf", "uses", "ranking", "supports")], year=2024
+        ),
+    ]
+    w = compute_node_weights(assemble_graph(exs))
+    assert w["tfidf"].coverage == "corroborated"
+    assert w["tfidf"].direction == "stable"  # old, but never contradicted → stable

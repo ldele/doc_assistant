@@ -49,6 +49,9 @@ FAILURE_TAGS: tuple[str, ...] = (
     "evidence_contradiction",  # answer contradicts a retrieved passage
     "no_hedge",  # over-confident given weak/conflicting evidence
     "unsupported_claim",  # a distinct claim with no traceable source
+    # Feature 7d — answer leans on a claim the corpus itself disputes / has trended
+    # away from (contested or superseded-trending evidence). Appended (never reorder).
+    "contested_evidence",
 )
 
 
@@ -106,12 +109,15 @@ Also count:
 
 Also pick the single DOMINANT failure mode of this answer as ``failure_tag``,
 exactly one of: none | missing_citation | overclaim | evidence_contradiction |
-no_hedge | unsupported_claim. Use "none" if the answer has no notable fault.
+no_hedge | unsupported_claim | contested_evidence. Use "none" if the answer has no
+notable fault.
 * missing_citation — claims are made but not tied to any retrieved source.
 * overclaim — asserts more than the evidence supports.
 * evidence_contradiction — the answer contradicts a retrieved passage.
 * no_hedge — over-confident given weak or conflicting evidence.
 * unsupported_claim — a distinct claim with no traceable source.
+* contested_evidence — the answer rests on a claim the evidence itself disputes or
+  shows the field has moved away from, without flagging that disagreement.
 
 Add a short ``notes`` field (1-2 sentences max) explaining the lowest score.
 

@@ -1155,6 +1155,53 @@ This is the distinguishing capability — most existing tools stop short of this
     re-ingest — there is no stable chunk id. 7d back-pointers must use a deterministic
     composite key (`{document_id}:p{parent_index}`), not a Chroma id.
 
+- **Feature 7d — Knowledge-currency / claim-corroboration layer.** ✅ **Shipped
+  (2026-06-17), validated free on local Ollama.** Spec: `docs/specs/feature-7d-
+  knowledge-currency.md`. The epistemic layer on top of Feature 7: each concept
+  *claim* gets a **structural** corroboration weight (supporting vs disputing
+  sources, and whether disputes are *newer*), projected onto the chunks that mention
+  it. New `epistemics.py` + `scripts/compute_epistemics.py` + a regenerable
+  `chunk_epistemics` sidecar table; `concept_graph.py` extended with relation
+  **polarity** + per-doc **`EdgeSupport` (doc_id, polarity, year)** records +
+  `compute_node_weights`; `reviewer.py` gained the `contested_evidence` failure tag.
+  Decisions, recorded as ADRs:
+  - **ADR — age is never an input (Decision 1).** Currency *emerges* from polarity
+    over time: a claim is `superseded_trend` only when *disputing* sources are newer
+    than supporting ones. An old, uncontradicted claim keeps full weight (`stable`).
+    `year` is used only for *relative* ordering, never as an absolute age penalty.
+  - **ADR — the unique-source rule (Decision 4), the regression that matters.** A
+    concept that is the corpus's *only* source on its topic is `coverage="unique"` →
+    **neutral, never down-weighted / never marked**. Contested vs unique is
+    distinguished purely by whether *disputing* sources exist. Guard-tested on toy
+    graphs **and** held on the real run (169/198 nodes `unique`).
+  - **ADR — structural attribution for chunk back-pointers, not per-claim LLM spans.**
+    The spec wanted `source_chunk_ids` per claim. The honest, no-LLM way: a concept is
+    "in" a chunk if its canonical label occurs in the chunk text (word-boundary
+    match). This gives real chunk-level granularity (a parent can hold a contested
+    claim and three clean ones) without trusting the model to cite spans — consistent
+    with "structural weights only". Per-claim character spans are the deferred refinement.
+  - **ADR — sidecar keyed by `{document_id}:{chunk_index}` (baseline store).** The
+    composite is stable where Chroma's auto-UUIDs are not (branch ADR-4). The
+    parent-child store uses `(parent_index, child_index)` instead and is left for the
+    live-surfacing follow-up. Whole table replaced per run (regenerable).
+  - **Polarity extraction is local-model-noisy (validation finding).** Re-extracting
+    the public 10-paper corpus on `llama3.1:8b` then projecting gave 26 contested
+    nodes / 308 marked chunks / **0 superseded_trend** — plausibly inflated contested
+    signal (the 8B model labels "differs-from / compares-to" as `contradicts`), and no
+    clean newer-supersedes-older ordering surfaced. The structural machinery is
+    correct; signal *quality* tracks extraction quality (same lesson as PR 16's noisy
+    local extraction). A tighter polarity prompt or a stronger model sharpens it.
+  - **Deferred (own follow-ups, documented):** (1) **live answer-time surfacing** —
+    inject `contested`/`superseded_trend` into the synthesis evidence layer; needs a
+    stable chunk key plumbed into `RetrievedChunk` (retrieval uses the parent-child
+    store, which carries `parent_index`/`child_index`, not `chunk_index`). Synthesis is
+    deliberately *untouched* this PR, so the eval is byte-identical with markers off.
+    The marker-derivation join (`epistemics.markers_for_chunk_keys` /
+    `load_epistemics_index`) + a mocked guard test ship now. (2) **`query_router.py`
+    seam** (Decision 8) — the local/global retrieval-mode split; a distinct retrieval
+    concern the spec only measures "when Phase 7 lands." (3) per-claim spans, external
+    citation velocity, adjudication-log trust (v2) — all out of scope per the spec.
+
 ### Phase 8: UI Polish
 
 Goal: design pass on everything built so far.

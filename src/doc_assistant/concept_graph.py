@@ -67,6 +67,17 @@ log = logging.getLogger(__name__)
 #: convention. NOT a confidence score — see the module docstring.
 INTEGRITY_TAGS: tuple[str, ...] = ("EXTRACTED", "INFERRED", "AMBIGUOUS")
 
+#: Relation polarity (Feature 7d) — the *epistemic* axis of a stated claim, distinct
+#: from the relation phrase (the semantic axis). Captured per supporting document so
+#: corroboration vs contradiction is countable. ``supports`` is the neutral default
+#: when extraction omits/garbles it (the common, least-surprising case). NOT
+#: self-reported confidence — it's "does this doc affirm or dispute the link".
+POLARITIES: tuple[str, ...] = ("supports", "refines", "contradicts", "supersedes")
+_POLARITY_DEFAULT = "supports"
+#: Which polarities corroborate a claim vs dispute it (used by ``compute_node_weights``).
+SUPPORTING_POLARITIES: frozenset[str] = frozenset({"supports", "refines"})
+OPPOSING_POLARITIES: frozenset[str] = frozenset({"contradicts", "supersedes"})
+
 GRAPH_NAME = "graph.json"
 EXTRACTIONS_DIRNAME = "extractions"
 
@@ -81,23 +92,31 @@ class Triple:
     """One extracted relation: ``subject`` --(``relation``)--> ``object``.
 
     ``subject`` / ``object`` are canonical concept keys; ``relation`` is a short
-    normalized verb phrase. Self-loops and empty endpoints are dropped on parse.
+    normalized verb phrase. ``polarity`` (Feature 7d) is the epistemic axis — one
+    of ``POLARITIES``, defaulting to ``supports`` when extraction omits it. Self-loops
+    and empty endpoints are dropped on parse.
     """
 
     subject: str
     relation: str
     object: str
+    polarity: str = _POLARITY_DEFAULT
 
 
 @dataclass
 class DocExtraction:
-    """One document's extracted concepts + relations (the per-doc cache payload)."""
+    """One document's extracted concepts + relations (the per-doc cache payload).
+
+    ``year`` (Feature 7d) is the document's publication year (from metadata, may be
+    ``None``); it is used *only* for relative polarity ordering — never as an
+    absolute age input (decisions.md → Feature 7d, Decision 1)."""
 
     doc_id: str
     doc_hash: str
     filename: str
     concepts: list[str]
     triples: list[Triple]
+    year: int | None = None
 
 
 @dataclass
@@ -113,6 +132,20 @@ class ConceptNode:
     god_node: bool = False
 
 
+@dataclass(frozen=True)
+class EdgeSupport:
+    """One document's stance on a stated claim (Feature 7d).
+
+    ``(doc_id, polarity, year)`` — the per-source epistemic record corroboration is
+    counted from. Frozen + hashable so duplicate (doc, polarity) stances dedupe in a
+    set. Only stated edges (EXTRACTED/AMBIGUOUS) carry these; INFERRED edges don't.
+    """
+
+    doc_id: str
+    polarity: str
+    year: int | None
+
+
 @dataclass
 class ConceptEdge:
     """A relation between two concept nodes, with a structural integrity tag."""
@@ -123,6 +156,10 @@ class ConceptEdge:
     doc_ids: list[str]  # documents supporting the edge
     weight: int  # number of supporting documents
     integrity: str  # one of INTEGRITY_TAGS
+    # Feature 7d: per-document (doc_id, polarity, year) stances. Empty for INFERRED
+    # edges (co-occurrence is not a stated claim). The epistemic substrate for
+    # compute_node_weights; left empty when polarity wasn't extracted (old caches).
+    support: list[EdgeSupport] = field(default_factory=list)
 
 
 @dataclass
@@ -162,6 +199,27 @@ class ConceptGraph:
         return out
 
 
+@dataclass(frozen=True)
+class NodeWeight:
+    """A concept node's structural epistemic weight (Feature 7d) — corroboration, not
+    confidence. Derived from incident stated-claim ``EdgeSupport`` records.
+
+    * ``coverage`` — ``corroborated`` (>=2 independent supporting docs, no disputes),
+      ``unique`` (<=1 supporting doc, no disputes — the *only source on its topic*,
+      held NEUTRAL, never down-weighted; Decision 4), ``contested`` (>=1 disputing doc).
+    * ``direction`` — ``stable`` (no disputes), ``superseded_trend`` (disputing docs are
+      newer than the supporting ones — currency emerges from polarity over time, never
+      from absolute age; Decision 1), ``contested`` (disputed but no clear time order).
+    """
+
+    node_id: str
+    n_supporting_sources: int
+    n_contradicting_sources: int
+    agreement_ratio: float
+    direction: str  # stable | contested | superseded_trend
+    coverage: str  # corroborated | unique | contested
+
+
 # ============================================================
 # Pure core — canonicalisation & parsing
 # ============================================================
@@ -197,6 +255,25 @@ def snap_relation(relation: str) -> str:
     return key if key in RELATION_VERBS else _RELATION_FALLBACK
 
 
+def snap_polarity(polarity: object) -> str:
+    """Snap an extracted polarity to ``POLARITIES`` (fallback ``supports``) (Feature 7d).
+
+    Tolerant of common synonyms a local model emits (``contradicts``/``disputes``/
+    ``conflicts`` → ``contradicts``; ``supersedes``/``replaces``/``obsoletes`` →
+    ``supersedes``; ``refines``/``extends``/``improves`` → ``refines``). Anything else
+    → ``supports`` — the neutral default, so noise never manufactures a dispute."""
+    key = _WS_RE.sub(" ", str(polarity).strip().casefold())
+    if key in POLARITIES:
+        return key
+    if key in {"disputes", "conflicts", "contradict", "refutes", "disagrees"}:
+        return "contradicts"
+    if key in {"replaces", "obsoletes", "deprecates", "supersede"}:
+        return "supersedes"
+    if key in {"extends", "improves", "enhances", "refine", "builds_on", "builds on"}:
+        return "refines"
+    return _POLARITY_DEFAULT
+
+
 def community_id_for(node_ids: list[str]) -> str:
     """Stable, membership-derived community key (mirrors ``wiki.topic_id_for``).
 
@@ -209,14 +286,18 @@ def community_id_for(node_ids: list[str]) -> str:
     return "community-" + hashlib.sha256(joined.encode("utf-8")).hexdigest()[:10]
 
 
-def parse_extraction(raw: str, *, doc_id: str, doc_hash: str, filename: str) -> DocExtraction:
+def parse_extraction(
+    raw: str, *, doc_id: str, doc_hash: str, filename: str, year: int | None = None
+) -> DocExtraction:
     """Parse the model's JSON into a ``DocExtraction`` — tolerant by design.
 
     Two paths: a fast path parses valid JSON; a salvage fallback recovers the
     complete ``concepts`` / ``relations`` elements from truncated or prose-wrapped
     output (common from local models). Concepts and triple endpoints are
-    canonicalised, relation verbs snapped to the closed vocab, self-loops / empty
+    canonicalised, relation verbs snapped to the closed vocab, relation polarity
+    (Feature 7d) snapped to ``POLARITIES`` (default ``supports``), self-loops / empty
     endpoints / duplicates dropped. An unsalvageable completion → empty extraction.
+    ``year`` is recorded on the extraction for relative polarity ordering only.
     """
     text = _extract_json(raw)
     try:
@@ -244,26 +325,27 @@ def parse_extraction(raw: str, *, doc_id: str, doc_hash: str, filename: str) -> 
             concepts.append(key)
 
     triples: list[Triple] = []
-    seen_t: set[tuple[str, str, str]] = set()
+    seen_t: set[tuple[str, str, str, str]] = set()
     for t in relations_raw:
         if not isinstance(t, dict):
             continue
         subj, obj = canonical_key(t.get("subject", "")), canonical_key(t.get("object", ""))
         rel = snap_relation(t.get("relation", ""))
+        pol = snap_polarity(t.get("polarity", ""))
         if not subj or not obj or subj == obj:
             continue
-        sig = (subj, rel, obj)
+        sig = (subj, rel, obj, pol)
         if sig in seen_t:
             continue
         seen_t.add(sig)
-        triples.append(Triple(subject=subj, relation=rel, object=obj))
+        triples.append(Triple(subject=subj, relation=rel, object=obj, polarity=pol))
         # A triple's endpoints are concepts even if the model omitted them.
         for key in (subj, obj):
             if key not in seen_c:
                 seen_c.add(key)
                 concepts.append(key)
 
-    return DocExtraction(doc_id, doc_hash, filename, concepts, triples)
+    return DocExtraction(doc_id, doc_hash, filename, concepts, triples, year=year)
 
 
 def _extract_json(text: str) -> str:
@@ -412,6 +494,7 @@ def build_nodes_edges(
     # --- EXTRACTED / AMBIGUOUS edges from stated triples ---
     pair_relations: dict[tuple[str, str], set[str]] = defaultdict(set)
     pair_docs: dict[tuple[str, str], set[str]] = defaultdict(set)
+    pair_support: dict[tuple[str, str], set[EdgeSupport]] = defaultdict(set)
     for ex in extractions:
         for t in ex.triples:
             if t.subject not in valid_ids or t.object not in valid_ids:
@@ -419,12 +502,15 @@ def build_nodes_edges(
             pair = _pair(t.subject, t.object)
             pair_relations[pair].add(t.relation)
             pair_docs[pair].add(ex.doc_id)
+            # Feature 7d: per-(doc, polarity) stance, deduped within a doc by the set.
+            pair_support[pair].add(EdgeSupport(ex.doc_id, t.polarity, ex.year))
 
     edges: list[ConceptEdge] = []
     stated: set[tuple[str, str]] = set()
     for pair in sorted(pair_relations):
         rels = sorted(pair_relations[pair])
         docs = sorted(pair_docs[pair])
+        support = sorted(pair_support[pair], key=lambda s: (s.doc_id, s.polarity))
         integrity = "AMBIGUOUS" if len(rels) >= 2 else "EXTRACTED"
         edges.append(
             ConceptEdge(
@@ -434,6 +520,7 @@ def build_nodes_edges(
                 doc_ids=docs,
                 weight=len(docs),
                 integrity=integrity,
+                support=support,
             )
         )
         stated.add(pair)
@@ -600,6 +687,69 @@ def doc_clusters_from_graph(
 
 
 # ============================================================
+# Pure core — claim-corroboration weights (Feature 7d)
+# ============================================================
+
+
+def compute_node_weights(graph: ConceptGraph) -> dict[str, NodeWeight]:
+    """Structural epistemic weight per concept node (Feature 7d). Pure, deterministic.
+
+    Aggregates the ``EdgeSupport`` records on every *stated* edge incident to a node
+    (INFERRED edges carry no support and don't count — co-occurrence is not a claim),
+    counting **distinct documents** that support vs dispute the node's claims:
+
+    * ``coverage``  — ``contested`` if any disputing doc; else ``unique`` if <=1
+      supporting doc (the only source on its topic — held NEUTRAL, never penalized:
+      Decision 4); else ``corroborated``.
+    * ``direction`` — ``stable`` if undisputed; ``superseded_trend`` if the disputing
+      docs are newer than the supporting ones (currency from polarity-over-time, not
+      age: Decision 1); else ``contested``.
+
+    Every node gets a weight (isolated / claim-less nodes → ``stable``/``unique`` with
+    zero counts — neutral, never down-weighted)."""
+    incident: dict[str, list[EdgeSupport]] = defaultdict(list)
+    for e in graph.edges:
+        for endpoint in (e.source, e.target):
+            incident[endpoint].extend(e.support)
+
+    weights: dict[str, NodeWeight] = {}
+    for n in graph.nodes:
+        sup = incident.get(n.id, [])
+        supporting_docs = {s.doc_id for s in sup if s.polarity in SUPPORTING_POLARITIES}
+        opposing_docs = {s.doc_id for s in sup if s.polarity in OPPOSING_POLARITIES}
+        ns, nc = len(supporting_docs), len(opposing_docs)
+        denom = ns + nc
+        agreement = round(ns / denom, 4) if denom else 1.0
+
+        if nc == 0:
+            direction = "stable"
+        else:
+            opp_years = [s.year for s in sup if s.polarity in OPPOSING_POLARITIES and s.year]
+            sup_years = [s.year for s in sup if s.polarity in SUPPORTING_POLARITIES and s.year]
+            if opp_years and sup_years and max(opp_years) > max(sup_years):
+                direction = "superseded_trend"
+            else:
+                direction = "contested"
+
+        if nc >= 1:
+            coverage = "contested"
+        elif ns <= 1:
+            coverage = "unique"
+        else:
+            coverage = "corroborated"
+
+        weights[n.id] = NodeWeight(
+            node_id=n.id,
+            n_supporting_sources=ns,
+            n_contradicting_sources=nc,
+            agreement_ratio=agreement,
+            direction=direction,
+            coverage=coverage,
+        )
+    return weights
+
+
+# ============================================================
 # Pure core — JSON serialisation
 # ============================================================
 
@@ -628,6 +778,9 @@ def graph_to_dict(graph: ConceptGraph) -> dict[str, Any]:
                 "doc_ids": e.doc_ids,
                 "weight": e.weight,
                 "integrity": e.integrity,
+                "support": [
+                    {"doc_id": s.doc_id, "polarity": s.polarity, "year": s.year} for s in e.support
+                ],
             }
             for e in graph.edges
         ],
@@ -677,6 +830,15 @@ def graph_from_dict(data: dict[str, Any]) -> ConceptGraph:
             doc_ids=[str(x) for x in e.get("doc_ids") or []],
             weight=int(e.get("weight", 0)),
             integrity=str(e.get("integrity", "")),
+            support=[
+                EdgeSupport(
+                    doc_id=str(s.get("doc_id", "")),
+                    polarity=snap_polarity(s.get("polarity", "")),
+                    year=(int(s["year"]) if s.get("year") is not None else None),
+                )
+                for s in e.get("support") or []
+                if isinstance(s, dict)
+            ],
         )
         for e in data.get("edges") or []
     ]
@@ -713,25 +875,39 @@ def extraction_to_dict(ex: DocExtraction) -> dict[str, Any]:
         "doc_id": ex.doc_id,
         "doc_hash": ex.doc_hash,
         "filename": ex.filename,
+        "year": ex.year,
         "concepts": ex.concepts,
         "triples": [
-            {"subject": t.subject, "relation": t.relation, "object": t.object} for t in ex.triples
+            {
+                "subject": t.subject,
+                "relation": t.relation,
+                "object": t.object,
+                "polarity": t.polarity,
+            }
+            for t in ex.triples
         ],
     }
 
 
 def extraction_from_dict(data: dict[str, Any]) -> DocExtraction:
     """Load a ``DocExtraction`` from a cached JSON payload (tolerant of partials)."""
+    raw_year = data.get("year")
     return DocExtraction(
         doc_id=str(data.get("doc_id", "")),
         doc_hash=str(data.get("doc_hash", "")),
         filename=str(data.get("filename", "")),
         concepts=[str(c) for c in data.get("concepts") or []],
         triples=[
-            Triple(str(t.get("subject", "")), str(t.get("relation", "")), str(t.get("object", "")))
+            Triple(
+                str(t.get("subject", "")),
+                str(t.get("relation", "")),
+                str(t.get("object", "")),
+                polarity=snap_polarity(t.get("polarity", "")),
+            )
             for t in (data.get("triples") or [])
             if isinstance(t, dict)
         ],
+        year=int(raw_year) if raw_year is not None else None,
     )
 
 
@@ -742,15 +918,16 @@ def extraction_from_dict(data: dict[str, Any]) -> DocExtraction:
 
 @dataclass
 class GraphDoc:
-    """A document to extract from."""
+    """A document to extract from. ``year`` (Feature 7d) feeds relative polarity order."""
 
     doc_id: str
     doc_hash: str
     filename: str
+    year: int | None = None
 
 
 def load_documents() -> list[GraphDoc]:
-    """Load non-archived documents from SQLite (id / hash / filename)."""
+    """Load non-archived documents from SQLite (id / hash / filename / year)."""
     from sqlalchemy import select
 
     from doc_assistant.db.models import Document
@@ -758,7 +935,7 @@ def load_documents() -> list[GraphDoc]:
 
     with session_scope() as session:
         return [
-            GraphDoc(doc_id=str(d.id), doc_hash=d.doc_hash, filename=d.filename)
+            GraphDoc(doc_id=str(d.id), doc_hash=d.doc_hash, filename=d.filename, year=d.year)
             for d in session.execute(
                 select(Document).where(Document.is_archived.is_(False))
             ).scalars()
@@ -800,13 +977,19 @@ excerpts below, extract the salient TECHNICAL concepts (methods, models, dataset
 metrics, tasks) and the relationships stated between them. Use ONLY what the text \
 states — do not invent relationships.
 
+For each relation also give its POLARITY — how this paper positions the two concepts:
+- "supports": affirms/uses/relates them positively (the default if unsure)
+- "refines": extends or improves one with the other
+- "contradicts": disputes or conflicts with the relationship
+- "supersedes": presents one as replacing/obsoleting the other
+
 EXCERPTS:
 {material}
 
 Return JSON only, no prose, no markdown fence:
 {{"concepts": ["<5-15 concise concept names>"], \
 "relations": [{{"subject": "<concept>", "relation": "<short verb phrase>", \
-"object": "<concept>"}}]}}"""
+"object": "<concept>", "polarity": "<supports|refines|contradicts|supersedes>"}}]}}"""
 
 
 def _format_material(filename: str, excerpts: list[str]) -> str:
@@ -833,7 +1016,9 @@ def extract_doc(
     raw = client.complete(
         [{"role": "user", "content": prompt}], temperature=0.0, max_tokens=max_tokens
     )
-    return parse_extraction(raw, doc_id=doc.doc_id, doc_hash=doc.doc_hash, filename=doc.filename)
+    return parse_extraction(
+        raw, doc_id=doc.doc_id, doc_hash=doc.doc_hash, filename=doc.filename, year=doc.year
+    )
 
 
 # ============================================================

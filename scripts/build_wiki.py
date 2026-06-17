@@ -11,11 +11,19 @@ removed since the last build.
 Summarisation is the *generator* role and is fully local-capable — point it at a
 local model (`--provider ollama` or `WIKI_LLM_PROVIDER=ollama`) to build for free.
 
+Clustering primitive: by default, connected components over `DocSimilarity` at/above
+`--min-similarity` (corpus-dependent — saturates on same-domain libraries). Pass
+`--use-concept-communities` (or `WIKI_USE_CONCEPT_COMMUNITIES=true`) to cluster by
+the Feature 7 concept-graph communities instead (threshold-free); that path reads
+`data/graph/graph.json`, so run `build_concept_graph --apply` first, and it falls
+back to cosine clustering if the sidecar is absent or stale.
+
 Usage:
     python -m scripts.build_wiki                       # dry-run: clusters only, no LLM
     python -m scripts.build_wiki --apply               # summarise + write notes
     python -m scripts.build_wiki --apply --force       # wipe + rebuild all notes
     python -m scripts.build_wiki --apply --provider ollama --model llama3
+    python -m scripts.build_wiki --apply --use-concept-communities  # Feature 7 clustering
 """
 
 from __future__ import annotations
@@ -27,6 +35,7 @@ from doc_assistant.config import (
     WIKI_LLM_MODEL,
     WIKI_LLM_PROVIDER,
     WIKI_MIN_SIMILARITY,
+    WIKI_USE_CONCEPT_COMMUNITIES,
 )
 from doc_assistant.wiki import WikiBuildResult, build_wiki
 
@@ -41,6 +50,7 @@ def _format_report(result: WikiBuildResult) -> str:
 
     out: list[str] = []
     out.append("=" * 76)
+    out.append(f"Clustering:                {result.clustering}")
     out.append(f"Topics (clusters):         {len(notes)}")
     out.append(f"  Multi-document topics:    {len(multi)}")
     out.append(f"  Singletons:               {len(notes) - len(multi)}")
@@ -75,6 +85,16 @@ def main() -> int:
         default=WIKI_MIN_SIMILARITY,
         help="Cluster-merge cosine threshold (default %(default)s)",
     )
+    parser.add_argument(
+        "--use-concept-communities",
+        action=argparse.BooleanOptionalAction,
+        default=WIKI_USE_CONCEPT_COMMUNITIES,
+        help=(
+            "Cluster by the Feature 7 concept-graph communities (threshold-free) "
+            "instead of --min-similarity; falls back to cosine if data/graph is "
+            "absent/stale (default %(default)s). Run `build_concept_graph --apply` first."
+        ),
+    )
     args = parser.parse_args()
 
     client = None
@@ -99,7 +119,14 @@ def main() -> int:
         force=args.force,
         client=client,
         min_similarity=args.min_similarity,
+        use_concept_communities=args.use_concept_communities,
     )
+    if args.use_concept_communities and result.clustering != "concept-graph":
+        print(
+            "Note: --use-concept-communities requested but the concept graph was "
+            "absent/stale; fell back to cosine clustering. Run "
+            "`python -m scripts.build_concept_graph --apply` first."
+        )
     print(_format_report(result))
     if not args.apply:
         print("\nDry run. Pass --apply to summarise topics and write notes.")

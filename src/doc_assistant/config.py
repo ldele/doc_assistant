@@ -288,6 +288,16 @@ WIKI_MIN_CITATIONS = int(os.getenv("WIKI_MIN_CITATIONS", "3"))
 # How many chunk excerpts to sample per document as grounding for the summary.
 WIKI_CHUNK_SAMPLE = int(os.getenv("WIKI_CHUNK_SAMPLE", "3"))
 
+# Clustering primitive: when true, the wiki groups documents by the Feature 7
+# concept-graph *communities* (threshold-free Louvain — adapts to the corpus's own
+# structure) instead of the absolute-cosine WIKI_MIN_SIMILARITY union-find above.
+# This is the fix for the same-domain-saturation problem (decisions.md → Deferred
+# Improvements). Landed INERT: default false keeps shipped 6a-6d byte-identical, and
+# even when on, `wiki.load_communities` falls back to cosine clustering if the
+# `data/graph/graph.json` sidecar is absent or stale (so run `build_concept_graph
+# --apply` first). The default flips once the re-cluster is validated on data.
+WIKI_USE_CONCEPT_COMMUNITIES = os.getenv("WIKI_USE_CONCEPT_COMMUNITIES", "false").lower() == "true"
+
 
 # ============================================================
 # Cross-document concept graph (Phase 7 / Feature 7, PR 16)

@@ -22,6 +22,7 @@ from doc_assistant.concept_graph import (
     doc_clusters_from_graph,
     extraction_from_dict,
     extraction_to_dict,
+    graph_from_dict,
     graph_to_dict,
     normalize_relation,
     parse_extraction,
@@ -263,3 +264,38 @@ def test_extraction_dict_round_trip():
     assert back.doc_id == ex.doc_id and back.doc_hash == ex.doc_hash
     assert back.concepts == ex.concepts
     assert back.triples == ex.triples
+
+
+def test_graph_dict_round_trip():
+    """graph_from_dict is the inverse of graph_to_dict for the structural payload.
+
+    (meta gains a derived integrity_summary on serialize; the property recomputes
+    it, so it's dropped on load — everything else round-trips exactly.)"""
+    g = assemble_graph(
+        [
+            _ex("a", ["rag", "dpr"], [("rag", "uses", "dpr")]),
+            _ex("b", ["rag", "bm25"], [("rag", "compares to", "bm25")]),
+            _ex("c", ["standalone"]),
+        ],
+        meta={"provider": "ollama", "model": "llama3.1:8b"},
+    )
+    back = graph_from_dict(graph_to_dict(g))
+
+    assert [(n.id, n.label, n.community, n.degree, n.god_node) for n in back.nodes] == [
+        (n.id, n.label, n.community, n.degree, n.god_node) for n in g.nodes
+    ]
+    assert [(n.doc_ids, n.mentions) for n in back.nodes] == [
+        (n.doc_ids, n.mentions) for n in g.nodes
+    ]
+    assert [(e.source, e.target, e.relations, e.integrity, e.weight) for e in back.edges] == [
+        (e.source, e.target, e.relations, e.integrity, e.weight) for e in g.edges
+    ]
+    assert [(c.id, c.node_ids, c.size) for c in back.communities] == [
+        (c.id, c.node_ids, c.size) for c in g.communities
+    ]
+    assert back.god_nodes == g.god_nodes
+    assert back.gaps.isolated_nodes == g.gaps.isolated_nodes
+    assert back.gaps.thin_bridges == g.gaps.thin_bridges
+    assert back.meta == {"provider": "ollama", "model": "llama3.1:8b"}
+    # Re-serialising the reloaded graph reproduces the persisted dict exactly.
+    assert graph_to_dict(back) == graph_to_dict(g)

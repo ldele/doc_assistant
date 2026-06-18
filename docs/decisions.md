@@ -4,32 +4,6 @@ This document contains the *why* behind my choices, and the planned evolution of
 
 ---
 
-## About This Project
-
-The retrieval stack is deliberately built from established techniques rather than 
-new algorithms — the novelty here is the integrity layer and the measurement around 
-them, not the retrieval itself. The corpus is document-format-agnostic; research 
-papers are the test corpus because they're real documents I actually use, not 
-invented company data.
-
-The established building blocks:
-- Hybrid retrieval (BM25 + dense vectors): standard practice since 2023.
-- Cross-encoder reranking: standard practice, originally popularized by Microsoft 
-  research and Sentence-Transformers.
-- Parent-child retrieval: a LangChain pattern, predates this project.
-- Section-aware chunking: a common refinement, not unique here.
-- Query rewriting / HyDE: documented techniques from the literature.
-
-What this project contributes on top:
-- A research-integrity layer (provenance, dual interpretation, separate-context 
-  reviewer) that makes each answer auditable rather than taken on trust.
-- A measurement harness that compares these techniques empirically instead of by intuition.
-- An end-to-end working system over real documents, with documented design decisions.
-- Practical engineering: caching, streaming ingest, metadata cleanup, regression 
-  tracking.
-
----
-
 ## Core Decisions
 
 ### Local-first by default
@@ -471,6 +445,8 @@ resolutions + reopens-if in the `.claude/SESSION.md` baton (2026-06-15). Scope =
 7a (extraction) + 7b (communities + god-nodes) + 7c (gap signals) in one PR; **7d
 (knowledge-currency) is out** — it consumes this graph.
 
+*⚠ Superseded in part by “Feature 7 — concept-graph REDESIGN” (2026-06-18, below): ADR-3 (LLM-extraction as the node source) and the single integrity tag no longer hold; ADR-1 (Louvain) and ADR-4 (composite chunk key) carry over. Content here preserved as history.*
+
 **ADR-1 — Community detection: NetworkX Louvain, not Leiden/graspologic.** The
 roadmap named "Leiden (graspologic)"; both were verified unusable against the
 live venv (networkx 3.6.1 / numpy 2.4.6). `networkx.leiden_communities` **raises
@@ -525,6 +501,37 @@ edge labels, and stance extraction is noisier on a small model and needs the
 relative-year ordering 7d owns. PR 16 extracts a plain concept-`relation` verb
 only. **JSON-only, no SQLite graph table** — 7d's `compute_node_weights(graph)`
 takes the graph object and 7d owns its own `chunk_epistemics` table.
+
+### Feature 7 — concept-graph REDESIGN: curated vocabulary + deterministic skeleton + LLM enrichment (2026-06-18)
+
+*Supersedes the open-vocabulary-extraction core of the Feature 7 (PR 16) ADRs above — specifically ADR-3 (node source) and the single integrity tag. ADR-1 (Louvain) and ADR-4 (composite chunk key) carry over. Decided via `grill-me` (Cowork), accepted; resolutions + routing in the `.claude/SESSION.md` baton 2026-06-18.*
+
+**Frame.** The shipped graph derives its node set from a per-document open-vocabulary LLM extraction, then builds its own edges from extracted triples + co-occurrence — ignoring the two doc-level graphs the library already maintains: `Citation` (regex who-cites-whom) and `DocSimilarity` (BGE cosine). Decision: where do concept nodes and edges come from, now that those graphs exist and determinism is wanted.
+
+**Options.**
+- **A — Keep open-vocabulary LLM extraction.** Zero curation, cold-start-free, surfaces concepts you didn't know to track, and is the only thing that makes 7d's stance layer computable. But it is the dominant cost (the parallel-branch validation ran 36–40 calls/doc and hit `budget_exhausted` over the 61-doc corpus) and the source of unreliability — concept fragmentation on a same-domain corpus, which Feature 6 already showed saturates BGE at cosine 0.88–0.96 (ADR-3). Re-derives structure already in `Citation`/`DocSimilarity`.
+- **B — Replace fully: zero-LLM, interests-as-metadata, drop 7d.** Maximally cheap + deterministic, but loses the typed/polarized edges and the contested-evidence layer (7d) that is the project's integrity differentiator.
+- **C — Compose: deterministic skeleton + LLM enrichment over a user-curated vocabulary.** Nodes user-owned; presence + edges + gaps compute zero-LLM from the existing graphs; the LLM is confined to what only it can do. Keeps 7d, re-founded on a targeted pass. Cost: curation burden + a retained LLM enrichment path.
+
+**Decision — C.** The node vocabulary becomes a user-curated `Concept`/`ConceptAlias` set (seeded from existing `Keyword` rows; hybrid candidate mining + a cheap LLM dedupe/label pass; the user promotes — never auto-generated). On top:
+
+- **Presence is deterministic** — string/alias/embedding match of curated terms against Chroma chunks. The LLM never decides presence, never defines the vocabulary.
+- **Edges = deterministic skeleton + LLM annotation.** Skeleton from co-occurrence / `Citation` / `DocSimilarity`; the LLM, handed only the concepts already present in a document, adds a relation verb + stance (`supports|refines|contradicts|supersedes`). Because it only ever sees co-present concepts, every LLM relation is by construction a co-occurrence edge — it annotates the skeleton, never extends it. Trust becomes a **provenance set** `{cooccurrence, citation, similarity, llm_relation}` + stance-agreement, replacing the single `EXTRACTED|INFERRED|AMBIGUOUS` tag (cross-source stance disagreement = the 7d contested signal). Unconfirmed deterministic edges are kept and ranked by provenance, never dropped — the skeleton is never gated by the LLM.
+- **Gaps are deterministic + authoritative** — isolated / single-source / thin-bridge over the skeleton, unifying the wiki (6b) and concept-graph (7c) gap mechanisms into one; plus an **opt-in, quarantined** LLM “expected-missing-link” suggester (suggestions, never structural facts).
+
+Deciding reason: it wins reliability + cost on node discovery (the real problem) without surrendering the typed/polarized edges and 7d that distinguish the project. **Reverses if** curation proves too costly to maintain even with candidate mining (→ fall back to B, or re-admit A as an opt-in discovery mode), or if edge precision on the real corpus is unacceptable (see Confidence).
+
+**Consequences.**
+- *Easier:* deterministic, free, byte-stable skeleton rebuilds; every edge auditable to a citation/similarity/co-occurrence fact; concept set scoped to interest (`folder_id` aligns with projects-as-folders).
+- *Harder:* the user must maintain a vocabulary (mitigated by `Keyword`-seeded mining); a new `Concept`/`ConceptAlias` schema + migration; LLM enrichment becomes a second, optional pass rather than the single build path.
+- *Revisit:* 7d re-founds on a targeted stance pass over present curated concepts (cheaper than open extraction) — its polarity/year semantics carry over, the extraction shape changes. The current LLM-extraction graph + `data/graph/graph.json` are superseded — do not build on them (`.claude/KNOWN_ISSUES.md`).
+
+**Confidence.**
+- ✓ The two graphs exist and are zero-LLM: `Citation(source→target)` + `DocSimilarity(source→target, score)` in `db/models.py`; presence-by-match needs no model.
+- ✓ “LLM can only annotate, never extend” — logical consequence of constraining extraction to co-present concepts, not an external claim.
+- ⚠ **Edge precision** — projecting through doc graphs links every interest in doc X to every interest in doc Y; density/precision is unvalidated on the real corpus. → `RIGOR_TODO.md` before locking the edge model.
+- ⚠ **Presence recall** — string vs embedding/alias match threshold unset. → `RIGOR_TODO.md`.
+- ⚠ The empty on-disk `data/graph/graph.json` is an environment artifact (run was Ollama on the RTX box, per user), **not** a quality measurement — the current design's real-corpus behavior is unmeasured here.
 
 ### Pipeline assembly via a serializable profile (added 2026-06-16)
 
@@ -1244,18 +1251,6 @@ Capabilities:
 - **Integrity Chunk 3** — PRISMA-trAIce export. Structured methodology 
   disclosure alongside the generated review, pulled from `answer_records` 
   and the adjudication log.
-
----
-
-## What I'd Position This As
-
-> A personal research workspace that combines local-first RAG with explicit 
-> modeling of the literature graph, designed to help a researcher identify 
-> what they know, what they don't, and what to read next. Unlike general-
-> purpose RAG tools, it treats the document collection as a first-class 
-> object to curate and analyze, not just a corpus to search.
-
-Keywords: *personal*, *local-first*, *literature graph*, *knowledge gaps*, *what to read next*.
 
 ---
 

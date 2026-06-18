@@ -1,8 +1,18 @@
 # Document Assistant
 
-A local-first RAG assistant over your own research library (PDF, EPUB, HTML, DOCX, Markdown) that answers questions with inline, page-level citations — and measures whether those answers are any good. Built for researchers and students who need to search the *content* of their documents, with retrieval quality treated as an engineering problem, not a vibe.
+A local-first RAG assistant over your own document corpus (PDF, EPUB, HTML, DOCX, Markdown) that answers questions with inline, page-level citations — and measures whether those answers are any good. Document-format-agnostic by design; the test corpus here is research papers because they're real and freely available, but nothing assumes academia.
 
 Not a chatbot wrapper: the goal is reliable, grounded answers with the measurement and provenance to back them up.
+
+## Why I built this
+
+Three things pushed me to build this. The first: SharePoint-class documentation systems are outdated. They require an immense amount of effort to maintain and information retrieval is impractical. Search returns filenames, not answers; the knowledge is in there but you can't reach it.
+
+The second: LLMs are less reliable than they sound. A fluent answer with a confident citation is not the same as a correct one, and most tools blur that line. So this system is built to *prove* its answers rather than just emit them — page-level citations you can click through, a provenance record on every response, and a separate reviewer that can re-grade a flagged answer. Trust is earned per-answer, not assumed. You can even disable LLM generation entirely and rely on the retrieval layer alone.
+
+The third: reading documents and pulling structured information out of them is useful in nearly any job or field — it's not a niche academic need. You need to be able to easily retrieve SOPs and Procedures from your company's wiki to do your job. Additionally, it has become essential to curate and maintain reliable documentation systems to feed AI context. This system is not made to version documents but estimates information density and relevance to provide grounded answers.
+
+This implements established RAG techniques rather than new algorithms; what it contributes is the integrity layer and the measurement to back the whole thing up. It is made to be modular, extensible and reusable.
 
 ## Why this is interesting (engineering)
 

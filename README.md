@@ -6,13 +6,13 @@ Not a chatbot wrapper: the goal is reliable, grounded answers with the measureme
 
 ## Why I built this
 
-Three things pushed me to build this. The first: SharePoint-class documentation systems are outdated. They require an immense amount of effort to maintain and information retrieval is impractical. Search returns filenames, not answers; the knowledge is in there but you can't reach it.
+Three things pushed me to build this. The first: I've worked with SharePoint-class documentation systems and found them outdated — they take an immense amount of effort to maintain, and retrieving anything useful is impractical. Search returns filenames, not answers; the knowledge is in there but you can't reach it.
 
 The second: LLMs are less reliable than they sound. A fluent answer with a confident citation is not the same as a correct one, and most tools blur that line. So this system is built to *prove* its answers rather than just emit them — page-level citations you can click through, a provenance record on every response, and a separate reviewer that can re-grade a flagged answer. Trust is earned per-answer, not assumed. You can even disable LLM generation entirely and rely on the retrieval layer alone.
 
-The third: reading documents and pulling structured information out of them is useful in nearly any job or field — it's not a niche academic need. You need to be able to easily retrieve SOPs and Procedures from your company's wiki to do your job. Additionally, it has become essential to curate and maintain reliable documentation systems to feed AI context. This system is not made to version documents but estimates information density and relevance to provide grounded answers.
+The third: reading documents and pulling structured information out of them is useful in nearly any job or field — it's not a niche academic need. You need to be able to pull a specific SOP or policy out of your company's wiki to do your job. Additionally, it has become essential to curate and maintain reliable documentation systems to feed AI context. This system is not made to version documents but estimates information density and relevance to provide grounded answers.
 
-This implements established RAG techniques rather than new algorithms; what it contributes is the integrity layer and the measurement to back the whole thing up. It is made to be modular, extensible and reusable.
+This implements established RAG techniques rather than new algorithms; what it contributes is the integrity layer and the measurement to back the whole thing up. It is made to allow extensibility over a stable core.
 
 ## Why this is interesting (engineering)
 

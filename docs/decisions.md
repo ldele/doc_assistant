@@ -6,9 +6,13 @@ This document contains the *why* behind my choices, and the planned evolution of
 
 ## About This Project
 
-This project implements and evaluates established RAG techniques on a personal 
-document library. It does not introduce new algorithms or methods.
+The retrieval stack is deliberately built from established techniques rather than 
+new algorithms — the novelty here is the integrity layer and the measurement around 
+them, not the retrieval itself. The corpus is document-format-agnostic; research 
+papers are the test corpus because they're real documents I actually use, not 
+invented company data.
 
+The established building blocks:
 - Hybrid retrieval (BM25 + dense vectors): standard practice since 2023.
 - Cross-encoder reranking: standard practice, originally popularized by Microsoft 
   research and Sentence-Transformers.
@@ -16,10 +20,11 @@ document library. It does not introduce new algorithms or methods.
 - Section-aware chunking: a common refinement, not unique here.
 - Query rewriting / HyDE: documented techniques from the literature.
 
-What this project does contribute is:
-- An end-to-end working system over real research documents.
-- A measurement harness that lets us compare these techniques empirically.
-- Documented design decisions for a specific domain (personal academic libraries).
+What this project contributes on top:
+- A research-integrity layer (provenance, dual interpretation, separate-context 
+  reviewer) that makes each answer auditable rather than taken on trust.
+- A measurement harness that compares these techniques empirically instead of by intuition.
+- An end-to-end working system over real documents, with documented design decisions.
 - Practical engineering: caching, streaming ingest, metadata cleanup, regression 
   tracking.
 

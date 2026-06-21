@@ -177,7 +177,8 @@ def main() -> int:
         else (
             "\nNote: re-run `ingest` to pull the spliced tables into retrieval. "
             "Incremental ingest now self-cleans the pre-splice (old-hash) chunks. "
-            "A content change drops the doc's citations/doc_similarities — re-run those enrichments after."
+            "A content change drops the doc's citations/doc_similarities — "
+            "re-run those enrichments after."
         )
     )
     return 0

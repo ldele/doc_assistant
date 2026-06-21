@@ -1,3 +1,5 @@
+<!-- status: active · updated: 2026-06-20 · class: living -->
+
 # Architecture
 
 ## High-level flow

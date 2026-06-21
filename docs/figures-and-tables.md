@@ -1,3 +1,5 @@
+<!-- status: active · updated: 2026-06-20 · class: living -->
+
 # Figures & Tables — detection and extraction (Phase 6 / Feature 4)
 
 How doc_assistant promotes tables (and, later, figures) from lossy text into

@@ -1,3 +1,5 @@
+<!-- status: active · updated: 2026-06-20 · class: living -->
+
 # Demo — 60-second walkthrough
 
 What to run, what to ask, and what to look at so a first-time reader sees the point quickly.

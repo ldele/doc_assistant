@@ -7,13 +7,34 @@ repos:
         args: [--fix]
       - id: ruff-format
 
-  # mypy: type checking
-  - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v1.11.0
+  # mypy: type checking — runs CI's effective command (`uv run mypy src/`) in the PROJECT venv so
+  # the local pre-check matches CI exactly. Why not the isolated mirrors-mypy hook:
+  #   - The old hook (additional_dependencies: []) ran mypy in pre-commit's own env WITHOUT project
+  #     deps, so it false-failed `import-not-found` on every third-party import not in pyproject's
+  #     mypy `ignore_missing_imports` set (anthropic, numpy, duckdb, pydantic, dotenv, sqlalchemy…),
+  #     plus the strict subclass-Any cascade (BaseModel/DeclarativeBase → "subclass has type Any")
+  #     and bogus unused-`type: ignore`s — all while CI was green. `language: system` + `uv run`
+  #     uses the resolved project env, so every import resolves and the results match CI.
+  #   - `--no-sync` is REQUIRED, not cosmetic: a bare `uv run` re-resolves torch WITHOUT the
+  #     cpu/cu130 extra and pulls the heavy CUDA wheel (the exact hazard CI guards with
+  #     UV_NO_SYNC=1). --no-sync reuses the already-synced env untouched. See
+  #     docs/specs/torch-backend-per-machine.md.
+  #   - Strictness comes from [tool.mypy] strict=true, NOT a `--strict` arg — the old arg also
+  #     re-enabled warn_unused_ignores (the config turns it off), another divergence from CI.
+  #   - `files: ^src/` keeps the trigger scoped (runs only when an src file is staged); with
+  #     pass_filenames:false it checks the whole src/ tree like CI. src/-only is intended — the
+  #     eval harness + other non-src .py are outside the strict gate (architecture.md).
+  # CONSTRAINT: needs `uv` on PATH and the env synced at commit time (true on any dev box; run
+  # `uv sync` first on a fresh clone). CI (.github/workflows/ci.yml) remains the authoritative gate.
+  - repo: local
     hooks:
       - id: mypy
-        args: [--strict]
-        additional_dependencies: []
+        name: mypy (strict, project venv via uv — mirrors CI)
+        entry: uv run --no-sync mypy
+        language: system
+        args: [src]
+        pass_filenames: false
+        files: ^src/
 
   # bandit: security SAST
   - repo: https://github.com/PyCQA/bandit

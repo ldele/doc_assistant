@@ -1,3 +1,9 @@
+<!-- status: superseded · updated: 2026-06-20 · class: append-only -->
+
+> **Superseded 2026-06-20 (cpc adoption, ADR-001).** The living roadmap is now `docs/ROADMAP.md`
+> (reshaped to the cpc PR table). This file is the frozen original, kept for its detailed per-phase
+> prose and history. Do not edit; update `docs/ROADMAP.md` instead.
+
 # doc_assistant — roadmap additions
 
 Engineering quality additions on top of the existing phase plan in `docs/decisions.md`. Purpose: domain-aware retrieval, reproducible evaluation, structured handling of figures and tables, and an explicit research-integrity layer that records how each answer was produced.

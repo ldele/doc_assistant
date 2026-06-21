@@ -1,3 +1,5 @@
+<!-- status: active · updated: 2026-06-20 · class: living -->
+
 # Design decisions
 
 This document contains the *why* behind my choices, and the planned evolution of the project.
@@ -26,7 +28,7 @@ Wanted to practice using LangChain. Using LlamaIndex would have hidden some of t
 
 ### Streaming ingest over batch
 
-A batch ingest holds the entire corpus in memory before storing. For most cases, that's fine ; for someone having 500+ research PDF papers, it isn't. 
+A batch ingest holds the entire corpus in memory before storing. For most cases, that's fine ; for someone having 500+ research PDF papers, it isn't.
 Memory stays flat regardless of corpus size, and a crash on document 200 doesn't lose documents 1-199.
 
 ### Two-tier cache
@@ -41,7 +43,7 @@ Vector search loses on exact terms (author surnames, equation labels, library fu
 
 ### Cross-encoder reranking on top of retrieval
 
-Embedding-based retrieval is fast but not perfect. The reranker is slower per item 
+Embedding-based retrieval is fast but not perfect. The reranker is slower per item
 but only sees ~10 candidates, so total cost is small.
 
 ### Document hierarchy with orthogonal topic tags
@@ -49,19 +51,19 @@ Folder (user-defined) → Document → Part (section/chapter) → Chunk
 ↑
 (topic tags)
 
-A chunk has one structural parent (its part within a document) but can carry 
-many topic tags. This separates *structural* hierarchy (the document's 
-inherent organization) from *semantic* membership (what concepts a chunk is 
+A chunk has one structural parent (its part within a document) but can carry
+many topic tags. This separates *structural* hierarchy (the document's
+inherent organization) from *semantic* membership (what concepts a chunk is
 about). Both should be queryable independently.
 
-Folders are user-defined groupings that don't have to align with topics or 
+Folders are user-defined groupings that don't have to align with topics or
 documents — useful for projects, reading lists, course materials.
 
 ### Metadata as soft filter, not hard gate
 
-The RAG remains the core of the project while using hybrid search + 
-reranking. The addition of a metadata layer would act as an optional scope ("only search in folder X" or 
-"only methodology sections"). 
+The RAG remains the core of the project while using hybrid search +
+reranking. The addition of a metadata layer would act as an optional scope ("only search in folder X" or
+"only methodology sections").
 This should preserve the baseline behavior while adding precision when explicitly requested.
 
 ### Two-step metadata cleanup
@@ -71,7 +73,7 @@ Current:
     1. Dry run reports what would change, makes no modifications
     2. User reviews, then re-runs with `--apply`
 
-Reasoning: the goal is to improve retrieval quality while not always re-running ingest which is costly. 
+Reasoning: the goal is to improve retrieval quality while not always re-running ingest which is costly.
 It only needs to be done once for each document, so it is extra worth it to run a cleanup on the files.
 
 ### Parent-child retrieval is the default
@@ -91,12 +93,12 @@ A +0.62 correctness improvement with a strict judge is a substantial real
 effect. Methodology questions in particular benefit (+1.40), because they
 require procedural context that small chunks can't convey.
 
-The mechanism: child chunks (~400 chars) are embedded and used for precise 
-retrieval. When a child is retrieved, its containing parent passage 
-(~2000 chars) is passed to the LLM instead. This gives the LLM richer 
+The mechanism: child chunks (~400 chars) are embedded and used for precise
+retrieval. When a child is retrieved, its containing parent passage
+(~2000 chars) is passed to the LLM instead. This gives the LLM richer
 context per retrieved item without sacrificing retrieval precision.
 
-The baseline (single-chunk) retrieval remains available via 
+The baseline (single-chunk) retrieval remains available via
 `USE_PARENT_CHILD=false` in the environment.
 
 Note: This setting is for what I currently have in my library.
@@ -106,7 +108,7 @@ What matters is that I can quickly check the performance of the settings.
 
 ### TOP_K tuning — adopted at TOP_K=10
 
-Hypothesis: increasing the number of retrieved chunks would help when the 
+Hypothesis: increasing the number of retrieved chunks would help when the
 correct content was being found but not all of it made the top-5 cutoff.
 
 Measurement swept TOP_K over [3, 5, 8, 10, 12, 15] to find optimal value
@@ -153,7 +155,7 @@ Outcome: substantial improvement across all measures except latency.
 Five of six known regressions resolved, including all three historical PDF
 failures that previous experiments couldn't fix (scanned documents).
 
-Mechanism: the reranker's 6th, 7th, and 8th choices are still highly 
+Mechanism: the reranker's 6th, 7th, and 8th choices are still highly
 relevant (cutting at 5 was removing relevant context).
 
 Trade-offs:
@@ -168,7 +170,7 @@ What matters is that I can quickly check the performance of the settings.
 
 ### Multi-Query expansion — tested twice, not adopted
 
-Hypothesis: generating 3 variations of each query and combining retrieval 
+Hypothesis: generating 3 variations of each query and combining retrieval
 results would improve recall on ambiguous or distributed-information questions.
 
 Two prompt variants tested:
@@ -183,16 +185,16 @@ Both regressed against the no-MQ baseline:
 | Faithfulness | 4.55 | 4.25 | 4.30 |
 | Regressions resolved | 5/6 | 2/6 | 2/6 |
 
-Mechanism of failure: query variations multiply the number of candidates 
-the reranker has to discriminate among. Even when variations stay tightly 
-scoped (paraphrase-only), they dilute the reranker's selection of the 
-top-K positions. The highest-relevance chunks survive, but the marginal 
-positions (6th-8th) get displaced by slightly-less-relevant candidates 
+Mechanism of failure: query variations multiply the number of candidates
+the reranker has to discriminate among. Even when variations stay tightly
+scoped (paraphrase-only), they dilute the reranker's selection of the
+top-K positions. The highest-relevance chunks survive, but the marginal
+positions (6th-8th) get displaced by slightly-less-relevant candidates
 from variations.
 
 Note: This setting is for what I currently have in my library.
 What matters is that I can quickly check the performance of the settings.
-As of phase 2, the cost outweighs the benefits. 
+As of phase 2, the cost outweighs the benefits.
 
 The MQ code remains available but disabled by default.
 
@@ -200,8 +202,8 @@ The MQ code remains available but disabled by default.
 
 ### Document health tracking
 
-Health classification implemented as a pure-Python scoring model in 
-`src/doc_assistant/health.py`. Each document is classified as healthy, 
+Health classification implemented as a pure-Python scoring model in
+`src/doc_assistant/health.py`. Each document is classified as healthy,
 marginal, or broken based on observable signals at ingest time:
 
 - Chunk count and chunks-per-page ratio
@@ -212,18 +214,18 @@ marginal, or broken based on observable signals at ingest time:
 
 Score ≥75 = healthy, ≥40 = marginal, <40 = broken.
 
-The classification is informational, not blocking: broken documents are 
+The classification is informational, not blocking: broken documents are
 still retrievable, but visually flagged for the user's attention.
-Broken document content might still be valuable. 
+Broken document content might still be valuable.
 
 Known limitations:
 - Some documents might be classified as marginal. (Issues with some pdf formats)
   Not blocking; accepted as a known issue.
-- Section detection regex now strips markdown formatting from heading 
-  text to prevent future occurrences. 
+- Section detection regex now strips markdown formatting from heading
+  text to prevent future occurrences.
   (Might have to build something more robust after further testing).
 
-To resolve some edge cases, a dedup script (`scripts/dedupe_documents.py`) existed 
+To resolve some edge cases, a dedup script (`scripts/dedupe_documents.py`) existed
 that formerly cleared duplicate Document rows from the path+content hash drift
 (likely an artifact of the chroma→sqlite migration). It was deleted in the
 2026-06-07 dead-code audit once content-only hashing removed the root cause — see
@@ -231,23 +233,23 @@ the Content-only hashing section below.
 
 ### Library browser via chat commands
 
-Implementation pattern: `/library` command renders all documents as a 
-structured Chainlit message. Chosen for implementation simplicity and 
+Implementation pattern: `/library` command renders all documents as a
+structured Chainlit message. Chosen for implementation simplicity and
 reliability within Chainlit's native message API.
 
-Known scaling limit: this pattern works well for libraries up to ~100 
-documents. Beyond that, rendering hundreds of cards in a single message 
+Known scaling limit: this pattern works well for libraries up to ~100
+documents. Beyond that, rendering hundreds of cards in a single message
 becomes unwieldy and slow.
 
 Future migration path when needed:
 1. Add pagination (Phase 8): `/library page:2` for 20-doc pages
-2. Or migrate to a real sidebar/separate UI (Phase 8+) if Chainlit gets 
-   better layout support, or migrate the whole app to Streamlit/Reflex 
+2. Or migrate to a real sidebar/separate UI (Phase 8+) if Chainlit gets
+   better layout support, or migrate the whole app to Streamlit/Reflex
    with proper navigation
-3. The data layer in `library.py` is independent of the UI — switching 
+3. The data layer in `library.py` is independent of the UI — switching
    UI frameworks doesn't require redesigning queries
 
-The library.py abstraction is specifically designed so that any UI 
+The library.py abstraction is specifically designed so that any UI
 change is a UI change, not a data layer rewrite.
 
 ### Enrichment-Layer Pattern (post-ingest, idempotent, sidecar by default)
@@ -263,24 +265,24 @@ writes to its own sidecar table or manifest.
 
 Rules:
 
-- One module per enrichment kind (`citations.py`, `metadata_extractor.py`, 
+- One module per enrichment kind (`citations.py`, `metadata_extractor.py`,
   `figures.py`, `tables.py`, `doc_vectors.py`, ...).
-- One CLI runner per module under `scripts/extract_*.py` with 
+- One CLI runner per module under `scripts/extract_*.py` with
   `--dry-run` / `--apply` / `--force` / `--doc <hash>` flags.
-- Idempotent: re-running on the same input produces the same output. Skip 
+- Idempotent: re-running on the same input produces the same output. Skip
   docs that already have results unless `--force`.
-- Sidecar by default. Splicing back into the markdown is only allowed when 
-  the enrichment is *text-shaped* (e.g., tables). Binary artifacts (figures, 
+- Sidecar by default. Splicing back into the markdown is only allowed when
+  the enrichment is *text-shaped* (e.g., tables). Binary artifacts (figures,
   embeddings) live outside the markdown.
 - No mutation of the primary chunk store from an enrichment module.
 
 Trade-offs:
 
-- Re-runnability is the goal. As extractors improve, every enrichment can 
+- Re-runnability is the goal. As extractors improve, every enrichment can
   be re-run without touching primary ingest.
 - Cost: small duplication of scaffolding (one CLI per module). Accepted.
-- Risk: enrichment results can drift from the underlying markdown if the 
-  cache is regenerated. Mitigated by content-only hashing — re-extraction 
+- Risk: enrichment results can drift from the underlying markdown if the
+  cache is regenerated. Mitigated by content-only hashing — re-extraction
   produces the same hash if the content is unchanged.
 
 ### Enrichment provider-intent guard — no `--apply` CLI can *silently* spend (added 2026-06-15)
@@ -343,46 +345,46 @@ pattern) is automation-safe.
 
 ### Research Integrity Layer
 
-A cross-cutting layer that records how each answer was produced and 
-separates *evidence* from *AI interpretation* in synthesis-mode answers. 
+A cross-cutting layer that records how each answer was produced and
+separates *evidence* from *AI interpretation* in synthesis-mode answers.
 Ships in three chunks across Phases 5, 6, and 9.
 
 **Sources (influences, not specs):**
 
 - AI Usage Cards (arXiv 2303.03886) — provenance card schema.
-- PRISMA-trAIce (PMC12694947) — Phase 9 export target for AI-assisted 
+- PRISMA-trAIce (PMC12694947) — Phase 9 export target for AI-assisted
   literature reviews.
-- BE WISE framework (Frontiers, April 2026) — influence on the `human` 
+- BE WISE framework (Frontiers, April 2026) — influence on the `human`
   synthesis mode. Treated as a vendor framework, not adopted as a spec.
-- Nature Methods — disclosure norm; satisfied as a byproduct of trAIce 
+- Nature Methods — disclosure norm; satisfied as a byproduct of trAIce
   export.
 
 **Chunk 1 — Provenance card (Phase 5).** New `answer_records` table stores
-query, retrieved chunk IDs + scores, reranker scores, model name, prompt 
-version, token cost, latency, timestamp. Rendered as a collapsible card 
-under each answer. CLI export `/export-record <answer_id>` → JSON. The 
+query, retrieved chunk IDs + scores, reranker scores, model name, prompt
+version, token cost, latency, timestamp. Rendered as a collapsible card
+under each answer. CLI export `/export-record <answer_id>` → JSON. The
 eval harness consumes the same record schema.
 
 **Chunk 2a — Dual interpretation layer (Phase 6).** Synthesis-mode answers
 return two layers: *evidence* (retrieved passages, faithfulness-scored, no
-synthesis) and *interpretation* (LLM synthesis, clearly labeled, with 
-retrieval-derived uncertainty markers). Per-claim accept/reject/edit, 
-persisted on the answer record. Pre-interpretation checkpoint (coverage + 
+synthesis) and *interpretation* (LLM synthesis, clearly labeled, with
+retrieval-derived uncertainty markers). Per-claim accept/reject/edit,
+persisted on the answer record. Pre-interpretation checkpoint (coverage +
 citation density + faithfulness) warns the user before generating.
 
 **Chunk 2b — Reviewer agent (Phase 6).** ✅ Done (2026-05-28).
 `src/doc_assistant/reviewer.py` + `answer_reviews` sidecar table.
-Reviewer defaults to Haiku, runs ONLY when PR 5.1's heuristic 
-confidence flags fire (cost discipline). 4-dim rubric: 
-faithfulness, citation_density, hedging_adequacy (1-5 each) + 
-unsupported_claims_count. **Reference-FREE**: judges answer vs 
-retrieved evidence, not vs a ground-truth reference — distinct from 
-the eval harness's `LLMJudgeScorer` which compares against expected 
-answers. `temperature=0`, single-turn, no system prompt — same 
-isolation contract as the eval judge. JSON-in-prompt (no tool-use; 
-keeps consistency with eval judge). No auto-retry. `/review <id>` 
-slash command for manual re-review. 16 unit tests (+ 3 isolation tests in `test_reviewer_isolation.py`). Schema is 
-reviewer-kind-agnostic so a future human-review path slots into the 
+Reviewer defaults to Haiku, runs ONLY when PR 5.1's heuristic
+confidence flags fire (cost discipline). 4-dim rubric:
+faithfulness, citation_density, hedging_adequacy (1-5 each) +
+unsupported_claims_count. **Reference-FREE**: judges answer vs
+retrieved evidence, not vs a ground-truth reference — distinct from
+the eval harness's `LLMJudgeScorer` which compares against expected
+answers. `temperature=0`, single-turn, no system prompt — same
+isolation contract as the eval judge. JSON-in-prompt (no tool-use;
+keeps consistency with eval judge). No auto-retry. `/review <id>`
+slash command for manual re-review. 16 unit tests (+ 3 isolation tests in `test_reviewer_isolation.py`). Schema is
+reviewer-kind-agnostic so a future human-review path slots into the
 same table.
 *Deferred (idea, 2026-06-02):* the trigger policy is currently fixed —
 auto-run on heuristically-flagged answers + manual `/review`. A later
@@ -412,26 +414,26 @@ does not drift. The full evaluation strategy, scorer limitations, verified-10
 headline rule, and the local-judge calibration gate live in
 [`tests/eval/TESTING.md`](../tests/eval/TESTING.md).
 
-**Chunk 3 — PRISMA-trAIce export (Phase 9).** When the literature review 
-generator produces a review, it also produces a structured trAIce-aligned 
-disclosure (JSON + markdown). Pulls from `answer_records` and the 
+**Chunk 3 — PRISMA-trAIce export (Phase 9).** When the literature review
+generator produces a review, it also produces a structured trAIce-aligned
+disclosure (JSON + markdown). Pulls from `answer_records` and the
 adjudication log; no new instrumentation needed.
 
 **Mode flag.** `SYNTHESIS_MODE = human | ai` (default `ai`).
 
-- `human` — AI returns evidence only; interpretation is the user's. 
+- `human` — AI returns evidence only; interpretation is the user's.
   BE WISE-influenced path.
 - `ai` — dual-layer with reviewer scoring.
 
 Both modes share the same pipeline; the flag selects the output template.
 
 **Why retrieval-derived uncertainty markers, not self-reported confidence.**
-LLMs are systematically overconfident and the mapping between 
-self-reported scores and actual correctness is non-linear and 
-model-dependent. Building a calibration model (Platt scaling or similar) 
-requires a labeled dataset and ongoing maintenance — out of scope for a 
-single-user tool. Retrieval-derived markers (citation density, source 
-diversity, reranker score spread) are observable, not self-reported, and 
+LLMs are systematically overconfident and the mapping between
+self-reported scores and actual correctness is non-linear and
+model-dependent. Building a calibration model (Platt scaling or similar)
+requires a labeled dataset and ongoing maintenance — out of scope for a
+single-user tool. Retrieval-derived markers (citation density, source
+diversity, reranker score spread) are observable, not self-reported, and
 map to instrumentation that already exists.
 
 ### Feature 7 — cross-document concept graph: design decisions (PR 16)
@@ -620,8 +622,8 @@ past sidecar.
 
 ## Roadmap
 
-Phases renumbered to absorb the doc-assistant-roadmap.md additions. See 
-that document for the source of intent; this section records the locked 
+Phases renumbered to absorb the doc-assistant-roadmap.md additions. See
+that document for the source of intent; this section records the locked
 phase plan.
 
 ---
@@ -748,11 +750,11 @@ Goal: working end-to-end RAG over personal documents.
 
 ### ✅ Phase 2: Quality Foundation (in progress)
 
-Goal: make the existing Q&A measurably smarter. No quality improvement is 
+Goal: make the existing Q&A measurably smarter. No quality improvement is
 worth claiming without a metric.
 
 - 2.0 Section metadata cleanup (references, garbage, title-as-section)
-- 2.1 Evaluation set: 20+ question/answer pairs spanning factual recall, 
+- 2.1 Evaluation set: 20+ question/answer pairs spanning factual recall,
   methodology, synthesis, state-of-the-art, and negative-answer cases
 - 2.2 Metrics: retrieval recall@K, answer faithfulness, answer correctness,
   latency, token cost
@@ -773,11 +775,11 @@ Deliverable: a measurable improvement in answer quality, with numbers.
 
 ### ✅ Phase 3: Document Store + Library UI (complete)
 
-Goal: treat the library as a first-class object. Browse, upload, organize, 
+Goal: treat the library as a first-class object. Browse, upload, organize,
 inspect, and control how documents are processed.
 
 Core components:
-- SQLite document store implementing the Folder → Document → Part → Chunk 
+- SQLite document store implementing the Folder → Document → Part → Chunk
   hierarchy
 - Library browser in the Chainlit UI
 - Drag-and-drop upload with debounced ingest
@@ -787,23 +789,23 @@ Core components:
 
 **Document Health & Ingestion Control** (sub-feature):
 
-Silent extraction failures destroy trust and pollute downstream metrics. 
-The current global-env-var approach to extractor selection doesn't scale — 
+Silent extraction failures destroy trust and pollute downstream metrics.
+The current global-env-var approach to extractor selection doesn't scale —
 different documents need different treatments.
 
-- Pre-ingestion profiling: detect scanned vs born-digital, presence of text 
+- Pre-ingestion profiling: detect scanned vs born-digital, presence of text
   layer, page count, estimated work
 - Classification: "born-digital", "scanned", "hybrid"
 - Recommended extractor per file with rationale shown to the user
 - Per-document extractor override (PyMuPDF4LLM vs Marker, eventually others)
-- Post-ingestion health check: chunk count, section detection, page coverage, 
+- Post-ingestion health check: chunk count, section detection, page coverage,
   "looks broken" flag
 - Per-document health badges in library view: ✅ good / ⚠️ marginal / ❌ broken
 - One-click re-extraction with a different extractor (no manual cache deletion)
 - Persistent ingestion log
 
-Rationale: this experience was discovered the hard way — historical PDFs 
-(Hodgkin & Huxley, Hubel & Wiesel) extracted to 1-10 chunks each 
+Rationale: this experience was discovered the hard way — historical PDFs
+(Hodgkin & Huxley, Hubel & Wiesel) extracted to 1-10 chunks each
 because they lack proper text layers.
 A non-technical user wouldn't have noticed until eval results were inexplicable.
 
@@ -817,98 +819,98 @@ A non-technical user wouldn't have noticed until eval results were inexplicable.
 
 ### ✅ Phase 4: Citation Graph
 
-Goal: model relationships between documents. Both explicit (citations) and 
+Goal: model relationships between documents. Both explicit (citations) and
 implicit (semantic similarity). Surface the structure of the literature.
 
 **Done (2026-05-26 session — explicit edges):**
-- Tier-1 regex citation extractor (`src/doc_assistant/citations.py`). 
-  Two-tier design with LLM fallback was the locked decision; tier-1 
-  measured at 22/27 docs (81%) on the existing corpus, 1,234 citations 
-  parsed. Tier-2 LLM fallback deferred — measure first, escalate when 
+- Tier-1 regex citation extractor (`src/doc_assistant/citations.py`).
+  Two-tier design with LLM fallback was the locked decision; tier-1
+  measured at 22/27 docs (81%) on the existing corpus, 1,234 citations
+  parsed. Tier-2 LLM fallback deferred — measure first, escalate when
   data warrants.
-- Doc-level metadata extractor (`src/doc_assistant/metadata_extractor.py`) 
-  for title / authors / year / DOI. Coverage on the 27-doc corpus: 27/27 
+- Doc-level metadata extractor (`src/doc_assistant/metadata_extractor.py`)
+  for title / authors / year / DOI. Coverage on the 27-doc corpus: 27/27
   title, 26/27 authors, 23/27 year, 7/27 DOI.
-- Internal citation matcher (DOI → first-author-surname + year → fuzzy 
-  title via stdlib `SequenceMatcher`). Cross-citation rate is 
-  structurally low on the current corpus (mostly recent papers citing 
+- Internal citation matcher (DOI → first-author-surname + year → fuzzy
+  title via stdlib `SequenceMatcher`). Cross-citation rate is
+  structurally low on the current corpus (mostly recent papers citing
   classics not in the library).
-- CLI runners: `scripts/extract_citations.py`, `scripts/extract_doc_metadata.py`. 
+- CLI runners: `scripts/extract_citations.py`, `scripts/extract_doc_metadata.py`.
   Both idempotent (skip already-processed docs unless `--force`).
-- Slash commands: `/cites`, `/cited-by`, `/graph` (Mermaid for ≤25-node 
+- Slash commands: `/cites`, `/cited-by`, `/graph` (Mermaid for ≤25-node
   subgraphs).
 - 45 unit tests across citations + metadata.
-- GROBID and refextract evaluated and deferred — Docker + Java service 
+- GROBID and refextract evaluated and deferred — Docker + Java service
   cost not justified by the recall data so far.
 
 **Done (2026-05-28 session — implicit edges):**
-- Doc-level vector enrichment (`src/doc_assistant/doc_vectors.py`). 
-  Mean-pools chunk embeddings from the baseline Chroma store per 
-  document, L2-normalises, and computes pairwise cosine similarity. 
-  Returns directed top-K=10 nearest-neighbour edges per source above a 
+- Doc-level vector enrichment (`src/doc_assistant/doc_vectors.py`).
+  Mean-pools chunk embeddings from the baseline Chroma store per
+  document, L2-normalises, and computes pairwise cosine similarity.
+  Returns directed top-K=10 nearest-neighbour edges per source above a
   0.5 cosine threshold.
-- Sidecar table `doc_similarities (source_document_id, target_document_id, 
-  embedding_model, score, computed_at)` — composite PK so future Phase 5 
+- Sidecar table `doc_similarities (source_document_id, target_document_id,
+  embedding_model, score, computed_at)` — composite PK so future Phase 5
   embedder swaps (Feature 1) don't collide with existing rows.
-- CLI runner `scripts/compute_doc_vectors.py` — `--dry-run` / `--apply` / 
-  `--force` / `--doc <prefix>` / `--top-k` / `--threshold` flags. 
+- CLI runner `scripts/compute_doc_vectors.py` — `--dry-run` / `--apply` /
+  `--force` / `--doc <prefix>` / `--top-k` / `--threshold` flags.
   Idempotent: refuses to overwrite without `--force`.
-- `library.similar_docs(doc_id, limit=10, embedding_model=...)` query 
+- `library.similar_docs(doc_id, limit=10, embedding_model=...)` query
   joined to Document for filenames/titles.
 - `/similar <id>` slash command in `commands.py`.
-- 15 unit tests over the pure-numpy core (mean-pool, edge computation, 
+- 15 unit tests over the pure-numpy core (mean-pool, edge computation,
   threshold + top-K behaviour).
 
 **Locked design choices for doc vectors:**
-- Persist edges only, not the mean-pooled vectors themselves. Vectors 
-  are recomputed from Chroma on demand. Rationale: at personal-library 
-  scale (10s–100s of docs) the recompute is seconds; a separate vector 
-  table is bloat with no measurable benefit. Rejected: persist vectors 
+- Persist edges only, not the mean-pooled vectors themselves. Vectors
+  are recomputed from Chroma on demand. Rationale: at personal-library
+  scale (10s–100s of docs) the recompute is seconds; a separate vector
+  table is bloat with no measurable benefit. Rejected: persist vectors
   for incremental updates (premature at this scale).
-- Source store: baseline Chroma (`CHROMA_PATH`), not PC. Fewer, larger 
-  chunks per doc, simpler iteration, equivalent mean-pool semantics. 
-  Rejected: PC child store (finer granularity but more chunks per doc; 
+- Source store: baseline Chroma (`CHROMA_PATH`), not PC. Fewer, larger
+  chunks per doc, simpler iteration, equivalent mean-pool semantics.
+  Rejected: PC child store (finer granularity but more chunks per doc;
   no signal it improves the doc-level vector).
-- Directed top-K, asymmetric. The cosine relation is symmetric but the 
-  top-K trim makes the persisted edge set directional. Gives a stable 
-  "most similar to A" UX. Consumers wanting symmetric edges can union 
-  both directions. Rejected: undirected edges (loses "top-K of A" 
+- Directed top-K, asymmetric. The cosine relation is symmetric but the
+  top-K trim makes the persisted edge set directional. Gives a stable
+  "most similar to A" UX. Consumers wanting symmetric edges can union
+  both directions. Rejected: undirected edges (loses "top-K of A"
   intuition; would need an arbitrary disambiguation rule).
-- O(N²) similarity is fine for the current scale. Rejected: ANN index 
+- O(N²) similarity is fine for the current scale. Rejected: ANN index
   (premature; Phase 7 if and when the library grows past ~1000 docs).
 
 **Remaining (operational, not architectural):**
-- Apply the citation extraction, metadata backfill, and doc-vector 
-  computation on the local DB. All three CLI runners exist; this is the 
+- Apply the citation extraction, metadata backfill, and doc-vector
+  computation on the local DB. All three CLI runners exist; this is the
   15-minute shell run flagged in CLAUDE.md.
-- LNCS colon-separator format and multi-column extraction artifacts are 
+- LNCS colon-separator format and multi-column extraction artifacts are
   known tier-1 weaknesses; cosmetic, deferred.
 
 ### Phase 5: Embedding & Eval Foundation
 
-Goal: domain-aware retrieval backed by reproducible measurement, plus 
+Goal: domain-aware retrieval backed by reproducible measurement, plus
 the first deliverable of the Research Integrity Layer.
 
 See `docs/doc-assistant-roadmap.md` for the source of intent.
 
-- **Feature 1** — ✅ Done (2026-05-28). `EMBEDDING_MODEL` env var; 
-  `src/doc_assistant/embeddings.py` registry + factory. Initial options: 
-  `bge-base` (default → legacy `"langchain"` collection name for zero-migration 
-  upgrade), `specter2` (academic, uses its own collection). 15 unit tests. 
+- **Feature 1** — ✅ Done (2026-05-28). `EMBEDDING_MODEL` env var;
+  `src/doc_assistant/embeddings.py` registry + factory. Initial options:
+  `bge-base` (default → legacy `"langchain"` collection name for zero-migration
+  upgrade), `specter2` (academic, uses its own collection). 15 unit tests.
   Per-folder routing (Feature 1b) gated on Feature 3 measurement.
-- **Feature 2** — ✅ Done (2026-05-28). `src/doc_assistant/eval/` 
-  package: `cases.py` (YAML loader), `results.py` (dataclasses), 
-  `scorers.py` (5 scorers: ExactMatch, ContainsAll, CitationOverlap, 
-  EmbeddingSimilarity, LLMJudge), `runner.py` (Runner with progress 
-  callback + exception capture), `store.py` (DuckDB, 3-table schema, 
-  context-manager), `report.py` (summary + diff), `adapters.py` 
-  (RAGPipeline wrapper — only file with doc_assistant deps; 
-  extractable per Feature 5). CLI `scripts/run_eval.py` with paid 
+- **Feature 2** — ✅ Done (2026-05-28). `src/doc_assistant/eval/`
+  package: `cases.py` (YAML loader), `results.py` (dataclasses),
+  `scorers.py` (5 scorers: ExactMatch, ContainsAll, CitationOverlap,
+  EmbeddingSimilarity, LLMJudge), `runner.py` (Runner with progress
+  callback + exception capture), `store.py` (DuckDB, 3-table schema,
+  context-manager), `report.py` (summary + diff), `adapters.py`
+  (RAGPipeline wrapper — only file with doc_assistant deps;
+  extractable per Feature 5). CLI `scripts/run_eval.py` with paid
   scorers gated behind explicit flags. 59 unit tests (cases 9 + runner/store 27 + scorers 23).
-- **Feature 3** — ✅ Done (2026-05-28). 35-case eval set, run via the 
-  harness against two embedders (BGE vs SPECTER2) with a hardened 
-  reference-only LLM judge (`temperature=0`). 5 trials per model 
-  (`--repeat 5`); reported as mean ± trial-mean std. **Result: bge-base 
+- **Feature 3** — ✅ Done (2026-05-28). 35-case eval set, run via the
+  harness against two embedders (BGE vs SPECTER2) with a hardened
+  reference-only LLM judge (`temperature=0`). 5 trials per model
+  (`--repeat 5`); reported as mean ± trial-mean std. **Result: bge-base
   wins on the retrieval-side signals; the two are tied on the LLM judge.**
 
   | Scorer | bge-base (n=5) | specter2 (n=5) | Δ (bge − specter2) | Verdict |
@@ -917,51 +919,51 @@ See `docs/doc-assistant-roadmap.md` for the source of intent.
   | `contains_all` (0-1) | **0.804 ± 0.013** | 0.767 ± 0.014 | +0.037 | Real (~4σ) |
   | `llm_judge` (1-5) | 2.209 ± 0.053 | 2.224 ± 0.092 | −0.015 | Tied (within noise) |
 
-  The cross-encoder reranker and the answer LLM together level out the 
-  embedder differential at the chunk level: what matters is which 
-  documents got retrieved (bge wins) and whether the answer surfaces the 
-  expected keywords (bge wins); the judge's rubric over the resulting 
+  The cross-encoder reranker and the answer LLM together level out the
+  embedder differential at the chunk level: what matters is which
+  documents got retrieved (bge wins) and whether the answer surfaces the
+  expected keywords (bge wins); the judge's rubric over the resulting
   answers sees no meaningful difference.
 
-  **Key finding — SPECTER2 lost because of training-task mismatch.** 
-  SPECTER2 was trained for paper-level citation prediction over 
-  abstracts; our task is chunk-level QA retrieval over full text. 
-  bge-base's training corpora (MS MARCO, NQ, SQuAD, HotpotQA) are 
-  much closer to QA retrieval. **Implication:** lock bge-base as 
-  default; defer Feature 1b (per-folder embedder routing) until a 
-  workflow emerges where SPECTER2's strengths apply (e.g., the 
-  `/similar` paper-level task). Locked in `embeddings.py` registry; 
+  **Key finding — SPECTER2 lost because of training-task mismatch.**
+  SPECTER2 was trained for paper-level citation prediction over
+  abstracts; our task is chunk-level QA retrieval over full text.
+  bge-base's training corpora (MS MARCO, NQ, SQuAD, HotpotQA) are
+  much closer to QA retrieval. **Implication:** lock bge-base as
+  default; defer Feature 1b (per-folder embedder routing) until a
+  workflow emerges where SPECTER2's strengths apply (e.g., the
+  `/similar` paper-level task). Locked in `embeddings.py` registry;
   re-confirmed empirically.
 
-  **Provenance + reproducibility.** This comparison was measured on a 
-  private, non-redistributable corpus, so the numbers above are kept 
-  here as the record but cannot be reproduced by a third party. It is 
-  **queued to be re-run on the public demo corpus** 
-  (`tests/eval/cases.public.yaml` + `corpus_manifest.yaml`) so the 
-  embedder evidence becomes reproducible alongside the rest of the 
+  **Provenance + reproducibility.** This comparison was measured on a
+  private, non-redistributable corpus, so the numbers above are kept
+  here as the record but cannot be reproduced by a third party. It is
+  **queued to be re-run on the public demo corpus**
+  (`tests/eval/cases.public.yaml` + `corpus_manifest.yaml`) so the
+  embedder evidence becomes reproducible alongside the rest of the
   benchmark. Until then, treat the embedder verdict as provisional.
 
-  **Methodology caveats:** 35 cases is small — effect sizes are 
-  suggestive, not significant. LLM-judge means are low (~2.2/5) because 
-  the rubric is strict reference-only grading; absolute scores are not 
-  directly interpretable, the cross-model gap is the signal. 
-  `embedding_similarity` is excluded — it uses the active embedder, so 
+  **Methodology caveats:** 35 cases is small — effect sizes are
+  suggestive, not significant. LLM-judge means are low (~2.2/5) because
+  the rubric is strict reference-only grading; absolute scores are not
+  directly interpretable, the cross-model gap is the signal.
+  `embedding_similarity` is excluded — it uses the active embedder, so
   the comparison is confounded across models (fix pending).
-- **Integrity Chunk 1** — Provenance card. `answer_records` table; 
-  collapsible card under each answer; `/export-record <id>` → JSON. 
+- **Integrity Chunk 1** — Provenance card. `answer_records` table;
+  collapsible card under each answer; `/export-record <id>` → JSON.
   Hooks into existing `tracking.py`.
 - **Provider layer (generation side of Feature 1)** — the config-driven-provider pattern Feature 1 applied to embeddings extends to generation. A normalized `LLMClient.complete()` protocol (`src/doc_assistant/llm.py`) with Anthropic + Ollama adapters backs the reviewer and the eval judge; the streaming chat path stays LangChain but reads `LLM_PROVIDER`/`LLM_MODEL`. **Local-first is the end goal, hybrid today** — the *generator* should run fully local (analysis + chat on Ollama, no `ANTHROPIC_API_KEY`). The *judge and reviewer are pinned instruments*, not generators: they default to a fixed, version-recorded reference model and only move to local once the local-judge calibration gate passes (see `tests/eval/TESTING.md`). Note: Feature 4c's VLM figure description is API-only and not part of the local path. Reviewer context isolation (evidence-only prompt, separate instance) is pinned by a guard test. Full design: `docs/specs/llm-provider-isolation.md`.
 
 ### Phase 6: Per-project routing + Figures & Tables + Dual-layer interpretation
 
-Goal: turn the static embedding config into per-corpus routing; promote 
-figures and tables to first-class content; ship the dual-layer 
+Goal: turn the static embedding config into per-corpus routing; promote
+figures and tables to first-class content; ship the dual-layer
 interpretation + reviewer agent.
 
-- **Feature 1b** — Per-project embedder routing. **Gated on Feature 3 
-  results.** `Folder.embedding_model` column. Collection naming 
-  `{folder_id}__{model_name}`. Cross-folder queries hit each collection 
-  independently and the cross-encoder reranker resolves the mixed-space 
+- **Feature 1b** — Per-project embedder routing. **Gated on Feature 3
+  results.** `Folder.embedding_model` column. Collection naming
+  `{folder_id}__{model_name}`. Cross-folder queries hit each collection
+  independently and the cross-encoder reranker resolves the mixed-space
   merge.
 - **Feature 4a** — table extraction pass. ✅ **Engine decision LOCKED 2026-06-02**
   (RTX eval): **Marker** wins, run out-of-process (`uvx --from marker-pdf
@@ -1036,11 +1038,11 @@ interpretation + reviewer agent.
   preserving the Enrichment-Layer rule. Eval hook: `FigureRetrievalScorer`
   (held-out figure spec → was its figure chunk retrieved?). Dry-run on the public
   10-paper corpus: 38 of 45 figures eligible, 7 skipped as well-captioned.
-- **Integrity Chunk 2a** — Dual interpretation layer. `SYNTHESIS_MODE 
-  = human | ai` (default `ai`). Evidence + interpretation as separate 
+- **Integrity Chunk 2a** — Dual interpretation layer. `SYNTHESIS_MODE
+  = human | ai` (default `ai`). Evidence + interpretation as separate
   output sections. Per-claim adjudication.
-- **Integrity Chunk 2b** — Reviewer agent. Cheaper LLM scores the 
-  interpretation against a structured rubric (faithfulness, citation 
+- **Integrity Chunk 2b** — Reviewer agent. Cheaper LLM scores the
+  interpretation against a structured rubric (faithfulness, citation
   density, hedging adequacy, claims-without-sources). No auto-retry.
 - **Integrity Chunk 2c** — Reviewer aggregation & self-improvement loop —
   ✅ **code shipped (PR 12, 2026-06-14; one paid anchor run pending)**.
@@ -1081,15 +1083,15 @@ Goal: quantitative view of what the library knows vs what the field knows.
 This is the distinguishing capability — most existing tools stop short of this.
 
 - External literature API integration (Semantic Scholar, OpenAlex, arXiv)
-- DOI lookup at ingest time → fetch authoritative metadata, references, 
+- DOI lookup at ingest time → fetch authoritative metadata, references,
   classifications
 - Topic clustering across the library
-- Field coverage estimation: "you have 47 of the top 100 papers in this cluster 
+- Field coverage estimation: "you have 47 of the top 100 papers in this cluster
   by citation count"
-- Frontier detection: recent papers heavily cited by your library's papers but 
+- Frontier detection: recent papers heavily cited by your library's papers but
   missing from your library
 - "What to read next" recommendations, ranked
-- Knowledge map dashboard: bubble plot or similar, clusters sized by coverage, 
+- Knowledge map dashboard: bubble plot or similar, clusters sized by coverage,
   recency color-coded, gaps visible at a glance
 - **Feature 6 — Self-organizing wiki / synthesis layer.** A derived markdown
   layer over the corpus: per-topic notes (summary + tags + `[[links]]` +
@@ -1229,7 +1231,7 @@ Note: content-only hashing completed in Phase 3 (was moved from Phase 8 to Phase
 
 ### Phase 9: Literature Review Generation
 
-Goal: synthesize a structured review across documents in the library on a 
+Goal: synthesize a structured review across documents in the library on a
 chosen topic. The endgame feature.
 
 Requires everything from Phases 2–7 to work well:
@@ -1244,51 +1246,51 @@ Capabilities:
 - Per-paper synthesis: what does each paper contribute on the topic?
 - Cross-paper synthesis: agreements, disagreements, evolution of ideas
 - Citation-grounded claims: every assertion linked to specific passages
-- Structural output: introduction, main themes, methodological comparison, 
+- Structural output: introduction, main themes, methodological comparison,
   open questions, references
 - Configurable scope: by folder, by topic, by date range, by document set
 - Export: markdown, PDF, or BibTeX-aware Word document
-- **Integrity Chunk 3** — PRISMA-trAIce export. Structured methodology 
-  disclosure alongside the generated review, pulled from `answer_records` 
+- **Integrity Chunk 3** — PRISMA-trAIce export. Structured methodology
+  disclosure alongside the generated review, pulled from `answer_records`
   and the adjudication log.
 
 ---
 
 ## Forward-looking considerations (added 2026-05-28)
 
-The architecture is well-positioned for the current ~50-doc personal-library 
-scale and handles ~500 docs without changes. Several trajectory questions are 
-worth keeping in view as the project grows; none requires action now, but 
+The architecture is well-positioned for the current ~50-doc personal-library
+scale and handles ~500 docs without changes. Several trajectory questions are
+worth keeping in view as the project grows; none requires action now, but
 none should be silently undermined by short-term decisions either.
 
 ### Eval set as a living artefact
 
-`tests/eval/cases.yaml` ships with 35 cases. The expected pattern: every real 
-question the user asks the system in earnest is a candidate eval case. The 
-file should grow with use — 100 cases by Phase 6, 200+ by Phase 9. Each new 
-case is a regression test against future PRs. The harness (`scripts/run_eval.py` 
+`tests/eval/cases.yaml` ships with 35 cases. The expected pattern: every real
+question the user asks the system in earnest is a candidate eval case. The
+file should grow with use — 100 cases by Phase 6, 200+ by Phase 9. Each new
+case is a regression test against future PRs. The harness (`scripts/run_eval.py`
 with `--repeat`) is built to scale linearly with the case count.
 
-**Risk:** authored expected_answers go stale as the corpus changes or as 
-the user's understanding sharpens. Periodic review needed — the 
+**Risk:** authored expected_answers go stale as the corpus changes or as
+the user's understanding sharpens. Periodic review needed — the
 `metadata.author_verified: false` flag is the marker.
 
 ### Cost discipline
 
-Once `/chat` is in daily use, Haiku token spend matters. The provenance 
-card (PR 5, Integrity Chunk 1) is the data primitive that makes cost 
-analysis evidence-based — every answer carries its token cost. Options 
+Once `/chat` is in daily use, Haiku token spend matters. The provenance
+card (PR 5, Integrity Chunk 1) is the data primitive that makes cost
+analysis evidence-based — every answer carries its token cost. Options
 that become available once the records exist:
 
-1. **Answer cache** keyed by `(query_hash, retrieved_chunk_ids, model, prompt_version)`. 
+1. **Answer cache** keyed by `(query_hash, retrieved_chunk_ids, model, prompt_version)`.
    Same question with the same context returns the same answer for free.
-2. **Tiered LLM routing**: Haiku for simple lookups, Sonnet for hard 
-   synthesis, Ollama for routine queries. The reviewer agent in 
-   Chunk 2b will need this anyway (cheap model judges expensive model's 
+2. **Tiered LLM routing**: Haiku for simple lookups, Sonnet for hard
+   synthesis, Ollama for routine queries. The reviewer agent in
+   Chunk 2b will need this anyway (cheap model judges expensive model's
    output).
 3. **Per-session cost budgets**: warn at $X, hard-stop at $Y.
 
-None of these is built yet; the schema for PR 5 should make all three 
+None of these is built yet; the schema for PR 5 should make all three
 feasible later without re-instrumenting.
 
 ### Database scale story
@@ -1340,13 +1342,13 @@ Going multi-user requires:
 3. **DB redesign**: SQLite is single-writer; multi-user concurrent edits need either WAL-mode tuning, server-mode (`sqld`), or a switch to Postgres.
 4. **`created_by` and `modified_by` columns** on every mutable table.
 
-**Don't bake in single-user assumptions you can't reverse.** The current 
-schema mostly avoids this — UUIDs everywhere, sidecar tables. The 
-`/folders` and `/tags` features (when added) need to think about per-user 
+**Don't bake in single-user assumptions you can't reverse.** The current
+schema mostly avoids this — UUIDs everywhere, sidecar tables. The
+`/folders` and `/tags` features (when added) need to think about per-user
 vs shared from day one.
 
-**When to revisit:** the moment a workflow emerges that involves >1 person 
-on the same corpus. Until then, the cost of designing for it now exceeds 
+**When to revisit:** the moment a workflow emerges that involves >1 person
+on the same corpus. Until then, the cost of designing for it now exceeds
 the cost of deferring.
 
 ---
@@ -1355,22 +1357,22 @@ the cost of deferring.
 
 Decisions I haven't made yet:
 
-- **UI framework for Phases 4-7.** Chainlit handles chat well but is awkward 
-  for graph visualization and library browsers. Possible migrations: Reflex, 
-  FastAPI + custom frontend, Streamlit. Decision point: when graph 
+- **UI framework for Phases 4-7.** Chainlit handles chat well but is awkward
+  for graph visualization and library browsers. Possible migrations: Reflex,
+  FastAPI + custom frontend, Streamlit. Decision point: when graph
   visualization is being built and Chainlit's element API hits its limits.
 
 - **Embedding model upgrade path.** current choice: `bge-base-en-v1.5`
     I should test new models.
 
 - **Multi-user support.** Currently single-user. Multi-user suppport in the future ?
-    Redesign of db architecture needed. 
+    Redesign of db architecture needed.
 
-- **Citation extraction quality vs. external API quality.** TBD — revisit 
-  during Phase 7 (Gap Detection) when Semantic Scholar / OpenAlex / arXiv 
+- **Citation extraction quality vs. external API quality.** TBD — revisit
+  during Phase 7 (Gap Detection) when Semantic Scholar / OpenAlex / arXiv
   integrations land and can provide a ground-truth comparison.
 
-- **Tier-2 LLM citation fallback.** Deferred until corpus grows or 
+- **Tier-2 LLM citation fallback.** Deferred until corpus grows or
   no-section docs become problematic.
 
 - **MCP server interface (external tool access).** Open / unscheduled.
@@ -1525,7 +1527,7 @@ indicator of "did we write the tests we should have", not a goal in itself.
 
 ### Better document pre-processing
 
-Current extraction (PyMuPDF4LLM + Marker for scanned) produces usable but 
+Current extraction (PyMuPDF4LLM + Marker for scanned) produces usable but
 imperfect markdown. Specific issues observed:
 
 - Mid-word breaks from PDF columns ("M isregistration", "W ith")
@@ -1534,8 +1536,8 @@ imperfect markdown. Specific issues observed:
 - Tables sometimes lose structure
 - Reference list parsing varies by paper format
 
-A dedicated pre-processing pass — between extraction and chunking — could 
-clean these systematically. Possible techniques: regex-based artifact repair, 
+A dedicated pre-processing pass — between extraction and chunking — could
+clean these systematically. Possible techniques: regex-based artifact repair,
 LLM-based "did this extract correctly?" check, format-specific cleaners.
 
 Cost: might not be worth the cost but worth trying. LLM-based could be costly.
@@ -1599,12 +1601,12 @@ Currently no evidence either way.
 
 ### Domain-aware tokenization / keyword embedding
 
-Standard embedding models treat all tokens equivalently. Scientific text has 
-*disproportionately important keywords* — drug names, protein names, technique 
+Standard embedding models treat all tokens equivalently. Scientific text has
+*disproportionately important keywords* — drug names, protein names, technique
 names, mathematical operators — that carry most of the meaning of a sentence.
 
-A potential improvement: identify a vocabulary of high-signal scientific terms 
-(via TF-IDF on the corpus, or pre-built domain dictionaries like UMLS for 
+A potential improvement: identify a vocabulary of high-signal scientific terms
+(via TF-IDF on the corpus, or pre-built domain dictionaries like UMLS for
 biomedical), then either:
 
 1. Boost their weight in BM25 retrieval

@@ -13,7 +13,7 @@ The claim is the neuron doctrine:
 - They are in contact, not physically continuous.
 - Signals pass from one neuron to another through specialized junctions.
 
-It opposed the older reticular theory, which proposed that the 
+It opposed the older reticular theory, which proposed that the
 nervous system was one continuous network.
 
 Cajal is arguing:
@@ -48,12 +48,12 @@ The "dynamic polarization" principle is especially important:
 - Dendrites/cell body receive
 - Axon sends
 
-He states explicitly: "nervous movement in dendrites is toward the cell, 
+He states explicitly: "nervous movement in dendrites is toward the cell,
 and away through axons."
 
-Historically, this lecture is also important because Cajal and Camillo Golgi 
-shared the Nobel Prize but fundamentally disagreed. They used the same 
-staining method to support opposite theories but Golgi supported continuity while 
+Historically, this lecture is also important because Cajal and Camillo Golgi
+shared the Nobel Prize but fundamentally disagreed. They used the same
+staining method to support opposite theories but Golgi supported continuity while
 Cajal supported discrete neurons. Cajal won.
 
 ---
@@ -63,30 +63,30 @@ Cajal supported discrete neurons. Cajal won.
 Several things.
 
 **A. The reasoning is still scientifically valid today.**
-Cajal is not just describing anatomy. He is doing hypothesis formation, model 
-comparison, mechanistic inference, and cautious interpretation. He repeatedly 
-notes that current evidence supports X but future methods may revise it. 
+Cajal is not just describing anatomy. He is doing hypothesis formation, model
+comparison, mechanistic inference, and cautious interpretation. He repeatedly
+notes that current evidence supports X but future methods may revise it.
 That epistemic caution is modern and the mark of great science.
 
 **B. He inferred function from structure incredibly accurately.**
-Without modern techniques or concepts like electrophysiology, electron microscopy, 
-molecular biology, fluorescent imaging, or computers, 
-he inferred directional signaling, circuit organization, 
-convergence/divergence, hierarchical processing, and regeneration dynamics. 
+Without modern techniques or concepts like electrophysiology, electron microscopy,
+molecular biology, fluorescent imaging, or computers,
+he inferred directional signaling, circuit organization,
+convergence/divergence, hierarchical processing, and regeneration dynamics.
 Many of these inferrences turned out largely correct.
 
 **C. The descriptions are unbelievably detailed.**
-The lecture is effectively a giant anatomical compression algorithm. He 
-mentally reconstructed neural circuitry from stained slices, static images, 
-and partial observations. That required extraordinary visual reasoning, 
-spatial abstraction, memory, and patience. This is one reason Cajal is often 
+The lecture is effectively a giant anatomical compression algorithm. He
+mentally reconstructed neural circuitry from stained slices, static images,
+and partial observations. That required extraordinary visual reasoning,
+spatial abstraction, memory, and patience. This is one reason Cajal is often
 considered one of the greatest anatomists in scientific history.
 
 **D. He was already thinking about plasticity and growth.**
-The sections on regeneration, growth cones, developmental wiring, and 
-structural changes under pathology are early forms of ideas that later 
+The sections on regeneration, growth cones, developmental wiring, and
+structural changes under pathology are early forms of ideas that later
 became developmental neuroscience, neural repair, and neuroplasticity.
 
 **E. Some parts are wrong or incomplete.**
-Some physiological conclusions were speculative. 
+Some physiological conclusions were speculative.
 He was imperfect but the impressive thing is how much he got right with minimal tools.

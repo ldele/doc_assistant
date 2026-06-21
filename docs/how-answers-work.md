@@ -1,3 +1,5 @@
+<!-- status: active · updated: 2026-06-20 · class: living -->
+
 # How answers work — evidence vs. interpretation
 
 This assistant is built for research, so it tries to be clear about **what comes

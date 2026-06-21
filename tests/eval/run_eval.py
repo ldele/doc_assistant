@@ -382,7 +382,10 @@ def main():
     print()
 
     rag = RAGPipeline()
-    judge = ChatAnthropic(
+    # The eval judge is the one *intentional* live API call under tests/: this harness is a
+    # manually-invoked measurement tool (`python -m tests.eval.run_eval`), not a pytest-collected
+    # test, and it must call the real model to score real answers — so the §13 gate exempts it.
+    judge = ChatAnthropic(  # cpc: allow-live-api  (intentional paid eval judge — see note above)
         model="claude-haiku-4-5-20251001",
         api_key=ANTHROPIC_API_KEY,
         max_tokens=200,

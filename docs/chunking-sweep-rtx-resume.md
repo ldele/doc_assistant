@@ -1,3 +1,5 @@
+<!-- status: active · updated: 2026-06-20 · class: disposable -->
+
 # Chunking sweep — resume on the RTX box
 
 > ✅ **DONE (2026-06-06).** Full 6-config sweep run on the RTX box (public corpus, n=3,

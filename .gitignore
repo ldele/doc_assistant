@@ -20,9 +20,15 @@ build/
 
 # Claude
 # CLAUDE.md is COMMITTED — shared, public-safe agent instructions (a portfolio plus).
-# Personal/transient notes go in CLAUDE.local.md (gitignored); .claude/ work dir stays local.
+# Personal/transient notes go in CLAUDE.local.md (gitignored).
+# .claude/ is gitignored EXCEPT the Tier-1 canonical-facts files (committed): CONTEXT.md +
+# KNOWN_ISSUES.md. The SESSION.md baton (and everything else in .claude/) stays local. (ADR-001.)
 CLAUDE.local.md
-.claude/
+.claude/*
+!.claude/CONTEXT.md
+!.claude/KNOWN_ISSUES.md
+# Local-only convention gates that depend on a private tooling repo — never shared (see ADR-001).
+.pre-commit-config.cpc.yaml
 
 # Runtime data
 data/cache/

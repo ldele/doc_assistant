@@ -1,32 +1,44 @@
 # CLAUDE.md — doc_assistant
 
-Entry-point file for Claude sessions on this project; both Cowork and Claude Code read it on session start. Session status lives in the baton, not in this file.
+Entry point for Claude sessions (Code + Cowork read this on session start). It **points** at the
+coordination files; it does not restate them. Session status lives in the baton, not here. Project
+conventions follow an internal **CONVENTIONS** standard (cpc); see `docs/decisions/ADR-001-adopt-cpc-standard.md`. ADRs in `docs/decisions/`.
 
 ## What this is
 
-A local-first personal research assistant: ingests PDF/EPUB/HTML/DOCX/MD, hybrid RAG (BM25 + vector + cross-encoder rerank), answers with inline citations plus a research-integrity layer (provenance, dual interpretation, reviewer). Not a general-purpose chatbot — reliable answers grounded in *your* documents, with measurable quality.
+A local-first personal research assistant: ingests PDF/EPUB/HTML/DOCX/MD, hybrid RAG (BM25 + vector
++ cross-encoder rerank), answers with inline citations plus a research-integrity layer (provenance,
+dual interpretation, reviewer). Not a general-purpose chatbot — reliable answers grounded in *your*
+documents, with measurable quality.
 
-## Coordination triad
+**State (2026-06-20):** Phase 6 + Phase 7 in progress; core RAG, eval harness, integrity layer,
+provider-agnostic LLM, figures/tables, wiki, and concept graph all shipped. Detail: `.claude/CONTEXT.md`.
+**Stack:** Python 3.12 + uv; Chroma + SQLite; Claude API or local Ollama. Full stack + locked
+settings: `.claude/CONTEXT.md`.
 
-Read on session start, in this order:
+## Coordination files (read in this order)
 
 1. `.claude/SESSION.md` — handoff baton: who worked last, what's done/uncommitted, what's next, which tool picks up.
-2. `.claude/CONTEXT.md` — stable facts: stack, locked settings, provider config, phase map, open questions.
-3. `docs/DEVLOG.md` (tail) — per-change history. (Predates the `.claude/DEVLOG.md` convention; stays in `docs/` — do not move or duplicate.)
+2. `.claude/CONTEXT.md` — canonical facts: stack, locked settings, provider config, phase map, open questions.
+3. `docs/DEVLOG.md` (tail) — per-change history. *(Lives in `docs/`, not `.claude/` — do not move or duplicate.)*
+4. `.claude/KNOWN_ISSUES.md` — open weaknesses, recurring failures, workarounds.
 
-Also: `.claude/KNOWN_ISSUES.md` — open weaknesses, recurring failures, workarounds.
+Reference: `docs/ROADMAP.md` · `docs/architecture.md` · `docs/decisions.md` (ADR home; split into `docs/decisions/` in progress, ADR-001) · `docs/specs/`.
 
-Note: `.claude/` is gitignored local working state — these files are absent in a fresh clone.
+Tracking: `.claude/CONTEXT.md` + `.claude/KNOWN_ISSUES.md` are committed; `.claude/SESSION.md` stays local (gitignored).
 
-Human-destined docs live in `docs/` and the repo root (README). Don't put LLM-coordination state there.
+## Non-negotiables (digest — full text in `.claude/CONTEXT.md`)
 
-## Key documents
-
-- `docs/architecture.md` — pipeline flow, module responsibilities, public contracts, full engineering standards.
-- `docs/decisions.md` — every design decision with rationale; this project's ADR home (no `.claude/ADRs/`). **Always check before suggesting architectural changes.**
-- `docs/doc-assistant-roadmap.md` — Phase 5+ source of intent; PR-by-PR implementation order at the bottom.
-- `docs/figures-and-tables.md` — Feature 4 detection layer (regions, tables, the Marker decision).
-- `docs/specs/` — code-level build specs: `feature-4b-figure-detection.md` (✅ built — PR 8, 2026-06-14) · `llm-provider-isolation.md` · `feature-4a-marker-table-ingest.md` · `chunk-2a-dual-interpretation.md` · `feature-7d-knowledge-currency.md` (✅ engine built 2026-06-17 — `epistemics.py` + `chunk_epistemics` sidecar + polarity-aware `concept_graph`; live marker surfacing + `query_router` deferred) · `torch-backend-per-machine.md` (per-machine CUDA/CPU torch via conflicting extras; ✅ implemented `423cbfa`). **PR 9 — Feature 4c (full) ✅ built 2026-06-14 (paid validation run pending). PR 12 — Integrity Chunk 2c ✅ built 2026-06-14 (paid golden-anchor run pending). PR 13 — Feature 6 (self-organizing wiki / synthesis layer, 6a–6d) ✅ built 2026-06-14 (validated free on local Ollama). PR 16 — Feature 7 (cross-document concept graph, 7a–7c) ✅ built 2026-06-15, validated free on local Ollama (`data/graph/graph.json` sidecar). Feature 6 re-point ✅ built 2026-06-17 — `wiki.load_communities` clusters by concept-graph communities behind `WIKI_USE_CONCEPT_COMMUNITIES` (inert by default; cosine fallback), validated free (cosine@0.90 → 2 topics vs concept communities → 9 on the 10-paper corpus). Feature 7d ✅ engine built 2026-06-17 — claim-corroboration weights (`compute_node_weights`) + `epistemics.py` chunk projection + `chunk_epistemics` sidecar + reviewer `contested_evidence` tag, validated free (748 rows; unique-source rule held). Next: PR 17 (Zotero), or 7d's deferred follow-ups (live answer-time marker surfacing + `query_router` seam), or the wiki `[[links]]`-from-concept-edges refinement.**
+- **Never `git commit`/`push`, nor open/merge a PR, without explicit user review.** Stage, summarize, stop.
+- `apps/` are thin shells; all logic in `src/doc_assistant/`. **Enrichment-Layer Pattern** — derived
+  data is an idempotent sidecar module + CLI runner, never mutates the chunk store.
+- **Locked settings** (TOP_K, CANDIDATE_K, chunk sizes, retrieval weights, …) change only via an
+  eval-harness experiment (`--repeat`, beat the control, record a baseline). Table: `.claude/CONTEXT.md`.
+- `structlog` only, no `print()` in `src/` *(currently violated — `.claude/KNOWN_ISSUES.md`)*;
+  exceptions chain (`raise X from e`); no secrets in code (`.env` gitignored).
+- Engineering preferences (design principles + working protocol) live in the cpc **CONVENTIONS**
+  §12/§13 — read there, don't restate. Three are gate-enforced (`cpc-push-guard`, `cpc-coupling-check`,
+  `cpc-test-api-check`); plus the doc gates (`cpc-docs-check`, `cpc-init-check`).
 
 ## Tool split
 
@@ -39,27 +51,16 @@ When both could do it: stay in the tool that's already open.
 
 ## Handoff protocol
 
-End of any non-trivial session: **append** a baton entry to `.claude/SESSION.md` — active tool, what's done, which tool picks up, next action by file (file:line where possible). Append-only; correct with a new entry, never rewrite old ones.
+End of any non-trivial session: **append** a baton entry to `.claude/SESSION.md` — active tool, what's
+done, which tool picks up, next action by file (file:line where possible). Append-only; correct with a
+new entry, never rewrite old ones.
 
 ## Build protocol (Claude Code)
 
-1. Pick the next PR from the roadmap's PR-by-PR table. One PR per session — never bundle.
-2. Read that PR's `docs/decisions.md` section before starting.
+1. Pick the next PR from the `docs/ROADMAP.md` PR table. One PR per session — never bundle.
+2. Read that PR's `docs/decisions.md` section (or its ADR) before starting.
 3. Where a spec exists in `docs/specs/`, it is the code-level contract (files, contracts, guard tests, DoD).
 4. Append one `docs/DEVLOG.md` entry per logical change (what / why / rejected / opens).
-
-## Engineering standards (non-negotiable)
-
-- No secrets in code. `.env` gitignored; `.env.example` committed.
-- CI green before merge; `bandit` HIGH blocks merge.
-- Coverage floor CI-enforced: 40% today (`ci.yml`); raise toward 45%+ as integration tests land.
-- Structured logging via `structlog`; no `print()` in `src/`. *(Currently violated — see `.claude/KNOWN_ISSUES.md`; fix or descope consciously, don't ignore.)*
-- Exceptions chain (`raise X from e`); user-facing messages translated at the UI boundary.
-- `apps/` = thin shells only; all business logic in `src/doc_assistant/`.
-- **Enrichment-Layer Pattern** — derived data ships as a separate module + CLI runner, idempotent, sidecar by default, never mutates the primary chunk store.
-- **Locked settings** (table in `.claude/CONTEXT.md`) change only via an experiment through the eval harness: `--repeat`, beat the control beyond its variance, record a baseline in `tests/eval/baselines/`.
-- **Never `git commit`/`git push`, nor open or merge a PR, without explicit user review.** Stage, summarize the diff, ask.
-- Refresh docs at every checkpoint (PR, merge, milestone): README, DEVLOG, CONTEXT/architecture as warranted — docs and code land together.
 
 ## Skills in play
 
@@ -70,10 +71,15 @@ End of any non-trivial session: **append** a baton entry to `.claude/SESSION.md`
 | Claiming a result / touching a locked setting | `rigor-gate` |
 | Pre-merge review of a diff | `review-router` |
 | Recurring bug or design weakness | `known-issues` |
-| Non-obvious design choice | `architecture-decision` (record in `docs/decisions.md`) |
+| Non-obvious design choice | `architecture-decision` (record in `docs/decisions/`) |
 | Stress-testing a spec before locking | `grill-me` |
 | README work | `readme-writer` |
 
 ## Setup
 
-See `README.md` (Python 3.12 + uv: `uv sync` → `.env` → ingest → Chainlit or CLI). Runtime quirks (3.14/Chainlit; the former win32 cu130 segfault, now resolved via `torch-backend = "auto"`; sandbox sync) live in `.claude/KNOWN_ISSUES.md`.
+See `README.md` (Python 3.12 + uv: `uv sync` → `.env` → ingest → Chainlit or CLI). Runtime quirks
+(3.14/Chainlit; the resolved win32 cu130 segfault; sandbox sync; the Anthropic credit-leak) live in
+`.claude/KNOWN_ISSUES.md`.
+
+> Rules changed? Edit `.claude/CONTEXT.md` (the canonical text). This file only points.
+> Cowork project settings only point here — never restate rules there.

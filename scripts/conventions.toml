@@ -1,0 +1,45 @@
+# Config for docs_check.py and sprint_check.py. Tune per project; do not silently raise to pass.
+# Laid by cpc-init (standard profile) into the consumer's scripts/conventions.toml.
+
+[cpc]
+# The init profile this project was laid at (read by cpc-init-check, the completeness gate).
+# This file is laid ONLY by the standard profile, so it declares "standard"; a prototype has no
+# conventions.toml and the gate resolves "prototype" by its absence. Single source of truth (§5).
+profile = "standard"
+
+[budgets]
+entry_max_lines        = 600   # docs_check: root CLAUDE.md + .claude/CONTEXT.md combined
+module_claude_max_lines = 40   # docs_check: each <module>/CLAUDE.md
+uses_max_files         = 12    # sprint_check: resolved `uses` read-set files (globs expanded)
+uses_max_lines         = 2500  # sprint_check: summed line count of resolved `uses` files
+
+[uses]
+# sprint_check: `uses` ⊇ `affects` coherence (you must read what you change).
+# "warn" (default; new files not yet on disk are exempt) or "error" to enforce hard.
+superset_affects = "warn"
+
+[staleness]
+disposable_days = 90           # PLAN_/REVIEW_ still 'active' older than this -> flagged
+
+[headers]
+# globs (relative to root) exempt from the status-header requirement
+exempt = ["docs/specs/**", "**/*.json"]
+
+[routes]
+# extensions treated as route targets when found inside `backticks`
+extensions = [".md"]
+
+[test_api]
+# cpc-test-api-check (CONVENTIONS §13, ADR-007): keep paid/live API calls out of tests.
+# This codebase is provider-agnostic, so the bare substrings "anthropic" / "openai" match
+# the provider *name used as data* all over the suite — make_client("anthropic", ...),
+# monkeypatch.setattr(config, "REVIEWER_PROVIDER", "anthropic"), `"anthropic" in
+# PAID_PROVIDERS`, the make_client("openai", ...) unknown-provider ValueError test — and
+# the monkeypatch targets that *isolate* the SDKs. None of those are live calls. Drop the
+# two coarse substrings and re-add the precise *live-construction* shapes, so a genuinely
+# un-mocked SDK / LangChain client still trips the gate while the provider-name-as-data
+# noise does not. The default requests./httpx./urllib.request/boto3/.client( patterns
+# stay in force. A line that truly must construct a live client carries `cpc: allow-live-api`
+# (currently only the intentional eval judge in tests/eval/run_eval.py).
+allow_patterns = ["anthropic", "openai"]
+extra_patterns = ["anthropic.Anthropic(", "openai.OpenAI(", "ChatAnthropic(", "ChatOpenAI("]

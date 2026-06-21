@@ -296,7 +296,7 @@ uv run python -m scripts.sweep_chunking --cases tests/eval/cases.public.yaml --r
 
 `bge-base` is the default embedder — it performed better in our comparisons, though the better choice depends on the corpus ([`docs/decisions.md`](docs/decisions.md) → Phase 5 / Feature 3; re-checked on the public corpus, see [Benchmarks](#benchmarks)).
 
-**Recently shipped:** Marker table extraction (isolated out-of-process sidecar, gated to caption-detected table pages — engine chosen by measurement), dual-layer evidence/interpretation answers, and the provider-agnostic LLM layer ([`docs/specs/llm-provider-isolation.md`](docs/specs/llm-provider-isolation.md)). **Next:** the knowledge-currency layer ([`docs/specs/feature-7d-knowledge-currency.md`](docs/specs/feature-7d-knowledge-currency.md)) and figure region detection (Feature 4b). Full rationale and roadmap: [`docs/decisions.md`](docs/decisions.md), [`docs/doc-assistant-roadmap.md`](docs/doc-assistant-roadmap.md).
+**Recently shipped:** Marker table extraction (isolated out-of-process sidecar, gated to caption-detected table pages — engine chosen by measurement), dual-layer evidence/interpretation answers, and the provider-agnostic LLM layer ([`docs/specs/llm-provider-isolation.md`](docs/specs/llm-provider-isolation.md)). **Next:** the knowledge-currency layer ([`docs/specs/feature-7d-knowledge-currency.md`](docs/specs/feature-7d-knowledge-currency.md)) and figure region detection (Feature 4b). Full rationale and roadmap: [`docs/decisions.md`](docs/decisions.md), [`docs/ROADMAP.md`](docs/ROADMAP.md).
 
 A 60-second walkthrough for first-time readers: [`docs/DEMO.md`](docs/DEMO.md).
 

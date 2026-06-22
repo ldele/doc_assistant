@@ -464,17 +464,21 @@ class ChatController:
         parsed = parse_command(text)
         if parsed is not None:
             cmd, arg = parsed
-            # Export commands need the live session transcript, so they're handled here
-            # (stateful) rather than in the stateless commands.execute_command dispatcher.
-            if cmd in ("export", "export-conversation", "export_conversation"):
-                msg, path = self.export_conversation(session, dev=False)
-                yield Result(self._command_result(msg, download_path=path))
-                return
-            if cmd in ("export-debug", "export_debug"):
-                msg, path = self.export_conversation(session, dev=True)
-                yield Result(self._command_result(msg, download_path=path))
-                return
-            yield Result(self._command_result(execute_command(cmd, arg)))
+            try:
+                # Export commands need the live session transcript, so they're handled here
+                # (stateful) rather than in the stateless commands.execute_command dispatcher.
+                if cmd in ("export", "export-conversation", "export_conversation"):
+                    msg, path = self.export_conversation(session, dev=False)
+                    yield Result(self._command_result(msg, download_path=path))
+                elif cmd in ("export-debug", "export_debug"):
+                    msg, path = self.export_conversation(session, dev=True)
+                    yield Result(self._command_result(msg, download_path=path))
+                else:
+                    yield Result(self._command_result(execute_command(cmd, arg)))
+            except Exception as e:
+                # A failing command (empty/missing DB, no API key, …) must not break the
+                # turn or the SSE stream — surface it as a normal result.
+                yield Result(self._command_result(f"⚠ `/{cmd}` failed: {e}"))
             return
 
         # --- Chunk 2a: claim edit follow-up (a prior "✎ Edit" set this) ---
@@ -490,7 +494,10 @@ class ChatController:
 
         # --- Library metadata questions (answered from SQLite) ---
         if is_library_query(text):
-            yield Result(self._command_result(answer_library_query(text)))
+            try:
+                yield Result(self._command_result(answer_library_query(text)))
+            except Exception as e:
+                yield Result(self._command_result(f"⚠ Library query failed: {e}"))
             return
 
         # --- RAG pipeline ---
@@ -525,28 +532,37 @@ class ChatController:
         parents map via text containment (ADR-1). Read-only, no LLM, no provider touched
         (honors the credit guard). A clean no-op — every ``markers`` stays empty — when the
         epistemics sidecar is absent/empty, so the turn is byte-identical to before. The
-        read sides are loaded at most once per turn (Decision 6)."""
-        document_ids = [
-            str(d) for d in (doc.metadata.get("document_id") for doc, _ in scored) if d
-        ]
-        index: dict[str, list[str]] | None = None
-        marked_by_doc: dict[str, list[MarkedChunk]] | None = None
-        for sv, (doc, _score) in zip(sources, scored, strict=True):
-            if sv.chunk_key is not None:
-                if index is None:
-                    index = load_epistemics_index()
-                markers = index.get(sv.chunk_key)
+        read sides are loaded at most once per turn (Decision 6).
+
+        Defensive: markers are advisory (inform, never block), so **any** failure to load
+        them — e.g. the ``chunk_epistemics`` table absent on an older DB, a Chroma hiccup —
+        leaves the sources unmarked rather than breaking the turn."""
+        try:
+            document_ids = [
+                str(d) for d in (doc.metadata.get("document_id") for doc, _ in scored) if d
+            ]
+            index: dict[str, list[str]] | None = None
+            marked_by_doc: dict[str, list[MarkedChunk]] | None = None
+            for sv, (doc, _score) in zip(sources, scored, strict=True):
+                if sv.chunk_key is not None:
+                    if index is None:
+                        index = load_epistemics_index()
+                    markers = index.get(sv.chunk_key)
+                    if markers:
+                        sv.markers = list(markers)
+                    continue
+                document_id = doc.metadata.get("document_id")
+                if not document_id:
+                    continue
+                if marked_by_doc is None:
+                    marked_by_doc = load_marked_chunks(document_ids)
+                markers = markers_for_parent(
+                    doc.page_content, marked_by_doc.get(str(document_id), [])
+                )
                 if markers:
-                    sv.markers = list(markers)
-                continue
-            document_id = doc.metadata.get("document_id")
-            if not document_id:
-                continue
-            if marked_by_doc is None:
-                marked_by_doc = load_marked_chunks(document_ids)
-            markers = markers_for_parent(doc.page_content, marked_by_doc.get(str(document_id), []))
-            if markers:
-                sv.markers = markers
+                    sv.markers = markers
+        except Exception:
+            return  # advisory markers must never break a turn
 
     def _handle_rag(self, session: Session, text: str) -> Iterator[TurnEvent]:
         rag = self.rag

@@ -287,16 +287,22 @@ def load_epistemics_index() -> dict[str, list[str]]:
     The read-side counterpart of ``build_epistemics`` — what the live evidence layer
     will consult to mark retrieved chunks (deferred wiring)."""
     from sqlalchemy import select
+    from sqlalchemy.exc import OperationalError
 
     from doc_assistant.db.models import ChunkEpistemics as ChunkEpistemicsRow
     from doc_assistant.db.session import session_scope
 
     index: dict[str, list[str]] = {}
-    with session_scope() as session:
-        for row in session.execute(select(ChunkEpistemicsRow)).scalars():
-            markers = derive_markers(row.n_contested, row.n_superseded_trend)
-            if markers:
-                index[f"{row.document_id}:{row.chunk_index}"] = markers
+    try:
+        with session_scope() as session:
+            for row in session.execute(select(ChunkEpistemicsRow)).scalars():
+                markers = derive_markers(row.n_contested, row.n_superseded_trend)
+                if markers:
+                    index[f"{row.document_id}:{row.chunk_index}"] = markers
+    except OperationalError:
+        # The chunk_epistemics sidecar table doesn't exist on this DB (the 7d engine never
+        # ran) — treat as "no markers", consistent with the quiet-on-absent design.
+        return {}
     return index
 
 
@@ -348,17 +354,23 @@ def load_marked_chunks(document_ids: list[str]) -> dict[str, list[MarkedChunk]]:
         return {}
 
     from sqlalchemy import select
+    from sqlalchemy.exc import OperationalError
 
     from doc_assistant.db.models import ChunkEpistemics as ChunkEpistemicsRow
     from doc_assistant.db.session import session_scope
 
     marked: dict[tuple[str, int], list[str]] = {}
-    with session_scope() as session:
-        stmt = select(ChunkEpistemicsRow).where(ChunkEpistemicsRow.document_id.in_(document_ids))
-        for row in session.execute(stmt).scalars():
-            markers = derive_markers(row.n_contested, row.n_superseded_trend)
-            if markers:
-                marked[(str(row.document_id), int(row.chunk_index))] = markers
+    try:
+        with session_scope() as session:
+            stmt = select(ChunkEpistemicsRow).where(
+                ChunkEpistemicsRow.document_id.in_(document_ids)
+            )
+            for row in session.execute(stmt).scalars():
+                markers = derive_markers(row.n_contested, row.n_superseded_trend)
+                if markers:
+                    marked[(str(row.document_id), int(row.chunk_index))] = markers
+    except OperationalError:  # chunk_epistemics table absent → no markers (see above)
+        return {}
     if not marked:
         return {}
 

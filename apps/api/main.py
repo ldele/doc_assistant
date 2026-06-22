@@ -19,7 +19,9 @@ abstraction to build now.
 
 from __future__ import annotations
 
+import asyncio
 import json
+import threading
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -47,22 +49,52 @@ _ALLOWED_ORIGINS = [
 ]
 
 
+def _sse(event: object) -> ServerSentEvent | None:
+    """Map one TurnEvent to an SSE event (None for unknown types)."""
+    if isinstance(event, Token):
+        return ServerSentEvent(event="token", data=event.text)
+    if isinstance(event, Step):
+        return ServerSentEvent(
+            event="step", data=json.dumps({"name": event.name, "status": event.status})
+        )
+    if isinstance(event, Result):
+        return ServerSentEvent(
+            event="result",
+            data=TurnResultPayload.from_turn_result(event.result).model_dump_json(),
+        )
+    return None
+
+
 async def _event_stream(
     controller: ChatController, session: Session, text: str
 ) -> AsyncIterator[ServerSentEvent]:
-    """Map the controller's sync ``TurnEvent`` generator to SSE events 1:1."""
-    for event in controller.handle_message(session, text):
-        if isinstance(event, Token):
-            yield ServerSentEvent(event="token", data=event.text)
-        elif isinstance(event, Step):
-            yield ServerSentEvent(
-                event="step", data=json.dumps({"name": event.name, "status": event.status})
-            )
-        elif isinstance(event, Result):
-            yield ServerSentEvent(
-                event="result",
-                data=TurnResultPayload.from_turn_result(event.result).model_dump_json(),
-            )
+    """Map the controller's sync ``TurnEvent`` generator to SSE events 1:1.
+
+    ``handle_message`` is a **sync, blocking** generator — the LLM token stream does
+    blocking network reads, and retrieval is heavy CPU. Iterated directly on the event
+    loop it stalls SSE flushing, so the whole answer bursts out at the end. Instead, run it
+    in a worker thread and hand events to the loop through a queue: the loop stays free to
+    flush each token as the model produces it (M2 ADR-2; the threadpool note made good)."""
+    loop = asyncio.get_running_loop()
+    queue: asyncio.Queue[object] = asyncio.Queue()
+    done = object()
+
+    def worker() -> None:
+        try:
+            for event in controller.handle_message(session, text):
+                loop.call_soon_threadsafe(queue.put_nowait, event)
+        finally:
+            loop.call_soon_threadsafe(queue.put_nowait, done)
+
+    threading.Thread(target=worker, daemon=True).start()
+
+    while True:
+        event = await queue.get()
+        if event is done:
+            break
+        sse = _sse(event)
+        if sse is not None:
+            yield sse
     yield ServerSentEvent(event="done", data="")
 
 

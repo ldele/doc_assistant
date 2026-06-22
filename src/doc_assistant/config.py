@@ -1,6 +1,7 @@
 """Project configuration. All paths and runtime settings live here."""
 
 import os
+import sys
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -28,7 +29,29 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 # Runtime data paths
 # ============================================================
 
-DATA_PATH = PROJECT_ROOT / "data"
+def _resolve_data_path() -> Path:
+    """Resolve the runtime data dir (corpus, DB, exports, figures, graph).
+
+    Precedence: ``DOC_DATA_DIR`` env override > a stable per-user app-data dir when
+    PyInstaller-**frozen** > the in-repo ``./data`` (dev). When frozen, ``__file__`` lives
+    in a temp unpack dir, so ``PROJECT_ROOT`` climbs into ``%TEMP%`` and the in-repo path is
+    meaningless — the desktop app keeps its data in a per-user location instead (PR-M4).
+    Point the override at an existing corpus to reuse it: ``DOC_DATA_DIR=...\\data``.
+    """
+    override = os.getenv("DOC_DATA_DIR")
+    if override:
+        return Path(override).expanduser().resolve()
+    if getattr(sys, "frozen", False):  # running from a PyInstaller bundle
+        base = (
+            os.getenv("LOCALAPPDATA")
+            or os.getenv("XDG_DATA_HOME")
+            or str(Path.home() / ".local" / "share")
+        )
+        return Path(base) / "doc_assistant" / "data"
+    return PROJECT_ROOT / "data"
+
+
+DATA_PATH = _resolve_data_path()
 DOCS_PATH = DATA_PATH / "sources"
 CACHE_PATH = DATA_PATH / "cache"
 CHROMA_PATH = str(DATA_PATH / "chroma")  # Chroma wants a string, not Path

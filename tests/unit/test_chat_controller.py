@@ -203,6 +203,31 @@ def test_dispatch_library_query(monkeypatch):
     assert result.answer == "LIBRARY ANSWER"
 
 
+def test_failing_command_is_surfaced_not_raised(monkeypatch):
+    # A command that raises (e.g. an empty/missing DB) must yield a graceful error result,
+    # never propagate out of the generator (which would break the SSE stream).
+    def _boom(cmd, arg):
+        raise RuntimeError("no such table: documents")
+
+    monkeypatch.setattr(chat_controller, "execute_command", _boom)
+    controller = ChatController(rag=FakeRAG([], []))
+    result = _final(_results(controller, Session(), "/library"))
+    assert "/library` failed" in result.answer and "no such table" in result.answer
+    assert result.sources == [] and result.record_id is None
+
+
+def test_failing_library_query_is_surfaced(monkeypatch):
+    monkeypatch.setattr(chat_controller, "is_library_query", lambda t: True)
+
+    def _boom(text):
+        raise RuntimeError("db gone")
+
+    monkeypatch.setattr(chat_controller, "answer_library_query", _boom)
+    controller = ChatController(rag=FakeRAG([], []))
+    result = _final(_results(controller, Session(), "how many pdfs?"))
+    assert "Library query failed" in result.answer and "db gone" in result.answer
+
+
 def test_dispatch_rag_path_taken(monkeypatch, temp_db):
     monkeypatch.setattr(chat_controller, "is_library_query", lambda t: False)
     controller = ChatController(rag=FakeRAG(_three_clean_sources(), ["Cells ", "meet [1]."]))
@@ -379,3 +404,18 @@ def test_markers_absent_is_byte_identical(monkeypatch, temp_db):
     result = _final(_results(controller, Session(), "q"))
     assert all(s.markers == [] for s in result.sources)
     assert "⚠" not in result.sources_md  # quiet-on-clean → no chip
+
+
+def test_marker_load_failure_does_not_break_turn(monkeypatch, temp_db):
+    # Markers are advisory — a read failure (e.g. the chunk_epistemics table absent on an
+    # older DB) must leave sources unmarked, never crash the turn / SSE stream.
+    monkeypatch.setattr(chat_controller, "is_library_query", lambda t: False)
+
+    def _boom():
+        raise RuntimeError("no such table: chunk_epistemics")
+
+    monkeypatch.setattr(chat_controller, "load_epistemics_index", _boom)
+    controller = ChatController(rag=FakeRAG(_three_clean_sources(), ["Answer [1]."]))
+    result = _final(_results(controller, Session(), "q"))
+    assert result.answer == "Answer [1]."
+    assert all(s.markers == [] for s in result.sources)

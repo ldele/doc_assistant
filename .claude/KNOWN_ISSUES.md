@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-06-20 · class: living -->
+<!-- status: active · updated: 2026-06-22 · class: living -->
 
 # KNOWN ISSUES
 
@@ -83,3 +83,20 @@ Migrated from the old `CLAUDE.md` / `README` runtime-quirk notes on 2026-06-20 (
 - **Compounding caveat:** marker *quality* upstream still comes from the superseded open-vocabulary graph
   (KI-7) — `contested` is local-model-noisy. M1 surfaces what the sidecar holds; it does not fix extraction.
 - **Pointer:** `docs/specs/pr-m1-epistemics-markers.md` ADR-1 (option 2 = the re-projection upgrade).
+
+## KI-9 — Frozen desktop build does not bundle model weights → first-run HuggingFace download; offline launch fails — OPEN
+- **Symptom:** On a clean machine (verified in **Windows Sandbox**, 2026-06-22, RG-012 Tier-1), the
+  frozen sidecar's first launch downloads the `bge-base` embedder + the cross-encoder reranker from
+  HuggingFace before `/api/health` goes green (≈218s of that cold-start). With no network, the backend
+  never warms — `/api/health` never returns 200.
+- **Cause:** `scripts/doc_assistant_api.spec` bundles the *library code* (`sentence_transformers`,
+  `transformers`, `tokenizers`, `huggingface_hub`) via `collect_all`, but **not the model weights** —
+  sentence-transformers resolves those from the HF cache / hub at runtime.
+- **Why it matters:** the app is positioned local-first; a first-run network dependency (and a hard
+  offline failure) is a shippability gap, and the download dominates the RG-010 cold-start number.
+- **Workaround:** ensure network is available on first launch; or pre-seed the HF cache
+  (`HF_HOME` / `%USERPROFILE%\.cache\huggingface`).
+- **Real fix:** bundle the model weights into the freeze (add the model dirs to the spec `datas` and
+  point `HF_HOME` / `SENTENCE_TRANSFORMERS_HOME` at the unpacked location), or ship them with the
+  installer as a Tauri resource; re-measure RG-010 after. Decide before the M4 ship.
+- **Pointer:** `docs/desktop-packaging.md` §"Data directory"; RG-010 / RG-012 in `.claude/RIGOR_TODO.md`.

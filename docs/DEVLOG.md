@@ -2020,3 +2020,40 @@ This is **PR-A (scaffolding only)**; the decisions.md -> ADR split is PR-B (out 
 - **KI-8** — containment coarseness; the precise PC re-projection is the upgrade if it misfires on real data.
 - Marker **quality** still comes from the superseded open-vocab graph (KI-7) — surfaced as-is; fixed by the graph redesign, not M1.
 - Nothing committed — M0 + M1 staged together for review (two logical PRs; commit separately or as one — user's call).
+
+---
+## Session: 2026-06-22 (cont.) — PR-M2: FastAPI + SSE boundary (Chainlit→Tauri M2)
+
+**Starting from:** M0 + M1 built + staged (uncommitted). The turn core is a `ChatController` yielding a `TurnEvent` stream → `TurnResult`; `SourceView.markers` carries the 7d chips.
+**Goal this session:** Build PR-M2 per `docs/specs/pr-m2-fastapi-boundary.md` — expose `ChatController` over a local FastAPI/SSE boundary (the contract the Tauri frontend speaks in M3), adding *no* business logic and removing nothing.
+
+### apps/api/ (new package) — FastAPI desktop backend
+**What:** `main.py` (app factory `create_app` + routes), `models.py` (pydantic schemas), `sessions.py` (in-memory `SessionStore`). FastAPI is **just another renderer** over `ChatController` (ADR-1): per request it calls the same controller and maps the result to HTTP. **No `chainlit`, no business logic.** Endpoints: `GET /api/health`, `POST /api/chat` (SSE), `POST /api/claims/{id}/adjudicate`, `POST /api/export` (file stream), `GET /api/figures/{id}` (PNG), `GET /api/source/{record_id}/{n}`, `GET/POST /api/settings` (read view + a documented 501 for writes). Binds `127.0.0.1` only; CORS allowlist is explicit (Tauri dev origin + webview), no `*`.
+**Why:** the Tauri frontend (M3) needs a local HTTP surface; one orchestration, three renderers (CLI, Chainlit, FastAPI) keeps the controller UI-agnostic and the boundary trivially testable with a fake controller.
+**Rejected:** FastAPI re-implementing the turn flow against `pipeline.py` (re-introduces the trapped-logic problem M0 fixed — two orchestrations drift); WebSocket (full-duplex unused; the only server→client push is tokens, which SSE handles and bundles far simpler — ADR-2); a job-poll endpoint (worse latency/UX than streaming).
+
+### SSE token streaming (ADR-2)
+**What:** `POST /api/chat` returns `text/event-stream` via `sse-starlette`'s `EventSourceResponse`; each `TurnEvent` → one SSE event: `event: token` (delta) · `event: step` (`{name,status}` JSON) · terminal `event: result` (the full `TurnResultPayload` JSON) · `event: done`. The mapper switches on the `Token`/`Step`/`Result` variants 1:1.
+**Why:** SSE maps onto the controller's event stream exactly and survives the webview + (M4) sidecar boundary cleanly.
+**Note (logged in the module docstring):** `handle_message` is a **sync, blocking** generator; for a single-user local app it's iterated directly on the event loop. A multi-client server would offload to a threadpool (`anyio.to_thread`) — not needed for the desktop target.
+
+### Controller lifecycle + session store (ADR-3)
+**What:** one `ChatController` per process. Built **lazily in `lifespan`** (model load is expensive) so `uvicorn apps.api.main:app` imports cheap — verified: import builds **no** controller (deferred to startup). Tests inject a fake via `create_app(controller=...)`, set eagerly on `app.state` so `TestClient` needs no lifespan `with`-block. `SessionStore` = a per-app `dict[str, Session]` (single-user, process-scoped, no eviction); unknown id on `/chat` starts a fresh conversation, on `/claims`/`/export` → 404.
+**Deviation from spec letter (intent-preserving):** the session store is a **per-app `SessionStore` instance on `app.state`**, not a module-global dict (ADR-3 said "module-level dict") — functionally identical for one process, but gives clean test isolation (each `create_app` → fresh store).
+
+### pyproject.toml / uv.lock / Justfile / pytest
+**What:** added `fastapi`/`uvicorn[standard]`/`sse-starlette` to the **base** deps (the M4 sidecar needs them; no torch interaction). `uv lock` resolved **+0 new packages** — Chainlit already pulled FastAPI/uvicorn/starlette transitively; now they're explicit. Added `just api` (`uvicorn apps.api.main:app --host 127.0.0.1 --port 8001`). Added `"."` to `pytest pythonpath` so tests can import `apps.*` (apps/ is not an installed package — `setuptools.packages.find where=["src"]`).
+**Why:** explicit deps are a contract (don't rely on a transitive); the dev loop runs FastAPI under `uv` (sidecar freeze is M4).
+
+### tests
+**What:** `tests/unit/test_api_models.py` — `TurnResult` round-trips through `TurnResultPayload` with no field loss (incl. `Path`→`str`, markers, nested sources/claims) + `Literal` rejects a bad `decision`/`mode`. `tests/integration/test_api_chat_sse.py` (CI gate) — a **fake `ChatController`** + `TestClient`: health shape; `/chat` SSE emits ordered `token`s, exactly one `result` (valid payload, markers present), then `done`; adjudicate maps to the controller + bad decision → 422; unknown-session export → 404; figure served (200 image/png) + missing → 404; settings read 200 + write 501. No real pipeline/LLM/network/paid call (cpc §13).
+
+**Verification (gate, CPU box, `uv run --no-sync`):** `ruff check src tests apps` ✓ · `ruff format --check` ✓ · `mypy src` ✓ (42 files — the CI gate) · `bandit -r src apps` 0/0/0 ✓ · `pytest tests/unit tests/integration` → **590 passed, 1 skipped, coverage 81.6%** (+11 over M1). `uvicorn apps.api.main:app` imports in ~6.6s (the existing torch/langchain import cost) with the 8 routes registered and **no controller built at import**. SSE framing verified end-to-end via `TestClient`; a real-server `curl` smoke needs the full model stack + corpus (deferred to a run with data / M4). **Chainlit + CLI unchanged** — this PR adds a renderer, removes none.
+
+**Type-gate note:** `mypy apps/api` reports `import-untyped` on `doc_assistant.*` (the package ships no `py.typed` marker) — the same situation as `apps/cli.py`/`apps/chainlit_app.py`, and apps/ is outside CI's `mypy src/` gate. Left as-is (adding `py.typed` is a separate, project-wide change, not M2 scope).
+
+**Opens:**
+- **PR-M3** (Tauri frontend) — consumes this contract; the five-primitive component mapping + the rich per-claim editorial GUI + styled tables; framework (React/Svelte/vanilla) is M3's sub-decision.
+- **PR-M4** (PyInstaller sidecar) — freeze the FastAPI stack + the CPU-torch pin (KI-3); cold-start + SSE first-token latency measured on the frozen build.
+- `SourceAdapter` registry / `/api/sources` — deferred until a second concrete ingestion source exists (seam noted in `main.py`'s docstring, not built).
+- Nothing committed — M0 + M1 + M2 staged together (three logical PRs); commit separately or as one — user's call.

@@ -69,7 +69,7 @@ full architectural context per feature.
 | 17 | Ingestion adapters: Zotero (Calibre TBD) | planned | — |
 | M0 | Desktop shell: extract `ChatController` + `TurnResult` (UI-agnostic turn core) | done | `docs/specs/pr-m0-chat-controller.md` |
 | M1 | Desktop shell: live 7d epistemics-marker surfacing (pre-migration demo win) | done | `docs/specs/pr-m1-epistemics-markers.md` |
-| M2 | Desktop shell: FastAPI backend + SSE boundary | planned | `docs/specs/pr-m2-fastapi-boundary.md` |
+| M2 | Desktop shell: FastAPI backend + SSE boundary | done | `docs/specs/pr-m2-fastapi-boundary.md` |
 | M3 | Desktop shell: Tauri frontend (framework TBD) | planned | spec TBD (one ahead of M2) |
 | M4 | Desktop shell: PyInstaller sidecar packaging + frozen CPU-torch pin | planned | spec TBD (one ahead of M3) |
 | M5 | Desktop shell: delete Chainlit + lift the Python-3.12 pin (KI-2) | planned | spec TBD (one ahead of M4) |

@@ -37,6 +37,10 @@ chat:
 cli *ARGS:
     uv run --extra {{torch}} python apps/cli.py {{ARGS}}
 
+# Run the desktop API (FastAPI + SSE over 127.0.0.1; the Tauri frontend connects here in dev).
+api *ARGS:
+    uv run --extra {{torch}} uvicorn apps.api.main:app --host 127.0.0.1 --port 8001 {{ARGS}}
+
 # Full test suite (always needs dev).
 test:
     uv run --extra {{torch}} --extra dev pytest tests/unit tests/integration

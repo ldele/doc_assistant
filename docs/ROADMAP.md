@@ -67,12 +67,27 @@ full architectural context per feature.
 | 15 | Feature 5: extract eval harness to a standalone repo | planned | — |
 | 16 | Feature 7: cross-document concept graph (7a–7c) | done | — |
 | 17 | Ingestion adapters: Zotero (Calibre TBD) | planned | — |
+| M0 | Desktop shell: extract `ChatController` + `TurnResult` (UI-agnostic turn core) | planned | `docs/specs/pr-m0-chat-controller.md` |
+| M1 | Desktop shell: live 7d epistemics-marker surfacing (pre-migration demo win) | planned | `docs/specs/pr-m1-epistemics-markers.md` |
+| M2 | Desktop shell: FastAPI backend + SSE boundary | planned | `docs/specs/pr-m2-fastapi-boundary.md` |
+| M3 | Desktop shell: Tauri frontend (framework TBD) | planned | spec TBD (one ahead of M2) |
+| M4 | Desktop shell: PyInstaller sidecar packaging + frozen CPU-torch pin | planned | spec TBD (one ahead of M3) |
+| M5 | Desktop shell: delete Chainlit + lift the Python-3.12 pin (KI-2) | planned | spec TBD (one ahead of M4) |
 
 **Feature 7d (knowledge-currency layer):** engine shipped 2026-06-17 (`epistemics.py` + `chunk_epistemics`
 sidecar + polarity-aware concept graph + reviewer `contested_evidence` tag); **deferred** follow-ups —
 live answer-time marker surfacing + the `query_router` seam. Spec: `docs/specs/feature-7d-knowledge-currency.md`.
 **Feature 6 re-point** shipped 2026-06-17 (`wiki.load_communities` clusters by concept-graph communities
 behind `WIKI_USE_CONCEPT_COMMUNITIES`, inert by default; cosine fallback).
+
+**Desktop shell migration (M0–M5):** replace Chainlit with a Tauri desktop app + FastAPI backend. The
+decision and its sub-decisions (SSE over WebSocket; sidecar-for-release, separate-process-for-dev) are
+recorded in `docs/decisions/ADR-002-tauri-fastapi-desktop-shell.md`. M0–M2 are specced
+(`docs/specs/pr-m{0,1,2}-*.md`); M3–M5 are specced one ahead as each predecessor lands. **M0** (lift the
+turn orchestration out of `apps/chainlit_app.py` into a UI-agnostic `ChatController`) is the only hard
+blocker for everything; **M1** (the 7d contested/superseded marker chip) is the pre-migration demo win
+and shares M0's `chunk_key` plumbing. Replaces the "UI = Chainlit" stack row in `.claude/CONTEXT.md`
+once M5 lands.
 
 **Later / open (no PR yet):** the concept-graph **redesign** (curated vocabulary + deterministic
 skeleton + confined LLM enrichment, 2026-06-18 — the next concept-graph build, see

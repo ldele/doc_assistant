@@ -3,7 +3,7 @@
 **Status:** 📋 PLANNED — designed by Cowork 2026-06-21 (Tauri migration, `docs/decisions/ADR-002-tauri-fastapi-desktop-shell.md`). Third PR of the migration (M2). **Depends on PR-M0** (`ChatController`/`TurnResult`/`TurnEvent` must exist) and is best done after **PR-M1** (so the 7d `SourceView.markers` field is already in the payload the API serializes).
 **Owner of execution:** Claude Code (code + tests).
 **Pattern reference:** thin-shell rule (`apps/` carry no logic; `.claude/CONTEXT.md` rule #3). FastAPI is **just another renderer** over `ChatController` — exactly like `apps/cli.py` and `apps/chainlit_app.py`. It owns no business logic; it maps `TurnEvent` → HTTP/SSE and HTTP requests → controller calls.
-**Migration context:** `docs/` → `tauri-migration-plan.md` Part 3, PR-M2. Provides the contract the Tauri frontend (PR-M3) speaks; bundled as a sidecar in PR-M4.
+**Migration context:** `docs/decisions/ADR-002-tauri-fastapi-desktop-shell.md` (Execution §, M2). Provides the contract the Tauri frontend (PR-M3) speaks; bundled as a sidecar in PR-M4.
 
 **Requirement (the why).** The Tauri frontend needs a local HTTP surface to drive the RAG/integrity pipeline. This PR exposes `ChatController` over FastAPI: a streaming chat endpoint (SSE), claim-adjudication and export endpoints, figure/source serving (replacing Chainlit's `cl.Image`/side elements), a health endpoint for the sidecar readiness gate (PR-M4), and a settings surface stub for Phase 8. **Chainlit and the CLI keep working unchanged in parallel** — this PR *adds* a third frontend; it removes nothing.
 

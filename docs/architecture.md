@@ -79,12 +79,13 @@ flowchart TD
 | `doc_assistant.extractors` | Convert any supported format → markdown | Returns `str`; raises `ExtractionError` on failure |
 | `doc_assistant.ingest` | Extract, chunk, embed, store; streaming | Idempotent per content hash; raises `IngestError` |
 | `doc_assistant.pipeline` | RAG runtime: retrieve, rerank, generate | Returns `Answer` with citations; raises `PipelineError` |
+| `doc_assistant.chat_controller` | UI-agnostic turn orchestration | Yields `TurnEvent`s → `TurnResult`; no UI-framework import (PR-M0) |
 | `doc_assistant.health` | Document health scoring and classification | Pure function; no I/O; returns `HealthResult` |
 | `doc_assistant.library` | Document store queries (browse, filter, tag) | Read-only queries against SQLite; UI-framework-agnostic |
 | `doc_assistant.prompts` | Prompt templates | Pure string interpolation; no I/O |
 | `doc_assistant.tracking` | Token usage tracking and cost estimation | Append-only; never raises |
-| `apps/cli.py` | Terminal interface | Thin entrypoint; no business logic |
-| `apps/chainlit_app.py` | Web chat UI | Thin entrypoint; no business logic |
+| `apps/cli.py` | Terminal renderer | Renders `TurnResult`; no business logic |
+| `apps/chainlit_app.py` | Web chat renderer | Maps `TurnEvent`/`TurnResult` → Chainlit widgets; no business logic |
 | `scripts/` | One-off maintenance scripts | Not part of the importable package |
 
 This table is non-exhaustive — it covers the core ingest/runtime modules. The research-integrity and enrichment layer (`query_router`, `synthesis`, `provenance`, `reviewer`, `citations`, `metadata_extractor`, `doc_vectors`, `regions`, `tables`, `tables_marker`, `embeddings`, `bibtex`, `commands`, `llm`) is shown in the Mermaid diagram above.

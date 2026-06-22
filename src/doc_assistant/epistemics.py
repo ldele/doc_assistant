@@ -32,6 +32,7 @@ import logging
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 from doc_assistant.concept_graph import ConceptGraph, NodeWeight, compute_node_weights
 
@@ -72,6 +73,16 @@ class ChunkEpistemics:
     @property
     def chunk_key(self) -> str:
         return f"{self.document_id}:{self.chunk_index}"
+
+
+@dataclass
+class MarkedChunk:
+    """A marked baseline chunk, carrying its text for the PC-mode containment join (ADR-1,
+    PR-M1). ``markers`` is non-empty by construction (only marked chunks are loaded)."""
+
+    chunk_index: int
+    text: str
+    markers: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -192,6 +203,31 @@ def markers_for_chunk_keys(
     return out
 
 
+def markers_for_parent(parent_text: str, marked: list[MarkedChunk]) -> list[str]:
+    """Markers for a retrieved parent chunk (PC mode) via text containment (pure, ADR-1).
+
+    A marked baseline chunk "belongs to" the parent when its (stripped) text is contained
+    in the parent text. Returns the de-duplicated union of all matching markers in
+    first-seen order; empty when nothing matches (quiet-on-clean). Containment is
+    deliberately coarse at parent boundaries — markers are an advisory chip, not a gate,
+    so over-attribution within a parent is acceptable and fail-safe. The precise
+    re-projection of epistemics onto PC parents is the documented upgrade if this proves
+    too coarse (see `docs/specs/pr-m1-epistemics-markers.md` ADR-1, option 2)."""
+    if not parent_text or not marked:
+        return []
+    out: list[str] = []
+    seen: set[str] = set()
+    for mc in marked:
+        text = mc.text.strip()
+        if not text or text not in parent_text:
+            continue
+        for marker in mc.markers:
+            if marker not in seen:
+                seen.add(marker)
+                out.append(marker)
+    return out
+
+
 def graph_version(graph: ConceptGraph) -> str:
     """A short, stable fingerprint of the graph's structure (for sidecar staleness).
 
@@ -262,6 +298,82 @@ def load_epistemics_index() -> dict[str, list[str]]:
             if markers:
                 index[f"{row.document_id}:{row.chunk_index}"] = markers
     return index
+
+
+def _load_baseline_texts(document_ids: list[str]) -> dict[tuple[str, int], str]:
+    """Fetch baseline-chunk text for the given docs from Chroma, keyed by
+    ``(document_id, chunk_index)`` — the text side of the PC-mode marker join.
+
+    Mirrors ``load_doc_chunks``'s read pattern but scoped to ``document_ids`` and indexed
+    by key. Returns ``{}`` if Chroma / the baseline collection is absent."""
+    from doc_assistant.config import CHROMA_PATH
+    from doc_assistant.embeddings import get_collection_name
+
+    try:
+        import chromadb
+    except ImportError:  # pragma: no cover - dep present in dev env
+        return {}
+
+    client = chromadb.PersistentClient(path=CHROMA_PATH)
+    try:
+        coll = client.get_collection(get_collection_name())
+    except Exception:
+        return {}
+
+    where: Any = {"document_id": {"$in": document_ids}} if document_ids else None
+    data = coll.get(where=where, include=["documents", "metadatas"])
+    documents = data.get("documents") or []
+    metadatas = data.get("metadatas") or []
+    out: dict[tuple[str, int], str] = {}
+    for text, meta in zip(documents, metadatas, strict=False):
+        if not text or not isinstance(meta, dict):
+            continue
+        document_id = meta.get("document_id")
+        chunk_index = meta.get("chunk_index")
+        if document_id is None or chunk_index is None:
+            continue
+        out[(str(document_id), int(chunk_index))] = str(text)
+    return out
+
+
+def load_marked_chunks(document_ids: list[str]) -> dict[str, list[MarkedChunk]]:
+    """Marked baseline chunks for the given docs, keyed by ``document_id`` — the read side
+    the PC-mode marker join (ADR-1 containment) consults.
+
+    Joins the ``chunk_epistemics`` sidecar rows that carry a marker (scoped to
+    ``document_ids``) to each row's baseline chunk text in Chroma. Returns ``{}`` when the
+    sidecar / graph is absent or no requested doc is marked — so a turn with no markers is
+    a clean no-op (byte-identical), and a fresh checkout (no graph) surfaces nothing."""
+    if not document_ids:
+        return {}
+
+    from sqlalchemy import select
+
+    from doc_assistant.db.models import ChunkEpistemics as ChunkEpistemicsRow
+    from doc_assistant.db.session import session_scope
+
+    marked: dict[tuple[str, int], list[str]] = {}
+    with session_scope() as session:
+        stmt = select(ChunkEpistemicsRow).where(ChunkEpistemicsRow.document_id.in_(document_ids))
+        for row in session.execute(stmt).scalars():
+            markers = derive_markers(row.n_contested, row.n_superseded_trend)
+            if markers:
+                marked[(str(row.document_id), int(row.chunk_index))] = markers
+    if not marked:
+        return {}
+
+    texts = _load_baseline_texts(document_ids)
+    out: dict[str, list[MarkedChunk]] = {}
+    for (document_id, chunk_index), markers in marked.items():
+        text = texts.get((document_id, chunk_index))
+        if text is None:  # re-ingest drift: a marked row with no current baseline chunk
+            continue
+        out.setdefault(document_id, []).append(
+            MarkedChunk(chunk_index=chunk_index, text=text, markers=markers)
+        )
+    for chunks in out.values():
+        chunks.sort(key=lambda mc: mc.chunk_index)
+    return out
 
 
 def build_epistemics(*, apply: bool, graph_dir: Path | None = None) -> EpistemicsResult:

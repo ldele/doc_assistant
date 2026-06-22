@@ -1,6 +1,6 @@
 # Spec — PR-M0: extract `ChatController` + `TurnResult` (UI-agnostic turn core)
 
-**Status:** 📋 PLANNED — designed by Cowork 2026-06-21 (Tauri migration, `docs/decisions/ADR-002-tauri-fastapi-desktop-shell.md`). First PR of the Chainlit→Tauri migration (M0). **Tool-agnostic; no framework change.**
+**Status:** ✅ BUILT — designed by Cowork 2026-06-21; built + gate-green by Claude Code 2026-06-22 (Tauri migration, `docs/decisions/ADR-002-tauri-fastapi-desktop-shell.md`). First PR of the Chainlit→Tauri migration (M0). **Tool-agnostic; no framework change.**
 **Owner of execution:** Claude Code (code + tests).
 **Pattern reference:** the existing thin-shell rule (`apps/` carry no logic; `.claude/CONTEXT.md` rule #3) and the already-stated "UI-agnostic" intent in `provenance.py` (module docstring) / `library.py` ("UI-framework-agnostic"). This PR *completes* that intent: it lifts the turn orchestration out of `apps/chainlit_app.py` into the library so any frontend renders the same value object.
 **Migration context:** `docs/decisions/ADR-002-tauri-fastapi-desktop-shell.md` (Execution §, M0). Unblocks PR-M1 (7d markers), PR-M2 (FastAPI), PR-M3 (Tauri frontend).

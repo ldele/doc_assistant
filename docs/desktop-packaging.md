@@ -79,6 +79,27 @@ For the dev inner loop (no freeze), keep the two-process flow: `just api` + `npm
 - **Clean-machine smoke**: install + run on a machine with **no Python / no toolchain** — the portability gate.
 - Parity: the Tauri app renders the same `TurnResult` as the CLI / Chainlit (the M0 parity contract).
 
+## Data directory (frozen builds)
+
+A frozen onefile binary unpacks to a temp dir, so the in-repo `./data` path is meaningless
+at runtime — `config._resolve_data_path()` (PR-M4) handles it:
+
+- `DOC_DATA_DIR` env override wins (point it at an existing corpus to reuse it);
+- else, when **frozen**, data lives in a stable per-user dir
+  (`%LOCALAPPDATA%\doc_assistant\data` on Windows; `$XDG_DATA_HOME`/`~/.local/share` elsewhere);
+- else (dev) the in-repo `./data`.
+
+Reuse your dev corpus with the frozen binary:
+
+```bat
+set DOC_DATA_DIR=C:\path\to\doc_assistant\data
+dist\doc-assistant-api.exe
+curl http://127.0.0.1:8001/api/health     :: chunk_count should be > 0
+```
+
+A real install ingests into the per-user dir (or ships a seeded corpus there). Without this,
+the symptom is a healthy server with `chunk_count: 0` / "empty (vector-only) index".
+
 ## Notes
 
 - Bind `127.0.0.1` only (the entrypoint enforces it); the sidecar is the app's private backend.

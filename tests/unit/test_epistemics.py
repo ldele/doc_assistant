@@ -193,3 +193,23 @@ def test_markers_for_parent_unions_multiple_chunks_deduped():
 def test_markers_for_parent_empty_inputs():
     assert markers_for_parent("", [MarkedChunk(0, "x", [MARKER_CONTESTED])]) == []
     assert markers_for_parent("some text", []) == []
+
+
+def test_epistemics_reads_tolerate_missing_table(tmp_path, monkeypatch):
+    # An older library.db has no chunk_epistemics table (the 7d engine never ran). The read
+    # side must return empty, not raise — else every answer crashes the marker join (PR-M1).
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+
+    from doc_assistant.db import session as session_mod
+    from doc_assistant.epistemics import load_epistemics_index, load_marked_chunks
+
+    engine = create_engine(f"sqlite:///{tmp_path / 'no_tables.db'}", future=True)  # empty schema
+    factory = sessionmaker(bind=engine, autoflush=False, autocommit=False, future=True)
+    monkeypatch.setattr(session_mod, "_engine", engine)
+    monkeypatch.setattr(session_mod, "_SessionLocal", factory)
+    try:
+        assert load_epistemics_index() == {}
+        assert load_marked_chunks(["doc1", "doc2"]) == {}
+    finally:
+        engine.dispose()

@@ -82,6 +82,12 @@ dev = [
     "structlog>=24.0.0",
 ]
 
+# Desktop packaging only (PR-M4) — kept out of `dev` so the normal install stays lean.
+# Build the frozen sidecar with: uv sync --extra cpu --extra packaging && just sidecar.
+packaging = [
+    "pyinstaller>=6.0",
+]
+
 # PyTorch backend variants — mutually exclusive (see [tool.uv] conflicts). Pick
 # exactly ONE per machine at sync time:
 #   GPU box (RTX, CUDA):  uv sync --extra cu130

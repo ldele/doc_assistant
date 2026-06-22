@@ -71,7 +71,7 @@ full architectural context per feature.
 | M1 | Desktop shell: live 7d epistemics-marker surfacing (pre-migration demo win) | done | `docs/specs/pr-m1-epistemics-markers.md` |
 | M2 | Desktop shell: FastAPI backend + SSE boundary | done | `docs/specs/pr-m2-fastapi-boundary.md` |
 | M3 | Desktop shell: Tauri frontend (Svelte 5 + Vite) | done | `docs/specs/pr-m3-tauri-frontend.md` |
-| M4 | Desktop shell: PyInstaller sidecar packaging + frozen CPU-torch pin | planned | spec TBD (one ahead of M3) |
+| M4 | Desktop shell: PyInstaller sidecar packaging + frozen CPU-torch pin | in progress | `docs/specs/pr-m4-sidecar-packaging.md` |
 | M5 | Desktop shell: delete Chainlit + lift the Python-3.12 pin (KI-2) | planned | spec TBD (one ahead of M4) |
 
 **Feature 7d (knowledge-currency layer):** engine shipped 2026-06-17 (`epistemics.py` + `chunk_epistemics`

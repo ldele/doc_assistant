@@ -15,16 +15,34 @@
   const sessionId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
 
   let health = $state<Health | null>(null)
-  let healthError = $state<string | null>(null)
+  let status = $state<'connecting' | 'ready' | 'down'>('connecting')
   let turns = $state<TurnState[]>([])
   let input = $state('')
   let sending = $state(false)
   let nextId = 0
 
+  // Readiness gate (PR-M4): the frozen sidecar takes a few seconds to load models before
+  // it accepts requests. Poll /api/health until it answers (or give up after ~60s).
   $effect(() => {
-    getHealth()
-      .then((h) => (health = h))
-      .catch((e) => (healthError = String(e)))
+    let cancelled = false
+    void (async () => {
+      for (let i = 0; i < 60 && !cancelled; i++) {
+        try {
+          const h = await getHealth()
+          if (!cancelled) {
+            health = h
+            status = 'ready'
+          }
+          return
+        } catch {
+          await new Promise((r) => setTimeout(r, 1000))
+        }
+      }
+      if (!cancelled) status = 'down'
+    })()
+    return () => {
+      cancelled = true
+    }
   })
 
   async function send(): Promise<void> {
@@ -66,7 +84,7 @@
     try {
       await exportConversation(sessionId, false)
     } catch (e) {
-      healthError = String(e)
+      console.error('export failed', e)
     }
   }
 </script>
@@ -75,14 +93,14 @@
   <header>
     <div class="brand">
       <strong>doc_assistant</strong>
-      {#if health}
+      {#if status === 'ready' && health}
         <span class="meta">
           {health.chunk_count.toLocaleString()} chunks · {health.model} · {health.embedding_model}
         </span>
-      {:else if healthError}
-        <span class="meta err">backend unreachable — is <code>just api</code> running?</span>
+      {:else if status === 'connecting'}
+        <span class="meta">starting the engine…</span>
       {:else}
-        <span class="meta">connecting…</span>
+        <span class="meta err">backend unreachable — run <code>just api</code></span>
       {/if}
     </div>
     <button class="ghost" onclick={doExport} disabled={turns.length === 0}>⬇ Export</button>

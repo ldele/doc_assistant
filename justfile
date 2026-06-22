@@ -41,6 +41,15 @@ cli *ARGS:
 api *ARGS:
     uv run --extra {{torch}} uvicorn apps.api.main:app --host 127.0.0.1 --port 8001 {{ARGS}}
 
+# Verify the frozen-sidecar build prerequisites (triple, CPU torch, entrypoint) — no freeze.
+sidecar-check:
+    uv run --no-sync python -m scripts.build_sidecar --check
+
+# Build the frozen FastAPI sidecar (PR-M4). Needs PyInstaller + a CPU-synced venv (KI-3:
+# the cu130 wheel segfaults headless — `uv sync --extra cpu --extra dev` first).
+sidecar:
+    uv run --no-sync python -m scripts.build_sidecar
+
 # Full test suite (always needs dev).
 test:
     uv run --extra {{torch}} --extra dev pytest tests/unit tests/integration

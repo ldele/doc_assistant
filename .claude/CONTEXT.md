@@ -19,10 +19,12 @@ LLM layer, figures/tables, and the wiki/synthesis layer are shipped. The cross-d
 redesign that is not yet built — do not build on `data/graph/graph.json` (`.claude/KNOWN_ISSUES.md`
 KI-7).** ~555 tests; ruff / mypy --strict / bandit clean.
 Desktop-shell migration underway (ADR-002): PR-M0 (`ChatController`) + M1 (live 7d marker chips) + M2
-(FastAPI + SSE, `apps/api/`) + M3 (Svelte/Tauri frontend, `apps/desktop/`) built; next is PR-M4
-(PyInstaller sidecar packaging + the CPU-torch pin), then M5 (delete Chainlit, lift the 3.12 pin).
-Other candidates: PR 17 (Zotero ingest), the remaining 7d `query_router` seam, or the wiki
-`[[links]]`-from-concept-edges refinement. Full plan: `docs/ROADMAP.md`.
+(FastAPI + SSE, `apps/api/`) + M3 (Svelte/Tauri frontend, `apps/desktop/`) built; **M4 (sidecar
+packaging) scaffolded** — entrypoint + `just sidecar-check` + Tauri wiring green, but the PyInstaller
+freeze + `tauri build` + clean-machine smoke are desktop steps (RG-010/011/012; RG-011/012 block the
+M4 ship). Runbook: `docs/desktop-packaging.md`. Then M5 (delete Chainlit, lift the 3.12 pin, KI-2).
+Other candidates: PR 17 (Zotero ingest), the 7d `query_router` seam, the wiki `[[links]]` refinement.
+Full plan: `docs/ROADMAP.md`.
 
 ## Stack
 

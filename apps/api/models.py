@@ -48,7 +48,9 @@ class SourceViewPayload(BaseModel):
     n: int
     citation: str
     excerpt: str
-    figure_path: str | None
+    # The figure *id* (not the server path — no filesystem path crosses the boundary, M2
+    # ADR-1); the frontend renders it via GET /api/figures/{figure_id}.
+    figure_id: str | None
     chunk_key: str | None
     markers: list[str]
 
@@ -58,7 +60,7 @@ class SourceViewPayload(BaseModel):
             n=sv.n,
             citation=sv.citation,
             excerpt=sv.excerpt,
-            figure_path=sv.figure_path,
+            figure_id=sv.figure_id,
             chunk_key=sv.chunk_key,
             markers=list(sv.markers),
         )

@@ -1,0 +1,7 @@
+# Frontend build + deps
+node_modules/
+dist/
+
+# Tauri (Rust) build artifacts + generated schemas (M4)
+src-tauri/target/
+src-tauri/gen/

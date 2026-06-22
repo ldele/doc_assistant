@@ -1,21 +1,37 @@
-"""CLI version — thin shell over doc_assistant core.
+"""CLI — thin renderer over ``doc_assistant.chat_controller``.
 
-Same dispatch order as the Chainlit UI:
-    1. Slash command  -> commands.execute_command()
-    2. Library metadata question -> query_router.answer_library_query()
-    3. Otherwise -> RAG pipeline
+Same turn orchestration as the Chainlit UI (one ``ChatController``); the CLI just
+renders the ``TurnEvent`` stream to stdout: stream tokens as they arrive, then print
+the finished ``TurnResult`` (answer + the pre-rendered markdown blocks). Dispatch
+order (slash command → library query → RAG) now lives in the controller, so the CLI
+gains the same commands the web UI has (including ``/export``).
 """
 
-from doc_assistant.commands import execute_command, parse_command
-from doc_assistant.pipeline import RAGPipeline, format_citation
-from doc_assistant.query_router import answer_library_query, is_library_query
+from doc_assistant.chat_controller import ChatController, Result, Session, Token, TurnResult
+
+
+def _render_result(result: TurnResult, *, streamed: bool) -> None:
+    """Print the finished turn. If the answer was already streamed token-by-token, only
+    the trailing blocks are printed; otherwise the full answer + blocks."""
+    if not streamed:
+        print("\n" + result.answer)
+    blocks = (
+        result.sources_md
+        + result.usage_md
+        + result.provenance_card_md
+        + result.claim_review_md
+        + result.citation_note_md
+    )
+    if blocks.strip():
+        print(blocks)
+    print()
 
 
 def main() -> None:
-    rag = RAGPipeline()
-    history: list[dict[str, str]] = []
+    controller = ChatController()
+    session = Session()
 
-    print(f"\nReady. {rag.chunk_count()} chunks indexed. Type 'exit' to quit.\n")
+    print(f"\nReady. {controller.chunk_count()} chunks indexed. Type 'exit' to quit.\n")
     while True:
         question = input("Ask: ").strip()
         if question.lower() == "exit":
@@ -23,36 +39,18 @@ def main() -> None:
         if not question:
             continue
 
-        # --- Slash commands ---
-        parsed = parse_command(question)
-        if parsed is not None:
-            cmd, arg = parsed
-            print("\n" + execute_command(cmd, arg) + "\n")
-            continue
-
-        # --- Library metadata questions (SQLite-answered) ---
-        if is_library_query(question):
-            print("\n" + answer_library_query(question) + "\n")
-            continue
-
-        # --- RAG ---
-        standalone = rag.rewrite(question, history)
-        docs = rag.retrieve(standalone)
-
-        print("\nAnswer: ", end="", flush=True)
-        full_answer = ""
-        for token in rag.stream_answer(standalone, docs):
-            print(token, end="", flush=True)
-            full_answer += token
-        print("\n")
-
-        print("Sources:")
-        for i, doc in enumerate(docs):
-            print(f"  {format_citation(doc, i + 1)}")
-        print()
-
-        history.append({"role": "user", "content": question})
-        history.append({"role": "assistant", "content": full_answer})
+        streamed = False
+        for event in controller.handle_message(session, question):
+            if isinstance(event, Token):
+                if not streamed:
+                    print("\nAnswer: ", end="", flush=True)
+                    streamed = True
+                print(event.text, end="", flush=True)
+            elif isinstance(event, Result):
+                if streamed:
+                    print()
+                _render_result(event.result, streamed=streamed)
+        # Step events are advisory; the CLI ignores them.
 
 
 if __name__ == "__main__":

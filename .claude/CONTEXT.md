@@ -18,8 +18,9 @@ LLM layer, figures/tables, and the wiki/synthesis layer are shipped. The cross-d
 (PR 16) + the 7d engine shipped too, **but their open-vocabulary core was superseded by a 2026-06-18
 redesign that is not yet built — do not build on `data/graph/graph.json` (`.claude/KNOWN_ISSUES.md`
 KI-7).** ~555 tests; ruff / mypy --strict / bandit clean.
-Next candidates: PR 17 (Zotero ingest), 7d follow-ups (answer-time marker surfacing + `query_router`
-seam), or the wiki `[[links]]`-from-concept-edges refinement. Full plan: `docs/ROADMAP.md`.
+Desktop-shell migration underway (ADR-002): PR-M0 (`ChatController`) + PR-M1 (live 7d marker chips)
+built; next is PR-M2 (FastAPI + SSE). Other candidates: PR 17 (Zotero ingest), the remaining 7d
+`query_router` seam, or the wiki `[[links]]`-from-concept-edges refinement. Full plan: `docs/ROADMAP.md`.
 
 ## Stack
 
@@ -33,7 +34,7 @@ seam), or the wiki `[[links]]`-from-concept-edges refinement. Full plan: `docs/R
 | Document store | SQLite via SQLAlchemy — `data/library.db` |
 | LLM (generation/reviewer/judge) | Claude API **or** local Ollama (provider-agnostic) |
 | Orchestration | LangChain |
-| UI | Chainlit (web) + CLI — both thin shells over `src/doc_assistant/` |
+| UI | Chainlit (web) + CLI — thin **renderers** over `chat_controller.ChatController` (PR-M0). Being replaced by a Tauri desktop shell + FastAPI; see `docs/decisions/ADR-002-tauri-fastapi-desktop-shell.md`. |
 | PDF / tables | PyMuPDF4LLM (full-text default); Marker for high-fidelity tables, isolated out-of-process post-ingest pass |
 | torch backend | per-machine, chosen by a mutually-exclusive uv extra (`cu130` GPU / `cpu`) — see `docs/specs/torch-backend-per-machine.md` |
 

@@ -67,3 +67,19 @@ Migrated from the old `CLAUDE.md` / `README` runtime-quirk notes on 2026-06-20 (
   also an empty environment artifact, not a quality measurement).
 - **Pointer:** `docs/decisions.md` → "Feature 7 — concept-graph REDESIGN" (2026-06-18). Edge precision +
   presence recall are flagged for RIGOR_TODO before the edge model is locked.
+
+## KI-8 — PC→baseline marker mapping (PR-M1) is coarse at parent boundaries — OPEN (advisory, fail-safe)
+- **Symptom:** In the default parent-child retrieval mode, the live 7d marker chip maps a marked baseline
+  chunk onto a retrieved parent by **text containment** (`epistemics.markers_for_parent`): a parent gets a
+  marker if it *contains* a marked chunk's text. The two collections are independent segmentations, so a
+  parent spanning a marked chunk plus three clean ones is marked as a whole — over-attribution within the
+  parent. A marked chunk straddling two parents marks both.
+- **Why it's acceptable (for now):** markers are an **advisory chip, not a gate** (inform-don't-block), and
+  over-attribution is fail-safe — it points the user at a real contested concept *in that passage*. The
+  marker never changes synthesis, ranking, or the answer (byte-identical when absent).
+- **Status:** chosen in PR-M1 ADR-1 over the heavier alternative (re-project `chunk_epistemics` onto PC
+  parents — a second projection + migration + its own attribution-quality validation). That precise
+  re-projection is the documented upgrade **if** containment proves too coarse on real data.
+- **Compounding caveat:** marker *quality* upstream still comes from the superseded open-vocabulary graph
+  (KI-7) — `contested` is local-model-noisy. M1 surfaces what the sidecar holds; it does not fix extraction.
+- **Pointer:** `docs/specs/pr-m1-epistemics-markers.md` ADR-1 (option 2 = the re-projection upgrade).

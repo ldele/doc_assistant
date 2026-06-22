@@ -2057,3 +2057,34 @@ This is **PR-A (scaffolding only)**; the decisions.md -> ADR split is PR-B (out 
 - **PR-M4** (PyInstaller sidecar) — freeze the FastAPI stack + the CPU-torch pin (KI-3); cold-start + SSE first-token latency measured on the frozen build.
 - `SourceAdapter` registry / `/api/sources` — deferred until a second concrete ingestion source exists (seam noted in `main.py`'s docstring, not built).
 - Nothing committed — M0 + M1 + M2 staged together (three logical PRs); commit separately or as one — user's call.
+
+---
+## Session: 2026-06-22 (cont.) — PR-M3: Tauri/Svelte desktop frontend (Chainlit→Tauri M3)
+
+**Starting from:** M0+M1 committed (`acb3df0`), M2 staged. The API (`apps/api/`) exposes `ChatController` over HTTP/SSE.
+**Goal this session:** Build PR-M3 per `docs/specs/pr-m3-tauri-frontend.md` (written this session — M3–M5 were specced one-ahead) — the owned web UI inside a Tauri shell that consumes the M2 contract and finally renders the rich integrity UX Chainlit couldn't.
+
+### Framework decision — Svelte 5 + Vite (ADR-1, user choice)
+**What:** the one sub-decision ADR-002 deferred to M3. Chose **Svelte 5 + Vite + TypeScript** (user-selected) over React (heavier) and vanilla (verbose at scale). Compiles to ~29 KB gzipped, owned HTML/CSS, drops into Tauri's webview unchanged — rich-but-lean, matching the Tauri-over-Electron ethos.
+**Why:** single-user local tool with a rich-but-bounded UI; leanness is a project value (it rejected Electron + the "basic" Python-UI options).
+
+### apps/desktop/ (new) — Svelte UI + Tauri 2 shell
+**What:** `src/lib/api.ts` (fetch + **POST-SSE** parsed by hand — EventSource is GET-only; ADR-2), `types.ts` (TS mirror of the API payloads). Components: `App.svelte` (health header, conversation, streaming send loop, export), `Turn.svelte`, `SourceCard.svelte` (citation + 7d marker chips + figure via `/api/figures/{id}`), `ClaimReview.svelte` (the **accept/reject/edit** GUI — per-claim state, POSTs `/adjudicate`), `Provenance.svelte` (collapsible card + usage), `Markdown.svelte` (`marked`). Tauri 2 shell in `src-tauri/` (`tauri.conf.json` devUrl→Vite / frontendDist→`../dist` / CSP allows `127.0.0.1:8001`; `Cargo.toml`, `build.rs`, `src/{main,lib}.rs` + `tauri-plugin-shell` for the M4 sidecar; `capabilities/default.json`). Vite proxies `/api`→`:8001` in dev (no CORS); README documents the two-process dev loop.
+**Why:** thin-shell rule — the frontend renders the API's `TurnResult`, no business logic; all logic stays in `src/doc_assistant/` behind the HTTP boundary.
+
+### SourceView.figure_id (ADR-3) — an id crosses the boundary, never a server path
+**What:** added `figure_id: str | None` to `SourceView` (`chat_controller.py`, additive) + exposed it in `SourceViewPayload` (dropped `figure_path` from the payload). The frontend renders figures via `/api/figures/{figure_id}`.
+**Why:** M2 ADR-1 said "no filesystem path crosses the boundary," but `SourceView` only had `figure_path` (a server path). `figure_path` stays on `SourceView` for Chainlit's local `cl.Image`.
+
+### Svelte 5 native-TS gotcha (build fix)
+**What:** `vite build` choked on the optional parameter `edited?: string` in `ClaimReview.svelte` — Svelte 5's built-in TS strip doesn't handle `?:` optional params (svelte-check did). Rewrote as a default-valued param (`edited = ''`).
+**Why:** logged so future Svelte code avoids optional params in `<script lang="ts">` (or wires `vitePreprocess` for full transpile — added to vite.config but the native strip still ran).
+
+**Verification.** `npm run build` → **svelte-check 0 errors** + vite bundle **28.78 KB gzipped**. Browser-driven run (Vite + a fake-controller API streaming canned SSE — no models/LLM/paid call): health renders (2,455 chunks · model · embedding); a turn **streams token-by-token**; the result shows the **markdown answer**, **2 source cards with `⚠ contested in corpus` / `⚠ trend superseded` chips** (M1 surfaced natively), the **flagged-claim accept/reject/edit GUI** (the Chunk-2a-parked editorial UX), and the **provenance card**; **Accept** POSTs `/adjudicate` (200) → claim resolves to `✓ accepted`. Backend log confirmed `/chat` + `/adjudicate` hits. (Screenshot tool timed out — verified via the a11y snapshot + DOM eval, which the tool guidance prefers anyway.) Throwaway fake-API harness removed. Python gate after `figure_id`: ruff/format/mypy --strict src/bandit clean, **590 passed, coverage 81.6%**.
+
+**Not built here (PR-M4):** the native `tauri build` (Rust + Tauri CLI + crate downloads + a native window — not feasible/verifiable in this env), app icons (`tauri icon`), the PyInstaller sidecar that freezes + spawns the backend, the installer. M3 ships + verifies the web frontend; M4 packages it.
+
+**Opens:**
+- **PR-M4** (PyInstaller sidecar) — freeze the FastAPI stack as a Tauri sidecar (CPU-torch pin, KI-3); generate icons; cold-start + SSE first-token latency on the frozen build; clean-machine smoke.
+- **PR-M5** — delete Chainlit + lift the Python-3.12 pin (KI-2).
+- Nothing committed — M2 + M3 staged on top of the committed M0+M1 (`acb3df0`). `apps/desktop/node_modules` + `dist` are gitignored; `package-lock.json` committed.

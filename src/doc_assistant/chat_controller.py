@@ -106,9 +106,10 @@ class SourceView:
     n: int
     citation: str  # format_citation(doc, n)
     excerpt: str  # ~800-char side-panel preview (with trailing "..." when truncated)
-    figure_path: str | None  # resolved PNG path if this chunk is a figure
+    figure_path: str | None  # resolved PNG path (Chainlit local render); never crosses the API
     chunk_key: str | None  # ADR-2; the 7d marker join key
     markers: list[str] = field(default_factory=list)  # PR-M1: contested / superseded_trend
+    figure_id: str | None = None  # PR-M3: the id the web/API renders via GET /api/figures/{id}
 
 
 @dataclass
@@ -351,7 +352,8 @@ def _build_source_views(
     for i, (doc, _score) in enumerate(scored):
         meta = doc.metadata
         preview = doc.page_content[:800] + ("..." if len(doc.page_content) > 800 else "")
-        figure_path = fig_paths.get(meta.get("figure_id", ""))
+        figure_id = meta.get("figure_id") or None
+        figure_path = fig_paths.get(figure_id) if figure_id else None
         views.append(
             SourceView(
                 n=i + 1,
@@ -359,6 +361,7 @@ def _build_source_views(
                 excerpt=preview,
                 figure_path=figure_path,
                 chunk_key=_chunk_key(meta),
+                figure_id=figure_id,
             )
         )
     return views

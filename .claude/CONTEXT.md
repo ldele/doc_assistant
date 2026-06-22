@@ -18,10 +18,11 @@ LLM layer, figures/tables, and the wiki/synthesis layer are shipped. The cross-d
 (PR 16) + the 7d engine shipped too, **but their open-vocabulary core was superseded by a 2026-06-18
 redesign that is not yet built — do not build on `data/graph/graph.json` (`.claude/KNOWN_ISSUES.md`
 KI-7).** ~555 tests; ruff / mypy --strict / bandit clean.
-Desktop-shell migration underway (ADR-002): PR-M0 (`ChatController`) + PR-M1 (live 7d marker chips)
-+ PR-M2 (FastAPI + SSE, `apps/api/`) built; next is PR-M3 (Tauri frontend). Other candidates: PR 17
-(Zotero ingest), the remaining 7d `query_router` seam, or the wiki `[[links]]`-from-concept-edges
-refinement. Full plan: `docs/ROADMAP.md`.
+Desktop-shell migration underway (ADR-002): PR-M0 (`ChatController`) + M1 (live 7d marker chips) + M2
+(FastAPI + SSE, `apps/api/`) + M3 (Svelte/Tauri frontend, `apps/desktop/`) built; next is PR-M4
+(PyInstaller sidecar packaging + the CPU-torch pin), then M5 (delete Chainlit, lift the 3.12 pin).
+Other candidates: PR 17 (Zotero ingest), the remaining 7d `query_router` seam, or the wiki
+`[[links]]`-from-concept-edges refinement. Full plan: `docs/ROADMAP.md`.
 
 ## Stack
 
@@ -35,7 +36,7 @@ refinement. Full plan: `docs/ROADMAP.md`.
 | Document store | SQLite via SQLAlchemy — `data/library.db` |
 | LLM (generation/reviewer/judge) | Claude API **or** local Ollama (provider-agnostic) |
 | Orchestration | LangChain |
-| UI | Chainlit (web) + CLI + **FastAPI desktop API** (`apps/api/`, PR-M2) — all thin **renderers** over `chat_controller.ChatController` (PR-M0). Migrating to a Tauri desktop shell over the FastAPI/SSE boundary; see `docs/decisions/ADR-002-tauri-fastapi-desktop-shell.md`. Chainlit stays until PR-M5. |
+| UI | **Tauri desktop app** (`apps/desktop/`, Svelte 5 + Vite, PR-M3) over the **FastAPI/SSE** boundary (`apps/api/`, PR-M2); Chainlit (web) + CLI remain — all thin **renderers** over `chat_controller.ChatController` (PR-M0). See `docs/decisions/ADR-002-tauri-fastapi-desktop-shell.md`. Chainlit deleted at PR-M5; native Tauri packaging is PR-M4. |
 | PDF / tables | PyMuPDF4LLM (full-text default); Marker for high-fidelity tables, isolated out-of-process post-ingest pass |
 | torch backend | per-machine, chosen by a mutually-exclusive uv extra (`cu130` GPU / `cpu`) — see `docs/specs/torch-backend-per-machine.md` |
 

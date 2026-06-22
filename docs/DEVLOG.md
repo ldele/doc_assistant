@@ -2088,3 +2088,34 @@ This is **PR-A (scaffolding only)**; the decisions.md -> ADR split is PR-B (out 
 - **PR-M4** (PyInstaller sidecar) — freeze the FastAPI stack as a Tauri sidecar (CPU-torch pin, KI-3); generate icons; cold-start + SSE first-token latency on the frozen build; clean-machine smoke.
 - **PR-M5** — delete Chainlit + lift the Python-3.12 pin (KI-2).
 - Nothing committed — M2 + M3 staged on top of the committed M0+M1 (`acb3df0`). `apps/desktop/node_modules` + `dist` are gitignored; `package-lock.json` committed.
+
+---
+## Session: 2026-06-22 (cont.) — PR-M4: PyInstaller sidecar packaging (scaffold; freeze deferred)
+
+**Starting from:** M0+M1 (`acb3df0`), M2 (`fbba143`) committed; M3 staged. The frontend + API + controller work; M4 packages them into an installer.
+**Goal this session:** Build the packaging machinery per `docs/specs/pr-m4-sidecar-packaging.md` (written this session) — freeze the FastAPI backend as a Tauri sidecar. **Honest scope: the verifiable parts are built + green; the PyInstaller freeze + `tauri build` + clean-machine smoke can't run in this env (Tauri/Rust toolchain + a clean machine) and are deferred (RG-010/011/012).**
+
+### apps/api/__main__.py (new) — standalone server entrypoint
+**What:** `python -m apps.api` runs `uvicorn.run(app, 127.0.0.1, $DOC_API_PORT|8001)` — the dev runner AND the script PyInstaller freezes. Verified: imports clean, 8 routes, **controller not built at import** (lazy in lifespan → the process starts immediately and `/api/health` flips to 200 once warm).
+**Why:** the frozen sidecar needs a single entry script; binding `127.0.0.1` only is enforced here.
+
+### scripts/build_sidecar.py + doc_assistant_api.spec (new) — the freeze
+**What:** `build_sidecar.py` — `--check` (verifies the Rust target triple + a **CPU-torch guard** + the entry import, no freeze) and the full build (PyInstaller → copy to `src-tauri/binaries/doc-assistant-api-<triple>[.exe]`, Tauri's naming). The spec is an onefile PyInstaller config with `collect_all` for torch/chroma/sentence-transformers/transformers/tokenizers/pymupdf/langchain*/duckdb — **a starting point** (ML freezes need on-machine hidden-import/data iteration). **CPU torch only (ADR-2):** the script refuses a `+cu*` torch — the cu130 wheel segfaults headless (KI-3) and the installer must run anywhere. Verified: `just sidecar-check` → triple `x86_64-pc-windows-msvc`, torch `2.12.0+cpu`, entry import all pass.
+**Why naming:** the build script does the verifiable orchestration (triple detection, the CPU guard, the rename/copy); only the heavy freeze itself is deferred.
+**Naming note:** put under `scripts/` (an established `python -m scripts.*` package) **not** a `packaging/` dir — that name would shadow the installed `packaging` library on `sys.path`.
+
+### Tauri sidecar wiring (src-tauri/) + readiness gate (App.svelte)
+**What:** `tauri.conf.json` `bundle.externalBin`; `src-tauri/src/lib.rs` spawns the sidecar on setup via `tauri-plugin-shell` `.sidecar()` + drains its stderr (missing sidecar = non-fatal, dev mode); `capabilities/default.json` scoped `shell:allow-execute`. Frontend **readiness gate**: `App.svelte` polls `/api/health` (≤60×1s) → `starting the engine… → ready / unreachable`, covering the sidecar cold-start window. Frontend re-built clean (28.89 KB gzipped).
+**Why:** one process boundary (the sidecar) keeps the Rust shell off the Python ABI; the frontend poll is the readiness UX (no frozen window).
+
+### packaging extra + Justfile + runbook
+**What:** `pyproject.toml` `packaging` extra (`pyinstaller>=6.0`, kept out of `dev`); `uv lock` regenerated (+pyinstaller 6.21.0 & deps). `Justfile`: `sidecar` / `sidecar-check`. `docs/desktop-packaging.md` — the desktop runbook (CPU sync → freeze → `tauri icon` → `tauri build` → smoke) with the rigor gates. `.claude/RIGOR_TODO.md`: **RG-010** cold-start (degrades), **RG-011** SSE first-token latency vs Chainlit (**blocks-ship**), **RG-012** clean-machine smoke (**blocks-ship**).
+
+**Verification (this env).** `python -m apps.api` imports clean · `just sidecar-check` green · frontend builds with the readiness gate · Python gate: ruff/format/`mypy --strict src`/bandit clean, **590 passed, coverage 81.6%**. **NOT run here:** the PyInstaller freeze, `npx tauri build`, the clean-machine smoke, the latency/cold-start measurements — all need the Tauri/Rust toolchain + a real machine (RG-010/011/012; runbook §5).
+
+**Status: M4 SCAFFOLDED, not done.** Unlike M0–M3 (fully verified), M4's ship gate stays open until a desktop produces a working frozen sidecar + installer and closes RG-011/012.
+
+**Opens:**
+- **Desktop build** (the user / a real machine): iterate the PyInstaller spec until the frozen binary runs; `tauri icon` + `tauri build`; close RG-010/011/012.
+- **PR-M5** — delete Chainlit + lift the Python-3.12 pin (KI-2), once the installer ships.
+- Nothing committed — M2 (`fbba143`) committed; M3 + M4 staged on top.

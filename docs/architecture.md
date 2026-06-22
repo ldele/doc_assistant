@@ -86,6 +86,7 @@ flowchart TD
 | `doc_assistant.tracking` | Token usage tracking and cost estimation | Append-only; never raises |
 | `apps/cli.py` | Terminal renderer | Renders `TurnResult`; no business logic |
 | `apps/chainlit_app.py` | Web chat renderer | Maps `TurnEvent`/`TurnResult` → Chainlit widgets; no business logic |
+| `apps/api/` | Desktop HTTP renderer (PR-M2) | FastAPI over `127.0.0.1`; `TurnEvent` → SSE, requests → controller calls; no business logic |
 | `scripts/` | One-off maintenance scripts | Not part of the importable package |
 
 This table is non-exhaustive — it covers the core ingest/runtime modules. The research-integrity and enrichment layer (`query_router`, `synthesis`, `provenance`, `reviewer`, `citations`, `metadata_extractor`, `doc_vectors`, `regions`, `tables`, `tables_marker`, `embeddings`, `bibtex`, `commands`, `llm`) is shown in the Mermaid diagram above.

@@ -19,8 +19,9 @@ LLM layer, figures/tables, and the wiki/synthesis layer are shipped. The cross-d
 redesign that is not yet built — do not build on `data/graph/graph.json` (`.claude/KNOWN_ISSUES.md`
 KI-7).** ~555 tests; ruff / mypy --strict / bandit clean.
 Desktop-shell migration underway (ADR-002): PR-M0 (`ChatController`) + PR-M1 (live 7d marker chips)
-built; next is PR-M2 (FastAPI + SSE). Other candidates: PR 17 (Zotero ingest), the remaining 7d
-`query_router` seam, or the wiki `[[links]]`-from-concept-edges refinement. Full plan: `docs/ROADMAP.md`.
++ PR-M2 (FastAPI + SSE, `apps/api/`) built; next is PR-M3 (Tauri frontend). Other candidates: PR 17
+(Zotero ingest), the remaining 7d `query_router` seam, or the wiki `[[links]]`-from-concept-edges
+refinement. Full plan: `docs/ROADMAP.md`.
 
 ## Stack
 
@@ -34,7 +35,7 @@ built; next is PR-M2 (FastAPI + SSE). Other candidates: PR 17 (Zotero ingest), t
 | Document store | SQLite via SQLAlchemy — `data/library.db` |
 | LLM (generation/reviewer/judge) | Claude API **or** local Ollama (provider-agnostic) |
 | Orchestration | LangChain |
-| UI | Chainlit (web) + CLI — thin **renderers** over `chat_controller.ChatController` (PR-M0). Being replaced by a Tauri desktop shell + FastAPI; see `docs/decisions/ADR-002-tauri-fastapi-desktop-shell.md`. |
+| UI | Chainlit (web) + CLI + **FastAPI desktop API** (`apps/api/`, PR-M2) — all thin **renderers** over `chat_controller.ChatController` (PR-M0). Migrating to a Tauri desktop shell over the FastAPI/SSE boundary; see `docs/decisions/ADR-002-tauri-fastapi-desktop-shell.md`. Chainlit stays until PR-M5. |
 | PDF / tables | PyMuPDF4LLM (full-text default); Marker for high-fidelity tables, isolated out-of-process post-ingest pass |
 | torch backend | per-machine, chosen by a mutually-exclusive uv extra (`cu130` GPU / `cpu`) — see `docs/specs/torch-backend-per-machine.md` |
 

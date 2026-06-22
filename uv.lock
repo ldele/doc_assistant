@@ -1173,6 +1173,7 @@ dependencies = [
     { name = "chromadb" },
     { name = "duckdb" },
     { name = "ebooklib" },
+    { name = "fastapi" },
     { name = "langchain" },
     { name = "langchain-anthropic" },
     { name = "langchain-chroma" },
@@ -1194,8 +1195,10 @@ dependencies = [
     { name = "rank-bm25" },
     { name = "sentence-transformers" },
     { name = "sqlalchemy" },
+    { name = "sse-starlette" },
     { name = "striprtf" },
     { name = "tqdm" },
+    { name = "uvicorn", extra = ["standard"] },
 ]
 
 [package.optional-dependencies]
@@ -1227,6 +1230,7 @@ requires-dist = [
     { name = "detect-secrets", marker = "extra == 'dev'", specifier = ">=1.5.0" },
     { name = "duckdb", specifier = ">=1.5.3" },
     { name = "ebooklib", specifier = ">=0.18" },
+    { name = "fastapi", specifier = ">=0.115" },
     { name = "langchain", specifier = ">=1.0,<2.0" },
     { name = "langchain-anthropic", specifier = ">=1.0,<2.0" },
     { name = "langchain-chroma", specifier = ">=1.0,<2.0" },
@@ -1253,11 +1257,13 @@ requires-dist = [
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.6.0" },
     { name = "sentence-transformers", specifier = ">=3.0" },
     { name = "sqlalchemy", specifier = ">=2.0" },
+    { name = "sse-starlette", specifier = ">=2.1" },
     { name = "striprtf", specifier = ">=0.0.26" },
     { name = "structlog", marker = "extra == 'dev'", specifier = ">=24.0.0" },
     { name = "torch", marker = "extra == 'cpu'", specifier = ">=2.12", index = "https://download.pytorch.org/whl/cpu", conflict = { package = "doc-assistant", extra = "cpu" } },
     { name = "torch", marker = "extra == 'cu130'", specifier = ">=2.12", index = "https://download.pytorch.org/whl/cu130", conflict = { package = "doc-assistant", extra = "cu130" } },
     { name = "tqdm", specifier = ">=4.66" },
+    { name = "uvicorn", extras = ["standard"], specifier = ">=0.30" },
 ]
 provides-extras = ["dev", "cpu", "cu130"]
 

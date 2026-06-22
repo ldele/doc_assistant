@@ -60,6 +60,13 @@ dependencies = [
     # extensions, unlike igraph/leidenalg/graspologic (flaky Windows wheels). See
     # docs/decisions.md → Feature 7 ADR (Louvain-over-Leiden for v1).
     "networkx>=3.2",
+    # Desktop API (PR-M2, ADR-002): FastAPI over 127.0.0.1 + SSE token streaming. Bundled
+    # as a PyInstaller sidecar in PR-M4, so they live in the base deps (not an extra). No
+    # torch interaction. `sse-starlette` gives EventSourceResponse (heartbeat + clean
+    # client-disconnect); `uvicorn[standard]` is the dev/sidecar ASGI server.
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.30",
+    "sse-starlette>=2.1",
 ]
 
 [project.optional-dependencies]
@@ -93,7 +100,9 @@ where = ["src"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-pythonpath = ["src"]
+# "." puts the repo root on sys.path so tests can import the thin shells under apps/
+# (apps/ is not an installed package — see [tool.setuptools.packages.find] where=["src"]).
+pythonpath = ["src", "."]
 markers = [
     "api: tests that call external APIs (Anthropic, etc.) — costs money, run with -m api",
 ]

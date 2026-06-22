@@ -7,6 +7,10 @@
 # The +cu130 wheel SEGFAULTS (exit 139) on a box with no usable GPU, so cpu is the default.
 # Rationale + the underlying uv extras/conflicts: docs/specs/torch-backend-per-machine.md.
 
+# Windows has no POSIX `sh`; run recipes through cmd so `just` works out of the box. The
+# recipe bodies are plain single commands (uv/npm/uvicorn), so cmd vs PowerShell is moot.
+set windows-shell := ["cmd.exe", "/c"]
+
 torch := env_var_or_default("DOC_TORCH", "cpu")
 
 # Show the resolved backend for this machine.
@@ -45,8 +49,7 @@ api *ARGS:
 sidecar-check:
     uv run --no-sync python -m scripts.build_sidecar --check
 
-# Build the frozen FastAPI sidecar (PR-M4). Needs PyInstaller + a CPU-synced venv (KI-3:
-# the cu130 wheel segfaults headless — `uv sync --extra cpu --extra dev` first).
+# Build the frozen FastAPI sidecar (PR-M4; CPU-synced venv + packaging extra — see KI-3).
 sidecar:
     uv run --no-sync python -m scripts.build_sidecar
 

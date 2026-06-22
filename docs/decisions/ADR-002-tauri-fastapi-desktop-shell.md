@@ -124,8 +124,11 @@ loop would slow every iteration. So: **release** = Tauri bundles the frozen Fast
 Six PRs, one per session, in `docs/ROADMAP.md` (M0–M5). Specs written: M0
 (`pr-m0-chat-controller.md`), M1 (`pr-m1-epistemics-markers.md`), M2 (`pr-m2-fastapi-boundary.md`).
 M3–M5 specced one ahead as each predecessor lands (each depends on the prior's output: frontend
-framework, freeze layout). Sequencing rationale (why M1 lands before the migration proper, and why the
-"sexy" UX is built natively in Tauri rather than in Chainlit): `tauri-migration-plan.md` Part 1.
+framework, freeze layout). **Sequencing rationale:** M1 lands *before* the migration proper because it
+is the pre-migration demo win and shares M0's `chunk_key` plumbing — so the 7d marker join is wired
+once, on the new `ChatController`, never retrofitted into Chainlit and then again into the controller.
+The rich per-claim editorial UX is built natively in Tauri (PR-M3), not in Chainlit, because the Chunk
+2a ADR already rejected building it in Chainlit and deferred it to this decision.
 
 Build order: `M0 → M1 → M2 → M3 → M4 → M5`. M0 is the only hard blocker for everything; M1 (the 7d
 marker chip) is the pre-migration demo win and shares M0's `chunk_key` plumbing.

@@ -2173,3 +2173,39 @@ This is **PR-A (scaffolding only)**; the decisions.md -> ADR split is PR-B (out 
 - **RG-013** (`.claude/RIGOR_TODO.md`): the **M4 PyInstaller freeze must re-verify `structlog` is bundled** (new base dep — coupling to RG-012/KI-9) and that the frozen build emits structured logs without a missing-import or console-silencing regression. Not closeable here (needs the Tauri toolchain + a box).
 - KI-1 closed; `.claude/CONTEXT.md` rule #5 reworded to match (structlog, configured at entrypoints).
 - Nothing committed — staged for review.
+
+---
+## Session: 2026-06-23 (cont.) — M4 ship gates RG-010/RG-011 run on the host
+
+**Starting from:** the frozen `dist\doc-assistant-api.exe` (Jun-22 build, pre-structlog) + the real 27k
+corpus + the installer all present on the box. Goal: close the host-runnable M4 ship gates.
+
+### RG-010 — cold-start measured (warm cache) → done
+**What:** ran the frozen sidecar with `DOC_DATA_DIR` → repo `data\`; timed launch → `/api/health 200`.
+**Result:** **~35–40s** (39.7s, 34.9s) warm HF cache; `chunk_count=27168` (real corpus loaded). Required
+`HF_HUB_OFFLINE=1` — see below. The user-facing first-run cold-start is still the KI-9 ≈218s HF download.
+Baseline recorded in RIGOR_TODO; RG-010 (degrades) → closed.
+
+### RG-011 — first-token BLOCKED on this box (corporate proxy) → KI-10
+**What:** attempted the one paid Haiku first-token call on the frozen build.
+**Finding:** the freeze launches, serves, and **retrieves** ("Found 10 relevant passages"), then the
+**Anthropic call SSL-fails** — `[SSL: CERTIFICATE_VERIFY_FAILED] unable to get local issuer certificate`
+from the anthropic SDK's httpx. The freeze bundles `certifi`, which doesn't trust this box's corporate
+TLS-MITM root CA. Same root cause crashed startup first (the HF metadata HEAD), worked around with
+`HF_HUB_OFFLINE=1` + the warm cache. A failed TLS handshake bills nothing, so **no paid call landed**.
+No env-only fix (httpx pins certifi). **RG-011 stays open (blocks-ship); measure on a non-proxy box or
+the RTX/Ollama path.** Logged **KI-10** (frozen build needs OS-trust-store support — `truststore`/
+`pip-system-certs` — for proxy users; couples KI-9).
+**Why this isn't a freeze defect:** the freeze loads the full stack, serves, and retrieves correctly; only
+outbound LLM TLS is blocked, and only by this box's MITM proxy (KI-6 family). The M2 TestClient already
+verifies the SSE first-token *framing*; the on-frozen-build warm number over a real LLM is what remains.
+
+### Notes
+**What:** PyInstaller onefile spawns a child server that `proc.terminate()` doesn't reap — a stale server
+lingered on :8001 between runs (a bogus 0.3s "cold-start" gave it away). Cleaned with `taskkill /F /IM`.
+The Windows-cert-store export I tried for a TLS workaround was (correctly) denied as out-of-scope; not pursued.
+
+**Opens:** RG-011 + RG-012 (Test-B installed-app launch + Tier-2 cited turn) still block the M4 ship —
+both need either a non-proxy machine / the RTX-Ollama box (RG-011) or Windows Sandbox + the data-home flow
+(RG-012). KI-10 (cert trust) + KI-9 (bundle weights) are the two freeze fixes to weigh before the ship.
+No code changed; RIGOR_TODO + KNOWN_ISSUES updated.

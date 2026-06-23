@@ -28,15 +28,16 @@ marker-derivation join, all guard-tested.
 
 from __future__ import annotations
 
-import logging
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+import structlog
+
 from doc_assistant.concept_graph import ConceptGraph, NodeWeight, compute_node_weights
 
-log = logging.getLogger(__name__)
+log = structlog.get_logger(__name__)
 
 #: Evidence-layer markers (extend the Chunk 2a marker set). Structural, not opinion.
 MARKER_CONTESTED = "contested"
@@ -263,7 +264,7 @@ def load_doc_chunks() -> list[tuple[str, int, str]]:
     try:
         coll = client.get_collection(get_collection_name())
     except Exception:
-        log.warning("No baseline collection — run ingest first; epistemics will be empty")
+        log.warning("no_baseline_collection", hint="run ingest first; epistemics will be empty")
         return []
 
     data = coll.get(include=["documents", "metadatas"])

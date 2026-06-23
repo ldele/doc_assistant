@@ -23,9 +23,11 @@ from doc_assistant.chat_controller import (
     Token,
     TurnResult,
 )
-from doc_assistant.config import LLM_MODEL, LLM_PROVIDER
+from doc_assistant.config import LLM_MODEL, LLM_PROVIDER, LOG_JSON, LOG_LEVEL
 from doc_assistant.embeddings import get_active_model_name
+from doc_assistant.logging_config import configure_logging
 
+configure_logging(json=LOG_JSON, level=LOG_LEVEL)
 controller = ChatController()
 
 

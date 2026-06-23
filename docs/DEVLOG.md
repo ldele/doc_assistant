@@ -2135,3 +2135,41 @@ This is **PR-A (scaffolding only)**; the decisions.md -> ADR split is PR-B (out 
 ### M4 build executed + tooling (icons, latency helper, Windows `just`)
 **What:** ran the desktop build on the Windows box — `npx tauri icon` (icons committed under `apps/desktop/src-tauri/icons/`, incl. unused android/ios sets from the default generator; `Cargo.lock` committed for reproducible Rust builds) + `npx tauri build`. Tooling: `justfile` `set windows-shell := ["cmd.exe","/c"]` (the box has no POSIX `sh`, so every recipe failed — now works, verified); `scripts/measure_latency.py` (RG-010 cold-start + RG-011 first-token, `--launch dist\doc-assistant-api.exe`; the chat call is a real paid LLM call). Runbook §5 rewritten with the helper + the **Windows Sandbox** clean-box procedure (Tier-1 freeze-proof vs Tier-2 real-turn, the latter gated on the unbuilt data-home/ingest flow); the top-of-file checklist tracks status.
 **Status:** M4 **build done**; PAUSED at **RG-012** (clean-machine smoke) pending a restart for Windows Sandbox. RG-011 + RG-012 still block the M4 ship; then PR-M5. **Open product gap:** the real-install data home / first-run ingest flow is unbuilt (`DOC_DATA_DIR` is self-test-only).
+
+---
+## Session: 2026-06-23 — structlog observability substrate (ADR-003; closes KI-1)
+
+**Starting from:** Cowork handoff — ADR-003 + `docs/specs/structlog-observability.md` designed (no code). Rule #5 ("structlog only; no `print()` in `src/`") was aspirational: `structlog` absent from base deps, 11 modules on stdlib `logging`, 32 `print()` in 4 modules, zero logging config.
+**Goal this session:** Build the spec — one config seam, convert every call site, wire the entrypoints — without changing user-visible behaviour (CLI progress, answers, eval all untouched).
+
+### src/doc_assistant/logging_config.py (new) — the one configuration seam
+**What:** `configure_logging(*, json=False, level="INFO")` wires structlog on top of the stdlib (`stdlib.LoggerFactory` + `ProcessorFormatter`) so app `structlog.get_logger` events and third-party stdlib logs (chromadb/httpx/transformers, damped to WARNING) share one renderer — `ConsoleRenderer` (human, dev/CLI) or `JSONRenderer` (machine). Idempotent (removes only its own flagged handler on re-call, so it coexists with pytest's). Pure setup — **no app imports** (guard-tested). The renderer choice lives entirely in the stdlib formatter, so toggling `json` re-renders without disturbing cached structlog loggers.
+**Why:** observability is a project tenet (ADR-003) — every `src/` line a structured, queryable event with bindable context, configured once per entrypoint (rule #3: `apps/` own wiring).
+**Rejected:** per-module structlog config (duplication + `src/` owning wiring); pure-structlog bypassing stdlib (loses third-party log capture). Both per ADR-003 options.
+
+### config.py — LOG_LEVEL / LOG_JSON (config contract, not a locked setting)
+**What:** `LOG_LEVEL` (default `INFO` — keeps converted progress visible) + `LOG_JSON` (default `False`; the env var *is* the "deployed/observed" signal for the FastAPI renderer). Env-overridable; no eval experiment needed to change.
+
+### 11 stdlib loggers → structlog; 16 `%`-style sites → key-value events
+**What:** `citations, concept_graph, doc_vectors, epistemics, eval/runner, export, figures, regions, reviewer, tables, wiki`: `logging.getLogger` → `structlog.get_logger`. The 16 call sites moved from `log.warning("No '%s' at %s", a, b)` to `log.warning("collection_missing", collection=a, path=b)` — a short stable event slug + queryable kwargs; human guidance kept as a `hint=`. `eval/runner` uses `structlog.get_logger` only — **no** `logging_config`/app import (harness extractability, guard-tested).
+**Why:** Decision 4/5 — unify the pipeline; the kwargs are the queryable part.
+
+### 32 `print()` → `log.*`; the cost-warning box → direct stderr
+**What:** `ingest.py` (18), `pipeline.py` (9), `db/migrations.py` (4) prints → `log.info`/`log.warning` with event+kwargs at the right level (progress→info; `Couldn't…`/`Error on…`/destructive→warning); these three gained a `structlog.get_logger`. **`llm.py:277`** (the paid-run abort-window box) stays a direct `sys.stderr.write` + `flush` — an interactive CLI safety prompt, not an observability event, so collapsing it into a structlog line would degrade the UX (ADR-003 ADR-B: preserve stderr semantics).
+**Why:** Decision 6 — the prints were the CLI's progress UX; converting after the console renderer is wired keeps them visible.
+
+### Entrypoints call configure_logging once
+**What:** `apps/cli.py` `main()`, `apps/chainlit_app.py` (module load, before `ChatController`), `apps/api/main.py` `create_app()`. Plus the **program entrypoints** `python -m doc_assistant.ingest` and `…db.migrations` (in their `if __name__ == "__main__"` guards). `src/` *library* code never configures logging — the `__main__` guards run only as a program, never on import, so rule #3's intent (no import-time side effect) holds.
+**Deviation (intent-preserving):** the spec listed only the three app shells; the `doc-ingest`/migrations `python -m` paths (the canonical ingest invocation in README + Justfile) are separate entrypoints into `src/`, so they configure logging in their `__main__` guard — otherwise the migrated `info` progress would be silenced (fails DoD #4). The bare `doc-ingest` console_script (undocumented alias) is unchanged: its `info` progress now relies on the `-m` path; warnings still surface via stdlib lastResort.
+
+### Tests + deps
+**What:** `tests/unit/test_logging_config.py` (renderer selection, level filtering, idempotency, exc_info-in-JSON, no-app-import) + `tests/unit/test_eval_harness_isolation.py` (subprocess: importing `eval/runner` leaks no `logging_config`/`config`/`pipeline`/`chat_controller`/`chainlit`/`fastapi`). `structlog>=24.0.0` moved dev→base in `pyproject.toml`; `uv lock` regenerated (structlog now a base dep, 294 packages).
+
+**Verification (CPU box, `uv run --no-sync`).** `ruff check src tests apps` ✓ · `ruff format --check` ✓ (my files; one pre-existing unrelated `test_embeddings.py` diff from ruff 0.15 vs pinned 0.6.0 — left, per the M0 baton) · `mypy --strict src` ✓ (43 files) · `bandit -r src` 0 issues ✓ · `pytest tests/unit tests/integration` → **601 passed, 1 skipped, coverage 82%** (+7 tests). **Zero `print()` in `src/`** (grep). **Console-parity smoke (DoD #4):** drove the real `ingest`/`pipeline`/`migrations` loggers through both renderers — console emits human-readable progress, JSON emits structured events, both on stderr. All entrypoints import/compile clean.
+
+**Note (DoD #2 nuance):** `logging_config.py` itself uses stdlib `logging` (`getLogger(root)`, third-party level damping) — that is the *wiring that makes structlog work*, not an app logger. No `src/` module acquires a stdlib **app** logger anymore.
+
+**Opens:**
+- **RG-013** (`.claude/RIGOR_TODO.md`): the **M4 PyInstaller freeze must re-verify `structlog` is bundled** (new base dep — coupling to RG-012/KI-9) and that the frozen build emits structured logs without a missing-import or console-silencing regression. Not closeable here (needs the Tauri toolchain + a box).
+- KI-1 closed; `.claude/CONTEXT.md` rule #5 reworded to match (structlog, configured at entrypoints).
+- Nothing committed — staged for review.

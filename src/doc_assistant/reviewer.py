@@ -26,9 +26,9 @@ Locked design choices
 from __future__ import annotations
 
 import json
-import logging
 from dataclasses import dataclass
 
+import structlog
 from sqlalchemy import select
 
 from doc_assistant.db.models import AnswerReview
@@ -36,7 +36,7 @@ from doc_assistant.db.session import session_scope
 from doc_assistant.llm import LLMClient, Message
 from doc_assistant.provenance import AnswerProvenance, RetrievedChunk
 
-log = logging.getLogger(__name__)
+log = structlog.get_logger(__name__)
 
 # Chunk 2c — the fixed failure-tag vocabulary the reviewer chooses from. A
 # categorical tag (alongside the free-text `notes`) is what makes recurring

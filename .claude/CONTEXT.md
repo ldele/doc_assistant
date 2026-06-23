@@ -84,8 +84,11 @@ in cpc CONVENTIONS **§12 / §13** — read them there, do not restate. Project-
 3. **`apps/` are thin shells.** All business logic in `src/doc_assistant/`; UI → library, never the reverse.
 4. **Enrichment-Layer Pattern.** Derived data ships as a separate module + idempotent CLI runner,
    sidecar by default, never mutates the primary chunk store.
-5. **Structured logging via `structlog`; no `print()` in `src/`.** *(Currently violated — see
-   `.claude/KNOWN_ISSUES.md`.)*
+5. **Structured logging via `structlog`; no `print()` in `src/`.** Configured once per entrypoint
+   via `logging_config.configure_logging` (console renderer for dev/CLI, JSON when `LOG_JSON=true`);
+   `src/` library code never configures logging. Enforced as of ADR-003 (KI-1 closed). The one
+   sanctioned `stderr` write is the paid-run abort-window box in `llm.py` (an interactive CLI prompt,
+   not a log event).
 6. **Exceptions chain** (`raise X from e`); user-facing messages translated at the UI boundary.
 7. **bandit HIGH blocks merge; CI green before merge.** Docs land with the code at every checkpoint.
 

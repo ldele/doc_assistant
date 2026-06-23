@@ -38,12 +38,13 @@ Design choices
 
 from __future__ import annotations
 
-import logging
 import re
 from dataclasses import dataclass
 from typing import Any
 
-log = logging.getLogger(__name__)
+import structlog
+
+log = structlog.get_logger(__name__)
 
 # Minimum shape for a region to count as a real table rather than a
 # layout artifact. Tunable here; deliberately not a config knob yet.
@@ -228,7 +229,7 @@ def extract_tables_from_pages(pdf_path: str, pages: list[int]) -> list[Extracted
             try:
                 raw_tables = page.extract_tables()
             except Exception as e:  # pragma: no cover - pdfplumber page-level failure
-                log.warning("pdfplumber failed on page %d of %s: %s", page_number, pdf_path, e)
+                log.warning("pdfplumber_failed", page=page_number, pdf=str(pdf_path), error=str(e))
                 continue
             for raw in raw_tables or []:
                 rows = _normalise_rows(raw)

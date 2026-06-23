@@ -9,12 +9,15 @@ check the live schema first). Keep this list append-only.
 
 from pathlib import Path
 
+import structlog
 from sqlalchemy import inspect, text
 from sqlalchemy.engine import Engine
 
 from doc_assistant.config import SQLITE_PATH
 from doc_assistant.db.models import Base
 from doc_assistant.db.session import get_engine
+
+log = structlog.get_logger(__name__)
 
 # Additive columns on PRE-EXISTING tables: (table, column, column_ddl, index_or_None).
 # create_all() never alters an existing table, so each is applied by hand below,
@@ -42,7 +45,7 @@ def _apply_additive_columns(engine: Engine) -> None:
                 conn.execute(
                     text(f"CREATE INDEX IF NOT EXISTS {index} ON {table} ({column})")  # nosec B608
                 )
-            print(f"  + added column {table}.{column}")
+            log.info("added_column", table=table, column=column)
 
 
 def init_db(reset: bool = False) -> None:
@@ -57,21 +60,28 @@ def init_db(reset: bool = False) -> None:
     engine = get_engine()
 
     if reset:
-        print(f"Resetting database at {db_path}")
+        log.warning("resetting_database", path=str(db_path))
         Base.metadata.drop_all(engine)
 
-    print(f"Creating tables in {db_path}")
+    log.info("creating_tables", path=str(db_path))
     Base.metadata.create_all(engine)
     _apply_additive_columns(engine)
 
     # Verify
     inspector = inspect(engine)
     tables = inspector.get_table_names()
-    print(f"Tables present: {sorted(tables)}")
+    log.info("tables_present", tables=sorted(tables))
 
 
 if __name__ == "__main__":
     import argparse
+
+    # Program entrypoint (`python -m doc_assistant.db.migrations`): configure logging
+    # here so the table-creation events are visible (ADR-003). Library imports never do.
+    from doc_assistant.config import LOG_JSON, LOG_LEVEL
+    from doc_assistant.logging_config import configure_logging
+
+    configure_logging(json=LOG_JSON, level=LOG_LEVEL)
 
     parser = argparse.ArgumentParser()
     parser.add_argument(

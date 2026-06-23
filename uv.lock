@@ -1206,6 +1206,7 @@ dependencies = [
     { name = "sqlalchemy" },
     { name = "sse-starlette" },
     { name = "striprtf" },
+    { name = "structlog" },
     { name = "tqdm" },
     { name = "uvicorn", extra = ["standard"] },
 ]
@@ -1227,7 +1228,6 @@ dev = [
     { name = "pytest" },
     { name = "pytest-cov" },
     { name = "ruff" },
-    { name = "structlog" },
 ]
 packaging = [
     { name = "pyinstaller" },
@@ -1272,7 +1272,7 @@ requires-dist = [
     { name = "sqlalchemy", specifier = ">=2.0" },
     { name = "sse-starlette", specifier = ">=2.1" },
     { name = "striprtf", specifier = ">=0.0.26" },
-    { name = "structlog", marker = "extra == 'dev'", specifier = ">=24.0.0" },
+    { name = "structlog", specifier = ">=24.0.0" },
     { name = "torch", marker = "extra == 'cpu'", specifier = ">=2.12", index = "https://download.pytorch.org/whl/cpu", conflict = { package = "doc-assistant", extra = "cpu" } },
     { name = "torch", marker = "extra == 'cu130'", specifier = ">=2.12", index = "https://download.pytorch.org/whl/cu130", conflict = { package = "doc-assistant", extra = "cu130" } },
     { name = "tqdm", specifier = ">=4.66" },

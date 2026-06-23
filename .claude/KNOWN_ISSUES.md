@@ -1,17 +1,24 @@
-<!-- status: active · updated: 2026-06-22 · class: living -->
+<!-- status: active · updated: 2026-06-23 · class: living -->
 
 # KNOWN ISSUES
 
 Open weaknesses, recurring failures, workarounds. Log a bug the second time it appears.
 Migrated from the old `CLAUDE.md` / `README` runtime-quirk notes on 2026-06-20 (cpc adoption).
 
-## KI-1 — `print()` in `src/` violates the structlog-only standard — OPEN
-- **Symptom:** Source modules still use `print()` in places; the engineering standard mandates
-  structured logging via `structlog` and no `print()` in `src/`.
-- **Cause:** Predates the logging standard; never fully back-filled.
-- **Workaround:** None needed at runtime — cosmetic/observability debt.
-- **Real fix:** Replace `print()` calls with `structlog` loggers, or consciously descope per module.
-  Don't silently ignore.
+## KI-1 — `print()` in `src/` violates the structlog-only standard — RESOLVED (2026-06-23)
+- **Symptom:** Source modules used `print()` (32 calls / 4 modules) and stdlib `logging`
+  (11 modules) with no logging configuration; the standard mandates structured logging via
+  `structlog` and no `print()` in `src/`. `info`-level lines were invisible by default.
+- **Cause:** Predated the logging standard; never fully back-filled.
+- **Fix (shipped, ADR-003 / `docs/specs/structlog-observability.md`):** one `configure_logging`
+  seam (`src/doc_assistant/logging_config.py`, structlog-over-stdlib, console/JSON renderers)
+  called once at each app + program entrypoint; all 11 loggers → `structlog.get_logger`, all 16
+  `%`-style sites → key-value events, all 32 prints → `log.*` (the `llm.py` paid-run abort box
+  stays a direct `sys.stderr.write` — an interactive CLI safety prompt, ADR-B). `LOG_LEVEL`/
+  `LOG_JSON` config contract. **Zero `print()` in `src/`**; behaviour-preserving (CLI progress,
+  answers, eval untouched). Rule #5 is now true + enforceable.
+- **Follow-up:** RG-013 (`.claude/RIGOR_TODO.md`) — the M4 freeze must re-verify `structlog`
+  (now a base dep) is bundled.
 
 ## KI-2 — Python 3.14 breaks Chainlit at runtime — OPEN (constraint, not a bug to fix)
 - **Symptom:** App fails to run the Chainlit web UI on Python 3.14 (anyio event-loop incompatibility).

@@ -107,3 +107,21 @@ Migrated from the old `CLAUDE.md` / `README` runtime-quirk notes on 2026-06-20 (
   point `HF_HOME` / `SENTENCE_TRANSFORMERS_HOME` at the unpacked location), or ship them with the
   installer as a Tauri resource; re-measure RG-010 after. Decide before the M4 ship.
 - **Pointer:** `docs/desktop-packaging.md` §"Data directory"; RG-010 / RG-012 in `.claude/RIGOR_TODO.md`.
+
+## KI-10 — Frozen build's bundled `certifi` rejects corporate-MITM'd HTTPS — OPEN (env-dependent; blocks RG-011 here)
+- **Symptom:** On a box behind a TLS-inspecting (MITM) corporate proxy, the frozen
+  `dist\doc-assistant-api.exe` fails outbound HTTPS with `[SSL: CERTIFICATE_VERIFY_FAILED] unable to get
+  local issuer certificate`. Seen 2026-06-23 twice: (1) the startup HuggingFace metadata HEAD for
+  `bge-base` → **startup crash** even with a warm cache; (2) the Anthropic chat call → turn fails with no
+  token (blocks RG-011's first-token measurement on this box).
+- **Cause:** PyInstaller bundles **`certifi`** (Mozilla's CA set). httpx (used by `huggingface_hub` and the
+  `anthropic` SDK) pins certifi, so it never consults the **Windows root store** where the corporate MITM
+  root CA lives. Distinct from KI-6 (that is the `OPENSSL_Applink` crash on uv's python-build-standalone
+  interpreter; this is a CA-trust gap in the *frozen* build).
+- **Workaround:** (HF) `HF_HUB_OFFLINE=1` + a warm cache (or KI-9's bundle-the-weights — then no HF network
+  at all). (LLM) no env-only fix — httpx ignores `SSL_CERT_FILE`; measure on a non-proxy box or via the
+  local Ollama path (RTX box), which makes no external TLS call.
+- **Real fix (shippability):** make the frozen build use the OS trust store for outbound TLS — bundle
+  `truststore` (`truststore.inject_into_ssl()` at the API entrypoint) or `pip-system-certs` in the freeze —
+  so a corporate-proxy user isn't blocked. Decide before the M4 ship (couples KI-9 + RG-011).
+- **Pointer:** RG-010/RG-011 progress in `.claude/RIGOR_TODO.md`; `docs/desktop-packaging.md` §5.

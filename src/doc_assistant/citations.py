@@ -25,18 +25,18 @@ This module is the data layer for Phase 4 — UI surfaces are built on top in
 
 from __future__ import annotations
 
-import logging
 import re
 import unicodedata
 from dataclasses import dataclass, field
 from difflib import SequenceMatcher
 
+import structlog
 from sqlalchemy import select
 
 from doc_assistant.db.models import Document
 from doc_assistant.db.session import session_scope
 
-log = logging.getLogger(__name__)
+log = structlog.get_logger(__name__)
 
 
 # ============================================================

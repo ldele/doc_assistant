@@ -67,6 +67,11 @@ dependencies = [
     "fastapi>=0.115",
     "uvicorn[standard]>=0.30",
     "sse-starlette>=2.1",
+    # Observability substrate (ADR-003): every src/ log line is a structured,
+    # queryable event. A base dep, not dev-only, because the running app (CLI /
+    # Chainlit / FastAPI sidecar) configures + emits through it. NOTE: the M4
+    # PyInstaller freeze must re-verify it's bundled (RG-013, coupling to KI-9).
+    "structlog>=24.0.0",
 ]
 
 [project.optional-dependencies]
@@ -79,7 +84,6 @@ dev = [
     "pip-audit>=2.7.0",
     "detect-secrets>=1.5.0",
     "pre-commit>=3.8.0",
-    "structlog>=24.0.0",
 ]
 
 # Desktop packaging only (PR-M4) — kept out of `dev` so the normal install stays lean.

@@ -35,9 +35,10 @@ from sse_starlette.sse import EventSourceResponse, ServerSentEvent
 from apps.api.models import AdjudicateRequest, ChatRequest, ExportRequest, TurnResultPayload
 from apps.api.sessions import SessionStore
 from doc_assistant.chat_controller import ChatController, Result, Session, Step, Token
-from doc_assistant.config import LLM_MODEL, LLM_PROVIDER
+from doc_assistant.config import LLM_MODEL, LLM_PROVIDER, LOG_JSON, LOG_LEVEL
 from doc_assistant.embeddings import get_active_model_name
 from doc_assistant.figures import load_figure_image_paths
+from doc_assistant.logging_config import configure_logging
 from doc_assistant.provenance import get_record
 
 # Local app only: the frontend speaks to the sidecar over 127.0.0.1. Explicit origins,
@@ -130,6 +131,10 @@ def create_app(controller: ChatController | None = None) -> FastAPI:
     ``app.state`` eagerly so the test client needs no lifespan; in production it is
     ``None`` and a real ``ChatController`` is built once in ``lifespan`` (lazy — so
     importing this module / ``app = create_app()`` does not load models)."""
+    # FastAPI is an app entrypoint (this runs for both `uvicorn ...:app` and `python -m
+    # apps.api`, which imports `app`). The env-driven LOG_JSON is the "deployed/observed
+    # context" signal (ADR-003 Decision 7). Idempotent, so the test's create_app() is safe.
+    configure_logging(json=LOG_JSON, level=LOG_LEVEL)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:

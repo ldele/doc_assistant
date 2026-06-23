@@ -20,15 +20,16 @@ Enrichment-Layer rule — never touches the chunk store.
 from __future__ import annotations
 
 import json
-import logging
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+import structlog
+
 from doc_assistant.config import EXPORT_DIR
 
-log = logging.getLogger(__name__)
+log = structlog.get_logger(__name__)
 
 
 # ============================================================

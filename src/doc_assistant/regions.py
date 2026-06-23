@@ -25,12 +25,13 @@ caption-gating alone left on caption-less or mixed pages.
 
 from __future__ import annotations
 
-import logging
 import re
 from dataclasses import dataclass
 from typing import Literal
 
-log = logging.getLogger(__name__)
+import structlog
+
+log = structlog.get_logger(__name__)
 
 RegionKind = Literal["table", "chart", "photo", "figure", "text"]
 

@@ -28,12 +28,12 @@ with no I/O, behind a thin impure PyMuPDF boundary (``detect_figure_regions``,
 from __future__ import annotations
 
 import base64
-import logging
 import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol
 
+import structlog
 from pydantic import BaseModel, Field
 
 from doc_assistant import config
@@ -44,7 +44,7 @@ from doc_assistant.config import (
 )
 from doc_assistant.regions import FIGURE_CAPTION_RE, RegionKind, analyze_pages
 
-log = logging.getLogger(__name__)
+log = structlog.get_logger(__name__)
 
 # A bbox is (x0, y0, x1, y1) in PDF points; y increases downward.
 BBox = tuple[float, float, float, float]

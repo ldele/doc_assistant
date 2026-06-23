@@ -29,6 +29,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 # Runtime data paths
 # ============================================================
 
+
 def _resolve_data_path() -> Path:
     """Resolve the runtime data dir (corpus, DB, exports, figures, graph).
 
@@ -382,3 +383,19 @@ CONCEPT_GRAPH_GOD_NODES = int(os.getenv("CONCEPT_GRAPH_GOD_NODES", "10"))
 # Louvain is randomized; a fixed seed makes community assignment reproducible so the
 # graph artifact is deterministic for a given set of extractions.
 CONCEPT_GRAPH_SEED = int(os.getenv("CONCEPT_GRAPH_SEED", "42"))
+
+
+# ============================================================
+# Logging / observability (ADR-003)
+# ============================================================
+# structlog is the single logging substrate (rule #5). These two knobs are read
+# by `logging_config.configure_logging`, which each app entrypoint calls once.
+# They are a CONFIG CONTRACT, not a locked setting — change freely via env, no
+# eval experiment needed (unlike the retrieval knobs above).
+#   LOG_LEVEL — root level; "INFO" keeps CLI progress visible (the converted
+#               print() statements log at info).
+#   LOG_JSON  — False → human-readable ConsoleRenderer (dev/CLI default);
+#               True  → JSONRenderer for machine consumption / a deployed,
+#               observed FastAPI context. The env var IS the "deployed" signal.
+LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
+LOG_JSON = os.getenv("LOG_JSON", "false").lower() == "true"

@@ -274,7 +274,12 @@ def assert_provider_intent(
     if abort_seconds > 0 and not _assume_yes():
         lines.append(f"  Ctrl-C now to abort -- continuing in {abort_seconds:.0f}s...")
     lines.append(border)
-    print("\n".join(lines), file=sys.stderr, flush=True)
+    # A deliberate, formatted stderr block the user reads to decide whether to Ctrl-C
+    # before a paid run — an interactive CLI safety prompt, not an observability event,
+    # so it stays a direct stderr write (ADR-003 ADR-B: preserve stderr semantics) rather
+    # than collapsing into a structlog line.
+    sys.stderr.write("\n".join(lines) + "\n")
+    sys.stderr.flush()
 
     if abort_seconds > 0 and not _assume_yes():
         time.sleep(abort_seconds)

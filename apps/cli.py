@@ -8,6 +8,8 @@ gains the same commands the web UI has (including ``/export``).
 """
 
 from doc_assistant.chat_controller import ChatController, Result, Session, Token, TurnResult
+from doc_assistant.config import LOG_JSON, LOG_LEVEL
+from doc_assistant.logging_config import configure_logging
 
 
 def _render_result(result: TurnResult, *, streamed: bool) -> None:
@@ -28,6 +30,7 @@ def _render_result(result: TurnResult, *, streamed: bool) -> None:
 
 
 def main() -> None:
+    configure_logging(json=LOG_JSON, level=LOG_LEVEL)
     controller = ChatController()
     session = Session()
 

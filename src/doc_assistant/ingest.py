@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+import structlog
 from langchain_chroma import Chroma
 from langchain_core.documents import Document
 from langchain_text_splitters import RecursiveCharacterTextSplitter
@@ -31,6 +32,8 @@ from doc_assistant.embeddings import (
 from doc_assistant.extractors import extract_to_markdown, is_supported
 from doc_assistant.figures import figure_chunk_text
 from doc_assistant.tables_marker import TABLE_BLOCK_RE
+
+log = structlog.get_logger(__name__)
 
 PAGE_MARKER = re.compile(r"<!--\s*page:(\d+)\s*-->")
 HEADING_MARKER = re.compile(r"^(#{1,6})\s+(.+?)$", re.MULTILINE)
@@ -94,7 +97,7 @@ def load_or_extract(original: Path) -> str:
     if is_cache_fresh(original, cached):
         return cached.read_text(encoding="utf-8")
 
-    print(f"  Extracting: {original.name}")
+    log.info("extracting", file=original.name)
     text = extract_to_markdown(original, pdf_extractor=PDF_EXTRACTOR)
     cached.parent.mkdir(parents=True, exist_ok=True)
     cached.write_text(text, encoding="utf-8")
@@ -149,7 +152,7 @@ def _find_orphan_hashes(
         try:
             text = load_or_extract(path)
         except Exception as e:
-            print(f"  Couldn't re-hash {path.name} for orphan check, keeping it: {e}")
+            log.warning("rehash_failed", file=path.name, error=str(e), hint="keeping it")
             continue
         if not text.strip():
             continue
@@ -183,12 +186,13 @@ def cleanup_orphans_sqlite(db_for_metadata: Chroma) -> list[str]:
         # FK-cascades its outbound citations + doc_similarities (ondelete=CASCADE)
         # and NULLs inbound citation targets (ondelete=SET NULL); the new content
         # starts with none. Re-run the citation / doc-vector enrichment afterwards.
-        print(
-            f"  {len(stale)} document(s) changed content — old enrichment "
-            "(citations, doc_similarities) dropped; re-run enrichment to rebuild it."
+        log.info(
+            "enrichment_dropped",
+            count=len(stale),
+            hint="old enrichment (citations, doc_similarities) dropped; re-run to rebuild",
         )
 
-    print(f"Removing {len(orphan_hashes)} orphan documents from SQLite...")
+    log.info("removing_orphans", count=len(orphan_hashes))
     with session_scope() as session:
         for h in orphan_hashes:
             doc = session.execute(
@@ -235,20 +239,20 @@ def cleanup_orphans_chroma(
             try:
                 cache_path.unlink()
             except Exception as e:
-                print(f"  Couldn't delete cache {cache_path.name}: {e}")
-        print(f"  Removed {len(set(orphan_caches))} orphan cache files")
+                log.warning("cache_delete_failed", file=cache_path.name, error=str(e))
+        log.info("removed_orphan_caches", count=len(set(orphan_caches)))
 
 
 def load_documents() -> list[Document]:
     documents: list[Document] = []
     files = [p for p in DOCS_PATH.rglob("*") if p.is_file() and is_supported(p)]
-    print(f"Found {len(files)} supported files")
+    log.info("found_files", count=len(files))
 
     for path in files:
         try:
             text = load_or_extract(path)
             if not text.strip():
-                print(f"  Skipping empty: {path.name}")
+                log.info("skipping_empty", file=path.name)
                 continue
 
             documents.append(
@@ -264,7 +268,7 @@ def load_documents() -> list[Document]:
                 )
             )
         except Exception as e:
-            print(f"  Error on {path.name}: {e}")
+            log.warning("document_error", file=path.name, error=str(e))
 
     return documents
 
@@ -550,7 +554,9 @@ def process_one_document(
 
         # Print a warning if anything's amiss
         if health.status != "healthy":
-            print(f"  [{health.status.upper()}] {path.name}: {', '.join(health.reasons)}")
+            log.warning(
+                "extraction_health", status=health.status, file=path.name, reasons=health.reasons
+            )
 
         # Stamp health and document_id onto chunks
         for doc in documents:
@@ -586,9 +592,7 @@ def process_one_document(
 
         existing_baseline = db.get(where={"doc_hash": h}, include=[])
         if existing_baseline["ids"]:
-            print(
-                f"  Removing {len(existing_baseline['ids'])} existing baseline chunks for hash {h}"
-            )
+            log.info("removing_existing_baseline", count=len(existing_baseline["ids"]), hash=h)
             db.delete(ids=existing_baseline["ids"])
         db.add_documents(documents)
 
@@ -615,14 +619,14 @@ def process_one_document(
 
         existing_pc = pc_db.get(where={"doc_hash": h}, include=[])
         if existing_pc["ids"]:
-            print(f"  Removing {len(existing_pc['ids'])} existing pc chunks for hash {h}")
+            log.info("removing_existing_pc", count=len(existing_pc["ids"]), hash=h)
             pc_db.delete(ids=existing_pc["ids"])
         pc_db.add_documents(pc_chunks)
 
         indexed.add(h)
         return "added"
     except Exception as e:
-        print(f"\n  Error on {path.name}: {e}")
+        log.warning("document_error", file=path.name, error=str(e))
         return "error"
 
 
@@ -660,13 +664,13 @@ def main(
 
     active_model = get_active_model_name()
     collection = get_collection_name(active_model)
-    print(f"Embedding model: {active_model} (collection: {collection})")
+    log.info("embedding_model", model=active_model, collection=collection)
     embeddings = get_embeddings(active_model)
 
     if force_rebuild:
         if scope is not None:
             raise ValueError("--rebuild and --path are mutually exclusive (rebuild is global)")
-        print("Force rebuild: clearing vector stores and SQLite document records...")
+        log.warning("force_rebuild", hint="clearing vector stores and SQLite document records")
         shutil.rmtree(CHROMA_PATH, ignore_errors=True)
         shutil.rmtree(PC_CHROMA_PATH, ignore_errors=True)
         Path(CHROMA_PATH).mkdir(exist_ok=True)
@@ -694,7 +698,7 @@ def main(
         cleanup_orphans_chroma(pc_db, orphan_hashes, also_clean_cache=False)
 
     indexed = get_indexed_hashes(db) & get_indexed_hashes(pc_db)
-    print(f"Already indexed in both stores: {len(indexed)} unique documents")
+    log.info("already_indexed", count=len(indexed))
 
     splitter = _make_baseline_splitter()
 
@@ -703,19 +707,30 @@ def main(
         files = [walk_root] if is_supported(walk_root) else []
     else:
         files = [p for p in walk_root.rglob("*") if p.is_file() and is_supported(p)]
-    scope_desc = f" under {walk_root}" if scope is not None else ""
-    print(f"Found {len(files)} supported files{scope_desc}")
+    log.info("found_files", count=len(files), scope=str(walk_root) if scope is not None else None)
 
     stats: dict[str, int] = {"added": 0, "skipped": 0, "error": 0}
     for path in tqdm(files, desc="Processing"):
         result = process_one_document(path, db, pc_db, splitter, indexed)
         stats[result] += 1
 
-    print(f"\nDone: {stats['added']} added, {stats['skipped']} skipped, {stats['error']} errors")
+    log.info(
+        "ingest_complete",
+        added=stats["added"],
+        skipped=stats["skipped"],
+        errors=stats["error"],
+    )
 
 
 if __name__ == "__main__":
     import argparse
+
+    # `python -m doc_assistant.ingest` is a program entrypoint (not library import),
+    # so it configures logging here — the only place src/ does, and only when run as a
+    # program. Without it the converted progress events would be silenced (ADR-003).
+    from doc_assistant.logging_config import configure_logging
+
+    configure_logging(json=config.LOG_JSON, level=config.LOG_LEVEL)
 
     parser = argparse.ArgumentParser()
     parser.add_argument(

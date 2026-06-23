@@ -72,7 +72,7 @@ full architectural context per feature.
 | M2 | Desktop shell: FastAPI backend + SSE boundary | done | `docs/specs/pr-m2-fastapi-boundary.md` |
 | M3 | Desktop shell: Tauri frontend (Svelte 5 + Vite) | done | `docs/specs/pr-m3-tauri-frontend.md` |
 | M4 | Desktop shell: PyInstaller sidecar packaging + frozen CPU-torch pin | in progress | `docs/specs/pr-m4-sidecar-packaging.md` |
-| M5 | Desktop shell: delete Chainlit + lift the Python-3.12 pin (KI-2) | planned | spec TBD (one ahead of M4) |
+| M5 | Desktop shell: delete Chainlit + lift the Python-3.12 pin (KI-2) | planned (spec ready; build gated on the M4 installer + RG-012) | `docs/specs/pr-m5-decommission-chainlit.md` |
 
 **Feature 7d (knowledge-currency layer):** engine shipped 2026-06-17 (`epistemics.py` + `chunk_epistemics`
 sidecar + polarity-aware concept graph + reviewer `contested_evidence` tag). **Live answer-time marker

@@ -2209,3 +2209,48 @@ The Windows-cert-store export I tried for a TLS workaround was (correctly) denie
 both need either a non-proxy machine / the RTX-Ollama box (RG-011) or Windows Sandbox + the data-home flow
 (RG-012). KI-10 (cert trust) + KI-9 (bundle weights) are the two freeze fixes to weigh before the ship.
 No code changed; RIGOR_TODO + KNOWN_ISSUES updated.
+
+---
+## Session: 2026-06-24 (RTX box) — RG-011 first-token measured on the Ollama path (boundary PASS)
+
+**Why:** the `da30b6f` ToDo — RG-011 was *blocked* on the work box because the corporate TLS-MITM proxy
+SSL-failed the Anthropic first-token call (KI-10); that DEVLOG said "measure on a non-proxy box or the
+RTX/Ollama path." Now on the RTX box with local Ollama (no external TLS), so the boundary is finally
+timeable. User chose the **lean** scope (measure the SSE boundary on the source server; do not freeze).
+
+### What changed
+- **`scripts/measure_latency.py`** — added `-r/--repeat N` (warm samples: one discarded warm-up + N timed,
+  median/min/max/spread/sd) and `--in-process` (time `ChatController.handle_message` → first `Token` with
+  no server — the Chainlit/CLI control). Each HTTP sample now uses a **fresh `session_id`** so no
+  history-rewrite LLM call leaks into the timed path (the old single `"bench"` id would have, on samples
+  2..N). Backward-compatible (default `--repeat 1`, no `--in-process` → prior behaviour). ruff ✓; outside
+  the mypy gate (`files: ^src/`).
+
+### RG-011 — measured, boundary PASS
+**What:** `apps/api` (source FastAPI/SSE) vs in-process `ChatController`, both on `ollama/llama3.1:8b`
+(GPU) + bge-base/reranker on CPU torch, public corpus (2455 chunks), q="What is retrieval-augmented
+generation?", n=5 warm/path, fresh session/sample. Credit-safe: `.env` temporarily flipped to ollama
+(backed up + restored — `config.load_dotenv(override=True)` makes `.env` win over shell env, KI-4);
+`/api/health` confirmed `ollama/llama3.1:8b` + `chunk_count=2455` **before** any chat call; no Anthropic
+call was reachable. HF forced offline (warm cache, dodges KI-6/KI-10).
+**Result:** in-process median **4.563s** (sd 0.050); HTTP/SSE median **4.140s** (sd 0.665). Δ (HTTP −
+in-process) = **−0.42s**, inside the HTTP path's own spread → **the SSE boundary adds no measurable
+first-token latency.** The small negative Δ is noise (separate-process Ollama warm-state), not a real
+speedup. Baseline: `tests/eval/baselines/rg011_first_token_ollama_2026-06-24.md`.
+**Why this discharges the gate's risk:** the frozen sidecar runs the *same* uvicorn `app`, so per-token
+latency is identical to the source server — the freeze only adds process cold-start (RG-010). RG-011's
+real question (does the desktop HTTP/SSE hop slow first-token vs in-process Chainlit) is answered: no.
+
+### Rejected / not done
+- **Did not freeze + measure the artifact** (the full RG-010/RG-011-on-`dist/`): user chose lean; no
+  `dist/` on this box and the freeze needs `uv sync --extra cpu` (venv churn) + ~10–30 min. The boundary
+  result transfers to the freeze (same server); only the freeze's own cold-start is unmeasured here.
+- **Did not mark RG-011 `done`.** Honest scope: the *boundary* is discharged, but the frozen-artifact
+  first-token + RG-012 clean-machine smoke remain → RG-011 stays `blocks-ship` open.
+
+**Opens:** (1) frozen-artifact first-token + RG-010 cold-start — needs the freeze (CPU sync) on a box;
+(2) RG-012 clean-machine smoke — Windows Sandbox + the data-home flow; (3) the two freeze fixes before
+ship: KI-9 (bundle model weights) + KI-10 (OS-trust-store for proxy users). `.claude/RIGOR_TODO.md` lives
+on the work box (gitignored) — its RG-011 entry should cite the committed baseline above; the result is
+recorded here + KNOWN_ISSUES KI-10 so it survives the per-machine gap. Only `scripts/measure_latency.py`
+is a code change; staged, not committed (per CLAUDE.md).

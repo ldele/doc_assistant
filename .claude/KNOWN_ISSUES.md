@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-06-23 · class: living -->
+<!-- status: active · updated: 2026-06-24 · class: living -->
 
 # KNOWN ISSUES
 
@@ -124,4 +124,10 @@ Migrated from the old `CLAUDE.md` / `README` runtime-quirk notes on 2026-06-20 (
 - **Real fix (shippability):** make the frozen build use the OS trust store for outbound TLS — bundle
   `truststore` (`truststore.inject_into_ssl()` at the API entrypoint) or `pip-system-certs` in the freeze —
   so a corporate-proxy user isn't blocked. Decide before the M4 ship (couples KI-9 + RG-011).
+- **Update (2026-06-24):** the **RG-011 first-token** this blocked is now **measured on the RTX/Ollama
+  path** (no external TLS, proxy-independent) — FastAPI/SSE boundary adds no measurable first-token
+  latency vs the in-process `ChatController` (median 4.14s vs 4.56s, n=5; boundary **PASS**). Baseline:
+  `tests/eval/baselines/rg011_first_token_ollama_2026-06-24.md`. **KI-10 itself stays OPEN** — the frozen
+  build's cert-trust gap is unfixed; only the *measurement it was blocking* is unblocked (and only on the
+  local-LLM path; the frozen-artifact + paid/non-proxy first-token still pend).
 - **Pointer:** RG-010/RG-011 progress in `.claude/RIGOR_TODO.md`; `docs/desktop-packaging.md` §5.

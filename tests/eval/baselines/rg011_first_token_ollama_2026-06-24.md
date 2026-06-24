@@ -68,3 +68,68 @@ uv run --no-sync python -m scripts.measure_latency --in-process --repeat 5 --que
 ```
 
 **Provenance:** commit `da30b6f` (branch `docs/desktop-shell-specs`) + `scripts/measure_latency.py` `--repeat`/`--in-process` enhancement (this change). No `data/eval.duckdb` rows — `measure_latency.py` is a latency bench, not an eval-harness run.
+
+---
+
+## Frozen-build follow-up (2026-06-24, same day) — RG-010 cold-start + RG-011 on the actual artifact
+
+The source-server result above settled the *boundary*; this section measures the **frozen PyInstaller
+sidecar** (`dist/doc-assistant-api.exe`, 385 MB onefile, built this session via `just sidecar`), which is
+the artifact RG-010/RG-011 actually gate. Same box, same corpus (2455 chunks), same `ollama/llama3.1:8b`,
+`DOC_DATA_DIR`→repo data, `HF_HUB_OFFLINE=1` (warm cache).
+
+**RG-010 — cold-start (process spawn → first `/api/health 200`, models warm):** **46.2 s** (n=1).
+Onefile unpacks the 385 MB bundle to a temp dir on launch, then loads bge-base + reranker + the Chroma
+stores. Degrades-severity (no hard threshold). Above the runbook's ~30 s soft guideline → if cold-start
+becomes a UX problem, the documented lever is switching the spec `onefile → onedir` (ship `_internal/` as
+a Tauri resource — skips the per-launch unpack). The user-facing **first-run** cold-start is worse and
+KI-9-dominated (≈218 s HF weight download on a cold cache).
+
+**RG-011 — frozen first-token vs in-process control, measured back-to-back (same Ollama warm-state):**
+
+| Path | median | min | max | spread | sd |
+|---|---:|---:|---:|---:|---:|
+| **in-process** (control, this session) | 5.859 | 5.797 | 5.906 | 0.109 | 0.035 |
+| **frozen `dist/…exe`** (HTTP/SSE) | 5.312 | 4.532 | 6.125 | 1.593 | 0.520 |
+| **Δ (frozen − in-process), medians** | **−0.547** | — | — | — | — |
+
+**Reading**
+- **The freeze adds no first-token penalty.** The frozen build's median (5.312 s) is *below* the
+  in-process control's (5.859 s), Δ −0.55 s — same direction and magnitude as the source-server boundary
+  result. **RG-011 PASS on the frozen artifact.**
+- **Cross-session absolute numbers are not comparable** — they track Ollama GPU warm-state, not the build.
+  This session ran ~5.3–5.9 s; the earlier same-day source run ran ~4.1–4.6 s. The valid comparison is
+  always **same-session frozen-vs-control**, which is why the control was re-measured here rather than
+  reusing the 4.563 s number above. The apparent "frozen looks +0.75 s slower than yesterday's source"
+  was entirely this confound; against its own same-session control the frozen build is not slower.
+- Variance pattern repeats: in-process tight (sd 0.035), HTTP loose (sd 0.520) — queue/httpx scheduling +
+  Ollama drift over the 5 HTTP samples; medians are the robust statistic.
+
+**RG-013 — structlog bundled in the freeze:** PASS. The frozen binary's console emits structlog-rendered
+events (`…Z [info ] loading_embeddings [doc_assistant.pipeline] model=bge-base`); a scan for
+`structlog|ModuleNotFound|ImportError|Traceback` over the full startup log is **0**. structlog (a base dep
+since ADR-003) survives the freeze with no missing-import / console-silencing regression.
+
+**Frozen smoke (this box, NOT a clean machine):** the binary launches, serves, `/api/health` 200,
+`chunk_count=2455` (real corpus via `DOC_DATA_DIR`), no missing-module / DLL error. This exercises the
+freeze integrity but is **not** RG-012 — RG-012 Tier-1 requires a Python-free box (Windows Sandbox, which
+is not enabled here; `WindowsSandbox.exe` absent).
+
+**Still open after this session:** RG-012 clean-machine smoke (needs Windows Sandbox enabled / a second
+Python-free box + the unbuilt data-home flow for Tier-2); the two freeze fixes KI-9 (bundle weights) +
+KI-10 (OS trust store) before the M4 ship; a paid-provider first-token on the frozen build (latency-wise
+provider-independent — the SSE-hop verdict already holds; KI-10 blocks it on the work box's proxy).
+
+**Reproduce (frozen)**
+```bash
+just sidecar    # build dist/doc-assistant-api.exe (CPU-synced venv + packaging extra)
+# .env → ollama (back up first), then:
+DOC_DATA_DIR=...\data HF_HUB_OFFLINE=1 uv run --no-sync python -m scripts.measure_latency \
+  --launch C:/abs/path/dist/doc-assistant-api.exe --repeat 5 --question "What is retrieval-augmented generation?"
+# kill the lingering onefile child on :8001 (terminate doesn't reap it), then the control:
+uv run --no-sync python -m scripts.measure_latency --in-process --repeat 5 --question "What is retrieval-augmented generation?"
+```
+
+**Provenance (frozen):** commit `9447e8e` + this session's freeze (`scripts/build_sidecar.py` →
+`scripts/doc_assistant_api.spec`, PyInstaller 6.21.0, torch 2.12.0+cpu, target `x86_64-pc-windows-msvc`).
+`dist/` + `apps/desktop/src-tauri/binaries/` are gitignored build artifacts, not committed.

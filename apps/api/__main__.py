@@ -11,10 +11,43 @@ process starts immediately and ``/api/health`` flips to ``200`` once the stack i
 from __future__ import annotations
 
 import os
+import sys
 
-import uvicorn
 
-from apps.api.main import app
+def _configure_frozen_runtime() -> None:
+    """Wire the freeze-only runtime fixes before the app stack is imported.
+
+    Runs at the entrypoint, ahead of ``from apps.api.main import app``, because both
+    fixes must take effect before ``huggingface_hub`` / ``httpx`` / the ``anthropic`` SDK
+    are imported and read their config:
+
+    * **KI-9** — when PyInstaller-frozen, point ``HF_HOME`` at the bundled model cache
+      (``_MEIPASS/hf_cache``) and force offline, so the embedder + reranker load from the
+      bundle with no first-run HuggingFace download (and no hard offline failure).
+    * **KI-10** — route outbound TLS through the OS/system trust store via ``truststore``,
+      so the bundled ``certifi`` set doesn't reject a corporate TLS-MITM proxy's root CA.
+      No-op-safe in dev; guarded so a missing/un-importable ``truststore`` never blocks start.
+    """
+    if getattr(sys, "frozen", False):
+        meipass = getattr(sys, "_MEIPASS", None)
+        if meipass:
+            os.environ.setdefault("HF_HOME", os.path.join(meipass, "hf_cache"))
+            os.environ.setdefault("HF_HUB_OFFLINE", "1")
+            os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
+    try:
+        import truststore
+
+        truststore.inject_into_ssl()
+    except Exception:
+        # TLS-store setup must never block startup (e.g. truststore absent in a dev venv).
+        pass
+
+
+_configure_frozen_runtime()
+
+import uvicorn  # noqa: E402
+
+from apps.api.main import app  # noqa: E402
 
 
 def main() -> None:

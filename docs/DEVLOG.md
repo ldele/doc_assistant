@@ -2306,3 +2306,56 @@ first-run HF download / offline failure) + KI-10 (OS trust store for proxy users
 child isn't reaped by `proc.terminate()` (lingers on :8001 — kill by port between runs; known). Build
 artifacts (`dist/`, Tauri `binaries/`) are gitignored. Docs (DEVLOG/baseline/KNOWN_ISSUES) + `.claude/`
 trackers staged/updated; nothing committed (per CLAUDE.md).
+
+---
+## Session: 2026-06-24 (RTX box, cont.) — installer built; freeze fixes KI-9 (bundle weights) + KI-10 (truststore)
+
+**Why:** push toward RG-012 (clean-machine smoke). Built the installer; then, since RG-012 needs a clean
+box (Windows Sandbox not enabled here) + the unbuilt data-home flow, the user chose the autonomous,
+ship-critical path: the two freeze fixes KI-9 + KI-10.
+
+### Installer built (RG-012 prerequisite) → done
+`npm install` + `npx tauri build` (Tauri v2; rustc 1.96.0) produced **both** bundles, exit 0:
+`doc_assistant_0.1.0_x64_en-US.msi` (368 MB) + `doc_assistant_0.1.0_x64-setup.exe` (367 MB), bundling the
+frozen sidecar via `externalBin`. Reproducible on this box (the M4 baton claimed it ran on the work box;
+verified here). WiX auto-downloaded fine (no cert wall on this box). `target/` + installers are gitignored.
+
+### KI-9 — bundle model weights into the freeze → verified offline-capable
+**What:** the embedder (`BAAI/bge-base-en-v1.5`, 419 MB) + reranker (`BAAI/bge-reranker-base`, 1.1 GB) are
+now bundled so the frozen build needs **no first-run HuggingFace download** and works fully offline.
+**How (no `src/` changes — packaging stays contained):**
+- `scripts/doc_assistant_api.spec` stages a **minimal, symlink-free, blob-less** HF hub cache at freeze
+  time — `snapshot_download(local_files_only=True)` → `copytree(symlinks=False)` derefs each model's
+  `snapshots/<rev>` into real files + writes `refs/main`, **dropping `blobs/`** (HF reads via `snapshots/`,
+  so no duplication → ~1.5 GB single copy, not 3 GB). Bundled into the onefile at `hf_cache/`.
+- `apps/api/__main__.py` `_configure_frozen_runtime()` (runs before the app import) sets
+  `HF_HOME=_MEIPASS/hf_cache` + `HF_HUB_OFFLINE=1` + `TRANSFORMERS_OFFLINE=1` when `sys.frozen`.
+**Verified (the real proof):** renamed the user HF cache away (simulating a clean machine) → launched the
+frozen binary → `/api/health` green in ~23s, `chunk_count=2455`; console scan for
+`Downloading|huggingface http|errors|Traceback|CERTIFICATE_VERIFY` = **0**. Models loaded from the bundle,
+no cache, no network. Cache restored after.
+**Cost:** frozen binary 385 MB → **1.6 GB**; installer will be ~1.9 GB. **Surprising upside:** RG-010
+cold-start did **not** regress (30.9 s vs the 385 MB build's 46.2 s — within run-to-run/OS-cache variance;
+the unpack is dwarfed by model load on NVMe), so the onefile+weights approach is viable and the
+onedir/Tauri-resource optimization is **less urgent** than feared (kept as a documented option).
+
+### KI-10 — OS trust store for outbound TLS → implemented + bundled
+**What:** `truststore>=0.10` added as a base dep; `apps/api/__main__.py` calls `truststore.inject_into_ssl()`
+at the entrypoint (guarded — never blocks startup); spec adds `collect_submodules("truststore")`. Routes
+httpx (huggingface_hub, anthropic SDK) through the **OS/system trust store** instead of the bundled
+`certifi` set, so a corporate TLS-MITM proxy's root CA is honored (the KI-10 cert failure).
+**Verified:** truststore imports + `inject_into_ssl()` runs clean in dev and in the frozen build (no cert
+errors in the frozen log). **Caveat:** the actual proxy-cert fix can only be confirmed on a TLS-MITM box
+(this RTX box isn't behind one) — so KI-10 is *implemented + bundled + injects cleanly*; the on-proxy
+confirmation is the remaining check.
+
+### Rejected / not done
+- **RG-012 itself** still can't run here (Windows Sandbox absent + Tier-2 data-home flow unbuilt).
+- **onedir / Tauri-resource** packaging for the weights — not needed yet (cold-start didn't regress);
+  documented option if the 1.6 GB onefile / ~1.9 GB installer becomes a problem.
+
+**Opens:** RG-012 clean-machine smoke (now with a weights-bundled, offline-capable, proxy-safe installer →
+should pass Tier-1 cleanly when a clean box is available); confirm KI-10 on an actual proxy box; the
+data-home flow for Tier-2. Code staged (`apps/api/__main__.py`, `pyproject.toml`, `uv.lock`,
+`scripts/doc_assistant_api.spec`) + docs; `Cargo.toml` shows a phantom CRLF-only diff (left unstaged);
+build artifacts gitignored; nothing committed (per CLAUDE.md).

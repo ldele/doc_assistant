@@ -72,6 +72,11 @@ dependencies = [
     # Chainlit / FastAPI sidecar) configures + emits through it. NOTE: the M4
     # PyInstaller freeze must re-verify it's bundled (RG-013, coupling to KI-9).
     "structlog>=24.0.0",
+    # KI-10: route outbound TLS through the OS/system trust store instead of the
+    # bundled `certifi` set. The frozen sidecar's httpx (huggingface_hub, anthropic
+    # SDK) otherwise rejects a corporate TLS-MITM proxy's root CA. Injected at the
+    # API entrypoint (`apps/api/__main__.py`); no-op-safe in dev. Pure-Python, tiny.
+    "truststore>=0.10",
 ]
 
 [project.optional-dependencies]

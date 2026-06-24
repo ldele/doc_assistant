@@ -92,7 +92,7 @@ Migrated from the old `CLAUDE.md` / `README` runtime-quirk notes on 2026-06-20 (
   (KI-7) — `contested` is local-model-noisy. M1 surfaces what the sidecar holds; it does not fix extraction.
 - **Pointer:** `docs/specs/pr-m1-epistemics-markers.md` ADR-1 (option 2 = the re-projection upgrade).
 
-## KI-9 — Frozen desktop build does not bundle model weights → first-run HuggingFace download; offline launch fails — OPEN
+## KI-9 — Frozen desktop build does not bundle model weights → first-run HuggingFace download; offline launch fails — RESOLVED (2026-06-24)
 - **Symptom:** On a clean machine (verified in **Windows Sandbox**, 2026-06-22, RG-012 Tier-1), the
   frozen sidecar's first launch downloads the `bge-base` embedder + the cross-encoder reranker from
   HuggingFace before `/api/health` goes green (≈218s of that cold-start). With no network, the backend
@@ -107,9 +107,16 @@ Migrated from the old `CLAUDE.md` / `README` runtime-quirk notes on 2026-06-20 (
 - **Real fix:** bundle the model weights into the freeze (add the model dirs to the spec `datas` and
   point `HF_HOME` / `SENTENCE_TRANSFORMERS_HOME` at the unpacked location), or ship them with the
   installer as a Tauri resource; re-measure RG-010 after. Decide before the M4 ship.
+- **RESOLVED (2026-06-24):** `scripts/doc_assistant_api.spec` now stages a minimal, symlink-free,
+  blob-less HF hub cache (deref'd `snapshots/` + `refs/main`, no `blobs/` → ~1.5 GB single copy) into the
+  freeze at `hf_cache/`; `apps/api/__main__.py` points `HF_HOME` there + sets `HF_HUB_OFFLINE`/
+  `TRANSFORMERS_OFFLINE` when frozen. **Verified offline:** with the user HF cache renamed away, the frozen
+  binary reached `/api/health` 200 (`chunk_count=2455`) with zero download/network. Cost: binary 385 MB →
+  1.6 GB; **RG-010 cold-start did not regress** (30.9 s). Optional future: onedir / Tauri-resource instead
+  of embedding in the onefile (not needed — cold-start is fine).
 - **Pointer:** `docs/desktop-packaging.md` §"Data directory"; RG-010 / RG-012 in `.claude/RIGOR_TODO.md`.
 
-## KI-10 — Frozen build's bundled `certifi` rejects corporate-MITM'd HTTPS — OPEN (env-dependent; blocks RG-011 here)
+## KI-10 — Frozen build's bundled `certifi` rejects corporate-MITM'd HTTPS — NEAR-RESOLVED (2026-06-24; truststore shipped, pending on-proxy confirmation)
 - **Symptom:** On a box behind a TLS-inspecting (MITM) corporate proxy, the frozen
   `dist\doc-assistant-api.exe` fails outbound HTTPS with `[SSL: CERTIFICATE_VERIFY_FAILED] unable to get
   local issuer certificate`. Seen 2026-06-23 twice: (1) the startup HuggingFace metadata HEAD for
@@ -131,4 +138,11 @@ Migrated from the old `CLAUDE.md` / `README` runtime-quirk notes on 2026-06-20 (
   `tests/eval/baselines/rg011_first_token_ollama_2026-06-24.md`. **KI-10 itself stays OPEN** — the frozen
   build's cert-trust gap is unfixed; only the *measurement it was blocking* is unblocked (and only on the
   local-LLM path; the frozen-artifact + paid/non-proxy first-token still pend).
+- **Fix implemented (2026-06-24):** `truststore>=0.10` is a base dep; `apps/api/__main__.py` calls
+  `truststore.inject_into_ssl()` at the entrypoint (guarded; before the app/httpx/anthropic import); the
+  spec bundles it (`collect_submodules("truststore")`). Outbound TLS now uses the **OS/system trust store**
+  (which carries a corporate MITM root CA) instead of the bundled `certifi` set. **Verified:** imports +
+  injects cleanly in dev and in the frozen build (no cert error in the frozen log). **Pending:** confirm
+  on an actual TLS-MITM box — this RTX box isn't behind one, so the proxy-cert fix is implemented + bundled
+  but not yet confirmed against a real MITM proxy. Status → near-resolved; close after the on-proxy check.
 - **Pointer:** RG-010/RG-011 progress in `.claude/RIGOR_TODO.md`; `docs/desktop-packaging.md` §5.

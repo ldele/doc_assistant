@@ -146,3 +146,39 @@ Migrated from the old `CLAUDE.md` / `README` runtime-quirk notes on 2026-06-20 (
   on an actual TLS-MITM box — this RTX box isn't behind one, so the proxy-cert fix is implemented + bundled
   but not yet confirmed against a real MITM proxy. Status → near-resolved; close after the on-proxy check.
 - **Pointer:** RG-010/RG-011 progress in `.claude/RIGOR_TODO.md`; `docs/desktop-packaging.md` §5.
+
+## KI-11 — chromadb hnsw index not persisted under a non-ASCII path → broken corpus for accented usernames — RESOLVED (2026-06-24)
+- **Symptom:** A fresh ingest whose Chroma persist directory's **actual filesystem location contains
+  non-ASCII characters** does **not** write the hnsw segment files (`data_level0.bin` / `header.bin` /
+  `length.bin` / `link_lists.bin`) — only `index_metadata.pickle` + `chroma.sqlite3`. chromadb then
+  attempts a read-time *backfill* on next open: it works for a tiny corpus (~310 chunks) but **fails for a
+  real-size one** (2455 chunks) with `chromadb.errors.InternalError: Error executing plan: Error sending
+  backfill request to compactor: … Error loading hnsw index`.
+- **Where it bites:** the shipped desktop app keeps its corpus in the **per-user data home**
+  `C:\Users\<username>\AppData\Local\doc_assistant\data` (PR-M4, `config._resolve_data_path`). Any user
+  whose Windows username has an accent / non-Latin character (é, ü, ñ, CJK, Cyrillic — very common) gets a
+  non-ASCII path → a corpus that won't reload. Verified on this box (username "Lucas Délez", the `é`).
+- **Confirmed (2026-06-24, chromadb 1.5.9), path is the variable:**
+  - ASCII location (`C:\Projects\…`), 1 **and** 10 files → `.bin` written, reloads fine.
+  - Non-ASCII location (`C:\Users\Lucas Délez\…`), 10 files / 2455 chunks → no `.bin` → reload **fails**.
+  - The Windows **8.3 short path** (`C:\Users\LUCASD~1\…`, ASCII *string*) does **NOT** help — chromadb /
+    hnswlib resolves it to the real `é` directory for file I/O, so `.bin` still isn't written.
+- **NOT the cause (ruled out):** a general "fresh ingest is broken" (a fresh full ASCII ingest works), the
+  freeze (the venv reproduces it identically), or corpus size alone (ASCII 2455 works).
+- **Impact:** breaks **RG-012 Tier-2** (a real cited turn on a clean box) and any from-scratch re-ingest
+  under a non-ASCII home. The existing repo index (`C:\Projects\…`, ASCII) is unaffected — which is why
+  this stayed latent until the per-user data home was exercised.
+- **Workarounds:** install / point `DOC_DATA_DIR` at a **pure-ASCII** path (e.g. `C:\doc_assistant\data`);
+  or pre-seed the corpus from an ASCII build. The 8.3 short path is **not** a workaround.
+- **FIX SHIPPED (2026-06-24, option a):** `config._chroma_base()` — when `DATA_PATH` is non-ASCII on
+  Windows, the **Chroma vector dirs only** relocate to a guaranteed-ASCII machine path
+  (`%PROGRAMDATA%\doc_assistant\chroma\<sha1(data_path)[:12]>`); SQLite (`library.db`) + sources stay at the
+  per-user home (SQLite handles non-ASCII fine). ASCII data paths and non-Windows are unchanged (byte-for-byte
+  `DATA_PATH/chroma`). Also fixed `ingest.py` to `mkdir(parents=True, …)` the Chroma dirs (the relocated base
+  has new intermediate dirs). **Verified on this box** (data home `…/café_home`, the `é`): Chroma landed at
+  `C:\ProgramData\doc_assistant\chroma\…`, the full 10-file ingest wrote all four `.bin`, and a fresh process
+  reloaded the full corpus (chunk_count 2335) — the exact case that failed before. **Remaining:** the
+  *shipped* frozen sidecar/installer must be re-frozen to bundle this `config` change (the fix is in `src/`;
+  any future `just sidecar` picks it up). Upstream report to chromadb/hnswlib still worth filing.
+- **Pointer:** found while validating the data-home flow without a clean box (RG-012); `docs/DEVLOG.md`
+  2026-06-24 session.

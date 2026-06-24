@@ -18,7 +18,8 @@ Migrated from the old `CLAUDE.md` / `README` runtime-quirk notes on 2026-06-20 (
   `LOG_JSON` config contract. **Zero `print()` in `src/`**; behaviour-preserving (CLI progress,
   answers, eval untouched). Rule #5 is now true + enforceable.
 - **Follow-up:** RG-013 (`.claude/RIGOR_TODO.md`) — the M4 freeze must re-verify `structlog`
-  (now a base dep) is bundled.
+  (now a base dep) is bundled. **Closed 2026-06-24:** verified on the frozen `dist/doc-assistant-api.exe`
+  — startup console emits structlog events, zero `structlog`/import errors in the log.
 
 ## KI-2 — Python 3.14 breaks Chainlit at runtime — OPEN (constraint, not a bug to fix)
 - **Symptom:** App fails to run the Chainlit web UI on Python 3.14 (anyio event-loop incompatibility).

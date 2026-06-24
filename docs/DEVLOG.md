@@ -2254,3 +2254,55 @@ ship: KI-9 (bundle model weights) + KI-10 (OS-trust-store for proxy users). `.cl
 on the work box (gitignored) — its RG-011 entry should cite the committed baseline above; the result is
 recorded here + KNOWN_ISSUES KI-10 so it survives the per-machine gap. Only `scripts/measure_latency.py`
 is a code change; staged, not committed (per CLAUDE.md).
+
+---
+## Session: 2026-06-24 (RTX box, cont.) — froze the sidecar; RG-010 / RG-011-frozen / RG-013 closed
+
+**Why:** continue the M4 ship gates on the RTX box now that RG-011's boundary was settled. Built the actual
+frozen artifact (absent here before) and ran the gates that need it.
+
+### What changed (build only — no source edits)
+- **Froze the sidecar:** `uv sync --extra cpu --extra dev --extra packaging` (added PyInstaller 6.21.0;
+  torch stays `2.12.0+cpu`; this **pruned the editable `claude-project-conventions` from the venv** — not a
+  declared dep — harmless: the cpc pre-commit gates run in their own isolated env; re-add for manual `python
+  -m cpc` use) → `just sidecar` (= `python -m scripts.build_sidecar`). Produced `dist/doc-assistant-api.exe`
+  (385 MB onefile) + copied to `apps/desktop/src-tauri/binaries/doc-assistant-api-x86_64-pc-windows-msvc.exe`.
+  rustc 1.96.0 present (triple `x86_64-pc-windows-msvc`). Both are gitignored build artifacts.
+
+### RG-010 — cold-start → done (degrades)
+Frozen launch → first `/api/health 200` = **46.2 s** (warm HF cache, `DOC_DATA_DIR`→repo data, real corpus
+`chunk_count=2455`). Onefile unpacks 385 MB to temp + loads bge/reranker/Chroma. Above the ~30 s soft
+guideline; **onefile→onedir** is the lever if it ever matters. First-run (cold cache) is KI-9-dominated
+(≈218 s HF download). No hard threshold → recorded + closed.
+
+### RG-011 — frozen first-token → done (PASS, no freeze penalty)
+`measure_latency --launch dist\…exe --repeat 5` on `ollama/llama3.1:8b` → frozen HTTP/SSE median **5.312 s**
+(sd 0.520). Re-measured the **in-process control in the same session/Ollama-state** → median **5.859 s**
+(sd 0.035). Δ (frozen − control) = **−0.55 s** → the freeze + SSE boundary add **no** first-token penalty.
+**Key methodology note:** absolute first-token tracks Ollama GPU warm-state (this session ~5.3–5.9 s vs the
+earlier same-day source run ~4.1–4.6 s), so the valid comparison is **same-session frozen-vs-control**, not
+cross-session — which is why the control was re-run rather than reused. Credit-safe: `.env` flipped to
+ollama (backed up + restored; verified), HF offline; no Anthropic call reachable. Appended to the RG-011
+baseline (`tests/eval/baselines/rg011_first_token_ollama_2026-06-24.md`).
+
+### RG-013 — structlog bundled in the freeze → done
+Frozen startup console emits structlog-rendered events
+(`…Z [info ] loading_embeddings [doc_assistant.pipeline] model=bge-base`); a scan of the full log for
+`structlog|ModuleNotFound|ImportError|Traceback` returns **0**. structlog is import-followed via
+`collect_submodules("doc_assistant")` (no explicit hiddenimport needed); structured logging survives the
+freeze with no regression. KI-1 follow-up closed.
+
+### Rejected / not done
+- **RG-012 clean-machine smoke — NOT possible on this box.** Windows Sandbox isn't enabled here
+  (`WindowsSandbox.exe` absent; the feature query needs elevation). Needs the feature on (admin + restart)
+  or a second Python-free box, **plus** the unbuilt data-home flow for Tier-2 (a fresh box has
+  `chunk_count: 0`). The frozen build *did* pass an on-box freeze-integrity smoke (launches, serves, real
+  corpus, no missing-module/DLL error), but that is not a clean machine.
+- **Did not build the installer** (`npx tauri build`) — only needed for RG-012, which is blocked anyway.
+
+**Opens:** RG-012 (sandbox + data-home flow) is the last blocks-ship gate; then PR-M5 (delete Chainlit,
+lift the 3.12 pin). Two freeze fixes still pending for shippable UX: KI-9 (bundle weights → kills the
+first-run HF download / offline failure) + KI-10 (OS trust store for proxy users). The PyInstaller onefile
+child isn't reaped by `proc.terminate()` (lingers on :8001 — kill by port between runs; known). Build
+artifacts (`dist/`, Tauri `binaries/`) are gitignored. Docs (DEVLOG/baseline/KNOWN_ISSUES) + `.claude/`
+trackers staged/updated; nothing committed (per CLAUDE.md).

@@ -2358,4 +2358,75 @@ confirmation is the remaining check.
 should pass Tier-1 cleanly when a clean box is available); confirm KI-10 on an actual proxy box; the
 data-home flow for Tier-2. Code staged (`apps/api/__main__.py`, `pyproject.toml`, `uv.lock`,
 `scripts/doc_assistant_api.spec`) + docs; `Cargo.toml` shows a phantom CRLF-only diff (left unstaged);
-build artifacts gitignored; nothing committed (per CLAUDE.md).
+build artifacts gitignored; nothing committed (per CLAUDE.md). *(Committed by user as `ea60a1a`.)*
+
+---
+## Session: 2026-06-24 (RTX box, cont.) — frozen end-to-end validation + found KI-11 (chromadb non-ASCII path)
+
+**Why:** no clean box available (can't restart for Windows Sandbox), so "do what you can": validate the
+frozen build end-to-end on this box + exercise the per-user data home (re-ingesting into it).
+
+### Frozen build end-to-end — functional PASS
+Drove a real cited turn through the frozen sidecar (Ollama, repo corpus, `DOC_DATA_DIR`): retrieved the
+right papers (rag_lewis/dpr/bge/hyde), streamed a grounded answer (first-token 11.8 s, full 17.9 s),
+result payload carried 10 sources. **One gap:** the local 8B emitted **no inline `[n]` citations** this
+turn — the known local-generation citation-discipline weakness (prior sessions), *not* a freeze defect
+(retrieval/sources/streaming all correct). Credit-safe (`.env`→ollama, backed up + restored; verified).
+
+### Exercised the per-user data home → found KI-11 (a real shippability bug)
+Re-ingested the 10 PDFs into `%LOCALAPPDATA%\doc_assistant\data` (the location a real install uses) and
+launched the frozen build with **no `DOC_DATA_DIR`** so it resolves its own home. It **crashed** at startup:
+`chromadb … Error loading hnsw index`. Debugged it (the venv reproduces it identically — not the freeze):
+
+**KI-11 — chromadb 1.5.9 does not persist the hnsw `.bin` index when the persist directory's actual
+location contains non-ASCII characters.** This box's username is "Lucas Délez" (the `é`), so the per-user
+path is non-ASCII. Evidence: ASCII location (`C:\Projects\…`, 1 **and** 10 files) → `.bin` written, reloads
+fine; non-ASCII location (10 files / 2455 chunks) → no `.bin` → reload fails (read-time backfill works for
+~310 chunks but fails at 2455). The Windows **8.3 short path** does NOT help (chromadb resolves it to the
+real `é` dir). **Impact:** the shipped app's per-user data home breaks for any user with an accented /
+non-Latin Windows username — common. Latent until now because dev/repo paths are ASCII. Full writeup +
+candidate fixes (ASCII Chroma location / chromadb version bisect / upstream report) in KNOWN_ISSUES **KI-11**.
+
+**Course-correction note:** first hypothesized non-ASCII, then the 8.3-short-path test (no `.bin`) made me
+doubt it, then a fresh full **ASCII** ingest (`.bin` written, reloads) confirmed the path *is* the cause —
+the short path failed because it resolves to the same `é` directory. Recorded so the reasoning is traceable.
+
+### Rejected / not done
+- **Did not build the Tier-2 data-home flow** — KI-11 must be fixed first (a fresh ingest under the real
+  per-user home produces a broken corpus), and the fix is a design decision (surfaced to the user).
+- **Did not implement the KI-11 fix** — it's a data-layer/packaging decision (ASCII-relocate vs chromadb
+  version vs upstream); proposed to the user rather than chosen unilaterally.
+
+**Opens:** decide + implement the KI-11 fix (then re-validate the per-user data home here — this box's `é`
+username is the perfect test); RG-012 Tier-1 still needs a clean box; confirm KI-10 on a proxy box. Test
+artifacts cleaned; per-user test dir removed; `.env` restored; repo corpus intact. Only KNOWN_ISSUES +
+DEVLOG changed (docs); nothing committed (per CLAUDE.md).
+
+---
+## Session: 2026-06-24 (RTX box, cont.) — KI-11 fix: relocate Chroma to an ASCII path under non-ASCII data homes
+
+**Why:** user chose the "ASCII Chroma location" fix for KI-11. This box's `é` username is the ideal validator.
+
+**What changed (`src/`):**
+- **`config.py`** — `_chroma_base()`: when `DATA_PATH` is non-ASCII **on Windows**, the Chroma vector dirs
+  relocate to `%PROGRAMDATA%\doc_assistant\chroma\<sha1(data_path)[:12]>` (guaranteed ASCII); `CHROMA_PATH`
+  /`PC_CHROMA_PATH` derive from that base. SQLite + sources stay at `DATA_PATH` (SQLite handles non-ASCII).
+  ASCII data paths + non-Windows → byte-identical to before (`DATA_PATH/chroma`). `sha1(..., usedforsecurity=False)`.
+- **`ingest.py`** — the Chroma `mkdir` calls now use `parents=True` (the relocated base has new intermediate
+  dirs; the old single-level `mkdir(exist_ok=True)` raised `FileNotFoundError` on the new path).
+
+**Verified on this box** (data home `C:\Projects\doc_assistant\café_home\data`, the `é`, chosen non-virtualized
+to dodge the Claude-app MSIX `AppData` redirection): `PC_CHROMA_PATH` resolved to
+`C:\ProgramData\doc_assistant\chroma\27281d573b7f\chroma_pc` (ASCII); full 10-file ingest rc 0 → all four
+`.bin` written → fresh-process read **chunk_count 2335** (vs the pre-fix failure). Gate: ruff ✓, mypy --strict
+src ✓ (43 files), bandit ✓; full test suite re-run for the `src` change.
+
+**Note (env quirk):** running inside the Claude desktop app's **MSIX sandbox** virtualizes `AppData\Local`
+(→ `…\Packages\Claude…\LocalCache\…`) and `$LOCALAPPDATA` varied per shell — which is why the validation used
+a non-virtualized `C:\Projects\…` non-ASCII path. The real installed Tauri app runs outside that sandbox and
+uses the true `C:\Users\<username>\AppData\Local\…`; the fix keys off non-ASCII-ness, so it applies there too.
+
+**Opens:** **re-freeze the sidecar + rebuild the installer** so the shipped artifact bundles this `config`
+change (the fix is in `src/`; `just sidecar` picks it up) — then the per-user data home works for accented
+usernames; then the Tier-2 data-home flow is unblocked. Still: RG-012 Tier-1 (clean box), KI-10 on a proxy
+box. Staged: `config.py`, `ingest.py` + docs; nothing committed (per CLAUDE.md).

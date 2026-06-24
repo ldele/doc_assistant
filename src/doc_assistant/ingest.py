@@ -658,9 +658,11 @@ def main(
     # fresh-clone footgun of having to run migrations manually before ingest.
     init_db()
 
-    CACHE_PATH.mkdir(exist_ok=True)
-    Path(CHROMA_PATH).mkdir(exist_ok=True)
-    Path(PC_CHROMA_PATH).mkdir(exist_ok=True)
+    # parents=True: the Chroma base may be a relocated ASCII path with new intermediate
+    # dirs (KI-11, config._chroma_base), not just DATA_PATH/chroma.
+    CACHE_PATH.mkdir(parents=True, exist_ok=True)
+    Path(CHROMA_PATH).mkdir(parents=True, exist_ok=True)
+    Path(PC_CHROMA_PATH).mkdir(parents=True, exist_ok=True)
 
     active_model = get_active_model_name()
     collection = get_collection_name(active_model)
@@ -673,8 +675,8 @@ def main(
         log.warning("force_rebuild", hint="clearing vector stores and SQLite document records")
         shutil.rmtree(CHROMA_PATH, ignore_errors=True)
         shutil.rmtree(PC_CHROMA_PATH, ignore_errors=True)
-        Path(CHROMA_PATH).mkdir(exist_ok=True)
-        Path(PC_CHROMA_PATH).mkdir(exist_ok=True)
+        Path(CHROMA_PATH).mkdir(parents=True, exist_ok=True)
+        Path(PC_CHROMA_PATH).mkdir(parents=True, exist_ok=True)
         with session_scope() as session:
             session.execute(delete(DBDocument))
 

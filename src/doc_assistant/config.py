@@ -53,10 +53,35 @@ def _resolve_data_path() -> Path:
 
 
 DATA_PATH = _resolve_data_path()
+
+
+def _chroma_base() -> Path:
+    """ASCII-safe base dir for the Chroma vector stores (KI-11).
+
+    chromadb's hnsw writer silently fails to persist the index ``.bin`` segments when the
+    persist directory's real location contains non-ASCII characters on Windows (verified on
+    chromadb 1.5.9; the 8.3 short path doesn't help — it resolves to the real path). The
+    shipped app's per-user data home is ``C:\\Users\\<username>\\...``, so an accented /
+    non-Latin Windows username would yield a corpus that cannot reload. Relocate **only** the
+    Chroma dirs to a guaranteed-ASCII machine path (``%PROGRAMDATA%``, namespaced by a hash of
+    the data path to avoid cross-home collisions); the SQLite store + sources stay at
+    ``DATA_PATH`` (SQLite handles non-ASCII paths fine). ASCII data paths (the dev/repo case)
+    and non-Windows platforms are unchanged.
+    """
+    if sys.platform != "win32" or str(DATA_PATH).isascii():
+        return DATA_PATH
+    import hashlib
+
+    digest = hashlib.sha1(str(DATA_PATH).encode("utf-8"), usedforsecurity=False).hexdigest()[:12]
+    return Path(os.getenv("PROGRAMDATA", "C:\\ProgramData")) / "doc_assistant" / "chroma" / digest
+
+
+_CHROMA_BASE = _chroma_base()
 DOCS_PATH = DATA_PATH / "sources"
 CACHE_PATH = DATA_PATH / "cache"
-CHROMA_PATH = str(DATA_PATH / "chroma")  # Chroma wants a string, not Path
-PC_CHROMA_PATH = str(DATA_PATH / "chroma_pc")  # Parent - Child
+# Chroma wants a string, not Path. Base is ASCII-safe (KI-11) — see `_chroma_base`.
+CHROMA_PATH = str(_CHROMA_BASE / "chroma")
+PC_CHROMA_PATH = str(_CHROMA_BASE / "chroma_pc")  # Parent - Child
 SQLITE_PATH = str(DATA_PATH / "library.db")
 SQLITE_URL = f"sqlite:///{SQLITE_PATH}"
 

@@ -90,13 +90,12 @@ def test_exc_info_is_rendered_in_json() -> None:
 
 def test_module_imports_no_app_code() -> None:
     """Decision 1: the seam is pure setup — no business logic, no app imports. Importing
-    it must never pull in config / app / chainlit (so it stays a trivially-importable
+    it must never pull in config or app code (so it stays a trivially-importable
     wiring module)."""
     import doc_assistant.logging_config as mod
 
     text = Path(mod.__file__).read_text(encoding="utf-8")
     forbidden = (
-        "import chainlit",
         "from doc_assistant",
         "import doc_assistant",
         "from apps",

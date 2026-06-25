@@ -10,7 +10,7 @@ the FastAPI/SSE boundary (`apps/api/`, PR-M2). Decision + rationale:
 - Streaming chat (POST-SSE → token-by-token), inline-citation markdown answers.
 - Source cards with the 7d **contested / superseded** marker chips (PR-M1).
 - The per-claim **accept / reject / edit** review GUI (the editorial UX deferred by the
-  Chunk 2a ADR — built natively here, not in Chainlit).
+  Chunk 2a ADR — built natively here, unlike the old web UI).
 - A collapsible provenance + usage card; figures served over `GET /api/figures/{id}`.
 
 ## Dev loop (two processes)

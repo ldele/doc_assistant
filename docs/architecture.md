@@ -85,7 +85,6 @@ flowchart TD
 | `doc_assistant.prompts` | Prompt templates | Pure string interpolation; no I/O |
 | `doc_assistant.tracking` | Token usage tracking and cost estimation | Append-only; never raises |
 | `apps/cli.py` | Terminal renderer | Renders `TurnResult`; no business logic |
-| `apps/chainlit_app.py` | Web chat renderer | Maps `TurnEvent`/`TurnResult` → Chainlit widgets; no business logic |
 | `apps/api/` | Desktop HTTP renderer (PR-M2) | FastAPI over `127.0.0.1`; `TurnEvent` → SSE, requests → controller calls; no business logic |
 | `apps/desktop/` | Tauri desktop frontend (PR-M3) | Svelte 5 + Vite UI in a Tauri 2 shell; renders the API's `TurnResult`; no business logic |
 | `scripts/` | One-off maintenance scripts | Not part of the importable package |

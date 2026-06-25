@@ -1,6 +1,6 @@
 """FastAPI desktop backend — a thin HTTP/SSE renderer over ``ChatController`` (PR-M2).
 
-FastAPI is *just another shell* (like ``apps/cli.py`` and ``apps/chainlit_app.py``): it
+FastAPI is *just another shell* (like ``apps/cli.py``): it
 maps ``TurnEvent`` → HTTP/SSE and HTTP requests → controller calls, and owns no
 retrieval/provenance/claim logic. One ``ChatController`` is built per process in the
 ``lifespan`` (model load is expensive); the test path injects a fake controller via

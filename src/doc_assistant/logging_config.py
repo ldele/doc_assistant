@@ -7,7 +7,7 @@ third-party stdlib logs (chromadb, httpx, transformers, …) flow through one re
 
 Pure setup only — **no business logic and no app imports** (this module must stay
 importable without pulling in ``doc_assistant.config`` or any ``apps/`` code). Each app
-entrypoint (``apps/cli.py``, ``apps/chainlit_app.py``, ``apps/api``) and the ``python -m``
+entrypoint (``apps/cli.py``, ``apps/api``) and the ``python -m``
 program entrypoints (``doc_assistant.ingest``, ``doc_assistant.db.migrations``) call it
 once, early. ``src/`` *library* code never calls it: importing a library module must have
 no logging side effect, and if ``configure_logging`` never runs, structlog falls back to

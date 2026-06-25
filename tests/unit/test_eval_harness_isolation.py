@@ -20,7 +20,6 @@ _FORBIDDEN = (
     "doc_assistant.config",
     "doc_assistant.pipeline",
     "doc_assistant.chat_controller",
-    "chainlit",
     "fastapi",
 )
 

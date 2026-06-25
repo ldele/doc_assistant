@@ -1,19 +1,19 @@
-"""UI-agnostic turn orchestration (PR-M0 — Chainlit→Tauri migration).
+"""UI-agnostic turn orchestration (PR-M0 — Tauri desktop-shell migration).
 
 The whole RAG/integrity turn — slash-command dispatch, pending claim-edit handling,
 library-query routing, history-aware rewrite, retrieval, figure lookup, source
 assembly, ``SYNTHESIS_MODE=human`` branch, answer streaming, provenance capture,
 confidence-signal gating + (flagged-only) reviewer call, claim segmentation + eager
 persistence, citation audit, usage accounting, and export stashing — used to live
-inside ``apps/chainlit_app.py``'s ``on_message``, interleaved with ``cl.*`` rendering.
+inside the original web-UI ``on_message`` handler, interleaved with UI rendering.
 
 This module lifts that orchestration out of the UI so any frontend renders the same
 value object. ``ChatController.handle_message`` yields a stream of :class:`TurnEvent`
 (streamed ``Token``s + ``Step`` status updates) terminating in a :class:`Result`
-wrapping a :class:`TurnResult` — everything a renderer needs, as data. The Chainlit
+wrapping a :class:`TurnResult` — everything a renderer needs, as data. The desktop
 and CLI apps (and, in PR-M2, FastAPI) become thin renderers over this stream.
 
-**No ``chainlit`` import here.** No generation logic moves: ``pipeline.stream_answer``
+**No UI-framework import here.** No generation logic moves: ``pipeline.stream_answer``
 etc. are called exactly as before. This is a *move*, not a redesign — behaviour is
 frozen and guarded by ``tests/integration/test_turn_parity.py``.
 
@@ -106,7 +106,7 @@ class SourceView:
     n: int
     citation: str  # format_citation(doc, n)
     excerpt: str  # ~800-char side-panel preview (with trailing "..." when truncated)
-    figure_path: str | None  # resolved PNG path (Chainlit local render); never crosses the API
+    figure_path: str | None  # resolved PNG path (local desktop render); never crosses the API
     chunk_key: str | None  # ADR-2; the 7d marker join key
     markers: list[str] = field(default_factory=list)  # PR-M1: contested / superseded_trend
     figure_id: str | None = None  # PR-M3: the id the web/API renders via GET /api/figures/{id}
@@ -186,7 +186,7 @@ TurnEvent = Token | Step | Result
 
 
 # ============================================================
-# Helpers (moved verbatim from chainlit_app.py — pure formatters)
+# Helpers (pure formatters, moved out of the original UI handler)
 # ============================================================
 
 
@@ -425,7 +425,7 @@ def _export_sources(
 class ChatController:
     """Owns the turn orchestration. Stateless across turns (the injected ``Session``
     carries per-conversation state). Imports the same library functions the old
-    ``chainlit_app.py`` did; no ``chainlit`` import."""
+    the original UI handler did; no UI-framework import."""
 
     def __init__(self, rag: RAGPipeline | None = None) -> None:
         self.rag = rag if rag is not None else RAGPipeline()

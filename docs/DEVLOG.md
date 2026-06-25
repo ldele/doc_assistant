@@ -2430,3 +2430,98 @@ uses the true `C:\Users\<username>\AppData\Local\…`; the fix keys off non-ASCI
 change (the fix is in `src/`; `just sidecar` picks it up) — then the per-user data home works for accented
 usernames; then the Tier-2 data-home flow is unblocked. Still: RG-012 Tier-1 (clean box), KI-10 on a proxy
 box. Staged: `config.py`, `ingest.py` + docs; nothing committed (per CLAUDE.md).
+
+---
+## Session: 2026-06-25 — Doc cleanup: archive discharged disposables + refresh DEMO (Claude Code, work box)
+
+**Why:** session-start review of "where we left off" + the user asked to clean up useless documentation if
+not already done. The cpc docs-migration (ADR-001) had left two discharged disposables in `docs/` root, and
+`DEMO.md` still presented Chainlit as *the* web UI (pre-desktop-shell).
+
+**Audit basis:** a 10-doc staleness audit (each doc: full read + repo-wide reference grep + git history).
+Verdicts — KEEP: `docs/archive/doc-assistant-roadmap.md` (ROADMAP forwards to it), `ADR-000-template.md`
+(canonical ADR seed), `figures-and-tables.md` (TESTING.md + specs cite it), `how-answers-work.md`
+(UI-agnostic; README link), `library.bib` (live `/bibtex` exporter target). `decisions.md` left **as-is**:
+it holds **no** duplicates of ADR-001/002/003 (those were authored fresh in `docs/decisions/`), so the
+1623-line monolith is still the sole canonical home of ~30 decisions — the full per-file split is **PR-B**
+(a real migration repointing ~20 references), not a cleanup. Sprint template kept (inert, but part of the
+adopted cpc standard; `sprint_check.py` is the still-unbuilt phase-2 half).
+
+**What changed (docs-only):**
+- **Deleted** `docs/PLAN_pr-a-cpc-scaffolding.md` + `docs/chunking-sweep-rtx-resume.md` (`git rm`). PR-A has
+  landed (ADR-001 accepted; the `.claude` triad + ROADMAP + ADR-00{1,2,3} all exist) and the chunking sweep
+  concluded 2026-06-06 (result locked in `tests/eval/baselines/chunking_sweep_public_2026-06-06.md`), so both
+  files' live purpose is discharged. (Briefly archived to `docs/archive/` first; **the user reviewed both and
+  chose deletion** — low residual value; the durable info lives in ADR-001 + the baseline, recoverable from
+  git history.)
+- Generalized ADR-001's now-dead disposable-list route (its example was the deleted chunking note). The only
+  remaining mentions of the two files are append-only DEVLOG history, left as-is.
+- `docs/DEMO.md` "Run it" refreshed: the desktop app (`just api` backend + `apps/desktop` Vite/Tauri) is now
+  the lead/shipping UI; the CLI is kept; Chainlit is demoted to a "legacy — removed at M5, needs 3.12"
+  fallback (it still works — M5 is spec-only). Header `updated: 2026-06-25`.
+
+**Verification:** unit+integration suite green on the host (official CPython 3.12.10 venv) — **602 passed in
+60s** (run before the change; docs-only after, so unaffected). Re-grep confirms no living doc routes to the
+old paths. The cpc `docs_check` gate was not re-run (the editable cpc package was pruned from this venv
+during the 06-24 freeze); headers use valid cpc enums and routes were checked by hand.
+
+**Opens:** PR-B (`decisions.md` → per-file ADR split) when prioritized. Desktop-shell M4 ship gates still
+open (re-freeze to bundle the KI-11 `src` fix; RG-012 clean-machine smoke; KI-10 on-proxy confirm) + PR-M5.
+Nothing committed — staged for review (cpc §13).
+
+---
+## Session: 2026-06-25 (cont.) — M4 ship gates closed (re-freeze) + PR-M5 (Chainlit decommissioned), Claude Code (work box)
+
+**Why:** user — "re-freeze and continue closing PR-M4 and M5." The shipped `dist/` artifact was the stale
+Jun-22 freeze (384 MB, pre KI-9/10/11). Re-froze on this box (CPU torch `2.12.0+cpu`, PyInstaller 6.21),
+closed the M4 ship gates, then executed PR-M5.
+
+### M4 — re-freeze + ship gates (no `src/` change; packaging + verification)
+- **Re-froze** `dist/doc-assistant-api.exe` → **1.62 GB** (KI-9 weights + KI-10 truststore + KI-11 ASCII-Chroma
+  fix bundled) + copied to the Tauri `binaries/`. **Rebuilt the installer** (`npx tauri build`) → NSIS
+  `setup.exe` 1.63 GB + MSI 1.62 GB (were 382 MB).
+- **Host smoke + RG-010:** frozen launch → `/api/health 200` in **30 s** (warm, OFFLINE — weights from the
+  bundle), `chunk_count=27168` (real corpus), structlog events present, **zero** import/cert/no-such-table
+  errors → RG-010 re-confirmed, **RG-013** (structlog in freeze) re-confirmed.
+- **RG-012 clean-machine smoke (Windows Sandbox, this box) → FULL PASS.** Test A (frozen sidecar on a clean,
+  Python-free Win11): health 200 in 118 s, `chunk_count=0`, **no HF download** (KI-9 offline validated). Test B
+  (silent-install the 1.63 GB NSIS bundle → launch the installed app → it spawns a healthy sidecar): health 200
+  in 48 s. Fixed the host-local harness `smoke.ps1` (outside the repo): the installed exe is
+  `doc-assistant-desktop.exe` (Cargo bin), not `doc_assistant.exe` (productName) → switched Test B to a
+  registry-`InstallLocation` name-agnostic locate. **Blocks-ship freeze-portability gate cleared.** Tier-2 (a
+  cited turn) still pends the unbuilt data-home / first-run-ingest flow.
+
+### PR-M5 — decommission Chainlit (`docs/specs/pr-m5-decommission-chainlit.md` → ✅ BUILT)
+**What:** deleted `apps/chainlit_app.py` + `.chainlit/` (config + 24 translations + chainlit.md); removed the
+`chainlit>=2.0,<3.0` base dep + the `chainlit.*` mypy override; deleted the `chat` (chainlit) justfile recipe,
+added a `desktop` recipe (`npm run dev`); trimmed the Chainlit arm from `test_turn_parity.py` (parity is now
+CLI == canonical `TurnResult`); scrubbed every remaining `chainlit` mention from src/apps/tests docstrings +
+comments. `uv lock` → chainlit + 15 transitive deps (socketio / opentelemetry-instr / pywin32 / …) gone from
+the lock; `uv sync` uninstalled them from `.venv`. **`fastapi`/`uvicorn`/`sse-starlette` stay** (made explicit
+base deps in M2 precisely for this clean removal).
+**Gate (3.12, chainlit uninstalled):** ruff ✓ · `mypy --strict src` ✓ (43 files) · bandit ✓ · **602 passed**.
+**DoD #1:** `grep -rni chainlit src tests apps pyproject.toml justfile docs/architecture.md` → clean except the
+historical RG-011 baseline (spec-excepted); no `import chainlit` anywhere. **DoD #4 (GUI works):** proven by
+RG-012 Test B (installed Tauri app launched + spawned a healthy sidecar) + the host API smoke.
+
+### ADR-2 — the 3.12-pin lift: VERIFIED-AND-DEFERRED (KI-2 stays open, cause renamed)
+Ran the M5 ADR-2 check in an isolated venv (`UV_PROJECT_ENVIRONMENT=.venv314`, non-destructive to `.venv`):
+`uv sync --python 3.14 --extra cpu --extra dev` **resolves + installs cleanly** (torch `2.12.0+cpu` has a cp314
+wheel; chainlit absent), and ruff / `mypy --strict src` / bandit pass on 3.14 — **but the full pytest suite
+hard-crashes the interpreter** (no Python traceback; process dies ~47–54%, first at `tests/unit/test_llm.py`
+under full-suite load; NOT reproducible unit-only or for that test in isolation). 3.12 runs all 602. → per
+ADR-2's edge case, **do not lift the pin**: KI-2 stays open with the cause **renamed from Chainlit/anyio to a
+native dep** (anthropic / langchain / `pydantic-core` / `tokenizers` not yet cp314-stable). The literal
+`--python 3.12` recipe pin is deleted; only this native-dep gate now holds the runtime at 3.12. Trove
+classifiers left at 3.10–3.12 (no 3.13/3.14 until the suite passes on 3.14).
+
+**Docs:** KI-2 rewritten (cause renamed); CONTEXT (runtime row + desktop-shell paragraph → M0–M5 shipped);
+README (UI row + run instructions → desktop/CLI + the 3.14 note); CLAUDE (runtime quirk); `architecture.md`
+(dropped the `chainlit_app.py` row); ROADMAP M4 → done + M5 → done; M5 spec → BUILT. `.gitignore` `.venv/` →
+`.venv*/`.
+
+**Opens / not done:** Tier-2 cited-turn on a clean box (needs the **data-home / first-run-ingest flow** — the
+last product gap); KI-10 **on-proxy** confirmation (this *is* the proxy box; needs 1 paid Anthropic first-token
+call through the re-frozen truststore binary — flagged, not done); KI-2 re-check on 3.14 when native deps ship
+cp314 wheels; PR-B (`decisions.md` split). Throwaway `.venv314` left on disk (`rm -rf` sandbox-blocked;
+gitignored). **Nothing committed — staged for review (cpc §13).**

@@ -1,6 +1,6 @@
 """CLI — thin renderer over ``doc_assistant.chat_controller``.
 
-Same turn orchestration as the Chainlit UI (one ``ChatController``); the CLI just
+Same turn orchestration as the desktop/API UI (one ``ChatController``); the CLI just
 renders the ``TurnEvent`` stream to stdout: stream tokens as they arrive, then print
 the finished ``TurnResult`` (answer + the pre-rendered markdown blocks). Dispatch
 order (slash command → library query → RAG) now lives in the controller, so the CLI

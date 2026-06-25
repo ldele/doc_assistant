@@ -18,7 +18,7 @@ Locked design choices
   prompt template is edited.
 * **UUIDs everywhere.** `id` and `session_id` are never auto-increments
   so multi-user later is a non-breaking change.
-* **UI-agnostic.** This module returns dataclasses. The Chainlit card
+* **UI-agnostic.** This module returns dataclasses. The provenance card
   and the `/export-record` slash command both read from here.
 """
 

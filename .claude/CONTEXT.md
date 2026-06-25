@@ -18,11 +18,13 @@ LLM layer, figures/tables, and the wiki/synthesis layer are shipped. The cross-d
 (PR 16) + the 7d engine shipped too, **but their open-vocabulary core was superseded by a 2026-06-18
 redesign that is not yet built — do not build on `data/graph/graph.json` (`.claude/KNOWN_ISSUES.md`
 KI-7).** ~555 tests; ruff / mypy --strict / bandit clean.
-Desktop-shell migration underway (ADR-002): PR-M0 (`ChatController`) + M1 (live 7d marker chips) + M2
-(FastAPI + SSE, `apps/api/`) + M3 (Svelte/Tauri frontend, `apps/desktop/`) built; **M4 (sidecar
-packaging) scaffolded** — entrypoint + `just sidecar-check` + Tauri wiring green, but the PyInstaller
-freeze + `tauri build` + clean-machine smoke are desktop steps (RG-010/011/012; RG-011/012 block the
-M4 ship). Runbook: `docs/desktop-packaging.md`. Then M5 (delete Chainlit, lift the 3.12 pin, KI-2).
+Desktop-shell migration (ADR-002): **M0–M5 all shipped (2026-06-25).** M0 (`ChatController`) · M1 (live 7d
+marker chips) · M2 (FastAPI + SSE, `apps/api/`) · M3 (Svelte/Tauri frontend, `apps/desktop/`) · **M4** —
+frozen 1.6 GB onefile bundling model weights (KI-9) + OS trust store (KI-10) + the ASCII-Chroma fix (KI-11);
+RG-010 (~30 s cold-start) / RG-011 (no SSE first-token penalty) / RG-012 Tier-1 (clean-machine freeze +
+installer smoke, in Windows Sandbox) / RG-013 all closed — Tier-2 (a cited turn) pends the data-home /
+first-run-ingest flow. Runbook: `docs/desktop-packaging.md`. · **M5** — Chainlit removed; the 3.12-pin lift
+was verified-and-deferred (KI-2: native deps crash on 3.14, not Chainlit). UI is now Tauri desktop + CLI.
 Other candidates: PR 17 (Zotero ingest), the 7d `query_router` seam, the wiki `[[links]]` refinement.
 Full plan: `docs/ROADMAP.md`.
 
@@ -30,7 +32,7 @@ Full plan: `docs/ROADMAP.md`.
 
 | Layer | Choice |
 |---|---|
-| Language / runtime | Python 3.12 (dev works on 3.14; Chainlit needs 3.12 at runtime). Package manager: **uv**. |
+| Language / runtime | Python 3.12 (the pinned runtime; native deps not yet cp314-stable — KI-2; Chainlit removed in PR-M5). Package manager: **uv**. |
 | Embeddings | `bge-base-en-v1.5` (default; swappable via `EMBEDDING_MODEL`, `specter2` also registered) |
 | Reranker | `bge-reranker-base` (local cross-encoder) |
 | Vector store | Chroma (local, persistent) — `data/chroma/` |
@@ -38,7 +40,7 @@ Full plan: `docs/ROADMAP.md`.
 | Document store | SQLite via SQLAlchemy — `data/library.db` |
 | LLM (generation/reviewer/judge) | Claude API **or** local Ollama (provider-agnostic) |
 | Orchestration | LangChain |
-| UI | **Tauri desktop app** (`apps/desktop/`, Svelte 5 + Vite, PR-M3) over the **FastAPI/SSE** boundary (`apps/api/`, PR-M2); Chainlit (web) + CLI remain — all thin **renderers** over `chat_controller.ChatController` (PR-M0). See `docs/decisions/ADR-002-tauri-fastapi-desktop-shell.md`. Chainlit deleted at PR-M5; native Tauri packaging is PR-M4. |
+| UI | **Tauri desktop app** (`apps/desktop/`, Svelte 5 + Vite, PR-M3) over the **FastAPI/SSE** boundary (`apps/api/`, PR-M2); CLI remains — both thin **renderers** over `chat_controller.ChatController` (PR-M0). See `docs/decisions/ADR-002-tauri-fastapi-desktop-shell.md`. Chainlit removed at PR-M5; native Tauri packaging is PR-M4. |
 | PDF / tables | PyMuPDF4LLM (full-text default); Marker for high-fidelity tables, isolated out-of-process post-ingest pass |
 | torch backend | per-machine, chosen by a mutually-exclusive uv extra (`cu130` GPU / `cpu`) — see `docs/specs/torch-backend-per-machine.md` |
 

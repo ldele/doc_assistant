@@ -1,7 +1,7 @@
 """In-memory session store for the desktop API (PR-M2, ADR-3).
 
 Single-user, **process-scoped**, no persistence, no eviction in v1 — an app restart
-clears it, consistent with today's Chainlit per-chat reset. One ``SessionStore`` lives
+clears it, consistent with the original per-chat reset. One ``SessionStore`` lives
 per app instance (held on ``app.state``); the ``session_id`` is a caller-supplied key, so
 multi-user / persisted sessions later is a non-breaking change (same rationale as the
 provenance UUIDs).

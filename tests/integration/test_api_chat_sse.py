@@ -165,8 +165,10 @@ def test_figure_served_and_missing(tmp_path, monkeypatch):
     assert client.get("/api/figures/missing").status_code == 404
 
 
-def test_settings_read_and_write_stub():
+def test_settings_read_and_post_validation():
     client = _client()
-    assert client.get("/api/settings").status_code == 200
-    assert "top_k" in client.get("/api/settings").json()
-    assert client.post("/api/settings", json={}).status_code == 501  # write not wired
+    body = client.get("/api/settings").json()
+    assert "top_k" in body  # locked knobs still present in the read view
+    assert "data_home" in body and "source_dir" in body and "chunk_count" in body
+    # POST now wires the write path (set the source folder) — an empty body fails validation.
+    assert client.post("/api/settings", json={}).status_code == 422

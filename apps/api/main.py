@@ -22,24 +22,35 @@ from __future__ import annotations
 import asyncio
 import json
 import threading
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+import structlog
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from sse_starlette.sse import EventSourceResponse, ServerSentEvent
 
-from apps.api.models import AdjudicateRequest, ChatRequest, ExportRequest, TurnResultPayload
+from apps.api.models import (
+    AdjudicateRequest,
+    ChatRequest,
+    ExportRequest,
+    SettingsUpdate,
+    TurnResultPayload,
+)
 from apps.api.sessions import SessionStore
+from doc_assistant import app_settings
 from doc_assistant.chat_controller import ChatController, Result, Session, Step, Token
-from doc_assistant.config import LLM_MODEL, LLM_PROVIDER, LOG_JSON, LOG_LEVEL
+from doc_assistant.config import DATA_PATH, LLM_MODEL, LLM_PROVIDER, LOG_JSON, LOG_LEVEL
 from doc_assistant.embeddings import get_active_model_name
 from doc_assistant.figures import load_figure_image_paths
 from doc_assistant.logging_config import configure_logging
 from doc_assistant.provenance import get_record
+
+log = structlog.get_logger(__name__)
 
 # Local app only: the frontend speaks to the sidecar over 127.0.0.1. Explicit origins,
 # never "*". The Tauri dev server (default :1420) + the packaged webview origin.
@@ -126,7 +137,61 @@ def _settings_view() -> dict[str, Any]:
     }
 
 
-def create_app(controller: ChatController | None = None) -> FastAPI:
+SUPPORTED_NOTE = "pdf · epub · html · docx · md (and similar text formats)"
+
+
+@dataclass
+class _IngestStatus:
+    """Background-ingest progress, read by GET /api/ingest/status (guarded by a lock)."""
+
+    state: str = "idle"  # idle | running | done | error
+    source_dir: str | None = None
+    added: int = 0
+    skipped: int = 0
+    errors: int = 0
+    message: str | None = None
+
+
+def _default_ingest(*, scope: str) -> dict[str, int]:
+    """Lazy wrapper so importing this module doesn't pull the heavy ingest -> torch chain."""
+    from doc_assistant.ingest import main as ingest_main
+
+    return ingest_main(scope=scope)
+
+
+def _full_settings(app: FastAPI) -> dict[str, Any]:
+    """Read view: the locked knobs plus the data home, the user's source folder, chunk_count."""
+    controller: ChatController = app.state.controller
+    source = app_settings.get_source_dir()
+    return {
+        **_settings_view(),
+        "data_home": str(DATA_PATH),
+        "source_dir": str(source),
+        "source_dir_exists": source.is_dir(),
+        "supported_formats": SUPPORTED_NOTE,
+        "chunk_count": controller.chunk_count(),
+    }
+
+
+def _ingest_status_dict(app: FastAPI) -> dict[str, Any]:
+    st: _IngestStatus = app.state.ingest_status
+    with app.state.ingest_lock:
+        return {
+            "state": st.state,
+            "source_dir": st.source_dir,
+            "added": st.added,
+            "skipped": st.skipped,
+            "errors": st.errors,
+            "message": st.message,
+        }
+
+
+def create_app(
+    controller: ChatController | None = None,
+    *,
+    ingest_fn: Callable[..., dict[str, int]] | None = None,
+    controller_factory: Callable[[], ChatController] | None = None,
+) -> FastAPI:
     """Build the FastAPI app. ``controller`` is injected in tests (a fake) and set on
     ``app.state`` eagerly so the test client needs no lifespan; in production it is
     ``None`` and a real ``ChatController`` is built once in ``lifespan`` (lazy — so
@@ -144,6 +209,12 @@ def create_app(controller: ChatController | None = None) -> FastAPI:
 
     app = FastAPI(title="doc_assistant desktop API", lifespan=lifespan)
     app.state.sessions = SessionStore()
+    app.state.ingest_status = _IngestStatus()
+    app.state.ingest_lock = threading.Lock()
+    # Test seams (cpc §13): default to the real ingest + a fresh ChatController; tests inject
+    # fakes so /api/ingest runs no real ingest / model reload.
+    app.state.ingest_fn = ingest_fn or _default_ingest
+    app.state.controller_factory = controller_factory or ChatController
     if controller is not None:
         app.state.controller = controller
     app.add_middleware(
@@ -217,13 +288,67 @@ def create_app(controller: ChatController | None = None) -> FastAPI:
         }
 
     @app.get("/api/settings")
-    def get_settings() -> dict[str, Any]:
-        return _settings_view()
+    def get_settings(request: Request) -> dict[str, Any]:
+        return _full_settings(request.app)
 
     @app.post("/api/settings")
-    def post_settings() -> dict[str, Any]:
-        # The env-toggleable write path lands with the Phase-8 settings UI.
-        raise HTTPException(status_code=501, detail="settings write not yet wired (Phase 8)")
+    def post_settings(request: Request, body: SettingsUpdate) -> dict[str, Any]:
+        # "Point at a folder": set the source documents dir (validated + persisted to the data
+        # home). The data *home* (index/DB) stays managed by config; the user only chooses where
+        # their documents live. Re-index via POST /api/ingest to load the new folder.
+        try:
+            app_settings.set_source_dir(body.source_dir)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e)) from e
+        return _full_settings(request.app)
+
+    @app.post("/api/ingest", status_code=202)
+    def ingest_start(request: Request) -> dict[str, Any]:
+        app_ = request.app
+        source = app_settings.get_source_dir()
+        status: _IngestStatus = app_.state.ingest_status
+        with app_.state.ingest_lock:
+            if status.state == "running":
+                raise HTTPException(status_code=409, detail="ingest already running")
+            status.state = "running"
+            status.source_dir = str(source)
+            status.added = status.skipped = status.errors = 0
+            status.message = None
+
+        def _worker() -> None:
+            try:
+                stats = app_.state.ingest_fn(scope=str(source))
+            except Exception as e:  # surface any ingest failure to the status view
+                log.exception("ingest_failed", source=str(source))
+                with app_.state.ingest_lock:
+                    status.state = "error"
+                    status.message = str(e)
+                return
+            # Reload the controller so the new corpus is live BEFORE reporting "done" — a client
+            # that sees "done" then reads chunk_count must get the updated count (BM25 + Chroma
+            # handles are built at construction). A reload failure is logged but doesn't fail the
+            # ingest: the documents are persisted, a restart picks them up, so a successful ingest
+            # never flips to "error".
+            try:
+                app_.state.controller = app_.state.controller_factory()
+            except Exception:
+                log.exception("controller_reload_failed_after_ingest")
+            with app_.state.ingest_lock:
+                status.added = int(stats.get("added", 0))
+                status.skipped = int(stats.get("skipped", 0))
+                status.errors = int(stats.get("error", 0))
+                status.message = (
+                    f"indexed {status.added} new, {status.skipped} unchanged, "
+                    f"{status.errors} errors"
+                )
+                status.state = "done"
+
+        threading.Thread(target=_worker, name="ingest", daemon=True).start()
+        return _ingest_status_dict(app_)
+
+    @app.get("/api/ingest/status")
+    def ingest_status(request: Request) -> dict[str, Any]:
+        return _ingest_status_dict(request.app)
 
     return app
 

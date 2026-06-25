@@ -652,7 +652,7 @@ def main(
     force_rebuild: bool = False,
     skip_cleanup: bool = False,
     scope: str | None = None,
-) -> None:
+) -> dict[str, int]:
     # Ensure the SQLite schema exists. Idempotent (create_all no-ops when the
     # tables are already present), so this is safe on every run and removes the
     # fresh-clone footgun of having to run migrations manually before ingest.
@@ -722,6 +722,7 @@ def main(
         skipped=stats["skipped"],
         errors=stats["error"],
     )
+    return stats
 
 
 if __name__ == "__main__":

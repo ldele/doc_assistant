@@ -38,9 +38,14 @@ def _configure_frozen_runtime() -> None:
         import truststore
 
         truststore.inject_into_ssl()
-    except Exception:
-        # TLS-store setup must never block startup (e.g. truststore absent in a dev venv).
-        pass
+    except Exception as e:  # never block startup (e.g. truststore absent in a dev venv)
+        # Visible, not silent: a swallowed failure here is a prime suspect for KI-10 (the frozen
+        # build still hitting CERTIFICATE_VERIFY_FAILED — if inject_into_ssl fails, certifi is
+        # used and the corporate MITM CA is rejected). Pre-logging entrypoint, so write straight
+        # to stderr (cf. the sanctioned llm.py stderr write); startup still proceeds.
+        msg = f"WARN truststore.inject_into_ssl() failed (OS trust store inactive): {e}\n"
+        sys.stderr.write(msg)
+        sys.stderr.flush()
 
 
 _configure_frozen_runtime()

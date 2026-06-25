@@ -2525,3 +2525,41 @@ last product gap); KI-10 **on-proxy** confirmation (this *is* the proxy box; nee
 call through the re-frozen truststore binary — flagged, not done); KI-2 re-check on 3.14 when native deps ship
 cp314 wheels; PR-B (`decisions.md` split). Throwaway `.venv314` left on disk (`rm -rf` sandbox-blocked;
 gitignored). **Nothing committed — staged for review (cpc §13).**
+
+---
+## Session: 2026-06-25 (cont.) — KI-10 on-proxy = FAIL (confirmed) + data-home settings/ingest backend, Claude Code (work box)
+
+**KI-10 on-proxy check (user-authorized, → $0 billed).** Drove a real Anthropic turn through the re-frozen
+sidecar on this TLS-MITM-proxy box: retrieval succeeded, generation produced **no token** — the worker-thread
+stderr shows `httpx.ConnectError: [SSL: CERTIFICATE_VERIFY_FAILED]` → `anthropic.APIConnectionError`. **$0
+billed** (the handshake fails before any request reaches Anthropic). So `truststore.inject_into_ssl()` is not
+taking effect in the freeze → **KI-10 confirmed OPEN** (was "near-resolved, pending"; the earlier "verified"
+was on the non-proxy RTX box, where certifi works anyway). **Root-cause lead:** the inject runs in the right
+place (before the httpx/anthropic import) but was wrapped in a **silent `try/except: pass`** — a failing inject
+would be swallowed → certifi → this exact error. Made `apps/api/__main__.py` **write the failure to stderr**
+(also fixes a pre-existing **bandit B110** that surfaced once bandit scanned `apps`). Next: re-freeze + re-test;
+the WARN line confirms whether inject is the failure point. Non-blocking (paid-API on a proxy box only).
+
+**Data-home / first-run ingest — "point at a folder" (user-chosen approach).** A fresh install resolves its
+corpus to the empty per-user data home (`chunk_count: 0`); built the backend so a user can point at their
+documents folder and index it from the running app.
+- **`src/doc_assistant/app_settings.py` (new):** persist/load user settings as JSON in the data home;
+  `get_source_dir()` (`DOC_SOURCE_DIR` env > persisted `source_dir` > `config.DOCS_PATH`) + `set_source_dir()`
+  (validates the dir exists, persists). The data *home* stays managed by config (KI-11-safe); the user only
+  picks where their *documents* are.
+- **`ingest.main` → returns its stats dict** (was `-> None`; additive — the CLI ignores the return).
+- **`apps/api` (thin shell over src):** `GET /api/settings` now reports `data_home` / `source_dir` /
+  `source_dir_exists` / `chunk_count` (+ the locked knobs); `POST /api/settings` sets the source folder
+  (400 on a bad path); `POST /api/ingest` runs `ingest.main(scope=source_dir)` in a **daemon thread**, then
+  **rebuilds the ChatController** so the new corpus is live (chunk_count updates without a restart);
+  `GET /api/ingest/status` polls progress (idle/running/done/error + counts). 409 on a concurrent ingest.
+  Test seams added to `create_app(ingest_fn=…, controller_factory=…)`.
+- **Tests:** `tests/integration/test_api_settings_ingest.py` (6, all fakes — settings GET/POST + persistence
+  + 400; ingest start→status→done with the recorded scope + live chunk_count reload; failure→error;
+  concurrent→409); fixed the now-stale `test_settings_read_and_write_stub` (501 → 422 — the write path is wired).
+**Gate GREEN (3.12):** ruff ✓ · ruff format ✓ · `mypy --strict src` ✓ (44 files) · `bandit -r src apps` 0/0/0 ✓
+· `pytest tests/unit tests/integration` → **608 passed** (+6).
+
+**Not built (follow-ups):** the **frontend** settings panel (source-folder picker + Re-index button + status
+poll + empty-corpus banner) — the backend contract is ready for it; streamed ingest *progress* (v1 reports
+final counts only); the KI-10 truststore fix + re-freeze. **Nothing committed — staged for review (cpc §13).**

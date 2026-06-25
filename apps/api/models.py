@@ -39,6 +39,12 @@ class ExportRequest(BaseModel):
     dev: bool = False
 
 
+class SettingsUpdate(BaseModel):
+    """The one user-settable knob in v1: the source documents folder to ingest from."""
+
+    source_dir: str
+
+
 # ============================================================
 # Response payloads (mirror the controller value objects)
 # ============================================================

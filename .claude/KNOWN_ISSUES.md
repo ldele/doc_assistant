@@ -128,7 +128,7 @@ Migrated from the old `CLAUDE.md` / `README` runtime-quirk notes on 2026-06-20 (
   of embedding in the onefile (not needed — cold-start is fine).
 - **Pointer:** `docs/desktop-packaging.md` §"Data directory"; RG-010 / RG-012 in `.claude/RIGOR_TODO.md`.
 
-## KI-10 — Frozen build's bundled `certifi` rejects corporate-MITM'd HTTPS — NEAR-RESOLVED (2026-06-24; truststore shipped, pending on-proxy confirmation)
+## KI-10 — Frozen build's bundled `certifi` rejects corporate-MITM'd HTTPS — OPEN (2026-06-25: truststore CONFIRMED ineffective against a real MITM proxy in the freeze)
 - **Symptom:** On a box behind a TLS-inspecting (MITM) corporate proxy, the frozen
   `dist\doc-assistant-api.exe` fails outbound HTTPS with `[SSL: CERTIFICATE_VERIFY_FAILED] unable to get
   local issuer certificate`. Seen 2026-06-23 twice: (1) the startup HuggingFace metadata HEAD for
@@ -157,6 +157,22 @@ Migrated from the old `CLAUDE.md` / `README` runtime-quirk notes on 2026-06-20 (
   injects cleanly in dev and in the frozen build (no cert error in the frozen log). **Pending:** confirm
   on an actual TLS-MITM box — this RTX box isn't behind one, so the proxy-cert fix is implemented + bundled
   but not yet confirmed against a real MITM proxy. Status → near-resolved; close after the on-proxy check.
+- **On-proxy check (2026-06-25, this work box behind the TLS-MITM proxy) — CONFIRMED STILL BROKEN.** Drove a
+  real Anthropic turn through the **re-frozen** sidecar (1.62 GB, truststore bundled): retrieval succeeded
+  ("Found 10 relevant passages") but generation produced **no token** — the worker-thread stderr shows
+  `httpx.ConnectError: [SSL: CERTIFICATE_VERIFY_FAILED] unable to get local issuer certificate` →
+  `anthropic.APIConnectionError`. So `truststore.inject_into_ssl()` is **not taking effect** for the anthropic
+  httpx client in the freeze. **$0 billed** — the handshake fails before any request reaches Anthropic.
+  **KI-10 → OPEN (confirmed).** Non-blocking (only paid-API use on a corporate-proxy machine; Ollama /
+  off-proxy use is unaffected).
+- **Root-cause lead (2026-06-25):** ordering is NOT the cause — `apps/api/__main__._configure_frozen_runtime`
+  calls `truststore.inject_into_ssl()` **before** `from apps.api.main import app` (so before httpx/anthropic
+  import). But that call was wrapped in a **silent `try/except: pass`**: if `inject_into_ssl()` itself fails in
+  the freeze (e.g. truststore not fully bundled/usable), the error was swallowed → certifi used → exactly this
+  cert failure. Changed the handler to **write the failure to stderr** (also fixes a bandit B110). **Next:**
+  re-freeze + re-run the on-proxy turn — a stderr `WARN truststore.inject_into_ssl() failed …` will confirm
+  whether inject is the failure point; if so fix the freeze's truststore bundling, else hand the anthropic
+  client an explicit OS-trust `verify` context. Reproducible/fixable in **dev** on this proxy box.
 - **Pointer:** RG-010/RG-011 progress in `.claude/RIGOR_TODO.md`; `docs/desktop-packaging.md` §5.
 
 ## KI-11 — chromadb hnsw index not persisted under a non-ASCII path → broken corpus for accented usernames — RESOLVED (2026-06-24)

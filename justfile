@@ -33,9 +33,10 @@ ingest *ARGS:
 eval *ARGS:
     uv run --extra {{torch}} python -m scripts.run_eval {{ARGS}}
 
-# Launch the Chainlit web UI (Chainlit needs Python 3.12 at runtime).
-chat:
-    uv run --extra {{torch}} --python 3.12 chainlit run apps/chainlit_app.py
+# Launch the desktop frontend (Svelte/Vite) in dev — pair with `just api` in another shell
+# (or `cd apps/desktop && npx tauri dev` for the native Tauri window).
+desktop:
+    cd apps/desktop && npm run dev
 
 # CLI fallback.
 cli *ARGS:

@@ -1,6 +1,6 @@
 """Tests for the UI-agnostic turn controller (PR-M0).
 
-No Chainlit, no live LLM, no real corpus: a fake ``RAGPipeline`` supplies retrieval +
+No live LLM, no real corpus: a fake ``RAGPipeline`` supplies retrieval +
 streamed tokens, and the DB-touching paths run against a temp SQLite (the ``temp_db``
 fixture) or are monkeypatched. These exercise the dispatch order, the ADR-2 chunk-key
 derivation, the TurnResult shape, claim adjudication, and the provenance-failure path.

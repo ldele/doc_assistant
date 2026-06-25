@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-06-20 · class: living -->
+<!-- status: active · updated: 2026-06-25 · class: living -->
 
 # Demo — 60-second walkthrough
 
@@ -12,10 +12,23 @@ uv sync
 cp .env.example .env          # add ANTHROPIC_API_KEY (or run fully local — uncomment the Ollama stanza in .env.example, no key needed)
 # drop a few PDFs in data/sources/ (any public papers work)
 uv run python -m doc_assistant.ingest      # extract -> chunk -> embed -> store (incremental after first run)
-uv run --python 3.12 chainlit run apps/chainlit_app.py   # web UI  (or: uv run python apps/cli.py)
 ```
 
 First run downloads the embedder + reranker (a few hundred MB) and builds the index; subsequent runs are incremental.
+
+Then pick a UI:
+
+```bash
+# Desktop app — the shipping UI (Tauri + Svelte over a local FastAPI/SSE backend)
+just api                                         # backend on 127.0.0.1:8001
+cd apps/desktop && npm install && npm run dev     # dev UI in the browser (or: npx tauri dev for the native window)
+
+# CLI — same cited answers, no GUI
+uv run python apps/cli.py
+
+# Chainlit — legacy web UI (slated for removal at M5; still works today, needs Python 3.12)
+uv run --python 3.12 chainlit run apps/chainlit_app.py
+```
 
 ## Ask these
 

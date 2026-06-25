@@ -77,9 +77,9 @@ new entry, never rewrite old ones.
 
 ## Setup
 
-See `README.md` (Python 3.12 + uv: `uv sync` → `.env` → ingest → Chainlit or CLI). Runtime quirks
-(3.14/Chainlit; the resolved win32 cu130 segfault; sandbox sync; the Anthropic credit-leak) live in
-`.claude/KNOWN_ISSUES.md`.
+See `README.md` (Python 3.12 + uv: `uv sync` → `.env` → ingest → Tauri desktop or CLI). Runtime quirks
+(the 3.12 pin — native deps not yet 3.14-stable, KI-2; the resolved win32 cu130 segfault; sandbox sync;
+the Anthropic credit-leak) live in `.claude/KNOWN_ISSUES.md`.
 
 > Rules changed? Edit `.claude/CONTEXT.md` (the canonical text). This file only points.
 > Cowork project settings only point here — never restate rules there.

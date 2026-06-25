@@ -119,7 +119,7 @@ Then hand-verify each file's **class** is correct (the script guesses; you confi
 - append-only: `docs/DEVLOG.md`, every `docs/decisions/ADR-*.md`, `.claude/SESSION.md`
 - living: `docs/architecture.md`, `docs/ROADMAP.md`, `.claude/CONTEXT.md`, `.claude/KNOWN_ISSUES.md`,
   `docs/figures-and-tables.md`, `docs/how-answers-work.md`, `docs/DEMO.md`
-- disposable: `docs/chunking-sweep-rtx-resume.md` (dated, one-off — archive when stale)
+- disposable: dated, one-off notes (a sweep-resume, an increment plan) — archive or delete when stale; none currently in the tree
 - `docs/specs/**` is header-exempt by default (`conventions.toml [headers] exempt`); leave as-is
   unless you opt them in.
 - `docs/library.bib` is not markdown — out of scope for the header rule.

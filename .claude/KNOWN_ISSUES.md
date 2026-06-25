@@ -21,11 +21,23 @@ Migrated from the old `CLAUDE.md` / `README` runtime-quirk notes on 2026-06-20 (
   (now a base dep) is bundled. **Closed 2026-06-24:** verified on the frozen `dist/doc-assistant-api.exe`
   — startup console emits structlog events, zero `structlog`/import errors in the log.
 
-## KI-2 — Python 3.14 breaks Chainlit at runtime — OPEN (constraint, not a bug to fix)
-- **Symptom:** App fails to run the Chainlit web UI on Python 3.14 (anyio event-loop incompatibility).
-- **Cause:** Chainlit's anyio stack is not yet 3.14-compatible.
-- **Workaround:** Develop/test on 3.14 if desired, but **run on Python 3.12** (the pinned runtime).
-- **Real fix:** Upstream Chainlit/anyio support; revisit on a Chainlit bump. CLI path is unaffected.
+## KI-2 — Python-3.12 runtime pin — STILL OPEN (cause renamed after PR-M5: native deps, not Chainlit)
+- **Original cause (gone):** Chainlit's anyio stack broke on 3.14. **Chainlit was removed in PR-M5
+  (2026-06-25)** — so that cause no longer exists, but the runtime pin does **not** lift.
+- **M5 ADR-2 verification (2026-06-25):** with Chainlit gone, `uv sync --python 3.14 --extra cpu --extra dev`
+  resolves + installs cleanly (torch `2.12.0+cpu` has a cp314 wheel; chainlit absent), and ruff /
+  `mypy --strict src` / bandit all pass on 3.14 — **but the full pytest suite hard-crashes the interpreter**
+  (no Python traceback; the process dies at ~47–54%, first surfacing in `tests/unit/test_llm.py` under
+  full-suite load). It does **not** reproduce unit-only or for that test in isolation (load/order-dependent).
+  327+ tests pass before the crash; Python 3.12 runs all **602** clean.
+- **Cause:** a native/compiled dependency in the LLM-client import path (anthropic / langchain /
+  `pydantic-core` / `tokenizers` — Python 3.14 is new and several C/Rust wheels aren't yet cp314-stable).
+- **Workaround:** **run + test on Python 3.12** (the pinned runtime). CLI / FastAPI / Tauri all work on 3.12.
+- **Real fix:** revisit when the native deps ship stable cp314 wheels — re-run the M5 ADR-2 check
+  (`uv sync --python 3.14 …` + full gate) and lift the pin only when 602 pass on 3.14. Do **not** add
+  3.13/3.14 trove classifiers until then.
+- **Note:** the literal `--python 3.12` pin (the old `just chat`/`chainlit` recipe) is **deleted** (M5); the
+  only thing now holding the runtime at 3.12 is this native-dependency stability gate.
 
 ## KI-3 — win32 `cu130` torch wheel segfaults on a GPU-less box — RESOLVED (2026-06)
 - **Symptom:** Instant segfault when the CUDA (`cu130`) torch wheel ran on a machine with no usable GPU.

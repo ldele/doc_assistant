@@ -1,11 +1,11 @@
 """Parity gate (PR-M0 ADR-1): every frontend renders the same ``TurnResult``.
 
-The migration's core guarantee is behavioural identity — the CLI, Chainlit, and (later)
-FastAPI renderers all consume one ``TurnEvent`` stream and must produce the same answer,
-the same source citations, the same provenance id, and the same flagged-claim set. Here
-we drive one controller turn, capture the event stream, and feed it to minimal harnesses
-mirroring each renderer's consumption logic (no ``cl.*`` runtime, no stdout) — then assert
-the rendered content agrees.
+The migration's core guarantee is behavioural identity — the CLI and the FastAPI/Tauri
+renderers all consume one ``TurnEvent`` stream and must produce the same answer, the same
+source citations, the same provenance id, and the same flagged-claim set. Here we drive one
+controller turn, capture the event stream, feed it to a minimal harness mirroring the CLI's
+consumption logic (no stdout), then assert it agrees with the canonical content the
+structured ``TurnResult`` exposes (exactly what the API/Tauri serialize).
 
 Deterministic: a fake pipeline supplies fixed retrieval + a fixed answer; a temp SQLite
 backs provenance. No network, no corpus, no paid call (cpc §13).
@@ -120,11 +120,6 @@ def _canonical(result: TurnResult) -> str:
     )
 
 
-def _render_chainlit(result: TurnResult) -> str:
-    """Mirror apps/chainlit_app.py `_render_result` content assembly."""
-    return _canonical(result)
-
-
 def _render_cli(events: list[object]) -> str:
     """Mirror apps/cli.py: stream tokens, then append the TurnResult's blocks."""
     streamed = ""
@@ -155,18 +150,19 @@ def test_renderers_render_identical_content(temp_db, monkeypatch):
         ["Neurons meet at synapses [1]. ", "Discrete cells [2]."], temp_db, monkeypatch
     )
 
-    chainlit = _render_chainlit(result)
     cli = _render_cli(events)
+    canonical = _canonical(result)
 
-    # Byte-identical content across renderers (the parity guarantee).
-    assert chainlit == cli == _canonical(result)
+    # Byte-identical content across renderers (the parity guarantee): the CLI render equals
+    # the canonical content the API/Tauri serialize from the TurnResult.
+    assert cli == canonical
 
-    # The salient facts appear in both renderings.
-    assert result.answer in chainlit and result.answer in cli
+    # The salient facts appear in the rendering.
+    assert result.answer in cli
     for s in result.sources:
-        assert s.citation in chainlit and s.citation in cli
+        assert s.citation in cli
     assert result.record_id is not None
-    assert result.record_id[:8] in chainlit and result.record_id[:8] in cli
+    assert result.record_id[:8] in cli
 
 
 def test_flagged_claims_agree_across_renderers(temp_db, monkeypatch):
@@ -174,12 +170,12 @@ def test_flagged_claims_agree_across_renderers(temp_db, monkeypatch):
     events, result = _events(["Neurons are continuous."], temp_db, monkeypatch)
 
     assert len(result.flagged_claims) == 1
-    chainlit = _render_chainlit(result)
     cli = _render_cli(events)
-    assert chainlit == cli
+    canonical = _canonical(result)
+    assert cli == canonical
     # The flagged claim's text surfaces in the shared review block.
-    assert result.flagged_claims[0].text in chainlit
-    assert "claim(s) to review" in chainlit and "claim(s) to review" in cli
+    assert result.flagged_claims[0].text in cli
+    assert "claim(s) to review" in cli and "claim(s) to review" in canonical
 
 
 def test_byte_identical_when_markers_absent(temp_db, monkeypatch):

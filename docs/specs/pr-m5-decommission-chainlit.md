@@ -1,6 +1,6 @@
 # Spec — PR-M5: decommission Chainlit + lift the Python-3.12 pin (KI-2)
 
-**Status:** 📐 DESIGNED — specced one-ahead by Claude Code 2026-06-23 (Tauri migration, `docs/decisions/ADR-002-tauri-fastapi-desktop-shell.md`). **Sixth and final PR of the migration (M5). No code written.**
+**Status:** ✅ BUILT (2026-06-25) — Chainlit removed (renderer + `.chainlit/` + dep + mypy override + recipe), parity test trimmed, gate green on 3.12 (602 passed). The 3.12-pin lift was **verified-and-deferred** per ADR-2: on 3.14 the deps install + ruff/mypy/bandit pass, but the full pytest suite hard-crashes the interpreter (native dep, not Chainlit) → **KI-2 stays open with the cause renamed**. Tauri migration (`docs/decisions/ADR-002-tauri-fastapi-desktop-shell.md`).
 **Owner of execution:** Claude Code (code + tests + gate, on the box).
 **Hard gate — do NOT execute the build until both hold** (recorded decision, `.claude/SESSION.md` 2026-06-22): (1) the M4 installer ships and **RG-012** (clean-machine smoke) passes — the Tauri app must be the *proven* primary UI before the fallback is deleted; (2) **RG-011** (first-token latency vs the Chainlit baseline) is recorded — the comparison is gone once Chainlit is. Until then this is a written contract only.
 **Closes:** KI-2 (the Python-3.12 runtime pin exists *because of* Chainlit/anyio; it dissolves when Chainlit is gone). Removes the last "UI = Chainlit (web)" stack coupling.

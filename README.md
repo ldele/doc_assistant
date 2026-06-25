@@ -43,15 +43,15 @@ This implements established RAG techniques rather than new algorithms; what it c
 | LLM | Claude (API) or Llama 3 / Mistral (local via Ollama) |
 | Orchestration | LangChain |
 | Document store | SQLite (via SQLAlchemy) |
-| UI | Chainlit (web) + CLI |
+| UI | Tauri desktop app (Svelte 5 + Vite over a FastAPI/SSE backend) + CLI |
 | PDF / table extraction | PyMuPDF4LLM (full-text, default); Marker for high-fidelity tables, run isolated out-of-process on caption-detected table pages (chosen by measurement) — a separate idempotent post-ingest pass; tables enter retrieval on the next ingest |
 
 ## Setup
 
 ```bash
 # Prerequisites: Python 3.12, uv
-# Note: Python 3.14 works for development/testing but Chainlit
-# requires 3.12 at runtime (anyio event loop incompatibility).
+# Note: use Python 3.12 — 3.14 is not yet supported at runtime (some native
+# dependencies aren't cp314-stable; see .claude/KNOWN_ISSUES.md KI-2).
 git clone <your-repo-url> doc-assistant
 cd doc-assistant
 
@@ -112,8 +112,9 @@ cp ~/your-papers/*.pdf data/sources/
 # Build the index (one-time, then incremental)
 uv run python -m doc_assistant.ingest
 
-# Launch the chat UI
-uv run chainlit run apps/chainlit_app.py
+# Launch the desktop app (Tauri + Svelte over the FastAPI backend)
+just api                                        # backend on 127.0.0.1:8001
+cd apps/desktop && npm install && npm run dev    # dev UI (or: npx tauri dev for a native window)
 
 # Or use the CLI
 uv run python apps/cli.py

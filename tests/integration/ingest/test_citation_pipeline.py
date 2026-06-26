@@ -70,8 +70,8 @@ def temp_db(tmp_path: Path) -> Iterator[Path]:
 def _run_pipeline(papers: list[FakePaper]) -> dict[str, str]:
     """Populate the bound DB with Documents + Citations. Returns paper_id -> doc_id map."""
     # Import inside to ensure the module picks up the rebound session
-    from doc_assistant.citations import extract_from_markdown, match_to_library
     from doc_assistant.db.session import session_scope
+    from doc_assistant.ingest.citations import extract_from_markdown, match_to_library
 
     corpus = render_corpus(papers)
     paper_id_to_doc_id: dict[str, str] = {}
@@ -219,7 +219,7 @@ def test_mixed_format_lncs_resolves_via_author_year(temp_db: Path) -> None:
 
 def test_match_to_library_against_empty_db_returns_none(temp_db: Path) -> None:
     """Matcher must not blow up when there's nothing in the library."""
-    from doc_assistant.citations import ParsedCitation, match_to_library
+    from doc_assistant.ingest.citations import ParsedCitation, match_to_library
 
     c = ParsedCitation(raw_text="some text", doi="10.0/x", title="t", authors="Foo", year=2020)
     assert match_to_library(c) is None

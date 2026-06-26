@@ -3,7 +3,7 @@
 Pure-logic tests — no DB. Matching is tested separately as an integration test.
 """
 
-from doc_assistant.citations import (
+from doc_assistant.ingest.citations import (
     _extract_authors_and_title,
     _extract_doi,
     _extract_year,

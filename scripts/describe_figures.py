@@ -35,7 +35,7 @@ from sqlalchemy import or_, select, update
 from doc_assistant.config import FIGURE_VLM_MODEL, MAX_VLM_CALLS_PER_DOC
 from doc_assistant.db.models import Document, Figure
 from doc_assistant.db.session import session_scope
-from doc_assistant.figures import (
+from doc_assistant.ingest.figures import (
     SKIP_BUDGET_EXHAUSTED,
     SKIP_IMAGE_MISSING,
     AnthropicVisionDescriber,

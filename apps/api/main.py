@@ -46,7 +46,7 @@ from doc_assistant import app_settings
 from doc_assistant.chat_controller import ChatController, Result, Session, Step, Token
 from doc_assistant.config import DATA_PATH, LLM_MODEL, LLM_PROVIDER, LOG_JSON, LOG_LEVEL
 from doc_assistant.embeddings import get_active_model_name
-from doc_assistant.figures import load_figure_image_paths
+from doc_assistant.ingest.figures import load_figure_image_paths
 from doc_assistant.logging_config import configure_logging
 from doc_assistant.provenance import get_record
 

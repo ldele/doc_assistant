@@ -34,7 +34,7 @@ from sqlalchemy import delete, func, or_, select
 from doc_assistant.config import DOCS_PATH, FIGURE_RENDER_DPI
 from doc_assistant.db.models import Document, Figure
 from doc_assistant.db.session import session_scope
-from doc_assistant.figures import (
+from doc_assistant.ingest.figures import (
     FigureRegion,
     detect_figure_regions,
     figure_dir,

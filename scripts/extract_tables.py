@@ -31,7 +31,7 @@ from doc_assistant.config import CACHE_PATH, DOCS_PATH
 from doc_assistant.db.models import Document
 from doc_assistant.db.session import session_scope
 from doc_assistant.fsutil import atomic_write_text
-from doc_assistant.tables import (
+from doc_assistant.ingest.tables import (
     ExtractedTable,
     extract_tables,
     has_spliced_tables,

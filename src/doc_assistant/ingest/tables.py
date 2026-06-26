@@ -249,6 +249,6 @@ def extract_tables(pdf_path: str) -> list[ExtractedTable]:
     or photo — even with a stray table caption — are excluded. A document
     with no table page yields ``[]``.
     """
-    from doc_assistant.regions import table_candidate_pages
+    from .regions import table_candidate_pages
 
     return extract_tables_from_pages(pdf_path, table_candidate_pages(pdf_path))

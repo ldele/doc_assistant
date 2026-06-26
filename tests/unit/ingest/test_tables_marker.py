@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from doc_assistant.tables_marker import (
+from doc_assistant.ingest.tables_marker import (
     has_marker_tables,
     parse_marker_tables,
     splice_tables_inline,
@@ -186,7 +186,7 @@ def test_strip_and_has_marker_tables_roundtrip() -> None:
 
 
 def test_strip_pdfplumber_block_removes_pdfplumber_splice() -> None:
-    from doc_assistant.tables import ExtractedTable, splice_tables
+    from doc_assistant.ingest.tables import ExtractedTable, splice_tables
 
     md = "<!-- page:1 -->\nText.\n"
     pp = splice_tables(md, [ExtractedTable(page=1, index=1, rows=[["a", "b"], ["1", "2"]])])

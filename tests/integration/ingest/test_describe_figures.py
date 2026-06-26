@@ -23,7 +23,7 @@ import doc_assistant.db.session as session_mod
 from doc_assistant import ingest
 from doc_assistant.db.models import Base, Document, Figure
 from doc_assistant.db.session import session_scope
-from doc_assistant.figures import FigureDescription
+from doc_assistant.ingest.figures import FigureDescription
 
 DOC_HASH = "vlmhash0001"
 

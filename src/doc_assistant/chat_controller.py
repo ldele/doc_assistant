@@ -51,7 +51,7 @@ from doc_assistant.epistemics import (
     load_marked_chunks,
     markers_for_parent,
 )
-from doc_assistant.figures import load_figure_image_paths
+from doc_assistant.ingest.figures import load_figure_image_paths
 from doc_assistant.pipeline import RAGPipeline, format_citation
 from doc_assistant.prompts import ANSWER_PROMPT
 from doc_assistant.provenance import (

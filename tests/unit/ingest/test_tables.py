@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from doc_assistant.tables import (
+from doc_assistant.ingest.tables import (
     _BLOCK_BEGIN,
     _BLOCK_END,
     ExtractedTable,
@@ -211,7 +211,7 @@ def test_extract_from_pages_cleans_cells_and_numbers_across_pages(monkeypatch: A
 
 def test_extract_tables_only_extracts_classified_table_pages(monkeypatch: Any):
     """extract_tables delegates page selection to regions.table_candidate_pages."""
-    import doc_assistant.regions as regions
+    import doc_assistant.ingest.regions as regions
 
     monkeypatch.setattr(regions, "table_candidate_pages", lambda _p: [2])
     pp_pages = [
@@ -226,7 +226,7 @@ def test_extract_tables_only_extracts_classified_table_pages(monkeypatch: Any):
 
 
 def test_extract_tables_empty_when_no_table_pages(monkeypatch: Any):
-    import doc_assistant.regions as regions
+    import doc_assistant.ingest.regions as regions
 
     monkeypatch.setattr(regions, "table_candidate_pages", lambda _p: [])
     _patch_pdfplumber(monkeypatch, [_FakePage([[["a", "b"], ["c", "d"]]])])

@@ -20,7 +20,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-from doc_assistant.tables import MAX_CELL_CHARS, MIN_COLS, strip_spliced_tables
+from .tables import MAX_CELL_CHARS, MIN_COLS, strip_spliced_tables
 
 # Page markers the extractor wrote into the cache (mirrors ingest.PAGE_MARKER).
 _PAGE_MARKER_RE = re.compile(r"<!--\s*page:(\d+)\s*-->")

@@ -22,8 +22,10 @@ Desktop-shell migration (ADR-002): **M0–M5 all shipped (2026-06-25).** M0 (`Ch
 marker chips) · M2 (FastAPI + SSE, `apps/api/`) · M3 (Svelte/Tauri frontend, `apps/desktop/`) · **M4** —
 frozen 1.6 GB onefile bundling model weights (KI-9) + OS trust store (KI-10) + the ASCII-Chroma fix (KI-11);
 RG-010 (~30 s cold-start) / RG-011 (no SSE first-token penalty) / RG-012 Tier-1 (clean-machine freeze +
-installer smoke, in Windows Sandbox) / RG-013 all closed — Tier-2 (a cited turn) pends the data-home /
-first-run-ingest flow. Runbook: `docs/desktop-packaging.md`. · **M5** — Chainlit removed; the 3.12-pin lift
+installer smoke, in Windows Sandbox) / RG-013 all closed. The **data-home / first-run-ingest flow is now
+built** (backend `77eb5f9`: `/api/settings` + `/api/ingest`; frontend `apps/desktop` settings panel +
+empty-corpus banner) — RG-012 **Tier-2** (a cited turn on a clean box) pends a re-freeze bundling it + the
+clean-box run. Runbook: `docs/desktop-packaging.md`. · **M5** — Chainlit removed; the 3.12-pin lift
 was verified-and-deferred (KI-2: native deps crash on 3.14, not Chainlit). UI is now Tauri desktop + CLI.
 Other candidates: PR 17 (Zotero ingest), the 7d `query_router` seam, the wiki `[[links]]` refinement.
 Full plan: `docs/ROADMAP.md`.

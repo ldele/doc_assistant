@@ -64,3 +64,4 @@ docs/STUDY_PLAN.md
 Marker_Testings.ipynb
 *.ipynb
 docs/DEVLOG.md.bak
+.chainlit_run.log

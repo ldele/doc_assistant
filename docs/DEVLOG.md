@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-06-20 · class: append-only -->
+<!-- status: active · updated: 2026-06-26 · class: append-only -->
 
 # DEVLOG — doc_assistant
 
@@ -2607,6 +2607,66 @@ robust, no false precision; clicking always re-points+ingests the typed folder r
 is a **typed/pasted path** (works identically in browser-dev + Tauri webview, fully verifiable here); a
 **native folder picker** (Tauri dialog plugin — npm + Cargo dep + a capability, unverifiable without the Tauri
 toolchain) is a deferred UX-sugar follow-up over the same contract.
+
+---
+## Session: 2026-06-26 (cont.) — Gap-detection layer design-locked (ADR-004 + spec), Cowork (work box)
+
+**Starting from:** Phase 7 in progress; the concept-graph redesign (Decision C, 2026-06-18) decided-not-built;
+the gap mechanism described only as one bullet inside Decision C. Idea-generator (sibling project) v1 built,
+exploring how to bolt it onto a RAG + gap detector.
+**Goal this session:** Settle how the gap-detection layer is built — the curated-vocabulary blind-spot tension —
+and record it in the repo's conventions. Docs-only; no code.
+
+### docs/decisions/ADR-004-gap-detection-layer.md (new)
+**What:** New ADR (split-ADR house format) locking the gap layer as a **two-tier deterministic/stochastic**
+structure over the Decision-C curated skeleton. Tier 1 = deterministic facts over the skeleton (isolated /
+single-source / thin-bridge / under-connected), subsuming the wiki-6b + concept-7c gap signals. Tier 2a =
+within-corpus, gated in-app: a deterministic floor (aggregate the persisted per-claim `unsupported` markers +
+citation-layer gaps) + a quarantined LLM suggestion ceiling. Tier 2b = the true external "anti-blind-spot"
+reach, deferred. Cross-cutting: the determinism label is first-class; stochastic gaps feed the curated
+vocabulary (the compounding arrow) and never write the skeleton; three gap *types* (`unsupported` /
+`contested` / `superseded_trend`) stay distinct.
+**Why:** Phase 7's headline capability is surfacing what the user/LLM can't see, but a curated graph can only
+find gaps *inside* the chosen vocabulary — precise on the known, blind on the unknown. The deterministic/
+stochastic wall (an existing project tenet) resolves it: the stochastic finder may reach past the vocabulary
+*because* it can only propose candidates a deterministic check or the user must accept — it can't corrupt the
+graph. That single property buys recall on the unknown without losing the curated graph's precision/auditability.
+**Rejected:** (A) single-tier deterministic only — trustworthy but can't deliver the anti-blind-spot feature;
+(B) open-vocabulary LLM extraction as the finder — the cost/fragmentation Decision C already retired (survives
+only fenced-off in Tier 2a); (C) **the idea-generator as the blind-spot finder — rejected on a structural
+ground:** its novelty gate measures distance against its own pool, so it closes *inward* (convex-hull filler,
+not frontier-crosser) and has no representation of "outside" the known space; confirmed empirically. Recorded so
+it isn't retried.
+**Opens:** The Tier-2a deterministic floor is the cheapest first increment (a query over already-persisted
+`answer_claims.marker` + the `Citation` graph). Reframes the reviewer as a gap *feeder* and makes Phase 9
+review-generation share an observability/rating spine with Tier 2a (build it once).
+
+### docs/specs/feature-gap-detection.md (new)
+**What:** Full code-level spec in the feature-7d style: the `Gap` dataclass (with first-class `determinism`),
+per-tier detector signatures, the `gaps.py` / `gap_suggest.py` / `scripts/build_gaps.py` module split, a
+regenerable `gaps` sidecar table, guard tests, and a DoD. Status header marks it **DESIGNED-NOT-BUILT** and
+**blocked** on (a) the Decision-C skeleton and (b) the RG-001 edge-precision run.
+**Why:** Gives Claude Code a buildable contract for the first increment (Tier 1 + the Tier-2a floor) without
+guessing numbers — Tier-1 thresholds (`min_degree`, presence-recall) are explicitly provisional and set from
+the validation run, not the spec.
+**Rejected:** Speccing the thresholds now — they depend on edge density, which is unmeasured; locking them
+pre-run would invite a revise-after-first-`--apply` churn.
+**Opens:** The DoD gates "done" on RG-001 confirming Tier-1 signals are meaningful on the real corpus —
+because isolated/thin-bridge/under-connected are all defined *relative to the edge set*, an over- or
+under-connected skeleton makes every gap count meaningless. The edge-precision run is a **correctness gate on
+this feature, not optional rigor.**
+
+### docs/decisions.md · docs/ROADMAP.md — cross-links
+**What:** Decision C's "Gaps are deterministic" bullet now forward-points to ADR-004 + the spec; ROADMAP's
+Phase 7 line and the "Later / open" bullet both reference the gap layer + its blocking conditions.
+**Why:** The canonical files must lead a reader to the new ADR/spec; append-only pointer, no rewrite of the
+Decision-C text.
+**Opens:** `.claude/CONTEXT.md` open-questions needs the matching bullet too — **write-protected for Cowork
+this session (Claude Code owns it)**; the exact snippet is staged in the Cowork outputs folder for a manual/Code
+paste.
+
+**Nothing committed — new files + edits staged for review (cpc §13).** Files: `docs/decisions/ADR-004-*.md`
+(new), `docs/specs/feature-gap-detection.md` (new), `docs/decisions.md` + `docs/ROADMAP.md` (modified).
 
 **Opens / not built:** native folder-picker button; streamed ingest *progress* (still final-counts-only);
 KI-10 truststore re-freeze (separate, non-blocking — proxy-paid-API only). **Nothing committed — staged for

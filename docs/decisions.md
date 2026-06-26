@@ -436,77 +436,31 @@ single-user tool. Retrieval-derived markers (citation density, source
 diversity, reranker score spread) are observable, not self-reported, and
 map to instrumentation that already exists.
 
-### Feature 7 — cross-document concept graph: design decisions (PR 16)
+### Feature 7 — cross-document concept graph: carried-over decisions (PR 16)
 
-Concept/entity graph over the library (nodes = concepts, edges = relations),
-clustered into communities with high-degree "god nodes" surfaced. Post-ingest
-**Enrichment-Layer** sidecar (`data/graph/graph.json` + `.manifest.json`), never
-mutates the chunk store. Full code-level contract:
-[`docs/specs/feature-7-concept-graph.md`](specs/feature-7-concept-graph.md);
-resolutions + reopens-if in the `.claude/SESSION.md` baton (2026-06-15). Scope =
-7a (extraction) + 7b (communities + god-nodes) + 7c (gap signals) in one PR; **7d
-(knowledge-currency) is out** — it consumes this graph.
+> The PR-16 concept graph derived its nodes from a per-document open-vocabulary LLM extraction. That
+> node-source design is **superseded** by "Feature 7 — concept-graph REDESIGN" (2026-06-18, below) and
+> by `docs/decisions/ADR-004-gap-detection-layer.md`; do not build on it (`.claude/KNOWN_ISSUES.md`
+> KI-7). Two PR-16 decisions are **not** superseded and carry over unchanged — kept here:
 
-*⚠ Superseded in part by “Feature 7 — concept-graph REDESIGN” (2026-06-18, below): ADR-3 (LLM-extraction as the node source) and the single integrity tag no longer hold; ADR-1 (Louvain) and ADR-4 (composite chunk key) carry over. Content here preserved as history.*
+**ADR-1 — Community detection: NetworkX Louvain, not Leiden/graspologic.**
+`networkx.leiden_communities` raises `NotImplementedError` (a backend-dispatch stub, no bundled
+backend); `graspologic` hard-pins `numpy<2.0` (+ a Rust wheel and heavy deps), forcing a numpy-1.x
+downgrade that breaks the locked torch/sentence-transformers/chromadb stack and corrupts `uv.lock`.
+**Decision:** use `networkx.louvain_communities(weight="weight", resolution=…, seed=42)` — same
+modularity family, ships in the installed networkx, bit-deterministic with a fixed seed. Keep a
+`detect_communities(algorithm="louvain")` seam for a future numpy-2 Leiden. Only new declared dep:
+`networkx>=3.4`. *Reopens if a numpy-2 Leiden backend lands.*
 
-**ADR-1 — Community detection: NetworkX Louvain, not Leiden/graspologic.** The
-roadmap named "Leiden (graspologic)"; both were verified unusable against the
-live venv (networkx 3.6.1 / numpy 2.4.6). `networkx.leiden_communities` **raises
-`NotImplementedError`** — it is a backend-dispatch stub with no bundled backend.
-`graspologic` hard-pins `numpy<2.0` (+ a Rust wheel, gensim, POT, umap-learn,
-statsmodels, Python<3.13), so installing it — even as an extra — forces a numpy
-1.x downgrade that breaks the locked torch/sentence-transformers/chromadb stack
-on both machines and corrupts `uv.lock`. **Decision:** use
-`networkx.louvain_communities(weight="weight", resolution=…, seed=42)` — same
-modularity family, ships in the installed networkx, **bit-deterministic with a
-fixed seed** (verified). Keep a `detect_communities(algorithm="louvain")` seam
-for a future numpy-2-compatible Leiden (`leidenalg`/igraph). Only new declared
-dep: `networkx>=3.4` (pure-Python, already transitively present; floor is >=3.4
-not >=3.6 because `requires-python>=3.10` and networkx ≥3.6 drops 3.10 — uv
-resolves 3.6.x on the 3.12 runtime via markers). *Reopens if a
-numpy-2 Leiden backend lands.*
-
-**ADR-2 — Extraction provider: API-on-this-box, local-first stays the goal.** The
-primary dev box has no Ollama (verified only on the RTX box —
-[[rtx-machine-ollama-testing]]). `GRAPH_LLM_PROVIDER`/`MODEL` cascade from
-`LLM_*` like `WIKI_LLM_PROVIDER`; validation here runs on `anthropic`/Haiku
-(cheapest, matches the reviewer/VLM convention), free on Ollama on the RTX box.
-**Consequence:** 7a is a modest *paid* run on this box;
-`GRAPH_MAX_LLM_CALLS_PER_DOC` doubles as a cost cap. Local-first is held where a
-local model exists, not abandoned. *Reopens if a local model lands on the dev
-box.*
-
-**ADR-3 — Node canonicalization: deterministic string + cosine over the existing
-BGE embedder.** Feature 6 proved this corpus saturates (same-domain BGE vectors
-~0.88–0.96); a noisy extractor fragments concepts ("Transformer" vs "the
-transformer"), degrading community quality. **Decision:** `canonical_key`
-(casefold/NFKC/strip) then merge near-duplicate *labels* by cosine over the
-existing `embeddings.py` BGE factory (no new model/API, deterministic), above
-`GRAPH_NODE_MERGE_SIMILARITY`. Rejected: string-only (ships a fragmented graph);
-LLM-assisted dedup (cost + nondeterminism breaks idempotency). The merge
-threshold is **provisional — tune on the first real run**; it is the top quality
-risk.
-
-**ADR-4 — Back-pointers use a deterministic composite chunk key, not a Chroma
-id.** 7d needs `source_chunk_ids` so each claim is one hop from its evidence, but
-`ingest.py` calls `add_documents()` with no `ids=` — Chroma generates UUIDs
-**regenerated on every re-ingest**. There is no stable chunk id to reference (the
-roadmap's "stable chunk ids" assumption was wrong). **Decision:** back-pointers
-are the deterministic composite `{document_id}:p{parent_index}` (all
-content-deterministic, survives re-ingest); the field keeps 7d's name, only the
-value scheme is fixed. No chunk-store schema change. *Reopens if ingest later
-stamps a stable persisted chunk id.*
-
-**Deferred to 7d (persisted nullable now for forward-compat):** edge `polarity ∈
-{supports,contradicts,refines,supersedes}` and `year` — no PR 16 feature reads
-edge labels, and stance extraction is noisier on a small model and needs the
-relative-year ordering 7d owns. PR 16 extracts a plain concept-`relation` verb
-only. **JSON-only, no SQLite graph table** — 7d's `compute_node_weights(graph)`
-takes the graph object and 7d owns its own `chunk_epistemics` table.
+**ADR-4 — Back-pointers use a deterministic composite chunk key, not a Chroma id.** `ingest.py` calls
+`add_documents()` with no `ids=`, so Chroma generates UUIDs regenerated on every re-ingest — there is no
+stable chunk id to reference. **Decision:** back-pointers are the deterministic composite
+`{document_id}:p{parent_index}` (content-deterministic, survives re-ingest); no chunk-store schema
+change. *Reopens if ingest later stamps a stable persisted chunk id.*
 
 ### Feature 7 — concept-graph REDESIGN: curated vocabulary + deterministic skeleton + LLM enrichment (2026-06-18)
 
-*Supersedes the open-vocabulary-extraction core of the Feature 7 (PR 16) ADRs above — specifically ADR-3 (node source) and the single integrity tag. ADR-1 (Louvain) and ADR-4 (composite chunk key) carry over. Decided via `grill-me` (Cowork), accepted; resolutions + routing in the `.claude/SESSION.md` baton 2026-06-18.*
+*Supersedes the open-vocabulary-extraction core of the PR-16 concept graph — the per-document LLM node source and the single `EXTRACTED|INFERRED|AMBIGUOUS` integrity tag. The two carried-over PR-16 decisions (ADR-1 Louvain, ADR-4 composite chunk key) are kept in the section above. Decided via `grill-me` (Cowork), accepted.*
 
 **Frame.** The shipped graph derives its node set from a per-document open-vocabulary LLM extraction, then builds its own edges from extracted triples + co-occurrence — ignoring the two doc-level graphs the library already maintains: `Citation` (regex who-cites-whom) and `DocSimilarity` (BGE cosine). Decision: where do concept nodes and edges come from, now that those graphs exist and determinism is wanted.
 
@@ -519,7 +473,7 @@ takes the graph object and 7d owns its own `chunk_epistemics` table.
 
 - **Presence is deterministic** — string/alias/embedding match of curated terms against Chroma chunks. The LLM never decides presence, never defines the vocabulary.
 - **Edges = deterministic skeleton + LLM annotation.** Skeleton from co-occurrence / `Citation` / `DocSimilarity`; the LLM, handed only the concepts already present in a document, adds a relation verb + stance (`supports|refines|contradicts|supersedes`). Because it only ever sees co-present concepts, every LLM relation is by construction a co-occurrence edge — it annotates the skeleton, never extends it. Trust becomes a **provenance set** `{cooccurrence, citation, similarity, llm_relation}` + stance-agreement, replacing the single `EXTRACTED|INFERRED|AMBIGUOUS` tag (cross-source stance disagreement = the 7d contested signal). Unconfirmed deterministic edges are kept and ranked by provenance, never dropped — the skeleton is never gated by the LLM.
-- **Gaps are deterministic + authoritative** — isolated / single-source / thin-bridge over the skeleton, unifying the wiki (6b) and concept-graph (7c) gap mechanisms into one; plus an **opt-in, quarantined** LLM “expected-missing-link” suggester (suggestions, never structural facts).
+- **Gaps are deterministic + authoritative** — isolated / single-source / thin-bridge over the skeleton, unifying the wiki (6b) and concept-graph (7c) gap mechanisms into one; plus an **opt-in, quarantined** LLM “expected-missing-link” suggester (suggestions, never structural facts). *This gap mechanism is expanded into a full two-tier (deterministic / stochastic) layer in `docs/decisions/ADR-004-gap-detection-layer.md` (2026-06-26) — build spec `docs/specs/feature-gap-detection.md`. ADR-004 also adds the within-corpus `unsupported_claim` + citation-gap signals and the "outside-the-corpus" Tier 2b reach (deferred), and records the idea-generator as rejected for it.*
 
 Deciding reason: it wins reliability + cost on node discovery (the real problem) without surrendering the typed/polarized edges and 7d that distinguish the project. **Reverses if** curation proves too costly to maintain even with candidate mining (→ fall back to B, or re-admit A as an opt-in discovery mode), or if edge precision on the real corpus is unacceptable (see Confidence).
 

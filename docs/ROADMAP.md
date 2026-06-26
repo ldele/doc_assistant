@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-06-20 · class: living -->
+<!-- status: active · updated: 2026-06-26 · class: living -->
 
 # ROADMAP — doc_assistant
 
@@ -37,7 +37,7 @@ in `tests/eval/TESTING.md`.
 - **Phase 4 — Citation graph close-out** — doc-similarity edges. Status: done.
 - **Phase 5 — Embedding & eval foundation** — config-driven embedder, golden set, provenance. Status: done.
 - **Phase 6 — Figures/tables + dual-layer interpretation + reviewer + self-improvement loop** (per-project routing deferred). Status: in progress.
-- **Phase 7 — Gap detection** — wiki/synthesis layer + cross-document concept graph. Status: in progress. *(The concept-graph open-vocabulary core was superseded by the 2026-06-18 redesign — not yet built; see `.claude/KNOWN_ISSUES.md`.)*
+- **Phase 7 — Gap detection** — wiki/synthesis layer + cross-document concept graph + the gap-detection layer over them. Status: in progress. *(The concept-graph open-vocabulary core was superseded by the 2026-06-18 redesign — not yet built; see `.claude/KNOWN_ISSUES.md`. The gap layer itself is design-locked in `docs/decisions/ADR-004-gap-detection-layer.md` / `docs/specs/feature-gap-detection.md`, blocked on the Decision-C skeleton + the RG-001 edge-precision run.)*
 - **Phase 8 — UI polish** — settings page exposing the RAG sandbox knobs. Status: planned.
 - **Phase 9 — Literature-review generation** — PRISMA-trAIce export. Status: planned.
 - **(no phase number) — Extract eval harness to a standalone repo** (Feature 5). Status: planned.
@@ -94,8 +94,11 @@ once M5 lands.
 
 **Later / open (no PR yet):** the concept-graph **redesign** (curated vocabulary + deterministic
 skeleton + confined LLM enrichment, 2026-06-18 — the next concept-graph build, see
-`.claude/KNOWN_ISSUES.md`); Zotero/Calibre ingest adapters (PR 17); an outbound **MCP-server**
-interface over `pipeline.py`. Full detail for all three: `docs/archive/doc-assistant-roadmap.md`.
+`.claude/KNOWN_ISSUES.md`), and the **gap-detection layer** built on top of it (two-tier
+deterministic/stochastic, `docs/decisions/ADR-004-gap-detection-layer.md` +
+`docs/specs/feature-gap-detection.md` — its deterministic Tier-1 + Tier-2a-floor are the first
+increment, blocked on the skeleton + RG-001); Zotero/Calibre ingest adapters (PR 17); an outbound
+**MCP-server** interface over `pipeline.py`. Full detail: `docs/archive/doc-assistant-roadmap.md`.
 
 ## What NOT to do
 

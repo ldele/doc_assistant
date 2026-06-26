@@ -71,7 +71,7 @@ full architectural context per feature.
 | M1 | Desktop shell: live 7d epistemics-marker surfacing (pre-migration demo win) | done | `docs/specs/pr-m1-epistemics-markers.md` |
 | M2 | Desktop shell: FastAPI backend + SSE boundary | done | `docs/specs/pr-m2-fastapi-boundary.md` |
 | M3 | Desktop shell: Tauri frontend (Svelte 5 + Vite) | done | `docs/specs/pr-m3-tauri-frontend.md` |
-| M4 | Desktop shell: PyInstaller sidecar packaging + frozen CPU-torch pin | done (RG-010/011/012 Tier-1 pass; KI-9/10/11 bundled in the freeze; Tier-2 cited turn pends the data-home flow) | `docs/specs/pr-m4-sidecar-packaging.md` |
+| M4 | Desktop shell: PyInstaller sidecar packaging + frozen CPU-torch pin | done (RG-010/011/012 Tier-1 pass; KI-9/10/11 bundled in the freeze; data-home/first-run-ingest flow now built — backend `77eb5f9` + frontend settings panel; **RG-012 Tier-2** cited-turn validation pends a re-freeze + clean-box run) | `docs/specs/pr-m4-sidecar-packaging.md` |
 | M5 | Desktop shell: delete Chainlit + lift the Python-3.12 pin (KI-2) | done — Chainlit removed (renderer + dep + recipe + config); 3.12-pin lift **verified-and-deferred** (KI-2: native deps crash on 3.14, not Chainlit) | `docs/specs/pr-m5-decommission-chainlit.md` |
 
 **Feature 7d (knowledge-currency layer):** engine shipped 2026-06-17 (`epistemics.py` + `chunk_epistemics`

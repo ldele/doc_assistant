@@ -48,4 +48,35 @@ export interface Health {
   embedding_model: string
 }
 
+// GET/POST /api/settings — the locked engine knobs (read-only) plus the one user-settable
+// knob, the source documents folder, and the live corpus size. Mirrors _full_settings() in
+// apps/api/main.py.
+export interface Settings {
+  provider: string
+  model: string
+  embedding_model: string
+  top_k: number
+  candidate_k: number
+  use_parent_child: boolean
+  synthesis_mode: string
+  parent_chunk: [number, number]
+  child_chunk: [number, number]
+  retrieval_weights: { bm25: number; vector: number }
+  data_home: string
+  source_dir: string
+  source_dir_exists: boolean
+  supported_formats: string
+  chunk_count: number
+}
+
+// GET /api/ingest/status and the POST /api/ingest 202 body. Mirrors _IngestStatus.
+export interface IngestStatus {
+  state: 'idle' | 'running' | 'done' | 'error'
+  source_dir: string | null
+  added: number
+  skipped: number
+  errors: number
+  message: string | null
+}
+
 export type Decision = 'accepted' | 'rejected' | 'edited'

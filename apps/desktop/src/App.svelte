@@ -2,6 +2,7 @@
   import type { Health, TurnResult } from './lib/types'
   import { getHealth, streamChat, exportConversation } from './lib/api'
   import Turn from './lib/Turn.svelte'
+  import Settings from './lib/Settings.svelte'
 
   interface TurnState {
     id: number
@@ -19,7 +20,19 @@
   let turns = $state<TurnState[]>([])
   let input = $state('')
   let sending = $state(false)
+  let showSettings = $state(false)
   let nextId = 0
+
+  // Re-pull /api/health after an ingest so the header chunk count + the empty-corpus banner
+  // reflect the new corpus (the backend rebuilds the controller before reporting "done").
+  async function refreshHealth(): Promise<void> {
+    try {
+      health = await getHealth()
+      status = 'ready'
+    } catch {
+      // leave the prior health/status; a transient blip shouldn't blank the header
+    }
+  }
 
   // Readiness gate (PR-M4): the frozen sidecar takes a few seconds to load models before
   // it accepts requests. Poll /api/health until it answers (or give up after ~60s).
@@ -103,11 +116,21 @@
         <span class="meta err">backend unreachable — run <code>just api</code></span>
       {/if}
     </div>
-    <button class="ghost" onclick={doExport} disabled={turns.length === 0}>⬇ Export</button>
+    <div class="actions">
+      <button class="ghost" onclick={doExport} disabled={turns.length === 0}>⬇ Export</button>
+      <button class="ghost" onclick={() => (showSettings = true)} aria-label="Settings">⚙</button>
+    </div>
   </header>
 
   <section class="conversation">
-    {#if turns.length === 0}
+    {#if status === 'ready' && health && health.chunk_count === 0}
+      <div class="banner">
+        <strong>No documents indexed yet.</strong>
+        <p>Point doc_assistant at a folder of your documents to get started — it'll index them
+          locally, then you can ask questions grounded in them.</p>
+        <button class="primary" onclick={() => (showSettings = true)}>Choose a folder…</button>
+      </div>
+    {:else if turns.length === 0}
       <p class="empty">Ask a question grounded in your documents. Answers carry inline citations,
         provenance, and per-claim review.</p>
     {/if}
@@ -135,6 +158,10 @@
     </button>
   </footer>
 </main>
+
+{#if showSettings}
+  <Settings onClose={() => (showSettings = false)} onCorpusChanged={refreshHealth} />
+{/if}
 
 <style>
   main {
@@ -172,6 +199,32 @@
     color: var(--fg-2);
     margin-top: 2rem;
     text-align: center;
+  }
+  .actions {
+    display: flex;
+    gap: 0.4rem;
+    align-items: center;
+  }
+  .banner {
+    margin: 2rem auto 0;
+    max-width: 520px;
+    text-align: center;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--surface);
+    padding: 1.4rem 1.6rem;
+  }
+  .banner p {
+    color: var(--fg-2);
+    font-size: 0.9rem;
+    margin: 0.5rem 0 1rem;
+  }
+  .banner .primary {
+    background: var(--accent);
+    color: var(--accent-fg);
+    border-color: var(--accent);
+    font-weight: 600;
+    padding: 0.45rem 1.1rem;
   }
   footer {
     display: flex;

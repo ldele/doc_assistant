@@ -2563,3 +2563,51 @@ documents folder and index it from the running app.
 **Not built (follow-ups):** the **frontend** settings panel (source-folder picker + Re-index button + status
 poll + empty-corpus banner) — the backend contract is ready for it; streamed ingest *progress* (v1 reports
 final counts only); the KI-10 truststore fix + re-freeze. **Nothing committed — staged for review (cpc §13).**
+
+---
+## Session: 2026-06-26 — M4 first-run / data-home UI (frontend settings panel), Claude Code (work box)
+
+Built the **frontend settings + first-run-ingest panel** — the user-facing half of the data-home flow whose
+backend landed in `77eb5f9` ("Point to Folder Ingest"). This closes the **last code-doable M4 gap**: a fresh
+install resolves to an empty per-user corpus (`chunk_count: 0`) with no way to point at documents; now the
+running app drives `POST /api/settings` + `POST /api/ingest` + the status poll itself. Unblocks **RG-012
+Tier-2** (a clean machine can point → index → ask a cited turn). **Frontend-only — no `src/`/`apps/api`
+change** (the backend contract was already committed + tested in `test_api_settings_ingest.py`).
+
+**What (apps/desktop/, ~131 insertions + 1 new component):**
+- **`src/lib/Settings.svelte` (new):** slide-over dialog — source-folder input, one low-friction primary
+  action (validate+persist via `setSourceDir`, then `startIngest`, then poll `getIngestStatus` to terminal),
+  Corpus (chunk count + data home), read-only Engine knobs (provider/model/embedder/`top K of N`/synthesis).
+- **`src/App.svelte`:** ⚙ settings toggle; **empty-corpus first-run banner** (shown only when ready +
+  `chunk_count === 0`, not while connecting/down); `refreshHealth()` re-pulls `/api/health` after a
+  successful ingest so the header chunk count goes live (backend rebuilds the controller before "done").
+- **`src/lib/api.ts` + `types.ts`:** `getSettings`/`setSourceDir`/`startIngest`/`getIngestStatus` + `Settings`
+  / `IngestStatus` wire types + a FastAPI-`detail` error extractor — mirror `apps/api/main.py` field-for-field.
+
+**Verified live in the browser** (Vite dev + a throwaway fake API on `:8001` mirroring the real contract — no
+models/torch/network; pattern from the M3 baton): first-run banner at 0 chunks → open panel → **Index folder
+→ running → done with the header going 0 → 2,455 chunks live + banner clearing**; bad-path → backend 400
+`detail` surfaced in `--warn-fg`, no ingest, count unchanged; Esc/✕/scrim close. `npm run build`
+(svelte-check + vite) **0 errors / 0 warnings**; 0 console errors across the whole interaction.
+
+**Adversarial review (4-lens Workflow: contract / reactivity / concurrency / UX, each finding independently
+verified):** contract + reactivity lenses clean; one finding (409 concurrent-ingest) **rejected** on verify
+(unreachable — the button is `busy`-guarded during ingest). **7 confirmed (all edge-case/nit), all fixed +
+re-verified live:** (1) poll loop now **tolerates ≤4 transient status blips** so a minutes-long index isn't
+torn down + falsely failed (matches `App.svelte`'s readiness-gate posture); (2) post-ingest refresh is
+**non-fatal** (`load(silent)`) so a blip can't collapse the panel + erase the ✓; (3) Re-index/Index label
+keys off **`chunk_count` alone** (the old raw-string-vs-resolved-path compare mis-flips on Windows path
+normalization — fwd slashes / trailing slash / drive case); (4) **autofocus the input on open + a Tab focus
+trap** (honour `aria-modal`); (5) status messages in an **`aria-live="polite"`** region (errors `role=alert`);
+(6) **clear stale ✓/error on input edit**; (7) **Enter-to-index**. Each re-verified via the preview
+(`activeElement`, `defaultPrevented`, Tab-wrap, live-region text).
+
+**Deviations / decisions (intent-preserving):** label off `chunk_count` not path-equality (review #3 option b —
+robust, no false precision; clicking always re-points+ingests the typed folder regardless). The source folder
+is a **typed/pasted path** (works identically in browser-dev + Tauri webview, fully verifiable here); a
+**native folder picker** (Tauri dialog plugin — npm + Cargo dep + a capability, unverifiable without the Tauri
+toolchain) is a deferred UX-sugar follow-up over the same contract.
+
+**Opens / not built:** native folder-picker button; streamed ingest *progress* (still final-counts-only);
+KI-10 truststore re-freeze (separate, non-blocking — proxy-paid-API only). **Nothing committed — staged for
+review (cpc §13).**

@@ -41,8 +41,8 @@ from doc_assistant.config import DATA_PATH, MARKER_MAX_WORKERS
 from doc_assistant.db.models import Document
 from doc_assistant.db.session import session_scope
 from doc_assistant.fsutil import atomic_write_text
-from doc_assistant.regions import table_candidate_pages
-from doc_assistant.tables_marker import (
+from doc_assistant.ingest.regions import table_candidate_pages
+from doc_assistant.ingest.tables_marker import (
     has_marker_tables,
     parse_marker_tables,
     splice_tables_inline,

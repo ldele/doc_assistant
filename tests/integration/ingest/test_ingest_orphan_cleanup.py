@@ -26,9 +26,10 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import sessionmaker
 
 import doc_assistant.db.session as session_mod
-from doc_assistant import figures, ingest
+from doc_assistant import config, ingest
 from doc_assistant.db.models import Base, Figure
 from doc_assistant.db.models import Document as DBDocument
+from doc_assistant.ingest import figures
 
 _DOC_V1 = """<!-- page:1 -->
 # Retrieval study
@@ -67,10 +68,10 @@ def isolated_ingest(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator
     for d in (docs, cache, chroma, pc_chroma):
         d.mkdir(parents=True, exist_ok=True)
 
-    monkeypatch.setattr(ingest, "DOCS_PATH", docs)
-    monkeypatch.setattr(ingest, "CACHE_PATH", cache)
-    monkeypatch.setattr(ingest, "CHROMA_PATH", str(chroma))
-    monkeypatch.setattr(ingest, "PC_CHROMA_PATH", str(pc_chroma))
+    monkeypatch.setattr(config, "DOCS_PATH", docs)
+    monkeypatch.setattr(config, "CACHE_PATH", cache)
+    monkeypatch.setattr(config, "CHROMA_PATH", str(chroma))
+    monkeypatch.setattr(config, "PC_CHROMA_PATH", str(pc_chroma))
     # Fake embedder: stable vectors, no HF download. Dimension is arbitrary.
     monkeypatch.setattr(
         ingest, "get_embeddings", lambda name=None: DeterministicFakeEmbedding(size=16)
@@ -150,8 +151,8 @@ def test_content_change_leaves_exactly_one_hash(isolated_ingest: Path) -> None:
     # Exactly one Document survives for the file, and it is the NEW content.
     assert _doc_hashes_for("paper.md") == [new_hash]
     # Both vector stores agree: only the new hash, the stale copy is gone.
-    assert _store_hashes(ingest.CHROMA_PATH) == {new_hash}
-    assert _store_hashes(ingest.PC_CHROMA_PATH) == {new_hash}
+    assert _store_hashes(config.CHROMA_PATH) == {new_hash}
+    assert _store_hashes(config.PC_CHROMA_PATH) == {new_hash}
     # A content change must NOT delete the live cache the new hash came from.
     assert ingest.get_cache_path(src).read_text(encoding="utf-8") == _DOC_V2
 
@@ -175,8 +176,8 @@ def test_deleted_source_still_cleaned_and_cache_removed(isolated_ingest: Path) -
     with session_scope() as session:
         remaining = session.execute(select(func.count()).select_from(DBDocument)).scalar_one()
     assert remaining == 0
-    assert _store_hashes(ingest.CHROMA_PATH) == set()
-    assert _store_hashes(ingest.PC_CHROMA_PATH) == set()
+    assert _store_hashes(config.CHROMA_PATH) == set()
+    assert _store_hashes(config.PC_CHROMA_PATH) == set()
     # Gone source => its orphaned cache is swept too.
     assert not cache.exists()
 
@@ -292,14 +293,14 @@ def test_figure_dir_delete_failure_does_not_abort_sweep(
     g1.unlink()
     g2.unlink()  # both sources gone => both are orphans
 
-    real_rmtree = ingest.shutil.rmtree
+    real_rmtree = ingest.cleanup.shutil.rmtree
 
     def selective_rmtree(path: object, *args: object, **kwargs: object) -> None:
         if str(h1) in str(path):
             raise OSError("simulated locked figure dir")
         real_rmtree(path, *args, **kwargs)
 
-    monkeypatch.setattr(ingest.shutil, "rmtree", selective_rmtree)
+    monkeypatch.setattr(ingest.cleanup.shutil, "rmtree", selective_rmtree)
 
     ingest.main()  # must not raise despite the h1 rmtree failure
 

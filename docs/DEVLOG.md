@@ -2823,3 +2823,85 @@ tests/integration/test_ingest_orphan_cleanup.py` → **11 passed** (+1 over the 
 **Opens:** none functional. If the SQLite commit keeps failing across runs (a real disk/DB fault, not a
 transient hiccup), the doc re-errors each run with the warning surfaced — by design; it is no longer
 silently stranded. KI-12 marked RESOLVED.
+
+---
+## Session: 2026-06-26 (cont.) — ingest.py → `ingest/` package (break the monolith) + batch-isolation test, Claude Code
+
+Two changes on the ingestion path, both behavior-preserving.
+
+### Batch isolation pinned by a test
+**What:** `tests/integration/test_ingest_write_ordering.py::test_one_failing_document_does_not_abort_the_batch`
+— three sources, one made to raise mid-processing (patched `extract_chunk_metadata`); asserts
+`stats == {added: 2, skipped: 0, error: 1}`, the bad doc leaves no row + no chunks (it failed before any
+write), and both good docs ingest fully.
+**Why:** the per-document `try/except` in `process_one_document` + the `main` loop already isolate a bad
+document (skip + log `document_error` + continue), but nothing asserted it. This is the preferred behavior
+(one bad file never aborts the batch), now guarded.
+**Opens:** none.
+
+### `ingest.py` (888 lines) split into the `ingest/` package
+**What:** the monolith is now a package of cohesive layers — `cache.py` (extraction cache + content hash),
+`chunking.py` (splitter factories + table-aware parent/child chunking + metadata/health signals, pure),
+`store.py` (SQLite + Chroma read/write helpers), `cleanup.py` (orphan detection + cross-store cleanup),
+`__init__.py` (the `process_one_document` / `main` orchestration + the inverse-orphan reconciliation), and
+`__main__.py` (the `python -m doc_assistant.ingest` CLI). Logic moved **verbatim** — no behavior change.
+**Why:** the file had grown to mix cache I/O, hashing, pure chunking, DB writes, orphan cleanup, and
+orchestration; the layers are independently testable and the dependency graph is a clean DAG
+(`cleanup → cache`; `__init__ → {cache, chunking, store, cleanup}`; no cycles).
+**Coupling named:** `__init__` re-exports the full prior public surface via `__all__`, so every external
+importer is unchanged (`apps/api` `main`; `scripts/find_duplicates` `get_cache_path`/`is_cache_fresh`;
+`tests` `doc_hash` / `build_parent_child_chunks` / `figure_units` / `_make_*_splitter`). The config-path
+seam moved from per-module `from config import CACHE_PATH` (bound copies) to dynamic `config.X` reads, so a
+test patches **one** seam (`config`) for all layers; the two ingest test fixtures patch `config.*` (was
+`ingest.*`) and the figure-sweep test patches `ingest.cleanup.shutil`. The function-name monkeypatch seams
+(`figure_units`, `upsert_document_in_sqlite`, `extract_chunk_metadata`, `get_embeddings`) stay valid because
+the orchestration that calls them lives in `__init__`.
+**Rejected:** moving orchestration into a `runner.py` (cleaner thin `__init__`, but it would relocate every
+function-name patch seam → far more test churn for no behavioral gain); a formal ADR (a behavior-preserving
+decomposition with a clean DAG, not a contested trade-off — documented here + in `architecture.md` instead).
+**Gate GREEN (official-CPython 3.12, `uv run --no-sync`):** `ruff check src tests apps scripts` ✓ ·
+`ruff format` ✓ · `mypy --strict src` ✓ (50 files) · `bandit -r src apps` 0/0/0 ✓ · `python -m
+doc_assistant.ingest --help` ✓ · `pytest tests/unit tests/integration` → **622 passed, 1 skipped**.
+`architecture.md` module table + Mermaid chunker node updated to the package.
+**Opens:** none. **Nothing committed — staged for review (cpc §13).**
+
+---
+## Session: 2026-06-26 (cont.) — fold the document-feature extractors into `ingest/` + mirror the test tree, Claude Code
+
+Extends the `ingest/` package: the citation/table/figure extraction modules now live with the core
+pipeline, and the test layout mirrors the source. Behavior-preserving (no logic changed; pure import moves).
+
+### Enrichment/feature extractors moved into `ingest/`
+**What:** `git mv` of `citations.py`, `tables.py`, `tables_marker.py`, `figures.py`, `regions.py` from
+`src/doc_assistant/` into `src/doc_assistant/ingest/`. The package now holds the full document-processing
+surface: pipeline (`cache`/`chunking`/`store`/`cleanup` + `__init__`/`__main__`) **+** feature extraction
+(`citations`/`tables`/`tables_marker`/`figures`/`regions`).
+**Why:** these are all "turn a source document into indexed + enriched data" — co-locating them is cleaner
+than a flat `src/` and matches how the work is reasoned about (per the user's request). Dependency graph
+stays a clean DAG: `regions` (leaf) ← `tables`/`figures`; `tables` ← `tables_marker`; and the core
+`chunking → tables_marker`, `store`/`cleanup → figures` — no module imports the `ingest` core (no cycle).
+**Coupling named:** intra-package cross-refs are now **relative** (`figures` → `.regions`, `tables` →
+`.regions`, `tables_marker` → `.tables`; `chunking` → `.tables_marker`, `store`/`cleanup` → `.figures`).
+Every external importer (≈19 files across `src`/`apps`/`scripts`/`tests`) was repointed to
+`doc_assistant.ingest.<name>` — `bibtex` (citations), `chat_controller` + `apps/api` + `self_eval`
+(figures), the `extract_*`/`describe_figures`/`eval_marker_tables` scripts, and the moved modules' tests.
+The `ingest/__init__` public surface is unchanged (the extractors are imported by their own paths, not
+re-exported through `__init__`).
+**Rejected:** a re-export shim at the old `doc_assistant.<name>` paths (would leave dead stubs — the
+opposite of "cleaner"); a deeper `ingest/enrichment/` sub-package (the user asked for "the same folder").
+
+### Test tree mirrors the package
+**What:** moved the 13 ingest-domain test files into `tests/unit/ingest/` (`test_hash`,
+`test_chunking_config`, `test_citations`, `test_tables`, `test_tables_marker`, `test_figures`,
+`test_regions`) and `tests/integration/ingest/` (`test_ingest_orphan_cleanup`, `test_ingest_write_ordering`,
+`test_describe_figures`, `test_figures_extract`, `test_marker_table_retrieval`, `test_citation_pipeline`),
+each with an `__init__.py` to match the existing package-style test dirs. `test_fsutil` stays flat —
+`fsutil` is a shared util, not in the `ingest` package, so its test mirrors its source location.
+**Why:** "verify the tests follow the same pattern" — the test tree now mirrors the source package. Safe:
+no test had a `__file__`/fixture-path dependency, and the one cross-reference
+(`test_citation_pipeline` → `tests.fixtures.synthetic_corpus`) is an absolute import that survives the move.
+**Gate GREEN (official-CPython 3.12, `uv run --no-sync`):** `ruff check src tests apps scripts` ✓ ·
+`ruff format --check` ✓ · `mypy --strict src` ✓ (50 files) · `bandit -r src apps` 0/0/0 ✓ · `pytest
+tests/unit tests/integration` → **622 passed, 1 skipped** (unchanged — pure relocation). `architecture.md`
+module table + enrichment-module note updated.
+**Opens:** none. **Nothing committed — staged for review (cpc §13).**

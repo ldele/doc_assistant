@@ -22,10 +22,10 @@ from sqlalchemy import create_engine, func, select
 from sqlalchemy.orm import sessionmaker
 
 import doc_assistant.db.session as session_mod
-from doc_assistant import figures
 from doc_assistant.db.models import Base, Document, Figure
 from doc_assistant.db.session import session_scope
-from doc_assistant.figures import detect_figure_regions
+from doc_assistant.ingest import figures
+from doc_assistant.ingest.figures import detect_figure_regions
 
 CAPTION = "Figure 1: a test figure caption."
 DOC_HASH = "testhash0001"

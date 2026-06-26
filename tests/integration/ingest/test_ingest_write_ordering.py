@@ -24,7 +24,7 @@ from sqlalchemy import create_engine, func, select
 from sqlalchemy.orm import sessionmaker
 
 import doc_assistant.db.session as session_mod
-from doc_assistant import ingest
+from doc_assistant import config, ingest
 from doc_assistant.db.models import Base, Figure
 from doc_assistant.db.models import Document as DBDocument
 
@@ -48,10 +48,10 @@ def isolated_ingest(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator
     for d in (docs, cache, chroma, pc_chroma):
         d.mkdir(parents=True, exist_ok=True)
 
-    monkeypatch.setattr(ingest, "DOCS_PATH", docs)
-    monkeypatch.setattr(ingest, "CACHE_PATH", cache)
-    monkeypatch.setattr(ingest, "CHROMA_PATH", str(chroma))
-    monkeypatch.setattr(ingest, "PC_CHROMA_PATH", str(pc_chroma))
+    monkeypatch.setattr(config, "DOCS_PATH", docs)
+    monkeypatch.setattr(config, "CACHE_PATH", cache)
+    monkeypatch.setattr(config, "CHROMA_PATH", str(chroma))
+    monkeypatch.setattr(config, "PC_CHROMA_PATH", str(pc_chroma))
     monkeypatch.setattr(
         ingest, "get_embeddings", lambda name=None: DeterministicFakeEmbedding(size=16)
     )
@@ -121,7 +121,7 @@ def _chunk_count_for(filename: str) -> int:
 
 def _pc_figure_chunk_ids(h: str) -> list[str]:
     """figure_id values of any chunk_type='figure' chunks for ``h`` in the pc store."""
-    data = _open_store(ingest.PC_CHROMA_PATH).get(where={"doc_hash": h}, include=["metadatas"])
+    data = _open_store(config.PC_CHROMA_PATH).get(where={"doc_hash": h}, include=["metadatas"])
     return [
         str(m.get("figure_id")) for m in data["metadatas"] if m and m.get("chunk_type") == "figure"
     ]
@@ -180,8 +180,8 @@ def test_pc_store_failure_leaves_no_orphan_and_self_heals(
 
     # Exactly the partial state the intersection dedup gate exists to repair: the hash
     # is in the baseline store but not the parent-child store.
-    assert expected_hash in _store_hashes(ingest.CHROMA_PATH)
-    assert expected_hash not in _store_hashes(ingest.PC_CHROMA_PATH)
+    assert expected_hash in _store_hashes(config.CHROMA_PATH)
+    assert expected_hash not in _store_hashes(config.PC_CHROMA_PATH)
 
     # Second run, no failure injected: the hash is missing from the intersection, so the
     # document is reprocessed, both writes land, and the row is finally committed.
@@ -189,8 +189,8 @@ def test_pc_store_failure_leaves_no_orphan_and_self_heals(
     stats2 = ingest.main()
     assert stats2["added"] == 1
     assert _document_count() == 1
-    assert expected_hash in _store_hashes(ingest.CHROMA_PATH)
-    assert expected_hash in _store_hashes(ingest.PC_CHROMA_PATH)
+    assert expected_hash in _store_hashes(config.CHROMA_PATH)
+    assert expected_hash in _store_hashes(config.PC_CHROMA_PATH)
 
 
 def test_sqlite_commit_failure_self_heals_via_reconciliation(
@@ -225,8 +225,8 @@ def test_sqlite_commit_failure_self_heals_via_reconciliation(
     assert stats["error"] == 1
     assert _document_count() == 0  # the commit failed, so no row
     # The inverse orphan: present in BOTH stores, yet with no Document row.
-    assert expected_hash in _store_hashes(ingest.CHROMA_PATH)
-    assert expected_hash in _store_hashes(ingest.PC_CHROMA_PATH)
+    assert expected_hash in _store_hashes(config.CHROMA_PATH)
+    assert expected_hash in _store_hashes(config.PC_CHROMA_PATH)
 
     # Second run, commit no longer failing: reconciliation removes the no-row hash from the
     # dedup intersection, so the doc is reprocessed and the row is finally committed.
@@ -234,8 +234,8 @@ def test_sqlite_commit_failure_self_heals_via_reconciliation(
     stats2 = ingest.main()
     assert stats2["added"] == 1
     assert _document_count() == 1
-    assert expected_hash in _store_hashes(ingest.CHROMA_PATH)
-    assert expected_hash in _store_hashes(ingest.PC_CHROMA_PATH)
+    assert expected_hash in _store_hashes(config.CHROMA_PATH)
+    assert expected_hash in _store_hashes(config.PC_CHROMA_PATH)
 
 
 def test_recorded_chunk_count_excludes_figure_chunks(
@@ -258,7 +258,7 @@ def test_recorded_chunk_count_excludes_figure_chunks(
 
     assert ingest.main()["added"] == 1
 
-    baseline_total = len(_open_store(ingest.CHROMA_PATH).get(where={"doc_hash": h})["ids"])
+    baseline_total = len(_open_store(config.CHROMA_PATH).get(where={"doc_hash": h})["ids"])
     # The figure WAS materialised into the store (so this isn't a vacuous test)...
     assert "fig-xyz" in _pc_figure_chunk_ids(h)
     # ...yet the recorded chunk_count excludes it: total == prose chunks + 1 figure.
@@ -300,8 +300,8 @@ def test_reingest_reuses_document_id_keeping_figures_linked(
 
     # Drop the hash from BOTH vector stores so it falls out of the dedup intersection and
     # gets reprocessed — but the SQLite Document row (and its Figure) survives.
-    _open_store(ingest.CHROMA_PATH).delete(where={"doc_hash": h})
-    _open_store(ingest.PC_CHROMA_PATH).delete(where={"doc_hash": h})
+    _open_store(config.CHROMA_PATH).delete(where={"doc_hash": h})
+    _open_store(config.PC_CHROMA_PATH).delete(where={"doc_hash": h})
 
     ingest.main(skip_cleanup=True)  # skip_cleanup so orphan cleanup can't touch the row
 
@@ -310,3 +310,47 @@ def test_reingest_reuses_document_id_keeping_figures_linked(
     assert _document_count() == 1
     assert _doc_id_for("paper.md") == doc_id
     assert "fig-seed-1" in _pc_figure_chunk_ids(h)
+
+
+def test_one_failing_document_does_not_abort_the_batch(
+    isolated_ingest: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Batch isolation: one document raising mid-ingest is counted `error`, the rest ingest.
+
+    Pins the contract that ``process_one_document``'s per-doc try/except plus the ``main``
+    loop isolate failures — one document's exception never aborts the run nor corrupts its
+    neighbours.
+    """
+    docs = isolated_ingest
+    g1 = "<!-- page:1 -->\n# Paper one\n\nUnique body for the first good document.\n"
+    bad = "<!-- page:1 -->\n# Paper two\n\nBADDOC_TRIGGER body for the failing document.\n"
+    g2 = "<!-- page:1 -->\n# Paper three\n\nUnique body for the second good document.\n"
+    _write_cached_source(docs, "g1.md", g1)
+    _write_cached_source(docs, "bad.md", bad)
+    _write_cached_source(docs, "g2.md", g2)
+
+    # Make ONLY the bad document raise mid-processing (before any store write).
+    original = ingest.extract_chunk_metadata
+
+    def boom_on_bad(
+        chunk_text: str, full_text: str, chunk_start: int
+    ) -> dict[str, int | str | None]:
+        if "BADDOC_TRIGGER" in full_text:
+            raise RuntimeError("simulated per-document failure")
+        return original(chunk_text, full_text, chunk_start)
+
+    monkeypatch.setattr(ingest, "extract_chunk_metadata", boom_on_bad)
+
+    stats = ingest.main()
+    assert stats == {"added": 2, "skipped": 0, "error": 1}  # run continued past the failure
+    assert _document_count() == 2  # the two good docs committed; the bad one did not
+
+    # The bad doc left nothing behind (it failed before any vector/SQLite write)...
+    bad_h = ingest.doc_hash(bad)
+    assert bad_h not in _store_hashes(config.CHROMA_PATH)
+    assert bad_h not in _store_hashes(config.PC_CHROMA_PATH)
+    # ...and both good docs are fully ingested.
+    for content in (g1, g2):
+        good_h = ingest.doc_hash(content)
+        assert good_h in _store_hashes(config.CHROMA_PATH)
+        assert good_h in _store_hashes(config.PC_CHROMA_PATH)

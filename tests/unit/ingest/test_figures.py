@@ -1,4 +1,4 @@
-"""Tests for the pure core of ``doc_assistant.figures`` (Feature 4b).
+"""Tests for the pure core of ``doc_assistant.ingest.figures`` (Feature 4b).
 
 The caption pairer (``pair_caption``), the ADR-1 region chooser
 (``select_region_bboxes``) and the path builder (``figure_image_path``) are
@@ -9,7 +9,7 @@ by ``tests/integration/test_figures_extract.py``.
 
 from __future__ import annotations
 
-from doc_assistant.figures import (
+from doc_assistant.ingest.figures import (
     SKIP_CAPTION_SUFFICIENT,
     SKIP_NO_IMAGE,
     FigureDescription,

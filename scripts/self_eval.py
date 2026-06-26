@@ -34,7 +34,7 @@ from doc_assistant.config import (
     TOP_K,
 )
 from doc_assistant.embeddings import get_active_model_name
-from doc_assistant.figures import load_figure_image_paths
+from doc_assistant.ingest.figures import load_figure_image_paths
 from doc_assistant.provenance import AnswerProvenance, RetrievedChunk
 from doc_assistant.reviewer import review_answer, verdict_from_review
 from doc_assistant.synthesis import audit_citations

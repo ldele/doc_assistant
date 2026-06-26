@@ -10,7 +10,7 @@ retrieval mechanism). Live end-to-end quality on real PDFs is the opt-in
 from __future__ import annotations
 
 from doc_assistant.ingest import build_parent_child_chunks
-from doc_assistant.tables_marker import parse_marker_tables, splice_tables_inline
+from doc_assistant.ingest.tables_marker import parse_marker_tables, splice_tables_inline
 
 _CACHE_MD = """<!-- page:1 -->
 # Intro

@@ -22,9 +22,9 @@ from dataclasses import dataclass
 
 from sqlalchemy import select
 
-from doc_assistant.citations import _first_author_surname
 from doc_assistant.db.models import Document
 from doc_assistant.db.session import session_scope
+from doc_assistant.ingest.citations import _first_author_surname
 
 # ============================================================
 # Classification

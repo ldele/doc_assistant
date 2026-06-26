@@ -32,7 +32,7 @@ flowchart TD
     subgraph ING["Ingest (incremental)"]
         SRC["Sources<br/>PDF · EPUB · HTML · DOCX · MD"] --> EXT["extractors.py"]
         EXT --> CACHE[("Markdown cache<br/>data/cache")]
-        CACHE --> CHUNK["ingest.py<br/>table-aware parent–child chunker"]
+        CACHE --> CHUNK["ingest/chunking.py<br/>table-aware parent–child chunker"]
         CHUNK --> EMB["embeddings.py<br/>BGE-base"]
     end
 
@@ -77,7 +77,7 @@ flowchart TD
 |---|---|---|
 | `doc_assistant.config` | Paths, env vars, feature flags | Read-only after init; no side effects |
 | `doc_assistant.extractors` | Convert any supported format → markdown | Returns `str`; raises `ExtractionError` on failure |
-| `doc_assistant.ingest` | Extract, chunk, embed, store; streaming | Idempotent per content hash; raises `IngestError` |
+| `doc_assistant.ingest` (package — pipeline: `cache` · `chunking` · `store` · `cleanup` + `__init__` orchestration / `__main__` CLI; document-feature extraction: `citations` · `tables` · `tables_marker` · `figures` · `regions`) | Extract, chunk, embed, store; orphan cleanup + partial-write self-heal; table/figure/citation extraction (sidecar) | Idempotent per content hash; per-document failures isolated |
 | `doc_assistant.pipeline` | RAG runtime: retrieve, rerank, generate | Returns `Answer` with citations; raises `PipelineError` |
 | `doc_assistant.chat_controller` | UI-agnostic turn orchestration | Yields `TurnEvent`s → `TurnResult`; no UI-framework import (PR-M0) |
 | `doc_assistant.health` | Document health scoring and classification | Pure function; no I/O; returns `HealthResult` |
@@ -89,7 +89,7 @@ flowchart TD
 | `apps/desktop/` | Tauri desktop frontend (PR-M3) | Svelte 5 + Vite UI in a Tauri 2 shell; renders the API's `TurnResult`; no business logic |
 | `scripts/` | One-off maintenance scripts | Not part of the importable package |
 
-This table is non-exhaustive — it covers the core ingest/runtime modules. The research-integrity and enrichment layer (`query_router`, `synthesis`, `provenance`, `reviewer`, `citations`, `metadata_extractor`, `doc_vectors`, `regions`, `tables`, `tables_marker`, `embeddings`, `bibtex`, `commands`, `llm`) is shown in the Mermaid diagram above.
+This table is non-exhaustive — it covers the core ingest/runtime modules. The research-integrity and enrichment layer (`query_router`, `synthesis`, `provenance`, `reviewer`, `metadata_extractor`, `doc_vectors`, `embeddings`, `bibtex`, `commands`, `llm`) is shown in the Mermaid diagram above. The document-feature extractors (`citations`, `tables`, `tables_marker`, `figures`, `regions`) now live inside the `doc_assistant.ingest` package (imported as `doc_assistant.ingest.<name>`).
 
 **Boundary rule:** `apps/` contains no business logic. All logic lives in `src/doc_assistant/`. The UI layer calls the library layer; never the reverse.
 

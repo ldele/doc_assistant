@@ -1,4 +1,4 @@
-"""Tests for the page content classifier (``doc_assistant.regions``).
+"""Tests for the page content classifier (``doc_assistant.ingest.regions``).
 
 The pure router (``classify_page``) is covered exhaustively against the
 routing matrix. ``analyze_pages`` / ``table_candidate_pages`` are exercised
@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from doc_assistant.regions import (
+from doc_assistant.ingest.regions import (
     CHART_CURVE_MIN,
     IMAGE_AREA_MIN,
     PageSignals,

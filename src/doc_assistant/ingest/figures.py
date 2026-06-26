@@ -42,7 +42,8 @@ from doc_assistant.config import (
     FIGURE_DIR,
     FIGURE_MIN_AREA_FRACTION,
 )
-from doc_assistant.regions import FIGURE_CAPTION_RE, RegionKind, analyze_pages
+
+from .regions import FIGURE_CAPTION_RE, RegionKind, analyze_pages
 
 log = structlog.get_logger(__name__)
 

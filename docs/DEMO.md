@@ -25,9 +25,6 @@ cd apps/desktop && npm install && npm run dev     # dev UI in the browser (or: n
 
 # CLI — same cited answers, no GUI
 uv run python apps/cli.py
-
-# Chainlit — legacy web UI (slated for removal at M5; still works today, needs Python 3.12)
-uv run --python 3.12 chainlit run apps/chainlit_app.py
 ```
 
 ## Ask these

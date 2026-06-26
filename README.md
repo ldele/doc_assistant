@@ -208,7 +208,7 @@ docker compose run --rm doc-assistant python -m doc_assistant.ingest
 docker compose up
 ```
 
-Open `http://localhost:8000`.
+The container serves the **headless FastAPI backend** on `http://localhost:8001` (check `http://localhost:8001/api/health`) — the same backend the desktop app's sidecar bundles. The GUI is the Tauri desktop app, which runs on the host (see Usage), not in the container; Docker is for running the API/server. Point a client (or the desktop app's backend URL) at `:8001`.
 
 For local LLM via Ollama, set `LLM_MODE=local` in `.env`. On Linux, ensure Ollama listens on all interfaces: `OLLAMA_HOST=0.0.0.0 ollama serve`.
 

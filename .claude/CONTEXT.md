@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-06-20 · class: living -->
+<!-- status: active · updated: 2026-06-26 · class: living -->
 
 # CONTEXT — doc_assistant
 
@@ -12,7 +12,7 @@ and its contract are recorded in `docs/decisions/ADR-001-adopt-cpc-standard.md`.
 research-integrity layer (provenance, evidence/interpretation split, separate-context reviewer).
 Not a chatbot wrapper — reliable, grounded, *measurable* answers over **your** documents.
 
-**Current phase (2026-06-20):** Phase 6 in progress; Phase 7 (gap detection) underway. Core RAG,
+**Current phase (2026-06-26):** Phase 6 in progress; Phase 7 (gap detection) underway. Core RAG,
 eval harness, document store + library UI, citation graph, the integrity layer, the provider-agnostic
 LLM layer, figures/tables, and the wiki/synthesis layer are shipped. The cross-document concept graph
 (PR 16) + the 7d engine shipped too, **but their open-vocabulary core was superseded by a 2026-06-18
@@ -119,4 +119,11 @@ in cpc CONVENTIONS **§12 / §13** — read them there, do not restate. Project-
 - **Concept graph redesign (2026-06-18) decided, not built** — the shipped open-vocabulary core is
   superseded (KI-7); the curated-vocabulary + deterministic-skeleton design has unvalidated edge
   precision + presence recall (flagged for RIGOR_TODO before locking the edge model).
+- **Gap-detection layer (2026-06-26) decided, not built** — two-tier deterministic/stochastic over
+  the curated skeleton (`docs/decisions/ADR-004-gap-detection-layer.md` /
+  `docs/specs/feature-gap-detection.md`). Deterministic Tier-1 + the Tier-2a
+  `unsupported_claim`/citation-gap floor are the first increment; blocked on the Decision-C skeleton
+  **and** the RG-001 edge-precision run (Tier-1 signals are defined relative to the edge set —
+  meaningless on an un-validated graph). External "anti-blind-spot" Tier 2b deferred; the
+  idea-generator is rejected for it.
 - **BM25/vector `0.4/0.6` weights never measured** — sweep when a `--bm25-weight` flag exists.

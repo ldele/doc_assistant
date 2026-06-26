@@ -4,6 +4,7 @@ import shutil
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 import structlog
 from langchain_chroma import Chroma
@@ -30,7 +31,8 @@ from doc_assistant.embeddings import (
     get_embeddings,
 )
 from doc_assistant.extractors import extract_to_markdown, is_supported
-from doc_assistant.figures import figure_chunk_text
+from doc_assistant.figures import figure_chunk_text, figure_dir
+from doc_assistant.fsutil import atomic_write_text
 from doc_assistant.tables_marker import TABLE_BLOCK_RE
 
 log = structlog.get_logger(__name__)
@@ -99,8 +101,10 @@ def load_or_extract(original: Path) -> str:
 
     log.info("extracting", file=original.name)
     text = extract_to_markdown(original, pdf_extractor=PDF_EXTRACTOR)
-    cached.parent.mkdir(parents=True, exist_ok=True)
-    cached.write_text(text, encoding="utf-8")
+    # Atomic write: this cached .md is the source-of-truth the next ingest re-hashes;
+    # a crash mid-write must not leave a truncated cache that is_cache_fresh trusts
+    # (the same hazard the table-splice writers share — see fsutil.atomic_write_text).
+    atomic_write_text(cached, text)
     return text
 
 
@@ -114,6 +118,19 @@ def doc_hash(text: str) -> str:
 def get_indexed_hashes(db: Chroma) -> set[str]:
     data = db.get(include=["metadatas"])
     return {m.get("doc_hash") for m in data["metadatas"] if m and m.get("doc_hash")}
+
+
+def get_document_row_hashes() -> set[str]:
+    """The doc_hashes that currently have a committed Document row in SQLite.
+
+    The SQLite-side counterpart to ``get_indexed_hashes`` (the Chroma side). The
+    dedup gate in ``main`` subtracts the Chroma intersection from this set to find
+    *inverse orphans* — chunks present in both stores with no Document row — the
+    one partial-write shape the intersection gate alone cannot self-heal (F1).
+    """
+    with session_scope() as session:
+        rows = session.execute(select(DBDocument.doc_hash)).scalars().all()
+    return {str(h) for h in rows if h}
 
 
 def _find_orphan_hashes(
@@ -243,6 +260,44 @@ def cleanup_orphans_chroma(
         log.info("removed_orphan_caches", count=len(set(orphan_caches)))
 
 
+def cleanup_orphan_figures(orphan_hashes: list[str]) -> None:
+    """Remove the on-disk figure PNG dirs for orphan documents.
+
+    Figure *rows* FK-cascade-delete with their Document (``cleanup_orphans_sqlite``),
+    but the cropped PNGs under ``FIGURE_DIR/{doc_hash}/`` (``figures.figure_dir``) are
+    on-disk sidecars with no DB cascade — without this sweep they accumulate forever
+    as documents are removed or their content changes. Keyed by ``doc_hash``, so it is
+    correct for BOTH orphan kinds (``_find_orphan_hashes``): a gone source, and a
+    content change (a new ``doc_hash`` leaves the old hash's figure dir dead — its PNGs
+    never match the current content). Re-extraction writes the new hash's dir afresh.
+
+    Gated by the same ``scope is None`` guard as the whole cleanup block (in ``main``);
+    a ``--path`` run must not delete out-of-scope figures. (Unlike ``also_clean_cache``,
+    an orthogonal *source-existence* gate, this sweep deliberately removes BOTH gone-
+    and stale-orphan figure dirs.)
+
+    Coupling: ingest cleanup <-> the figures on-disk layout (``config.FIGURE_DIR /
+    {doc_hash}/``, via ``figures.figure_dir``). If that layout changes, this follows it.
+    """
+    if not orphan_hashes:
+        return
+    removed = 0
+    for h in orphan_hashes:
+        fig_dir = figure_dir(h)
+        if not fig_dir.exists():
+            continue
+        # Per-hash try/except (not rmtree(ignore_errors=True)) so a locked PNG on Windows
+        # surfaces a warning instead of a silently-incomplete sweep, and ``removed``
+        # counts actual deletions — mirrors cleanup_orphans_chroma's cache-delete posture.
+        try:
+            shutil.rmtree(fig_dir)
+            removed += 1
+        except OSError as e:
+            log.warning("figure_dir_delete_failed", dir=str(fig_dir), error=str(e))
+    if removed:
+        log.info("removed_orphan_figures", count=removed)
+
+
 def load_documents() -> list[Document]:
     documents: list[Document] = []
     files = [p for p in DOCS_PATH.rglob("*") if p.is_file() and is_supported(p)]
@@ -321,7 +376,23 @@ def clean_chunk_text(text: str) -> str:
     return PAGE_MARKER.sub("", text).strip()
 
 
+def _existing_document_id(doc_hash: str) -> str | None:
+    """The id of the Document row already recorded for ``doc_hash``, if any.
+
+    Read-only. ``process_one_document`` calls this to resolve the id a re-ingest
+    must reuse (so the document's figures and other id-keyed sidecars stay linked)
+    *before* the Chroma writes — without committing a row. The row is written last,
+    only if both vector writes land (F1, see ``process_one_document``).
+    """
+    with session_scope() as session:
+        existing = session.execute(
+            select(DBDocument.id).where(DBDocument.doc_hash == doc_hash)
+        ).scalar_one_or_none()
+        return str(existing) if existing is not None else None
+
+
 def upsert_document_in_sqlite(
+    document_id: str,
     filename: str,
     source_original: str,
     source_cache: str | None,
@@ -332,10 +403,16 @@ def upsert_document_in_sqlite(
     page_count: int | None = None,
     extraction_health: str | None = None,
 ) -> str:
-    """Create or update a Document row in SQLite. Returns the document's UUID.
+    """Create or update the Document row for ``doc_hash``. Returns its id.
 
-    If a document with the same doc_hash exists, return its ID and log a
-    re-ingestion event. Otherwise create a new Document row.
+    ``document_id`` is resolved by the caller (``_existing_document_id`` for a
+    re-ingest, a fresh UUID for a new document) and is the same id already stamped
+    into the chunk metadata, so the row and its chunks share one identity. Called
+    **after** the Chroma writes succeed, so this commit is the last step of a
+    document's ingest — a vector-write failure aborts before any row is written.
+
+    If a row with ``doc_hash`` exists, update it and log a re-ingestion event;
+    otherwise create a new row with ``document_id`` as its primary key.
     """
     with session_scope() as session:
         existing = session.execute(
@@ -360,8 +437,9 @@ def upsert_document_in_sqlite(
             session.add(event)
             return str(existing.id)
         else:
-            # New document
+            # New document — keyed by the pre-resolved id (matches the chunk metadata).
             document = DBDocument(
+                id=document_id,
                 filename=filename,
                 source_original=source_original,
                 source_cache=source_cache,
@@ -374,17 +452,16 @@ def upsert_document_in_sqlite(
                 extracted_at=datetime.now(timezone.utc),
             )
             session.add(document)
-            session.flush()  # generate the UUID
 
             event = IngestionEvent(
-                document_id=document.id,
+                document_id=document_id,
                 event_type="extract",
                 extractor=extractor_used,
                 chunks_produced=chunk_count,
                 health_status=extraction_health,
             )
             session.add(event)
-            return str(document.id)
+            return document_id
 
 
 def _split_trailing_paragraph(text: str) -> tuple[str, str]:
@@ -524,6 +601,11 @@ def process_one_document(
                 )
             )
 
+        # The recorded chunk_count is the baseline-chunk count, *excluding* the figure
+        # chunks appended below — snapshot it before they are added so committing the
+        # SQLite row last (below) records the same value the original pre-figure order did.
+        baseline_chunk_count = len(documents)
+
         pages = [int(m.group(1)) for m in PAGE_MARKER.finditer(text)]
         page_count = max(pages) if pages else None
 
@@ -540,23 +622,15 @@ def process_one_document(
             reference_flagged_ratio=float(signals["reference_flagged_ratio"]),
         )
 
-        document_id = upsert_document_in_sqlite(
-            filename=path.name,
-            source_original=str(path),
-            source_cache=str(get_cache_path(path)),
-            doc_hash=h,
-            format=path.suffix.lower().lstrip("."),
-            extractor_used=PDF_EXTRACTOR,
-            chunk_count=len(documents),
-            page_count=page_count,
-            extraction_health=health.status,
-        )
-
-        # Print a warning if anything's amiss
-        if health.status != "healthy":
-            log.warning(
-                "extraction_health", status=health.status, file=path.name, reasons=health.reasons
-            )
+        # Resolve the document id WITHOUT writing the row (F1). A re-ingest reuses the
+        # existing row's id so its figures + other id-keyed sidecars stay linked; a new
+        # document mints a fresh UUID (figure_units() then finds none — a new doc has no
+        # figures yet). The row is committed *last*, only after both Chroma writes land,
+        # so a vector-write failure can never leave a committed Document row with no
+        # chunks. The id is needed up front because it is stamped into every chunk's
+        # metadata and is the key figure_units() queries on.
+        # Coupling: ingest.py <-> db Document (this id) <-> both Chroma collections.
+        document_id = _existing_document_id(h) or str(uuid4())
 
         # Stamp health and document_id onto chunks
         for doc in documents:
@@ -590,6 +664,9 @@ def process_one_document(
                 )
             )
 
+        # --- Vector-store writes. BOTH must land before the SQLite row is committed
+        # (F1): the row write below is the last step, so an exception in either Chroma
+        # write aborts the document with no orphaned Document row left behind.
         existing_baseline = db.get(where={"doc_hash": h}, include=[])
         if existing_baseline["ids"]:
             log.info("removing_existing_baseline", count=len(existing_baseline["ids"]), hash=h)
@@ -622,6 +699,27 @@ def process_one_document(
             log.info("removing_existing_pc", count=len(existing_pc["ids"]), hash=h)
             pc_db.delete(ids=existing_pc["ids"])
         pc_db.add_documents(pc_chunks)
+
+        # --- Both vector stores updated; commit the Document row + its ingestion event
+        # last, keyed by the pre-resolved document_id already stamped into the chunks.
+        upsert_document_in_sqlite(
+            document_id=document_id,
+            filename=path.name,
+            source_original=str(path),
+            source_cache=str(get_cache_path(path)),
+            doc_hash=h,
+            format=path.suffix.lower().lstrip("."),
+            extractor_used=PDF_EXTRACTOR,
+            chunk_count=baseline_chunk_count,
+            page_count=page_count,
+            extraction_health=health.status,
+        )
+
+        # Print a warning if anything's amiss
+        if health.status != "healthy":
+            log.warning(
+                "extraction_health", status=health.status, file=path.name, reasons=health.reasons
+            )
 
         indexed.add(h)
         return "added"
@@ -698,8 +796,37 @@ def main(
         orphan_hashes = cleanup_orphans_sqlite(db)
         cleanup_orphans_chroma(db, orphan_hashes, also_clean_cache=True)
         cleanup_orphans_chroma(pc_db, orphan_hashes, also_clean_cache=False)
+        cleanup_orphan_figures(orphan_hashes)
 
+    # The dedup gate is the INTERSECTION of the two stores on purpose: a hash counts as
+    # "already indexed" only when it is present in BOTH the baseline and the parent-child
+    # collection. That self-heals a partial *Chroma* write — if a document landed in one
+    # store but the other add_documents failed, the hash is missing from the intersection
+    # and is reprocessed next run, completing the write. A future refactor must keep this an
+    # intersection (not a union / single store) or a half-written document is treated as
+    # done and never repaired.
     indexed = get_indexed_hashes(db) & get_indexed_hashes(pc_db)
+
+    # Inverse-orphan reconciliation (the SQLite-side twin of the self-heal above). The
+    # intersection gate repairs a partial *Chroma* write, but not its inverse: both vector
+    # writes landing while the final upsert_document_in_sqlite commit fails leaves the hash in
+    # BOTH stores (so in the intersection) with no Document row. Subtract those no-row hashes
+    # from the dedup set so the document is reprocessed and its row committed on THIS run —
+    # nothing is deleted (process_one_document removes+re-adds chunks idempotently). A
+    # gone/content-changed no-row hash is already swept by cleanup_orphans_* above, so only the
+    # source-present + unchanged shape reaches here; that one used to need `--rebuild`. The
+    # warning makes the drift measurable. Runs unconditionally — the gate must stay correct even
+    # under --path / --skip-cleanup. See docs/DEVLOG.md (F1).
+    inverse_orphans = indexed - get_document_row_hashes()
+    if inverse_orphans:
+        log.warning(
+            "chroma_chunks_without_document_row",
+            count=len(inverse_orphans),
+            hashes=sorted(inverse_orphans),
+            hint="reprocessing to recommit the missing Document row(s)",
+        )
+        indexed -= inverse_orphans
+
     log.info("already_indexed", count=len(indexed))
 
     splitter = _make_baseline_splitter()

@@ -2671,3 +2671,155 @@ paste.
 **Opens / not built:** native folder-picker button; streamed ingest *progress* (still final-counts-only);
 KI-10 truststore re-freeze (separate, non-blocking — proxy-paid-API only). **Nothing committed — staged for
 review (cpc §13).**
+
+---
+## Session: 2026-06-26 (cont.) — Ingestion hardening: dual-store write ordering + atomic cache writes + figure-dir orphan sweep, Claude Code (work box)
+
+Picked up the Cowork ingestion-review handoff — three fixes (F1/T1/G1) from the staged
+`ingestion-map-and-review.md`. Code + tests. Same session synced the `.claude/` trackers Cowork can't
+write (CONTEXT open-questions gap-layer bullet + date bumps; RIGOR_TODO RG-001/RG-007 dead
+`feature-7-concept-graph.md` link repointed to ADR-004 + `feature-gap-detection.md`; KI-7 cleanup +
+pointer bullets). **Nothing committed — staged for review (cpc §13).**
+
+### F1 — commit the SQLite Document row AFTER both Chroma writes (`ingest.py`)
+**What:** `process_one_document` called `upsert_document_in_sqlite` (which commits) *before*
+`db.add_documents` (baseline) and `pc_db.add_documents` (parent-child). Reordered: resolve `document_id`
+up front WITHOUT committing — new `_existing_document_id(doc_hash)` reuses an existing row's id (so its
+figures + other id-keyed sidecars stay linked), else `uuid4()` mints a fresh one — stamp it into the chunk
+metadata + `figure_units()`, do both Chroma writes, THEN commit the row last via
+`upsert_document_in_sqlite(document_id=…)` (now takes the pre-resolved id and keys a new row by it). The
+recorded `chunk_count` is snapshot as `baseline_chunk_count` before the figure chunks are appended, so the
+committed value is identical to the old pre-figure order. The `session.flush()` (only ever for UUID
+generation) is dropped — the id is explicit now.
+**Why:** on a Chroma write failure the old order left a committed Document row with zero chunks — an orphan
+the library UI counts but retrieval can't serve. Writing the row last means a vector-write failure aborts
+the document cleanly with nothing persisted; it is also strictly better on re-ingest (a failed re-ingest no
+longer bumps `chunk_count`/`extracted_at` or logs a spurious `reextract` event).
+**Rejected:** the lower-risk additive alternative (keep the order, add a post-run reconciliation that only
+*warns* on rows with no chunks). It detects the orphan instead of preventing it, and still ships the bad
+row. The reorder is the handoff's preferred fix.
+**Coupling named:** `ingest.py` ↔ `db` `Document` (the shared id) ↔ both Chroma collections. Added a
+comment at the dedup gate explaining why it must stay the **intersection**
+(`get_indexed_hashes(db) & get_indexed_hashes(pc_db)`): a hash counts as indexed only if present in *both*
+stores, so a partial write (baseline landed, pc failed) is missing from the intersection and self-heals
+next run — a refactor to a union / single store would silently strand half-written docs.
+**Tests (`tests/integration/test_ingest_write_ordering.py`, new):** monkeypatch `Chroma.add_documents` to
+fail — (1) the first write fails → zero Document rows (no orphan); (2) the second store fails after the
+first lands → still zero rows, hash present in baseline-only, and a clean re-run completes the partial
+write (the intersection self-heal); plus (3) re-ingest reuses the existing `document_id` so figures stay
+linked (drives the `_existing_document_id` reuse branch — guards figure coupling) and (4) the recorded
+`chunk_count` excludes figure chunks (pins `baseline_chunk_count`). Fake embedder + temp dirs/SQLite — no
+real Chroma server / LLM / paid call. (1)/(2) fail on the pre-reorder code (the orphan row would exist).
+**Follow-up (the inverse orphan — now CLOSED, KI-12).** The intersection self-heal repairs a partial *Chroma*
+write but not its inverse: both vector writes landing while the final SQLite commit fails leaves the hash in
+both stores (so in the intersection) with no Document row — previously only `--rebuild` cleared it. `main` now
+reconciles the dedup set against SQLite — `inverse_orphans = (baseline ∩ pc) − get_document_row_hashes()` — and
+subtracts those no-row hashes from `indexed`, so the document is reprocessed and its row recommitted on the
+next run (the source-gone/stale shapes are already swept by `cleanup_orphans_*`, so only source-present+
+unchanged reaches here; nothing is deleted — `process_one_document` re-adds idempotently). Regression-guarded
+by `test_sqlite_commit_failure_self_heals_via_reconciliation`; documented in `.claude/KNOWN_ISSUES.md` KI-12
+(RESOLVED). Landed as a same-day follow-up to this session.
+
+### T1 — atomic cache writes (`fsutil.py` new; `ingest.py`, `extract_tables*.py`)
+**What:** new `fsutil.atomic_write_text(path, text)` — write a temp file in the same dir, `fsync`,
+`os.replace` (atomic same-filesystem rename); on any failure before the swap it removes the temp and leaves
+the original intact. Guarantees *atomicity* (no truncated/partial file is ever visible — the hazard this
+fixes), not full power-loss durability of the rename; that failure mode is benign (a lost rename leaves the
+prior complete cache → a cheap re-extract). Newline handling matches `Path.write_text`, so on-disk bytes
+(and `doc_hash` over the re-read cache) are unchanged. Routed the three writers of the ingest source-truth
+`.md` cache through it:
+`ingest.load_or_extract` (initial extraction) + the two table-splice passes
+(`scripts/extract_tables_marker.py`, `scripts/extract_tables.py`).
+**Why:** all three overwrite the cached `.md` *in place*, and that cache is the source-of-truth the next
+ingest re-hashes; a crash mid-write left a truncated cache that `is_cache_fresh` then trusted → a corrupt
+re-ingest.
+**Rejected:** per-script patches — centralised instead, since the three share one write contract.
+**Coupling named:** these three are the writers of the ingest source-truth cache; `atomic_write_text` is
+their single shared contract. Scoped to the source-truth cache — the other sidecar writers (`graph.json`,
+wiki notes, settings, export) are different artifacts, left as-is.
+**Tests (`tests/unit/test_fsutil.py`, new):** write / overwrite / parent-dir creation; no temp left on
+success; a failed swap (`os.replace` raising) leaves the original byte-for-byte intact + no temp.
+
+### G1 — sweep orphaned figure PNG dirs on cleanup (`ingest.py`)
+**What:** new `ingest.cleanup_orphan_figures(orphan_hashes)` — `shutil.rmtree(figure_dir(h))` per orphan
+hash, wrapped in a per-hash try/except (logs `figure_dir_delete_failed` + continues on a locked dir, counts
+only actual deletions — mirrors `cleanup_orphans_chroma`'s cache-delete posture, not `ignore_errors=True`);
+called only in the global cleanup branch (`scope is None`), after the Chroma orphan sweeps.
+**Why:** Figure *rows* already FK-cascade-delete with their Document, but the cropped PNGs under
+`FIGURE_DIR/{doc_hash}/` are on-disk sidecars with no DB cascade — they leaked forever as documents were
+deleted or their content changed. Keyed by `doc_hash`, so it is correct for both orphan kinds: a gone
+source and a content change (the old hash's dir no longer matches any content; re-extraction writes the new
+hash's dir).
+**Rejected:** sweeping inside `cleanup_orphans_chroma` — it runs once per store (double-sweep) and the
+figure layout isn't Chroma's concern; a dedicated, clearly-gated function is cleaner.
+**Coupling named:** ingest cleanup ↔ the figures on-disk layout (`config.FIGURE_DIR / {doc_hash}/`, via
+`figures.figure_dir`) — uses the canonical `figure_dir()` so a layout change follows automatically. Gated by
+the whole cleanup block's `scope is None` guard so a `--path` run can't delete out-of-scope figures (unlike
+`also_clean_cache`, an orthogonal source-existence gate — this sweep deliberately removes both gone- and
+stale-orphan dirs).
+**Tests (`tests/integration/test_ingest_orphan_cleanup.py`, +4):** a gone source's figure dir is swept
+while a live doc's is kept; a content-change (stale) orphan's old-hash dir is swept; a figure-dir delete
+failure is logged and skipped without aborting the sweep; and a direct assertion that `Figure` rows
+cascade-delete on `Document` delete (previously asserted nowhere).
+
+**Adversarial review (3-lens Workflow — B1 correctness / B2-B3 correctness / test adequacy, every finding
+independently verified):** the B1 reorder core verified correct (re-ingest id reuse, `baseline_chunk_count`,
+figure coupling, and the dedup self-heal all hold — no behavioral bug). **7 refinements confirmed + applied:**
+(1) `cleanup_orphan_figures` now uses a per-hash try/except + warning (was `rmtree(ignore_errors=True)`),
+so a locked dir on Windows surfaces instead of being silently skipped + miscounted; (2) the dedup-gate
+comment scoped to Chroma-write failures, with the residual post-Chroma SQLite-commit case named in-code;
+(3) `atomic_write_text` docstring scoped to atomicity-not-power-loss-durability (the benign cache failure
+mode stated); (4) `cleanup_orphan_figures` docstring corrected (the gate is the `scope is None` guard, not
+`also_clean_cache`); (5) +test: re-ingest reuses `document_id` keeping figures linked; (6) +test: recorded
+`chunk_count` excludes figure chunks; (7) +test: a figure-dir delete failure doesn't abort the sweep; plus
+the single-doc call-counter assumption is now an assertion. One finding (the reorder itself) was raised then
+dismissed on verify as a clean bill of health.
+
+**Gate GREEN (official-CPython 3.12 venv, `uv run --no-sync`):** `ruff check src tests apps scripts` ✓ ·
+`ruff format` ✓ (mine; the lone `test_embeddings.py` diff is the pre-existing ruff-0.15-vs-0.6 churn, left
+per the M0/M2 batons) · `mypy --strict src` ✓ (45 files) · `bandit -r src apps` 0/0/0 ✓ · `pytest
+tests/unit tests/integration` → **620 passed, 1 skipped** (+13: 5 fsutil, 4 write-ordering, 4
+figure/cascade/delete-failure); the KI-12 inverse-orphan reconciliation follow-up adds one more →
+**621 passed**. **Nothing committed — staged for review (cpc §13).**
+
+---
+## Session: 2026-06-26 (cont.) — F1 follow-up: inverse-orphan reconciliation (self-heal the post-commit window), Claude Code (work box)
+
+Actioned the F1 "Opens" from the previous entry — the one partial-write shape the intersection dedup
+gate could not self-heal. **Nothing committed — staged for review (cpc §13).**
+
+### Inverse-orphan reconciliation in `ingest.main` (`ingest.py`; +1 test; KI-12)
+**What:** New read-only helper `get_document_row_hashes()` (the SQLite-side twin of
+`get_indexed_hashes`) returns every `doc_hash` with a committed `Document` row. After the dedup
+intersection is computed, `main()` now subtracts `inverse_orphans = indexed - get_document_row_hashes()`
+from `indexed` and logs a `chroma_chunks_without_document_row` warning naming the hashes. The dedup-gate
+comment's old "Residual (NOT self-healed)" block is replaced with the reconciliation rationale.
+**Why:** F1 commits the SQLite row last (after both Chroma writes) to kill the *forward* orphan (a row
+with zero chunks). The narrow inverse remained: both vector writes land and only the final
+`upsert_document_in_sqlite` commit fails → the hash is in both stores (so in the intersection) with no
+row, the library UI undercounts it, and the gate skipped it forever (only `--rebuild` cleared it).
+Subtracting no-row hashes from the dedup set makes the *next ordinary ingest* reprocess the doc and
+commit its row — the SQLite-side mirror of the Chroma-side self-heal. Nothing is deleted
+(`process_one_document` removes+re-adds chunks idempotently); the gone / content-changed shapes are
+already swept by `cleanup_orphans_*`, so only source-present + unchanged reaches here. Runs
+unconditionally (no `scope is None` / `skip_cleanup` gate) — it deletes nothing, so the gate stays
+correct under `--path` / `--skip-cleanup`; the warning keeps the drift measurable.
+**Rejected:** (a) a KNOWN_ISSUES-only "accepted residual" note — leaves a real (if rare) undercount that
+only `--rebuild` fixes; (b) *dropping* the orphan's Chroma chunks to force reprocessing — deletes
+retrievable data on a possibly-transient SQLite hiccup, where subtract-from-`indexed` heals just as well
+with zero deletion; (c) warn-only with no subtraction — the regression test proves it does NOT heal (the
+doc stays skipped, row never committed).
+**Coupling named:** the dedup gate now reads BOTH sides of the document identity — Chroma
+(`get_indexed_hashes` ×2) and SQLite (`get_document_row_hashes`). A refactor must keep all three or the
+self-heal silently regresses.
+**Tests (`tests/integration/test_ingest_write_ordering.py`, +1):**
+`test_sqlite_commit_failure_self_heals_via_reconciliation` — monkeypatch the final commit to raise after
+both Chroma writes, assert the inverse-orphan state (hash in both stores, zero rows), then a clean re-run
+commits the row. Verified to FAIL on the warn-only (subtraction-disabled) code, so it pins the heal, not
+just the detection.
+**Gate (official-CPython 3.12 venv, `uv run --no-sync`):** `ruff check` ✓ · `mypy --strict
+src/doc_assistant/ingest.py` ✓ · `pytest tests/integration/test_ingest_write_ordering.py
+tests/integration/test_ingest_orphan_cleanup.py` → **11 passed** (+1 over the F1 batch).
+**Opens:** none functional. If the SQLite commit keeps failing across runs (a real disk/DB fault, not a
+transient hiccup), the doc re-errors each run with the warning surfaced — by design; it is no longer
+silently stranded. KI-12 marked RESOLVED.

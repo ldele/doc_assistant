@@ -30,6 +30,7 @@ from sqlalchemy import select
 from doc_assistant.config import CACHE_PATH, DOCS_PATH
 from doc_assistant.db.models import Document
 from doc_assistant.db.session import session_scope
+from doc_assistant.fsutil import atomic_write_text
 from doc_assistant.tables import (
     ExtractedTable,
     extract_tables,
@@ -125,7 +126,7 @@ def _run_one(
     if apply:
         new_markdown = splice_tables(markdown, tables)
         if new_markdown != markdown:
-            cache_path.write_text(new_markdown, encoding="utf-8")
+            atomic_write_text(cache_path, new_markdown)
             row["note"] = "spliced" if tables else "cleared block"
 
     return row

@@ -26,8 +26,8 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import sessionmaker
 
 import doc_assistant.db.session as session_mod
-from doc_assistant import ingest
-from doc_assistant.db.models import Base
+from doc_assistant import figures, ingest
+from doc_assistant.db.models import Base, Figure
 from doc_assistant.db.models import Document as DBDocument
 
 _DOC_V1 = """<!-- page:1 -->
@@ -179,3 +179,129 @@ def test_deleted_source_still_cleaned_and_cache_removed(isolated_ingest: Path) -
     assert _store_hashes(ingest.PC_CHROMA_PATH) == set()
     # Gone source => its orphaned cache is swept too.
     assert not cache.exists()
+
+
+def test_orphan_cleanup_sweeps_figure_dir_for_gone_source(
+    isolated_ingest: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A gone document's on-disk figure PNG dir is swept; a live document's is kept (G1).
+
+    Figure *rows* FK-cascade with the Document; the cropped PNGs under
+    ``FIGURE_DIR/{doc_hash}/`` have no DB cascade, so the orphan sweep must remove them
+    or they leak forever.
+    """
+    docs = isolated_ingest
+    fig_root = docs.parent / "figures"
+    monkeypatch.setattr(figures, "FIGURE_DIR", fig_root)
+
+    gone = _write_cached_source(docs, "gone.md", _DOC_V1)
+    _write_cached_source(docs, "keep.md", _DOC_V2)  # distinct content => distinct hash
+    ingest.main()
+    gone_hash = ingest.doc_hash(_DOC_V1)
+    keep_hash = ingest.doc_hash(_DOC_V2)
+
+    # Simulate extract_figures having written a PNG dir per document.
+    for h in (gone_hash, keep_hash):
+        d = figures.figure_dir(h)
+        d.mkdir(parents=True, exist_ok=True)
+        (d / "page1_fig0.png").write_bytes(b"\x89PNG fake")
+
+    gone.unlink()  # source removed => gone_hash becomes a 'gone' orphan
+    ingest.main()
+
+    assert not figures.figure_dir(gone_hash).exists()  # swept with the orphan
+    assert figures.figure_dir(keep_hash).exists()  # live document untouched
+    assert (figures.figure_dir(keep_hash) / "page1_fig0.png").exists()
+
+
+def test_orphan_cleanup_sweeps_figure_dir_on_content_change(
+    isolated_ingest: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A content change orphans the old hash; its now-dead figure dir is swept too (G1)."""
+    docs = isolated_ingest
+    fig_root = docs.parent / "figures"
+    monkeypatch.setattr(figures, "FIGURE_DIR", fig_root)
+
+    src = _write_cached_source(docs, "paper.md", _DOC_V1)
+    ingest.main()
+    old_hash = ingest.doc_hash(_DOC_V1)
+    old_dir = figures.figure_dir(old_hash)
+    old_dir.mkdir(parents=True, exist_ok=True)
+    (old_dir / "page1_fig0.png").write_bytes(b"fake")
+
+    # Splice tables into the cache (source untouched, cache stays fresh) => new hash;
+    # old_hash is now a 'stale' orphan and its figure dir no longer matches any content.
+    ingest.get_cache_path(src).write_text(_DOC_V2, encoding="utf-8")
+    ingest.main()
+
+    assert not old_dir.exists()
+
+
+def test_figure_rows_cascade_on_document_delete(isolated_ingest: Path) -> None:
+    """Deleting a Document removes its Figure rows — the cascade orphan cleanup relies on.
+
+    ``cleanup_orphans_sqlite`` deletes orphan Document rows; the figure-dir sweep (G1)
+    only handles the on-disk PNGs because the rows are expected to cascade. Asserted here
+    directly since nothing else covered it.
+    """
+    from doc_assistant.db.session import session_scope
+
+    with session_scope() as session:
+        doc = DBDocument(filename="f.pdf", source_original="/x/f.pdf", doc_hash="hh", format="pdf")
+        session.add(doc)
+        session.flush()
+        doc_id = doc.id
+        session.add(Figure(document_id=doc_id, doc_hash="hh", page=1, kind="figure"))
+
+    def _figure_count() -> int:
+        with session_scope() as session:
+            return session.execute(
+                select(func.count()).select_from(Figure).where(Figure.document_id == doc_id)
+            ).scalar_one()
+
+    assert _figure_count() == 1
+
+    with session_scope() as session:
+        session.delete(session.get(DBDocument, doc_id))
+
+    assert _figure_count() == 0
+
+
+def test_figure_dir_delete_failure_does_not_abort_sweep(
+    isolated_ingest: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A locked/undeletable figure dir is logged and skipped — the sweep continues (G1).
+
+    Guards the per-hash try/except (not ``rmtree(ignore_errors=True)``): one orphan's
+    failed delete must neither raise nor stop the remaining orphans being swept.
+    """
+    docs = isolated_ingest
+    fig_root = docs.parent / "figures"
+    monkeypatch.setattr(figures, "FIGURE_DIR", fig_root)
+
+    g1 = _write_cached_source(docs, "gone1.md", _DOC_V1)
+    g2 = _write_cached_source(docs, "gone2.md", _DOC_V2)
+    ingest.main()
+    h1 = ingest.doc_hash(_DOC_V1)
+    h2 = ingest.doc_hash(_DOC_V2)
+    for h in (h1, h2):
+        d = figures.figure_dir(h)
+        d.mkdir(parents=True, exist_ok=True)
+        (d / "page1_fig0.png").write_bytes(b"fake")
+
+    g1.unlink()
+    g2.unlink()  # both sources gone => both are orphans
+
+    real_rmtree = ingest.shutil.rmtree
+
+    def selective_rmtree(path: object, *args: object, **kwargs: object) -> None:
+        if str(h1) in str(path):
+            raise OSError("simulated locked figure dir")
+        real_rmtree(path, *args, **kwargs)
+
+    monkeypatch.setattr(ingest.shutil, "rmtree", selective_rmtree)
+
+    ingest.main()  # must not raise despite the h1 rmtree failure
+
+    assert figures.figure_dir(h1).exists()  # delete failed -> dir kept, no crash
+    assert not figures.figure_dir(h2).exists()  # loop continued -> h2 swept

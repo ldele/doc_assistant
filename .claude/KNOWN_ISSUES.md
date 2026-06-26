@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-06-24 · class: living -->
+<!-- status: active · updated: 2026-06-26 · class: living -->
 
 # KNOWN ISSUES
 
@@ -87,6 +87,11 @@ Migrated from the old `CLAUDE.md` / `README` runtime-quirk notes on 2026-06-20 (
   also an empty environment artifact, not a quality measurement).
 - **Pointer:** `docs/decisions.md` → "Feature 7 — concept-graph REDESIGN" (2026-06-18). Edge precision +
   presence recall are flagged for RIGOR_TODO before the edge model is locked.
+- **Cleanup when built:** retiring `concept_graph.py` + `scripts/build_concept_graph.py` is gated on the
+  redesign landing; it is a connected change across `epistemics.py` → `chat_controller.py` /
+  `compute_epistemics.py` / `wiki.py` + their tests (the carried-over PR-16 ADR-1 Louvain / ADR-4 chunk
+  key stay). Not safe as standalone cleanup while `epistemics.py` imports it.
+- **Pointer (add):** also `docs/decisions/ADR-004-gap-detection-layer.md` + `docs/specs/feature-gap-detection.md`.
 
 ## KI-8 — PC→baseline marker mapping (PR-M1) is coarse at parent boundaries — OPEN (advisory, fail-safe)
 - **Symptom:** In the default parent-child retrieval mode, the live 7d marker chip maps a marked baseline
@@ -210,3 +215,26 @@ Migrated from the old `CLAUDE.md` / `README` runtime-quirk notes on 2026-06-20 (
   any future `just sidecar` picks it up). Upstream report to chromadb/hnswlib still worth filing.
 - **Pointer:** found while validating the data-home flow without a clean box (RG-012); `docs/DEVLOG.md`
   2026-06-24 session.
+
+## KI-12 — Inverse orphan: Chroma chunks with no Document row (post-F1 write reorder) — RESOLVED (2026-06-26)
+- **Symptom:** A document's chunks are present in **both** Chroma stores (so in the dedup
+  intersection) but it has **no `Document` row** in SQLite. The library UI (which counts rows)
+  undercounts it; retrieval is unaffected (it reads Chroma).
+- **Cause:** The F1 write reorder commits the SQLite row **last**, after both Chroma writes, to
+  prevent the *forward* orphan (a committed row with zero chunks). That leaves the narrow inverse:
+  both vector writes land and only the final `upsert_document_in_sqlite` commit fails. The
+  intersection dedup gate self-heals a partial *Chroma* write, but on its own it treats this hash
+  as "already indexed" and skips it — so only `--rebuild` cleared it.
+- **Fix (shipped, 2026-06-26):** `main()` now reconciles the dedup set against SQLite —
+  `inverse_orphans = (get_indexed_hashes(db) & get_indexed_hashes(pc_db)) - get_document_row_hashes()`
+  are subtracted from `indexed` (with a `chroma_chunks_without_document_row` warning), so the
+  document is reprocessed and its row committed on the **next ordinary ingest**. The SQLite-side
+  twin of the Chroma-side self-heal; nothing is deleted (chunks re-add idempotently). The
+  gone / content-changed shapes are already swept by `cleanup_orphans_*`, so only the
+  source-present + unchanged shape reaches the reconciliation.
+- **Regression test:**
+  `tests/integration/test_ingest_write_ordering.py::test_sqlite_commit_failure_self_heals_via_reconciliation`
+  — monkeypatch the final commit to fail after both Chroma writes, assert the inverse-orphan state,
+  then assert a clean re-run commits the row. Verified to fail on the warn-only (no-subtraction) code.
+- **Pointer:** `docs/DEVLOG.md` 2026-06-26 ingestion-hardening F1 "Opens" + the follow-up entry; the
+  dedup-gate comment in `ingest.py:main`.

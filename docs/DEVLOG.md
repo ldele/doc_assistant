@@ -2905,3 +2905,22 @@ no test had a `__file__`/fixture-path dependency, and the one cross-reference
 tests/unit tests/integration` → **622 passed, 1 skipped** (unchanged — pure relocation). `architecture.md`
 module table + enrichment-module note updated.
 **Opens:** none. **Nothing committed — staged for review (cpc §13).**
+
+## Session: 2026-06-27 — Verify the 2026-06-26 ingest refactor + doc/gate sync, Claude Code
+
+**What:** ran a 5-agent verification of yesterday's `ingest/` package split + extractor move + docs.
+**Refactor confirmed sound** — clean imports, all `ingest/__init__` re-exports resolve, CLI + `doc-ingest`
+entrypoint OK, **623 passed / 0 skipped**, ruff / mypy --strict / bandit green, and an AST diff confirms the
+"moved verbatim" claim (21/26 fns byte-identical; the rest differ only by `config.X` call-time access; the 5
+moved extractors are pure renames). Every defect found was stale documentation, not broken code.
+**Fixed (doc-sync from the move):** repointed the 4 dead source links in `figures-and-tables.md` + the Mermaid
+enrichment nodes in `architecture.md` to `ingest/<name>.py`; corrected KI-12's test path
+(`tests/integration/ingest/…`) and the `CONTEXT.md` test count (~555 → ~623); refreshed the README Status
+block (phase + count, already-shipped 7d/4b out of "Next" → gap-detection); repointed `architecture.md`'s
+manual-eval command to the canonical `scripts.run_eval`; added a path-note banner to the retained 4a/4b specs.
+**CI gate (was red — pre-existing, NOT from the refactor):** `ruff format --check src/ tests/` failed on
+`tests/unit/test_embeddings.py` from a ruff-version skew (pre-commit hook `v0.6.0` vs lock/CI `0.15.13`).
+Reformatted the file (gate green), then aligned versions so it can't recur: pre-commit ruff rev → `v0.15.13`,
+`pyproject` dev floor → `ruff>=0.15.13`, re-locked (1-line `uv.lock` diff; ruff stays 0.15.13).
+**Opens:** `bibtex` still imports the private `_first_author_surname` across the `ingest` boundary (pre-existing
+coupling smell — promote or re-export later). **Nothing committed — staged for review (cpc §13).**

@@ -32,9 +32,9 @@ def test_registry_has_default_model():
 def test_registry_entries_are_self_consistent():
     for key, config in MODELS.items():
         assert isinstance(config, EmbeddingModelConfig)
-        assert (
-            config.name == key
-        ), f"Registry key {key!r} does not match config.name {config.name!r}"
+        assert config.name == key, (
+            f"Registry key {key!r} does not match config.name {config.name!r}"
+        )
         assert config.hf_id, f"{key} missing hf_id"
         assert config.dimension > 0
 

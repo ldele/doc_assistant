@@ -1,6 +1,9 @@
 # Spec — Feature 4a: isolated-Marker table ingest path
 
 **Status:** ✅ SHIPPED 2026-06-04..06 (Claude Code, commit `2933881`). `tables_marker.py` + `extract_tables_marker.py` + tests landed; Marker = primary table engine; caption-anchored inline splice; `cases.tables.yaml` measured green on the RTX/GPU box 2026-06-06. Designed 2026-06-04 (grilled with user, verified against code); retained as the design record.
+
+> **Path note (2026-06-26):** the extractor modules moved into the `src/doc_assistant/ingest/` package in `c28dc14`. Paths cited below (`tables.py`, `tables_marker.py`, `regions.py`) now live at `src/doc_assistant/ingest/<name>.py`; the public API is unchanged.
+
 **Owner of execution:** Claude Code (code + tests).
 **Pattern reference:** Enrichment-Layer Pattern (`docs/decisions.md`); mirrors `scripts/extract_tables.py` + `src/doc_assistant/tables.py`.
 **Engine decision:** locked 2026-06-02 (RTX eval) — **Marker wins, run isolated.** See `docs/DEVLOG.md` 2026-06-02 and `docs/figures-and-tables.md`. Step 1 (the `eval_marker_tables.py` shell-out) shipped 2026-06-04.

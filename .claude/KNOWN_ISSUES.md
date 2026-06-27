@@ -233,7 +233,7 @@ Migrated from the old `CLAUDE.md` / `README` runtime-quirk notes on 2026-06-20 (
   gone / content-changed shapes are already swept by `cleanup_orphans_*`, so only the
   source-present + unchanged shape reaches the reconciliation.
 - **Regression test:**
-  `tests/integration/test_ingest_write_ordering.py::test_sqlite_commit_failure_self_heals_via_reconciliation`
+  `tests/integration/ingest/test_ingest_write_ordering.py::test_sqlite_commit_failure_self_heals_via_reconciliation`
   — monkeypatch the final commit to fail after both Chroma writes, assert the inverse-orphan state,
   then assert a clean re-run commits the row. Verified to fail on the warn-only (no-subtraction) code.
 - **Pointer:** `docs/DEVLOG.md` 2026-06-26 ingestion-hardening F1 "Opens" + the follow-up entry; the

@@ -17,7 +17,7 @@ eval harness, document store + library UI, citation graph, the integrity layer, 
 LLM layer, figures/tables, and the wiki/synthesis layer are shipped. The cross-document concept graph
 (PR 16) + the 7d engine shipped too, **but their open-vocabulary core was superseded by a 2026-06-18
 redesign that is not yet built — do not build on `data/graph/graph.json` (`.claude/KNOWN_ISSUES.md`
-KI-7).** ~555 tests; ruff / mypy --strict / bandit clean.
+KI-7).** ~623 tests; ruff / mypy --strict / bandit clean.
 Desktop-shell migration (ADR-002): **M0–M5 all shipped (2026-06-25).** M0 (`ChatController`) · M1 (live 7d
 marker chips) · M2 (FastAPI + SSE, `apps/api/`) · M3 (Svelte/Tauri frontend, `apps/desktop/`) · **M4** —
 frozen 1.6 GB onefile bundling model weights (KI-9) + OS trust store (KI-10) + the ASCII-Chroma fix (KI-11);

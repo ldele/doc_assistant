@@ -1,6 +1,9 @@
 # Spec — Feature 4b: figure region detection + caption pairing (sidecar manifest)
 
 **Status:** ✅ BUILT (Claude Code, 2026-06-14) — `src/doc_assistant/figures.py` + `scripts/extract_figures.py` + `Figure` table; gate green (389 tests), validated on the public corpus (45 regions / 44 PNGs, all caption-paired). Designed by Cowork 2026-06-13. Roadmap PR 8.
+
+> **Path note (2026-06-26):** the extractor modules moved into the `src/doc_assistant/ingest/` package in `c28dc14`. Paths cited below (`figures.py`, `tables.py`, `regions.py`) now live at `src/doc_assistant/ingest/<name>.py`; the public API is unchanged.
+
 **Owner of execution:** Claude Code (code + tests).
 **Pattern reference:** Enrichment-Layer Pattern (`docs/decisions.md`) — post-ingest, idempotent, **sidecar** (figures are binary → never spliced into the markdown). Mirrors `scripts/extract_tables.py` + `src/doc_assistant/tables.py` / `doc_vectors.py`.
 **Foundation (shipped):** the page content classifier `src/doc_assistant/regions.py` already discriminates `chart` / `photo` / `figure` / `table` / `text` per page and exposes `is_figure` + the raster `image_area_fraction` signal. 4b promotes that **page-level** verdict to **region-level**: find the figure bbox(es) on each figure page, pair each with its caption, render a PNG, and persist a `Figure` sidecar row. This is the deeper step the `regions.py` and 4a docstrings call "the proper Feature 4b build."

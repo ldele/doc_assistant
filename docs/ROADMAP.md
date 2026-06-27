@@ -94,7 +94,9 @@ once M5 lands.
 
 **Later / open (no PR yet):** the concept-graph **redesign** (curated vocabulary + deterministic
 skeleton + confined LLM enrichment, 2026-06-18 — the next concept-graph build, see
-`.claude/KNOWN_ISSUES.md`), and the **gap-detection layer** built on top of it (two-tier
+`.claude/KNOWN_ISSUES.md`; **build spec `docs/specs/concept-graph-redesign.md`**, design-locked
+2026-06-27 — deterministic skeleton is the first increment, blocked on RG-001 for threshold-setting),
+and the **gap-detection layer** built on top of it (two-tier
 deterministic/stochastic, `docs/decisions/ADR-004-gap-detection-layer.md` +
 `docs/specs/feature-gap-detection.md` — its deterministic Tier-1 + Tier-2a-floor are the first
 increment, blocked on the skeleton + RG-001); Zotero/Calibre ingest adapters (PR 17); an outbound

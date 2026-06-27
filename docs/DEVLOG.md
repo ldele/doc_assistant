@@ -2379,7 +2379,8 @@ launched the frozen build with **no `DOC_DATA_DIR`** so it resolves its own home
 `chromadb … Error loading hnsw index`. Debugged it (the venv reproduces it identically — not the freeze):
 
 **KI-11 — chromadb 1.5.9 does not persist the hnsw `.bin` index when the persist directory's actual
-location contains non-ASCII characters.** This box's username is "Lucas Délez" (the `é`), so the per-user
+location contains non-ASCII characters.** This box's Windows username contains a non-ASCII character (an
+accented `é`), so the per-user
 path is non-ASCII. Evidence: ASCII location (`C:\Projects\…`, 1 **and** 10 files) → `.bin` written, reloads
 fine; non-ASCII location (10 files / 2455 chunks) → no `.bin` → reload fails (read-time backfill works for
 ~310 chunks but fails at 2455). The Windows **8.3 short path** does NOT help (chromadb resolves it to the
@@ -2924,3 +2925,29 @@ Reformatted the file (gate green), then aligned versions so it can't recur: pre-
 `pyproject` dev floor → `ruff>=0.15.13`, re-locked (1-line `uv.lock` diff; ruff stays 0.15.13).
 **Opens:** `bibtex` still imports the private `_first_author_surname` across the `ingest` boundary (pre-existing
 coupling smell — promote or re-export later). **Nothing committed — staged for review (cpc §13).**
+
+## Session: 2026-06-27 (cont.) — Private sources manifest: re-downloadable library across machines, Claude Code
+
+**What:** new `src/doc_assistant/sources_manifest.py` + `scripts/sync_sources.py` — a gitignored
+`data/sources_manifest.yaml` that pins each file in `data/sources/` by `sha256` + size and the URL it was
+downloaded from, so the library can be reconstituted on another machine. CLI: build (default) / `--download` /
+`--verify-only` / `--dry-run`. Adds `config.SOURCES_MANIFEST` + a `.gitignore` entry + a README "Move your
+library between machines" subsection.
+**Why:** move a (mostly copyrighted, non-redistributable) personal library between PCs the way the public corpus
+is reproduced — a curated URL list + a fetcher — but private/gitignored, shared out-of-band.
+**Design:** a deliberate near-clone of the public-corpus flow (`download_corpus.py` + `corpus_manifest.yaml`).
+Ingest captures NO source URL (the `Document` row only has the local path), so URLs are user-curated; the one
+shortcut auto-fills `url` for any file whose `sha256` (or filename) matches the committed public corpus. Pure
+core (merge/enrich/(de)serialise) split from the fs+network boundary for unit-testing without the wire.
+`merge_entries` preserves a user-filled `url` across rebuilds and refreshes the content pin; absent files are
+kept (still re-downloadable). Download is format-agnostic (library has EPUB/HTML/DOCX/MD, not just PDF).
+**Rejected:** a `source_url` column on `Document` + capture-at-ingest (bigger, and only helps files added
+*after* — the existing library has no captured URLs, so a curated manifest is the only thing that works today);
+richer catalog fields + a desktop Settings button (both offered; user chose URL+checksum, CLI-only).
+**Gate GREEN (`uv run --no-sync`, torch 2.12.0+cpu):** ruff ✓ · ruff format ✓ · mypy --strict src ✓ (51 files)
+· bandit ✓ (B310 nosec — scheme restricted to http/https) · **+15 tests** (8 unit pure-core, 7 integration
+scan/build/download/verify, network mocked). Real dry-run on the box's 10-file corpus → 10/10 URLs auto-filled
+from the public corpus, 0 missing; real build wrote the manifest (gitignored — confirmed via `git check-ignore`);
+`--verify-only` → 0 mismatches.
+**Opens:** real `--download` not exercised here (would hit arxiv.org through the corporate TLS proxy, KI-10);
+the fetch path is covered by mocked-HTTP integration tests. **Nothing committed — staged for review (cpc §13).**

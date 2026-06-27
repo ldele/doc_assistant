@@ -190,11 +190,12 @@ Migrated from the old `CLAUDE.md` / `README` runtime-quirk notes on 2026-06-20 (
 - **Where it bites:** the shipped desktop app keeps its corpus in the **per-user data home**
   `C:\Users\<username>\AppData\Local\doc_assistant\data` (PR-M4, `config._resolve_data_path`). Any user
   whose Windows username has an accent / non-Latin character (é, ü, ñ, CJK, Cyrillic — very common) gets a
-  non-ASCII path → a corpus that won't reload. Verified on this box (username "Lucas Délez", the `é`).
+  non-ASCII path → a corpus that won't reload. Verified on this box (a Windows username containing a
+  non-ASCII character — here an accented `é`).
 - **Confirmed (2026-06-24, chromadb 1.5.9), path is the variable:**
   - ASCII location (`C:\Projects\…`), 1 **and** 10 files → `.bin` written, reloads fine.
-  - Non-ASCII location (`C:\Users\Lucas Délez\…`), 10 files / 2455 chunks → no `.bin` → reload **fails**.
-  - The Windows **8.3 short path** (`C:\Users\LUCASD~1\…`, ASCII *string*) does **NOT** help — chromadb /
+  - Non-ASCII location (`C:\Users\<non-ASCII username>\…`, e.g. an accented `é`), 10 files / 2455 chunks → no `.bin` → reload **fails**.
+  - The Windows **8.3 short path** (`C:\Users\<NAME>~1\…`, an ASCII *string*) does **NOT** help — chromadb /
     hnswlib resolves it to the real `é` directory for file I/O, so `.bin` still isn't written.
 - **NOT the cause (ruled out):** a general "fresh ingest is broken" (a fresh full ASCII ingest works), the
   freeze (the venv reproduces it identically), or corpus size alone (ASCII 2455 works).

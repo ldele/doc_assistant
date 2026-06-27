@@ -35,6 +35,7 @@ data/cache/
 data/chroma/
 data/chroma_pc/
 data/sources/
+data/sources_manifest.yaml
 data/issues/
 data/library.db
 data/eval.duckdb

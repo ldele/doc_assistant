@@ -85,6 +85,13 @@ PC_CHROMA_PATH = str(_CHROMA_BASE / "chroma_pc")  # Parent - Child
 SQLITE_PATH = str(DATA_PATH / "library.db")
 SQLITE_URL = f"sqlite:///{SQLITE_PATH}"
 
+# Private sources manifest — maps each file in DOCS_PATH to its download URL + a
+# sha256/size pin, so the library can be re-downloaded on another machine (a
+# private mirror of the public-corpus flow). Gitignored: the library is mostly
+# copyrighted, so the manifest is shared out-of-band, never committed. Built by
+# `doc_assistant.sources_manifest` (CLI: `scripts/sync_sources.py`).
+SOURCES_MANIFEST = DATA_PATH / "sources_manifest.yaml"
+
 # Conversation + debug exports (markdown transcripts, dev bundles, per-turn JSONL
 # logs). Gitignored, regenerable — written by `doc_assistant.export`. A user
 # downloads a clean transcript; a dev grabs the full bundle (sources + scores +

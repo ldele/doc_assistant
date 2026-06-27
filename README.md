@@ -126,6 +126,19 @@ To rebuild from scratch (after changing chunking strategy, for example):
 uv run python -m doc_assistant.ingest --rebuild
 ```
 
+### Move your library between machines
+
+`data/sources/` is gitignored (your library is yours), so cloning the repo elsewhere doesn't carry your documents. Keep a small **sources manifest** — the private analog of the public-corpus downloader — to reconstitute them:
+
+```bash
+uv run python -m scripts.sync_sources               # record data/sources/ -> data/sources_manifest.yaml
+# fill in the `url:` for any file not auto-matched, then copy the manifest to the other machine out-of-band
+uv run python -m scripts.sync_sources --download    # on the other machine: re-fetch into data/sources/
+uv run python -m scripts.sync_sources --verify-only # checksum what's on disk against the manifest
+```
+
+The manifest pins each file by SHA-256 + size plus the URL it came from; files matching the public corpus get their URL filled in automatically. It's **gitignored** — share it out-of-band, never commit it (the repo is public).
+
 ### Citation graph + similarity edges (Phase 4)
 
 After ingestion, three post-passes populate the data layer:

@@ -6,8 +6,12 @@ repos:
   # under scripts/ (outside CI's lint scope, see [tool.ruff] src=["src","tests"]) could fail
   # the commit while CI stayed green. pass_filenames:false + explicit paths = same tree as CI;
   # files:^(src|tests)/ keeps the trigger scoped so the hook only fires on relevant changes.
+  # rev pinned to match the uv.lock ruff (0.15.13) + pyproject floor, so the local
+  # format hook produces byte-identical output to the CI gate (`ruff format --check`).
+  # A skew here (old hook formatting one way, newer locked CI ruff another) silently
+  # reddened CI — see docs/DEVLOG.md 2026-06-27.
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.6.0
+    rev: v0.15.13
     hooks:
       - id: ruff
         args: [--fix, src/, tests/]

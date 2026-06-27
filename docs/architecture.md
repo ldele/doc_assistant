@@ -37,8 +37,8 @@ flowchart TD
     end
 
     subgraph ENR["Enrichment layers — post-ingest · idempotent · sidecar"]
-        REG["regions.py<br/>page classifier"] --> TBL["tables_marker.py / tables.py<br/>Marker · pdfplumber"]
-        CIT["citations.py"]
+        REG["ingest/regions.py<br/>page classifier"] --> TBL["ingest/tables_marker.py / ingest/tables.py<br/>Marker · pdfplumber"]
+        CIT["ingest/citations.py"]
         MD["metadata_extractor.py"]
         DV["doc_vectors.py"]
     end
@@ -148,8 +148,8 @@ tests/
 ├── integration/          # cross-module, may use temp files, mocked LLM
 │   └── test_<flow>.py
 └── eval/                 # RAG evaluation harness (not part of standard CI run)
-    ├── run_eval.py       # harness entrypoint
-    ├── cases.yaml / cases.public.yaml
+    ├── run_eval.py       # legacy recall@K harness (eval_set.json); canonical harness is scripts/run_eval.py
+    ├── cases.yaml / cases.public.yaml   # consumed by scripts/run_eval.py
     ├── TESTING.md        # what each tier and scorer measures
     └── baselines/        # recorded eval baselines
 ```
@@ -160,5 +160,5 @@ The testing strategy — what each tier and each eval scorer measures, why, and 
 
 Run commands:
 - `uv run pytest tests/unit/ tests/integration/` — free, fast, CI default
-- `uv run python -m tests.eval.run_eval` — manual, costs API tokens
+- `uv run python -m scripts.run_eval` — manual, costs API tokens (the canonical harness; reads `tests/eval/cases.yaml`, persists to `data/eval.duckdb`)
 - `uv run pytest -m api` — any future tests marked with `@pytest.mark.api`

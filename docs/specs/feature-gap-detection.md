@@ -153,7 +153,9 @@ All four are pure and deterministic given the graph; each returns `Gap`s with
 ## Build node
 
 **Depends on:** the **Decision-C curated-vocabulary skeleton** (the `Concept`/`ConceptAlias` schema +
-deterministic edges) — **not yet built**; the `Citation` graph (shipped, `db/models.py`); the per-claim
+deterministic edges) — **not yet built; build spec `docs/specs/concept-graph-redesign.md`** (design-locked
+2026-06-27, its deterministic Node A is the dependency this layer needs); the `Citation` graph (shipped,
+`db/models.py`); the per-claim
 `unsupported` marker (shipped, `synthesis.claim_marker()` → `answer_claims.marker`); the reviewer
 `failure_tag` enum (shipped, `reviewer.ReviewResult`). The shared observability/rating spine is
 introduced here (its first consumer) and reused by Phase 9 review-generation.

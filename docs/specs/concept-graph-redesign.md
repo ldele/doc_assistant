@@ -246,6 +246,54 @@ dedupe/label vocabulary pass; embedding-fallback presence; retiring `concept_gra
 `epistemics.py`/`wiki.py` (KI-7 connected change); the gap layer itself (`docs/specs/feature-gap-detection.md`);
 the curation UI.
 
+### Build sequence (PR order)
+
+The load-bearing insight: **RG-001/008/009 are threshold-setting gates, not build blockers.** Node A is
+buildable and fully testable on fakes (the guard tests below use toy inputs, no DB/LLM); only the real
+`--apply` run and the threshold-locking need the RTX/Ollama box (KI-5: enrichment runs on the host). So
+Node A can land **staged** behind the dry-run + provisional defaults now; the validation run closes the
+gate later.
+
+**Dependency chain (what must be true before each step):**
+
+```
+Curated vocabulary (Concept/ConceptAlias)  ─┐
+DocSimilarity populated (compute_doc_vectors --apply)  ─┤
+Citation graph (shipped)                    ─┼─> Node A skeleton ─> RG-001/008/009 run ─> thresholds locked
+Chunk store + {doc_id}:p{parent_index} key  ─┘                              │
+                                                                            └─> Node B (stance) ─> gap layer (ADR-004)
+```
+
+**Two prerequisites that bit Feature 6 — check them first:** (1) `DocSimilarity` must be **populated**
+(`scripts/compute_doc_vectors.py --apply`) or similarity-provenance is silently absent; (2) the curated
+`Concept`/`ConceptAlias` rows must exist — the first increment seeds candidates from `Keyword` + manual
+`--promote` (Decision 1). **No vocabulary → empty graph.** Curation is a real product step, not a formality.
+
+- **PR-A — Node A (this spec's first increment).** Schema + config → pure core (`match_presence` →
+  `cooccurrence_edges` → `add_*_provenance` → `edge_weight` → `analyze_skeleton` → dict round-trip →
+  `node_weights_for_epistemics`) → impure boundary + orchestrator → `seed_concepts.py` → CLI runner → guard
+  tests → gate + docs. TDD, additive (new tables only). The no-edge-creation guard (citation/similarity
+  annotate-never-create) is the most important test — it is the density-control invariant.
+- **Gate — RG-001/008/009 (the keystone; needs the RTX/Ollama box or a paid OK).** Not a code step — a
+  human-in-the-loop spot-check `--apply` run on the real ~61-doc corpus. **RG-008** (blocks-ship): edge
+  precision per provenance tier; set `min_cooccurrence` + the trust threshold *from the run*. **RG-009**
+  (degrades): presence recall vs a few hand-labelled docs. Record baselines in `tests/eval/baselines/`.
+  RG-002/004 are moot under the redesign (nodes curated; co-occurrence is in the skeleton) — they close as
+  "redesign re-founds this," don't re-run them against the old graph.
+- **PR-B — Node B (deferred, gated on PR-A + RG-001).** `concept_skeleton_enrich.py`; re-founds 7d's stance
+  layer. Provider-isolated, Ollama-default.
+- **PR-C — gap layer (separate spec, gated on the skeleton + RG-001).** `docs/specs/feature-gap-detection.md`
+  Tier-1 + Tier-2a floor; subsumes the wiki-6b + concept-7c signals.
+
+**Risks / watch points (flagged, not re-decided):** (1) **empty-vocabulary trap** — PR-A is useless without
+promoted concepts; budget time for a starter set. (2) **DocSimilarity must be populated** first. (3)
+**density blow-up is the headline risk (RG-008)** — the chunk-level co-occurrence + annotate-never-create
+design exists to prevent "every concept in doc X linked to every in doc Y"; if the run shows a dense
+low-precision graph the lever is `min_cooccurrence` ↑, **not** a design change. (4) the run is
+**environment-gated, not design-gated** — don't let "can't run RG-001 today" stall PR-A. (5) the **KI-7
+connected change stays parked** (`epistemics.py` imports `concept_graph.py`); name the coupling, don't
+silently wire it.
+
 ### Guard tests (written with the build)
 
 - `tests/unit/test_concept_skeleton.py` — fixed toy inputs (curated concepts + aliases + synthetic chunk

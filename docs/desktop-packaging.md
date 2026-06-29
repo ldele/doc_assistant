@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-06-22 · class: runbook -->
+<!-- status: active · updated: 2026-06-29 · class: runbook -->
 
 # Desktop packaging runbook (PR-M4)
 
@@ -159,6 +159,53 @@ renders the same `TurnResult` as the CLI / Chainlit.
 
 Record results in `.claude/RIGOR_TODO.md` (RG-010/011/012 → `Status: done`); RG-011 + RG-012 keep
 the rigor gate red until they pass.
+
+### KI-10 — frozen build rejects corporate-MITM HTTPS (the truststore fix)
+
+On a box behind a TLS-inspecting (MITM) corporate proxy, the frozen `dist\doc-assistant-api.exe`
+SSL-fails the outbound Anthropic call (`CERTIFICATE_VERIFY_FAILED`); `$0` billed (the handshake dies
+first). This blocks the **frozen-build paid first-token** measurement (the last open piece of RG-011 on
+this box). **Dev-reproducible on the proxy box — no sandbox / clean machine / RTX needed**; cost ≈ a
+re-freeze + at most 1–2 paid calls (cents). Non-blocking by itself (Ollama / off-proxy use is unaffected).
+Two live hypotheses: **(A)** `truststore.inject_into_ssl()` fails in the freeze (truststore not fully
+bundled), or **(B)** inject runs but the anthropic SDK's httpx client ignores the global patch.
+
+- **Step 0 — read the diagnostic (no code; the stderr-WARN is already staged in `apps/api/__main__.py`).**
+
+  ```powershell
+  just sidecar                                   # re-freeze with the WARN entrypoint (~1.6 GB)
+  # run ONE on-proxy Anthropic turn through dist\doc-assistant-api.exe, capture stderr
+  ```
+
+  `WARN truststore.inject_into_ssl() failed …` in stderr ⇒ **branch A**; no warn but still
+  `CERTIFICATE_VERIFY_FAILED` ⇒ **branch B**. **Don't write the fix before this read** — A and B differ;
+  guessing wastes a re-freeze cycle.
+- **Step A — inject fails in the freeze (fix bundling).** `collect_submodules("truststore")`
+  (`scripts/doc_assistant_api.spec`) collects the modules but the onefile may not reproduce truststore's
+  SSL patch. Add a **PyInstaller runtime hook** calling `inject_into_ssl()` (runs before any collected
+  import) + any submodule the WARN names to `hiddenimports`. Re-freeze, re-read. If truststore stays
+  fragile even with the hook, **fall through to Step B**.
+- **Step B — anthropic client ignores the global inject (the robust fix; recommended regardless).** In
+  `llm.py` `AnthropicClient.__init__` (today `Anthropic(api_key=...)` with **no custom `http_client`**),
+  hand the SDK an explicit OS-trust httpx client:
+
+  ```python
+  import truststore, httpx, ssl
+  ctx = truststore.SSLContext(ssl.PROTOCOL_TLS_CLIENT)   # OS store carries the corporate MITM root CA
+  self._client = Anthropic(api_key=..., http_client=httpx.Client(verify=ctx))
+  ```
+
+  Guard it (fall back to the default client when truststore is absent / a dev box; log the fallback). This
+  removes the dependency on the global monkeypatch surviving the freeze and keeps the TLS concern inside
+  `AnthropicClient`. Confirm `Anthropic(http_client=...)` is the current SDK seam before writing.
+- **Step C — verify + record.** Re-run the on-proxy turn → first token + real answer (cents billed); record
+  RG-011's frozen-build paid number in `.claude/RIGOR_TODO.md`, flip KI-10 → RESOLVED. **Tests:** no live
+  paid call (cpc §13) — a construction-only unit test (truststore-context client when importable, clean
+  fallback when not) is the regression guard.
+- **Scope:** KI-9 (bundled weights + `HF_HUB_OFFLINE`) already removes all HuggingFace network when frozen,
+  so KI-10's remaining scope is **only the outbound LLM call** — don't re-solve the HF side.
+
+Full issue history + root-cause lead: `.claude/KNOWN_ISSUES.md` KI-10.
 
 ## Data directory (frozen builds)
 

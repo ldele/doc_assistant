@@ -82,7 +82,12 @@ Migrated from the old `CLAUDE.md` / `README` runtime-quirk notes on 2026-06-20 (
 - **Status:** Superseded in part by the **2026-06-18 concept-graph REDESIGN** (Decision C — user-curated
   vocabulary + deterministic skeleton from `Citation`/`DocSimilarity` + confined LLM enrichment). ADR-1
   (Louvain) and ADR-4 (composite chunk key) carry over; ADR-3 (LLM-extraction node source) + the single
-  integrity tag do not. The redesign is **decided but not yet built**; Feature 7d re-founds on it.
+  integrity tag do not. **Update (2026-06-30):** the redesign's **Node A — the deterministic, zero-LLM
+  skeleton — is now BUILT** as a *new* module (`concept_skeleton.py` + `scripts/{seed_concepts,
+  build_concept_skeleton}.py` + the four `concept_*` tables), alongside the old graph (Decision 8). The
+  old open-vocabulary `concept_graph.py` + `data/graph/graph.json` are **still superseded** and still in
+  place (nothing retired yet); Node B (LLM stance) + the RG-001 validation run remain. Feature 7d still
+  reads the old graph until the connected re-point lands (see Cleanup).
 - **Do not build on:** the current LLM-extraction graph or `data/graph/graph.json` (the on-disk file is
   also an empty environment artifact, not a quality measurement).
 - **Pointer:** `docs/decisions.md` → "Feature 7 — concept-graph REDESIGN" (2026-06-18). Edge precision +

@@ -1,6 +1,10 @@
 # Spec — Concept-graph redesign: curated vocabulary + deterministic skeleton + confined LLM enrichment
 
-**Status:** 🔒 **DESIGNED, NOT BUILT** (2026-06-27, Cowork). Turns "Feature 7 — concept-graph
+**Status:** ✅ **NODE A BUILT** (2026-06-30, Claude Code) — the deterministic, zero-LLM skeleton
+(`src/doc_assistant/concept_skeleton.py` + `scripts/{seed_concepts,build_concept_skeleton}.py` + the four
+new tables + `CONCEPT_SKELETON_*` config; 23 guard tests, full gate green). **Node B (LLM relation/stance)
+and the RG-001/008/009 threshold-setting `--apply` run on the real corpus remain.** Was 🔒 DESIGNED, NOT
+BUILT (2026-06-27, Cowork). Turns "Feature 7 — concept-graph
 REDESIGN" ("Decision C", `docs/decisions.md`, 2026-06-18) into a code-level build contract.
 **Supersedes** the open-vocabulary LLM-extraction core of the shipped PR-16 graph (`.claude/KNOWN_ISSUES.md`
 KI-7) — do **not** build on `concept_graph.py` or `data/graph/graph.json`. The two carried-over PR-16

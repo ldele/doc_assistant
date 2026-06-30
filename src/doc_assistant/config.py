@@ -418,6 +418,38 @@ CONCEPT_GRAPH_SEED = int(os.getenv("CONCEPT_GRAPH_SEED", "42"))
 
 
 # ============================================================
+# Concept skeleton — REDESIGN (Phase 7 / Feature 7, curated-vocabulary skeleton)
+# ============================================================
+# The curated-vocabulary + deterministic-skeleton redesign of the concept graph
+# (docs/specs/concept-graph-redesign.md; supersedes the open-vocabulary block above,
+# KNOWN_ISSUES KI-7). Node A (the deterministic skeleton) makes ZERO LLM calls; the
+# LLM relation/stance pass (Node B) is deferred. Sidecar artifact + sidecar tables,
+# regenerable, never mutates the chunk store (Enrichment-Layer Pattern). These are
+# ordinary config contracts, NOT eval-locked retrieval settings.
+
+# Sidecar root: data/skeleton/skeleton.json + the per-doc extraction cache.
+# Gitignored (derived, regenerable).
+CONCEPT_SKELETON_DIR = DATA_PATH / "skeleton"
+
+# Two concepts get a co-occurrence edge only when co-present in at least this many
+# *chunks* (chunk-level, not document-level — Decision 4: doc-level co-occurrence on a
+# same-domain corpus saturates into a meaningless dense graph). PROVISIONAL — the
+# headline density lever; set from the RG-001/008 edge-precision run on the real corpus.
+CONCEPT_SKELETON_MIN_COOCCURRENCE = int(os.getenv("CONCEPT_SKELETON_MIN_COOCCURRENCE", "2"))
+
+# Louvain is randomized; a fixed seed makes community assignment reproducible so the
+# skeleton.json artifact is byte-identical to rebuild (ADR-1, carried over from PR-16).
+CONCEPT_SKELETON_SEED = int(os.getenv("CONCEPT_SKELETON_SEED", "42"))
+
+# Node B (deferred, LLM relation/stance enrichment) defaults to LOCAL Ollama
+# *explicitly*, NOT to LLM_PROVIDER — the same credit-leak footgun guard as the wiki
+# and the old concept graph (KI-4). An Anthropic run is opt-in via --provider and
+# routes through `llm.assert_provider_intent`. Node A never reads these.
+CONCEPT_SKELETON_LLM_PROVIDER = os.getenv("CONCEPT_SKELETON_LLM_PROVIDER", "ollama")
+CONCEPT_SKELETON_LLM_MODEL = os.getenv("CONCEPT_SKELETON_LLM_MODEL", "llama3.1:8b")
+
+
+# ============================================================
 # Logging / observability (ADR-003)
 # ============================================================
 # structlog is the single logging substrate (rule #5). These two knobs are read

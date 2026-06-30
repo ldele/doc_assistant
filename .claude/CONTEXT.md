@@ -12,12 +12,16 @@ and its contract are recorded in `docs/decisions/ADR-001-adopt-cpc-standard.md`.
 research-integrity layer (provenance, evidence/interpretation split, separate-context reviewer).
 Not a chatbot wrapper — reliable, grounded, *measurable* answers over **your** documents.
 
-**Current phase (2026-06-26):** Phase 6 in progress; Phase 7 (gap detection) underway. Core RAG,
+**Current phase (2026-06-30):** Phase 6 in progress; Phase 7 (gap detection) underway. Core RAG,
 eval harness, document store + library UI, citation graph, the integrity layer, the provider-agnostic
 LLM layer, figures/tables, and the wiki/synthesis layer are shipped. The cross-document concept graph
 (PR 16) + the 7d engine shipped too, **but their open-vocabulary core was superseded by a 2026-06-18
-redesign that is not yet built — do not build on `data/graph/graph.json` (`.claude/KNOWN_ISSUES.md`
-KI-7).** ~623 tests; ruff / mypy --strict / bandit clean.
+redesign — do not build on `concept_graph.py` / `data/graph/graph.json` (`.claude/KNOWN_ISSUES.md`
+KI-7).** The redesign's **Node A — the deterministic, zero-LLM concept skeleton — is BUILT (2026-06-30,
+`concept_skeleton.py` + `scripts/{seed_concepts,build_concept_skeleton}.py` + the `concept_*` tables +
+`CONCEPT_SKELETON_*` config)**, alongside the old graph (not retired); pending: the RG-001/008/009
+`--apply` validation run on the real corpus, then Node B (LLM stance) + the KI-7 retirement.
+~660 tests; ruff / mypy --strict / bandit clean.
 Desktop-shell migration (ADR-002): **M0–M5 all shipped (2026-06-25).** M0 (`ChatController`) · M1 (live 7d
 marker chips) · M2 (FastAPI + SSE, `apps/api/`) · M3 (Svelte/Tauri frontend, `apps/desktop/`) · **M4** —
 frozen 1.6 GB onefile bundling model weights (KI-9) + OS trust store (KI-10) + the ASCII-Chroma fix (KI-11);
@@ -116,9 +120,12 @@ in cpc CONVENTIONS **§12 / §13** — read them there, do not restate. Project-
   with `--repeat` before locking it as a measured win. `CANDIDATE_K=10` reproduces pre-split behaviour.
 - **Per-project embedder routing (Feature 1b) deferred** — no model beats `bge-base` on an identifiable
   sub-corpus yet (SPECTER2 lost on every retrieval signal). Re-run SPECTER2 `--repeat 5` first.
-- **Concept graph redesign (2026-06-18) decided, not built** — the shipped open-vocabulary core is
-  superseded (KI-7); the curated-vocabulary + deterministic-skeleton design has unvalidated edge
-  precision + presence recall (flagged for RIGOR_TODO before locking the edge model).
+- **Concept graph redesign (2026-06-18): Node A built (2026-06-30), validation pending** — the shipped
+  open-vocabulary core is superseded (KI-7); the curated-vocabulary + deterministic-skeleton **Node A**
+  is built (`concept_skeleton.py`) but its edge precision + presence recall are **unvalidated** — the
+  RG-001/008/009 `--apply` run on the real corpus sets `CONCEPT_SKELETON_MIN_COOCCURRENCE` + the
+  presence-match mode from the data (not guessed) and gates marking the graph *usable* + the gap layer.
+  Node B (LLM relation/stance) is deferred to PR-B.
 - **Gap-detection layer (2026-06-26) decided, not built** — two-tier deterministic/stochastic over
   the curated skeleton (`docs/decisions/ADR-004-gap-detection-layer.md` /
   `docs/specs/feature-gap-detection.md`). Deterministic Tier-1 + the Tier-2a

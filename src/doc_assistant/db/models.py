@@ -412,6 +412,132 @@ class ChunkEpistemics(Base):
 
 
 # ============================================================
+# Concept graph — REDESIGN (Phase 7 / Feature 7, curated-vocabulary skeleton)
+# ============================================================
+# The curated-vocabulary + deterministic-skeleton redesign of Feature 7
+# (docs/specs/concept-graph-redesign.md; supersedes the open-vocabulary PR-16 core,
+# KNOWN_ISSUES KI-7). Two lifecycles are kept deliberately distinct:
+#   * Concept / ConceptAlias  — CURATED user data; survive a skeleton rebuild.
+#   * ConceptEdge / ConceptPresenceRow — DERIVED sidecar rows; dropped + rebuilt on
+#     every `build_concept_skeleton` run (Enrichment-Layer Pattern: regenerable,
+#     never mutates the chunk store).
+# Producer: `concept_skeleton.py` / `scripts/build_concept_skeleton.py` (Node A is
+# deterministic + free; the LLM stance pass, Node B, is deferred).
+
+
+class Concept(Base):
+    """A user-curated concept node — the vocabulary the skeleton is built over.
+
+    CURATED, not derived: the LLM never defines or extends this vocabulary
+    (redesign Decision 1). Seeded as *candidates* from `Keyword` rows and promoted
+    by the user (`scripts/seed_concepts.py`); survives a skeleton rebuild. `folder_id`
+    ships present-but-null for the future projects-as-folders scoping (Decision 9) —
+    the first increment builds global (folder-agnostic) presence.
+    """
+
+    __tablename__ = "concepts"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid4()))
+    label: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    folder_id: Mapped[str | None] = mapped_column(
+        String, ForeignKey("folders.id", ondelete="SET NULL"), nullable=True
+    )
+    # "keyword" (promoted from a Keyword candidate) | "manual".
+    source: Mapped[str] = mapped_column(String, nullable=False, default="manual")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
+
+    aliases: Mapped[list["ConceptAlias"]] = relationship(
+        "ConceptAlias", back_populates="concept", cascade="all, delete-orphan"
+    )
+
+
+class ConceptAlias(Base):
+    """A surface form (synonym / abbreviation) for a curated `Concept`.
+
+    CURATED (Decision 1/2): alias coverage is what bounds deterministic presence
+    recall (RG-009). Unique per `(concept_id, alias)`; survives a rebuild.
+    """
+
+    __tablename__ = "concept_aliases"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid4()))
+    concept_id: Mapped[str] = mapped_column(
+        String, ForeignKey("concepts.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    alias: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
+
+    concept: Mapped[Concept] = relationship("Concept", back_populates="aliases")
+
+    __table_args__ = (UniqueConstraint("concept_id", "alias", name="uq_concept_alias"),)
+
+
+class ConceptEdge(Base):
+    """A derived skeleton edge between two curated concepts — a regenerable sidecar.
+
+    Dropped + rebuilt on every `build_concept_skeleton` run (Enrichment-Layer
+    Pattern). `provenance_json` is the JSON provenance set ⊆ {cooccurrence, citation,
+    similarity, llm_relation}; the edge is KEPT and ranked by `weight`, never dropped
+    for lacking an LLM stance (Decision 5). `relation` / `stance_json` are the deferred
+    Node-B LLM annotation — null after the deterministic Node-A build.
+    """
+
+    __tablename__ = "concept_edges"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid4()))
+    source_concept_id: Mapped[str] = mapped_column(
+        String, ForeignKey("concepts.id", ondelete="CASCADE"), nullable=False
+    )
+    target_concept_id: Mapped[str] = mapped_column(
+        String, ForeignKey("concepts.id", ondelete="CASCADE"), nullable=False
+    )
+    # JSON list ⊆ ("cooccurrence", "citation", "similarity", "llm_relation").
+    provenance_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
+    weight: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    n_cooccurrence_chunks: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    # Node B (deferred): the LLM relation verb + per-document stance.
+    relation: Mapped[str | None] = mapped_column(String, nullable=True, default=None)
+    # JSON list of [document_id, polarity]; null until Node B annotates.
+    stance_json: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+    graph_version: Mapped[str | None] = mapped_column(String, nullable=True)
+    computed_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
+
+    __table_args__ = (
+        Index("idx_concept_edges_source", "source_concept_id"),
+        Index("idx_concept_edges_target", "target_concept_id"),
+    )
+
+
+class ConceptPresenceRow(Base):
+    """A derived concept-presence record — which chunks a concept's surface forms hit
+    in one document. Regenerable sidecar (dropped + rebuilt each run).
+
+    `chunk_keys_json` is the JSON list of composite chunk keys
+    `"{document_id}:p{parent_index}"` (ADR-4) the concept matched in this document.
+    """
+
+    __tablename__ = "concept_presence"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid4()))
+    concept_id: Mapped[str] = mapped_column(
+        String, ForeignKey("concepts.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    document_id: Mapped[str] = mapped_column(
+        String, ForeignKey("documents.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    # JSON list of "{document_id}:p{parent_index}" chunk keys (ADR-4).
+    chunk_keys_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
+    n_mentions: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    graph_version: Mapped[str | None] = mapped_column(String, nullable=True)
+    computed_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
+
+    __table_args__ = (
+        Index("idx_concept_presence_concept", "concept_id"),
+        Index("idx_concept_presence_document", "document_id"),
+    )
+
+
+# ============================================================
 # AnswerRecord — Phase 5 / Integrity Chunk 1 (provenance card).
 # ============================================================
 

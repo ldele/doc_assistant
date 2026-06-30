@@ -2951,3 +2951,52 @@ from the public corpus, 0 missing; real build wrote the manifest (gitignored —
 `--verify-only` → 0 mismatches.
 **Opens:** real `--download` not exercised here (would hit arxiv.org through the corporate TLS proxy, KI-10);
 the fetch path is covered by mocked-HTTP integration tests. **Nothing committed — staged for review (cpc §13).**
+
+## Session: 2026-06-30 — Concept-graph redesign PR-A: deterministic skeleton (Node A), Claude Code
+
+**What:** built Node A of the concept-graph redesign (`docs/specs/concept-graph-redesign.md`) — the
+deterministic, **zero-LLM** concept skeleton over a user-curated vocabulary. New
+`src/doc_assistant/concept_skeleton.py` (pure core + impure boundary + orchestrator, mirroring the
+`concept_graph.py` / `wiki.py` / `epistemics.py` split): curated-vocabulary presence (case-folded
+label/alias substring match), chunk-level co-occurrence edges (`{document_id}:p{parent_index}` keys,
+ADR-4), citation/similarity **provenance annotation** (the no-edge-creation invariant — annotate the
+co-occurrence skeleton, never extend it), deterministic `edge_weight` (provenance count dominates,
+co-occurrence count breaks ties), seeded Louvain communities (ADR-1, `detect_communities(algorithm=)`
+seam), `skeleton_to_dict`/`skeleton_from_dict` (both directions — the missing-inverse that bit Feature 6),
+a timestamp-free `graph_version`, and `node_weights_for_epistemics` (re-exposes the existing
+`concept_graph.NodeWeight` shape so 7d can re-found on the skeleton — unique-source = neutral preserved
+verbatim). Four new SQLAlchemy tables (`Concept`/`ConceptAlias` curated; `ConceptEdge`/`ConceptPresenceRow`
+derived) via `create_all` (no `_ADDITIVE_COLUMNS` entry — new tables); `CONCEPT_SKELETON_*` config block;
+`data/skeleton/` gitignored. CLI runners `scripts/seed_concepts.py` (Keyword→candidate→`--promote`) and
+`scripts/build_concept_skeleton.py` (dry-run default, 76-char report). +23 tests (9 pure-core, 4 weights,
+5 seed, 5 build).
+
+**Why:** the shipped open-vocabulary graph (KI-7) re-derives structure the library already has
+(`Citation`/`DocSimilarity`) and is the cost + fragmentation source. The redesign grounds nodes in
+user curation, computes presence + the edge skeleton with zero LLM, and confines the (deferred) LLM to
+relation/stance annotation only. Node A is the deterministic skeleton + the gap layer (ADR-004) is
+defined against it. Buildable + fully testable on fakes now; the real `--apply` validation run
+(RG-001/008/009) sets `min_cooccurrence` + presence-recall thresholds from the corpus, not guessed.
+
+**Rejected:** (a) importing `concept_graph`'s `ConceptNode`/`ConceptEdge` dataclasses — the redesign
+defines its own; only `POLARITIES`/`SUPPORTING`/`OPPOSING` and the `NodeWeight` *shape* carry over.
+(b) a unique constraint on `Concept.label` — `promote_keyword` is get-or-create-idempotent instead
+(SQLite treats `(label, NULL folder_id)` tuples as distinct, so a UNIQUE wouldn't guard global concepts
+anyway). (c) building Node B (LLM stance) here — deferred to PR-B, gated on RG-001.
+
+**Coupling named (cpc §12):** `concept_skeleton` imports `concept_graph.NodeWeight` (the 7d seam);
+`concept_graph.py` is retired only as part of the connected KI-7 change (re-pointing
+`epistemics.py`/`wiki.py`), not here.
+
+**Watch-point:** presence is case-folded **substring** match (the spec's locked primitive); precision
+against short ambiguous surface forms is a curation concern + an RG-008 watch-point (word-boundary
+matching, as in `epistemics.concepts_in_text`, is the documented upgrade lever).
+
+**Gate GREEN** (official-CPython 3.12, `uv run --no-sync`): ruff ✓ · ruff format ✓ · `mypy --strict src`
+✓ (52 files) · bandit 0/0/0 ✓ · `pytest tests/unit tests/integration` → **660 passed, 1 skipped**.
+`init_db` creates all four tables; both CLIs `--help` clean.
+
+**Opens:** RG-001/008/009 threshold-setting `--apply` run on the real corpus (free on the RTX/Ollama
+box or host, KI-5 — sets `min_cooccurrence` + presence recall, gates marking the graph *usable* + the
+gap layer); Node B (LLM relation/stance, PR-B); retiring the superseded `concept_graph.py` (KI-7
+connected change). **Nothing committed — staged for review (cpc §13).**

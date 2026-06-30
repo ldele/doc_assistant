@@ -92,10 +92,13 @@ blocker for everything; **M1** (the 7d contested/superseded marker chip) is the 
 and shares M0's `chunk_key` plumbing. Replaces the "UI = Chainlit" stack row in `.claude/CONTEXT.md`
 once M5 lands.
 
-**Later / open (no PR yet):** the concept-graph **redesign** (curated vocabulary + deterministic
+**Later / open:** the concept-graph **redesign** (curated vocabulary + deterministic
 skeleton + confined LLM enrichment, 2026-06-18 — the next concept-graph build, see
 `.claude/KNOWN_ISSUES.md`; **build spec `docs/specs/concept-graph-redesign.md`**, design-locked
-2026-06-27 — deterministic skeleton is the first increment, blocked on RG-001 for threshold-setting),
+2026-06-27. **PR-A (Node A — the deterministic, zero-LLM skeleton) BUILT 2026-06-30**
+(`concept_skeleton.py` + `scripts/{seed_concepts,build_concept_skeleton}.py` + 4 sidecar tables, 23
+tests); remaining: the RG-001/008/009 threshold-setting `--apply` run on the real corpus, then PR-B
+(Node B — LLM relation/stance) and the KI-7 retirement of the old `concept_graph.py`),
 and the **gap-detection layer** built on top of it (two-tier
 deterministic/stochastic, `docs/decisions/ADR-004-gap-detection-layer.md` +
 `docs/specs/feature-gap-detection.md` — its deterministic Tier-1 + Tier-2a-floor are the first

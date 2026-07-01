@@ -2,7 +2,12 @@
 
 from __future__ import annotations
 
-from doc_assistant.keywords import candidate_terms, tf_idf_keywords, tokenize
+from doc_assistant.keywords import (
+    candidate_terms,
+    corpus_band_keywords,
+    tf_idf_keywords,
+    tokenize,
+)
 
 
 def test_tokenize_casefolds_and_keeps_tech_tokens() -> None:
@@ -66,3 +71,29 @@ def test_tf_idf_tie_breaks_by_term_ascending() -> None:
     doc_terms = {"d1": ["zeta", "alpha", "mu"]}
     ranked = [k.term for k in tf_idf_keywords(doc_terms, top_k=3)["d1"]]
     assert ranked == ["alpha", "mu", "zeta"]
+
+
+def test_corpus_band_excludes_singletons_and_hubs() -> None:
+    # "retrieval" is in all 3 docs (hub), "solo" in 1 (singleton), "bm25"/"dense" in 2 (band).
+    doc_terms = {
+        "d1": ["retrieval", "bm25", "solo"],
+        "d2": ["retrieval", "bm25", "dense"],
+        "d3": ["retrieval", "dense"],
+    }
+    picked = {k.term for k in corpus_band_keywords(doc_terms, min_df=2, max_df=2, top_k=10)}
+    assert picked == {"bm25", "dense"}  # only the df==2 shared band survives
+    # df=3 hub and df=1 singleton are both excluded — the two RG-001 failure modes.
+    assert "retrieval" not in picked
+    assert "solo" not in picked
+
+
+def test_corpus_band_ranks_by_breadth_and_is_deterministic() -> None:
+    doc_terms = {
+        "d1": ["alpha", "alpha", "beta"],
+        "d2": ["alpha", "beta"],
+        "d3": ["alpha"],  # alpha df=3, beta df=2
+    }
+    picked = corpus_band_keywords(doc_terms, min_df=2, max_df=3, top_k=2)
+    assert [k.term for k in picked] == ["alpha", "beta"]  # broader (df=3) ranks first
+    again = corpus_band_keywords(doc_terms, min_df=2, max_df=3, top_k=2)
+    assert [k.term for k in picked] == [k.term for k in again]  # byte-stable

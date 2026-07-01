@@ -3041,3 +3041,35 @@ extracted candidates instead of the hand-seeded 30), word-boundary presence matc
 inflation), and a re-run on the larger multi-domain corpus (makes provenance discriminating). Node B + the KI-7
 retirement unchanged. Provisional concepts + skeleton sidecar live in the gitignored DB (reset:
 `DELETE FROM concept_aliases; DELETE FROM concepts;`). **Nothing committed — staged for review (cpc §13).**
+
+---
+## Session: 2026-07-01 (cont.) — RG-001 (b)+(c): keyword-grounded + corpus-band vocab; corpus is the blocker, Claude Code
+
+**What:** after the `docs/desktop-shell-specs` branch merged to `main` (PR #3) + was deleted, re-ran RG-001 with
+real keyword-grounded vocabularies to test whether the concept graph sparsifies to a usable state. (b) Promoted
+139 concepts from the per-doc TF-IDF extractor → 13% density @K=2 but **17 communities that map to papers** (a
+federation of per-paper cliques; 146/148 candidates are df=1). (c) Built a general **`corpus_band` extractor
+mode** (`corpus_band_keywords` pure fn + `mode`/`min_df`/`max_df_frac` on `extract_keywords` +
+`KEYWORD_MIN_DF`/`KEYWORD_MAX_DF_FRAC`/`KEYWORD_CORPUS_TOP_K` config + `--mode`/`--min-df`/`--max-df-frac` CLI +5
+tests) to select the shared mid-DF band, and ran it ONCE with general defaults (2/0.7/60) — **hypothesis failed:**
+the df 6–7 band is generic academic vocabulary (`consider`/`introduce`/`benchmark`/`sebastian`…), giving the most
+saturated graph of all (60 concepts, **83% density @K=2**).
+
+**Why:** the four vocabulary regimes (manual-hub 46% · manual-precise 27% · per-doc-TFIDF 13% · corpus-band 83%)
+all fail for one reason — **10 same-domain papers can't support a cross-document concept graph**: doc-similarity
+is fully saturated (provenance non-discriminating), N=10 co-occurrence is unstable, and on a same-domain corpus
+domain concepts and academic boilerplate share a DF range so no statistical band separates them. The blocker is
+the CORPUS, not the vocabulary method or the code. Baseline updated with the four-regime synthesis
+(`tests/eval/baselines/rg001_concept_skeleton_2026-07-01.md`).
+
+**Rejected:** tuning `min_df`/`max_df_frac`/`top_k` or expanding the stopword list against this corpus's output —
+that is over-fitting to a corpus already shown (×4) to be inadequate (explicit user constraint: "do not
+over-optimize on this corpus"). The `corpus_band` mode is likely the right *default* on the larger multi-domain
+corpus, where mid-DF terms are the shared domain concepts; it just can't be validated on 10 same-domain papers.
+
+**Gate:** ruff / ruff format / `mypy --strict src` (53 files) / pytest **675 passed** (+3 corpus-band tests).
+
+**Opens:** RG-001 stays open (blocks-ship) — the gate is now the **corpus**: re-run on `cases.yaml` (multi-domain)
+before any threshold lock / marking the graph usable. Secondary: a semantic/LLM or curated-domain-stopword
+vocabulary gate (deferred, un-tuned). Node B + KI-7 retirement unchanged. On-disk: 60 corpus-band concepts +
+skeleton @K=2 (gitignored). **Uncommitted on `main` — branch off before committing; awaiting review (cpc §13).**

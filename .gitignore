@@ -47,6 +47,10 @@ data/graph/
 data/skeleton/
 data/exports/
 
+# Separate multi-domain test corpus (open-access arXiv PDFs + derived DB/vectors; RG-001
+# multi-domain re-check, kept apart from the public corpus). All downloaded/derived.
+data_multidomain/
+
 # Backups
 backups/
 

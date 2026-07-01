@@ -22,11 +22,12 @@ from doc_assistant.db.models import Base, Document, Keyword, document_keywords
 from doc_assistant.db.session import session_scope
 from doc_assistant.keywords import extract_keywords
 
-# A toy corpus: "colbert"/"hyde" are distinctive; "retrieval" is ubiquitous.
+# A toy corpus: "colbert"/"hyde" are distinctive (df=1); "retrieval" is ubiquitous (df=3);
+# "bm25" is shared mid-frequency (df=2) — the corpus-band target.
 CORPUS = {
-    "d1": ("colbert.pdf", "colbert late interaction retrieval retrieval ranking"),
+    "d1": ("colbert.pdf", "colbert late interaction retrieval retrieval ranking bm25"),
     "d2": ("hyde.pdf", "hyde hypothetical document retrieval generation"),
-    "d3": ("dpr.pdf", "dense passage retrieval dense encoder"),
+    "d3": ("dpr.pdf", "dense passage retrieval dense encoder bm25"),
 }
 
 
@@ -112,3 +113,22 @@ def test_extracted_keywords_feed_the_promote_seam(env: Path) -> None:
     candidates = {c.name for c in list_keyword_candidates()}
     assert "colbert" in candidates  # KI-13 loop closed: extractor -> seed_concepts candidate
     assert all(not c.promoted for c in list_keyword_candidates())  # candidate only
+
+
+def test_corpus_band_mode_links_shared_terms_across_docs(env: Path) -> None:
+    # max_df = floor(0.7 * 3) = 2, min_df = 2 → the band is exactly df==2.
+    extract_keywords(
+        apply=True,
+        top_k=20,
+        ngram_max=1,
+        min_chars=3,
+        mode="corpus_band",
+        min_df=2,
+        max_df_frac=0.7,
+    )
+    with session_scope() as session:
+        rows = {k.name: k for k in session.execute(select(Keyword)).scalars()}
+        assert "bm25" in rows  # shared mid-frequency term selected
+        assert len(rows["bm25"].documents) == 2  # linked to BOTH docs → cross-document edge
+        assert "retrieval" not in rows  # df=3 hub excluded (> max_df)
+        assert "colbert" not in rows  # df=1 singleton excluded (< min_df)

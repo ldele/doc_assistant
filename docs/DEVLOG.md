@@ -3000,3 +3000,44 @@ matching, as in `epistemics.concepts_in_text`, is the documented upgrade lever).
 box or host, KI-5 — sets `min_cooccurrence` + presence recall, gates marking the graph *usable* + the
 gap layer); Node B (LLM relation/stance, PR-B); retiring the superseded `concept_graph.py` (KI-7
 connected change). **Nothing committed — staged for review (cpc §13).**
+
+---
+## Session: 2026-07-01 — RG-001/008/009 concept-skeleton validation run + keyword extractor (KI-13), Claude Code
+
+**What (1 — RG-001/008/009 validation run, free/zero-LLM):** ran the deferred concept-skeleton edge-precision
++ presence-recall validation on the real 10-paper corpus. Had to build three empty prerequisites first (all
+free/regex): `extract_doc_metadata --apply` (titles/authors/years were NULL) → `extract_citations --apply
+--force` (7 internal library links, was 0) → a **provisional** 30-concept vocabulary seeded directly (the
+`Keyword`→`--promote` seam was dead — see change 2). Swept `min_cooccurrence` 1..5. **Finding: the skeleton is
+near-complete** — 201 edges / 46% density at K=2 (max C(30,2)=435); `min_cooccurrence`↑ is a weak lever (27%
+at K=5), the real lever is vocabulary breadth (dropping 9 broad hubs cut edges 201→57 at K=2). similarity-
+provenance annotates 100% of edges, citation ~88% → non-discriminating (the KI-7 same-domain doc saturation,
+re-confirmed; a corpus property). Baseline: `tests/eval/baselines/rg001_concept_skeleton_2026-07-01.md`.
+**Why:** RG-001 gates marking the graph *usable* + the gap layer (ADR-004); the run correctly does **not**
+certify it — thresholds left unlocked, gap layer stays blocked. `.claude/RIGOR_TODO.md` RG-001/008/009 updated
+(run DONE, gate NOT passed).
+
+**What (2 — keyword extractor, fixes KI-13):** new `src/doc_assistant/keywords.py` — a deterministic,
+**zero-LLM, zero-new-dependency** corpus TF-IDF keyword extractor: pure core (`tokenize` → `candidate_terms`
+uni/bi/tri-grams with stopword-boundary + min-char + alpha filters → `tf_idf_keywords`, `(1+ln tf)*smoothed-idf`,
+deterministic tie-break) + impure boundary (reads cached markdown, writes `Keyword(source="extracted")` rows +
+`document_keywords` links, idempotent, `--force` clears only extracted links, never mutates the chunk store).
+CLI `scripts/extract_keywords.py` (`--apply`/`--force`/`--doc`/`--top-k`, dry-run default);
+`KEYWORDS_PER_DOC`/`KEYWORD_NGRAM_MAX`/`KEYWORD_MIN_CHARS` config. **Why:** KI-13 — the concept-skeleton
+`--promote` seam mined `Keyword` rows that nothing produced. TF-IDF over a same-domain corpus also down-ranks
+the broad hubs that saturated change 1, surfacing distinctive per-paper terms — the curator-friendly set.
+**Verified on the real corpus:** 148 candidates written (was 0), `seed_concepts` now lists them; sample terms
+colbert / late interaction / hyde / contriever / negative passages. +17 tests (unit + integration incl. the
+`list_keyword_candidates` loop-closure). Gate green (ruff / ruff format / `mypy --strict src` 53 files / pytest).
+
+**Rejected:** (a) KeyBERT / YAKE / a new NLP dep — the project is deliberately dep-cautious (networkx-over-igraph,
+KI-2 native-dep pain) and the zero-LLM/"push work out of the model" ethos favours plain TF-IDF; (b) a direct
+`seed_concepts --add` CLI (KI-13 option b) — a producer for the *existing* `keywords` table is the more general
+fix and leaves the `--promote` seam intact; (c) locking `CONCEPT_SKELETON_MIN_COOCCURRENCE` from this run — the
+provisional vocabulary is un-signed-off and the graph isn't usable yet.
+
+**Opens:** RG-001 stays open (blocks-ship) — to close: user-signed vocabulary (now promotable from the 148
+extracted candidates instead of the hand-seeded 30), word-boundary presence matching (kills BERT-substring
+inflation), and a re-run on the larger multi-domain corpus (makes provenance discriminating). Node B + the KI-7
+retirement unchanged. Provisional concepts + skeleton sidecar live in the gitignored DB (reset:
+`DELETE FROM concept_aliases; DELETE FROM concepts;`). **Nothing committed — staged for review (cpc §13).**

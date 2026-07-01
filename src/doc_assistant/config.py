@@ -450,6 +450,22 @@ CONCEPT_SKELETON_LLM_MODEL = os.getenv("CONCEPT_SKELETON_LLM_MODEL", "llama3.1:8
 
 
 # ============================================================
+# Keyword extraction (concept-skeleton vocabulary seed) — KI-13
+# ============================================================
+# Deterministic, zero-LLM corpus TF-IDF over the cached markdown. Populates the
+# `keywords` table (source="extracted"), which seeds concept-skeleton vocabulary
+# candidates (scripts/seed_concepts.py → --promote). Additive + idempotent, never
+# mutates the chunk store (Enrichment-Layer Pattern). Ordinary config contracts,
+# NOT eval-locked retrieval settings — tune freely.
+#   KEYWORDS_PER_DOC — top-scored candidate phrases kept per document.
+#   KEYWORD_NGRAM_MAX — longest candidate phrase (1..N tokens; 3 = up to trigrams).
+#   KEYWORD_MIN_CHARS — drop candidates shorter than this (letters+digits, no spaces).
+KEYWORDS_PER_DOC = int(os.getenv("KEYWORDS_PER_DOC", "15"))
+KEYWORD_NGRAM_MAX = int(os.getenv("KEYWORD_NGRAM_MAX", "3"))
+KEYWORD_MIN_CHARS = int(os.getenv("KEYWORD_MIN_CHARS", "3"))
+
+
+# ============================================================
 # Logging / observability (ADR-003)
 # ============================================================
 # structlog is the single logging substrate (rule #5). These two knobs are read

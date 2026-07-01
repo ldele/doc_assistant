@@ -33,7 +33,7 @@ def env(tmp_path: Path) -> Iterator[Path]:
         engine.dispose()
 
 
-def _fake_embed(texts: list[str]) -> list[list[float]]:
+def _fake_embed(texts: list[str], *, model: str | None = None) -> list[list[float]]:
     # Deterministic toy vectors: the two "dense …" concepts collide; BM25 is orthogonal.
     out: list[list[float]] = []
     for t in texts:
@@ -66,3 +66,28 @@ def test_merge_suggestions_empty_for_single_concept(
     add_concept("BM25")
     monkeypatch.setattr(cs, "embed_texts", _fake_embed)
     assert concept_merge_suggestions(threshold=0.5) == []
+
+
+def test_anchor_ranked_downranks_off_topic_boilerplate(monkeypatch: pytest.MonkeyPatch) -> None:
+    markdown = (
+        "## **Abstract**\n\ndense retrieval beats bm25 on passage retrieval.\n\n"
+        "## **1 Introduction**\n\nwe thank the funding committee and acknowledgements.\n"
+    )
+    monkeypatch.setattr(
+        cs, "_load_paper_docs", lambda ids=None: [("d1", "paper.pdf", "Dense Retrieval", markdown)]
+    )
+
+    def fake_embed(texts: list[str], *, model: str | None = None) -> list[list[float]]:
+        on = ("dense", "retrieval", "bm25", "passage")
+        return [[1.0, 0.0] if any(w in t.lower() for w in on) else [0.0, 1.0] for t in texts]
+
+    monkeypatch.setattr(cs, "embed_texts", fake_embed)
+    results = cs.anchor_ranked_candidates(top_k=3, pool_k=30)
+    assert len(results) == 1
+    scored = results[0][2]
+    assert scored  # non-empty
+    # On-topic term ranks first; scores are sorted descending; boilerplate is pushed down.
+    assert any(w in scored[0].term for w in ("dense", "retrieval", "bm25", "passage"))
+    assert [s.anchor_cosine for s in scored] == sorted(
+        (s.anchor_cosine for s in scored), reverse=True
+    )

@@ -478,6 +478,11 @@ KEYWORD_CORPUS_TOP_K = int(os.getenv("KEYWORD_CORPUS_TOP_K", "60"))
 # embedding cosine >= this are flagged as near-duplicates to merge. General defaults.
 ABSTRACT_CONCEPTS_TOP_K = int(os.getenv("ABSTRACT_CONCEPTS_TOP_K", "12"))
 CONCEPT_MERGE_COSINE = float(os.getenv("CONCEPT_MERGE_COSINE", "0.85"))
+# Embedder for concept↔concept distance (merge suggestions + anchor ranking). Defaults to the
+# academic SPECTER2 rather than the retrieval bge, because bge compresses same-domain concepts
+# into a narrow cosine band (~0.6-0.7) — SPECTER2 (trained on scientific title/abstracts) spreads
+# them. Overridable; falls back to whatever the registry resolves.
+CONCEPT_EMBED_MODEL = os.getenv("CONCEPT_EMBED_MODEL", "specter2")
 
 
 # ============================================================

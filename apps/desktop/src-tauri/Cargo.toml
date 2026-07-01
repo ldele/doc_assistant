@@ -1,0 +1,20 @@
+[package]
+name = "doc-assistant-desktop"
+version = "0.1.0"
+description = "doc_assistant desktop shell (Tauri 2) — hosts the Svelte UI; talks to the FastAPI backend over 127.0.0.1. The PyInstaller sidecar is wired in PR-M4."
+edition = "2021"
+rust-version = "1.77.2"
+
+[lib]
+name = "doc_assistant_desktop_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+# Used in PR-M4 to spawn the bundled FastAPI sidecar binary; harmless to declare now.
+tauri-plugin-shell = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"

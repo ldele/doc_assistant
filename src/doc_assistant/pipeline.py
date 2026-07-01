@@ -3,6 +3,7 @@
 from collections.abc import Generator
 from typing import Any
 
+import structlog
 from langchain_chroma import Chroma
 from langchain_classic.retrievers import EnsembleRetriever
 from langchain_community.retrievers import BM25Retriever
@@ -27,6 +28,8 @@ from doc_assistant.embeddings import (
     get_embeddings,
 )
 from doc_assistant.prompts import ANSWER_PROMPT, MULTI_QUERY_PROMPT, REWRITE_PROMPT
+
+log = structlog.get_logger(__name__)
 
 
 def _sigmoid_activation_kwarg() -> dict[str, Any]:
@@ -81,19 +84,19 @@ class RAGPipeline:
     def __init__(self) -> None:
         active_model = get_active_model_name()
         collection = get_collection_name(active_model)
-        print(f"Loading embeddings ({active_model})...")
+        log.info("loading_embeddings", model=active_model)
         self.embeddings = get_embeddings(active_model)
 
-        print("Loading vector store...")
+        log.info("loading_vector_store")
         chroma_path = PC_CHROMA_PATH if USE_PARENT_CHILD else CHROMA_PATH
-        print(f"Using vector store: {chroma_path} (collection: {collection})")
+        log.info("vector_store", path=chroma_path, collection=collection)
         self.db = Chroma(
             persist_directory=chroma_path,
             embedding_function=self.embeddings,
             collection_name=collection,
         )
 
-        print("Building keyword index...")
+        log.info("building_keyword_index")
         data = self.db.get(include=["documents", "metadatas"])
         all_docs = [
             Document(page_content=text, metadata=meta or {})
@@ -101,7 +104,7 @@ class RAGPipeline:
             if not (meta and meta.get("keep_for_retrieval") is False)
         ]
         excluded = len(data["documents"]) - len(all_docs)
-        print(f"  BM25 index excludes {excluded} non-retrievable chunks")
+        log.info("bm25_excludes", count=excluded)
         vector = self.db.as_retriever(
             search_kwargs={
                 "k": CANDIDATE_K,
@@ -117,13 +120,13 @@ class RAGPipeline:
             # cannot be built from zero documents, so fall back to a vector-only
             # ensemble. The app still launches; retrieval simply returns nothing
             # until documents are ingested.
-            print("  no retrievable chunks; starting with an empty (vector-only) index")
+            log.warning("empty_index", hint="vector-only until documents are ingested")
             self.ensemble = EnsembleRetriever(retrievers=[vector], weights=[1.0])
 
-        print("Loading reranker...")
+        log.info("loading_reranker")
         self.reranker = CrossEncoder("BAAI/bge-reranker-base", **_sigmoid_activation_kwarg())
 
-        print("Loading LLM...")
+        log.info("loading_llm")
         self.llm = self._build_llm()
 
     def _build_llm(self) -> Any:
@@ -252,7 +255,7 @@ class RAGPipeline:
                 variations = [query]
         except (json.JSONDecodeError, ValueError):
             # If parsing fails, fall back to just the original query
-            print("  Warning: MQ JSON parse failed, using original query only")
+            log.warning("multi_query_parse_failed", hint="using original query only")
             variations = []
 
         # Always include the original query

@@ -1,0 +1,10 @@
+# Frontend build + deps
+node_modules/
+dist/
+
+# Tauri (Rust) build artifacts + generated schemas (M4)
+src-tauri/target/
+src-tauri/gen/
+
+# Frozen FastAPI sidecar binary — large, per-platform; produced by scripts/build_sidecar.py
+src-tauri/binaries/

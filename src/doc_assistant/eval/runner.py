@@ -13,16 +13,17 @@ the caller's concern (see ``Store``).
 
 from __future__ import annotations
 
-import logging
 import time
 from collections.abc import Callable
 from typing import TypeAlias
+
+import structlog
 
 from doc_assistant.eval.cases import EvalCase
 from doc_assistant.eval.results import EvalOutput, EvalResult
 from doc_assistant.eval.scorers import Scorer
 
-log = logging.getLogger(__name__)
+log = structlog.get_logger(__name__)
 
 SystemUnderTest: TypeAlias = Callable[[str], EvalOutput]
 
@@ -63,7 +64,7 @@ class Runner:
                 output = system_under_test(case.query)
                 error = None
             except Exception as e:
-                log.exception("system_under_test raised on case %s", case.id)
+                log.exception("system_under_test_raised", case_id=case.id)
                 output, error = None, f"{type(e).__name__}: {e}"
             latency_ms = (time.monotonic() - start) * 1000.0
 
@@ -72,7 +73,7 @@ class Runner:
                 try:
                     scores.append(scorer(case, output))
                 except Exception as e:
-                    log.exception("scorer %s raised on case %s", scorer.name, case.id)
+                    log.exception("scorer_raised", scorer=scorer.name, case_id=case.id)
                     from doc_assistant.eval.results import ScoreResult
 
                     scores.append(

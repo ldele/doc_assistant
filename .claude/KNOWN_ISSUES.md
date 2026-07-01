@@ -1,23 +1,43 @@
-<!-- status: active · updated: 2026-06-20 · class: living -->
+<!-- status: active · updated: 2026-06-26 · class: living -->
 
 # KNOWN ISSUES
 
 Open weaknesses, recurring failures, workarounds. Log a bug the second time it appears.
 Migrated from the old `CLAUDE.md` / `README` runtime-quirk notes on 2026-06-20 (cpc adoption).
 
-## KI-1 — `print()` in `src/` violates the structlog-only standard — OPEN
-- **Symptom:** Source modules still use `print()` in places; the engineering standard mandates
-  structured logging via `structlog` and no `print()` in `src/`.
-- **Cause:** Predates the logging standard; never fully back-filled.
-- **Workaround:** None needed at runtime — cosmetic/observability debt.
-- **Real fix:** Replace `print()` calls with `structlog` loggers, or consciously descope per module.
-  Don't silently ignore.
+## KI-1 — `print()` in `src/` violates the structlog-only standard — RESOLVED (2026-06-23)
+- **Symptom:** Source modules used `print()` (32 calls / 4 modules) and stdlib `logging`
+  (11 modules) with no logging configuration; the standard mandates structured logging via
+  `structlog` and no `print()` in `src/`. `info`-level lines were invisible by default.
+- **Cause:** Predated the logging standard; never fully back-filled.
+- **Fix (shipped, ADR-003 / `docs/specs/structlog-observability.md`):** one `configure_logging`
+  seam (`src/doc_assistant/logging_config.py`, structlog-over-stdlib, console/JSON renderers)
+  called once at each app + program entrypoint; all 11 loggers → `structlog.get_logger`, all 16
+  `%`-style sites → key-value events, all 32 prints → `log.*` (the `llm.py` paid-run abort box
+  stays a direct `sys.stderr.write` — an interactive CLI safety prompt, ADR-B). `LOG_LEVEL`/
+  `LOG_JSON` config contract. **Zero `print()` in `src/`**; behaviour-preserving (CLI progress,
+  answers, eval untouched). Rule #5 is now true + enforceable.
+- **Follow-up:** RG-013 (`.claude/RIGOR_TODO.md`) — the M4 freeze must re-verify `structlog`
+  (now a base dep) is bundled. **Closed 2026-06-24:** verified on the frozen `dist/doc-assistant-api.exe`
+  — startup console emits structlog events, zero `structlog`/import errors in the log.
 
-## KI-2 — Python 3.14 breaks Chainlit at runtime — OPEN (constraint, not a bug to fix)
-- **Symptom:** App fails to run the Chainlit web UI on Python 3.14 (anyio event-loop incompatibility).
-- **Cause:** Chainlit's anyio stack is not yet 3.14-compatible.
-- **Workaround:** Develop/test on 3.14 if desired, but **run on Python 3.12** (the pinned runtime).
-- **Real fix:** Upstream Chainlit/anyio support; revisit on a Chainlit bump. CLI path is unaffected.
+## KI-2 — Python-3.12 runtime pin — STILL OPEN (cause renamed after PR-M5: native deps, not Chainlit)
+- **Original cause (gone):** Chainlit's anyio stack broke on 3.14. **Chainlit was removed in PR-M5
+  (2026-06-25)** — so that cause no longer exists, but the runtime pin does **not** lift.
+- **M5 ADR-2 verification (2026-06-25):** with Chainlit gone, `uv sync --python 3.14 --extra cpu --extra dev`
+  resolves + installs cleanly (torch `2.12.0+cpu` has a cp314 wheel; chainlit absent), and ruff /
+  `mypy --strict src` / bandit all pass on 3.14 — **but the full pytest suite hard-crashes the interpreter**
+  (no Python traceback; the process dies at ~47–54%, first surfacing in `tests/unit/test_llm.py` under
+  full-suite load). It does **not** reproduce unit-only or for that test in isolation (load/order-dependent).
+  327+ tests pass before the crash; Python 3.12 runs all **602** clean.
+- **Cause:** a native/compiled dependency in the LLM-client import path (anthropic / langchain /
+  `pydantic-core` / `tokenizers` — Python 3.14 is new and several C/Rust wheels aren't yet cp314-stable).
+- **Workaround:** **run + test on Python 3.12** (the pinned runtime). CLI / FastAPI / Tauri all work on 3.12.
+- **Real fix:** revisit when the native deps ship stable cp314 wheels — re-run the M5 ADR-2 check
+  (`uv sync --python 3.14 …` + full gate) and lift the pin only when 602 pass on 3.14. Do **not** add
+  3.13/3.14 trove classifiers until then.
+- **Note:** the literal `--python 3.12` pin (the old `just chat`/`chainlit` recipe) is **deleted** (M5); the
+  only thing now holding the runtime at 3.12 is this native-dependency stability gate.
 
 ## KI-3 — win32 `cu130` torch wheel segfaults on a GPU-less box — RESOLVED (2026-06)
 - **Symptom:** Instant segfault when the CUDA (`cu130`) torch wheel ran on a machine with no usable GPU.
@@ -62,8 +82,194 @@ Migrated from the old `CLAUDE.md` / `README` runtime-quirk notes on 2026-06-20 (
 - **Status:** Superseded in part by the **2026-06-18 concept-graph REDESIGN** (Decision C — user-curated
   vocabulary + deterministic skeleton from `Citation`/`DocSimilarity` + confined LLM enrichment). ADR-1
   (Louvain) and ADR-4 (composite chunk key) carry over; ADR-3 (LLM-extraction node source) + the single
-  integrity tag do not. The redesign is **decided but not yet built**; Feature 7d re-founds on it.
+  integrity tag do not. **Update (2026-06-30):** the redesign's **Node A — the deterministic, zero-LLM
+  skeleton — is now BUILT** as a *new* module (`concept_skeleton.py` + `scripts/{seed_concepts,
+  build_concept_skeleton}.py` + the four `concept_*` tables), alongside the old graph (Decision 8). The
+  old open-vocabulary `concept_graph.py` + `data/graph/graph.json` are **still superseded** and still in
+  place (nothing retired yet); Node B (LLM stance) + the RG-001 validation run remain. Feature 7d still
+  reads the old graph until the connected re-point lands (see Cleanup).
 - **Do not build on:** the current LLM-extraction graph or `data/graph/graph.json` (the on-disk file is
   also an empty environment artifact, not a quality measurement).
 - **Pointer:** `docs/decisions.md` → "Feature 7 — concept-graph REDESIGN" (2026-06-18). Edge precision +
   presence recall are flagged for RIGOR_TODO before the edge model is locked.
+- **Cleanup when built:** retiring `concept_graph.py` + `scripts/build_concept_graph.py` is gated on the
+  redesign landing; it is a connected change across `epistemics.py` → `chat_controller.py` /
+  `compute_epistemics.py` / `wiki.py` + their tests (the carried-over PR-16 ADR-1 Louvain / ADR-4 chunk
+  key stay). Not safe as standalone cleanup while `epistemics.py` imports it.
+- **Pointer (add):** also `docs/decisions/ADR-004-gap-detection-layer.md` + `docs/specs/feature-gap-detection.md`.
+
+## KI-8 — PC→baseline marker mapping (PR-M1) is coarse at parent boundaries — OPEN (advisory, fail-safe)
+- **Symptom:** In the default parent-child retrieval mode, the live 7d marker chip maps a marked baseline
+  chunk onto a retrieved parent by **text containment** (`epistemics.markers_for_parent`): a parent gets a
+  marker if it *contains* a marked chunk's text. The two collections are independent segmentations, so a
+  parent spanning a marked chunk plus three clean ones is marked as a whole — over-attribution within the
+  parent. A marked chunk straddling two parents marks both.
+- **Why it's acceptable (for now):** markers are an **advisory chip, not a gate** (inform-don't-block), and
+  over-attribution is fail-safe — it points the user at a real contested concept *in that passage*. The
+  marker never changes synthesis, ranking, or the answer (byte-identical when absent).
+- **Status:** chosen in PR-M1 ADR-1 over the heavier alternative (re-project `chunk_epistemics` onto PC
+  parents — a second projection + migration + its own attribution-quality validation). That precise
+  re-projection is the documented upgrade **if** containment proves too coarse on real data.
+- **Compounding caveat:** marker *quality* upstream still comes from the superseded open-vocabulary graph
+  (KI-7) — `contested` is local-model-noisy. M1 surfaces what the sidecar holds; it does not fix extraction.
+- **Pointer:** `docs/specs/pr-m1-epistemics-markers.md` ADR-1 (option 2 = the re-projection upgrade).
+
+## KI-9 — Frozen desktop build does not bundle model weights → first-run HuggingFace download; offline launch fails — RESOLVED (2026-06-24)
+- **Symptom:** On a clean machine (verified in **Windows Sandbox**, 2026-06-22, RG-012 Tier-1), the
+  frozen sidecar's first launch downloads the `bge-base` embedder + the cross-encoder reranker from
+  HuggingFace before `/api/health` goes green (≈218s of that cold-start). With no network, the backend
+  never warms — `/api/health` never returns 200.
+- **Cause:** `scripts/doc_assistant_api.spec` bundles the *library code* (`sentence_transformers`,
+  `transformers`, `tokenizers`, `huggingface_hub`) via `collect_all`, but **not the model weights** —
+  sentence-transformers resolves those from the HF cache / hub at runtime.
+- **Why it matters:** the app is positioned local-first; a first-run network dependency (and a hard
+  offline failure) is a shippability gap, and the download dominates the RG-010 cold-start number.
+- **Workaround:** ensure network is available on first launch; or pre-seed the HF cache
+  (`HF_HOME` / `%USERPROFILE%\.cache\huggingface`).
+- **Real fix:** bundle the model weights into the freeze (add the model dirs to the spec `datas` and
+  point `HF_HOME` / `SENTENCE_TRANSFORMERS_HOME` at the unpacked location), or ship them with the
+  installer as a Tauri resource; re-measure RG-010 after. Decide before the M4 ship.
+- **RESOLVED (2026-06-24):** `scripts/doc_assistant_api.spec` now stages a minimal, symlink-free,
+  blob-less HF hub cache (deref'd `snapshots/` + `refs/main`, no `blobs/` → ~1.5 GB single copy) into the
+  freeze at `hf_cache/`; `apps/api/__main__.py` points `HF_HOME` there + sets `HF_HUB_OFFLINE`/
+  `TRANSFORMERS_OFFLINE` when frozen. **Verified offline:** with the user HF cache renamed away, the frozen
+  binary reached `/api/health` 200 (`chunk_count=2455`) with zero download/network. Cost: binary 385 MB →
+  1.6 GB; **RG-010 cold-start did not regress** (30.9 s). Optional future: onedir / Tauri-resource instead
+  of embedding in the onefile (not needed — cold-start is fine).
+- **Pointer:** `docs/desktop-packaging.md` §"Data directory"; RG-010 / RG-012 in `.claude/RIGOR_TODO.md`.
+
+## KI-10 — Frozen build's bundled `certifi` rejects corporate-MITM'd HTTPS — OPEN (2026-06-25: truststore CONFIRMED ineffective against a real MITM proxy in the freeze)
+- **Symptom:** On a box behind a TLS-inspecting (MITM) corporate proxy, the frozen
+  `dist\doc-assistant-api.exe` fails outbound HTTPS with `[SSL: CERTIFICATE_VERIFY_FAILED] unable to get
+  local issuer certificate`. Seen 2026-06-23 twice: (1) the startup HuggingFace metadata HEAD for
+  `bge-base` → **startup crash** even with a warm cache; (2) the Anthropic chat call → turn fails with no
+  token (blocks RG-011's first-token measurement on this box).
+- **Cause:** PyInstaller bundles **`certifi`** (Mozilla's CA set). httpx (used by `huggingface_hub` and the
+  `anthropic` SDK) pins certifi, so it never consults the **Windows root store** where the corporate MITM
+  root CA lives. Distinct from KI-6 (that is the `OPENSSL_Applink` crash on uv's python-build-standalone
+  interpreter; this is a CA-trust gap in the *frozen* build).
+- **Workaround:** (HF) `HF_HUB_OFFLINE=1` + a warm cache (or KI-9's bundle-the-weights — then no HF network
+  at all). (LLM) no env-only fix — httpx ignores `SSL_CERT_FILE`; measure on a non-proxy box or via the
+  local Ollama path (RTX box), which makes no external TLS call.
+- **Real fix (shippability):** make the frozen build use the OS trust store for outbound TLS — bundle
+  `truststore` (`truststore.inject_into_ssl()` at the API entrypoint) or `pip-system-certs` in the freeze —
+  so a corporate-proxy user isn't blocked. Decide before the M4 ship (couples KI-9 + RG-011).
+- **Update (2026-06-24):** the **RG-011 first-token** this blocked is now **measured on the RTX/Ollama
+  path** (no external TLS, proxy-independent) — FastAPI/SSE boundary adds no measurable first-token
+  latency vs the in-process `ChatController` (median 4.14s vs 4.56s, n=5; boundary **PASS**). Baseline:
+  `tests/eval/baselines/rg011_first_token_ollama_2026-06-24.md`. **KI-10 itself stays OPEN** — the frozen
+  build's cert-trust gap is unfixed; only the *measurement it was blocking* is unblocked (and only on the
+  local-LLM path; the frozen-artifact + paid/non-proxy first-token still pend).
+- **Fix implemented (2026-06-24):** `truststore>=0.10` is a base dep; `apps/api/__main__.py` calls
+  `truststore.inject_into_ssl()` at the entrypoint (guarded; before the app/httpx/anthropic import); the
+  spec bundles it (`collect_submodules("truststore")`). Outbound TLS now uses the **OS/system trust store**
+  (which carries a corporate MITM root CA) instead of the bundled `certifi` set. **Verified:** imports +
+  injects cleanly in dev and in the frozen build (no cert error in the frozen log). **Pending:** confirm
+  on an actual TLS-MITM box — this RTX box isn't behind one, so the proxy-cert fix is implemented + bundled
+  but not yet confirmed against a real MITM proxy. Status → near-resolved; close after the on-proxy check.
+- **On-proxy check (2026-06-25, this work box behind the TLS-MITM proxy) — CONFIRMED STILL BROKEN.** Drove a
+  real Anthropic turn through the **re-frozen** sidecar (1.62 GB, truststore bundled): retrieval succeeded
+  ("Found 10 relevant passages") but generation produced **no token** — the worker-thread stderr shows
+  `httpx.ConnectError: [SSL: CERTIFICATE_VERIFY_FAILED] unable to get local issuer certificate` →
+  `anthropic.APIConnectionError`. So `truststore.inject_into_ssl()` is **not taking effect** for the anthropic
+  httpx client in the freeze. **$0 billed** — the handshake fails before any request reaches Anthropic.
+  **KI-10 → OPEN (confirmed).** Non-blocking (only paid-API use on a corporate-proxy machine; Ollama /
+  off-proxy use is unaffected).
+- **Root-cause lead (2026-06-25):** ordering is NOT the cause — `apps/api/__main__._configure_frozen_runtime`
+  calls `truststore.inject_into_ssl()` **before** `from apps.api.main import app` (so before httpx/anthropic
+  import). But that call was wrapped in a **silent `try/except: pass`**: if `inject_into_ssl()` itself fails in
+  the freeze (e.g. truststore not fully bundled/usable), the error was swallowed → certifi used → exactly this
+  cert failure. Changed the handler to **write the failure to stderr** (also fixes a bandit B110). **Next:**
+  re-freeze + re-run the on-proxy turn — a stderr `WARN truststore.inject_into_ssl() failed …` will confirm
+  whether inject is the failure point; if so fix the freeze's truststore bundling, else hand the anthropic
+  client an explicit OS-trust `verify` context. Reproducible/fixable in **dev** on this proxy box.
+- **Pointer:** RG-010/RG-011 progress in `.claude/RIGOR_TODO.md`; `docs/desktop-packaging.md` §5.
+
+## KI-11 — chromadb hnsw index not persisted under a non-ASCII path → broken corpus for accented usernames — RESOLVED (2026-06-24)
+- **Symptom:** A fresh ingest whose Chroma persist directory's **actual filesystem location contains
+  non-ASCII characters** does **not** write the hnsw segment files (`data_level0.bin` / `header.bin` /
+  `length.bin` / `link_lists.bin`) — only `index_metadata.pickle` + `chroma.sqlite3`. chromadb then
+  attempts a read-time *backfill* on next open: it works for a tiny corpus (~310 chunks) but **fails for a
+  real-size one** (2455 chunks) with `chromadb.errors.InternalError: Error executing plan: Error sending
+  backfill request to compactor: … Error loading hnsw index`.
+- **Where it bites:** the shipped desktop app keeps its corpus in the **per-user data home**
+  `C:\Users\<username>\AppData\Local\doc_assistant\data` (PR-M4, `config._resolve_data_path`). Any user
+  whose Windows username has an accent / non-Latin character (é, ü, ñ, CJK, Cyrillic — very common) gets a
+  non-ASCII path → a corpus that won't reload. Verified on this box (a Windows username containing a
+  non-ASCII character — here an accented `é`).
+- **Confirmed (2026-06-24, chromadb 1.5.9), path is the variable:**
+  - ASCII location (`C:\Projects\…`), 1 **and** 10 files → `.bin` written, reloads fine.
+  - Non-ASCII location (`C:\Users\<non-ASCII username>\…`, e.g. an accented `é`), 10 files / 2455 chunks → no `.bin` → reload **fails**.
+  - The Windows **8.3 short path** (`C:\Users\<NAME>~1\…`, an ASCII *string*) does **NOT** help — chromadb /
+    hnswlib resolves it to the real `é` directory for file I/O, so `.bin` still isn't written.
+- **NOT the cause (ruled out):** a general "fresh ingest is broken" (a fresh full ASCII ingest works), the
+  freeze (the venv reproduces it identically), or corpus size alone (ASCII 2455 works).
+- **Impact:** breaks **RG-012 Tier-2** (a real cited turn on a clean box) and any from-scratch re-ingest
+  under a non-ASCII home. The existing repo index (`C:\Projects\…`, ASCII) is unaffected — which is why
+  this stayed latent until the per-user data home was exercised.
+- **Workarounds:** install / point `DOC_DATA_DIR` at a **pure-ASCII** path (e.g. `C:\doc_assistant\data`);
+  or pre-seed the corpus from an ASCII build. The 8.3 short path is **not** a workaround.
+- **FIX SHIPPED (2026-06-24, option a):** `config._chroma_base()` — when `DATA_PATH` is non-ASCII on
+  Windows, the **Chroma vector dirs only** relocate to a guaranteed-ASCII machine path
+  (`%PROGRAMDATA%\doc_assistant\chroma\<sha1(data_path)[:12]>`); SQLite (`library.db`) + sources stay at the
+  per-user home (SQLite handles non-ASCII fine). ASCII data paths and non-Windows are unchanged (byte-for-byte
+  `DATA_PATH/chroma`). Also fixed `ingest.py` to `mkdir(parents=True, …)` the Chroma dirs (the relocated base
+  has new intermediate dirs). **Verified on this box** (data home `…/café_home`, the `é`): Chroma landed at
+  `C:\ProgramData\doc_assistant\chroma\…`, the full 10-file ingest wrote all four `.bin`, and a fresh process
+  reloaded the full corpus (chunk_count 2335) — the exact case that failed before. **Remaining:** the
+  *shipped* frozen sidecar/installer must be re-frozen to bundle this `config` change (the fix is in `src/`;
+  any future `just sidecar` picks it up). Upstream report to chromadb/hnswlib still worth filing.
+- **Pointer:** found while validating the data-home flow without a clean box (RG-012); `docs/DEVLOG.md`
+  2026-06-24 session.
+
+## KI-12 — Inverse orphan: Chroma chunks with no Document row (post-F1 write reorder) — RESOLVED (2026-06-26)
+- **Symptom:** A document's chunks are present in **both** Chroma stores (so in the dedup
+  intersection) but it has **no `Document` row** in SQLite. The library UI (which counts rows)
+  undercounts it; retrieval is unaffected (it reads Chroma).
+- **Cause:** The F1 write reorder commits the SQLite row **last**, after both Chroma writes, to
+  prevent the *forward* orphan (a committed row with zero chunks). That leaves the narrow inverse:
+  both vector writes land and only the final `upsert_document_in_sqlite` commit fails. The
+  intersection dedup gate self-heals a partial *Chroma* write, but on its own it treats this hash
+  as "already indexed" and skips it — so only `--rebuild` cleared it.
+- **Fix (shipped, 2026-06-26):** `main()` now reconciles the dedup set against SQLite —
+  `inverse_orphans = (get_indexed_hashes(db) & get_indexed_hashes(pc_db)) - get_document_row_hashes()`
+  are subtracted from `indexed` (with a `chroma_chunks_without_document_row` warning), so the
+  document is reprocessed and its row committed on the **next ordinary ingest**. The SQLite-side
+  twin of the Chroma-side self-heal; nothing is deleted (chunks re-add idempotently). The
+  gone / content-changed shapes are already swept by `cleanup_orphans_*`, so only the
+  source-present + unchanged shape reaches the reconciliation.
+- **Regression test:**
+  `tests/integration/ingest/test_ingest_write_ordering.py::test_sqlite_commit_failure_self_heals_via_reconciliation`
+  — monkeypatch the final commit to fail after both Chroma writes, assert the inverse-orphan state,
+  then assert a clean re-run commits the row. Verified to fail on the warn-only (no-subtraction) code.
+- **Pointer:** `docs/DEVLOG.md` 2026-06-26 ingestion-hardening F1 "Opens" + the follow-up entry; the
+  dedup-gate comment in `ingest.py:main`.
+
+## KI-13 — concept-skeleton vocabulary seam is dead on real data (no `Keyword` producer) — RESOLVED (2026-07-01)
+- **Symptom:** `scripts/seed_concepts.py` mines curated-vocabulary candidates from `Keyword` rows, but the
+  `keywords` (and `document_keywords`) tables are **empty on the real corpus** and stay empty after a full
+  ingest — so `seed_concepts` lists 0 candidates and `promote_keyword` returns `None` for everything. The
+  concept skeleton (Node A) is therefore empty via the intended path.
+- **Cause:** **Nothing in the codebase ever writes a `Keyword` row.** The `Keyword` model +
+  `document_keywords` association exist, but no ingest step or enrichment runner populates them
+  (`extract_doc_metadata.py` fills `title`/`authors`/`year`/`doi` only). The redesign's Decision 1 ("seed
+  candidates from `Keyword` + manual `--promote`") assumes a keyword producer that was never built.
+- **Impact:** blocks the RG-001/008/009 validation via the documented seam; the vocabulary must be seeded by
+  hand (direct `Concept`/`ConceptAlias` inserts, as done for the 2026-07-01 run). No user-facing CLI exists
+  for direct concept creation either — only the dead `--promote` path.
+- **Workaround:** insert `Concept` (+ `ConceptAlias`) rows directly via the ORM (the 2026-07-01 baseline run
+  did this with a provisional 30-concept set).
+- **Fix (shipped 2026-07-01, option a — staged for review):** new `src/doc_assistant/keywords.py` — a
+  deterministic, **zero-LLM, zero-new-dependency** corpus TF-IDF keyword extractor (pure core
+  `tokenize`/`candidate_terms`/`tf_idf_keywords` + impure boundary reading cached markdown, writing
+  `Keyword(source="extracted")` rows + `document_keywords` links; additive, idempotent, never touches the
+  chunk store) + CLI `scripts/extract_keywords.py` (`--apply`/`--force`/`--doc`/`--top-k`, dry-run default) +
+  `KEYWORDS_PER_DOC`/`KEYWORD_NGRAM_MAX`/`KEYWORD_MIN_CHARS` config. The `--promote` seam now works as designed:
+  `extract_keywords --apply` → `seed_concepts` → `--promote`. **Verified on the real corpus:** 148 candidates
+  written (was 0), each a real IR term; TF-IDF surfaces distinctive per-paper terms (colbert, hyde, late
+  interaction) and down-ranks the broad hubs that saturated the RG-008 run — a useful side effect. +17 tests
+  (6 unit, 5 integration; `list_keyword_candidates` loop-closure asserted). Gate green.
+- **Follow-up (not this fix):** the RG-001 run can now re-seed its vocabulary from *extracted* candidates
+  instead of the ad-hoc hand-seeded 30 — a better-grounded re-run once a curator promotes a subset.
+- **Pointer:** `tests/eval/baselines/rg001_concept_skeleton_2026-07-01.md`; `docs/specs/concept-graph-redesign.md`
+  Decision 1; `.claude/RIGOR_TODO.md` RG-001/008/009.

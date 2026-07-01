@@ -20,9 +20,11 @@ from doc_assistant.concept_graph import (
 from doc_assistant.epistemics import (
     MARKER_CONTESTED,
     MARKER_SUPERSEDED,
+    MarkedChunk,
     concepts_in_text,
     derive_markers,
     markers_for_chunk_keys,
+    markers_for_parent,
     project_chunk,
     project_chunk_weights,
 )
@@ -149,3 +151,65 @@ def test_markers_for_chunk_keys_returns_only_marked():
     index = {"d:1": [MARKER_CONTESTED], "d:2": []}
     out = markers_for_chunk_keys(["d:1", "d:2", "d:3"], index)
     assert out == {"d:1": [MARKER_CONTESTED]}  # clean + unknown keys stay quiet
+
+
+# ============================================================
+# PR-M1 — PC→baseline containment mapping (markers_for_parent)
+# ============================================================
+
+
+def test_markers_for_parent_contained_chunk_surfaces_markers():
+    parent = "Long parent passage. Synapses are discrete junctions. More text."
+    marked = [
+        MarkedChunk(
+            chunk_index=2, text="Synapses are discrete junctions.", markers=[MARKER_CONTESTED]
+        )
+    ]
+    assert markers_for_parent(parent, marked) == [MARKER_CONTESTED]
+
+
+def test_markers_for_parent_uncontained_chunk_is_quiet():
+    parent = "A passage about ion channels and gating."
+    marked = [
+        MarkedChunk(
+            chunk_index=0, text="Reticular continuity of the net.", markers=[MARKER_CONTESTED]
+        )
+    ]
+    assert markers_for_parent(parent, marked) == []
+
+
+def test_markers_for_parent_unions_multiple_chunks_deduped():
+    parent = "alpha beta gamma delta"
+    marked = [
+        MarkedChunk(chunk_index=0, text="alpha beta", markers=[MARKER_CONTESTED]),
+        MarkedChunk(
+            chunk_index=1, text="gamma delta", markers=[MARKER_SUPERSEDED, MARKER_CONTESTED]
+        ),
+    ]
+    # First-seen order, de-duplicated across chunks.
+    assert markers_for_parent(parent, marked) == [MARKER_CONTESTED, MARKER_SUPERSEDED]
+
+
+def test_markers_for_parent_empty_inputs():
+    assert markers_for_parent("", [MarkedChunk(0, "x", [MARKER_CONTESTED])]) == []
+    assert markers_for_parent("some text", []) == []
+
+
+def test_epistemics_reads_tolerate_missing_table(tmp_path, monkeypatch):
+    # An older library.db has no chunk_epistemics table (the 7d engine never ran). The read
+    # side must return empty, not raise — else every answer crashes the marker join (PR-M1).
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+
+    from doc_assistant.db import session as session_mod
+    from doc_assistant.epistemics import load_epistemics_index, load_marked_chunks
+
+    engine = create_engine(f"sqlite:///{tmp_path / 'no_tables.db'}", future=True)  # empty schema
+    factory = sessionmaker(bind=engine, autoflush=False, autocommit=False, future=True)
+    monkeypatch.setattr(session_mod, "_engine", engine)
+    monkeypatch.setattr(session_mod, "_SessionLocal", factory)
+    try:
+        assert load_epistemics_index() == {}
+        assert load_marked_chunks(["doc1", "doc2"]) == {}
+    finally:
+        engine.dispose()

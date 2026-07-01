@@ -5,7 +5,7 @@ __pycache__/
 *.egg-info/
 dist/
 build/
-.venv/
+.venv*/
 .pytest_cache/
 .coverage
 .mypy_cache/
@@ -35,6 +35,7 @@ data/cache/
 data/chroma/
 data/chroma_pc/
 data/sources/
+data/sources_manifest.yaml
 data/issues/
 data/library.db
 data/eval.duckdb
@@ -43,6 +44,7 @@ data/tables_debug/
 data/figures/
 data/wiki/
 data/graph/
+data/skeleton/
 data/exports/
 
 # Backups
@@ -64,3 +66,4 @@ docs/STUDY_PLAN.md
 Marker_Testings.ipynb
 *.ipynb
 docs/DEVLOG.md.bak
+.chainlit_run.log

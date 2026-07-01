@@ -50,7 +50,6 @@ dependencies = [
     "rank_bm25>=0.2.2",
     "striprtf>=0.0.26",
     "odfpy>=1.4.1",
-    "chainlit>=2.0,<3.0",
     "tqdm>=4.66",
     "sqlalchemy>=2.0",
     "duckdb>=1.5.3",
@@ -60,19 +59,41 @@ dependencies = [
     # extensions, unlike igraph/leidenalg/graspologic (flaky Windows wheels). See
     # docs/decisions.md → Feature 7 ADR (Louvain-over-Leiden for v1).
     "networkx>=3.2",
+    # Desktop API (PR-M2, ADR-002): FastAPI over 127.0.0.1 + SSE token streaming. Bundled
+    # as a PyInstaller sidecar in PR-M4, so they live in the base deps (not an extra). No
+    # torch interaction. `sse-starlette` gives EventSourceResponse (heartbeat + clean
+    # client-disconnect); `uvicorn[standard]` is the dev/sidecar ASGI server.
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.30",
+    "sse-starlette>=2.1",
+    # Observability substrate (ADR-003): every src/ log line is a structured,
+    # queryable event. A base dep, not dev-only, because the running app (CLI /
+    # FastAPI sidecar) configures + emits through it. NOTE: the M4
+    # PyInstaller freeze must re-verify it's bundled (RG-013, coupling to KI-9).
+    "structlog>=24.0.0",
+    # KI-10: route outbound TLS through the OS/system trust store instead of the
+    # bundled `certifi` set. The frozen sidecar's httpx (huggingface_hub, anthropic
+    # SDK) otherwise rejects a corporate TLS-MITM proxy's root CA. Injected at the
+    # API entrypoint (`apps/api/__main__.py`); no-op-safe in dev. Pure-Python, tiny.
+    "truststore>=0.10",
 ]
 
 [project.optional-dependencies]
 dev = [
     "pytest>=8.0",
     "pytest-cov>=5.0",
-    "ruff>=0.6.0",
+    "ruff>=0.15.13",  # floor matches uv.lock + the pre-commit ruff rev; prevents CI/local format skew
     "mypy>=1.11.0",
     "bandit>=1.7.9",
     "pip-audit>=2.7.0",
     "detect-secrets>=1.5.0",
     "pre-commit>=3.8.0",
-    "structlog>=24.0.0",
+]
+
+# Desktop packaging only (PR-M4) — kept out of `dev` so the normal install stays lean.
+# Build the frozen sidecar with: uv sync --extra cpu --extra packaging && just sidecar.
+packaging = [
+    "pyinstaller>=6.0",
 ]
 
 # PyTorch backend variants — mutually exclusive (see [tool.uv] conflicts). Pick
@@ -93,7 +114,9 @@ where = ["src"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-pythonpath = ["src"]
+# "." puts the repo root on sys.path so tests can import the thin shells under apps/
+# (apps/ is not an installed package — see [tool.setuptools.packages.find] where=["src"]).
+pythonpath = ["src", "."]
 markers = [
     "api: tests that call external APIs (Anthropic, etc.) — costs money, run with -m api",
 ]
@@ -162,7 +185,6 @@ module = [
     "rank_bm25.*",
     "striprtf.*",
     "odf.*",
-    "chainlit.*",
     "tqdm.*",
     "sqlalchemy.*",
     "networkx.*",

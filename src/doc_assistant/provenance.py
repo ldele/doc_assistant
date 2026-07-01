@@ -18,7 +18,7 @@ Locked design choices
   prompt template is edited.
 * **UUIDs everywhere.** `id` and `session_id` are never auto-increments
   so multi-user later is a non-breaking change.
-* **UI-agnostic.** This module returns dataclasses. The Chainlit card
+* **UI-agnostic.** This module returns dataclasses. The provenance card
   and the `/export-record` slash command both read from here.
 """
 
@@ -52,6 +52,11 @@ class RetrievedChunk:
     # Wider grounding text the reviewer/judge sees (REVIEWER_EVIDENCE_CHARS). Transient:
     # excluded from the persisted JSON and the UI card — only the reviewer reads it.
     full_text: str | None = None
+    # Stable epistemics-format key ``{document_id}:{chunk_index}`` for the 7d marker join
+    # (PR-M0 / ADR-2). Populated for flat/baseline chunks; ``None`` for parent-child chunks
+    # (the PC→baseline mapping is PR-M1's decision). Transient: excluded from the persisted
+    # JSON, like ``full_text`` — a join key, not stored provenance.
+    chunk_key: str | None = None
 
 
 @dataclass
@@ -144,10 +149,13 @@ def record_answer(
     error: str | None = None,
 ) -> str:
     """Persist one answer record. Returns the new ``id``."""
-    # Exclude the transient reviewer-only `full_text` — the persisted card keeps the
-    # compact display excerpt, not the wide grounding text.
+    # Exclude the transient fields — the wide reviewer-only `full_text` and the 7d join key
+    # `chunk_key` (ADR-2). The persisted card keeps the compact display excerpt only.
     chunks_json = json.dumps(
-        [{k: v for k, v in asdict(c).items() if k != "full_text"} for c in retrieved_chunks]
+        [
+            {k: v for k, v in asdict(c).items() if k not in ("full_text", "chunk_key")}
+            for c in retrieved_chunks
+        ]
     )
     with session_scope() as session:
         record = AnswerRecord(

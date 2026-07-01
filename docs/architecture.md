@@ -32,13 +32,13 @@ flowchart TD
     subgraph ING["Ingest (incremental)"]
         SRC["Sources<br/>PDF · EPUB · HTML · DOCX · MD"] --> EXT["extractors.py"]
         EXT --> CACHE[("Markdown cache<br/>data/cache")]
-        CACHE --> CHUNK["ingest.py<br/>table-aware parent–child chunker"]
+        CACHE --> CHUNK["ingest/chunking.py<br/>table-aware parent–child chunker"]
         CHUNK --> EMB["embeddings.py<br/>BGE-base"]
     end
 
     subgraph ENR["Enrichment layers — post-ingest · idempotent · sidecar"]
-        REG["regions.py<br/>page classifier"] --> TBL["tables_marker.py / tables.py<br/>Marker · pdfplumber"]
-        CIT["citations.py"]
+        REG["ingest/regions.py<br/>page classifier"] --> TBL["ingest/tables_marker.py / ingest/tables.py<br/>Marker · pdfplumber"]
+        CIT["ingest/citations.py"]
         MD["metadata_extractor.py"]
         DV["doc_vectors.py"]
     end
@@ -77,17 +77,19 @@ flowchart TD
 |---|---|---|
 | `doc_assistant.config` | Paths, env vars, feature flags | Read-only after init; no side effects |
 | `doc_assistant.extractors` | Convert any supported format → markdown | Returns `str`; raises `ExtractionError` on failure |
-| `doc_assistant.ingest` | Extract, chunk, embed, store; streaming | Idempotent per content hash; raises `IngestError` |
+| `doc_assistant.ingest` (package — pipeline: `cache` · `chunking` · `store` · `cleanup` + `__init__` orchestration / `__main__` CLI; document-feature extraction: `citations` · `tables` · `tables_marker` · `figures` · `regions`) | Extract, chunk, embed, store; orphan cleanup + partial-write self-heal; table/figure/citation extraction (sidecar) | Idempotent per content hash; per-document failures isolated |
 | `doc_assistant.pipeline` | RAG runtime: retrieve, rerank, generate | Returns `Answer` with citations; raises `PipelineError` |
+| `doc_assistant.chat_controller` | UI-agnostic turn orchestration | Yields `TurnEvent`s → `TurnResult`; no UI-framework import (PR-M0) |
 | `doc_assistant.health` | Document health scoring and classification | Pure function; no I/O; returns `HealthResult` |
 | `doc_assistant.library` | Document store queries (browse, filter, tag) | Read-only queries against SQLite; UI-framework-agnostic |
 | `doc_assistant.prompts` | Prompt templates | Pure string interpolation; no I/O |
 | `doc_assistant.tracking` | Token usage tracking and cost estimation | Append-only; never raises |
-| `apps/cli.py` | Terminal interface | Thin entrypoint; no business logic |
-| `apps/chainlit_app.py` | Web chat UI | Thin entrypoint; no business logic |
+| `apps/cli.py` | Terminal renderer | Renders `TurnResult`; no business logic |
+| `apps/api/` | Desktop HTTP renderer (PR-M2) | FastAPI over `127.0.0.1`; `TurnEvent` → SSE, requests → controller calls; no business logic |
+| `apps/desktop/` | Tauri desktop frontend (PR-M3) | Svelte 5 + Vite UI in a Tauri 2 shell; renders the API's `TurnResult`; no business logic |
 | `scripts/` | One-off maintenance scripts | Not part of the importable package |
 
-This table is non-exhaustive — it covers the core ingest/runtime modules. The research-integrity and enrichment layer (`query_router`, `synthesis`, `provenance`, `reviewer`, `citations`, `metadata_extractor`, `doc_vectors`, `regions`, `tables`, `tables_marker`, `embeddings`, `bibtex`, `commands`, `llm`) is shown in the Mermaid diagram above.
+This table is non-exhaustive — it covers the core ingest/runtime modules. The research-integrity and enrichment layer (`query_router`, `synthesis`, `provenance`, `reviewer`, `metadata_extractor`, `doc_vectors`, `embeddings`, `bibtex`, `commands`, `llm`, plus the cross-document concept layer `concept_graph` and `epistemics`) is shown in the Mermaid diagram above. The document-feature extractors (`citations`, `tables`, `tables_marker`, `figures`, `regions`) now live inside the `doc_assistant.ingest` package (imported as `doc_assistant.ingest.<name>`). The concept-graph **redesign** adds `concept_skeleton` (a deterministic, zero-LLM enrichment sidecar over the curated `Concept`/`ConceptAlias` vocabulary + `Citation`/`DocSimilarity`; producers `scripts/seed_concepts.py` + `scripts/build_concept_skeleton.py`) — it lands alongside the superseded open-vocabulary `concept_graph` (KI-7), not replacing it yet.
 
 **Boundary rule:** `apps/` contains no business logic. All logic lives in `src/doc_assistant/`. The UI layer calls the library layer; never the reverse.
 
@@ -146,8 +148,8 @@ tests/
 ├── integration/          # cross-module, may use temp files, mocked LLM
 │   └── test_<flow>.py
 └── eval/                 # RAG evaluation harness (not part of standard CI run)
-    ├── run_eval.py       # harness entrypoint
-    ├── cases.yaml / cases.public.yaml
+    ├── run_eval.py       # legacy recall@K harness (eval_set.json); canonical harness is scripts/run_eval.py
+    ├── cases.yaml / cases.public.yaml   # consumed by scripts/run_eval.py
     ├── TESTING.md        # what each tier and scorer measures
     └── baselines/        # recorded eval baselines
 ```
@@ -158,5 +160,5 @@ The testing strategy — what each tier and each eval scorer measures, why, and 
 
 Run commands:
 - `uv run pytest tests/unit/ tests/integration/` — free, fast, CI default
-- `uv run python -m tests.eval.run_eval` — manual, costs API tokens
+- `uv run python -m scripts.run_eval` — manual, costs API tokens (the canonical harness; reads `tests/eval/cases.yaml`, persists to `data/eval.duckdb`)
 - `uv run pytest -m api` — any future tests marked with `@pytest.mark.api`

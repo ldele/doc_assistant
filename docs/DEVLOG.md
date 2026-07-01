@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-06-20 · class: append-only -->
+<!-- status: active · updated: 2026-06-26 · class: append-only -->
 
 # DEVLOG — doc_assistant
 
@@ -1953,3 +1953,1091 @@ This is **PR-A (scaffolding only)**; the decisions.md -> ADR split is PR-B (out 
 **mypy pre-commit hook now runs CI's command in the project venv (resolves the best-effort follow-up above).** Replaced the isolated mirrors-mypy hook (`additional_dependencies: []`) with a `repo: local`, `language: system` hook running `uv run --no-sync mypy src` — CI's effective gate (`uv run mypy src/`, deps installed). **Why:** the isolated env had no project deps, so a staged dep-heavy `src` file (e.g. `figures.py`) false-failed `import-not-found` on `anthropic`/`numpy`/`duckdb`/`pydantic`/`dotenv`/`sqlalchemy` (anything outside pyproject's `ignore_missing_imports` set), plus the strict subclass-Any cascade (BaseModel/DeclarativeBase → "subclass has type Any") and bogus unused-`type: ignore`s — all while CI was green. Latent false-failure: `files: ^src/` meant it only fired when one of ~10 such files was staged. **Refinements:** `--no-sync` is required, not cosmetic — a bare `uv run` re-resolves torch without the cpu/cu130 extra and pulls the heavy CUDA wheel (the hazard CI guards with `UV_NO_SYNC=1`); dropped the `--strict` arg (strict comes from `[tool.mypy]` strict=true; the arg also re-enabled `warn_unused_ignores`, which the config deliberately turns off — another CI divergence); kept `files: ^src/` so the trigger stays scoped (runs only when an src file is staged) while `pass_filenames:false` checks the whole `src/` tree like CI. **Rejected:** (b) populating `additional_dependencies` (brittle, duplicates pyproject); (c) `--ignore-missing-imports` best-effort (doesn't fix the strict subclass-Any cascade). **Constraint:** needs `uv` on PATH + env synced at commit time (true on any dev box; `uv sync` on a fresh clone); CI remains authoritative. **Verified:** `uv run --no-sync mypy src` green (41 files); `pre-commit run mypy --all-files` Passed; staging `src/doc_assistant/figures.py` now Passes (was 12 errors); a non-src file (`docs/DEVLOG.md`) correctly Skipped. Pre-existing fix (predates cpc adoption). Nothing committed — staged for review.
 
 **Localized cpc gates + scrubbed private references (share-safe).** The committed `.pre-commit-config.yaml` hard-depended on the PRIVATE cpc repo (a git+https URL ×6) — that would break `pre-commit` for anyone cloning doc_assistant (no access) and expose private tooling in a portfolio repo. Fix: the committed config now carries only the public-safe, self-contained gates (ruff / mypy / bandit / detect-secrets / hygiene); the cpc gates moved to a **gitignored** `.pre-commit-config.cpc.yaml` (personal pre-check, run via `pre-commit run --config .pre-commit-config.cpc.yaml --all-files`). Genericized the private repo's absolute path + name out of CONTEXT.md / CLAUDE.md / ADR-001 / DEVLOG / PLAN (kept the cpc concept + the decision record). CI is unaffected (it doesn't use pre-commit). The branch was already pushed, so the commit carrying the private URL is collapsed into one clean commit and force-pushed (history scrub).
+
+---
+## Session: 2026-06-22 — PR-M0: extract ChatController + TurnResult (Chainlit→Tauri M0)
+
+**Starting from:** branch `docs/desktop-shell-specs`; ADR-002 + M0/M1/M2 specs written + gap-fixed (`29b7d3b`). M0 unbuilt.
+**Goal this session:** Build PR-M0 per `docs/specs/pr-m0-chat-controller.md` — lift turn orchestration out of `apps/chainlit_app.py` into a UI-agnostic library service; behaviour frozen; parity-gated.
+
+### src/doc_assistant/chat_controller.py (new) — UI-agnostic turn orchestration
+**What:** `ChatController.handle_message(session, text)` ports `on_message`'s dispatch order **verbatim** (slash command → pending claim-edit → library query → RAG) and yields a `TurnEvent` stream (`Token`/`Step`/`Result`) terminating in a `TurnResult` value object. Value objects: `Session` (ADR-3 — caller-owned per-conversation state replacing `cl.user_session`), `SourceView`, `ClaimView`, `UsageView`, `TurnResult`. The pure formatters (`_format_provenance_card`, `_format_review_block`, `_build_retrieved_chunks`, `_build_claim_review` [split per Decision 5 → markdown + `list[ClaimView]`], `_export_sources`) moved verbatim. **No `chainlit` import.**
+**Why:** All Chainlit coupling lived in one 607-line file with the turn orchestration trapped inside `on_message` — business logic in the UI layer (violates rule #3). Lifting it makes the migration "write a renderer for `TurnResult`", not "rewrite 608 lines"; the controller is unit-testable without Chainlit; FastAPI (M2) becomes a third renderer (ADR-1).
+**Rejected:** controller returning a finished `TurnResult` only (loses token streaming, core UX); callbacks (`on_token`/`on_step`) instead of a generator (inverts control, awkward across the future HTTP boundary). A generator is the shape SSE + CLI both want.
+**Deviations from spec letter (intent-preserving):** (1) `export_conversation -> tuple[str, Path | None]` (spec said `-> Path`) — returns the exact confirmation text + empty-case message so no string-building leaks into the renderer; (2) added `TurnResult.download_path: Path | None` — lets a renderer attach the `/export` download widget without re-deriving dispatch, preserving the original `/export` behaviour across the split.
+
+### src/doc_assistant/provenance.py — `RetrievedChunk.chunk_key` (ADR-2)
+**What:** Added `chunk_key: str | None = None` after `full_text`, set in the controller as the epistemics-compatible `{document_id}:{chunk_index}` for flat chunks, `None` for parent-child chunks (PC carries `parent_index`, not `chunk_index`) and rows missing `document_id`. Transient — excluded from the persisted JSON (extended the `full_text` exclusion in `record_answer`).
+**Why:** PR-M1 (7d markers) joins retrieved chunks against the `chunk_epistemics` sidecar, whose key format (`epistemics.py:74`) is a plain `{document_id}:{chunk_index}`. Plumb the field once here so it's never retrofitted into Chainlit and then again into the controller.
+**Rejected:** inventing `{document_id}:p{parent_index}` now — it can't join `load_epistemics_index` → shows zero markers, a silent-failure trap.
+**What it opens:** the PC→baseline chunk-key mapping is PR-M1's central decision; in the default PC config `chunk_key` is often `None` — correct and expected.
+
+### apps/chainlit_app.py + apps/cli.py — rewritten as thin renderers
+**What:** `chainlit_app.py` 607→185 lines: consumes the `TurnEvent` stream (`Token`→`stream_token`, `Step`→`cl.Step`, `Result`→assemble message content + source/figure elements + claim/export action buttons). `cli.py` renders the same `TurnResult` (streams tokens, then prints the pre-rendered blocks); its hand-rolled dispatch deleted in favour of the controller's — so the CLI now gains the web UI's commands (incl. `/export`).
+**Why:** thin-shell rule (rule #3): apps map fields to widgets, no business logic.
+**Behaviour (frozen):** dispatch order, provenance/reviewer gating, claim segmentation/adjudication, citation audit, usage, human-mode branch, export stashing all ported verbatim. Intended minor change: side-panel source elements populate at result-finalise (sources arrive with the `Result` event) not during streaming — same content. Export action rides only on real answers (streamed AI / human mode), so command/library/edit responses stay plain as before.
+
+### tests — parity gate + unit coverage
+**What:** `tests/unit/test_chat_controller.py` (new) — dispatch order, ADR-2 chunk-key derivation (flat → key, `chunk_index=0` not dropped, PC-only → None, missing doc_id → None, not persisted), AI/human `TurnResult` shape, flagged-claim surfacing, `adjudicate` passthrough, provenance-failure caught. `tests/integration/test_turn_parity.py` (new, CI gate) — drives one controller turn, feeds the captured event stream to minimal CLI + Chainlit render harnesses, asserts byte-identical content + same answer/citations/provenance-id/flagged set. `tests/unit/test_provenance.py` extended — `chunk_key` excluded from persistence + round-trips to None. All fakes (fake `RAGPipeline`, temp SQLite) — no Chainlit, no live LLM, no corpus, no paid call (cpc §13).
+
+**Verification (gate, CPU box, `uv run --no-sync`):** `ruff check src/ tests/` ✓ · `ruff format --check` ✓ (5 files reformatted) · `mypy src` ✓ (42 files) · `bandit -r src` 0/0/0 ✓ · `pytest tests/unit tests/integration --cov-fail-under=40` → **571 passed, 1 skipped, coverage 82.2%** (was 555; +16); `chat_controller.py` 89%. Both apps `py_compile` clean. App behaviour unchanged — parity test green.
+
+**Env note:** the `.venv` lacked the dev extra; restored via `uv sync --native-tls --extra cpu --extra dev` — the corporate TLS-intercepting proxy needs `--native-tls` (the OS cert store), else `uv` fails `invalid peer certificate: UnknownIssuer` on both PyPI and download.pytorch.org. Dev tools resolved NEWER than the pinned pre-commit ruff (0.15.13 vs 0.6.0; mypy 2.1.0) — formatting may differ slightly under the pinned hook; CI (`uv sync --extra dev` → latest) matches what ran here.
+
+**Opens:**
+- **PR-M1** (7d marker surfacing) — next migration PR; `SourceView` reserves the `markers` slot; M1 decides the PC→baseline mapping.
+- **PR-M2** (FastAPI + SSE) — `TurnEvent` maps 1:1 to SSE; a third renderer.
+- Nothing committed — staged for user review (cpc §13).
+
+---
+## Session: 2026-06-22 (cont.) — PR-M1: live 7d epistemics-marker surfacing (Chainlit→Tauri M1)
+
+**Starting from:** PR-M0 built + staged (uncommitted) on `docs/desktop-shell-specs`. M0 left `SourceView` with a reserved `markers` slot and `RetrievedChunk.chunk_key` plumbed (flat chunks only; PC → `None`).
+**Goal this session:** Build PR-M1 per `docs/specs/pr-m1-epistemics-markers.md` — surface the 7d `contested`/`superseded_trend` markers on retrieved sources at answer time, deciding the PC→baseline mapping M0 deferred. Read-only, free, byte-identical when absent.
+
+### src/doc_assistant/epistemics.py — `MarkedChunk`, `markers_for_parent`, `load_marked_chunks` (additive)
+**What:** `MarkedChunk{chunk_index, text, markers}`. `markers_for_parent(parent_text, marked) -> list[str]` — **pure** ADR-1 containment test: a marked baseline chunk belongs to a retrieved PC parent when its text is contained in the parent's; returns the deduped union (first-seen order), empty when nothing matches. `load_marked_chunks(document_ids) -> {document_id: [MarkedChunk]}` — impure; joins the `chunk_epistemics` rows that carry a marker (scoped to the docs) to each row's baseline chunk text in Chroma (`_load_baseline_texts`, a scoped `coll.get(where={"document_id": {"$in": …}})`). Returns `{}` when the sidecar/graph is absent. `load_epistemics_index` + `markers_for_chunk_keys` kept as-is (the flat path).
+**Why:** The two Chroma collections are independent segmentations — a retrieved PC parent has no `chunk_index`, so it can't key directly into `chunk_epistemics`. Containment maps a parent to the marked baseline chunks whose text it covers, with no re-ingest and no schema change.
+**Rejected:** re-projecting `chunk_epistemics` onto PC parents (a second projection + migration + its own validation — too heavy for the demo win; the documented upgrade if containment is too coarse); emitting a baseline index onto PC children at ingest (couples ingest to the epistemics key, needs a full re-ingest); disabling PC for marked answers (changes retrieval to fit a display feature).
+**What it opens:** containment is coarse at parent boundaries (over-attribution within a parent; a chunk straddling two parents marks both) → logged as **KI-8** (advisory + fail-safe, so acceptable).
+
+### src/doc_assistant/chat_controller.py — `SourceView.markers` + the marker join
+**What:** `SourceView.markers: list[str]` (was a reserved comment). New `_attach_markers(sources, scored)` runs in the RAG path right after building the source views: flat chunks (have `chunk_key`) join directly on `load_epistemics_index()`; PC parents (no `chunk_key`) map via `markers_for_parent` over `load_marked_chunks(document_ids)`. Each read side is loaded **at most once per turn** (lazy). The "Sources:" block is rebuilt from the source views via `_sources_block`, appending a quiet `— ⚠ contested in corpus` / `trend superseded` chip per `_marker_chip` — **""** when clean, so a no-marker turn's `sources_md` is byte-identical to M0.
+**Why:** the join lives in `ChatController` (Decision 1), so every frontend (CLI, Chainlit, future FastAPI/Tauri) gets the markers for free; read-only, no LLM, no provider touched (honors the credit guard).
+**Deviation from spec letter (intent-preserving):** the chip is rendered **inside `sources_md`** (the shared markdown block) rather than as a Chainlit-only renderer concern — so `apps/chainlit_app.py` needs **no change**, and the CLI + FastAPI get the chip too. The structured `SourceView.markers` field stays the source of truth for the rich Tauri rendering (PR-M3). ADR-2 explicitly permits rendering the chip in `sources_md` (gated for byte-identity).
+
+### Synthesis untouched (ADR-2)
+**What:** no change to `prompts.py` / `synthesis.py` / the answer stream. Markers ride on `SourceView` + the sources block only.
+**Why:** eval comparability — a turn with markers absent is byte-identical to before (guard-tested), so the eval harness is unaffected.
+
+### tests
+**What:** `test_epistemics.py` +4 — `markers_for_parent` (contained → markers, uncontained → quiet, multi-chunk deduped union, empty inputs). `test_chat_controller.py` +3 — flat join (chunk_key → index), PC join (containment via stubbed `load_marked_chunks`), and **sidecar-absent → all markers empty + no chip**; fixed `test_provenance_failure` to stub the marker read (the join now reads the DB). `test_turn_parity.py` +1 — **byte-identical when markers absent**: `sources_md` equals the citation-only form. All fakes — no Chroma/LLM/corpus/paid call (cpc §13).
+
+**Verification (gate, CPU box, `uv run --no-sync`):** `ruff check` ✓ · `ruff format` ✓ · `mypy src` ✓ (42 files; added `Any` annotation on the chromadb `where` filter) · `bandit -r src` 0/0/0 ✓ · `pytest tests/unit tests/integration` → **579 passed, 1 skipped, coverage 81.6%** (+8 over M0).
+
+**Opens:**
+- **PR-M2** (FastAPI + SSE) — the next migration PR; `SourceView.markers` is now in the payload it serializes.
+- **KI-8** — containment coarseness; the precise PC re-projection is the upgrade if it misfires on real data.
+- Marker **quality** still comes from the superseded open-vocab graph (KI-7) — surfaced as-is; fixed by the graph redesign, not M1.
+- Nothing committed — M0 + M1 staged together for review (two logical PRs; commit separately or as one — user's call).
+
+---
+## Session: 2026-06-22 (cont.) — PR-M2: FastAPI + SSE boundary (Chainlit→Tauri M2)
+
+**Starting from:** M0 + M1 built + staged (uncommitted). The turn core is a `ChatController` yielding a `TurnEvent` stream → `TurnResult`; `SourceView.markers` carries the 7d chips.
+**Goal this session:** Build PR-M2 per `docs/specs/pr-m2-fastapi-boundary.md` — expose `ChatController` over a local FastAPI/SSE boundary (the contract the Tauri frontend speaks in M3), adding *no* business logic and removing nothing.
+
+### apps/api/ (new package) — FastAPI desktop backend
+**What:** `main.py` (app factory `create_app` + routes), `models.py` (pydantic schemas), `sessions.py` (in-memory `SessionStore`). FastAPI is **just another renderer** over `ChatController` (ADR-1): per request it calls the same controller and maps the result to HTTP. **No `chainlit`, no business logic.** Endpoints: `GET /api/health`, `POST /api/chat` (SSE), `POST /api/claims/{id}/adjudicate`, `POST /api/export` (file stream), `GET /api/figures/{id}` (PNG), `GET /api/source/{record_id}/{n}`, `GET/POST /api/settings` (read view + a documented 501 for writes). Binds `127.0.0.1` only; CORS allowlist is explicit (Tauri dev origin + webview), no `*`.
+**Why:** the Tauri frontend (M3) needs a local HTTP surface; one orchestration, three renderers (CLI, Chainlit, FastAPI) keeps the controller UI-agnostic and the boundary trivially testable with a fake controller.
+**Rejected:** FastAPI re-implementing the turn flow against `pipeline.py` (re-introduces the trapped-logic problem M0 fixed — two orchestrations drift); WebSocket (full-duplex unused; the only server→client push is tokens, which SSE handles and bundles far simpler — ADR-2); a job-poll endpoint (worse latency/UX than streaming).
+
+### SSE token streaming (ADR-2)
+**What:** `POST /api/chat` returns `text/event-stream` via `sse-starlette`'s `EventSourceResponse`; each `TurnEvent` → one SSE event: `event: token` (delta) · `event: step` (`{name,status}` JSON) · terminal `event: result` (the full `TurnResultPayload` JSON) · `event: done`. The mapper switches on the `Token`/`Step`/`Result` variants 1:1.
+**Why:** SSE maps onto the controller's event stream exactly and survives the webview + (M4) sidecar boundary cleanly.
+**Note (logged in the module docstring):** `handle_message` is a **sync, blocking** generator; for a single-user local app it's iterated directly on the event loop. A multi-client server would offload to a threadpool (`anyio.to_thread`) — not needed for the desktop target.
+
+### Controller lifecycle + session store (ADR-3)
+**What:** one `ChatController` per process. Built **lazily in `lifespan`** (model load is expensive) so `uvicorn apps.api.main:app` imports cheap — verified: import builds **no** controller (deferred to startup). Tests inject a fake via `create_app(controller=...)`, set eagerly on `app.state` so `TestClient` needs no lifespan `with`-block. `SessionStore` = a per-app `dict[str, Session]` (single-user, process-scoped, no eviction); unknown id on `/chat` starts a fresh conversation, on `/claims`/`/export` → 404.
+**Deviation from spec letter (intent-preserving):** the session store is a **per-app `SessionStore` instance on `app.state`**, not a module-global dict (ADR-3 said "module-level dict") — functionally identical for one process, but gives clean test isolation (each `create_app` → fresh store).
+
+### pyproject.toml / uv.lock / Justfile / pytest
+**What:** added `fastapi`/`uvicorn[standard]`/`sse-starlette` to the **base** deps (the M4 sidecar needs them; no torch interaction). `uv lock` resolved **+0 new packages** — Chainlit already pulled FastAPI/uvicorn/starlette transitively; now they're explicit. Added `just api` (`uvicorn apps.api.main:app --host 127.0.0.1 --port 8001`). Added `"."` to `pytest pythonpath` so tests can import `apps.*` (apps/ is not an installed package — `setuptools.packages.find where=["src"]`).
+**Why:** explicit deps are a contract (don't rely on a transitive); the dev loop runs FastAPI under `uv` (sidecar freeze is M4).
+
+### tests
+**What:** `tests/unit/test_api_models.py` — `TurnResult` round-trips through `TurnResultPayload` with no field loss (incl. `Path`→`str`, markers, nested sources/claims) + `Literal` rejects a bad `decision`/`mode`. `tests/integration/test_api_chat_sse.py` (CI gate) — a **fake `ChatController`** + `TestClient`: health shape; `/chat` SSE emits ordered `token`s, exactly one `result` (valid payload, markers present), then `done`; adjudicate maps to the controller + bad decision → 422; unknown-session export → 404; figure served (200 image/png) + missing → 404; settings read 200 + write 501. No real pipeline/LLM/network/paid call (cpc §13).
+
+**Verification (gate, CPU box, `uv run --no-sync`):** `ruff check src tests apps` ✓ · `ruff format --check` ✓ · `mypy src` ✓ (42 files — the CI gate) · `bandit -r src apps` 0/0/0 ✓ · `pytest tests/unit tests/integration` → **590 passed, 1 skipped, coverage 81.6%** (+11 over M1). `uvicorn apps.api.main:app` imports in ~6.6s (the existing torch/langchain import cost) with the 8 routes registered and **no controller built at import**. SSE framing verified end-to-end via `TestClient`; a real-server `curl` smoke needs the full model stack + corpus (deferred to a run with data / M4). **Chainlit + CLI unchanged** — this PR adds a renderer, removes none.
+
+**Type-gate note:** `mypy apps/api` reports `import-untyped` on `doc_assistant.*` (the package ships no `py.typed` marker) — the same situation as `apps/cli.py`/`apps/chainlit_app.py`, and apps/ is outside CI's `mypy src/` gate. Left as-is (adding `py.typed` is a separate, project-wide change, not M2 scope).
+
+**Opens:**
+- **PR-M3** (Tauri frontend) — consumes this contract; the five-primitive component mapping + the rich per-claim editorial GUI + styled tables; framework (React/Svelte/vanilla) is M3's sub-decision.
+- **PR-M4** (PyInstaller sidecar) — freeze the FastAPI stack + the CPU-torch pin (KI-3); cold-start + SSE first-token latency measured on the frozen build.
+- `SourceAdapter` registry / `/api/sources` — deferred until a second concrete ingestion source exists (seam noted in `main.py`'s docstring, not built).
+- Nothing committed — M0 + M1 + M2 staged together (three logical PRs); commit separately or as one — user's call.
+
+---
+## Session: 2026-06-22 (cont.) — PR-M3: Tauri/Svelte desktop frontend (Chainlit→Tauri M3)
+
+**Starting from:** M0+M1 committed (`acb3df0`), M2 staged. The API (`apps/api/`) exposes `ChatController` over HTTP/SSE.
+**Goal this session:** Build PR-M3 per `docs/specs/pr-m3-tauri-frontend.md` (written this session — M3–M5 were specced one-ahead) — the owned web UI inside a Tauri shell that consumes the M2 contract and finally renders the rich integrity UX Chainlit couldn't.
+
+### Framework decision — Svelte 5 + Vite (ADR-1, user choice)
+**What:** the one sub-decision ADR-002 deferred to M3. Chose **Svelte 5 + Vite + TypeScript** (user-selected) over React (heavier) and vanilla (verbose at scale). Compiles to ~29 KB gzipped, owned HTML/CSS, drops into Tauri's webview unchanged — rich-but-lean, matching the Tauri-over-Electron ethos.
+**Why:** single-user local tool with a rich-but-bounded UI; leanness is a project value (it rejected Electron + the "basic" Python-UI options).
+
+### apps/desktop/ (new) — Svelte UI + Tauri 2 shell
+**What:** `src/lib/api.ts` (fetch + **POST-SSE** parsed by hand — EventSource is GET-only; ADR-2), `types.ts` (TS mirror of the API payloads). Components: `App.svelte` (health header, conversation, streaming send loop, export), `Turn.svelte`, `SourceCard.svelte` (citation + 7d marker chips + figure via `/api/figures/{id}`), `ClaimReview.svelte` (the **accept/reject/edit** GUI — per-claim state, POSTs `/adjudicate`), `Provenance.svelte` (collapsible card + usage), `Markdown.svelte` (`marked`). Tauri 2 shell in `src-tauri/` (`tauri.conf.json` devUrl→Vite / frontendDist→`../dist` / CSP allows `127.0.0.1:8001`; `Cargo.toml`, `build.rs`, `src/{main,lib}.rs` + `tauri-plugin-shell` for the M4 sidecar; `capabilities/default.json`). Vite proxies `/api`→`:8001` in dev (no CORS); README documents the two-process dev loop.
+**Why:** thin-shell rule — the frontend renders the API's `TurnResult`, no business logic; all logic stays in `src/doc_assistant/` behind the HTTP boundary.
+
+### SourceView.figure_id (ADR-3) — an id crosses the boundary, never a server path
+**What:** added `figure_id: str | None` to `SourceView` (`chat_controller.py`, additive) + exposed it in `SourceViewPayload` (dropped `figure_path` from the payload). The frontend renders figures via `/api/figures/{figure_id}`.
+**Why:** M2 ADR-1 said "no filesystem path crosses the boundary," but `SourceView` only had `figure_path` (a server path). `figure_path` stays on `SourceView` for Chainlit's local `cl.Image`.
+
+### Svelte 5 native-TS gotcha (build fix)
+**What:** `vite build` choked on the optional parameter `edited?: string` in `ClaimReview.svelte` — Svelte 5's built-in TS strip doesn't handle `?:` optional params (svelte-check did). Rewrote as a default-valued param (`edited = ''`).
+**Why:** logged so future Svelte code avoids optional params in `<script lang="ts">` (or wires `vitePreprocess` for full transpile — added to vite.config but the native strip still ran).
+
+**Verification.** `npm run build` → **svelte-check 0 errors** + vite bundle **28.78 KB gzipped**. Browser-driven run (Vite + a fake-controller API streaming canned SSE — no models/LLM/paid call): health renders (2,455 chunks · model · embedding); a turn **streams token-by-token**; the result shows the **markdown answer**, **2 source cards with `⚠ contested in corpus` / `⚠ trend superseded` chips** (M1 surfaced natively), the **flagged-claim accept/reject/edit GUI** (the Chunk-2a-parked editorial UX), and the **provenance card**; **Accept** POSTs `/adjudicate` (200) → claim resolves to `✓ accepted`. Backend log confirmed `/chat` + `/adjudicate` hits. (Screenshot tool timed out — verified via the a11y snapshot + DOM eval, which the tool guidance prefers anyway.) Throwaway fake-API harness removed. Python gate after `figure_id`: ruff/format/mypy --strict src/bandit clean, **590 passed, coverage 81.6%**.
+
+**Not built here (PR-M4):** the native `tauri build` (Rust + Tauri CLI + crate downloads + a native window — not feasible/verifiable in this env), app icons (`tauri icon`), the PyInstaller sidecar that freezes + spawns the backend, the installer. M3 ships + verifies the web frontend; M4 packages it.
+
+**Opens:**
+- **PR-M4** (PyInstaller sidecar) — freeze the FastAPI stack as a Tauri sidecar (CPU-torch pin, KI-3); generate icons; cold-start + SSE first-token latency on the frozen build; clean-machine smoke.
+- **PR-M5** — delete Chainlit + lift the Python-3.12 pin (KI-2).
+- Nothing committed — M2 + M3 staged on top of the committed M0+M1 (`acb3df0`). `apps/desktop/node_modules` + `dist` are gitignored; `package-lock.json` committed.
+
+---
+## Session: 2026-06-22 (cont.) — PR-M4: PyInstaller sidecar packaging (scaffold; freeze deferred)
+
+**Starting from:** M0+M1 (`acb3df0`), M2 (`fbba143`) committed; M3 staged. The frontend + API + controller work; M4 packages them into an installer.
+**Goal this session:** Build the packaging machinery per `docs/specs/pr-m4-sidecar-packaging.md` (written this session) — freeze the FastAPI backend as a Tauri sidecar. **Honest scope: the verifiable parts are built + green; the PyInstaller freeze + `tauri build` + clean-machine smoke can't run in this env (Tauri/Rust toolchain + a clean machine) and are deferred (RG-010/011/012).**
+
+### apps/api/__main__.py (new) — standalone server entrypoint
+**What:** `python -m apps.api` runs `uvicorn.run(app, 127.0.0.1, $DOC_API_PORT|8001)` — the dev runner AND the script PyInstaller freezes. Verified: imports clean, 8 routes, **controller not built at import** (lazy in lifespan → the process starts immediately and `/api/health` flips to 200 once warm).
+**Why:** the frozen sidecar needs a single entry script; binding `127.0.0.1` only is enforced here.
+
+### scripts/build_sidecar.py + doc_assistant_api.spec (new) — the freeze
+**What:** `build_sidecar.py` — `--check` (verifies the Rust target triple + a **CPU-torch guard** + the entry import, no freeze) and the full build (PyInstaller → copy to `src-tauri/binaries/doc-assistant-api-<triple>[.exe]`, Tauri's naming). The spec is an onefile PyInstaller config with `collect_all` for torch/chroma/sentence-transformers/transformers/tokenizers/pymupdf/langchain*/duckdb — **a starting point** (ML freezes need on-machine hidden-import/data iteration). **CPU torch only (ADR-2):** the script refuses a `+cu*` torch — the cu130 wheel segfaults headless (KI-3) and the installer must run anywhere. Verified: `just sidecar-check` → triple `x86_64-pc-windows-msvc`, torch `2.12.0+cpu`, entry import all pass.
+**Why naming:** the build script does the verifiable orchestration (triple detection, the CPU guard, the rename/copy); only the heavy freeze itself is deferred.
+**Naming note:** put under `scripts/` (an established `python -m scripts.*` package) **not** a `packaging/` dir — that name would shadow the installed `packaging` library on `sys.path`.
+
+### Tauri sidecar wiring (src-tauri/) + readiness gate (App.svelte)
+**What:** `tauri.conf.json` `bundle.externalBin`; `src-tauri/src/lib.rs` spawns the sidecar on setup via `tauri-plugin-shell` `.sidecar()` + drains its stderr (missing sidecar = non-fatal, dev mode); `capabilities/default.json` scoped `shell:allow-execute`. Frontend **readiness gate**: `App.svelte` polls `/api/health` (≤60×1s) → `starting the engine… → ready / unreachable`, covering the sidecar cold-start window. Frontend re-built clean (28.89 KB gzipped).
+**Why:** one process boundary (the sidecar) keeps the Rust shell off the Python ABI; the frontend poll is the readiness UX (no frozen window).
+
+### packaging extra + Justfile + runbook
+**What:** `pyproject.toml` `packaging` extra (`pyinstaller>=6.0`, kept out of `dev`); `uv lock` regenerated (+pyinstaller 6.21.0 & deps). `Justfile`: `sidecar` / `sidecar-check`. `docs/desktop-packaging.md` — the desktop runbook (CPU sync → freeze → `tauri icon` → `tauri build` → smoke) with the rigor gates. `.claude/RIGOR_TODO.md`: **RG-010** cold-start (degrades), **RG-011** SSE first-token latency vs Chainlit (**blocks-ship**), **RG-012** clean-machine smoke (**blocks-ship**).
+
+**Verification (this env).** `python -m apps.api` imports clean · `just sidecar-check` green · frontend builds with the readiness gate · Python gate: ruff/format/`mypy --strict src`/bandit clean, **590 passed, coverage 81.6%**. **NOT run here:** the PyInstaller freeze, `npx tauri build`, the clean-machine smoke, the latency/cold-start measurements — all need the Tauri/Rust toolchain + a real machine (RG-010/011/012; runbook §5).
+
+**Status: M4 SCAFFOLDED, not done.** Unlike M0–M3 (fully verified), M4's ship gate stays open until a desktop produces a working frozen sidecar + installer and closes RG-011/012.
+
+**Opens:**
+- **Desktop build** (the user / a real machine): iterate the PyInstaller spec until the frozen binary runs; `tauri icon` + `tauri build`; close RG-010/011/012.
+- **PR-M5** — delete Chainlit + lift the Python-3.12 pin (KI-2), once the installer ships.
+- Nothing committed — M2 (`fbba143`) committed; M3 + M4 staged on top.
+
+### M4 follow-up — frozen data-dir relocation (found by the first real freeze)
+**What:** the freeze **succeeded first try** (no missing modules — full torch/Chroma/reranker/LLM stack loads + serves). But the running sidecar read the corpus from `%TEMP%\data\chroma_pc` (empty → `chunk_count: 0`): `config.PROJECT_ROOT = Path(__file__).resolve().parents[2]` climbs into the PyInstaller temp-unpack dir when frozen. Fixed with `config._resolve_data_path()` — precedence `DOC_DATA_DIR` override > a per-user app-data dir when `sys.frozen` (`%LOCALAPPDATA%\doc_assistant\data`) > the in-repo `./data` (dev, **unchanged** — all data paths derive from `DATA_PATH`).
+**Why:** a frozen binary unpacks to temp, so the in-repo path is meaningless at runtime — desktop apps keep data in a stable per-user location. The `DOC_DATA_DIR` override lets the frozen build reuse an existing dev corpus.
+**Verified:** dev `DATA_PATH` byte-identical (`<repo>/data`); ruff / `mypy --strict src` clean; **590 passed**. Runbook gained a "Data directory (frozen builds)" section. Re-freeze (`just sidecar`) to bake it in; the warnings during the freeze (`torch.utils.tensorboard`, `chromadb.server.fastapi`, `transformers.cli.serving`) are benign optional-submodule skips.
+
+### M4 follow-ups — three more bugs the real corpus surfaced (test-DB masked them)
+**The freeze worked first try** (full stack loads + serves). Running it against the real `library.db` + corpus then exposed three robustness bugs the temp-DB tests hid:
+1. **Every answer crashed: `no such table: chunk_epistemics`.** The PR-M1 marker join (`_attach_markers` → `load_marked_chunks`) queried the 7d sidecar table, absent on a DB that predates the engine. The test fixture creates *all* tables → masked. **Fix:** `epistemics.load_epistemics_index`/`load_marked_chunks` catch `OperationalError` → `{}` (an absent enrichment table = no markers, like the absent graph); `_attach_markers` wrapped defensively (markers are advisory — inform, never block — so any load failure leaves sources unmarked, never breaks the turn). Verified against the real DB: both return `{}`, no crash.
+2. **Slash commands broke the SSE stream.** The command + library-query paths in `handle_message` called `execute_command`/`answer_library_query` unguarded (the pending-edit path was guarded) — a failing command (empty DB, no key) propagated out of the generator and killed the stream. **Fix:** wrapped both → a failed command yields `⚠ /x failed: …` as a normal result.
+3. **No streaming — the answer burst out after 10–20s.** `handle_message` is a sync, blocking generator; iterated directly on the event loop, the response transport buffer never flushed until the turn ended. **Fix:** `apps/api/main._event_stream` runs the turn in a **worker thread** and bridges events to the loop via an `asyncio.Queue` (the M2 "threadpool note" made good), so the loop stays free to flush each token. Required `db/session.py` `check_same_thread=False` (the standard FastAPI+SQLite setting — the app already touches the DB from threadpool handlers). **Verified end-to-end:** with a 0.4s/token fake, SSE events arrive 0.4s apart (`+1.2/+1.6/+2.0s`) — incremental, not bursting.
+**Verified:** ruff / `mypy --strict src` / bandit clean; **594 passed** (+4 tests: command-failure ×2, marker-load-failure, missing-table). All staged as M4 follow-ups. **Data-dir + these three = the app is fully live against the real 27k-chunk corpus.**
+
+### M4 build executed + tooling (icons, latency helper, Windows `just`)
+**What:** ran the desktop build on the Windows box — `npx tauri icon` (icons committed under `apps/desktop/src-tauri/icons/`, incl. unused android/ios sets from the default generator; `Cargo.lock` committed for reproducible Rust builds) + `npx tauri build`. Tooling: `justfile` `set windows-shell := ["cmd.exe","/c"]` (the box has no POSIX `sh`, so every recipe failed — now works, verified); `scripts/measure_latency.py` (RG-010 cold-start + RG-011 first-token, `--launch dist\doc-assistant-api.exe`; the chat call is a real paid LLM call). Runbook §5 rewritten with the helper + the **Windows Sandbox** clean-box procedure (Tier-1 freeze-proof vs Tier-2 real-turn, the latter gated on the unbuilt data-home/ingest flow); the top-of-file checklist tracks status.
+**Status:** M4 **build done**; PAUSED at **RG-012** (clean-machine smoke) pending a restart for Windows Sandbox. RG-011 + RG-012 still block the M4 ship; then PR-M5. **Open product gap:** the real-install data home / first-run ingest flow is unbuilt (`DOC_DATA_DIR` is self-test-only).
+
+---
+## Session: 2026-06-23 — structlog observability substrate (ADR-003; closes KI-1)
+
+**Starting from:** Cowork handoff — ADR-003 + `docs/specs/structlog-observability.md` designed (no code). Rule #5 ("structlog only; no `print()` in `src/`") was aspirational: `structlog` absent from base deps, 11 modules on stdlib `logging`, 32 `print()` in 4 modules, zero logging config.
+**Goal this session:** Build the spec — one config seam, convert every call site, wire the entrypoints — without changing user-visible behaviour (CLI progress, answers, eval all untouched).
+
+### src/doc_assistant/logging_config.py (new) — the one configuration seam
+**What:** `configure_logging(*, json=False, level="INFO")` wires structlog on top of the stdlib (`stdlib.LoggerFactory` + `ProcessorFormatter`) so app `structlog.get_logger` events and third-party stdlib logs (chromadb/httpx/transformers, damped to WARNING) share one renderer — `ConsoleRenderer` (human, dev/CLI) or `JSONRenderer` (machine). Idempotent (removes only its own flagged handler on re-call, so it coexists with pytest's). Pure setup — **no app imports** (guard-tested). The renderer choice lives entirely in the stdlib formatter, so toggling `json` re-renders without disturbing cached structlog loggers.
+**Why:** observability is a project tenet (ADR-003) — every `src/` line a structured, queryable event with bindable context, configured once per entrypoint (rule #3: `apps/` own wiring).
+**Rejected:** per-module structlog config (duplication + `src/` owning wiring); pure-structlog bypassing stdlib (loses third-party log capture). Both per ADR-003 options.
+
+### config.py — LOG_LEVEL / LOG_JSON (config contract, not a locked setting)
+**What:** `LOG_LEVEL` (default `INFO` — keeps converted progress visible) + `LOG_JSON` (default `False`; the env var *is* the "deployed/observed" signal for the FastAPI renderer). Env-overridable; no eval experiment needed to change.
+
+### 11 stdlib loggers → structlog; 16 `%`-style sites → key-value events
+**What:** `citations, concept_graph, doc_vectors, epistemics, eval/runner, export, figures, regions, reviewer, tables, wiki`: `logging.getLogger` → `structlog.get_logger`. The 16 call sites moved from `log.warning("No '%s' at %s", a, b)` to `log.warning("collection_missing", collection=a, path=b)` — a short stable event slug + queryable kwargs; human guidance kept as a `hint=`. `eval/runner` uses `structlog.get_logger` only — **no** `logging_config`/app import (harness extractability, guard-tested).
+**Why:** Decision 4/5 — unify the pipeline; the kwargs are the queryable part.
+
+### 32 `print()` → `log.*`; the cost-warning box → direct stderr
+**What:** `ingest.py` (18), `pipeline.py` (9), `db/migrations.py` (4) prints → `log.info`/`log.warning` with event+kwargs at the right level (progress→info; `Couldn't…`/`Error on…`/destructive→warning); these three gained a `structlog.get_logger`. **`llm.py:277`** (the paid-run abort-window box) stays a direct `sys.stderr.write` + `flush` — an interactive CLI safety prompt, not an observability event, so collapsing it into a structlog line would degrade the UX (ADR-003 ADR-B: preserve stderr semantics).
+**Why:** Decision 6 — the prints were the CLI's progress UX; converting after the console renderer is wired keeps them visible.
+
+### Entrypoints call configure_logging once
+**What:** `apps/cli.py` `main()`, `apps/chainlit_app.py` (module load, before `ChatController`), `apps/api/main.py` `create_app()`. Plus the **program entrypoints** `python -m doc_assistant.ingest` and `…db.migrations` (in their `if __name__ == "__main__"` guards). `src/` *library* code never configures logging — the `__main__` guards run only as a program, never on import, so rule #3's intent (no import-time side effect) holds.
+**Deviation (intent-preserving):** the spec listed only the three app shells; the `doc-ingest`/migrations `python -m` paths (the canonical ingest invocation in README + Justfile) are separate entrypoints into `src/`, so they configure logging in their `__main__` guard — otherwise the migrated `info` progress would be silenced (fails DoD #4). The bare `doc-ingest` console_script (undocumented alias) is unchanged: its `info` progress now relies on the `-m` path; warnings still surface via stdlib lastResort.
+
+### Tests + deps
+**What:** `tests/unit/test_logging_config.py` (renderer selection, level filtering, idempotency, exc_info-in-JSON, no-app-import) + `tests/unit/test_eval_harness_isolation.py` (subprocess: importing `eval/runner` leaks no `logging_config`/`config`/`pipeline`/`chat_controller`/`chainlit`/`fastapi`). `structlog>=24.0.0` moved dev→base in `pyproject.toml`; `uv lock` regenerated (structlog now a base dep, 294 packages).
+
+**Verification (CPU box, `uv run --no-sync`).** `ruff check src tests apps` ✓ · `ruff format --check` ✓ (my files; one pre-existing unrelated `test_embeddings.py` diff from ruff 0.15 vs pinned 0.6.0 — left, per the M0 baton) · `mypy --strict src` ✓ (43 files) · `bandit -r src` 0 issues ✓ · `pytest tests/unit tests/integration` → **601 passed, 1 skipped, coverage 82%** (+7 tests). **Zero `print()` in `src/`** (grep). **Console-parity smoke (DoD #4):** drove the real `ingest`/`pipeline`/`migrations` loggers through both renderers — console emits human-readable progress, JSON emits structured events, both on stderr. All entrypoints import/compile clean.
+
+**Note (DoD #2 nuance):** `logging_config.py` itself uses stdlib `logging` (`getLogger(root)`, third-party level damping) — that is the *wiring that makes structlog work*, not an app logger. No `src/` module acquires a stdlib **app** logger anymore.
+
+**Opens:**
+- **RG-013** (`.claude/RIGOR_TODO.md`): the **M4 PyInstaller freeze must re-verify `structlog` is bundled** (new base dep — coupling to RG-012/KI-9) and that the frozen build emits structured logs without a missing-import or console-silencing regression. Not closeable here (needs the Tauri toolchain + a box).
+- KI-1 closed; `.claude/CONTEXT.md` rule #5 reworded to match (structlog, configured at entrypoints).
+- Nothing committed — staged for review.
+
+---
+## Session: 2026-06-23 (cont.) — M4 ship gates RG-010/RG-011 run on the host
+
+**Starting from:** the frozen `dist\doc-assistant-api.exe` (Jun-22 build, pre-structlog) + the real 27k
+corpus + the installer all present on the box. Goal: close the host-runnable M4 ship gates.
+
+### RG-010 — cold-start measured (warm cache) → done
+**What:** ran the frozen sidecar with `DOC_DATA_DIR` → repo `data\`; timed launch → `/api/health 200`.
+**Result:** **~35–40s** (39.7s, 34.9s) warm HF cache; `chunk_count=27168` (real corpus loaded). Required
+`HF_HUB_OFFLINE=1` — see below. The user-facing first-run cold-start is still the KI-9 ≈218s HF download.
+Baseline recorded in RIGOR_TODO; RG-010 (degrades) → closed.
+
+### RG-011 — first-token BLOCKED on this box (corporate proxy) → KI-10
+**What:** attempted the one paid Haiku first-token call on the frozen build.
+**Finding:** the freeze launches, serves, and **retrieves** ("Found 10 relevant passages"), then the
+**Anthropic call SSL-fails** — `[SSL: CERTIFICATE_VERIFY_FAILED] unable to get local issuer certificate`
+from the anthropic SDK's httpx. The freeze bundles `certifi`, which doesn't trust this box's corporate
+TLS-MITM root CA. Same root cause crashed startup first (the HF metadata HEAD), worked around with
+`HF_HUB_OFFLINE=1` + the warm cache. A failed TLS handshake bills nothing, so **no paid call landed**.
+No env-only fix (httpx pins certifi). **RG-011 stays open (blocks-ship); measure on a non-proxy box or
+the RTX/Ollama path.** Logged **KI-10** (frozen build needs OS-trust-store support — `truststore`/
+`pip-system-certs` — for proxy users; couples KI-9).
+**Why this isn't a freeze defect:** the freeze loads the full stack, serves, and retrieves correctly; only
+outbound LLM TLS is blocked, and only by this box's MITM proxy (KI-6 family). The M2 TestClient already
+verifies the SSE first-token *framing*; the on-frozen-build warm number over a real LLM is what remains.
+
+### Notes
+**What:** PyInstaller onefile spawns a child server that `proc.terminate()` doesn't reap — a stale server
+lingered on :8001 between runs (a bogus 0.3s "cold-start" gave it away). Cleaned with `taskkill /F /IM`.
+The Windows-cert-store export I tried for a TLS workaround was (correctly) denied as out-of-scope; not pursued.
+
+**Opens:** RG-011 + RG-012 (Test-B installed-app launch + Tier-2 cited turn) still block the M4 ship —
+both need either a non-proxy machine / the RTX-Ollama box (RG-011) or Windows Sandbox + the data-home flow
+(RG-012). KI-10 (cert trust) + KI-9 (bundle weights) are the two freeze fixes to weigh before the ship.
+No code changed; RIGOR_TODO + KNOWN_ISSUES updated.
+
+---
+## Session: 2026-06-24 (RTX box) — RG-011 first-token measured on the Ollama path (boundary PASS)
+
+**Why:** the `da30b6f` ToDo — RG-011 was *blocked* on the work box because the corporate TLS-MITM proxy
+SSL-failed the Anthropic first-token call (KI-10); that DEVLOG said "measure on a non-proxy box or the
+RTX/Ollama path." Now on the RTX box with local Ollama (no external TLS), so the boundary is finally
+timeable. User chose the **lean** scope (measure the SSE boundary on the source server; do not freeze).
+
+### What changed
+- **`scripts/measure_latency.py`** — added `-r/--repeat N` (warm samples: one discarded warm-up + N timed,
+  median/min/max/spread/sd) and `--in-process` (time `ChatController.handle_message` → first `Token` with
+  no server — the Chainlit/CLI control). Each HTTP sample now uses a **fresh `session_id`** so no
+  history-rewrite LLM call leaks into the timed path (the old single `"bench"` id would have, on samples
+  2..N). Backward-compatible (default `--repeat 1`, no `--in-process` → prior behaviour). ruff ✓; outside
+  the mypy gate (`files: ^src/`).
+
+### RG-011 — measured, boundary PASS
+**What:** `apps/api` (source FastAPI/SSE) vs in-process `ChatController`, both on `ollama/llama3.1:8b`
+(GPU) + bge-base/reranker on CPU torch, public corpus (2455 chunks), q="What is retrieval-augmented
+generation?", n=5 warm/path, fresh session/sample. Credit-safe: `.env` temporarily flipped to ollama
+(backed up + restored — `config.load_dotenv(override=True)` makes `.env` win over shell env, KI-4);
+`/api/health` confirmed `ollama/llama3.1:8b` + `chunk_count=2455` **before** any chat call; no Anthropic
+call was reachable. HF forced offline (warm cache, dodges KI-6/KI-10).
+**Result:** in-process median **4.563s** (sd 0.050); HTTP/SSE median **4.140s** (sd 0.665). Δ (HTTP −
+in-process) = **−0.42s**, inside the HTTP path's own spread → **the SSE boundary adds no measurable
+first-token latency.** The small negative Δ is noise (separate-process Ollama warm-state), not a real
+speedup. Baseline: `tests/eval/baselines/rg011_first_token_ollama_2026-06-24.md`.
+**Why this discharges the gate's risk:** the frozen sidecar runs the *same* uvicorn `app`, so per-token
+latency is identical to the source server — the freeze only adds process cold-start (RG-010). RG-011's
+real question (does the desktop HTTP/SSE hop slow first-token vs in-process Chainlit) is answered: no.
+
+### Rejected / not done
+- **Did not freeze + measure the artifact** (the full RG-010/RG-011-on-`dist/`): user chose lean; no
+  `dist/` on this box and the freeze needs `uv sync --extra cpu` (venv churn) + ~10–30 min. The boundary
+  result transfers to the freeze (same server); only the freeze's own cold-start is unmeasured here.
+- **Did not mark RG-011 `done`.** Honest scope: the *boundary* is discharged, but the frozen-artifact
+  first-token + RG-012 clean-machine smoke remain → RG-011 stays `blocks-ship` open.
+
+**Opens:** (1) frozen-artifact first-token + RG-010 cold-start — needs the freeze (CPU sync) on a box;
+(2) RG-012 clean-machine smoke — Windows Sandbox + the data-home flow; (3) the two freeze fixes before
+ship: KI-9 (bundle model weights) + KI-10 (OS-trust-store for proxy users). `.claude/RIGOR_TODO.md` lives
+on the work box (gitignored) — its RG-011 entry should cite the committed baseline above; the result is
+recorded here + KNOWN_ISSUES KI-10 so it survives the per-machine gap. Only `scripts/measure_latency.py`
+is a code change; staged, not committed (per CLAUDE.md).
+
+---
+## Session: 2026-06-24 (RTX box, cont.) — froze the sidecar; RG-010 / RG-011-frozen / RG-013 closed
+
+**Why:** continue the M4 ship gates on the RTX box now that RG-011's boundary was settled. Built the actual
+frozen artifact (absent here before) and ran the gates that need it.
+
+### What changed (build only — no source edits)
+- **Froze the sidecar:** `uv sync --extra cpu --extra dev --extra packaging` (added PyInstaller 6.21.0;
+  torch stays `2.12.0+cpu`; this **pruned the editable `claude-project-conventions` from the venv** — not a
+  declared dep — harmless: the cpc pre-commit gates run in their own isolated env; re-add for manual `python
+  -m cpc` use) → `just sidecar` (= `python -m scripts.build_sidecar`). Produced `dist/doc-assistant-api.exe`
+  (385 MB onefile) + copied to `apps/desktop/src-tauri/binaries/doc-assistant-api-x86_64-pc-windows-msvc.exe`.
+  rustc 1.96.0 present (triple `x86_64-pc-windows-msvc`). Both are gitignored build artifacts.
+
+### RG-010 — cold-start → done (degrades)
+Frozen launch → first `/api/health 200` = **46.2 s** (warm HF cache, `DOC_DATA_DIR`→repo data, real corpus
+`chunk_count=2455`). Onefile unpacks 385 MB to temp + loads bge/reranker/Chroma. Above the ~30 s soft
+guideline; **onefile→onedir** is the lever if it ever matters. First-run (cold cache) is KI-9-dominated
+(≈218 s HF download). No hard threshold → recorded + closed.
+
+### RG-011 — frozen first-token → done (PASS, no freeze penalty)
+`measure_latency --launch dist\…exe --repeat 5` on `ollama/llama3.1:8b` → frozen HTTP/SSE median **5.312 s**
+(sd 0.520). Re-measured the **in-process control in the same session/Ollama-state** → median **5.859 s**
+(sd 0.035). Δ (frozen − control) = **−0.55 s** → the freeze + SSE boundary add **no** first-token penalty.
+**Key methodology note:** absolute first-token tracks Ollama GPU warm-state (this session ~5.3–5.9 s vs the
+earlier same-day source run ~4.1–4.6 s), so the valid comparison is **same-session frozen-vs-control**, not
+cross-session — which is why the control was re-run rather than reused. Credit-safe: `.env` flipped to
+ollama (backed up + restored; verified), HF offline; no Anthropic call reachable. Appended to the RG-011
+baseline (`tests/eval/baselines/rg011_first_token_ollama_2026-06-24.md`).
+
+### RG-013 — structlog bundled in the freeze → done
+Frozen startup console emits structlog-rendered events
+(`…Z [info ] loading_embeddings [doc_assistant.pipeline] model=bge-base`); a scan of the full log for
+`structlog|ModuleNotFound|ImportError|Traceback` returns **0**. structlog is import-followed via
+`collect_submodules("doc_assistant")` (no explicit hiddenimport needed); structured logging survives the
+freeze with no regression. KI-1 follow-up closed.
+
+### Rejected / not done
+- **RG-012 clean-machine smoke — NOT possible on this box.** Windows Sandbox isn't enabled here
+  (`WindowsSandbox.exe` absent; the feature query needs elevation). Needs the feature on (admin + restart)
+  or a second Python-free box, **plus** the unbuilt data-home flow for Tier-2 (a fresh box has
+  `chunk_count: 0`). The frozen build *did* pass an on-box freeze-integrity smoke (launches, serves, real
+  corpus, no missing-module/DLL error), but that is not a clean machine.
+- **Did not build the installer** (`npx tauri build`) — only needed for RG-012, which is blocked anyway.
+
+**Opens:** RG-012 (sandbox + data-home flow) is the last blocks-ship gate; then PR-M5 (delete Chainlit,
+lift the 3.12 pin). Two freeze fixes still pending for shippable UX: KI-9 (bundle weights → kills the
+first-run HF download / offline failure) + KI-10 (OS trust store for proxy users). The PyInstaller onefile
+child isn't reaped by `proc.terminate()` (lingers on :8001 — kill by port between runs; known). Build
+artifacts (`dist/`, Tauri `binaries/`) are gitignored. Docs (DEVLOG/baseline/KNOWN_ISSUES) + `.claude/`
+trackers staged/updated; nothing committed (per CLAUDE.md).
+
+---
+## Session: 2026-06-24 (RTX box, cont.) — installer built; freeze fixes KI-9 (bundle weights) + KI-10 (truststore)
+
+**Why:** push toward RG-012 (clean-machine smoke). Built the installer; then, since RG-012 needs a clean
+box (Windows Sandbox not enabled here) + the unbuilt data-home flow, the user chose the autonomous,
+ship-critical path: the two freeze fixes KI-9 + KI-10.
+
+### Installer built (RG-012 prerequisite) → done
+`npm install` + `npx tauri build` (Tauri v2; rustc 1.96.0) produced **both** bundles, exit 0:
+`doc_assistant_0.1.0_x64_en-US.msi` (368 MB) + `doc_assistant_0.1.0_x64-setup.exe` (367 MB), bundling the
+frozen sidecar via `externalBin`. Reproducible on this box (the M4 baton claimed it ran on the work box;
+verified here). WiX auto-downloaded fine (no cert wall on this box). `target/` + installers are gitignored.
+
+### KI-9 — bundle model weights into the freeze → verified offline-capable
+**What:** the embedder (`BAAI/bge-base-en-v1.5`, 419 MB) + reranker (`BAAI/bge-reranker-base`, 1.1 GB) are
+now bundled so the frozen build needs **no first-run HuggingFace download** and works fully offline.
+**How (no `src/` changes — packaging stays contained):**
+- `scripts/doc_assistant_api.spec` stages a **minimal, symlink-free, blob-less** HF hub cache at freeze
+  time — `snapshot_download(local_files_only=True)` → `copytree(symlinks=False)` derefs each model's
+  `snapshots/<rev>` into real files + writes `refs/main`, **dropping `blobs/`** (HF reads via `snapshots/`,
+  so no duplication → ~1.5 GB single copy, not 3 GB). Bundled into the onefile at `hf_cache/`.
+- `apps/api/__main__.py` `_configure_frozen_runtime()` (runs before the app import) sets
+  `HF_HOME=_MEIPASS/hf_cache` + `HF_HUB_OFFLINE=1` + `TRANSFORMERS_OFFLINE=1` when `sys.frozen`.
+**Verified (the real proof):** renamed the user HF cache away (simulating a clean machine) → launched the
+frozen binary → `/api/health` green in ~23s, `chunk_count=2455`; console scan for
+`Downloading|huggingface http|errors|Traceback|CERTIFICATE_VERIFY` = **0**. Models loaded from the bundle,
+no cache, no network. Cache restored after.
+**Cost:** frozen binary 385 MB → **1.6 GB**; installer will be ~1.9 GB. **Surprising upside:** RG-010
+cold-start did **not** regress (30.9 s vs the 385 MB build's 46.2 s — within run-to-run/OS-cache variance;
+the unpack is dwarfed by model load on NVMe), so the onefile+weights approach is viable and the
+onedir/Tauri-resource optimization is **less urgent** than feared (kept as a documented option).
+
+### KI-10 — OS trust store for outbound TLS → implemented + bundled
+**What:** `truststore>=0.10` added as a base dep; `apps/api/__main__.py` calls `truststore.inject_into_ssl()`
+at the entrypoint (guarded — never blocks startup); spec adds `collect_submodules("truststore")`. Routes
+httpx (huggingface_hub, anthropic SDK) through the **OS/system trust store** instead of the bundled
+`certifi` set, so a corporate TLS-MITM proxy's root CA is honored (the KI-10 cert failure).
+**Verified:** truststore imports + `inject_into_ssl()` runs clean in dev and in the frozen build (no cert
+errors in the frozen log). **Caveat:** the actual proxy-cert fix can only be confirmed on a TLS-MITM box
+(this RTX box isn't behind one) — so KI-10 is *implemented + bundled + injects cleanly*; the on-proxy
+confirmation is the remaining check.
+
+### Rejected / not done
+- **RG-012 itself** still can't run here (Windows Sandbox absent + Tier-2 data-home flow unbuilt).
+- **onedir / Tauri-resource** packaging for the weights — not needed yet (cold-start didn't regress);
+  documented option if the 1.6 GB onefile / ~1.9 GB installer becomes a problem.
+
+**Opens:** RG-012 clean-machine smoke (now with a weights-bundled, offline-capable, proxy-safe installer →
+should pass Tier-1 cleanly when a clean box is available); confirm KI-10 on an actual proxy box; the
+data-home flow for Tier-2. Code staged (`apps/api/__main__.py`, `pyproject.toml`, `uv.lock`,
+`scripts/doc_assistant_api.spec`) + docs; `Cargo.toml` shows a phantom CRLF-only diff (left unstaged);
+build artifacts gitignored; nothing committed (per CLAUDE.md). *(Committed by user as `ea60a1a`.)*
+
+---
+## Session: 2026-06-24 (RTX box, cont.) — frozen end-to-end validation + found KI-11 (chromadb non-ASCII path)
+
+**Why:** no clean box available (can't restart for Windows Sandbox), so "do what you can": validate the
+frozen build end-to-end on this box + exercise the per-user data home (re-ingesting into it).
+
+### Frozen build end-to-end — functional PASS
+Drove a real cited turn through the frozen sidecar (Ollama, repo corpus, `DOC_DATA_DIR`): retrieved the
+right papers (rag_lewis/dpr/bge/hyde), streamed a grounded answer (first-token 11.8 s, full 17.9 s),
+result payload carried 10 sources. **One gap:** the local 8B emitted **no inline `[n]` citations** this
+turn — the known local-generation citation-discipline weakness (prior sessions), *not* a freeze defect
+(retrieval/sources/streaming all correct). Credit-safe (`.env`→ollama, backed up + restored; verified).
+
+### Exercised the per-user data home → found KI-11 (a real shippability bug)
+Re-ingested the 10 PDFs into `%LOCALAPPDATA%\doc_assistant\data` (the location a real install uses) and
+launched the frozen build with **no `DOC_DATA_DIR`** so it resolves its own home. It **crashed** at startup:
+`chromadb … Error loading hnsw index`. Debugged it (the venv reproduces it identically — not the freeze):
+
+**KI-11 — chromadb 1.5.9 does not persist the hnsw `.bin` index when the persist directory's actual
+location contains non-ASCII characters.** This box's Windows username contains a non-ASCII character (an
+accented `é`), so the per-user
+path is non-ASCII. Evidence: ASCII location (`C:\Projects\…`, 1 **and** 10 files) → `.bin` written, reloads
+fine; non-ASCII location (10 files / 2455 chunks) → no `.bin` → reload fails (read-time backfill works for
+~310 chunks but fails at 2455). The Windows **8.3 short path** does NOT help (chromadb resolves it to the
+real `é` dir). **Impact:** the shipped app's per-user data home breaks for any user with an accented /
+non-Latin Windows username — common. Latent until now because dev/repo paths are ASCII. Full writeup +
+candidate fixes (ASCII Chroma location / chromadb version bisect / upstream report) in KNOWN_ISSUES **KI-11**.
+
+**Course-correction note:** first hypothesized non-ASCII, then the 8.3-short-path test (no `.bin`) made me
+doubt it, then a fresh full **ASCII** ingest (`.bin` written, reloads) confirmed the path *is* the cause —
+the short path failed because it resolves to the same `é` directory. Recorded so the reasoning is traceable.
+
+### Rejected / not done
+- **Did not build the Tier-2 data-home flow** — KI-11 must be fixed first (a fresh ingest under the real
+  per-user home produces a broken corpus), and the fix is a design decision (surfaced to the user).
+- **Did not implement the KI-11 fix** — it's a data-layer/packaging decision (ASCII-relocate vs chromadb
+  version vs upstream); proposed to the user rather than chosen unilaterally.
+
+**Opens:** decide + implement the KI-11 fix (then re-validate the per-user data home here — this box's `é`
+username is the perfect test); RG-012 Tier-1 still needs a clean box; confirm KI-10 on a proxy box. Test
+artifacts cleaned; per-user test dir removed; `.env` restored; repo corpus intact. Only KNOWN_ISSUES +
+DEVLOG changed (docs); nothing committed (per CLAUDE.md).
+
+---
+## Session: 2026-06-24 (RTX box, cont.) — KI-11 fix: relocate Chroma to an ASCII path under non-ASCII data homes
+
+**Why:** user chose the "ASCII Chroma location" fix for KI-11. This box's `é` username is the ideal validator.
+
+**What changed (`src/`):**
+- **`config.py`** — `_chroma_base()`: when `DATA_PATH` is non-ASCII **on Windows**, the Chroma vector dirs
+  relocate to `%PROGRAMDATA%\doc_assistant\chroma\<sha1(data_path)[:12]>` (guaranteed ASCII); `CHROMA_PATH`
+  /`PC_CHROMA_PATH` derive from that base. SQLite + sources stay at `DATA_PATH` (SQLite handles non-ASCII).
+  ASCII data paths + non-Windows → byte-identical to before (`DATA_PATH/chroma`). `sha1(..., usedforsecurity=False)`.
+- **`ingest.py`** — the Chroma `mkdir` calls now use `parents=True` (the relocated base has new intermediate
+  dirs; the old single-level `mkdir(exist_ok=True)` raised `FileNotFoundError` on the new path).
+
+**Verified on this box** (data home `C:\Projects\doc_assistant\café_home\data`, the `é`, chosen non-virtualized
+to dodge the Claude-app MSIX `AppData` redirection): `PC_CHROMA_PATH` resolved to
+`C:\ProgramData\doc_assistant\chroma\27281d573b7f\chroma_pc` (ASCII); full 10-file ingest rc 0 → all four
+`.bin` written → fresh-process read **chunk_count 2335** (vs the pre-fix failure). Gate: ruff ✓, mypy --strict
+src ✓ (43 files), bandit ✓; full test suite re-run for the `src` change.
+
+**Note (env quirk):** running inside the Claude desktop app's **MSIX sandbox** virtualizes `AppData\Local`
+(→ `…\Packages\Claude…\LocalCache\…`) and `$LOCALAPPDATA` varied per shell — which is why the validation used
+a non-virtualized `C:\Projects\…` non-ASCII path. The real installed Tauri app runs outside that sandbox and
+uses the true `C:\Users\<username>\AppData\Local\…`; the fix keys off non-ASCII-ness, so it applies there too.
+
+**Opens:** **re-freeze the sidecar + rebuild the installer** so the shipped artifact bundles this `config`
+change (the fix is in `src/`; `just sidecar` picks it up) — then the per-user data home works for accented
+usernames; then the Tier-2 data-home flow is unblocked. Still: RG-012 Tier-1 (clean box), KI-10 on a proxy
+box. Staged: `config.py`, `ingest.py` + docs; nothing committed (per CLAUDE.md).
+
+---
+## Session: 2026-06-25 — Doc cleanup: archive discharged disposables + refresh DEMO (Claude Code, work box)
+
+**Why:** session-start review of "where we left off" + the user asked to clean up useless documentation if
+not already done. The cpc docs-migration (ADR-001) had left two discharged disposables in `docs/` root, and
+`DEMO.md` still presented Chainlit as *the* web UI (pre-desktop-shell).
+
+**Audit basis:** a 10-doc staleness audit (each doc: full read + repo-wide reference grep + git history).
+Verdicts — KEEP: `docs/archive/doc-assistant-roadmap.md` (ROADMAP forwards to it), `ADR-000-template.md`
+(canonical ADR seed), `figures-and-tables.md` (TESTING.md + specs cite it), `how-answers-work.md`
+(UI-agnostic; README link), `library.bib` (live `/bibtex` exporter target). `decisions.md` left **as-is**:
+it holds **no** duplicates of ADR-001/002/003 (those were authored fresh in `docs/decisions/`), so the
+1623-line monolith is still the sole canonical home of ~30 decisions — the full per-file split is **PR-B**
+(a real migration repointing ~20 references), not a cleanup. Sprint template kept (inert, but part of the
+adopted cpc standard; `sprint_check.py` is the still-unbuilt phase-2 half).
+
+**What changed (docs-only):**
+- **Deleted** `docs/PLAN_pr-a-cpc-scaffolding.md` + `docs/chunking-sweep-rtx-resume.md` (`git rm`). PR-A has
+  landed (ADR-001 accepted; the `.claude` triad + ROADMAP + ADR-00{1,2,3} all exist) and the chunking sweep
+  concluded 2026-06-06 (result locked in `tests/eval/baselines/chunking_sweep_public_2026-06-06.md`), so both
+  files' live purpose is discharged. (Briefly archived to `docs/archive/` first; **the user reviewed both and
+  chose deletion** — low residual value; the durable info lives in ADR-001 + the baseline, recoverable from
+  git history.)
+- Generalized ADR-001's now-dead disposable-list route (its example was the deleted chunking note). The only
+  remaining mentions of the two files are append-only DEVLOG history, left as-is.
+- `docs/DEMO.md` "Run it" refreshed: the desktop app (`just api` backend + `apps/desktop` Vite/Tauri) is now
+  the lead/shipping UI; the CLI is kept; Chainlit is demoted to a "legacy — removed at M5, needs 3.12"
+  fallback (it still works — M5 is spec-only). Header `updated: 2026-06-25`.
+
+**Verification:** unit+integration suite green on the host (official CPython 3.12.10 venv) — **602 passed in
+60s** (run before the change; docs-only after, so unaffected). Re-grep confirms no living doc routes to the
+old paths. The cpc `docs_check` gate was not re-run (the editable cpc package was pruned from this venv
+during the 06-24 freeze); headers use valid cpc enums and routes were checked by hand.
+
+**Opens:** PR-B (`decisions.md` → per-file ADR split) when prioritized. Desktop-shell M4 ship gates still
+open (re-freeze to bundle the KI-11 `src` fix; RG-012 clean-machine smoke; KI-10 on-proxy confirm) + PR-M5.
+Nothing committed — staged for review (cpc §13).
+
+---
+## Session: 2026-06-25 (cont.) — M4 ship gates closed (re-freeze) + PR-M5 (Chainlit decommissioned), Claude Code (work box)
+
+**Why:** user — "re-freeze and continue closing PR-M4 and M5." The shipped `dist/` artifact was the stale
+Jun-22 freeze (384 MB, pre KI-9/10/11). Re-froze on this box (CPU torch `2.12.0+cpu`, PyInstaller 6.21),
+closed the M4 ship gates, then executed PR-M5.
+
+### M4 — re-freeze + ship gates (no `src/` change; packaging + verification)
+- **Re-froze** `dist/doc-assistant-api.exe` → **1.62 GB** (KI-9 weights + KI-10 truststore + KI-11 ASCII-Chroma
+  fix bundled) + copied to the Tauri `binaries/`. **Rebuilt the installer** (`npx tauri build`) → NSIS
+  `setup.exe` 1.63 GB + MSI 1.62 GB (were 382 MB).
+- **Host smoke + RG-010:** frozen launch → `/api/health 200` in **30 s** (warm, OFFLINE — weights from the
+  bundle), `chunk_count=27168` (real corpus), structlog events present, **zero** import/cert/no-such-table
+  errors → RG-010 re-confirmed, **RG-013** (structlog in freeze) re-confirmed.
+- **RG-012 clean-machine smoke (Windows Sandbox, this box) → FULL PASS.** Test A (frozen sidecar on a clean,
+  Python-free Win11): health 200 in 118 s, `chunk_count=0`, **no HF download** (KI-9 offline validated). Test B
+  (silent-install the 1.63 GB NSIS bundle → launch the installed app → it spawns a healthy sidecar): health 200
+  in 48 s. Fixed the host-local harness `smoke.ps1` (outside the repo): the installed exe is
+  `doc-assistant-desktop.exe` (Cargo bin), not `doc_assistant.exe` (productName) → switched Test B to a
+  registry-`InstallLocation` name-agnostic locate. **Blocks-ship freeze-portability gate cleared.** Tier-2 (a
+  cited turn) still pends the unbuilt data-home / first-run-ingest flow.
+
+### PR-M5 — decommission Chainlit (`docs/specs/pr-m5-decommission-chainlit.md` → ✅ BUILT)
+**What:** deleted `apps/chainlit_app.py` + `.chainlit/` (config + 24 translations + chainlit.md); removed the
+`chainlit>=2.0,<3.0` base dep + the `chainlit.*` mypy override; deleted the `chat` (chainlit) justfile recipe,
+added a `desktop` recipe (`npm run dev`); trimmed the Chainlit arm from `test_turn_parity.py` (parity is now
+CLI == canonical `TurnResult`); scrubbed every remaining `chainlit` mention from src/apps/tests docstrings +
+comments. `uv lock` → chainlit + 15 transitive deps (socketio / opentelemetry-instr / pywin32 / …) gone from
+the lock; `uv sync` uninstalled them from `.venv`. **`fastapi`/`uvicorn`/`sse-starlette` stay** (made explicit
+base deps in M2 precisely for this clean removal).
+**Gate (3.12, chainlit uninstalled):** ruff ✓ · `mypy --strict src` ✓ (43 files) · bandit ✓ · **602 passed**.
+**DoD #1:** `grep -rni chainlit src tests apps pyproject.toml justfile docs/architecture.md` → clean except the
+historical RG-011 baseline (spec-excepted); no `import chainlit` anywhere. **DoD #4 (GUI works):** proven by
+RG-012 Test B (installed Tauri app launched + spawned a healthy sidecar) + the host API smoke.
+
+### ADR-2 — the 3.12-pin lift: VERIFIED-AND-DEFERRED (KI-2 stays open, cause renamed)
+Ran the M5 ADR-2 check in an isolated venv (`UV_PROJECT_ENVIRONMENT=.venv314`, non-destructive to `.venv`):
+`uv sync --python 3.14 --extra cpu --extra dev` **resolves + installs cleanly** (torch `2.12.0+cpu` has a cp314
+wheel; chainlit absent), and ruff / `mypy --strict src` / bandit pass on 3.14 — **but the full pytest suite
+hard-crashes the interpreter** (no Python traceback; process dies ~47–54%, first at `tests/unit/test_llm.py`
+under full-suite load; NOT reproducible unit-only or for that test in isolation). 3.12 runs all 602. → per
+ADR-2's edge case, **do not lift the pin**: KI-2 stays open with the cause **renamed from Chainlit/anyio to a
+native dep** (anthropic / langchain / `pydantic-core` / `tokenizers` not yet cp314-stable). The literal
+`--python 3.12` recipe pin is deleted; only this native-dep gate now holds the runtime at 3.12. Trove
+classifiers left at 3.10–3.12 (no 3.13/3.14 until the suite passes on 3.14).
+
+**Docs:** KI-2 rewritten (cause renamed); CONTEXT (runtime row + desktop-shell paragraph → M0–M5 shipped);
+README (UI row + run instructions → desktop/CLI + the 3.14 note); CLAUDE (runtime quirk); `architecture.md`
+(dropped the `chainlit_app.py` row); ROADMAP M4 → done + M5 → done; M5 spec → BUILT. `.gitignore` `.venv/` →
+`.venv*/`.
+
+**Opens / not done:** Tier-2 cited-turn on a clean box (needs the **data-home / first-run-ingest flow** — the
+last product gap); KI-10 **on-proxy** confirmation (this *is* the proxy box; needs 1 paid Anthropic first-token
+call through the re-frozen truststore binary — flagged, not done); KI-2 re-check on 3.14 when native deps ship
+cp314 wheels; PR-B (`decisions.md` split). Throwaway `.venv314` left on disk (`rm -rf` sandbox-blocked;
+gitignored). **Nothing committed — staged for review (cpc §13).**
+
+---
+## Session: 2026-06-25 (cont.) — KI-10 on-proxy = FAIL (confirmed) + data-home settings/ingest backend, Claude Code (work box)
+
+**KI-10 on-proxy check (user-authorized, → $0 billed).** Drove a real Anthropic turn through the re-frozen
+sidecar on this TLS-MITM-proxy box: retrieval succeeded, generation produced **no token** — the worker-thread
+stderr shows `httpx.ConnectError: [SSL: CERTIFICATE_VERIFY_FAILED]` → `anthropic.APIConnectionError`. **$0
+billed** (the handshake fails before any request reaches Anthropic). So `truststore.inject_into_ssl()` is not
+taking effect in the freeze → **KI-10 confirmed OPEN** (was "near-resolved, pending"; the earlier "verified"
+was on the non-proxy RTX box, where certifi works anyway). **Root-cause lead:** the inject runs in the right
+place (before the httpx/anthropic import) but was wrapped in a **silent `try/except: pass`** — a failing inject
+would be swallowed → certifi → this exact error. Made `apps/api/__main__.py` **write the failure to stderr**
+(also fixes a pre-existing **bandit B110** that surfaced once bandit scanned `apps`). Next: re-freeze + re-test;
+the WARN line confirms whether inject is the failure point. Non-blocking (paid-API on a proxy box only).
+
+**Data-home / first-run ingest — "point at a folder" (user-chosen approach).** A fresh install resolves its
+corpus to the empty per-user data home (`chunk_count: 0`); built the backend so a user can point at their
+documents folder and index it from the running app.
+- **`src/doc_assistant/app_settings.py` (new):** persist/load user settings as JSON in the data home;
+  `get_source_dir()` (`DOC_SOURCE_DIR` env > persisted `source_dir` > `config.DOCS_PATH`) + `set_source_dir()`
+  (validates the dir exists, persists). The data *home* stays managed by config (KI-11-safe); the user only
+  picks where their *documents* are.
+- **`ingest.main` → returns its stats dict** (was `-> None`; additive — the CLI ignores the return).
+- **`apps/api` (thin shell over src):** `GET /api/settings` now reports `data_home` / `source_dir` /
+  `source_dir_exists` / `chunk_count` (+ the locked knobs); `POST /api/settings` sets the source folder
+  (400 on a bad path); `POST /api/ingest` runs `ingest.main(scope=source_dir)` in a **daemon thread**, then
+  **rebuilds the ChatController** so the new corpus is live (chunk_count updates without a restart);
+  `GET /api/ingest/status` polls progress (idle/running/done/error + counts). 409 on a concurrent ingest.
+  Test seams added to `create_app(ingest_fn=…, controller_factory=…)`.
+- **Tests:** `tests/integration/test_api_settings_ingest.py` (6, all fakes — settings GET/POST + persistence
+  + 400; ingest start→status→done with the recorded scope + live chunk_count reload; failure→error;
+  concurrent→409); fixed the now-stale `test_settings_read_and_write_stub` (501 → 422 — the write path is wired).
+**Gate GREEN (3.12):** ruff ✓ · ruff format ✓ · `mypy --strict src` ✓ (44 files) · `bandit -r src apps` 0/0/0 ✓
+· `pytest tests/unit tests/integration` → **608 passed** (+6).
+
+**Not built (follow-ups):** the **frontend** settings panel (source-folder picker + Re-index button + status
+poll + empty-corpus banner) — the backend contract is ready for it; streamed ingest *progress* (v1 reports
+final counts only); the KI-10 truststore fix + re-freeze. **Nothing committed — staged for review (cpc §13).**
+
+---
+## Session: 2026-06-26 — M4 first-run / data-home UI (frontend settings panel), Claude Code (work box)
+
+Built the **frontend settings + first-run-ingest panel** — the user-facing half of the data-home flow whose
+backend landed in `77eb5f9` ("Point to Folder Ingest"). This closes the **last code-doable M4 gap**: a fresh
+install resolves to an empty per-user corpus (`chunk_count: 0`) with no way to point at documents; now the
+running app drives `POST /api/settings` + `POST /api/ingest` + the status poll itself. Unblocks **RG-012
+Tier-2** (a clean machine can point → index → ask a cited turn). **Frontend-only — no `src/`/`apps/api`
+change** (the backend contract was already committed + tested in `test_api_settings_ingest.py`).
+
+**What (apps/desktop/, ~131 insertions + 1 new component):**
+- **`src/lib/Settings.svelte` (new):** slide-over dialog — source-folder input, one low-friction primary
+  action (validate+persist via `setSourceDir`, then `startIngest`, then poll `getIngestStatus` to terminal),
+  Corpus (chunk count + data home), read-only Engine knobs (provider/model/embedder/`top K of N`/synthesis).
+- **`src/App.svelte`:** ⚙ settings toggle; **empty-corpus first-run banner** (shown only when ready +
+  `chunk_count === 0`, not while connecting/down); `refreshHealth()` re-pulls `/api/health` after a
+  successful ingest so the header chunk count goes live (backend rebuilds the controller before "done").
+- **`src/lib/api.ts` + `types.ts`:** `getSettings`/`setSourceDir`/`startIngest`/`getIngestStatus` + `Settings`
+  / `IngestStatus` wire types + a FastAPI-`detail` error extractor — mirror `apps/api/main.py` field-for-field.
+
+**Verified live in the browser** (Vite dev + a throwaway fake API on `:8001` mirroring the real contract — no
+models/torch/network; pattern from the M3 baton): first-run banner at 0 chunks → open panel → **Index folder
+→ running → done with the header going 0 → 2,455 chunks live + banner clearing**; bad-path → backend 400
+`detail` surfaced in `--warn-fg`, no ingest, count unchanged; Esc/✕/scrim close. `npm run build`
+(svelte-check + vite) **0 errors / 0 warnings**; 0 console errors across the whole interaction.
+
+**Adversarial review (4-lens Workflow: contract / reactivity / concurrency / UX, each finding independently
+verified):** contract + reactivity lenses clean; one finding (409 concurrent-ingest) **rejected** on verify
+(unreachable — the button is `busy`-guarded during ingest). **7 confirmed (all edge-case/nit), all fixed +
+re-verified live:** (1) poll loop now **tolerates ≤4 transient status blips** so a minutes-long index isn't
+torn down + falsely failed (matches `App.svelte`'s readiness-gate posture); (2) post-ingest refresh is
+**non-fatal** (`load(silent)`) so a blip can't collapse the panel + erase the ✓; (3) Re-index/Index label
+keys off **`chunk_count` alone** (the old raw-string-vs-resolved-path compare mis-flips on Windows path
+normalization — fwd slashes / trailing slash / drive case); (4) **autofocus the input on open + a Tab focus
+trap** (honour `aria-modal`); (5) status messages in an **`aria-live="polite"`** region (errors `role=alert`);
+(6) **clear stale ✓/error on input edit**; (7) **Enter-to-index**. Each re-verified via the preview
+(`activeElement`, `defaultPrevented`, Tab-wrap, live-region text).
+
+**Deviations / decisions (intent-preserving):** label off `chunk_count` not path-equality (review #3 option b —
+robust, no false precision; clicking always re-points+ingests the typed folder regardless). The source folder
+is a **typed/pasted path** (works identically in browser-dev + Tauri webview, fully verifiable here); a
+**native folder picker** (Tauri dialog plugin — npm + Cargo dep + a capability, unverifiable without the Tauri
+toolchain) is a deferred UX-sugar follow-up over the same contract.
+
+---
+## Session: 2026-06-26 (cont.) — Gap-detection layer design-locked (ADR-004 + spec), Cowork (work box)
+
+**Starting from:** Phase 7 in progress; the concept-graph redesign (Decision C, 2026-06-18) decided-not-built;
+the gap mechanism described only as one bullet inside Decision C. Idea-generator (sibling project) v1 built,
+exploring how to bolt it onto a RAG + gap detector.
+**Goal this session:** Settle how the gap-detection layer is built — the curated-vocabulary blind-spot tension —
+and record it in the repo's conventions. Docs-only; no code.
+
+### docs/decisions/ADR-004-gap-detection-layer.md (new)
+**What:** New ADR (split-ADR house format) locking the gap layer as a **two-tier deterministic/stochastic**
+structure over the Decision-C curated skeleton. Tier 1 = deterministic facts over the skeleton (isolated /
+single-source / thin-bridge / under-connected), subsuming the wiki-6b + concept-7c gap signals. Tier 2a =
+within-corpus, gated in-app: a deterministic floor (aggregate the persisted per-claim `unsupported` markers +
+citation-layer gaps) + a quarantined LLM suggestion ceiling. Tier 2b = the true external "anti-blind-spot"
+reach, deferred. Cross-cutting: the determinism label is first-class; stochastic gaps feed the curated
+vocabulary (the compounding arrow) and never write the skeleton; three gap *types* (`unsupported` /
+`contested` / `superseded_trend`) stay distinct.
+**Why:** Phase 7's headline capability is surfacing what the user/LLM can't see, but a curated graph can only
+find gaps *inside* the chosen vocabulary — precise on the known, blind on the unknown. The deterministic/
+stochastic wall (an existing project tenet) resolves it: the stochastic finder may reach past the vocabulary
+*because* it can only propose candidates a deterministic check or the user must accept — it can't corrupt the
+graph. That single property buys recall on the unknown without losing the curated graph's precision/auditability.
+**Rejected:** (A) single-tier deterministic only — trustworthy but can't deliver the anti-blind-spot feature;
+(B) open-vocabulary LLM extraction as the finder — the cost/fragmentation Decision C already retired (survives
+only fenced-off in Tier 2a); (C) **the idea-generator as the blind-spot finder — rejected on a structural
+ground:** its novelty gate measures distance against its own pool, so it closes *inward* (convex-hull filler,
+not frontier-crosser) and has no representation of "outside" the known space; confirmed empirically. Recorded so
+it isn't retried.
+**Opens:** The Tier-2a deterministic floor is the cheapest first increment (a query over already-persisted
+`answer_claims.marker` + the `Citation` graph). Reframes the reviewer as a gap *feeder* and makes Phase 9
+review-generation share an observability/rating spine with Tier 2a (build it once).
+
+### docs/specs/feature-gap-detection.md (new)
+**What:** Full code-level spec in the feature-7d style: the `Gap` dataclass (with first-class `determinism`),
+per-tier detector signatures, the `gaps.py` / `gap_suggest.py` / `scripts/build_gaps.py` module split, a
+regenerable `gaps` sidecar table, guard tests, and a DoD. Status header marks it **DESIGNED-NOT-BUILT** and
+**blocked** on (a) the Decision-C skeleton and (b) the RG-001 edge-precision run.
+**Why:** Gives Claude Code a buildable contract for the first increment (Tier 1 + the Tier-2a floor) without
+guessing numbers — Tier-1 thresholds (`min_degree`, presence-recall) are explicitly provisional and set from
+the validation run, not the spec.
+**Rejected:** Speccing the thresholds now — they depend on edge density, which is unmeasured; locking them
+pre-run would invite a revise-after-first-`--apply` churn.
+**Opens:** The DoD gates "done" on RG-001 confirming Tier-1 signals are meaningful on the real corpus —
+because isolated/thin-bridge/under-connected are all defined *relative to the edge set*, an over- or
+under-connected skeleton makes every gap count meaningless. The edge-precision run is a **correctness gate on
+this feature, not optional rigor.**
+
+### docs/decisions.md · docs/ROADMAP.md — cross-links
+**What:** Decision C's "Gaps are deterministic" bullet now forward-points to ADR-004 + the spec; ROADMAP's
+Phase 7 line and the "Later / open" bullet both reference the gap layer + its blocking conditions.
+**Why:** The canonical files must lead a reader to the new ADR/spec; append-only pointer, no rewrite of the
+Decision-C text.
+**Opens:** `.claude/CONTEXT.md` open-questions needs the matching bullet too — **write-protected for Cowork
+this session (Claude Code owns it)**; the exact snippet is staged in the Cowork outputs folder for a manual/Code
+paste.
+
+**Nothing committed — new files + edits staged for review (cpc §13).** Files: `docs/decisions/ADR-004-*.md`
+(new), `docs/specs/feature-gap-detection.md` (new), `docs/decisions.md` + `docs/ROADMAP.md` (modified).
+
+**Opens / not built:** native folder-picker button; streamed ingest *progress* (still final-counts-only);
+KI-10 truststore re-freeze (separate, non-blocking — proxy-paid-API only). **Nothing committed — staged for
+review (cpc §13).**
+
+---
+## Session: 2026-06-26 (cont.) — Ingestion hardening: dual-store write ordering + atomic cache writes + figure-dir orphan sweep, Claude Code (work box)
+
+Picked up the Cowork ingestion-review handoff — three fixes (F1/T1/G1) from the staged
+`ingestion-map-and-review.md`. Code + tests. Same session synced the `.claude/` trackers Cowork can't
+write (CONTEXT open-questions gap-layer bullet + date bumps; RIGOR_TODO RG-001/RG-007 dead
+`feature-7-concept-graph.md` link repointed to ADR-004 + `feature-gap-detection.md`; KI-7 cleanup +
+pointer bullets). **Nothing committed — staged for review (cpc §13).**
+
+### F1 — commit the SQLite Document row AFTER both Chroma writes (`ingest.py`)
+**What:** `process_one_document` called `upsert_document_in_sqlite` (which commits) *before*
+`db.add_documents` (baseline) and `pc_db.add_documents` (parent-child). Reordered: resolve `document_id`
+up front WITHOUT committing — new `_existing_document_id(doc_hash)` reuses an existing row's id (so its
+figures + other id-keyed sidecars stay linked), else `uuid4()` mints a fresh one — stamp it into the chunk
+metadata + `figure_units()`, do both Chroma writes, THEN commit the row last via
+`upsert_document_in_sqlite(document_id=…)` (now takes the pre-resolved id and keys a new row by it). The
+recorded `chunk_count` is snapshot as `baseline_chunk_count` before the figure chunks are appended, so the
+committed value is identical to the old pre-figure order. The `session.flush()` (only ever for UUID
+generation) is dropped — the id is explicit now.
+**Why:** on a Chroma write failure the old order left a committed Document row with zero chunks — an orphan
+the library UI counts but retrieval can't serve. Writing the row last means a vector-write failure aborts
+the document cleanly with nothing persisted; it is also strictly better on re-ingest (a failed re-ingest no
+longer bumps `chunk_count`/`extracted_at` or logs a spurious `reextract` event).
+**Rejected:** the lower-risk additive alternative (keep the order, add a post-run reconciliation that only
+*warns* on rows with no chunks). It detects the orphan instead of preventing it, and still ships the bad
+row. The reorder is the handoff's preferred fix.
+**Coupling named:** `ingest.py` ↔ `db` `Document` (the shared id) ↔ both Chroma collections. Added a
+comment at the dedup gate explaining why it must stay the **intersection**
+(`get_indexed_hashes(db) & get_indexed_hashes(pc_db)`): a hash counts as indexed only if present in *both*
+stores, so a partial write (baseline landed, pc failed) is missing from the intersection and self-heals
+next run — a refactor to a union / single store would silently strand half-written docs.
+**Tests (`tests/integration/test_ingest_write_ordering.py`, new):** monkeypatch `Chroma.add_documents` to
+fail — (1) the first write fails → zero Document rows (no orphan); (2) the second store fails after the
+first lands → still zero rows, hash present in baseline-only, and a clean re-run completes the partial
+write (the intersection self-heal); plus (3) re-ingest reuses the existing `document_id` so figures stay
+linked (drives the `_existing_document_id` reuse branch — guards figure coupling) and (4) the recorded
+`chunk_count` excludes figure chunks (pins `baseline_chunk_count`). Fake embedder + temp dirs/SQLite — no
+real Chroma server / LLM / paid call. (1)/(2) fail on the pre-reorder code (the orphan row would exist).
+**Follow-up (the inverse orphan — now CLOSED, KI-12).** The intersection self-heal repairs a partial *Chroma*
+write but not its inverse: both vector writes landing while the final SQLite commit fails leaves the hash in
+both stores (so in the intersection) with no Document row — previously only `--rebuild` cleared it. `main` now
+reconciles the dedup set against SQLite — `inverse_orphans = (baseline ∩ pc) − get_document_row_hashes()` — and
+subtracts those no-row hashes from `indexed`, so the document is reprocessed and its row recommitted on the
+next run (the source-gone/stale shapes are already swept by `cleanup_orphans_*`, so only source-present+
+unchanged reaches here; nothing is deleted — `process_one_document` re-adds idempotently). Regression-guarded
+by `test_sqlite_commit_failure_self_heals_via_reconciliation`; documented in `.claude/KNOWN_ISSUES.md` KI-12
+(RESOLVED). Landed as a same-day follow-up to this session.
+
+### T1 — atomic cache writes (`fsutil.py` new; `ingest.py`, `extract_tables*.py`)
+**What:** new `fsutil.atomic_write_text(path, text)` — write a temp file in the same dir, `fsync`,
+`os.replace` (atomic same-filesystem rename); on any failure before the swap it removes the temp and leaves
+the original intact. Guarantees *atomicity* (no truncated/partial file is ever visible — the hazard this
+fixes), not full power-loss durability of the rename; that failure mode is benign (a lost rename leaves the
+prior complete cache → a cheap re-extract). Newline handling matches `Path.write_text`, so on-disk bytes
+(and `doc_hash` over the re-read cache) are unchanged. Routed the three writers of the ingest source-truth
+`.md` cache through it:
+`ingest.load_or_extract` (initial extraction) + the two table-splice passes
+(`scripts/extract_tables_marker.py`, `scripts/extract_tables.py`).
+**Why:** all three overwrite the cached `.md` *in place*, and that cache is the source-of-truth the next
+ingest re-hashes; a crash mid-write left a truncated cache that `is_cache_fresh` then trusted → a corrupt
+re-ingest.
+**Rejected:** per-script patches — centralised instead, since the three share one write contract.
+**Coupling named:** these three are the writers of the ingest source-truth cache; `atomic_write_text` is
+their single shared contract. Scoped to the source-truth cache — the other sidecar writers (`graph.json`,
+wiki notes, settings, export) are different artifacts, left as-is.
+**Tests (`tests/unit/test_fsutil.py`, new):** write / overwrite / parent-dir creation; no temp left on
+success; a failed swap (`os.replace` raising) leaves the original byte-for-byte intact + no temp.
+
+### G1 — sweep orphaned figure PNG dirs on cleanup (`ingest.py`)
+**What:** new `ingest.cleanup_orphan_figures(orphan_hashes)` — `shutil.rmtree(figure_dir(h))` per orphan
+hash, wrapped in a per-hash try/except (logs `figure_dir_delete_failed` + continues on a locked dir, counts
+only actual deletions — mirrors `cleanup_orphans_chroma`'s cache-delete posture, not `ignore_errors=True`);
+called only in the global cleanup branch (`scope is None`), after the Chroma orphan sweeps.
+**Why:** Figure *rows* already FK-cascade-delete with their Document, but the cropped PNGs under
+`FIGURE_DIR/{doc_hash}/` are on-disk sidecars with no DB cascade — they leaked forever as documents were
+deleted or their content changed. Keyed by `doc_hash`, so it is correct for both orphan kinds: a gone
+source and a content change (the old hash's dir no longer matches any content; re-extraction writes the new
+hash's dir).
+**Rejected:** sweeping inside `cleanup_orphans_chroma` — it runs once per store (double-sweep) and the
+figure layout isn't Chroma's concern; a dedicated, clearly-gated function is cleaner.
+**Coupling named:** ingest cleanup ↔ the figures on-disk layout (`config.FIGURE_DIR / {doc_hash}/`, via
+`figures.figure_dir`) — uses the canonical `figure_dir()` so a layout change follows automatically. Gated by
+the whole cleanup block's `scope is None` guard so a `--path` run can't delete out-of-scope figures (unlike
+`also_clean_cache`, an orthogonal source-existence gate — this sweep deliberately removes both gone- and
+stale-orphan dirs).
+**Tests (`tests/integration/test_ingest_orphan_cleanup.py`, +4):** a gone source's figure dir is swept
+while a live doc's is kept; a content-change (stale) orphan's old-hash dir is swept; a figure-dir delete
+failure is logged and skipped without aborting the sweep; and a direct assertion that `Figure` rows
+cascade-delete on `Document` delete (previously asserted nowhere).
+
+**Adversarial review (3-lens Workflow — B1 correctness / B2-B3 correctness / test adequacy, every finding
+independently verified):** the B1 reorder core verified correct (re-ingest id reuse, `baseline_chunk_count`,
+figure coupling, and the dedup self-heal all hold — no behavioral bug). **7 refinements confirmed + applied:**
+(1) `cleanup_orphan_figures` now uses a per-hash try/except + warning (was `rmtree(ignore_errors=True)`),
+so a locked dir on Windows surfaces instead of being silently skipped + miscounted; (2) the dedup-gate
+comment scoped to Chroma-write failures, with the residual post-Chroma SQLite-commit case named in-code;
+(3) `atomic_write_text` docstring scoped to atomicity-not-power-loss-durability (the benign cache failure
+mode stated); (4) `cleanup_orphan_figures` docstring corrected (the gate is the `scope is None` guard, not
+`also_clean_cache`); (5) +test: re-ingest reuses `document_id` keeping figures linked; (6) +test: recorded
+`chunk_count` excludes figure chunks; (7) +test: a figure-dir delete failure doesn't abort the sweep; plus
+the single-doc call-counter assumption is now an assertion. One finding (the reorder itself) was raised then
+dismissed on verify as a clean bill of health.
+
+**Gate GREEN (official-CPython 3.12 venv, `uv run --no-sync`):** `ruff check src tests apps scripts` ✓ ·
+`ruff format` ✓ (mine; the lone `test_embeddings.py` diff is the pre-existing ruff-0.15-vs-0.6 churn, left
+per the M0/M2 batons) · `mypy --strict src` ✓ (45 files) · `bandit -r src apps` 0/0/0 ✓ · `pytest
+tests/unit tests/integration` → **620 passed, 1 skipped** (+13: 5 fsutil, 4 write-ordering, 4
+figure/cascade/delete-failure); the KI-12 inverse-orphan reconciliation follow-up adds one more →
+**621 passed**. **Nothing committed — staged for review (cpc §13).**
+
+---
+## Session: 2026-06-26 (cont.) — F1 follow-up: inverse-orphan reconciliation (self-heal the post-commit window), Claude Code (work box)
+
+Actioned the F1 "Opens" from the previous entry — the one partial-write shape the intersection dedup
+gate could not self-heal. **Nothing committed — staged for review (cpc §13).**
+
+### Inverse-orphan reconciliation in `ingest.main` (`ingest.py`; +1 test; KI-12)
+**What:** New read-only helper `get_document_row_hashes()` (the SQLite-side twin of
+`get_indexed_hashes`) returns every `doc_hash` with a committed `Document` row. After the dedup
+intersection is computed, `main()` now subtracts `inverse_orphans = indexed - get_document_row_hashes()`
+from `indexed` and logs a `chroma_chunks_without_document_row` warning naming the hashes. The dedup-gate
+comment's old "Residual (NOT self-healed)" block is replaced with the reconciliation rationale.
+**Why:** F1 commits the SQLite row last (after both Chroma writes) to kill the *forward* orphan (a row
+with zero chunks). The narrow inverse remained: both vector writes land and only the final
+`upsert_document_in_sqlite` commit fails → the hash is in both stores (so in the intersection) with no
+row, the library UI undercounts it, and the gate skipped it forever (only `--rebuild` cleared it).
+Subtracting no-row hashes from the dedup set makes the *next ordinary ingest* reprocess the doc and
+commit its row — the SQLite-side mirror of the Chroma-side self-heal. Nothing is deleted
+(`process_one_document` removes+re-adds chunks idempotently); the gone / content-changed shapes are
+already swept by `cleanup_orphans_*`, so only source-present + unchanged reaches here. Runs
+unconditionally (no `scope is None` / `skip_cleanup` gate) — it deletes nothing, so the gate stays
+correct under `--path` / `--skip-cleanup`; the warning keeps the drift measurable.
+**Rejected:** (a) a KNOWN_ISSUES-only "accepted residual" note — leaves a real (if rare) undercount that
+only `--rebuild` fixes; (b) *dropping* the orphan's Chroma chunks to force reprocessing — deletes
+retrievable data on a possibly-transient SQLite hiccup, where subtract-from-`indexed` heals just as well
+with zero deletion; (c) warn-only with no subtraction — the regression test proves it does NOT heal (the
+doc stays skipped, row never committed).
+**Coupling named:** the dedup gate now reads BOTH sides of the document identity — Chroma
+(`get_indexed_hashes` ×2) and SQLite (`get_document_row_hashes`). A refactor must keep all three or the
+self-heal silently regresses.
+**Tests (`tests/integration/test_ingest_write_ordering.py`, +1):**
+`test_sqlite_commit_failure_self_heals_via_reconciliation` — monkeypatch the final commit to raise after
+both Chroma writes, assert the inverse-orphan state (hash in both stores, zero rows), then a clean re-run
+commits the row. Verified to FAIL on the warn-only (subtraction-disabled) code, so it pins the heal, not
+just the detection.
+**Gate (official-CPython 3.12 venv, `uv run --no-sync`):** `ruff check` ✓ · `mypy --strict
+src/doc_assistant/ingest.py` ✓ · `pytest tests/integration/test_ingest_write_ordering.py
+tests/integration/test_ingest_orphan_cleanup.py` → **11 passed** (+1 over the F1 batch).
+**Opens:** none functional. If the SQLite commit keeps failing across runs (a real disk/DB fault, not a
+transient hiccup), the doc re-errors each run with the warning surfaced — by design; it is no longer
+silently stranded. KI-12 marked RESOLVED.
+
+---
+## Session: 2026-06-26 (cont.) — ingest.py → `ingest/` package (break the monolith) + batch-isolation test, Claude Code
+
+Two changes on the ingestion path, both behavior-preserving.
+
+### Batch isolation pinned by a test
+**What:** `tests/integration/test_ingest_write_ordering.py::test_one_failing_document_does_not_abort_the_batch`
+— three sources, one made to raise mid-processing (patched `extract_chunk_metadata`); asserts
+`stats == {added: 2, skipped: 0, error: 1}`, the bad doc leaves no row + no chunks (it failed before any
+write), and both good docs ingest fully.
+**Why:** the per-document `try/except` in `process_one_document` + the `main` loop already isolate a bad
+document (skip + log `document_error` + continue), but nothing asserted it. This is the preferred behavior
+(one bad file never aborts the batch), now guarded.
+**Opens:** none.
+
+### `ingest.py` (888 lines) split into the `ingest/` package
+**What:** the monolith is now a package of cohesive layers — `cache.py` (extraction cache + content hash),
+`chunking.py` (splitter factories + table-aware parent/child chunking + metadata/health signals, pure),
+`store.py` (SQLite + Chroma read/write helpers), `cleanup.py` (orphan detection + cross-store cleanup),
+`__init__.py` (the `process_one_document` / `main` orchestration + the inverse-orphan reconciliation), and
+`__main__.py` (the `python -m doc_assistant.ingest` CLI). Logic moved **verbatim** — no behavior change.
+**Why:** the file had grown to mix cache I/O, hashing, pure chunking, DB writes, orphan cleanup, and
+orchestration; the layers are independently testable and the dependency graph is a clean DAG
+(`cleanup → cache`; `__init__ → {cache, chunking, store, cleanup}`; no cycles).
+**Coupling named:** `__init__` re-exports the full prior public surface via `__all__`, so every external
+importer is unchanged (`apps/api` `main`; `scripts/find_duplicates` `get_cache_path`/`is_cache_fresh`;
+`tests` `doc_hash` / `build_parent_child_chunks` / `figure_units` / `_make_*_splitter`). The config-path
+seam moved from per-module `from config import CACHE_PATH` (bound copies) to dynamic `config.X` reads, so a
+test patches **one** seam (`config`) for all layers; the two ingest test fixtures patch `config.*` (was
+`ingest.*`) and the figure-sweep test patches `ingest.cleanup.shutil`. The function-name monkeypatch seams
+(`figure_units`, `upsert_document_in_sqlite`, `extract_chunk_metadata`, `get_embeddings`) stay valid because
+the orchestration that calls them lives in `__init__`.
+**Rejected:** moving orchestration into a `runner.py` (cleaner thin `__init__`, but it would relocate every
+function-name patch seam → far more test churn for no behavioral gain); a formal ADR (a behavior-preserving
+decomposition with a clean DAG, not a contested trade-off — documented here + in `architecture.md` instead).
+**Gate GREEN (official-CPython 3.12, `uv run --no-sync`):** `ruff check src tests apps scripts` ✓ ·
+`ruff format` ✓ · `mypy --strict src` ✓ (50 files) · `bandit -r src apps` 0/0/0 ✓ · `python -m
+doc_assistant.ingest --help` ✓ · `pytest tests/unit tests/integration` → **622 passed, 1 skipped**.
+`architecture.md` module table + Mermaid chunker node updated to the package.
+**Opens:** none. **Nothing committed — staged for review (cpc §13).**
+
+---
+## Session: 2026-06-26 (cont.) — fold the document-feature extractors into `ingest/` + mirror the test tree, Claude Code
+
+Extends the `ingest/` package: the citation/table/figure extraction modules now live with the core
+pipeline, and the test layout mirrors the source. Behavior-preserving (no logic changed; pure import moves).
+
+### Enrichment/feature extractors moved into `ingest/`
+**What:** `git mv` of `citations.py`, `tables.py`, `tables_marker.py`, `figures.py`, `regions.py` from
+`src/doc_assistant/` into `src/doc_assistant/ingest/`. The package now holds the full document-processing
+surface: pipeline (`cache`/`chunking`/`store`/`cleanup` + `__init__`/`__main__`) **+** feature extraction
+(`citations`/`tables`/`tables_marker`/`figures`/`regions`).
+**Why:** these are all "turn a source document into indexed + enriched data" — co-locating them is cleaner
+than a flat `src/` and matches how the work is reasoned about (per the user's request). Dependency graph
+stays a clean DAG: `regions` (leaf) ← `tables`/`figures`; `tables` ← `tables_marker`; and the core
+`chunking → tables_marker`, `store`/`cleanup → figures` — no module imports the `ingest` core (no cycle).
+**Coupling named:** intra-package cross-refs are now **relative** (`figures` → `.regions`, `tables` →
+`.regions`, `tables_marker` → `.tables`; `chunking` → `.tables_marker`, `store`/`cleanup` → `.figures`).
+Every external importer (≈19 files across `src`/`apps`/`scripts`/`tests`) was repointed to
+`doc_assistant.ingest.<name>` — `bibtex` (citations), `chat_controller` + `apps/api` + `self_eval`
+(figures), the `extract_*`/`describe_figures`/`eval_marker_tables` scripts, and the moved modules' tests.
+The `ingest/__init__` public surface is unchanged (the extractors are imported by their own paths, not
+re-exported through `__init__`).
+**Rejected:** a re-export shim at the old `doc_assistant.<name>` paths (would leave dead stubs — the
+opposite of "cleaner"); a deeper `ingest/enrichment/` sub-package (the user asked for "the same folder").
+
+### Test tree mirrors the package
+**What:** moved the 13 ingest-domain test files into `tests/unit/ingest/` (`test_hash`,
+`test_chunking_config`, `test_citations`, `test_tables`, `test_tables_marker`, `test_figures`,
+`test_regions`) and `tests/integration/ingest/` (`test_ingest_orphan_cleanup`, `test_ingest_write_ordering`,
+`test_describe_figures`, `test_figures_extract`, `test_marker_table_retrieval`, `test_citation_pipeline`),
+each with an `__init__.py` to match the existing package-style test dirs. `test_fsutil` stays flat —
+`fsutil` is a shared util, not in the `ingest` package, so its test mirrors its source location.
+**Why:** "verify the tests follow the same pattern" — the test tree now mirrors the source package. Safe:
+no test had a `__file__`/fixture-path dependency, and the one cross-reference
+(`test_citation_pipeline` → `tests.fixtures.synthetic_corpus`) is an absolute import that survives the move.
+**Gate GREEN (official-CPython 3.12, `uv run --no-sync`):** `ruff check src tests apps scripts` ✓ ·
+`ruff format --check` ✓ · `mypy --strict src` ✓ (50 files) · `bandit -r src apps` 0/0/0 ✓ · `pytest
+tests/unit tests/integration` → **622 passed, 1 skipped** (unchanged — pure relocation). `architecture.md`
+module table + enrichment-module note updated.
+**Opens:** none. **Nothing committed — staged for review (cpc §13).**
+
+## Session: 2026-06-27 — Verify the 2026-06-26 ingest refactor + doc/gate sync, Claude Code
+
+**What:** ran a 5-agent verification of yesterday's `ingest/` package split + extractor move + docs.
+**Refactor confirmed sound** — clean imports, all `ingest/__init__` re-exports resolve, CLI + `doc-ingest`
+entrypoint OK, **623 passed / 0 skipped**, ruff / mypy --strict / bandit green, and an AST diff confirms the
+"moved verbatim" claim (21/26 fns byte-identical; the rest differ only by `config.X` call-time access; the 5
+moved extractors are pure renames). Every defect found was stale documentation, not broken code.
+**Fixed (doc-sync from the move):** repointed the 4 dead source links in `figures-and-tables.md` + the Mermaid
+enrichment nodes in `architecture.md` to `ingest/<name>.py`; corrected KI-12's test path
+(`tests/integration/ingest/…`) and the `CONTEXT.md` test count (~555 → ~623); refreshed the README Status
+block (phase + count, already-shipped 7d/4b out of "Next" → gap-detection); repointed `architecture.md`'s
+manual-eval command to the canonical `scripts.run_eval`; added a path-note banner to the retained 4a/4b specs.
+**CI gate (was red — pre-existing, NOT from the refactor):** `ruff format --check src/ tests/` failed on
+`tests/unit/test_embeddings.py` from a ruff-version skew (pre-commit hook `v0.6.0` vs lock/CI `0.15.13`).
+Reformatted the file (gate green), then aligned versions so it can't recur: pre-commit ruff rev → `v0.15.13`,
+`pyproject` dev floor → `ruff>=0.15.13`, re-locked (1-line `uv.lock` diff; ruff stays 0.15.13).
+**Opens:** `bibtex` still imports the private `_first_author_surname` across the `ingest` boundary (pre-existing
+coupling smell — promote or re-export later). **Nothing committed — staged for review (cpc §13).**
+
+## Session: 2026-06-27 (cont.) — Private sources manifest: re-downloadable library across machines, Claude Code
+
+**What:** new `src/doc_assistant/sources_manifest.py` + `scripts/sync_sources.py` — a gitignored
+`data/sources_manifest.yaml` that pins each file in `data/sources/` by `sha256` + size and the URL it was
+downloaded from, so the library can be reconstituted on another machine. CLI: build (default) / `--download` /
+`--verify-only` / `--dry-run`. Adds `config.SOURCES_MANIFEST` + a `.gitignore` entry + a README "Move your
+library between machines" subsection.
+**Why:** move a (mostly copyrighted, non-redistributable) personal library between PCs the way the public corpus
+is reproduced — a curated URL list + a fetcher — but private/gitignored, shared out-of-band.
+**Design:** a deliberate near-clone of the public-corpus flow (`download_corpus.py` + `corpus_manifest.yaml`).
+Ingest captures NO source URL (the `Document` row only has the local path), so URLs are user-curated; the one
+shortcut auto-fills `url` for any file whose `sha256` (or filename) matches the committed public corpus. Pure
+core (merge/enrich/(de)serialise) split from the fs+network boundary for unit-testing without the wire.
+`merge_entries` preserves a user-filled `url` across rebuilds and refreshes the content pin; absent files are
+kept (still re-downloadable). Download is format-agnostic (library has EPUB/HTML/DOCX/MD, not just PDF).
+**Rejected:** a `source_url` column on `Document` + capture-at-ingest (bigger, and only helps files added
+*after* — the existing library has no captured URLs, so a curated manifest is the only thing that works today);
+richer catalog fields + a desktop Settings button (both offered; user chose URL+checksum, CLI-only).
+**Gate GREEN (`uv run --no-sync`, torch 2.12.0+cpu):** ruff ✓ · ruff format ✓ · mypy --strict src ✓ (51 files)
+· bandit ✓ (B310 nosec — scheme restricted to http/https) · **+15 tests** (8 unit pure-core, 7 integration
+scan/build/download/verify, network mocked). Real dry-run on the box's 10-file corpus → 10/10 URLs auto-filled
+from the public corpus, 0 missing; real build wrote the manifest (gitignored — confirmed via `git check-ignore`);
+`--verify-only` → 0 mismatches.
+**Opens:** real `--download` not exercised here (would hit arxiv.org through the corporate TLS proxy, KI-10);
+the fetch path is covered by mocked-HTTP integration tests. **Nothing committed — staged for review (cpc §13).**
+
+## Session: 2026-06-30 — Concept-graph redesign PR-A: deterministic skeleton (Node A), Claude Code
+
+**What:** built Node A of the concept-graph redesign (`docs/specs/concept-graph-redesign.md`) — the
+deterministic, **zero-LLM** concept skeleton over a user-curated vocabulary. New
+`src/doc_assistant/concept_skeleton.py` (pure core + impure boundary + orchestrator, mirroring the
+`concept_graph.py` / `wiki.py` / `epistemics.py` split): curated-vocabulary presence (case-folded
+label/alias substring match), chunk-level co-occurrence edges (`{document_id}:p{parent_index}` keys,
+ADR-4), citation/similarity **provenance annotation** (the no-edge-creation invariant — annotate the
+co-occurrence skeleton, never extend it), deterministic `edge_weight` (provenance count dominates,
+co-occurrence count breaks ties), seeded Louvain communities (ADR-1, `detect_communities(algorithm=)`
+seam), `skeleton_to_dict`/`skeleton_from_dict` (both directions — the missing-inverse that bit Feature 6),
+a timestamp-free `graph_version`, and `node_weights_for_epistemics` (re-exposes the existing
+`concept_graph.NodeWeight` shape so 7d can re-found on the skeleton — unique-source = neutral preserved
+verbatim). Four new SQLAlchemy tables (`Concept`/`ConceptAlias` curated; `ConceptEdge`/`ConceptPresenceRow`
+derived) via `create_all` (no `_ADDITIVE_COLUMNS` entry — new tables); `CONCEPT_SKELETON_*` config block;
+`data/skeleton/` gitignored. CLI runners `scripts/seed_concepts.py` (Keyword→candidate→`--promote`) and
+`scripts/build_concept_skeleton.py` (dry-run default, 76-char report). +23 tests (9 pure-core, 4 weights,
+5 seed, 5 build).
+
+**Why:** the shipped open-vocabulary graph (KI-7) re-derives structure the library already has
+(`Citation`/`DocSimilarity`) and is the cost + fragmentation source. The redesign grounds nodes in
+user curation, computes presence + the edge skeleton with zero LLM, and confines the (deferred) LLM to
+relation/stance annotation only. Node A is the deterministic skeleton + the gap layer (ADR-004) is
+defined against it. Buildable + fully testable on fakes now; the real `--apply` validation run
+(RG-001/008/009) sets `min_cooccurrence` + presence-recall thresholds from the corpus, not guessed.
+
+**Rejected:** (a) importing `concept_graph`'s `ConceptNode`/`ConceptEdge` dataclasses — the redesign
+defines its own; only `POLARITIES`/`SUPPORTING`/`OPPOSING` and the `NodeWeight` *shape* carry over.
+(b) a unique constraint on `Concept.label` — `promote_keyword` is get-or-create-idempotent instead
+(SQLite treats `(label, NULL folder_id)` tuples as distinct, so a UNIQUE wouldn't guard global concepts
+anyway). (c) building Node B (LLM stance) here — deferred to PR-B, gated on RG-001.
+
+**Coupling named (cpc §12):** `concept_skeleton` imports `concept_graph.NodeWeight` (the 7d seam);
+`concept_graph.py` is retired only as part of the connected KI-7 change (re-pointing
+`epistemics.py`/`wiki.py`), not here.
+
+**Watch-point:** presence is case-folded **substring** match (the spec's locked primitive); precision
+against short ambiguous surface forms is a curation concern + an RG-008 watch-point (word-boundary
+matching, as in `epistemics.concepts_in_text`, is the documented upgrade lever).
+
+**Gate GREEN** (official-CPython 3.12, `uv run --no-sync`): ruff ✓ · ruff format ✓ · `mypy --strict src`
+✓ (52 files) · bandit 0/0/0 ✓ · `pytest tests/unit tests/integration` → **660 passed, 1 skipped**.
+`init_db` creates all four tables; both CLIs `--help` clean.
+
+**Opens:** RG-001/008/009 threshold-setting `--apply` run on the real corpus (free on the RTX/Ollama
+box or host, KI-5 — sets `min_cooccurrence` + presence recall, gates marking the graph *usable* + the
+gap layer); Node B (LLM relation/stance, PR-B); retiring the superseded `concept_graph.py` (KI-7
+connected change). **Nothing committed — staged for review (cpc §13).**
+
+---
+## Session: 2026-07-01 — RG-001/008/009 concept-skeleton validation run + keyword extractor (KI-13), Claude Code
+
+**What (1 — RG-001/008/009 validation run, free/zero-LLM):** ran the deferred concept-skeleton edge-precision
++ presence-recall validation on the real 10-paper corpus. Had to build three empty prerequisites first (all
+free/regex): `extract_doc_metadata --apply` (titles/authors/years were NULL) → `extract_citations --apply
+--force` (7 internal library links, was 0) → a **provisional** 30-concept vocabulary seeded directly (the
+`Keyword`→`--promote` seam was dead — see change 2). Swept `min_cooccurrence` 1..5. **Finding: the skeleton is
+near-complete** — 201 edges / 46% density at K=2 (max C(30,2)=435); `min_cooccurrence`↑ is a weak lever (27%
+at K=5), the real lever is vocabulary breadth (dropping 9 broad hubs cut edges 201→57 at K=2). similarity-
+provenance annotates 100% of edges, citation ~88% → non-discriminating (the KI-7 same-domain doc saturation,
+re-confirmed; a corpus property). Baseline: `tests/eval/baselines/rg001_concept_skeleton_2026-07-01.md`.
+**Why:** RG-001 gates marking the graph *usable* + the gap layer (ADR-004); the run correctly does **not**
+certify it — thresholds left unlocked, gap layer stays blocked. `.claude/RIGOR_TODO.md` RG-001/008/009 updated
+(run DONE, gate NOT passed).
+
+**What (2 — keyword extractor, fixes KI-13):** new `src/doc_assistant/keywords.py` — a deterministic,
+**zero-LLM, zero-new-dependency** corpus TF-IDF keyword extractor: pure core (`tokenize` → `candidate_terms`
+uni/bi/tri-grams with stopword-boundary + min-char + alpha filters → `tf_idf_keywords`, `(1+ln tf)*smoothed-idf`,
+deterministic tie-break) + impure boundary (reads cached markdown, writes `Keyword(source="extracted")` rows +
+`document_keywords` links, idempotent, `--force` clears only extracted links, never mutates the chunk store).
+CLI `scripts/extract_keywords.py` (`--apply`/`--force`/`--doc`/`--top-k`, dry-run default);
+`KEYWORDS_PER_DOC`/`KEYWORD_NGRAM_MAX`/`KEYWORD_MIN_CHARS` config. **Why:** KI-13 — the concept-skeleton
+`--promote` seam mined `Keyword` rows that nothing produced. TF-IDF over a same-domain corpus also down-ranks
+the broad hubs that saturated change 1, surfacing distinctive per-paper terms — the curator-friendly set.
+**Verified on the real corpus:** 148 candidates written (was 0), `seed_concepts` now lists them; sample terms
+colbert / late interaction / hyde / contriever / negative passages. +17 tests (unit + integration incl. the
+`list_keyword_candidates` loop-closure). Gate green (ruff / ruff format / `mypy --strict src` 53 files / pytest).
+
+**Rejected:** (a) KeyBERT / YAKE / a new NLP dep — the project is deliberately dep-cautious (networkx-over-igraph,
+KI-2 native-dep pain) and the zero-LLM/"push work out of the model" ethos favours plain TF-IDF; (b) a direct
+`seed_concepts --add` CLI (KI-13 option b) — a producer for the *existing* `keywords` table is the more general
+fix and leaves the `--promote` seam intact; (c) locking `CONCEPT_SKELETON_MIN_COOCCURRENCE` from this run — the
+provisional vocabulary is un-signed-off and the graph isn't usable yet.
+
+**Opens:** RG-001 stays open (blocks-ship) — to close: user-signed vocabulary (now promotable from the 148
+extracted candidates instead of the hand-seeded 30), word-boundary presence matching (kills BERT-substring
+inflation), and a re-run on the larger multi-domain corpus (makes provenance discriminating). Node B + the KI-7
+retirement unchanged. Provisional concepts + skeleton sidecar live in the gitignored DB (reset:
+`DELETE FROM concept_aliases; DELETE FROM concepts;`). **Nothing committed — staged for review (cpc §13).**

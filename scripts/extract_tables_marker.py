@@ -40,8 +40,9 @@ from sqlalchemy import select
 from doc_assistant.config import DATA_PATH, MARKER_MAX_WORKERS
 from doc_assistant.db.models import Document
 from doc_assistant.db.session import session_scope
-from doc_assistant.regions import table_candidate_pages
-from doc_assistant.tables_marker import (
+from doc_assistant.fsutil import atomic_write_text
+from doc_assistant.ingest.regions import table_candidate_pages
+from doc_assistant.ingest.tables_marker import (
     has_marker_tables,
     parse_marker_tables,
     splice_tables_inline,
@@ -96,7 +97,7 @@ def _run_one(
     if apply:
         new_markdown = splice_tables_inline(strip_pdfplumber_block(markdown), tables)
         if new_markdown != markdown:
-            cache_path.write_text(new_markdown, encoding="utf-8")
+            atomic_write_text(cache_path, new_markdown)
             row["note"] = "spliced" if tables else "superseded pdfplumber"
     return row
 
@@ -177,7 +178,8 @@ def main() -> int:
         else (
             "\nNote: re-run `ingest` to pull the spliced tables into retrieval. "
             "Incremental ingest now self-cleans the pre-splice (old-hash) chunks. "
-            "A content change drops the doc's citations/doc_similarities — re-run those enrichments after."
+            "A content change drops the doc's citations/doc_similarities — "
+            "re-run those enrichments after."
         )
     )
     return 0

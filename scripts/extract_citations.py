@@ -23,14 +23,14 @@ from pathlib import Path
 
 from sqlalchemy import delete, func, select
 
-from doc_assistant.citations import (
+from doc_assistant.config import CACHE_PATH, DOCS_PATH
+from doc_assistant.db.models import Citation, Document
+from doc_assistant.db.session import session_scope
+from doc_assistant.ingest.citations import (
     ExtractionResult,
     extract_from_markdown,
     match_to_library,
 )
-from doc_assistant.config import CACHE_PATH, DOCS_PATH
-from doc_assistant.db.models import Citation, Document
-from doc_assistant.db.session import session_scope
 
 if sys.platform == "win32" and hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")

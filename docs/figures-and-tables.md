@@ -42,7 +42,7 @@ made this concrete and reshaped the design — see the atlas lessons
 
 ## The architecture: classify first, then extract
 
-One **page content classifier** ([`regions.py`](../src/doc_assistant/regions.py))
+One **page content classifier** ([`regions.py`](../src/doc_assistant/ingest/regions.py))
 is the shared detection layer under both tables (4a) and figures (4b).
 Instead of each feature running its own geometric detector, classify what a
 page contains once, then route.
@@ -102,10 +102,10 @@ figure page. See "Figure extraction (4b)" below.
 
 ---
 
-## Table extraction — pdfplumber fallback ([`tables.py`](../src/doc_assistant/tables.py))
+## Table extraction — pdfplumber fallback ([`tables.py`](../src/doc_assistant/ingest/tables.py))
 
 > This is the **frozen no-dep fallback**; the primary engine is **Marker** (see
-> [`tables_marker.py`](../src/doc_assistant/tables_marker.py)), which splices
+> [`tables_marker.py`](../src/doc_assistant/ingest/tables_marker.py)), which splices
 > page-anchored inline blocks `<!-- table:marker:page=N:begin/end -->` at the caption
 > and strips pymupdf4llm's lossy inline twin. The rest of this section describes the
 > pdfplumber path verbatim.
@@ -164,7 +164,7 @@ spliced** (ADR-2). Figures are binary: embedding base64 in the markdown destroys
 the human-readable cache, and a placeholder without the image is noise. So the
 caption text stays in the markdown untouched, and each figure region persists as
 a `Figure` row plus a cropped PNG under `data/figures/{doc_hash}/`.
-[`figures.py`](../src/doc_assistant/figures.py) is the pure core + thin PyMuPDF
+[`figures.py`](../src/doc_assistant/ingest/figures.py) is the pure core + thin PyMuPDF
 boundary; [`scripts/extract_figures.py`](../scripts/extract_figures.py) is the CLI.
 
 - **Gated by the classifier.** Only `regions.analyze_pages` `is_figure` pages are

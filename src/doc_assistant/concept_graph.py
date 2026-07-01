@@ -43,12 +43,13 @@ from __future__ import annotations
 
 import hashlib
 import json
-import logging
 import re
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
+
+import structlog
 
 from doc_assistant.config import (
     CONCEPT_GRAPH_CHUNK_CHARS,
@@ -60,7 +61,7 @@ from doc_assistant.config import (
     CONCEPT_GRAPH_SEED,
 )
 
-log = logging.getLogger(__name__)
+log = structlog.get_logger(__name__)
 
 #: The structural edge-integrity vocabulary (reused by Feature 7d's epistemics
 #: layer). A tuple, not an enum, to match this project's ``reviewer.FAILURE_TAGS``
@@ -312,7 +313,7 @@ def parse_extraction(
         concepts_raw = list(_salvage_strings(text, "concepts"))
         relations_raw = list(_salvage_array(text, "relations"))
         if not concepts_raw and not relations_raw:
-            log.warning("concept extraction parse failed for %s", filename)
+            log.warning("concept_extraction_parse_failed", filename=filename)
 
     concepts: list[str] = []
     seen_c: set[str] = set()
@@ -965,7 +966,7 @@ def sample_doc_text(
     try:
         coll = client.get_collection(get_collection_name())
     except Exception:
-        log.warning("No baseline collection — run ingest first; concept graph will be empty")
+        log.warning("no_baseline_collection", hint="run ingest first; concept graph will be empty")
         return []
 
     data = coll.get(where={"document_id": doc_id}, include=["documents"], limit=per_doc)
@@ -1011,7 +1012,7 @@ def extract_doc(
     failure degrades to an empty extraction (see ``parse_extraction``).
     """
     if not excerpts:
-        log.warning("no chunk excerpts for %s — extraction will be sparse", doc.filename)
+        log.warning("no_chunk_excerpts", filename=doc.filename, hint="extraction will be sparse")
     prompt = _EXTRACTION_PROMPT.format(material=_format_material(doc.filename, excerpts))
     raw = client.complete(
         [{"role": "user", "content": prompt}], temperature=0.0, max_tokens=max_tokens
@@ -1111,7 +1112,7 @@ def build_concept_graph(
                 _write_cached_extraction(root, ex)
             extracted += 1
         except Exception as e:
-            log.warning("concept extraction failed for %s: %s", doc.filename, e)
+            log.warning("concept_extraction_failed", filename=doc.filename, error=str(e))
             errors += 1
 
     meta = {

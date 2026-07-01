@@ -244,3 +244,32 @@ Migrated from the old `CLAUDE.md` / `README` runtime-quirk notes on 2026-06-20 (
   then assert a clean re-run commits the row. Verified to fail on the warn-only (no-subtraction) code.
 - **Pointer:** `docs/DEVLOG.md` 2026-06-26 ingestion-hardening F1 "Opens" + the follow-up entry; the
   dedup-gate comment in `ingest.py:main`.
+
+## KI-13 — concept-skeleton vocabulary seam is dead on real data (no `Keyword` producer) — RESOLVED (2026-07-01)
+- **Symptom:** `scripts/seed_concepts.py` mines curated-vocabulary candidates from `Keyword` rows, but the
+  `keywords` (and `document_keywords`) tables are **empty on the real corpus** and stay empty after a full
+  ingest — so `seed_concepts` lists 0 candidates and `promote_keyword` returns `None` for everything. The
+  concept skeleton (Node A) is therefore empty via the intended path.
+- **Cause:** **Nothing in the codebase ever writes a `Keyword` row.** The `Keyword` model +
+  `document_keywords` association exist, but no ingest step or enrichment runner populates them
+  (`extract_doc_metadata.py` fills `title`/`authors`/`year`/`doi` only). The redesign's Decision 1 ("seed
+  candidates from `Keyword` + manual `--promote`") assumes a keyword producer that was never built.
+- **Impact:** blocks the RG-001/008/009 validation via the documented seam; the vocabulary must be seeded by
+  hand (direct `Concept`/`ConceptAlias` inserts, as done for the 2026-07-01 run). No user-facing CLI exists
+  for direct concept creation either — only the dead `--promote` path.
+- **Workaround:** insert `Concept` (+ `ConceptAlias`) rows directly via the ORM (the 2026-07-01 baseline run
+  did this with a provisional 30-concept set).
+- **Fix (shipped 2026-07-01, option a — staged for review):** new `src/doc_assistant/keywords.py` — a
+  deterministic, **zero-LLM, zero-new-dependency** corpus TF-IDF keyword extractor (pure core
+  `tokenize`/`candidate_terms`/`tf_idf_keywords` + impure boundary reading cached markdown, writing
+  `Keyword(source="extracted")` rows + `document_keywords` links; additive, idempotent, never touches the
+  chunk store) + CLI `scripts/extract_keywords.py` (`--apply`/`--force`/`--doc`/`--top-k`, dry-run default) +
+  `KEYWORDS_PER_DOC`/`KEYWORD_NGRAM_MAX`/`KEYWORD_MIN_CHARS` config. The `--promote` seam now works as designed:
+  `extract_keywords --apply` → `seed_concepts` → `--promote`. **Verified on the real corpus:** 148 candidates
+  written (was 0), each a real IR term; TF-IDF surfaces distinctive per-paper terms (colbert, hyde, late
+  interaction) and down-ranks the broad hubs that saturated the RG-008 run — a useful side effect. +17 tests
+  (6 unit, 5 integration; `list_keyword_candidates` loop-closure asserted). Gate green.
+- **Follow-up (not this fix):** the RG-001 run can now re-seed its vocabulary from *extracted* candidates
+  instead of the ad-hoc hand-seeded 30 — a better-grounded re-run once a curator promotes a subset.
+- **Pointer:** `tests/eval/baselines/rg001_concept_skeleton_2026-07-01.md`; `docs/specs/concept-graph-redesign.md`
+  Decision 1; `.claude/RIGOR_TODO.md` RG-001/008/009.

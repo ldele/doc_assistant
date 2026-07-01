@@ -328,6 +328,40 @@ def tf_idf_keywords(
     return ranked
 
 
+def corpus_band_keywords(
+    doc_terms: dict[str, list[str]], *, min_df: int, max_df: int, top_k: int
+) -> list[ScoredKeyword]:
+    """Select a single corpus vocabulary of shared *mid-document-frequency* terms.
+
+    The counterpart to :func:`tf_idf_keywords`. Where per-doc TF-IDF surfaces each document's
+    *distinctive* terms (which are df≈1 and form per-paper cliques in the concept graph), this
+    selects terms whose corpus document-frequency falls in ``min_df..max_df`` — the shared band
+    that produces cross-document co-occurrence edges. Below the band = paper-specific singletons;
+    above it = ubiquitous hubs that saturate the graph. Both are excluded.
+
+    Score is ``df * (1 + ln total_tf)`` — breadth (how many documents) first, substance (how
+    often) second. Deterministic: ties break by term ascending. ``ScoredKeyword.tf`` here is the
+    *corpus-total* frequency (not per-document, unlike the TF-IDF path). Returns the top ``top_k``.
+    """
+    per_doc_counts = {doc_id: Counter(terms) for doc_id, terms in doc_terms.items()}
+    doc_freq: Counter[str] = Counter()
+    total_tf: Counter[str] = Counter()
+    for counts in per_doc_counts.values():
+        for term, tf in counts.items():
+            doc_freq[term] += 1
+            total_tf[term] += tf
+
+    scored: list[ScoredKeyword] = []
+    for term, df in doc_freq.items():
+        if df < min_df or df > max_df:
+            continue
+        tf = total_tf[term]
+        score = df * (1.0 + math.log(tf))
+        scored.append(ScoredKeyword(term=term, score=score, tf=tf, df=df))
+    scored.sort(key=lambda s: (-s.score, s.term))
+    return scored[:top_k]
+
+
 # --------------------------------------------------------------------------- #
 # Impure boundary — reads cached markdown, writes Keyword rows (host only, KI-5)
 # --------------------------------------------------------------------------- #
@@ -459,20 +493,41 @@ def extract_keywords(
     top_k: int,
     ngram_max: int,
     min_chars: int,
+    mode: str = "per_doc",
+    min_df: int = 2,
+    max_df_frac: float = 0.7,
 ) -> KeywordExtractionResult:
-    """Extract per-document keyphrases by corpus TF-IDF; optionally persist them.
+    """Extract keyphrases (per-doc TF-IDF or corpus mid-DF band); optionally persist.
 
-    IDF is always computed over the whole cached corpus (stable statistics); ``document_id``
-    only restricts which docs are *reported* and *written*. Deterministic and free (no LLM).
-    With ``apply=False`` nothing is written (dry run).
+    ``mode="per_doc"`` ranks each document's distinctive terms by TF-IDF (``top_k`` per doc).
+    ``mode="corpus_band"`` selects ONE corpus vocabulary of shared terms whose document-frequency
+    is in ``min_df .. floor(max_df_frac * N)`` (``top_k`` total), then links each to the documents
+    it appears in — the vocabulary that yields cross-document concept edges. Statistics are always
+    computed over the whole cached corpus; ``document_id`` only restricts what is reported/written.
+    Deterministic and free (no LLM). ``apply=False`` writes nothing (dry run).
     """
-    corpus = load_document_texts()  # whole corpus → stable IDF
+    corpus = load_document_texts()  # whole corpus → stable statistics
     filenames = {doc_id: fname for doc_id, fname, _ in corpus}
     doc_terms = {
         doc_id: candidate_terms(tokenize(text), ngram_max=ngram_max, min_chars=min_chars)
         for doc_id, _, text in corpus
     }
-    ranked = tf_idf_keywords(doc_terms, top_k=top_k)
+
+    ranked: dict[str, list[ScoredKeyword]]
+    if mode == "corpus_band":
+        max_df = max(min_df, int(max_df_frac * len(doc_terms)))
+        selected = corpus_band_keywords(doc_terms, min_df=min_df, max_df=max_df, top_k=top_k)
+        by_term = {s.term: s for s in selected}
+        chosen = set(by_term)
+        ranked = {
+            doc_id: sorted(
+                (by_term[t] for t in set(terms) & chosen),
+                key=lambda s: (-s.score, s.term),
+            )
+            for doc_id, terms in doc_terms.items()
+        }
+    else:
+        ranked = tf_idf_keywords(doc_terms, top_k=top_k)
 
     targets = [document_id] if document_id is not None else list(ranked)
     docs: list[DocKeywords] = []

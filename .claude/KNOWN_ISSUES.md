@@ -273,3 +273,22 @@ Migrated from the old `CLAUDE.md` / `README` runtime-quirk notes on 2026-06-20 (
   instead of the ad-hoc hand-seeded 30 — a better-grounded re-run once a curator promotes a subset.
 - **Pointer:** `tests/eval/baselines/rg001_concept_skeleton_2026-07-01.md`; `docs/specs/concept-graph-redesign.md`
   Decision 1; `.claude/RIGOR_TODO.md` RG-001/008/009.
+
+## KI-14 — PyMuPDF4LLM image placeholders pollute the extracted markdown — OPEN (found 2026-07-01)
+- **Symptom:** the cached markdown contains `**==> picture [W x H] intentionally omitted <==**` placeholder
+  lines wherever PyMuPDF4LLM declines to render an inline image. On the multi-domain arXiv corpus this was
+  **1027 occurrences** across 24 papers, heaviest in figure/equation-dense physics/math/econ papers
+  (statmech 214, cosmo 182, econ 173; text-heavy ML papers far fewer). These land in the RAG **chunk store**
+  (retrievable noise) and in keyword extraction (surfacing junk tokens `intentionally omitted`, `x 12`,
+  `br 1`, `0 br` — 11 of 13 concept-skeleton "communities" on that corpus were these noise isolates).
+- **Cause:** PyMuPDF4LLM's markdown writer emits a textual placeholder for images it does not extract; the
+  primary ingest path keeps it verbatim (figures are handled separately by the Feature-4b sidecar, so the
+  placeholder carries no value in the chunk text).
+- **Impact:** low on the public IR corpus (text-heavy, few figures); **material on STEM/figure-dense corpora**
+  — pollutes retrieval and any text-derived enrichment (keywords, future concept vocabulary). Surfaced by the
+  RG-001 multi-domain re-check, not the public corpus.
+- **Workaround:** none applied (would be a code change; out of scope for the "current-params re-check").
+- **Real fix:** strip `==> … intentionally omitted <==` placeholder lines in the extract→markdown step (or a
+  cache-normalisation pass) before chunking + keywording; optionally re-point them at the figure sidecar.
+- **Pointer:** `tests/eval/baselines/rg001_concept_skeleton_multidomain_2026-07-01.md` finding 4;
+  `data_multidomain/cache/*.md`.

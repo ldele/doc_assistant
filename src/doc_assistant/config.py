@@ -463,6 +463,14 @@ CONCEPT_SKELETON_LLM_MODEL = os.getenv("CONCEPT_SKELETON_LLM_MODEL", "llama3.1:8
 KEYWORDS_PER_DOC = int(os.getenv("KEYWORDS_PER_DOC", "15"))
 KEYWORD_NGRAM_MAX = int(os.getenv("KEYWORD_NGRAM_MAX", "3"))
 KEYWORD_MIN_CHARS = int(os.getenv("KEYWORD_MIN_CHARS", "3"))
+# corpus_band mode (cross-document concept-graph vocabulary): keep only terms whose
+# document-frequency is in [KEYWORD_MIN_DF, floor(KEYWORD_MAX_DF_FRAC * N)] — shared
+# mid-frequency concepts, excluding paper-specific singletons AND ubiquitous hubs (the two
+# failure modes RG-001 measured). KEYWORD_CORPUS_TOP_K caps the global vocabulary size.
+# General defaults — deliberately NOT tuned to any one corpus.
+KEYWORD_MIN_DF = int(os.getenv("KEYWORD_MIN_DF", "2"))
+KEYWORD_MAX_DF_FRAC = float(os.getenv("KEYWORD_MAX_DF_FRAC", "0.7"))
+KEYWORD_CORPUS_TOP_K = int(os.getenv("KEYWORD_CORPUS_TOP_K", "60"))
 
 
 # ============================================================

@@ -472,6 +472,13 @@ KEYWORD_MIN_DF = int(os.getenv("KEYWORD_MIN_DF", "2"))
 KEYWORD_MAX_DF_FRAC = float(os.getenv("KEYWORD_MAX_DF_FRAC", "0.7"))
 KEYWORD_CORPUS_TOP_K = int(os.getenv("KEYWORD_CORPUS_TOP_K", "60"))
 
+# Semantic concept layer (concept_semantics.py, #2) — grounds vocabulary in meaning, not
+# frequency. ABSTRACT_CONCEPTS_TOP_K: candidate concepts pulled from a scientific paper's
+# title+abstract (concept-dense; papers only). CONCEPT_MERGE_COSINE: two curated concepts with
+# embedding cosine >= this are flagged as near-duplicates to merge. General defaults.
+ABSTRACT_CONCEPTS_TOP_K = int(os.getenv("ABSTRACT_CONCEPTS_TOP_K", "12"))
+CONCEPT_MERGE_COSINE = float(os.getenv("CONCEPT_MERGE_COSINE", "0.85"))
+
 
 # ============================================================
 # Logging / observability (ADR-003)

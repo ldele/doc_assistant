@@ -25,6 +25,8 @@ log = structlog.get_logger(__name__)
 _ADDITIVE_COLUMNS: list[tuple[str, str, str, str | None]] = [
     # Chunk 2c — categorical failure tag on the (pre-existing) reviewer table.
     ("answer_reviews", "failure_tag", "VARCHAR", "ix_answer_reviews_failure_tag"),
+    # Glossary — curated definition gloss on the (pre-existing) concepts table.
+    ("concepts", "definition", "TEXT", None),
 ]
 
 

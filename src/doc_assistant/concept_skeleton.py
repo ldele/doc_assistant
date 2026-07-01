@@ -664,6 +664,75 @@ def promote_keyword(name: str) -> str | None:
         return str(concept.id)
 
 
+def add_concept(
+    label: str,
+    *,
+    definition: str | None = None,
+    aliases: list[str] | None = None,
+) -> str:
+    """Create or update a **curated** ``Concept`` (a glossary entry). Idempotent.
+
+    The direct-curation counterpart to :func:`promote_keyword` (which requires a mined
+    ``Keyword`` row). Get-or-create by ``label`` with ``source="manual"``; on re-add it
+    fills/updates the ``definition`` and adds any new ``aliases`` (never removes one). The
+    label is always an implicit surface form for presence; ``aliases`` are extra synonyms.
+    Returns the Concept id. Zero LLM.
+    """
+    from sqlalchemy import select
+
+    from doc_assistant.db.models import Concept, ConceptAlias
+    from doc_assistant.db.session import session_scope
+
+    with session_scope() as session:
+        concept = session.execute(
+            select(Concept).where(Concept.label == label)
+        ).scalar_one_or_none()
+        if concept is None:
+            concept = Concept(label=label, source="manual", definition=definition)
+            session.add(concept)
+            session.flush()
+        elif definition is not None:
+            concept.definition = definition
+        existing = {a.alias for a in concept.aliases}
+        for alias in aliases or []:
+            if alias and alias not in existing:
+                session.add(ConceptAlias(concept_id=concept.id, alias=alias))
+                existing.add(alias)
+        return str(concept.id)
+
+
+@dataclass(frozen=True)
+class GlossaryEntry:
+    """A curated concept as a glossary row: label + definition + synonyms."""
+
+    label: str
+    definition: str | None
+    aliases: list[str]
+    source: str
+
+
+def load_glossary() -> list[GlossaryEntry]:
+    """All curated concepts as glossary entries (label, definition, aliases), by label."""
+    from sqlalchemy import select
+
+    from doc_assistant.db.models import Concept
+    from doc_assistant.db.session import session_scope
+
+    with session_scope() as session:
+        concepts = list(session.execute(select(Concept)).scalars())
+        entries = [
+            GlossaryEntry(
+                label=c.label,
+                definition=c.definition,
+                aliases=sorted(a.alias for a in c.aliases if a.alias != c.label),
+                source=c.source,
+            )
+            for c in concepts
+        ]
+    entries.sort(key=lambda e: e.label.casefold())
+    return entries
+
+
 def load_presence_inputs(document_ids: list[str] | None = None) -> list[tuple[str, str, str]]:
     """Parent-chunk text for presence matching: ``[(chunk_key, document_id, text)]``.
 

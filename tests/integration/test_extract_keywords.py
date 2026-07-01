@@ -1,0 +1,114 @@
+"""Integration guard tests for keyword extraction (KI-13 vocabulary-seed producer).
+
+Extraction writes `Keyword(source="extracted")` rows linked to documents; idempotent; the
+rows then surface through the concept-skeleton `--promote` seam. Temp file-backed SQLite
+swapped into the global session (mirrors test_seed_concepts.py). `load_document_texts` is
+monkeypatched to a toy corpus so no cache files / Chroma are needed.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Iterator
+from pathlib import Path
+
+import pytest
+from sqlalchemy import create_engine, func, select
+from sqlalchemy.orm import sessionmaker
+
+import doc_assistant.db.session as session_mod
+import doc_assistant.keywords as kw
+from doc_assistant.concept_skeleton import list_keyword_candidates
+from doc_assistant.db.models import Base, Document, Keyword, document_keywords
+from doc_assistant.db.session import session_scope
+from doc_assistant.keywords import extract_keywords
+
+# A toy corpus: "colbert"/"hyde" are distinctive; "retrieval" is ubiquitous.
+CORPUS = {
+    "d1": ("colbert.pdf", "colbert late interaction retrieval retrieval ranking"),
+    "d2": ("hyde.pdf", "hyde hypothetical document retrieval generation"),
+    "d3": ("dpr.pdf", "dense passage retrieval dense encoder"),
+}
+
+
+@pytest.fixture
+def env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Path]:
+    engine = create_engine(f"sqlite:///{tmp_path / 'library.db'}", echo=False, future=True)
+    Base.metadata.create_all(engine)
+    orig_engine, orig_factory = session_mod._engine, session_mod._SessionLocal
+    session_mod._engine = engine
+    session_mod._SessionLocal = sessionmaker(
+        bind=engine, autoflush=False, autocommit=False, future=True, expire_on_commit=False
+    )
+    # Seed Document rows keyed by the toy corpus ids.
+    with session_scope() as session:
+        session.add_all(
+            Document(
+                id=doc_id,
+                filename=fname,
+                source_original=fname,
+                doc_hash=doc_id,
+                format="pdf",
+            )
+            for doc_id, (fname, _text) in CORPUS.items()
+        )
+    # Bypass cached-markdown IO with the toy corpus.
+    monkeypatch.setattr(
+        kw,
+        "load_document_texts",
+        lambda document_ids=None: [(d, f, t) for d, (f, t) in CORPUS.items()],
+    )
+    try:
+        yield tmp_path
+    finally:
+        session_mod._engine = orig_engine
+        session_mod._SessionLocal = orig_factory
+        engine.dispose()
+
+
+def _links() -> int:
+    with session_scope() as session:
+        return int(
+            session.execute(select(func.count()).select_from(document_keywords)).scalar() or 0
+        )
+
+
+def test_dry_run_writes_nothing(env: Path) -> None:
+    result = extract_keywords(apply=False, top_k=5, ngram_max=2, min_chars=3)
+    assert result.n_documents == 3
+    assert result.total_written == 0
+    with session_scope() as session:
+        assert (session.execute(select(func.count()).select_from(Keyword)).scalar() or 0) == 0
+
+
+def test_apply_writes_keyword_rows_and_links(env: Path) -> None:
+    result = extract_keywords(apply=True, top_k=5, ngram_max=2, min_chars=3)
+    assert result.total_written > 0
+    with session_scope() as session:
+        names = {k.name for k in session.execute(select(Keyword)).scalars()}
+        assert all(k.source == "extracted" for k in session.execute(select(Keyword)).scalars())
+    # Distinctive terms surface; the ubiquitous "retrieval" is out-ranked out of top-5.
+    assert "colbert" in names
+    assert "hyde" in names
+
+
+def test_apply_is_idempotent(env: Path) -> None:
+    extract_keywords(apply=True, top_k=5, ngram_max=2, min_chars=3)
+    links_after_first = _links()
+    again = extract_keywords(apply=True, top_k=5, ngram_max=2, min_chars=3)
+    assert again.total_written == 0  # docs already have extracted keywords → skipped
+    assert _links() == links_after_first
+
+
+def test_force_reextracts(env: Path) -> None:
+    extract_keywords(apply=True, top_k=5, ngram_max=2, min_chars=3)
+    baseline = _links()
+    forced = extract_keywords(apply=True, force=True, top_k=5, ngram_max=2, min_chars=3)
+    assert forced.total_written > 0  # cleared + rewritten
+    assert _links() == baseline  # same corpus → same link count
+
+
+def test_extracted_keywords_feed_the_promote_seam(env: Path) -> None:
+    extract_keywords(apply=True, top_k=5, ngram_max=2, min_chars=3)
+    candidates = {c.name for c in list_keyword_candidates()}
+    assert "colbert" in candidates  # KI-13 loop closed: extractor -> seed_concepts candidate
+    assert all(not c.promoted for c in list_keyword_candidates())  # candidate only

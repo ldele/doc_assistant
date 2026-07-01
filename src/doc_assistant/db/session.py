@@ -15,6 +15,12 @@ _engine = create_engine(
     SQLITE_URL,
     echo=False,  # set True to log all SQL (verbose)
     future=True,
+    # The app touches the DB from multiple threads: FastAPI runs sync route handlers in a
+    # worker-thread pool, and the desktop API streams a turn from a worker thread (so SSE
+    # tokens flush instead of bursting at the end). SQLAlchemy's connection pool serialises
+    # per-connection checkout, so cross-thread use is safe — but pysqlite's default
+    # check_same_thread=True forbids it. Turn it off (the standard FastAPI+SQLite setting).
+    connect_args={"check_same_thread": False},
 )
 
 # Session factory

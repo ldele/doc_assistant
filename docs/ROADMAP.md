@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-06-20 · class: living -->
+<!-- status: active · updated: 2026-06-26 · class: living -->
 
 # ROADMAP — doc_assistant
 
@@ -37,7 +37,7 @@ in `tests/eval/TESTING.md`.
 - **Phase 4 — Citation graph close-out** — doc-similarity edges. Status: done.
 - **Phase 5 — Embedding & eval foundation** — config-driven embedder, golden set, provenance. Status: done.
 - **Phase 6 — Figures/tables + dual-layer interpretation + reviewer + self-improvement loop** (per-project routing deferred). Status: in progress.
-- **Phase 7 — Gap detection** — wiki/synthesis layer + cross-document concept graph. Status: in progress. *(The concept-graph open-vocabulary core was superseded by the 2026-06-18 redesign — not yet built; see `.claude/KNOWN_ISSUES.md`.)*
+- **Phase 7 — Gap detection** — wiki/synthesis layer + cross-document concept graph + the gap-detection layer over them. Status: in progress. *(The concept-graph open-vocabulary core was superseded by the 2026-06-18 redesign — not yet built; see `.claude/KNOWN_ISSUES.md`. The gap layer itself is design-locked in `docs/decisions/ADR-004-gap-detection-layer.md` / `docs/specs/feature-gap-detection.md`, blocked on the Decision-C skeleton + the RG-001 edge-precision run.)*
 - **Phase 8 — UI polish** — settings page exposing the RAG sandbox knobs. Status: planned.
 - **Phase 9 — Literature-review generation** — PRISMA-trAIce export. Status: planned.
 - **(no phase number) — Extract eval harness to a standalone repo** (Feature 5). Status: planned.
@@ -67,17 +67,43 @@ full architectural context per feature.
 | 15 | Feature 5: extract eval harness to a standalone repo | planned | — |
 | 16 | Feature 7: cross-document concept graph (7a–7c) | done | — |
 | 17 | Ingestion adapters: Zotero (Calibre TBD) | planned | — |
+| M0 | Desktop shell: extract `ChatController` + `TurnResult` (UI-agnostic turn core) | done | `docs/specs/pr-m0-chat-controller.md` |
+| M1 | Desktop shell: live 7d epistemics-marker surfacing (pre-migration demo win) | done | `docs/specs/pr-m1-epistemics-markers.md` |
+| M2 | Desktop shell: FastAPI backend + SSE boundary | done | `docs/specs/pr-m2-fastapi-boundary.md` |
+| M3 | Desktop shell: Tauri frontend (Svelte 5 + Vite) | done | `docs/specs/pr-m3-tauri-frontend.md` |
+| M4 | Desktop shell: PyInstaller sidecar packaging + frozen CPU-torch pin | done (RG-010/011/012 Tier-1 pass; KI-9/10/11 bundled in the freeze; data-home/first-run-ingest flow now built — backend `77eb5f9` + frontend settings panel; **RG-012 Tier-2** cited-turn validation pends a re-freeze + clean-box run) | `docs/specs/pr-m4-sidecar-packaging.md` |
+| M5 | Desktop shell: delete Chainlit + lift the Python-3.12 pin (KI-2) | done — Chainlit removed (renderer + dep + recipe + config); 3.12-pin lift **verified-and-deferred** (KI-2: native deps crash on 3.14, not Chainlit) | `docs/specs/pr-m5-decommission-chainlit.md` |
 
 **Feature 7d (knowledge-currency layer):** engine shipped 2026-06-17 (`epistemics.py` + `chunk_epistemics`
-sidecar + polarity-aware concept graph + reviewer `contested_evidence` tag); **deferred** follow-ups —
-live answer-time marker surfacing + the `query_router` seam. Spec: `docs/specs/feature-7d-knowledge-currency.md`.
+sidecar + polarity-aware concept graph + reviewer `contested_evidence` tag). **Live answer-time marker
+surfacing shipped 2026-06-22 (PR-M1)** — sources carry `contested`/`superseded_trend` chips via
+`ChatController` (flat: `chunk_key` join; PC: text containment), synthesis untouched (byte-identical when
+absent). **Still deferred:** the `query_router` local/global seam (Decision 8). Marker quality reflects
+the superseded graph (KI-7). Spec: `docs/specs/feature-7d-knowledge-currency.md`.
 **Feature 6 re-point** shipped 2026-06-17 (`wiki.load_communities` clusters by concept-graph communities
 behind `WIKI_USE_CONCEPT_COMMUNITIES`, inert by default; cosine fallback).
 
-**Later / open (no PR yet):** the concept-graph **redesign** (curated vocabulary + deterministic
+**Desktop shell migration (M0–M5):** replace Chainlit with a Tauri desktop app + FastAPI backend. The
+decision and its sub-decisions (SSE over WebSocket; sidecar-for-release, separate-process-for-dev) are
+recorded in `docs/decisions/ADR-002-tauri-fastapi-desktop-shell.md`. M0–M2 are specced
+(`docs/specs/pr-m{0,1,2}-*.md`); M3–M5 are specced one ahead as each predecessor lands. **M0** (lift the
+turn orchestration out of `apps/chainlit_app.py` into a UI-agnostic `ChatController`) is the only hard
+blocker for everything; **M1** (the 7d contested/superseded marker chip) is the pre-migration demo win
+and shares M0's `chunk_key` plumbing. Replaces the "UI = Chainlit" stack row in `.claude/CONTEXT.md`
+once M5 lands.
+
+**Later / open:** the concept-graph **redesign** (curated vocabulary + deterministic
 skeleton + confined LLM enrichment, 2026-06-18 — the next concept-graph build, see
-`.claude/KNOWN_ISSUES.md`); Zotero/Calibre ingest adapters (PR 17); an outbound **MCP-server**
-interface over `pipeline.py`. Full detail for all three: `docs/archive/doc-assistant-roadmap.md`.
+`.claude/KNOWN_ISSUES.md`; **build spec `docs/specs/concept-graph-redesign.md`**, design-locked
+2026-06-27. **PR-A (Node A — the deterministic, zero-LLM skeleton) BUILT 2026-06-30**
+(`concept_skeleton.py` + `scripts/{seed_concepts,build_concept_skeleton}.py` + 4 sidecar tables, 23
+tests); remaining: the RG-001/008/009 threshold-setting `--apply` run on the real corpus, then PR-B
+(Node B — LLM relation/stance) and the KI-7 retirement of the old `concept_graph.py`),
+and the **gap-detection layer** built on top of it (two-tier
+deterministic/stochastic, `docs/decisions/ADR-004-gap-detection-layer.md` +
+`docs/specs/feature-gap-detection.md` — its deterministic Tier-1 + Tier-2a-floor are the first
+increment, blocked on the skeleton + RG-001); Zotero/Calibre ingest adapters (PR 17); an outbound
+**MCP-server** interface over `pipeline.py`. Full detail: `docs/archive/doc-assistant-roadmap.md`.
 
 ## What NOT to do
 

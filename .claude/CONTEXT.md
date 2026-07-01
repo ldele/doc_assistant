@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-06-20 · class: living -->
+<!-- status: active · updated: 2026-06-26 · class: living -->
 
 # CONTEXT — doc_assistant
 
@@ -12,20 +12,33 @@ and its contract are recorded in `docs/decisions/ADR-001-adopt-cpc-standard.md`.
 research-integrity layer (provenance, evidence/interpretation split, separate-context reviewer).
 Not a chatbot wrapper — reliable, grounded, *measurable* answers over **your** documents.
 
-**Current phase (2026-06-20):** Phase 6 in progress; Phase 7 (gap detection) underway. Core RAG,
+**Current phase (2026-06-30):** Phase 6 in progress; Phase 7 (gap detection) underway. Core RAG,
 eval harness, document store + library UI, citation graph, the integrity layer, the provider-agnostic
 LLM layer, figures/tables, and the wiki/synthesis layer are shipped. The cross-document concept graph
 (PR 16) + the 7d engine shipped too, **but their open-vocabulary core was superseded by a 2026-06-18
-redesign that is not yet built — do not build on `data/graph/graph.json` (`.claude/KNOWN_ISSUES.md`
-KI-7).** ~555 tests; ruff / mypy --strict / bandit clean.
-Next candidates: PR 17 (Zotero ingest), 7d follow-ups (answer-time marker surfacing + `query_router`
-seam), or the wiki `[[links]]`-from-concept-edges refinement. Full plan: `docs/ROADMAP.md`.
+redesign — do not build on `concept_graph.py` / `data/graph/graph.json` (`.claude/KNOWN_ISSUES.md`
+KI-7).** The redesign's **Node A — the deterministic, zero-LLM concept skeleton — is BUILT (2026-06-30,
+`concept_skeleton.py` + `scripts/{seed_concepts,build_concept_skeleton}.py` + the `concept_*` tables +
+`CONCEPT_SKELETON_*` config)**, alongside the old graph (not retired); pending: the RG-001/008/009
+`--apply` validation run on the real corpus, then Node B (LLM stance) + the KI-7 retirement.
+~660 tests; ruff / mypy --strict / bandit clean.
+Desktop-shell migration (ADR-002): **M0–M5 all shipped (2026-06-25).** M0 (`ChatController`) · M1 (live 7d
+marker chips) · M2 (FastAPI + SSE, `apps/api/`) · M3 (Svelte/Tauri frontend, `apps/desktop/`) · **M4** —
+frozen 1.6 GB onefile bundling model weights (KI-9) + OS trust store (KI-10) + the ASCII-Chroma fix (KI-11);
+RG-010 (~30 s cold-start) / RG-011 (no SSE first-token penalty) / RG-012 Tier-1 (clean-machine freeze +
+installer smoke, in Windows Sandbox) / RG-013 all closed. The **data-home / first-run-ingest flow is now
+built** (backend `77eb5f9`: `/api/settings` + `/api/ingest`; frontend `apps/desktop` settings panel +
+empty-corpus banner) — RG-012 **Tier-2** (a cited turn on a clean box) pends a re-freeze bundling it + the
+clean-box run. Runbook: `docs/desktop-packaging.md`. · **M5** — Chainlit removed; the 3.12-pin lift
+was verified-and-deferred (KI-2: native deps crash on 3.14, not Chainlit). UI is now Tauri desktop + CLI.
+Other candidates: PR 17 (Zotero ingest), the 7d `query_router` seam, the wiki `[[links]]` refinement.
+Full plan: `docs/ROADMAP.md`.
 
 ## Stack
 
 | Layer | Choice |
 |---|---|
-| Language / runtime | Python 3.12 (dev works on 3.14; Chainlit needs 3.12 at runtime). Package manager: **uv**. |
+| Language / runtime | Python 3.12 (the pinned runtime; native deps not yet cp314-stable — KI-2; Chainlit removed in PR-M5). Package manager: **uv**. |
 | Embeddings | `bge-base-en-v1.5` (default; swappable via `EMBEDDING_MODEL`, `specter2` also registered) |
 | Reranker | `bge-reranker-base` (local cross-encoder) |
 | Vector store | Chroma (local, persistent) — `data/chroma/` |
@@ -33,7 +46,7 @@ seam), or the wiki `[[links]]`-from-concept-edges refinement. Full plan: `docs/R
 | Document store | SQLite via SQLAlchemy — `data/library.db` |
 | LLM (generation/reviewer/judge) | Claude API **or** local Ollama (provider-agnostic) |
 | Orchestration | LangChain |
-| UI | Chainlit (web) + CLI — both thin shells over `src/doc_assistant/` |
+| UI | **Tauri desktop app** (`apps/desktop/`, Svelte 5 + Vite, PR-M3) over the **FastAPI/SSE** boundary (`apps/api/`, PR-M2); CLI remains — both thin **renderers** over `chat_controller.ChatController` (PR-M0). See `docs/decisions/ADR-002-tauri-fastapi-desktop-shell.md`. Chainlit removed at PR-M5; native Tauri packaging is PR-M4. |
 | PDF / tables | PyMuPDF4LLM (full-text default); Marker for high-fidelity tables, isolated out-of-process post-ingest pass |
 | torch backend | per-machine, chosen by a mutually-exclusive uv extra (`cu130` GPU / `cpu`) — see `docs/specs/torch-backend-per-machine.md` |
 
@@ -79,8 +92,11 @@ in cpc CONVENTIONS **§12 / §13** — read them there, do not restate. Project-
 3. **`apps/` are thin shells.** All business logic in `src/doc_assistant/`; UI → library, never the reverse.
 4. **Enrichment-Layer Pattern.** Derived data ships as a separate module + idempotent CLI runner,
    sidecar by default, never mutates the primary chunk store.
-5. **Structured logging via `structlog`; no `print()` in `src/`.** *(Currently violated — see
-   `.claude/KNOWN_ISSUES.md`.)*
+5. **Structured logging via `structlog`; no `print()` in `src/`.** Configured once per entrypoint
+   via `logging_config.configure_logging` (console renderer for dev/CLI, JSON when `LOG_JSON=true`);
+   `src/` library code never configures logging. Enforced as of ADR-003 (KI-1 closed). The one
+   sanctioned `stderr` write is the paid-run abort-window box in `llm.py` (an interactive CLI prompt,
+   not a log event).
 6. **Exceptions chain** (`raise X from e`); user-facing messages translated at the UI boundary.
 7. **bandit HIGH blocks merge; CI green before merge.** Docs land with the code at every checkpoint.
 
@@ -104,7 +120,17 @@ in cpc CONVENTIONS **§12 / §13** — read them there, do not restate. Project-
   with `--repeat` before locking it as a measured win. `CANDIDATE_K=10` reproduces pre-split behaviour.
 - **Per-project embedder routing (Feature 1b) deferred** — no model beats `bge-base` on an identifiable
   sub-corpus yet (SPECTER2 lost on every retrieval signal). Re-run SPECTER2 `--repeat 5` first.
-- **Concept graph redesign (2026-06-18) decided, not built** — the shipped open-vocabulary core is
-  superseded (KI-7); the curated-vocabulary + deterministic-skeleton design has unvalidated edge
-  precision + presence recall (flagged for RIGOR_TODO before locking the edge model).
+- **Concept graph redesign (2026-06-18): Node A built (2026-06-30), validation pending** — the shipped
+  open-vocabulary core is superseded (KI-7); the curated-vocabulary + deterministic-skeleton **Node A**
+  is built (`concept_skeleton.py`) but its edge precision + presence recall are **unvalidated** — the
+  RG-001/008/009 `--apply` run on the real corpus sets `CONCEPT_SKELETON_MIN_COOCCURRENCE` + the
+  presence-match mode from the data (not guessed) and gates marking the graph *usable* + the gap layer.
+  Node B (LLM relation/stance) is deferred to PR-B.
+- **Gap-detection layer (2026-06-26) decided, not built** — two-tier deterministic/stochastic over
+  the curated skeleton (`docs/decisions/ADR-004-gap-detection-layer.md` /
+  `docs/specs/feature-gap-detection.md`). Deterministic Tier-1 + the Tier-2a
+  `unsupported_claim`/citation-gap floor are the first increment; blocked on the Decision-C skeleton
+  **and** the RG-001 edge-precision run (Tier-1 signals are defined relative to the edge set —
+  meaningless on an un-validated graph). External "anti-blind-spot" Tier 2b deferred; the
+  idea-generator is rejected for it.
 - **BM25/vector `0.4/0.6` weights never measured** — sweep when a `--bm25-weight` flag exists.

@@ -1,0 +1,358 @@
+"""FastAPI desktop backend — a thin HTTP/SSE renderer over ``ChatController`` (PR-M2).
+
+FastAPI is *just another shell* (like ``apps/cli.py``): it
+maps ``TurnEvent`` → HTTP/SSE and HTTP requests → controller calls, and owns no
+retrieval/provenance/claim logic. One ``ChatController`` is built per process in the
+``lifespan`` (model load is expensive); the test path injects a fake controller via
+``create_app(controller=...)`` so no real pipeline / LLM / network is touched (cpc §13).
+
+Streaming: ``/api/chat`` returns ``text/event-stream`` — each ``TurnEvent`` becomes one
+SSE event (``token`` / ``step`` / terminal ``result`` / ``done``). ``handle_message`` is a
+**sync, blocking** generator (the LLM token stream); for a single-user local app we
+iterate it directly on the event loop. A multi-client server would offload to a
+threadpool (``anyio.to_thread``) — noted here, not needed for the desktop target.
+
+Future ``SourceAdapter`` registry + ``/api/sources`` mount here (per the source-agnostic
+companion goal) once a second concrete ingestion source exists — a seam, not an
+abstraction to build now.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import json
+import threading
+from collections.abc import AsyncIterator, Callable
+from contextlib import asynccontextmanager
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
+
+import structlog
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from sse_starlette.sse import EventSourceResponse, ServerSentEvent
+
+from apps.api.models import (
+    AdjudicateRequest,
+    ChatRequest,
+    ExportRequest,
+    SettingsUpdate,
+    TurnResultPayload,
+)
+from apps.api.sessions import SessionStore
+from doc_assistant import app_settings
+from doc_assistant.chat_controller import ChatController, Result, Session, Step, Token
+from doc_assistant.config import DATA_PATH, LLM_MODEL, LLM_PROVIDER, LOG_JSON, LOG_LEVEL
+from doc_assistant.embeddings import get_active_model_name
+from doc_assistant.ingest.figures import load_figure_image_paths
+from doc_assistant.logging_config import configure_logging
+from doc_assistant.provenance import get_record
+
+log = structlog.get_logger(__name__)
+
+# Local app only: the frontend speaks to the sidecar over 127.0.0.1. Explicit origins,
+# never "*". The Tauri dev server (default :1420) + the packaged webview origin.
+_ALLOWED_ORIGINS = [
+    "http://localhost:1420",
+    "http://127.0.0.1:1420",
+    "tauri://localhost",
+]
+
+
+def _sse(event: object) -> ServerSentEvent | None:
+    """Map one TurnEvent to an SSE event (None for unknown types)."""
+    if isinstance(event, Token):
+        return ServerSentEvent(event="token", data=event.text)
+    if isinstance(event, Step):
+        return ServerSentEvent(
+            event="step", data=json.dumps({"name": event.name, "status": event.status})
+        )
+    if isinstance(event, Result):
+        return ServerSentEvent(
+            event="result",
+            data=TurnResultPayload.from_turn_result(event.result).model_dump_json(),
+        )
+    return None
+
+
+async def _event_stream(
+    controller: ChatController, session: Session, text: str
+) -> AsyncIterator[ServerSentEvent]:
+    """Map the controller's sync ``TurnEvent`` generator to SSE events 1:1.
+
+    ``handle_message`` is a **sync, blocking** generator — the LLM token stream does
+    blocking network reads, and retrieval is heavy CPU. Iterated directly on the event
+    loop it stalls SSE flushing, so the whole answer bursts out at the end. Instead, run it
+    in a worker thread and hand events to the loop through a queue: the loop stays free to
+    flush each token as the model produces it (M2 ADR-2; the threadpool note made good)."""
+    loop = asyncio.get_running_loop()
+    queue: asyncio.Queue[object] = asyncio.Queue()
+    done = object()
+
+    def worker() -> None:
+        try:
+            for event in controller.handle_message(session, text):
+                loop.call_soon_threadsafe(queue.put_nowait, event)
+        finally:
+            loop.call_soon_threadsafe(queue.put_nowait, done)
+
+    threading.Thread(target=worker, daemon=True).start()
+
+    while True:
+        event = await queue.get()
+        if event is done:
+            break
+        sse = _sse(event)
+        if sse is not None:
+            yield sse
+    yield ServerSentEvent(event="done", data="")
+
+
+def _settings_view() -> dict[str, Any]:
+    """A read-only view of the locked + env-toggleable knobs (Phase-8 settings UI is later)."""
+    from doc_assistant.config import (
+        CANDIDATE_K,
+        CHILD_CHUNK_OVERLAP,
+        CHILD_CHUNK_SIZE,
+        PARENT_CHUNK_OVERLAP,
+        PARENT_CHUNK_SIZE,
+        SYNTHESIS_MODE,
+        TOP_K,
+        USE_PARENT_CHILD,
+    )
+
+    return {
+        "provider": LLM_PROVIDER,
+        "model": LLM_MODEL,
+        "embedding_model": get_active_model_name(),
+        "top_k": TOP_K,
+        "candidate_k": CANDIDATE_K,
+        "use_parent_child": USE_PARENT_CHILD,
+        "synthesis_mode": SYNTHESIS_MODE,
+        "parent_chunk": [PARENT_CHUNK_SIZE, PARENT_CHUNK_OVERLAP],
+        "child_chunk": [CHILD_CHUNK_SIZE, CHILD_CHUNK_OVERLAP],
+        "retrieval_weights": {"bm25": 0.4, "vector": 0.6},
+    }
+
+
+SUPPORTED_NOTE = "pdf · epub · html · docx · md (and similar text formats)"
+
+
+@dataclass
+class _IngestStatus:
+    """Background-ingest progress, read by GET /api/ingest/status (guarded by a lock)."""
+
+    state: str = "idle"  # idle | running | done | error
+    source_dir: str | None = None
+    added: int = 0
+    skipped: int = 0
+    errors: int = 0
+    message: str | None = None
+
+
+def _default_ingest(*, scope: str) -> dict[str, int]:
+    """Lazy wrapper so importing this module doesn't pull the heavy ingest -> torch chain."""
+    from doc_assistant.ingest import main as ingest_main
+
+    return ingest_main(scope=scope)
+
+
+def _full_settings(app: FastAPI) -> dict[str, Any]:
+    """Read view: the locked knobs plus the data home, the user's source folder, chunk_count."""
+    controller: ChatController = app.state.controller
+    source = app_settings.get_source_dir()
+    return {
+        **_settings_view(),
+        "data_home": str(DATA_PATH),
+        "source_dir": str(source),
+        "source_dir_exists": source.is_dir(),
+        "supported_formats": SUPPORTED_NOTE,
+        "chunk_count": controller.chunk_count(),
+    }
+
+
+def _ingest_status_dict(app: FastAPI) -> dict[str, Any]:
+    st: _IngestStatus = app.state.ingest_status
+    with app.state.ingest_lock:
+        return {
+            "state": st.state,
+            "source_dir": st.source_dir,
+            "added": st.added,
+            "skipped": st.skipped,
+            "errors": st.errors,
+            "message": st.message,
+        }
+
+
+def create_app(
+    controller: ChatController | None = None,
+    *,
+    ingest_fn: Callable[..., dict[str, int]] | None = None,
+    controller_factory: Callable[[], ChatController] | None = None,
+) -> FastAPI:
+    """Build the FastAPI app. ``controller`` is injected in tests (a fake) and set on
+    ``app.state`` eagerly so the test client needs no lifespan; in production it is
+    ``None`` and a real ``ChatController`` is built once in ``lifespan`` (lazy — so
+    importing this module / ``app = create_app()`` does not load models)."""
+    # FastAPI is an app entrypoint (this runs for both `uvicorn ...:app` and `python -m
+    # apps.api`, which imports `app`). The env-driven LOG_JSON is the "deployed/observed
+    # context" signal (ADR-003 Decision 7). Idempotent, so the test's create_app() is safe.
+    configure_logging(json=LOG_JSON, level=LOG_LEVEL)
+
+    @asynccontextmanager
+    async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        if getattr(app.state, "controller", None) is None:
+            app.state.controller = ChatController()
+        yield
+
+    app = FastAPI(title="doc_assistant desktop API", lifespan=lifespan)
+    app.state.sessions = SessionStore()
+    app.state.ingest_status = _IngestStatus()
+    app.state.ingest_lock = threading.Lock()
+    # Test seams (cpc §13): default to the real ingest + a fresh ChatController; tests inject
+    # fakes so /api/ingest runs no real ingest / model reload.
+    app.state.ingest_fn = ingest_fn or _default_ingest
+    app.state.controller_factory = controller_factory or ChatController
+    if controller is not None:
+        app.state.controller = controller
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=_ALLOWED_ORIGINS,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+
+    @app.get("/api/health")
+    def health(request: Request) -> dict[str, Any]:
+        controller: ChatController = request.app.state.controller
+        return {
+            "status": "ok",
+            "chunk_count": controller.chunk_count(),
+            "model": f"{LLM_PROVIDER}/{LLM_MODEL}",
+            "embedding_model": get_active_model_name(),
+        }
+
+    @app.post("/api/chat")
+    async def chat(request: Request, body: ChatRequest) -> EventSourceResponse:
+        controller: ChatController = request.app.state.controller
+        sessions: SessionStore = request.app.state.sessions
+        session = sessions.get_or_create(body.session_id)  # unknown id → fresh conversation
+        return EventSourceResponse(_event_stream(controller, session, body.text))
+
+    @app.post("/api/claims/{claim_id}/adjudicate")
+    def adjudicate(request: Request, claim_id: str, body: AdjudicateRequest) -> dict[str, bool]:
+        controller: ChatController = request.app.state.controller
+        try:
+            controller.adjudicate(claim_id, body.decision, edited_text=body.edited_text)
+        except KeyError as e:
+            raise HTTPException(status_code=404, detail=str(e)) from e
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e)) from e
+        return {"ok": True}
+
+    @app.post("/api/export")
+    def export(request: Request, body: ExportRequest) -> FileResponse:
+        controller: ChatController = request.app.state.controller
+        sessions: SessionStore = request.app.state.sessions
+        session = sessions.get(body.session_id)
+        if session is None:
+            raise HTTPException(status_code=404, detail="unknown session_id")
+        message, path = controller.export_conversation(session, dev=body.dev)
+        if path is None:  # nothing to export yet
+            raise HTTPException(status_code=400, detail=message)
+        return FileResponse(str(path), media_type="text/markdown", filename=path.name)
+
+    @app.get("/api/figures/{figure_id}")
+    def figure(figure_id: str) -> FileResponse:
+        path = load_figure_image_paths([figure_id]).get(figure_id)
+        if not path or not Path(path).exists():
+            raise HTTPException(status_code=404, detail="figure not found")
+        return FileResponse(path, media_type="image/png")
+
+    @app.get("/api/source/{record_id}/{n}")
+    def source(record_id: str, n: int) -> dict[str, Any]:
+        prov = get_record(record_id)
+        if prov is None or n < 1 or n > len(prov.retrieved_chunks):
+            raise HTTPException(status_code=404, detail="source not found")
+        chunk = prov.retrieved_chunks[n - 1]
+        return {
+            "n": n,
+            "filename": chunk.filename,
+            "page": chunk.page,
+            "section": chunk.section,
+            "reranker_score": chunk.reranker_score,
+            "excerpt": chunk.chunk_excerpt,
+        }
+
+    @app.get("/api/settings")
+    def get_settings(request: Request) -> dict[str, Any]:
+        return _full_settings(request.app)
+
+    @app.post("/api/settings")
+    def post_settings(request: Request, body: SettingsUpdate) -> dict[str, Any]:
+        # "Point at a folder": set the source documents dir (validated + persisted to the data
+        # home). The data *home* (index/DB) stays managed by config; the user only chooses where
+        # their documents live. Re-index via POST /api/ingest to load the new folder.
+        try:
+            app_settings.set_source_dir(body.source_dir)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e)) from e
+        return _full_settings(request.app)
+
+    @app.post("/api/ingest", status_code=202)
+    def ingest_start(request: Request) -> dict[str, Any]:
+        app_ = request.app
+        source = app_settings.get_source_dir()
+        status: _IngestStatus = app_.state.ingest_status
+        with app_.state.ingest_lock:
+            if status.state == "running":
+                raise HTTPException(status_code=409, detail="ingest already running")
+            status.state = "running"
+            status.source_dir = str(source)
+            status.added = status.skipped = status.errors = 0
+            status.message = None
+
+        def _worker() -> None:
+            try:
+                stats = app_.state.ingest_fn(scope=str(source))
+            except Exception as e:  # surface any ingest failure to the status view
+                log.exception("ingest_failed", source=str(source))
+                with app_.state.ingest_lock:
+                    status.state = "error"
+                    status.message = str(e)
+                return
+            # Reload the controller so the new corpus is live BEFORE reporting "done" — a client
+            # that sees "done" then reads chunk_count must get the updated count (BM25 + Chroma
+            # handles are built at construction). A reload failure is logged but doesn't fail the
+            # ingest: the documents are persisted, a restart picks them up, so a successful ingest
+            # never flips to "error".
+            try:
+                app_.state.controller = app_.state.controller_factory()
+            except Exception:
+                log.exception("controller_reload_failed_after_ingest")
+            with app_.state.ingest_lock:
+                status.added = int(stats.get("added", 0))
+                status.skipped = int(stats.get("skipped", 0))
+                status.errors = int(stats.get("error", 0))
+                status.message = (
+                    f"indexed {status.added} new, {status.skipped} unchanged, "
+                    f"{status.errors} errors"
+                )
+                status.state = "done"
+
+        threading.Thread(target=_worker, name="ingest", daemon=True).start()
+        return _ingest_status_dict(app_)
+
+    @app.get("/api/ingest/status")
+    def ingest_status(request: Request) -> dict[str, Any]:
+        return _ingest_status_dict(request.app)
+
+    return app
+
+
+# Module-level app for `uvicorn apps.api.main:app` (the `just api` dev recipe). The real
+# ChatController is built lazily in lifespan, so importing this module stays cheap.
+app = create_app()

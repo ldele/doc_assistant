@@ -1,11 +1,26 @@
 repos:
-  # Ruff: lint + format (two separate hooks — order matters)
+  # Ruff: lint + format (two separate hooks — order matters).
+  # Scope = src/ + tests/ ONLY, to mirror CI exactly (`uv run ruff check src/ tests/`,
+  # `uv run ruff format --check src/ tests/` in .github/workflows/ci.yml). Without this,
+  # the hook passed staged filenames and linted repo-wide — so a one-time reference script
+  # under scripts/ (outside CI's lint scope, see [tool.ruff] src=["src","tests"]) could fail
+  # the commit while CI stayed green. pass_filenames:false + explicit paths = same tree as CI;
+  # files:^(src|tests)/ keeps the trigger scoped so the hook only fires on relevant changes.
+  # rev pinned to match the uv.lock ruff (0.15.13) + pyproject floor, so the local
+  # format hook produces byte-identical output to the CI gate (`ruff format --check`).
+  # A skew here (old hook formatting one way, newer locked CI ruff another) silently
+  # reddened CI — see docs/DEVLOG.md 2026-06-27.
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.6.0
+    rev: v0.15.13
     hooks:
       - id: ruff
-        args: [--fix]
+        args: [--fix, src/, tests/]
+        pass_filenames: false
+        files: ^(src|tests)/
       - id: ruff-format
+        args: [src/, tests/]
+        pass_filenames: false
+        files: ^(src|tests)/
 
   # mypy: type checking — runs CI's effective command (`uv run mypy src/`) in the PROJECT venv so
   # the local pre-check matches CI exactly. Why not the isolated mirrors-mypy hook:

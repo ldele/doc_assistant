@@ -193,6 +193,33 @@ def test_record_answer_excludes_full_text_from_persistence(temp_db: Path):
     assert "WIDE GROUNDING TEXT" not in raw and "full_text" not in raw  # the wide text is not
 
 
+def test_record_answer_excludes_chunk_key_from_persistence(temp_db: Path):
+    """The transient 7d join key ``chunk_key`` (ADR-2) is never written to the DB —
+    like ``full_text``, it is a join key, not stored provenance."""
+    from sqlalchemy import select
+
+    from doc_assistant.db.models import AnswerRecord
+    from doc_assistant.db.session import session_scope
+
+    rid = record_answer(
+        query="q",
+        answer="a",
+        retrieved_chunks=[
+            RetrievedChunk(filename="p.pdf", chunk_excerpt="shown", chunk_key="doc1:3")
+        ],
+    )
+    with session_scope() as session:
+        raw = session.execute(
+            select(AnswerRecord.retrieved_chunks_json).where(AnswerRecord.id == rid)
+        ).scalar_one()
+    assert "shown" in raw  # display excerpt persists
+    assert "chunk_key" not in raw and "doc1:3" not in raw  # the join key does not
+
+    # And a loaded record round-trips with chunk_key defaulting to None (not in JSON).
+    prov = get_record(rid)
+    assert prov is not None and prov.retrieved_chunks[0].chunk_key is None
+
+
 def test_get_record_returns_none_for_missing(temp_db: Path):
     assert get_record("does-not-exist") is None
 

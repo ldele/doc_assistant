@@ -1,0 +1,135 @@
+"""Integration tests for the settings + ingest endpoints — the "point at a folder" flow.
+
+All fakes (cpc §13): a fake controller supplies ``chunk_count``; an injected ``ingest_fn``
+records the scope + returns canned stats; an injected ``controller_factory`` returns a fresh
+fake whose ``chunk_count`` reflects the post-ingest corpus — proving the live reload. The
+persisted settings file is redirected to a temp path so no test touches the real data home.
+"""
+
+from __future__ import annotations
+
+import threading
+import time
+from pathlib import Path
+
+import pytest
+from apps.api.main import create_app
+from fastapi.testclient import TestClient
+
+
+class FakeController:
+    def __init__(self, count: int = 0) -> None:
+        self._count = count
+
+    def chunk_count(self) -> int:
+        return self._count
+
+
+@pytest.fixture
+def settings_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """Redirect the persisted user settings to a temp file (never the real data home)."""
+    from doc_assistant import app_settings
+
+    monkeypatch.setattr(app_settings, "SETTINGS_PATH", tmp_path / "settings.json")
+    return tmp_path
+
+
+def _poll_until(client: TestClient, *, state: str, tries: int = 60) -> dict:
+    for _ in range(tries):
+        st = client.get("/api/ingest/status").json()
+        if st["state"] == state:
+            return st
+        time.sleep(0.05)
+    return client.get("/api/ingest/status").json()
+
+
+def test_get_settings_reports_home_source_and_count(settings_file: Path) -> None:
+    client = TestClient(create_app(controller=FakeController(count=42)))
+    body = client.get("/api/settings").json()
+    assert body["chunk_count"] == 42
+    assert "data_home" in body and "source_dir" in body and "source_dir_exists" in body
+    assert "top_k" in body and "provider" in body  # the read view is a superset of the knobs
+
+
+def test_post_settings_sets_and_persists_source_dir(settings_file: Path, tmp_path: Path) -> None:
+    docs = tmp_path / "my_papers"
+    docs.mkdir()
+    client = TestClient(create_app(controller=FakeController()))
+    r = client.post("/api/settings", json={"source_dir": str(docs)})
+    assert r.status_code == 200
+    assert Path(r.json()["source_dir"]) == docs.resolve()
+    assert r.json()["source_dir_exists"] is True
+    # persisted: a fresh GET reflects the chosen folder
+    assert Path(client.get("/api/settings").json()["source_dir"]) == docs.resolve()
+
+
+def test_post_settings_rejects_nonexistent_dir(settings_file: Path, tmp_path: Path) -> None:
+    client = TestClient(create_app(controller=FakeController()))
+    r = client.post("/api/settings", json={"source_dir": str(tmp_path / "nope")})
+    assert r.status_code == 400
+
+
+def test_ingest_runs_on_the_folder_and_reloads_controller(
+    settings_file: Path, tmp_path: Path
+) -> None:
+    docs = tmp_path / "papers"
+    docs.mkdir()
+    seen: dict[str, str] = {}
+
+    def fake_ingest(*, scope: str) -> dict[str, int]:
+        seen["scope"] = scope
+        return {"added": 3, "skipped": 1, "error": 0}
+
+    app = create_app(
+        controller=FakeController(count=0),
+        ingest_fn=fake_ingest,
+        controller_factory=lambda: FakeController(count=99),  # the post-ingest corpus
+    )
+    client = TestClient(app)
+    client.post("/api/settings", json={"source_dir": str(docs)})
+
+    r = client.post("/api/ingest")
+    assert r.status_code == 202
+    assert r.json()["state"] in ("running", "done")
+
+    st = _poll_until(client, state="done")
+    assert st["state"] == "done"
+    assert (st["added"], st["skipped"], st["errors"]) == (3, 1, 0)
+    assert seen["scope"] == str(docs.resolve())  # ingested the chosen folder
+    # the controller was reloaded → the live chunk_count reflects the new corpus
+    assert client.get("/api/settings").json()["chunk_count"] == 99
+
+
+def test_ingest_surfaces_failure_in_status(settings_file: Path) -> None:
+    def boom(*, scope: str) -> dict[str, int]:
+        raise RuntimeError("disk full")
+
+    app = create_app(
+        controller=FakeController(),
+        ingest_fn=boom,
+        controller_factory=lambda: FakeController(),
+    )
+    client = TestClient(app)
+    client.post("/api/ingest")
+    st = _poll_until(client, state="error")
+    assert st["state"] == "error"
+    assert "disk full" in (st["message"] or "")
+
+
+def test_ingest_rejects_concurrent_run(settings_file: Path) -> None:
+    release = threading.Event()
+
+    def slow_ingest(*, scope: str) -> dict[str, int]:
+        release.wait(timeout=5)
+        return {"added": 0, "skipped": 0, "error": 0}
+
+    app = create_app(
+        controller=FakeController(),
+        ingest_fn=slow_ingest,
+        controller_factory=lambda: FakeController(),
+    )
+    client = TestClient(app)
+    assert client.post("/api/ingest").status_code == 202  # first starts
+    assert client.post("/api/ingest").status_code == 409  # second rejected while running
+    release.set()
+    _poll_until(client, state="done")

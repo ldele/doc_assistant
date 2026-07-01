@@ -3,7 +3,7 @@ services:
     build: .
     container_name: doc-assistant
     ports:
-      - "8000:8000"
+      - "8001:8001"
     volumes:
       # Documents, cache, and chroma DB live on host
       - ./data:/app/data
@@ -13,6 +13,10 @@ services:
       - hf-cache:/root/.cache/huggingface
 
     environment:
+      # Bind 0.0.0.0 inside the container so the published port is reachable from the host
+      # (the app defaults to 127.0.0.1; this opts in — see Dockerfile).
+      - DOC_API_HOST=0.0.0.0
+      - DOC_API_PORT=8001
       - LLM_MODE=${LLM_MODE:-api}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
 

@@ -35,8 +35,8 @@ from sqlalchemy import select
 from doc_assistant.config import DATA_PATH, MARKER_PYTHON
 from doc_assistant.db.models import Document
 from doc_assistant.db.session import session_scope
-from doc_assistant.regions import analyze_pages
-from doc_assistant.tables import extract_tables_from_pages, render_table_markdown
+from doc_assistant.ingest.regions import analyze_pages
+from doc_assistant.ingest.tables import extract_tables_from_pages, render_table_markdown
 from scripts.extract_tables import _resolve_pdf_path
 
 if sys.platform == "win32" and hasattr(sys.stdout, "reconfigure"):

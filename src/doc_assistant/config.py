@@ -1,6 +1,7 @@
 """Project configuration. All paths and runtime settings live here."""
 
 import os
+import sys
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -28,13 +29,68 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 # Runtime data paths
 # ============================================================
 
-DATA_PATH = PROJECT_ROOT / "data"
+
+def _resolve_data_path() -> Path:
+    """Resolve the runtime data dir (corpus, DB, exports, figures, graph).
+
+    Precedence: ``DOC_DATA_DIR`` env override > a stable per-user app-data dir when
+    PyInstaller-**frozen** > the in-repo ``./data`` (dev). When frozen, ``__file__`` lives
+    in a temp unpack dir, so ``PROJECT_ROOT`` climbs into ``%TEMP%`` and the in-repo path is
+    meaningless — the desktop app keeps its data in a per-user location instead (PR-M4).
+    Point the override at an existing corpus to reuse it: ``DOC_DATA_DIR=...\\data``.
+    """
+    override = os.getenv("DOC_DATA_DIR")
+    if override:
+        return Path(override).expanduser().resolve()
+    if getattr(sys, "frozen", False):  # running from a PyInstaller bundle
+        base = (
+            os.getenv("LOCALAPPDATA")
+            or os.getenv("XDG_DATA_HOME")
+            or str(Path.home() / ".local" / "share")
+        )
+        return Path(base) / "doc_assistant" / "data"
+    return PROJECT_ROOT / "data"
+
+
+DATA_PATH = _resolve_data_path()
+
+
+def _chroma_base() -> Path:
+    """ASCII-safe base dir for the Chroma vector stores (KI-11).
+
+    chromadb's hnsw writer silently fails to persist the index ``.bin`` segments when the
+    persist directory's real location contains non-ASCII characters on Windows (verified on
+    chromadb 1.5.9; the 8.3 short path doesn't help — it resolves to the real path). The
+    shipped app's per-user data home is ``C:\\Users\\<username>\\...``, so an accented /
+    non-Latin Windows username would yield a corpus that cannot reload. Relocate **only** the
+    Chroma dirs to a guaranteed-ASCII machine path (``%PROGRAMDATA%``, namespaced by a hash of
+    the data path to avoid cross-home collisions); the SQLite store + sources stay at
+    ``DATA_PATH`` (SQLite handles non-ASCII paths fine). ASCII data paths (the dev/repo case)
+    and non-Windows platforms are unchanged.
+    """
+    if sys.platform != "win32" or str(DATA_PATH).isascii():
+        return DATA_PATH
+    import hashlib
+
+    digest = hashlib.sha1(str(DATA_PATH).encode("utf-8"), usedforsecurity=False).hexdigest()[:12]
+    return Path(os.getenv("PROGRAMDATA", "C:\\ProgramData")) / "doc_assistant" / "chroma" / digest
+
+
+_CHROMA_BASE = _chroma_base()
 DOCS_PATH = DATA_PATH / "sources"
 CACHE_PATH = DATA_PATH / "cache"
-CHROMA_PATH = str(DATA_PATH / "chroma")  # Chroma wants a string, not Path
-PC_CHROMA_PATH = str(DATA_PATH / "chroma_pc")  # Parent - Child
+# Chroma wants a string, not Path. Base is ASCII-safe (KI-11) — see `_chroma_base`.
+CHROMA_PATH = str(_CHROMA_BASE / "chroma")
+PC_CHROMA_PATH = str(_CHROMA_BASE / "chroma_pc")  # Parent - Child
 SQLITE_PATH = str(DATA_PATH / "library.db")
 SQLITE_URL = f"sqlite:///{SQLITE_PATH}"
+
+# Private sources manifest — maps each file in DOCS_PATH to its download URL + a
+# sha256/size pin, so the library can be re-downloaded on another machine (a
+# private mirror of the public-corpus flow). Gitignored: the library is mostly
+# copyrighted, so the manifest is shared out-of-band, never committed. Built by
+# `doc_assistant.sources_manifest` (CLI: `scripts/sync_sources.py`).
+SOURCES_MANIFEST = DATA_PATH / "sources_manifest.yaml"
 
 # Conversation + debug exports (markdown transcripts, dev bundles, per-turn JSONL
 # logs). Gitignored, regenerable — written by `doc_assistant.export`. A user
@@ -359,3 +415,67 @@ CONCEPT_GRAPH_GOD_NODES = int(os.getenv("CONCEPT_GRAPH_GOD_NODES", "10"))
 # Louvain is randomized; a fixed seed makes community assignment reproducible so the
 # graph artifact is deterministic for a given set of extractions.
 CONCEPT_GRAPH_SEED = int(os.getenv("CONCEPT_GRAPH_SEED", "42"))
+
+
+# ============================================================
+# Concept skeleton — REDESIGN (Phase 7 / Feature 7, curated-vocabulary skeleton)
+# ============================================================
+# The curated-vocabulary + deterministic-skeleton redesign of the concept graph
+# (docs/specs/concept-graph-redesign.md; supersedes the open-vocabulary block above,
+# KNOWN_ISSUES KI-7). Node A (the deterministic skeleton) makes ZERO LLM calls; the
+# LLM relation/stance pass (Node B) is deferred. Sidecar artifact + sidecar tables,
+# regenerable, never mutates the chunk store (Enrichment-Layer Pattern). These are
+# ordinary config contracts, NOT eval-locked retrieval settings.
+
+# Sidecar root: data/skeleton/skeleton.json + the per-doc extraction cache.
+# Gitignored (derived, regenerable).
+CONCEPT_SKELETON_DIR = DATA_PATH / "skeleton"
+
+# Two concepts get a co-occurrence edge only when co-present in at least this many
+# *chunks* (chunk-level, not document-level — Decision 4: doc-level co-occurrence on a
+# same-domain corpus saturates into a meaningless dense graph). PROVISIONAL — the
+# headline density lever; set from the RG-001/008 edge-precision run on the real corpus.
+CONCEPT_SKELETON_MIN_COOCCURRENCE = int(os.getenv("CONCEPT_SKELETON_MIN_COOCCURRENCE", "2"))
+
+# Louvain is randomized; a fixed seed makes community assignment reproducible so the
+# skeleton.json artifact is byte-identical to rebuild (ADR-1, carried over from PR-16).
+CONCEPT_SKELETON_SEED = int(os.getenv("CONCEPT_SKELETON_SEED", "42"))
+
+# Node B (deferred, LLM relation/stance enrichment) defaults to LOCAL Ollama
+# *explicitly*, NOT to LLM_PROVIDER — the same credit-leak footgun guard as the wiki
+# and the old concept graph (KI-4). An Anthropic run is opt-in via --provider and
+# routes through `llm.assert_provider_intent`. Node A never reads these.
+CONCEPT_SKELETON_LLM_PROVIDER = os.getenv("CONCEPT_SKELETON_LLM_PROVIDER", "ollama")
+CONCEPT_SKELETON_LLM_MODEL = os.getenv("CONCEPT_SKELETON_LLM_MODEL", "llama3.1:8b")
+
+
+# ============================================================
+# Keyword extraction (concept-skeleton vocabulary seed) — KI-13
+# ============================================================
+# Deterministic, zero-LLM corpus TF-IDF over the cached markdown. Populates the
+# `keywords` table (source="extracted"), which seeds concept-skeleton vocabulary
+# candidates (scripts/seed_concepts.py → --promote). Additive + idempotent, never
+# mutates the chunk store (Enrichment-Layer Pattern). Ordinary config contracts,
+# NOT eval-locked retrieval settings — tune freely.
+#   KEYWORDS_PER_DOC — top-scored candidate phrases kept per document.
+#   KEYWORD_NGRAM_MAX — longest candidate phrase (1..N tokens; 3 = up to trigrams).
+#   KEYWORD_MIN_CHARS — drop candidates shorter than this (letters+digits, no spaces).
+KEYWORDS_PER_DOC = int(os.getenv("KEYWORDS_PER_DOC", "15"))
+KEYWORD_NGRAM_MAX = int(os.getenv("KEYWORD_NGRAM_MAX", "3"))
+KEYWORD_MIN_CHARS = int(os.getenv("KEYWORD_MIN_CHARS", "3"))
+
+
+# ============================================================
+# Logging / observability (ADR-003)
+# ============================================================
+# structlog is the single logging substrate (rule #5). These two knobs are read
+# by `logging_config.configure_logging`, which each app entrypoint calls once.
+# They are a CONFIG CONTRACT, not a locked setting — change freely via env, no
+# eval experiment needed (unlike the retrieval knobs above).
+#   LOG_LEVEL — root level; "INFO" keeps CLI progress visible (the converted
+#               print() statements log at info).
+#   LOG_JSON  — False → human-readable ConsoleRenderer (dev/CLI default);
+#               True  → JSONRenderer for machine consumption / a deployed,
+#               observed FastAPI context. The env var IS the "deployed" signal.
+LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
+LOG_JSON = os.getenv("LOG_JSON", "false").lower() == "true"

@@ -25,10 +25,10 @@ Design notes
 
 from __future__ import annotations
 
-import logging
 from dataclasses import dataclass
 
 import numpy as np
+import structlog
 from sqlalchemy import select
 
 from doc_assistant.config import CHROMA_PATH
@@ -36,7 +36,7 @@ from doc_assistant.db.models import Document
 from doc_assistant.db.session import session_scope
 from doc_assistant.embeddings import get_active_model_name, get_collection_name
 
-log = logging.getLogger(__name__)
+log = structlog.get_logger(__name__)
 
 
 # ============================================================
@@ -173,14 +173,19 @@ def load_chunk_embeddings_by_document() -> dict[str, list[np.ndarray]]:
     try:
         coll = client.get_collection(collection_name)
     except Exception:
-        log.warning("No '%s' collection at %s — run ingest first", collection_name, CHROMA_PATH)
+        log.warning(
+            "collection_missing",
+            collection=collection_name,
+            path=CHROMA_PATH,
+            hint="run ingest first",
+        )
         return {}
 
     data = coll.get(include=["embeddings", "metadatas"])
     raw_embeddings = data.get("embeddings")
     metadatas = data.get("metadatas") or []
     if raw_embeddings is None or len(raw_embeddings) == 0:
-        log.warning("Collection has no embeddings")
+        log.warning("collection_no_embeddings")
         return {}
 
     hash_to_id = _hash_to_doc_id_map()
@@ -201,5 +206,5 @@ def load_chunk_embeddings_by_document() -> dict[str, list[np.ndarray]]:
         grouped.setdefault(doc_id, []).append(np.asarray(vec, dtype=np.float32))
 
     if dropped_no_id:
-        log.warning("Dropped %d chunks with no resolvable document_id", dropped_no_id)
+        log.warning("dropped_chunks_no_doc_id", count=dropped_no_id)
     return grouped

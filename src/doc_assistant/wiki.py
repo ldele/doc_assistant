@@ -26,13 +26,14 @@ from __future__ import annotations
 
 import hashlib
 import json
-import logging
 import re
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 from functools import partial
 from pathlib import Path
 from typing import Any
+
+import structlog
 
 from doc_assistant.config import (
     WIKI_CHUNK_SAMPLE,
@@ -42,7 +43,7 @@ from doc_assistant.config import (
     WIKI_USE_CONCEPT_COMMUNITIES,
 )
 
-log = logging.getLogger(__name__)
+log = structlog.get_logger(__name__)
 
 MANIFEST_NAME = ".manifest.json"
 
@@ -382,14 +383,12 @@ def load_communities(
     root = graph_dir or CONCEPT_GRAPH_DIR
     graph_path = root / cg.GRAPH_NAME
     if not graph_path.exists():
-        log.info(
-            "concept-graph clustering on, but %s is absent — using cosine clustering", graph_path
-        )
+        log.info("concept_graph_absent", path=str(graph_path), hint="using cosine clustering")
         return None
     try:
         graph = cg.graph_from_dict(json.loads(graph_path.read_text(encoding="utf-8")))
     except Exception as e:
-        log.warning("concept graph unreadable (%s) — using cosine clustering", e)
+        log.warning("concept_graph_unreadable", error=str(e), hint="using cosine clustering")
         return None
 
     extractions: list[cg.DocExtraction] = []
@@ -405,11 +404,11 @@ def load_communities(
         extractions.append(ex)
     if missing:
         log.info(
-            "concept graph stale: %d/%d document(s) lack a current extraction (e.g. %s) "
-            "— run `build_concept_graph --apply`; using cosine clustering",
-            len(missing),
-            len(docs),
-            ", ".join(missing[:3]),
+            "concept_graph_stale",
+            missing=len(missing),
+            total=len(docs),
+            examples=", ".join(missing[:3]),
+            hint="run `build_concept_graph --apply`; using cosine clustering",
         )
         return None
 
@@ -430,7 +429,7 @@ def sample_chunks(doc_ids: list[str], *, per_doc: int = WIKI_CHUNK_SAMPLE) -> di
     try:
         coll = client.get_collection(get_collection_name())
     except Exception:
-        log.warning("No baseline collection — run ingest first; wiki summaries will be thin")
+        log.warning("no_baseline_collection", hint="run ingest first; wiki summaries will be thin")
         return {}
 
     out: dict[str, list[str]] = {}
@@ -509,7 +508,7 @@ def summarize_cluster(
         tags = [slugify(str(t)) for t in tags_raw if str(t).strip()][:6]
         return title, summary, tags
     except Exception as e:
-        log.warning("wiki summary failed for a cluster, using fallback: %s", e)
+        log.warning("wiki_summary_failed", error=str(e), hint="using fallback")
         return fallback_title(docs), "", []
 
 

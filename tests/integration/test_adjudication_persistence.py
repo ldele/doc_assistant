@@ -3,7 +3,7 @@
 Exercises the full DB round-trip — record an answer, segment + eager-persist its
 claims as ``pending``, then accept/reject/edit and read the log back — against a
 fresh temp SQLite. No LLM/pipeline; the UI wiring that calls these lives in the
-Chainlit shell.
+app shell (CLI / API / Tauri).
 """
 
 from __future__ import annotations

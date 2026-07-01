@@ -14,17 +14,24 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /app
 
 # Copy dependency manifest first, install separately.
-# Dependencies only reinstall when pyproject.toml changes
+# Dependencies only reinstall when pyproject.toml changes.
+# The CPU torch extra: a container has no host GPU, and the API needs torch for the
+# embedder + reranker (the `just api` dev recipe selects a torch extra the same way).
 COPY pyproject.toml README.md ./
 COPY src/ ./src/
-RUN pip install --no-cache-dir -e .
+RUN pip install --no-cache-dir -e ".[cpu]"
 
 # Copy the rest of the application
 COPY apps/ ./apps/
 COPY scripts/ ./scripts/
 
-# Chainlit listens on 8000 by default
-EXPOSE 8000
+# The FastAPI backend (PR-M2/M4). The Tauri desktop app is the GUI and runs on the host;
+# the container serves the headless API the same backend the desktop sidecar bundles.
+EXPOSE 8001
 
-# --host 0.0.0.0 makes it accessible from outside the container.
-CMD ["chainlit", "run", "apps/chainlit_app.py", "--host", "0.0.0.0", "--port", "8000"]
+# Bind 0.0.0.0 INSIDE the container so the host can reach it (the app defaults to
+# 127.0.0.1 — safe-by-default — and exposes DOC_API_HOST to opt into 0.0.0.0 here).
+ENV DOC_API_HOST=0.0.0.0 DOC_API_PORT=8001
+HEALTHCHECK --interval=30s --timeout=5s --start-period=120s --retries=3 \
+    CMD curl -fsS http://localhost:8001/api/health || exit 1
+CMD ["python", "-m", "apps.api"]

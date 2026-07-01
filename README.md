@@ -43,15 +43,15 @@ This implements established RAG techniques rather than new algorithms; what it c
 | LLM | Claude (API) or Llama 3 / Mistral (local via Ollama) |
 | Orchestration | LangChain |
 | Document store | SQLite (via SQLAlchemy) |
-| UI | Chainlit (web) + CLI |
+| UI | Tauri desktop app (Svelte 5 + Vite over a FastAPI/SSE backend) + CLI |
 | PDF / table extraction | PyMuPDF4LLM (full-text, default); Marker for high-fidelity tables, run isolated out-of-process on caption-detected table pages (chosen by measurement) — a separate idempotent post-ingest pass; tables enter retrieval on the next ingest |
 
 ## Setup
 
 ```bash
 # Prerequisites: Python 3.12, uv
-# Note: Python 3.14 works for development/testing but Chainlit
-# requires 3.12 at runtime (anyio event loop incompatibility).
+# Note: use Python 3.12 — 3.14 is not yet supported at runtime (some native
+# dependencies aren't cp314-stable; see .claude/KNOWN_ISSUES.md KI-2).
 git clone <your-repo-url> doc-assistant
 cd doc-assistant
 
@@ -112,8 +112,9 @@ cp ~/your-papers/*.pdf data/sources/
 # Build the index (one-time, then incremental)
 uv run python -m doc_assistant.ingest
 
-# Launch the chat UI
-uv run chainlit run apps/chainlit_app.py
+# Launch the desktop app (Tauri + Svelte over the FastAPI backend)
+just api                                        # backend on 127.0.0.1:8001
+cd apps/desktop && npm install && npm run dev    # dev UI (or: npx tauri dev for a native window)
 
 # Or use the CLI
 uv run python apps/cli.py
@@ -124,6 +125,19 @@ To rebuild from scratch (after changing chunking strategy, for example):
 ```bash
 uv run python -m doc_assistant.ingest --rebuild
 ```
+
+### Move your library between machines
+
+`data/sources/` is gitignored (your library is yours), so cloning the repo elsewhere doesn't carry your documents. Keep a small **sources manifest** — the private analog of the public-corpus downloader — to reconstitute them:
+
+```bash
+uv run python -m scripts.sync_sources               # record data/sources/ -> data/sources_manifest.yaml
+# fill in the `url:` for any file not auto-matched, then copy the manifest to the other machine out-of-band
+uv run python -m scripts.sync_sources --download    # on the other machine: re-fetch into data/sources/
+uv run python -m scripts.sync_sources --verify-only # checksum what's on disk against the manifest
+```
+
+The manifest pins each file by SHA-256 + size plus the URL it came from; files matching the public corpus get their URL filled in automatically. It's **gitignored** — share it out-of-band, never commit it (the repo is public).
 
 ### Citation graph + similarity edges (Phase 4)
 
@@ -207,7 +221,7 @@ docker compose run --rm doc-assistant python -m doc_assistant.ingest
 docker compose up
 ```
 
-Open `http://localhost:8000`.
+The container serves the **headless FastAPI backend** on `http://localhost:8001` (check `http://localhost:8001/api/health`) — the same backend the desktop app's sidecar bundles. The GUI is the Tauri desktop app, which runs on the host (see Usage), not in the container; Docker is for running the API/server. Point a client (or the desktop app's backend URL) at `:8001`.
 
 For local LLM via Ollama, set `LLM_MODE=local` in `.env`. On Linux, ensure Ollama listens on all interfaces: `OLLAMA_HOST=0.0.0.0 ollama serve`.
 
@@ -292,11 +306,11 @@ uv run python -m scripts.sweep_chunking --cases tests/eval/cases.public.yaml --r
 
 ## Status
 
-**Phase 6 in progress.** Shipped: core RAG (Phase 1); measured quality + eval harness (Phases 2 & 5); document store + library UI (Phase 3); citation graph + doc-similarity edges (Phase 4); the research-integrity layer — provenance card, heuristic confidence signals, and a separate-context LLM reviewer agent; and a provider-agnostic LLM layer (Claude API *or* fully-local Ollama for analysis, reviewer, and judge). **365 tests · ruff / mypy --strict / bandit clean.**
+**Phase 6 + 7 in progress.** Shipped: core RAG (Phase 1); measured quality + eval harness (Phases 2 & 5); document store + library UI (Phase 3); citation graph + doc-similarity edges (Phase 4); the research-integrity layer — provenance card, heuristic confidence signals, and a separate-context LLM reviewer agent; and a provider-agnostic LLM layer (Claude API *or* fully-local Ollama for analysis, reviewer, and judge). **~623 tests · ruff / mypy --strict / bandit clean.**
 
 `bge-base` is the default embedder — it performed better in our comparisons, though the better choice depends on the corpus ([`docs/decisions.md`](docs/decisions.md) → Phase 5 / Feature 3; re-checked on the public corpus, see [Benchmarks](#benchmarks)).
 
-**Recently shipped:** Marker table extraction (isolated out-of-process sidecar, gated to caption-detected table pages — engine chosen by measurement), dual-layer evidence/interpretation answers, and the provider-agnostic LLM layer ([`docs/specs/llm-provider-isolation.md`](docs/specs/llm-provider-isolation.md)). **Next:** the knowledge-currency layer ([`docs/specs/feature-7d-knowledge-currency.md`](docs/specs/feature-7d-knowledge-currency.md)) and figure region detection (Feature 4b). Full rationale and roadmap: [`docs/decisions.md`](docs/decisions.md), [`docs/ROADMAP.md`](docs/ROADMAP.md).
+**Recently shipped:** Marker table extraction (isolated out-of-process sidecar, gated to caption-detected table pages — engine chosen by measurement), dual-layer evidence/interpretation answers, the provider-agnostic LLM layer ([`docs/specs/llm-provider-isolation.md`](docs/specs/llm-provider-isolation.md)), figure region detection + VLM description (Feature 4b/4c), the knowledge-currency layer ([`docs/specs/feature-7d-knowledge-currency.md`](docs/specs/feature-7d-knowledge-currency.md)), and the Tauri desktop shell that replaced Chainlit (ADR-002, M0–M5). **Next:** the gap-detection layer ([`docs/decisions/ADR-004-gap-detection-layer.md`](docs/decisions/ADR-004-gap-detection-layer.md) · [`docs/specs/feature-gap-detection.md`](docs/specs/feature-gap-detection.md)) — designed, blocked on RG-001. Full rationale and roadmap: [`docs/decisions.md`](docs/decisions.md), [`docs/ROADMAP.md`](docs/ROADMAP.md).
 
 A 60-second walkthrough for first-time readers: [`docs/DEMO.md`](docs/DEMO.md).
 

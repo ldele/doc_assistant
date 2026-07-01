@@ -14,7 +14,12 @@ from sqlalchemy import create_engine, func, select
 from sqlalchemy.orm import sessionmaker
 
 import doc_assistant.db.session as session_mod
-from doc_assistant.concept_skeleton import list_keyword_candidates, promote_keyword
+from doc_assistant.concept_skeleton import (
+    add_concept,
+    list_keyword_candidates,
+    load_glossary,
+    promote_keyword,
+)
 from doc_assistant.db.models import Base, Concept, ConceptAlias, Keyword
 from doc_assistant.db.session import session_scope
 
@@ -91,3 +96,42 @@ def test_candidate_marks_promoted_after_promote(env: Path) -> None:
     by_name = {c.name: c for c in list_keyword_candidates()}
     assert by_name["RAG"].promoted is True
     assert by_name["BM25"].promoted is False
+
+
+def test_add_concept_creates_curated_glossary_entry(env: Path) -> None:
+    add_concept("BM25", definition="A sparse lexical ranker.", aliases=["Okapi BM25"])
+    with session_scope() as session:
+        c = session.execute(select(Concept)).scalar_one()
+        assert c.label == "BM25"
+        assert c.source == "manual"  # directly curated, not promoted from a keyword
+        assert c.definition == "A sparse lexical ranker."
+        aliases = {a.alias for a in session.execute(select(ConceptAlias)).scalars()}
+    # The label is an implicit surface form; only extra synonyms are stored as aliases.
+    assert aliases == {"Okapi BM25"}
+
+
+def test_add_concept_idempotent_updates_definition_and_unions_aliases(env: Path) -> None:
+    first = add_concept("dense retrieval", aliases=["DPR"])
+    second = add_concept(
+        "dense retrieval",
+        definition="Embedding-based retrieval.",
+        aliases=["dense passage retrieval"],
+    )
+    assert first == second  # get-or-create by label
+    assert _count(Concept) == 1
+    with session_scope() as session:
+        c = session.execute(select(Concept)).scalar_one()
+        assert c.definition == "Embedding-based retrieval."  # filled on re-add
+        aliases = {a.alias for a in session.execute(select(ConceptAlias)).scalars()}
+    assert aliases == {"DPR", "dense passage retrieval"}  # union, never removed
+
+
+def test_load_glossary_returns_sorted_entries(env: Path) -> None:
+    add_concept("re-ranking", definition="Reorder candidates.", aliases=["reranking"])
+    add_concept("BM25")
+    glossary = load_glossary()
+    assert [e.label for e in glossary] == ["BM25", "re-ranking"]  # sorted by label (casefold)
+    assert glossary[0].definition is None
+    rr = glossary[1]
+    assert rr.definition == "Reorder candidates."
+    assert rr.aliases == ["reranking"]

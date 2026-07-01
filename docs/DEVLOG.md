@@ -3073,3 +3073,37 @@ corpus, where mid-DF terms are the shared domain concepts; it just can't be vali
 before any threshold lock / marking the graph usable. Secondary: a semantic/LLM or curated-domain-stopword
 vocabulary gate (deferred, un-tuned). Node B + KI-7 retirement unchanged. On-disk: 60 corpus-band concepts +
 skeleton @K=2 (gitignored). **Uncommitted on `main` — branch off before committing; awaiting review (cpc §13).**
+
+---
+## Session: 2026-07-01 (cont.) — Curated glossary (#1) + semantic concept layer (#2), Claude Code
+
+**Context:** the RG-001 runs proved a *usable* concept graph needs a **curated** vocabulary, not an auto-selected
+one — demonstrated: 10 hand-picked IR concepts on the public corpus give a 10-node / 17-edge graph whose every
+edge is a correct relationship (`re-ranking–MS MARCO`, `hard negatives–BM25`, `contrastive learning–dense
+retrieval`) vs the 60-concept auto-blob (83% density, generic words). So built the two curation tools.
+
+**#1 — glossary curation (`seed_concepts --add`).** A concept is now a glossary entry: label + **definition** +
+aliases. New `concepts.definition` column (additive migration, `_ADDITIVE_COLUMNS`); `concept_skeleton.add_concept`
+(get-or-create by label, updates definition, unions aliases; the label stays an implicit surface form so it is not
+stored as a self-alias) + `load_glossary`; `seed_concepts.py` gains `--add`/`--alias`/`--define`/`--glossary`. The
+direct-curation counterpart to `--promote` (which needs a mined `Keyword`). +4 tests. Fixes the "just curate a
+few" workflow — no `--promote-all`.
+
+**#2 — semantic concept layer (`concept_semantics.py` + `scripts/suggest_concepts.py`).** Two capabilities that
+ground vocabulary in *meaning*: (a) **title+abstract candidate extraction** — a paper's title+abstract is an
+author-curated, boilerplate-free concept summary; `--from-abstracts` surfaces the real concepts (DPR → "passage
+retrieval / dense / open-domain question answering", vs full-text corpus-band's "consider/introduce/benchmark").
+Papers only — `extract_abstract` returns None for books/notes, caller falls back. (b) **concept↔concept distance**
+— the first in the project (doc↔doc lived in `doc_vectors`): embed label+definition, cosine, `--near` flags
+near-duplicate concepts to merge. +8 tests. Config `ABSTRACT_CONCEPTS_TOP_K`, `CONCEPT_MERGE_COSINE`.
+
+**Why (answers the design questions):** *Do we measure concept/keyword distance?* — not before; now we do (#2b).
+*Glossary?* — yes, that is #1 (definitions + synonyms). *Concepts from abstract+title for papers?* — yes, works
+well (#2a); the "all chunks relate to title+abstract" assumption holds for papers and is the right concept source.
+
+**Findings / opens:** bge (general embedder) compresses same-domain concepts to cosine ~0.6–0.71, so an absolute
+merge threshold is embedder-dependent — the already-registered **SPECTER2** (academic embedder) or a *relative*
+threshold is the follow-up (same saturation lesson as KI-7). Not tuned here. The full auto→semantic pipeline
+(rank full-text candidates by abstract-anchor similarity; per-folder scoping for mixed libraries) is the next
+increment. **Gate green:** ruff / format / `mypy --strict src` (54 files) / pytest. **Uncommitted on
+`feat/keyword-concept-graph` — staged, awaiting review (cpc §13).**

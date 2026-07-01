@@ -444,6 +444,9 @@ class Concept(Base):
     )
     # "keyword" (promoted from a Keyword candidate) | "manual".
     source: Mapped[str] = mapped_column(String, nullable=False, default="manual")
+    # Curated glossary gloss — a short definition of the concept. Optional; feeds the
+    # semantic-distance layer (embed the definition, richer than the bare label).
+    definition: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
 
     aliases: Mapped[list["ConceptAlias"]] = relationship(

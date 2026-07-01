@@ -122,22 +122,22 @@ def nearest_pairs(
 # --------------------------------------------------------------------------- #
 
 
-def embed_texts(texts: list[str]) -> list[list[float]]:
-    """Embed strings with the active retrieval model (bge-base). Loads the model — not free."""
+def embed_texts(texts: list[str], *, model: str | None = None) -> list[list[float]]:
+    """Embed strings with an embedding model (default: the active model, bge-base).
+
+    ``model`` selects a registry key — e.g. ``"specter2"``, the academic embedder that separates
+    same-domain scientific concepts better than the general bge. Loads the model — not free.
+    """
     from doc_assistant.embeddings import get_embeddings
 
-    vectors = get_embeddings().embed_documents(texts)
+    vectors = get_embeddings(model).embed_documents(texts)
     return [[float(x) for x in vec] for vec in vectors]
 
 
-def suggest_from_abstracts(
-    document_ids: list[str] | None = None, *, top_k: int
-) -> list[tuple[str, str, list[str]]]:
-    """Per-document ``(document_id, filename, candidate concepts)`` from title + abstract.
-
-    Papers only — a document with no extractable abstract yields ``[]`` candidates (the caller
-    falls back to full-text keywords / manual curation). Zero LLM; no embedding needed.
-    """
+def _load_paper_docs(
+    document_ids: list[str] | None = None,
+) -> list[tuple[str, str, str | None, str | None]]:
+    """Load ``(document_id, filename, title, cached_markdown)`` for non-archived docs (KI-5)."""
     from sqlalchemy import select
 
     from doc_assistant.db.models import Document
@@ -148,13 +148,22 @@ def suggest_from_abstracts(
         stmt = select(Document).where(Document.is_archived.is_(False))
         if document_ids is not None:
             stmt = stmt.where(Document.id.in_(document_ids))
-        rows = [
+        return [
             (d.id, d.filename, d.title, _find_cached_text(d.source_cache, d.source_original))
             for d in session.execute(stmt).scalars()
         ]
 
+
+def suggest_from_abstracts(
+    document_ids: list[str] | None = None, *, top_k: int
+) -> list[tuple[str, str, list[str]]]:
+    """Per-document ``(document_id, filename, candidate concepts)`` from title + abstract.
+
+    Papers only — a document with no extractable abstract yields ``[]`` candidates (the caller
+    falls back to full-text keywords / manual curation). Zero LLM; no embedding needed.
+    """
     out: list[tuple[str, str, list[str]]] = []
-    for doc_id, filename, title, markdown in rows:
+    for doc_id, filename, title, markdown in _load_paper_docs(document_ids):
         abstract = extract_abstract(markdown) if markdown else None
         candidates = abstract_candidates(title, abstract, top_k=top_k)
         if not candidates:
@@ -163,11 +172,66 @@ def suggest_from_abstracts(
     return out
 
 
-def concept_merge_suggestions(*, threshold: float) -> list[ConceptPair]:
+@dataclass(frozen=True)
+class ScoredCandidate:
+    """A full-text candidate term and its cosine to the paper's title+abstract anchor."""
+
+    term: str
+    anchor_cosine: float
+
+
+def anchor_ranked_candidates(
+    document_ids: list[str] | None = None,
+    *,
+    top_k: int,
+    pool_k: int = 80,
+    ngram_max: int = 3,
+    min_chars: int = 3,
+    model: str | None = None,
+) -> list[tuple[str, str, list[ScoredCandidate]]]:
+    """Full-text candidates re-ranked by cosine to the paper's title+abstract *anchor*.
+
+    The unifying step: full-text **recall** (candidates from the whole paper, so a concept the
+    abstract omits is still found) plus abstract **precision** (a candidate far from the paper's
+    topic — generic academic boilerplate — is down-ranked). The pool is the ``pool_k`` most
+    frequent full-text candidates (bounds embedding cost); each is scored by cosine to the
+    ``title + abstract`` anchor. No abstract → title-only anchor; no anchor/pool → ``[]``. Loads
+    the embedder — not free.
+    """
+    out: list[tuple[str, str, list[ScoredCandidate]]] = []
+    for doc_id, filename, title, markdown in _load_paper_docs(document_ids):
+        if not markdown:
+            out.append((doc_id, filename, []))
+            continue
+        abstract = extract_abstract(markdown)
+        anchor = ". ".join(part for part in (title, abstract) if part).strip()
+        terms = candidate_terms(tokenize(markdown), ngram_max=ngram_max, min_chars=min_chars)
+        pool = [term for term, _ in Counter(terms).most_common(pool_k)]
+        if not pool:
+            out.append((doc_id, filename, []))
+            continue
+        if not anchor:
+            # No title/abstract anchor (non-paper) → keep frequency order, mark cosine 0.
+            out.append((doc_id, filename, [ScoredCandidate(t, 0.0) for t in pool[:top_k]]))
+            continue
+        vectors = embed_texts([anchor, *pool], model=model)
+        anchor_vec = vectors[0]
+        scored = [
+            ScoredCandidate(term, _cosine(vectors[i + 1], anchor_vec))
+            for i, term in enumerate(pool)
+        ]
+        scored.sort(key=lambda s: (-s.anchor_cosine, s.term))
+        out.append((doc_id, filename, scored[:top_k]))
+    return out
+
+
+def concept_merge_suggestions(*, threshold: float, model: str | None = None) -> list[ConceptPair]:
     """Embed curated concepts (label + definition) and return near-duplicate pairs to merge.
 
     The first concept↔concept distance in the project. Definitions, when present, enrich the
-    embedding beyond the bare label. Returns ``[]`` for fewer than two concepts.
+    embedding beyond the bare label. ``model`` selects the embedder — ``"specter2"`` (academic)
+    separates same-domain concepts better than the general bge, which compresses them into a narrow
+    cosine band. Returns ``[]`` for fewer than two concepts.
     """
     from doc_assistant.concept_skeleton import load_glossary
 
@@ -176,5 +240,5 @@ def concept_merge_suggestions(*, threshold: float) -> list[ConceptPair]:
         return []
     labels = [e.label for e in entries]
     texts = [f"{e.label}. {e.definition}" if e.definition else e.label for e in entries]
-    vectors = embed_texts(texts)
+    vectors = embed_texts(texts, model=model)
     return nearest_pairs(labels, vectors, threshold=threshold)

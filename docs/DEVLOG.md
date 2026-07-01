@@ -3107,3 +3107,28 @@ threshold is the follow-up (same saturation lesson as KI-7). Not tuned here. The
 (rank full-text candidates by abstract-anchor similarity; per-folder scoping for mixed libraries) is the next
 increment. **Gate green:** ruff / format / `mypy --strict src` (54 files) / pytest. **Uncommitted on
 `feat/keyword-concept-graph` — staged, awaiting review (cpc §13).**
+
+---
+## Session: 2026-07-01 (cont.) — Abstract-anchor ranking + SPECTER2 concept distance, Claude Code
+
+**What:** the two follow-ups to the semantic layer.
+1. **Abstract-anchor ranking (the unified extractor)** — `concept_semantics.anchor_ranked_candidates`: mine a
+   full-text candidate *pool* (top `pool_k` by frequency, bounds embed cost), then re-rank by cosine to the
+   paper's `title + abstract` anchor. Full-text **recall** + abstract **precision**. `_load_paper_docs` extracted
+   + shared with `suggest_from_abstracts`; `ScoredCandidate` carries the anchor cosine; no-abstract → title-only
+   anchor; no anchor/pool → `[]`. CLI `suggest_concepts --anchor-ranked [--pool-k]`. +1 test.
+2. **SPECTER2 concept distance** — `embed_texts(..., model=)` + `concept_merge_suggestions(..., model=)`; new
+   `CONCEPT_EMBED_MODEL` config (default **specter2**, the registered academic embedder) + `suggest_concepts
+   --model`. Fixes bge's same-domain compression.
+
+**Why + measured (public corpus):** anchor-ranking surfaces each paper's real concepts with **no boilerplate** —
+DPR → "open-domain question answering [0.81] / question answering [0.69] / dense [0.61]"; reranking-BERT →
+"passage re-ranking [0.81] / re-ranking [0.72] / re-ranker [0.69]". SPECTER2 vs bge on the 10 curated concepts:
+bge compresses to a flat ~0.77–0.82 band (arbitrary top pair passage-retrieval~RAG); **SPECTER2 spreads it and
+surfaces real relations** — cross-encoder~re-ranking **0.906**, BM25~MS-MARCO **0.904** — so the merge feature is
+functional at the 0.85 default only with SPECTER2 (bge maxed at 0.816 → flagged nothing).
+
+**Opens:** wire anchor-ranked candidates into a promote/dedupe curation flow (candidates → SPECTER2 merge-dedupe →
+`seed_concepts --add`); per-folder concept scoping (`Concept.folder_id` exists) for mixed libraries; a *relative*
+merge threshold. **Gate green:** ruff / format / `mypy --strict src` (54 files) / pytest. **Uncommitted on
+`feat/keyword-concept-graph` — staged, awaiting review (cpc §13).**

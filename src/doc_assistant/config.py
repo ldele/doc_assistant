@@ -446,15 +446,17 @@ CONCEPT_SKELETON_DIR = DATA_PATH / "skeleton"
 
 # Two concepts get a co-occurrence edge only when co-present in at least this many
 # *chunks* (chunk-level, not document-level — Decision 4: doc-level co-occurrence on a
-# same-domain corpus saturates into a meaningless dense graph). PROVISIONAL — the
-# headline density lever; set from the RG-001/008 edge-precision run on the real corpus.
+# same-domain corpus saturates into a meaningless dense graph). VALIDATED by the R5
+# decision run (ADR-008; `tests/eval/baselines/rg001_concept_skeleton_r5_2026-07-02.md`):
+# K=2 gives 21.5% density + clean topic communities on the 76-doc corpus. Headline density lever.
 CONCEPT_SKELETON_MIN_COOCCURRENCE = int(os.getenv("CONCEPT_SKELETON_MIN_COOCCURRENCE", "2"))
 
 # Concept-presence matching primitive (Decision 2 / R2). "boundary" (default) counts only
 # whole-word (alnum-bounded) surface-form occurrences, so "bert" does NOT fire inside
 # "sbert"/"colbert"/"roberta" — the substring inflation that fabricated co-occurrence edges
 # and confounded the RG-008/009 runs. "substring" keeps the original raw str.count behaviour
-# as the A/B lever for the RG-008 comparison. Set the winner from that run.
+# as the A/B lever for the RG-008 comparison. VALIDATED winner = "boundary" (R5 / ADR-008:
+# substring inflated density ~1.7x and halved the provenance-strength median — fabricated edges).
 CONCEPT_SKELETON_PRESENCE_MODE = os.getenv("CONCEPT_SKELETON_PRESENCE_MODE", "boundary")
 
 # Louvain is randomized; a fixed seed makes community assignment reproducible so the

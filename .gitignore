@@ -27,8 +27,11 @@ CLAUDE.local.md
 .claude/*
 !.claude/CONTEXT.md
 !.claude/KNOWN_ISSUES.md
+# Rotated-out baton entries (cpc rotation, ADR-018 rule 11) — local-only, like the baton itself.
+docs/archive/SESSION-archive-*.md
 # Local-only convention gates that depend on a private tooling repo — never shared (see ADR-001).
 .pre-commit-config.cpc.yaml
+tools/conventions/
 
 # Runtime data
 data/cache/

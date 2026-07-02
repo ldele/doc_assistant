@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-06-26 · class: living -->
+<!-- status: active · updated: 2026-07-02 · class: living -->
 
 # KNOWN ISSUES
 

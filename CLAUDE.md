@@ -34,11 +34,12 @@ Tracking: `.claude/CONTEXT.md` + `.claude/KNOWN_ISSUES.md` are committed; `.clau
   data is an idempotent sidecar module + CLI runner, never mutates the chunk store.
 - **Locked settings** (TOP_K, CANDIDATE_K, chunk sizes, retrieval weights, …) change only via an
   eval-harness experiment (`--repeat`, beat the control, record a baseline). Table: `.claude/CONTEXT.md`.
-- `structlog` only, no `print()` in `src/` *(currently violated — `.claude/KNOWN_ISSUES.md`)*;
+- `structlog` only, no `print()` in `src/` (enforced since ADR-003; KI-1 closed);
   exceptions chain (`raise X from e`); no secrets in code (`.env` gitignored).
 - Engineering preferences (design principles + working protocol) live in the cpc **CONVENTIONS**
-  §12/§13 — read there, don't restate. Three are gate-enforced (`cpc-push-guard`, `cpc-coupling-check`,
-  `cpc-test-api-check`); plus the doc gates (`cpc-docs-check`, `cpc-init-check`).
+  §12/§13 — read there, don't restate. The cpc gates run **locally only** from the vendored,
+  gitignored `tools/conventions/` via `.pre-commit-config.cpc.yaml` — never in CI (cpc is private,
+  this repo is public; ADR-001/ADR-007). Wiring + commands: `.claude/CONTEXT.md`.
 
 ## Tool split
 
@@ -51,9 +52,11 @@ When both could do it: stay in the tool that's already open.
 
 ## Handoff protocol
 
-End of any non-trivial session: **append** a baton entry to `.claude/SESSION.md` — active tool, what's
-done, which tool picks up, next action by file (file:line where possible). Append-only; correct with a
-new entry, never rewrite old ones.
+End of any non-trivial session: add a baton entry to `.claude/SESSION.md` — **newest on top**, heading
+`## YYYY-MM-DD — <Code|Cowork> — <topic>` — active tool, what's done, which tool picks up, next action
+by file (file:line where possible). Append-only; correct with a new entry, never rewrite old ones.
+Cap 10 entries (cpc ADR-018): rotate older entries verbatim to docs/archive/SESSION-archive-NNN.md
+(local-only, like the baton).
 
 ## Build protocol (Claude Code)
 

@@ -1,8 +1,11 @@
 # Spec — Remediation plan R1–R7: review findings → evaluate + fix (2026-07)
 
-**Status:** 🔒 PLANNED, NOT BUILT (2026-07-02, Claude Code review session). Seven one-session
-increments from the 2026-07-02 direction + algorithmic review. Each increment is one PR
-(build protocol: one PR per session, never bundle). Execution owner: Claude Code.
+**Status:** ✅ **COMPLETE — all of R1–R7 landed (2026-07-02).** R1/R2/R3/R7 committed; R4 committed
+(`1374ed5`); R5 (decision run, **PASS** — ADR-008) + R6 (BM25 preprocess + hygiene) built and staged.
+Seven one-session increments from the 2026-07-02 direction + algorithmic review, each one PR
+(build protocol: one PR per session, never bundle). Execution owner: Claude Code. Per-increment
+status lines below. Follow-ups spun off: Node B / PR-B (unblocked by R5) and the `--bm25-weight`
+0.4/0.6 sweep (unblocked by R6).
 **Sources:** the review conversation (2026-07-02); `tests/eval/baselines/rg001_concept_skeleton_2026-07-01.md`
 (runs a–c); `tests/eval/baselines/rg001_concept_skeleton_multidomain_2026-07-01.md`; KI-7 / KI-8 / KI-14
 (`.claude/KNOWN_ISSUES.md`); RG-001/008/009 (`.claude/RIGOR_TODO.md`).
@@ -215,6 +218,20 @@ serialization round-trip; byte-identical rebuild on identical inputs.
 
 ## R5 — The decision run: multi-domain revalidation (RG-001/008/009) + gap wizard-of-oz
 
+**Status (2026-07-02):** ✅ **DONE — PASS** (ADR-008; baseline `tests/eval/baselines/
+rg001_concept_skeleton_r5_2026-07-02.md`). Ran on the **main corpus** (76 docs; the dedicated
+`data_multidomain/` home + manifest are absent on this box — user decision) — which is itself a two-cluster
+IR+neuroscience mix, so a naturally partial similarity graph. Step 1 enrichment done ($0): citations (0
+resolved — curated reading set), doc-vectors (760 sim edges), keyword candidates (60). User signed off a
+**26-concept / 17-alias** vocabulary. Sweep (boundary): K=2 → **density 21.5%, 3 communities mapping to
+retrieval / pose-vision / connectome, provenance-strength median 0.52 (spreads — R4 discriminates)**;
+substring A/B inflated density to 36% + halved the strength median (confirms R2). Presence recall 26/26.
+Gap wizard-of-oz (ADR-004 Tier-1): 0 isolated / 3 single-source / 1 thin bridge / 1 under-connected — ≥3
+actionable signals on a healthy (degree 1→20) graph. **Outcome:** `MIN_COOCCURRENCE=2` + `boundary`
+promoted provisional → **validated** (config comments updated; values unchanged); **RG-008/009 closed**,
+**ADR-004 Tier-1 unblocked**, **Node B (PR-B) unblocked**. Caveat: a multi-domain re-run remains a stronger
+(optional) stress test, not required for the PASS.
+
 **Not a code PR** — a measurement session. Precondition: R1–R3 landed (R4 recommended). Host box with the
 multi-domain data home (`DOC_DATA_DIR` pointed at it; the 2026-07-01 runs used a gitignored
 `data_multidomain/`, 24 arXiv papers across 6 domains — recreate from its `manifest.json` if absent). $0.
@@ -243,6 +260,18 @@ multi-domain data home (`DOC_DATA_DIR` pointed at it; the 2026-07-01 runs used a
 ---
 
 ## R6 — Core retrieval: BM25 preprocessing + pipeline hygiene (eval-gated)
+
+**Status (2026-07-02):** ✅ **DONE (staged, not committed).** All four fixes landed: (1)
+`preprocess_func=keywords.tokenize` on `BM25Retriever.from_documents` (casefold + tech-token); (2) candidate
+dedup on a full-content SHA-256 (was `doc_hash + 50-char prefix`); (3) `expand_query` non-list JSON →
+`variations=[]` (was `[query]`, double-running the query); (4) parent_text invariant probed on the PC chunker.
++6 guard tests; gate green (**724 passed / 1 skipped**). **Eval-gate (fix 1):** retrieval-only recall@K over
+`cases.yaml` (private benchmark — the public corpus is download-only + absent here) against the current `data/`
+store, `$0`/deterministic/`USE_MULTI_QUERY=false`. Control (default split) vs treatment (tokenize): **recall@5
+0.8775 / recall@10 0.9069 — identical, zero regression** → ships per the "matches control" rule. Honest
+reading: the benchmark is reranker-dominated, so the fix un-handicaps the sparse arm (proven by the
+deterministic unit test) without moving final top-K; it is the prerequisite for the (separate follow-up)
+0.4/0.6 weight sweep. Baseline: `tests/eval/baselines/bm25_preprocess_2026-07-02.md`.
 
 **Why:** the BM25 arm is handicapped — `BM25Retriever.from_documents(...)`
 ([pipeline.py:115](../../src/doc_assistant/pipeline.py)) uses LangChain's default `preprocess_func`, verified

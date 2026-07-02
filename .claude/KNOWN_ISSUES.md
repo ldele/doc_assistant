@@ -100,6 +100,14 @@ Migrated from the old `CLAUDE.md` / `README` runtime-quirk notes on 2026-06-20 (
   live 7d marker chips in a chat turn — is now gated OFF by default (`EPISTEMICS_MARKERS_ENABLED=false`,
   `docs/decisions/ADR-005-epistemics-markers-default-off.md`), so the app no longer surfaces KI-7 noise under
   the integrity banner. Full retirement still owed with Node B; the flag flips back on then.
+- **R5 decision run (2026-07-02, PASS — ADR-008):** the RG-001/008/009 validation the redesign was
+  waiting on is **done**. On the main corpus (76 docs; the multi-domain home is absent) the deterministic
+  skeleton at the validated `MIN_COOCCURRENCE=2` + `boundary` gives 21.5% density, clean retrieval/pose/
+  connectome communities, a spread provenance-strength distribution (R4 discriminates), and a healthy
+  ADR-004 Tier-1 gap layer. **RG-008/009 closed; ADR-004 Tier-1 unblocked; Node B (PR-B) unblocked** — the
+  confined-LLM stance pass + the eventual retirement of the superseded `concept_graph.py` are now the live
+  next steps (KI-7 stays OPEN until that connected re-point/retirement lands). Baseline:
+  `tests/eval/baselines/rg001_concept_skeleton_r5_2026-07-02.md`.
 - **Pointer (add):** also `docs/decisions/ADR-004-gap-detection-layer.md` + `docs/specs/feature-gap-detection.md`.
 
 ## KI-8 — PC→baseline marker mapping (PR-M1) is coarse at parent boundaries — OPEN (advisory, fail-safe)

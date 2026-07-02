@@ -52,9 +52,7 @@ def test_r4_strength_json_added_to_preexisting_concept_edges(tmp_path: Path) -> 
         }
 
         _apply_additive_columns(engine)
-        assert "strength_json" in {
-            c["name"] for c in inspect(engine).get_columns("concept_edges")
-        }
+        assert "strength_json" in {c["name"] for c in inspect(engine).get_columns("concept_edges")}
 
         _apply_additive_columns(engine)  # idempotent second pass
     finally:

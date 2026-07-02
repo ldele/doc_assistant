@@ -481,8 +481,10 @@ class ConceptEdge(Base):
     Dropped + rebuilt on every `build_concept_skeleton` run (Enrichment-Layer
     Pattern). `provenance_json` is the JSON provenance set ⊆ {cooccurrence, citation,
     similarity, llm_relation}; the edge is KEPT and ranked by `weight`, never dropped
-    for lacking an LLM stance (Decision 5). `relation` / `stance_json` are the deferred
-    Node-B LLM annotation — null after the deterministic Node-A build.
+    for lacking an LLM stance (Decision 5). `strength_json` (R4) is the graded per-token
+    provenance strength `{token: ratio}` (citation/similarity only; null when no doc-pair
+    token applies). `relation` / `stance_json` are the deferred Node-B LLM annotation —
+    null after the deterministic Node-A build.
     """
 
     __tablename__ = "concept_edges"
@@ -496,6 +498,8 @@ class ConceptEdge(Base):
     )
     # JSON list ⊆ ("cooccurrence", "citation", "similarity", "llm_relation").
     provenance_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
+    # R4: JSON {token: strength ratio} for graded doc-pair provenance; null when none.
+    strength_json: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
     weight: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     n_cooccurrence_chunks: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     # Node B (deferred): the LLM relation verb + per-document stance.

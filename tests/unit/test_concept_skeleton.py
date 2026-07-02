@@ -195,7 +195,39 @@ def test_provenance_added_to_an_existing_edge_only() -> None:
     assert simd[0].weight > edges[0].weight
 
 
-# ---- edge weight (Decision 5) ----------------------------------------------
+# ---- graded provenance strength (R4 — ratio, not boolean) ------------------
+
+
+def test_provenance_strength_is_ratio_on_a_partial_graph() -> None:
+    # a,b co-occur; both present in d1,d2,d3. Only d1<->d2 are similar → a partial graph.
+    edge = SkeletonEdge("a", "b", frozenset({"cooccurrence"}), 1.0, 4)
+    doc_index = {"a": {"d1", "d2", "d3"}, "b": {"d1", "d2", "d3"}}
+    out = add_similarity_provenance([edge], [("d1", "d2")], doc_index)
+    e = out[0]
+    assert e.provenance == frozenset({"cooccurrence", "similarity"})  # token kept (strength>0)
+    # 6 ordered candidate pairs among {d1,d2,d3}; 2 linked (d1->d2, d2->d1) → 2/6.
+    assert dict(e.provenance_strength)["similarity"] == pytest.approx(1 / 3, abs=1e-6)
+
+
+def test_provenance_strength_saturated_graph_is_one() -> None:
+    # Every candidate endpoint-doc pair is linked → strength pins at 1.0 (the honest
+    # "no discrimination on a saturated graph" case; R4 payoff is on partial graphs).
+    edge = SkeletonEdge("a", "b", frozenset({"cooccurrence"}), 1.0, 2)
+    doc_index = {"a": {"d1", "d2"}, "b": {"d1", "d2"}}
+    out = add_citation_provenance([edge], [("d1", "d2")], doc_index)
+    assert dict(out[0].provenance_strength)["citation"] == 1.0
+
+
+def test_provenance_strength_absent_when_token_not_added() -> None:
+    # Concepts share only one doc → no da≠db candidate pair → no token, no strength.
+    edge = SkeletonEdge("a", "b", frozenset({"cooccurrence"}), 1.0, 1)
+    doc_index = {"a": {"d1"}, "b": {"d1"}}
+    out = add_citation_provenance([edge], [("d1", "d2")], doc_index)
+    assert out[0].provenance == frozenset({"cooccurrence"})  # unchanged
+    assert out[0].provenance_strength == ()  # co-occurrence carries no strength
+
+
+# ---- edge weight (Decision 5 + R4 graded tiebreak) -------------------------
 
 
 def test_edge_weight_deterministic_and_ranks_multiprovenance_higher() -> None:
@@ -208,6 +240,23 @@ def test_edge_weight_deterministic_and_ranks_multiprovenance_higher() -> None:
     assert edge_weight(frozenset({"cooccurrence"}), 10) > edge_weight(
         frozenset({"cooccurrence"}), 1
     )
+
+
+def test_edge_weight_strength_refines_tiebreak_within_band() -> None:
+    # Same tokens + same co-occurrence count → the graded strength breaks the tie...
+    prov = frozenset({"cooccurrence", "citation"})
+    strong = edge_weight(prov, 3, (("citation", 1.0),))
+    weak = edge_weight(prov, 3, (("citation", 0.1),))
+    assert strong > weak
+    assert weak >= 2.0 and strong < 3.0  # ...but both stay inside the 2-token band
+
+
+def test_edge_weight_token_count_dominates_strength() -> None:
+    # The locked invariant: a co-occurrence-only edge, even with a huge co-occurrence count,
+    # never outranks a 2-token edge with the weakest possible strength.
+    single = edge_weight(frozenset({"cooccurrence"}), 10_000)
+    multi = edge_weight(frozenset({"cooccurrence", "citation"}), 1, (("citation", 0.0),))
+    assert single < 2.0 <= multi
 
 
 # ---- serialisation round-trip (Decision 7 carry-over) ----------------------
@@ -226,6 +275,7 @@ def test_skeleton_dict_roundtrip_is_exact() -> None:
             frozenset({"cooccurrence", "citation"}),
             2.5,
             3,
+            provenance_strength=(("citation", 0.4),),
             stance_by_doc=(("d1", "supports"),),
             relation="uses",
         )
@@ -235,6 +285,7 @@ def test_skeleton_dict_roundtrip_is_exact() -> None:
 
     assert skeleton_to_dict(back) == skeleton_to_dict(sk)
     assert back.edges[0].provenance == frozenset({"cooccurrence", "citation"})
+    assert back.edges[0].provenance_strength == (("citation", 0.4),)  # R4 round-trips exactly
     assert back.edges[0].stance_by_doc == (("d1", "supports"),)
     assert back.edges[0].relation == "uses"
 

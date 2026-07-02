@@ -177,6 +177,16 @@ Indicative acceptance (pre-registered): the multi-domain top-60 contains recogni
 
 ## R4 — Graded provenance strength (ratio, not boolean)
 
+**Status (2026-07-02):** ✅ code + guard tests BUILT (staged, not committed). `provenance_strength`
+(sorted `(token, ratio)` tuple, hashable → frozen edge stays byte-stable) on `SkeletonEdge`;
+`_add_provenance` computes `|linked ∩ candidate pairs| / |candidate pairs|` per token and keeps it when
+`> 0` (token membership identical to the old boolean). `edge_weight` splits the fractional tiebreak into
+`0.5·mean(strengths) + 0.5·(1 − 1/(1+cooc))` — the multi-token-beats-single invariant is preserved (guard
+test) and the sum stays `< 1`. Round-tripped both serialization directions + folded into `_graph_version`;
+persisted via an additive `strength_json` column on `concept_edges` (+ `_ADDITIVE_COLUMNS` migration, guard
+test). +6 tests; gate green (**718 passed / 1 skipped**). The saturated toy graph pins every strength at
+`1.0` as predicted; the partial-graph spread is the R5 measurement.
+
 **Why:** `_add_provenance` ([concept_skeleton.py:244](../../src/doc_assistant/concept_skeleton.py), any-pair
 test at ~line 269) asks "does *any* doc containing A link to *any* doc containing B?" — measured
 non-discriminating (run (a): similarity 100%, citation ~88%). A **ratio** stays deterministic and becomes a

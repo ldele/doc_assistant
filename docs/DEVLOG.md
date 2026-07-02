@@ -3132,3 +3132,37 @@ functional at the 0.85 default only with SPECTER2 (bge maxed at 0.816 → flagge
 `seed_concepts --add`); per-folder concept scoping (`Concept.folder_id` exists) for mixed libraries; a *relative*
 merge threshold. **Gate green:** ruff / format / `mypy --strict src` (54 files) / pytest. **Uncommitted on
 `feat/keyword-concept-graph` — staged, awaiting review (cpc §13).**
+
+---
+## Session: 2026-07-02 — App review (direction + algorithms) → remediation plan R1–R7, Claude Code
+
+**What:** full review of the app against the original charter (direction alignment) + an algorithmic review
+of the branch modules and the core pipeline; findings turned into a seven-increment remediation plan —
+**`docs/specs/remediation-plan-2026-07.md`** (new) + R1–R7 rows in the ROADMAP PR table. Docs only; no code
+changed. Findings, condensed: direction remains aligned (the redesign moved *toward* the project ethos) but
+three method-level confounds invalidate parts of the 2026-07-01 validation runs — KI-14 placeholder noise
+(also polluting the RAG chunk store), substring presence inflating co-occurrence edges (BERT→SBERT), DF-only
+keyword scoring (fails by construction on both corpora; the literature fix is reference-corpus contrast +
+C-value). Plus: the BM25 arm runs LangChain's default `text.split()` preprocessing (case-sensitive,
+punctuation attached — verified in the installed package); candidate dedup keys on `doc_hash + 50-char
+prefix` (collision-prone); `expand_query` double-runs the query on non-list JSON; the live 7d marker chips
+surface superseded-graph (KI-7) data through the KI-8 containment join — the one finding working against the
+integrity-layer promise.
+
+**Why:** the RG-001/008/009 verdicts ("corpus is the blocker" → "method is the deeper gate") were honest but
+confounded on three axes; R1–R4 remove the confounds deterministically ($0) so R5 can be the clean go/no-go
+on the edge model + gap layer, with a pre-registered wizard-of-oz check that the gap signals are worth acting
+on *before* more vocabulary tooling. R6/R7 are independent quick wins in the core answer path and product
+trust. Key execution detail baked into R1: `--rebuild` does **not** re-extract (`load_or_extract` trusts
+mtime; the cache is the hash source), so the KI-14 fix needs strip-at-extract **plus** an idempotent
+cache-normalization runner; the changed content hashes then drive per-doc re-index on an ordinary ingest.
+
+**Rejected:** invoking heavier planning machinery (charter/sprints) — the PR table + one spec file is the
+house pattern (cf. `concept-graph-redesign.md`); tuning any keyword/threshold parameter as part of *this*
+plan — every R-increment pre-registers its acceptance bands and defers locks to measured runs.
+
+**Opens:** execute R1 first (also improves core retrieval immediately); R6's 0.4/0.6 weight sweep stays a
+*separate* experiment after the BM25 preprocess fix lands (the tokenizer moves the weights' optimum).
+**Decided same-session (user):** R3 = Option A (`wordfreq` as the contrastive reference) and R7 = option (a)
+(`EPISTEMICS_MARKERS_ENABLED` kill-switch, default off) — both baked into the plan + ROADMAP rows; the
+executing sessions record the ADRs. **Docs staged on `feat/keyword-concept-graph`, awaiting review (cpc §13).**

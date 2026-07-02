@@ -3420,3 +3420,63 @@ honest expectation); the payoff is the strength *distribution* on the multi-doma
 the R5 decision run. `_PROVENANCE_WEIGHT` is still uniform 1.0/token — per-source weighting is a separate,
 eval-gated lever, not this PR.
 **Nothing committed (cpc §13) — staged for review.**
+
+## Session: 2026-07-02 (cont.) — R5 concept-skeleton decision run: PASS (ADR-008), Claude Code
+
+**What:** remediation-plan §R5 — the go/no-go measurement for the deterministic skeleton (Node A) after
+R1–R4. Ran on the **main corpus** (76 docs; `data_multidomain/` + manifest absent on this box — user chose
+main). Step 1 enrichment ($0/host/deterministic): `extract_citations --apply` (3918 parsed, **0 resolved**
+— a curated reading set, so citation provenance is empty), `compute_doc_vectors --apply` (**760** top-10
+similarity edges — the operative doc-pair token), `extract_keywords --mode contrastive --apply` (60
+candidates, was 0). User signed off a **26-concept / 17-alias** vocabulary (cross-cluster; venue/OCR noise
+excluded), seeded via `add_concept`. Pre-registered acceptance bands **before** the sweep (rigor). Sweep
+`build_concept_skeleton --min-cooccurrence {1..5}`, boundary + one substring A/B; recorded edges / density
+/ communities / isolated / **provenance-strength distribution** / presence recall; then the ADR-004 Tier-1
+gap wizard-of-oz. Deliverables: `tests/eval/baselines/rg001_concept_skeleton_r5_2026-07-02.md` (pre-reg +
+results + verdict), `docs/decisions/ADR-008-concept-skeleton-r5-decision-run.md`, config comments
+provisional→validated (values unchanged), ROADMAP R5 + plan §R5 status.
+**Result — PASS on every band.** K=2/boundary: **density 21.5%**, 3 communities mapping to
+retrieval / pose-vision / connectome (not papers, not noise), **strength median 0.52 over [0.09, 1.0]** (R4
+discriminates on the partial graph — the payoff, on real data), presence recall 26/26. Substring A/B:
+density 36% + strength median 0.23 (fabricated diffuse edges — confirms R2). Gap layer: 0 isolated /
+3 single-source (PHATE, Res2Net, SBERT) / 1 thin bridge (MedSAM—Embeddings) / 1 under-connected — ≥3
+actionable signals on a healthy degree-1→20 graph.
+**Why:** the two skeleton knobs shipped PROVISIONAL; the 2026-07-01 runs were confounded. R1–R4 removed the
+confounds; R5 is the clean re-measure. ADR-004 blocked Tier-1 gaps on *unvalidated* edge precision — the
+healthy, discriminating gap set is exactly that validation.
+**Rejected:** K=3 as the default (finer contrastive-learning split but sparser — K=2's 3-way split already
+maps to real topics; K=3 stays available per-run); FAIL/descope (passed every band); changing the config
+values (they were already 2/boundary — R5 confirms, doesn't change).
+**Opens:** **closes RG-008/009**, **unblocks ADR-004 Tier-1**, **unblocks Node B (PR-B)**. A multi-domain
+re-run (6-domain home, absent) is a stronger optional stress test, not required for the PASS.
+**Data-home writes only** (Concept/Keyword/DocSimilarity/Citation sidecars on the gitignored `data/`);
+staged code/docs = config comments + baseline + ADR-008 + ROADMAP/plan. **Nothing committed (cpc §13).**
+
+## Session: 2026-07-02 (cont.) — R6 BM25 preprocessing + pipeline hygiene (eval-gated), Claude Code
+
+**What:** remediation-plan §R6 — the last remediation item. (1) `BM25Retriever.from_documents` now gets
+`preprocess_func=keywords.tokenize` (casefold + tech-token) instead of LangChain's default `text.split()`
+(case-sensitive, punctuation attached — `BM25?` never matched `bm25`). (2) candidate dedup keys on a
+full-content SHA-256, not `doc_hash + first 50 chars` (distinct chunks sharing a header/placeholder prefix
+were silently collapsed pre-rerank). (3) `expand_query` on valid-but-non-list JSON now yields `[]` (was
+`[query]`, which line-262 prepended it a second time → the ensemble ran the same query twice). (4) probed the
+parent_text invariant (every PC chunk must carry `parent_text` or it is unreturnable in PC mode). +6 guard
+tests (`tests/unit/test_pipeline_retrieval.py` ×5 + `tests/integration/ingest/test_parent_child_invariant.py`
+×1); gate green — **724 passed / 1 skipped**, ruff/format/`mypy --strict`(54)/bandit clean.
+**Eval (fix 1 is eval-gated):** retrieval-only recall@K over `cases.yaml` (private benchmark — the public
+corpus is download-only + absent on this box) against the current `data/` store, `USE_MULTI_QUERY=false`,
+$0/deterministic (BM25 rebuilt in-memory, no re-ingest). Control (default split) vs treatment (tokenize):
+**recall@5 0.8775, recall@10 0.9069 — IDENTICAL, zero regression** → ships per the "matches control" rule.
+Baseline `tests/eval/baselines/bm25_preprocess_2026-07-02.md`.
+**Why:** the BM25 arm was handicapped (verified default = bare `text.split()`); the 0.4 ensemble weight bought
+less than intended. The tokenizer fix must land BEFORE any 0.4/0.6 weight sweep (it moves the weights'
+optimum). Fixes 2–3 are correctness nits that ride regardless.
+**Result reading (honest):** identical final recall = the benchmark is reranker-dominated (cross-encoder +
+vector arm already surface the right chunks on NL questions); the fix un-handicaps the sparse arm (proven by
+the deterministic unit test — default `split()` ranks the wrong doc on a lowercased query, `tokenize` ranks
+the right one) without regressing measured quality. Indicative + reproducible, not a definitive verdict.
+**Rejected:** the paid full harness / LLM judge (retrieval recall@K is the $0 instrument for a retrieval
+change); a local import for `tokenize` (clean top-level import — `keywords` doesn't drag `wordfreq` at module
+load, it's lazy). **Follow-up (own session, now unblocked):** the `--bm25-weight` flag + 0.4/0.6 sweep
+(CONTEXT open question).
+**Staged code/docs; `data/` store untouched (BM25 is in-memory). Nothing committed (cpc §13).**

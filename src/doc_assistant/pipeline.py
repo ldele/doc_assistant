@@ -1,5 +1,6 @@
 """RAG pipeline: retrieval, reranking, and answer generation."""
 
+import hashlib
 from collections.abc import Generator
 from typing import Any
 
@@ -27,6 +28,7 @@ from doc_assistant.embeddings import (
     get_collection_name,
     get_embeddings,
 )
+from doc_assistant.keywords import tokenize
 from doc_assistant.prompts import ANSWER_PROMPT, MULTI_QUERY_PROMPT, REWRITE_PROMPT
 
 log = structlog.get_logger(__name__)
@@ -112,7 +114,12 @@ class RAGPipeline:
             }
         )
         if all_docs:
-            bm25 = BM25Retriever.from_documents(all_docs)
+            # R6: BM25's default preprocess_func is a bare ``text.split()`` — case-sensitive,
+            # punctuation attached ("BM25?" never matches "bm25"), so the 0.4 ensemble arm was
+            # handicapped. ``keywords.tokenize`` casefolds + emits tech-aware tokens
+            # ("BM25" -> "bm25", "cross-encoder" intact). LangChain applies the same func to the
+            # query at retrieval time, so index and query tokenization stay symmetric.
+            bm25 = BM25Retriever.from_documents(all_docs, preprocess_func=tokenize)
             bm25.k = CANDIDATE_K
             self.ensemble = EnsembleRetriever(retrievers=[bm25, vector], weights=[0.4, 0.6])
         else:
@@ -153,7 +160,11 @@ class RAGPipeline:
         for q in queries:
             candidates = self.ensemble.invoke(q)
             for doc in candidates:
-                doc_id = doc.metadata.get("doc_hash", "") + "_" + doc.page_content[:50]
+                # R6: dedup on a full-content hash, not a 50-char prefix — distinct chunks that
+                # share a prefix (repeated headers; pre-R1 KI-14 placeholder-prefixed chunks)
+                # silently collapsed into one, dropping real candidates before rerank.
+                content_hash = hashlib.sha256(doc.page_content.encode("utf-8")).hexdigest()
+                doc_id = doc.metadata.get("doc_hash", "") + "_" + content_hash
                 if doc_id not in seen_ids:
                     seen_ids.add(doc_id)
                     all_candidates.append(doc)
@@ -252,7 +263,10 @@ class RAGPipeline:
 
             variations = json.loads(text)
             if not isinstance(variations, list):
-                variations = [query]
+                # R6: valid JSON that isn't a list → no variations (the original query is
+                # prepended below regardless). Was ``[query]``, which line-262 prepended a
+                # SECOND time, so the ensemble ran the same query twice. Match the except branch.
+                variations = []
         except (json.JSONDecodeError, ValueError):
             # If parsing fails, fall back to just the original query
             log.warning("multi_query_parse_failed", hint="using original query only")

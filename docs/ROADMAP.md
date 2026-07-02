@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-06-26 · class: living -->
+<!-- status: active · updated: 2026-07-02 · class: living -->
 
 # ROADMAP — doc_assistant
 
@@ -74,12 +74,12 @@ full architectural context per feature.
 | M4 | Desktop shell: PyInstaller sidecar packaging + frozen CPU-torch pin | done (RG-010/011/012 Tier-1 pass; KI-9/10/11 bundled in the freeze; data-home/first-run-ingest flow now built — backend `77eb5f9` + frontend settings panel; **RG-012 Tier-2** cited-turn validation pends a re-freeze + clean-box run) | `docs/specs/pr-m4-sidecar-packaging.md` |
 | M5 | Desktop shell: delete Chainlit + lift the Python-3.12 pin (KI-2) | done — Chainlit removed (renderer + dep + recipe + config); 3.12-pin lift **verified-and-deferred** (KI-2: native deps crash on 3.14, not Chainlit) | `docs/specs/pr-m5-decommission-chainlit.md` |
 | R1 | Ingest hygiene: strip PyMuPDF4LLM image placeholders + cache-normalization runner (closes KI-14) | done (2026-07-02, `4da02e3` + host apply/re-ingest; cache grep=0 → KI-14 RESOLVED on main corpus) | `docs/specs/remediation-plan-2026-07.md` |
-| R2 | Concept presence: word-boundary matching (RG-009 lever; de-confounds R5) | built (2026-07-02, staged) — `mode="boundary"` default + `substring` A/B lever; 706 tests green; indicative measurement recorded (IR 270×/RAG 6.6×/BERT 3.3× substring inflation); curated-vocab corpus run at R5 | `docs/specs/remediation-plan-2026-07.md` |
+| R2 | Concept presence: word-boundary matching (RG-009 lever; de-confounds R5) | done (2026-07-02, `338e55e`) — `mode="boundary"` default + `substring` A/B lever; indicative measurement recorded (IR 270×/RAG 6.6×/BERT 3.3× substring inflation); curated-vocab corpus run at R5 | `docs/specs/remediation-plan-2026-07.md` |
 | R3 | Keyword termhood: contrastive scoring (`wordfreq` reference — decided 2026-07-02) + C-value nested-term fix + orphan sweep | built (2026-07-02, staged) — ADR-006; `mode=contrastive`; 712 tests green; real-corpus dry-run surfaces domain vocab vs corpus_band's boilerplate | `docs/specs/remediation-plan-2026-07.md` |
 | R4 | Concept skeleton: graded provenance strength (ratio, not boolean) | planned | `docs/specs/remediation-plan-2026-07.md` |
 | R5 | RG-001/008/009 multi-domain revalidation run + gap wizard-of-oz → edge-model go/no-go | planned (measurement session; needs R1–R3, R4 recommended) | `docs/specs/remediation-plan-2026-07.md` |
 | R6 | Core retrieval: BM25 `preprocess_func` + pipeline hygiene (eval-gated, before any weight sweep) | planned | `docs/specs/remediation-plan-2026-07.md` |
-| R7 | KI-7 containment: 7d marker chip default-off until Node B (decided 2026-07-02: option a — `EPISTEMICS_MARKERS_ENABLED` kill-switch) | built (2026-07-02, staged) — ADR-005; default off, 700 tests green | `docs/specs/remediation-plan-2026-07.md` |
+| R7 | KI-7 containment: 7d marker chip default-off until Node B (decided 2026-07-02: option a — `EPISTEMICS_MARKERS_ENABLED` kill-switch) | done (2026-07-02, `591280d`) — ADR-005; default off | `docs/specs/remediation-plan-2026-07.md` |
 | S1 | Selective ingestion backend: `SourceFile` registry + selection-scoped ingest (CLI `--files`/`--dry-run`, `GET/PATCH /api/sources`, `POST /api/ingest {paths}`) | planned (spec drafted 2026-07-02, not yet locked) | `docs/specs/feature-selective-ingestion.md` |
 | S2 | Selective ingestion UI: Tauri sources panel (status chips, select-by-status/type, exclude toggle, ingest-selected) | planned (needs S1) | `docs/specs/feature-selective-ingestion.md` |
 

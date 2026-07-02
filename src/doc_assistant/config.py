@@ -492,6 +492,16 @@ KEYWORD_MIN_DF = int(os.getenv("KEYWORD_MIN_DF", "2"))
 KEYWORD_MAX_DF_FRAC = float(os.getenv("KEYWORD_MAX_DF_FRAC", "0.7"))
 KEYWORD_CORPUS_TOP_K = int(os.getenv("KEYWORD_CORPUS_TOP_K", "60"))
 
+# contrastive mode (R3 / ADR-006): termhood = C-value nested discount * reference-corpus
+# "weirdness". Defaults frozen a priori (before looking at output), per the rigor rule.
+#   KEYWORD_WEIRDNESS_REF_CEILING — the wordfreq zipf ceiling; per token, weirdness =
+#     max(0, ceiling - zipf(token)); an OOV technical token (zipf 0) → the full ceiling
+#     (maximally weird). 8.0 ≈ the top of the zipf scale ("the" ≈ 7.7).
+#   KEYWORD_CONTRASTIVE_MIN_CVALUE — drop candidates whose C-value is at/below this (a
+#     fully-nested fragment with no standalone occurrences). 0.0 = drop only pure nesting.
+KEYWORD_WEIRDNESS_REF_CEILING = float(os.getenv("KEYWORD_WEIRDNESS_REF_CEILING", "8.0"))
+KEYWORD_CONTRASTIVE_MIN_CVALUE = float(os.getenv("KEYWORD_CONTRASTIVE_MIN_CVALUE", "0.0"))
+
 # Semantic concept layer (concept_semantics.py, #2) — grounds vocabulary in meaning, not
 # frequency. ABSTRACT_CONCEPTS_TOP_K: candidate concepts pulled from a scientific paper's
 # title+abstract (concept-dense; papers only). CONCEPT_MERGE_COSINE: two curated concepts with

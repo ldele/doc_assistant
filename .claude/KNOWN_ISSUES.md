@@ -281,7 +281,7 @@ Migrated from the old `CLAUDE.md` / `README` runtime-quirk notes on 2026-06-20 (
 - **Pointer:** `tests/eval/baselines/rg001_concept_skeleton_2026-07-01.md`; `docs/specs/concept-graph-redesign.md`
   Decision 1; `.claude/RIGOR_TODO.md` RG-001/008/009.
 
-## KI-14 — PyMuPDF4LLM image placeholders pollute the extracted markdown — FIX BUILT, host data-run pending (found 2026-07-01; PR-R1 built 2026-07-02)
+## KI-14 — PyMuPDF4LLM image placeholders pollute the extracted markdown — RESOLVED (main corpus, 2026-07-02)
 - **Symptom:** the cached markdown contains `**==> picture [W x H] intentionally omitted <==**` placeholder
   lines wherever PyMuPDF4LLM declines to render an inline image. On the multi-domain arXiv corpus this was
   **1027 occurrences** across 24 papers, heaviest in figure/equation-dense physics/math/econ papers
@@ -303,11 +303,12 @@ Migrated from the old `CLAUDE.md` / `README` runtime-quirk notes on 2026-06-20 (
   (dry-run default, `--apply`, atomic per-file rewrite only when content changes) fixes existing caches, since
   `--rebuild` does NOT re-extract (`ingest/cache.py` trusts mtime). +23 guard tests; gate green (699 passed).
   Dry-run on `data/cache`: 62 scanned, **57 changed, 1,123 placeholder lines**.
-- **Remaining to close (host, $0, KI-5 — deferred to the user per cpc §13):** `normalize_cache --apply` →
-  plain `python -m doc_assistant.ingest` (re-index the 57 changed docs; F1 reuses ids so citations/keywords/
-  concept links survive) → re-run `compute_doc_vectors` / `extract_citations` / `extract_keywords --force`
-  (+ `extract_figures` / Marker-tables only on corpora that used them); repeat on the multi-domain data home.
-  Verify cache `grep` = 0 + keyword candidates no longer carry `intentionally omitted` / `x 12` / `br 1`, then
-  mark **RESOLVED**.
+- **RESOLVED (main corpus, 2026-07-02):** the user ran `normalize_cache --apply` + re-ingest on this box's
+  `data/` corpus. **Verified: cache `grep "intentionally omitted"` = 0** (62 docs), and the R3 keyword
+  dry-run over the re-ingested corpus shows no `intentionally omitted` / `x 12` / `br 1` junk tokens. The
+  strip is now in `extract_to_markdown`, so future ingests stay clean.
+- **Remaining (only when that home is next used):** re-run `normalize_cache --apply` + re-ingest on the
+  **multi-domain** data home (`data_multidomain/`, not on this box) — same $0 runner; the code fix already
+  applies to any future extraction there.
 - **Pointer:** `tests/eval/baselines/rg001_concept_skeleton_multidomain_2026-07-01.md` finding 4;
   `data_multidomain/cache/*.md`; DEVLOG 2026-07-02 (cont.) PR-R1 entry.

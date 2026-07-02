@@ -76,9 +76,11 @@ tests/integration`); both corpora normalized + re-ingested on their host boxes; 
 
 **Status (2026-07-02):** ✅ code + guard tests BUILT (staged, not committed). `match_presence(...,
 mode=)` — `"boundary"` default (alnum lookarounds), `"substring"` A/B lever;
-`CONCEPT_SKELETON_PRESENCE_MODE` + `--presence-mode`; 706 tests green. The **verify-after**
-before/after presence table (both modes, real corpus) is deferred to the R5 decision run — held
-off here because the box's R1 re-ingest was in flight. See DEVLOG 2026-07-02 (cont., R2).
+`CONCEPT_SKELETON_PRESENCE_MODE` + `--presence-mode`; 706 tests green. **Indicative verify-after
+recorded** (`tests/eval/baselines/rg001_concept_skeleton_2026-07-01.md` R2 addendum): an ad-hoc probe
+vocabulary over the real 5,617 chunks shows the substring confound — IR 270× / RAG 6.6× / BERT 3.3×
+inflation, edge density ~1.6–2× higher under substring. The curated `Concept` vocab is empty on this
+data home, so the **corpus-level curated run is the R5 decision run**. See DEVLOG 2026-07-02 (cont., R2).
 
 **Why:** substring matching sits at the **top of the edge funnel** — BERT firing 550× via
 SBERT/ColBERT/RoBERTa doesn't just inflate `n_mentions`, it fabricates co-occurrence edges from BERT to
@@ -117,6 +119,13 @@ is monotone in df, so it always grabs the most-shared = most-generic terms. The 
 literature's answer is **contrast against a reference corpus** ("weirdness" ratio) + **C-value** for nested
 multi-word terms. Both deterministic, zero-LLM, and the reference is external — so this does **not** violate
 the no-tuning-against-the-corpus constraint.
+
+**Status (2026-07-02):** ✅ BUILT (staged, not committed). `wordfreq` base dep (ADR-006); `c_value_scores`
++ `weirdness` + `mode="contrastive"` + orphan sweep; config `KEYWORD_WEIRDNESS_REF_CEILING` /
+`KEYWORD_CONTRASTIVE_MIN_CVALUE`; CLI `--mode contrastive`; 712 tests green. Indicative dry-run on the
+R1-clean real corpus recorded (`tests/eval/baselines/rg001_keyword_termhood_2026-07-02.md`): contrastive
+surfaces domain vocab where corpus_band returns boilerplate. Optional `concept_semantics` ride-alongs
+dropped (scope). See DEVLOG 2026-07-02 (cont., R3).
 
 **DECIDED (user, 2026-07-02): Option A — `wordfreq` dependency** as the reference-frequency source
 (maintained, compact, `zipf_frequency(token, "en")`; one `uv add`, data ships with the package so it works

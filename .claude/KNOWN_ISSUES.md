@@ -96,6 +96,10 @@ Migrated from the old `CLAUDE.md` / `README` runtime-quirk notes on 2026-06-20 (
   redesign landing; it is a connected change across `epistemics.py` → `chat_controller.py` /
   `compute_epistemics.py` / `wiki.py` + their tests (the carried-over PR-16 ADR-1 Louvain / ADR-4 chunk
   key stay). Not safe as standalone cleanup while `epistemics.py` imports it.
+- **Containment (2026-07-02, PR-R7 — staged):** the one *user-facing* leak of this superseded data — the
+  live 7d marker chips in a chat turn — is now gated OFF by default (`EPISTEMICS_MARKERS_ENABLED=false`,
+  `docs/decisions/ADR-005-epistemics-markers-default-off.md`), so the app no longer surfaces KI-7 noise under
+  the integrity banner. Full retirement still owed with Node B; the flag flips back on then.
 - **Pointer (add):** also `docs/decisions/ADR-004-gap-detection-layer.md` + `docs/specs/feature-gap-detection.md`.
 
 ## KI-8 — PC→baseline marker mapping (PR-M1) is coarse at parent boundaries — OPEN (advisory, fail-safe)
@@ -112,6 +116,9 @@ Migrated from the old `CLAUDE.md` / `README` runtime-quirk notes on 2026-06-20 (
   re-projection is the documented upgrade **if** containment proves too coarse on real data.
 - **Compounding caveat:** marker *quality* upstream still comes from the superseded open-vocabulary graph
   (KI-7) — `contested` is local-model-noisy. M1 surfaces what the sidecar holds; it does not fix extraction.
+- **Mostly moot in practice since 2026-07-02 (PR-R7):** the live chip is now default-OFF
+  (`EPISTEMICS_MARKERS_ENABLED=false`, ADR-005), so this containment coarseness only bites when a user opts
+  the markers back on. The precise re-projection upgrade rides with Node B, alongside KI-7 retirement.
 - **Pointer:** `docs/specs/pr-m1-epistemics-markers.md` ADR-1 (option 2 = the re-projection upgrade).
 
 ## KI-9 — Frozen desktop build does not bundle model weights → first-run HuggingFace download; offline launch fails — RESOLVED (2026-06-24)

@@ -79,7 +79,7 @@ full architectural context per feature.
 | R4 | Concept skeleton: graded provenance strength (ratio, not boolean) | planned | `docs/specs/remediation-plan-2026-07.md` |
 | R5 | RG-001/008/009 multi-domain revalidation run + gap wizard-of-oz → edge-model go/no-go | planned (measurement session; needs R1–R3, R4 recommended) | `docs/specs/remediation-plan-2026-07.md` |
 | R6 | Core retrieval: BM25 `preprocess_func` + pipeline hygiene (eval-gated, before any weight sweep) | planned | `docs/specs/remediation-plan-2026-07.md` |
-| R7 | KI-7 containment: 7d marker chip default-off until Node B (decided 2026-07-02: option a — `EPISTEMICS_MARKERS_ENABLED` kill-switch) | planned | `docs/specs/remediation-plan-2026-07.md` |
+| R7 | KI-7 containment: 7d marker chip default-off until Node B (decided 2026-07-02: option a — `EPISTEMICS_MARKERS_ENABLED` kill-switch) | built (2026-07-02, staged) — ADR-005; default off, 700 tests green | `docs/specs/remediation-plan-2026-07.md` |
 
 **Feature 7d (knowledge-currency layer):** engine shipped 2026-06-17 (`epistemics.py` + `chunk_epistemics`
 sidecar + polarity-aware concept graph + reviewer `contested_evidence` tag). **Live answer-time marker

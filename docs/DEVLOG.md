@@ -3210,3 +3210,38 @@ Marker-tables **only** on corpora that used them. Verify: cache `grep` = 0; keyw
 (official-CPython 3.12, `uv run --no-sync`): ruff ✓ · ruff format ✓ · `mypy --strict src` ✓ (54) · bandit
 0/0/0 ✓ · `pytest tests/unit tests/integration` → **699 passed, 1 skipped**. **Staged on
 `feat/keyword-concept-graph`, nothing committed (cpc §13).**
+
+---
+## Session: 2026-07-02 (cont.) — PR-R7: 7d marker chips default-off until Node B (KI-7 containment), Claude Code
+
+**What:** built remediation-plan §R7 (user-decided option a). Ran alongside the user's R1 host data-run — R7
+is pure code + fake-based tests, touches no store, so no collision.
+- `config.py` — new `EPISTEMICS_MARKERS_ENABLED` (default `false`), in a new "Live 7d epistemics markers"
+  block. `.env.example` documents it.
+- `chat_controller.py` — `_attach_markers` returns immediately when the flag is off (before any epistemics
+  read), so the default turn is the byte-identical M0/M1 no-marker path. Flag imported by name → the module
+  global is the monkeypatch seam (same pattern as the existing `load_epistemics_index` test patches).
+- Tests: new `test_markers_disabled_by_default` (populated index + spies → markers empty, no chip, **loaders
+  never called**); the two marker-attached tests + the load-failure test now `setattr(..., True)` to opt in;
+  `test_markers_absent_is_byte_identical` opts in too (so it still exercises the enabled-but-empty join, not
+  just the gate). The parity test `test_byte_identical_when_markers_absent` is left as-is — it now guards the
+  **default** path.
+- ADR-005 recorded (`docs/decisions/ADR-005-epistemics-markers-default-off.md`); KI-7/KI-8 + `feature-7d`
+  spec + ROADMAP R7 row updated.
+
+**Why:** the live `contested`/`superseded` chips are the only *user-facing* leak of the superseded
+open-vocabulary graph (KI-7), reaching sources through the coarse containment join (KI-8) — noise wearing the
+integrity layer's uniform, the one review finding working *against* the product promise. Default-off is the
+cheap containment move; full KI-7 retirement stays bundled with Node B (a connected change across four
+modules). The chip is already quiet-on-clean, so no renderer/UI change was needed.
+
+**Rejected (per the locked decision):** (b) keep on + label "experimental" — still surfaces KI-7 noise under
+the trust banner; (c) full retirement now — the known four-module connected change, only worth it with Node B.
+Also: reading the flag dynamically via `config.X` — imported-by-name matches the module's existing config
+imports and the tests' established monkeypatch-the-module-global pattern.
+
+**Opens:** Node B (PR-B, confined LLM relation/stance) flips the default back on with trustworthy data and
+carries the KI-7 retirement + the KI-8 precise re-projection. **Gate GREEN** (official-CPython 3.12,
+`uv run --no-sync`): ruff ✓ · ruff format ✓ · `mypy --strict src` ✓ (54) · bandit 0/0/0 ✓ ·
+`pytest tests/unit tests/integration` → **700 passed, 1 skipped**. **Staged on `feat/keyword-concept-graph`,
+nothing committed (cpc §13).**

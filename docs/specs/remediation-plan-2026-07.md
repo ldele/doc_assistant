@@ -252,6 +252,10 @@ and sweep the vibes-locked 0.4/0.6.
 
 ## R7 — KI-7 containment: stop surfacing superseded-graph markers by default
 
+**Status (2026-07-02):** ✅ BUILT (staged, not committed). `EPISTEMICS_MARKERS_ENABLED` (default
+`false`) gates `ChatController._attach_markers`; ADR-005 recorded; parity test now guards the
+default no-marker path; 700 tests green. See DEVLOG 2026-07-02 (cont., R7).
+
 **Why:** the app's differentiator is the integrity layer, yet the live `contested` / `superseded` chips are
 computed from the **superseded** open-vocabulary graph (KI-7) through a coarse containment join (KI-8) —
 noise wearing the trust layer's uniform. Full KI-7 retirement stays gated on Node B; this is the cheap

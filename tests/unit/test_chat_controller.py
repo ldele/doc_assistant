@@ -370,6 +370,7 @@ def _pc_sources() -> list[tuple[Document, float]]:
 def test_markers_flat_join(monkeypatch, temp_db):
     # Flat chunk: direct join on chunk_key against the marker index.
     monkeypatch.setattr(chat_controller, "is_library_query", lambda t: False)
+    monkeypatch.setattr(chat_controller, "EPISTEMICS_MARKERS_ENABLED", True)  # R7: off by default
     monkeypatch.setattr(
         chat_controller, "load_epistemics_index", lambda: {"d1:0": [MARKER_CONTESTED]}
     )
@@ -383,6 +384,7 @@ def test_markers_flat_join(monkeypatch, temp_db):
 def test_markers_pc_join_via_containment(monkeypatch, temp_db):
     # PC parent: no chunk_key → containment mapping (ADR-1).
     monkeypatch.setattr(chat_controller, "is_library_query", lambda t: False)
+    monkeypatch.setattr(chat_controller, "EPISTEMICS_MARKERS_ENABLED", True)  # R7: off by default
     marked = {
         "d1": [MarkedChunk(chunk_index=0, text="discrete junctions", markers=[MARKER_SUPERSEDED])]
     }
@@ -397,7 +399,9 @@ def test_markers_pc_join_via_containment(monkeypatch, temp_db):
 
 def test_markers_absent_is_byte_identical(monkeypatch, temp_db):
     # Sidecar empty → every markers empty → no chip → sources_md is the citation-only form.
+    # (Flag on so this exercises the enabled-but-empty join path, not just the R7 gate.)
     monkeypatch.setattr(chat_controller, "is_library_query", lambda t: False)
+    monkeypatch.setattr(chat_controller, "EPISTEMICS_MARKERS_ENABLED", True)
     monkeypatch.setattr(chat_controller, "load_epistemics_index", lambda: {})
     monkeypatch.setattr(chat_controller, "load_marked_chunks", lambda ids: {})
     controller = ChatController(rag=FakeRAG(_three_clean_sources(), ["Answer [1]."]))
@@ -410,6 +414,7 @@ def test_marker_load_failure_does_not_break_turn(monkeypatch, temp_db):
     # Markers are advisory — a read failure (e.g. the chunk_epistemics table absent on an
     # older DB) must leave sources unmarked, never crash the turn / SSE stream.
     monkeypatch.setattr(chat_controller, "is_library_query", lambda t: False)
+    monkeypatch.setattr(chat_controller, "EPISTEMICS_MARKERS_ENABLED", True)  # exercise the load
 
     def _boom():
         raise RuntimeError("no such table: chunk_epistemics")
@@ -419,3 +424,25 @@ def test_marker_load_failure_does_not_break_turn(monkeypatch, temp_db):
     result = _final(_results(controller, Session(), "q"))
     assert result.answer == "Answer [1]."
     assert all(s.markers == [] for s in result.sources)
+
+
+def test_markers_disabled_by_default(monkeypatch, temp_db):
+    # R7 / ADR-005: with EPISTEMICS_MARKERS_ENABLED off (the default), the marker join is
+    # skipped entirely — even a populated index leaves every source unmarked, no chip, and
+    # the load functions are never called (the byte-identical M0/M1 no-marker path).
+    monkeypatch.setattr(chat_controller, "is_library_query", lambda t: False)
+    # NOT enabling the flag — assert the shipped default.
+    loads: list[str] = []
+    monkeypatch.setattr(
+        chat_controller,
+        "load_epistemics_index",
+        lambda: loads.append("flat") or {"d1:0": [MARKER_CONTESTED]},
+    )
+    monkeypatch.setattr(
+        chat_controller, "load_marked_chunks", lambda ids: loads.append("pc") or {}
+    )
+    controller = ChatController(rag=FakeRAG(_three_clean_sources(), ["Answer [1]."]))
+    result = _final(_results(controller, Session(), "q"))
+    assert all(s.markers == [] for s in result.sources)
+    assert "⚠" not in result.sources_md
+    assert loads == []  # gated out before any epistemics read

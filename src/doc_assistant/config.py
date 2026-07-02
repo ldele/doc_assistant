@@ -318,6 +318,19 @@ MIN_FAILURE_TAG_DOCS = int(os.getenv("MIN_FAILURE_TAG_DOCS", "5"))
 # Wider = fairer judgement but more judge tokens; 1500 is a balance. Not persisted.
 REVIEWER_EVIDENCE_CHARS = int(os.getenv("REVIEWER_EVIDENCE_CHARS", "1500"))
 
+# ============================================================
+# Live 7d epistemics markers (contested / superseded-trend chips)
+# ============================================================
+# Whether the chat turn surfaces 7d marker chips on source cards (PR-M1). Default
+# OFF: the marker *quality* still comes from the SUPERSEDED open-vocabulary concept
+# graph (KI-7), reaching sources through the coarse containment join (KI-8) — noise
+# wearing the integrity layer's uniform, which works against the product's core
+# promise (remediation plan R7). With this off, `_attach_markers` is skipped entirely,
+# so the turn takes the M0/M1 byte-identical no-marker path. Node B (the confined-LLM
+# relation/stance layer) flips the default back on once markers rest on trustworthy
+# data. See docs/decisions/ADR-005-epistemics-markers-default-off.md.
+EPISTEMICS_MARKERS_ENABLED = os.getenv("EPISTEMICS_MARKERS_ENABLED", "false").lower() == "true"
+
 
 # ============================================================
 # Self-organizing wiki / synthesis layer (Phase 7 / Feature 6)

@@ -2,25 +2,15 @@
 
 A local-first RAG assistant over your own document corpus (PDF, EPUB, HTML, DOCX, Markdown) that answers questions with inline, page-level citations — and measures whether those answers are any good. Document-format-agnostic by design; the test corpus here is research papers because they're real and freely available, but nothing assumes academia.
 
-Not a chatbot wrapper: the goal is reliable, grounded answers with the measurement and provenance to back them up.
+Not a chatbot wrapper. A fluent answer with a confident citation is not the same as a correct one, so this system is built to *prove* its answers rather than just emit them: page-level citations you can click through, a provenance record on every response, and a separate reviewer that can re-grade a flagged answer. You can even disable LLM generation entirely and rely on the retrieval layer alone. It implements established RAG techniques rather than new algorithms — what it contributes is the integrity layer and the measurement behind it.
 
-## Why I built this
+## Engineering highlights
 
-Three things pushed me to build this. The first: I've worked with SharePoint-class documentation systems and found them outdated — they take an immense amount of effort to maintain, and retrieving anything useful is impractical. Search returns filenames, not answers; the knowledge is in there but you can't reach it.
-
-The second: LLMs are less reliable than they sound. A fluent answer with a confident citation is not the same as a correct one, and most tools blur that line. So this system is built to *prove* its answers rather than just emit them — page-level citations you can click through, a provenance record on every response, and a separate reviewer that can re-grade a flagged answer. Trust is earned per-answer, not assumed. You can even disable LLM generation entirely and rely on the retrieval layer alone.
-
-The third: reading documents and pulling structured information out of them is useful in nearly any job or field — it's not a niche academic need. You need to be able to pull a specific SOP or policy out of your company's wiki to do your job. Additionally, it has become essential to curate and maintain reliable documentation systems to feed AI context. This system is not built to version documents; instead it maps concepts across the corpus and flags which claims are corroborated versus contested a layer I'm still extending.
-
-This implements established RAG techniques rather than new algorithms; what it contributes is the integrity layer and the measurement to back the whole thing up. It is made to allow extensibility over a stable core.
-
-## Why this is interesting (engineering)
-
-- **Choices come from experiments, not just intuition.** TOP_K, parent-child retrieval, and the BM25/vector mix were each picked by trying them and measuring; an in-repo eval harness scores the pipeline so changes can be tracked over time. The reasoning behind each non-obvious choice — and what didn't make the cut — is in [`docs/decisions.md`](docs/decisions.md).
-- **Reproducible benchmarks.** A public eval set runs over a corpus anyone can rebuild from arXiv — 5 trials, reported as mean ± trial-mean std with the caveats stated alongside (see [Benchmarks](#benchmarks)). What each scorer measures and why is in [`tests/eval/TESTING.md`](tests/eval/TESTING.md).
-- **A research-integrity layer.** Every answer carries a provenance record (retrieved chunks, model, cost); a separate-context reviewer agent can re-grade flagged answers; confidence signals keep the UI quiet on clean ones — the aim being to make AI-assisted output auditable.
-- **Architecture that grows by addition.** Enrichment layers (citations, doc-vectors, tables) are sidecar modules with idempotent CLI runners that don't mutate the chunk store — new capability tends to be a new module rather than a rewrite.
-- **Functions as a local RAG sandbox.** The embedder, chunking, the retrieval candidate pool (`CANDIDATE_K`) and final cut (`TOP_K`), parent-child and multi-query retrieval, and the LLM backend (Claude API or local Ollama) are config-swappable, with the eval harness on hand to measure what each change does.
+- **Settings are locked by experiment, not intuition.** TOP_K, parent-child retrieval, chunk sizes, and the BM25/vector mix were each picked by measuring alternatives with the in-repo eval harness. The reasoning behind each non-obvious choice — and what didn't make the cut — is in [`docs/decisions.md`](docs/decisions.md).
+- **Benchmarks anyone can re-run.** The public eval set runs over a corpus rebuilt from arXiv — 5 trials, reported as mean ± trial-mean std, caveats stated alongside (see [Benchmarks](#benchmarks)). What each scorer measures and why: [`tests/eval/TESTING.md`](tests/eval/TESTING.md).
+- **A research-integrity layer.** Every answer carries a provenance record (retrieved chunks, model, cost); a separate-context reviewer agent re-grades flagged answers; confidence signals keep the UI quiet on clean ones — AI-assisted output that stays auditable.
+- **Growth by addition.** Derived data (citations, figures, tables, keywords, doc vectors, the wiki) ships as sidecar modules with idempotent CLI runners that never mutate the chunk store — new capability is a new module, not a rewrite.
+- **A local RAG sandbox.** The embedder, chunking, the retrieval candidate pool (`CANDIDATE_K`) and final cut (`TOP_K`), parent-child retrieval, and the LLM backend (Claude API or local Ollama) are config-swappable, with the eval harness on hand to measure what each change does.
 
 ## What it does
 
@@ -28,9 +18,37 @@ This implements established RAG techniques rather than new algorithms; what it c
 - **Evidence vs. interpretation** — each answer separates what your sources actually say from the AI's synthesis (clearly labelled, with per-claim grounding markers you can accept / reject / edit), so an inference is never mistaken for a fact. See [how answers work](docs/how-answers-work.md).
 - **Hybrid retrieval + reranking** — BM25 + vector ensemble, cross-encoder reranker, parent-child chunks.
 - **Citation graph** — extracts references, resolves them against your library, exposes in/out edges.
-- **Measurable quality** — eval harness with 5 scorers and a DuckDB result store.
+- **Corpus wiki** — derived, linked, cited topic notes synthesized over the corpus; regenerable, never hand-authored.
+- **Measurable quality** — eval harness with six scorers (deterministic + LLM judge) and a DuckDB result store.
 - **Local-first and pluggable** — Chroma + SQLite on disk; Claude API or local Ollama.
 - **Cost transparency** — per-turn and per-session token tracking.
+
+## Architecture
+
+```mermaid
+flowchart LR
+    subgraph Ingest
+        A["data/sources/<br/>PDF · EPUB · HTML · DOCX · MD"] --> B["extract to markdown<br/>(cached, page-marked)"]
+        B --> C["chunk<br/>(parent-child + baseline)"]
+        C --> D["embed<br/>(bge-base, local)"]
+    end
+    D --> E[("Chroma ×2<br/>vector stores")]
+    C --> F[("SQLite<br/>documents")]
+    B -. "idempotent sidecar runners:<br/>citations · figures · tables ·<br/>keywords · doc vectors" .-> F
+    subgraph Query
+        Q["question"] --> R["hybrid retrieve<br/>(BM25 + vector)"]
+        R --> RR["cross-encoder rerank"]
+        RR --> G["LLM synthesis<br/>(Claude API or Ollama)"]
+        G --> H["answer + inline citations<br/>+ provenance record"]
+        H -. "flagged" .-> V["reviewer agent<br/>(separate context)"]
+    end
+    E --> R
+    F --> R
+```
+
+The chunk store is never mutated after ingest — every derived layer (citations, figures, tables,
+keywords, the wiki, the concept graph) is an additive sidecar with an idempotent CLI runner
+([`docs/architecture.md`](docs/architecture.md)).
 
 ## Stack
 
@@ -306,11 +324,11 @@ uv run python -m scripts.sweep_chunking --cases tests/eval/cases.public.yaml --r
 
 ## Status
 
-**Phase 6 + 7 in progress.** Shipped: core RAG (Phase 1); measured quality + eval harness (Phases 2 & 5); document store + library UI (Phase 3); citation graph + doc-similarity edges (Phase 4); the research-integrity layer — provenance card, heuristic confidence signals, and a separate-context LLM reviewer agent; and a provider-agnostic LLM layer (Claude API *or* fully-local Ollama for analysis, reviewer, and judge). **~623 tests · ruff / mypy --strict / bandit clean.**
+**Phase 6 + 7 in progress (as of 2026-07-02).** Shipped: core RAG (Phase 1); measured quality + eval harness (Phases 2 & 5); document store + library UI (Phase 3); citation graph + doc-similarity edges (Phase 4); the research-integrity layer — provenance card, heuristic confidence signals, and a separate-context LLM reviewer agent; and a provider-agnostic LLM layer (Claude API *or* fully-local Ollama for analysis, reviewer, and judge). **712 tests · ruff / mypy --strict / bandit clean.**
 
 `bge-base` is the default embedder — it performed better in our comparisons, though the better choice depends on the corpus ([`docs/decisions.md`](docs/decisions.md) → Phase 5 / Feature 3; re-checked on the public corpus, see [Benchmarks](#benchmarks)).
 
-**Recently shipped:** Marker table extraction (isolated out-of-process sidecar, gated to caption-detected table pages — engine chosen by measurement), dual-layer evidence/interpretation answers, the provider-agnostic LLM layer ([`docs/specs/llm-provider-isolation.md`](docs/specs/llm-provider-isolation.md)), figure region detection + VLM description (Feature 4b/4c), the knowledge-currency layer ([`docs/specs/feature-7d-knowledge-currency.md`](docs/specs/feature-7d-knowledge-currency.md)), and the Tauri desktop shell that replaced Chainlit (ADR-002, M0–M5). **Next:** the gap-detection layer ([`docs/decisions/ADR-004-gap-detection-layer.md`](docs/decisions/ADR-004-gap-detection-layer.md) · [`docs/specs/feature-gap-detection.md`](docs/specs/feature-gap-detection.md)) — designed, blocked on RG-001. Full rationale and roadmap: [`docs/decisions.md`](docs/decisions.md), [`docs/ROADMAP.md`](docs/ROADMAP.md).
+**Recently shipped:** Marker table extraction (isolated out-of-process sidecar, gated to caption-detected table pages — engine chosen by measurement), dual-layer evidence/interpretation answers, the provider-agnostic LLM layer ([`docs/specs/llm-provider-isolation.md`](docs/specs/llm-provider-isolation.md)), figure region detection + VLM description (Feature 4b/4c), the knowledge-currency layer ([`docs/specs/feature-7d-knowledge-currency.md`](docs/specs/feature-7d-knowledge-currency.md)), the Tauri desktop shell that replaced Chainlit (ADR-002, M0–M5), a zero-LLM corpus keyword extractor with contrastive termhood scoring ([`ADR-006`](docs/decisions/ADR-006-contrastive-keyword-termhood.md): C-value × reference-corpus weirdness via [`wordfreq`](https://github.com/rspeer/wordfreq)), and the deterministic concept-graph skeleton ([`docs/specs/concept-graph-redesign.md`](docs/specs/concept-graph-redesign.md), Node A — built; its threshold-setting validation run is still pending, so the graph is not yet marked usable). **Next:** the gap-detection layer ([`docs/decisions/ADR-004-gap-detection-layer.md`](docs/decisions/ADR-004-gap-detection-layer.md) · [`docs/specs/feature-gap-detection.md`](docs/specs/feature-gap-detection.md)) — designed, blocked on that validation run (RG-001) — and user-selective ingestion ([`docs/specs/feature-selective-ingestion.md`](docs/specs/feature-selective-ingestion.md), drafted). Full rationale and roadmap: [`docs/decisions.md`](docs/decisions.md), [`docs/ROADMAP.md`](docs/ROADMAP.md).
 
 A 60-second walkthrough for first-time readers: [`docs/DEMO.md`](docs/DEMO.md).
 

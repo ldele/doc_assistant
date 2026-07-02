@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-06-26 · class: append-only -->
+<!-- status: active · updated: 2026-07-02 · class: append-only -->
 
 # DEVLOG — doc_assistant
 
@@ -3352,3 +3352,43 @@ pins vs ingest intent).
 **Opens:** spec needs a grill/lock pass before S1 is built; sequence S1 **before** PR 17 so adapters have a
 seam to land in; explicit-selection-overrides-`excluded` is a UX call worth confirming at lock time.
 **Docs only — no code, nothing committed (cpc §13).**
+
+## Session: 2026-07-02 (cont.) — cpc conformance: baton rotation + doc hygiene (ADR-018 catch-up), Claude Code
+
+**What:** rotated `.claude/SESSION.md` per cpc ADR-018 rule 11 — entries 2026-06-10 → 2026-06-26
+(31 of 42) moved **byte-verbatim** (cmp-verified) to docs/archive/SESSION-archive-001.md; baton
+1071 → 430 lines; new-entry format flips to newest-on-top `## YYYY-MM-DD — <tool> — <topic>` (the
+old `## Baton — <date>` headings are invisible to the gate's date regex, so they don't trip rule 11a).
+Baton + archive stay local-only (`.gitignore`). Status headers added (`SESSION.md`, `RIGOR_TODO.md`);
+`.claude/commands/**` header-exempted in `scripts/conventions.toml` (slash-command prompts, not
+coordination docs); `session_max_entries = 10` set; stale `updated:` dates bumped to last-commit
+dates on 7 living docs (rule 12); stale CLAUDE.md claim fixed (structlog "currently violated" →
+enforced since ADR-003).
+**Why:** user-raised drift vs the cpc standard: the baton loaded ~47k tokens every session and the
+standard's rotation rule (cpc 1.1.0, ADR-018) was never adopted here.
+**Rejected:** committing the archive (the baton is deliberately local — tracking split in root
+`.gitignore`/ADR-001); reordering the kept old entries newest-first (churns verbatim history for zero
+gate benefit — the correction-note cross-references would scramble); headers on command files
+(prompt noise).
+**Opens:** old-format entries rotate out naturally as new-format entries accumulate; the
+session-baton skill's template still says "newest at bottom" — upstream fix due in claude-skills.
+
+## Session: 2026-07-02 (cont.) — cpc gates vendored local-only + wired (ADR-007), Claude Code
+
+**What:** `docs/decisions/ADR-007-cpc-gates-vendored-local-only.md` — cpc 1.1.0 vendored via
+`cpc-init` to tools/conventions/ (+ `rungate.py` shim; pre-commit local hooks on Windows can't set
+PYTHONPATH inline) and wired in `.pre-commit-config.cpc.yaml` — **both gitignored** (cpc private /
+repo public, ADR-001): docs/test-api checks + push-guard at pre-push, coupling-check at commit-msg;
+`cpc-init-check` deliberately unwired (red-by-design on the deferred AGENTS.md entry file, cpc
+ADR-014). Pruned init's unwanted creates (AGENTS.md, GLOSSARY.md, `.claude/.gitignore`). CLAUDE.md
+digest + CONTEXT.md canonical text updated to the honest wiring. **Verification:** `docs_check
+--strict` 0 errors / 0 warnings (was 8/7 at session start); `test_api_check --strict` clean (116 test
+files). No `src/`/`tests/`/`apps/` file touched — suite not re-run, nothing it covers changed.
+**Why:** the 2026-06-18 "pre-commit pinned v0.1.0" delivery lock was never executed and cpc ADR-015
+has since reversed remote delivery; CLAUDE.md's "gate-enforced" claim was false on every box.
+**Rejected:** committed vendoring / CI wiring (publishes the private repo — ADR-007 options 1–2);
+sibling-checkout PYTHONPATH (no per-repo version pin).
+**Opens:** per-machine install — `pre-commit install -c .pre-commit-config.cpc.yaml -t pre-push
+-t commit-msg` after `cpc-init`; AGENTS.md entry-file adoption still open (then wire init_check);
+sprint contracts (migration plan step 10) are the next ways-of-working adoption.
+**Nothing committed (cpc §13) — staged for review.**

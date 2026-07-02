@@ -3392,3 +3392,31 @@ sibling-checkout PYTHONPATH (no per-repo version pin).
 -t commit-msg` after `cpc-init`; AGENTS.md entry-file adoption still open (then wire init_check);
 sprint contracts (migration plan step 10) are the next ways-of-working adoption.
 **Nothing committed (cpc §13) — staged for review.**
+
+## Session: 2026-07-02 (cont.) — R4 graded provenance strength (ratio, not boolean), Claude Code
+
+**What:** remediation-plan §R4. `SkeletonEdge` gains `provenance_strength` — a sorted, hashable
+`(token, ratio)` tuple (keeps the frozen edge byte-stable). `_add_provenance` now computes, per doc-pair
+token, `strength = |linked ∩ candidate pairs| / |candidate pairs|` over
+`{(da, db) : da ∈ docs(A), db ∈ docs(B), da ≠ db}`, and keeps the token when `strength > 0` — token
+*membership* is byte-identical to the old boolean "any linked", so the no-edge-creation invariant is
+untouched. `edge_weight(provenance, cooc, provenance_strength=())` splits its fractional tiebreak into
+`0.5·mean(strengths) + 0.5·(1 − 1/(1+cooc))` (both halves in `[0,1)`, sum `< 1`). Serialized both directions
+(`skeleton_to_dict`/`_from_dict`), folded into the `_graph_version` payload, and persisted via a new additive
+`strength_json` column on `concept_edges` (model + `_ADDITIVE_COLUMNS` migration). +6 guard tests
+(partial-graph ratio, saturated=1.0, token-count-dominates-strength invariant, round-trip, migration column);
+gate green — ruff/format/`mypy --strict`(54)/bandit 0-0-0, **718 passed / 1 skipped**.
+**Why:** the boolean `_add_provenance` was measured non-discriminating on run (a) (similarity 100%, citation
+~88% of edges carried the token) — it added a source but no signal. A deterministic *ratio* stays byte-stable
+and becomes a relative corroboration signal on a partial doc graph, which is exactly the multi-domain regime
+R5 measures.
+**Rejected:** an unhashable `dict` field on the frozen edge (breaks hashing / the byte-stable version — used
+a sorted tuple); folding strengths into `provenance_json` (overloads that column's documented list contract —
+a separate `strength_json` keeps each column single-purpose); scaling the *integer* weight by strength (would
+let a strong 1-token edge outrank a weak 2-token edge, breaking the locked multi-token invariant — strength
+lives strictly in the `< 1` tiebreak).
+**Opens:** on a saturated doc graph every strength is `1.0` by construction (no discrimination there — the
+honest expectation); the payoff is the strength *distribution* on the multi-domain graph, recorded per-K in
+the R5 decision run. `_PROVENANCE_WEIGHT` is still uniform 1.0/token — per-source weighting is a separate,
+eval-gated lever, not this PR.
+**Nothing committed (cpc §13) — staged for review.**

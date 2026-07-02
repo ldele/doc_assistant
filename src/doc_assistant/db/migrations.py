@@ -27,6 +27,8 @@ _ADDITIVE_COLUMNS: list[tuple[str, str, str, str | None]] = [
     ("answer_reviews", "failure_tag", "VARCHAR", "ix_answer_reviews_failure_tag"),
     # Glossary — curated definition gloss on the (pre-existing) concepts table.
     ("concepts", "definition", "TEXT", None),
+    # R4 — graded per-token provenance strength on the (pre-existing) concept_edges table.
+    ("concept_edges", "strength_json", "TEXT", None),
 ]
 
 

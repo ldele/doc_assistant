@@ -80,6 +80,13 @@ class SkeletonEdge:
     ``source_concept_id`` < ``target_concept_id`` by construction (canonical order).
     ``stance_by_doc`` / ``relation`` are the deferred Node-B LLM annotation — empty/None
     after the deterministic Node-A build.
+
+    ``provenance_strength`` (R4) is a *graded* strength in ``[0, 1]`` per doc-pair provenance
+    token (``citation`` / ``similarity``; ``cooccurrence`` is the base fact and carries none):
+    the fraction of candidate endpoint-doc pairs the token's doc graph actually links. Stored
+    as a sorted ``(token, strength)`` tuple so the frozen edge stays hashable + byte-stable.
+    Presence of a token is unchanged (strength > 0 ⟺ the old boolean "any linked"); the
+    strength only refines ``edge_weight``'s tiebreak on a partial doc graph.
     """
 
     source_concept_id: str
@@ -87,6 +94,7 @@ class SkeletonEdge:
     provenance: frozenset[str]  # ⊆ PROVENANCE_SOURCES
     weight: float  # derived from provenance (Decision 5); deterministic
     n_cooccurrence_chunks: int  # chunk-level count (Decision 4)
+    provenance_strength: tuple[tuple[str, float], ...] = ()  # sorted (token, ratio); R4
     stance_by_doc: tuple[tuple[str, str], ...] = ()  # (document_id, polarity) per asserting doc
     relation: str | None = None
 
@@ -275,19 +283,36 @@ def cooccurrence_edges(
     return edges
 
 
+def _with_strength(
+    existing: tuple[tuple[str, float], ...], token: str, strength: float
+) -> tuple[tuple[str, float], ...]:
+    """Merge ``token`` → ``strength`` into an edge's sorted strength mapping (replace-or-add)."""
+    merged = dict(existing)
+    merged[token] = strength
+    return tuple(sorted(merged.items()))
+
+
 def _add_provenance(
     edges: list[SkeletonEdge],
     doc_pairs: list[tuple[str, str]],
     concept_doc_index: dict[str, set[str]],
     token: str,
 ) -> list[SkeletonEdge]:
-    """Annotate existing edges with ``token`` where a doc-level pair links their concepts.
+    """Annotate existing edges with ``token`` + a graded strength (R4 — ratio, not boolean).
 
     The no-edge-creation invariant (Decision 5): an edge gains the provenance token only
     when some ``(doc_a, doc_b)`` pair connects a document containing one endpoint to a
     document containing the other (either direction). A pair over concepts that are **not**
     already a co-occurrence edge creates **nothing** — this is the density control that
     prevents "every concept in doc X linked to every concept in doc Y".
+
+    R4 graded strength: over the *candidate* endpoint-doc pairs
+    ``{(da, db) : da ∈ docs(A), db ∈ docs(B), da ≠ db}``, ``strength = |linked ∩ candidates| /
+    |candidates|`` — the fraction actually connected by this token's doc graph. The token is
+    kept iff ``strength > 0`` (identical membership to the old boolean "any linked"); the
+    strength is recorded on ``provenance_strength`` and folded into the deterministic weight
+    tiebreak. On a saturated graph every strength is ``1.0`` by construction; the signal only
+    spreads on a partial graph (the multi-domain regime).
     """
     if not doc_pairs:
         return list(edges)
@@ -300,14 +325,25 @@ def _add_provenance(
     for e in edges:
         src_docs = concept_doc_index.get(e.source_concept_id, set())
         tgt_docs = concept_doc_index.get(e.target_concept_id, set())
-        connected = any((da, db) in linked for da in src_docs for db in tgt_docs if da != db)
-        if connected:
+        candidate = 0
+        hit = 0
+        for da in src_docs:
+            for db in tgt_docs:
+                if da == db:
+                    continue
+                candidate += 1
+                if (da, db) in linked:
+                    hit += 1
+        if candidate and hit:
+            strength = round(hit / candidate, 6)
             provenance = e.provenance | {token}
+            strengths = _with_strength(e.provenance_strength, token, strength)
             out.append(
                 replace(
                     e,
                     provenance=provenance,
-                    weight=edge_weight(provenance, e.n_cooccurrence_chunks),
+                    provenance_strength=strengths,
+                    weight=edge_weight(provenance, e.n_cooccurrence_chunks, strengths),
                 )
             )
         else:
@@ -349,16 +385,31 @@ _PROVENANCE_WEIGHT: dict[str, float] = {
 }
 
 
-def edge_weight(provenance: frozenset[str], n_cooccurrence_chunks: int) -> float:
+def edge_weight(
+    provenance: frozenset[str],
+    n_cooccurrence_chunks: int,
+    provenance_strength: tuple[tuple[str, float], ...] = (),
+) -> float:
     """Deterministic edge weight from the provenance set + co-occurrence count (Decision 5).
 
     The integer part is the number of corroborating provenance sources; a bounded fractional
-    term in ``[0, 1)`` from the co-occurrence count breaks ties between equal-provenance
-    edges. So a multi-provenance edge (≥ 2) always ranks above a co-occurrence-only edge
-    (< 2), and among equals, more co-occurring chunks rank higher.
+    term in ``[0, 1)`` breaks ties between equal-provenance edges. So a multi-provenance edge
+    (≥ 2) always ranks above a co-occurrence-only edge (< 2) — the **locked invariant**: more
+    provenance tokens always outrank fewer.
+
+    R4 splits that fractional tiebreak into two bounded halves: ``0.5*mean(strengths) +
+    0.5*(1 - 1/(1 + cooc))``. ``mean(strengths)`` is the average graded provenance strength
+    (the ``citation`` / ``similarity`` ratios; ``0.0`` when there are none — a co-occurrence-
+    only edge), so on a partial doc graph a better-corroborated edge ranks above an equal-token
+    edge with weaker links; ``cooc`` still breaks the remaining ties by co-occurring-chunk
+    count. Both halves are in ``[0, 1)`` (the strength half tops out at ``0.5``), so the sum
+    stays ``< 1`` and the integer part still dominates.
     """
     base = sum(_PROVENANCE_WEIGHT[p] for p in provenance if p in _PROVENANCE_WEIGHT)
-    tiebreak = 1.0 - 1.0 / (1.0 + max(n_cooccurrence_chunks, 0))
+    strengths = [s for _, s in provenance_strength]
+    mean_strength = sum(strengths) / len(strengths) if strengths else 0.0
+    cooc_term = 1.0 - 1.0 / (1.0 + max(n_cooccurrence_chunks, 0))
+    tiebreak = 0.5 * mean_strength + 0.5 * cooc_term
     return round(base + tiebreak, 6)
 
 
@@ -412,6 +463,7 @@ def _graph_version(
                 sorted(e.provenance),
                 e.weight,
                 e.n_cooccurrence_chunks,
+                [list(s) for s in e.provenance_strength],  # already sorted by token (R4)
                 sorted([list(s) for s in e.stance_by_doc]),
                 e.relation,
             ]
@@ -514,6 +566,7 @@ def skeleton_to_dict(skeleton: ConceptSkeleton) -> dict[str, Any]:
                 "source": e.source_concept_id,
                 "target": e.target_concept_id,
                 "provenance": sorted(e.provenance),
+                "provenance_strength": dict(e.provenance_strength),
                 "weight": e.weight,
                 "n_cooccurrence_chunks": e.n_cooccurrence_chunks,
                 "stance": [list(s) for s in e.stance_by_doc],
@@ -547,6 +600,12 @@ def skeleton_from_dict(data: dict[str, Any]) -> ConceptSkeleton:
             provenance=frozenset(e.get("provenance", [])),
             weight=float(e.get("weight", 0.0)),
             n_cooccurrence_chunks=int(e.get("n_cooccurrence_chunks", 0)),
+            provenance_strength=tuple(
+                sorted(
+                    (token, float(strength))
+                    for token, strength in e.get("provenance_strength", {}).items()
+                )
+            ),
             stance_by_doc=tuple((s[0], s[1]) for s in e.get("stance", [])),
             relation=e.get("relation"),
         )
@@ -867,6 +926,9 @@ def _write_skeleton_rows(
                 source_concept_id=e.source_concept_id,
                 target_concept_id=e.target_concept_id,
                 provenance_json=json.dumps(sorted(e.provenance)),
+                strength_json=(
+                    json.dumps(dict(e.provenance_strength)) if e.provenance_strength else None
+                ),
                 weight=e.weight,
                 n_cooccurrence_chunks=e.n_cooccurrence_chunks,
                 relation=e.relation,

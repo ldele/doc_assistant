@@ -77,6 +77,12 @@ def main() -> int:
         default=None,
         help="Override the Louvain seed for this run",
     )
+    parser.add_argument(
+        "--presence-mode",
+        choices=("boundary", "substring"),
+        default=None,
+        help="Presence match: boundary=whole-word (default), substring=raw (A/B lever)",
+    )
     args = parser.parse_args()
 
     result = build_concept_skeleton(
@@ -84,6 +90,7 @@ def main() -> int:
         force=args.force,
         min_cooccurrence=args.min_cooccurrence,
         seed=args.seed,
+        presence_mode=args.presence_mode,
     )
     print(_format_report(result))
     if not args.apply:

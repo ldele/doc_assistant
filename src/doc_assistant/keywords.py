@@ -2,12 +2,13 @@
 
 Fixes KI-13: the concept-skeleton promote seam (``scripts/seed_concepts.py``) mines
 ``Keyword`` rows, but nothing in the codebase produced them, so the vocabulary path was
-dead on real data. This module extracts keyphrases from each document's cached markdown — zero LLM — and writes
-them as ``Keyword(source="extracted")`` rows linked to their documents. Additive, idempotent,
-and it never touches the chunk store (Enrichment-Layer Pattern), exactly like the
-``extract_citations`` / ``extract_doc_metadata`` sidecar runners. Three modes: ``per_doc``
-TF-IDF and ``corpus_band`` (pure Python), and ``contrastive`` (R3 / ADR-006) — C-value nested
-discount * reference-corpus weirdness, using ``wordfreq`` as the general-English reference.
+dead on real data. This module extracts keyphrases from each document's cached markdown —
+zero LLM — and writes them as ``Keyword(source="extracted")`` rows linked to their
+documents. Additive, idempotent, and it never touches the chunk store (Enrichment-Layer
+Pattern), exactly like the ``extract_citations`` / ``extract_doc_metadata`` sidecar runners.
+Three modes: ``per_doc`` TF-IDF and ``corpus_band`` (pure Python), and ``contrastive``
+(R3 / ADR-006) — C-value nested discount * reference-corpus weirdness, using ``wordfreq``
+as the general-English reference.
 
 TF-IDF over a same-domain corpus down-weights ubiquitous terms (``model``, ``bert``) and
 surfaces each document's distinctive phrases — which also mitigates the broad-hub density

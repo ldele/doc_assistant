@@ -3273,15 +3273,82 @@ run and keeps substring as an explicit A/B so the run can *show* the effect.
 **Rejected:** `\b` word boundaries (breaks on `gpt-4`/`c++` edge chars — the plan called this out); reading
 the mode inside the pure `match_presence` from config (kept the core pure — the impure orchestrator resolves
 config and passes `mode=`); switching the primitive silently without an A/B lever (R5 needs the before/after
-comparison, so `substring` is retained, not deleted); running the `build_concept_skeleton` dry-run
-measurement now (the box's R1 re-ingest was in flight — deferred to R5, which re-measures on the clean corpus
-anyway).
+comparison, so `substring` is retained, not deleted).
 
-**Opens:** **R5 verify-after** ($0, host, after the re-ingest settles) — dry-run `build_concept_skeleton
---presence-mode {boundary,substring} --min-cooccurrence {1..5}` on the real corpus; append a before/after
-table (BERT mentions, per-K edge counts/density) to `tests/eval/baselines/rg001_concept_skeleton_2026-07-01.md`;
+**Measured (indicative, 2026-07-02, after the R1 re-ingest finished; $0, no DB mutation):** the curated
+`Concept` vocabulary is **empty** on this `data/` home (the 2026-07-01 hand-seed lived elsewhere), so ran an
+**ad-hoc probe vocabulary** of short/ambiguous forms over the real 5,617 parent chunks (probe list only, never
+written to the DB). Substring vs boundary mentions/docs: **IR 10541/76 → 39/8 (270×; a fabricated hub in
+*every* doc)**, RAG 1334/71 → 201/3 (6.6×), BERT 770/59 → 232/13 (3.3×); distinctive forms (DPR/ColBERT/BM25/
+ECG) ≈1.0×. Probe-skeleton edge **density ~1.6–2× higher under substring** at every K (K2 0.58 vs 0.32) — the
+exact RG-008 gate metric. Recorded → `tests/eval/baselines/rg001_concept_skeleton_2026-07-01.md` (R2 addendum).
+
+**Opens:** the **curated-vocabulary corpus run** is the R5 decision run — dry-run `build_concept_skeleton
+--presence-mode {boundary,substring} --min-cooccurrence {1..5}` after a vocabulary is curated (R5 step 2);
 set the winning mode + `min_cooccurrence`, then close RG-008/009. Accepted looseness (documented): overlapping
 alias spans double-count `n_mentions` (reporting-only). **Gate GREEN** (official-CPython 3.12, `uv run
 --no-sync`): ruff ✓ · ruff format ✓ · `mypy --strict src` ✓ (54) · bandit 0/0/0 ✓ · `pytest tests/unit
 tests/integration` → **706 passed, 1 skipped**. **Staged on `feat/keyword-concept-graph`, nothing committed
 (cpc §13).**
+
+---
+## Session: 2026-07-02 (cont.) — PR-R3: contrastive keyword termhood (`wordfreq`) + C-value + orphan sweep, Claude Code
+
+**What:** built remediation-plan §R3 (the largest increment; user-decided reference source = Option A).
+- **Dependency:** `uv add wordfreq` → base dep `wordfreq>=3.0` (+ ftfy/langcodes/locate/wcwidth); `uv lock`
+  + `uv sync --extra cpu --extra dev` (native TLS, proxy box) — also re-pinned torch to `+cpu`. mypy
+  override `wordfreq.*`. ADR-006 recorded.
+- **`keywords.py` (3 fixes):** (1) `c_value_scores` — Frantzi C-value, `+1` length variant, discounts
+  fragments that occur only inside longer terms; (2) `weirdness(term, *, ref_ceiling)` — `min` over tokens
+  of `max(0, ceiling − zipf(token))` (OOV → ceiling = maximally weird); (3) new `mode="contrastive"`:
+  `score = (1+ln tf)·weirdness` over a C-value-gated pool (the pre-registered formula), plus
+  `_sweep_orphan_keywords()` deleting extracted `Keyword` rows with no doc links and no matching promoted
+  `Concept` label/alias (run only on a whole-corpus `--force apply`). `KeywordExtractionResult.removed_orphans`.
+- **config** `KEYWORD_WEIRDNESS_REF_CEILING=8.0` + `KEYWORD_CONTRASTIVE_MIN_CVALUE=0.0` (frozen a priori);
+  CLI `--mode contrastive` + banner. Dropped the optional `concept_semantics` ride-alongs (PR already large).
+- **Tests +6:** unit — C-value discounts fully-nested + ranks container over its unigram; weirdness favors
+  OOV/domain over common English; contrastive ranks domain over common + drops nested; determinism/top_k.
+  integration — force sweeps orphaned rows but keeps a promoted concept's form; no sweep without force / on a
+  single-doc run.
+
+**Verify-after (indicative, $0 dry-run on the R1-clean real corpus — cache `grep "intentionally omitted"` =
+**0**, confirming the user's R1 apply+re-ingest landed):** `tests/eval/baselines/rg001_keyword_termhood_2026-07-02.md`.
+`corpus_band` top-40 is boilerplate + author surnames (`state`/`effect`/`simple`/`whether`/`four`/`best`/
+`zhang`/`chen`); **contrastive** top-40 is real domain vocab (`deeplabcut`/`connectome`/`cebra`/`imagenet`/
+`embeddings`/`bm25`/`res2net`/`medsam-2`/`phate`). Pre-registered acceptance MET. Noted limitations (follow-up,
+not blocking): publisher/ID artifacts (`elife`/`pmid`/`zenodo`) and repeated-token n-grams (`outflux outflux
+outflux`) rank high — weirdness rewards all rare tokens.
+
+**Why:** both pre-R3 modes fail by construction (per-doc → df≈1 cliques; corpus_band monotone in df → most
+generic). Reference-corpus contrast + C-value is the literature answer, deterministic and external (no
+corpus-tuning-against-itself). This is what makes the R5 curation candidates promotable.
+
+**Rejected:** repo-frozen table (Option B — build+maintain a table for the same math) and AWL-only (Option C —
+no general contrast; may layer on later); folding C-value into per_doc/corpus_band (would alter the R5 A/B
+baselines — kept them unchanged); the `concept_semantics` ride-alongs (scope).
+
+**Opens:** the contrastive follow-up levers (STOPWORDS/metadata strip for publisher artifacts; collapse
+repeated-token grams); **R5** uses `extract_keywords --mode contrastive --apply` → `seed_concepts --promote`
+to curate the vocabulary the empty-vocab finding (R2) flagged, then runs the skeleton. **Gate GREEN**
+(official-CPython 3.12, `uv run --no-sync`): ruff ✓ · ruff format ✓ · `mypy --strict src` ✓ (54) · bandit
+0/0/0 ✓ · `pytest tests/unit tests/integration` → **712 passed, 1 skipped**. **Staged on
+`feat/keyword-concept-graph`, nothing committed (cpc §13).**
+
+## Session: 2026-07-02 (cont.) — Selective ingestion designed: spec S1/S2 + roadmap rows (planning session, docs only)
+
+**What:** drafted `docs/specs/feature-selective-ingestion.md` (DRAFT — not yet grilled/locked) and added
+roadmap PR rows **S1** (backend: `SourceFile` registry + selection-scoped ingest — CLI `--files`/`--dry-run`,
+`GET/PATCH /api/sources`, optional `POST /api/ingest {paths}` body) and **S2** (Tauri sources panel);
+re-pointed row 17 (Zotero/Calibre) at the spec's ADR-3 as *optional producers* for the registry.
+**Why:** user request (2026-07-02): user-defined selective ingestion — batch and on-need with corpus
+metadata — for a mixed papers+books corpus, with both a script and a UI path. Hard constraint: **no Zotero
+dependency**; our SQLite is the system of record. Design: register ≠ ingest (stat-only scan, derived
+status, persist only identity + user intent: `doc_type`, `excluded`); selection reaches the locked ingest
+core as an explicit `files=` list; cleanup stays global-only (partial runs never delete).
+**Rejected:** stateless listing (nowhere to hold pre-ingest metadata); persisted-status mirror (drift);
+predicate DSL in the core (locked path); `Document.doc_type` column in v1 (`create_all` adds tables, not
+columns — no ALTER-migration story yet); merging with `sources_manifest.py` (different axis: provenance
+pins vs ingest intent).
+**Opens:** spec needs a grill/lock pass before S1 is built; sequence S1 **before** PR 17 so adapters have a
+seam to land in; explicit-selection-overrides-`excluded` is a UX call worth confirming at lock time.
+**Docs only — no code, nothing committed (cpc §13).**

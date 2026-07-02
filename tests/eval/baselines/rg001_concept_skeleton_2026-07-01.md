@@ -161,3 +161,45 @@ Reset: `DELETE FROM concept_aliases; DELETE FROM concepts;`.
   `per_doc` (TF-IDF distinctive) and `corpus_band` (shared mid-DF). Both were exercised here; neither yields a
   usable graph *on this corpus* (the corpus is the blocker), but the machinery + config knobs are in place for
   the multi-domain re-run.
+
+---
+
+## R2 addendum (2026-07-02) — word-boundary vs substring presence, real corpus
+
+**Reproducible/indicative, not a verdict.** Measures the R2 change (`match_presence` boundary mode) against
+the substring primitive it replaces, on the **real `data/` corpus** (5,617 parent chunks, post-R1
+re-ingest). The curated `Concept` vocabulary is **empty on this data home** (the 2026-07-01 hand-seeded set
+lived elsewhere), so this uses an **ad-hoc probe vocabulary** of short/ambiguous surface forms — *not* written
+to the DB — over the real chunk text. The corpus-level run on the *curated* vocabulary is the R5 decision run
+(needs curation first). $0, deterministic, no LLM, no DB mutation.
+
+**Per-concept mentions / documents (boundary → substring, inflation ×):**
+
+| form | boundary m/docs | substring m/docs | inflation |
+|------|----------------:|-----------------:|----------:|
+| IR   | 39 / 8   | 10541 / 76 | **270×** |
+| RAG  | 201 / 3  | 1334 / 71  | 6.6× |
+| BERT | 232 / 13 | 770 / 59   | 3.3× |
+| RNN  | 1 / 1    | 13 / 6     | 13× |
+| CNN  | 111 / 14 | 186 / 19   | 1.7× |
+| transformer | 207 / 22 | 345 / 27 | 1.7× |
+| MRI  | 305 / 18 | 417 / 23   | 1.4× |
+| DPR / ColBERT / SBERT / BM25 / ECG / retrieval | — | — | ≈1.0× (distinctive; unaffected) |
+
+**Probe-skeleton edge density by `min_cooccurrence` (14 probe concepts, edges / possible-pairs):**
+
+| mode | K1 | K2 | K3 | K4 | K5 |
+|------|----|----|----|----|----|
+| boundary  | 0.43 | 0.32 | 0.30 | 0.27 | 0.26 |
+| substring | 0.68 | 0.58 | 0.54 | 0.51 | 0.47 |
+
+**Reading.** Substring presence fabricates hubs: `IR` "appears" in **all 76 docs** (matched inside *their*,
+*first*, *requires*, …) and `RAG` jumps 3 → 71 docs (*storage*/*average*/*fragment*). Because one over-matched
+short form present in every doc co-occurs with every other concept, edge **density runs ~1.6–2× higher under
+substring** — the exact metric RG-008 gates on. Distinctive forms (DPR, ColBERT, BM25, ECG) are unchanged, so
+boundary matching costs nothing where the surface form is already unambiguous. This confirms substring was a
+real confound; the R5 run re-measures on the curated vocabulary and sets the mode + `min_cooccurrence`.
+
+**Re-run:** `uv run --no-sync python scripts/../<scratch>/r2_presence_measure.py` — or, on a curated
+vocabulary: `uv run --no-sync python -m scripts.build_concept_skeleton --presence-mode boundary` vs
+`--presence-mode substring` (dry-run; sweep `--min-cooccurrence 1..5`).

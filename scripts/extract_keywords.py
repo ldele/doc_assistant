@@ -23,11 +23,13 @@ import argparse
 import sys
 
 from doc_assistant.config import (
+    KEYWORD_CONTRASTIVE_MIN_CVALUE,
     KEYWORD_CORPUS_TOP_K,
     KEYWORD_MAX_DF_FRAC,
     KEYWORD_MIN_CHARS,
     KEYWORD_MIN_DF,
     KEYWORD_NGRAM_MAX,
+    KEYWORD_WEIRDNESS_REF_CEILING,
     KEYWORDS_PER_DOC,
 )
 from doc_assistant.keywords import KeywordExtractionResult, extract_keywords
@@ -61,10 +63,11 @@ def main() -> int:
     parser.add_argument("--doc", default=None, metavar="ID", help="Only this document id")
     parser.add_argument(
         "--mode",
-        choices=("per-doc", "corpus-band"),
+        choices=("per-doc", "corpus-band", "contrastive"),
         default="per-doc",
         help="per-doc = distinctive terms per document (TF-IDF); "
-        "corpus-band = shared mid-document-frequency vocabulary (cross-document concept graph)",
+        "corpus-band = shared mid-document-frequency vocabulary; "
+        "contrastive = termhood via C-value + reference-corpus weirdness (R3, recommended)",
     )
     parser.add_argument(
         "--top-k",
@@ -83,10 +86,10 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    mode = "corpus_band" if args.mode == "corpus-band" else "per_doc"
+    mode = {"corpus-band": "corpus_band", "contrastive": "contrastive"}.get(args.mode, "per_doc")
     top_k = args.top_k
     if top_k is None:
-        top_k = KEYWORD_CORPUS_TOP_K if mode == "corpus_band" else KEYWORDS_PER_DOC
+        top_k = KEYWORDS_PER_DOC if mode == "per_doc" else KEYWORD_CORPUS_TOP_K
 
     result = extract_keywords(
         apply=args.apply,
@@ -98,10 +101,19 @@ def main() -> int:
         mode=mode,
         min_df=args.min_df,
         max_df_frac=args.max_df_frac,
+        ref_ceiling=KEYWORD_WEIRDNESS_REF_CEILING,
+        min_cvalue=KEYWORD_CONTRASTIVE_MIN_CVALUE,
     )
     banner = f"mode={args.mode}  top_k={top_k}"
     if mode == "corpus_band":
         banner += f"  min_df={args.min_df}  max_df_frac={args.max_df_frac}"
+    elif mode == "contrastive":
+        banner += (
+            f"  ref_ceiling={KEYWORD_WEIRDNESS_REF_CEILING}"
+            f"  min_cvalue={KEYWORD_CONTRASTIVE_MIN_CVALUE}"
+        )
+    if args.apply and args.force:
+        banner += f"  (swept {result.removed_orphans} orphaned rows)"
     print(banner)
     print(_format_report(result, apply=args.apply))
     if not args.apply:

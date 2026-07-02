@@ -115,6 +115,50 @@ def test_extracted_keywords_feed_the_promote_seam(env: Path) -> None:
     assert all(not c.promoted for c in list_keyword_candidates())  # candidate only
 
 
+def test_force_sweeps_orphaned_keywords_but_keeps_promoted(
+    env: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from doc_assistant.db.models import Concept
+
+    extract_keywords(apply=True, top_k=5, ngram_max=2, min_chars=3)
+    with session_scope() as session:
+        names = {k.name for k in session.execute(select(Keyword)).scalars()}
+    assert {"colbert", "hyde"} <= names
+
+    # Promote "colbert" to a curated Concept — the sweep must never delete a promoted form.
+    with session_scope() as session:
+        session.add(Concept(label="colbert", source="keyword"))
+
+    # A new corpus that drops "colbert" and "hyde": both lose every link on a force re-extract.
+    new_corpus = {
+        "d1": ("colbert.pdf", "late interaction retrieval ranking bm25"),
+        "d2": ("hyde.pdf", "hypothetical document retrieval generation"),
+        "d3": ("dpr.pdf", "dense passage retrieval dense encoder bm25"),
+    }
+    monkeypatch.setattr(
+        kw,
+        "load_document_texts",
+        lambda document_ids=None: [(d, f, t) for d, (f, t) in new_corpus.items()],
+    )
+    result = extract_keywords(apply=True, force=True, top_k=5, ngram_max=2, min_chars=3)
+
+    assert result.removed_orphans >= 1
+    with session_scope() as session:
+        remaining = {k.name for k in session.execute(select(Keyword)).scalars()}
+    assert "hyde" not in remaining  # orphan + not promoted → swept
+    assert "colbert" in remaining  # orphan BUT matches a promoted Concept label → kept
+
+
+def test_no_sweep_without_force_or_on_single_doc(env: Path) -> None:
+    # A plain apply (no force) never sweeps; a --doc run is excluded from the sweep too.
+    result = extract_keywords(apply=True, top_k=5, ngram_max=2, min_chars=3)
+    assert result.removed_orphans == 0
+    single = extract_keywords(
+        apply=True, force=True, document_id="d1", top_k=5, ngram_max=2, min_chars=3
+    )
+    assert single.removed_orphans == 0  # single-document force run is excluded
+
+
 def test_corpus_band_mode_links_shared_terms_across_docs(env: Path) -> None:
     # max_df = floor(0.7 * 3) = 2, min_df = 2 → the band is exactly df==2.
     extract_keywords(

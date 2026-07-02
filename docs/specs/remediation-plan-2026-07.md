@@ -74,6 +74,12 @@ tests/integration`); both corpora normalized + re-ingested on their host boxes; 
 
 ## R2 — Word-boundary presence matching (the RG-009 lever)
 
+**Status (2026-07-02):** ✅ code + guard tests BUILT (staged, not committed). `match_presence(...,
+mode=)` — `"boundary"` default (alnum lookarounds), `"substring"` A/B lever;
+`CONCEPT_SKELETON_PRESENCE_MODE` + `--presence-mode`; 706 tests green. The **verify-after**
+before/after presence table (both modes, real corpus) is deferred to the R5 decision run — held
+off here because the box's R1 re-ingest was in flight. See DEVLOG 2026-07-02 (cont., R2).
+
 **Why:** substring matching sits at the **top of the edge funnel** — BERT firing 550× via
 SBERT/ColBERT/RoBERTa doesn't just inflate `n_mentions`, it fabricates co-occurrence edges from BERT to
 everything in those papers, inflating the exact density metric RG-008 gates on. Running R5 without this fix

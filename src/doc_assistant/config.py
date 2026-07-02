@@ -450,6 +450,13 @@ CONCEPT_SKELETON_DIR = DATA_PATH / "skeleton"
 # headline density lever; set from the RG-001/008 edge-precision run on the real corpus.
 CONCEPT_SKELETON_MIN_COOCCURRENCE = int(os.getenv("CONCEPT_SKELETON_MIN_COOCCURRENCE", "2"))
 
+# Concept-presence matching primitive (Decision 2 / R2). "boundary" (default) counts only
+# whole-word (alnum-bounded) surface-form occurrences, so "bert" does NOT fire inside
+# "sbert"/"colbert"/"roberta" — the substring inflation that fabricated co-occurrence edges
+# and confounded the RG-008/009 runs. "substring" keeps the original raw str.count behaviour
+# as the A/B lever for the RG-008 comparison. Set the winner from that run.
+CONCEPT_SKELETON_PRESENCE_MODE = os.getenv("CONCEPT_SKELETON_PRESENCE_MODE", "boundary")
+
 # Louvain is randomized; a fixed seed makes community assignment reproducible so the
 # skeleton.json artifact is byte-identical to rebuild (ADR-1, carried over from PR-16).
 CONCEPT_SKELETON_SEED = int(os.getenv("CONCEPT_SKELETON_SEED", "42"))

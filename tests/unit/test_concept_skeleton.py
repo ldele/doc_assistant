@@ -6,7 +6,11 @@ Fixed toy inputs, no DB / LLM / network. The no-edge-creation guard
 
 from __future__ import annotations
 
+import pytest
+
 from doc_assistant.concept_skeleton import (
+    PRESENCE_BOUNDARY,
+    PRESENCE_SUBSTRING,
     ConceptNode,
     ConceptPresence,
     SkeletonEdge,
@@ -56,6 +60,74 @@ def test_presence_counts_mentions_across_chunks() -> None:
     assert by_doc["d1"].chunk_keys == ("d1:p0", "d1:p1")
     assert by_doc["d1"].n_mentions == 3  # two + one occurrences
     assert by_doc["d2"].chunk_keys == ("d2:p0",)
+
+
+# ---- presence match mode (R2 / RG-009 — word-boundary vs substring) --------
+
+
+def test_presence_boundary_rejects_substring_hits() -> None:
+    # The confound R2 fixes: "bert" must NOT fire inside sbert / colbert / roberta.
+    concepts = [("c_bert", "BERT")]
+    chunks = [
+        ("d1:p0", "d1", "SBERT and ColBERT build on RoBERTa."),  # no standalone token
+        ("d2:p0", "d2", "BERT is the base model."),  # standalone → the only real hit
+    ]
+    presences = match_presence(concepts, {}, chunks, mode=PRESENCE_BOUNDARY)
+    by_doc = {p.document_id: p for p in presences}
+    assert set(by_doc) == {"d2"}  # d1 contributes nothing under boundary
+    assert by_doc["d2"].chunk_keys == ("d2:p0",)
+    assert by_doc["d2"].n_mentions == 1
+
+
+def test_presence_boundary_matches_at_punctuation_and_string_edges() -> None:
+    concepts = [("c_bert", "BERT")]
+    chunks = [
+        ("d1:p0", "d1", "We use BERT."),  # trailing period
+        ("d2:p0", "d2", "(BERT) is strong"),  # wrapped in parens
+        ("d3:p0", "d3", "bert"),  # whole string, no surrounding chars
+    ]
+    presences = match_presence(concepts, {}, chunks, mode=PRESENCE_BOUNDARY)
+    assert {p.document_id for p in presences} == {"d1", "d2", "d3"}
+    assert all(p.n_mentions == 1 for p in presences)
+
+
+def test_presence_boundary_handles_hyphen_and_plus_forms() -> None:
+    # \b would mishandle these edge chars; alnum lookarounds get them right.
+    concepts = [("c_gpt4", "GPT-4"), ("c_cpp", "C++")]
+    chunks = [
+        ("d1:p0", "d1", "GPT-4 is used, not GPT-4o."),  # matches gpt-4, not inside gpt-4o
+        ("d2:p0", "d2", "Written in C++ here."),
+    ]
+    presences = match_presence(concepts, {}, chunks, mode=PRESENCE_BOUNDARY)
+    by_concept = {p.concept_id: p for p in presences}
+    assert by_concept["c_gpt4"].n_mentions == 1  # the gpt-4o occurrence is excluded
+    assert by_concept["c_gpt4"].document_id == "d1"
+    assert by_concept["c_cpp"].document_id == "d2"  # c++ matched despite '+' edges
+    # Deterministic, sorted by (concept_id, document_id).
+    assert [(p.concept_id, p.document_id) for p in presences] == sorted(
+        (p.concept_id, p.document_id) for p in presences
+    )
+
+
+def test_presence_substring_mode_reproduces_raw_count() -> None:
+    concepts = [("c_bert", "BERT")]
+    chunks = [("d1:p0", "d1", "SBERT and ColBERT and BERT.")]
+    substring = match_presence(concepts, {}, chunks, mode=PRESENCE_SUBSTRING)
+    assert substring[0].n_mentions == 3  # sbert + colbert + bert (old behaviour)
+    boundary = match_presence(concepts, {}, chunks, mode=PRESENCE_BOUNDARY)
+    assert boundary[0].n_mentions == 1  # only the standalone token
+
+
+def test_presence_default_mode_is_boundary() -> None:
+    concepts = [("c_bert", "BERT")]
+    chunks = [("d1:p0", "d1", "SBERT only, no standalone.")]
+    # No mode passed → boundary → sbert does not count → no presence row at all.
+    assert match_presence(concepts, {}, chunks) == []
+
+
+def test_presence_invalid_mode_raises() -> None:
+    with pytest.raises(ValueError, match="presence mode"):
+        match_presence([("c", "bert")], {}, [("d:p0", "d", "bert")], mode="bogus")
 
 
 # ---- co-occurrence (Decision 4) --------------------------------------------

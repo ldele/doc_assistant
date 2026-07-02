@@ -3245,3 +3245,43 @@ carries the KI-7 retirement + the KI-8 precise re-projection. **Gate GREEN** (of
 `uv run --no-sync`): ruff ✓ · ruff format ✓ · `mypy --strict src` ✓ (54) · bandit 0/0/0 ✓ ·
 `pytest tests/unit tests/integration` → **700 passed, 1 skipped**. **Staged on `feat/keyword-concept-graph`,
 nothing committed (cpc §13).**
+
+---
+## Session: 2026-07-02 (cont.) — PR-R2: word-boundary concept presence (RG-009 lever), Claude Code
+
+**What:** built remediation-plan §R2. Ran alongside the user's R1 host re-ingest — code + guard tests only,
+no store access, so no collision; the before/after measurement is deferred to R5 (below).
+- `concept_skeleton.py` — `match_presence(..., *, mode="boundary")`; new `_presence_matchers` precompiles one
+  regex per surface form. Boundary uses **alnum lookarounds** `(?<![a-z0-9])form(?![a-z0-9])`, deliberately
+  NOT `\b` (which mishandles non-word edge chars — `gpt-4`, `c++`, where a trailing `\b` would demand a
+  following word char). `"substring"` mode keeps the original `str.count` as the A/B lever. Orchestrator
+  `build_concept_skeleton` gained `presence_mode` (defaults to config); `match_presence` call passes it.
+- `config.py` `CONCEPT_SKELETON_PRESENCE_MODE` (default `"boundary"`) + `.env.example`; CLI `--presence-mode
+  {boundary,substring}`.
+- Tests (+6, `test_concept_skeleton.py`): `bert` no longer fires inside `sbert`/`colbert`/`roberta`; matches
+  at punctuation/parens/string edges; `gpt-4` matches but not inside `gpt-4o`, `c++` matches; substring mode
+  reproduces the raw count (3 vs boundary's 1); default is boundary; unknown mode raises. The two pre-existing
+  presence tests are mode-agnostic (clean tokens) and pass unchanged under the new default.
+
+**Why:** substring matching sits at the **top of the edge funnel** — one over-matched short form (BERT firing
+inside every SBERT/ColBERT/RoBERTa mention) doesn't just inflate `n_mentions`, it fabricates co-occurrence
+edges from that concept to everything in those papers, inflating the exact density metric RG-008 gates on.
+Running the R5 decision run without this fix would produce a *third* confounded negative (after KI-14 and
+DF-only keywords). Word-boundary was already the spec's named RG-009 upgrade lever; R2 builds it ahead of the
+run and keeps substring as an explicit A/B so the run can *show* the effect.
+
+**Rejected:** `\b` word boundaries (breaks on `gpt-4`/`c++` edge chars — the plan called this out); reading
+the mode inside the pure `match_presence` from config (kept the core pure — the impure orchestrator resolves
+config and passes `mode=`); switching the primitive silently without an A/B lever (R5 needs the before/after
+comparison, so `substring` is retained, not deleted); running the `build_concept_skeleton` dry-run
+measurement now (the box's R1 re-ingest was in flight — deferred to R5, which re-measures on the clean corpus
+anyway).
+
+**Opens:** **R5 verify-after** ($0, host, after the re-ingest settles) — dry-run `build_concept_skeleton
+--presence-mode {boundary,substring} --min-cooccurrence {1..5}` on the real corpus; append a before/after
+table (BERT mentions, per-K edge counts/density) to `tests/eval/baselines/rg001_concept_skeleton_2026-07-01.md`;
+set the winning mode + `min_cooccurrence`, then close RG-008/009. Accepted looseness (documented): overlapping
+alias spans double-count `n_mentions` (reporting-only). **Gate GREEN** (official-CPython 3.12, `uv run
+--no-sync`): ruff ✓ · ruff format ✓ · `mypy --strict src` ✓ (54) · bandit 0/0/0 ✓ · `pytest tests/unit
+tests/integration` → **706 passed, 1 skipped**. **Staged on `feat/keyword-concept-graph`, nothing committed
+(cpc §13).**

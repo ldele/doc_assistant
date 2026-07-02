@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from collections import defaultdict
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -151,12 +152,36 @@ def _surface_forms(label: str, alias_list: list[str]) -> list[str]:
     return forms
 
 
+PRESENCE_BOUNDARY = "boundary"
+PRESENCE_SUBSTRING = "substring"
+PRESENCE_MODES = (PRESENCE_BOUNDARY, PRESENCE_SUBSTRING)
+
+
+def _presence_matchers(forms: list[str], mode: str) -> list[tuple[str, re.Pattern[str] | None]]:
+    """Precompiled per-form matchers for one concept (compiled once, reused per chunk).
+
+    ``boundary`` mode pairs each form with a compiled regex that requires alnum boundaries
+    on both sides — ``(?<![a-z0-9])form(?![a-z0-9])`` over casefolded text; ``substring``
+    mode carries ``None`` (the caller falls back to ``str.count``). Alnum lookarounds are
+    used instead of ``\\b`` on purpose: ``\\b`` mishandles forms whose edge characters are
+    non-word (``gpt-4``, ``c++``), where a trailing ``\\b`` would demand a following word
+    char. The forms are already casefolded, so the class is lowercase ``[a-z0-9]``.
+    """
+    if mode == PRESENCE_SUBSTRING:
+        return [(form, None) for form in forms]
+    if mode != PRESENCE_BOUNDARY:
+        raise ValueError(f"unknown presence mode {mode!r} (expected one of {PRESENCE_MODES})")
+    return [(form, re.compile(rf"(?<![a-z0-9]){re.escape(form)}(?![a-z0-9])")) for form in forms]
+
+
 def match_presence(
     concepts: list[tuple[str, str]],
     aliases: dict[str, list[str]],
     chunk_texts: list[tuple[str, str, str]],
+    *,
+    mode: str = PRESENCE_BOUNDARY,
 ) -> list[ConceptPresence]:
-    """Deterministic presence — case-folded substring match of curated surface forms.
+    """Deterministic presence — case-folded surface-form match of curated concepts.
 
     ``concepts`` = ``(concept_id, label)``; ``aliases`` maps ``concept_id`` → surface
     forms; ``chunk_texts`` = ``(chunk_key, document_id, text)`` where ``chunk_key`` is the
@@ -165,10 +190,15 @@ def match_presence(
     LLM never decides presence). Returns one ``ConceptPresence`` per ``(concept, document)``
     with ≥ 1 hit, ``chunk_keys`` sorted, ``n_mentions`` = total surface-form occurrences.
 
-    Recall is bounded by alias coverage (the curation burden, RG-009); substring match is
-    the spec's locked primitive — precision against ambiguous short forms is a curation
-    concern and a watch-point for the RG-008 edge-precision run (word-boundary matching,
-    as in ``epistemics.concepts_in_text``, is the documented upgrade lever).
+    ``mode`` (R2 / RG-009): ``"boundary"`` (default) counts only whole-word (alnum-bounded)
+    occurrences, so ``bert`` does **not** fire inside ``sbert`` / ``colbert`` / ``roberta``
+    — the substring-inflation that fabricated co-occurrence edges. ``"substring"`` keeps the
+    original raw ``str.count`` behaviour as the A/B lever for the RG-008 comparison run.
+    Recall is bounded by alias coverage (the curation burden, RG-009).
+
+    Known accepted looseness (reporting-only today): overlapping alias spans double-count
+    ``n_mentions`` — e.g. both ``passage retrieval`` and ``dense passage retrieval`` firing on
+    one span. Longest-match span consumption is the upgrade if ``n_mentions`` ever gates.
     """
     # Pre-fold chunk texts once.
     folded = [(key, doc_id, text.casefold()) for key, doc_id, text in chunk_texts]
@@ -178,8 +208,12 @@ def match_presence(
         forms = _surface_forms(label, aliases.get(concept_id, []))
         if not forms:
             continue
+        matchers = _presence_matchers(forms, mode)
         for chunk_key, doc_id, low in folded:
-            count = sum(low.count(form) for form in forms)
+            count = sum(
+                len(pattern.findall(low)) if pattern is not None else low.count(form)
+                for form, pattern in matchers
+            )
             if count:
                 hits[(concept_id, doc_id)][chunk_key] += count
     presences: list[ConceptPresence] = []
@@ -872,6 +906,7 @@ def build_concept_skeleton(
     min_cooccurrence: int | None = None,
     seed: int | None = None,
     resolution: float = 1.0,
+    presence_mode: str | None = None,
     document_ids: list[str] | None = None,
     concept_loader: Any = None,
     presence_loader: Any = None,
@@ -892,11 +927,13 @@ def build_concept_skeleton(
     from doc_assistant.config import (
         CONCEPT_SKELETON_DIR,
         CONCEPT_SKELETON_MIN_COOCCURRENCE,
+        CONCEPT_SKELETON_PRESENCE_MODE,
         CONCEPT_SKELETON_SEED,
     )
 
     min_cooc = CONCEPT_SKELETON_MIN_COOCCURRENCE if min_cooccurrence is None else min_cooccurrence
     seed_val = CONCEPT_SKELETON_SEED if seed is None else seed
+    mode = CONCEPT_SKELETON_PRESENCE_MODE if presence_mode is None else presence_mode
     root = skeleton_dir or CONCEPT_SKELETON_DIR
     _ = force  # Node A always rebuilds the derived tables; force is reserved for Node B.
 
@@ -908,7 +945,7 @@ def build_concept_skeleton(
     chunk_texts = load_p(document_ids)
     citation_pairs, doc_sim_pairs = load_g()
 
-    presences = match_presence(concepts, aliases, chunk_texts)
+    presences = match_presence(concepts, aliases, chunk_texts, mode=mode)
     doc_index = _concept_doc_index(presences)
 
     edges = cooccurrence_edges(presences, min_cooccurrence=min_cooc)

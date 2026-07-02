@@ -131,9 +131,13 @@ class ConceptSkeleton:
 
 **Pure core (deterministic given its inputs; no DB, no LLM, no network):**
 
-- `match_presence(concepts, aliases, chunk_texts) -> list[ConceptPresence]` — case-folded exact/alias
-  substring match of each curated surface form against each chunk (Decision 2). The single presence
-  primitive; the LLM never touches it.
+- `match_presence(concepts, aliases, chunk_texts, *, mode="boundary") -> list[ConceptPresence]` — case-folded
+  surface-form match of each curated form against each chunk (Decision 2). The single presence primitive; the
+  LLM never touches it. **`mode` (R2, 2026-07-02):** `"boundary"` (default) counts only alnum-bounded
+  whole-word occurrences — the substring primitive over-matched short forms (`bert` inside `sbert`/`colbert`/
+  `roberta`), fabricating co-occurrence edges and confounding RG-008/009; `"substring"` is retained as the A/B
+  lever for the RG-008 comparison (`CONCEPT_SKELETON_PRESENCE_MODE` / `--presence-mode`). Word-boundary was
+  the spec's own named upgrade lever (see RG-009).
 - `cooccurrence_edges(presences, *, min_cooccurrence) -> list[SkeletonEdge]` — concept pairs co-present
   in ≥ `min_cooccurrence` **chunks** (Decision 4); each gets `provenance={"cooccurrence"}`,
   `n_cooccurrence_chunks` set.

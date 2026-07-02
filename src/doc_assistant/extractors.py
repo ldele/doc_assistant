@@ -1,9 +1,49 @@
 """Format-specific extractors. Each returns markdown text."""
 
+import re
 from collections.abc import Callable
 from pathlib import Path
 
 from bs4 import BeautifulSoup
+
+# PyMuPDF4LLM emits a textual placeholder line for every inline image / vector graphic it
+# declines to render, e.g. ``**==> picture [29 x 29] intentionally omitted <==**``. These
+# carry no value in the chunk text (figures are handled by the Feature-4b sidecar) and
+# pollute both retrieval and text-derived enrichment (KI-14). Anchor to the ``==> … <==``
+# frame — NOT the word "picture" — so any object type PyMuPDF4LLM frames the same way is
+# stripped. Whole line, tolerant of ``*``/``**`` emphasis and leading/trailing horizontal
+# whitespace; ``[^\S\n]`` matches spaces/tabs but not newlines, so ``.`` stays on one line.
+_IMAGE_PLACEHOLDER_LINE = re.compile(
+    r"^[^\S\n]*\*{0,2}[^\S\n]*==>.*?<==[^\S\n]*\*{0,2}[^\S\n]*$",
+    re.MULTILINE,
+)
+# Collapse the blank-line run a removed placeholder leaves behind so paragraph spacing
+# stays single. Only applied when a placeholder was actually removed (see below).
+_COLLAPSE_BLANK_LINES = re.compile(r"\n{3,}")
+
+
+def count_image_placeholders(md: str) -> int:
+    """Number of PyMuPDF4LLM image-placeholder lines in ``md`` (KI-14)."""
+    return len(_IMAGE_PLACEHOLDER_LINE.findall(md))
+
+
+def strip_image_placeholders(md: str) -> str:
+    """Remove PyMuPDF4LLM image / vector-graphic placeholder lines from markdown.
+
+    Deletes any whole line framed by ``==> … <==`` (tolerating ``*``/``**`` emphasis and
+    surrounding whitespace), then collapses the blank-line run left behind so paragraph
+    spacing stays single.
+
+    A **no-op when no placeholder is present**: text with none is returned byte-for-byte
+    unchanged, so unaffected documents keep their content hash and are never needlessly
+    re-ingested. The blank-line collapse fires only when a placeholder was removed, so its
+    (benign) side effect is confined to documents that are already changing. The transform
+    is idempotent — a second pass finds nothing to strip. See KI-14.
+    """
+    if not _IMAGE_PLACEHOLDER_LINE.search(md):
+        return md
+    stripped = _IMAGE_PLACEHOLDER_LINE.sub("", md)
+    return _COLLAPSE_BLANK_LINES.sub("\n\n", stripped)
 
 
 def extract_pdf_pymupdf(pdf_path: Path) -> str:
@@ -128,7 +168,12 @@ SUPPORTED_EXTENSIONS: set[str] = {".pdf", *_EXTRACTORS}
 
 
 def extract_to_markdown(path: Path, pdf_extractor: str = "pymupdf") -> str:
-    """Main entry point: extract any supported file to markdown."""
+    """Main entry point: extract any supported file to markdown.
+
+    The extracted markdown is passed through ``strip_image_placeholders`` at the single
+    exit so PyMuPDF4LLM image placeholders never reach the cache / chunk store (KI-14);
+    the strip is a no-op for formats and documents without placeholders.
+    """
     suffix = path.suffix.lower()
 
     if suffix == ".pdf":
@@ -140,12 +185,14 @@ def extract_to_markdown(path: Path, pdf_extractor: str = "pymupdf") -> str:
                 f"Unsupported PDF extractor '{pdf_extractor}'. Only 'pymupdf' is "
                 "available; Marker support was removed (see scripts/eval_marker_tables.py)."
             )
-        return extract_pdf_pymupdf(path)
+        md = extract_pdf_pymupdf(path)
+    else:
+        extractor = _EXTRACTORS.get(suffix)
+        if extractor is None:
+            raise ValueError(f"Unsupported format: {suffix}")
+        md = extractor(path)
 
-    extractor = _EXTRACTORS.get(suffix)
-    if extractor is None:
-        raise ValueError(f"Unsupported format: {suffix}")
-    return extractor(path)
+    return strip_image_placeholders(md)
 
 
 def is_supported(path: Path) -> bool:

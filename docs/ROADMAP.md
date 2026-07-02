@@ -73,7 +73,7 @@ full architectural context per feature.
 | M3 | Desktop shell: Tauri frontend (Svelte 5 + Vite) | done | `docs/specs/pr-m3-tauri-frontend.md` |
 | M4 | Desktop shell: PyInstaller sidecar packaging + frozen CPU-torch pin | done (RG-010/011/012 Tier-1 pass; KI-9/10/11 bundled in the freeze; data-home/first-run-ingest flow now built — backend `77eb5f9` + frontend settings panel; **RG-012 Tier-2** cited-turn validation pends a re-freeze + clean-box run) | `docs/specs/pr-m4-sidecar-packaging.md` |
 | M5 | Desktop shell: delete Chainlit + lift the Python-3.12 pin (KI-2) | done — Chainlit removed (renderer + dep + recipe + config); 3.12-pin lift **verified-and-deferred** (KI-2: native deps crash on 3.14, not Chainlit) | `docs/specs/pr-m5-decommission-chainlit.md` |
-| R1 | Ingest hygiene: strip PyMuPDF4LLM image placeholders + cache-normalization runner (closes KI-14) | planned | `docs/specs/remediation-plan-2026-07.md` |
+| R1 | Ingest hygiene: strip PyMuPDF4LLM image placeholders + cache-normalization runner (closes KI-14) | code built (2026-07-02, staged); host `normalize_cache --apply` + re-ingest pending | `docs/specs/remediation-plan-2026-07.md` |
 | R2 | Concept presence: word-boundary matching (RG-009 lever; de-confounds R5) | planned | `docs/specs/remediation-plan-2026-07.md` |
 | R3 | Keyword termhood: contrastive scoring (`wordfreq` reference — decided 2026-07-02) + C-value nested-term fix + orphan sweep | planned | `docs/specs/remediation-plan-2026-07.md` |
 | R4 | Concept skeleton: graded provenance strength (ratio, not boolean) | planned | `docs/specs/remediation-plan-2026-07.md` |

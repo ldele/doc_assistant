@@ -28,6 +28,10 @@ R7 (small, product trust) → R2 → R3 → R4 → R5 → R6 when an eval-capabl
 
 ## R1 — Ingest hygiene: strip PyMuPDF4LLM image placeholders (closes KI-14)
 
+**Status (2026-07-02):** ✅ code + tests + runner BUILT (staged, not committed); host
+`normalize_cache --apply` + re-ingest pending (the step that actually closes KI-14). See DEVLOG
+2026-07-02 (cont.).
+
 **Why first:** the placeholders are retrievable noise in the **RAG chunk store** (the answer path), not just
 keyword junk, and they invalidated part of the multi-domain run (11/13 "communities" were placeholder noise).
 

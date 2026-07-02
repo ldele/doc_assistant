@@ -274,7 +274,7 @@ Migrated from the old `CLAUDE.md` / `README` runtime-quirk notes on 2026-06-20 (
 - **Pointer:** `tests/eval/baselines/rg001_concept_skeleton_2026-07-01.md`; `docs/specs/concept-graph-redesign.md`
   Decision 1; `.claude/RIGOR_TODO.md` RG-001/008/009.
 
-## KI-14 — PyMuPDF4LLM image placeholders pollute the extracted markdown — OPEN (found 2026-07-01)
+## KI-14 — PyMuPDF4LLM image placeholders pollute the extracted markdown — FIX BUILT, host data-run pending (found 2026-07-01; PR-R1 built 2026-07-02)
 - **Symptom:** the cached markdown contains `**==> picture [W x H] intentionally omitted <==**` placeholder
   lines wherever PyMuPDF4LLM declines to render an inline image. On the multi-domain arXiv corpus this was
   **1027 occurrences** across 24 papers, heaviest in figure/equation-dense physics/math/econ papers
@@ -290,5 +290,17 @@ Migrated from the old `CLAUDE.md` / `README` runtime-quirk notes on 2026-06-20 (
 - **Workaround:** none applied (would be a code change; out of scope for the "current-params re-check").
 - **Real fix:** strip `==> … intentionally omitted <==` placeholder lines in the extract→markdown step (or a
   cache-normalisation pass) before chunking + keywording; optionally re-point them at the figure sidecar.
+- **FIX BUILT (2026-07-02, PR-R1 — `docs/specs/remediation-plan-2026-07.md` §R1; staged, not committed):**
+  `extractors.strip_image_placeholders` (frame-anchored `==> … <==`, whole-line, no-op when absent + idempotent)
+  applied at the single `extract_to_markdown` exit → all future extractions clean; `scripts/normalize_cache.py`
+  (dry-run default, `--apply`, atomic per-file rewrite only when content changes) fixes existing caches, since
+  `--rebuild` does NOT re-extract (`ingest/cache.py` trusts mtime). +23 guard tests; gate green (699 passed).
+  Dry-run on `data/cache`: 62 scanned, **57 changed, 1,123 placeholder lines**.
+- **Remaining to close (host, $0, KI-5 — deferred to the user per cpc §13):** `normalize_cache --apply` →
+  plain `python -m doc_assistant.ingest` (re-index the 57 changed docs; F1 reuses ids so citations/keywords/
+  concept links survive) → re-run `compute_doc_vectors` / `extract_citations` / `extract_keywords --force`
+  (+ `extract_figures` / Marker-tables only on corpora that used them); repeat on the multi-domain data home.
+  Verify cache `grep` = 0 + keyword candidates no longer carry `intentionally omitted` / `x 12` / `br 1`, then
+  mark **RESOLVED**.
 - **Pointer:** `tests/eval/baselines/rg001_concept_skeleton_multidomain_2026-07-01.md` finding 4;
-  `data_multidomain/cache/*.md`.
+  `data_multidomain/cache/*.md`; DEVLOG 2026-07-02 (cont.) PR-R1 entry.

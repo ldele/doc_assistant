@@ -3166,3 +3166,47 @@ plan — every R-increment pre-registers its acceptance bands and defers locks t
 **Decided same-session (user):** R3 = Option A (`wordfreq` as the contrastive reference) and R7 = option (a)
 (`EPISTEMICS_MARKERS_ENABLED` kill-switch, default off) — both baked into the plan + ROADMAP rows; the
 executing sessions record the ADRs. **Docs staged on `feat/keyword-concept-graph`, awaiting review (cpc §13).**
+
+---
+## Session: 2026-07-02 (cont.) — PR-R1: strip PyMuPDF4LLM image placeholders (KI-14), Claude Code
+
+**What:** built remediation-plan §R1 (code + tests + runner; data-run deferred to the host).
+- `src/doc_assistant/extractors.py` — new pure `strip_image_placeholders(md)` + `count_image_placeholders(md)`.
+  A whole-line regex anchored on the `==> … <==` **frame** (not the word "picture", so vector-graphic /
+  other framed placeholders are also caught), tolerant of `*`/`**` emphasis and horizontal whitespace; after
+  removing the line it collapses the blank-line run to a single paragraph break. **No-op when no placeholder
+  is present** (returns the input object unchanged → hash-stable, so untouched docs are never needlessly
+  re-ingested) and idempotent. `extract_to_markdown` now routes every format through the strip at a single
+  exit, so all future extractions are clean.
+- New `scripts/normalize_cache.py` — the existing-cache seam. Because `--rebuild` does **not** re-extract
+  (`ingest/cache.py` trusts mtime; the cached `.md` is the hash source), pre-fix caches keep their
+  placeholders. Idempotent, dry-run-default runner rewrites each cached `.md` through `strip_image_placeholders`
+  via `fsutil.atomic_write_text` **only when content changes**; targets `config.CACHE_PATH` (honours
+  `DOC_DATA_DIR`). Testable core `normalize_cache_dir(cache_dir, *, apply)` → `NormalizeResult`.
+- Tests (+23): `tests/unit/test_extractors.py` +10 (single/multi/varying-dim removal, emphasis+whitespace
+  tolerance, non-"picture" frame, byte-identical no-op, markdown-structure preservation, idempotence, count
+  helper, strip-at-extract); `tests/integration/test_normalize_cache.py` +4 (dry-run writes nothing, apply
+  rewrites only changed files + clean file byte-identical, second-apply-0-changes idempotence guard, empty dir).
+
+**Evaluate-before (dry-run on the main-corpus cache, `data/cache`, $0 read-only):** 62 files scanned, **57
+needing changes, 1,123 placeholder lines** — matches the raw `grep` count. (The 2026-07-01 multi-domain run
+measured 1,027 across 24 papers; re-count on that box.)
+
+**Why:** the placeholders are retrievable noise in the RAG **chunk store** (answer path), not just keyword
+junk, and they invalidated part of the multi-domain concept-skeleton run (11/13 "communities" were placeholder
+noise). Two seams because the fix at extraction time can't reach caches that `--rebuild` won't re-extract.
+
+**Rejected:** matching on the literal `picture [W x H]` wording (brittle — frame-anchoring is format-proof);
+globally collapsing blank lines on every extraction (would change hashes of clean docs — scoped the collapse
+to docs where a placeholder was actually removed); running `--apply` + re-ingest here (mutates the real corpus
++ heavy re-embed — a deliberate host operation for the user, not part of the code PR).
+
+**Opens (host data-run, then KI-14 → RESOLVED — $0, deferred to user per cpc §13 + KI-5):**
+`python -m scripts.normalize_cache --apply` → plain `python -m doc_assistant.ingest` (re-chunks/re-embeds only
+the 57 changed docs; ids reused via F1 so citations/keywords/concept links survive) → re-run
+`compute_doc_vectors` / `extract_citations` / `extract_keywords --force`; then `extract_figures` /
+Marker-tables **only** on corpora that used them. Verify: cache `grep` = 0; keyword candidates no longer carry
+`intentionally omitted` / `x 12` / `br 1`. Repeat on the multi-domain data home. **Gate GREEN**
+(official-CPython 3.12, `uv run --no-sync`): ruff ✓ · ruff format ✓ · `mypy --strict src` ✓ (54) · bandit
+0/0/0 ✓ · `pytest tests/unit tests/integration` → **699 passed, 1 skipped**. **Staged on
+`feat/keyword-concept-graph`, nothing committed (cpc §13).**

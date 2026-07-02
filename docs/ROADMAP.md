@@ -73,6 +73,13 @@ full architectural context per feature.
 | M3 | Desktop shell: Tauri frontend (Svelte 5 + Vite) | done | `docs/specs/pr-m3-tauri-frontend.md` |
 | M4 | Desktop shell: PyInstaller sidecar packaging + frozen CPU-torch pin | done (RG-010/011/012 Tier-1 pass; KI-9/10/11 bundled in the freeze; data-home/first-run-ingest flow now built — backend `77eb5f9` + frontend settings panel; **RG-012 Tier-2** cited-turn validation pends a re-freeze + clean-box run) | `docs/specs/pr-m4-sidecar-packaging.md` |
 | M5 | Desktop shell: delete Chainlit + lift the Python-3.12 pin (KI-2) | done — Chainlit removed (renderer + dep + recipe + config); 3.12-pin lift **verified-and-deferred** (KI-2: native deps crash on 3.14, not Chainlit) | `docs/specs/pr-m5-decommission-chainlit.md` |
+| R1 | Ingest hygiene: strip PyMuPDF4LLM image placeholders + cache-normalization runner (closes KI-14) | planned | `docs/specs/remediation-plan-2026-07.md` |
+| R2 | Concept presence: word-boundary matching (RG-009 lever; de-confounds R5) | planned | `docs/specs/remediation-plan-2026-07.md` |
+| R3 | Keyword termhood: contrastive scoring (`wordfreq` reference — decided 2026-07-02) + C-value nested-term fix + orphan sweep | planned | `docs/specs/remediation-plan-2026-07.md` |
+| R4 | Concept skeleton: graded provenance strength (ratio, not boolean) | planned | `docs/specs/remediation-plan-2026-07.md` |
+| R5 | RG-001/008/009 multi-domain revalidation run + gap wizard-of-oz → edge-model go/no-go | planned (measurement session; needs R1–R3, R4 recommended) | `docs/specs/remediation-plan-2026-07.md` |
+| R6 | Core retrieval: BM25 `preprocess_func` + pipeline hygiene (eval-gated, before any weight sweep) | planned | `docs/specs/remediation-plan-2026-07.md` |
+| R7 | KI-7 containment: 7d marker chip default-off until Node B (decided 2026-07-02: option a — `EPISTEMICS_MARKERS_ENABLED` kill-switch) | planned | `docs/specs/remediation-plan-2026-07.md` |
 
 **Feature 7d (knowledge-currency layer):** engine shipped 2026-06-17 (`epistemics.py` + `chunk_epistemics`
 sidecar + polarity-aware concept graph + reviewer `contested_evidence` tag). **Live answer-time marker
@@ -92,7 +99,9 @@ blocker for everything; **M1** (the 7d contested/superseded marker chip) is the 
 and shares M0's `chunk_key` plumbing. Replaces the "UI = Chainlit" stack row in `.claude/CONTEXT.md`
 once M5 lands.
 
-**Later / open:** the concept-graph **redesign** (curated vocabulary + deterministic
+**Later / open:** the 2026-07-02 direction + algorithm review produced remediation increments
+**R1–R7** (rows above; plan: `docs/specs/remediation-plan-2026-07.md`) — R1–R4 de-confound and R5 re-runs
+the RG-001/008/009 validation below; R6/R7 are independent. Then: the concept-graph **redesign** (curated vocabulary + deterministic
 skeleton + confined LLM enrichment, 2026-06-18 — the next concept-graph build, see
 `.claude/KNOWN_ISSUES.md`; **build spec `docs/specs/concept-graph-redesign.md`**, design-locked
 2026-06-27. **PR-A (Node A — the deterministic, zero-LLM skeleton) BUILT 2026-06-30**

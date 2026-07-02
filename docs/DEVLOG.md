@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-06-26 · class: append-only -->
+<!-- status: active · updated: 2026-07-02 · class: append-only -->
 
 # DEVLOG — doc_assistant
 
@@ -3041,3 +3041,382 @@ extracted candidates instead of the hand-seeded 30), word-boundary presence matc
 inflation), and a re-run on the larger multi-domain corpus (makes provenance discriminating). Node B + the KI-7
 retirement unchanged. Provisional concepts + skeleton sidecar live in the gitignored DB (reset:
 `DELETE FROM concept_aliases; DELETE FROM concepts;`). **Nothing committed — staged for review (cpc §13).**
+
+---
+## Session: 2026-07-01 (cont.) — RG-001 (b)+(c): keyword-grounded + corpus-band vocab; corpus is the blocker, Claude Code
+
+**What:** after the `docs/desktop-shell-specs` branch merged to `main` (PR #3) + was deleted, re-ran RG-001 with
+real keyword-grounded vocabularies to test whether the concept graph sparsifies to a usable state. (b) Promoted
+139 concepts from the per-doc TF-IDF extractor → 13% density @K=2 but **17 communities that map to papers** (a
+federation of per-paper cliques; 146/148 candidates are df=1). (c) Built a general **`corpus_band` extractor
+mode** (`corpus_band_keywords` pure fn + `mode`/`min_df`/`max_df_frac` on `extract_keywords` +
+`KEYWORD_MIN_DF`/`KEYWORD_MAX_DF_FRAC`/`KEYWORD_CORPUS_TOP_K` config + `--mode`/`--min-df`/`--max-df-frac` CLI +5
+tests) to select the shared mid-DF band, and ran it ONCE with general defaults (2/0.7/60) — **hypothesis failed:**
+the df 6–7 band is generic academic vocabulary (`consider`/`introduce`/`benchmark`/`sebastian`…), giving the most
+saturated graph of all (60 concepts, **83% density @K=2**).
+
+**Why:** the four vocabulary regimes (manual-hub 46% · manual-precise 27% · per-doc-TFIDF 13% · corpus-band 83%)
+all fail for one reason — **10 same-domain papers can't support a cross-document concept graph**: doc-similarity
+is fully saturated (provenance non-discriminating), N=10 co-occurrence is unstable, and on a same-domain corpus
+domain concepts and academic boilerplate share a DF range so no statistical band separates them. The blocker is
+the CORPUS, not the vocabulary method or the code. Baseline updated with the four-regime synthesis
+(`tests/eval/baselines/rg001_concept_skeleton_2026-07-01.md`).
+
+**Rejected:** tuning `min_df`/`max_df_frac`/`top_k` or expanding the stopword list against this corpus's output —
+that is over-fitting to a corpus already shown (×4) to be inadequate (explicit user constraint: "do not
+over-optimize on this corpus"). The `corpus_band` mode is likely the right *default* on the larger multi-domain
+corpus, where mid-DF terms are the shared domain concepts; it just can't be validated on 10 same-domain papers.
+
+**Gate:** ruff / ruff format / `mypy --strict src` (53 files) / pytest **675 passed** (+3 corpus-band tests).
+
+**Opens:** RG-001 stays open (blocks-ship) — the gate is now the **corpus**: re-run on `cases.yaml` (multi-domain)
+before any threshold lock / marking the graph usable. Secondary: a semantic/LLM or curated-domain-stopword
+vocabulary gate (deferred, un-tuned). Node B + KI-7 retirement unchanged. On-disk: 60 corpus-band concepts +
+skeleton @K=2 (gitignored). **Uncommitted on `main` — branch off before committing; awaiting review (cpc §13).**
+
+---
+## Session: 2026-07-01 (cont.) — Curated glossary (#1) + semantic concept layer (#2), Claude Code
+
+**Context:** the RG-001 runs proved a *usable* concept graph needs a **curated** vocabulary, not an auto-selected
+one — demonstrated: 10 hand-picked IR concepts on the public corpus give a 10-node / 17-edge graph whose every
+edge is a correct relationship (`re-ranking–MS MARCO`, `hard negatives–BM25`, `contrastive learning–dense
+retrieval`) vs the 60-concept auto-blob (83% density, generic words). So built the two curation tools.
+
+**#1 — glossary curation (`seed_concepts --add`).** A concept is now a glossary entry: label + **definition** +
+aliases. New `concepts.definition` column (additive migration, `_ADDITIVE_COLUMNS`); `concept_skeleton.add_concept`
+(get-or-create by label, updates definition, unions aliases; the label stays an implicit surface form so it is not
+stored as a self-alias) + `load_glossary`; `seed_concepts.py` gains `--add`/`--alias`/`--define`/`--glossary`. The
+direct-curation counterpart to `--promote` (which needs a mined `Keyword`). +4 tests. Fixes the "just curate a
+few" workflow — no `--promote-all`.
+
+**#2 — semantic concept layer (`concept_semantics.py` + `scripts/suggest_concepts.py`).** Two capabilities that
+ground vocabulary in *meaning*: (a) **title+abstract candidate extraction** — a paper's title+abstract is an
+author-curated, boilerplate-free concept summary; `--from-abstracts` surfaces the real concepts (DPR → "passage
+retrieval / dense / open-domain question answering", vs full-text corpus-band's "consider/introduce/benchmark").
+Papers only — `extract_abstract` returns None for books/notes, caller falls back. (b) **concept↔concept distance**
+— the first in the project (doc↔doc lived in `doc_vectors`): embed label+definition, cosine, `--near` flags
+near-duplicate concepts to merge. +8 tests. Config `ABSTRACT_CONCEPTS_TOP_K`, `CONCEPT_MERGE_COSINE`.
+
+**Why (answers the design questions):** *Do we measure concept/keyword distance?* — not before; now we do (#2b).
+*Glossary?* — yes, that is #1 (definitions + synonyms). *Concepts from abstract+title for papers?* — yes, works
+well (#2a); the "all chunks relate to title+abstract" assumption holds for papers and is the right concept source.
+
+**Findings / opens:** bge (general embedder) compresses same-domain concepts to cosine ~0.6–0.71, so an absolute
+merge threshold is embedder-dependent — the already-registered **SPECTER2** (academic embedder) or a *relative*
+threshold is the follow-up (same saturation lesson as KI-7). Not tuned here. The full auto→semantic pipeline
+(rank full-text candidates by abstract-anchor similarity; per-folder scoping for mixed libraries) is the next
+increment. **Gate green:** ruff / format / `mypy --strict src` (54 files) / pytest. **Uncommitted on
+`feat/keyword-concept-graph` — staged, awaiting review (cpc §13).**
+
+---
+## Session: 2026-07-01 (cont.) — Abstract-anchor ranking + SPECTER2 concept distance, Claude Code
+
+**What:** the two follow-ups to the semantic layer.
+1. **Abstract-anchor ranking (the unified extractor)** — `concept_semantics.anchor_ranked_candidates`: mine a
+   full-text candidate *pool* (top `pool_k` by frequency, bounds embed cost), then re-rank by cosine to the
+   paper's `title + abstract` anchor. Full-text **recall** + abstract **precision**. `_load_paper_docs` extracted
+   + shared with `suggest_from_abstracts`; `ScoredCandidate` carries the anchor cosine; no-abstract → title-only
+   anchor; no anchor/pool → `[]`. CLI `suggest_concepts --anchor-ranked [--pool-k]`. +1 test.
+2. **SPECTER2 concept distance** — `embed_texts(..., model=)` + `concept_merge_suggestions(..., model=)`; new
+   `CONCEPT_EMBED_MODEL` config (default **specter2**, the registered academic embedder) + `suggest_concepts
+   --model`. Fixes bge's same-domain compression.
+
+**Why + measured (public corpus):** anchor-ranking surfaces each paper's real concepts with **no boilerplate** —
+DPR → "open-domain question answering [0.81] / question answering [0.69] / dense [0.61]"; reranking-BERT →
+"passage re-ranking [0.81] / re-ranking [0.72] / re-ranker [0.69]". SPECTER2 vs bge on the 10 curated concepts:
+bge compresses to a flat ~0.77–0.82 band (arbitrary top pair passage-retrieval~RAG); **SPECTER2 spreads it and
+surfaces real relations** — cross-encoder~re-ranking **0.906**, BM25~MS-MARCO **0.904** — so the merge feature is
+functional at the 0.85 default only with SPECTER2 (bge maxed at 0.816 → flagged nothing).
+
+**Opens:** wire anchor-ranked candidates into a promote/dedupe curation flow (candidates → SPECTER2 merge-dedupe →
+`seed_concepts --add`); per-folder concept scoping (`Concept.folder_id` exists) for mixed libraries; a *relative*
+merge threshold. **Gate green:** ruff / format / `mypy --strict src` (54 files) / pytest. **Uncommitted on
+`feat/keyword-concept-graph` — staged, awaiting review (cpc §13).**
+
+---
+## Session: 2026-07-02 — App review (direction + algorithms) → remediation plan R1–R7, Claude Code
+
+**What:** full review of the app against the original charter (direction alignment) + an algorithmic review
+of the branch modules and the core pipeline; findings turned into a seven-increment remediation plan —
+**`docs/specs/remediation-plan-2026-07.md`** (new) + R1–R7 rows in the ROADMAP PR table. Docs only; no code
+changed. Findings, condensed: direction remains aligned (the redesign moved *toward* the project ethos) but
+three method-level confounds invalidate parts of the 2026-07-01 validation runs — KI-14 placeholder noise
+(also polluting the RAG chunk store), substring presence inflating co-occurrence edges (BERT→SBERT), DF-only
+keyword scoring (fails by construction on both corpora; the literature fix is reference-corpus contrast +
+C-value). Plus: the BM25 arm runs LangChain's default `text.split()` preprocessing (case-sensitive,
+punctuation attached — verified in the installed package); candidate dedup keys on `doc_hash + 50-char
+prefix` (collision-prone); `expand_query` double-runs the query on non-list JSON; the live 7d marker chips
+surface superseded-graph (KI-7) data through the KI-8 containment join — the one finding working against the
+integrity-layer promise.
+
+**Why:** the RG-001/008/009 verdicts ("corpus is the blocker" → "method is the deeper gate") were honest but
+confounded on three axes; R1–R4 remove the confounds deterministically ($0) so R5 can be the clean go/no-go
+on the edge model + gap layer, with a pre-registered wizard-of-oz check that the gap signals are worth acting
+on *before* more vocabulary tooling. R6/R7 are independent quick wins in the core answer path and product
+trust. Key execution detail baked into R1: `--rebuild` does **not** re-extract (`load_or_extract` trusts
+mtime; the cache is the hash source), so the KI-14 fix needs strip-at-extract **plus** an idempotent
+cache-normalization runner; the changed content hashes then drive per-doc re-index on an ordinary ingest.
+
+**Rejected:** invoking heavier planning machinery (charter/sprints) — the PR table + one spec file is the
+house pattern (cf. `concept-graph-redesign.md`); tuning any keyword/threshold parameter as part of *this*
+plan — every R-increment pre-registers its acceptance bands and defers locks to measured runs.
+
+**Opens:** execute R1 first (also improves core retrieval immediately); R6's 0.4/0.6 weight sweep stays a
+*separate* experiment after the BM25 preprocess fix lands (the tokenizer moves the weights' optimum).
+**Decided same-session (user):** R3 = Option A (`wordfreq` as the contrastive reference) and R7 = option (a)
+(`EPISTEMICS_MARKERS_ENABLED` kill-switch, default off) — both baked into the plan + ROADMAP rows; the
+executing sessions record the ADRs. **Docs staged on `feat/keyword-concept-graph`, awaiting review (cpc §13).**
+
+---
+## Session: 2026-07-02 (cont.) — PR-R1: strip PyMuPDF4LLM image placeholders (KI-14), Claude Code
+
+**What:** built remediation-plan §R1 (code + tests + runner; data-run deferred to the host).
+- `src/doc_assistant/extractors.py` — new pure `strip_image_placeholders(md)` + `count_image_placeholders(md)`.
+  A whole-line regex anchored on the `==> … <==` **frame** (not the word "picture", so vector-graphic /
+  other framed placeholders are also caught), tolerant of `*`/`**` emphasis and horizontal whitespace; after
+  removing the line it collapses the blank-line run to a single paragraph break. **No-op when no placeholder
+  is present** (returns the input object unchanged → hash-stable, so untouched docs are never needlessly
+  re-ingested) and idempotent. `extract_to_markdown` now routes every format through the strip at a single
+  exit, so all future extractions are clean.
+- New `scripts/normalize_cache.py` — the existing-cache seam. Because `--rebuild` does **not** re-extract
+  (`ingest/cache.py` trusts mtime; the cached `.md` is the hash source), pre-fix caches keep their
+  placeholders. Idempotent, dry-run-default runner rewrites each cached `.md` through `strip_image_placeholders`
+  via `fsutil.atomic_write_text` **only when content changes**; targets `config.CACHE_PATH` (honours
+  `DOC_DATA_DIR`). Testable core `normalize_cache_dir(cache_dir, *, apply)` → `NormalizeResult`.
+- Tests (+23): `tests/unit/test_extractors.py` +10 (single/multi/varying-dim removal, emphasis+whitespace
+  tolerance, non-"picture" frame, byte-identical no-op, markdown-structure preservation, idempotence, count
+  helper, strip-at-extract); `tests/integration/test_normalize_cache.py` +4 (dry-run writes nothing, apply
+  rewrites only changed files + clean file byte-identical, second-apply-0-changes idempotence guard, empty dir).
+
+**Evaluate-before (dry-run on the main-corpus cache, `data/cache`, $0 read-only):** 62 files scanned, **57
+needing changes, 1,123 placeholder lines** — matches the raw `grep` count. (The 2026-07-01 multi-domain run
+measured 1,027 across 24 papers; re-count on that box.)
+
+**Why:** the placeholders are retrievable noise in the RAG **chunk store** (answer path), not just keyword
+junk, and they invalidated part of the multi-domain concept-skeleton run (11/13 "communities" were placeholder
+noise). Two seams because the fix at extraction time can't reach caches that `--rebuild` won't re-extract.
+
+**Rejected:** matching on the literal `picture [W x H]` wording (brittle — frame-anchoring is format-proof);
+globally collapsing blank lines on every extraction (would change hashes of clean docs — scoped the collapse
+to docs where a placeholder was actually removed); running `--apply` + re-ingest here (mutates the real corpus
++ heavy re-embed — a deliberate host operation for the user, not part of the code PR).
+
+**Opens (host data-run, then KI-14 → RESOLVED — $0, deferred to user per cpc §13 + KI-5):**
+`python -m scripts.normalize_cache --apply` → plain `python -m doc_assistant.ingest` (re-chunks/re-embeds only
+the 57 changed docs; ids reused via F1 so citations/keywords/concept links survive) → re-run
+`compute_doc_vectors` / `extract_citations` / `extract_keywords --force`; then `extract_figures` /
+Marker-tables **only** on corpora that used them. Verify: cache `grep` = 0; keyword candidates no longer carry
+`intentionally omitted` / `x 12` / `br 1`. Repeat on the multi-domain data home. **Gate GREEN**
+(official-CPython 3.12, `uv run --no-sync`): ruff ✓ · ruff format ✓ · `mypy --strict src` ✓ (54) · bandit
+0/0/0 ✓ · `pytest tests/unit tests/integration` → **699 passed, 1 skipped**. **Staged on
+`feat/keyword-concept-graph`, nothing committed (cpc §13).**
+
+---
+## Session: 2026-07-02 (cont.) — PR-R7: 7d marker chips default-off until Node B (KI-7 containment), Claude Code
+
+**What:** built remediation-plan §R7 (user-decided option a). Ran alongside the user's R1 host data-run — R7
+is pure code + fake-based tests, touches no store, so no collision.
+- `config.py` — new `EPISTEMICS_MARKERS_ENABLED` (default `false`), in a new "Live 7d epistemics markers"
+  block. `.env.example` documents it.
+- `chat_controller.py` — `_attach_markers` returns immediately when the flag is off (before any epistemics
+  read), so the default turn is the byte-identical M0/M1 no-marker path. Flag imported by name → the module
+  global is the monkeypatch seam (same pattern as the existing `load_epistemics_index` test patches).
+- Tests: new `test_markers_disabled_by_default` (populated index + spies → markers empty, no chip, **loaders
+  never called**); the two marker-attached tests + the load-failure test now `setattr(..., True)` to opt in;
+  `test_markers_absent_is_byte_identical` opts in too (so it still exercises the enabled-but-empty join, not
+  just the gate). The parity test `test_byte_identical_when_markers_absent` is left as-is — it now guards the
+  **default** path.
+- ADR-005 recorded (`docs/decisions/ADR-005-epistemics-markers-default-off.md`); KI-7/KI-8 + `feature-7d`
+  spec + ROADMAP R7 row updated.
+
+**Why:** the live `contested`/`superseded` chips are the only *user-facing* leak of the superseded
+open-vocabulary graph (KI-7), reaching sources through the coarse containment join (KI-8) — noise wearing the
+integrity layer's uniform, the one review finding working *against* the product promise. Default-off is the
+cheap containment move; full KI-7 retirement stays bundled with Node B (a connected change across four
+modules). The chip is already quiet-on-clean, so no renderer/UI change was needed.
+
+**Rejected (per the locked decision):** (b) keep on + label "experimental" — still surfaces KI-7 noise under
+the trust banner; (c) full retirement now — the known four-module connected change, only worth it with Node B.
+Also: reading the flag dynamically via `config.X` — imported-by-name matches the module's existing config
+imports and the tests' established monkeypatch-the-module-global pattern.
+
+**Opens:** Node B (PR-B, confined LLM relation/stance) flips the default back on with trustworthy data and
+carries the KI-7 retirement + the KI-8 precise re-projection. **Gate GREEN** (official-CPython 3.12,
+`uv run --no-sync`): ruff ✓ · ruff format ✓ · `mypy --strict src` ✓ (54) · bandit 0/0/0 ✓ ·
+`pytest tests/unit tests/integration` → **700 passed, 1 skipped**. **Staged on `feat/keyword-concept-graph`,
+nothing committed (cpc §13).**
+
+---
+## Session: 2026-07-02 (cont.) — PR-R2: word-boundary concept presence (RG-009 lever), Claude Code
+
+**What:** built remediation-plan §R2. Ran alongside the user's R1 host re-ingest — code + guard tests only,
+no store access, so no collision; the before/after measurement is deferred to R5 (below).
+- `concept_skeleton.py` — `match_presence(..., *, mode="boundary")`; new `_presence_matchers` precompiles one
+  regex per surface form. Boundary uses **alnum lookarounds** `(?<![a-z0-9])form(?![a-z0-9])`, deliberately
+  NOT `\b` (which mishandles non-word edge chars — `gpt-4`, `c++`, where a trailing `\b` would demand a
+  following word char). `"substring"` mode keeps the original `str.count` as the A/B lever. Orchestrator
+  `build_concept_skeleton` gained `presence_mode` (defaults to config); `match_presence` call passes it.
+- `config.py` `CONCEPT_SKELETON_PRESENCE_MODE` (default `"boundary"`) + `.env.example`; CLI `--presence-mode
+  {boundary,substring}`.
+- Tests (+6, `test_concept_skeleton.py`): `bert` no longer fires inside `sbert`/`colbert`/`roberta`; matches
+  at punctuation/parens/string edges; `gpt-4` matches but not inside `gpt-4o`, `c++` matches; substring mode
+  reproduces the raw count (3 vs boundary's 1); default is boundary; unknown mode raises. The two pre-existing
+  presence tests are mode-agnostic (clean tokens) and pass unchanged under the new default.
+
+**Why:** substring matching sits at the **top of the edge funnel** — one over-matched short form (BERT firing
+inside every SBERT/ColBERT/RoBERTa mention) doesn't just inflate `n_mentions`, it fabricates co-occurrence
+edges from that concept to everything in those papers, inflating the exact density metric RG-008 gates on.
+Running the R5 decision run without this fix would produce a *third* confounded negative (after KI-14 and
+DF-only keywords). Word-boundary was already the spec's named RG-009 upgrade lever; R2 builds it ahead of the
+run and keeps substring as an explicit A/B so the run can *show* the effect.
+
+**Rejected:** `\b` word boundaries (breaks on `gpt-4`/`c++` edge chars — the plan called this out); reading
+the mode inside the pure `match_presence` from config (kept the core pure — the impure orchestrator resolves
+config and passes `mode=`); switching the primitive silently without an A/B lever (R5 needs the before/after
+comparison, so `substring` is retained, not deleted).
+
+**Measured (indicative, 2026-07-02, after the R1 re-ingest finished; $0, no DB mutation):** the curated
+`Concept` vocabulary is **empty** on this `data/` home (the 2026-07-01 hand-seed lived elsewhere), so ran an
+**ad-hoc probe vocabulary** of short/ambiguous forms over the real 5,617 parent chunks (probe list only, never
+written to the DB). Substring vs boundary mentions/docs: **IR 10541/76 → 39/8 (270×; a fabricated hub in
+*every* doc)**, RAG 1334/71 → 201/3 (6.6×), BERT 770/59 → 232/13 (3.3×); distinctive forms (DPR/ColBERT/BM25/
+ECG) ≈1.0×. Probe-skeleton edge **density ~1.6–2× higher under substring** at every K (K2 0.58 vs 0.32) — the
+exact RG-008 gate metric. Recorded → `tests/eval/baselines/rg001_concept_skeleton_2026-07-01.md` (R2 addendum).
+
+**Opens:** the **curated-vocabulary corpus run** is the R5 decision run — dry-run `build_concept_skeleton
+--presence-mode {boundary,substring} --min-cooccurrence {1..5}` after a vocabulary is curated (R5 step 2);
+set the winning mode + `min_cooccurrence`, then close RG-008/009. Accepted looseness (documented): overlapping
+alias spans double-count `n_mentions` (reporting-only). **Gate GREEN** (official-CPython 3.12, `uv run
+--no-sync`): ruff ✓ · ruff format ✓ · `mypy --strict src` ✓ (54) · bandit 0/0/0 ✓ · `pytest tests/unit
+tests/integration` → **706 passed, 1 skipped**. **Staged on `feat/keyword-concept-graph`, nothing committed
+(cpc §13).**
+
+---
+## Session: 2026-07-02 (cont.) — PR-R3: contrastive keyword termhood (`wordfreq`) + C-value + orphan sweep, Claude Code
+
+**What:** built remediation-plan §R3 (the largest increment; user-decided reference source = Option A).
+- **Dependency:** `uv add wordfreq` → base dep `wordfreq>=3.0` (+ ftfy/langcodes/locate/wcwidth); `uv lock`
+  + `uv sync --extra cpu --extra dev` (native TLS, proxy box) — also re-pinned torch to `+cpu`. mypy
+  override `wordfreq.*`. ADR-006 recorded.
+- **`keywords.py` (3 fixes):** (1) `c_value_scores` — Frantzi C-value, `+1` length variant, discounts
+  fragments that occur only inside longer terms; (2) `weirdness(term, *, ref_ceiling)` — `min` over tokens
+  of `max(0, ceiling − zipf(token))` (OOV → ceiling = maximally weird); (3) new `mode="contrastive"`:
+  `score = (1+ln tf)·weirdness` over a C-value-gated pool (the pre-registered formula), plus
+  `_sweep_orphan_keywords()` deleting extracted `Keyword` rows with no doc links and no matching promoted
+  `Concept` label/alias (run only on a whole-corpus `--force apply`). `KeywordExtractionResult.removed_orphans`.
+- **config** `KEYWORD_WEIRDNESS_REF_CEILING=8.0` + `KEYWORD_CONTRASTIVE_MIN_CVALUE=0.0` (frozen a priori);
+  CLI `--mode contrastive` + banner. Dropped the optional `concept_semantics` ride-alongs (PR already large).
+- **Tests +6:** unit — C-value discounts fully-nested + ranks container over its unigram; weirdness favors
+  OOV/domain over common English; contrastive ranks domain over common + drops nested; determinism/top_k.
+  integration — force sweeps orphaned rows but keeps a promoted concept's form; no sweep without force / on a
+  single-doc run.
+
+**Verify-after (indicative, $0 dry-run on the R1-clean real corpus — cache `grep "intentionally omitted"` =
+**0**, confirming the user's R1 apply+re-ingest landed):** `tests/eval/baselines/rg001_keyword_termhood_2026-07-02.md`.
+`corpus_band` top-40 is boilerplate + author surnames (`state`/`effect`/`simple`/`whether`/`four`/`best`/
+`zhang`/`chen`); **contrastive** top-40 is real domain vocab (`deeplabcut`/`connectome`/`cebra`/`imagenet`/
+`embeddings`/`bm25`/`res2net`/`medsam-2`/`phate`). Pre-registered acceptance MET. Noted limitations (follow-up,
+not blocking): publisher/ID artifacts (`elife`/`pmid`/`zenodo`) and repeated-token n-grams (`outflux outflux
+outflux`) rank high — weirdness rewards all rare tokens.
+
+**Why:** both pre-R3 modes fail by construction (per-doc → df≈1 cliques; corpus_band monotone in df → most
+generic). Reference-corpus contrast + C-value is the literature answer, deterministic and external (no
+corpus-tuning-against-itself). This is what makes the R5 curation candidates promotable.
+
+**Rejected:** repo-frozen table (Option B — build+maintain a table for the same math) and AWL-only (Option C —
+no general contrast; may layer on later); folding C-value into per_doc/corpus_band (would alter the R5 A/B
+baselines — kept them unchanged); the `concept_semantics` ride-alongs (scope).
+
+**Opens:** the contrastive follow-up levers (STOPWORDS/metadata strip for publisher artifacts; collapse
+repeated-token grams); **R5** uses `extract_keywords --mode contrastive --apply` → `seed_concepts --promote`
+to curate the vocabulary the empty-vocab finding (R2) flagged, then runs the skeleton. **Gate GREEN**
+(official-CPython 3.12, `uv run --no-sync`): ruff ✓ · ruff format ✓ · `mypy --strict src` ✓ (54) · bandit
+0/0/0 ✓ · `pytest tests/unit tests/integration` → **712 passed, 1 skipped**. **Staged on
+`feat/keyword-concept-graph`, nothing committed (cpc §13).**
+
+## Session: 2026-07-02 (cont.) — Selective ingestion designed: spec S1/S2 + roadmap rows (planning session, docs only)
+
+**What:** drafted `docs/specs/feature-selective-ingestion.md` (DRAFT — not yet grilled/locked) and added
+roadmap PR rows **S1** (backend: `SourceFile` registry + selection-scoped ingest — CLI `--files`/`--dry-run`,
+`GET/PATCH /api/sources`, optional `POST /api/ingest {paths}` body) and **S2** (Tauri sources panel);
+re-pointed row 17 (Zotero/Calibre) at the spec's ADR-3 as *optional producers* for the registry.
+**Why:** user request (2026-07-02): user-defined selective ingestion — batch and on-need with corpus
+metadata — for a mixed papers+books corpus, with both a script and a UI path. Hard constraint: **no Zotero
+dependency**; our SQLite is the system of record. Design: register ≠ ingest (stat-only scan, derived
+status, persist only identity + user intent: `doc_type`, `excluded`); selection reaches the locked ingest
+core as an explicit `files=` list; cleanup stays global-only (partial runs never delete).
+**Rejected:** stateless listing (nowhere to hold pre-ingest metadata); persisted-status mirror (drift);
+predicate DSL in the core (locked path); `Document.doc_type` column in v1 (`create_all` adds tables, not
+columns — no ALTER-migration story yet); merging with `sources_manifest.py` (different axis: provenance
+pins vs ingest intent).
+**Opens:** spec needs a grill/lock pass before S1 is built; sequence S1 **before** PR 17 so adapters have a
+seam to land in; explicit-selection-overrides-`excluded` is a UX call worth confirming at lock time.
+**Docs only — no code, nothing committed (cpc §13).**
+
+## Session: 2026-07-02 (cont.) — cpc conformance: baton rotation + doc hygiene (ADR-018 catch-up), Claude Code
+
+**What:** rotated `.claude/SESSION.md` per cpc ADR-018 rule 11 — entries 2026-06-10 → 2026-06-26
+(31 of 42) moved **byte-verbatim** (cmp-verified) to docs/archive/SESSION-archive-001.md; baton
+1071 → 430 lines; new-entry format flips to newest-on-top `## YYYY-MM-DD — <tool> — <topic>` (the
+old `## Baton — <date>` headings are invisible to the gate's date regex, so they don't trip rule 11a).
+Baton + archive stay local-only (`.gitignore`). Status headers added (`SESSION.md`, `RIGOR_TODO.md`);
+`.claude/commands/**` header-exempted in `scripts/conventions.toml` (slash-command prompts, not
+coordination docs); `session_max_entries = 10` set; stale `updated:` dates bumped to last-commit
+dates on 7 living docs (rule 12); stale CLAUDE.md claim fixed (structlog "currently violated" →
+enforced since ADR-003).
+**Why:** user-raised drift vs the cpc standard: the baton loaded ~47k tokens every session and the
+standard's rotation rule (cpc 1.1.0, ADR-018) was never adopted here.
+**Rejected:** committing the archive (the baton is deliberately local — tracking split in root
+`.gitignore`/ADR-001); reordering the kept old entries newest-first (churns verbatim history for zero
+gate benefit — the correction-note cross-references would scramble); headers on command files
+(prompt noise).
+**Opens:** old-format entries rotate out naturally as new-format entries accumulate; the
+session-baton skill's template still says "newest at bottom" — upstream fix due in claude-skills.
+
+## Session: 2026-07-02 (cont.) — cpc gates vendored local-only + wired (ADR-007), Claude Code
+
+**What:** `docs/decisions/ADR-007-cpc-gates-vendored-local-only.md` — cpc 1.1.0 vendored via
+`cpc-init` to tools/conventions/ (+ `rungate.py` shim; pre-commit local hooks on Windows can't set
+PYTHONPATH inline) and wired in `.pre-commit-config.cpc.yaml` — **both gitignored** (cpc private /
+repo public, ADR-001): docs/test-api checks + push-guard at pre-push, coupling-check at commit-msg;
+`cpc-init-check` deliberately unwired (red-by-design on the deferred AGENTS.md entry file, cpc
+ADR-014). Pruned init's unwanted creates (AGENTS.md, GLOSSARY.md, `.claude/.gitignore`). CLAUDE.md
+digest + CONTEXT.md canonical text updated to the honest wiring. **Verification:** `docs_check
+--strict` 0 errors / 0 warnings (was 8/7 at session start); `test_api_check --strict` clean (116 test
+files). No `src/`/`tests/`/`apps/` file touched — suite not re-run, nothing it covers changed.
+**Why:** the 2026-06-18 "pre-commit pinned v0.1.0" delivery lock was never executed and cpc ADR-015
+has since reversed remote delivery; CLAUDE.md's "gate-enforced" claim was false on every box.
+**Rejected:** committed vendoring / CI wiring (publishes the private repo — ADR-007 options 1–2);
+sibling-checkout PYTHONPATH (no per-repo version pin).
+**Opens:** per-machine install — `pre-commit install -c .pre-commit-config.cpc.yaml -t pre-push
+-t commit-msg` after `cpc-init`; AGENTS.md entry-file adoption still open (then wire init_check);
+sprint contracts (migration plan step 10) are the next ways-of-working adoption.
+**Nothing committed (cpc §13) — staged for review.**
+
+## Session: 2026-07-02 (cont.) — R4 graded provenance strength (ratio, not boolean), Claude Code
+
+**What:** remediation-plan §R4. `SkeletonEdge` gains `provenance_strength` — a sorted, hashable
+`(token, ratio)` tuple (keeps the frozen edge byte-stable). `_add_provenance` now computes, per doc-pair
+token, `strength = |linked ∩ candidate pairs| / |candidate pairs|` over
+`{(da, db) : da ∈ docs(A), db ∈ docs(B), da ≠ db}`, and keeps the token when `strength > 0` — token
+*membership* is byte-identical to the old boolean "any linked", so the no-edge-creation invariant is
+untouched. `edge_weight(provenance, cooc, provenance_strength=())` splits its fractional tiebreak into
+`0.5·mean(strengths) + 0.5·(1 − 1/(1+cooc))` (both halves in `[0,1)`, sum `< 1`). Serialized both directions
+(`skeleton_to_dict`/`_from_dict`), folded into the `_graph_version` payload, and persisted via a new additive
+`strength_json` column on `concept_edges` (model + `_ADDITIVE_COLUMNS` migration). +6 guard tests
+(partial-graph ratio, saturated=1.0, token-count-dominates-strength invariant, round-trip, migration column);
+gate green — ruff/format/`mypy --strict`(54)/bandit 0-0-0, **718 passed / 1 skipped**.
+**Why:** the boolean `_add_provenance` was measured non-discriminating on run (a) (similarity 100%, citation
+~88% of edges carried the token) — it added a source but no signal. A deterministic *ratio* stays byte-stable
+and becomes a relative corroboration signal on a partial doc graph, which is exactly the multi-domain regime
+R5 measures.
+**Rejected:** an unhashable `dict` field on the frozen edge (breaks hashing / the byte-stable version — used
+a sorted tuple); folding strengths into `provenance_json` (overloads that column's documented list contract —
+a separate `strength_json` keeps each column single-purpose); scaling the *integer* weight by strength (would
+let a strong 1-token edge outrank a weak 2-token edge, breaking the locked multi-token invariant — strength
+lives strictly in the `< 1` tiebreak).
+**Opens:** on a saturated doc graph every strength is `1.0` by construction (no discrimination there — the
+honest expectation); the payoff is the strength *distribution* on the multi-domain graph, recorded per-K in
+the R5 decision run. `_PROVENANCE_WEIGHT` is still uniform 1.0/token — per-source weighting is a separate,
+eval-gated lever, not this PR.
+**Nothing committed (cpc §13) — staged for review.**

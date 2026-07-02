@@ -80,8 +80,126 @@ Precise vocabulary — the 9 broad hubs (present in ≥7/10 docs) removed (n=21,
    private multi-paper-per-topic set) — on 10 same-domain papers, provenance carries no precision signal.
 5. **Gap-detection (ADR-004) stays blocked** on a usable graph — i.e. on (1)–(4) closing.
 
-## Follow-up filed (not part of this run)
+## Re-run (b), 2026-07-01 — keyword-grounded vocabulary (the KI-13 extractor closed)
 
-- **Vocabulary seam gap:** `scripts/seed_concepts.py` depends on `Keyword` rows that no ingest/enrichment step
-  produces — the promote-from-Keyword flow is dead on real data. Either wire a keyword extractor or add a
-  direct concept-seeding CLI. (Logged in `.claude/KNOWN_ISSUES.md`.)
+After building the TF-IDF keyword extractor (KI-13 fix), re-ran with a vocabulary promoted from the
+**extracted** candidates instead of the hand-seeded 30: `extract_keywords --apply` → 148 candidates → dropped
+9 noise fragments → `seed_concepts --promote-all` → **139 keyword-grounded concepts** (each with one seed
+alias = the surface form).
+
+**Key property of the extracted vocabulary:** 146/148 candidates have **document-frequency = 1** (only 2 have
+df=2) — TF-IDF top-N-per-doc selects each paper's *most distinctive* terms, which by construction appear in one
+document. The shared cross-cutting IR concepts (BM25, dense retrieval, cross-encoder) are **absent from all 148**
+— they are never any single paper's top-15, so TF-IDF drops them.
+
+Keyword-grounded vocabulary (n=139, C=9591):
+
+| min_cooccurrence | edges | density | communities | isolated |
+|---|---|---|---|---|
+| 1 | 1717 | 18% | 13 | 7 |
+| 2 (applied) | 1250 | 13% | 17 | 10 |
+| 3 | 1012 | 10.5% | 19 | 12 |
+
+**Observation:** the graph is a **federation of per-paper cliques** — each paper's ~15 df=1 terms co-occur
+within that paper and form a dense internal clique. The k=2 communities map cleanly to documents: c0 "passage"
+(DPR), c1 "ance" (HyDE), c2 "late" (ColBERT), c3 "rag" (RAG), c4 "sts" (SBERT), c5 "text embedding" (BGE),
+c6 "assistant" (LLM-judge) + 10 singleton fragments. Provenance now *partially* discriminates (citation 678/1250
+= 54%, similarity 989/1250 = 79%, vs ~100% in run (a)) because within-paper clique edges span no cross-doc pair.
+So the keyword-grounded graph clusters **by document, not by cross-cutting concept** — it is effectively a
+per-document keyword clustering, not a cross-document concept graph.
+
+## Re-run (c), 2026-07-01 — corpus mid-DF band vocabulary (tests the run-(b) hypothesis)
+
+Run (b) predicted the usable vocabulary is the shared *mid-document-frequency* band. Added a general
+`corpus_band` mode to the extractor (keep terms with `min_df ≤ df ≤ floor(max_df_frac·N)`, ranked by
+`df·(1+ln tf)`) and ran it **once with general defaults (`min_df=2`, `max_df_frac=0.7`, `top_k=60`) — no
+per-corpus tuning.** 60 terms selected, 405 doc-links (avg df≈6.8).
+
+**The hypothesis FAILS on this corpus.** The df=6–7 band is dominated by **generic academic vocabulary that
+every IR paper uses**, not domain concepts: `consider, create, including, introduce, multiple, requires,
+respectively, report, release, strong, benchmark, document, average, volume, web, format` … + an author name
+(`sebastian`). Only a minority are real concepts (bm25, dense, passage, ranking, encoder, transformer, marco,
+trec). These generic terms co-occur everywhere → the **most saturated graph of all**: n=60, **1466 edges /
+83% density @K=2**, provenance 100%/100%/100%, 3 communities, 0 isolated.
+
+Root cause: on a small same-domain corpus, **domain concepts and common academic boilerplate occupy the same
+document-frequency range**, so *no* DF band separates them. A larger stopword list would help a little but
+tuning it against this output is corpus-overfitting (out of scope, per the run brief).
+
+## Synthesis — four vocabulary regimes, none usable on this corpus
+
+| vocabulary | n | density @K=2 | communities | failure mode |
+|---|---|---|---|---|
+| manual, broad hubs | 30 | 46% | 4 | over-connected (hubs link everything) |
+| manual, hubs dropped | 21 | 27% | 4 | most balanced, but hand-curated |
+| keyword TF-IDF (df≈1) | 139 | 13% | 17 | per-paper cliques (clusters by document) |
+| keyword corpus-band (df 6–7) | 60 | **83%** | 3 | generic academic vocab saturates worse than hubs |
+
+**Definitive verdict: the gate does NOT pass, and the blocker is the CORPUS, not the vocabulary method or the
+code.** Four different vocabulary strategies span 13%→83% density and every one fails, because 10 same-domain
+papers cannot support a cross-document concept graph: doc-similarity is fully saturated (provenance can't
+discriminate), co-occurrence is unstable at N=10, and — proven here — statistical keyword selection cannot
+separate "domain concept" from "common academic word" without a distinctive DF signal that only a larger,
+**multi-domain** corpus provides.
+
+**Design guidance (RG-001 deliverable):**
+1. **The corpus is the gate.** Re-run all of this on the larger multi-domain private corpus (`cases.yaml`)
+   before any threshold is locked or the graph is marked usable. On a proper corpus, `corpus_band` is likely
+   the right default (mid-DF terms there *are* the shared domain concepts); it cannot be validated here.
+2. **Vocabulary needs a semantic gate, not just statistics** — an embedding/LLM filter or a curated
+   domain-stopword list to reject academic boilerplate. Deferred (and NOT tuned against this corpus).
+3. Word-boundary presence matching (RG-009) still pending.
+4. Gap-detection (ADR-004) stays blocked on a usable graph.
+
+Applied on-disk state after this run: 60 corpus-band concepts + skeleton at K=2 (`data/skeleton/`, gitignored).
+Reset: `DELETE FROM concept_aliases; DELETE FROM concepts;`.
+
+## Follow-up filed
+
+- **Vocabulary seam gap → RESOLVED (KI-13):** the keyword extractor (`src/doc_assistant/keywords.py`,
+  `scripts/extract_keywords.py`) produces `Keyword` candidates for the `--promote` seam in two modes —
+  `per_doc` (TF-IDF distinctive) and `corpus_band` (shared mid-DF). Both were exercised here; neither yields a
+  usable graph *on this corpus* (the corpus is the blocker), but the machinery + config knobs are in place for
+  the multi-domain re-run.
+
+---
+
+## R2 addendum (2026-07-02) — word-boundary vs substring presence, real corpus
+
+**Reproducible/indicative, not a verdict.** Measures the R2 change (`match_presence` boundary mode) against
+the substring primitive it replaces, on the **real `data/` corpus** (5,617 parent chunks, post-R1
+re-ingest). The curated `Concept` vocabulary is **empty on this data home** (the 2026-07-01 hand-seeded set
+lived elsewhere), so this uses an **ad-hoc probe vocabulary** of short/ambiguous surface forms — *not* written
+to the DB — over the real chunk text. The corpus-level run on the *curated* vocabulary is the R5 decision run
+(needs curation first). $0, deterministic, no LLM, no DB mutation.
+
+**Per-concept mentions / documents (boundary → substring, inflation ×):**
+
+| form | boundary m/docs | substring m/docs | inflation |
+|------|----------------:|-----------------:|----------:|
+| IR   | 39 / 8   | 10541 / 76 | **270×** |
+| RAG  | 201 / 3  | 1334 / 71  | 6.6× |
+| BERT | 232 / 13 | 770 / 59   | 3.3× |
+| RNN  | 1 / 1    | 13 / 6     | 13× |
+| CNN  | 111 / 14 | 186 / 19   | 1.7× |
+| transformer | 207 / 22 | 345 / 27 | 1.7× |
+| MRI  | 305 / 18 | 417 / 23   | 1.4× |
+| DPR / ColBERT / SBERT / BM25 / ECG / retrieval | — | — | ≈1.0× (distinctive; unaffected) |
+
+**Probe-skeleton edge density by `min_cooccurrence` (14 probe concepts, edges / possible-pairs):**
+
+| mode | K1 | K2 | K3 | K4 | K5 |
+|------|----|----|----|----|----|
+| boundary  | 0.43 | 0.32 | 0.30 | 0.27 | 0.26 |
+| substring | 0.68 | 0.58 | 0.54 | 0.51 | 0.47 |
+
+**Reading.** Substring presence fabricates hubs: `IR` "appears" in **all 76 docs** (matched inside *their*,
+*first*, *requires*, …) and `RAG` jumps 3 → 71 docs (*storage*/*average*/*fragment*). Because one over-matched
+short form present in every doc co-occurs with every other concept, edge **density runs ~1.6–2× higher under
+substring** — the exact metric RG-008 gates on. Distinctive forms (DPR, ColBERT, BM25, ECG) are unchanged, so
+boundary matching costs nothing where the surface form is already unambiguous. This confirms substring was a
+real confound; the R5 run re-measures on the curated vocabulary and sets the mode + `min_cooccurrence`.
+
+**Re-run:** `uv run --no-sync python scripts/../<scratch>/r2_presence_measure.py` — or, on a curated
+vocabulary: `uv run --no-sync python -m scripts.build_concept_skeleton --presence-mode boundary` vs
+`--presence-mode substring` (dry-run; sweep `--min-cooccurrence 1..5`).

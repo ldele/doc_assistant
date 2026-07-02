@@ -2,11 +2,13 @@
 
 Fixes KI-13: the concept-skeleton promote seam (``scripts/seed_concepts.py``) mines
 ``Keyword`` rows, but nothing in the codebase produced them, so the vocabulary path was
-dead on real data. This module extracts keyphrases from each document's cached markdown by
-corpus **TF-IDF** — pure Python, no LLM, no new dependency — and writes them as
-``Keyword(source="extracted")`` rows linked to their documents. Additive, idempotent, and
-it never touches the chunk store (Enrichment-Layer Pattern), exactly like the
-``extract_citations`` / ``extract_doc_metadata`` sidecar runners.
+dead on real data. This module extracts keyphrases from each document's cached markdown —
+zero LLM — and writes them as ``Keyword(source="extracted")`` rows linked to their
+documents. Additive, idempotent, and it never touches the chunk store (Enrichment-Layer
+Pattern), exactly like the ``extract_citations`` / ``extract_doc_metadata`` sidecar runners.
+Three modes: ``per_doc`` TF-IDF and ``corpus_band`` (pure Python), and ``contrastive``
+(R3 / ADR-006) — C-value nested discount * reference-corpus weirdness, using ``wordfreq``
+as the general-English reference.
 
 TF-IDF over a same-domain corpus down-weights ubiquitous terms (``model``, ``bert``) and
 surfaces each document's distinctive phrases — which also mitigates the broad-hub density
@@ -22,7 +24,7 @@ from __future__ import annotations
 
 import math
 import re
-from collections import Counter
+from collections import Counter, defaultdict
 from dataclasses import dataclass
 
 import structlog
@@ -328,6 +330,145 @@ def tf_idf_keywords(
     return ranked
 
 
+def corpus_band_keywords(
+    doc_terms: dict[str, list[str]], *, min_df: int, max_df: int, top_k: int
+) -> list[ScoredKeyword]:
+    """Select a single corpus vocabulary of shared *mid-document-frequency* terms.
+
+    The counterpart to :func:`tf_idf_keywords`. Where per-doc TF-IDF surfaces each document's
+    *distinctive* terms (which are df≈1 and form per-paper cliques in the concept graph), this
+    selects terms whose corpus document-frequency falls in ``min_df..max_df`` — the shared band
+    that produces cross-document co-occurrence edges. Below the band = paper-specific singletons;
+    above it = ubiquitous hubs that saturate the graph. Both are excluded.
+
+    Score is ``df * (1 + ln total_tf)`` — breadth (how many documents) first, substance (how
+    often) second. Deterministic: ties break by term ascending. ``ScoredKeyword.tf`` here is the
+    *corpus-total* frequency (not per-document, unlike the TF-IDF path). Returns the top ``top_k``.
+    """
+    per_doc_counts = {doc_id: Counter(terms) for doc_id, terms in doc_terms.items()}
+    doc_freq: Counter[str] = Counter()
+    total_tf: Counter[str] = Counter()
+    for counts in per_doc_counts.values():
+        for term, tf in counts.items():
+            doc_freq[term] += 1
+            total_tf[term] += tf
+
+    scored: list[ScoredKeyword] = []
+    for term, df in doc_freq.items():
+        if df < min_df or df > max_df:
+            continue
+        tf = total_tf[term]
+        score = df * (1.0 + math.log(tf))
+        scored.append(ScoredKeyword(term=term, score=score, tf=tf, df=df))
+    scored.sort(key=lambda s: (-s.score, s.term))
+    return scored[:top_k]
+
+
+# --------------------------------------------------------------------------- #
+# R3 — contrastive termhood: C-value nested discount + reference-corpus weirdness
+# --------------------------------------------------------------------------- #
+
+
+def _contiguous_subgrams(tokens: tuple[str, ...]) -> set[tuple[str, ...]]:
+    """Every *proper* contiguous sub-n-gram of ``tokens`` (deduplicated)."""
+    subs: set[tuple[str, ...]] = set()
+    n = len(tokens)
+    for size in range(1, n):  # proper: size < n
+        for i in range(n - size + 1):
+            subs.add(tokens[i : i + size])
+    return subs
+
+
+def c_value_scores(term_freqs: dict[str, int]) -> dict[str, float]:
+    """C-value nested-term termhood (Frantzi & Ananiadou), the ``+1`` length variant.
+
+    ``C(a) = log2(|a| + 1) * (f(a) - mean_{b ⊋ a} f(b))`` where ``|a|`` is ``a``'s token
+    length and ``b ⊋ a`` ranges over the *observed candidate terms* that strictly contain
+    ``a`` as a contiguous sub-n-gram. A term appearing only inside longer terms scores ~0
+    (its count equals its containers'), so nested fragments are discounted; a term that also
+    occurs standalone keeps a positive score. The ``+1`` keeps unigrams eligible
+    (``log2 2 = 1``, not ``log2 1 = 0``). Deterministic; O(V · ngram_max²).
+    """
+    tokens_of = {t: tuple(t.split()) for t in term_freqs}
+    # For each candidate, collect the frequencies of the longer candidates containing it.
+    super_freqs: dict[str, list[int]] = defaultdict(list)
+    for b, b_tok in tokens_of.items():
+        fb = term_freqs[b]
+        for sub in _contiguous_subgrams(b_tok):
+            key = " ".join(sub)
+            if key in term_freqs:  # only real candidates count as nesting containers
+                super_freqs[key].append(fb)
+    scores: dict[str, float] = {}
+    for term, tok in tokens_of.items():
+        supers = super_freqs.get(term, [])
+        mean_super = sum(supers) / len(supers) if supers else 0.0
+        scores[term] = math.log2(len(tok) + 1) * (term_freqs[term] - mean_super)
+    return scores
+
+
+def _zipf(token: str) -> float:
+    """General-English frequency of ``token`` on wordfreq's zipf scale (0=unseen … ~8)."""
+    from wordfreq import zipf_frequency
+
+    return float(zipf_frequency(token, "en"))
+
+
+def weirdness(term: str, *, ref_ceiling: float) -> float:
+    """Domain-specificity of ``term`` by contrast against general English (R3).
+
+    Per token, ``max(0, ref_ceiling - zipf(token))`` — high when the token is rare in
+    general English; an out-of-vocabulary technical token (``bm25`` → zipf 0) reaches the
+    full ceiling, i.e. maximally weird (the desired smoothing of reference OOV). A phrase
+    takes the **min** over its tokens, so it is only as domain-specific as its most-common
+    word (``dense passage retrieval`` is bounded by ``passage``). Deterministic; ``wordfreq``
+    ships its frequency table, so this is offline after install.
+    """
+    tokens = term.split()
+    if not tokens:
+        return 0.0
+    return min(max(0.0, ref_ceiling - _zipf(tok)) for tok in tokens)
+
+
+def contrastive_keywords(
+    doc_terms: dict[str, list[str]],
+    *,
+    top_k: int,
+    ref_ceiling: float,
+    min_cvalue: float,
+) -> list[ScoredKeyword]:
+    """Select a corpus vocabulary by **termhood**: C-value nested discount * weirdness.
+
+    Neither existing mode separates domain concepts from academic boilerplate: per-doc
+    TF-IDF picks df≈1 per-paper cliques, and ``corpus_band``'s ``df·(1+ln tf)`` is monotone
+    in df so it grabs the most-shared = most-generic terms. This mode scores by contrast
+    against a reference corpus instead. A term is dropped if its C-value is ``≤ min_cvalue``
+    (a nested fragment with no standalone occurrences) or its weirdness is 0 (pure common
+    English). Otherwise ``score = (1 + ln tf_corpus) · weirdness(term)`` — the pre-registered
+    R3 formula. ``tf`` is the corpus-total frequency, ``df`` the document frequency.
+    Deterministic: ties break by term ascending.
+    """
+    per_doc_counts = {doc_id: Counter(terms) for doc_id, terms in doc_terms.items()}
+    doc_freq: Counter[str] = Counter()
+    total_tf: Counter[str] = Counter()
+    for counts in per_doc_counts.values():
+        for term, tf in counts.items():
+            doc_freq[term] += 1
+            total_tf[term] += tf
+
+    cvals = c_value_scores(dict(total_tf))
+    scored: list[ScoredKeyword] = []
+    for term, tf in total_tf.items():
+        if cvals[term] <= min_cvalue:  # nested fragment / no net standalone frequency
+            continue
+        w = weirdness(term, ref_ceiling=ref_ceiling)
+        if w <= 0.0:  # pure common-English term (no contrast signal)
+            continue
+        score = (1.0 + math.log(tf)) * w
+        scored.append(ScoredKeyword(term=term, score=score, tf=tf, df=doc_freq[term]))
+    scored.sort(key=lambda s: (-s.score, s.term))
+    return scored[:top_k]
+
+
 # --------------------------------------------------------------------------- #
 # Impure boundary — reads cached markdown, writes Keyword rows (host only, KI-5)
 # --------------------------------------------------------------------------- #
@@ -351,6 +492,7 @@ class KeywordExtractionResult:
     n_documents: int
     n_distinct_keywords: int
     total_written: int
+    removed_orphans: int = 0  # extracted Keyword rows swept after a --force re-extract (R3)
 
 
 def _find_cached_text(source_cache: str | None, source_original: str) -> str | None:
@@ -451,6 +593,41 @@ def _persist_keywords(document_id: str, terms: list[str], *, force: bool) -> int
         return added
 
 
+def _sweep_orphan_keywords() -> int:
+    """Delete extracted ``Keyword`` rows with no document links and no promoted concept (R3).
+
+    A ``--force`` re-extract clears each doc's *extracted* links but leaves the ``Keyword``
+    rows behind; a term that no longer appears in any document then lingers forever and
+    pollutes ``seed_concepts`` candidates. This sweeps rows where ``source == "extracted"``,
+    ``documents`` is empty, and the name does not match a promoted ``Concept`` label or
+    ``ConceptAlias`` (never delete a curated concept's surface form). Returns the count.
+    """
+    from sqlalchemy import select
+
+    from doc_assistant.db.models import Concept, ConceptAlias, Keyword
+    from doc_assistant.db.session import session_scope
+
+    with session_scope() as session:
+        curated = {
+            label.casefold() for label in session.execute(select(Concept.label)).scalars() if label
+        }
+        curated |= {
+            alias.casefold()
+            for alias in session.execute(select(ConceptAlias.alias)).scalars()
+            if alias
+        }
+        removed = 0
+        rows = session.execute(select(Keyword).where(Keyword.source == "extracted")).scalars()
+        for kw in rows:
+            if kw.documents:  # still linked to a live document
+                continue
+            if kw.name.casefold() in curated:  # a promoted concept's surface form
+                continue
+            session.delete(kw)
+            removed += 1
+        return removed
+
+
 def extract_keywords(
     *,
     apply: bool,
@@ -459,20 +636,51 @@ def extract_keywords(
     top_k: int,
     ngram_max: int,
     min_chars: int,
+    mode: str = "per_doc",
+    min_df: int = 2,
+    max_df_frac: float = 0.7,
+    ref_ceiling: float = 8.0,
+    min_cvalue: float = 0.0,
 ) -> KeywordExtractionResult:
-    """Extract per-document keyphrases by corpus TF-IDF; optionally persist them.
+    """Extract keyphrases (per-doc TF-IDF, corpus mid-DF band, or contrastive); persist opt.
 
-    IDF is always computed over the whole cached corpus (stable statistics); ``document_id``
-    only restricts which docs are *reported* and *written*. Deterministic and free (no LLM).
-    With ``apply=False`` nothing is written (dry run).
+    ``mode="per_doc"`` ranks each document's distinctive terms by TF-IDF (``top_k`` per doc).
+    ``mode="corpus_band"`` selects ONE corpus vocabulary of shared terms whose document-frequency
+    is in ``min_df .. floor(max_df_frac * N)`` (``top_k`` total), then links each to the documents
+    it appears in. ``mode="contrastive"`` (R3) selects ONE corpus vocabulary by termhood —
+    C-value nested discount * reference-corpus weirdness (``ref_ceiling`` / ``min_cvalue``) — the
+    mode that separates domain concepts from academic boilerplate. Statistics are always computed
+    over the whole cached corpus; ``document_id`` only restricts what is reported/written.
+    Deterministic and free (no LLM). ``apply=False`` writes nothing (dry run). After a
+    ``force`` re-extract, orphaned extracted ``Keyword`` rows are swept (R3).
     """
-    corpus = load_document_texts()  # whole corpus → stable IDF
+    corpus = load_document_texts()  # whole corpus → stable statistics
     filenames = {doc_id: fname for doc_id, fname, _ in corpus}
     doc_terms = {
         doc_id: candidate_terms(tokenize(text), ngram_max=ngram_max, min_chars=min_chars)
         for doc_id, _, text in corpus
     }
-    ranked = tf_idf_keywords(doc_terms, top_k=top_k)
+
+    ranked: dict[str, list[ScoredKeyword]]
+    if mode in ("corpus_band", "contrastive"):
+        if mode == "contrastive":
+            selected = contrastive_keywords(
+                doc_terms, top_k=top_k, ref_ceiling=ref_ceiling, min_cvalue=min_cvalue
+            )
+        else:
+            max_df = max(min_df, int(max_df_frac * len(doc_terms)))
+            selected = corpus_band_keywords(doc_terms, min_df=min_df, max_df=max_df, top_k=top_k)
+        by_term = {s.term: s for s in selected}
+        chosen = set(by_term)
+        ranked = {
+            doc_id: sorted(
+                (by_term[t] for t in set(terms) & chosen),
+                key=lambda s: (-s.score, s.term),
+            )
+            for doc_id, terms in doc_terms.items()
+        }
+    else:
+        ranked = tf_idf_keywords(doc_terms, top_k=top_k)
 
     targets = [document_id] if document_id is not None else list(ranked)
     docs: list[DocKeywords] = []
@@ -493,16 +701,25 @@ def extract_keywords(
                 written=written,
             )
         )
+    # After a force re-extract, sweep extracted Keyword rows now orphaned (R3). Only when
+    # writing over the whole corpus — a single-document run would wrongly sweep other docs'
+    # terms that are momentarily unlinked in this pass.
+    removed_orphans = 0
+    if apply and force and document_id is None:
+        removed_orphans = _sweep_orphan_keywords()
+
     if apply:
         log.info(
             "keywords_extracted",
             documents=len(docs),
             distinct=len(distinct),
             links_written=total_written,
+            removed_orphans=removed_orphans,
         )
     return KeywordExtractionResult(
         docs=docs,
         n_documents=len(docs),
         n_distinct_keywords=len(distinct),
         total_written=total_written,
+        removed_orphans=removed_orphans,
     )

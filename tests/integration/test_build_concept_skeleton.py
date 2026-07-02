@@ -120,7 +120,11 @@ def test_node_a_build_writes_sidecar_and_provenance(env: Path) -> None:
     with session_scope() as session:
         edge = session.execute(select(ConceptEdge)).scalar_one()
         provenance = set(json.loads(edge.provenance_json))
+        strength = json.loads(edge.strength_json)
     assert provenance == {"cooccurrence", "citation", "similarity"}
+    # R4: graded strength persisted per doc-pair token; this saturated toy graph → 1.0.
+    # Co-occurrence is the base fact and carries no strength entry.
+    assert strength == {"citation": 1.0, "similarity": 1.0}
 
 
 def test_build_is_byte_identical_on_rerun(env: Path) -> None:

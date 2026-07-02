@@ -76,6 +76,11 @@ dependencies = [
     # SDK) otherwise rejects a corporate TLS-MITM proxy's root CA. Injected at the
     # API entrypoint (`apps/api/__main__.py`); no-op-safe in dev. Pure-Python, tiny.
     "truststore>=0.10",
+    # R3 (ADR-006): reference English word-frequency source for contrastive keyword
+    # termhood (`keywords.weirdness`) — separates domain concepts from academic
+    # boilerplate by contrast against general English. Frequency data ships with the
+    # package (offline after install); pure-Python, no torch interaction.
+    "wordfreq>=3.0",
 ]
 
 [project.optional-dependencies]
@@ -188,6 +193,7 @@ module = [
     "tqdm.*",
     "sqlalchemy.*",
     "networkx.*",
+    "wordfreq.*",
 ]
 ignore_missing_imports = true
 

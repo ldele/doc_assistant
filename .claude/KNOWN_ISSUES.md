@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-06-26 · class: living -->
+<!-- status: active · updated: 2026-07-02 · class: living -->
 
 # KNOWN ISSUES
 
@@ -96,6 +96,10 @@ Migrated from the old `CLAUDE.md` / `README` runtime-quirk notes on 2026-06-20 (
   redesign landing; it is a connected change across `epistemics.py` → `chat_controller.py` /
   `compute_epistemics.py` / `wiki.py` + their tests (the carried-over PR-16 ADR-1 Louvain / ADR-4 chunk
   key stay). Not safe as standalone cleanup while `epistemics.py` imports it.
+- **Containment (2026-07-02, PR-R7 — staged):** the one *user-facing* leak of this superseded data — the
+  live 7d marker chips in a chat turn — is now gated OFF by default (`EPISTEMICS_MARKERS_ENABLED=false`,
+  `docs/decisions/ADR-005-epistemics-markers-default-off.md`), so the app no longer surfaces KI-7 noise under
+  the integrity banner. Full retirement still owed with Node B; the flag flips back on then.
 - **Pointer (add):** also `docs/decisions/ADR-004-gap-detection-layer.md` + `docs/specs/feature-gap-detection.md`.
 
 ## KI-8 — PC→baseline marker mapping (PR-M1) is coarse at parent boundaries — OPEN (advisory, fail-safe)
@@ -112,6 +116,9 @@ Migrated from the old `CLAUDE.md` / `README` runtime-quirk notes on 2026-06-20 (
   re-projection is the documented upgrade **if** containment proves too coarse on real data.
 - **Compounding caveat:** marker *quality* upstream still comes from the superseded open-vocabulary graph
   (KI-7) — `contested` is local-model-noisy. M1 surfaces what the sidecar holds; it does not fix extraction.
+- **Mostly moot in practice since 2026-07-02 (PR-R7):** the live chip is now default-OFF
+  (`EPISTEMICS_MARKERS_ENABLED=false`, ADR-005), so this containment coarseness only bites when a user opts
+  the markers back on. The precise re-projection upgrade rides with Node B, alongside KI-7 retirement.
 - **Pointer:** `docs/specs/pr-m1-epistemics-markers.md` ADR-1 (option 2 = the re-projection upgrade).
 
 ## KI-9 — Frozen desktop build does not bundle model weights → first-run HuggingFace download; offline launch fails — RESOLVED (2026-06-24)
@@ -273,3 +280,35 @@ Migrated from the old `CLAUDE.md` / `README` runtime-quirk notes on 2026-06-20 (
   instead of the ad-hoc hand-seeded 30 — a better-grounded re-run once a curator promotes a subset.
 - **Pointer:** `tests/eval/baselines/rg001_concept_skeleton_2026-07-01.md`; `docs/specs/concept-graph-redesign.md`
   Decision 1; `.claude/RIGOR_TODO.md` RG-001/008/009.
+
+## KI-14 — PyMuPDF4LLM image placeholders pollute the extracted markdown — RESOLVED (main corpus, 2026-07-02)
+- **Symptom:** the cached markdown contains `**==> picture [W x H] intentionally omitted <==**` placeholder
+  lines wherever PyMuPDF4LLM declines to render an inline image. On the multi-domain arXiv corpus this was
+  **1027 occurrences** across 24 papers, heaviest in figure/equation-dense physics/math/econ papers
+  (statmech 214, cosmo 182, econ 173; text-heavy ML papers far fewer). These land in the RAG **chunk store**
+  (retrievable noise) and in keyword extraction (surfacing junk tokens `intentionally omitted`, `x 12`,
+  `br 1`, `0 br` — 11 of 13 concept-skeleton "communities" on that corpus were these noise isolates).
+- **Cause:** PyMuPDF4LLM's markdown writer emits a textual placeholder for images it does not extract; the
+  primary ingest path keeps it verbatim (figures are handled separately by the Feature-4b sidecar, so the
+  placeholder carries no value in the chunk text).
+- **Impact:** low on the public IR corpus (text-heavy, few figures); **material on STEM/figure-dense corpora**
+  — pollutes retrieval and any text-derived enrichment (keywords, future concept vocabulary). Surfaced by the
+  RG-001 multi-domain re-check, not the public corpus.
+- **Workaround:** none applied (would be a code change; out of scope for the "current-params re-check").
+- **Real fix:** strip `==> … intentionally omitted <==` placeholder lines in the extract→markdown step (or a
+  cache-normalisation pass) before chunking + keywording; optionally re-point them at the figure sidecar.
+- **FIX BUILT (2026-07-02, PR-R1 — `docs/specs/remediation-plan-2026-07.md` §R1; staged, not committed):**
+  `extractors.strip_image_placeholders` (frame-anchored `==> … <==`, whole-line, no-op when absent + idempotent)
+  applied at the single `extract_to_markdown` exit → all future extractions clean; `scripts/normalize_cache.py`
+  (dry-run default, `--apply`, atomic per-file rewrite only when content changes) fixes existing caches, since
+  `--rebuild` does NOT re-extract (`ingest/cache.py` trusts mtime). +23 guard tests; gate green (699 passed).
+  Dry-run on `data/cache`: 62 scanned, **57 changed, 1,123 placeholder lines**.
+- **RESOLVED (main corpus, 2026-07-02):** the user ran `normalize_cache --apply` + re-ingest on this box's
+  `data/` corpus. **Verified: cache `grep "intentionally omitted"` = 0** (62 docs), and the R3 keyword
+  dry-run over the re-ingested corpus shows no `intentionally omitted` / `x 12` / `br 1` junk tokens. The
+  strip is now in `extract_to_markdown`, so future ingests stay clean.
+- **Remaining (only when that home is next used):** re-run `normalize_cache --apply` + re-ingest on the
+  **multi-domain** data home (`data_multidomain/`, not on this box) — same $0 runner; the code fix already
+  applies to any future extraction there.
+- **Pointer:** `tests/eval/baselines/rg001_concept_skeleton_multidomain_2026-07-01.md` finding 4;
+  `data_multidomain/cache/*.md`; DEVLOG 2026-07-02 (cont.) PR-R1 entry.

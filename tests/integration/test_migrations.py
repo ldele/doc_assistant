@@ -36,6 +36,31 @@ def test_additive_column_added_to_preexisting_table(tmp_path: Path) -> None:
         engine.dispose()
 
 
+def test_r4_strength_json_added_to_preexisting_concept_edges(tmp_path: Path) -> None:
+    # R4: an existing concept_edges (Node-A, pre-strength) gains strength_json in place.
+    engine = create_engine(f"sqlite:///{tmp_path / 'edges.db'}", future=True)
+    try:
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    "CREATE TABLE concept_edges "
+                    "(id VARCHAR PRIMARY KEY, provenance_json TEXT, weight FLOAT)"
+                )
+            )
+        assert "strength_json" not in {
+            c["name"] for c in inspect(engine).get_columns("concept_edges")
+        }
+
+        _apply_additive_columns(engine)
+        assert "strength_json" in {
+            c["name"] for c in inspect(engine).get_columns("concept_edges")
+        }
+
+        _apply_additive_columns(engine)  # idempotent second pass
+    finally:
+        engine.dispose()
+
+
 def test_additive_migration_skips_absent_table(tmp_path: Path) -> None:
     # No answer_reviews table at all → migration is a clean no-op.
     engine = create_engine(f"sqlite:///{tmp_path / 'empty.db'}", future=True)

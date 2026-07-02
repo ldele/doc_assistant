@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-06-26 · class: living -->
+<!-- status: active · updated: 2026-07-02 · class: living -->
 
 # CONTEXT — doc_assistant
 
@@ -99,6 +99,17 @@ in cpc CONVENTIONS **§12 / §13** — read them there, do not restate. Project-
    not a log event).
 6. **Exceptions chain** (`raise X from e`); user-facing messages translated at the UI boundary.
 7. **bandit HIGH blocks merge; CI green before merge.** Docs land with the code at every checkpoint.
+
+**cpc gate wiring (ADR-007 — canonical text).** The cpc gates are vendored at `tools/conventions/`
+(cpc 1.1.0; re-run `cpc-init` from the cpc checkout to upgrade) and wired via
+`.pre-commit-config.cpc.yaml`. **Both are gitignored — local-only, never in the shared
+`.pre-commit-config.yaml` or CI:** cpc is a private tooling repo, this repo is public (ADR-001).
+Install (no clash with the main config's pre-commit stage):
+`pre-commit install -c .pre-commit-config.cpc.yaml -t pre-push -t commit-msg` — docs/init/test-api
+checks + `cpc-push-guard` at pre-push, `cpc-coupling-check` at commit-msg. On-call any time:
+`python tools/conventions/rungate.py docs_check --root . --strict`. Baton hygiene is gate-read
+(rule 11): newest-on-top, cap 10 entries (`scripts/conventions.toml`), rotate older entries verbatim
+to docs/archive/SESSION-archive-NNN.md (local-only, like the baton).
 
 ## Phase map
 

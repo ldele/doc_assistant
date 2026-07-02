@@ -10,6 +10,8 @@ profile = "standard"
 [budgets]
 entry_max_lines        = 600   # docs_check: root CLAUDE.md + .claude/CONTEXT.md combined
 module_claude_max_lines = 40   # docs_check: each <module>/CLAUDE.md
+session_max_entries    = 10    # docs_check rule 11b (ADR-018): baton cap; rotate older entries
+                               # verbatim to docs/archive/SESSION-archive-NNN.md (local-only here)
 uses_max_files         = 12    # sprint_check: resolved `uses` read-set files (globs expanded)
 uses_max_lines         = 2500  # sprint_check: summed line count of resolved `uses` files
 
@@ -23,7 +25,9 @@ disposable_days = 90           # PLAN_/REVIEW_ still 'active' older than this ->
 
 [headers]
 # globs (relative to root) exempt from the status-header requirement
-exempt = ["docs/specs/**", "**/*.json"]
+# .claude/commands/* are slash-command PROMPTS, not coordination docs — a governance header
+# would be injected into every command invocation as prompt noise.
+exempt = ["docs/specs/**", "**/*.json", ".claude/commands/**"]
 
 [routes]
 # extensions treated as route targets when found inside `backticks`

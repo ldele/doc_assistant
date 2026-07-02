@@ -6,7 +6,11 @@ Fixed toy inputs, no DB / LLM / network. The no-edge-creation guard
 
 from __future__ import annotations
 
+import pytest
+
 from doc_assistant.concept_skeleton import (
+    PRESENCE_BOUNDARY,
+    PRESENCE_SUBSTRING,
     ConceptNode,
     ConceptPresence,
     SkeletonEdge,
@@ -56,6 +60,74 @@ def test_presence_counts_mentions_across_chunks() -> None:
     assert by_doc["d1"].chunk_keys == ("d1:p0", "d1:p1")
     assert by_doc["d1"].n_mentions == 3  # two + one occurrences
     assert by_doc["d2"].chunk_keys == ("d2:p0",)
+
+
+# ---- presence match mode (R2 / RG-009 — word-boundary vs substring) --------
+
+
+def test_presence_boundary_rejects_substring_hits() -> None:
+    # The confound R2 fixes: "bert" must NOT fire inside sbert / colbert / roberta.
+    concepts = [("c_bert", "BERT")]
+    chunks = [
+        ("d1:p0", "d1", "SBERT and ColBERT build on RoBERTa."),  # no standalone token
+        ("d2:p0", "d2", "BERT is the base model."),  # standalone → the only real hit
+    ]
+    presences = match_presence(concepts, {}, chunks, mode=PRESENCE_BOUNDARY)
+    by_doc = {p.document_id: p for p in presences}
+    assert set(by_doc) == {"d2"}  # d1 contributes nothing under boundary
+    assert by_doc["d2"].chunk_keys == ("d2:p0",)
+    assert by_doc["d2"].n_mentions == 1
+
+
+def test_presence_boundary_matches_at_punctuation_and_string_edges() -> None:
+    concepts = [("c_bert", "BERT")]
+    chunks = [
+        ("d1:p0", "d1", "We use BERT."),  # trailing period
+        ("d2:p0", "d2", "(BERT) is strong"),  # wrapped in parens
+        ("d3:p0", "d3", "bert"),  # whole string, no surrounding chars
+    ]
+    presences = match_presence(concepts, {}, chunks, mode=PRESENCE_BOUNDARY)
+    assert {p.document_id for p in presences} == {"d1", "d2", "d3"}
+    assert all(p.n_mentions == 1 for p in presences)
+
+
+def test_presence_boundary_handles_hyphen_and_plus_forms() -> None:
+    # \b would mishandle these edge chars; alnum lookarounds get them right.
+    concepts = [("c_gpt4", "GPT-4"), ("c_cpp", "C++")]
+    chunks = [
+        ("d1:p0", "d1", "GPT-4 is used, not GPT-4o."),  # matches gpt-4, not inside gpt-4o
+        ("d2:p0", "d2", "Written in C++ here."),
+    ]
+    presences = match_presence(concepts, {}, chunks, mode=PRESENCE_BOUNDARY)
+    by_concept = {p.concept_id: p for p in presences}
+    assert by_concept["c_gpt4"].n_mentions == 1  # the gpt-4o occurrence is excluded
+    assert by_concept["c_gpt4"].document_id == "d1"
+    assert by_concept["c_cpp"].document_id == "d2"  # c++ matched despite '+' edges
+    # Deterministic, sorted by (concept_id, document_id).
+    assert [(p.concept_id, p.document_id) for p in presences] == sorted(
+        (p.concept_id, p.document_id) for p in presences
+    )
+
+
+def test_presence_substring_mode_reproduces_raw_count() -> None:
+    concepts = [("c_bert", "BERT")]
+    chunks = [("d1:p0", "d1", "SBERT and ColBERT and BERT.")]
+    substring = match_presence(concepts, {}, chunks, mode=PRESENCE_SUBSTRING)
+    assert substring[0].n_mentions == 3  # sbert + colbert + bert (old behaviour)
+    boundary = match_presence(concepts, {}, chunks, mode=PRESENCE_BOUNDARY)
+    assert boundary[0].n_mentions == 1  # only the standalone token
+
+
+def test_presence_default_mode_is_boundary() -> None:
+    concepts = [("c_bert", "BERT")]
+    chunks = [("d1:p0", "d1", "SBERT only, no standalone.")]
+    # No mode passed → boundary → sbert does not count → no presence row at all.
+    assert match_presence(concepts, {}, chunks) == []
+
+
+def test_presence_invalid_mode_raises() -> None:
+    with pytest.raises(ValueError, match="presence mode"):
+        match_presence([("c", "bert")], {}, [("d:p0", "d", "bert")], mode="bogus")
 
 
 # ---- co-occurrence (Decision 4) --------------------------------------------
@@ -123,7 +195,39 @@ def test_provenance_added_to_an_existing_edge_only() -> None:
     assert simd[0].weight > edges[0].weight
 
 
-# ---- edge weight (Decision 5) ----------------------------------------------
+# ---- graded provenance strength (R4 — ratio, not boolean) ------------------
+
+
+def test_provenance_strength_is_ratio_on_a_partial_graph() -> None:
+    # a,b co-occur; both present in d1,d2,d3. Only d1<->d2 are similar → a partial graph.
+    edge = SkeletonEdge("a", "b", frozenset({"cooccurrence"}), 1.0, 4)
+    doc_index = {"a": {"d1", "d2", "d3"}, "b": {"d1", "d2", "d3"}}
+    out = add_similarity_provenance([edge], [("d1", "d2")], doc_index)
+    e = out[0]
+    assert e.provenance == frozenset({"cooccurrence", "similarity"})  # token kept (strength>0)
+    # 6 ordered candidate pairs among {d1,d2,d3}; 2 linked (d1->d2, d2->d1) → 2/6.
+    assert dict(e.provenance_strength)["similarity"] == pytest.approx(1 / 3, abs=1e-6)
+
+
+def test_provenance_strength_saturated_graph_is_one() -> None:
+    # Every candidate endpoint-doc pair is linked → strength pins at 1.0 (the honest
+    # "no discrimination on a saturated graph" case; R4 payoff is on partial graphs).
+    edge = SkeletonEdge("a", "b", frozenset({"cooccurrence"}), 1.0, 2)
+    doc_index = {"a": {"d1", "d2"}, "b": {"d1", "d2"}}
+    out = add_citation_provenance([edge], [("d1", "d2")], doc_index)
+    assert dict(out[0].provenance_strength)["citation"] == 1.0
+
+
+def test_provenance_strength_absent_when_token_not_added() -> None:
+    # Concepts share only one doc → no da≠db candidate pair → no token, no strength.
+    edge = SkeletonEdge("a", "b", frozenset({"cooccurrence"}), 1.0, 1)
+    doc_index = {"a": {"d1"}, "b": {"d1"}}
+    out = add_citation_provenance([edge], [("d1", "d2")], doc_index)
+    assert out[0].provenance == frozenset({"cooccurrence"})  # unchanged
+    assert out[0].provenance_strength == ()  # co-occurrence carries no strength
+
+
+# ---- edge weight (Decision 5 + R4 graded tiebreak) -------------------------
 
 
 def test_edge_weight_deterministic_and_ranks_multiprovenance_higher() -> None:
@@ -136,6 +240,23 @@ def test_edge_weight_deterministic_and_ranks_multiprovenance_higher() -> None:
     assert edge_weight(frozenset({"cooccurrence"}), 10) > edge_weight(
         frozenset({"cooccurrence"}), 1
     )
+
+
+def test_edge_weight_strength_refines_tiebreak_within_band() -> None:
+    # Same tokens + same co-occurrence count → the graded strength breaks the tie...
+    prov = frozenset({"cooccurrence", "citation"})
+    strong = edge_weight(prov, 3, (("citation", 1.0),))
+    weak = edge_weight(prov, 3, (("citation", 0.1),))
+    assert strong > weak
+    assert weak >= 2.0 and strong < 3.0  # ...but both stay inside the 2-token band
+
+
+def test_edge_weight_token_count_dominates_strength() -> None:
+    # The locked invariant: a co-occurrence-only edge, even with a huge co-occurrence count,
+    # never outranks a 2-token edge with the weakest possible strength.
+    single = edge_weight(frozenset({"cooccurrence"}), 10_000)
+    multi = edge_weight(frozenset({"cooccurrence", "citation"}), 1, (("citation", 0.0),))
+    assert single < 2.0 <= multi
 
 
 # ---- serialisation round-trip (Decision 7 carry-over) ----------------------
@@ -154,6 +275,7 @@ def test_skeleton_dict_roundtrip_is_exact() -> None:
             frozenset({"cooccurrence", "citation"}),
             2.5,
             3,
+            provenance_strength=(("citation", 0.4),),
             stance_by_doc=(("d1", "supports"),),
             relation="uses",
         )
@@ -163,6 +285,7 @@ def test_skeleton_dict_roundtrip_is_exact() -> None:
 
     assert skeleton_to_dict(back) == skeleton_to_dict(sk)
     assert back.edges[0].provenance == frozenset({"cooccurrence", "citation"})
+    assert back.edges[0].provenance_strength == (("citation", 0.4),)  # R4 round-trips exactly
     assert back.edges[0].stance_by_doc == (("d1", "supports"),)
     assert back.edges[0].relation == "uses"
 

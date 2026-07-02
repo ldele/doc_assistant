@@ -35,6 +35,7 @@ from langchain_core.documents import Document
 from doc_assistant import export
 from doc_assistant.commands import execute_command, parse_command
 from doc_assistant.config import (
+    EPISTEMICS_MARKERS_ENABLED,
     LLM_MODEL,
     LLM_PROVIDER,
     REVIEWER_EVIDENCE_CHARS,
@@ -536,7 +537,14 @@ class ChatController:
 
         Defensive: markers are advisory (inform, never block), so **any** failure to load
         them — e.g. the ``chunk_epistemics`` table absent on an older DB, a Chroma hiccup —
-        leaves the sources unmarked rather than breaking the turn."""
+        leaves the sources unmarked rather than breaking the turn.
+
+        Gated OFF by default (``EPISTEMICS_MARKERS_ENABLED``, R7 / ADR-005): today the marker
+        data comes from the superseded open-vocabulary graph (KI-7) via a coarse join (KI-8),
+        so surfacing it undermines the integrity layer. When disabled this returns before any
+        load, so every ``markers`` stays empty and the turn is the byte-identical M0/M1 path."""
+        if not EPISTEMICS_MARKERS_ENABLED:
+            return
         try:
             document_ids = [
                 str(d) for d in (doc.metadata.get("document_id") for doc, _ in scored) if d

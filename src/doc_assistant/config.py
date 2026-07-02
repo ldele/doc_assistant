@@ -318,6 +318,19 @@ MIN_FAILURE_TAG_DOCS = int(os.getenv("MIN_FAILURE_TAG_DOCS", "5"))
 # Wider = fairer judgement but more judge tokens; 1500 is a balance. Not persisted.
 REVIEWER_EVIDENCE_CHARS = int(os.getenv("REVIEWER_EVIDENCE_CHARS", "1500"))
 
+# ============================================================
+# Live 7d epistemics markers (contested / superseded-trend chips)
+# ============================================================
+# Whether the chat turn surfaces 7d marker chips on source cards (PR-M1). Default
+# OFF: the marker *quality* still comes from the SUPERSEDED open-vocabulary concept
+# graph (KI-7), reaching sources through the coarse containment join (KI-8) — noise
+# wearing the integrity layer's uniform, which works against the product's core
+# promise (remediation plan R7). With this off, `_attach_markers` is skipped entirely,
+# so the turn takes the M0/M1 byte-identical no-marker path. Node B (the confined-LLM
+# relation/stance layer) flips the default back on once markers rest on trustworthy
+# data. See docs/decisions/ADR-005-epistemics-markers-default-off.md.
+EPISTEMICS_MARKERS_ENABLED = os.getenv("EPISTEMICS_MARKERS_ENABLED", "false").lower() == "true"
+
 
 # ============================================================
 # Self-organizing wiki / synthesis layer (Phase 7 / Feature 6)
@@ -437,6 +450,13 @@ CONCEPT_SKELETON_DIR = DATA_PATH / "skeleton"
 # headline density lever; set from the RG-001/008 edge-precision run on the real corpus.
 CONCEPT_SKELETON_MIN_COOCCURRENCE = int(os.getenv("CONCEPT_SKELETON_MIN_COOCCURRENCE", "2"))
 
+# Concept-presence matching primitive (Decision 2 / R2). "boundary" (default) counts only
+# whole-word (alnum-bounded) surface-form occurrences, so "bert" does NOT fire inside
+# "sbert"/"colbert"/"roberta" — the substring inflation that fabricated co-occurrence edges
+# and confounded the RG-008/009 runs. "substring" keeps the original raw str.count behaviour
+# as the A/B lever for the RG-008 comparison. Set the winner from that run.
+CONCEPT_SKELETON_PRESENCE_MODE = os.getenv("CONCEPT_SKELETON_PRESENCE_MODE", "boundary")
+
 # Louvain is randomized; a fixed seed makes community assignment reproducible so the
 # skeleton.json artifact is byte-identical to rebuild (ADR-1, carried over from PR-16).
 CONCEPT_SKELETON_SEED = int(os.getenv("CONCEPT_SKELETON_SEED", "42"))
@@ -463,6 +483,36 @@ CONCEPT_SKELETON_LLM_MODEL = os.getenv("CONCEPT_SKELETON_LLM_MODEL", "llama3.1:8
 KEYWORDS_PER_DOC = int(os.getenv("KEYWORDS_PER_DOC", "15"))
 KEYWORD_NGRAM_MAX = int(os.getenv("KEYWORD_NGRAM_MAX", "3"))
 KEYWORD_MIN_CHARS = int(os.getenv("KEYWORD_MIN_CHARS", "3"))
+# corpus_band mode (cross-document concept-graph vocabulary): keep only terms whose
+# document-frequency is in [KEYWORD_MIN_DF, floor(KEYWORD_MAX_DF_FRAC * N)] — shared
+# mid-frequency concepts, excluding paper-specific singletons AND ubiquitous hubs (the two
+# failure modes RG-001 measured). KEYWORD_CORPUS_TOP_K caps the global vocabulary size.
+# General defaults — deliberately NOT tuned to any one corpus.
+KEYWORD_MIN_DF = int(os.getenv("KEYWORD_MIN_DF", "2"))
+KEYWORD_MAX_DF_FRAC = float(os.getenv("KEYWORD_MAX_DF_FRAC", "0.7"))
+KEYWORD_CORPUS_TOP_K = int(os.getenv("KEYWORD_CORPUS_TOP_K", "60"))
+
+# contrastive mode (R3 / ADR-006): termhood = C-value nested discount * reference-corpus
+# "weirdness". Defaults frozen a priori (before looking at output), per the rigor rule.
+#   KEYWORD_WEIRDNESS_REF_CEILING — the wordfreq zipf ceiling; per token, weirdness =
+#     max(0, ceiling - zipf(token)); an OOV technical token (zipf 0) → the full ceiling
+#     (maximally weird). 8.0 ≈ the top of the zipf scale ("the" ≈ 7.7).
+#   KEYWORD_CONTRASTIVE_MIN_CVALUE — drop candidates whose C-value is at/below this (a
+#     fully-nested fragment with no standalone occurrences). 0.0 = drop only pure nesting.
+KEYWORD_WEIRDNESS_REF_CEILING = float(os.getenv("KEYWORD_WEIRDNESS_REF_CEILING", "8.0"))
+KEYWORD_CONTRASTIVE_MIN_CVALUE = float(os.getenv("KEYWORD_CONTRASTIVE_MIN_CVALUE", "0.0"))
+
+# Semantic concept layer (concept_semantics.py, #2) — grounds vocabulary in meaning, not
+# frequency. ABSTRACT_CONCEPTS_TOP_K: candidate concepts pulled from a scientific paper's
+# title+abstract (concept-dense; papers only). CONCEPT_MERGE_COSINE: two curated concepts with
+# embedding cosine >= this are flagged as near-duplicates to merge. General defaults.
+ABSTRACT_CONCEPTS_TOP_K = int(os.getenv("ABSTRACT_CONCEPTS_TOP_K", "12"))
+CONCEPT_MERGE_COSINE = float(os.getenv("CONCEPT_MERGE_COSINE", "0.85"))
+# Embedder for concept↔concept distance (merge suggestions + anchor ranking). Defaults to the
+# academic SPECTER2 rather than the retrieval bge, because bge compresses same-domain concepts
+# into a narrow cosine band (~0.6-0.7) — SPECTER2 (trained on scientific title/abstracts) spreads
+# them. Overridable; falls back to whatever the registry resolves.
+CONCEPT_EMBED_MODEL = os.getenv("CONCEPT_EMBED_MODEL", "specter2")
 
 
 # ============================================================

@@ -104,6 +104,71 @@ Both tiers are independent: changing the chunking strategy invalidates embedding
 
 Hashing is content-only (SHA-256 of extracted markdown, truncated to 16 hex chars). Documents survive path changes and re-extractions without creating orphan rows. Migration from the old path+content scheme: `scripts/archive/migrate_to_content_hash.py`.
 
+## Chunking & retrieval units
+
+The retriever's unit of work is not "the document" — it's a **chunk**. How documents
+are split into chunks, and what gets embedded vs. what reaches the LLM, is the
+parent–child scheme below. This is the default mode (`USE_PARENT_CHILD=true`); a
+flat single-store mode (`baseline`) exists as a fallback.
+
+**Two grain sizes, one link.** A document is split twice:
+
+- **Parents** — 2000 chars, 200 overlap, split on `## `/`### `/paragraph
+  boundaries (`PARENT_CHUNK_SIZE`/`_OVERLAP`). A parent is a coherent passage —
+  the unit of *context* sent to the LLM.
+- **Children** — 400 chars, 50 overlap (`CHILD_CHUNK_SIZE`/`_OVERLAP`). A child is
+  a narrow span — the unit of *retrieval* that gets embedded and matched.
+
+The link between them is **not a relational foreign key**. There is no `chunks`
+table in SQLite; chunks live only as Chroma vectors, and the parent–child
+relationship is carried in each child's Chroma **metadata**: `parent_text`,
+`parent_index`, `child_index`. A child retrieves; the pipeline then unpacks that
+child's `parent_text` and sends the *parent* to the model. Small unit for
+precision, large unit for context.
+
+```mermaid
+flowchart TB
+    D["Source document (.md)<br/>cached, page/section markers"]
+    D -->|"split · 2000/200"| P0["parent_index 0<br/>'## Method  We use a hybrid…'"]
+    D --> P1["parent_index 1<br/>'The ensemble fuses results…'"]
+    D --> PN["parent_index N<br/>table / figure chunk (atomic)"]
+    P0 -->|"split · 400/50"| C0["child_index 0"]
+    P0 --> C1["child_index 1<br/>'The dense retriever embeds…'"]
+    C1 -->|"only children are embedded"| CH[("Chroma vector<br/>+ metadata")]
+    CH -->|"child wins → unpack parent_text"| LLM["LLM context = parent_text"]
+```
+
+**What a stored record looks like** (Chroma, not SQL — metadata *is* the schema):
+
+```json
+{
+  "page_content": "The dense retriever embeds queries and documents…",
+  "metadata": {
+    "document_id": "550e8400-e29b-41d4-a716-446655440000",
+    "doc_hash": "abc123", "filename": "dpr.pdf", "format": "pdf", "health": "healthy",
+    "parent_text": "## Method  We use a hybrid retriever…",   // full parent → LLM context
+    "parent_index": 0, "child_index": 1,
+    "page": 3, "section": "Method",
+    "chunk_type": null, "figure_id": null                     // "figure" for VLM-described figures
+  }
+}
+```
+
+**Tables & figures are atomic chunks.** A table is spliced into the cached markdown
+and merged with its caption into a single parent==child block (the caption is the
+retrieval "magnet"). A figure becomes a `chunk_type="figure"` chunk only *after* the
+VLM description pass — `(caption + vlm_description)`; the PNG image itself is never
+embedded. See `figures-and-tables.md`.
+
+**Document structure is scaffolded but unused.** The `DocumentPart` table
+(`db/models.py`) can hold a chapter/section tree (`kind`, `title`,
+`parent_part_id`), but it is not currently populated and chunks do not link to it.
+This is the seam the book-oriented redesign builds on (ADR-009): the current scheme
+is tuned for short, section-headed papers and degrades on long, chaptered books.
+
+All chunk sizes and retrieval weights are **locked settings** — changed only via an
+eval-harness experiment, never edited ad hoc. See `.claude/CONTEXT.md`.
+
 ## Document health model
 
 Each ingested document is scored on five signals: chunk count, chunks-per-page ratio, average chunk length, section detection rate, reference-flagged chunk ratio.

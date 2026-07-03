@@ -100,6 +100,39 @@ When a claim comes out cut awkwardly — or just needs rewording — you can **e
 Your version replaces the original and is saved with the answer, so the record shows
 what you actually settled on, not the AI's first draft.
 
+## Indicators vs. retrieval — what actually reorders your results
+
+Several scores are shown alongside an answer, but
+**only one decides which passages you see.** The rest are *indicators* —
+signals for you to look closer, with zero effect on ranking. Keeping this line sharp
+matters, because an indicator that looks like a ranking signal invites the wrong
+mental model.
+
+| Signal | What it is | Reorders retrieval? |
+|---|---|---|
+| BM25 (keyword) | Sparse lexical match score | **Yes** — but only shapes the pre-rerank candidate pool |
+| Vector similarity | Dense cosine match score | **Yes** — but only shapes the pre-rerank candidate pool |
+| Ensemble fusion (`BM25_WEIGHT`) | Blends the two arms above | **Yes** — pre-rerank only; can't change the final top-K |
+| **Cross-encoder reranker** | Query–passage relevance, 0–1 | **Yes — this alone sets the final ranking and top-K** |
+| Relevance score (shown per source) | The reranker score, surfaced | No — it's the reranker output, *displayed* |
+| Per-claim markers (weak / unsupported) | Derived from the cited source's rerank score | No — reader indicator |
+| Confidence signals (weak retrieval, single-source…) | Post-answer heuristics | No — reader indicator |
+| Epistemic markers (contested / superseded) | Corpus-wide claim status, computed offline | No — reader indicator, **off by default** (ADR-005) |
+
+**The one-line version:** the reranker orders your results; everything else is either
+an input to the pool it reranks, or an annotation on top of what it chose. BM25 and
+the vector arm feed the reranker a candidate pool but don't get the final say — the
+cross-encoder re-scores the whole pool and its sort is what you see.
+
+**Epistemic markers are the case to watch.** Today they're purely advisory (a
+"contested in corpus" chip) and gated off by default. They are computed from the
+concept graph, *after* retrieval, and never touch ranking. This is a deliberate
+default (ADR-005), **not** a permanent design: once the corpus is large enough and
+retrieval breadth (`TOP_K`/`CANDIDATE_K`) grows, promoting epistemic status into a
+ranking signal — down-weighting superseded or contested passages — is a plausible
+future change. If that happens, this table is the thing to update, because the signal
+would move from the bottom (indicator) group into the top (retrieval) group.
+
 ## The deeper check
 
 A reference-free **LLM reviewer** can grade the answer's faithfulness against the

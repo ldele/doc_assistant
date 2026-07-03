@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-06-26 · class: living -->
+<!-- status: active · updated: 2026-07-03 · class: living -->
 
 # Design decisions
 
@@ -39,7 +39,7 @@ Extraction is far slower than embedding. Caching only embeddings means re-extrac
 
 Vector search loses on exact terms (author surnames, equation labels, library function names). BM25 loses on paraphrased questions. Ensemble retrieval at weights `[0.4, 0.6]` (keyword:vector) gave better hits during testing on technical documents.
 
-**Methodology rigor: ⚠ vibes-locked, no numbers behind the weights.** "Gave better hits during testing" was a qualitative impression from before the eval harness existed. The *architectural* choice (hybrid retrieval) is well-justified by the asymmetric failure modes of pure-vector vs pure-BM25; the *specific weights* (0.4/0.6) are essentially arbitrary. Re-measure via `scripts/run_eval.py` with a weight sweep when the `--bm25-weight` flag exists (small follow-up). Citation_overlap alone (deterministic, free) is enough for this; no answer-LLM needed.
+**Methodology rigor: ⚠ was vibes-locked; MEASURED 2026-07-03 → kept (negative result).** "Gave better hits during testing" was a qualitative impression from before the eval harness existed. The *architectural* choice (hybrid retrieval) is well-justified by the asymmetric failure modes of pure-vector vs pure-BM25; the *specific weights* (0.4/0.6) were essentially arbitrary. Now measured: `scripts/sweep_bm25_weight.py` sweeps the `--bm25-weight` knob (`config.BM25_WEIGHT`) `0.0`→`1.0` with a retrieval-only recall@K instrument (free, deterministic). **Post-rerank recall is flat across the whole range — no weight beats the control, so `0.4/0.6` stays.** The result is *structural*: LangChain's `EnsembleRetriever` returns the full candidate **union** of both arms and the cross-encoder re-scores all of it, so the weight only permutes a list the reranker then re-sorts — it is inert on the shipped top-K by construction. The instrument is shown to discriminate (pre-rerank recall@5 *does* move, 0.9363→0.8824), so this is a real null, not a dead measurement; the control even sits on the better pre-rerank side. The weight would only become live under a pipeline change (truncate the candidate pool before reranking, ablate the reranker, or split `CANDIDATE_K` per arm). Baseline: `tests/eval/baselines/bm25_weight_sweep_2026-07-03.md`.
 
 ### Cross-encoder reranking on top of retrieval
 
@@ -1510,8 +1510,9 @@ harness can measure the effect — so the project already *functions as* a local
 sandbox. Three knobs are still hardcoded, which is exactly what keeps that
 description qualified rather than absolute:
 
-1. **BM25 / vector weights** — literal `[0.4, 0.6]` in `pipeline.py` (`EnsembleRetriever`).
-   Expose as `BM25_WEIGHT` / `VECTOR_WEIGHT` (or a single `HYBRID_WEIGHTS`) env knob.
+1. **BM25 / vector weights** — ✅ **DONE (2026-07-03).** Exposed as `config.BM25_WEIGHT` (vector =
+   `1 - w`), resolved by `pipeline.resolve_ensemble_weights`, with `--bm25-weight` on `run_eval.py`.
+   Swept + eval-gated (kept `0.4/0.6`, negative result — see "Hybrid search" above).
 2. **Reranker** — `BAAI/bge-reranker-base` hardcoded in `pipeline.py`, always-on. Give
    it a registry + factory (mirror `embeddings.py`) and a `USE_RERANKER` toggle.
 3. **General config sweep** — only `sweep_chunking.py` exists. Generalize it into a

@@ -299,6 +299,18 @@ the public corpus (`--repeat 3`, with judge) checked whether any alternative bea
 variance but didn't exceed it. So the defaults stand on measurement, not assumption. Full grid
 + run ids: [`tests/eval/baselines/chunking_sweep_public_2026-06-06.md`](tests/eval/baselines/chunking_sweep_public_2026-06-06.md).
 
+### BM25 / vector mix
+
+The hybrid split `BM25 0.4 / vector 0.6` was the last locked retrieval setting never measured. A
+full sweep of the BM25 arm's weight (`0.0`→`1.0`) settles it: **post-rerank recall is flat across the
+entire range** — no weight beats the default, which stays `0.4/0.6`. The result is structural, not
+just an artefact of one corpus: the ensemble hands the cross-encoder the *whole* candidate pool from
+both arms, so the reranker re-scores everything and the weight only reorders candidates it then
+re-sorts — the final top-K doesn't move. (The *pre*-rerank candidate order *does* shift with the
+weight, which is how the measurement is shown to discriminate — a flat curve from a live knob, not a
+dead one.) Full method, the structural explanation, and when the weight *would* matter:
+[`tests/eval/baselines/bm25_weight_sweep_2026-07-03.md`](tests/eval/baselines/bm25_weight_sweep_2026-07-03.md).
+
 ### Reproducing
 
 [`tests/eval/corpus_manifest.yaml`](tests/eval/corpus_manifest.yaml) lists the 10 papers (pinned arXiv versions + SHA-256); `download_corpus.py` fetches them from arXiv (download-only, so arXiv's license is not an issue). [`tests/eval/cases.public.yaml`](tests/eval/cases.public.yaml) is a standalone 10-case set written against them.
@@ -320,6 +332,16 @@ under [Chunk sizes](#chunk-sizes) above; this reproduces it:
 ```bash
 uv run python -m scripts.sweep_chunking --dry-run            # print the grid + commands
 uv run python -m scripts.sweep_chunking --cases tests/eval/cases.public.yaml --repeat 3 --with-llm-judge
+```
+
+**BM25 / vector weight sweep** (retrieval-only — free, deterministic, no re-embed) — the result is
+under **BM25 / vector mix** above:
+
+```bash
+uv run python -m scripts.sweep_bm25_weight --dry-run                              # print the grid
+uv run python -m scripts.sweep_bm25_weight --cases tests/eval/cases.public.yaml   # sweep on the public corpus
+# or gate a single weight through the full harness:
+uv run python -m scripts.run_eval --cases tests/eval/cases.public.yaml --bm25-weight 0.5 --with-llm-judge
 ```
 
 ## Status

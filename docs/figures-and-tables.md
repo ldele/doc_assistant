@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-06-27 · class: living -->
+<!-- status: active · updated: 2026-07-03 · class: living -->
 
 # Figures & Tables — detection and extraction (Phase 6 / Feature 4)
 

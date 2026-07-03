@@ -86,6 +86,17 @@ def main() -> int:
         "--note", type=str, default=None, help="Optional note recorded on the run row"
     )
     parser.add_argument(
+        "--bm25-weight",
+        type=float,
+        default=None,
+        help=(
+            "Override the ensemble weight on the BM25 (sparse) arm; the vector arm "
+            "takes the complement (1 - w). Default: config BM25_WEIGHT (0.4). LOCKED "
+            "retrieval setting — sweep with scripts/sweep_bm25_weight.py and change the "
+            "default only on an eval win (rigor-gate)."
+        ),
+    )
+    parser.add_argument(
         "--repeat",
         type=int,
         default=1,
@@ -110,7 +121,8 @@ def main() -> int:
     print("Loading RAG pipeline (this can take a minute)...")
     from doc_assistant.pipeline import RAGPipeline
 
-    pipeline = RAGPipeline()
+    pipeline = RAGPipeline(bm25_weight=args.bm25_weight)
+    print(f"BM25 ensemble weight: {pipeline.bm25_weight} (vector {1.0 - pipeline.bm25_weight})")
     sut = rag_pipeline_adapter(pipeline)
     scorers = _build_scorers(
         pipeline,
@@ -147,6 +159,7 @@ def main() -> int:
                     "scorers": [s.name for s in scorers],
                     "trial_index": trial,
                     "n_trials": args.repeat,
+                    "bm25_weight": pipeline.bm25_weight,
                 },
                 note=trial_note,
             )

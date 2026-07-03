@@ -192,6 +192,23 @@ CANDIDATE_K = int(os.getenv("CANDIDATE_K", "20"))
 if CANDIDATE_K < TOP_K:
     raise ValueError(f"CANDIDATE_K ({CANDIDATE_K}) must be >= TOP_K ({TOP_K})")
 
+# Hybrid-retrieval ensemble weight on the BM25 (sparse) arm; the vector (dense)
+# arm gets the complement (1 - BM25_WEIGHT), so the two always sum to 1.0. LOCKED
+# at 0.4 (vector 0.6) but "vibes-locked" — the split was never measured
+# (docs/decisions.md; CONTEXT open question). Change only via an eval-harness
+# experiment that beats the control beyond variance (rigor-gate), same rule as the
+# rows above. Sweep it with `scripts/sweep_bm25_weight.py` (or the `--bm25-weight`
+# flag on `scripts/run_eval.py`); resolved into `[bm25, vector]` weights by
+# `pipeline.resolve_ensemble_weights`.
+#   Reranker-dominance caveat: LangChain's EnsembleRetriever returns the FULL UNION
+#   of both arms' CANDIDATE_K docs (no truncation), and the cross-encoder then
+#   re-scores that whole union — so on the current pipeline this weight only reorders
+#   the pre-rerank candidate list and CANNOT move post-rerank top-K recall. Measured:
+#   tests/eval/baselines/bm25_weight_sweep_2026-07-03.md.
+BM25_WEIGHT = float(os.getenv("BM25_WEIGHT", "0.4"))
+if not 0.0 <= BM25_WEIGHT <= 1.0:
+    raise ValueError(f"BM25_WEIGHT ({BM25_WEIGHT}) must be in [0.0, 1.0]")
+
 # Synthesis mode (Phase 6 / Integrity Chunk 2a — dual interpretation).
 #   ai    -> dual-layer: deterministic evidence + labelled AI interpretation,
 #            segmented into adjudicable (accept/reject/edit) claims.

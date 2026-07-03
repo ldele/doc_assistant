@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-07-02 · class: living -->
+<!-- status: active · updated: 2026-07-03 · class: living -->
 
 # CONTEXT — doc_assistant
 
@@ -61,7 +61,7 @@ row: `docs/decisions.md`.
 
 | Setting | Locked value | Where enforced / note |
 |---|---|---|
-| Hybrid retrieval weights | BM25 `0.4` / vector `0.6` | `pipeline.py`. ⚠ vibes-locked — weights never measured; architecture is justified, the split is not. |
+| Hybrid retrieval weights | BM25 `0.4` / vector `0.6` | `config.BM25_WEIGHT` (vector = `1 - w`), wired in `pipeline.py`. **Swept 2026-07-03** (`tests/eval/baselines/bm25_weight_sweep_2026-07-03.md`): post-rerank recall is FLAT across `[0,1]` — the cross-encoder re-scores the full candidate union, so the weight is inert on the shipped top-K by construction. Kept (negative result); the split is on the better *pre*-rerank side. Sweep: `scripts/sweep_bm25_weight.py` / `--bm25-weight`. |
 | Final rerank cut | `TOP_K = 10` | `config.py`. Measured peak over [3,5,8,10,12,15]; strong shape, weak error bars. |
 | Candidate pool / retriever | `CANDIDATE_K = 20` | `config.py`; guard `CANDIDATE_K >= TOP_K`. Split from TOP_K on 2026-06-07 (`09115c8`). Public-confirmed (no regression); **verdict unvalidated** — see Open questions + `tests/eval/baselines/candidate_k_public_2026-06-13.md`. |
 | Parent-child retrieval | default ON (`USE_PARENT_CHILD`) | `pipeline.py`; env-toggleable. Measured lift; magnitude weak. |
@@ -144,4 +144,11 @@ to docs/archive/SESSION-archive-NNN.md (local-only, like the baton).
   **and** the RG-001 edge-precision run (Tier-1 signals are defined relative to the edge set —
   meaningless on an un-validated graph). External "anti-blind-spot" Tier 2b deferred; the
   idea-generator is rejected for it.
-- **BM25/vector `0.4/0.6` weights never measured** — sweep when a `--bm25-weight` flag exists.
+- **BM25/vector `0.4/0.6` weights — MEASURED 2026-07-03 (resolved, kept).** `--bm25-weight` flag
+  (config `BM25_WEIGHT` → `pipeline`/`run_eval`) + `scripts/sweep_bm25_weight.py` added; swept
+  `{0.0..1.0}` retrieval-only over `cases.yaml`. Post-rerank recall is **flat across the whole
+  range** — LangChain's `EnsembleRetriever` hands the cross-encoder the *full* candidate union, so
+  the weight is structurally inert on the shipped top-K (only pre-rerank ordering moves; the
+  instrument discriminates via `pre@5`). Kept `0.4/0.6` (negative result). The weight would only
+  become live if the candidate pool were truncated pre-rerank or the reranker ablated. Baseline:
+  `tests/eval/baselines/bm25_weight_sweep_2026-07-03.md`.

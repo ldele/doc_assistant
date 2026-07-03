@@ -13,7 +13,7 @@ from langchain_core.documents import Document
 from langchain_core.runnables import RunnableLambda
 
 from doc_assistant.keywords import tokenize
-from doc_assistant.pipeline import RAGPipeline
+from doc_assistant.pipeline import RAGPipeline, resolve_ensemble_weights
 
 # ---- fix 1: BM25 preprocess_func (casefold + tech-token) --------------------
 
@@ -100,3 +100,28 @@ def test_expand_query_parse_failure_falls_back_to_original_only() -> None:
 def test_expand_query_valid_list_prepends_original() -> None:
     rag = _pipeline_returning('["variation one", "variation two"]')
     assert rag.expand_query("q") == ["q", "variation one", "variation two"]
+
+
+# ---- --bm25-weight: ensemble-weight resolution -----------------------------
+
+
+def test_resolve_ensemble_weights_default_is_the_locked_split() -> None:
+    # None → the config-locked BM25_WEIGHT (0.4) with the vector complement (0.6).
+    weights = resolve_ensemble_weights(None)
+    assert weights == pytest.approx([0.4, 0.6])
+
+
+@pytest.mark.parametrize(
+    ("bm25", "expected"),
+    [(0.0, [0.0, 1.0]), (0.5, [0.5, 0.5]), (0.7, [0.7, 0.3]), (1.0, [1.0, 0.0])],
+)
+def test_resolve_ensemble_weights_complements_to_one(bm25: float, expected: list[float]) -> None:
+    weights = resolve_ensemble_weights(bm25)
+    assert weights == pytest.approx(expected)
+    assert sum(weights) == pytest.approx(1.0)
+
+
+@pytest.mark.parametrize("bad", [-0.01, 1.01, 2.0, -1.0])
+def test_resolve_ensemble_weights_out_of_range_raises(bad: float) -> None:
+    with pytest.raises(ValueError, match=r"must be in \[0\.0, 1\.0\]"):
+        resolve_ensemble_weights(bad)

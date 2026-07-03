@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-07-02 · class: append-only -->
+<!-- status: active · updated: 2026-07-03 · class: append-only -->
 
 # DEVLOG — doc_assistant
 
@@ -3480,3 +3480,40 @@ change); a local import for `tokenize` (clean top-level import — `keywords` do
 load, it's lazy). **Follow-up (own session, now unblocked):** the `--bm25-weight` flag + 0.4/0.6 sweep
 (CONTEXT open question).
 **Staged code/docs; `data/` store untouched (BM25 is in-memory). Nothing committed (cpc §13).**
+
+## Session: 2026-07-03 — `--bm25-weight` flag + 0.4/0.6 ensemble-weight sweep (eval-gated), Claude Code
+
+**What:** exposed the vibes-locked hybrid-retrieval split as a knob and swept it. (1) `config.BM25_WEIGHT`
+(env, default `0.4`, validated `[0,1]`) — the BM25-arm ensemble weight; vector arm = `1 - w`. (2)
+`pipeline.resolve_ensemble_weights(bm25_weight)` — a pure, validated `None→config`/`w→[w,1-w]` helper (so the
+weight can be probed without loading models); `RAGPipeline.__init__(*, bm25_weight=None)` uses it, records
+`self.bm25_weight`, logs `ensemble_weights`, and drops the hardcoded `weights=[0.4, 0.6]`. (3) `--bm25-weight`
+on `scripts/run_eval.py` (→ `RAGPipeline`, recorded in the run config). (4) `scripts/sweep_bm25_weight.py` — a
+standalone retrieval-only recall@K sweep: loads the pipeline once, rebuilds only the ensemble per weight (no
+re-embed), measures **pre-** and **post-rerank** recall@5/@10 vs `expected_citations` (bidirectional
+substring). +22 guard tests (`test_pipeline_retrieval.py` weight-resolution ×9, new `test_sweep_bm25_weight.py`
+scorer contract ×13); gate green — **746 passed**, ruff/format/`mypy --strict`(54)/bandit clean.
+**Eval (rigor-gate, $0/deterministic):** swept `{0.0,0.2,0.4,0.6,0.8,1.0}` over `cases.yaml` (34 scored) on
+the `data/` store, `USE_MULTI_QUERY=false`, offline. **post-rerank recall FLAT across the whole range**
+(post@5 0.8775 / post@10 0.9069 — identical to the R6 baseline, cross-validating the instrument). **No weight
+beats the control → KEEP 0.4/0.6 (negative result).** Baseline
+`tests/eval/baselines/bm25_weight_sweep_2026-07-03.md`.
+**Why:** the split was never measured (CONTEXT open question); R6 un-handicapped BM25, the stated prerequisite.
+Now measured, it stays — via an experiment that wins, per the locked-settings rule.
+**Result reading (honest, structural):** post-rerank *cannot* move by construction — LangChain's
+`EnsembleRetriever` returns the **full union** of both arms' `CANDIDATE_K` docs (no truncation; even a
+0-weighted arm contributes its docs), and the cross-encoder re-scores that entire union → the reranked top-K
+is weight-independent. Not merely "reranker-dominated benchmark" (R6's framing) — **inert on the shipped
+output**. Discrimination proof: `pre@5` DOES move (0.9363 at w≤0.4 → 0.8824 at w≥0.6), so the instrument
+detects the ranking change; the flat post-rerank is a real null. Directional: the control sits on the better
+(vector-leaning) pre-rerank side, so 0.4/0.6 is if anything correct. Indicative + reproducible, one
+same-domain NL benchmark — not definitive.
+**Rejected:** shelling `run_eval` per weight like `sweep_chunking` (that generates an answer per case — an LLM
+call the weight doesn't affect; retrieval-only recall is the right $0 instrument, and one pipeline load beats
+re-embedding); changing the default (nothing beat control); mutating `ensemble.weights` in place (rebuilding
+the `EnsembleRetriever` re-runs its weight validator).
+**Opens:** resolves the CONTEXT "0.4/0.6 never measured" open question + annotates the locked-settings row. The
+weight only becomes live under a pipeline change (truncate the candidate pool pre-rerank, or ablate the
+cross-encoder, or split `CANDIDATE_K` per arm) — each its own experiment, noted in the baseline.
+**Also this session:** deleted the merged remote branch `feat/keyword-concept-graph` + pruned (user-directed).
+**Staged code/docs; `data/` store untouched (retrieval-only). Nothing committed (cpc §13).**

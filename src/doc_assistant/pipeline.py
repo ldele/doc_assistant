@@ -13,6 +13,7 @@ from sentence_transformers import CrossEncoder
 
 from doc_assistant.config import (
     ANTHROPIC_API_KEY,
+    BM25_WEIGHT,
     CANDIDATE_K,
     CHROMA_PATH,
     LLM_MODEL,
@@ -32,6 +33,23 @@ from doc_assistant.keywords import tokenize
 from doc_assistant.prompts import ANSWER_PROMPT, MULTI_QUERY_PROMPT, REWRITE_PROMPT
 
 log = structlog.get_logger(__name__)
+
+
+def resolve_ensemble_weights(bm25_weight: float | None) -> list[float]:
+    """Resolve a BM25-arm weight into ``[bm25, vector]`` ensemble weights.
+
+    ``None`` uses the locked config default (``BM25_WEIGHT``); the vector arm
+    always takes the complement so the pair sums to 1.0. Kept as a pure,
+    validated function (no I/O, no models) so the sweep driver and the eval CLI
+    can probe candidate weights without constructing a ``RAGPipeline`` — building
+    one loads the embedder, vector store, and cross-encoder. An out-of-range
+    weight raises rather than clamping: a bad ``--bm25-weight`` is a caller error,
+    not a value to silently correct.
+    """
+    weight = BM25_WEIGHT if bm25_weight is None else bm25_weight
+    if not 0.0 <= weight <= 1.0:
+        raise ValueError(f"bm25_weight ({weight}) must be in [0.0, 1.0]")
+    return [weight, 1.0 - weight]
 
 
 def _sigmoid_activation_kwarg() -> dict[str, Any]:
@@ -83,7 +101,11 @@ def build_chat_model(provider: str, model: str) -> Any:
 
 
 class RAGPipeline:
-    def __init__(self) -> None:
+    def __init__(self, *, bm25_weight: float | None = None) -> None:
+        weights = resolve_ensemble_weights(bm25_weight)
+        # The effective BM25-arm weight actually wired into the ensemble — recorded
+        # so an eval run / sweep can report the arm it measured, not just the flag.
+        self.bm25_weight = weights[0]
         active_model = get_active_model_name()
         collection = get_collection_name(active_model)
         log.info("loading_embeddings", model=active_model)
@@ -121,7 +143,8 @@ class RAGPipeline:
             # query at retrieval time, so index and query tokenization stay symmetric.
             bm25 = BM25Retriever.from_documents(all_docs, preprocess_func=tokenize)
             bm25.k = CANDIDATE_K
-            self.ensemble = EnsembleRetriever(retrievers=[bm25, vector], weights=[0.4, 0.6])
+            log.info("ensemble_weights", bm25=weights[0], vector=weights[1])
+            self.ensemble = EnsembleRetriever(retrievers=[bm25, vector], weights=weights)
         else:
             # Empty library (fresh install / nothing ingested): BM25Retriever
             # cannot be built from zero documents, so fall back to a vector-only

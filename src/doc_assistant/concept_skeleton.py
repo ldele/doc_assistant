@@ -961,6 +961,27 @@ def _write_skeleton_json(skeleton: ConceptSkeleton, skeleton_dir: Path) -> None:
     )
 
 
+def write_skeleton(
+    skeleton: ConceptSkeleton,
+    presences: list[ConceptPresence],
+    *,
+    skeleton_dir: Path | None = None,
+) -> None:
+    """Persist an (enriched) skeleton to the derived sidecar — the Node B write seam.
+
+    Public wrapper over the two derived-table + ``skeleton.json`` writers so the deferred
+    Node-B runner (``concept_skeleton_enrich``) re-writes the *same* sidecar Node A does,
+    idempotently and via one code path (Enrichment-Layer Pattern). ``version`` comes from the
+    skeleton's own ``graph_version`` so edges/presence rows and ``skeleton.json`` stay in sync.
+    """
+    from doc_assistant.config import CONCEPT_SKELETON_DIR
+
+    root = skeleton_dir or CONCEPT_SKELETON_DIR
+    version = str(skeleton.meta.get("graph_version", ""))
+    _write_skeleton_rows(skeleton, presences, version)
+    _write_skeleton_json(skeleton, root)
+
+
 def build_concept_skeleton(
     *,
     apply: bool,

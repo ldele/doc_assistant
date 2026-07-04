@@ -97,7 +97,7 @@ class CitationOverlapScorer:
     """Fraction of ``case.expected_citations`` present in ``output.citations``.
 
     Matches by case-insensitive substring against each output citation —
-    so ``"hodgkin_huxley_1952.pdf"`` matches ``"hodgkin_huxley_1952"``.
+    so ``"example_paper_2020.pdf"`` matches ``"example_paper_2020"``.
     """
 
     name = "citation_overlap"

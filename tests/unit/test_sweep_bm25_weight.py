@@ -43,8 +43,8 @@ def test_empty_filename_cannot_fabricate_a_hit_end_to_end() -> None:
 
 def test_recall_bidirectional_substring() -> None:
     # cases.yaml contract: a fragment matches the full filename and vice versa.
-    assert _recall_at_k(["hodgkin_huxley_1952"], ["hodgkin_huxley_1952.pdf"], 5) == 1.0
-    assert _recall_at_k(["cajal_1911.pdf"], ["cajal_1911"], 5) == 1.0
+    assert _recall_at_k(["example_paper_2020"], ["example_paper_2020.pdf"], 5) == 1.0
+    assert _recall_at_k(["example_paper_1911.pdf"], ["example_paper_1911"], 5) == 1.0
 
 
 def test_recall_truncates_at_k() -> None:

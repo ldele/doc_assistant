@@ -97,8 +97,8 @@ def _filenames(docs: list) -> list[str]:
 def _recall_at_k(expected: list[str], filenames: list[str], k: int) -> float | None:
     """Recall of ``expected`` citations within the first ``k`` filenames.
 
-    Bidirectional substring (``hodgkin_huxley_1952`` matches
-    ``hodgkin_huxley_1952.pdf`` and vice versa) — the ``cases.yaml`` contract.
+    Bidirectional substring (``example_paper_2020`` matches
+    ``example_paper_2020.pdf`` and vice versa) — the ``cases.yaml`` contract.
     ``None`` when the case declares no ``expected_citations`` (unscored).
     """
     if not expected:

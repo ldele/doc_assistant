@@ -106,8 +106,8 @@ def test_contains_all_no_substrings():
 def test_citation_overlap_substring_match():
     # Bidirectional substring match: stem matches full filename
     r = CitationOverlapScorer()(
-        _case(expected_citations=["hodgkin_huxley_1952", "hebb_1949"]),
-        _out(citations=["hodgkin_huxley_1952.pdf", "hebb_1949.pdf", "noise.pdf"]),
+        _case(expected_citations=["example_paper_2020", "example_paper_2019"]),
+        _out(citations=["example_paper_2020.pdf", "example_paper_2019.pdf", "noise.pdf"]),
     )
     assert r.value == 1.0
     assert r.details["extra"] == ["noise.pdf"]
@@ -115,11 +115,11 @@ def test_citation_overlap_substring_match():
 
 def test_citation_overlap_partial():
     r = CitationOverlapScorer()(
-        _case(expected_citations=["hodgkin_huxley_1952", "hebb_1949"]),
-        _out(citations=["hodgkin_huxley_1952.pdf"]),
+        _case(expected_citations=["example_paper_2020", "example_paper_2019"]),
+        _out(citations=["example_paper_2020.pdf"]),
     )
     assert math.isclose(r.value, 0.5)
-    assert r.details["missing"] == ["hebb_1949"]
+    assert r.details["missing"] == ["example_paper_2019"]
 
 
 def test_citation_overlap_no_expected():

@@ -3517,3 +3517,39 @@ weight only becomes live under a pipeline change (truncate the candidate pool pr
 cross-encoder, or split `CANDIDATE_K` per arm) — each its own experiment, noted in the baseline.
 **Also this session:** deleted the merged remote branch `feat/keyword-concept-graph` + pruned (user-directed).
 **Staged code/docs; `data/` store untouched (retrieval-only). Nothing committed (cpc §13).**
+
+## Session: 2026-07-04 — PR-B / Node B: confined LLM relation/stance enrichment (run on Ollama), Claude Code
+
+**What:** built the deferred Node B of the concept-skeleton redesign (spec Decision 6; was *specified, not
+built*). (1) New `src/doc_assistant/concept_skeleton_enrich.py`: `annotate_relations(skeleton, present_by_doc,
+client)` — per document, one LLM call handed **only that doc's present concepts** + the subset of skeleton
+edges among them; returned `{relation, stance∈POLARITIES}` is attached to the *existing* edge
+(`provenance` gains `llm_relation`, weight recomputed). **Never creates a node/edge** (candidate pairs are
+pre-filtered to existing edges; out-of-range indices dropped). Idempotent: each edge's Node-B annotation is
+rebuilt from its Node-A base, so a re-run on identical LLM output reproduces the skeleton. Pure `build_messages`
+/ `parse_annotations` (tolerant JSON: fenced or bare, drops bad pair-index / unknown stance / empty relation)
+behind the `LLMClient` seam; impure `load_presence_rows` / `present_by_doc` read only the derived
+`concept_presence` sidecar. (2) `concept_skeleton.write_skeleton()` — public write seam so Node B re-writes the
+same `concept_edges` + `skeleton.json` sidecar via one code path. (3) `build_concept_skeleton.py`:
+`--enrich` / `--provider` / `--model`, **apply-gated** (LLM called only on `--apply`, so a dry run is $0 and a
+paid provider always trips `assert_provider_intent`), provider default `CONCEPT_SKELETON_LLM_PROVIDER=ollama`
+(explicit local, NOT `LLM_PROVIDER` — KI-4 credit-leak guard). +14 guard tests
+(`test_concept_skeleton_enrich.py`): confinement, contested detection, graceful degrade, idempotency, parsers.
+Gate green — **646 unit+integration passed**, ruff / `mypy` clean.
+**Why:** PR-B was gated on PR-A + RG-001, both landed (ADR-008); Ollama becoming available on Node B unblocked
+the run. Re-founds 7d's stance layer on the skeleton (Decision 7).
+**Result (rigor, $0 local):** ran `ollama:llama3.1:8b` over the 8-doc public-corpus skeleton — **7 LLM calls,
+20/20 edges annotated, 66 stance assertions, 10 contested edges** (≥2 docs asserting opposing polarities, e.g.
+`dense retrieval —[evaluated with]→ BM25`: supports/contradicts/contradicts/supersedes). Relations read
+sensibly (`contrastive learning —[contrasts with]→ BM25`; `passage retrieval —[improves on]→ MS MARCO`).
+`concept_edges` + `skeleton.json` consistent (graph_version `3cc23a84c5470ae0`). Zero Anthropic calls
+(structural: `--provider ollama` → `OllamaClient` only).
+**Also:** applied the pending R4 `concept_edges.strength_json` additive migration on this box (it was
+un-migrated — Node A write failed until `python -m doc_assistant.db.migrations` ran; idempotent, no data loss).
+**Rejected:** re-running Node A *inside* `annotate_relations` (kept the pure core DB-free; the runner rebuilds
+Node A then enriches); *appending* stances to existing edges (fresh-set → idempotent re-runs); calling the LLM
+in a `--enrich` dry run (apply-gating is what keeps a paid provider from spending un-guarded).
+**Opens:** `relation` is first-wins per edge across asserting docs (stance still accumulates per doc);
+determinism is *structural*, not byte-stable across LLM runs (temp-0 llama is near-stable, not guaranteed); the
+actual re-point of `epistemics.py` onto `node_weights_for_epistemics` stays a separate change (Decision 8).
+**Staged code/docs; `data/skeleton` + `concept_edges` regenerated (derived sidecar, gitignored). Nothing committed (cpc §13).**

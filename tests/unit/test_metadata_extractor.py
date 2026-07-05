@@ -76,7 +76,7 @@ def test_arxiv_year_from_filename():
 
 
 def test_arxiv_year_none_for_non_arxiv():
-    assert _arxiv_year_from_filename("hodgkin_huxley_1952.pdf") is None
+    assert _arxiv_year_from_filename("example_paper_1952.pdf") is None
     assert _arxiv_year_from_filename(None) is None
 
 

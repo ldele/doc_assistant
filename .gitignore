@@ -68,6 +68,18 @@ Thumbs.db
 core.py
 HANDOFF.md
 
+# private: personal research library — never in the public repo. The public eval suite
+# (tests/eval/cases.public.yaml + corpus_manifest.yaml) stays committed; these fixtures run
+# only against the local private corpus, so they are kept local. library.bib regenerates via
+# `python -m scripts.export_bibtex`.
+docs/library.bib
+tests/eval/cases.yaml
+tests/eval/eval_set.json
+tests/eval/qualitative_questions.md
+tests/eval/baselines/strict_baseline_2026_05_12.json
+tests/eval/baselines/strict_parentchild_2026_05_12.json
+tests/eval/baselines/strict_pc_topk8_2026_05_12.json
+
 # private: interview-prep, not for the public repo
 docs/STUDY_PLAN.md
 Marker_Testings.ipynb

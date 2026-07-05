@@ -123,6 +123,26 @@ def test_never_creates_edge_for_non_edge_pair():
     assert (out.edges[0].source_concept_id, out.edges[0].target_concept_id) == ("a", "b")
 
 
+def test_require_provenance_skips_uncorroborated_edges():
+    # Only the citation+similarity-backed edge (a,b) is eligible; the co-occurrence-only
+    # edge (c,d) is never sent to the model and stays unannotated.
+    ab = SkeletonEdge("a", "b", frozenset({"cooccurrence", "citation", "similarity"}), 3.0, 2)
+    cd = SkeletonEdge("c", "d", frozenset({"cooccurrence"}), 1.0, 2)
+    sk = _skeleton([_node("a", "A"), _node("b", "B"), _node("c", "C"), _node("d", "D")], [ab, cd])
+    client = FakeClient([_ann(0, "r", "supports")])
+    out = annotate_relations(
+        sk,
+        {"doc1": ["a", "b", "c", "d"]},
+        client,
+        require_provenance=frozenset({"citation", "similarity"}),
+    )
+    user_msg = client.calls[0][1]["content"]
+    assert "A <-> B" in user_msg and "C <-> D" not in user_msg
+    by_pair = {(e.source_concept_id, e.target_concept_id): e for e in out.edges}
+    assert "llm_relation" in by_pair[("a", "b")].provenance
+    assert "llm_relation" not in by_pair[("c", "d")].provenance
+
+
 # ============================================================
 # Stance aggregation + contested detection
 # ============================================================

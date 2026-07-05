@@ -125,6 +125,11 @@ def main() -> int:
         default=None,
         help="Node B LLM model (default CONCEPT_SKELETON_LLM_MODEL=llama3.1:8b)",
     )
+    parser.add_argument(
+        "--corroborated",
+        action="store_true",
+        help="Node B: annotate only citation+similarity-backed edges (skip co-occurrence-only)",
+    )
     args = parser.parse_args()
 
     result = build_concept_skeleton(
@@ -183,8 +188,10 @@ def _run_node_b(args: argparse.Namespace, result: SkeletonResult) -> int:
         return 1
 
     client = make_client(provider, model)
-    print(f"\nNode B: annotating with {provider}:{model} over {len(pbd)} document(s)...")
-    enriched = annotate_relations(result.skeleton, pbd, client)
+    require = frozenset({"citation", "similarity"}) if args.corroborated else frozenset()
+    scope_note = " (corroborated edges only)" if args.corroborated else ""
+    print(f"\nNode B: {provider}:{model} over {len(pbd)} document(s){scope_note}...")
+    enriched = annotate_relations(result.skeleton, pbd, client, require_provenance=require)
     write_skeleton(enriched, presences)
     print(_format_node_b_report(enriched, contested_edges(list(enriched.edges))))
     print(f"\nEnriched skeleton written to {CONCEPT_SKELETON_DIR / 'skeleton.json'}.")

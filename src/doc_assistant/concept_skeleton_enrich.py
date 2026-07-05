@@ -41,8 +41,10 @@ from doc_assistant.llm import LLMClient, Message
 
 log = structlog.get_logger(__name__)
 
-#: Node B is a JSON-shaped one-shot per document; the output is small (a few pairs).
-DEFAULT_MAX_TOKENS = 512
+#: Node B is a JSON-shaped one-shot per document. Sized for corpus scale — a document can
+#: co-present dozens of edge pairs, each ~15 output tokens; too small a budget truncates the
+#: JSON and the whole document's annotations are dropped (parse failure).
+DEFAULT_MAX_TOKENS = 2048
 LLM_RELATION = "llm_relation"
 
 _SYSTEM = """You annotate how research concepts relate *within a single document*.
@@ -119,6 +121,7 @@ def annotate_relations(
     *,
     temperature: float = 0.0,
     max_tokens: int = DEFAULT_MAX_TOKENS,
+    require_provenance: frozenset[str] = frozenset(),
 ) -> ConceptSkeleton:
     """Annotate existing edges with an LLM relation verb + per-document stance (Node B).
 
@@ -129,9 +132,18 @@ def annotate_relations(
     rebuilt from its Node-A base, so a re-run on unchanged inputs reproduces the skeleton
     byte-for-byte. A per-document LLM/parse failure is logged and skipped (that document simply
     contributes no stance); other documents still annotate.
+
+    ``require_provenance`` caps the pass to *corroborated* edges: only edges whose provenance is
+    a superset of it are eligible (e.g. ``{"citation", "similarity"}`` annotates just the
+    cross-doc-backed edges, skipping the co-occurrence-only long tail). Empty (default) = every
+    existing edge, the confined full pass.
     """
     label_by_id = {n.id: n.label for n in skeleton.nodes}
-    edge_pairs = {(e.source_concept_id, e.target_concept_id) for e in skeleton.edges}
+    edge_pairs = {
+        (e.source_concept_id, e.target_concept_id)
+        for e in skeleton.edges
+        if e.provenance >= require_provenance
+    }
 
     relation_by_pair: dict[tuple[str, str], str] = {}
     stances_by_pair: dict[tuple[str, str], list[tuple[str, str]]] = defaultdict(list)

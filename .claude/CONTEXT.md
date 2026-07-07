@@ -23,10 +23,15 @@ the real corpus (RG-001/008/009, R5 PASS, ADR-008). **The retired open-vocabular
 `concept_graph.py` is DELETED (2026-07-07, KI-7 RESOLVED, ROADMAP row G1)** — `epistemics.py` /
 `wiki.py` now read the skeleton directly; `EPISTEMICS_MARKERS_ENABLED` defaults on. **The
 gap-detection layer's deterministic Tier-1 + Tier-2a floor is BUILT (2026-07-07, ROADMAP row G2)**
-— `gaps.py` + `GapRow` + `scripts/build_gaps.py`, ADR-004. Deferred: the Tier-2a stochastic ceiling
-(`gap_suggest.py`) + Tier 2b (external reach), and a year-aware Node-B stance pass (the skeleton
-carries no publication years today, so `superseded_trend` is unreachable — `stable`/`contested`/
-`unique` only). ~700 tests; ruff / mypy --strict / bandit clean.
+— `gaps.py` + `GapRow` + `scripts/build_gaps.py`, ADR-004. **Next sprints planned as contracts
+(2026-07-07): G4** (`SPRINT-004-ki10-frozen-os-trust.md`, active) — the KI-10 frozen-build OS-trust
+fix, runnable only on this TLS-MITM box (on-proxy paid verification user-approved); **G5**
+(`SPRINT-005-gap-stochastic-ceiling.md`, active) — the Tier-2a **stochastic ceiling** (`gap_suggest.py`,
+quarantined Ollama-default LLM suggestions atop G2's floor), built + proven offline here, real Ollama
+run deferred to the RTX box. **G3** (`SPRINT-003-year-aware-superseded.md`) is **parked/deferred** — a
+low-yield year-aware `superseded_trend` veneer, un-park after a `Document.year` backfill. Still
+deferred: Tier 2b (external reach); S1/S2 selective ingestion. ~700 tests; ruff / mypy --strict /
+bandit clean.
 Desktop-shell migration (ADR-002): **M0–M5 all shipped (2026-06-25).** M0 (`ChatController`) · M1 (live 7d
 marker chips) · M2 (FastAPI + SSE, `apps/api/`) · M3 (Svelte/Tauri frontend, `apps/desktop/`) · **M4** —
 frozen 1.6 GB onefile bundling model weights (KI-9) + OS trust store (KI-10) + the ASCII-Chroma fix (KI-11);

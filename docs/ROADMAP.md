@@ -84,6 +84,9 @@ full architectural context per feature.
 | S2 | Selective ingestion UI: Tauri sources panel (status chips, select-by-status/type, exclude toggle, ingest-selected) | planned (needs S1) | `docs/specs/feature-selective-ingestion.md` |
 | G1 | KI-7 retirement: delete `concept_graph.py`, re-point `epistemics.py`/`wiki.py` onto the Node-A/B `concept_skeleton` seam, flip `EPISTEMICS_MARKERS_ENABLED` default-on | done (2026-07-07) — KI-7 resolved, ADR-005 superseded | `docs/sprints/SPRINT-001-retire-concept-graph.md` |
 | G2 | Gap-detection layer: deterministic Tier-1 + Tier-2a floor (`gaps.py` + `GapRow` + `scripts/build_gaps.py`); stochastic ceiling out of scope | done (2026-07-07) — `min_degree=3` from the corpus's own degree distribution, `tests/eval/baselines/gap_min_degree_2026-07.md` | `docs/sprints/SPRINT-002-gap-layer-deterministic.md` |
+| G3 | Year-aware skeleton → unlock `superseded_trend`: thread `Document.year` into the skeleton artifact so `node_weights_for_epistemics` marks a node superseded when its contradicting docs are newer than its supporting docs (relative polarity-over-time, parameter-free; fail-safe to `contested` on missing years). Deterministic, CPU-box, $0; `epistemics.py` unchanged | **deferred / parked (2026-07-07)** — low-yield veneer; `Document.year` coverage likely too thin for the marker to fire. Contract kept on file; un-park after a metadata backfill | `docs/sprints/SPRINT-003-year-aware-superseded.md` |
+| G4 | KI-10 frozen OS-trust fix: diagnose (WARN entrypoint + on-proxy turn), hand `AnthropicClient` a guarded `httpx.Client(verify=truststore.SSLContext(...))` (shared helper, reused at the VLM seam), optional branch-A PyInstaller runtime hook; construction-only test (no paid call), on-proxy Step-C verification flips KI-10 | planned (2026-07-07) — runnable only on this TLS-MITM box; corporate-proxy shippability blocker; on-proxy paid verification user-approved | `docs/sprints/SPRINT-004-ki10-frozen-os-trust.md` |
+| G5 | Gap-detection Tier-2a **stochastic ceiling**: new `gap_suggest.py` — one quarantined, Ollama-default LLM call per Tier-1 `under_connected` node → rated `suggested_link`/`suggested_concept`/`thin_area` `Gap`s (`determinism="stochastic"`, `status="surfaced"`), never auto-written; `--suggest` wires `--provider`/`--model` + `assert_provider_intent`. Tier-2b + the idea-generator out of scope | planned (2026-07-07) — the Phase 7 headline atop G2's floor; built + proven offline on this box (scripted `LLMClient`, no paid call), real Ollama run deferred to the RTX box | `docs/sprints/SPRINT-005-gap-stochastic-ceiling.md` |
 
 **Feature 7d (knowledge-currency layer):** engine shipped 2026-06-17 (`epistemics.py` + `chunk_epistemics`
 sidecar + polarity-aware concept graph + reviewer `contested_evidence` tag). **Live answer-time marker
@@ -92,7 +95,8 @@ surfacing shipped 2026-06-22 (PR-M1)** — sources carry `contested`/`superseded
 absent). **Still deferred:** the `query_router` local/global seam (Decision 8). **KI-7 retired
 2026-07-07 (G1):** marker data now sources from the Node-A/B concept skeleton, not the deleted
 open-vocabulary graph; `EPISTEMICS_MARKERS_ENABLED` defaults on. `superseded_trend` stays unreachable
-until a year-aware Node-B pass exists (the skeleton carries no publication years). Spec:
+until the skeleton carries publication years — **planned as G3** (`docs/sprints/SPRINT-003-year-aware-superseded.md`):
+a deterministic year-aware pass (no LLM), not the Node-B stance pass. Spec:
 `docs/specs/feature-7d-knowledge-currency.md`.
 **Feature 6 re-point** shipped 2026-06-17 (`wiki.load_communities` clusters by concept-skeleton
 communities behind `WIKI_USE_CONCEPT_COMMUNITIES`, inert by default; cosine fallback).

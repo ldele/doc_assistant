@@ -8,6 +8,40 @@ Append only — never edit past entries.
 Format: What changed | Why | Rejected alternatives | What it opens
 
 ---
+## 2026-07-07 — Planning: next sprints — G4 (KI-10) + G5 (gap ceiling) active; G3 parked
+- **What:** Wrote three cpc sprint contracts (no `src/` changes) after G1/G2 landed, then
+  re-prioritized with the user to two active + one parked:
+  - **G4** (`SPRINT-004-ki10-frozen-os-trust.md`, active) — diagnose-then-fix KI-10: hand
+    `AnthropicClient.__init__` a guarded `httpx.Client(verify=truststore.SSLContext(...))` via a
+    shared helper (reused at the `ingest/figures.py` VLM seam), optional branch-A PyInstaller runtime
+    hook, construction-only unit test (no paid call in tests), on-proxy Step-C verification flips
+    KI-10. **On-proxy paid verification user-approved.** Runnable only on this TLS-MITM box.
+  - **G5** (`SPRINT-005-gap-stochastic-ceiling.md`, active) — the Tier-2a **stochastic ceiling**
+    (`gap_suggest.py`): one quarantined, Ollama-default LLM call per Tier-1 `under_connected` node →
+    rated `suggested_link`/`suggested_concept`/`thin_area` `Gap`s (`determinism="stochastic"`,
+    `status="surfaced"`), never auto-written; replaces the `--suggest` `NotImplementedError` stub,
+    wires `--provider`/`--model` + `assert_provider_intent`. GapRow already has room (no migration).
+    Built + proven offline here via a scripted `LLMClient`; the real Ollama run is a deferred RTX-box
+    host step, not a landing gate. Tier-2b + the idea-generator explicitly out of scope.
+  - **G3** (`SPRINT-003-year-aware-superseded.md`, **PARKED**) — the year-aware `superseded_trend`
+    pass; contract kept verbatim on file but archived-status (deferred), see Why.
+  Also: ROADMAP rows G3(deferred)/G4/G5, the Feature-7d note (→G3), `.claude/CONTEXT.md`.
+- **Why:** the baton's post-G2 pickup left the direction open. User first picked G3+G4, then judged
+  **G3 a low-yield veneer** — `Document.year` coverage on the corpus is likely too thin for the
+  marker to fire, and currency markers sit on top of the integrity stack rather than being core — so
+  G3 was parked (un-park after a metadata backfill) and its slot given to **G5**, the Phase 7
+  headline (LLM candidate gaps atop G2's deterministic floor). G4 is the corporate-proxy shippability
+  blocker only this TLS-MITM box can verify; the user greenlit spending a little API credit on it.
+- **Rejected:** the iterative-planning PLAN.md/CHECKPOINTS.md artifacts (wrong type for this cpc
+  project — sprint contracts + DEVLOG are the planning surface, per the 2026-07-07 Cowork cleanup);
+  re-running `roadmap_sync` (it would slug near-duplicate stubs — the contracts are hand-written);
+  S1 selective ingestion for the second slot (foundational but a spec-lock away and less core than
+  the gap headline); deleting G3 (cheap to keep on file; only the year metadata is missing).
+- **Opens:** G4 + G5 are both `status: active`; when executed, archive the sibling first so
+  `sprint_check` sees exactly one active contract (the G1→G2 archive-on-land pattern). They're
+  independent — order can swap. G5's real value pass + G4's Step-C are host runs (RTX box / this
+  proxy box respectively). Nothing committed — staged for user review.
+
 ## 2026-07-07 — SPRINT-002 gap-layer-deterministic
 - **What:** Built the first increment of the gap-detection layer (ADR-004 /
   `docs/specs/feature-gap-detection.md`): a new `src/doc_assistant/gaps.py` with four pure Tier-1

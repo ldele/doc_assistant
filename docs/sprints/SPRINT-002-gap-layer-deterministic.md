@@ -1,14 +1,13 @@
-<!-- status: active · updated: 2026-07-07 · class: disposable -->
-<!-- QUEUED behind SPRINT-001 (G1). Both contracts sit `active` on disk, which is fine, but
-     sprint_check ERRORs on >1 active contract when run bare. While G1 is in flight, scope the gate
-     explicitly: `python -m cpc.sprint_check --root . --contract docs/sprints/SPRINT-001-retire-concept-graph.md`.
-     Start G2 only after G1 lands (retirement gives the gap layer a single skeleton to define against). -->
+<!-- status: archived · updated: 2026-07-07 · class: disposable -->
+<!-- LANDED 2026-07-07 in db54ee8, after SPRINT-001 (G1) in the same commit. All DoD items met;
+     gate green. (Historical: G2 was queued behind G1 so the gap layer defines against a single
+     skeleton; both contracts are now archived so `sprint_check` no longer sees >1 active contract.) -->
 
 # SPRINT-002 — gap-layer-deterministic
 
 - **base:** main
 - **depends-on:** SPRINT-001 (G1) — the KI-7 retirement must land first.
-- **DoD:** `python -m scripts.build_gaps --apply` on the `data/` corpus writes deterministic `gaps` rows; an idempotent re-run is a no-op (row count + `graph_version` unchanged) and makes zero LLM calls; a degree-0 fixture concept → one `isolated` Gap, a sole-source concept → `single_source` (rating None, flagged-not-penalized), a cut edge → `thin_bridge`, a below-`min_degree` concept → `under_connected`; fixture `answer_claims` with `marker=="unsupported"` aggregate to `unsourced_claim` gaps carrying the contributing ids in `evidence`, cited claims produce none; every Gap carries `determinism="deterministic"`; the three gap types (`unsupported`/`contested`/`superseded_trend`) stay distinct; retrieval output byte-identical (public-eval fixture); `min_degree` set from the corpus degree distribution and recorded in a baseline note (not guessed); full gate green; nothing committed — staged for review.
+- **DoD:** `python -m scripts.build_gaps --apply` on the `data/` corpus writes deterministic `gaps` rows; an idempotent re-run is a no-op (row count + `graph_version` unchanged) and makes zero LLM calls; a degree-0 fixture concept → one `isolated` Gap, a sole-source concept → `single_source` (rating None, flagged-not-penalized), a cut edge → `thin_bridge`, a below-`min_degree` concept → `under_connected`; fixture `answer_claims` with `marker=="unsupported"` aggregate to `unsourced_claim` gaps carrying the contributing ids in `evidence`, cited claims produce none; every Gap carries `determinism="deterministic"`; ADR-004's three epistemic blind-spot categories stay distinct, never flattened — `unsupported` (realized here as the `unsourced_claim` gap kind) ≠ `contested` ≠ `superseded_trend` (the latter two stay epistemics markers, not gap kinds; `superseded_trend` remains in the vocabulary but is unreachable until the skeleton carries publication years — see SPRINT-001); retrieval output byte-identical (public-eval fixture); `min_degree` set from the corpus degree distribution and recorded in a baseline note (not guessed); full gate green; nothing committed — staged for review.
 
 <!-- One path (or glob) per bullet. uses/affects/contracts/docs are machine-read by sprint_check.py. -->
 

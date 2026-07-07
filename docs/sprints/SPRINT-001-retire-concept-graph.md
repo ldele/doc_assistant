@@ -1,4 +1,6 @@
-<!-- status: active · updated: 2026-07-07 · class: disposable -->
+<!-- status: archived · updated: 2026-07-07 · class: disposable -->
+<!-- LANDED 2026-07-07 in db54ee8 (both G1+G2 in one commit). All DoD items met; gate green. -->
+
 
 # SPRINT-001 — retire-concept-graph
 
@@ -19,24 +21,35 @@
 - docs/decisions/ADR-005-epistemics-markers-default-off.md
 
 ## affects
-<!-- write-set: the change must stay inside this (globs allowed) -->
+<!-- write-set: the change must stay inside this (globs allowed).
+     The four retirement DELETIONS and the one connected-change fix are in the write-set
+     (added at build time per the ordering note): concept_graph.py + build_concept_graph.py
+     + their two test files are deleted; scripts/self_eval.py is repointed because it
+     imported the now-deleted CONCEPT_GRAPH_LLM_MODEL default (a required consequence of
+     the config deletion, not new scope). -->
 - src/doc_assistant/concept_skeleton.py
 - src/doc_assistant/epistemics.py
 - src/doc_assistant/wiki.py
 - src/doc_assistant/config.py
+- src/doc_assistant/concept_graph.py
 - scripts/compute_epistemics.py
 - scripts/build_wiki.py
+- scripts/self_eval.py
+- scripts/build_concept_graph.py
 - tests/unit/test_epistemics.py
 - tests/unit/test_chat_controller.py
+- tests/unit/test_concept_graph.py
 - tests/integration/test_compute_epistemics.py
 - tests/integration/test_build_wiki.py
+- tests/integration/test_build_concept_graph.py
 
 ## contracts
 <!-- type: target [ | when: <glob> ]  —  test = verify-loop reminder; snap/map must co-change.
      Idents verified to exist 2026-07-07 against the current test files. -->
 - test: tests/unit/test_epistemics.py
 - test: tests/unit/test_chat_controller.py::test_markers_absent_is_byte_identical
-- test: tests/unit/test_chat_controller.py::test_markers_disabled_by_default
+- test: tests/unit/test_chat_controller.py::test_markers_enabled_by_default
+- test: tests/unit/test_chat_controller.py::test_markers_disabled_via_opt_out_flag
 - test: tests/unit/test_concept_skeleton_weights.py::test_sole_source_is_unique_never_contested
 
 ## docs

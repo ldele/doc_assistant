@@ -1,10 +1,11 @@
 # Spec — Gap detection: two-tier deterministic/stochastic layer
 
-**Status:** 🔒 **DESIGNED, NOT BUILT** (2026-06-26, Cowork). Design-locked in
-`docs/decisions/ADR-004-gap-detection-layer.md`; extends the concept-graph redesign ("Decision C",
-`docs/decisions.md`). **Blocked** on the edge-precision validation run (RG-001) — Tier 1's signals are
-defined relative to the edge set and are meaningless on an un-validated graph (see Confidence in
-ADR-004). Tier-1 thresholds below are **provisional**, set against the first real run.
+**Status:** ✅ **Tier 1 + the Tier-2a deterministic floor BUILT (2026-07-07, SPRINT-002, ROADMAP row
+G2)** — `src/doc_assistant/gaps.py` + `GapRow` + `scripts/build_gaps.py`. RG-001's edge-precision
+validation ran and passed first (R5, ADR-008); `min_degree=3` is set from this corpus's degree
+distribution, not guessed (`tests/eval/baselines/gap_min_degree_2026-07.md`). **Still not built:**
+the Tier-2a stochastic ceiling (`gap_suggest.py`) and Tier 2b (external reach) — both deferred, out
+of the G2 sprint's scope; see `docs/sprints/SPRINT-002-gap-layer-deterministic.md`.
 **Owner of execution:** Claude Code (code + tests), when Phase 7 is active.
 **Pattern reference:** Enrichment-Layer Pattern (`docs/decisions.md`); Research Integrity Layer
 (Chunk 2a markers, Chunk 2b reviewer); Decision C skeleton (`docs/decisions.md`); 7d epistemics

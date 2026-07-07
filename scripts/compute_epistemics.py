@@ -1,20 +1,19 @@
 """Compute the knowledge-currency / claim-corroboration sidecar (Feature 7d).
 
-Projects the Feature 7 concept graph's per-node corroboration weights onto the
-baseline chunks (structural attribution — a concept is "in" a chunk if its label
-occurs in the text), and writes a `chunk_epistemics` row per chunk that carries a
-weighted claim. The row records contested / superseded-trending claim counts so the
-evidence layer can surface them at answer time.
+Projects the concept skeleton's per-node corroboration weights onto the baseline
+chunks (structural attribution — a concept is "in" a chunk if its label occurs in
+the text), and writes a `chunk_epistemics` row per chunk that carries a weighted
+claim. The row records contested / superseded-trending claim counts so the evidence
+layer can surface them at answer time.
 
-Free + read-only: no LLM call (the only LLM cost in Feature 7 is the graph
-extraction itself), never mutates the chunk store. Enrichment-Layer Pattern —
-idempotent, regenerable: re-running replaces the table from the current graph.
+Free + read-only: no LLM call, never mutates the chunk store. Enrichment-Layer
+Pattern — idempotent, regenerable: re-running replaces the table from the current
+skeleton.
 
-Run `build_concept_graph --apply` first (this projects over `data/graph/graph.json`).
-For contested / superseded-trending signals to appear, that graph must carry relation
-polarity — re-extract with `build_concept_graph --apply --force` after upgrading to
-the Feature 7d extraction prompt; an older polarity-free graph yields all-stable
-weights (everything corroborated/unique), which is itself an honest result.
+Run `build_concept_skeleton --apply` first (this projects over
+`data/skeleton/skeleton.json`). The skeleton carries no publication years, so
+`superseded_trend` never appears today (contested / stable / unique only) — see
+`concept_skeleton.node_weights_for_epistemics`.
 
 Usage:
     python -m scripts.compute_epistemics              # dry-run: compute + report

@@ -25,25 +25,18 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-from collections import defaultdict
+from collections import Counter, defaultdict
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
 import structlog
 
-# The 7d projection (epistemics.project_chunk) consumes ``concept_graph.NodeWeight``;
-# ``node_weights_for_epistemics`` below returns that exact type so 7d can re-found on this
-# skeleton without a contract change. NAMED cross-module coupling (cpc CONVENTIONS §12):
-# concept_graph.py is retired as part of that connected change (spec Decision 8 / KI-7),
-# not here — until then NodeWeight is imported, not redefined.
-from doc_assistant.concept_graph import NodeWeight
-
 log = structlog.get_logger(__name__)
 
 
 # ============================================================
-# Vocabulary (re-homed verbatim from concept_graph.py — Decision 7)
+# Vocabulary (re-homed verbatim out of the now-retired open-vocabulary module — Decision 7)
 # ============================================================
 
 POLARITIES: tuple[str, ...] = ("supports", "refines", "contradicts", "supersedes")
@@ -626,17 +619,39 @@ def skeleton_from_dict(data: dict[str, Any]) -> ConceptSkeleton:
 
 
 # ============================================================
-# 7d seam — node weights in the existing NodeWeight contract shape
+# 7d seam — node weights (the retired concept_graph.NodeWeight contract shape)
 # ============================================================
 
 
+@dataclass(frozen=True)
+class NodeWeight:
+    """A concept node's structural epistemic weight (Feature 7d) — corroboration, not
+    confidence. Derived from incident stated-claim stances (re-homed verbatim from the
+    retired ``concept_graph.NodeWeight``, KI-7 retirement).
+
+    * ``coverage`` — ``corroborated`` (>=2 independent supporting docs, no disputes),
+      ``unique`` (<=1 supporting doc, no disputes — the *only source on its topic*,
+      held NEUTRAL, never down-weighted; Decision 4), ``contested`` (>=1 disputing doc).
+    * ``direction`` — ``stable`` (no disputes), ``superseded_trend`` (disputing docs are
+      newer than the supporting ones — currency emerges from polarity over time, never
+      from absolute age; Decision 1), ``contested`` (disputed but no clear time order).
+    """
+
+    node_id: str
+    n_supporting_sources: int
+    n_contradicting_sources: int
+    agreement_ratio: float
+    direction: str  # stable | contested | superseded_trend
+    coverage: str  # corroborated | unique | contested
+
+
 def node_weights_for_epistemics(skeleton: ConceptSkeleton) -> dict[str, NodeWeight]:
-    """Per-node corroboration weights in the ``concept_graph.NodeWeight`` shape (Decision 7).
+    """Per-node corroboration weights in the ``NodeWeight`` contract shape (Decision 7).
 
     The seam 7d re-founds on (``epistemics.project_chunk`` reads ``.coverage`` /
     ``.direction``). Aggregates incident edges' ``stance_by_doc`` into supporting / opposing
-    *document* sets, then applies the unique-source = neutral rule **verbatim** from
-    ``concept_graph.compute_node_weights``: coverage is decided contested-FIRST, so a
+    *document* sets, then applies the unique-source = neutral rule **verbatim** from the
+    retired ``concept_graph.compute_node_weights``: coverage is decided contested-FIRST, so a
     sole-source concept (no opposing doc) is ``unique``, never ``contested``. Returns a
     weight for **every** node (a stance-less node → ``unique`` / ``stable``). The skeleton
     carries no publication years, so ``direction`` is ``stable`` / ``contested`` only —
@@ -674,6 +689,44 @@ def node_weights_for_epistemics(skeleton: ConceptSkeleton) -> dict[str, NodeWeig
             coverage=coverage,
         )
     return weights
+
+
+# ============================================================
+# Feature 6 seam — document clusters from the skeleton's Louvain communities
+# ============================================================
+
+
+def doc_clusters_from_skeleton(
+    skeleton: ConceptSkeleton, document_ids: list[str]
+) -> list[list[str]]:
+    """Group documents by the concept-community they most belong to (Decision 8).
+
+    The wiki cluster seam (retired ``concept_graph.doc_clusters_from_graph``): every
+    node's ``doc_ids`` casts a vote for its community; a document's dominant community
+    (most-voted, ties broken by lowest community id) determines its cluster. A document
+    with no community vote (no curated concept present, or only isolated/degree-0
+    concepts) becomes its own singleton cluster — mirroring the old "solo" bucket.
+    Deterministic; reads only the skeleton's own node membership, not a separate per-doc
+    cache (the skeleton carries none — it is rebuilt fresh from current DB/Chroma state
+    every run, unlike the retired per-doc-hash LLM extraction cache).
+    """
+    votes: dict[str, Counter[int]] = defaultdict(Counter)
+    for n in skeleton.nodes:
+        if n.community < 0:
+            continue
+        for doc_id in n.doc_ids:
+            votes[doc_id][n.community] += 1
+    by_community: dict[str, list[str]] = defaultdict(list)
+    for doc_id in document_ids:
+        doc_votes = votes.get(doc_id)
+        if not doc_votes:
+            by_community[f"solo:{doc_id}"].append(doc_id)
+            continue
+        dominant = min(doc_votes.items(), key=lambda kv: (-kv[1], kv[0]))[0]
+        by_community[f"c{dominant}"].append(doc_id)
+    clusters = [sorted(docs) for docs in by_community.values()]
+    clusters.sort(key=lambda c: (-len(c), c[0]))
+    return clusters
 
 
 # ============================================================

@@ -1,10 +1,10 @@
 """Integration test for the epistemics build (Feature 7d) — the impure orchestration.
 
 Drives ``epistemics.build_epistemics`` against a temp SQLite (for the
-``chunk_epistemics`` sidecar), a temp concept-graph ``graph.json``, and a **stubbed**
-``load_doc_chunks`` (so it never reads the real Chroma store). Asserts projection →
-rows written, marker derivation, the unique-source-stays-quiet rule, idempotency
-(replace not append), dry-run writes nothing, and a missing graph raises.
+``chunk_epistemics`` sidecar), a temp concept-skeleton ``skeleton.json``, and a
+**stubbed** ``load_doc_chunks`` (so it never reads the real Chroma store). Asserts
+projection → rows written, marker derivation, the unique-source-stays-quiet rule,
+idempotency (replace not append), dry-run writes nothing, and a missing skeleton raises.
 
 Deterministic + offline: no network, no real LLM, no Chroma.
 """
@@ -20,11 +20,11 @@ from sqlalchemy import create_engine, func, select
 from sqlalchemy.orm import sessionmaker
 
 import doc_assistant.db.session as session_mod
-from doc_assistant import concept_graph as cg
+from doc_assistant import concept_skeleton as cs
 from doc_assistant import epistemics
 from doc_assistant.db.models import Base, ChunkEpistemics, Document
 from doc_assistant.db.session import session_scope
-from doc_assistant.epistemics import MARKER_SUPERSEDED, build_epistemics, load_epistemics_index
+from doc_assistant.epistemics import MARKER_CONTESTED, build_epistemics, load_epistemics_index
 
 
 @pytest.fixture
@@ -46,32 +46,28 @@ def env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Path]:
         engine.dispose()
 
 
-# colbert↔ranking: old supports (2005), new supersedes (2022) → superseded_trend.
-# hyde↔prompting: a single supporting source → unique → never marked.
-_GRAPH_EXTRACTIONS = [
-    cg.DocExtraction(
-        "old",
-        "hold",
-        "old.pdf",
-        ["colbert", "ranking"],
-        [cg.Triple("colbert", "uses", "ranking", "supports")],
-        year=2005,
+# colbert<->ranking: "old" supports, "new" contradicts → contested (the skeleton
+# carries no publication years, so superseded_trend isn't reachable — see
+# concept_skeleton.node_weights_for_epistemics).
+# hyde<->prompting: a single supporting source → unique → never marked.
+_COOC = frozenset({"cooccurrence"})
+_SKELETON_NODES = [
+    cs.ConceptNode("colbert", "colbert", ("old", "new"), 0, -1),
+    cs.ConceptNode("ranking", "ranking", ("old", "new"), 0, -1),
+    cs.ConceptNode("hyde", "hyde", ("z",), 0, -1),
+    cs.ConceptNode("prompting", "prompting", ("z",), 0, -1),
+]
+_SKELETON_EDGES = [
+    cs.SkeletonEdge(
+        "colbert",
+        "ranking",
+        _COOC,
+        cs.edge_weight(_COOC, 2),
+        2,
+        stance_by_doc=(("new", "contradicts"), ("old", "supports")),
     ),
-    cg.DocExtraction(
-        "new",
-        "hnew",
-        "new.pdf",
-        ["colbert", "ranking"],
-        [cg.Triple("colbert", "uses", "ranking", "supersedes")],
-        year=2022,
-    ),
-    cg.DocExtraction(
-        "z",
-        "hz",
-        "z.pdf",
-        ["hyde", "prompting"],
-        [cg.Triple("hyde", "uses", "prompting", "supports")],
-        year=2020,
+    cs.SkeletonEdge(
+        "hyde", "prompting", _COOC, cs.edge_weight(_COOC, 1), 1, stance_by_doc=(("z", "supports"),)
     ),
 ]
 
@@ -82,10 +78,12 @@ _CHUNKS = [
 ]
 
 
-def _write_graph(root: Path) -> None:
-    graph = cg.assemble_graph(_GRAPH_EXTRACTIONS)
+def _write_skeleton(root: Path) -> None:
+    skeleton = cs.analyze_skeleton(_SKELETON_NODES, _SKELETON_EDGES, seed=42)
     root.mkdir(parents=True, exist_ok=True)
-    (root / cg.GRAPH_NAME).write_text(json.dumps(cg.graph_to_dict(graph)), encoding="utf-8")
+    (root / cs.SKELETON_NAME).write_text(
+        json.dumps(cs.skeleton_to_dict(skeleton)), encoding="utf-8"
+    )
 
 
 def _seed_docs(doc_ids: list[str]) -> None:
@@ -107,59 +105,59 @@ def _count_rows() -> int:
         return int(session.execute(select(func.count()).select_from(ChunkEpistemics)).scalar_one())
 
 
-def test_apply_writes_rows_and_marks_superseded(env: Path) -> None:
+def test_apply_writes_rows_and_marks_contested(env: Path) -> None:
     _seed_docs(["doc-colbert", "doc-hyde"])
-    _write_graph(env / "graph")
+    _write_skeleton(env / "skeleton")
 
-    result = build_epistemics(apply=True, graph_dir=env / "graph")
+    result = build_epistemics(apply=True, skeleton_dir=env / "skeleton")
     assert result.applied
-    assert result.n_superseded_nodes >= 1
+    assert result.n_contested_nodes >= 1
 
     with session_scope() as session:
         rows = list(session.execute(select(ChunkEpistemics)).scalars())
     by_key = {f"{r.document_id}:{r.chunk_index}": r for r in rows}
     # Both chunks that carry a claim get a row; the concept-free chunk does not.
     assert set(by_key) == {"doc-colbert:0", "doc-hyde:0"}
-    assert by_key["doc-colbert:0"].n_superseded_trend >= 1
+    assert by_key["doc-colbert:0"].n_contested >= 1
     assert by_key["doc-hyde:0"].n_contested == 0  # the unique-source chunk stays clean
 
 
 def test_marker_index_returns_only_marked_chunks(env: Path) -> None:
     _seed_docs(["doc-colbert", "doc-hyde"])
-    _write_graph(env / "graph")
-    build_epistemics(apply=True, graph_dir=env / "graph")
+    _write_skeleton(env / "skeleton")
+    build_epistemics(apply=True, skeleton_dir=env / "skeleton")
 
     index = load_epistemics_index()
-    assert MARKER_SUPERSEDED in index.get("doc-colbert:0", [])
+    assert MARKER_CONTESTED in index.get("doc-colbert:0", [])
     assert "doc-hyde:0" not in index  # quiet-on-clean: unique-source chunk not surfaced
 
 
 def test_rebuild_is_idempotent_replaces_not_appends(env: Path) -> None:
     _seed_docs(["doc-colbert", "doc-hyde"])
-    _write_graph(env / "graph")
-    build_epistemics(apply=True, graph_dir=env / "graph")
-    build_epistemics(apply=True, graph_dir=env / "graph")
+    _write_skeleton(env / "skeleton")
+    build_epistemics(apply=True, skeleton_dir=env / "skeleton")
+    build_epistemics(apply=True, skeleton_dir=env / "skeleton")
     assert _count_rows() == 2  # two claim-bearing chunks, not four
 
 
 def test_dry_run_writes_nothing(env: Path) -> None:
     _seed_docs(["doc-colbert", "doc-hyde"])
-    _write_graph(env / "graph")
-    result = build_epistemics(apply=False, graph_dir=env / "graph")
+    _write_skeleton(env / "skeleton")
+    result = build_epistemics(apply=False, skeleton_dir=env / "skeleton")
     assert not result.applied
     assert result.rows  # computed in-memory...
     assert _count_rows() == 0  # ...but nothing persisted
 
 
-def test_missing_graph_raises(env: Path) -> None:
+def test_missing_skeleton_raises(env: Path) -> None:
     with pytest.raises(FileNotFoundError):
-        build_epistemics(apply=True, graph_dir=env / "no-graph-here")
+        build_epistemics(apply=True, skeleton_dir=env / "no-skeleton-here")
 
 
 def test_no_document_mutation(env: Path) -> None:
     _seed_docs(["doc-colbert", "doc-hyde"])
-    _write_graph(env / "graph")
-    build_epistemics(apply=True, graph_dir=env / "graph")
+    _write_skeleton(env / "skeleton")
+    build_epistemics(apply=True, skeleton_dir=env / "skeleton")
     with session_scope() as session:
         doc_count = session.execute(select(func.count()).select_from(Document)).scalar_one()
     assert doc_count == 2  # the sidecar never touches the documents table

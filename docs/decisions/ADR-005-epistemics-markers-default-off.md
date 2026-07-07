@@ -1,10 +1,17 @@
-<!-- status: active · updated: 2026-07-02 · class: append-only -->
+<!-- status: superseded · updated: 2026-07-07 · class: append-only -->
 
 # ADR-005 — Live 7d epistemics markers default OFF until Node B
 
-- **Status:** accepted
+- **Status:** superseded (2026-07-07) — default-on, markers rest on the Node-A/B skeleton
 - **Date:** 2026-07-02
 - **Deciders:** user (option chosen), Claude Code (execution)
+
+**2026-07-07 update:** Node B (confined-LLM relation/stance enrichment) shipped and merged
+(PR #6 `6679540`), and the KI-7 retirement (SPRINT-001) re-pointed `epistemics.py` / `wiki.py`
+onto `concept_skeleton.py` — the condition this ADR's Option 1 was waiting on. Per the
+Decision section below, `EPISTEMICS_MARKERS_ENABLED` now **defaults to `true`**; the
+superseded open-vocabulary `concept_graph.py` this ADR was containing is deleted. The
+`false` opt-out remains for anyone who wants the byte-identical no-marker path.
 
 ## Context
 

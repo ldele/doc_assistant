@@ -338,15 +338,13 @@ REVIEWER_EVIDENCE_CHARS = int(os.getenv("REVIEWER_EVIDENCE_CHARS", "1500"))
 # ============================================================
 # Live 7d epistemics markers (contested / superseded-trend chips)
 # ============================================================
-# Whether the chat turn surfaces 7d marker chips on source cards (PR-M1). Default
-# OFF: the marker *quality* still comes from the SUPERSEDED open-vocabulary concept
-# graph (KI-7), reaching sources through the coarse containment join (KI-8) — noise
-# wearing the integrity layer's uniform, which works against the product's core
-# promise (remediation plan R7). With this off, `_attach_markers` is skipped entirely,
-# so the turn takes the M0/M1 byte-identical no-marker path. Node B (the confined-LLM
-# relation/stance layer) flips the default back on once markers rest on trustworthy
-# data. See docs/decisions/ADR-005-epistemics-markers-default-off.md.
-EPISTEMICS_MARKERS_ENABLED = os.getenv("EPISTEMICS_MARKERS_ENABLED", "false").lower() == "true"
+# Whether the chat turn surfaces 7d marker chips on source cards (PR-M1). Default ON
+# (2026-07-07, KI-7 retirement): marker data now rests on the concept-skeleton's Node
+# A/B stance pass, not the retired open-vocabulary concept graph — see
+# docs/decisions/ADR-005-epistemics-markers-default-off.md (status note: superseded)
+# and .claude/KNOWN_ISSUES.md KI-7 (resolved). `EPISTEMICS_MARKERS_ENABLED=false`
+# still opts out for anyone who wants the byte-identical no-marker path.
+EPISTEMICS_MARKERS_ENABLED = os.getenv("EPISTEMICS_MARKERS_ENABLED", "true").lower() == "true"
 
 
 # ============================================================
@@ -362,7 +360,7 @@ WIKI_DIR = DATA_PATH / "wiki"
 
 # Topic summarization is the *generator* role (not a pinned instrument) and a
 # per-cluster batch op — the same silent-spend profile as concept extraction. So,
-# like CONCEPT_GRAPH_LLM_PROVIDER (Feature 7), it defaults to LOCAL Ollama
+# like CONCEPT_SKELETON_LLM_PROVIDER (Feature 7), it defaults to LOCAL Ollama
 # *explicitly*, NOT to LLM_PROVIDER. This keeps `build_wiki --apply` free by
 # default; `--provider anthropic` is opt-in and routes through the cost guard
 # (`llm.assert_provider_intent`). Changed 2026-06-15 (was: inherit LLM_PROVIDER/
@@ -388,74 +386,27 @@ WIKI_MIN_CITATIONS = int(os.getenv("WIKI_MIN_CITATIONS", "3"))
 # How many chunk excerpts to sample per document as grounding for the summary.
 WIKI_CHUNK_SAMPLE = int(os.getenv("WIKI_CHUNK_SAMPLE", "3"))
 
-# Clustering primitive: when true, the wiki groups documents by the Feature 7
-# concept-graph *communities* (threshold-free Louvain — adapts to the corpus's own
-# structure) instead of the absolute-cosine WIKI_MIN_SIMILARITY union-find above.
-# This is the fix for the same-domain-saturation problem (decisions.md → Deferred
-# Improvements). Landed INERT: default false keeps shipped 6a-6d byte-identical, and
-# even when on, `wiki.load_communities` falls back to cosine clustering if the
-# `data/graph/graph.json` sidecar is absent or stale (so run `build_concept_graph
-# --apply` first). The default flips once the re-cluster is validated on data.
+# Clustering primitive: when true, the wiki groups documents by the concept-skeleton's
+# *communities* (threshold-free Louvain — adapts to the corpus's own structure) instead
+# of the absolute-cosine WIKI_MIN_SIMILARITY union-find above. This is the fix for the
+# same-domain-saturation problem (decisions.md → Deferred Improvements). Landed INERT:
+# default false keeps shipped 6a-6d byte-identical, and even when on, `wiki.
+# load_communities` falls back to cosine clustering if the `data/skeleton/skeleton.json`
+# sidecar is absent (so run `build_concept_skeleton --apply` first). The default flips
+# once the re-cluster is validated on data.
 WIKI_USE_CONCEPT_COMMUNITIES = os.getenv("WIKI_USE_CONCEPT_COMMUNITIES", "false").lower() == "true"
 
 
 # ============================================================
-# Cross-document concept graph (Phase 7 / Feature 7, PR 16)
+# Concept skeleton (Phase 7 / Feature 7, curated-vocabulary skeleton)
 # ============================================================
-# A concept/entity graph across the library: nodes = concepts, edges = relations
-# (integrity-tagged EXTRACTED|INFERRED|AMBIGUOUS — no self-reported confidence),
-# clustered into communities (Louvain) with high-degree "god nodes" surfaced. A
-# sidecar artifact under CONCEPT_GRAPH_DIR (graph.json + per-doc extraction cache)
-# — NOT a graph database. Enrichment-Layer Pattern: idempotent, regenerable, never
-# mutates the chunk store. See docs/doc-assistant-roadmap.md → Feature 7 and
-# docs/decisions.md → Feature 7.
-
-# Sidecar root: data/graph/graph.json + data/graph/extractions/{doc_hash}.json.
-# Gitignored (derived, regenerable).
-CONCEPT_GRAPH_DIR = DATA_PATH / "graph"
-
-# Concept extraction runs an LLM over EVERY document — a per-document batch op, and
-# exactly the operation that silently burns API credits if it inherits the analysis
-# provider default (LLM_MODE=api → LLM_PROVIDER=anthropic). So — unlike the wiki
-# summarizer — it defaults to LOCAL Ollama *explicitly*, NOT to LLM_PROVIDER, to
-# hold the local-first promise by default. Override with --provider / the env vars
-# (an Anthropic run is opt-in and prints a cost warning). See decisions.md → the
-# Feature 7 "default-Ollama extraction" ADR.
-CONCEPT_GRAPH_LLM_PROVIDER = os.getenv("CONCEPT_GRAPH_LLM_PROVIDER", "ollama")
-CONCEPT_GRAPH_LLM_MODEL = os.getenv("CONCEPT_GRAPH_LLM_MODEL", "llama3.1:8b")
-
-# Per-document extraction grounding: up to this many chunk excerpts, each truncated
-# to this many characters, are concatenated as the extraction prompt's material.
-CONCEPT_GRAPH_CHUNK_SAMPLE = int(os.getenv("CONCEPT_GRAPH_CHUNK_SAMPLE", "12"))
-CONCEPT_GRAPH_CHUNK_CHARS = int(os.getenv("CONCEPT_GRAPH_CHUNK_CHARS", "600"))
-
-# Output-token budget for one document's extraction (Ollama num_predict / Anthropic
-# max_tokens). Enough for ~15-30 triples; raise for concept-dense papers.
-CONCEPT_GRAPH_MAX_TOKENS = int(os.getenv("CONCEPT_GRAPH_MAX_TOKENS", "1500"))
-
-# INFERRED co-occurrence edges: two concepts co-mentioned in at least this many
-# distinct documents (but never explicitly related by an extracted triple) get an
-# INFERRED edge — "these travel together across the corpus, though no single paper
-# stated the link." >=2 keeps the graph from exploding with one-off co-occurrences.
-CONCEPT_GRAPH_MIN_COOCCURRENCE = int(os.getenv("CONCEPT_GRAPH_MIN_COOCCURRENCE", "2"))
-
-# How many highest-degree hub concepts to surface as "god nodes".
-CONCEPT_GRAPH_GOD_NODES = int(os.getenv("CONCEPT_GRAPH_GOD_NODES", "10"))
-
-# Louvain is randomized; a fixed seed makes community assignment reproducible so the
-# graph artifact is deterministic for a given set of extractions.
-CONCEPT_GRAPH_SEED = int(os.getenv("CONCEPT_GRAPH_SEED", "42"))
-
-
-# ============================================================
-# Concept skeleton — REDESIGN (Phase 7 / Feature 7, curated-vocabulary skeleton)
-# ============================================================
-# The curated-vocabulary + deterministic-skeleton redesign of the concept graph
-# (docs/specs/concept-graph-redesign.md; supersedes the open-vocabulary block above,
-# KNOWN_ISSUES KI-7). Node A (the deterministic skeleton) makes ZERO LLM calls; the
-# LLM relation/stance pass (Node B) is deferred. Sidecar artifact + sidecar tables,
-# regenerable, never mutates the chunk store (Enrichment-Layer Pattern). These are
-# ordinary config contracts, NOT eval-locked retrieval settings.
+# The curated-vocabulary + deterministic-skeleton redesign of Feature 7
+# (docs/specs/concept-graph-redesign.md; supersedes the retired open-vocabulary
+# `concept_graph.py`, KNOWN_ISSUES KI-7 — retired once Node A/B landed). Node A
+# (the deterministic skeleton) makes ZERO LLM calls; Node B is the confined LLM
+# relation/stance pass. Sidecar artifact + sidecar tables, regenerable, never
+# mutates the chunk store (Enrichment-Layer Pattern). These are ordinary config
+# contracts, NOT eval-locked retrieval settings.
 
 # Sidecar root: data/skeleton/skeleton.json + the per-doc extraction cache.
 # Gitignored (derived, regenerable).

@@ -1,11 +1,12 @@
 """Knowledge-currency / claim-corroboration projection (Phase 7 / Feature 7d).
 
-The epistemic layer on top of Feature 7's concept graph. Feature 7 says *what*
-relates to what; ``concept_graph.compute_node_weights`` says *how well corroborated*
-each concept's claims are (supporting vs disputing sources, and whether disputes are
-newer — ``superseded_trend``). This module **projects** those node-level weights down
-onto the retrieval substrate (chunks), so an answer can surface "this evidence sits on
-a contested / superseded-trending claim" at read time.
+The epistemic layer on top of the concept skeleton (Node A/B, KI-7 retirement).
+``concept_skeleton.node_weights_for_epistemics`` says *how well corroborated* each
+concept's claims are (supporting vs disputing sources). This module **projects** those
+node-level weights down onto the retrieval substrate (chunks), so an answer can surface
+"this evidence sits on a contested claim" at read time. (``superseded_trend`` stays a
+valid marker in the vocabulary below, but the skeleton carries no publication years, so
+today's Node A/B weights never produce it — see ``node_weights_for_epistemics``.)
 
 Why a projection, not per-chunk scoring: a ~2000-char chunk is the wrong unit for
 epistemics (one parent can hold a stale result and three solid definitions). The
@@ -35,7 +36,7 @@ from typing import Any
 
 import structlog
 
-from doc_assistant.concept_graph import ConceptGraph, NodeWeight, compute_node_weights
+from doc_assistant.concept_skeleton import ConceptSkeleton, NodeWeight, node_weights_for_epistemics
 
 log = structlog.get_logger(__name__)
 
@@ -169,14 +170,14 @@ def project_chunk(
 
 
 def project_chunk_weights(
-    graph: ConceptGraph,
+    skeleton: ConceptSkeleton,
     weights: dict[str, NodeWeight],
     doc_chunks: list[tuple[str, int, str]],
 ) -> list[ChunkEpistemics]:
     """Project node weights onto chunks (pure). ``doc_chunks`` = (document_id,
     chunk_index, text). Only chunks that contain at least one weighted concept get a
     row — a chunk with no claims carries no epistemic signal and is omitted."""
-    node_ids = [n.id for n in graph.nodes]
+    node_ids = [n.id for n in skeleton.nodes]
     rows: list[ChunkEpistemics] = []
     for document_id, chunk_index, text in doc_chunks:
         present = concepts_in_text(text, node_ids)
@@ -229,15 +230,13 @@ def markers_for_parent(parent_text: str, marked: list[MarkedChunk]) -> list[str]
     return out
 
 
-def graph_version(graph: ConceptGraph) -> str:
-    """A short, stable fingerprint of the graph's structure (for sidecar staleness).
+def graph_version(skeleton: ConceptSkeleton) -> str:
+    """The skeleton's own structural fingerprint (for sidecar staleness).
 
-    Hash of the sorted node ids + edge count — changes when the graph re-extracts,
-    stable across a pure re-projection of the same graph."""
-    import hashlib
-
-    payload = "|".join(sorted(n.id for n in graph.nodes)) + f"#{len(graph.edges)}"
-    return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:12]
+    Reuses ``concept_skeleton``'s canonical ``graph_version`` (computed over the full
+    node/edge/stance signature, not re-derived here) so there is one definition of
+    "did the skeleton change", not two."""
+    return str(skeleton.meta.get("graph_version", ""))
 
 
 # ============================================================
@@ -389,32 +388,32 @@ def load_marked_chunks(document_ids: list[str]) -> dict[str, list[MarkedChunk]]:
     return out
 
 
-def build_epistemics(*, apply: bool, graph_dir: Path | None = None) -> EpistemicsResult:
-    """Compute per-chunk epistemic weights from the concept graph; write the sidecar.
+def build_epistemics(*, apply: bool, skeleton_dir: Path | None = None) -> EpistemicsResult:
+    """Compute per-chunk epistemic weights from the concept skeleton; write the sidecar.
 
-    Read-only + free (no LLM): loads ``graph.json``, computes node weights, projects
+    Read-only + free (no LLM): loads ``skeleton.json``, computes node weights, projects
     them onto baseline chunks via structural attribution. ``apply`` replaces the
-    ``chunk_epistemics`` table (regenerable sidecar — dropped + rebuilt with the graph);
-    a dry run computes + reports but writes nothing. Idempotent: same graph + same
+    ``chunk_epistemics`` table (regenerable sidecar — dropped + rebuilt with the skeleton);
+    a dry run computes + reports but writes nothing. Idempotent: same skeleton + same
     chunks → identical rows. Never touches the chunk store."""
     import json
 
-    from doc_assistant.concept_graph import GRAPH_NAME, graph_from_dict
-    from doc_assistant.config import CONCEPT_GRAPH_DIR
+    from doc_assistant.concept_skeleton import SKELETON_NAME, skeleton_from_dict
+    from doc_assistant.config import CONCEPT_SKELETON_DIR
 
-    root = graph_dir or CONCEPT_GRAPH_DIR
-    graph_path = root / GRAPH_NAME
-    if not graph_path.exists():
+    root = skeleton_dir or CONCEPT_SKELETON_DIR
+    skeleton_path = root / SKELETON_NAME
+    if not skeleton_path.exists():
         raise FileNotFoundError(
-            f"No concept graph at {graph_path} — run `python -m scripts.build_concept_graph "
-            "--apply` first (Feature 7d projects over Feature 7's graph)."
+            f"No concept skeleton at {skeleton_path} — run `python -m scripts."
+            "build_concept_skeleton --apply` first (Feature 7d projects over the skeleton)."
         )
-    graph = graph_from_dict(json.loads(graph_path.read_text(encoding="utf-8")))
-    weights = compute_node_weights(graph)
-    version = graph_version(graph)
+    skeleton = skeleton_from_dict(json.loads(skeleton_path.read_text(encoding="utf-8")))
+    weights = node_weights_for_epistemics(skeleton)
+    version = graph_version(skeleton)
 
     doc_chunks = load_doc_chunks()
-    rows = project_chunk_weights(graph, weights, doc_chunks)
+    rows = project_chunk_weights(skeleton, weights, doc_chunks)
 
     if apply:
         _write_rows(rows, version)

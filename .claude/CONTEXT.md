@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-07-03 · class: living -->
+<!-- status: active · updated: 2026-07-07 · class: living -->
 
 # CONTEXT — doc_assistant
 
@@ -12,16 +12,21 @@ and its contract are recorded in `docs/decisions/ADR-001-adopt-cpc-standard.md`.
 research-integrity layer (provenance, evidence/interpretation split, separate-context reviewer).
 Not a chatbot wrapper — reliable, grounded, *measurable* answers over **your** documents.
 
-**Current phase (2026-06-30):** Phase 6 in progress; Phase 7 (gap detection) underway. Core RAG,
-eval harness, document store + library UI, citation graph, the integrity layer, the provider-agnostic
-LLM layer, figures/tables, and the wiki/synthesis layer are shipped. The cross-document concept graph
-(PR 16) + the 7d engine shipped too, **but their open-vocabulary core was superseded by a 2026-06-18
-redesign — do not build on `concept_graph.py` / `data/graph/graph.json` (`.claude/KNOWN_ISSUES.md`
-KI-7).** The redesign's **Node A — the deterministic, zero-LLM concept skeleton — is BUILT (2026-06-30,
-`concept_skeleton.py` + `scripts/{seed_concepts,build_concept_skeleton}.py` + the `concept_*` tables +
-`CONCEPT_SKELETON_*` config)**, alongside the old graph (not retired); pending: the RG-001/008/009
-`--apply` validation run on the real corpus, then Node B (LLM stance) + the KI-7 retirement.
-~660 tests; ruff / mypy --strict / bandit clean.
+**Current phase (2026-07-07):** Phase 6 done; Phase 7 (concept skeleton + gap detection) well
+underway. Core RAG, eval harness, document store + library UI, citation graph, the integrity layer,
+the provider-agnostic LLM layer, figures/tables, and the wiki/synthesis layer are shipped. The
+concept-graph redesign — curated vocabulary + deterministic skeleton (Node A, 2026-06-30) +
+confined LLM relation/stance enrichment (Node B, PR #6 `6679540`) — is **BUILT**
+(`concept_skeleton.py` + `concept_skeleton_enrich.py` + `scripts/{seed_concepts,
+build_concept_skeleton}.py` + the `concept_*` tables + `CONCEPT_SKELETON_*` config), validated on
+the real corpus (RG-001/008/009, R5 PASS, ADR-008). **The retired open-vocabulary
+`concept_graph.py` is DELETED (2026-07-07, KI-7 RESOLVED, ROADMAP row G1)** — `epistemics.py` /
+`wiki.py` now read the skeleton directly; `EPISTEMICS_MARKERS_ENABLED` defaults on. **The
+gap-detection layer's deterministic Tier-1 + Tier-2a floor is BUILT (2026-07-07, ROADMAP row G2)**
+— `gaps.py` + `GapRow` + `scripts/build_gaps.py`, ADR-004. Deferred: the Tier-2a stochastic ceiling
+(`gap_suggest.py`) + Tier 2b (external reach), and a year-aware Node-B stance pass (the skeleton
+carries no publication years today, so `superseded_trend` is unreachable — `stable`/`contested`/
+`unique` only). ~700 tests; ruff / mypy --strict / bandit clean.
 Desktop-shell migration (ADR-002): **M0–M5 all shipped (2026-06-25).** M0 (`ChatController`) · M1 (live 7d
 marker chips) · M2 (FastAPI + SSE, `apps/api/`) · M3 (Svelte/Tauri frontend, `apps/desktop/`) · **M4** —
 frozen 1.6 GB onefile bundling model weights (KI-9) + OS trust store (KI-10) + the ASCII-Chroma fix (KI-11);
@@ -131,19 +136,19 @@ to docs/archive/SESSION-archive-NNN.md (local-only, like the baton).
   with `--repeat` before locking it as a measured win. `CANDIDATE_K=10` reproduces pre-split behaviour.
 - **Per-project embedder routing (Feature 1b) deferred** — no model beats `bge-base` on an identifiable
   sub-corpus yet (SPECTER2 lost on every retrieval signal). Re-run SPECTER2 `--repeat 5` first.
-- **Concept graph redesign (2026-06-18): Node A built (2026-06-30), validation pending** — the shipped
-  open-vocabulary core is superseded (KI-7); the curated-vocabulary + deterministic-skeleton **Node A**
-  is built (`concept_skeleton.py`) but its edge precision + presence recall are **unvalidated** — the
-  RG-001/008/009 `--apply` run on the real corpus sets `CONCEPT_SKELETON_MIN_COOCCURRENCE` + the
-  presence-match mode from the data (not guessed) and gates marking the graph *usable* + the gap layer.
-  Node B (LLM relation/stance) is deferred to PR-B.
-- **Gap-detection layer (2026-06-26) decided, not built** — two-tier deterministic/stochastic over
-  the curated skeleton (`docs/decisions/ADR-004-gap-detection-layer.md` /
-  `docs/specs/feature-gap-detection.md`). Deterministic Tier-1 + the Tier-2a
-  `unsupported_claim`/citation-gap floor are the first increment; blocked on the Decision-C skeleton
-  **and** the RG-001 edge-precision run (Tier-1 signals are defined relative to the edge set —
-  meaningless on an un-validated graph). External "anti-blind-spot" Tier 2b deferred; the
-  idea-generator is rejected for it.
+- **Concept graph redesign (2026-06-18) — RESOLVED, fully built.** Node A (deterministic skeleton,
+  2026-06-30) + Node B (confined LLM stance, PR #6) both shipped; RG-001/008/009 validated the edges
+  (R5 PASS, ADR-008, `CONCEPT_SKELETON_MIN_COOCCURRENCE=2` + `boundary` presence); the superseded
+  open-vocabulary `concept_graph.py` is deleted (2026-07-07, KI-7 resolved). Open item carried
+  forward: a year-aware Node-B stance pass would unlock `superseded_trend` (today's
+  `node_weights_for_epistemics` can only produce `stable`/`contested`/`unique` — not tracked as a
+  new KI, just a documented limitation).
+- **Gap-detection layer (2026-06-26) — Tier 1 + Tier-2a floor BUILT (2026-07-07, G2).** Deterministic
+  detectors (`isolated`/`single_source`/`thin_bridge`/`under_connected`) + the `unsourced_claim` floor
+  are live (`gaps.py` + `GapRow` + `scripts/build_gaps.py`); `citation_missing` (the other floor kind)
+  is not yet built. Deferred: the Tier-2a stochastic ceiling (`gap_suggest.py`, quarantined LLM
+  suggestions) and Tier 2b (external "anti-blind-spot" reach — the idea-generator is rejected for it,
+  ADR-004 option 3).
 - **BM25/vector `0.4/0.6` weights — MEASURED 2026-07-03 (resolved, kept).** `--bm25-weight` flag
   (config `BM25_WEIGHT` → `pipeline`/`run_eval`) + `scripts/sweep_bm25_weight.py` added; swept
   `{0.0..1.0}` retrieval-only over `cases.yaml`. Post-rerank recall is **flat across the whole

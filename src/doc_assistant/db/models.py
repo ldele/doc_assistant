@@ -545,6 +545,50 @@ class ConceptPresenceRow(Base):
 
 
 # ============================================================
+# GapRow — Phase 7, gap-detection layer (deterministic Tier 1 + Tier-2a floor).
+# ============================================================
+# `docs/decisions/ADR-004-gap-detection-layer.md` + `docs/specs/feature-gap-detection.md`.
+# Deterministic rows (tier="t1" / "t2a" with determinism="deterministic") are a
+# regenerable sidecar — dropped + rebuilt on every `build_gaps` run, same as
+# `ConceptEdge`/`ConceptPresenceRow` (Enrichment-Layer Pattern). Stochastic rows
+# (the deferred Tier-2a ceiling / `gap_suggest.py`, out of this sprint's scope)
+# persist their `status` across a rebuild — the "compounding arrow" — so the
+# rebuild path must delete/replace only `determinism="deterministic"` rows.
+
+
+class GapRow(Base):
+    """One detected (or suggested) corpus gap — see `gaps.Gap` for the pure shape.
+
+    `concept_id` is not a foreign key: for a deterministic gap it is a curated
+    `Concept.id`, but a stochastic suggestion's `concept_id` may be a candidate
+    label that doesn't exist as a `Concept` yet (that's the point — it's a
+    promotion candidate). `evidence_json` holds the deterministic graph-fact ids
+    (edge/doc ids, or the contributing `answer_claims` ids) or, for a stochastic
+    row, the LLM inputs it was produced from (observability).
+    """
+
+    __tablename__ = "gaps"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid4()))
+    concept_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    tier: Mapped[str] = mapped_column(String, nullable=False)  # t1 | t2a | t2b
+    determinism: Mapped[str] = mapped_column(String, nullable=False)  # deterministic | stochastic
+    kind: Mapped[str] = mapped_column(String, nullable=False)
+    # JSON list of fact ids (deterministic) or LLM inputs (stochastic).
+    evidence_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
+    rating: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # surfaced | promoted | dismissed — the curation lifecycle (compounding arrow).
+    status: Mapped[str] = mapped_column(String, nullable=False, default="surfaced")
+    graph_version: Mapped[str | None] = mapped_column(String, nullable=True)
+    computed_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
+
+    __table_args__ = (
+        Index("idx_gaps_concept", "concept_id"),
+        Index("idx_gaps_determinism", "determinism"),
+    )
+
+
+# ============================================================
 # AnswerRecord — Phase 5 / Integrity Chunk 1 (provenance card).
 # ============================================================
 

@@ -7,15 +7,13 @@ The impure build path is covered by ``tests/integration/test_compute_epistemics.
 
 from __future__ import annotations
 
-from doc_assistant.concept_graph import (
-    DocExtraction,
+from doc_assistant.concept_skeleton import (
+    ConceptNode,
     NodeWeight,
-    Triple,
-    assemble_graph,
-    canonical_key,
-    compute_node_weights,
-    snap_polarity,
-    snap_relation,
+    SkeletonEdge,
+    analyze_skeleton,
+    edge_weight,
+    node_weights_for_epistemics,
 )
 from doc_assistant.epistemics import (
     MARKER_CONTESTED,
@@ -28,27 +26,6 @@ from doc_assistant.epistemics import (
     project_chunk,
     project_chunk_weights,
 )
-
-
-def _exp(
-    doc: str,
-    concepts: list[str],
-    triples: list[tuple[str, str, str, str]],
-    *,
-    year: int | None = None,
-) -> DocExtraction:
-    return DocExtraction(
-        doc_id=doc,
-        doc_hash=f"h{doc}",
-        filename=f"{doc}.pdf",
-        concepts=[canonical_key(c) for c in concepts],
-        triples=[
-            Triple(canonical_key(s), snap_relation(r), canonical_key(o), polarity=snap_polarity(p))
-            for s, r, o, p in triples
-        ],
-        year=year,
-    )
-
 
 # ============================================================
 # Structural attribution
@@ -111,30 +88,42 @@ def test_project_chunk_unique_source_stays_quiet():
 
 
 def test_project_chunk_weights_maps_to_right_chunks_and_omits_empty():
-    exs = [
-        _exp(
-            "old", ["colbert", "ranking"], [("colbert", "uses", "ranking", "supports")], year=2005
-        ),
-        _exp(
-            "new",
-            ["colbert", "ranking"],
-            [("colbert", "uses", "ranking", "supersedes")],
-            year=2022,
-        ),
-        _exp("z", ["hyde", "prompting"], [("hyde", "uses", "prompting", "supports")], year=2020),
+    # colbert<->ranking: "old" supports, "new" contradicts → contested (the skeleton
+    # carries no publication years, so superseded_trend isn't reachable here — see
+    # concept_skeleton.node_weights_for_epistemics).
+    # hyde<->prompting: a single supporting source → unique → never marked.
+    cooc = frozenset({"cooccurrence"})
+    nodes = [
+        ConceptNode("colbert", "colbert", ("old", "new"), 0, -1),
+        ConceptNode("ranking", "ranking", ("old", "new"), 0, -1),
+        ConceptNode("hyde", "hyde", ("z",), 0, -1),
+        ConceptNode("prompting", "prompting", ("z",), 0, -1),
     ]
-    graph = assemble_graph(exs)
-    weights = compute_node_weights(graph)
+    edges = [
+        SkeletonEdge(
+            "colbert",
+            "ranking",
+            cooc,
+            edge_weight(cooc, 2),
+            2,
+            stance_by_doc=(("new", "contradicts"), ("old", "supports")),
+        ),
+        SkeletonEdge(
+            "hyde", "prompting", cooc, edge_weight(cooc, 1), 1, stance_by_doc=(("z", "supports"),)
+        ),
+    ]
+    skeleton = analyze_skeleton(nodes, edges, seed=42)
+    weights = node_weights_for_epistemics(skeleton)
     doc_chunks = [
         ("doc-colbert", 0, "this chunk explains colbert and ranking together"),
         ("doc-hyde", 0, "a hyde prompting trick that nobody else covers"),
         ("doc-empty", 0, "totally unrelated prose with none of the concepts"),
     ]
-    rows = project_chunk_weights(graph, weights, doc_chunks)
+    rows = project_chunk_weights(skeleton, weights, doc_chunks)
     by_key = {r.chunk_key: r for r in rows}
 
-    # colbert is newer-disputed → superseded_trend → its chunk is marked.
-    assert MARKER_SUPERSEDED in by_key["doc-colbert:0"].markers
+    # colbert/ranking is disputed → contested → its chunk is marked.
+    assert MARKER_CONTESTED in by_key["doc-colbert:0"].markers
     # hyde is a sole source → its chunk has a claim but stays quiet.
     assert by_key["doc-hyde:0"].n_claims >= 1
     assert by_key["doc-hyde:0"].markers == []

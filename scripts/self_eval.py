@@ -28,7 +28,7 @@ from pathlib import Path
 
 from doc_assistant import export
 from doc_assistant.config import (
-    CONCEPT_GRAPH_LLM_MODEL,
+    CONCEPT_SKELETON_LLM_MODEL,
     REVIEWER_EVIDENCE_CHARS,
     REVIEWER_MODEL,
     TOP_K,
@@ -141,7 +141,7 @@ def main() -> int:
         "--provider", type=str, default="ollama", help="LLM provider (ollama | anthropic)"
     )
     parser.add_argument(
-        "--model", type=str, default=CONCEPT_GRAPH_LLM_MODEL, help="Model (default %(default)s)"
+        "--model", type=str, default=CONCEPT_SKELETON_LLM_MODEL, help="Model (default %(default)s)"
     )
     parser.add_argument("--limit", type=int, default=0, help="Only run the first N questions")
     parser.add_argument(

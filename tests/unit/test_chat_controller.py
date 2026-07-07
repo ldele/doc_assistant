@@ -426,12 +426,35 @@ def test_marker_load_failure_does_not_break_turn(monkeypatch, temp_db):
     assert all(s.markers == [] for s in result.sources)
 
 
-def test_markers_disabled_by_default(monkeypatch, temp_db):
-    # R7 / ADR-005: with EPISTEMICS_MARKERS_ENABLED off (the default), the marker join is
-    # skipped entirely — even a populated index leaves every source unmarked, no chip, and
-    # the load functions are never called (the byte-identical M0/M1 no-marker path).
+def test_markers_enabled_by_default(monkeypatch, temp_db):
+    # KI-7 retirement / ADR-005 update (2026-07-07): EPISTEMICS_MARKERS_ENABLED now
+    # defaults to True — markers rest on the concept-skeleton's Node A/B stance pass,
+    # not the retired open-vocabulary graph. NOT setting the flag here — this exercises
+    # the shipped default, not an explicit opt-in. A populated index (the skeleton
+    # holding an opposing-stance edge) surfaces a chip; a clean index surfaces none.
     monkeypatch.setattr(chat_controller, "is_library_query", lambda t: False)
-    # NOT enabling the flag — assert the shipped default.
+    monkeypatch.setattr(
+        chat_controller, "load_epistemics_index", lambda: {"d1:0": [MARKER_CONTESTED]}
+    )
+    controller = ChatController(rag=FakeRAG(_three_clean_sources(), ["Answer [1]."]))
+    result = _final(_results(controller, Session(), "q"))
+    assert result.sources[0].markers == [MARKER_CONTESTED]
+    assert "⚠ contested in corpus" in result.sources_md
+
+    monkeypatch.setattr(chat_controller, "load_epistemics_index", lambda: {})
+    monkeypatch.setattr(chat_controller, "load_marked_chunks", lambda ids: {})
+    controller = ChatController(rag=FakeRAG(_three_clean_sources(), ["Answer [1]."]))
+    result = _final(_results(controller, Session(), "q"))
+    assert all(s.markers == [] for s in result.sources)
+    assert "⚠" not in result.sources_md
+
+
+def test_markers_disabled_via_opt_out_flag(monkeypatch, temp_db):
+    # The `false` opt-out still short-circuits the join entirely — even a populated
+    # index leaves every source unmarked, no chip, and the load functions are never
+    # called (the byte-identical M0/M1 no-marker path).
+    monkeypatch.setattr(chat_controller, "is_library_query", lambda t: False)
+    monkeypatch.setattr(chat_controller, "EPISTEMICS_MARKERS_ENABLED", False)
     loads: list[str] = []
     monkeypatch.setattr(
         chat_controller,

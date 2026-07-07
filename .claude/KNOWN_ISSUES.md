@@ -75,7 +75,21 @@ Migrated from the old `CLAUDE.md` / `README` runtime-quirk notes on 2026-06-20 (
   `uv venv --clear --python …` → `uv sync --all-extras`). Behind a TLS-inspecting proxy, prefix uv
   commands with `UV_NATIVE_TLS=1`. Offline work (ingest/embeddings/retrieval) is unaffected either way.
 
-## KI-7 — Concept-graph LLM-extraction core + `data/graph/graph.json` are SUPERSEDED — OPEN (redesign decided, not yet built)
+## KI-7 — Concept-graph LLM-extraction core + `data/graph/graph.json` are SUPERSEDED — RESOLVED (2026-07-07, SPRINT-001)
+- **RESOLVED (2026-07-07):** the retirement landed. `concept_graph.py` +
+  `scripts/build_concept_graph.py` + their tests are **deleted**; `epistemics.py` now sources node
+  weights from `concept_skeleton.node_weights_for_epistemics`, and `wiki.py`'s cluster seam reads
+  the skeleton's Louvain communities (`concept_skeleton.doc_clusters_from_skeleton`). No file in
+  `src/`/`scripts/` imports the retired module (`grep -rEn "import .*concept_graph|from
+  .*concept_graph|graph_from_dict|GRAPH_NAME" src/ scripts/` is clean; only historical
+  "retired ``concept_graph``…" prose survives). `EPISTEMICS_MARKERS_ENABLED` now defaults `true`
+  (ADR-005 superseded) — markers rest on the Node-A/B skeleton, not the deleted open-vocabulary
+  graph. Left open by this sprint: the skeleton carries no publication years, so
+  `superseded_trend` is not yet reachable (`contested`/`stable`/`unique` only) — a future
+  year-aware Node-B pass would close that gap; not tracked as a new KI since it is a documented,
+  intentional limitation of `node_weights_for_epistemics`, not a defect.
+- **Node B DONE (2026-07-07):** the confined-LLM stance pass is built + merged (PR #6 `6679540`,
+  `concept_skeleton_enrich.py`).
 - **Symptom:** The shipped Feature 7 (PR 16) concept graph derives nodes from a per-document
   open-vocabulary LLM extraction; on this same-domain corpus that fragments concepts and is the
   dominant cost (36–40 LLM calls/doc; hit `budget_exhausted` over the 61-doc corpus).

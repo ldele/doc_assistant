@@ -14,16 +14,16 @@ local model (`--provider ollama` or `WIKI_LLM_PROVIDER=ollama`) to build for fre
 Clustering primitive: by default, connected components over `DocSimilarity` at/above
 `--min-similarity` (corpus-dependent — saturates on same-domain libraries). Pass
 `--use-concept-communities` (or `WIKI_USE_CONCEPT_COMMUNITIES=true`) to cluster by
-the Feature 7 concept-graph communities instead (threshold-free); that path reads
-`data/graph/graph.json`, so run `build_concept_graph --apply` first, and it falls
-back to cosine clustering if the sidecar is absent or stale.
+the concept-skeleton's Louvain communities instead (threshold-free); that path reads
+`data/skeleton/skeleton.json`, so run `build_concept_skeleton --apply` first, and it
+falls back to cosine clustering if the sidecar is absent.
 
 Usage:
     python -m scripts.build_wiki                       # dry-run: clusters only, no LLM
     python -m scripts.build_wiki --apply               # summarise + write notes
     python -m scripts.build_wiki --apply --force       # wipe + rebuild all notes
     python -m scripts.build_wiki --apply --provider ollama --model llama3
-    python -m scripts.build_wiki --apply --use-concept-communities  # Feature 7 clustering
+    python -m scripts.build_wiki --apply --use-concept-communities  # skeleton clustering
 """
 
 from __future__ import annotations
@@ -90,9 +90,9 @@ def main() -> int:
         action=argparse.BooleanOptionalAction,
         default=WIKI_USE_CONCEPT_COMMUNITIES,
         help=(
-            "Cluster by the Feature 7 concept-graph communities (threshold-free) "
-            "instead of --min-similarity; falls back to cosine if data/graph is "
-            "absent/stale (default %(default)s). Run `build_concept_graph --apply` first."
+            "Cluster by the concept-skeleton's communities (threshold-free) "
+            "instead of --min-similarity; falls back to cosine if data/skeleton is "
+            "absent (default %(default)s). Run `build_concept_skeleton --apply` first."
         ),
     )
     args = parser.parse_args()
@@ -123,9 +123,9 @@ def main() -> int:
     )
     if args.use_concept_communities and result.clustering != "concept-graph":
         print(
-            "Note: --use-concept-communities requested but the concept graph was "
-            "absent/stale; fell back to cosine clustering. Run "
-            "`python -m scripts.build_concept_graph --apply` first."
+            "Note: --use-concept-communities requested but the concept skeleton was "
+            "absent; fell back to cosine clustering. Run "
+            "`python -m scripts.build_concept_skeleton --apply` first."
         )
     print(_format_report(result))
     if not args.apply:

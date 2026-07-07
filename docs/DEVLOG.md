@@ -8,6 +8,69 @@ Append only — never edit past entries.
 Format: What changed | Why | Rejected alternatives | What it opens
 
 ---
+## 2026-07-07 — SPRINT-002 gap-layer-deterministic
+- **What:** Built the first increment of the gap-detection layer (ADR-004 /
+  `docs/specs/feature-gap-detection.md`): a new `src/doc_assistant/gaps.py` with four pure Tier-1
+  detectors over the concept skeleton (`detect_isolated`, `detect_single_source`,
+  `detect_thin_bridges`, `detect_under_connected`) plus the Tier-2a deterministic floor
+  (`detect_unsourced_claims`, presence-matching `unsupported`-marked `AnswerClaim` text onto the
+  curated vocabulary via `concept_skeleton.match_presence`), a `Gap`/`GapEvidence` value shape, and
+  the impure orchestrator `build_gaps` (loads `skeleton.json` + curated concepts + unsupported
+  claims, replaces only `determinism="deterministic"` `gaps` rows — stochastic rows, none yet
+  produced, would survive a rebuild). New `GapRow` model (`db/models.py`; `create_all` handles the
+  new table, no migration needed) + CLI runner `scripts/build_gaps.py` (`--min-degree`, `--suggest`
+  stub that raises `NotImplementedError`). `min_degree=3` set from this corpus's own degree
+  distribution (Q1 of 26 curated concepts' degrees — `tests/eval/baselines/gap_min_degree_2026-07.md`),
+  verified against the real `data/skeleton/skeleton.json` (10 Tier-1 + 3 Tier-2a-floor gaps,
+  dry-run). Tests: `tests/unit/test_gaps.py` (7), `tests/unit/test_gaps_floor.py` (5),
+  `tests/integration/test_build_gaps.py` (8, incl. idempotency, dry-run, missing-skeleton,
+  `--suggest` raising, and stochastic-rows-survive-rebuild).
+- **Why:** G2 on the roadmap — Phase 7's headline capability (surfacing gaps the user/LLM can't
+  see) needed a first, trustworthy increment now that G1 (KI-7 retirement) gives it a single
+  skeleton to define against and RG-001/R5 (ADR-008) validated that skeleton's edges. The
+  deterministic floor is "a query, not new ML" (ADR-004 Decision 3) — it only reads data
+  `synthesis.claim_marker()` already persists.
+- **Rejected:** `citation_missing` (the other Tier-2a floor kind in the full spec) and
+  `gap_suggest.py` (the Tier-2a stochastic ceiling) — both explicitly out of this sprint's scope
+  per its write-set (only `unsourced_claim` + the four Tier-1 kinds). A separate `concept_types.py`
+  or reusing `epistemics`'s pattern of a bespoke presence matcher — reused
+  `concept_skeleton.match_presence` directly instead so claim-text and chunk-text attribution use
+  one identical rule. A fixed absolute `min_degree` — rejected per the corpus's own degree
+  distribution should set it, not a guess (the same lesson RG-001/ADR-008 already applied to
+  `MIN_COOCCURRENCE`).
+- **Opens:** The Tier-2a stochastic ceiling (`gap_suggest.py`) and Tier-2b (external reach) remain
+  fully deferred, as does `citation_missing`. `min_degree=3` should be re-derived (not left stale)
+  if the corpus changes materially — the baseline note has the re-run recipe.
+
+## 2026-07-07 — SPRINT-001 retire-concept-graph
+- **What:** Re-homed `NodeWeight` (+ the vocabulary it needed) into `concept_skeleton.py`,
+  removing its stopgap import from `concept_graph.py`. Re-pointed `epistemics.py` onto
+  `concept_skeleton.node_weights_for_epistemics` (loads `skeleton.json`, not `graph.json`) and
+  `wiki.py`'s cluster seam onto a new `concept_skeleton.doc_clusters_from_skeleton` (Louvain
+  communities via node `doc_ids`, no separate per-doc cache). Deleted `concept_graph.py`,
+  `scripts/build_concept_graph.py`, and their tests (`tests/unit/test_concept_graph.py`,
+  `tests/integration/test_build_concept_graph.py`); removed the now-dead `CONCEPT_GRAPH_*`
+  config block. Flipped `EPISTEMICS_MARKERS_ENABLED` default to `true` (ADR-005 superseded);
+  KI-7 → RESOLVED. Rewrote the concept_graph-dependent fixtures in `test_epistemics.py`,
+  `test_compute_epistemics.py`, and `test_build_wiki.py` against skeleton data directly, and
+  renamed `test_chat_controller.py::test_markers_disabled_by_default` to
+  `test_markers_enabled_by_default` (+ added `test_markers_disabled_via_opt_out_flag` for the
+  `false` path) to match the new default.
+- **Why:** KI-7's last blocker — Node A (2026-06-30) and Node B (PR #6, merged) both landed on
+  the deterministic concept-skeleton redesign, but `epistemics.py`/`wiki.py` still read the
+  superseded open-vocabulary `concept_graph.py`/`graph.json`. Retiring it removes the dead
+  parallel implementation and lets the marker chips (previously gated off by ADR-005 because
+  their data source was untrustworthy) come back on by default.
+- **Rejected:** A new `concept_types.py` module for `NodeWeight` — unnecessary indirection when
+  `concept_skeleton.py` is its only real consumer; re-homing it inline keeps the diff smaller.
+  Reusing `epistemics.graph_version`'s old node-id-hash fingerprint — replaced with the
+  skeleton's own richer `meta["graph_version"]` so there is one canonical definition of
+  "did the graph change," not two.
+- **Opens:** The skeleton carries no publication years, so `node_weights_for_epistemics` can
+  only ever produce `stable`/`contested`/`unique` — never `superseded_trend` — until a
+  year-aware Node-B stance pass exists (documented limitation, not a new KI). G2
+  (gap-detection layer) was queued behind this sprint and is next.
+
 ## Session: 2026-05-21 — Production infrastructure + content-only hashing
 
 **Starting from:** Phase 3.3 complete. Four Phase 3 gate items remaining: prod infra (CI, pre-commit, security), content-only hashing, .env.example.

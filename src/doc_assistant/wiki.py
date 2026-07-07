@@ -357,62 +357,45 @@ def load_doc_graph(embedding_model: str | None = None) -> tuple[list[DocRef], li
 def load_communities(
     docs: list[DocRef], *, graph_dir: Path | None = None
 ) -> list[list[str]] | None:
-    """Document clusters from the Feature 7 concept-graph sidecar — or ``None``.
+    """Document clusters from the concept-skeleton sidecar (Node A/B) — or ``None``.
 
     The threshold-free replacement for ``cluster_documents``: reads
-    ``CONCEPT_GRAPH_DIR/graph.json`` (Louvain communities, written by
-    ``build_concept_graph``) plus the per-doc extraction cache, and returns the
-    document grouping ``concept_graph.doc_clusters_from_graph`` derives from it —
-    docs grouped by the concept-community they most belong to. Same return shape as
-    ``cluster_documents`` (``list[list[doc_id]]``), so it drops straight into
-    ``_assemble_notes``.
+    ``CONCEPT_SKELETON_DIR/skeleton.json`` (Louvain communities) and returns the
+    document grouping ``concept_skeleton.doc_clusters_from_skeleton`` derives from
+    it — docs grouped by the concept-community they most belong to. Same return
+    shape as ``cluster_documents`` (``list[list[doc_id]]``), so it drops straight
+    into ``_assemble_notes``.
 
-    Returns ``None`` (→ the caller falls back to absolute-cosine clustering) when
-    the graph can't be trusted for the *current* corpus:
+    Returns ``None`` (→ the caller falls back to absolute-cosine clustering) when the
+    skeleton sidecar is absent, unreadable, or carries no nodes — so a fresh checkout
+    or an unrun skeleton build never fails the wiki, it just clusters by cosine
+    instead. Unlike the retired ``concept_graph`` path, there is no separate
+    staleness check: the skeleton has no per-doc-hash cache to go stale — it is
+    rebuilt fresh from current DB/Chroma state on every ``build_concept_skeleton
+    --apply``.
 
-    * ``graph.json`` is absent or unreadable, or
-    * **stale** — some non-archived document has no cached extraction for its
-      *current* ``doc_hash`` (a content change since the last ``build_concept_graph
-      --apply`` re-keys the cache, so the missing entry reads as stale).
-
-    Read-only: never extracts, never calls an LLM, never writes the sidecar.
+    Read-only: never rebuilds the skeleton, never calls an LLM, never writes the sidecar.
     """
-    from doc_assistant import concept_graph as cg
-    from doc_assistant.config import CONCEPT_GRAPH_DIR
+    from doc_assistant import concept_skeleton as cs
+    from doc_assistant.config import CONCEPT_SKELETON_DIR
 
-    root = graph_dir or CONCEPT_GRAPH_DIR
-    graph_path = root / cg.GRAPH_NAME
-    if not graph_path.exists():
-        log.info("concept_graph_absent", path=str(graph_path), hint="using cosine clustering")
-        return None
-    try:
-        graph = cg.graph_from_dict(json.loads(graph_path.read_text(encoding="utf-8")))
-    except Exception as e:
-        log.warning("concept_graph_unreadable", error=str(e), hint="using cosine clustering")
-        return None
-
-    extractions: list[cg.DocExtraction] = []
-    missing: list[str] = []
-    for d in docs:
-        ex = cg.load_cached_extraction(root, d.doc_hash)
-        if ex is None:
-            missing.append(d.filename)
-            continue
-        # The cache stores the doc_id at extraction time; realign to the current PK
-        # so the returned clusters reference live doc_ids regardless of any reassign.
-        ex.doc_id = d.doc_id
-        extractions.append(ex)
-    if missing:
+    root = graph_dir or CONCEPT_SKELETON_DIR
+    skeleton_path = root / cs.SKELETON_NAME
+    if not skeleton_path.exists():
         log.info(
-            "concept_graph_stale",
-            missing=len(missing),
-            total=len(docs),
-            examples=", ".join(missing[:3]),
-            hint="run `build_concept_graph --apply`; using cosine clustering",
+            "concept_skeleton_absent", path=str(skeleton_path), hint="using cosine clustering"
         )
         return None
+    try:
+        skeleton = cs.skeleton_from_dict(json.loads(skeleton_path.read_text(encoding="utf-8")))
+    except Exception as e:
+        log.warning("concept_skeleton_unreadable", error=str(e), hint="using cosine clustering")
+        return None
+    if not skeleton.nodes:
+        log.info("concept_skeleton_empty", hint="using cosine clustering")
+        return None
 
-    return cg.doc_clusters_from_graph(graph, extractions)
+    return cs.doc_clusters_from_skeleton(skeleton, [d.doc_id for d in docs])
 
 
 def sample_chunks(doc_ids: list[str], *, per_doc: int = WIKI_CHUNK_SAMPLE) -> dict[str, list[str]]:
@@ -609,9 +592,9 @@ def build_wiki(
     notes. Never touches the chunk store.
 
     Clustering primitive: ``use_concept_communities`` (default off) groups documents
-    by the Feature 7 concept-graph communities instead of the absolute-cosine
-    threshold — but only if that sidecar is present and fresh; otherwise it silently
-    falls back to ``cluster_documents`` so the run never fails for a missing graph.
+    by the concept-skeleton's Louvain communities instead of the absolute-cosine
+    threshold — but only if that sidecar is present; otherwise it silently falls back
+    to ``cluster_documents`` so the run never fails for a missing skeleton.
     """
     root = wiki_dir or WIKI_DIR
     docs, edges = load_doc_graph(embedding_model)

@@ -82,15 +82,20 @@ full architectural context per feature.
 | R7 | KI-7 containment: 7d marker chip default-off until Node B (decided 2026-07-02: option a — `EPISTEMICS_MARKERS_ENABLED` kill-switch) | done (2026-07-02, `591280d`) — ADR-005; default off | `docs/specs/remediation-plan-2026-07.md` |
 | S1 | Selective ingestion backend: `SourceFile` registry + selection-scoped ingest (CLI `--files`/`--dry-run`, `GET/PATCH /api/sources`, `POST /api/ingest {paths}`) | planned (spec drafted 2026-07-02, not yet locked) | `docs/specs/feature-selective-ingestion.md` |
 | S2 | Selective ingestion UI: Tauri sources panel (status chips, select-by-status/type, exclude toggle, ingest-selected) | planned (needs S1) | `docs/specs/feature-selective-ingestion.md` |
+| G1 | KI-7 retirement: delete `concept_graph.py`, re-point `epistemics.py`/`wiki.py` onto the Node-A/B `concept_skeleton` seam, flip `EPISTEMICS_MARKERS_ENABLED` default-on | done (2026-07-07) — KI-7 resolved, ADR-005 superseded | `docs/sprints/SPRINT-001-retire-concept-graph.md` |
+| G2 | Gap-detection layer: deterministic Tier-1 + Tier-2a floor (`gaps.py` + `GapRow` + `scripts/build_gaps.py`); stochastic ceiling out of scope | done (2026-07-07) — `min_degree=3` from the corpus's own degree distribution, `tests/eval/baselines/gap_min_degree_2026-07.md` | `docs/sprints/SPRINT-002-gap-layer-deterministic.md` |
 
 **Feature 7d (knowledge-currency layer):** engine shipped 2026-06-17 (`epistemics.py` + `chunk_epistemics`
 sidecar + polarity-aware concept graph + reviewer `contested_evidence` tag). **Live answer-time marker
 surfacing shipped 2026-06-22 (PR-M1)** — sources carry `contested`/`superseded_trend` chips via
 `ChatController` (flat: `chunk_key` join; PC: text containment), synthesis untouched (byte-identical when
-absent). **Still deferred:** the `query_router` local/global seam (Decision 8). Marker quality reflects
-the superseded graph (KI-7). Spec: `docs/specs/feature-7d-knowledge-currency.md`.
-**Feature 6 re-point** shipped 2026-06-17 (`wiki.load_communities` clusters by concept-graph communities
-behind `WIKI_USE_CONCEPT_COMMUNITIES`, inert by default; cosine fallback).
+absent). **Still deferred:** the `query_router` local/global seam (Decision 8). **KI-7 retired
+2026-07-07 (G1):** marker data now sources from the Node-A/B concept skeleton, not the deleted
+open-vocabulary graph; `EPISTEMICS_MARKERS_ENABLED` defaults on. `superseded_trend` stays unreachable
+until a year-aware Node-B pass exists (the skeleton carries no publication years). Spec:
+`docs/specs/feature-7d-knowledge-currency.md`.
+**Feature 6 re-point** shipped 2026-06-17 (`wiki.load_communities` clusters by concept-skeleton
+communities behind `WIKI_USE_CONCEPT_COMMUNITIES`, inert by default; cosine fallback).
 
 **Desktop shell migration (M0–M5):** replace Chainlit with a Tauri desktop app + FastAPI backend. The
 decision and its sub-decisions (SSE over WebSocket; sidecar-for-release, separate-process-for-dev) are
@@ -108,12 +113,16 @@ skeleton + confined LLM enrichment, 2026-06-18 — the next concept-graph build,
 `.claude/KNOWN_ISSUES.md`; **build spec `docs/specs/concept-graph-redesign.md`**, design-locked
 2026-06-27. **PR-A (Node A — the deterministic, zero-LLM skeleton) BUILT 2026-06-30**
 (`concept_skeleton.py` + `scripts/{seed_concepts,build_concept_skeleton}.py` + 4 sidecar tables, 23
-tests); remaining: the RG-001/008/009 threshold-setting `--apply` run on the real corpus, then PR-B
-(Node B — LLM relation/stance) and the KI-7 retirement of the old `concept_graph.py`),
-and the **gap-detection layer** built on top of it (two-tier
-deterministic/stochastic, `docs/decisions/ADR-004-gap-detection-layer.md` +
-`docs/specs/feature-gap-detection.md` — its deterministic Tier-1 + Tier-2a-floor are the first
-increment, blocked on the skeleton + RG-001); Zotero/Calibre ingest adapters (PR 17); an outbound
+tests); RG-001/008/009 threshold-setting run **done** (R5 PASS, ADR-008) and **PR-B (Node B — LLM
+relation/stance) BUILT + merged** (PR #6 `6679540`: `17d6757` enrichment, `caa7ef4` corroborated-cap +
+token budget, `894233f` vocab prune/merge — `concept_skeleton_enrich.py`, Ollama-default). **KI-7
+retirement of the old `concept_graph.py` + the markers-on flip DONE (2026-07-07, G1, SPRINT-001).**
+**Gap-detection layer's deterministic Tier-1 + Tier-2a-floor DONE (2026-07-07, G2,
+SPRINT-002)** — `gaps.py` + `GapRow` + `scripts/build_gaps.py`
+(`docs/decisions/ADR-004-gap-detection-layer.md` + `docs/specs/feature-gap-detection.md`).
+Remaining: the Tier-2a stochastic ceiling (`gap_suggest.py`, quarantined LLM suggestions) +
+Tier 2b (external reach) — both deferred, out of scope for G2. Zotero/Calibre ingest
+adapters (PR 17); an outbound
 **MCP-server** interface over `pipeline.py`. Full detail: `docs/archive/doc-assistant-roadmap.md`.
 
 ## What NOT to do

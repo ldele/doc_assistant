@@ -1,8 +1,10 @@
-<!-- status: active · updated: 2026-06-26 · class: append-only -->
+<!-- status: active · updated: 2026-07-07 · class: append-only -->
 
 # ADR-004 — Gap detection: a two-tier deterministic/stochastic layer over the concept graph
 
-- **Status:** accepted, **NOT built** (2026-06-26 — decided with Cowork; build spec `docs/specs/feature-gap-detection.md` → design-locked, blocked on the edge-precision validation run)
+- **Status:** accepted — **Tier 1 + the Tier-2a deterministic floor BUILT (2026-07-07, SPRINT-002,
+  ROADMAP row G2)**; the Tier-2a stochastic ceiling (`gap_suggest.py`) and Tier 2b remain not built
+  (2026-06-26 — decided with Cowork; build spec `docs/specs/feature-gap-detection.md`)
 - **Date:** 2026-06-26
 - **Deciders:** Lucas (decided with Cowork)
 

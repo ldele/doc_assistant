@@ -20,7 +20,7 @@ from sqlalchemy import create_engine, delete
 from sqlalchemy.orm import sessionmaker
 
 import doc_assistant.db.session as session_mod
-from doc_assistant import concept_graph as cg
+from doc_assistant import concept_skeleton as cs
 from doc_assistant import wiki
 from doc_assistant.db.models import Base, DocSimilarity, Document
 from doc_assistant.db.session import session_scope
@@ -95,47 +95,31 @@ def _wiki_files(root: Path) -> set[str]:
     return {p.name for p in root.glob("topic-*.md")}
 
 
-def _write_concept_graph(
-    root: Path,
-    specs: list[tuple[str, str, list[str], list[tuple[str, str, str]]]],
-) -> None:
-    """Materialize a Feature 7 sidecar (graph.json + per-doc extraction cache).
-
-    ``specs`` = ``(doc_hash, filename, concepts, triples)`` per document. The
-    cache's stored doc_id is set to the hash (``load_communities`` realigns it to
-    the live SQLite PK), so only the doc_hash needs to match the seeded corpus.
+def _write_concept_skeleton(root: Path, ids: dict[str, str]) -> None:
+    """Materialize a concept-skeleton sidecar (``skeleton.json``): two curated
+    concepts (rag/dpr) co-present in docs a+b (one Louvain community), two more
+    (bm25/sparse retrieval) present in doc c alone (a second, singleton community)
+    — a grouping the absolute-cosine path can't produce at the 0.90 default
+    (a-b similarity is 0.70). Node ids are the *live* SQLite PKs directly — the
+    skeleton has no separate per-doc-hash cache to realign (unlike the retired
+    ``concept_graph`` extraction cache).
     """
-    extractions = [
-        cg.DocExtraction(
-            doc_id=doc_hash,
-            doc_hash=doc_hash,
-            filename=filename,
-            concepts=[cg.canonical_key(c) for c in concepts],
-            triples=[
-                cg.Triple(cg.canonical_key(s), cg.snap_relation(r), cg.canonical_key(o))
-                for s, r, o in triples
-            ],
-        )
-        for doc_hash, filename, concepts, triples in specs
+    cooc = frozenset({"cooccurrence"})
+    nodes = [
+        cs.ConceptNode("rag", "RAG", (ids["a"], ids["b"]), 0, -1),
+        cs.ConceptNode("dpr", "DPR", (ids["a"], ids["b"]), 0, -1),
+        cs.ConceptNode("bm25", "BM25", (ids["c"],), 0, -1),
+        cs.ConceptNode("sparse retrieval", "sparse retrieval", (ids["c"],), 0, -1),
     ]
-    graph = cg.assemble_graph(extractions)
+    edges = [
+        cs.SkeletonEdge("dpr", "rag", cooc, cs.edge_weight(cooc, 2), 2),
+        cs.SkeletonEdge("bm25", "sparse retrieval", cooc, cs.edge_weight(cooc, 1), 1),
+    ]
+    skeleton = cs.analyze_skeleton(nodes, edges, seed=42)
     root.mkdir(parents=True, exist_ok=True)
-    (root / cg.GRAPH_NAME).write_text(json.dumps(cg.graph_to_dict(graph)), encoding="utf-8")
-    ext_dir = root / cg.EXTRACTIONS_DIRNAME
-    ext_dir.mkdir(parents=True, exist_ok=True)
-    for ex in extractions:
-        (ext_dir / f"{ex.doc_hash}.json").write_text(
-            json.dumps(cg.extraction_to_dict(ex)), encoding="utf-8"
-        )
-
-
-# Two concept communities: {a,b} share rag/dpr, c stands alone on bm25/sparse —
-# a grouping the absolute-cosine path can't produce at the 0.90 default (a-b=0.70).
-_GRAPH_SPECS = [
-    ("ha", "a.pdf", ["rag", "dpr"], [("rag", "uses", "dpr")]),
-    ("hb", "b.pdf", ["rag", "dpr"], [("rag", "uses", "dpr")]),
-    ("hc", "c.pdf", ["bm25", "sparse retrieval"], [("bm25", "compares to", "sparse retrieval")]),
-]
+    (root / cs.SKELETON_NAME).write_text(
+        json.dumps(cs.skeleton_to_dict(skeleton)), encoding="utf-8"
+    )
 
 
 def test_apply_writes_clustered_notes_and_manifest(env: Path) -> None:
@@ -222,7 +206,7 @@ def test_no_document_mutation_and_no_chroma_dir(env: Path) -> None:
 def test_load_communities_groups_docs_by_concept_community(env: Path) -> None:
     ids = _seed()
     graph_dir = env / "graph"
-    _write_concept_graph(graph_dir, _GRAPH_SPECS)
+    _write_concept_skeleton(graph_dir, ids)
 
     docs, _ = load_doc_graph()
     clusters = load_communities(docs, graph_dir=graph_dir)
@@ -233,29 +217,32 @@ def test_load_communities_groups_docs_by_concept_community(env: Path) -> None:
     assert {ids["c"]} in cluster_sets
 
 
-def test_load_communities_none_when_graph_absent(env: Path) -> None:
+def test_load_communities_none_when_skeleton_absent(env: Path) -> None:
     _seed()
     docs, _ = load_doc_graph()
     # No sidecar written at all → fall back signalled by None.
     assert load_communities(docs, graph_dir=env / "graph") is None
 
 
-def test_load_communities_none_when_stale(env: Path) -> None:
+def test_load_communities_none_when_skeleton_empty(env: Path) -> None:
     _seed()
     graph_dir = env / "graph"
-    _write_concept_graph(graph_dir, _GRAPH_SPECS)
-    # Drop one doc's cached extraction → its current hash is unrepresented → stale.
-    (graph_dir / cg.EXTRACTIONS_DIRNAME / "hc.json").unlink()
+    empty = cs.analyze_skeleton([], [], seed=42)
+    graph_dir.mkdir(parents=True, exist_ok=True)
+    (graph_dir / cs.SKELETON_NAME).write_text(
+        json.dumps(cs.skeleton_to_dict(empty)), encoding="utf-8"
+    )
 
     docs, _ = load_doc_graph()
+    # A skeleton sidecar with no nodes (e.g. an empty curated vocabulary) → fall back.
     assert load_communities(docs, graph_dir=graph_dir) is None
 
 
 def test_build_wiki_uses_concept_communities_when_fresh(env: Path) -> None:
-    _seed()
+    ids = _seed()
     root = env / "wiki"
     graph_dir = env / "graph"
-    _write_concept_graph(graph_dir, _GRAPH_SPECS)
+    _write_concept_skeleton(graph_dir, ids)
 
     # Default cosine threshold (0.90) would make a,b,c all singletons (a-b is 0.70);
     # concept communities group {a,b}. Getting a 2-doc topic proves communities drove it.

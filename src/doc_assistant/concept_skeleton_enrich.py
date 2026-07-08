@@ -200,7 +200,13 @@ def annotate_relations(
 
     seed = int(skeleton.meta.get("seed", 42))
     resolution = float(skeleton.meta.get("resolution", 1.0))
-    version = _graph_version(list(skeleton.nodes), new_edges, seed=seed, resolution=resolution)
+    version = _graph_version(
+        list(skeleton.nodes),
+        new_edges,
+        seed=seed,
+        resolution=resolution,
+        doc_years=skeleton.meta.get("doc_years"),
+    )
     meta = {
         **skeleton.meta,
         "graph_version": version,

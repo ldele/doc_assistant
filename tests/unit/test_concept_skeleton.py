@@ -290,6 +290,48 @@ def test_skeleton_dict_roundtrip_is_exact() -> None:
     assert back.edges[0].relation == "uses"
 
 
+# ---- G3 (SPRINT-003) — doc_years threading, round-trip, back-compat --------
+
+
+def test_doc_years_round_trips_via_skeleton_meta() -> None:
+    # Threaded at the skeleton/meta level (not a new ConceptNode field — see the sprint's
+    # blast-radius note); skeleton_to_dict/from_dict already carry `meta` verbatim.
+    nodes = [ConceptNode("a", "Alpha", ("d1", "d2"), 0, -1)]
+    edges: list[SkeletonEdge] = []
+    sk = analyze_skeleton(
+        nodes, edges, seed=42, meta_extra={"doc_years": {"d1": 2020, "d2": 2022}}
+    )
+    back = skeleton_from_dict(skeleton_to_dict(sk))
+    assert back.meta["doc_years"] == {"d1": 2020, "d2": 2022}
+
+
+def test_year_less_skeleton_json_still_loads_and_has_no_doc_years_key() -> None:
+    # A pre-G3 skeleton.json has no "doc_years" key in meta at all — back-compat invariant.
+    nodes = [ConceptNode("a", "Alpha", ("d1",), 0, -1)]
+    sk = analyze_skeleton(nodes, [], seed=42)  # no meta_extra at all
+    back = skeleton_from_dict(skeleton_to_dict(sk))
+    assert "doc_years" not in back.meta
+
+
+def test_graph_version_changes_when_doc_years_change() -> None:
+    nodes = [
+        ConceptNode("a", "Alpha", ("d1", "d2"), 0, -1),
+        ConceptNode("b", "Beta", ("d1", "d2"), 0, -1),
+    ]
+    edges = [
+        SkeletonEdge(
+            "a", "b", frozenset({"cooccurrence"}), 1.5, 2, stance_by_doc=(("d1", "supports"),)
+        )
+    ]
+    s1 = analyze_skeleton(nodes, edges, seed=42, meta_extra={"doc_years": {"d1": 2020}})
+    s2 = analyze_skeleton(nodes, edges, seed=42, meta_extra={"doc_years": {"d1": 2021}})
+    s3 = analyze_skeleton(nodes, edges, seed=42, meta_extra={"doc_years": {"d1": 2020}})
+    assert s1.meta["graph_version"] != s2.meta["graph_version"]  # a year backfill busts the cache
+    assert (
+        s1.meta["graph_version"] == s3.meta["graph_version"]
+    )  # identical inputs -> identical hash
+
+
 # ---- Louvain determinism (ADR-1) -------------------------------------------
 
 

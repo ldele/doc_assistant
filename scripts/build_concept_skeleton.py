@@ -34,8 +34,10 @@ def _format_report(result: SkeletonResult) -> str:
     sk = result.skeleton
     prov = result.provenance_counts
     out: list[str] = []
+    doc_years = sk.meta.get("doc_years") or {}
     out.append("=" * 76)
     out.append(f"Documents (with presence):  {result.n_documents}")
+    out.append(f"Documents with a year:      {len(doc_years)}  (G3 — unlocks superseded_trend)")
     out.append(f"Concept nodes:              {result.n_concepts}")
     out.append(f"Skeleton edges:             {result.n_edges}")
     out.append(

@@ -24,7 +24,12 @@ from doc_assistant import concept_skeleton as cs
 from doc_assistant import epistemics
 from doc_assistant.db.models import Base, ChunkEpistemics, Document
 from doc_assistant.db.session import session_scope
-from doc_assistant.epistemics import MARKER_CONTESTED, build_epistemics, load_epistemics_index
+from doc_assistant.epistemics import (
+    MARKER_CONTESTED,
+    MARKER_SUPERSEDED,
+    build_epistemics,
+    load_epistemics_index,
+)
 
 
 @pytest.fixture
@@ -120,6 +125,42 @@ def test_apply_writes_rows_and_marks_contested(env: Path) -> None:
     assert set(by_key) == {"doc-colbert:0", "doc-hyde:0"}
     assert by_key["doc-colbert:0"].n_contested >= 1
     assert by_key["doc-hyde:0"].n_contested == 0  # the unique-source chunk stays clean
+
+
+def test_superseded_row_and_marker(env: Path) -> None:
+    """G3: a contested node whose contradicting doc is newer than its supporting doc
+    surfaces the superseded_trend marker end-to-end (skeleton.json meta -> build_epistemics
+    -> chunk_epistemics row -> marker index). Own skeleton fixture (not the module-level
+    ``_SKELETON_*`` one) so it doesn't perturb the plain-contested tests above."""
+    _seed_docs(["doc-colbert", "doc-hyde"])
+    nodes = [
+        cs.ConceptNode("colbert", "colbert", ("old", "new"), 0, -1),
+        cs.ConceptNode("ranking", "ranking", ("old", "new"), 0, -1),
+    ]
+    edges = [
+        cs.SkeletonEdge(
+            "colbert",
+            "ranking",
+            _COOC,
+            cs.edge_weight(_COOC, 2),
+            2,
+            stance_by_doc=(("new", "contradicts"), ("old", "supports")),
+        ),
+    ]
+    skeleton = cs.analyze_skeleton(
+        nodes, edges, seed=42, meta_extra={"doc_years": {"old": 2018, "new": 2024}}
+    )
+    root = env / "skeleton"
+    root.mkdir(parents=True, exist_ok=True)
+    (root / cs.SKELETON_NAME).write_text(
+        json.dumps(cs.skeleton_to_dict(skeleton)), encoding="utf-8"
+    )
+
+    result = build_epistemics(apply=True, skeleton_dir=root)
+    assert result.n_superseded_nodes == 2  # both colbert and ranking are superseded_trend
+
+    index = load_epistemics_index()
+    assert MARKER_SUPERSEDED in index.get("doc-colbert:0", [])
 
 
 def test_marker_index_returns_only_marked_chunks(env: Path) -> None:

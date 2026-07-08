@@ -25,6 +25,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import statistics
 from collections import Counter, defaultdict
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -440,13 +441,20 @@ def detect_communities(
 
 
 def _graph_version(
-    nodes: list[ConceptNode], edges: list[SkeletonEdge], *, seed: int, resolution: float
+    nodes: list[ConceptNode],
+    edges: list[SkeletonEdge],
+    *,
+    seed: int,
+    resolution: float,
+    doc_years: dict[str, int] | None = None,
 ) -> str:
     """A short, timestamp-free fingerprint of the skeleton's structure (byte-stable rebuild).
 
     Hashes the sorted node ids + canonical edge signatures (endpoints, sorted provenance,
-    weight, co-occurrence count, stance) + the community params. Identical inputs → identical
-    version → byte-identical ``skeleton.json`` (Decision 3)."""
+    weight, co-occurrence count, stance) + the community params + (G3) the ``doc_years`` map,
+    so a metadata backfill that changes a doc's year busts the cache even though no node/edge
+    changed. Identical inputs → identical version → byte-identical ``skeleton.json``
+    (Decision 3)."""
     payload = {
         "nodes": sorted(n.id for n in nodes),
         "edges": sorted(
@@ -464,6 +472,7 @@ def _graph_version(
         ),
         "seed": seed,
         "resolution": resolution,
+        "doc_years": sorted((doc_years or {}).items()),
     }
     blob = json.dumps(payload, sort_keys=True, ensure_ascii=False)
     return hashlib.sha256(blob.encode("utf-8")).hexdigest()[:16]
@@ -526,7 +535,10 @@ def analyze_skeleton(
     }
     if meta_extra:
         meta.update(meta_extra)
-    meta["graph_version"] = _graph_version(nodes, edges, seed=seed, resolution=resolution)
+    doc_years = meta.get("doc_years")
+    meta["graph_version"] = _graph_version(
+        nodes, edges, seed=seed, resolution=resolution, doc_years=doc_years
+    )
     return ConceptSkeleton(
         nodes=analysed_nodes,
         edges=sorted_edges,
@@ -653,10 +665,14 @@ def node_weights_for_epistemics(skeleton: ConceptSkeleton) -> dict[str, NodeWeig
     *document* sets, then applies the unique-source = neutral rule **verbatim** from the
     retired ``concept_graph.compute_node_weights``: coverage is decided contested-FIRST, so a
     sole-source concept (no opposing doc) is ``unique``, never ``contested``. Returns a
-    weight for **every** node (a stance-less node → ``unique`` / ``stable``). The skeleton
-    carries no publication years, so ``direction`` is ``stable`` / ``contested`` only —
-    ``superseded_trend`` requires the year-aware Node-B stance pass.
+    weight for **every** node (a stance-less node → ``unique`` / ``stable``).
+
+    G3 (SPRINT-003): a contested node's ``direction`` is ``superseded_trend`` when its
+    contradicting docs are, in aggregate, newer than its supporting docs — see
+    :func:`_aggregate_direction`. Reads ``skeleton.meta["doc_years"]`` (absent/empty on a
+    pre-G3 skeleton → every contested node stays ``contested``, byte-identical to before).
     """
+    doc_years: dict[str, int] = skeleton.meta.get("doc_years") or {}
     incident: dict[str, tuple[set[str], set[str]]] = {n.id: (set(), set()) for n in skeleton.nodes}
     for e in skeleton.edges:
         for doc_id, polarity in e.stance_by_doc:
@@ -672,13 +688,15 @@ def node_weights_for_epistemics(skeleton: ConceptSkeleton) -> dict[str, NodeWeig
     for n in skeleton.nodes:
         sup, opp = incident[n.id]
         ns, nc = len(sup), len(opp)
-        direction = "contested" if nc >= 1 else "stable"
         if nc >= 1:
             coverage = "contested"
+            direction = _aggregate_direction(sup, opp, doc_years)
         elif ns <= 1:
             coverage = "unique"
+            direction = "stable"
         else:
             coverage = "corroborated"
+            direction = "stable"
         agreement = round(ns / (ns + nc), 4) if (ns + nc) else 1.0
         weights[n.id] = NodeWeight(
             node_id=n.id,
@@ -689,6 +707,24 @@ def node_weights_for_epistemics(skeleton: ConceptSkeleton) -> dict[str, NodeWeig
             coverage=coverage,
         )
     return weights
+
+
+def _aggregate_direction(sup: set[str], opp: set[str], doc_years: dict[str, int]) -> str:
+    """``contested`` vs ``superseded_trend`` for a node with >= 1 opposing doc (G3).
+
+    Relative polarity-over-time, never absolute age (Decision 1, feature-7d spec): compares
+    the **median** publication year of the opposing (contradicting) doc set against the
+    median of the supporting doc set. ``superseded_trend`` only when the opposing median is
+    strictly newer. Fails safe to ``contested`` whenever the comparison isn't well-formed —
+    no supporting docs to compare against, or any doc in either set missing a year (never
+    guess a superseded call on incomplete year data)."""
+    if not sup or not opp or any(d not in doc_years for d in sup | opp):
+        return "contested"
+    sup_years = [doc_years[d] for d in sup]
+    opp_years = [doc_years[d] for d in opp]
+    sup_median = statistics.median(sup_years)
+    opp_median = statistics.median(opp_years)
+    return "superseded_trend" if opp_median > sup_median else "contested"
 
 
 # ============================================================
@@ -951,6 +987,27 @@ def load_doc_graphs() -> tuple[list[tuple[str, str]], list[tuple[str, str]]]:
     return citation_pairs, doc_sim_pairs
 
 
+def load_doc_years() -> dict[str, int]:
+    """Read ``Document.year`` for every document that has one (zero-LLM, deterministic).
+
+    G3 (SPRINT-003): threaded into the skeleton at the ``meta`` level (``doc_years``), not
+    onto ``ConceptNode``, to keep the blast radius to serialisation. Docs with no year are
+    simply absent from the map — ``node_weights_for_epistemics`` fails safe to ``contested``
+    whenever a required year is missing."""
+    from sqlalchemy import select
+
+    from doc_assistant.db.models import Document
+    from doc_assistant.db.session import session_scope
+
+    years: dict[str, int] = {}
+    with session_scope() as session:
+        stmt = select(Document.id, Document.year).where(Document.year.is_not(None))
+        for doc_id, year in session.execute(stmt):
+            if doc_id is not None and year is not None:
+                years[str(doc_id)] = int(year)
+    return years
+
+
 def _concept_doc_index(presences: list[ConceptPresence]) -> dict[str, set[str]]:
     """``concept_id`` → set of documents it is present in (for provenance annotation)."""
     index: dict[str, set[str]] = defaultdict(set)
@@ -1047,6 +1104,7 @@ def build_concept_skeleton(
     concept_loader: Any = None,
     presence_loader: Any = None,
     doc_graph_loader: Any = None,
+    doc_years_loader: Any = None,
     skeleton_dir: Path | None = None,
 ) -> SkeletonResult:
     """Build the deterministic concept skeleton (Node A) — **zero LLM calls**.
@@ -1059,6 +1117,11 @@ def build_concept_skeleton(
     ``concepts`` / ``concept_aliases`` are read-only here; only the derived tables are
     rebuilt. ``force`` is accepted for CLI/Node-B parity (Node A always rebuilds the derived
     tables on ``apply``). The ``*_loader`` seams are DI hooks for testing without a DB/Chroma.
+
+    G3 (SPRINT-003): also loads ``Document.year`` and attaches it to ``skeleton.meta["doc_years"]``
+    (once, at build time) so ``node_weights_for_epistemics`` can compare supporting- vs
+    contradicting-document years for a contested node. A year-less corpus yields an empty map —
+    ``direction`` stays ``contested``/``stable`` exactly as before this sprint (back-compat).
     """
     from doc_assistant.config import (
         CONCEPT_SKELETON_DIR,
@@ -1076,10 +1139,12 @@ def build_concept_skeleton(
     load_c = concept_loader or load_concepts
     load_p = presence_loader or load_presence_inputs
     load_g = doc_graph_loader or load_doc_graphs
+    load_y = doc_years_loader or load_doc_years
 
     concepts, aliases = load_c()
     chunk_texts = load_p(document_ids)
     citation_pairs, doc_sim_pairs = load_g()
+    doc_years = load_y()
 
     presences = match_presence(concepts, aliases, chunk_texts, mode=mode)
     doc_index = _concept_doc_index(presences)
@@ -1104,7 +1169,11 @@ def build_concept_skeleton(
         edges,
         seed=seed_val,
         resolution=resolution,
-        meta_extra={"n_documents": n_documents, "min_cooccurrence": min_cooc},
+        meta_extra={
+            "n_documents": n_documents,
+            "min_cooccurrence": min_cooc,
+            "doc_years": doc_years,
+        },
     )
 
     provenance_counts: dict[str, int] = {token: 0 for token in PROVENANCE_SOURCES}

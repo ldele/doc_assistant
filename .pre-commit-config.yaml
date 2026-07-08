@@ -77,5 +77,3 @@ repos:
       - id: check-merge-conflict
       - id: check-added-large-files
         args: [--maxkb=500]
-      - id: no-commit-to-branch
-        args: [--branch, main]

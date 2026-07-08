@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-07-03 · class: append-only -->
+<!-- status: active · updated: 2026-07-08 · class: append-only -->
 
 # DEVLOG — doc_assistant
 
@@ -8,6 +8,54 @@ Append only — never edit past entries.
 Format: What changed | Why | Rejected alternatives | What it opens
 
 ---
+## 2026-07-08 — SPRINT-005 gap-stochastic-ceiling (G5)
+
+- **What:** Built the Tier-2a stochastic ceiling (ADR-004 Decision 4). New `src/doc_assistant/
+  gap_suggest.py`: `suggest_for_thin(gaps, skeleton, client, ...)` — one quarantined LLM call per
+  Tier-1 `under_connected` concept, handed only its label + present neighbours, returning a
+  `suggested_link`/`suggested_concept`/`thin_area` rated `Gap` (`determinism="stochastic"`,
+  `status="surfaced"`); `parse_suggestion` validates kind/target/rating, tolerant of a fenced JSON
+  response. Confinement mirrors Node B: takes an already-built `LLMClient` (no provider decision
+  here), never mutates `skeleton`, never creates a `Concept`/edge, a per-concept transport/parse
+  failure is logged and skipped, zero `under_connected` gaps checked before the loop → zero calls.
+  `gaps.build_gaps(suggest=True, apply=True, client=...)` replaces the `NotImplementedError` stub:
+  deterministic rows still rebuild via the untouched `determinism=="deterministic"` delete filter;
+  a new `_write_stochastic_gap_rows` upserts by `concept_id`, skipping any row already
+  `promoted`/`dismissed` (the compounding arrow survives a rebuild *and* a re-suggest).
+  `suggest=True, apply=False` makes zero LLM calls; `suggest=True, apply=True` without a `client`
+  raises `ValueError`. `config.GAP_SUGGEST_LLM_PROVIDER`/`_MODEL` (Ollama-default, mirrors
+  `CONCEPT_SKELETON_LLM_*`, KI-4 guard). `scripts/build_gaps.py --suggest` gains
+  `--provider`/`--model`, routes `--apply` through `llm.assert_provider_intent` before any client is
+  constructed (the `build_concept_skeleton._run_node_b` precedent). +18 tests
+  (`tests/unit/test_gap_suggest.py`, `tests/integration/test_build_gaps.py`); no live LLM/paid call
+  in any test. Gate green — **773 passed**, ruff / ruff format / `mypy --strict src` (57 files) /
+  bandit 0 HIGH clean, coverage 83% (`gap_suggest.py` 96%, `gaps.py` 99%).
+- **Why:** G5 was one of two planned-contract sprints left active after the 2026-07-07 planning
+  session (alongside G4/SPRINT-004). This box (`DOC_TORCH=cu130`, no TLS-MITM proxy) is the
+  RTX/Ollama box the sprint doc itself names for the deferred real-model smoke test — G4 needs a
+  proxy box this one is not, so it stayed untouched (still `status: active`) while G5 landed here.
+- **Real run (RTX/Ollama box, $0):** `gaps` table didn't exist yet on this box's `data/library.db`
+  (additive, never auto-created outside `create_all`) — ran `python -m doc_assistant.db.migrations`
+  once. Then `python -m scripts.build_gaps --apply --suggest` (default `ollama`/`llama3.1:8b`) over
+  the real 357-concept/1534-edge skeleton: **12/12 `under_connected` concepts produced a
+  suggestion**, 0 failures, ~51s. Manual spot-check: plausible and mostly on-topic (`relevance
+  judgement`+`BM25` → `information retrieval`; `myelin`/`axon` → `demyelination`), a couple
+  weak/generic. **Finding:** all 12 came back `suggested_concept` and rating sat flat at 0.8/0.9 —
+  llama3.1:8b doesn't spread confidence here, the same local-8B calibration-flattening already seen
+  with Node B/the reviewer; not a code defect, `rating` just isn't discriminating on this model yet.
+  Baseline: `tests/eval/baselines/gap_suggest_ollama_2026-07-08.md`.
+- **Rejected:** re-deriving `_DEFAULT_MIN_DEGREE=3` even though the real corpus grew materially
+  (26 → 357 curated concepts) since that baseline — a Tier-1-threshold question, out of scope for a
+  Tier-2a-ceiling sprint, left for its own pass; a `(concept_id, kind)` upsert identity — kept
+  concept-only, matching the one-suggestion-per-concept-per-pass shape `suggest_for_thin` emits.
+- **Opens:** Tier 2b (external reach) stays out of scope (ADR-004 option 3, rejected direction); G4
+  is the one remaining planned-contract sprint, needs the TLS-MITM proxy box; a stronger model or an
+  explicit calibration pass would fix the flat-rating finding, not scoped here.
+- Also updated: `docs/ROADMAP.md` (G5 row → done), `docs/decisions/ADR-004-gap-detection-layer.md`
+  (status line), `.claude/CONTEXT.md`, `docs/sprints/SPRINT-005-gap-stochastic-ceiling.md` (→
+  archived, landed). **Staged code/docs; `data/gaps` (302 rows, 12 stochastic `surfaced`) is
+  gitignored real-DB sidecar data, not part of any commit. Nothing committed (cpc §13).**
+
 ## 2026-07-07 — Planning: next sprints — G4 (KI-10) + G5 (gap ceiling) active; G3 parked
 - **What:** Wrote three cpc sprint contracts (no `src/` changes) after G1/G2 landed, then
   re-prioritized with the user to two active + one parked:

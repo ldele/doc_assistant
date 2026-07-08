@@ -1,9 +1,11 @@
-<!-- status: active · updated: 2026-07-07 · class: disposable -->
-<!-- QUEUED alongside SPRINT-004 (G4). Independent (gap layer vs packaging). When executed, archive the
-     sibling active contract first so sprint_check sees exactly one active contract (G1→G2 pattern).
-     MACHINE NOTE: buildable + fully gate-testable on THIS CPU box via a scripted LLMClient (no Ollama,
-     no network, no cost). The real `--suggest --apply` smoke against a local model is a HOST step on the
-     RTX/Ollama box — deferred, NOT a landing gate (see scope boundary). -->
+<!-- status: archived · updated: 2026-07-08 · class: disposable -->
+<!-- LANDED 2026-07-08 on the RTX/Ollama box. All DoD items met; gate green (773 passed, +18 tests).
+     The deferred real-Ollama smoke run also completed here (12/12 under_connected concepts
+     suggested, $0; tests/eval/baselines/gap_suggest_ollama_2026-07-08.md). SPRINT-004 (G4, the
+     sibling contract this note originally said to archive first) was NOT touched — it needs a
+     TLS-MITM proxy box this machine isn't, so it stays `status: active`, genuinely un-landed, not
+     just un-archived-for-hygiene. sprint_check now sees exactly 1 active contract (SPRINT-004),
+     which is the target state, not a violation of the archive-on-land convention. -->
 
 # SPRINT-005 — gap-stochastic-ceiling
 

@@ -8,6 +8,57 @@ Append only — never edit past entries.
 Format: What changed | Why | Rejected alternatives | What it opens
 
 ---
+## 2026-07-08 — SPRINT-003 year-aware-superseded (G3)
+
+- **What:** Threaded `Document.year` into the concept skeleton so `node_weights_for_epistemics`
+  can emit `direction="superseded_trend"`. New `concept_skeleton.load_doc_years()` (zero-LLM,
+  reads `Document.id`→`Document.year` for docs that have one) wired into `build_concept_skeleton`
+  via a `doc_years_loader` DI seam (matching `concept_loader`/`presence_loader`/`doc_graph_loader`)
+  and attached at the **skeleton/meta level** (`skeleton.meta["doc_years"]`) — not a new
+  `ConceptNode` field, per the sprint's blast-radius note (every positional `ConceptNode(...)` in
+  the test suite stays valid). `skeleton_to_dict`/`skeleton_from_dict` already round-trip `meta`
+  verbatim, so no serialiser change was needed for round-tripping; a pre-G3 `skeleton.json` has no
+  `doc_years` key at all and loads exactly as before (back-compat, guard-tested).
+  New `concept_skeleton._aggregate_direction(sup, opp, doc_years)`: for a contested node
+  (>=1 opposing doc), compares **median(opposing years) vs median(supporting years)** —
+  `superseded_trend` only when the opposing median is *strictly* newer; fails safe to `contested`
+  when there's no supporting doc to compare against or *any* doc in either set is missing a year
+  (never guess on incomplete data). Parameter-free — no new `config.py` knob. Rule + fail-safe
+  matrix recorded in `tests/eval/baselines/superseded_year_rule_2026-07.md`.
+  `_graph_version` now hashes `doc_years` too, so a metadata backfill busts the skeleton cache
+  even when no node/edge changed. `concept_skeleton_enrich.py`'s Node-B version call updated to
+  pass the same `doc_years` through, for hash consistency between the two write paths.
+  `epistemics.py` **is unchanged** — it already consumed `.direction`/`.coverage` at
+  `epistemics.py:159`/`:412`/`:422`; this sprint only made `superseded_trend` reachable.
+  `scripts/build_concept_skeleton.py`'s report gained a "Documents with a year" line.
+  +10 tests (6 in `test_concept_skeleton_weights.py`: newer-opposing/older-or-equal/equal-year/
+  missing-year-failsafe/sole-disputer/pre-G3-no-key; 3 in `test_concept_skeleton.py`: doc_years
+  round-trip, back-compat load, graph_version cache-busting; 1 end-to-end in
+  `test_compute_epistemics.py`: `skeleton.json` meta → `build_epistemics` → a real
+  `MARKER_SUPERSEDED` chunk marker). Gate green — **783 passed** (was 773), ruff / ruff format /
+  `mypy --strict src` (57 files) / bandit 0 HIGH clean.
+- **Why:** G3 was parked 2026-07-07 on the premise that `Document.year` coverage was too thin
+  for the marker to ever fire; that premise was disproven the same day by the
+  `extract_doc_metadata --apply` backfill (45/47 docs, 96%, RTX box) — see `.claude/SESSION.md`.
+  Un-parked and built straight through per the sprint contract
+  (`docs/sprints/SPRINT-003-year-aware-superseded.md`).
+- **Rejected alternatives:** a `ConceptNode.year`-per-node field (rejected in the sprint doc
+  itself — breaks every positional `ConceptNode(...)` fixture); mean instead of median for the
+  aggregate (median chosen for robustness to one outlier-year doc, matching the `min_degree`
+  baseline's own preference for a distribution-relative statistic); `>=` instead of strict `>`
+  (an equal-median opposing set is coincident evidence, not a *newer* trend — stays `contested`).
+- **What it opens:** the **host apply** — `build_concept_skeleton --apply` (now loads years) +
+  `compute_epistemics --apply` on the real corpus — is the user's run after review (per CLAUDE.md
+  non-negotiable #1; nothing was committed or run against `data/library.db` this session). The
+  real year-coverage count and the resulting contested/superseded split are recorded in
+  `tests/eval/baselines/superseded_year_rule_2026-07.md`'s "Pending" section once that runs.
+  **Doc-staleness found while landing this:** `.claude/CONTEXT.md`'s "Current phase" line and
+  "Open questions" concept-graph bullet still said G3 was "parked/deferred" and the year-aware
+  gap was merely "documented, not tracked" — both written before the 2026-07-08 un-park commit
+  (`58e6d88`) that only touched `docs/ROADMAP.md` + the sprint doc. Synced in this same session
+  (see CONTEXT.md diff) so the two coordination files don't disagree about G3's status again.
+
+---
 ## 2026-07-08 — SPRINT-005 gap-stochastic-ceiling (G5)
 
 - **What:** Built the Tier-2a stochastic ceiling (ADR-004 Decision 4). New `src/doc_assistant/

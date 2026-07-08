@@ -29,9 +29,12 @@ and **the Tier-2a stochastic ceiling is BUILT (2026-07-08, ROADMAP row G5)** —
 (`SPRINT-004-ki10-frozen-os-trust.md`, still active — genuinely un-landed, not just un-archived) is
 the one remaining planned-contract sprint: the KI-10 frozen-build OS-trust fix, runnable only on a
 TLS-MITM box (on-proxy paid verification user-approved), which this RTX box is not. **G3**
-(`SPRINT-003-year-aware-superseded.md`) is **parked/deferred** — a
-low-yield year-aware `superseded_trend` veneer, un-park after a `Document.year` backfill. Still
-deferred: Tier 2b (external reach); S1/S2 selective ingestion. 773 tests; ruff / mypy --strict /
+(`SPRINT-003-year-aware-superseded.md`) — un-parked 2026-07-08 (the `extract_doc_metadata --apply`
+backfill gave 45/47 docs a year, 96%, disproving the "coverage too thin" park premise) and **code
+built same day** (`load_doc_years` + `_aggregate_direction`, median-vs-median, parameter-free,
+fail-safe to `contested` on missing years; `epistemics.py` unchanged) — staged, awaiting review;
+the host `--apply` run (real corpus year-coverage + contested/superseded split) is still pending.
+Still deferred: Tier 2b (external reach); S1/S2 selective ingestion. 783 tests; ruff / mypy --strict /
 bandit clean.
 Desktop-shell migration (ADR-002): **M0–M5 all shipped (2026-06-25).** M0 (`ChatController`) · M1 (live 7d
 marker chips) · M2 (FastAPI + SSE, `apps/api/`) · M3 (Svelte/Tauri frontend, `apps/desktop/`) · **M4** —
@@ -145,10 +148,10 @@ to docs/archive/SESSION-archive-NNN.md (local-only, like the baton).
 - **Concept graph redesign (2026-06-18) — RESOLVED, fully built.** Node A (deterministic skeleton,
   2026-06-30) + Node B (confined LLM stance, PR #6) both shipped; RG-001/008/009 validated the edges
   (R5 PASS, ADR-008, `CONCEPT_SKELETON_MIN_COOCCURRENCE=2` + `boundary` presence); the superseded
-  open-vocabulary `concept_graph.py` is deleted (2026-07-07, KI-7 resolved). Open item carried
-  forward: a year-aware Node-B stance pass would unlock `superseded_trend` (today's
-  `node_weights_for_epistemics` can only produce `stable`/`contested`/`unique` — not tracked as a
-  new KI, just a documented limitation).
+  open-vocabulary `concept_graph.py` is deleted (2026-07-07, KI-7 resolved). **Resolved
+  2026-07-08 (G3, code-built):** the year-aware pass is deterministic, not Node-B/LLM —
+  `node_weights_for_epistemics` can now produce `superseded_trend`, gated on
+  `skeleton.meta["doc_years"]` being populated by the host `--apply` run (pending).
 - **Gap-detection layer (2026-06-26) — Tier 1 + Tier-2a floor BUILT (2026-07-07, G2); the Tier-2a
   stochastic ceiling BUILT (2026-07-08, G5).** Deterministic detectors
   (`isolated`/`single_source`/`thin_bridge`/`under_connected`) + the `unsourced_claim` floor are live

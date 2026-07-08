@@ -1,12 +1,14 @@
-<!-- status: archived · updated: 2026-07-07 · class: disposable -->
-<!-- PARKED 2026-07-07 (NOT landed — deferred, not done). Reason: a low-yield veneer. `Document.year`
-     coverage on the corpus is likely too thin for `superseded_trend` to fire materially, and currency
-     markers sit on top of the integrity stack rather than being core (user call, 2026-07-07). The
-     contract is kept verbatim on file — un-park once the corpus carries real year metadata
-     (`extract_doc_metadata --apply` → measure coverage). `archived` status so `sprint_check` counts
-     only the active G4/G5 contracts, not this parked one. -->
+<!-- status: active · updated: 2026-07-08 · class: disposable -->
+<!-- UN-PARKED 2026-07-08. The park condition below — "un-park once the corpus carries real year
+     metadata (`extract_doc_metadata --apply` → measure coverage)" — is now MET: the backfill ran on
+     the RTX box (2026-07-08), giving 45/47 active docs a year (96%, range 2012-2026), far above the
+     "likely too thin" premise this was parked on. G3 is now the next actionable build sprint (CPU-box,
+     $0, deterministic). G4/SPRINT-004 stays active-but-hardware-blocked (needs a TLS-MITM proxy box).
+     ORIGINAL PARK NOTE (2026-07-07, kept for the record): parked as a low-yield veneer on the
+     assumption `Document.year` coverage was too thin for `superseded_trend` to fire — that assumption
+     is now disproven by the 96% measurement. -->
 
-# SPRINT-003 — year-aware-superseded (PARKED)
+# SPRINT-003 — year-aware-superseded
 
 - **base:** main
 - **depends-on:** SPRINT-001 (G1) — landed; the skeleton is now the single node-weight source for `epistemics.py`.

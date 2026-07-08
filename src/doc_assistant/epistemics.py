@@ -29,14 +29,18 @@ marker-derivation join, all guard-tested.
 
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 import structlog
 
-from doc_assistant.concept_skeleton import ConceptSkeleton, NodeWeight, node_weights_for_epistemics
+from doc_assistant.concept_skeleton import (
+    ConceptSkeleton,
+    NodeWeight,
+    compile_boundary_pattern,
+    node_weights_for_epistemics,
+)
 
 log = structlog.get_logger(__name__)
 
@@ -120,19 +124,26 @@ def derive_markers(n_contested: int, n_superseded_trend: int) -> list[str]:
     return markers
 
 
-def concepts_in_text(text: str, node_ids: list[str]) -> list[str]:
-    """Which concept node ids occur in ``text`` (structural word-boundary match, pure).
+def concepts_in_text(text: str, labels_by_id: dict[str, str]) -> list[str]:
+    """Which concept node ids are attributed to ``text`` (structural word-boundary match, pure).
 
-    Node ids are canonical (lowercase) keys; matching is case-insensitive on a
-    word boundary so "bm25" matches but "ir" (too short) and substrings like the "rag"
-    inside "storage" do not. Deterministic order (input order, de-duplicated)."""
-    low = text.lower()
+    Matches on each concept's **label** (not its node id — the curated skeleton's ids are opaque
+    ``Concept.id`` UUIDs that never occur in document text; KI-15), casefolded, via the same
+    alnum-boundary pattern ``concept_skeleton``'s Node-A presence matcher uses (R2,
+    :func:`concept_skeleton.compile_boundary_pattern` — not ``\\b``, which mishandles non-word
+    edge chars like "gpt-4"). Labels shorter than ``_MIN_CONCEPT_LEN`` are skipped (too short to
+    attribute reliably — "ir" would match far too much). Deterministic order (``labels_by_id``
+    iteration order, de-duplicated)."""
+    low = text.casefold()
     present: list[str] = []
     seen: set[str] = set()
-    for nid in node_ids:
-        if len(nid) < _MIN_CONCEPT_LEN or nid in seen:
+    for nid, label in labels_by_id.items():
+        if nid in seen:
             continue
-        if re.search(rf"\b{re.escape(nid)}\b", low):
+        form = label.strip().casefold()
+        if len(form) < _MIN_CONCEPT_LEN:
+            continue
+        if compile_boundary_pattern(form).search(low):
             seen.add(nid)
             present.append(nid)
     return present
@@ -177,10 +188,10 @@ def project_chunk_weights(
     """Project node weights onto chunks (pure). ``doc_chunks`` = (document_id,
     chunk_index, text). Only chunks that contain at least one weighted concept get a
     row — a chunk with no claims carries no epistemic signal and is omitted."""
-    node_ids = [n.id for n in skeleton.nodes]
+    labels_by_id = {n.id: n.label for n in skeleton.nodes}
     rows: list[ChunkEpistemics] = []
     for document_id, chunk_index, text in doc_chunks:
-        present = concepts_in_text(text, node_ids)
+        present = concepts_in_text(text, labels_by_id)
         if not present:
             continue
         rows.append(project_chunk(document_id, chunk_index, present, weights))

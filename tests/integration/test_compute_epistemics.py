@@ -128,10 +128,52 @@ def test_apply_writes_rows_and_marks_contested(env: Path) -> None:
 
 
 def test_superseded_row_and_marker(env: Path) -> None:
-    """G3: a contested node whose contradicting doc is newer than its supporting doc
-    surfaces the superseded_trend marker end-to-end (skeleton.json meta -> build_epistemics
-    -> chunk_epistemics row -> marker index). Own skeleton fixture (not the module-level
-    ``_SKELETON_*`` one) so it doesn't perturb the plain-contested tests above."""
+    """G3 + G6: a contested node whose contradicting docs are, in aggregate, newer than its
+    supporting docs surfaces the superseded_trend marker end-to-end (skeleton.json meta ->
+    build_epistemics -> chunk_epistemics row -> marker index). Two dated docs per side (the
+    G6 confidence floor) so the fire isn't the demoted single-doc case — see
+    ``test_superseded_marker_requires_two_per_side`` below for that. Own skeleton fixture (not
+    the module-level ``_SKELETON_*`` one) so it doesn't perturb the plain-contested tests above.
+    """
+    _seed_docs(["doc-colbert", "doc-hyde"])
+    nodes = [
+        cs.ConceptNode("colbert", "colbert", ("old1", "old2", "new1", "new2"), 0, -1),
+        cs.ConceptNode("ranking", "ranking", ("old1", "old2", "new1", "new2"), 0, -1),
+    ]
+    edges = [
+        cs.SkeletonEdge(
+            "colbert",
+            "ranking",
+            _COOC,
+            cs.edge_weight(_COOC, 2),
+            2,
+            stance_by_doc=(
+                ("old1", "supports"),
+                ("old2", "supports"),
+                ("new1", "contradicts"),
+                ("new2", "contradicts"),
+            ),
+        ),
+    ]
+    doc_years = {"old1": 2017, "old2": 2018, "new1": 2023, "new2": 2024}
+    skeleton = cs.analyze_skeleton(nodes, edges, seed=42, meta_extra={"doc_years": doc_years})
+    root = env / "skeleton"
+    root.mkdir(parents=True, exist_ok=True)
+    (root / cs.SKELETON_NAME).write_text(
+        json.dumps(cs.skeleton_to_dict(skeleton)), encoding="utf-8"
+    )
+
+    result = build_epistemics(apply=True, skeleton_dir=root)
+    assert result.n_superseded_nodes == 2  # both colbert and ranking are superseded_trend
+
+    index = load_epistemics_index()
+    assert MARKER_SUPERSEDED in index.get("doc-colbert:0", [])
+
+
+def test_superseded_marker_requires_two_per_side(env: Path) -> None:
+    """G6 (SPRINT-006): the exact 1-v-1 fixture that fired superseded_trend end-to-end under
+    G3 alone now stays contested — demoted, not deleted, coverage. `MARKER_SUPERSEDED` must
+    NOT appear; `MARKER_CONTESTED` still does (the underlying dispute is real, just thin)."""
     _seed_docs(["doc-colbert", "doc-hyde"])
     nodes = [
         cs.ConceptNode("colbert", "colbert", ("old", "new"), 0, -1),
@@ -157,10 +199,50 @@ def test_superseded_row_and_marker(env: Path) -> None:
     )
 
     result = build_epistemics(apply=True, skeleton_dir=root)
-    assert result.n_superseded_nodes == 2  # both colbert and ranking are superseded_trend
+    assert result.n_superseded_nodes == 0
+    assert result.n_contested_nodes == 2
 
     index = load_epistemics_index()
-    assert MARKER_SUPERSEDED in index.get("doc-colbert:0", [])
+    assert MARKER_CONTESTED in index.get("doc-colbert:0", [])
+    assert MARKER_SUPERSEDED not in index.get("doc-colbert:0", [])
+
+
+def test_uuid_id_node_is_attributed_via_label_end_to_end(env: Path) -> None:
+    """KI-15, end-to-end: a curated-skeleton node id is an opaque UUID (never present in any
+    chunk text) — attribution must go through the node's LABEL, not its id, or this node's
+    claim never reaches a chunk and the marker never surfaces, no matter how correct its
+    coverage/direction weights are."""
+    _seed_docs(["doc-colbert", "doc-hyde"])
+    uuid_a = "00688507-0351-442b-b156-00521129a344"
+    uuid_b = "007cc904-194d-408d-b847-13f9c79b1a2d"
+    nodes = [
+        cs.ConceptNode(uuid_a, "colbert", ("old", "new"), 0, -1),
+        cs.ConceptNode(uuid_b, "ranking", ("old", "new"), 0, -1),
+    ]
+    edges = [
+        cs.SkeletonEdge(
+            uuid_a,
+            uuid_b,
+            _COOC,
+            cs.edge_weight(_COOC, 2),
+            2,
+            stance_by_doc=(("new", "contradicts"), ("old", "supports")),
+        ),
+    ]
+    skeleton = cs.analyze_skeleton(nodes, edges, seed=42)
+    root = env / "skeleton"
+    root.mkdir(parents=True, exist_ok=True)
+    (root / cs.SKELETON_NAME).write_text(
+        json.dumps(cs.skeleton_to_dict(skeleton)), encoding="utf-8"
+    )
+
+    result = build_epistemics(apply=True, skeleton_dir=root)
+    assert result.n_contested_nodes == 2
+    # The whole point: rows/markers exist even though no chunk text ever contains a UUID.
+    assert len(result.rows) >= 1
+
+    index = load_epistemics_index()
+    assert MARKER_CONTESTED in index.get("doc-colbert:0", [])
 
 
 def test_marker_index_returns_only_marked_chunks(env: Path) -> None:

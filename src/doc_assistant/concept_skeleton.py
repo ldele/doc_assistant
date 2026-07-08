@@ -159,21 +159,29 @@ PRESENCE_SUBSTRING = "substring"
 PRESENCE_MODES = (PRESENCE_BOUNDARY, PRESENCE_SUBSTRING)
 
 
+def compile_boundary_pattern(form: str) -> re.Pattern[str]:
+    """Word-boundary regex for one casefolded surface form (R2, shared with ``epistemics``).
+
+    Alnum lookarounds — ``(?<![a-z0-9])form(?![a-z0-9])`` over casefolded text — instead of
+    ``\\b`` on purpose: ``\\b`` mishandles forms whose edge characters are non-word (``gpt-4``,
+    ``c++``), where a trailing ``\\b`` would demand a following word char. ``form`` must already
+    be casefolded (the class is lowercase ``[a-z0-9]``). The single definition every
+    boundary-matching caller in the codebase shares (``_presence_matchers`` here,
+    ``epistemics.concepts_in_text`` for chunk-level attribution — KI-15) so there is one
+    boundary-matching behavior, not a second hand-rolled (and possibly diverging) one."""
+    return re.compile(rf"(?<![a-z0-9]){re.escape(form)}(?![a-z0-9])")
+
+
 def _presence_matchers(forms: list[str], mode: str) -> list[tuple[str, re.Pattern[str] | None]]:
     """Precompiled per-form matchers for one concept (compiled once, reused per chunk).
 
-    ``boundary`` mode pairs each form with a compiled regex that requires alnum boundaries
-    on both sides — ``(?<![a-z0-9])form(?![a-z0-9])`` over casefolded text; ``substring``
-    mode carries ``None`` (the caller falls back to ``str.count``). Alnum lookarounds are
-    used instead of ``\\b`` on purpose: ``\\b`` mishandles forms whose edge characters are
-    non-word (``gpt-4``, ``c++``), where a trailing ``\\b`` would demand a following word
-    char. The forms are already casefolded, so the class is lowercase ``[a-z0-9]``.
-    """
+    ``boundary`` mode pairs each form with :func:`compile_boundary_pattern`; ``substring`` mode
+    carries ``None`` (the caller falls back to ``str.count``)."""
     if mode == PRESENCE_SUBSTRING:
         return [(form, None) for form in forms]
     if mode != PRESENCE_BOUNDARY:
         raise ValueError(f"unknown presence mode {mode!r} (expected one of {PRESENCE_MODES})")
-    return [(form, re.compile(rf"(?<![a-z0-9]){re.escape(form)}(?![a-z0-9])")) for form in forms]
+    return [(form, compile_boundary_pattern(form)) for form in forms]
 
 
 def match_presence(
@@ -709,16 +717,32 @@ def node_weights_for_epistemics(skeleton: ConceptSkeleton) -> dict[str, NodeWeig
     return weights
 
 
+#: G6 (SPRINT-006): the definitional smallest per-side count for a median to mean "aggregate"
+#: rather than a single opinion. A structural confidence floor, NOT an eval-harness tunable —
+#: raising it (e.g. to 3, or adding a year-gap/window) would be a knob and is out of scope; see
+#: docs/sprints/SPRINT-006-gate-superseded-confidence.md.
+MIN_DATED_DOCS_PER_SIDE = 2
+
+
 def _aggregate_direction(sup: set[str], opp: set[str], doc_years: dict[str, int]) -> str:
-    """``contested`` vs ``superseded_trend`` for a node with >= 1 opposing doc (G3).
+    """``contested`` vs ``superseded_trend`` for a node with >= 1 opposing doc (G3, gated G6).
 
     Relative polarity-over-time, never absolute age (Decision 1, feature-7d spec): compares
     the **median** publication year of the opposing (contradicting) doc set against the
     median of the supporting doc set. ``superseded_trend`` only when the opposing median is
     strictly newer. Fails safe to ``contested`` whenever the comparison isn't well-formed —
     no supporting docs to compare against, or any doc in either set missing a year (never
-    guess a superseded call on incomplete year data)."""
-    if not sup or not opp or any(d not in doc_years for d in sup | opp):
+    guess a superseded call on incomplete year data).
+
+    G6 (SPRINT-006): also requires >= :data:`MIN_DATED_DOCS_PER_SIDE` dated docs on **each**
+    side before treating the comparison as a meaningful aggregate — a median of one document
+    is not an aggregate, so the single-doc-per-side case (the thinnest possible evidence) stays
+    `contested` instead of firing on what is effectively a coin-flip."""
+    if (
+        len(sup) < MIN_DATED_DOCS_PER_SIDE
+        or len(opp) < MIN_DATED_DOCS_PER_SIDE
+        or any(d not in doc_years for d in sup | opp)
+    ):
         return "contested"
     sup_years = [doc_years[d] for d in sup]
     opp_years = [doc_years[d] for d in opp]

@@ -17,6 +17,7 @@ from doc_assistant.concept_skeleton import (
     add_citation_provenance,
     add_similarity_provenance,
     analyze_skeleton,
+    compile_boundary_pattern,
     cooccurrence_edges,
     edge_weight,
     match_presence,
@@ -89,6 +90,19 @@ def test_presence_boundary_matches_at_punctuation_and_string_edges() -> None:
     presences = match_presence(concepts, {}, chunks, mode=PRESENCE_BOUNDARY)
     assert {p.document_id for p in presences} == {"d1", "d2", "d3"}
     assert all(p.n_mentions == 1 for p in presences)
+
+
+def test_compile_boundary_pattern_matches_presence_matchers_output() -> None:
+    # KI-15: epistemics.concepts_in_text shares this exact pattern builder so chunk-level
+    # attribution and Node-A presence matching can never diverge on boundary semantics.
+    pattern = compile_boundary_pattern("gpt-4")
+    assert pattern.search("we benchmarked gpt-4 on the task.")
+    assert not pattern.search("gpt-4o is a different model.")  # non-word edge char, not \b
+    # Same behavior as match_presence's own boundary mode on the identical form.
+    presences = match_presence(
+        [("c", "gpt-4")], {}, [("d1:p0", "d1", "gpt-4 was released."), ("d1:p1", "d1", "gpt-4o.")]
+    )
+    assert {p.document_id: p.chunk_keys for p in presences} == {"d1": ("d1:p0",)}
 
 
 def test_presence_boundary_handles_hyphen_and_plus_forms() -> None:

@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-07-02 · class: living -->
+<!-- status: active · updated: 2026-07-08 (KI-15) · class: living -->
 
 # KNOWN ISSUES
 
@@ -334,3 +334,56 @@ Migrated from the old `CLAUDE.md` / `README` runtime-quirk notes on 2026-06-20 (
   applies to any future extraction there.
 - **Pointer:** `tests/eval/baselines/rg001_concept_skeleton_multidomain_2026-07-01.md` finding 4;
   `data_multidomain/cache/*.md`; DEVLOG 2026-07-02 (cont.) PR-R1 entry.
+
+## KI-15 — `epistemics.concepts_in_text` matches concept **UUIDs**, not labels — never fires on the real corpus — RESOLVED (2026-07-08, SPRINT-007)
+- **Symptom:** `build_epistemics` reports **0 chunks with a claim** on the real 47-doc/357-concept
+  corpus, even though `node_weights_for_epistemics` correctly computes 226 contested / 9
+  superseded_trend nodes from the same skeleton. `load_doc_chunks()` returns all 6215 real chunks
+  fine in isolation — the projection step itself silently drops every one of them.
+- **Cause:** `epistemics.project_chunk_weights` builds `node_ids = [n.id for n in skeleton.nodes]`
+  and hands that list to `concepts_in_text`, which regex-searches chunk text for each id
+  **literally** (docstring: "Node ids are canonical (lowercase) keys"). That was true of the
+  retired open-vocabulary `concept_graph.py` (KI-7), whose node id *was* `canonical_key(label)` —
+  e.g. `"bm25"`. The curated-vocabulary `concept_skeleton.py` that replaced it (Node A, PR-A) uses
+  the `Concept.id` **UUID primary key** as the node id (e.g.
+  `00688507-0351-442b-b156-00521129a344` for the concept labelled "sentence encoder") — a UUID
+  never occurs in chunk text, so `concepts_in_text` always returns `[]` and no chunk ever gets a
+  row. G1 (SPRINT-001, 2026-07-07) re-pointed `epistemics.py` from `concept_graph` onto
+  `concept_skeleton` but did not update this id-space assumption — `epistemics.py` was kept
+  deliberately **unchanged** by every skeleton-side sprint since (G1/G3/G6 docs all say so
+  explicitly), so nothing since G1 landed would have caught this.
+- **Impact:** the **entire live answer-time marker surfacing (PR-M1)** — the `contested` /
+  `superseded_trend` source chips in the desktop chat UI — has been silently dark on the real
+  corpus since G1 retired `concept_graph.py`, independent of G3/G6's node-level correctness. This
+  is a bigger problem than anything G3/G6 gate: the node weights are right, but nothing downstream
+  of them ever reaches a chunk. Not caught earlier because no integration test drives real
+  UUID-keyed nodes through `project_chunk_weights` against real chunk text — the existing
+  `tests/integration/test_compute_epistemics.py` fixtures use short human-readable ids
+  (`"colbert"`, `"ranking"`) that happen to also be valid substrings of their own stubbed chunk
+  text, masking the id/label conflation.
+- **Workaround:** none — the live markers just don't appear; nothing crashes, so this fails silent
+  rather than loud.
+- **FIX BUILT + real-validated (2026-07-08, SPRINT-007 — staged, not committed):**
+  `concepts_in_text(text, labels_by_id: dict[str, str])` now matches on the concept's **label**,
+  casefolded, via a new shared `concept_skeleton.compile_boundary_pattern` (the same alnum-
+  boundary regex Node-A's own presence matcher uses — R2, not `\b`, so `epistemics.py` doesn't
+  reintroduce the non-word-edge-char bug R2 already fixed once). `project_chunk_weights` passes
+  `{n.id: n.label for n in skeleton.nodes}`. +4 tests (2 unit incl. a UUID-id fixture and a
+  `gpt-4`/`gpt-4o` boundary case; 1 in `test_concept_skeleton.py` guarding the shared pattern
+  builder against `match_presence`'s own output; 1 end-to-end integration test with a UUID-shaped
+  node id). Gate green, **790 passed** (was 786).
+  **Real-corpus validation** (same skeleton snapshot G6 already built, no rebuild — projection is
+  free/read-only): `compute_epistemics --apply` went from **0 chunks with a claim / 0 marked** to
+  **4008 chunks with a claim / 3334 marked** (of 6215 real chunks). Manual spot-check on one
+  marked chunk confirmed all 6 attributed labels genuinely appear in its text — not just non-zero,
+  actually correct. Full writeup: `tests/eval/baselines/epistemics_label_attribution_2026-07.md`.
+- **Not done (documented follow-up, not a defect):** a live-UI smoke test that the desktop chat's
+  evidence chips now render on a real answer (PR-M1's read side was never the broken part, but
+  hasn't been exercised end-to-end since before this fix); parent-child chunk-store re-projection
+  (already a separate documented follow-up, `docs/specs/pr-m1-epistemics-markers.md` ADR-1
+  option 2).
+- **Pointer:** `src/doc_assistant/epistemics.py` (`concepts_in_text`/`project_chunk_weights`),
+  `src/doc_assistant/concept_skeleton.py` (`compile_boundary_pattern`); found while hand-auditing
+  G6's before/after split on the real `data/library.db`
+  (`tests/eval/baselines/superseded_year_rule_2026-07.md` G6 addendum);
+  `docs/sprints/SPRINT-007-fix-epistemics-label-attribution.md`.

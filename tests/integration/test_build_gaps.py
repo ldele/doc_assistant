@@ -3,8 +3,9 @@
 Drives ``gaps.build_gaps`` against a temp SQLite (curated vocabulary + persisted
 ``answer_claims``) and a temp concept-skeleton ``skeleton.json``. Asserts Tier-1 +
 Tier-2a-floor rows written, idempotency (replace deterministic rows, not append),
-dry-run writes nothing, a missing skeleton raises, and ``--suggest`` (the
-not-yet-built stochastic ceiling) raises rather than silently doing nothing.
+dry-run writes nothing, a missing skeleton raises, and the Tier-2a stochastic
+ceiling (``--suggest``) writes/upserts stochastic rows via a scripted ``LLMClient``
+— zero calls without ``--apply``, a promoted row survives a re-suggest.
 
 Deterministic + offline: no network, no real LLM, no Chroma.
 """
@@ -173,10 +174,101 @@ def test_missing_skeleton_raises(env: Path) -> None:
         build_gaps(apply=True, skeleton_dir=env / "no-skeleton-here", min_degree=2)
 
 
-def test_suggest_flag_raises_not_implemented(env: Path) -> None:
+def test_suggest_without_apply_makes_zero_calls_and_writes_nothing(env: Path) -> None:
+    # Dry run + --suggest: the contract every other enrichment CLI shares — no LLM call,
+    # nothing persisted, even though suggest=True.
     _write_skeleton(env / "skeleton")
-    with pytest.raises(NotImplementedError):
-        build_gaps(apply=False, skeleton_dir=env / "skeleton", min_degree=2, suggest=True)
+
+    class _ExplodingClient:
+        def complete(self, messages: object, *, temperature: float, max_tokens: int) -> str:
+            raise AssertionError("must not be called on a dry run")
+
+    result = build_gaps(
+        apply=False,
+        skeleton_dir=env / "skeleton",
+        min_degree=2,
+        suggest=True,
+        client=_ExplodingClient(),
+    )
+    assert result.n_suggested == 0
+    assert _count_rows() == 0
+
+
+def test_suggest_with_apply_requires_a_client(env: Path) -> None:
+    _write_skeleton(env / "skeleton")
+    with pytest.raises(ValueError, match="requires an LLMClient"):
+        build_gaps(apply=True, skeleton_dir=env / "skeleton", min_degree=2, suggest=True)
+
+
+class _FakeSuggestClient:
+    """Returns the same canned suggestion for every ``under_connected`` concept asked about."""
+
+    def __init__(
+        self, response: str = '{"kind": "thin_area", "target": "fusion", "rating": 0.6}'
+    ) -> None:
+        self._response = response
+        self.n_calls = 0
+
+    def complete(
+        self, messages: list[dict[str, str]], *, temperature: float, max_tokens: int
+    ) -> str:
+        self.n_calls += 1
+        return self._response
+
+
+def test_suggest_on_writes_stochastic_without_a_paid_call(env: Path) -> None:
+    _seed_curated_concepts()
+    _seed_claims()
+    _write_skeleton(env / "skeleton")
+    client = _FakeSuggestClient()
+
+    result = build_gaps(
+        apply=True, skeleton_dir=env / "skeleton", min_degree=2, suggest=True, client=client
+    )
+
+    # Fixture edges (sole-shared, hub-leaf) give every non-isolated node degree 1 < min_degree=2,
+    # so all four ("hub", "leaf", "shared", "sole") route through the ceiling; "iso" (degree 0)
+    # is `isolated`, not `under_connected`, and is excluded.
+    assert result.n_suggested == 4
+    assert client.n_calls == 4
+    with session_scope() as session:
+        stochastic = list(
+            session.execute(select(GapRow).where(GapRow.determinism == "stochastic")).scalars()
+        )
+    assert {r.concept_id for r in stochastic} == {"hub", "leaf", "shared", "sole"}
+    leaf = next(r for r in stochastic if r.concept_id == "leaf")
+    assert leaf.kind == "thin_area"
+    assert leaf.status == "surfaced"
+    assert leaf.rating == 0.6
+
+
+def test_promoted_stochastic_survives_rebuild_and_resuggest(env: Path) -> None:
+    _seed_curated_concepts()
+    _seed_claims()
+    _write_skeleton(env / "skeleton")
+    client = _FakeSuggestClient()
+
+    build_gaps(
+        apply=True, skeleton_dir=env / "skeleton", min_degree=2, suggest=True, client=client
+    )
+    with session_scope() as session:
+        row = session.execute(
+            select(GapRow).where(GapRow.determinism == "stochastic", GapRow.concept_id == "leaf")
+        ).scalar_one()
+        row.status = "promoted"
+
+    # A deterministic rebuild + a re-suggest must not clobber the promotion.
+    build_gaps(
+        apply=True, skeleton_dir=env / "skeleton", min_degree=2, suggest=True, client=client
+    )
+
+    with session_scope() as session:
+        stochastic = list(
+            session.execute(select(GapRow).where(GapRow.determinism == "stochastic")).scalars()
+        )
+    assert len(stochastic) == 4  # re-suggest neither duplicates nor drops the other three
+    leaf = next(r for r in stochastic if r.concept_id == "leaf")
+    assert leaf.status == "promoted"  # survived both the rebuild and the re-suggest
 
 
 def test_stochastic_rows_survive_a_deterministic_rebuild(env: Path) -> None:

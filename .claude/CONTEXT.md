@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-07-07 · class: living -->
+<!-- status: active · updated: 2026-07-08 · class: living -->
 
 # CONTEXT — doc_assistant
 
@@ -22,15 +22,16 @@ build_concept_skeleton}.py` + the `concept_*` tables + `CONCEPT_SKELETON_*` conf
 the real corpus (RG-001/008/009, R5 PASS, ADR-008). **The retired open-vocabulary
 `concept_graph.py` is DELETED (2026-07-07, KI-7 RESOLVED, ROADMAP row G1)** — `epistemics.py` /
 `wiki.py` now read the skeleton directly; `EPISTEMICS_MARKERS_ENABLED` defaults on. **The
-gap-detection layer's deterministic Tier-1 + Tier-2a floor is BUILT (2026-07-07, ROADMAP row G2)**
-— `gaps.py` + `GapRow` + `scripts/build_gaps.py`, ADR-004. **Next sprints planned as contracts
-(2026-07-07): G4** (`SPRINT-004-ki10-frozen-os-trust.md`, active) — the KI-10 frozen-build OS-trust
-fix, runnable only on this TLS-MITM box (on-proxy paid verification user-approved); **G5**
-(`SPRINT-005-gap-stochastic-ceiling.md`, active) — the Tier-2a **stochastic ceiling** (`gap_suggest.py`,
-quarantined Ollama-default LLM suggestions atop G2's floor), built + proven offline here, real Ollama
-run deferred to the RTX box. **G3** (`SPRINT-003-year-aware-superseded.md`) is **parked/deferred** — a
+gap-detection layer's deterministic Tier-1 + Tier-2a floor is BUILT (2026-07-07, ROADMAP row G2)**,
+and **the Tier-2a stochastic ceiling is BUILT (2026-07-08, ROADMAP row G5)** — `gaps.py` + `GapRow` +
+`scripts/build_gaps.py` + `gap_suggest.py`, ADR-004; real-validated on the RTX/Ollama box
+(`tests/eval/baselines/gap_suggest_ollama_2026-07-08.md`). **G4**
+(`SPRINT-004-ki10-frozen-os-trust.md`, still active — genuinely un-landed, not just un-archived) is
+the one remaining planned-contract sprint: the KI-10 frozen-build OS-trust fix, runnable only on a
+TLS-MITM box (on-proxy paid verification user-approved), which this RTX box is not. **G3**
+(`SPRINT-003-year-aware-superseded.md`) is **parked/deferred** — a
 low-yield year-aware `superseded_trend` veneer, un-park after a `Document.year` backfill. Still
-deferred: Tier 2b (external reach); S1/S2 selective ingestion. ~700 tests; ruff / mypy --strict /
+deferred: Tier 2b (external reach); S1/S2 selective ingestion. 773 tests; ruff / mypy --strict /
 bandit clean.
 Desktop-shell migration (ADR-002): **M0–M5 all shipped (2026-06-25).** M0 (`ChatController`) · M1 (live 7d
 marker chips) · M2 (FastAPI + SSE, `apps/api/`) · M3 (Svelte/Tauri frontend, `apps/desktop/`) · **M4** —
@@ -148,12 +149,17 @@ to docs/archive/SESSION-archive-NNN.md (local-only, like the baton).
   forward: a year-aware Node-B stance pass would unlock `superseded_trend` (today's
   `node_weights_for_epistemics` can only produce `stable`/`contested`/`unique` — not tracked as a
   new KI, just a documented limitation).
-- **Gap-detection layer (2026-06-26) — Tier 1 + Tier-2a floor BUILT (2026-07-07, G2).** Deterministic
-  detectors (`isolated`/`single_source`/`thin_bridge`/`under_connected`) + the `unsourced_claim` floor
-  are live (`gaps.py` + `GapRow` + `scripts/build_gaps.py`); `citation_missing` (the other floor kind)
-  is not yet built. Deferred: the Tier-2a stochastic ceiling (`gap_suggest.py`, quarantined LLM
-  suggestions) and Tier 2b (external "anti-blind-spot" reach — the idea-generator is rejected for it,
-  ADR-004 option 3).
+- **Gap-detection layer (2026-06-26) — Tier 1 + Tier-2a floor BUILT (2026-07-07, G2); the Tier-2a
+  stochastic ceiling BUILT (2026-07-08, G5).** Deterministic detectors
+  (`isolated`/`single_source`/`thin_bridge`/`under_connected`) + the `unsourced_claim` floor are live
+  (`gaps.py` + `GapRow` + `scripts/build_gaps.py`); `citation_missing` (the other floor kind) is not
+  yet built. `gap_suggest.py` (Ollama-default, quarantined, apply-gated via
+  `llm.assert_provider_intent`) adds one LLM suggestion per `under_connected` concept — real-validated
+  on this RTX/Ollama box (12/12 suggested, $0, `tests/eval/baselines/gap_suggest_ollama_2026-07-08.md`);
+  llama3.1:8b's `rating` output is flat (~0.8, not discriminating) and it only ever chose
+  `suggested_concept` in that run — a local-model calibration ceiling, not a code defect. Still
+  deferred: Tier 2b (external "anti-blind-spot" reach — the idea-generator is rejected for it, ADR-004
+  option 3).
 - **BM25/vector `0.4/0.6` weights — MEASURED 2026-07-03 (resolved, kept).** `--bm25-weight` flag
   (config `BM25_WEIGHT` → `pipeline`/`run_eval`) + `scripts/sweep_bm25_weight.py` added; swept
   `{0.0..1.0}` retrieval-only over `cases.yaml`. Post-rerank recall is **flat across the whole

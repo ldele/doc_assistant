@@ -3,10 +3,11 @@
 One typed ``Gap`` object, split on the project's existing deterministic/stochastic
 line (ADR-004 Decision 1). This module ships **Tier 1** (deterministic, over the
 concept skeleton) and the **Tier-2a deterministic floor** (a query over already-
-persisted answer-claim data) — the first increment locked by the spec. The Tier-2a
-stochastic ceiling (a quarantined LLM suggestion pass) is a separate module,
-``gap_suggest.py``, out of scope here (it never writes the skeleton as fact —
-ADR-004 Decision 4).
+persisted answer-claim data), and orchestrates (``build_gaps(suggest=True, ...)``)
+the **Tier-2a stochastic ceiling** — a quarantined LLM suggestion pass that lives
+in its own module, ``gap_suggest.py`` (it never writes the skeleton as fact —
+ADR-004 Decision 4; this module makes no provider decision, it only plumbs an
+already-built ``LLMClient`` through).
 
 Detectors are pure: no DB, no Chroma, no LLM. ``build_gaps`` (bottom of this module)
 is the impure orchestration — load the skeleton + claims, run the detectors, write
@@ -24,6 +25,7 @@ from pathlib import Path
 from typing import Literal
 
 from doc_assistant.concept_skeleton import PRESENCE_BOUNDARY, ConceptSkeleton, match_presence
+from doc_assistant.llm import LLMClient
 from doc_assistant.synthesis import MARKER_UNSUPPORTED
 
 GapTier = Literal["t1", "t2a", "t2b"]
@@ -217,6 +219,9 @@ class GapsResult:
     n_t1: int
     n_t2a: int
     applied: bool
+    n_suggested: int = (
+        0  # Tier-2a stochastic ceiling rows written this run (0 unless suggest+apply)
+    )
 
 
 def load_unsupported_claims() -> list[ClaimForGap]:
@@ -265,33 +270,92 @@ def _write_gap_rows(gaps: list[Gap], version: str) -> None:
         )
 
 
+def _write_stochastic_gap_rows(suggestions: list[Gap], version: str) -> int:
+    """Upsert Tier-2a stochastic suggestions by concept identity (status-preserving).
+
+    Unlike :func:`_write_gap_rows`' deterministic replace, this path never deletes: a
+    concept already carrying a ``promoted``/``dismissed`` stochastic row is left alone
+    (a fresh suggestion must not downgrade a human's curation decision — the
+    "compounding arrow"); a concept with no stochastic row yet, or one still
+    ``surfaced``, gets its row inserted/updated to the new suggestion. Suggestion
+    identity is the concept: :func:`gap_suggest.suggest_for_thin` emits at most one
+    suggestion per concept per call. Returns the number of rows written.
+    """
+    import json
+
+    from sqlalchemy import select
+
+    from doc_assistant.db.models import GapRow
+    from doc_assistant.db.session import session_scope
+
+    if not suggestions:
+        return 0
+
+    with session_scope() as session:
+        existing = {
+            row.concept_id: row
+            for row in session.execute(
+                select(GapRow).where(GapRow.determinism == "stochastic")
+            ).scalars()
+        }
+        written = 0
+        for g in suggestions:
+            current = existing.get(g.concept_id)
+            if current is not None and current.status in {"promoted", "dismissed"}:
+                continue  # a human curation decision survives a re-suggest
+            evidence_json = json.dumps(list(g.evidence.fact_ids))
+            if current is None:
+                session.add(
+                    GapRow(
+                        concept_id=g.concept_id,
+                        tier=g.tier,
+                        determinism=g.determinism,
+                        kind=g.kind,
+                        evidence_json=evidence_json,
+                        rating=g.rating,
+                        status=g.status,
+                        graph_version=version,
+                    )
+                )
+            else:
+                current.tier = g.tier
+                current.kind = g.kind
+                current.evidence_json = evidence_json
+                current.rating = g.rating
+                current.graph_version = version
+                # status stays "surfaced" — current.status was already checked above
+            written += 1
+    return written
+
+
 def build_gaps(
     *,
     apply: bool,
     skeleton_dir: Path | None = None,
     min_degree: int,
     suggest: bool = False,
+    client: LLMClient | None = None,
 ) -> GapsResult:
     """Compute Tier-1 + the Tier-2a deterministic floor; write the ``gaps`` sidecar.
 
     Read-only + free (no LLM): loads ``skeleton.json`` + the curated vocabulary +
     every ``unsupported``-marked claim, runs the pure detectors, and (on ``apply``)
     replaces the deterministic ``gaps`` rows (regenerable sidecar — dropped + rebuilt
-    with the skeleton; stochastic rows, none of which this sprint produces, persist
-    across the rebuild). A dry run computes + reports but writes nothing. Idempotent:
+    with the skeleton; stochastic rows persist across the rebuild, keyed by concept
+    and status-preserving). A dry run computes + reports but writes nothing. Idempotent:
     same skeleton + same claims → identical row count + ``graph_version``. Never
     touches the chunk store or the curated vocabulary.
 
-    ``suggest`` is a stub for the Tier-2a stochastic ceiling — a separate,
-    quarantined-LLM module (``gap_suggest.py``) not built in this sprint.
+    ``suggest`` additionally runs the Tier-2a stochastic ceiling
+    (``gap_suggest.suggest_for_thin``) over the ``under_connected`` Tier-1 gaps.
+    This module makes **no provider decision** — the caller
+    (``scripts/build_gaps.py``) resolves the provider/model, routes ``--apply``
+    through ``llm.assert_provider_intent``, and hands an already-built ``client``
+    here. ``suggest`` only calls the LLM when ``apply`` is also true (a dry run
+    with ``--suggest`` reports zero suggested rows and makes zero LLM calls,
+    matching every other enrichment CLI's dry-run contract); when ``apply`` and
+    ``suggest`` are both true, ``client`` is required.
     """
-    if suggest:
-        raise NotImplementedError(
-            "The Tier-2a stochastic ceiling (--suggest) is a separate, quarantined-LLM "
-            "module (gap_suggest.py) — not built in this sprint. Deterministic Tier 1 + "
-            "the Tier-2a floor run without it."
-        )
-
     import json
 
     from doc_assistant.concept_skeleton import SKELETON_NAME, load_concepts, skeleton_from_dict
@@ -321,6 +385,20 @@ def build_gaps(
     if apply:
         _write_gap_rows(all_gaps, version)
 
+    n_suggested = 0
+    if suggest and apply:
+        if client is None:
+            raise ValueError("build_gaps(suggest=True, apply=True) requires an LLMClient")
+        from doc_assistant.gap_suggest import suggest_for_thin
+
+        suggestions = suggest_for_thin(t1, skeleton, client)
+        n_suggested = _write_stochastic_gap_rows(suggestions, version)
+
     return GapsResult(
-        gaps=all_gaps, graph_version=version, n_t1=len(t1), n_t2a=len(t2a), applied=apply
+        gaps=all_gaps,
+        graph_version=version,
+        n_t1=len(t1),
+        n_t2a=len(t2a),
+        applied=apply,
+        n_suggested=n_suggested,
     )

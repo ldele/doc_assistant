@@ -86,7 +86,7 @@ full architectural context per feature.
 | G2 | Gap-detection layer: deterministic Tier-1 + Tier-2a floor (`gaps.py` + `GapRow` + `scripts/build_gaps.py`); stochastic ceiling out of scope | done (2026-07-07) — `min_degree=3` from the corpus's own degree distribution, `tests/eval/baselines/gap_min_degree_2026-07.md` | `docs/sprints/SPRINT-002-gap-layer-deterministic.md` |
 | G3 | Year-aware skeleton → unlock `superseded_trend`: thread `Document.year` into the skeleton artifact so `node_weights_for_epistemics` marks a node superseded when its contradicting docs are newer than its supporting docs (relative polarity-over-time, parameter-free; fail-safe to `contested` on missing years). Deterministic, CPU-box, $0; `epistemics.py` unchanged | **deferred / parked (2026-07-07)** — low-yield veneer; `Document.year` coverage likely too thin for the marker to fire. Contract kept on file; un-park after a metadata backfill | `docs/sprints/SPRINT-003-year-aware-superseded.md` |
 | G4 | KI-10 frozen OS-trust fix: diagnose (WARN entrypoint + on-proxy turn), hand `AnthropicClient` a guarded `httpx.Client(verify=truststore.SSLContext(...))` (shared helper, reused at the VLM seam), optional branch-A PyInstaller runtime hook; construction-only test (no paid call), on-proxy Step-C verification flips KI-10 | planned (2026-07-07) — runnable only on this TLS-MITM box; corporate-proxy shippability blocker; on-proxy paid verification user-approved | `docs/sprints/SPRINT-004-ki10-frozen-os-trust.md` |
-| G5 | Gap-detection Tier-2a **stochastic ceiling**: new `gap_suggest.py` — one quarantined, Ollama-default LLM call per Tier-1 `under_connected` node → rated `suggested_link`/`suggested_concept`/`thin_area` `Gap`s (`determinism="stochastic"`, `status="surfaced"`), never auto-written; `--suggest` wires `--provider`/`--model` + `assert_provider_intent`. Tier-2b + the idea-generator out of scope | planned (2026-07-07) — the Phase 7 headline atop G2's floor; built + proven offline on this box (scripted `LLMClient`, no paid call), real Ollama run deferred to the RTX box | `docs/sprints/SPRINT-005-gap-stochastic-ceiling.md` |
+| G5 | Gap-detection Tier-2a **stochastic ceiling**: new `gap_suggest.py` — one quarantined, Ollama-default LLM call per Tier-1 `under_connected` node → rated `suggested_link`/`suggested_concept`/`thin_area` `Gap`s (`determinism="stochastic"`, `status="surfaced"`), never auto-written; `--suggest` wires `--provider`/`--model` + `assert_provider_intent`. Tier-2b + the idea-generator out of scope | **done (2026-07-08)** — built + gate-tested offline (scripted `LLMClient`, +18 tests, 773 green) on the RTX/Ollama box, then real-validated there: `--apply --suggest` (llama3.1:8b) → 12/12 `under_connected` concepts suggested, $0, ~51s; baseline `tests/eval/baselines/gap_suggest_ollama_2026-07-08.md` | `docs/sprints/SPRINT-005-gap-stochastic-ceiling.md` |
 
 **Feature 7d (knowledge-currency layer):** engine shipped 2026-06-17 (`epistemics.py` + `chunk_epistemics`
 sidecar + polarity-aware concept graph + reviewer `contested_evidence` tag). **Live answer-time marker
@@ -124,8 +124,10 @@ retirement of the old `concept_graph.py` + the markers-on flip DONE (2026-07-07,
 **Gap-detection layer's deterministic Tier-1 + Tier-2a-floor DONE (2026-07-07, G2,
 SPRINT-002)** — `gaps.py` + `GapRow` + `scripts/build_gaps.py`
 (`docs/decisions/ADR-004-gap-detection-layer.md` + `docs/specs/feature-gap-detection.md`).
-Remaining: the Tier-2a stochastic ceiling (`gap_suggest.py`, quarantined LLM suggestions) +
-Tier 2b (external reach) — both deferred, out of scope for G2. Zotero/Calibre ingest
+**The Tier-2a stochastic ceiling DONE (2026-07-08, G5, SPRINT-005)** — `gap_suggest.py`
+(quarantined, Ollama-default LLM suggestions atop G2's floor), real-validated on this RTX/Ollama
+box (`tests/eval/baselines/gap_suggest_ollama_2026-07-08.md`). Remaining: Tier 2b (external
+reach) — deferred, the idea-generator is rejected for it (ADR-004 option 3). Zotero/Calibre ingest
 adapters (PR 17); an outbound
 **MCP-server** interface over `pipeline.py`. Full detail: `docs/archive/doc-assistant-roadmap.md`.
 

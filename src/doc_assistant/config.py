@@ -438,6 +438,14 @@ CONCEPT_SKELETON_SEED = int(os.getenv("CONCEPT_SKELETON_SEED", "42"))
 CONCEPT_SKELETON_LLM_PROVIDER = os.getenv("CONCEPT_SKELETON_LLM_PROVIDER", "ollama")
 CONCEPT_SKELETON_LLM_MODEL = os.getenv("CONCEPT_SKELETON_LLM_MODEL", "llama3.1:8b")
 
+# Gap detection's Tier-2a stochastic ceiling (SPRINT-005 / gap_suggest.py) is the same
+# confined-LLM-suggestion profile as Node B — defaults to LOCAL Ollama *explicitly*, NOT
+# LLM_PROVIDER (KI-4 credit-leak guard). An Anthropic run is opt-in via --provider and
+# routes through `llm.assert_provider_intent`. gap_suggest.py never reads these itself —
+# it takes an already-built LLMClient; only scripts/build_gaps.py resolves them.
+GAP_SUGGEST_LLM_PROVIDER = os.getenv("GAP_SUGGEST_LLM_PROVIDER", "ollama")
+GAP_SUGGEST_LLM_MODEL = os.getenv("GAP_SUGGEST_LLM_MODEL", "llama3.1:8b")
+
 
 # ============================================================
 # Keyword extraction (concept-skeleton vocabulary seed) — KI-13

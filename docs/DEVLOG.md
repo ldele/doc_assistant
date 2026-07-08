@@ -8,6 +8,125 @@ Append only — never edit past entries.
 Format: What changed | Why | Rejected alternatives | What it opens
 
 ---
+## 2026-07-08 — SPRINT-007 fix-epistemics-label-attribution (G7, KI-15)
+
+- **What:** `epistemics.concepts_in_text` matched skeleton node **ids** literally against chunk
+  text — correct for the retired open-vocabulary `concept_graph.py` (id = `canonical_key(label)`,
+  a real lowercase string) but wrong for the curated `concept_skeleton.py` that replaced it, whose
+  node id is the opaque `Concept.id` **UUID**. A UUID never appears in document text, so
+  attribution silently returned nothing on the real corpus for every chunk and every concept,
+  regardless of how correct the underlying node weights were. Fix: `concepts_in_text(text,
+  labels_by_id: dict[str, str])` now matches on `label`, casefolded, via a new
+  `concept_skeleton.compile_boundary_pattern(form)` — extracted (not rewritten) from the exact
+  alnum-boundary regex Node A's own presence matcher (`_presence_matchers`) already used (R2: alnum
+  lookarounds, not `\b`, so non-word edge chars like `gpt-4`/`c++` are handled correctly). One
+  shared boundary-matching definition, not two independent (and, per the old code, diverging —
+  `epistemics.py` still used `\b`) implementations. `project_chunk_weights` now builds
+  `{n.id: n.label for n in skeleton.nodes}` instead of a bare id list.
+- **Why:** KI-15, found while hand-auditing G6's real-corpus run — `build_epistemics` reported 0
+  chunks with a claim against a skeleton with 226 contested / 9 superseded_trend nodes. The live
+  desktop chat's contested/superseded_trend evidence chips (PR-M1) have been silently dark on the
+  real corpus since the G1 re-point (2026-07-07), independent of G3/G6's node-level correctness —
+  the weights were always right, nothing downstream of them ever reached a chunk.
+- **Tests:** +4 (`test_epistemics.py`: a UUID-shaped id whose label matches real text, a
+  `gpt-4`/`gpt-4o` boundary-edge case guarding against a `\b` regression; `test_concept_skeleton.py`:
+  `compile_boundary_pattern` produces identical behavior to `match_presence`'s own boundary mode;
+  `test_compute_epistemics.py`: end-to-end with a UUID node id, asserting the marker still
+  surfaces). Existing `concepts_in_text`/`project_chunk_weights` tests updated to the new
+  `dict[str, str]` signature (some previously passed ids that doubled as labels, e.g. `"bm25"` —
+  exactly the shape that let this bug ship unnoticed; new tests deliberately use a UUID that is
+  never also a valid label). **Gate green:** ruff / ruff format / `mypy --strict src` (57 files) /
+  bandit 0 HIGH/MED / **790 passed** (was 786).
+- **Real-corpus validation ($0, no LLM — projection is read-only):** ran `compute_epistemics
+  --apply` against the same skeleton G6 already built this session (no rebuild needed).
+  **Before: 0 chunks with a claim, 0 marked. After: 4008/6215 chunks with a claim (64.5%),
+  3334/6215 marked (53.6%).** Runtime ~34s (357 labels x 6215 chunks; `re.compile`'s internal
+  cache absorbs the repeat pattern compiles across chunks). Manually spot-checked one marked chunk
+  (a Res2Net paper) against its real text — all 6 attributed labels (`res2net-50`, `knowledge
+  distillation`, `salient object`, `salient object detection`, `res2net`, `image segmentation`)
+  genuinely present, no false positives from the boundary regex. Full writeup:
+  `tests/eval/baselines/epistemics_label_attribution_2026-07.md`.
+- **Rejected:** a back-compat shim keeping the old `list[str]` signature (exactly one production
+  caller, in this same module — no back-compat cost to changing it cleanly); re-deriving the
+  boundary regex independently in `epistemics.py` instead of sharing `concept_skeleton`'s (would
+  have left two definitions that could silently diverge again); wiring the parent-child chunk
+  store in the same pass (already a separate, documented follow-up — `docs/specs/
+  pr-m1-epistemics-markers.md` ADR-1 option 2 — kept out of scope here).
+- **Not investigated further (aside, not this sprint's finding):** 53.6% of all real chunks now
+  carry a marker — a large fraction, driven upstream by 226/357 (63%) of concepts being
+  `contested` in this corpus. Plausible for a broad multi-domain corpus, not obviously a
+  false-positive artifact (the spot-check found none), but worth a wider look before leaning on
+  marker density as a UI signal.
+- **What it opens:** a live-UI smoke test (does the desktop chat actually render the chips on a
+  real answer now?) is the natural next verification step — PR-M1's read side
+  (`markers_for_chunk_keys`/`markers_for_parent`) was never the broken part, but hasn't been
+  exercised end-to-end since before this fix. `.claude/KNOWN_ISSUES.md` KI-15 → RESOLVED. Nothing
+  committed — staged for review (cpc §13).
+
+---
+## 2026-07-08 — SPRINT-006 gate-superseded-confidence (G6)
+
+- **What:** `_aggregate_direction` (`concept_skeleton.py`) now requires **>= 2 dated documents on
+  each side** (`MIN_DATED_DOCS_PER_SIDE`, a named module constant, not a `config.py` tunable)
+  before treating median-vs-median as a meaningful aggregate — a median of one document is not an
+  aggregate. Demotes the single-doc-per-side `superseded_trend` fires G3 allowed back to
+  `contested`; all of G3's other fail-safes (missing year, no supporting doc, equal/older median)
+  are preserved verbatim. `epistemics.py` and `_graph_version` are unchanged — the floor is a
+  read-time weight decision, not a serialized field.
+- **Tests:** G3's `test_newer_opposing_makes_superseded` renamed/bumped to a 2-per-side fixture
+  (`test_two_dated_per_side_newer_opposing_fires_superseded`); +2 new unit tests (the exact old
+  1-v-1 fixture now asserting demotion; a 2-vs-1 thin-side case staying contested); +1 new
+  integration test (`test_superseded_marker_requires_two_per_side`, end-to-end skeleton ->
+  `chunk_epistemics` -> marker index, asserting `MARKER_SUPERSEDED` is absent). **Gate green:**
+  ruff / ruff format / `mypy --strict src` (57 files) / bandit 0 HIGH/MED / **786 passed** (was
+  783, +3 net — one test renamed+modified, three added).
+- **Planning gap found before the host run (this is the substantive finding of the session):**
+  the pending "G3 host apply" that prior sessions described as `build_concept_skeleton --apply`
+  is **destructive** run alone — Node A's `--apply` unconditionally rebuilds `concept_edges` from
+  `cooccurrence_edges`/`add_citation_provenance`/`add_similarity_provenance`, none of which set
+  `relation`/`stance_by_doc`, so it silently wipes whatever Node-B (LLM stance) annotation was
+  already on disk. Verified empirically: a dry run against the live corpus showed `llm_relation 0`
+  where the on-disk `skeleton.json` carried `node_b_calls: 17` / `219` annotated edges from the
+  last real Node-B run. **The correct host command is `build_concept_skeleton --apply --enrich`**
+  (Node A + Node B together, one invocation) — this was not stated anywhere in SESSION.md's
+  "next actions" or the SPRINT-006 doc's dependency line, both of which just said "one-command
+  host run: `build_concept_skeleton --apply`."
+- **Real run (this box, $0, local Ollama `llama3.1:8b`):** ran the corrected
+  `build_concept_skeleton --apply --enrich` — 46 LLM calls, 1254/1534 edges annotated, 1455
+  stance assertions, 55 contested edges (year coverage 45/47 docs, 96%, matches the earlier
+  backfill measurement). Then measured **before** (G3 code, no gate) vs **after** (G6 code, gated)
+  from that *same* skeleton snapshot — toggled the guard clause in/out via a local `git stash`
+  rather than re-running the host apply twice, because Node B is not cached (each `--enrich` call
+  re-invokes the LLM, and temp-0 llama is documented as "near-stable, not guaranteed" byte-for-
+  byte) — a second host run would have confounded the gate's effect with run-to-run LLM variance.
+  **Before: 226 contested / 26 superseded_trend. After: 226 contested / 9 superseded_trend** — 17
+  of 26 (65%) were the demoted single-doc case, confirming the code review finding that motivated
+  this sprint (most fires were the thinnest possible evidence). Hand-audited the 9 survivors: all
+  have a genuine multi-year spread on both sides, not a duplicated single year. Not a zero-fire
+  outcome (the sprint doc's other flagged possibility). Full writeup + the audit table:
+  `tests/eval/baselines/superseded_year_rule_2026-07.md`.
+- **Second finding, logged not fixed (out of scope — `epistemics.py` is explicitly untouched by
+  this sprint):** `build_epistemics` reported **0 chunks with a claim** against the real skeleton,
+  even though `load_doc_chunks()` correctly returns all 6215 real chunks in isolation. Root cause:
+  `epistemics.concepts_in_text` regex-matches skeleton node **ids** literally against chunk text;
+  the curated `concept_skeleton.py` (Node A) uses the `Concept.id` **UUID** as the node id, which
+  never appears in chunk text (the retired `concept_graph.py` used `canonical_key(label)`, a real
+  lowercase string — this worked before G1's re-point). So the live answer-time
+  contested/superseded_trend chips (PR-M1) have been silently dark on the real corpus since G1
+  (2026-07-07), independent of G3/G6's node-level correctness — the weights are right, nothing
+  downstream of them reaches a chunk. Logged as `.claude/KNOWN_ISSUES.md` KI-15 (candidate fix:
+  match on label surface forms, not the id — needs its own sprint).
+- **Rejected:** re-running the host apply a second time for the after-split (LLM non-determinism
+  would confound before vs. after — see above); tuning `MIN_DATED_DOCS_PER_SIDE` based on the
+  real-corpus result (the sprint doc is explicit that `2` is definitional, not empirically tuned,
+  and the result wasn't a zero-fire case that would even raise the question).
+- **What it opens:** KI-15 (the UUID/label mismatch) is a materially bigger problem than anything
+  G3/G6 gate — worth its own sprint before further epistemics work is prioritized. The three
+  generic-sounding survivor labels (`psychology`, `bank`, `political science`) are a minor aside
+  on curated-vocabulary quality, not investigated further (out of scope — G6 gates evidence
+  count, not label quality). Nothing committed — staged for review (cpc §13).
+
+---
 ## 2026-07-08 — SPRINT-003 year-aware-superseded (G3)
 
 - **What:** Threaded `Document.year` into the concept skeleton so `node_weights_for_epistemics`

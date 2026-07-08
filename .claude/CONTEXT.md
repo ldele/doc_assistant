@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-07-08 · class: living -->
+<!-- status: active · updated: 2026-07-08 (G7) · class: living -->
 
 # CONTEXT — doc_assistant
 
@@ -32,10 +32,26 @@ TLS-MITM box (on-proxy paid verification user-approved), which this RTX box is n
 (`SPRINT-003-year-aware-superseded.md`) — un-parked 2026-07-08 (the `extract_doc_metadata --apply`
 backfill gave 45/47 docs a year, 96%, disproving the "coverage too thin" park premise) and **code
 built same day** (`load_doc_years` + `_aggregate_direction`, median-vs-median, parameter-free,
-fail-safe to `contested` on missing years; `epistemics.py` unchanged) — staged, awaiting review;
-the host `--apply` run (real corpus year-coverage + contested/superseded split) is still pending.
-Still deferred: Tier 2b (external reach); S1/S2 selective ingestion. 783 tests; ruff / mypy --strict /
-bandit clean.
+fail-safe to `contested` on missing years; `epistemics.py` unchanged); **host `--apply` run DONE
+2026-07-08 (same session as G6, below)** — real corpus: 226 contested / 26 superseded_trend nodes
+(ungated). **G6** (`SPRINT-006-gate-superseded-confidence.md`) — **built + real-validated
+2026-07-08, staged, awaiting review**: gates `superseded_trend` to >= 2 dated docs per side
+(`MIN_DATED_DOCS_PER_SIDE`, named constant not a `config.py` tunable); real corpus after-gate:
+**9 superseded_trend nodes** (17/26 pre-gate fires, 65%, were the demoted single-doc case — the
+review finding that motivated the sprint, confirmed at similar magnitude). Found and worked around
+a real footgun in the process: `build_concept_skeleton --apply` **alone** wipes existing Node-B
+stance annotations (rebuilds edges with no `relation`/`stance_by_doc`) — the correct host command
+is `--apply --enrich` together; see `tests/eval/baselines/superseded_year_rule_2026-07.md`. **G7**
+(`SPRINT-007-fix-epistemics-label-attribution.md`) — **built + real-validated same day**: fixed
+KI-15, the bug G6 surfaced — `epistemics.concepts_in_text` was matching concept **UUIDs** (the
+curated skeleton's node id), not labels, against chunk text, so live answer-time marker surfacing
+(PR-M1) had been silently dark on the real corpus since the G1 re-point, independent of G3/G6's
+node-level correctness. Now matches on label via a shared
+`concept_skeleton.compile_boundary_pattern` (R2's alnum-boundary regex, reused not reimplemented).
+Real corpus: **0 → 4008 chunks with a claim, 0 → 3334 marked** (of 6215) — spot-checked correct,
+not just non-zero. KI-15 RESOLVED. Still deferred: Tier 2b (external reach); S1/S2 selective
+ingestion; a live-UI smoke test that the desktop chips actually render now (PR-M1's read side was
+never the broken part). 790 tests; ruff / mypy --strict / bandit clean.
 Desktop-shell migration (ADR-002): **M0–M5 all shipped (2026-06-25).** M0 (`ChatController`) · M1 (live 7d
 marker chips) · M2 (FastAPI + SSE, `apps/api/`) · M3 (Svelte/Tauri frontend, `apps/desktop/`) · **M4** —
 frozen 1.6 GB onefile bundling model weights (KI-9) + OS trust store (KI-10) + the ASCII-Chroma fix (KI-11);
@@ -149,9 +165,11 @@ to docs/archive/SESSION-archive-NNN.md (local-only, like the baton).
   2026-06-30) + Node B (confined LLM stance, PR #6) both shipped; RG-001/008/009 validated the edges
   (R5 PASS, ADR-008, `CONCEPT_SKELETON_MIN_COOCCURRENCE=2` + `boundary` presence); the superseded
   open-vocabulary `concept_graph.py` is deleted (2026-07-07, KI-7 resolved). **Resolved
-  2026-07-08 (G3, code-built):** the year-aware pass is deterministic, not Node-B/LLM —
-  `node_weights_for_epistemics` can now produce `superseded_trend`, gated on
-  `skeleton.meta["doc_years"]` being populated by the host `--apply` run (pending).
+  2026-07-08 (G3, code-built + host-applied):** the year-aware pass is deterministic, not Node-B/LLM —
+  `node_weights_for_epistemics` produces `superseded_trend`, gated (G6) on >= 2 dated docs per side.
+  **G7 (2026-07-08) fixed the id/label mismatch (KI-15)** that kept this from reaching a chunk at
+  answer time — `epistemics.concepts_in_text` now matches on label; real corpus went from 0 to
+  4008 marked-eligible chunks. KI-15 RESOLVED.
 - **Gap-detection layer (2026-06-26) — Tier 1 + Tier-2a floor BUILT (2026-07-07, G2); the Tier-2a
   stochastic ceiling BUILT (2026-07-08, G5).** Deterministic detectors
   (`isolated`/`single_source`/`thin_bridge`/`under_connected`) + the `unsourced_claim` floor are live

@@ -33,20 +33,44 @@ from doc_assistant.epistemics import (
 
 
 def test_concepts_in_text_word_boundary_match():
-    present = concepts_in_text(
-        "RAG combines BM25 with dense retrieval.",
-        ["rag", "bm25", "dense retrieval", "missing"],
-    )
-    assert present == ["rag", "bm25", "dense retrieval"]
+    labels_by_id = {"n1": "rag", "n2": "bm25", "n3": "dense retrieval", "n4": "missing"}
+    present = concepts_in_text("RAG combines BM25 with dense retrieval.", labels_by_id)
+    assert present == ["n1", "n2", "n3"]
 
 
 def test_concepts_in_text_skips_short_and_avoids_substring_false_positive():
     # "ir" is too short to attribute; "rag" must NOT match inside "storage".
-    assert concepts_in_text("cloud storage for ir systems", ["rag", "ir"]) == []
+    labels_by_id = {"n1": "rag", "n2": "ir"}
+    assert concepts_in_text("cloud storage for ir systems", labels_by_id) == []
 
 
-def test_concepts_in_text_dedupes_repeats():
-    assert concepts_in_text("bm25 bm25 bm25", ["bm25", "bm25"]) == ["bm25"]
+def test_concepts_in_text_dedupes_repeated_ids():
+    # Same id appearing twice in the input (shouldn't happen from a real skeleton, but the
+    # de-dup guard is cheap and load-bearing for `seen`) is only attributed once.
+    assert concepts_in_text("bm25 bm25 bm25", {"n1": "bm25"}) == ["n1"]
+
+
+def test_concepts_in_text_matches_label_not_uuid_id():
+    # KI-15: the curated skeleton's node id is an opaque Concept.id UUID, not a readable
+    # string — attribution must match the LABEL, never the id itself. The id below deliberately
+    # never appears anywhere in the text.
+    uuid_id = "00688507-0351-442b-b156-00521129a344"
+    labels_by_id = {uuid_id: "sentence encoder"}
+    assert concepts_in_text("A sentence encoder maps text to a dense vector.", labels_by_id) == [
+        uuid_id
+    ]
+    # The id itself is never present in any chunk — searching for it directly must find nothing.
+    assert concepts_in_text(uuid_id, labels_by_id) == []
+
+
+def test_concepts_in_text_boundary_handles_nonword_edge_chars():
+    # R2's rationale for alnum lookarounds over `\b`: a trailing `\b` after a non-word char
+    # (the "4" in "gpt-4") would wrongly demand a following word character. Shared via
+    # concept_skeleton.compile_boundary_pattern — this guards epistemics.py doesn't regress to
+    # `\b` (which it did until KI-15's fix).
+    labels_by_id = {"n1": "gpt-4"}
+    assert concepts_in_text("we benchmarked gpt-4 on the task.", labels_by_id) == ["n1"]
+    assert concepts_in_text("gpt-4o is a different model.", labels_by_id) == []
 
 
 # ============================================================

@@ -101,7 +101,38 @@ def _skeleton_with_years(
     )
 
 
-def test_newer_opposing_makes_superseded() -> None:
+def test_two_dated_per_side_newer_opposing_fires_superseded() -> None:
+    # G6: >= 2 dated docs per side is the confidence floor for treating median-vs-median as a
+    # genuine aggregate, not a coin-flip — this is the smallest fixture that still clears it.
+    nodes = [
+        ConceptNode("a", "A", ("old1", "old2", "new1", "new2"), 1, 0),
+        ConceptNode("b", "B", ("old1", "old2", "new1", "new2"), 1, 0),
+    ]
+    edges = [
+        SkeletonEdge(
+            "a",
+            "b",
+            frozenset({"cooccurrence", "llm_relation"}),
+            2.0,
+            3,
+            stance_by_doc=(
+                ("old1", "supports"),
+                ("old2", "supports"),
+                ("new1", "contradicts"),
+                ("new2", "contradicts"),
+            ),
+        )
+    ]
+    doc_years = {"old1": 2017, "old2": 2018, "new1": 2023, "new2": 2024}
+    w = node_weights_for_epistemics(_skeleton_with_years(nodes, edges, doc_years))
+    assert w["a"].coverage == "contested"
+    assert w["a"].direction == "superseded_trend"
+
+
+def test_single_disputer_one_supporter_now_stays_contested() -> None:
+    # G6 (SPRINT-006): the exact 1-v-1 fixture that fired `superseded_trend` under G3 alone is
+    # now demoted — median-of-one is not an aggregate. This is the sprint's headline behavior
+    # change; the old assertion (`superseded_trend`) is deliberately gone.
     nodes = [
         ConceptNode("a", "A", ("old", "new"), 1, 0),
         ConceptNode("b", "B", ("old", "new"), 1, 0),
@@ -118,7 +149,35 @@ def test_newer_opposing_makes_superseded() -> None:
     ]
     w = node_weights_for_epistemics(_skeleton_with_years(nodes, edges, {"old": 2018, "new": 2024}))
     assert w["a"].coverage == "contested"
-    assert w["a"].direction == "superseded_trend"
+    assert w["a"].direction == "contested"
+
+
+def test_thin_side_two_vs_one_stays_contested() -> None:
+    # 2 dated supporters clear the floor, but only 1 dated disputer does not — the thin side
+    # still gates the whole comparison to `contested`, even though the median test alone would
+    # have fired (opp median 2024 > sup median 2018.5).
+    nodes = [
+        ConceptNode("a", "A", ("old1", "old2", "new"), 1, 0),
+        ConceptNode("b", "B", ("old1", "old2", "new"), 1, 0),
+    ]
+    edges = [
+        SkeletonEdge(
+            "a",
+            "b",
+            frozenset({"cooccurrence", "llm_relation"}),
+            2.0,
+            3,
+            stance_by_doc=(
+                ("old1", "supports"),
+                ("old2", "supports"),
+                ("new", "contradicts"),
+            ),
+        )
+    ]
+    doc_years = {"old1": 2018, "old2": 2019, "new": 2024}
+    w = node_weights_for_epistemics(_skeleton_with_years(nodes, edges, doc_years))
+    assert w["a"].coverage == "contested"
+    assert w["a"].direction == "contested"
 
 
 def test_older_or_equal_opposing_stays_contested() -> None:

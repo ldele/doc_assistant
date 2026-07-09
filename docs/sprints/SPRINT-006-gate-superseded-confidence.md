@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-07-08 · class: disposable -->
+<!-- status: archived · updated: 2026-07-09 · class: disposable -->
 <!-- Follow-on to SPRINT-003 (G3). G3 shipped the parameter-free median-vs-median superseded_trend
      rule as a *measurable instrument* and deliberately left the single-doc-per-side case firing
      (1 old supporter vs 1 new disputer -> superseded_trend). Review flagged that case as the

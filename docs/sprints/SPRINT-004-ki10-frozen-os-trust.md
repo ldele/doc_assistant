@@ -1,7 +1,7 @@
-<!-- status: active · updated: 2026-07-07 · class: disposable -->
-<!-- QUEUED behind SPRINT-003 (G3). Independent subsystem (packaging/TLS, not epistemics) — order can
-     swap. When executed, archive the sibling active contract first so sprint_check sees exactly one
-     active contract (the G1→G2 archive-on-land pattern). -->
+<!-- status: active · updated: 2026-07-09 · class: disposable -->
+<!-- NEXT UP (2026-07-09). SPRINT-003/006/007 (G3/G6/G7) all landed + archived, so this is now the sole
+     active contract — sprint_check sees exactly one. Independent subsystem (packaging/TLS, not
+     epistemics). Runnable only on this TLS-MITM proxy box; on-proxy paid turn user-approved 2026-07-07. -->
 
 # SPRINT-004 — ki10-frozen-os-trust
 

@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-07-08 · class: disposable -->
+<!-- status: archived · updated: 2026-07-09 · class: disposable -->
 <!-- KI-15 (.claude/KNOWN_ISSUES.md): epistemics.concepts_in_text matches skeleton node *ids*
      literally against chunk text. That was correct for the retired open-vocabulary
      concept_graph.py, whose node id WAS canonical_key(label) — a real lowercase string. The

@@ -386,4 +386,4 @@ For the authoritative, current GPU list — NVIDIA compute capability, AMD ROCm 
 
 ## License
 
-MIT
+Apache-2.0 — see [LICENSE.txt](LICENSE.txt).

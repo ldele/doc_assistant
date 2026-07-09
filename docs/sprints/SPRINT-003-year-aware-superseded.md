@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-07-08 · class: disposable -->
+<!-- status: archived · updated: 2026-07-09 · class: disposable -->
 <!-- UN-PARKED 2026-07-08. The park condition below — "un-park once the corpus carries real year
      metadata (`extract_doc_metadata --apply` → measure coverage)" — is now MET: the backfill ran on
      the RTX box (2026-07-08), giving 45/47 active docs a year (96%, range 2012-2026), far above the

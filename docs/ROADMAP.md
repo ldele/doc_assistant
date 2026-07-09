@@ -38,7 +38,7 @@ in `tests/eval/TESTING.md`.
 - **Phase 5 — Embedding & eval foundation** — config-driven embedder, golden set, provenance. Status: done.
 - **Phase 6 — Figures/tables + dual-layer interpretation + reviewer + self-improvement loop** (per-project routing deferred). Status: in progress.
 - **Phase 7 — Gap detection** — wiki/synthesis layer + cross-document concept graph + the gap-detection layer over them. Status: in progress. *(The concept-graph open-vocabulary core was superseded by the 2026-06-18 redesign — not yet built; see `.claude/KNOWN_ISSUES.md`. The gap layer itself is design-locked in `docs/decisions/ADR-004-gap-detection-layer.md` / `docs/specs/feature-gap-detection.md`, blocked on the Decision-C skeleton + the RG-001 edge-precision run.)*
-- **Phase 8 — UI polish** — settings page exposing the RAG sandbox knobs. Status: planned.
+- **Phase 8 — UI polish** — settings page exposing the RAG sandbox knobs. Status: planned. *(Chat-UI refinement shipped 2026-07-09 — `ee8fe8d`. The sandbox knobs are design-locked in `docs/decisions/ADR-010-rag-sandbox-nonpersistent-overrides.md` (accepted) / `docs/specs/feature-rag-sandbox.md` — session-scoped, non-persistent, query-time overrides only; ready to build.)*
 - **Phase 9 — Literature-review generation** — PRISMA-trAIce export. Status: planned.
 - **(no phase number) — Extract eval harness to a standalone repo** (Feature 5). Status: planned.
 

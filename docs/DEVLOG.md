@@ -8,6 +8,76 @@ Append only — never edit past entries.
 Format: What changed | Why | Rejected alternatives | What it opens
 
 ---
+## 2026-07-09 — ADR-010 (proposed): RAG sandbox — non-persistent query-time overrides (Phase 8 planning)
+
+- **What:** drafted `docs/decisions/ADR-010-rag-sandbox-nonpersistent-overrides.md` (**Status:
+  proposed** — awaiting user sign-off), the design decision for Phase 8's "settings page exposing the
+  RAG sandbox knobs." Decision: a **session-scoped, non-persistent** experiment surface in the desktop
+  Settings that overrides only the **query-time** knobs which honestly move a single answer — `TOP_K`,
+  `SYNTHESIS_MODE` (ai/human), `USE_MULTI_QUERY` — never rebuilding the pipeline, never re-ingesting,
+  never persisting. Construction-time knobs (`CANDIDATE_K`, retrieval weights, reranker, provider) and
+  ingest-time knobs (chunk sizes, `USE_PARENT_CHILD`) stay **read-only with the reason**; the
+  BM25/vector weight is shown read-only labeled "inert on the shipped top-K by construction (measured)"
+  rather than given a misinforming slider. Grounded in a full knob-flow map (query-time vs
+  construction-time vs ingest-time, cited to `pipeline.py` / `chat_controller.py` / `ingest/chunking.py`
+  / `apps/api/main.py`).
+- **Why:** the roadmap asks to expose the knobs, but the locked-settings non-negotiable says settings
+  change only via an eval-harness experiment. **Non-persistence is the governance wall** — the sandbox
+  changes *this answer*, never *the default*, so the eval harness stays the source of truth. The
+  exposed set (cheap, query-parameterizable) equals the honest set equals the governance-safe set — all
+  three constraints land on one scope line, which keeps the feature small.
+- **Rejected:** persistent editable settings (option 2) — directly violates the locked-settings rule,
+  lets measurable quality silently regress; read-only exposition only (option 1) — safe but not a
+  sandbox, kept as the fallback if per-request override isolation can't be proven. A/B-compare
+  (locked-vs-override side by side) is the recorded **north-star**, phased *after* the basic surface
+  (≈2× per-turn cost).
+- **Accepted + spec written (same session):** user signed off → ADR-010 flipped **accepted**, v1
+  scope = option 3 (basic override surface; A/B-compare deferred as the north-star). Build spec
+  `docs/specs/feature-rag-sandbox.md` written to the ADR-004/feature-gap-detection contract shape —
+  per-file contracts (`chat_controller.RagOverrides` + `handle(overrides=…)`; `retrieve_with_scores(…,
+  use_multi_query=None)`; `ChatRequest.overrides` pydantic; `POST /api/chat` pass-through; the
+  `_settings_view` weights-from-config fix; the Svelte sandbox surface), guard tests (incl. the
+  isolation guard — a turn with overrides must not leak into the next), and DoD. **Ready to build as a
+  Phase 8 sprint.**
+- **Opens:** two ⚠ carried into the spec's DoD — per-request override isolation under the shared
+  FastAPI singleton (guard test required; no module-global monkeypatching), and the untested "is this
+  the *useful* knob set" product hypothesis (validate with real use before widening). Not yet built;
+  nothing committed.
+
+## 2026-07-09 — Chat UI refinement (Phase 8 UI polish, presentational)
+
+- **What:** five presentational refinements to the Tauri/Svelte desktop chat — no backend, no
+  locked-setting change. (1) **Auto-scroll while streaming** (`apps/desktop/src/App.svelte`): a
+  `$effect` keeps the newest content in view as tokens append / a turn is added, but only while the
+  reader is *pinned* to the bottom — an `onscroll` handler clears `pinned` once they scroll up > 80px
+  and re-arms it at the edge; a send force-pins so the view jumps to the user's own new turn. (2)
+  **Per-turn usage chip** (`Turn.svelte`): a muted `N tokens · $X.XXXX` / `· local` line under each
+  answer (in / out / session tooltip) — surfaces the `usage` numbers that were previously reachable
+  only inside the Provenance `<details>`. (3) **Textarea auto-grow** (`App.svelte`): the composer
+  grows with content to a 160px cap then scrolls, and resets to base after a send;
+  `min-height`/`max-height` added. (4) **Settings drawer transitions** (`Settings.svelte`):
+  `transition:fly` (slide, no fade) on the panel + `transition:fade` on the scrim, gated by a
+  `prefers-reduced-motion` check → 0 ms (instant swap) when reduced motion is requested. (5)
+  **Send-button spinner** (`App.svelte`): replaces the bare `…` with a CSS spinner (`aria-busy`,
+  reduced-motion-safe). `svelte-check` clean (0 errors / 0 warnings, 116 files).
+- **Why:** Phase 8 UI-polish, "chat UI refinement" track (user-chosen over the Phase 8 sandbox-knobs
+  feature). The buried per-turn cost is the notable one — for a cost-conscious local research tool,
+  glanceable spend fits the inform-don't-block posture. Auto-scroll + auto-grow are baseline
+  chat-composer ergonomics that were absent.
+- **Rejected:** recoloring the source marker chips (currently warn-amber for all) → dropped after
+  confirming `epistemics.derive_markers` only ever emits `contested` / `superseded_trend`, both
+  genuine warnings, so amber is already correct and any neutral branch would be dead code for values
+  the backend cannot produce. CSS-only drawer transitions → they don't fire on `{#if}` mount without
+  a post-mount class toggle; Svelte JS transitions with a runtime reduced-motion duration cover both
+  intro and outro cleanly.
+- **Opens:** runtime not yet driven end-to-end — streaming auto-scroll / usage chip need the FastAPI
+  sidecar's SSE, and the dev server on :1420 was externally occupied this session, so verification is
+  `svelte-check` + reasoning only (the auto-scroll `$effect` cannot loop: its tracked deps are the
+  last turn's `answer`, `turns.length`, `convoEl`; writing `scrollTop` invalidates none of them, and
+  `pinned` is a plain `let`). The Phase 8 "RAG sandbox knobs" feature is still unbuilt/unspecced and
+  collides with the locked-settings rule — needs an ADR before code. **The 3 Svelte files landed as
+  user commit `ee8fe8d` "UI refinements"; this DEVLOG entry trails it (uncommitted).**
+
 ## 2026-07-09 — SPRINT-004 ki10-frozen-os-trust (G4, KI-10 branch B)
 
 - **What:** new `llm.os_trust_http_client()` — builds an anthropic

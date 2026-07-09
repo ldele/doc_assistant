@@ -18,6 +18,20 @@
     streaming?: boolean
     error?: string | null
   } = $props()
+
+  // Glanceable turn cost — the same numbers the Provenance panel spells out, surfaced up front
+  // so the reader sees the spend without expanding anything (inform, don't gate).
+  const usage = $derived(result?.usage ?? null)
+  const tokens = $derived(usage ? (usage.turn_input + usage.turn_output).toLocaleString() : '')
+  const spend = $derived(
+    !usage
+      ? ''
+      : usage.is_local
+        ? 'local'
+        : usage.cost_usd != null
+          ? `$${usage.cost_usd.toFixed(4)}`
+          : '—',
+  )
 </script>
 
 <div class="turn">
@@ -40,6 +54,14 @@
       {/if}
       <ClaimReview claims={result.flagged_claims} />
       <Provenance {result} />
+      {#if usage}
+        <div
+          class="usage"
+          title={`in ${usage.turn_input.toLocaleString()} · out ${usage.turn_output.toLocaleString()} · session ${usage.session_total.toLocaleString()} tokens`}
+        >
+          {tokens} tokens · {spend}
+        </div>
+      {/if}
     {:else}
       <Markdown source={answer} />
       {#if streaming}<span class="cursor">▍</span>{/if}
@@ -69,6 +91,13 @@
     display: grid;
     gap: 0.5rem;
     margin-top: 0.7rem;
+  }
+  .usage {
+    margin-top: 0.6rem;
+    font-size: 0.72rem;
+    color: var(--fg-2);
+    font-variant-numeric: tabular-nums;
+    text-align: right;
   }
   .cursor {
     animation: blink 1s steps(2) infinite;

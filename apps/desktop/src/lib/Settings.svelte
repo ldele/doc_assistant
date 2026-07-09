@@ -2,6 +2,14 @@
   import type { Settings, IngestStatus } from './types'
   import { getSettings, setSourceDir, startIngest, getIngestStatus } from './api'
   import { onDestroy } from 'svelte'
+  import { fade, fly } from 'svelte/transition'
+
+  // Slide the drawer in/out — but collapse to an instant swap when the OS asks for reduced motion.
+  const animate =
+    typeof window !== 'undefined' && window.matchMedia
+      ? !window.matchMedia('(prefers-reduced-motion: reduce)').matches
+      : true
+  const DUR = animate ? 180 : 0
 
   // The parent refreshes /api/health after a successful ingest so the chunk count in the
   // header goes live (the backend rebuilds the controller on the new corpus before "done").
@@ -134,6 +142,7 @@
   class="scrim"
   onclick={() => !busy && onClose()}
   role="presentation"
+  transition:fade={{ duration: DUR }}
 ></div>
 
 <div
@@ -144,6 +153,7 @@
   tabindex="-1"
   bind:this={panelEl}
   onkeydown={onPanelKey}
+  transition:fly={{ x: 420, opacity: 1, duration: DUR }}
 >
   <header>
     <strong>Settings</strong>

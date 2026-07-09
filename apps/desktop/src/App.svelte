@@ -23,6 +23,12 @@
   let showSettings = $state(false)
   let nextId = 0
 
+  let convoEl = $state<HTMLElement | null>(null)
+  let taEl = $state<HTMLTextAreaElement | null>(null)
+  // Follow a streaming answer only while the reader is already at the bottom, so a long
+  // response never yanks them away from something they scrolled up to re-read.
+  let pinned = true
+
   // Re-pull /api/health after an ingest so the header chunk count + the empty-corpus banner
   // reflect the new corpus (the backend rebuilds the controller before reporting "done").
   async function refreshHealth(): Promise<void> {
@@ -58,10 +64,40 @@
     }
   })
 
+  // Keep the newest content in view as tokens stream in / a turn is added — but only when the
+  // reader is pinned to the bottom (see `pinned`). Reading the last turn's answer + the turn
+  // count is what makes this re-run on each streamed token.
+  $effect(() => {
+    const last = turns[turns.length - 1]
+    void last?.answer
+    void turns.length
+    if (pinned && convoEl) convoEl.scrollTop = convoEl.scrollHeight
+  })
+
+  // A reader who has scrolled up to re-read is no longer pinned; snap back on once they
+  // return to the bottom (small slack so it engages just before the exact edge).
+  function onConvoScroll(): void {
+    if (!convoEl) return
+    pinned = convoEl.scrollHeight - convoEl.scrollTop - convoEl.clientHeight < 80
+  }
+
+  // Grow the composer with its content up to a cap, then let it scroll. Reset to the base
+  // height after a send (measuring `scrollHeight` on empty content would keep the tall size).
+  function autogrow(): void {
+    if (!taEl) return
+    taEl.style.height = 'auto'
+    taEl.style.height = `${Math.min(taEl.scrollHeight, 160)}px`
+  }
+  function resetComposer(): void {
+    if (taEl) taEl.style.height = 'auto'
+  }
+
   async function send(): Promise<void> {
     const text = input.trim()
     if (!text || sending) return
     input = ''
+    resetComposer()
+    pinned = true // sending jumps the reader to their own new turn
     sending = true
     const idx =
       turns.push({
@@ -122,7 +158,7 @@
     </div>
   </header>
 
-  <section class="conversation">
+  <section class="conversation" bind:this={convoEl} onscroll={onConvoScroll}>
     {#if status === 'ready' && health && health.chunk_count === 0}
       <div class="banner">
         <strong>No documents indexed yet.</strong>
@@ -147,14 +183,21 @@
 
   <footer>
     <textarea
+      bind:this={taEl}
       bind:value={input}
       onkeydown={onKey}
+      oninput={autogrow}
       placeholder="Ask your documents…  (Enter to send, Shift+Enter for newline)"
       rows="2"
       disabled={sending}
     ></textarea>
-    <button class="send" onclick={send} disabled={sending || input.trim() === ''}>
-      {sending ? '…' : 'Send'}
+    <button
+      class="send"
+      onclick={send}
+      disabled={sending || input.trim() === ''}
+      aria-busy={sending}
+    >
+      {#if sending}<span class="spinner" aria-hidden="true"></span>{:else}Send{/if}
     </button>
   </footer>
 </main>
@@ -241,6 +284,9 @@
     border: 1px solid var(--border);
     background: var(--surface);
     color: var(--fg);
+    min-height: 3.4rem;
+    max-height: 160px;
+    overflow-y: auto;
   }
   button {
     font: inherit;
@@ -260,6 +306,28 @@
     color: var(--accent-fg);
     border-color: var(--accent);
     font-weight: 600;
+    min-width: 4.4rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .spinner {
+    width: 0.95em;
+    height: 0.95em;
+    border: 2px solid var(--accent-fg);
+    border-top-color: transparent;
+    border-radius: 50%;
+    animation: spin 0.6s linear infinite;
+  }
+  @keyframes spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .spinner {
+      animation: none;
+    }
   }
   .ghost {
     font-size: 0.82rem;

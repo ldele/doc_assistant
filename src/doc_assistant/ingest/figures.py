@@ -493,7 +493,13 @@ class AnthropicVisionDescriber:
     def __init__(self, *, api_key: str | None = None) -> None:
         from anthropic import Anthropic
 
-        self._client = Anthropic(api_key=api_key or config.ANTHROPIC_API_KEY)
+        from doc_assistant.llm import os_trust_http_client
+
+        kwargs: dict[str, Any] = {"api_key": api_key or config.ANTHROPIC_API_KEY}
+        http_client = os_trust_http_client()
+        if http_client is not None:  # OS-trust TLS for corporate MITM proxies (KI-10)
+            kwargs["http_client"] = http_client
+        self._client = Anthropic(**kwargs)
         self._tool = figure_tool()
 
     def describe(

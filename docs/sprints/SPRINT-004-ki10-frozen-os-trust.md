@@ -1,4 +1,6 @@
-<!-- status: active · updated: 2026-07-09 · class: disposable -->
+<!-- status: archived · updated: 2026-07-09 · class: disposable -->
+<!-- LANDED 2026-07-09 (branch B, staged) — KI-10 RESOLVED via an on-proxy paid Step-C turn. -->
+
 <!-- NEXT UP (2026-07-09). SPRINT-003/006/007 (G3/G6/G7) all landed + archived, so this is now the sole
      active contract — sprint_check sees exactly one. Independent subsystem (packaging/TLS, not
      epistemics). Runnable only on this TLS-MITM proxy box; on-proxy paid turn user-approved 2026-07-07. -->

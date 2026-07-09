@@ -35,8 +35,9 @@ class _FakeMessages:
 
 
 class _FakeAnthropic:
-    def __init__(self, *, api_key: str | None = None) -> None:
+    def __init__(self, *, api_key: str | None = None, http_client: Any = None) -> None:
         self.api_key = api_key
+        self.http_client = http_client
         self.sink: dict[str, Any] = {}
         self.messages = _FakeMessages(self.sink)
 
@@ -133,6 +134,59 @@ def test_anthropic_complete_hoists_system_message(patched_sdks: None):
     assert kwargs["system"] == "SYS"
     # The system turn is hoisted out of the messages array.
     assert [m["role"] for m in kwargs["messages"]] == ["user"]
+
+
+# ============================================================
+# OS-trust HTTP client (KI-10 — corporate TLS-MITM proxy)
+# ============================================================
+
+
+def test_anthropic_client_uses_os_trust_context_when_truststore_present(
+    patched_sdks: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """In the frozen build, when ``truststore`` is importable, the SDK is handed an
+    http client whose ``verify`` context is the OS-trust one (KI-10 branch B)."""
+    import sys
+
+    monkeypatch.setattr(sys, "frozen", True, raising=False)  # simulate the frozen build
+    sentinel_ctx = object()
+    captured: dict[str, Any] = {}
+    monkeypatch.setattr("truststore.SSLContext", lambda _proto: sentinel_ctx)
+
+    def fake_default_httpx(*, verify: Any, **_kw: Any) -> Any:
+        captured["verify"] = verify
+        return object()
+
+    monkeypatch.setattr("anthropic.DefaultHttpxClient", fake_default_httpx)
+
+    client = llm.make_client("anthropic", "m")
+    # The SDK received an explicit OS-trust http client (not the certifi default)...
+    assert client._client.http_client is not None  # type: ignore[attr-defined]
+    # ...built from the truststore-backed verify context.
+    assert captured["verify"] is sentinel_ctx
+
+
+def test_anthropic_client_falls_back_cleanly_when_truststore_absent(
+    patched_sdks: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Even in the frozen build, if ``truststore`` cannot be imported, construction
+    still succeeds and no custom http client is handed to the SDK — it uses its own
+    default (certifi). No live paid call (cpc §13); construction only."""
+    import builtins
+    import sys
+
+    monkeypatch.setattr(sys, "frozen", True, raising=False)  # frozen, but truststore missing
+    real_import = builtins.__import__
+
+    def fake_import(name: str, *args: Any, **kwargs: Any) -> Any:
+        if name == "truststore":
+            raise ImportError("truststore unavailable")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", fake_import)
+
+    client = llm.make_client("anthropic", "m")
+    assert client._client.http_client is None  # type: ignore[attr-defined]
 
 
 # ============================================================

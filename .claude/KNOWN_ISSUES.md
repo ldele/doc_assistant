@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-07-08 (KI-15) · class: living -->
+<!-- status: active · updated: 2026-07-09 (KI-10 branch B) · class: living -->
 
 # KNOWN ISSUES
 
@@ -167,7 +167,7 @@ Migrated from the old `CLAUDE.md` / `README` runtime-quirk notes on 2026-06-20 (
   of embedding in the onefile (not needed — cold-start is fine).
 - **Pointer:** `docs/desktop-packaging.md` §"Data directory"; RG-010 / RG-012 in `.claude/RIGOR_TODO.md`.
 
-## KI-10 — Frozen build's bundled `certifi` rejects corporate-MITM'd HTTPS — OPEN (2026-06-25: truststore CONFIRMED ineffective against a real MITM proxy in the freeze)
+## KI-10 — Frozen build's bundled `certifi` rejects corporate-MITM'd HTTPS — RESOLVED (2026-07-09, SPRINT-004 branch B — frozen on-proxy paid turn succeeded)
 - **Symptom:** On a box behind a TLS-inspecting (MITM) corporate proxy, the frozen
   `dist\doc-assistant-api.exe` fails outbound HTTPS with `[SSL: CERTIFICATE_VERIFY_FAILED] unable to get
   local issuer certificate`. Seen 2026-06-23 twice: (1) the startup HuggingFace metadata HEAD for
@@ -212,6 +212,29 @@ Migrated from the old `CLAUDE.md` / `README` runtime-quirk notes on 2026-06-20 (
   re-freeze + re-run the on-proxy turn — a stderr `WARN truststore.inject_into_ssl() failed …` will confirm
   whether inject is the failure point; if so fix the freeze's truststore bundling, else hand the anthropic
   client an explicit OS-trust `verify` context. Reproducible/fixable in **dev** on this proxy box.
+- **Branch-B fix BUILT (2026-07-09, SPRINT-004 — staged, not committed):** the diagnostic lead above
+  (inject doesn't reach the anthropic httpx client in the freeze) is exactly what branch B sidesteps —
+  it stops depending on the process-global patch. New `llm.os_trust_http_client()` builds an anthropic
+  `DefaultHttpxClient(verify=truststore.SSLContext(ssl.PROTOCOL_TLS_CLIENT))` (OS trust store carries the
+  MITM root CA) and `AnthropicClient.__init__` / `AnthropicVisionDescriber.__init__` pass it as
+  `http_client=`. **`sys.frozen`-gated** — `None` (SDK default certifi) in dev/tests, OS-trust client only
+  in the frozen build where KI-10 bites — so dev/test behaviour is byte-unchanged (no ripple).
+  `truststore`/SDK import guarded → clean certifi fallback + `log.info` if unavailable. `DefaultHttpxClient`
+  (not a bare `httpx.Client`) preserves the SDK's default timeouts/limits. +2 construction-only unit tests
+  (present+frozen→OS-trust context; absent→certifi fallback), **no paid call** (cpc §13); gate green
+  (791 passed). Branch A (PyInstaller runtime hook) not needed — the on-proxy Step-C run below confirms
+  truststore imports + injects fine in the freeze (no `WARN truststore.inject_into_ssl() failed`), so
+  branch B's explicit `http_client` is what took effect.
+- **RESOLVED — Step C run on-proxy (2026-07-09, this TLS-MITM box):** re-froze with branch B
+  (`just sidecar` → fresh 1.62 GB `dist\doc-assistant-api.exe`, 12:00), launched it against the dev corpus
+  (`DOC_DATA_DIR`, `chunk_count=30882`, `model=anthropic/claude-haiku-4-5-20251001`), and drove **one real
+  on-proxy `/api/chat` turn**. Result: **HTTP 200, tokens streamed, a grounded cited answer,
+  `cost_usd≈$0.0059` billed (`is_local:false`) — the paid Anthropic call succeeded through the corporate
+  MITM proxy with ZERO `CERTIFICATE_VERIFY_FAILED`** (frozen server log clean: no SSL/ConnectError, no
+  truststore WARN). This is the exact turn that failed the handshake with `$0` billed on 2026-06-25.
+  **KI-10 → RESOLVED.** Frozen paid number recorded in `.claude/RIGOR_TODO.md` RG-011. (Housekeeping: the
+  re-freeze needed the `packaging` extra — `uv sync --extra cpu --extra dev --extra packaging`; run
+  `uv sync --extra cpu --extra dev` to return the venv to its lean documented state.)
 - **Pointer:** RG-010/RG-011 progress in `.claude/RIGOR_TODO.md`; `docs/desktop-packaging.md` §5.
 
 ## KI-11 — chromadb hnsw index not persisted under a non-ASCII path → broken corpus for accented usernames — RESOLVED (2026-06-24)

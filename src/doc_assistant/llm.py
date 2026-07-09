@@ -37,9 +37,16 @@ from __future__ import annotations
 import os
 import sys
 import time
-from typing import Any, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
+
+import structlog
 
 from doc_assistant import config
+
+if TYPE_CHECKING:
+    import httpx
+
+log = structlog.get_logger(__name__)
 
 # A chat message in the normalized shape. ``role`` is one of
 # "system" | "user" | "assistant"; ``content`` is plain text.
@@ -81,6 +88,51 @@ def _extract_anthropic_text(response: Any) -> str:
 
 
 # ============================================================
+# OS-trust HTTP client (KI-10 — corporate TLS-MITM proxy)
+# ============================================================
+
+
+def os_trust_http_client() -> httpx.Client | None:
+    """Build an httpx client that verifies outbound TLS against the OS trust store.
+
+    Behind a TLS-inspecting (MITM) corporate proxy the proxy's root CA lives in the
+    OS/system trust store, not in the ``certifi`` bundle the Anthropic SDK's httpx
+    client pins — so a frozen build SSL-fails the Anthropic call with
+    ``CERTIFICATE_VERIFY_FAILED`` (KI-10). Handing the SDK a client whose ``verify``
+    context is truststore-backed routes verification through the OS store, and does
+    so *inside* ``AnthropicClient`` — it does not depend on
+    ``truststore.inject_into_ssl()``'s process-global monkeypatch surviving the
+    PyInstaller freeze (the confirmed failure mode; ``docs/desktop-packaging.md`` §KI-10,
+    branch B).
+
+    ``DefaultHttpxClient`` (the SDK's own subclass) is used rather than a bare
+    ``httpx.Client`` so the SDK's default timeouts / connection limits are preserved
+    while the OS-trust ``verify`` context is layered on.
+
+    Returns ``None`` (→ caller uses the SDK's default certifi client) in two cases:
+    a **dev / non-frozen** run, where certifi is correct and the entrypoint's
+    ``truststore.inject_into_ssl()`` already covers an on-proxy dev turn; or when
+    ``truststore`` / the SDK's ``DefaultHttpxClient`` is unavailable. The OS-trust
+    client is therefore built **only in the frozen build**, exactly where KI-10
+    bites — dev and test behaviour is unchanged. Off-proxy frozen use is unaffected
+    too, since the OS store is a superset of certifi's public CAs.
+    """
+    if not getattr(sys, "frozen", False):
+        # dev / tests: SDK default (certifi); on-proxy dev is covered by the entrypoint inject.
+        return None
+    try:
+        import ssl
+
+        import truststore
+        from anthropic import DefaultHttpxClient
+    except Exception as exc:  # truststore/anthropic not bundled → fall back to certifi
+        log.info("os_trust_http_client_unavailable", error=str(exc))
+        return None
+    ctx = truststore.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    return DefaultHttpxClient(verify=ctx)
+
+
+# ============================================================
 # Adapters
 # ============================================================
 
@@ -97,7 +149,11 @@ class AnthropicClient:
         from anthropic import Anthropic
 
         self.model = model
-        self._client = Anthropic(api_key=api_key or config.ANTHROPIC_API_KEY)
+        kwargs: dict[str, Any] = {"api_key": api_key or config.ANTHROPIC_API_KEY}
+        http_client = os_trust_http_client()
+        if http_client is not None:  # OS-trust TLS for corporate MITM proxies (KI-10)
+            kwargs["http_client"] = http_client
+        self._client = Anthropic(**kwargs)
 
     def complete(self, messages: list[Message], *, temperature: float, max_tokens: int) -> str:
         system_parts = [m["content"] for m in messages if m["role"] == "system"]

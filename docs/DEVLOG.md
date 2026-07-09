@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-07-08 · class: append-only -->
+<!-- status: active · updated: 2026-07-09 · class: append-only -->
 
 # DEVLOG — doc_assistant
 
@@ -6,6 +6,47 @@ Real-time development log. One entry per logical change.
 Append only — never edit past entries.
 
 Format: What changed | Why | Rejected alternatives | What it opens
+
+---
+## 2026-07-09 — SPRINT-004 ki10-frozen-os-trust (G4, KI-10 branch B)
+
+- **What:** new `llm.os_trust_http_client()` — builds an anthropic
+  `DefaultHttpxClient(verify=truststore.SSLContext(ssl.PROTOCOL_TLS_CLIENT))` so outbound
+  Anthropic TLS verifies against the **OS trust store** (which carries the corporate MITM root CA)
+  instead of the SDK's pinned `certifi` bundle (KI-10). Gated on `getattr(sys, "frozen", False)`:
+  it returns `None` in dev / tests (SDK default certifi — unchanged behaviour; on-proxy dev is
+  already covered by the `apps/api/__main__` entrypoint `inject_into_ssl`) and only builds the
+  OS-trust client **in the frozen build**, exactly where KI-10 bites. `truststore`/SDK import is
+  guarded → `None` fallback + `log.info` if unavailable. Reused at both raw-SDK Anthropic seams via
+  one helper: `llm.AnthropicClient.__init__` (`llm.py`) and `AnthropicVisionDescriber.__init__`
+  (`ingest/figures.py`) — each passes `http_client=` only when non-`None`. +2 construction-only
+  unit tests (`test_llm.py`: OS-trust context when truststore present + frozen; clean certifi
+  fallback when truststore import fails) — **no live paid call** (cpc §13). `_FakeAnthropic` fake
+  extended to accept `http_client`. Gate green: ruff / ruff format / `mypy --strict`(57) / bandit
+  (0 HIGH/MED) clean; **pytest 791 passed, 1 skipped** (+2 vs pre-sprint).
+- **Why:** the frozen `dist\doc-assistant-api.exe` SSL-fails the Anthropic call on a corporate
+  TLS-MITM box (`CERTIFICATE_VERIFY_FAILED`, $0 billed) — a corporate-proxy shippability blocker
+  (KI-10). The 2026-06-25 on-proxy check confirmed `truststore.inject_into_ssl()`'s process-global
+  patch does **not** reach the anthropic httpx client in the freeze; branch B hands the SDK an
+  explicit OS-trust `verify` context, robust to that (`docs/desktop-packaging.md` §KI-10 Step B).
+- **Rejected:** the contract's literal `httpx.Client(verify=ctx)` → used the SDK's own
+  `DefaultHttpxClient` subclass instead so the SDK's default timeouts / connection limits are
+  preserved while OS-trust `verify` is layered on (per the anthropic SDK's own guidance). Applying
+  OS-trust in dev too → gated on `sys.frozen` instead: keeps dev/test behaviour byte-identical (no
+  ripple into the many AnthropicClient-constructing tests), and the fix lands precisely in the
+  frozen build. A branch-A PyInstaller runtime hook (`scripts/rthook_truststore.py`) → not written:
+  branch B doesn't depend on the global inject surviving the freeze, so the hook is unneeded unless
+  Step-A diagnostics show truststore itself isn't bundled (spec already `collect_submodules`s it).
+- **Step C DONE (on-proxy, this TLS-MITM box):** re-froze with branch B (`just sidecar` → fresh 1.62 GB
+  `dist\doc-assistant-api.exe`; needed `uv sync --extra cpu --extra dev --extra packaging` to add
+  pyinstaller), launched against the dev corpus (`chunk_count=30882`, `model=anthropic/claude-haiku-4-5`),
+  drove **one real on-proxy `/api/chat` turn** → **HTTP 200, tokens streamed, grounded cited answer,
+  ≈$0.0059 billed (`is_local:false`), ≈4.7 s, ZERO `CERTIFICATE_VERIFY_FAILED`** (frozen log clean, no
+  truststore WARN → branch B's explicit `http_client` took effect). The exact turn that failed the
+  handshake with $0 billed on 2026-06-25. **KI-10 → RESOLVED**; frozen paid RG-011 number recorded
+  (`.claude/RIGOR_TODO.md`).
+- **Opens:** nothing blocking. Housekeeping — `uv sync --extra cpu --extra dev` returns the venv to its
+  lean documented state (drops the `packaging`/pyinstaller extra). **Staged; nothing committed (cpc §13).**
 
 ---
 ## 2026-07-08 — SPRINT-007 fix-epistemics-label-attribution (G7, KI-15)

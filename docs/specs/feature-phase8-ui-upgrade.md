@@ -169,9 +169,15 @@ lifespan rebuild it live; what happens to an in-flight turn during a provider sw
 PyInstaller sidecar's `sys.frozen` OS-trust-store branch (KI-10, `llm.os_trust_http_client()`) change
 per-provider.
 
-**Depends on:** its own ADR (`docs/decisions/ADR-011-*` or next available number) — run
-`architecture-decision` on this specifically before it's buildable. Not sequenced with a build order
-here since it isn't spec'd yet; ROADMAP carries it as `planned, needs ADR`.
+**Depends on:** its own ADR — **`docs/decisions/ADR-011-desktop-provider-apikey-management.md`
+(status `accepted`, grilled 2026-07-10, 8 forks resolved).** ADR-011 decides a **phased** answer: v1
+switches provider **+ model** among already-configured providers (the key stays in `.env`; a **live swap
+between turns via a narrow `RAGPipeline` generation-model seam** — the grill corrected the earlier
+"`ChatController.reconfigure`" wording; the per-answer reviewer follows the switch; inform-only KI-4
+posture), and defers keyring-backed in-app key entry to a v2 north-star. **Not buildable from this spec
+alone** — write a **v1 build spec** (the `RAGPipeline` generation-model swap seam, the non-secret
+`llm_provider`/`llm_model` settings field + effective-provider reporting, reviewer re-resolution without
+module-global mutation, guard tests) first. See ADR-011's grill ledger for the full resolution set.
 
 ---
 

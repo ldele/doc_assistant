@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-07-09 · class: append-only -->
+<!-- status: active · updated: 2026-07-10 · class: append-only -->
 
 # DEVLOG — doc_assistant
 
@@ -8,6 +8,120 @@ Append only — never edit past entries.
 Format: What changed | Why | Rejected alternatives | What it opens
 
 ---
+## 2026-07-10 — ADR-011 grilled → accepted: 8 forks resolved, v1 mechanism corrected + reviewer-coupling decided
+
+**What:** Ran a `grill-me` pass on ADR-011 (was `proposed`) and flipped it to **accepted**. Explored the
+provider architecture first (not the ADR's summary) and corrected a factual error: `ChatController` caches
+no LLM client — the **generation** model is a thin `ChatAnthropic`/`ChatOllama` wrapper built inside
+`RAGPipeline` (`pipeline.py:89-96`, alongside the expensive embedder/reranker), the **reviewer** is built
+per-call from `config.REVIEWER_PROVIDER` (`llm.py:236-238`), and the **judge** is eval-only. Eight forks
+resolved (ledger now in the ADR): (A) keep the phasing; (B) **live swap** via a narrow `RAGPipeline`
+generation-model swap + reviewer re-resolution off the persisted setting, applied between turns —
+**corrects the ADR's earlier "`ChatController` rebuilds the client" wording**; (C) **reviewer follows the
+switch** (local = truly free; an explicit `REVIEWER_PROVIDER` pin still wins) — KI-4-driven; (D)
+**inform-only, no gate** on switch-to-paid; (E) keyless provider shown unavailable+reason; (F) mid-stream
+switch applies next turn; (G) provider **+ model** field, per-provider default, validated on use; (H)
+selection persists in `settings.json` via `app_settings`. Folded all resolutions + a grill ledger into the
+ADR; updated Consequences/Confidence (added ⚠ for unmeasured local-reviewer quality).
+
+**Why:** the user asked to grill before locking (ADR-010 precedent: grill → accepted). The exploration
+turned a plausible-but-wrong mechanism ("one client on the controller") into the real seam — the point of a grill.
+
+**Rejected (in the grill):** restart-gated activation (30 s cold-start on a settings action reads as broken;
+kept as the fallback if the live seam is fiddly); reviewer stays pinned (would bill on a "local" turn — KI-4
+surprise); a confirm dialog on switch-to-paid (violates inform-don't-block); provider-only switching (too
+rigid for Ollama's varied local models).
+
+**Opens:** ADR-011 is **accepted**; next is a **v1 build spec** (the `RAGPipeline` generation-model swap
+seam, the non-secret `llm_provider`/`llm_model` settings field + effective-provider reporting, reviewer
+re-resolution without global mutation, guard tests) before U1c is buildable — still 5th in the UI order,
+behind U2/U3/U1/U1b. Two ⚠ RIGOR_TODO items owed: local reviewer quality (at v1 build) and keyring
+frozen-bundling (before any v2). **Nothing committed — ADR + ROADMAP/spec/DEVLOG edits staged (cpc §13).**
+
+## 2026-07-10 — ADR-011 (proposed): desktop provider / API-key management — phased (provider switch v1, keyring key-entry deferred)
+
+**What:** Authored `docs/decisions/ADR-011-desktop-provider-apikey-management.md` (status **proposed**,
+cpc shape) for Phase-8 **U1c** — the one UI track left un-designed because it crosses into secret
+storage + construction-time provider binding. Decision: **phased**. v1 = switch LLM provider/model
+among **already-configured** providers (the Anthropic key stays in `.env`), persist the *selection* as
+a non-secret via `app_settings`/`settings.json`, apply it by rebuilding **only** the LLM client at the
+next turn through a `ChatController` reconfigure seam (embedder/reranker stay warm → no restart);
+in-flight turn finishes on the old client. v2 north-star = keyring-backed in-app key entry (option 2),
+recorded not built. Grounded in the real seams: import-time `config` constants (`config.py:108,121-125`,
+`load_dotenv(override=True)` `:9-14`), `make_client`/`AnthropicClient` (`llm.py:148-156,222`), the
+singleton `lifespan` controller (`apps/api/main.py:205-217`), and the `source_dir`-only settings
+precedent (`app_settings.py`). Resolved one open question from code: KI-10's frozen OS-trust branch
+(`os_trust_http_client`, `llm.py:95-132`) is `sys.frozen`-gated + Anthropic-only + key-independent, so a
+provider switch doesn't touch it.
+
+**Why:** the ROADMAP/baton pick-up flagged "U1c needs its own ADR (ADR-011) before buildable"; the
+`feature-phase8-ui-upgrade.md` §U1c spec deliberately scoped-but-didn't-design it. Phasing takes the
+high-value/low-risk axis (provider switch) now and defers the risky axis (secret storage: a new dep + a
+PyInstaller frozen-bundling question in the class of KI-9/KI-10 + a Secret-Service fallback + the
+no-secrets-in-tests surface) — the same shape as ADR-010 (ship the safe overrides, phase the A/B north-star).
+
+**Rejected:** (a) `.env` as app-writable + restart-gated switch — makes the app co-author a plaintext
+secret file the user hand-edits, and a full ~30s cold-start (RG-010/KI-9) per switch; (b) keyring +
+in-app key entry in v1 — correct hygiene but materially larger/riskier (frozen bundling unvalidated), so
+deferred to v2 not dropped; (c) session-only in-memory key — best hygiene but re-enter-every-launch UX
+with no persistence payoff. KI-4 credit-leak met head-on: the switch UI must surface paid-vs-local +
+provenance must show the effective provider, and go through `assert_provider_intent`.
+
+**Opens:** Status is **proposed** — needs review/accept (a `grill-me` pass is the natural next step
+before it flips to accepted) + a v1 build spec (the `ChatController.reconfigure` seam, the settings
+field/endpoint, guard tests) before U1c is buildable. v2 keyring bundling/fallback is a ⚠ Confidence
+item owed a RIGOR_TODO entry before any v2 build. **Nothing committed — ADR + ROADMAP/spec/DEVLOG edits
+staged for review (cpc §13).**
+
+## 2026-07-10 — Phase 8 UI sprints prepared: SPRINT-008..011 (U2/U3/U1/U1b) written in locked build order
+
+**What:** Turned the design-locked Phase-8 UI spec (`docs/specs/feature-phase8-ui-upgrade.md`, grilled
+same day) into four cpc SPRINT contracts, in the SPRINT-000 shape, in the locked build order — no code
+touched:
+- `SPRINT-008-chat-bubble-layout.md` (**U2**, `status: active`) — the one active contract; frontend-only,
+  CSS + a template tweak in `Turn.svelte`.
+- `SPRINT-009-citation-side-panel.md` (**U3**, `status: archived` = queued) — reuses the Settings drawer;
+  DOM text-node-walk linkifier; default-hidden sources + the malformed-citation fallback.
+- `SPRINT-010-settings-sandbox-theme.md` (**U1**, queued) — adopts `feature-rag-sandbox.md` (ADR-010) +
+  full read-only disclosure + a client-only tri-state theme.
+- `SPRINT-011-settings-niche-knobs.md` (**U1b**, queued) — the two ADR-010 "must revisit" knobs; depends
+  on U1's `RagOverrides`.
+Updated the ROADMAP U-rows to point at each contract + bumped the ROADMAP/DEVLOG `updated:` dates (both
+were stale at 07-09, one already flagged by `docs_check`'s `[living]` rule). **U1c is deliberately NOT
+given a contract** — it needs its own ADR (ADR-011) first; recorded as such in the roadmap row.
+
+**Why:** the baton's pick-up was "next build session U2, per the locked order"; preparing the whole
+buildable set now (not just U2) mirrors the 2026-07-07 planning precedent (three contracts written at
+once) and lets each build session start by flipping the next queued contract to `active` with no
+re-planning.
+
+**Gate mechanics that shaped the contracts (verified against the vendored tooling, not assumed):**
+`sprint_check.find_active_contract` **hard-errors on >1 `status: active`** contract, so only U2 is active;
+U3/U1/U1b use `status: archived` (the sole gate-valid non-active status for a `disposable` file —
+`docs_check` recognizes only `active|superseded|archived`; `queued` would fail the header check). This is
+the same idiom the parked G3 sprint used; each queued contract carries an explicit "QUEUED — not started"
+header note so it doesn't read as done, and each emits the same tolerated `[lifecycle]` warn the other
+SPRINT-*.md files already do. The `uses` read-set budget is **12 files / 2500 lines** (conventions.toml,
+tighter than the 15/4000 default) — U2/U3/U1b fit comfortably; **U1 does not** hold its full write-set
+under it (backend + all of `apps/desktop/src`), so U1's read-set is deliberately **spec-led** (the two
+specs + ADR-010 + the two backend threading seams; frontend/test files are line-specified inside those
+specs and opened on demand → expected `uses⊇affects` WARNs).
+
+**Rejected:** (a) writing only U2 — the user asked to "prepare the next sprints" (plural) and the order is
+locked, so the whole buildable set is the right unit for a planning pass; (b) marking all four `active` —
+trips the >1-active hard error; (c) inventing a `status: queued` — not in the gate's recognized vocabulary,
+would fail the header check; (d) **splitting U1** backend/frontend into two sprints to fit the read-set
+budget cleanly — not taken here (keeps the contract matching the design-locked single-track plan), but
+documented as an ESCAPE HATCH in `SPRINT-010`'s header for the U1 build session to take if the budget /
+`--strict` WARNs bite at activation; (e) writing a U1c contract — blocked on ADR-011.
+
+**Opens:** **U1c needs an `architecture-decision` pass → ADR-011** (provider/API-key management: secrets
+storage + provider-switch-requires-rebuild — a different risk class; open questions listed in the spec's
+§U1c) before it's buildable. The **U1-size / read-set-budget** tension is the one live judgment call —
+either accept U1 as one spec-led sprint (as written) or split it at the backend/frontend seam; surfaced to
+the user. Build sessions pick up in order: activate `SPRINT-008`, build, land; then flip `SPRINT-009` to
+`active`; etc. **Nothing committed — four new contracts + ROADMAP/DEVLOG edits staged for review (cpc §13).**
+
 ## 2026-07-10 — Phase 8 UI/UX spec grilled: U1/U1b/U2/U3 design-locked, U1c split out (needs its own ADR)
 
 - **What:** ran a `grill-me` pass on `docs/specs/feature-phase8-ui-upgrade.md` (drafted earlier this

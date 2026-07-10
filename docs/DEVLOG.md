@@ -8,6 +8,77 @@ Append only — never edit past entries.
 Format: What changed | Why | Rejected alternatives | What it opens
 
 ---
+## 2026-07-10 — Phase 8 UI/UX spec grilled: U1/U1b/U2/U3 design-locked, U1c split out (needs its own ADR)
+
+- **What:** ran a `grill-me` pass on `docs/specs/feature-phase8-ui-upgrade.md` (drafted earlier this
+  session). Five real forks resolved with the user, ledger recorded at the top of the spec: (1) Settings
+  scope widens to "all possible options" but splits into three tracks — **U1** unchanged (ADR-010's
+  locked 3 knobs + disclosure fix + theme), **U1b** (new) — the two knobs ADR-010 flagged "must revisit"
+  (`EPISTEMICS_MARKERS_ENABLED`, `REVIEWER_EVIDENCE_CHARS`), now in scope via a same-day ADR-010
+  amendment, not a new ADR; **U1c** (new) — provider/API-key management, deliberately *not* designed
+  here (secrets storage + a rebuild requirement is a different risk class, needs its own ADR) — scoped
+  as a stub with the open questions a future ADR must answer. (2) Build order locked as **U2 → U3 → U1 →
+  U1b → U1c** — engineering order (fast frontend wins first), not the request's listed order, confirmed
+  explicitly by the user even after scope widened. (3) The malformed-citation fallback (U3) keeps
+  showing sources inline when `citation_note_md` is non-empty — confirmed. (4) User bubble stays neutral
+  `--surface-2`, not accent-tinted — confirmed. (5) No `vitest` — `theme.ts` and the citation linkifier
+  verify via the preview harness only — confirmed. Four mechanical items (theme via `localStorage`,
+  single swap-on-click citation panel, DOM-walk linkifier, bubble `max-width`) asserted without a
+  question — one defensible answer each, no live trade-off.
+- **Why:** grill-me's own rule — "a grilling that leaves no artifact didn't happen." Each resolution
+  routed to the artifact that owns it: the spec itself (all five), plus a same-day amendment to
+  `docs/decisions/ADR-010-rag-sandbox-nonpersistent-overrides.md` (U1b, since it revisits an ADR-010
+  "must revisit" item rather than being a fresh decision) and `docs/ROADMAP.md` (U1b/U1c rows added,
+  U1/U2/U3 status flipped from "not yet grilled" to design-locked with their build-order position).
+- **Rejected:** designing U1c inline as part of this pass — the grill surfaced it needs its own
+  options-and-trade-offs analysis (key storage location, live vs. restart-required provider switch,
+  interaction with the frozen sidecar's `sys.frozen` OS-trust branch from KI-10/G4) that a UI spec
+  shouldn't absorb as a paragraph.
+- **Opens:** build session picks up at **U2** per the locked order. **U1c** needs a dedicated
+  `architecture-decision` pass before it's buildable — next ADR number after ADR-010 is ADR-011.
+  Nothing built yet this session — spec + ADR amendment + ROADMAP, all staged, not committed.
+
+---
+## 2026-07-10 — Phase 8 UI/UX upgrade spec: settings disclosure + dark mode, chat bubble layout, citation side panel
+
+- **What:** drafted `docs/specs/feature-phase8-ui-upgrade.md` (**Status: DRAFT**, not yet grilled/
+  locked) — three UI/UX tracks against the current Tauri/Svelte desktop, grounded in a live read of
+  `apps/desktop/src/**` (App/Turn/SourceCard/Markdown/Settings.svelte, `app.css`, `types.ts`) rather
+  than from memory. **U1 — Settings:** adopts the already-locked ADR-010 RAG sandbox knobs
+  (`feature-rag-sandbox.md`) as-is, closes a disclosure gap where `Settings.svelte` silently drops
+  `retrieval_weights`/`use_parent_child`/chunk sizes it already fetches, and adds a manual System/
+  Light/Dark theme toggle (`data-theme` attribute overriding the existing `prefers-color-scheme` CSS,
+  persisted in `localStorage` — deliberately *not* routed through `POST /api/settings`, since theme has
+  no retrieval-quality bearing and shouldn't share ADR-010's non-persistence governance). **U2 — chat
+  layout:** right-aligned, width-capped user bubble (`Turn.svelte` CSS only); the RAG answer block stays
+  full-width/unbounded, unchanged. **U3 — citation panel:** the LLM's existing inline `[n]` markers
+  (`synthesis.py::_CITATION_RE`) become clickable via a DOM text-node walk (skips `<code>`/`<pre>`, so a
+  bracketed number in a code example is never linkified) that opens a slide-over panel reusing
+  `Settings.svelte`'s existing scrim/fly/focus-trap/Esc mechanics — one panel at a time, swap-on-click.
+  Source cards no longer render inline by default; a malformed-citation answer (`citation_note_md`)
+  falls back to showing them so a source is never unreachable.
+- **Why:** live audit (2026-07-10, native `npx tauri dev` window pointed at the real 30,882-chunk
+  corpus via `DOC_DATA_DIR`) surfaced concrete gaps against a modern RAG chat UI: settings under-
+  disclose what's already fetched, dark mode is OS-only with no in-app lever, the user/assistant turns
+  read as undifferentiated stacked paragraphs, and every source renders unconditionally instead of
+  on-demand. Also rounded up everything else already logged as UI debt (A/B-compare north-star, S1/S2
+  selective ingestion, deferred PDF viewer + styled tables, the never-actually-built "rich marker UI"
+  hover from PR-M1, the post-KI-15 live-marker smoke test) into one backlog table so it sequences
+  alongside U1–U3 instead of trickling into future baton entries piecemeal.
+- **Rejected:** persisting theme as a backend setting (mixes a zero-quality-impact cosmetic preference
+  into the surface ADR-010 just drew a careful non-persistence line around); regex-replacing `[n]` on
+  raw markdown or final HTML strings (both risk mangling either `marked`'s escaping or a citation-shaped
+  number sitting inside a code span — the DOM text-node walk is the only option that can't touch markup
+  it doesn't already hold text-node references to); an inline accordion instead of a side panel (asked-
+  for pattern was explicitly the Chainlit/Claude-artifacts side panel, not an inline expand).
+- **Opens:** `docs/ROADMAP.md` Phase 8 note + PR rows **U1/U2/U3** added, pointing at the new spec.
+  Recommends a short `grill-me` pass before build on two open calls the spec flags: the user-bubble
+  color (proposed neutral `--surface-2`, not accent-tinted) and whether a `vitest` runner is worth
+  adding now for `theme.ts`/the citation linkifier vs. relying on the preview harness alone. Suggested
+  build order U2 → U3 → U1 (U1 is the largest single piece, since it absorbs the full ADR-010 build).
+  Nothing built yet — spec only, staged for review, not committed.
+
+---
 ## 2026-07-09 — ADR-010 (proposed): RAG sandbox — non-persistent query-time overrides (Phase 8 planning)
 
 - **What:** drafted `docs/decisions/ADR-010-rag-sandbox-nonpersistent-overrides.md` (**Status:

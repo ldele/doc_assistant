@@ -1,10 +1,12 @@
-<!-- status: active · updated: 2026-07-09 · class: append-only -->
+<!-- status: active · updated: 2026-07-10 · class: append-only -->
 
 # ADR-010 — RAG sandbox: session-scoped, non-persistent query-time knob overrides in the desktop
 
 - **Status:** accepted — v1 scope = option 3 (basic session-scoped override surface); the
   option-4 A/B-compare is the recorded north-star, phased after v1. Build spec:
   `docs/specs/feature-rag-sandbox.md` (2026-07-09).        (proposed | accepted | superseded by ADR-NNN)
+  **Amended 2026-07-10:** the two "must revisit" niche knobs are now in scope (U1b in
+  `docs/specs/feature-phase8-ui-upgrade.md`) — see Amendment section below.
 - **Date:** 2026-07-09
 - **Deciders:** Lucas (with Claude Code)
 
@@ -154,3 +156,14 @@ the locked-value display is truthful.
 - ⚠ **That `TOP_K` + synthesis mode + multi-query is the *useful* set is an untested product
   hypothesis.** Validate with real use before widening the surface; do not pre-build option 4 on the
   assumption that users want more knobs.
+
+## Amendment (2026-07-10) — the "must revisit" niche knobs: include both
+
+Revisited during the `docs/specs/feature-phase8-ui-upgrade.md` grill pass (U1 scope question). Decision
+unchanged for the core three; **both `EPISTEMICS_MARKERS_ENABLED` and `REVIEWER_EVIDENCE_CHARS` are now
+in scope**, as a fifth-and-sixth field on `RagOverrides`, tracked as **U1b** in that spec — not a
+separate ADR, since they satisfy exactly the same three properties (Decision, above) the original three
+do: query-time, cheap, non-persistent, request-scoped. No governance change; the non-persistence wall
+and the isolation-guard-test obligation (Decision 4) apply to these two identically. Deferred:
+`REVIEWER_EVIDENCE_CHARS`'s valid range is not decided here — the build step must read the reviewer
+prompt's current usage before choosing bounds, not guess one.

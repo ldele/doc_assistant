@@ -11,12 +11,16 @@
     result,
     streaming = false,
     error = null,
+    onCitationClick,
+    activeCitationN = null,
   }: {
     question: string
     answer: string
     result: TurnResult | null
     streaming?: boolean
     error?: string | null
+    onCitationClick?: (n: number) => void
+    activeCitationN?: number | null
   } = $props()
 
   // Glanceable turn cost — the same numbers the Provenance panel spells out, surfaced up front
@@ -44,8 +48,8 @@
     {#if error}
       <p class="error">⚠ {error}</p>
     {:else if result}
-      <Markdown source={result.answer} />
-      {#if result.sources.length}
+      <Markdown source={result.answer} {onCitationClick} {activeCitationN} />
+      {#if result.sources.length && result.citation_note_md !== ''}
         <div class="sources">
           {#each result.sources as s (s.n)}
             <SourceCard source={s} />

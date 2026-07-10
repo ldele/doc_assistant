@@ -3,6 +3,7 @@
   import { getHealth, streamChat, exportConversation } from './lib/api'
   import Turn from './lib/Turn.svelte'
   import Settings from './lib/Settings.svelte'
+  import SourcePanel from './lib/SourcePanel.svelte'
 
   interface TurnState {
     id: number
@@ -22,6 +23,16 @@
   let sending = $state(false)
   let showSettings = $state(false)
   let nextId = 0
+  // Which citation panel is open — same single-drawer ownership shape as showSettings, keyed
+  // by turn so a click in an older turn doesn't resolve against a newer one's sources.
+  let activeCitation = $state<{ turnId: number; n: number } | null>(null)
+  const activeSource = $derived(
+    activeCitation
+      ? (turns
+          .find((t) => t.id === activeCitation!.turnId)
+          ?.result?.sources.find((s) => s.n === activeCitation!.n) ?? null)
+      : null,
+  )
 
   let convoEl = $state<HTMLElement | null>(null)
   let taEl = $state<HTMLTextAreaElement | null>(null)
@@ -177,6 +188,8 @@
         result={t.result}
         streaming={t.streaming}
         error={t.error}
+        onCitationClick={(n) => (activeCitation = { turnId: t.id, n })}
+        activeCitationN={activeCitation?.turnId === t.id ? activeCitation.n : null}
       />
     {/each}
   </section>
@@ -204,6 +217,10 @@
 
 {#if showSettings}
   <Settings onClose={() => (showSettings = false)} onCorpusChanged={refreshHealth} />
+{/if}
+
+{#if activeCitation && activeSource}
+  <SourcePanel source={activeSource} onClose={() => (activeCitation = null)} />
 {/if}
 
 <style>

@@ -8,6 +8,52 @@ Append only — never edit past entries.
 Format: What changed | Why | Rejected alternatives | What it opens
 
 ---
+## 2026-07-10 — U3 built: citation side panel, sources hidden by default (SPRINT-009)
+
+**What:** `apps/desktop/src/lib/SourcePanel.svelte` (new) — `Settings.svelte`'s scrim+panel drawer
+mechanics (`fly`/`fade`, `prefers-reduced-motion` collapse, focus trap on Tab, Esc-to-close) copy-adapted
+with the form body replaced by one unchanged `<SourceCard source={...} />` plus a "Source [n]" header.
+`Markdown.svelte` — citation linkifier: a `$effect` walks text nodes via `createTreeWalker` after
+`{@html html}` renders, skipping any node with a `<code>`/`<pre>` ancestor **or** one already inside a
+`.citation` button (idempotency guard — the effect legitimately re-runs on every `activeCitationN`
+change, not just `html` changes, so re-processing already-linkified text without this guard would nest
+buttons infinitely), and replaces `/\[(\d+)\]/g` matches with `<button class="citation" data-n="…">`.
+A separate `$effect` attaches **one delegated `click` listener via `el.addEventListener`** (imperative,
+not a template `onclick` binding — matters because Svelte's a11y linter only checks template-declared
+handlers, and the real interactive targets are the dynamically-created buttons, which already carry
+correct button semantics). `Turn.svelte` — removed the unconditional sources grid; kept it gated on
+`result.sources.length && result.citation_note_md !== ''` (the malformed-citation fallback); passes
+`onCitationClick`/`activeCitationN` through to `Markdown`. `App.svelte` — owns
+`activeCitation: {turnId, n} | null` (same shape as `showSettings`), wires the callback per-turn, resolves
+the `SourceView` via `$derived`, renders one `<SourcePanel>` at the top level.
+
+**Why:** SPRINT-009 (U3), 2nd in the locked Phase-8 UI build order; design-locked in
+`docs/specs/feature-phase8-ui-upgrade.md` §U3 (grilled 2026-07-10).
+
+**Rejected:** a `Svelte` template `onclick` on the linkifier's container div — triggered
+`a11y_click_events_have_key_events`/`a11y_no_static_element_interactions` warnings from `svelte-check`,
+and doesn't match the contract's literal `el.addEventListener('click', …)` wording anyway; switching to
+an imperative listener fixed both. One listener-per-button (simpler but doesn't survive a `linkifyCitations`
+re-run replacing the button set) — the contract explicitly calls for delegation.
+
+**Verified:** `svelte-check` — 0 errors, 0 warnings. Preview harness (`desktop-ui`, no backend — `fetch`
+was mocked client-side for `/api/chat` to return a synthetic SSE `result` with two sources and an answer
+containing `[1]`, `[2]` outside a code span and `[3]` inside one, avoiding any real/paid LLM call for a
+UI-only check): confirmed `[1]`/`[2]` became `.citation` buttons, `[3]` stayed plain text inside `<code>`;
+turn 1 (well-formed, `citation_note_md === ''`) showed no source cards by default; clicking `[1]` opened
+the panel with the right `SourceCard` content and gave `[1]` the `.active` accent style; clicking `[2]`
+swapped the panel content (confirmed via `document.querySelectorAll('[role="dialog"]').length === 1`, no
+stacking) and moved `.active` from `[1]` to `[2]`; Esc closed it. A second mocked turn with
+`citation_note_md !== ''` showed both source cards inline (the fallback). **Gotcha, matches a prior
+session's note in `.claude/SESSION.md`:** `preview_click` missed the citation buttons (Svelte 5 event
+delegation) — `document.querySelector(...).click()` via `preview_eval` worked; used that for every click
+in this session. Dark mode + `mobile` preset (375px, panel computed `width: 345px` = `92vw`, no overflow)
+both checked on the panel.
+
+**Opens:** SPRINT-010 (U1, settings disclosure + ADR-010 sandbox + theme toggle) is next in the locked
+order — doesn't touch `Turn.svelte`/`Markdown.svelte`, so no rebase concern from this change. **Nothing
+committed — staged for review (cpc §13).**
+
 ## 2026-07-10 — U2 built: right-aligned, width-capped chat bubble (SPRINT-008)
 
 **What:** `apps/desktop/src/lib/Turn.svelte` — `.turn` is now `display: flex; flex-direction: column`

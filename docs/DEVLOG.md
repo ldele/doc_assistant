@@ -8,6 +8,35 @@ Append only — never edit past entries.
 Format: What changed | Why | Rejected alternatives | What it opens
 
 ---
+## 2026-07-10 — U1c v1 build spec written: docs/specs/feature-provider-switch.md (ADR-011 → code contract)
+
+**What:** Wrote the code-level build spec for ADR-011 v1 (provider + model switch), analogous to how
+`feature-rag-sandbox.md` operationalizes ADR-010. Grounded in the exact seams: the swap seam is a new
+`RAGPipeline.set_chat_model` rebuilding `self.llm` via the already-parameterized `build_chat_model`
+(`pipeline.py:78-100,160-164`) — no API call, embedder/reranker untouched; the non-secret selection
+persists in `settings.json` via `app_settings` (the `source_dir` precedent); `provider_available`
+generalizes `reviewer_available` (`llm.py:246-255`); paid/local labels from `config.PAID_PROVIDERS`
+(`config.py:139`); the reviewer follows via `get_reviewer_client(effective_provider, effective_model)`
+respecting an explicit `REVIEWER_PROVIDER` pin; `_settings_view`/health report the **effective** provider.
+Notable find: **fork F (in-flight turn finishes on the old provider) is satisfied for free** —
+`stream_answer` binds `chain = ANSWER_PROMPT | self.llm` per call (`pipeline.py:257`), so a running stream
+keeps the old model reference after a swap; asserted by a guard test, not a new lock. Per-file contracts +
+guard tests (all $0, cpc §13) + DoD + out-of-scope (keyring v2, judge, A/B compare).
+
+**Why:** ADR-011 (accepted) + the ROADMAP U1c row both name "write a v1 build spec before buildable" as the
+next artifact; the spec is the SPRINT contract's source at build time.
+
+**Rejected:** threading the effective provider through every reviewer call (kept `get_reviewer_client`'s
+no-arg form byte-identical, added optional args instead); a mid-stream switch guard (unneeded — the
+per-call chain capture already isolates the in-flight turn); touching the eval judge or the CLI
+`assert_provider_intent` path (out of scope — UI switch only).
+
+**Opens:** U1c is now spec-complete and buildable (create a cpc SPRINT contract) — **independent of U1's
+`RagOverrides` path** (provider is a persisted global, not a request-scoped override), so it could build
+once U1's Settings rework lands, still nominally 5th in the UI order. Two ⚠ RIGOR_TODO items unchanged
+(local reviewer quality at build; keyring frozen-bundling before v2). **Nothing committed — spec +
+ROADMAP/DEVLOG edits staged (cpc §13).**
+
 ## 2026-07-10 — ADR-011 grilled → accepted: 8 forks resolved, v1 mechanism corrected + reviewer-coupling decided
 
 **What:** Ran a `grill-me` pass on ADR-011 (was `proposed`) and flipped it to **accepted**. Explored the

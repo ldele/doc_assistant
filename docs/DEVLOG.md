@@ -8,6 +8,34 @@ Append only — never edit past entries.
 Format: What changed | Why | Rejected alternatives | What it opens
 
 ---
+## 2026-07-10 — U2 built: right-aligned, width-capped chat bubble (SPRINT-008)
+
+**What:** `apps/desktop/src/lib/Turn.svelte` — `.turn` is now `display: flex; flex-direction: column`
+(replacing implicit block flow); `.you` gains `align-self: flex-end`, `max-width: min(72%, 640px)`,
+`background: var(--surface-2)`, `border-radius: 14px` with `border-bottom-right-radius: 4px` (tail cue),
+`padding: 0.55rem 0.85rem`. The "You" label and question stayed in place inside the same div — no template
+restructuring was needed, only CSS, since `.you` already wrapped both. `.assistant` and every child
+(`Markdown`, sources grid, `ClaimReview`, `Provenance`, usage chip) are byte-untouched.
+
+**Why:** SPRINT-008 (U2), 1st in the locked Phase-8 UI build order; design-locked in
+`docs/specs/feature-phase8-ui-upgrade.md` §U2 (grilled 2026-07-10, ledger #4: neutral surface, not accent).
+
+**Rejected:** moving the "You" label outside/above the bubble — the existing markup already nests it
+inside `.you`, so no structural change was needed to satisfy the spec's "label stays legible" requirement.
+
+**Verified:** `svelte-check` — 0 errors, 0 warnings. Preview harness (desktop-ui, no backend needed — a
+turn renders with the question as soon as `send()` pushes it, before the API call resolves/errors):
+`preview_inspect` confirmed `.you` computed `max-width: min(72%, 640px)`, `align-self: flex-end`,
+`background-color: rgb(236, 238, 242)` light / `rgb(39, 44, 52)` dark (both match `--surface-2`); `.assistant`
+stayed `width: 790px` / `max-width: none` / transparent background beside the narrow bubble. `mobile` preset
+(375px): `.you` computed width 222.9px against a 248.4px cap, no overflow past `.turn`'s right edge.
+Screenshot at desktop/light confirms the visual match to spec (bounded bubble, squared tail corner, "YOU"
+label inside, assistant error block full-width below).
+
+**Opens:** SPRINT-009 (U3, citation side panel) is next in the locked order — it also edits `Turn.svelte`
+(removes the always-on sources grid, adds `onCitationClick`) and rebases cleanly on this since U2 only
+touched `.you`/`.turn` CSS. **Nothing committed — staged for review (cpc §13).**
+
 ## 2026-07-10 — U1c v1 build spec written: docs/specs/feature-provider-switch.md (ADR-011 → code contract)
 
 **What:** Wrote the code-level build spec for ADR-011 v1 (provider + model switch), analogous to how

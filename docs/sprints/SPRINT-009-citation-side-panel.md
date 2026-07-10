@@ -1,10 +1,6 @@
-<!-- status: archived · updated: 2026-07-10 · class: disposable -->
-<!-- QUEUED — NOT started. status:archived keeps this out of sprint_check's "exactly one active
-     contract" count (it hard-errors on >1 active). This is a queued contract, not a completed one;
-     the build session that picks up U3 flips this header to `status: active` (after SPRINT-008/U2
-     has landed) and archives no sibling — U2 is the only active contract before it. The identical
-     [lifecycle] "archived but not under docs/archive/" warn the other queued/done sprints already
-     emit applies here too and is tolerated (pre-existing across all SPRINT-*.md).
+<!-- status: active · updated: 2026-07-10 · class: disposable -->
+<!-- ACTIVE 2026-07-10 — SPRINT-008 (U2) landed (staged for review), no sibling to archive since
+     U2 was the only other active contract. This is now the sole active contract.
 
      U3 (ROADMAP), 2nd in the locked Phase-8 UI build order (U2 → U3 → U1 → U1b → U1c).
      Design-locked spec: docs/specs/feature-phase8-ui-upgrade.md §U3 (grilled 2026-07-10).

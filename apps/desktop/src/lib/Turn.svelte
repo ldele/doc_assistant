@@ -71,11 +71,19 @@
 
 <style>
   .turn {
+    display: flex;
+    flex-direction: column;
     border-bottom: 1px solid var(--border);
     padding: 1rem 0;
   }
   .you {
+    align-self: flex-end;
+    max-width: min(72%, 640px);
     margin-bottom: 0.6rem;
+    background: var(--surface-2);
+    border-radius: 14px;
+    border-bottom-right-radius: 4px;
+    padding: 0.55rem 0.85rem;
   }
   .who {
     font-size: 0.7rem;

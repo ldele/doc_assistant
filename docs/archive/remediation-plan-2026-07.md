@@ -1,5 +1,7 @@
 # Spec — Remediation plan R1–R7: review findings → evaluate + fix (2026-07)
 
+> **📦 Archived — shipped; the historical code-level contract, archived here (2026-07-11).** Live status: ROADMAP rows R1–R7 (all done). The behaviour of record is the code + tests, not this spec.
+
 **Status:** ✅ **COMPLETE — all of R1–R7 landed (2026-07-02).** R1/R2/R3/R7 committed; R4 committed
 (`1374ed5`); R5 (decision run, **PASS** — ADR-008) + R6 (BM25 preprocess + hygiene) built and staged.
 Seven one-session increments from the 2026-07-02 direction + algorithmic review, each one PR
@@ -98,7 +100,7 @@ keyword tokenizer's notion of a word: `(?<![a-z0-9])<re.escape(form)>(?![a-z0-9]
 [epistemics.py:122](../../src/doc_assistant/epistemics.py)). Precompile once per form.
 - Add `CONCEPT_SKELETON_PRESENCE_MODE` config (`"boundary"` default, `"substring"` kept as the A/B lever for
   the R5 comparison). This changes the spec-locked Decision-2 primitive — update
-  `docs/specs/concept-graph-redesign.md` (word-boundary was already its named upgrade lever) + DEVLOG.
+  `docs/archive/concept-graph-redesign.md` (word-boundary was already its named upgrade lever) + DEVLOG.
 - Known accepted looseness (document, don't fix now): overlapping alias spans double-count `n_mentions`
   (e.g. both `passage retrieval` and `dense passage retrieval` as forms of one concept firing on one span).
   `n_mentions` is reporting-only today; longest-match span consumption is the upgrade if it ever gates.

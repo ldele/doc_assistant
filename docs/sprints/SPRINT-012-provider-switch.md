@@ -1,5 +1,5 @@
 <!-- status: archived · updated: 2026-07-11 · class: disposable -->
-<!-- BUILT 2026-07-11 — staged for review, not yet committed. status:archived so sprint_check sees
+<!-- BUILT 2026-07-11 — committed `09afd0c` (U1/U1b/U1c). status:archived so sprint_check sees
      no active contract (Phase 8's five-track UI build order — U2/U3/U1/U1b/U1c — is now fully
      shipped; the next SPRINT contract, whatever it is, starts fresh). Pre-existing [lifecycle]
      warn applies (tolerated across all SPRINT-*.md).

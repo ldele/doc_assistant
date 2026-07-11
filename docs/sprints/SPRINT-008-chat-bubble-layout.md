@@ -1,5 +1,5 @@
 <!-- status: archived · updated: 2026-07-10 · class: disposable -->
-<!-- BUILT 2026-07-10 — staged for review, not yet committed. status:archived so sprint_check sees
+<!-- BUILT 2026-07-10 — committed `7ee1b1e` (SPRINT-008). status:archived so sprint_check sees
      SPRINT-009 (U3) as the sole active contract.
      U2 (ROADMAP), 1st in the locked Phase-8 UI build order (U2 → U3 → U1 → U1b → U1c).
      Design-locked spec: docs/specs/feature-phase8-ui-upgrade.md §U2 (grilled 2026-07-10).

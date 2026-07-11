@@ -56,6 +56,15 @@ def test_set_llm_selection_rejects_keyless_provider(
     assert app_settings.get_llm_selection() == (None, None)  # never persisted
 
 
+def test_set_llm_selection_rejects_empty_model(settings_file: Path) -> None:
+    # A blank/whitespace model would build a nameless chat model and then be silently dropped by
+    # get_llm_selection's truthiness gate on the next boot — reject it instead of corrupting state.
+    for blank in ("", "   "):
+        with pytest.raises(ValueError, match="model must not be empty"):
+            app_settings.set_llm_selection("ollama", blank)
+        assert app_settings.get_llm_selection() == (None, None)  # never persisted
+
+
 def test_effective_llm_falls_back_to_config_default(
     settings_file: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

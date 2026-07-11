@@ -3,7 +3,7 @@
 A **thin** Svelte 5 + Vite UI inside a Tauri 2 shell. It renders the API's `TurnResult`
 payload and holds **no business logic** — all logic stays in `src/doc_assistant/` behind
 the FastAPI/SSE boundary (`apps/api/`, PR-M2). Decision + rationale:
-`docs/decisions/ADR-002-tauri-fastapi-desktop-shell.md` and `docs/specs/pr-m3-tauri-frontend.md`.
+`docs/decisions/ADR-002-tauri-fastapi-desktop-shell.md` and `docs/archive/pr-m3-tauri-frontend.md`.
 
 ## What it renders
 

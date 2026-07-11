@@ -744,6 +744,16 @@ def test_reviewer_follows_the_effective_provider_when_unpinned(monkeypatch, temp
     monkeypatch.setattr(
         chat_controller, "review_answer", lambda prov, client: ReviewResult(error="stubbed")
     )
+    # Capture the persisted reviewer_kind — it must name the instrument that actually ran, not a
+    # hardcoded "llm_haiku", once the reviewer follows a switch to Ollama (provenance honesty).
+    persisted: dict[str, object] = {}
+
+    def fake_persist_review(record_id, review, *, reviewer_kind, model_name):
+        persisted["kind"] = reviewer_kind
+        persisted["model"] = model_name
+        return "rev-id"
+
+    monkeypatch.setattr(chat_controller, "persist_review", fake_persist_review)
     # One weak, low-scoring source → fires a confidence signal → reviewer runs.
     weak_source = [(_doc("thin evidence", document_id="d1", chunk_index=0, filename="a.pdf"), 0.1)]
     rag = FakeRAG(weak_source, ["Answer [1]."])
@@ -752,3 +762,5 @@ def test_reviewer_follows_the_effective_provider_when_unpinned(monkeypatch, temp
     controller = ChatController(rag=rag)
     _final(_results(controller, Session(), "q"))
     assert captured == {"provider": "ollama", "model": "llama3.1:8b"}
+    # A followed Ollama switch must NOT be labeled "llm_haiku" beside an ollama model_name.
+    assert persisted == {"kind": "llm_ollama", "model": "llama3.1:8b"}

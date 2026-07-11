@@ -1,7 +1,7 @@
 """Concept-graph redesign — the deterministic concept skeleton (Node A).
 
 The curated-vocabulary + deterministic-skeleton redesign of Feature 7
-(``docs/specs/concept-graph-redesign.md``; supersedes the open-vocabulary PR-16
+(``docs/archive/concept-graph-redesign.md``; supersedes the open-vocabulary PR-16
 ``concept_graph.py``, ``.claude/KNOWN_ISSUES.md`` KI-7). The node vocabulary is
 **user-curated** (``Concept`` / ``ConceptAlias``); presence and the edge skeleton are
 computed with **zero LLM** from that vocabulary plus the library's existing zero-LLM

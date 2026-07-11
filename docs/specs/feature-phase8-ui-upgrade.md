@@ -336,11 +336,11 @@ U1–U3 rather than being rediscovered later:
 | **A/B compare sandbox** (run locked defaults vs. override side by side) | ADR-010 option 4 | recorded north-star, phased *after* the U1/ADR-010 basic sandbox — real cost implication (≈2× per compared turn) |
 | **S1 — Selective ingestion backend** (`SourceFile` registry, `--files`/`--dry-run`, `GET/PATCH /api/sources`) | `docs/specs/feature-selective-ingestion.md` | DRAFT, not yet grilled/locked |
 | **S2 — Selective ingestion UI** (Tauri sources panel: status chips, select-by-status/type, exclude toggle) | `docs/specs/feature-selective-ingestion.md`, ROADMAP row S2 | planned, blocked on S1 |
-| **In-app PDF source viewer** | `docs/specs/pr-m3-tauri-frontend.md` "Out of scope" | deferred "later refinement" at M3, never scheduled since |
-| **Styled table rendering** in the answer/source view | `docs/specs/pr-m3-tauri-frontend.md` "Out of scope" | same — deferred, never scheduled |
-| **Rich marker UI** — hover a `contested`/`superseded_trend` chip to see the corroborating/contradicting docs, not just the bare chip | `docs/specs/pr-m1-epistemics-markers.md` "Out of scope" (tagged "PR-M3") | deferred at M1, **not actually built** in M3 — currently just a static chip (`SourceCard.svelte:17-21`) |
+| **In-app PDF source viewer** | `docs/archive/pr-m3-tauri-frontend.md` "Out of scope" | deferred "later refinement" at M3, never scheduled since |
+| **Styled table rendering** in the answer/source view | `docs/archive/pr-m3-tauri-frontend.md` "Out of scope" | same — deferred, never scheduled |
+| **Rich marker UI** — hover a `contested`/`superseded_trend` chip to see the corroborating/contradicting docs, not just the bare chip | `docs/archive/pr-m1-epistemics-markers.md` "Out of scope" (tagged "PR-M3") | deferred at M1, **not actually built** in M3 — currently just a static chip (`SourceCard.svelte:17-21`) |
 | **Live-UI smoke test of the marker chips on the real corpus** | `.claude/KNOWN_ISSUES.md` KI-15 (resolved) follow-up | the *backend* label-matching bug (KI-15) is fixed and chips now fire on 3,334 real chunks, but nobody has confirmed the chip renders correctly in the live desktop UI since before the fix — a fast add-on once U3 is in, since the fix makes chips finally common enough to see without hunting |
-| **Precise PC (parent-child) re-projection for markers** | `docs/specs/pr-m1-epistemics-markers.md` ADR-1 option 2 | the current containment-based marker mapping is a documented coarse approximation; upgrade needs its own attribution-quality validation, backend work not UI |
+| **Precise PC (parent-child) re-projection for markers** | `docs/archive/pr-m1-epistemics-markers.md` ADR-1 option 2 | the current containment-based marker mapping is a documented coarse approximation; upgrade needs its own attribution-quality validation, backend work not UI |
 
 None of these are pulled into U1–U3's scope — they're independently sequenceable. The two most
 natural next-after items, if this spec's three tracks land well, are **the ADR-010 A/B-compare

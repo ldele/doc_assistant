@@ -108,6 +108,12 @@ def set_llm_selection(provider: str, model: str) -> None:
         raise ValueError(f"unknown provider '{provider}' — valid options: anthropic, ollama")
     if not provider_available(key):
         raise ValueError(f"provider '{key}' has no credential configured (add it to .env)")
+    # A blank model must never be persisted: build_chat_model would get an empty name, and
+    # get_llm_selection's own truthiness gate would then silently drop the selection on the next
+    # boot (reverting to the config default) — inform-don't-corrupt.
+    model = model.strip()
+    if not model:
+        raise ValueError("model must not be empty")
     settings = load_user_settings()
     settings["llm_provider"] = key
     settings["llm_model"] = model

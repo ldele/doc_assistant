@@ -225,7 +225,7 @@ def markers_for_parent(parent_text: str, marked: list[MarkedChunk]) -> list[str]
     deliberately coarse at parent boundaries — markers are an advisory chip, not a gate,
     so over-attribution within a parent is acceptable and fail-safe. The precise
     re-projection of epistemics onto PC parents is the documented upgrade if this proves
-    too coarse (see `docs/specs/pr-m1-epistemics-markers.md` ADR-1, option 2)."""
+    too coarse (see `docs/archive/pr-m1-epistemics-markers.md` ADR-1, option 2)."""
     if not parent_text or not marked:
         return []
     out: list[str] = []

@@ -1,5 +1,7 @@
 # Spec — PR-M4: PyInstaller sidecar packaging (the desktop installer)
 
+> **📦 Archived — mostly shipped; the historical code-level contract, archived here (2026-07-11).** Live status: ROADMAP row M4 — installer built, RG-010/011/012-Tier-1 pass; **RG-012 Tier-2** (a cited turn on a clean/frozen box) still pends a re-freeze + clean-box run (also in `docs/ui-checklist.md` §2). The behaviour of record is the code + runbook `docs/desktop-packaging.md`, not this spec.
+
 **Status:** 🔧 SCAFFOLDED — specced + built by Claude Code 2026-06-22 (Tauri migration, `docs/decisions/ADR-002-tauri-fastapi-desktop-shell.md`). Fifth PR of the migration (M4). **Depends on PR-M2** (the backend it freezes) + **PR-M3** (the shell it bundles).
 **The verifiable parts are built + green; the freeze + native build + clean-machine smoke are desktop steps (RG-010/011/012).** Not "done" the way M0–M3 are — see *Verification boundary*.
 **Owner of execution:** Claude Code (scaffold) → the user / a desktop (freeze + build + smoke).

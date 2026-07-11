@@ -17,7 +17,7 @@ and CLI apps (and, in PR-M2, FastAPI) become thin renderers over this stream.
 etc. are called exactly as before. This is a *move*, not a redesign — behaviour is
 frozen and guarded by ``tests/integration/test_turn_parity.py``.
 
-See ``docs/specs/pr-m0-chat-controller.md`` and
+See ``docs/archive/pr-m0-chat-controller.md`` and
 ``docs/decisions/ADR-002-tauri-fastapi-desktop-shell.md``.
 """
 
@@ -840,8 +840,19 @@ class ChatController:
                         review = review_answer(
                             prov, get_reviewer_client(self.rag.provider, self.rag.model)
                         )
+                        # ADR-011: the recorded kind must match the instrument that actually ran.
+                        # A followed switch to Ollama is no longer the Haiku reviewer — labeling it
+                        # "llm_haiku" beside an ollama model_name would be a provenance lie.
+                        reviewer_kind = (
+                            "llm_haiku"
+                            if reviewer_provider == "anthropic"
+                            else f"llm_{reviewer_provider}"
+                        )
                         persist_review(
-                            record_id, review, reviewer_kind="llm_haiku", model_name=reviewer_model
+                            record_id,
+                            review,
+                            reviewer_kind=reviewer_kind,
+                            model_name=reviewer_model,
                         )
                     except Exception as e:
                         review = ReviewResult(error=f"reviewer setup failed: {e}")

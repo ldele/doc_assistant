@@ -1,5 +1,7 @@
 # Spec — PR-M5: decommission Chainlit + lift the Python-3.12 pin (KI-2)
 
+> **📦 Archived — shipped; the historical code-level contract, archived here (2026-07-11).** Live status: ROADMAP row M5 — Chainlit removed; the 3.12-pin lift was verified-and-deferred (KI-2 stays open: native deps crash on 3.14, not Chainlit). The behaviour of record is the code + tests, not this spec.
+
 **Status:** ✅ BUILT (2026-06-25) — Chainlit removed (renderer + `.chainlit/` + dep + mypy override + recipe), parity test trimmed, gate green on 3.12 (602 passed). The 3.12-pin lift was **verified-and-deferred** per ADR-2: on 3.14 the deps install + ruff/mypy/bandit pass, but the full pytest suite hard-crashes the interpreter (native dep, not Chainlit) → **KI-2 stays open with the cause renamed**. Tauri migration (`docs/decisions/ADR-002-tauri-fastapi-desktop-shell.md`).
 **Owner of execution:** Claude Code (code + tests + gate, on the box).
 **Hard gate — do NOT execute the build until both hold** (recorded decision, `.claude/SESSION.md` 2026-06-22): (1) the M4 installer ships and **RG-012** (clean-machine smoke) passes — the Tauri app must be the *proven* primary UI before the fallback is deleted; (2) **RG-011** (first-token latency vs the Chainlit baseline) is recorded — the comparison is gone once Chainlit is. Until then this is a written contract only.

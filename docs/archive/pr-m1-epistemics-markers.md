@@ -1,5 +1,7 @@
 # Spec — PR-M1: live 7d epistemics-marker surfacing (contested / superseded-trend)
 
+> **📦 Archived — shipped; the historical code-level contract, archived here (2026-07-11).** Live status: ROADMAP row M1 (done). The rich-marker-UI follow-up (ADR-1 option 2) is tracked in `docs/ui-checklist.md` §3. The behaviour of record is the code + tests, not this spec.
+
 **Status:** ✅ BUILT — designed by Cowork 2026-06-21; built + gate-green by Claude Code 2026-06-22 (Tauri migration). Second PR of the migration (M1); the **pre-migration demo win**. **Depends on PR-M0** (`ChatController`, `SourceView`, `RetrievedChunk.chunk_key`).
 **Owner of execution:** Claude Code (code + tests).
 **Pattern reference:** the read-side seam the 7d engine deliberately left open. `epistemics.markers_for_chunk_keys` / `load_epistemics_index` (epistemics.py:178, 248) exist and are documented as *"the read-side seam the live evidence layer will call once a stable chunk key is plumbed through retrieval (deferred)."* This PR closes that seam. The 7d engine, `chunk_epistemics` sidecar, and `reviewer.contested_evidence` tag already shipped (SESSION baton 2026-06-17, `4add13a` "Knowledge Currency").

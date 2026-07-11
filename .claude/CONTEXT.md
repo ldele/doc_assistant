@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-07-08 (G7) · class: living -->
+<!-- status: active · updated: 2026-07-11 (Phase 8 UI polish committed 09afd0c; phase kept open) · class: living -->
 
 # CONTEXT — doc_assistant
 
@@ -156,7 +156,7 @@ to docs/archive/SESSION-archive-NNN.md (local-only, like the baton).
 | 5 | Embedding & eval foundation (config-driven embedder, golden set, provenance) | done |
 | 6 | Figures & tables, dual-layer interpretation, reviewer + self-improvement loop | in progress |
 | 7 | Gap detection — wiki/synthesis layer + cross-document concept graph (incl. 7d engine) | in progress |
-| 8 | UI polish (settings page exposing the RAG sandbox knobs) | done — U2/U3/U1/U1b/U1c all built |
+| 8 | UI polish (settings page exposing the RAG sandbox knobs) + ongoing chat/citation UX | **open — iterative UI track** (not closed): U2/U3/U1/U1b/U1c built & committed (`09afd0c`); end-to-end verification still owed + more UI elements planned. Living status: `docs/ui-checklist.md` |
 | 9 | Literature-review generation (PRISMA-trAIce export) | planned |
 | — | Extract eval harness to a standalone repo (Feature 5) | planned |
 

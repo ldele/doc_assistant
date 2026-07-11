@@ -8,6 +8,45 @@ Append only — never edit past entries.
 Format: What changed | Why | Rejected alternatives | What it opens
 
 ---
+## 2026-07-11 — Phase-8 review follow-ups + doc cleanup (post-`09afd0c`)
+
+**What:** In-depth review of the Phase-8 commit `09afd0c` (RAG sandbox overrides / niche knobs /
+provider switch), then two small correctness fixes it surfaced + a documentation pass. **(1)**
+`chat_controller.py`: the reviewer's persisted `reviewer_kind` was a hardcoded `"llm_haiku"` — when
+the reviewer *follows* an unpinned switch to Ollama (ADR-011) that label contradicted the
+(correct) `model_name` beside it. Now derived from the resolved reviewer provider
+(`"llm_haiku"` for anthropic, else `f"llm_{provider}"`). **(2)** `app_settings.set_llm_selection`
+now rejects an empty/whitespace `model` (raises `ValueError`), and `apps/api/models.py`'s
+`SettingsUpdate.llm_model` gained `min_length=1` — a blank model would otherwise build a nameless
+chat model and then be silently dropped by `get_llm_selection`'s truthiness gate on the next boot.
++2 tests (`test_app_settings` empty-model rejection; `test_chat_controller` reviewer-follow now
+asserts `reviewer_kind="llm_ollama"`). **Docs:** Phase 8 flipped from "done" → **open (iterative UI
+track)** in ROADMAP + CONTEXT; the five U-row statuses reconciled from "staged for review" to their
+commits (`7ee1b1e`/`8ba1ffc`/`09afd0c`); stale "not yet committed" notes in SPRINT-008..012 fixed;
+new living `docs/ui-checklist.md` (shipped UI features + verification debt + backlog + a reusable
+per-feature review checklist); the 8 fully-shipped specs (`remediation-plan-2026-07`,
+`concept-graph-redesign`, `pr-m0`..`pr-m5`) **moved to `docs/archive/`** (each with an "archived
+here" banner pointing at its live ROADMAP row), and **every live `docs/specs/…` reference repointed**
+— ROADMAP, READMEs, ADR-002, KNOWN_ISSUES, RIGOR_TODO, the four still-active specs that cross-ref
+them, and the 7 source-file docstrings. Excluded `table-figure-future-work.md` from the move — it's
+`status: active` live backlog, not superseded.
+
+**Why:** The user does not consider Phase 8 closed (more UI elements coming + end-to-end
+verification still owed), so the docs must stop claiming "done". The two fixes are provenance-honesty
+/ inform-don't-corrupt — small but on the project's core thesis.
+
+**Rejected:** In-place status-archival (a lighter banner-only option, taken first then reversed at
+the user's request for a real relocation). The physical move is cleaner for discovery; its one
+accepted cost is that the **append-only** DEVLOG + eval baselines + the local SESSION baton keep
+their historical `docs/specs/…` paths (their earlier entries are immutable by convention, so those
+links are stale-by-design, not fixed).
+
+**Verified:** `ruff` / `ruff format` / `mypy --strict src` clean on the touched files; targeted
+suites green (see the session's test run). **Opens:** the live-UI smoke tests of the sandbox knobs /
+provider switch / marker chips on a real answer turn, and RG-012 Tier-2 — all tracked in
+`docs/ui-checklist.md` §2 as the debt that keeps Phase 8 open.
+
+---
 ## 2026-07-11 — U1c built: desktop provider + model switch (SPRINT-012, ADR-011)
 
 **What:** Live provider/model switching from Settings, no restart, key stays in `.env` (v1 scope —

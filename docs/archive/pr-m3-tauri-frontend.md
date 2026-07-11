@@ -1,5 +1,7 @@
 # Spec — PR-M3: Tauri desktop frontend (Svelte) over the FastAPI/SSE boundary
 
+> **📦 Archived — shipped; the historical code-level contract, archived here (2026-07-11).** Live status: ROADMAP row M3 (done). Ongoing frontend polish is now tracked in `docs/ui-checklist.md` (Phase 8). The behaviour of record is `apps/desktop/` + tests, not this spec.
+
 **Status:** ✅ BUILT — specced one-ahead + built by Claude Code 2026-06-22 (Tauri migration, `docs/decisions/ADR-002-tauri-fastapi-desktop-shell.md`). Fourth PR of the migration (M3). Framework decision (Svelte) made with the user this session. **Depends on PR-M2** (the API contract it consumes).
 **Owner of execution:** Claude Code (frontend + Tauri shell scaffold).
 **Pattern reference:** thin-shell rule (`apps/` carry no logic; `.claude/CONTEXT.md` rule #3). The frontend is a *renderer* of the API's `TurnResult` — exactly like `apps/cli.py` / `apps/chainlit_app.py` / `apps/api/`, but in TypeScript over HTTP.

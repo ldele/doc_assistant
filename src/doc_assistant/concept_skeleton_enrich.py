@@ -1,7 +1,7 @@
 """Node B — confined LLM relation/stance enrichment of the concept skeleton.
 
 The deferred second build node of the concept-graph redesign
-(``docs/specs/concept-graph-redesign.md``, Decision 6). Handed **only** the concepts a
+(``docs/archive/concept-graph-redesign.md``, Decision 6). Handed **only** the concepts a
 document already contains, one LLM call per document annotates the *existing* co-occurrence
 edges between co-present concepts with a relation verb + a stance ∈ ``POLARITIES``. It
 **never** creates a node or an edge (the by-construction confinement) and never touches

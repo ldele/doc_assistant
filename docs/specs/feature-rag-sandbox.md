@@ -6,8 +6,8 @@ later phase — out of scope here.
 **Owner of execution:** Claude Code (code + tests + the Svelte surface), when Phase 8 is active. Create
 a cpc SPRINT contract from this spec at build time (`docs/sprints/SPRINT-000-template.md` shape).
 **Pattern reference:** thin-shell boundary (`apps/` render, logic in `src/doc_assistant/` — root
-`CLAUDE.md`); ChatController seam (PR-M0, `docs/specs/pr-m0-chat-controller.md`); FastAPI/SSE boundary
-(PR-M2, `docs/specs/pr-m2-fastapi-boundary.md`); Tauri frontend (PR-M3, `docs/specs/pr-m3-tauri-frontend.md`).
+`CLAUDE.md`); ChatController seam (PR-M0, `docs/archive/pr-m0-chat-controller.md`); FastAPI/SSE boundary
+(PR-M2, `docs/archive/pr-m2-fastapi-boundary.md`); Tauri frontend (PR-M3, `docs/archive/pr-m3-tauri-frontend.md`).
 
 **Goal (the why).** Phase 8's stated item is "a settings page exposing the RAG sandbox knobs." Today
 the desktop shows them read-only. This feature lets the user **experiment** — see how the retrieval /

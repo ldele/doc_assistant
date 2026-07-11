@@ -408,7 +408,7 @@ WIKI_USE_CONCEPT_COMMUNITIES = os.getenv("WIKI_USE_CONCEPT_COMMUNITIES", "false"
 # Concept skeleton (Phase 7 / Feature 7, curated-vocabulary skeleton)
 # ============================================================
 # The curated-vocabulary + deterministic-skeleton redesign of Feature 7
-# (docs/specs/concept-graph-redesign.md; supersedes the retired open-vocabulary
+# (docs/archive/concept-graph-redesign.md; supersedes the retired open-vocabulary
 # `concept_graph.py`, KNOWN_ISSUES KI-7 — retired once Node A/B landed). Node A
 # (the deterministic skeleton) makes ZERO LLM calls; Node B is the confined LLM
 # relation/stance pass. Sidecar artifact + sidecar tables, regenerable, never

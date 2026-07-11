@@ -1,5 +1,7 @@
 # Spec — PR-M2: FastAPI backend + SSE boundary (the desktop API contract)
 
+> **📦 Archived — shipped; the historical code-level contract, archived here (2026-07-11).** Live status: ROADMAP row M2 (done). The behaviour of record is `apps/api/` + tests, not this spec.
+
 **Status:** ✅ BUILT — designed by Cowork 2026-06-21; built + gate-green by Claude Code 2026-06-22 (Tauri migration, `docs/decisions/ADR-002-tauri-fastapi-desktop-shell.md`). Third PR of the migration (M2). **Depends on PR-M0** (`ChatController`/`TurnResult`/`TurnEvent` must exist) and is best done after **PR-M1** (so the 7d `SourceView.markers` field is already in the payload the API serializes — it is).
 **Owner of execution:** Claude Code (code + tests).
 **Pattern reference:** thin-shell rule (`apps/` carry no logic; `.claude/CONTEXT.md` rule #3). FastAPI is **just another renderer** over `ChatController` — exactly like `apps/cli.py` and `apps/chainlit_app.py`. It owns no business logic; it maps `TurnEvent` → HTTP/SSE and HTTP requests → controller calls.

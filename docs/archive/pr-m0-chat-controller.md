@@ -1,5 +1,7 @@
 # Spec — PR-M0: extract `ChatController` + `TurnResult` (UI-agnostic turn core)
 
+> **📦 Archived — shipped; the historical code-level contract, archived here (2026-07-11).** Live status: ROADMAP row M0 (done). The behaviour of record is `chat_controller.py` + tests, not this spec.
+
 **Status:** ✅ BUILT — designed by Cowork 2026-06-21; built + gate-green by Claude Code 2026-06-22 (Tauri migration, `docs/decisions/ADR-002-tauri-fastapi-desktop-shell.md`). First PR of the Chainlit→Tauri migration (M0). **Tool-agnostic; no framework change.**
 **Owner of execution:** Claude Code (code + tests).
 **Pattern reference:** the existing thin-shell rule (`apps/` carry no logic; `.claude/CONTEXT.md` rule #3) and the already-stated "UI-agnostic" intent in `provenance.py` (module docstring) / `library.py` ("UI-framework-agnostic"). This PR *completes* that intent: it lifts the turn orchestration out of `apps/chainlit_app.py` into the library so any frontend renders the same value object.
@@ -207,7 +209,7 @@ The ADR's parity gate. With a fake/stub pipeline producing a fixed answer + fixe
 
 ## Out of scope (later PRs)
 - **7d marker surfacing** (join `chunk_key` → `chunk_epistemics`, add `SourceView.markers`) — **PR-M1**.
-- **FastAPI / SSE** mapping of `TurnEvent` — **PR-M2** (`docs/specs/pr-m2-fastapi-boundary.md`).
+- **FastAPI / SSE** mapping of `TurnEvent` — **PR-M2** (`docs/archive/pr-m2-fastapi-boundary.md`).
 - **Persisting `chunk_key`** in the provenance record — a 7d decision, not this PR.
 - **Any UX change** (rich per-claim inline edit, styled tables) — built natively in the Tauri frontend, **PR-M3**.
 - **Global KI-1 `print()`→structlog sweep** — tracked separately; only the new module must be clean here.

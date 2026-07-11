@@ -415,7 +415,7 @@ class ChunkEpistemics(Base):
 # Concept graph — REDESIGN (Phase 7 / Feature 7, curated-vocabulary skeleton)
 # ============================================================
 # The curated-vocabulary + deterministic-skeleton redesign of Feature 7
-# (docs/specs/concept-graph-redesign.md; supersedes the open-vocabulary PR-16 core,
+# (docs/archive/concept-graph-redesign.md; supersedes the open-vocabulary PR-16 core,
 # KNOWN_ISSUES KI-7). Two lifecycles are kept deliberately distinct:
 #   * Concept / ConceptAlias  — CURATED user data; survive a skeleton rebuild.
 #   * ConceptEdge / ConceptPresenceRow — DERIVED sidecar rows; dropped + rebuilt on

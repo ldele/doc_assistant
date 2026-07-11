@@ -4,7 +4,7 @@
 
 How to build the installable Tauri desktop app: freeze the FastAPI backend as a PyInstaller
 **sidecar**, bundle it with the Svelte frontend, produce a native installer. ADR + rationale:
-`docs/decisions/ADR-002-tauri-fastapi-desktop-shell.md`; spec: `docs/specs/pr-m4-sidecar-packaging.md`.
+`docs/decisions/ADR-002-tauri-fastapi-desktop-shell.md`; spec: `docs/archive/pr-m4-sidecar-packaging.md`.
 
 > **Runs on a desktop, not in CI / the sandbox.** Freezing torch + Chroma + PyMuPDF (~GB
 > binary), `cargo tauri build`, and the clean-machine smoke need the Tauri/Rust toolchain and

@@ -7,7 +7,7 @@
 - **Deciders:** Lucas (drafted with Cowork)
 
 > This ADR records the decision to migrate the UI from Chainlit to a Tauri desktop app with a FastAPI
-> backend, and is the **why** the migration specs (`docs/specs/pr-m0-chat-controller.md`,
+> backend, and is the **why** the migration specs (`docs/archive/pr-m0-chat-controller.md`,
 > `pr-m1-epistemics-markers.md`, `pr-m2-fastapi-boundary.md`) build against. It supersedes the UI
 > half of the stack table in `.claude/CONTEXT.md` ("UI = Chainlit (web)"). It relates to the Chunk 2a
 > ADR (`docs/specs/chunk-2a-dual-interpretation.md`), which deferred the rich per-claim editorial GUI
@@ -86,7 +86,7 @@ Adopt a **Tauri desktop application** with a **FastAPI backend** wrapping the ex
 The only server→client push in a turn is the token/step stream; everything else is request→response.
 SSE maps 1:1 onto PR-M0's `TurnEvent` (`token`/`step`/`result`), survives the Tauri webview and the
 sidecar boundary cleanly, and is materially simpler to bundle and debug than a WS lifecycle. Full detail
-+ the endpoint contract: `docs/specs/pr-m2-fastapi-boundary.md` ADR-2.
++ the endpoint contract: `docs/archive/pr-m2-fastapi-boundary.md` ADR-2.
 
 ### ADR-3 (sub-decision) — Sidecar for release, separate-process for dev
 PyInstaller-freezing the Python stack is the migration's hardest part; forcing it into the dev inner
@@ -124,7 +124,7 @@ loop would slow every iteration. So: **release** = Tauri bundles the frozen Fast
 Six PRs, one per session, in `docs/ROADMAP.md` (M0–M5). **All six specs now written**
 (`pr-m{0,1,2,3,4,5}-*.md`) — M3–M5 were specced one ahead as each predecessor landed (each depends on
 the prior's output: frontend framework, freeze layout, Chainlit-removal surface). M0–M4 built; M5 is
-designed and gated on the M4 installer shipping + RG-012 passing (`docs/specs/pr-m5-decommission-chainlit.md`). **Sequencing rationale:** M1 lands *before* the migration proper because it
+designed and gated on the M4 installer shipping + RG-012 passing (`docs/archive/pr-m5-decommission-chainlit.md`). **Sequencing rationale:** M1 lands *before* the migration proper because it
 is the pre-migration demo win and shares M0's `chunk_key` plumbing — so the 7d marker join is wired
 once, on the new `ChatController`, never retrofitted into Chainlit and then again into the controller.
 The rich per-claim editorial UX is built natively in Tauri (PR-M3), not in Chainlit, because the Chunk

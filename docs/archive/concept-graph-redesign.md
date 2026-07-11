@@ -1,5 +1,7 @@
 # Spec — Concept-graph redesign: curated vocabulary + deterministic skeleton + confined LLM enrichment
 
+> **📦 Archived — shipped; the historical code-level contract, archived here (2026-07-11).** Live status: ROADMAP row 16 (PR-16) + G1 — Node A/B skeleton built and validated; the open-vocabulary core it replaced is deleted (KI-7 resolved). The behaviour of record is `concept_skeleton*.py` + tests, not this spec.
+
 **Status:** ✅ **NODE A BUILT** (2026-06-30, Claude Code) — the deterministic, zero-LLM skeleton
 (`src/doc_assistant/concept_skeleton.py` + `scripts/{seed_concepts,build_concept_skeleton}.py` + the four
 new tables + `CONCEPT_SKELETON_*` config; 23 guard tests, full gate green). **Node B (LLM relation/stance)

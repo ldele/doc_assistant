@@ -1,5 +1,5 @@
 <!-- status: archived · updated: 2026-07-11 · class: disposable -->
-<!-- BUILT 2026-07-11 — staged for review, not yet committed. status:archived so sprint_check sees
+<!-- BUILT 2026-07-11 — committed `09afd0c` (U1/U1b/U1c). status:archived so sprint_check sees
      U1c (once it has a build spec + SPRINT contract) as the sole active contract. Pre-existing
      [lifecycle] warn applies (tolerated across all SPRINT-*.md).
 

@@ -1,5 +1,5 @@
 <!-- status: archived · updated: 2026-07-10 · class: disposable -->
-<!-- BUILT 2026-07-10 — staged for review, not yet committed. status:archived so sprint_check sees
+<!-- BUILT 2026-07-10 — committed `8ba1ffc` (SPRINT-009). status:archived so sprint_check sees
      SPRINT-010 (U1) as the sole active contract.
 
      U3 (ROADMAP), 2nd in the locked Phase-8 UI build order (U2 → U3 → U1 → U1b → U1c).

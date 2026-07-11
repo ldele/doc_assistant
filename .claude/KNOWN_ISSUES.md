@@ -141,7 +141,7 @@ Migrated from the old `CLAUDE.md` / `README` runtime-quirk notes on 2026-06-20 (
 - **Mostly moot in practice since 2026-07-02 (PR-R7):** the live chip is now default-OFF
   (`EPISTEMICS_MARKERS_ENABLED=false`, ADR-005), so this containment coarseness only bites when a user opts
   the markers back on. The precise re-projection upgrade rides with Node B, alongside KI-7 retirement.
-- **Pointer:** `docs/specs/pr-m1-epistemics-markers.md` ADR-1 (option 2 = the re-projection upgrade).
+- **Pointer:** `docs/archive/pr-m1-epistemics-markers.md` ADR-1 (option 2 = the re-projection upgrade).
 
 ## KI-9 — Frozen desktop build does not bundle model weights → first-run HuggingFace download; offline launch fails — RESOLVED (2026-06-24)
 - **Symptom:** On a clean machine (verified in **Windows Sandbox**, 2026-06-22, RG-012 Tier-1), the
@@ -323,7 +323,7 @@ Migrated from the old `CLAUDE.md` / `README` runtime-quirk notes on 2026-06-20 (
   (6 unit, 5 integration; `list_keyword_candidates` loop-closure asserted). Gate green.
 - **Follow-up (not this fix):** the RG-001 run can now re-seed its vocabulary from *extracted* candidates
   instead of the ad-hoc hand-seeded 30 — a better-grounded re-run once a curator promotes a subset.
-- **Pointer:** `tests/eval/baselines/rg001_concept_skeleton_2026-07-01.md`; `docs/specs/concept-graph-redesign.md`
+- **Pointer:** `tests/eval/baselines/rg001_concept_skeleton_2026-07-01.md`; `docs/archive/concept-graph-redesign.md`
   Decision 1; `.claude/RIGOR_TODO.md` RG-001/008/009.
 
 ## KI-14 — PyMuPDF4LLM image placeholders pollute the extracted markdown — RESOLVED (main corpus, 2026-07-02)
@@ -342,7 +342,7 @@ Migrated from the old `CLAUDE.md` / `README` runtime-quirk notes on 2026-06-20 (
 - **Workaround:** none applied (would be a code change; out of scope for the "current-params re-check").
 - **Real fix:** strip `==> … intentionally omitted <==` placeholder lines in the extract→markdown step (or a
   cache-normalisation pass) before chunking + keywording; optionally re-point them at the figure sidecar.
-- **FIX BUILT (2026-07-02, PR-R1 — `docs/specs/remediation-plan-2026-07.md` §R1; staged, not committed):**
+- **FIX BUILT (2026-07-02, PR-R1 — `docs/archive/remediation-plan-2026-07.md` §R1; staged, not committed):**
   `extractors.strip_image_placeholders` (frame-anchored `==> … <==`, whole-line, no-op when absent + idempotent)
   applied at the single `extract_to_markdown` exit → all future extractions clean; `scripts/normalize_cache.py`
   (dry-run default, `--apply`, atomic per-file rewrite only when content changes) fixes existing caches, since
@@ -403,7 +403,7 @@ Migrated from the old `CLAUDE.md` / `README` runtime-quirk notes on 2026-06-20 (
 - **Not done (documented follow-up, not a defect):** a live-UI smoke test that the desktop chat's
   evidence chips now render on a real answer (PR-M1's read side was never the broken part, but
   hasn't been exercised end-to-end since before this fix); parent-child chunk-store re-projection
-  (already a separate documented follow-up, `docs/specs/pr-m1-epistemics-markers.md` ADR-1
+  (already a separate documented follow-up, `docs/archive/pr-m1-epistemics-markers.md` ADR-1
   option 2).
 - **Pointer:** `src/doc_assistant/epistemics.py` (`concepts_in_text`/`project_chunk_weights`),
   `src/doc_assistant/concept_skeleton.py` (`compile_boundary_pattern`); found while hand-auditing

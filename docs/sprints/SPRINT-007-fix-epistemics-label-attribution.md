@@ -44,7 +44,7 @@
 ## uses
 <!-- read-set (cap 12 files / 2500 lines). -->
 - .claude/KNOWN_ISSUES.md
-- docs/specs/pr-m1-epistemics-markers.md
+- docs/archive/pr-m1-epistemics-markers.md
 - src/doc_assistant/concept_skeleton.py
 - src/doc_assistant/epistemics.py
 - tests/unit/test_epistemics.py

@@ -71,7 +71,7 @@ class SettingsUpdate(BaseModel):
 
     source_dir: str | None = None
     llm_provider: Literal["anthropic", "ollama"] | None = None
-    llm_model: str | None = None
+    llm_model: str | None = Field(default=None, min_length=1)
 
     @model_validator(mode="after")
     def _check_shape(self) -> SettingsUpdate:

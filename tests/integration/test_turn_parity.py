@@ -56,6 +56,9 @@ class FakeRAG:
         self._scored = scored
         self._tokens = tokens
         self.llm = types.SimpleNamespace(model="fake-model")
+        # ADR-011 (U1c): the effective provider/model chat_controller._is_local reads.
+        self.provider = "anthropic"
+        self.model = "claude-haiku-4-5-20251001"
 
     def chunk_count(self) -> int:
         return 7
@@ -63,7 +66,9 @@ class FakeRAG:
     def rewrite(self, question: str, history: list[dict[str, str]], counter: object = None) -> str:
         return question
 
-    def retrieve_with_scores(self, query: str, top_k: int = 10) -> list[tuple[Document, float]]:
+    def retrieve_with_scores(
+        self, query: str, top_k: int = 10, *, use_multi_query: bool | None = None
+    ) -> list[tuple[Document, float]]:
         return self._scored
 
     def stream_answer(

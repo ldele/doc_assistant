@@ -32,15 +32,14 @@ from typing import Any, Literal
 
 from langchain_core.documents import Document
 
-from doc_assistant import export
+from doc_assistant import app_settings, export
 from doc_assistant.commands import execute_command, parse_command
 from doc_assistant.config import (
     EPISTEMICS_MARKERS_ENABLED,
-    LLM_MODEL,
-    LLM_PROVIDER,
     REVIEWER_EVIDENCE_CHARS,
     SYNTHESIS_MODE,
     TOP_K,
+    USE_MULTI_QUERY,
     USE_PARENT_CHILD,
 )
 from doc_assistant.embeddings import get_active_model_name
@@ -93,6 +92,25 @@ class Session:
     export_turns: list[export.ExportTurn] = field(default_factory=list)
     awaiting_edit: dict[str, Any] | None = None
     session_id: str = field(default_factory=lambda: time.strftime("%Y%m%d-%H%M%S"))
+
+
+@dataclass(frozen=True)
+class RagOverrides:
+    """Session-scoped, per-turn RAG knob overrides (ADR-010 / feature-rag-sandbox.md).
+    ``None`` (a field or the whole object) = use the locked default. Non-persistent: never
+    written to config/.env/app_settings, and never assigned to a module global — threaded
+    as an explicit request-scoped parameter so concurrent turns on the shared
+    ``ChatController`` singleton cannot leak overrides into each other.
+
+    ``epistemics_markers_enabled``/``reviewer_evidence_chars`` (U1b, SPRINT-011, ADR-010's
+    2026-07-10 amendment) are the two "must revisit" niche knobs — same non-persistent,
+    request-scoped mechanics as the original three."""
+
+    top_k: int | None = None
+    synthesis_mode: str | None = None  # "ai" | "human"
+    use_multi_query: bool | None = None
+    epistemics_markers_enabled: bool | None = None
+    reviewer_evidence_chars: int | None = None
 
 
 # ============================================================
@@ -191,8 +209,15 @@ TurnEvent = Token | Step | Result
 # ============================================================
 
 
-def _is_local() -> bool:
-    return LLM_PROVIDER.lower() == "ollama"
+def _is_local(provider: str) -> bool:
+    """Whether ``provider`` is the local/free Ollama backend.
+
+    ADR-011 (U1c, desktop provider switch): takes the caller's **effective** provider
+    (``self.rag.provider``) rather than reading the import-time ``LLM_PROVIDER`` constant, so this
+    stays truthful after a live switch. No default — every call site must say which provider it
+    means.
+    """
+    return provider.lower() == "ollama"
 
 
 # PR-M1 — human labels for the 7d evidence-layer markers (advisory chip, not a gate).
@@ -218,6 +243,39 @@ def _sources_block(sources: list[SourceView]) -> str:
     return "\n\n---\n**Sources:**\n" + "\n".join(lines)
 
 
+def _overrides_note(
+    eff_top_k: int,
+    eff_synthesis_mode: str,
+    eff_multi_query: bool,
+    eff_markers_enabled: bool = EPISTEMICS_MARKERS_ENABLED,
+    eff_reviewer_evidence_chars: int = REVIEWER_EVIDENCE_CHARS,
+) -> str:
+    """ADR-010 Decision 5: provenance shows the *effective* knob values and flags any that
+    differ from the locked default. Returns "" (no-op, byte-identical turn) when every
+    effective value equals its config default — i.e. ``overrides=None`` or an all-``None``
+    ``RagOverrides``. The last two params are U1b's niche knobs (SPRINT-011)."""
+    diffs = []
+    if eff_top_k != TOP_K:
+        diffs.append(f"top_k={eff_top_k} (default {TOP_K})")
+    if eff_synthesis_mode != SYNTHESIS_MODE:
+        diffs.append(f"synthesis_mode={eff_synthesis_mode} (default {SYNTHESIS_MODE})")
+    if eff_multi_query != USE_MULTI_QUERY:
+        diffs.append(f"multi_query={eff_multi_query} (default {USE_MULTI_QUERY})")
+    if eff_markers_enabled != EPISTEMICS_MARKERS_ENABLED:
+        diffs.append(
+            f"epistemics_markers_enabled={eff_markers_enabled} "
+            f"(default {EPISTEMICS_MARKERS_ENABLED})"
+        )
+    if eff_reviewer_evidence_chars != REVIEWER_EVIDENCE_CHARS:
+        diffs.append(
+            f"reviewer_evidence_chars={eff_reviewer_evidence_chars} "
+            f"(default {REVIEWER_EVIDENCE_CHARS})"
+        )
+    if not diffs:
+        return ""
+    return "\n\n🧪 **Session override (this answer only):** " + " · ".join(diffs)
+
+
 def _format_review_block(review: ReviewResult | None) -> str:
     """Render the reviewer's verdict as a sub-section of the provenance card."""
     if review is None:
@@ -234,10 +292,10 @@ def _format_review_block(review: ReviewResult | None) -> str:
     return "\n\n**Reviewer assessment:** " + " · ".join(bits) + notes
 
 
-def _token_suffix(prov: AnswerProvenance) -> str:
+def _token_suffix(prov: AnswerProvenance, *, is_local: bool) -> str:
     """Header token tag — provider-aware. Local models report no usage, so a
     `0 tokens` figure would be misleading; show `local` instead."""
-    if _is_local():
+    if is_local:
         return " · local"
     total = (prov.token_input or 0) + (prov.token_output or 0)
     return f" · {total:,} tokens"
@@ -248,6 +306,7 @@ def _format_provenance_card(
     signals: ConfidenceSignals,
     *,
     review: ReviewResult | None = None,
+    is_local: bool = False,
 ) -> str:
     """Render an AnswerProvenance as a plain-markdown card (no raw HTML).
 
@@ -275,7 +334,8 @@ def _format_provenance_card(
         )
         return (
             f"\n\n---\n"
-            f"🔍 **Provenance** — `{id8}` · {latency_s:.1f}s{_token_suffix(prov)}{top}  \n"
+            f"🔍 **Provenance** — `{id8}` · {latency_s:.1f}s"
+            f"{_token_suffix(prov, is_local=is_local)}{top}  \n"
             f"{meta}  \n"
             f"{hint}"
         )
@@ -298,7 +358,7 @@ def _format_provenance_card(
     return (
         f"\n\n---\n"
         f"⚠ **Low confidence: {', '.join(signals.reasons)}** — "
-        f"`{id8}` · {latency_s:.1f}s{_token_suffix(prov)}  \n"
+        f"`{id8}` · {latency_s:.1f}s{_token_suffix(prov, is_local=is_local)}  \n"
         f"{meta}  \n"
         f"**Prompt version** `{prov.prompt_version or '?'}`\n\n"
         f"**Confidence signals**  \n{sig_lines}"
@@ -324,8 +384,15 @@ def _chunk_key(meta: dict[str, Any]) -> str | None:
     return None  # TODO(PR-M1): PC→baseline chunk-key mapping for parent chunks
 
 
-def _build_retrieved_chunks(scored: list[tuple[Document, float]]) -> list[RetrievedChunk]:
-    """Build the provenance RetrievedChunk list from (doc, score) pairs."""
+def _build_retrieved_chunks(
+    scored: list[tuple[Document, float]],
+    *,
+    reviewer_evidence_chars: int = REVIEWER_EVIDENCE_CHARS,
+) -> list[RetrievedChunk]:
+    """Build the provenance RetrievedChunk list from (doc, score) pairs.
+
+    ``reviewer_evidence_chars`` (U1b / ADR-010 amendment) defaults to the locked config
+    value — callers pass the per-turn effective value to override it, request-scoped."""
     chunks: list[RetrievedChunk] = []
     for doc, score in scored:
         meta = doc.metadata
@@ -338,7 +405,7 @@ def _build_retrieved_chunks(scored: list[tuple[Document, float]]) -> list[Retrie
                 reranker_score=float(score),
                 chunk_excerpt=doc.page_content[:300],
                 # Wider grounding for the reviewer (not persisted/displayed).
-                full_text=doc.page_content[:REVIEWER_EVIDENCE_CHARS],
+                full_text=doc.page_content[:reviewer_evidence_chars],
                 chunk_key=_chunk_key(meta),
             )
         )
@@ -429,7 +496,20 @@ class ChatController:
     the original UI handler did; no UI-framework import."""
 
     def __init__(self, rag: RAGPipeline | None = None) -> None:
-        self.rag = rag if rag is not None else RAGPipeline()
+        if rag is not None:
+            self.rag = rag  # test seam (cpc §13) — a fake; never carries a persisted selection
+        else:
+            self.rag = RAGPipeline()
+            # ADR-011 (U1c): apply any persisted provider/model selection so a restart restores
+            # it. A fresh RAGPipeline boots on the config default; only swap if the persisted
+            # choice actually differs (skip a needless rebuild on the common no-switch boot).
+            provider, model = app_settings.get_llm_selection()
+            if (
+                provider is not None
+                and model is not None
+                and (provider, model) != (self.rag.provider, self.rag.model)
+            ):
+                self.rag.set_chat_model(provider, model)
         # Cached once — the prompt template doesn't change between turns.
         self._answer_template_hash = template_hash(str(ANSWER_PROMPT))
 
@@ -437,6 +517,18 @@ class ChatController:
 
     def chunk_count(self) -> int:
         return self.rag.chunk_count()
+
+    def reconfigure(self, provider: str, model: str) -> None:
+        """Switch the live generation provider/model (ADR-011, U1c desktop provider switch).
+
+        Validates and persists the choice via ``app_settings`` (raises :class:`ValueError` for
+        an unknown or keyless provider — the API maps that to 400), then swaps the pipeline's
+        generation model with a **direct method call** — never a module-global mutation. An
+        in-flight turn already holds its own chain reference (``pipeline.set_chat_model``'s own
+        guarantee) and finishes on the old model; the very next turn picks up the new one.
+        """
+        app_settings.set_llm_selection(provider, model)
+        self.rag.set_chat_model(provider, model)
 
     def adjudicate(self, claim_id: str, decision: str, edited_text: str | None = None) -> None:
         """Record the user's verdict on one flagged claim. Lifts ``_resolve_claim``'s
@@ -458,9 +550,15 @@ class ChatController:
         path = export.write_markdown(f"{session.session_id}-{flavour}.md", md)
         return (f"📄 Exported {len(turns)} turn(s) — {flavour}. Saved to `{path}`.", path)
 
-    def handle_message(self, session: Session, text: str) -> Iterator[TurnEvent]:
+    def handle_message(
+        self, session: Session, text: str, *, overrides: RagOverrides | None = None
+    ) -> Iterator[TurnEvent]:
         """Drive one turn. Ports ``on_message``'s dispatch order verbatim:
-        (a) slash command, (b) pending claim-edit, (c) library query, (d) RAG path."""
+        (a) slash command, (b) pending claim-edit, (c) library query, (d) RAG path.
+
+        ``overrides`` (ADR-010) only affects the RAG path — commands/library queries/claim
+        edits have no retrieval or synthesis-mode knobs to override. Default ``None`` is
+        byte-identical to before this feature existed."""
         # --- Slash commands ---
         parsed = parse_command(text)
         if parsed is not None:
@@ -502,7 +600,7 @@ class ChatController:
             return
 
         # --- RAG pipeline ---
-        yield from self._handle_rag(session, text)
+        yield from self._handle_rag(session, text, overrides)
 
     # -- internal ---------------------------------------------------------
 
@@ -514,7 +612,7 @@ class ChatController:
             mode="ai",
             sources=[],
             flagged_claims=[],
-            usage=UsageView(0, 0, 0, None, _is_local()),
+            usage=UsageView(0, 0, 0, None, _is_local(self.rag.provider)),
             standalone_query="",
             record_id=None,
             provenance_card_md="",
@@ -526,7 +624,11 @@ class ChatController:
         )
 
     def _attach_markers(
-        self, sources: list[SourceView], scored: list[tuple[Document, float]]
+        self,
+        sources: list[SourceView],
+        scored: list[tuple[Document, float]],
+        *,
+        enabled: bool = EPISTEMICS_MARKERS_ENABLED,
     ) -> None:
         """PR-M1: attach 7d epistemics markers (contested / superseded-trend) to each
         source. Flat chunks join directly on ``chunk_key`` against the marker index; PC
@@ -539,11 +641,11 @@ class ChatController:
         them — e.g. the ``chunk_epistemics`` table absent on an older DB, a Chroma hiccup —
         leaves the sources unmarked rather than breaking the turn.
 
-        Gated OFF by default (``EPISTEMICS_MARKERS_ENABLED``, R7 / ADR-005): today the marker
-        data comes from the superseded open-vocabulary graph (KI-7) via a coarse join (KI-8),
-        so surfacing it undermines the integrity layer. When disabled this returns before any
-        load, so every ``markers`` stays empty and the turn is the byte-identical M0/M1 path."""
-        if not EPISTEMICS_MARKERS_ENABLED:
+        ``enabled`` defaults to the locked ``EPISTEMICS_MARKERS_ENABLED`` config default; a
+        caller passes the per-turn effective value (U1b / ADR-010 amendment) to override it.
+        When disabled this returns before any load, so every ``markers`` stays empty and the
+        turn is the byte-identical M0/M1 path."""
+        if not enabled:
             return
         try:
             document_ids = [
@@ -572,11 +674,42 @@ class ChatController:
         except Exception:
             return  # advisory markers must never break a turn
 
-    def _handle_rag(self, session: Session, text: str) -> Iterator[TurnEvent]:
+    def _handle_rag(
+        self, session: Session, text: str, overrides: RagOverrides | None = None
+    ) -> Iterator[TurnEvent]:
         rag = self.rag
         history = session.history
         counter = session.counter
         user_question = text
+
+        # --- ADR-010: resolve effective per-turn knobs (None = locked default; never a
+        # module-global assignment — request-scoped so concurrent turns can't leak). ---
+        eff_top_k = overrides.top_k if overrides and overrides.top_k is not None else TOP_K
+        eff_synthesis_mode = (
+            overrides.synthesis_mode if overrides and overrides.synthesis_mode else SYNTHESIS_MODE
+        )
+        eff_multi_query = (
+            USE_MULTI_QUERY
+            if overrides is None or overrides.use_multi_query is None
+            else overrides.use_multi_query
+        )
+        eff_markers_enabled = (
+            EPISTEMICS_MARKERS_ENABLED
+            if overrides is None or overrides.epistemics_markers_enabled is None
+            else overrides.epistemics_markers_enabled
+        )
+        eff_reviewer_evidence_chars = (
+            overrides.reviewer_evidence_chars
+            if overrides and overrides.reviewer_evidence_chars is not None
+            else REVIEWER_EVIDENCE_CHARS
+        )
+        overrides_note = _overrides_note(
+            eff_top_k,
+            eff_synthesis_mode,
+            eff_multi_query,
+            eff_markers_enabled,
+            eff_reviewer_evidence_chars,
+        )
 
         pre_in, pre_out = counter.input_tokens, counter.output_tokens
         turn_start = time.monotonic()
@@ -587,7 +720,11 @@ class ChatController:
         else:
             standalone = user_question
 
-        scored = rag.retrieve_with_scores(standalone, top_k=TOP_K)
+        scored = rag.retrieve_with_scores(
+            standalone,
+            top_k=eff_top_k,
+            use_multi_query=(overrides.use_multi_query if overrides else None),
+        )
         yield Step("Searching documents", f"Found {len(scored)} relevant passages")
 
         docs = [doc for doc, _ in scored]
@@ -604,11 +741,15 @@ class ChatController:
         fig_paths = load_figure_image_paths(fig_ids) if fig_ids else {}
 
         sources = _build_source_views(scored, fig_paths)
-        self._attach_markers(sources, scored)  # PR-M1: 7d markers (no-op when sidecar absent)
-        retrieved_chunks = _build_retrieved_chunks(scored)
+        # PR-M1: 7d markers (no-op when sidecar absent); enabled= is U1b's per-turn override.
+        self._attach_markers(sources, scored, enabled=eff_markers_enabled)
+        retrieved_chunks = _build_retrieved_chunks(
+            scored, reviewer_evidence_chars=eff_reviewer_evidence_chars
+        )
 
-        # --- SYNTHESIS_MODE=human: evidence only; skip the interpretation call ---
-        if SYNTHESIS_MODE == "human":
+        # --- synthesis_mode=human (locked default or a per-turn override): evidence only;
+        # skip the interpretation call ---
+        if eff_synthesis_mode == "human":
             yield Result(
                 self._human_result(
                     session,
@@ -619,6 +760,8 @@ class ChatController:
                     sources=sources,
                     retrieved_chunks=retrieved_chunks,
                     turn_start=turn_start,
+                    eff_top_k=eff_top_k,
+                    overrides_note=overrides_note,
                 )
             )
             return
@@ -636,7 +779,7 @@ class ChatController:
         embedding_model = get_active_model_name()
         prov_version = prompt_version_hash(
             template_hash=self._answer_template_hash,
-            top_k=TOP_K,
+            top_k=eff_top_k,
             use_parent_child=USE_PARENT_CHILD,
             embedding_model=embedding_model,
         )
@@ -652,7 +795,7 @@ class ChatController:
                 model_name=model_name,
                 embedding_model=embedding_model,
                 prompt_version=prov_version,
-                top_k=TOP_K,
+                top_k=eff_top_k,
                 use_parent_child=USE_PARENT_CHILD,
                 token_input=turn_in,
                 token_output=turn_out,
@@ -667,7 +810,7 @@ class ChatController:
                 model_name=model_name,
                 embedding_model=embedding_model,
                 prompt_version=prov_version,
-                top_k=TOP_K,
+                top_k=eff_top_k,
                 use_parent_child=USE_PARENT_CHILD,
                 token_input=turn_in,
                 token_output=turn_out,
@@ -680,23 +823,35 @@ class ChatController:
             if signals.any():
                 # PR 6 — when heuristic flags fire AND a reviewer is available, run the LLM
                 # reviewer to add depth. ~$0.001 + ~1-2s per flagged answer (free + local
-                # under Ollama). Clean answers skip the call.
-                from doc_assistant.llm import get_reviewer_client, reviewer_available
+                # under Ollama). Clean answers skip the call. ADR-011 (U1c): the reviewer
+                # follows the effective generation provider unless REVIEWER_PROVIDER is
+                # explicitly pinned in the environment (resolve_reviewer's own rule).
+                from doc_assistant.llm import (
+                    get_reviewer_client,
+                    resolve_reviewer,
+                    reviewer_available,
+                )
 
-                if reviewer_available():
+                reviewer_provider, reviewer_model = resolve_reviewer(
+                    self.rag.provider, self.rag.model
+                )
+                if reviewer_available(reviewer_provider):
                     try:
-                        from doc_assistant.config import REVIEWER_MODEL
-
-                        review = review_answer(prov, get_reviewer_client())
+                        review = review_answer(
+                            prov, get_reviewer_client(self.rag.provider, self.rag.model)
+                        )
                         persist_review(
-                            record_id, review, reviewer_kind="llm_haiku", model_name=REVIEWER_MODEL
+                            record_id, review, reviewer_kind="llm_haiku", model_name=reviewer_model
                         )
                     except Exception as e:
                         review = ReviewResult(error=f"reviewer setup failed: {e}")
-            provenance_block = _format_provenance_card(prov, signals, review=review)
+            provenance_block = _format_provenance_card(
+                prov, signals, review=review, is_local=_is_local(self.rag.provider)
+            )
         except Exception as e:
             # Never let provenance failure break the answer.
             provenance_block = f"\n\n_⚠ Provenance capture failed: {e}_"
+        provenance_block += overrides_note
 
         sources_block = _sources_block(sources)
         usage_block = self._usage_block(full_answer, turn_in, turn_out, counter)
@@ -758,8 +913,8 @@ class ChatController:
                     turn_input=turn_in,
                     turn_output=turn_out,
                     session_total=counter.total(),
-                    cost_usd=None if _is_local() else counter.cost_usd(),
-                    is_local=_is_local(),
+                    cost_usd=None if _is_local(self.rag.provider) else counter.cost_usd(),
+                    is_local=_is_local(self.rag.provider),
                 ),
                 standalone_query=standalone,
                 record_id=record_id,
@@ -782,9 +937,12 @@ class ChatController:
         sources: list[SourceView],
         retrieved_chunks: list[RetrievedChunk],
         turn_start: float,
+        eff_top_k: int = TOP_K,
+        overrides_note: str = "",
     ) -> TurnResult:
-        """``SYNTHESIS_MODE=human`` — evidence only; no interpretation call. Records
-        provenance silently (no card shown), stashes the export turn, updates history."""
+        """``synthesis_mode=human`` (locked default or a per-turn ADR-010 override) —
+        evidence only; no interpretation call. Records provenance silently (no card shown),
+        stashes the export turn, updates history."""
         human_answer = "(human synthesis mode — evidence only; no AI interpretation)"
         with contextlib.suppress(Exception):  # provenance is a sidecar, never blocks
             record_answer(
@@ -793,7 +951,7 @@ class ChatController:
                 answer=human_answer,
                 retrieved_chunks=retrieved_chunks,
                 embedding_model=get_active_model_name(),
-                top_k=TOP_K,
+                top_k=eff_top_k,
                 use_parent_child=USE_PARENT_CHILD,
                 latency_ms=(time.monotonic() - turn_start) * 1000.0,
             )
@@ -813,11 +971,12 @@ class ChatController:
             answer=(
                 "🧑 **Human synthesis mode** — evidence only; the interpretation is yours.\n\n"
                 + render_evidence_markdown(retrieved_chunks)
+                + overrides_note
             ),
             mode="human",
             sources=sources,
             flagged_claims=[],
-            usage=UsageView(0, 0, session.counter.total(), None, _is_local()),
+            usage=UsageView(0, 0, session.counter.total(), None, _is_local(self.rag.provider)),
             standalone_query=standalone,
             record_id=None,
             provenance_card_md="",
@@ -830,14 +989,15 @@ class ChatController:
     def _usage_block(
         self, full_answer: str, turn_in: int, turn_out: int, counter: TokenCounter
     ) -> str:
-        if _is_local():
+        if _is_local(self.rag.provider):
             # Local models report no token usage to the LangChain callback, so the real
             # counts are zero — showing "0 tokens / $0.0000" reads as broken. Be honest:
-            # no metered cost, with a rough output estimate from text.
+            # no metered cost, with a rough output estimate from text. The effective
+            # provider/model (ADR-011) — never the import-time LLM_PROVIDER/LLM_MODEL.
             est_out = max(0, len(full_answer) // 4)
             return (
                 f"\n\n---\n"
-                f"🖥 **Local model** (`{LLM_PROVIDER}/{LLM_MODEL}`) — no metered token "
+                f"🖥 **Local model** (`{self.rag.provider}/{self.rag.model}`) — no metered token "
                 f"cost; provider reports no usage. (~{est_out:,} output tokens, estimated.)"
             )
         turn_total = turn_in + turn_out

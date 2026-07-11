@@ -1,7 +1,7 @@
-<!-- status: active · updated: 2026-07-10 · class: disposable -->
-<!-- ACTIVE 2026-07-10 — SPRINT-009 (U3) landed (staged for review), no sibling to archive. This is
-     now the sole active contract. Pre-existing [lifecycle] warn applies (tolerated across all
-     SPRINT-*.md).
+<!-- status: archived · updated: 2026-07-11 · class: disposable -->
+<!-- BUILT 2026-07-11 — staged for review, not yet committed. status:archived so sprint_check sees
+     SPRINT-011 (U1b, unblocked now that this landed) as the sole active contract once it's flipped.
+     Pre-existing [lifecycle] warn applies (tolerated across all SPRINT-*.md).
 
      U1 (ROADMAP), 3rd in the locked Phase-8 UI build order (U2 → U3 → U1 → U1b → U1c).
      Design: docs/specs/feature-phase8-ui-upgrade.md §U1 (theme toggle + settings disclosure)

@@ -233,9 +233,33 @@ def make_client(provider: str, model: str) -> LLMClient:
     raise ValueError(f"Unknown LLM provider '{provider}'. Valid options: anthropic, ollama")
 
 
-def get_reviewer_client() -> LLMClient:
-    """The pinned reviewer instrument — reads ``REVIEWER_PROVIDER``/``REVIEWER_MODEL``."""
-    return make_client(config.REVIEWER_PROVIDER, config.REVIEWER_MODEL)
+def resolve_reviewer(
+    effective_provider: str | None = None, effective_model: str | None = None
+) -> tuple[str, str]:
+    """Resolve the reviewer's effective ``(provider, model)`` (ADR-011, U1c).
+
+    With no args: today's behaviour — ``REVIEWER_PROVIDER``/``REVIEWER_MODEL`` (an explicit
+    ``.env`` pin, or its default of ``LLM_PROVIDER`` + the pinned reference model).
+
+    A caller passes the *live* generation ``(effective_provider, effective_model)`` to make the
+    reviewer **follow** a provider switch (fork C) — but only when ``REVIEWER_PROVIDER`` was never
+    explicitly pinned in the environment (:data:`config.REVIEWER_PROVIDER_PINNED`); an explicit pin
+    always wins, preserving the cross-run comparability ``REVIEWER_MODEL`` exists for.
+    ``REVIEWER_MODEL`` (a Haiku name) would fail on Ollama, so a followed switch uses the effective
+    **chat** model, not it. Exposed separately from :func:`get_reviewer_client` so a caller can log
+    /persist which instrument actually ran without rebuilding one just to inspect it.
+    """
+    if config.REVIEWER_PROVIDER_PINNED or effective_provider is None:
+        return config.REVIEWER_PROVIDER, config.REVIEWER_MODEL
+    return effective_provider, effective_model or config.REVIEWER_MODEL
+
+
+def get_reviewer_client(
+    effective_provider: str | None = None, effective_model: str | None = None
+) -> LLMClient:
+    """The reviewer instrument — see :func:`resolve_reviewer` for the resolution rule."""
+    provider, model = resolve_reviewer(effective_provider, effective_model)
+    return make_client(provider, model)
 
 
 def get_judge_client() -> LLMClient:
@@ -243,16 +267,27 @@ def get_judge_client() -> LLMClient:
     return make_client(config.JUDGE_PROVIDER, config.JUDGE_MODEL)
 
 
-def reviewer_available() -> bool:
-    """Whether the reviewer can run given current config.
+def provider_available(provider: str) -> bool:
+    """Whether ``provider`` can actually run right now.
 
-    Anthropic needs ``ANTHROPIC_API_KEY``; Ollama (local) needs nothing.
-    Call sites gate on this instead of hardcoding the API-key check, so a
-    fully-local reviewer (``REVIEWER_PROVIDER=ollama``) works without a key.
+    Anthropic needs ``ANTHROPIC_API_KEY``; Ollama (local) needs nothing. Generalizes the check
+    ``reviewer_available`` already did (ADR-011 U1c) — reused by the settings-view provider list
+    (fork E) and ``app_settings.set_llm_selection`` (never persist a choice that can't run).
     """
-    if config.REVIEWER_PROVIDER.lower() == "anthropic":
+    if provider.lower() == "anthropic":
         return bool(config.ANTHROPIC_API_KEY)
     return True
+
+
+def reviewer_available(provider: str | None = None) -> bool:
+    """Whether the reviewer can run.
+
+    With no args: today's behaviour (checks ``REVIEWER_PROVIDER``). Call sites gate on this
+    instead of hardcoding the API-key check, so a fully-local reviewer
+    (``REVIEWER_PROVIDER=ollama``) works without a key. ADR-011: pass the *effective* provider to
+    check availability for a followed switch instead of the pinned default.
+    """
+    return provider_available(provider if provider is not None else config.REVIEWER_PROVIDER)
 
 
 # ============================================================

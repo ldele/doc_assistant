@@ -128,6 +128,13 @@ REVIEWER_MODEL = os.getenv("REVIEWER_MODEL", _REFERENCE_MODEL)
 JUDGE_PROVIDER = os.getenv("JUDGE_PROVIDER", LLM_PROVIDER)
 JUDGE_MODEL = os.getenv("JUDGE_MODEL", _REFERENCE_MODEL)
 
+# ADR-011 (U1c, desktop provider switch): whether REVIEWER_PROVIDER was *explicitly* set in the
+# environment, as opposed to inheriting LLM_PROVIDER's value by default. REVIEWER_PROVIDER's own
+# resolved value can't tell these apart (an unpinned reviewer on an anthropic install also reads
+# "anthropic") — a live provider switch needs the *pinned* distinction to decide whether the
+# reviewer should follow the switch (fork C) or stay put.
+REVIEWER_PROVIDER_PINNED = os.getenv("REVIEWER_PROVIDER") is not None
+
 # Providers that bill real money per call. The single source of truth for the
 # enrichment-CLI cost guard (`doc_assistant.llm.assert_provider_intent`): a
 # `--apply` enrichment run resolving to one of these prints a loud cost warning

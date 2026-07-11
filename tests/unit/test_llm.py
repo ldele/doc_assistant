@@ -269,6 +269,66 @@ def test_reviewer_available_ollama_needs_no_key(monkeypatch: pytest.MonkeyPatch)
 
 
 # ============================================================
+# ADR-011 / SPRINT-012 (U1c) — provider_available + reviewer-follows-the-switch
+# ============================================================
+
+
+def test_provider_available(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(config, "ANTHROPIC_API_KEY", None)
+    assert llm.provider_available("anthropic") is False
+    assert llm.provider_available("ollama") is True
+    monkeypatch.setattr(config, "ANTHROPIC_API_KEY", "k")
+    assert llm.provider_available("anthropic") is True
+
+
+def test_reviewer_available_effective_provider_overrides_config(monkeypatch: pytest.MonkeyPatch):
+    # The effective-provider param checks THAT provider's key, not REVIEWER_PROVIDER's.
+    monkeypatch.setattr(config, "REVIEWER_PROVIDER", "anthropic")
+    monkeypatch.setattr(config, "ANTHROPIC_API_KEY", None)
+    assert llm.reviewer_available() is False  # unpinned default check: anthropic, no key
+    assert llm.reviewer_available("ollama") is True  # a followed switch to ollama needs no key
+
+
+def test_resolve_reviewer_with_no_args_matches_todays_config(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(config, "REVIEWER_PROVIDER_PINNED", False)
+    monkeypatch.setattr(config, "REVIEWER_PROVIDER", "anthropic")
+    monkeypatch.setattr(config, "REVIEWER_MODEL", "claude-haiku-4-5-20251001")
+    assert llm.resolve_reviewer() == ("anthropic", "claude-haiku-4-5-20251001")
+
+
+def test_get_reviewer_client_follows_unpinned_switch(
+    patched_sdks: None, monkeypatch: pytest.MonkeyPatch
+):
+    # REVIEWER_PROVIDER was never explicitly set in the environment → follow the live switch.
+    monkeypatch.setattr(config, "REVIEWER_PROVIDER_PINNED", False)
+    client = llm.get_reviewer_client("ollama", "llama3.1:8b")
+    assert isinstance(client, llm.OllamaClient)
+    assert client.model == "llama3.1:8b"
+
+
+def test_get_reviewer_client_respects_explicit_pin(
+    patched_sdks: None, monkeypatch: pytest.MonkeyPatch
+):
+    # An explicit .env REVIEWER_PROVIDER pin wins even when a switch is passed in.
+    monkeypatch.setattr(config, "REVIEWER_PROVIDER_PINNED", True)
+    monkeypatch.setattr(config, "REVIEWER_PROVIDER", "anthropic")
+    monkeypatch.setattr(config, "REVIEWER_MODEL", "claude-haiku-4-5-20251001")
+    client = llm.get_reviewer_client("ollama", "llama3.1:8b")  # the switch is ignored
+    assert isinstance(client, llm.AnthropicClient)
+    assert client.model == "claude-haiku-4-5-20251001"
+
+
+def test_get_reviewer_client_no_args_is_byte_identical_to_today(
+    patched_sdks: None, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.setattr(config, "REVIEWER_PROVIDER", "anthropic")
+    monkeypatch.setattr(config, "REVIEWER_MODEL", "claude-sonnet-4-6")
+    client = llm.get_reviewer_client()
+    assert isinstance(client, llm.AnthropicClient)
+    assert client.model == "claude-sonnet-4-6"
+
+
+# ============================================================
 # Enrichment-CLI cost guard (assert_provider_intent)
 # ============================================================
 

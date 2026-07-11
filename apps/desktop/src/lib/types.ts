@@ -52,6 +52,8 @@ export interface Health {
 // knob, the source documents folder, and the live corpus size. Mirrors _full_settings() in
 // apps/api/main.py.
 export interface Settings {
+  // provider/model are the *effective* values (ADR-011, U1c) — the persisted switch if one was
+  // made, else the config default. Never stale after a live provider switch.
   provider: string
   model: string
   embedding_model: string
@@ -59,9 +61,13 @@ export interface Settings {
   candidate_k: number
   use_parent_child: boolean
   synthesis_mode: string
+  use_multi_query: boolean
+  epistemics_markers_enabled: boolean
+  reviewer_evidence_chars: number
   parent_chunk: [number, number]
   child_chunk: [number, number]
   retrieval_weights: { bm25: number; vector: number }
+  providers: ProviderOption[]
   data_home: string
   source_dir: string
   source_dir_exists: boolean
@@ -80,3 +86,22 @@ export interface IngestStatus {
 }
 
 export type Decision = 'accepted' | 'rejected' | 'edited'
+
+// Session-scoped, non-persistent RAG-sandbox overrides (ADR-010, + the U1b niche-knob
+// amendment). `undefined`/`null` (a field or the whole object) = use the locked default.
+// Mirrors apps/api/models.py::RagOverrides.
+export interface RagOverrides {
+  top_k?: number | null
+  synthesis_mode?: 'ai' | 'human' | null
+  use_multi_query?: boolean | null
+  epistemics_markers_enabled?: boolean | null
+  reviewer_evidence_chars?: number | null
+}
+
+// One entry in the settings view's provider picker (ADR-011, U1c). `available: false` means the
+// provider's credential is missing (e.g. no ANTHROPIC_API_KEY) — the UI disables that option.
+export interface ProviderOption {
+  id: string
+  available: boolean
+  paid: boolean
+}

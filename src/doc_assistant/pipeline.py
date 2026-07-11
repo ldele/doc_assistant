@@ -157,25 +157,53 @@ class RAGPipeline:
         self.reranker = CrossEncoder("BAAI/bge-reranker-base", **_sigmoid_activation_kwarg())
 
         log.info("loading_llm")
+        # The *effective* generation provider/model — starts at the config default; a caller
+        # (ChatController, at construction or via a live switch) may move it with set_chat_model
+        # (ADR-011, U1c). Read this, not the LLM_PROVIDER/LLM_MODEL constants, to know what's live.
+        self.provider = LLM_PROVIDER
+        self.model = LLM_MODEL
         self.llm = self._build_llm()
 
     def _build_llm(self) -> Any:
         """Build the streaming analysis model from ``LLM_PROVIDER``/``LLM_MODEL``."""
         return build_chat_model(LLM_PROVIDER, LLM_MODEL)
 
+    def set_chat_model(self, provider: str, model: str) -> None:
+        """Swap **only** the streaming generation model (ADR-011, U1c desktop provider switch).
+
+        The embedder, vector store, BM25 index, and reranker are untouched — this rebuilds
+        nothing expensive, no network I/O (`build_chat_model` only constructs a thin API-client
+        wrapper). ``rewrite``/``stream_answer``/``expand_query`` all bind
+        ``chain = PROMPT | self.llm`` **fresh on every call**, so an in-flight turn (which already
+        captured the old ``self.llm`` in its own local ``chain``) finishes unaffected, and the
+        very next call picks up the new model automatically — no extra synchronization needed.
+        Idempotent; never assigns any module-global (``config.LLM_PROVIDER`` etc. stay untouched).
+        """
+        self.llm = build_chat_model(provider, model)
+        self.provider = provider
+        self.model = model
+
     def retrieve(self, query: str, top_k: int = TOP_K) -> list[Document]:
         """Retrieve top-k documents for `query`. Reranker scores discarded."""
         return [doc for doc, _ in self.retrieve_with_scores(query, top_k)]
 
-    def retrieve_with_scores(self, query: str, top_k: int = TOP_K) -> list[tuple[Document, float]]:
+    def retrieve_with_scores(
+        self, query: str, top_k: int = TOP_K, *, use_multi_query: bool | None = None
+    ) -> list[tuple[Document, float]]:
         """Retrieve top-k as ``(doc, reranker_score)`` pairs.
 
         Used by the provenance card to record per-chunk attribution and
         by anything that wants to inspect reranker confidence (e.g.,
         Phase 6 dual-interpretation gating).
+
+        ``use_multi_query`` (ADR-010 / feature-rag-sandbox.md) is a request-scoped override
+        of the ``USE_MULTI_QUERY`` config default: ``None`` preserves today's behaviour
+        (follows the global), ``True``/``False`` forces expansion on/off for this call only —
+        no module-global is ever assigned, so concurrent calls can't leak into each other.
         """
+        effective_multi_query = USE_MULTI_QUERY if use_multi_query is None else use_multi_query
         # Multi-Query: generate variations if enabled
-        queries = self.expand_query(query) if USE_MULTI_QUERY else [query]
+        queries = self.expand_query(query) if effective_multi_query else [query]
 
         # Collect candidates from all queries
         all_candidates: list[Document] = []

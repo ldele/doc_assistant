@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-07-10 · class: append-only -->
+<!-- status: active · updated: 2026-07-11 · class: append-only -->
 
 # DEVLOG — doc_assistant
 
@@ -6,6 +6,198 @@ Real-time development log. One entry per logical change.
 Append only — never edit past entries.
 
 Format: What changed | Why | Rejected alternatives | What it opens
+
+---
+## 2026-07-11 — U1c built: desktop provider + model switch (SPRINT-012, ADR-011)
+
+**What:** Live provider/model switching from Settings, no restart, key stays in `.env` (v1 scope —
+ADR-011 option 4). `pipeline.py::RAGPipeline.set_chat_model(provider, model)` — rebuilds **only**
+`self.llm` (a thin API-client wrapper; the embedder/reranker/BM25/Chroma are untouched); the
+pipeline now also tracks `self.provider`/`self.model` as instance attributes (was previously
+implicit in the `LLM_PROVIDER`/`LLM_MODEL` constants baked in at construction). Every chain
+(`rewrite`/`stream_answer`/`expand_query`) already binds `chain = PROMPT | self.llm` fresh per
+call, so an in-flight turn keeps streaming on the pre-swap object for free — proved with a real
+`RunnableLambda`-composed chain in the test, not just an assertion about Python semantics.
+`app_settings.py` gained `get_llm_selection`/`set_llm_selection`/`effective_llm` — the exact
+`source_dir` persistence precedent (`settings.json`), with `set_llm_selection` rejecting an
+unknown or keyless provider before anything is written. `llm.py` gained `provider_available`
+(generalizes the old `reviewer_available` check) and a new `resolve_reviewer` (extracted out of
+`get_reviewer_client`) so the reviewer can **follow** a switch when `REVIEWER_PROVIDER` was never
+explicitly pinned — `config.REVIEWER_PROVIDER_PINNED` (new) detects a real `.env` pin, since
+`REVIEWER_PROVIDER`'s own *resolved* value can't distinguish "explicitly pinned to anthropic" from
+"defaulted to anthropic." `chat_controller.py`: `ChatController.__init__` applies any persisted
+selection to a freshly-built `RAGPipeline` (test-injected fakes are explicitly skipped — cpc §13);
+a new `reconfigure(provider, model)` validates+persists+swaps in one call; `_is_local` dropped its
+no-arg signature reading the frozen `LLM_PROVIDER` constant in favor of an explicit `provider: str`
+param, threaded from `self.rag.provider` at every one of its 6 call sites (usage view, provenance
+card's token suffix, the "🖥 Local model" line) — all now report the **effective**, not boot-time,
+provider. `apps/api/models.py::SettingsUpdate` gained optional `llm_provider`/`llm_model` (a
+`model_validator` requires at least one of `source_dir` or the pair, and the pair travels together
+or not at all — preserves the existing "empty body → 422" contract). `apps/api/main.py`:
+`_settings_view()`'s `provider`/`model` now come from `app_settings.effective_llm()` (not the
+import-time constants) and it gained a `providers` list (availability + paid/local labels, for the
+UI's disabled-with-reason state); `/api/health` likewise. `Settings.svelte` gained a "Provider &
+model" section — placed between "Corpus" and "RAG sandbox" (a construction-time setting that's
+actually live, reading more naturally before the per-turn sandbox controls) — a provider `<select>`
+(disabled options for a keyless provider), a model input pre-filled from the effective value, and
+an Apply button.
+
+**Why:** SPRINT-012 (U1c), the last track in the locked Phase-8 UI build order (U2→U3→U1→U1b→
+**U1c**); design-locked in ADR-011 (accepted, grilled 2026-07-10, 8 forks) + its v1 build spec
+`docs/specs/feature-provider-switch.md` (already committed as `8217454`, before this session — I
+only refreshed its line-number citations after U1/U1b shifted them, no design change).
+
+**Rejected:** mutating `config.LLM_PROVIDER`/`REVIEWER_PROVIDER` directly on a switch — the whole
+point of ADR-010 Decision 4's no-module-global-mutation rule extends here even though this is a
+*persisted global* rather than a per-request override: `RAGPipeline` instance attributes +
+`app_settings`'s JSON file are the actual mutable state, `config.py`'s constants stay frozen
+exactly as every other part of this codebase assumes. Comparing `REVIEWER_PROVIDER`'s resolved
+value against `LLM_PROVIDER` to detect a "pin" — rejected because the *default* already sets them
+equal, so value-equality can't tell a real pin from an unset one; `REVIEWER_PROVIDER_PINNED` checks
+whether the env var was actually set instead.
+
+**Verified:** `ruff`/`ruff format` clean; `mypy --strict src` (57 files) clean (one real catch: the
+construction-time apply-persisted-selection check needed an explicit `model is not None` alongside
+`provider is not None` — `get_llm_selection`'s `tuple[str | None, str | None]` return doesn't let
+mypy infer the pairing from one check alone); `bandit` 0 HIGH/MED; **pytest 848 passed** (was 821) —
+new: `test_app_settings.py` (new file — round-trip, keyless/unknown rejection, `effective_llm`
+precedence), `test_llm.py` (`provider_available`, `get_reviewer_client` following vs. respecting an
+explicit pin), `test_pipeline_retrieval.py` (`set_chat_model` swaps `self.llm`/`.provider`/`.model`
+via a faked `build_chat_model`; the in-flight-chain-survives-a-swap guarantee via a real
+`RunnableLambda` composition), `test_chat_controller.py` (persisted selection applied at
+construction vs. skipped for an injected fake vs. skipped when nothing's persisted; `reconfigure`
+persists+swaps with `config.LLM_PROVIDER` provably unchanged; a keyless `reconfigure` is rejected
+before the pipeline is ever touched; `_is_local`/the reviewer both follow `self.rag.provider`, not
+the boot constant), `test_api_settings_ingest.py` (a provider-switch POST reconfigures the
+controller and persists; a keyless provider is 400 before the controller is touched; the two
+`llm_*` fields must travel together — 422 otherwise; `source_dir`-only stays byte-identical;
+`providers` list reports availability/paid correctly). `svelte-check` — 0 errors. Preview-harness-
+verified live against the real 16,039-chunk corpus and a real `ANTHROPIC_API_KEY`: switched
+anthropic→ollama→anthropic through the real UI (Apply → `/api/health` and the settings view both
+flipped to `ollama/llama3.1:8b` mid-session, no restart, $0 — `OllamaLLM` construction makes no
+network call) and back; the real `data/settings.json` this created was deleted afterward to
+restore the pre-test state exactly (it didn't exist before).
+
+**Opens:** ADR-011's v2 north-star (in-app key entry via an OS keychain) is explicitly deferred,
+owing a `RIGOR_TODO` entry for the PyInstaller-frozen `keyring` bundling risk before any v2 build.
+Phase 8's five-track UI build order (U2/U3/U1/U1b/U1c) is now fully shipped.
+
+---
+## 2026-07-11 — U1b built: the two ADR-010 "must revisit" niche knobs (SPRINT-011)
+
+**What:** `RagOverrides` (both the `chat_controller.py` dataclass and the `apps/api/models.py` wire
+model) gained a fourth and fifth field: `epistemics_markers_enabled: bool | None` and
+`reviewer_evidence_chars: int | None`, extending U1's sandbox exactly per its own mechanics — request-
+scoped, no module-global ever assigned, same effective-value-in-provenance treatment (Decision 5).
+`chat_controller._attach_markers` gained an `enabled: bool = EPISTEMICS_MARKERS_ENABLED` keyword,
+replacing its internal module-global read; `_build_retrieved_chunks` gained a
+`reviewer_evidence_chars: int = REVIEWER_EVIDENCE_CHARS` keyword, replacing the hardcoded slice bound —
+both default to the locked config value so an omitted override is byte-identical to today.
+`_overrides_note` extended to flag either field when it differs from its default.
+`apps/api/models.py::RagOverrides.reviewer_evidence_chars` is bounded `[200, 6000]`
+(`Field(ge=200, le=6000)`) — read `config.py`'s own comment on `REVIEWER_EVIDENCE_CHARS` first (the
+300-char provenance-card excerpt was empirically shown to starve the reviewer into false "unsupported
+claim" verdicts, 2026-06-17 self-eval), so the floor sits above that discredited value; the ceiling is
+a generous 4x the 1500-char default. `_settings_view()` gained `epistemics_markers_enabled` and
+`reviewer_evidence_chars` fields (mirroring U1's `use_multi_query` addition) so the sandbox switch/input
+render their un-overridden baseline correctly rather than guessing a default client-side.
+`Settings.svelte`'s "RAG sandbox" section gained an on/off switch ("Show contested/superseded chips")
+and an integer input ("Reviewer evidence"), both under the same "session only" banner and cleared by
+the existing "Reset to locked defaults" button — no new UI pattern.
+
+**Why:** SPRINT-011 (U1b), 4th in the locked Phase-8 UI build order (U2 → U3 → U1 → **U1b** → U1c);
+hard-depends on U1 (extends the same dataclass/wire-model/Settings-section U1 built); design-locked in
+ADR-010's 2026-07-10 amendment + `feature-phase8-ui-upgrade.md` §U1b (grilled 2026-07-10).
+
+**Rejected:** guessing `reviewer_evidence_chars` bounds — the sprint contract explicitly required
+reading the reviewer prompt's actual usage first (`chat_controller.py`'s one call site,
+`doc.page_content[:REVIEWER_EVIDENCE_CHARS]`, feeding `reviewer.py:181`'s `c.full_text or
+c.chunk_excerpt`) rather than picking a plausible-looking range.
+
+**Verified:** `ruff`/`ruff format` clean; `mypy --strict src` (57 files) clean; `bandit` 0 HIGH/MED;
+**pytest 821 passed** (was 809) — the isolation-guard test (`test_overrides_isolation_no_state_leak_
+between_turns`) was extended in place to `test_overrides_isolation_covers_all_five_fields` per the
+sprint's own instruction ("extend U1's test, don't fork a parallel one") — a turn overriding all five
+fields followed by a plain turn now proves every one of the five reverts, not just three; plus two new
+focused tests (`test_epistemics_markers_override_per_turn`, `test_reviewer_evidence_chars_override_per_
+turn`) and out-of-range/in-range pydantic bound tests. `svelte-check` — 0 errors. Preview-harness-
+verified live against the real corpus ($0, construction only): both new controls render with the real
+config baseline (markers **on** by default per the G1 flip, evidence **1,500** chars); toggling each
+mutates state and the label/checkbox reflect it; "Reset to locked defaults" correctly returns the
+markers switch to **true** (verified by first setting it to the non-default `false`, then confirming
+reset flips it back — a same-value round-trip wouldn't have proven anything).
+
+**Opens:** U1c (provider/API-key management) is next in the build order, but needs its own v1 build
+spec derived from ADR-011 before it's buildable (not yet written).
+
+---
+## 2026-07-11 — U1 built: RAG sandbox overrides + full Settings disclosure + manual theme (SPRINT-010)
+
+**What:** Three bundled deliverables, all in/around `Settings.svelte` per
+`docs/specs/feature-rag-sandbox.md` (ADR-010) + `feature-phase8-ui-upgrade.md` §U1.
+
+*RAG sandbox (ADR-010).* `chat_controller.py` — `RagOverrides` (frozen dataclass: `top_k`,
+`synthesis_mode`, `use_multi_query`, all `X | None = None`); `handle_message`/`_handle_rag` gained an
+`overrides` kwarg, resolving `eff_top_k`/`eff_synthesis_mode`/`eff_multi_query` as **local variables**
+per call — no module-global is ever assigned (the isolation obligation, ADR-010 Decision 4). A new
+`_overrides_note` helper appends a "🧪 Session override" line to the provenance card (and the human-mode
+answer) listing only the fields that differ from the locked default (Decision 5); `""` when none do, so
+a plain turn stays byte-identical. `pipeline.py::retrieve_with_scores` gained a keyword-only
+`use_multi_query: bool | None = None` — `None` preserves today's global-driven behaviour, no new
+construction cost. `apps/api/models.py::RagOverrides` (pydantic, `top_k` bounded `[1, CANDIDATE_K]` via
+`Field(ge=1, le=CANDIDATE_K)`) + `ChatRequest.overrides: RagOverrides | None = None`; `apps/api/main.py`'s
+`/api/chat` maps the wire model → the dataclass and threads it through; `_settings_view()`'s
+`retrieval_weights` now reads `config.BM25_WEIGHT` instead of a hardcoded `{0.4, 0.6}` literal (the "fix
+in passing" ADR-010 called out), and gained a `use_multi_query` field so the sandbox switch knows its
+un-overridden baseline.
+
+*Full read-only disclosure.* The "Engine (read-only)" section now renders every field in the `Settings`
+TS type — `retrieval_weights` (labeled "inert on the shipped top-K by construction (measured)"),
+`use_parent_child`, `parent_chunk`, `child_chunk` (all "needs a re-ingest to change") were fetched and
+silently dropped before. `top_k`/`synthesis_mode` moved out of this section entirely — they're now live
+sandbox controls, not locked knobs.
+
+*Manual theme.* `apps/desktop/src/lib/theme.ts` (new, ~25 lines) — `getTheme`/`setTheme` over
+`localStorage['theme']`, `applyTheme` sets/clears `document.documentElement.dataset.theme`. `main.ts`
+calls `applyTheme(getTheme())` before `mount()` (no flash-of-wrong-theme). `app.css` re-keys the existing
+two palettes off `:root[data-theme='dark'|'light']` (unconditional) plus `@media (prefers-color-scheme:
+dark) { :root:not([data-theme]) {...} }` (system fallback) — same colors, no new values. `Settings.svelte`
+gained a "Display" section (3-way segmented System/Light/Dark, above "Your documents") and the "RAG
+sandbox" section (Top-K slider, AI/Human segmented toggle, multi-query switch, a muted "session only"
+banner, a "Reset to locked defaults" button that sets `overrides = {}`). `App.svelte` owns
+`overrides = $state<RagOverrides>({})` (in-memory only, cleared on restart) and passes it into
+`streamChat(...)` and `bind:overrides` into `<Settings>`.
+
+**Why:** SPRINT-010 (U1), 3rd in the locked Phase-8 UI build order (U2 → U3 → **U1** → U1b → U1c);
+design-locked in ADR-010 (accepted 2026-07-09) + `feature-phase8-ui-upgrade.md` §U1 (grilled 2026-07-10).
+
+**Rejected:** persisting overrides as a new default (ADR-010 option 2, rejected on the governance
+ground — would let the eval-gated locked settings silently drift); routing theme through
+`POST /api/settings`/`RagOverrides` (ADR-010's non-persistence wall is for retrieval-quality-governed
+knobs, not a cosmetic client preference — would make dark mode forget itself every restart).
+
+**Verified:** `ruff`/`ruff format` clean; `mypy --strict src` (57 files) clean; `bandit` 0 HIGH/MED;
+**pytest 809 passed** (was 806) — new/extended: `test_chat_controller.py` (isolation guard —
+overridden turn then `overrides=None` turn back to locked defaults, no monkeypatch in the path; top_k
+override reaches the pipeline call; `overrides=None`/all-`None`-fields byte-identical to omitted;
+synthesis_mode override routes to human even when the default is ai), `test_pipeline_retrieval.py`
+(`use_multi_query` override ignores the global both directions; `None` follows it),
+`test_api_models.py` (`top_k` out-of-range → `ValidationError`), `test_settings_view.py` (new —
+`retrieval_weights` moves with `config.BM25_WEIGHT`), `test_api_chat_sse.py` (absent `overrides` →
+controller receives `None`; a populated body reaches the controller as a matching `RagOverrides`;
+out-of-range `top_k` → 422 over HTTP). `svelte-check` — 0 errors, 0 warnings. Preview-harness-verified
+live against the real 16,039-chunk corpus (Anthropic-backed `ChatController` construction only — no
+answer turn sent, so **$0**): Settings panel shows all five sections; theme toggle flips
+`document.documentElement`'s computed background 22,25,29 (dark) ↔ 255,255,255 (light) and persists to
+`localStorage`; Top-K slider/AI-Human toggle/multi-query switch each mutate `overrides` and the derived
+labels update; "Reset to locked defaults" clears all three back to the config defaults. (One harness
+note, not a product bug: this preview browser's tab reports `document.hidden === true`, which pauses the
+Settings drawer's `fly`-transition mid-slide — verified control behaviour via real DOM events/clicks
+instead of mouse-coordinate clicks, per the existing "screenshots are flaky here" note in
+`.claude/KNOWN_ISSUES.md`.)
+
+**Opens:** SPRINT-011 (U1b, queued) extends `RagOverrides` with `EPISTEMICS_MARKERS_ENABLED` +
+`REVIEWER_EVIDENCE_CHARS` — same mechanics, same isolation-guard test extended to five fields.
 
 ---
 ## 2026-07-10 — U3 built: citation side panel, sources hidden by default (SPRINT-009)

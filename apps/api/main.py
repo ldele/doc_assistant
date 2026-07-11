@@ -43,8 +43,15 @@ from apps.api.models import (
 )
 from apps.api.sessions import SessionStore
 from doc_assistant import app_settings
-from doc_assistant.chat_controller import ChatController, Result, Session, Step, Token
-from doc_assistant.config import DATA_PATH, LLM_MODEL, LLM_PROVIDER, LOG_JSON, LOG_LEVEL
+from doc_assistant.chat_controller import (
+    ChatController,
+    RagOverrides,
+    Result,
+    Session,
+    Step,
+    Token,
+)
+from doc_assistant.config import DATA_PATH, LOG_JSON, LOG_LEVEL
 from doc_assistant.embeddings import get_active_model_name
 from doc_assistant.ingest.figures import load_figure_image_paths
 from doc_assistant.logging_config import configure_logging
@@ -78,7 +85,10 @@ def _sse(event: object) -> ServerSentEvent | None:
 
 
 async def _event_stream(
-    controller: ChatController, session: Session, text: str
+    controller: ChatController,
+    session: Session,
+    text: str,
+    overrides: RagOverrides | None = None,
 ) -> AsyncIterator[ServerSentEvent]:
     """Map the controller's sync ``TurnEvent`` generator to SSE events 1:1.
 
@@ -93,7 +103,7 @@ async def _event_stream(
 
     def worker() -> None:
         try:
-            for event in controller.handle_message(session, text):
+            for event in controller.handle_message(session, text, overrides=overrides):
                 loop.call_soon_threadsafe(queue.put_nowait, event)
         finally:
             loop.call_soon_threadsafe(queue.put_nowait, done)
@@ -113,27 +123,55 @@ async def _event_stream(
 def _settings_view() -> dict[str, Any]:
     """A read-only view of the locked + env-toggleable knobs (Phase-8 settings UI is later)."""
     from doc_assistant.config import (
+        BM25_WEIGHT,
         CANDIDATE_K,
         CHILD_CHUNK_OVERLAP,
         CHILD_CHUNK_SIZE,
+        EPISTEMICS_MARKERS_ENABLED,
+        PAID_PROVIDERS,
         PARENT_CHUNK_OVERLAP,
         PARENT_CHUNK_SIZE,
+        REVIEWER_EVIDENCE_CHARS,
         SYNTHESIS_MODE,
         TOP_K,
+        USE_MULTI_QUERY,
         USE_PARENT_CHILD,
     )
+    from doc_assistant.llm import provider_available
+
+    # ADR-011 (U1c): the *effective* provider/model — the persisted selection if the user has
+    # switched, else the config default — never the import-time LLM_PROVIDER/LLM_MODEL constants
+    # (those would go stale the moment a switch happens).
+    eff_provider, eff_model = app_settings.effective_llm()
 
     return {
-        "provider": LLM_PROVIDER,
-        "model": LLM_MODEL,
+        "provider": eff_provider,
+        "model": eff_model,
         "embedding_model": get_active_model_name(),
         "top_k": TOP_K,
         "candidate_k": CANDIDATE_K,
         "use_parent_child": USE_PARENT_CHILD,
         "synthesis_mode": SYNTHESIS_MODE,
+        # The locked defaults for the RAG-sandbox toggles (ADR-010 + the U1b amendment) — the
+        # sandbox section needs these to render each control's un-overridden state correctly.
+        "use_multi_query": USE_MULTI_QUERY,
+        "epistemics_markers_enabled": EPISTEMICS_MARKERS_ENABLED,
+        "reviewer_evidence_chars": REVIEWER_EVIDENCE_CHARS,
         "parent_chunk": [PARENT_CHUNK_SIZE, PARENT_CHUNK_OVERLAP],
         "child_chunk": [CHILD_CHUNK_SIZE, CHILD_CHUNK_OVERLAP],
-        "retrieval_weights": {"bm25": 0.4, "vector": 0.6},
+        # ADR-010 "fix in passing": sourced from config, not a hardcoded literal — the
+        # read-only display can no longer silently drift from the real BM25_WEIGHT.
+        "retrieval_weights": {"bm25": BM25_WEIGHT, "vector": round(1 - BM25_WEIGHT, 3)},
+        # ADR-011 (U1c) — the provider picker's option list: availability (fork E) + paid/local
+        # labeling (fork D/KI-4), so a keyless provider renders disabled with its reason.
+        "providers": [
+            {
+                "id": p,
+                "available": provider_available(p),
+                "paid": p in PAID_PROVIDERS,
+            }
+            for p in ("anthropic", "ollama")
+        ],
     }
 
 
@@ -228,10 +266,12 @@ def create_app(
     @app.get("/api/health")
     def health(request: Request) -> dict[str, Any]:
         controller: ChatController = request.app.state.controller
+        # ADR-011 (U1c): the effective provider/model, so /api/health reflects a live switch.
+        eff_provider, eff_model = app_settings.effective_llm()
         return {
             "status": "ok",
             "chunk_count": controller.chunk_count(),
-            "model": f"{LLM_PROVIDER}/{LLM_MODEL}",
+            "model": f"{eff_provider}/{eff_model}",
             "embedding_model": get_active_model_name(),
         }
 
@@ -240,7 +280,18 @@ def create_app(
         controller: ChatController = request.app.state.controller
         sessions: SessionStore = request.app.state.sessions
         session = sessions.get_or_create(body.session_id)  # unknown id → fresh conversation
-        return EventSourceResponse(_event_stream(controller, session, body.text))
+        overrides = (
+            RagOverrides(
+                top_k=body.overrides.top_k,
+                synthesis_mode=body.overrides.synthesis_mode,
+                use_multi_query=body.overrides.use_multi_query,
+                epistemics_markers_enabled=body.overrides.epistemics_markers_enabled,
+                reviewer_evidence_chars=body.overrides.reviewer_evidence_chars,
+            )
+            if body.overrides is not None
+            else None
+        )
+        return EventSourceResponse(_event_stream(controller, session, body.text, overrides))
 
     @app.post("/api/claims/{claim_id}/adjudicate")
     def adjudicate(request: Request, claim_id: str, body: AdjudicateRequest) -> dict[str, bool]:
@@ -293,13 +344,23 @@ def create_app(
 
     @app.post("/api/settings")
     def post_settings(request: Request, body: SettingsUpdate) -> dict[str, Any]:
+        controller: ChatController = request.app.state.controller
         # "Point at a folder": set the source documents dir (validated + persisted to the data
         # home). The data *home* (index/DB) stays managed by config; the user only chooses where
         # their documents live. Re-index via POST /api/ingest to load the new folder.
-        try:
-            app_settings.set_source_dir(body.source_dir)
-        except ValueError as e:
-            raise HTTPException(status_code=400, detail=str(e)) from e
+        if body.source_dir is not None:
+            try:
+                app_settings.set_source_dir(body.source_dir)
+            except ValueError as e:
+                raise HTTPException(status_code=400, detail=str(e)) from e
+        # ADR-011 (U1c): switch the live provider/model. SettingsUpdate's own validator already
+        # guarantees these travel together, but mypy can't see that invariant across fields, so
+        # both are checked here too.
+        if body.llm_provider is not None and body.llm_model is not None:
+            try:
+                controller.reconfigure(body.llm_provider, body.llm_model)
+            except ValueError as e:
+                raise HTTPException(status_code=400, detail=str(e)) from e
         return _full_settings(request.app)
 
     @app.post("/api/ingest", status_code=202)

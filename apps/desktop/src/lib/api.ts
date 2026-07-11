@@ -3,7 +3,7 @@
 // In dev, Vite proxies `/api` → 127.0.0.1:8001 (same-origin, no CORS). In the packaged
 // Tauri build the frontend is served from the asset/tauri origin, so it hits the absolute
 // backend URL (the API's CORS allowlist includes `tauri://localhost`).
-import type { Decision, Health, IngestStatus, Settings, TurnResult } from './types'
+import type { Decision, Health, IngestStatus, RagOverrides, Settings, TurnResult } from './types'
 
 const API_BASE: string = import.meta.env.DEV ? '' : 'http://127.0.0.1:8001'
 
@@ -19,16 +19,18 @@ export async function getHealth(): Promise<Health> {
 }
 
 /** Stream a chat turn. `/api/chat` is POST-SSE, so we parse the body stream by hand
- *  (EventSource is GET-only). Yields `{event, data}` for token / step / result / done. */
+ *  (EventSource is GET-only). Yields `{event, data}` for token / step / result / done.
+ *  `overrides` (ADR-010) rides this one request only — never persisted, never a default. */
 export async function* streamChat(
   text: string,
   sessionId: string,
+  overrides?: RagOverrides,
   signal?: AbortSignal,
 ): AsyncGenerator<SSEvent> {
   const r = await fetch(`${API_BASE}/api/chat`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ text, session_id: sessionId }),
+    body: JSON.stringify({ text, session_id: sessionId, overrides: overrides ?? null }),
     signal,
   })
   if (!r.ok || !r.body) throw new Error(`chat failed: ${r.status}`)
@@ -96,6 +98,18 @@ export async function setSourceDir(sourceDir: string): Promise<Settings> {
     body: JSON.stringify({ source_dir: sourceDir }),
   })
   if (!r.ok) throw new Error(await errorDetail(r, 'save settings'))
+  return (await r.json()) as Settings
+}
+
+/** Switch the live LLM provider/model (ADR-011, U1c) — takes effect on the next turn, no
+ *  restart. 400 carries the backend's reason (unknown provider, or one with no key configured). */
+export async function setLlmProvider(provider: string, model: string): Promise<Settings> {
+  const r = await fetch(`${API_BASE}/api/settings`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ llm_provider: provider, llm_model: model }),
+  })
+  if (!r.ok) throw new Error(await errorDetail(r, 'switch provider'))
   return (await r.json()) as Settings
 }
 

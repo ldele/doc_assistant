@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { Health, TurnResult } from './lib/types'
+  import type { Health, RagOverrides, TurnResult } from './lib/types'
   import { getHealth, streamChat, exportConversation } from './lib/api'
   import Turn from './lib/Turn.svelte'
   import Settings from './lib/Settings.svelte'
@@ -22,6 +22,9 @@
   let input = $state('')
   let sending = $state(false)
   let showSettings = $state(false)
+  // ADR-010: the RAG-sandbox overrides for this app session. In-memory only — a fresh
+  // launch always starts from {} (locked defaults), never persisted to disk.
+  let overrides = $state<RagOverrides>({})
   let nextId = 0
   // Which citation panel is open — same single-drawer ownership shape as showSettings, keyed
   // by turn so a click in an older turn doesn't resolve against a newer one's sources.
@@ -120,7 +123,7 @@
         error: null,
       }) - 1
     try {
-      for await (const ev of streamChat(text, sessionId)) {
+      for await (const ev of streamChat(text, sessionId, overrides)) {
         if (ev.event === 'token') turns[idx].answer += ev.data
         else if (ev.event === 'result') turns[idx].result = JSON.parse(ev.data) as TurnResult
         // `step` events are advisory; ignored for now.
@@ -216,7 +219,11 @@
 </main>
 
 {#if showSettings}
-  <Settings onClose={() => (showSettings = false)} onCorpusChanged={refreshHealth} />
+  <Settings
+    onClose={() => (showSettings = false)}
+    onCorpusChanged={refreshHealth}
+    bind:overrides
+  />
 {/if}
 
 {#if activeCitation && activeSource}

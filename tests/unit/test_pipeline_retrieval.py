@@ -125,3 +125,96 @@ def test_resolve_ensemble_weights_complements_to_one(bm25: float, expected: list
 def test_resolve_ensemble_weights_out_of_range_raises(bad: float) -> None:
     with pytest.raises(ValueError, match=r"must be in \[0\.0, 1\.0\]"):
         resolve_ensemble_weights(bad)
+
+
+# ---- ADR-010 / SPRINT-010 (U1): request-scoped use_multi_query override ----------------
+
+
+def _retrieval_rig(monkeypatch: pytest.MonkeyPatch) -> tuple[RAGPipeline, list[str]]:
+    """A bare pipeline with a fake ensemble/reranker and an ``expand_query`` spy, so a test
+    can assert whether expansion ran without a real LLM call."""
+    monkeypatch.setattr("doc_assistant.pipeline.USE_PARENT_CHILD", False)
+    calls: list[str] = []
+    rag = _bare_pipeline()
+    rag.expand_query = lambda q: (calls.append(q), [q, "a variation"])[1]  # type: ignore[method-assign]
+    doc = Document(page_content="hello", metadata={"doc_hash": "h", "filename": "f"})
+    rag.ensemble = RunnableLambda(lambda _q: [doc])
+
+    class _FakeReranker:
+        def predict(self, pairs: list) -> list[float]:
+            return [0.9] * len(pairs)
+
+    rag.reranker = _FakeReranker()
+    return rag, calls
+
+
+def test_use_multi_query_override_ignores_global(monkeypatch: pytest.MonkeyPatch) -> None:
+    # override=False skips expansion even though the global default is True.
+    monkeypatch.setattr("doc_assistant.pipeline.USE_MULTI_QUERY", True)
+    rag, calls = _retrieval_rig(monkeypatch)
+    rag.retrieve_with_scores("q", top_k=5, use_multi_query=False)
+    assert calls == []
+
+    # override=True expands even though the global default is False.
+    monkeypatch.setattr("doc_assistant.pipeline.USE_MULTI_QUERY", False)
+    rag2, calls2 = _retrieval_rig(monkeypatch)
+    rag2.retrieve_with_scores("q", top_k=5, use_multi_query=True)
+    assert calls2 == ["q"]
+
+
+def test_use_multi_query_none_follows_the_global(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("doc_assistant.pipeline.USE_MULTI_QUERY", True)
+    rag, calls = _retrieval_rig(monkeypatch)
+    rag.retrieve_with_scores("q", top_k=5, use_multi_query=None)
+    assert calls == ["q"]  # None preserves today's (global-driven) behaviour
+
+    monkeypatch.setattr("doc_assistant.pipeline.USE_MULTI_QUERY", False)
+    rag2, calls2 = _retrieval_rig(monkeypatch)
+    rag2.retrieve_with_scores("q", top_k=5, use_multi_query=None)
+    assert calls2 == []
+
+
+# ---- ADR-011 / SPRINT-012 (U1c): the generation-model swap seam -------------------------
+
+
+def test_set_chat_model_swaps_llm(monkeypatch: pytest.MonkeyPatch) -> None:
+    rag = _bare_pipeline()
+    rag.llm = "old"
+    rag.provider = "anthropic"
+    rag.model = "claude-haiku-4-5-20251001"
+
+    calls: list[tuple[str, str]] = []
+
+    def fake_build(provider: str, model: str) -> str:
+        calls.append((provider, model))
+        return f"{provider}:{model}"
+
+    monkeypatch.setattr("doc_assistant.pipeline.build_chat_model", fake_build)
+    rag.set_chat_model("ollama", "llama3.1:8b")
+
+    assert rag.llm == "ollama:llama3.1:8b"
+    assert rag.provider == "ollama"
+    assert rag.model == "llama3.1:8b"
+    assert calls == [("ollama", "llama3.1:8b")]  # exactly one build call — no API call, no reload
+
+
+def test_in_flight_chain_survives_a_swap(monkeypatch: pytest.MonkeyPatch) -> None:
+    # fork F: a chain already bound (`chain = PROMPT | self.llm`, as stream_answer/rewrite/
+    # expand_query all do per call) before a swap must keep streaming on the OLD model; the
+    # swap only rebinds `self.llm` for the NEXT call to pick up.
+    rag = _bare_pipeline()
+    rag.provider = "anthropic"
+    rag.model = "old-model"
+    rag.llm = RunnableLambda(lambda _x: "OLD_RESULT")
+
+    prompt = RunnableLambda(lambda x: x)
+    chain = prompt | rag.llm  # simulates a turn already in flight
+
+    monkeypatch.setattr(
+        "doc_assistant.pipeline.build_chat_model",
+        lambda _p, _m: RunnableLambda(lambda _x: "NEW_RESULT"),
+    )
+    rag.set_chat_model("ollama", "new-model")
+
+    assert chain.invoke("q") == "OLD_RESULT"  # the pre-built chain is unaffected by the swap
+    assert rag.llm.invoke("q") == "NEW_RESULT"  # a fresh chain would use the new model

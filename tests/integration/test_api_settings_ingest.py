@@ -20,9 +20,20 @@ from fastapi.testclient import TestClient
 class FakeController:
     def __init__(self, count: int = 0) -> None:
         self._count = count
+        # ADR-011 (U1c): every reconfigure() call, in order.
+        self.reconfigure_calls: list[tuple[str, str]] = []
 
     def chunk_count(self) -> int:
         return self._count
+
+    def reconfigure(self, provider: str, model: str) -> None:
+        # Exercises the SAME validation/persistence a real ChatController.reconfigure runs
+        # (app_settings.set_llm_selection) — proves the API maps its ValueError to 400 — without
+        # a real RAGPipeline/pipeline swap.
+        from doc_assistant import app_settings
+
+        app_settings.set_llm_selection(provider, model)
+        self.reconfigure_calls.append((provider, model))
 
 
 @pytest.fixture
@@ -67,6 +78,70 @@ def test_post_settings_rejects_nonexistent_dir(settings_file: Path, tmp_path: Pa
     client = TestClient(create_app(controller=FakeController()))
     r = client.post("/api/settings", json={"source_dir": str(tmp_path / "nope")})
     assert r.status_code == 400
+
+
+# ============================================================
+# ADR-011 / SPRINT-012 (U1c) — desktop provider switch
+# ============================================================
+
+
+def test_post_settings_provider_switch_reconfigures_controller(
+    settings_file: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("doc_assistant.config.ANTHROPIC_API_KEY", None)  # ollama needs no key
+    fake = FakeController()
+    client = TestClient(create_app(controller=fake))
+    r = client.post("/api/settings", json={"llm_provider": "ollama", "llm_model": "llama3.1:8b"})
+    assert r.status_code == 200
+    assert fake.reconfigure_calls == [("ollama", "llama3.1:8b")]
+    body = r.json()
+    assert body["provider"] == "ollama" and body["model"] == "llama3.1:8b"
+    # persisted: a fresh GET reflects the switch
+    fresh = client.get("/api/settings").json()
+    assert fresh["provider"] == "ollama" and fresh["model"] == "llama3.1:8b"
+
+
+def test_post_settings_keyless_provider_is_400(
+    settings_file: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("doc_assistant.config.ANTHROPIC_API_KEY", None)
+    fake = FakeController()
+    client = TestClient(create_app(controller=fake))
+    r = client.post(
+        "/api/settings",
+        json={"llm_provider": "anthropic", "llm_model": "claude-haiku-4-5-20251001"},
+    )
+    assert r.status_code == 400
+    assert fake.reconfigure_calls == []  # rejected before the controller was ever touched
+
+
+def test_post_settings_llm_fields_must_travel_together(settings_file: Path) -> None:
+    client = TestClient(create_app(controller=FakeController()))
+    assert client.post("/api/settings", json={"llm_provider": "ollama"}).status_code == 422
+    assert client.post("/api/settings", json={"llm_model": "llama3"}).status_code == 422
+
+
+def test_post_settings_source_dir_only_backward_compat(
+    settings_file: Path, tmp_path: Path
+) -> None:
+    # No llm_* sent → byte-identical to pre-U1c behaviour.
+    docs = tmp_path / "papers_backcompat"
+    docs.mkdir()
+    fake = FakeController()
+    client = TestClient(create_app(controller=fake))
+    r = client.post("/api/settings", json={"source_dir": str(docs)})
+    assert r.status_code == 200
+    assert fake.reconfigure_calls == []
+
+
+def test_settings_view_reports_providers_list(
+    settings_file: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("doc_assistant.config.ANTHROPIC_API_KEY", None)
+    client = TestClient(create_app(controller=FakeController()))
+    providers = {p["id"]: p for p in client.get("/api/settings").json()["providers"]}
+    assert providers["anthropic"] == {"id": "anthropic", "available": False, "paid": True}
+    assert providers["ollama"] == {"id": "ollama", "available": True, "paid": False}
 
 
 def test_ingest_runs_on_the_folder_and_reloads_controller(

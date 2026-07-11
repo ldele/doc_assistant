@@ -25,8 +25,44 @@
   background: var(--bg);
 }
 
+/* U1 — manual theme (lib/theme.ts). A `data-theme` attribute on <html> wins over the OS
+   media query by attribute-selector specificity + source order; `'system'` clears the
+   attribute, falling through to `@media (prefers-color-scheme)` below. Same two palettes,
+   just re-keyed — no new colors. */
+:root[data-theme='dark'] {
+  --bg: #16191d;
+  --surface: #1e2228;
+  --surface-2: #272c34;
+  --border: #333a44;
+  --fg: #e7eaee;
+  --fg-2: #98a1ad;
+  --accent: #4d86f0;
+  --accent-fg: #ffffff;
+  --warn-fg: #f0b95e;
+  --warn-bg: #2e2616;
+  --warn-border: #5a4a22;
+  --ok-fg: #6fd394;
+  --ok-border: #2f5b3e;
+}
+
+:root[data-theme='light'] {
+  --bg: #ffffff;
+  --surface: #f7f8fa;
+  --surface-2: #eceef2;
+  --border: #d9dde3;
+  --fg: #1b1f24;
+  --fg-2: #5b636e;
+  --accent: #2d6cdf;
+  --accent-fg: #ffffff;
+  --warn-fg: #9a5b00;
+  --warn-bg: #fff4e0;
+  --warn-border: #f0c87a;
+  --ok-fg: #1f7a3d;
+  --ok-border: #8fcea8;
+}
+
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme]) {
     --bg: #16191d;
     --surface: #1e2228;
     --surface-2: #272c34;

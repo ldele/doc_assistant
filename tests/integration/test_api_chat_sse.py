@@ -48,11 +48,16 @@ class FakeController:
 
     def __init__(self) -> None:
         self.adjudicated: list[tuple[str, str, str | None]] = []
+        # ADR-010: every handle_message call's `overrides` arg, in call order.
+        self.received_overrides: list[object] = []
 
     def chunk_count(self) -> int:
         return 7
 
-    def handle_message(self, session: object, text: str) -> Iterator[object]:
+    def handle_message(
+        self, session: object, text: str, *, overrides: object = None
+    ) -> Iterator[object]:
+        self.received_overrides.append(overrides)
         yield Step("Searching documents", "Found 1 passage")
         yield Token("Hello ")
         yield Token("world [1].")
@@ -172,3 +177,66 @@ def test_settings_read_and_post_validation():
     assert "data_home" in body and "source_dir" in body and "chunk_count" in body
     # POST now wires the write path (set the source folder) — an empty body fails validation.
     assert client.post("/api/settings", json={}).status_code == 422
+
+
+# ============================================================
+# ADR-010 / SPRINT-010 (U1) — /api/chat overrides
+# ============================================================
+
+
+def test_chat_absent_overrides_reaches_controller_as_none():
+    fake = FakeController()
+    client = _client(fake)
+    with client.stream("POST", "/api/chat", json={"text": "hi", "session_id": "s1"}):
+        pass
+    assert fake.received_overrides == [None]  # backward compat
+
+
+def test_chat_overrides_reach_controller_as_rag_overrides():
+    fake = FakeController()
+    client = _client(fake)
+    body = {
+        "text": "hi",
+        "session_id": "s1",
+        "overrides": {
+            "top_k": 3,
+            "synthesis_mode": "human",
+            "use_multi_query": True,
+            "epistemics_markers_enabled": False,
+            "reviewer_evidence_chars": 500,
+        },
+    }
+    with client.stream("POST", "/api/chat", json=body):
+        pass
+    (received,) = fake.received_overrides
+    assert received is not None
+    assert (
+        received.top_k,
+        received.synthesis_mode,
+        received.use_multi_query,
+        received.epistemics_markers_enabled,
+        received.reviewer_evidence_chars,
+    ) == (3, "human", True, False, 500)
+
+
+def test_chat_reviewer_evidence_chars_out_of_range_is_422():
+    client = _client()
+    body = {"text": "hi", "session_id": "s1", "overrides": {"reviewer_evidence_chars": 100}}
+    r = client.post("/api/chat", json=body)
+    assert r.status_code == 422
+
+
+def test_chat_top_k_override_out_of_range_is_422():
+    client = _client()
+    body = {"text": "hi", "session_id": "s1", "overrides": {"top_k": 0}}
+    r = client.post("/api/chat", json=body)
+    assert r.status_code == 422
+
+
+def test_settings_post_still_writable_only_via_source_dir():
+    # Overrides are never persisted (ADR-010 Decision 1) — /api/settings has no overrides
+    # field; sending one is simply ignored by pydantic (extra fields not forwarded), the
+    # write path stays source_dir-only.
+    client = _client()
+    r = client.post("/api/settings", json={"source_dir": "/nonexistent/path/xyz"})
+    assert r.status_code == 400  # rejected for not-a-directory, not for the shape

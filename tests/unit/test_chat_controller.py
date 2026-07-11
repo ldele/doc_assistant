@@ -15,9 +15,10 @@ from pathlib import Path
 import pytest
 from langchain_core.documents import Document
 
-from doc_assistant import chat_controller
+from doc_assistant import chat_controller, config
 from doc_assistant.chat_controller import (
     ChatController,
+    RagOverrides,
     Result,
     Session,
     Token,
@@ -25,6 +26,7 @@ from doc_assistant.chat_controller import (
     _build_retrieved_chunks,
 )
 from doc_assistant.epistemics import MARKER_CONTESTED, MARKER_SUPERSEDED, MarkedChunk
+from doc_assistant.reviewer import ReviewResult
 
 # ============================================================
 # Fixtures / fakes
@@ -60,14 +62,29 @@ class FakeRAG:
         self._scored = scored
         self._tokens = tokens
         self.llm = types.SimpleNamespace(model="fake-model")
+        # ADR-010: every retrieve_with_scores call's (top_k, use_multi_query) args, in order —
+        # lets a test assert what actually reached the pipeline without a real one.
+        self.retrieve_calls: list[tuple[int, bool | None]] = []
+        # ADR-011 (U1c): the effective provider/model + a set_chat_model spy.
+        self.provider = "anthropic"
+        self.model = "claude-haiku-4-5-20251001"
+        self.set_chat_model_calls: list[tuple[str, str]] = []
 
     def chunk_count(self) -> int:
         return 42
 
+    def set_chat_model(self, provider: str, model: str) -> None:
+        self.set_chat_model_calls.append((provider, model))
+        self.provider = provider
+        self.model = model
+
     def rewrite(self, question: str, history: list[dict[str, str]], counter: object = None) -> str:
         return question
 
-    def retrieve_with_scores(self, query: str, top_k: int = 10) -> list[tuple[Document, float]]:
+    def retrieve_with_scores(
+        self, query: str, top_k: int = 10, *, use_multi_query: bool | None = None
+    ) -> list[tuple[Document, float]]:
+        self.retrieve_calls.append((top_k, use_multi_query))
         return self._scored
 
     def stream_answer(
@@ -112,8 +129,13 @@ def _three_clean_sources() -> list[tuple[Document, float]]:
     ]
 
 
-def _results(controller: ChatController, session: Session, text: str) -> list[object]:
-    return list(controller.handle_message(session, text))
+def _results(
+    controller: ChatController,
+    session: Session,
+    text: str,
+    overrides: RagOverrides | None = None,
+) -> list[object]:
+    return list(controller.handle_message(session, text, overrides=overrides))
 
 
 def _final(events: list[object]) -> TurnResult:
@@ -469,3 +491,264 @@ def test_markers_disabled_via_opt_out_flag(monkeypatch, temp_db):
     assert all(s.markers == [] for s in result.sources)
     assert "⚠" not in result.sources_md
     assert loads == []  # gated out before any epistemics read
+
+
+# ============================================================
+# ADR-010 / SPRINT-010 (U1) — RAG-sandbox overrides
+# ============================================================
+
+
+def test_top_k_override_changes_retrieve_arg(monkeypatch, temp_db):
+    monkeypatch.setattr(chat_controller, "is_library_query", lambda t: False)
+    rag = FakeRAG(_three_clean_sources(), ["Answer [1]."])
+    controller = ChatController(rag=rag)
+    _results(controller, Session(), "q", RagOverrides(top_k=3))
+    assert rag.retrieve_calls == [(3, None)]  # eff_top_k=3 reached the pipeline call
+
+
+def test_synthesis_mode_override_routes_to_human_even_when_default_is_ai(monkeypatch, temp_db):
+    monkeypatch.setattr(chat_controller, "is_library_query", lambda t: False)
+    monkeypatch.setattr(chat_controller, "SYNTHESIS_MODE", "ai")  # locked default stays "ai"
+    controller = ChatController(rag=FakeRAG(_three_clean_sources(), ["SHOULD NOT STREAM"]))
+    events = _results(controller, Session(), "q", RagOverrides(synthesis_mode="human"))
+    assert not any(isinstance(e, Token) for e in events)  # no interpretation call made
+    result = _final(events)
+    assert result.mode == "human"
+
+
+def test_overrides_none_reproduces_default_effective_values(monkeypatch, temp_db):
+    monkeypatch.setattr(chat_controller, "is_library_query", lambda t: False)
+    rag = FakeRAG(_three_clean_sources(), ["Answer [1]."])
+    controller = ChatController(rag=rag)
+    # overrides=None (the default) — same as never passing overrides at all.
+    result_none = _final(_results(controller, Session(), "q", None))
+    result_omitted = _final(_results(controller, Session(), "q"))
+    assert rag.retrieve_calls == [(10, None), (10, None)]  # both used the locked TOP_K
+    assert result_none.answer == result_omitted.answer == "Answer [1]."
+    # No "session override" note when every field is unset.
+    assert "Session override" not in result_none.provenance_card_md
+    assert "Session override" not in result_omitted.provenance_card_md
+
+
+def test_all_none_fields_reproduce_default_effective_values(monkeypatch, temp_db):
+    # An explicit RagOverrides() with every field None must be indistinguishable from
+    # overrides=None — the "all fields None" case the spec calls out separately.
+    monkeypatch.setattr(chat_controller, "is_library_query", lambda t: False)
+    rag = FakeRAG(_three_clean_sources(), ["Answer [1]."])
+    controller = ChatController(rag=rag)
+    result = _final(_results(controller, Session(), "q", RagOverrides()))
+    assert rag.retrieve_calls == [(10, None)]
+    assert "Session override" not in result.provenance_card_md
+
+
+def test_overrides_isolation_covers_all_five_fields(monkeypatch, temp_db):
+    # The ⚠ correctness obligation (ADR-010 Decision 4 + the U1b amendment): a turn with all
+    # five overrides set, then a turn with overrides=None, must use every locked default on
+    # the second turn — proving no module-global was mutated. EPISTEMICS_MARKERS_ENABLED is
+    # monkeypatched to False only to give the override something to differ from; nothing here
+    # touches the module during the turns themselves (no monkeypatch in that path).
+    monkeypatch.setattr(chat_controller, "is_library_query", lambda t: False)
+    monkeypatch.setattr(chat_controller, "EPISTEMICS_MARKERS_ENABLED", False)
+    monkeypatch.setattr(
+        chat_controller, "load_epistemics_index", lambda: {"d1:0": [MARKER_CONTESTED]}
+    )
+    captured_full_text: list[str] = []
+    real_record_answer = chat_controller.record_answer
+
+    def spy(**kwargs):
+        captured_full_text.append(kwargs["retrieved_chunks"][0].full_text)
+        return real_record_answer(**kwargs)
+
+    monkeypatch.setattr(chat_controller, "record_answer", spy)
+
+    long_source = [(_doc("y" * 5000, document_id="d1", chunk_index=0, filename="a.pdf"), 0.9)]
+    rag = FakeRAG(long_source, ["Answer [1]."])
+    controller = ChatController(rag=rag)
+    session = Session()
+
+    overridden = _final(
+        _results(
+            controller,
+            session,
+            "q1",
+            RagOverrides(
+                top_k=2,
+                use_multi_query=True,
+                epistemics_markers_enabled=True,
+                reviewer_evidence_chars=300,
+            ),
+        )
+    )
+    clean = _final(_results(controller, session, "q2", None))
+
+    assert rag.retrieve_calls == [(2, True), (10, None)]  # second turn: locked defaults
+    assert overridden.sources[0].markers == [MARKER_CONTESTED]  # override enabled it
+    assert clean.sources[0].markers == []  # back to disabled (the locked default)
+    assert len(captured_full_text[0]) == 300  # override
+    assert len(captured_full_text[1]) == 1500  # back to REVIEWER_EVIDENCE_CHARS's default
+    assert "Session override" in overridden.provenance_card_md
+    assert "Session override" not in clean.provenance_card_md
+
+
+def test_epistemics_markers_override_per_turn(monkeypatch, temp_db):
+    monkeypatch.setattr(chat_controller, "is_library_query", lambda t: False)
+    monkeypatch.setattr(chat_controller, "EPISTEMICS_MARKERS_ENABLED", False)  # locked: off
+    monkeypatch.setattr(
+        chat_controller, "load_epistemics_index", lambda: {"d1:0": [MARKER_CONTESTED]}
+    )
+    controller = ChatController(rag=FakeRAG(_three_clean_sources(), ["Answer [1]."]))
+    result = _final(
+        _results(controller, Session(), "q", RagOverrides(epistemics_markers_enabled=True))
+    )
+    assert result.sources[0].markers == [MARKER_CONTESTED]
+    assert "epistemics_markers_enabled=True (default False)" in result.provenance_card_md
+
+
+def test_reviewer_evidence_chars_override_per_turn(monkeypatch, temp_db):
+    monkeypatch.setattr(chat_controller, "is_library_query", lambda t: False)
+    captured: dict[str, str] = {}
+    real_record_answer = chat_controller.record_answer
+
+    def spy(**kwargs):
+        captured["full_text"] = kwargs["retrieved_chunks"][0].full_text
+        return real_record_answer(**kwargs)
+
+    monkeypatch.setattr(chat_controller, "record_answer", spy)
+    long_source = [(_doc("z" * 5000, document_id="d1", chunk_index=0, filename="a.pdf"), 0.9)]
+    controller = ChatController(rag=FakeRAG(long_source, ["Answer [1]."]))
+    result = _final(
+        _results(controller, Session(), "q", RagOverrides(reviewer_evidence_chars=500))
+    )
+    assert len(captured["full_text"]) == 500
+    assert "reviewer_evidence_chars=500 (default 1500)" in result.provenance_card_md
+
+
+def test_overrides_note_flags_only_the_differing_fields(monkeypatch, temp_db):
+    monkeypatch.setattr(chat_controller, "is_library_query", lambda t: False)
+    controller = ChatController(rag=FakeRAG(_three_clean_sources(), ["Answer [1]."]))
+    result = _final(_results(controller, Session(), "q", RagOverrides(top_k=5)))
+    assert "top_k=5 (default 10)" in result.provenance_card_md
+    assert "synthesis_mode" not in result.provenance_card_md.split("Session override")[-1]
+
+
+# ============================================================
+# ADR-011 / SPRINT-012 (U1c) — desktop provider switch
+# ============================================================
+
+
+@pytest.fixture
+def settings_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """Redirect the persisted user settings to a temp file — same pattern as
+    tests/integration/test_api_settings_ingest.py, never the real data home."""
+    monkeypatch.setattr(chat_controller.app_settings, "SETTINGS_PATH", tmp_path / "settings.json")
+    return tmp_path
+
+
+class _FakeRAGForConstruction:
+    """Stands in for RAGPipeline ONLY to test ChatController.__init__'s apply-persisted-
+    selection step, without loading any real model/embedder/reranker."""
+
+    def __init__(self) -> None:
+        self.provider = "anthropic"
+        self.model = "claude-haiku-4-5-20251001"
+        self.set_chat_model_calls: list[tuple[str, str]] = []
+
+    def set_chat_model(self, provider: str, model: str) -> None:
+        self.set_chat_model_calls.append((provider, model))
+        self.provider = provider
+        self.model = model
+
+
+def test_persisted_selection_applied_at_construction(settings_file, monkeypatch):
+    monkeypatch.setattr(config, "ANTHROPIC_API_KEY", None)  # ollama needs no key
+    chat_controller.app_settings.set_llm_selection("ollama", "llama3.1:8b")
+    monkeypatch.setattr(chat_controller, "RAGPipeline", _FakeRAGForConstruction)
+
+    controller = ChatController()  # no injected rag → applies the persisted selection
+
+    assert controller.rag.set_chat_model_calls == [("ollama", "llama3.1:8b")]
+    assert (controller.rag.provider, controller.rag.model) == ("ollama", "llama3.1:8b")
+
+
+def test_no_persisted_selection_skips_the_swap_at_construction(settings_file, monkeypatch):
+    # Nothing persisted → the fresh RAGPipeline's own boot default is left alone (no needless
+    # rebuild on the common no-switch boot).
+    monkeypatch.setattr(chat_controller, "RAGPipeline", _FakeRAGForConstruction)
+    controller = ChatController()
+    assert controller.rag.set_chat_model_calls == []
+
+
+def test_injected_rag_skips_the_apply_persisted_step(settings_file, monkeypatch):
+    # A test-injected fake (cpc §13) must never be silently reconfigured by a leftover
+    # persisted selection from a previous test/run.
+    monkeypatch.setattr(config, "ANTHROPIC_API_KEY", None)
+    chat_controller.app_settings.set_llm_selection("ollama", "llama3.1:8b")
+    rag = FakeRAG([], [])
+    ChatController(rag=rag)
+    assert rag.set_chat_model_calls == []
+
+
+def test_reconfigure_persists_and_swaps_no_global_mutation(settings_file, monkeypatch):
+    monkeypatch.setattr(config, "ANTHROPIC_API_KEY", None)  # ollama needs no key
+    original_llm_provider = config.LLM_PROVIDER
+    rag = FakeRAG([], [])
+    controller = ChatController(rag=rag)
+
+    controller.reconfigure("ollama", "llama3.1:8b")
+
+    assert rag.set_chat_model_calls == [("ollama", "llama3.1:8b")]
+    assert (rag.provider, rag.model) == ("ollama", "llama3.1:8b")
+    assert chat_controller.app_settings.get_llm_selection() == ("ollama", "llama3.1:8b")
+    assert original_llm_provider == config.LLM_PROVIDER  # no global mutation
+
+
+def test_reconfigure_rejects_keyless_provider_and_does_not_swap(settings_file, monkeypatch):
+    monkeypatch.setattr(config, "ANTHROPIC_API_KEY", None)
+    rag = FakeRAG([], [])
+    controller = ChatController(rag=rag)
+    with pytest.raises(ValueError, match="no credential"):
+        controller.reconfigure("anthropic", "claude-haiku-4-5-20251001")
+    assert rag.set_chat_model_calls == []  # rejected before the pipeline was ever touched
+    assert chat_controller.app_settings.get_llm_selection() == (None, None)
+
+
+def test_is_local_reflects_the_effective_provider_not_the_boot_constant(monkeypatch, temp_db):
+    # Even if the boot-default LLM_PROVIDER is anthropic, a rag whose EFFECTIVE provider is
+    # ollama (post-switch) must report is_local=True / no metered cost.
+    monkeypatch.setattr(chat_controller, "is_library_query", lambda t: False)
+    monkeypatch.setattr(config, "LLM_PROVIDER", "anthropic")
+    rag = FakeRAG(_three_clean_sources(), ["Answer [1]."])
+    rag.provider = "ollama"
+    controller = ChatController(rag=rag)
+    result = _final(_results(controller, Session(), "q"))
+    assert result.usage.is_local is True
+    assert result.usage.cost_usd is None
+
+
+def test_reviewer_follows_the_effective_provider_when_unpinned(monkeypatch, temp_db):
+    # A flagged (low-confidence) answer triggers the reviewer call; it must resolve against
+    # the rag's effective provider/model, not the config default, when REVIEWER_PROVIDER was
+    # never explicitly pinned.
+    monkeypatch.setattr(chat_controller, "is_library_query", lambda t: False)
+    monkeypatch.setattr(config, "REVIEWER_PROVIDER_PINNED", False)
+    captured: dict[str, object] = {}
+
+    def fake_get_reviewer_client(provider=None, model=None):
+        captured["provider"] = provider
+        captured["model"] = model
+        return object()
+
+    monkeypatch.setattr(
+        "doc_assistant.llm.get_reviewer_client", fake_get_reviewer_client, raising=False
+    )
+    monkeypatch.setattr(
+        chat_controller, "review_answer", lambda prov, client: ReviewResult(error="stubbed")
+    )
+    # One weak, low-scoring source → fires a confidence signal → reviewer runs.
+    weak_source = [(_doc("thin evidence", document_id="d1", chunk_index=0, filename="a.pdf"), 0.1)]
+    rag = FakeRAG(weak_source, ["Answer [1]."])
+    rag.provider = "ollama"
+    rag.model = "llama3.1:8b"
+    controller = ChatController(rag=rag)
+    _final(_results(controller, Session(), "q"))
+    assert captured == {"provider": "ollama", "model": "llama3.1:8b"}

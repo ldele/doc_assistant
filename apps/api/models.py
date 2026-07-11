@@ -13,7 +13,9 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, model_validator
+
+from doc_assistant.config import CANDIDATE_K
 
 if TYPE_CHECKING:
     from doc_assistant.chat_controller import ClaimView, SourceView, TurnResult, UsageView
@@ -24,9 +26,31 @@ if TYPE_CHECKING:
 # ============================================================
 
 
+class RagOverrides(BaseModel):
+    """Wire model for a session-scoped, non-persistent RAG-sandbox override (ADR-010).
+    ``None`` (a field or the whole object) = use the locked default. ``top_k`` is bounded to
+    ``[1, CANDIDATE_K]`` — the candidate pool is fixed at pipeline construction, so a top_k
+    above it is meaningless; out-of-range is a 422, never a silent clamp.
+
+    ``epistemics_markers_enabled``/``reviewer_evidence_chars`` (U1b, SPRINT-011, ADR-010's
+    2026-07-10 amendment) are the two "must revisit" niche knobs. ``reviewer_evidence_chars``
+    is bounded ``[200, 6000]``: the floor sits above the ~300-char display excerpt that was
+    empirically shown to starve the reviewer into false "unsupported claim" verdicts
+    (`config.py`'s own comment on `REVIEWER_EVIDENCE_CHARS`); the ceiling is a generous 4x the
+    1500-char default, bounding judge-token cost without being restrictive for experimentation.
+    """
+
+    top_k: int | None = Field(default=None, ge=1, le=CANDIDATE_K)
+    synthesis_mode: Literal["ai", "human"] | None = None
+    use_multi_query: bool | None = None
+    epistemics_markers_enabled: bool | None = None
+    reviewer_evidence_chars: int | None = Field(default=None, ge=200, le=6000)
+
+
 class ChatRequest(BaseModel):
     text: str
     session_id: str
+    overrides: RagOverrides | None = None
 
 
 class AdjudicateRequest(BaseModel):
@@ -40,9 +64,22 @@ class ExportRequest(BaseModel):
 
 
 class SettingsUpdate(BaseModel):
-    """The one user-settable knob in v1: the source documents folder to ingest from."""
+    """User-settable settings: the source documents folder, and (ADR-011, U1c) the LLM
+    provider/model to switch to. At least one of ``source_dir`` or the ``llm_provider`` +
+    ``llm_model`` pair must be present; the two ``llm_*`` fields travel together or not at all —
+    both requests reject an otherwise-empty or half-shaped body with a 422, not a silent no-op."""
 
-    source_dir: str
+    source_dir: str | None = None
+    llm_provider: Literal["anthropic", "ollama"] | None = None
+    llm_model: str | None = None
+
+    @model_validator(mode="after")
+    def _check_shape(self) -> SettingsUpdate:
+        if self.source_dir is None and self.llm_provider is None and self.llm_model is None:
+            raise ValueError("at least one of source_dir or llm_provider+llm_model is required")
+        if (self.llm_provider is None) != (self.llm_model is None):
+            raise ValueError("llm_provider and llm_model must be provided together")
+        return self
 
 
 # ============================================================

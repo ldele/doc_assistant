@@ -3,7 +3,14 @@
 **Status:** 📋 **design-locked** (ADR-011 accepted + grilled 2026-07-10, 8 forks); **NOT built.** v1 scope
 = option 4 (switch provider **+ model** among already-configured providers; the API key stays in `.env`;
 live swap between turns). Keyring / in-app key entry (ADR-011 option 2) is the recorded **v2** north-star —
-out of scope here. Roadmap PR **U1c**, 5th in the Phase-8 UI build order (after U2/U3/U1/U1b).
+out of scope here. Roadmap PR **U1c**, 5th in the Phase-8 UI build order (after U2/U3/U1/U1b — all four
+now built, 2026-07-10/11).
+
+**2026-07-11 line-number refresh:** U1 (SPRINT-010) and U1b (SPRINT-011) landed on top of this spec's
+original line citations and shifted several of them (both still uncommitted, on the same working tree).
+Citations below have been re-verified against the current file state; the contracts themselves are
+unchanged — U1/U1b touched `RagOverrides`/`Settings.svelte`'s sandbox section, a different surface than
+this spec's provider-switch seam, so nothing here needed a design change, only a line-number correction.
 **Owner of execution:** Claude Code, when U1c is active. Create a cpc SPRINT contract from this spec at
 build time (`docs/sprints/SPRINT-000-template.md` shape).
 **Pattern reference:** thin-shell (`apps/` render, logic in `src/doc_assistant/` — root `CLAUDE.md`); the
@@ -37,7 +44,7 @@ the switch re-sources the generation model + reviewer between turns. Full ration
 `build_chat_model(provider, model)` (`pipeline.py:78-100`) is already parameterized and makes **no** API
 call at construction. `RAGPipeline.__init__` sets `self.llm = self._build_llm()` →
 `build_chat_model(LLM_PROVIDER, LLM_MODEL)` (`:160-164`); `self.llm` drives the rewrite / answer /
-multi-query chains (`:242, 257, 272`). Add the swap:
+multi-query chains (`chain = ... | self.llm` at `:250, 265, 280`). Add the swap:
 
 ```python
 def set_chat_model(self, provider: str, model: str) -> None:
@@ -47,7 +54,7 @@ def set_chat_model(self, provider: str, model: str) -> None:
 ```
 
 - **In-flight turn is safe for free (fork F):** `stream_answer` binds `chain = ANSWER_PROMPT | self.llm`
-  **per call** (`:257`), so a stream already running keeps the *old* model reference after a swap; the
+  **per call** (`:265`), so a stream already running keeps the *old* model reference after a swap; the
   next turn builds a fresh chain on the new `self.llm`. No extra guard needed — assert this with a test.
 - `build_chat_model`'s `api_key=SecretStr(ANTHROPIC_API_KEY or "")` (`:94`) stays config-sourced — v1 is
   key-via-`.env`, so no change to the key path.
@@ -90,10 +97,13 @@ Mirror the `source_dir` pattern (JSON keys `llm_provider` / `llm_model` in `sett
 - Add `reconfigure(self, provider: str, model: str) -> None`: validate + `app_settings.set_llm_selection`,
   then `self.rag.set_chat_model(provider, model)`. This is a **direct method call, not a global mutation**
   (ADR-010 Decision 4). Applied between turns by construction (see the pipeline in-flight note).
-- Reviewer call site (`:684-692`): pass the effective provider/model into `get_reviewer_client(...)` so it
-  follows the switch (fork C).
-- `_is_local()` (`:195`) currently reads `LLM_PROVIDER` — change it to read the **effective** provider so
-  the "🖥 Local model — no metered token" line (`:840`) is truthful after a switch.
+- Reviewer call site (`:791-804`, inside the `signals.any()` branch — `reviewer_available()` at `:797`,
+  `get_reviewer_client()`/`review_answer` at `:801`): pass the effective provider/model into
+  `get_reviewer_client(...)` so it follows the switch (fork C).
+- `_is_local()` (`:214`) currently reads `LLM_PROVIDER` — change it to read the **effective** provider so
+  the "🖥 Local model — no metered token" line (`_usage_block`, the `if _is_local():` branch) is truthful
+  after a switch. (Also update its handful of other call sites in the same file — `:293, 583, 873, 874,
+  936, 949` at last count — rather than only the one in `_usage_block`.)
 
 ### `apps/api/models.py` — wire model (thin)
 
@@ -107,25 +117,32 @@ class SettingsUpdate(BaseModel):
 
 ### `apps/api/main.py` — endpoint + effective settings view
 
-- `POST /api/settings` (`:294-303`): when `llm_provider`/`llm_model` are present, call
+- `POST /api/settings` (`:327-335`): when `llm_provider`/`llm_model` are present, call
   `controller.reconfigure(provider, model)` (`ValueError` → 400 for keyless/unknown). The `source_dir`
   path is unchanged; sending neither is unchanged (backward compat).
-- `_settings_view()` (`:113-137`): report the **effective** provider/model (from `app_settings.effective_llm()` /
-  the controller), **not** the import-time `LLM_PROVIDER`/`LLM_MODEL` constants. Add a `providers` list for
-  the UI: `[{"id": "anthropic", "available": provider_available("anthropic"), "paid": "anthropic" in
+- `_settings_view()` (`:123-158` as of U1b — this function already gained `use_multi_query`,
+  `epistemics_markers_enabled`, `reviewer_evidence_chars` fields and a `BM25_WEIGHT`-sourced
+  `retrieval_weights` in SPRINT-010/011; U1c only adds to it, doesn't touch those): report the
+  **effective** provider/model (from `app_settings.effective_llm()` / the controller), **not** the
+  import-time `LLM_PROVIDER`/`LLM_MODEL` constants. Add a `providers` list for the UI:
+  `[{"id": "anthropic", "available": provider_available("anthropic"), "paid": "anthropic" in
   config.PAID_PROVIDERS}, {"id": "ollama", "available": True, "paid": False}]`. (The `retrieval_weights`
-  hardcoded-literal fix stays U1's, per `feature-rag-sandbox.md` — not this spec's.)
-- Health (`:228-236`): `model = f"{eff_provider}/{eff_model}"` so `/api/health` reflects the switch.
+  hardcoded-literal fix already landed as U1's — not this spec's to redo.)
+- Health (`:250-257`): `model = f"{eff_provider}/{eff_model}"` so `/api/health` reflects the switch.
 
 ### `apps/desktop/src/lib/{types.ts, api.ts}` + `Settings.svelte`
 
 - `types.ts`/`api.ts`: add `llm_provider`/`llm_model` + the `providers` list to the settings type; the
   settings POST includes them when the user applies a switch.
-- `Settings.svelte`: a **"Provider & model"** section (slots beside U1's Engine/sandbox sections) — a
-  provider selector (each option labeled *metered* / *local* from `providers[].paid`; a
-  `available:false` option is **disabled** with "add its API key to `.env`", fork E), a model input
-  pre-filled with the effective model, and an **Apply** that POSTs `{llm_provider, llm_model}`. Show the
-  effective provider/model as the current state. No secret field anywhere (v1).
+- `Settings.svelte`: a new **"Provider & model"** section. Concrete placement (post-U1/U1b, the file's
+  section order top-to-bottom is now Display → Your documents → Corpus → RAG sandbox → Engine
+  (read-only)): slot it **between "Corpus" and "RAG sandbox"** — it's a construction-time setting like
+  Engine, not a per-turn override like the sandbox, but it's the one construction-time knob that's
+  actually live, so it reads more naturally *before* the sandbox section than buried after it. A provider
+  selector (each option labeled *metered* / *local* from `providers[].paid`; an `available:false` option
+  is **disabled** with "add its API key to `.env`", fork E), a model input pre-filled with the effective
+  model, and an **Apply** that POSTs `{llm_provider, llm_model}`. Show the effective provider/model as the
+  current state. No secret field anywhere (v1).
 
 ---
 

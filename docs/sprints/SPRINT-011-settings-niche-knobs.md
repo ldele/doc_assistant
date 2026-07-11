@@ -1,7 +1,7 @@
-<!-- status: archived · updated: 2026-07-10 · class: disposable -->
-<!-- QUEUED — NOT started. status:archived keeps this out of sprint_check's "exactly one active
-     contract" count. The build session that picks up U1b flips this to `status: active` after
-     SPRINT-010 (U1) lands. Pre-existing [lifecycle] warn applies (tolerated across all SPRINT-*.md).
+<!-- status: archived · updated: 2026-07-11 · class: disposable -->
+<!-- BUILT 2026-07-11 — staged for review, not yet committed. status:archived so sprint_check sees
+     U1c (once it has a build spec + SPRINT contract) as the sole active contract. Pre-existing
+     [lifecycle] warn applies (tolerated across all SPRINT-*.md).
 
      U1b (ROADMAP), 4th in the locked Phase-8 UI build order (U2 → U3 → U1 → U1b → U1c).
      Design: docs/specs/feature-phase8-ui-upgrade.md §U1b + the 2026-07-10 amendment section of

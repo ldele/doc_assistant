@@ -102,8 +102,14 @@ row: `docs/decisions.md`.
 
 ## Provider config
 
-- LLM provider/model resolved at import time (`LLM_PROVIDER`, `LLM_MODEL`, + reviewer/judge knobs).
-  Local default for fully-offline runs: an 8B Ollama model (e.g. `llama3.1:8b`).
+- LLM provider/model resolved at import time (`LLM_PROVIDER`, `LLM_MODEL`, + reviewer/judge knobs)
+  for every CLI/enrichment path. Local default for fully-offline runs: an 8B Ollama model (e.g.
+  `llama3.1:8b`).
+- **Desktop chat generation is the one exception (ADR-011, U1c, 2026-07-11):** the Settings UI can
+  live-switch the chat provider/model between already-configured providers (key stays in `.env`,
+  no restart) — `app_settings.effective_llm()` is the source of truth there, not the raw
+  `LLM_PROVIDER`/`LLM_MODEL` constants. The reviewer follows an unpinned switch; an explicit
+  `REVIEWER_PROVIDER` in `.env` still wins. In-app key entry (a v2 north-star) is not built.
 - **Credit-leak hazard:** `.env` defaults are all-Anthropic and every generator/reviewer/judge
   inherits it, so a "local" enrichment run can silently bill the API. **Force `--provider ollama`
   on enrichment/self-eval runs.** See `.claude/KNOWN_ISSUES.md`.
@@ -150,7 +156,7 @@ to docs/archive/SESSION-archive-NNN.md (local-only, like the baton).
 | 5 | Embedding & eval foundation (config-driven embedder, golden set, provenance) | done |
 | 6 | Figures & tables, dual-layer interpretation, reviewer + self-improvement loop | in progress |
 | 7 | Gap detection — wiki/synthesis layer + cross-document concept graph (incl. 7d engine) | in progress |
-| 8 | UI polish (settings page exposing the RAG sandbox knobs) | planned |
+| 8 | UI polish (settings page exposing the RAG sandbox knobs) | done — U2/U3/U1/U1b/U1c all built |
 | 9 | Literature-review generation (PRISMA-trAIce export) | planned |
 | — | Extract eval harness to a standalone repo (Feature 5) | planned |
 

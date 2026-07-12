@@ -8,6 +8,91 @@ Append only — never edit past entries.
 Format: What changed | Why | Rejected alternatives | What it opens
 
 ---
+## 2026-07-11 — Review corrections: turn-instrument snapshot, reviewer-evidence clamp, reviewer-pin doc
+
+**What:** The correction pass for findings 1–3 of today's cross-review (see the launcher entry
+below). **(1) Turn-instrument snapshot (finding 2):** `pipeline.stream_answer` gained an `llm=`
+param — it's a generator, so `chain = PROMPT | self.llm` binds at the *first token*, and a
+concurrent `set_chat_model` landing before that would stream on a model the caller never
+recorded; passing a snapshot pins the turn. `chat_controller._handle_rag` now snapshots
+`(llm, provider, model)` at turn start and every label — `model_name`, the provenance card's
+`is_local`, the usage block (its signature now takes `provider`/`model` explicitly), the
+TurnResult usage, and the reviewer resolution — reads the snapshot, never `self.rag`
+post-stream. `_human_result`/`_empty_result` keep live reads deliberately: no generation call
+happens there, so there is nothing to mislabel. **(2) Reviewer-evidence clamp (finding 1):**
+`Settings.svelte`'s number input now commits on change (blur/Enter/spinner) instead of every
+keystroke, clamps to the API bounds [200, 6000], and treats a cleared field as "drop the
+override" — a partial value like "15" en route to 1500 can no longer become an override that
+422s every subsequent turn. **(3) `.env.example` (finding 3, doc half):** the reviewer block now
+states ADR-011's actual rule — unset `REVIEWER_*` means the reviewer *follows* the live chat
+provider/model (including a Settings-panel switch and a custom `LLM_MODEL`); an explicit
+`REVIEWER_PROVIDER` pins it; `REVIEWER_MODEL` alone is ignored while following. The old
+"leaving these unset changes nothing" claim was stale since ADR-011.
+
+**Rejected:** snapshotting labels without the `stream_answer` pin (shrinks the race but inverts
+the mislabel — the answer could stream on the new model while labeled old); clamping the UI
+input per keystroke (fights the user mid-typing: "1" would snap to 200 before they can type
+"1500").
+
+**Verified:** ruff + `ruff format --check` + `mypy --strict` clean on the touched files; 73
+targeted tests pass (test_chat_controller, test_pipeline_retrieval, test_turn_parity,
+test_api_chat_sse) incl. 2 new regression tests (mid-turn-switch relabel; the lazy-bind race
+with an unpinned control); svelte-check 0 errors; live-UI drive of the input: 15→200,
+9999→6000, 3000→3000, cleared→default 1500. **Opens:** the two deferred follow-ups — the
+model-only reviewer pin (an ADR-011 amendment decision) and `post_settings` atomicity — are
+written up as next actions in the session baton.
+
+---
+## 2026-07-11 — One-command app launcher (`just app`) + cross-review of today's commits
+
+**What:** `scripts/launch_app.ps1` + `scripts/launch_app.cmd` (double-click shim) + a `just app`
+recipe + README Usage update — one command now starts the FastAPI backend (8001) and the Vite dev
+UI (1420) in their own console windows, waits for the health endpoint (cold model load ~30–60 s),
+and opens the app in the default browser. Idempotent: already-running servers on either port are
+reused. Three non-obvious choices baked in: **(1)** the backend runs `uv run --no-sync` so a
+launch never mutates the venv (a plain `uv run` re-syncs against the base resolution, ignoring
+the per-machine torch extra — `docs/specs/torch-backend-per-machine.md`; the local
+`.claude/launch.json` `api` entry got the same fix); **(2)** the port probe is
+`Get-NetTCPConnection -State Listen` across both address families — Vite v6 binds `::1` only, so
+a `TcpClient('127.0.0.1', …)` probe misses it and spawns a duplicate window (caught live on the
+first test run); **(3)** the script is ASCII-only — Windows PowerShell 5.1 misparses BOM-less
+UTF-8 `.ps1` files (em-dashes broke the parse on the first attempt).
+
+**Also this session — cross-review of `09afd0c` + `71e41e9`** (verdict: approve; no
+merge-blockers; live-UI checks done with zero API spend — no chat turn sent). Four findings, all
+small, tracked here as opens:
+1. *(provenance, low)* `chat_controller.py:786`/`:1000` read `rag.llm`/`self.rag.provider`
+   **after** streaming — a provider switch landing mid-turn labels the in-flight answer (born on
+   the pre-swap model) with the post-swap provider/model. Fix: snapshot `(provider, model)` at
+   the top of `_handle_rag`.
+2. *(docs/behaviour, low)* `llm.py:236 resolve_reviewer` — with `REVIEWER_PROVIDER` unset the
+   reviewer now always follows the *chat* model, even when no switch ever happened (e.g. a custom
+   `LLM_MODEL` in `.env` silently moves the reviewer off the pinned Haiku reference), and a
+   model-only pin (`REVIEWER_MODEL` set, provider unset) is ignored. `.env.example`'s "leaving
+   these unset changes nothing" is now stale. (Upside: the old unpinned-Ollama path that sent a
+   Haiku model name to Ollama is fixed.)
+3. *(UX/correctness, medium-low)* `Settings.svelte:416` — the reviewer-evidence number input
+   writes every keystroke into `overrides.reviewer_evidence_chars` unvalidated (typing "15" en
+   route to 1500, or clearing the field → `Number('') === 0`); the next turn then 422s and
+   surfaces only as an opaque "chat failed: 422". Clamp/validate on change, or drop out-of-range.
+4. *(quality, low)* `apps/api/main.py:346 post_settings` — combined `source_dir` + `llm_*` body
+   applies source_dir before the provider switch can 400: partial success behind an error
+   response. Latent (the UI never sends both); validate both before applying either.
+
+**Why:** README's two-shell dance was the last friction to actually running the app; the review
+pays down Phase-8 verification debt (`docs/ui-checklist.md` §2).
+
+**Rejected:** a `just`-only recipe (no health-wait/reuse logic in one cmd line); bundling
+`npx tauri dev` into the launcher (Rust-toolchain dependency; the browser flow is the daily
+driver); auto-restoring the cu130 torch wheel after noticing the venv sits on `2.12.0+cpu` on the
+RTX box (multi-GB sync — user's call; `just sync` restores it).
+
+**Verified:** script run twice live — first run exposed and fixed the IPv6 probe bug, second run
+reused both servers, reported "Ready - 16039 chunks", opened the app. **Opens:** findings 1–4
+(candidates for `docs/ui-checklist.md` §2); the venv torch restore; the baton-rotation backlog
+(unchanged).
+
+---
 ## 2026-07-11 — Phase-8 review follow-ups + doc cleanup (post-`09afd0c`)
 
 **What:** In-depth review of the Phase-8 commit `09afd0c` (RAG sandbox overrides / niche knobs /

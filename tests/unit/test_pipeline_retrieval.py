@@ -218,3 +218,29 @@ def test_in_flight_chain_survives_a_swap(monkeypatch: pytest.MonkeyPatch) -> Non
 
     assert chain.invoke("q") == "OLD_RESULT"  # the pre-built chain is unaffected by the swap
     assert rag.llm.invoke("q") == "NEW_RESULT"  # a fresh chain would use the new model
+
+
+def test_stream_answer_llm_pin_defeats_the_lazy_bind_race(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # 2026-07-11 review follow-up: stream_answer is a generator, so `chain = PROMPT | self.llm`
+    # binds at the FIRST TOKEN, not at call time — a swap landing between a caller's snapshot
+    # and that first token would stream on the new model while the caller records the old one.
+    # Passing llm= pins the turn to the snapshot; the unpinned control shows the race is real.
+    rag = _bare_pipeline()
+    rag.provider = "anthropic"
+    rag.model = "old-model"
+    rag.llm = RunnableLambda(lambda _x: _FakeMsg("OLD"))
+    snapshot = rag.llm
+
+    pinned = rag.stream_answer("q", [], llm=snapshot)  # generators created pre-swap,
+    unpinned = rag.stream_answer("q", [])  # neither started yet
+
+    monkeypatch.setattr(
+        "doc_assistant.pipeline.build_chat_model",
+        lambda _p, _m: RunnableLambda(lambda _x: _FakeMsg("NEW")),
+    )
+    rag.set_chat_model("ollama", "new-model")  # the swap lands before the first token
+
+    assert "".join(pinned) == "OLD"  # pinned: the snapshotted instrument generates
+    assert "".join(unpinned) == "NEW"  # unpinned control: the lazy bind picks up the swap

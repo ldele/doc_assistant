@@ -88,7 +88,7 @@ class FakeRAG:
         return self._scored
 
     def stream_answer(
-        self, question: str, docs: list[Document], counter: object = None
+        self, question: str, docs: list[Document], counter: object = None, llm: object = None
     ) -> Iterator[str]:
         yield from self._tokens
 
@@ -764,3 +764,31 @@ def test_reviewer_follows_the_effective_provider_when_unpinned(monkeypatch, temp
     assert captured == {"provider": "ollama", "model": "llama3.1:8b"}
     # A followed Ollama switch must NOT be labeled "llm_haiku" beside an ollama model_name.
     assert persisted == {"kind": "llm_ollama", "model": "llama3.1:8b"}
+
+
+class _SwitchMidStreamRAG(FakeRAG):
+    """FakeRAG whose stream simulates a live provider switch landing mid-turn."""
+
+    def stream_answer(
+        self, question: str, docs: list[Document], counter: object = None, llm: object = None
+    ) -> Iterator[str]:
+        yield "Neurons "
+        # A concurrent POST /api/settings lands while tokens are still streaming.
+        self.set_chat_model("ollama", "llama3.1:8b")
+        self.llm = types.SimpleNamespace(model="llama3.1:8b")
+        yield "meet [1]."
+
+
+def test_mid_turn_switch_does_not_relabel_the_in_flight_turn(monkeypatch, temp_db):
+    # 2026-07-11 review follow-up: every turn label used to be read off self.rag AFTER
+    # streaming, so a switch landing mid-turn stamped the new provider/model on an answer
+    # the pre-switch model generated. The turn now snapshots the instrument up front.
+    monkeypatch.setattr(chat_controller, "is_library_query", lambda t: False)
+    controller = ChatController(rag=_SwitchMidStreamRAG(_three_clean_sources(), []))
+    result = _final(_results(controller, Session(), "How do neurons connect?"))
+
+    # The answer streamed on the pre-switch anthropic instrument — every label must say so.
+    assert result.answer.startswith("Neurons meet [1].")
+    assert result.usage.is_local is False  # not relabeled "local" by the ollama switch
+    assert "Local model" not in result.usage_md  # metered block, not the ollama shape
+    assert "· local" not in result.provenance_card_md  # token suffix stays metered

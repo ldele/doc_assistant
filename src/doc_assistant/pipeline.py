@@ -280,9 +280,15 @@ class RAGPipeline:
         question: str,
         docs: list[Document],
         counter: Any = None,
+        llm: Any | None = None,
     ) -> Generator[str, None, None]:
+        """Stream the answer over ``docs``. ``llm`` (ADR-011) pins the turn to a caller's
+        snapshot of the generation model: this is a generator, so the chain binds lazily at
+        the first token — without the pin, a concurrent ``set_chat_model`` landing between
+        the caller's snapshot and that first token would stream on a model the caller never
+        recorded. ``None`` = bind ``self.llm`` live (pre-ADR-011 behaviour)."""
         context = format_docs_for_prompt(docs)
-        chain = ANSWER_PROMPT | self.llm
+        chain = ANSWER_PROMPT | (llm if llm is not None else self.llm)
         callbacks = [counter] if counter else []
         for chunk in chain.stream(
             {"context": context, "question": question},

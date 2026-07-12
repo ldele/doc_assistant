@@ -412,6 +412,11 @@
         >Reviewer evidence
         <span class="muted">({effReviewerEvidenceChars.toLocaleString()} chars)</span></label
       >
+      <!-- Commit on change (blur/Enter/spinner), not per keystroke: a partial value ("15" en
+           route to 1500, or a cleared field) must never become the override — the API rejects
+           out-of-range with a 422 and every later question would fail on it. Out-of-range
+           clamps to the API bounds [200, 6000]; an emptied field drops the override entirely
+           (back to the locked default). -->
       <input
         id="reviewer-chars"
         type="number"
@@ -419,8 +424,20 @@
         max="6000"
         step="100"
         value={effReviewerEvidenceChars}
-        oninput={(e) =>
-          (overrides.reviewer_evidence_chars = Number((e.target as HTMLInputElement).value))}
+        onchange={(e) => {
+          const el = e.target as HTMLInputElement
+          if (el.value.trim() === '') {
+            overrides.reviewer_evidence_chars = null
+            el.value = String(effReviewerEvidenceChars)
+            return
+          }
+          const n = Math.round(Number(el.value))
+          const clamped = Number.isFinite(n)
+            ? Math.min(6000, Math.max(200, n))
+            : effReviewerEvidenceChars
+          overrides.reviewer_evidence_chars = clamped
+          el.value = String(clamped)
+        }}
       />
 
       <button class="ghost" onclick={resetSandbox}>Reset to locked defaults</button>

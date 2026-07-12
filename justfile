@@ -33,6 +33,10 @@ ingest *ARGS:
 eval *ARGS:
     uv run --extra {{torch}} python -m scripts.run_eval {{ARGS}}
 
+# One-shot app launch: API + desktop UI in their own windows, wait for health, open browser.
+app:
+    powershell -NoProfile -ExecutionPolicy Bypass -File scripts/launch_app.ps1
+
 # Launch the desktop frontend (Svelte/Vite) in dev — pair with `just api` in another shell
 # (or `cd apps/desktop && npx tauri dev` for the native Tauri window).
 desktop:

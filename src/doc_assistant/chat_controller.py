@@ -682,6 +682,14 @@ class ChatController:
         counter = session.counter
         user_question = text
 
+        # --- ADR-011: snapshot the generation instrument for the whole turn. A live provider
+        # switch (RAGPipeline.set_chat_model) can land mid-turn; the answer must stream on —
+        # and every recorded label (model_name, usage, reviewer resolution) must name — the
+        # SAME instrument, so read the trio once here and never through ``rag`` again. ---
+        turn_llm = rag.llm
+        turn_provider = rag.provider
+        turn_model = rag.model
+
         # --- ADR-010: resolve effective per-turn knobs (None = locked default; never a
         # module-global assignment — request-scoped so concurrent turns can't leak). ---
         eff_top_k = overrides.top_k if overrides and overrides.top_k is not None else TOP_K
@@ -767,7 +775,7 @@ class ChatController:
             return
 
         full_answer = ""
-        for tok in rag.stream_answer(standalone, docs, counter=counter):
+        for tok in rag.stream_answer(standalone, docs, counter=counter, llm=turn_llm):
             full_answer += tok
             yield Token(tok)
 
@@ -783,7 +791,7 @@ class ChatController:
             use_parent_child=USE_PARENT_CHILD,
             embedding_model=embedding_model,
         )
-        model_name = getattr(rag.llm, "model", None) or getattr(rag.llm, "model_name", None)
+        model_name = getattr(turn_llm, "model", None) or getattr(turn_llm, "model_name", None)
         record_id: str | None = None
         review: ReviewResult | None = None
         try:
@@ -832,13 +840,11 @@ class ChatController:
                     reviewer_available,
                 )
 
-                reviewer_provider, reviewer_model = resolve_reviewer(
-                    self.rag.provider, self.rag.model
-                )
+                reviewer_provider, reviewer_model = resolve_reviewer(turn_provider, turn_model)
                 if reviewer_available(reviewer_provider):
                     try:
                         review = review_answer(
-                            prov, get_reviewer_client(self.rag.provider, self.rag.model)
+                            prov, get_reviewer_client(turn_provider, turn_model)
                         )
                         # ADR-011: the recorded kind must match the instrument that actually ran.
                         # A followed switch to Ollama is no longer the Haiku reviewer — labeling it
@@ -857,7 +863,7 @@ class ChatController:
                     except Exception as e:
                         review = ReviewResult(error=f"reviewer setup failed: {e}")
             provenance_block = _format_provenance_card(
-                prov, signals, review=review, is_local=_is_local(self.rag.provider)
+                prov, signals, review=review, is_local=_is_local(turn_provider)
             )
         except Exception as e:
             # Never let provenance failure break the answer.
@@ -865,7 +871,9 @@ class ChatController:
         provenance_block += overrides_note
 
         sources_block = _sources_block(sources)
-        usage_block = self._usage_block(full_answer, turn_in, turn_out, counter)
+        usage_block = self._usage_block(
+            full_answer, turn_in, turn_out, counter, provider=turn_provider, model=turn_model
+        )
 
         # --- Chunk 2a: segment + eager-persist claims; surface flagged ones ---
         claim_review_block = ""
@@ -924,8 +932,8 @@ class ChatController:
                     turn_input=turn_in,
                     turn_output=turn_out,
                     session_total=counter.total(),
-                    cost_usd=None if _is_local(self.rag.provider) else counter.cost_usd(),
-                    is_local=_is_local(self.rag.provider),
+                    cost_usd=None if _is_local(turn_provider) else counter.cost_usd(),
+                    is_local=_is_local(turn_provider),
                 ),
                 standalone_query=standalone,
                 record_id=record_id,
@@ -998,17 +1006,25 @@ class ChatController:
         )
 
     def _usage_block(
-        self, full_answer: str, turn_in: int, turn_out: int, counter: TokenCounter
+        self,
+        full_answer: str,
+        turn_in: int,
+        turn_out: int,
+        counter: TokenCounter,
+        *,
+        provider: str,
+        model: str,
     ) -> str:
-        if _is_local(self.rag.provider):
+        if _is_local(provider):
             # Local models report no token usage to the LangChain callback, so the real
             # counts are zero — showing "0 tokens / $0.0000" reads as broken. Be honest:
-            # no metered cost, with a rough output estimate from text. The effective
-            # provider/model (ADR-011) — never the import-time LLM_PROVIDER/LLM_MODEL.
+            # no metered cost, with a rough output estimate from text. ``provider``/``model``
+            # are the caller's turn snapshot (ADR-011) — never read live off ``self.rag``,
+            # which a mid-turn switch may already have moved.
             est_out = max(0, len(full_answer) // 4)
             return (
                 f"\n\n---\n"
-                f"🖥 **Local model** (`{self.rag.provider}/{self.rag.model}`) — no metered token "
+                f"🖥 **Local model** (`{provider}/{model}`) — no metered token "
                 f"cost; provider reports no usage. (~{est_out:,} output tokens, estimated.)"
             )
         turn_total = turn_in + turn_out

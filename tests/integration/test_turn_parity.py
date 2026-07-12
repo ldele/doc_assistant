@@ -72,7 +72,7 @@ class FakeRAG:
         return self._scored
 
     def stream_answer(
-        self, question: str, docs: list[Document], counter: object = None
+        self, question: str, docs: list[Document], counter: object = None, llm: object = None
     ) -> Iterator[str]:
         yield from self._tokens
 

@@ -130,7 +130,11 @@ cp ~/your-papers/*.pdf data/sources/
 # Build the index (one-time, then incremental)
 uv run python -m doc_assistant.ingest
 
-# Launch the desktop app (Tauri + Svelte over the FastAPI backend)
+# Launch the desktop app (Tauri + Svelte over the FastAPI backend) — one command:
+just app          # starts backend (8001) + dev UI (1420) in their own windows, opens the browser
+                  # (no `just`? scripts/launch_app.cmd double-clicks to the same thing)
+
+# ... or manually, in two shells:
 just api                                        # backend on 127.0.0.1:8001
 cd apps/desktop && npm install && npm run dev    # dev UI (or: npx tauri dev for a native window)
 

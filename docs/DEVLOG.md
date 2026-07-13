@@ -8,6 +8,27 @@ Append only — never edit past entries.
 Format: What changed | Why | Rejected alternatives | What it opens
 
 ---
+## 2026-07-13 — Idea tray: five new feature candidates parked/queued (docs only)
+
+**What:** user dropped five feature ideas; routed each to the ui-checklist §3 tray (+ two ROADMAP
+phase bullets) with an explicit status, per their own prioritization ("quick wins + what we just
+planned first; CLI + MCP post-review"): (1) **evidence-only chat mode** — QUICK WIN, ~90% exists as
+`synthesis_mode=human` (verified in `chat_controller.py:813` — skips the interpretation call, renders
+evidence, records provenance); remaining work is a first-class mode toggle + pinning the condense step
+off so the whole turn is guaranteed $0. (2) **Unconstrained mode** (corpus restraint off, integrity
+measurements on) — to plan; pairs with the deferred full-answer A/B compare; paid → KI-4 badge rules.
+(3) **External literature discovery** off the enrichment layers — to plan, ADR required (first
+outbound-network feature); **scoped to open-access APIs** (OpenAlex/S2/Crossref/arXiv/Unpaywall/CORE);
+Sci-Hub explicitly excluded (unauthorized distribution of copyrighted papers). (4) **Global CLI** —
+parked post-review (user's own hesitation on the record). (5) **MCP server** — parked post-review.
+**Why:** capture while fresh, don't derail the locked queue (commit review → metadata-enrichment spec →
+visual-identity V1).
+**Rejected:** building the evidence-only toggle inline today (cheap, but this session already carries
+two change sets — one PR per concern); treating discovery as part of metadata enrichment (same lookup
+infra, different risk class — enrichment is offline-able, discovery is a networked product feature).
+**Opens:** the five tray rows; the evidence-only mode is the natural next quick win after V1.
+**Docs only: ui-checklist §3 + ROADMAP phases + this DEVLOG. Nothing committed (cpc §13).**
+
 ## 2026-07-13 — Visual identity pass grilled → design-locked (11 forks; spec + SPRINT-016 next)
 
 **What:** Planning only — ran `grill-me` over the new "sexy pass" backlog row at the user's request.

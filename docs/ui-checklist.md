@@ -40,6 +40,7 @@ Each box is checked only when the feature is **committed** (not merely staged) a
 - [x] **U1 — manual System/Light/Dark theme** — `theme.ts` + re-keyed `app.css` (`data-theme` attr wins over the OS media query); `localStorage`, applied in `main.ts` before mount (no flash). Client-only, never a backend setting. Commit `09afd0c`.
 - [x] **U1b — two niche sandbox knobs** (ADR-010 amendment): `epistemics_markers_enabled` toggle (contested/superseded chips), `reviewer_evidence_chars` number `[200, 6000]`. Same non-persistent, request-scoped mechanics. Commit `09afd0c`.
 - [x] **U1c — live provider + model switch** (ADR-011 v1): `<select>` of configured providers (keyless provider rendered disabled with reason) + model input + Apply; takes effect next turn, no restart; reviewer follows an unpinned switch; persists like `source_dir`. Commit `09afd0c`.
+- [ ] **U6 — A/B-compare sandbox (retrieval diff, v1)** — a per-turn "Compare" button runs the query under the locked defaults vs the session override and shows the two retrieved source sets side-by-side (per-source diff badges `both`/`only A`/`only B` + an honest note); **$0** (retrieval only, no LLM). Pure `compare.py` (`diff_sources`/`compare_note`) + `ChatController.compare_retrieval` (no LLM, no module-global mutation) + `POST /api/compare` + `CompareCard.svelte`. Full-answer 2× compare deferred (cost-gated). *Built + verified 2026-07-13 (pytest 875 +7; svelte-check 0/0; preview-harness live — `top_k=4` override → real depth diff + "only A" badges + depth note, defaults → no-op note, dark, no overflow, $0/offline) — **staged, commit pending**.* Spec: `docs/specs/feature-ab-compare-sandbox.md`; contract: SPRINT-015.
 - [x] **"Point at a folder" source dir + first-run ingest banner** — `/api/settings` + `/api/ingest`. *(M4 data-home flow.)*
 - [x] **Reset-to-locked-defaults** button (clears session overrides).
 
@@ -71,7 +72,7 @@ Sourced from the phase8 spec's "Related backlog" table + `pr-m1`/`pr-m3` out-of-
 
 | # | Candidate UI element | Where tracked | Notes |
 |---|---|---|---|
-| [~] | **A/B compare sandbox** — run locked defaults vs. override side-by-side | ADR-010 option 4 · `docs/specs/feature-ab-compare-sandbox.md` (spec written 2026-07-13, grilled) | **Spec locked (U6).** v1 = **retrieval diff only** ($0, no LLM — extends U1's retrieve path); full-answer 2× compare deferred (cost-gated, unverifiable without a model). Next to build after L1. |
+| [x] | **A/B compare sandbox** — run locked defaults vs. override side-by-side | ADR-010 option 4 · `docs/specs/feature-ab-compare-sandbox.md` · SPRINT-015 | **v1 built 2026-07-13 (U6, staged).** Retrieval diff only ($0, no LLM); moved to §1 above. **Still deferred:** the full-answer 2× compare (cost-gated, unverifiable without a model). |
 | [ ] | **Rich marker UI** — hover a contested/superseded chip → the corroborating/contradicting docs, not just a bare chip | `pr-m1` out-of-scope (tagged PR-M3) | Currently a static chip (`SourceCard.svelte:17-21`). Backend markers already carry the data. |
 | [ ] | **In-app PDF source viewer** — open the cited PDF at the page | `pr-m3` out-of-scope | Deferred at M3, never scheduled. |
 | [ ] | **Styled table rendering** in the answer/source view | `pr-m3` out-of-scope | Marker tables render as text today. |

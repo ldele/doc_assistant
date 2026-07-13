@@ -4,6 +4,7 @@
 // Tauri build the frontend is served from the asset/tauri origin, so it hits the absolute
 // backend URL (the API's CORS allowlist includes `tauri://localhost`).
 import type {
+  CompareResult,
   ConversationDetail,
   ConversationSummary,
   Decision,
@@ -55,6 +56,21 @@ export async function getLibraryDocument(docId: string): Promise<LibraryDocument
   const r = await fetch(`${API_BASE}/api/library/documents/${encodeURIComponent(docId)}`)
   if (!r.ok) throw new Error(`library document failed: ${r.status}`)
   return (await r.json()) as LibraryDocumentChunks
+}
+
+/** A/B-compare retrieval (U6): the query under the locked defaults vs the session override.
+ *  $0 — retrieval only, no generation. `overrides` rides this one request. */
+export async function compareRetrieval(
+  text: string,
+  overrides?: RagOverrides,
+): Promise<CompareResult> {
+  const r = await fetch(`${API_BASE}/api/compare`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text, overrides: overrides ?? null }),
+  })
+  if (!r.ok) throw new Error(await errorDetail(r, 'compare'))
+  return (await r.json()) as CompareResult
 }
 
 /** Stream a chat turn. `/api/chat` is POST-SSE, so we parse the body stream by hand

@@ -1,5 +1,6 @@
-<!-- status: active · updated: 2026-07-13 · class: disposable -->
-<!-- BUILDING 2026-07-13. Sole active contract (SPRINT-013 archived on commit). Design lock:
+<!-- status: archived · updated: 2026-07-13 · class: disposable -->
+<!-- BUILT + COMMITTED 2026-07-13 (`aa288d9` "UI: In-App Ingestion (v1)"). Flipped active→archived
+     when SPRINT-015 (A/B-compare) became the active contract. Design lock:
      docs/specs/feature-library-browser.md (grilled 2026-07-13). Feature: the Library space L1 —
      a read-only chunk browser. Lights up the reserved (disabled) Library sidebar tab: list ingested
      documents -> open one -> read its chunks as parent blocks, each expandable to its child chunks.

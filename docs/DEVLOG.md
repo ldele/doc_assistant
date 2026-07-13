@@ -8,6 +8,44 @@ Append only — never edit past entries.
 Format: What changed | Why | Rejected alternatives | What it opens
 
 ---
+## 2026-07-13 — A/B-compare sandbox v1: retrieval diff (SPRINT-015, U6)
+
+**What:** A per-turn **Compare** action realises ADR-010 option-4's north-star as its retrieval-only,
+**$0** first slice (`docs/specs/feature-ab-compare-sandbox.md`, grilled today). **Backend:** new pure
+`src/doc_assistant/compare.py` — `diff_sources` (union two ranked source sets by the pipeline's own
+dedup identity `doc_hash+"_"+sha256(page_content)`, classify `in_both`/`only_in_a`/`only_in_b` +
+rank-delta, order by best rank) + `compare_note` (the honest note: no retrieval-affecting override →
+"doesn't change retrieval"; `top_k`-only → depth note; `use_multi_query` differs → "" the diff speaks) +
+`build_result`. New `ChatController.compare_retrieval(text, overrides)` runs `retrieve_with_scores`
+**twice** on the same raw query (A = locked defaults, B = the session `RagOverrides`) — **no `self.llm`
+touch, no generation, no module-global mutation** (the ADR-010 isolation invariant, shared with
+`_handle_rag`). New `POST /api/compare` (synchronous JSON, not SSE) + payloads. **Frontend:** a
+`Compare` button beside Send (`.compare`, reuses the button base — no new palette) + new
+`CompareCard.svelte` (two columns A|B, per-source diff badges `both ↕Δ`/`only A`/`only B`, effective
+`{top_k, multi-query}` header per side, the honest note, an "indicative — not a verdict" footer;
+columns stack under 640px). The card is ephemeral (not a chat turn); `↻ New` clears it.
+**Why:** U1 let a user override retrieval knobs but gave no way to *see* the effect. Retrieval is $0
+(no LLM), so the diff is fully live-verifiable here — exactly ADR-010's "validate before widening"
+posture. The full-answer 2× compare stays deferred (cost-gated, unverifiable without a model).
+**Rejected:** the full-answer compare v1 (2× paid, can't prove $0 on this box; ADR cautions against
+pre-building option 4); a persistent compare mode (per-turn opt-in is cost-legible); a note that
+inspects the rows (kept `compare_note(eff_a, eff_b)` pure per the locked spec — see Opens); `dict[str,
+object]` for the effective knobs (mypy can't `int()` an `object` → typed `dict[str, int | bool]`).
+**Verified:** full gate green — ruff / ruff format / mypy `src` (59 files) / bandit / **pytest 875
+passed, 1 skipped** (+7: 6 unit diff/note + 1 endpoint w/ no-LLM + isolation guards); `svelte-check`
+0/0. Preview-harness live on the real corpus ($0/offline): defaults → the no-op note + two identical
+10-source columns; a `top_k=4` override → A=10 / B=4, 4 `in_both` + 6 `only_in_a`, the depth note, "only
+A" badges; a `use_multi_query` flip returned a valid 200 (the reranker surfaced the same top-10 for that
+query — an honest "multi-query didn't move the top-K here"); dark mode + no horizontal overflow.
+**Opens:** the full-answer 2× compare (cost-gated, once validatable with a model); a note for the
+"override changed a knob but didn't move membership on this query" case (currently an empty note + two
+identical columns — honest but silent; would need `compare_note` to see the rows); saving/exporting a
+comparison; >2-way compare.
+**Staged: `src/doc_assistant/compare.py` (new) · `chat_controller.py` · `apps/api/{main,models}.py` ·
+`apps/desktop/src/App.svelte` · `lib/CompareCard.svelte` (new) · `lib/{api,types}.ts` ·
+`tests/unit/test_compare.py` + `tests/integration/test_api_compare.py` (new) · the SPRINT-015 contract
++ SPRINT-014 archived + this DEVLOG/ROADMAP/ui-checklist. Nothing committed (cpc §13).**
+
 ## 2026-07-13 — Library space L1: read-only chunk browser (SPRINT-014)
 
 **What:** The reserved (disabled) **Library** sidebar tab now opens a **read-only chunk browser**

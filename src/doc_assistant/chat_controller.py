@@ -24,6 +24,7 @@ See ``docs/archive/pr-m0-chat-controller.md`` and
 from __future__ import annotations
 
 import contextlib
+import hashlib
 import time
 from collections.abc import Iterator
 from dataclasses import dataclass, field
@@ -32,7 +33,7 @@ from typing import Any, Literal
 
 from langchain_core.documents import Document
 
-from doc_assistant import app_settings, export
+from doc_assistant import app_settings, compare, export
 from doc_assistant.commands import execute_command, parse_command
 from doc_assistant.config import (
     EPISTEMICS_MARKERS_ENABLED,
@@ -529,6 +530,58 @@ class ChatController:
         """
         app_settings.set_llm_selection(provider, model)
         self.rag.set_chat_model(provider, model)
+
+    def compare_retrieval(self, text: str, overrides: RagOverrides) -> compare.CompareResult:
+        """Retrieval-only A/B compare (U6, ``feature-ab-compare-sandbox.md``).
+
+        Runs ``retrieve_with_scores`` twice on the same raw query — A = locked defaults, B = the
+        session ``overrides`` — and returns both ranked source sets + the diff + note. **$0**:
+        retrieval only, no generation, no ``self.llm`` touch. Request-scoped: ``overrides`` rides
+        the call, no module-global assigned (the ADR-010 isolation invariant). Only
+        ``top_k``/``use_multi_query`` affect retrieval; the rest are answer-time (see the note).
+        """
+        eff_a: dict[str, int | bool] = {"top_k": TOP_K, "use_multi_query": USE_MULTI_QUERY}
+        eff_b: dict[str, int | bool] = {
+            "top_k": overrides.top_k if overrides.top_k is not None else TOP_K,
+            "use_multi_query": (
+                overrides.use_multi_query
+                if overrides.use_multi_query is not None
+                else USE_MULTI_QUERY
+            ),
+        }
+        # A follows the global default (use_multi_query=None); B forces the override's value.
+        pairs_a = self.rag.retrieve_with_scores(
+            text, top_k=int(eff_a["top_k"]), use_multi_query=None
+        )
+        pairs_b = self.rag.retrieve_with_scores(
+            text, top_k=int(eff_b["top_k"]), use_multi_query=overrides.use_multi_query
+        )
+        return compare.build_result(
+            text,
+            [self._to_compare_source(d, s, i + 1) for i, (d, s) in enumerate(pairs_a)],
+            [self._to_compare_source(d, s, i + 1) for i, (d, s) in enumerate(pairs_b)],
+            eff_a,
+            eff_b,
+        )
+
+    @staticmethod
+    def _to_compare_source(doc: Document, score: float, rank: int) -> compare.CompareSource:
+        """Map one retrieved ``(Document, score)`` to a :class:`compare.CompareSource`.
+
+        ``identity`` reuses the pipeline's dedup key (``doc_hash + "_" + sha256(page_content)``)
+        so a source appearing on both sides matches exactly."""
+        content_hash = hashlib.sha256(doc.page_content.encode("utf-8")).hexdigest()
+        identity = f"{doc.metadata.get('doc_hash', '')}_{content_hash}"
+        return compare.CompareSource(
+            rank=rank,
+            filename=str(doc.metadata.get("filename", "unknown")),
+            page=doc.metadata.get("page"),
+            section=doc.metadata.get("section"),
+            score=float(score),
+            excerpt=doc.page_content[:240].strip(),  # a short preview for the compare card
+            citation=format_citation(doc, rank),
+            identity=identity,
+        )
 
     def adjudicate(self, claim_id: str, decision: str, edited_text: str | None = None) -> None:
         """Record the user's verdict on one flagged claim. Lifts ``_resolve_claim``'s

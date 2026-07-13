@@ -37,6 +37,8 @@ from sse_starlette.sse import EventSourceResponse, ServerSentEvent
 from apps.api.models import (
     AdjudicateRequest,
     ChatRequest,
+    CompareRequest,
+    CompareResultPayload,
     ConversationDetailPayload,
     ConversationSummaryPayload,
     ExportRequest,
@@ -296,6 +298,25 @@ def create_app(
             else None
         )
         return EventSourceResponse(_event_stream(controller, session, body.text, overrides))
+
+    @app.post("/api/compare")
+    def compare_route(request: Request, body: CompareRequest) -> CompareResultPayload:
+        """A/B-compare retrieval (U6): run ``text`` under the locked defaults (A) and the session
+        override (B), returning both source sets + the diff + the honesty note. **$0** — retrieval
+        only, no generation. Request-scoped overrides, no module-global mutation (ADR-010)."""
+        controller: ChatController = request.app.state.controller
+        overrides = (
+            RagOverrides(
+                top_k=body.overrides.top_k,
+                synthesis_mode=body.overrides.synthesis_mode,
+                use_multi_query=body.overrides.use_multi_query,
+                epistemics_markers_enabled=body.overrides.epistemics_markers_enabled,
+                reviewer_evidence_chars=body.overrides.reviewer_evidence_chars,
+            )
+            if body.overrides is not None
+            else RagOverrides()
+        )
+        return CompareResultPayload.from_result(controller.compare_retrieval(body.text, overrides))
 
     @app.post("/api/claims/{claim_id}/adjudicate")
     def adjudicate(request: Request, claim_id: str, body: AdjudicateRequest) -> dict[str, bool]:

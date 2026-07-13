@@ -1,5 +1,6 @@
 <script lang="ts">
   import type {
+    CompareResult,
     ConversationDetail,
     ConversationSummary,
     Health,
@@ -8,6 +9,7 @@
     TurnResult,
   } from './lib/types'
   import {
+    compareRetrieval,
     getConversation,
     getHealth,
     exportConversation,
@@ -21,6 +23,7 @@
   import SourcePanel from './lib/SourcePanel.svelte'
   import Sidebar from './lib/Sidebar.svelte'
   import LibraryBrowser from './lib/LibraryBrowser.svelte'
+  import CompareCard from './lib/CompareCard.svelte'
 
   interface TurnState {
     id: number
@@ -48,6 +51,11 @@
   // launch always starts from {} (locked defaults), never persisted to disk.
   let overrides = $state<RagOverrides>({})
   let nextId = 0
+
+  // A/B-compare (U6): a per-turn retrieval diff (locked defaults vs the session override). $0 —
+  // retrieval only, no answer generation. The result is an ephemeral card, not a chat turn.
+  let compareResult = $state<CompareResult | null>(null)
+  let comparing = $state(false)
 
   // Conversation history (feature-conversation-history.md). `viewing` is the session_id shown as a
   // read-only transcript; `null` means the live chat (composer + claims bound to `sessionId`).
@@ -200,6 +208,22 @@
     }
   }
 
+  // A/B-compare (U6): retrieve the current question under the locked defaults and the session
+  // override, and show the source-set diff. $0 (no LLM); the composer text is left intact.
+  async function doCompare(): Promise<void> {
+    const text = input.trim()
+    if (!text || sending || comparing) return
+    comparing = true
+    try {
+      compareResult = await compareRetrieval(text, overrides)
+      pinned = true // bring the fresh compare card into view
+    } catch (e) {
+      console.error('compare failed', e)
+    } finally {
+      comparing = false
+    }
+  }
+
   async function doExport(): Promise<void> {
     try {
       await exportConversation(sessionId, false)
@@ -216,6 +240,7 @@
     if (sending) return
     turns = []
     activeCitation = null
+    compareResult = null
     viewing = null
     viewedConvo = null
     input = ''
@@ -365,6 +390,9 @@
               activeCitationN={activeCitation?.turnKey === String(t.id) ? activeCitation.n : null}
             />
           {/each}
+          {#if compareResult}
+            <CompareCard result={compareResult} onClose={() => (compareResult = null)} />
+          {/if}
         {/if}
       </section>
 
@@ -381,6 +409,15 @@
             rows="2"
             disabled={sending}
           ></textarea>
+          <button
+            class="compare"
+            onclick={doCompare}
+            disabled={sending || comparing || input.trim() === ''}
+            title="Compare retrieval — locked defaults vs your session override ($0, no answer)"
+            type="button"
+          >
+            {comparing ? 'Comparing…' : 'Compare'}
+          </button>
           <button class="send" onclick={send} disabled={sending || input.trim() === ''} aria-busy={sending}>
             {#if sending}<span class="spinner" aria-hidden="true"></span>{:else}Send{/if}
           </button>
@@ -573,6 +610,11 @@
   .ghost {
     font-size: 0.82rem;
     padding: 0.3rem 0.7rem;
+  }
+  .compare {
+    font-size: 0.82rem;
+    white-space: nowrap;
+    color: var(--fg-2);
   }
   @media (max-width: 720px) {
     .hamburger {

@@ -1,0 +1,37 @@
+/* Local bundled webfonts — NO CDN (offline / on-proxy / local-first; SPRINT-016, fork #3).
+   woff2 vendored under ../assets/fonts (OFL; latin subsets from the @fontsource packages). Vite
+   fingerprints + inlines these at build via the relative url(), so the shipped app carries its own
+   fonts. font-display: swap → text paints immediately in the --font-serif / --font-sans fallback
+   and upgrades to Spectral/Inter when each face is ready (no invisible-text flash). */
+
+/* Spectral — scholarly serif for reading surfaces (answers, chunks, excerpts, content headings). */
+@font-face {
+  font-family: 'Spectral';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('../assets/fonts/spectral-400.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Spectral';
+  font-style: italic;
+  font-weight: 400;
+  font-display: swap;
+  src: url('../assets/fonts/spectral-400-italic.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Spectral';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url('../assets/fonts/spectral-600.woff2') format('woff2');
+}
+
+/* Inter — variable UI sans for chrome. One woff2 covers the whole weight axis. */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url('../assets/fonts/inter-variable.woff2') format('woff2');
+}

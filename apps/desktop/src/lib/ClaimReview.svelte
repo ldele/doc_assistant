@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { ClaimView, Decision } from './types'
   import { adjudicate } from './api'
+  import Icon from './Icon.svelte'
 
   let { claims }: { claims: ClaimView[] } = $props()
 
@@ -34,16 +35,19 @@
     states[c.claim_id] = { ...st(c.claim_id), editing: false }
   }
 
-  function doneLabel(s: Status): string {
-    if (s === 'accepted') return '✓ accepted'
-    if (s === 'rejected') return '✗ rejected'
-    return '✎ edited'
+  function doneWord(s: Status): string {
+    if (s === 'accepted') return 'accepted'
+    if (s === 'rejected') return 'rejected'
+    return 'edited'
   }
 </script>
 
 {#if claims.length}
   <section class="claims">
-    <h3>⚠ {claims.length} claim(s) to review <small>(evidence vs interpretation)</small></h3>
+    <h3>
+      <Icon name="triangle-alert" size={15} />
+      {claims.length} claim(s) to review <small>(evidence vs interpretation)</small>
+    </h3>
     {#each claims as c (c.claim_id)}
       {@const s = st(c.claim_id)}
       <div class="claim" class:resolved={s.status !== 'pending' && s.status !== 'error'}>
@@ -61,14 +65,20 @@
           </div>
         {:else if s.status === 'pending'}
           <div class="actions">
-            <button class="ok" onclick={() => decide(c, 'accepted')}>✓ Accept</button>
-            <button class="no" onclick={() => decide(c, 'rejected')}>✗ Reject</button>
-            <button onclick={() => startEdit(c)}>✎ Edit</button>
+            <button class="ok" onclick={() => decide(c, 'accepted')}><Icon name="check" size={14} /> Accept</button>
+            <button class="no" onclick={() => decide(c, 'rejected')}><Icon name="x" size={14} /> Reject</button>
+            <button onclick={() => startEdit(c)}><Icon name="pencil" size={14} /> Edit</button>
           </div>
         {:else if s.status === 'error'}
-          <span class="err">⚠ couldn’t record: {s.error}</span>
+          <span class="err"><Icon name="triangle-alert" size={13} /> couldn’t record: {s.error}</span>
         {:else}
-          <span class="done">{doneLabel(s.status)}</span>
+          <span class="done">
+            {#if s.status === 'accepted'}<Icon name="check" size={13} />{:else if s.status === 'rejected'}<Icon
+                name="x"
+                size={13}
+              />{:else}<Icon name="pencil" size={13} />{/if}
+            {doneWord(s.status)}
+          </span>
         {/if}
       </div>
     {/each}
@@ -84,6 +94,9 @@
   h3 {
     margin: 0 0 0.5rem;
     font-size: 0.95rem;
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
   }
   h3 small {
     color: var(--fg-2);
@@ -144,6 +157,9 @@
     background: var(--surface-2);
     color: var(--fg);
     cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
   }
   button.ok {
     border-color: var(--ok-border);
@@ -156,9 +172,15 @@
   .done {
     font-size: 0.82rem;
     color: var(--fg-2);
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
   }
   .err {
     font-size: 0.82rem;
     color: var(--warn-fg);
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
   }
 </style>

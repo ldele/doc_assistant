@@ -8,6 +8,76 @@ Append only — never edit past entries.
 Format: What changed | Why | Rejected alternatives | What it opens
 
 ---
+## 2026-07-13 — Visual identity V1 follow-ups: light palette → white/ivory (user feedback) + fonts vendored/committed/loaded
+
+**What:** two same-session adjustments on the just-built V1 (entry below), both staged:
+(1) **Palette — user disliked the warm-ivory light scheme on the live app → pulled to white/ivory.**
+`--bg` `#f7f3ea`→`#ffffff` (white page), `--surface`/`--surface-2`/`--border` to whisper-ivory
+(`#f8f7f3`/`#efece5`/`#e5e1d8`), `--fg` `#2a2620`→`#23201b`; both light blocks (`:root` default +
+`[data-theme='light']`) in lockstep. Dark theme, indigo accent, and ink text unchanged. Spec palette
+table + direction note amended. (2) **Fonts landed — vendored + committed** (the user's mechanism pick):
+four latin-subset woff2 (Spectral 400/italic/600 + Inter variable, OFL, ~115 KB) fetched into
+`apps/desktop/src/assets/fonts/` + new `apps/desktop/src/lib/fonts.css` (`@font-face`, `font-display:
+swap`, `@font-face` family names matched to the `--font-serif`/`--font-sans` tokens) imported first in
+`main.ts`. So the branded faces now actually render (not just the Georgia/system fallback).
+**Why:** the color scheme is the user's call and they reacted to the live result (warm ivory read too
+beige); vendored+committed best fits the local-first, no-CDN, offline/proxy constraints (the identity
+ships with the app, no build-time dependency, gitignored `node_modules` not relied on).
+**Rejected:** `@fontsource` npm (assets in gitignored `node_modules`, not committed); pure-neutral-grey
+light scheme (kept a whisper of ivory warmth per "white / ivory"); touching the dark theme (user
+specified the light/white side; no objection raised to the warm charcoal).
+**Verified ($0/offline, preview harness):** `svelte-check` **0/0** (123 files); computed `--bg #ffffff`,
+`htmlBg rgb(255,255,255)`; **all 4 `@font-face` faces loaded + ready** (`document.fonts.check` true for
+Spectral normal/italic/600 + Inter; `document.fonts.size === 4`); Vite dev compiled the vendored `url()`
+with no asset error.
+**Fetch quirk logged:** the woff2 download failed schannel revocation (`CRYPT_E_NO_REVOCATION_CHECK`,
+the corporate-proxy TLS quirk) until `curl --ssl-no-revoke` — same on-proxy workaround family as the
+truststore/HF-offline dev-run fix.
+**Opens:** nothing new — V1 is now complete incl. fonts. Fork #4's headings-only serif fallback stays
+available if the full serif reach reads heavy now that real Spectral renders. Next: V2 (layout/wordmark).
+**Staged (app.css + fonts.css + main.ts + 4 woff2 + spec/DEVLOG/ROADMAP/ui-checklist). Nothing committed (cpc §13).**
+
+## 2026-07-13 — Visual identity V1 built: paper & ink tokens + Lucide icons + serif reading surfaces (frontend-only, staged)
+
+**What:** Built SPRINT-016 (V1 of the design-locked visual-identity pass; spec
+`docs/specs/feature-visual-identity.md` + `docs/sprints/SPRINT-016-visual-identity-v1.md`, both new this
+session). Three things, all frontend/CSS — no `src/`, no API, no wire type, no behavior change:
+(1) **Tokens** — re-keyed all four theme blocks in `apps/desktop/src/app.css` to **paper & ink**: warm
+ivory light (`--bg #f7f3ea`) / warm charcoal dark (`--bg #1b1813`), **deep-indigo** `--accent`
+(`#4a3fa6` light / `#9a8ff0` dark — no warn/ok collision), warmed warn/ok pair; added `--font-sans`
+(Inter→system) / `--font-serif` (Spectral→Georgia) stack tokens and two per-theme shadow tokens
+(`--shadow-1` resting, `--shadow-2` raised). Every component already referenced the vars (zero hardcoded
+hex — verified), so the retheme recolored the whole app for free. (2) **Icons** — new
+`apps/desktop/src/lib/Icon.svelte` renders Lucide inline SVGs (`currentColor`, `aria-hidden` default,
+`size` prop, real `<path>` children under `{#if}` — no `{@html}`); replaced **every** chrome emoji glyph
+across 8 components (`☰`→menu, `⬇`→download, `⚙`→settings, `←`→arrow-left, `↻`→rotate-ccw, `✕`→x,
+`✓`→check, `✗`→x, `✎`→pencil, `⚠`→triangle-alert; the `●` current-chat marker → a CSS-drawn dot). (3)
+**Serif reach** — `--font-serif` applied to the reading surfaces (answer body via `Markdown.svelte` `.md`,
+covering `Turn`/`ReadonlyTurn`; Library parent/child chunk text; source-card excerpts; Library doc
+heading); chrome stays sans. Code spans pinned back to monospace.
+**Why:** first session of the "sexy pass" — ship the safe, high-signal skin (tokens/fonts/icons, fully
+reversible, no logic touched) ahead of V2 layout rhythm and V3 branding, per the grill's V1→V2→V3 phasing.
+**Rejected:** `export type IconName` from the instance script (made it local — nothing imports it, avoids
+svelte-check ambiguity); flex layout on the `.ok`/`.warn` prose paragraphs (kept inline flow so text wraps
+around the inline icon); replacing the streaming caret `▍` (it's a text caret, not chrome iconography) and
+the backend-embedded content emoji `🧪`/`🖥`/`🔎`/`📄` in streamed answer/provenance markdown (those live in
+`src/doc_assistant/chat_controller.py` / `commands.py` — content, not chrome; touching them would put icon
+concerns in the library layer, violating the thin-shell rule).
+**Verified ($0/offline, preview harness on the real 76-doc corpus):** `svelte-check` **0 errors / 0
+warnings** (123 files); light palette (`--accent #4a3fa6`, `--bg #f7f3ea`) + dark flip (`#9a8ff0` /
+`#1b1813`, deeper `--shadow-2`) confirmed via computed styles; **4 SVG icons render, 0 chrome emoji left
+in the DOM**, icon buttons keep their `aria-label`s; serif seam confirmed on real content — Library `h2`
++ `.blocktext` = Spectral/Georgia serif stack, sidebar labels = Inter sans; no console errors; mobile
+375px → no horizontal overflow, hamburger (menu icon) appears. **Open item:** the actual Spectral/Inter
+woff2 binaries aren't bundled yet (prose renders in the Georgia/system fallback) — the `@font-face` load
+is the only V1 piece gated on the user's font-delivery choice (vendored-commit vs `@fontsource` npm vs
+defer); everything else is mechanism-independent and landed.
+**Opens:** the font-binary bundling (immediate follow-up); V2 (layout rhythm + header/wordmark + empty
+states + ~70ch measure); V3 (Tauri app icon + branding + audit). Fork #4's headings-only serif fallback
+stays available if the full reach reads heavy once the real Spectral loads.
+**Staged frontend only (app.css, Icon.svelte + 9 components) + the spec + SPRINT-016 + these docs.
+Nothing committed (cpc §13).**
+
 ## 2026-07-13 — Idea tray: five new feature candidates parked/queued (docs only)
 
 **What:** user dropped five feature ideas; routed each to the ui-checklist §3 tray (+ two ROADMAP

@@ -1,4 +1,5 @@
 import { mount } from 'svelte'
+import './lib/fonts.css'
 import './app.css'
 import App from './App.svelte'
 import { applyTheme, getTheme } from './lib/theme'

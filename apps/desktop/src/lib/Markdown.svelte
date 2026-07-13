@@ -96,6 +96,12 @@
 <div class="md" bind:this={el}>{@html html}</div>
 
 <style>
+  /* Reading surface — Spectral serif for the answer prose (paper & ink; V1). Code/citations
+     opt back out below. */
+  .md {
+    font-family: var(--font-serif);
+    line-height: 1.6;
+  }
   .md :global(p) {
     margin: 0.4em 0;
   }
@@ -104,6 +110,7 @@
     padding: 0.1em 0.3em;
     border-radius: 4px;
     font-size: 0.9em;
+    font-family: ui-monospace, 'Cascadia Code', 'Segoe UI Mono', Menlo, Consolas, monospace;
   }
   .md :global(h1),
   .md :global(h2),

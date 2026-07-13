@@ -106,8 +106,9 @@
   }
   .dochead h2 {
     margin: 0;
-    font-size: 1.1rem;
+    font-size: 1.2rem;
     word-break: break-word;
+    font-family: var(--font-serif);
   }
   .metaline {
     margin: 0.3rem 0 0;
@@ -149,8 +150,9 @@
     margin: 0;
     white-space: pre-wrap;
     overflow-wrap: anywhere;
-    font-size: 0.9rem;
-    line-height: 1.5;
+    font-size: 0.95rem;
+    line-height: 1.6;
+    font-family: var(--font-serif);
   }
   .children {
     margin-top: 0.5rem;
@@ -187,8 +189,9 @@
     margin: 0;
     white-space: pre-wrap;
     overflow-wrap: anywhere;
-    font-size: 0.82rem;
-    line-height: 1.45;
+    font-size: 0.86rem;
+    line-height: 1.55;
     color: var(--fg);
+    font-family: var(--font-serif);
   }
 </style>

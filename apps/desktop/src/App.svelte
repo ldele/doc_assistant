@@ -24,6 +24,7 @@
   import Sidebar from './lib/Sidebar.svelte'
   import LibraryBrowser from './lib/LibraryBrowser.svelte'
   import CompareCard from './lib/CompareCard.svelte'
+  import Icon from './lib/Icon.svelte'
 
   interface TurnState {
     id: number
@@ -327,9 +328,9 @@
   <div class="content">
     <main>
       <header>
-        <button class="hamburger" onclick={() => (sidebarOpen = true)} aria-label="Open conversations"
-          >☰</button
-        >
+        <button class="hamburger" onclick={() => (sidebarOpen = true)} aria-label="Open conversations">
+          <Icon name="menu" />
+        </button>
         <div class="brand">
           <strong>doc_assistant</strong>
           {#if status === 'ready' && health}
@@ -346,9 +347,12 @@
           <button
             class="ghost"
             onclick={doExport}
-            disabled={turns.length === 0 || viewing !== null || mode === 'library'}>⬇ Export</button
+            disabled={turns.length === 0 || viewing !== null || mode === 'library'}
+            ><Icon name="download" size={15} /> Export</button
           >
-          <button class="ghost" onclick={() => (showSettings = true)} aria-label="Settings">⚙</button>
+          <button class="ghost" onclick={() => (showSettings = true)} aria-label="Settings">
+            <Icon name="settings" />
+          </button>
         </div>
       </header>
 
@@ -404,7 +408,7 @@
 
       <footer>
         {#if viewing}
-          <button class="back" onclick={backToCurrent}>← Back to current chat</button>
+          <button class="back" onclick={backToCurrent}><Icon name="arrow-left" size={15} /> Back to current chat</button>
         {:else}
           <textarea
             bind:this={taEl}
@@ -586,6 +590,10 @@
     flex: 1;
     padding: 0.6rem;
     color: var(--fg-2);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.3rem;
   }
   .send {
     background: var(--accent);
@@ -618,6 +626,9 @@
   .ghost {
     font-size: 0.82rem;
     padding: 0.3rem 0.7rem;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
   }
   .compare {
     font-size: 0.82rem;

@@ -1,24 +1,36 @@
+/* Visual identity V1 — "paper & ink" (docs/specs/feature-visual-identity.md, SPRINT-016).
+   White / ivory (light — user-directed 2026-07-13: white bg + a whisper-ivory surface layer, not
+   the warm beige of the first cut) / warm charcoal (dark) neutrals, a single deep-indigo accent, a
+   warm warn/ok semantic pair, plus font-stack + 2 shadow tokens. Same variable names as before, so
+   every component (all of which reference the vars — zero hardcoded hex) recolors for free.
+   Reading surfaces opt into --font-serif; chrome stays --font-sans. */
+
 :root {
   --bg: #ffffff;
-  --surface: #f7f8fa;
-  --surface-2: #eceef2;
-  --border: #d9dde3;
-  --fg: #1b1f24;
-  --fg-2: #5b636e;
-  --accent: #2d6cdf;
+  --surface: #f8f7f3;
+  --surface-2: #efece5;
+  --border: #e5e1d8;
+  --fg: #23201b;
+  --fg-2: #6b6559;
+  --accent: #4a3fa6;
   --accent-fg: #ffffff;
-  --warn-fg: #9a5b00;
-  --warn-bg: #fff4e0;
-  --warn-border: #f0c87a;
-  --ok-fg: #1f7a3d;
-  --ok-border: #8fcea8;
+  --warn-fg: #8a5300;
+  --warn-bg: #fbeecb;
+  --warn-border: #e6c987;
+  --ok-fg: #2f6b3d;
+  --ok-border: #9cc9a6;
 
-  font-family:
-    system-ui,
-    -apple-system,
-    'Segoe UI',
-    Roboto,
-    sans-serif;
+  --shadow-1: 0 1px 2px rgba(30, 28, 24, 0.05), 0 1px 3px rgba(30, 28, 24, 0.04);
+  --shadow-2: 0 10px 30px rgba(30, 28, 24, 0.12);
+
+  /* Font stacks. --font-serif on reading surfaces (answers, chunks, excerpts, content headings);
+     --font-sans on chrome. Both degrade gracefully to system faces until the local woff2 load
+     (Georgia for the serif, system-ui for the sans) — the serif/sans distinction is already
+     visible in the fallback. Local @font-face lives in fonts.css (no CDN). */
+  --font-sans: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-serif: 'Spectral', 'Iowan Old Style', Georgia, Cambria, 'Times New Roman', serif;
+
+  font-family: var(--font-sans);
   font-size: 15px;
   line-height: 1.5;
   color: var(--fg);
@@ -28,54 +40,63 @@
 /* U1 — manual theme (lib/theme.ts). A `data-theme` attribute on <html> wins over the OS
    media query by attribute-selector specificity + source order; `'system'` clears the
    attribute, falling through to `@media (prefers-color-scheme)` below. Same two palettes,
-   just re-keyed — no new colors. */
+   just re-keyed — no per-component color, all via these vars. */
 :root[data-theme='dark'] {
-  --bg: #16191d;
-  --surface: #1e2228;
-  --surface-2: #272c34;
-  --border: #333a44;
-  --fg: #e7eaee;
-  --fg-2: #98a1ad;
-  --accent: #4d86f0;
-  --accent-fg: #ffffff;
-  --warn-fg: #f0b95e;
-  --warn-bg: #2e2616;
+  --bg: #1b1813;
+  --surface: #23201a;
+  --surface-2: #2e2a22;
+  --border: #3b362c;
+  --fg: #ece5d6;
+  --fg-2: #a79e8b;
+  --accent: #9a8ff0;
+  --accent-fg: #1b1813;
+  --warn-fg: #efc06a;
+  --warn-bg: #2f2712;
   --warn-border: #5a4a22;
-  --ok-fg: #6fd394;
-  --ok-border: #2f5b3e;
+  --ok-fg: #79c98d;
+  --ok-border: #345f3f;
+
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.35), 0 1px 3px rgba(0, 0, 0, 0.3);
+  --shadow-2: 0 10px 30px rgba(0, 0, 0, 0.55);
 }
 
 :root[data-theme='light'] {
   --bg: #ffffff;
-  --surface: #f7f8fa;
-  --surface-2: #eceef2;
-  --border: #d9dde3;
-  --fg: #1b1f24;
-  --fg-2: #5b636e;
-  --accent: #2d6cdf;
+  --surface: #f8f7f3;
+  --surface-2: #efece5;
+  --border: #e5e1d8;
+  --fg: #23201b;
+  --fg-2: #6b6559;
+  --accent: #4a3fa6;
   --accent-fg: #ffffff;
-  --warn-fg: #9a5b00;
-  --warn-bg: #fff4e0;
-  --warn-border: #f0c87a;
-  --ok-fg: #1f7a3d;
-  --ok-border: #8fcea8;
+  --warn-fg: #8a5300;
+  --warn-bg: #fbeecb;
+  --warn-border: #e6c987;
+  --ok-fg: #2f6b3d;
+  --ok-border: #9cc9a6;
+
+  --shadow-1: 0 1px 2px rgba(30, 28, 24, 0.05), 0 1px 3px rgba(30, 28, 24, 0.04);
+  --shadow-2: 0 10px 30px rgba(30, 28, 24, 0.12);
 }
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme]) {
-    --bg: #16191d;
-    --surface: #1e2228;
-    --surface-2: #272c34;
-    --border: #333a44;
-    --fg: #e7eaee;
-    --fg-2: #98a1ad;
-    --accent: #4d86f0;
-    --accent-fg: #ffffff;
-    --warn-fg: #f0b95e;
-    --warn-bg: #2e2616;
+    --bg: #1b1813;
+    --surface: #23201a;
+    --surface-2: #2e2a22;
+    --border: #3b362c;
+    --fg: #ece5d6;
+    --fg-2: #a79e8b;
+    --accent: #9a8ff0;
+    --accent-fg: #1b1813;
+    --warn-fg: #efc06a;
+    --warn-bg: #2f2712;
     --warn-border: #5a4a22;
-    --ok-fg: #6fd394;
-    --ok-border: #2f5b3e;
+    --ok-fg: #79c98d;
+    --ok-border: #345f3f;
+
+    --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.35), 0 1px 3px rgba(0, 0, 0, 0.3);
+    --shadow-2: 0 10px 30px rgba(0, 0, 0, 0.55);
   }
 }
 

@@ -4,6 +4,7 @@
   import { onDestroy } from 'svelte'
   import { fade, fly } from 'svelte/transition'
   import { getTheme, setTheme, applyTheme, type Theme } from './theme'
+  import Icon from './Icon.svelte'
 
   // Slide the drawer in/out — but collapse to an instant swap when the OS asks for reduced motion.
   const animate =
@@ -212,7 +213,9 @@
 >
   <header>
     <strong>Settings</strong>
-    <button class="x" onclick={onClose} disabled={busy} aria-label="Close">✕</button>
+    <button class="x" onclick={onClose} disabled={busy} aria-label="Close">
+      <Icon name="x" />
+    </button>
   </header>
 
   {#if loadError}
@@ -272,7 +275,7 @@
         {settings.supported_formats}.
       </p>
       {#if settings.source_dir && !settings.source_dir_exists}
-        <p class="warn">⚠ The saved folder doesn't exist yet: <code>{settings.source_dir}</code></p>
+        <p class="warn"><Icon name="triangle-alert" size={14} /> The saved folder doesn't exist yet: <code>{settings.source_dir}</code></p>
       {/if}
 
       <button class="primary" onclick={indexFolder} disabled={busy || dir.trim() === ''}>
@@ -293,7 +296,7 @@
             large folders. You can keep this open.</p>
         {/if}
         {#if ingest?.state === 'done'}
-          <p class="ok">✓ {ingest.message}</p>
+          <p class="ok"><Icon name="check" size={14} /> {ingest.message}</p>
         {/if}
         {#if ingest?.state === 'error'}
           <p class="err" role="alert">Indexing failed: {ingest.message}</p>
@@ -518,8 +521,9 @@
     border: none;
     background: none;
     color: var(--fg-2);
-    font-size: 1rem;
     padding: 0.2rem 0.4rem;
+    display: inline-flex;
+    align-items: center;
   }
   .x:disabled {
     opacity: 0.4;

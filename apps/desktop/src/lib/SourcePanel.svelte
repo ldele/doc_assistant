@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { SourceView } from './types'
   import SourceCard from './SourceCard.svelte'
+  import Icon from './Icon.svelte'
   import { fade, fly } from 'svelte/transition'
 
   // Same drawer mechanics as Settings.svelte (fly/scrim, reduced-motion collapse, focus trap,
@@ -63,7 +64,9 @@
 >
   <header>
     <strong>Source [{source.n}]</strong>
-    <button class="x" bind:this={closeEl} onclick={onClose} aria-label="Close">✕</button>
+    <button class="x" bind:this={closeEl} onclick={onClose} aria-label="Close">
+      <Icon name="x" />
+    </button>
   </header>
   <SourceCard {source} />
 </div>
@@ -105,7 +108,8 @@
     border: none;
     background: none;
     color: var(--fg-2);
-    font-size: 1rem;
     padding: 0.2rem 0.4rem;
+    display: inline-flex;
+    align-items: center;
   }
 </style>

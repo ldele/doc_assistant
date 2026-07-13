@@ -4,6 +4,7 @@
   // — depending on `mode` — the conversation history list (chat) or the document list (library).
   // Persistent column on desktop; an off-canvas drawer under 720px.
   import type { ConversationSummary, LibraryDocument } from './types'
+  import Icon from './Icon.svelte'
 
   let {
     mode,
@@ -90,7 +91,7 @@
       </button>
     </div>
     {#if mode === 'chat'}
-      <button class="new" onclick={onNew} type="button">↻ New chat</button>
+      <button class="new" onclick={onNew} type="button"><Icon name="rotate-ccw" size={15} /> New chat</button>
     {/if}
   </div>
 
@@ -109,7 +110,7 @@
           >
             <span class="title">{c.title}</span>
             <span class="rowmeta">
-              {#if c.session_id === liveSessionId}<span class="dot" title="Current chat">●</span>{/if}
+              {#if c.session_id === liveSessionId}<span class="dot" title="Current chat" aria-hidden="true"></span>{/if}
               <span>{relTime(c.last_at)} · {c.turn_count} turn{c.turn_count === 1 ? '' : 's'}</span>
             </span>
           </button>
@@ -196,7 +197,9 @@
     background: var(--surface-2);
     color: var(--fg);
     font-weight: 600;
-    text-align: left;
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
   }
   .list {
     flex: 1;
@@ -247,8 +250,11 @@
     gap: 0.3rem;
   }
   .dot {
-    color: var(--accent);
-    font-size: 0.7em;
+    width: 0.5rem;
+    height: 0.5rem;
+    border-radius: 50%;
+    background: var(--accent);
+    flex: none;
   }
   .scrim {
     display: none;

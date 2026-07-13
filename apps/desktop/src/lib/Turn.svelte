@@ -4,6 +4,7 @@
   import SourceCard from './SourceCard.svelte'
   import ClaimReview from './ClaimReview.svelte'
   import Provenance from './Provenance.svelte'
+  import Icon from './Icon.svelte'
 
   let {
     question,
@@ -46,7 +47,7 @@
 
   <div class="assistant">
     {#if error}
-      <p class="error">⚠ {error}</p>
+      <p class="error"><Icon name="triangle-alert" size={15} /> {error}</p>
     {:else if result}
       <Markdown source={result.answer} {onCitationClick} {activeCitationN} />
       {#if result.sources.length && result.citation_note_md !== ''}
@@ -116,6 +117,9 @@
   }
   .error {
     color: var(--warn-fg);
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
   }
   @keyframes blink {
     50% {

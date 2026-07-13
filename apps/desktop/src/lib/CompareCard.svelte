@@ -3,6 +3,7 @@
   // sets side by side — A = locked defaults, B = the session override — with per-source diff badges
   // (in both / only-A / only-B, + rank delta) and the honest note. Retrieval-only, $0. Read-only.
   import type { CompareResult, CompareRow, CompareSource } from './types'
+  import Icon from './Icon.svelte'
 
   let { result, onClose }: { result: CompareResult; onClose: () => void } = $props()
 
@@ -31,7 +32,9 @@
       <strong>Retrieval comparison — defaults vs your override</strong>
       <span class="q">“{result.query}”</span>
     </div>
-    <button class="x" onclick={onClose} aria-label="Close comparison" type="button">✕</button>
+    <button class="x" onclick={onClose} aria-label="Close comparison" type="button">
+      <Icon name="x" size={15} />
+    </button>
   </div>
 
   {#if result.note}
@@ -96,7 +99,9 @@
     background: var(--surface-2);
     color: var(--fg-2);
     border-radius: 6px;
-    padding: 0.1rem 0.4rem;
+    padding: 0.2rem 0.35rem;
+    display: inline-flex;
+    align-items: center;
   }
   .note {
     margin: 0.5rem 0 0;

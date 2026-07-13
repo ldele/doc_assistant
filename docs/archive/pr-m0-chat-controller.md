@@ -1,3 +1,5 @@
+<!-- status: archived · updated: 2026-07-11 · class: disposable -->
+
 # Spec — PR-M0: extract `ChatController` + `TurnResult` (UI-agnostic turn core)
 
 > **📦 Archived — shipped; the historical code-level contract, archived here (2026-07-11).** Live status: ROADMAP row M0 (done). The behaviour of record is `chat_controller.py` + tests, not this spec.

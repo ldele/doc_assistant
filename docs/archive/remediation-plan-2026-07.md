@@ -1,3 +1,5 @@
+<!-- status: archived · updated: 2026-07-11 · class: disposable -->
+
 # Spec — Remediation plan R1–R7: review findings → evaluate + fix (2026-07)
 
 > **📦 Archived — shipped; the historical code-level contract, archived here (2026-07-11).** Live status: ROADMAP rows R1–R7 (all done). The behaviour of record is the code + tests, not this spec.

@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-07-09 (KI-10 branch B) · class: living -->
+<!-- status: active · updated: 2026-07-13 · class: living -->
 
 # KNOWN ISSUES
 

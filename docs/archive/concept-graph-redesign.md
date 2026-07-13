@@ -1,3 +1,5 @@
+<!-- status: archived · updated: 2026-07-11 · class: disposable -->
+
 # Spec — Concept-graph redesign: curated vocabulary + deterministic skeleton + confined LLM enrichment
 
 > **📦 Archived — shipped; the historical code-level contract, archived here (2026-07-11).** Live status: ROADMAP row 16 (PR-16) + G1 — Node A/B skeleton built and validated; the open-vocabulary core it replaced is deleted (KI-7 resolved). The behaviour of record is `concept_skeleton*.py` + tests, not this spec.

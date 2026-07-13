@@ -1,3 +1,5 @@
+<!-- status: archived · updated: 2026-07-11 · class: disposable -->
+
 # Spec — PR-M2: FastAPI backend + SSE boundary (the desktop API contract)
 
 > **📦 Archived — shipped; the historical code-level contract, archived here (2026-07-11).** Live status: ROADMAP row M2 (done). The behaviour of record is `apps/api/` + tests, not this spec.

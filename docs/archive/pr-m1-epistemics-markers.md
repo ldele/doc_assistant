@@ -1,3 +1,5 @@
+<!-- status: archived · updated: 2026-07-11 · class: disposable -->
+
 # Spec — PR-M1: live 7d epistemics-marker surfacing (contested / superseded-trend)
 
 > **📦 Archived — shipped; the historical code-level contract, archived here (2026-07-11).** Live status: ROADMAP row M1 (done). The rich-marker-UI follow-up (ADR-1 option 2) is tracked in `docs/ui-checklist.md` §3. The behaviour of record is the code + tests, not this spec.

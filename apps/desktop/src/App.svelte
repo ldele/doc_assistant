@@ -1,9 +1,23 @@
 <script lang="ts">
-  import type { Health, RagOverrides, TurnResult } from './lib/types'
-  import { getHealth, streamChat, exportConversation } from './lib/api'
+  import type {
+    ConversationDetail,
+    ConversationSummary,
+    Health,
+    RagOverrides,
+    TurnResult,
+  } from './lib/types'
+  import {
+    getConversation,
+    getHealth,
+    exportConversation,
+    listConversations,
+    streamChat,
+  } from './lib/api'
   import Turn from './lib/Turn.svelte'
+  import ReadonlyTurn from './lib/ReadonlyTurn.svelte'
   import Settings from './lib/Settings.svelte'
   import SourcePanel from './lib/SourcePanel.svelte'
+  import Sidebar from './lib/Sidebar.svelte'
 
   interface TurnState {
     id: number
@@ -14,7 +28,12 @@
     error: string | null
   }
 
-  const sessionId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+  function freshSessionId(): string {
+    return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+  }
+  // $state: the sidebar's "current" marker + the citation-source derivation read this, so a fresh
+  // id from ↻ New must trigger updates.
+  let sessionId = $state(freshSessionId())
 
   let health = $state<Health | null>(null)
   let status = $state<'connecting' | 'ready' | 'down'>('connecting')
@@ -26,16 +45,31 @@
   // launch always starts from {} (locked defaults), never persisted to disk.
   let overrides = $state<RagOverrides>({})
   let nextId = 0
-  // Which citation panel is open — same single-drawer ownership shape as showSettings, keyed
-  // by turn so a click in an older turn doesn't resolve against a newer one's sources.
-  let activeCitation = $state<{ turnId: number; n: number } | null>(null)
-  const activeSource = $derived(
-    activeCitation
-      ? (turns
-          .find((t) => t.id === activeCitation!.turnId)
-          ?.result?.sources.find((s) => s.n === activeCitation!.n) ?? null)
-      : null,
-  )
+
+  // Conversation history (feature-conversation-history.md). `viewing` is the session_id shown as a
+  // read-only transcript; `null` means the live chat (composer + claims bound to `sessionId`).
+  let conversations = $state<ConversationSummary[]>([])
+  let viewing = $state<string | null>(null)
+  let viewedConvo = $state<ConversationDetail | null>(null)
+  let sidebarOpen = $state(false) // mobile drawer
+
+  // Which citation panel is open — keyed by a turn *key* (a live turn's id as string, or a past
+  // turn's record_id) so a click resolves against the right turn in either mode.
+  let activeCitation = $state<{ turnKey: string; n: number } | null>(null)
+  const activeSource = $derived.by(() => {
+    if (!activeCitation) return null
+    if (viewing && viewedConvo) {
+      const t = viewedConvo.turns.find((t) => t.record_id === activeCitation!.turnKey)
+      const s = t?.sources.find((s) => s.n === activeCitation!.n)
+      // A rehydrated source is degraded — no markers/figures (not persisted). Shape it as a
+      // SourceView so SourcePanel/SourceCard render it unchanged.
+      return s
+        ? { n: s.n, citation: s.citation, excerpt: s.excerpt, figure_id: null, chunk_key: null, markers: [] }
+        : null
+    }
+    const t = turns.find((t) => String(t.id) === activeCitation!.turnKey)
+    return t?.result?.sources.find((s) => s.n === activeCitation!.n) ?? null
+  })
 
   let convoEl = $state<HTMLElement | null>(null)
   let taEl = $state<HTMLTextAreaElement | null>(null)
@@ -54,8 +88,18 @@
     }
   }
 
+  // History is a sidecar read — a failure must never break the chat (inform, don't block).
+  async function refreshConversations(): Promise<void> {
+    try {
+      conversations = await listConversations()
+    } catch {
+      // keep the prior list
+    }
+  }
+
   // Readiness gate (PR-M4): the frozen sidecar takes a few seconds to load models before
-  // it accepts requests. Poll /api/health until it answers (or give up after ~60s).
+  // it accepts requests. Poll /api/health until it answers (or give up after ~60s), then
+  // load the conversation history.
   $effect(() => {
     let cancelled = false
     void (async () => {
@@ -65,6 +109,7 @@
           if (!cancelled) {
             health = h
             status = 'ready'
+            void refreshConversations()
           }
           return
         } catch {
@@ -78,13 +123,13 @@
     }
   })
 
-  // Keep the newest content in view as tokens stream in / a turn is added — but only when the
-  // reader is pinned to the bottom (see `pinned`). Reading the last turn's answer + the turn
-  // count is what makes this re-run on each streamed token.
+  // Keep the newest content in view as tokens stream in / a turn is added / a chat is opened —
+  // but only when the reader is pinned to the bottom (see `pinned`).
   $effect(() => {
     const last = turns[turns.length - 1]
     void last?.answer
     void turns.length
+    void viewing
     if (pinned && convoEl) convoEl.scrollTop = convoEl.scrollHeight
   })
 
@@ -133,6 +178,8 @@
     } finally {
       turns[idx].streaming = false
       sending = false
+      // The finished turn is now persisted — refresh the sidebar so this chat appears/updates.
+      void refreshConversations()
     }
   }
 
@@ -150,80 +197,157 @@
       console.error('export failed', e)
     }
   }
+
+  // Clear the conversation and start a fresh question (U4). Resets the on-screen turns, any open
+  // citation panel, the read-only view, and the composer — and mints a new sessionId so the
+  // backend doesn't thread the previous conversation's context into the next question. Session
+  // overrides (ADR-010) are left as-is: a deliberate sandbox setting, not conversation state.
+  function newConversation(): void {
+    if (sending) return
+    turns = []
+    activeCitation = null
+    viewing = null
+    viewedConvo = null
+    input = ''
+    resetComposer()
+    nextId = 0
+    sessionId = freshSessionId()
+    pinned = true
+    sidebarOpen = false
+    taEl?.focus()
+  }
+
+  // Open a past conversation read-only (H2). Selecting the live chat returns to it; the live
+  // chat's in-memory state is never destroyed by viewing an old one.
+  async function openConversation(sid: string): Promise<void> {
+    sidebarOpen = false
+    activeCitation = null
+    if (sid === sessionId) {
+      viewing = null
+      viewedConvo = null
+      return
+    }
+    try {
+      viewedConvo = await getConversation(sid)
+      viewing = sid
+      pinned = true
+    } catch (e) {
+      console.error('open conversation failed', e)
+    }
+  }
+
+  function backToCurrent(): void {
+    viewing = null
+    viewedConvo = null
+    activeCitation = null
+  }
 </script>
 
-<main>
-  <header>
-    <div class="brand">
-      <strong>doc_assistant</strong>
-      {#if status === 'ready' && health}
-        <span class="meta">
-          {health.chunk_count.toLocaleString()} chunks · {health.model} · {health.embedding_model}
-        </span>
-      {:else if status === 'connecting'}
-        <span class="meta">starting the engine…</span>
-      {:else}
-        <span class="meta err">backend unreachable — run <code>just api</code></span>
-      {/if}
-    </div>
-    <div class="actions">
-      <button class="ghost" onclick={doExport} disabled={turns.length === 0}>⬇ Export</button>
-      <button class="ghost" onclick={() => (showSettings = true)} aria-label="Settings">⚙</button>
-    </div>
-  </header>
+<div class="app">
+  <Sidebar
+    {conversations}
+    liveSessionId={sessionId}
+    viewingSessionId={viewing}
+    open={sidebarOpen}
+    onNew={newConversation}
+    onSelect={openConversation}
+    onClose={() => (sidebarOpen = false)}
+  />
 
-  <section class="conversation" bind:this={convoEl} onscroll={onConvoScroll}>
-    {#if status === 'ready' && health && health.chunk_count === 0}
-      <div class="banner">
-        <strong>No documents indexed yet.</strong>
-        <p>Point doc_assistant at a folder of your documents to get started — it'll index them
-          locally, then you can ask questions grounded in them.</p>
-        <button class="primary" onclick={() => (showSettings = true)}>Choose a folder…</button>
-      </div>
-    {:else if turns.length === 0}
-      <p class="empty">Ask a question grounded in your documents. Answers carry inline citations,
-        provenance, and per-claim review.</p>
-    {/if}
-    {#each turns as t (t.id)}
-      <Turn
-        question={t.question}
-        answer={t.answer}
-        result={t.result}
-        streaming={t.streaming}
-        error={t.error}
-        onCitationClick={(n) => (activeCitation = { turnId: t.id, n })}
-        activeCitationN={activeCitation?.turnId === t.id ? activeCitation.n : null}
-      />
-    {/each}
-  </section>
+  <div class="content">
+    <main>
+      <header>
+        <button class="hamburger" onclick={() => (sidebarOpen = true)} aria-label="Open conversations"
+          >☰</button
+        >
+        <div class="brand">
+          <strong>doc_assistant</strong>
+          {#if status === 'ready' && health}
+            <span class="meta">
+              {health.chunk_count.toLocaleString()} chunks · {health.model} · {health.embedding_model}
+            </span>
+          {:else if status === 'connecting'}
+            <span class="meta">starting the engine…</span>
+          {:else}
+            <span class="meta err">backend unreachable — run <code>just api</code></span>
+          {/if}
+        </div>
+        <div class="actions">
+          <button class="ghost" onclick={doExport} disabled={turns.length === 0 || viewing !== null}
+            >⬇ Export</button
+          >
+          <button class="ghost" onclick={() => (showSettings = true)} aria-label="Settings">⚙</button>
+        </div>
+      </header>
 
-  <footer>
-    <textarea
-      bind:this={taEl}
-      bind:value={input}
-      onkeydown={onKey}
-      oninput={autogrow}
-      placeholder="Ask your documents…  (Enter to send, Shift+Enter for newline)"
-      rows="2"
-      disabled={sending}
-    ></textarea>
-    <button
-      class="send"
-      onclick={send}
-      disabled={sending || input.trim() === ''}
-      aria-busy={sending}
-    >
-      {#if sending}<span class="spinner" aria-hidden="true"></span>{:else}Send{/if}
-    </button>
-  </footer>
-</main>
+      <section class="conversation" bind:this={convoEl} onscroll={onConvoScroll}>
+        {#if viewing && viewedConvo}
+          <p class="readonly-note">
+            Viewing a past conversation (read-only).
+            <button class="linkish" onclick={backToCurrent}>Back to current chat</button>
+          </p>
+          {#each viewedConvo.turns as t (t.record_id)}
+            <ReadonlyTurn
+              question={t.question}
+              answer={t.answer}
+              onCitationClick={(n) => (activeCitation = { turnKey: t.record_id, n })}
+              activeCitationN={activeCitation?.turnKey === t.record_id ? activeCitation.n : null}
+            />
+          {/each}
+        {:else}
+          {#if status === 'ready' && health && health.chunk_count === 0}
+            <div class="banner">
+              <strong>No documents indexed yet.</strong>
+              <p>
+                Point doc_assistant at a folder of your documents to get started — it'll index them
+                locally, then you can ask questions grounded in them.
+              </p>
+              <button class="primary" onclick={() => (showSettings = true)}>Choose a folder…</button>
+            </div>
+          {:else if turns.length === 0}
+            <p class="empty">
+              Ask a question grounded in your documents. Answers carry inline citations, provenance,
+              and per-claim review.
+            </p>
+          {/if}
+          {#each turns as t (t.id)}
+            <Turn
+              question={t.question}
+              answer={t.answer}
+              result={t.result}
+              streaming={t.streaming}
+              error={t.error}
+              onCitationClick={(n) => (activeCitation = { turnKey: String(t.id), n })}
+              activeCitationN={activeCitation?.turnKey === String(t.id) ? activeCitation.n : null}
+            />
+          {/each}
+        {/if}
+      </section>
+
+      <footer>
+        {#if viewing}
+          <button class="back" onclick={backToCurrent}>← Back to current chat</button>
+        {:else}
+          <textarea
+            bind:this={taEl}
+            bind:value={input}
+            onkeydown={onKey}
+            oninput={autogrow}
+            placeholder="Ask your documents…  (Enter to send, Shift+Enter for newline)"
+            rows="2"
+            disabled={sending}
+          ></textarea>
+          <button class="send" onclick={send} disabled={sending || input.trim() === ''} aria-busy={sending}>
+            {#if sending}<span class="spinner" aria-hidden="true"></span>{:else}Send{/if}
+          </button>
+        {/if}
+      </footer>
+    </main>
+  </div>
+</div>
 
 {#if showSettings}
-  <Settings
-    onClose={() => (showSettings = false)}
-    onCorpusChanged={refreshHealth}
-    bind:overrides
-  />
+  <Settings onClose={() => (showSettings = false)} onCorpusChanged={refreshHealth} bind:overrides />
 {/if}
 
 {#if activeCitation && activeSource}
@@ -231,9 +355,20 @@
 {/if}
 
 <style>
+  .app {
+    display: flex;
+    height: 100vh;
+  }
+  .content {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    justify-content: center;
+    overflow: hidden;
+  }
   main {
+    width: 100%;
     max-width: 820px;
-    margin: 0 auto;
     height: 100vh;
     display: flex;
     flex-direction: column;
@@ -243,12 +378,25 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
+    gap: 0.5rem;
     padding: 0.8rem 0;
     border-bottom: 1px solid var(--border);
+  }
+  .hamburger {
+    display: none;
+    font: inherit;
+    cursor: pointer;
+    border: 1px solid var(--border);
+    background: var(--surface-2);
+    color: var(--fg);
+    border-radius: 8px;
+    padding: 0.2rem 0.55rem;
   }
   .brand {
     display: flex;
     flex-direction: column;
+    flex: 1;
+    min-width: 0;
   }
   .meta {
     font-size: 0.76rem;
@@ -266,6 +414,25 @@
     color: var(--fg-2);
     margin-top: 2rem;
     text-align: center;
+  }
+  .readonly-note {
+    font-size: 0.78rem;
+    color: var(--fg-2);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 0.4rem 0.7rem;
+    margin: 0 0 0.5rem;
+  }
+  .linkish {
+    font: inherit;
+    font-size: inherit;
+    background: none;
+    border: none;
+    color: var(--accent);
+    cursor: pointer;
+    padding: 0;
+    text-decoration: underline;
   }
   .actions {
     display: flex;
@@ -325,6 +492,11 @@
     opacity: 0.5;
     cursor: default;
   }
+  .back {
+    flex: 1;
+    padding: 0.6rem;
+    color: var(--fg-2);
+  }
   .send {
     background: var(--accent);
     color: var(--accent-fg);
@@ -356,5 +528,10 @@
   .ghost {
     font-size: 0.82rem;
     padding: 0.3rem 0.7rem;
+  }
+  @media (max-width: 720px) {
+    .hamburger {
+      display: inline-flex;
+    }
   }
 </style>

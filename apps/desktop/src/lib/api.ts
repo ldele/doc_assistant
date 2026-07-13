@@ -3,7 +3,16 @@
 // In dev, Vite proxies `/api` → 127.0.0.1:8001 (same-origin, no CORS). In the packaged
 // Tauri build the frontend is served from the asset/tauri origin, so it hits the absolute
 // backend URL (the API's CORS allowlist includes `tauri://localhost`).
-import type { Decision, Health, IngestStatus, RagOverrides, Settings, TurnResult } from './types'
+import type {
+  ConversationDetail,
+  ConversationSummary,
+  Decision,
+  Health,
+  IngestStatus,
+  RagOverrides,
+  Settings,
+  TurnResult,
+} from './types'
 
 const API_BASE: string = import.meta.env.DEV ? '' : 'http://127.0.0.1:8001'
 
@@ -16,6 +25,20 @@ export async function getHealth(): Promise<Health> {
   const r = await fetch(`${API_BASE}/api/health`)
   if (!r.ok) throw new Error(`health failed: ${r.status}`)
   return (await r.json()) as Health
+}
+
+/** List past conversations for the history sidebar (feature-conversation-history.md). */
+export async function listConversations(): Promise<ConversationSummary[]> {
+  const r = await fetch(`${API_BASE}/api/conversations`)
+  if (!r.ok) throw new Error(`conversations failed: ${r.status}`)
+  return (await r.json()) as ConversationSummary[]
+}
+
+/** Rehydrate one conversation as a read-only transcript. */
+export async function getConversation(sessionId: string): Promise<ConversationDetail> {
+  const r = await fetch(`${API_BASE}/api/conversations/${encodeURIComponent(sessionId)}`)
+  if (!r.ok) throw new Error(`conversation failed: ${r.status}`)
+  return (await r.json()) as ConversationDetail
 }
 
 /** Stream a chat turn. `/api/chat` is POST-SSE, so we parse the body stream by hand

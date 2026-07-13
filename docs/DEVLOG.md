@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-07-11 · class: append-only -->
+<!-- status: active · updated: 2026-07-13 · class: append-only -->
 
 # DEVLOG — doc_assistant
 
@@ -8,6 +8,74 @@ Append only — never edit past entries.
 Format: What changed | Why | Rejected alternatives | What it opens
 
 ---
+## 2026-07-13 — App shell + conversation history (SPRINT-013)
+
+**What:** The left-sidebar app shell + backend-backed conversation history
+(`docs/specs/feature-conversation-history.md`, grilled today). **Backend:** (1) a one-arg write-fix —
+`_handle_rag`/`_human_result` now pass `session_id=session.session_id` into `record_answer`
+(`chat_controller.py:810,970`); it was dropped, so every `AnswerRecord` persisted `session_id=NULL`.
+History therefore populates from this fix forward (pre-fix rows stay NULL and are excluded — no
+backfill). (2) New `src/doc_assistant/conversations.py` — a pure read layer over `AnswerRecord`:
+`list_conversations` (group-by `session_id`, newest-first, NULL excluded, title = earliest turn's
+`original_query or query`) + `get_conversation` (ordered turns; sources rebuilt from
+`retrieved_chunks_json`, reproducing `pipeline.format_citation`'s exact string). (3) Two GET endpoints
+(`/api/conversations`, `/api/conversations/{sid}` → 404) + pydantic payloads; the payload tags the
+naive-UTC DB timestamps as UTC (`_as_utc`) so the browser doesn't read them as local time.
+**Frontend:** new `Sidebar.svelte` (Chat/Library switch — Library disabled; `↻ New chat`; history list
+with a `●` current-marker) + `ReadonlyTurn.svelte` (question + citation-linkified answer, no
+claim/provenance chrome) + an `App.svelte` restructure into a `sidebar │ main │ drawer` grid. A
+`viewing` state holds the read-only session; the live `turns`/`sessionId` are never touched by viewing
+history (H2). `↻ New` moved from the top bar into the sidebar (Decision 7). Mobile: the sidebar is an
+off-canvas drawer behind a hamburger. `sessionId` became `$state` (the sidebar's current-marker + the
+citation-source derivation read it, so a fresh id from `↻ New` must trigger updates).
+**Why:** A research tool accretes conversations worth returning to; the shell is also the IA the Library
+space will reuse. History is nearly free — the data was already written per-turn, just unkeyed.
+**Rejected:** `localStorage` history (a second source of truth, no provenance tie — Fork A);
+full/rich or resumable rehydration (Fork B: adjudicating an old turn = "edit history"; resuming needs
+context replay — both larger scope); reusing `Turn.svelte` for past turns with a faked empty `result`
+(would render empty claim/provenance blocks — a dedicated `ReadonlyTurn` is honest); a title column
+(auto from the first question, Fork C). Degradation is deliberate: `retrieved_chunks_json` omits
+markers/figures/`full_text`, so a reopened citation panel shows excerpt + citation only.
+**Verified:** full gate green — ruff / ruff format / mypy `src` (58 files) / **pytest 863 passed, 1
+skipped** (+13: 10 unit + 3 endpoint); `svelte-check` 0/0. Preview-harness live on the real corpus: two
+real turns persisted + grouped into the sidebar (title/time/turn-count correct, UTC time fixed from a
+"2h ago" bug), reopened a past chat read-only (banner + back-bar + composer hidden + 11 linkified
+citations + a degraded source panel with 0 marker chips), `↻ New` + H2 (live turn preserved across a
+history detour), dark mode + mobile off-canvas drawer + no horizontal overflow.
+**Opens:** rich/resumable rehydration + claims-on-old-turns (the `AnswerReview`/`AnswerClaim` joins);
+conversation rename/delete/search; retention/prune as `answer_records` grows (parked, H4); the Library
+space (in-app ingestion + chunk browser) that this shell now has a reserved tab for.
+**Staged: `src/doc_assistant/conversations.py` (new) · `chat_controller.py` · `apps/api/{main,models}.py`
+· `apps/desktop/src/App.svelte` · `lib/{Sidebar,ReadonlyTurn}.svelte` (new) · `lib/{types,api}.ts` ·
+`tests/unit/test_conversations.py` + `tests/integration/test_api_conversations.py` (new) · the
+SPRINT-013 contract + this DEVLOG/ROADMAP/ui-checklist. Nothing committed (cpc §13).**
+
+## 2026-07-13 — UI: "↻ New" conversation-reset button (App.svelte)
+
+**What:** Added a `↻ New` ghost button to the header actions (left of Export), reusing the existing
+`.ghost` class — **no new CSS or palette**. `newConversation()` clears `turns`, closes any open
+citation panel (`activeCitation = null`), empties + reflows the composer, resets `nextId`, and **mints
+a fresh `sessionId`** (extracted a `freshSessionId()` helper; `const sessionId` → `let`) so the backend
+does not thread the prior conversation's context into the next question. Session RAG overrides (ADR-010)
+are deliberately left intact — they're a sandbox setting, not conversation state. Disabled while a turn
+is streaming (`sending`) and when there's nothing to clear (`turns.length === 0 && input === ''`);
+native `<button>` with `aria-label` + `title`, keyboard-focusable.
+**Why:** User asked for a "refresh for the question" — a first-class way to start over without a browser
+reload (the desktop shell exposes none). Precursor to the conversation-history sidebar: once history
+exists, "New" additionally pushes the current chat into history before resetting (the reset + fresh-
+session core is unchanged by that).
+**Rejected:** clearing only the textbox (leaves backend session context → follow-up leakage into the
+next question); reusing the same `sessionId` (old turns re-enter standalone-question rewriting);
+resetting the sandbox overrides too (intentionally sticky per ADR-010).
+**Verified:** `svelte-check` 0 errors / 0 warnings; preview-harness (light + dark via OS scheme) — button
+legible in both (dark = the `--fg`/`--surface-2`/`--border` dark values, no new color), clears a live
+conversation, correct disabled states. No unit test (frontend has no vitest — preview-harness-only, per
+the phase8 spec).
+**Opens:** the conversation-history sidebar (persist past chats; "New" archives the current one) and its
+persistence model (in-memory vs SQLite) — UI checklist backlog. Dev-run SSL fix (truststore inject + HF
+offline) is `.claude/launch.json`-only (gitignored, local to the proxy box) — not part of this diff.
+**Staged: `apps/desktop/src/App.svelte`. Nothing committed (cpc §13).**
+
 ## 2026-07-11 — Review corrections: turn-instrument snapshot, reviewer-evidence clamp, reviewer-pin doc
 
 **What:** The correction pass for findings 1–3 of today's cross-review (see the launcher entry

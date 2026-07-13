@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-07-11 · class: living -->
+<!-- status: active · updated: 2026-07-13 · class: living -->
 
 # UI checklist — doc_assistant (Phase 8, kept open)
 
@@ -29,6 +29,8 @@ Each box is checked only when the feature is **committed** (not merely staged) a
 - [x] **Streaming chat over POST-SSE** — token/step/result events parsed by hand (`api.ts::streamChat`). *(M2/M3 baseline)*
 - [x] **U2 — right-aligned, width-capped user bubble; RAG answer stays full-width** — `Turn.svelte` CSS only (`align-self: flex-end`, `max-width: min(72%, 640px)`, tail-cue corner). Commit `7ee1b1e`. *Verified: preview-harness, both themes, mobile no-overflow.*
 - [x] **U3 — citation side panel** — click inline `[n]` → slide-over with that source's chunk detail; source cards hidden inline by default. `SourcePanel.svelte` (new) + `Markdown.svelte` text-node linkifier + delegated click; `App.svelte` owns `activeCitation`. Commit `8ba1ffc`. *Verified: preview-harness, mocked SSE ($0).*
+- [ ] **U4 — "↻ New" conversation-reset button** — clears turns + citation panel + composer, mints a fresh `sessionId` (no backend context leak into the next question); session RAG overrides intentionally kept. `App.svelte` only, reuses `.ghost` (no new CSS). *Built + verified 2026-07-13 (svelte-check 0/0; preview-harness light+dark, live-convo clear, disabled states) — **staged, commit pending**.* Subsumed into U5's sidebar (↻ New moved there).
+- [ ] **U5 — app shell + conversation history** — left sidebar (Chat/Library switch, Library disabled) listing past chats backend-backed by `AnswerRecord.session_id`; reopen a chat read-only (degraded citation panel); `↻ New chat` in the sidebar; live chat preserved when viewing history (H2); mobile off-canvas drawer. Backend: `record_answer` `session_id` write-fix + `conversations.py` + `GET /api/conversations[/{sid}]`. *Built + verified 2026-07-13 (pytest 863; svelte-check 0/0; preview-harness live on the real corpus — 2 turns→history, reopen read-only, dark + mobile, no overflow) — **staged, commit pending** (flip to `[x]` + add sha on commit).* Spec: `docs/specs/feature-conversation-history.md`; contract: SPRINT-013.
 - [x] **Earlier chat-UI refinement pass** — `ee8fe8d` (2026-07-09).
 - [x] **Provenance card + low-confidence card** — effective-provider-aware token/`local` suffix. *(M1 baseline; made switch-truthful in `09afd0c`.)*
 
@@ -73,6 +75,10 @@ Sourced from the phase8 spec's "Related backlog" table + `pr-m1`/`pr-m3` out-of-
 | [ ] | **S2 — selective-ingestion sources panel** — status chips, select-by-status/type, exclude toggle, ingest-selected | `feature-selective-ingestion.md`, ROADMAP S2 | Blocked on **S1** backend (draft, not locked). The other half-built Phase-8 UI item. |
 | [ ] | **In-app API-key entry (OS keychain)** — U1c v2 | ADR-011 v2 north-star | Explicitly deferred; needs the keyring decision from ADR-011's open questions. |
 | [ ] | **Precise parent-child re-projection for markers** | `pr-m1` ADR-1 option 2 | Backend attribution-quality work, not UI — but gates marker-chip trustworthiness. |
+| [ ] | **Conversation rename / delete / search / pin** | `feature-conversation-history.md` out-of-scope | Deferred from U5 (v1 has none). Rename needs a `title` column/sidecar; delete needs a careful "edit history?" call. |
+| [ ] | **Conversation retention / prune** (parked from the history grill, H4) | `feature-conversation-history.md` ledger | v1 lists most-recent ~100, no delete/prune. Revisit when `answer_records` grows large — a maintenance increment (CLI or a settings action). |
+| [ ] | **Rich / resumable chat rehydration** — claims + reviewer on reopened turns (`AnswerReview`/`AnswerClaim` joins), or resume a past chat as a live thread | `feature-conversation-history.md` Fork B | U5 reopens read-only. The joins + a resumable-session path are the natural follow-up. |
+| [ ] | **In-app ingestion + Calibre-style chunk browser** — a "Library" view: add/manage documents in-app (extends the point-at-a-folder flow), browse ingested docs → their chunks, read chunk text, see markers, optionally annotate/comment a chunk | new (2026-07-13, user request); overlaps **S1/S2** (`feature-selective-ingestion.md`) | **Needs a spec + grill first.** Builds on the existing `/api/settings`+`/api/ingest` plumbing; chunk-annotation is a new sidecar store (Enrichment-Layer Pattern — never mutate the chunk store). Pairs with the "In-app PDF source viewer" row above. |
 
 <!-- Add new UI ideas below this line as `| [ ] | <element> | <where> | <notes> |` -->
 

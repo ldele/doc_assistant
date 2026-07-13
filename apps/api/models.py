@@ -11,6 +11,7 @@ does not pull the heavy ``chat_controller`` → ``pipeline`` → torch chain.
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Literal
 
 from pydantic import BaseModel, Field, model_validator
@@ -19,6 +20,11 @@ from doc_assistant.config import CANDIDATE_K
 
 if TYPE_CHECKING:
     from doc_assistant.chat_controller import ClaimView, SourceView, TurnResult, UsageView
+    from doc_assistant.conversations import (
+        ConversationDetail,
+        ConversationSummary,
+        ConversationTurn,
+    )
 
 
 # ============================================================
@@ -169,4 +175,76 @@ class TurnResultPayload(BaseModel):
             usage_md=r.usage_md,
             citation_note_md=r.citation_note_md,
             download_path=str(r.download_path) if r.download_path is not None else None,
+        )
+
+
+# ============================================================
+# Conversation history (feature-conversation-history.md — read-only)
+# ============================================================
+
+
+def _as_utc(dt: datetime) -> datetime:
+    """Tag a naive DB timestamp (``AnswerRecord.created_at`` is naive UTC) as UTC so the ISO wire
+    value carries an offset — otherwise a browser ``new Date()`` reads it as *local* time."""
+    return dt if dt.tzinfo is not None else dt.replace(tzinfo=timezone.utc)
+
+
+class ConversationSummaryPayload(BaseModel):
+    """One conversation in the sidebar list."""
+
+    session_id: str
+    title: str
+    turn_count: int
+    started_at: datetime
+    last_at: datetime
+
+    @classmethod
+    def from_summary(cls, s: ConversationSummary) -> ConversationSummaryPayload:
+        return cls(
+            session_id=s.session_id,
+            title=s.title,
+            turn_count=s.turn_count,
+            started_at=_as_utc(s.started_at),
+            last_at=_as_utc(s.last_at),
+        )
+
+
+class ConversationSourcePayload(BaseModel):
+    n: int
+    citation: str
+    excerpt: str
+
+
+class ConversationTurnPayload(BaseModel):
+    record_id: str
+    question: str
+    answer: str
+    sources: list[ConversationSourcePayload]
+
+    @classmethod
+    def from_turn(cls, t: ConversationTurn) -> ConversationTurnPayload:
+        return cls(
+            record_id=t.record_id,
+            question=t.question,
+            answer=t.answer,
+            sources=[
+                ConversationSourcePayload(n=s.n, citation=s.citation, excerpt=s.excerpt)
+                for s in t.sources
+            ],
+        )
+
+
+class ConversationDetailPayload(BaseModel):
+    """A reopened conversation — its title + ordered turns (read-only transcript)."""
+
+    session_id: str
+    title: str
+    turns: list[ConversationTurnPayload]
+
+    @classmethod
+    def from_detail(cls, d: ConversationDetail) -> ConversationDetailPayload:
+        return cls(
+            session_id=d.session_id,
+            title=d.title,
+            turns=[ConversationTurnPayload.from_turn(t) for t in d.turns],
         )

@@ -808,6 +808,7 @@ class ChatController:
                 token_input=turn_in,
                 token_output=turn_out,
                 latency_ms=latency_ms,
+                session_id=session.session_id,
             )
             prov = AnswerProvenance(
                 id=record_id,
@@ -973,6 +974,7 @@ class ChatController:
                 top_k=eff_top_k,
                 use_parent_child=USE_PARENT_CHILD,
                 latency_ms=(time.monotonic() - turn_start) * 1000.0,
+                session_id=session.session_id,
             )
         self._append_export_turn(
             session,

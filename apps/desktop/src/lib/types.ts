@@ -48,6 +48,37 @@ export interface Health {
   embedding_model: string
 }
 
+// Conversation history (feature-conversation-history.md). GET /api/conversations returns the
+// sidebar list; GET /api/conversations/{sid} rehydrates one chat as a read-only transcript.
+// Mirrors apps/api/models.py::Conversation*Payload.
+export interface ConversationSummary {
+  session_id: string
+  title: string
+  turn_count: number
+  started_at: string // ISO 8601
+  last_at: string // ISO 8601
+}
+
+// A rehydrated citation — degraded vs a live SourceView (no markers/figures; not persisted).
+export interface ConversationSource {
+  n: number
+  citation: string
+  excerpt: string
+}
+
+export interface ConversationTurn {
+  record_id: string
+  question: string
+  answer: string
+  sources: ConversationSource[]
+}
+
+export interface ConversationDetail {
+  session_id: string
+  title: string
+  turns: ConversationTurn[]
+}
+
 // GET/POST /api/settings — the locked engine knobs (read-only) plus the one user-settable
 // knob, the source documents folder, and the live corpus size. Mirrors _full_settings() in
 // apps/api/main.py.

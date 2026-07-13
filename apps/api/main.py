@@ -37,6 +37,8 @@ from sse_starlette.sse import EventSourceResponse, ServerSentEvent
 from apps.api.models import (
     AdjudicateRequest,
     ChatRequest,
+    ConversationDetailPayload,
+    ConversationSummaryPayload,
     ExportRequest,
     SettingsUpdate,
     TurnResultPayload,
@@ -337,6 +339,27 @@ def create_app(
             "reranker_score": chunk.reranker_score,
             "excerpt": chunk.chunk_excerpt,
         }
+
+    @app.get("/api/conversations")
+    def list_conversations_route() -> list[ConversationSummaryPayload]:
+        """Past conversations for the history sidebar (feature-conversation-history.md).
+
+        A read over the ``AnswerRecord`` store — the *live* session appears here too once it has
+        a persisted turn (the frontend marks it as current). Rows predating the ``session_id``
+        write-fix are ``NULL`` and excluded."""
+        from doc_assistant.conversations import list_conversations
+
+        return [ConversationSummaryPayload.from_summary(s) for s in list_conversations()]
+
+    @app.get("/api/conversations/{session_id}")
+    def get_conversation_route(session_id: str) -> ConversationDetailPayload:
+        """Rehydrate one conversation as a read-only transcript, or 404 if unknown."""
+        from doc_assistant.conversations import get_conversation
+
+        detail = get_conversation(session_id)
+        if detail is None:
+            raise HTTPException(status_code=404, detail="conversation not found")
+        return ConversationDetailPayload.from_detail(detail)
 
     @app.get("/api/settings")
     def get_settings(request: Request) -> dict[str, Any]:

@@ -1,3 +1,5 @@
+<!-- status: archived · updated: 2026-07-11 · class: disposable -->
+
 # Spec — PR-M5: decommission Chainlit + lift the Python-3.12 pin (KI-2)
 
 > **📦 Archived — shipped; the historical code-level contract, archived here (2026-07-11).** Live status: ROADMAP row M5 — Chainlit removed; the 3.12-pin lift was verified-and-deferred (KI-2 stays open: native deps crash on 3.14, not Chainlit). The behaviour of record is the code + tests, not this spec.

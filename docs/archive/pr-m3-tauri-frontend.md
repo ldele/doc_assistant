@@ -1,3 +1,5 @@
+<!-- status: archived · updated: 2026-07-11 · class: disposable -->
+
 # Spec — PR-M3: Tauri desktop frontend (Svelte) over the FastAPI/SSE boundary
 
 > **📦 Archived — shipped; the historical code-level contract, archived here (2026-07-11).** Live status: ROADMAP row M3 (done). Ongoing frontend polish is now tracked in `docs/ui-checklist.md` (Phase 8). The behaviour of record is `apps/desktop/` + tests, not this spec.

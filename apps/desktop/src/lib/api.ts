@@ -9,6 +9,8 @@ import type {
   Decision,
   Health,
   IngestStatus,
+  LibraryDocument,
+  LibraryDocumentChunks,
   RagOverrides,
   Settings,
   TurnResult,
@@ -39,6 +41,20 @@ export async function getConversation(sessionId: string): Promise<ConversationDe
   const r = await fetch(`${API_BASE}/api/conversations/${encodeURIComponent(sessionId)}`)
   if (!r.ok) throw new Error(`conversation failed: ${r.status}`)
   return (await r.json()) as ConversationDetail
+}
+
+/** List ingested documents for the Library browser (feature-library-browser.md, read-only). */
+export async function listLibraryDocuments(): Promise<LibraryDocument[]> {
+  const r = await fetch(`${API_BASE}/api/library/documents`)
+  if (!r.ok) throw new Error(`library documents failed: ${r.status}`)
+  return (await r.json()) as LibraryDocument[]
+}
+
+/** One document's chunks grouped into parent blocks (each expandable to its children). 404 unknown. */
+export async function getLibraryDocument(docId: string): Promise<LibraryDocumentChunks> {
+  const r = await fetch(`${API_BASE}/api/library/documents/${encodeURIComponent(docId)}`)
+  if (!r.ok) throw new Error(`library document failed: ${r.status}`)
+  return (await r.json()) as LibraryDocumentChunks
 }
 
 /** Stream a chat turn. `/api/chat` is POST-SSE, so we parse the body stream by hand

@@ -136,3 +136,45 @@ export interface ProviderOption {
   available: boolean
   paid: boolean
 }
+
+// Library browser (feature-library-browser.md, L1 — read-only). GET /api/library/documents lists
+// ingested docs; GET /api/library/documents/{id} returns its chunks as parent blocks. Mirrors
+// apps/api/models.py::Library*Payload. NULL metadata (title/authors/year, health) stays null.
+export interface LibraryDocument {
+  id: string
+  filename: string
+  title: string | null
+  format: string
+  health: string | null
+  chunk_count: number | null
+  page_count: number | null
+  folders: string[]
+  tags: string[]
+  keywords: string[]
+  added_at: string | null // ISO 8601
+}
+
+export interface LibraryChild {
+  child_index: number
+  text: string
+  retrievable: boolean
+}
+
+export interface LibraryParent {
+  parent_index: number
+  parent_text: string
+  children: LibraryChild[]
+}
+
+export interface LibraryDocumentChunks {
+  id: string
+  filename: string
+  format: string
+  title: string | null
+  authors: string | null
+  year: number | null
+  chunk_count: number | null
+  health: string | null
+  parents: LibraryParent[]
+  child_count: number
+}

@@ -43,6 +43,9 @@ Each box is checked only when the feature is **committed** (not merely staged) a
 - [x] **"Point at a folder" source dir + first-run ingest banner** — `/api/settings` + `/api/ingest`. *(M4 data-home flow.)*
 - [x] **Reset-to-locked-defaults** button (clears session overrides).
 
+### Library space
+- [ ] **L1 — read-only chunk browser** — the Library sidebar tab (enabled) lists ingested docs; opening one shows its chunks as parent blocks, each `<details>`-expandable to its `child_index`-ordered child chunks. Read-only, no model: `library.py` (`group_children` + `get_document_chunks` over the live Chroma handle) + `GET /api/library/documents[/{id}]` + `LibraryBrowser.svelte` + a `chat|library` shell mode switch. Markers + figure thumbnails deferred to **L1b** (chunk_epistemics=0 / figures=0 on this corpus). *Built + verified 2026-07-13 (pytest 868 +5; svelte-check 0/0; preview-harness live on the real corpus — 76 docs, parent/child render, 404, dark, no overflow, Chat↔Library preserves the live chat, $0/offline) — **staged, commit pending** (flip to `[x]` + add sha on commit).* Spec: `docs/specs/feature-library-browser.md`; contract: SPRINT-014.
+
 ---
 
 ## 2 · Open / verification debt (keeps Phase 8 open)
@@ -68,7 +71,7 @@ Sourced from the phase8 spec's "Related backlog" table + `pr-m1`/`pr-m3` out-of-
 
 | # | Candidate UI element | Where tracked | Notes |
 |---|---|---|---|
-| [ ] | **A/B compare sandbox** — run locked defaults vs. override side-by-side | ADR-010 option 4 | Recorded north-star; extends U1 directly. Real cost: ≈2× per compared turn. Most natural next item. |
+| [~] | **A/B compare sandbox** — run locked defaults vs. override side-by-side | ADR-010 option 4 · `docs/specs/feature-ab-compare-sandbox.md` (spec written 2026-07-13, grilled) | **Spec locked (U6).** v1 = **retrieval diff only** ($0, no LLM — extends U1's retrieve path); full-answer 2× compare deferred (cost-gated, unverifiable without a model). Next to build after L1. |
 | [ ] | **Rich marker UI** — hover a contested/superseded chip → the corroborating/contradicting docs, not just a bare chip | `pr-m1` out-of-scope (tagged PR-M3) | Currently a static chip (`SourceCard.svelte:17-21`). Backend markers already carry the data. |
 | [ ] | **In-app PDF source viewer** — open the cited PDF at the page | `pr-m3` out-of-scope | Deferred at M3, never scheduled. |
 | [ ] | **Styled table rendering** in the answer/source view | `pr-m3` out-of-scope | Marker tables render as text today. |
@@ -78,7 +81,7 @@ Sourced from the phase8 spec's "Related backlog" table + `pr-m1`/`pr-m3` out-of-
 | [ ] | **Conversation rename / delete / search / pin** | `feature-conversation-history.md` out-of-scope | Deferred from U5 (v1 has none). Rename needs a `title` column/sidecar; delete needs a careful "edit history?" call. |
 | [ ] | **Conversation retention / prune** (parked from the history grill, H4) | `feature-conversation-history.md` ledger | v1 lists most-recent ~100, no delete/prune. Revisit when `answer_records` grows large — a maintenance increment (CLI or a settings action). |
 | [ ] | **Rich / resumable chat rehydration** — claims + reviewer on reopened turns (`AnswerReview`/`AnswerClaim` joins), or resume a past chat as a live thread | `feature-conversation-history.md` Fork B | U5 reopens read-only. The joins + a resumable-session path are the natural follow-up. |
-| [ ] | **In-app ingestion + Calibre-style chunk browser** — a "Library" view: add/manage documents in-app (extends the point-at-a-folder flow), browse ingested docs → their chunks, read chunk text, see markers, optionally annotate/comment a chunk | new (2026-07-13, user request); overlaps **S1/S2** (`feature-selective-ingestion.md`) | **Needs a spec + grill first.** Builds on the existing `/api/settings`+`/api/ingest` plumbing; chunk-annotation is a new sidecar store (Enrichment-Layer Pattern — never mutate the chunk store). Pairs with the "In-app PDF source viewer" row above. |
+| [~] | **Library space** — a "Library" view: browse ingested docs → their chunks (read chunk text), plus in-app document management + optional chunk annotation | new (2026-07-13, user request); grilled + carved into L1/L1b/L2/L3 | **Carved 2026-07-13.** **L1 (chunk browser) built** (`feature-library-browser.md`, staged, §1 above). Remaining: **L1b** markers + figure thumbnails (reopens when sidecars populate); **L2** in-app ingestion mgmt → adopt `feature-selective-ingestion.md` (S1/S2); **L3** chunk annotation → a new Enrichment-Layer sidecar, **needs its own ADR** (first write path). Pairs with the "In-app PDF source viewer" row. |
 
 <!-- Add new UI ideas below this line as `| [ ] | <element> | <where> | <notes> |` -->
 

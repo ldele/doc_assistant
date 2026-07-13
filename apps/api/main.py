@@ -40,6 +40,8 @@ from apps.api.models import (
     ConversationDetailPayload,
     ConversationSummaryPayload,
     ExportRequest,
+    LibraryDocumentChunksPayload,
+    LibraryDocumentPayload,
     SettingsUpdate,
     TurnResultPayload,
 )
@@ -360,6 +362,30 @@ def create_app(
         if detail is None:
             raise HTTPException(status_code=404, detail="conversation not found")
         return ConversationDetailPayload.from_detail(detail)
+
+    @app.get("/api/library/documents")
+    def list_library_documents() -> list[LibraryDocumentPayload]:
+        """Every ingested (non-archived) document for the Library browser (read-only, no model).
+
+        A read over the SQLite ``Document`` store — feature-library-browser.md (L1)."""
+        from doc_assistant.library import list_documents
+
+        return [LibraryDocumentPayload.from_summary(s) for s in list_documents()]
+
+    @app.get("/api/library/documents/{doc_id}")
+    def get_library_document(request: Request, doc_id: str) -> LibraryDocumentChunksPayload:
+        """One document's chunks grouped into parent blocks, or 404 if the document is unknown.
+
+        Reads the live Chroma handle (``ChatController.rag.db``) via a metadata filter — no
+        embeddings, no generation. A known doc with no stored chunks returns empty parents (not
+        a 404)."""
+        from doc_assistant.library import get_document_chunks
+
+        controller: ChatController = request.app.state.controller
+        view = get_document_chunks(doc_id, controller.rag.db)
+        if view is None:
+            raise HTTPException(status_code=404, detail="document not found")
+        return LibraryDocumentChunksPayload.from_view(view)
 
     @app.get("/api/settings")
     def get_settings(request: Request) -> dict[str, Any]:

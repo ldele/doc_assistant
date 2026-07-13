@@ -126,3 +126,69 @@ def test_short_id_lookup(temp_database):
 
     found = find_document_by_short_id(full_id[:8])
     assert found == full_id
+
+
+# ============================================================
+# Chunk browser (Library L1 — feature-library-browser.md)
+# ============================================================
+# `group_children` is pure — flat Chroma child chunks -> ordered parent blocks. No DB, no Chroma.
+# The impure `get_document_chunks` (SQLite + live handle) is covered by the API integration test.
+
+
+def _chunk(p, c, text, parent_text="P", keep=None):
+    return {
+        "parent_index": p,
+        "child_index": c,
+        "parent_text": parent_text,
+        "text": text,
+        "keep_for_retrieval": keep,
+    }
+
+
+def test_group_children_orders_and_groups():
+    from doc_assistant.library import ChunkChild, ParentBlock, group_children
+
+    # Deliberately out of order across two parents; child 0 of parent 0 is not retrievable.
+    blocks = group_children(
+        [
+            _chunk(1, 1, "p1c1", parent_text="P1"),
+            _chunk(0, 1, "p0c1", parent_text="P0"),
+            _chunk(0, 0, "p0c0", parent_text="P0", keep=False),
+            _chunk(1, 0, "p1c0", parent_text="P1"),
+        ]
+    )
+
+    assert [b.parent_index for b in blocks] == [0, 1]  # parents ordered by parent_index
+    assert isinstance(blocks[0], ParentBlock)
+    assert blocks[0].parent_text == "P0"  # from the first-seen child of the parent
+    assert [(c.child_index, c.text, c.retrievable) for c in blocks[0].children] == [
+        (0, "p0c0", False),  # keep_for_retrieval=False -> retrievable=False
+        (1, "p0c1", True),  # None -> retrievable (kept)
+    ]
+    assert isinstance(blocks[0].children[0], ChunkChild)
+    assert [c.text for c in blocks[1].children] == ["p1c0", "p1c1"]
+
+
+def test_group_children_drops_rows_missing_index():
+    from doc_assistant.library import group_children
+
+    blocks = group_children(
+        [_chunk(0, 0, "keep"), _chunk(None, 0, "drop-no-parent"), _chunk(0, None, "drop-no-child")]
+    )
+    assert len(blocks) == 1
+    assert [c.text for c in blocks[0].children] == ["keep"]
+
+
+def test_group_children_parent_index_zero_is_not_dropped():
+    from doc_assistant.library import group_children
+
+    # Falsy-but-valid indices (0) must survive — the guard is `is None`, not truthiness.
+    blocks = group_children([_chunk(0, 0, "zero")])
+    assert [b.parent_index for b in blocks] == [0]
+    assert blocks[0].children[0].child_index == 0
+
+
+def test_group_children_empty():
+    from doc_assistant.library import group_children
+
+    assert group_children([]) == []

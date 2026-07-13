@@ -1,8 +1,7 @@
-<!-- status: active · updated: 2026-07-13 · class: disposable -->
-<!-- BUILT 2026-07-13 — staged, pending user review/commit. Set status:active so sprint_check
-     validates THIS session's diff against this contract; flip to status:archived after commit
-     (the Phase-8 UI track has no other active contract). Pre-existing [lifecycle] warn applies
-     (tolerated across all SPRINT-*.md).
+<!-- status: archived · updated: 2026-07-13 · class: disposable -->
+<!-- BUILT + COMMITTED 2026-07-13 (`9ce5690` "Sprint 13: Chat History + Some AI polish"). Flipped
+     active→archived when SPRINT-014 (Library browser, L1) became the active contract.
+     Pre-existing [lifecycle] warn applies (tolerated across all SPRINT-*.md).
 
      Design lock: docs/specs/feature-conversation-history.md (grilled 2026-07-13). Feature: the
      left-sidebar app shell + conversation history. Backend-backed by the existing

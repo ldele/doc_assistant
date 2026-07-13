@@ -3,6 +3,7 @@
     ConversationDetail,
     ConversationSummary,
     Health,
+    LibraryDocument,
     RagOverrides,
     TurnResult,
   } from './lib/types'
@@ -11,6 +12,7 @@
     getHealth,
     exportConversation,
     listConversations,
+    listLibraryDocuments,
     streamChat,
   } from './lib/api'
   import Turn from './lib/Turn.svelte'
@@ -18,6 +20,7 @@
   import Settings from './lib/Settings.svelte'
   import SourcePanel from './lib/SourcePanel.svelte'
   import Sidebar from './lib/Sidebar.svelte'
+  import LibraryBrowser from './lib/LibraryBrowser.svelte'
 
   interface TurnState {
     id: number
@@ -52,6 +55,13 @@
   let viewing = $state<string | null>(null)
   let viewedConvo = $state<ConversationDetail | null>(null)
   let sidebarOpen = $state(false) // mobile drawer
+
+  // Library space (feature-library-browser.md, L1). `mode` swaps the sidebar list + main pane
+  // between Chat and Library; the chat state (turns/viewing/sessionId) is untouched by the switch.
+  let mode = $state<'chat' | 'library'>('chat')
+  let documents = $state<LibraryDocument[]>([])
+  let libraryDocId = $state<string | null>(null)
+  let documentsLoaded = false
 
   // Which citation panel is open — keyed by a turn *key* (a live turn's id as string, or a past
   // turn's record_id) so a click resolves against the right turn in either mode.
@@ -241,16 +251,45 @@
     viewedConvo = null
     activeCitation = null
   }
+
+  // Library documents are a sidecar read — a failure must never break the app (inform, don't block).
+  async function refreshDocuments(): Promise<void> {
+    try {
+      documents = await listLibraryDocuments()
+      documentsLoaded = true
+    } catch {
+      // keep the prior list
+    }
+  }
+
+  // Switch between Chat and Library. Entering Library closes any open citation panel and lazy-loads
+  // the document list once; the live chat's in-memory state is preserved across the switch.
+  function selectMode(m: 'chat' | 'library'): void {
+    mode = m
+    sidebarOpen = false
+    activeCitation = null
+    if (m === 'library' && !documentsLoaded) void refreshDocuments()
+  }
+
+  function selectDocument(id: string): void {
+    libraryDocId = id
+    sidebarOpen = false
+  }
 </script>
 
 <div class="app">
   <Sidebar
+    {mode}
     {conversations}
+    {documents}
     liveSessionId={sessionId}
     viewingSessionId={viewing}
+    selectedDocId={libraryDocId}
     open={sidebarOpen}
     onNew={newConversation}
     onSelect={openConversation}
+    onSelectMode={selectMode}
+    onSelectDocument={selectDocument}
     onClose={() => (sidebarOpen = false)}
   />
 
@@ -273,13 +312,18 @@
           {/if}
         </div>
         <div class="actions">
-          <button class="ghost" onclick={doExport} disabled={turns.length === 0 || viewing !== null}
-            >⬇ Export</button
+          <button
+            class="ghost"
+            onclick={doExport}
+            disabled={turns.length === 0 || viewing !== null || mode === 'library'}>⬇ Export</button
           >
           <button class="ghost" onclick={() => (showSettings = true)} aria-label="Settings">⚙</button>
         </div>
       </header>
 
+      {#if mode === 'library'}
+        <LibraryBrowser docId={libraryDocId} />
+      {:else}
       <section class="conversation" bind:this={convoEl} onscroll={onConvoScroll}>
         {#if viewing && viewedConvo}
           <p class="readonly-note">
@@ -342,6 +386,7 @@
           </button>
         {/if}
       </footer>
+      {/if}
     </main>
   </div>
 </div>

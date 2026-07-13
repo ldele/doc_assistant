@@ -1,24 +1,35 @@
 <script lang="ts">
-  // Left-rail app shell (feature-conversation-history.md, Decisions 7, 8). Hosts the Chat/Library
-  // switch (Library reserved but disabled), the "↻ New chat" action, and the conversation history
-  // list. Persistent column on desktop; an off-canvas drawer under 720px.
-  import type { ConversationSummary } from './types'
+  // Left-rail app shell (feature-conversation-history.md, Decisions 7, 8; Library tab enabled by
+  // feature-library-browser.md, L1). Hosts the Chat/Library switch, the "↻ New chat" action, and
+  // — depending on `mode` — the conversation history list (chat) or the document list (library).
+  // Persistent column on desktop; an off-canvas drawer under 720px.
+  import type { ConversationSummary, LibraryDocument } from './types'
 
   let {
+    mode,
     conversations,
+    documents,
     liveSessionId,
     viewingSessionId,
+    selectedDocId,
     open = false,
     onNew,
     onSelect,
+    onSelectMode,
+    onSelectDocument,
     onClose,
   }: {
+    mode: 'chat' | 'library'
     conversations: ConversationSummary[]
+    documents: LibraryDocument[]
     liveSessionId: string
     viewingSessionId: string | null
+    selectedDocId: string | null
     open?: boolean
     onNew: () => void
     onSelect: (sessionId: string) => void
+    onSelectMode: (mode: 'chat' | 'library') => void
+    onSelectDocument: (docId: string) => void
     onClose?: () => void
   } = $props()
 
@@ -45,42 +56,76 @@
 <aside class="sidebar" class:open>
   <div class="top">
     <div class="modes" role="tablist" aria-label="Workspace">
-      <button class="mode active" role="tab" aria-selected="true" type="button">Chat</button>
       <button
         class="mode"
+        class:active={mode === 'chat'}
         role="tab"
-        aria-selected="false"
-        disabled
+        aria-selected={mode === 'chat'}
         type="button"
-        title="Library — coming soon"
+        onclick={() => onSelectMode('chat')}
+      >
+        Chat
+      </button>
+      <button
+        class="mode"
+        class:active={mode === 'library'}
+        role="tab"
+        aria-selected={mode === 'library'}
+        type="button"
+        onclick={() => onSelectMode('library')}
       >
         Library
       </button>
     </div>
-    <button class="new" onclick={onNew} type="button">↻ New chat</button>
+    {#if mode === 'chat'}
+      <button class="new" onclick={onNew} type="button">↻ New chat</button>
+    {/if}
   </div>
 
-  <nav class="list" aria-label="Conversation history">
-    {#if conversations.length === 0}
-      <p class="empty">No conversations yet. Ask a question to start one.</p>
-    {:else}
-      {#each conversations as c (c.session_id)}
-        <button
-          class="row"
-          class:active={isActive(c.session_id)}
-          aria-current={isActive(c.session_id) ? 'true' : undefined}
-          onclick={() => onSelect(c.session_id)}
-          type="button"
-        >
-          <span class="title">{c.title}</span>
-          <span class="rowmeta">
-            {#if c.session_id === liveSessionId}<span class="dot" title="Current chat">●</span>{/if}
-            <span>{relTime(c.last_at)} · {c.turn_count} turn{c.turn_count === 1 ? '' : 's'}</span>
-          </span>
-        </button>
-      {/each}
-    {/if}
-  </nav>
+  {#if mode === 'chat'}
+    <nav class="list" aria-label="Conversation history">
+      {#if conversations.length === 0}
+        <p class="empty">No conversations yet. Ask a question to start one.</p>
+      {:else}
+        {#each conversations as c (c.session_id)}
+          <button
+            class="row"
+            class:active={isActive(c.session_id)}
+            aria-current={isActive(c.session_id) ? 'true' : undefined}
+            onclick={() => onSelect(c.session_id)}
+            type="button"
+          >
+            <span class="title">{c.title}</span>
+            <span class="rowmeta">
+              {#if c.session_id === liveSessionId}<span class="dot" title="Current chat">●</span>{/if}
+              <span>{relTime(c.last_at)} · {c.turn_count} turn{c.turn_count === 1 ? '' : 's'}</span>
+            </span>
+          </button>
+        {/each}
+      {/if}
+    </nav>
+  {:else}
+    <nav class="list" aria-label="Documents">
+      {#if documents.length === 0}
+        <p class="empty">No documents indexed yet.</p>
+      {:else}
+        {#each documents as d (d.id)}
+          <button
+            class="row"
+            class:active={d.id === selectedDocId}
+            aria-current={d.id === selectedDocId ? 'true' : undefined}
+            onclick={() => onSelectDocument(d.id)}
+            type="button"
+          >
+            <span class="title">{d.title || d.filename}</span>
+            <span class="rowmeta">
+              <span>{d.format}{#if d.chunk_count != null} · {d.chunk_count.toLocaleString()} chunks{/if}</span>
+            </span>
+          </button>
+        {/each}
+      {/if}
+    </nav>
+  {/if}
 </aside>
 
 {#if open}

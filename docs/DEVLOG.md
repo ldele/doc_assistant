@@ -8,6 +8,56 @@ Append only — never edit past entries.
 Format: What changed | Why | Rejected alternatives | What it opens
 
 ---
+## 2026-07-13 — Library space L1: read-only chunk browser (SPRINT-014)
+
+**What:** The reserved (disabled) **Library** sidebar tab now opens a **read-only chunk browser**
+(`docs/specs/feature-library-browser.md`, grilled today). **Backend:** extended the existing
+`src/doc_assistant/library.py` (the SQLite data-access layer) with a chunk-browser section — a pure
+`group_children` (flat Chroma child chunks → ordered parent blocks) + an impure
+`get_document_chunks(doc_id, chroma)` that reads the **live Chroma handle** (`ChatController.rag.db`)
+via a metadata filter (`where={"document_id": …}`, `include=["documents","metadatas"]`) — no
+embeddings, no BM25, no generation, no writes. Two GET endpoints (`/api/library/documents` reuses the
+existing `list_documents()`; `/api/library/documents/{doc_id}` groups the doc's chunks, 404 on unknown,
+empty parents on a 0-chunk doc) + pydantic payloads. **Frontend:** a client `mode` (`chat|library`)
+swaps the SPRINT-013 shell — in library mode the sidebar lists documents (same `.row` idiom it uses for
+conversations) and the main pane renders a new `LibraryBrowser.svelte` (doc header + an accordion of
+parent blocks, each a native `<details>` expandable to its `child_index`-ordered child chunks). Chat
+state (`turns`/`viewing`/`sessionId`) is untouched by the switch (verified: a Chat→Library→Chat
+round-trip preserves the live conversation).
+**Why:** The app could answer *from* the corpus but never *show* it — no way to see which docs are
+ingested or read the chunks the retriever holds. This is the Calibre-style browser half of the
+2026-07-13 Library-space request; it also lights up the tab the shell reserved.
+**Grounded, not assumed:** probed the live corpus first — the `chroma_pc` `langchain` collection's
+child metadata carries `document_id`/`parent_index`/`parent_text`/`child_index` (join on `document_id`);
+`page`/`section`/`chunk_index`/`keep_for_retrieval` are NULL here, so the browser surfaces only present
+fields. This probe is also **why markers + figure thumbnails were deferred to L1b**: `chunk_epistemics`
+= 0 rows and `figures` = 0 rows on this box (figures need the paid VLM pass), so they'd render empty and
+can't be proven $0/offline now.
+**Build deviation (defended):** the spec named a *new* `library.py`; a substantial `library.py`
+data-access layer already existed, so L1 **extended** it and **reused** `list_documents()`/
+`DocumentSummary` for the list (richer than the spec's placeholder `LibraryDocument`) — same contract,
+less duplication.
+**Rejected:** a second Chroma client (the live handle is already open); browsing the baseline `chroma`
+collection for a clean marker key (not the live retrieval store — dishonest); a `**header` splat into
+the view dataclass (mypy-unsafe over a heterogeneous dict → explicit construction); showing NULL
+metadata as blank labels (omit it — honest).
+**Verified:** full gate green — ruff / ruff format / mypy `src` (58 files) / bandit / **pytest 868
+passed, 1 skipped** (+5: 4 unit `group_children` + 1 endpoint); `svelte-check` 0/0. Preview-harness live
+on the real corpus ($0/offline, no model): `/api/library/documents` → 76 docs; a 7-chunk doc →
+3 parent blocks / 18 children with populated `parent_text`, child ordering, `<details>` expand;
+unknown id → 404; NULL title/authors/year honestly omitted; dark mode (existing palette, no new color);
+no horizontal overflow; Chat↔Library round-trip preserves the live chat. (Screenshot skipped — times
+out on this proxy box, KI/notes; DOM-level synchronous-eval proof used instead.)
+**Opens:** L1b (marker chips + figure thumbnails + the data-population runbook, reopens when the
+sidecars populate); L2 in-app ingestion management (adopt `docs/specs/feature-selective-ingestion.md`
+S1/S2); L3 chunk annotation (a new Enrichment-Layer sidecar — needs its own ADR); search/filter/sort
+within the library; in-app PDF source viewer; pagination for very large docs.
+**Staged: `src/doc_assistant/library.py` · `apps/api/{main,models}.py` ·
+`apps/desktop/src/App.svelte` · `lib/{LibraryBrowser}.svelte` (new) · `lib/{Sidebar}.svelte` ·
+`lib/{types,api}.ts` · `tests/unit/test_library.py` + `tests/integration/test_api_library.py` (new) ·
+the SPRINT-014 contract + SPRINT-013 archived + this DEVLOG/ROADMAP/ui-checklist + the two new specs.
+Nothing committed (cpc §13).**
+
 ## 2026-07-13 — App shell + conversation history (SPRINT-013)
 
 **What:** The left-sidebar app shell + backend-backed conversation history

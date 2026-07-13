@@ -25,6 +25,11 @@ if TYPE_CHECKING:
         ConversationSummary,
         ConversationTurn,
     )
+    from doc_assistant.library import (
+        DocumentChunkView,
+        DocumentSummary,
+        ParentBlock,
+    )
 
 
 # ============================================================
@@ -247,4 +252,96 @@ class ConversationDetailPayload(BaseModel):
             session_id=d.session_id,
             title=d.title,
             turns=[ConversationTurnPayload.from_turn(t) for t in d.turns],
+        )
+
+
+# ============================================================
+# Library browser (feature-library-browser.md — read-only, L1)
+# ============================================================
+
+
+class LibraryDocumentPayload(BaseModel):
+    """One document in the Library list (mirrors ``library.DocumentSummary``)."""
+
+    id: str
+    filename: str
+    title: str | None
+    format: str
+    health: str | None
+    chunk_count: int | None
+    page_count: int | None
+    folders: list[str]
+    tags: list[str]
+    keywords: list[str]
+    added_at: datetime | None
+
+    @classmethod
+    def from_summary(cls, s: DocumentSummary) -> LibraryDocumentPayload:
+        return cls(
+            id=s.id,
+            filename=s.filename,
+            title=s.title,
+            format=s.format,
+            health=s.health,
+            chunk_count=s.chunk_count,
+            page_count=s.page_count,
+            folders=list(s.folders),
+            tags=list(s.tags),
+            keywords=list(s.keywords),
+            added_at=_as_utc(s.added_at) if s.added_at is not None else None,
+        )
+
+
+class LibraryChildPayload(BaseModel):
+    child_index: int
+    text: str
+    retrievable: bool
+
+
+class LibraryParentPayload(BaseModel):
+    parent_index: int
+    parent_text: str
+    children: list[LibraryChildPayload]
+
+    @classmethod
+    def from_block(cls, b: ParentBlock) -> LibraryParentPayload:
+        return cls(
+            parent_index=b.parent_index,
+            parent_text=b.parent_text,
+            children=[
+                LibraryChildPayload(
+                    child_index=c.child_index, text=c.text, retrievable=c.retrievable
+                )
+                for c in b.children
+            ],
+        )
+
+
+class LibraryDocumentChunksPayload(BaseModel):
+    """A document's header + its chunks grouped into parent blocks (browser detail)."""
+
+    id: str
+    filename: str
+    format: str
+    title: str | None
+    authors: str | None
+    year: int | None
+    chunk_count: int | None
+    health: str | None
+    parents: list[LibraryParentPayload]
+    child_count: int
+
+    @classmethod
+    def from_view(cls, v: DocumentChunkView) -> LibraryDocumentChunksPayload:
+        return cls(
+            id=v.id,
+            filename=v.filename,
+            format=v.format,
+            title=v.title,
+            authors=v.authors,
+            year=v.year,
+            chunk_count=v.chunk_count,
+            health=v.health,
+            parents=[LibraryParentPayload.from_block(b) for b in v.parents],
+            child_count=v.child_count,
         )

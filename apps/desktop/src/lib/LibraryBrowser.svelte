@@ -44,13 +44,13 @@
     <p class="hint err">Couldn’t load this document — {error}</p>
   {:else if detail}
     <header class="dochead">
-      <h2>{detail.filename}</h2>
+      <h2>{detail.title ?? detail.filename}</h2>
       <p class="metaline">
+        {#if detail.title}<span>{detail.filename}</span><span>·</span>{/if}
         <span>{detail.format}</span>
         {#if detail.chunk_count != null}<span>· {detail.chunk_count.toLocaleString()} chunks</span>{/if}
         {#if detail.health}<span>· {detail.health}</span>{/if}
       </p>
-      {#if detail.title}<p class="metaextra"><strong>Title</strong> {detail.title}</p>{/if}
       {#if detail.authors}<p class="metaextra"><strong>Authors</strong> {detail.authors}</p>{/if}
       {#if detail.year != null}<p class="metaextra"><strong>Year</strong> {detail.year}</p>{/if}
     </header>

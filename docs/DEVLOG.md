@@ -8,6 +8,94 @@ Append only — never edit past entries.
 Format: What changed | Why | Rejected alternatives | What it opens
 
 ---
+## 2026-07-13 — Visual identity pass grilled → design-locked (11 forks; spec + SPRINT-016 next)
+
+**What:** Planning only — ran `grill-me` over the new "sexy pass" backlog row at the user's request.
+All 11 forks resolved, none parked; full ledger in the session baton, condensed into the ui-checklist §3
+row. Headline locks: **full visual identity** (not just a token retheme), phased **V1 tokens+fonts+icons
+→ V2 layout/wordmark/empty-states/reading-measure → V3 app icon+branding+audit** with an explicit
+stop-early rule after V1; **paper & ink** direction (warm ivory/charcoal); **Spectral + Inter** with the
+serif on reading surfaces only; **deep indigo** accent (deciding reason: interactive-affordance
+recognizability + zero collision with the warn/ok semantics); **Lucide** SVGs replace the emoji glyphs;
+shell topology explicitly **out** (verified drawer/a11y behavior is not re-risked); display name stays
+`doc_assistant`.
+**Why:** §3's own rule — grill before building; the user picked "full identity" over my
+token-retheme recommendation, which reshaped the remaining forks (wordmark, layout scope, phasing).
+**Rejected (by the user, on the record):** token-retheme-only ambition; Source Serif/Sans superfamily
+(chose Spectral for long-form screen reading, consistent with serif-on-reading-surfaces); oxblood accent
+(error-family collision risk); display rename (scope discipline).
+**Opens:** write `docs/specs/feature-visual-identity.md` (design lock, ledger at top, per-sprint DoD) +
+the SPRINT-016 (V1) contract; Spectral woff2 subsets + Inter variable go in `apps/desktop/src/assets/fonts/`
+(local-only, no CDN); serif-reach reopens to headings-only if reading surfaces feel heavy in V1 practice.
+**Docs only: this DEVLOG + ui-checklist §3 row + the baton ledger. Nothing committed (cpc §13).**
+
+## 2026-07-13 — UI feedback pass: Compare contextualized + renamed; Library prefers Title — First Author
+
+**What:** Two small refinements from the user's review of the shipped L1/U6, decisions locked in-chat.
+**(1) Compare → "Test override", contextual.** The button next to Send renders **only while a
+retrieval-affecting override is set** (`overrides.top_k != null || overrides.use_multi_query != null` —
+Settings writes these fields only when touched; Reset → `{}` hides it again). Card retitled
+**"Retrieval comparison — defaults vs your override"**; columns **"A — Locked defaults" / "B — Your
+override"** so the compact `only A`/`only B` badges keep their anchor. `App.svelte` (derived
+`hasRetrievalOverride`, `{#if}` around the button, new label/tooltip) + `CompareCard.svelte` (header +
+column titles). No wire/backend change. **(2) Library rows + detail prefer "Title — First Author [et
+al.]"** over the raw filename; filename stays reachable (row tooltip; detail metaline). `authors` added
+to the list wire model end-to-end: `library.DocumentSummary` (+`authors=d.authors`) →
+`LibraryDocumentPayload` → `types.ts::LibraryDocument`; `Sidebar.svelte` gains a `docLabel` helper
+(split on `;`/`,`/` and `, first name + "et al." when more — the registry has no locked `authors`
+format yet; the parse tightens when the metadata-enrichment spec defines one) with the filename
+fallback; `LibraryBrowser.svelte` heading = `title ?? filename`, redundant Title row dropped.
+**Why:** user review: "A/B compare" names the mechanism, not the benefit, and a dead button in the
+default state doesn't earn composer real estate; library filenames (`1-s2.0-S0896…-main.pdf`) are
+unreadable. **Data honesty:** 0/76 docs carry title/authors/year on this corpus — the display change
+shows nothing until the metadata-enrichment backlog row (new, ui-checklist §3) runs; verified the
+rendering via a canned-fetch harness instead.
+**Rejected:** moving Compare into the Settings drawer (loses the composer text — would need its own
+query input); always-visible renamed button (still dead weight with no override); a clever
+`authors`-format parse (no data to validate against — deferred to the enrichment spec).
+**Verified:** `svelte-check` 0/0; ruff/format/mypy clean on the touched files; pytest
+library+compare suites **16 passed** (additive wire field, no assertion breaks). Preview-harness live
+($0/offline): button absent by default → set `top_k=4` → "Test override" appears → card A=10/B=4 with
+the new header/columns → Reset → button gone; canned-fetch checks: multi-author → "Title — Rajpurkar
+et al." + filename tooltip, single author → "Title — Jane Doe", NULL → filename; detail h2 = title,
+filename in metaline, Authors/Year rows; zero console errors. (Screenshot timed out once — DOM checks
+are the proof, per the documented fallback.)
+**Opens:** the metadata-enrichment sidecar (deterministic-first + local-LLM assist, user-endorsed);
+manual metadata editing (first registry write path from the UI → ADR); chunk editing + color-coded
+problematic/modified chunks (→ ADR, collides with the enrichment-layer non-negotiable); L1b epistemics
+in Library (blocked: `chunk_epistemics`=0 on this box — run the enrichment first). All four added as
+ui-checklist §3 backlog rows.
+**Staged-ready: `src/doc_assistant/library.py` · `apps/api/models.py` · `apps/desktop/src/lib/{types.ts,
+Sidebar,LibraryBrowser,CompareCard}.svelte` · `apps/desktop/src/App.svelte` + this DEVLOG/ui-checklist.
+Nothing committed (cpc §13).**
+
+## 2026-07-13 — Post-commit verification of L1 + U6 on the committed code; paperwork flips; L1 count finding
+
+**What:** Docs/verification only — no `src/` or frontend change. (1) **Re-verified both of last
+session's UI features live on the committed code** (`aa288d9` L1, `c965418` U6) via the browser-preview
+harness on the real corpus ($0/offline): Library mode switch → 76 docs listed → doc detail (parent
+blocks, `<details>`-expandable children, no overflow); Compare with no override → the no-op note + two
+identical 10-source columns; Compare with a `top_k=4` session override → A=10/B=4, 8 `both` + 6 `only A`
+badges + the depth note; the card survives a Chat↔Library round-trip and closes via ✕; zero console
+errors. (2) **Post-commit paperwork the baton owed:** SPRINT-015 → `status: archived`; ROADMAP U4/U5
+(`9ce5690`), L1 (`aa288d9`), U6 (`c965418`) rows staged→done; ui-checklist §1 boxes flipped with shas.
+(3) **Archive hygiene per this morning's `1b605fd` convention:** `git mv` SPRINT-013/014/015 →
+`docs/archive/sprints/`; added the missing `status:` header to the (local-only) `SESSION-archive-016.md`.
+`docs_check --strict`: **0 errors, 0 warnings.** (4) **New review finding (ui-checklist §2):** the
+library list's `chunk_count` (SQLite registry, ingest-time; sums 11,965 over 76 docs) disagrees with the
+L1 detail's live Chroma parent/child counts (30,882 children) — e.g. "47 chunks" beside "23 parent
+blocks · 125 child chunks" on one screen. (5) **New backlog row (§3):** a visual-polish "sexy pass"
+candidate (design tokens / local typeface / SVG icons) — the current `app.css` is a deliberately
+minimal 13-var token set that reads clean-but-default; unspecced, grill before building.
+**Why:** the baton's "pick up: USER, then Code" step — user committed U6, so the flips were owed; a
+re-verify on the *committed* tree (not the staged one) closes the loop honestly.
+**Rejected:** fixing the chunk-count mismatch inline (two plausible fixes — recompute registry counts
+from Chroma vs relabel the list column; deserves its own small change, logged in §2 instead); starting
+the sexy pass without a spec (§3's own rule: grill first).
+**Opens:** the chunk-count finding; the sexy-pass backlog row; §2's live-smoke debts unchanged.
+**Edited: `docs/{ROADMAP,ui-checklist,DEVLOG}.md` · `docs/archive/sprints/SPRINT-01{3,4,5}-*.md` (moved,
+015 flipped archived). Nothing committed (cpc §13).**
+
 ## 2026-07-13 — A/B-compare sandbox v1: retrieval diff (SPRINT-015, U6)
 
 **What:** A per-turn **Compare** action realises ADR-010 option-4's north-star as its retrieval-only,

@@ -144,6 +144,7 @@ export interface LibraryDocument {
   id: string
   filename: string
   title: string | null
+  authors: string | null
   format: string
   health: string | null
   chunk_count: number | null

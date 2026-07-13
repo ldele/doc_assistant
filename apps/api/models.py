@@ -275,6 +275,7 @@ class LibraryDocumentPayload(BaseModel):
     id: str
     filename: str
     title: str | None
+    authors: str | None
     format: str
     health: str | None
     chunk_count: int | None
@@ -290,6 +291,7 @@ class LibraryDocumentPayload(BaseModel):
             id=s.id,
             filename=s.filename,
             title=s.title,
+            authors=s.authors,
             format=s.format,
             health=s.health,
             chunk_count=s.chunk_count,

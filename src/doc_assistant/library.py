@@ -38,6 +38,7 @@ class DocumentSummary:
     health: str | None
     chunk_count: int | None
     page_count: int | None
+    authors: str | None = None
     folders: list[str] = field(default_factory=list)
     tags: list[str] = field(default_factory=list)
     keywords: list[str] = field(default_factory=list)
@@ -122,6 +123,7 @@ def list_documents(
                 health=d.extraction_health,
                 chunk_count=d.chunk_count,
                 page_count=d.page_count,
+                authors=d.authors,
                 folders=[f.name for f in d.folders],
                 tags=[t.name for t in d.tags],
                 keywords=[k.name for k in d.keywords],

@@ -1,12 +1,12 @@
-<!-- status: active · updated: 2026-07-13 · class: disposable -->
+<!-- status: archived · updated: 2026-07-13 · class: disposable -->
 <!-- BUILDING 2026-07-13. Sole active contract (SPRINT-014 archived on commit). Design lock:
      docs/specs/feature-ab-compare-sandbox.md (grilled 2026-07-13). Feature: A/B-compare sandbox v1 —
      a per-turn "Compare" action runs the query under the locked defaults (A) and the current session
      RagOverrides (B) and shows the two retrieved source sets side by side with a computed diff.
      RETRIEVAL DIFF ONLY — $0 (no LLM call), the retrieval-only, live-verifiable first slice of
      ADR-010 option-4's north-star. Full-answer 2x compare is deferred (cost-gated, unverifiable
-     without a model). Request-scoped, no module-global mutation (U1 isolation discipline). Flip to
-     status:archived after commit. Pre-existing [lifecycle] warn applies (tolerated across SPRINT-*.md). -->
+     without a model). Request-scoped, no module-global mutation (U1 isolation discipline). Committed
+     `c965418` 2026-07-13 → archived. Pre-existing [lifecycle] warn applies (tolerated across SPRINT-*.md). -->
 
 # SPRINT-015 — ab-compare
 

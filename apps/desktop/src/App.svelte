@@ -56,6 +56,12 @@
   // retrieval only, no answer generation. The result is an ephemeral card, not a chat turn.
   let compareResult = $state<CompareResult | null>(null)
   let comparing = $state(false)
+  // The Test-override button only exists while a retrieval-affecting override is set — with none,
+  // both sides retrieve identically and the button is dead weight (2026-07-13 UX review). Settings
+  // writes these fields only when touched; Reset returns overrides to {}.
+  const hasRetrievalOverride = $derived(
+    overrides.top_k != null || overrides.use_multi_query != null,
+  )
 
   // Conversation history (feature-conversation-history.md). `viewing` is the session_id shown as a
   // read-only transcript; `null` means the live chat (composer + claims bound to `sessionId`).
@@ -409,15 +415,17 @@
             rows="2"
             disabled={sending}
           ></textarea>
-          <button
-            class="compare"
-            onclick={doCompare}
-            disabled={sending || comparing || input.trim() === ''}
-            title="Compare retrieval — locked defaults vs your session override ($0, no answer)"
-            type="button"
-          >
-            {comparing ? 'Comparing…' : 'Compare'}
-          </button>
+          {#if hasRetrievalOverride}
+            <button
+              class="compare"
+              onclick={doCompare}
+              disabled={sending || comparing || input.trim() === ''}
+              title="See how your override changes retrieval for this question — locked defaults vs override, sources only, no answer ($0)"
+              type="button"
+            >
+              {comparing ? 'Comparing…' : 'Test override'}
+            </button>
+          {/if}
           <button class="send" onclick={send} disabled={sending || input.trim() === ''} aria-busy={sending}>
             {#if sending}<span class="spinner" aria-hidden="true"></span>{:else}Send{/if}
           </button>

@@ -51,6 +51,18 @@
   function isActive(sid: string): boolean {
     return viewingSessionId === null ? sid === liveSessionId : sid === viewingSessionId
   }
+
+  // Library row label: prefer "Title — First Author" over the raw filename (which stays as the
+  // row tooltip). The registry stores `authors` as one string with no locked format yet — split on
+  // the common separators and take the first name; "et al." when more are listed. Tighten once the
+  // metadata-enrichment sidecar defines the canonical format.
+  function docLabel(d: LibraryDocument): string {
+    if (!d.title) return d.filename
+    if (!d.authors) return d.title
+    const names = d.authors.split(/\s*(?:;|,| and )\s*/).filter(Boolean)
+    const first = names[0] ?? d.authors
+    return `${d.title} — ${names.length > 1 ? `${first} et al.` : first}`
+  }
 </script>
 
 <aside class="sidebar" class:open>
@@ -116,8 +128,9 @@
             aria-current={d.id === selectedDocId ? 'true' : undefined}
             onclick={() => onSelectDocument(d.id)}
             type="button"
+            title={d.title ? d.filename : undefined}
           >
-            <span class="title">{d.title || d.filename}</span>
+            <span class="title">{docLabel(d)}</span>
             <span class="rowmeta">
               <span>{d.format}{#if d.chunk_count != null} · {d.chunk_count.toLocaleString()} chunks{/if}</span>
             </span>

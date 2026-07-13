@@ -28,7 +28,7 @@
 <div class="card">
   <div class="head">
     <div>
-      <strong>A/B compare — retrieval</strong>
+      <strong>Retrieval comparison — defaults vs your override</strong>
       <span class="q">“{result.query}”</span>
     </div>
     <button class="x" onclick={onClose} aria-label="Close comparison" type="button">✕</button>
@@ -39,7 +39,7 @@
   {/if}
 
   <div class="cols">
-    {#each [{ side: 'a', title: 'Locked defaults', eff: result.eff_a, sources: result.sources_a }, { side: 'b', title: 'Session override', eff: result.eff_b, sources: result.sources_b }] as col (col.side)}
+    {#each [{ side: 'a', title: 'A — Locked defaults', eff: result.eff_a, sources: result.sources_a }, { side: 'b', title: 'B — Your override', eff: result.eff_b, sources: result.sources_b }] as col (col.side)}
       <section class="col">
         <header class="colhead">
           <span class="coltitle">{col.title}</span>

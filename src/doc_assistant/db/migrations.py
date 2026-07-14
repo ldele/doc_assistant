@@ -29,6 +29,8 @@ _ADDITIVE_COLUMNS: list[tuple[str, str, str, str | None]] = [
     ("concepts", "definition", "TEXT", None),
     # R4 — graded per-token provenance strength on the (pre-existing) concept_edges table.
     ("concept_edges", "strength_json", "TEXT", None),
+    # Conversation rename — user-set title on the (pre-existing) conversation_meta table.
+    ("conversation_meta", "title_override", "TEXT", None),
 ]
 
 

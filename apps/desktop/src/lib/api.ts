@@ -48,7 +48,7 @@ export async function getConversation(sessionId: string): Promise<ConversationDe
  *  change. `deleted: true` hides it (records retained); `deleted: false` restores it. */
 export async function updateConversationMeta(
   sessionId: string,
-  patch: { pinned?: boolean; archived?: boolean; deleted?: boolean },
+  patch: { pinned?: boolean; archived?: boolean; deleted?: boolean; title?: string },
 ): Promise<void> {
   const r = await fetch(`${API_BASE}/api/conversations/${encodeURIComponent(sessionId)}`, {
     method: 'PATCH',

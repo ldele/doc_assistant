@@ -111,12 +111,14 @@ def set_conversation_meta(
     pinned: bool | None = None,
     archived: bool | None = None,
     deleted: bool | None = None,
+    title: str | None = None,
 ) -> None:
     """Upsert a conversation's management flags — only the fields passed are changed.
 
     ``deleted=True`` **soft-deletes** (stamps ``deleted_at``, hiding it from the list while its
-    ``AnswerRecord`` provenance is retained); ``deleted=False`` restores it. Creates the sidecar
-    row on first action; an absent row means all-default (not pinned/archived/deleted)."""
+    ``AnswerRecord`` provenance is retained); ``deleted=False`` restores it. ``title`` sets a
+    custom title (blank reverts to the derived first-question title). Creates the sidecar row on
+    first action; an absent row means all-default (not pinned/archived/deleted, derived title)."""
     with session_scope() as session:
         meta = session.get(ConversationMeta, session_id)
         if meta is None:
@@ -128,6 +130,8 @@ def set_conversation_meta(
             meta.archived = archived
         if deleted is not None:
             meta.deleted_at = datetime.now(timezone.utc) if deleted else None
+        if title is not None:
+            meta.title_override = title.strip() or None
 
 
 def list_conversations(limit: int = 100) -> list[ConversationSummary]:
@@ -177,15 +181,19 @@ def list_conversations(limit: int = 100) -> list[ConversationSummary]:
 
         flag_rows = session.execute(
             select(
-                ConversationMeta.session_id, ConversationMeta.pinned, ConversationMeta.archived
+                ConversationMeta.session_id,
+                ConversationMeta.pinned,
+                ConversationMeta.archived,
+                ConversationMeta.title_override,
             ).where(ConversationMeta.session_id.in_(session_ids))
         ).all()
-        flags = {sid: (bool(pinned), bool(archived)) for sid, pinned, archived in flag_rows}
+        flags = {sid: (bool(pinned), bool(archived)) for sid, pinned, archived, _ in flag_rows}
+        overrides = {sid: title for sid, _, _, title in flag_rows if title}
 
         summaries = [
             ConversationSummary(
                 session_id=sid,
-                title=titles.get(sid, "(untitled)"),
+                title=overrides.get(sid) or titles.get(sid, "(untitled)"),
                 turn_count=count,
                 started_at=started_at,
                 last_at=last_at,
@@ -273,5 +281,8 @@ def get_conversation(session_id: str) -> ConversationDetail | None:
             )
             for row in rows
         ]
-        title = _truncate(rows[0].original_query or rows[0].query)
+        meta = session.get(ConversationMeta, session_id)
+        title = (meta.title_override if meta and meta.title_override else None) or _truncate(
+            rows[0].original_query or rows[0].query
+        )
         return ConversationDetail(session_id=session_id, title=title, turns=turns)

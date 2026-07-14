@@ -229,11 +229,13 @@ class ConversationSummaryPayload(BaseModel):
 
 class ConversationMetaUpdate(BaseModel):
     """PATCH body for a conversation's management flags — only the fields sent are changed.
-    ``deleted`` toggles the soft-delete (True hides + retains records; False restores)."""
+    ``deleted`` toggles the soft-delete (True hides + retains records; False restores). ``title``
+    sets a custom title (blank reverts to the derived first-question title)."""
 
     pinned: bool | None = None
     archived: bool | None = None
     deleted: bool | None = None
+    title: str | None = None
 
 
 class ConversationSourcePayload(BaseModel):

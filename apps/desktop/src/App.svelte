@@ -149,6 +149,49 @@
       console.error('archive failed', e)
     }
   }
+  async function renameConversation(sid: string, title: string): Promise<void> {
+    try {
+      await updateConversationMeta(sid, { title })
+      await refreshConversations()
+    } catch (e) {
+      console.error('rename failed', e)
+    }
+  }
+
+  // Resizable left sidebar. Width is a client-only view preference (like the theme toggle),
+  // persisted in localStorage; clamped so it can't be dragged uselessly narrow or wide.
+  const SIDEBAR_MIN = 200
+  const SIDEBAR_MAX = 480
+  function loadSidebarWidth(): number {
+    try {
+      const v = Number(localStorage.getItem('sidebarWidth'))
+      return v >= SIDEBAR_MIN && v <= SIDEBAR_MAX ? v : 260
+    } catch {
+      return 260
+    }
+  }
+  let sidebarWidth = $state(loadSidebarWidth())
+  function startResize(e: PointerEvent): void {
+    e.preventDefault()
+    const onMove = (ev: PointerEvent) => {
+      sidebarWidth = Math.min(SIDEBAR_MAX, Math.max(SIDEBAR_MIN, ev.clientX))
+    }
+    const onUp = () => {
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup', onUp)
+      document.body.style.cursor = ''
+      document.body.style.userSelect = ''
+      try {
+        localStorage.setItem('sidebarWidth', String(Math.round(sidebarWidth)))
+      } catch {
+        /* ignore — width just won't persist */
+      }
+    }
+    document.body.style.cursor = 'col-resize'
+    document.body.style.userSelect = 'none'
+    window.addEventListener('pointermove', onMove)
+    window.addEventListener('pointerup', onUp)
+  }
   async function deleteConversation(sid: string): Promise<void> {
     // Soft-delete is reversible, but there's no restore UI yet — confirm to avoid a mis-click.
     if (
@@ -393,7 +436,7 @@
   }
 </script>
 
-<div class="app">
+<div class="app" style="--sidebar-width: {sidebarWidth}px">
   <Sidebar
     {mode}
     {conversations}
@@ -410,7 +453,15 @@
     onPin={pinConversation}
     onArchive={archiveConversation}
     onDelete={deleteConversation}
+    onRename={renameConversation}
   />
+  <div
+    class="resizer"
+    role="separator"
+    aria-orientation="vertical"
+    aria-label="Resize sidebar"
+    onpointerdown={startResize}
+  ></div>
 
   <div class="content">
     <main>
@@ -577,6 +628,26 @@
   .app {
     display: flex;
     height: 100vh;
+  }
+  /* Drag handle between the sidebar and the content — a thin hit area with a hover cue. */
+  .resizer {
+    flex: none;
+    width: 5px;
+    margin-left: -3px;
+    cursor: col-resize;
+    background: transparent;
+    z-index: 5;
+    transition: background 0.15s ease;
+  }
+  .resizer:hover,
+  .resizer:active {
+    background: var(--accent);
+    opacity: 0.5;
+  }
+  @media (max-width: 720px) {
+    .resizer {
+      display: none;
+    }
   }
   .content {
     flex: 1;

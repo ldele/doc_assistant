@@ -8,6 +8,83 @@ Append only — never edit past entries.
 Format: What changed | Why | Rejected alternatives | What it opens
 
 ---
+## 2026-07-14 — Sidebar search bar + chat sort control (user request, "next round")
+
+**What:** a fixed header strip above the list (`Sidebar.svelte`) with two controls. (1) **Search** — a
+plain case-insensitive title filter (V1, "start simple"); in Chat mode it filters conversations by title,
+in Library mode it filters documents by label/filename/author. Ephemeral (not persisted), ✕-to-clear,
+own empty state ("No chats/documents match …"). Query state is shared across modes (one input). (2) **Sort
+control** (Chat only) — an `arrow-up-down` icon button opening a small dropdown: **Newest first** (default),
+Oldest first, Name A–Z, Name Z–A (checkmark on the active one). Persisted in `localStorage` (`convSort`),
+like the panel widths / theme. Pinned chats still float to their own section regardless of order; the
+chosen order applies within each of Pinned / Recent. Two new Lucide glyphs (`search`, `arrow-up-down`).
+
+**Why:** items 3 (sort) + 7 (search) from the sidebar feedback list, deferred to this round.
+
+**Rejected:** (a) a flat "search results" list that drops the Pinned/Recent split while searching — kept the
+split so a pinned match stays visibly pinned; (b) full-text/body search — deferred to a later pass once V1
+title search proves its keep (the user's explicit "V1 on something simple then test"); (c) a fixed-position
+sort menu like the ⋯ row menu — the toolbar isn't inside the scrolling list, so a plain
+`position: absolute` dropdown + outside-pointerdown close is enough.
+
+**Verified ($0, frontend-only):** `svelte-check` 0/0; live on the real corpus — sort A–Z reordered the 8
+chats alphabetically and persisted `convSort:"az"`; search "cluster" → 1 match, "zzzznomatch" → empty state;
+Library search "main" → 1 doc, sort button correctly absent in Library; 0 console errors. All test state
+restored (search cleared, `convSort` removed → reload confirms default newest-first order).
+
+**Opens:** Library panel redesign (research) is the remaining feedback item. Search is title-only; touch has
+no affordance issues here (both controls are tap targets).
+
+**Staged; nothing committed (cpc §13).**
+
+## 2026-07-14 — Resizable right SourcePanel + lavender "tab" section labels (user request)
+
+**What:** two frontend tweaks. (1) **Resizable citation SourcePanel** — a drag handle on the panel's left
+edge (`SourcePanel.svelte`), width clamped [320, 720] and capped at 92vw, persisted in `localStorage`
+(`sourcePanelWidth`) — same pattern as the left sidebar. (2) **Lavender "tab" section labels** — the sidebar
+"Pinned" / "Recent" headers restyled as title-case lavender chips (new `--lavender` token in the 4 theme
+blocks; `color-mix` tint background) for legibility (Claude-desktop-like grouping); "Recent" now always
+shows when there are non-pinned chats (was only rendered alongside a Pinned section).
+
+**Why:** user request — the right source panel couldn't be extended; and wanting the Pinned/Recent grouping
+more legible, "tabbed" like Claude desktop, with a lavender treatment.
+
+**Verified ($0, frontend-only):** `svelte-check` 0/0; live — "Pinned"/"Recent" headers computed
+`color: rgb(111,98,201)` (`--lavender` `#6f62c9`) on a lavender-tint chip, `text-transform: none`; the
+SourcePanel opened via a citation ($0 fetch-mock) and its handle dragged 420→600px, clamped, persisted; 0
+console errors. Restored to defaults after (unpinned, widths reset).
+
+**Opens:** sort control + search bar still queued; Library panel redesign (research). Touch devices have no
+drag affordance for either resize handle yet.
+
+**Staged; nothing committed (cpc §13).**
+
+## 2026-07-14 — Chat rename (title_override) + resizable left sidebar (user request)
+
+**What:** two small additions. (1) **Rename** — the ⋯ menu gains **Rename** (between Pin and Archive);
+it turns the row's title into an inline `<input>` (prefilled + selected; Enter/blur saves, Esc cancels).
+Backed by a new additive `conversation_meta.title_override` column (`db/models.py` + an `_ADDITIVE_COLUMNS`
+migration); `set_conversation_meta(..., title=)` upserts it (blank reverts to the derived first-question
+title); `list_conversations` / `get_conversation` prefer the override; `PATCH /api/conversations/{sid}` +
+`updateConversationMeta` carry `title`. (2) **Resizable left sidebar** — a drag handle (`.resizer`) between
+the sidebar and content; `App.svelte` owns `sidebarWidth` (clamped 200–480px) exposed as `--sidebar-width`;
+the width persists in `localStorage` (a client-only view preference, like the theme toggle). The mobile
+drawer keeps a capped width.
+
+**Why:** user request — rename chats (under Pin, above Archive) + resize the side panels.
+
+**Verified:** `pytest` **35** (+ rename set/revert test); `svelte-check` 0/0; ruff + mypy clean; additive
+migration applied to `data/library.db` (`title_override` added). Live ($0): menu order Pin·Rename·Archive·
+Delete; rename → inline input (focused, prefilled) → Enter saves + shows in the sidebar + persists; blank
+title reverts to derived; drag resizes 260→360px live, clamps at 480px, persists to localStorage; 0 console
+errors. (Both actions restored to defaults after testing.)
+
+**Opens:** the right citation **SourcePanel** isn't resizable yet (same pattern — quick follow-up if
+wanted). Rename uses inline edit (no `window.prompt`, which some Tauri webviews block). Sort control +
+search bar + Library redesign still queued from the prior round.
+
+**Staged; nothing committed (cpc §13). Additive migration applied to the live DB.**
+
 ## 2026-07-14 — Conversation sidebar UX v2: pinned section + per-row ⋯ menu + hover-fix + mode icons (user feedback)
 
 **What:** rewrote `Sidebar.svelte` per live-review feedback. (1) **Per-row ⋯ menu** replaces the three

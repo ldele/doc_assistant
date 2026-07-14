@@ -247,3 +247,14 @@ def test_meta_absent_row_is_all_default(temp_db: Path):
     _seed("s1", "q", when=datetime(2026, 7, 13, 10, 0, 0))
     (c,) = list_conversations()
     assert not c.pinned and not c.archived
+
+
+def test_rename_sets_and_reverts_title(temp_db: Path):
+    _seed("s1", "the original question", when=datetime(2026, 7, 13, 10, 0, 0))
+    set_conversation_meta("s1", title="My renamed chat")
+    assert list_conversations()[0].title == "My renamed chat"
+    d = get_conversation("s1")
+    assert d is not None and d.title == "My renamed chat"
+    # a blank title reverts to the derived first-question title
+    set_conversation_meta("s1", title="   ")
+    assert list_conversations()[0].title == "the original question"

@@ -23,6 +23,8 @@
     | 'trash-2'
     | 'message-square'
     | 'ellipsis'
+    | 'search'
+    | 'arrow-up-down'
 
   let { name, size = 18 }: { name: IconName; size?: number } = $props()
 </script>
@@ -90,6 +92,10 @@
     <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
   {:else if name === 'ellipsis'}
     <circle cx="12" cy="12" r="1" /><circle cx="19" cy="12" r="1" /><circle cx="5" cy="12" r="1" />
+  {:else if name === 'search'}
+    <circle cx="11" cy="11" r="8" /><path d="m21 21-4.3-4.3" />
+  {:else if name === 'arrow-up-down'}
+    <path d="m21 16-4 4-4-4" /><path d="M17 20V4" /><path d="m3 8 4-4 4 4" /><path d="M7 4v16" />
   {/if}
 </svg>
 

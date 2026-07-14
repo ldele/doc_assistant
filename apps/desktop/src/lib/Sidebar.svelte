@@ -23,6 +23,7 @@
     onPin,
     onArchive,
     onDelete,
+    onRename,
   }: {
     mode: 'chat' | 'library'
     conversations: ConversationSummary[]
@@ -39,16 +40,102 @@
     onPin: (sessionId: string, pinned: boolean) => void
     onArchive: (sessionId: string, archived: boolean) => void
     onDelete: (sessionId: string) => void
+    onRename: (sessionId: string, title: string) => void
   } = $props()
+
+  // Inline rename: "Rename" in the ⋯ menu turns the row's title into an editable input.
+  let editingId = $state<string | null>(null)
+  let editValue = $state('')
+  function startRename(c: ConversationSummary): void {
+    editingId = c.session_id
+    editValue = c.title
+    closeMenu()
+  }
+  function saveRename(sid: string): void {
+    if (editingId !== sid) return // guard the blur-after-Enter double fire
+    editingId = null
+    if (editValue.trim()) onRename(sid, editValue.trim())
+  }
+  function cancelRename(): void {
+    editingId = null
+  }
+  function focusSelect(node: HTMLInputElement): void {
+    node.focus()
+    node.select()
+  }
+
+  // Search (V1: a plain case-insensitive title filter over the currently-shown list — chats in
+  // chat mode, documents in library mode; "start simple, deepen once it earns its keep" per the
+  // user's brief). Ephemeral: not persisted, cleared on the ✕.
+  let query = $state('')
+  const q = $derived(query.trim().toLowerCase())
+
+  // Sort order for the chat history. Persisted like the other client-only view prefs (theme, panel
+  // widths). Default: newest-first. Pinned still float to their own section regardless of order.
+  type SortKey = 'recent' | 'oldest' | 'az' | 'za'
+  const SORT_KEYS: SortKey[] = ['recent', 'oldest', 'az', 'za']
+  const SORT_LABELS: Record<SortKey, string> = {
+    recent: 'Newest first',
+    oldest: 'Oldest first',
+    az: 'Name A–Z',
+    za: 'Name Z–A',
+  }
+  function loadSort(): SortKey {
+    try {
+      const v = localStorage.getItem('convSort')
+      if (v === 'recent' || v === 'oldest' || v === 'az' || v === 'za') return v
+    } catch {
+      /* ignore — fall back to default */
+    }
+    return 'recent'
+  }
+  let sortKey = $state<SortKey>(loadSort())
+  let sortOpen = $state(false)
+  let sortwrapEl = $state<HTMLElement | null>(null)
+  function setSort(k: SortKey): void {
+    sortKey = k
+    sortOpen = false
+    try {
+      localStorage.setItem('convSort', k)
+    } catch {
+      /* ignore — order just won't persist */
+    }
+  }
+  function ts(iso: string): number {
+    const t = new Date(iso).getTime()
+    return Number.isNaN(t) ? 0 : t
+  }
+  function sortConvos(list: ConversationSummary[], key: SortKey): ConversationSummary[] {
+    const arr = [...list]
+    if (key === 'oldest') arr.sort((a, b) => ts(a.last_at) - ts(b.last_at))
+    else if (key === 'az') arr.sort((a, b) => a.title.localeCompare(b.title))
+    else if (key === 'za') arr.sort((a, b) => b.title.localeCompare(a.title))
+    else arr.sort((a, b) => ts(b.last_at) - ts(a.last_at))
+    return arr
+  }
 
   // Archived conversations are hidden behind a toggle; pinned ones get their own section on top.
   let showArchived = $state(false)
   const archivedCount = $derived(conversations.filter((c) => c.archived).length)
-  const visibleConvos = $derived(
-    showArchived ? conversations : conversations.filter((c) => !c.archived),
+  const matchedConvos = $derived(
+    (showArchived ? conversations : conversations.filter((c) => !c.archived)).filter(
+      (c) => q === '' || c.title.toLowerCase().includes(q),
+    ),
   )
-  const pinnedConvos = $derived(visibleConvos.filter((c) => c.pinned))
-  const otherConvos = $derived(visibleConvos.filter((c) => !c.pinned))
+  const sortedConvos = $derived(sortConvos(matchedConvos, sortKey))
+  const pinnedConvos = $derived(sortedConvos.filter((c) => c.pinned))
+  const otherConvos = $derived(sortedConvos.filter((c) => !c.pinned))
+  // Library search: title/author/filename substring (documents already arrive in a stable order).
+  const matchedDocs = $derived(
+    q === ''
+      ? documents
+      : documents.filter(
+          (d) =>
+            docLabel(d).toLowerCase().includes(q) ||
+            d.filename.toLowerCase().includes(q) ||
+            (d.authors ?? '').toLowerCase().includes(q),
+        ),
+  )
 
   // The per-row ⋯ menu: a single floating menu, positioned at the clicked button (fixed, so the
   // sidebar's overflow can't clip it). Closes on outside-click, Esc, or a list scroll.
@@ -76,6 +163,9 @@
     if (menuConvo) onPin(menuConvo.session_id, !menuConvo.pinned)
     closeMenu()
   }
+  function menuRename(): void {
+    if (menuConvo) startRename(menuConvo)
+  }
   function menuArchive(): void {
     if (menuConvo) onArchive(menuConvo.session_id, !menuConvo.archived)
     closeMenu()
@@ -87,10 +177,23 @@
 
   $effect(() => {
     function onKey(e: KeyboardEvent): void {
-      if (e.key === 'Escape') closeMenu()
+      if (e.key === 'Escape') {
+        closeMenu()
+        sortOpen = false
+      }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
+  })
+
+  // Close the sort dropdown on any click outside its wrapper (only wired while it's open).
+  $effect(() => {
+    if (!sortOpen) return
+    function onDown(e: PointerEvent): void {
+      if (sortwrapEl && !sortwrapEl.contains(e.target as Node)) sortOpen = false
+    }
+    window.addEventListener('pointerdown', onDown)
+    return () => window.removeEventListener('pointerdown', onDown)
   })
 
   function relTime(iso: string): string {
@@ -153,42 +256,105 @@
     {/if}
   </div>
 
+  {#if (mode === 'chat' && conversations.length > 0) || (mode === 'library' && documents.length > 0)}
+    <div class="toolbar">
+      <div class="search">
+        <Icon name="search" size={14} />
+        <input
+          type="text"
+          bind:value={query}
+          placeholder={mode === 'chat' ? 'Search chats' : 'Search library'}
+          aria-label={mode === 'chat' ? 'Search chats' : 'Search library'}
+        />
+        {#if query}
+          <button class="clear" onclick={() => (query = '')} aria-label="Clear search" type="button">
+            <Icon name="x" size={13} />
+          </button>
+        {/if}
+      </div>
+      {#if mode === 'chat'}
+        <div class="sortwrap" bind:this={sortwrapEl}>
+          <button
+            class="sortbtn"
+            class:on={sortOpen}
+            onclick={() => (sortOpen = !sortOpen)}
+            aria-haspopup="menu"
+            aria-expanded={sortOpen}
+            title="Sort: {SORT_LABELS[sortKey]}"
+            aria-label="Sort conversations"
+            type="button"><Icon name="arrow-up-down" size={15} /></button
+          >
+          {#if sortOpen}
+            <div class="sortmenu" role="menu">
+              {#each SORT_KEYS as k}
+                <button
+                  class="sortitem"
+                  class:active={sortKey === k}
+                  role="menuitemradio"
+                  aria-checked={sortKey === k}
+                  onclick={() => setSort(k)}
+                  type="button"
+                >
+                  <span class="tick">{#if sortKey === k}<Icon name="check" size={14} />{/if}</span>
+                  {SORT_LABELS[k]}
+                </button>
+              {/each}
+            </div>
+          {/if}
+        </div>
+      {/if}
+    </div>
+  {/if}
+
   {#snippet convRow(c: ConversationSummary)}
     <div
       class="convrow"
       class:active={isActive(c.session_id)}
       class:menuopen={openMenuFor === c.session_id}
     >
-      <button
-        class="rowmain"
-        aria-current={isActive(c.session_id) ? 'true' : undefined}
-        onclick={() => onSelect(c.session_id)}
-        type="button"
-      >
-        <span class="title">{c.title}</span>
-        <span class="rowmeta">
-          {#if c.session_id === liveSessionId}<span class="dot" title="Current chat" aria-hidden="true"></span>{/if}
-          <span>{relTime(c.last_at)} · {c.turn_count} turn{c.turn_count === 1 ? '' : 's'}</span>
-        </span>
-      </button>
-      <div class="rowactions">
+      {#if editingId === c.session_id}
+        <input
+          class="rename-input"
+          bind:value={editValue}
+          use:focusSelect
+          onkeydown={(e) => {
+            if (e.key === 'Enter') saveRename(c.session_id)
+            else if (e.key === 'Escape') cancelRename()
+          }}
+          onblur={() => saveRename(c.session_id)}
+        />
+      {:else}
         <button
-          class="act"
-          class:on={c.pinned}
-          title={c.pinned ? 'Unpin' : 'Pin'}
-          aria-label={c.pinned ? 'Unpin conversation' : 'Pin conversation'}
-          onclick={() => onPin(c.session_id, !c.pinned)}
-          type="button"><Icon name="pin" size={14} /></button
+          class="rowmain"
+          aria-current={isActive(c.session_id) ? 'true' : undefined}
+          onclick={() => onSelect(c.session_id)}
+          type="button"
         >
-        <button
-          class="act"
-          title="More"
-          aria-label="Conversation options"
-          aria-haspopup="menu"
-          onclick={(e) => openMenu(c.session_id, e)}
-          type="button"><Icon name="ellipsis" size={14} /></button
-        >
-      </div>
+          <span class="title">{c.title}</span>
+          <span class="rowmeta">
+            {#if c.session_id === liveSessionId}<span class="dot" title="Current chat" aria-hidden="true"></span>{/if}
+            <span>{relTime(c.last_at)} · {c.turn_count} turn{c.turn_count === 1 ? '' : 's'}</span>
+          </span>
+        </button>
+        <div class="rowactions">
+          <button
+            class="act"
+            class:on={c.pinned}
+            title={c.pinned ? 'Unpin' : 'Pin'}
+            aria-label={c.pinned ? 'Unpin conversation' : 'Pin conversation'}
+            onclick={() => onPin(c.session_id, !c.pinned)}
+            type="button"><Icon name="pin" size={14} /></button
+          >
+          <button
+            class="act"
+            title="More"
+            aria-label="Conversation options"
+            aria-haspopup="menu"
+            onclick={(e) => openMenu(c.session_id, e)}
+            type="button"><Icon name="ellipsis" size={14} /></button
+          >
+        </div>
+      {/if}
     </div>
   {/snippet}
 
@@ -200,9 +366,14 @@
         {#if pinnedConvos.length > 0}
           <p class="section-header">Pinned</p>
           {#each pinnedConvos as c (c.session_id)}{@render convRow(c)}{/each}
-          <p class="section-header">Recent</p>
         {/if}
-        {#each otherConvos as c (c.session_id)}{@render convRow(c)}{/each}
+        {#if otherConvos.length > 0}
+          <p class="section-header">Recent</p>
+          {#each otherConvos as c (c.session_id)}{@render convRow(c)}{/each}
+        {/if}
+        {#if q !== '' && pinnedConvos.length === 0 && otherConvos.length === 0}
+          <p class="empty">No chats match “{query.trim()}”.</p>
+        {/if}
         {#if archivedCount > 0}
           <button class="archived-toggle" onclick={() => (showArchived = !showArchived)} type="button">
             {showArchived ? 'Hide' : 'Show'} archived ({archivedCount})
@@ -214,8 +385,10 @@
     <nav class="list" aria-label="Documents">
       {#if documents.length === 0}
         <p class="empty">No documents indexed yet.</p>
+      {:else if matchedDocs.length === 0}
+        <p class="empty">No documents match “{query.trim()}”.</p>
       {:else}
-        {#each documents as d (d.id)}
+        {#each matchedDocs as d (d.id)}
           <button
             class="librow"
             class:active={d.id === selectedDocId}
@@ -241,6 +414,9 @@
     <button class="menuitem" role="menuitem" onclick={menuPin} type="button">
       <Icon name="pin" size={14} /> {menuConvo.pinned ? 'Unpin' : 'Pin'}
     </button>
+    <button class="menuitem" role="menuitem" onclick={menuRename} type="button">
+      <Icon name="pencil" size={14} /> Rename
+    </button>
     <button class="menuitem muted" role="menuitem" onclick={menuArchive} type="button">
       <Icon name="archive" size={14} /> {menuConvo.archived ? 'Unarchive' : 'Archive'}
     </button>
@@ -257,7 +433,7 @@
 
 <style>
   .sidebar {
-    width: 260px;
+    width: var(--sidebar-width, 260px);
     flex-shrink: 0;
     height: 100vh;
     border-right: 1px solid var(--border);
@@ -311,6 +487,120 @@
     justify-content: center;
     gap: 0.4rem;
   }
+  /* Search + sort toolbar — fixed header strip above the scrolling list. */
+  .toolbar {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.5rem 0.8rem;
+    border-bottom: 1px solid var(--border);
+  }
+  .search {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.3rem 0.5rem;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface);
+    color: var(--fg-2);
+  }
+  .search:focus-within {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 22%, transparent);
+  }
+  .search input {
+    flex: 1;
+    min-width: 0;
+    font: inherit;
+    font-size: 0.82rem;
+    border: none;
+    background: none;
+    color: var(--fg);
+    padding: 0;
+  }
+  .search input:focus {
+    outline: none;
+  }
+  .search input::placeholder {
+    color: var(--fg-2);
+  }
+  .clear {
+    font: inherit;
+    cursor: pointer;
+    border: none;
+    background: none;
+    color: var(--fg-2);
+    padding: 0;
+    display: inline-flex;
+    flex: none;
+  }
+  .clear:hover {
+    color: var(--fg);
+  }
+  .sortwrap {
+    position: relative;
+    flex: none;
+  }
+  .sortbtn {
+    font: inherit;
+    cursor: pointer;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--fg-2);
+    padding: 0.36rem;
+    border-radius: 8px;
+    display: inline-flex;
+    align-items: center;
+  }
+  .sortbtn:hover,
+  .sortbtn.on {
+    background: var(--surface-2);
+    color: var(--fg);
+  }
+  .sortmenu {
+    position: absolute;
+    top: calc(100% + 4px);
+    right: 0;
+    z-index: 31;
+    min-width: 168px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    box-shadow: var(--shadow-2);
+    padding: 0.3rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.1rem;
+  }
+  .sortitem {
+    font: inherit;
+    font-size: 0.82rem;
+    text-align: left;
+    cursor: pointer;
+    border: none;
+    background: none;
+    color: var(--fg);
+    padding: 0.4rem 0.5rem;
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+  }
+  .sortitem:hover {
+    background: var(--surface-2);
+  }
+  .sortitem.active {
+    color: var(--accent);
+    font-weight: 600;
+  }
+  .tick {
+    width: 14px;
+    display: inline-flex;
+    flex: none;
+  }
   .list {
     flex: 1;
     overflow-y: auto;
@@ -325,14 +615,17 @@
     padding: 0.6rem;
     line-height: 1.4;
   }
+  /* Lavender "tab" labels for Pinned / Recent — grouped + legible (user request). */
   .section-header {
-    font-size: 0.68rem;
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
-    color: var(--fg-2);
+    align-self: flex-start;
+    font-size: 0.7rem;
     font-weight: 600;
-    margin: 0;
-    padding: 0.55rem 0.55rem 0.25rem;
+    letter-spacing: 0.02em;
+    color: var(--lavender);
+    background: color-mix(in srgb, var(--lavender) 14%, transparent);
+    border-radius: 6px;
+    margin: 0.55rem 0.1rem 0.3rem;
+    padding: 0.16rem 0.5rem;
   }
   /* Chat row: a container (main button + hover-revealed pin + ⋯). */
   .convrow {
@@ -362,6 +655,22 @@
     gap: 0.15rem;
     flex: 1;
     min-width: 0;
+  }
+  .rename-input {
+    flex: 1;
+    min-width: 0;
+    margin: 0.3rem 0.4rem;
+    font: inherit;
+    font-size: 0.85rem;
+    color: var(--fg);
+    background: var(--bg);
+    border: 1px solid var(--accent);
+    border-radius: 6px;
+    padding: 0.3rem 0.4rem;
+  }
+  .rename-input:focus {
+    outline: none;
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 30%, transparent);
   }
   /* Actions show only on mouse hover, or while this row's menu is open (item 6: no focus-within). */
   .rowactions {
@@ -505,6 +814,7 @@
       position: fixed;
       top: 0;
       left: 0;
+      width: min(85vw, 320px);
       z-index: 20;
       transform: translateX(-100%);
       transition: transform 0.2s ease;

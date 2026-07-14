@@ -56,4 +56,6 @@ for that per-conversation state.
 - Hover-only row actions — no touch affordance yet (mobile follow-up: `:focus-within` partially covers it).
 - No **trash/restore** view for soft-deleted conversations (recoverable via the API today).
 - Consider an **ADR**: first conversation-level write path + the schema addition.
-- Rename (a `title_override`) is a natural sibling field on this table when wanted.
+- **Rename** — built 2026-07-14 (additive `title_override` column; ⋯-menu inline edit between Pin and
+  Archive; blank reverts to the derived title). **Resizable left sidebar** also landed (client-only width
+  in `localStorage`, clamped 200–480px). Right citation `SourcePanel` resize is a quick follow-up.

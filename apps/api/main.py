@@ -395,7 +395,11 @@ def create_app(
         from doc_assistant.conversations import set_conversation_meta
 
         set_conversation_meta(
-            session_id, pinned=body.pinned, archived=body.archived, deleted=body.deleted
+            session_id,
+            pinned=body.pinned,
+            archived=body.archived,
+            deleted=body.deleted,
+            title=body.title,
         )
         return {"ok": True}
 

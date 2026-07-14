@@ -16,7 +16,7 @@
   <header>
     <span class="cite">{source.citation}</span>
     {#each source.markers as m (m)}
-      <span class="chip" title="From your corpus's concept graph — advisory, not a gate">
+      <span class="chip" title="From your corpus's concept graph (advisory, not a gate)">
         <Icon name="triangle-alert" size={12} /> {markerLabel(m)}
       </span>
     {/each}

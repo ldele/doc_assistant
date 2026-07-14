@@ -8,6 +8,49 @@ Append only — never edit past entries.
 Format: What changed | Why | Rejected alternatives | What it opens
 
 ---
+## 2026-07-14 — Visual identity V2 (SPRINT-017): header/wordmark + spacing/type scale + empty states with sample chips + ~70ch reading measure
+
+**What:** built V2 of the visual-identity pass (V1 committed `35b8627`) — frontend-only, layout
+rhythm, staged. (1) **Header/wordmark** — `App.svelte` header now renders a wordmark: an indigo book
+mark (new `Icon` glyph in a `--accent` tile) + `doc_assistant` in `--font-serif` (`doc` ink,
+`_assistant` muted via `.wm-dim`), the engine meta line kept as a quieter subtitle. (2) **Spacing +
+type scale** — `app.css` gains a small *used* token set (`--space-1..6`, `--text-meta/-sm/-title/
+-display`, `--measure: 68ch`), applied to the header/footer/conversation padding + empty/first-run
+states (no dead tokens). (3) **Empty states restyled** — the no-turns empty state and the no-corpus
+first-run banner share one centered, mark-led layout (icon tile + serif headline + tightened copy);
+the empty state carries three corpus-agnostic **sample-question chips** that prefill the existing
+composer (`useSample` sets `input` + focuses the textarea — no turn sent, no behavior change).
+(4) **Reading measure** — `Markdown.svelte` `.md` prose caps at `--measure` (~68ch), left-aligned;
+source/provenance cards keep the full column width. (5) **Icons** — `Icon.svelte` gains `book-open`
+(wordmark), `book-open-text` (empty state), `library` (first-run banner), Lucide paths. (6) **Copy de-tell (user request)** — removed em dashes
+from **all user-facing UI copy** across 6 components (an "AI-written" tell the user flagged), swapping
+them for the app's own idioms (periods, commas, colons, parentheses, `·` — the same middot the header/
+metaline already use); code comments left untouched (not rendered). Live-confirmed 0 em/en dashes in
+the rendered page. **Shell topology unchanged** (fork #9). SPRINT-016 flipped archived (V1 committed)
+→ `docs/archive/sprints/`.
+**Why:** V2 is the design-locked next phase (`feature-visual-identity.md` §V2, fork #9 scope). The
+V2 design specifics were chosen with the user this session: wordmark **option A** (serif + book mark,
+picked over sans-underscore and monogram-tile) and empty state **with sample chips** (picked over a
+plain restyle) — the two genuinely taste-driven forks the spec left open.
+**Rejected:** applying the type scale across every component (out of a look-pass's safe scope — kept
+to the shell + reading surface I touched, so every token added is referenced, not dead); a serif
+*wordmark on all chrome* (chrome stays sans per fork #4 — only the brand element is serif); prefilling
++ auto-sending a chip (chips prefill only — the reader still presses Send, so no new turn behavior);
+corpus-specific sample questions (topics aren't known at this layer — kept generic-but-runnable).
+**Verified ($0/offline, preview harness on the real dev build):** `svelte-check` **0/0** (123 files);
+computed styles confirm the serif wordmark (Spectral stack, `doc` ink `#23201b` / `_assistant` muted
+`#6b6559`) + indigo mark tile + 3 pill chips; a chip click prefills + focuses the composer and enables
+Send; a **mocked-SSE $0 turn** renders answer prose through `.md` capped at **510px = 68ch** inside a
+790px column (measure applied, prose narrower than the column) with the wordmark intact + chips gone;
+dark theme flips clean (charcoal `#1b1813` bg, paper-white wordmark, lightened-indigo `#9a8ff0` mark
+with dark text); mobile 375px — hamburger appears, no horizontal overflow (scrollWidth == clientWidth),
+chips wrap; **0 console errors**. (Screenshots timed out again on this box — the documented flakiness;
+structural + computed-style verification used, same fallback as V1.)
+**Opens:** V3 (Tauri app icon + branding + cross-screen polish audit) is the remaining phase.
+Fork #4's headings-only serif fallback remains available if the full reading-surface serif reads heavy.
+The chip questions are static placeholders — a future enrichment could seed them from the corpus.
+**Staged; no `src/`/API/wire-type/behavior change (a look pass). Nothing committed (cpc §13).**
+
 ## 2026-07-13 — Visual identity V1 follow-ups: light palette → white/ivory (user feedback) + fonts vendored/committed/loaded
 
 **What:** two same-session adjustments on the just-built V1 (entry below), both staged:

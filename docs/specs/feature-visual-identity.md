@@ -187,20 +187,54 @@ still overrides the OS media query; no horizontal overflow at mobile width; icon
 (chrome + palette + icons on the app shell; serif on a real reading surface — the Library browser is
 $0). Byte-level behavior unchanged (a look pass changes no logic, no wire type, no backend).
 
-### V2 — layout rhythm + header/wordmark + empty states + reading measure
+### V2 — layout rhythm + header/wordmark + empty states + reading measure  *(BUILT 2026-07-14 — SPRINT-017, staged)*
 
 Header/wordmark treatment; a coherent spacing + type scale; restyled empty/first-run states; a ~70ch
-`max-width` measure on prose. **Shell topology stays put** (fork #9). Separate sprint; separate DoD.
+`max-width` measure on prose. **Shell topology stays put** (fork #9).
 
-### V3 — Tauri app icon + branding + polish audit
+**Design specifics chosen 2026-07-14 (with the user — the two forks V2 left open):**
+
+- **Wordmark = option A: serif + book mark.** `doc_assistant` in `--font-serif` (`doc` ink,
+  `_assistant` muted) preceded by a `--accent` tile holding a Lucide `book-open` glyph; the engine
+  meta line becomes a quieter subtitle. Leans into the scholarly identity (the serif is already the
+  reading voice). *Rejected:* B (sans wordmark, indigo underscore) and C (serif-monogram tile). The
+  serif reaches only this single brand element — chrome otherwise stays sans (fork #4 holds).
+- **Empty state = with sample chips.** The no-turns state gets an icon tile (`book-open-text`) + serif
+  headline + tightened copy + **three corpus-agnostic sample-question chips** that prefill the existing
+  composer (no turn sent, no new behavior). The no-corpus first-run banner shares the same mark-led
+  layout (`library` glyph). *Rejected:* a plain restyle with no chips.
+- **Spacing + type scale.** A small, *used* token set — `--space-1..6`, `--text-meta/-sm/-title/
+  -display`, `--measure: 68ch` — declared in `app.css` and applied to the shell (header/footer/
+  conversation padding) + the empty/first-run states. No component-wide scale rewrite (out of a
+  look-pass's safe scope); every token added is referenced.
+- **Reading measure.** `Markdown.svelte` `.md` prose caps at `--measure` (~68ch), left-aligned;
+  source/provenance cards keep the full column. Verified live: a $0 answer renders at 510px = 68ch.
+
+Separate sprint (SPRINT-017); DoD in the contract. Fork #4's headings-only serif fallback remains
+available if the full reading-surface serif reads heavy now that V2's rhythm is in.
+
+### V3 — Tauri app icon + branding + polish audit + **rename to Provenote**
 
 App icon / installer branding assets; a final cross-screen polish audit (both themes, mobile, all
 shipped surfaces). Separate sprint.
 
+**Name — locked 2026-07-14 (reverses fork #10): `doc_assistant` → `Provenote`.** A coined name
+(*provenance + note*) that also describes the product — provenance-tracked notes and answers from
+your own library. Treatment: **lowercase serif wordmark, `proven` in ink + `ote` in `--accent`
+indigo**, beside the existing book mark (Icon `book-open`). Availability-checked 2026-07-14:
+**GitHub `provenote` free · PyPI `provenote` free · npm `provenote` free**; no exact-name product
+surfaced (`.com` still to confirm at a registrar). *Rejected en route: Colofolio/Foliad (portfolio
+products already own them), Marginalis (a reading-journal app), Veritome (an AI-compliance tool).*
+V3 executes the rename across the wordmark, `<title>`/window title, packaging (Tauri bundle
+identifier + product name), and the user-facing docs/README — **the packaging + bundle-id surface may
+warrant its own ADR** (it touches installer identity, not just CSS). The repo/module name
+`doc_assistant` can stay as the internal package name; the rename is the *product* identity.
+
 ## Out of scope (whole pass)
 
 - **Shell topology** — `sidebar │ main │ drawer` is verified; not re-risked (fork #9).
-- **Product rename** — display name stays `doc_assistant` (fork #10).
+- **Product rename** — was out of scope for V1/V2 (fork #10). **Reversed 2026-07-14: the product is
+  renamed to `Provenote`, executed in V3** (see the V3 section). V1/V2 shipped under `doc_assistant`.
 - **Backend content emoji** — `🧪`/`🖥`/`🔎`/`📄` in streamed markdown stay (thin-shell boundary).
 - **Any behavior / logic / wire-type / locked-setting change** — a look pass touches CSS + templates only.
 - **New motion vocabulary** — existing fly/fade + reduced-motion patterns are reused, not extended (fork #8).

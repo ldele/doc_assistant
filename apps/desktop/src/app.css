@@ -30,6 +30,22 @@
   --font-sans: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   --font-serif: 'Spectral', 'Iowan Old Style', Georgia, Cambria, 'Times New Roman', serif;
 
+  /* Layout rhythm + reading measure (V2 — SPRINT-017). A small, coherent spacing + type scale so
+     the shell has one vocabulary instead of ad-hoc rem values; --measure caps prose line length on
+     reading surfaces (~68ch is the classic 45–75-char comfortable range). Theme-independent (sizes,
+     not colors) — declared once here, referenced from the components a look pass touches. */
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.5rem;
+  --space-6: 2.5rem;
+  --text-meta: 0.76rem;
+  --text-sm: 0.82rem;
+  --text-title: 1.25rem;
+  --text-display: 1.6rem;
+  --measure: 68ch;
+
   font-family: var(--font-sans);
   font-size: 15px;
   line-height: 1.5;

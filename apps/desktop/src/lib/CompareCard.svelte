@@ -29,7 +29,7 @@
 <div class="card">
   <div class="head">
     <div>
-      <strong>Retrieval comparison — defaults vs your override</strong>
+      <strong>Retrieval comparison: defaults vs your override</strong>
       <span class="q">“{result.query}”</span>
     </div>
     <button class="x" onclick={onClose} aria-label="Close comparison" type="button">
@@ -42,7 +42,7 @@
   {/if}
 
   <div class="cols">
-    {#each [{ side: 'a', title: 'A — Locked defaults', eff: result.eff_a, sources: result.sources_a }, { side: 'b', title: 'B — Your override', eff: result.eff_b, sources: result.sources_b }] as col (col.side)}
+    {#each [{ side: 'a', title: 'A · Locked defaults', eff: result.eff_a, sources: result.sources_a }, { side: 'b', title: 'B · Your override', eff: result.eff_b, sources: result.sources_b }] as col (col.side)}
       <section class="col">
         <header class="colhead">
           <span class="coltitle">{col.title}</span>
@@ -68,7 +68,7 @@
   </div>
 
   <p class="foot">
-    Indicative on one query — <strong>not a verdict</strong>. Only <code>top_k</code> /
+    Indicative on one query, <strong>not a verdict</strong>. Only <code>top_k</code> /
     <code>multi-query</code> change retrieval; the eval harness is the only path to a new default.
   </p>
 </div>

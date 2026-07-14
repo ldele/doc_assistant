@@ -176,6 +176,19 @@
     if (taEl) taEl.style.height = 'auto'
   }
 
+  // Sample questions for the empty state — corpus-agnostic openers that run one-click on any
+  // library. Picking one only prefills the existing composer (no turn sent, no new behavior); the
+  // reader still presses Send. Kept generic because the corpus topics aren't known at this layer.
+  const sampleQuestions = [
+    'What are the main themes across my documents?',
+    'Where do my sources agree and disagree?',
+    'What are the key findings, with citations?',
+  ]
+  function useSample(q: string): void {
+    input = q
+    taEl?.focus()
+  }
+
   async function send(): Promise<void> {
     const text = input.trim()
     if (!text || sending) return
@@ -332,16 +345,19 @@
           <Icon name="menu" />
         </button>
         <div class="brand">
-          <strong>doc_assistant</strong>
-          {#if status === 'ready' && health}
-            <span class="meta">
-              {health.chunk_count.toLocaleString()} chunks · {health.model} · {health.embedding_model}
-            </span>
-          {:else if status === 'connecting'}
-            <span class="meta">starting the engine…</span>
-          {:else}
-            <span class="meta err">backend unreachable — run <code>just api</code></span>
-          {/if}
+          <span class="mark"><Icon name="book-open" size={19} /></span>
+          <div class="brandtext">
+            <span class="wordmark">doc<span class="wm-dim">_assistant</span></span>
+            {#if status === 'ready' && health}
+              <span class="meta">
+                {health.chunk_count.toLocaleString()} chunks · {health.model} · {health.embedding_model}
+              </span>
+            {:else if status === 'connecting'}
+              <span class="meta">starting the engine…</span>
+            {:else}
+              <span class="meta err">backend unreachable. Run <code>just api</code></span>
+            {/if}
+          </div>
         </div>
         <div class="actions">
           <button
@@ -376,18 +392,28 @@
         {:else}
           {#if status === 'ready' && health && health.chunk_count === 0}
             <div class="banner">
-              <strong>No documents indexed yet.</strong>
+              <span class="state-mark"><Icon name="library" size={26} /></span>
+              <strong>No documents indexed yet</strong>
               <p>
-                Point doc_assistant at a folder of your documents to get started — it'll index them
+                Point doc_assistant at a folder of your documents to get started. It'll index them
                 locally, then you can ask questions grounded in them.
               </p>
               <button class="primary" onclick={() => (showSettings = true)}>Choose a folder…</button>
             </div>
           {:else if turns.length === 0}
-            <p class="empty">
-              Ask a question grounded in your documents. Answers carry inline citations, provenance,
-              and per-claim review.
-            </p>
+            <div class="empty">
+              <span class="state-mark"><Icon name="book-open-text" size={26} /></span>
+              <h2>Ask your library a question</h2>
+              <p>
+                Every answer is grounded in your own documents, with inline citations, provenance,
+                and per-claim review.
+              </p>
+              <div class="chips">
+                {#each sampleQuestions as q}
+                  <button class="chip" onclick={() => useSample(q)}>{q}</button>
+                {/each}
+              </div>
+            </div>
           {/if}
           {#each turns as t (t.id)}
             <Turn
@@ -424,7 +450,7 @@
               class="compare"
               onclick={doCompare}
               disabled={sending || comparing || input.trim() === ''}
-              title="See how your override changes retrieval for this question — locked defaults vs override, sources only, no answer ($0)"
+              title="See how your override changes retrieval for this question: locked defaults vs override, sources only, no answer ($0)"
               type="button"
             >
               {comparing ? 'Comparing…' : 'Test override'}
@@ -472,8 +498,8 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 0.5rem;
-    padding: 0.8rem 0;
+    gap: var(--space-2);
+    padding: var(--space-3) 0;
     border-bottom: 1px solid var(--border);
   }
   .hamburger {
@@ -488,12 +514,38 @@
   }
   .brand {
     display: flex;
-    flex-direction: column;
+    align-items: center;
+    gap: var(--space-3);
     flex: 1;
     min-width: 0;
   }
+  .mark {
+    flex: none;
+    width: 32px;
+    height: 32px;
+    border-radius: 9px;
+    background: var(--accent);
+    color: var(--accent-fg);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .brandtext {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+  .wordmark {
+    font-family: var(--font-serif);
+    font-size: var(--text-title);
+    line-height: 1.15;
+    color: var(--fg);
+  }
+  .wm-dim {
+    color: var(--fg-2);
+  }
   .meta {
-    font-size: 0.76rem;
+    font-size: var(--text-meta);
     color: var(--fg-2);
   }
   .meta.err {
@@ -502,12 +554,62 @@
   .conversation {
     flex: 1;
     overflow-y: auto;
-    padding: 0.5rem 0;
+    padding: var(--space-2) 0;
   }
-  .empty {
-    color: var(--fg-2);
-    margin-top: 2rem;
+  /* Empty + first-run states share one centered, mark-led layout (V2). */
+  .empty,
+  .banner {
+    max-width: 540px;
+    margin: var(--space-6) auto 0;
     text-align: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+  .state-mark {
+    flex: none;
+    width: 46px;
+    height: 46px;
+    border-radius: 12px;
+    background: var(--surface-2);
+    color: var(--accent);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: var(--space-4);
+  }
+  .empty h2,
+  .banner strong {
+    font-family: var(--font-serif);
+    font-size: var(--text-title);
+    font-weight: 600;
+    color: var(--fg);
+    margin: 0;
+  }
+  .empty p,
+  .banner p {
+    color: var(--fg-2);
+    font-size: var(--text-sm);
+    line-height: 1.6;
+    max-width: 46ch;
+    margin: var(--space-2) 0 var(--space-4);
+  }
+  .chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+    justify-content: center;
+  }
+  .chip {
+    font-size: var(--text-sm);
+    color: var(--accent);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: var(--space-2) var(--space-3);
+  }
+  .chip:hover {
+    border-color: var(--accent);
   }
   .readonly-note {
     font-size: 0.78rem;
@@ -534,18 +636,11 @@
     align-items: center;
   }
   .banner {
-    margin: 2rem auto 0;
-    max-width: 520px;
-    text-align: center;
     border: 1px solid var(--border);
     border-radius: 12px;
     background: var(--surface);
-    padding: 1.4rem 1.6rem;
-  }
-  .banner p {
-    color: var(--fg-2);
-    font-size: 0.9rem;
-    margin: 0.5rem 0 1rem;
+    box-shadow: var(--shadow-1);
+    padding: var(--space-6) var(--space-5);
   }
   .banner .primary {
     background: var(--accent);
@@ -556,8 +651,8 @@
   }
   footer {
     display: flex;
-    gap: 0.5rem;
-    padding: 0.8rem 0;
+    gap: var(--space-2);
+    padding: var(--space-3) 0;
     border-top: 1px solid var(--border);
   }
   textarea {

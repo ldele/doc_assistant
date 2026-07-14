@@ -143,7 +143,7 @@
         misses = 0
         if (st.state === 'done' || st.state === 'error') break
       } catch {
-        if (++misses >= 5) throw new Error('lost contact with the indexer — it may still be running')
+        if (++misses >= 5) throw new Error('lost contact with the indexer (it may still be running)')
       }
     }
     if (ingest?.state === 'done') {
@@ -292,7 +292,7 @@
            without re-navigating; the failure cases also assert role="alert". -->
       <div aria-live="polite">
         {#if busy && ingest?.state === 'running'}
-          <p class="muted">Indexing <code>{ingest.source_dir}</code> — this can take a while for
+          <p class="muted">Indexing <code>{ingest.source_dir}</code>. This can take a while for
             large folders. You can keep this open.</p>
         {/if}
         {#if ingest?.state === 'done'}
@@ -320,7 +320,7 @@
     <section>
       <h3>Provider &amp; model</h3>
       <p class="hint">
-        Switch between already-configured providers — takes effect on your next question, no
+        Switch between already-configured providers. Takes effect on your next question, no
         restart. The API key stays in <code>.env</code>.
       </p>
 
@@ -328,7 +328,7 @@
       <select id="llm-provider" bind:value={llmProvider} disabled={llmBusy}>
         {#each settings.providers as p (p.id)}
           <option value={p.id} disabled={!p.available}>
-            {p.id} ({p.paid ? 'metered' : 'local'}){p.available ? '' : ' — add its key to .env'}
+            {p.id} ({p.paid ? 'metered' : 'local'}){p.available ? '' : ' · add its key to .env'}
           </option>
         {/each}
       </select>
@@ -357,7 +357,7 @@
     <section>
       <h3>RAG sandbox</h3>
       <p class="banner">
-        Session only — resets when you restart. To change a default, run the eval harness.
+        Session only. Resets when you restart. To change a default, run the eval harness.
       </p>
 
       <label for="topk">Top-K <span class="muted">({effTopK} of {settings.candidate_k})</span></label>
@@ -456,27 +456,27 @@
         <dt>Candidate pool (pre-rerank)</dt>
         <dd>
           {settings.candidate_k}
-          <span class="muted">— fixed at construction; Top-K above cuts it after rerank</span>
+          <span class="muted">(fixed at construction; Top-K above cuts it after rerank)</span>
         </dd>
         <dt>Retrieval weights</dt>
         <dd>
           bm25 {settings.retrieval_weights.bm25} / vector {settings.retrieval_weights.vector}
-          <span class="muted">— inert on the shipped top-K by construction (measured)</span>
+          <span class="muted">(inert on the shipped top-K by construction, measured)</span>
         </dd>
         <dt>Parent-child retrieval</dt>
         <dd>
           {settings.use_parent_child ? 'on' : 'off'}
-          <span class="muted">— needs a re-ingest to change</span>
+          <span class="muted">(needs a re-ingest to change)</span>
         </dd>
         <dt>Parent chunk size / overlap</dt>
         <dd>
           {settings.parent_chunk[0]} / {settings.parent_chunk[1]}
-          <span class="muted">— needs a re-ingest to change</span>
+          <span class="muted">(needs a re-ingest to change)</span>
         </dd>
         <dt>Child chunk size / overlap</dt>
         <dd>
           {settings.child_chunk[0]} / {settings.child_chunk[1]}
-          <span class="muted">— needs a re-ingest to change</span>
+          <span class="muted">(needs a re-ingest to change)</span>
         </dd>
       </dl>
       <p class="hint">These are locked defaults (changed only via the eval harness).</p>

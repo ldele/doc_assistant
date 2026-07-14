@@ -62,7 +62,7 @@
     if (!d.authors) return d.title
     const names = d.authors.split(/\s*(?:;|,| and )\s*/).filter(Boolean)
     const first = names[0] ?? d.authors
-    return `${d.title} — ${names.length > 1 ? `${first} et al.` : first}`
+    return `${d.title} · ${names.length > 1 ? `${first} et al.` : first}`
   }
 </script>
 

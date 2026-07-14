@@ -15,6 +15,9 @@
     | 'check'
     | 'pencil'
     | 'triangle-alert'
+    | 'book-open'
+    | 'book-open-text'
+    | 'library'
 
   let { name, size = 18 }: { name: IconName; size?: number } = $props()
 </script>
@@ -56,6 +59,16 @@
     <path
       d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3z"
     /><path d="M12 9v4" /><path d="M12 17h.01" />
+  {:else if name === 'book-open'}
+    <path d="M12 7v14" /><path
+      d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"
+    />
+  {:else if name === 'book-open-text'}
+    <path d="M12 7v14" /><path d="M16 12h2" /><path d="M16 8h2" /><path
+      d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"
+    /><path d="M6 8h2" /><path d="M6 12h2" />
+  {:else if name === 'library'}
+    <path d="m16 6 4 14" /><path d="M12 6v14" /><path d="M8 8v12" /><path d="M4 4v16" />
   {/if}
 </svg>
 

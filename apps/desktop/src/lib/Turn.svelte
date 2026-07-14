@@ -35,7 +35,7 @@
         ? 'local'
         : usage.cost_usd != null
           ? `$${usage.cost_usd.toFixed(4)}`
-          : '—',
+          : 'n/a',
   )
 </script>
 

@@ -41,7 +41,7 @@
   {:else if loading}
     <p class="hint">Loading…</p>
   {:else if error}
-    <p class="hint err">Couldn’t load this document — {error}</p>
+    <p class="hint err">Couldn’t load this document: {error}</p>
   {:else if detail}
     <header class="dochead">
       <h2>{detail.title ?? detail.filename}</h2>

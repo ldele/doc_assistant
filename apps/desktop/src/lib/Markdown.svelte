@@ -97,10 +97,12 @@
 
 <style>
   /* Reading surface — Spectral serif for the answer prose (paper & ink; V1). Code/citations
-     opt back out below. */
+     opt back out below. V2: cap the line length at --measure (~68ch), left-aligned, so prose reads
+     at a comfortable measure while wider elements (source/provenance cards) keep the full column. */
   .md {
     font-family: var(--font-serif);
     line-height: 1.6;
+    max-width: var(--measure);
   }
   .md :global(p) {
     margin: 0.4em 0;

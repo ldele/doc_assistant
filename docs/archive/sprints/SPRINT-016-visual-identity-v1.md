@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-07-13 · class: disposable -->
+<!-- status: archived · updated: 2026-07-14 · class: disposable · built: V1 committed 35b8627 -->
 <!-- BUILDING 2026-07-13. Sole active contract. Design lock:
      docs/specs/feature-visual-identity.md (grilled 2026-07-13, 11 forks, design-locked).
      Feature: Visual-identity pass V1 — "paper & ink". Re-key the app.css token set to a warm

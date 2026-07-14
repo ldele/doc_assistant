@@ -8,6 +8,36 @@ Append only — never edit past entries.
 Format: What changed | Why | Rejected alternatives | What it opens
 
 ---
+## 2026-07-14 — Citation robustness, Phase B: answer-prompt fix (stop haiku's malformed citations at the source)
+
+**What:** tightened `ANSWER_PROMPT`'s citing rules (`prompts.py`) with three explicit negatives targeting
+the exact forms haiku emitted: (1) "a citation is ONLY a bracketed number — write `[3]`, never `[Source 3]`";
+(2) "for several sources, `[2][4]` — never `[2, 4]` or `[Sources 2, 4]`"; (3) "NEVER put words or a phrase in
+square brackets — write the claim as prose then its citation: `BM25 is term-based [2]`, never
+`[term-based system][2]`". Complements the deterministic parser + linkifier (the prior entry) — prompt reduces
+malformed at the source, parser/linkifier catch any stragglers (defense in depth).
+
+**Why:** the deterministic layer made malformed citations *usable*, but haiku still emitted them; fixing the
+prompt is the root-cause half. Gated on a paid turn to validate — user greenlit one.
+
+**Verified (1 real turn, $0.0063 — indicative, not a multi-sample eval):** the same question that previously
+produced **12 malformed citations** (whole claim phrases like `[term-based system]`) now yields **0**
+`[Source N]`, **0** `[2, 4]`, **0** phrase-wraps; **9 clean `[n]`** citations, all linkified + clickable to
+the side panel; compact "10 sources" strip, no wall. The only 2 residual "malformed" (`[that]`, `[ing]`) are
+editorial brackets *inside quoted source text*, not citation attempts — the linkifier leaves them plain (no
+digit). No `[n]`-only prompt test / hash is pinned, so no test broke. (`prompt_version_hash` naturally rolls —
+recorded in provenance, expected.)
+
+**Rejected:** forbidding brackets even inside quotes (fights legitimate scholarly quoting — the `[that]`
+artifacts are correct quoting); a rigorous multi-turn eval now (cost; one turn is a clear directional signal,
+the deterministic layer is the safety net regardless).
+
+**Opens:** the citation-audit still counts quote-artifact brackets (`[that]`) as "malformed" — a minor
+cosmetic in the citation-check note; a future refinement could exclude bracket tokens inside quotes. A proper
+before/after eval (N turns) is available if a hard number is wanted.
+
+**Staged; nothing committed (cpc §13).**
+
 ## 2026-07-14 — Conversation resume (fresh-context) + durable export-on-past + clean MD template
 
 **What:** three linked pieces (design lock: `docs/specs/feature-conversation-resume.md`). (1) **Fresh-context

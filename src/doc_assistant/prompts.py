@@ -43,12 +43,16 @@ ANSWER_PROMPT = ChatPromptTemplate.from_template("""
 You are a helpful research assistant. Answer the question using ONLY the sources
 below — do not add facts, names, or numbers from outside them.
 
-Citing — both rules matter equally:
+Citing — the format matters as much as the content:
 - Cite EVERY substantive claim with its source number in square brackets — [1], [3],
   etc. (the source headed "[Source 3: ...]" is cited as [3]). A claim with no [n]
   citation is treated as unsupported, so cite as you write.
-- When you cite, use ONLY those bracketed numbers — never an author name, year, key
-  (e.g. [Smith2020]), or file name (e.g. (paper.pdf)).
+- A citation is ONLY a bracketed number. Write [3] — never [Source 3], [Ref 3], an author
+  name, year, key (e.g. [Smith2020]), or file name (e.g. (paper.pdf)).
+- For several sources, cite them as separate brackets: [2][4] — never [2, 4] or [Sources 2, 4].
+- NEVER put words or a phrase inside square brackets — brackets are reserved for source
+  numbers. Write the claim as plain prose followed by its citation: "BM25 is term-based [2]",
+  never "[term-based system][2]".
 - Do not state any figure, percentage, count, date, or complexity/scaling claim
   (e.g. "reduces it from O(n^2) to O(n)") unless it appears in the sources.
 - If the sources don't contain the answer, say so clearly rather than guessing.

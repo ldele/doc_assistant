@@ -21,6 +21,8 @@
     | 'pin'
     | 'archive'
     | 'trash-2'
+    | 'message-square'
+    | 'ellipsis'
 
   let { name, size = 18 }: { name: IconName; size?: number } = $props()
 </script>
@@ -84,6 +86,10 @@
     <path d="M3 6h18" /><path
       d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"
     /><line x1="10" x2="10" y1="11" y2="17" /><line x1="14" x2="14" y1="11" y2="17" />
+  {:else if name === 'message-square'}
+    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+  {:else if name === 'ellipsis'}
+    <circle cx="12" cy="12" r="1" /><circle cx="19" cy="12" r="1" /><circle cx="5" cy="12" r="1" />
   {/if}
 </svg>
 

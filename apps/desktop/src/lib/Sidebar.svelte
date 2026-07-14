@@ -1,8 +1,9 @@
 <script lang="ts">
   // Left-rail app shell (feature-conversation-history.md, Decisions 7, 8; Library tab enabled by
-  // feature-library-browser.md, L1). Hosts the Chat/Library switch, the "↻ New chat" action, and
-  // — depending on `mode` — the conversation history list (chat) or the document list (library).
-  // Persistent column on desktop; an off-canvas drawer under 720px.
+  // feature-library-browser.md, L1; management actions by feature-conversation-management.md). Hosts
+  // the Chat/Library switch, "New chat", and — depending on `mode` — the conversation history (with
+  // per-row pin + ⋯ menu, pinned grouped into their own section) or the document list. Persistent
+  // column on desktop; an off-canvas drawer under 720px.
   import type { ConversationSummary, LibraryDocument } from './types'
   import Icon from './Icon.svelte'
 
@@ -40,12 +41,57 @@
     onDelete: (sessionId: string) => void
   } = $props()
 
-  // Archived conversations are hidden behind a toggle so they don't clutter the list.
+  // Archived conversations are hidden behind a toggle; pinned ones get their own section on top.
   let showArchived = $state(false)
   const archivedCount = $derived(conversations.filter((c) => c.archived).length)
   const visibleConvos = $derived(
     showArchived ? conversations : conversations.filter((c) => !c.archived),
   )
+  const pinnedConvos = $derived(visibleConvos.filter((c) => c.pinned))
+  const otherConvos = $derived(visibleConvos.filter((c) => !c.pinned))
+
+  // The per-row ⋯ menu: a single floating menu, positioned at the clicked button (fixed, so the
+  // sidebar's overflow can't clip it). Closes on outside-click, Esc, or a list scroll.
+  let openMenuFor = $state<string | null>(null)
+  let menuPos = $state<{ x: number; y: number }>({ x: 0, y: 0 })
+  const menuConvo = $derived(
+    openMenuFor ? (conversations.find((c) => c.session_id === openMenuFor) ?? null) : null,
+  )
+
+  function openMenu(sid: string, ev: MouseEvent): void {
+    ev.stopPropagation()
+    if (openMenuFor === sid) {
+      closeMenu()
+      return
+    }
+    const r = (ev.currentTarget as HTMLElement).getBoundingClientRect()
+    const flip = r.bottom + 130 > window.innerHeight
+    menuPos = { x: Math.max(8, r.right - 168), y: flip ? Math.max(8, r.top - 130) : r.bottom + 4 }
+    openMenuFor = sid
+  }
+  function closeMenu(): void {
+    openMenuFor = null
+  }
+  function menuPin(): void {
+    if (menuConvo) onPin(menuConvo.session_id, !menuConvo.pinned)
+    closeMenu()
+  }
+  function menuArchive(): void {
+    if (menuConvo) onArchive(menuConvo.session_id, !menuConvo.archived)
+    closeMenu()
+  }
+  function menuDelete(): void {
+    if (menuConvo) onDelete(menuConvo.session_id)
+    closeMenu()
+  }
+
+  $effect(() => {
+    function onKey(e: KeyboardEvent): void {
+      if (e.key === 'Escape') closeMenu()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  })
 
   function relTime(iso: string): string {
     const then = new Date(iso).getTime()
@@ -68,8 +114,7 @@
 
   // Library row label: prefer "Title — First Author" over the raw filename (which stays as the
   // row tooltip). The registry stores `authors` as one string with no locked format yet — split on
-  // the common separators and take the first name; "et al." when more are listed. Tighten once the
-  // metadata-enrichment sidecar defines the canonical format.
+  // the common separators and take the first name; "et al." when more are listed.
   function docLabel(d: LibraryDocument): string {
     if (!d.title) return d.filename
     if (!d.authors) return d.title
@@ -90,7 +135,7 @@
         type="button"
         onclick={() => onSelectMode('chat')}
       >
-        Chat
+        <Icon name="message-square" size={14} /> Chat
       </button>
       <button
         class="mode"
@@ -100,7 +145,7 @@
         type="button"
         onclick={() => onSelectMode('library')}
       >
-        Library
+        <Icon name="library" size={14} /> Library
       </button>
     </div>
     {#if mode === 'chat'}
@@ -108,54 +153,56 @@
     {/if}
   </div>
 
+  {#snippet convRow(c: ConversationSummary)}
+    <div
+      class="convrow"
+      class:active={isActive(c.session_id)}
+      class:menuopen={openMenuFor === c.session_id}
+    >
+      <button
+        class="rowmain"
+        aria-current={isActive(c.session_id) ? 'true' : undefined}
+        onclick={() => onSelect(c.session_id)}
+        type="button"
+      >
+        <span class="title">{c.title}</span>
+        <span class="rowmeta">
+          {#if c.session_id === liveSessionId}<span class="dot" title="Current chat" aria-hidden="true"></span>{/if}
+          <span>{relTime(c.last_at)} · {c.turn_count} turn{c.turn_count === 1 ? '' : 's'}</span>
+        </span>
+      </button>
+      <div class="rowactions">
+        <button
+          class="act"
+          class:on={c.pinned}
+          title={c.pinned ? 'Unpin' : 'Pin'}
+          aria-label={c.pinned ? 'Unpin conversation' : 'Pin conversation'}
+          onclick={() => onPin(c.session_id, !c.pinned)}
+          type="button"><Icon name="pin" size={14} /></button
+        >
+        <button
+          class="act"
+          title="More"
+          aria-label="Conversation options"
+          aria-haspopup="menu"
+          onclick={(e) => openMenu(c.session_id, e)}
+          type="button"><Icon name="ellipsis" size={14} /></button
+        >
+      </div>
+    </div>
+  {/snippet}
+
   {#if mode === 'chat'}
-    <nav class="list" aria-label="Conversation history">
+    <nav class="list" aria-label="Conversation history" onscroll={closeMenu}>
       {#if conversations.length === 0}
         <p class="empty">No conversations yet. Ask a question to start one.</p>
       {:else}
-        {#each visibleConvos as c (c.session_id)}
-          <div class="row" class:active={isActive(c.session_id)} class:archived={c.archived}>
-            <button
-              class="rowmain"
-              aria-current={isActive(c.session_id) ? 'true' : undefined}
-              onclick={() => onSelect(c.session_id)}
-              type="button"
-            >
-              <span class="title">
-                {#if c.pinned}<span class="pinmark" aria-hidden="true"><Icon name="pin" size={11} /></span>{/if}{c.title}
-              </span>
-              <span class="rowmeta">
-                {#if c.session_id === liveSessionId}<span class="dot" title="Current chat" aria-hidden="true"></span>{/if}
-                <span>{relTime(c.last_at)} · {c.turn_count} turn{c.turn_count === 1 ? '' : 's'}</span>
-              </span>
-            </button>
-            <div class="rowactions">
-              <button
-                class="act"
-                class:on={c.pinned}
-                title={c.pinned ? 'Unpin' : 'Pin'}
-                aria-label={c.pinned ? 'Unpin conversation' : 'Pin conversation'}
-                onclick={() => onPin(c.session_id, !c.pinned)}
-                type="button"><Icon name="pin" size={14} /></button
-              >
-              <button
-                class="act"
-                class:on={c.archived}
-                title={c.archived ? 'Unarchive' : 'Archive'}
-                aria-label={c.archived ? 'Unarchive conversation' : 'Archive conversation'}
-                onclick={() => onArchive(c.session_id, !c.archived)}
-                type="button"><Icon name="archive" size={14} /></button
-              >
-              <button
-                class="act danger"
-                title="Delete"
-                aria-label="Delete conversation"
-                onclick={() => onDelete(c.session_id)}
-                type="button"><Icon name="trash-2" size={14} /></button
-              >
-            </div>
-          </div>
-        {/each}
+        {#if pinnedConvos.length > 0}
+          <p class="section-header">Pinned</p>
+          {#each pinnedConvos as c (c.session_id)}{@render convRow(c)}{/each}
+          <p class="section-header">Recent</p>
+        {/if}
+        {#each otherConvos as c (c.session_id)}{@render convRow(c)}{/each}
         {#if archivedCount > 0}
           <button class="archived-toggle" onclick={() => (showArchived = !showArchived)} type="button">
             {showArchived ? 'Hide' : 'Show'} archived ({archivedCount})
@@ -170,7 +217,7 @@
       {:else}
         {#each documents as d (d.id)}
           <button
-            class="row"
+            class="librow"
             class:active={d.id === selectedDocId}
             aria-current={d.id === selectedDocId ? 'true' : undefined}
             onclick={() => onSelectDocument(d.id)}
@@ -187,6 +234,22 @@
     </nav>
   {/if}
 </aside>
+
+{#if openMenuFor && menuConvo}
+  <div class="menu-backdrop" onclick={closeMenu} role="presentation"></div>
+  <div class="menu" style="left: {menuPos.x}px; top: {menuPos.y}px" role="menu">
+    <button class="menuitem" role="menuitem" onclick={menuPin} type="button">
+      <Icon name="pin" size={14} /> {menuConvo.pinned ? 'Unpin' : 'Pin'}
+    </button>
+    <button class="menuitem muted" role="menuitem" onclick={menuArchive} type="button">
+      <Icon name="archive" size={14} /> {menuConvo.archived ? 'Unarchive' : 'Archive'}
+    </button>
+    <div class="menusep"></div>
+    <button class="menuitem danger" role="menuitem" onclick={menuDelete} type="button">
+      <Icon name="trash-2" size={14} /> Delete
+    </button>
+  </div>
+{/if}
 
 {#if open}
   <div class="scrim" onclick={onClose} role="presentation"></div>
@@ -224,15 +287,15 @@
     background: var(--surface);
     color: var(--fg-2);
     font-size: 0.82rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.35rem;
   }
   .mode.active {
     background: var(--surface-2);
     color: var(--fg);
     font-weight: 600;
-  }
-  .mode:disabled {
-    opacity: 0.5;
-    cursor: default;
   }
   .new {
     font: inherit;
@@ -245,6 +308,7 @@
     font-weight: 600;
     display: flex;
     align-items: center;
+    justify-content: center;
     gap: 0.4rem;
   }
   .list {
@@ -261,22 +325,29 @@
     padding: 0.6rem;
     line-height: 1.4;
   }
-  .row {
+  .section-header {
+    font-size: 0.68rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--fg-2);
+    font-weight: 600;
+    margin: 0;
+    padding: 0.55rem 0.55rem 0.25rem;
+  }
+  /* Chat row: a container (main button + hover-revealed pin + ⋯). */
+  .convrow {
     display: flex;
     align-items: center;
     border: 1px solid transparent;
     border-radius: 8px;
     width: 100%;
   }
-  .row:hover {
+  .convrow:hover {
     background: var(--surface);
   }
-  .row.active {
+  .convrow.active {
     background: var(--surface-2);
     border-color: var(--border);
-  }
-  .row.archived {
-    opacity: 0.55;
   }
   .rowmain {
     text-align: left;
@@ -292,10 +363,7 @@
     flex: 1;
     min-width: 0;
   }
-  .pinmark {
-    color: var(--accent);
-    margin-right: 0.2rem;
-  }
+  /* Actions show only on mouse hover, or while this row's menu is open (item 6: no focus-within). */
   .rowactions {
     display: none;
     align-items: center;
@@ -303,8 +371,8 @@
     padding-right: 0.25rem;
     flex: none;
   }
-  .row:hover .rowactions,
-  .row:focus-within .rowactions {
+  .convrow:hover .rowactions,
+  .convrow.menuopen .rowactions {
     display: flex;
   }
   .act {
@@ -324,10 +392,6 @@
   .act.on {
     color: var(--accent);
   }
-  .act.danger:hover {
-    color: var(--warn-fg);
-    background: var(--warn-bg);
-  }
   .archived-toggle {
     font: inherit;
     font-size: 0.75rem;
@@ -339,6 +403,28 @@
     margin-top: 0.2rem;
     text-align: left;
     text-decoration: underline;
+  }
+  /* Library row: stacked title + meta (a plain button — restored after the chat-row refactor). */
+  .librow {
+    text-align: left;
+    font: inherit;
+    cursor: pointer;
+    border: 1px solid transparent;
+    background: none;
+    color: var(--fg);
+    border-radius: 8px;
+    padding: 0.45rem 0.55rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+    width: 100%;
+  }
+  .librow:hover {
+    background: var(--surface);
+  }
+  .librow.active {
+    background: var(--surface-2);
+    border-color: var(--border);
   }
   .title {
     font-size: 0.85rem;
@@ -359,6 +445,56 @@
     border-radius: 50%;
     background: var(--accent);
     flex: none;
+  }
+  /* ⋯ dropdown menu (fixed — never clipped by the sidebar). */
+  .menu-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 30;
+  }
+  .menu {
+    position: fixed;
+    z-index: 31;
+    min-width: 160px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    box-shadow: var(--shadow-2);
+    padding: 0.3rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.1rem;
+  }
+  .menuitem {
+    font: inherit;
+    font-size: 0.82rem;
+    text-align: left;
+    cursor: pointer;
+    border: none;
+    background: none;
+    color: var(--fg);
+    padding: 0.4rem 0.5rem;
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+  .menuitem:hover {
+    background: var(--surface-2);
+  }
+  .menuitem.muted {
+    color: var(--fg-2);
+  }
+  .menuitem.danger {
+    color: var(--danger);
+  }
+  .menuitem.danger:hover {
+    background: color-mix(in srgb, var(--danger) 12%, transparent);
+  }
+  .menusep {
+    height: 1px;
+    background: var(--border);
+    margin: 0.2rem 0.1rem;
   }
   .scrim {
     display: none;

@@ -8,6 +8,40 @@ Append only — never edit past entries.
 Format: What changed | Why | Rejected alternatives | What it opens
 
 ---
+## 2026-07-14 — Conversation sidebar UX v2: pinned section + per-row ⋯ menu + hover-fix + mode icons (user feedback)
+
+**What:** rewrote `Sidebar.svelte` per live-review feedback. (1) **Per-row ⋯ menu** replaces the three
+inline action icons — on hover a row shows a **pin** quick-toggle + a **⋯** button; ⋯ opens a
+fixed-positioned dropdown (Pin/Unpin, **Archive** muted-grey, ─── separator, **Delete** in red `--danger`)
+that closes on outside-click / Esc / list-scroll. (2) **Pinned in its own section** — a "Pinned" header +
+pinned rows, then "Recent" (Claude/ChatGPT-style), via a Svelte-5 `{#snippet}` shared by both sections.
+(3) **Hover-only actions** — dropped the `:focus-within` reveal that kept a row's icons visible after a
+click (the reported bug); actions now show on `:hover` or while that row's menu is open. (4) **Chat/Library
+mode icons** (`message-square` / `library`). (5) **Fixed a regression** — the earlier chat-row refactor had
+reshaped `.row` into a flex-row, breaking the **Library** list layout (title + meta on one line, uneven);
+Library rows now use a dedicated `.librow` (stacked). New: `--danger` token (red, 4 theme blocks), Icon
+glyphs `message-square` / `ellipsis`.
+
+**Why:** feedback on the just-built management UI — delete should be red; a Claude-like ⋯ menu (archive
+grey, delete at the bottom, separated) instead of three always-adjacent icons; pinned chats grouped
+separately; actions only on hover; icons by the Chat/Library labels. Plus the library-name-size regression.
+
+**Verified ($0, frontend-only):** `svelte-check` 0/0; live — mode icons present, chat-row actions
+`display:none` until hover, 2 actions/row (pin + ⋯), the ⋯ menu shows Pin(ink) / Archive(grey `--fg-2`) /
+Delete(red `--danger` `#c0392b`) with a separator, pinning yields "Pinned" + "Recent" sections with the
+pinned row on top, menu closes after an action, Library rows back to `flex-direction: column`; 0 console
+errors. Every test action restored (history unchanged).
+
+**Rejected:** keeping the three inline icons (user wanted the ⋯ menu); `:focus-within` reveal (kept icons
+visible post-click — the bug); a title pin-mark (the Pinned section is the indicator now).
+
+**Opens (this feedback round, still to do):** **sort control** (⋯ · date + alphabetical, both directions)
+and a **search bar** (V1 title filter over conversations + library) — next; they share the dropdown/input
+pattern. **Library panel redesign** (a middle 2D table for many docs) — needs research. Touch devices have
+no hover affordance for the row actions yet.
+
+**Staged; nothing committed (cpc §13).**
+
 ## 2026-07-14 — Conversation management: pin / archive / soft-delete (new `conversation_meta` sidecar)
 
 **What:** the first conversation-*level* write path (design lock:

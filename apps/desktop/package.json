@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "description": "Tauri desktop frontend for doc_assistant — a thin Svelte UI over the FastAPI/SSE boundary (PR-M3). No business logic; renders the API's TurnResult payload.",
+  "description": "Tauri desktop frontend for Provenote: a thin Svelte UI over the FastAPI/SSE boundary (PR-M3). No business logic; renders the API's TurnResult payload.",
   "scripts": {
     "dev": "vite",
     "build": "svelte-check --tsconfig ./tsconfig.json && vite build",

@@ -1,4 +1,4 @@
-# Document Assistant
+# Provenote
 
 A local-first RAG assistant over your own document corpus (PDF, EPUB, HTML, DOCX, Markdown) that answers questions with inline, page-level citations — and measures whether those answers are any good. Document-format-agnostic by design; the test corpus here is research papers because they're real and freely available, but nothing assumes academia.
 
@@ -367,7 +367,7 @@ cross-encoder reranker — **always** run locally (see the [hardware note](#setu
 **chat LLM** runs locally too *if* you choose [Ollama](https://ollama.com) instead of the Claude API.
 With the default API path, only the retrieval models run on your hardware.
 
-If you go fully local, here's the spec for the LLM side, game-spec style. doc_assistant's local
+If you go fully local, here's the spec for the LLM side, game-spec style. Provenote's local
 default is an 8B model (e.g. `llama3.1:8b`, 4-bit quantized):
 
 | Local LLM (Ollama) | Minimum — runs, slow | Recommended — smooth |

@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "doc_assistant",
+  "productName": "Provenote",
   "version": "0.1.0",
-  "identifier": "com.doc-assistant.desktop",
+  "identifier": "com.provenote.desktop",
   "build": {
     "frontendDist": "../dist",
     "devUrl": "http://localhost:1420",
@@ -13,7 +13,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "doc_assistant",
+        "title": "Provenote",
         "width": 1024,
         "height": 768,
         "minWidth": 640,

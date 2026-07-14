@@ -213,22 +213,53 @@ Header/wordmark treatment; a coherent spacing + type scale; restyled empty/first
 Separate sprint (SPRINT-017); DoD in the contract. Fork #4's headings-only serif fallback remains
 available if the full reading-surface serif reads heavy now that V2's rhythm is in.
 
-### V3 — Tauri app icon + branding + polish audit + **rename to Provenote**
+### V3 — rename to Provenote (V3a) + Tauri app icon / branding (V3b) + polish audit
 
-App icon / installer branding assets; a final cross-screen polish audit (both themes, mobile, all
-shipped surfaces). Separate sprint.
+Carved 2026-07-14 (with the user) into two build increments. This section is the build-ready design
+lock; the gated sprint contract is instantiated at build time (the repo runs one active sprint,
+created when the build starts — the same spec→sprint pattern as `feature-provider-switch.md`→SPRINT-012).
 
 **Name — locked 2026-07-14 (reverses fork #10): `doc_assistant` → `Provenote`.** A coined name
 (*provenance + note*) that also describes the product — provenance-tracked notes and answers from
-your own library. Treatment: **lowercase serif wordmark, `proven` in ink + `ote` in `--accent`
-indigo**, beside the existing book mark (Icon `book-open`). Availability-checked 2026-07-14:
-**GitHub `provenote` free · PyPI `provenote` free · npm `provenote` free**; no exact-name product
-surfaced (`.com` still to confirm at a registrar). *Rejected en route: Colofolio/Foliad (portfolio
-products already own them), Marginalis (a reading-journal app), Veritome (an AI-compliance tool).*
-V3 executes the rename across the wordmark, `<title>`/window title, packaging (Tauri bundle
-identifier + product name), and the user-facing docs/README — **the packaging + bundle-id surface may
-warrant its own ADR** (it touches installer identity, not just CSS). The repo/module name
-`doc_assistant` can stay as the internal package name; the rename is the *product* identity.
+your own library. Treatment **B: lowercase serif wordmark, `proven` in `--fg` ink + `ote` in
+`--accent` indigo**, beside the existing book mark (Icon `book-open`). Availability-checked 2026-07-14:
+**GitHub / PyPI / npm `provenote` all free**; no exact-name product surfaced (`.com` still to confirm
+at a registrar). *Rejected en route: Colofolio/Foliad (portfolio products), Marginalis (a reading-
+journal app), Veritome (an AI-compliance tool).*
+
+#### V3a — the rename + a cross-screen polish audit  *(BUILT 2026-07-14 — SPRINT-018, staged)*
+
+**Built 2026-07-14** as `docs/sprints/SPRINT-018-visual-identity-v3a-rename.md`, immediately after the
+user committed V2 (`4fd772c`) + SPRINT-017 was archived — so the wordmark shipped as `doc_assistant`
+in V2 then `Provenote` in V3a (the two overlap the same line; a clean two-commit history).
+
+**Scope decisions (2026-07-14, with the user):** rename + polish audit in V3a; app icon/branding
+carved to V3b; Tauri bundle **identifier** → `com.provenote.desktop`.
+
+**Rename targets — the PRODUCT identity only.** The internal Python package, the npm package name
+(`doc-assistant-desktop`), the `doc-assistant-api` sidecar binary, and the dev/architecture docs
+**keep `doc_assistant`** (module ≠ product):
+- **Wordmark** — `App.svelte`, treatment B (new `.wm-accent { color: var(--accent) }` in `app.css`,
+  replacing V2's `.wm-dim` split): `proven` ink + `ote` indigo.
+- **Titles** — `index.html` `<title>` + `tauri.conf.json` `app.windows[0].title` → `Provenote`.
+- **Tauri bundle** — `productName` → `Provenote`; `identifier` `com.doc-assistant.desktop` →
+  `com.provenote.desktop`; `externalBin` (`binaries/doc-assistant-api`) **unchanged** (internal
+  sidecar; renaming risks the M4 freeze pipeline).
+- **Docs** — `package.json` `description` + `README.md` user-facing product name → `Provenote`.
+- **Cross-screen polish audit** — walk every shipped surface (chat/streaming, empty/first-run,
+  Library, Settings, Compare, citation panel, provenance/claim cards) in both themes + mobile; fix any
+  V2-rhythm blemish; record findings (fixed vs. deferred) in the DEVLOG entry.
+- **DoD:** `svelte-check` 0; Provenote wordmark + `<title>` verified live ($0, both themes + mobile,
+  no overflow); no behavior / wire-type / logic / locked-setting change; sidecar + internal package
+  names confirmed unchanged.
+
+#### V3b — Tauri app icon + branding assets
+
+Design a Provenote app icon (the `book-open` mark, white on the indigo `--accent`, matching the header
+mark tile), regenerate the full `src-tauri/icons/*` set from a 1024px source via `tauri icon`, and run a
+final cross-screen branding/polish audit. **A separate follow-up** — it needs image tooling (SVG
+rasterization + the Tauri CLI) and is **not browser-preview-verifiable** (it is the OS/installer icon).
+**The packaging + bundle-id surface may warrant its own ADR** (installer identity, not just CSS).
 
 ## Out of scope (whole pass)
 

@@ -8,6 +8,37 @@ Append only — never edit past entries.
 Format: What changed | Why | Rejected alternatives | What it opens
 
 ---
+## 2026-07-14 — Visual identity V3a (SPRINT-018): rename doc_assistant → Provenote (product identity) + shell polish audit
+
+**What:** renamed the **product** identity `doc_assistant` → `Provenote` (V2 committed `4fd772c`; V3
+carved into V3a rename / V3b icon). Frontend + one Tauri config + docs; staged. (1) **Wordmark** —
+`App.svelte` treatment B: `proven` in `--fg` ink + `ote` in `--accent` indigo (renamed the V2 `.wm-dim`
+scoped class → `.wm-accent`, repointed to `var(--accent)` — no dead selector), beside the `book-open`
+mark. (2) **Titles** — `index.html` `<title>` + `tauri.conf.json` window title → `Provenote`.
+(3) **Tauri bundle** — `productName` → `Provenote`; `identifier` `com.doc-assistant.desktop` →
+`com.provenote.desktop`; `externalBin` (`doc-assistant-api` sidecar) **unchanged**. (4) **Docs** —
+`README.md` H1 (`Document Assistant` → `Provenote`) + the one prose product mention; `package.json`
+`description` product ref → `Provenote` (+ its em dash → colon). The internal Python package, npm
+package name (`doc-assistant-desktop`), sidecar binary, `python -m doc_assistant.*` commands, and dev
+docs **keep `doc_assistant`** (module ≠ product). SPRINT-017 archived (V2 committed).
+**Why:** name locked `Provenote` 2026-07-14 (availability-checked — GitHub/PyPI/npm free, no exact-name
+product); reverses grill fork #10. Built **after** the V2 commit so the wordmark ships as `doc_assistant`
+in V2 then `Provenote` in V3a (clean history — the two overlap the same line).
+**Rejected:** renaming the sidecar binary / npm package / Python module (internal, not product;
+renaming the sidecar risks the M4 freeze pipeline); a broader README rewrite (only the product name
+changed — the `python -m doc_assistant` commands are the module, they stay).
+**Polish audit (shell-level, $0/offline):** walked the shell + empty/first-run states in both themes +
+mobile — wordmark treatment B renders correct (`proven` ink + `ote` indigo; dark = paper-white
+`#ece5d6` + lightened indigo `#9a8ff0`), tab title = `Provenote`, no element wider than the viewport,
+hamburger appears at 375px, 0 console errors. Deeper per-surface visual audit (Settings/Library/Compare
+interiors) is limited by the flaky screenshot tooling on this box + API cost; those surfaces are
+structurally untouched by the rename, so not independently re-audited this pass (noted, not claimed).
+**Verified:** `svelte-check` **0/0** (123 files); computed styles confirm wordmark colors both themes +
+`document.title`; no `.wm-dim` leftover; mobile no-overflow; 0 console errors.
+**Opens:** **V3b** — the Tauri app icon + branding-asset regeneration (design + image tooling, not
+preview-verifiable; may want its own ADR). The `provenote` `.com` domain still to confirm at a registrar.
+**Staged; no `src/`/API/wire-type/behavior change. Nothing committed (cpc §13).**
+
 ## 2026-07-14 — Visual identity V2 (SPRINT-017): header/wordmark + spacing/type scale + empty states with sample chips + ~70ch reading measure
 
 **What:** built V2 of the visual-identity pass (V1 committed `35b8627`) — frontend-only, layout

@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-07-14 · class: disposable -->
+<!-- status: archived · updated: 2026-07-14 · class: disposable · built: V2 committed 4fd772c -->
 <!-- BUILDING 2026-07-14. Sole active contract (SPRINT-016 archived on V1 commit 35b8627).
      Design lock: docs/specs/feature-visual-identity.md §V2 (grilled 2026-07-13, fork #9 locks the
      scope; V2 design specifics chosen 2026-07-14 with the user — wordmark option A serif + book

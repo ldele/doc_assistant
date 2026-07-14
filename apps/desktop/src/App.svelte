@@ -347,7 +347,7 @@
         <div class="brand">
           <span class="mark"><Icon name="book-open" size={19} /></span>
           <div class="brandtext">
-            <span class="wordmark">doc<span class="wm-dim">_assistant</span></span>
+            <span class="wordmark">proven<span class="wm-accent">ote</span></span>
             {#if status === 'ready' && health}
               <span class="meta">
                 {health.chunk_count.toLocaleString()} chunks · {health.model} · {health.embedding_model}
@@ -541,8 +541,8 @@
     line-height: 1.15;
     color: var(--fg);
   }
-  .wm-dim {
-    color: var(--fg-2);
+  .wm-accent {
+    color: var(--accent);
   }
   .meta {
     font-size: var(--text-meta);

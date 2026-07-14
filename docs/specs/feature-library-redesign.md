@@ -1,12 +1,13 @@
 # Spec — Library redesign: folder rail + inventory grid + drill-down
 
-**Status:** DESIGN DRAFT (2026-07-14) — direction chosen in-session by the user from a clickable
-prototype ([artifact](https://claude.ai/code/artifact/54804676-82fc-4d93-9f54-c4a70b074dfd)); **not yet
-grilled/locked**. This is the next Library increment after `feature-library-browser.md` (L1, shipped),
-which explicitly parked "search / filter / sort within the library" and any folder/type navigation. Call
-it **L4** on the roadmap.
+**Status:** DESIGN-LOCKED (grilled 2026-07-14, `grill-me`; ledger at foot). Direction chosen in-session by
+the user from a clickable prototype
+([artifact](https://claude.ai/code/artifact/54804676-82fc-4d93-9f54-c4a70b074dfd)). The next Library
+increment after `feature-library-browser.md` (L1, shipped), which explicitly parked "search / filter / sort
+within the library" and any folder/type navigation. Call it **L4** on the roadmap.
 
 **Owner:** Claude Code (frontend rebuild + a thin backend wiring pass). **Two phases, two PRs** — never bundle.
+**Build Phase A first** (frontend, real-data, $0); Phase B (folders) follows.
 
 ---
 
@@ -58,10 +59,14 @@ and click; it is provable on the preview harness like L1.
 |---|----------|--------|
 | 1 | **Navigation = drill-down + Back**, persistent rail. Main pane swaps collection-grid ⇄ doc-chunks; breadcrumb `Library › Folder › Doc` + Back. Rail never needs Back (click another node). | User's choice; the one deep step is doc→chunks |
 | 2 | **Inventory grid is the default** collection view; a **grid ⇄ list toggle** (list = today's `.row` idiom) persists in `localStorage` (`libraryView`), like the other client-only view prefs. | The user's "2-D inventory"; keep the familiar list as an option |
-| 3 | **Rail = a nav tree**, not the doc list. Sections: **Collections** (folders, hierarchical, expandable — expanding reveals child docs inline for quick-pick), **Types** (`format`, real), **Added** (date buckets from `added_at`, real). "All documents" pinned on top. | Matches the prototype + the user's "expand folder on the left" |
+| 3 | **Rail = a nav tree**, not the doc list. Section order: **All documents** → **Collections** (folders, hierarchical, expandable — expanding reveals child docs inline for quick-pick) → **Types** (`format`) → **Added** (date buckets from `added_at`). | Matches the prototype + the user's "expand folder on the left"; organization → format → time |
+| 3a | **Adaptive sections** (grill Q3): Types / Added render only when they'd have **≥2 entries** — a one-format or one-bucket section is a dead filter, so it's hidden until the corpus earns it (all-PDF, all-early-July today → both hidden). | A single-option filter is noise; appears automatically when the corpus diversifies |
+| 3b | **Date buckets** (grill Q2): `Today` / `This week` / `This month` / `Earlier`, relative to now, adaptive-hidden per 3a. | Familiar relative bucketing; no config |
 | 4 | **The doc list moves into the main pane** (as the grid). The chunk view is the **existing `LibraryBrowser.svelte`** rendered in the drill-down slot — reused verbatim, not rebuilt. | Maximal reuse; the deep view already exists and is design-locked |
+| 4a | **Rail ↔ main sync** (grill Q5): clicking a document **anywhere** (rail tree or main grid) drills the main pane into it; selecting/expanding a folder sets it the active collection so the grid shows its docs. One behavior, no divergence. | Predictable; the rail tree and grid are two views of one selection |
 | 5 | **Reuse `list_documents(...)` filters + the `Folder`/`Tag` model.** No new table. Phase A filters **client-side** (payload already carries every field); Phase B wires the existing server-side filters + a folder-tree endpoint. | The infrastructure is already there; don't duplicate it |
-| 6 | **Folder population = mirror the source-directory subfolders at ingest** (recommended) — see the open decision. Creates/reuses hierarchical `Folder` rows keyed by the relative sub-path, links the document. Plus a one-off **backfill** command for the existing corpus. **Projects** = folders with no filesystem parent (the `ChatConcept.folder_id` "projects-as-folders" note) — deferred. | Local-first, zero manual tagging, fits the hierarchical model |
+| 5a | **Search scope** (grill Q4): the search bar filters the **active collection**; a 0-match empty-state offers a one-click **"Search all N documents"** escape. | "Filter what's in front of me" without dead-ends |
+| 6 | **Folder population = mirror source-dir subfolders at ingest + a one-off backfill** (grill Q6, **locked** as the Phase B direction). Creates/reuses hierarchical `Folder` rows keyed by the relative sub-path, links the document. **Reopens if** the user's `source_dir` is intentionally flat → manual assignment fits better. **Projects** = folders with no filesystem parent (`ChatConcept.folder_id` note) — deferred. | Local-first, zero manual tagging, fits the hierarchical model |
 | 7 | **Read-only still.** Phase A/B write nothing at browse time; folders are written *at ingest / by the backfill*, not by the browser. Manual folder/tag **editing** in the UI = a later increment (first browse-time write path — same ADR consideration L3 flagged). | Enrichment-Layer discipline; no scope creep |
 | 8 | **Honest empties throughout** (L1 rule): NULL title→filename; empty Collections→a "why" empty-state, never a fake tree; a keyword/type with 0 docs is hidden. | inform-don't-block |
 
@@ -72,14 +77,17 @@ and click; it is provable on the preview harness like L1.
   keyword chips) or the **list** rows per `libraryView`; emits `onOpenDocument(id)`. Both themes; no body
   overflow; `grid-template-columns: repeat(auto-fill, minmax(150px, 1fr))`.
 - `apps/desktop/src/lib/Sidebar.svelte` — in `library` mode, replace the flat doc list with the **nav
-  tree**: "All documents", then **Collections** (Phase A: empty-state), **Types** (group by `format`,
-  counts), **Added** (buckets: e.g. "This week" / "This month" / "Earlier" from `added_at`). Selecting a
-  node sets the active collection. Expanding a folder (Phase B) reveals its docs inline. The **search bar**
-  (just shipped) filters the active collection. Chat mode is untouched.
+  tree** in order: "All documents" → **Collections** (Phase A: empty-state) → **Types** (group by
+  `format`) → **Added** (buckets `Today`/`This week`/`This month`/`Earlier` from `added_at`). Types/Added
+  render only with **≥2 entries** (Decision 3a). Selecting a node sets the active collection; expanding a
+  folder (Phase B) reveals its docs inline, and clicking a doc there drills the main pane (Decision 4a).
+  The **search bar** (just shipped) filters the active collection, with a "Search all" escape on 0 matches
+  (Decision 5a). Chat mode is untouched.
 - `apps/desktop/src/App.svelte` — library drill-down state: `libraryCollection` (`{kind:'all'|'type'|
   'date'|'folder'|'keyword', value}`), `libraryDocId | null`, derived breadcrumb. Main pane renders
-  `LibraryGrid` (collection) or `LibraryBrowser` (a doc is open) with a breadcrumb + Back bar. Client-side
-  `docsFor(collection)` filter over the cached document list. `libraryView` in `localStorage`.
+  `LibraryGrid` (collection) or `LibraryBrowser` (a doc is open) with a breadcrumb `Library › Collection ›
+  Doc` + Back bar (Back: doc→grid, then collection→all). Client-side `docsFor(collection)` filter over the
+  cached document list. `libraryView` (`grid`|`list`) in `localStorage`.
 - No `api.ts` / `types.ts` / backend change in Phase A (payload already sufficient).
 
 ## Contract — Phase B (backend wiring, gated on the decision)
@@ -115,20 +123,30 @@ Full gate green (`ruff`/`ruff format`/`mypy --strict src`/`bandit`/`pytest`).
 - **Phase B:** folders populate at ingest + a backfill for the current corpus; the rail's Collections tree
   is live and filters the grid; `GET /api/library/folders` + filter params + tests; one DEVLOG entry.
 
-## Open decision (needs the user) — how folders get populated
+## Folder population — RESOLVED (grill-me 2026-07-14)
 
-The `Folder` model is hierarchical and ready; the question is what fills it:
+Locked to **A: mirror source-dir subfolders at ingest + a one-off backfill** (Decision 6). The `Folder`
+model is hierarchical and ready; the backfill organises the current flat corpus without a re-ingest.
+**Reopens if** the user's `source_dir` is intentionally flat (no meaningful subfolders) — then manual
+assignment (B, its own ADR) becomes the better starting point. Manual editing (B) stays a later increment
+layered on A; deferring folders entirely (C) was rejected in favour of Phase A shipping first without them.
 
-- **A. Mirror source-dir subfolders at ingest (recommended).** Local-first, zero manual work, matches the
-  filesystem the user already organises. Caveat: the **current** corpus was ingested flat, so it stays
-  unfoldered until the **backfill** runs (or they re-organise `source_dir` + re-ingest).
-- **B. Manual folder assignment in the UI.** Most control, but it's the first browse-time write path
-  (drag-to-folder, new-folder) — heavier, and wants its own ADR. Better as a later increment on top of A.
-- **C. Defer folders; ship Phase A only** (Types + Added + keywords) and revisit folders when there's a
-  real subfoldered corpus.
+## Decision ledger (grill-me 2026-07-14)
 
-Recommendation: **build Phase A now** (no decision needed — it's all real-data frontend), then do **A** for
-Phase B (ingest mirror + backfill), leaving **B** (manual editing) for later.
+| Branch | Resolution | Deciding reason / reopens-if |
+|---|---|---|
+| Phasing | **Phase A (frontend, real-data) ships first**; folders = Phase B | ~90% of value now, provable $0; reopens if an empty Collections section is unacceptable |
+| Single-type sections | **Adaptive** — Types/Added hidden below 2 entries | a one-option filter is noise; auto-appears when the corpus diversifies |
+| Search scope | **Active collection** + "Search all N" escape on 0 matches | "filter what's in front of me" without dead-ends |
+| Folder source (Phase B) | **Mirror source subfolders at ingest + backfill** | local-first, zero tagging, model already hierarchical; reopens if `source_dir` is intentionally flat |
+| Date buckets | `Today`/`This week`/`This month`/`Earlier`, adaptive-hidden | familiar relative bucketing |
+| Rail ↔ main sync | click a doc anywhere → drills main pane; folder select → active collection | one behavior, no divergence |
+| Grid defaults | grid default, list toggle, `libraryView` in `localStorage` | matches the other client-only view prefs |
+| Projects / manual edit / drawer / title backfill / virtualization | **parked** (see Out of scope) | scope discipline; virtualization re-check if a collection >~500 tiles |
+
+**Routing:** resolutions live in this spec (the design-lock). No ADR needed yet — the first browse-time
+write path (manual folder/tag editing, Phase-B+) is the ADR trigger and is parked. Handoff recorded in
+`.claude/SESSION.md`.
 
 ## Out of scope (deferred)
 

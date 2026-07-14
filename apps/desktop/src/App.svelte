@@ -25,6 +25,7 @@
   import LibraryBrowser from './lib/LibraryBrowser.svelte'
   import CompareCard from './lib/CompareCard.svelte'
   import Icon from './lib/Icon.svelte'
+  import appMark from './assets/brand/app-mark.png'
 
   interface TurnState {
     id: number
@@ -345,7 +346,7 @@
           <Icon name="menu" />
         </button>
         <div class="brand">
-          <span class="mark"><Icon name="book-open" size={19} /></span>
+          <span class="mark"><img src={appMark} alt="" width="32" height="32" /></span>
           <div class="brandtext">
             <span class="wordmark">proven<span class="wm-accent">ote</span></span>
             {#if status === 'ready' && health}
@@ -524,11 +525,17 @@
     width: 32px;
     height: 32px;
     border-radius: 9px;
-    background: var(--accent);
-    color: var(--accent-fg);
+    overflow: hidden;
     display: inline-flex;
     align-items: center;
     justify-content: center;
+    box-shadow: var(--shadow-1);
+  }
+  .mark img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
   }
   .brandtext {
     display: flex;
@@ -542,7 +549,7 @@
     color: var(--fg);
   }
   .wm-accent {
-    color: var(--accent);
+    color: var(--accent-wordmark);
   }
   .meta {
     font-size: var(--text-meta);

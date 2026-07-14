@@ -160,11 +160,19 @@ def render_turn_markdown(turn: ExportTurn, *, index: int | None = None, dev: boo
 
 
 def render_conversation_markdown(
-    turns: list[ExportTurn], *, title: str = "Conversation export", dev: bool = False
+    turns: list[ExportTurn],
+    *,
+    title: str = "Conversation export",
+    subtitle: str | None = None,
+    dev: bool = False,
 ) -> str:
-    """Render a whole conversation. Header + each turn, separated by rules."""
+    """Render a whole conversation. Header + each turn, separated by rules. ``subtitle`` (e.g.
+    an export timestamp + session id) renders as an italic line under the title, if given."""
     flavour = "developer bundle" if dev else "transcript"
-    header = [f"# {title}", "", f"_{len(turns)} turn(s) · {flavour}._", ""]
+    header = [f"# {title}", "", f"_{len(turns)} turn(s) · {flavour}._"]
+    if subtitle:
+        header.append(f"_{subtitle}_")
+    header.append("")
     if not turns:
         header.append("_No turns to export yet._")
         return "\n".join(header) + "\n"

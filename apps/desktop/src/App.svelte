@@ -70,6 +70,11 @@
   let conversations = $state<ConversationSummary[]>([])
   let viewing = $state<string | null>(null)
   let viewedConvo = $state<ConversationDetail | null>(null)
+  // Resume (fresh-context): a reopened past chat the user chose to *continue*. Its turns render
+  // read-only above the composer for reference; `sessionId` is switched to it so new turns thread
+  // to the same conversation and persist. The in-memory backend session starts fresh (empty
+  // history), so new questions are standalone corpus queries — no replay of the old turns.
+  let resumedHistory = $state<ConversationDetail | null>(null)
   let sidebarOpen = $state(false) // mobile drawer
 
   // Library space (feature-library-browser.md, L1). `mode` swaps the sidebar list + main pane
@@ -84,14 +89,17 @@
   let activeCitation = $state<{ turnKey: string; n: number } | null>(null)
   const activeSource = $derived.by(() => {
     if (!activeCitation) return null
-    if (viewing && viewedConvo) {
-      const t = viewedConvo.turns.find((t) => t.record_id === activeCitation!.turnKey)
+    // Read-only transcripts (a viewed chat, or a resumed chat's history) key by record_id;
+    // a resumed chat also has live turns below, so fall through to those if not found here.
+    const detail = viewedConvo ?? resumedHistory
+    if (detail) {
+      const t = detail.turns.find((t) => t.record_id === activeCitation!.turnKey)
       const s = t?.sources.find((s) => s.n === activeCitation!.n)
       // A rehydrated source is degraded — no markers/figures (not persisted). Shape it as a
       // SourceView so SourcePanel/SourceCard render it unchanged.
-      return s
-        ? { n: s.n, citation: s.citation, excerpt: s.excerpt, figure_id: null, chunk_key: null, markers: [] }
-        : null
+      if (s) {
+        return { n: s.n, citation: s.citation, excerpt: s.excerpt, figure_id: null, chunk_key: null, markers: [] }
+      }
     }
     const t = turns.find((t) => String(t.id) === activeCitation!.turnKey)
     return t?.result?.sources.find((s) => s.n === activeCitation!.n) ?? null
@@ -247,7 +255,9 @@
 
   async function doExport(): Promise<void> {
     try {
-      await exportConversation(sessionId, false)
+      // Export the conversation on screen: the viewed past chat, else the live/resumed session.
+      // The backend sources the transcript from the durable records by id, so both work.
+      await exportConversation(viewing ?? sessionId, false)
     } catch (e) {
       console.error('export failed', e)
     }
@@ -264,10 +274,32 @@
     compareResult = null
     viewing = null
     viewedConvo = null
+    resumedHistory = null
     input = ''
     resetComposer()
     nextId = 0
     sessionId = freshSessionId()
+    pinned = true
+    sidebarOpen = false
+    taEl?.focus()
+  }
+
+  // Continue a viewed past chat (fresh-context resume). Switch the live session to it: its turns
+  // become read-only reference above the composer, and new turns thread to the same session_id
+  // (so they append + persist). The backend session for this id starts empty — new questions are
+  // standalone corpus queries, not a replay of the old conversation (memory is a later increment).
+  function resumeConversation(): void {
+    if (!viewedConvo || !viewing) return
+    resumedHistory = viewedConvo
+    sessionId = viewing
+    viewing = null
+    viewedConvo = null
+    turns = []
+    nextId = 0
+    activeCitation = null
+    compareResult = null
+    input = ''
+    resetComposer()
     pinned = true
     sidebarOpen = false
     taEl?.focus()
@@ -364,7 +396,8 @@
           <button
             class="ghost"
             onclick={doExport}
-            disabled={turns.length === 0 || viewing !== null || mode === 'library'}
+            disabled={mode === 'library' ||
+              (viewing === null && resumedHistory === null && turns.length === 0)}
             ><Icon name="download" size={15} /> Export</button
           >
           <button class="ghost" onclick={() => (showSettings = true)} aria-label="Settings">
@@ -380,6 +413,8 @@
         {#if viewing && viewedConvo}
           <p class="readonly-note">
             Viewing a past conversation (read-only).
+            <button class="linkish" onclick={resumeConversation}>Continue this chat</button>
+            ·
             <button class="linkish" onclick={backToCurrent}>Back to current chat</button>
           </p>
           {#each viewedConvo.turns as t (t.record_id)}
@@ -391,6 +426,21 @@
             />
           {/each}
         {:else}
+          {#if resumedHistory}
+            <p class="readonly-note resumed">
+              Continuing <strong>{resumedHistory.title}</strong> · earlier turns are shown for
+              reference. New questions start fresh — grounded in your corpus, not the old chat.
+            </p>
+            {#each resumedHistory.turns as t (t.record_id)}
+              <ReadonlyTurn
+                question={t.question}
+                answer={t.answer}
+                onCitationClick={(n) => (activeCitation = { turnKey: t.record_id, n })}
+                activeCitationN={activeCitation?.turnKey === t.record_id ? activeCitation.n : null}
+              />
+            {/each}
+            <div class="resume-divider"><span>continuing below</span></div>
+          {/if}
           {#if status === 'ready' && health && health.chunk_count === 0}
             <div class="banner">
               <span class="state-mark"><Icon name="library" size={26} /></span>
@@ -401,7 +451,7 @@
               </p>
               <button class="primary" onclick={() => (showSettings = true)}>Choose a folder…</button>
             </div>
-          {:else if turns.length === 0}
+          {:else if turns.length === 0 && !resumedHistory}
             <div class="empty">
               <span class="state-mark"><Icon name="book-open-text" size={26} /></span>
               <h2>Ask your library a question</h2>
@@ -435,7 +485,14 @@
 
       <footer>
         {#if viewing}
-          <button class="back" onclick={backToCurrent}><Icon name="arrow-left" size={15} /> Back to current chat</button>
+          <div class="viewing-bar">
+            <button class="back" onclick={backToCurrent}
+              ><Icon name="arrow-left" size={15} /> Back to current chat</button
+            >
+            <button class="resume" onclick={resumeConversation}
+              ><Icon name="rotate-ccw" size={15} /> Continue this chat</button
+            >
+          </div>
         {:else}
           <textarea
             bind:this={taEl}
@@ -637,6 +694,32 @@
     padding: 0;
     text-decoration: underline;
   }
+  /* Resume banner: tinted with the accent so "continuing" reads distinct from "viewing". */
+  .readonly-note.resumed {
+    background: color-mix(in srgb, var(--accent) 8%, var(--surface));
+    border-color: color-mix(in srgb, var(--accent) 25%, var(--border));
+    color: var(--fg);
+  }
+  .readonly-note.resumed strong {
+    font-weight: 600;
+  }
+  .resume-divider {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    margin: 0.4rem 0 0.8rem;
+    color: var(--fg-2);
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  .resume-divider::before,
+  .resume-divider::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--border);
+  }
   .actions {
     display: flex;
     gap: 0.4rem;
@@ -688,10 +771,27 @@
     opacity: 0.5;
     cursor: default;
   }
+  .viewing-bar {
+    display: flex;
+    gap: 0.5rem;
+    width: 100%;
+  }
   .back {
     flex: 1;
     padding: 0.6rem;
     color: var(--fg-2);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.3rem;
+  }
+  .resume {
+    flex: 1;
+    padding: 0.6rem;
+    background: var(--accent);
+    color: var(--accent-fg);
+    border-color: var(--accent);
+    font-weight: 600;
     display: inline-flex;
     align-items: center;
     justify-content: center;

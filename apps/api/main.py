@@ -333,9 +333,10 @@ def create_app(
     def export(request: Request, body: ExportRequest) -> FileResponse:
         controller: ChatController = request.app.state.controller
         sessions: SessionStore = request.app.state.sessions
-        session = sessions.get(body.session_id)
-        if session is None:
-            raise HTTPException(status_code=404, detail="unknown session_id")
+        # get_or_create (not get): a past/reopened conversation's session_id isn't in the
+        # in-memory store, but export sources from the durable transcript by id. An id with no
+        # persisted turns falls through to the "nothing to export" 400 below.
+        session = sessions.get_or_create(body.session_id)
         message, path = controller.export_conversation(session, dev=body.dev)
         if path is None:  # nothing to export yet
             raise HTTPException(status_code=400, detail=message)

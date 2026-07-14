@@ -24,6 +24,32 @@ from doc_assistant.provenance import WEAK_RETRIEVAL_THRESHOLD, ConfidenceSignals
 # using [1], [2], ..."). Source N maps to the Nth retrieved chunk (1-based).
 _CITATION_RE = re.compile(r"\[(\d+)\]")
 
+# Citation-robustness (2026-07-14). LLMs (haiku especially) routinely cite in
+# non-canonical-but-unambiguous forms the bare-[n] parser used to drop — [Source 2],
+# [Sources 2, 4], [2, 4], [2 and 4] — so a claim that DID cite read as "uncited" and the
+# form was scored "malformed". We *parse* these forms (resolve them to source numbers); we
+# do NOT rewrite the answer text — surface-don't-mutate still holds (see audit_citations).
+# A token resolves iff its interior is an optional "source(s)"/"ref(s)" label followed by a
+# ,/;/&/and-separated integer list; truly unparseable attempts ([karp2020dense], (paper.pdf))
+# still surface as malformed.
+_CITATION_TOKEN_RE = re.compile(
+    r"\[\s*(?:sources?|refs?)?\s*(\d+(?:\s*(?:,|;|&|and)\s*\d+)*)\s*\]",
+    re.IGNORECASE,
+)
+_DIGITS_RE = re.compile(r"\d+")
+
+
+def cited_source_numbers(text: str) -> list[int]:
+    """Every source number referenced by a citation token in ``text``, in order, across
+    canonical (``[2]``) and common non-canonical (``[Source 2]``, ``[2, 4]``) forms.
+
+    Reads the citations only — the answer's presentation is never altered."""
+    nums: list[int] = []
+    for m in _CITATION_TOKEN_RE.finditer(text):
+        nums.extend(int(x) for x in _DIGITS_RE.findall(m.group(1)))
+    return nums
+
+
 # Sentence-ish boundary: terminal punctuation followed by whitespace. Cheap and
 # deterministic (no NLP dep); ``edit`` is the escape hatch for coarse splits.
 _SENTENCE_RE = re.compile(r"(?<=[.!?])\s+")
@@ -98,8 +124,7 @@ def segment_claims(answer: str, sources: list[RetrievedChunk]) -> list[Claim]:
     for i, sentence in enumerate(split_sentences(answer)):
         citations: list[ClaimCitation] = []
         seen: set[int] = set()
-        for raw in _CITATION_RE.findall(sentence):
-            n = int(raw)
+        for n in cited_source_numbers(sentence):
             if n in seen:
                 continue
             seen.add(n)
@@ -125,9 +150,10 @@ def segment_claims(answer: str, sources: list[RetrievedChunk]) -> list[Claim]:
 # ============================================================
 # Post-hoc citation audit (Integrity Chunk 2a, surfacing layer)
 # ============================================================
-# A bracket token that ISN'T a bare number — the model citing in a disallowed form
-# ([Smith2020], [karp2020dense], [Source 1]) which the [n] parser silently drops, so
-# the claim merely looks "uncited". Surfacing it tells us the model *tried* to cite.
+# A bracket token containing a letter — a candidate citation attempt. audit_citations then
+# subtracts the ones that ARE resolvable citations (``[Source 2]`` via _CITATION_TOKEN_RE),
+# leaving only the genuinely unparseable forms ([Smith2020], [karp2020dense]) that the model
+# meant as a cite but no parser can map — surfacing them tells us the model *tried* to cite.
 _MALFORMED_BRACKET_RE = re.compile(r"\[[^\]]*[A-Za-z][^\]]*\]")
 # A file name cited inline in parentheses: (paper.pdf), (dpr_kumar_2020.pdf).
 _FILENAME_CITE_RE = re.compile(r"\([^()\s]*\.(?:pdf|md|epub|docx?|html?|txt)\)", re.IGNORECASE)
@@ -170,18 +196,22 @@ class CitationAudit:
 def audit_citations(answer: str, n_sources: int) -> CitationAudit:
     """Audit an answer's inline citations against the retrieved sources (pure).
 
-    Surfaces — never rewrites (surface-don't-mutate) — what the ``[n]`` parser can't:
-    valid in-range citations, out-of-range numbers, malformed citation *attempts*
-    ([Smith2020], (paper.pdf)) that otherwise read as plain uncited text, and how many
-    sentences carry no citation. Deterministic."""
+    Surfaces — never rewrites (surface-don't-mutate) — what a naive parser can't:
+    valid in-range citations (canonical ``[n]`` *and* non-canonical ``[Source 2]`` /
+    ``[2, 4]`` forms — see ``cited_source_numbers``), out-of-range numbers, genuinely
+    malformed attempts ([Smith2020], (paper.pdf)) that still read as plain uncited text,
+    and how many sentences carry no citation. Deterministic."""
     sentences = split_sentences(answer)
-    nums = [int(x) for x in _CITATION_RE.findall(answer)]
+    nums = cited_source_numbers(answer)
     valid = sorted({n for n in nums if 1 <= n <= n_sources})
     out_of_range = sorted({n for n in nums if n < 1 or n > n_sources})
-    malformed = list(
-        dict.fromkeys(_MALFORMED_BRACKET_RE.findall(answer) + _FILENAME_CITE_RE.findall(answer))
+    # A bracketed-with-letters token or inline filename that is NOT a resolvable citation
+    # ([Source 2] etc. now read as citations, so they no longer count as "malformed").
+    candidates = dict.fromkeys(
+        _MALFORMED_BRACKET_RE.findall(answer) + _FILENAME_CITE_RE.findall(answer)
     )
-    n_uncited = sum(1 for s in sentences if not _CITATION_RE.search(s))
+    malformed = [tok for tok in candidates if not _CITATION_TOKEN_RE.fullmatch(tok)]
+    n_uncited = sum(1 for s in sentences if not cited_source_numbers(s))
     return CitationAudit(
         valid=valid,
         out_of_range=out_of_range,

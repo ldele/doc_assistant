@@ -23,6 +23,7 @@ from sqlalchemy import func, select
 
 from doc_assistant.db.models import AnswerRecord
 from doc_assistant.db.session import session_scope
+from doc_assistant.export import ExportSource, ExportTurn
 
 _TITLE_MAX = 80
 
@@ -151,6 +152,56 @@ def list_conversations(limit: int = 100) -> list[ConversationSummary]:
             )
             for sid, count, started_at, last_at in agg
         ]
+
+
+def conversation_export_turns(session_id: str) -> list[ExportTurn]:
+    """Build export turns for a whole conversation from its durable ``AnswerRecord`` rows.
+
+    The persisted records are the *complete* transcript, so a reopened or resumed chat exports
+    the same as a live one (the in-memory session may hold only the newest turns, or none).
+    Telemetry is best-effort from the persisted columns; the reviewer verdict and figures are
+    not stored on ``AnswerRecord`` (sibling tables), so they're omitted here — a clean
+    user transcript, not the live dev bundle."""
+    turns: list[ExportTurn] = []
+    with session_scope() as session:
+        rows = (
+            session.execute(
+                select(AnswerRecord)
+                .where(AnswerRecord.session_id == session_id)
+                .order_by(AnswerRecord.created_at.asc())
+            )
+            .scalars()
+            .all()
+        )
+        # Build inside the session scope — the ORM rows detach once it closes.
+        for row in rows:
+            chunks = json.loads(row.retrieved_chunks_json or "[]")
+            sources = [
+                ExportSource(
+                    n=i + 1,
+                    filename=chunk.get("filename"),
+                    page=chunk.get("page"),
+                    section=chunk.get("section"),
+                    reranker_score=chunk.get("reranker_score"),
+                    excerpt=chunk.get("chunk_excerpt"),
+                )
+                for i, chunk in enumerate(chunks)
+            ]
+            turns.append(
+                ExportTurn(
+                    question=row.original_query or row.query,
+                    answer=row.answer,
+                    standalone_query=row.query if row.original_query else None,
+                    sources=sources,
+                    token_input=row.token_input,
+                    token_output=row.token_output,
+                    latency_ms=row.latency_ms,
+                    model_name=row.model_name,
+                    embedding_model=row.embedding_model,
+                    record_id=str(row.id),
+                )
+            )
+    return turns
 
 
 def get_conversation(session_id: str) -> ConversationDetail | None:

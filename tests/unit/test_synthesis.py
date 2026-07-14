@@ -8,6 +8,7 @@ from doc_assistant.synthesis import (
     MARKER_UNSUPPORTED,
     MARKER_WEAK,
     audit_citations,
+    cited_source_numbers,
     claim_marker,
     format_banner,
     render_evidence_markdown,
@@ -51,6 +52,56 @@ def test_audit_citations_flags_malformed_key_and_filename() -> None:
 def test_audit_citations_counts_uncited_sentences() -> None:
     a = audit_citations("Cited claim [1]. Uncited framing sentence here.", n_sources=2)
     assert a.n_uncited_sentences == 1 and a.clean  # uncited != unclean
+
+
+# --- cited_source_numbers (robust citation parsing) --------------------------
+
+
+def test_cited_numbers_canonical() -> None:
+    assert cited_source_numbers("DPR [1] beats BM25 [2][3].") == [1, 2, 3]
+
+
+def test_cited_numbers_source_label() -> None:
+    # haiku's dominant non-canonical form: "[Source N]" / "[Sources N, M]".
+    assert cited_source_numbers("Per [Source 2] and [Sources 3, 4].") == [2, 3, 4]
+    assert cited_source_numbers("case-insensitive [source 5]") == [5]
+
+
+def test_cited_numbers_bare_lists() -> None:
+    assert cited_source_numbers("Combined [2, 4] and [1 and 3] and [5; 6].") == [2, 4, 1, 3, 5, 6]
+
+
+def test_cited_numbers_ignores_non_citations() -> None:
+    # A BibTeX-ish key, a wrapped claim label, and a chemical bracket are NOT citations.
+    assert cited_source_numbers("[karp2020dense] [term-based system] [Ca2+] [see 2]") == []
+
+
+# --- robust forms feed audit + segment ---------------------------------------
+
+
+def test_audit_source_label_is_valid_not_malformed() -> None:
+    a = audit_citations("BM25 is sparse [Source 2]. Dense is latent [Sources 1, 3].", n_sources=5)
+    assert a.valid == [1, 2, 3]
+    assert a.clean and not a.malformed  # [Source 2] no longer flagged malformed
+    assert a.n_uncited_sentences == 0  # both sentences now read as cited
+
+
+def test_audit_out_of_range_source_label() -> None:
+    a = audit_citations("Cites [Source 9] only.", n_sources=3)
+    assert a.out_of_range == [9] and not a.malformed and not a.clean
+
+
+def test_audit_still_flags_genuinely_malformed() -> None:
+    a = audit_citations("Per [karp2020dense] and [term-based system].", n_sources=3)
+    assert any("karp2020dense" in m for m in a.malformed)
+    assert any("term-based system" in m for m in a.malformed)
+
+
+def test_segment_source_label_claim_is_supported() -> None:
+    # "[Source 1]" used to read as uncited → wrongly "unsupported"; now attributed.
+    claims = segment_claims("Grounded via [Source 1].", [_src(0.8)])
+    assert claims[0].source_numbers == [1]
+    assert claims[0].marker == MARKER_OK
 
 
 # --- split_sentences ---------------------------------------------------------

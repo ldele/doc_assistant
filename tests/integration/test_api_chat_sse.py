@@ -151,9 +151,11 @@ def test_adjudicate_rejects_bad_decision():
     assert r.status_code == 422  # pydantic Literal validation
 
 
-def test_export_unknown_session_is_404():
+def test_export_empty_session_is_400():
+    # Export now sources from the durable transcript by session_id (so a past/reopened chat is
+    # exportable), so an id with no turns is "nothing to export" (400), not "unknown session".
     r = _client().post("/api/export", json={"session_id": "nope", "dev": False})
-    assert r.status_code == 404
+    assert r.status_code == 400
 
 
 def test_figure_served_and_missing(tmp_path, monkeypatch):

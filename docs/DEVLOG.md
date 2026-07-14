@@ -8,6 +8,114 @@ Append only — never edit past entries.
 Format: What changed | Why | Rejected alternatives | What it opens
 
 ---
+## 2026-07-14 — Conversation resume (fresh-context) + durable export-on-past + clean MD template
+
+**What:** three linked pieces (design lock: `docs/specs/feature-conversation-resume.md`). (1) **Fresh-context
+resume** — "Continue this chat" on a viewed past conversation (`App.svelte`: new `resumedHistory` state +
+`resumeConversation()`) switches the live session to that `session_id`; the old turns render **read-only
+above the composer** (with a "continuing below" divider), new turns thread to the same id and persist. The
+backend in-memory session for that id starts empty, so new questions are standalone corpus queries — no
+replay of old turns (`chat_controller.py:778`'s `if history` rewrite no-ops on empty history, so **no new
+backend was needed** for the fresh-context behaviour). `activeSource` now resolves citations in the resumed
+history too. (2) **Durable export** — new `conversations.conversation_export_turns(session_id)` builds export
+view-models from the persisted `AnswerRecord` rows; `chat_controller.export_conversation` sources from it
+(dev bundle still prefers the richer in-memory turns when live); `/api/export` uses `get_or_create` (not
+`get`), so a **past / reopened / resumed** chat exports the same as a live one. (3) **Clean template** —
+`render_conversation_markdown` gains an optional `subtitle`; transcript titled "Provenote conversation" with
+an `Exported <UTC> · session <id>` line.
+
+**Why:** user asked (live review) to be able to *continue* past chats — but with fresh (corpus-only) context,
+deferring conversational memory; to fix Export being dead on past chats; and for an "easy Markdown template".
+Grounded on `feature-conversation-history.md`'s durable `AnswerRecord` store (every turn already persists
+with its `session_id`).
+
+**Verified:** `pytest` **763 passed** (+ `conversation_export_turns` tests; `/api/export` unknown-id test
+flipped `404`→`400`); `svelte-check` 0/0; ruff + mypy clean. Live ($0): resume shows history read-only above
+an enabled composer, a new turn (window.fetch SSE **mock** — `POST /api/chat` count held) threaded to the
+**resumed** `session_id` (sent id == reopened id) and appended below the divider; export-on-past hit the
+**real** API (restarted to load this code) → `200` + a clean 2-turn transcript with the new header, unknown
+id → `400`.
+
+**Rejected:** replaying old turns as LLM context on resume (memory deferred by the user — costs tokens,
+reconstructs an imperfect context); exporting only the in-memory session (misses a past/resumed chat's
+history — durable is the complete record); a `404` for an unknown export id (export is now by-durable-id, so
+"nothing to export" `400` is the honest signal).
+
+**Opens:** resume replaces the in-view live chat (a prior chat's turns stay in history; empty prior chat
+loses nothing) — note if a "keep both" flow is wanted. `ReadonlyTurn` (past/resumed history) shows clickable
+citations but no source *list* (degraded panel, per the history spec). Conversation management
+(delete/pin/archive/projects) is the next cluster. The prompt-side citation fix stays gated on a paid turn.
+
+**Staged; nothing committed (cpc §13).**
+
+## 2026-07-14 — Citation robustness: parse the non-canonical citation forms the model emits (no answer rewrite)
+
+**What:** taught the citation layer to recognize the non-canonical-but-unambiguous forms the LLM (haiku
+especially) actually emits — `[Source 2]`, `[Sources 2, 4]`, `[2, 4]`, `[2 and 4]` — alongside canonical
+`[n]`. **Parse-don't-mutate:** no answer text is rewritten; the parser simply reads more forms.
+Backend (`synthesis.py`): new `_CITATION_TOKEN_RE` + `cited_source_numbers(text)` helper; `segment_claims`
+and `audit_citations` now consume it. A resolvable token no longer counts as "malformed" — so `[Source 2]`
+reads as a valid citation, a `[Source 1]` claim is now *attributed* + marked (was wrongly `unsupported`), and
+a sentence citing only `[Source 2]` stops reading "uncited"; genuinely-malformed attempts (`[karp2020dense]`,
+`[term-based system]`, `(paper.pdf)`) still surface. Frontend (`Markdown.svelte`): `linkifyCitations` extended
+with the same grammar (non-global regexes, no `lastIndex` state) — each resolved number renders as a clean
+clickable `[n]` opening the citation side panel; non-citation labels stay literal; code/pre + idempotency
+guards unchanged.
+
+**Why:** on this box's haiku, answers routinely cited as `[Source N]` / wrapped labels → the `[n]`-only parser
+scored them malformed/uncited, which (a) mis-marked supported claims `unsupported`, (b) inflated the
+"N malformed" citation-check note, and (c) broke the click-to-side-panel path, forcing the inline source
+fallback. User-flagged during live review.
+
+**Verified ($0):** `test_synthesis` 28 pass (+8: source-label / plural / bare-list / and-form recognition,
+out-of-range label, genuinely-malformed still flagged, `[Source 1]` claim now `MARKER_OK`); chat-turn tests
+green (`test_chat_controller` + `test_api_chat_sse` + `test_turn_parity` = 54). Frontend `svelte-check` 0/0;
+linkifier verified live via a **window.fetch SSE mock** (no paid call — POST /api/chat held at 4):
+`[Source 2]`→`[2]`, `[Sources 1, 3]`→`[1][3]`, `[2, 3]`→`[2][3]`, `[1 and 4]`→`[1][4]` all clickable,
+`[term-based system]` stayed plain, and a click resolved to the right source in the panel.
+
+**Rejected:** rewriting the answer to canonical `[n]` in the pipeline (violates the module's
+surface-don't-mutate principle + the enrichment non-negotiable, and could mask a hallucination); a
+prompt-only fix (the deterministic parser is $0-provable now; a prompt tweak needs paid eval — deferred,
+gated).
+
+**Opens:** the frontend normalizes *display* (`[Source 2]` shows as `[2]`); the stored answer + export keep
+the raw form (surface-don't-mutate) — revisit if the raw form should render inline. Ranges (`[2-4]`)
+intentionally not expanded (rare; ambiguous vs hyphens). The prompt-side fix (stop haiku wrapping claim labels
+in brackets) is the gated Phase-B follow-on. Possibly an ADR: the parser now defines "what counts as a
+citation" in the integrity layer.
+
+**Staged; nothing committed (cpc §13).**
+
+## 2026-07-14 — UI review polish: header app-icon + wordmark accent + favicon + compact collapsed sources
+
+**What:** four frontend-only refinements from a live-review pass on V3. (1) **Header mark** = the V3b Provenote
+laurel icon (`src/assets/brand/app-mark.png`, from `src-tauri/icons/128x128.png`) replacing the flat Lucide
+`book-open` tile — in-app brand now matches the OS/installer icon. (2) **Wordmark accent** — new
+`--accent-wordmark` token (light `#5946d6`, dark `#a596ff`) so `ote` reads as a clearly-more-vivid indigo
+without recoloring the app's other affordances. (3) **Favicon** — `public/favicon.png` + `<link>` in
+`index.html`. (4) **Compact sources** — `Turn.svelte` full source-card grid replaced by a collapsed-by-default
+bib-style `<details>` "N sources" list (~21px collapsed vs the old card wall), each row opening the citation
+side panel; shown whenever sources exist (the "citations part below the chat" the user asked for).
+
+**Why:** live-review feedback — header showed the old placeholder mark, `ote` was indistinguishable from ink,
+no favicon, and malformed-citation turns dumped all source cards inline forcing a long scroll.
+
+**Verified ($0):** `svelte-check` 0/0; header `<img>` loads (128px→32px, rounded, both themes), `ote` computed
+`rgb(89,70,214)` / dark `rgb(165,150,255)`, favicon `/favicon.png`→200, compact sources collapsed=21px /
+expand→one-line rows / click opens+swaps the panel / zero full-card walls; 0 console errors.
+
+**Rejected:** the detailed laurel at 32px was a concern (V3b noted it softens below ~48px) but the user
+explicitly wanted the product icon in-header; a subtle shadow lift compensates.
+
+**Opens:** the compact list is live-turn only (`Turn.svelte`); past chats (`ReadonlyTurn`) show no sources —
+folds into the conversation-resume work. **Cost note:** 3 unintended real `/api/chat` turns fired (~$0.016)
+via browser-automation clicks before the $0 fetch-mock approach was adopted — see the new
+[[provenote-chat-verify-fetch-mock]] memory.
+
+**Staged; nothing committed (cpc §13).**
+
+---
 ## 2026-07-14 — Visual identity V3b (SPRINT-019): Provenote app icon + full platform icon-set regeneration
 
 **What:** shipped the Provenote **app icon** and regenerated the whole `src-tauri/icons/*` set from it.

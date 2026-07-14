@@ -45,30 +45,41 @@
     return false
   }
 
-  // Turn bracketed citation markers like "[2]" into clickable buttons — but never inside a
-  // <code>/<pre> span (a technical corpus can legitimately contain "[2]" as code, not a
-  // citation) and never by touching raw HTML/attributes: only text nodes we already hold.
+  // Citation forms we recognise: canonical [2] AND the non-canonical-but-unambiguous ones the
+  // model emits — [Source 2], [Sources 2, 4], [2, 4], [2 and 4] — matching the backend parser
+  // (synthesis.cited_source_numbers). Presentation only: each resolved number renders as a clean
+  // clickable [n]; the source markdown is never rewritten. Non-global (no lastIndex state).
+  const CITE_BODY = String.raw`\[\s*(?:sources?|refs?)?\s*\d+(?:\s*(?:,|;|&|and)\s*\d+)*\s*\]`
+  const CITE_ANYWHERE = new RegExp(CITE_BODY, 'i')
+  const CITE_SPLIT = new RegExp(`(${CITE_BODY})`, 'i')
+  const CITE_EXACT = new RegExp(`^${CITE_BODY}$`, 'i')
+
+  // Turn citation markers into clickable buttons — but never inside a <code>/<pre> span (a
+  // technical corpus can legitimately contain "[2]" as code, not a citation) and never by
+  // touching raw HTML/attributes: only text nodes we already hold.
   function linkifyCitations(root: HTMLElement): void {
     const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT)
     const targets: Text[] = []
     let n: Node | null
     while ((n = walker.nextNode())) {
-      if (!/\[\d+\]/.test(n.textContent ?? '')) continue
+      if (!CITE_ANYWHERE.test(n.textContent ?? '')) continue
       if (hasAncestorMatching(n, root, (e) => e.tagName === 'CODE' || e.tagName === 'PRE')) continue
       if (hasAncestorMatching(n, root, (e) => e.classList.contains('citation'))) continue
       targets.push(n as Text)
     }
     for (const textNode of targets) {
       const frag = document.createDocumentFragment()
-      for (const part of (textNode.textContent ?? '').split(/(\[\d+\])/g)) {
-        const m = /^\[(\d+)\]$/.exec(part)
-        if (m) {
-          const btn = document.createElement('button')
-          btn.type = 'button'
-          btn.className = 'citation'
-          btn.dataset.n = m[1]
-          btn.textContent = part
-          frag.appendChild(btn)
+      for (const part of (textNode.textContent ?? '').split(CITE_SPLIT)) {
+        if (part && CITE_EXACT.test(part)) {
+          // One [n] button per source number in the token (e.g. "[Sources 2, 4]" → [2][4]).
+          for (const num of part.match(/\d+/g) ?? []) {
+            const btn = document.createElement('button')
+            btn.type = 'button'
+            btn.className = 'citation'
+            btn.dataset.n = num
+            btn.textContent = `[${num}]`
+            frag.appendChild(btn)
+          }
         } else if (part) {
           frag.appendChild(document.createTextNode(part))
         }

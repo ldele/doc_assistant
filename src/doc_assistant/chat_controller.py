@@ -28,12 +28,13 @@ import hashlib
 import time
 from collections.abc import Iterator
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Literal
 
 from langchain_core.documents import Document
 
-from doc_assistant import app_settings, compare, export
+from doc_assistant import app_settings, compare, conversations, export
 from doc_assistant.commands import execute_command, parse_command
 from doc_assistant.config import (
     EPISTEMICS_MARKERS_ENABLED,
@@ -589,16 +590,25 @@ class ChatController:
         adjudicate_claim(claim_id, decision, edited_text=edited_text)
 
     def export_conversation(self, session: Session, *, dev: bool) -> tuple[str, Path | None]:
-        """Render the session's turns to markdown, write to ``data/exports/``, and return
-        ``(message, path)``. ``path`` is ``None`` when there is nothing to export (the
-        message then explains that). Refined from the spec's ``-> Path`` so the exact
-        confirmation text is built here, not in the renderer (no business logic in apps/)."""
-        turns = session.export_turns
+        """Render a conversation to markdown, write to ``data/exports/``, and return
+        ``(message, path)``. ``path`` is ``None`` when there is nothing to export.
+
+        Sources from the **durable ``AnswerRecord`` transcript** by ``session_id`` — so a
+        reopened or resumed past chat exports the same as a live one (the earlier turns live
+        only in the store). The in-memory ``export_turns`` are richer (reviewer, figures,
+        citation audit), so the dev bundle prefers them when this is a live session."""
+        in_memory = session.export_turns
+        durable = conversations.conversation_export_turns(session.session_id)
+        turns = in_memory if (dev and in_memory) else (durable or in_memory)
         if not turns:
             return ("Nothing to export yet — ask a question first.", None)
         flavour = "debug" if dev else "transcript"
+        subtitle = (
+            f"Exported {datetime.now(timezone.utc):%Y-%m-%d %H:%M UTC} · session "
+            f"{session.session_id}"
+        )
         md = export.render_conversation_markdown(
-            turns, title=f"doc_assistant session {session.session_id}", dev=dev
+            turns, title="Provenote conversation", subtitle=subtitle, dev=dev
         )
         path = export.write_markdown(f"{session.session_id}-{flavour}.md", md)
         return (f"📄 Exported {len(turns)} turn(s) — {flavour}. Saved to `{path}`.", path)

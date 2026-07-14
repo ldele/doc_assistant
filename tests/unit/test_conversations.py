@@ -15,6 +15,7 @@ from pathlib import Path
 import pytest
 
 from doc_assistant.conversations import (
+    conversation_export_turns,
     get_conversation,
     list_conversations,
 )
@@ -161,3 +162,41 @@ def test_get_conversation_ignores_null_session(temp_db: Path):
     _seed(None, "orphan", when=datetime(2026, 7, 1, 9, 0, 0))
     # A NULL session_id is not addressable as a conversation.
     assert get_conversation("") is None
+
+
+# --- conversation_export_turns (durable export source) -----------------------
+
+
+def test_conversation_export_turns_builds_from_records(temp_db: Path):
+    _seed(
+        "s1",
+        "q1 rewritten",
+        original_query="what is dpr?",
+        when=datetime(2026, 7, 13, 10, 0, 0),
+        answer="DPR uses dual encoders [1].",
+        chunks=[
+            {
+                "filename": "dpr.pdf",
+                "page": 3,
+                "section": "Intro",
+                "reranker_score": 0.71,
+                "chunk_excerpt": "excerpt one",
+            }
+        ],
+    )
+    _seed("s1", "q2", when=datetime(2026, 7, 13, 10, 5, 0), answer="Second answer.")
+
+    turns = conversation_export_turns("s1")
+    assert [t.question for t in turns] == [
+        "what is dpr?",
+        "q2",
+    ]  # created_at order; original_query wins
+    assert turns[0].answer == "DPR uses dual encoders [1]."
+    assert turns[0].standalone_query == "q1 rewritten"  # differed from original → recorded
+    src = turns[0].sources[0]
+    assert (src.n, src.filename, src.page, src.reranker_score) == (1, "dpr.pdf", 3, 0.71)
+    assert turns[1].sources == []  # no chunks persisted
+
+
+def test_conversation_export_turns_empty_for_unknown(temp_db: Path):
+    assert conversation_export_turns("ghost") == []

@@ -1,7 +1,6 @@
 <script lang="ts">
   import type { TurnResult } from './types'
   import Markdown from './Markdown.svelte'
-  import SourceCard from './SourceCard.svelte'
   import ClaimReview from './ClaimReview.svelte'
   import Provenance from './Provenance.svelte'
   import Icon from './Icon.svelte'
@@ -50,12 +49,32 @@
       <p class="error"><Icon name="triangle-alert" size={15} /> {error}</p>
     {:else if result}
       <Markdown source={result.answer} {onCitationClick} {activeCitationN} />
-      {#if result.sources.length && result.citation_note_md !== ''}
-        <div class="sources">
-          {#each result.sources as s (s.n)}
-            <SourceCard source={s} />
-          {/each}
-        </div>
+      {#if result.sources.length}
+        <details class="sources">
+          <summary
+            >{result.sources.length} source{result.sources.length === 1 ? '' : 's'}</summary
+          >
+          <ul class="citelist">
+            {#each result.sources as s (s.n)}
+              <li>
+                <button
+                  type="button"
+                  class="citelink"
+                  class:active={activeCitationN === s.n}
+                  onclick={() => onCitationClick?.(s.n)}
+                  title="Open this source in the side panel"
+                >
+                  {s.citation}
+                </button>
+                {#if s.markers.length}
+                  <span class="cite-marker" title={s.markers.join(', ')}>
+                    <Icon name="triangle-alert" size={11} />
+                  </span>
+                {/if}
+              </li>
+            {/each}
+          </ul>
+        </details>
       {/if}
       <ClaimReview claims={result.flagged_claims} />
       <Provenance {result} />
@@ -100,10 +119,65 @@
     margin: 0.1rem 0 0;
     font-weight: 600;
   }
+  /* Sources render as a compact, collapsed-by-default bib-style list (user feedback 2026-07-14:
+     the old full-card grid forced a long scroll). Each row opens the citation side panel; the
+     inline [n] links in the answer prose remain the primary path. */
   .sources {
-    display: grid;
-    gap: 0.5rem;
     margin-top: 0.7rem;
+  }
+  .sources > summary {
+    cursor: pointer;
+    color: var(--fg-2);
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    padding: 0.15rem 0;
+    user-select: none;
+  }
+  .sources > summary:hover {
+    color: var(--fg);
+  }
+  .citelist {
+    list-style: none;
+    margin: 0.35rem 0 0;
+    padding: 0;
+    display: grid;
+    gap: 0.1rem;
+  }
+  .citelist li {
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+    min-width: 0;
+  }
+  .citelink {
+    font: inherit;
+    font-size: 0.82rem;
+    text-align: left;
+    background: none;
+    border: none;
+    padding: 0.08rem 0;
+    color: var(--fg);
+    cursor: pointer;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100%;
+  }
+  .citelink:hover,
+  .citelink:focus-visible {
+    color: var(--accent);
+    text-decoration: underline;
+  }
+  .citelink.active {
+    color: var(--accent);
+    font-weight: 600;
+    text-decoration: underline;
+  }
+  .cite-marker {
+    color: var(--warn-fg);
+    display: inline-flex;
+    flex: none;
   }
   .usage {
     margin-top: 0.6rem;

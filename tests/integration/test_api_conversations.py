@@ -89,3 +89,24 @@ def test_get_conversation_endpoint(temp_db: None) -> None:
 
 def test_get_conversation_unknown_returns_404(temp_db: None) -> None:
     assert _client().get("/api/conversations/nope").status_code == 404
+
+
+def test_patch_conversation_pin_archive_soft_delete(temp_db: None) -> None:
+    _seed("s1", "keep", datetime(2026, 7, 13, 10, 0, 0))
+    _seed("s2", "pin then delete", datetime(2026, 7, 13, 11, 0, 0))
+    client = _client()
+
+    # pin s1 (the older one) → it sorts first and carries the flag
+    assert client.patch("/api/conversations/s1", json={"pinned": True}).json() == {"ok": True}
+    body = client.get("/api/conversations").json()
+    assert body[0]["session_id"] == "s1" and body[0]["pinned"] is True
+
+    # archive surfaces as a flag but stays listed
+    client.patch("/api/conversations/s1", json={"archived": True})
+    assert client.get("/api/conversations").json()[0]["archived"] is True
+
+    # soft-delete s2 → drops from the list, then restore brings it back
+    client.patch("/api/conversations/s2", json={"deleted": True})
+    assert [c["session_id"] for c in client.get("/api/conversations").json()] == ["s1"]
+    client.patch("/api/conversations/s2", json={"deleted": False})
+    assert {c["session_id"] for c in client.get("/api/conversations").json()} == {"s1", "s2"}

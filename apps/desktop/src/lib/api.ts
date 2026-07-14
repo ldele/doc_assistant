@@ -44,6 +44,20 @@ export async function getConversation(sessionId: string): Promise<ConversationDe
   return (await r.json()) as ConversationDetail
 }
 
+/** Set a conversation's management flags (pin / archive / soft-delete). Only the fields passed
+ *  change. `deleted: true` hides it (records retained); `deleted: false` restores it. */
+export async function updateConversationMeta(
+  sessionId: string,
+  patch: { pinned?: boolean; archived?: boolean; deleted?: boolean },
+): Promise<void> {
+  const r = await fetch(`${API_BASE}/api/conversations/${encodeURIComponent(sessionId)}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(patch),
+  })
+  if (!r.ok) throw new Error(`update conversation failed: ${r.status}`)
+}
+
 /** List ingested documents for the Library browser (feature-library-browser.md, read-only). */
 export async function listLibraryDocuments(): Promise<LibraryDocument[]> {
   const r = await fetch(`${API_BASE}/api/library/documents`)

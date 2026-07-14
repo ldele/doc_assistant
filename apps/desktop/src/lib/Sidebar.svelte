@@ -19,6 +19,9 @@
     onSelectMode,
     onSelectDocument,
     onClose,
+    onPin,
+    onArchive,
+    onDelete,
   }: {
     mode: 'chat' | 'library'
     conversations: ConversationSummary[]
@@ -32,7 +35,17 @@
     onSelectMode: (mode: 'chat' | 'library') => void
     onSelectDocument: (docId: string) => void
     onClose?: () => void
+    onPin: (sessionId: string, pinned: boolean) => void
+    onArchive: (sessionId: string, archived: boolean) => void
+    onDelete: (sessionId: string) => void
   } = $props()
+
+  // Archived conversations are hidden behind a toggle so they don't clutter the list.
+  let showArchived = $state(false)
+  const archivedCount = $derived(conversations.filter((c) => c.archived).length)
+  const visibleConvos = $derived(
+    showArchived ? conversations : conversations.filter((c) => !c.archived),
+  )
 
   function relTime(iso: string): string {
     const then = new Date(iso).getTime()
@@ -100,21 +113,54 @@
       {#if conversations.length === 0}
         <p class="empty">No conversations yet. Ask a question to start one.</p>
       {:else}
-        {#each conversations as c (c.session_id)}
-          <button
-            class="row"
-            class:active={isActive(c.session_id)}
-            aria-current={isActive(c.session_id) ? 'true' : undefined}
-            onclick={() => onSelect(c.session_id)}
-            type="button"
-          >
-            <span class="title">{c.title}</span>
-            <span class="rowmeta">
-              {#if c.session_id === liveSessionId}<span class="dot" title="Current chat" aria-hidden="true"></span>{/if}
-              <span>{relTime(c.last_at)} · {c.turn_count} turn{c.turn_count === 1 ? '' : 's'}</span>
-            </span>
-          </button>
+        {#each visibleConvos as c (c.session_id)}
+          <div class="row" class:active={isActive(c.session_id)} class:archived={c.archived}>
+            <button
+              class="rowmain"
+              aria-current={isActive(c.session_id) ? 'true' : undefined}
+              onclick={() => onSelect(c.session_id)}
+              type="button"
+            >
+              <span class="title">
+                {#if c.pinned}<span class="pinmark" aria-hidden="true"><Icon name="pin" size={11} /></span>{/if}{c.title}
+              </span>
+              <span class="rowmeta">
+                {#if c.session_id === liveSessionId}<span class="dot" title="Current chat" aria-hidden="true"></span>{/if}
+                <span>{relTime(c.last_at)} · {c.turn_count} turn{c.turn_count === 1 ? '' : 's'}</span>
+              </span>
+            </button>
+            <div class="rowactions">
+              <button
+                class="act"
+                class:on={c.pinned}
+                title={c.pinned ? 'Unpin' : 'Pin'}
+                aria-label={c.pinned ? 'Unpin conversation' : 'Pin conversation'}
+                onclick={() => onPin(c.session_id, !c.pinned)}
+                type="button"><Icon name="pin" size={14} /></button
+              >
+              <button
+                class="act"
+                class:on={c.archived}
+                title={c.archived ? 'Unarchive' : 'Archive'}
+                aria-label={c.archived ? 'Unarchive conversation' : 'Archive conversation'}
+                onclick={() => onArchive(c.session_id, !c.archived)}
+                type="button"><Icon name="archive" size={14} /></button
+              >
+              <button
+                class="act danger"
+                title="Delete"
+                aria-label="Delete conversation"
+                onclick={() => onDelete(c.session_id)}
+                type="button"><Icon name="trash-2" size={14} /></button
+              >
+            </div>
+          </div>
         {/each}
+        {#if archivedCount > 0}
+          <button class="archived-toggle" onclick={() => (showArchived = !showArchived)} type="button">
+            {showArchived ? 'Hide' : 'Show'} archived ({archivedCount})
+          </button>
+        {/if}
       {/if}
     </nav>
   {:else}
@@ -216,17 +262,10 @@
     line-height: 1.4;
   }
   .row {
-    text-align: left;
-    font: inherit;
-    cursor: pointer;
-    border: 1px solid transparent;
-    background: none;
-    color: var(--fg);
-    border-radius: 8px;
-    padding: 0.45rem 0.55rem;
     display: flex;
-    flex-direction: column;
-    gap: 0.15rem;
+    align-items: center;
+    border: 1px solid transparent;
+    border-radius: 8px;
     width: 100%;
   }
   .row:hover {
@@ -235,6 +274,71 @@
   .row.active {
     background: var(--surface-2);
     border-color: var(--border);
+  }
+  .row.archived {
+    opacity: 0.55;
+  }
+  .rowmain {
+    text-align: left;
+    font: inherit;
+    cursor: pointer;
+    border: none;
+    background: none;
+    color: var(--fg);
+    padding: 0.45rem 0.55rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+    flex: 1;
+    min-width: 0;
+  }
+  .pinmark {
+    color: var(--accent);
+    margin-right: 0.2rem;
+  }
+  .rowactions {
+    display: none;
+    align-items: center;
+    gap: 0.05rem;
+    padding-right: 0.25rem;
+    flex: none;
+  }
+  .row:hover .rowactions,
+  .row:focus-within .rowactions {
+    display: flex;
+  }
+  .act {
+    font: inherit;
+    cursor: pointer;
+    border: none;
+    background: none;
+    color: var(--fg-2);
+    padding: 0.22rem;
+    border-radius: 6px;
+    display: inline-flex;
+  }
+  .act:hover {
+    background: var(--surface-2);
+    color: var(--fg);
+  }
+  .act.on {
+    color: var(--accent);
+  }
+  .act.danger:hover {
+    color: var(--warn-fg);
+    background: var(--warn-bg);
+  }
+  .archived-toggle {
+    font: inherit;
+    font-size: 0.75rem;
+    cursor: pointer;
+    border: none;
+    background: none;
+    color: var(--fg-2);
+    padding: 0.4rem 0.55rem;
+    margin-top: 0.2rem;
+    text-align: left;
+    text-decoration: underline;
   }
   .title {
     font-size: 0.85rem;

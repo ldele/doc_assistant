@@ -57,6 +57,8 @@ export interface ConversationSummary {
   turn_count: number
   started_at: string // ISO 8601
   last_at: string // ISO 8601
+  pinned: boolean
+  archived: boolean
 }
 
 // A rehydrated citation — degraded vs a live SourceView (no markers/figures; not persisted).

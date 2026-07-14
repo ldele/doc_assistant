@@ -40,6 +40,7 @@ from apps.api.models import (
     CompareRequest,
     CompareResultPayload,
     ConversationDetailPayload,
+    ConversationMetaUpdate,
     ConversationSummaryPayload,
     ExportRequest,
     LibraryDocumentChunksPayload,
@@ -384,6 +385,19 @@ def create_app(
         if detail is None:
             raise HTTPException(status_code=404, detail="conversation not found")
         return ConversationDetailPayload.from_detail(detail)
+
+    @app.patch("/api/conversations/{session_id}")
+    def update_conversation_route(
+        session_id: str, body: ConversationMetaUpdate
+    ) -> dict[str, bool]:
+        """Set a conversation's management flags (pin / archive / soft-delete). Only the fields
+        present in the body change; others are left as-is. Idempotent per field."""
+        from doc_assistant.conversations import set_conversation_meta
+
+        set_conversation_meta(
+            session_id, pinned=body.pinned, archived=body.archived, deleted=body.deleted
+        )
+        return {"ok": True}
 
     @app.get("/api/library/documents")
     def list_library_documents() -> list[LibraryDocumentPayload]:

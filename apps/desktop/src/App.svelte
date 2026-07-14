@@ -16,6 +16,7 @@
     listConversations,
     listLibraryDocuments,
     streamChat,
+    updateConversationMeta,
   } from './lib/api'
   import Turn from './lib/Turn.svelte'
   import ReadonlyTurn from './lib/ReadonlyTurn.svelte'
@@ -128,6 +129,43 @@
       conversations = await listConversations()
     } catch {
       // keep the prior list
+    }
+  }
+
+  // Conversation management (pin / archive / soft-delete): PATCH the flag, then refresh the list.
+  async function pinConversation(sid: string, pinned: boolean): Promise<void> {
+    try {
+      await updateConversationMeta(sid, { pinned })
+      await refreshConversations()
+    } catch (e) {
+      console.error('pin failed', e)
+    }
+  }
+  async function archiveConversation(sid: string, archived: boolean): Promise<void> {
+    try {
+      await updateConversationMeta(sid, { archived })
+      await refreshConversations()
+    } catch (e) {
+      console.error('archive failed', e)
+    }
+  }
+  async function deleteConversation(sid: string): Promise<void> {
+    // Soft-delete is reversible, but there's no restore UI yet — confirm to avoid a mis-click.
+    if (
+      !window.confirm(
+        'Delete this conversation? It is removed from your history; the underlying records are kept.',
+      )
+    )
+      return
+    try {
+      await updateConversationMeta(sid, { deleted: true })
+      // If the deleted chat is the one on screen (viewed, resumed, or live), start fresh.
+      if (viewing === sid || resumedHistory?.session_id === sid || sessionId === sid) {
+        newConversation()
+      }
+      await refreshConversations()
+    } catch (e) {
+      console.error('delete failed', e)
     }
   }
 
@@ -369,6 +407,9 @@
     onSelectMode={selectMode}
     onSelectDocument={selectDocument}
     onClose={() => (sidebarOpen = false)}
+    onPin={pinConversation}
+    onArchive={archiveConversation}
+    onDelete={deleteConversation}
   />
 
   <div class="content">

@@ -17,11 +17,11 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy import func, select
 
-from doc_assistant.db.models import AnswerRecord
+from doc_assistant.db.models import AnswerRecord, ConversationMeta
 from doc_assistant.db.session import session_scope
 from doc_assistant.export import ExportSource, ExportTurn
 
@@ -37,6 +37,8 @@ class ConversationSummary:
     turn_count: int
     started_at: datetime
     last_at: datetime
+    pinned: bool = False
+    archived: bool = False
 
 
 @dataclass(frozen=True)
@@ -103,13 +105,43 @@ def _sources_from_json(retrieved_chunks_json: str | None) -> list[ConversationSo
     return sources
 
 
+def set_conversation_meta(
+    session_id: str,
+    *,
+    pinned: bool | None = None,
+    archived: bool | None = None,
+    deleted: bool | None = None,
+) -> None:
+    """Upsert a conversation's management flags — only the fields passed are changed.
+
+    ``deleted=True`` **soft-deletes** (stamps ``deleted_at``, hiding it from the list while its
+    ``AnswerRecord`` provenance is retained); ``deleted=False`` restores it. Creates the sidecar
+    row on first action; an absent row means all-default (not pinned/archived/deleted)."""
+    with session_scope() as session:
+        meta = session.get(ConversationMeta, session_id)
+        if meta is None:
+            meta = ConversationMeta(session_id=session_id)
+            session.add(meta)
+        if pinned is not None:
+            meta.pinned = pinned
+        if archived is not None:
+            meta.archived = archived
+        if deleted is not None:
+            meta.deleted_at = datetime.now(timezone.utc) if deleted else None
+
+
 def list_conversations(limit: int = 100) -> list[ConversationSummary]:
-    """The most-recently-active conversations, newest first (Decision 10: no prune, cap ~100).
+    """The most-recently-active conversations (Decision 10: no prune, cap ~100). Soft-deleted
+    conversations are excluded; pinned ones sort first, then newest-first within each group.
 
     Groups ``AnswerRecord`` by ``session_id`` (``NULL`` excluded); the title is the earliest
-    turn's question (``original_query`` before its rewrite, else ``query``).
+    turn's question (``original_query`` before its rewrite, else ``query``). Pin/archive flags
+    come from the ``conversation_meta`` sidecar (absent row = defaults).
     """
     with session_scope() as session:
+        deleted_subq = select(ConversationMeta.session_id).where(
+            ConversationMeta.deleted_at.is_not(None)
+        )
         agg = session.execute(
             select(
                 AnswerRecord.session_id,
@@ -118,6 +150,7 @@ def list_conversations(limit: int = 100) -> list[ConversationSummary]:
                 func.max(AnswerRecord.created_at),
             )
             .where(AnswerRecord.session_id.is_not(None))
+            .where(AnswerRecord.session_id.not_in(deleted_subq))
             .group_by(AnswerRecord.session_id)
             .order_by(func.max(AnswerRecord.created_at).desc())
             .limit(limit)
@@ -142,16 +175,28 @@ def list_conversations(limit: int = 100) -> list[ConversationSummary]:
             if sid not in titles:
                 titles[sid] = _truncate(original_query or query)
 
-        return [
+        flag_rows = session.execute(
+            select(
+                ConversationMeta.session_id, ConversationMeta.pinned, ConversationMeta.archived
+            ).where(ConversationMeta.session_id.in_(session_ids))
+        ).all()
+        flags = {sid: (bool(pinned), bool(archived)) for sid, pinned, archived in flag_rows}
+
+        summaries = [
             ConversationSummary(
                 session_id=sid,
                 title=titles.get(sid, "(untitled)"),
                 turn_count=count,
                 started_at=started_at,
                 last_at=last_at,
+                pinned=flags.get(sid, (False, False))[0],
+                archived=flags.get(sid, (False, False))[1],
             )
             for sid, count, started_at, last_at in agg
         ]
+        # Pinned first; stable sort preserves the newest-first order within each group.
+        summaries.sort(key=lambda c: not c.pinned)
+        return summaries
 
 
 def conversation_export_turns(session_id: str) -> list[ExportTurn]:

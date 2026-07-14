@@ -18,6 +18,7 @@ from doc_assistant.conversations import (
     conversation_export_turns,
     get_conversation,
     list_conversations,
+    set_conversation_meta,
 )
 from doc_assistant.db.models import AnswerRecord
 from doc_assistant.db.session import session_scope
@@ -200,3 +201,49 @@ def test_conversation_export_turns_builds_from_records(temp_db: Path):
 
 def test_conversation_export_turns_empty_for_unknown(temp_db: Path):
     assert conversation_export_turns("ghost") == []
+
+
+# --- conversation management: pin / archive / soft-delete ---------------------
+
+
+def test_pin_sorts_conversation_first(temp_db: Path):
+    _seed("old", "q", when=datetime(2026, 7, 13, 10, 0, 0))
+    _seed("new", "q", when=datetime(2026, 7, 13, 12, 0, 0))
+    _seed("pinme", "q", when=datetime(2026, 7, 13, 9, 0, 0))  # the oldest
+    set_conversation_meta("pinme", pinned=True)
+
+    convos = list_conversations()
+    assert convos[0].session_id == "pinme" and convos[0].pinned
+    # non-pinned keep newest-first below the pin
+    assert [c.session_id for c in convos[1:]] == ["new", "old"]
+
+
+def test_soft_delete_excludes_and_restores(temp_db: Path):
+    _seed("keep", "q", when=datetime(2026, 7, 13, 10, 0, 0))
+    _seed("gone", "q", when=datetime(2026, 7, 13, 11, 0, 0))
+    set_conversation_meta("gone", deleted=True)
+    assert [c.session_id for c in list_conversations()] == ["keep"]  # hidden
+    # the underlying records are retained — restore brings it back
+    set_conversation_meta("gone", deleted=False)
+    assert {c.session_id for c in list_conversations()} == {"keep", "gone"}
+
+
+def test_archive_surfaces_as_flag_not_excluded(temp_db: Path):
+    _seed("s1", "q", when=datetime(2026, 7, 13, 10, 0, 0))
+    set_conversation_meta("s1", archived=True)
+    (c,) = list_conversations()  # archived still listed; the frontend chooses to hide
+    assert c.archived and not c.pinned
+
+
+def test_set_meta_changes_only_given_fields(temp_db: Path):
+    _seed("s1", "q", when=datetime(2026, 7, 13, 10, 0, 0))
+    set_conversation_meta("s1", pinned=True)
+    set_conversation_meta("s1", archived=True)  # pinned must survive
+    (c,) = list_conversations()
+    assert c.pinned and c.archived
+
+
+def test_meta_absent_row_is_all_default(temp_db: Path):
+    _seed("s1", "q", when=datetime(2026, 7, 13, 10, 0, 0))
+    (c,) = list_conversations()
+    assert not c.pinned and not c.archived

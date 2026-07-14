@@ -8,6 +8,46 @@ Append only — never edit past entries.
 Format: What changed | Why | Rejected alternatives | What it opens
 
 ---
+## 2026-07-14 — Conversation management: pin / archive / soft-delete (new `conversation_meta` sidecar)
+
+**What:** the first conversation-*level* write path (design lock:
+`docs/specs/feature-conversation-management.md`). New additive `conversation_meta` table
+(`db/models.py`, keyed by `session_id`: `pinned`, `archived`, `deleted_at`, `updated_at`) — the
+durable home for per-conversation state, since conversations are *derived* by grouping `AnswerRecord`
+(no conversation entity). `conversations.py`: `set_conversation_meta(session_id, pinned?/archived?/
+deleted?)` upsert + `list_conversations` now reads the sidecar — excludes soft-deleted (subquery),
+attaches pinned/archived, sorts **pinned-first** (stable → newest-first within each group). `PATCH
+/api/conversations/{sid}` → `set_conversation_meta`. Frontend: `Sidebar.svelte` rows restructured
+(the `<button>` row → a container + `.rowmain` + hover-revealed pin/archive/delete actions), a pin mark
+on pinned rows, archived rows behind a "Show archived (N)" toggle; `App.svelte` handlers (delete
+`window.confirm`s and falls back to a fresh chat if the on-screen chat is the one deleted). New Icon
+glyphs `pin` / `archive` / `trash-2`.
+
+**Why:** the user's conversation-management cluster (delete / pin / archive / projects). Pin/archive/
+delete are the single-conversation actions, built on a shared sidecar so projects (grouping) extends it.
+
+**Design choices:** **soft-delete** (`deleted_at` — reversible, retains the `AnswerRecord` provenance,
+fits the research-integrity ethos; a permanent purge is a later action); a **relational sidecar table**,
+not a JSON blob (the history spec's "no second source of truth"); **projects/groups deferred** (a
+distinct, larger data model — the next increment on this table).
+
+**Verified:** `pytest` **766** (+ `set_conversation_meta` / pin-sort / soft-delete-exclude-restore /
+archive-flag / absent-row-default / PATCH-endpoint tests); `svelte-check` 0/0; ruff + mypy clean. Live
+($0, no LLM, real corpus — **every action restored afterward so history is unchanged**): pin → row jumps
+to top + mark; unpin → restores order; archive → hidden + "Show archived (1)" toggle → shown dimmed;
+delete (confirm) → gone from list + API, then restored; 0 console errors. **Additive migration applied to
+`data/library.db`** (`conversation_meta` created; no existing data touched).
+
+**Rejected:** hard-delete (destroys provenance — soft is reversible + auditable); a localStorage/
+`app_settings` JSON blob for the flags (not queryable, a second source of truth); building projects now.
+
+**Opens:** hover-only actions (no touch affordance — mobile follow-up); no "trash/restore" UI for
+soft-deleted chats yet (recoverable via the API / a future view); all-false meta rows equal an absent row
+(harmless). **Projects (conversation groups)** is next on this sidecar. Likely warrants an ADR (first
+conversation write path + schema change).
+
+**Staged; nothing committed (cpc §13). Additive migration applied to the live DB.**
+
 ## 2026-07-14 — Citation robustness, Phase B: answer-prompt fix (stop haiku's malformed citations at the source)
 
 **What:** tightened `ANSWER_PROMPT`'s citing rules (`prompts.py`) with three explicit negatives targeting

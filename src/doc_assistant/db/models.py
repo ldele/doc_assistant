@@ -757,3 +757,24 @@ class IngestionEvent(Base):
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     document: Mapped[Document] = relationship("Document", back_populates="ingestion_events")
+
+
+class ConversationMeta(Base):
+    """Per-conversation management state (pin / archive / soft-delete), keyed by ``session_id``.
+
+    Conversations are *derived* by grouping ``AnswerRecord`` rows (there is no conversation
+    entity), so this sidecar holds the small mutable state a user sets on a whole conversation.
+    A row exists only once an action has been taken; an **absent** row means the defaults (not
+    pinned, not archived, not deleted). Additive — ``create_all`` makes the table.
+
+    **Soft delete:** ``deleted_at`` non-null hides the conversation from the list but retains its
+    ``AnswerRecord`` provenance (reversible; a permanent purge is a later, separate action).
+    """
+
+    __tablename__ = "conversation_meta"
+
+    session_id: Mapped[str] = mapped_column(String, primary_key=True)
+    pinned: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    archived: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, onupdate=_utcnow)

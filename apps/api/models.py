@@ -211,6 +211,8 @@ class ConversationSummaryPayload(BaseModel):
     turn_count: int
     started_at: datetime
     last_at: datetime
+    pinned: bool = False
+    archived: bool = False
 
     @classmethod
     def from_summary(cls, s: ConversationSummary) -> ConversationSummaryPayload:
@@ -220,7 +222,18 @@ class ConversationSummaryPayload(BaseModel):
             turn_count=s.turn_count,
             started_at=_as_utc(s.started_at),
             last_at=_as_utc(s.last_at),
+            pinned=s.pinned,
+            archived=s.archived,
         )
+
+
+class ConversationMetaUpdate(BaseModel):
+    """PATCH body for a conversation's management flags — only the fields sent are changed.
+    ``deleted`` toggles the soft-delete (True hides + retains records; False restores)."""
+
+    pinned: bool | None = None
+    archived: bool | None = None
+    deleted: bool | None = None
 
 
 class ConversationSourcePayload(BaseModel):

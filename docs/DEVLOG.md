@@ -8,6 +8,44 @@ Append only — never edit past entries.
 Format: What changed | Why | Rejected alternatives | What it opens
 
 ---
+## 2026-07-14 — Visual identity V3b (SPRINT-019): Provenote app icon + full platform icon-set regeneration
+
+**What:** shipped the Provenote **app icon** and regenerated the whole `src-tauri/icons/*` set from it.
+Assets + one ADR + docs; staged (on top of V3a `181046c`). (1) **Design** — a **laurel wreath encircling an
+open book** on a violet rounded tile (open book = reading; laurel = scholarship / provenance — on-theme for
+a research-integrity product). Supplied by the user as a **designed 1024px master**, committed as
+`apps/desktop/src-tauri/app-icon.png`. (2) **Regenerate** — `npx tauri icon src-tauri/app-icon.png`
+(tauri-cli 2.11.3) rewrote the full platform set: 32/64/128/128@2x PNGs, `icon.png` 512, `icon.ico`
+(16→256 frames), `icon.icns` 1024, the Windows Store `Square*`/`StoreLogo` set, and android/ios. (3)
+**ADR-012** records the installer-identity split the §V3b spec flagged: Provenote = installer/product
+identity (name, window, icon, bundle id `com.provenote.desktop`); `doc_assistant` = code identity (package,
+commands, npm name, `doc-assistant-api` sidecar) — unchanged. SPRINT-018 archived (V3a committed).
+**Why:** V3b was the carved second half of V3; the app icon was the last brand surface still showing the
+default Tauri glyph. The laurel + book mark says "researched / verified," closer to Provenote's provenance +
+research-integrity pitch than a plain reading glyph.
+**Pivot (two attempts, one committed):** the first cut generated a faithful white Lucide `book-open` on the
+flat indigo `--accent` tile from a committed Pillow script (`tools/branding/generate_app_icon.py`) — it
+matched the in-app header mark and was reproducible-from-source, but plain. The user then supplied a
+**designed laurel icon** they preferred and had verified at low res; adopted it and **removed the generator**
+(a "generator" that no longer produces the shipped icon is misleading provenance — and this repo prizes
+provenance). The shipped icon is now a designed raster master, not script-generated.
+**Verified (not browser-preview-verifiable — it is the OS/installer icon):** `bundle.icon` files present at
+correct dimensions (32/64/128/256/512/1024 + the `.ico` 16→256 frame set); a magnified contact sheet
+(16→128px) confirms **graceful degradation** — book + wreath both crisp at 48–128px; the wreath softens to a
+fine ring by 32px and a faint halo at 16–24px while the open book carries recognition. **No `src/` / API /
+wire-type / logic / locked-setting / behavior change** — assets + docs only; `bundle.icon` paths unchanged
+(same filenames, new pixels).
+**Rejected / noted:** renaming the sidecar binary / Python package to `provenote` (ADR-012 — re-risks the M4
+freeze pipeline + churns imports for a cosmetic win); a macOS squircle-safe-area remaster (kept the
+full-bleed rounded tile). The icon's violet gradient runs **lighter than the in-app `--accent` indigo**
+(#4a3fa6) — a minor palette divergence the user accepted (an OS icon is allowed to be a richer "jewel" than
+the flat UI).
+**Opens:** the wreath detail is largely lost below ~32px (the book still reads) — acceptable, but a
+simplified small-size variant is a future polish option. macOS squircle-safe-area + a dedicated splash
+remain unbuilt (out of scope). `provenote.com` still unconfirmed at a registrar (queued).
+**Staged assets + docs; nothing committed (cpc §13 — user reviews + commits).**
+
+---
 ## 2026-07-14 — Visual identity V3a (SPRINT-018): rename doc_assistant → Provenote (product identity) + shell polish audit
 
 **What:** renamed the **product** identity `doc_assistant` → `Provenote` (V2 committed `4fd772c`; V3

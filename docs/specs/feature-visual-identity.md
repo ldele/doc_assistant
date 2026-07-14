@@ -253,13 +253,38 @@ carved to V3b; Tauri bundle **identifier** → `com.provenote.desktop`.
   no overflow); no behavior / wire-type / logic / locked-setting change; sidecar + internal package
   names confirmed unchanged.
 
-#### V3b — Tauri app icon + branding assets
+#### V3b — Tauri app icon + branding assets  *(BUILT 2026-07-14 — SPRINT-019, staged)*
 
-Design a Provenote app icon (the `book-open` mark, white on the indigo `--accent`, matching the header
-mark tile), regenerate the full `src-tauri/icons/*` set from a 1024px source via `tauri icon`, and run a
-final cross-screen branding/polish audit. **A separate follow-up** — it needs image tooling (SVG
-rasterization + the Tauri CLI) and is **not browser-preview-verifiable** (it is the OS/installer icon).
-**The packaging + bundle-id surface may warrant its own ADR** (installer identity, not just CSS).
+Design a Provenote app icon and regenerate the full `src-tauri/icons/*` set from a 1024px source via
+`tauri icon`. A separate follow-up from V3a — it needs image tooling and is **not browser-preview-verifiable**
+(it is the OS/installer icon).
+
+**Built 2026-07-14** as `docs/sprints/SPRINT-019-visual-identity-v3b-icon.md`, on top of the V3a commit
+(`181046c`):
+
+- **Icon = a designed laurel wreath encircling an open book** on a violet rounded tile (open book =
+  reading; laurel = scholarship / provenance — on-theme for a research-integrity product). Shares the book
+  motif with the in-app header `.mark` but is a richer gradient "jewel" (an OS icon may be more ornate than
+  the flat UI). **Supplied by the user as a designed 1024px master**, committed as `src-tauri/app-icon.png`.
+- **Two attempts (one shipped).** The first cut generated a flat white Lucide `book-open` on the indigo
+  `--accent` tile from a committed Pillow script (there is no SVG rasterizer on this box — no
+  ImageMagick/Inkscape/rsvg/cairosvg — and `tauri icon` takes a PNG anyway) — faithful to the header +
+  reproducible-from-source, but plain. Superseded by the user's designed laurel icon; the generator was
+  **removed** (a generator that no longer produces the shipped icon is misleading provenance).
+- **`npx tauri icon src-tauri/app-icon.png`** regenerated the whole platform set (32/64/128/128@2x PNGs,
+  `icon.png` 512, `icon.ico` 16→256 frames, `icon.icns` 1024, the Windows Store `Square*`/`StoreLogo`
+  set, android/ios) — one coherent brand across all platforms.
+- **Verified** (not preview-verifiable): key sizes + `.ico` frame set dimension-checked; a magnified
+  contact sheet (16→128px) confirms **graceful degradation** — book + wreath crisp at 48–128px, the wreath
+  softening to a fine ring by 32px and a faint halo at 16–24px while the open book carries recognition. No
+  `src/`/API/wire/logic/locked-setting/behavior change; `bundle.icon` paths unchanged (same filenames).
+- **Note:** the icon's violet gradient runs lighter than the in-app `--accent` indigo (#4a3fa6) — a minor
+  palette divergence the user accepted; a simplified small-size (sub-32px) variant is a future polish option.
+
+**Installer-identity ADR — recorded as ADR-012.** The packaging surface did warrant it: Provenote is the
+installer/product identity (name, window, icon, bundle id `com.provenote.desktop`); `doc_assistant` stays
+the code identity (package, commands, npm name, `doc-assistant-api` sidecar). The mixed surface is
+intentional; the bundle id is now a one-way door. See `docs/decisions/ADR-012-provenote-installer-identity.md`.
 
 ## Out of scope (whole pass)
 

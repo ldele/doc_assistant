@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-07-14 · class: disposable -->
+<!-- status: archived · updated: 2026-07-14 · class: disposable · built: V3a committed 181046c -->
 <!-- BUILDING 2026-07-14. Sole active contract (SPRINT-017/V2 committed 4fd772c + archived).
      Design lock: docs/specs/feature-visual-identity.md §V3 / §V3a (name locked 2026-07-14 = Provenote;
      scope decisions with the user: rename + polish audit in V3a, app icon/branding carved to V3b;

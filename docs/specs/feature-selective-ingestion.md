@@ -1,6 +1,33 @@
 # Spec — Selective ingestion: source registry + selection-scoped ingest (S1) + Tauri sources panel (S2)
 
-**Status:** DRAFT (designed 2026-07-02, planning session) — not yet grilled/locked. Roadmap PRs S1/S2.
+**Status:** **LOCKED (grilled 2026-07-15, `grill-me`; ledger at foot).** Designed 2026-07-02; grilled
+after the L4 library redesign confirmed a **flat, all-PDF source** (user, 2026-07-15). Roadmap PRs S1/S2.
+
+> **Grill lock amendment (2026-07-15) — governs where it conflicts with the original body below.**
+> The corpus is a **single flat folder of all-PDF papers** (confirmed, not a metadata gap). That
+> changes the selection model:
+> - **`doc_type` behavior is DEFERRED** (was Decision 4 / part of ADR-1). On an all-PDF corpus it is
+>   manual classification with **no consumer** (explicitly not a chunking/embedding lever — per-type
+>   routing needs a measured eval win first). S1 ships **no** `doc_type` seeding, **no** `doc_type`
+>   in `PATCH /api/sources`, **no** `doc_type` UI, and reads it nowhere. Selection in v1 is
+>   **status (`new`/`changed`/`ingested`/`missing`) + `excluded` + explicit `paths`** only.
+> - **BUT the `doc_type` column ships now, dormant** — a nullable `SourceFile.doc_type` with nothing
+>   wired to it. Reason: `init_db()`/`create_all` creates new tables but cannot ALTER a column onto an
+>   existing one (the build-time note below), and no ALTER-helper exists — so a dormant column now
+>   makes doc_type's future return a pure behavior add, not a migration. **Reopens (doc_type behavior)
+>   if:** a second format enters the corpus, or a per-type routing eval wins.
+> - **The registry (`SourceFile`) is KEPT** (not reduced to a stateless listing): persistent
+>   `excluded` has nowhere else to live (an un-ingested file has no `Document` row), and the table is
+>   still the status-listing source and the PR-17 adapter seam. It is just **minimal** now
+>   (identity + `excluded` + dormant `doc_type`).
+> - **`SourcePatch` / `PATCH /api/sources` accept `excluded` only** in v1 (drop the `doc_type` field);
+>   `SourceView` still *reports* `doc_type` (always null) so the wire shape is forward-stable.
+> - **S2 UI shape** (dedicated `Sources.svelte` sidebar mode vs folding the file list into the existing
+>   Settings ingest section) is **PARKED to S2 kickoff** — it does not block S1 (the API is UI-agnostic).
+> - **Unchanged and kept as drafted:** `dry-run` (Decision 6), explicit-selection-overrides-`excluded`
+>   (Decision 5), the `new/changed/ingested/missing` status truth table (Decision 3), the
+>   `SourceFile`-rides-`create_all` migration, vendor-neutral registry (ADR-3), rename→per-path-metadata
+>   loss as a documented v1 limitation (ADR-1 consequence).
 
 **Owner of execution:** Claude Code (code + tests). One PR per increment: **S1** (backend + CLI + API), **S2** (Tauri UI).
 **Pattern reference:** the **locked primary ingest path** (extract → markdown → chunk → embed → store,
@@ -206,6 +233,23 @@ selection state; all rules live server-side.
   (ruff / `mypy --strict` / bandit / coverage floor); one DEVLOG entry per logical change.
 - **S2:** the Sources panel lists status-chipped files, selection → ingest-selected round-trips through the
   API with live progress; exclude + doc-type edits persist; no business logic in the frontend.
+
+## Decision ledger (grill-me 2026-07-15)
+
+| Branch | Resolution | Deciding reason / reopens-if |
+|---|---|---|
+| `doc_type` behavior (v1) | **Deferred** — no seeding, no PATCH field, no UI, read nowhere | All-PDF corpus → manual busywork with no consumer (not a chunk/embed lever). **Reopens if** a 2nd format enters or a per-type routing eval wins |
+| `doc_type` schema | **Ship the nullable column now, dormant** | `create_all` can't ALTER a column onto an existing table + no ALTER-helper exists → dormant column makes the future return a behavior-only add. Cost: one dead nullable column |
+| Registry `SourceFile` vs stateless listing | **Keep the table (minimal: identity + `excluded` + dormant `doc_type`)** | Persistent `excluded` has nowhere else to live (no `Document` row pre-ingest); also the status-listing source + PR-17 adapter seam. Stateless can't persist exclude |
+| Selection primitive (v1) | **status + `excluded` + explicit `paths`** | doc_type deferral removes the metadata-selection axis; incremental (`new`/`changed`) + exclude is the real need for a flat personal corpus |
+| `PATCH /api/sources` shape | **`excluded` only**; `SourceView` still reports `doc_type` (always null) | Drop the unused field but keep the wire shape forward-stable |
+| S1 PR boundary | **One PR: registry + CLI + API**; S2 (UI) separate | Project one-increment-per-PR norm; S1 shrank with doc_type gone but still coheres as backend |
+| S2 UI shape | **Parked** — dedicated `Sources` sidebar mode vs fold into Settings | Doesn't block S1 (API is UI-agnostic); decide at S2 kickoff with the flat-corpus file-count in view |
+| `dry-run`, exclude-override, status truth table, vendor-neutral registry, rename-loss | **Kept as drafted** | No trade-off surfaced; the flat-source fact doesn't touch them |
+
+**Routing:** resolutions live in this spec (the design-lock, which already embeds ADR-1/2/3) + the amendment
+block up top; the `SESSION.md` handoff carries the ledger. **No new standalone ADR** — the first
+browse-time *write* path (manual folder/tag editing, deferred) remains the ADR trigger, unchanged from L4.
 
 ## Out of scope (deferred, with owners)
 

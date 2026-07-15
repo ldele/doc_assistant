@@ -123,13 +123,18 @@ Full gate green (`ruff`/`ruff format`/`mypy --strict src`/`bandit`/`pytest`).
 - **Phase B:** folders populate at ingest + a backfill for the current corpus; the rail's Collections tree
   is live and filters the grid; `GET /api/library/folders` + filter params + tests; one DEVLOG entry.
 
-## Folder population — RESOLVED (grill-me 2026-07-14)
+## Folder population — REOPENED then SHELVED (user, 2026-07-15)
 
-Locked to **A: mirror source-dir subfolders at ingest + a one-off backfill** (Decision 6). The `Folder`
-model is hierarchical and ready; the backfill organises the current flat corpus without a re-ingest.
-**Reopens if** the user's `source_dir` is intentionally flat (no meaningful subfolders) — then manual
-assignment (B, its own ADR) becomes the better starting point. Manual editing (B) stays a later increment
-layered on A; deferring folders entirely (C) was rejected in favour of Phase A shipping first without them.
+Was locked to **A: mirror source-dir subfolders at ingest + a one-off backfill** (Decision 6), with an
+explicit **reopens-if the `source_dir` is intentionally flat**. **That condition is now confirmed
+true** (user, 2026-07-15): the source is a single flat folder by design (0 folders on the corpus is
+not a metadata gap — there are no subfolders to mirror). So **path-derived folder-mirroring is
+shelved** — Phase B as specified (ingest-time subfolder mirror + backfill) is **not built**. The
+Phase-A **Collections** rail section stays honest-empty (as shipped). If folder/Collection grouping is
+ever wanted on a flat corpus, the path is **manual assignment** (option B — its own ADR, the first
+browse-time write path), never a fake path-derived tree. Deferring folders entirely (C) is effectively
+where we land for now. **Note for the ingestion work:** with no folders, **`doc_type`** (paper/book/
+web/note) is the primary selection axis in `feature-selective-ingestion.md`, not folder scoping.
 
 ## Decision ledger (grill-me 2026-07-14)
 

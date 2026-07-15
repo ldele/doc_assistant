@@ -8,6 +8,60 @@ Append only — never edit past entries.
 Format: What changed | Why | Rejected alternatives | What it opens
 
 ---
+## 2026-07-15 — Selective ingestion S1: SourceFile registry + selection-scoped ingest (backend + CLI + API)
+
+**What:** the S1 backend of `docs/specs/feature-selective-ingestion.md` (grilled + LOCKED same day).
+Ingest is no longer all-or-nothing over one folder. Five parts.
+(1) **`SourceFile` table** (`db/models.py`) — one row per discovered file: `rel_path` (unique key,
+POSIX), `format`/`size`/`mtime`/`first_seen`/`last_seen` (identity), `excluded` (the one persisted
+user intent), and a **dormant nullable `doc_type`** (ships now, wired to nothing — `create_all` can't
+ALTER a column later, so a dormant column makes doc_type's future return a behaviour-only add). Rides
+the additive `init_db()` `create_all`, like `Figure`. (2) **New `ingest/registry.py`** — pure core
+(`derive_status` 8-combo truth table → new/changed/ingested/missing; `validate_selection` →
+normalized rel_paths or `InvalidSelection` listing every offender by reason) + impure boundary
+(`scan_sources` stat-only walk that upserts rows + derives status with **no content reads**;
+`set_source_meta` PATCH seam; `resolve_selection` → explicit paths, explicit picks override
+`excluded`; `plan_files` dry-run classifier; `view_for` single-row echo). (3) **`ingest.main(files=,
+dry_run=)`** — `files` is a validated explicit list (mutually exclusive with `--path`/`--rebuild`,
+skips orphan cleanup); an implicit walk now subtracts standing exclusions; `dry_run` reports
+`would_add`/`would_reembed`/`skip_unchanged`/`excluded` **without loading embeddings or opening
+Chroma**. (4) **CLI** `--files P…` / `--dry-run` with the exclusivity rules. (5) **API** — `GET
+/api/sources` (scan + list), `PATCH /api/sources` (`excluded` only; 404 unknown), `POST /api/ingest`
+gains an optional `{paths?}` body resolved + validated up front (bad path → 400 before anything
+starts; no body = whole dir minus exclusions). Wire models `IngestRequest`/`SourcePatch`/
+`SourceFilePayload` (named `SourceFile*` to avoid the citation-`SourceView` collision).
+
+**Why:** the "in-app ingestion" pivot after L4. A flat mixed corpus needs user-controlled selection —
+batch (pick a subset) + on-need (by status). The M4 "index everything" flow shipped; this adds the
+registry + selection layer on the same locked ingest core (its six stages are untouched — this only
+changes *which files enter*).
+
+**Rejected / deferred (grill lock 2026-07-15, ledger in the spec):** (a) **`doc_type` behavior** —
+deferred (all-PDF corpus → manual busywork, no consumer yet; it's not a chunk/embed lever); only the
+dormant column ships. (b) **stateless computed listing** (no table) — rejected: persistent `excluded`
+has nowhere else to live (no `Document` row pre-ingest), and the table is the status-listing source +
+the PR-17 adapter seam. (c) **`default_doc_type` seeding fn** — omitted (no dead code; lands with the
+column's activation). (d) **S2 UI shape** — parked to S2 kickoff. (e) a CLI exclude command — not
+needed; `excluded` is set via the API/UI, honored by every surface.
+
+**Verified (offline, $0, no real embeddings — cpc §13):** full gate green — ruff / ruff format /
+`mypy src/` (60 files) / bandit (no issues) / **920 pytest passed** (+27: 19 unit truth-table +
+validation, 8 integration) / coverage 84% (registry.py 96%). Integration proof on tmp dirs (no
+corpus, no network): scan lifecycle new→ingested→changed→missing; resolve_selection excludes then an
+explicit pick overrides; bad paths raise `InvalidSelection`; `main(dry_run=True)` returns the plan
+with a `get_embeddings` **trap that never fires**; the API GET→PATCH→POST`{paths}` flow drives a fake
+`ingest_fn` that receives `files=[b.pdf]` (scope None), unknown PATCH → 404, traversal path → 400,
+no-body POST still uses the scope path. Zero regressions in the 125 existing ingest tests.
+
+**Opens:** **S2** (Tauri Sources panel — status chips, exclude toggle, ingest-selected) — UI shape
+(dedicated sidebar mode vs fold into Settings) decided at kickoff. PR 17 (Zotero/Calibre) writes this
+registry through the same public fns (ADR-3 seam). `doc_type` reactivation when a 2nd format or a
+routing eval arrives. Latent, pre-existing: a `source_dir` outside `config.DOCS_PATH` has no
+resolvable markdown cache (`get_cache_path` is DOCS_PATH-relative) — `scan_sources` degrades such a
+file to not-fresh rather than crash; unchanged by this work.
+
+**Staged; nothing committed (cpc §13).**
+
 ## 2026-07-15 — Library redesign L4 Phase A: nav-tree rail + inventory grid + drill-down
 
 **What:** the Library space is rebuilt from a flat doc list into a file-browser-style navigation

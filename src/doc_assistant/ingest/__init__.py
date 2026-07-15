@@ -326,15 +326,86 @@ def _resolve_walk_root(scope: str | None) -> Path:
     )
 
 
+def _drop_excluded(walked: list[Path]) -> tuple[list[Path], int]:
+    """Drop files flagged ``excluded`` in the registry from an implicit walk (Decision 5).
+
+    Exclusions are keyed by rel_path under the configured source dir; a walked file outside that
+    dir (a ``--path`` elsewhere) can't match an exclusion and is kept. Returns ``(kept, skipped)``.
+    Registry / app_settings are imported lazily to keep the locked core's top-level imports intact.
+    """
+    from doc_assistant import app_settings
+    from doc_assistant.ingest import registry
+
+    with session_scope() as session:
+        excluded = registry.excluded_rel_paths(session)
+    if not excluded:
+        return walked, 0
+    source_dir = app_settings.get_source_dir().resolve()
+    kept: list[Path] = []
+    skipped = 0
+    for f in walked:
+        try:
+            rel = f.resolve().relative_to(source_dir).as_posix()
+        except ValueError:
+            rel = ""
+        if rel and rel in excluded:
+            skipped += 1
+        else:
+            kept.append(f)
+    return kept, skipped
+
+
+def _resolve_ingest_files(scope: str | None, files: list[Path] | None) -> tuple[list[Path], int]:
+    """Resolve the files to ingest + the excluded-skipped count (feature-selective-ingestion.md).
+
+    ``files`` given → used as-is (an explicit selection; exclusions already applied or overridden
+    upstream). Otherwise walk ``_resolve_walk_root(scope)`` as before, then subtract standing
+    exclusions.
+    """
+    if files is not None:
+        return list(files), 0
+    walk_root = _resolve_walk_root(scope)
+    if walk_root.is_file():
+        walked = [walk_root] if is_supported(walk_root) else []
+    else:
+        walked = [p for p in walk_root.rglob("*") if p.is_file() and is_supported(p)]
+    return _drop_excluded(walked)
+
+
+def _dry_run_plan(scope: str | None, files: list[Path] | None) -> dict[str, int]:
+    """The dry-run plan (Decision 6): resolve + classify stat-only, report — never loads
+    embeddings or opens Chroma, so a monkeypatched `get_embeddings` trap stays untouched."""
+    from doc_assistant.ingest import registry
+
+    to_process, excluded_skipped = _resolve_ingest_files(scope, files)
+    with session_scope() as session:
+        plan = registry.plan_files(session, to_process)
+    plan["excluded"] = excluded_skipped
+    log.info("dry_run_plan", **plan)
+    return plan
+
+
 def main(
     force_rebuild: bool = False,
     skip_cleanup: bool = False,
     scope: str | None = None,
+    files: list[Path] | None = None,
+    dry_run: bool = False,
 ) -> dict[str, int]:
+    # Selective ingestion (feature-selective-ingestion.md, S1). `files` is an explicit,
+    # already-validated absolute path list (from `registry.resolve_selection` for the API, or CLI
+    # `--files`) — mutually exclusive with the walk-scoping flags. `dry_run` reports the plan
+    # without loading embeddings or opening Chroma (Decision 6).
+    if files is not None and (scope is not None or force_rebuild):
+        raise ValueError("files= is mutually exclusive with --path and --rebuild")
+
     # Ensure the SQLite schema exists. Idempotent (create_all no-ops when the
     # tables are already present), so this is safe on every run and removes the
     # fresh-clone footgun of having to run migrations manually before ingest.
     init_db()
+
+    if dry_run:
+        return _dry_run_plan(scope, files)
 
     # parents=True: the Chroma base may be a relocated ASCII path with new intermediate
     # dirs (KI-11, config._chroma_base), not just DATA_PATH/chroma.
@@ -369,10 +440,10 @@ def main(
         collection_name=collection,
     )
 
-    # Orphan cleanup is global by design — skip when scoping to a subset,
-    # otherwise a partial walk would falsely flag everything outside the
+    # Orphan cleanup is global by design — skip when scoping to a subset (--path or an explicit
+    # `files=` selection), otherwise a partial walk would falsely flag everything outside the
     # scope as missing-on-disk.
-    if not skip_cleanup and not force_rebuild and scope is None:
+    if not skip_cleanup and not force_rebuild and scope is None and files is None:
         orphan_hashes = cleanup_orphans_sqlite(db)
         cleanup_orphans_chroma(db, orphan_hashes, also_clean_cache=True)
         cleanup_orphans_chroma(pc_db, orphan_hashes, also_clean_cache=False)
@@ -411,15 +482,16 @@ def main(
 
     splitter = _make_baseline_splitter()
 
-    walk_root = _resolve_walk_root(scope)
-    if walk_root.is_file():
-        files = [walk_root] if is_supported(walk_root) else []
-    else:
-        files = [p for p in walk_root.rglob("*") if p.is_file() and is_supported(p)]
-    log.info("found_files", count=len(files), scope=str(walk_root) if scope is not None else None)
+    to_process, excluded_skipped = _resolve_ingest_files(scope, files)
+    log.info(
+        "found_files",
+        count=len(to_process),
+        scope=str(_resolve_walk_root(scope)) if scope is not None else None,
+        excluded_skipped=excluded_skipped,
+    )
 
     stats: dict[str, int] = {"added": 0, "skipped": 0, "error": 0}
-    for path in tqdm(files, desc="Processing"):
+    for path in tqdm(to_process, desc="Processing"):
         result = process_one_document(path, db, pc_db, splitter, indexed)
         stats[result] += 1
 

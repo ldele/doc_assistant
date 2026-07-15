@@ -780,3 +780,49 @@ class ConversationMeta(Base):
     # A user-set title; when null the list/detail fall back to the derived first-question title.
     title_override: Mapped[str | None] = mapped_column(Text, nullable=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, onupdate=_utcnow)
+
+
+# ============================================================
+# SourceFile — selective-ingestion registry (feature-selective-ingestion.md, S1).
+# ============================================================
+
+
+class SourceFile(Base):
+    """One discovered file under the current source dir — pre-ingest bookkeeping.
+
+    Populated by `ingest/registry.py::scan_sources` with a **stat-only** walk (no
+    extraction, no hashing, no content reads — listing a large corpus is instant).
+    Persists **identity** (`rel_path`, `format`, `size`, `mtime`, `first_seen`/`last_seen`)
+    and **user intent** (`excluded`); ingestion *status* is never stored — it is derived at
+    read time from the cache mtime + the `Document` rows (`registry.derive_status`). Keyed by
+    `rel_path` (POSIX separators, relative to the source dir); a rename orphans the row (v1
+    limitation — the content-hash dedup gate still prevents re-embedding, so only per-path
+    metadata is lost). No FK to `Document` (linkage is a read-time join on `source_original`,
+    nothing to drift). Rides the additive `init_db()` `create_all`, like `Figure`.
+
+    `doc_type` ships **dormant** (grill lock 2026-07-15): the column exists but nothing seeds,
+    reads, or writes it in v1 — the source is flat all-PDF, so per-file classification is
+    manual busywork with no consumer yet (it is *not* a chunk/embed lever). It lives here now
+    only because `create_all` cannot ALTER a column onto an existing table later; when doc_type
+    graduates it becomes a behaviour-only add, no migration. See the spec's amendment block.
+    """
+
+    __tablename__ = "source_files"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid4()))
+    # rel_path is the identity key: POSIX-style, relative to the current source dir.
+    rel_path: Mapped[str] = mapped_column(String, nullable=False, unique=True, index=True)
+    format: Mapped[str] = mapped_column(String, nullable=False)  # suffix sans dot, lowercased
+    size: Mapped[int] = mapped_column(Integer, nullable=False)
+    mtime: Mapped[float] = mapped_column(Float, nullable=False)  # source st_mtime at last scan
+
+    # Dormant in v1 (see class docstring). Nullable; never seeded/read/written yet.
+    doc_type: Mapped[str | None] = mapped_column(String, nullable=True, default=None)
+    # User intent: an excluded file is skipped by every *implicit* ingest walk (an explicit
+    # --files/paths pick overrides it). The one field that genuinely needs persistence.
+    excluded: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
+    first_seen: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
+    # Refreshed to now on every scan that still sees the file; a vanished file keeps its old
+    # last_seen and derives `missing`.
+    last_seen: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)

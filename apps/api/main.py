@@ -43,9 +43,12 @@ from apps.api.models import (
     ConversationMetaUpdate,
     ConversationSummaryPayload,
     ExportRequest,
+    IngestRequest,
     LibraryDocumentChunksPayload,
     LibraryDocumentPayload,
     SettingsUpdate,
+    SourceFilePayload,
+    SourcePatch,
     TurnResultPayload,
 )
 from apps.api.sessions import SessionStore
@@ -59,6 +62,7 @@ from doc_assistant.chat_controller import (
     Token,
 )
 from doc_assistant.config import DATA_PATH, LOG_JSON, LOG_LEVEL
+from doc_assistant.db.session import session_scope
 from doc_assistant.embeddings import get_active_model_name
 from doc_assistant.ingest.figures import load_figure_image_paths
 from doc_assistant.logging_config import configure_logging
@@ -197,11 +201,17 @@ class _IngestStatus:
     message: str | None = None
 
 
-def _default_ingest(*, scope: str) -> dict[str, int]:
-    """Lazy wrapper so importing this module doesn't pull the heavy ingest -> torch chain."""
+def _default_ingest(
+    *, scope: str | None = None, files: list[Path] | None = None
+) -> dict[str, int]:
+    """Lazy wrapper so importing this module doesn't pull the heavy ingest -> torch chain.
+
+    ``scope`` = the whole source dir (honoring exclusions); ``files`` = an explicit, pre-resolved
+    selection (selective ingestion, S1). The two are mutually exclusive at the ``main()`` layer.
+    """
     from doc_assistant.ingest import main as ingest_main
 
-    return ingest_main(scope=scope)
+    return ingest_main(scope=scope, files=files)
 
 
 def _full_settings(app: FastAPI) -> dict[str, Any]:
@@ -453,9 +463,26 @@ def create_app(
         return _full_settings(request.app)
 
     @app.post("/api/ingest", status_code=202)
-    def ingest_start(request: Request) -> dict[str, Any]:
+    def ingest_start(request: Request, body: IngestRequest | None = None) -> dict[str, Any]:
         app_ = request.app
         source = app_settings.get_source_dir()
+
+        # Selective ingestion (S1): an explicit `paths` selection is resolved + validated up front
+        # so a bad path is a 400 *before* anything starts running (nothing partial). No body (or
+        # null paths) keeps today's behavior — the whole source dir, now minus standing exclusions.
+        selection: list[Path] | None = None
+        if body is not None and body.paths is not None:
+            from doc_assistant.ingest import registry
+
+            with session_scope() as session:
+                try:
+                    selection = registry.resolve_selection(session, source, body.paths)
+                except registry.InvalidSelection as e:
+                    raise HTTPException(
+                        status_code=400,
+                        detail={"error": "invalid selection", "offenders": e.offenders},
+                    ) from e
+
         status: _IngestStatus = app_.state.ingest_status
         with app_.state.ingest_lock:
             if status.state == "running":
@@ -467,7 +494,10 @@ def create_app(
 
         def _worker() -> None:
             try:
-                stats = app_.state.ingest_fn(scope=str(source))
+                if selection is not None:
+                    stats = app_.state.ingest_fn(files=selection)
+                else:
+                    stats = app_.state.ingest_fn(scope=str(source))
             except Exception as e:  # surface any ingest failure to the status view
                 log.exception("ingest_failed", source=str(source))
                 with app_.state.ingest_lock:
@@ -499,6 +529,34 @@ def create_app(
     @app.get("/api/ingest/status")
     def ingest_status(request: Request) -> dict[str, Any]:
         return _ingest_status_dict(request.app)
+
+    @app.get("/api/sources")
+    def list_sources(request: Request) -> list[SourceFilePayload]:
+        """Selective ingestion (S1): stat-only scan of the source dir → each file with a
+        derived ingest status (new / changed / ingested / missing) + its ``excluded`` flag."""
+        from doc_assistant.ingest import registry
+
+        source = app_settings.get_source_dir()
+        with session_scope() as session:
+            return [SourceFilePayload.from_view(v) for v in registry.scan_sources(session, source)]
+
+    @app.patch("/api/sources")
+    def patch_source(body: SourcePatch, request: Request) -> SourceFilePayload:
+        """Update one registry row's intent (v1: ``excluded``). 404 if rel_path is unknown."""
+        from doc_assistant.ingest import registry
+
+        source = app_settings.get_source_dir()
+        with session_scope() as session:
+            try:
+                registry.set_source_meta(session, body.rel_path, excluded=body.excluded)
+            except KeyError as e:
+                raise HTTPException(
+                    status_code=404, detail=f"unknown source: {body.rel_path}"
+                ) from e
+            view = registry.view_for(session, source, body.rel_path)
+            if view is None:  # unreachable (set_source_meta would have raised) — narrows for mypy
+                raise HTTPException(status_code=404, detail=f"unknown source: {body.rel_path}")
+            return SourceFilePayload.from_view(view)
 
     return app
 

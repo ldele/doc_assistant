@@ -25,6 +25,13 @@
     | 'ellipsis'
     | 'search'
     | 'arrow-up-down'
+    | 'layout-grid'
+    | 'list'
+    | 'folder'
+    | 'file-text'
+    | 'calendar'
+    | 'tag'
+    | 'chevron-right'
 
   let { name, size = 18 }: { name: IconName; size?: number } = $props()
 </script>
@@ -96,6 +103,36 @@
     <circle cx="11" cy="11" r="8" /><path d="m21 21-4.3-4.3" />
   {:else if name === 'arrow-up-down'}
     <path d="m21 16-4 4-4-4" /><path d="M17 20V4" /><path d="m3 8 4-4 4 4" /><path d="M7 4v16" />
+  {:else if name === 'layout-grid'}
+    <rect width="7" height="7" x="3" y="3" rx="1" /><rect width="7" height="7" x="14" y="3" rx="1" /><rect
+      width="7"
+      height="7"
+      x="14"
+      y="14"
+      rx="1"
+    /><rect width="7" height="7" x="3" y="14" rx="1" />
+  {:else if name === 'list'}
+    <path d="M3 12h.01" /><path d="M3 18h.01" /><path d="M3 6h.01" /><path d="M8 12h13" /><path
+      d="M8 18h13"
+    /><path d="M8 6h13" />
+  {:else if name === 'folder'}
+    <path
+      d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"
+    />
+  {:else if name === 'file-text'}
+    <path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z" /><path
+      d="M14 2v4a2 2 0 0 0 2 2h4"
+    /><path d="M10 9H8" /><path d="M16 13H8" /><path d="M16 17H8" />
+  {:else if name === 'calendar'}
+    <path d="M8 2v4" /><path d="M16 2v4" /><rect width="18" height="18" x="3" y="4" rx="2" /><path
+      d="M3 10h18"
+    />
+  {:else if name === 'tag'}
+    <path
+      d="M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z"
+    /><circle cx="7.5" cy="7.5" r=".5" fill="currentColor" />
+  {:else if name === 'chevron-right'}
+    <path d="m9 18 6-6-6-6" />
   {/if}
 </svg>
 

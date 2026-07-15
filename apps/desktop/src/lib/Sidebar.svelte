@@ -1,10 +1,22 @@
 <script lang="ts">
   // Left-rail app shell (feature-conversation-history.md, Decisions 7, 8; Library tab enabled by
-  // feature-library-browser.md, L1; management actions by feature-conversation-management.md). Hosts
-  // the Chat/Library switch, "New chat", and — depending on `mode` — the conversation history (with
-  // per-row pin + ⋯ menu, pinned grouped into their own section) or the document list. Persistent
-  // column on desktop; an off-canvas drawer under 720px.
+  // feature-library-browser.md, L1; management actions by feature-conversation-management.md;
+  // library nav tree by feature-library-redesign.md, L4 Phase A). Hosts the Chat/Library switch,
+  // "New chat", and — depending on `mode` — the conversation history (with per-row pin + ⋯ menu,
+  // pinned grouped into their own section) or the library navigation tree (All documents →
+  // Collections → Types → Added → Keywords; the doc list itself moved to the main-pane grid).
+  // Persistent column on desktop; an off-canvas drawer under 720px.
   import type { ConversationSummary, LibraryDocument } from './types'
+  import {
+    type LibraryCollection,
+    DATE_BUCKET_LABELS,
+    collectionLabel,
+    dateGroups,
+    folderGroups,
+    keywordGroups,
+    sameCollection,
+    typeGroups,
+  } from './library'
   import Icon from './Icon.svelte'
 
   let {
@@ -13,12 +25,13 @@
     documents,
     liveSessionId,
     viewingSessionId,
-    selectedDocId,
+    libraryCollection,
+    libraryQuery = $bindable(''),
     open = false,
     onNew,
     onSelect,
     onSelectMode,
-    onSelectDocument,
+    onSelectCollection,
     onClose,
     onPin,
     onArchive,
@@ -30,12 +43,13 @@
     documents: LibraryDocument[]
     liveSessionId: string
     viewingSessionId: string | null
-    selectedDocId: string | null
+    libraryCollection: LibraryCollection
+    libraryQuery?: string
     open?: boolean
     onNew: () => void
     onSelect: (sessionId: string) => void
     onSelectMode: (mode: 'chat' | 'library') => void
-    onSelectDocument: (docId: string) => void
+    onSelectCollection: (c: LibraryCollection) => void
     onClose?: () => void
     onPin: (sessionId: string, pinned: boolean) => void
     onArchive: (sessionId: string, archived: boolean) => void
@@ -64,9 +78,9 @@
     node.select()
   }
 
-  // Search (V1: a plain case-insensitive title filter over the currently-shown list — chats in
-  // chat mode, documents in library mode; "start simple, deepen once it earns its keep" per the
-  // user's brief). Ephemeral: not persisted, cleared on the ✕.
+  // Search (V1: a plain case-insensitive title filter, ephemeral, ✕-to-clear). Chat search stays
+  // local to this rail; the library search moved to a bindable prop (`libraryQuery`) because it now
+  // filters the *active collection* shown in the main-pane grid (L4 Decision 5a) — App owns that.
   let query = $state('')
   const q = $derived(query.trim().toLowerCase())
 
@@ -125,17 +139,13 @@
   const sortedConvos = $derived(sortConvos(matchedConvos, sortKey))
   const pinnedConvos = $derived(sortedConvos.filter((c) => c.pinned))
   const otherConvos = $derived(sortedConvos.filter((c) => !c.pinned))
-  // Library search: title/author/filename substring (documents already arrive in a stable order).
-  const matchedDocs = $derived(
-    q === ''
-      ? documents
-      : documents.filter(
-          (d) =>
-            docLabel(d).toLowerCase().includes(q) ||
-            d.filename.toLowerCase().includes(q) ||
-            (d.authors ?? '').toLowerCase().includes(q),
-        ),
-  )
+  // Library nav-tree groups (L4 Decision 3), computed client-side from the payload. Types/Added
+  // render only with ≥2 entries (Decision 3a — a one-option filter is noise); Collections shows a
+  // "why" empty-state until folders exist (Phase B populates them); keywords are capped top-N.
+  const types = $derived(typeGroups(documents))
+  const dates = $derived(dateGroups(documents, new Date()))
+  const folders = $derived(folderGroups(documents))
+  const keywords = $derived(keywordGroups(documents))
 
   // The per-row ⋯ menu: a single floating menu, positioned at the clicked button (fixed, so the
   // sidebar's overflow can't clip it). Closes on outside-click, Esc, or a list scroll.
@@ -214,17 +224,6 @@
   function isActive(sid: string): boolean {
     return viewingSessionId === null ? sid === liveSessionId : sid === viewingSessionId
   }
-
-  // Library row label: prefer "Title — First Author" over the raw filename (which stays as the
-  // row tooltip). The registry stores `authors` as one string with no locked format yet — split on
-  // the common separators and take the first name; "et al." when more are listed.
-  function docLabel(d: LibraryDocument): string {
-    if (!d.title) return d.filename
-    if (!d.authors) return d.title
-    const names = d.authors.split(/\s*(?:;|,| and )\s*/).filter(Boolean)
-    const first = names[0] ?? d.authors
-    return `${d.title} · ${names.length > 1 ? `${first} et al.` : first}`
-  }
 </script>
 
 <aside class="sidebar" class:open>
@@ -260,16 +259,33 @@
     <div class="toolbar">
       <div class="search">
         <Icon name="search" size={14} />
-        <input
-          type="text"
-          bind:value={query}
-          placeholder={mode === 'chat' ? 'Search chats' : 'Search library'}
-          aria-label={mode === 'chat' ? 'Search chats' : 'Search library'}
-        />
-        {#if query}
-          <button class="clear" onclick={() => (query = '')} aria-label="Clear search" type="button">
-            <Icon name="x" size={13} />
-          </button>
+        {#if mode === 'chat'}
+          <input type="text" bind:value={query} placeholder="Search chats" aria-label="Search chats" />
+          {#if query}
+            <button class="clear" onclick={() => (query = '')} aria-label="Clear search" type="button">
+              <Icon name="x" size={13} />
+            </button>
+          {/if}
+        {:else}
+          <!-- Library search filters the active collection shown in the grid (Decision 5a). -->
+          <input
+            type="text"
+            bind:value={libraryQuery}
+            placeholder={libraryCollection.kind === 'all'
+              ? 'Search library'
+              : `Search ${collectionLabel(libraryCollection)}`}
+            aria-label="Search library"
+          />
+          {#if libraryQuery}
+            <button
+              class="clear"
+              onclick={() => (libraryQuery = '')}
+              aria-label="Clear search"
+              type="button"
+            >
+              <Icon name="x" size={13} />
+            </button>
+          {/if}
         {/if}
       </div>
       {#if mode === 'chat'}
@@ -382,27 +398,98 @@
       {/if}
     </nav>
   {:else}
-    <nav class="list" aria-label="Documents">
+    <nav class="list" aria-label="Library navigation">
       {#if documents.length === 0}
         <p class="empty">No documents indexed yet.</p>
-      {:else if matchedDocs.length === 0}
-        <p class="empty">No documents match “{query.trim()}”.</p>
       {:else}
-        {#each matchedDocs as d (d.id)}
-          <button
-            class="librow"
-            class:active={d.id === selectedDocId}
-            aria-current={d.id === selectedDocId ? 'true' : undefined}
-            onclick={() => onSelectDocument(d.id)}
-            type="button"
-            title={d.title ? d.filename : undefined}
-          >
-            <span class="title">{docLabel(d)}</span>
-            <span class="rowmeta">
-              <span>{d.format}{#if d.chunk_count != null} · {d.chunk_count.toLocaleString()} chunks{/if}</span>
-            </span>
-          </button>
-        {/each}
+        <button
+          class="treerow"
+          class:active={libraryCollection.kind === 'all'}
+          aria-current={libraryCollection.kind === 'all' ? 'true' : undefined}
+          onclick={() => onSelectCollection({ kind: 'all' })}
+          type="button"
+        >
+          <span class="treeicon"><Icon name="library" size={14} /></span>
+          <span class="treelabel">All documents</span>
+          <span class="count">{documents.length}</span>
+        </button>
+
+        <p class="section-header">Collections</p>
+        {#if folders.length === 0}
+          <p class="tree-empty">No folders yet — folders arrive with source-dir mirroring (Phase B).</p>
+        {:else}
+          {#each folders as g (g.value)}
+            <button
+              class="treerow"
+              class:active={sameCollection(libraryCollection, { kind: 'folder', value: g.value })}
+              aria-current={sameCollection(libraryCollection, { kind: 'folder', value: g.value })
+                ? 'true'
+                : undefined}
+              onclick={() => onSelectCollection({ kind: 'folder', value: g.value })}
+              type="button"
+            >
+              <span class="treeicon"><Icon name="folder" size={14} /></span>
+              <span class="treelabel">{g.value}</span>
+              <span class="count">{g.count}</span>
+            </button>
+          {/each}
+        {/if}
+
+        {#if types.length >= 2}
+          <p class="section-header">Types</p>
+          {#each types as g (g.value)}
+            <button
+              class="treerow"
+              class:active={sameCollection(libraryCollection, { kind: 'type', value: g.value })}
+              aria-current={sameCollection(libraryCollection, { kind: 'type', value: g.value })
+                ? 'true'
+                : undefined}
+              onclick={() => onSelectCollection({ kind: 'type', value: g.value })}
+              type="button"
+            >
+              <span class="treeicon"><Icon name="file-text" size={14} /></span>
+              <span class="treelabel">{g.value.toUpperCase()}</span>
+              <span class="count">{g.count}</span>
+            </button>
+          {/each}
+        {/if}
+
+        {#if dates.length >= 2}
+          <p class="section-header">Added</p>
+          {#each dates as g (g.value)}
+            <button
+              class="treerow"
+              class:active={sameCollection(libraryCollection, { kind: 'date', value: g.value })}
+              aria-current={sameCollection(libraryCollection, { kind: 'date', value: g.value })
+                ? 'true'
+                : undefined}
+              onclick={() => onSelectCollection({ kind: 'date', value: g.value })}
+              type="button"
+            >
+              <span class="treeicon"><Icon name="calendar" size={14} /></span>
+              <span class="treelabel">{DATE_BUCKET_LABELS[g.value]}</span>
+              <span class="count">{g.count}</span>
+            </button>
+          {/each}
+        {/if}
+
+        {#if keywords.length > 0}
+          <p class="section-header">Keywords</p>
+          <div class="kwwrap">
+            {#each keywords as g (g.value)}
+              <button
+                class="kwchip"
+                class:active={sameCollection(libraryCollection, { kind: 'keyword', value: g.value })}
+                onclick={() => onSelectCollection({ kind: 'keyword', value: g.value })}
+                type="button"
+                title="{g.count} document{g.count === 1 ? '' : 's'}"
+              >
+                <Icon name="tag" size={11} />
+                <span class="kwtext">{g.value}</span>
+              </button>
+            {/each}
+          </div>
+        {/if}
       {/if}
     </nav>
   {/if}
@@ -713,27 +800,91 @@
     text-align: left;
     text-decoration: underline;
   }
-  /* Library row: stacked title + meta (a plain button — restored after the chat-row refactor). */
-  .librow {
-    text-align: left;
+  /* Library nav tree (L4): single-line rows — icon · label · doc count. */
+  .treerow {
     font: inherit;
+    font-size: 0.85rem;
     cursor: pointer;
+    text-align: left;
     border: 1px solid transparent;
     background: none;
     color: var(--fg);
     border-radius: 8px;
-    padding: 0.45rem 0.55rem;
+    padding: 0.4rem 0.55rem;
     display: flex;
-    flex-direction: column;
-    gap: 0.15rem;
+    align-items: center;
+    gap: 0.45rem;
     width: 100%;
+    min-width: 0;
   }
-  .librow:hover {
+  .treerow:hover {
     background: var(--surface);
   }
-  .librow.active {
+  .treerow.active {
     background: var(--surface-2);
     border-color: var(--border);
+  }
+  .treeicon {
+    color: var(--fg-2);
+    display: inline-flex;
+    flex: none;
+  }
+  .treerow.active .treeicon {
+    color: var(--accent);
+  }
+  .treelabel {
+    flex: 1;
+    min-width: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .count {
+    font-size: 0.68rem;
+    color: var(--fg-2);
+    flex: none;
+  }
+  .tree-empty {
+    color: var(--fg-2);
+    font-size: 0.74rem;
+    line-height: 1.4;
+    padding: 0 0.55rem;
+    margin: 0 0 0.2rem;
+  }
+  .kwwrap {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem;
+    padding: 0 0.4rem 0.4rem 0.1rem;
+  }
+  .kwchip {
+    font: inherit;
+    font-size: 0.7rem;
+    cursor: pointer;
+    color: var(--lavender);
+    background: color-mix(in srgb, var(--lavender) 10%, transparent);
+    border: 1px solid transparent;
+    border-radius: 999px;
+    padding: 0.12rem 0.5rem;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    max-width: 100%;
+    min-width: 0;
+  }
+  .kwchip:hover {
+    border-color: var(--lavender);
+  }
+  .kwchip.active {
+    background: var(--lavender);
+    color: var(--bg);
+    font-weight: 600;
+  }
+  .kwtext {
+    min-width: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
   .title {
     font-size: 0.85rem;

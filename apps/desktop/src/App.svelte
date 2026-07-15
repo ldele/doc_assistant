@@ -24,8 +24,16 @@
   import SourcePanel from './lib/SourcePanel.svelte'
   import Sidebar from './lib/Sidebar.svelte'
   import LibraryBrowser from './lib/LibraryBrowser.svelte'
+  import LibraryGrid from './lib/LibraryGrid.svelte'
   import CompareCard from './lib/CompareCard.svelte'
   import Icon from './lib/Icon.svelte'
+  import {
+    type LibraryCollection,
+    collectionLabel,
+    docLabel,
+    docsFor,
+    filterDocs,
+  } from './lib/library'
   import appMark from './assets/brand/app-mark.png'
 
   interface TurnState {
@@ -78,12 +86,47 @@
   let resumedHistory = $state<ConversationDetail | null>(null)
   let sidebarOpen = $state(false) // mobile drawer
 
-  // Library space (feature-library-browser.md, L1). `mode` swaps the sidebar list + main pane
-  // between Chat and Library; the chat state (turns/viewing/sessionId) is untouched by the switch.
+  // Library space (feature-library-browser.md L1; nav redesign feature-library-redesign.md L4
+  // Phase A). `mode` swaps the sidebar + main pane between Chat and Library; the chat state
+  // (turns/viewing/sessionId) is untouched by the switch. Navigation model: the rail picks the
+  // active *collection*, the main pane shows it as an inventory grid, and opening a document
+  // drills down in place to the chunk view (breadcrumb + Back walk back up).
   let mode = $state<'chat' | 'library'>('chat')
   let documents = $state<LibraryDocument[]>([])
+  let libraryCollection = $state<LibraryCollection>({ kind: 'all' })
   let libraryDocId = $state<string | null>(null)
+  let libraryQuery = $state('')
   let documentsLoaded = false
+
+  // Grid ⇄ list toggle — a client-only view preference, persisted like theme/panel widths.
+  function loadLibraryView(): 'grid' | 'list' {
+    try {
+      const v = localStorage.getItem('libraryView')
+      if (v === 'grid' || v === 'list') return v
+    } catch {
+      /* ignore — fall back to default */
+    }
+    return 'grid'
+  }
+  let libraryView = $state<'grid' | 'list'>(loadLibraryView())
+  function setLibraryView(v: 'grid' | 'list'): void {
+    libraryView = v
+    try {
+      localStorage.setItem('libraryView', v)
+    } catch {
+      /* ignore — view just won't persist */
+    }
+  }
+
+  // The active collection's documents, then the search filter on top (Decision 5a: search
+  // scopes to what's in front of you; the 0-match empty state offers a "Search all" escape).
+  const collectionDocs = $derived(docsFor(documents, libraryCollection, new Date()))
+  const visibleDocs = $derived(filterDocs(collectionDocs, libraryQuery))
+  // Breadcrumb label for the open document, from the cached list (the chunk view fetches its
+  // own detail; a stale/missing entry just hides the crumb).
+  const openDoc = $derived(
+    libraryDocId ? (documents.find((d) => d.id === libraryDocId) ?? null) : null,
+  )
 
   // Which citation panel is open — keyed by a turn *key* (a live turn's id as string, or a past
   // turn's record_id) so a click resolves against the right turn in either mode.
@@ -430,9 +473,29 @@
     if (m === 'library' && !documentsLoaded) void refreshDocuments()
   }
 
-  function selectDocument(id: string): void {
+  // Rail ↔ main sync (Decision 4a): selecting a collection makes it the grid's content and
+  // returns to grid level; clicking a document anywhere drills the main pane into it.
+  function selectCollection(c: LibraryCollection): void {
+    libraryCollection = c
+    libraryDocId = null
+    sidebarOpen = false
+  }
+
+  function openDocument(id: string): void {
     libraryDocId = id
     sidebarOpen = false
+  }
+
+  // Back walks one level up: doc → its collection's grid, then collection → All documents.
+  function libraryBack(): void {
+    if (libraryDocId !== null) libraryDocId = null
+    else libraryCollection = { kind: 'all' }
+  }
+
+  // The 0-match escape (Decision 5a): widen to All documents, keeping the query.
+  function searchAll(): void {
+    libraryCollection = { kind: 'all' }
+    libraryDocId = null
   }
 </script>
 
@@ -443,12 +506,13 @@
     {documents}
     liveSessionId={sessionId}
     viewingSessionId={viewing}
-    selectedDocId={libraryDocId}
+    {libraryCollection}
+    bind:libraryQuery
     open={sidebarOpen}
     onNew={newConversation}
     onSelect={openConversation}
     onSelectMode={selectMode}
-    onSelectDocument={selectDocument}
+    onSelectCollection={selectCollection}
     onClose={() => (sidebarOpen = false)}
     onPin={pinConversation}
     onArchive={archiveConversation}
@@ -499,7 +563,88 @@
       </header>
 
       {#if mode === 'library'}
-        <LibraryBrowser docId={libraryDocId} />
+        <div class="library">
+          <div class="libnav">
+            {#if libraryDocId !== null || libraryCollection.kind !== 'all'}
+              <button class="libback" onclick={libraryBack} aria-label="Back" title="Back">
+                <Icon name="arrow-left" size={15} />
+              </button>
+            {/if}
+            <nav class="crumbs" aria-label="Library location">
+              <button
+                class="crumb"
+                onclick={() => selectCollection({ kind: 'all' })}
+                disabled={libraryDocId === null && libraryCollection.kind === 'all'}
+                type="button">Library</button
+              >
+              {#if libraryCollection.kind !== 'all'}
+                <span class="crumbsep"><Icon name="chevron-right" size={13} /></span>
+                <button
+                  class="crumb"
+                  onclick={() => (libraryDocId = null)}
+                  disabled={libraryDocId === null}
+                  type="button">{collectionLabel(libraryCollection)}</button
+                >
+              {/if}
+              {#if openDoc}
+                <span class="crumbsep"><Icon name="chevron-right" size={13} /></span>
+                <span class="crumb current" title={openDoc.filename}>{docLabel(openDoc)}</span>
+              {/if}
+            </nav>
+            {#if libraryDocId === null}
+              <div class="viewtoggle" role="group" aria-label="Layout">
+                <button
+                  class:active={libraryView === 'grid'}
+                  onclick={() => setLibraryView('grid')}
+                  aria-label="Grid view"
+                  aria-pressed={libraryView === 'grid'}
+                  title="Grid view"
+                  type="button"><Icon name="layout-grid" size={15} /></button
+                >
+                <button
+                  class:active={libraryView === 'list'}
+                  onclick={() => setLibraryView('list')}
+                  aria-label="List view"
+                  aria-pressed={libraryView === 'list'}
+                  title="List view"
+                  type="button"><Icon name="list" size={15} /></button
+                >
+              </div>
+            {/if}
+          </div>
+
+          {#if libraryDocId !== null}
+            <LibraryBrowser docId={libraryDocId} />
+          {:else}
+            <section class="libmain">
+              {#if documents.length === 0}
+                <div class="libempty">
+                  <span class="state-mark"><Icon name="library" size={26} /></span>
+                  <strong>No documents indexed yet</strong>
+                  <p>Point doc_assistant at a folder of your documents to fill the library.</p>
+                </div>
+              {:else if visibleDocs.length === 0}
+                <div class="libempty">
+                  <span class="state-mark"><Icon name="search" size={26} /></span>
+                  {#if libraryQuery.trim() !== ''}
+                    <strong>No documents match “{libraryQuery.trim()}”</strong>
+                    <p>Nothing in {collectionLabel(libraryCollection)} matches.</p>
+                    {#if libraryCollection.kind !== 'all'}
+                      <button class="widen" onclick={searchAll} type="button">
+                        Search all {documents.length} documents
+                      </button>
+                    {/if}
+                  {:else}
+                    <strong>Nothing in {collectionLabel(libraryCollection)}</strong>
+                    <p>This collection is empty right now.</p>
+                  {/if}
+                </div>
+              {:else}
+                <LibraryGrid documents={visibleDocs} view={libraryView} onOpenDocument={openDocument} />
+              {/if}
+            </section>
+          {/if}
+        </div>
       {:else}
       <section class="conversation" bind:this={convoEl} onscroll={onConvoScroll}>
         {#if viewing && viewedConvo}
@@ -731,6 +876,126 @@
     flex: 1;
     overflow-y: auto;
     padding: var(--space-2) 0;
+  }
+  /* Library pane (L4): breadcrumb/Back/view-toggle bar over the grid or the drilled chunk view. */
+  .library {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+  }
+  .libnav {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    padding: var(--space-2) 0;
+    border-bottom: 1px solid var(--border);
+    min-height: 2.4rem;
+  }
+  .libback {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    padding: 0.28rem 0.5rem;
+    color: var(--fg-2);
+  }
+  .libback:hover {
+    color: var(--fg);
+  }
+  .crumbs {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 0.2rem;
+    overflow: hidden;
+  }
+  .crumb {
+    font: inherit;
+    font-size: var(--text-sm);
+    cursor: pointer;
+    border: none;
+    background: none;
+    color: var(--accent);
+    padding: 0.15rem 0.25rem;
+    border-radius: 6px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-width: 0;
+  }
+  .crumb:hover:not(:disabled) {
+    background: var(--surface);
+  }
+  /* The current location isn't a link — a disabled tail crumb reads as "you are here". */
+  .crumb:disabled,
+  .crumb.current {
+    color: var(--fg);
+    cursor: default;
+    opacity: 1;
+    font-weight: 600;
+  }
+  .crumbsep {
+    color: var(--fg-2);
+    display: inline-flex;
+    flex: none;
+  }
+  .viewtoggle {
+    flex: none;
+    display: inline-flex;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  .viewtoggle button {
+    border: none;
+    border-radius: 0;
+    background: var(--surface);
+    color: var(--fg-2);
+    padding: 0.28rem 0.55rem;
+    display: inline-flex;
+    align-items: center;
+  }
+  .viewtoggle button.active {
+    background: var(--surface-2);
+    color: var(--accent);
+  }
+  .libmain {
+    flex: 1;
+    overflow-y: auto;
+    min-width: 0;
+  }
+  .libempty {
+    max-width: 540px;
+    margin: var(--space-6) auto 0;
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+  .libempty strong {
+    font-family: var(--font-serif);
+    font-size: var(--text-title);
+    font-weight: 600;
+    color: var(--fg);
+  }
+  .libempty p {
+    color: var(--fg-2);
+    font-size: var(--text-sm);
+    line-height: 1.6;
+    max-width: 46ch;
+    margin: var(--space-2) 0 var(--space-4);
+  }
+  .widen {
+    font-size: var(--text-sm);
+    color: var(--accent);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: var(--space-2) var(--space-3);
+  }
+  .widen:hover {
+    border-color: var(--accent);
   }
   /* Empty + first-run states share one centered, mark-led layout (V2). */
   .empty,

@@ -8,6 +8,60 @@ Append only — never edit past entries.
 Format: What changed | Why | Rejected alternatives | What it opens
 
 ---
+## 2026-07-15 — Library redesign L4 Phase A: nav-tree rail + inventory grid + drill-down
+
+**What:** the Library space is rebuilt from a flat doc list into a file-browser-style navigation
+(spec `docs/specs/feature-library-redesign.md`, design-locked 2026-07-14). Three parts.
+(1) **New `lib/library.ts`** — a client-side collection model: `LibraryCollection` (`all`/`type`/
+`date`/`folder`/`keyword`), `docsFor()` to filter the cached document list, `dateBucket()`
+(Today/This week/This month/Earlier relative to now), the `typeGroups`/`dateGroups`/`folderGroups`/
+`keywordGroups` counters, and `docLabel`/`filterDocs` (moved out of `Sidebar.svelte` — the grid,
+breadcrumb, and search all need them now). (2) **New `LibraryGrid.svelte`** — the "inventory" tile
+grid (`repeat(auto-fill, minmax(150px, 1fr))`): each tile shows a format chip, the title/filename
+(3-line clamp), page·chunk·date meta, and up to 3 keyword chips; a `list` view renders the old
+stacked-row idiom instead. Dumb component — no filtering, emits `onOpenDocument(id)`. (3) **`Sidebar`
+library mode** is now the nav tree: **All documents** → **Collections** (Phase-A empty-state until
+folders populate) → **Types** (by `format`) → **Added** (date buckets) → **Keywords** (chips); Types
+and Added render only with **≥2 entries** (a one-option filter is noise). (4) **`App.svelte`** owns
+the drill-down: `libraryCollection` + `libraryDocId` + `libraryQuery`, a breadcrumb `Library ›
+Collection › Doc` with a Back control (doc→grid, then collection→all), and the grid⇄list toggle
+persisted in `localStorage` (`libraryView`). Library search now scopes to the **active collection**
+(bindable `libraryQuery`) with a one-click "Search all N documents" escape on 0 matches. +7 Lucide
+glyphs (`layout-grid`, `list`, `folder`, `file-text`, `calendar`, `tag`, `chevron-right`).
+
+**Why:** the next Library increment after L1 (which parked search/filter/sort + folder navigation).
+The user chose drill-down-with-Back over two-pane / detail-drawer from a clickable prototype; the
+persistent rail means changing collection never needs "back" — only the doc→chunks step drills.
+
+**Rejected:** (a) two-pane (chunks always in a right pane) and detail-drawer navigation — the user
+preferred the file-browser feel (drawer noted as a possible later toggle reusing `SourcePanel`); (b)
+a backend folder-tree endpoint now — Phase A filters entirely client-side because the
+`LibraryDocument` payload already ships `format`/`added_at`/`keywords`/`folders`; folders (the one
+empty axis on the current flat-ingested corpus) are Phase B (mirror source-dir subfolders at ingest
++ a backfill); (c) always-visible Types/Added sections — hidden below 2 entries so a single-format
+corpus doesn't show a dead filter.
+
+**Verified ($0, frontend-only, no backend/LLM change):** `svelte-check` 0/0 (125 files). Live on the
+real corpus via the preview harness: nav tree renders (Collections empty-stated, **Types correctly
+absent** — all-PDF corpus <2 types, **Added shows 2 buckets** — This month + Earlier, keyword chips);
+inventory grid = 47 tiles at 4-col auto-fill; clicking the "medical image segmentation" keyword →
+exactly 3 docs + breadcrumb `Library › medical image segmentation` + Back appears; opening a tile
+drills to the `LibraryBrowser` chunk view (breadcrumb gains the doc crumb, view toggle hides); Back
+returns to the keyword grid; grid⇄list toggle flips (3 rows / 0 tiles) and persists `libraryView`;
+searching "colbert" inside the keyword collection → 0-match empty-state → "Search all 47 documents"
+widens to All documents keeping the query → the single ColBERT match; dark theme resolves (`--bg`
+`#1b1813`, dark `--lavender` `#b0a4ff`, tile surface `#23201a`), no body horizontal overflow; mobile
+375px → off-canvas drawer (fixed, `translateX(-100%)` closed, `.open` + scrim on hamburger) + 2-col
+grid; 0 console errors. Test residue restored (`libraryView` cleared, viewport/scheme reset).
+
+**Opens:** Phase B — folder population (source-dir mirror at ingest + a backfill runner) + `GET
+/api/library/folders` + server-side `folder`/`format`/`tag` filters, which lights up the Collections
+section. Still parked: manual folder/tag editing (first browse-time write path — ADR trigger),
+title/author metadata backfill (tiles show filenames until then), the detail-drawer variant,
+virtualization for very large collections.
+
+**Staged; nothing committed (cpc §13).**
+
 ## 2026-07-14 — Sidebar search bar + chat sort control (user request, "next round")
 
 **What:** a fixed header strip above the list (`Sidebar.svelte`) with two controls. (1) **Search** — a

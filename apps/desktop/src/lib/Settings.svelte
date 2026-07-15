@@ -5,6 +5,7 @@
   import { fade, fly } from 'svelte/transition'
   import { getTheme, setTheme, applyTheme, type Theme } from './theme'
   import Icon from './Icon.svelte'
+  import Sources from './Sources.svelte'
 
   // Slide the drawer in/out — but collapse to an instant swap when the OS asks for reduced motion.
   const animate =
@@ -305,6 +306,16 @@
           <p class="err" role="alert">{actionError}</p>
         {/if}
       </div>
+    </section>
+
+    <section>
+      <h3>Manage files <span class="muted">(selective indexing)</span></h3>
+      <p class="hint">
+        See each file's status, exclude ones you don't want, or index just a selection. Excluded
+        files are skipped by <strong>Index folder</strong> above; an explicit selection here still
+        indexes them.
+      </p>
+      <Sources {onCorpusChanged} />
     </section>
 
     <section>

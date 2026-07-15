@@ -14,6 +14,7 @@ import type {
   LibraryDocumentChunks,
   RagOverrides,
   Settings,
+  SourceFile,
   TurnResult,
 } from './types'
 
@@ -182,11 +183,41 @@ export async function setLlmProvider(provider: string, model: string): Promise<S
   return (await r.json()) as Settings
 }
 
-/** Kick off a background re-index of the saved source folder. 409 if one is already running. */
-export async function startIngest(): Promise<IngestStatus> {
-  const r = await fetch(`${API_BASE}/api/ingest`, { method: 'POST' })
+/** Kick off a background re-index. No `paths` = the whole saved source folder (minus exclusions);
+ *  a `paths` list (rel_paths) = ingest exactly that selection. 409 if one is already running,
+ *  400 if any path is invalid (the detail names the offenders). */
+export async function startIngest(paths?: string[]): Promise<IngestStatus> {
+  const init: RequestInit =
+    paths === undefined
+      ? { method: 'POST' }
+      : {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ paths }),
+        }
+  const r = await fetch(`${API_BASE}/api/ingest`, init)
   if (!r.ok) throw new Error(await errorDetail(r, 'start ingest'))
   return (await r.json()) as IngestStatus
+}
+
+/** Selective ingestion (S2): stat-only scan of the source folder → every file with a derived
+ *  ingest status + its `excluded` flag. Cheap ($0/offline); safe to call on every panel open. */
+export async function getSources(): Promise<SourceFile[]> {
+  const r = await fetch(`${API_BASE}/api/sources`)
+  if (!r.ok) throw new Error(`sources failed: ${r.status}`)
+  return (await r.json()) as SourceFile[]
+}
+
+/** Set a file's `excluded` flag (an excluded file is skipped by a whole-folder index; an explicit
+ *  selection still overrides it). Returns the updated row. 404 if the rel_path is unknown. */
+export async function patchSource(relPath: string, excluded: boolean): Promise<SourceFile> {
+  const r = await fetch(`${API_BASE}/api/sources`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ rel_path: relPath, excluded }),
+  })
+  if (!r.ok) throw new Error(await errorDetail(r, 'update source'))
+  return (await r.json()) as SourceFile
 }
 
 export async function getIngestStatus(): Promise<IngestStatus> {
@@ -195,11 +226,22 @@ export async function getIngestStatus(): Promise<IngestStatus> {
   return (await r.json()) as IngestStatus
 }
 
-/** Pull the `detail` string out of a FastAPI error body, falling back to the status code. */
+/** Pull a human message out of a FastAPI error body, falling back to the status code. `detail` is
+ *  usually a string, but the selective-ingest 400 sends `{error, offenders}` — render that too. */
 async function errorDetail(r: Response, what: string): Promise<string> {
   try {
-    const body = (await r.json()) as { detail?: string }
-    if (body.detail) return body.detail
+    const detail = ((await r.json()) as { detail?: unknown }).detail
+    if (typeof detail === 'string') return detail
+    if (detail && typeof detail === 'object') {
+      const d = detail as { error?: string; offenders?: Record<string, string[]> }
+      if (d.offenders) {
+        const parts = Object.entries(d.offenders)
+          .filter(([, v]) => v.length)
+          .map(([k, v]) => `${k}: ${v.join(', ')}`)
+        return `${d.error ?? 'invalid selection'} — ${parts.join('; ')}`
+      }
+      return JSON.stringify(detail)
+    }
   } catch {
     // non-JSON body — fall through to the status code
   }

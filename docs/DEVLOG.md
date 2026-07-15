@@ -8,6 +8,54 @@ Append only — never edit past entries.
 Format: What changed | Why | Rejected alternatives | What it opens
 
 ---
+## 2026-07-15 — Selective ingestion S2: Sources panel (scan · exclude · ingest-selected) in Settings
+
+**What:** the S2 frontend over the S1 endpoints. (1) **`types.ts`** `SourceFile` (mirrors
+`SourceFilePayload`) + **`api.ts`** `getSources()` / `patchSource(rel_path, excluded)` and
+`startIngest(paths?)` extended to POST `{paths}` when a selection is given (no-arg keeps whole-dir);
+`errorDetail` now renders the selective-ingest 400's `{error, offenders}` object, not `[object
+Object]`. (2) **New `Sources.svelte`** — scans on mount (`GET /api/sources`, $0 stat-only) + a Rescan
+button; per-file row = select checkbox + rel_path + status chip (new/changed/**indexed**/missing) +
+an Exclude/Excluded toggle (`PATCH`); a **"Select new + changed"** quick action; **"Ingest selected
+(N)"** → `startIngest([paths])` → the same tolerant poll as the whole-folder index → on done
+`onCorpusChanged()` + clear selection + rescan. Excluded rows dim and drop from the selection;
+`missing` rows can't be selected. (3) **Settings.svelte** mounts it as a new **"Manage files"**
+section under "Your documents" (the parked S2-shape fork — resolved with the user to **fold into
+Settings**, not a 3rd sidebar mode: simplest V1, ingestion stays in one place).
+
+**Why:** S2 of `feature-selective-ingestion.md`. The M4 flow does whole-folder "index everything";
+this adds per-file visibility + exclude + subset-ingest for a mixed/flat corpus, on the same locked
+core (nothing in `src/` changed — pure renderer over the S1 API).
+
+**Rejected:** (a) a dedicated **Sources sidebar mode** (Chat/Library/Sources) — more wiring + a
+permanent tab for an occasional task; the user chose the Settings section for a simpler V1 (a mode is
+a clean future upgrade if the file list outgrows the drawer). (b) a `doc_type` control — the column
+is dormant (S1 lock), so no UI. (c) a CLI-style exclude in the panel — exclusion is one PATCH toggle.
+
+**Verified ($0/offline, real 47-doc corpus):** `svelte-check` 0/0 (126 files). Live via the preview
+harness: **`GET /api/sources` → 47 files all correctly derived `ingested`** (the `has_document`
+path-match + cache-freshness both work on the real DB); the panel renders 47 rows with "indexed"
+chips + exclude toggles; **exclude → `PATCH` persists** (fresh server GET confirms `excluded:true`,
+row dims, summary "1 excluded") and **include reverts** it; **select a file → "Ingest selected (1)"
+→ `POST {paths}` → `resolve_selection` → `main(files=[…])` → dedup-skip → "indexed 0 new, 1 unchanged,
+0 errors"** ($0), then the UI shows done + clears the selection + rescans; dark theme resolves (muted
+chips, dimmed excluded rows); mobile 375px the 92vw drawer rows fit with no overflow; **0 console
+errors**. Test state restored (no excluded files).
+
+**One-time migration surfaced (not an S2 bug):** this box's `data/library.db` was missing tables
+(`conversation_meta` *and* the new `source_files`) — the API relies on ingest's `init_db()`
+`create_all` to migrate, and it hadn't run since S1. Ran `init_db()` once → both created (23 tables),
+`/api/sources` then worked. Same pattern as every prior additive table (Figure, gaps): an upgrading
+user creates `source_files` on their next ingest. **Opens:** the API not migrating on startup is a
+pre-existing latent gap (a stale DB 500s `/api/conversations` too) — a systemic "init_db in lifespan"
+fix is its own change, out of S2 scope.
+
+**Opens:** S2 could grow into a dedicated mode if the flat 47-file list ever needs full width. PR 17
+(Zotero/Calibre) will surface as extra `SourceFile` producers. Touch note: the exclude toggle + row
+checkbox are tap targets; no drag affordances involved.
+
+**Staged; nothing committed (cpc §13).**
+
 ## 2026-07-15 — Selective ingestion S1: SourceFile registry + selection-scoped ingest (backend + CLI + API)
 
 **What:** the S1 backend of `docs/specs/feature-selective-ingestion.md` (grilled + LOCKED same day).

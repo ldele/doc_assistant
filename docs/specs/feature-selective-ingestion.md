@@ -22,8 +22,10 @@ after the L4 library redesign confirmed a **flat, all-PDF source** (user, 2026-0
 >   (identity + `excluded` + dormant `doc_type`).
 > - **`SourcePatch` / `PATCH /api/sources` accept `excluded` only** in v1 (drop the `doc_type` field);
 >   `SourceView` still *reports* `doc_type` (always null) so the wire shape is forward-stable.
-> - **S2 UI shape** (dedicated `Sources.svelte` sidebar mode vs folding the file list into the existing
->   Settings ingest section) is **PARKED to S2 kickoff** — it does not block S1 (the API is UI-agnostic).
+> - **S2 UI shape** — **RESOLVED at S2 kickoff (user, 2026-07-15): fold the file table into the
+>   existing Settings drawer** as a "Manage files" section (not a 3rd sidebar mode). Simplest V1,
+>   ingestion stays in one place; a dedicated mode stays a clean future upgrade if the flat file list
+>   outgrows the drawer. **S2 built + live-verified 2026-07-15.**
 > - **Unchanged and kept as drafted:** `dry-run` (Decision 6), explicit-selection-overrides-`excluded`
 >   (Decision 5), the `new/changed/ingested/missing` status truth table (Decision 3), the
 >   `SourceFile`-rides-`create_all` migration, vendor-neutral registry (ADR-3), rename→per-path-metadata
@@ -244,7 +246,7 @@ selection state; all rules live server-side.
 | Selection primitive (v1) | **status + `excluded` + explicit `paths`** | doc_type deferral removes the metadata-selection axis; incremental (`new`/`changed`) + exclude is the real need for a flat personal corpus |
 | `PATCH /api/sources` shape | **`excluded` only**; `SourceView` still reports `doc_type` (always null) | Drop the unused field but keep the wire shape forward-stable |
 | S1 PR boundary | **One PR: registry + CLI + API**; S2 (UI) separate | Project one-increment-per-PR norm; S1 shrank with doc_type gone but still coheres as backend |
-| S2 UI shape | **Parked** — dedicated `Sources` sidebar mode vs fold into Settings | Doesn't block S1 (API is UI-agnostic); decide at S2 kickoff with the flat-corpus file-count in view |
+| S2 UI shape | **Resolved (2026-07-15): fold into Settings** as a "Manage files" section (not a 3rd mode) | Simplest V1 for a flat 47-file corpus; a dedicated mode is a clean future upgrade. S2 built + verified same day |
 | `dry-run`, exclude-override, status truth table, vendor-neutral registry, rename-loss | **Kept as drafted** | No trade-off surfaced; the flat-source fact doesn't touch them |
 
 **Routing:** resolutions live in this spec (the design-lock, which already embeds ADR-1/2/3) + the amendment

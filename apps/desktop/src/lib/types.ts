@@ -157,6 +157,20 @@ export interface LibraryDocument {
   added_at: string | null // ISO 8601
 }
 
+// Selective ingestion (feature-selective-ingestion.md, S2). GET /api/sources lists every file
+// under the source dir with a derived ingest status; PATCH /api/sources sets `excluded`; POST
+// /api/ingest {paths} ingests a selection. Mirrors apps/api/models.py::SourceFilePayload.
+// `doc_type` is always null in v1 (the backend's dormant column).
+export interface SourceFile {
+  rel_path: string
+  format: string
+  size: number
+  mtime: number
+  status: 'new' | 'changed' | 'ingested' | 'missing'
+  excluded: boolean
+  doc_type: string | null
+}
+
 export interface LibraryChild {
   child_index: number
   text: string

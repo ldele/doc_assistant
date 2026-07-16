@@ -465,7 +465,12 @@ def create_app(
     @app.post("/api/ingest", status_code=202)
     def ingest_start(request: Request, body: IngestRequest | None = None) -> dict[str, Any]:
         app_ = request.app
-        source = app_settings.get_source_dir()
+        # Resolve once so the whole endpoint speaks the canonical path. The registry resolves
+        # source_dir everywhere it scans (scan_sources / resolve_selection / view_for), so the
+        # `files=` selection is always resolved — the `scope=` branch and `status.source_dir` must
+        # agree, or they diverge on Windows (case-normalized username, 8.3 short paths) and any
+        # symlinked source dir. `get_source_dir` already resolves in production; this is idempotent.
+        source = app_settings.get_source_dir().resolve()
 
         # Selective ingestion (S1): an explicit `paths` selection is resolved + validated up front
         # so a bad path is a 400 *before* anything starts running (nothing partial). No body (or

@@ -8,6 +8,29 @@ Append only — never edit past entries.
 Format: What changed | Why | Rejected alternatives | What it opens
 
 ---
+## 2026-07-16 — Fix: `POST /api/ingest` no-body scope resolves to the canonical path (Windows) + Python 3.12 pin
+
+**What:** `apps/api/main.py` `ingest_start` now reads `app_settings.get_source_dir().resolve()` once at
+the top, so the whole endpoint speaks one canonical path — the `scope=` ingest arg, `status.source_dir`,
+and the selection pass. The no-body branch previously passed the *un-resolved* `str(source)` as `scope`,
+diverging from the `files=` branch (already resolved via `registry.resolve_selection` →
+`source_dir.resolve()`) and from the registry's universal `.resolve()` (`scan_sources` / `view_for`).
+**Why:** fixes `test_selective_ingest.py::test_api_ingest_no_body_still_works`, a pre-existing failure
+pulled in with S1 that tripped on Windows only — the un-resolved path kept the env-derived
+`pytest-of-LDELEZ` casing while `src.resolve()` canonicalizes to the on-disk `pytest-of-ldelez` (the
+same class of mismatch bites 8.3 short paths and symlinked source dirs). Idempotent in production
+(`get_source_dir` already resolves in the env-override and stored-path cases).
+**Rejected:** resolving only at the `scope=` call site (leaves `status.source_dir` non-canonical);
+"fixing" the test's expectation (`str(src.resolve())` encodes the intended contract, matched everywhere
+else). **Opens:** nothing.
+**Also (build):** added a tracked `.python-version` = `3.12`. With no pin, `uv run` in a fresh worktree
+selected Python 3.14 (`requires-python >= 3.10`) and built a broken venv — the project targets 3.12
+(KI-2: native deps not 3.14-stable). Rebuilt this worktree's `.venv` on the official python.org 3.12.10
+(`pythoncore-3.12-64`, matching the main venv; the uv-managed standalone hits the OpenSSL-applink crash)
+from uv cache (`uv sync --extra cpu --extra dev --offline`, $0 / no network).
+**Staged code + docs; `.venv` is gitignored (local only). Nothing committed without review (cpc §13).**
+
+---
 ## 2026-07-15 — Selective ingestion S2: Sources panel (scan · exclude · ingest-selected) in Settings
 
 **What:** the S2 frontend over the S1 endpoints. (1) **`types.ts`** `SourceFile` (mirrors

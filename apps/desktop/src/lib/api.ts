@@ -105,6 +105,22 @@ export async function revealDocument(docId: string): Promise<void> {
   if (!r.ok) throw new Error(`reveal document failed: ${r.status}`)
 }
 
+export interface DeleteResult {
+  filename: string
+  trashed_file: boolean
+  chunks_removed: number
+}
+
+/** Safe-delete a document: source file → Recycle Bin, then drop its DB row + index chunks
+ *  (ADR-014). Throws on failure (e.g. 409 when the file couldn't be moved to the Recycle Bin). */
+export async function deleteDocument(docId: string): Promise<DeleteResult> {
+  const r = await fetch(`${API_BASE}/api/library/documents/${encodeURIComponent(docId)}`, {
+    method: 'DELETE',
+  })
+  if (!r.ok) throw new Error(`delete document failed: ${r.status}`)
+  return (await r.json()) as DeleteResult
+}
+
 /** A/B-compare retrieval (U6): the query under the locked defaults vs the session override.
  *  $0 — retrieval only, no generation. `overrides` rides this one request. */
 export async function compareRetrieval(

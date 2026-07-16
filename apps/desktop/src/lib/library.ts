@@ -87,13 +87,41 @@ export function docLabel(d: LibraryDocument): string {
   return first ? `${d.title} · ${first}` : d.title
 }
 
-// Just the author part ("First Author" or "First Author et al."), or '' when unknown. The grid
-// tile renders this on its own line under the title (the breadcrumb/search still use docLabel).
+// Just the author part, or '' when unknown. Up to three authors show in full (books, small
+// collaborations); four or more collapse to "First Author et al." The tile renders this on its
+// own byline (the breadcrumb/search still use docLabel). Space-only author strings that don't
+// split cleanly stay as one name and are ellipsis-truncated by the tile CSS (user can fix in
+// the edit modal). Splits on ; , & and the word "and".
 export function authorLabel(d: LibraryDocument): string {
   if (!d.authors) return ''
-  const names = d.authors.split(/\s*(?:;|,| and )\s*/).filter(Boolean)
-  const first = names[0] ?? d.authors
-  return names.length > 1 ? `${first} et al.` : first
+  const names = d.authors
+    .split(/\s*(?:;|,|&|\band\b)\s*/)
+    .map((n) => n.trim())
+    .filter(Boolean)
+  if (names.length === 0) return ''
+  if (names.length <= 3) return names.join(', ')
+  return `${names[0]} et al.`
+}
+
+// Library sort order — a client-side sort over the already-filtered collection. Directions match
+// the useful default per key (dates newest-first, names A→Z).
+export type LibrarySort = 'title-az' | 'author-az' | 'pub-desc' | 'added-desc'
+
+export function sortDocs(docs: LibraryDocument[], sort: LibrarySort): LibraryDocument[] {
+  const copy = [...docs]
+  const title = (d: LibraryDocument) => (d.title ?? d.filename).toLowerCase()
+  // No-author docs sort last under Author A→Z (￿ is above any real letter).
+  const author = (d: LibraryDocument) => (authorLabel(d) || '￿').toLowerCase()
+  switch (sort) {
+    case 'title-az':
+      return copy.sort((a, b) => title(a).localeCompare(title(b)))
+    case 'author-az':
+      return copy.sort((a, b) => author(a).localeCompare(author(b)) || title(a).localeCompare(title(b)))
+    case 'pub-desc':
+      return copy.sort((a, b) => (b.year ?? -Infinity) - (a.year ?? -Infinity))
+    case 'added-desc':
+      return copy.sort((a, b) => (b.added_at ?? '').localeCompare(a.added_at ?? ''))
+  }
 }
 
 // Search filter (Decision 5a): same fields the old rail search matched.

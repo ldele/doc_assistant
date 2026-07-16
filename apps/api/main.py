@@ -42,6 +42,7 @@ from apps.api.models import (
     ConversationDetailPayload,
     ConversationMetaUpdate,
     ConversationSummaryPayload,
+    DeleteResultPayload,
     ExportRequest,
     IngestRequest,
     LibraryDocumentChunksPayload,
@@ -469,6 +470,25 @@ def create_app(
         if not reveal_document_source(doc_id):
             raise HTTPException(status_code=404, detail="source file not found")
         return {"ok": True}
+
+    @app.delete("/api/library/documents/{doc_id}")
+    def delete_library_document(doc_id: str, request: Request) -> DeleteResultPayload:
+        """Safe-delete a document: source file → Recycle Bin, then drop its DB row + index chunks
+        (ADR-014). 404 if unknown; 409 if the source file couldn't be moved to the Recycle Bin."""
+        from doc_assistant.library import delete_document
+
+        controller: ChatController = request.app.state.controller
+        try:
+            result = delete_document(doc_id, controller.rag.db)
+        except RuntimeError as e:
+            raise HTTPException(status_code=409, detail=str(e)) from e
+        if result is None:
+            raise HTTPException(status_code=404, detail="document not found")
+        return DeleteResultPayload(
+            filename=result.filename,
+            trashed_file=result.trashed_file,
+            chunks_removed=result.chunks_removed,
+        )
 
     @app.get("/api/settings")
     def get_settings(request: Request) -> dict[str, Any]:

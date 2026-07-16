@@ -11,22 +11,42 @@
   let {
     documents,
     view,
+    activeKeyword = null,
     onOpenDocument,
     onEditMetadata,
     onReveal,
+    onDelete,
   }: {
     documents: LibraryDocument[]
     view: 'grid' | 'list'
+    activeKeyword?: string | null
     onOpenDocument: (id: string) => void
     onEditMetadata: (id: string) => void
     onReveal: (id: string) => void
+    onDelete: (id: string) => void
   } = $props()
+
+  const CHIP_CAP = 6 // chips shown before "+N" — enough to fill the reserved two-line keyword row
 
   // NULL metadata is omitted, never shown blank (L1's honest-empty rule).
   function addedShort(iso: string | null): string | null {
     if (!iso) return null
     const t = new Date(iso)
     return Number.isNaN(t.getTime()) ? null : t.toLocaleDateString()
+  }
+
+  // The byline: authors and the *publication* year (distinct from the ingestion date below).
+  function byline(d: LibraryDocument): string {
+    const a = authorLabel(d)
+    const y = d.year != null ? String(d.year) : ''
+    return a && y ? `${a} · ${y}` : a || y
+  }
+
+  // When a keyword filter is active, surface it first in every tile so the reason a doc is here
+  // is always visible (and highlighted), even if it would otherwise fall past the "+N" cap.
+  function orderedKeywords(d: LibraryDocument): string[] {
+    if (!activeKeyword || !d.keywords.includes(activeKeyword)) return d.keywords
+    return [activeKeyword, ...d.keywords.filter((k) => k !== activeKeyword)]
   }
 
   // A single floating ⋯ menu (position:fixed, so the scrolling main pane can't clip it),
@@ -56,6 +76,10 @@
   }
   function menuReveal(): void {
     if (menuDoc) onReveal(menuDoc.id)
+    closeMenu()
+  }
+  function menuDelete(): void {
+    if (menuDoc) onDelete(menuDoc.id)
     closeMenu()
   }
   // Close on Esc or any scroll/wheel (the fixed menu would otherwise detach from its tile).
@@ -90,26 +114,25 @@
             {#if d.customized}<span class="editmark" title="Edited metadata"></span>{/if}
           </span>
           <span class="name">{d.title ?? d.filename}</span>
-          {#if authorLabel(d)}<span class="authors">{authorLabel(d)}</span>{/if}
+          <!-- Byline reserved even when empty so every tile aligns the rows below it. -->
+          <span class="byline">{byline(d)}</span>
           <span class="meta">
-            {#if d.year != null}<span>{d.year}</span>{/if}
             {#if d.page_count != null}<span>{d.page_count} pages</span>{/if}
             {#if d.chunk_count != null}<span>{d.chunk_count.toLocaleString()} chunks</span>{/if}
-            {#if addedShort(d.added_at)}<span>{addedShort(d.added_at)}</span>{/if}
+            {#if addedShort(d.added_at)}<span>Added {addedShort(d.added_at)}</span>{/if}
           </span>
-          {#if d.keywords.length > 0}
-            <!-- Unkeyed: a doc's raw keyword array may repeat a string, and this static sublist
-                 never reorders — keying by value would crash on a duplicate. Cap at 3 + a
-                 "+N" overflow chip so tags never wrap unpredictably (fixed card footprint). -->
-            <span class="kws">
-              {#each d.keywords.slice(0, 3) as k}<span class="kw">{k}</span>{/each}
-              {#if d.keywords.length > 3}
-                <span class="kw more" title={d.keywords.slice(3).join(', ')}
-                  >+{d.keywords.length - 3}</span
-                >
-              {/if}
-            </span>
-          {/if}
+          <!-- Keyword row: always reserves two lines (below), so tiles are a uniform height even
+               with no keywords. Unkeyed each — a doc's raw array may repeat a string. -->
+          <span class="kws">
+            {#each orderedKeywords(d).slice(0, CHIP_CAP) as k}
+              <span class="kw" class:active={k === activeKeyword}>{k}</span>
+            {/each}
+            {#if d.keywords.length > CHIP_CAP}
+              <span class="kw more" title={orderedKeywords(d).slice(CHIP_CAP).join(', ')}
+                >+{d.keywords.length - CHIP_CAP}</span
+              >
+            {/if}
+          </span>
         </button>
         <button
           class="tileact"
@@ -145,7 +168,7 @@
               >{d.format}{#if d.year != null} · {d.year}{/if}{#if d.page_count != null}
                 · {d.page_count} pages{/if}{#if d.chunk_count != null}
                 · {d.chunk_count.toLocaleString()} chunks{/if}{#if addedShort(d.added_at)}
-                · {addedShort(d.added_at)}{/if}</span
+                · Added {addedShort(d.added_at)}{/if}</span
             >
           </span>
         </button>
@@ -170,6 +193,10 @@
     </button>
     <button class="menuitem" role="menuitem" onclick={menuReveal} type="button">
       <Icon name="folder" size={14} /> Reveal in file explorer
+    </button>
+    <div class="menusep"></div>
+    <button class="menuitem danger" role="menuitem" onclick={menuDelete} type="button">
+      <Icon name="trash-2" size={14} /> Delete…
     </button>
   </div>
 {/if}
@@ -196,9 +223,8 @@
     gap: 0.35rem;
     width: 100%;
     min-width: 0;
-    /* Fixed footprint: a long title clamps (below) rather than reflowing the row, and the
-       floor keeps author-/keyword-less tiles level with their neighbours. */
-    min-height: 150px;
+    /* Every row below is a reserved fixed height (title 2 lines, byline 1, meta 1, keywords 2),
+       so all tiles are a uniform height regardless of how much metadata each doc has. */
     border: 1px solid var(--border);
     border-radius: 10px;
     background: var(--surface);
@@ -256,9 +282,11 @@
     /* Reserve two lines so single- and double-line titles align what follows. */
     min-height: 2.7em;
   }
-  .authors {
+  /* Byline (author · publication year) — reserved even when empty so the rows below always align. */
+  .byline {
     font-size: 0.72rem;
     color: var(--fg-2);
+    min-height: 1.2em;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -269,12 +297,18 @@
     display: flex;
     flex-wrap: wrap;
     gap: 0.15rem 0.45rem;
-    margin-top: auto;
+    min-height: 1.1em;
   }
+  /* Keyword row — always reserves exactly two lines and clips beyond, so a doc with few (or no)
+     keywords is the same height as one with many. */
   .kws {
     display: flex;
     flex-wrap: wrap;
     gap: 0.25rem;
+    min-height: 2.5em;
+    max-height: 2.5em;
+    overflow: hidden;
+    align-content: flex-start;
   }
   .kw {
     font-size: 0.64rem;
@@ -291,6 +325,12 @@
     color: var(--fg-2);
     background: var(--surface-2);
     flex: none;
+  }
+  /* The active keyword filter — surfaced first + filled so the reason a doc is listed is obvious. */
+  .kw.active {
+    color: var(--accent-fg);
+    background: var(--accent);
+    font-weight: 600;
   }
   /* The ⋯ action — hidden until the tile is hovered or its menu is open (mirrors Sidebar). */
   .tileact,
@@ -407,5 +447,13 @@
   }
   .menuitem:hover {
     background: var(--surface-2);
+  }
+  .menuitem.danger {
+    color: var(--danger);
+  }
+  .menusep {
+    height: 1px;
+    background: var(--border);
+    margin: 0.25rem 0.35rem;
   }
 </style>

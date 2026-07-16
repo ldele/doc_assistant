@@ -8,6 +8,75 @@ Append only — never edit past entries.
 Format: What changed | Why | Rejected alternatives | What it opens
 
 ---
+## 2026-07-16 — Document safe-delete: source file → Recycle Bin + confirmation (ADR-014)
+
+**What:** single-document delete from the `⋯` menu — the source file goes to the **OS Recycle Bin**
+(recoverable) and the doc leaves the library + search index, behind a confirmation dialog.
+- **Backend (`library.delete_document(doc_id, chroma_db)`):** recycles the source file **first**
+  (`send2trash`, resolved via `resolve_source_path`) — a trash failure raises and **aborts** the delete
+  (never orphan a still-indexed file); a file already gone skips trashing. Then drops the `Document` row
+  (FK-cascades citations/parts/similarities), the `DocumentMeta` override (no FK — explicit), the doc's
+  chunks from the live Chroma store (counted), its figure dir (reuses `cleanup_orphan_figures`) and cached
+  `.md`. Returns `DeleteResult(filename, trashed_file, chunks_removed)`. New `DELETE
+  /api/library/documents/{id}` → 200 / 404 (unknown) / **409** (couldn't recycle the file).
+- **Dependency:** `send2trash>=2.1.0` (base dep, pure-Python cross-platform trash; `uv add --native-tls`
+  through the proxy; mypy override added).
+- **Frontend:** `LibraryGrid` ⋯ menu gains a red **Delete…** item; new `LibraryDeleteConfirm.svelte`
+  (scrim + card, Esc/Cancel/scrim-close) states "source file → **Recycle Bin** (recoverable) … removing
+  its N chunks from the search index"; a red-tinted Delete button (busy state). `App.svelte` owns
+  `deletingDocId`, drops back to the grid if the open doc was deleted, then re-fetches.
+
+**Why:** user request for a "safe-delete" (file + DB) with a confirmation, and multi-select later.
+**Decisions (ADR-014):** Recycle Bin over soft-delete/permanent (user pick); trash-first for consistency;
+single-doc first, **multi-select (bulk delete / move-to-collection) deferred**.
+
+**Verified:** `svelte-check` 0/0 (128 files); ruff/format + `mypy --strict src` (61) + bandit clean;
+**pytest 15** (`test_document_delete` ×7: unknown→None, file trashed + row + chunks removed, file-already-
+gone, **trash-failure aborts + row survives**, DELETE route 200/404/409 — all with a monkeypatched
+`send2trash`, no real file touched; + `test_document_meta` ×8). UI live-verified up to the confirmation
+(⋯ → red Delete… → dialog with the right target + chunk count + Cancel). **The live end-to-end delete
+recycles a real file, so it is NOT run in automation** — the user's to try; the logic is covered by tests.
+
+**Opens:** recovery is via the OS Recycle Bin (no in-app trash/restore view); **multi-select** (bulk +
+move-to-collection) is next. The `send2trash` add re-resolved torch off `+cpu` on the proxy box; restored
+via `uv sync --extra cpu --extra dev --native-tls`.
+
+**Staged; nothing committed (cpc §13). New dep `send2trash` (pyproject + lock).**
+
+## 2026-07-16 — Library polish: normalized tiles + sort control + active-keyword highlight (user feedback)
+
+**What:** three frontend refinements to the L4 grid (no backend).
+- **Normalized tiles** — every tile is now a **uniform height** (161px measured, all identical) because each
+  row is a reserved fixed height: title (2 lines, clamped) → **byline** (author · publication year, reserved
+  even when empty) → meta (`N pages · N chunks · **Added** <date>` — the ingestion date, now labelled to
+  distinguish it from the publication year in the byline) → **keywords (always two reserved lines**, clipped
+  beyond). Fixed the **author bug**: `authorLabel` split only on `,;and`, so space-separated author strings
+  showed in full — now up to **3 authors show fully** (books/small collabs), **4+ collapse to "First et al."**;
+  un-splittable space-only strings ellipsis-truncate (user can fix in the edit modal).
+- **Sort control** (`libSort`, persisted) — a `↑↓` button + dropdown in the library toolbar (next to the
+  grid/list toggle), options **Title A–Z · Author A–Z · Publication date (newest) · Added date (newest)**,
+  applied client-side over the filtered collection (`sortDocs`). Default Title A–Z.
+- **Active-keyword highlight** — selecting a keyword collection now surfaces that keyword **first + filled**
+  (`.kw.active`) in every tile (`orderedKeywords`), so the reason a doc is listed is always visible even past
+  the `+N` cap; the rail chip was already active-styled.
+
+**Why:** user asked for a cleaner, normalized library — uniform boxes, "First et al." + date instead of all
+authors, a clear ingestion-vs-publication date, reserved keyword space; a chat-style sort with more keys; and
+the selected keyword highlighted/first in the boxes.
+
+**Verified ($0, frontend-only):** `svelte-check` 0/0 (127 files); live on the real corpus — all 12 sampled
+tiles measured an **identical 161px**; bylines "Reza Shadmehr, John W. Krakauer · 2008" (2 shown), "Laura E
+Suarez et al. · 2022" (4+ → et al.), "2017" (year only); meta shows "Added 7/2/2026"; sort menu lists the 4
+keys and Author A–Z reordered correctly; selecting `connectome` → all 18 tiles show it as the **first,
+highlighted** chip. Test state reset (sort→default, collection→All).
+
+**Opens:** the residual bad title/author extractions (hyphenation artifacts, a sentence as an author) are now
+user-fixable via the edit modal — not a layout bug. Sort is one direction per key (reverse = easy follow-up).
+**Deferred (user-requested, next):** document **safe-delete** (file + DB + index, with confirmation), then
+**multi-select** (bulk delete / move-to-collection).
+
+**Staged; nothing committed (cpc §13).**
+
 ## 2026-07-16 — Document metadata editing + reveal-in-explorer + author on tiles (ADR-013)
 
 **What:** the first browse-time **write path** — a per-document `⋯` menu (Edit metadata / Reveal in

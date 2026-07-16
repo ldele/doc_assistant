@@ -304,6 +304,88 @@ def _reveal_in_file_manager(path: Path) -> None:
         subprocess.run(["xdg-open", str(path.parent)], check=False)  # nosec B603 B607
 
 
+@dataclass
+class DeleteResult:
+    """Outcome of a document delete (ADR-014)."""
+
+    filename: str
+    trashed_file: bool  # source file moved to the Recycle Bin (False = it was already gone)
+    chunks_removed: int  # chunks dropped from the live search index
+
+
+def delete_document(document_id: str, chroma_db: Any) -> DeleteResult | None:
+    """Safe-delete a document: source file → Recycle Bin, then drop its DB row + index chunks.
+
+    Returns None if the document is unknown. The source file is moved to the OS Recycle Bin FIRST
+    (recoverable); only on success (or when the file is already gone) does the removal proceed, so
+    a locked/undeletable file leaves the library entry intact rather than orphaning a still-indexed
+    file on disk. Removal then: deletes the ``Document`` row (FK-cascades citations / parts /
+    similarities), the ``DocumentMeta`` override (no FK — explicit), the doc's chunks from the live
+    Chroma store, its figure dir, and its cached ``.md``. ADR-014.
+    """
+    from send2trash import send2trash
+
+    from doc_assistant.ingest.cleanup import cleanup_orphan_figures
+
+    with session_scope() as session:
+        doc = session.get(Document, document_id)
+        if doc is None:
+            return None
+        filename = doc.filename
+        doc_hash_val = doc.doc_hash
+        source_original = doc.source_original
+        source_cache = doc.source_cache
+
+    # 1. Recycle the source file first (recoverable). A trash failure aborts the whole delete.
+    path = resolve_source_path(source_original, filename)
+    trashed = False
+    if path is not None:
+        try:
+            send2trash(str(path))
+            trashed = True
+        except Exception as e:
+            log.warning("delete_trash_failed", document_id=document_id, error=str(e))
+            raise RuntimeError(f"could not move {filename} to the Recycle Bin") from e
+
+    # 2. Drop the DB row (+ cascades) and the override sidecar (no FK).
+    with session_scope() as session:
+        meta = session.get(DocumentMeta, document_id)
+        if meta is not None:
+            session.delete(meta)
+        doc = session.get(Document, document_id)
+        if doc is not None:
+            session.delete(doc)
+
+    # 3. Remove the doc's chunks from the live search index (count for the caller).
+    chunks_removed = 0
+    try:
+        found = chroma_db.get(where={"doc_hash": doc_hash_val}, include=[])
+        ids = list(found.get("ids", []))
+        chunks_removed = len(ids)
+        if ids:
+            chroma_db.delete(ids=ids)
+    except Exception as e:
+        log.warning("delete_chunks_failed", document_id=document_id, error=str(e))
+
+    # 4. On-disk sidecars: figure dir (by hash) + the cached markdown.
+    cleanup_orphan_figures([doc_hash_val])
+    if source_cache:
+        cache_path = Path(source_cache)
+        if cache_path.exists():
+            try:
+                cache_path.unlink()
+            except OSError as e:
+                log.warning("delete_cache_failed", file=cache_path.name, error=str(e))
+
+    log.info(
+        "document_deleted",
+        document_id=document_id,
+        trashed_file=trashed,
+        chunks_removed=chunks_removed,
+    )
+    return DeleteResult(filename=filename, trashed_file=trashed, chunks_removed=chunks_removed)
+
+
 def library_summary() -> LibrarySummary:
     """Return high-level counts for the library."""
     with session_scope() as session:

@@ -81,6 +81,7 @@ dependencies = [
     # boilerplate by contrast against general English. Frequency data ships with the
     # package (offline after install); pure-Python, no torch interaction.
     "wordfreq>=3.0",
+    "send2trash>=2.1.0",
 ]
 
 [project.optional-dependencies]
@@ -194,6 +195,7 @@ module = [
     "sqlalchemy.*",
     "networkx.*",
     "wordfreq.*",
+    "send2trash.*",
 ]
 ignore_missing_imports = true
 

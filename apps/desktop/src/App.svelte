@@ -14,6 +14,7 @@
     getHealth,
     exportConversation,
     listConversations,
+    deleteDocument,
     listLibraryDocuments,
     resetDocumentMeta,
     revealDocument,
@@ -29,14 +30,17 @@
   import LibraryBrowser from './lib/LibraryBrowser.svelte'
   import LibraryGrid from './lib/LibraryGrid.svelte'
   import LibraryMetaEditor from './lib/LibraryMetaEditor.svelte'
+  import LibraryDeleteConfirm from './lib/LibraryDeleteConfirm.svelte'
   import CompareCard from './lib/CompareCard.svelte'
   import Icon from './lib/Icon.svelte'
   import {
     type LibraryCollection,
+    type LibrarySort,
     collectionLabel,
     docLabel,
     docsFor,
     filterDocs,
+    sortDocs,
   } from './lib/library'
   import appMark from './assets/brand/app-mark.png'
 
@@ -122,10 +126,43 @@
     }
   }
 
-  // The active collection's documents, then the search filter on top (Decision 5a: search
-  // scopes to what's in front of you; the 0-match empty state offers a "Search all" escape).
+  // Library sort — a client-only preference, persisted like the view toggle.
+  const LIB_SORTS: { key: LibrarySort; label: string }[] = [
+    { key: 'title-az', label: 'Title (A–Z)' },
+    { key: 'author-az', label: 'Author (A–Z)' },
+    { key: 'pub-desc', label: 'Publication date (newest)' },
+    { key: 'added-desc', label: 'Added date (newest)' },
+  ]
+  function loadLibrarySort(): LibrarySort {
+    try {
+      const v = localStorage.getItem('librarySort')
+      if (LIB_SORTS.some((s) => s.key === v)) return v as LibrarySort
+    } catch {
+      /* ignore — fall back to default */
+    }
+    return 'title-az'
+  }
+  let librarySort = $state<LibrarySort>(loadLibrarySort())
+  let libSortOpen = $state(false)
+  function setLibrarySort(v: LibrarySort): void {
+    librarySort = v
+    libSortOpen = false
+    try {
+      localStorage.setItem('librarySort', v)
+    } catch {
+      /* ignore — just won't persist */
+    }
+  }
+
+  // The active collection's documents → search filter (Decision 5a) → sort. When a keyword is the
+  // active collection, `activeKeyword` drives the tile highlight + first-position ordering.
   const collectionDocs = $derived(docsFor(documents, libraryCollection, new Date()))
-  const visibleDocs = $derived(filterDocs(collectionDocs, libraryQuery))
+  const visibleDocs = $derived(
+    sortDocs(filterDocs(collectionDocs, libraryQuery), librarySort),
+  )
+  const activeKeyword = $derived(
+    libraryCollection.kind === 'keyword' ? libraryCollection.value : null,
+  )
   // Breadcrumb label for the open document, from the cached list (the chunk view fetches its
   // own detail; a stale/missing entry just hides the crumb).
   const openDoc = $derived(
@@ -529,6 +566,28 @@
     }
   }
 
+  // Safe-delete (ADR-014): the ⋯ Delete opens a confirmation; on confirm the source file goes to
+  // the Recycle Bin and the doc leaves the library + index. If the open doc was deleted, drop back
+  // to its collection grid, then re-fetch the list.
+  let deletingDocId = $state<string | null>(null)
+  let deleteBusy = $state(false)
+  const deletingDoc = $derived(
+    deletingDocId ? (documents.find((d) => d.id === deletingDocId) ?? null) : null,
+  )
+  async function confirmDelete(): Promise<void> {
+    if (deletingDocId === null) return
+    deleteBusy = true
+    try {
+      await deleteDocument(deletingDocId)
+      if (libraryDocId === deletingDocId) libraryDocId = null
+      await refreshDocuments()
+      deletingDocId = null
+    } catch {
+      // e.g. the file couldn't be moved to the Recycle Bin — leave the dialog open, doc intact
+    }
+    deleteBusy = false
+  }
+
   // Back walks one level up: doc → its collection's grid, then collection → All documents.
   function libraryBack(): void {
     if (libraryDocId !== null) libraryDocId = null
@@ -635,6 +694,40 @@
               {/if}
             </nav>
             {#if libraryDocId === null}
+              <div class="libsort">
+                <button
+                  class="sortbtn"
+                  onclick={() => (libSortOpen = !libSortOpen)}
+                  aria-haspopup="menu"
+                  aria-expanded={libSortOpen}
+                  title="Sort documents"
+                  type="button"><Icon name="arrow-up-down" size={15} /></button
+                >
+                {#if libSortOpen}
+                  <div
+                    class="sort-backdrop"
+                    onclick={() => (libSortOpen = false)}
+                    role="presentation"
+                  ></div>
+                  <div class="sortmenu" role="menu">
+                    {#each LIB_SORTS as s}
+                      <button
+                        class="sortitem"
+                        class:on={librarySort === s.key}
+                        role="menuitemradio"
+                        aria-checked={librarySort === s.key}
+                        onclick={() => setLibrarySort(s.key)}
+                        type="button"
+                      >
+                        <span class="tick"
+                          >{#if librarySort === s.key}<Icon name="check" size={13} />{/if}</span
+                        >
+                        {s.label}
+                      </button>
+                    {/each}
+                  </div>
+                {/if}
+              </div>
               <div class="viewtoggle" role="group" aria-label="Layout">
                 <button
                   class:active={libraryView === 'grid'}
@@ -686,9 +779,11 @@
                 <LibraryGrid
                   documents={visibleDocs}
                   view={libraryView}
+                  {activeKeyword}
                   onOpenDocument={openDocument}
                   onEditMetadata={(id) => (editingDocId = id)}
                   onReveal={revealDoc}
+                  onDelete={(id) => (deletingDocId = id)}
                 />
               {/if}
             </section>
@@ -824,6 +919,15 @@
     onSave={saveDocMeta}
     onReset={resetDocMeta}
     onClose={() => (editingDocId = null)}
+  />
+{/if}
+
+{#if deletingDoc}
+  <LibraryDeleteConfirm
+    doc={deletingDoc}
+    busy={deleteBusy}
+    onConfirm={confirmDelete}
+    onClose={() => (deletingDocId = null)}
   />
 {/if}
 
@@ -1002,6 +1106,68 @@
   .crumbsep {
     color: var(--fg-2);
     display: inline-flex;
+    flex: none;
+  }
+  .libsort {
+    position: relative;
+    flex: none;
+  }
+  .sortbtn {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.28rem 0.5rem;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface);
+    color: var(--fg-2);
+    cursor: pointer;
+  }
+  .sortbtn:hover {
+    color: var(--fg);
+    border-color: var(--accent);
+  }
+  .sort-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 20;
+  }
+  .sortmenu {
+    position: absolute;
+    z-index: 21;
+    top: calc(100% + 4px);
+    right: 0;
+    min-width: 200px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    box-shadow: var(--shadow-2);
+    padding: 0.25rem;
+  }
+  .sortitem {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    width: 100%;
+    padding: 0.4rem 0.5rem;
+    border: none;
+    background: none;
+    color: var(--fg);
+    border-radius: 6px;
+    cursor: pointer;
+    font: inherit;
+    font-size: 0.82rem;
+    text-align: left;
+    white-space: nowrap;
+  }
+  .sortitem:hover {
+    background: var(--surface-2);
+  }
+  .sortitem.on {
+    color: var(--accent);
+  }
+  .sortitem .tick {
+    display: inline-flex;
+    width: 13px;
     flex: none;
   }
   .viewtoggle {

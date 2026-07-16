@@ -337,6 +337,14 @@ class LibraryDocumentMetaUpdate(BaseModel):
     year: int | None = None
 
 
+class DeleteResultPayload(BaseModel):
+    """Outcome of a document delete (ADR-014)."""
+
+    filename: str
+    trashed_file: bool
+    chunks_removed: int
+
+
 class LibraryChildPayload(BaseModel):
     child_index: int
     text: str

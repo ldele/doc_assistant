@@ -142,7 +142,8 @@ in cpc CONVENTIONS **§12 / §13** — read them there, do not restate. Project-
 7. **bandit HIGH blocks merge; CI green before merge.** Docs land with the code at every checkpoint.
 
 **cpc gate wiring (ADR-007 — canonical text).** The cpc gates are vendored at `tools/conventions/`
-(cpc **1.2.1**, re-vendored from 1.1.0 on 2026-07-16; re-run `cpc-init` from the cpc checkout to
+(cpc **1.2.2**, re-vendored 1.1.0→1.2.1→1.2.2 on 2026-07-16 — the 1.2.2 step picks up the KI-16
+embedded-tree fix; re-run `cpc-init` from the cpc checkout to
 upgrade — vendor from the release *tag*, not an unreleased HEAD) and wired via
 `.pre-commit-config.cpc.yaml`. **Both are gitignored — local-only, never in the shared
 `.pre-commit-config.yaml` or CI:** cpc is a private tooling repo, this repo is public (ADR-001).

@@ -8,6 +8,23 @@ Append only — never edit past entries.
 Format: What changed | Why | Rejected alternatives | What it opens
 
 ---
+## 2026-07-16 — cpc re-vendored 1.2.1 → 1.2.2; KI-16 RESOLVED
+
+**What:** third cpc step today — the KI-16 fix landed upstream (cpc `bda91a5`, released as
+**v1.2.2** same day) and this repo re-vendored via `cpc-init` re-run (`tools/conventions/cpc/`
+`_VERSION` 1.2.2; the three deliberately-diverged lays — `AGENTS.md`/`GLOSSARY.md`/
+`.claude/.gitignore` — pruned again, same as the 1.2.1 step). `docs_check` now skips embedded
+checkouts structurally (`.venv`/`node_modules`/`.git` parts + any dir carrying its own `.git`),
+so a live background-task worktree under `.claude/worktrees/` no longer produces phantom errors.
+KI-16 flipped → RESOLVED (resolution bullet in the entry); CONTEXT wiring line → 1.2.2.
+**Verified:** `docs_check --strict` **0/0 unfiltered** on the 1.2.2 vendor (upstream: 144/144
+tests + the live repro on this repo's own worktree, 70 → 0, before the tag).
+**Why:** closes the loop the same-day review opened — gate noise during background tasks was the
+one environmental red herring left.
+**Rejected:** waiting for the next natural touch to re-vendor (the fix specifically de-flakes THIS
+repo's gate; adopt while the context is warm).
+**Opens:** none.
+
 ## 2026-07-16 — Docs-staleness fix batch (applies the same-day review's findings)
 
 **What:** applied the fixes from the docs review (entry below), docs-only. **ROADMAP:** flipped

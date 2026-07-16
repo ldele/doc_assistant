@@ -418,7 +418,7 @@ Migrated from the old `CLAUDE.md` / `README` runtime-quirk notes on 2026-06-20 (
   (`tests/eval/baselines/superseded_year_rule_2026-07.md` G6 addendum);
   `docs/sprints/SPRINT-007-fix-epistemics-label-attribution.md`.
 
-## KI-16 — vendored `docs_check` scans Claude Code background-task worktrees under `.claude/worktrees/` → ~70 phantom errors — OPEN (upstream cpc)
+## KI-16 — vendored `docs_check` scans Claude Code background-task worktrees under `.claude/worktrees/` → ~70 phantom errors — RESOLVED (2026-07-16, cpc 1.2.2 re-vendor)
 - **Symptom:** `python tools/conventions/rungate.py docs_check --root . --strict` reports dozens of
   `[header] missing status:` ERRORs for paths under `.claude/worktrees/<name>/…` (the worktree's
   README/CLAUDE.md/tests-eval copies **plus its whole `.venv` site-packages**) whenever a Claude Code
@@ -438,3 +438,9 @@ Migrated from the old `CLAUDE.md` / `README` runtime-quirk notes on 2026-06-20 (
   class of fix in `src/cpc/docs_check.py`; belongs in cpc 1.2.x.
 - **Pointer:** `tools/conventions/cpc/docs_check.py` (rule-1 scan vs the rule-3/4 exclusions);
   found during the 2026-07-16 cpc 1.1.0→1.2.1 re-vendor (DEVLOG entry same date).
+- **Resolution (2026-07-16, same day):** fixed upstream in cpc — new shared `in_embedded_tree()`
+  skips `.venv`/`node_modules`/`.git` parts plus any directory below root carrying its own `.git`
+  (file = linked worktree/submodule, dir = nested clone) across rules 1/3/4 (rules 7 + 12 inherit).
+  Shipped in cpc **v1.2.2** (fix `bda91a5`, locked by two tests; verified on this repo's live
+  worktree repro 70 → 0); re-vendored here the same day. A future background-task worktree no
+  longer trips the gate.

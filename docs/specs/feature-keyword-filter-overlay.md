@@ -1,10 +1,11 @@
 # Spec — Keyword filtering as a two-pane overlay
 
-**Status:** **DESIGN-LOCKED** (grilled 2026-07-16, `grill-me`; ledger at foot). Redesigns the presentation of
-the faceted-keyword-filtering v1 (the inline `LibraryFacetBar`, built + staged 2026-07-16 but **not committed**)
-into an on-demand overlay. The pure filter logic (`facetFilter` / `keywordFacets` in `lib/library.ts`) is
-**unchanged** — this is a presentation swap, not a logic change. Frontend-only, `$0`/offline, preview-harness
-verifiable.
+**Status:** ✅ **SHIPPED — commit `ce8b112` (2026-07-16).** Grilled 2026-07-16 (`grill-me`; ledger at foot).
+Redesigned the faceted-keyword-filtering v1 (the inline `LibraryFacetBar`) into an on-demand overlay; v1 was
+uncommitted, so both folded into `ce8b112`. The pure filter logic (`facetFilter` / `keywordFacets` in
+`lib/library.ts`) is **unchanged** — a presentation swap, not a logic change. Frontend-only, `$0`/offline,
+preview-harness-verified (search, live toggle 76→22, 26 greyed, Esc-persist, Clear, dark, mobile panes stack,
+0 console errors).
 
 **Owner:** Claude Code. One PR. Since v1 is uncommitted, **fold** v1 + this redesign into a single commit
 (no throwaway inline-bar commit).

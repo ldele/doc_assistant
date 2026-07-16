@@ -70,6 +70,24 @@ _AFFILIATION_KEYWORDS = re.compile(
     re.IGNORECASE,
 )
 
+# Discourse / section leads that a permissive author scan can mistake for a name list
+# (e.g. "However, ideas from…", "Additional Key Words and Phrases:"). An author line is a
+# list of proper names, never a sentence — so a candidate opening with one of these is not it.
+_NON_AUTHOR_LEAD = re.compile(
+    r"^(however|moreover|therefore|furthermore|additional(?:ly)?|although|whereas|here\b"
+    r"|we\b|our\b|in this|this (?:paper|work|article|study)|index terms|key ?words?"
+    r"|abstract|introduction|copyright)",
+    re.IGNORECASE,
+)
+
+# Publisher boilerplate that a heading scan can mistake for a title, e.g. Springer's
+# "The Author(s), under exclusive licence to Springer Nature…". Never a real title.
+_COPYRIGHT_HEADING = re.compile(
+    r"(the author\(s\)|under (?:exclusive )?licen[cs]e|all rights reserved"
+    r"|©|\(c\)\s|copyright|springer nature|creative commons)",
+    re.IGNORECASE,
+)
+
 
 @dataclass
 class DocMetadata:
@@ -99,6 +117,7 @@ def _clean_markdown(text: str) -> str:
     text = re.sub(r"\*+", "", text)
     text = re.sub(r"_+", "", text)
     text = re.sub(r"\[[^\]]*\]", "", text)
+    text = text.replace("\\", "")  # markdown escape / hard-break artifacts (e.g. "WIESEL\")
     text = re.sub(r"\s+", " ", text).strip()
     return text
 
@@ -108,6 +127,8 @@ def _is_skippable_heading(text: str) -> bool:
     if not normalized:
         return True
     if normalized in _SKIP_HEADINGS:
+        return True
+    if _COPYRIGHT_HEADING.search(normalized):
         return True
     if re.match(
         r"^\d+(\.\d+)*\.?\s+(introduction|methods?|results?|discussion|abstract)\b",
@@ -202,6 +223,8 @@ def _looks_like_author_line(line: str) -> tuple[bool, str]:
     if "@" in cleaned:
         return False, cleaned
     if _AFFILIATION_KEYWORDS.search(cleaned):
+        return False, cleaned
+    if _NON_AUTHOR_LEAD.match(cleaned):
         return False, cleaned
     if not re.match(r"^[A-Z]", cleaned):
         return False, cleaned

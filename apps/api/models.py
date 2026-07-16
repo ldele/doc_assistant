@@ -286,12 +286,17 @@ class ConversationDetailPayload(BaseModel):
 
 
 class LibraryDocumentPayload(BaseModel):
-    """One document in the Library list (mirrors ``library.DocumentSummary``)."""
+    """One document in the Library list (mirrors ``library.DocumentSummary``).
+
+    ``title``/``authors``/``year`` are effective values (user override ?? auto); ``customized``
+    is True when a user override is in force (ADR-013)."""
 
     id: str
     filename: str
     title: str | None
     authors: str | None
+    year: int | None
+    customized: bool
     format: str
     health: str | None
     chunk_count: int | None
@@ -308,6 +313,8 @@ class LibraryDocumentPayload(BaseModel):
             filename=s.filename,
             title=s.title,
             authors=s.authors,
+            year=s.year,
+            customized=s.customized,
             format=s.format,
             health=s.health,
             chunk_count=s.chunk_count,
@@ -317,6 +324,25 @@ class LibraryDocumentPayload(BaseModel):
             keywords=list(s.keywords),
             added_at=_as_utc(s.added_at) if s.added_at is not None else None,
         )
+
+
+class LibraryDocumentMetaUpdate(BaseModel):
+    """PATCH body for a document's user metadata overrides (ADR-013).
+
+    The editor sends the whole small form; each field is the desired *effective* value. A blank
+    string (or a value equal to the auto-extracted default) clears that field's override."""
+
+    title: str | None = None
+    authors: str | None = None
+    year: int | None = None
+
+
+class DeleteResultPayload(BaseModel):
+    """Outcome of a document delete (ADR-014)."""
+
+    filename: str
+    trashed_file: bool
+    chunks_removed: int
 
 
 class LibraryChildPayload(BaseModel):

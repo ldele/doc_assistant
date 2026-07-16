@@ -9,15 +9,19 @@ All functions return plain dataclasses, not SQLAlchemy models. This
 keeps the UI layer free of session lifecycle concerns.
 """
 
+# subprocess is used only by _reveal_in_file_manager to open a local file in the OS file manager.
+import subprocess  # nosec B404
+import sys
 from collections import Counter
 from dataclasses import dataclass, field
 from datetime import datetime
+from pathlib import Path
 from typing import Any
 
 import structlog
 from sqlalchemy import func, select
 
-from doc_assistant.db.models import Document, Folder, Tag
+from doc_assistant.db.models import Document, DocumentMeta, Folder, Tag
 from doc_assistant.db.session import session_scope
 
 log = structlog.get_logger(__name__)
@@ -29,7 +33,11 @@ log = structlog.get_logger(__name__)
 
 @dataclass
 class DocumentSummary:
-    """One row in the library list."""
+    """One row in the library list.
+
+    ``title``/``authors``/``year`` are the **effective** values (user override ?? auto-extracted);
+    ``customized`` is True when a ``DocumentMeta`` override is in force for any of them (ADR-013).
+    """
 
     id: str
     filename: str
@@ -39,6 +47,8 @@ class DocumentSummary:
     chunk_count: int | None
     page_count: int | None
     authors: str | None = None
+    year: int | None = None
+    customized: bool = False
     folders: list[str] = field(default_factory=list)
     tags: list[str] = field(default_factory=list)
     keywords: list[str] = field(default_factory=list)
@@ -114,23 +124,39 @@ def list_documents(
         query = query.order_by(Document.filename)
         docs = session.execute(query).scalars().unique().all()
 
-        return [
-            DocumentSummary(
-                id=d.id,
-                filename=d.filename,
-                title=d.title,
-                format=d.format,
-                health=d.extraction_health,
-                chunk_count=d.chunk_count,
-                page_count=d.page_count,
-                authors=d.authors,
-                folders=[f.name for f in d.folders],
-                tags=[t.name for t in d.tags],
-                keywords=[k.name for k in d.keywords],
-                added_at=d.added_at,
+        # Batch-load user overrides once, then merge effective = override ?? auto (ADR-013).
+        overrides = {m.document_id: m for m in session.execute(select(DocumentMeta)).scalars()}
+
+        summaries: list[DocumentSummary] = []
+        for d in docs:
+            m = overrides.get(d.id)
+            title = (m.title_override if m and m.title_override is not None else None) or d.title
+            authors = (
+                m.authors_override if m and m.authors_override is not None else None
+            ) or d.authors
+            year = (m.year_override if m and m.year_override is not None else None) or d.year
+            customized = m is not None and any(
+                v is not None for v in (m.title_override, m.authors_override, m.year_override)
             )
-            for d in docs
-        ]
+            summaries.append(
+                DocumentSummary(
+                    id=d.id,
+                    filename=d.filename,
+                    title=title,
+                    format=d.format,
+                    health=d.extraction_health,
+                    chunk_count=d.chunk_count,
+                    page_count=d.page_count,
+                    authors=authors,
+                    year=year,
+                    customized=customized,
+                    folders=[f.name for f in d.folders],
+                    tags=[t.name for t in d.tags],
+                    keywords=[k.name for k in d.keywords],
+                    added_at=d.added_at,
+                )
+            )
+        return summaries
 
 
 def get_document_details(doc_id: str) -> DocumentDetails | None:
@@ -176,6 +202,188 @@ def get_document_details(doc_id: str) -> DocumentDetails | None:
             keywords=[k.name for k in doc.keywords],
             ingestion_history=history,
         )
+
+
+# ============================================================
+# Metadata overrides + reveal (ADR-013 — first browse-time write path)
+# ============================================================
+
+
+def _dedup_override(value: str | None, auto: str | None) -> str | None:
+    """The override to store for a text field: None if blank or equal to the auto default."""
+    stripped = (value or "").strip()
+    if not stripped or stripped == (auto or "").strip():
+        return None
+    return stripped
+
+
+def set_document_meta(
+    document_id: str,
+    *,
+    title: str | None = None,
+    authors: str | None = None,
+    year: int | None = None,
+) -> None:
+    """Replace a document's user metadata overrides with the given *effective* values (ADR-013).
+
+    The editor sends the whole small metadata form, so this is a replace, not a partial patch:
+    each field's override is stored only when it is non-blank **and** differs from the
+    auto-extracted default (so re-saving an untouched field creates no override). When nothing
+    differs from the defaults the sidecar row is dropped (the document is no longer "customized").
+    """
+    with session_scope() as session:
+        doc = session.get(Document, document_id)
+        if doc is None:
+            return
+        t_over = _dedup_override(title, doc.title)
+        a_over = _dedup_override(authors, doc.authors)
+        y_over = year if (year is not None and year != doc.year) else None
+
+        meta = session.get(DocumentMeta, document_id)
+        if t_over is None and a_over is None and y_over is None:
+            if meta is not None:
+                session.delete(meta)
+            return
+        if meta is None:
+            meta = DocumentMeta(document_id=document_id)
+            session.add(meta)
+        meta.title_override = t_over
+        meta.authors_override = a_over
+        meta.year_override = y_over
+
+
+def clear_document_meta(document_id: str) -> None:
+    """Reset a document to its auto-extracted defaults by deleting its override row."""
+    with session_scope() as session:
+        meta = session.get(DocumentMeta, document_id)
+        if meta is not None:
+            session.delete(meta)
+
+
+def resolve_source_path(source_original: str, filename: str) -> Path | None:
+    """The on-disk source file, or None if it can't be located.
+
+    ``source_original`` may be stored resolved or not; fall back to ``DOCS_PATH / filename``
+    (mirrors the extract-* scripts' resolver). Returns None when the file has moved/been deleted.
+    """
+    p = Path(source_original)
+    if p.exists():
+        return p
+    from doc_assistant.config import DOCS_PATH
+
+    alt = Path(DOCS_PATH) / filename
+    return alt if alt.exists() else None
+
+
+def reveal_document_source(document_id: str) -> bool:
+    """Open the OS file manager with the document's source file selected (local desktop action).
+
+    Returns False if the document is unknown or its source file can't be located. The reveal runs
+    on whatever host the API runs on — always the user's machine (local-first). ADR-013.
+    """
+    with session_scope() as session:
+        doc = session.get(Document, document_id)
+        if doc is None:
+            return False
+        path = resolve_source_path(doc.source_original, doc.filename)
+    if path is None:
+        log.warning("reveal_source_not_found", document_id=document_id)
+        return False
+    _reveal_in_file_manager(path)
+    return True
+
+
+def _reveal_in_file_manager(path: Path) -> None:
+    """Reveal ``path`` in the OS file manager, file selected. List-form args, never a shell."""
+    if sys.platform == "win32":
+        # explorer selects the file inside its folder; it exits non-zero even on success.
+        subprocess.run(["explorer", f"/select,{path}"], check=False)  # nosec B603 B607
+    elif sys.platform == "darwin":
+        subprocess.run(["open", "-R", str(path)], check=False)  # nosec B603 B607
+    else:
+        subprocess.run(["xdg-open", str(path.parent)], check=False)  # nosec B603 B607
+
+
+@dataclass
+class DeleteResult:
+    """Outcome of a document delete (ADR-014)."""
+
+    filename: str
+    trashed_file: bool  # source file moved to the Recycle Bin (False = it was already gone)
+    chunks_removed: int  # chunks dropped from the live search index
+
+
+def delete_document(document_id: str, chroma_db: Any) -> DeleteResult | None:
+    """Safe-delete a document: source file → Recycle Bin, then drop its DB row + index chunks.
+
+    Returns None if the document is unknown. The source file is moved to the OS Recycle Bin FIRST
+    (recoverable); only on success (or when the file is already gone) does the removal proceed, so
+    a locked/undeletable file leaves the library entry intact rather than orphaning a still-indexed
+    file on disk. Removal then: deletes the ``Document`` row (FK-cascades citations / parts /
+    similarities), the ``DocumentMeta`` override (no FK — explicit), the doc's chunks from the live
+    Chroma store, its figure dir, and its cached ``.md``. ADR-014.
+    """
+    from send2trash import send2trash
+
+    from doc_assistant.ingest.cleanup import cleanup_orphan_figures
+
+    with session_scope() as session:
+        doc = session.get(Document, document_id)
+        if doc is None:
+            return None
+        filename = doc.filename
+        doc_hash_val = doc.doc_hash
+        source_original = doc.source_original
+        source_cache = doc.source_cache
+
+    # 1. Recycle the source file first (recoverable). A trash failure aborts the whole delete.
+    path = resolve_source_path(source_original, filename)
+    trashed = False
+    if path is not None:
+        try:
+            send2trash(str(path))
+            trashed = True
+        except Exception as e:
+            log.warning("delete_trash_failed", document_id=document_id, error=str(e))
+            raise RuntimeError(f"could not move {filename} to the Recycle Bin") from e
+
+    # 2. Drop the DB row (+ cascades) and the override sidecar (no FK).
+    with session_scope() as session:
+        meta = session.get(DocumentMeta, document_id)
+        if meta is not None:
+            session.delete(meta)
+        doc = session.get(Document, document_id)
+        if doc is not None:
+            session.delete(doc)
+
+    # 3. Remove the doc's chunks from the live search index (count for the caller).
+    chunks_removed = 0
+    try:
+        found = chroma_db.get(where={"doc_hash": doc_hash_val}, include=[])
+        ids = list(found.get("ids", []))
+        chunks_removed = len(ids)
+        if ids:
+            chroma_db.delete(ids=ids)
+    except Exception as e:
+        log.warning("delete_chunks_failed", document_id=document_id, error=str(e))
+
+    # 4. On-disk sidecars: figure dir (by hash) + the cached markdown.
+    cleanup_orphan_figures([doc_hash_val])
+    if source_cache:
+        cache_path = Path(source_cache)
+        if cache_path.exists():
+            try:
+                cache_path.unlink()
+            except OSError as e:
+                log.warning("delete_cache_failed", file=cache_path.name, error=str(e))
+
+    log.info(
+        "document_deleted",
+        document_id=document_id,
+        trashed_file=trashed,
+        chunks_removed=chunks_removed,
+    )
+    return DeleteResult(filename=filename, trashed_file=trashed, chunks_removed=chunks_removed)
 
 
 def library_summary() -> LibrarySummary:

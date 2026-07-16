@@ -155,7 +155,10 @@ write path (manual folder/tag editing, Phase-B+) is the ADR trigger and is parke
 
 ## Out of scope (deferred)
 
-- Manual folder/tag **editing** in the browser (first browse-time write path — needs an ADR).
+- ~~Manual metadata editing~~ **DONE** — the first browse-time write path shipped 2026-07-16 as
+  title/authors/year override editing + reveal-in-explorer (`ADR-013`, `DocumentMeta` sidecar). Manual
+  **folder/tag** editing remains deferred (same write path, layered on the same model).
 - **Projects** as top-level folders (the `ChatConcept.folder_id` scoping) — a later increment on the same model.
-- Title/author **metadata backfill** (tiles show filenames until then); in-app PDF source viewer; the
-  detail-**drawer** navigation variant (reuses `SourcePanel`); virtualization of very large collections.
+- Title/author **metadata backfill** — DONE (deterministic `enrich_metadata`, 2026-07-16); tiles show real
+  titles + an author line. In-app PDF source viewer; the detail-**drawer** navigation variant (reuses
+  `SourcePanel`); virtualization of very large collections; user-selectable library columns.

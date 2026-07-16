@@ -250,6 +250,76 @@ STOPWORDS: frozenset[str] = frozenset(
     }
 )
 
+# Scholarly-metadata artifacts: publisher / journal / preprint-server / repository names and
+# identifier labels that leak out of reference lists and page headers. They are *rare* in
+# general English, so contrastive weirdness scores them as "distinctive" even though they carry
+# no topical meaning (RG-001/R3 flagged this as the contrastive mode's known publisher-artifact
+# limitation). Filtered exactly like STOPWORDS — a candidate is dropped if ANY of its tokens is
+# here, so "7554 elife" (the eLife DOI registrant + journal) goes out with "elife".
+# Deliberately EXCLUDES words that double as domain concepts in a neuroscience/ML corpus
+# (`cell`, `neuron`, `nature`, `science`) — those must survive as real keywords.
+VENUE_STOPWORDS: frozenset[str] = frozenset(
+    {
+        # preprint servers / repositories / code hosts
+        "arxiv",
+        "biorxiv",
+        "medrxiv",
+        "chemrxiv",
+        "ssrn",
+        "osf",
+        "zenodo",
+        "figshare",
+        "dryad",
+        "github",
+        # publishers / imprints
+        "elsevier",
+        "springer",
+        "wiley",
+        "plos",
+        "frontiers",
+        "frontiersin",
+        "ieee",
+        "acm",
+        "sage",
+        "bmc",
+        "mdpi",
+        "hindawi",
+        # journal / venue abbreviations (as they appear casefolded in headers + refs)
+        "elife",
+        "jneurosci",
+        "neurosci",
+        "neuroimage",
+        "neurobiol",
+        "neurophysiol",
+        "physiol",
+        "biophys",
+        "fnana",
+        "pnas",
+        "jmlr",
+        "neurips",
+        "nips",
+        "iclr",
+        "icml",
+        "cvpr",
+        "eccv",
+        "iccv",
+        # identifier / bibliographic labels
+        "doi",
+        "pmid",
+        "pmc",
+        "pubmed",
+        "issn",
+        "isbn",
+        "orcid",
+        "http",
+        "https",
+        "www",
+        "preprint",
+        "et",
+        "al",
+    }
+)
+
 
 @dataclass(frozen=True)
 class ScoredKeyword:
@@ -272,21 +342,27 @@ def candidate_terms(
     ngram_max: int,
     min_chars: int,
     stopwords: frozenset[str] = STOPWORDS,
+    venue_stopwords: frozenset[str] = VENUE_STOPWORDS,
 ) -> list[str]:
     """Candidate uni/bi/tri-grams from a token stream (one entry per occurrence → TF).
 
     A candidate is rejected if any of its tokens is a stopword (so no ``model of the``
-    junk and no phrase padded by function words), if it is shorter than ``min_chars``
-    (letters + digits, spaces excluded), or if it contains no alphabetic character (pure
-    numbers / IDs are not keywords). Order/repetition is preserved so the caller can count
-    term frequency directly.
+    junk and no phrase padded by function words) or a ``venue_stopwords`` scholarly-metadata
+    artifact (publisher / journal / repository / ID token — so ``elife`` and ``7554 elife``
+    both go), if it is shorter than ``min_chars`` (letters + digits, spaces excluded), or if
+    it contains no alphabetic character (pure numbers / IDs are not keywords). Order/repetition
+    is preserved so the caller can count term frequency directly.
     """
     terms: list[str] = []
     n = len(tokens)
     for size in range(1, ngram_max + 1):
         for i in range(n - size + 1):
             gram = tokens[i : i + size]
-            if any(tok in stopwords for tok in gram):
+            if any(tok in stopwords or tok in venue_stopwords for tok in gram):
+                continue
+            # A repeated single token ("outflux outflux outflux") is an OCR/extraction
+            # artifact, never a keyphrase — weirdness would otherwise rank it highly (RG-001/R3).
+            if size > 1 and len(set(gram)) == 1:
                 continue
             term = " ".join(gram)
             if len(term.replace(" ", "")) < min_chars:

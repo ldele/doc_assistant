@@ -2,6 +2,7 @@
 
 from doc_assistant.metadata_extractor import (
     _arxiv_year_from_filename,
+    _clean_markdown,
     _extract_doi,
     _extract_title,
     _extract_year,
@@ -120,6 +121,32 @@ def test_authors_rejects_email_line():
     line = "PRANAVSR@CS.STANFORD.EDU AWNI@CS.STANFORD.EDU"
     ok, _ = _looks_like_author_line(line)
     assert not ok
+
+
+def test_authors_rejects_discourse_lead():
+    """A discourse/section sentence is never an author list (observed on ACM-style papers)."""
+    assert not _looks_like_author_line("However, ideas from these techniques are unexplored.")[0]
+    assert not _looks_like_author_line("Additional Key Words and Phrases: Medical Segmentation")[0]
+    assert not _looks_like_author_line("We present a hybrid model, and we evaluate it.")[0]
+
+
+# ============================================================
+# Cleaning + boilerplate skips (2026-07 enrichment wiring)
+# ============================================================
+
+
+def test_clean_markdown_strips_backslash_artifacts():
+    # markdown hard-break backslashes leaked into author names ("WIESEL\")
+    assert _clean_markdown("D. H. HUBEL\\ AND T. N. WIESEL\\") == "D. H. HUBEL AND T. N. WIESEL"
+
+
+def test_title_skips_publisher_copyright_line():
+    """A Springer-style licence line must not be mistaken for the title."""
+    md = (
+        "# The Author(s), under exclusive licence to Springer Nature\n\n"
+        "# The Past, Present, and Future State of the Field\n\nbody"
+    )
+    assert _extract_title(md) == "The Past, Present, and Future State of the Field"
 
 
 # ============================================================

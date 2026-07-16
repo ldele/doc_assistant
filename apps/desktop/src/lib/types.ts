@@ -145,8 +145,10 @@ export interface ProviderOption {
 export interface LibraryDocument {
   id: string
   filename: string
-  title: string | null
-  authors: string | null
+  title: string | null // effective: user override ?? auto-extracted (ADR-013)
+  authors: string | null // effective
+  year: number | null // effective
+  customized: boolean // a user metadata override is in force
   format: string
   health: string | null
   chunk_count: number | null

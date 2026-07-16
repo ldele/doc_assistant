@@ -8,6 +8,115 @@ Append only — never edit past entries.
 Format: What changed | Why | Rejected alternatives | What it opens
 
 ---
+## 2026-07-16 — Keyword de-noising: venue/publisher/ID denylist + repeated-token filter
+
+**What:** the library keyword chips (and the rail's Keywords nav) were dominated by scholarly-metadata
+artifacts — `elife` (25 docs), `biorxiv`, `neuroimage`, `jneurosci`, `neurobiol`, `fnana`, `frontiersin`,
+`zenodo`, `pmid`, `7554 elife` (the eLife DOI registrant). Two filters in `keywords.py::candidate_terms`
+(the single choke-point every mode feeds through): (1) a curated **`VENUE_STOPWORDS`** frozenset (preprint
+servers / repositories / publishers / journal abbreviations / ID labels) — a candidate is dropped if ANY
+of its tokens is a venue token, so `elife` and the bigram `7554 elife` both go. **Deliberately excludes
+words that double as domain concepts** (`cell`/`neuron`/`nature`/`science`) so real keywords survive.
+(2) a **repeated-token n-gram** reject (`outflux outflux outflux` — an OCR artifact weirdness scored highly,
+the exact case RG-001/R3 flagged). Regenerated the corpus vocabulary (`extract_keywords --mode contrastive
+--force --apply`), sweeping the now-orphaned venue rows.
+
+**Why:** user feedback — the chips were venue noise, not topics; "better metadata → better tags/keywords for
+navigation." This is the follow-up lever R3 explicitly parked ("STOPWORDS/metadata strip for publisher
+artifacts; collapse repeated-token grams").
+
+**Rejected:** filtering author surnames (`sporns`/`cajal`) — not deterministically separable from topics
+(`cajal` is both a person and a body of work), left as the manual-curation tail; denying `cell`/`neuron`/
+`nature` (real neuroscience concepts that happen to be journal names) — would strip genuine keywords;
+re-tuning the contrastive weirdness/C-value knobs (locked settings — a denylist is the surgical fix, no
+eval needed since it only removes provably-non-topical tokens).
+
+**Verified ($0/offline, deterministic):** dry-run reviewed before applying — venue tokens **0 remaining**,
+the 60-term vocabulary now reads `embeddings`/`connectome`/`deeplabcut`/`bm25`/`cebra`/`res2net`/
+`parcellation`/`tractography`/`markerless`/`keypoints`; ruff + `mypy --strict` clean; **pytest 53**
+(3 new `candidate_terms` cases — venue+ID drop, keeps venue-homonym domain words, repeated-token drop — plus
+the concept-skeleton suite that shares `candidate_terms`, unregressed). Applied to the live `data/library.db`
+(**268 links, 14 orphan rows swept** across two passes); reloaded — tiles show clean domain chips, the
+political-science paper honestly shows none (no domain keyword in a neuro/ML vocabulary).
+
+**Opens:** residual non-venue proper-noun/OCR tail (`sporns`, `cajal`, `huggingface`, `mathrm`, `neurosc`)
+— the **manual keyword/tag edit UI** (needs an ADR, first browse-time write path) is the fix. Concept
+skeleton unaffected (built from the 26 curated concepts, not raw keywords). Re-runnable any time.
+
+**Staged; nothing committed (cpc §13). Keyword rows regenerated in the live DB (reversible — re-extract).**
+
+## 2026-07-16 — Metadata enrichment: wire the (unwired) extractor onto Document (real titles on tiles)
+
+**What:** populated the empty `Document.title`/`authors`/`year`/`doi` columns (0/76 → title 76/76,
+authors 57/76, year 66/76, doi 25/76) so the library grid shows real titles instead of filenames.
+(1) **`metadata_enrich.py`** (new) — the runner: reads each doc's cached markdown (reuses
+`keywords.load_document_texts`), runs the existing `metadata_extractor.extract_metadata`, and writes the
+four columns. **Idempotent per column** — only fills a NULL unless `force` (so a later manual edit is never
+clobbered); `apply=False` is a $0 dry run. Enrichment-Layer discipline: writes only those columns, never the
+chunk store. (2) **`scripts/enrich_metadata.py`** (new) — thin CLI mirroring `compute_doc_vectors.py`
+(`--apply`/`--force`/`--doc`, dry-run report). (3) **`metadata_extractor.py`** — the extractor was **fully
+built but never called anywhere** (dead since Phase 4); wiring it revealed three false-positives on the real
+corpus, fixed: skip publisher copyright/licence headings (Springer's "The Author(s), under exclusive
+licence…" was hijacking a title), strip markdown hard-break backslashes (`WIESEL\`), and reject author
+candidates that open with a discourse/section lead (`However,` / `Additional Key Words and Phrases:` — never
+a name list; honest-empty beats a wrong author, so authors fell 61→57).
+
+**Why:** user feedback on the new grid — filenames are unreadable; "if we improve the metadata we can make
+better tags/keywords for navigation." Chose a **deterministic sidecar over editing source files** (never
+mutate the user's PDFs — enrichment-layer + provenance) and **auto-fill first, manual-edit later** (the
+manual-edit UI is the first browse-time write path → its own ADR, deferred).
+
+**Rejected:** rewriting/renaming source PDFs (destructive, breaks re-ingest + provenance); an LLM extraction
+pass (unnecessary — the deterministic heuristics already hit 100% titles on this corpus, $0/offline, and the
+cost-discipline rule says prove the deterministic path first); storing `authors` as JSON (the frontend
+`docLabel` splits a delimited string — kept the extractor's string form).
+
+**Verified ($0/offline, deterministic):** dry-run on the real 76-doc corpus reviewed **before** applying
+(quality gate); ruff/format clean; `mypy --strict` (2 files) clean; **pytest 27** (`test_metadata_extractor`
++ new `test_metadata_enrich`: apply-fills-NULL / dry-run-writes-nothing / idempotent-keeps-title /
+force-overwrites). Applied to the live `data/library.db` (**224 columns written**); reloaded the grid —
+tiles now read "A Primer on Motion Capture with Deep Learning…", "Res2Net: A New Multi-scale Backbone
+Architecture · Shang-Hua…" etc., filename preserved as the hover `title`.
+
+**Opens:** ~19 docs have no confident author (honest-blank) + a few noisy year picks — the **manual-edit UI**
+(needs an ADR) is the fix for stragglers. **Keyword de-noising** is the natural next step (chips still show
+venue/ID artifacts — `elife`/`biorxiv`/`zenodo`/`7554 elife` — from `keywords.py`, a separate change).
+DOI 25/76. Re-runnable any time (`--force` to refresh, only-NULL by default).
+
+**Staged; nothing committed (cpc §13). Metadata applied to the live DB (reversible — only-NULL fills).**
+
+## 2026-07-16 — Library grid: mode-aware width + fixed-footprint tiles (user feedback)
+
+**What:** two frontend fixes to the L4 grid from live-review feedback. (1) **Mode-aware main width**
+(`App.svelte`) — `<main>` was hard-capped at `max-width: 820px` (the chat reading measure, ~68ch) and
+centered, so in fullscreen the **library grid floated in a centered 820px column** with wide empty margins
+and stayed stuck at 4 columns. Added `main.wide` (`max-width: 1500px`), bound `class:wide={mode ===
+'library'}`; Chat keeps its 820px reading column. Measured at 1456px viewport: main 820→1122px, grid
+775→1077px, **4→5 columns**, right-side whitespace 217→0. (2) **Fixed-footprint tiles** (`LibraryGrid.svelte`,
+best-practice list from the user) — `.tile` gets `min-height: 128px`; `.name` clamps 3→**2 lines** with a
+reserved `min-height: 2.7em` so a long filename (`2021.04.30.442096v1.full.pdf`) no longer reflows its row
+(all tiles a uniform 140px); keyword chips cap at 3 + a **"+N" overflow chip** (`title` = the hidden ones)
+so tags never wrap unpredictably; grid `minmax(150px→200px, 1fr)` for a comfortable tile; `aria-label={
+docLabel(d)}` on tile+row buttons gives a clean accessible name instead of the whole-card text mash.
+
+**Why:** the user tested the pulled-in Library Grid (9f597df) fullscreen and flagged the "weird white space"
++ long titles reflowing the grid; supplied a card-grid best-practices list.
+
+**Rejected (from the list, not applicable here):** whole-card-as-`<a>` + CSS overlay (this is an in-app
+open action, not URL navigation — a `<button>` with a clean `aria-label` is the correct semantic);
+`flex-wrap: nowrap` clipping on the tag row (risks invisible tags — the 3+"+N" cap already bounds it);
+skeleton loading states (deferred — docs load once from the local API, no async card-populate jank to mask).
+
+**Verified ($0, frontend-only):** `svelte-check` **0/0** (126 files); live at 1456px — 5 uniform 140px tiles
+per row filling the pane, 0 right-whitespace, "+8" overflow chip rendered, long filename clamped to 2 lines
+(33px); Chat mode still `main` 820px / no `.wide`. Screenshot captured.
+
+**Opens:** the 1500px cap centers the grid on ultrawide (>~1760px) — a readable-width choice, revisit to
+`none` if full-bleed is wanted. Sidebar width is a separate user-resizable pref (default 260, persisted).
+Next: **metadata enrichment** (real titles on tiles + de-noised keywords — the higher-leverage follow-up).
+
+**Staged; nothing committed (cpc §13).**
+
 ## 2026-07-15 — Selective ingestion S2: Sources panel (scan · exclude · ingest-selected) in Settings
 
 **What:** the S2 frontend over the S1 endpoints. (1) **`types.ts`** `SourceFile` (mirrors

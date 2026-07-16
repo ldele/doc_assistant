@@ -44,6 +44,35 @@ def test_candidate_terms_drops_pure_numeric_and_too_short() -> None:
     assert "retrieval" in terms
 
 
+def test_candidate_terms_drops_venue_and_id_artifacts() -> None:
+    # publisher / journal / repo / ID tokens are noise, and n-grams containing them go too
+    tokens = ["7554", "elife", "connectome", "biorxiv", "pmid", "deeplabcut"]
+    terms = set(candidate_terms(tokens, ngram_max=2, min_chars=3))
+    assert "elife" not in terms
+    assert "biorxiv" not in terms
+    assert "7554 elife" not in terms  # the eLife DOI-registrant bigram
+    assert "elife connectome" not in terms  # any n-gram touching a venue token
+    # genuine domain terms survive
+    assert "connectome" in terms
+    assert "deeplabcut" in terms
+
+
+def test_candidate_terms_keeps_domain_words_that_double_as_venues() -> None:
+    # 'cell' / 'neuron' / 'nature' are journals but also real concepts — must NOT be filtered
+    tokens = ["cell", "neuron", "nature", "membrane"]
+    terms = set(candidate_terms(tokens, ngram_max=1, min_chars=3))
+    assert {"cell", "neuron", "nature", "membrane"} <= terms
+
+
+def test_candidate_terms_drops_repeated_token_ngrams() -> None:
+    # "outflux outflux [outflux]" is an OCR artifact, not a keyphrase
+    tokens = ["outflux", "outflux", "outflux", "retrieval"]
+    terms = set(candidate_terms(tokens, ngram_max=3, min_chars=3))
+    assert "outflux outflux" not in terms
+    assert "outflux outflux outflux" not in terms
+    assert "outflux" in terms  # the single token is still a legitimate candidate
+
+
 def test_tf_idf_ranks_distinctive_above_ubiquitous() -> None:
     # "retrieval" is in every doc (ubiquitous → low idf); "colbert" only in d1 (distinctive).
     doc_terms = {

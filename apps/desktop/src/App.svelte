@@ -528,7 +528,7 @@
   ></div>
 
   <div class="content">
-    <main>
+    <main class:wide={mode === 'library'}>
       <header>
         <button class="hamburger" onclick={() => (sidebarOpen = true)} aria-label="Open conversations">
           <Icon name="menu" />
@@ -808,6 +808,12 @@
     display: flex;
     flex-direction: column;
     padding: 0 1rem;
+  }
+  /* The 820px cap is the chat reading measure (~68ch). The library is an inventory
+     grid, not prose — let it use the width so the grid reflows into more columns
+     instead of floating in a centered column with empty margins in fullscreen. */
+  main.wide {
+    max-width: 1500px;
   }
   header {
     display: flex;

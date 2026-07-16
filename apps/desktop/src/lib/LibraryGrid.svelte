@@ -28,7 +28,13 @@
 {#if view === 'grid'}
   <div class="grid">
     {#each documents as d (d.id)}
-      <button class="tile" onclick={() => onOpenDocument(d.id)} type="button" title={d.filename}>
+      <button
+        class="tile"
+        onclick={() => onOpenDocument(d.id)}
+        type="button"
+        title={d.filename}
+        aria-label={docLabel(d)}
+      >
         <span class="tilehead">
           <span class="docmark"><Icon name="file-text" size={16} /></span>
           <span class="fmt">{d.format}</span>
@@ -41,9 +47,15 @@
         </span>
         {#if d.keywords.length > 0}
           <!-- Unkeyed: a doc's raw keyword array may repeat a string, and this static sublist
-               never reorders — keying by value would crash on a duplicate. -->
+               never reorders — keying by value would crash on a duplicate. Cap at 3 + a
+               "+N" overflow chip so tags never wrap unpredictably (fixed card footprint). -->
           <span class="kws">
             {#each d.keywords.slice(0, 3) as k}<span class="kw">{k}</span>{/each}
+            {#if d.keywords.length > 3}
+              <span class="kw more" title={d.keywords.slice(3).join(', ')}
+                >+{d.keywords.length - 3}</span
+              >
+            {/if}
           </span>
         {/if}
       </button>
@@ -52,7 +64,13 @@
 {:else}
   <div class="rows">
     {#each documents as d (d.id)}
-      <button class="row" onclick={() => onOpenDocument(d.id)} type="button" title={d.filename}>
+      <button
+        class="row"
+        onclick={() => onOpenDocument(d.id)}
+        type="button"
+        title={d.filename}
+        aria-label={docLabel(d)}
+      >
         <span class="name">{docLabel(d)}</span>
         <span class="rowmeta">
           <span>{d.format}</span>
@@ -68,7 +86,7 @@
 <style>
   .grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
     gap: var(--space-3);
     padding: var(--space-2) 0;
   }
@@ -80,6 +98,9 @@
     flex-direction: column;
     gap: 0.4rem;
     min-width: 0;
+    /* Fixed footprint: a long filename clamps (below) rather than reflowing the row,
+       and the floor keeps keyword-less tiles level with their neighbours. */
+    min-height: 128px;
     border: 1px solid var(--border);
     border-radius: 10px;
     background: var(--surface);
@@ -117,10 +138,12 @@
     line-height: 1.35;
     overflow-wrap: anywhere;
     display: -webkit-box;
-    -webkit-line-clamp: 3;
-    line-clamp: 3;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
     -webkit-box-orient: vertical;
     overflow: hidden;
+    /* Reserve two lines so single- and double-line titles align the metadata below. */
+    min-height: 2.7em;
   }
   .meta {
     font-size: 0.68rem;
@@ -145,6 +168,12 @@
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+  }
+  /* Overflow count (+N) — muted, never truncates, sits at the end of the tag row. */
+  .kw.more {
+    color: var(--fg-2);
+    background: var(--surface-2);
+    flex: none;
   }
   /* List view — the stacked title+meta row idiom the old rail used. */
   .rows {

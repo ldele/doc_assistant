@@ -13,7 +13,6 @@
     collectionLabel,
     dateGroups,
     folderGroups,
-    keywordGroups,
     sameCollection,
     typeGroups,
   } from './library'
@@ -141,11 +140,11 @@
   const otherConvos = $derived(sortedConvos.filter((c) => !c.pinned))
   // Library nav-tree groups (L4 Decision 3), computed client-side from the payload. Types/Added
   // render only with ≥2 entries (Decision 3a — a one-option filter is noise); Collections shows a
-  // "why" empty-state until folders exist (Phase B populates them); keywords are capped top-N.
+  // "why" empty-state until folders exist (Phase B populates them). Keywords are no longer a nav
+  // group — they moved to the main-pane facet bar as a multi-select filter (pure-facet model).
   const types = $derived(typeGroups(documents))
   const dates = $derived(dateGroups(documents, new Date()))
   const folders = $derived(folderGroups(documents))
-  const keywords = $derived(keywordGroups(documents))
 
   // The per-row ⋯ menu: a single floating menu, positioned at the clicked button (fixed, so the
   // sidebar's overflow can't clip it). Closes on outside-click, Esc, or a list scroll.
@@ -473,23 +472,6 @@
           {/each}
         {/if}
 
-        {#if keywords.length > 0}
-          <p class="section-header">Keywords</p>
-          <div class="kwwrap">
-            {#each keywords as g (g.value)}
-              <button
-                class="kwchip"
-                class:active={sameCollection(libraryCollection, { kind: 'keyword', value: g.value })}
-                onclick={() => onSelectCollection({ kind: 'keyword', value: g.value })}
-                type="button"
-                title="{g.count} document{g.count === 1 ? '' : 's'}"
-              >
-                <Icon name="tag" size={11} />
-                <span class="kwtext">{g.value}</span>
-              </button>
-            {/each}
-          </div>
-        {/if}
       {/if}
     </nav>
   {/if}
@@ -850,41 +832,6 @@
     line-height: 1.4;
     padding: 0 0.55rem;
     margin: 0 0 0.2rem;
-  }
-  .kwwrap {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.25rem;
-    padding: 0 0.4rem 0.4rem 0.1rem;
-  }
-  .kwchip {
-    font: inherit;
-    font-size: 0.7rem;
-    cursor: pointer;
-    color: var(--lavender);
-    background: color-mix(in srgb, var(--lavender) 10%, transparent);
-    border: 1px solid transparent;
-    border-radius: 999px;
-    padding: 0.12rem 0.5rem;
-    display: inline-flex;
-    align-items: center;
-    gap: 0.25rem;
-    max-width: 100%;
-    min-width: 0;
-  }
-  .kwchip:hover {
-    border-color: var(--lavender);
-  }
-  .kwchip.active {
-    background: var(--lavender);
-    color: var(--bg);
-    font-weight: 600;
-  }
-  .kwtext {
-    min-width: 0;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
   }
   .title {
     font-size: 0.85rem;

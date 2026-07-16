@@ -8,6 +8,67 @@ Append only — never edit past entries.
 Format: What changed | Why | Rejected alternatives | What it opens
 
 ---
+## 2026-07-16 — UI: keyword filtering as a two-pane overlay (folds the inline-bar cut below)
+
+**What:** grilled the just-built inline facet bar (entry below) — it doesn't scale past a few dozen
+keywords — and redesigned the presentation into an on-demand **two-pane overlay**
+(`LibraryKeywordFilter.svelte`, reusing the `LibraryMetaEditor` modal shell): left = a searchable keyword
+list (Zotero mechanics — AND, grey-out unavailable, most-used-on-top); right = a live preview of the
+matching documents (`title · author · year` + "N documents"). **Live commit, no Apply.** The inline
+`LibraryFacetBar` is replaced by a slim `LibraryFilterStrip.svelte` — a "Filter by keyword" trigger + the
+*selected* keywords as removable chips + a result count + Clear. `App.svelte` gains `keywordFilterOpen`
+state; the overlay + strip share `facetList` / `visibleDocs` / the existing `toggle`/`clear` handlers.
+**The pure `facetFilter`/`keywordFacets` logic is unchanged** — a presentation swap. Design lock + grill
+ledger: `docs/specs/feature-keyword-filter-overlay.md`.
+**Why:** user feedback in a `grill-me` session — an always-on chip bar is fine at 60 keywords, not at
+600; an overlay (searchable, with a doc preview) is the standard escape hatch (command palette, Zotero's
+tag selector, GitHub's label filter). 9 branches resolved, 3 parked.
+**Verified ($0/offline, preview harness, real 76-doc corpus):** `svelte-check` **0/0** (130 files); strip
+trigger → overlay opens (60 keyword rows sorted by count + "76 documents" preview); search "conn" → list
+filters to `connectome`/`connectomics`/`connectomes`; toggle `embeddings` → preview "22 documents" + 26
+rows greyed + grid behind 76→22 + strip chip + "Keywords · 1" + "22 docs"; **Esc closes and the selection
+persists**; Clear → 76; dark theme adapts via CSS vars (scrim/surface/border/text); mobile 375px → panes
+**stack** (single column), no horizontal overflow; **0 console errors** (verified on a fresh tab — the
+mid-session HMR "Failed to reload LibraryFacetBar" errors were stale buffer ghosts from the delete).
+**Rejected:** Zotero's *container* (a permanent docked tag panel would crowd the rail's Collections); a
+fully overlay-only strip-less view (hidden filter state); draft-selection + Apply (the live preview makes
+it redundant); user-pinned favorites + a general "Filters" hub + Cmd-K (all parked — see the spec).
+**Opens:** user-pinned favorites ride tag-families (promote-to-`Concept`); the general Filters-hub reopens
+when extended-metadata lands article-type/year/journal as filters; no JS unit tests (no vitest in the repo).
+
+## 2026-07-16 — UI: faceted keyword filtering in the Library (Phase 8, frontend-only, staged)
+
+**What:** the Library grid gains a **multi-select keyword facet bar** (new `LibraryFacetBar.svelte`).
+Clicking a keyword chip toggles it into an **AND** filter; a chip greys out + disables when adding it
+would empty the grid, and each available chip shows its live co-occurrence count. Retired the
+single-select `{kind:'keyword'}` `LibraryCollection` (user pick — "pure facet"): keywords are no
+longer a nav collection but an orthogonal facet on the collection → search → **facet (AND)** → sort
+pipeline. Pure helpers `facetFilter` + `keywordFacets` (deterministic, ties break alphabetically) +
+`KeywordFacet` in `lib/library.ts`; removed the now-dead `keywordGroups` and the Sidebar "Keywords"
+nav group (+ its dead CSS). `LibraryGrid` `activeKeyword: string|null` → `activeKeywords: string[]`
+(selected facets surface first + highlight on every tile). App: non-persistent `libraryKeywords` +
+`toggle/clearKeywordFacets`; the filtered empty-state offers "Clear keyword filters". **Backend
+untouched** — `LibraryDocument.keywords` already ships client-side; thin-shell preserved.
+**Why:** user feedback — "click a keyword to filter; multi-select greys out the unavailable ones."
+The lavender chips were display-only; this makes them a working facet. Live data also proves the
+next backlog row's premise: `llms`/`llm` and `connectome`/`connectomics` show as separate chips
+(tag families).
+**Verified ($0/offline, preview harness, real 76-doc corpus):** `svelte-check` **0/0** (129 files);
+live — 60 keywords (24 shown + "Show all (60)"), select `embeddings` → **76→22 tiles** + `pretrained`
+19→14 / `llms` 13→7 recount + **26 chips greyed** (disabled, opacity 0.5, `cursor:not-allowed`,
+`aria-pressed=false`); `llms`+`pretrained` → **5-tile AND intersection** with both surfaced +
+highlighted on the tile; **Clear** restores 76; dark theme adapts via CSS vars (selected = ink on the
+lightened `--accent`); mobile 375px no horizontal overflow; **0 console errors**.
+**Rejected:** OR semantics (nothing is ever "unavailable" under OR → grey-out meaningless); an
+orthogonal facet keeping the keyword-collection (two redundant keyword mechanisms); a backend
+facet-count endpoint (76 docs + keywords already client-side → pure frontend); making tile chips
+click-to-toggle (a chip lives inside the tile's body `<button>` — nested buttons are invalid HTML;
+the facet bar is the v1 toggle home, tile-chip toggling deferred to a tile restructure).
+**Opens:** `Tag` (user labels) not yet faceted (no producer/data — the natural follow-on); tag
+families (`llms`/`llm` normalization) is the next backlog row (reuse `Concept`/`ConceptAlias`, needs
+an ADR); tile chips as toggles (needs the nested-button restructure); no JS unit tests for the pure
+helpers (no vitest in the repo — verified via svelte-check + the live harness).
+
 ## 2026-07-16 — cpc re-vendored 1.2.1 → 1.2.2; KI-16 RESOLVED
 
 **What:** third cpc step today — the KI-16 fix landed upstream (cpc `bda91a5`, released as

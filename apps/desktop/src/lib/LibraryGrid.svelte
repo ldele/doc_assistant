@@ -11,7 +11,7 @@
   let {
     documents,
     view,
-    activeKeyword = null,
+    activeKeywords = [],
     onOpenDocument,
     onEditMetadata,
     onReveal,
@@ -19,7 +19,7 @@
   }: {
     documents: LibraryDocument[]
     view: 'grid' | 'list'
-    activeKeyword?: string | null
+    activeKeywords?: string[]
     onOpenDocument: (id: string) => void
     onEditMetadata: (id: string) => void
     onReveal: (id: string) => void
@@ -42,11 +42,13 @@
     return a && y ? `${a} · ${y}` : a || y
   }
 
-  // When a keyword filter is active, surface it first in every tile so the reason a doc is here
-  // is always visible (and highlighted), even if it would otherwise fall past the "+N" cap.
+  // When keyword facets are active, surface the selected ones first in every tile so the reason a
+  // doc is here is always visible (and highlighted), even if they'd otherwise fall past the "+N" cap.
   function orderedKeywords(d: LibraryDocument): string[] {
-    if (!activeKeyword || !d.keywords.includes(activeKeyword)) return d.keywords
-    return [activeKeyword, ...d.keywords.filter((k) => k !== activeKeyword)]
+    if (activeKeywords.length === 0) return d.keywords
+    const active = d.keywords.filter((k) => activeKeywords.includes(k))
+    if (active.length === 0) return d.keywords
+    return [...active, ...d.keywords.filter((k) => !activeKeywords.includes(k))]
   }
 
   // A single floating ⋯ menu (position:fixed, so the scrolling main pane can't clip it),
@@ -125,7 +127,7 @@
                with no keywords. Unkeyed each — a doc's raw array may repeat a string. -->
           <span class="kws">
             {#each orderedKeywords(d).slice(0, CHIP_CAP) as k}
-              <span class="kw" class:active={k === activeKeyword}>{k}</span>
+              <span class="kw" class:active={activeKeywords.includes(k)}>{k}</span>
             {/each}
             {#if d.keywords.length > CHIP_CAP}
               <span class="kw more" title={orderedKeywords(d).slice(CHIP_CAP).join(', ')}

@@ -29,6 +29,8 @@
   import Sidebar from './lib/Sidebar.svelte'
   import LibraryBrowser from './lib/LibraryBrowser.svelte'
   import LibraryGrid from './lib/LibraryGrid.svelte'
+  import LibraryFilterStrip from './lib/LibraryFilterStrip.svelte'
+  import LibraryKeywordFilter from './lib/LibraryKeywordFilter.svelte'
   import LibraryMetaEditor from './lib/LibraryMetaEditor.svelte'
   import LibraryDeleteConfirm from './lib/LibraryDeleteConfirm.svelte'
   import CompareCard from './lib/CompareCard.svelte'
@@ -39,7 +41,9 @@
     collectionLabel,
     docLabel,
     docsFor,
+    facetFilter,
     filterDocs,
+    keywordFacets,
     sortDocs,
   } from './lib/library'
   import appMark from './assets/brand/app-mark.png'
@@ -104,6 +108,11 @@
   let libraryCollection = $state<LibraryCollection>({ kind: 'all' })
   let libraryDocId = $state<string | null>(null)
   let libraryQuery = $state('')
+  // Selected keyword facets (AND). Orthogonal to the collection — session-scoped, non-persistent
+  // (a filter, not a preference), resets on reload like the search query. `keywordFilterOpen` toggles
+  // the two-pane picker overlay; the inline strip shows only the selected keywords + the trigger.
+  let libraryKeywords = $state<string[]>([])
+  let keywordFilterOpen = $state(false)
   let documentsLoaded = false
 
   // Grid ⇄ list toggle — a client-only view preference, persisted like theme/panel widths.
@@ -154,14 +163,15 @@
     }
   }
 
-  // The active collection's documents → search filter (Decision 5a) → sort. When a keyword is the
-  // active collection, `activeKeyword` drives the tile highlight + first-position ordering.
+  // Pipeline: active collection → search filter (Decision 5a) → keyword facets (AND) → sort.
+  // Facets are orthogonal to the collection: switching collection keeps them, and the facet chips
+  // grey out relative to the current searched pool. `facetList` drives the facet bar; the selected
+  // keywords also drive the tile highlight + first-position ordering.
   const collectionDocs = $derived(docsFor(documents, libraryCollection, new Date()))
+  const searchedDocs = $derived(filterDocs(collectionDocs, libraryQuery))
+  const facetList = $derived(keywordFacets(searchedDocs, libraryKeywords))
   const visibleDocs = $derived(
-    sortDocs(filterDocs(collectionDocs, libraryQuery), librarySort),
-  )
-  const activeKeyword = $derived(
-    libraryCollection.kind === 'keyword' ? libraryCollection.value : null,
+    sortDocs(facetFilter(searchedDocs, libraryKeywords), librarySort),
   )
   // Breadcrumb label for the open document, from the cached list (the chunk view fetches its
   // own detail; a stale/missing entry just hides the crumb).
@@ -599,6 +609,16 @@
     libraryCollection = { kind: 'all' }
     libraryDocId = null
   }
+
+  // Keyword facets: toggle one on/off (AND semantics), or clear the whole selection.
+  function toggleKeywordFacet(value: string): void {
+    libraryKeywords = libraryKeywords.includes(value)
+      ? libraryKeywords.filter((k) => k !== value)
+      : [...libraryKeywords, value]
+  }
+  function clearKeywordFacets(): void {
+    libraryKeywords = []
+  }
 </script>
 
 <div class="app" style="--sidebar-width: {sidebarWidth}px">
@@ -759,32 +779,50 @@
                   <strong>No documents indexed yet</strong>
                   <p>Point doc_assistant at a folder of your documents to fill the library.</p>
                 </div>
-              {:else if visibleDocs.length === 0}
-                <div class="libempty">
-                  <span class="state-mark"><Icon name="search" size={26} /></span>
-                  {#if libraryQuery.trim() !== ''}
-                    <strong>No documents match “{libraryQuery.trim()}”</strong>
-                    <p>Nothing in {collectionLabel(libraryCollection)} matches.</p>
-                    {#if libraryCollection.kind !== 'all'}
-                      <button class="widen" onclick={searchAll} type="button">
-                        Search all {documents.length} documents
-                      </button>
-                    {/if}
-                  {:else}
-                    <strong>Nothing in {collectionLabel(libraryCollection)}</strong>
-                    <p>This collection is empty right now.</p>
-                  {/if}
-                </div>
               {:else}
-                <LibraryGrid
-                  documents={visibleDocs}
-                  view={libraryView}
-                  {activeKeyword}
-                  onOpenDocument={openDocument}
-                  onEditMetadata={(id) => (editingDocId = id)}
-                  onReveal={revealDoc}
-                  onDelete={(id) => (deletingDocId = id)}
+                <LibraryFilterStrip
+                  selected={libraryKeywords}
+                  resultCount={visibleDocs.length}
+                  hasKeywords={facetList.length > 0}
+                  onOpen={() => (keywordFilterOpen = true)}
+                  onRemove={toggleKeywordFacet}
+                  onClear={clearKeywordFacets}
                 />
+                {#if visibleDocs.length === 0}
+                  <div class="libempty">
+                    <span class="state-mark"><Icon name="search" size={26} /></span>
+                    {#if libraryQuery.trim() !== '' || libraryKeywords.length > 0}
+                      <strong>No documents match your filters</strong>
+                      <p>
+                        Nothing in {collectionLabel(libraryCollection)} matches{#if libraryQuery.trim() !== ''}
+                          “{libraryQuery.trim()}”{/if}.
+                      </p>
+                      {#if libraryKeywords.length > 0}
+                        <button class="widen" onclick={clearKeywordFacets} type="button">
+                          Clear keyword filters
+                        </button>
+                      {/if}
+                      {#if libraryCollection.kind !== 'all'}
+                        <button class="widen" onclick={searchAll} type="button">
+                          Search all {documents.length} documents
+                        </button>
+                      {/if}
+                    {:else}
+                      <strong>Nothing in {collectionLabel(libraryCollection)}</strong>
+                      <p>This collection is empty right now.</p>
+                    {/if}
+                  </div>
+                {:else}
+                  <LibraryGrid
+                    documents={visibleDocs}
+                    view={libraryView}
+                    activeKeywords={libraryKeywords}
+                    onOpenDocument={openDocument}
+                    onEditMetadata={(id) => (editingDocId = id)}
+                    onReveal={revealDoc}
+                    onDelete={(id) => (deletingDocId = id)}
+                  />
+                {/if}
               {/if}
             </section>
           {/if}
@@ -928,6 +966,17 @@
     busy={deleteBusy}
     onConfirm={confirmDelete}
     onClose={() => (deletingDocId = null)}
+  />
+{/if}
+
+{#if keywordFilterOpen}
+  <LibraryKeywordFilter
+    facets={facetList}
+    previewDocs={visibleDocs}
+    selectedCount={libraryKeywords.length}
+    onToggle={toggleKeywordFacet}
+    onClear={clearKeywordFacets}
+    onClose={() => (keywordFilterOpen = false)}
   />
 {/if}
 

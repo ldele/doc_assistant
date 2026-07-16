@@ -8,12 +8,13 @@ export type DateBucket = 'today' | 'week' | 'month' | 'earlier'
 
 // The active collection shown in the main-pane grid. 'folder' is reachable in Phase A only
 // if the payload already carries folder names (the current corpus has none — empty-stated).
+// Keywords are NOT a collection kind — they are a multi-select facet (see keywordFacets below),
+// orthogonal to the single-select structural nav. Type/Date/Folder stay mutually exclusive.
 export type LibraryCollection =
   | { kind: 'all' }
   | { kind: 'type'; value: string }
   | { kind: 'date'; value: DateBucket }
   | { kind: 'folder'; value: string }
-  | { kind: 'keyword'; value: string }
 
 export const DATE_BUCKET_LABELS: Record<DateBucket, string> = {
   today: 'Today',
@@ -52,8 +53,6 @@ export function docsFor(
       return documents.filter((d) => dateBucket(d.added_at, now) === c.value)
     case 'folder':
       return documents.filter((d) => d.folders.includes(c.value))
-    case 'keyword':
-      return documents.filter((d) => d.keywords.includes(c.value))
   }
 }
 
@@ -66,7 +65,6 @@ export function collectionLabel(c: LibraryCollection): string {
     case 'date':
       return DATE_BUCKET_LABELS[c.value]
     case 'folder':
-    case 'keyword':
       return c.value
   }
 }
@@ -171,13 +169,52 @@ export function folderGroups(documents: LibraryDocument[]): Group[] {
     .sort((a, b) => a.value.localeCompare(b.value))
 }
 
-// Top keywords by doc count (capped — the auto-extracted vocabulary is long-tailed).
-// A keyword with 0 docs can't appear by construction (Decision 8).
-export function keywordGroups(documents: LibraryDocument[], cap = 12): Group[] {
-  const m = new Map<string, number>()
-  for (const d of documents) for (const k of d.keywords) m.set(k, (m.get(k) ?? 0) + 1)
-  return [...m.entries()]
-    .map(([value, count]) => ({ value, count }))
-    .sort((a, b) => b.count - a.count || a.value.localeCompare(b.value))
-    .slice(0, cap)
+// ---------------------------------------------------------------------------
+// Keyword facets — multi-select filtering over the keyword chips (AND semantics).
+// ---------------------------------------------------------------------------
+
+export interface KeywordFacet {
+  value: string
+  count: number // docs in the current (faceted) result set that carry this keyword
+  selected: boolean
+  available: boolean // adding this keyword still leaves a result (always true when selected)
+}
+
+// AND semantics: a document must carry *every* selected keyword. Empty selection = no filter.
+// This is the narrowing that makes "grey out unavailable" meaningful — under OR, adding a
+// keyword only ever broadens, so nothing is ever unavailable.
+export function facetFilter(documents: LibraryDocument[], selected: string[]): LibraryDocument[] {
+  if (selected.length === 0) return documents
+  return documents.filter((d) => selected.every((k) => d.keywords.includes(k)))
+}
+
+// Facet chips for the current pool. `base` is the collection+search result *before* keyword
+// facets; `selected` the active keywords. Each chip's `count` is how many of the current
+// (faceted) results also carry it — i.e. what the grid would narrow to if you added it — so a
+// chip greys out (`available: false`) exactly when adding it would empty the grid. Selected chips
+// always appear (pinned first) and stay `available` so they can be removed even when the
+// selection is over-constrained. Pure + deterministic (ties break alphabetically), so it is
+// unit-testable and stable across renders.
+export function keywordFacets(base: LibraryDocument[], selected: string[]): KeywordFacet[] {
+  const sel = new Set(selected)
+  const faceted = facetFilter(base, selected)
+  const counts = new Map<string, number>()
+  for (const d of faceted)
+    for (const k of new Set(d.keywords)) counts.set(k, (counts.get(k) ?? 0) + 1)
+  // Universe = every keyword in the pre-facet pool, plus the selected ones (which may no longer
+  // appear in `base` after a collection switch but must still render as removable chips).
+  const universe = new Set<string>(selected)
+  for (const d of base) for (const k of d.keywords) universe.add(k)
+
+  const facets: KeywordFacet[] = [...universe].map((value) => {
+    const isSelected = sel.has(value)
+    const count = counts.get(value) ?? 0
+    return { value, count, selected: isSelected, available: isSelected || count > 0 }
+  })
+  facets.sort((a, b) => {
+    if (a.selected !== b.selected) return a.selected ? -1 : 1
+    if (a.available !== b.available) return a.available ? -1 : 1
+    return b.count - a.count || a.value.localeCompare(b.value)
+  })
+  return facets
 }

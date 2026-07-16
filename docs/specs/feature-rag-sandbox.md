@@ -1,8 +1,9 @@
 # Spec — RAG sandbox: session-scoped, non-persistent query-time overrides
 
-**Status:** 📋 **design-locked (2026-07-09, ADR-010 accepted); NOT built.** v1 scope = the basic
-override surface (option 3). The A/B-compare view (ADR-010 option 4) is the recorded north-star, a
-later phase — out of scope here.
+**Status:** ✅ **SHIPPED 2026-07-11 (U1, commit `09afd0c`; SPRINT-010 archived)** — was design-locked
+2026-07-09 (ADR-010 accepted); retained as the design record. v1 scope = the basic
+override surface (option 3). The A/B-compare view (ADR-010 option 4) was the recorded north-star —
+since shipped as its retrieval-only v1 (U6, `c965418`, `feature-ab-compare-sandbox.md`).
 **Owner of execution:** Claude Code (code + tests + the Svelte surface), when Phase 8 is active. Create
 a cpc SPRINT contract from this spec at build time (`docs/sprints/SPRINT-000-template.md` shape).
 **Pattern reference:** thin-shell boundary (`apps/` render, logic in `src/doc_assistant/` — root

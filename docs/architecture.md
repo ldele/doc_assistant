@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-07-03 · class: living -->
+<!-- status: active · updated: 2026-07-16 (library write paths ADR-013/014; SourceFile registry S1; concept_graph deletion reflected) · class: living -->
 
 # Architecture
 
@@ -45,7 +45,7 @@ flowchart TD
 
     subgraph ST["Stores"]
         CHROMA[("Chroma<br/>vectors")]
-        SQL[("SQLite<br/>Document · Citation · DocSimilarity<br/>AnswerRecord · AnswerClaim · AnswerReview")]
+        SQL[("SQLite<br/>Document · DocumentMeta · SourceFile · Citation · DocSimilarity<br/>AnswerRecord · AnswerClaim · AnswerReview<br/>(+ Concept* · chunk_epistemics · Figure · Keyword sidecars)")]
     end
 
     subgraph QRY["Query → Answer"]
@@ -77,11 +77,11 @@ flowchart TD
 |---|---|---|
 | `doc_assistant.config` | Paths, env vars, feature flags | Read-only after init; no side effects |
 | `doc_assistant.extractors` | Convert any supported format → markdown | Returns `str`; raises `ExtractionError` on failure |
-| `doc_assistant.ingest` (package — pipeline: `cache` · `chunking` · `store` · `cleanup` + `__init__` orchestration / `__main__` CLI; document-feature extraction: `citations` · `tables` · `tables_marker` · `figures` · `regions`) | Extract, chunk, embed, store; orphan cleanup + partial-write self-heal; table/figure/citation extraction (sidecar) | Idempotent per content hash; per-document failures isolated |
+| `doc_assistant.ingest` (package — pipeline: `cache` · `chunking` · `store` · `cleanup` · `registry` (S1 `SourceFile` source registry + selection-scoped ingest) + `__init__` orchestration / `__main__` CLI; document-feature extraction: `citations` · `tables` · `tables_marker` · `figures` · `regions`) | Extract, chunk, embed, store; orphan cleanup + partial-write self-heal; source scan/select (`--files`/`--dry-run`, exclude flags); table/figure/citation extraction (sidecar) | Idempotent per content hash; per-document failures isolated; selection never bypasses the locked six-stage ingest |
 | `doc_assistant.pipeline` | RAG runtime: retrieve, rerank, generate | Returns `Answer` with citations; raises `PipelineError` |
 | `doc_assistant.chat_controller` | UI-agnostic turn orchestration | Yields `TurnEvent`s → `TurnResult`; no UI-framework import (PR-M0) |
 | `doc_assistant.health` | Document health scoring and classification | Pure function; no I/O; returns `HealthResult` |
-| `doc_assistant.library` | Document store queries (browse, filter, tag) | Read-only queries against SQLite; UI-framework-agnostic |
+| `doc_assistant.library` | Document store queries (browse, filter, tag) + the Library's write paths: `DocumentMeta` overrides (ADR-013) and `delete_document` (ADR-014 — trash-first source-file recycle, then row/meta/chunks/figures/cache) | Queries + two explicit, ADR-recorded write paths; UI-framework-agnostic |
 | `doc_assistant.prompts` | Prompt templates | Pure string interpolation; no I/O |
 | `doc_assistant.tracking` | Token usage tracking and cost estimation | Append-only; never raises |
 | `apps/cli.py` | Terminal renderer | Renders `TurnResult`; no business logic |
@@ -89,7 +89,7 @@ flowchart TD
 | `apps/desktop/` | Tauri desktop frontend (PR-M3) | Svelte 5 + Vite UI in a Tauri 2 shell; renders the API's `TurnResult`; no business logic |
 | `scripts/` | One-off maintenance scripts | Not part of the importable package |
 
-This table is non-exhaustive — it covers the core ingest/runtime modules. The research-integrity and enrichment layer (`query_router`, `synthesis`, `provenance`, `reviewer`, `metadata_extractor`, `doc_vectors`, `embeddings`, `bibtex`, `commands`, `llm`, plus the cross-document concept layer `concept_graph` and `epistemics`) is shown in the Mermaid diagram above. The document-feature extractors (`citations`, `tables`, `tables_marker`, `figures`, `regions`) now live inside the `doc_assistant.ingest` package (imported as `doc_assistant.ingest.<name>`). The concept-graph **redesign** adds `concept_skeleton` (a deterministic, zero-LLM enrichment sidecar over the curated `Concept`/`ConceptAlias` vocabulary + `Citation`/`DocSimilarity`; producers `scripts/seed_concepts.py` + `scripts/build_concept_skeleton.py`) — it lands alongside the superseded open-vocabulary `concept_graph` (KI-7), not replacing it yet.
+This table is non-exhaustive — it covers the core ingest/runtime modules. The research-integrity and enrichment layer (`query_router`, `synthesis`, `provenance`, `reviewer`, `metadata_extractor`, `metadata_enrich` (deterministic backfill runner, L5), `doc_vectors`, `embeddings`, `bibtex`, `commands`, `llm`, plus the cross-document concept layer `concept_skeleton`/`concept_skeleton_enrich` and `epistemics`) is shown in the Mermaid diagram above. The document-feature extractors (`citations`, `tables`, `tables_marker`, `figures`, `regions`) now live inside the `doc_assistant.ingest` package (imported as `doc_assistant.ingest.<name>`). The concept layer is the **redesign**: `concept_skeleton` (a deterministic, zero-LLM enrichment sidecar over the curated `Concept`/`ConceptAlias` vocabulary + `Citation`/`DocSimilarity`; producers `scripts/seed_concepts.py` + `scripts/build_concept_skeleton.py`) plus the confined Node-B LLM pass (`concept_skeleton_enrich`). The superseded open-vocabulary `concept_graph.py` was **deleted 2026-07-07** (G1, KI-7 resolved) — `epistemics.py`/`wiki.py` read the skeleton directly.
 
 **Boundary rule:** `apps/` contains no business logic. All logic lives in `src/doc_assistant/`. The UI layer calls the library layer; never the reverse.
 

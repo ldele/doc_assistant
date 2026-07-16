@@ -2,7 +2,7 @@
 
 # ADR-002 — Desktop shell: Tauri frontend + FastAPI Python backend (replace Chainlit)
 
-- **Status:** proposed (2026-06-21 — drafted with Cowork; specs M0/M1/M2 written, build not started)
+- **Status:** accepted — implemented (M0–M5 all shipped 2026-06-25; status corrected 2026-07-16 — the field had been left at its 2026-06-21 "proposed" draft state long after the build landed)
 - **Date:** 2026-06-21
 - **Deciders:** Lucas (drafted with Cowork)
 

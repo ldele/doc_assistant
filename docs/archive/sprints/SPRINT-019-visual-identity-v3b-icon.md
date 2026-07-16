@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-07-14 · class: disposable -->
+<!-- status: archived · updated: 2026-07-16 · class: disposable -->
 <!-- BUILDING 2026-07-14. Sole active contract (SPRINT-018/V3a committed 181046c + archived).
      Design lock: docs/specs/feature-visual-identity.md §V3b + ADR-012 (installer identity). Feature:
      Visual-identity V3b — the Provenote app icon + branding-asset regeneration. A designed laurel-wreath

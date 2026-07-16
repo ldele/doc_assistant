@@ -1,6 +1,8 @@
 # Spec — Library redesign: folder rail + inventory grid + drill-down
 
-**Status:** DESIGN-LOCKED (grilled 2026-07-14, `grill-me`; ledger at foot). Direction chosen in-session by
+**Status:** ✅ **Phase A SHIPPED 2026-07-15 (commit `9f597df`; library follow-ups `8f31fe3` metadata
+enrichment · `e549254` metadata editing/ADR-013 · `95817fc` safe-delete/ADR-014). Phase B (folders)
+NOT built.** Was DESIGN-LOCKED (grilled 2026-07-14, `grill-me`; ledger at foot). Direction chosen in-session by
 the user from a clickable prototype
 ([artifact](https://claude.ai/code/artifact/54804676-82fc-4d93-9f54-c4a70b074dfd)). The next Library
 increment after `feature-library-browser.md` (L1, shipped), which explicitly parked "search / filter / sort

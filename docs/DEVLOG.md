@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-07-13 · class: append-only -->
+<!-- status: active · updated: 2026-07-16 · class: append-only -->
 
 # DEVLOG — doc_assistant
 
@@ -8,6 +8,72 @@ Append only — never edit past entries.
 Format: What changed | Why | Rejected alternatives | What it opens
 
 ---
+## 2026-07-16 — Docs-staleness fix batch (applies the same-day review's findings)
+
+**What:** applied the fixes from the docs review (entry below), docs-only. **ROADMAP:** flipped
+**10 stale status cells** to committed with verified SHAs — S1 `2893544` · S2 `7224f10` · V2
+`4fd772c` · V3a `181046c` · V3b `487f2df` · L4-A `9f597df` · **G3 `d7528ab` · G4 `5fc5964` · G6
+`cb166d4` · G7 `1e1e7eb`** (the G-rows still said "staged — awaiting review" from 2026-07-08; SHAs
+re-derived from `git log`/`-S`, not taken on faith — the review agent had mis-mapped two);
+added rows **L5** (metadata enrichment + keyword de-noising, `8f31fe3`) / **L6** (metadata editing,
+ADR-013, `e549254`) / **L7** (safe-delete, ADR-014, `95817fc`); fixed the stale Phase-7 bullet
+("redesign not yet built" → built+validated, `concept_graph.py` deleted) and the 7d paragraph's
+"host apply pending"; repointed all 17 `docs/sprints/SPRINT-*` references to `docs/archive/sprints/`
+(every numbered contract is archived). **architecture.md:** `library.py` contract corrected
+(read-only → + ADR-013/014 write paths); `ingest` row gains `registry` (S1); SQL-store node gains
+`DocumentMeta`/`SourceFile` (+ sidecar note); the false "`concept_graph` … not replacing it yet"
+claim replaced with the real state (deleted 2026-07-07, skeleton is the layer); `metadata_enrich` +
+`concept_skeleton_enrich` named. **Specs:** 8 shipped specs advanced from design-locked/"NOT built"
+to ✅ SHIPPED with SHAs (rag-sandbox, provider-switch, library-redesign Phase A, selective-ingestion,
+visual-identity complete, ab-compare, library-browser, conversation-history) — design locks retained
+as the design record. **ADR-002:** status corrected proposed → accepted/implemented (M0–M5 shipped
+2026-06-25). **decisions.md:** 3 dangling `docs/doc-assistant-roadmap.md` routes → `docs/archive/…`.
+**ui-checklist:** S1/S2 + L4-A + enrichment + metadata-edit + safe-delete added to §1, their §3 rows
+flipped `[x]` with committed SHAs, visual-identity row → COMPLETE. **KNOWN_ISSUES:** KI-8 dated
+correction (KI-7 citation outdated; markers default-ON again since G1 — the "mostly moot" bullet no
+longer holds).
+**Why:** the 2026-07-16 review found the paperwork lagging the code by up to 8 days; a doc that says
+"staged" for committed work actively misleads the next session.
+**Rejected:** stubbing the `docs/decisions.md` monolith (ADR-001 step 4) and deleting `HANDOFF.md` —
+both are user decisions, left open; backfilling cpc headers onto the 19 specs (specs are
+`[headers]`-exempt by config — optional consistency work, not staleness).
+**Opens:** decisions.md stub vs hybrid (user call); HANDOFF.md retire/refresh (user call); the
+enrichment row's local-LLM leftover pass; live end-to-end delete smoke (user's run).
+
+## 2026-07-16 — cpc re-vendored 1.1.0 → 1.2.1 + documentation review (gates + judgment sweep)
+
+**What:** re-ran `cpc-init` from the cpc checkout at release tag **`v1.2.1`** (via a temp git
+worktree; not the unreleased 1.2.2 HEAD — `_VERSION` records releases): `tools/conventions/cpc/`
+refreshed (19 modules; new `keypoint.py` = the ADR-020 workflow-boundary runner; the cpc LICENSE now
+travels with the drop), and the two new 1.2.0 templates laid —
+`docs/features/FEATURE-000-template.md` + `docs/specs/SPEC-000-template.md` (the per-feature
+rationale layer + the ADR-019 executor brief). Pruned the three files `cpc-init` lays that this repo
+deliberately diverges on: `AGENTS.md` (`init_check` stays unwired — ADR-014 entry-file adoption
+consciously deferred, per `.pre-commit-config.cpc.yaml`), `GLOSSARY.md`, `.claude/.gitignore` (root
+`.gitignore` already covers `.claude/*`). Gate battery on 1.2.1: `test_api_check` clean;
+`sprint_check` green after flipping the **overdue SPRINT-019 → archived** (V3b shipped `487f2df`,
+post-commit flip never done); `docs_check --strict` clean on the real docs — its 70 remaining errors
+are phantom hits on the live `.claude/worktrees/` background-task worktree, logged as **KI-16**
+(upstream one-line-class fix in cpc's `docs_check.py` identified; no `conventions.toml` workaround
+exists). Docs corrected this session: `.claude/CONTEXT.md` (cpc version bump; wiring text no longer
+claims `init_check` runs at pre-push; the new on-call `keypoint` command documented; the missing
+**Provenote** product-identity fact added, ADR-012), `docs/ROADMAP.md` `updated:` bump (rule-12 WARN).
+**Why:** adopt cpc 1.2.x; keep ADR-007's canonical wiring text honest; user-requested docs review.
+**Rejected:** vendoring HEAD (1.2.2-unreleased); adopting AGENTS.md/GLOSSARY.md wholesale just
+because `cpc-init` lays them (deliberate divergences stay deliberate); a `[headers] exempt` glob for
+the worktree noise (`Path.match` is right-anchored — cannot left-anchor a recursive glob; KI-16).
+**Opens:** the judgment sweep found real staleness beyond this session's fixes, deferred to its own
+fix session: ROADMAP rows S1/S2/V2/V3a/V3b/L4-A still "staged, not committed" though committed +
+no rows for metadata-edit (`e549254`)/safe-delete (`8f31fe3`); `architecture.md` stale (`library.py`
+described "read-only" but now carries ADR-013/014 write paths; no `SourceFile`/`DocumentMeta`;
+deleted `concept_graph` still described as present); specs `feature-rag-sandbox.md` +
+`feature-provider-switch.md` say "NOT built" for shipped U1/U1c (`09afd0c`), 6 more shipped specs
+never advanced past design-locked; ADR-002 still `Status: proposed` for the shipped desktop shell;
+`docs/decisions.md` monolith never stubbed (ADR-001 step 4) — dual ADR home + 3 dangling
+`docs/doc-assistant-roadmap.md` routes inside it; root `HANDOFF.md` (2026-05-26, self-described
+transient "delete after pickup") contradicts the current phase map; 19/21 specs lack the line-1 cpc
+header; `docs/ui-checklist.md` lags today's shipped work (boxes unflipped).
+
 ## 2026-07-16 — Fix: `POST /api/ingest` no-body scope resolves to the canonical path (Windows) + Python 3.12 pin
 
 **What:** `apps/api/main.py` `ingest_start` now reads `app_settings.get_source_dir().resolve()` once at

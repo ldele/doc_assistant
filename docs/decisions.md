@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-07-03 · class: living -->
+<!-- status: active · updated: 2026-07-16 · class: living -->
 
 # Design decisions
 
@@ -845,7 +845,7 @@ implicit (semantic similarity). Surface the structure of the literature.
 Goal: domain-aware retrieval backed by reproducible measurement, plus
 the first deliverable of the Research Integrity Layer.
 
-See `docs/doc-assistant-roadmap.md` for the source of intent.
+See `docs/archive/doc-assistant-roadmap.md` for the source of intent.
 
 - **Feature 1** — ✅ Done (2026-05-28). `EMBEDDING_MODEL` env var;
   `src/doc_assistant/embeddings.py` registry + factory. Initial options:
@@ -1499,7 +1499,7 @@ Cost: might not be worth the cost but worth trying. LLM-based could be costly.
 ### ~~pdfplumber for table extraction~~ — promoted to Phase 6 (Feature 4a)
 
 Was deferred; now scheduled as Feature 4a under the Phase 6 enrichment layer.
-See `docs/doc-assistant-roadmap.md` and the Phase 6 entry above for the
+See `docs/archive/doc-assistant-roadmap.md` and the Phase 6 entry above for the
 implementation plan.
 
 ### Expose remaining retrieval knobs — toward a config-complete RAG sandbox
@@ -1523,7 +1523,7 @@ Each is a small extension of an existing pattern (the embedder registry and the 
 sweep already prove it). Sequence them behind the higher-priority Phase 6 nodes;
 landing all three makes the "local RAG sandbox" claim in the README unqualified.
 Once exposed, these knobs feed the **Phase 8 settings page** (user-facing sandbox, with
-the benchmarked default pre-selected — see `doc-assistant-roadmap.md` → Phase 8).
+the benchmarked default pre-selected — see `docs/archive/doc-assistant-roadmap.md` → Phase 8).
 Noted 2026-06-04.
 
 ### SPECTER2 for paper-level similarity (gated on use case)

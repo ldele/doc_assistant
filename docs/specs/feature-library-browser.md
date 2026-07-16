@@ -1,6 +1,7 @@
 # Spec — Library space, L1: read-only chunk browser
 
-**Status:** DESIGN-LOCKED (grilled 2026-07-13, `grill-me`). Roadmap PR **L1**. Owner: Claude Code.
+**Status:** ✅ **SHIPPED 2026-07-13 (L1, commit `aa288d9`; SPRINT-014 archived).** Was DESIGN-LOCKED
+(grilled 2026-07-13, `grill-me`); retained as the design record. Roadmap PR **L1**. Owner: Claude Code.
 **One PR.** Ledger + routing at the foot of this file. Supersedes the `docs/ui-checklist.md` §3 backlog
 row "In-app ingestion + Calibre-style chunk browser" for its **browser** half only — the ingestion half
 (L2) routes to `docs/specs/feature-selective-ingestion.md` (S1/S2); chunk annotation (L3) is parked.

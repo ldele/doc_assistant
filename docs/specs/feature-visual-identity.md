@@ -1,6 +1,8 @@
 # Spec — Visual identity pass ("sexy pass"): paper & ink
 
-**Status:** 🎨 **design-locked** (grilled 2026-07-13 — see Grill ledger below; 11 forks, none parked).
+**Status:** ✅ **SHIPPED — all phases committed:** V1 `35b8627` · V2 `4fd772c` · V3a `181046c` ·
+V3b `487f2df` (2026-07-13/14; the pass is complete). Was 🎨 design-locked (grilled 2026-07-13 — see
+Grill ledger below; 11 forks, none parked); retained as the design record.
 **Phased:** **V1** design tokens + fonts + icons → **V2** layout rhythm + header/wordmark + empty
 states + ~70ch reading measure → **V3** Tauri app icon + branding + polish audit. **Stop-early after
 V1 is allowed** (each phase ships independently; V1 is a complete, coherent deliverable on its own).

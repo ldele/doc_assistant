@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-07-11 (Phase 8 UI polish committed 09afd0c; phase kept open) · class: living -->
+<!-- status: active · updated: 2026-07-16 (cpc re-vendored 1.1.0→1.2.1; wiring text corrected; Provenote fact added) · class: living -->
 
 # CONTEXT — doc_assistant
 
@@ -11,6 +11,11 @@ and its contract are recorded in `docs/decisions/ADR-001-adopt-cpc-standard.md`.
 (BM25 + vector + cross-encoder rerank) → answers with inline page-level citations, plus a
 research-integrity layer (provenance, evidence/interpretation split, separate-context reviewer).
 Not a chatbot wrapper — reliable, grounded, *measurable* answers over **your** documents.
+
+**Product name: Provenote** (V3a/V3b, committed `181046c`/`487f2df`, 2026-07-14) — the product/
+installer identity only (wordmark, window title, app icon, bundle id `com.provenote.desktop`).
+The **code identity stays `doc_assistant`** (Python package, commands, npm name, `doc-assistant-api`
+sidecar) — intentional split, do not "finish" the rename into code. ADR-012.
 
 **Current phase (2026-07-07):** Phase 6 done; Phase 7 (concept skeleton + gap detection) well
 underway. Core RAG, eval harness, document store + library UI, citation graph, the integrity layer,
@@ -137,13 +142,20 @@ in cpc CONVENTIONS **§12 / §13** — read them there, do not restate. Project-
 7. **bandit HIGH blocks merge; CI green before merge.** Docs land with the code at every checkpoint.
 
 **cpc gate wiring (ADR-007 — canonical text).** The cpc gates are vendored at `tools/conventions/`
-(cpc 1.1.0; re-run `cpc-init` from the cpc checkout to upgrade) and wired via
+(cpc **1.2.1**, re-vendored from 1.1.0 on 2026-07-16; re-run `cpc-init` from the cpc checkout to
+upgrade — vendor from the release *tag*, not an unreleased HEAD) and wired via
 `.pre-commit-config.cpc.yaml`. **Both are gitignored — local-only, never in the shared
 `.pre-commit-config.yaml` or CI:** cpc is a private tooling repo, this repo is public (ADR-001).
 Install (no clash with the main config's pre-commit stage):
-`pre-commit install -c .pre-commit-config.cpc.yaml -t pre-push -t commit-msg` — docs/init/test-api
-checks + `cpc-push-guard` at pre-push, `cpc-coupling-check` at commit-msg. On-call any time:
-`python tools/conventions/rungate.py docs_check --root . --strict`. Baton hygiene is gate-read
+`pre-commit install -c .pre-commit-config.cpc.yaml -t pre-push -t commit-msg` — docs/test-api
+checks + `cpc-push-guard` at pre-push, `cpc-coupling-check` at commit-msg. (`cpc-init-check` is
+deliberately **not** wired: it requires the ADR-014 `AGENTS.md` entry file, whose adoption this
+repo consciously defers — run it on-call only. Likewise not laid: `GLOSSARY.md`,
+`.claude/.gitignore` — the root `.gitignore` already covers `.claude/*`.) On-call any time:
+`python tools/conventions/rungate.py docs_check --root . --strict`; new at 1.2.x:
+`python tools/conventions/rungate.py keypoint <session-start|plan-start|sprint-start|sprint-close|session-close>`
+(gate battery + judgment checklist per workflow boundary, cpc ADR-020; per-project extras go in
+`[keypoints.<name>]` in `scripts/conventions.toml` — none registered yet). Baton hygiene is gate-read
 (rule 11): newest-on-top, cap 10 entries (`scripts/conventions.toml`), rotate older entries verbatim
 to docs/archive/SESSION-archive-NNN.md (local-only, like the baton).
 

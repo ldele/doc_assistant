@@ -1,6 +1,7 @@
 # Spec — Selective ingestion: source registry + selection-scoped ingest (S1) + Tauri sources panel (S2)
 
-**Status:** **LOCKED (grilled 2026-07-15, `grill-me`; ledger at foot).** Designed 2026-07-02; grilled
+**Status:** ✅ **S1+S2 SHIPPED 2026-07-15 (commits `2893544`/`7224f10`).** Was LOCKED (grilled
+2026-07-15, `grill-me`; ledger at foot); retained as the design record. Designed 2026-07-02; grilled
 after the L4 library redesign confirmed a **flat, all-PDF source** (user, 2026-07-15). Roadmap PRs S1/S2.
 
 > **Grill lock amendment (2026-07-15) — governs where it conflicts with the original body below.**

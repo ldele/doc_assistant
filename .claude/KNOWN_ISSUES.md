@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-07-13 · class: living -->
+<!-- status: active · updated: 2026-07-16 · class: living -->
 
 # KNOWN ISSUES
 
@@ -141,6 +141,13 @@ Migrated from the old `CLAUDE.md` / `README` runtime-quirk notes on 2026-06-20 (
 - **Mostly moot in practice since 2026-07-02 (PR-R7):** the live chip is now default-OFF
   (`EPISTEMICS_MARKERS_ENABLED=false`, ADR-005), so this containment coarseness only bites when a user opts
   the markers back on. The precise re-projection upgrade rides with Node B, alongside KI-7 retirement.
+- **Update (2026-07-16, docs review):** two bullets above are outdated. (a) The "compounding caveat" —
+  the open-vocabulary graph is gone (KI-7 RESOLVED 2026-07-07, G1: `concept_graph.py` deleted); marker
+  data now sources from the curated Node-A/B `concept_skeleton`, and attribution actually reaches chunks
+  since the KI-15 label fix (G7). (b) The "mostly moot / default-OFF" bullet — G1 flipped
+  `EPISTEMICS_MARKERS_ENABLED` back to **default-ON** (superseding ADR-005), so the containment
+  coarseness is live again by default. The issue this entry tracks (PC-parent containment mapping is
+  coarse) is unchanged and still OPEN; the re-projection upgrade remains the documented fix.
 - **Pointer:** `docs/archive/pr-m1-epistemics-markers.md` ADR-1 (option 2 = the re-projection upgrade).
 
 ## KI-9 — Frozen desktop build does not bundle model weights → first-run HuggingFace download; offline launch fails — RESOLVED (2026-06-24)
@@ -410,3 +417,24 @@ Migrated from the old `CLAUDE.md` / `README` runtime-quirk notes on 2026-06-20 (
   G6's before/after split on the real `data/library.db`
   (`tests/eval/baselines/superseded_year_rule_2026-07.md` G6 addendum);
   `docs/sprints/SPRINT-007-fix-epistemics-label-attribution.md`.
+
+## KI-16 — vendored `docs_check` scans Claude Code background-task worktrees under `.claude/worktrees/` → ~70 phantom errors — OPEN (upstream cpc)
+- **Symptom:** `python tools/conventions/rungate.py docs_check --root . --strict` reports dozens of
+  `[header] missing status:` ERRORs for paths under `.claude/worktrees/<name>/…` (the worktree's
+  README/CLAUDE.md/tests-eval copies **plus its whole `.venv` site-packages**) whenever a Claude Code
+  background task has an active worktree there. First seen 2026-07-16 (70 errors, worktree
+  `peaceful-blackburn-89f131`); the repo's own docs were clean. Reproduces on cpc 1.1.0 **and** 1.2.1.
+- **Cause:** the rule-1 status-header scan does `claude.rglob("*.md")` over all of `.claude/` with no
+  exclusion for embedded git worktrees or `.venv` (cpc 1.2.1 added a `.venv`/`node_modules`/`.git`
+  parts-exclusion to rules 3–4 only, not rule 1). No `conventions.toml` workaround exists:
+  `[headers] exempt` matches via `Path.match()`, which is right-anchored and cannot left-anchor a
+  recursive `*.claude/worktrees/**` glob (confirmed on Python 3.14).
+- **Workaround:** treat `worktrees/`-path errors as noise (filter with
+  `… docs_check … 2>&1 | grep -v "worktrees/"`), or run the gate when no background-task worktree
+  exists (`git worktree list` to check; they are auto-cleaned when unchanged — do NOT delete an
+  active one, it belongs to a running task).
+- **Fix (upstream, cpc repo):** extend the rule-1 `md_files` scan with the same parts-exclusion as
+  rules 3–4, plus skip any directory carrying a `.git` *file* (the nested-worktree marker). One-line
+  class of fix in `src/cpc/docs_check.py`; belongs in cpc 1.2.x.
+- **Pointer:** `tools/conventions/cpc/docs_check.py` (rule-1 scan vs the rule-3/4 exclusions);
+  found during the 2026-07-16 cpc 1.1.0→1.2.1 re-vendor (DEVLOG entry same date).

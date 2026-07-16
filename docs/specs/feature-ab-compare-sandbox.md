@@ -1,6 +1,8 @@
 # Spec — A/B-compare sandbox, v1: retrieval diff
 
-**Status:** DESIGN-LOCKED (grilled 2026-07-13, `grill-me`). Roadmap PR **U6**. Owner: Claude Code.
+**Status:** ✅ **SHIPPED 2026-07-13 (U6, commit `c965418`; SPRINT-015 archived; "Test override"
+contextual-button refinement committed after).** Was DESIGN-LOCKED (grilled 2026-07-13, `grill-me`);
+retained as the design record. Roadmap PR **U6**. Owner: Claude Code.
 **One PR.** Ledger at the foot. Realises ADR-010's option-4 north-star as its **retrieval-only, $0**
 first increment — the ADR sequences A/B after the basic override surface (U1) and cautions *"do not
 pre-build option 4 on the assumption that users want more knobs; validate with real use before widening"*

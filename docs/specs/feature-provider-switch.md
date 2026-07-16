@@ -1,6 +1,7 @@
 # Spec — U1c v1: desktop provider + model switch (ADR-011)
 
-**Status:** 📋 **design-locked** (ADR-011 accepted + grilled 2026-07-10, 8 forks); **NOT built.** v1 scope
+**Status:** ✅ **SHIPPED 2026-07-11 (U1c, commit `09afd0c`; SPRINT-012 archived)** — was design-locked
+(ADR-011 accepted + grilled 2026-07-10, 8 forks); retained as the design record. v1 scope
 = option 4 (switch provider **+ model** among already-configured providers; the API key stays in `.env`;
 live swap between turns). Keyring / in-app key entry (ADR-011 option 2) is the recorded **v2** north-star —
 out of scope here. Roadmap PR **U1c**, 5th in the Phase-8 UI build order (after U2/U3/U1/U1b — all four

@@ -1,7 +1,8 @@
 # Spec — App shell + conversation history (left sidebar)
 
-**Status:** 🔒 **design-locked (2026-07-13, grilled).** All forks resolved — decision ledger at the
-bottom. Ready to become a cpc SPRINT contract. Scope = the **left-sidebar app shell** + the
+**Status:** ✅ **SHIPPED 2026-07-13 (U5, commit `9ce5690`; SPRINT-013 archived).** Was 🔒 design-locked
+(2026-07-13, grilled); retained as the design record. All forks resolved — decision ledger at the
+bottom. Scope = the **left-sidebar app shell** + the
 **Chat space's conversation history**. The **Library space** (in-app ingestion + Calibre-style chunk
 browser + chunk annotations) is a *sibling* increment — this spec only reserves its nav slot; its design
 is `docs/specs/feature-library-chunk-browser.md` (not yet written).

@@ -45,6 +45,7 @@ from apps.api.models import (
     ExportRequest,
     IngestRequest,
     LibraryDocumentChunksPayload,
+    LibraryDocumentMetaUpdate,
     LibraryDocumentPayload,
     SettingsUpdate,
     SourceFilePayload,
@@ -436,6 +437,38 @@ def create_app(
         if view is None:
             raise HTTPException(status_code=404, detail="document not found")
         return LibraryDocumentChunksPayload.from_view(view)
+
+    @app.patch("/api/library/documents/{doc_id}")
+    def patch_library_document(doc_id: str, body: LibraryDocumentMetaUpdate) -> dict[str, bool]:
+        """Set a document's user metadata overrides (title/authors/year). ADR-013 — first
+        browse-time write path. 404 if the document is unknown; effective values are
+        override ?? auto-extracted default."""
+        from doc_assistant.library import get_document_details, set_document_meta
+
+        if get_document_details(doc_id) is None:
+            raise HTTPException(status_code=404, detail="document not found")
+        set_document_meta(doc_id, title=body.title, authors=body.authors, year=body.year)
+        return {"ok": True}
+
+    @app.post("/api/library/documents/{doc_id}/reset-metadata")
+    def reset_library_document_metadata(doc_id: str) -> dict[str, bool]:
+        """Reset a document to its auto-extracted metadata (delete the override row). ADR-013."""
+        from doc_assistant.library import clear_document_meta, get_document_details
+
+        if get_document_details(doc_id) is None:
+            raise HTTPException(status_code=404, detail="document not found")
+        clear_document_meta(doc_id)
+        return {"ok": True}
+
+    @app.post("/api/library/documents/{doc_id}/reveal")
+    def reveal_library_document(doc_id: str) -> dict[str, bool]:
+        """Reveal the source file in the OS file manager (local desktop action, ADR-013).
+        404 if the document is unknown or its source file can't be located (moved/deleted)."""
+        from doc_assistant.library import reveal_document_source
+
+        if not reveal_document_source(doc_id):
+            raise HTTPException(status_code=404, detail="source file not found")
+        return {"ok": True}
 
     @app.get("/api/settings")
     def get_settings(request: Request) -> dict[str, Any]:

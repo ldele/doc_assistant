@@ -73,6 +73,38 @@ export async function getLibraryDocument(docId: string): Promise<LibraryDocument
   return (await r.json()) as LibraryDocumentChunks
 }
 
+/** Set a document's user metadata overrides (title/authors/year). The editor sends the whole form;
+ *  each effective value blank/equal-to-default clears that field's override (ADR-013). */
+export async function updateDocumentMeta(
+  docId: string,
+  patch: { title?: string; authors?: string; year?: number | null },
+): Promise<void> {
+  const r = await fetch(`${API_BASE}/api/library/documents/${encodeURIComponent(docId)}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(patch),
+  })
+  if (!r.ok) throw new Error(`update document metadata failed: ${r.status}`)
+}
+
+/** Reset a document's metadata to the auto-extracted defaults (drop the override). */
+export async function resetDocumentMeta(docId: string): Promise<void> {
+  const r = await fetch(
+    `${API_BASE}/api/library/documents/${encodeURIComponent(docId)}/reset-metadata`,
+    { method: 'POST' },
+  )
+  if (!r.ok) throw new Error(`reset document metadata failed: ${r.status}`)
+}
+
+/** Reveal a document's source file in the OS file manager (local desktop action). 404 if the file
+ *  can't be located (moved/deleted since ingest). */
+export async function revealDocument(docId: string): Promise<void> {
+  const r = await fetch(`${API_BASE}/api/library/documents/${encodeURIComponent(docId)}/reveal`, {
+    method: 'POST',
+  })
+  if (!r.ok) throw new Error(`reveal document failed: ${r.status}`)
+}
+
 /** A/B-compare retrieval (U6): the query under the locked defaults vs the session override.
  *  $0 — retrieval only, no generation. `overrides` rides this one request. */
 export async function compareRetrieval(

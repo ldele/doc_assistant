@@ -8,6 +8,50 @@ Append only — never edit past entries.
 Format: What changed | Why | Rejected alternatives | What it opens
 
 ---
+## 2026-07-16 — Document metadata editing + reveal-in-explorer + author on tiles (ADR-013)
+
+**What:** the first browse-time **write path** — a per-document `⋯` menu (Edit metadata / Reveal in
+file explorer) mirroring the conversation ⋯ menu, plus the author on its own line on each tile.
+- **Data model (`DocumentMeta` sidecar, ADR-013):** new table keyed by `document_id` with
+  `title/authors/year_override`. Auto-extracted values stay the *default* on `Document`; **effective =
+  override ?? default**; `customized` flags any override. `set_document_meta` **replaces** the small
+  override set and **dedups each field against its auto default** (re-saving an untouched field creates
+  no override), so a re-run of `enrich_metadata` never clobbers a user edit. Reset = delete the row.
+- **Backend (`library.py` + 3 routes):** `set_document_meta`/`clear_document_meta` + `list_documents`
+  now merges overrides (batch-loaded once) and carries `year`/`customized`; `resolve_source_path` +
+  `reveal_document_source` (`_reveal_in_file_manager`: `explorer /select` / `open -R` / `xdg-open`,
+  list-form, no shell). `PATCH /api/library/documents/{id}`, `POST …/reset-metadata`, `POST …/reveal`
+  (404 on unknown doc / missing file). `LibraryDocumentPayload` gains `year`/`customized`.
+- **Frontend:** `LibraryGrid.svelte` restructured tile/row into a container + body-button + hover-`⋯`
+  (a `<button>` can't nest a `<button>`), single floating menu mirroring Sidebar; **author on its own
+  muted line** (new `authorLabel`); a small accent "edited" dot when `customized`. New
+  `LibraryMetaEditor.svelte` modal (Title/Authors/Year, Save/Reset/Cancel). `App.svelte` owns
+  `editingDocId`, wires save/reset/reveal → API → `refreshDocuments` (re-fetch, like the chat actions).
+
+**Why:** user request — correct the ~3% wrong titles + ~19 blank authors the extractor leaves, "like the
+chats", with reset-to-default and a "must-have" reveal-in-explorer; author visible on the snippet.
+**User decisions:** editable = Title/Authors/Year; author on its own line (a future "choose which columns
+show" increment is out of scope but the override model supports it).
+
+**Rejected:** override columns on `documents` (4 additive migrations + mixes user writes into the
+extraction registry — the sidecar isolates them); a Tauri command + `shell:allow-open` for reveal (the
+app's first Tauri command, untestable in preview — the API is always local, so a backend reveal fits the
+100%-API-driven frontend). See ADR-013.
+
+**Verified:** `svelte-check` 0/0 (127 files); ruff/format + `mypy --strict src` (61) + bandit clean;
+**pytest 28** (new `test_document_meta`: dedup/blank-revert/reset/effective + PATCH/reset/reveal 200+404
+with a monkeypatched reveal; + library regression). Live ($0): applied the new-table migration
+(`python -m doc_assistant.db.migrations` — the API doesn't `create_all` on startup, same as
+`conversation_meta`); API E2E PATCH→effective→reset→404 PASS; UI — tile shows title + author line +
+`⋯`; menu → Edit metadata → change title → Save → tile updates + edit-dot; Reset → reverts (test edit
+cleaned up). Reveal opens a real OS window on the host (mocked in tests; live-checked path = user's box).
+
+**Opens:** the residual bad-author/OCR tail is now user-fixable. `document_meta` must be migrated on any
+box that predates it (as `conversation_meta` was). Deferred: editing DOI/notes/tags/folders, per-field
+reset, bulk edit; user-selectable library columns.
+
+**Staged; nothing committed (cpc §13). `document_meta` table created in the live DB (empty).**
+
 ## 2026-07-16 — Keyword de-noising: venue/publisher/ID denylist + repeated-token filter
 
 **What:** the library keyword chips (and the rail's Keywords nav) were dominated by scholarly-metadata

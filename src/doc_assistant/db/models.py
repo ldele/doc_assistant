@@ -782,6 +782,28 @@ class ConversationMeta(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, onupdate=_utcnow)
 
 
+class DocumentMeta(Base):
+    """User-defined metadata overrides for a document, keyed by ``document_id`` (ADR-013).
+
+    ``Document.title``/``authors``/``year`` hold the *auto-extracted* values (the default,
+    populated by the metadata-enrichment pass). This sidecar holds the *user override* for each
+    field — the **effective** value shown in the library is ``override ?? default``. A row exists
+    only once the user edits a field; an **absent** row (or an all-null one) means "no overrides,
+    use the defaults". Reset-to-default = delete the row. Keeping overrides here (not on
+    ``documents``) isolates the first browse-time write path from the extraction-populated
+    registry, so a re-run of enrichment never clobbers a user edit. Additive — ``create_all``
+    makes the table, no migration (mirrors ``ConversationMeta``).
+    """
+
+    __tablename__ = "document_meta"
+
+    document_id: Mapped[str] = mapped_column(String, primary_key=True)
+    title_override: Mapped[str | None] = mapped_column(Text, nullable=True)
+    authors_override: Mapped[str | None] = mapped_column(Text, nullable=True)
+    year_override: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, onupdate=_utcnow)
+
+
 # ============================================================
 # SourceFile — selective-ingestion registry (feature-selective-ingestion.md, S1).
 # ============================================================

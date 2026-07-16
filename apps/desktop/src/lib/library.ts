@@ -79,13 +79,21 @@ export function sameCollection(a: LibraryCollection, b: LibraryCollection): bool
 }
 
 // Row label: prefer "Title — First Author" over the raw filename (which stays the tooltip).
-// Moved here from Sidebar.svelte — the grid, the breadcrumb, and search all need it now.
+// Moved here from Sidebar.svelte — the breadcrumb and search use the combined label.
 export function docLabel(d: LibraryDocument): string {
   if (!d.title) return d.filename
   if (!d.authors) return d.title
+  const first = authorLabel(d)
+  return first ? `${d.title} · ${first}` : d.title
+}
+
+// Just the author part ("First Author" or "First Author et al."), or '' when unknown. The grid
+// tile renders this on its own line under the title (the breadcrumb/search still use docLabel).
+export function authorLabel(d: LibraryDocument): string {
+  if (!d.authors) return ''
   const names = d.authors.split(/\s*(?:;|,| and )\s*/).filter(Boolean)
   const first = names[0] ?? d.authors
-  return `${d.title} · ${names.length > 1 ? `${first} et al.` : first}`
+  return names.length > 1 ? `${first} et al.` : first
 }
 
 // Search filter (Decision 5a): same fields the old rail search matched.

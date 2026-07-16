@@ -15,8 +15,11 @@
     exportConversation,
     listConversations,
     listLibraryDocuments,
+    resetDocumentMeta,
+    revealDocument,
     streamChat,
     updateConversationMeta,
+    updateDocumentMeta,
   } from './lib/api'
   import Turn from './lib/Turn.svelte'
   import ReadonlyTurn from './lib/ReadonlyTurn.svelte'
@@ -25,6 +28,7 @@
   import Sidebar from './lib/Sidebar.svelte'
   import LibraryBrowser from './lib/LibraryBrowser.svelte'
   import LibraryGrid from './lib/LibraryGrid.svelte'
+  import LibraryMetaEditor from './lib/LibraryMetaEditor.svelte'
   import CompareCard from './lib/CompareCard.svelte'
   import Icon from './lib/Icon.svelte'
   import {
@@ -486,6 +490,45 @@
     sidebarOpen = false
   }
 
+  // Metadata editing (ADR-013 — first browse-time write path). `editingDocId` opens the modal;
+  // Save/Reset write then re-fetch the list so the tile reflects the new effective values
+  // (mirrors how the conversation actions re-fetch). Reveal opens the OS file manager server-side.
+  let editingDocId = $state<string | null>(null)
+  const editingDoc = $derived(
+    editingDocId ? (documents.find((d) => d.id === editingDocId) ?? null) : null,
+  )
+  async function saveDocMeta(patch: {
+    title: string
+    authors: string
+    year: number | null
+  }): Promise<void> {
+    if (editingDocId === null) return
+    try {
+      await updateDocumentMeta(editingDocId, patch)
+      await refreshDocuments()
+    } catch {
+      // inform-don't-block: a write failure leaves the prior values in place
+    }
+    editingDocId = null
+  }
+  async function resetDocMeta(): Promise<void> {
+    if (editingDocId === null) return
+    try {
+      await resetDocumentMeta(editingDocId)
+      await refreshDocuments()
+    } catch {
+      // keep the prior list on failure
+    }
+    editingDocId = null
+  }
+  async function revealDoc(id: string): Promise<void> {
+    try {
+      await revealDocument(id)
+    } catch {
+      // the source file may have moved since ingest — surface nothing, never crash the UI
+    }
+  }
+
   // Back walks one level up: doc → its collection's grid, then collection → All documents.
   function libraryBack(): void {
     if (libraryDocId !== null) libraryDocId = null
@@ -640,7 +683,13 @@
                   {/if}
                 </div>
               {:else}
-                <LibraryGrid documents={visibleDocs} view={libraryView} onOpenDocument={openDocument} />
+                <LibraryGrid
+                  documents={visibleDocs}
+                  view={libraryView}
+                  onOpenDocument={openDocument}
+                  onEditMetadata={(id) => (editingDocId = id)}
+                  onReveal={revealDoc}
+                />
               {/if}
             </section>
           {/if}
@@ -767,6 +816,15 @@
 
 {#if activeCitation && activeSource}
   <SourcePanel source={activeSource} onClose={() => (activeCitation = null)} />
+{/if}
+
+{#if editingDoc}
+  <LibraryMetaEditor
+    doc={editingDoc}
+    onSave={saveDocMeta}
+    onReset={resetDocMeta}
+    onClose={() => (editingDocId = null)}
+  />
 {/if}
 
 <style>

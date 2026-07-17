@@ -1,14 +1,17 @@
 # Spec — Tag families (keyword synonym-collapse over the concept vocabulary)
 
-**Status:** **PR-1 + PR-2 BUILT 2026-07-17 (staged, not committed)**; PR-3 still DESIGN-LOCKED (grilled
-2026-07-16, `grill-me`; ledger at foot; parked — not scheduled). Architectural decisions in **ADR-015**.
+**Status:** **PR-1 ✅ SHIPPED `0c3b0d4` · PR-2 ✅ SHIPPED `0af43db`** (both committed 2026-07-17).
+**PR-2.5 (hardening) + PR-2.6 (family-aware tiles) SCOPED 2026-07-17** from a post-commit review — see the
+carve below; both are **defect-driven, not new scope**. PR-3 still DESIGN-LOCKED (grilled 2026-07-16,
+`grill-me`; ledger at foot; parked — not scheduled). Architectural decisions in **ADR-015**.
 Collapses near-duplicate keywords (`llm`/`llms`, `connectome`/`connectomics`) into user-curated **families** so
 the Library keyword filter treats each family as one entry. *Takes advantage of* the curated
 `Concept`/`ConceptAlias` vocabulary — it is **not** the concept-graph/epistemics UI (a separate later track
 over the same rows; ADR-015 §C).
 
-**Owner:** Claude Code. **Three PRs, never bundle:** ~~PR-1 families end-to-end (manual)~~ **BUILT** →
-~~PR-2 detection~~ **BUILT** → PR-3 LLM assist (parked).
+**Owner:** Claude Code. **Never bundle:** ~~PR-1 families end-to-end (manual)~~ **SHIPPED** →
+~~PR-2 detection~~ **SHIPPED** → **PR-2.5 hardening** (next) → **PR-2.6 family-aware tiles** → PR-3 LLM
+assist (parked).
 
 ---
 
@@ -49,7 +52,7 @@ unit). Extends the existing pure helpers; no backend filter change.
 
 ## Carve
 
-### PR-1 — families end-to-end, manual (build first) — ✅ BUILT 2026-07-17 (staged)
+### PR-1 — families end-to-end, manual (build first) — ✅ SHIPPED 2026-07-17 `0c3b0d4`
 
 The whole mechanism with hand-curation; no detection yet. Demoable: create `large language models`, assign
 `llm`/`llms`, watch the overlay collapse them and filter the union.
@@ -74,7 +77,7 @@ The whole mechanism with hand-curation; no detection yet. Demoable: create `larg
   preview-harness `$0` — create a family live, confirm the overlay collapses `llm`/`llms` into one entry that
   filters the union; DEVLOG + ui-checklist + this spec's status flip with SHA.
 
-### PR-2 — detection — ✅ BUILT 2026-07-17 (staged)
+### PR-2 — detection — ✅ SHIPPED 2026-07-17 `0af43db`
 
 - **`src/` pure core** `keyword_families.py` (or extend `keywords.py`): `Keyword` list → proposed families via
   **Tier 1 morphological** (casefold + conservative singularizer/suffix-normalizer; `llms`→`llm`,
@@ -94,6 +97,109 @@ The whole mechanism with hand-curation; no detection yet. Demoable: create `larg
   `controller.rag.embeddings.embed_documents` to satisfy "no new model load"; the CLI script has no `--apply` at
   all (report-only, per the DoD). Verified live on the real 76-doc corpus (both the CLI and the app's Detect
   button found the same proposal, `pvpo`≈`avpv pvpo` @ 0.77 confidence) — full details in `docs/DEVLOG.md`.
+
+### PR-2.5 — hardening the write paths (next; defect-driven) — SCOPED 2026-07-17
+
+Post-commit review of `0c3b0d4`+`0af43db` (agent review + live drive on the real 76-doc corpus). The read
+path is sound — facet math, union-find determinism, thin-shell discipline, and the no-families default path
+all reviewed **clean**, and the feature demonstrably works live (family `Large language model` → 14 docs,
+union correct, AND recount correct, Detect reproduced `pvpo`≈`avpv pvpo` @ 0.77). The defects are all in the
+**under-guarded write paths**, and none were caught by the 977 passing tests.
+
+**Why this jumps the queue:** D1/D2 sit on the *natural* post-PR-2 flow. `_canonical_and_members` always
+proposes an **existing keyword** as canonical (`llm`), so Detect → Accept → **Rename** (to get the spec's own
+demo label "large language models") is the obvious next click — and that click is currently a data-corruption
+trap whose blast radius escapes the feature.
+
+| # | Defect | Where | Repro (verified, not inferred) |
+|---|--------|-------|--------------------------------|
+| **D1** | Rename onto an existing canonical creates **duplicate `Concept` labels** → create route 500s forever (no UI recovery) **and** `promote_keyword` throws `MultipleResultsFound` repo-wide (breaks `scripts/seed_concepts.py`). `Concept.label` has no unique constraint (`db/models.py:441`); `rename_concept` explicitly defers the check to callers and **no caller does**. | `concept_skeleton.py:948` · `library.py:529` · `main.py:514` (catches only `ValueError`) | create `llm` → create `vector search` → PATCH `vector search`→`llm` = 200 → `GET` lists `['llm','llm']` → next create `llm` = **HTTP 500** |
+| **D2** | Rename **silently drops the family's own canonical keyword**. `create_keyword_family` → `add_concept` never seeds an alias for the label (unlike `promote_keyword`), so the canonical is only *implicit*; rename re-points it and the original keyword falls out and reappears as a standalone chip — the exact duplicate the feature exists to remove. | `library.py:508,529` · `_build_family` `:478` | `create("llm",["llms"])` → `doc_count=3` → `rename(id,"large language models")` → aliases=`['llms']`, **`doc_count=2`**, `llm` gone |
+| **D3** | A keyword can belong to **two families**. `add_family_member` defers the canonical-collision case to the Manage view; the view only guards the *pick-list* path — "New family" canonical is unchecked free text. Downstream `familyCanonicalMap` (`library.ts:249`) resolves order-dependently, so the overlay, its tooltip, and the Manage view show **three inconsistent numbers**. | `library.py:541` · `LibraryManageKeywords.svelte:62` | `create("large language models",["llm","llms"])` then `create("llm",[])` → two families claim `llm` |
+| **D4** | Stemmer's sibilant-`es` rule (`w[:-2]`) **over-strips**, so common plurals never match structurally. False *negatives* only (conservatism claim holds; **coverage** claim does not) — they silently degrade from a `confidence=1.0` structural match to a threshold-dependent Tier-2 fuzzy one. Existing tests pick `boxes`/`taxonomies` — the two inputs the rules get right. | `keyword_families.py:41-45` | verified via real `_stem`: `database/databas`, `size/siz`, `cache/cach`, `response/respons`, `analysis/analys` all **MISS**; `detect_family_proposals(["database","databases"])` → `[]` |
+| **D5** | A live keyword selection **isn't remapped when families change** → grid goes empty while the stale chip still looks selectable (the universe includes `selected` by design). The Manage view is opened *from* the overlay, i.e. exactly where a selection is live. | `App.svelte:670` (`createFamily`) / `:702` (`deleteFamily`), neither touches `libraryKeywords` (`:126`) | select `llm` (2 docs) → Manage → create family with `llm`+`llms` → `facetFilter` returns `[]`, grid empty |
+
+- **Fixes:** D1 → reject a colliding label in `library.rename_keyword_family` (**409**, not in the view — the
+  invariant belongs at the library boundary; map it in the API shell). D2 → seed the canonical as a real alias
+  on create (align `create_keyword_family` with `promote_keyword`'s alias-seeding), or make rename carry the
+  old label into the alias set — **pick one and note the migration for the 26 pre-existing concepts on this
+  box**. D3 → route the free-text canonical through the same move-on-reassign guard. D4 → only strip `es` when
+  `w[:-2]` ends in a sibilant, else `w[:-1]` (or try both stems). D5 → map `libraryKeywords` through the new
+  canonical map after each family write.
+- **DoD:** the five repros above become **regression tests first** (they all pass today — that's the point);
+  `test_rename_family_canonical` (`tests/integration/test_keyword_families.py:~199`) extended to assert
+  `aliases` + `doc_count`, not just `canonical` (asserting only `canonical` is why D2 hid); stemmer tests gain
+  the `-se`/`-ze`/`-che`/`-ie` class; first tests for `familyCanonicalMap`/`familyUnitsOf`/`facetFilter`
+  composition (the grouping layer is currently **entirely unexercised**). Then the standard gates
+  (`svelte-check` 0 · ruff/format · `mypy --strict src` · bandit · full suite) + a live $0 drive of
+  Detect→Accept→Rename on the real corpus. No new scope, no ADR, no locked-setting touch.
+
+### PR-2.6 — family-aware grid tiles (frontend-only; carries defect D6)
+
+Carved **with** D6 rather than into PR-2.5: both are the same root cause in the same file — `LibraryGrid`
+never learned about families — and splitting them would touch it twice.
+
+- **D6 (verified live):** selecting a **family** highlights **nothing** on the tiles. `LibraryGrid.svelte:129`
+  renders raw `d.keywords` and matches `activeKeywords.includes(k)`; with a family selected `activeKeywords`
+  holds the canonical (`Large language model`) while tiles hold raw forms (`llm`/`llms`), so the match can
+  never fire. Measured on the real corpus: **family → 0 of 25 chips highlighted; control keyword `pretrained`
+  → 19 highlighted.** `orderedKeywords` (`:47-51`) breaks identically — `active.length === 0` returns
+  `d.keywords` unchanged, so the matching form isn't floated to the front and can hide behind `+N`.
+- **Display:** tiles render a family as its **atomic canonical chip** (`Connectome`, not
+  `connectomes`+`connectome`+`connectomics`), consistent with the overlay's T6 atomic-entry rule. Two wins
+  beyond the fix: the tile's scarce keyword budget (`CHIP_CAP`, 2 reserved lines, `+N` overflow) stops being
+  spent on duplicate forms of one concept, and casing stops disagreeing with the filter (tile `imagenet` vs
+  overlay `ImageNet` — the vocabulary already supplies the display name).
+- **Reuses the shipped pure helper** (`familyCanonicalOf`/`keywordsOf`) — presentation only, no new data path,
+  `$0`, no backend change. **DoD:** family selection highlights + floats its members; default path (no
+  families) byte-identical; `svelte-check` 0; both themes; mobile no-overflow; live $0 verify.
+
+### PR-2.7 — Manage view at scale (frontend-only) — SCOPED 2026-07-17 (user feedback on the live view)
+
+User reviewed the shipped Manage view and the filter overlay and raised three things; all three are real and
+all are presentation. **Carved as its own PR** (not folded into PR-2.5) to keep hardening purely about data
+correctness — but note **F2 below *is* the D3 fix**, so the two PRs must not both implement it: PR-2.5 owns
+the `library.py` boundary guard (the invariant), PR-2.7 owns the control that stops the user reaching it.
+
+**Grounding measured on the live corpus 2026-07-17 (not assumed):** 60 keywords surface; **30 of them (exactly
+50%) sit on a single document**. `FAMILIES (26)` is likewise misleading — only ~6 are real families; the rest
+are 0-member concepts inherited from the earlier concept-graph seeding, several with **0 docs** (`BERT`).
+
+| # | Finding | Fix |
+|---|---------|-----|
+| **F1** | **"Manage keywords…" is rendered inside the scrolling pane**, so it reads as the last list item and is lost under the scrollbar. | Move it to the overlay header (beside the title/search) or a fixed footer bar **outside** the scroll region. |
+| **F2** | **"New family" canonical is unchecked free text** → no navigation to existing families at scale, and it's the D3 hole. | **Autocomplete the canonical against existing families.** One control = the user's navigation ask **and** the D3 guard. Typing an existing canonical offers *navigate to that family*, not *create a duplicate*. |
+| **F3** | **Flat pools don't scale** — a 38-chip keyword pool and a flat `FAMILIES (26)` list are already awkward; at ~100 families they're unusable. | Searchable/filterable picker for both; hide the 0-member/0-doc inherited concepts from the families list (they are vocabulary, not families). |
+| **F4** | **The 1-doc long tail is 50% of the list** and is where every ugly string lives. | **Demote, don't delete** (below). |
+
+**F4 — the long tail, and why demotion is the right verb.** Traced every odd keyword back to its source doc:
+they are **mostly real specialist vocabulary, not junk** — `16p11` is **16p11.2** (autism CNV) truncated at
+the dot; `c57bl` is the **C57BL/6** mouse strain truncated at the slash (7 docs); `va1v`/`dl5`/`osns`/`upns`/
+`mgns` are Drosophila antennal-lobe glomeruli and neuron classes, all from **one** olfactory paper;
+`avpv`/`pvpo`/`mpoa` are hypothalamic nuclei from one mating paper; `rabv` = rabies-virus tracing. The truly
+broken ones are a small, **clustered** minority: `mathrm` (LaTeX `\mathrm` leak), `professium`, `outflux` —
+**all three from the same 1952 scanned Hodgkin-Huxley paper** — plus `102ff` (a "p. 102ff" citation
+artifact), `fne-tune` (OCR of "fine-tune"), `neurosc` (truncation).
+
+- **Principle:** a facet exists to *partition* a set; a 1-doc facet doesn't partition — selecting it yields
+  one document, which search already does better. So rare keywords have near-zero **filtering** value
+  regardless of whether they're junk or gold. That is a principled threshold that sweeps up the ugly strings
+  for free, **without** having to classify them.
+- **Build:** collapse keywords below a doc-count threshold (default **< 2 docs**) behind a
+  **"Show rare (N)"** toggle in the overlay + Manage view. **The overlay's existing search box is the escape
+  hatch** — a specialist still finds `va1v` by typing it. Nothing is destroyed; the tail is demoted and
+  instantly reversible. Threshold is a **display default, not a locked retrieval setting** (no eval-harness
+  gate — it governs presentation, not retrieval).
+- **DoD:** `svelte-check` 0; default path unchanged for corpora with no rare tail; the toggle round-trips;
+  search finds a demoted keyword; `$0` live verify on the real corpus (expect 60 → **30** default-visible);
+  both themes; mobile no-overflow.
+
+**Rejected:** (a) *deleting the rare tail* — it's mostly real vocabulary, and delete isn't reversible-by-
+search. (b) *modelling suppression as a "hidden" family* (a `Concept` whose aliases are the junk) — abuses
+ADR-015's model, which defines a family as **synonym collapse**; overloading it would corrupt the meaning of
+every consumer that reads those rows. Suppression gets its own store (see the checklist row). (c) *folding F2
+into PR-2.5* — the invariant belongs at the `library.py` boundary regardless; a view-level control is a
+convenience on top, not a substitute (a second client would bypass it).
 
 ### PR-3 — LLM confirm/merge pass (parked)
 

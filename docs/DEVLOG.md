@@ -8,6 +8,112 @@ Append only — never edit past entries.
 Format: What changed | Why | Rejected alternatives | What it opens
 
 ---
+## 2026-07-17 — Manage view at scale scoped (PR-2.7) + 2 non-UI rows, from live user feedback (docs-only)
+
+**What:** user reviewed the shipped Manage-keywords view + filter overlay and raised three things — the
+"Manage keywords…" trigger sits under the scrollbar; nothing scales to ~100 families; and "102ff, 16p11 wtf
+are that?". Scoped **PR-2.7 — Manage view at scale** (frontend-only) into `feature-tag-families.md`, plus two
+**non-UI** backlog rows the third point exposed. **Docs-only; no code changed.**
+
+**Why the "wtf" answer changed the design — traced every odd keyword to its source doc rather than assuming:**
+they are **mostly real specialist vocabulary, not junk.** `16p11` is **16p11.2** (autism CNV) truncated at the
+dot; `c57bl` is **C57BL/6** (mouse strain, **7 docs**) truncated at the slash; `va1v`/`dl5`/`osns`/`upns`/
+`mgns` are Drosophila antennal-lobe glomeruli + neuron classes, all from **one** olfactory paper;
+`avpv`/`pvpo`/`mpoa` are hypothalamic nuclei from one mating paper; `rabv` = rabies-virus tracing. The truly
+broken ones are a small **clustered** minority: `mathrm` (LaTeX leak), `professium`, `outflux` — **all three
+from the same 1952 scanned Hodgkin-Huxley paper** — plus `102ff` ("p. 102ff"), `fne-tune` (OCR of
+"fine-tune"), `neurosc`. So the verb is **demote, not delete**: deleting real vocabulary isn't
+reversible-by-search.
+
+**The measurement that made it principled (live corpus, not assumed):** 60 keywords surface; **30 — exactly
+50% — sit on a single document**, and every ugly string the user spotted is in that tail. **A facet exists to
+partition a set; a 1-doc facet doesn't partition** (selecting it yields one doc, which search does better), so
+rare keywords have near-zero *filtering* value **whether they're junk or gold**. That threshold sweeps up the
+noise **without having to classify it** — and the overlay's existing search box is already the escape hatch.
+Also measured: `FAMILIES (26)` is misleading — only ~6 are real families, the rest 0-member concepts inherited
+from concept-graph seeding, several with 0 docs (`BERT`).
+
+**Convergence worth not losing:** autocompleting the "New family" canonical against existing families is
+simultaneously the user's navigation ask **and** the fix for defect **D3**. Carve guards against building it
+twice: **PR-2.5 owns the `library.py` boundary invariant; PR-2.7 owns the control that stops the user reaching
+it.**
+
+**Rejected:** (a) *deleting the rare tail* — mostly real vocabulary; delete isn't reversible-by-search
+(demotion is). (b) *modelling suppression as a "hidden" family* (a `Concept` whose aliases are the junk) —
+abuses ADR-015, which defines a family as **synonym collapse**; overloading those rows corrupts every
+consumer that reads them, including the concept-graph track that owns them later. (c) *folding PR-2.7's
+autocomplete into PR-2.5* — the invariant belongs at the library boundary regardless; a view control is a
+convenience on top, not a substitute (a second client bypasses it). (d) *a code-level stoplist for
+suppression* (`VENUE_STOPWORDS` precedent) — wrong shape for **user-editable** data; the user-override
+precedent is `DocumentMeta`/ADR-013 (a sidecar), and note the Enrichment-Layer Pattern does **not** govern it
+(it's a user override, not derived data). (e) *treating the doc-count threshold as a locked setting* — it
+governs **presentation**, not retrieval, so no eval-harness gate.
+
+**Opens:** two **non-UI** rows now on the checklist. (1) **Extractor truncation** — `_TOKEN_RE`
+(`keywords.py:36`) allows `-`/`+` as internal joiners but not `.`/`/`; fixing it touches the **ingest path**
+(re-run extraction over 76 docs, re-check the `VENUE_STOPWORDS`/repeated-token interaction) and **must
+preserve the ASCII-lowercase `Keyword.name` invariant** that the tag-families review leaned on (it's why
+SQLite `lower()` == Python `.casefold()` there). (2) **Keyword suppression** — needs a decision on where it
+lives (sidecar table + migration + UI write surface) → wants an ADR or a spec section; may pair with the
+extractor fix (fix what you can, suppress what you can't).
+
+---
+## 2026-07-17 — Post-commit review of tag families PR-1/PR-2; PR-2.5 + PR-2.6 scoped (docs-only)
+
+**What:** reviewed the two shipped tag-families commits (`0c3b0d4` PR-1, `0af43db` PR-2) — an agent review
+of the diff plus a live drive of the running app on the real 76-doc corpus ($0/offline). **No code changed
+this session; docs only.** Flipped the post-commit paperwork the commits left behind
+(`feature-tag-families.md` + `ui-checklist.md` still said "staged, not committed"; now ✅ SHIPPED with SHAs),
+and scoped two defect-driven follow-ups into the spec: **PR-2.5** (hardening the write paths, D1–D5) and
+**PR-2.6** (family-aware grid tiles, D6). Full repros per defect live in the spec's carve table.
+
+**Verified working live (so the review is not theoretical):** the overlay collapses families into atomic
+entries (`Large language model` 3 forms, `Connectome` 3 forms, `Embeddings` 4 forms); selecting the LLM
+family returns **14 documents**, all genuinely LLM papers (union correct) and every other chip recounts for
+AND (`chatgpt` 7, `Embeddings` 7, non-overlapping → 0, greyed); Detect reproduced the DEVLOG's claim exactly
+(`pvpo`≈`avpv pvpo` @ 0.77, tier MEANING) — **left unaccepted, real corpus unchanged**; 0 console errors.
+Unplanned bonus confirmed on screen: the curated vocabulary supplies **display names**, so `bm25` renders as
+`BM25` and `imagenet` as `ImageNet`.
+
+**Why:** 977 tests passed and every gate was clean, yet **6 real defects** survived — all in the
+**under-guarded write paths**. The read path reviewed clean (facet math, union-find determinism + the
+`(a,b)` key ordering, thin-shell discipline, and the no-families default path being genuinely
+byte-identical). Two defects **escape the feature**: D1 (rename onto an existing canonical → duplicate
+`Concept` labels → create route 500s forever *and* `promote_keyword` throws `MultipleResultsFound`,
+breaking `scripts/seed_concepts.py`) and D2 (rename silently drops the family's own canonical keyword,
+re-creating the duplicate chip the feature exists to remove). Both sit on the **natural** post-PR-2 flow:
+`_canonical_and_members` always proposes an existing keyword as canonical (`llm`), so Detect → Accept →
+**Rename** is the obvious next click. D1 is precisely the boundary risk ADR-015 named in its Consequences,
+now realized — the tag-families UI can corrupt vocabulary a different feature reads.
+
+**Root cause of the test blind spot (worth keeping):** `test_rename_family_canonical` asserts only
+`renamed.canonical` — never `aliases` or `doc_count` — and it even uses the exact
+`create_keyword_family("llm", [])`→rename shape that triggers D2. The stemmer tests (D4) pick `boxes`/
+`taxonomies`, the two inputs the sibilant/`-ies` rules happen to get right; verified against the real
+`_stem`, `database`/`databases`, `size`/`sizes`, `cache`/`caches`, `response`/`responses` and
+`analysis`/`analyses` all **MISS**, and `detect_family_proposals(["database","databases"])` returns `[]`.
+The frontend grouping layer (`familyCanonicalMap`/`familyUnitsOf`) has **no tests at all**. So PR-2.5's DoD
+puts the five repros in as regression tests *first* — they all pass today, which is the point.
+
+**Rejected:** (a) *folding D6 into PR-2.5* — carved into its own PR-2.6 instead: D6 and the family-aware
+tile display are the same root cause in the same file (`LibraryGrid` never learned about families), so
+bundling them into a backend-correctness PR would both violate "never bundle" and touch that file twice.
+(b) *fixing D3's free-text canonical in the Svelte view* — the "a keyword belongs to at most one family"
+invariant (ADR-015) belongs at the `library.py` boundary; the view is a thin shell and a second client
+would bypass a view-level guard. Same reasoning routes D1's collision check to
+`library.rename_keyword_family` (→ 409) rather than to `commitRename`. (c) *logging the six to
+KNOWN_ISSUES and building new features first* (user call — hardening was chosen instead; leaving Rename as
+a data-corruption trap on the happy path was not acceptable). (d) *adding a DB unique constraint on
+`Concept.label` for D1* — deferred to the PR: it's the right long-term shape but it's a migration touching
+a table two other features read, so it needs its own decision rather than riding a UI fix.
+
+**Opens:** PR-2.5 must **pick one** D2 fix (seed the canonical as a real alias on create, aligning
+`create_keyword_family` with `promote_keyword`, vs. make rename carry the old label into the alias set) and
+**note the migration for the 26 pre-existing curated concepts on this box** — they predate the feature and
+carry no seeded alias. PR-3 (LLM confirm) stays parked behind Ollama proof (KI-4). The `Concept.label`
+uniqueness question (rejected (d)) is now on the record for whoever touches the schema next.
+
+---
 ## 2026-07-17 — Tag families PR-2: detection (feature-tag-families.md, ADR-015)
 
 **What:** built PR-2 of the tag-families spec — a deterministic, zero-LLM detection pass that

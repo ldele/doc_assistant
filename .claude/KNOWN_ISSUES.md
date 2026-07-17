@@ -242,6 +242,21 @@ Migrated from the old `CLAUDE.md` / `README` runtime-quirk notes on 2026-06-20 (
   **KI-10 → RESOLVED.** Frozen paid number recorded in `.claude/RIGOR_TODO.md` RG-011. (Housekeeping: the
   re-freeze needed the `packaging` extra — `uv sync --extra cpu --extra dev --extra packaging`; run
   `uv sync --extra cpu --extra dev` to return the venv to its lean documented state.)
+- **Addendum (2026-07-17) — the failure is `httpx`-specific; stdlib `urllib` is unaffected (DEV only).**
+  Measured on this proxy box while planning the Crossref metadata lookup: **stdlib
+  `urllib.request.urlopen` reaches `https://api.crossref.org` cleanly, both WITH and WITHOUT
+  `truststore.inject_into_ssl()`** (~0.7–0.8 s; a full spike over the corpus's 25 real DOIs resolved
+  **25/25, 0 failures**). Why: `truststore.inject_into_ssl()` is a **process-global** SSL patch and stdlib
+  urllib honours it, whereas **httpx pins certifi and ignores both the global patch and `SSL_CERT_FILE`**
+  (the cause above). This is why the KI-10 fix had to be branch B (hand the SDK an explicit OS-trust
+  client, `llm.os_trust_http_client()` `:95-132`) — note that helper returns `None` when **not frozen** and
+  is **anthropic-typed**, so it is a *pattern, not a reusable component* for a second client.
+  **⚠ Scope this claim honestly:** measured on the **dev interpreter** (`sys.frozen is False`), one box,
+  one day, one proxy state. **It does NOT prove the frozen build** — KI-10's whole subject is PyInstaller
+  bundling certifi, and a frozen stdlib-urllib call was **not** tested. **Consequence for design:** a new
+  outbound call from `src/` should prefer the stdlib `urllib` seam (`sources_manifest.py:278-285`
+  `_http_get`) over adding an httpx client — urllib sidesteps this KI in dev; httpx means re-solving it.
+  Re-verify on the frozen build before shipping any outbound call in a release.
 - **Pointer:** RG-010/RG-011 progress in `.claude/RIGOR_TODO.md`; `docs/desktop-packaging.md` §5.
 
 ## KI-11 — chromadb hnsw index not persisted under a non-ASCII path → broken corpus for accented usernames — RESOLVED (2026-06-24)

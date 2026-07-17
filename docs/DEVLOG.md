@@ -8,6 +8,80 @@ Append only — never edit past entries.
 Format: What changed | Why | Rejected alternatives | What it opens
 
 ---
+## 2026-07-17 — Planned the 3 remaining UI features into 8 PRs; corrected 3 false checklist claims (docs-only)
+
+**What:** explored + planned the other three UI features the user picked — **evidence-only chat mode**,
+**missing-source + library-only delete**, **extended metadata + web autocomplete** — against the live code and
+the real 76-doc corpus. Carved into **8 PRs**, sequenced **after** tag-families PR-2.5/2.6/2.7. **Docs-only; no
+code changed; coding deferred to a later session by the user.** Full per-PR detail (files, seams, decisions,
+tests, verification, risks) is in a **local, uncommitted** plan file; the load-bearing measurements and every
+corrected claim are duplicated into `docs/ui-checklist.md` §3 + this entry so nothing is lost with it.
+
+**Why it needed measuring: three claims in our own docs were FALSE.**
+1. **"The web-fetch is the first outbound network call beyond the LLM APIs"** (ui-checklist) — **false.**
+   `sources_manifest.py:278-285` `_http_get` already does `urllib.request.urlopen` (scheme guard + UA +
+   timeout + `# nosec B310` + checksum verify); `scripts/download_corpus.py:72-73` too. The defensible claim
+   is *"first outbound call from the API **serving path**"* (`apps/api/` has zero such imports). The
+   correction **helps**: `_http_get` is a ready-made precedent to copy, not a novelty to argue against.
+2. **"`article_type` is already parsed and thrown away"** (my own claim, this session) — **false, 0/76
+   measured.** `_is_skippable_heading` (`metadata_extractor.py:125-138`) returns a **bool skip predicate**,
+   and `_SKIP_HEADINGS` mixes document types ("research article") with **section names** ("abstract",
+   "methods", "main") — it never fires as a taxonomy on this corpus. Reasoning from code *shape* was wrong;
+   the measurement is why we caught it.
+3. **"Evidence-only: ~90% exists, in Settings"** — broadly true, details wrong. `synthesis_mode` is already a
+   **request-scoped per-turn override** (not a global setting), and it renders as a **concatenated markdown
+   string** with an emoji + em-dash prefix (`chat_controller.py:1055-1058`) that the de-tell pass missed
+   because it lives in `src/`. `result.mode` is **live on the wire and dead on the frontend** (zero
+   consumers) — a free field.
+
+**Measurements that drove the carve (live, this box):** `doi` **25/76** and 100% invisible in `apps/` (2 of the
+25 are `type: component` — a figure DOI, wrong for the paper) · `notes` **0/76 with no writer** → dropped from
+the DOI PR · local-text yield for the new fields is hopeless (journal 5/76 · url 1/76 · article_type **0/76**)
+while **Crossref covers 21/25/25** → Crossref, not extraction · **0/76 sources missing** → the badge has
+nothing to show live (synthesize a case) · existence check ×76 = **1.0 ms** → derive-live is sound ·
+`USE_MULTI_QUERY` default **false** → the *rewrite* is the real $0 leak, not multi-query.
+
+**Two findings that changed a decision, not just a detail.** (a) **Evidence-only is a better idea than it
+looked:** human mode writes `"(human mode: evidence only)"` into history (`:1053`), so in a pure-human chat the
+rewrite LLM reads a **zero-information stub** — it is *structurally incapable* of resolving a pronoun, i.e. it
+costs money to accomplish nothing. And `_human_result` **already hardcodes `UsageView(0, 0, …)`** (`:1063`)
+while the rewrite really spends tokens — **the turn already lies; forcing makes the lie true.** The honest
+residual is *mixed*-mode chats. (b) **`is_archived` is a trap:** ~12 read paths filter it and nothing sets it,
+but **the retrieval pipeline has no `is_archived` filter and Chroma chunks carry only `doc_hash`** — an
+"archived" doc would vanish from the Library while its chunks kept being retrieved and cited. Archiving
+without removing chunks is incoherent; removing them kills the reversibility that was the only reason to
+archive.
+
+**Transport spike (real outbound calls to the public Crossref API, disclosed to the user).** stdlib `urllib`
+reaches `api.crossref.org` from this proxy box **with and without** `truststore.inject_into_ssl()` (~0.7–0.8 s;
+25/25 DOIs, 0 failures) → **transport decided: stdlib urllib behind a named seam, not httpx.** Recorded as a
+**KI-10 addendum** — the failure is **httpx-specific** (it pins certifi and ignores both the process-global
+patch and `SSL_CERT_FILE`), which is why the KI-10 fix had to be branch B. **⚠ Scoped honestly: dev
+interpreter (`sys.frozen is False`), one box/day/proxy state — it does NOT prove the frozen build**, which is
+KI-10's actual subject.
+
+**Rejected:** (a) *`is_archived` for library-only delete* — the retrieval-filter evidence above. (b) *reusing
+`scan_sources` for the badge* — it **WRITES** (upserts rows, refreshes `last_seen`); a read-only list endpoint
+must not mutate the registry. (c) *a 4th context-menu item for library-only delete* — `openMenu` hardcodes
+geometry for 3 items (`LibraryGrid.svelte:68-69`) and two adjacent red Delete items on the most destructive
+path is a footgun; a checkbox in the existing dialog (default = today's behaviour) is the gate already. (d)
+*httpx for Crossref* — re-solves KI-10 for a second client; `os_trust_http_client()` returns `None` when not
+frozen and is anthropic-typed (a pattern, not a component). (e) *the `cpc: allow-live-api` pragma* — the gate
+tripping on `urllib.request` in a test file is **correct pressure**: the call must sit behind a named
+monkeypatchable seam (precedent: `test_sync_sources.py`). (f) *a counter-based zero-LLM test* —
+`expand_query` (`pipeline.py:302`) takes **no counter**, so it would silently miss the multi-query leak; spy
+the pipeline instead. (g) *shipping the metadata migration before the ADR* — Crossref coverage is what decides
+which columns earn one; PR-B first would be a migration written against a guess. (h) *`notes` in
+`DocumentMeta`* — it has no auto default, so `_dedup_override` would mark it "customized" and corrupt the
+`.editmark` dot's meaning.
+
+**Opens:** `expand_query` takes no counter (real bug, its own PR) · **no network guard in the test suite** (the
+`api` marker is declared but unused; **no `conftest.py` exists anywhere**) → a missed monkeypatch would
+silently hit the network in CI · the `year_override` blanking trap (`library.py:244` — no way to override to
+empty) that every new nullable field inherits · the frozen-build urllib check above · human-mode resume stores
+a stub answer, not the evidence.
+
+---
 ## 2026-07-17 — Manage view at scale scoped (PR-2.7) + 2 non-UI rows, from live user feedback (docs-only)
 
 **What:** user reviewed the shipped Manage-keywords view + filter overlay and raised three things — the

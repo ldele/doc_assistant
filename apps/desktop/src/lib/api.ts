@@ -11,6 +11,7 @@ import type {
   Health,
   IngestStatus,
   KeywordFamily,
+  KeywordFamilyProposal,
   LibraryDocument,
   LibraryDocumentChunks,
   RagOverrides,
@@ -188,6 +189,15 @@ export async function deleteKeywordFamily(familyId: string): Promise<void> {
     method: 'DELETE',
   })
   if (!r.ok) throw new Error(await errorDetail(r, 'delete keyword family'))
+}
+
+/** Zero-LLM detection pass (PR-2): propose family groupings for un-familied keywords via
+ *  morphological + bge-embedding clustering. Nothing is written — accept a proposal via
+ *  createKeywordFamily. May take a few seconds (runs the embedder over the candidate pool). */
+export async function detectKeywordFamilies(): Promise<KeywordFamilyProposal[]> {
+  const r = await fetch(`${API_BASE}/api/library/keyword-families/detect`, { method: 'POST' })
+  if (!r.ok) throw new Error(await errorDetail(r, 'detect keyword families'))
+  return (await r.json()) as KeywordFamilyProposal[]
 }
 
 /** A/B-compare retrieval (U6): the query under the locked defaults vs the session override.

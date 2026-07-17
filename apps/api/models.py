@@ -27,6 +27,7 @@ if TYPE_CHECKING:
         ConversationTurn,
     )
     from doc_assistant.ingest.registry import SourceView as RegistrySourceView
+    from doc_assistant.keyword_families import FamilyProposal
     from doc_assistant.library import (
         DocumentChunkView,
         DocumentSummary,
@@ -436,6 +437,29 @@ class KeywordFamilyMember(BaseModel):
     """POST body to add a member keyword to a family."""
 
     keyword: str = Field(min_length=1)
+
+
+# ============================================================
+# Tag families — detection (feature-tag-families.md — PR-2)
+# ============================================================
+
+
+class KeywordFamilyProposalPayload(BaseModel):
+    """One deterministic, zero-LLM family proposal (mirrors ``keyword_families.FamilyProposal``).
+
+    Nothing here has been written to the DB — accepting a proposal calls the existing family CRUD
+    above (``POST``/``PATCH .../keyword-families``)."""
+
+    canonical: str
+    members: list[str]
+    tier: Literal["morphological", "embedding"]
+    confidence: float
+
+    @classmethod
+    def from_proposal(cls, p: FamilyProposal) -> KeywordFamilyProposalPayload:
+        return cls(
+            canonical=p.canonical, members=list(p.members), tier=p.tier, confidence=p.confidence
+        )
 
 
 # ============================================================

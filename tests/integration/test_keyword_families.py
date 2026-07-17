@@ -1,14 +1,16 @@
-"""Integration tests for tag families (ADR-015, feature-tag-families.md PR-1).
+"""Integration tests for tag families (ADR-015, feature-tag-families.md PR-1 + PR-2).
 
 A family is a curated Concept whose ConceptAlias rows carry member Keyword names. Covers:
 CRUD (create/rename/add-remove-member/delete), the move-on-reassign invariant, the
-union doc_count, and the API routes (200/404/400). Temp file-backed SQLite, no LLM.
+union doc_count, and the API routes (200/404/400). Temp file-backed SQLite, no LLM. The
+PR-2 ``/detect`` route section uses a fake ``.rag.embeddings`` stub — no real bge load.
 """
 
 from __future__ import annotations
 
 from collections.abc import Iterator
 from pathlib import Path
+from typing import ClassVar
 
 import pytest
 from apps.api.main import create_app
@@ -24,6 +26,39 @@ from doc_assistant.db.session import session_scope
 class _FakeController:
     def chunk_count(self) -> int:
         return 0
+
+
+class _FakeEmbeddings:
+    """Deterministic toy embedder for the /detect route — no real bge load. Known keywords get a
+    fixed near-cosine-1 pair (connectome/connectomics); everything else gets its own orthogonal
+    one-hot dimension, so unrelated keywords never spuriously cluster."""
+
+    _KNOWN: ClassVar[dict[str, tuple[float, float]]] = {
+        "connectome": (1.0, 0.0),
+        "connectomics": (0.99, 0.14),
+    }
+
+    def embed_documents(self, texts: list[str]) -> list[list[float]]:
+        dim = 2 + len(texts)
+        vectors: list[list[float]] = []
+        for i, t in enumerate(texts):
+            vec = [0.0] * dim
+            if t in self._KNOWN:
+                vec[0], vec[1] = self._KNOWN[t]
+            else:
+                vec[2 + i] = 1.0
+            vectors.append(vec)
+        return vectors
+
+
+class _FakeRag:
+    def __init__(self) -> None:
+        self.embeddings = _FakeEmbeddings()
+
+
+class _FakeControllerWithRag(_FakeController):
+    def __init__(self) -> None:
+        self.rag = _FakeRag()
 
 
 @pytest.fixture
@@ -256,3 +291,45 @@ def test_routes_400_on_blank_canonical(env: Path) -> None:
     client = _client()
     r = client.post("/api/library/keyword-families", json={"canonical": "   ", "members": []})
     assert r.status_code == 400
+
+
+# --- detect route (PR-2) -------------------------------------------------------------------- #
+
+
+def _client_with_rag() -> TestClient:
+    return TestClient(create_app(controller=_FakeControllerWithRag()))  # type: ignore[arg-type]
+
+
+def test_detect_route_proposes_both_tiers_and_excludes_familied(env: Path) -> None:
+    _seed_doc_with_keywords("a.pdf", "llm", "llms", "connectome", "connectomics", "bm25", "rag")
+    client = _client_with_rag()
+    client.post(
+        "/api/library/keyword-families",
+        json={"canonical": "retrieval-augmented generation", "members": ["rag"]},
+    )
+
+    r = client.post("/api/library/keyword-families/detect")
+    assert r.status_code == 200
+    proposals = r.json()
+    assert {p["tier"] for p in proposals} == {"morphological", "embedding"}
+
+    morph = next(p for p in proposals if p["tier"] == "morphological")
+    assert morph["canonical"] == "llm"
+    assert morph["members"] == ["llms"]
+    assert morph["confidence"] == 1.0
+
+    embed = next(p for p in proposals if p["tier"] == "embedding")
+    assert embed["canonical"] == "connectome"
+    assert embed["members"] == ["connectomics"]
+    assert embed["confidence"] > 0.9
+
+    proposed_names = {n for p in proposals for n in [p["canonical"], *p["members"]]}
+    assert "rag" not in proposed_names  # already a family member -> excluded
+    assert "bm25" not in proposed_names  # no group -> no proposal
+
+
+def test_detect_route_empty_corpus_returns_empty_list(env: Path) -> None:
+    client = _client()  # no .rag stub needed — embed_fn is never called with <2 candidates
+    r = client.post("/api/library/keyword-families/detect")
+    assert r.status_code == 200
+    assert r.json() == []

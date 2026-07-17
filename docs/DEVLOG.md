@@ -8,6 +8,71 @@ Append only — never edit past entries.
 Format: What changed | Why | Rejected alternatives | What it opens
 
 ---
+## 2026-07-17 — Tag families PR-2: detection (feature-tag-families.md, ADR-015)
+
+**What:** built PR-2 of the tag-families spec — a deterministic, zero-LLM detection pass that
+proposes family groupings for un-familied keywords, for the user to review and accept (nothing
+auto-applies). **Pure core:** new `src/doc_assistant/keyword_families.py`. Tier 1 (`_stem`,
+morphological — a conservative plural/suffix stripper: `llms`→`llm`, `connectomes`→`connectome`),
+Tier 2 (`_tier2_embedding`, bge cosine clustering via union-find so a chain of near-duplicates
+proposes one group, not overlapping pairs — catches meaning-close/spelling-different pairs a stem
+can't, e.g. `connectome`≈`connectomics`) with a hand-rolled Levenshtein `_edit_similarity` blended
+into Tier 2's confidence as a *supporting* signal, never a gate. `embed_fn` is injected (no model
+load inside this module) — `detect_family_proposals(names, *, embed_fn=None, embedding_threshold)`.
+**Impure boundary:** `library.py` gains `detect_family_candidates(embed_fn=None,
+embedding_threshold=None)` — loads every `Keyword` name, subtracts anything already a family's
+canonical/alias (case-insensitive), and hands the rest to the pure core. **API:** `POST
+/api/library/keyword-families/detect` (`apps/api/main.py`/`models.py`) reuses the controller's
+already-loaded embedder (`controller.rag.embeddings.embed_documents` — no second model load), wraps
+it to match the pure core's `embed_fn` contract, returns `KeywordFamilyProposalPayload[]`.
+**CLI:** `scripts/detect_keyword_families.py` — report-only (no `--apply`, matching the DoD's
+"nothing auto-applies"; `--no-embeddings` for an instant Tier-1-only pass, `--threshold`/`--model`
+for Tier 2), loads a fresh embedder via the existing `concept_semantics.embed_texts` (acceptable on
+a host CLI, unlike the API route). **Frontend:** `types.ts`/`api.ts` (`KeywordFamilyProposal`,
+`detectKeywordFamilies`); `LibraryManageKeywords.svelte` gains a "Detect proposals" section (Detect
+button → tier badge + canonical + members + confidence % + Accept/Dismiss per row; Accept routes
+through PR-1's existing `onCreate`, Dismiss is a pure client-side filter — nothing was ever
+written); `App.svelte` owns `detectProposals`/`detecting`/`detectError` state, cleared when the
+Manage view closes (proposals are cheap to regenerate; staleness after other edits is harmless
+since accepting still goes through idempotent CRUD).
+
+**Why:** PR-2 was next per the design-locked spec's foundation-first carve (T8) — PR-1 shipped the
+manual mechanism; PR-2 removes the toil of *finding* what to group by hand.
+
+**Verified:** 14 new pure-core unit tests (`tests/unit/test_keyword_families.py` — stem edge cases,
+Tier 1/2 grouping, the transitive-chain union-find case, Tier-1-consumed names excluded from Tier 2,
+toy-vector Tier 2 with no real bge load) + 2 new integration tests (`/detect` route, 200 with both
+tiers + familied-exclusion, empty-corpus 200/[]) — full suite **977 passed / 1 skipped** (pre-
+existing, unrelated). ruff/ruff format/`mypy --strict src`/bandit clean; `svelte-check` **0/0**
+(131 files). **Live on the real 76-doc corpus, $0/offline:** `--no-embeddings` found 0 proposals
+(every simple-plural pair on this corpus is already familied or non-existent — a legitimate
+negative, not a bug); the full run (real bge, offline-cached) found one genuine Tier-2 proposal —
+`pvpo` ≈ `avpv pvpo` (confidence 0.77) — both via the CLI and via the app's Detect button (identical
+result, confirming the API route's embed_fn wiring matches the CLI's). Accepted the proposal live
+(created the family, refreshed the list, proposal cleared) then deleted it to leave the real corpus
+unchanged (verification, not a curation decision for the user's data). Dark theme, mobile 375px,
+0 console errors, 0 API server errors.
+
+**Rejected:** returning Tier 2 as flat pairs (mirroring `concept_semantics.ConceptPair`) instead of
+transitively-grouped proposals — the spec calls for "grouped candidates," and a chain of 3+
+near-duplicates as one proposal is a better review unit than N overlapping pairs; adding a
+fuzzy-match dependency (`rapidfuzz`/`python-Levenshtein`) for the edit-distance signal — ~15 lines
+hand-rolled matches this repo's existing bias (cf. `keywords.py`'s `weirdness`/`c_value_scores`)
+against a new dependency for one small deterministic computation; gating Tier 2 on edit-distance —
+would defeat the tier's purpose (spelling-different, meaning-close pairs are exactly its job); a
+`--apply` flag on the CLI script — the DoD is explicit that nothing auto-applies, so there is
+nothing for `--apply` to do that the app's Accept button doesn't already own.
+
+**Opens:** PR-3 (an optional, gated LLM confirm/merge pass — parked, prove on Ollama first per
+KI-4) is the last carved piece; not scheduled. The Detect flow has no rate-limiting/debounce (a
+user could click Detect repeatedly; each call re-embeds the current candidate pool — cheap at this
+corpus's ~40-keyword scale, would want caching if the un-familied pool grows large). Proposals
+aren't persisted across a Manage-view close/reopen (by design — see above) — if that reads as
+friction once PR-2 sees real use, revisit.
+
+**Staged, nothing committed (cpc §13).**
+
+---
 ## 2026-07-17 — Tag families PR-1: families end-to-end, manual (feature-tag-families.md, ADR-015)
 
 **What:** built PR-1 of the design-locked tag-families spec — a family = a curated `Concept` whose

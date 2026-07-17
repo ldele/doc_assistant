@@ -5,6 +5,7 @@
     ConversationSummary,
     Health,
     KeywordFamily,
+    KeywordFamilyProposal,
     LibraryDocument,
     RagOverrides,
     TurnResult,
@@ -14,6 +15,7 @@
     compareRetrieval,
     createKeywordFamily,
     deleteKeywordFamily,
+    detectKeywordFamilies,
     getConversation,
     getHealth,
     exportConversation,
@@ -129,6 +131,11 @@
   // `manageKeywordsOpen` opens the curation view (from the keyword-filter overlay's link).
   let keywordFamilies = $state<KeywordFamily[]>([])
   let manageKeywordsOpen = $state(false)
+  // Detection (PR-2) — proposals live only while the Manage view is open; nothing is written
+  // until a proposal is accepted (routes into createFamily below), so staleness is harmless.
+  let detectProposals = $state<KeywordFamilyProposal[]>([])
+  let detecting = $state(false)
+  let detectError = $state<string | null>(null)
 
   // Grid ⇄ list toggle — a client-only view preference, persisted like theme/panel widths.
   function loadLibraryView(): 'grid' | 'list' {
@@ -700,6 +707,31 @@
       // keep the prior list
     }
   }
+
+  // Detection (PR-2): a zero-LLM proposal pass, run on request (never automatically — the API
+  // call loads/runs the embedder, not something to fire on every Manage-view open).
+  async function runDetectFamilies(): Promise<void> {
+    detecting = true
+    detectError = null
+    try {
+      detectProposals = await detectKeywordFamilies()
+    } catch (e) {
+      detectError = e instanceof Error ? e.message : 'Detection failed.'
+    }
+    detecting = false
+  }
+  function dismissProposal(canonical: string): void {
+    detectProposals = detectProposals.filter((p) => p.canonical !== canonical)
+  }
+  async function acceptProposal(p: KeywordFamilyProposal): Promise<void> {
+    await createFamily(p.canonical, p.members)
+    dismissProposal(p.canonical)
+  }
+  function closeManageKeywords(): void {
+    manageKeywordsOpen = false
+    detectProposals = []
+    detectError = null
+  }
 </script>
 
 <div class="app" style="--sidebar-width: {sidebarWidth}px">
@@ -1067,12 +1099,18 @@
   <LibraryManageKeywords
     families={keywordFamilies}
     {allKeywords}
+    proposals={detectProposals}
+    {detecting}
+    {detectError}
     onCreate={createFamily}
     onRename={renameFamily}
     onAddMember={addFamilyMemberKeyword}
     onRemoveMember={removeFamilyMemberKeyword}
     onDelete={deleteFamily}
-    onClose={() => (manageKeywordsOpen = false)}
+    onDetect={runDetectFamilies}
+    onAcceptProposal={acceptProposal}
+    onDismissProposal={dismissProposal}
+    onClose={closeManageKeywords}
   />
 {/if}
 

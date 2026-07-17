@@ -169,6 +169,15 @@ export interface KeywordFamily {
   doc_count: number
 }
 
+// Detection (PR-2). A zero-LLM proposal — nothing has been written; accepting one calls the
+// create-family API above. Mirrors apps/api/models.py::KeywordFamilyProposalPayload.
+export interface KeywordFamilyProposal {
+  canonical: string
+  members: string[]
+  tier: 'morphological' | 'embedding'
+  confidence: number
+}
+
 // Selective ingestion (feature-selective-ingestion.md, S2). GET /api/sources lists every file
 // under the source dir with a derived ingest status; PATCH /api/sources sets `excluded`; POST
 // /api/ingest {paths} ingests a selection. Mirrors apps/api/models.py::SourceFilePayload.

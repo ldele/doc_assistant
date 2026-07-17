@@ -13,16 +13,20 @@ keeps the UI layer free of session lifecycle concerns.
 import subprocess  # nosec B404
 import sys
 from collections import Counter
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import structlog
 from sqlalchemy import func, select
 
 from doc_assistant.db.models import Document, DocumentMeta, Folder, Tag
 from doc_assistant.db.session import session_scope
+
+if TYPE_CHECKING:
+    from doc_assistant.keyword_families import FamilyProposal
 
 log = structlog.get_logger(__name__)
 
@@ -598,6 +602,44 @@ def delete_keyword_family(concept_id: str) -> bool:
     from doc_assistant.concept_skeleton import delete_concept
 
     return delete_concept(concept_id)
+
+
+def _all_keyword_names() -> list[str]:
+    """Every distinct ``Keyword.name`` in the corpus, sorted."""
+    from doc_assistant.db.models import Keyword
+
+    with session_scope() as session:
+        return sorted({k.name for k in session.execute(select(Keyword)).scalars()})
+
+
+def detect_family_candidates(
+    embed_fn: Callable[[list[str]], list[list[float]]] | None = None,
+    *,
+    embedding_threshold: float | None = None,
+) -> list["FamilyProposal"]:
+    """Run the zero-LLM detection tiers (PR-2) over every un-familied keyword.
+
+    A keyword already a family's canonical or alias is excluded before detection runs — nothing
+    here writes to the DB or promotes a proposal; reviewing + accepting one is done through the
+    existing family CRUD above. ``embed_fn`` (see ``keyword_families.detect_family_proposals``)
+    is optional — omit it for a Tier-1-only (morphological) pass. ``embedding_threshold`` defaults
+    to ``keyword_families.DEFAULT_EMBEDDING_THRESHOLD`` when omitted.
+    """
+    from doc_assistant.keyword_families import DEFAULT_EMBEDDING_THRESHOLD, detect_family_proposals
+
+    names = _all_keyword_names()
+    familied: set[str] = set()
+    for f in list_keyword_families():
+        familied.add(f.canonical.casefold())
+        familied.update(a.casefold() for a in f.aliases)
+    candidates = [n for n in names if n.casefold() not in familied]
+    return detect_family_proposals(
+        candidates,
+        embed_fn=embed_fn,
+        embedding_threshold=(
+            embedding_threshold if embedding_threshold is not None else DEFAULT_EMBEDDING_THRESHOLD
+        ),
+    )
 
 
 # ============================================================

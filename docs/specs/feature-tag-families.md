@@ -1,13 +1,14 @@
 # Spec — Tag families (keyword synonym-collapse over the concept vocabulary)
 
-**Status:** **PR-1 BUILT 2026-07-17 (staged, not committed)**; PR-2/PR-3 still DESIGN-LOCKED (grilled
-2026-07-16, `grill-me`; ledger at foot). Architectural decisions in **ADR-015**. Collapses near-duplicate
-keywords (`llm`/`llms`, `connectome`/`connectomics`) into user-curated **families** so the Library keyword
-filter treats each family as one entry. *Takes advantage of* the curated `Concept`/`ConceptAlias` vocabulary —
-it is **not** the concept-graph/epistemics UI (that is a separate later track over the same rows; ADR-015 §C).
+**Status:** **PR-1 + PR-2 BUILT 2026-07-17 (staged, not committed)**; PR-3 still DESIGN-LOCKED (grilled
+2026-07-16, `grill-me`; ledger at foot; parked — not scheduled). Architectural decisions in **ADR-015**.
+Collapses near-duplicate keywords (`llm`/`llms`, `connectome`/`connectomics`) into user-curated **families** so
+the Library keyword filter treats each family as one entry. *Takes advantage of* the curated
+`Concept`/`ConceptAlias` vocabulary — it is **not** the concept-graph/epistemics UI (a separate later track
+over the same rows; ADR-015 §C).
 
 **Owner:** Claude Code. **Three PRs, never bundle:** ~~PR-1 families end-to-end (manual)~~ **BUILT** →
-**PR-2 detection (next)** → PR-3 LLM assist (parked).
+~~PR-2 detection~~ **BUILT** → PR-3 LLM assist (parked).
 
 ---
 
@@ -73,7 +74,7 @@ The whole mechanism with hand-curation; no detection yet. Demoable: create `larg
   preview-harness `$0` — create a family live, confirm the overlay collapses `llm`/`llms` into one entry that
   filters the union; DEVLOG + ui-checklist + this spec's status flip with SHA.
 
-### PR-2 — detection
+### PR-2 — detection — ✅ BUILT 2026-07-17 (staged)
 
 - **`src/` pure core** `keyword_families.py` (or extend `keywords.py`): `Keyword` list → proposed families via
   **Tier 1 morphological** (casefold + conservative singularizer/suffix-normalizer; `llms`→`llm`,
@@ -85,6 +86,14 @@ The whole mechanism with hand-curation; no detection yet. Demoable: create `larg
 - **DoD:** unit tests on the pure tiers (toy keyword sets, incl. the two example cases); the embedding tier
   behind the API's loaded `bge` (no new model load); nothing auto-applies; preview-harness — Detect surfaces
   `llm`/`llms` (Tier 1) and `connectome`/`connectomics` (Tier 2) as reviewable proposals.
+- **Built as:** a new `keyword_families.py` (not an extension of `keywords.py` — kept the extraction module's
+  concern separate, matching the `concept_semantics.py`/`concept_curation.py` split precedent). Tier 2 groups
+  transitively via union-find (a chain proposes one family, not overlapping pairs) rather than returning flat
+  pairs. `library.detect_family_candidates(embed_fn, embedding_threshold)` is the impure boundary (loads
+  keyword names, subtracts already-familied ones, injects `embed_fn`). The API route wraps
+  `controller.rag.embeddings.embed_documents` to satisfy "no new model load"; the CLI script has no `--apply` at
+  all (report-only, per the DoD). Verified live on the real 76-doc corpus (both the CLI and the app's Detect
+  button found the same proposal, `pvpo`≈`avpv pvpo` @ 0.77 confidence) — full details in `docs/DEVLOG.md`.
 
 ### PR-3 — LLM confirm/merge pass (parked)
 

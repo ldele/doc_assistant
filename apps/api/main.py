@@ -48,6 +48,7 @@ from apps.api.models import (
     KeywordFamilyCreate,
     KeywordFamilyMember,
     KeywordFamilyPayload,
+    KeywordFamilyProposalPayload,
     KeywordFamilyRename,
     LibraryDocumentChunksPayload,
     LibraryDocumentMetaUpdate,
@@ -564,6 +565,25 @@ def create_app(
         if not delete_keyword_family(family_id):
             raise HTTPException(status_code=404, detail="keyword family not found")
         return {"ok": True}
+
+    @app.post("/api/library/keyword-families/detect")
+    def detect_keyword_families_route(request: Request) -> list[KeywordFamilyProposalPayload]:
+        """Deterministic, zero-LLM detection pass over every un-familied keyword (PR-2):
+        morphological stem-matching (``llm``/``llms``) plus bge-embedding cosine clustering
+        (``connectome``/``connectomics``). Nothing here writes to the DB — review a proposal, then
+        create/extend a family through the existing CRUD routes above. Reuses the controller's
+        already-loaded embedder (no new model load)."""
+        from doc_assistant.library import detect_family_candidates
+
+        controller: ChatController = request.app.state.controller
+
+        def embed_fn(texts: list[str]) -> list[list[float]]:
+            return [
+                [float(x) for x in v] for v in controller.rag.embeddings.embed_documents(texts)
+            ]
+
+        proposals = detect_family_candidates(embed_fn=embed_fn)
+        return [KeywordFamilyProposalPayload.from_proposal(p) for p in proposals]
 
     @app.get("/api/settings")
     def get_settings(request: Request) -> dict[str, Any]:

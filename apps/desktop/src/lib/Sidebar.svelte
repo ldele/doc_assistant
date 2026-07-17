@@ -37,7 +37,7 @@
     onDelete,
     onRename,
   }: {
-    mode: 'chat' | 'library'
+    mode: 'chat' | 'library' | 'graph'
     conversations: ConversationSummary[]
     documents: LibraryDocument[]
     liveSessionId: string
@@ -47,7 +47,7 @@
     open?: boolean
     onNew: () => void
     onSelect: (sessionId: string) => void
-    onSelectMode: (mode: 'chat' | 'library') => void
+    onSelectMode: (mode: 'chat' | 'library' | 'graph') => void
     onSelectCollection: (c: LibraryCollection) => void
     onClose?: () => void
     onPin: (sessionId: string, pinned: boolean) => void
@@ -248,6 +248,16 @@
       >
         <Icon name="library" size={14} /> Library
       </button>
+      <button
+        class="mode"
+        class:active={mode === 'graph'}
+        role="tab"
+        aria-selected={mode === 'graph'}
+        type="button"
+        onclick={() => onSelectMode('graph')}
+      >
+        <Icon name="waypoints" size={14} /> Graph
+      </button>
     </div>
     {#if mode === 'chat'}
       <button class="new" onclick={onNew} type="button"><Icon name="rotate-ccw" size={15} /> New chat</button>
@@ -396,7 +406,7 @@
         {/if}
       {/if}
     </nav>
-  {:else}
+  {:else if mode === 'library'}
     <nav class="list" aria-label="Library navigation">
       {#if documents.length === 0}
         <p class="empty">No documents indexed yet.</p>

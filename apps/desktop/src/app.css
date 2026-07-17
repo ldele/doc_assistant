@@ -23,6 +23,23 @@
   --ok-fg: #2f6b3d;
   --ok-border: #9cc9a6;
 
+  /* Categorical community palette (concept graph — feature-concept-graph.md PR-G2a). 12 hues
+     cycled by `community % 12`: colour is a grouping hint and community ids are positional, so a
+     collision past 12 is harmless (logged, never blocked). Kept clear of the semantic
+     --danger/--warn-fg, which the gap badges reserve. Light values (readable on ivory/white). */
+  --comm-0: hsl(210 55% 47%);
+  --comm-1: hsl(145 48% 39%);
+  --comm-2: hsl(35 62% 44%);
+  --comm-3: hsl(280 42% 52%);
+  --comm-4: hsl(330 52% 50%);
+  --comm-5: hsl(190 55% 39%);
+  --comm-6: hsl(15 58% 50%);
+  --comm-7: hsl(255 45% 56%);
+  --comm-8: hsl(95 42% 39%);
+  --comm-9: hsl(300 38% 50%);
+  --comm-10: hsl(170 48% 36%);
+  --comm-11: hsl(230 32% 49%);
+
   --shadow-1: 0 1px 2px rgba(30, 28, 24, 0.05), 0 1px 3px rgba(30, 28, 24, 0.04);
   --shadow-2: 0 10px 30px rgba(30, 28, 24, 0.12);
 
@@ -48,6 +65,11 @@
   --text-title: 1.25rem;
   --text-display: 1.6rem;
   --measure: 68ch;
+
+  /* Concept-graph structural strokes (PR-G2a). Derived from --fg via color-mix so they track BOTH
+     themes from one declaration — no per-theme restatement needed (var() is late-bound at use). */
+  --graph-edge: color-mix(in srgb, var(--fg) 18%, transparent);
+  --graph-node-stroke: color-mix(in srgb, var(--fg) 32%, transparent);
 
   font-family: var(--font-sans);
   font-size: 15px;
@@ -78,6 +100,20 @@
   --ok-fg: #79c98d;
   --ok-border: #345f3f;
 
+  /* Community palette — dark values (brighter, on warm charcoal). See :root for the rationale. */
+  --comm-0: hsl(210 62% 67%);
+  --comm-1: hsl(145 45% 57%);
+  --comm-2: hsl(35 66% 62%);
+  --comm-3: hsl(280 55% 73%);
+  --comm-4: hsl(330 60% 69%);
+  --comm-5: hsl(190 55% 57%);
+  --comm-6: hsl(15 66% 66%);
+  --comm-7: hsl(255 62% 75%);
+  --comm-8: hsl(95 44% 57%);
+  --comm-9: hsl(300 44% 67%);
+  --comm-10: hsl(170 46% 54%);
+  --comm-11: hsl(230 46% 69%);
+
   --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.35), 0 1px 3px rgba(0, 0, 0, 0.3);
   --shadow-2: 0 10px 30px rgba(0, 0, 0, 0.55);
 }
@@ -99,6 +135,23 @@
   --warn-border: #e6c987;
   --ok-fg: #2f6b3d;
   --ok-border: #9cc9a6;
+
+  /* Categorical community palette (concept graph — feature-concept-graph.md PR-G2a). 12 hues
+     cycled by `community % 12`: colour is a grouping hint and community ids are positional, so a
+     collision past 12 is harmless (logged, never blocked). Kept clear of the semantic
+     --danger/--warn-fg, which the gap badges reserve. Light values (readable on ivory/white). */
+  --comm-0: hsl(210 55% 47%);
+  --comm-1: hsl(145 48% 39%);
+  --comm-2: hsl(35 62% 44%);
+  --comm-3: hsl(280 42% 52%);
+  --comm-4: hsl(330 52% 50%);
+  --comm-5: hsl(190 55% 39%);
+  --comm-6: hsl(15 58% 50%);
+  --comm-7: hsl(255 45% 56%);
+  --comm-8: hsl(95 42% 39%);
+  --comm-9: hsl(300 38% 50%);
+  --comm-10: hsl(170 48% 36%);
+  --comm-11: hsl(230 32% 49%);
 
   --shadow-1: 0 1px 2px rgba(30, 28, 24, 0.05), 0 1px 3px rgba(30, 28, 24, 0.04);
   --shadow-2: 0 10px 30px rgba(30, 28, 24, 0.12);
@@ -122,6 +175,20 @@
     --warn-border: #5a4a22;
     --ok-fg: #79c98d;
     --ok-border: #345f3f;
+
+    /* Community palette — dark values (OS-dark, no explicit data-theme). See :root. */
+    --comm-0: hsl(210 62% 67%);
+    --comm-1: hsl(145 45% 57%);
+    --comm-2: hsl(35 66% 62%);
+    --comm-3: hsl(280 55% 73%);
+    --comm-4: hsl(330 60% 69%);
+    --comm-5: hsl(190 55% 57%);
+    --comm-6: hsl(15 66% 66%);
+    --comm-7: hsl(255 62% 75%);
+    --comm-8: hsl(95 44% 57%);
+    --comm-9: hsl(300 44% 67%);
+    --comm-10: hsl(170 46% 54%);
+    --comm-11: hsl(230 46% 69%);
 
     --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.35), 0 1px 3px rgba(0, 0, 0, 0.3);
     --shadow-2: 0 10px 30px rgba(0, 0, 0, 0.55);

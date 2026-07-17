@@ -1,8 +1,10 @@
 <script lang="ts">
   import type {
     CompareResult,
+    ConceptGraph as ConceptGraphData,
     ConversationDetail,
     ConversationSummary,
+    GraphRebuildStatus,
     Health,
     KeywordFamily,
     KeywordFamilyProposal,
@@ -16,13 +18,17 @@
     createKeywordFamily,
     deleteKeywordFamily,
     detectKeywordFamilies,
+    getConceptGraph,
+    getConceptPresence,
     getConversation,
+    getGraphRebuildStatus,
     getHealth,
     exportConversation,
     listConversations,
     listKeywordFamilies,
     deleteDocument,
     listLibraryDocuments,
+    rebuildConceptGraph,
     removeFamilyMember,
     renameKeywordFamily,
     resetDocumentMeta,
@@ -44,6 +50,7 @@
   import LibraryMetaEditor from './lib/LibraryMetaEditor.svelte'
   import LibraryDeleteConfirm from './lib/LibraryDeleteConfirm.svelte'
   import CompareCard from './lib/CompareCard.svelte'
+  import ConceptGraph from './lib/ConceptGraph.svelte'
   import Icon from './lib/Icon.svelte'
   import {
     type LibraryCollection,
@@ -115,7 +122,7 @@
   // (turns/viewing/sessionId) is untouched by the switch. Navigation model: the rail picks the
   // active *collection*, the main pane shows it as an inventory grid, and opening a document
   // drills down in place to the chunk view (breadcrumb + Back walk back up).
-  let mode = $state<'chat' | 'library'>('chat')
+  let mode = $state<'chat' | 'library' | 'graph'>('chat')
   let documents = $state<LibraryDocument[]>([])
   let libraryCollection = $state<LibraryCollection>({ kind: 'all' })
   let libraryDocId = $state<string | null>(null)
@@ -136,6 +143,69 @@
   let detectProposals = $state<KeywordFamilyProposal[]>([])
   let detecting = $state(false)
   let detectError = $state<string | null>(null)
+
+  // Concept graph (feature-concept-graph.md PR-G2a, ADR-017). Lazy-loaded on first entry to the
+  // Graph mode; `null` after a load means "never built" (a 404 — the normal first run), which the
+  // view renders as a build affordance. Rebuild is a 202 + poll job (B1/ADR-017 B1); while it runs
+  // `graphRebuildState` is 'running' and the graph is refetched once it settles.
+  let conceptGraph = $state<ConceptGraphData | null>(null)
+  let graphLoading = $state(false)
+  let graphError = $state<string | null>(null)
+  let graphLoaded = false
+  let graphRebuildState = $state<GraphRebuildStatus['state']>('idle')
+
+  async function loadConceptGraph(): Promise<void> {
+    graphLoading = true
+    graphError = null
+    try {
+      conceptGraph = await getConceptGraph()
+    } catch (e) {
+      graphError = e instanceof Error ? e.message : String(e)
+    } finally {
+      graphLoading = false
+      graphLoaded = true
+    }
+  }
+
+  // Kick a rebuild and poll the status route until it settles, then refetch the graph. Deterministic
+  // and ~7s; the view stays usable throughout (inform, don't block).
+  async function rebuildGraph(): Promise<void> {
+    if (graphRebuildState === 'running') return
+    graphRebuildState = 'running'
+    try {
+      await rebuildConceptGraph()
+    } catch (e) {
+      graphRebuildState = 'error'
+      graphError = e instanceof Error ? e.message : String(e)
+      return
+    }
+    const poll = async (): Promise<void> => {
+      try {
+        const st = await getGraphRebuildStatus()
+        graphRebuildState = st.state
+        if (st.state === 'running') {
+          setTimeout(() => void poll(), 700)
+          return
+        }
+        if (st.state === 'error') {
+          graphError = st.message ?? 'rebuild failed'
+          return
+        }
+        await loadConceptGraph() // 'done' → pull the fresh graph
+      } catch (e) {
+        graphRebuildState = 'error'
+        graphError = e instanceof Error ? e.message : String(e)
+      }
+    }
+    void poll()
+  }
+
+  // Deep-link from a graph node to curate its concept (ADR-017 A1 — the graph never writes the
+  // vocabulary; the Manage-keywords view owns every edit). Switches to Library and opens the view.
+  function manageConcept(_conceptId: string, _label: string): void {
+    selectMode('library')
+    manageKeywordsOpen = true
+  }
 
   // Grid ⇄ list toggle — a client-only view preference, persisted like theme/panel widths.
   function loadLibraryView(): 'grid' | 'list' {
@@ -559,13 +629,18 @@
 
   // Switch between Chat and Library. Entering Library closes any open citation panel and lazy-loads
   // the document list once; the live chat's in-memory state is preserved across the switch.
-  function selectMode(m: 'chat' | 'library'): void {
+  function selectMode(m: 'chat' | 'library' | 'graph'): void {
     mode = m
     sidebarOpen = false
     activeCitation = null
     if (m === 'library' && !documentsLoaded) {
       void refreshDocuments()
       void refreshFamilies()
+    }
+    if (m === 'graph') {
+      // The ego panel resolves doc_ids → titles from the library list, so it must be loaded too.
+      if (!documentsLoaded) void refreshDocuments()
+      if (!graphLoaded) void loadConceptGraph()
     }
   }
 
@@ -763,7 +838,7 @@
   ></div>
 
   <div class="content">
-    <main class:wide={mode === 'library'}>
+    <main class:wide={mode === 'library' || mode === 'graph'}>
       <header>
         <button class="hamburger" onclick={() => (sidebarOpen = true)} aria-label="Open conversations">
           <Icon name="menu" />
@@ -787,7 +862,7 @@
           <button
             class="ghost"
             onclick={doExport}
-            disabled={mode === 'library' ||
+            disabled={mode !== 'chat' ||
               (viewing === null && resumedHistory === null && turns.length === 0)}
             ><Icon name="download" size={15} /> Export</button
           >
@@ -940,6 +1015,21 @@
             </section>
           {/if}
         </div>
+      {:else if mode === 'graph'}
+        <ConceptGraph
+          graph={conceptGraph}
+          loading={graphLoading}
+          error={graphError}
+          {documents}
+          rebuildState={graphRebuildState}
+          onRebuild={rebuildGraph}
+          onOpenDocument={(id) => {
+            selectMode('library')
+            openDocument(id)
+          }}
+          onManageConcept={manageConcept}
+          loadPresence={getConceptPresence}
+        />
       {:else}
       <section class="conversation" bind:this={convoEl} onscroll={onConvoScroll}>
         {#if viewing && viewedConvo}

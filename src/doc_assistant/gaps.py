@@ -22,7 +22,7 @@ from __future__ import annotations
 from collections import defaultdict
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Literal
+from typing import Literal, cast
 
 from doc_assistant.concept_skeleton import PRESENCE_BOUNDARY, ConceptSkeleton, match_presence
 from doc_assistant.llm import LLMClient
@@ -326,6 +326,44 @@ def _write_stochastic_gap_rows(suggestions: list[Gap], version: str) -> int:
                 # status stays "surfaced" — current.status was already checked above
             written += 1
     return written
+
+
+def load_gaps() -> list[Gap]:
+    """Read the persisted ``gaps`` sidecar back — the read half of the row writers.
+
+    Returns every gap (deterministic *and* stochastic) in the pure :class:`Gap` shape, so a
+    consumer reads ``determinism`` rather than re-deriving it (ADR-004: it is first-class).
+    An **empty list means the sidecar has not been built yet** — the normal state before
+    ``build_gaps --apply`` — never an error.
+
+    ``status`` here is the row's own value. Per **ADR-017 C1** a user's dismissal/promotion is a
+    *user override* that lives in its own sidecar (deterministic rows are delete-and-replace, so
+    a status written here would not survive a rebuild); a consumer that shows triage state must
+    resolve ``override ?? this``.
+    """
+    import json
+
+    from sqlalchemy import select
+
+    from doc_assistant.db.models import GapRow
+    from doc_assistant.db.session import session_scope
+
+    with session_scope() as session:
+        rows = list(
+            session.execute(select(GapRow).order_by(GapRow.kind, GapRow.concept_id)).scalars()
+        )
+        return [
+            Gap(
+                concept_id=r.concept_id,
+                tier=cast(GapTier, r.tier),
+                determinism=cast(Determinism, r.determinism),
+                kind=cast(GapKind, r.kind),
+                evidence=GapEvidence(fact_ids=tuple(json.loads(r.evidence_json or "[]"))),
+                rating=r.rating,
+                status=cast(GapStatus, r.status),
+            )
+            for r in rows
+        ]
 
 
 def build_gaps(

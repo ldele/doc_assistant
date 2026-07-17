@@ -39,6 +39,8 @@ from apps.api.models import (
     ChatRequest,
     CompareRequest,
     CompareResultPayload,
+    ConceptGraphPayload,
+    ConceptPresencePayload,
     ConversationDetailPayload,
     ConversationMetaUpdate,
     ConversationSummaryPayload,
@@ -208,6 +210,40 @@ class _IngestStatus:
     message: str | None = None
 
 
+@dataclass
+class _GraphRebuildStatus:
+    """Background concept-skeleton rebuild progress, read by the rebuild status route.
+
+    Mirrors ``_IngestStatus`` deliberately (ADR-017 B1): the rebuild is ~7s of deterministic,
+    zero-LLM work, and this repo's established shape for a derived-data build triggered from the
+    app is 202 + poll, not a blocking request.
+    """
+
+    state: str = "idle"  # idle | running | done | error
+    graph_version: str | None = None
+    message: str | None = None
+
+
+def _default_rebuild_graph() -> str:
+    """Lazy wrapper so importing this module doesn't pull the heavy concept-skeleton chain.
+
+    Returns the new ``graph_version``. The CLI runner (``scripts/build_concept_skeleton --apply``)
+    stays the canonical seam — this is a second caller of the *same* idempotent function, which is
+    what ADR-017 B1 decided the Enrichment-Layer Pattern permits (it constrains what derived data
+    is, not who triggers it).
+    """
+    from doc_assistant.concept_skeleton import build_concept_skeleton
+
+    result = build_concept_skeleton(apply=True)
+    return str(result.skeleton.meta.get("graph_version", ""))
+
+
+def _graph_rebuild_status_dict(app: FastAPI) -> dict[str, Any]:
+    st: _GraphRebuildStatus = app.state.graph_rebuild_status
+    with app.state.graph_rebuild_lock:
+        return {"state": st.state, "graph_version": st.graph_version, "message": st.message}
+
+
 def _default_ingest(
     *, scope: str | None = None, files: list[Path] | None = None
 ) -> dict[str, int]:
@@ -253,6 +289,7 @@ def create_app(
     *,
     ingest_fn: Callable[..., dict[str, int]] | None = None,
     controller_factory: Callable[[], ChatController] | None = None,
+    rebuild_graph_fn: Callable[[], str] | None = None,
 ) -> FastAPI:
     """Build the FastAPI app. ``controller`` is injected in tests (a fake) and set on
     ``app.state`` eagerly so the test client needs no lifespan; in production it is
@@ -273,9 +310,12 @@ def create_app(
     app.state.sessions = SessionStore()
     app.state.ingest_status = _IngestStatus()
     app.state.ingest_lock = threading.Lock()
+    app.state.graph_rebuild_status = _GraphRebuildStatus()
+    app.state.graph_rebuild_lock = threading.Lock()
     # Test seams (cpc §13): default to the real ingest + a fresh ChatController; tests inject
     # fakes so /api/ingest runs no real ingest / model reload.
     app.state.ingest_fn = ingest_fn or _default_ingest
+    app.state.rebuild_graph_fn = rebuild_graph_fn or _default_rebuild_graph
     app.state.controller_factory = controller_factory or ChatController
     if controller is not None:
         app.state.controller = controller
@@ -584,6 +624,80 @@ def create_app(
 
         proposals = detect_family_candidates(embed_fn=embed_fn)
         return [KeywordFamilyProposalPayload.from_proposal(p) for p in proposals]
+
+    # --- Concept graph (PR-G1 — ADR-017 / docs/specs/feature-concept-graph.md) ---
+    # Read-only over the vocabulary by decision (ADR-017 A1): the graph observes, the
+    # Manage-keywords routes above edit. The one write here is the rebuild *trigger*, which runs
+    # the same idempotent runner the CLI does.
+
+    @app.get("/api/concepts/graph")
+    def get_concept_graph() -> ConceptGraphPayload:
+        """The concept-graph read model: nodes + edges + communities + gaps + a staleness verdict.
+
+        **404 when the skeleton has never been built** — ``skeleton.json`` is a gitignored,
+        regenerable sidecar, so a fresh clone legitimately has none. That is an empty state the UI
+        answers with the rebuild button below, not a server fault; the detail says so.
+
+        Ids are concept **UUIDs** throughout (nodes, edge endpoints, gap anchors, community
+        members); ``label`` rides only on the node. One id space, deliberately — see KI-15.
+        """
+        from doc_assistant.concept_graph_view import load_graph_view
+
+        view = load_graph_view()
+        if view is None:
+            raise HTTPException(
+                status_code=404,
+                detail="concept graph not built yet — run a rebuild to create it",
+            )
+        return ConceptGraphPayload.from_view(view)
+
+    @app.get("/api/concepts/{concept_id}/presence")
+    def get_concept_presence(concept_id: str) -> list[ConceptPresencePayload]:
+        """Where one concept appears: its documents + the chunk keys that mention it.
+
+        Per-concept, not bulk — the view renders one neighbourhood at a time (ego-first), and the
+        chunk-key set grows with the vocabulary. An unknown concept returns ``[]`` (a concept that
+        is present nowhere is indistinguishable here, by design — the vocabulary is the authority
+        on existence)."""
+        from doc_assistant.concept_graph_view import load_concept_presence
+
+        return [ConceptPresencePayload.from_presence(p) for p in load_concept_presence(concept_id)]
+
+    @app.post("/api/concepts/graph/rebuild", status_code=202)
+    def rebuild_concept_graph(request: Request) -> dict[str, Any]:
+        """Rebuild the concept skeleton (Node A: ~7s, zero-LLM, deterministic, idempotent).
+
+        202 + poll, mirroring ``POST /api/ingest`` — the repo's established shape for a
+        derived-data build triggered from the app (ADR-017 B1). 409 while one is already running.
+        """
+        app_ = request.app
+        status: _GraphRebuildStatus = app_.state.graph_rebuild_status
+        with app_.state.graph_rebuild_lock:
+            if status.state == "running":
+                raise HTTPException(status_code=409, detail="graph rebuild already running")
+            status.state = "running"
+            status.message = None
+
+        def _worker() -> None:
+            try:
+                version = app_.state.rebuild_graph_fn()
+            except Exception as e:  # a failed rebuild must not kill the thread silently
+                log.exception("graph_rebuild_failed")
+                with app_.state.graph_rebuild_lock:
+                    status.state = "error"
+                    status.message = str(e)
+                return
+            with app_.state.graph_rebuild_lock:
+                status.graph_version = version
+                status.message = "graph rebuilt"
+                status.state = "done"
+
+        threading.Thread(target=_worker, name="graph-rebuild", daemon=True).start()
+        return _graph_rebuild_status_dict(app_)
+
+    @app.get("/api/concepts/graph/rebuild/status")
+    def concept_graph_rebuild_status(request: Request) -> dict[str, Any]:
+        return _graph_rebuild_status_dict(request.app)
 
     @app.get("/api/settings")
     def get_settings(request: Request) -> dict[str, Any]:

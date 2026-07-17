@@ -1171,6 +1171,32 @@ def write_skeleton(
     _write_skeleton_json(skeleton, root)
 
 
+def load_skeleton(*, skeleton_dir: Path | None = None) -> ConceptSkeleton | None:
+    """Read the ``skeleton.json`` sidecar back — the read half of :func:`write_skeleton`.
+
+    Returns ``None`` when the artifact does not exist. **Absent is the normal first run, not an
+    error**: ``skeleton.json`` is a regenerable sidecar and is gitignored, so a fresh clone has
+    none until ``build_concept_skeleton --apply`` runs (Enrichment-Layer Pattern). Callers render
+    an empty state and offer a rebuild; they must not treat ``None`` as a failure.
+
+    A file that exists but cannot be read or parsed *is* an error — that means a corrupt or
+    truncated artifact, which is not the same thing as "never built", and silently returning
+    ``None`` would invite a rebuild that masks the real problem.
+    """
+    from doc_assistant.config import CONCEPT_SKELETON_DIR
+
+    root = skeleton_dir or CONCEPT_SKELETON_DIR
+    path = root / SKELETON_NAME
+    if not path.is_file():
+        log.info("skeleton_absent", path=str(path))
+        return None
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as e:
+        raise RuntimeError(f"concept skeleton at {path} is unreadable") from e
+    return skeleton_from_dict(data)
+
+
 def build_concept_skeleton(
     *,
     apply: bool,

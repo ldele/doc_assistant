@@ -21,11 +21,19 @@ from doc_assistant.config import CANDIDATE_K
 if TYPE_CHECKING:
     from doc_assistant.chat_controller import ClaimView, SourceView, TurnResult, UsageView
     from doc_assistant.compare import CompareResult, CompareRow, CompareSource
+    from doc_assistant.concept_graph_view import GraphStaleness, GraphView
+    from doc_assistant.concept_skeleton import (
+        Community,
+        ConceptNode,
+        ConceptPresence,
+        SkeletonEdge,
+    )
     from doc_assistant.conversations import (
         ConversationDetail,
         ConversationSummary,
         ConversationTurn,
     )
+    from doc_assistant.gaps import Gap
     from doc_assistant.ingest.registry import SourceView as RegistrySourceView
     from doc_assistant.keyword_families import FamilyProposal
     from doc_assistant.library import (
@@ -590,4 +598,172 @@ class SourceFilePayload(BaseModel):
             status=v.status,
             excluded=v.excluded,
             doc_type=v.doc_type,
+        )
+
+
+# ============================================================
+# Concept graph (PR-G1 — ADR-017 / docs/specs/feature-concept-graph.md)
+# ============================================================
+#
+# Wire id space: concept **UUIDs** everywhere — `ConceptGraphNodePayload.id`,
+# `ConceptGraphEdgePayload.source`/`target`, `GapPayload.concept_id` and
+# `ConceptCommunityPayload.node_ids` are all `Concept.id`. `label` rides **only** on the node;
+# the client joins by id. Mixing ids and labels across this boundary is the bug that caused
+# KI-15, so the one id space is a contract, not a convention.
+
+
+class ConceptGraphNodePayload(BaseModel):
+    """One concept node. `degree` and `community` are precomputed layout signal."""
+
+    id: str
+    label: str
+    doc_ids: list[str]
+    degree: int
+    community: int
+
+    @classmethod
+    def from_node(cls, n: ConceptNode) -> ConceptGraphNodePayload:
+        return cls(
+            id=n.id,
+            label=n.label,
+            doc_ids=list(n.doc_ids),
+            degree=n.degree,
+            community=n.community,
+        )
+
+
+class ConceptGraphEdgePayload(BaseModel):
+    """An undirected concept-concept edge, typed by its provenance set.
+
+    `relation`/`stance` are the deferred Node-B annotation and are empty on every edge until
+    that pass runs — a renderer must not imply agreement/disagreement it does not have.
+    """
+
+    source: str
+    target: str
+    provenance: list[str]
+    weight: float
+    n_cooccurrence_chunks: int
+    relation: str | None = None
+
+    @classmethod
+    def from_edge(cls, e: SkeletonEdge) -> ConceptGraphEdgePayload:
+        return cls(
+            source=e.source_concept_id,
+            target=e.target_concept_id,
+            provenance=sorted(e.provenance),
+            weight=e.weight,
+            n_cooccurrence_chunks=e.n_cooccurrence_chunks,
+            relation=e.relation,
+        )
+
+
+class ConceptCommunityPayload(BaseModel):
+    """A Louvain community. `id` is POSITIONAL, not identity — it renumbers when the
+    vocabulary changes, so a client must never persist a preference against it."""
+
+    id: int
+    label: str
+    node_ids: list[str]
+    size: int
+
+    @classmethod
+    def from_community(cls, c: Community) -> ConceptCommunityPayload:
+        return cls(id=c.id, label=c.label, node_ids=list(c.node_ids), size=c.size)
+
+
+class GapPayload(BaseModel):
+    """One detected corpus gap (ADR-004), anchored to a concept.
+
+    `rating` is `None` for every deterministic gap (a raw graph fact carries no confidence).
+    `status` is the row's own value; per ADR-017 C1 a user's triage lives in its own override
+    sidecar (deterministic rows are delete-and-replace), so it is not yet resolved here.
+    """
+
+    concept_id: str
+    tier: str
+    determinism: str
+    kind: str
+    fact_ids: list[str]
+    rating: float | None = None
+    status: str
+
+    @classmethod
+    def from_gap(cls, g: Gap) -> GapPayload:
+        return cls(
+            concept_id=g.concept_id,
+            tier=g.tier,
+            determinism=g.determinism,
+            kind=g.kind,
+            fact_ids=list(g.evidence.fact_ids),
+            rating=g.rating,
+            status=g.status,
+        )
+
+
+class GraphStalenessPayload(BaseModel):
+    """How far the built graph has drifted from the live vocabulary.
+
+    The skeleton is a build artifact and the Manage-keywords view writes `Concept` rows live,
+    so drift is structural, not a defect: the UI reports it and offers a rebuild.
+    """
+
+    stale: bool
+    n_concepts_in_db: int
+    n_concepts_in_skeleton: int
+    added_labels: list[str]
+    removed_ids: list[str]
+
+    @classmethod
+    def from_staleness(cls, s: GraphStaleness) -> GraphStalenessPayload:
+        return cls(
+            stale=s.stale,
+            n_concepts_in_db=s.n_concepts_in_db,
+            n_concepts_in_skeleton=s.n_concepts_in_skeleton,
+            added_labels=list(s.added_labels),
+            removed_ids=list(s.removed_ids),
+        )
+
+
+class ConceptGraphPayload(BaseModel):
+    """The whole read model for one render of the concept-graph view."""
+
+    graph_version: str
+    nodes: list[ConceptGraphNodePayload]
+    edges: list[ConceptGraphEdgePayload]
+    communities: list[ConceptCommunityPayload]
+    gaps: list[GapPayload]
+    staleness: GraphStalenessPayload
+
+    @classmethod
+    def from_view(cls, v: GraphView) -> ConceptGraphPayload:
+        return cls(
+            graph_version=str(v.skeleton.meta.get("graph_version", "")),
+            nodes=[ConceptGraphNodePayload.from_node(n) for n in v.skeleton.nodes],
+            edges=[ConceptGraphEdgePayload.from_edge(e) for e in v.skeleton.edges],
+            communities=[
+                ConceptCommunityPayload.from_community(c) for c in v.skeleton.communities
+            ],
+            gaps=[GapPayload.from_gap(g) for g in v.gaps],
+            staleness=GraphStalenessPayload.from_staleness(v.staleness),
+        )
+
+
+class ConceptPresencePayload(BaseModel):
+    """Where one concept appears in one document.
+
+    `chunk_keys` are ADR-4 composite `"{document_id}:p{parent_index}"` — the navigation
+    payload that takes the ego view from a concept down to the chunks that mention it.
+    """
+
+    document_id: str
+    chunk_keys: list[str]
+    n_mentions: int
+
+    @classmethod
+    def from_presence(cls, p: ConceptPresence) -> ConceptPresencePayload:
+        return cls(
+            document_id=p.document_id,
+            chunk_keys=list(p.chunk_keys),
+            n_mentions=p.n_mentions,
         )

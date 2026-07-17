@@ -8,6 +8,465 @@ Append only — never edit past entries.
 Format: What changed | Why | Rejected alternatives | What it opens
 
 ---
+## 2026-07-17 — Concept graph PR-G2a: the view — concept index + gap lens + ego graph + chunk nav (frontend)
+
+**What:** built PR-G2a of `feature-concept-graph.md` — the third top-level view that renders the PR-G1 read
+model. A **destination, not a modal** (`mode` union widened `'chat'|'library'` → `+'graph'` in the 4 measured
+places + a third rail tab). New `lib/ConceptGraph.svelte`: a searchable **concept index** on the left (label ·
+gap badge · doc count) with a **"Gaps only" lens** and an **"Include under-connected"** opt-in; selecting a
+concept opens a depth-1 **ego graph** (hand-rolled SVG, no dependency) + a details panel that navigates concept
+→ document → the chunks it appears in. New `lib/forceLayout.ts`: pure, seeded (mulberry32 + phyllotaxis init +
+Fruchterman–Reingold to convergence, then fit-to-viewBox) — deterministic and epsilon-guarded so no coordinate
+can be NaN. `types.ts`/`api.ts` mirror the 7 PR-G1 payloads + 4 client fns (404 → `null`, the normal first
+run). `app.css` gains a **12-hue categorical community palette** (both themes) cycled by `community % 12`, plus
+`--graph-edge`/`--graph-node-stroke` derived once from `--fg` via `color-mix` (late-bound, tracks both themes).
+`Icon.svelte` gains the Lucide `waypoints` glyph. Deep-links only: node → `openDocument()` (Library), "Edit"
+→ Manage-keywords (**ADR-017 A1 — the graph never writes the vocabulary**). Staleness banner + empty state
+share one **Rebuild** affordance (202 + poll, ADR-017 B1). Read-only; `$0`.
+
+**Why:** ADR-004's north star is gap detection; RG-014 found the strong signal (`single_source`) is
+**list-shaped**, so the index — not the graph — is the home, and the graph earns its place as the navigation
+surface. Ego-first (B3) bounds the hairball (`Embeddings` touches 80% of the graph) to one neighbourhood.
+
+**Ordering honours the verdict:** `single_source` leads (danger tone); `under_connected` is **off by default**
+behind a toggle (it is graph-degree noise at n=26). Gaps badge **nodes**, stance will colour **edges** (B9) →
+no collision when Node B lands (PR-G4).
+
+**Verified live ($0/offline, real corpus, via read_page + javascript_tool — the SVG DOM is the only assertable
+surface; screenshots time out on this box):** index shows **26 concepts**, the 3 `single_source` true positives
+(PHATE/Res2Net/SBERT) lead in danger tone, gap lens = **8** (under_connected hidden), → **10** when opted in.
+Res2Net ego = 3 nodes/3 edges, Embeddings (degree 20) ego = **21 nodes** — **no NaN** in any cx/cy/x1/y1, all
+in-viewBox, no collapse. **Determinism: identical positions across a re-render.** 3 distinct community fills;
+theme flip changes fill + the `color-mix` edge stroke. Zoom clamps **0.4↔3.0**. Res2Net → its 1 document →
+"Mentioned in 25 chunks" → **Open in Library** switches mode + opens the doc; **Edit** → Manage-keywords.
+375px: **no horizontal overflow** (index + ego). **Gate:** `svelte-check` 0/0 (133 files); `vite build` clean
+(157 modules); **still one runtime dep (`marked`)** — the layout is hand-rolled.
+
+**Rejected:** a graph library (cytoscape/d3 — 4× the bundle, an eval-using lib breaks only in the packaged
+Tauri CSP, and with zero frontend tests the SVG DOM must stay assertable); a modal (6 hand-rolled scrim dialogs
+exist, all capped transient tasks — a graph is a destination); `weight`-as-thickness (range 2.377–2.949, flat);
+a provenance legend (one state); contested/superseded colour (renders nothing until PR-G4); animating the
+simulation (run off the render path, draw statically — determinism is the safety net); persisting pan (it is
+position-specific and resets on re-centre; only zoom, a real preference, persists); a `color-mix` hue wheel for
+communities (a rotated hue can land on low-contrast yellow in light theme — a fixed per-theme ramp controls
+contrast, and colour is a positional grouping hint so cycling past 12 is harmless).
+
+**Opens:** PR-G2b (gaps as a first-class destination + triage via the ADR-017 C1 override sidecar — `status` is
+still the raw row value on the wire); the `unsourced_claim` count stays approximate until the claim-segmenter
+heading bug is fixed (surface it, don't present it as precise); PR-G4 (Node B on the RTX box) unblocks the
+reserved edge-stance encoding; community palette cycles (not collides) past 12 — fine for now, revisit if a
+real corpus shows >12 communities. **PR-G1 is still staged/uncommitted — this builds on it; both await review.**
+**Staged; nothing committed (cpc §13).**
+
+---
+## 2026-07-17 — Concept graph PR-G1: serve the read model (load_skeleton + load_gaps + 4 routes)
+
+**What:** built PR-G1 of `feature-concept-graph.md` — the backend read model the graph view consumes.
+**Staged, NOT committed.** New `src/doc_assistant/concept_graph_view.py` (`GraphView`, `GraphStaleness`,
+`load_graph_view`, `load_concept_presence`); `concept_skeleton.load_skeleton()`; `gaps.load_gaps()`; six
+payloads in `apps/api/models.py`; four thin routes in `apps/api/main.py`; 16 tests in
+`tests/integration/test_concept_graph_api.py`.
+
+**Why the pieces landed where they did.** `load_skeleton` is the **read half of `write_skeleton`**, so it sits
+beside it in `concept_skeleton.py`; `load_gaps` likewise mirrors the row writers inside `gaps.py`, because
+that module owns the gap domain. The *assembly* (skeleton + gaps + staleness) got its **own** module rather
+than joining `library.py`: `library.py` serves documents/keywords, and the graph is a distinct top-level view
+— putting it there would have grown an already-large module with an unrelated concern. `apps/` stays a shell:
+every route is a pass-through, and the loader/assembly/staleness reasoning all lives in `src/`.
+
+**Two decisions worth the record.** (1) **One wire id space — concept UUIDs everywhere** (node ids, edge
+endpoints, gap anchors, community members), with `label` **only** on the node. The spec demanded a choice
+because mixing ids and labels across a boundary is *exactly* what made KI-15 match nothing silently; the live
+check asserts it (70/70 edges, 14/14 gaps resolve). (2) **Presence is served per-concept, not bulk** — a
+**deliberate deviation** from the spec's "graph → skeleton + gaps + presence". Ego-first (B3) renders one
+neighbourhood at a time, and bulk-shipping 1781 chunk keys for a 26-node graph is waste that scales badly to
+357. `doc_ids` already rides each node, so only chunk-level navigation needs the extra call.
+
+**Distinguishing "never built" from "broken" was the load-bearing detail.** `skeleton.json` is gitignored and
+regenerable, so **absent is the NORMAL first run** → `load_skeleton` returns `None` and the route answers
+**404 with a rebuild hint**, not a 500 and not a fake empty graph. But a file that *exists and won't parse* is
+a corrupt artifact — a different state — so that **raises** (`raise RuntimeError(...) from e`); returning
+`None` there would invite a rebuild that masks the real problem.
+
+**Verified live on the real corpus ($0/offline).** `GET /api/concepts/graph` → **26 nodes / 70 edges / 3
+communities / 14 gaps**, `graph_version b59a4aa6afa77978`, `stale:false`, every `relation` `null` (Node B
+never run). Presence: `Embeddings` → **32 docs / 283 chunk keys**; unknown → `[]`. Rebuild: **202** → poll →
+`done`, returning the **identical graph_version** — determinism proven end-to-end through the API, not just in
+a unit test. Empty state: skeleton moved aside → **404** → restored → 200. Gates: ruff, ruff format,
+`mypy --strict src`, bandit all clean; **full suite 994 passed** (was 977; **+16 new, 0 regressions**).
+
+**Rejected:** (a) *the assembly in `library.py`* — see above. (b) *bulk presence* — see above. (c) *a blocking
+rebuild route* — 7.1s on the event loop, when `POST /api/ingest`'s 202+poll is the repo's established shape for
+exactly this (ADR-017 B1). (d) *`None` on a corrupt skeleton* — conflates two states. (e) *seeding the FK
+referents in one `session_scope`* — these models carry no `relationship()`, so a single flush does not reliably
+order the parent insert before the child and the FK trips; the test seeder commits the referent separately.
+(f) *"fixing" `apps/api/main.py:734`'s pre-existing E501* — **CI lints `src/` + `tests/` only** (confirmed in
+`.pre-commit-config.yaml`: "Scope = src/ + tests/ ONLY, to mirror CI exactly"), so `apps/` is deliberately out
+of ruff's scope and that line is neither a gate failure nor mine.
+
+**Two self-inflicted bugs caught before they shipped, both by measuring rather than reasoning:** my first
+staleness diff was `sk_ids.symmetric_difference(db_ids) & db_ids`, a convoluted spelling of `db_ids - sk_ids`
+— simplified. And the `Write` tool captured a literal `</content>` tag into four files (the module, the ADR,
+the spec, the test); caught by a `SyntaxError` on the first import, stripped from all four.
+
+**Opens:** PR-G2a (the view) is next and needs the **palette** decision (3 non-semantic hues, 3 communities —
+luck, not headroom). The **`GET /api/concepts/graph` payload can't paginate** — fine at 44 KB / 26 nodes,
+~600 KB at 357; state a position before the vocabulary grows. **RG-014 stays open** (the gap payload is ~50%
+precise; the spec's "don't lead with `under_connected`" is the mitigation, and PR-G2a must honour it). ADR-017
+C1's **gap-triage override sidecar is NOT built** — that is PR-G2b, and `GapPayload.status` is currently the
+raw row value, not the effective one.
+
+---
+## 2026-07-17 — Wrote ADR-017 (concept-graph UI boundaries) + docs/specs/feature-concept-graph.md (docs-only)
+
+**What:** authored the two artifacts the concept-graph grill routed to. **`docs/decisions/ADR-017-concept-graph-
+ui-boundaries.md`** (new, accepted) and **`docs/specs/feature-concept-graph.md`** (new, design-locked, not
+built). Docs-only; no code. `docs_check --strict` 0/0.
+
+**Why an ADR at all:** the graph is the first UI over the curated vocabulary that is **not** curation, and it
+crosses three boundaries that each had no owner — places where a plausible design quietly breaks a shipped
+guarantee. ADR-017 decides **only** the boundaries; the spec owns the contract (ADR-019's "if an ADR owns the
+*why*, the spec is the *how* and must not re-litigate it").
+
+**The three decisions.** **A1 — read-only for the vocabulary + deep-link to Manage-keywords:** you edit the
+*source* and regenerate, never the derived artifact; the "a keyword belongs to at most one family" invariant
+keeps **one** home while **PR-2.5 is still repairing it** (rename → duplicate `Concept` labels → corrupts
+`promote_keyword` repo-wide), and a second writer onto known-broken paths isn't worth a convenience. **B1 —
+in-app Rebuild (202 + poll), CLI runner stays canonical:** 7.1 s is a button, and `POST /api/ingest` + a status
+poll is the established pattern for this repo's *largest* derived build. The reasoning that mattered: **the
+Enrichment-Layer Pattern constrains *what* derived data is (regenerable, sidecar, never mutates source) — not
+*who is allowed to press go*.** **C1 — gap triage as a user-override sidecar keyed on `(concept_id, kind)`:** a
+dismissal is a **user judgment**, not derived data, so it must not live in a table that is deleted and rebuilt
+from the skeleton; `GapRow.status` becomes **effective = override ?? "surfaced"**, which is exactly ADR-013 A2's
+shape (auto on the record, override in a sidecar). This keeps ADR-004's regenerable guarantee intact.
+
+**C1 exists because RG-014 disproved the grill's own premise.** B14 had resolved "dismiss/promote from the
+view" partly on *"`build_gaps` deliberately persists status across rebuilds"*. It does not — for deterministic
+gaps (`gaps.py:257` deletes and replaces them; only the stochastic path is status-preserving), and **all 14
+live gaps are deterministic**. The ADR records the corrected reasoning rather than the comfortable one.
+
+**The spec's load-bearing constraint is the RG-014 verdict, not the design.** The gap payload is **~50%
+precise**, and — the finding that shapes every screen — **the strong kinds are LIST-shaped (`single_source`,
+`unsourced_claim`) while the weak kinds are GRAPH-shaped (`under_connected`, `thin_bridge`)**. So the spec
+**leads with the index + gap list, defaults `under_connected` OFF**, and positions the graph as the *navigation
+and context* surface rather than the dashboard. A spec that led with the pretty part would have shipped the
+noise: `under_connected` is the **largest** kind and flags `Tractography` (10 docs) and `Motor control` (13
+docs) — among the best-sourced concepts — as gaps.
+
+**Rejected (ADR):** *graph writes in place* — every write instantly stales the view you're reading, so it lies
+until rebuilt; *the graph replacing Manage-keywords* — a force layout is a poor bulk-alias editor and it
+discards a view mid-hardening; *CLI-only rebuild* — breaks the acquire loop by ejecting the user to a terminal
+mid-research; *auto-rebuild on staleness* — spends 7.1 s unasked **and destroys the seeded-determinism property
+that is the feature's only verification surface**; *making the deterministic write path status-preserving* —
+`gaps` would become a hybrid of derived + user data, forfeiting the regenerable property ADR-004 relies on, and
+it needs a reconcile rule for gaps that stop firing; *no triage for deterministic gaps* — 0 stochastic gaps
+exist, so that means no triage at all and a permanent nag.
+
+**Rejected (spec):** *the cpc `SPEC-000` executor-brief template* — the house shape for feature contracts is
+`feature-*.md` (Status/Owner → decision → grounding → carve → parked → ledger), per `feature-tag-families.md`;
+SPEC-NNN is for delegated sprint briefs. *Leading with the graph* — see the verdict. *Shipping
+contested/superseded encoding* — dead until PR-G4. *`weight` as edge thickness* (2.377–2.949, flat) and *a
+provenance legend* (one state).
+
+**Opens:** the spec is **design-locked, not built** — PR-G1 (serve; write the missing `load_skeleton()`) is
+next. **RG-014 stays open** until the spec's narrowed claim is exercised and the two live defects land: the
+**claim-segmenter heading bug** (12 of 61 `unsupported` claims are markdown headings — and they feed the
+failure-tag gates driving the self-improvement loop) and the **`under_connected` corpus-vs-vocabulary guard**.
+PR-G4 (Node B on the RTX box, $0) still gates every epistemic encoding. B13 (the acquire loop) needs its own
+ADR when picked up.
+
+---
+## 2026-07-17 — RG-014: ran build_gaps --apply on a fresh skeleton; VERDICT ~50% precision. B1 narrows; 3 defects found
+
+**What:** closed out RG-014's procedure at the user's request — *"run build_gaps --apply and check the 14
+findings are real"*. **Data-only writes (both gitignored): `data/skeleton/skeleton.json` + the `concept_edges`
+/ `concept_presence` / `gaps` sidecars. No source changed.** All $0/offline.
+
+**Procedure.** Verified first that **0 edges carried Node-B annotation** (so a rebuild loses nothing) →
+`build_concept_skeleton --apply` → fresh **`b59a4aa6afa77978`** replacing the stale `055312c8c15a7e69` →
+`build_gaps` dry on the fresh skeleton: **still 14** (*the findings are stable across the rebuild — they were
+not artifacts of staleness*) → `--apply`: **14 rows persisted** → re-run: **14 rows, no duplication —
+idempotence confirmed.**
+
+**VERDICT: 8 of 14 defensible, 6 of 14 noise/duplicate/misleading. B1 survives but NARROWS.**
+- ✅ **`single_source` (3) — TRUE POSITIVE and the whole product thesis.** `Res2Net` appears **only** in the
+  Res2Net paper; `SBERT` **only** in the Sentence-BERT paper; `PHATE` **only** in one neurodevelopment paper.
+  Each is a method known *solely from its originating source* — no independent evaluation or replication in the
+  corpus. This is exactly the user's *"technically, having a single source is not good"*, and it is directly
+  actionable via B13 (acquire corroboration).
+- ⚠️ **`unsourced_claim` (4) — real signal, ~33% contaminated input.** Aggregation is sound (`RAG` 15
+  unsupported claims, `BM25` 5) and sampled prose is genuinely uncited. **But 20 of the 61 underlying
+  `unsupported` claims are not prose claims at all — 12 are MARKDOWN HEADINGS** (`"# Dense Passage Retrieval
+  (DPR) and Its Advantages Over BM25"`) **+ 8 fragments.** A heading can never cite, so it is *structurally*
+  always unsupported. (43/61 also predate the 2026-07-14 parser fix.)
+- ❌ **`under_connected` (5) — mostly noise at n=26, and it's the LARGEST kind.** It measures **graph degree**,
+  which at a 26-concept vocabulary is dominated by **vocabulary sparsity, not corpus coverage**. **`Tractography`
+  (10 docs, degree 2)** and **`Motor control` (13 docs, degree 2)** are among the corpus's **best-sourced**
+  concepts and are flagged as gaps. **It conflates "my corpus is thin on X" with "my vocabulary is too small
+  for X to co-occur with anything."** 2 of 5 duplicate `single_source`; only `MedSAM` is defensible.
+- ⚠️ **`thin_bridge` (2) — redundant + half-misleading.** Both derive from **one edge** (`MedSAM` ↔
+  `Embeddings`) and it flags **both endpoints**, so **`Embeddings` — the most-connected node in the graph
+  (degree 20/25, 32 docs) — is reported as a "thin bridge" gap.**
+
+**The finding that most affects the spec: the STRONG kinds are LIST-shaped (`single_source`,
+`unsourced_claim`); the WEAK kinds are GRAPH-shaped (`under_connected`, `thin_bridge`).** B1 does **not**
+reverse — the corroboration job stands on the two strong kinds, and the graph's *navigation* value (B7,
+concept→doc→chunk, 1781/1781 verified) is independent — **but the graph is not the primary renderer for the gap
+payload; a list is. The spec must not lead with `under_connected`.**
+
+**⚠️ B14 REOPENS — the grill's reasoning was wrong.** B14 resolved "dismiss/promote from the view" partly
+because *"`build_gaps` deliberately persists status across rebuilds"*. **It does not — for deterministic gaps.**
+`gaps.py:257`: `session.execute(delete(GapRow).where(GapRow.determinism == "deterministic"))` — deterministic
+rows are **delete-and-replace**; only `_write_stochastic_gap_rows` (`:273`) does the *"status-preserving"*
+upsert that "never deletes". **Verified live: a `dismissed` deterministic gap reset to `surfaced` on the next
+run.** **All 14 of today's gaps are deterministic** (stochastic = 0) → **dismissing any of them is futile, and
+rebuild is part of the acquire loop.** I over-read the docstring's "stochastic rows persist their status" as
+"rows persist their status". **Lesson: when a docstring qualifies a noun, the qualifier is load-bearing.**
+
+**Rejected:** (a) *running `build_gaps --apply` against the stale skeleton* (the literal request) — it would
+stamp findings with a dead `graph_version` and answer a question about an out-of-date graph; rebuilt first
+(safe: writes are gitignored, idempotent, and 0 annotated edges existed). (b) *closing RG-014* — the run
+answered "do they persist / are they real" (yes / ~half), but the spec hasn't absorbed the verdict and two live
+defects remain. (c) *reversing B1* — `single_source` + `unsourced_claim` carry the job; the weak kinds are a
+detector-tuning problem, not a premise failure. (d) *treating `under_connected` as permanently broken* — it is
+noise **at n=26**; it should improve as the vocabulary grows (`--promote-all` → ~86).
+
+**Opens:** **(a) BUG — the claim segmenter counts markdown headings as claims** → 12 permanent false
+`unsupported` markers → false gaps **and they feed the failure-tag gates that drive the self-improvement loop**
+(new checklist row). **(b) deterministic gap triage needs a durable store** keyed on `(concept_id, kind)`,
+mirroring the stochastic upsert — **decide in ADR-017.** **(c) `under_connected` needs a corpus-vs-vocabulary
+guard** (gate on doc-count, or defer the kind until the vocabulary is larger). Live state now: skeleton
+`b59a4aa6afa77978`, `gaps` = **14 rows**, all `surfaced`, all deterministic.
+
+---
+## 2026-07-17 — GRILLED the concept graph (grill-me): 12 branches, 11 resolved / 1 parked; the root question was overturned by the repo (docs-only)
+
+**What:** ran `grill-me` on the concept-graph view before its spec. **12 branches: 11 RESOLVED, 1 PARKED, 0
+open.** Full ledger in the session baton; the durable half is in `docs/ui-checklist.md` §3. **Docs-only; no
+code; nothing run but free read-only dry-runs.** **Routed, not authored** (the grill doesn't write artifacts):
+a **new ADR-017 `concept-graph-ui-boundaries`** (B5/B6 read-only-for-the-vocabulary + deep-link; B8 an API
+caller of an enrichment runner; B14 gap-status writes) cross-referencing ADR-015 (which reserved this track) +
+ADR-004 (which owns gaps); a **new `feature-concept-graph` spec**; **B13 → the External literature discovery
+row**; **RG-014 → `.claude/RIGOR_TODO.md`**.
+
+**Why it mattered: the grill overturned its own root question by reading the repo instead of asking the user.**
+I opened B1 ("what job does this do?") expecting to argue against a pretty-but-useless Obsidian clone.
+**ADR-004 answered first:** *"Phase 7's stated purpose is **gap detection** — and the project's north-star reason
+for it is to surface what the user (and the LLM) cannot see: concepts the corpus under-supports, claims it
+cannot source, and directions for exploration the user did not think to look."* And the gap layer is **BUILT +
+Ollama-validated with a recorded baseline** (Tier-1 + Tier-2a floor SPRINT-002/G2; ceiling SPRINT-005/G5) —
+`gaps.py`, `gap_suggest.py`, `scripts/build_gaps.py` — **with 0 rows and ZERO UI**. A **free dry-run found 14
+real gaps** on the live corpus (`under_connected` 5 · `unsourced_claim` 4 · `single_source` 3 · `thin_bridge`
+2). The user's own framing independently matched the detector — *"technically, having a single source is not
+good"* — which is exactly what `single_source` measures. **So the graph has a payload today; it is not
+decoration.** **Lesson: read the archived spec before asking the user what a feature is for.**
+
+**Measurements that decided branches (all free/offline):** **B3** — the hairball is real **today**: 22%
+density, mean degree 5.4, but **`Embeddings` has degree 20/25 = touches 80% of the graph** (depth-1 ego = 81%
+of all nodes, on 32/76 docs) while the **median ego is 6 nodes** → **ego-first, depth-1**. *(Side finding: a
+degree-20 node on 32 docs means `Embeddings` is too generic to be a good concept — the graph reveals
+vocabulary quality for free.)* **B7** — **1781/1781 (100%)** of `concept_presence.chunk_keys` resolve against
+the live index (ADR-4 key `{document_id}:p{parent_index}`) → concept→doc→chunk navigation is real. *(My first
+attempt reported 0/1781 — I'd built `doc:idx` instead of `doc:pN`; caught it rather than shipping it.)* **B8**
+— **rebuild = 7.1 s, zero-LLM, deterministic** → a button, not a batch job; and it **confirmed the artifact is
+stale**: `graph_version` `055312c8c15a7e69` → **`b59a4aa6afa77978`**, with **`doc_years` now present** (so
+`superseded_trend` becomes possible once stance lands). **B9** — **every `Gap` is anchored to `concept_id`**
+(even `thin_bridge`, whose endpoints live in `evidence.fact_ids`) while stance is an **edge** property ⇒ **gaps
+encode on nodes, stance on edges, no palette collision** — and B3 (≤21 rendered nodes) defused the 3-hue
+community gap entirely. **B14** — `GapStatus = surfaced|promoted|dismissed` **already exists** and `build_gaps`
+**deliberately persists status across rebuilds**: the sidecar was *designed* for triage.
+
+**Rejected:** (a) *a global map* (B3) — hub-dominated at n=26 already, and `--promote-all` is one command from
+~86 nodes. (b) *top-N-by-degree capping* — it hides exactly the low-degree nodes the gap layer flags as
+`under_connected`, i.e. it hides the findings. (c) *graph writes to the vocabulary* (B5) — you edit the source
+and regenerate, never the derived artifact; and a second writer onto rows whose invariants **PR-2.5 is
+currently repairing** (D1 rename → duplicate labels → corrupts `promote_keyword`) is reckless. (d) *the graph
+replacing Manage-keywords* — a force layout is a poor bulk-alias editor. (e) *auto-rebuild on staleness* — it
+spends 7.1 s unasked **and breaks the seeded-determinism verification story, which is the only test surface**.
+(f) *CLI-only rebuild* — it breaks the acquire loop by dumping the user into a terminal mid-research; the app
+**already** triggers its biggest derived build via `POST /api/ingest` **202 + status-poll**, so the precedent
+exists and the CLI runner stays canonical (Enrichment-Layer intact). (g) *read-only gaps* — a view that can't
+say "I know, that's fine" becomes a permanent nag.
+
+**Opens / parked.** **B13 (parked, needs its own ADR):** the **gap → acquisition loop** — *"download and find
+more information to complete the graph… we will need a provider list, and a quality list"*. It closes ADR-004's
+loop and merges with the **External literature discovery** row; **transport is already spiked** (stdlib urllib →
+Crossref, 25/25). **CONSTRAINT ON THE SPEC: model a gap as an object with an ACTION SLOT** (`GapStatus.promoted`
+is that slot) so it attaches without rework. **RG-014 (blocks-ship): the 14 gaps are a DRY-RUN claim —
+`build_gaps --apply` has NEVER been run and nobody has read the findings.** Run it on a *fresh* skeleton,
+confirm the sidecar persists + status survives a re-run, and judge signal-vs-noise **before** the spec — **B1
+reverses if it's noise.** (Note **RG-001** is still `open`/`blocks-ship` and its close instructions name
+`build_concept_graph --apply`, **a command that no longer exists** — the module was retired in KI-7/SPRINT-001;
+that entry needs re-pointing at the skeleton.) Node B on the RTX box (PR-G4) still gates every epistemic
+encoding.
+
+---
+## 2026-07-17 — Planned the concept graph (PR-G1/G2/G4); RAG blast-radius + chat-mode boundary measured; 2 self-corrections (docs-only)
+
+**What:** planned the **concept-graph view** in depth (3 explorers + a design pass, all grounded on live code +
+the real corpus) and answered two user challenges with measurements. **Docs-only; no code; nothing run but free
+read-only dry-runs.** Plan detail lives in a **local, uncommitted** plan file; everything load-bearing is
+duplicated into `docs/ui-checklist.md` §3.
+
+**Two self-corrections to my own uncommitted entry below — both were load-bearing and both are now fixed in
+place** (the entry never landed, so correcting beats shipping a known-false claim + an erratum): **(1) Node B is
+BUILT, not "unbuilt", and $0, not "paid"** — see the corrected text below; **(2) "citations 3918" is the WRONG
+table for citation-highlighting** — those are bibliography refs with **0 resolved** (`target_document_id` → 0);
+answer-citations are `answer_claims` 168. **Root cause of (1): I grepped `scripts/` for a FILE named like a
+stance runner and concluded the feature didn't exist. The runner is a FLAG (`--enrich`) on the existing Node-A
+script. Lesson: absence of a filename is not absence of a feature — grep the call graph, not the directory.**
+
+**Concept graph — decisions (user).** (1) **Hand-rolled SVG + a seeded force layout, NO dependency.** The
+reasons compound: 26 nodes (500 worst case) needs no library; the Tauri CSP is `default-src 'self'` with **no
+`unsafe-eval`**, so an eval-using lib breaks **only in the packaged build** (dev-mode Vite won't catch it); the
+frontend is a deliberate **1-runtime-dep** artifact (`marked`) with `dist` at **101 KB** (cytoscape ~400 KB =
+4× the whole bundle) and a stated no-CDN/vendored ethos; and decisively — **zero frontend tests exist and
+screenshots time out on this box, so SVG's DOM is the only verification surface**; canvas/WebGL would render
+the feature literally unassertable. (2) **Association-only** — measured: **all 26 nodes are `unique`/`stable`,
+`contested_edges()` → `[]`**, so contested colouring is dead UI; reserve `--danger`/`--warn-fg` for stance and
+ship nothing that renders empty. (3) **One vocabulary — a family IS a concept**; don't filter by `source`.
+**The real defect isn't the shared rows (ADR-015 chose that deliberately) — it's that the skeleton is a build
+artifact, so the graph silently lags user edits.** Surface staleness + a Rebuild action instead (inform, don't
+block). **Resolved:** full view, **not a modal** (there is no reusable modal shell — it's hand-rolled in **6**
+components, all `min(84vh,620px)`-capped *transient tasks*; a graph is a *destination*); the shell change is
+small (the `'chat'|'library'` union appears in exactly **4** places).
+
+**Why the graph is ready when the rest of the phase isn't:** `concepts` 26 · `concept_edges` **70** ·
+`concept_presence` 222 · 3 communities · `skeleton.json` carries a **complete render model with layout signal
+precomputed** (`community`→colour, `degree`→radius, `doc_ids`→click-through). ADR-015 **reserved this track by
+name** and PR-1/PR-2 made `Concept` a first-class UI citizen. It is greenfield — `concept_graph.py` was retired
+(KI-7) leaving no dead code.
+
+**Rejected:** (a) *d3-force/cytoscape/sigma* — see (1); a dep would also want its own ADR. (b) *canvas/WebGL* —
+unassertable on this box, which is the binding constraint, not perf. (c) *filtering the graph by
+`source='manual'`* — ADR-015 earmarked the column, but promotion is how the vocabulary is *meant* to grow, so
+filtering it out is backwards. (d) *shipping contested/superseded colouring now* — 0 signal. (e) *leaning on
+`weight` for edge thickness* — range is **2.377–2.949**, nearly flat. (f) *a provenance legend* — all 70 edges
+are `{cooccurrence, similarity}` and **0 citations resolve**, so it would have exactly one state. (g)
+*persisting anything against a community id* — they're **positional, not identity** (add a concept → they
+renumber). (h) *animating the force sim* — run seeded to convergence off the render path; **determinism makes
+the assertions non-flaky**, which is the point.
+
+**User challenge 1 — "I don't see the problem with changing top-k; the issue is the embedding." MEASURED: they
+are right, and it exposed a real gap.** `TOP_K` is **already** per-session, non-persistent **and bounded**
+(`ge=1, le=CANDIDATE_K` → [1,20], **422, never a silent clamp**) — there was never a problem. The embedding *is*
+the only catastrophic knob, but **not by the assumed mechanism**: collections are **namespaced per model**, so
+switching reads an **empty** collection → `warning("empty_index")` → "the sources don't contain the answer". The
+real footgun is narrower: `_LEGACY_COLLECTION="langchain"` is bound to **whatever `DEFAULT_MODEL` is** and both
+registered models are **768-dim**, so changing `DEFAULT_MODEL` would **silently inherit bge-base's vectors** —
+Chroma accepts the dimension and nothing detects it. **THE GAP: `EMBEDDING_MODEL` is in NEITHER ADR-010's split
+NOR CONTEXT's locked table — the most dangerous knob is documented as "swappable" and governed by nothing,
+while harmless `TOP_K` is locked.** Why: **ADR-010 sorts by *cost to change*; the user sorts by *blast radius*.
+Those axes disagree, and blast-radius is unmapped.** Per-doc ingestion tuning: the **vector space genuinely
+survives** (same model ⇒ same space; reranker scores pairs independently) — but **BM25's `avgdl` is
+corpus-global**, so mixed chunk sizes **systematically penalize the longer-chunked doc on the sparse arm**;
+health thresholds are absolute; **`TOP_K` counts parents, not tokens** (a per-doc `PARENT_CHUNK_SIZE=8000`
+quadruples context+cost, **no guard**); and the splitters are **import-time singletons**, so runtime config
+mutation does **nothing** on the hot path. **Contained, not free.** Captured as its own row.
+
+**User challenge 2 — "chat modes = swapping some system prompts." MEASURED: good idea, one hard boundary.**
+**`ANSWER_PROMPT` is not a prompt — it's the wire format `synthesis.py` parses** (`_CITATION_RE` is commented as
+matching markers *"produced by ANSWER_PROMPT"*). **Proof the coupling already broke:** a 2026-07-14 fix records
+the model emitting `[Source 2]`/`[2, 4]`, the parser dropping them, and **claims that DID cite reading as
+uncited**. A user edit is that failure with the safety off: every claim → `MARKER_UNSUPPORTED` → **false
+`unsupported` rows persisted to the adjudication log** → the failure-tag gates count them → **the
+self-improvement loop learns from corrupted data**, silently. **Carve: the citing block is NOT user-editable;
+the persona/task framing above it is.** Also: `CitationAudit.clean` is `True` for an answer with **zero**
+citations (use `n_uncited_sentences`), and `chat_controller.py:516` caches `_answer_template_hash` **at
+construction** — swappable prompts would make **every provenance record lie** unless it moves per-turn.
+
+**Opens:** the graph's **palette gap** — only **3 non-semantic hues** for exactly **3 communities** is luck, not
+headroom (`--promote-all` → ~86 nodes; KI-15 documents a real **357**-concept corpus) → **design for 300–500**.
+`skeleton.json` is **gitignored + stale** (predates G3 → no `doc_years`; a rebuild changes `graph_version` —
+never hard-code it) and a fresh clone has **none** (the empty state is the normal first-run path).
+**`data/graph/graph.json` is a stale EMPTY decoy** (retired `concept_graph.py` residue) — reading it renders an
+empty graph that looks like a layout bug. **No `load_skeleton()` and zero graph API routes** — the read model is
+all to build; node ids are **UUIDs with labels only on nodes**, the exact id-space mismatch that caused KI-15.
+Node B on the RTX box (PR-G4) unblocks **every** epistemic UI at $0.
+
+---
+## 2026-07-17 — Captured the UI phase's remaining features (7 rows); DIAGNOSED epistemics as blocked on Node B never having been RUN (docs-only)
+
+**What:** the user named the rest of this UI phase — concept graph (Obsidian-like) + epistemics, ingestion
+workflow, settings screen, user-tunable RAG pipeline, chunk screen, citation/source highlighting, figures +
+tables. Measured the **data reality** behind each against the live corpus, then captured **6 new
+`docs/ui-checklist.md` §3 rows** + **rewrote the epistemics row** (its guidance was wrong). **Docs-only; no
+code; nothing run against the corpus except free read-only dry-runs.**
+
+**The headline: three of these are not UI work — they're data problems, and they block differently.**
+
+**1. Epistemics — the checklist's own fix was WRONG, and I nearly repeated it.** The row said *"the enrichment
+run hasn't been applied here. First step is running the epistemics build ($0/local) and confirming the sidecar
+populates."* I offered the user exactly that; they said **investigate first**. They were right — **running it
+writes 0 rows.** Free read-only dry-run (`python -m scripts.compute_epistemics`): `Concept nodes weighted: 26`
+· **`Contested nodes: 0`** · **`Superseded-trend nodes: 0`** · `Chunks with a claim: **1835**` · **`Chunks
+marked: 0`**. **The pipeline is healthy — KI-15's fix works** (1835 chunks project fine); the **input signal**
+is absent. `node_weights_for_epistemics` aggregates edges' `stance_by_doc` and documents that *"a stance-less
+node → unique/stable"*; **all 70 `concept_edges` rows carry `stance_json = None`** (verified) → no node is ever
+`contested` → no chunk is ever marked. Stance comes from **Node B**, the LLM relation/stance pass.
+**⚠ SELF-CORRECTION (same session, caught before this entry was ever committed): I first wrote here that Node B
+is "explicitly deferred and UNBUILT (no stance/relation runner exists in `scripts/`)" and that epistemics is
+"blocked on an unbuilt, PAID LLM feature". BOTH CLAIMS ARE FALSE.** Node B is **code-complete and committed** —
+`src/doc_assistant/concept_skeleton_enrich.py` (pure core; idempotent, re-deriving each edge's annotation from
+scratch; **never creates a node or edge** — Node A owns those) — and it is **runnable today** via **`python -m
+scripts.build_concept_skeleton --enrich`** (`scripts/build_concept_skeleton.py:150` `if args.enrich: return
+_run_node_b(...)`, report formatter at `:59`). **It has simply never been run.** **And it is $0, not paid:**
+`CONCEPT_SKELETON_LLM_PROVIDER` defaults to **local Ollama** (`llama3.1:8b`, `config.py:445-446`) — *not*
+`LLM_PROVIDER` — with `llm.assert_provider_intent` as the KI-4 credit-leak guard; one call **per document**.
+**The only real blocker: Ollama isn't on this dev box** (verified on the separate RTX machine) → **running Node
+B there is the single prerequisite for every epistemic UI.** *How the error happened: I grepped `scripts/` for a
+**file** named like a stance runner and concluded the feature didn't exist. The runner is a **flag** on the
+existing Node-A script.* **Lesson: absence of a filename is not absence of a feature — grep the call graph, not
+the directory listing.** (Also latent: `superseded_trend` can't fire even *with* stance unless the skeleton
+carries publication years — the on-disk artifact predates G3 (2026-07-08), so its `meta` has no `doc_years`; a
+rebuild adds them (66/76 docs have a year) **and changes `graph_version`** — never hard-code
+`055312c8c15a7e69`.) **Lesson that survives the correction: a builder existing and being free does not mean
+running it produces anything. Dry-run first.**
+
+**2. Figures — blocked, and expensively.** `figures` = **0 rows**, and **0 chunks carry `chunk_type` in either
+Chroma index** (`data/chroma` 11 965; `data/chroma_pc` **30 882** = the live one). The `chunk_type='figure'`
+ingest path (`ingest/__init__.py:220-271`) has **never produced a chunk here**. Unblocking needs
+`describe_figures`, *by its own docstring* **"the project's only paid, API-only enrichment"** (VLM, gated by
+`MAX_VLM_CALLS_PER_DOC`) → a deliberate cost decision under the repo's discipline, not a build to just run.
+
+**3. Tables — needs diagnosis, not a UI plan.** Extraction code **exists** (`ingest/tables.py`,
+`scripts/extract_tables*.py`, `eval_marker_tables.py`) — I initially and wrongly said it didn't — but **no
+`tables` table exists and no table chunk is indexed** (`document_parts` is 0 too). Where were they meant to
+land, and why didn't they? Answer that before planning any "surface the tables" UI.
+
+**Contrast — what IS ready.** **The concept graph is the phase's biggest unbuilt feature and nothing blocks
+it:** `concepts` **26** · `concept_aliases` 17 · `concept_edges` **70** · `concept_presence` **222** ·
+`doc_similarities` **760** · `skeleton.json` present. **ADR-015 explicitly reserved this track**, and PR-1/PR-2
+just made `Concept` a first-class UI citizen — the read model, write path and vocabulary all exist, and Node A
+is zero-LLM. **⚠ Second self-correction: I first cited "citations 3918" as citation-highlighting's data — WRONG table.**
+Those 3918 are **bibliography references** (paper→paper) and **0 are resolved to an in-corpus document**
+(`target_document_id IS NOT NULL` → 0, verified) — that's the *citation-graph* feature. **Answer**-citation
+highlighting rests on `answer_claims` **168** / `answer_records` 26 + per-turn `result.sources`, and inherits
+`synthesis.py`'s `[n]` parser (`_CITATION_RE`, `:23-25`) — whose `:30-38` records a 2026-07-14 fix where the
+model emitted `[Source 2]`/`[2, 4]` and **claims that DID cite read as uncited**. **Ingestion** has its model + most of its read surface already (`source_files` 77,
+`ingestion_events` 76, derived status, the `excluded` toggle).
+
+**4. "User-tunable RAG pipeline" is a governance request wearing a UI costume.** ADR-010 **considered and
+rejected persistent editable settings "on governance grounds"** — non-persistence **is** the wall that keeps a
+restart returning to the eval-gated baseline, and CONTEXT's non-negotiable says a locked setting changes **only
+via an eval-harness experiment**: *"a sandbox override is fine; changing a default is not a UI PR."* Captured
+with the collision stated, **grill + ADR before any build** (user's call), so nobody ships it as "just a
+settings screen" and quietly invalidates every baseline.
+
+**Rejected:** (a) *running `compute_epistemics --apply` because it's free* — it writes 0 rows; free ≠ useful.
+(b) *treating "epistemics" and "figures" as one blocked row* — they block on **different** things (an unbuilt
+LLM pass vs a paid VLM run) and must be decided separately. (c) *planning the figures/tables UI now* — the data
+question is unanswered for both halves. (d) *folding "improve the settings screen" and "user-tunable RAG" into
+one row* — one is layout, the other reopens an ADR; bundling them is how the governance change would sneak in.
+(e) *treating the concept graph as part of tag families* — ADR-015 deliberately separated them.
+
+**Opens:** Node B (the LLM stance pass) is the single prerequisite for **all** epistemic UI — and it's paid, so
+it lands under "prove on Ollama first" (KI-4). The two Chroma dirs (11 965 vs 30 882) should be reconciled or
+documented before anything counts chunks. `folders`/`tags`/`document_tags`/`gaps`/`document_parts` are all **0
+rows** — the Library redesign's Phase B (folders) has no data either. The concept graph must **not** imply
+epistemic stance it doesn't have: its 70 edges are association-only.
+
+---
 ## 2026-07-17 — Planned the 3 remaining UI features into 8 PRs; corrected 3 false checklist claims (docs-only)
 
 **What:** explored + planned the other three UI features the user picked — **evidence-only chat mode**,

@@ -5,9 +5,12 @@
 // backend URL (the API's CORS allowlist includes `tauri://localhost`).
 import type {
   CompareResult,
+  ConceptGraph,
+  ConceptPresence,
   ConversationDetail,
   ConversationSummary,
   Decision,
+  GraphRebuildStatus,
   Health,
   IngestStatus,
   KeywordFamily,
@@ -351,6 +354,37 @@ export async function getIngestStatus(): Promise<IngestStatus> {
   const r = await fetch(`${API_BASE}/api/ingest/status`)
   if (!r.ok) throw new Error(`ingest status failed: ${r.status}`)
   return (await r.json()) as IngestStatus
+}
+
+// Concept graph (docs/specs/feature-concept-graph.md, ADR-017). Read-only render model + a 202+poll
+// rebuild, mirroring the ingest job. A 404 is the NORMAL first run — skeleton.json is gitignored, so
+// a fresh clone has none; the caller renders an empty state offering a rebuild, not an error.
+export async function getConceptGraph(): Promise<ConceptGraph | null> {
+  const r = await fetch(`${API_BASE}/api/concepts/graph`)
+  if (r.status === 404) return null
+  if (!r.ok) throw new Error(await errorDetail(r, 'concept graph'))
+  return (await r.json()) as ConceptGraph
+}
+
+/** Where one concept appears, down to the chunk keys — the ego view's navigation payload. Served
+ *  per-concept (not bulk in the graph) so one neighbourhood's chunks load at a time. */
+export async function getConceptPresence(conceptId: string): Promise<ConceptPresence[]> {
+  const r = await fetch(`${API_BASE}/api/concepts/${encodeURIComponent(conceptId)}/presence`)
+  if (!r.ok) throw new Error(await errorDetail(r, 'concept presence'))
+  return (await r.json()) as ConceptPresence[]
+}
+
+/** Trigger a rebuild (202). Deterministic, ~7s, zero-LLM; poll getGraphRebuildStatus until done. */
+export async function rebuildConceptGraph(): Promise<GraphRebuildStatus> {
+  const r = await fetch(`${API_BASE}/api/concepts/graph/rebuild`, { method: 'POST' })
+  if (!r.ok) throw new Error(await errorDetail(r, 'rebuild concept graph'))
+  return (await r.json()) as GraphRebuildStatus
+}
+
+export async function getGraphRebuildStatus(): Promise<GraphRebuildStatus> {
+  const r = await fetch(`${API_BASE}/api/concepts/graph/rebuild/status`)
+  if (!r.ok) throw new Error(`graph rebuild status failed: ${r.status}`)
+  return (await r.json()) as GraphRebuildStatus
 }
 
 /** Pull a human message out of a FastAPI error body, falling back to the status code. `detail` is

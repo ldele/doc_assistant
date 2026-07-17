@@ -32,6 +32,7 @@
     | 'calendar'
     | 'tag'
     | 'chevron-right'
+    | 'waypoints'
 
   let { name, size = 18 }: { name: IconName; size?: number } = $props()
 </script>
@@ -133,6 +134,14 @@
     /><circle cx="7.5" cy="7.5" r=".5" fill="currentColor" />
   {:else if name === 'chevron-right'}
     <path d="m9 18 6-6-6-6" />
+  {:else if name === 'waypoints'}
+    <circle cx="12" cy="4.5" r="2.5" /><path d="m10.2 6.3-3.9 3.9" /><circle
+      cx="4.5"
+      cy="12"
+      r="2.5"
+    /><path d="M7 12h10" /><circle cx="19.5" cy="12" r="2.5" /><path
+      d="m13.8 17.7 3.9-3.9"
+    /><circle cx="12" cy="19.5" r="2.5" />
   {/if}
 </svg>
 

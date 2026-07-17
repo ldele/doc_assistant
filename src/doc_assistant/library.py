@@ -433,6 +433,174 @@ def find_document_by_short_id(short_id: str) -> str | None:
 
 
 # ============================================================
+# Keyword families (feature-tag-families.md — PR-1)
+# ============================================================
+# A family = a curated Concept whose ConceptAlias rows carry member Keyword names
+# (ADR-015). Reuses the existing concept vocabulary — no new schema. A keyword
+# belongs to at most one family; assigning it to a second family moves it.
+
+
+@dataclass
+class KeywordFamily:
+    """A canonical tag + its member keyword names, with a union doc_count.
+
+    ``aliases`` excludes the canonical label itself (mirrors ``GlossaryEntry``).
+    ``doc_count`` is the number of documents carrying *any* member keyword (canonical or
+    alias), matched case-insensitively against ``Keyword.name``.
+    """
+
+    id: str
+    canonical: str
+    aliases: list[str] = field(default_factory=list)
+    doc_count: int = 0
+
+
+def _family_doc_count(session: Any, names: list[str]) -> int:
+    """Union of documents carrying any of ``names`` as a Keyword, case-insensitive."""
+    from doc_assistant.db.models import Keyword, document_keywords
+
+    if not names:
+        return 0
+    lowered = {n.casefold() for n in names}
+    stmt = (
+        select(func.count(func.distinct(document_keywords.c.document_id)))
+        .select_from(document_keywords)
+        .join(Keyword, Keyword.id == document_keywords.c.keyword_id)
+        .where(func.lower(Keyword.name).in_(lowered))
+    )
+    return int(session.execute(stmt).scalar() or 0)
+
+
+def _build_family(session: Any, concept: Any) -> KeywordFamily:
+    aliases = sorted(a.alias for a in concept.aliases if a.alias != concept.label)
+    doc_count = _family_doc_count(session, [concept.label, *aliases])
+    return KeywordFamily(
+        id=str(concept.id), canonical=concept.label, aliases=aliases, doc_count=doc_count
+    )
+
+
+def list_keyword_families() -> list[KeywordFamily]:
+    """All curated concepts as keyword families, each with its union doc_count."""
+    from doc_assistant.db.models import Concept
+
+    with session_scope() as session:
+        concepts = list(session.execute(select(Concept)).scalars())
+        families = [_build_family(session, c) for c in concepts]
+    families.sort(key=lambda f: f.canonical.casefold())
+    return families
+
+
+def get_keyword_family(concept_id: str) -> KeywordFamily | None:
+    """One keyword family by id, or None if unknown."""
+    from doc_assistant.db.models import Concept
+
+    with session_scope() as session:
+        concept = session.get(Concept, concept_id)
+        if concept is None:
+            return None
+        return _build_family(session, concept)
+
+
+def create_keyword_family(canonical: str, members: list[str] | None = None) -> KeywordFamily:
+    """Create a keyword family (a curated Concept) with initial member keywords.
+
+    Idempotent by canonical label (matches ``add_concept``'s get-or-create). Any member
+    keyword already belonging to another family is moved (a keyword belongs to at most one
+    family — ADR-015).
+    """
+    from doc_assistant.concept_skeleton import add_concept
+
+    canonical = canonical.strip()
+    if not canonical:
+        raise ValueError("canonical must not be blank")
+    concept_id = add_concept(label=canonical)
+    for member in members or []:
+        add_family_member(concept_id, member)
+    family = get_keyword_family(concept_id)
+    if family is None:  # pragma: no cover - add_concept above guarantees the row exists
+        raise RuntimeError(f"keyword family {concept_id!r} vanished immediately after creation")
+    return family
+
+
+def rename_keyword_family(concept_id: str, new_canonical: str) -> KeywordFamily | None:
+    """Rename a family's canonical label. Returns None if the family is unknown."""
+    from doc_assistant.concept_skeleton import rename_concept
+
+    new_canonical = new_canonical.strip()
+    if not new_canonical:
+        raise ValueError("new_canonical must not be blank")
+    if not rename_concept(concept_id, new_canonical):
+        return None
+    return get_keyword_family(concept_id)
+
+
+def add_family_member(concept_id: str, keyword_name: str) -> KeywordFamily | None:
+    """Assign a keyword to a family. Returns None if the family is unknown.
+
+    A keyword belongs to at most one family: if it's already an alias of another family,
+    it's removed from there first (moved, not duplicated). Idempotent — assigning an
+    already-member keyword is a no-op. (Does not check whether ``keyword_name`` collides
+    with *another* family's canonical label — an edge case left to the Manage view.)
+    """
+    from doc_assistant.db.models import Concept, ConceptAlias
+
+    keyword_name = keyword_name.strip()
+    if not keyword_name:
+        raise ValueError("keyword_name must not be blank")
+    lowered = keyword_name.casefold()
+    with session_scope() as session:
+        concept = session.get(Concept, concept_id)
+        if concept is None:
+            return None
+        others = (
+            session.execute(
+                select(ConceptAlias).where(
+                    func.lower(ConceptAlias.alias) == lowered,
+                    ConceptAlias.concept_id != concept_id,
+                )
+            )
+            .scalars()
+            .all()
+        )
+        for other in others:
+            session.delete(other)
+        already_member = concept.label.casefold() == lowered or any(
+            a.alias.casefold() == lowered for a in concept.aliases
+        )
+        if not already_member:
+            concept.aliases.append(ConceptAlias(alias=keyword_name))
+        session.flush()
+        return _build_family(session, concept)
+
+
+def remove_family_member(concept_id: str, keyword_name: str) -> KeywordFamily | None:
+    """Remove a keyword from a family's alias set. Returns None if the family is unknown.
+
+    A no-op if ``keyword_name`` isn't a member alias (idempotent) — the canonical label
+    itself can't be "removed" this way; rename or delete the family instead.
+    """
+    from doc_assistant.db.models import Concept
+
+    lowered = keyword_name.strip().casefold()
+    with session_scope() as session:
+        concept = session.get(Concept, concept_id)
+        if concept is None:
+            return None
+        row = next((a for a in concept.aliases if a.alias.casefold() == lowered), None)
+        if row is not None:
+            concept.aliases.remove(row)
+        session.flush()
+        return _build_family(session, concept)
+
+
+def delete_keyword_family(concept_id: str) -> bool:
+    """Delete a family. Returns True if it existed."""
+    from doc_assistant.concept_skeleton import delete_concept
+
+    return delete_concept(concept_id)
+
+
+# ============================================================
 # Chunk browser (Library space L1 — docs/specs/feature-library-browser.md)
 # ============================================================
 # A read-only view of the chunks the two-tier retriever stores for a document:

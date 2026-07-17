@@ -45,6 +45,10 @@ from apps.api.models import (
     DeleteResultPayload,
     ExportRequest,
     IngestRequest,
+    KeywordFamilyCreate,
+    KeywordFamilyMember,
+    KeywordFamilyPayload,
+    KeywordFamilyRename,
     LibraryDocumentChunksPayload,
     LibraryDocumentMetaUpdate,
     LibraryDocumentPayload,
@@ -489,6 +493,77 @@ def create_app(
             trashed_file=result.trashed_file,
             chunks_removed=result.chunks_removed,
         )
+
+    @app.get("/api/library/keyword-families")
+    def list_keyword_families_route() -> list[KeywordFamilyPayload]:
+        """Every curated keyword family, each with its union doc_count (feature-tag-families.md,
+        PR-1). A family is a curated Concept whose aliases are member Keyword names (ADR-015)."""
+        from doc_assistant.library import list_keyword_families
+
+        return [KeywordFamilyPayload.from_family(f) for f in list_keyword_families()]
+
+    @app.post("/api/library/keyword-families")
+    def create_keyword_family_route(body: KeywordFamilyCreate) -> KeywordFamilyPayload:
+        """Create a family (canonical label + initial member keywords). Idempotent by canonical
+        label; a member keyword already in another family is moved (ADR-015)."""
+        from doc_assistant.library import create_keyword_family
+
+        try:
+            family = create_keyword_family(body.canonical, body.members)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e)) from e
+        return KeywordFamilyPayload.from_family(family)
+
+    @app.patch("/api/library/keyword-families/{family_id}")
+    def rename_keyword_family_route(
+        family_id: str, body: KeywordFamilyRename
+    ) -> KeywordFamilyPayload:
+        """Rename a family's canonical label. 404 if unknown."""
+        from doc_assistant.library import rename_keyword_family
+
+        try:
+            family = rename_keyword_family(family_id, body.canonical)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e)) from e
+        if family is None:
+            raise HTTPException(status_code=404, detail="keyword family not found")
+        return KeywordFamilyPayload.from_family(family)
+
+    @app.post("/api/library/keyword-families/{family_id}/members")
+    def add_keyword_family_member_route(
+        family_id: str, body: KeywordFamilyMember
+    ) -> KeywordFamilyPayload:
+        """Assign a keyword to a family, moving it off any other family it belonged to
+        (ADR-015). 404 if the family is unknown."""
+        from doc_assistant.library import add_family_member
+
+        try:
+            family = add_family_member(family_id, body.keyword)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e)) from e
+        if family is None:
+            raise HTTPException(status_code=404, detail="keyword family not found")
+        return KeywordFamilyPayload.from_family(family)
+
+    @app.delete("/api/library/keyword-families/{family_id}/members/{keyword}")
+    def remove_keyword_family_member_route(family_id: str, keyword: str) -> KeywordFamilyPayload:
+        """Remove a keyword from a family's alias set (a no-op if it isn't a member). 404 if the
+        family is unknown."""
+        from doc_assistant.library import remove_family_member
+
+        family = remove_family_member(family_id, keyword)
+        if family is None:
+            raise HTTPException(status_code=404, detail="keyword family not found")
+        return KeywordFamilyPayload.from_family(family)
+
+    @app.delete("/api/library/keyword-families/{family_id}")
+    def delete_keyword_family_route(family_id: str) -> dict[str, bool]:
+        """Delete a family. 404 if unknown."""
+        from doc_assistant.library import delete_keyword_family
+
+        if not delete_keyword_family(family_id):
+            raise HTTPException(status_code=404, detail="keyword family not found")
+        return {"ok": True}
 
     @app.get("/api/settings")
     def get_settings(request: Request) -> dict[str, Any]:

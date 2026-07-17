@@ -30,6 +30,7 @@ if TYPE_CHECKING:
     from doc_assistant.library import (
         DocumentChunkView,
         DocumentSummary,
+        KeywordFamily,
         ParentBlock,
     )
 
@@ -398,6 +399,43 @@ class LibraryDocumentChunksPayload(BaseModel):
             parents=[LibraryParentPayload.from_block(b) for b in v.parents],
             child_count=v.child_count,
         )
+
+
+# ============================================================
+# Tag families (feature-tag-families.md — PR-1)
+# ============================================================
+
+
+class KeywordFamilyPayload(BaseModel):
+    """A canonical tag + its member keyword names (mirrors ``library.KeywordFamily``)."""
+
+    id: str
+    canonical: str
+    aliases: list[str]
+    doc_count: int
+
+    @classmethod
+    def from_family(cls, f: KeywordFamily) -> KeywordFamilyPayload:
+        return cls(id=f.id, canonical=f.canonical, aliases=list(f.aliases), doc_count=f.doc_count)
+
+
+class KeywordFamilyCreate(BaseModel):
+    """POST body to create a family: the canonical label + initial member keywords."""
+
+    canonical: str = Field(min_length=1)
+    members: list[str] = Field(default_factory=list)
+
+
+class KeywordFamilyRename(BaseModel):
+    """PATCH body to rename a family's canonical label."""
+
+    canonical: str = Field(min_length=1)
+
+
+class KeywordFamilyMember(BaseModel):
+    """POST body to add a member keyword to a family."""
+
+    keyword: str = Field(min_length=1)
 
 
 # ============================================================

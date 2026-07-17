@@ -6,27 +6,34 @@
   // (the faceted+sorted grid docs). Reuses the LibraryMetaEditor modal shell (scrim + centered dialog,
   // Esc-to-close, autofocused control). Dumb by design — App owns the selection + the filter math.
   import type { KeywordFacet } from './library'
-  import type { LibraryDocument } from './types'
-  import { authorLabel } from './library'
+  import type { KeywordFamily, LibraryDocument } from './types'
+  import { authorLabel, familyByCanonical } from './library'
   import Icon from './Icon.svelte'
 
   let {
     facets,
     previewDocs,
     selectedCount,
+    families,
     onToggle,
     onClear,
     onClose,
+    onManage,
   }: {
     facets: KeywordFacet[]
     previewDocs: LibraryDocument[]
     selectedCount: number
+    families: KeywordFamily[]
     onToggle: (value: string) => void
     onClear: () => void
     onClose: () => void
+    onManage: () => void
   } = $props()
 
   let query = $state('')
+  // A facet's value that matches a family's canonical -> "N forms" subtitle + hover (feature-
+  // tag-families.md, PR-1 DoD: "the overlay renders a family as an atomic entry").
+  const familyMap = $derived(familyByCanonical(families))
 
   // The overlay's own search box filters the keyword list by substring. Selected keywords always
   // stay visible (so a search can't hide a chip you still need to unselect), matching Zotero.
@@ -74,6 +81,7 @@
       </div>
       <div class="kwlist" role="group" aria-label="Keyword filters">
         {#each shown as f (f.value)}
+          {@const fam = familyMap.get(f.value)}
           <button
             class="kwrow"
             class:selected={f.selected}
@@ -81,24 +89,34 @@
             type="button"
             aria-pressed={f.selected}
             disabled={!f.available && !f.selected}
-            title={!f.available && !f.selected
-              ? `No documents match “${f.value}” with the current filters`
-              : undefined}
+            title={fam && fam.aliases.length > 0
+              ? `Also matches: ${fam.aliases.join(', ')}`
+              : !f.available && !f.selected
+                ? `No documents match “${f.value}” with the current filters`
+                : undefined}
             onclick={() => onToggle(f.value)}
           >
             <span class="tick">{#if f.selected}<Icon name="check" size={13} />{/if}</span>
-            <span class="kwname">{f.value}</span>
+            <span class="kwtext">
+              <span class="kwname">{f.value}</span>
+              {#if fam && fam.aliases.length > 0}
+                <span class="kwforms">{fam.aliases.length + 1} forms</span>
+              {/if}
+            </span>
             {#if !f.selected}<span class="kwcount">{f.count}</span>{/if}
           </button>
         {:else}
           <p class="nomatch">No keywords match “{query.trim()}”.</p>
         {/each}
       </div>
-      {#if selectedCount > 0}
-        <button class="clearall" onclick={onClear} type="button">
-          <Icon name="x" size={12} /> Clear {selectedCount} selected
-        </button>
-      {/if}
+      <div class="kwlistfoot">
+        {#if selectedCount > 0}
+          <button class="clearall" onclick={onClear} type="button">
+            <Icon name="x" size={12} /> Clear {selectedCount} selected
+          </button>
+        {/if}
+        <button class="managebtn" onclick={onManage} type="button">Manage keywords…</button>
+      </div>
     </section>
 
     <!-- Right: live preview of the matching documents -->
@@ -272,12 +290,23 @@
     flex: none;
     color: var(--accent);
   }
-  .kwname {
+  .kwtext {
     flex: 1;
+    min-width: 0;
+    display: flex;
+    align-items: baseline;
+    gap: 0.4rem;
+  }
+  .kwname {
     min-width: 0;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+  }
+  .kwforms {
+    font-size: 0.68rem;
+    color: var(--fg-2);
+    flex: none;
   }
   .kwcount {
     font-size: 0.7rem;
@@ -285,11 +314,17 @@
     color: var(--fg-2);
     flex: none;
   }
+  .kwlistfoot {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-2);
+    flex: none;
+  }
   .clearall {
     display: inline-flex;
     align-items: center;
     gap: 0.25rem;
-    align-self: flex-start;
     font: inherit;
     font-size: 0.75rem;
     cursor: pointer;
@@ -301,6 +336,20 @@
   }
   .clearall:hover {
     color: var(--fg);
+  }
+  .managebtn {
+    font: inherit;
+    font-size: 0.75rem;
+    cursor: pointer;
+    border: none;
+    background: none;
+    color: var(--accent);
+    padding: 0.2rem 0;
+    flex: none;
+    margin-left: auto;
+  }
+  .managebtn:hover {
+    text-decoration: underline;
   }
   .previewhead {
     margin: 0;

@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-07-16 · class: append-only -->
+<!-- status: active · updated: 2026-07-17 · class: append-only -->
 
 # DEVLOG — doc_assistant
 
@@ -6,6 +6,63 @@ Real-time development log. One entry per logical change.
 Append only — never edit past entries.
 
 Format: What changed | Why | Rejected alternatives | What it opens
+
+---
+## 2026-07-17 — Tag families PR-1: families end-to-end, manual (feature-tag-families.md, ADR-015)
+
+**What:** built PR-1 of the design-locked tag-families spec — a family = a curated `Concept` whose
+`ConceptAlias` rows carry member `Keyword` names (ADR-015), reusing the existing vocabulary tables
+(no schema change). **Backend:** `concept_skeleton.py` gains the missing mutation primitives
+(`remove_alias`, `delete_concept`, `rename_concept` — matching `add_concept`'s style); `library.py`
+gains `KeywordFamily` + `list_keyword_families`/`get_keyword_family`/`create_keyword_family`/
+`rename_keyword_family`/`add_family_member`/`remove_family_member`/`delete_keyword_family` (thin
+shells; `doc_count` = a case-insensitive union query over `document_keywords`/`Keyword`; a keyword
+belongs to at most one family — `add_family_member` moves it off any other family's alias set).
+Six new FastAPI routes under `/api/library/keyword-families` (`apps/api/main.py` + `models.py`),
+mirroring the safe-delete/metadata-edit route conventions (404 on unknown family, 400 on a blank
+canonical). **Frontend:** `types.ts`/`api.ts` wire contract; `library.ts` gains `familyCanonicalMap`/
+`familyByCanonical`/`familyUnitsOf` (a pure pre-facet grouping step) plus an optional `keywordsOf`
+accessor on `facetFilter`/`keywordFacets` (default = raw keywords, so the no-families path is
+byte-identical to pre-PR-1 behavior); new `LibraryManageKeywords.svelte` (create/rename/add-remove-
+member/delete, opened via a new "Manage keywords…" link in `LibraryKeywordFilter.svelte`, which also
+now shows a family facet's "N forms" subtitle + hover listing its members); `App.svelte` loads
+families alongside documents and threads `keywordsOf` through the facet/filter pipeline.
+
+**Why:** PR-1 was next per the design-locked spec (ADR-015, grilled 2026-07-16) — the overlay built
+last session ships raw per-keyword facets, so near-duplicates (`llm`/`llms`, `connectome`/
+`connectomics`) still count as separate filters. Foundation-first carve (T8): manual CRUD before
+detection (PR-2) or an LLM pass (PR-3, parked).
+
+**Verified:** 17 new integration tests (`test_keyword_families.py` — CRUD, the move-on-reassign
+invariant, union `doc_count`, route 200/404/400) + full suite **961 passed / 1 skipped** (pre-existing,
+unrelated); ruff/ruff format/`mypy --strict src`/bandit clean; `svelte-check` **0/0** (131 files).
+**Live on the real 76-doc corpus, $0/offline:** the box already carries 26 curated `Concept` rows from
+earlier concept-graph work (e.g. `Large language model` ← `llm`/`llms`) — confirmed this is intended
+reuse of the vocabulary, not pollution (ADR-015's "take advantage of," not the graph UI). The overlay
+correctly collapsed `llm`/`llms` into one `Large language model` facet ("3 forms", hover lists the
+aliases, count = union = 14 docs); toggling it filtered the grid to the 14-doc union and the strip
+chip showed the canonical name. Full CRUD round-trip in Manage keywords (create a test family from an
+un-familied keyword → add a second member → rename → remove a member → delete) verified live and
+cleaned up (DB back to 26 concepts, no test residue). Dark theme flips via CSS vars; mobile 375px no
+horizontal overflow; 0 console errors; 0 API server errors.
+
+**Rejected:** listing only `source="keyword"`-promoted concepts as families (would hide manually
+curated glossary entries like `RAG`/`BM25` that are equally valid single-keyword families; ADR-015
+treats the whole vocabulary as reusable); mutating `facetFilter`/`keywordFacets` to hard-require a
+`KeywordFamily[]` param (an optional `keywordsOf` accessor keeps the default path untouched, matching
+the DoD's byte-identical requirement); collapsing `d.keywords` in place on `LibraryDocument` objects
+(would also silently change what the grid tiles' own keyword chips display, out of PR-1's scope — the
+collapse is confined to the facet/filter computation only).
+
+**Opens:** PR-2 (detection: tiered morphological + `bge` embedding clustering, no auto-apply) and PR-3
+(LLM confirm pass, parked — prove on Ollama first, KI-4) are next per the spec's carve. The Manage
+view's per-family "add a keyword" `<select>` lists every un-familied keyword with no search/filter —
+fine at the current ~40-keyword scale, would want a search box if the vocabulary grows a lot before
+PR-2's detection reduces the un-familied pool. No UI surfaces a family's `source` field (`"manual"`
+here) — not needed yet, but PR-2's detected proposals will likely want to distinguish themselves before
+acceptance.
+
+**Staged, nothing committed (cpc §13).**
 
 ---
 ## 2026-07-16 — UI: keyword filtering as a two-pane overlay (folds the inline-bar cut below)

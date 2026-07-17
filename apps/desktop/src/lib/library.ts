@@ -2,7 +2,7 @@
 // Collections are computed from the LibraryDocument payload the API already ships
 // (Decision 5: Phase A filters client-side) — no backend involvement; Phase B wires
 // server-side folders + the folder-tree endpoint.
-import type { LibraryDocument } from './types'
+import type { KeywordFamily, LibraryDocument } from './types'
 
 export type DateBucket = 'today' | 'week' | 'month' | 'earlier'
 
@@ -180,12 +180,25 @@ export interface KeywordFacet {
   available: boolean // adding this keyword still leaves a result (always true when selected)
 }
 
+// `keywordsOf` extracts a document's facet units. Defaults to its raw keywords; a caller passes
+// `familyUnitsOf(...)` (below) to filter/count over family-collapsed units instead. The default
+// makes the no-families path byte-identical to the pre-PR-1 behavior.
+type KeywordsOf = (d: LibraryDocument) => string[]
+const rawKeywordsOf: KeywordsOf = (d) => d.keywords
+
 // AND semantics: a document must carry *every* selected keyword. Empty selection = no filter.
 // This is the narrowing that makes "grey out unavailable" meaningful — under OR, adding a
 // keyword only ever broadens, so nothing is ever unavailable.
-export function facetFilter(documents: LibraryDocument[], selected: string[]): LibraryDocument[] {
+export function facetFilter(
+  documents: LibraryDocument[],
+  selected: string[],
+  keywordsOf: KeywordsOf = rawKeywordsOf,
+): LibraryDocument[] {
   if (selected.length === 0) return documents
-  return documents.filter((d) => selected.every((k) => d.keywords.includes(k)))
+  return documents.filter((d) => {
+    const units = new Set(keywordsOf(d))
+    return selected.every((k) => units.has(k))
+  })
 }
 
 // Facet chips for the current pool. `base` is the collection+search result *before* keyword
@@ -195,16 +208,20 @@ export function facetFilter(documents: LibraryDocument[], selected: string[]): L
 // always appear (pinned first) and stay `available` so they can be removed even when the
 // selection is over-constrained. Pure + deterministic (ties break alphabetically), so it is
 // unit-testable and stable across renders.
-export function keywordFacets(base: LibraryDocument[], selected: string[]): KeywordFacet[] {
+export function keywordFacets(
+  base: LibraryDocument[],
+  selected: string[],
+  keywordsOf: KeywordsOf = rawKeywordsOf,
+): KeywordFacet[] {
   const sel = new Set(selected)
-  const faceted = facetFilter(base, selected)
+  const faceted = facetFilter(base, selected, keywordsOf)
   const counts = new Map<string, number>()
   for (const d of faceted)
-    for (const k of new Set(d.keywords)) counts.set(k, (counts.get(k) ?? 0) + 1)
-  // Universe = every keyword in the pre-facet pool, plus the selected ones (which may no longer
+    for (const k of new Set(keywordsOf(d))) counts.set(k, (counts.get(k) ?? 0) + 1)
+  // Universe = every unit in the pre-facet pool, plus the selected ones (which may no longer
   // appear in `base` after a collection switch but must still render as removable chips).
   const universe = new Set<string>(selected)
-  for (const d of base) for (const k of d.keywords) universe.add(k)
+  for (const d of base) for (const k of keywordsOf(d)) universe.add(k)
 
   const facets: KeywordFacet[] = [...universe].map((value) => {
     const isSelected = sel.has(value)
@@ -217,4 +234,40 @@ export function keywordFacets(base: LibraryDocument[], selected: string[]): Keyw
     return b.count - a.count || a.value.localeCompare(b.value)
   })
   return facets
+}
+
+// ---------------------------------------------------------------------------
+// Tag families (feature-tag-families.md, PR-1) — synonym-collapse over keyword facets.
+// A family is a curated Concept whose alias keywords collapse into one facet unit
+// (ADR-015). This is a pre-facet grouping step: `facetFilter`/`keywordFacets` above stay
+// unchanged and operate on whatever `keywordsOf` hands them.
+// ---------------------------------------------------------------------------
+
+// Case-insensitive keyword-name -> canonical-label map (a family's own canonical maps to
+// itself too, so re-mapping an already-canonical value is a no-op). Un-familied keywords are
+// absent — callers fall back to the raw keyword name.
+export function familyCanonicalMap(families: KeywordFamily[]): Map<string, string> {
+  const m = new Map<string, string>()
+  for (const f of families) {
+    m.set(f.canonical.toLowerCase(), f.canonical)
+    for (const alias of f.aliases) m.set(alias.toLowerCase(), f.canonical)
+  }
+  return m
+}
+
+// Canonical label -> its family, for "N forms" display (the overlay looks up a facet's value
+// here to show its member keywords). Absent = an un-familied, single-keyword facet.
+export function familyByCanonical(families: KeywordFamily[]): Map<string, KeywordFamily> {
+  return new Map(families.map((f) => [f.canonical, f]))
+}
+
+// A `keywordsOf` accessor that collapses each doc's keywords through `canonicalOf` (deduping),
+// for use with `facetFilter`/`keywordFacets`. When `canonicalOf` is empty (no families exist)
+// this is behaviorally identical to the raw keyword list.
+export function familyUnitsOf(canonicalOf: Map<string, string>): KeywordsOf {
+  return (d) => {
+    const units = new Set<string>()
+    for (const k of d.keywords) units.add(canonicalOf.get(k.toLowerCase()) ?? k)
+    return [...units]
+  }
 }

@@ -1,13 +1,13 @@
 # Spec — Tag families (keyword synonym-collapse over the concept vocabulary)
 
-**Status:** **DESIGN-LOCKED** (grilled 2026-07-16, `grill-me`; ledger at foot). Architectural decisions in
-**ADR-015**. Collapses near-duplicate keywords (`llm`/`llms`, `connectome`/`connectomics`) into user-curated
-**families** so the Library keyword filter treats each family as one entry. *Takes advantage of* the curated
-`Concept`/`ConceptAlias` vocabulary — it is **not** the concept-graph/epistemics UI (that is a separate later
-track over the same rows; ADR-015 §C).
+**Status:** **PR-1 BUILT 2026-07-17 (staged, not committed)**; PR-2/PR-3 still DESIGN-LOCKED (grilled
+2026-07-16, `grill-me`; ledger at foot). Architectural decisions in **ADR-015**. Collapses near-duplicate
+keywords (`llm`/`llms`, `connectome`/`connectomics`) into user-curated **families** so the Library keyword
+filter treats each family as one entry. *Takes advantage of* the curated `Concept`/`ConceptAlias` vocabulary —
+it is **not** the concept-graph/epistemics UI (that is a separate later track over the same rows; ADR-015 §C).
 
-**Owner:** Claude Code. **Three PRs, never bundle — build PR-1 first:** PR-1 families end-to-end (manual) →
-PR-2 detection → PR-3 LLM assist (parked).
+**Owner:** Claude Code. **Three PRs, never bundle:** ~~PR-1 families end-to-end (manual)~~ **BUILT** →
+**PR-2 detection (next)** → PR-3 LLM assist (parked).
 
 ---
 
@@ -48,7 +48,7 @@ unit). Extends the existing pure helpers; no backend filter change.
 
 ## Carve
 
-### PR-1 — families end-to-end, manual (build first)
+### PR-1 — families end-to-end, manual (build first) — ✅ BUILT 2026-07-17 (staged)
 
 The whole mechanism with hand-curation; no detection yet. Demoable: create `large language models`, assign
 `llm`/`llms`, watch the overlay collapse them and filter the union.

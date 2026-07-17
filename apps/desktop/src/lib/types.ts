@@ -159,6 +159,16 @@ export interface LibraryDocument {
   added_at: string | null // ISO 8601
 }
 
+// Tag families (feature-tag-families.md, PR-1). A family is a curated Concept whose aliases are
+// member Keyword names (ADR-015); `doc_count` is the union of docs carrying any member keyword.
+// Mirrors apps/api/models.py::KeywordFamilyPayload.
+export interface KeywordFamily {
+  id: string
+  canonical: string
+  aliases: string[]
+  doc_count: number
+}
+
 // Selective ingestion (feature-selective-ingestion.md, S2). GET /api/sources lists every file
 // under the source dir with a derived ingest status; PATCH /api/sources sets `excluded`; POST
 // /api/ingest {paths} ingests a selection. Mirrors apps/api/models.py::SourceFilePayload.

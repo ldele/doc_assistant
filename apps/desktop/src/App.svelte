@@ -4,18 +4,25 @@
     ConversationDetail,
     ConversationSummary,
     Health,
+    KeywordFamily,
     LibraryDocument,
     RagOverrides,
     TurnResult,
   } from './lib/types'
   import {
+    addFamilyMember,
     compareRetrieval,
+    createKeywordFamily,
+    deleteKeywordFamily,
     getConversation,
     getHealth,
     exportConversation,
     listConversations,
+    listKeywordFamilies,
     deleteDocument,
     listLibraryDocuments,
+    removeFamilyMember,
+    renameKeywordFamily,
     resetDocumentMeta,
     revealDocument,
     streamChat,
@@ -31,6 +38,7 @@
   import LibraryGrid from './lib/LibraryGrid.svelte'
   import LibraryFilterStrip from './lib/LibraryFilterStrip.svelte'
   import LibraryKeywordFilter from './lib/LibraryKeywordFilter.svelte'
+  import LibraryManageKeywords from './lib/LibraryManageKeywords.svelte'
   import LibraryMetaEditor from './lib/LibraryMetaEditor.svelte'
   import LibraryDeleteConfirm from './lib/LibraryDeleteConfirm.svelte'
   import CompareCard from './lib/CompareCard.svelte'
@@ -42,6 +50,8 @@
     docLabel,
     docsFor,
     facetFilter,
+    familyCanonicalMap,
+    familyUnitsOf,
     filterDocs,
     keywordFacets,
     sortDocs,
@@ -115,6 +125,11 @@
   let keywordFilterOpen = $state(false)
   let documentsLoaded = false
 
+  // Tag families (feature-tag-families.md, PR-1). Loaded alongside the document list;
+  // `manageKeywordsOpen` opens the curation view (from the keyword-filter overlay's link).
+  let keywordFamilies = $state<KeywordFamily[]>([])
+  let manageKeywordsOpen = $state(false)
+
   // Grid ⇄ list toggle — a client-only view preference, persisted like theme/panel widths.
   function loadLibraryView(): 'grid' | 'list' {
     try {
@@ -167,12 +182,23 @@
   // Facets are orthogonal to the collection: switching collection keeps them, and the facet chips
   // grey out relative to the current searched pool. `facetList` drives the facet bar; the selected
   // keywords also drive the tile highlight + first-position ordering.
+  // Family collapse (PR-1) sits ahead of the facet math: `keywordsOf` maps each doc's raw
+  // keywords through the family canonical map (identity when no families exist — byte-identical
+  // to pre-PR-1 behavior), then `keywordFacets`/`facetFilter` operate on those collapsed units.
+  const familyCanonicalOf = $derived(familyCanonicalMap(keywordFamilies))
+  const keywordsOf = $derived(familyUnitsOf(familyCanonicalOf))
   const collectionDocs = $derived(docsFor(documents, libraryCollection, new Date()))
   const searchedDocs = $derived(filterDocs(collectionDocs, libraryQuery))
-  const facetList = $derived(keywordFacets(searchedDocs, libraryKeywords))
+  const facetList = $derived(keywordFacets(searchedDocs, libraryKeywords, keywordsOf))
   const visibleDocs = $derived(
-    sortDocs(facetFilter(searchedDocs, libraryKeywords), librarySort),
+    sortDocs(facetFilter(searchedDocs, libraryKeywords, keywordsOf), librarySort),
   )
+  // The corpus's full raw-keyword universe (unfiltered by collection/search), for the Manage view.
+  const allKeywords = $derived.by(() => {
+    const s = new Set<string>()
+    for (const d of documents) for (const k of d.keywords) s.add(k)
+    return [...s]
+  })
   // Breadcrumb label for the open document, from the cached list (the chunk view fetches its
   // own detail; a stale/missing entry just hides the crumb).
   const openDoc = $derived(
@@ -515,13 +541,25 @@
     }
   }
 
+  // Tag families are a sidecar read, same inform-don't-block rule as documents.
+  async function refreshFamilies(): Promise<void> {
+    try {
+      keywordFamilies = await listKeywordFamilies()
+    } catch {
+      // keep the prior list
+    }
+  }
+
   // Switch between Chat and Library. Entering Library closes any open citation panel and lazy-loads
   // the document list once; the live chat's in-memory state is preserved across the switch.
   function selectMode(m: 'chat' | 'library'): void {
     mode = m
     sidebarOpen = false
     activeCitation = null
-    if (m === 'library' && !documentsLoaded) void refreshDocuments()
+    if (m === 'library' && !documentsLoaded) {
+      void refreshDocuments()
+      void refreshFamilies()
+    }
   }
 
   // Rail ↔ main sync (Decision 4a): selecting a collection makes it the grid's content and
@@ -618,6 +656,49 @@
   }
   function clearKeywordFacets(): void {
     libraryKeywords = []
+  }
+
+  // Tag-family curation (feature-tag-families.md, PR-1). Each write refreshes the family list
+  // (inform-don't-block: a failure just leaves the prior list, same as the document writes above).
+  async function createFamily(canonical: string, members: string[]): Promise<void> {
+    try {
+      await createKeywordFamily(canonical, members)
+      await refreshFamilies()
+    } catch {
+      // leave the prior list — the create form keeps its typed values for a retry
+    }
+  }
+  async function renameFamily(familyId: string, canonical: string): Promise<void> {
+    try {
+      await renameKeywordFamily(familyId, canonical)
+      await refreshFamilies()
+    } catch {
+      // keep the prior name
+    }
+  }
+  async function addFamilyMemberKeyword(familyId: string, keyword: string): Promise<void> {
+    try {
+      await addFamilyMember(familyId, keyword)
+      await refreshFamilies()
+    } catch {
+      // keep the prior membership
+    }
+  }
+  async function removeFamilyMemberKeyword(familyId: string, keyword: string): Promise<void> {
+    try {
+      await removeFamilyMember(familyId, keyword)
+      await refreshFamilies()
+    } catch {
+      // keep the prior membership
+    }
+  }
+  async function deleteFamily(familyId: string): Promise<void> {
+    try {
+      await deleteKeywordFamily(familyId)
+      await refreshFamilies()
+    } catch {
+      // keep the prior list
+    }
   }
 </script>
 
@@ -974,9 +1055,24 @@
     facets={facetList}
     previewDocs={visibleDocs}
     selectedCount={libraryKeywords.length}
+    families={keywordFamilies}
     onToggle={toggleKeywordFacet}
     onClear={clearKeywordFacets}
     onClose={() => (keywordFilterOpen = false)}
+    onManage={() => (manageKeywordsOpen = true)}
+  />
+{/if}
+
+{#if manageKeywordsOpen}
+  <LibraryManageKeywords
+    families={keywordFamilies}
+    {allKeywords}
+    onCreate={createFamily}
+    onRename={renameFamily}
+    onAddMember={addFamilyMemberKeyword}
+    onRemoveMember={removeFamilyMemberKeyword}
+    onDelete={deleteFamily}
+    onClose={() => (manageKeywordsOpen = false)}
   />
 {/if}
 

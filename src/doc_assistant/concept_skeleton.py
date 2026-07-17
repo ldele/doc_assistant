@@ -907,6 +907,61 @@ def add_concept(
         return str(concept.id)
 
 
+def remove_alias(concept_id: str, alias: str) -> bool:
+    """Remove one ``ConceptAlias`` row from a ``Concept``. Returns True if a row was removed.
+
+    Counterpart to :func:`add_concept`'s alias-adding (which never removes one). Case-sensitive
+    exact match on ``alias``; a missing concept or a no-match alias both return False."""
+    from sqlalchemy import select
+
+    from doc_assistant.db.models import ConceptAlias
+    from doc_assistant.db.session import session_scope
+
+    with session_scope() as session:
+        row = session.execute(
+            select(ConceptAlias).where(
+                ConceptAlias.concept_id == concept_id, ConceptAlias.alias == alias
+            )
+        ).scalar_one_or_none()
+        if row is None:
+            return False
+        session.delete(row)
+        return True
+
+
+def delete_concept(concept_id: str) -> bool:
+    """Delete a ``Concept`` and its aliases. Returns True if it existed.
+
+    The FK (``ondelete="CASCADE"``) + ORM cascade both drop ``ConceptAlias`` rows; no manual
+    cleanup needed."""
+    from doc_assistant.db.models import Concept
+    from doc_assistant.db.session import session_scope
+
+    with session_scope() as session:
+        concept = session.get(Concept, concept_id)
+        if concept is None:
+            return False
+        session.delete(concept)
+        return True
+
+
+def rename_concept(concept_id: str, new_label: str) -> bool:
+    """Rename a ``Concept``'s label in place. Returns True if it existed.
+
+    No uniqueness check against other labels (matches :func:`add_concept`'s own get-or-create,
+    which is also unenforced at the DB level) — callers that need "no two families share a
+    canonical name" enforce it themselves."""
+    from doc_assistant.db.models import Concept
+    from doc_assistant.db.session import session_scope
+
+    with session_scope() as session:
+        concept = session.get(Concept, concept_id)
+        if concept is None:
+            return False
+        concept.label = new_label
+        return True
+
+
 @dataclass(frozen=True)
 class GlossaryEntry:
     """A curated concept as a glossary row: label + definition + synonyms."""

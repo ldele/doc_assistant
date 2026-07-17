@@ -10,6 +10,7 @@ import type {
   Decision,
   Health,
   IngestStatus,
+  KeywordFamily,
   LibraryDocument,
   LibraryDocumentChunks,
   RagOverrides,
@@ -119,6 +120,74 @@ export async function deleteDocument(docId: string): Promise<DeleteResult> {
   })
   if (!r.ok) throw new Error(`delete document failed: ${r.status}`)
   return (await r.json()) as DeleteResult
+}
+
+// Tag families (feature-tag-families.md, PR-1). A family collapses near-duplicate keywords
+// (`llm`/`llms`) into one filterable entry — errors carry the backend's `detail` (400/404).
+
+export async function listKeywordFamilies(): Promise<KeywordFamily[]> {
+  const r = await fetch(`${API_BASE}/api/library/keyword-families`)
+  if (!r.ok) throw new Error(await errorDetail(r, 'keyword families'))
+  return (await r.json()) as KeywordFamily[]
+}
+
+export async function createKeywordFamily(
+  canonical: string,
+  members: string[] = [],
+): Promise<KeywordFamily> {
+  const r = await fetch(`${API_BASE}/api/library/keyword-families`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ canonical, members }),
+  })
+  if (!r.ok) throw new Error(await errorDetail(r, 'create keyword family'))
+  return (await r.json()) as KeywordFamily
+}
+
+export async function renameKeywordFamily(
+  familyId: string,
+  canonical: string,
+): Promise<KeywordFamily> {
+  const r = await fetch(`${API_BASE}/api/library/keyword-families/${encodeURIComponent(familyId)}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ canonical }),
+  })
+  if (!r.ok) throw new Error(await errorDetail(r, 'rename keyword family'))
+  return (await r.json()) as KeywordFamily
+}
+
+/** Assign a keyword to a family, moving it off any other family it belonged to (ADR-015). */
+export async function addFamilyMember(familyId: string, keyword: string): Promise<KeywordFamily> {
+  const r = await fetch(
+    `${API_BASE}/api/library/keyword-families/${encodeURIComponent(familyId)}/members`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ keyword }),
+    },
+  )
+  if (!r.ok) throw new Error(await errorDetail(r, 'add family member'))
+  return (await r.json()) as KeywordFamily
+}
+
+export async function removeFamilyMember(
+  familyId: string,
+  keyword: string,
+): Promise<KeywordFamily> {
+  const r = await fetch(
+    `${API_BASE}/api/library/keyword-families/${encodeURIComponent(familyId)}/members/${encodeURIComponent(keyword)}`,
+    { method: 'DELETE' },
+  )
+  if (!r.ok) throw new Error(await errorDetail(r, 'remove family member'))
+  return (await r.json()) as KeywordFamily
+}
+
+export async function deleteKeywordFamily(familyId: string): Promise<void> {
+  const r = await fetch(`${API_BASE}/api/library/keyword-families/${encodeURIComponent(familyId)}`, {
+    method: 'DELETE',
+  })
+  if (!r.ok) throw new Error(await errorDetail(r, 'delete keyword family'))
 }
 
 /** A/B-compare retrieval (U6): the query under the locked defaults vs the session override.

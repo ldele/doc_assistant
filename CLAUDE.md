@@ -25,7 +25,9 @@ settings: `.claude/CONTEXT.md`.
 
 Reference: `docs/ROADMAP.md` · `docs/architecture.md` · `docs/decisions.md` (ADR home; split into `docs/decisions/` in progress, ADR-001) · `docs/specs/`.
 
-Tracking: `.claude/CONTEXT.md` + `.claude/KNOWN_ISSUES.md` are committed; `.claude/SESSION.md` stays local (gitignored).
+Tracking: `.claude/CONTEXT.md` + `.claude/KNOWN_ISSUES.md` + `.claude/RIGOR_TODO.md` are committed
+(RIGOR_TODO added by ADR-020 — it is project validation debt, not per-machine state); `.claude/SESSION.md`
+stays local (gitignored).
 
 ## Non-negotiables (digest — full text in `.claude/CONTEXT.md`)
 

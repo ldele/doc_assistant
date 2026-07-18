@@ -22,11 +22,14 @@ build/
 # CLAUDE.md is COMMITTED — shared, public-safe agent instructions (a portfolio plus).
 # Personal/transient notes go in CLAUDE.local.md (gitignored).
 # .claude/ is gitignored EXCEPT the Tier-1 canonical-facts files (committed): CONTEXT.md +
-# KNOWN_ISSUES.md. The SESSION.md baton (and everything else in .claude/) stays local. (ADR-001.)
+# KNOWN_ISSUES.md + RIGOR_TODO.md. The SESSION.md baton (and everything else in .claude/) stays
+# local. (ADR-001; RIGOR_TODO.md added by ADR-020 — it tracks PROJECT validation debt, not
+# per-machine state, and keeping it local left the two boxes holding disjoint item sets.)
 CLAUDE.local.md
 .claude/*
 !.claude/CONTEXT.md
 !.claude/KNOWN_ISSUES.md
+!.claude/RIGOR_TODO.md
 # Rotated-out baton entries (cpc rotation, ADR-018 rule 11) — local-only, like the baton itself.
 docs/archive/SESSION-archive-*.md
 # Local-only convention gates that depend on a private tooling repo — never shared (see ADR-001).

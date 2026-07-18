@@ -8,6 +8,52 @@ Append only — never edit past entries.
 Format: What changed | Why | Rejected alternatives | What it opens
 
 ---
+## 2026-07-18 — ADR-020: share `RIGOR_TODO.md` via git (the two boxes held disjoint rigor trackers)
+
+**What:** added `!.claude/RIGOR_TODO.md` to the `.gitignore` allowlist beside `CONTEXT.md` and
+`KNOWN_ISSUES.md`, amending **ADR-001**'s `.claude/` contract. New
+`docs/decisions/ADR-020-share-rigor-todo-via-git.md`; `CLAUDE.md`'s tracking line updated; the tracker's
+own header rewritten from a "per-machine note" into a shared-file header carrying an item inventory and a
+first-sync merge procedure. `SESSION.md` stays local — it genuinely *is* per-machine state.
+
+**Why:** ADR-001 grouped the rigor tracker with the `SESSION.md` baton, but they are different kinds of
+file. The baton records *"who worked last on this box"*; the rigor tracker records *validation debt of the
+codebase*, which is true whichever machine you are sitting at. Grouping them let the two boxes accumulate
+**disjoint item sets** for ~3 weeks.
+
+**The failure is not hypothetical, and that is why this got fixed rather than noted.** **RG-014 has no
+entry on this box** — while being cited as authority in **ADR-017, ADR-018, ADR-019,
+`docs/specs/feature-concept-graph.md` and `docs/ui-checklist.md`** for "`single_source` is the strong,
+low-volume gap signal". A week of design decisions rested on an item nobody working here could read — and
+on 2026-07-18 that same verdict was found **not to transfer** across the ADR-018 vocabulary rescope, which
+is exactly the bound a reader would have checked had the text been reachable. This copy holds
+RG-001/008/009/010/011/012/013/015; RG-014, RG-007 and possibly RG-003/005/006 live only on the work box.
+
+**Publication surface checked first — this repo is public.** Scanned for absolute user paths,
+credentials, tokens and hostnames: **none**. Content is engineering measurements and box nicknames; the
+one sensitive-sounding detail (a corporate TLS-MITM proxy) is **already public** in the committed
+`KNOWN_ISSUES.md` KI-10. The publish decision stays the user's — staged, not committed.
+
+**Rejected:** *keep it local + add a reconciliation ritual* — this **is** the status quo; the file has
+carried a "still to reconcile against the work box" instruction since 2026-07-01 and it never happened, so
+adding a second reminder supplies no mechanism (git is the mechanism). *Fold rigor items into
+`KNOWN_ISSUES.md`* — conflates defects with validation-debt-on-work-believed-correct, and the
+`rigor-gate` skill addresses `RIGOR_TODO.md` by name. *Move it to `docs/`* — breaks every existing
+reference for nothing the allowlist entry does not already give.
+
+**The hazard this change creates, and how it is contained:** the work box still holds the file as
+**untracked and ignored**. On `git pull` git will refuse to clobber it — **that refusal is the safety
+net and must not be forced past**. The tracker's header now carries the procedure (rename local copy
+aside → pull → hand-merge the missing RG items → delete the temp) plus an explicit present-vs-missing
+inventory, so the first sync is a **merge, not an overwrite**.
+
+**Opens:** the merge itself, which can only be done on the work box — until then the shared copy is
+incomplete **and says so in its own header**. Also surfaced, logged not fixed: the file's line *"The gate
+(`rigor_gate.py`) fails while any `blocks-ship` item is `open`"* is **aspirational** — there is no
+`scripts/rigor_gate.py` in this repo and neither pre-commit nor CI reference it. Sharing the file does not
+make it enforcing; wiring a real gate is unticketed. **Staged; nothing committed (cpc §13).**
+
+---
 ## 2026-07-18 — Stage-0 candidate ranking: triage mined keywords before promotion (read-only)
 
 **What:** a **stage 0** for vocabulary curation in `concept_curation.py` — `rank_candidates()` (pure) +

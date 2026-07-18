@@ -459,3 +459,30 @@ Migrated from the old `CLAUDE.md` / `README` runtime-quirk notes on 2026-06-20 (
   Shipped in cpc **v1.2.2** (fix `bda91a5`, locked by two tests; verified on this repo's live
   worktree repro 70 → 0); re-vendored here the same day. A future background-task worktree no
   longer trips the gate.
+
+## KI-17 — stochastic gap rows outlive their concept → orphaned gaps served to the graph UI (2026-07-18, OPEN)
+- **Symptom:** `load_graph_view()` serves **27** gaps against a **13**-node skeleton; **10** of them
+  (all `kind="suggested_concept"`, all `determinism="stochastic"`) carry a `concept_id` that resolves
+  to no node. The view's own report disagrees with the sidecar: `build_gaps --apply` printed
+  "Total gaps: 15 · Rows written: 15", but the route returns 27. Surfaced by the ADR-018 rescope
+  (357 → 13 graph concepts, 2026-07-18); the 10 orphans were generated on 2026-07-08 against the
+  old 357-concept vocabulary.
+- **Cause:** the two gap classes have different write disciplines (this is ADR-017's own finding,
+  read from the other end). `gaps.py:257` **delete-and-replaces** deterministic rows, so those
+  self-heal on every rebuild; `_write_stochastic_gap_rows` (`:273`) is a **status-preserving
+  upsert**, which is correct for not losing a user's triage — but it has **no delete pass for rows
+  whose concept left the vocabulary**. Nothing reconciles a stochastic row against the current
+  vocabulary, so it is immortal. Deleting a `Concept` (or, now, excluding it) strands its gaps.
+- **Impact:** PR-G2a's index badges gaps by looking the concept up, so an orphan renders no row —
+  it inflates the gap *count* without being reachable. Worse for **PR-G2b**, which promotes gaps to
+  a first-class destination with a per-row triage action: a row you cannot resolve to a concept is a
+  row you cannot dismiss or promote.
+- **Workaround:** none needed for correctness today (the orphans are invisible in the index, not
+  wrong answers); read the `build_gaps` report — not `len(view.gaps)` — as the true gap count until
+  fixed.
+- **Candidate fix (PR-G2b territory, ADR-017 C1):** in `_write_stochastic_gap_rows`, delete
+  stochastic rows whose `concept_id` is not in the current vocabulary before the upsert — a
+  reconcile pass, not a blanket delete, so triage on a *live* concept still survives. Guard test:
+  a stochastic gap on a concept that is then excluded (`set_graph_include(cid, False)`) →
+  `build_gaps --apply` → the row is gone, while a stochastic gap on an included concept keeps its
+  status. Decide alongside the C1 override sidecar, since both concern what a rebuild may destroy.

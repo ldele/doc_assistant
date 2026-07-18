@@ -795,7 +795,16 @@ def doc_clusters_from_skeleton(
 
 
 def load_concepts() -> tuple[list[tuple[str, str]], dict[str, list[str]]]:
-    """Read the curated vocabulary: ``[(concept_id, label)]`` + ``{concept_id: [alias]}``.
+    """Read the **graph** vocabulary: ``[(concept_id, label)]`` + ``{concept_id: [alias]}``.
+
+    Only concepts with ``graph_include`` true (**ADR-018**). Tag families (ADR-015) and graph
+    nodes are the same ``Concept`` rows, but the two want opposite things from that table:
+    families want breadth, the graph wants a small curated map. So the graph filters and
+    ``library.list_keyword_families()`` deliberately does not — that asymmetry is the decision,
+    not an oversight.
+
+    The flag is **opt-in**: NULL (every row predating the migration) reads as excluded. Aliases
+    are fetched only for the included ids, so an excluded concept contributes no surface form.
 
     Materialised into plain tuples inside the session (no detached-ORM access downstream)
     so the pure core stays DB-free. Empty vocabulary → empty graph (the curation prereq)."""
@@ -807,10 +816,13 @@ def load_concepts() -> tuple[list[tuple[str, str]], dict[str, list[str]]]:
     concepts: list[tuple[str, str]] = []
     aliases: dict[str, list[str]] = defaultdict(list)
     with session_scope() as session:
-        for row in session.execute(select(Concept)).scalars():
+        rows = session.execute(select(Concept).where(Concept.graph_include.is_(True))).scalars()
+        for row in rows:
             concepts.append((str(row.id), row.label))
+        included = {cid for cid, _ in concepts}
         for arow in session.execute(select(ConceptAlias)).scalars():
-            aliases[str(arow.concept_id)].append(arow.alias)
+            if str(arow.concept_id) in included:
+                aliases[str(arow.concept_id)].append(arow.alias)
     concepts.sort(key=lambda c: c[0])
     return concepts, dict(aliases)
 
@@ -848,7 +860,12 @@ def promote_keyword(name: str) -> str | None:
 
     Returns the Concept id, or ``None`` if no Keyword has that name. Get-or-create by label
     so promoting twice is a no-op (one Concept, one seed alias). The LLM is never involved
-    (Decision 1)."""
+    (Decision 1).
+
+    Promoted concepts are **excluded from the graph** (``graph_include=False``, ADR-018): a
+    promotion is a *candidate* by this function's own contract, and this is the path
+    ``--promote-all`` drives — the bulk run that flooded the graph with 344 nodes on
+    2026-07-05. Opt one in with :func:`set_graph_include`."""
     from sqlalchemy import select
 
     from doc_assistant.db.models import Concept, ConceptAlias, Keyword
@@ -863,11 +880,63 @@ def promote_keyword(name: str) -> str | None:
         ).scalar_one_or_none()
         if existing is not None:
             return str(existing.id)
-        concept = Concept(label=name, source="keyword")
+        concept = Concept(label=name, source="keyword", graph_include=False)
         session.add(concept)
         session.flush()
         session.add(ConceptAlias(concept_id=concept.id, alias=name))
         return str(concept.id)
+
+
+def backfill_graph_include(apply: bool = False) -> tuple[int, int]:
+    """Set ``graph_include`` on rows that have none, by source (**ADR-018**). Idempotent.
+
+    The retroactive form of the same rule the creation paths follow: ``source == "manual"``
+    (deliberate glossary curation) opts **in**, everything else opts **out**. Only rows where
+    the flag ``IS NULL`` are touched, so a user's later override is never overwritten and a
+    second run is a no-op.
+
+    Returns ``(n_included, n_excluded)`` — the counts it would set, or did when ``apply``.
+    Dry-run by default: this decides what the graph is built over, so it reports first."""
+    from sqlalchemy import select
+
+    from doc_assistant.db.models import Concept
+    from doc_assistant.db.session import session_scope
+
+    with session_scope() as session:
+        rows = list(
+            session.execute(select(Concept).where(Concept.graph_include.is_(None))).scalars()
+        )
+        included = [r for r in rows if r.source == "manual"]
+        excluded = [r for r in rows if r.source != "manual"]
+        if apply:
+            for row in included:
+                row.graph_include = True
+            for row in excluded:
+                row.graph_include = False
+        log.info(
+            "backfill_graph_include",
+            n_included=len(included),
+            n_excluded=len(excluded),
+            applied=apply,
+        )
+        return len(included), len(excluded)
+
+
+def set_graph_include(concept_id: str, include: bool) -> bool:
+    """Opt one ``Concept`` into or out of the graph vocabulary (ADR-018). Idempotent.
+
+    Returns True if a row was updated, False if no concept has that id. The only write
+    surface for the flag; the change takes effect on the next ``build_concept_skeleton``
+    run, since the skeleton is a derived artifact."""
+    from doc_assistant.db.models import Concept
+    from doc_assistant.db.session import session_scope
+
+    with session_scope() as session:
+        concept = session.get(Concept, concept_id)
+        if concept is None:
+            return False
+        concept.graph_include = include
+        return True
 
 
 def add_concept(
@@ -875,6 +944,7 @@ def add_concept(
     *,
     definition: str | None = None,
     aliases: list[str] | None = None,
+    graph_include: bool = True,
 ) -> str:
     """Create or update a **curated** ``Concept`` (a glossary entry). Idempotent.
 
@@ -883,6 +953,11 @@ def add_concept(
     fills/updates the ``definition`` and adds any new ``aliases`` (never removes one). The
     label is always an implicit surface form for presence; ``aliases`` are extra synonyms.
     Returns the Concept id. Zero LLM.
+
+    ``graph_include`` defaults **true** here (ADR-018): this is the deliberate glossary path,
+    so naming a concept is taken as wanting it on the map. The candidate/organisational paths
+    (:func:`promote_keyword`, ``library.create_keyword_family``) pass ``False`` instead.
+    Only applied on **create** — it never silently re-includes a concept the user excluded.
     """
     from sqlalchemy import select
 
@@ -894,7 +969,12 @@ def add_concept(
             select(Concept).where(Concept.label == label)
         ).scalar_one_or_none()
         if concept is None:
-            concept = Concept(label=label, source="manual", definition=definition)
+            concept = Concept(
+                label=label,
+                source="manual",
+                definition=definition,
+                graph_include=graph_include,
+            )
             session.add(concept)
             session.flush()
         elif definition is not None:

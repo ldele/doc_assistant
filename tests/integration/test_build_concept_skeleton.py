@@ -64,8 +64,11 @@ def _seed() -> dict[str, str]:
             session.flush()
             ids[name] = str(doc.id)
 
-        rag = Concept(label="RAG", source="keyword")
-        dpr = Concept(label="DPR", source="manual")
+        # graph_include is opt-in (ADR-018) and independent of `source` — a promoted
+        # keyword is graph vocabulary here precisely because the flag, not the source,
+        # decides membership.
+        rag = Concept(label="RAG", source="keyword", graph_include=True)
+        dpr = Concept(label="DPR", source="manual", graph_include=True)
         session.add_all([rag, dpr])
         session.flush()
         session.add(ConceptAlias(concept_id=rag.id, alias="retrieval-augmented generation"))

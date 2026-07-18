@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 
 import structlog
@@ -43,6 +44,9 @@ CLASSIFY_BATCH = 25
 CLASSIFY_MAX_TOKENS = 512
 
 _PURE_DIGIT = re.compile(r"^\d+$")
+# Two adjacent Capitalised words — a conservative person-name shape for stage 0 (see
+# harvest_name_bigrams). Deliberately does NOT match lowercase runs or single tokens.
+_NAME_BIGRAM = re.compile(r"\b([A-Z][a-z]+)\s+([A-Z][a-z]+)\b")
 
 
 def is_artifact(label: str) -> bool:
@@ -220,8 +224,130 @@ def classify_noise(
 
 
 # --------------------------------------------------------------------------- #
+# Stage 0 — rank mined candidates BEFORE promotion (pure core)
+# --------------------------------------------------------------------------- #
+# The three stages above prune a vocabulary that was already promoted. This stage runs one
+# step earlier and is why that pruning got so expensive: `--promote-all` (2026-07-05) imported
+# **672 of 688 keywords that appear in exactly one document** — the keyword extractor scores
+# per-document salience, not cross-document vocabulary. A singleton keyword can never form a
+# co-occurrence edge, so it enters the skeleton as a permanently isolated node.
+#
+# Ranking, not filtering. Signals are reported per candidate and NOTHING is auto-excluded —
+# `pddl` is a legitimate 1-document concept, and the 2026-07-18 trap in
+# `docs/specs/feature-concept-graph.md` is exactly what auto-exclusion produces.
+
+
+@dataclass(frozen=True)
+class RankedCandidate:
+    """A mined keyword with the signals a human needs to decide whether to promote it."""
+
+    name: str
+    doc_count: int  # distinct documents — the primary signal (cross-document reach)
+    promoted: bool  # a Concept with this label already exists
+    in_graph: bool  # ...and it is in the graph vocabulary (ADR-018 graph_include)
+    artifact: bool  # is_artifact() fired — deterministic, high precision
+    author_like: bool  # ADVISORY ONLY, low precision on this corpus — see harvest_name_bigrams
+
+
+def harvest_name_bigrams(authors: Iterable[str]) -> frozenset[str]:
+    """Person-name bigrams (both orders) from raw ``documents.authors`` strings.
+
+    **This signal is advisory and measurably impure.** `documents.authors` is free text that
+    frequently holds a *whole citation* — ``"Omar Khatab and Matei Zaharia. 2020. ColBERT:
+    Efficient and Effective Passage Search…"`` — so the field contains paper **titles** as well as
+    people. Measured on the live corpus: 290 bigrams harvested, 3 keywords flagged, of which
+    **only 1 was a real author name** (``ziyang wang``); the other two (``usage cards``,
+    ``responsibly reporting``) are title fragments. **1/3 precision — never auto-exclude on it.**
+
+    Two guards keep the false positives cheap rather than catastrophic: only **capitalised
+    word pairs** are harvested (so a citation's lowercase run cannot contribute), and only
+    **multi-token** candidates are ever matched — which is what protects the single-token
+    concepts this corpus cares most about. ``bert`` appears in 4 authors strings and ``colbert``
+    in 1; a substring rule would drop both, and they are two of the most important concepts in
+    an IR corpus.
+
+    Both orders are emitted because the field mixes ``"Given Surname"`` and ``"Surname, Given"``.
+    """
+    out: set[str] = set()
+    for text in authors:
+        for match in _NAME_BIGRAM.finditer(text or ""):
+            first, second = match.group(1).lower(), match.group(2).lower()
+            out.add(f"{first} {second}")
+            out.add(f"{second} {first}")
+    return frozenset(out)
+
+
+def rank_candidates(
+    doc_counts_by_name: dict[str, int],
+    *,
+    promoted: set[str],
+    in_graph: set[str],
+    name_bigrams: frozenset[str],
+) -> list[RankedCandidate]:
+    """Score + order mined candidates for review. Pure; the caller supplies every input.
+
+    Ordered by **document count descending**, then name — cross-document reach first, because a
+    concept graph is a cross-document instrument. Every candidate is returned (including
+    already-promoted ones, flagged) so a caller can filter; this function never drops a row.
+    """
+    ranked = [
+        RankedCandidate(
+            name=name,
+            doc_count=count,
+            promoted=name in promoted,
+            in_graph=name in in_graph,
+            artifact=is_artifact(name),
+            author_like=" " in name.strip() and name.strip().lower() in name_bigrams,
+        )
+        for name, count in doc_counts_by_name.items()
+    ]
+    ranked.sort(key=lambda c: (-c.doc_count, c.name))
+    return ranked
+
+
+# --------------------------------------------------------------------------- #
 # Impure boundary — read the curated vocabulary, apply the plan
 # --------------------------------------------------------------------------- #
+def rank_keyword_candidates() -> list[RankedCandidate]:
+    """Read keywords + their document spread + the current vocabulary, and rank them.
+
+    The impure wrapper over :func:`rank_candidates`; all judgement lives in the pure core.
+    """
+    from sqlalchemy import func, select
+
+    from doc_assistant.db.models import Concept, Document, Keyword, document_keywords
+    from doc_assistant.db.session import session_scope
+
+    with session_scope() as session:
+        counts = {
+            name: int(n)
+            for name, n in session.execute(
+                select(Keyword.name, func.count(func.distinct(document_keywords.c.document_id)))
+                .join(document_keywords, document_keywords.c.keyword_id == Keyword.id)
+                .group_by(Keyword.name)
+            )
+        }
+        concepts = list(session.execute(select(Concept)).scalars())
+        promoted = {c.label for c in concepts}
+        in_graph = {c.label for c in concepts if c.graph_include}
+        authors = [a for (a,) in session.execute(select(Document.authors)) if a]
+
+    ranked = rank_candidates(
+        counts,
+        promoted=promoted,
+        in_graph=in_graph,
+        name_bigrams=harvest_name_bigrams(authors),
+    )
+    log.info(
+        "rank_keyword_candidates",
+        n_candidates=len(ranked),
+        n_multi_doc=sum(1 for c in ranked if c.doc_count >= 2),
+        n_artifact=sum(1 for c in ranked if c.artifact),
+        n_author_like=sum(1 for c in ranked if c.author_like),
+    )
+    return ranked
+
+
 def load_concepts() -> list[tuple[str, str]]:
     """All curated concepts as ``(id, label)``, sorted by id (stable)."""
     from sqlalchemy import select

@@ -92,7 +92,9 @@ def _write_skeleton_json(env: Path, skeleton: ConceptSkeleton) -> None:
 
 def _seed_concepts(*ids_labels: tuple[str, str]) -> None:
     with session_scope() as s:
-        s.add_all(Concept(id=i, label=lab, source="manual") for i, lab in ids_labels)
+        s.add_all(
+            Concept(id=i, label=lab, source="manual", graph_include=True) for i, lab in ids_labels
+        )
 
 
 def _seed_presence(concept_id: str, document_id: str, chunk_keys: list[str], n: int) -> None:

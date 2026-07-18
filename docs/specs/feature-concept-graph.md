@@ -4,11 +4,20 @@
 foot). Boundaries in **ADR-017**; the gap layer it surfaces is **ADR-004**; the vocabulary it reads is
 **ADR-015**, which reserved this track by name. **PR-G1 ✅ BUILT 2026-07-17 (staged, not committed).**
 
-**Owner:** Claude Code. **Never bundle:** ~~PR-G1 serve~~ **BUILT** → PR-G2a index+ego+chunks → PR-G2b gaps as a
-destination → PR-G2c Library entry → PR-G4 Node B (separate; unblocks the epistemic encoding).
+**Owner:** Claude Code. **Never bundle:** ~~PR-G1 serve~~ **BUILT** → ~~PR-G2a index+ego+chunks~~ **BUILT** →
+PR-G2b gaps as a destination → PR-G2c Library entry → ~~PR-G4 Node B~~ **RUN** (see the PR-G4 section).
 
 **⚠ Read `## The verdict` before designing any screen.** The gap payload is **~50% precise** and the strong
 half is **list-shaped, not graph-shaped**. A spec that leads with the pretty part ships the noise.
+
+> **⚠ TWO BOXES, TWO CORPORA — this spec's live numbers are not universal (added 2026-07-18).** PR-G1/G2a,
+> ADR-017 and `## The verdict` were measured on the **RTX box: 76 docs, 26 concepts, 14 gaps**. The **CPU
+> box carries 47 docs, 688 keywords, 357 concepts** and *none* of the labels this spec cites (`Res2Net`,
+> `PHATE`, `SBERT`, `Embeddings`) exist there. **Do not treat a live-verified number here as reproducible
+> on the box in front of you — re-measure.** The CPU box's vocabulary has since been rescoped to **13**
+> graph concepts / 19 edges / 15 gaps by **ADR-018** (`graph_include`), which also means
+> **`## The verdict`'s "single_source is the strong signal" ranking is un-retested at that size** — see
+> the PR-G2b note.
 
 ---
 
@@ -179,6 +188,15 @@ overflow. **Gate:** `svelte-check` 0/0, `vite build` clean (157 modules), still 
 
 ### PR-G2b — gaps as a first-class destination + triage
 
+> **⚠ RE-MEASURE THE ORDERING FIRST (2026-07-18).** "Strong kinds first" inherits `## The verdict`'s
+> ranking, measured at **26 concepts / 14 gaps** on the RTX box. After ADR-018 the CPU box sits at **13
+> concepts / 15 gaps**, and the kinds are nearly **flat** — `thin_bridge` 4 · `isolated` 3 ·
+> `single_source` 3 · `under_connected` 3 · `unsourced_claim` 2. `single_source` is no longer
+> self-evidently the headline, and `under_connected`'s "graph-degree noise at n=26" argument needs
+> restating at n=13. **Re-derive the verdict on the box you build on; do not rubber-stamp it.**
+> Also blocked on **KI-17** — 10 orphaned stochastic gap rows are served today, and a gap you cannot
+> resolve to a concept is a gap you cannot triage.
+
 - Promote the gap lens to its own surface: the findings, grouped by kind, **strong kinds first**.
 - **Triage (dismiss/promote) via the ADR-017 C1 override sidecar** — new table keyed on `(concept_id, kind)`,
   landing via `create_all` (the `figures` precedent), **not** `_ADDITIVE_COLUMNS` (that handles columns).
@@ -192,14 +210,25 @@ overflow. **Gate:** `svelte-check` 0/0, `vite build` clean (157 modules), still 
 
 Reverse `concept_presence` from the Library document view; reuse PR-G2a's ego view unchanged.
 
-### PR-G4 — run Node B (separate; unblocks the epistemic encoding)
+### PR-G4 — run Node B (separate; unblocks the epistemic encoding) — ✅ RUN 2026-07-18 (CPU box)
 
 **Node B is BUILT** — `concept_skeleton_enrich.py` (pure core, idempotent, **never creates a node or edge**) —
-and runnable via **`build_concept_skeleton --enrich`** (`:150`). **Never run.** **$0**:
+and runnable via **`build_concept_skeleton --enrich`** (`:150`). **$0**:
 `CONCEPT_SKELETON_LLM_PROVIDER` defaults to **local Ollama** (`llama3.1:8b`), not `LLM_PROVIDER`, guarded by
-`assert_provider_intent` (KI-4); one call per document. **Blocker: Ollama is on the RTX box.** Running it →
-stance → contested nodes → the reserved edge encoding + the L1b Library row unblock. *(Rebuild first: the
-skeleton now carries `doc_years`, so `superseded_trend` becomes possible.)*
+`assert_provider_intent` (KI-4); one call per document. Running it → stance → contested nodes → the reserved
+edge encoding + the L1b Library row unblock.
+
+> **CORRECTION (2026-07-18): "Never run" and "Blocker: Ollama is on the RTX box" were both false.** Ollama
+> is on the **CPU** box, and Node B had already run there on **2026-07-08** (the G6 session's
+> `--apply --enrich`) — that skeleton carried `node_b_calls: 46` / **1254 annotated edges**. Re-run
+> 2026-07-18 after the ADR-018 rescope: **9 calls, 19/19 edges annotated, 63 stance assertions, 7
+> contested edges**, `$0`, ~2 min. Node-level directions: **7 contested / 6 stable / 0 superseded_trend**
+> (a 13-concept vocabulary rarely clears G6's ≥2-dated-docs-per-side floor). **The reserved edge-stance
+> encoding is therefore unblocked by data now** — it can be built whenever PR-G2b/G2c allow.
+
+*(Rebuild note: always `--apply --enrich` **together** — `--apply` alone rebuilds the edges with no
+`relation`/`stance_by_doc` and silently wipes Node B's annotations; see
+`tests/eval/baselines/superseded_year_rule_2026-07.md`.)*
 
 ## Verification (this is the safety net — there is no other)
 
@@ -230,6 +259,18 @@ which is *why* ADR-017 locks SVG over canvas. All via `read_page` + `javascript_
 - **`under_connected` / `thin_bridge` as headline signals** — see the verdict; revisit at a larger vocabulary.
 
 ## Traps (each cost real time to find)
+
+- **⚠ An unfamiliar short label is NOT evidence of junk — trace it to its document before judging. This trap
+  has fired TWICE (2026-07-17, 2026-07-18).** The corpus is **multi-domain** (IR/RAG · systems neuroscience ·
+  viral tracing/mouse genetics · AI planning), so a vocabulary reviewed from inside the retrieval domain
+  reads most of it as noise. Real terms mistaken for artifacts: `cre` (Cre recombinase, **203 mentions —
+  more than `BM25`**), `dbs` (deep brain stimulation, 134), `ntsr1`, `pddl`, plus the 2026-07-17 batch
+  (`16p11` = 16p11.2 truncated at the dot, `c57bl` = C57BL/6 across **7 docs**, `va1v`/`dl5`/`osns` =
+  Drosophila glomeruli). Genuinely broken strings are a small **clustered** minority — `mathrm`/`professium`/
+  `outflux` all came from one 1952 scanned paper. **The rule, set 2026-07-17 and restated here: demote, not
+  delete — deleting real vocabulary is not reversible-by-search.** Under ADR-018 the demote verb is
+  `set_graph_include(cid, False)`, which keeps the row and its keyword family. Cheap check before any such
+  call: the concept's aliases, `n_mentions`, and the **titles** of its presence documents.
 
 - **`data/graph/graph.json` is a stale EMPTY DECOY** (0 nodes, Jun 15) — residue of the retired
   `concept_graph.py` (KI-7). **Reading it renders an empty graph that looks like a layout bug.** The live

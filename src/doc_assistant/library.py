@@ -511,13 +511,17 @@ def create_keyword_family(canonical: str, members: list[str] | None = None) -> K
     Idempotent by canonical label (matches ``add_concept``'s get-or-create). Any member
     keyword already belonging to another family is moved (a keyword belongs to at most one
     family — ADR-015).
+
+    Families are **not** graph vocabulary (``graph_include=False``, ADR-018): grouping keywords
+    is library organisation, not a claim that the concept belongs on the map. This is what stops
+    the families feature from re-flooding the graph as it grows.
     """
     from doc_assistant.concept_skeleton import add_concept
 
     canonical = canonical.strip()
     if not canonical:
         raise ValueError("canonical must not be blank")
-    concept_id = add_concept(label=canonical)
+    concept_id = add_concept(label=canonical, graph_include=False)
     for member in members or []:
         add_family_member(concept_id, member)
     family = get_keyword_family(concept_id)

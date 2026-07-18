@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-07-16 (cpc re-vendored 1.1.0→1.2.1; wiring text corrected; Provenote fact added) · class: living -->
+<!-- status: active · updated: 2026-07-18 (ADR-018 graph vocabulary scope; two-box corpus warning) · class: living -->
 
 # CONTEXT — doc_assistant
 
@@ -180,6 +180,16 @@ to docs/archive/SESSION-archive-NNN.md (local-only, like the baton).
   with `--repeat` before locking it as a measured win. `CANDIDATE_K=10` reproduces pre-split behaviour.
 - **Per-project embedder routing (Feature 1b) deferred** — no model beats `bge-base` on an identifiable
   sub-corpus yet (SPECTER2 lost on every retrieval signal). Re-run SPECTER2 `--repeat 5` first.
+- **Graph vocabulary is now SCOPED (2026-07-18, ADR-018, staged).** Tag families (ADR-015) and concept-graph
+  nodes are the same `Concept` rows; the graph filters on an additive **opt-in `graph_include`** flag while
+  `library.list_keyword_families()` deliberately does not. Root cause of the flood: **all 344**
+  `source="keyword"` concepts were created by **one `seed_concepts.py --promote-all` on 2026-07-05**.
+  Real corpus (CPU box, $0 Ollama): graph **357 → 13 nodes / 19 edges / 15 gaps**, families still 357.
+  **Curation is CLI-only** (`add_concept`, `set_graph_include`, `scripts/backfill_graph_include.py`) — no UI yet.
+- **⚠ TWO BOXES, TWO CORPORA.** This box's `data/library.db` carries **47 docs**; ADR-017 / PR-G1 / PR-G2a /
+  the L5 row were measured on a **76-doc** corpus elsewhere, and none of their cited concept labels
+  (`Res2Net`/`PHATE`/`SBERT`/`Embeddings`) exist here. **Never assume a spec's "live-verified" number
+  reproduces on the box in front of you — re-measure.**
 - **Concept graph redesign (2026-06-18) — RESOLVED, fully built.** Node A (deterministic skeleton,
   2026-06-30) + Node B (confined LLM stance, PR #6) both shipped; RG-001/008/009 validated the edges
   (R5 PASS, ADR-008, `CONCEPT_SKELETON_MIN_COOCCURRENCE=2` + `boundary` presence); the superseded

@@ -77,11 +77,11 @@ def _seed_curated_concepts() -> None:
     with session_scope() as session:
         session.add_all(
             [
-                Concept(id="iso", label="Iso", source="manual"),
-                Concept(id="sole", label="Sole", source="manual"),
-                Concept(id="shared", label="Shared", source="manual"),
-                Concept(id="hub", label="Hub", source="manual"),
-                Concept(id="leaf", label="Leaf", source="manual"),
+                Concept(id="iso", label="Iso", source="manual", graph_include=True),
+                Concept(id="sole", label="Sole", source="manual", graph_include=True),
+                Concept(id="shared", label="Shared", source="manual", graph_include=True),
+                Concept(id="hub", label="Hub", source="manual", graph_include=True),
+                Concept(id="leaf", label="Leaf", source="manual", graph_include=True),
             ]
         )
         session.add(ConceptAlias(concept_id="shared", alias="shared concept"))

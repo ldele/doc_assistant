@@ -31,6 +31,11 @@ _ADDITIVE_COLUMNS: list[tuple[str, str, str, str | None]] = [
     ("concept_edges", "strength_json", "TEXT", None),
     # Conversation rename — user-set title on the (pre-existing) conversation_meta table.
     ("conversation_meta", "title_override", "TEXT", None),
+    # ADR-018 — graph-vocabulary opt-in on the (pre-existing) concepts table. Lands NULL
+    # on every existing row, which reads as excluded; scripts/backfill_graph_include.py
+    # sets the policy (source == "manual" opts in). Indexed: load_concepts filters on it
+    # on every skeleton build.
+    ("concepts", "graph_include", "BOOLEAN", "ix_concepts_graph_include"),
 ]
 
 

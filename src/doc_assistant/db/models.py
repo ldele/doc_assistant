@@ -447,6 +447,13 @@ class Concept(Base):
     # Curated glossary gloss — a short definition of the concept. Optional; feeds the
     # semantic-distance layer (embed the definition, richer than the bare label).
     definition: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # ADR-018 — is this concept part of the concept-graph vocabulary? Tag families
+    # (ADR-015) and graph nodes are the same rows, and the two want opposite things
+    # from this table: families want breadth, the graph wants a small curated map.
+    # OPT-IN by design (default false): a new row never enters the graph unbidden,
+    # which is what makes a bulk promotion unable to re-flood it. Nullable for the
+    # additive migration; NULL reads as excluded.
+    graph_include: Mapped[bool | None] = mapped_column(Boolean, nullable=True, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
 
     aliases: Mapped[list["ConceptAlias"]] = relationship(

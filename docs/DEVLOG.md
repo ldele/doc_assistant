@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-07-17 · class: append-only -->
+<!-- status: active · updated: 2026-07-18 · class: append-only -->
 
 # DEVLOG — doc_assistant
 
@@ -6,6 +6,166 @@ Real-time development log. One entry per logical change.
 Append only — never edit past entries.
 
 Format: What changed | Why | Rejected alternatives | What it opens
+
+---
+## 2026-07-18 — Stage-0 candidate ranking: triage mined keywords before promotion (read-only)
+
+**What:** a **stage 0** for vocabulary curation in `concept_curation.py` — `rank_candidates()` (pure) +
+`harvest_name_bigrams()` (pure) + `rank_keyword_candidates()` (impure wrapper), behind a read-only runner
+`scripts/rank_candidates.py`. Orders mined keywords by **document reach** and reports three signals per
+candidate: `docs` (distinct documents), `artifact` (reuses the existing deterministic `is_artifact`), and
+an advisory `author?`. +13 tests. **Read-only — it ranks, never promotes, excludes, or writes.**
+
+**Why:** the module's existing three stages prune a vocabulary that was *already* promoted; nothing ran
+before promotion, which is why `--promote-all` was so destructive. The measurement that frames it:
+**672 of 688 keywords (97.7%) appear in exactly one document** — the keyword extractor scores per-document
+salience, not cross-document vocabulary, and a singleton keyword can never form a co-occurrence edge, so it
+enters the skeleton as a permanently isolated node. Ranking by reach cuts the review set **688 → 16 (2.3%)**
+without classifying anything.
+
+**Ranking, not filtering — and that is a deliberate reaction to the same day's mistake.** Nothing is
+auto-excluded: `pddl` is a legitimate 1-document concept, and the correction entry below records what
+auto-exclusion produces on a multi-domain corpus. Signals order a human's review; they do not act.
+
+**The author signal is reported honestly as weak.** `documents.authors` is free text that often holds a
+*whole citation* — `"Omar Khatab and Matei Zaharia. 2020. ColBERT: Efficient…"` — so the field contains
+paper **titles** as well as people. Measured live: 290 name bigrams harvested, **3 keywords flagged, only
+1 a real author name** (`ziyang wang`); the others (`usage cards`, `responsibly reporting`) are title
+fragments. **~1/3 precision → advisory only, never an auto-exclude.** Two guards keep it cheap rather than
+catastrophic: only **capitalised** word pairs are harvested, and only **multi-token** candidates are ever
+matched. That second guard is load-bearing and has its own test: **`bert` appears in 4 authors strings and
+`colbert` in 1**, so a substring rule would silently drop two of the most important concepts in an IR
+corpus. Noise classification stays with the existing `classify_noise()` LLM seam, whose prompt already
+names author names as noise — free on Ollama, and not worth reimplementing deterministically at 1/3
+precision.
+
+**Rejected:** a hard `>=2 docs` gate (kills `pddl` and every legitimate single-source concept — and
+`single_source` is the gap layer's *strongest* signal, so gating on reach would suppress the findings
+ADR-004 exists to produce); substring matching against `documents.authors` (drops `bert`/`colbert` —
+measured, not hypothesised); a new module (this is vocabulary quality, which `concept_curation.py` owns,
+and it already had `is_artifact` to reuse); auto-promoting the top N (redesign **Decision 1** — the vocabulary
+is curated by the user, never auto-extended).
+
+**Live output on the real corpus (read-only, $0):** 688 candidates → 16 with reach >=2 → **8 unpromoted**,
+of which 5 are real concepts the graph is currently missing — **`medical image segmentation` (3 docs)**,
+`cajal`, `dice score`, `mamba`, `rag` — and 3 are correctly flagged artifacts (`18653 v1`, `10 18653 v1`,
+`mrr 10`). It also confirms the morphological duplicates predicted from the pool: **`passage`/`passages`
+and `mrr`/`mrr 10` are all promoted concepts** — `dedup_pairs()` (stage 3, already built, never run) is the
+tool for those. Gate: ruff ✓ · format ✓ · `mypy --strict src` (63) ✓ · bandit 0 HIGH/MED ✓ ·
+**1015 passed** (+13).
+
+**Opens:** the ranker surfaces candidates but **promotion is still one-at-a-time via `seed_concepts
+--promote`** — a batch review UI (or an `--llm` judged pass over just the top-ranked slice) is the natural
+follow-up, now that the review set is 16 rather than 688. **25 of 47 documents still have zero concept
+presence** — reach-ranking cannot fix that, because those documents' keywords are singletons *by
+construction*; closing it needs per-domain seeding from document titles/abstracts, which is a different
+instrument. `dedup_pairs()`/`classify_noise()` both remain built and unrun.
+**Staged; nothing committed (cpc §13).**
+
+---
+## 2026-07-18 — CORRECTION to the ADR-018 entry: the 4 "junk" concepts are real specialist vocabulary
+
+**What:** retracts one claim in the ADR-018 entry below — that `cre`, `dbs`, `ntsr1`, `pddl` are "4 junk
+manual entries … worth curating out". **They are correctly curated domain concepts.** Nothing was removed.
+The `set_graph_include(cid, False)` action item that rode on that claim is withdrawn.
+
+**The evidence (traced to source, which is what the original claim skipped):**
+
+| concept | alias | home document(s) | mentions |
+|---|---|---|---|
+| `cre` | Cre recombinase | mouse axonal-projection paper · "Neuroanatomy goes viral!" | **203** |
+| `dbs` | deep brain stimulation | hypothalamic stimulation · dopamine/beta-oscillations | **134** |
+| `ntsr1` | neurotensin receptor 1 | mouse whisker-cortex paper | 30 |
+| `pddl` | planning domain definition language | hierarchical-planning paper | 46 |
+
+Every one carries a correct expansion alias and real textual presence. **`cre` has more mentions than
+`BM25`** (203 vs 137).
+
+**Why the error happened, precisely:** the corpus spans at least four domains (IR/RAG · systems neuroscience ·
+viral tracing/mouse genetics · AI planning), but the vocabulary was judged against the *one* domain the
+session had been reading specs about. Lowercase acronyms sitting beside `BM25`/`dense retrieval` were
+pattern-matched as extraction noise **without opening the documents they came from.**
+
+**The supporting argument was also inverted.** "3 single-concept communities and 6 of the 15 gaps" was cited
+as evidence of junkiness. That is the gap layer working: `isolated`/`single_source` on `pddl` means *"you own
+exactly one AI-planning paper"* — a true coverage finding, which is the whole point of ADR-004. A correct
+signal was read as a defect.
+
+**This is a REPEAT.** The 2026-07-17 entry ("Manage view at scale scoped (PR-2.7)") reached the identical
+conclusion one day earlier, in the same words — *"they are **mostly real specialist vocabulary, not junk**"*
+(`16p11` = 16p11.2 truncated at the dot; `c57bl` = C57BL/6 across 7 docs; `va1v`/`dl5`/`osns` = Drosophila
+glomeruli) — and set the rule **"demote, not delete: deleting real vocabulary isn't reversible-by-search."**
+That rule was not consulted. Recorded as a trap in `docs/specs/feature-concept-graph.md` so the third
+occurrence is cheaper than the second.
+
+**What actually is wrong** (the finding the false one was hiding): **25 of 47 documents have zero concept
+presence** — the vocabulary is too *small* and too *IR-skewed*, not too impure. Root cause of the poor
+candidate pool: **672 of 688 keywords (97.7%) appear in exactly one document** — the extractor produces
+per-document salience, not cross-document vocabulary, so `--promote-all` imported 672 document-specific
+strings. Next PR ranks candidates instead of promoting them wholesale.
+
+**Opens:** nothing removed, so no rebuild was needed; the 13-concept graph stands as measured.
+
+---
+## 2026-07-18 — ADR-018: scope the graph vocabulary with an opt-in `graph_include` flag (357 → 13 nodes)
+
+**What:** added a nullable `graph_include` flag to `Concept` and filtered `concept_skeleton.load_concepts()`
+on it (**ADR-018**). `library.list_keyword_families()` stays **unfiltered** — that asymmetry is the whole
+decision. Creation paths follow one rule: `add_concept()` opts **in** (new `graph_include: bool = True`
+param — the deliberate glossary path), `promote_keyword()` and `library.create_keyword_family()` opt
+**out**. New `set_graph_include()` write surface + `backfill_graph_include()` (dry-run by default, touches
+only `IS NULL` rows) behind a thin runner, `scripts/backfill_graph_include.py`. Migration is one append to
+`db/migrations.py` `_ADDITIVE_COLUMNS` (+ an index — the filter runs on every build). +14 guard tests.
+
+**Why:** **ADR-015's named "boundary risk" materialized.** Tag families and graph nodes are the same
+`Concept` rows, and the two features want opposite things from that table — families want breadth, the
+graph wants a small curated map. Measured on this box: **all 344** `source="keyword"` concepts share one
+`created_at` (**2026-07-05**) — a single `seed_concepts.py --promote-all` run, against `promote_keyword`'s
+own documented contract that a Keyword is *"a candidate only — never auto-written"*. The graph was 357
+nodes of `'speckles'`/`'hyaline'`/`'13 intentionally omitted'`, and `single_source` was **224 of 302**
+gaps — the exact signal RG-014 found strong *because* it was low-volume at 26 concepts.
+
+**Polarity is the load-bearing half:** opt-in, so NULL reads as excluded and a new row never enters the
+graph unbidden. Opt-out would let the identical regression recur on the next bulk operation; opt-in makes
+re-flooding structurally impossible. A test asserts exactly that (`test_bulk_promotion_cannot_reflood`).
+
+**Rejected:** filtering on the existing `source='manual'` (overloads a *provenance* field as a *curation*
+control — they diverge the moment a graph-worthy concept arrives via `promote_keyword`, and the only fix
+would be lying about its provenance); **deleting the 344** (destructive, cascades into
+`concept_presence`/`concept_edges`/`gaps`, removes 344 keyword families from a shipped view to fix a
+different feature — and being a data fix, the next `--promote-all` re-floods); splitting into two tables
+(a real migration across four consumers to buy what a nullable column buys; revisit only if the two
+vocabularies diverge in *shape*, not just membership).
+
+**Applied + measured on the real corpus ($0, local Ollama, this box — 47 docs / 688 keywords):**
+migration added the column (357 rows NULL) → backfill split **13 include / 344 exclude** → rebuild
+`--apply --enrich --provider ollama` (the `--apply`-alone footgun avoided). **Graph 357 → 13 nodes**,
+1534 → **19 edges**, 40 → **6 communities**, over 22 documents with presence. **Node B: 9 calls, 19/19
+edges annotated, 63 stance assertions, 7 contested edges** — and the result reads as a real map
+(`dense retrieval —[contrasts with]→ BM25`, `contrastive learning —[uses]→ hard negatives`) where 357
+nodes read as noise. Directions: **7 contested / 6 stable / 0 superseded_trend**. **Gaps 302 → 15**
+(isolated 3 · single_source 3 · thin_bridge 4 · under_connected 3 · unsourced_claim 2). Both ADR
+guarantees verified live: graph vocabulary **13**, keyword families still **357**.
+Gate: ruff ✓ · format ✓ · `mypy --strict src` (63) ✓ · bandit 0 HIGH/MED ✓ · **1002 passed** (+14; the
+6 `send2trash` failures are pre-existing venv drift, unrelated to this diff — the dep is declared in
+`pyproject.toml:84` but absent from `.venv`).
+
+**Found in passing, logged not fixed — `.claude/KNOWN_ISSUES.md` KI-17:** the rescope stranded **10**
+stochastic `suggested_concept` gap rows whose concept left the vocabulary. `build_gaps` delete-and-
+replaces *deterministic* rows but **status-preserving-upserts** stochastic ones with no reconcile pass,
+so they are immortal — `load_graph_view()` serves **27** gaps against 13 nodes while the runner reports
+15. Invisible in PR-G2a's index (it resolves by concept), but it breaks **PR-G2b**, where every gap needs
+a triage action. Fix belongs with the ADR-017 C1 override sidecar.
+
+**Opens:** **the gap distribution must be re-derived before PR-G2b** — its "strong kinds first" ordering
+rests on RG-014's verdict at 26 concepts on the *other* box's 76-doc corpus; at 13 concepts here the
+kinds are nearly flat (4/3/3/3/2), so `single_source` is no longer self-evidently the headline. **No
+curation UI:** opting a concept in is CLI-only until a follow-up adds the toggle to Manage-keywords (its
+natural home — keeps ADR-017 A1 intact, the graph still never writes the vocabulary). The 13 included
+concepts contain 4 junk manual entries (`cre`, `dbs`, `ntsr1`, `pddl`, added 2026-07-05) that now form
+three single-concept communities and account for 6 of the 15 gaps — worth curating out. `--promote-all`
+is now harmless to the graph but still violates `promote_keyword`'s candidate-only contract.
+**Staged; nothing committed (cpc §13).**
 
 ---
 ## 2026-07-17 — Concept graph PR-G2a: the view — concept index + gap lens + ego graph + chunk nav (frontend)

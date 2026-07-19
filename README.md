@@ -1,12 +1,10 @@
 # Provenote
 
-A local-first RAG assistant over your own document corpus (PDF, EPUB, HTML, DOCX, Markdown) that answers questions with inline, page-level citations — and measures whether those answers are any good. Document-format-agnostic by design; the test corpus here is research papers because they're real and freely available, but nothing assumes academia.
+A local-first RAG assistant over your own document corpus (PDF, EPUB, HTML, DOCX, Markdown) that answers questions with inline, page-level citations and measures whether those answers are any good. Document-format-agnostic by design; the test corpus here is research papers because they're real and freely available, but nothing assumes academia.
 
 Not a chatbot wrapper. A fluent answer with a confident citation is not the same as a correct one, so this system is built to *prove* its answers rather than just emit them: page-level citations you can click through, a provenance record on every response, and a separate reviewer that can re-grade a flagged answer. You can even disable LLM generation entirely and rely on the retrieval layer alone. It implements established RAG techniques rather than new algorithms — what it contributes is the integrity layer and the measurement behind it.
 
 ![Provenote demo — ask a question, get a streamed cited answer, open a source, browse the library, explore the concept graph](docs/assets/provenote-demo.gif)
-
-*One loop, fully local ($0 — `ollama/llama3.1:8b` on a real 47-paper corpus): ask → the answer streams in with inline citations → open source `[1]` in the side panel (with the per-claim evidence/interpretation review underneath) → the library grid → the concept graph with its gap badges.*
 
 ## Engineering highlights
 

@@ -29,7 +29,7 @@ from dataclasses import dataclass
 
 import structlog
 
-from doc_assistant.keywords import candidate_terms, tokenize
+from doc_assistant.knowledge.keywords import candidate_terms, tokenize
 
 log = structlog.get_logger(__name__)
 
@@ -142,7 +142,7 @@ def _load_paper_docs(
 
     from doc_assistant.db.models import Document
     from doc_assistant.db.session import session_scope
-    from doc_assistant.keywords import _find_cached_text
+    from doc_assistant.knowledge.keywords import _find_cached_text
 
     with session_scope() as session:
         stmt = select(Document).where(Document.is_archived.is_(False))
@@ -233,7 +233,7 @@ def concept_merge_suggestions(*, threshold: float, model: str | None = None) -> 
     separates same-domain concepts better than the general bge, which compresses them into a narrow
     cosine band. Returns ``[]`` for fewer than two concepts.
     """
-    from doc_assistant.concept_skeleton import load_glossary
+    from doc_assistant.knowledge.concept_skeleton import load_glossary
 
     entries = load_glossary()
     if len(entries) < 2:

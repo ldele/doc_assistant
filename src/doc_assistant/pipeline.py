@@ -29,7 +29,7 @@ from doc_assistant.embeddings import (
     get_collection_name,
     get_embeddings,
 )
-from doc_assistant.keywords import tokenize
+from doc_assistant.knowledge.keywords import tokenize
 from doc_assistant.prompts import ANSWER_PROMPT, MULTI_QUERY_PROMPT, REWRITE_PROMPT
 
 log = structlog.get_logger(__name__)

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from doc_assistant.concept_curation import (
+from doc_assistant.knowledge.concept_curation import (
     build_classify_messages,
     is_artifact,
     parse_noise_indices,

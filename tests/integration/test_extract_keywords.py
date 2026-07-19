@@ -16,11 +16,11 @@ from sqlalchemy import create_engine, func, select
 from sqlalchemy.orm import sessionmaker
 
 import doc_assistant.db.session as session_mod
-import doc_assistant.keywords as kw
-from doc_assistant.concept_skeleton import list_keyword_candidates
+import doc_assistant.knowledge.keywords as kw
 from doc_assistant.db.models import Base, Document, Keyword, document_keywords
 from doc_assistant.db.session import session_scope
-from doc_assistant.keywords import extract_keywords
+from doc_assistant.knowledge.concept_skeleton import list_keyword_candidates
+from doc_assistant.knowledge.keywords import extract_keywords
 
 # A toy corpus: "colbert"/"hyde" are distinctive (df=1); "retrieval" is ubiquitous (df=3);
 # "bm25" is shared mid-frequency (df=2) — the corpus-band target.

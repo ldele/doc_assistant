@@ -2,7 +2,8 @@
 
 The pruning counterpart to ``seed_concepts --promote-all``: a broad promoted vocabulary carries
 extraction noise (DOI/date/license fragments, single-char tokens, author names, sentence
-fragments). This runs three cheapest-first stages over ``doc_assistant.concept_curation`` —
+fragments). This runs three cheapest-first stages over
+``doc_assistant.knowledge.concept_curation`` —
 deterministic artifact filter, optional local-LLM classification, optional embedding near-dup
 merge — and rewrites the curated ``concepts`` / ``concept_aliases`` tables. Dry-run by default;
 mutates only on ``--apply``. Re-run ``build_concept_skeleton --apply`` afterwards to regenerate the
@@ -25,7 +26,7 @@ import argparse
 import sys
 
 from doc_assistant import config
-from doc_assistant.concept_curation import (
+from doc_assistant.knowledge.concept_curation import (
     CurationPlan,
     apply_merges,
     classify_noise,

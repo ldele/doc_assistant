@@ -14,14 +14,14 @@ from sqlalchemy import create_engine, func, select
 from sqlalchemy.orm import sessionmaker
 
 import doc_assistant.db.session as session_mod
-from doc_assistant.concept_skeleton import (
+from doc_assistant.db.models import Base, Concept, ConceptAlias, Keyword
+from doc_assistant.db.session import session_scope
+from doc_assistant.knowledge.concept_skeleton import (
     add_concept,
     list_keyword_candidates,
     load_glossary,
     promote_keyword,
 )
-from doc_assistant.db.models import Base, Concept, ConceptAlias, Keyword
-from doc_assistant.db.session import session_scope
 
 
 @pytest.fixture

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from doc_assistant.keywords import (
+from doc_assistant.knowledge.keywords import (
     c_value_scores,
     candidate_terms,
     contrastive_keywords,

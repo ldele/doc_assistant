@@ -26,7 +26,7 @@ from __future__ import annotations
 import argparse
 import sys
 
-from doc_assistant.concept_skeleton import (
+from doc_assistant.knowledge.concept_skeleton import (
     add_concept,
     list_keyword_candidates,
     load_glossary,

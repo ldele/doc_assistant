@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import pytest
 
-from doc_assistant.concept_skeleton import (
+from doc_assistant.knowledge.concept_skeleton import (
     PRESENCE_BOUNDARY,
     PRESENCE_SUBSTRING,
     ConceptNode,

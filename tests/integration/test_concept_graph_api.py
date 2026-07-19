@@ -21,8 +21,10 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 import doc_assistant.db.session as session_mod
-from doc_assistant.concept_graph_view import load_concept_presence, load_graph_view
-from doc_assistant.concept_skeleton import (
+from doc_assistant.db.models import Base, Concept, ConceptPresenceRow, Document, GapRow
+from doc_assistant.db.session import session_scope
+from doc_assistant.knowledge.concept_graph_view import load_concept_presence, load_graph_view
+from doc_assistant.knowledge.concept_skeleton import (
     Community,
     ConceptNode,
     ConceptSkeleton,
@@ -30,8 +32,6 @@ from doc_assistant.concept_skeleton import (
     load_skeleton,
     skeleton_to_dict,
 )
-from doc_assistant.db.models import Base, Concept, ConceptPresenceRow, Document, GapRow
-from doc_assistant.db.session import session_scope
 
 _A = "11111111-1111-4111-8111-111111111111"
 _B = "22222222-2222-4222-8222-222222222222"

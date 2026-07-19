@@ -94,7 +94,7 @@ payload. The list is.** The graph earns its place as the *navigation and context
 **Built as:** `concept_skeleton.load_skeleton()` (the read half of `write_skeleton`; `None` when absent,
 **raises on a corrupt artifact** — "never built" and "unreadable" are different states) · `gaps.load_gaps()`
 (the read half of the row writers; lives in `gaps.py` because that module owns the gap domain) · a new
-**`src/doc_assistant/concept_graph_view.py`** assembling skeleton + gaps + staleness (`GraphView`,
+**`src/doc_assistant/knowledge/concept_graph_view.py`** assembling skeleton + gaps + staleness (`GraphView`,
 `GraphStaleness`, `load_graph_view`, `load_concept_presence`) · payloads in `apps/api/models.py` · four thin
 routes in `apps/api/main.py`: `GET /api/concepts/graph` (200/**404 empty state**), `GET
 /api/concepts/{id}/presence`, `POST /api/concepts/graph/rebuild` (**202**/409), `GET
@@ -114,7 +114,7 @@ determinism proven end-to-end through the API. Empty state: skeleton moved aside
 hint → restored → 200. **Gates:** ruff + ruff format + `mypy --strict src` + bandit clean; **full suite 994
 passed** (was 977; +16 new, 0 regressions).
 
-- **`src/doc_assistant/concept_skeleton.py`** — add **`load_skeleton() -> ConceptSkeleton | None`**: read
+- **`src/doc_assistant/knowledge/concept_skeleton.py`** — add **`load_skeleton() -> ConceptSkeleton | None`**: read
   `data/skeleton/skeleton.json`, `skeleton_from_dict` (`:597`), `None` if absent. **The loader belongs in
   `src/`** (thin-shell rule).
 - **Staleness is part of the payload, not an afterthought.** Return `{graph_version, built_at,

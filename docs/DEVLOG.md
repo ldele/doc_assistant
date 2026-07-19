@@ -8,6 +8,39 @@ Append only — never edit past entries.
 Format: What changed | Why | Rejected alternatives | What it opens
 
 ---
+## 2026-07-19 — ADR-023: knowledge/ subpackage — 11 corpus-derived modules out of the flat package
+
+**What:** created `src/doc_assistant/knowledge/` and `git mv`'d the Phase-7 feature cluster into
+it: `concept_curation`, `concept_graph_view`, `concept_semantics`, `concept_skeleton`,
+`concept_skeleton_enrich`, `epistemics`, `gap_suggest`, `gaps`, `keyword_families`, `keywords`,
+`wiki` (histories preserved). Package docstring states the layer's contract (Enrichment-Layer
+sidecars; the answer path reads it, never depends on it). **49 files** rewritten to
+`doc_assistant.knowledge.<mod>` (script-driven, word-boundary-safe, `--verify` pass shows 0
+old-path references; covered `from doc_assistant.X import`, `from doc_assistant import X as y`,
+`import doc_assistant.X`, and docstring prose; no monkeypatch-string forms existed). Living
+docs/specs path-updated (KNOWN_ISSUES, RIGOR_TODO, ui-checklist, feature-concept-graph/-gap-
+detection/-7d specs); `docs/architecture.md` module map + Mermaid gain the knowledge/ node;
+`src/doc_assistant/CLAUDE.md` layout updated. Append-only records keep historical paths. Kept at
+top level deliberately: `synthesis.py` (answer-path Chunk 2a), `tracking.py` (token infra),
+`doc_vectors.py` (Phase-4 similarity input), the whole RAG path, and the existing `db/` /
+`ingest/` / `eval/` — per the directive. ADR: `docs/decisions/ADR-023-knowledge-subpackage.md`.
+
+**Why:** 63 modules, 40+ flat — "the concept graph" had no boundary to stay inside; the flat
+listing stopped communicating the architecture (cpc §12: a real subsystem boundary earns its layer).
+
+**Rejected:** naming it `features/` (generic, collides with `docs/features/`); compatibility
+re-export shims at old paths (nothing external imports the package — cpc §12 no-speculative-
+abstraction); touching `scripts/archive/` (frozen, unmaintained).
+
+**Gate:** ruff ✓ (3 E501s fixed — two rewrite-lengthened docstrings + one pre-existing 100-char
+line in `apps/api/main.py` that apps/-scoped habits had missed) · format ✓ · `mypy --strict src`
+64 files ✓ · bandit 0 HIGH/MED ✓ · **pytest 1015 passed / 6 failed — byte-identical to the
+pre-restructure failure set** (the known send2trash venv drift, `pyproject.toml` declares it,
+`.venv` lacks it; `uv sync` fixes but pulls the multi-GB cu130 wheel — deliberately left).
+
+**Opens:** none new; the Phase-D scale review (C4) now has a named review surface.
+
+---
 ## 2026-07-19 — ADR-022: docs-system rationalization — index over monolith, DEVLOG fully inverted, per-artifact verdicts
 
 **What:** decided which doc layers earn their place at scale and executed (ADR-022). (1)

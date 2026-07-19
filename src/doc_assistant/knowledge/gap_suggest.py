@@ -26,8 +26,8 @@ import json
 
 import structlog
 
-from doc_assistant.concept_skeleton import ConceptSkeleton
-from doc_assistant.gaps import Gap, GapEvidence, GapKind
+from doc_assistant.knowledge.concept_skeleton import ConceptSkeleton
+from doc_assistant.knowledge.gaps import Gap, GapEvidence, GapKind
 from doc_assistant.llm import LLMClient, Message
 
 log = structlog.get_logger(__name__)

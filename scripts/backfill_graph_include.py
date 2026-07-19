@@ -24,7 +24,7 @@ from __future__ import annotations
 import argparse
 import sys
 
-from doc_assistant.concept_skeleton import backfill_graph_include
+from doc_assistant.knowledge.concept_skeleton import backfill_graph_include
 
 if sys.platform == "win32" and hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")

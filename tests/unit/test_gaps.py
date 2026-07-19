@@ -1,11 +1,16 @@
-"""Tests for the pure Tier-1 gap detectors (``doc_assistant.gaps``) over a fixed
+"""Tests for the pure Tier-1 gap detectors (``doc_assistant.knowledge.gaps``) over a fixed
 toy concept skeleton — no DB, no LLM, no Chroma.
 """
 
 from __future__ import annotations
 
-from doc_assistant.concept_skeleton import ConceptNode, SkeletonEdge, analyze_skeleton, edge_weight
-from doc_assistant.gaps import (
+from doc_assistant.knowledge.concept_skeleton import (
+    ConceptNode,
+    SkeletonEdge,
+    analyze_skeleton,
+    edge_weight,
+)
+from doc_assistant.knowledge.gaps import (
     detect_isolated,
     detect_single_source,
     detect_thin_bridges,

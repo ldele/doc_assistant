@@ -36,7 +36,7 @@ import argparse
 import sys
 
 from doc_assistant import config
-from doc_assistant.gaps import GapsResult, build_gaps
+from doc_assistant.knowledge.gaps import GapsResult, build_gaps
 from doc_assistant.llm import assert_provider_intent, make_client
 
 # Q1 (first quartile) of the degree distribution on the validated 2026-07 corpus

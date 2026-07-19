@@ -1,4 +1,4 @@
-"""Tests for the pure core of ``doc_assistant.wiki`` (Feature 6).
+"""Tests for the pure core of ``doc_assistant.knowledge.wiki`` (Feature 6).
 
 Clustering, gap signals, link derivation, markdown rendering, manifest diff,
 and the (LLM-injected) note assembly — all exercised with plain data, no DB and
@@ -8,7 +8,7 @@ no real LLM. The impure build path is covered by
 
 from __future__ import annotations
 
-from doc_assistant.wiki import (
+from doc_assistant.knowledge.wiki import (
     DocRef,
     SimEdge,
     TopicNote,

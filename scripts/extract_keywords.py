@@ -32,7 +32,7 @@ from doc_assistant.config import (
     KEYWORD_WEIRDNESS_REF_CEILING,
     KEYWORDS_PER_DOC,
 )
-from doc_assistant.keywords import KeywordExtractionResult, extract_keywords
+from doc_assistant.knowledge.keywords import KeywordExtractionResult, extract_keywords
 
 if sys.platform == "win32" and hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")

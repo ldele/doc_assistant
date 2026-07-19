@@ -7,7 +7,7 @@ into the fixture edges (no LLM).
 
 from __future__ import annotations
 
-from doc_assistant.concept_skeleton import (
+from doc_assistant.knowledge.concept_skeleton import (
     ConceptNode,
     ConceptSkeleton,
     SkeletonEdge,

@@ -9,11 +9,11 @@ import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-import doc_assistant.concept_semantics as cs
 import doc_assistant.db.session as session_mod
-from doc_assistant.concept_semantics import concept_merge_suggestions
-from doc_assistant.concept_skeleton import add_concept
+import doc_assistant.knowledge.concept_semantics as cs
 from doc_assistant.db.models import Base
+from doc_assistant.knowledge.concept_semantics import concept_merge_suggestions
+from doc_assistant.knowledge.concept_skeleton import add_concept
 
 
 @pytest.fixture

@@ -20,11 +20,11 @@ from sqlalchemy import create_engine, func, select
 from sqlalchemy.orm import sessionmaker
 
 import doc_assistant.db.session as session_mod
-from doc_assistant import concept_skeleton as cs
-from doc_assistant import epistemics
 from doc_assistant.db.models import Base, ChunkEpistemics, Document
 from doc_assistant.db.session import session_scope
-from doc_assistant.epistemics import (
+from doc_assistant.knowledge import concept_skeleton as cs
+from doc_assistant.knowledge import epistemics
+from doc_assistant.knowledge.epistemics import (
     MARKER_CONTESTED,
     MARKER_SUPERSEDED,
     build_epistemics,

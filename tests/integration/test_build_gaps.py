@@ -22,10 +22,10 @@ from sqlalchemy import create_engine, func, select
 from sqlalchemy.orm import sessionmaker
 
 import doc_assistant.db.session as session_mod
-from doc_assistant import concept_skeleton as cs
 from doc_assistant.db.models import AnswerClaim, AnswerRecord, Base, Concept, ConceptAlias, GapRow
 from doc_assistant.db.session import session_scope
-from doc_assistant.gaps import build_gaps
+from doc_assistant.knowledge import concept_skeleton as cs
+from doc_assistant.knowledge.gaps import build_gaps
 from doc_assistant.synthesis import MARKER_OK, MARKER_UNSUPPORTED
 
 

@@ -29,7 +29,7 @@ from itertools import combinations
 
 import structlog
 
-from doc_assistant.concept_skeleton import (
+from doc_assistant.knowledge.concept_skeleton import (
     POLARITIES,
     ConceptPresence,
     ConceptSkeleton,

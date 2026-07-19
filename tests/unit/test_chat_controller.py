@@ -25,7 +25,7 @@ from doc_assistant.chat_controller import (
     TurnResult,
     _build_retrieved_chunks,
 )
-from doc_assistant.epistemics import MARKER_CONTESTED, MARKER_SUPERSEDED, MarkedChunk
+from doc_assistant.knowledge.epistemics import MARKER_CONTESTED, MARKER_SUPERSEDED, MarkedChunk
 from doc_assistant.reviewer import ReviewResult
 
 # ============================================================

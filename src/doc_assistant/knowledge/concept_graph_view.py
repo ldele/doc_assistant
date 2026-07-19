@@ -28,13 +28,13 @@ from dataclasses import dataclass
 
 import structlog
 
-from doc_assistant.concept_skeleton import (
+from doc_assistant.knowledge.concept_skeleton import (
     ConceptPresence,
     ConceptSkeleton,
     load_concepts,
     load_skeleton,
 )
-from doc_assistant.gaps import Gap, load_gaps
+from doc_assistant.knowledge.gaps import Gap, load_gaps
 
 log = structlog.get_logger(__name__)
 

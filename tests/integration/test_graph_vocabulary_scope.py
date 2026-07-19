@@ -18,15 +18,15 @@ from sqlalchemy import create_engine, select
 from sqlalchemy.orm import sessionmaker
 
 import doc_assistant.db.session as session_mod
-from doc_assistant.concept_skeleton import (
+from doc_assistant.db.models import Base, Concept, Keyword
+from doc_assistant.db.session import session_scope
+from doc_assistant.knowledge.concept_skeleton import (
     add_concept,
     backfill_graph_include,
     load_concepts,
     promote_keyword,
     set_graph_include,
 )
-from doc_assistant.db.models import Base, Concept, Keyword
-from doc_assistant.db.session import session_scope
 from doc_assistant.library import create_keyword_family, list_keyword_families
 
 
@@ -193,8 +193,8 @@ def test_backfill_is_idempotent_and_preserves_overrides(env: Path) -> None:
 
 def test_rank_keyword_candidates_reads_reach_vocabulary_and_authors(env: Path) -> None:
     """The SQL half of stage 0: document reach, promotion state, and the authors harvest."""
-    from doc_assistant.concept_curation import rank_keyword_candidates
     from doc_assistant.db.models import Document, Keyword, document_keywords
+    from doc_assistant.knowledge.concept_curation import rank_keyword_candidates
 
     with session_scope() as session:
         for i in (1, 2):

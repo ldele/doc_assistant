@@ -18,7 +18,6 @@ from sqlalchemy import create_engine, func, select
 from sqlalchemy.orm import sessionmaker
 
 import doc_assistant.db.session as session_mod
-from doc_assistant.concept_skeleton import build_concept_skeleton
 from doc_assistant.db.models import (
     Base,
     Citation,
@@ -30,6 +29,7 @@ from doc_assistant.db.models import (
     Document,
 )
 from doc_assistant.db.session import session_scope
+from doc_assistant.knowledge.concept_skeleton import build_concept_skeleton
 
 
 @pytest.fixture

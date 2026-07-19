@@ -25,7 +25,7 @@ from __future__ import annotations
 import argparse
 import sys
 
-from doc_assistant.epistemics import EpistemicsResult, build_epistemics
+from doc_assistant.knowledge.epistemics import EpistemicsResult, build_epistemics
 
 if sys.platform == "win32" and hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")

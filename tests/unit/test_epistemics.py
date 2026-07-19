@@ -1,4 +1,4 @@
-"""Tests for the pure core of ``doc_assistant.epistemics`` (Feature 7d).
+"""Tests for the pure core of ``doc_assistant.knowledge.epistemics`` (Feature 7d).
 
 Structural concept→chunk attribution, projection of node weights onto chunks, marker
 derivation, and the read-side marker join — all with plain data, no DB / Chroma / LLM.
@@ -7,7 +7,7 @@ The impure build path is covered by ``tests/integration/test_compute_epistemics.
 
 from __future__ import annotations
 
-from doc_assistant.concept_skeleton import (
+from doc_assistant.knowledge.concept_skeleton import (
     ConceptNode,
     NodeWeight,
     SkeletonEdge,
@@ -15,7 +15,7 @@ from doc_assistant.concept_skeleton import (
     edge_weight,
     node_weights_for_epistemics,
 )
-from doc_assistant.epistemics import (
+from doc_assistant.knowledge.epistemics import (
     MARKER_CONTESTED,
     MARKER_SUPERSEDED,
     MarkedChunk,
@@ -215,7 +215,7 @@ def test_epistemics_reads_tolerate_missing_table(tmp_path, monkeypatch):
     from sqlalchemy.orm import sessionmaker
 
     from doc_assistant.db import session as session_mod
-    from doc_assistant.epistemics import load_epistemics_index, load_marked_chunks
+    from doc_assistant.knowledge.epistemics import load_epistemics_index, load_marked_chunks
 
     engine = create_engine(f"sqlite:///{tmp_path / 'no_tables.db'}", future=True)  # empty schema
     factory = sessionmaker(bind=engine, autoflush=False, autocommit=False, future=True)

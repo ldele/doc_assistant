@@ -1,7 +1,7 @@
 # Spec — Gap detection: two-tier deterministic/stochastic layer
 
 **Status:** ✅ **Tier 1 + the Tier-2a deterministic floor BUILT (2026-07-07, SPRINT-002, ROADMAP row
-G2)** — `src/doc_assistant/gaps.py` + `GapRow` + `scripts/build_gaps.py`. RG-001's edge-precision
+G2)** — `src/doc_assistant/knowledge/gaps.py` + `GapRow` + `scripts/build_gaps.py`. RG-001's edge-precision
 validation ran and passed first (R5, ADR-008); `min_degree=3` is set from this corpus's degree
 distribution, not guessed (`tests/eval/baselines/gap_min_degree_2026-07.md`). **Still not built:**
 the Tier-2a stochastic ceiling (`gap_suggest.py`) and Tier 2b (external reach) — both deferred, out
@@ -65,7 +65,7 @@ on).
 
 ## Contracts (build-time; Tier 1 + the Tier-2a floor are the first increment)
 
-### `src/doc_assistant/gaps.py` (new) — the gap object + deterministic detectors
+### `src/doc_assistant/knowledge/gaps.py` (new) — the gap object + deterministic detectors
 
 ```
 GapTier      = Literal["t1", "t2a", "t2b"]
@@ -110,7 +110,7 @@ concepts, the doc context, the prompt) so the suggestion is auditable.
 All four are pure and deterministic given the graph; each returns `Gap`s with
 `determinism="deterministic"`, `tier="t1"`, `rating=None`.
 
-### `src/doc_assistant/gaps.py` — Tier-2a deterministic floor (pure over persisted data)
+### `src/doc_assistant/knowledge/gaps.py` — Tier-2a deterministic floor (pure over persisted data)
 
 - `detect_unsourced_claims(claims: Iterable[AnswerClaimRow]) -> list[Gap]` — aggregate
   `answer_claims.marker == "unsupported"` across answers, grouped to the curated concept(s) the claim
@@ -120,7 +120,7 @@ All four are pure and deterministic given the graph; each returns `Gap`s with
 - `detect_citation_gaps(citation_graph, ingested_doc_ids) -> list[Gap]` — references the corpus cites
   (the `Citation` graph) but does not contain. `kind="citation_missing"`.
 
-### `src/doc_assistant/gap_suggest.py` (new) — Tier-2a stochastic ceiling (quarantined)
+### `src/doc_assistant/knowledge/gap_suggest.py` (new) — Tier-2a stochastic ceiling (quarantined)
 
 - `suggest_for_thin(gaps: list[Gap], graph, client: LLMClient) -> list[Gap]` — for under-connected
   nodes (+ optionally answer-level reviewer `failure_tag`s), one quarantined LLM call per concept,
@@ -160,7 +160,7 @@ deterministic edges) — **not yet built; build spec `docs/archive/concept-graph
 `unsupported` marker (shipped, `synthesis.claim_marker()` → `answer_claims.marker`); the reviewer
 `failure_tag` enum (shipped, `reviewer.ReviewResult`). The shared observability/rating spine is
 introduced here (its first consumer) and reused by Phase 9 review-generation.
-**Files owned:** `src/doc_assistant/gaps.py` (new), `src/doc_assistant/gap_suggest.py` (new),
+**Files owned:** `src/doc_assistant/knowledge/gaps.py` (new), `src/doc_assistant/knowledge/gap_suggest.py` (new),
 `scripts/build_gaps.py` (new), `src/doc_assistant/db/models.py` + `db/migrations.py` (`gaps` table),
 the curated-concept/wiki surfacing seam, tests as below.
 **Status:** blocked (design-locked) — on the Decision-C skeleton **and** the RG-001 edge-precision run.

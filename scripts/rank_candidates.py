@@ -33,7 +33,7 @@ from __future__ import annotations
 import argparse
 import sys
 
-from doc_assistant.concept_curation import rank_keyword_candidates
+from doc_assistant.knowledge.concept_curation import rank_keyword_candidates
 
 if sys.platform == "win32" and hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")

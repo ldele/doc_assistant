@@ -11,9 +11,14 @@ from __future__ import annotations
 
 import copy
 
-from doc_assistant.concept_skeleton import Community, ConceptNode, ConceptSkeleton, SkeletonEdge
-from doc_assistant.gap_suggest import build_messages, parse_suggestion, suggest_for_thin
-from doc_assistant.gaps import Gap
+from doc_assistant.knowledge.concept_skeleton import (
+    Community,
+    ConceptNode,
+    ConceptSkeleton,
+    SkeletonEdge,
+)
+from doc_assistant.knowledge.gap_suggest import build_messages, parse_suggestion, suggest_for_thin
+from doc_assistant.knowledge.gaps import Gap
 
 
 class FakeClient:

@@ -1,10 +1,11 @@
-"""Tests for the Tier-2a deterministic floor (``doc_assistant.gaps.detect_unsourced_claims``)
+"""Tests for the Tier-2a deterministic floor
+(``doc_assistant.knowledge.gaps.detect_unsourced_claims``)
 over a fixed toy claim set — no DB, no LLM.
 """
 
 from __future__ import annotations
 
-from doc_assistant.gaps import ClaimForGap, detect_unsourced_claims
+from doc_assistant.knowledge.gaps import ClaimForGap, detect_unsourced_claims
 from doc_assistant.synthesis import MARKER_OK, MARKER_UNSUPPORTED
 
 _CONCEPTS = [("rag", "RAG"), ("bm25", "BM25")]

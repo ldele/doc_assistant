@@ -45,7 +45,8 @@ from doc_assistant.config import (
     USE_PARENT_CHILD,
 )
 from doc_assistant.embeddings import get_active_model_name
-from doc_assistant.epistemics import (
+from doc_assistant.ingest.figures import load_figure_image_paths
+from doc_assistant.knowledge.epistemics import (
     MARKER_CONTESTED,
     MARKER_SUPERSEDED,
     MarkedChunk,
@@ -53,7 +54,6 @@ from doc_assistant.epistemics import (
     load_marked_chunks,
     markers_for_parent,
 )
-from doc_assistant.ingest.figures import load_figure_image_paths
 from doc_assistant.pipeline import RAGPipeline, format_citation
 from doc_assistant.prompts import ANSWER_PROMPT
 from doc_assistant.provenance import (

@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-07-17 · class: living -->
+<!-- status: active · updated: 2026-07-19 · class: living -->
 
 # KNOWN ISSUES
 
@@ -333,7 +333,7 @@ Migrated from the old `CLAUDE.md` / `README` runtime-quirk notes on 2026-06-20 (
   for direct concept creation either — only the dead `--promote` path.
 - **Workaround:** insert `Concept` (+ `ConceptAlias`) rows directly via the ORM (the 2026-07-01 baseline run
   did this with a provisional 30-concept set).
-- **Fix (shipped 2026-07-01, option a — staged for review):** new `src/doc_assistant/keywords.py` — a
+- **Fix (shipped 2026-07-01, option a — staged for review):** new `src/doc_assistant/knowledge/keywords.py` — a
   deterministic, **zero-LLM, zero-new-dependency** corpus TF-IDF keyword extractor (pure core
   `tokenize`/`candidate_terms`/`tf_idf_keywords` + impure boundary reading cached markdown, writing
   `Keyword(source="extracted")` rows + `document_keywords` links; additive, idempotent, never touches the
@@ -427,8 +427,8 @@ Migrated from the old `CLAUDE.md` / `README` runtime-quirk notes on 2026-06-20 (
   hasn't been exercised end-to-end since before this fix); parent-child chunk-store re-projection
   (already a separate documented follow-up, `docs/archive/pr-m1-epistemics-markers.md` ADR-1
   option 2).
-- **Pointer:** `src/doc_assistant/epistemics.py` (`concepts_in_text`/`project_chunk_weights`),
-  `src/doc_assistant/concept_skeleton.py` (`compile_boundary_pattern`); found while hand-auditing
+- **Pointer:** `src/doc_assistant/knowledge/epistemics.py` (`concepts_in_text`/`project_chunk_weights`),
+  `src/doc_assistant/knowledge/concept_skeleton.py` (`compile_boundary_pattern`); found while hand-auditing
   G6's before/after split on the real `data/library.db`
   (`tests/eval/baselines/superseded_year_rule_2026-07.md` G6 addendum);
   `docs/sprints/SPRINT-007-fix-epistemics-label-attribution.md`.

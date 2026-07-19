@@ -12,7 +12,7 @@ from langchain_community.retrievers import BM25Retriever
 from langchain_core.documents import Document
 from langchain_core.runnables import RunnableLambda
 
-from doc_assistant.keywords import tokenize
+from doc_assistant.knowledge.keywords import tokenize
 from doc_assistant.pipeline import RAGPipeline, resolve_ensemble_weights
 
 # ---- fix 1: BM25 preprocess_func (casefold + tech-token) --------------------

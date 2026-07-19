@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from doc_assistant.concept_semantics import (
+from doc_assistant.knowledge.concept_semantics import (
     abstract_candidates,
     extract_abstract,
     nearest_pairs,

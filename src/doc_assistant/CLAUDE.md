@@ -3,13 +3,16 @@
 **Owns:** every piece of business logic — RAG pipeline, document store, enrichment sidecars.
 `apps/` render it; `scripts/` drive it; neither owns logic (non-negotiable #3).
 
-**Layout**
+**Layout (ADR-023)**
 - Top level — the RAG answer path: `pipeline.py` (hybrid retrieval + rerank), `chat_controller.py`
   (turn orchestration), `llm.py` (provider-agnostic clients), `synthesis.py`, `provenance.py`,
   `reviewer*.py`, `prompts.py`, `config.py`, plus app services (`library.py`, `conversations.py`,
-  `app_settings.py`, `compare.py`, `health.py`, `export.py`).
+  `app_settings.py`, `compare.py`, `health.py`, `export.py`) and `doc_vectors.py`.
 - `db/` — SQLAlchemy models + session + **additive** migrations (`_ADDITIVE_COLUMNS`).
 - `ingest/` — extract → markdown → chunk → embed → store (locked path) + registry/cache/figures/tables.
+- `knowledge/` — the corpus-derived layer: keywords/families, concept skeleton (Node A/B) +
+  curation/semantics/graph view, wiki, gaps, epistemics. All Enrichment-Layer sidecars; the answer
+  path reads it, never depends on it.
 - `eval/` — the eval harness (runner, scorers, cases, store).
 
 **Rules that bite here**

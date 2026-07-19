@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-07-16 (library write paths ADR-013/014; SourceFile registry S1; concept_graph deletion reflected) · class: living -->
+<!-- status: active · updated: 2026-07-19 (ADR-023: knowledge/ subpackage — concept graph · keywords · wiki · gaps · epistemics) · class: living -->
 
 # Architecture
 
@@ -41,6 +41,7 @@ flowchart TD
         CIT["ingest/citations.py"]
         MD["metadata_extractor.py"]
         DV["doc_vectors.py"]
+        KNW["knowledge/ (ADR-023)<br/>keywords · concept skeleton (Node A/B) · wiki<br/>gaps · epistemics · graph view"]
     end
 
     subgraph ST["Stores"]
@@ -63,6 +64,7 @@ flowchart TD
     CIT --> SQL
     MD --> SQL
     DV --> SQL
+    KNW --> SQL
     TBL -. splices tables .-> CACHE
     CHROMA --> RET
     SQL --> ROUTE
@@ -82,6 +84,7 @@ flowchart TD
 | `doc_assistant.chat_controller` | UI-agnostic turn orchestration | Yields `TurnEvent`s → `TurnResult`; no UI-framework import (PR-M0) |
 | `doc_assistant.health` | Document health scoring and classification | Pure function; no I/O; returns `HealthResult` |
 | `doc_assistant.library` | Document store queries (browse, filter, tag) + the Library's write paths: `DocumentMeta` overrides (ADR-013) and `delete_document` (ADR-014 — trash-first source-file recycle, then row/meta/chunks/figures/cache) | Queries + two explicit, ADR-recorded write paths; UI-framework-agnostic |
+| `doc_assistant.knowledge` (package — `keywords` · `keyword_families` · `concept_skeleton` (Node A) · `concept_skeleton_enrich` (Node B) · `concept_curation` · `concept_semantics` · `concept_graph_view` · `wiki` · `gaps` · `gap_suggest` · `epistemics`) | The Phase-7 knowledge layer: mined vocabulary, curated concept skeleton, wiki notes, gap detection, chunk epistemics — all derived *from* the corpus (ADR-023) | Enrichment-Layer Pattern throughout: additive sidecars, idempotent `scripts/` runners, never writes the chunk store; the answer path reads it but never depends on it |
 | `doc_assistant.prompts` | Prompt templates | Pure string interpolation; no I/O |
 | `doc_assistant.tracking` | Token usage tracking and cost estimation | Append-only; never raises |
 | `apps/cli.py` | Terminal renderer | Renders `TurnResult`; no business logic |
@@ -89,7 +92,7 @@ flowchart TD
 | `apps/desktop/` | Tauri desktop frontend (PR-M3) | Svelte 5 + Vite UI in a Tauri 2 shell; renders the API's `TurnResult`; no business logic |
 | `scripts/` | One-off maintenance scripts | Not part of the importable package |
 
-This table is non-exhaustive — it covers the core ingest/runtime modules. The research-integrity and enrichment layer (`query_router`, `synthesis`, `provenance`, `reviewer`, `metadata_extractor`, `metadata_enrich` (deterministic backfill runner, L5), `doc_vectors`, `embeddings`, `bibtex`, `commands`, `llm`, plus the cross-document concept layer `concept_skeleton`/`concept_skeleton_enrich` and `epistemics`) is shown in the Mermaid diagram above. The document-feature extractors (`citations`, `tables`, `tables_marker`, `figures`, `regions`) now live inside the `doc_assistant.ingest` package (imported as `doc_assistant.ingest.<name>`). The concept layer is the **redesign**: `concept_skeleton` (a deterministic, zero-LLM enrichment sidecar over the curated `Concept`/`ConceptAlias` vocabulary + `Citation`/`DocSimilarity`; producers `scripts/seed_concepts.py` + `scripts/build_concept_skeleton.py`) plus the confined Node-B LLM pass (`concept_skeleton_enrich`). The superseded open-vocabulary `concept_graph.py` was **deleted 2026-07-07** (G1, KI-7 resolved) — `epistemics.py`/`wiki.py` read the skeleton directly.
+This table is non-exhaustive — it covers the core ingest/runtime modules. The research-integrity layer (`query_router`, `synthesis`, `provenance`, `reviewer`, `metadata_extractor`, `metadata_enrich` (deterministic backfill runner, L5), `doc_vectors`, `embeddings`, `bibtex`, `commands`, `llm`) is shown in the Mermaid diagram above. The document-feature extractors (`citations`, `tables`, `tables_marker`, `figures`, `regions`) live inside the `doc_assistant.ingest` package. The cross-document knowledge layer lives inside `doc_assistant.knowledge` (ADR-023, imported as `doc_assistant.knowledge.<name>`): `concept_skeleton` is a deterministic, zero-LLM enrichment sidecar over the curated `Concept`/`ConceptAlias` vocabulary + `Citation`/`DocSimilarity` (producers `scripts/seed_concepts.py` + `scripts/build_concept_skeleton.py`), `concept_skeleton_enrich` is the confined Node-B LLM pass, and `epistemics`/`wiki`/`gaps` read the skeleton directly. The superseded open-vocabulary `concept_graph.py` was **deleted 2026-07-07** (G1, KI-7 resolved).
 
 **Boundary rule:** `apps/` contains no business logic. All logic lives in `src/doc_assistant/`. The UI layer calls the library layer; never the reverse.
 

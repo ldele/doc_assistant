@@ -20,11 +20,11 @@ from sqlalchemy import create_engine, delete
 from sqlalchemy.orm import sessionmaker
 
 import doc_assistant.db.session as session_mod
-from doc_assistant import concept_skeleton as cs
-from doc_assistant import wiki
 from doc_assistant.db.models import Base, DocSimilarity, Document
 from doc_assistant.db.session import session_scope
-from doc_assistant.wiki import build_wiki, load_communities, load_doc_graph, topic_id_for
+from doc_assistant.knowledge import concept_skeleton as cs
+from doc_assistant.knowledge import wiki
+from doc_assistant.knowledge.wiki import build_wiki, load_communities, load_doc_graph, topic_id_for
 
 
 class _FakeClient:

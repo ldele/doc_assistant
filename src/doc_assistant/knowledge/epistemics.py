@@ -35,7 +35,7 @@ from typing import Any
 
 import structlog
 
-from doc_assistant.concept_skeleton import (
+from doc_assistant.knowledge.concept_skeleton import (
     ConceptSkeleton,
     NodeWeight,
     compile_boundary_pattern,
@@ -409,8 +409,8 @@ def build_epistemics(*, apply: bool, skeleton_dir: Path | None = None) -> Episte
     chunks → identical rows. Never touches the chunk store."""
     import json
 
-    from doc_assistant.concept_skeleton import SKELETON_NAME, skeleton_from_dict
     from doc_assistant.config import CONCEPT_SKELETON_DIR
+    from doc_assistant.knowledge.concept_skeleton import SKELETON_NAME, skeleton_from_dict
 
     root = skeleton_dir or CONCEPT_SKELETON_DIR
     skeleton_path = root / SKELETON_NAME

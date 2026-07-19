@@ -384,7 +384,7 @@ def dedup_pairs(
     Runs on the host (loads the embedder), not the sandbox. Pass the *post-prune* survivors so a
     kept concept is never merged into one that is about to be removed.
     """
-    from doc_assistant.concept_semantics import embed_texts, nearest_pairs
+    from doc_assistant.knowledge.concept_semantics import embed_texts, nearest_pairs
 
     if len(concepts) < 2:
         return []

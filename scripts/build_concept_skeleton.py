@@ -23,8 +23,8 @@ import argparse
 import sys
 from typing import Any
 
-from doc_assistant.concept_skeleton import SkeletonResult, build_concept_skeleton
 from doc_assistant.config import CONCEPT_SKELETON_DIR
+from doc_assistant.knowledge.concept_skeleton import SkeletonResult, build_concept_skeleton
 
 if sys.platform == "win32" and hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
@@ -159,8 +159,8 @@ def _run_node_b(args: argparse.Namespace, result: SkeletonResult) -> int:
     ``--apply``, so a dry run costs nothing and a paid provider always trips the cost guard.
     """
     from doc_assistant import config
-    from doc_assistant.concept_skeleton import contested_edges, write_skeleton
-    from doc_assistant.concept_skeleton_enrich import (
+    from doc_assistant.knowledge.concept_skeleton import contested_edges, write_skeleton
+    from doc_assistant.knowledge.concept_skeleton_enrich import (
         annotate_relations,
         load_presence_rows,
         present_by_doc,

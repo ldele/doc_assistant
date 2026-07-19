@@ -20,7 +20,7 @@ from dataclasses import dataclass
 
 import structlog
 
-from doc_assistant.keywords import load_document_texts
+from doc_assistant.knowledge.keywords import load_document_texts
 from doc_assistant.metadata_extractor import DocMetadata, extract_metadata
 
 log = structlog.get_logger(__name__)

@@ -21,21 +21,21 @@ from doc_assistant.config import CANDIDATE_K
 if TYPE_CHECKING:
     from doc_assistant.chat_controller import ClaimView, SourceView, TurnResult, UsageView
     from doc_assistant.compare import CompareResult, CompareRow, CompareSource
-    from doc_assistant.concept_graph_view import GraphStaleness, GraphView
-    from doc_assistant.concept_skeleton import (
-        Community,
-        ConceptNode,
-        ConceptPresence,
-        SkeletonEdge,
-    )
     from doc_assistant.conversations import (
         ConversationDetail,
         ConversationSummary,
         ConversationTurn,
     )
-    from doc_assistant.gaps import Gap
     from doc_assistant.ingest.registry import SourceView as RegistrySourceView
-    from doc_assistant.keyword_families import FamilyProposal
+    from doc_assistant.knowledge.concept_graph_view import GraphStaleness, GraphView
+    from doc_assistant.knowledge.concept_skeleton import (
+        Community,
+        ConceptNode,
+        ConceptPresence,
+        SkeletonEdge,
+    )
+    from doc_assistant.knowledge.gaps import Gap
+    from doc_assistant.knowledge.keyword_families import FamilyProposal
     from doc_assistant.library import (
         DocumentChunkView,
         DocumentSummary,

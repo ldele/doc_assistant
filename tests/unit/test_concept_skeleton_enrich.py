@@ -12,7 +12,7 @@ import json
 
 import pytest
 
-from doc_assistant.concept_skeleton import (
+from doc_assistant.knowledge.concept_skeleton import (
     Community,
     ConceptNode,
     ConceptPresence,
@@ -20,7 +20,7 @@ from doc_assistant.concept_skeleton import (
     SkeletonEdge,
     contested_edges,
 )
-from doc_assistant.concept_skeleton_enrich import (
+from doc_assistant.knowledge.concept_skeleton_enrich import (
     annotate_relations,
     build_messages,
     parse_annotations,

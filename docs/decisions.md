@@ -32,3 +32,4 @@ the locked retrieval/chunking settings that predate per-file ADRs.
 | [ADR-020](decisions/ADR-020-share-rigor-todo-via-git.md) | `RIGOR_TODO.md` shared via git (project debt, not per-machine state) | accepted |
 | [ADR-021](decisions/ADR-021-adopt-cpc-big-project-layout.md) | cpc big-project layout: `AGENTS.md` entry + module `CLAUDE.md` + vendored gates | accepted |
 | [ADR-022](decisions/ADR-022-docs-system-rationalization.md) | Docs system rationalized for scale (this index; monolith archived; DEVLOG inverted) | accepted |
+| [ADR-023](decisions/ADR-023-knowledge-subpackage.md) | Backend restructure: `knowledge/` subpackage for concept graph / keywords / wiki / gaps | accepted |

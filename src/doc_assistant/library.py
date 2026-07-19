@@ -26,7 +26,7 @@ from doc_assistant.db.models import Document, DocumentMeta, Folder, Tag
 from doc_assistant.db.session import session_scope
 
 if TYPE_CHECKING:
-    from doc_assistant.keyword_families import FamilyProposal
+    from doc_assistant.knowledge.keyword_families import FamilyProposal
 
 log = structlog.get_logger(__name__)
 
@@ -516,7 +516,7 @@ def create_keyword_family(canonical: str, members: list[str] | None = None) -> K
     is library organisation, not a claim that the concept belongs on the map. This is what stops
     the families feature from re-flooding the graph as it grows.
     """
-    from doc_assistant.concept_skeleton import add_concept
+    from doc_assistant.knowledge.concept_skeleton import add_concept
 
     canonical = canonical.strip()
     if not canonical:
@@ -532,7 +532,7 @@ def create_keyword_family(canonical: str, members: list[str] | None = None) -> K
 
 def rename_keyword_family(concept_id: str, new_canonical: str) -> KeywordFamily | None:
     """Rename a family's canonical label. Returns None if the family is unknown."""
-    from doc_assistant.concept_skeleton import rename_concept
+    from doc_assistant.knowledge.concept_skeleton import rename_concept
 
     new_canonical = new_canonical.strip()
     if not new_canonical:
@@ -603,7 +603,7 @@ def remove_family_member(concept_id: str, keyword_name: str) -> KeywordFamily | 
 
 def delete_keyword_family(concept_id: str) -> bool:
     """Delete a family. Returns True if it existed."""
-    from doc_assistant.concept_skeleton import delete_concept
+    from doc_assistant.knowledge.concept_skeleton import delete_concept
 
     return delete_concept(concept_id)
 
@@ -629,7 +629,10 @@ def detect_family_candidates(
     is optional — omit it for a Tier-1-only (morphological) pass. ``embedding_threshold`` defaults
     to ``keyword_families.DEFAULT_EMBEDDING_THRESHOLD`` when omitted.
     """
-    from doc_assistant.keyword_families import DEFAULT_EMBEDDING_THRESHOLD, detect_family_proposals
+    from doc_assistant.knowledge.keyword_families import (
+        DEFAULT_EMBEDDING_THRESHOLD,
+        detect_family_proposals,
+    )
 
     names = _all_keyword_names()
     familied: set[str] = set()

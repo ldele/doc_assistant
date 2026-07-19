@@ -37,7 +37,7 @@ from doc_assistant.config import (
     WIKI_MIN_SIMILARITY,
     WIKI_USE_CONCEPT_COMMUNITIES,
 )
-from doc_assistant.wiki import WikiBuildResult, build_wiki
+from doc_assistant.knowledge.wiki import WikiBuildResult, build_wiki
 
 if sys.platform == "win32" and hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")

@@ -7,7 +7,7 @@ order a human's review, not to filter for them — the 2026-07-18 trap in
 
 from __future__ import annotations
 
-from doc_assistant.concept_curation import (
+from doc_assistant.knowledge.concept_curation import (
     harvest_name_bigrams,
     rank_candidates,
 )

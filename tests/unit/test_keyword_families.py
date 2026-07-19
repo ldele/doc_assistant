@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from doc_assistant.keyword_families import (
+from doc_assistant.knowledge.keyword_families import (
     FamilyProposal,
     _edit_distance,
     _edit_similarity,

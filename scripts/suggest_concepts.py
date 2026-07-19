@@ -21,15 +21,15 @@ from __future__ import annotations
 import argparse
 import sys
 
-from doc_assistant.concept_semantics import (
-    anchor_ranked_candidates,
-    concept_merge_suggestions,
-    suggest_from_abstracts,
-)
 from doc_assistant.config import (
     ABSTRACT_CONCEPTS_TOP_K,
     CONCEPT_EMBED_MODEL,
     CONCEPT_MERGE_COSINE,
+)
+from doc_assistant.knowledge.concept_semantics import (
+    anchor_ranked_candidates,
+    concept_merge_suggestions,
+    suggest_from_abstracts,
 )
 
 if sys.platform == "win32" and hasattr(sys.stdout, "reconfigure"):

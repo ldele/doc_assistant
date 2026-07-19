@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-07-18 · class: living -->
+<!-- status: active · updated: 2026-07-19 · class: living -->
 
 # RIGOR_TODO — deferred rigor tracker
 
@@ -56,7 +56,7 @@ Status:   open | done | waived
 **Logged:** 2026-06-18 (redesign); reconstructed here 2026-07-01
 **Severity:** blocks-ship (RG-008 gates a *usable* graph + the gap layer) · RG-009 degrades
 **Status:** **open — validation run DONE 2026-07-01, gate NOT passed.** Node A is BUILT
-(`src/doc_assistant/concept_skeleton.py`, 2026-06-30); the `--apply` run ran on the real corpus (baseline
+(`src/doc_assistant/knowledge/concept_skeleton.py`, 2026-06-30); the `--apply` run ran on the real corpus (baseline
 `tests/eval/baselines/rg001_concept_skeleton_2026-07-01.md`) and found the graph **near-complete (46% density
 at the provisional K=2) → NOT usable**. Thresholds **not locked**; the gap layer (ADR-004) stays blocked.
 **Area:** ML / retrieval (deterministic, zero-LLM skeleton)

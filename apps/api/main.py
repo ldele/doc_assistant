@@ -232,7 +232,7 @@ def _default_rebuild_graph() -> str:
     what ADR-017 B1 decided the Enrichment-Layer Pattern permits (it constrains what derived data
     is, not who triggers it).
     """
-    from doc_assistant.concept_skeleton import build_concept_skeleton
+    from doc_assistant.knowledge.concept_skeleton import build_concept_skeleton
 
     result = build_concept_skeleton(apply=True)
     return str(result.skeleton.meta.get("graph_version", ""))
@@ -641,7 +641,7 @@ def create_app(
         Ids are concept **UUIDs** throughout (nodes, edge endpoints, gap anchors, community
         members); ``label`` rides only on the node. One id space, deliberately — see KI-15.
         """
-        from doc_assistant.concept_graph_view import load_graph_view
+        from doc_assistant.knowledge.concept_graph_view import load_graph_view
 
         view = load_graph_view()
         if view is None:
@@ -659,7 +659,7 @@ def create_app(
         chunk-key set grows with the vocabulary. An unknown concept returns ``[]`` (a concept that
         is present nowhere is indistinguishable here, by design — the vocabulary is the authority
         on existence)."""
-        from doc_assistant.concept_graph_view import load_concept_presence
+        from doc_assistant.knowledge.concept_graph_view import load_concept_presence
 
         return [ConceptPresencePayload.from_presence(p) for p in load_concept_presence(concept_id)]
 
@@ -731,7 +731,7 @@ def create_app(
         # source_dir everywhere it scans (scan_sources / resolve_selection / view_for), so the
         # `files=` selection is always resolved — the `scope=` branch and `status.source_dir` must
         # agree, or they diverge on Windows (case-normalized username, 8.3 short paths) and any
-        # symlinked source dir. `get_source_dir` already resolves in production; this is idempotent.
+        # symlinked source dir. `get_source_dir` already resolves in prod; this is idempotent.
         source = app_settings.get_source_dir().resolve()
 
         # Selective ingestion (S1): an explicit `paths` selection is resolved + validated up front

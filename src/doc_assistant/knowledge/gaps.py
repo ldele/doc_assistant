@@ -24,7 +24,11 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal, cast
 
-from doc_assistant.concept_skeleton import PRESENCE_BOUNDARY, ConceptSkeleton, match_presence
+from doc_assistant.knowledge.concept_skeleton import (
+    PRESENCE_BOUNDARY,
+    ConceptSkeleton,
+    match_presence,
+)
 from doc_assistant.llm import LLMClient
 from doc_assistant.synthesis import MARKER_UNSUPPORTED
 
@@ -396,8 +400,12 @@ def build_gaps(
     """
     import json
 
-    from doc_assistant.concept_skeleton import SKELETON_NAME, load_concepts, skeleton_from_dict
     from doc_assistant.config import CONCEPT_SKELETON_DIR
+    from doc_assistant.knowledge.concept_skeleton import (
+        SKELETON_NAME,
+        load_concepts,
+        skeleton_from_dict,
+    )
 
     root = skeleton_dir or CONCEPT_SKELETON_DIR
     skeleton_path = root / SKELETON_NAME
@@ -427,7 +435,7 @@ def build_gaps(
     if suggest and apply:
         if client is None:
             raise ValueError("build_gaps(suggest=True, apply=True) requires an LLMClient")
-        from doc_assistant.gap_suggest import suggest_for_thin
+        from doc_assistant.knowledge.gap_suggest import suggest_for_thin
 
         suggestions = suggest_for_thin(t1, skeleton, client)
         n_suggested = _write_stochastic_gap_rows(suggestions, version)

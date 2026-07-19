@@ -19,7 +19,7 @@ import argparse
 import sys
 from collections.abc import Callable
 
-from doc_assistant.keyword_families import DEFAULT_EMBEDDING_THRESHOLD, FamilyProposal
+from doc_assistant.knowledge.keyword_families import DEFAULT_EMBEDDING_THRESHOLD, FamilyProposal
 from doc_assistant.library import detect_family_candidates
 
 if sys.platform == "win32" and hasattr(sys.stdout, "reconfigure"):
@@ -72,7 +72,7 @@ def main() -> int:
 
     embed_fn: Callable[[list[str]], list[list[float]]] | None = None
     if not args.no_embeddings:
-        from doc_assistant.concept_semantics import embed_texts
+        from doc_assistant.knowledge.concept_semantics import embed_texts
 
         model = args.model
 

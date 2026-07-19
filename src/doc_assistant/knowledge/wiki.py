@@ -376,8 +376,8 @@ def load_communities(
 
     Read-only: never rebuilds the skeleton, never calls an LLM, never writes the sidecar.
     """
-    from doc_assistant import concept_skeleton as cs
     from doc_assistant.config import CONCEPT_SKELETON_DIR
+    from doc_assistant.knowledge import concept_skeleton as cs
 
     root = graph_dir or CONCEPT_SKELETON_DIR
     skeleton_path = root / cs.SKELETON_NAME

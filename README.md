@@ -4,9 +4,13 @@ A local-first RAG assistant over your own document corpus (PDF, EPUB, HTML, DOCX
 
 Not a chatbot wrapper. A fluent answer with a confident citation is not the same as a correct one, so this system is built to *prove* its answers rather than just emit them: page-level citations you can click through, a provenance record on every response, and a separate reviewer that can re-grade a flagged answer. You can even disable LLM generation entirely and rely on the retrieval layer alone. It implements established RAG techniques rather than new algorithms — what it contributes is the integrity layer and the measurement behind it.
 
+![Provenote demo — ask a question, get a streamed cited answer, open a source, browse the library, explore the concept graph](docs/assets/provenote-demo.gif)
+
+*One loop, fully local ($0 — `ollama/llama3.1:8b` on a real 47-paper corpus): ask → the answer streams in with inline citations → open source `[1]` in the side panel (with the per-claim evidence/interpretation review underneath) → the library grid → the concept graph with its gap badges.*
+
 ## Engineering highlights
 
-- **Settings are locked by experiment, not intuition.** TOP_K, parent-child retrieval, chunk sizes, and the BM25/vector mix were each picked by measuring alternatives with the in-repo eval harness. The reasoning behind each non-obvious choice — and what didn't make the cut — is in [`docs/decisions.md`](docs/decisions.md).
+- **Settings are locked by experiment, not intuition.** TOP_K, parent-child retrieval, chunk sizes, and the BM25/vector mix were each picked by measuring alternatives with the in-repo eval harness. The reasoning behind each non-obvious choice — and what didn't make the cut — is indexed in [`docs/decisions.md`](docs/decisions.md) (per-decision ADRs; the early design rationale is preserved verbatim in [`docs/archive/decisions-monolith.md`](docs/archive/decisions-monolith.md)).
 - **Benchmarks anyone can re-run.** The public eval set runs over a corpus rebuilt from arXiv — 5 trials, reported as mean ± trial-mean std, caveats stated alongside (see [Benchmarks](#benchmarks)). What each scorer measures and why: [`tests/eval/TESTING.md`](tests/eval/TESTING.md).
 - **A research-integrity layer.** Every answer carries a provenance record (retrieved chunks, model, cost); a separate-context reviewer agent re-grades flagged answers; confidence signals keep the UI quiet on clean ones — AI-assisted output that stays auditable.
 - **Growth by addition.** Derived data (citations, figures, tables, keywords, doc vectors, the wiki) ships as sidecar modules with idempotent CLI runners that never mutate the chunk store — new capability is a new module, not a rewrite.
@@ -18,6 +22,9 @@ Not a chatbot wrapper. A fluent answer with a confident citation is not the same
 - **Evidence vs. interpretation** — each answer separates what your sources actually say from the AI's synthesis (clearly labelled, with per-claim grounding markers you can accept / reject / edit), so an inference is never mistaken for a fact. See [how answers work](docs/how-answers-work.md).
 - **Hybrid retrieval + reranking** — BM25 + vector ensemble, cross-encoder reranker, parent-child chunks.
 - **Citation graph** — extracts references, resolves them against your library, exposes in/out edges.
+- **Concept graph + gap detection** — a curated-vocabulary, deterministic concept skeleton (LLM used only to annotate existing edges, never to invent structure), with a graph view that surfaces knowledge gaps (single-source concepts, thin bridges, isolated nodes) as leads to read next.
+- **Knowledge-currency markers** — answer sources carry advisory `contested` / `superseded trend` chips derived from cross-document stance + publication years; they inform, never gate.
+- **Library workspace** — browsable document grid with filters, per-chunk reading view, user-editable metadata (overrides survive re-ingest), safe delete (OS trash first), selective ingestion.
 - **Corpus wiki** — derived, linked, cited topic notes synthesized over the corpus; regenerable, never hand-authored.
 - **Measurable quality** — eval harness with six scorers (deterministic + LLM judge) and a DuckDB result store.
 - **Local-first and pluggable** — Chroma + SQLite on disk; Claude API or local Ollama.
@@ -201,15 +208,19 @@ uv run python -m scripts.export_bibtex      # write docs/library.bib
 ## Project layout
 
 ```
-src/doc_assistant/    # core library (pipeline, ingestion, extractors, health, library)
-apps/                 # UIs — thin shells, no business logic
-scripts/              # maintenance utilities (hash migration, sync verification)
-tests/                # unit, integration, eval harness
-docs/                 # architecture and design decisions
+src/doc_assistant/    # core library — the RAG answer path lives at the top level
+  db/                 #   SQLAlchemy models + additive migrations
+  ingest/             #   extract → markdown → chunk → embed → store (+ tables/figures/citations)
+  knowledge/          #   corpus-derived layer: keywords, concept skeleton, wiki, gaps, epistemics
+  eval/               #   the eval harness (runner, scorers, result store)
+apps/                 # UIs — thin shells, no business logic (FastAPI/SSE · Tauri/Svelte · CLI)
+scripts/              # idempotent enrichment/eval runners + build tooling
+tests/                # unit, integration, eval harness cases + committed baselines
+docs/                 # architecture, ADRs (docs/decisions/), specs, roadmap, this demo's GIF
 data/                 # runtime data (sources, caches, vector stores, SQLite) — not committed
 ```
 
-See [`docs/architecture.md`](docs/architecture.md) for the data flow and module contracts, and [`docs/decisions.md`](docs/decisions.md) for the reasoning behind key design choices.
+See [`docs/architecture.md`](docs/architecture.md) for the data flow and module contracts, and [`docs/decisions.md`](docs/decisions.md) for the decision index. (Agent-facing coordination lives in `AGENTS.md` + `.claude/` — deliberately separate from this human-facing README.)
 
 ## Running tests
 
@@ -350,13 +361,23 @@ uv run python -m scripts.run_eval --cases tests/eval/cases.public.yaml --bm25-we
 
 ## Status
 
-**Phase 6 + 7 in progress (as of 2026-07-02).** Shipped: core RAG (Phase 1); measured quality + eval harness (Phases 2 & 5); document store + library UI (Phase 3); citation graph + doc-similarity edges (Phase 4); the research-integrity layer — provenance card, heuristic confidence signals, and a separate-context LLM reviewer agent; and a provider-agnostic LLM layer (Claude API *or* fully-local Ollama for analysis, reviewer, and judge). **712 tests · ruff / mypy --strict / bandit clean.**
+**Phase 6 + 7 in progress (as of 2026-07-19).** Shipped: core RAG (Phase 1); measured quality + eval harness (Phases 2 & 5); document store + the redesigned library workspace — grid/list browsing, metadata editing, safe delete, selective ingestion (Phase 3 + L4–L7/S1–S2); citation graph + doc-similarity edges (Phase 4); the research-integrity layer — provenance card, dual evidence/interpretation answers, a separate-context LLM reviewer; the provider-agnostic LLM layer with live in-app provider/model switching (Claude API *or* fully-local Ollama); figures + Marker tables; the corpus wiki; and the full concept-graph stack — curated vocabulary (opt-in graph scope, ADR-018), deterministic Node-A skeleton + confined Node-B LLM stance pass (validated: ADR-008), year-aware `superseded_trend` gating, live answer-time markers, gap detection (deterministic floor + quarantined LLM ceiling), and the desktop graph view. **1,015 tests · ruff / mypy --strict / bandit clean.**
 
-`bge-base` is the default embedder — it performed better in our comparisons, though the better choice depends on the corpus ([`docs/decisions.md`](docs/decisions.md) → Phase 5 / Feature 3; re-checked on the public corpus, see [Benchmarks](#benchmarks)).
+`bge-base` is the default embedder — it performed better in our comparisons, though the better choice depends on the corpus (see [Benchmarks](#benchmarks)).
 
-**Recently shipped:** Marker table extraction (isolated out-of-process sidecar, gated to caption-detected table pages — engine chosen by measurement), dual-layer evidence/interpretation answers, the provider-agnostic LLM layer ([`docs/specs/llm-provider-isolation.md`](docs/specs/llm-provider-isolation.md)), figure region detection + VLM description (Feature 4b/4c), the knowledge-currency layer ([`docs/specs/feature-7d-knowledge-currency.md`](docs/specs/feature-7d-knowledge-currency.md)), the Tauri desktop shell that replaced Chainlit (ADR-002, M0–M5), a zero-LLM corpus keyword extractor with contrastive termhood scoring ([`ADR-006`](docs/decisions/ADR-006-contrastive-keyword-termhood.md): C-value × reference-corpus weirdness via [`wordfreq`](https://github.com/rspeer/wordfreq)), and the deterministic concept-graph skeleton ([`docs/archive/concept-graph-redesign.md`](docs/archive/concept-graph-redesign.md), Node A — built; its threshold-setting validation run is still pending, so the graph is not yet marked usable). **Next:** the gap-detection layer ([`docs/decisions/ADR-004-gap-detection-layer.md`](docs/decisions/ADR-004-gap-detection-layer.md) · [`docs/specs/feature-gap-detection.md`](docs/specs/feature-gap-detection.md)) — designed, blocked on that validation run (RG-001) — and user-selective ingestion ([`docs/specs/feature-selective-ingestion.md`](docs/specs/feature-selective-ingestion.md), drafted). Full rationale and roadmap: [`docs/decisions.md`](docs/decisions.md), [`docs/ROADMAP.md`](docs/ROADMAP.md).
+**Recently:** the codebase was restructured for scale (module-scoped agent context, the `knowledge/` subpackage, a rationalized docs system — ADR-021/022/023), and a dedicated **scale-robustness review** audited the whole knowledge layer against a 0-documents-to-10,000-documents contract ([`docs/REVIEW_2026-07-19_scale-robustness.md`](docs/REVIEW_2026-07-19_scale-robustness.md)). **Next:** the review's P0 robustness fixes, then the concept-taxonomy layer ([`ADR-019`](docs/decisions/ADR-019-concept-taxonomy-classification-layer.md), designed). Full roadmap: [`docs/ROADMAP.md`](docs/ROADMAP.md).
 
 A 60-second walkthrough for first-time readers: [`docs/DEMO.md`](docs/DEMO.md).
+
+## Limitations
+
+Honest constraints, current as of 2026-07-19 — the full ledger lives in `.claude/KNOWN_ISSUES.md`:
+
+- **Validated at ~50–100 documents, not yet at thousands.** Retrieval quality is benchmarked and holds; but the 2026-07-19 scale review found corpus-linear hot paths (whole-corpus in-memory passes, an O(edges × docs²) provenance step) and a handful of thresholds tuned on the current corpora in the *enrichment* layer. They are catalogued with a prioritized fix plan — don't bulk-ingest 10k documents before those land.
+- **Local-model ceilings are real.** An 8B Ollama model streams solid cited answers (the GIF above), but its gap-suggestion ratings are non-discriminating (~flat 0.8) — a calibration limit of the model, not the pipeline.
+- **Marker attribution is conservative-lossy in parent-child mode.** A marked chunk straddling two parent chunks currently loses its chip (silent false negative, advisory-only); the precise re-projection is a documented upgrade.
+- **Single-user, local-first by design.** The FastAPI backend serves one desktop app on localhost; multi-client serving would need threadpool offloading (documented, not built).
+- **Tested primarily on Windows** (plus CI on Linux); macOS paths (MPS) work but are unbenchmarked.
 
 ---
 

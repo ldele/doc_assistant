@@ -1,8 +1,10 @@
-<!-- status: active · updated: 2026-07-03 · class: living -->
+<!-- status: active · updated: 2026-07-19 · class: living -->
 
 # Demo — 60-second walkthrough
 
 What to run, what to ask, and what to look at so a first-time reader sees the point quickly.
+(The README's GIF — `docs/assets/provenote-demo.gif` — is this walkthrough on film: chip →
+streamed cited answer → source panel → library grid → concept graph.)
 
 ## Run it
 
@@ -19,7 +21,10 @@ First run downloads the embedder + reranker (a few hundred MB) and builds the in
 Then pick a UI:
 
 ```bash
-# Desktop app — the shipping UI (Tauri + Svelte over a local FastAPI/SSE backend)
+# Desktop app — one command (backend :8001 + dev UI :1420, opens the browser):
+just app          # no `just`? scripts/launch_app.cmd double-clicks to the same thing
+
+# ... or manually, in two shells:
 just api                                         # backend on 127.0.0.1:8001
 cd apps/desktop && npm install && npm run dev     # dev UI in the browser (or: npx tauri dev for the native window)
 
@@ -42,6 +47,7 @@ Pick questions whose answers live *inside* the documents, not in the model's tra
 2. **The provenance card.** On a weak/flagged answer it expands: retrieved chunks, model, token cost, confidence signals. Clean answers stay quiet. `/export-record <id>` dumps the full audit JSON.
 3. **The reviewer.** On a flagged answer a separate-context reviewer re-grades faithfulness / citation density / hedging. Run `/review <id>` on any past answer.
 4. **The citation graph.** `/cites <doc>`, `/cited-by <doc>`, `/similar <doc>` — references resolved against your own library, plus embedding-similarity edges.
+5. **The Library and Graph tabs.** Browse the corpus as a filterable grid (edit metadata, exclude files, safe-delete); switch to Graph for the curated concept skeleton — gap badges (`single source`, `thin bridge`, `isolated`) are reading leads, and clicking a concept shows its neighbourhood plus the documents it appears in.
 
 ## What this is showing
 

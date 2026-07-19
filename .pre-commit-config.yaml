@@ -77,3 +77,6 @@ repos:
       - id: check-merge-conflict
       - id: check-added-large-files
         args: [--maxkb=500]
+        # docs/assets/ holds deliberate README media (the demo GIF, ~1.7 MB); the 500 KB
+        # guard stays strict everywhere else to catch accidental blobs (weights, DBs).
+        exclude: ^docs/assets/

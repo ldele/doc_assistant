@@ -8,6 +8,41 @@ Append only — never edit past entries.
 Format: What changed | Why | Rejected alternatives | What it opens
 
 ---
+## 2026-07-19 — Public docs refresh: README demo GIF + status/limitations truth-up, DEMO.md touch
+
+**What:** (1) **Recorded a real demo GIF** and embedded it at the top of the README
+(`docs/assets/provenote-demo.gif`, 23 frames, 1.73 MB, 960px): empty state → sample chip →
+a genuinely streamed cited answer → the source side panel (with the per-claim review) → the
+library grid → the concept-graph ego view. Recorded against the real 47-doc corpus on
+**`ollama/llama3.1:8b` ($0 — provider switched via `/api/settings` and verified on
+`/api/health` before any turn; KI-4)** by driving the dev app (API :8001 + Vite :1420) with
+puppeteer-core + installed Chrome (the Browser pane's screenshot capture times out on this box —
+known quirk, 2026-07-15 baton), frames assembled with Pillow. Recording tooling stays in the
+session scratchpad (would add undeclared npm/Pillow deps if committed); pipeline documented in
+agent memory. Side effects: 3 real 1-turn conversations now sit in this box's history (no DELETE
+endpoint; harmless), and the provider switch surfaced a gitignore gap — the app's persisted
+`data/settings.json` (U1c) was untracked-but-not-ignored and would have ridden into a public
+commit; now gitignored as per-machine runtime state. (2) **README truth-up:** Status was frozen at 2026-07-02 ("concept graph
+not yet usable", "gap detection blocked on RG-001", "712 tests") — now reflects the shipped
+graph/gaps/markers/library/provider-switch stack, **1,015 tests**, the ADR-021/022/023
+restructure, and links the scale review. New **Limitations** section (validated at ~50–100 docs
+with the review's scale caveat, local-model ceilings, the KI-8/WE-7 marker-loss truth,
+single-user design, Windows-first testing). "What it does" gains the concept-graph/markers/
+library bullets; Project layout shows the db/ingest/knowledge/eval subpackages; decisions.md
+references point at the index + archived monolith. (3) **DEMO.md** gains `just app`, the
+Library/Graph walkthrough beat, and the GIF pointer.
+
+**Why:** the README is the public face; it under-sold three shipped phases and over-claimed
+nothing — but its status text was five iterations stale, and the user asked for a UI GIF.
+
+**Rejected:** committing the GIF recorder into `scripts/` (undeclared puppeteer-core/Pillow
+deps; revisit if the GIF needs regular regeneration); re-recording to purge the history rows
+(real data, not worth touching `library.db`).
+
+**Opens:** GIF re-record wanted after the next visual-identity pass; consider a
+`docs/assets/` dark/light pair if the README ever needs theme-aware media.
+
+---
 ## 2026-07-19 — C4 scale-robustness review: knowledge layer vs specs/ADRs at 0 docs and 10k docs (docs-only)
 
 **What:** ran the user-directed in-depth review of the whole `knowledge/` layer against its own

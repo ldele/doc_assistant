@@ -38,6 +38,9 @@ docs/archive/SESSION-archive-*.md
 tools/conventions/
 
 # Runtime data
+# settings.json is the app's persisted per-machine settings (provider/model selection, U1c) —
+# written by the app at runtime, never committed (it would pin one user's choice for everyone).
+data/settings.json
 data/cache/
 data/chroma/
 data/chroma_pc/

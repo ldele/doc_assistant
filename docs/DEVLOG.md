@@ -8,6 +8,45 @@ Append only — never edit past entries.
 Format: What changed | Why | Rejected alternatives | What it opens
 
 ---
+## 2026-07-19 — C4 scale-robustness review: knowledge layer vs specs/ADRs at 0 docs and 10k docs (docs-only)
+
+**What:** ran the user-directed in-depth review of the whole `knowledge/` layer against its own
+specs/ADRs under four lenses (zero-doc, scale 0→10k, corpus-tuned constants, conformance) — four
+independent read-only review passes (one per cluster), every finding required to quote the code
+line it stands on; the seven highest-stakes claims re-verified by hand before publication (all
+seven held). **Output: `docs/REVIEW_2026-07-19_scale-robustness.md`** — 36 findings + a
+corpus-tuned-constants inventory + a P0/P1/P2 fix plan. Headlines: (a) zero-doc discipline
+largely HELD (honest empty states everywhere; 2 crash edges in wiki/epistemics builders; the
+contract is unpinned by tests); (b) every cluster has ≥1 corpus-linear-or-worse hot path
+(unpaginated whole-corpus loads, a per-edge doc×doc Cartesian provenance product, O(chunks ×
+concepts) full-recompute projection with a 512-pattern regex-cache cliff, O(n²) family cosine,
+three unbounded LLM loops); (c) the over-optimize-on-current-corpus complaint is CONFIRMED and
+localized — frozen Q1 `min_degree=3` whose docstring claims "corpus-derived", family threshold
+0.86 **above bge's measured ceiling**, `contested` on `nc>=1` already marking 53.6% of chunks,
+the monolith's recorded-wrong absolute-cosine 0.90 still the wiki default; (d) three conformance
+breaks: curation hard-deletes vs ADR-018's demote (KI-20), the in-app rebuild never runs
+`build_gaps` so the view serves stale gaps (KI-21), and KI-8's containment rationale is
+arithmetically backwards — straddling chunks lose markers, they don't double-mark.
+
+**Why:** the product contract (works at 0 docs, scales to 10k) had never been a review lens;
+sessions kept tuning to the 47/76-doc corpora.
+
+**Routed:** KNOWN_ISSUES **KI-18** (scale cliffs) / **KI-19** (tuned constants + LLM budgets) /
+**KI-20** (delete-vs-demote) / **KI-21** (rebuild half-refresh) + KI-8 direction correction +
+KI-17 fix-placement correction; RIGOR_TODO **RG-016..019** (each constant's owed experiment);
+ROADMAP C4 done. **No code changed by this review** — fixes are follow-up sessions per the plan;
+P2 constants are measurement-gated (never hand-tune).
+
+**Rejected:** fixing "obvious" P0s inline this session (the session already carries the ADR-021/
+022/023 restructure; review-then-fix in one diff would bury both); treating the review passes'
+findings as publishable without an independent verification step (all 36 numbered findings were
+consolidated; the 7 highest-stakes were re-verified line-by-line before anything was routed —
+one of the 36, KW-8, is a positive no-defect trace, kept because it documents the 0-doc contract).
+
+**Opens:** the P0 list is the natural next session (small, no eval needed); the LLM-budget policy
+wants one ADR covering Node B / gap_suggest / wiki caps together.
+
+---
 ## 2026-07-19 — ADR-023: knowledge/ subpackage — 11 corpus-derived modules out of the flat package
 
 **What:** created `src/doc_assistant/knowledge/` and `git mv`'d the Phase-7 feature cluster into

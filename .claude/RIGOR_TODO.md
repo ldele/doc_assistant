@@ -274,3 +274,58 @@ with the corpus size and vocabulary size stated as bounds on the verdict. Record
 
 **Reopens if:** the vocabulary or corpus changes size materially (this is now twice-demonstrated —
 a verdict measured at one vocabulary size does not transfer to another).
+
+## RG-016 — graph floors + gap-kind ranking must be re-derived at scale (they encode n≈26–76)
+
+- **Severity:** degrades · **Status:** open · **Added:** 2026-07-19 (scale review, KI-19)
+- **What was skipped:** three graph thresholds ship as absolutes measured once on tiny inputs:
+  `CONCEPT_SKELETON_MIN_COOCCURRENCE=2` (validated at 76 docs only — ADR-008 is explicitly
+  scope-bound), `_DEFAULT_MIN_DEGREE=3` (a frozen Q1 snapshot from a 26-concept graph whose
+  docstring claims "corpus-derived"; already failed to transfer at 357 and at 13 concepts), and
+  the UI gap-kind rank table (single_source first, on the authority of RG-014 — unreadable from
+  this box, non-transferring per RG-015).
+- **The experiment owed:** synthetic (or real) corpora at ~1k and ~10k docs; sweep the
+  co-occurrence floor as a function of chunk volume (density curve vs the ADR-008 21.5%
+  reference); implement min_degree as runtime Q1 and verify it reproduces the 26-concept
+  behavior; re-derive kind ranking from per-kind precision at ≥3 vocabulary sizes.
+- **Until then:** treat all three as display heuristics, not signals; extends RG-015.
+
+## RG-017 — family Tier-2 embedding threshold (0.86) was never derived on the embedder it runs on
+
+- **Severity:** degrades · **Status:** open · **Added:** 2026-07-19 (scale review, KI-19)
+- **What was skipped:** `DEFAULT_EMBEDDING_THRESHOLD=0.86` gates Tier-2 family detection, but
+  both call paths embed with **bge**, whose same-domain cosine ceiling this project already
+  measured at ~0.77–0.82 (the concept-merge feature hit the identical wall and switched to
+  specter2). The tier therefore under-fires structurally — `connectome`≈`connectomics` (its
+  design case) cannot pass; the only observed proposal was a substring pair.
+- **The experiment owed:** a labelled pair set (true families vs near-misses from the real
+  vocabulary); ROC on bge vs specter2; pick embedder + threshold from the curve, record the
+  baseline, then re-run `detect_family_candidates` on the real corpus and hand-check.
+- **Until then:** Tier-2 silence is not evidence of no families.
+
+## RG-018 — wiki clustering: the recorded "wrong primitive" is still the shipped default
+
+- **Severity:** degrades · **Status:** open · **Added:** 2026-07-19 (scale review, KI-19; the
+  deferred item itself dates to the monolith)
+- **What was skipped:** the monolith records "absolute-cosine threshold is the wrong primitive
+  (use relative / community clustering)"; the community path is BUILT
+  (`WIKI_USE_CONCEPT_COMMUNITIES`) but default-false, validated only on the 10-paper public
+  corpus, while the live default remains union-find at `WIKI_MIN_SIMILARITY=0.90` — tuned on
+  that same corpus. `[[links]]` derive from cosine edges on both paths.
+- **The experiment owed:** the flip validation on the current corpora (47 + 76 docs): communities
+  vs cosine on cluster count/size distribution + a hand-read of note coherence; then flip the
+  default, and derive links from inter-community skeleton edges (the recorded refinement).
+- **Until then:** wiki topics on a same-domain corpus are one-blob-plus-outliers by construction.
+
+## RG-019 — `contested` fires on one disputing doc; marker density is saturating unvalidated
+
+- **Severity:** degrades · **Status:** open · **Added:** 2026-07-19 (scale review, KI-19)
+- **What was skipped:** `coverage="contested"` triggers on `nc >= 1` (an implicit, unnamed
+  threshold); 53.6% of real chunks carried a marker at 47 docs (recorded 2026-07-08, flagged
+  "worth a wider spot-check", never done) and the trigger is monotone in corpus size.
+  `agreement_ratio` is computed into the artifact and consulted by nothing.
+- **The experiment owed:** the deferred density spot-check (sample marked chunks, measure
+  precision of "contested" against a hand judgment), then derive a named floor
+  (min disputing docs and/or an agreement-ratio band — the `MIN_DATED_DOCS_PER_SIDE` pattern)
+  and re-measure density at both corpora sizes.
+- **Until then:** do not lean on marker density as a UI signal (the 2026-07-08 caveat stands).

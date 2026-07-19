@@ -148,6 +148,14 @@ Migrated from the old `CLAUDE.md` / `README` runtime-quirk notes on 2026-06-20 (
   `EPISTEMICS_MARKERS_ENABLED` back to **default-ON** (superseding ADR-005), so the containment
   coarseness is live again by default. The issue this entry tracks (PC-parent containment mapping is
   coarse) is unchanged and still OPEN; the re-projection upgrade remains the documented fix.
+- **Update (2026-07-19, scale review — the direction claim above is arithmetically wrong):**
+  "a marked chunk straddling two parents marks both" is unreachable — containment is a strict
+  full-substring test (`knowledge/epistemics.py:234`) and a `BASELINE_CHUNK_SIZE=1000` chunk can
+  never fit inside a `PARENT_CHUNK_OVERLAP=200` overlap, so a straddling chunk is contained in
+  **neither** parent and its markers silently vanish. The real failure mode is systematic false
+  *negatives* (order ~40% of marked chunks at these sizes), not fail-safe over-attribution — in
+  the default-ON, default-PC configuration. The documented upgrade (re-projection, option 2)
+  or overlap-based matching fixes it. See `docs/REVIEW_2026-07-19_scale-robustness.md` WE-7.
 - **Pointer:** `docs/archive/pr-m1-epistemics-markers.md` ADR-1 (option 2 = the re-projection upgrade).
 
 ## KI-9 — Frozen desktop build does not bundle model weights → first-run HuggingFace download; offline launch fails — RESOLVED (2026-06-24)
@@ -486,3 +494,101 @@ Migrated from the old `CLAUDE.md` / `README` runtime-quirk notes on 2026-06-20 (
   a stochastic gap on a concept that is then excluded (`set_graph_include(cid, False)`) →
   `build_gaps --apply` → the row is gone, while a stochastic gap on an included concept keeps its
   status. Decide alongside the C1 override sidecar, since both concern what a rebuild may destroy.
+- **Placement correction (2026-07-19 review):** the reconcile as sketched sits inside
+  `_write_stochastic_gap_rows`, which only executes under `suggest and apply` and early-returns on
+  zero suggestions — a deterministic-only `build_gaps --apply` (this KI's own repro) would never
+  reach it. Hoist it to run unconditionally on every `--apply`, keyed against the
+  `graph_include`-filtered `load_concepts()` (excluded = removed; the unfiltered table would fail
+  this KI's own guard test). See `docs/REVIEW_2026-07-19_scale-robustness.md` (GP/KI-17 check).
+
+## KI-18 — knowledge layer: corpus-linear/quadratic hot paths fall over well before 10k docs — OPEN (2026-07-19)
+- **Symptom:** every knowledge/ cluster has at least one path whose cost scales with the corpus
+  (not the vocabulary), invisible at n≈50: presence loads **every** child chunk incl. denormalized
+  parent_text in one unpaginated `coll.get` then rescans the corpus once per concept
+  (`knowledge/concept_skeleton.py:1100`/`:214`); edge provenance is a per-edge doc×doc Cartesian
+  product (`:332`); the keyword extractor holds all corpus text + per-occurrence term streams in
+  RAM and pays the full-corpus load even for a single-doc re-extract (`knowledge/keywords.py:733`);
+  family Tier-2 is O(n²) pairwise cosine (`knowledge/keyword_families.py:149`) and
+  `list_keyword_families` is an N+1 COUNT (`library.py:486`); the epistemics projection is a
+  full-recompute O(chunks × concepts) regex scan, whole corpus in RAM, `re.compile` in the
+  per-chunk loop saved only by Python's 512-pattern cache (`knowledge/epistemics.py:140/258/445`),
+  and flat-mode chat loads the entire marker index per turn (`chat_controller.py:722`); the
+  unsourced-claims sweep loads every claim ever persisted (`knowledge/gaps.py:242`); wiki
+  synthesis re-summarizes unchanged topics with unbounded material (`knowledge/wiki.py:547/440`).
+- **Cause:** built and validated on 47/76-doc corpora; the 0–10k contract was never a review lens
+  until now.
+- **Impact:** first failure is memory (presence + keyword loads), then rebuild wall-clock
+  (provenance product, projection scan ~34s@47docs → hours@10k), then LLM-call volume (KI-19's
+  budget half). Nothing is wrong at current size.
+- **Workaround:** none needed at n≤~100; do not bulk-ingest thousands of docs before the P1 fixes.
+- **Fix:** the mechanical P1 list in `docs/REVIEW_2026-07-19_scale-robustness.md` (page/stream the
+  loads, invert the provenance loop, hoist/alternate the regex pass, blocked similarity, grouped
+  counts, scope the flat index, skip-unchanged topics, bound the claims sweep). No behavior change.
+- **Pointer:** REVIEW findings CS-1/2/6/9, KW-1/2/3, GP-3, WE-3/4/10.
+
+## KI-19 — knowledge layer: corpus-tuned constants + unbounded LLM budgets encode n≈50 — OPEN (2026-07-19)
+- **Symptom:** thresholds that mis-tune (or already mis-tune) off the current corpora:
+  `_DEFAULT_MIN_DEGREE=3` is a frozen Q1 snapshot from a 26-concept graph while the gaps.py
+  docstring claims "corpus-derived" (`scripts/build_gaps.py:46`); family Tier-2's
+  `DEFAULT_EMBEDDING_THRESHOLD=0.86` sits above bge's own measured same-domain ceiling (~0.82) so
+  the tier under-fires structurally (`knowledge/keyword_families.py:28`); `contested` fires on
+  `nc>=1` (one disputing doc) — 53.6% of chunks already marked at 47 docs, saturating with growth,
+  `agreement_ratio` computed but never consulted (`knowledge/concept_skeleton.py:699`); the wiki
+  ships the absolute-cosine 0.90 clustering the monolith recorded as the wrong primitive, fix
+  inert behind `WIKI_USE_CONCEPT_COMMUNITIES=false` (`config.py:387/404`);
+  `CONCEPT_SKELETON_MIN_COOCCURRENCE=2` is validated at 76 docs only; `KEYWORD_MIN_CHARS=3`
+  deletes (not demotes) sub-3-char specialist tokens; `KEYWORD_CORPUS_TOP_K=60` ≈ the current
+  vocabulary size. Plus three **unbounded LLM loops** that scale with corpus/vocab: Node B one
+  call per doc (`knowledge/concept_skeleton_enrich.py:151`), gap_suggest one per thin concept
+  (`knowledge/gap_suggest.py:129`), wiki one per topic incl. singletons (`knowledge/wiki.py:547`).
+- **Cause:** the exact over-optimize-on-current-corpus failure the 2026-07-19 review was ordered
+  to find; contrast with the honest structural constants (`MIN_DATED_DOCS_PER_SIDE=2`,
+  `_MIN_CONCEPT_LEN=3`), which show the discipline exists — it just wasn't applied everywhere.
+- **Impact:** silent mis-ranking/saturation as the corpus grows; surprise hour-long (or, if a paid
+  provider is forced, costly) enrichment runs.
+- **Workaround:** none needed at current size; treat every constant in the REVIEW inventory table
+  as suspect before citing it in a design argument.
+- **Fix:** measurement-gated only — RG-016 (graph floors + kind ranking), RG-017 (family
+  threshold), RG-018 (wiki communities flip), RG-019 (contested min-N); one ADR for the shared
+  LLM-budget policy (Node B / gap_suggest / wiki caps). **Never hand-tune these without the
+  experiment.**
+- **Pointer:** REVIEW findings CS-3/4/7/8, KW-4/5/6/9, GP-1/2/5, WE-5/6; the inventory table in
+  `docs/REVIEW_2026-07-19_scale-robustness.md`.
+
+## KI-20 — concept curation hard-deletes vocabulary where ADR-018 mandates demote — OPEN (2026-07-19)
+- **Symptom:** `concept_curation.remove_concepts` (`knowledge/concept_curation.py:400`) deletes
+  `Concept` + `ConceptAlias` rows outright; stages 1–3 (artifact filter, `classify_noise` LLM,
+  near-dup merge) route into it. `classify_noise` is precisely the path that mislabels real
+  specialist vocabulary (`cre`/`dbs`/`ntsr1`/`pddl` — the trap hit twice, 2026-07-17/18).
+  Deleting a Concept also deletes its keyword family (ADR-015 shared table) and cascades into
+  presence/edges/gaps.
+- **Cause:** the module predates ADR-018's demote verb; stage-0 ranking was correctly migrated to
+  read-only but the destructive stages were not revisited.
+- **Impact:** contained today — dry-run default, `--apply`-gated, and stages 1–3 have never been
+  applied on the real corpus; the contract violation is the risk, not a live loss.
+- **Workaround:** never run `scripts/curate_concepts.py --apply` stages 1–3 until fixed; curate
+  with `set_graph_include(cid, False)`.
+- **Fix:** route noise/artifact verdicts through `set_graph_include(id, False)` (keep row +
+  family); reserve deletion for an explicit, separately-confirmed path. Guard test: a
+  `classify_noise`-flagged concept keeps its family after `--apply`.
+- **Pointer:** REVIEW finding CS-5 (verified); ADR-018; `docs/specs/feature-concept-graph.md`
+  Traps; KW-9 is the same verb error at the tokenizer (`KEYWORD_MIN_CHARS` deletes unmined).
+
+## KI-21 — in-app graph rebuild refreshes the skeleton but not the gaps the view serves — OPEN (2026-07-19)
+- **Symptom:** the ADR-017 B1 rebuild route (`apps/api/main.py:232` `_default_rebuild_graph`)
+  calls `build_concept_skeleton(apply=True)` only — `build_gaps` has no API caller — and
+  `load_graph_view` serves all `GapRow`s with no `graph_version` cross-check
+  (`knowledge/concept_graph_view.py:96`, `knowledge/gaps.py:355`). After an in-app rebuild the
+  UI shows gaps computed from the previous skeleton (including the gap the user just closed)
+  until the CLI runs. Distinct from KI-17 (rows outliving `build_gaps` itself): here `build_gaps`
+  never runs at all on the app's only rebuild affordance.
+- **Cause:** B1 shipped the skeleton half of the acquire loop ("gap → ingest → rebuild → gap
+  closes"); the gaps half was left to the CLI.
+- **Impact:** the loop the button exists to close does not close in-app; stale-gap confusion
+  compounds KI-17's orphans.
+- **Workaround:** run `python -m scripts.build_gaps --apply` after any in-app rebuild.
+- **Fix:** chain `build_gaps(apply=True, min_degree=<runtime-derived>)` after the route's
+  skeleton build (needs KI-19/GP-1's runtime Q1 so the route needs no hardcoded default), or
+  stamp `graph_version` onto gap rows and filter mismatches in the view; land together with the
+  KI-17 reconcile (both concern what a rebuild must refresh).
+- **Pointer:** REVIEW finding GP-4 (verified); ADR-017 B1.

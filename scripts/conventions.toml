@@ -1,27 +1,29 @@
-# Config for docs_check.py and sprint_check.py. Tune per project; do not silently raise to pass.
-# Laid by cpc-init (standard profile) into the consumer's scripts/conventions.toml.
+# Config for the vendored cpc gates (docs_check, sprint_check, keypoint, …). Tune per project;
+# do not silently raise to pass. Laid by cpc-init (standard profile); refreshed to the cpc 1.2.3
+# key set on 2026-07-19 (ADR-021) with this project's tuned values preserved.
 
 [cpc]
 # The init profile this project was laid at (read by cpc-init-check, the completeness gate).
-# This file is laid ONLY by the standard profile, so it declares "standard"; a prototype has no
-# conventions.toml and the gate resolves "prototype" by its absence. Single source of truth (§5).
 profile = "standard"
 
 [budgets]
-entry_max_lines        = 600   # docs_check: root CLAUDE.md + .claude/CONTEXT.md combined
+entry_max_lines        = 600   # docs_check: root entry file (AGENTS.md) + .claude/CONTEXT.md combined
 module_claude_max_lines = 40   # docs_check: each <module>/CLAUDE.md
-session_max_entries    = 10    # docs_check rule 11b (ADR-018): baton cap; rotate older entries
+session_max_entries    = 10    # docs_check rule 11b (cpc ADR-018): baton cap; rotate older entries
                                # verbatim to docs/archive/SESSION-archive-NNN.md (local-only here)
 uses_max_files         = 12    # sprint_check: resolved `uses` read-set files (globs expanded)
 uses_max_lines         = 2500  # sprint_check: summed line count of resolved `uses` files
+# Token budgets (0 = off) — calibrate before enabling.
+entry_max_tokens       = 0
+uses_max_tokens        = 0
 
 [uses]
 # sprint_check: `uses` ⊇ `affects` coherence (you must read what you change).
-# "warn" (default; new files not yet on disk are exempt) or "error" to enforce hard.
 superset_affects = "warn"
 
 [staleness]
 disposable_days = 90           # PLAN_/REVIEW_ still 'active' older than this -> flagged
+living_bump = "warn"           # rule 12 (cpc ADR-018): living doc edited without bumping updated:
 
 [headers]
 # globs (relative to root) exempt from the status-header requirement
@@ -32,6 +34,23 @@ exempt = ["docs/specs/**", "**/*.json", ".claude/commands/**"]
 [routes]
 # extensions treated as route targets when found inside `backticks`
 extensions = [".md"]
+check_md_links = true     # rule 4b: markdown [text](target) links in entry/.claude files must resolve
+check_adr_refs = false
+
+[entry]
+# stub-stays-stub (cpc ADR-014, rule 9): AGENTS.md is canonical here (project ADR-021), so root
+# CLAUDE.md must stay a bare `@AGENTS.md` import — entry content belongs in AGENTS.md.
+enforce_stub = true
+
+[plan]
+require_prior_art = false
+
+[generate]
+# Derived artifacts regenerated before handoff (cpc ADR-013). None registered yet.
+
+[keypoints]
+# Per-project extras per boundary: [keypoints.<name>] run = [...] / checklist = [...].
+# None registered yet — the deterministic floor (docs_check/sprint_check/generate) already runs.
 
 [test_api]
 # cpc-test-api-check (CONVENTIONS §13, ADR-007): keep paid/live API calls out of tests.

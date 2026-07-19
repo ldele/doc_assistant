@@ -65,3 +65,21 @@ test:
 # Verify the active torch wheel + CUDA availability on this machine.
 torch-check:
     uv run --extra {{torch}} python -c "import torch; print(torch.__version__, 'cuda', torch.cuda.is_available())"
+
+# --- cpc conventions (vendored, LOCAL-ONLY — ADR-021) -----------------------------------------
+# tools/conventions/ is gitignored (private tooling, public repo — ADR-001/ADR-007); on a fresh
+# clone these recipes are unavailable by design. Facade only (cpc ADR-011): each recipe aliases a
+# directly-runnable command; nothing lives ONLY here.
+
+# Fast docs/route gate.
+check:
+    uv run --no-sync python tools/conventions/rungate.py docs_check --root . --strict
+
+# Docs gate + file-integrity gate.
+lint:
+    uv run --no-sync python tools/conventions/rungate.py docs_check --root . --strict
+    uv run --no-sync python tools/conventions/rungate.py integrity_check --root . --strict
+
+# Boundary ritual (cpc ADR-020): plan-start | session-start | sprint-start | sprint-close | session-close.
+keypoint NAME:
+    uv run --no-sync python tools/conventions/rungate.py keypoint {{NAME}}

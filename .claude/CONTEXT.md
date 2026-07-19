@@ -1,9 +1,10 @@
-<!-- status: active · updated: 2026-07-18 (ADR-018 graph vocabulary scope; two-box corpus warning) · class: living -->
+<!-- status: active · updated: 2026-07-19 (ADR-021 big-project layout: AGENTS.md entry + module CLAUDE.md files + cpc 1.2.3 vendored) · class: living -->
 
 # CONTEXT — doc_assistant
 
 Canonical facts: stack, locked settings, provider config, phase map, open questions. This is the
-**single source** for the rules the root `CLAUDE.md` only digests and points at (cpc CONVENTIONS §5).
+**single source** for the rules the root entry file (`AGENTS.md`; `CLAUDE.md` is its one-line
+`@AGENTS.md` stub — ADR-021) only digests and points at (cpc CONVENTIONS §5).
 Conventions: this project follows an internal project-conventions standard (cpc); the decision
 and its contract are recorded in `docs/decisions/ADR-001-adopt-cpc-standard.md`.
 
@@ -142,21 +143,26 @@ in cpc CONVENTIONS **§12 / §13** — read them there, do not restate. Project-
 7. **bandit HIGH blocks merge; CI green before merge.** Docs land with the code at every checkpoint.
 
 **cpc gate wiring (ADR-007 — canonical text).** The cpc gates are vendored at `tools/conventions/`
-(cpc **1.2.2**, re-vendored 1.1.0→1.2.1→1.2.2 on 2026-07-16 — the 1.2.2 step picks up the KI-16
-embedded-tree fix; re-run `cpc-init` from the cpc checkout to
-upgrade — vendor from the release *tag*, not an unreleased HEAD) and wired via
-`.pre-commit-config.cpc.yaml`. **Both are gitignored — local-only, never in the shared
-`.pre-commit-config.yaml` or CI:** cpc is a private tooling repo, this repo is public (ADR-001).
+(cpc **1.2.3**; re-vendor by re-running `cpc-init` from the cpc checkout at the release *tag*,
+never an unreleased HEAD — this box re-vendored 2026-07-19 with the ADR-021 layout switch) and
+wired via `.pre-commit-config.cpc.yaml`, whose hooks run the **vendored copy** through the
+`tools/conventions/rungate.py` shim (no pip-install from the private remote, no network at hook
+time). **Both are gitignored — local-only, never in the shared `.pre-commit-config.yaml` or CI:**
+cpc is a private tooling repo, this repo is public (ADR-001).
 Install (no clash with the main config's pre-commit stage):
 `pre-commit install -c .pre-commit-config.cpc.yaml -t pre-push -t commit-msg` — docs/test-api
-checks + `cpc-push-guard` at pre-push, `cpc-coupling-check` at commit-msg. (`cpc-init-check` is
-deliberately **not** wired: it requires the ADR-014 `AGENTS.md` entry file, whose adoption this
-repo consciously defers — run it on-call only. Likewise not laid: `GLOSSARY.md`,
-`.claude/.gitignore` — the root `.gitignore` already covers `.claude/*`.) On-call any time:
-`python tools/conventions/rungate.py docs_check --root . --strict`; new at 1.2.x:
+checks + `cpc-push-guard` at pre-push, `cpc-coupling-check` at commit-msg. **The big-project
+layout is adopted (ADR-021, 2026-07-19):** `AGENTS.md` is the canonical entry file (`CLAUDE.md` a
+bare `@AGENTS.md` stub, `[entry] enforce_stub = true`), module `CLAUDE.md` files cover
+`src/doc_assistant/` · `apps/desktop/` · `apps/api/` · `scripts/` (≤40 lines each), and
+`GLOSSARY.md` is laid + filled. `cpc-init-check` therefore now **passes** — still run it on-call,
+not as a hook: `python tools/conventions/rungate.py init_check --root . --profile standard`.
+On-call any time:
+`python tools/conventions/rungate.py docs_check --root . --strict`;
 `python tools/conventions/rungate.py keypoint <session-start|plan-start|sprint-start|sprint-close|session-close>`
 (gate battery + judgment checklist per workflow boundary, cpc ADR-020; per-project extras go in
-`[keypoints.<name>]` in `scripts/conventions.toml` — none registered yet). Baton hygiene is gate-read
+`[keypoints.<name>]` in `scripts/conventions.toml` — none registered yet). `just check` / `just
+lint` / `just keypoint <name>` alias these (facade only). Baton hygiene is gate-read
 (rule 11): newest-on-top, cap 10 entries (`scripts/conventions.toml`), rotate older entries verbatim
 to docs/archive/SESSION-archive-NNN.md (local-only, like the baton).
 

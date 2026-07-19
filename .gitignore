@@ -19,7 +19,8 @@ build/
 .env
 
 # Claude
-# CLAUDE.md is COMMITTED — shared, public-safe agent instructions (a portfolio plus).
+# AGENTS.md (canonical entry file) + CLAUDE.md (its one-line @AGENTS.md stub) + the module
+# CLAUDE.md files are COMMITTED — shared, public-safe agent instructions (ADR-021).
 # Personal/transient notes go in CLAUDE.local.md (gitignored).
 # .claude/ is gitignored EXCEPT the Tier-1 canonical-facts files (committed): CONTEXT.md +
 # KNOWN_ISSUES.md + RIGOR_TODO.md. The SESSION.md baton (and everything else in .claude/) stays

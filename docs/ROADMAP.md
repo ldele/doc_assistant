@@ -1,9 +1,10 @@
-<!-- status: active · updated: 2026-07-16 · class: living -->
+<!-- status: active · updated: 2026-07-19 · class: living -->
 
 # ROADMAP — doc_assistant
 
 The living roadmap: phase map, goals, and the machine-read PR table. This is the **source of
-intent**; `docs/decisions.md` records the locked design choices and rationale, and `CLAUDE.md` /
+intent**; `docs/decisions/` records the locked design choices (living index `docs/decisions.md`;
+pre-cpc rationale frozen at `docs/archive/decisions-monolith.md` — ADR-022), and `AGENTS.md` /
 `.claude/CONTEXT.md` point at both. The evaluation strategy and the verified-10 benchmark rule live
 in `tests/eval/TESTING.md`.
 
@@ -46,8 +47,9 @@ in `tests/eval/TESTING.md`.
 
 ## PR order (Claude Code, one PR per session)
 
-Each row is one PR. `Spec` links the code-level contract where one exists; `decisions.md` carries the
-full architectural context per feature.
+Each row is one PR. `Spec` links the code-level contract where one exists; the ADRs in
+`docs/decisions/` (and, for pre-cpc features, `docs/archive/decisions-monolith.md`) carry the
+architectural context per feature.
 
 | PR | Scope | Status | Spec |
 |----|-------|--------|------|
@@ -109,6 +111,10 @@ full architectural context per feature.
 | L6 | Manual metadata editing in the Library — user-editable title/authors/year via a `DocumentMeta` **override sidecar** (user-entered wins over extracted, survives re-ingest; the first UI write path into the registry) + reveal-in-explorer | **done (2026-07-16, committed `e549254`)** — `db/models.py::DocumentMeta` + migration + `LibraryMetaEditor.svelte` + `PATCH` route; `test_document_meta.py`. Migration note: the API does not `create_all` — run `python -m doc_assistant.db.migrations` on boxes predating the table | `docs/decisions/ADR-013-document-metadata-editing.md` |
 | L7 | Document safe-delete — single-doc delete from the Library `⋯` menu: source file → **OS Recycle Bin** (trash-first, abort-on-fail), then row + meta + chunks + figures + cache; confirmation dialog | **done (2026-07-16, committed `95817fc`)** — `library.delete_document` + `DELETE /api/library/documents/{id}` (200/404/409) + `LibraryDeleteConfirm.svelte`; new base dep `send2trash`; `test_document_delete.py` (7 tests, mocked trash). Deferred: multi-select bulk delete + move-to-collection (needs its own ADR) | `docs/decisions/ADR-014-document-safe-delete.md` |
 | G8 | **ADR-018 graph vocabulary scope** — tag families (ADR-015) and concept-graph nodes are the same `Concept` rows and want opposite things from that table; scope the graph with an additive opt-in `graph_include` flag (`load_concepts()` filters, `list_keyword_families()` deliberately does not) rather than deleting the bulk-promoted vocabulary. `add_concept` opts in, `promote_keyword`/`create_keyword_family` opt out; `backfill_graph_include` applies the same rule retroactively (`source=="manual"`) | **done (2026-07-18, staged)** — root cause: **all 344** `source="keyword"` concepts created **2026-07-05** by one `seed_concepts.py --promote-all`, against `promote_keyword`'s candidate-only contract. Real corpus (CPU box, $0 local Ollama): graph **357 → 13 nodes**, 1534 → **19 edges**, 40 → **6 communities**, gaps **302 → 15**; Node B re-run **9 calls / 19 edges annotated / 63 stances / 7 contested**; families still **357** (the guard). +14 tests, **1002 passed**. **Found not fixed: KI-17** — 10 orphaned stochastic gap rows survive a vocabulary change (`build_gaps` upserts stochastic rows with no reconcile pass), so the route serves 27 gaps against 13 nodes. **PR-G2b's "strong kinds first" ordering must be re-derived at n=13 before it is built** | `docs/decisions/ADR-018-graph-vocabulary-scope.md` |
+| C1 | cpc big-project layout: `AGENTS.md` entry + `CLAUDE.md` stub + module `CLAUDE.md` files (src/apps×2/scripts) + cpc 1.2.3 vendored on this box + `GLOSSARY.md` filled + conventions tooling separated from scripts | **done (2026-07-19)** — `docs_check --strict` 0 errors, `init_check` green for the first time | `docs/decisions/ADR-021-adopt-cpc-big-project-layout.md` |
+| C2 | Docs-system rationalization: per-artifact verdicts (ADRs/specs/sprints/features/DEVLOG/monolith), `decisions.md` → living index + monolith frozen to `docs/archive/decisions-monolith.md`, DEVLOG historical block inverted (newest-first everywhere) | **done (2026-07-19)** — 181 DEVLOG entries verified byte-identical bodies; re-scopes ADR-001 Steps 4/5 | `docs/decisions/ADR-022-docs-system-rationalization.md` |
+| C3 | Backend restructure: `src/doc_assistant/knowledge/` subpackage for the concept-graph / keywords / wiki / gaps / epistemics feature modules (db/ and ingest/ already exist; RAG pipeline stays top-level) | in progress (2026-07-19) | `docs/decisions/ADR-023-knowledge-subpackage.md` |
+| C4 | Scale-robustness review: knowledge-layer code vs specs/ADRs under the 0-doc + 10k-doc lenses (corpus-tuned constants, empty-state crashes, O(n²) blowups) | in progress (2026-07-19) | — (output: `docs/REVIEW_2026-07-19_scale-robustness.md`) |
 
 **Feature 7d (knowledge-currency layer):** engine shipped 2026-06-17 (`epistemics.py` + `chunk_epistemics`
 sidecar + polarity-aware concept graph + reviewer `contested_evidence` tag). **Live answer-time marker
@@ -157,7 +163,8 @@ adapters (PR 17); an outbound
 
 ## What NOT to do
 
-- Don't refactor the overall architecture. Locked decisions in `decisions.md` are locked for a reason.
+- Don't refactor the overall architecture. Locked decisions (`docs/decisions/` + the frozen
+  monolith) are locked for a reason.
 - Don't add SPECTER2 *and* PubMedBERT *and* MedCPT at once. Pick one; biomedical models are a separate,
   corpus-gated decision.
 - Don't over-engineer the eval harness. Pydantic + pytest + DuckDB + Anthropic judge. No frameworks.

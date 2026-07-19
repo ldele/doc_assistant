@@ -86,14 +86,14 @@ Full plan: `docs/ROADMAP.md`.
 | PDF / tables | PyMuPDF4LLM (full-text default); Marker for high-fidelity tables, isolated out-of-process post-ingest pass |
 | torch backend | per-machine, chosen by a mutually-exclusive uv extra (`cu130` GPU / `cpu`) — see `docs/specs/torch-backend-per-machine.md` |
 
-Pipeline flow + module contracts: `docs/architecture.md`. Design rationale for every choice:
-`docs/decisions.md`.
+Pipeline flow + module contracts: `docs/architecture.md`. Design rationale: `docs/decisions.md`
+(the living ADR index; pre-cpc rationale frozen at `docs/archive/decisions-monolith.md` — ADR-022).
 
 ## Locked settings
 
 Change **only** via an experiment through the eval harness: `--repeat`, beat the control beyond its
 variance, record a baseline in `tests/eval/baselines/` (and update the decision). Full rationale per
-row: `docs/decisions.md`.
+row: `docs/archive/decisions-monolith.md` (frozen pre-cpc record; ADR-022) + per-file ADRs since.
 
 | Setting | Locked value | Where enforced / note |
 |---|---|---|

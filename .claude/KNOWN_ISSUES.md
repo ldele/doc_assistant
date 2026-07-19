@@ -592,3 +592,49 @@ Migrated from the old `CLAUDE.md` / `README` runtime-quirk notes on 2026-06-20 (
   stamp `graph_version` onto gap rows and filter mismatches in the view; land together with the
   KI-17 reconcile (both concern what a rebuild must refresh).
 - **Pointer:** REVIEW finding GP-4 (verified); ADR-017 B1.
+
+## KI-22 — declared base dep `send2trash` absent from venv → `DELETE /api/library/documents` 500s; the failing tests were misread as "venv drift" — RESOLVED (2026-07-19)
+- **Symptom:** `DELETE /api/library/documents/{id}` returns **HTTP 500** on every call (verified live
+  against a nonexistent id, which deletes nothing). Frozen worker traceback:
+  `File "src/doc_assistant/library.py", line 330, in delete_document / from send2trash import
+  send2trash / ModuleNotFoundError: No module named 'send2trash'`. In the test suite the same gap
+  surfaces as 6 failures in `tests/integration/test_document_delete.py`, but *not* on the delete
+  assertion — on `monkeypatch.setattr("send2trash.send2trash", …)` during setup:
+  `ModuleNotFoundError: No module named 'send2trash'` raised from `_pytest/monkeypatch.py`.
+- **Cause:** `send2trash>=2.1.0` is a declared **base** dependency (`pyproject.toml:84`) that was
+  simply not installed in this box's `.venv`. `library.delete_document` imports it **lazily inside
+  the function** (`library.py:330`), so nothing fails at import/startup — the app boots clean, health
+  is green, only the delete path breaks, at call time. The route
+  (`apps/api/main.py:519 delete_library_document`) catches only `RuntimeError` (its 409 path), so a
+  `ModuleNotFoundError` escapes as an unhandled 500.
+- **The real trap (why this outlived several sessions):** the 6 failures were carried in the baton as
+  *"6 pre-existing send2trash failures … venv drift, unrelated to this diff"* and left alone for
+  multiple sessions. That reading was **wrong**: the suite was correctly reporting a **broken shipped
+  feature**, not a test-only artifact. The cryptic monkeypatch-resolution shape of the error (a
+  `ModuleNotFoundError` from deep in pytest internals, far from any `delete` assertion) is exactly
+  what made "test-infra noise" look plausible. **Lesson: a red test is a claim the product is broken
+  until you prove otherwise — trace the import to a real call path before labelling it environmental.**
+- **Workaround:** none needed post-fix; before the fix, avoid the delete path (curation is CLI-only).
+- **Real fix / Resolution (2026-07-19):** installed the declared dep into the venv
+  (`uv pip install "send2trash>=2.1.0"` — the single pure-Python package, deliberately **not**
+  `uv sync`, which would pull the multi-GB cu130 torch wheel; KI-3). The lazy import is uncached on
+  failure, so the running server recovered without a restart: the same probe now returns **404** as
+  designed, and all 6 `test_document_delete.py` tests pass → suite **1015 → 1021 passed, 0 failed**
+  (the first fully-green run in several sessions). **Guard added:** new
+  `tests/unit/test_declared_dependencies.py` asserts every `[project].dependencies` entry resolves via
+  `importlib.metadata.version` (fails **by package name** — "declared runtime dependency 'X' is not
+  installed … missing-dependency drift, not a test-infra flake"), plus a pin on the exact
+  `from send2trash import send2trash` form. So the next missing base dep fails loudly and can't be
+  re-misdiagnosed. The venv fix itself is per-machine (`.venv` gitignored) — the committed change is
+  the guard test + these docs.
+- **Not fixed (deliberate, out of scope):** the route still only catches `RuntimeError`, so a genuinely
+  absent base dep would still 500 rather than degrade — acceptable, since a missing hard dependency is
+  a broken install, not a runtime condition to handle gracefully; the guard test is the right layer to
+  catch it. The lazy import at `library.py:330` was left as-is (it runs before the unknown-id early
+  return, but moving it would only paper over a missing *required* dep).
+- **Type:** implementation (environment/contract — declared dep not provisioned).
+- **Severity:** degrades (one feature dead: safe-delete; app otherwise fully functional).
+- **First observed:** 2026-07-19 (as failing tests; the "venv drift" misreading recurs across the
+  2026-07-15 / 07-18 / 07-19 batons). Root-caused + resolved same day.
+- **Related:** KI-3 (why the fix avoided `uv sync`); the safe-delete feature is ADR-014;
+  `tests/integration/test_document_delete.py`; `tests/unit/test_declared_dependencies.py`.

@@ -8,6 +8,43 @@ Append only — never edit past entries.
 Format: What changed | Why | Rejected alternatives | What it opens
 
 ---
+## 2026-07-19 — Verify-the-app pass: root-caused the "6 pre-existing send2trash failures" → a live 500 bug (KI-22) + a dependency-presence guard test
+
+**What:** Ran a full app-verification pass (all gates + a live $0 Ollama chat turn on the real
+47-doc/16,039-chunk corpus). The turn worked end-to-end — correct SSE shape (step → 296 token →
+result → done), 10 cited sources, 9 flagged claims, epistemics markers firing, `is_local:true`
+`cost_usd:null` — and the concept graph served the ADR-018 numbers (13 nodes/19 edges/6 communities,
+27 gaps = KI-17 reproducing). But the "6 pre-existing send2trash failures" the baton had carried as
+*"venv drift, unrelated"* turned out to be a **real shipped-feature break**: `DELETE
+/api/library/documents/{id}` 500s on every call because the declared base dep `send2trash>=2.1.0`
+(`pyproject.toml:84`) was absent from the venv, imported lazily inside `library.delete_document`
+(`library.py:330`) so it fails at call time, and the route catches only `RuntimeError` so it escapes
+as a 500. Verified live with a nonexistent-id probe (deletes nothing) → 500 before, 404 after.
+**Fix:** `uv pip install "send2trash>=2.1.0"` (venv-local, per-machine); suite went **1015 → 1021
+passed, 0 failed** — first fully-green run in several sessions. **Added
+`tests/unit/test_declared_dependencies.py`** (+35 tests): asserts every `[project].dependencies`
+entry resolves via `importlib.metadata.version`, failing **by package name**, plus a pin on the exact
+`from send2trash import send2trash` form. Recorded KI-22; the committed change is the guard test +
+KNOWN_ISSUES/DEVLOG (the venv fix is gitignored `.venv` state).
+
+**Why:** the failing tests were the suite correctly reporting a broken feature, but the cryptic
+`ModuleNotFoundError`-from-monkeypatch shape made "test-infra noise" look plausible, so the misread
+survived multiple sessions. A guard that fails by package name — "declared runtime dependency 'X' is
+not installed … missing-dependency drift, not a test-infra flake" — makes the next such gap
+unmissable and un-mislabellable.
+
+**Rejected:** `uv sync` to restore the dep (would pull the multi-GB cu130 torch wheel, KI-3) —
+installed the one pure-Python package instead; broadening the route's `except` to swallow the missing
+dep (a missing hard dependency is a broken install, not a runtime condition to handle — the guard
+test is the right layer); moving the lazy import below the unknown-id early return (papers over a
+missing *required* dep without fixing it).
+
+**Opens:** the guard only covers base `[project].dependencies`, not the `cpu`/`cu130`/`dev`/`packaging`
+extras (an absent extra is expected on a lean install, so asserting it would false-positive); revisit
+if an extras-drift bug ever bites. The baton's habit of labelling red tests "environmental" is worth a
+cross-project atlas lesson (proposed, awaiting say-so).
+
+---
 ## 2026-07-19 — Public docs refresh: README demo GIF + status/limitations truth-up, DEMO.md touch
 
 **What:** (1) **Recorded a real demo GIF** and embedded it at the top of the README

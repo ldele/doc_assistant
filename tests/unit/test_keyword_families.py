@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import pytest
+
 from doc_assistant.knowledge.keyword_families import (
     FamilyProposal,
     _edit_distance,
     _edit_similarity,
-    _stem,
+    _stem_candidates,
     detect_family_proposals,
 )
 
@@ -14,20 +16,20 @@ from doc_assistant.knowledge.keyword_families import (
 
 
 def test_stem_strips_simple_plural() -> None:
-    assert _stem("llms") == "llm"
-    assert _stem("connectomes") == "connectome"
+    assert "llm" in _stem_candidates("llms")
+    assert "connectome" in _stem_candidates("connectomes")
 
 
 def test_stem_leaves_short_words_and_ss_us_is_endings_alone() -> None:
-    assert _stem("bm25") == "bm25"
-    assert _stem("class") == "class"
-    assert _stem("bus") == "bus"
-    assert _stem("axis") == "axis"
+    assert _stem_candidates("bm25") == {"bm25"}
+    assert _stem_candidates("class") == {"class"}
+    assert _stem_candidates("bus") == {"bus"}
+    assert _stem_candidates("axis") == {"axis"}
 
 
 def test_stem_handles_ies_and_sibilant_es() -> None:
-    assert _stem("taxonomies") == "taxonomy"
-    assert _stem("boxes") == "box"
+    assert "taxonomy" in _stem_candidates("taxonomies")
+    assert "box" in _stem_candidates("boxes")
 
 
 def test_tier1_groups_llm_and_llms() -> None:
@@ -143,3 +145,55 @@ def test_edit_distance_and_similarity() -> None:
     assert _edit_distance("kitten", "sitting") == 3
     assert _edit_similarity("llm", "llm") == 1.0
     assert 0.0 <= _edit_similarity("connectome", "connectomics") < 1.0
+
+
+# --- PR-2.5 D4: the sibilant `-es` rule over-stripped, so common plurals never matched --------- #
+# `w.endswith(("ses","xes","zes","ches","shes")) -> w[:-2]` is right for `boxes`->`box` and
+# `classes`->`class`, but wrong for every word whose singular already ends in `e`
+# (`database`/`databases`, `size`/`sizes`, `cache`/`caches`). Structurally the two readings are
+# indistinguishable without a lexicon, so both stems are now candidates and a match on **either**
+# groups the pair. The existing tests picked `boxes`/`taxonomies` — the two inputs the old rules
+# got right — which is why this hid.
+
+
+@pytest.mark.parametrize(
+    ("singular", "plural"),
+    [
+        ("database", "databases"),
+        ("size", "sizes"),
+        ("cache", "caches"),
+        ("response", "responses"),
+        ("interface", "interfaces"),
+        ("box", "boxes"),  # the case the old rule already handled — must not regress
+        ("class", "classes"),
+        ("taxonomy", "taxonomies"),
+        ("llm", "llms"),
+    ],
+)
+def test_singular_and_plural_share_a_stem_candidate(singular: str, plural: str) -> None:
+    assert _stem_candidates(singular) & _stem_candidates(plural), (
+        f"{singular!r} and {plural!r} must group structurally"
+    )
+
+
+def test_detect_proposes_a_family_for_an_e_final_plural(singular_plural_corpus: list[str]) -> None:
+    """The end-to-end shape of D4: a `confidence=1.0` structural match, not a Tier-2 fuzzy one."""
+    proposals = detect_family_proposals(singular_plural_corpus)
+
+    assert [p.canonical for p in proposals] == ["database"]
+    assert proposals[0].members == ("databases",)
+    assert proposals[0].tier == "morphological"
+    assert proposals[0].confidence == 1.0
+
+
+@pytest.fixture
+def singular_plural_corpus() -> list[str]:
+    return ["database", "databases", "retrieval"]
+
+
+@pytest.mark.parametrize("word", ["bm25", "class", "bus", "axis", "not", "cas"])
+def test_short_and_ss_us_is_words_keep_only_themselves(word: str) -> None:
+    """The conservatism guard: no candidate may be produced that a *shorter* real word could
+    collide with. `notes`->{notes,note} must never reach `not`; `cases`->{cases,cas,case} is the
+    accepted residual risk (it needs a real keyword equal to an over-stripped stem)."""
+    assert _stem_candidates(word) == {word}

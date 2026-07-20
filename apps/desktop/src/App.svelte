@@ -70,6 +70,7 @@
     facetFilter,
     familyCanonicalMap,
     familyUnitsOf,
+    remapSelection,
     filterDocs,
     keywordFacets,
     sortDocs,
@@ -661,6 +662,16 @@
   async function refreshFamilies(): Promise<void> {
     try {
       keywordFamilies = await listKeywordFamilies()
+      // PR-2.5 D5 — a family write changes what a facet *unit* is, so a live selection has to be
+      // re-pointed or the grid silently empties behind a chip that still looks selectable. The
+      // Manage view is opened from the overlay, i.e. exactly where a selection is live. Mapped
+      // against the whole library, not the active collection, so an out-of-collection selection
+      // survives (it must stay removable).
+      libraryKeywords = remapSelection(
+        libraryKeywords,
+        familyCanonicalMap(keywordFamilies),
+        documents,
+      )
     } catch {
       // keep the prior list
     }
@@ -1113,6 +1124,7 @@
                     documents={visibleDocs}
                     view={libraryView}
                     activeKeywords={libraryKeywords}
+                    {keywordsOf}
                     onOpenDocument={openDocument}
                     onEditMetadata={(id) => (editingDocId = id)}
                     onReveal={revealDoc}

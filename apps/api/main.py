@@ -654,11 +654,18 @@ def create_app(
     def rename_keyword_family_route(
         family_id: str, body: KeywordFamilyRename
     ) -> KeywordFamilyPayload:
-        """Rename a family's canonical label. 404 if unknown."""
-        from doc_assistant.library import rename_keyword_family
+        """Rename a family's canonical label. 404 if unknown, 409 if the label is taken.
+
+        The uniqueness invariant lives in `library.rename_keyword_family` (PR-2.5 D1) — this shell
+        only maps it to a status code. `KeywordFamilyExists` subclasses `ValueError`, so the
+        ordering of these two handlers is load-bearing.
+        """
+        from doc_assistant.library import KeywordFamilyExists, rename_keyword_family
 
         try:
             family = rename_keyword_family(family_id, body.canonical)
+        except KeywordFamilyExists as e:
+            raise HTTPException(status_code=409, detail=str(e)) from e
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e)) from e
         if family is None:

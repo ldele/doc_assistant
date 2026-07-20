@@ -8,6 +8,115 @@ Append only — never edit past entries.
 Format: What changed | Why | Rejected alternatives | What it opens
 
 ---
+## 2026-07-20 — PR-2.6: family-aware grid tiles (D6 — a family selection highlighted nothing)
+
+**What.** `LibraryGrid` learns about tag families through one optional prop, `keywordsOf`,
+defaulting to `(d) => d.keywords`. `App` passes the accessor it already derives for the facet
+overlay, so tiles and facets finally agree on what a *unit* is. Ordering moved into a pure
+`orderedUnits(units, active)` in `lib/library.ts`; the `+N` overflow count now counts units.
+
+**Why it was broken.** `LibraryGrid` matched `activeKeywords.includes(rawKeyword)`. With a family
+selected, `activeKeywords` holds the **canonical** (`Pretrained model`) while tiles held the raw
+member forms (`pretrained`/`huggingface`) — the match could never fire. `orderedKeywords` broke
+identically, so the matching form was not floated to the front and could hide behind `+N`. One
+root cause, one file: the grid never learned about families, which is why D6 was carved **with**
+PR-2.6 rather than into PR-2.5 (splitting would have touched the same file twice).
+
+**Why the default is the raw list.** It is the whole no-families guarantee: with `canonicalOf`
+empty, `familyUnitsOf` already returns the raw keywords, and the default prop means a caller that
+knows nothing about families renders exactly what it rendered before. Verified live with a plain
+keyword control.
+
+**Why the `+N` count had to change too.** It read `d.keywords.length`, so a tile holding `llm`
+and `llms` would claim one more chip than it renders once the family collapses them — and the
+collapse would not actually free the tile's scarce chip budget, which is half the point of showing
+a family atomically.
+
+**Rejected:** **passing the family list into the grid** and mapping there — that would put the
+grouping rule in two places (the overlay already owns it) and give the component a data dependency
+it does not need; **keeping ordering inside the component** — it is the half of D6 easiest to get
+wrong, so it belongs where it can be tested; **rendering both the canonical and its members** —
+contradicts the overlay's atomic-entry rule and spends the chip budget on duplicate forms of one
+concept.
+
+**Verified:** 5 new frontend tests (15 total, `npm test`); full suite **1164 passed / 1 skipped** ·
+ruff · `mypy --strict src` · `svelte-check` 0/0 · docs+integrity 0/0. **Live on the real 76-doc
+corpus ($0, no LLM), driven in the running app:** with the probe family selected, **22 of 22**
+tiles highlighted and in **all 22** the active chip was floated first — the spec measured **0 of
+25** before. Control (plain keyword `cajal`): 9 of 9 highlighted and floated, so the default path
+is unchanged. Dark theme at 375 px: 0 px horizontal overflow, active chip visually distinct, 0
+console errors. The probe family was built from two previously un-familied keywords
+(`pretrained` + `huggingface`) precisely so deleting it restored the vocabulary exactly — verified
+at 26 concepts / 17 aliases before and after, both keywords unclaimed again.
+
+**Opens:** PR-2.7 (Manage view at scale) is next in the carve. Svelte-5 gotcha worth knowing:
+`{@const}` must be the immediate child of a block (`{#each}`), not of the element where it reads
+most naturally.
+
+---
+## 2026-07-20 — PR-2.5: hardening the tag-family write paths (D1–D5, all five defect-driven)
+
+**What.** The five defects the post-commit review of `0c3b0d4`+`0af43db` found in the tag-family
+**write** paths — none of which the 977 tests passing at the time caught. Each repro is now a
+regression test written **first**, so it fails against the shipped code. Read path untouched.
+
+| # | Defect | Fix |
+|---|--------|-----|
+| D1 | Rename onto an existing canonical created duplicate `Concept.label` rows → `add_concept`'s get-or-create then raised `MultipleResultsFound` for that label **forever**, 500ing the create route and breaking `promote_keyword` repo-wide | `rename_keyword_family` raises `KeywordFamilyExists`; the API shell maps it to **409** |
+| D2 | Rename silently dropped the family's own canonical keyword — it is only an *implicit* member, so re-pointing the label let the original keyword fall out and reappear as the standalone chip the feature exists to remove; `doc_count` fell with it | Rename carries the old label into the alias set first |
+| D3 | "New family" took its canonical as unchecked free text, so a keyword already claimed elsewhere ended up in **two** families and `familyCanonicalMap` resolved it order-dependently — three different numbers for one keyword | `create_keyword_family` routes the canonical through `add_family_member`, reusing the move-on-reassign guard |
+| D4 | The sibilant `-es` rule always stripped two characters, so every plural whose singular ends in `e` (`database`, `size`, `cache`, `response`) **never matched** — a silent false negative that degraded a `confidence=1.0` structural pair to a threshold-dependent fuzzy one, or to nothing | `_stem` → `_stem_candidates`; Tier 1 groups on a non-empty intersection, union-find because a name can now bridge buckets |
+| D5 | A live keyword selection was not re-pointed when families changed → the grid emptied behind a chip that still looked selectable. The Manage view is opened *from* the overlay, i.e. exactly where a selection is live | New pure `remapSelection` in `lib/library.ts`, called after every family write |
+
+**Why D2 was fixed by rename rather than by create.** The spec offered both. Seeding the canonical
+as a real alias on create would have needed a **migration for the 26 pre-existing concepts** on this
+box; carrying the old label at rename time changes nothing about existing rows, because the label
+stays the implicit member `_build_family` already treats it as. Smaller blast radius for the same
+invariant.
+
+**Why D4 emits two candidate stems instead of a better single rule.** There isn't one. `boxes`→`box`
+and `databases`→`database` are structurally identical — both stems end in a sibilant — so no
+lexicon-free rule can separate them. Emitting both trades an implausible false **positive** (needs a
+real keyword equal to an over-stripped stem: `cas` beside `cases`) for a silent false **negative**,
+which is the worse of the two because a proposal is reviewed before it is applied and a
+non-proposal is not reviewable at all.
+
+**Why the frontend got a test runner and no dependency.** The spec's DoD asks for the first tests of
+`familyCanonicalMap`/`familyUnitsOf`/`facetFilter` — but the frontend had **no test runner at all**,
+a prerequisite the spec never states. Node 24's built-in `node:test` runs the real `.ts` module with
+native type stripping, so `npm test` works with **zero new dependencies**. Test files are excluded
+from `tsconfig.json` so the app config doesn't have to carry `@types/node` +
+`allowImportingTsExtensions` for test-only imports; they are run, not type-checked.
+
+**Rejected:** **adding vitest** (or `@types/node`) — a dependency and a new gate to maintain, for
+something the runtime already does; **enforcing uniqueness in the Manage view** (D1) — the invariant
+belongs at the library boundary, the view is one of several callers; **exact-case collision
+matching** — the client lowercases its canonical map, so two families differing only by case would
+collide there anyway; **dropping `_stem` while keeping a "primary" stem for readability** — dead code.
+
+**Verified:** 5 new integration tests + 6 new/updated unit tests + **10 new frontend tests**; full
+suite **1164 passed / 1 skipped**; ruff · `ruff format` · `mypy --strict src` · bandit ·
+`svelte-check` 0/0 · `npm test` 10/10 · docs+integrity 0/0. **Live, $0, on a copy of the real
+76-doc library** (the original verified untouched at 26 concepts / 17 aliases before and after):
+Detect reproduced `pvpo`≈`avpv pvpo` @ 0.77 with the real bge embedder → Accept → **Rename**, which
+kept `pvpo` as a member and held `doc_count` at 1 (D2), a colliding rename returned **HTTP 409**
+(D1), and re-creating that same label still returned **200** — the repo-wide poisoning is closed.
+Measured honestly: on this corpus the fixed stemmer finds **exactly the same three pairs** as the
+old one (`llm`/`llms`, `connectome`/`connectomes`, `keypoint`/`keypoints`) — no regression, and no
+new find either, because these 60 keywords contain no e-final plural. D4 is proven by unit test, not
+by this corpus.
+
+**Not done, deliberately:** D5 was not driven in the browser. Exercising it live would write to the
+user's curated vocabulary, and move-on-reassign is **not undoable** — detaching a keyword deletes
+that `ConceptAlias` row, and deleting the new family does not restore it. It is covered by 4 unit
+tests on the extracted pure function plus `svelte-check`.
+
+**Opens:** that non-undoable move is ADR-015's stated semantics, not a defect — but D3 now extends it
+to the *canonical*, so naming a new family after a keyword claimed elsewhere silently strips it from
+the other family. Worth knowing before bulk curation; recorded in the spec. **PR-2.6** (family-aware
+grid tiles, carrying D6) is next in the carve.
+
+---
 ## 2026-07-20 — KNOWN_ISSUES split: open issues in the working file, closed ones archived verbatim
 
 **What.** `.claude/KNOWN_ISSUES.md` went from **738 lines to 237**. The 14 resolved entries moved

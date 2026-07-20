@@ -5,13 +5,14 @@
   // design: no filtering here — App owns collection + search. Per-tile ⋯ menu (ADR-013):
   // Edit metadata / Reveal in file explorer, mirroring the conversation ⋯ menu in Sidebar.
   import type { LibraryDocument } from './types'
-  import { authorLabel, docLabel } from './library'
+  import { authorLabel, docLabel, orderedUnits } from './library'
   import Icon from './Icon.svelte'
 
   let {
     documents,
     view,
     activeKeywords = [],
+    keywordsOf = (d) => d.keywords,
     onOpenDocument,
     onEditMetadata,
     onReveal,
@@ -21,6 +22,10 @@
     documents: LibraryDocument[]
     view: 'grid' | 'list'
     activeKeywords?: string[]
+    // Tag families (PR-2.6): collapse a document's raw keywords into display **units**, so a
+    // family renders as its single canonical chip. Defaults to the raw list, which is what keeps
+    // the no-families path byte-identical — App passes `familyUnitsOf(familyCanonicalMap(...))`.
+    keywordsOf?: (d: LibraryDocument) => string[]
     onOpenDocument: (id: string) => void
     onEditMetadata: (id: string) => void
     onReveal: (id: string) => void
@@ -44,13 +49,12 @@
     return a && y ? `${a} · ${y}` : a || y
   }
 
-  // When keyword facets are active, surface the selected ones first in every tile so the reason a
-  // doc is here is always visible (and highlighted), even if they'd otherwise fall past the "+N" cap.
-  function orderedKeywords(d: LibraryDocument): string[] {
-    if (activeKeywords.length === 0) return d.keywords
-    const active = d.keywords.filter((k) => activeKeywords.includes(k))
-    if (active.length === 0) return d.keywords
-    return [...active, ...d.keywords.filter((k) => !activeKeywords.includes(k))]
+  // A tile's chips, as display units with the selected ones floated to the front so the reason a
+  // doc is here stays visible even past the "+N" cap. Both halves must speak *units*: a family
+  // selection holds the canonical while the raw keywords hold the member forms, so matching on raw
+  // keywords highlighted nothing (D6). Ordering lives in `library.ts` so it is testable.
+  function tileUnits(d: LibraryDocument): string[] {
+    return orderedUnits(keywordsOf(d), activeKeywords)
   }
 
   // A single floating ⋯ menu (position:fixed, so the scrolling main pane can't clip it),
@@ -109,6 +113,7 @@
 {#if view === 'grid'}
   <div class="grid">
     {#each documents as d (d.id)}
+      {@const units = tileUnits(d)}
       <div class="tile" class:menuopen={openMenuFor === d.id}>
         <button
           class="tilebody"
@@ -131,14 +136,16 @@
             {#if addedShort(d.added_at)}<span>Added {addedShort(d.added_at)}</span>{/if}
           </span>
           <!-- Keyword row: always reserves two lines (below), so tiles are a uniform height even
-               with no keywords. Unkeyed each — a doc's raw array may repeat a string. -->
+               with no keywords. Unkeyed each — a doc's raw array may repeat a string, and the
+               `+N` count is over *units*, so collapsing a family frees the tile's chip budget
+               instead of spending it on duplicate forms of one concept (PR-2.6). -->
           <span class="kws">
-            {#each orderedKeywords(d).slice(0, CHIP_CAP) as k}
+            {#each units.slice(0, CHIP_CAP) as k}
               <span class="kw" class:active={activeKeywords.includes(k)}>{k}</span>
             {/each}
-            {#if d.keywords.length > CHIP_CAP}
-              <span class="kw more" title={orderedKeywords(d).slice(CHIP_CAP).join(', ')}
-                >+{d.keywords.length - CHIP_CAP}</span
+            {#if units.length > CHIP_CAP}
+              <span class="kw more" title={units.slice(CHIP_CAP).join(', ')}
+                >+{units.length - CHIP_CAP}</span
               >
             {/if}
           </span>

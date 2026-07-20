@@ -877,6 +877,12 @@ def create_keyword_family(canonical: str, members: list[str] | None = None) -> K
     if not canonical:
         raise ValueError("canonical must not be blank")
     concept_id = add_concept(label=canonical, graph_include=False)
+    # The canonical is a member too (an implicit one — `_build_family`). "New family" takes it as
+    # unchecked free text, so without this a keyword already claimed elsewhere ended up in two
+    # families and `familyCanonicalMap` resolved it order-dependently (PR-2.5 D3). Routing it
+    # through `add_family_member` reuses the move-on-reassign guard rather than restating it: the
+    # call detaches the name from any other family and, being the label, adds no self-alias.
+    add_family_member(concept_id, canonical)
     for member in members or []:
         add_family_member(concept_id, member)
     family = get_keyword_family(concept_id)
@@ -885,13 +891,61 @@ def create_keyword_family(canonical: str, members: list[str] | None = None) -> K
     return family
 
 
+class KeywordFamilyExists(ValueError):
+    """Another family already uses this canonical label (the API shell maps it to 409)."""
+
+
 def rename_keyword_family(concept_id: str, new_canonical: str) -> KeywordFamily | None:
-    """Rename a family's canonical label. Returns None if the family is unknown."""
+    """Rename a family's canonical label. Returns None if the family is unknown.
+
+    Two guards, both PR-2.5 defects that shipped in PR-1:
+
+    * **D1 — the label must stay unique.** ``Concept.label`` has no unique constraint and
+      ``rename_concept`` defers the check to callers, so a rename onto an existing canonical
+      created duplicate rows — after which ``add_concept``'s get-or-create raises
+      ``MultipleResultsFound`` for that label **forever**, breaking the create route *and*
+      ``promote_keyword`` repo-wide, with no way back through the UI. Compared case-insensitively
+      because the client's ``familyCanonicalMap`` lowercases its keys, so two families differing
+      only by case would collide there anyway. Raises :class:`KeywordFamilyExists` (a
+      ``ValueError``, so existing 400 handlers still catch it).
+    * **D2 — the old canonical stays a member.** The label is only an *implicit* member
+      (``create_keyword_family`` seeds no alias for it), so re-pointing it dropped the original
+      keyword out of the family, where it reappeared as the standalone chip the feature exists to
+      remove — and ``doc_count`` silently fell. Carrying it into the alias set keeps the family
+      covering the same documents, which is the whole invariant of a rename.
+    """
+    from doc_assistant.db.models import Concept, ConceptAlias
     from doc_assistant.knowledge.concept_skeleton import rename_concept
 
     new_canonical = new_canonical.strip()
     if not new_canonical:
         raise ValueError("new_canonical must not be blank")
+
+    with session_scope() as session:
+        clash = (
+            session.execute(
+                select(Concept).where(
+                    func.lower(Concept.label) == new_canonical.casefold(),
+                    Concept.id != concept_id,
+                )
+            )
+            .scalars()
+            .first()
+        )
+        if clash is not None:
+            raise KeywordFamilyExists(f"a keyword family named {new_canonical!r} already exists")
+
+        concept = session.get(Concept, concept_id)
+        if concept is None:
+            return None
+        old_label = concept.label
+        keeps_old = old_label.casefold() != new_canonical.casefold() and not any(
+            a.alias.casefold() == old_label.casefold() for a in concept.aliases
+        )
+        if keeps_old:
+            concept.aliases.append(ConceptAlias(alias=old_label))
+        session.flush()
+
     if not rename_concept(concept_id, new_canonical):
         return None
     return get_keyword_family(concept_id)

@@ -13,5 +13,10 @@
     "skipLibCheck": true,
     "verbatimModuleSyntax": true
   },
-  "include": ["src/**/*.ts", "src/**/*.svelte", "src/vite-env.d.ts"]
+  "include": ["src/**/*.ts", "src/**/*.svelte", "src/vite-env.d.ts"],
+  // Test files are run by node's built-in runner (`npm test`), which strips types rather than
+  // checking them. They are excluded here so the app config does not have to carry
+  // `@types/node` + `allowImportingTsExtensions` for test-only imports — the frontend still
+  // has zero test dependencies.
+  "exclude": ["src/**/*.test.ts"]
 }

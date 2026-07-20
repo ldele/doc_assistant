@@ -273,3 +273,42 @@ export function familyUnitsOf(canonicalOf: Map<string, string>): KeywordsOf {
     return [...units]
   }
 }
+
+// Re-point a live keyword selection after a family write (PR-2.5 D5). The Manage view is opened
+// *from* the facet overlay — i.e. exactly where a selection is live — so grouping `llm` into a
+// family left the grid filtering on a unit that no longer exists: empty results behind a chip that
+// still looked selectable (`keywordFacets`' universe includes `selected` by design, so it renders).
+//
+// Two moves, one for each direction of a family write: map each selection through the *new*
+// canonical map (create/rename/add-member), then drop anything that is no longer a unit of any
+// document (delete/remove-member). `documents` must be the whole library, not the active
+// collection — a selection that is merely out-of-collection must stay, so it can still be removed.
+export function remapSelection(
+  selected: string[],
+  canonicalOf: Map<string, string>,
+  documents: LibraryDocument[],
+): string[] {
+  if (selected.length === 0) return selected
+  const unitsOf = familyUnitsOf(canonicalOf)
+  const live = new Set<string>()
+  for (const d of documents) for (const u of unitsOf(d)) live.add(u)
+  const remapped = selected.map((k) => canonicalOf.get(k.toLowerCase()) ?? k)
+  return [...new Set(remapped)].filter((k) => live.has(k))
+}
+
+// Float the selected units to the front of a tile's chip row (PR-2.6). The reason a document is
+// in the grid must be visible even when its chips would otherwise fall past the `+N` cap — so this
+// is ordering, not filtering: nothing is dropped, and an empty or non-matching selection returns
+// the input untouched (that is what keeps the no-families path byte-identical).
+//
+// It takes *units*, not raw keywords, which is the whole of defect D6: the grid matched
+// `activeKeywords.includes(rawKeyword)`, but a family selection holds the **canonical**
+// (`Large language model`) while tiles held the raw forms (`llm`/`llms`), so the match could never
+// fire — measured live at 0 of 25 chips highlighted against 19 for a plain keyword.
+export function orderedUnits(units: string[], active: string[]): string[] {
+  if (active.length === 0) return units
+  const selected = new Set(active)
+  const hit = units.filter((u) => selected.has(u))
+  if (hit.length === 0) return units
+  return [...hit, ...units.filter((u) => !selected.has(u))]
+}

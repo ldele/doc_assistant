@@ -1,7 +1,8 @@
 # Spec — Tag families (keyword synonym-collapse over the concept vocabulary)
 
-**Status:** **PR-1 ✅ SHIPPED `0c3b0d4` · PR-2 ✅ SHIPPED `0af43db`** (both committed 2026-07-17).
-**PR-2.5 (hardening) + PR-2.6 (family-aware tiles) SCOPED 2026-07-17** from a post-commit review — see the
+**Status:** **PR-1 ✅ SHIPPED `0c3b0d4` · PR-2 ✅ SHIPPED `0af43db`** (both committed 2026-07-17) ·
+**PR-2.5 ✅ BUILT 2026-07-20** · **PR-2.6 ✅ BUILT 2026-07-20** (both staged; D1–D6 fixed).
+**PR-2.7 (Manage view at scale) SCOPED 2026-07-17** from a post-commit review — see the
 carve below; both are **defect-driven, not new scope**. PR-3 still DESIGN-LOCKED (grilled 2026-07-16,
 `grill-me`; ledger at foot; parked — not scheduled). Architectural decisions in **ADR-015**.
 Collapses near-duplicate keywords (`llm`/`llms`, `connectome`/`connectomics`) into user-curated **families** so
@@ -10,8 +11,8 @@ the Library keyword filter treats each family as one entry. *Takes advantage of*
 over the same rows; ADR-015 §C).
 
 **Owner:** Claude Code. **Never bundle:** ~~PR-1 families end-to-end (manual)~~ **SHIPPED** →
-~~PR-2 detection~~ **SHIPPED** → **PR-2.5 hardening** (next) → **PR-2.6 family-aware tiles** → PR-3 LLM
-assist (parked).
+~~PR-2 detection~~ **SHIPPED** → ~~PR-2.5 hardening~~ **BUILT** → ~~PR-2.6 family-aware tiles~~ **BUILT** →
+**PR-2.7 Manage view at scale** (next) → PR-3 LLM assist (parked).
 
 ---
 
@@ -98,7 +99,7 @@ The whole mechanism with hand-curation; no detection yet. Demoable: create `larg
   all (report-only, per the DoD). Verified live on the real 76-doc corpus (both the CLI and the app's Detect
   button found the same proposal, `pvpo`≈`avpv pvpo` @ 0.77 confidence) — full details in `docs/DEVLOG.md`.
 
-### PR-2.5 — hardening the write paths (next; defect-driven) — SCOPED 2026-07-17
+### PR-2.5 — hardening the write paths (defect-driven) — ✅ BUILT 2026-07-20 (staged)
 
 Post-commit review of `0c3b0d4`+`0af43db` (agent review + live drive on the real 76-doc corpus). The read
 path is sound — facet math, union-find determinism, thin-shell discipline, and the no-families default path
@@ -134,7 +135,7 @@ trap whose blast radius escapes the feature.
   (`svelte-check` 0 · ruff/format · `mypy --strict src` · bandit · full suite) + a live $0 drive of
   Detect→Accept→Rename on the real corpus. No new scope, no ADR, no locked-setting touch.
 
-### PR-2.6 — family-aware grid tiles (frontend-only; carries defect D6)
+### PR-2.6 — family-aware grid tiles (frontend-only; carries defect D6) — ✅ BUILT 2026-07-20 (staged)
 
 Carved **with** D6 rather than into PR-2.5: both are the same root cause in the same file — `LibraryGrid`
 never learned about families — and splitting them would touch it twice.
@@ -233,3 +234,60 @@ curation-home → detection → overlay-render → wire → LLM → carve in dep
 `concept_skeleton`/`Concept` code (promote/add/glossary primitives, string-match aliases, 0 concepts on the
 corpus). User steer that shaped it: *"not re-using but taking advantage of"* + the concept-graph/epistemics
 UI is a separate later track. Decisions routed to ADR-015 (architecture) + this spec (contract).
+
+#### PR-2.5 — as built (2026-07-20)
+
+All five defects fixed; the five repros are regression tests that **fail against the shipped code**.
+
+| # | Fix, as built | Note |
+|---|---------------|------|
+| **D1** | `library.rename_keyword_family` raises `KeywordFamilyExists` (a `ValueError` subclass) on a **case-insensitive** collision; the API shell maps it to **409**. | Case-insensitive because the client's `familyCanonicalMap` lowercases its keys — two families differing only by case would collide there anyway. Renaming to your own label, or only changing its case, still works. |
+| **D2** | Rename carries the **old label into the alias set** before re-pointing it. | The spec offered "seed the canonical as an alias on create" as the alternative. This one was chosen because it needs **no migration** for the 26 pre-existing concepts on this box: the label stays an *implicit* member exactly as `_build_family` already treats it, so nothing about existing rows changes. |
+| **D3** | `create_keyword_family` routes its canonical through `add_family_member` before the members. | Reuses the move-on-reassign guard instead of restating it; being the label, the call adds no self-alias and only detaches the name from other families. |
+| **D4** | `_stem` → `_stem_candidates(word) -> frozenset[str]`; Tier 1 groups on a **non-empty intersection**, via union-find (a name can now bridge buckets). | The `-es` plural is structurally ambiguous — `boxes`→`box` but `databases`→`database`, and both stems end in a sibilant — so no single-stem rule can be right. Emitting both trades an implausible false *positive* (a real keyword equal to an over-stripped stem, e.g. `cas` beside `cases`) for the silent false *negative* that is not reviewable at all. |
+| **D5** | New pure `remapSelection(selected, canonicalOf, documents)` in `lib/library.ts`, called from `refreshFamilies` after every family write. | Maps the selection through the new canonical map, then drops units no document carries any more — covering both directions (create re-points, delete drops). Mapped against the **whole** library so an out-of-collection selection stays removable. |
+
+**Frontend tests now exist** (`apps/desktop/src/lib/library.test.ts`, 10 tests, `npm test`): the grouping
+layer the spec called "entirely unexercised". Runner is node's built-in `node:test` with native TS
+stripping — **zero new dependencies**; test files are excluded from `tsconfig.json` so the app config
+needn't carry `@types/node` + `allowImportingTsExtensions` for test-only imports.
+
+**Sharp edge, unchanged but now reachable one more way:** move-on-reassign is **not undoable** —
+detaching a keyword from another family deletes that `ConceptAlias` row, and deleting the new family
+does not restore it. D3 extends that to the *canonical*, so naming a new family after a keyword
+already claimed elsewhere silently strips it from the other family. That is ADR-015's stated
+"a keyword belongs to at most one family", not a new behaviour, but it is worth knowing before
+curating in bulk.
+
+#### PR-2.6 — as built (2026-07-20)
+
+`LibraryGrid` gains one optional prop, `keywordsOf`, defaulting to `(d) => d.keywords` — that
+default is what makes the no-families path byte-identical. `App` passes the accessor it already
+derives for the overlay (`familyUnitsOf(familyCanonicalMap(keywordFamilies))`), so tiles and facets
+finally agree on what a unit *is*: **one data path, two renderers**, no new API and no backend
+change.
+
+Ordering moved out of the component into a pure `orderedUnits(units, active)` in `lib/library.ts`,
+so the half of D6 that is easiest to get wrong is unit-tested rather than only eyeballed. The `+N`
+overflow count and its tooltip now count **units**, not raw keywords — otherwise a tile holding
+`llm`+`llms` would claim one more chip than it renders, and the family collapse would not actually
+free the tile's chip budget.
+
+Svelte 5 note: the `{@const}` binding the tile's units has to sit as the immediate child of
+`{#each}` (it is a block-scoped declaration), not inside the `<span class="kws">` where it reads
+most naturally.
+
+**Live on the real 76-doc corpus ($0, no LLM)** — probe family `Pretrained model`
+(`pretrained` + `huggingface`, both previously un-familied so the probe was exactly reversible;
+deleted afterwards, 26 concepts / 17 aliases before and after):
+
+| | Before (spec measurement) | After |
+|---|---|---|
+| Family selected → chips highlighted | **0 of 25** | **22 of 22** |
+| Family selected → active chip floated first | not floated | **22 of 22 tiles** |
+| Plain keyword (`cajal`, control) | 9 | **9 of 9**, floated — default path unchanged |
+
+Tiles render the family as its atomic canonical chip (`Pretrained model`, not
+`pretrained`+`huggingface`), so the vocabulary's casing now drives the tile too. Dark theme at
+375 px: **0 px** horizontal overflow, active chip visually distinct (filled indigo vs translucent),
+0 console errors.

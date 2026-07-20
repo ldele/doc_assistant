@@ -28,23 +28,36 @@ _MIN_STEM_LEN = 3
 DEFAULT_EMBEDDING_THRESHOLD = 0.86
 
 
-def _stem(word: str) -> str:
-    """A conservative plural/suffix stem — collapses ``llms``→``llm``, ``connectomes``→
-    ``connectome``.
+def _stem_candidates(word: str) -> frozenset[str]:
+    """Every plausible conservative stem of ``word`` — two keywords group when these **intersect**.
 
-    Deliberately narrow (only strips a handful of common plural suffixes) so it doesn't over-merge
-    unrelated short words; anything it can't confidently normalize is returned unchanged.
+    A set rather than one stem because the ``-es`` plural is structurally ambiguous and no rule can
+    resolve it without a lexicon: ``boxes``/``classes`` drop ``es`` (``box``, ``class``), while
+    ``databases``/``sizes``/``caches`` drop only the ``s`` (their singular already ends in ``e``).
+    Both readings end in a sibilant, so the shipped single-stem rule (always ``w[:-2]``) silently
+    turned every word of the second kind into a **false negative** — ``database``/``databases``
+    never matched, and quietly degraded from a ``confidence=1.0`` structural pair to a
+    threshold-dependent Tier-2 fuzzy one, or to nothing (PR-2.5 D4).
+
+    The trade this makes: emitting both candidates admits a false *positive* only when a real
+    keyword happens to equal an over-stripped stem (``cas`` beside ``cases``, ``databas`` beside
+    ``databases``) — implausible strings, and the proposal is reviewed before it is applied.
+    A silent false negative is not reviewable at all.
+
+    The word itself is always a candidate, so an unchanged form still matches its own plural. The
+    ``ss``/``us``/``is`` and short-word guards are unchanged, which is what keeps ``notes`` from
+    ever reaching ``not``.
     """
     w = word.strip().casefold()
     if len(w) <= _MIN_STEM_LEN:
-        return w
+        return frozenset({w})
     if w.endswith("ies") and len(w) > 4:
-        return w[:-3] + "y"
+        return frozenset({w, w[:-3] + "y"})
     if w.endswith(("ses", "xes", "zes", "ches", "shes")):
-        return w[:-2]
+        return frozenset({w, w[:-2], w[:-1]})
     if w.endswith("s") and not w.endswith(("ss", "us", "is")):
-        return w[:-1]
-    return w
+        return frozenset({w, w[:-1]})
+    return frozenset({w})
 
 
 def _edit_distance(a: str, b: str) -> int:
@@ -102,11 +115,37 @@ def _canonical_and_members(names: list[str]) -> tuple[str, tuple[str, ...]]:
 def _tier1_morphological(names: list[str]) -> list[FamilyProposal]:
     """Group keywords whose conservative stem matches. Deterministic; confidence is always 1.0 (a
     structural match, not a probabilistic score)."""
-    by_stem: dict[str, list[str]] = {}
-    for n in names:
-        by_stem.setdefault(_stem(n), []).append(n)
+    # Union-find, because a name can now carry several candidate stems (`_stem_candidates`) and
+    # therefore bridge buckets: `databases` shares `database` with the singular and `databas` with
+    # nothing else. A plain dict-of-lists would emit two overlapping proposals for one family.
+    # The partition is order-independent, so this stays deterministic.
+    parent = list(range(len(names)))
+
+    def find(i: int) -> int:
+        while parent[i] != i:
+            parent[i] = parent[parent[i]]
+            i = parent[i]
+        return i
+
+    def union(a: int, b: int) -> None:
+        ra, rb = find(a), find(b)
+        if ra != rb:
+            parent[max(ra, rb)] = min(ra, rb)
+
+    first_seen: dict[str, int] = {}
+    for i, n in enumerate(names):
+        for stem in sorted(_stem_candidates(n)):
+            if stem in first_seen:
+                union(first_seen[stem], i)
+            else:
+                first_seen[stem] = i
+
+    grouped: dict[int, list[str]] = {}
+    for i, n in enumerate(names):
+        grouped.setdefault(find(i), []).append(n)
+
     proposals: list[FamilyProposal] = []
-    for group in by_stem.values():
+    for group in grouped.values():
         if len(group) < 2:
             continue
         canonical, members = _canonical_and_members(group)

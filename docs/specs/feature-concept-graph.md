@@ -2,7 +2,7 @@
 
 **Status:** **DESIGN-LOCKED 2026-07-17** (grilled `grill-me`: 12 branches, 11 resolved / 1 parked; ledger at
 foot). Boundaries in **ADR-017**; the gap layer it surfaces is **ADR-004**; the vocabulary it reads is
-**ADR-015**, which reserved this track by name. **PR-G1 ✅ BUILT 2026-07-17 (staged, not committed).**
+**ADR-015**, which reserved this track by name. **PR-G1 ✅ BUILT 2026-07-17, COMMITTED** (`/api/concepts/graph*` routes are in `apps/api/main.py` at HEAD; marker corrected 2026-07-20 — it had read "staged, not committed" for three days after the commit landed).**
 
 **Owner:** Claude Code. **Never bundle:** ~~PR-G1 serve~~ **BUILT** → ~~PR-G2a index+ego+chunks~~ **BUILT** →
 PR-G2b gaps as a destination → PR-G2c Library entry → ~~PR-G4 Node B~~ **RUN** (see the PR-G4 section).
@@ -89,7 +89,7 @@ payload. The list is.** The graph earns its place as the *navigation and context
 
 ## Carve
 
-### PR-G1 — serve the read model (backend, thin shell) — ✅ BUILT 2026-07-17 (staged)
+### PR-G1 — serve the read model (backend, thin shell) — ✅ BUILT + COMMITTED 2026-07-17
 
 **Built as:** `concept_skeleton.load_skeleton()` (the read half of `write_skeleton`; `None` when absent,
 **raises on a corrupt artifact** — "never built" and "unreadable" are different states) · `gaps.load_gaps()`
@@ -133,7 +133,7 @@ passed** (was 977; +16 new, 0 regressions).
   path (a fresh clone has none — the NORMAL first run, not an error)**; `curl … | jq '.nodes|length'` → **26**,
   `.edges|length` → **70**, `.gaps|length` → **14**.
 
-### PR-G2a — concept index + gap lens + ego + chunk navigation (frontend) — ✅ BUILT 2026-07-17 (staged)
+### PR-G2a — concept index + gap lens + ego + chunk navigation (frontend) — ✅ BUILT + COMMITTED 2026-07-17 (`b02e2dc`)
 
 **Built as:** `lib/ConceptGraph.svelte` (index + gap lens + ego SVG + doc→chunk nav + staleness/empty rebuild) ·
 `lib/forceLayout.ts` (pure, seeded mulberry32 + phyllotaxis init + Fruchterman–Reingold → fit-to-viewBox;

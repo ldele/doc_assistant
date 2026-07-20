@@ -26,7 +26,8 @@ Full stack + locked settings: `.claude/CONTEXT.md`.
 1. `.claude/SESSION.md` — handoff baton: who worked last, what's done/uncommitted, what's next, which tool picks up.
 2. `.claude/CONTEXT.md` — canonical facts: stack, locked settings, provider config, phase map, open questions.
 3. `docs/DEVLOG.md` (top entries — newest first) — per-change history. *(Lives in `docs/`, not `.claude/` — do not move or duplicate.)*
-4. `.claude/KNOWN_ISSUES.md` — open weaknesses, recurring failures, workarounds.
+4. `.claude/KNOWN_ISSUES.md` — open weaknesses, recurring failures, workarounds, plus a one-line
+   **Resolved** index; closed issues in full at `docs/archive/KNOWN_ISSUES-resolved-001.md`.
 
 Reference: `docs/ROADMAP.md` · `docs/architecture.md` · `docs/decisions/` (ADRs — living index
 `docs/decisions.md`, ADR-022) · `docs/specs/` · `GLOSSARY.md` (pinned vocabulary).

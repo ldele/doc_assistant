@@ -8,6 +8,41 @@ Append only — never edit past entries.
 Format: What changed | Why | Rejected alternatives | What it opens
 
 ---
+## 2026-07-20 — KNOWN_ISSUES split: open issues in the working file, closed ones archived verbatim
+
+**What.** `.claude/KNOWN_ISSUES.md` went from **738 lines to 237**. The 14 resolved entries moved
+**verbatim** to `docs/archive/KNOWN_ISSUES-resolved-001.md` (544 lines); the working file keeps the
+10 open issues in full plus a new **Resolved — index** table. `AGENTS.md`'s coordination-file list
+points at both.
+
+**Why.** 526 of the 738 lines — 71% — were closed issues. The file is read at session start to find
+what might bite *today*, and four fifths of it was history. Same shape ADR-022 already applied to
+the decisions monolith: living index in the working file, canonical detail frozen in `docs/archive/`.
+
+**What each retained row keeps, and why those two things.** `| KI | What it was | What keeps it
+fixed — do not undo | Resolved |`. A closed issue still carries exactly two live risks: **the trap**
+(so it isn't re-diagnosed from scratch — e.g. "never `cu130` on a GPU-less box") and **the load-bearing
+fix** (so nobody deletes it not knowing what it holds up — e.g. the API lifespan's `init_db()` call
+is the *only* migration trigger the app has). Everything else — reproduction steps, the diagnosis
+narrative, rejected alternatives, verification detail — is history, and history belongs in the
+archive.
+
+**Rejected:** **summarising on the way into the archive** — the archive is the canonical account,
+and a summary of a summary is how detail quietly dies; **deleting resolved entries outright** — the
+KI-15 and KI-22 write-ups are the record of *how a class of bug was caught*, which is worth more
+than the bug; **splitting by date rather than by state** — "resolved" is the property that makes an
+entry stop being operational, a date boundary is arbitrary; **per-heading anchor links** into the
+archive — they rot on the first heading edit, and the KI number is trivially findable.
+
+**Verified:** a script asserts every resolved body appears **byte-identical** in the archive, every
+open body byte-identical in the working file, every resolved KI has an index row, and the header is
+preserved — all four clean. `docs_check --strict` 0/0.
+
+**Opens:** numbering stays global and never reused (the KI-23-was-KI-20 note travelled with its
+entry into the archive). Next rotation is `KNOWN_ISSUES-resolved-002.md`; no cap is enforced by a
+gate — `session_max_entries` covers the baton only.
+
+---
 ## 2026-07-20 — `document_meta` gets its missing foreign key; rebuild migrations exist now (ADR-026)
 
 **What.** `document_meta.document_id` is now a real FK to `documents.id` with `ON DELETE CASCADE`.

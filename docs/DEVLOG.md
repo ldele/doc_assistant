@@ -8,6 +8,40 @@ Append only — never edit past entries.
 Format: What changed | Why | Rejected alternatives | What it opens
 
 ---
+## 2026-07-20 — Docs: corpus groups grilled → design-locked as "Folders with retrieval scope" (ADR-025)
+
+**What:** ran `grill-me` on the corpus-groups question the demo collection raised (demo corpus vs
+personal papers in one store). 6 forks → all resolved or parked; ledger in the session baton.
+**ADR-025** written (accepted, unbuilt): corpus groups ARE folders (reuse the dormant
+`Folder`/`document_folders` schema — the ADR-015 reuse pattern); demo membership auto-assigned at
+ingest by manifest sha-match + one-time backfill, user edits win (ADR-013 pattern); scoping = a
+**query-time doc-hash filter on both retrieval arms** (no chunk-store writes; unscoped path
+byte-identical); scope is per-turn request-scoped (ADR-010 pattern), sticky in UI only, and **the
+provenance record + an answer chip always state the scope** (integrity, non-negotiable);
+enrichment stays corpus-global in v1. Carve **F1 folders → F2 scoping → F3 demo auto-assign**,
+spec at build time. Routed: RG-020 (scoped-retrieval bounds: Chroma `$in` latency at the 10k
+contract + scoped-BM25 statistics + an unscoped-byte-identical guard test) and RG-021 (the eval
+index-composition fingerprint, promoted from the 2026-07-20 demo-collection entry's "Opens");
+ui-checklist §3 row (design-locked); decisions.md row.
+
+**Why:** the user's fork — groups inside the main store vs a fully separable corpus — plus the
+requirement that demo files stay easily deletable. The deciding constraint is the `is_archived`
+precedent: doc-level flags scope every library-side read but NOT retrieval (chunks carry only
+`doc_hash`), so any grouping that scopes the grid alone lies in chat. That makes retrieval
+scoping the feature's core, not its garnish.
+
+**Rejected (full list in ADR-025):** separate database (complexity, not storage — every read path
+is corpus-global; env-level data home already gives coarse isolation); a new group object beside
+folders; a partition column; chunk-metadata stamping (mutates the chunk store per edit);
+post-rerank filtering (recall collapses on small scopes); persistent/global scope (a forgotten
+scope silently narrows every answer).
+
+**Opens:** F1's spec must reconcile ADR-025 with the L4 Library-redesign spec's Phase-B locks
+(2026-07-14: "folders = mirror source subfolders at ingest + backfill") — two auto-assign rules
+compose, they don't compete. Per-folder enrichment parked with a named reopener (facet clutter →
+PR-2.7 demotion first). RG-020/021 carry the deferred measurements.
+
+---
 ## 2026-07-20 — Demo-corpus removal: `download_corpus --remove-demo` (content-hash matched, ADR-014 safe-delete, dry-run default)
 
 **What:** the demo collection is now cleanly removable. Core in `src/doc_assistant/library.py`

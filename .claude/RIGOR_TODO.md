@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-07-19 · class: living -->
+<!-- status: active · updated: 2026-07-20 · class: living -->
 
 # RIGOR_TODO — deferred rigor tracker
 
@@ -329,3 +329,32 @@ a verdict measured at one vocabulary size does not transfer to another).
   (min disputing docs and/or an agreement-ratio band — the `MIN_DATED_DOCS_PER_SIDE` pattern)
   and re-measure density at both corpora sizes.
 - **Until then:** do not lean on marker density as a UI signal (the 2026-07-08 caveat stands).
+
+## RG-020 — folder-scoped retrieval (ADR-025 F2): filter latency at 10k docs + scoped-BM25 statistics
+
+- **Severity:** degrades · **Status:** open · **Added:** 2026-07-20 (corpus-groups grill, ADR-025 fork 3)
+- **What was deferred:** the query-time doc-hash filter ships on design reasoning, not measurement.
+  Two bounds owed when F2 builds: (a) Chroma `where doc_hash $in [...]` latency with a
+  thousands-of-hashes member set at the 10k-doc robustness contract (the "reverses if" trigger —
+  per-folder precomputed indexes are the fallback); (b) the scoped BM25 arm scores against
+  subset statistics (avgdl/IDF differ from global) — correct behavior, but record a before/after
+  retrieval sanity check so a scoped-recall surprise isn't misread as a bug.
+- **The experiment owed:** retrieve+rerank latency, unscoped vs scoped at small/medium/large
+  folder sizes on a synthetic 10k corpus (the `measure_latency.py` harness pattern); record in
+  `tests/eval/baselines/`. Assert the unscoped path stays byte-identical (guard test in F2).
+- **Until then:** F2 may ship scoped retrieval for real corpora sizes (~10²); do not claim the
+  10k contract holds for scoped turns.
+
+## RG-021 — eval-harness index-composition fingerprint (benchmark runs on a polluted index are silent)
+
+- **Severity:** degrades · **Status:** open · **Added:** 2026-07-20 (corpus-groups grill, ADR-025 fork 6; first flagged in the 2026-07-20 demo-collection DEVLOG "Opens")
+- **What was deferred:** nothing mechanically detects an eval run over an index containing
+  non-eval documents (e.g. the demo collection). BM25/IDF statistics and the vector neighborhood
+  are corpus-global, so such numbers are not comparable to committed baselines even with perfect
+  retrieval-side folder filtering — the guard must live in the harness, not the folders feature.
+- **The experiment owed (small build, not a run):** `run_eval` records index composition (doc
+  count + a digest of sorted doc_hashes) in every run record; warn on mismatch vs the baseline's
+  recorded composition. Becomes urgent the first time a baseline is re-recorded after `--demo`
+  has ever been ingested on the box.
+- **Until then:** the manual rule stands — benchmark on the clean eval-10 index only
+  (`evals/README.md` states it; the download-default guard test pins the fetch side).

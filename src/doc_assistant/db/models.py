@@ -643,6 +643,13 @@ class AnswerRecord(Base):
     top_k: Mapped[int | None] = mapped_column(Integer, nullable=True)
     use_parent_child: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
 
+    # ADR-025 F2: the retrieval scope this answer was produced under, as JSON
+    # {folder_id, folder_name, doc_count} — NULL for an unscoped (whole-library) turn, which
+    # is also how every pre-F2 row reads back. Deliberately NOT folded into `prompt_version`:
+    # a scope is a content filter, not a retrieval knob, and versioning it per folder would
+    # pollute every eval join keyed on that hash.
+    retrieval_scope_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+
     # Cost + latency telemetry.
     token_input: Mapped[int | None] = mapped_column(Integer, nullable=True)
     token_output: Mapped[int | None] = mapped_column(Integer, nullable=True)

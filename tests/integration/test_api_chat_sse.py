@@ -50,14 +50,21 @@ class FakeController:
         self.adjudicated: list[tuple[str, str, str | None]] = []
         # ADR-010: every handle_message call's `overrides` arg, in call order.
         self.received_overrides: list[object] = []
+        self.received_scopes: list[str | None] = []
 
     def chunk_count(self) -> int:
         return 7
 
     def handle_message(
-        self, session: object, text: str, *, overrides: object = None
+        self,
+        session: object,
+        text: str,
+        *,
+        overrides: object = None,
+        scope_folder_id: str | None = None,
     ) -> Iterator[object]:
         self.received_overrides.append(overrides)
+        self.received_scopes.append(scope_folder_id)
         yield Step("Searching documents", "Found 1 passage")
         yield Token("Hello ")
         yield Token("world [1].")

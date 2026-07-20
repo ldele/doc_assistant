@@ -332,7 +332,9 @@ a verdict measured at one vocabulary size does not transfer to another).
 
 ## RG-020 — folder-scoped retrieval (ADR-025 F2): filter latency at 10k docs + scoped-BM25 statistics
 
-- **Severity:** degrades · **Status:** open · **Added:** 2026-07-20 (corpus-groups grill, ADR-025 fork 3)
+- **Severity:** degrades · **Status:** **partially discharged 2026-07-20** (real-corpus half
+  measured at F2 build time — `tests/eval/baselines/rg020_scoped_retrieval_cost_2026-07-20.md`;
+  the synthetic 10k half is still open)
 - **What was deferred:** the query-time doc-hash filter ships on design reasoning, not measurement.
   Two bounds owed when F2 builds: (a) Chroma `where doc_hash $in [...]` latency with a
   thousands-of-hashes member set at the 10k-doc robustness contract (the "reverses if" trigger —
@@ -344,6 +346,17 @@ a verdict measured at one vocabulary size does not transfer to another).
   `tests/eval/baselines/`. Assert the unscoped path stays byte-identical (guard test in F2).
 - **Until then:** F2 may ship scoped retrieval for real corpora sizes (~10²); do not claim the
   10k contract holds for scoped turns.
+- **Measured 2026-07-20 (76 docs / 30,882 chunks), part (b) + the guard done:** BM25 subset
+  rebuild ≈20 µs/chunk (622 ms whole corpus · 248 ms for a 30-doc scope · 27 ms for 3 docs);
+  Chroma `$in` 136 ms unscoped → 193/232/408 ms for 3/30/76 hashes, i.e. the cost tracks the
+  **`$in` list length**, not the corpus share. Shipped with a single-slot scoped-ensemble memo
+  keyed on the hash set (F2 spec S5) so a sticky scope pays the rebuild once. The
+  **unscoped-byte-identical guard test exists** (`tests/unit/test_pipeline_scope.py::
+  test_scope_none_uses_the_prebuilt_ensemble_and_builds_no_filter`). Scoped-BM25 subset
+  statistics are recorded as expected-and-correct in the baseline.
+- **Still owed (why this stays open):** part (a) at the **10k contract** — extrapolation puts a
+  full-scope rebuild near ~80 s and a thousands-long `$in` list into Chroma, so the ADR-025
+  fallback (per-folder precomputed indexes) is still live. Do not claim 10k for scoped turns.
 
 ## RG-021 — eval-harness index-composition fingerprint (benchmark runs on a polluted index are silent)
 

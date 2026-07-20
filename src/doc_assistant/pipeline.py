@@ -129,6 +129,14 @@ class RAGPipeline:
         ]
         excluded = len(data["documents"]) - len(all_docs)
         log.info("bm25_excludes", count=excluded)
+        # Kept for ADR-025 F2: a folder-scoped turn rebuilds the BM25 arm over the subset of
+        # these docs, so the corpus has to survive construction. Nothing mutates it.
+        self._bm25_docs = all_docs
+        # Single-slot memo for the scoped ensemble, keyed on the exact hash set. The UI scope is
+        # sticky, so consecutive turns share a key; a membership edit changes the key and the
+        # slot self-invalidates (no TTL, no staleness window). See the F2 spec, S5.
+        self._scoped: tuple[frozenset[str], EnsembleRetriever] | None = None
+        self._weights = weights
         vector = self.db.as_retriever(
             search_kwargs={
                 "k": CANDIDATE_K,
@@ -183,12 +191,65 @@ class RAGPipeline:
         self.provider = provider
         self.model = model
 
-    def retrieve(self, query: str, top_k: int = TOP_K) -> list[Document]:
+    def _ensemble_for(self, scope: frozenset[str]) -> EnsembleRetriever:
+        """Build (or reuse) an ensemble restricted to the documents in ``scope``.
+
+        Both arms are scoped **before** scoring (ADR-025 fork 3; post-rerank filtering was
+        rejected because recall collapses exactly when the scope is small):
+
+        - vector — the same ``keep_for_retrieval`` filter ANDed with ``doc_hash $in [...]``;
+        - BM25 — a fresh index over the subset of ``self._bm25_docs``.
+
+        The BM25 rebuild is the real cost (~20 µs/chunk measured), so the result is memoised in
+        one slot keyed on ``scope`` itself. ``self.db``/``self.embeddings``/``self.reranker`` are
+        untouched: ``as_retriever`` is a thin wrapper, so nothing expensive is reloaded.
+
+        Note the scoped BM25 arm scores against **subset statistics** (avgdl/IDF differ from the
+        global index). That is correct — the arm is told to rank within the folder — but it means
+        scoped and unscoped scores are not directly comparable (RG-020).
+        """
+        if self._scoped is not None and self._scoped[0] == scope:
+            return self._scoped[1]
+
+        vector = self.db.as_retriever(
+            search_kwargs={
+                "k": CANDIDATE_K,
+                "filter": {
+                    "$and": [
+                        {"keep_for_retrieval": {"$ne": False}},
+                        {"doc_hash": {"$in": sorted(scope)}},
+                    ]
+                },
+            }
+        )
+        subset = [d for d in self._bm25_docs if d.metadata.get("doc_hash") in scope]
+        if subset:
+            bm25 = BM25Retriever.from_documents(subset, preprocess_func=tokenize)
+            bm25.k = CANDIDATE_K
+            ensemble = EnsembleRetriever(retrievers=[bm25, vector], weights=list(self._weights))
+        else:
+            # The scope names documents but no retrievable chunk survives (every chunk excluded,
+            # or the documents were removed from the index). Vector-only, mirroring the
+            # empty-library fallback — never widen the scope to compensate.
+            log.warning("scoped_bm25_empty", scope_size=len(scope))
+            ensemble = EnsembleRetriever(retrievers=[vector], weights=[1.0])
+        log.info("scoped_ensemble_built", docs=len(scope), chunks=len(subset))
+        self._scoped = (scope, ensemble)
+        return ensemble
+
+    def retrieve(
+        self, query: str, top_k: int = TOP_K, *, scope: frozenset[str] | None = None
+    ) -> list[Document]:
         """Retrieve top-k documents for `query`. Reranker scores discarded."""
-        return [doc for doc, _ in self.retrieve_with_scores(query, top_k)]
+        return [doc for doc, _ in self.retrieve_with_scores(query, top_k, scope=scope)]
 
     def retrieve_with_scores(
-        self, query: str, top_k: int = TOP_K, *, use_multi_query: bool | None = None
+        self,
+        query: str,
+        top_k: int = TOP_K,
+        *,
+        use_multi_query: bool | None = None,
+        scope: frozenset[str] | None = None,
     ) -> list[tuple[Document, float]]:
         """Retrieve top-k as ``(doc, reranker_score)`` pairs.
 
@@ -200,7 +261,22 @@ class RAGPipeline:
         of the ``USE_MULTI_QUERY`` config default: ``None`` preserves today's behaviour
         (follows the global), ``True``/``False`` forces expansion on/off for this call only —
         no module-global is ever assigned, so concurrent calls can't leak into each other.
+
+        ``scope`` (ADR-025 F2) restricts retrieval to a set of ``doc_hash`` values — a **content
+        filter**, not a quality knob: it changes *which documents* are searchable, never *how*
+        retrieval works. ``None`` = the whole library (today's path, byte-identical); a non-empty
+        set scopes both arms before scoring; an **empty** set retrieves nothing.
         """
+        # ADR-025 F2: an EMPTY scope retrieves nothing. It must never widen to the whole corpus —
+        # answering over every document when the caller asked for a folder is the `is_archived`
+        # lie this feature exists to kill. Returning here also skips the retrievers entirely.
+        if scope is not None and not scope:
+            log.info("retrieval_scope_empty")
+            return []
+        # ``scope is None`` keeps the prebuilt ensemble and constructs no filter — the unscoped
+        # path stays byte-identical (spec S4, guarded by a test).
+        ensemble = self.ensemble if scope is None else self._ensemble_for(scope)
+
         effective_multi_query = USE_MULTI_QUERY if use_multi_query is None else use_multi_query
         # Multi-Query: generate variations if enabled
         queries = self.expand_query(query) if effective_multi_query else [query]
@@ -209,7 +285,7 @@ class RAGPipeline:
         all_candidates: list[Document] = []
         seen_ids: set[str] = set()
         for q in queries:
-            candidates = self.ensemble.invoke(q)
+            candidates = ensemble.invoke(q)
             for doc in candidates:
                 # R6: dedup on a full-content hash, not a 50-char prefix — distinct chunks that
                 # share a prefix (repeated headers; pre-R1 KI-14 placeholder-prefixed chunks)

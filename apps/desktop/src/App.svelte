@@ -148,6 +148,12 @@
   // zero members is still visible and therefore fillable (spec D3). `folderError` surfaces a
   // 400 (blank/collision) in the Manage view without blocking anything else.
   let folders = $state<LibraryFolder[]>([])
+  // ADR-025 F2 — the chat retrieval scope. Sticky across turns, in memory ONLY: a reload
+  // returns to the whole library. Persisting it is the rejected option — a scope you forgot
+  // you set silently narrows every future answer, which is the exact lie the integrity layer
+  // exists to prevent. Deliberately separate from `libraryCollection`: filtering the Library
+  // grid and scoping a conversation are two different intentions.
+  let chatScopeFolderId = $state<string | null>(null)
   let manageFoldersOpen = $state(false)
   let manageFolderId = $state<string | null>(null)
   let manageFolderQuery = $state('')
@@ -284,6 +290,8 @@
   const familyCanonicalOf = $derived(familyCanonicalMap(keywordFamilies))
   const keywordsOf = $derived(familyUnitsOf(familyCanonicalOf))
   const folderNames = $derived(folderNameMap(folders))
+  // A folder deleted elsewhere must not stay silently selected as the chat scope.
+  const chatScopeFolder = $derived(folders.find((f) => f.id === chatScopeFolderId) ?? null)
   const collectionDocs = $derived(docsFor(documents, libraryCollection, new Date()))
   const searchedDocs = $derived(filterDocs(collectionDocs, libraryQuery))
   const facetList = $derived(keywordFacets(searchedDocs, libraryKeywords, keywordsOf))
@@ -442,6 +450,9 @@
             health = h
             status = 'ready'
             void refreshConversations()
+            // The composer's scope selector needs the folder list even if the user never
+            // opens the Library.
+            void refreshFolders()
           }
           return
         } catch {
@@ -452,6 +463,14 @@
     })()
     return () => {
       cancelled = true
+    }
+  })
+
+  // A scope naming a folder that no longer exists would silently become "search nothing" on the
+  // next turn. Drop it the moment the folder leaves the list, so the selector can't lie.
+  $effect(() => {
+    if (chatScopeFolderId !== null && !folders.some((f) => f.id === chatScopeFolderId)) {
+      chatScopeFolderId = null
     }
   })
 
@@ -513,7 +532,7 @@
         error: null,
       }) - 1
     try {
-      for await (const ev of streamChat(text, sessionId, overrides)) {
+      for await (const ev of streamChat(text, sessionId, overrides, undefined, chatScopeFolderId)) {
         if (ev.event === 'token') turns[idx].answer += ev.data
         else if (ev.event === 'result') turns[idx].result = JSON.parse(ev.data) as TurnResult
         // `step` events are advisory; ignored for now.
@@ -718,6 +737,7 @@
     mode = m
     sidebarOpen = false
     activeCitation = null
+    if (m === 'chat' && folders.length === 0) void refreshFolders()
     if (m === 'library' && !documentsLoaded) {
       void refreshDocuments()
       void refreshFamilies()
@@ -1132,6 +1152,7 @@
             <ReadonlyTurn
               question={t.question}
               answer={t.answer}
+              scope={t.scope}
               onCitationClick={(n) => (activeCitation = { turnKey: t.record_id, n })}
               activeCitationN={activeCitation?.turnKey === t.record_id ? activeCitation.n : null}
             />
@@ -1146,6 +1167,7 @@
               <ReadonlyTurn
                 question={t.question}
                 answer={t.answer}
+                scope={t.scope}
                 onCitationClick={(n) => (activeCitation = { turnKey: t.record_id, n })}
                 activeCitationN={activeCitation?.turnKey === t.record_id ? activeCitation.n : null}
               />
@@ -1224,6 +1246,25 @@
             >
               {comparing ? 'Comparing…' : 'Test override'}
             </button>
+          {/if}
+          {#if folders.length > 0}
+            <!-- ADR-025 F2 scope selector. Session-sticky, never persisted (see chatScopeFolderId).
+                 "All documents" is always the first option, so returning to the whole library is
+                 one click and never a hidden state. -->
+            <label class="scopepick" class:scoped={chatScopeFolderId !== null}>
+              <Icon name="folder" size={13} />
+              <select
+                bind:value={chatScopeFolderId}
+                disabled={sending}
+                aria-label="Search scope"
+                title="Which documents this question searches"
+              >
+                <option value={null}>All documents</option>
+                {#each folders as f (f.id)}
+                  <option value={f.id}>{f.name} ({f.doc_count})</option>
+                {/each}
+              </select>
+            </label>
           {/if}
           <button class="send" onclick={send} disabled={sending || input.trim() === ''} aria-busy={sending}>
             {#if sending}<span class="spinner" aria-hidden="true"></span>{:else}Send{/if}
@@ -1792,6 +1833,39 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
+  }
+  /* ADR-025 F2 scope selector — reads as a quiet control until a scope is set, then it is
+     tinted so a narrowed conversation is visible without opening anything. */
+  .scopepick {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    flex: none;
+    padding: 0.25rem 0.4rem;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--fg-2);
+    background: var(--surface);
+  }
+  .scopepick.scoped {
+    color: var(--accent);
+    border-color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 10%, transparent);
+  }
+  .scopepick select {
+    font: inherit;
+    font-size: 0.78rem;
+    max-width: 11rem;
+    border: none;
+    background: none;
+    color: inherit;
+    cursor: pointer;
+  }
+  .scopepick select:focus {
+    outline: none;
+  }
+  .scopepick select:disabled {
+    cursor: not-allowed;
   }
   .spinner {
     width: 0.95em;

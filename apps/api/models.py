@@ -75,6 +75,12 @@ class ChatRequest(BaseModel):
     text: str
     session_id: str
     overrides: RagOverrides | None = None
+    # ADR-025 F2 — restrict retrieval to one folder for this turn. A sibling of `overrides`,
+    # not a field inside it: a scope is a *content* filter (which documents), while
+    # `RagOverrides` is ADR-010's governance channel for locked *quality* knobs. Only the id
+    # crosses the wire — the backend resolves membership per turn, so a Library edit can never
+    # be out of date by the time the answer is produced.
+    scope_folder_id: str | None = None
 
 
 class CompareRequest(BaseModel):
@@ -170,6 +176,15 @@ class UsageViewPayload(BaseModel):
         )
 
 
+class ScopePayload(BaseModel):
+    """The retrieval scope a turn ran under (ADR-025 F2); absent = the whole library.
+    `folder_name` is null when the folder was deleted before the turn ran."""
+
+    folder_id: str
+    folder_name: str | None
+    doc_count: int
+
+
 class TurnResultPayload(BaseModel):
     answer: str
     mode: Literal["ai", "human"]
@@ -184,6 +199,7 @@ class TurnResultPayload(BaseModel):
     usage_md: str
     citation_note_md: str
     download_path: str | None
+    scope: ScopePayload | None = None
 
     @classmethod
     def from_turn_result(cls, r: TurnResult) -> TurnResultPayload:
@@ -201,6 +217,15 @@ class TurnResultPayload(BaseModel):
             usage_md=r.usage_md,
             citation_note_md=r.citation_note_md,
             download_path=str(r.download_path) if r.download_path is not None else None,
+            scope=(
+                ScopePayload(
+                    folder_id=r.scope.folder_id,
+                    folder_name=r.scope.folder_name,
+                    doc_count=r.scope.doc_count,
+                )
+                if r.scope is not None
+                else None
+            ),
         )
 
 
@@ -261,6 +286,8 @@ class ConversationTurnPayload(BaseModel):
     question: str
     answer: str
     sources: list[ConversationSourcePayload]
+    # ADR-025 F2 — replayed from the record, so a reopened scoped answer still says it was scoped.
+    scope: ScopePayload | None = None
 
     @classmethod
     def from_turn(cls, t: ConversationTurn) -> ConversationTurnPayload:
@@ -272,6 +299,7 @@ class ConversationTurnPayload(BaseModel):
                 ConversationSourcePayload(n=s.n, citation=s.citation, excerpt=s.excerpt)
                 for s in t.sources
             ],
+            scope=(ScopePayload(**t.retrieval_scope) if t.retrieval_scope is not None else None),
         )
 
 

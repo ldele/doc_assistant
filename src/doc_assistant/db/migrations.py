@@ -36,6 +36,9 @@ _ADDITIVE_COLUMNS: list[tuple[str, str, str, str | None]] = [
     # sets the policy (source == "manual" opts in). Indexed: load_concepts filters on it
     # on every skeleton build.
     ("concepts", "graph_include", "BOOLEAN", "ix_concepts_graph_include"),
+    # ADR-025 F2 — the folder retrieval scope a turn ran under, on the (pre-existing)
+    # answer_records table. NULL on every existing row, which reads correctly as "unscoped".
+    ("answer_records", "retrieval_scope_json", "TEXT", None),
 ]
 
 

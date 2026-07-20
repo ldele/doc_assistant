@@ -25,7 +25,12 @@ class FakeRag:
         self.calls: list[dict[str, object]] = []
 
     def retrieve_with_scores(
-        self, text: str, top_k: int, *, use_multi_query: bool | None = None
+        self,
+        text: str,
+        top_k: int,
+        *,
+        use_multi_query: bool | None = None,
+        scope: frozenset[str] | None = None,
     ) -> list[tuple[Document, float]]:
         self.calls.append({"text": text, "top_k": top_k, "use_multi_query": use_multi_query})
         docs = [

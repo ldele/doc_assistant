@@ -113,6 +113,8 @@ async def _event_stream(
     session: Session,
     text: str,
     overrides: RagOverrides | None = None,
+    *,
+    scope_folder_id: str | None = None,
 ) -> AsyncIterator[ServerSentEvent]:
     """Map the controller's sync ``TurnEvent`` generator to SSE events 1:1.
 
@@ -127,7 +129,9 @@ async def _event_stream(
 
     def worker() -> None:
         try:
-            for event in controller.handle_message(session, text, overrides=overrides):
+            for event in controller.handle_message(
+                session, text, overrides=overrides, scope_folder_id=scope_folder_id
+            ):
                 loop.call_soon_threadsafe(queue.put_nowait, event)
         finally:
             loop.call_soon_threadsafe(queue.put_nowait, done)
@@ -359,7 +363,11 @@ def create_app(
             if body.overrides is not None
             else None
         )
-        return EventSourceResponse(_event_stream(controller, session, body.text, overrides))
+        return EventSourceResponse(
+            _event_stream(
+                controller, session, body.text, overrides, scope_folder_id=body.scope_folder_id
+            )
+        )
 
     @app.post("/api/compare")
     def compare_route(request: Request, body: CompareRequest) -> CompareResultPayload:
@@ -543,7 +551,8 @@ def create_app(
     def list_folders_route() -> list[LibraryFolderPayload]:
         """Every folder with its non-archived member count (feature-corpus-folders.md, ADR-025 F1).
 
-        Folders organise the Library only — they do **not** scope chat retrieval; that is F2."""
+        A folder organises the Library and, since F2, can scope one chat turn's retrieval
+        (POST /api/chat `scope_folder_id`)."""
         from doc_assistant.library import list_folders
 
         return [LibraryFolderPayload.from_folder(f) for f in list_folders()]

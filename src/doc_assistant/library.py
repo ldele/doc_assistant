@@ -601,8 +601,9 @@ def find_document_by_short_id(short_id: str) -> str | None:
 # include its children?" is a question F2's retrieval scoping would otherwise have
 # to invent an answer to.
 #
-# Folders organise the LIBRARY only. They do NOT scope retrieval — that is F2. Any
-# UI built on this must not imply otherwise (the is_archived lesson, ADR-025).
+# Since F2 a folder also scopes chat retrieval (`folder_doc_hashes` below is the resolver).
+# The is_archived lesson still binds in the other direction: a scoped turn must SAY it was
+# scoped, in the provenance record and on the answer.
 
 
 @dataclass
@@ -771,6 +772,22 @@ def folder_document_ids(folder_id: str) -> list[str]:
         if folder is None:
             return []
         return [d.id for d in folder.documents if not d.is_archived]
+
+
+def folder_doc_hashes(folder_id: str) -> list[str]:
+    """``doc_hash`` of every non-archived document in a folder ([] for an unknown folder).
+
+    The retrieval-scope resolver (ADR-025 F2): chunks carry only ``doc_hash``, so this is the
+    key that scopes both retrieval arms. An unknown folder returning ``[]`` is deliberate and
+    load-bearing — an empty scope must retrieve nothing, never fall back to the whole corpus
+    (docs/specs/feature-corpus-folders-scope.md S3). Archived members are excluded, matching
+    ``folder_document_ids`` and the Library grid.
+    """
+    with session_scope() as session:
+        folder = session.get(Folder, folder_id)
+        if folder is None:
+            return []
+        return [d.doc_hash for d in folder.documents if not d.is_archived and d.doc_hash]
 
 
 # ============================================================

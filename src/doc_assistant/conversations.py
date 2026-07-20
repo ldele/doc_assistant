@@ -18,6 +18,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from typing import Any
 
 from sqlalchemy import func, select
 
@@ -59,6 +60,10 @@ class ConversationTurn:
     answer: str
     sources: list[ConversationSource]
     created_at: datetime
+    # ADR-025 F2 — {folder_id, folder_name, doc_count} if the turn was folder-scoped, else None.
+    # Replayed from the record so a reopened conversation cannot present a scoped answer as a
+    # whole-library one; that would be the same silent lie, just deferred.
+    retrieval_scope: dict[str, Any] | None = None
 
 
 @dataclass(frozen=True)
@@ -278,6 +283,9 @@ def get_conversation(session_id: str) -> ConversationDetail | None:
                 answer=row.answer,
                 sources=_sources_from_json(row.retrieved_chunks_json),
                 created_at=row.created_at,
+                retrieval_scope=(
+                    json.loads(row.retrieval_scope_json) if row.retrieval_scope_json else None
+                ),
             )
             for row in rows
         ]

@@ -8,6 +8,67 @@ Append only — never edit past entries.
 Format: What changed | Why | Rejected alternatives | What it opens
 
 ---
+## 2026-07-20 — F2: query-time folder retrieval scoping + the honesty contract (ADR-025 carve step 2)
+
+**What:** built **F2** — a folder can now scope one chat turn's retrieval. Contract first:
+`docs/specs/feature-corpus-folders-scope.md` (S1–S10). `library.folder_doc_hashes` resolves a
+folder to its non-archived members' `doc_hash`. `pipeline.retrieve_with_scores(..., scope=)`
+scopes **both arms before scoring** — vector via Chroma `$and[keep_for_retrieval≠False,
+doc_hash $in [...]]`, BM25 by rebuilding over the subset of a now-retained `self._bm25_docs` —
+memoised in one slot keyed on the hash set. `chat_controller` gains `ScopeView`,
+`_resolve_scope`, `_scope_note`, a `scope_folder_id` parameter threaded like `overrides`, and
+`TurnResult.scope`. Provenance gains an additive `answer_records.retrieval_scope_json` column.
+API: `ChatRequest.scope_folder_id` + `TurnResultPayload.scope`. Desktop: a composer scope
+selector (in-memory only) and a scope chip on the answer — plus the same chip on reopened
+conversations, replayed from the record via `ConversationTurn.retrieval_scope`.
+
+**Why:** F1 shipped a Library filter and said in-product that chat still searched everything.
+F2 makes that false — and the same honesty rule then points the other way, which is the whole
+content of this increment: a scoped answer that doesn't say it was scoped is indistinguishable
+from a whole-library one, i.e. the `is_archived` failure with a nicer UI.
+
+**Rejected:** (1) **putting the scope inside `RagOverrides`** — the plumbing is identical, but
+`RagOverrides` is ADR-010's governance channel for *locked quality knobs*; a scope is a *content
+filter*, and filing it there would blur exactly the distinction that keeps it out of the eval
+gate (and would render it through `_overrides_note`'s "🧪 Session override", framing a content
+choice as an experiment). (2) **Sending a doc-hash list from the client** — it goes stale between
+a Library edit and the next turn, and would let a caller retrieve an arbitrary set that no folder
+ever contained, which the provenance record would then attest to as "this folder". The id travels;
+the backend resolves. (3) **Falling back to unscoped when the folder is unknown/deleted/empty** —
+the single most important rejection: "I couldn't honour your scope" must never collapse into "I
+searched everything", so an unresolvable scope is a distinct empty `frozenset` all the way down
+and the turn answers honestly with zero sources. (4) **Persisting the selector** (localStorage /
+server-side) — that is ADR-025's rejected global scope: a scope you forgot you set silently
+narrows every future answer. (5) **Folding the scope into `prompt_version_hash`** — it would mint
+a prompt version per folder and pollute every eval join keyed on it.
+
+**Measured before deciding** (`tests/eval/baselines/rg020_scoped_retrieval_cost_2026-07-20.md`,
+live 76-doc / 30,882-chunk index): BM25 subset rebuild ≈20 µs/chunk (622 ms whole corpus · 248 ms
+for 30 docs · 27 ms for 3); Chroma `$in` 136 ms unscoped → 193/232/408 ms for 3/30/76 hashes —
+the cost tracks the **`$in` list length**, not the corpus share. That is what bought the S5 cache.
+**RG-020 partially discharged**; the 10k half stays open and is explicitly *not* claimed.
+
+**Verified:** 17 new tests (`tests/unit/test_pipeline_scope.py` 7 + `tests/integration/
+test_retrieval_scope.py` 10), including the S4 byte-identical guard, the S3 never-widen behaviour
+on deleted/empty/unknown folders, both synthesis paths, scope isolation between turns, the API
+round-trip and the additive-column migration. Full suite **1099 passed / 1 skipped** · ruff ·
+`mypy --strict src` · bandit · `svelte-check` 0/0. **Live on the real corpus ($0, no LLM):**
+unscoped retrieval hit 3 documents of which **2 lay outside** the probe folder; scoped retrieval
+hit only in-folder documents; an empty scope returned 0 sources in 0.2 ms; unscoped retrieval
+still worked afterwards. UI verified through the `window.fetch` SSE mock (**no paid turn**):
+request body carries `scope_folder_id`, chip reads "Searched Retrieval demo only — 3 documents,
+not the whole library", the deleted-folder variant reads "no documents were searched", an
+unscoped turn adds no chip, selector tints only when scoped, light+dark, 375px no overflow, 0
+console errors. Probe folders deleted; DB left at 76 docs / 0 folders.
+
+**Opens:** ⚠ the live DB was **missing this column and `concepts.graph_include`** until
+`init_db()` was run by hand — the API never migrates on startup (`apps/api/CLAUDE.md`), and F2
+moves that gap onto the **answer path**, where it would 500 every turn. Logged as **KI-20**.
+F3 (demo sha-match auto-assign) untouched. `compare_retrieval` (A/B) stays unscoped — stated,
+not built. Multi-folder scopes, persisted per-conversation scope, and scoping the enrichment
+sidecars remain parked (ADR-025).
+
+---
 ## 2026-07-20 — F1: folders end-to-end (CRUD + membership + Library rail), ADR-025 carve step 1
 
 **What:** built **F1** of the ADR-025 carve over the previously dormant `Folder`/`document_folders`

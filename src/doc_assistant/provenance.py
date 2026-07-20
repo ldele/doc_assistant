@@ -79,6 +79,10 @@ class AnswerProvenance:
     session_id: str | None = None
     error: str | None = None
     created_at: datetime | None = None
+    # ADR-025 F2 — the folder scope this answer ran under, or None for the whole library.
+    # {folder_id, folder_name, doc_count}. The integrity requirement is that a scoped answer
+    # can never be mistaken for a whole-library one after the fact.
+    retrieval_scope: dict[str, Any] | None = None
 
     def to_json_dict(self) -> dict[str, Any]:
         """Return a JSON-serialisable dict (datetimes → isoformat strings)."""
@@ -147,6 +151,7 @@ def record_answer(
     latency_ms: float | None = None,
     session_id: str | None = None,
     error: str | None = None,
+    retrieval_scope: dict[str, Any] | None = None,
 ) -> str:
     """Persist one answer record. Returns the new ``id``."""
     # Exclude the transient fields — the wide reviewer-only `full_text` and the 7d join key
@@ -173,6 +178,9 @@ def record_answer(
             token_output=token_output,
             latency_ms=latency_ms,
             error=error,
+            retrieval_scope_json=(
+                json.dumps(retrieval_scope) if retrieval_scope is not None else None
+            ),
         )
         session.add(record)
         session.flush()
@@ -282,6 +290,9 @@ def _row_to_provenance(row: AnswerRecord) -> AnswerProvenance:
         session_id=row.session_id,
         error=row.error,
         created_at=row.created_at,
+        retrieval_scope=(
+            json.loads(row.retrieval_scope_json) if row.retrieval_scope_json else None
+        ),
     )
 
 

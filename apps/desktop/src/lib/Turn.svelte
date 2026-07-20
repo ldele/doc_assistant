@@ -48,6 +48,25 @@
     {#if error}
       <p class="error"><Icon name="triangle-alert" size={15} /> {error}</p>
     {:else if result}
+      {#if result.scope}
+        <!-- ADR-025 F2, non-negotiable: a scoped answer states its scope, ABOVE the answer and
+             outside the collapsed Provenance panel. An answer drawn from part of the corpus that
+             doesn't say so is indistinguishable from one drawn from all of it. -->
+        <div class="scopechip">
+          <Icon name="folder" size={13} />
+          {#if result.scope.folder_name}
+            <span>
+              Searched <strong>{result.scope.folder_name}</strong> only —
+              {result.scope.doc_count} document{result.scope.doc_count === 1 ? '' : 's'}, not the
+              whole library.
+            </span>
+          {:else}
+            <span>
+              Scoped to a folder that no longer exists — <strong>no documents were searched</strong>.
+            </span>
+          {/if}
+        </div>
+      {/if}
       <Markdown source={result.answer} {onCitationClick} {activeCitationN} />
       {#if result.sources.length}
         <details class="sources">
@@ -185,6 +204,19 @@
     color: var(--fg-2);
     font-variant-numeric: tabular-nums;
     text-align: right;
+  }
+  .scopechip {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    margin: 0 0 0.6rem;
+    padding: 0.3rem 0.55rem;
+    border: 1px solid var(--accent);
+    border-radius: 8px;
+    background: color-mix(in srgb, var(--accent) 10%, transparent);
+    color: var(--fg);
+    font-size: 0.76rem;
+    line-height: 1.35;
   }
   .cursor {
     animation: blink 1s steps(2) infinite;

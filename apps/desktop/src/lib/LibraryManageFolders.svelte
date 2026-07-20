@@ -4,10 +4,9 @@
   // which documents belong to it (bulk, searchable). Reuses LibraryManageKeywords' modal shell
   // (scrim + centred dialog, Esc-to-close). Dumb by design — App owns the lists + the API calls.
   //
-  // The honest line at the foot is not decoration (spec D8): F1 ships the Library filter but NOT
-  // retrieval scoping (that is F2), and a user who narrows the Library would otherwise reasonably
-  // assume their next question was narrowed too. That is the is_archived failure ADR-025 exists
-  // to prevent. Delete the line in F2, when it stops being true.
+  // The line at the foot was F1's honesty note ("chat still searches everything"). F2 made it
+  // false, so it now points at the composer scope selector instead of warning about its absence
+  // — which was the point of writing it as a removable statement.
   import { untrack } from 'svelte'
   import type { LibraryDocument, LibraryFolder } from './types'
   import { docLabel } from './library'
@@ -229,10 +228,10 @@
     {/if}
 
     <p class="scopenote">
-      <Icon name="triangle-alert" size={13} />
+      <Icon name="folder" size={13} />
       <span>
-        Folders organise the Library. Chat still searches <strong>every</strong> document —
-        scoping a conversation to a folder is not built yet.
+        A folder organises the Library and can scope a chat turn: pick one beside the composer
+        to search <strong>only</strong> its documents. Scoped answers always say so.
       </span>
     </p>
   </div>

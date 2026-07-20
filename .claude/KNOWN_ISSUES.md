@@ -638,3 +638,27 @@ Migrated from the old `CLAUDE.md` / `README` runtime-quirk notes on 2026-06-20 (
   2026-07-15 / 07-18 / 07-19 batons). Root-caused + resolved same day.
 - **Related:** KI-3 (why the fix avoided `uv sync`); the safe-delete feature is ADR-014;
   `tests/integration/test_document_delete.py`; `tests/unit/test_declared_dependencies.py`.
+
+## KI-20 — additive schema columns never land on a running install; F2 moved that onto the answer path — OPEN (2026-07-20)
+- **Symptom:** on this box, `answer_records.retrieval_scope_json` (ADR-025 F2) **and**
+  `concepts.graph_include` (ADR-018, added 2026-07-07) were both missing from the live
+  `data/library.db` until `python -m doc_assistant.db.migrations` was run by hand on 2026-07-20.
+  The `graph_include` one had been absent for ~2 weeks without anyone noticing.
+- **Cause:** `_ADDITIVE_COLUMNS` is only applied by `init_db()`, which runs on **ingest** and at
+  the frozen-runtime entry — **not** on API startup (`apps/api/CLAUDE.md` records this as a known
+  gap: "a stale DB 500s until an ingest or a manual `python -m doc_assistant.db.migrations` runs").
+  A user who ingests once and then only chats never re-runs it, so every later additive column
+  silently never arrives.
+- **Why F2 escalates it:** until now the additive columns fed **sidecars** (a graph flag, a
+  reviewer tag), so a missing column degraded an enrichment feature. `retrieval_scope_json` is
+  written by `record_answer` on the **core answer path**, so on a stale DB **every chat turn would
+  fail to record** — the provenance write is `contextlib.suppress`-wrapped in human mode but not
+  in the ai path.
+- **Workaround:** run `uv run python -m doc_assistant.db.migrations` after pulling a change that
+  adds a column (done on this box 2026-07-20; 26 existing records read back as unscoped/NULL,
+  which is correct).
+- **Real fix (not built, needs a decision):** call `init_db()` in the API lifespan — it is
+  idempotent and additive, and `create_all` is already how new tables land. The counter-argument
+  is that the API deliberately does not own schema creation; if that stands, the alternative is a
+  startup *check* that refuses to serve (or warns loudly) when the live schema is behind
+  `_ADDITIVE_COLUMNS`, rather than discovering it at the first failed turn.

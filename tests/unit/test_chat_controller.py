@@ -65,6 +65,7 @@ class FakeRAG:
         # ADR-010: every retrieve_with_scores call's (top_k, use_multi_query) args, in order —
         # lets a test assert what actually reached the pipeline without a real one.
         self.retrieve_calls: list[tuple[int, bool | None]] = []
+        self.scope_calls: list[frozenset[str] | None] = []
         # ADR-011 (U1c): the effective provider/model + a set_chat_model spy.
         self.provider = "anthropic"
         self.model = "claude-haiku-4-5-20251001"
@@ -82,9 +83,15 @@ class FakeRAG:
         return question
 
     def retrieve_with_scores(
-        self, query: str, top_k: int = 10, *, use_multi_query: bool | None = None
+        self,
+        query: str,
+        top_k: int = 10,
+        *,
+        use_multi_query: bool | None = None,
+        scope: frozenset[str] | None = None,
     ) -> list[tuple[Document, float]]:
         self.retrieve_calls.append((top_k, use_multi_query))
+        self.scope_calls.append(scope)
         return self._scored
 
     def stream_answer(

@@ -128,7 +128,8 @@ export async function deleteDocument(docId: string): Promise<DeleteResult> {
 }
 
 // Folders (ADR-025 F1, docs/specs/feature-corpus-folders.md). Manual Library organisation over
-// the previously dormant Folder schema. Folders do NOT scope chat retrieval — that is F2.
+// the previously dormant Folder schema. Since F2 a folder can also scope a chat turn's
+// retrieval — see `streamChat`'s `scopeFolderId`.
 
 export async function listFolders(): Promise<LibraryFolder[]> {
   const r = await fetch(`${API_BASE}/api/library/folders`)
@@ -294,11 +295,18 @@ export async function* streamChat(
   sessionId: string,
   overrides?: RagOverrides,
   signal?: AbortSignal,
+  scopeFolderId?: string | null,
 ): AsyncGenerator<SSEvent> {
   const r = await fetch(`${API_BASE}/api/chat`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ text, session_id: sessionId, overrides: overrides ?? null }),
+    body: JSON.stringify({
+      text,
+      session_id: sessionId,
+      overrides: overrides ?? null,
+      // ADR-025 F2 — only the folder id travels; the backend resolves membership per turn.
+      scope_folder_id: scopeFolderId ?? null,
+    }),
     signal,
   })
   if (!r.ok || !r.body) throw new Error(`chat failed: ${r.status}`)

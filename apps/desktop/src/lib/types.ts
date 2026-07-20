@@ -39,6 +39,19 @@ export interface TurnResult {
   usage_md: string
   citation_note_md: string
   download_path: string | null
+  // ADR-025 F2 — set when the turn searched only one folder; null = the whole library.
+  // Whenever this is set the UI MUST say so: an answer drawn from a subset that doesn't
+  // announce it is the failure the folders feature exists to prevent.
+  scope: TurnScope | null
+}
+
+// The retrieval scope a turn ran under. `folder_name` is null when the folder was deleted
+// before the turn ran — the turn then searched nothing rather than everything.
+// Mirrors apps/api/models.py::ScopePayload.
+export interface TurnScope {
+  folder_id: string
+  folder_name: string | null
+  doc_count: number
 }
 
 export interface Health {
@@ -73,6 +86,8 @@ export interface ConversationTurn {
   question: string
   answer: string
   sources: ConversationSource[]
+  // ADR-025 F2 — replayed from the record so a reopened scoped answer still says it was scoped.
+  scope: TurnScope | null
 }
 
 export interface ConversationDetail {
@@ -161,7 +176,7 @@ export interface LibraryDocument {
 }
 
 // A Library folder (ADR-025 F1, docs/specs/feature-corpus-folders.md). Organises the Library
-// only — folders do NOT scope chat retrieval; that is F2. `parent_id` is always null in v1
+// and, since F2, a chat turn's retrieval scope. `parent_id` is always null in v1
 // (folders are flat, spec D1); `doc_count` excludes archived documents, matching the grid.
 // Mirrors apps/api/models.py::LibraryFolderPayload.
 export interface LibraryFolder {

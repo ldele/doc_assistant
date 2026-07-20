@@ -67,7 +67,12 @@ class FakeRAG:
         return question
 
     def retrieve_with_scores(
-        self, query: str, top_k: int = 10, *, use_multi_query: bool | None = None
+        self,
+        query: str,
+        top_k: int = 10,
+        *,
+        use_multi_query: bool | None = None,
+        scope: frozenset[str] | None = None,
     ) -> list[tuple[Document, float]]:
         return self._scored
 

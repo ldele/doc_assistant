@@ -32,6 +32,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Literal
 
+import structlog
 from langchain_core.documents import Document
 
 from doc_assistant import app_settings, compare, conversations, export
@@ -54,6 +55,7 @@ from doc_assistant.knowledge.epistemics import (
     load_marked_chunks,
     markers_for_parent,
 )
+from doc_assistant.library import folder_doc_hashes, get_folder
 from doc_assistant.pipeline import RAGPipeline, format_citation
 from doc_assistant.prompts import ANSWER_PROMPT
 from doc_assistant.provenance import (
@@ -77,6 +79,8 @@ from doc_assistant.synthesis import (
     segment_claims,
 )
 from doc_assistant.tracking import TokenCounter
+
+log = structlog.get_logger(__name__)
 
 # ============================================================
 # Session state (ADR-3) — caller-owned, injected into every call
@@ -118,6 +122,24 @@ class RagOverrides:
 # ============================================================
 # View models (pure render payload — no UI framework types)
 # ============================================================
+
+
+@dataclass
+class ScopeView:
+    """The retrieval scope one turn ran under (ADR-025 F2) — render-ready.
+
+    Present only on a scoped turn; ``None`` on ``TurnResult`` means the whole library. This is
+    a **content filter** (which documents), not a quality knob, which is why it rides beside
+    ``RagOverrides`` rather than inside it (docs/specs/feature-corpus-folders-scope.md, S1).
+
+    ``folder_name is None`` means the folder was deleted between the user picking it and the
+    turn running: ``doc_count`` is then 0 and the turn honestly retrieves nothing rather than
+    quietly widening to every document (S3).
+    """
+
+    folder_id: str
+    folder_name: str | None
+    doc_count: int
 
 
 @dataclass
@@ -174,6 +196,10 @@ class TurnResult:
     # None otherwise). Lets the renderer attach a download widget without re-deriving
     # dispatch — preserves the original /export behaviour across the UI split.
     download_path: Path | None = None
+    # ADR-025 F2 — the retrieval scope this turn ran under; None = the whole library. The
+    # renderer MUST surface this whenever it is set: an answer drawn from a subset of the
+    # corpus that doesn't say so is the failure this feature was built to prevent.
+    scope: ScopeView | None = None
 
 
 # ============================================================
@@ -276,6 +302,65 @@ def _overrides_note(
     if not diffs:
         return ""
     return "\n\n🧪 **Session override (this answer only):** " + " · ".join(diffs)
+
+
+def _resolve_scope(
+    scope_folder_id: str | None,
+) -> tuple[frozenset[str] | None, ScopeView | None]:
+    """Resolve a folder id into ``(doc_hash scope, ScopeView)`` for one turn (ADR-025 F2).
+
+    ``None`` in, ``(None, None)`` out — the unscoped path, byte-identical to pre-F2.
+
+    A folder that is unknown, deleted, or empty resolves to an **empty** frozenset, never to
+    ``None``: the caller must then retrieve nothing. Collapsing "I couldn't honour your scope"
+    into "I searched everything" is precisely the silent-lie failure this feature exists to
+    prevent, so the two cases are kept structurally distinct all the way down.
+
+    A resolution failure (a broken DB read) is treated the same way — empty, not unscoped.
+    """
+    if scope_folder_id is None:
+        return None, None
+    try:
+        hashes = folder_doc_hashes(scope_folder_id)
+        folder = get_folder(scope_folder_id)
+    except Exception as e:  # pragma: no cover - defensive; a scope must never widen on error
+        log.warning("scope_resolve_failed", folder_id=scope_folder_id, error=str(e))
+        return frozenset(), ScopeView(folder_id=scope_folder_id, folder_name=None, doc_count=0)
+    if folder is None:
+        log.warning("scope_folder_missing", folder_id=scope_folder_id)
+    return (
+        frozenset(hashes),
+        ScopeView(
+            folder_id=scope_folder_id,
+            folder_name=folder.name if folder is not None else None,
+            doc_count=len(hashes),
+        ),
+    )
+
+
+def _scope_dict(scope: ScopeView | None) -> dict[str, Any] | None:
+    """``ScopeView`` → the JSON shape persisted in ``answer_records.retrieval_scope_json``.
+    ``None`` stays ``None`` so an unscoped turn writes NULL, exactly like every pre-F2 row."""
+    if scope is None:
+        return None
+    return {
+        "folder_id": scope.folder_id,
+        "folder_name": scope.folder_name,
+        "doc_count": scope.doc_count,
+    }
+
+
+def _scope_note(scope: ScopeView | None) -> str:
+    """Provenance-card line naming the scope. ``""`` on an unscoped turn, so the default turn
+    stays byte-identical (the turn-parity test pins this)."""
+    if scope is None:
+        return ""
+    where = f"**{scope.folder_name}**" if scope.folder_name else "a folder that no longer exists"
+    return (
+        f"\n\n🔎 **Retrieval scope (this answer only):** {where} — "
+        f"{scope.doc_count} document{'' if scope.doc_count == 1 else 's'} searched, "
+        "not the whole library."
+    )
 
 
 def _format_review_block(review: ReviewResult | None) -> str:
@@ -614,14 +699,24 @@ class ChatController:
         return (f"📄 Exported {len(turns)} turn(s) — {flavour}. Saved to `{path}`.", path)
 
     def handle_message(
-        self, session: Session, text: str, *, overrides: RagOverrides | None = None
+        self,
+        session: Session,
+        text: str,
+        *,
+        overrides: RagOverrides | None = None,
+        scope_folder_id: str | None = None,
     ) -> Iterator[TurnEvent]:
         """Drive one turn. Ports ``on_message``'s dispatch order verbatim:
         (a) slash command, (b) pending claim-edit, (c) library query, (d) RAG path.
 
         ``overrides`` (ADR-010) only affects the RAG path — commands/library queries/claim
         edits have no retrieval or synthesis-mode knobs to override. Default ``None`` is
-        byte-identical to before this feature existed."""
+        byte-identical to before this feature existed.
+
+        ``scope_folder_id`` (ADR-025 F2) restricts retrieval to one folder's documents for this
+        turn only — request-scoped like ``overrides``, never stored on the session: a scope the
+        backend remembered would be a scope the user could forget (spec S9). Same RAG-path-only
+        carve."""
         # --- Slash commands ---
         parsed = parse_command(text)
         if parsed is not None:
@@ -663,7 +758,7 @@ class ChatController:
             return
 
         # --- RAG pipeline ---
-        yield from self._handle_rag(session, text, overrides)
+        yield from self._handle_rag(session, text, overrides, scope_folder_id)
 
     # -- internal ---------------------------------------------------------
 
@@ -738,7 +833,11 @@ class ChatController:
             return  # advisory markers must never break a turn
 
     def _handle_rag(
-        self, session: Session, text: str, overrides: RagOverrides | None = None
+        self,
+        session: Session,
+        text: str,
+        overrides: RagOverrides | None = None,
+        scope_folder_id: str | None = None,
     ) -> Iterator[TurnEvent]:
         rag = self.rag
         history = session.history
@@ -782,6 +881,13 @@ class ChatController:
             eff_reviewer_evidence_chars,
         )
 
+        # --- ADR-025 F2: resolve the retrieval scope ONCE for the turn. Membership lives in
+        # SQLite and is editable at any moment, so the hash set is read here and then frozen —
+        # the answer, the chip, and the provenance record all describe the same set. An unknown
+        # or empty folder yields an empty scope and an honest zero-source turn; it never falls
+        # back to the whole library (spec S3). ---
+        scope, scope_view = _resolve_scope(scope_folder_id)
+
         pre_in, pre_out = counter.input_tokens, counter.output_tokens
         turn_start = time.monotonic()
 
@@ -795,6 +901,7 @@ class ChatController:
             standalone,
             top_k=eff_top_k,
             use_multi_query=(overrides.use_multi_query if overrides else None),
+            scope=scope,
         )
         yield Step("Searching documents", f"Found {len(scored)} relevant passages")
 
@@ -833,6 +940,7 @@ class ChatController:
                     turn_start=turn_start,
                     eff_top_k=eff_top_k,
                     overrides_note=overrides_note,
+                    scope=scope_view,
                 )
             )
             return
@@ -872,6 +980,7 @@ class ChatController:
                 token_output=turn_out,
                 latency_ms=latency_ms,
                 session_id=session.session_id,
+                retrieval_scope=_scope_dict(scope_view),
             )
             prov = AnswerProvenance(
                 id=record_id,
@@ -932,7 +1041,7 @@ class ChatController:
         except Exception as e:
             # Never let provenance failure break the answer.
             provenance_block = f"\n\n_⚠ Provenance capture failed: {e}_"
-        provenance_block += overrides_note
+        provenance_block += overrides_note + _scope_note(scope_view)
 
         sources_block = _sources_block(sources)
         usage_block = self._usage_block(
@@ -1006,6 +1115,7 @@ class ChatController:
                 sources_md=sources_block,
                 usage_md=usage_block,
                 citation_note_md=citation_block,
+                scope=scope_view,
             )
         )
 
@@ -1022,6 +1132,7 @@ class ChatController:
         turn_start: float,
         eff_top_k: int = TOP_K,
         overrides_note: str = "",
+        scope: ScopeView | None = None,
     ) -> TurnResult:
         """``synthesis_mode=human`` (locked default or a per-turn ADR-010 override) —
         evidence only; no interpretation call. Records provenance silently (no card shown),
@@ -1038,6 +1149,7 @@ class ChatController:
                 use_parent_child=USE_PARENT_CHILD,
                 latency_ms=(time.monotonic() - turn_start) * 1000.0,
                 session_id=session.session_id,
+                retrieval_scope=_scope_dict(scope),
             )
         self._append_export_turn(
             session,
@@ -1056,6 +1168,9 @@ class ChatController:
                 "🧑 **Human synthesis mode** — evidence only; the interpretation is yours.\n\n"
                 + render_evidence_markdown(retrieved_chunks)
                 + overrides_note
+                # Human mode renders no provenance card, so the scope note rides the answer —
+                # otherwise a scoped evidence-only turn would state its scope nowhere.
+                + _scope_note(scope)
             ),
             mode="human",
             sources=sources,
@@ -1068,6 +1183,7 @@ class ChatController:
             sources_md="",
             usage_md="",
             citation_note_md="",
+            scope=scope,
         )
 
     def _usage_block(

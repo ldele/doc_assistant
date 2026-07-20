@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-07-19 (ADR-023: knowledge/ subpackage — concept graph · keywords · wiki · gaps · epistemics) · class: living -->
+<!-- status: active · updated: 2026-07-20 (ADR-024: evals/ results folder pointer) · class: living -->
 
 # Architecture
 
@@ -224,7 +224,7 @@ tests/
 
 Unit tests run on every commit (pre-commit). Full suite (unit + integration) runs in CI — free, no API calls. Eval harness runs manually at phase checkpoints and costs money (Anthropic API for the LLM judge).
 
-The testing strategy — what each tier and each eval scorer measures, why, and the reproducible public-corpus benchmark — is documented in [`tests/eval/TESTING.md`](../tests/eval/TESTING.md).
+The testing strategy — what each tier and each eval scorer measures, why, and the reproducible public-corpus benchmark — is documented in [`tests/eval/TESTING.md`](../tests/eval/TESTING.md). The benchmark *results* write-ups (headline numbers, sweeps, reproduction) live in the top-level [`evals/`](../evals/README.md) folder (ADR-024); the underlying run data stays in `tests/eval/baselines/`.
 
 Run commands:
 - `uv run pytest tests/unit/ tests/integration/` — free, fast, CI default

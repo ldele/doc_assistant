@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-07-19 · class: append-only -->
+<!-- status: active · updated: 2026-07-20 · class: append-only -->
 
 # DEVLOG — doc_assistant
 
@@ -6,6 +6,38 @@ Real-time development log. One entry per logical change.
 Append only — never edit past entries.
 
 Format: What changed | Why | Rejected alternatives | What it opens
+
+---
+## 2026-07-20 — Docs: benchmarks split out of README into a top-level `evals/` folder (ADR-024)
+
+**What:** New top-level `evals/README.md` now holds the full benchmark write-ups — the headline
+public benchmark (table + interpretation + the sbert_motivation judge-flakiness caveat), the
+`bge-base` vs `specter2` embedder comparison, the chunk-size sweep, the BM25/vector-weight sweep,
+and both reproduction guides — moved verbatim from the README's ~95-line Benchmarks section
+(links re-based `../`), plus a "where the eval pieces live" map and the public-10 vs private-35
+question-set split. The README's Benchmarks section shrinks to the headline 3-scorer table + one
+interpretation paragraph + links (anchor `#benchmarks` kept — both in-README references still
+resolve); layout tree gains the `evals/` line; the Status embedder note and the Running-tests
+comment now point into `evals/`. `docs/architecture.md` gains a one-sentence pointer.
+Decision recorded as `docs/decisions/ADR-024-evals-results-folder.md` + index row.
+
+**Why:** the README is the door (readme-writer), and ~95 of its 413 lines were archive-depth
+benchmark detail; the eval story also had no front door — harness in `src/doc_assistant/eval/`,
+strategy/cases/baselines in `tests/eval/`, narrative only in the README. User directive named the
+split and questioned the folder name; `evals/` over `benchmarks/` because "benchmarks" reads as
+performance and the repo's own vocabulary is *eval* everywhere.
+
+**Rejected:** `benchmarks/` as the name (vocabulary, above); moving `tests/eval/` wholesale into
+the new folder (61 files reference those paths — script defaults, the CI ignore, code comments,
+frozen append-only records; all churn, no gain); `docs/evals/` (the folder is audience-facing —
+top-level GitHub visibility is the point). Full ledger: ADR-024.
+
+**Opens:** `evals/` should accumulate future result write-ups (baseline data still goes to
+`tests/eval/baselines/` per the locked-settings rule — narrative vs data). Separately scoped, not
+built: a `tier: demo` extension of the public corpus from the 30papers.com list (the rumoured
+Sutskever→Carmack 27) — ~17–18 are arXiv-pinnable; must stay OUT of the verified-10 benchmark
+regime (extra distractor docs change retrieval difficulty and would invalidate every committed
+baseline), so it needs a downloader flag + manifest tier before any papers are added.
 
 ---
 ## 2026-07-19 — Verify-the-app pass: root-caused the "6 pre-existing send2trash failures" → a live 500 bug (KI-22) + a dependency-presence guard test

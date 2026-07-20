@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-07-19 · class: living -->
+<!-- status: active · updated: 2026-07-20 · class: living -->
 
 # Decisions — index
 
@@ -33,3 +33,4 @@ the locked retrieval/chunking settings that predate per-file ADRs.
 | [ADR-021](decisions/ADR-021-adopt-cpc-big-project-layout.md) | cpc big-project layout: `AGENTS.md` entry + module `CLAUDE.md` + vendored gates | accepted |
 | [ADR-022](decisions/ADR-022-docs-system-rationalization.md) | Docs system rationalized for scale (this index; monolith archived; DEVLOG inverted) | accepted |
 | [ADR-023](decisions/ADR-023-knowledge-subpackage.md) | Backend restructure: `knowledge/` subpackage for concept graph / keywords / wiki / gaps | accepted |
+| [ADR-024](decisions/ADR-024-evals-results-folder.md) | Top-level `evals/` = benchmark-results home (README keeps the headline; harness/baselines stay put) | accepted |

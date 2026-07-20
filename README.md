@@ -9,7 +9,7 @@ Not a chatbot wrapper. A fluent answer with a confident citation is not the same
 ## Engineering highlights
 
 - **Settings are locked by experiment, not intuition.** TOP_K, parent-child retrieval, chunk sizes, and the BM25/vector mix were each picked by measuring alternatives with the in-repo eval harness. The reasoning behind each non-obvious choice — and what didn't make the cut — is indexed in [`docs/decisions.md`](docs/decisions.md) (per-decision ADRs; the early design rationale is preserved verbatim in [`docs/archive/decisions-monolith.md`](docs/archive/decisions-monolith.md)).
-- **Benchmarks anyone can re-run.** The public eval set runs over a corpus rebuilt from arXiv — 5 trials, reported as mean ± trial-mean std, caveats stated alongside (see [Benchmarks](#benchmarks)). What each scorer measures and why: [`tests/eval/TESTING.md`](tests/eval/TESTING.md).
+- **Benchmarks anyone can re-run.** The public eval set runs over a corpus rebuilt from arXiv — 5 trials, reported as mean ± trial-mean std, caveats stated alongside (headline: [Benchmarks](#benchmarks); full results + reproduction: [`evals/`](evals/README.md)). What each scorer measures and why: [`tests/eval/TESTING.md`](tests/eval/TESTING.md).
 - **A research-integrity layer.** Every answer carries a provenance record (retrieved chunks, model, cost); a separate-context reviewer agent re-grades flagged answers; confidence signals keep the UI quiet on clean ones — AI-assisted output that stays auditable.
 - **Growth by addition.** Derived data (citations, figures, tables, keywords, doc vectors, the wiki) ships as sidecar modules with idempotent CLI runners that never mutate the chunk store — new capability is a new module, not a rewrite.
 - **A local RAG sandbox.** The embedder, chunking, the retrieval candidate pool (`CANDIDATE_K`) and final cut (`TOP_K`), parent-child retrieval, and the LLM backend (Claude API or local Ollama) are config-swappable, with the eval harness on hand to measure what each change does.
@@ -214,6 +214,7 @@ src/doc_assistant/    # core library — the RAG answer path lives at the top le
 apps/                 # UIs — thin shells, no business logic (FastAPI/SSE · Tauri/Svelte · CLI)
 scripts/              # idempotent enrichment/eval runners + build tooling
 tests/                # unit, integration, eval harness cases + committed baselines
+evals/                # benchmark results — the write-ups + how to reproduce each number
 docs/                 # architecture, ADRs (docs/decisions/), specs, roadmap, this demo's GIF
 data/                 # runtime data (sources, caches, vector stores, SQLite) — not committed
 ```
@@ -235,7 +236,7 @@ uv run python -m scripts.run_eval
 # With LLM judge (Claude Haiku, ~$0.10 for 35 cases)
 uv run python -m scripts.run_eval --with-llm-judge
 
-# Public eval — 10 cases on the RAG-literature demo corpus (see Reproducing)
+# Public eval — 10 cases on the RAG-literature demo corpus (see evals/README.md)
 uv run python -m scripts.download_corpus           # fetches 10 papers from arXiv
 uv run python -m doc_assistant.ingest
 uv run python -m scripts.run_eval --cases tests/eval/cases.public.yaml --with-llm-judge
@@ -263,11 +264,7 @@ docker compose down -v         # stop, delete model cache volume
 
 ## Benchmarks
 
-Quality is measured, not asserted. The eval harness ([`src/doc_assistant/eval/`](src/doc_assistant/eval/)) runs the full RAG pipeline — retrieve, rerank, generate — over a fixed question set and scores each answer on retrieval and answer-quality signals. The full strategy (test tiers, what each scorer measures and why, the reproducibility stance) is documented in **[`tests/eval/TESTING.md`](tests/eval/TESTING.md)**.
-
-The headline benchmark is **reproducible by anyone**: a public demo corpus of the 10 arXiv papers behind this project's own methods (RAG, dense retrieval, sentence embeddings, the BGE and SPECTER2 embedders, BERT re-ranking, ColBERT, HyDE, LLM-as-a-judge, AI Usage Cards). Nothing is re-hosted — [`corpus_manifest.yaml`](tests/eval/corpus_manifest.yaml) pins each paper's arXiv ID + SHA-256 and a script fetches the PDFs.
-
-5 trials on `bge-base` (`--repeat 5`), reported as mean ± trial-mean std:
+Quality is measured, not asserted. The eval harness ([`src/doc_assistant/eval/`](src/doc_assistant/eval/)) runs the full RAG pipeline — retrieve, rerank, generate — over a fixed question set, and the headline benchmark is **reproducible by anyone**: a public demo corpus of the 10 arXiv papers behind this project's own methods, pinned by arXiv ID + SHA-256 and fetched by a script. 5 trials on `bge-base` (`--repeat 5`), reported as mean ± trial-mean std:
 
 | Scorer | Mean (n=5) | Trial-mean std | What it measures |
 |---|---:|---:|---|
@@ -275,93 +272,15 @@ The headline benchmark is **reproducible by anyone**: a public demo corpus of th
 | `contains_all` (0-1) | **0.927** | 0.034 | answer surfaces the required facts |
 | `llm_judge` (1-5) | **3.894** | 0.075 | reference-graded answer quality |
 
-`citation_overlap` is **1.000 with zero variance** — retrieval depends only on the deterministic index, so it cites the right paper in all 10 cases, every trial. `contains_all` scores the stochastic generated answer, so single runs wobble (0.88–0.98) around a stable 0.927 mean. `llm_judge` **3.894/5** suggests the answers hold up — the `contains_all` shortfall looks more like phrasing than missing content. Cases are deliberately strict, not tuned to score 1.0. Committed reference results live in [`tests/eval/baselines/`](tests/eval/baselines/).
+`citation_overlap` is **1.000 with zero variance** — retrieval depends only on the deterministic index, so it cites the right paper in all 10 cases, every trial; the generated-answer scorers wobble run-to-run around stable means. Cases are deliberately strict, not tuned to score 1.0.
 
-One honest caveat: the judge call on `sbert_motivation` is flaky — skipped in 3 of 5 trials (API timeout / JSON parse), so the `llm_judge` mean is over 47 of 50 scores.
-
-### Embedder comparison — `bge-base` vs `specter2`
-
-`bge-base` is the default because it performed better here — though the better embedder
-depends on the corpus and the setup (these runs index full-document markdown chunks,
-not just abstracts). `specter2` is tuned for scientific papers, which the public corpus
-is, so it seemed worth a look. Same corpus, `--repeat 5`:
-
-| Scorer | `bge-base` | `specter2` |
-|---|---:|---:|
-| `citation_overlap` | 1.000 ± 0.000 | 0.900 ± 0.000 |
-| `contains_all` | 0.927 ± 0.027 | 0.800 ± 0.031 |
-| `llm_judge` | 3.738 ± 0.093 | 3.447 ± 0.090 |
-
-Reproduce the `specter2` arm (the `bge-base` arm is the default run):
-
-```bash
-EMBEDDING_MODEL=specter2 uv run python -m doc_assistant.ingest
-EMBEDDING_MODEL=specter2 uv run python -m scripts.run_eval \
-    --cases tests/eval/cases.public.yaml --with-llm-judge --repeat 5
-```
-
-Numbers + run ids: [`tests/eval/baselines/bge_vs_specter2_public_2026-06-04.md`](tests/eval/baselines/bge_vs_specter2_public_2026-06-04.md).
-
-### Chunk sizes
-
-The parent/child chunk sizes are the locked default `2000/200 · 400/50`. A 6-config sweep on
-the public corpus (`--repeat 3`, with judge) checked whether any alternative beats them —
-**none does**: the default is tied-best on `contains_all` (0.933) and best on `llm_judge`
-(3.951), and `citation_overlap` saturates at 1.000 across every config. A larger parent
-(3000/300) was weakest on the judge; a smaller `256/32` child matched the default with lower
-variance but didn't exceed it. So the defaults stand on measurement, not assumption. Full grid
-+ run ids: [`tests/eval/baselines/chunking_sweep_public_2026-06-06.md`](tests/eval/baselines/chunking_sweep_public_2026-06-06.md).
-
-### BM25 / vector mix
-
-The hybrid split `BM25 0.4 / vector 0.6` was the last locked retrieval setting never measured. A
-full sweep of the BM25 arm's weight (`0.0`→`1.0`) settles it: **post-rerank recall is flat across the
-entire range** — no weight beats the default, which stays `0.4/0.6`. The result is structural, not
-just an artefact of one corpus: the ensemble hands the cross-encoder the *whole* candidate pool from
-both arms, so the reranker re-scores everything and the weight only reorders candidates it then
-re-sorts — the final top-K doesn't move. (The *pre*-rerank candidate order *does* shift with the
-weight, which is how the measurement is shown to discriminate — a flat curve from a live knob, not a
-dead one.) Full method, the structural explanation, and when the weight *would* matter:
-[`tests/eval/baselines/bm25_weight_sweep_2026-07-03.md`](tests/eval/baselines/bm25_weight_sweep_2026-07-03.md).
-
-### Reproducing
-
-[`tests/eval/corpus_manifest.yaml`](tests/eval/corpus_manifest.yaml) lists the 10 papers (pinned arXiv versions + SHA-256); `download_corpus.py` fetches them from arXiv (download-only, so arXiv's license is not an issue). [`tests/eval/cases.public.yaml`](tests/eval/cases.public.yaml) is a standalone 10-case set written against them.
-
-```bash
-uv run python -m scripts.download_corpus            # 10 PDFs from arXiv -> data/sources/
-uv run python -m scripts.download_corpus --verify-only  # checksum against the manifest
-uv run python -m doc_assistant.ingest
-uv run python -m scripts.run_eval --cases tests/eval/cases.public.yaml --with-llm-judge
-```
-
-`--with-llm-judge` adds the reference-graded answer-quality score (Claude Haiku); it needs an `ANTHROPIC_API_KEY` in `.env` and costs a few cents for 10 cases. Drop the flag for a free, deterministic-only run (retrieval + keyword scorers).
-
-**Where runs are stored.** Every `run_eval` invocation appends to `data/eval.duckdb` — a binary working log, **gitignored** and regenerated on first run, not a source artifact. Committed, human-readable reference results live in [`tests/eval/baselines/`](tests/eval/baselines/) — diff a new run against those, not the binary DB. The harness is structured for extraction: every file except `adapters.py` is project-agnostic and can be lifted into a standalone repo.
-
-**Chunking sweep** (re-embeds the corpus per config — slow; GPU recommended) — the result is
-under [Chunk sizes](#chunk-sizes) above; this reproduces it:
-
-```bash
-uv run python -m scripts.sweep_chunking --dry-run            # print the grid + commands
-uv run python -m scripts.sweep_chunking --cases tests/eval/cases.public.yaml --repeat 3 --with-llm-judge
-```
-
-**BM25 / vector weight sweep** (retrieval-only — free, deterministic, no re-embed) — the result is
-under **BM25 / vector mix** above:
-
-```bash
-uv run python -m scripts.sweep_bm25_weight --dry-run                              # print the grid
-uv run python -m scripts.sweep_bm25_weight --cases tests/eval/cases.public.yaml   # sweep on the public corpus
-# or gate a single weight through the full harness:
-uv run python -m scripts.run_eval --cases tests/eval/cases.public.yaml --bm25-weight 0.5 --with-llm-judge
-```
+The full results live in **[`evals/`](evals/README.md)** — the embedder comparison (`bge-base` vs `specter2`), the chunk-size sweep, the BM25/vector-weight sweep, the honest caveats, and step-by-step reproduction. What each scorer measures and why: [`tests/eval/TESTING.md`](tests/eval/TESTING.md); committed reference baselines: [`tests/eval/baselines/`](tests/eval/baselines/).
 
 ## Status
 
 **Phase 6 + 7 in progress (as of 2026-07-19).** Shipped: core RAG (Phase 1); measured quality + eval harness (Phases 2 & 5); document store + the redesigned library workspace — grid/list browsing, metadata editing, safe delete, selective ingestion (Phase 3 + L4–L7/S1–S2); citation graph + doc-similarity edges (Phase 4); the research-integrity layer — provenance card, dual evidence/interpretation answers, a separate-context LLM reviewer; the provider-agnostic LLM layer with live in-app provider/model switching (Claude API *or* fully-local Ollama); figures + Marker tables; the corpus wiki; and the full concept-graph stack — curated vocabulary (opt-in graph scope, ADR-018), deterministic Node-A skeleton + confined Node-B LLM stance pass (validated: ADR-008), year-aware `superseded_trend` gating, live answer-time markers, gap detection (deterministic floor + quarantined LLM ceiling), and the desktop graph view. **1,015 tests · ruff / mypy --strict / bandit clean.**
 
-`bge-base` is the default embedder — it performed better in our comparisons, though the better choice depends on the corpus (see [Benchmarks](#benchmarks)).
+`bge-base` is the default embedder — it performed better in our comparisons, though the better choice depends on the corpus (see the [embedder comparison](evals/README.md#embedder-comparison--bge-base-vs-specter2) in `evals/`).
 
 **Recently:** the codebase was restructured for scale (module-scoped agent context, the `knowledge/` subpackage, a rationalized docs system — ADR-021/022/023), and a dedicated **scale-robustness review** audited the whole knowledge layer against a 0-documents-to-10,000-documents contract ([`docs/REVIEW_2026-07-19_scale-robustness.md`](docs/REVIEW_2026-07-19_scale-robustness.md)). **Next:** the review's P0 robustness fixes, then the concept-taxonomy layer ([`ADR-019`](docs/decisions/ADR-019-concept-taxonomy-classification-layer.md), designed). Full roadmap: [`docs/ROADMAP.md`](docs/ROADMAP.md).
 

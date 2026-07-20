@@ -147,6 +147,11 @@ cd apps/desktop && npm install && npm run dev    # dev UI (or: npx tauri dev for
 uv run python apps/cli.py
 ```
 
+> **No corpus of your own yet? Try it on a ready-made one:** `uv run python -m scripts.download_corpus --demo`
+> fetches 28 classic AI papers from arXiv into `data/sources/` — the public eval corpus plus the arXiv
+> subset of the rumoured [Sutskever→Carmack reading list](https://30papers.com/) — then ingest as above.
+> (Benchmark numbers always come from the 10-paper eval corpus alone; see [`evals/`](evals/README.md).)
+
 To rebuild from scratch (after changing chunking strategy, for example):
 
 ```bash

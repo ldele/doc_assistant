@@ -8,6 +8,48 @@ Append only — never edit past entries.
 Format: What changed | Why | Rejected alternatives | What it opens
 
 ---
+## 2026-07-20 — Public corpus: 18-paper demo collection (Sutskever→Carmack list) + `download_corpus --demo`; verified-10 regime pinned by a guard test
+
+**What:** `tests/eval/corpus_manifest.yaml` gains a **`collection: demo`** section — the 18
+arXiv-pinnable papers of the rumoured Sutskever→Carmack reading list (30papers.com): ResNet +
+identity mappings, dilated convs, RNN regularization, Deep Speech 2, Order Matters, Bahdanau
+attention, Pointer Networks, the Transformer, NTM, relation nets ×2, MPNN, scaling laws, GPipe,
+the coffee automaton, VLAE, and the Grünwald MDL tutorial (old-style id `math/0406077`). Every
+entry pinned the honest way: ids + latest versions verified against the arXiv API, then **each
+pinned-version PDF actually downloaded** (scratchpad, stdlib urllib + truststore through the
+corporate proxy — the KI-10-addendum transport; 3 s spacing) and SHA-256 + byte-size recorded;
+**18/18 re-verified through the script's own `--verify-only` path** (0 mismatches).
+`scripts/download_corpus.py`: new pure `_selected()` + **`--demo` flag** (default selection
+unchanged = the eval 10), a 3 s politeness sleep between real fetches, and an inform-don't-block
+summary line when demo entries are excluded. **New guard
+`tests/unit/test_download_corpus_selection.py` (5 tests)** pins the default selection to exactly
+the verified-10 and every demo entry to `referenced_by_eval: false`. Docs: README Usage gains the
+"try it on a ready-made corpus" note; `evals/README.md` + `tests/eval/corpus/README.md` state the
+demo collection is never part of the benchmark regime. Unit suite **841 passed**; ruff clean;
+`docs_check --strict` 0/0.
+
+**Why:** the 2026-07-20 evals-split session scoped this (ADR-024 "Opens"): the app demos better
+on a bigger, famous corpus (concept graph, wiki, gaps), but the verified-10 benchmark regime must
+stay closed — extra corpus documents are retrieval distractors, so demo papers must be opt-in and
+excluded from every published number. The list itself: zero overlap with the eval 10 (RAG methods
+vs DL classics), all freely downloadable, nothing re-hosted.
+
+**Rejected:** `tier: demo` (the chip spec's literal wording) — in the real schema `tier` is
+*source provenance* (`arxiv` vs the forward-compat `committed`), so membership got its own
+explicit `collection` field with absent = eval (pre-demo entries untouched, byte-identical);
+reusing `referenced_by_eval` as the selector (conflates "a case cites it" with "in the eval
+corpus" — a deliberate distractor paper would break the equivalence); the 9 non-arXiv items
+(AlexNet, Hinton MDL, Cover–Thomas chapter, Legg thesis, CS231n, blog posts) — noted in the
+manifest as ingest-as-HTML candidates, not silently fudged in.
+
+**Opens:** running `--demo` then a benchmark run on the same index produces non-comparable
+numbers — the docs say so, but nothing *mechanically* stops an eval run over a demo-polluted
+index (would need an index-composition fingerprint in the eval harness; noted, not built). The
+HTML items (Karpathy/Olah/Aaronson posts, CS231n) would exercise the HTML ingest path if ever
+wanted. arXiv re-renders make SHA mismatches warnings by design — if one fires later, re-pin and
+note it here.
+
+---
 ## 2026-07-20 — Docs: benchmarks split out of README into a top-level `evals/` folder (ADR-024)
 
 **What:** New top-level `evals/README.md` now holds the full benchmark write-ups — the headline

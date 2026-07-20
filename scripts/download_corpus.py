@@ -19,9 +19,20 @@ bundled file from ``tests/eval/corpus/`` instead of downloading) for any future
 CC-licensed paper that can be shipped in-repo. The current manifest commits
 nothing.
 
+The manifest carries two collections. The **eval** collection (the default, and
+the only one fetched without a flag) is the verified-10 benchmark corpus that
+``tests/eval/cases.public.yaml`` and every committed baseline in
+``tests/eval/baselines/`` were authored against — it must stay closed, because
+extra corpus documents are retrieval distractors that change benchmark
+difficulty. The **demo** collection (``collection: demo``, fetched only with
+``--demo``) adds classic deep-learning papers from the rumoured
+Sutskever->Carmack reading list (30papers.com) for exploring the app on a
+bigger, richer corpus; it is never part of the benchmark regime.
+
 Usage::
 
-    python -m scripts.download_corpus               # fetch the corpus -> data/sources/
+    python -m scripts.download_corpus               # eval corpus (10 PDFs) -> data/sources/
+    python -m scripts.download_corpus --demo        # eval + demo collections (28 PDFs)
     python -m scripts.download_corpus --verify-only # checksum what's already on disk
     python -m scripts.download_corpus --dry-run     # print the plan, fetch nothing
 """
@@ -32,9 +43,11 @@ import argparse
 import hashlib
 import shutil
 import sys
+import time
 import urllib.error
 import urllib.request
 from pathlib import Path
+from typing import Any
 
 import yaml
 
@@ -46,6 +59,18 @@ if sys.platform == "win32" and hasattr(sys.stdout, "reconfigure"):
 MANIFEST = PROJECT_ROOT / "tests" / "eval" / "corpus_manifest.yaml"
 COMMITTED_DIR = PROJECT_ROOT / "tests" / "eval" / "corpus"
 _UA = {"User-Agent": "doc_assistant-corpus-fetch/1.0 (reproducibility script)"}
+
+
+def _selected(documents: list[dict[str, Any]], *, include_demo: bool) -> list[dict[str, Any]]:
+    """The manifest entries a run operates on.
+
+    An entry with no ``collection`` field belongs to the eval corpus (the
+    pre-demo manifest carried no such field), so the default selection is
+    exactly the verified-10 benchmark regime.
+    """
+    if include_demo:
+        return list(documents)
+    return [d for d in documents if d.get("collection", "eval") == "eval"]
 
 
 def _sha256(path: Path) -> str:
@@ -98,17 +123,25 @@ def main() -> int:
     parser.add_argument(
         "--dry-run", action="store_true", help="Print the plan without copying or downloading"
     )
+    parser.add_argument(
+        "--demo",
+        action="store_true",
+        help="Also include the demo collection (classic DL papers, 30papers.com); "
+        "the default fetches only the verified-10 eval corpus",
+    )
     args = parser.parse_args()
 
     dest = Path(args.dest)
     manifest = yaml.safe_load(MANIFEST.read_text(encoding="utf-8"))["documents"]
+    documents = _selected(manifest, include_demo=args.demo)
+    excluded = len(manifest) - len(documents)
 
     if not args.dry_run and not args.verify_only:
         dest.mkdir(parents=True, exist_ok=True)
 
     placed = downloaded = mismatched = failed = 0
 
-    for doc in manifest:
+    for doc in documents:
         name = doc["filename"]
         target = dest / name
 
@@ -147,6 +180,8 @@ def main() -> int:
             print(f"    would download {url}")
             downloaded += 1
             continue
+        if downloaded:
+            time.sleep(3)  # arXiv politeness between fetches
         if _download(url, target):
             downloaded += 1
             if not _check(target, doc.get("sha256")):
@@ -160,6 +195,8 @@ def main() -> int:
     print(f"  copied (in-repo) : {placed}")
     print(f"  checksum mismatch: {mismatched}")
     print(f"  failed           : {failed}")
+    if excluded:
+        print(f"  (demo collection not selected: {excluded} papers — add --demo to include them)")
     return 1 if failed else 0
 
 

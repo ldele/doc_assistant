@@ -15,6 +15,17 @@
 # (cases.yaml) runs on the user's private library, which is mostly copyrighted and
 # not redistributable. That benchmark is unchanged; this corpus is a separate,
 # fully-shareable demonstration set.
+#
+# TWO COLLECTIONS. Entries with no `collection` field are the EVAL collection:
+# the verified-10 benchmark corpus that cases.public.yaml and every committed
+# baseline in tests/eval/baselines/ were authored against. It stays closed —
+# extra corpus documents are retrieval distractors that change benchmark
+# difficulty and would invalidate the baselines. Entries with `collection: demo`
+# are the DEMO collection (fetched only via `download_corpus --demo`): classic
+# deep-learning papers from the rumoured Sutskever->Carmack reading list
+# (30papers.com) — a bigger, richer corpus for exploring the app (library,
+# concept graph, wiki), never part of the benchmark regime. Pins recorded
+# 2026-07-20 from the then-latest arXiv version of each paper.
 
 documents:
   - filename: "rag_lewis_2020.pdf"
@@ -167,3 +178,298 @@ documents:
     referenced_by_eval: true
     sha256: 68f2d462e7b7379e90dc58d37d2f454e3bee2088fd25c03de20a9a2cef4dfe77
     bytes: 1171674
+
+  # ---- demo collection (Sutskever->Carmack reading list, 30papers.com) ----
+  # arXiv-pinnable subset only (18 of 27 listed items). Not on arXiv, skipped:
+  # AlexNet (NeurIPS-hosted), Hinton & van Camp MDL (COLT '93), the Cover-Thomas
+  # Kolmogorov-complexity book chapter, the Legg thesis, CS231n course notes and
+  # the Karpathy / Olah / Aaronson / Rush blog posts (ingest-as-HTML candidates).
+
+  - filename: "resnet_he_2015.pdf"
+    title: "Deep Residual Learning for Image Recognition"
+    authors: "He et al."
+    year: 2015
+    arxiv_id: "1512.03385"
+    version: "v1"
+    url: "https://arxiv.org/pdf/1512.03385v1.pdf"
+    abstract_url: "https://arxiv.org/abs/1512.03385v1"
+    license: "arXiv.org non-exclusive license — download-only, not re-hosted"
+    tier: arxiv
+    direct_pdf: true
+    committed: false
+    collection: demo
+    referenced_by_eval: false
+    sha256: 1e0651b6810ecba34a3dbc5b5b0209226f889004607c1f203540a48d64e5a93a
+    bytes: 819383
+  - filename: "identity_mappings_he_2016.pdf"
+    title: "Identity Mappings in Deep Residual Networks"
+    authors: "He et al."
+    year: 2016
+    arxiv_id: "1603.05027"
+    version: "v3"
+    url: "https://arxiv.org/pdf/1603.05027v3.pdf"
+    abstract_url: "https://arxiv.org/abs/1603.05027v3"
+    license: "arXiv.org non-exclusive license — download-only, not re-hosted"
+    tier: arxiv
+    direct_pdf: true
+    committed: false
+    collection: demo
+    referenced_by_eval: false
+    sha256: 676113014c130991d3a1203b151e1f2d4596f08898440c72270934a88d006c32
+    bytes: 1166414
+  - filename: "dilated_conv_yu_2015.pdf"
+    title: "Multi-Scale Context Aggregation by Dilated Convolutions"
+    authors: "Yu & Koltun"
+    year: 2015
+    arxiv_id: "1511.07122"
+    version: "v3"
+    url: "https://arxiv.org/pdf/1511.07122v3.pdf"
+    abstract_url: "https://arxiv.org/abs/1511.07122v3"
+    license: "arXiv.org non-exclusive license — download-only, not re-hosted"
+    tier: arxiv
+    direct_pdf: true
+    committed: false
+    collection: demo
+    referenced_by_eval: false
+    sha256: acac9b267cf8b2498d53fe9a9a5afcc51b3dc1cc677ae0ae82f8ca626869a8b1
+    bytes: 3000738
+  - filename: "rnn_regularization_zaremba_2014.pdf"
+    title: "Recurrent Neural Network Regularization"
+    authors: "Zaremba et al."
+    year: 2014
+    arxiv_id: "1409.2329"
+    version: "v5"
+    url: "https://arxiv.org/pdf/1409.2329v5.pdf"
+    abstract_url: "https://arxiv.org/abs/1409.2329v5"
+    license: "arXiv.org non-exclusive license — download-only, not re-hosted"
+    tier: arxiv
+    direct_pdf: true
+    committed: false
+    collection: demo
+    referenced_by_eval: false
+    sha256: fc75e2f390998d3990c6a8a9ba890571de7deb19bbe869a4aac1814850009612
+    bytes: 117777
+  - filename: "deep_speech2_amodei_2015.pdf"
+    title: "Deep Speech 2: End-to-End Speech Recognition in English and Mandarin"
+    authors: "Amodei et al."
+    year: 2015
+    arxiv_id: "1512.02595"
+    version: "v1"
+    url: "https://arxiv.org/pdf/1512.02595v1.pdf"
+    abstract_url: "https://arxiv.org/abs/1512.02595v1"
+    license: "arXiv.org non-exclusive license — download-only, not re-hosted"
+    tier: arxiv
+    direct_pdf: true
+    committed: false
+    collection: demo
+    referenced_by_eval: false
+    sha256: e4ad30231a2e754e100d3681edc70be75831aced4482e184961f4d935e3333f8
+    bytes: 877645
+  - filename: "order_matters_vinyals_2015.pdf"
+    title: "Order Matters: Sequence to sequence for sets"
+    authors: "Vinyals et al."
+    year: 2015
+    arxiv_id: "1511.06391"
+    version: "v4"
+    url: "https://arxiv.org/pdf/1511.06391v4.pdf"
+    abstract_url: "https://arxiv.org/abs/1511.06391v4"
+    license: "arXiv.org non-exclusive license — download-only, not re-hosted"
+    tier: arxiv
+    direct_pdf: true
+    committed: false
+    collection: demo
+    referenced_by_eval: false
+    sha256: f2b9f55c96cfe1fd3ff00385d6327fce14cab5564b563a772f001315b7d3ab86
+    bytes: 262627
+  - filename: "nmt_attention_bahdanau_2014.pdf"
+    title: "Neural Machine Translation by Jointly Learning to Align and Translate"
+    authors: "Bahdanau et al."
+    year: 2014
+    arxiv_id: "1409.0473"
+    version: "v7"
+    url: "https://arxiv.org/pdf/1409.0473v7.pdf"
+    abstract_url: "https://arxiv.org/abs/1409.0473v7"
+    license: "arXiv.org non-exclusive license — download-only, not re-hosted"
+    tier: arxiv
+    direct_pdf: true
+    committed: false
+    collection: demo
+    referenced_by_eval: false
+    sha256: 84801c8410da51b449d379d2fa4939a416123f2c93991077a680f863026022a7
+    bytes: 444482
+  - filename: "pointer_networks_vinyals_2015.pdf"
+    title: "Pointer Networks"
+    authors: "Vinyals et al."
+    year: 2015
+    arxiv_id: "1506.03134"
+    version: "v2"
+    url: "https://arxiv.org/pdf/1506.03134v2.pdf"
+    abstract_url: "https://arxiv.org/abs/1506.03134v2"
+    license: "arXiv.org non-exclusive license — download-only, not re-hosted"
+    tier: arxiv
+    direct_pdf: true
+    committed: false
+    collection: demo
+    referenced_by_eval: false
+    sha256: 640bb2150dbc2d711538daf127003e960a3432b0330e22a0131d472891f76353
+    bytes: 469544
+  - filename: "transformer_vaswani_2017.pdf"
+    title: "Attention Is All You Need"
+    authors: "Vaswani et al."
+    year: 2017
+    arxiv_id: "1706.03762"
+    version: "v7"
+    url: "https://arxiv.org/pdf/1706.03762v7.pdf"
+    abstract_url: "https://arxiv.org/abs/1706.03762v7"
+    license: "arXiv.org non-exclusive license — download-only, not re-hosted"
+    tier: arxiv
+    direct_pdf: true
+    committed: false
+    collection: demo
+    referenced_by_eval: false
+    sha256: bdfaa68d8984f0dc02beaca527b76f207d99b666d31d1da728ee0728182df697
+    bytes: 2215244
+  - filename: "ntm_graves_2014.pdf"
+    title: "Neural Turing Machines"
+    authors: "Graves et al."
+    year: 2014
+    arxiv_id: "1410.5401"
+    version: "v2"
+    url: "https://arxiv.org/pdf/1410.5401v2.pdf"
+    abstract_url: "https://arxiv.org/abs/1410.5401v2"
+    license: "arXiv.org non-exclusive license — download-only, not re-hosted"
+    tier: arxiv
+    direct_pdf: true
+    committed: false
+    collection: demo
+    referenced_by_eval: false
+    sha256: b8d2939cd7c76097f2cc2e5061188ca824ef8cad12de4500dfbd014b60dd16a9
+    bytes: 1357690
+  - filename: "relation_networks_santoro_2017.pdf"
+    title: "A simple neural network module for relational reasoning"
+    authors: "Santoro et al."
+    year: 2017
+    arxiv_id: "1706.01427"
+    version: "v1"
+    url: "https://arxiv.org/pdf/1706.01427v1.pdf"
+    abstract_url: "https://arxiv.org/abs/1706.01427v1"
+    license: "arXiv.org non-exclusive license — download-only, not re-hosted"
+    tier: arxiv
+    direct_pdf: true
+    committed: false
+    collection: demo
+    referenced_by_eval: false
+    sha256: c115123a511418ab46f04c4f9f78b6a569712960dbe9ca596d4edd6f0686d521
+    bytes: 1438944
+  - filename: "relational_rnn_santoro_2018.pdf"
+    title: "Relational recurrent neural networks"
+    authors: "Santoro et al."
+    year: 2018
+    arxiv_id: "1806.01822"
+    version: "v2"
+    url: "https://arxiv.org/pdf/1806.01822v2.pdf"
+    abstract_url: "https://arxiv.org/abs/1806.01822v2"
+    license: "arXiv.org non-exclusive license — download-only, not re-hosted"
+    tier: arxiv
+    direct_pdf: true
+    committed: false
+    collection: demo
+    referenced_by_eval: false
+    sha256: 097700e214454b345ae453d04062ce2997da0c14f60e2411f665e1410f18218f
+    bytes: 4105255
+  - filename: "mpnn_gilmer_2017.pdf"
+    title: "Neural Message Passing for Quantum Chemistry"
+    authors: "Gilmer et al."
+    year: 2017
+    arxiv_id: "1704.01212"
+    version: "v2"
+    url: "https://arxiv.org/pdf/1704.01212v2.pdf"
+    abstract_url: "https://arxiv.org/abs/1704.01212v2"
+    license: "arXiv.org non-exclusive license — download-only, not re-hosted"
+    tier: arxiv
+    direct_pdf: true
+    committed: false
+    collection: demo
+    referenced_by_eval: false
+    sha256: 37dc4ad74bf3da3ee000474cc85cabfad9bc9daa47f1aced6e8b8eea71467741
+    bytes: 523413
+  - filename: "scaling_laws_kaplan_2020.pdf"
+    title: "Scaling Laws for Neural Language Models"
+    authors: "Kaplan et al."
+    year: 2020
+    arxiv_id: "2001.08361"
+    version: "v1"
+    url: "https://arxiv.org/pdf/2001.08361v1.pdf"
+    abstract_url: "https://arxiv.org/abs/2001.08361v1"
+    license: "arXiv.org non-exclusive license — download-only, not re-hosted"
+    tier: arxiv
+    direct_pdf: true
+    committed: false
+    collection: demo
+    referenced_by_eval: false
+    sha256: a41bd7877fd1a6bcbba096b2619618bd2f90e02488f2365644903eb2f7c6a494
+    bytes: 2493004
+  - filename: "gpipe_huang_2018.pdf"
+    title: "GPipe: Efficient Training of Giant Neural Networks using Pipeline Parallelism"
+    authors: "Huang et al."
+    year: 2018
+    arxiv_id: "1811.06965"
+    version: "v5"
+    url: "https://arxiv.org/pdf/1811.06965v5.pdf"
+    abstract_url: "https://arxiv.org/abs/1811.06965v5"
+    license: "arXiv.org non-exclusive license — download-only, not re-hosted"
+    tier: arxiv
+    direct_pdf: true
+    committed: false
+    collection: demo
+    referenced_by_eval: false
+    sha256: 697f257e85667829053707594800447f3a75482226ddb6eb24374905c5af6d44
+    bytes: 539195
+  - filename: "coffee_automaton_aaronson_2014.pdf"
+    title: "Quantifying the Rise and Fall of Complexity in Closed Systems: The Coffee Automaton"
+    authors: "Aaronson et al."
+    year: 2014
+    arxiv_id: "1405.6903"
+    version: "v1"
+    url: "https://arxiv.org/pdf/1405.6903v1.pdf"
+    abstract_url: "https://arxiv.org/abs/1405.6903v1"
+    license: "arXiv.org non-exclusive license — download-only, not re-hosted"
+    tier: arxiv
+    direct_pdf: true
+    committed: false
+    collection: demo
+    referenced_by_eval: false
+    sha256: e35b1fa18e6640289c327954f7e14743f140d8262c523f967921fe86aa30c63b
+    bytes: 1330722
+  - filename: "vlae_chen_2016.pdf"
+    title: "Variational Lossy Autoencoder"
+    authors: "Chen et al."
+    year: 2016
+    arxiv_id: "1611.02731"
+    version: "v2"
+    url: "https://arxiv.org/pdf/1611.02731v2.pdf"
+    abstract_url: "https://arxiv.org/abs/1611.02731v2"
+    license: "arXiv.org non-exclusive license — download-only, not re-hosted"
+    tier: arxiv
+    direct_pdf: true
+    committed: false
+    collection: demo
+    referenced_by_eval: false
+    sha256: 717c685fdd7ed18cae250c226a3d25452f33d12f1aba857c2800aac622d38099
+    bytes: 2392268
+  - filename: "mdl_tutorial_grunwald_2004.pdf"
+    title: "A tutorial introduction to the minimum description length principle"
+    authors: "Grunwald"
+    year: 2004
+    arxiv_id: "math/0406077"
+    version: "v1"
+    url: "https://arxiv.org/pdf/math/0406077v1.pdf"
+    abstract_url: "https://arxiv.org/abs/math/0406077v1"
+    license: "arXiv.org non-exclusive license — download-only, not re-hosted"
+    tier: arxiv
+    direct_pdf: true
+    committed: false
+    collection: demo
+    referenced_by_eval: false
+    sha256: f931f2855d9addc7ace62ddf20aea67c2d6f8f95982648da8d9ba2a06008b7e6
+    bytes: 774850

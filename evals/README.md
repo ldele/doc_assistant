@@ -116,6 +116,15 @@ uv run python -m scripts.sweep_bm25_weight --cases tests/eval/cases.public.yaml 
 uv run python -m scripts.run_eval --cases tests/eval/cases.public.yaml --bm25-weight 0.5 --with-llm-judge
 ```
 
+**The demo collection is deliberately excluded from every number above.** The manifest also
+carries 18 `collection: demo` papers (the arXiv subset of the rumoured
+[Sutskever→Carmack reading list](https://30papers.com/), added 2026-07-20), fetched only via
+`download_corpus --demo` — a bigger corpus for *exploring the app*, never for benchmarking. Extra
+corpus documents are retrieval distractors that change benchmark difficulty, so a run taken with
+demo papers in the index is **not comparable** to the committed baselines: benchmark on the eval
+10 alone. A guard test (`tests/unit/test_download_corpus_selection.py`) pins the default download
+selection to exactly those 10.
+
 > New result? Record the baseline in [`tests/eval/baselines/`](../tests/eval/baselines/) (the
 > locked-settings rule in `.claude/CONTEXT.md`), then summarize it here — this folder is the
 > narrative record, the baselines are the data.

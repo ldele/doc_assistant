@@ -75,6 +75,7 @@ from doc_assistant.chat_controller import (
     Token,
 )
 from doc_assistant.config import DATA_PATH, LOG_JSON, LOG_LEVEL
+from doc_assistant.db.migrations import init_db
 from doc_assistant.db.session import session_scope
 from doc_assistant.embeddings import get_active_model_name
 from doc_assistant.ingest.figures import load_figure_image_paths
@@ -310,6 +311,21 @@ def create_app(
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        # KI-20: bring the live schema up to date before serving. `init_db` is idempotent and
+        # purely additive (create_all + ALTER ... ADD COLUMN), and until now it ran ONLY from
+        # `ingest` — so a user who pulled an update and just chatted never got new columns.
+        # That was survivable while additive columns fed sidecars; ADR-025 F2 put one on the
+        # answer path (`answer_records.retrieval_scope_json`), where a stale schema breaks every
+        # turn. Logged loudly when it actually changes something, so a silent drift like
+        # `concepts.graph_include` (missing here for ~2 weeks) can't repeat unnoticed.
+        try:
+            added = init_db()
+            if added:
+                log.warning("schema_migrated_at_startup", columns=added)
+            else:
+                log.info("schema_current")
+        except Exception as e:  # never let a migration problem stop the app from starting
+            log.error("schema_migration_failed", error=str(e))
         if getattr(app.state, "controller", None) is None:
             app.state.controller = ChatController()
         yield
@@ -386,7 +402,9 @@ def create_app(
             if body.overrides is not None
             else RagOverrides()
         )
-        return CompareResultPayload.from_result(controller.compare_retrieval(body.text, overrides))
+        return CompareResultPayload.from_result(
+            controller.compare_retrieval(body.text, overrides, body.scope_folder_id)
+        )
 
     @app.post("/api/claims/{claim_id}/adjudicate")
     def adjudicate(request: Request, claim_id: str, body: AdjudicateRequest) -> dict[str, bool]:

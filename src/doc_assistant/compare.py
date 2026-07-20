@@ -56,6 +56,11 @@ class CompareResult:
     eff_a: EffKnobs  # {"top_k": int, "use_multi_query": bool}
     eff_b: EffKnobs
     note: str
+    # ADR-025 F2 — the folder both sides were retrieved under, or None for the whole library.
+    # BOTH sides always share it: the comparison is about the knob, so the document set has to
+    # be held constant, and a diff computed over a different corpus than the next answer will
+    # use would be its own quiet lie.
+    scope_label: str | None = None
 
 
 _FAR = 10**9
@@ -127,6 +132,7 @@ def build_result(
     sources_b: list[CompareSource],
     eff_a: EffKnobs,
     eff_b: EffKnobs,
+    scope_label: str | None = None,
 ) -> CompareResult:
     """Assemble the :class:`CompareResult` from the two ranked source lists + effective knobs."""
     return CompareResult(
@@ -137,4 +143,5 @@ def build_result(
         eff_a=eff_a,
         eff_b=eff_b,
         note=compare_note(eff_a, eff_b),
+        scope_label=scope_label,
     )

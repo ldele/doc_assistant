@@ -350,6 +350,16 @@ def _scope_dict(scope: ScopeView | None) -> dict[str, Any] | None:
     }
 
 
+def _scope_label(scope: ScopeView | None) -> str | None:
+    """One-line scope label for surfaces that show a constraint rather than a full note
+    (the A/B compare card). ``None`` on an unscoped run."""
+    if scope is None:
+        return None
+    if scope.folder_name is None:
+        return "a folder that no longer exists (0 documents)"
+    return f"{scope.folder_name} ({scope.doc_count} document{'' if scope.doc_count == 1 else 's'})"
+
+
 def _scope_note(scope: ScopeView | None) -> str:
     """Provenance-card line naming the scope. ``""`` on an unscoped turn, so the default turn
     stays byte-identical (the turn-parity test pins this)."""
@@ -617,7 +627,12 @@ class ChatController:
         app_settings.set_llm_selection(provider, model)
         self.rag.set_chat_model(provider, model)
 
-    def compare_retrieval(self, text: str, overrides: RagOverrides) -> compare.CompareResult:
+    def compare_retrieval(
+        self,
+        text: str,
+        overrides: RagOverrides,
+        scope_folder_id: str | None = None,
+    ) -> compare.CompareResult:
         """Retrieval-only A/B compare (U6, ``feature-ab-compare-sandbox.md``).
 
         Runs ``retrieve_with_scores`` twice on the same raw query — A = locked defaults, B = the
@@ -625,7 +640,12 @@ class ChatController:
         retrieval only, no generation, no ``self.llm`` touch. Request-scoped: ``overrides`` rides
         the call, no module-global assigned (the ADR-010 isolation invariant). Only
         ``top_k``/``use_multi_query`` affect retrieval; the rest are answer-time (see the note).
+
+        ``scope_folder_id`` (ADR-025 F2) is applied to **both** sides. The comparison exists to
+        isolate a knob, so the document set is held constant — and an unscoped diff shown while a
+        folder scope is active would describe retrieval the next answer will not perform.
         """
+        scope, scope_view = _resolve_scope(scope_folder_id)
         eff_a: dict[str, int | bool] = {"top_k": TOP_K, "use_multi_query": USE_MULTI_QUERY}
         eff_b: dict[str, int | bool] = {
             "top_k": overrides.top_k if overrides.top_k is not None else TOP_K,
@@ -637,10 +657,13 @@ class ChatController:
         }
         # A follows the global default (use_multi_query=None); B forces the override's value.
         pairs_a = self.rag.retrieve_with_scores(
-            text, top_k=int(eff_a["top_k"]), use_multi_query=None
+            text, top_k=int(eff_a["top_k"]), use_multi_query=None, scope=scope
         )
         pairs_b = self.rag.retrieve_with_scores(
-            text, top_k=int(eff_b["top_k"]), use_multi_query=overrides.use_multi_query
+            text,
+            top_k=int(eff_b["top_k"]),
+            use_multi_query=overrides.use_multi_query,
+            scope=scope,
         )
         return compare.build_result(
             text,
@@ -648,6 +671,7 @@ class ChatController:
             [self._to_compare_source(d, s, i + 1) for i, (d, s) in enumerate(pairs_b)],
             eff_a,
             eff_b,
+            _scope_label(scope_view),
         )
 
     @staticmethod

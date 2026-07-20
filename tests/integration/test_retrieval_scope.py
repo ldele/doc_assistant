@@ -315,6 +315,70 @@ def test_chat_route_defaults_to_unscoped(monkeypatch, temp_db) -> None:
     assert _scope_json() == [None]
 
 
+# --- A/B compare (the user's 2026-07-20 decision: scope both sides) ----------------------- #
+
+
+def test_compare_scopes_both_sides_and_labels_the_card(monkeypatch, temp_db) -> None:
+    """An unscoped diff shown while a folder scope is active would describe retrieval the next
+    answer will not perform."""
+    folder_id = _folder_with("a.pdf")
+    rag = FakeRAG()
+    controller = ChatController(rag=rag)
+
+    result = controller.compare_retrieval("q", RagOverrides(top_k=3), folder_id)
+
+    assert rag.scope_calls == [frozenset({"h-a.pdf"}), frozenset({"h-a.pdf"})]  # A and B
+    assert result.scope_label == "Demo corpus (1 document)"
+
+
+def test_compare_without_a_scope_is_unchanged(monkeypatch, temp_db) -> None:
+    rag = FakeRAG()
+    result = ChatController(rag=rag).compare_retrieval("q", RagOverrides())
+
+    assert rag.scope_calls == [None, None]
+    assert result.scope_label is None
+
+
+# --- KI-20: the API migrates the live schema on startup ------------------------------------ #
+
+
+def test_api_startup_applies_pending_additive_columns(tmp_path: Path, monkeypatch) -> None:
+    """KI-20 — before this, additive columns only ever landed via `ingest`, so a user who pulled
+    an update and just chatted kept a stale schema. F2 put a column on the answer path, where
+    that breaks every turn."""
+    from apps.api.main import create_app
+    from fastapi.testclient import TestClient
+    from sqlalchemy import text as sql_text
+
+    db = tmp_path / "stale.db"
+    engine = create_engine(f"sqlite:///{db}", future=True)
+    Base.metadata.create_all(engine)
+    with engine.begin() as conn:
+        conn.execute(sql_text("ALTER TABLE answer_records DROP COLUMN retrieval_scope_json"))
+        cols = {r[1] for r in conn.execute(sql_text("PRAGMA table_info(answer_records)"))}
+    assert "retrieval_scope_json" not in cols  # a genuinely stale schema
+    engine.dispose()
+
+    monkeypatch.setattr("doc_assistant.config.SQLITE_PATH", str(db))
+    monkeypatch.setattr("doc_assistant.db.migrations.SQLITE_PATH", str(db))
+    fresh = create_engine(f"sqlite:///{db}", future=True)
+    monkeypatch.setattr(session_mod, "_engine", fresh)
+    monkeypatch.setattr(
+        session_mod,
+        "_SessionLocal",
+        sessionmaker(bind=fresh, autoflush=False, autocommit=False, future=True),
+    )
+
+    # Entering the TestClient context runs the lifespan.
+    with TestClient(create_app(controller=ChatController(rag=FakeRAG()))) as client:  # type: ignore[arg-type]
+        client.get("/api/health")
+
+    with fresh.begin() as conn:
+        cols = {r[1] for r in conn.execute(sql_text("PRAGMA table_info(answer_records)"))}
+    assert "retrieval_scope_json" in cols
+    fresh.dispose()
+
+
 # --- migration --------------------------------------------------------------------------- #
 
 

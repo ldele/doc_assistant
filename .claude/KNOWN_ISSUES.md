@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-07-19 · class: living -->
+<!-- status: active · updated: 2026-07-20 (KI-20 added + resolved: schema migration on API start) · class: living -->
 
 # KNOWN ISSUES
 
@@ -639,7 +639,7 @@ Migrated from the old `CLAUDE.md` / `README` runtime-quirk notes on 2026-06-20 (
 - **Related:** KI-3 (why the fix avoided `uv sync`); the safe-delete feature is ADR-014;
   `tests/integration/test_document_delete.py`; `tests/unit/test_declared_dependencies.py`.
 
-## KI-20 — additive schema columns never land on a running install; F2 moved that onto the answer path — OPEN (2026-07-20)
+## KI-20 — additive schema columns never land on a running install; F2 moved that onto the answer path — RESOLVED (2026-07-20)
 - **Symptom:** on this box, `answer_records.retrieval_scope_json` (ADR-025 F2) **and**
   `concepts.graph_include` (ADR-018, added 2026-07-07) were both missing from the live
   `data/library.db` until `python -m doc_assistant.db.migrations` was run by hand on 2026-07-20.
@@ -657,8 +657,18 @@ Migrated from the old `CLAUDE.md` / `README` runtime-quirk notes on 2026-06-20 (
 - **Workaround:** run `uv run python -m doc_assistant.db.migrations` after pulling a change that
   adds a column (done on this box 2026-07-20; 26 existing records read back as unscoped/NULL,
   which is correct).
-- **Real fix (not built, needs a decision):** call `init_db()` in the API lifespan — it is
-  idempotent and additive, and `create_all` is already how new tables land. The counter-argument
-  is that the API deliberately does not own schema creation; if that stands, the alternative is a
-  startup *check* that refuses to serve (or warns loudly) when the live schema is behind
-  `_ADDITIVE_COLUMNS`, rather than discovering it at the first failed turn.
+- **Fix (shipped 2026-07-20, user decision "migrate + log what it did"):** the API lifespan now
+  calls `init_db()` before serving (`apps/api/main.py`). It is idempotent and purely additive, and
+  the precedent already existed — `ingest/__init__.py:405` calls it for exactly this reason
+  ("the fresh-clone footgun of having to run migrations manually"). The API still owns no logic;
+  it calls a `src/` function like it calls every other one. `init_db`/`_apply_additive_columns`
+  now **return the columns they added**, so the lifespan logs `schema_migrated_at_startup
+  columns=[...]` at WARNING when it changes something and `schema_current` otherwise — a silent
+  two-week drift like `graph_include` cannot repeat unnoticed. A migration failure is caught and
+  logged, never a startup crash.
+- **Guard test:** `tests/integration/test_retrieval_scope.py::
+  test_api_startup_applies_pending_additive_columns` builds a genuinely stale schema (drops the
+  column), starts the app, and asserts the column is back. Verified non-vacuous — it fails when
+  the lifespan call is removed.
+- **Still true:** the frozen-build entry (`apps/api/__main__.py`) reaches the same lifespan, so
+  packaged installs are covered too. Ingest keeps its own `init_db()` call (fresh-clone path).

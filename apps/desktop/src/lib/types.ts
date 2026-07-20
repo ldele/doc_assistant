@@ -280,6 +280,8 @@ export interface CompareResult {
   eff_a: CompareEff
   eff_b: CompareEff
   note: string
+  // ADR-025 F2 — the folder BOTH sides were retrieved under; null = the whole library.
+  scope_label: string | null
 }
 
 // Concept graph (docs/specs/feature-concept-graph.md, ADR-017; PR-G1 serves it, PR-G2a renders it).

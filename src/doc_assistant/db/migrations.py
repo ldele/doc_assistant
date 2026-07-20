@@ -42,8 +42,13 @@ _ADDITIVE_COLUMNS: list[tuple[str, str, str, str | None]] = [
 ]
 
 
-def _apply_additive_columns(engine: Engine) -> None:
-    """Idempotently add any missing additive columns (+ their index) to existing tables."""
+def _apply_additive_columns(engine: Engine) -> list[str]:
+    """Idempotently add any missing additive columns (+ their index) to existing tables.
+
+    Returns the ``table.column`` names actually added, so a caller can say what it changed
+    rather than leaving a schema drift to be discovered at the first failed write (KI-20).
+    """
+    added: list[str] = []
     inspector = inspect(engine)
     tables = set(inspector.get_table_names())
     with engine.begin() as conn:
@@ -60,10 +65,15 @@ def _apply_additive_columns(engine: Engine) -> None:
                     text(f"CREATE INDEX IF NOT EXISTS {index} ON {table} ({column})")  # nosec B608
                 )
             log.info("added_column", table=table, column=column)
+            added.append(f"{table}.{column}")
+    return added
 
 
-def init_db(reset: bool = False) -> None:
+def init_db(reset: bool = False) -> list[str]:
     """Create all tables + apply additive column migrations. Safe to run repeatedly.
+
+    Returns the additive columns added by this call (empty when the schema was already
+    current), so an entrypoint can log a schema change instead of silently drifting (KI-20).
 
     Args:
         reset: If True, drops all tables first. WARNING: destroys data.
@@ -79,12 +89,13 @@ def init_db(reset: bool = False) -> None:
 
     log.info("creating_tables", path=str(db_path))
     Base.metadata.create_all(engine)
-    _apply_additive_columns(engine)
+    added = _apply_additive_columns(engine)
 
     # Verify
     inspector = inspect(engine)
     tables = inspector.get_table_names()
     log.info("tables_present", tables=sorted(tables))
+    return added
 
 
 if __name__ == "__main__":

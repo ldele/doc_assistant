@@ -8,6 +8,51 @@ Append only — never edit past entries.
 Format: What changed | Why | Rejected alternatives | What it opens
 
 ---
+## 2026-07-20 — KI-20 resolved (schema migrates on API start) + A/B compare honours the scope
+
+Two decisions the user took after reviewing F2 (`0e45dd3`), built together because both are
+about the same thing: a surface that quietly describes something other than what it did.
+
+**What (1) — KI-20, RESOLVED.** `init_db()` was called from **exactly one place in the running
+app**: `ingest/__init__.py:405`. So a user who pulled an update and only chatted never received
+new additive columns, and the **packaged build never migrated at all**. Evidence it had already
+bitten: this box was missing `concepts.graph_include` (added 2026-07-07) for ~2 weeks, silently.
+Fix — the API lifespan now calls `init_db()`, and `init_db`/`_apply_additive_columns` **return the
+columns they added** so the lifespan logs `schema_migrated_at_startup columns=[...]` at WARNING
+(`schema_current` otherwise). A migration error is caught and logged, never a startup crash.
+
+**What (2) — the A/B compare scopes both sides.** `compare_retrieval(..., scope_folder_id)`
+threads the resolved scope into **both** arms; `CompareResult.scope_label` drives a card line
+("Both sides searched X only"). Wire: `CompareRequest.scope_folder_id`,
+`CompareResultPayload.scope_label`, `types.ts`, `compareRetrieval(..., scopeFolderId)`.
+
+**Why:** (1) F2 put an additive column on the **answer path** (`answer_records.
+retrieval_scope_json`), so the long-tolerated migration gap stopped being a sidecar problem and
+became "every turn fails to record". (2) With a folder selected, an unscoped diff describes
+retrieval the next answer will not perform — the same quiet mismatch F2 exists to remove. Holding
+the document set constant across A and B is also what makes the comparison *about the knob*.
+
+**Rejected:** for KI-20, a **startup schema check that only warns** — it diagnoses without fixing,
+so the answer path still breaks until the user acts; and **wrapping the provenance write in
+`suppress`** — that hides a schema fault by silently dropping provenance, i.e. buys uptime with
+the integrity layer. For the compare, **leaving it unscoped but labelled** — the label removes the
+lie but keeps showing a comparison the user can't act on.
+
+**Verified:** 3 new tests (13 total in `test_retrieval_scope.py`); full suite **1102 passed / 1
+skipped** · ruff · `mypy --strict src` · bandit · `svelte-check` 0/0 · docs+integrity 0/0. The
+KI-20 guard test builds a genuinely stale schema (drops the column), starts the app, and asserts
+the column is back — **verified non-vacuous**: it fails when the lifespan call is removed. Live
+startup logged `schema_current` on this (already-migrated) box. **Live A/B through the real API
+and real pipeline ($0, retrieval only, no generation):** unscoped compare reached `bge_cpack`,
+`dpr_karpukhin`, `rag_lewis` — **all outside** the probe folder; scoped compare kept **both**
+sides entirely inside it; `scope_label` null unscoped, `"__ab_probe__ (3 documents)"` scoped.
+Probe folder deleted; DB left at 76 docs / 0 folders.
+
+**Opens:** F3 (demo sha-match auto-assign) untouched. Multi-folder scopes, persisted
+per-conversation scope, and scoping the enrichment sidecars stay parked (ADR-025). RG-020's
+synthetic 10k measurement still owed.
+
+---
 ## 2026-07-20 — F2: query-time folder retrieval scoping + the honesty contract (ADR-025 carve step 2)
 
 **What:** built **F2** — a folder can now scope one chat turn's retrieval. Contract first:

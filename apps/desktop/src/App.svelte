@@ -561,7 +561,7 @@
     if (!text || sending || comparing) return
     comparing = true
     try {
-      compareResult = await compareRetrieval(text, overrides)
+      compareResult = await compareRetrieval(text, overrides, chatScopeFolderId)
       pinned = true // bring the fresh compare card into view
     } catch (e) {
       console.error('compare failed', e)

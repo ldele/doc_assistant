@@ -150,9 +150,20 @@ Mirrors `folder_document_ids` (F1) and inherits its archived-exclusion rule (F1 
 8. One `docs/DEVLOG.md` entry; ROADMAP row; ui-checklist row updated; RG-020 updated with the
    measured numbers and what remains owed.
 
+## Amendments (user decisions, 2026-07-20, same session)
+
+- **S11 — the A/B compare scopes BOTH sides.** Originally out of scope. Reversed on the user's
+  call: with a folder selected, an unscoped diff describes retrieval the next answer will not
+  perform, which is the same class of quiet mismatch the rest of F2 exists to remove. Both arms
+  take the resolved scope (holding the document set constant is also what makes the comparison
+  *about the knob*), and `CompareResult.scope_label` puts a line on the card saying so.
+- **S12 — KI-20: the API lifespan migrates the schema and logs what it changed.** `init_db()` ran
+  from `ingest` only, so additive columns never reached an install whose user just chats — and F2
+  put one on the answer path. The lifespan now calls it; `init_db` returns the added columns and
+  the lifespan logs them at WARNING. See `.claude/KNOWN_ISSUES.md` KI-20.
+
 ## Out of scope (F2)
 
-F3 demo sha-match auto-assign · scoping `compare_retrieval` (A/B stays unscoped; stated, not
-built) · persisted per-conversation scope (ADR-025 reverses-into, needs an amendment) ·
+F3 demo sha-match auto-assign · persisted per-conversation scope (ADR-025 reverses-into, needs an amendment) ·
 multi-folder scopes · scoping the enrichment sidecars (ADR-025 fork 5, parked) · the synthetic
 10k `$in` measurement (RG-020, stays open) · RG-021 (eval-harness fingerprint).

@@ -89,6 +89,8 @@ class CompareRequest(BaseModel):
 
     text: str
     overrides: RagOverrides | None = None
+    # ADR-025 F2 — applied to BOTH sides, so the diff isolates the knob rather than the corpus.
+    scope_folder_id: str | None = None
 
 
 class AdjudicateRequest(BaseModel):
@@ -612,6 +614,8 @@ class CompareResultPayload(BaseModel):
     eff_a: CompareEffPayload
     eff_b: CompareEffPayload
     note: str
+    # ADR-025 F2 — the folder BOTH sides were retrieved under; null = the whole library.
+    scope_label: str | None = None
 
     @classmethod
     def from_result(cls, r: CompareResult) -> CompareResultPayload:
@@ -629,6 +633,7 @@ class CompareResultPayload(BaseModel):
                 use_multi_query=bool(r.eff_b["use_multi_query"]),
             ),
             note=r.note,
+            scope_label=r.scope_label,
         )
 
 

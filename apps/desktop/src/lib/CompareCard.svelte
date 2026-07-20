@@ -37,6 +37,15 @@
     </button>
   </div>
 
+  {#if result.scope_label}
+    <!-- ADR-025 F2: both sides were retrieved inside this folder. Without the line the card
+         reads as a whole-library comparison, which is not what was run. -->
+    <p class="scopeline">
+      <Icon name="folder" size={13} />
+      <span>Both sides searched <strong>{result.scope_label}</strong> only.</span>
+    </p>
+  {/if}
+
   {#if result.note}
     <p class="note">{result.note}</p>
   {/if}
@@ -102,6 +111,18 @@
     padding: 0.2rem 0.35rem;
     display: inline-flex;
     align-items: center;
+  }
+  .scopeline {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    margin: 0.5rem 0 0;
+    font-size: 0.8rem;
+    color: var(--fg);
+    border: 1px solid var(--accent);
+    background: color-mix(in srgb, var(--accent) 10%, transparent);
+    border-radius: 8px;
+    padding: 0.3rem 0.55rem;
   }
   .note {
     margin: 0.5rem 0 0;

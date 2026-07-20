@@ -277,11 +277,17 @@ export async function detectKeywordFamilies(): Promise<KeywordFamilyProposal[]> 
 export async function compareRetrieval(
   text: string,
   overrides?: RagOverrides,
+  scopeFolderId?: string | null,
 ): Promise<CompareResult> {
   const r = await fetch(`${API_BASE}/api/compare`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ text, overrides: overrides ?? null }),
+    // ADR-025 F2 — the scope rides both sides, so the diff isolates the knob, not the corpus.
+    body: JSON.stringify({
+      text,
+      overrides: overrides ?? null,
+      scope_folder_id: scopeFolderId ?? null,
+    }),
   })
   if (!r.ok) throw new Error(await errorDetail(r, 'compare'))
   return (await r.json()) as CompareResult

@@ -15,6 +15,7 @@
     onOpenDocument,
     onEditMetadata,
     onReveal,
+    onAddToFolder,
     onDelete,
   }: {
     documents: LibraryDocument[]
@@ -23,6 +24,7 @@
     onOpenDocument: (id: string) => void
     onEditMetadata: (id: string) => void
     onReveal: (id: string) => void
+    onAddToFolder: (id: string) => void
     onDelete: (id: string) => void
   } = $props()
 
@@ -65,8 +67,9 @@
       return
     }
     const r = (ev.currentTarget as HTMLElement).getBoundingClientRect()
-    const flip = r.bottom + 96 > window.innerHeight
-    menuPos = { x: Math.max(8, r.right - 196), y: flip ? Math.max(8, r.top - 88) : r.bottom + 4 }
+    // Height is hardcoded here — bump both numbers whenever a menu item is added or removed.
+    const flip = r.bottom + 128 > window.innerHeight
+    menuPos = { x: Math.max(8, r.right - 196), y: flip ? Math.max(8, r.top - 120) : r.bottom + 4 }
     openMenuFor = id
   }
   function closeMenu(): void {
@@ -78,6 +81,10 @@
   }
   function menuReveal(): void {
     if (menuDoc) onReveal(menuDoc.id)
+    closeMenu()
+  }
+  function menuAddToFolder(): void {
+    if (menuDoc) onAddToFolder(menuDoc.id)
     closeMenu()
   }
   function menuDelete(): void {
@@ -195,6 +202,9 @@
     </button>
     <button class="menuitem" role="menuitem" onclick={menuReveal} type="button">
       <Icon name="folder" size={14} /> Reveal in file explorer
+    </button>
+    <button class="menuitem" role="menuitem" onclick={menuAddToFolder} type="button">
+      <Icon name="library" size={14} /> Add to folder…
     </button>
     <div class="menusep"></div>
     <button class="menuitem danger" role="menuitem" onclick={menuDelete} type="button">

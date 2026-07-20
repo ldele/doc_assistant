@@ -6,13 +6,13 @@
   // pinned grouped into their own section) or the library navigation tree (All documents →
   // Collections → Types → Added → Keywords; the doc list itself moved to the main-pane grid).
   // Persistent column on desktop; an off-canvas drawer under 720px.
-  import type { ConversationSummary, LibraryDocument } from './types'
+  import type { ConversationSummary, LibraryDocument, LibraryFolder } from './types'
   import {
     type LibraryCollection,
     DATE_BUCKET_LABELS,
     collectionLabel,
     dateGroups,
-    folderGroups,
+    folderNameMap,
     sameCollection,
     typeGroups,
   } from './library'
@@ -22,6 +22,7 @@
     mode,
     conversations,
     documents,
+    folders,
     liveSessionId,
     viewingSessionId,
     libraryCollection,
@@ -31,6 +32,7 @@
     onSelect,
     onSelectMode,
     onSelectCollection,
+    onManageFolders,
     onClose,
     onPin,
     onArchive,
@@ -40,6 +42,7 @@
     mode: 'chat' | 'library' | 'graph'
     conversations: ConversationSummary[]
     documents: LibraryDocument[]
+    folders: LibraryFolder[]
     liveSessionId: string
     viewingSessionId: string | null
     libraryCollection: LibraryCollection
@@ -49,6 +52,7 @@
     onSelect: (sessionId: string) => void
     onSelectMode: (mode: 'chat' | 'library' | 'graph') => void
     onSelectCollection: (c: LibraryCollection) => void
+    onManageFolders: () => void
     onClose?: () => void
     onPin: (sessionId: string, pinned: boolean) => void
     onArchive: (sessionId: string, archived: boolean) => void
@@ -139,12 +143,13 @@
   const pinnedConvos = $derived(sortedConvos.filter((c) => c.pinned))
   const otherConvos = $derived(sortedConvos.filter((c) => !c.pinned))
   // Library nav-tree groups (L4 Decision 3), computed client-side from the payload. Types/Added
-  // render only with ≥2 entries (Decision 3a — a one-option filter is noise); Collections shows a
-  // "why" empty-state until folders exist (Phase B populates them). Keywords are no longer a nav
-  // group — they moved to the main-pane facet bar as a multi-select filter (pure-facet model).
+  // render only with ≥2 entries (Decision 3a — a one-option filter is noise). Keywords are no
+  // longer a nav group — they moved to the main-pane facet bar as a multi-select filter.
+  // Folders are the exception: they come from the API as a prop, because a folder derived from
+  // the document payload could never appear while empty (ADR-025 F1, spec D3).
   const types = $derived(typeGroups(documents))
   const dates = $derived(dateGroups(documents, new Date()))
-  const folders = $derived(folderGroups(documents))
+  const folderNames = $derived(folderNameMap(folders))
 
   // The per-row ⋯ menu: a single floating menu, positioned at the clicked button (fixed, so the
   // sidebar's overflow can't clip it). Closes on outside-click, Esc, or a list scroll.
@@ -282,7 +287,7 @@
             bind:value={libraryQuery}
             placeholder={libraryCollection.kind === 'all'
               ? 'Search library'
-              : `Search ${collectionLabel(libraryCollection)}`}
+              : `Search ${collectionLabel(libraryCollection, folderNames)}`}
             aria-label="Search library"
           />
           {#if libraryQuery}
@@ -423,23 +428,26 @@
           <span class="count">{documents.length}</span>
         </button>
 
-        <p class="section-header">Collections</p>
+        <div class="section-head-row">
+          <p class="section-header">Folders</p>
+          <button class="managelink" onclick={onManageFolders} type="button">Manage…</button>
+        </div>
         {#if folders.length === 0}
-          <p class="tree-empty">No folders yet — folders arrive with source-dir mirroring (Phase B).</p>
+          <p class="tree-empty">No folders yet — create one in Manage…</p>
         {:else}
-          {#each folders as g (g.value)}
+          {#each folders as f (f.id)}
             <button
               class="treerow"
-              class:active={sameCollection(libraryCollection, { kind: 'folder', value: g.value })}
-              aria-current={sameCollection(libraryCollection, { kind: 'folder', value: g.value })
+              class:active={sameCollection(libraryCollection, { kind: 'folder', value: f.id })}
+              aria-current={sameCollection(libraryCollection, { kind: 'folder', value: f.id })
                 ? 'true'
                 : undefined}
-              onclick={() => onSelectCollection({ kind: 'folder', value: g.value })}
+              onclick={() => onSelectCollection({ kind: 'folder', value: f.id })}
               type="button"
             >
               <span class="treeicon"><Icon name="folder" size={14} /></span>
-              <span class="treelabel">{g.value}</span>
-              <span class="count">{g.count}</span>
+              <span class="treelabel">{f.name}</span>
+              <span class="count">{f.doc_count}</span>
             </button>
           {/each}
         {/if}
@@ -693,6 +701,29 @@
     font-size: 0.82rem;
     padding: 0.6rem;
     line-height: 1.4;
+  }
+  /* The Folders header carries its own "Manage…" entry point — the only rail section with a
+     write path (ADR-025 F1). Baseline-aligned with the label, not a full-width bar. */
+  .section-head-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.4rem;
+  }
+  .managelink {
+    font: inherit;
+    font-size: 0.7rem;
+    cursor: pointer;
+    color: var(--fg-2);
+    background: none;
+    border: none;
+    padding: 0.16rem 0.3rem;
+    border-radius: 6px;
+    flex: none;
+  }
+  .managelink:hover {
+    color: var(--accent);
+    background: var(--surface-2);
   }
   /* Lavender "tab" labels for Pinned / Recent — grouped + legible (user request). */
   .section-header {

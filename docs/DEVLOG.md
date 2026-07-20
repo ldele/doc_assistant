@@ -8,6 +8,63 @@ Append only — never edit past entries.
 Format: What changed | Why | Rejected alternatives | What it opens
 
 ---
+## 2026-07-20 — F1: folders end-to-end (CRUD + membership + Library rail), ADR-025 carve step 1
+
+**What:** built **F1** of the ADR-025 carve over the previously dormant `Folder`/`document_folders`
+schema (0 rows). Contract first: `docs/specs/feature-corpus-folders.md` (D1–D9). Backend —
+`library.py` gains `FolderSummary` + `list_folders`/`get_folder`/`create_folder`/`rename_folder`/
+`delete_folder`/`add_documents_to_folder`/`remove_documents_from_folder`/`folder_document_ids`,
+mirroring the shipped keyword-families surface (None = unknown, `ValueError` = blank/collision,
+idempotent create, refreshed entity returned). `DocumentSummary` gains `folder_ids`;
+`list_documents(folder=<name>)` becomes `list_documents(folder_id=<id>)`. API — six routes under
+`/api/library/folders` + `LibraryFolderPayload`/`FolderCreate`/`FolderRename`/`FolderMembers`;
+`types.ts` mirrored. Frontend — new `LibraryManageFolders.svelte` (create / inline rename /
+confirm-delete / searchable bulk document picker, reusing the ManageKeywords modal shell), rail
+section "Collections" → **"Folders"** rendering the API list with counts + a "Manage…" entry point,
+`docsFor` matching `folder_ids`, and an **"Add to folder…"** item in the grid tile's ⋯ menu that
+opens the view pre-filtered to that document.
+
+**Why:** F1 is the demoable standalone step of the carve, and it is the piece that has to exist
+before F2 can scope retrieval to anything. Reconciliation with the L4 Library-redesign spec is the
+real judgment here — see "Rejected" below.
+
+**Rejected:** (1) **the baton's "compose both auto-assign rules" instruction** — L4's own
+2026-07-15 section already SHELVED source-dir subfolder mirroring when the user confirmed the
+reopen condition (`source_dir` is flat by design), and named **manual assignment** as the only
+honest path, gated on an ADR. ADR-025 is that ADR, so F1 builds manual assignment and mirroring
+stays shelved; F3's sha-match is a separate rule, not a second mirror. (2) **Nesting** — the
+schema is hierarchical but v1 creates every folder at the root (D1): ADR-025 flags nesting as the
+reopener for the whole folders-are-groups identity, and it would force F2 to invent an answer to
+"does scoping a parent include its children?". (3) **Name-keyed filtering** — `uq_folder_name_parent`
+never fires for root folders (SQLite treats NULL parents as distinct), so uniqueness moved into
+`library.py` and every filter keys on id (D2/D4). (4) **Deriving the rail from document payloads**
+(`folderGroups`, now retired) — a folder derived that way cannot appear while empty, and an
+invisible empty folder cannot be filled (D3). (5) **Deleting L4's write-trap test** — narrowed
+instead: read routes still write nothing (D7).
+
+**Honesty note (D8):** F1 ships the Library filter but *not* retrieval scoping, so the Manage view
+states in-product that chat still searches every document. Without it, narrowing the Library reads
+as narrowing the answer — the exact `is_archived` failure ADR-025 exists to prevent. F2 deletes
+the line by making it false.
+
+**Verified:** 15 new integration tests (`tests/integration/test_library_folders.py`) covering
+case-insensitive idempotent create, blank/collision `ValueError`, unknown-id `None`/`False`,
+idempotent membership, m2m overlap, archived excluded from counts (D5), id-based filtering, the
+D6 "delete never touches documents" guard and the D7 read-path write trap. Full suite **1082
+passed / 1 skipped** · ruff · `ruff format --check` · `mypy --strict src` · bandit ·
+`svelte-check` **0/0**. **Live on the real 76-doc corpus ($0/offline):** created "Demo corpus",
+bulk-added 3 documents → rail count 3 → grid filtered to 3 tiles with the breadcrumb resolving the
+id to the name; a rename onto an existing name surfaced `a folder named 'demo CORPUS' already
+exists` inline without blocking; deleting both folders left **76/76 documents intact** and reset
+the active collection to All; light + dark tokens resolve; 375px no overflow; 0 console errors.
+DB left with 0 folders.
+
+**Opens:** F2 (retrieval scoping + per-turn selector + provenance/answer chip; carries RG-020) and
+F3 (demo sha-match auto-assign + backfill) are untouched. `Tag` CRUD is the same shape and stays
+dormant, deliberately not bundled. `DocumentDetails.folders` still ships names only (the drill-down
+does not filter). Nesting, drag-and-drop assignment, and per-folder enrichment remain parked.
+
+---
 ## 2026-07-20 — Docs: corpus groups grilled → design-locked as "Folders with retrieval scope" (ADR-025)
 
 **What:** ran `grill-me` on the corpus-groups question the demo collection raised (demo corpus vs

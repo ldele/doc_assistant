@@ -2,12 +2,14 @@
 // Collections are computed from the LibraryDocument payload the API already ships
 // (Decision 5: Phase A filters client-side) — no backend involvement; Phase B wires
 // server-side folders + the folder-tree endpoint.
-import type { KeywordFamily, LibraryDocument } from './types'
+import type { KeywordFamily, LibraryDocument, LibraryFolder } from './types'
 
 export type DateBucket = 'today' | 'week' | 'month' | 'earlier'
 
-// The active collection shown in the main-pane grid. 'folder' is reachable in Phase A only
-// if the payload already carries folder names (the current corpus has none — empty-stated).
+// The active collection shown in the main-pane grid.
+// 'folder' carries a folder **id**, not a name (ADR-025 F1, spec D2): root folder names are not
+// unique (the DB constraint is (name, parent_folder_id) and SQLite treats NULL parents as
+// distinct), so a name cannot key a filter.
 // Keywords are NOT a collection kind — they are a multi-select facet (see keywordFacets below),
 // orthogonal to the single-select structural nav. Type/Date/Folder stay mutually exclusive.
 export type LibraryCollection =
@@ -52,11 +54,13 @@ export function docsFor(
     case 'date':
       return documents.filter((d) => dateBucket(d.added_at, now) === c.value)
     case 'folder':
-      return documents.filter((d) => d.folders.includes(c.value))
+      return documents.filter((d) => d.folder_ids.includes(c.value))
   }
 }
 
-export function collectionLabel(c: LibraryCollection): string {
+// `folderNames` resolves a folder id → its display name. A folder deleted in another view falls
+// back to a neutral label rather than showing a raw uuid.
+export function collectionLabel(c: LibraryCollection, folderNames?: Map<string, string>): string {
   switch (c.kind) {
     case 'all':
       return 'All documents'
@@ -65,7 +69,7 @@ export function collectionLabel(c: LibraryCollection): string {
     case 'date':
       return DATE_BUCKET_LABELS[c.value]
     case 'folder':
-      return c.value
+      return folderNames?.get(c.value) ?? 'Folder'
   }
 }
 
@@ -159,14 +163,12 @@ export function dateGroups(documents: LibraryDocument[], now: Date): Group<DateB
   }))
 }
 
-// Flat folder groups from the payload's folder names. Phase A renders these only if a
-// populated corpus already carries them; hierarchy (expandable tree) is Phase B.
-export function folderGroups(documents: LibraryDocument[]): Group[] {
-  const m = new Map<string, number>()
-  for (const d of documents) for (const f of d.folders) m.set(f, (m.get(f) ?? 0) + 1)
-  return [...m.entries()]
-    .map(([value, count]) => ({ value, count }))
-    .sort((a, b) => a.value.localeCompare(b.value))
+// NOTE: there is deliberately no `folderGroups(documents)` (retired in ADR-025 F1, spec D3).
+// A folder derived from the document payload cannot exist while empty — and an empty folder you
+// cannot see is a folder you cannot add documents to. The rail renders GET /api/library/folders
+// instead, which carries every folder plus its own doc_count.
+export function folderNameMap(folders: LibraryFolder[]): Map<string, string> {
+  return new Map(folders.map((f) => [f.id, f.name]))
 }
 
 // ---------------------------------------------------------------------------

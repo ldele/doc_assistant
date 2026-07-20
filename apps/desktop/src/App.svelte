@@ -9,13 +9,17 @@
     KeywordFamily,
     KeywordFamilyProposal,
     LibraryDocument,
+    LibraryFolder,
     RagOverrides,
     TurnResult,
   } from './lib/types'
   import {
+    addDocumentsToFolder,
     addFamilyMember,
     compareRetrieval,
+    createFolder,
     createKeywordFamily,
+    deleteFolder,
     deleteKeywordFamily,
     detectKeywordFamilies,
     getConceptGraph,
@@ -25,11 +29,14 @@
     getHealth,
     exportConversation,
     listConversations,
+    listFolders,
     listKeywordFamilies,
     deleteDocument,
     listLibraryDocuments,
     rebuildConceptGraph,
+    removeDocumentFromFolder,
     removeFamilyMember,
+    renameFolder,
     renameKeywordFamily,
     resetDocumentMeta,
     revealDocument,
@@ -47,6 +54,7 @@
   import LibraryFilterStrip from './lib/LibraryFilterStrip.svelte'
   import LibraryKeywordFilter from './lib/LibraryKeywordFilter.svelte'
   import LibraryManageKeywords from './lib/LibraryManageKeywords.svelte'
+  import LibraryManageFolders from './lib/LibraryManageFolders.svelte'
   import LibraryMetaEditor from './lib/LibraryMetaEditor.svelte'
   import LibraryDeleteConfirm from './lib/LibraryDeleteConfirm.svelte'
   import CompareCard from './lib/CompareCard.svelte'
@@ -57,6 +65,7 @@
     type LibrarySort,
     collectionLabel,
     docLabel,
+    folderNameMap,
     docsFor,
     facetFilter,
     familyCanonicalMap,
@@ -133,6 +142,16 @@
   let libraryKeywords = $state<string[]>([])
   let keywordFilterOpen = $state(false)
   let documentsLoaded = false
+
+  // Folders (ADR-025 F1, docs/specs/feature-corpus-folders.md). Manual Library organisation.
+  // The rail renders this list rather than deriving groups from `documents`, so a folder with
+  // zero members is still visible and therefore fillable (spec D3). `folderError` surfaces a
+  // 400 (blank/collision) in the Manage view without blocking anything else.
+  let folders = $state<LibraryFolder[]>([])
+  let manageFoldersOpen = $state(false)
+  let manageFolderId = $state<string | null>(null)
+  let manageFolderQuery = $state('')
+  let folderError = $state<string | null>(null)
 
   // Tag families (feature-tag-families.md, PR-1). Loaded alongside the document list;
   // `manageKeywordsOpen` opens the curation view (from the keyword-filter overlay's link).
@@ -264,6 +283,7 @@
   // to pre-PR-1 behavior), then `keywordFacets`/`facetFilter` operate on those collapsed units.
   const familyCanonicalOf = $derived(familyCanonicalMap(keywordFamilies))
   const keywordsOf = $derived(familyUnitsOf(familyCanonicalOf))
+  const folderNames = $derived(folderNameMap(folders))
   const collectionDocs = $derived(docsFor(documents, libraryCollection, new Date()))
   const searchedDocs = $derived(filterDocs(collectionDocs, libraryQuery))
   const facetList = $derived(keywordFacets(searchedDocs, libraryKeywords, keywordsOf))
@@ -627,6 +647,71 @@
     }
   }
 
+  // Folders are a sidecar read, same inform-don't-block rule as documents.
+  async function refreshFolders(): Promise<void> {
+    try {
+      folders = await listFolders()
+    } catch {
+      // keep the prior list
+    }
+  }
+
+  // Folder writes (ADR-025 F1). Write-then-refetch, like the family mutations above: the server
+  // is the authority on names + counts, so we never patch the local list by hand. Membership
+  // changes also refresh `documents`, whose `folder_ids` drive the grid filter.
+  async function folderWrite(op: () => Promise<unknown>, alsoDocuments = false): Promise<void> {
+    folderError = null
+    try {
+      await op()
+    } catch (e) {
+      folderError = e instanceof Error ? e.message : String(e)
+      return
+    }
+    await refreshFolders()
+    if (alsoDocuments) await refreshDocuments()
+  }
+
+  function createLibraryFolder(name: string): void {
+    void folderWrite(() => createFolder(name))
+  }
+
+  function renameLibraryFolder(folderId: string, name: string): void {
+    void folderWrite(() => renameFolder(folderId, name), true)
+  }
+
+  function deleteLibraryFolder(folderId: string): void {
+    // A deleted folder can't stay the active collection or the Manage selection.
+    if (libraryCollection.kind === 'folder' && libraryCollection.value === folderId) {
+      libraryCollection = { kind: 'all' }
+    }
+    if (manageFolderId === folderId) manageFolderId = null
+    void folderWrite(() => deleteFolder(folderId), true)
+  }
+
+  function addDocsToFolder(folderId: string, documentIds: string[]): void {
+    void folderWrite(() => addDocumentsToFolder(folderId, documentIds), true)
+  }
+
+  function removeDocFromFolder(folderId: string, documentId: string): void {
+    void folderWrite(() => removeDocumentFromFolder(folderId, documentId), true)
+  }
+
+  function openManageFolders(): void {
+    manageFolderQuery = ''
+    manageFoldersOpen = true
+    folderError = null
+    sidebarOpen = false
+    void refreshFolders()
+  }
+
+  // The grid tile's "Add to folder…": same view, opened pre-filtered to that one document so the
+  // picker shows it alone once a folder is chosen.
+  function openManageFoldersForDoc(id: string): void {
+    const doc = documents.find((d) => d.id === id)
+    openManageFolders()
+    manageFolderQuery = doc ? docLabel(doc) : ''
+  }
+
   // Switch between Chat and Library. Entering Library closes any open citation panel and lazy-loads
   // the document list once; the live chat's in-memory state is preserved across the switch.
   function selectMode(m: 'chat' | 'library' | 'graph'): void {
@@ -636,6 +721,7 @@
     if (m === 'library' && !documentsLoaded) {
       void refreshDocuments()
       void refreshFamilies()
+      void refreshFolders()
     }
     if (m === 'graph') {
       // The ego panel resolves doc_ids → titles from the library list, so it must be loaded too.
@@ -814,6 +900,7 @@
     {mode}
     {conversations}
     {documents}
+    {folders}
     liveSessionId={sessionId}
     viewingSessionId={viewing}
     {libraryCollection}
@@ -823,6 +910,7 @@
     onSelect={openConversation}
     onSelectMode={selectMode}
     onSelectCollection={selectCollection}
+    onManageFolders={openManageFolders}
     onClose={() => (sidebarOpen = false)}
     onPin={pinConversation}
     onArchive={archiveConversation}
@@ -893,7 +981,7 @@
                   class="crumb"
                   onclick={() => (libraryDocId = null)}
                   disabled={libraryDocId === null}
-                  type="button">{collectionLabel(libraryCollection)}</button
+                  type="button">{collectionLabel(libraryCollection, folderNames)}</button
                 >
               {/if}
               {#if openDoc}
@@ -982,7 +1070,7 @@
                     {#if libraryQuery.trim() !== '' || libraryKeywords.length > 0}
                       <strong>No documents match your filters</strong>
                       <p>
-                        Nothing in {collectionLabel(libraryCollection)} matches{#if libraryQuery.trim() !== ''}
+                        Nothing in {collectionLabel(libraryCollection, folderNames)} matches{#if libraryQuery.trim() !== ''}
                           “{libraryQuery.trim()}”{/if}.
                       </p>
                       {#if libraryKeywords.length > 0}
@@ -996,7 +1084,7 @@
                         </button>
                       {/if}
                     {:else}
-                      <strong>Nothing in {collectionLabel(libraryCollection)}</strong>
+                      <strong>Nothing in {collectionLabel(libraryCollection, folderNames)}</strong>
                       <p>This collection is empty right now.</p>
                     {/if}
                   </div>
@@ -1008,6 +1096,7 @@
                     onOpenDocument={openDocument}
                     onEditMetadata={(id) => (editingDocId = id)}
                     onReveal={revealDoc}
+                    onAddToFolder={openManageFoldersForDoc}
                     onDelete={(id) => (deletingDocId = id)}
                   />
                 {/if}
@@ -1182,6 +1271,23 @@
     onClear={clearKeywordFacets}
     onClose={() => (keywordFilterOpen = false)}
     onManage={() => (manageKeywordsOpen = true)}
+  />
+{/if}
+
+{#if manageFoldersOpen}
+  <LibraryManageFolders
+    {folders}
+    {documents}
+    selectedId={manageFolderId}
+    initialDocQuery={manageFolderQuery}
+    error={folderError}
+    onCreate={createLibraryFolder}
+    onRename={renameLibraryFolder}
+    onDelete={deleteLibraryFolder}
+    onAddDocuments={addDocsToFolder}
+    onRemoveDocument={removeDocFromFolder}
+    onSelect={(id) => (manageFolderId = id)}
+    onClose={() => (manageFoldersOpen = false)}
   />
 {/if}
 

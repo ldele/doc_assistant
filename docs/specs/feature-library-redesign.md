@@ -138,6 +138,17 @@ browse-time write path), never a fake path-derived tree. Deferring folders entir
 where we land for now. **Note for the ingestion work:** with no folders, **`doc_type`** (paper/book/
 web/note) is the primary selection axis in `feature-selective-ingestion.md`, not folder scoping.
 
+## Phase B superseded by ADR-025 F1 (2026-07-20)
+
+The shelving above held: subfolder mirroring was **not** built. The manual-assignment path this
+section named as the alternative ("option B — its own ADR, the first browse-time write path") was
+unblocked by `docs/decisions/ADR-025-corpus-folders-retrieval-scope.md` and **shipped as F1** —
+contract and the full reconciliation of these Phase-B locks in
+`docs/specs/feature-corpus-folders.md`. What carried over from Phase B: the `GET
+/api/library/folders` endpoint (extended to full CRUD) and the rail's folder section filtering the
+grid. What did not: path-derived mirroring, its backfill runner, and the hierarchical tree (F1 is
+flat — spec D1). Decision 7's "browsing writes nothing" is narrowed, not dropped (spec D7).
+
 ## Decision ledger (grill-me 2026-07-14)
 
 | Branch | Resolution | Deciding reason / reopens-if |

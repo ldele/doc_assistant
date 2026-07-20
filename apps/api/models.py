@@ -39,6 +39,7 @@ if TYPE_CHECKING:
     from doc_assistant.library import (
         DocumentChunkView,
         DocumentSummary,
+        FolderSummary,
         KeywordFamily,
         ParentBlock,
     )
@@ -312,6 +313,7 @@ class LibraryDocumentPayload(BaseModel):
     chunk_count: int | None
     page_count: int | None
     folders: list[str]
+    folder_ids: list[str]
     tags: list[str]
     keywords: list[str]
     added_at: datetime | None
@@ -330,6 +332,7 @@ class LibraryDocumentPayload(BaseModel):
             chunk_count=s.chunk_count,
             page_count=s.page_count,
             folders=list(s.folders),
+            folder_ids=list(s.folder_ids),
             tags=list(s.tags),
             keywords=list(s.keywords),
             added_at=_as_utc(s.added_at) if s.added_at is not None else None,
@@ -408,6 +411,53 @@ class LibraryDocumentChunksPayload(BaseModel):
             parents=[LibraryParentPayload.from_block(b) for b in v.parents],
             child_count=v.child_count,
         )
+
+
+# ============================================================
+# Folders (docs/specs/feature-corpus-folders.md — ADR-025 F1)
+# ============================================================
+
+
+class LibraryFolderPayload(BaseModel):
+    """One folder plus its non-archived member count (mirrors ``library.FolderSummary``).
+
+    ``parent_id`` is always None in F1 — folders are flat until nesting is decided (spec D1);
+    the field is on the wire so adding nesting later is not a contract break."""
+
+    id: str
+    name: str
+    description: str | None
+    parent_id: str | None
+    doc_count: int
+
+    @classmethod
+    def from_folder(cls, f: FolderSummary) -> LibraryFolderPayload:
+        return cls(
+            id=f.id,
+            name=f.name,
+            description=f.description,
+            parent_id=f.parent_id,
+            doc_count=f.doc_count,
+        )
+
+
+class FolderCreate(BaseModel):
+    """POST body to create a folder."""
+
+    name: str = Field(min_length=1)
+    description: str | None = None
+
+
+class FolderRename(BaseModel):
+    """PATCH body to rename a folder."""
+
+    name: str = Field(min_length=1)
+
+
+class FolderMembers(BaseModel):
+    """POST body to add documents to a folder (bulk; idempotent)."""
+
+    document_ids: list[str] = Field(min_length=1)
 
 
 # ============================================================

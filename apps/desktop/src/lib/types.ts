@@ -153,10 +153,23 @@ export interface LibraryDocument {
   health: string | null
   chunk_count: number | null
   page_count: number | null
-  folders: string[]
+  folders: string[] // display names
+  folder_ids: string[] // the key — a root folder name is not unique (ADR-025 F1, spec D2)
   tags: string[]
   keywords: string[]
   added_at: string | null // ISO 8601
+}
+
+// A Library folder (ADR-025 F1, docs/specs/feature-corpus-folders.md). Organises the Library
+// only — folders do NOT scope chat retrieval; that is F2. `parent_id` is always null in v1
+// (folders are flat, spec D1); `doc_count` excludes archived documents, matching the grid.
+// Mirrors apps/api/models.py::LibraryFolderPayload.
+export interface LibraryFolder {
+  id: string
+  name: string
+  description: string | null
+  parent_id: string | null
+  doc_count: number
 }
 
 // Tag families (feature-tag-families.md, PR-1). A family is a curated Concept whose aliases are

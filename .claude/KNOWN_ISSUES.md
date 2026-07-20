@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-07-20 (KI-20 added + resolved: schema migration on API start) · class: living -->
+<!-- status: active · updated: 2026-07-20 (KI-23 renumbered from a duplicate KI-20; KI-24 added) · class: living -->
 
 # KNOWN ISSUES
 
@@ -639,7 +639,12 @@ Migrated from the old `CLAUDE.md` / `README` runtime-quirk notes on 2026-06-20 (
 - **Related:** KI-3 (why the fix avoided `uv sync`); the safe-delete feature is ADR-014;
   `tests/integration/test_document_delete.py`; `tests/unit/test_declared_dependencies.py`.
 
-## KI-20 — additive schema columns never land on a running install; F2 moved that onto the answer path — RESOLVED (2026-07-20)
+## KI-23 — additive schema columns never land on a running install; F2 moved that onto the answer path — RESOLVED (2026-07-20)
+> **Renumbered 2026-07-20 (was KI-20).** It was filed as KI-20 while F2 was being built, colliding
+> with the existing KI-20 (concept curation hard-deletes vocabulary, 2026-07-19) — two open issues
+> under one id. This file is living, so the heading is corrected here; the **append-only**
+> `docs/DEVLOG.md` and `.claude/SESSION.md` entries of 2026-07-20 still say "KI-20" and are left
+> exactly as written. If you arrived from one of those, this is the issue they mean.
 - **Symptom:** on this box, `answer_records.retrieval_scope_json` (ADR-025 F2) **and**
   `concepts.graph_include` (ADR-018, added 2026-07-07) were both missing from the live
   `data/library.db` until `python -m doc_assistant.db.migrations` was run by hand on 2026-07-20.
@@ -672,3 +677,29 @@ Migrated from the old `CLAUDE.md` / `README` runtime-quirk notes on 2026-06-20 (
   the lifespan call is removed.
 - **Still true:** the frozen-build entry (`apps/api/__main__.py`) reaches the same lifespan, so
   packaged installs are covered too. Ingest keeps its own `init_db()` call (fresh-clone path).
+
+## KI-24 — `ingest --rebuild` silently empties every folder (membership cascades away with the rows) — OPEN (2026-07-20)
+- **Symptom:** after `python -m doc_assistant.ingest --rebuild`, every folder still exists but has
+  **0 documents**. Nothing in the output said so before 2026-07-20. Reproduced live on an isolated
+  data home: a hand-made folder holding 3 documents came back empty; only the demo folder
+  repopulated (see below).
+- **Cause:** the rebuild branch runs `session.execute(delete(DBDocument))`
+  (`src/doc_assistant/ingest/__init__.py`), and `document_folders.document_id` carries
+  `ON DELETE CASCADE` with `PRAGMA foreign_keys=ON` (`db/session.py`). Re-ingest mints **new**
+  `Document` rows, so nothing reconnects. Folder rows survive because the cascade is on the
+  *document* side — which is exactly what makes the loss invisible: the rail still lists your
+  folders, they are just empty.
+- **Blast radius:** ADR-025 F1 membership (hand-assigned folders) and, via F2, any saved habit of
+  scoping chat to a folder — a scoped turn after a rebuild searches **nothing** and says so
+  (correct, but the user won't know why). `document_tags` has the identical FK and the same
+  exposure once tags ship.
+- **Partial mitigation shipped (ADR-025 F3, 2026-07-20):** the rebuild now logs
+  `rebuild_clears_folder_membership memberships=<n>` before the delete — the loss is at least
+  *stated*. The **demo** folder self-heals, because a rebuild makes every document look newly
+  ingested and the F3 sha-match hook re-assigns it (spec M3). Hand-made folders do not.
+- **Real fix (not built):** snapshot `document_folders` keyed by `doc_hash` before the delete and
+  restore it after the loop — the hash survives a rebuild, the row id does not. Same treatment for
+  `document_tags`. Its own change; F3 deliberately did not bundle it.
+- **Pointer:** `docs/specs/feature-corpus-folders-demo.md` M9 (where it was found while specifying
+  the F3 trigger) · ADR-025 · `docs/specs/feature-corpus-folders.md` D6 (folder delete never
+  touches documents — the inverse direction, which *is* safe).

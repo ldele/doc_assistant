@@ -157,10 +157,10 @@ Mirrors `folder_document_ids` (F1) and inherits its archived-exclusion rule (F1 
   perform, which is the same class of quiet mismatch the rest of F2 exists to remove. Both arms
   take the resolved scope (holding the document set constant is also what makes the comparison
   *about the knob*), and `CompareResult.scope_label` puts a line on the card saying so.
-- **S12 — KI-20: the API lifespan migrates the schema and logs what it changed.** `init_db()` ran
+- **S12 — KI-23 (filed as KI-20): the API lifespan migrates the schema and logs what it changed.** `init_db()` ran
   from `ingest` only, so additive columns never reached an install whose user just chats — and F2
   put one on the answer path. The lifespan now calls it; `init_db` returns the added columns and
-  the lifespan logs them at WARNING. See `.claude/KNOWN_ISSUES.md` KI-20.
+  the lifespan logs them at WARNING. See `.claude/KNOWN_ISSUES.md` KI-23.
 
 ## Out of scope (F2)
 

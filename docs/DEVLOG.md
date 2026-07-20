@@ -8,6 +8,74 @@ Append only — never edit past entries.
 Format: What changed | Why | Rejected alternatives | What it opens
 
 ---
+## 2026-07-20 — ADR-025 F3: demo corpus auto-assigns into a folder at ingest + a one-time backfill
+
+Closes the ADR-025 carve (F1 folders → F2 retrieval scoping → **F3 demo auto-assign**). Contract
+written first: `docs/specs/feature-corpus-folders-demo.md` (M1–M11).
+
+**What.** New sidecar `src/doc_assistant/demo_corpus.py`: load the `collection: demo` pins from
+`tests/eval/corpus_manifest.yaml`, decide whether a file *is* one of them by **bytes** (size
+fast-path, then SHA-256 — so a renamed demo PDF still counts), resolve the demo folder, and assign.
+`ingest.main()` gained a two-line seam — `get_document_row_hashes()` diffed around the processing
+loop — and hands the newly-created rows to the hook. New runner
+`scripts/backfill_demo_folder.py` (dry-run default, `--apply`, `--force`) covers documents that
+were already in the library. `app_settings` gained `demo_folder_id` + `demo_backfill_done`.
+`process_one_document` is **untouched**.
+
+**Why the trigger is "the row is new", not `process_one_document`'s `"added"`.** `"added"` is also
+returned for *re*-ingests — the inverse-orphan repair, a `--path` rerun — so keying on it would
+re-add a document the user had removed from the folder by hand, every run. The ADR's own words are
+"ingest of a **new** document"; the row-set difference is literally that, and it keeps the locked
+ingest hot path free of a new parameter (M1/M2).
+
+**Why the folder is resolved by a persisted id, not by name.** ADR-025 promises an ordinary,
+renamable folder. A name-keyed lookup would silently create a *second* "Demo corpus" the first
+time someone renamed theirs. The id lives in `settings.json` because it is a per-install
+**pointer**, not document data — no schema change (M5).
+
+**Why the backfill refuses to run twice.** A second pass re-adds exactly the papers the user
+removed. `--force` exists and says so loudly (M8). A run that assigns nothing does **not** burn the
+flag, so back-filling before ingesting doesn't lock out the real backfill.
+
+**Rejected:** a **`folders.origin` additive column** to mark the demo folder — `settings.json`
+already fits a per-install pointer, and one auto-managed folder doesn't earn schema surface
+(reopener recorded). A **tombstone so a deleted demo folder never returns** — that would couple the
+generic `delete_folder` to demo semantics; per-*document* removals are what ADR-013 protects, and
+those are never re-fought (M6). **Bundling the manifest into the PyInstaller build** — the demo
+corpus is a repo-clone flow end to end, so a packaged install has no demo files to assign; the
+missing manifest is a quiet no-op by design (M10). A **demo badge / demo-specific UI** — ADR-025
+fork 1 is one organizing concept, one write surface (M11).
+
+**Found while specifying, logged not fixed — KI-24.** `ingest --rebuild` runs
+`delete(DBDocument)`, and `document_folders` cascades on the document side: **every folder is
+silently emptied** while still appearing in the rail. F3 adds a warning naming the count
+(`rebuild_clears_folder_membership memberships=4` in the live probe) and logs the issue; the real
+fix (snapshot membership by `doc_hash`, restore after) is its own change. The demo folder is the
+one that self-heals, because a rebuild makes every document look newly ingested (M3/M9).
+
+**Also corrected: a duplicate KI number.** The schema-migration issue filed yesterday as **KI-20**
+collided with the existing KI-20 (concept curation hard-deletes vocabulary). Renumbered to
+**KI-23** in the living `KNOWN_ISSUES.md` + code/spec/test references; the append-only DEVLOG and
+baton entries above still read "KI-20" and were **not** rewritten — KI-23 carries a pointer note.
+
+**Verified:** 27 new tests (13 unit + 14 integration); full suite **1129 passed / 1 skipped** ·
+ruff · `ruff format` · `mypy --strict src` · bandit · docs_check 0/0 · integrity_check 0/0.
+**Live, end-to-end, $0** (real ingest, real Chroma, local embedder, isolated `DOC_DATA_DIR` — the
+real 76-doc library never touched, verified 76 docs / 0 folders / no settings file before and
+after): a **renamed** demo PDF + a private PDF ingested → only the demo one joined "Demo corpus";
+re-ingest after a manual removal put **nothing** back; the folder renamed to "Sutskever reading
+list" kept receiving new demo papers with **no** second folder created; `--rebuild` logged the
+membership warning, left a hand-made folder empty, and refilled the demo folder. The live backfill
+dry run against the real corpus found 18 demo files on disk, none ingested — and **caught a
+reporting bug** on the way: the summary counted never-ingested files as "already members". Fixed
+and covered by a test.
+
+**Opens:** KI-24 (the real rebuild fix, and `document_tags` has the identical exposure) · the M8
+reopener (a per-document "was auto-assigned" marker would make backfill re-runs safe without a
+flag) · an "Eval corpus" folder for the other collection is deliberately **not** built (not in
+ADR-025) · `--remove-demo` still leaves the emptied folder behind, by choice.
+
+---
 ## 2026-07-20 — KI-20 resolved (schema migrates on API start) + A/B compare honours the scope
 
 Two decisions the user took after reviewing F2 (`0e45dd3`), built together because both are

@@ -311,7 +311,7 @@ def create_app(
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-        # KI-20: bring the live schema up to date before serving. `init_db` is idempotent and
+        # KI-23: bring the live schema up to date before serving. `init_db` is idempotent and
         # purely additive (create_all + ALTER ... ADD COLUMN), and until now it ran ONLY from
         # `ingest` — so a user who pulled an update and just chatted never got new columns.
         # That was survivable while additive columns fed sidecars; ADR-025 F2 put one on the

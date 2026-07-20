@@ -46,7 +46,7 @@ def _apply_additive_columns(engine: Engine) -> list[str]:
     """Idempotently add any missing additive columns (+ their index) to existing tables.
 
     Returns the ``table.column`` names actually added, so a caller can say what it changed
-    rather than leaving a schema drift to be discovered at the first failed write (KI-20).
+    rather than leaving a schema drift to be discovered at the first failed write (KI-23).
     """
     added: list[str] = []
     inspector = inspect(engine)
@@ -73,7 +73,7 @@ def init_db(reset: bool = False) -> list[str]:
     """Create all tables + apply additive column migrations. Safe to run repeatedly.
 
     Returns the additive columns added by this call (empty when the schema was already
-    current), so an entrypoint can log a schema change instead of silently drifting (KI-20).
+    current), so an entrypoint can log a schema change instead of silently drifting (KI-23).
 
     Args:
         reset: If True, drops all tables first. WARNING: destroys data.

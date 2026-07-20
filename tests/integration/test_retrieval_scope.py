@@ -339,13 +339,13 @@ def test_compare_without_a_scope_is_unchanged(monkeypatch, temp_db) -> None:
     assert result.scope_label is None
 
 
-# --- KI-20: the API migrates the live schema on startup ------------------------------------ #
+# --- KI-23: the API migrates the live schema on startup ------------------------------------ #
 
 
 def test_api_startup_applies_pending_additive_columns(tmp_path: Path, monkeypatch) -> None:
-    """KI-20 — before this, additive columns only ever landed via `ingest`, so a user who pulled
-    an update and just chatted kept a stale schema. F2 put a column on the answer path, where
-    that breaks every turn."""
+    """KI-23 (filed as KI-20) — before this, additive columns only ever landed via `ingest`, so
+    a user who pulled an update and just chatted kept a stale schema. F2 put a column on the
+    answer path, where that breaks every turn."""
     from apps.api.main import create_app
     from fastapi.testclient import TestClient
     from sqlalchemy import text as sql_text

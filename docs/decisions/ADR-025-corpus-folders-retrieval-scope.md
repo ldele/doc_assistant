@@ -89,3 +89,17 @@ Library grid would silently lie in chat. Meanwhile the schema already carries do
   ADR-024 (evals home; the demo/eval regime split).
 - `.claude/RIGOR_TODO.md` RG-020 (scoping bounds) · RG-021 (eval fingerprint).
 - Full grill ledger: `.claude/SESSION.md` 2026-07-20 entry.
+
+## Build status (appended 2026-07-20 — the carve is complete)
+
+- **F1** — `3969adb`, spec `docs/specs/feature-corpus-folders.md`.
+- **F2** — `0e45dd3` (+ follow-ups `dfe775e`), spec `docs/specs/feature-corpus-folders-scope.md`.
+- **F3** — spec `docs/specs/feature-corpus-folders-demo.md`. Fork 2 is built as written: bytes, not
+  names; only a *newly created* `Document` row is ever considered, so a hand removal is never
+  re-fought. Two things fork 2 did not say, decided at build time and recorded as spec M5/M6: the
+  folder is resolved by a **persisted id** (renaming it is respected — a name-keyed lookup would
+  make a second "Demo corpus"), and deleting it is respected until a *new* demo document arrives
+  (no tombstone). Fork 5 (per-folder enrichment) stays parked; RG-020's synthetic-10k half stays open.
+- Found while building F3, logged not fixed: **KI-24** — `ingest --rebuild` cascades away all
+  `document_folders` rows, so every folder is silently emptied. This ADR's membership model assumes
+  membership survives a reindex; it currently does not.

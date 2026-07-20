@@ -130,3 +130,40 @@ def effective_llm() -> tuple[str, str]:
     if provider is not None and model is not None:
         return provider, model
     return config.LLM_PROVIDER, config.LLM_MODEL
+
+
+# ============================================================
+# Demo-corpus bookkeeping (ADR-025 F3)
+# ============================================================
+# Two per-install pointers, not user-facing preferences: which folder holds the demo corpus, and
+# whether the one-time backfill has already run. They live here rather than in the schema because
+# they are *pointers*, not document data (spec M5) — resolving the folder by id is what makes
+# renaming it stick, and the backfill flag is what stops a second run from re-adding documents the
+# user removed (M8).
+
+
+def get_demo_folder_id() -> str | None:
+    """The folder id the demo corpus is assigned into, or None if never created."""
+    stored = load_user_settings().get("demo_folder_id")
+    return stored if isinstance(stored, str) and stored else None
+
+
+def set_demo_folder_id(folder_id: str) -> None:
+    """Remember which folder holds the demo corpus (id-keyed, so a rename is respected)."""
+    settings = load_user_settings()
+    settings["demo_folder_id"] = folder_id
+    save_user_settings(settings)
+    log.info("demo_folder_id_set", folder_id=folder_id)
+
+
+def demo_backfill_done() -> bool:
+    """Whether the one-time demo backfill has already been applied on this install."""
+    return load_user_settings().get("demo_backfill_done") is True
+
+
+def mark_demo_backfill_done() -> None:
+    """Record that the one-time demo backfill has run (see ``scripts/backfill_demo_folder.py``)."""
+    settings = load_user_settings()
+    settings["demo_backfill_done"] = True
+    save_user_settings(settings)
+    log.info("demo_backfill_marked_done")

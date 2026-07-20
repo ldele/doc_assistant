@@ -26,12 +26,13 @@ import structlog
 from langchain_chroma import Chroma
 from langchain_core.documents import Document
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-from sqlalchemy import delete
+from sqlalchemy import delete, func, select
 from tqdm import tqdm
 
 from doc_assistant import config
 from doc_assistant.db.migrations import init_db
 from doc_assistant.db.models import Document as DBDocument
+from doc_assistant.db.models import document_folders
 from doc_assistant.db.session import session_scope
 from doc_assistant.embeddings import (
     get_active_model_name,
@@ -427,6 +428,21 @@ def main(
         Path(config.CHROMA_PATH).mkdir(parents=True, exist_ok=True)
         Path(config.PC_CHROMA_PATH).mkdir(parents=True, exist_ok=True)
         with session_scope() as session:
+            # Deleting the Document rows cascades through `document_folders` (ON DELETE CASCADE),
+            # so EVERY folder loses its members and is left as an empty shell — a data loss the
+            # user cannot otherwise see. Naming the count is the honest minimum until the proper
+            # fix (snapshot + restore) lands; the demo folder is the only one that repopulates
+            # itself, because a rebuild makes every document look newly ingested (ADR-025 F3,
+            # spec M3/M9). See `.claude/KNOWN_ISSUES.md`.
+            membership_q = select(func.count()).select_from(document_folders)
+            memberships = session.execute(membership_q).scalar()
+            if memberships:
+                log.warning(
+                    "rebuild_clears_folder_membership",
+                    memberships=int(memberships),
+                    hint="folders survive but are emptied; re-add by hand "
+                    "(the demo folder refills itself)",
+                )
             session.execute(delete(DBDocument))
 
     db = Chroma(
@@ -490,10 +506,21 @@ def main(
         excluded_skipped=excluded_skipped,
     )
 
+    # ADR-025 F3 — the demo auto-assign trigger is "a Document row that did not exist before this
+    # run", captured as a set-difference around the loop. Deliberately NOT keyed on
+    # process_one_document's "added": that is also returned for *re*-ingests (the inverse-orphan
+    # repair above, a --path rerun), and re-assigning an existing document would re-fight a
+    # membership the user edited by hand. Snapshotting *here* — after the --rebuild wipe — makes a
+    # rebuild repopulate the demo folder it just emptied, which is the one honest exception
+    # (spec M1/M3, docs/specs/feature-corpus-folders-demo.md).
+    rows_before = get_document_row_hashes()
+
     stats: dict[str, int] = {"added": 0, "skipped": 0, "error": 0}
     for path in tqdm(to_process, desc="Processing"):
         result = process_one_document(path, db, pc_db, splitter, indexed)
         stats[result] += 1
+
+    _assign_demo_folder(get_document_row_hashes() - rows_before)
 
     log.info(
         "ingest_complete",
@@ -502,3 +529,20 @@ def main(
         errors=stats["error"],
     )
     return stats
+
+
+def _assign_demo_folder(new_hashes: set[str]) -> None:
+    """Put newly-ingested demo-manifest files into the demo folder (ADR-025 F3).
+
+    Never fails an ingest that otherwise succeeded: the documents are indexed and answerable
+    either way, so a folder-assignment problem is a warning, not a failure. Imported lazily to
+    keep the locked ingest core's top-level imports intact (the ``_drop_excluded`` precedent).
+    """
+    if not new_hashes:
+        return
+    try:
+        from doc_assistant import demo_corpus
+
+        demo_corpus.assign_new_documents(new_hashes)
+    except Exception as e:  # inform, never block an ingest that otherwise succeeded
+        log.warning("demo_folder_assign_failed", error=str(e))

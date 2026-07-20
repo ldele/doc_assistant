@@ -330,8 +330,8 @@ def delete_document(document_id: str, chroma_db: Any) -> DeleteResult | None:
     (recoverable); only on success (or when the file is already gone) does the removal proceed, so
     a locked/undeletable file leaves the library entry intact rather than orphaning a still-indexed
     file on disk. Removal then: deletes the ``Document`` row (FK-cascades citations / parts /
-    similarities), the ``DocumentMeta`` override (no FK — explicit), the doc's chunks from the live
-    Chroma store, its figure dir, and its cached ``.md``. ADR-014.
+    similarities, and since ADR-026 the ``DocumentMeta`` override too), the doc's chunks from the
+    live Chroma store, its figure dir, and its cached ``.md``. ADR-014.
     """
     from send2trash import send2trash
 
@@ -357,7 +357,8 @@ def delete_document(document_id: str, chroma_db: Any) -> DeleteResult | None:
             log.warning("delete_trash_failed", document_id=document_id, error=str(e))
             raise RuntimeError(f"could not move {filename} to the Recycle Bin") from e
 
-    # 2. Drop the DB row (+ cascades) and the override sidecar (no FK).
+    # 2. Drop the DB row (+ cascades). The override delete is redundant since ADR-026 gave
+    # document_meta a real FK, and is kept only so this path reads as the complete story.
     with session_scope() as session:
         meta = session.get(DocumentMeta, document_id)
         if meta is not None:

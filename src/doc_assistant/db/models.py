@@ -807,11 +807,22 @@ class DocumentMeta(Base):
     ``documents``) isolates the first browse-time write path from the extraction-populated
     registry, so a re-run of enrichment never clobbers a user edit. Additive — ``create_all``
     makes the table, no migration (mirrors ``ConversationMeta``).
+
+    ``document_id`` is a real foreign key with ``ON DELETE CASCADE`` (ADR-026). It shipped
+    without one, which made an override *outlive* its document: the orphan sweep and the old
+    ``--rebuild`` bulk delete removed ``Document`` rows without touching this table, leaving rows
+    nothing could ever read and nothing would ever clean. ``delete_document`` still deletes the
+    override explicitly — harmless now, and it keeps the ADR-014 path readable — but correctness
+    no longer depends on every caller remembering. Unlike ``ConversationMeta``, which cannot have
+    an FK (conversations are *derived* from ``AnswerRecord`` grouping; there is no table to point
+    at), this one always had a parent to reference.
     """
 
     __tablename__ = "document_meta"
 
-    document_id: Mapped[str] = mapped_column(String, primary_key=True)
+    document_id: Mapped[str] = mapped_column(
+        String, ForeignKey("documents.id", ondelete="CASCADE"), primary_key=True
+    )
     title_override: Mapped[str | None] = mapped_column(Text, nullable=True)
     authors_override: Mapped[str | None] = mapped_column(Text, nullable=True)
     year_override: Mapped[int | None] = mapped_column(Integer, nullable=True)

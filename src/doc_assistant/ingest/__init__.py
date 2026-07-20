@@ -26,13 +26,12 @@ import structlog
 from langchain_chroma import Chroma
 from langchain_core.documents import Document
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-from sqlalchemy import delete, func, select
+from sqlalchemy import select
 from tqdm import tqdm
 
 from doc_assistant import config
 from doc_assistant.db.migrations import init_db
 from doc_assistant.db.models import Document as DBDocument
-from doc_assistant.db.models import document_folders
 from doc_assistant.db.session import session_scope
 from doc_assistant.embeddings import (
     get_active_model_name,
@@ -419,31 +418,33 @@ def main(
     log.info("embedding_model", model=active_model, collection=collection)
     embeddings = get_embeddings(active_model)
 
+    # KI-24 — a rebuild wipes the *vector stores* and re-embeds; it does NOT reset the library
+    # registry. It used to run `delete(DBDocument)` here, which FK-cascaded away folder membership
+    # (ADR-025), tags, keywords, citations, figures and every other document-keyed row, orphaned
+    # the FK-less `document_meta` overrides against ids that no longer existed, and silently reset
+    # user columns (`is_archived`, `notes`) — all invisible afterwards, because the folders
+    # themselves survived and merely looked empty. It also cost retrieval quality: with the
+    # `figures` rows gone, `figure_units()` found none and the rebuilt index carried **no figure
+    # chunks** until the (paid, VLM) describe pass was re-run. Keeping the rows means
+    # `_existing_document_id` resolves to the same id, so every association simply stays attached.
+    # Rows the rebuild does not reproduce are swept *after* the loop instead
+    # (`_sweep_rebuild_rows`) — the same gone/stale classification `cleanup_orphans_sqlite`
+    # makes, which cannot run here
+    # because it reads its candidate set from the Chroma metadata this branch just deleted.
+    rebuild_known_hashes: set[str] = set()
     if force_rebuild:
         if scope is not None:
             raise ValueError("--rebuild and --path are mutually exclusive (rebuild is global)")
-        log.warning("force_rebuild", hint="clearing vector stores and SQLite document records")
+        log.warning(
+            "force_rebuild",
+            hint="clearing vector stores and re-embedding; the library registry "
+            "(folders, tags, metadata, figures) is preserved",
+        )
         shutil.rmtree(config.CHROMA_PATH, ignore_errors=True)
         shutil.rmtree(config.PC_CHROMA_PATH, ignore_errors=True)
         Path(config.CHROMA_PATH).mkdir(parents=True, exist_ok=True)
         Path(config.PC_CHROMA_PATH).mkdir(parents=True, exist_ok=True)
-        with session_scope() as session:
-            # Deleting the Document rows cascades through `document_folders` (ON DELETE CASCADE),
-            # so EVERY folder loses its members and is left as an empty shell — a data loss the
-            # user cannot otherwise see. Naming the count is the honest minimum until the proper
-            # fix (snapshot + restore) lands; the demo folder is the only one that repopulates
-            # itself, because a rebuild makes every document look newly ingested (ADR-025 F3,
-            # spec M3/M9). See `.claude/KNOWN_ISSUES.md`.
-            membership_q = select(func.count()).select_from(document_folders)
-            memberships = session.execute(membership_q).scalar()
-            if memberships:
-                log.warning(
-                    "rebuild_clears_folder_membership",
-                    memberships=int(memberships),
-                    hint="folders survive but are emptied; re-add by hand "
-                    "(the demo folder refills itself)",
-                )
-            session.execute(delete(DBDocument))
+        rebuild_known_hashes = get_document_row_hashes()
 
     db = Chroma(
         persist_directory=config.CHROMA_PATH,
@@ -510,10 +511,15 @@ def main(
     # run", captured as a set-difference around the loop. Deliberately NOT keyed on
     # process_one_document's "added": that is also returned for *re*-ingests (the inverse-orphan
     # repair above, a --path rerun), and re-assigning an existing document would re-fight a
-    # membership the user edited by hand. Snapshotting *here* — after the --rebuild wipe — makes a
-    # rebuild repopulate the demo folder it just emptied, which is the one honest exception
-    # (spec M1/M3, docs/specs/feature-corpus-folders-demo.md).
+    # membership the user edited by hand (spec M1/M2, docs/specs/feature-corpus-folders-demo.md).
+    # Since KI-24 a --rebuild keeps its rows, so this set is empty there and the folder is
+    # *preserved* rather than repopulated — which retires spec M3's "one honest exception".
     rows_before = get_document_row_hashes()
+    # `indexed` is pre-seeded with whatever both stores already hold, and
+    # `process_one_document` adds to it, so the *difference* is "what this run actually
+    # produced" — the set the KI-24 sweep needs. Never assume the rebuild's wipe left it empty:
+    # a hash still in `indexed` when the loop starts was NOT reproduced by this run.
+    indexed_before = set(indexed)
 
     stats: dict[str, int] = {"added": 0, "skipped": 0, "error": 0}
     for path in tqdm(to_process, desc="Processing"):
@@ -522,6 +528,9 @@ def main(
 
     _assign_demo_folder(get_document_row_hashes() - rows_before)
 
+    if force_rebuild:
+        _sweep_rebuild_rows(rebuild_known_hashes, indexed - indexed_before)
+
     log.info(
         "ingest_complete",
         added=stats["added"],
@@ -529,6 +538,63 @@ def main(
         errors=stats["error"],
     )
     return stats
+
+
+def _sweep_rebuild_rows(known_before: set[str], reproduced: set[str]) -> None:
+    """Drop the rows a ``--rebuild`` did not reproduce (KI-24's replacement for the bulk delete).
+
+    Classifies exactly like :func:`cleanup.\\_find_orphan_hashes`, but without re-hashing anything
+    — the rebuild has just told us what every present source produces:
+
+    * **stale** — another hash now exists for the same source file, i.e. the content changed. The
+      old row is a leftover duplicate and goes (this is the case the bulk delete used to be the
+      only cure for).
+    * **gone** — the source file is no longer on disk, so nothing will ever reproduce it.
+    * **kept** — the file is still there but produced nothing *this run* (an extraction error or an
+      empty extract). Deleting those would destroy folder membership, tags and metadata overrides
+      on the strength of a transient failure, so they are protected and reported. That protection
+      is new: the bulk delete removed them unconditionally, silently.
+    """
+    missing = known_before - reproduced
+    if not missing:
+        return
+    with session_scope() as session:
+        by_hash = {
+            str(h): str(src or "")
+            for h, src in session.execute(
+                select(DBDocument.doc_hash, DBDocument.source_original)
+            ).all()
+        }
+    live_sources = {by_hash[h] for h in reproduced if h in by_hash}
+
+    stale, gone, kept = [], [], []
+    for h in sorted(missing):
+        source = by_hash.get(h, "")
+        if source and source in live_sources:
+            stale.append(h)
+        elif not source or not Path(source).exists():
+            gone.append(h)
+        else:
+            kept.append(h)
+
+    if kept:
+        log.warning(
+            "rebuild_kept_unreproduced_rows",
+            count=len(kept),
+            hint="their source file is still on disk but produced nothing this run; "
+            "the library rows (folders, tags, metadata) are left intact",
+        )
+    doomed = stale + gone
+    if not doomed:
+        return
+    log.info("rebuild_removing_rows", stale=len(stale), gone=len(gone))
+    with session_scope() as session:
+        for h in doomed:
+            row = session.execute(
+                select(DBDocument).where(DBDocument.doc_hash == h)
+            ).scalar_one_or_none()
+            if row is not None:
+                session.delete(row)
 
 
 def _assign_demo_folder(new_hashes: set[str]) -> None:

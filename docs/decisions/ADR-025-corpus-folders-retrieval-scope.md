@@ -103,3 +103,9 @@ Library grid would silently lie in chat. Meanwhile the schema already carries do
 - Found while building F3, logged not fixed: **KI-24** — `ingest --rebuild` cascades away all
   `document_folders` rows, so every folder is silently emptied. This ADR's membership model assumes
   membership survives a reindex; it currently does not.
+
+**KI-24 resolved (appended 2026-07-20, same day).** The membership model this ADR assumes —
+that a folder's members survive a reindex — now holds: `ingest --rebuild` no longer deletes the
+`Document` rows, so `document_folders` is never cascaded away. F3 spec M3/M9 are amended
+accordingly; the demo folder is preserved on a rebuild rather than repopulated, so no hand
+removal is ever re-fought.

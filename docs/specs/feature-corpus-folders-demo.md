@@ -123,3 +123,21 @@ fork 5, parked) · RG-020's synthetic 10k measurement.
   empty. Reversible and visible; deleting it is one click.
 - After `--rebuild`, all folder membership is gone (M9) and only the **demo** folder repopulates
   (M3). A hand-made folder stays an empty shell until refilled by hand.
+
+## Amendments (2026-07-20, same day — KI-24 fixed)
+
+- **M3 is retired.** It read: *"`--rebuild` is the one honest exception, and it is logged"* — a
+  rebuild deleted every `Document` row, so every document looked new and demo membership was
+  re-applied, re-fighting a removal. KI-24's fix means the rebuild **keeps** its rows, so the
+  hook sees no new hashes there and membership is *preserved* instead of repopulated. There is
+  now **no** case in which a hand removal is re-fought. The M1/M2 trigger is unchanged; only the
+  exception it carried is gone.
+- **M9 is superseded.** It read: *"`--rebuild` silently destroys ALL folder membership … F3 does
+  not fix this — it adds a warning."* It is fixed, not warned about:
+  `ingest._sweep_rebuild_rows` replaces the bulk delete. The warning M9 added
+  (`rebuild_clears_folder_membership`) is gone with the behaviour it described; the new logs are
+  `rebuild_removing_rows` (what was swept) and `rebuild_kept_unreproduced_rows` (what was
+  protected). See `.claude/KNOWN_ISSUES.md` KI-24.
+- **"Known end states" — the second bullet no longer applies.** After a `--rebuild`, hand-made
+  folders keep their members; nothing is left as an empty shell. The first bullet
+  (`--remove-demo` leaves an emptied folder behind) still stands.

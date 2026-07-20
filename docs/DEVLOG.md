@@ -8,6 +8,125 @@ Append only — never edit past entries.
 Format: What changed | Why | Rejected alternatives | What it opens
 
 ---
+## 2026-07-20 — `document_meta` gets its missing foreign key; rebuild migrations exist now (ADR-026)
+
+**What.** `document_meta.document_id` is now a real FK to `documents.id` with `ON DELETE CASCADE`.
+Getting there needed a new migration mechanism: SQLite cannot `ALTER TABLE … ADD CONSTRAINT`, and
+`db/migrations.py` was additive-only by design. `_rebuild_table` implements SQLite's documented
+rebuild dance — FKs off, one transaction, create the model's shape under a temp name, copy the rows
+worth keeping, drop, rename, `foreign_key_check`, commit — and `_rebuild_document_meta_fk` is the
+first (and so far only) caller. **ADR-026** records both the fix and the policy around the
+mechanism.
+
+**Why it mattered more than "a missing constraint".** Correctness was being held up by convention:
+`delete_document` deletes the override by hand and its docstring says "no FK — explicit". Every
+*bulk* path forgot. The pre-KI-24 `--rebuild` forgot, and — the part KI-24 left open —
+`cleanup_orphans_sqlite` **still** forgot, on every incremental ingest that finds a gone or
+content-changed source. So orphaned overrides were still being produced today: unreadable (every
+read path resolves through a live document), never cleaned, accumulating.
+
+**Why the new shape is rendered from the model, not hand-written DDL.** A hand-written
+`CREATE TABLE` in a migration is a second definition of the table that silently drifts from
+`create_all`. `_rebuild_table` compiles the SQLAlchemy model's own table under a temp name, and
+copies only columns present in *both* the live table and the model — so a rebuild is safe against a
+schema that predates an additive column.
+
+**Why rebuilds are named functions, not a `_TABLE_REBUILDS` list.** A data-driven registry mirroring
+`_ADDITIVE_COLUMNS` would be a framework for n=1 and would make rebuilding a table feel as routine
+as adding a column. It is not: it rewrites the table. Named function, idempotent, ADR-justified.
+
+**Orphans are dropped, and logged in full first.** They cannot be carried (they are what the
+constraint forbids) and cannot be rescued (an override records no filename or hash, only a dead
+id). `init_db` returns the orphan count with the change description, so the KI-23 startup log
+states it. On the real corpus there were **zero**.
+
+**Rejected:** **compensating in application code** — add the override delete to the orphan sweep
+and `_sweep_rebuild_rows`; that is the bet that already failed twice, and a third caller would
+forget too. **A periodic orphan-cleanup pass** — sweeping up after a defect instead of making it
+impossible. **Alembic** — real tooling for one non-additive change on a single-file local SQLite
+app is a dependency plus a workflow; the reopener is explicit (a second or third rebuild → adopt
+it). **Leaving the orphans** after adding the FK — the constraint would be a claim the data does
+not support. **Fixing `ConversationMeta` the same way** — it *cannot* have an FK: conversations are
+derived by grouping `AnswerRecord` rows, there is no table to point at. Its bare `session_id` is
+correct, not the same defect.
+
+**Verified:** 8 new tests (`tests/integration/test_document_meta_fk_migration.py`) driving `init_db`
+over a genuinely pre-migration table — FK added, live overrides kept, orphans dropped and counted,
+idempotent, delete cascades, the orphan sweep no longer leaves a row behind, an unknown-document
+override is rejected outright, and **a failed rebuild leaves the old table exactly as it was**
+(no temp table, no data loss — the migration refuses rather than inventing a value). Full suite
+**1143 passed / 1 skipped** · ruff · `ruff format` · `mypy --strict src` · bandit · docs+integrity
+0/0. **Verified non-vacuous:** with the migration disabled, 7 of the 8 fail — the survivor is the
+fixture's own assertion that the legacy table really has no FK. **Live, on a copy of the real
+`data/library.db`** (the original deliberately untouched — the app will migrate it on next start):
+FK added with CASCADE, the one real override row preserved with its `authors`/`year` values,
+`PRAGMA foreign_key_check` clean, 76 documents intact, no leftover temp table, 0 orphans dropped.
+
+**Opens:** the reopener above (a second rebuild → Alembic). `delete_document` keeps its now
+redundant explicit override delete, retained so the ADR-014 path still reads as the complete story.
+
+---
+## 2026-07-20 — KI-24 fixed: `ingest --rebuild` rebuilds the index instead of resetting the library
+
+**What.** The rebuild branch no longer runs `delete(DBDocument)`. It wipes both Chroma stores and
+re-embeds, as its CLI help always claimed ("Wipe the vector store and re-embed everything"); the
+rows it does **not** reproduce are swept afterwards by the new `ingest._sweep_rebuild_rows`,
+classified gone/stale exactly the way `cleanup_orphans_sqlite` classifies them.
+
+**Why the delete had to go, rather than be compensated for.** KI-24 proposed snapshotting
+`document_folders` by `doc_hash` and restoring it after the loop. Auditing every FK to
+`documents.id` before building that showed the blast radius was much wider than folders —
+`document_tags`, `document_keywords`, `citations`, `doc_similarities`, `document_parts`,
+`chunk_epistemics`, `concept_presence`, `ingestion_events` all cascaded; `is_archived` and `notes`
+were reset by the re-insert; **`document_meta`** (the ADR-013 metadata overrides) has *no* FK, so
+its rows were **orphaned** rather than deleted, silently inert against ids that no longer existed.
+And because `figures` is keyed by document id, `figure_units()` found none mid-rebuild, so the
+reindexed corpus carried **no figure chunks at all** until the paid VLM describe pass was re-run —
+a silent retrieval-quality regression riding along with the data loss. Snapshotting all of that is
+a re-keying layer; **keeping the rows** makes `_existing_document_id` resolve to the same id and
+every association simply stays attached. One less mechanism, strictly more preserved.
+
+**Why the sweep runs after the loop, not before.** `cleanup_orphans_sqlite` reads its candidate set
+from the Chroma metadata — which this branch has just deleted — so it cannot run here. After the
+loop the rebuild has already told us what every present source produces, so gone/stale falls out
+with no re-hashing. The sweep keys on `indexed - indexed_before` ("what this run produced"), never
+on "the store was empty": an rmtree that silently fails must not be able to delete a library.
+
+**One deliberate behaviour change beyond restoring the invariant.** A document whose file is still
+on disk but which produced nothing this run (extraction error, empty extract) is now **kept and
+reported** (`rebuild_kept_unreproduced_rows`). The bulk delete removed it unconditionally, so a
+transient extraction failure used to cost the user their folders and metadata for that document.
+
+**Rejected:** the **snapshot-and-restore** KI-24 originally proposed — it preserves folders and
+tags but cannot preserve figures (the rebuild reads them *during* the loop, before any restore
+could run) and leaves the `document_meta` orphaning untouched; **a new `--reset-library` flag** to
+keep the old nuke available — nothing asked for it, and a destructive escape hatch nobody
+requested is how the original silent loss got shipped; **writing the snapshot to disk first** so a
+crashed rebuild could recover it — that only exists as a problem if you snapshot at all.
+
+**Retires ADR-025 F3 spec M3/M9.** M3 called a rebuild "the one honest exception" where a demo
+removal is re-fought; M9 recorded the loss as warned-about-not-fixed. Both are amended in
+`docs/specs/feature-corpus-folders-demo.md`: membership is preserved, so the demo hook sees no new
+rows on a rebuild and **nothing is re-fought anywhere**. The `rebuild_clears_folder_membership`
+warning F3 added is gone with the behaviour it described.
+
+**Verified:** 6 new tests (`tests/integration/ingest/test_ingest_rebuild_preserves_library.py`);
+full suite **1135 passed / 1 skipped** · ruff · `ruff format` · `mypy --strict src` · bandit ·
+docs+integrity 0/0. **Non-vacuous:** restoring the bulk delete fails exactly the three
+preservation tests and no others. **Live ($0, isolated `DOC_DATA_DIR`, real embedder + real
+Chroma, rebuild run as its own process; the real 76-doc library verified untouched before and
+after):** two documents re-embedded with **identical ids**, "My reading" (2) and "Demo corpus" (1)
+intact, metadata override and notes preserved; then deleting a source and rebuilding logged
+`rebuild_removing_rows gone=1` and dropped exactly that row.
+
+**Opens:** the derived sidecars now survive a rebuild *because the ids are stable*, but they are
+not re-derived by it — re-run their runners when the chunking changes. `document_meta` still has
+no FK; nothing creates new orphans, but it is not referentially enforced. A quirk found on the
+way, production-irrelevant but worth knowing: chromadb caches one system per persist path, so an
+**in-process** rebuild reattaches to the store `rmtree` was meant to remove — `--rebuild` is a CLI
+entrypoint in a fresh process and no API route exposes it, and the sweep is written not to care.
+
+---
 ## 2026-07-20 — ADR-025 F3: demo corpus auto-assigns into a folder at ingest + a one-time backfill
 
 Closes the ADR-025 carve (F1 folders → F2 retrieval scoping → **F3 demo auto-assign**). Contract

@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-07-20 (KI-23 renumbered from a duplicate KI-20; KI-24 added) · class: living -->
+<!-- status: active · updated: 2026-07-20 (KI-23 renumbered from a duplicate KI-20; KI-24 added + resolved) · class: living -->
 
 # KNOWN ISSUES
 
@@ -678,7 +678,7 @@ Migrated from the old `CLAUDE.md` / `README` runtime-quirk notes on 2026-06-20 (
 - **Still true:** the frozen-build entry (`apps/api/__main__.py`) reaches the same lifespan, so
   packaged installs are covered too. Ingest keeps its own `init_db()` call (fresh-clone path).
 
-## KI-24 — `ingest --rebuild` silently empties every folder (membership cascades away with the rows) — OPEN (2026-07-20)
+## KI-24 — `ingest --rebuild` silently reset the library (membership, metadata, figures cascaded away with the rows) — RESOLVED (2026-07-20)
 - **Symptom:** after `python -m doc_assistant.ingest --rebuild`, every folder still exists but has
   **0 documents**. Nothing in the output said so before 2026-07-20. Reproduced live on an isolated
   data home: a hand-made folder holding 3 documents came back empty; only the demo folder
@@ -693,13 +693,46 @@ Migrated from the old `CLAUDE.md` / `README` runtime-quirk notes on 2026-06-20 (
   scoping chat to a folder — a scoped turn after a rebuild searches **nothing** and says so
   (correct, but the user won't know why). `document_tags` has the identical FK and the same
   exposure once tags ship.
-- **Partial mitigation shipped (ADR-025 F3, 2026-07-20):** the rebuild now logs
-  `rebuild_clears_folder_membership memberships=<n>` before the delete — the loss is at least
-  *stated*. The **demo** folder self-heals, because a rebuild makes every document look newly
-  ingested and the F3 sha-match hook re-assigns it (spec M3). Hand-made folders do not.
-- **Real fix (not built):** snapshot `document_folders` keyed by `doc_hash` before the delete and
-  restore it after the loop — the hash survives a rebuild, the row id does not. Same treatment for
-  `document_tags`. Its own change; F3 deliberately did not bundle it.
+- **Wider than first logged.** Auditing every FK to `documents.id` before fixing it turned up
+  more than folders: `document_tags`, `document_keywords`, `citations`, `doc_similarities`,
+  `document_parts`, `chunk_epistemics`, `concept_presence` and `ingestion_events` all cascaded;
+  the user columns `is_archived` and `notes` were reset by the re-insert; **`document_meta`**
+  (the ADR-013 metadata overrides) has *no* FK, so its rows were not deleted but **orphaned**
+  against ids that no longer existed — silently inert, and accumulating. And because `figures`
+  rows are keyed by document id, `figure_units()` found none during the rebuild, so the
+  reindexed corpus carried **no figure chunks at all** until the (paid, VLM) describe pass was
+  re-run — a silent retrieval-quality regression on top of the data loss.
+- **Fix (shipped 2026-07-20): the rebuild no longer deletes the rows.** The CLI help always said
+  "Wipe the vector store and re-embed everything" — the bulk delete was never the advertised
+  contract. Keeping the rows means `_existing_document_id` resolves to the **same id**, so every
+  association simply stays attached; nothing needs snapshotting or re-keying. Rows the rebuild
+  does not reproduce are swept *after* the loop (`ingest._sweep_rebuild_rows`) with the same
+  gone/stale classification `cleanup_orphans_sqlite` makes — that sweep cannot run in this branch
+  itself, because it reads its candidate set from the Chroma metadata a rebuild has just deleted.
+- **One deliberate behaviour change beyond restoring the invariant:** a document whose source file
+  is still on disk but which produced nothing *this* run (extraction error, empty extract) is now
+  **kept and reported** (`rebuild_kept_unreproduced_rows`). The bulk delete removed it
+  unconditionally, so a transient extraction failure used to cost the user their folders and
+  metadata for that document.
+- **Guard tests:** `tests/integration/ingest/test_ingest_rebuild_preserves_library.py` (6) — ids
+  stable, folder membership / `document_meta` / `is_archived` / `notes` intact, figure chunks back
+  in the index, gone + stale rows still swept, present-but-unreproduced protected, and the
+  ordinary (non-rebuild) orphan sweep unweakened. **Verified non-vacuous:** restoring the bulk
+  delete fails exactly the three preservation tests.
+- **Live proof (2026-07-20, $0):** isolated `DOC_DATA_DIR`, real embedder, real Chroma, rebuild run
+  as its own process — two documents re-embedded with **identical ids**, "My reading" (2) and
+  "Demo corpus" (1) intact, metadata override and notes preserved; deleting a source then
+  rebuilding logged `rebuild_removing_rows gone=1` and dropped exactly that row.
+- **Retires ADR-025 F3 spec M3** ("a rebuild re-fights a demo removal, the one honest exception"):
+  membership is preserved now, so the demo hook sees no new rows on a rebuild and nothing is
+  re-fought. Amended in the spec.
+- **Still open, deliberately:** the derived sidecars (`document_keywords`, `citations`,
+  `doc_similarities`, `chunk_epistemics`, `concept_presence`, `document_parts`) now survive too
+  *because the ids are stable*, but they are not re-derived by the rebuild — re-run their runners
+  if the chunking changed. **`document_meta`'s missing FK is now fixed too** — see ADR-026: it
+  gained `ON DELETE CASCADE`, which also closes the path that was *still* orphaning overrides after
+  this fix (`cleanup_orphans_sqlite`, on every incremental ingest that finds a gone or
+  content-changed source).
 - **Pointer:** `docs/specs/feature-corpus-folders-demo.md` M9 (where it was found while specifying
   the F3 trigger) · ADR-025 · `docs/specs/feature-corpus-folders.md` D6 (folder delete never
   touches documents — the inverse direction, which *is* safe).

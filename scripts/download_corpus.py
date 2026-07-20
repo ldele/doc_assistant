@@ -29,12 +29,21 @@ difficulty. The **demo** collection (``collection: demo``, fetched only with
 Sutskever->Carmack reading list (30papers.com) for exploring the app on a
 bigger, richer corpus; it is never part of the benchmark regime.
 
+Removal mirrors download: ``--remove-demo`` finds the demo files in ``--dest`` by
+**content hash** (rename-proof) and safe-removes them — ingested documents go
+through ``library.delete_document`` (ADR-014: Recycle Bin first, then row +
+chunks + sidecars), never-ingested files go straight to the Recycle Bin. Nothing
+is hard-deleted; re-download + re-ingest restores everything. Dry-run is the
+default; ``--apply`` executes.
+
 Usage::
 
-    python -m scripts.download_corpus               # eval corpus (10 PDFs) -> data/sources/
-    python -m scripts.download_corpus --demo        # eval + demo collections (28 PDFs)
-    python -m scripts.download_corpus --verify-only # checksum what's already on disk
-    python -m scripts.download_corpus --dry-run     # print the plan, fetch nothing
+    python -m scripts.download_corpus                # eval corpus (10 PDFs) -> data/sources/
+    python -m scripts.download_corpus --demo         # eval + demo collections (28 PDFs)
+    python -m scripts.download_corpus --verify-only  # checksum what's already on disk
+    python -m scripts.download_corpus --dry-run      # print the plan, fetch nothing
+    python -m scripts.download_corpus --remove-demo  # plan the demo cleanup (removes nothing)
+    python -m scripts.download_corpus --remove-demo --apply   # demo files + rows -> Recycle Bin
 """
 
 from __future__ import annotations
@@ -92,6 +101,70 @@ def _check(path: Path, expected: str | None) -> bool:
     return False
 
 
+def _chunk_stores() -> list[Any]:
+    """Both Chroma stores (live index first) without loading the embedder.
+
+    ``delete``/``get`` never embed, so ``embedding_function`` stays unset — the demo
+    cleanup works on a box that has no model cache (and costs no model load).
+    """
+    from langchain_chroma import Chroma
+
+    from doc_assistant.config import CHROMA_PATH, PC_CHROMA_PATH, USE_PARENT_CHILD
+    from doc_assistant.embeddings import get_collection_name
+
+    collection = get_collection_name()
+    live, other = (
+        (PC_CHROMA_PATH, CHROMA_PATH) if USE_PARENT_CHILD else (CHROMA_PATH, PC_CHROMA_PATH)
+    )
+    return [Chroma(persist_directory=p, collection_name=collection) for p in (live, other)]
+
+
+def _remove_demo(dest: Path, *, apply: bool) -> int:
+    """Plan (default) or execute (``--apply``) the demo-collection cleanup in ``dest``."""
+    from doc_assistant.library import SourcePin, match_pinned_sources, remove_pinned_sources
+
+    manifest = yaml.safe_load(MANIFEST.read_text(encoding="utf-8"))["documents"]
+    pins = [
+        SourcePin(d["filename"], d["sha256"], int(d["bytes"]))
+        for d in manifest
+        if d.get("collection", "eval") == "demo"
+    ]
+    matches = match_pinned_sources(pins, dest)
+    if not matches:
+        print(f"no demo-collection files found in {dest} (content-hash match); nothing to do")
+        return 0
+
+    for m in matches:
+        if m.ambiguous:
+            state = "AMBIGUOUS (several library rows share this name) — skip; use the Library UI"
+        elif m.document_id:
+            state = "ingested — library row + index chunks + file"
+        else:
+            state = "file only (never ingested)"
+        print(f"[demo] {m.path.name}  ->  {state}")
+
+    if not apply:
+        print(f"\ndry run: {len(matches)} matched, nothing removed. Re-run with --apply")
+        print("(removal is recoverable: files go to the Recycle Bin; re-download restores)")
+        return 0
+
+    results = remove_pinned_sources(matches, _chunk_stores())
+    docs = sum(r.deleted_document for r in results)
+    files = sum(r.trashed_file for r in results)
+    chunks = sum(r.chunks_removed for r in results)
+    skipped = sum(r.skipped_ambiguous for r in results)
+    failed = sum(r.failed for r in results)
+    print("\n--- summary ---")
+    print(f"  library rows removed : {docs}")
+    print(f"  files -> Recycle Bin : {files}")
+    print(f"  index chunks removed : {chunks}")
+    if skipped:
+        print(f"  skipped (ambiguous)  : {skipped} — delete via the Library UI")
+    if failed:
+        print(f"  failed (file locked?): {failed} — left intact, re-run when unlocked")
+    return 1 if failed else 0
+
+
 def _download(url: str, dest: Path) -> bool:
     try:
         req = urllib.request.Request(url, headers=_UA)
@@ -129,7 +202,25 @@ def main() -> int:
         help="Also include the demo collection (classic DL papers, 30papers.com); "
         "the default fetches only the verified-10 eval corpus",
     )
+    parser.add_argument(
+        "--remove-demo",
+        action="store_true",
+        help="Safe-remove the demo collection from --dest (content-hash matched; "
+        "Recycle Bin + library delete). Dry-run unless --apply is given",
+    )
+    parser.add_argument(
+        "--apply",
+        action="store_true",
+        help="Execute the --remove-demo plan (without it, removal is a dry run)",
+    )
     args = parser.parse_args()
+
+    if args.apply and not args.remove_demo:
+        parser.error("--apply only makes sense with --remove-demo")
+    if args.remove_demo and (args.demo or args.verify_only or args.dry_run):
+        parser.error("--remove-demo cannot be combined with --demo/--verify-only/--dry-run")
+    if args.remove_demo:
+        return _remove_demo(Path(args.dest), apply=args.apply)
 
     dest = Path(args.dest)
     manifest = yaml.safe_load(MANIFEST.read_text(encoding="utf-8"))["documents"]

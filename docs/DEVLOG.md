@@ -8,6 +8,47 @@ Append only — never edit past entries.
 Format: What changed | Why | Rejected alternatives | What it opens
 
 ---
+## 2026-07-20 — Demo-corpus removal: `download_corpus --remove-demo` (content-hash matched, ADR-014 safe-delete, dry-run default)
+
+**What:** the demo collection is now cleanly removable. Core in `src/doc_assistant/library.py`
+(scripts stay thin per the module contract): `SourcePin`/`SourceMatch`/`SourceRemoval` +
+`match_pinned_sources()` — finds files under the sources dir by **content** (size fast-path so a
+big corpus costs stats not reads, then SHA-256; rename-proof) and links each to its library row by
+filename (content can't bridge that hop: `doc_hash` hashes extracted text, not file bytes; >1 row
+sharing a name → flagged ambiguous, never auto-deleted) — and `remove_pinned_sources()` — ingested
+matches go through `delete_document` (ADR-014: Recycle Bin first, then row/chunks/sidecars)
+against the live index, the same doc's chunks are swept from the secondary Chroma store too (the
+API delete only cleans the live one), never-ingested files go straight to the Recycle Bin; a
+refused trash (locked file) fails that one match and the batch continues. Script:
+`--remove-demo` (plan) / `--remove-demo --apply` (execute) per the dry-run-default polarity;
+`_chunk_stores()` opens both Chroma stores **without loading the embedder** (get/delete never
+embed) so cleanup works model-cache-free. **7 new integration tests**
+(`tests/integration/test_demo_corpus_removal.py`) on the ADR-014 test harness. Verified live:
+dry-run against the real `data/sources/` found **exactly the 18 just-downloaded demo files**
+(all correctly triaged "file only — never ingested"), removed nothing. Full suite **1067 passed /
+1 skipped** (pre-existing); ruff · `mypy --strict` · bandit(src) clean; `docs_check --strict` 0/0.
+README demo note + corpus README gained the removal line.
+
+**Why:** the corpus-groups discussion (2026-07-20): whichever way grouping lands later, "someone
+wanting to use the app should be able to delete those demo files easily" stands alone — and it
+rides entirely on shipped machinery (manifest pins + ADR-014), so it ships now while corpus
+groups waits for its grill + ADR.
+
+**Rejected:** matching library rows by `doc_hash` (it hashes extracted markdown, not file bytes —
+no bridge from a PDF's sha256); hard-deleting anything (ADR-014's whole point — Recycle Bin +
+re-download keeps every step reversible); a separate `scripts/remove_demo_corpus.py` (removal is
+the download's inverse; one manifest-owning script, one `--dest`); auto-deleting on ambiguous
+filename collisions (deleting the wrong user document to save a demo-cleanup click is the worst
+trade available).
+
+**Opens:** the bandit B310 `urlopen` advisory in `download_corpus.py` is pre-existing and outside
+the gate (bandit runs on `src/` only) — fine, but worth a `# nosec` + comment if scripts ever
+enter the gate. A file renamed *after* ingest removes as file-only and leaves its stale row to
+the ingest orphan cleanup (documented in the docstring). The secondary-store sweep exists because
+API deletes clean only the live index — if that ever changes in `delete_document` itself, drop
+the sweep here.
+
+---
 ## 2026-07-20 — Public corpus: 18-paper demo collection (Sutskever→Carmack list) + `download_corpus --demo`; verified-10 regime pinned by a guard test
 
 **What:** `tests/eval/corpus_manifest.yaml` gains a **`collection: demo`** section — the 18

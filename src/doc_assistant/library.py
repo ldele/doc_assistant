@@ -10,10 +10,11 @@ keeps the UI layer free of session lifecycle concerns.
 """
 
 # subprocess is used only by _reveal_in_file_manager to open a local file in the OS file manager.
+import hashlib
 import subprocess  # nosec B404
 import sys
 from collections import Counter
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -388,6 +389,155 @@ def delete_document(document_id: str, chroma_db: Any) -> DeleteResult | None:
         chunks_removed=chunks_removed,
     )
     return DeleteResult(filename=filename, trashed_file=trashed, chunks_removed=chunks_removed)
+
+
+# ============================================================
+# Pinned-source removal (demo-corpus cleanup; rides ADR-014)
+# ============================================================
+
+
+@dataclass(frozen=True)
+class SourcePin:
+    """A manifest-pinned source file: display name + exact content identity."""
+
+    filename: str
+    sha256: str
+    size_bytes: int
+
+
+@dataclass
+class SourceMatch:
+    """A file on disk whose exact bytes match a pin, plus its library row (if any)."""
+
+    path: Path
+    pin: SourcePin
+    document_id: str | None  # the ingested row; None = file never ingested (or ambiguous)
+    ambiguous: bool = False  # >1 library row shares the filename — never auto-delete
+
+
+@dataclass
+class SourceRemoval:
+    """Outcome for one matched file."""
+
+    filename: str  # on-disk name
+    deleted_document: bool  # a library row (+ chunks + sidecars) was removed
+    trashed_file: bool
+    chunks_removed: int
+    skipped_ambiguous: bool = False
+    failed: bool = False  # trash refused (e.g. file locked) — everything left intact
+
+
+def _file_sha256(path: Path) -> str:
+    h = hashlib.sha256()
+    with path.open("rb") as fh:
+        for block in iter(lambda: fh.read(1 << 20), b""):
+            h.update(block)
+    return h.hexdigest()
+
+
+def match_pinned_sources(pins: Sequence[SourcePin], sources_dir: Path) -> list[SourceMatch]:
+    """Files under ``sources_dir`` whose exact bytes match a pin, with their library rows.
+
+    File matching is by **content** (size fast-path, then SHA-256), never by name, so a
+    renamed pinned file is still found; only size-candidate files are ever hashed, so a
+    large unrelated corpus costs stat calls, not reads. The library row is then looked up
+    by the on-disk name against ``Document.filename`` — content can't bridge that hop
+    (``doc_hash`` hashes extracted text, not file bytes) — so a file renamed *after*
+    ingest matches as file-only and its stale row is left for the ingest orphan cleanup.
+    Several rows sharing one filename is marked ambiguous and never auto-deleted.
+    Missing/empty dir → [].
+    """
+    by_size: dict[int, list[SourcePin]] = {}
+    for pin in pins:
+        by_size.setdefault(pin.size_bytes, []).append(pin)
+
+    matches: list[SourceMatch] = []
+    if not sources_dir.is_dir():
+        return matches
+    for path in sorted(p for p in sources_dir.rglob("*") if p.is_file()):
+        candidates = by_size.get(path.stat().st_size)
+        if not candidates:
+            continue
+        digest = _file_sha256(path)
+        matched_pin = next((p for p in candidates if p.sha256 == digest), None)
+        if matched_pin is None:
+            continue
+        with session_scope() as session:
+            row_ids = (
+                session.execute(select(Document.id).where(Document.filename == path.name))
+                .scalars()
+                .all()
+            )
+        matches.append(
+            SourceMatch(
+                path=path,
+                pin=matched_pin,
+                document_id=str(row_ids[0]) if len(row_ids) == 1 else None,
+                ambiguous=len(row_ids) > 1,
+            )
+        )
+    return matches
+
+
+def remove_pinned_sources(
+    matches: Sequence[SourceMatch], chunk_stores: Sequence[Any]
+) -> list[SourceRemoval]:
+    """Safe-remove matched files: everything recoverable, nothing hard-deleted.
+
+    An ingested match goes through :func:`delete_document` (ADR-014 semantics — Recycle
+    Bin first, then row/chunks/sidecars) against ``chunk_stores[0]`` (the live index);
+    the same document's chunks are then swept from any additional stores. A never-ingested
+    match is simply moved to the OS trash, as is a matched file that survives its row
+    delete (``source_original`` pointing elsewhere). Ambiguous matches are skipped. A
+    refused trash (locked file) fails that one match and leaves it intact; the batch
+    continues. Recovery: restore from the Recycle Bin, or re-download + re-ingest.
+    """
+    from send2trash import send2trash
+
+    if not chunk_stores:
+        raise ValueError("chunk_stores must contain at least the live index")
+    live, *rest = chunk_stores
+
+    results: list[SourceRemoval] = []
+    for match in matches:
+        name = match.path.name
+        if match.ambiguous:
+            log.warning("pinned_removal_ambiguous", file=name)
+            results.append(SourceRemoval(name, False, False, 0, skipped_ambiguous=True))
+            continue
+
+        deleted_doc = False
+        trashed = False
+        chunks_removed = 0
+        try:
+            if match.document_id is not None:
+                with session_scope() as session:
+                    doc = session.get(Document, match.document_id)
+                    doc_hash_val = doc.doc_hash if doc is not None else None
+                deleted = delete_document(match.document_id, live)
+                if deleted is not None:
+                    deleted_doc = True
+                    trashed = deleted.trashed_file
+                    chunks_removed = deleted.chunks_removed
+                if doc_hash_val is not None:
+                    for store in rest:
+                        try:
+                            found = store.get(where={"doc_hash": doc_hash_val}, include=[])
+                            ids = list(found.get("ids", []))
+                            if ids:
+                                store.delete(ids=ids)
+                                chunks_removed += len(ids)
+                        except Exception as e:
+                            log.warning("pinned_removal_chunks_failed", file=name, error=str(e))
+            if match.path.exists():
+                send2trash(str(match.path))
+                trashed = True
+        except (RuntimeError, OSError) as e:
+            log.warning("pinned_removal_failed", file=name, error=str(e))
+            results.append(SourceRemoval(name, deleted_doc, trashed, chunks_removed, failed=True))
+            continue
+        results.append(SourceRemoval(name, deleted_doc, trashed, chunks_removed))
+    return results
 
 
 def library_summary() -> LibrarySummary:

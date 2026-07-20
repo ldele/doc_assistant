@@ -18,7 +18,9 @@ abstract links) and `tests/eval/cases.public.yaml` for the eval cases written
 against the 10-paper eval collection. The manifest also carries a `collection:
 demo` tier — 18 classic deep-learning papers from the rumoured Sutskever→Carmack
 reading list (30papers.com), fetched only via `--demo` for exploring the app on
-a bigger corpus; the eval collection alone is the benchmark regime.
+a bigger corpus; the eval collection alone is the benchmark regime. `--remove-demo
+--apply` safe-removes the demo papers again (content-hash matched, Recycle Bin,
+library rows deleted via ADR-014).
 
 This is the project's reproducible, fully-shareable demo corpus (the private
 neuroscience set in `tests/eval/cases.yaml` is the headline benchmark). See

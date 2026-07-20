@@ -150,6 +150,8 @@ uv run python apps/cli.py
 > **No corpus of your own yet? Try it on a ready-made one:** `uv run python -m scripts.download_corpus --demo`
 > fetches 28 classic AI papers from arXiv into `data/sources/` — the public eval corpus plus the arXiv
 > subset of the rumoured [Sutskever→Carmack reading list](https://30papers.com/) — then ingest as above.
+> Done exploring? `--remove-demo --apply` cleanly removes the demo papers again (matched by content
+> hash, so renames don't fool it; files go to the Recycle Bin and library entries are safe-deleted).
 > (Benchmark numbers always come from the 10-paper eval corpus alone; see [`evals/`](evals/README.md).)
 
 To rebuild from scratch (after changing chunking strategy, for example):

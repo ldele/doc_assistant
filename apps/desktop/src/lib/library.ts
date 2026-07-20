@@ -312,3 +312,68 @@ export function orderedUnits(units: string[], active: string[]): string[] {
   if (hit.length === 0) return units
   return [...hit, ...units.filter((u) => !selected.has(u))]
 }
+
+// --- PR-2.7: the rare tail, and inherited vocabulary ------------------------------------------ //
+
+// A facet exists to *partition* a set. A keyword on one document partitions nothing — selecting it
+// yields that document, which search already does better — so the 1-doc tail has near-zero
+// filtering value whether it is junk or gold. That is why the threshold is a principled default
+// rather than a quality judgement: on the real corpus it demotes exactly the strings nobody wants
+// to scroll past (`mathrm`, `102ff`, `fne-tune`) *and* the real specialist vocabulary
+// (`va1v`, `avpv`) without having to tell them apart. Nothing is destroyed: the tail is one toggle
+// (or one search) away. Presentation only — not a retrieval setting, so no eval gate.
+export const RARE_MAX_DOCS = 1
+
+// How many documents carry each unit, over a fixed pool. Deliberately independent of the current
+// selection, so the rare set does not shift under the user as they filter (`KeywordFacet.count` is
+// relative to the faceted pool and would).
+export function unitDocCounts(
+  documents: LibraryDocument[],
+  keywordsOf: KeywordsOf = rawKeywordsOf,
+): Map<string, number> {
+  const counts = new Map<string, number>()
+  for (const d of documents)
+    for (const unit of new Set(keywordsOf(d))) counts.set(unit, (counts.get(unit) ?? 0) + 1)
+  return counts
+}
+
+// Split facets into the ones worth showing and the demoted tail. A **selected** facet is never
+// demoted — hiding a chip the user still has to be able to unselect is the one thing this must not
+// do (same rule the overlay's search box already follows).
+export function splitRareFacets(
+  facets: KeywordFacet[],
+  docCounts: Map<string, number>,
+  maxDocs: number = RARE_MAX_DOCS,
+): { common: KeywordFacet[]; rare: KeywordFacet[] } {
+  const common: KeywordFacet[] = []
+  const rare: KeywordFacet[] = []
+  for (const f of facets) {
+    const rareEnough = !f.selected && (docCounts.get(f.value) ?? 0) <= maxDocs
+    ;(rareEnough ? rare : common).push(f)
+  }
+  // Honest-empty: never render an empty list while hiding content. In a small collection every
+  // keyword can be a 1-doc keyword, and collapsing all of them would look broken rather than
+  // informative — so when nothing survives, nothing is demoted either.
+  return common.length === 0 ? { common: facets, rare: [] } : { common, rare }
+}
+
+// Split the families list into real families and the vocabulary rows inherited from the earlier
+// concept-graph seeding — a `Concept` with no members and no documents is glossary vocabulary, not
+// a family (on this corpus that is ~20 of 26 rows). They are hidden by default, never deleted:
+// they are legitimate rows owned by a different feature (ADR-018's graph vocabulary).
+export function splitInheritedFamilies(families: KeywordFamily[]): {
+  real: KeywordFamily[]
+  inherited: KeywordFamily[]
+} {
+  const real: KeywordFamily[] = []
+  const inherited: KeywordFamily[] = []
+  for (const f of families) (f.aliases.length === 0 && f.doc_count === 0 ? inherited : real).push(f)
+  return { real, inherited }
+}
+
+// Case-insensitive substring filter used by the pickers that got too long to scan (PR-2.7 F3).
+export function filterByQuery<T>(items: T[], query: string, textOf: (item: T) => string): T[] {
+  const q = query.trim().toLowerCase()
+  if (q === '') return items
+  return items.filter((i) => textOf(i).toLowerCase().includes(q))
+}

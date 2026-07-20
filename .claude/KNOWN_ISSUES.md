@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-07-20 (resolved entries archived; this file is now open issues + a resolved index) · class: living -->
+<!-- status: active · updated: 2026-07-20 (KI-25 added + resolved: the graph emptied when KI-23 landed) · class: living -->
 
 # KNOWN ISSUES
 
@@ -215,6 +215,41 @@ narrative. Numbering is global and never reused (see the KI-23 note in the archi
   stamp `graph_version` onto gap rows and filter mismatches in the view; land together with the
   KI-17 reconcile (both concern what a rebuild must refresh).
 - **Pointer:** REVIEW finding GP-4 (verified); ADR-017 B1.
+
+## KI-25 — the concept graph emptied itself the moment KI-23 was fixed (`graph_include` landed NULL) — RESOLVED (2026-07-20)
+- **Symptom (user-reported):** the Graph view showed **nothing**. `GET /api/concepts/graph` returned
+  **0 nodes / 0 edges / 0 communities**, and its own staleness block said `n_concepts_in_db: 0`
+  while the `concepts` table held **26** rows.
+- **Cause — the fix for one issue triggered another.** ADR-018 made the graph vocabulary
+  **opt-in** via `concepts.graph_include`, and `load_concepts()` documents that "NULL (every row
+  predating the migration) reads as excluded". That column had never reached this box (**KI-23**).
+  Running `python -m doc_assistant.db.migrations` by hand on 2026-07-20 — while diagnosing KI-23 —
+  finally added it, **NULL on all 26 rows**, so every concept became excluded at once and the
+  vocabulary the graph builds from went to zero. The migration was correct; what was missing is
+  that an additive column with an opt-in default needs its **backfill** run in the same breath.
+- **Not detected by anything.** The graph route degrades honestly to an empty graph (it is the
+  documented "empty vocabulary → empty graph" path), the suite stayed green, and no gate compares
+  "concepts in the DB" against "concepts the graph can see".
+- **Fix (2026-07-20):** `python -m scripts.backfill_graph_include --apply` — the runner that exists
+  for exactly this, applying ADR-018's rule retroactively (`source == "manual"` opts in). All 26 are
+  `source="manual"` (they were hand-inserted during the 2026-07-01 baseline run, KI-13's
+  workaround), so all 26 opted back in. Then a skeleton rebuild:
+  `build_concept_skeleton(apply=True)` — **Node A only, deterministic, zero-LLM, $0**.
+  Result: **26 nodes / 70 edges / 3 communities / 14 gaps**, `stale: false`; the app's concept index
+  and the ego view both render again (verified live, 9 circles + 11 edges for `Connectome`).
+- **What is NOT restored:** `concept_edges` was already **empty** before the fix, so no Node-B
+  stance annotations were lost *by this* — but none exist now either. Re-running Node B
+  (`build_concept_skeleton --apply --enrich`) is an **LLM pass** and was deliberately not run;
+  KI-4's rule applies (force `--provider ollama`, which lives on the other box).
+- **The general trap, worth more than this instance:** *an additive column whose NULL default
+  changes behaviour is not a safe additive migration.* `_ADDITIVE_COLUMNS` already carries the note
+  for `graph_include` ("Lands NULL on every existing row, which reads as excluded;
+  `scripts/backfill_graph_include.py` sets the policy") — the note was right and simply nobody was
+  in a position to act on it, because the column had never landed. Any future opt-in column should
+  pair its `_ADDITIVE_COLUMNS` entry with its backfill runner in the same change.
+- **Pointer:** `src/doc_assistant/knowledge/concept_skeleton.py` (`load_concepts` — the filter and
+  its NULL semantics) · `scripts/backfill_graph_include.py` · ADR-018 · KI-23 (the migration that
+  triggered it) · KI-21 (the in-app rebuild's own gap).
 
 ---
 

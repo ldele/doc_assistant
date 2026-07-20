@@ -71,6 +71,7 @@
     familyCanonicalMap,
     familyUnitsOf,
     remapSelection,
+    unitDocCounts,
     filterDocs,
     keywordFacets,
     sortDocs,
@@ -296,6 +297,13 @@
   const collectionDocs = $derived(docsFor(documents, libraryCollection, new Date()))
   const searchedDocs = $derived(filterDocs(collectionDocs, libraryQuery))
   const facetList = $derived(keywordFacets(searchedDocs, libraryKeywords, keywordsOf))
+  // Documents per unit over the pre-facet pool — the rare-tail split (PR-2.7 F4) must not
+  // shift as the user toggles keywords, and `KeywordFacet.count` is relative to the faceted
+  // pool, so it cannot be reused for this.
+  const facetDocCounts = $derived(unitDocCounts(searchedDocs, keywordsOf))
+  // The Manage view's pool lists *raw* keyword names (a family's members), so its rare split
+  // counts raw keywords over the whole library rather than family units over a collection.
+  const rawKeywordDocCounts = $derived(unitDocCounts(documents))
   const visibleDocs = $derived(
     sortDocs(facetFilter(searchedDocs, libraryKeywords, keywordsOf), librarySort),
   )
@@ -1317,6 +1325,7 @@
 {#if keywordFilterOpen}
   <LibraryKeywordFilter
     facets={facetList}
+    docCounts={facetDocCounts}
     previewDocs={visibleDocs}
     selectedCount={libraryKeywords.length}
     families={keywordFamilies}
@@ -1348,6 +1357,7 @@
   <LibraryManageKeywords
     families={keywordFamilies}
     {allKeywords}
+    keywordDocCounts={rawKeywordDocCounts}
     proposals={detectProposals}
     {detecting}
     {detectError}

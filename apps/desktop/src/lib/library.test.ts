@@ -12,9 +12,13 @@ import {
   facetFilter,
   familyCanonicalMap,
   familyUnitsOf,
+  filterByQuery,
   keywordFacets,
   orderedUnits,
   remapSelection,
+  splitInheritedFamilies,
+  splitRareFacets,
+  unitDocCounts,
 } from './library.ts'
 import type { KeywordFamily, LibraryDocument } from './types.ts'
 
@@ -149,4 +153,95 @@ test('a family collapses several raw keywords into one chip, freeing the tile ch
   const unitsOf = familyUnitsOf(familyCanonicalMap([family('Connectome', ['connectomes', 'connectomics'])]))
   const tile = doc('x', ['connectome', 'connectomes', 'connectomics', 'mouse'])
   assert.deepEqual(unitsOf(tile).sort(), ['Connectome', 'mouse'])
+})
+
+// --- PR-2.7: the rare tail (F4), inherited vocabulary (F3), picker search (F3) ------------------ //
+
+const facet = (value: string, selected = false) => ({ value, count: 0, selected, available: true })
+
+test('unitDocCounts counts documents per unit, not occurrences', () => {
+  const counts = unitDocCounts(DOCS)
+  assert.equal(counts.get('llm'), 2)
+  assert.equal(counts.get('retrieval'), 2)
+  assert.equal(counts.get('llms'), 2)
+})
+
+test('unitDocCounts is family-aware when given the family accessor', () => {
+  const counts = unitDocCounts(DOCS, familyUnitsOf(familyCanonicalMap(FAMILIES)))
+  assert.equal(counts.get('Large language model'), 3, 'the union of llm + llms')
+  assert.equal(counts.get('llm'), undefined)
+})
+
+test('F4: a 1-doc keyword is demoted, a 2-doc keyword is not', () => {
+  const counts = new Map([
+    ['common', 5],
+    ['pair', 2],
+    ['mathrm', 1],
+    ['va1v', 1],
+  ])
+  const { common, rare } = splitRareFacets(
+    [facet('common'), facet('pair'), facet('mathrm'), facet('va1v')],
+    counts,
+  )
+  assert.deepEqual(
+    common.map((f) => f.value),
+    ['common', 'pair'],
+  )
+  assert.deepEqual(
+    rare.map((f) => f.value),
+    ['mathrm', 'va1v'],
+  )
+})
+
+test('F4: a selected facet is never demoted — it has to stay unselectable-from', () => {
+  const counts = new Map([['rare-but-selected', 1], ['common', 4]])
+  const { common, rare } = splitRareFacets(
+    [facet('rare-but-selected', true), facet('common')],
+    counts,
+  )
+  assert.deepEqual(
+    common.map((f) => f.value),
+    ['rare-but-selected', 'common'],
+  )
+  assert.deepEqual(rare, [])
+})
+
+test('F4: when every facet is rare, nothing is demoted (honest-empty)', () => {
+  const counts = new Map([['a', 1], ['b', 1]])
+  const { common, rare } = splitRareFacets([facet('a'), facet('b')], counts)
+  assert.equal(common.length, 2, 'a small collection must not collapse to an empty list')
+  assert.deepEqual(rare, [])
+})
+
+test('F4: an unknown unit counts as 0 docs and is demoted', () => {
+  const { rare } = splitRareFacets([facet('ghost'), facet('real')], new Map([['real', 9]]))
+  assert.deepEqual(
+    rare.map((f) => f.value),
+    ['ghost'],
+  )
+})
+
+test('F3: a 0-member 0-doc concept is inherited vocabulary, not a family', () => {
+  const { real, inherited } = splitInheritedFamilies([
+    family('Large language model', ['llm', 'llms'], 3),
+    family('BERT', [], 0),
+    family('Cited but memberless', [], 4),
+  ])
+  assert.deepEqual(
+    real.map((f) => f.canonical),
+    ['Large language model', 'Cited but memberless'],
+    'a memberless concept that still matches documents still partitions the grid — measured on the real corpus: 12 collapse synonyms, 10 are single-label with docs, only 4 are inert',
+  )
+  assert.deepEqual(
+    inherited.map((f) => f.canonical),
+    ['BERT'],
+  )
+})
+
+test('F3: filterByQuery is a case-insensitive substring match, empty query = identity', () => {
+  const items = ['ImageNet', 'imagenette', 'BM25']
+  assert.equal(filterByQuery(items, '', (s) => s), items)
+  assert.deepEqual(filterByQuery(items, 'imagenet', (s) => s), ['ImageNet', 'imagenette'])
+  assert.deepEqual(filterByQuery(items, 'bm', (s) => s), ['BM25'])
+  assert.deepEqual(filterByQuery(items, 'zzz', (s) => s), [])
 })

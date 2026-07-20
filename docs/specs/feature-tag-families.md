@@ -1,8 +1,8 @@
 # Spec — Tag families (keyword synonym-collapse over the concept vocabulary)
 
 **Status:** **PR-1 ✅ SHIPPED `0c3b0d4` · PR-2 ✅ SHIPPED `0af43db`** (both committed 2026-07-17) ·
-**PR-2.5 ✅ BUILT 2026-07-20** · **PR-2.6 ✅ BUILT 2026-07-20** (both staged; D1–D6 fixed).
-**PR-2.7 (Manage view at scale) SCOPED 2026-07-17** from a post-commit review — see the
+**PR-2.5 · PR-2.6 · PR-2.7 ✅ ALL BUILT 2026-07-20** (D1–D6 + F1–F4).
+**PR-3 (LLM assist) still parked** from a post-commit review — see the
 carve below; both are **defect-driven, not new scope**. PR-3 still DESIGN-LOCKED (grilled 2026-07-16,
 `grill-me`; ledger at foot; parked — not scheduled). Architectural decisions in **ADR-015**.
 Collapses near-duplicate keywords (`llm`/`llms`, `connectome`/`connectomics`) into user-curated **families** so
@@ -12,7 +12,7 @@ over the same rows; ADR-015 §C).
 
 **Owner:** Claude Code. **Never bundle:** ~~PR-1 families end-to-end (manual)~~ **SHIPPED** →
 ~~PR-2 detection~~ **SHIPPED** → ~~PR-2.5 hardening~~ **BUILT** → ~~PR-2.6 family-aware tiles~~ **BUILT** →
-**PR-2.7 Manage view at scale** (next) → PR-3 LLM assist (parked).
+~~PR-2.7 Manage view at scale~~ **BUILT** → PR-3 LLM assist (parked).
 
 ---
 
@@ -155,7 +155,7 @@ never learned about families — and splitting them would touch it twice.
   `$0`, no backend change. **DoD:** family selection highlights + floats its members; default path (no
   families) byte-identical; `svelte-check` 0; both themes; mobile no-overflow; live $0 verify.
 
-### PR-2.7 — Manage view at scale (frontend-only) — SCOPED 2026-07-17 (user feedback on the live view)
+### PR-2.7 — Manage view at scale (frontend-only) — ✅ BUILT 2026-07-20 (staged)
 
 User reviewed the shipped Manage view and the filter overlay and raised three things; all three are real and
 all are presentation. **Carved as its own PR** (not folded into PR-2.5) to keep hardening purely about data
@@ -291,3 +291,36 @@ Tiles render the family as its atomic canonical chip (`Pretrained model`, not
 `pretrained`+`huggingface`), so the vocabulary's casing now drives the tile too. Dark theme at
 375 px: **0 px** horizontal overflow, active chip visually distinct (filled indigo vs translucent),
 0 console errors.
+
+#### PR-2.7 — as built (2026-07-20), and where the spec's grounding was wrong
+
+| # | As built | Note |
+|---|----------|------|
+| **F1** | **Already satisfied — nothing to change.** `.kwlistfoot` is a flex sibling of the scrolling `.kwlist`, so "Manage keywords…" is already a pinned footer outside the scroll region. Verified live in the running app. | PR-1 (`0c3b0d4`) landed the same day the feedback was taken; the complaint predates it. Recorded rather than "fixed" so the next reader doesn't go looking. |
+| **F2** | Typing a canonical that already exists flips **Create → "Go to family"** and shows a warning naming the existing family's doc count; a partial match offers up to 5 existing families as one-click navigation, which scrolls to and outlines that row. | The user's navigation ask and the D3 guard are the same control, as the spec predicted. The invariant still lives at the `library.py` boundary (PR-2.5) — this only stops the user reaching it. |
+| **F3** | Search box over the keyword pool **and** the families list; the families heading now states an honest split. | See the correction below. |
+| **F4** | 1-doc keywords collapsed behind **"Show rare (N)"** in both the overlay and the Manage pool; a **selected** facet is never demoted; **search bypasses the split entirely**, so a specialist typing `va1v` still finds it. | Threshold is `RARE_MAX_DOCS = 1` — presentation only, no eval gate. |
+
+**The spec's F3 grounding was wrong, and the live data corrected it.** It expected "`FAMILIES (26)` is
+misleading — only ~6 are real families; the rest are 0-member concepts … several with 0 docs".
+Measured on the real corpus:
+
+- **12** have ≥1 alias — genuine synonym collapses (`Connectome`, `Large language model`, …)
+- **10** have 0 aliases but **>0 documents** (`ImageNet` 10, `Tractography` 10, `BM25` 6) — not
+  synonym collapses, but they *do* partition the grid, so hiding them would remove working facets
+- **4** have 0 aliases **and** 0 documents (`BERT`, `ColBERT`, `HyDE`, `Contrastive learning`) — inert
+
+So only the last group is hidden (behind "Show glossary-only (4)"), and the heading carries the
+split — `12 collapse synonyms · 10 single-label · 4 glossary-only hidden` — which addresses the
+"misleading count" complaint without deleting anything usable.
+
+**A trap found while building, in this PR's own rule.** A family created with **no members** starts
+at 0 aliases / 0 docs — exactly the shape the glossary-only group hides — so creating one would look
+like it silently failed. `submitCreate` now reveals that group when (and only when) the new family
+has no members.
+
+**Live on the real corpus ($0, no LLM):** overlay **55 facets → 25 shown, 30 demoted** (the spec
+predicted 30 rare, exactly right); toggle round-trips 25 ↔ 55; searching `mathrm` (a demoted 1-doc
+keyword) finds it. Manage pool **38 → 12**, round-trips. Families **22 ↔ 26**. F2 exact match shows
+"Go to family" + the warning; partial `conn` suggests `Brain connectivity`, `Connectome`. Dark theme
+at 375 px: 0 px horizontal overflow, 0 console errors.

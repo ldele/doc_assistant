@@ -7,7 +7,7 @@
   // Esc-to-close, autofocused control). Dumb by design — App owns the selection + the filter math.
   import type { KeywordFacet } from './library'
   import type { KeywordFamily, LibraryDocument } from './types'
-  import { authorLabel, familyByCanonical } from './library'
+  import { authorLabel, familyByCanonical, splitRareFacets } from './library'
   import Icon from './Icon.svelte'
 
   let {
@@ -15,6 +15,7 @@
     previewDocs,
     selectedCount,
     families,
+    docCounts,
     onToggle,
     onClear,
     onClose,
@@ -24,6 +25,9 @@
     previewDocs: LibraryDocument[]
     selectedCount: number
     families: KeywordFamily[]
+    // Documents per unit over the *unfiltered* pool, so the rare set stays put while you filter
+    // (PR-2.7 F4). `KeywordFacet.count` is relative to the faceted pool and would shift.
+    docCounts: Map<string, number>
     onToggle: (value: string) => void
     onClear: () => void
     onClose: () => void
@@ -35,13 +39,20 @@
   // tag-families.md, PR-1 DoD: "the overlay renders a family as an atomic entry").
   const familyMap = $derived(familyByCanonical(families))
 
+  // The 1-doc tail is half of a real corpus's keyword list and partitions nothing (PR-2.7 F4), so
+  // it is collapsed behind a toggle by default. Search is the escape hatch — a specialist typing
+  // `va1v` still finds it — which is why the query path searches ALL facets, demoted or not.
+  const split = $derived(splitRareFacets(facets, docCounts))
+  let showRare = $state(false)
+
   // The overlay's own search box filters the keyword list by substring. Selected keywords always
   // stay visible (so a search can't hide a chip you still need to unselect), matching Zotero.
   const shown = $derived.by(() => {
     const q = query.trim().toLowerCase()
-    if (q === '') return facets
-    return facets.filter((f) => f.selected || f.value.toLowerCase().includes(q))
+    if (q !== '') return facets.filter((f) => f.selected || f.value.toLowerCase().includes(q))
+    return showRare ? [...split.common, ...split.rare] : split.common
   })
+  const rareHidden = $derived(query.trim() === '' && !showRare ? split.rare.length : 0)
 
   function onKey(e: KeyboardEvent): void {
     if (e.key === 'Escape') onClose()
@@ -109,6 +120,15 @@
           <p class="nomatch">No keywords match “{query.trim()}”.</p>
         {/each}
       </div>
+      {#if rareHidden > 0 || (query.trim() === '' && split.rare.length > 0)}
+        <button class="raretoggle" onclick={() => (showRare = !showRare)} type="button">
+          <!-- The icon set has only `chevron-right`; rotating it is the standard disclosure
+               affordance and avoids adding two glyphs for one control. -->
+          <span class="chev" class:open={showRare}><Icon name="chevron-right" size={12} /></span>
+          {showRare ? `Hide rare (${split.rare.length})` : `Show rare (${split.rare.length})`}
+          <span class="rarehint">on 1 document — search still finds them</span>
+        </button>
+      {/if}
       <div class="kwlistfoot">
         {#if selectedCount > 0}
           <button class="clearall" onclick={onClear} type="button">
@@ -313,6 +333,34 @@
     font-variant-numeric: tabular-nums;
     color: var(--fg-2);
     flex: none;
+  }
+  .raretoggle {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    flex: none;
+    border: none;
+    background: none;
+    padding: 0.2rem 0;
+    font: inherit;
+    font-size: 0.75rem;
+    color: var(--fg-2);
+    cursor: pointer;
+    text-align: left;
+  }
+  .raretoggle:hover {
+    color: var(--fg);
+  }
+  .rarehint {
+    color: var(--fg-3, var(--fg-2));
+    font-size: 0.7rem;
+  }
+  .chev {
+    display: inline-flex;
+    transition: transform 0.12s ease;
+  }
+  .chev.open {
+    transform: rotate(90deg);
   }
   .kwlistfoot {
     display: flex;

@@ -8,6 +8,85 @@ Append only — never edit past entries.
 Format: What changed | Why | Rejected alternatives | What it opens
 
 ---
+## 2026-07-20 — PR-2.7: the Manage view at scale (F1–F4) + KI-25, the graph emptied by KI-23's fix
+
+Two things, logged together because the second was found while verifying the first in the running app.
+
+### PR-2.7 — F1–F4
+
+**What.** Four presentation fixes over the keyword overlay and the Manage view, all frontend-only,
+all resting on new **pure** helpers in `lib/library.ts` (`unitDocCounts`, `splitRareFacets`,
+`splitInheritedFamilies`, `filterByQuery`) so the rules are unit-tested rather than eyeballed.
+
+**F4 is the substantive one.** A facet exists to *partition* a set; a keyword on one document
+partitions nothing — selecting it yields that document, which search already does better. So the
+1-doc tail is collapsed behind "Show rare (N)". That single principled threshold sweeps up the ugly
+strings (`mathrm`, `102ff`, `fne-tune`) **and** the real specialist vocabulary (`va1v`, `avpv`)
+without having to classify them — which is the point, because they are not distinguishable by
+inspection. Nothing is destroyed: search bypasses the split entirely, and a **selected** facet is
+never demoted.
+
+**Two guards worth naming.** *Honest-empty*: when every facet is rare (a small collection), nothing
+is demoted — collapsing the whole list would look broken rather than informative. *Stable rarity*:
+the counts come from a `unitDocCounts` map over the pre-facet pool, not from `KeywordFacet.count`
+(which is relative to the *faceted* pool and would make the rare set shift under the user as they
+filter).
+
+**F1 was already satisfied.** `.kwlistfoot` is a flex sibling of the scrolling `.kwlist`, so
+"Manage keywords…" is already a pinned footer. Verified live and recorded rather than "fixed" —
+PR-1 landed the same day the feedback was taken.
+
+**The spec's F3 grounding was wrong; the live data corrected it.** It expected "only ~6 are real
+families; the rest are 0-member concepts". Measured: **12** have ≥1 alias (real collapses), **10**
+have 0 aliases but **>0 docs** (`ImageNet` 10, `Tractography` 10 — not collapses, but they *do*
+partition the grid), **4** are inert (0 aliases, 0 docs). Only the 4 are hidden; the heading now
+carries the split. Hiding all 22 would have removed working facets to satisfy a mis-estimate.
+
+**A trap found in this PR's own rule.** A family created with no members starts at 0 aliases /
+0 docs — exactly the shape the glossary-only group hides — so creating one would look like it
+silently failed. `submitCreate` now reveals that group when, and only when, the new family has no
+members.
+
+**Rejected:** *deleting the rare tail* — mostly real vocabulary, and delete is not
+reversible-by-search; *hiding every 0-alias concept* — 10 of them filter real documents; *a
+corpus-tuned "only demote if the list is long" rule* — the 1-doc principle is scale-free and the
+project forbids corpus-tuned constants.
+
+**Verified:** 8 new frontend tests (23 total); suite **1164 passed / 1 skipped** · ruff ·
+`mypy --strict src` · `svelte-check` 0/0 · docs+integrity 0/0. **Live, $0:** overlay 55 facets →
+**25 shown / 30 demoted** (the spec predicted 30, exactly); toggle round-trips 25 ↔ 55; searching
+`mathrm` finds a demoted keyword; Manage pool 38 → 12; families 22 ↔ 26; F2 shows "Go to family" +
+a warning on an exact match and suggests `Brain connectivity`/`Connectome` on `conn`. Dark at
+375 px: 0 px overflow, 0 console errors.
+
+### KI-25 — the graph emptied itself when KI-23 was fixed
+
+**Symptom (user-reported):** the Graph view showed nothing; `/api/concepts/graph` returned **0
+nodes** while `concepts` held **26** rows.
+
+**Cause.** ADR-018 made the graph vocabulary opt-in via `concepts.graph_include`, and
+`load_concepts()` documents that NULL "reads as excluded". That column had never reached this box
+(**KI-23**); running the migration by hand on 2026-07-20 — *while diagnosing KI-23* — finally added
+it, **NULL on all 26 rows**, excluding every concept at once. The migration was correct. What was
+missing is that **an additive column whose NULL default changes behaviour is not a safe additive
+migration** — it needs its backfill in the same breath. `_ADDITIVE_COLUMNS` even carries that note
+for this exact column; nobody was in a position to act on it, because the column had never landed.
+
+**Fix.** `backfill_graph_include --apply` (ADR-018's rule retroactively: `source == "manual"` opts
+in — all 26 qualify) then a skeleton rebuild, **Node A only, deterministic, $0**. Result: **26
+nodes / 70 edges / 3 communities / 14 gaps**, `stale: false`; the concept index and the ego view
+both render again (9 circles + 11 edges for `Connectome`).
+
+**Not restored, deliberately:** `concept_edges` was already empty, so nothing was lost *by this* —
+but Node-B stance annotations do not exist now either, and regenerating them is an **LLM pass**
+(`--apply --enrich`, KI-4: force `--provider ollama`, which lives on the other box). Not run; the
+user decides.
+
+**Why nothing caught it:** the graph route degrades honestly to an empty graph (the documented
+"empty vocabulary → empty graph" path), so the suite stayed green and no gate compares "concepts in
+the DB" to "concepts the graph can see".
+
+---
 ## 2026-07-20 — PR-2.6: family-aware grid tiles (D6 — a family selection highlighted nothing)
 
 **What.** `LibraryGrid` learns about tag families through one optional prop, `keywordsOf`,

@@ -6,11 +6,13 @@
   // any other family), or delete it. Reuses the overlay's modal shell (scrim + centered dialog,
   // Esc-to-close). Dumb by design — App owns the families list + calls the API, then refreshes.
   import type { KeywordFamily, KeywordFamilyProposal } from './types'
+  import { RARE_MAX_DOCS, filterByQuery, splitInheritedFamilies } from './library'
   import Icon from './Icon.svelte'
 
   let {
     families,
     allKeywords,
+    keywordDocCounts,
     proposals,
     detecting,
     detectError,
@@ -26,6 +28,7 @@
   }: {
     families: KeywordFamily[]
     allKeywords: string[] // every raw keyword name across the corpus
+    keywordDocCounts: Map<string, number> // documents per raw keyword (PR-2.7 F4)
     proposals: KeywordFamilyProposal[] // zero-LLM detection results (PR-2); [] until Detect runs
     detecting: boolean
     detectError: string | null
@@ -54,6 +57,62 @@
     [...allKeywords].filter((k) => !familiedLower.has(k.toLowerCase())).sort((a, b) => a.localeCompare(b)),
   )
 
+  // PR-2.7 F3/F4 — the flat pools stopped scanning at ~40 chips, and half of a real corpus's
+  // keywords sit on one document. Both pools get a search box; the 1-doc tail is collapsed behind
+  // a toggle (never deleted — search still reaches it, and so does the toggle).
+  let poolQuery = $state('')
+  let showRareMembers = $state(false)
+  const poolMatches = $derived(filterByQuery(unfamilied, poolQuery, (k) => k))
+  const poolSplit = $derived.by(() => {
+    if (poolQuery.trim() !== '') return { common: poolMatches, rare: [] as string[] }
+    const common: string[] = []
+    const rare: string[] = []
+    for (const k of poolMatches)
+      ((keywordDocCounts.get(k) ?? 0) <= RARE_MAX_DOCS ? rare : common).push(k)
+    return common.length === 0 ? { common: poolMatches, rare: [] as string[] } : { common, rare }
+  })
+  const poolShown = $derived(
+    showRareMembers ? [...poolSplit.common, ...poolSplit.rare] : poolSplit.common,
+  )
+
+  // A `Concept` with no members and no documents is glossary vocabulary inherited from the earlier
+  // concept-graph seeding, not a family (~20 of the 26 rows on this corpus). Hidden by default,
+  // never deleted — they belong to ADR-018's graph vocabulary, a different feature.
+  let famQuery = $state('')
+  let showInherited = $state(false)
+  const famSplit = $derived(splitInheritedFamilies(families))
+  const famShown = $derived(
+    filterByQuery(
+      showInherited ? [...famSplit.real, ...famSplit.inherited] : famSplit.real,
+      famQuery,
+      (f) => `${f.canonical} ${f.aliases.join(' ')}`,
+    ),
+  )
+
+  // PR-2.7 F2 — the canonical was unchecked free text: no way to reach an existing family at
+  // scale, and the hole D3 closed at the library boundary. Typing an existing canonical now offers
+  // to *go to* that family instead of silently creating a second claim on the same keyword.
+  const canonicalMatch = $derived.by(() => {
+    const v = newCanonical.trim().toLowerCase()
+    if (v === '') return null
+    return families.find((f) => f.canonical.toLowerCase() === v) ?? null
+  })
+  const canonicalSuggestions = $derived.by(() => {
+    const v = newCanonical.trim().toLowerCase()
+    if (v === '' || canonicalMatch) return []
+    return families.filter((f) => f.canonical.toLowerCase().includes(v)).slice(0, 5)
+  })
+  let highlightId = $state<string | null>(null)
+  function goToFamily(f: KeywordFamily): void {
+    newCanonical = ''
+    famQuery = ''
+    if (famSplit.inherited.some((i) => i.id === f.id)) showInherited = true
+    highlightId = f.id
+    queueMicrotask(() => {
+      document.getElementById(`fam-${f.id}`)?.scrollIntoView({ block: 'center' })
+    })
+  }
+
   let newCanonical = $state('')
   let newMembers = $state<string[]>([])
   function toggleNewMember(k: string): void {
@@ -62,6 +121,14 @@
   function submitCreate(): void {
     const canonical = newCanonical.trim()
     if (!canonical) return
+    if (canonicalMatch) {
+      goToFamily(canonicalMatch)
+      return
+    }
+    // A family created with no members starts at 0 aliases / 0 docs, which is exactly the shape
+    // the glossary-only group hides — so creating one would look like it silently failed. Reveal
+    // the group in that case (and only that case: with members it lands in the visible list).
+    if (newMembers.length === 0) showInherited = true
     onCreate(canonical, newMembers)
     newCanonical = ''
     newMembers = []
@@ -169,12 +236,45 @@
           onkeydown={(e) => e.key === 'Enter' && submitCreate()}
         />
         <button class="primary" onclick={submitCreate} disabled={!newCanonical.trim()} type="button">
-          Create
+          {canonicalMatch ? 'Go to family' : 'Create'}
         </button>
       </div>
+      {#if canonicalMatch}
+        <p class="hint match">
+          <Icon name="triangle-alert" size={13} />
+          “{canonicalMatch.canonical}” already exists ({canonicalMatch.doc_count} doc{canonicalMatch.doc_count ===
+          1
+            ? ''
+            : 's'}) — creating it again would split the same keyword across two families.
+        </p>
+      {:else if canonicalSuggestions.length > 0}
+        <div class="suggest" role="group" aria-label="Existing families matching what you typed">
+          <span class="hint">Existing:</span>
+          {#each canonicalSuggestions as f (f.id)}
+            <button class="suggestbtn" onclick={() => goToFamily(f)} type="button">
+              {f.canonical}
+            </button>
+          {/each}
+        </div>
+      {/if}
       {#if unfamilied.length > 0}
+        <div class="poolhead">
+          <div class="searchrow small">
+            <Icon name="search" size={13} />
+            <input
+              bind:value={poolQuery}
+              placeholder="Search keywords"
+              aria-label="Search un-familied keywords"
+            />
+          </div>
+          {#if poolSplit.rare.length > 0}
+            <button class="linkbtn" onclick={() => (showRareMembers = !showRareMembers)} type="button">
+              {showRareMembers ? 'Hide' : 'Show'} rare ({poolSplit.rare.length})
+            </button>
+          {/if}
+        </div>
         <div class="pickrow" role="group" aria-label="Member keywords for the new family">
-          {#each unfamilied as k (k)}
+          {#each poolShown as k (k)}
             <button
               class="pick"
               class:on={newMembers.includes(k)}
@@ -185,19 +285,38 @@
               {#if newMembers.includes(k)}<Icon name="check" size={11} />{/if}
               {k}
             </button>
+          {:else}
+            <p class="hint">No keywords match “{poolQuery.trim()}”.</p>
           {/each}
         </div>
       {/if}
     </section>
 
     <section class="block">
-      <h3>Families ({families.length})</h3>
-      {#if families.length === 0}
+      <h3>Families ({famSplit.real.length})</h3>
+      <p class="hint">
+        {famSplit.real.filter((f) => f.aliases.length > 0).length} collapse synonyms ·
+        {famSplit.real.filter((f) => f.aliases.length === 0).length} single-label
+        {#if famSplit.inherited.length > 0}· {famSplit.inherited.length} glossary-only hidden (no
+          members, no documents){/if}
+      </p>
+      {#if famSplit.real.length === 0 && famSplit.inherited.length === 0}
         <p class="hint">No families yet — create one above.</p>
       {:else}
+        <div class="poolhead">
+          <div class="searchrow small">
+            <Icon name="search" size={13} />
+            <input bind:value={famQuery} placeholder="Search families" aria-label="Search families" />
+          </div>
+          {#if famSplit.inherited.length > 0}
+            <button class="linkbtn" onclick={() => (showInherited = !showInherited)} type="button">
+              {showInherited ? 'Hide' : 'Show'} glossary-only ({famSplit.inherited.length})
+            </button>
+          {/if}
+        </div>
         <div class="famlist">
-          {#each families as f (f.id)}
-            <div class="famrow">
+          {#each famShown as f (f.id)}
+            <div class="famrow" id="fam-{f.id}" class:highlight={highlightId === f.id}>
               <div class="famhead">
                 {#if editingId === f.id}
                   <input
@@ -268,6 +387,8 @@
                 </div>
               {/if}
             </div>
+          {:else}
+            <p class="hint">No families match “{famQuery.trim()}”.</p>
           {/each}
         </div>
       {/if}
@@ -276,6 +397,79 @@
 </div>
 
 <style>
+  /* PR-2.7 F3 — a search row + a demote toggle above each pool that outgrew scanning. */
+  .poolhead {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-2);
+    margin-bottom: 0.4rem;
+  }
+  .searchrow.small {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    flex: 1;
+    min-width: 0;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-sm, 6px);
+    padding: 0.2rem 0.45rem;
+    color: var(--fg-2);
+  }
+  .searchrow.small input {
+    flex: 1;
+    min-width: 0;
+    border: none;
+    background: none;
+    color: var(--fg);
+    font: inherit;
+    font-size: 0.8rem;
+    outline: none;
+  }
+  .linkbtn {
+    flex: none;
+    border: none;
+    background: none;
+    padding: 0;
+    font: inherit;
+    font-size: 0.75rem;
+    color: var(--fg-2);
+    cursor: pointer;
+  }
+  .linkbtn:hover {
+    color: var(--fg);
+  }
+  /* PR-2.7 F2 — typing an existing canonical offers navigation, not a duplicate. */
+  .hint.match {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    color: var(--warn, var(--fg-2));
+  }
+  .suggest {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.3rem;
+    margin-bottom: 0.4rem;
+  }
+  .suggestbtn {
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    background: none;
+    color: var(--fg);
+    font: inherit;
+    font-size: 0.75rem;
+    padding: 0.1rem 0.5rem;
+    cursor: pointer;
+  }
+  .suggestbtn:hover {
+    border-color: var(--accent, var(--fg-2));
+  }
+  .famrow.highlight {
+    outline: 2px solid var(--accent, var(--fg-2));
+    outline-offset: 2px;
+  }
   .scrim {
     position: fixed;
     inset: 0;

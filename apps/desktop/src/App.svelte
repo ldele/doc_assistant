@@ -59,6 +59,7 @@
   import LibraryDeleteConfirm from './lib/LibraryDeleteConfirm.svelte'
   import CompareCard from './lib/CompareCard.svelte'
   import ConceptGraph from './lib/ConceptGraph.svelte'
+  import GlobalSearch from './lib/GlobalSearch.svelte'
   import Icon from './lib/Icon.svelte'
   import {
     type LibraryCollection,
@@ -76,6 +77,7 @@
     keywordFacets,
     sortDocs,
   } from './lib/library'
+  import { searchEverything } from './lib/search'
   import appMark from './assets/brand/app-mark.png'
 
   interface TurnState {
@@ -128,6 +130,12 @@
   let resumedHistory = $state<ConversationDetail | null>(null)
   let sidebarOpen = $state(false) // mobile drawer
 
+  // Global-search overlay (docs/specs/feature-app-shell-search-collapse.md, sub-item a). A
+  // navigation search over chats + documents, opened from the header or Cmd/Ctrl-K. App owns the
+  // query + derives the results (searchEverything is pure/tested); GlobalSearch just renders.
+  let searchOpen = $state(false)
+  let searchQuery = $state('')
+
   // Library space (feature-library-browser.md L1; nav redesign feature-library-redesign.md L4
   // Phase A). `mode` swaps the sidebar + main pane between Chat and Library; the chat state
   // (turns/viewing/sessionId) is untouched by the switch. Navigation model: the rail picks the
@@ -144,6 +152,8 @@
   let libraryKeywords = $state<string[]>([])
   let keywordFilterOpen = $state(false)
   let documentsLoaded = false
+  // The overlay's results, derived from the live chat + document lists (both already client-side).
+  const searchResults = $derived(searchEverything(searchQuery, conversations, documents))
 
   // Folders (ADR-025 F1, docs/specs/feature-corpus-folders.md). Manual Library organisation.
   // The rail renders this list rather than deriving groups from `documents`, so a folder with
@@ -405,6 +415,28 @@
     }
   }
   let sidebarWidth = $state(loadSidebarWidth())
+
+  // Collapsible sidebar (spec sub-item b). A desktop-only view preference — the same class as the
+  // theme + width above (client-only, localStorage, never a backend setting). Collapsing hides the
+  // rail via `.app.collapsed` under a min-width guard; the mobile off-canvas drawer (`sidebarOpen`)
+  // is untouched. Expanding restores the persisted width unchanged (collapse ≠ resize).
+  function loadSidebarCollapsed(): boolean {
+    try {
+      return localStorage.getItem('sidebarCollapsed') === '1'
+    } catch {
+      return false
+    }
+  }
+  let sidebarCollapsed = $state(loadSidebarCollapsed())
+  function toggleSidebar(): void {
+    sidebarCollapsed = !sidebarCollapsed
+    try {
+      localStorage.setItem('sidebarCollapsed', sidebarCollapsed ? '1' : '0')
+    } catch {
+      /* ignore — collapse state just won't persist */
+    }
+  }
+
   function startResize(e: PointerEvent): void {
     e.preventDefault()
     const onMove = (ev: PointerEvent) => {
@@ -782,6 +814,40 @@
     sidebarOpen = false
   }
 
+  // Global search (spec sub-item a). Opening refreshes both lists (inform-don't-block): documents
+  // lazy-load only on entering the Library, so a chat-only user must still be able to find a paper.
+  function openSearch(): void {
+    searchQuery = ''
+    searchOpen = true
+    void refreshConversations()
+    if (!documentsLoaded) void refreshDocuments()
+  }
+  function closeSearch(): void {
+    searchOpen = false
+  }
+  // Reuse the existing entry points (spec A6): a chat opens in Chat mode, a document in Library
+  // mode. selectMode already lazy-loads what each mode needs; opening a doc in chat mode shows
+  // nothing. Close the overlay on select.
+  function searchOpenChat(sid: string): void {
+    searchOpen = false
+    if (mode !== 'chat') selectMode('chat')
+    void openConversation(sid)
+  }
+  function searchOpenDoc(id: string): void {
+    searchOpen = false
+    if (mode !== 'library') selectMode('library')
+    openDocument(id)
+  }
+  // Cmd/Ctrl-K toggles the overlay (spec A2). preventDefault so the browser's own find/location
+  // bar never steals it; toggling closed is why it's not just `openSearch()`.
+  function onGlobalKey(e: KeyboardEvent): void {
+    if ((e.metaKey || e.ctrlKey) && (e.key === 'k' || e.key === 'K')) {
+      e.preventDefault()
+      if (searchOpen) closeSearch()
+      else openSearch()
+    }
+  }
+
   // Metadata editing (ADR-013 — first browse-time write path). `editingDocId` opens the modal;
   // Save/Reset write then re-fetch the list so the tile reflects the new effective values
   // (mirrors how the conversation actions re-fetch). Reveal opens the OS file manager server-side.
@@ -934,7 +1000,9 @@
   }
 </script>
 
-<div class="app" style="--sidebar-width: {sidebarWidth}px">
+<svelte:window onkeydown={onGlobalKey} />
+
+<div class="app" class:collapsed={sidebarCollapsed} style="--sidebar-width: {sidebarWidth}px">
   <Sidebar
     {mode}
     {conversations}
@@ -970,6 +1038,16 @@
         <button class="hamburger" onclick={() => (sidebarOpen = true)} aria-label="Open conversations">
           <Icon name="menu" />
         </button>
+        <button
+          class="collapse-toggle"
+          onclick={toggleSidebar}
+          aria-label={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          aria-pressed={sidebarCollapsed}
+          title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          type="button"
+        >
+          <Icon name="panel-left" size={16} />
+        </button>
         <div class="brand">
           <span class="mark"><img src={appMark} alt="" width="32" height="32" /></span>
           <div class="brandtext">
@@ -986,6 +1064,9 @@
           </div>
         </div>
         <div class="actions">
+          <button class="ghost" onclick={openSearch} aria-label="Search chats and documents" title="Search  (Ctrl/⌘ K)">
+            <Icon name="search" size={15} />
+          </button>
           <button
             class="ghost"
             onclick={doExport}
@@ -1373,6 +1454,16 @@
   />
 {/if}
 
+{#if searchOpen}
+  <GlobalSearch
+    bind:query={searchQuery}
+    results={searchResults}
+    onSelectChat={searchOpenChat}
+    onSelectDoc={searchOpenDoc}
+    onClose={closeSearch}
+  />
+{/if}
+
 <style>
   .app {
     display: flex;
@@ -1395,6 +1486,18 @@
   }
   @media (max-width: 720px) {
     .resizer {
+      display: none;
+    }
+  }
+  /* Collapsed sidebar (spec sub-item b) — desktop only. The rail + its drag handle are removed
+     from flow so the content fills the width; the header's collapse toggle brings them back at the
+     persisted width. `:global(.sidebar)` reaches the child component's root (the class lives in
+     Sidebar.svelte); the min-width guard leaves the mobile off-canvas drawer untouched. */
+  @media (min-width: 721px) {
+    .app.collapsed :global(.sidebar) {
+      display: none;
+    }
+    .app.collapsed .resizer {
       display: none;
     }
   }
@@ -1436,6 +1539,25 @@
     color: var(--fg);
     border-radius: 8px;
     padding: 0.2rem 0.55rem;
+  }
+  /* Desktop collapse toggle (spec b). Shares the header-left slot with the hamburger, split by the
+     720 px breakpoint: hamburger on mobile, collapse toggle on desktop. */
+  .collapse-toggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+    font: inherit;
+    cursor: pointer;
+    border: 1px solid var(--border);
+    background: var(--surface-2);
+    color: var(--fg-2);
+    border-radius: 8px;
+    padding: 0.3rem;
+  }
+  .collapse-toggle:hover {
+    color: var(--fg);
+    background: var(--surface);
   }
   .brand {
     display: flex;
@@ -1922,6 +2044,9 @@
   @media (max-width: 720px) {
     .hamburger {
       display: inline-flex;
+    }
+    .collapse-toggle {
+      display: none;
     }
   }
 </style>

@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-07-20 · class: living -->
+<!-- status: active · updated: 2026-07-21 · class: living -->
 
 # Decisions — index
 
@@ -36,3 +36,4 @@ the locked retrieval/chunking settings that predate per-file ADRs.
 | [ADR-024](decisions/ADR-024-evals-results-folder.md) | Top-level `evals/` = benchmark-results home (README keeps the headline; harness/baselines stay put) | accepted |
 | [ADR-025](decisions/ADR-025-corpus-folders-retrieval-scope.md) | Corpus groups = folders; query-time doc-hash retrieval scoping; per-turn scope in provenance | accepted (built, F1+F2+F3) |
 | [ADR-026](decisions/ADR-026-rebuild-migrations.md) | Rebuild migrations for shape changes SQLite can't ALTER; `document_meta` gets its missing FK | accepted (built) |
+| [ADR-027](decisions/ADR-027-epistemics-surfacing-split.md) | Epistemics surfacing split: assessment always-on (source-evaluation strip), influence opt-in (answer layer) | accepted |

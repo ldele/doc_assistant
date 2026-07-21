@@ -18,6 +18,9 @@ from `src/` (non-negotiable #3, `.claude/CONTEXT.md`).
   `doc_assistant`; do not "finish" the rename.
 - Dev run: `npm run dev` (Vite :1420) against `just api` (:8001), or `just app` for both.
 
-**Tests:** none (no JS test runner) — `svelte-check` + the live preview harness are the gate.
+**Tests:** `npm test` (Node's built-in `node:test`, zero deps; pure `lib/*.ts` only — since PR-2.5)
++ `svelte-check` + the live preview harness are the gate. A tested `.ts` module must stay free of
+runtime *value* imports from sibling modules (node strips type-only imports but can't resolve
+extensionless value ones) — keep pure helpers self-contained.
 
 <!-- Keep <=40 lines. Local only. If you're restating a project-wide rule, delete it and cite the code. -->

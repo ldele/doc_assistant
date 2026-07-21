@@ -185,7 +185,7 @@ module-global mutation, guard tests) first. See ADR-011's grill ledger for the f
 
 **Context.** Today `Turn.svelte:37-41` renders the user's question as a plain full-width block — a
 small uppercase "You" label, then a paragraph, no visual container, flush with the answer below it.
-Every mainstream chat UI (ChatGPT, Claude.ai, Gemini) marks the *user* turn as a bounded, right-aligned
+Every mainstream chat UI marks the *user* turn as a bounded, right-aligned
 bubble and leaves the *assistant* turn as an unbounded, left-aligned block — the asymmetry is what
 reads as "chat" rather than "alternating paragraphs." The RAG answer is explicitly **not** getting a
 matching bubble: it already renders as a full-width block (`Turn.svelte:43-69`, no wrapping card), and

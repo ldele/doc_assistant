@@ -33,6 +33,7 @@
     | 'tag'
     | 'chevron-right'
     | 'waypoints'
+    | 'panel-left'
 
   let { name, size = 18 }: { name: IconName; size?: number } = $props()
 </script>
@@ -142,6 +143,8 @@
     /><path d="M7 12h10" /><circle cx="19.5" cy="12" r="2.5" /><path
       d="m13.8 17.7 3.9-3.9"
     /><circle cx="12" cy="19.5" r="2.5" />
+  {:else if name === 'panel-left'}
+    <rect width="18" height="18" x="3" y="3" rx="2" /><path d="M9 3v18" />
   {/if}
 </svg>
 

@@ -344,6 +344,91 @@ def load_epistemics_index() -> dict[str, list[str]]:
     return index
 
 
+@dataclass(frozen=True)
+class ChunkEval:
+    """Per-source epistemic assessment for the always-on D3 strip (ADR-027) — the read-model
+    derived from one ``chunk_epistemics`` row. ``coverage`` is the single most-cautionary class
+    present; ``superseded`` flags a superseded-trend claim; ``n_claims`` is how many weighted
+    concepts the chunk carries. A retrieved source with **no** row is "not assessed" (absent)."""
+
+    coverage: str | None  # "contested" | "corroborated" | "unique" | None
+    superseded: bool
+    n_claims: int
+
+
+def _derive_coverage(n_contested: int, coverage_summary: dict[str, int]) -> str | None:
+    """The single most-cautionary coverage class of a chunk (contested > corroborated > unique)."""
+    if n_contested > 0:
+        return "contested"
+    if coverage_summary.get("corroborated", 0) > 0:
+        return "corroborated"
+    if coverage_summary.get("unique", 0) > 0:
+        return "unique"
+    return None
+
+
+def load_source_evaluations(chunk_keys: list[str]) -> tuple[dict[str, ChunkEval], str | None]:
+    """Per-source evaluations for the D3 strip + the sidecar's ``graph_version`` (ADR-027 D3).
+
+    Scoped, indexed read of ``chunk_epistemics`` for the retrieved sources' ``chunk_key``s (unlike
+    the full-scan ``load_epistemics_index`` — KI-18 discipline). A key with no row is simply absent
+    (the caller renders "not assessed"). A sidecar predating E1.1's ``chunk_key`` column (NULL key)
+    needs a ``compute_epistemics --apply`` to appear here — same transition as the marker join.
+    Returns ``({}, None)`` on a never-migrated DB (the 0-doc honest-degradation contract). $0."""
+    import json
+
+    from sqlalchemy import select
+    from sqlalchemy.exc import OperationalError
+
+    from doc_assistant.db.models import ChunkEpistemics as ChunkEpistemicsRow
+    from doc_assistant.db.session import session_scope
+
+    if not chunk_keys:
+        return {}, None
+    out: dict[str, ChunkEval] = {}
+    version: str | None = None
+    try:
+        with session_scope() as session:
+            rows = session.execute(
+                select(ChunkEpistemicsRow).where(ChunkEpistemicsRow.chunk_key.in_(chunk_keys))
+            ).scalars()
+            for row in rows:
+                if row.chunk_key is None:  # excluded by the IN filter; guards the dict key type
+                    continue
+                summary = json.loads(row.coverage_summary or "{}")
+                out[row.chunk_key] = ChunkEval(
+                    coverage=_derive_coverage(row.n_contested, summary),
+                    superseded=row.n_superseded_trend > 0,
+                    n_claims=row.n_claims,
+                )
+                if version is None:
+                    version = row.graph_version
+    except OperationalError:
+        return {}, None
+    return out, version
+
+
+def current_graph_version() -> str | None:
+    """The current skeleton's build stamp (from ``concept_presence``) for the D3 freshness compare.
+
+    A single-row read — ``None`` when no skeleton has been built or the table is absent. The D3
+    strip flags itself **stale** when the epistemics sidecar's ``graph_version`` differs from this
+    (the graph was rebuilt but ``compute_epistemics`` was not re-run)."""
+    from sqlalchemy import select
+    from sqlalchemy.exc import OperationalError
+
+    from doc_assistant.db.models import ConceptPresenceRow
+    from doc_assistant.db.session import session_scope
+
+    try:
+        with session_scope() as session:
+            return session.execute(
+                select(ConceptPresenceRow.graph_version).limit(1)
+            ).scalar_one_or_none()
+    except OperationalError:
+        return None
+
+
 def build_epistemics(*, apply: bool, skeleton_dir: Path | None = None) -> EpistemicsResult:
     """Compute per-chunk epistemic weights from the concept skeleton; write the sidecar.
 

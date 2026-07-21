@@ -11,6 +11,59 @@ Format: What changed | Why | Rejected alternatives | What it opens
 > (moved verbatim 2026-07-21). This file keeps 2026-07-15 onward.
 
 ---
+## 2026-07-21 — E2: always-on source-evaluation strip (ADR-027 D3) — full-stack
+
+Spec: `docs/specs/feature-e2-source-evaluation-strip.md` (ROADMAP row E2 · ADR-027 D3). A per-source
+evaluation strip below every chat answer — always-on, $0 (sidecar lookup joined against TOP_K, no
+LLM). Honest to build now: E1.1 made the marker join trustworthy, E1.2 gave the source path clean
+seams. **Staged, not committed** (cpc §13). Full suite **1182 passed / 1 skipped** (+6); ruff ·
+`ruff format` · `mypy --strict src` · bandit · **svelte-check 0/0** · **npm test 34/34** · docs 0/0 ·
+integrity 0/0.
+
+**The boundary (ADR-027).** D3 (this strip) is **always-on** assessment; D2/E3 (the answer-influence
+toggle over `eff_markers_enabled`) governs the *answer-surface* marker chips only and **never hides
+the strip**. So the strip's per-source `evaluation` attaches unconditionally; the existing `markers`
+field stays gated by the toggle — both derived from **one** scoped sidecar read.
+
+**Backend (E2a/E2b).** `epistemics.load_source_evaluations(chunk_keys)` — a scoped, indexed read
+(unlike the full-scan marker index; KI-18) returning per-key `ChunkEval(coverage, superseded,
+n_claims)` + the sidecar `graph_version`; `coverage` = contested > corroborated > unique.
+`current_graph_version()` (a 1-row `concept_presence` read) drives the freshness compare;
+`library.document_years(ids)` a scoped year join. `_attach_markers` → `_attach_source_evaluation`
+(always-on): sets `sv.evaluation` + `sv.reranker_score` for every source, sets `sv.markers` only when
+`markers_enabled`, returns `SourceEvalSummary(graph_version, stale)`; returns `None` (no strip) when
+no concept graph is built (0-doc/fresh). WARNING-logged on failure (never a silent lying UI).
+`SourceView` gains `evaluation`/`reranker_score`; `TurnResult` gains `source_eval`.
+
+**Wire (E2c).** `SourceViewPayload += evaluation (SourceEpistemicsPayload) + reranker_score`;
+`TurnResultPayload += source_eval (SourceEvalSummaryPayload)`; `types.ts` mirrors both. Replay
+(`ConversationSource`) stays degraded (no strip).
+
+**Frontend (E2d).** New `SourceEvaluation.svelte` below the answer: a per-source row — a colour-coded
+coverage chip (contested=warn, corroborated=ok, single-source=neutral, none=muted "not assessed"), a
+`superseded` badge, doc year, rerank score — and a footer "assessed as of `{graph_version}`" with a
+**stale** warning. Renders nothing when `source_eval` is null (honest degrade). Wired into `Turn.svelte`.
+
+**Tests (E2e).** The marker-attach path changed (`load_epistemics_index` → `load_source_evaluations`),
+so the marker tests were rebuilt around a `_stub_source_eval` helper (ChunkEval fixtures). New D3
+guards: `test_d3_strip_always_on_even_when_markers_disabled` (the boundary — evaluation attached while
+markers gated off), coverage-derivation + "not assessed", freshness-stale. Turn-parity byte-identical
+preserved (strip no-ops with no graph). Note: turn tests **without** `temp_db` must now stub the strip
+reads (D3 reads always) — else they'd hit the real DB via `current_graph_version()`.
+
+**Live $0 verify** (real API for init endpoints + a `window.fetch` `/api/chat` SSE mock — fake
+sources, no paid turn). The strip rendered below the answer: `[1] contested·2019·0.91`, `[2]
+corroborated·2023·0.88`, `[3] single-source·superseded·2011·0.85`, `[4] not assessed·0.70`, with a
+**stale** badge + "assessed from an earlier graph (b59a4aa6)" footer. **0 console errors**; coverage
+chips resolve to distinct tokens in **light + dark** (contested amber, corroborated green, superseded
+red); **375px → 0 horizontal overflow**.
+
+**Opens.** RG-019 (a `contested` denominator) still deferred — measurement-gated, and moot at 0
+Node-B stance on this box (the strip is honest-uniform, not saturated). **E3 / D2** (the persisted
+answer-influence toggle) is the next ADR-027 row. Node-B stance regen (to make the strip's assessment
+non-trivial on real data) still needs the RTX box (KI-4).
+
+---
 ## 2026-07-21 — E1.2: extract `_handle_rag` into named seams (pure refactor, no behavior change)
 
 ROADMAP row E1.2 (the code-health half of E1, deferred from E1.1). The AI-turn generator

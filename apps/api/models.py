@@ -19,7 +19,14 @@ from pydantic import BaseModel, Field, model_validator
 from doc_assistant.config import CANDIDATE_K
 
 if TYPE_CHECKING:
-    from doc_assistant.chat_controller import ClaimView, SourceView, TurnResult, UsageView
+    from doc_assistant.chat_controller import (
+        ClaimView,
+        SourceEpistemics,
+        SourceEvalSummary,
+        SourceView,
+        TurnResult,
+        UsageView,
+    )
     from doc_assistant.compare import CompareResult, CompareRow, CompareSource
     from doc_assistant.conversations import (
         ConversationDetail,
@@ -127,6 +134,21 @@ class SettingsUpdate(BaseModel):
 # ============================================================
 
 
+class SourceEpistemicsPayload(BaseModel):
+    """ADR-027 D3 — one source's always-on epistemic assessment (mirrors `SourceEpistemics`)."""
+
+    coverage: str | None  # corroborated | unique | contested | null (not assessed)
+    superseded: bool
+    n_claims: int
+    year: int | None
+
+    @classmethod
+    def from_view(cls, ev: SourceEpistemics) -> SourceEpistemicsPayload:
+        return cls(
+            coverage=ev.coverage, superseded=ev.superseded, n_claims=ev.n_claims, year=ev.year
+        )
+
+
 class SourceViewPayload(BaseModel):
     n: int
     citation: str
@@ -136,6 +158,9 @@ class SourceViewPayload(BaseModel):
     figure_id: str | None
     chunk_key: str | None
     markers: list[str]
+    # ADR-027 D3 — always-on per-source evaluation + the rerank score (strip signals).
+    reranker_score: float = 0.0
+    evaluation: SourceEpistemicsPayload | None = None
 
     @classmethod
     def from_view(cls, sv: SourceView) -> SourceViewPayload:
@@ -146,7 +171,24 @@ class SourceViewPayload(BaseModel):
             figure_id=sv.figure_id,
             chunk_key=sv.chunk_key,
             markers=list(sv.markers),
+            reranker_score=sv.reranker_score,
+            evaluation=(
+                SourceEpistemicsPayload.from_view(sv.evaluation)
+                if sv.evaluation is not None
+                else None
+            ),
         )
+
+
+class SourceEvalSummaryPayload(BaseModel):
+    """ADR-027 D3 — strip-level freshness (mirrors `SourceEvalSummary`)."""
+
+    graph_version: str | None
+    stale: bool
+
+    @classmethod
+    def from_view(cls, s: SourceEvalSummary) -> SourceEvalSummaryPayload:
+        return cls(graph_version=s.graph_version, stale=s.stale)
 
 
 class ClaimViewPayload(BaseModel):
@@ -202,6 +244,9 @@ class TurnResultPayload(BaseModel):
     citation_note_md: str
     download_path: str | None
     scope: ScopePayload | None = None
+    # ADR-027 D3 — strip-level freshness for the always-on source-evaluation strip (per-source
+    # evaluation rides on each source). null = no epistemics sidecar / 0-doc → no strip.
+    source_eval: SourceEvalSummaryPayload | None = None
 
     @classmethod
     def from_turn_result(cls, r: TurnResult) -> TurnResultPayload:
@@ -226,6 +271,11 @@ class TurnResultPayload(BaseModel):
                     doc_count=r.scope.doc_count,
                 )
                 if r.scope is not None
+                else None
+            ),
+            source_eval=(
+                SourceEvalSummaryPayload.from_view(r.source_eval)
+                if r.source_eval is not None
                 else None
             ),
         )

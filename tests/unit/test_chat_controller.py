@@ -382,7 +382,9 @@ def test_adjudicate_passes_decision_and_edit(monkeypatch):
 
 def test_provenance_failure_is_caught(monkeypatch):
     monkeypatch.setattr(chat_controller, "is_library_query", lambda t: False)
-    monkeypatch.setattr(chat_controller, "load_epistemics_index", lambda: {})  # no DB for the join
+    # No temp_db here → stub the D3 strip reads so nothing touches the real DB (current=None → no
+    # concept graph → the strip no-ops).
+    monkeypatch.setattr(chat_controller, "current_graph_version", lambda: None)
 
     def _boom(**kwargs):
         raise RuntimeError("db gone")
@@ -437,29 +439,49 @@ def _pc_sources() -> list[tuple[Document, float]]:
     ]
 
 
+def _eval(coverage=None, superseded=False, n_claims=1):
+    from doc_assistant.knowledge.epistemics import ChunkEval
+
+    return ChunkEval(coverage=coverage, superseded=superseded, n_claims=n_claims)
+
+
+def _stub_source_eval(monkeypatch, *, evals=None, current="gv1", sidecar="gv1", years=None):
+    """Stub the ADR-027 D3 source-evaluation reads (in the chat_controller namespace). ``current``
+    is what ``current_graph_version()`` returns — None → no concept graph → the strip no-ops (no
+    markers, ``source_eval`` None, the byte-identical path). ``sidecar`` is the epistemics build
+    stamp (differ from ``current`` → stale). ``evals`` maps chunk_key → ChunkEval; ``years`` maps
+    document_id → year."""
+    evals = evals or {}
+    monkeypatch.setattr(chat_controller, "current_graph_version", lambda: current)
+    monkeypatch.setattr(
+        chat_controller,
+        "load_source_evaluations",
+        lambda keys: (
+            {k: v for k, v in evals.items() if k in keys},
+            sidecar if current is not None else None,
+        ),
+    )
+    monkeypatch.setattr(chat_controller, "document_years", lambda ids: dict(years or {}))
+
+
 def test_markers_flat_join(monkeypatch, temp_db):
-    # Flat chunk: direct join on chunk_key against the marker index.
+    # D2 answer-surface markers: a flat chunk's contested evaluation → a chip when markers are on.
     monkeypatch.setattr(chat_controller, "is_library_query", lambda t: False)
     monkeypatch.setattr(chat_controller, "EPISTEMICS_MARKERS_ENABLED", True)  # R7: off by default
-    monkeypatch.setattr(
-        chat_controller, "load_epistemics_index", lambda: {"d1:0": [MARKER_CONTESTED]}
-    )
+    _stub_source_eval(monkeypatch, evals={"d1:0": _eval(coverage="contested")})
     controller = ChatController(rag=FakeRAG(_three_clean_sources(), ["Answer [1]."]))
     result = _final(_results(controller, Session(), "q"))
     assert result.sources[0].markers == [MARKER_CONTESTED]
-    assert result.sources[1].markers == []  # d2:4 not in the index → quiet
+    assert result.sources[1].markers == []  # d2:4 not assessed → quiet
     assert "⚠ contested in corpus" in result.sources_md  # chip in the shared block
 
 
 def test_markers_pc_join_via_chunk_key(monkeypatch, temp_db):
-    # E1.1 (KI-8): a PC parent now joins DIRECTLY on its {doc}:p{parent_index} key against the
-    # marker index — build_epistemics re-projected markers onto the parent segmentation, retiring
-    # the coarse text-containment. d1's parent (parent_index 0) → key "d1:p0".
+    # E1.1 (KI-8): a PC parent joins DIRECTLY on its {doc}:p{parent_index} key. d1's parent_index
+    # 0 → key "d1:p0" (the re-projection retired the coarse text-containment).
     monkeypatch.setattr(chat_controller, "is_library_query", lambda t: False)
-    monkeypatch.setattr(chat_controller, "EPISTEMICS_MARKERS_ENABLED", True)  # R7: off by default
-    monkeypatch.setattr(
-        chat_controller, "load_epistemics_index", lambda: {"d1:p0": [MARKER_SUPERSEDED]}
-    )
+    monkeypatch.setattr(chat_controller, "EPISTEMICS_MARKERS_ENABLED", True)
+    _stub_source_eval(monkeypatch, evals={"d1:p0": _eval(superseded=True)})
     controller = ChatController(rag=FakeRAG(_pc_sources(), ["Answer [1]."]))
     result = _final(_results(controller, Session(), "q"))
     assert result.sources[0].markers == [MARKER_SUPERSEDED]  # d1:p0 joined directly
@@ -468,14 +490,14 @@ def test_markers_pc_join_via_chunk_key(monkeypatch, temp_db):
 
 
 def test_markers_absent_is_byte_identical(monkeypatch, temp_db):
-    # Sidecar empty → every markers empty → no chip → sources_md is the citation-only form.
-    # (Flag on so this exercises the enabled-but-empty join path, not just the R7 gate.)
+    # No concept graph → the strip no-ops: every markers empty, no chip, source_eval None.
     monkeypatch.setattr(chat_controller, "is_library_query", lambda t: False)
     monkeypatch.setattr(chat_controller, "EPISTEMICS_MARKERS_ENABLED", True)
-    monkeypatch.setattr(chat_controller, "load_epistemics_index", lambda: {})
+    _stub_source_eval(monkeypatch, current=None)
     controller = ChatController(rag=FakeRAG(_three_clean_sources(), ["Answer [1]."]))
     result = _final(_results(controller, Session(), "q"))
     assert all(s.markers == [] for s in result.sources)
+    assert result.source_eval is None
     assert "⚠" not in result.sources_md  # quiet-on-clean → no chip
 
 
@@ -494,65 +516,103 @@ class _FakeLog:
         return lambda *a, **k: self
 
 
-def test_marker_load_failure_does_not_break_turn_but_warns(monkeypatch, temp_db):
-    # Markers are advisory — a read failure (e.g. the chunk_epistemics table absent on an older DB)
-    # must leave sources unmarked, never crash the turn / SSE stream. E1.1: but never silently —
-    # under ADR-027's always-on strip a swallowed failure is a silently-lying UI, so it WARNs.
+def test_source_evaluation_load_failure_does_not_break_turn_but_warns(monkeypatch, temp_db):
+    # The D3 strip is advisory — a read failure (e.g. the chunk_epistemics table absent on an older
+    # DB) must leave the turn intact, unmarked, no strip — but never silently: under an always-on
+    # strip a swallowed failure is a silently-lying UI, so it WARNs.
     monkeypatch.setattr(chat_controller, "is_library_query", lambda t: False)
-    monkeypatch.setattr(chat_controller, "EPISTEMICS_MARKERS_ENABLED", True)  # exercise the load
+    monkeypatch.setattr(chat_controller, "EPISTEMICS_MARKERS_ENABLED", True)
     fake_log = _FakeLog()
     monkeypatch.setattr(chat_controller, "log", fake_log)
+    monkeypatch.setattr(chat_controller, "current_graph_version", lambda: "gv1")
 
-    def _boom():
+    def _boom(keys):
         raise RuntimeError("no such table: chunk_epistemics")
 
-    monkeypatch.setattr(chat_controller, "load_epistemics_index", _boom)
+    monkeypatch.setattr(chat_controller, "load_source_evaluations", _boom)
     controller = ChatController(rag=FakeRAG(_three_clean_sources(), ["Answer [1]."]))
     result = _final(_results(controller, Session(), "q"))
     assert result.answer == "Answer [1]."
     assert all(s.markers == [] for s in result.sources)
-    assert "attach_markers_failed" in fake_log.warnings  # observable, not silently swallowed
+    assert result.source_eval is None
+    assert "attach_source_evaluation_failed" in fake_log.warnings  # observable, not swallowed
 
 
 def test_markers_enabled_by_default(monkeypatch, temp_db):
-    # KI-7 retirement / ADR-005 update (2026-07-07): EPISTEMICS_MARKERS_ENABLED now
-    # defaults to True — markers rest on the concept-skeleton's Node A/B stance pass,
-    # not the retired open-vocabulary graph. NOT setting the flag here — this exercises
-    # the shipped default, not an explicit opt-in. A populated index (the skeleton
-    # holding an opposing-stance edge) surfaces a chip; a clean index surfaces none.
+    # EPISTEMICS_MARKERS_ENABLED defaults True (KI-7 retirement / ADR-005 update). NOT setting the
+    # flag — this exercises the shipped default. A contested assessment surfaces a chip; a graph
+    # with no assessed source surfaces none.
     monkeypatch.setattr(chat_controller, "is_library_query", lambda t: False)
-    monkeypatch.setattr(
-        chat_controller, "load_epistemics_index", lambda: {"d1:0": [MARKER_CONTESTED]}
-    )
+    _stub_source_eval(monkeypatch, evals={"d1:0": _eval(coverage="contested")})
     controller = ChatController(rag=FakeRAG(_three_clean_sources(), ["Answer [1]."]))
     result = _final(_results(controller, Session(), "q"))
     assert result.sources[0].markers == [MARKER_CONTESTED]
     assert "⚠ contested in corpus" in result.sources_md
 
-    monkeypatch.setattr(chat_controller, "load_epistemics_index", lambda: {})
+    _stub_source_eval(monkeypatch, evals={})  # graph exists, but no retrieved source is assessed
     controller = ChatController(rag=FakeRAG(_three_clean_sources(), ["Answer [1]."]))
     result = _final(_results(controller, Session(), "q"))
     assert all(s.markers == [] for s in result.sources)
     assert "⚠" not in result.sources_md
 
 
-def test_markers_disabled_via_opt_out_flag(monkeypatch, temp_db):
-    # The `false` opt-out still short-circuits the join entirely — even a populated
-    # index leaves every source unmarked, no chip, and the load functions are never
-    # called (the byte-identical M0/M1 no-marker path).
+# ============================================================
+# ADR-027 D3 — always-on source-evaluation strip
+# ============================================================
+
+
+def test_d3_strip_always_on_even_when_markers_disabled(monkeypatch, temp_db):
+    # THE D3 boundary: the D2 influence toggle (markers) is OFF, but the assessment strip STILL
+    # attaches per-source evaluation (coverage + year) + the freshness summary. D3 is not gated.
     monkeypatch.setattr(chat_controller, "is_library_query", lambda t: False)
-    monkeypatch.setattr(chat_controller, "EPISTEMICS_MARKERS_ENABLED", False)
-    loads: list[str] = []
-    monkeypatch.setattr(
-        chat_controller,
-        "load_epistemics_index",
-        lambda: loads.append("index") or {"d1:0": [MARKER_CONTESTED]},
+    monkeypatch.setattr(chat_controller, "EPISTEMICS_MARKERS_ENABLED", False)  # D2 influence off
+    _stub_source_eval(monkeypatch, evals={"d1:0": _eval(coverage="contested")}, years={"d1": 2021})
+    controller = ChatController(rag=FakeRAG(_three_clean_sources(), ["Answer [1]."]))
+    result = _final(_results(controller, Session(), "q"))
+    assert result.sources[0].markers == []  # answer-surface chip gated off (D2)
+    ev = result.sources[0].evaluation
+    assert ev is not None and ev.coverage == "contested" and ev.year == 2021  # strip attached (D3)
+    assert result.source_eval is not None and result.source_eval.stale is False
+
+
+def test_d3_coverage_and_not_assessed(monkeypatch, temp_db):
+    monkeypatch.setattr(chat_controller, "is_library_query", lambda t: False)
+    _stub_source_eval(monkeypatch, evals={"d1:0": _eval(coverage="unique")})  # only d1 assessed
+    controller = ChatController(rag=FakeRAG(_three_clean_sources(), ["Answer [1]."]))
+    result = _final(_results(controller, Session(), "q"))
+    assert result.sources[0].evaluation is not None
+    assert result.sources[0].evaluation.coverage == "unique"
+    assert result.sources[1].evaluation is not None
+    assert result.sources[1].evaluation.coverage is None  # d2:4 has no row → "not assessed"
+    assert result.sources[0].reranker_score == 0.91  # per-source strip signal (ADR-027)
+
+
+def test_d3_freshness_stale_when_versions_differ(monkeypatch, temp_db):
+    monkeypatch.setattr(chat_controller, "is_library_query", lambda t: False)
+    _stub_source_eval(
+        monkeypatch,
+        evals={"d1:0": _eval(coverage="corroborated")},
+        current="gv-new",
+        sidecar="gv-old",
     )
     controller = ChatController(rag=FakeRAG(_three_clean_sources(), ["Answer [1]."]))
     result = _final(_results(controller, Session(), "q"))
-    assert all(s.markers == [] for s in result.sources)
+    assert result.source_eval is not None
+    assert result.source_eval.stale is True  # graph rebuilt after epistemics was computed
+    assert result.source_eval.graph_version == "gv-old"
+
+
+def test_markers_disabled_via_opt_out_flag(monkeypatch, temp_db):
+    # The D2 opt-out leaves the answer-surface markers empty even with a contested assessment —
+    # but (D3) the evaluation is still attached. The toggle governs influence, not assessment.
+    monkeypatch.setattr(chat_controller, "is_library_query", lambda t: False)
+    monkeypatch.setattr(chat_controller, "EPISTEMICS_MARKERS_ENABLED", False)
+    _stub_source_eval(monkeypatch, evals={"d1:0": _eval(coverage="contested")})
+    controller = ChatController(rag=FakeRAG(_three_clean_sources(), ["Answer [1]."]))
+    result = _final(_results(controller, Session(), "q"))
+    assert all(s.markers == [] for s in result.sources)  # no answer-surface chip
     assert "⚠" not in result.sources_md
-    assert loads == []  # gated out before any epistemics read
+    assert result.sources[0].evaluation is not None  # strip still assessed (D3)
 
 
 # ============================================================
@@ -611,9 +671,7 @@ def test_overrides_isolation_covers_all_five_fields(monkeypatch, temp_db):
     # touches the module during the turns themselves (no monkeypatch in that path).
     monkeypatch.setattr(chat_controller, "is_library_query", lambda t: False)
     monkeypatch.setattr(chat_controller, "EPISTEMICS_MARKERS_ENABLED", False)
-    monkeypatch.setattr(
-        chat_controller, "load_epistemics_index", lambda: {"d1:0": [MARKER_CONTESTED]}
-    )
+    _stub_source_eval(monkeypatch, evals={"d1:0": _eval(coverage="contested")})
     captured_full_text: list[str] = []
     real_record_answer = chat_controller.record_answer
 
@@ -655,9 +713,7 @@ def test_overrides_isolation_covers_all_five_fields(monkeypatch, temp_db):
 def test_epistemics_markers_override_per_turn(monkeypatch, temp_db):
     monkeypatch.setattr(chat_controller, "is_library_query", lambda t: False)
     monkeypatch.setattr(chat_controller, "EPISTEMICS_MARKERS_ENABLED", False)  # locked: off
-    monkeypatch.setattr(
-        chat_controller, "load_epistemics_index", lambda: {"d1:0": [MARKER_CONTESTED]}
-    )
+    _stub_source_eval(monkeypatch, evals={"d1:0": _eval(coverage="contested")})
     controller = ChatController(rag=FakeRAG(_three_clean_sources(), ["Answer [1]."]))
     result = _final(
         _results(controller, Session(), "q", RagOverrides(epistemics_markers_enabled=True))

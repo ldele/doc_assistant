@@ -3,6 +3,7 @@
   import Markdown from './Markdown.svelte'
   import ClaimReview from './ClaimReview.svelte'
   import Provenance from './Provenance.svelte'
+  import SourceEvaluation from './SourceEvaluation.svelte'
   import Icon from './Icon.svelte'
 
   let {
@@ -94,6 +95,11 @@
             {/each}
           </ul>
         </details>
+      {/if}
+      {#if result.source_eval && result.sources.length}
+        <!-- ADR-027 D3: always-on per-source epistemic evaluation, below the answer. Advisory —
+             it never gates the answer and is independent of the epistemics-influence toggle. -->
+        <SourceEvaluation sources={result.sources} summary={result.source_eval} />
       {/if}
       <ClaimReview claims={result.flagged_claims} />
       <Provenance {result} />

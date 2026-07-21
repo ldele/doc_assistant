@@ -192,7 +192,9 @@ def test_byte_identical_when_markers_absent(temp_db, monkeypatch):
     """PR-M1 ADR-2: with the epistemics sidecar absent/empty, the 7d marker join is a
     no-op — no chip, every `markers` empty, and `sources_md` is the citation-only form.
     This is the eval-comparability guarantee (markers must not perturb a clean turn)."""
-    monkeypatch.setattr(chat_controller, "load_epistemics_index", lambda: {})
+    # ADR-027 D3: no concept graph → the always-on source-evaluation strip no-ops (source_eval
+    # None), so the turn is byte-identical to the pre-strip form.
+    monkeypatch.setattr(chat_controller, "current_graph_version", lambda: None)
     _, result = _events(["Neurons meet at synapses [1]."], temp_db, monkeypatch)
 
     assert all(s.markers == [] for s in result.sources)

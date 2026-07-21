@@ -50,9 +50,12 @@ from doc_assistant.ingest.figures import load_figure_image_paths
 from doc_assistant.knowledge.epistemics import (
     MARKER_CONTESTED,
     MARKER_SUPERSEDED,
-    load_epistemics_index,
+    ChunkEval,
+    current_graph_version,
+    derive_markers,
+    load_source_evaluations,
 )
-from doc_assistant.library import folder_doc_hashes, get_folder
+from doc_assistant.library import document_years, folder_doc_hashes, get_folder
 from doc_assistant.pipeline import RAGPipeline, format_citation
 from doc_assistant.prompts import ANSWER_PROMPT
 from doc_assistant.provenance import (
@@ -153,6 +156,30 @@ class ScopeView:
     doc_count: int
 
 
+@dataclass(frozen=True)
+class SourceEpistemics:
+    """One source's epistemic assessment for the always-on D3 strip (ADR-027). ``coverage`` is the
+    most-cautionary claim class in the source's chunk (``corroborated``/``unique``/``contested``,
+    or ``None`` = not assessed); ``superseded`` flags a superseded-trend claim; ``year`` is the
+    doc's publication year. Always attached (D3 is not gated by the D2/E3 influence toggle)."""
+
+    coverage: str | None
+    superseded: bool
+    n_claims: int
+    year: int | None
+
+
+@dataclass(frozen=True)
+class SourceEvalSummary:
+    """Strip-level freshness for the D3 source-evaluation surface (ADR-027). ``graph_version`` is
+    the build stamp the epistemics sidecar was computed under; ``stale`` is True when the concept
+    graph has since been rebuilt without re-running ``compute_epistemics`` (the strip says so, not
+    hides it). ``None`` on ``TurnResult`` = no sidecar / 0-doc — the strip degrades to nothing."""
+
+    graph_version: str | None
+    stale: bool
+
+
 @dataclass
 class SourceView:
     """One retrieved source, render-ready (side panel / sources block)."""
@@ -162,8 +189,10 @@ class SourceView:
     excerpt: str  # ~800-char side-panel preview (with trailing "..." when truncated)
     figure_path: str | None  # resolved PNG path (local desktop render); never crosses the API
     chunk_key: str | None  # ADR-2; the 7d marker join key
-    markers: list[str] = field(default_factory=list)  # PR-M1: contested / superseded_trend
+    markers: list[str] = field(default_factory=list)  # PR-M1: contested / superseded_trend (D2)
     figure_id: str | None = None  # PR-M3: the id the web/API renders via GET /api/figures/{id}
+    reranker_score: float = 0.0  # per-source rerank score (D3 strip signal, ADR-027)
+    evaluation: SourceEpistemics | None = None  # always-on per-source assessment (D3)
 
 
 @dataclass
@@ -211,6 +240,9 @@ class TurnResult:
     # renderer MUST surface this whenever it is set: an answer drawn from a subset of the
     # corpus that doesn't say so is the failure this feature was built to prevent.
     scope: ScopeView | None = None
+    # ADR-027 D3 — strip-level freshness for the always-on source-evaluation surface (per-source
+    # assessment rides on each SourceView.evaluation). None = no sidecar / 0-doc → no strip.
+    source_eval: SourceEvalSummary | None = None
 
 
 # ============================================================
@@ -569,7 +601,7 @@ def _build_source_views(
 ) -> list[SourceView]:
     """Build the render-ready source list (side-panel preview + figure path + key)."""
     views: list[SourceView] = []
-    for i, (doc, _score) in enumerate(scored):
+    for i, (doc, score) in enumerate(scored):
         meta = doc.metadata
         preview = doc.page_content[:800] + ("..." if len(doc.page_content) > 800 else "")
         figure_id = meta.get("figure_id") or None
@@ -582,6 +614,7 @@ def _build_source_views(
                 figure_path=figure_path,
                 chunk_key=_chunk_key(meta),
                 figure_id=figure_id,
+                reranker_score=round(float(score), 4),  # D3 strip signal (ADR-027)
             )
         )
     return views
@@ -905,46 +938,61 @@ class ChatController:
             download_path=download_path,
         )
 
-    def _attach_markers(
+    def _attach_source_evaluation(
         self,
         sources: list[SourceView],
+        scored: list[tuple[Document, float]],
         *,
-        enabled: bool = EPISTEMICS_MARKERS_ENABLED,
-    ) -> None:
-        """Attach 7d epistemics markers (contested / superseded-trend) to each source (E1.1 /
-        KI-8). Every source — flat baseline chunk **and** PC parent — joins directly on
-        ``chunk_key`` against a single marker index (``build_epistemics`` projects onto both
-        segmentations, so a retrieved parent's ``{doc}:p{parent_index}`` key resolves without the
-        old text-containment that dropped ~40% of markers). Read-only, no LLM, no provider touched
-        (honors the credit guard); the index is loaded at most once per turn. A clean no-op — every
-        ``markers`` stays empty — when the epistemics sidecar is absent/empty, so the turn is
-        byte-identical to before.
+        markers_enabled: bool = EPISTEMICS_MARKERS_ENABLED,
+    ) -> SourceEvalSummary | None:
+        """ADR-027 **D3**: attach the always-on per-source epistemic evaluation (coverage/direction
+        + doc year) to every retrieved source, and return the strip-level freshness. Independent of
+        the D2/E3 answer-influence toggle — the strip **always** renders when a concept graph
+        exists; ``markers_enabled`` only governs whether the *answer-surface* marker chips
+        (``sv.markers``, E1.1) are populated from the same read. Scoped, indexed reads (KI-18), no
+        LLM, no provider touched.
 
-        Defensive: markers are advisory (inform, never block), so **any** failure to load them —
-        e.g. the ``chunk_epistemics`` table absent on an older DB, a Chroma hiccup — leaves the
-        sources unmarked rather than breaking the turn. But it is **logged at WARNING**: under
-        ADR-027's always-on evaluation strip a silently-swallowed failure is a silently-lying UI.
+        The per-source join is a direct ``chunk_key`` lookup (E1.1 re-projection — flat + PC both
+        resolve). Freshness: ``stale`` when the epistemics sidecar's
+        ``graph_version`` differs from the current skeleton's — the graph was rebuilt without a
+        ``compute_epistemics`` re-run. Returns ``None`` (no strip) when no concept graph is built.
 
-        ``enabled`` defaults to the locked ``EPISTEMICS_MARKERS_ENABLED`` config default; a caller
-        passes the per-turn effective value (U1b / ADR-010 amendment) to override it. When disabled
-        this returns before any load, so every ``markers`` stays empty and the turn is the
-        byte-identical M0/M1 path."""
-        if not enabled:
-            return
+        Advisory: any failure logs a **WARNING** and returns ``None`` rather than breaking the turn
+        — a silent failure under an always-on strip is a silently-lying UI."""
         try:
-            index = load_epistemics_index()
-            if not index:
-                return
-            for sv in sources:
-                if sv.chunk_key is None:
-                    continue
-                markers = index.get(sv.chunk_key)
-                if markers:
-                    sv.markers = list(markers)
+            current = current_graph_version()
+            if current is None:
+                return None  # no concept graph built → nothing to assess, no strip
+            chunk_keys = [sv.chunk_key for sv in sources if sv.chunk_key is not None]
+            evals, sidecar_version = load_source_evaluations(chunk_keys)
+            document_ids = [
+                str(d) for d in (doc.metadata.get("document_id") for doc, _ in scored) if d
+            ]
+            years = document_years(document_ids)
+            for sv, (doc, _score) in zip(sources, scored, strict=True):
+                document_id = doc.metadata.get("document_id")
+                year = years.get(str(document_id)) if document_id is not None else None
+                ev: ChunkEval | None = (
+                    evals.get(sv.chunk_key) if sv.chunk_key is not None else None
+                )
+                sv.evaluation = SourceEpistemics(
+                    coverage=ev.coverage if ev is not None else None,
+                    superseded=ev.superseded if ev is not None else False,
+                    n_claims=ev.n_claims if ev is not None else 0,
+                    year=year,
+                )
+                if ev is not None and markers_enabled:
+                    sv.markers = derive_markers(
+                        1 if ev.coverage == "contested" else 0, 1 if ev.superseded else 0
+                    )
+            return SourceEvalSummary(
+                graph_version=sidecar_version or current,
+                stale=sidecar_version is not None and sidecar_version != current,
+            )
         except Exception as exc:
-            # Advisory markers must never break a turn — but never silently, either (see above).
-            log.warning("attach_markers_failed", error=str(exc))
-            return
+            # Advisory strip must never break a turn — but never silently, either (see above).
+            log.warning("attach_source_evaluation_failed", error=str(exc))
+            return None
 
     def _capture_provenance_and_review(self, pin: _ProvenanceInputs) -> _ProvenanceOutcome:
         """Record the answer's provenance + (when a heuristic signal fires and a reviewer is
@@ -1105,9 +1153,11 @@ class ChatController:
         fig_paths = load_figure_image_paths(fig_ids) if fig_ids else {}
 
         sources = _build_source_views(scored, fig_paths)
-        # E1.1: 7d markers via a direct chunk_key join (no-op when sidecar absent); enabled= is
-        # U1b's per-turn override.
-        self._attach_markers(sources, enabled=knobs.markers_enabled)
+        # ADR-027 D3: the always-on source-evaluation strip (per-source coverage/year + freshness);
+        # markers_enabled= is U1b's per-turn override over the D2 answer-surface marker chips only.
+        source_eval = self._attach_source_evaluation(
+            sources, scored, markers_enabled=knobs.markers_enabled
+        )
         retrieved_chunks = _build_retrieved_chunks(
             scored, reviewer_evidence_chars=knobs.reviewer_evidence_chars
         )
@@ -1128,6 +1178,7 @@ class ChatController:
                     eff_top_k=knobs.top_k,
                     overrides_note=knobs.overrides_note,
                     scope=scope_view,
+                    source_eval=source_eval,
                 )
             )
             return
@@ -1238,6 +1289,7 @@ class ChatController:
                 usage_md=usage_block,
                 citation_note_md=citation_block,
                 scope=scope_view,
+                source_eval=source_eval,
             )
         )
 
@@ -1255,6 +1307,7 @@ class ChatController:
         eff_top_k: int = TOP_K,
         overrides_note: str = "",
         scope: ScopeView | None = None,
+        source_eval: SourceEvalSummary | None = None,
     ) -> TurnResult:
         """``synthesis_mode=human`` (locked default or a per-turn ADR-010 override) —
         evidence only; no interpretation call. Records provenance silently (no card shown),
@@ -1306,6 +1359,7 @@ class ChatController:
             usage_md="",
             citation_note_md="",
             scope=scope,
+            source_eval=source_eval,
         )
 
     def _usage_block(

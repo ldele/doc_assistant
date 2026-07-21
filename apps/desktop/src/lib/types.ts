@@ -1,6 +1,21 @@
 // TypeScript mirror of the desktop-API payloads (apps/api/models.py, PR-M2/M3).
 // Keep in sync with the pydantic models — this is the wire contract.
 
+// ADR-027 D3 — one source's always-on epistemic assessment. Mirrors
+// apps/api/models.py::SourceEpistemicsPayload. `coverage` null = "not assessed".
+export interface SourceEpistemics {
+  coverage: 'corroborated' | 'unique' | 'contested' | null
+  superseded: boolean
+  n_claims: number
+  year: number | null
+}
+
+// ADR-027 D3 — strip-level freshness. Mirrors apps/api/models.py::SourceEvalSummaryPayload.
+export interface SourceEvalSummary {
+  graph_version: string | null
+  stale: boolean
+}
+
 export interface SourceView {
   n: number
   citation: string
@@ -8,6 +23,9 @@ export interface SourceView {
   figure_id: string | null
   chunk_key: string | null
   markers: string[]
+  // ADR-027 D3 — always-on per-source evaluation + the rerank score (strip signals).
+  reranker_score: number
+  evaluation: SourceEpistemics | null
 }
 
 export interface ClaimView {
@@ -43,6 +61,9 @@ export interface TurnResult {
   // Whenever this is set the UI MUST say so: an answer drawn from a subset that doesn't
   // announce it is the failure the folders feature exists to prevent.
   scope: TurnScope | null
+  // ADR-027 D3 — strip-level freshness for the always-on source-evaluation strip (per-source
+  // evaluation rides on each source). null = no epistemics sidecar / 0-doc → no strip.
+  source_eval: SourceEvalSummary | null
 }
 
 // The retrieval scope a turn ran under. `folder_name` is null when the folder was deleted

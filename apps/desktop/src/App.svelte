@@ -340,10 +340,10 @@
     if (detail) {
       const t = detail.turns.find((t) => t.record_id === activeCitation!.turnKey)
       const s = t?.sources.find((s) => s.n === activeCitation!.n)
-      // A rehydrated source is degraded — no markers/figures (not persisted). Shape it as a
-      // SourceView so SourcePanel/SourceCard render it unchanged.
+      // A rehydrated source is degraded — no markers/figures/evaluation (not persisted). Shape it
+      // as a SourceView so SourcePanel/SourceCard render it unchanged.
       if (s) {
-        return { n: s.n, citation: s.citation, excerpt: s.excerpt, figure_id: null, chunk_key: null, markers: [] }
+        return { n: s.n, citation: s.citation, excerpt: s.excerpt, figure_id: null, chunk_key: null, markers: [], reranker_score: 0, evaluation: null }
       }
     }
     const t = turns.find((t) => String(t.id) === activeCitation!.turnKey)

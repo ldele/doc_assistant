@@ -169,6 +169,27 @@ def list_documents(
         return summaries
 
 
+def document_years(document_ids: list[str]) -> dict[str, int]:
+    """Publication year per document (a **scoped** ``SELECT id, year``) — for the ADR-027 D3 source
+    strip. Docs with no year are omitted. Scoped to the retrieved sources, not the whole-corpus
+    ``concept_skeleton.load_doc_years`` (KI-18 discipline: a per-turn read must not scale with the
+    corpus). Returns ``{}`` for an empty request."""
+    if not document_ids:
+        return {}
+    from sqlalchemy import select
+
+    from doc_assistant.db.models import Document
+    from doc_assistant.db.session import session_scope
+
+    years: dict[str, int] = {}
+    with session_scope() as session:
+        stmt = select(Document.id, Document.year).where(Document.id.in_(document_ids))
+        for doc_id, year in session.execute(stmt):
+            if doc_id is not None and year is not None:
+                years[str(doc_id)] = int(year)
+    return years
+
+
 def get_document_details(doc_id: str) -> DocumentDetails | None:
     """Return everything we know about a single document."""
     with session_scope() as session:

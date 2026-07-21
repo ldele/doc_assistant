@@ -116,6 +116,20 @@ class RagOverrides:
     reviewer_evidence_chars: int | None = None
 
 
+@dataclass(frozen=True)
+class _TurnKnobs:
+    """The effective per-turn RAG knobs (ADR-010), resolved once from a ``RagOverrides`` plus the
+    locked config defaults, together with the provenance ``overrides_note`` derived from them. A
+    ``None`` field (or ``overrides=None``) = the locked default. See ``_resolve_turn_knobs``."""
+
+    top_k: int
+    synthesis_mode: str
+    multi_query: bool
+    markers_enabled: bool
+    reviewer_evidence_chars: int
+    overrides_note: str
+
+
 # ============================================================
 # View models (pure render payload — no UI framework types)
 # ============================================================
@@ -299,6 +313,45 @@ def _overrides_note(
     if not diffs:
         return ""
     return "\n\n🧪 **Session override (this answer only):** " + " · ".join(diffs)
+
+
+def _resolve_turn_knobs(overrides: RagOverrides | None) -> _TurnKnobs:
+    """Resolve the effective per-turn knobs from ``overrides`` + the locked defaults (ADR-010).
+
+    Request-scoped: reads ``overrides`` and the config constants, never a module global, so
+    concurrent turns on the shared controller cannot leak. ``None`` = the locked default.
+    ``multi_query`` here is the *effective* value carried into the provenance note only — the
+    retrieval call passes the RAW ``overrides.use_multi_query`` (``None`` → the pipeline's own
+    default), a deliberately distinct path this resolution does not touch."""
+    top_k = overrides.top_k if overrides and overrides.top_k is not None else TOP_K
+    synthesis_mode = (
+        overrides.synthesis_mode if overrides and overrides.synthesis_mode else SYNTHESIS_MODE
+    )
+    multi_query = (
+        USE_MULTI_QUERY
+        if overrides is None or overrides.use_multi_query is None
+        else overrides.use_multi_query
+    )
+    markers_enabled = (
+        EPISTEMICS_MARKERS_ENABLED
+        if overrides is None or overrides.epistemics_markers_enabled is None
+        else overrides.epistemics_markers_enabled
+    )
+    reviewer_evidence_chars = (
+        overrides.reviewer_evidence_chars
+        if overrides and overrides.reviewer_evidence_chars is not None
+        else REVIEWER_EVIDENCE_CHARS
+    )
+    return _TurnKnobs(
+        top_k=top_k,
+        synthesis_mode=synthesis_mode,
+        multi_query=multi_query,
+        markers_enabled=markers_enabled,
+        reviewer_evidence_chars=reviewer_evidence_chars,
+        overrides_note=_overrides_note(
+            top_k, synthesis_mode, multi_query, markers_enabled, reviewer_evidence_chars
+        ),
+    )
 
 
 def _resolve_scope(
@@ -560,6 +613,21 @@ def _build_claim_review(claims: list[Claim], claim_ids: list[str]) -> tuple[str,
     return "\n".join(lines), views
 
 
+def _build_claims_block(
+    record_id: str, full_answer: str, retrieved_chunks: list[RetrievedChunk]
+) -> tuple[str, list[ClaimView]]:
+    """Chunk 2a: segment the answer into claims, eager-persist them, and render the review block
+    for the flagged ones (E1.2 — lifted from ``_handle_rag``). Advisory: any failure collapses to
+    a "Claim adjudication unavailable" note + no flagged claims, never breaking the turn. Called
+    only with a real ``record_id`` (the caller guards on it — no record, no claims)."""
+    try:
+        claims = segment_claims(full_answer, retrieved_chunks)
+        claim_ids = record_claims(record_id, claims)
+        return _build_claim_review(claims, claim_ids)
+    except Exception as e:
+        return f"\n\n_⚠ Claim adjudication unavailable: {e}_", []
+
+
 def _export_sources(
     scored: list[tuple[Document, float]], fig_paths: dict[str, str]
 ) -> list[export.ExportSource]:
@@ -582,6 +650,36 @@ def _export_sources(
             )
         )
     return sources
+
+
+@dataclass(frozen=True)
+class _ProvenanceInputs:
+    """The inputs to one turn's provenance + reviewer capture (E1.2 — bundled so the extracted
+    :meth:`ChatController._capture_provenance_and_review` stays a single-argument seam)."""
+
+    standalone: str
+    original_query: str | None
+    full_answer: str
+    retrieved_chunks: list[RetrievedChunk]
+    model_name: str | None
+    embedding_model: str
+    top_k: int
+    token_input: int
+    token_output: int
+    latency_ms: float
+    session_id: str
+    scope_view: ScopeView | None
+    turn_provider: str
+    turn_model: str
+
+
+@dataclass(frozen=True)
+class _ProvenanceOutcome:
+    """What one turn's provenance + reviewer capture produced (E1.2)."""
+
+    record_id: str | None
+    provenance_block: str
+    review: ReviewResult | None
 
 
 # ============================================================
@@ -848,6 +946,103 @@ class ChatController:
             log.warning("attach_markers_failed", error=str(exc))
             return
 
+    def _capture_provenance_and_review(self, pin: _ProvenanceInputs) -> _ProvenanceOutcome:
+        """Record the answer's provenance + (when a heuristic signal fires and a reviewer is
+        available) run the confined LLM reviewer, returning the rendered card block (E1.2 — the
+        88-line block lifted verbatim out of ``_handle_rag``). Never blocks the answer: any failure
+        collapses to a "Provenance capture failed" card and an empty ``record_id`` (the caller then
+        skips claim adjudication). The ``overrides_note``/``scope_note`` suffix is appended by the
+        caller, which owns those turn knobs."""
+        prov_version = prompt_version_hash(
+            template_hash=self._answer_template_hash,
+            top_k=pin.top_k,
+            use_parent_child=USE_PARENT_CHILD,
+            embedding_model=pin.embedding_model,
+        )
+        record_id: str | None = None
+        review: ReviewResult | None = None
+        try:
+            record_id = record_answer(
+                query=pin.standalone,
+                original_query=pin.original_query,
+                answer=pin.full_answer,
+                retrieved_chunks=pin.retrieved_chunks,
+                model_name=pin.model_name,
+                embedding_model=pin.embedding_model,
+                prompt_version=prov_version,
+                top_k=pin.top_k,
+                use_parent_child=USE_PARENT_CHILD,
+                token_input=pin.token_input,
+                token_output=pin.token_output,
+                latency_ms=pin.latency_ms,
+                session_id=pin.session_id,
+                retrieval_scope=_scope_dict(pin.scope_view),
+            )
+            prov = AnswerProvenance(
+                id=record_id,
+                query=pin.standalone,
+                original_query=pin.original_query,
+                answer=pin.full_answer,
+                retrieved_chunks=pin.retrieved_chunks,
+                model_name=pin.model_name,
+                embedding_model=pin.embedding_model,
+                prompt_version=prov_version,
+                top_k=pin.top_k,
+                use_parent_child=USE_PARENT_CHILD,
+                token_input=pin.token_input,
+                token_output=pin.token_output,
+                latency_ms=pin.latency_ms,
+            )
+            signals = compute_confidence_signals(prov)
+            # PR 5.1 — quiet UI on clean answers, loud on flagged ones. The card ALWAYS
+            # renders (so the provenance id and active model are visible on every answer):
+            # a compact neutral line on clean answers, a full ⚠ block when a signal fires.
+            if signals.any():
+                # PR 6 — when heuristic flags fire AND a reviewer is available, run the LLM
+                # reviewer to add depth. ~$0.001 + ~1-2s per flagged answer (free + local
+                # under Ollama). Clean answers skip the call. ADR-011 (U1c): the reviewer
+                # follows the effective generation provider unless REVIEWER_PROVIDER is
+                # explicitly pinned in the environment (resolve_reviewer's own rule).
+                from doc_assistant.llm import (
+                    get_reviewer_client,
+                    resolve_reviewer,
+                    reviewer_available,
+                )
+
+                reviewer_provider, reviewer_model = resolve_reviewer(
+                    pin.turn_provider, pin.turn_model
+                )
+                if reviewer_available(reviewer_provider):
+                    try:
+                        review = review_answer(
+                            prov, get_reviewer_client(pin.turn_provider, pin.turn_model)
+                        )
+                        # ADR-011: the recorded kind must match the instrument that actually ran.
+                        # A followed switch to Ollama is no longer the Haiku reviewer — labeling it
+                        # "llm_haiku" beside an ollama model_name would be a provenance lie.
+                        reviewer_kind = (
+                            "llm_haiku"
+                            if reviewer_provider == "anthropic"
+                            else f"llm_{reviewer_provider}"
+                        )
+                        persist_review(
+                            record_id,
+                            review,
+                            reviewer_kind=reviewer_kind,
+                            model_name=reviewer_model,
+                        )
+                    except Exception as e:
+                        review = ReviewResult(error=f"reviewer setup failed: {e}")
+            provenance_block = _format_provenance_card(
+                prov, signals, review=review, is_local=_is_local(pin.turn_provider)
+            )
+        except Exception as e:
+            # Never let provenance failure break the answer.
+            provenance_block = f"\n\n_⚠ Provenance capture failed: {e}_"
+        return _ProvenanceOutcome(
+            record_id=record_id, provenance_block=provenance_block, review=review
+        )
+
     def _handle_rag(
         self,
         session: Session,
@@ -870,32 +1065,7 @@ class ChatController:
 
         # --- ADR-010: resolve effective per-turn knobs (None = locked default; never a
         # module-global assignment — request-scoped so concurrent turns can't leak). ---
-        eff_top_k = overrides.top_k if overrides and overrides.top_k is not None else TOP_K
-        eff_synthesis_mode = (
-            overrides.synthesis_mode if overrides and overrides.synthesis_mode else SYNTHESIS_MODE
-        )
-        eff_multi_query = (
-            USE_MULTI_QUERY
-            if overrides is None or overrides.use_multi_query is None
-            else overrides.use_multi_query
-        )
-        eff_markers_enabled = (
-            EPISTEMICS_MARKERS_ENABLED
-            if overrides is None or overrides.epistemics_markers_enabled is None
-            else overrides.epistemics_markers_enabled
-        )
-        eff_reviewer_evidence_chars = (
-            overrides.reviewer_evidence_chars
-            if overrides and overrides.reviewer_evidence_chars is not None
-            else REVIEWER_EVIDENCE_CHARS
-        )
-        overrides_note = _overrides_note(
-            eff_top_k,
-            eff_synthesis_mode,
-            eff_multi_query,
-            eff_markers_enabled,
-            eff_reviewer_evidence_chars,
-        )
+        knobs = _resolve_turn_knobs(overrides)
 
         # --- ADR-025 F2: resolve the retrieval scope ONCE for the turn. Membership lives in
         # SQLite and is editable at any moment, so the hash set is read here and then frozen —
@@ -915,7 +1085,7 @@ class ChatController:
 
         scored = rag.retrieve_with_scores(
             standalone,
-            top_k=eff_top_k,
+            top_k=knobs.top_k,
             use_multi_query=(overrides.use_multi_query if overrides else None),
             scope=scope,
         )
@@ -937,14 +1107,14 @@ class ChatController:
         sources = _build_source_views(scored, fig_paths)
         # E1.1: 7d markers via a direct chunk_key join (no-op when sidecar absent); enabled= is
         # U1b's per-turn override.
-        self._attach_markers(sources, enabled=eff_markers_enabled)
+        self._attach_markers(sources, enabled=knobs.markers_enabled)
         retrieved_chunks = _build_retrieved_chunks(
-            scored, reviewer_evidence_chars=eff_reviewer_evidence_chars
+            scored, reviewer_evidence_chars=knobs.reviewer_evidence_chars
         )
 
         # --- synthesis_mode=human (locked default or a per-turn override): evidence only;
         # skip the interpretation call ---
-        if eff_synthesis_mode == "human":
+        if knobs.synthesis_mode == "human":
             yield Result(
                 self._human_result(
                     session,
@@ -955,8 +1125,8 @@ class ChatController:
                     sources=sources,
                     retrieved_chunks=retrieved_chunks,
                     turn_start=turn_start,
-                    eff_top_k=eff_top_k,
-                    overrides_note=overrides_note,
+                    eff_top_k=knobs.top_k,
+                    overrides_note=knobs.overrides_note,
                     scope=scope_view,
                 )
             )
@@ -971,94 +1141,32 @@ class ChatController:
         turn_out = counter.output_tokens - pre_out
         latency_ms = (time.monotonic() - turn_start) * 1000.0
 
-        # --- Provenance capture (sidecar; never blocks the answer) ---
+        # --- Provenance capture + reviewer (sidecar; never blocks the answer — E1.2) ---
         embedding_model = get_active_model_name()
-        prov_version = prompt_version_hash(
-            template_hash=self._answer_template_hash,
-            top_k=eff_top_k,
-            use_parent_child=USE_PARENT_CHILD,
-            embedding_model=embedding_model,
-        )
         model_name = getattr(turn_llm, "model", None) or getattr(turn_llm, "model_name", None)
-        record_id: str | None = None
-        review: ReviewResult | None = None
-        try:
-            record_id = record_answer(
-                query=standalone,
+        prov_out = self._capture_provenance_and_review(
+            _ProvenanceInputs(
+                standalone=standalone,
                 original_query=user_question if standalone != user_question else None,
-                answer=full_answer,
+                full_answer=full_answer,
                 retrieved_chunks=retrieved_chunks,
                 model_name=model_name,
                 embedding_model=embedding_model,
-                prompt_version=prov_version,
-                top_k=eff_top_k,
-                use_parent_child=USE_PARENT_CHILD,
+                top_k=knobs.top_k,
                 token_input=turn_in,
                 token_output=turn_out,
                 latency_ms=latency_ms,
                 session_id=session.session_id,
-                retrieval_scope=_scope_dict(scope_view),
+                scope_view=scope_view,
+                turn_provider=turn_provider,
+                turn_model=turn_model,
             )
-            prov = AnswerProvenance(
-                id=record_id,
-                query=standalone,
-                original_query=user_question if standalone != user_question else None,
-                answer=full_answer,
-                retrieved_chunks=retrieved_chunks,
-                model_name=model_name,
-                embedding_model=embedding_model,
-                prompt_version=prov_version,
-                top_k=eff_top_k,
-                use_parent_child=USE_PARENT_CHILD,
-                token_input=turn_in,
-                token_output=turn_out,
-                latency_ms=latency_ms,
-            )
-            signals = compute_confidence_signals(prov)
-            # PR 5.1 — quiet UI on clean answers, loud on flagged ones. The card ALWAYS
-            # renders (so the provenance id and active model are visible on every answer):
-            # a compact neutral line on clean answers, a full ⚠ block when a signal fires.
-            if signals.any():
-                # PR 6 — when heuristic flags fire AND a reviewer is available, run the LLM
-                # reviewer to add depth. ~$0.001 + ~1-2s per flagged answer (free + local
-                # under Ollama). Clean answers skip the call. ADR-011 (U1c): the reviewer
-                # follows the effective generation provider unless REVIEWER_PROVIDER is
-                # explicitly pinned in the environment (resolve_reviewer's own rule).
-                from doc_assistant.llm import (
-                    get_reviewer_client,
-                    resolve_reviewer,
-                    reviewer_available,
-                )
-
-                reviewer_provider, reviewer_model = resolve_reviewer(turn_provider, turn_model)
-                if reviewer_available(reviewer_provider):
-                    try:
-                        review = review_answer(
-                            prov, get_reviewer_client(turn_provider, turn_model)
-                        )
-                        # ADR-011: the recorded kind must match the instrument that actually ran.
-                        # A followed switch to Ollama is no longer the Haiku reviewer — labeling it
-                        # "llm_haiku" beside an ollama model_name would be a provenance lie.
-                        reviewer_kind = (
-                            "llm_haiku"
-                            if reviewer_provider == "anthropic"
-                            else f"llm_{reviewer_provider}"
-                        )
-                        persist_review(
-                            record_id,
-                            review,
-                            reviewer_kind=reviewer_kind,
-                            model_name=reviewer_model,
-                        )
-                    except Exception as e:
-                        review = ReviewResult(error=f"reviewer setup failed: {e}")
-            provenance_block = _format_provenance_card(
-                prov, signals, review=review, is_local=_is_local(turn_provider)
-            )
-        except Exception as e:
-            # Never let provenance failure break the answer.
-            provenance_block = f"\n\n_⚠ Provenance capture failed: {e}_"
-        provenance_block += overrides_note + _scope_note(scope_view)
+        )
+        record_id = prov_out.record_id
+        review = prov_out.review
+        provenance_block = (
+            prov_out.provenance_block + knobs.overrides_note + _scope_note(scope_view)
+        )
 
         sources_block = _sources_block(sources)
         usage_block = self._usage_block(
@@ -1069,12 +1177,9 @@ class ChatController:
         claim_review_block = ""
         flagged_claims: list[ClaimView] = []
         if record_id is not None:
-            try:
-                claims = segment_claims(full_answer, retrieved_chunks)
-                claim_ids = record_claims(record_id, claims)
-                claim_review_block, flagged_claims = _build_claim_review(claims, claim_ids)
-            except Exception as e:
-                claim_review_block = f"\n\n_⚠ Claim adjudication unavailable: {e}_"
+            claim_review_block, flagged_claims = _build_claims_block(
+                record_id, full_answer, retrieved_chunks
+            )
 
         # Post-hoc citation audit — quiet unless the model cited badly (out-of-range
         # numbers or malformed forms the [n] parser silently drops). Surface, don't rewrite.

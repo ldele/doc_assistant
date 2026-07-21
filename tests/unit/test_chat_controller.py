@@ -199,6 +199,45 @@ def test_chunk_key_is_not_persisted(temp_db, monkeypatch):
 
 
 # ============================================================
+# ADR-010 — _resolve_turn_knobs (E1.2; pure, no DB)
+# ============================================================
+
+
+def test_resolve_turn_knobs_defaults_when_no_overrides():
+    from doc_assistant.chat_controller import _resolve_turn_knobs
+    from doc_assistant.config import (
+        EPISTEMICS_MARKERS_ENABLED,
+        REVIEWER_EVIDENCE_CHARS,
+        SYNTHESIS_MODE,
+        TOP_K,
+        USE_MULTI_QUERY,
+    )
+
+    k = _resolve_turn_knobs(None)
+    assert k.top_k == TOP_K
+    assert k.synthesis_mode == SYNTHESIS_MODE
+    assert k.multi_query == USE_MULTI_QUERY
+    assert k.markers_enabled == EPISTEMICS_MARKERS_ENABLED
+    assert k.reviewer_evidence_chars == REVIEWER_EVIDENCE_CHARS
+    assert k.overrides_note == ""  # no diff → byte-identical turn
+
+
+def test_resolve_turn_knobs_all_none_overrides_equals_defaults():
+    # An explicit RagOverrides() with every field None is indistinguishable from overrides=None.
+    from doc_assistant.chat_controller import _resolve_turn_knobs
+
+    assert _resolve_turn_knobs(RagOverrides()) == _resolve_turn_knobs(None)
+
+
+def test_resolve_turn_knobs_applies_overrides_and_notes_the_diff():
+    from doc_assistant.chat_controller import _resolve_turn_knobs
+
+    k = _resolve_turn_knobs(RagOverrides(top_k=5, synthesis_mode="human"))
+    assert k.top_k == 5 and k.synthesis_mode == "human"
+    assert "top_k=5" in k.overrides_note and "synthesis_mode=human" in k.overrides_note
+
+
+# ============================================================
 # Dispatch order
 # ============================================================
 

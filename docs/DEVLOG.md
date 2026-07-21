@@ -11,6 +11,41 @@ Format: What changed | Why | Rejected alternatives | What it opens
 > (moved verbatim 2026-07-21). This file keeps 2026-07-15 onward.
 
 ---
+## 2026-07-21 — E1.2: extract `_handle_rag` into named seams (pure refactor, no behavior change)
+
+ROADMAP row E1.2 (the code-health half of E1, deferred from E1.1). The AI-turn generator
+`chat_controller._handle_rag` had grown to **~278 lines / ~14 responsibilities**; the plan calls for
+breaking it up *before* E2/E3 wire the always-on epistemics strip into it. **Pure refactor — byte-identical
+behavior.** **Staged, not committed** (cpc §13). Full suite **1179 passed / 1 skipped** (+3 unit tests);
+ruff · `ruff format` · `mypy --strict src` · bandit · docs_check 0/0 · integrity_check 0/0.
+
+**Approach.** `_handle_rag` is a *generator* (yields `Step`/`Token`/`Result`), so the yield-bearing
+flow stays in the orchestrator; only the **non-yielding computation** is extracted. Three seams, each
+a verbatim lift:
+- `_resolve_turn_knobs(overrides) -> _TurnKnobs` — the ADR-010 effective-knob resolution (top_k /
+  synthesis_mode / multi_query / markers_enabled / reviewer_evidence_chars + `overrides_note`). Preserves
+  the subtlety that retrieval passes the **raw** `overrides.use_multi_query`, while the *effective*
+  `multi_query` is for the provenance note only.
+- `_capture_provenance_and_review(_ProvenanceInputs) -> _ProvenanceOutcome` — the 88-line
+  provenance-record + confidence-signals + conditional LLM-reviewer + card-format block, try/except-bounded
+  exactly as before (a failure still collapses to a "Provenance capture failed" card + empty `record_id`).
+  Inputs bundled in a frozen `_ProvenanceInputs` so the seam is single-argument; the `overrides_note`/
+  `scope_note` suffix stays in the caller (it owns the turn knobs).
+- `_build_claims_block(record_id, full_answer, retrieved_chunks)` — the Chunk-2a segment→persist→render
+  block; the caller keeps its `if record_id is not None` guard.
+
+**Result.** `_handle_rag` **278 → 198 lines**; the three heaviest concerns are now named, testable seams
+(and E2's source-evaluation strip has clean spots to slot into — `_build_source_views` + the TurnResult
+assembly). Stopped here deliberately: extracting the yield-bearing export/TurnResult tail would need a
+~20-field parameter bundle that hurts readability more than it helps.
+
+**Verification.** The safety net is the existing `test_turn_parity` (byte-identical when markers absent)
++ the full `test_chat_controller` suite — all green, unchanged. Added 3 focused unit tests pinning
+`_resolve_turn_knobs` (defaults / all-None-overrides ≡ defaults / applies + notes the diff). No KI, no
+live probe (no data path touched). **Opens:** E2 (ADR-027 D3 always-on source strip) — now honest to
+build on (E1.1) *and* has clean seams to wire into (E1.2).
+
+---
 ## 2026-07-21 — E1.1: marker-join trustworthiness — KI-8 re-projection (correctness core)
 
 Spec: `docs/specs/feature-e1-marker-join.md` (ROADMAP row E1). The honesty prerequisite for ADR-027's

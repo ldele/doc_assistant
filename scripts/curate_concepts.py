@@ -1,11 +1,13 @@
-"""Curate the auto-seeded concept vocabulary — prune non-concepts + merge near-duplicates.
+"""Curate the auto-seeded concept vocabulary — demote non-concepts + merge near-duplicates.
 
-The pruning counterpart to ``seed_concepts --promote-all``: a broad promoted vocabulary carries
+The curation counterpart to ``seed_concepts --promote-all``: a broad promoted vocabulary carries
 extraction noise (DOI/date/license fragments, single-char tokens, author names, sentence
 fragments). This runs three cheapest-first stages over
 ``doc_assistant.knowledge.concept_curation`` —
 deterministic artifact filter, optional local-LLM classification, optional embedding near-dup
-merge — and rewrites the curated ``concepts`` / ``concept_aliases`` tables. Dry-run by default;
+merge. Artifact + noise verdicts **demote** the concept out of the graph vocabulary
+(``graph_include=False``, ADR-018 — the row + its keyword family survive, so a misclassified
+specialist term is recoverable); only near-dup merges fold + drop a row. Dry-run by default;
 mutates only on ``--apply``. Re-run ``build_concept_skeleton --apply`` afterwards to regenerate the
 derived skeleton over the cleaned vocabulary.
 
@@ -28,14 +30,13 @@ import sys
 from doc_assistant import config
 from doc_assistant.knowledge.concept_curation import (
     CurationPlan,
-    apply_merges,
+    apply_plan,
     classify_noise,
     dedup_pairs,
     doc_counts,
     is_artifact,
     load_concepts,
     plan_merges,
-    remove_concepts,
 )
 
 if sys.platform == "win32" and hasattr(sys.stdout, "reconfigure"):
@@ -75,13 +76,14 @@ def _build_plan(args: argparse.Namespace) -> CurationPlan:
 
 
 def _report(plan: CurationPlan, total: int) -> None:
-    kept = total - len(plan.remove_ids) - len(plan.merges)
+    in_graph = total - len(plan.demote_ids) - len(plan.merges)
     print("\n" + "=" * 72)
     print(f"Vocabulary curation plan  ({total} concepts)")
     print(f"  Artifact-filtered   : {len(plan.artifacts)}")
     print(f"  LLM-flagged noise   : {len(plan.llm_noise)}")
+    print(f"  -> demoted from graph: {len(plan.demote_ids)}  (rows + keyword families kept)")
     print(f"  Near-dup merges     : {len(plan.merges)}")
-    print(f"  -> concepts kept    : {kept}")
+    print(f"  -> graph vocabulary  : {in_graph}")
     print("=" * 72)
     for title, items in (("Artifacts", plan.artifacts), ("LLM noise", plan.llm_noise)):
         if items:
@@ -118,9 +120,11 @@ def main() -> int:
         print("\nDry run — nothing written. Re-run with --apply to curate.")
         return 0
 
-    removed = remove_concepts(plan.remove_ids)
-    merged = apply_merges(plan.merges)
-    print(f"\nApplied: removed {removed} concept(s), merged {merged}.")
+    demoted, merged = apply_plan(plan)
+    print(f"\nApplied: demoted {demoted} concept(s) from the graph, merged {merged}.")
+    print(
+        "Demote keeps the row + its keyword family (ADR-018) — reversible via set_graph_include."
+    )
     print("Next: `build_concept_skeleton --apply` to rebuild the skeleton over the clean vocab.")
     return 0
 

@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-07-20 (KI-25 added + resolved: the graph emptied when KI-23 landed) · class: living -->
+<!-- status: active · updated: 2026-07-21 (E0 correctness batch: KI-17/20/21 RESOLVED) · class: living -->
 
 # KNOWN ISSUES
 
@@ -91,7 +91,15 @@ narrative. Numbering is global and never reused (see the KI-23 note in the archi
   or overlap-based matching fixes it. See `docs/REVIEW_2026-07-19_scale-robustness.md` WE-7.
 - **Pointer:** `docs/archive/pr-m1-epistemics-markers.md` ADR-1 (option 2 = the re-projection upgrade).
 
-## KI-17 — stochastic gap rows outlive their concept → orphaned gaps served to the graph UI (2026-07-18, OPEN)
+## KI-17 — stochastic gap rows outlive their concept → orphaned gaps served to the graph UI (2026-07-18, RESOLVED 2026-07-21, E0.2)
+- **Resolved (2026-07-21, E0.2):** `gaps._reconcile_stochastic_gaps(live_ids)` deletes stochastic
+  rows whose `concept_id` is not in the `graph_include`-filtered `load_concepts()`, **hoisted to run
+  unconditionally on every `build_gaps --apply`** (the placement correction — it must reach a
+  deterministic-only apply). A reconcile, not a blanket delete: a promotion on a *live* concept
+  survives; only orphans are reaped. Guard test `test_orphaned_stochastic_gap_is_reconciled_away`
+  (excluded-anchor gap gone, live-anchor promotion kept). Live $0 probe on a copy of the real DB:
+  1 orphan reaped, 1 live promotion survived. **Do not** move the reconcile back inside the
+  `suggest` branch. (Ready to commit — not yet committed.)
 - **Symptom:** `load_graph_view()` serves **27** gaps against a **13**-node skeleton; **10** of them
   (all `kind="suggested_concept"`, all `determinism="stochastic"`) carry a `concept_id` that resolves
   to no node. The view's own report disagrees with the sidecar: `build_gaps --apply` printed
@@ -178,7 +186,14 @@ narrative. Numbering is global and never reused (see the KI-23 note in the archi
 - **Pointer:** REVIEW findings CS-3/4/7/8, KW-4/5/6/9, GP-1/2/5, WE-5/6; the inventory table in
   `docs/REVIEW_2026-07-19_scale-robustness.md`.
 
-## KI-20 — concept curation hard-deletes vocabulary where ADR-018 mandates demote — OPEN (2026-07-19)
+## KI-20 — concept curation hard-deletes vocabulary where ADR-018 mandates demote — RESOLVED (2026-07-21, E0.1)
+- **Resolved (2026-07-21, E0.1):** artifact + `classify_noise` verdicts route through new
+  `concept_curation.demote_concepts` (`graph_include=False` — keeps the row, its aliases, and its
+  ADR-015 keyword family) via the new `apply_plan` seam the runner drives. `remove_concepts` stays
+  as the reserved, separately-confirmed hard-delete primitive, no longer wired to the noise stages.
+  Guard tests `test_noise_verdict_demotes_and_keeps_the_family` / `test_remove_concepts_is_the_
+  reserved_hard_delete`. **Do not** re-point the noise stages at `remove_concepts`.
+  (Ready to commit — not yet committed.)
 - **Symptom:** `concept_curation.remove_concepts` (`knowledge/concept_curation.py:400`) deletes
   `Concept` + `ConceptAlias` rows outright; stages 1–3 (artifact filter, `classify_noise` LLM,
   near-dup merge) route into it. `classify_noise` is precisely the path that mislabels real
@@ -197,7 +212,15 @@ narrative. Numbering is global and never reused (see the KI-23 note in the archi
 - **Pointer:** REVIEW finding CS-5 (verified); ADR-018; `docs/specs/feature-concept-graph.md`
   Traps; KW-9 is the same verb error at the tokenizer (`KEYWORD_MIN_CHARS` deletes unmined).
 
-## KI-21 — in-app graph rebuild refreshes the skeleton but not the gaps the view serves — OPEN (2026-07-19)
+## KI-21 — in-app graph rebuild refreshes the skeleton but not the gaps the view serves — RESOLVED (2026-07-21, E0.3)
+- **Resolved (2026-07-21, E0.3):** `_default_rebuild_graph` (`apps/api/main.py`) now chains
+  `build_gaps(apply=True, min_degree=derive_min_degree(result.skeleton))` after the skeleton build.
+  `min_degree` is the runtime **Q1 of the rebuilt skeleton's connected-node degrees**
+  (`gaps.derive_min_degree`) — no hardcoded literal (measured **3** on the real 26-node graph,
+  matching the CLI baseline). With the E0.2 reconcile also chained in, the served gap set equals a
+  fresh recompute (live probe: 11 == 11, a just-inserted stale gap dropped). The plain skeleton
+  build preserves Node-B stance (E0.5b), so the rebuild does not darken epistemics. Guard test
+  `test_rebuild_refreshes_gaps_and_drops_stale_ones`. (Ready to commit — not yet committed.)
 - **Symptom:** the ADR-017 B1 rebuild route (`apps/api/main.py:232` `_default_rebuild_graph`)
   calls `build_concept_skeleton(apply=True)` only — `build_gaps` has no API caller — and
   `load_graph_view` serves all `GapRow`s with no `graph_version` cross-check

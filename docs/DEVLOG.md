@@ -11,6 +11,105 @@ Format: What changed | Why | Rejected alternatives | What it opens
 > (moved verbatim 2026-07-21). This file keeps 2026-07-15 onward.
 
 ---
+## 2026-07-21 — E0 correctness batch: five P0 fixes before the always-on epistemics surfaces
+
+Spec: `docs/specs/feature-e0-correctness-batch.md` (from `docs/PLAN_2026-07-21_exploration-epistemics.md`
+§E0 + the C4 review's P0 list). ADR-027 D3 makes the epistemics **assessment** always-on — *an
+always-on strip must not show false data* — so this closes the "a rebuild/curation silently destroys
+curated state" class (three of these are the same shape as KI-25) plus the boot + zero-doc footguns,
+before E1/E2 wire the surfaces. Backend-only, deterministic, **zero LLM / zero eval ceremony** (no
+locked setting touched). Every item ships a **guard test that fails against the pre-fix code**; the
+full suite is green (**1178 passed / 1 skipped**, +14), `ruff`/`ruff format`/`mypy --strict src`/
+`bandit`/docs_check/integrity_check all clean. **Staged, not committed** (cpc §13). Build order was
+E0.4 (safety net) → E0.1 → E0.2+E0.3 → E0.5a → E0.5b.
+
+**E0.4 — zero-doc honesty, pinned by a test (WE-1/WE-9/GP-7).**
+- *What.* `wiki.load_doc_graph` catches `OperationalError` → `([], [])` + a hint; the `epistemics`
+  build guards its sidecar write (a never-migrated DB has no `chunk_epistemics` table, so the
+  delete-all in `_write_rows` tripped `OperationalError`) → honest empty result + hint, `applied`
+  reflects it. Missing-skeleton still raises `FileNotFoundError` (kept — the CLI + existing test rely
+  on it). New parametrized `tests/integration/test_empty_input_honesty.py` over all four build paths
+  (wiki/epistemics/skeleton/gaps).
+- *Why.* The `.claude/CONTEXT.md` "degrade honestly at 0 documents" contract survived by habit; two
+  build paths crashed and nothing gated it. Non-vacuous: wiki/epistemics raise on a never-migrated DB
+  today (proven by a raw `OperationalError` repro).
+- *Rejected.* Making missing-skeleton return empty too (breaks the CLI contract + `test_missing_
+  skeleton_raises`); skip-on-empty for the epistemics write (would stop clearing stale rows on a real
+  corpus) — instead the `OperationalError` catch degrades only the genuinely-unmigrated case.
+
+**E0.1 — curation demotes, never deletes (KI-20 / CS-5).**
+- *What.* New `concept_curation.demote_concepts(ids)` (`graph_include=False`, keeps row + aliases +
+  ADR-015 keyword family) + `apply_plan(plan)` seam the runner now drives. Artifact + `classify_noise`
+  verdicts route through demote; `remove_concepts` is kept as the **reserved** explicit-deletion
+  primitive, no longer wired to the noise classifier. `CurationPlan.remove_ids` → `demote_ids`.
+- *Why.* `classify_noise` is exactly the stage that mislabels specialist vocab (`cre`/`dbs`/`ntsr1`/
+  `pddl`), and a delete cascades the keyword family + presence/edges/gaps — irrecoverable. ADR-018's
+  demote verb, applied. Guard `test_noise_verdict_demotes_and_keeps_the_family`; `remove_concepts`'
+  delete is covered too so the distinction is tested, not commented.
+- *Rejected.* Looping `set_graph_include` per id (N sessions) — a single bulk update instead;
+  changing the near-dup *merge* to demote (a merge folds aliases into the survivor first, no
+  vocabulary lost — left as-is, out of the DoD).
+
+**E0.2 — rebuild reconciles orphaned stochastic gaps (KI-17 / GP).**
+- *What.* `gaps._reconcile_stochastic_gaps(live_ids)` deletes stochastic `GapRow`s whose anchor
+  `concept_id` left the `graph_include`-filtered vocabulary, **hoisted to run unconditionally on
+  every `build_gaps --apply`** (the review's placement correction — inside the suggest branch it never
+  reached a deterministic-only apply). `GapsResult.n_reconciled` + CLI report line for transparency.
+- *Why.* Stochastic rows were status-preserving upserts with no delete pass → immortal orphans (the
+  live 27-gaps-over-13-nodes symptom). A reconcile, not a blanket delete: a promotion on a *live*
+  concept survives. `suggest_for_thin` always anchors on an existing concept (target lives in
+  `evidence`), so a live suggestion is never a false orphan. Guard `test_orphaned_stochastic_gap_is_
+  reconciled_away`; **updated** `test_stochastic_rows_survive_a_deterministic_rebuild` to anchor on a
+  live concept (its old synthetic non-vocab anchor is precisely the orphan the reconcile now reaps).
+- *Rejected.* `notin_([])` bulk SQL delete (empty-IN edge cases) — load + filter in Python (gaps are
+  tens of rows).
+
+**E0.3 — in-app rebuild refreshes gaps, not just the skeleton (KI-21 / GP-4).**
+- *What.* `_default_rebuild_graph` chains `build_gaps(apply=True, min_degree=derive_min_degree(skeleton))`
+  after the skeleton build. `gaps.derive_min_degree` = runtime **Q1 of the rebuilt skeleton's
+  connected-node degrees** (no literal; fails safe to 1 on a tiny graph). Guard `test_rebuild_
+  refreshes_gaps_and_drops_stale_ones` (route composition: served gaps == fresh recompute, stale gap
+  gone).
+- *Why.* The acquire loop the button exists to close (gap → ingest → rebuild → gap closes) never
+  closed in-app — the view served gaps from the previous skeleton, incl. the one just closed.
+  Derived `min_degree` measured **3** on the real 26-node graph, matching the CLI's validated Q1
+  baseline — the "no corpus-tuned literal" contract, satisfied by derivation.
+- *Rejected.* A hardcoded default (a corpus-tuned magic number, `.claude/CONTEXT.md`); stamping
+  `graph_version` on gap rows + filtering in the view (heavier; the refresh already makes the served
+  set correct).
+
+**E0.5a — a failed startup migration fails the boot.** The lifespan (`apps/api/main.py`) re-raises on
+`init_db()` failure with a clear message instead of swallowing and serving a half-migrated schema —
+KI-23 moved `init_db` here precisely because a stale **answer-path** column 500s every turn, a worse
+and later failure than refusing to start. Deliberately reverses the old "never let a migration
+problem stop the app" comment (documented in-code). Fixed the stale `apps/api/CLAUDE.md` line ("the
+API does not `init_db()` on startup"). Guards in `test_api_startup_migration.py` (boot fails on a
+broken migration; boots clean on a good one).
+
+**E0.5b — a plain rebuild preserves Node-B stance.** `build_concept_skeleton(apply=True)` without
+`--enrich` recomputes structure only, so it now re-attaches existing Node-B `stance_by_doc`/`relation`
+(+ the `llm_relation` provenance token and the weight that follows) to edges whose concept-pair still
+exists (`_reattach_stance` / `_load_existing_stance`, `stance_loader` DI seam) instead of wiping it —
+the G6-run footgun that darkens corpus-wide epistemics on every in-app rebuild. Transparent to
+`--enrich` (which re-derives every edge's stance, setting `()` on the ones it skips), so it only
+protects the plain path. Updated the `scripts/CLAUDE.md` footgun note. Guard `test_plain_rebuild_
+preserves_node_b_stance`. *Known bound (documented):* a stance entry for a since-removed document
+lingers until a real `--enrich`; preserving stale-but-mostly-right stance beats wiping all of it.
+
+**Live $0 probe (isolated copies of the real 76-doc library + 26-node skeleton; real Chroma read
+only; originals verified byte-unchanged).** This box's graph is currently clean (0 stochastic gaps,
+0 stance), so the probe injected the exact condition each fix protects, then exercised the real data
+paths: **E0.5b** — injected stance survived a plain rebuild (26 nodes/70 edges) in both `skeleton.json`
+and `concept_edges`, while a `stance_loader`-empty run (pre-fix simulation) wiped it; **E0.2** —
+derived `min_degree=3`, 1 orphan reaped, 1 live-anchored promotion kept; **E0.3** — served
+deterministic gaps (11) == fresh recompute (11), an injected stale gap dropped.
+
+**Deferred / opens.** E1 (KI-8 marker re-projection + `_handle_rag` extraction) is the next sprint;
+KI-18 scale hot-paths + KI-19 tuned constants stay measurement-gated (RG-016..019) — not touched here.
+The near-dup merge still hard-deletes the folded row (correct: aliases move first). ADR-017 C1's
+gap-triage override sidecar can inherit the E0.2 reconcile seam when PR-G2b lands.
+
+---
 ## 2026-07-21 — App-shell polish: global search overlay + collapsible sidebar (chat-first shell, a+b)
 
 The two **shovel-ready** sub-items of the "App shell → chat-first layout" backlog row

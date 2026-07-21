@@ -15,8 +15,9 @@ Pattern: runners re-derive; they never mutate the chunk store) plus dev/build to
 - **Dry-run is the default; `--apply` writes.** Keep that polarity on every new runner.
 - **KI-4 credit leak:** `.env` defaults are all-Anthropic — force `--provider ollama` on every
   enrichment/self-eval run. Paid providers must trip `llm.assert_provider_intent`.
-- **`build_concept_skeleton --apply` alone WIPES Node-B stance annotations** — the correct host
-  command is `--apply --enrich` (see `.claude/CONTEXT.md` G6 note).
+- **`build_concept_skeleton --apply` alone PRESERVES existing Node-B stance** (E0.5b) but does not
+  *regenerate* it — to refresh stance from the corpus, run `--apply --enrich` (Ollama, KI-4). Pre-E0.5b
+  a plain `--apply` silently wiped stance (the G6-run footgun; `.claude/CONTEXT.md` G6 note).
 - Enrichment runners need host `data/` access — they no-op in a sandbox (KI-5).
 - Runners run as modules (`python -m scripts.<name>`) inside the uv venv (`just eval`, `just ingest`).
 

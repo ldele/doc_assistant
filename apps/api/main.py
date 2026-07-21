@@ -236,14 +236,24 @@ class _GraphRebuildStatus:
 def _default_rebuild_graph() -> str:
     """Lazy wrapper so importing this module doesn't pull the heavy concept-skeleton chain.
 
-    Returns the new ``graph_version``. The CLI runner (``scripts/build_concept_skeleton --apply``)
-    stays the canonical seam — this is a second caller of the *same* idempotent function, which is
-    what ADR-017 B1 decided the Enrichment-Layer Pattern permits (it constrains what derived data
-    is, not who triggers it).
+    Returns the new ``graph_version``. The CLI runners (``build_concept_skeleton`` then
+    ``build_gaps``) stay the canonical seam — this is a second caller of the *same* idempotent
+    functions, which is what ADR-017 B1 decided the Enrichment-Layer Pattern permits (it constrains
+    what derived data is, not who triggers it).
+
+    E0.3 / KI-21: the skeleton rebuild is chained into ``build_gaps`` so the acquire loop the
+    button exists to close (gap → ingest → rebuild → gap closes) actually closes in-app — otherwise
+    ``load_graph_view`` keeps serving gaps computed against the *previous* skeleton, including a
+    gap the user just closed. ``min_degree`` is derived from the rebuilt skeleton's own degree
+    distribution (E0.3 — no hardcoded literal). Both passes are deterministic + zero-LLM; the plain
+    ``build_concept_skeleton(apply=True)`` preserves Node-B stance (E0.5b), so a rebuild does not
+    silently darken epistemics.
     """
     from doc_assistant.knowledge.concept_skeleton import build_concept_skeleton
+    from doc_assistant.knowledge.gaps import build_gaps, derive_min_degree
 
     result = build_concept_skeleton(apply=True)
+    build_gaps(apply=True, min_degree=derive_min_degree(result.skeleton))
     return str(result.skeleton.meta.get("graph_version", ""))
 
 
@@ -318,14 +328,24 @@ def create_app(
         # answer path (`answer_records.retrieval_scope_json`), where a stale schema breaks every
         # turn. Logged loudly when it actually changes something, so a silent drift like
         # `concepts.graph_include` (missing here for ~2 weeks) can't repeat unnoticed.
+        # E0.5a: a FAILED migration fails the boot, rather than serving a half-migrated schema.
+        # KI-23 moved init_db here precisely because a stale answer-path column (e.g.
+        # `answer_records.retrieval_scope_json`) breaks *every* turn at runtime — so swallowing the
+        # error only defers a worse, more confusing failure to the first chat. Refuse to start
+        # with a clear message instead. (Deliberately reverses the earlier "never let a migration
+        # problem stop the app" stance — an unreachable-at-boot DB is not something to paper over.)
         try:
             added = init_db()
-            if added:
-                log.warning("schema_migrated_at_startup", columns=added)
-            else:
-                log.info("schema_current")
-        except Exception as e:  # never let a migration problem stop the app from starting
+        except Exception as e:
             log.error("schema_migration_failed", error=str(e))
+            raise RuntimeError(
+                "database migration failed at startup; refusing to serve a stale schema (every "
+                "turn would 500). Fix the DB or run `python -m doc_assistant.db.migrations`."
+            ) from e
+        if added:
+            log.warning("schema_migrated_at_startup", columns=added)
+        else:
+            log.info("schema_current")
         if getattr(app.state, "controller", None) is None:
             app.state.controller = ChatController()
         yield

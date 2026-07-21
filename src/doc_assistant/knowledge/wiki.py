@@ -320,38 +320,48 @@ def diff_manifests(old: dict[str, list[str]], new: dict[str, list[str]]) -> Wiki
 
 
 def load_doc_graph(embedding_model: str | None = None) -> tuple[list[DocRef], list[SimEdge]]:
-    """Load non-archived documents + their similarity edges from SQLite."""
+    """Load non-archived documents + their similarity edges from SQLite.
+
+    Degrades honestly at 0 documents (`.claude/CONTEXT.md` robustness contract): a
+    never-ingested / never-migrated DB has no `documents` table, so the read trips
+    ``OperationalError``. That is the empty state, not a fault — return ``([], [])`` with a
+    hint rather than crashing this build path (E0.4 / WE-1)."""
     from sqlalchemy import select
+    from sqlalchemy.exc import OperationalError
 
     from doc_assistant.db.models import DocSimilarity, Document
     from doc_assistant.db.session import session_scope
 
-    with session_scope() as session:
-        docs = [
-            DocRef(
-                doc_id=str(d.id),
-                doc_hash=d.doc_hash,
-                filename=d.filename,
-                title=d.title,
-                year=d.year,
-                keywords=[k.name for k in d.keywords],
+    try:
+        with session_scope() as session:
+            docs = [
+                DocRef(
+                    doc_id=str(d.id),
+                    doc_hash=d.doc_hash,
+                    filename=d.filename,
+                    title=d.title,
+                    year=d.year,
+                    keywords=[k.name for k in d.keywords],
+                )
+                for d in session.execute(
+                    select(Document).where(Document.is_archived.is_(False))
+                ).scalars()
+            ]
+            edge_stmt = select(
+                DocSimilarity.source_document_id,
+                DocSimilarity.target_document_id,
+                DocSimilarity.score,
             )
-            for d in session.execute(
-                select(Document).where(Document.is_archived.is_(False))
-            ).scalars()
-        ]
-        edge_stmt = select(
-            DocSimilarity.source_document_id,
-            DocSimilarity.target_document_id,
-            DocSimilarity.score,
-        )
-        if embedding_model is not None:
-            edge_stmt = edge_stmt.where(DocSimilarity.embedding_model == embedding_model)
-        edges = [
-            SimEdge(source=str(s), target=str(t), score=float(sc))
-            for s, t, sc in session.execute(edge_stmt).all()
-        ]
-    return docs, edges
+            if embedding_model is not None:
+                edge_stmt = edge_stmt.where(DocSimilarity.embedding_model == embedding_model)
+            edges = [
+                SimEdge(source=str(s), target=str(t), score=float(sc))
+                for s, t, sc in session.execute(edge_stmt).all()
+            ]
+        return docs, edges
+    except OperationalError:
+        log.warning("wiki_no_documents_indexed", hint="run ingest first; the doc graph is empty")
+        return [], []
 
 
 def load_communities(

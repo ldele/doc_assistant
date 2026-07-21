@@ -60,6 +60,10 @@ def _format_report(result: GapsResult) -> str:
     out.append(f"Tier-1 gaps:               {result.n_t1}")
     out.append(f"Tier-2a floor gaps:        {result.n_t2a}")
     out.append(f"Tier-2a suggested (stoch): {result.n_suggested}")
+    if result.n_reconciled:
+        out.append(
+            f"Orphaned stochastic reaped:{result.n_reconciled:>3}  (concept left the graph)"
+        )
     out.append(f"Total gaps:                {len(result.gaps)}")
     if result.applied:
         out.append(f"Rows written:              {len(result.gaps) + result.n_suggested}")

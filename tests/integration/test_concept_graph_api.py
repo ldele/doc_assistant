@@ -304,6 +304,76 @@ def test_route_rebuild_reports_error_without_killing_the_thread(env: Path) -> No
     assert "node A exploded" in body["message"]
 
 
+def test_rebuild_refreshes_gaps_and_drops_stale_ones(
+    env: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """E0.3 / KI-21: the in-app rebuild chains ``build_gaps`` after the skeleton build, so
+    ``load_graph_view`` never serves gaps computed against the previous skeleton. A stale
+    deterministic gap and an orphaned stochastic gap (E0.2) are both cleared, and the served gap
+    count equals a fresh recompute — no stale/orphan inflation. Fails today: the rebuild ran only
+    ``build_concept_skeleton``, so both stale rows would survive."""
+    from apps.api.main import _default_rebuild_graph
+
+    from doc_assistant.knowledge import concept_skeleton as csm
+    from doc_assistant.knowledge.concept_skeleton import load_skeleton
+    from doc_assistant.knowledge.gaps import build_gaps, derive_min_degree
+
+    _seed_concepts((_A, "Embeddings"), (_B, "BM25"))
+    with session_scope() as s:  # concept_presence FKs documents.id — the referent must exist
+        s.add(
+            Document(
+                id="d1",
+                filename="d1.pdf",
+                source_original="/tmp/d1.pdf",
+                doc_hash="d1",
+                format="pdf",
+            )
+        )
+    # Both concepts co-occur in two chunks of one document -> a real, deterministic skeleton edge
+    # (no Chroma: the presence loader is stubbed).
+    chunks = [
+        ("d1:p0", "d1", "embeddings and bm25 are combined here"),
+        ("d1:p1", "d1", "more on embeddings versus bm25 today"),
+    ]
+    monkeypatch.setattr(csm, "load_presence_inputs", lambda document_ids=None: chunks)
+    monkeypatch.setattr(csm, "load_doc_graphs", lambda: ([], []))
+    monkeypatch.setattr(csm, "load_doc_years", lambda: {})
+
+    with session_scope() as s:
+        s.add_all(
+            [
+                GapRow(  # a gap from a previous skeleton the rebuild must replace
+                    concept_id="stale-ghost",
+                    tier="t1",
+                    determinism="deterministic",
+                    kind="isolated",
+                    status="surfaced",
+                    graph_version="old",
+                ),
+                GapRow(  # a stochastic orphan (anchor not in the vocabulary) — E0.2 reaps it
+                    concept_id="orphan-ghost",
+                    tier="t2a",
+                    determinism="stochastic",
+                    kind="thin_area",
+                    status="promoted",
+                    graph_version="old",
+                ),
+            ]
+        )
+
+    _default_rebuild_graph()
+
+    view = load_graph_view()
+    assert view is not None
+    skeleton = load_skeleton()
+    assert skeleton is not None
+    fresh = build_gaps(apply=False, min_degree=derive_min_degree(skeleton))
+    assert len(view.gaps) == len(fresh.gaps)  # no stale/orphan inflation
+    served = {g.concept_id for g in view.gaps}
+    assert "stale-ghost" not in served  # deterministic rebuild replaced it
+    assert "orphan-ghost" not in served  # reconcile chained into the rebuild
+
+
 def test_route_rebuild_409_while_one_is_running(env: Path) -> None:
     started = threading.Event()
     release = threading.Event()

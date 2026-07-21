@@ -426,8 +426,20 @@ def build_epistemics(*, apply: bool, skeleton_dir: Path | None = None) -> Episte
     doc_chunks = load_doc_chunks()
     rows = project_chunk_weights(skeleton, weights, doc_chunks)
 
+    applied = apply
     if apply:
-        _write_rows(rows, version)
+        from sqlalchemy.exc import OperationalError
+
+        try:
+            _write_rows(rows, version)
+        except OperationalError:
+            # E0.4 / WE-9: a never-migrated DB (the 0-doc honest-degradation contract,
+            # `.claude/CONTEXT.md`) has no `chunk_epistemics` table, so `_write_rows`' delete-all
+            # trips `OperationalError`. Degrade to an honest empty result + hint rather than
+            # crashing this build path. A migrated DB never reaches here (the table exists), so
+            # `apply` on a real corpus still clears + rewrites the sidecar as before.
+            log.warning("epistemics_write_skipped_no_schema", hint="run init_db / ingest first")
+            applied = False
 
     n_contested_nodes = sum(1 for w in weights.values() if w.coverage == "contested")
     n_superseded_nodes = sum(1 for w in weights.values() if w.direction == "superseded_trend")
@@ -438,7 +450,7 @@ def build_epistemics(*, apply: bool, skeleton_dir: Path | None = None) -> Episte
         n_contested_nodes=n_contested_nodes,
         n_superseded_nodes=n_superseded_nodes,
         n_chunks_marked=sum(1 for r in rows if r.markers),
-        applied=apply,
+        applied=applied,
     )
 
 

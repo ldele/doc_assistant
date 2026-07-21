@@ -3,9 +3,10 @@
 ``seed_concepts --promote-all`` bootstraps a broad vocabulary from mined keywords, but at
 corpus scale that vocabulary carries extraction noise — DOI/date/license fragments, single-
 character tokens, author eponyms, and sentence fragments that are not reusable concepts. This
-module is the pruning counterpart to seeding: it removes non-concepts and merges near-duplicates
-so the curated ``Concept`` vocabulary (and everything derived from it — the skeleton, wiki, Node
-B) sharpens.
+module is the pruning counterpart to seeding: it **demotes** non-concepts out of the graph
+vocabulary (``graph_include=False``, ADR-018 — never a hard delete, which would cascade the row's
+keyword family + presence/edges) and merges near-duplicates so the curated ``Concept`` vocabulary
+(and everything derived from it — the skeleton, wiki, Node B) sharpens.
 
 Three stages, cheapest-first so the expensive one sees fewer candidates:
 
@@ -185,7 +186,7 @@ def plan_merges(
 # --------------------------------------------------------------------------- #
 @dataclass
 class CurationPlan:
-    """What a dry run computed: the ids to remove (with reason) and the merges to apply."""
+    """What a dry run computed: the ids to demote (with reason) and the merges to apply."""
 
     artifacts: list[tuple[str, str]] = field(default_factory=list)  # (id, label)
     llm_noise: list[tuple[str, str]] = field(default_factory=list)  # (id, label)
@@ -193,7 +194,8 @@ class CurationPlan:
     n_calls: int = 0
 
     @property
-    def remove_ids(self) -> set[str]:
+    def demote_ids(self) -> set[str]:
+        """Ids the artifact + noise stages flag — demoted from the graph, never deleted (E0.1)."""
         return {cid for cid, _ in self.artifacts} | {cid for cid, _ in self.llm_noise}
 
 
@@ -397,8 +399,44 @@ def dedup_pairs(
     ]
 
 
+def demote_concepts(ids: set[str]) -> int:
+    """Drop concepts from the graph vocabulary (``graph_include=False``). Returns the count set.
+
+    The ADR-018 **demote** verb, and the safe default the noise/artifact stages route through
+    (E0.1 / KI-20 / review CS-5). It keeps the ``Concept`` row, its aliases, **and its ADR-015
+    keyword family** — a deletion would cascade all three (plus presence/edges/gaps), and the
+    ``classify_noise`` stage is exactly the path that mislabels real specialist vocabulary
+    (``cre``/``dbs``/``ntsr1``/``pddl`` — the trap that has hit twice). Demotion is reversible
+    (``set_graph_include(id, True)``); a hard delete is not. Only rows that exist are counted.
+
+    The bulk counterpart to :func:`concept_skeleton.set_graph_include` (the single-concept write
+    surface for the same flag); a re-run is idempotent (already-``False`` rows stay ``False``)."""
+    if not ids:
+        return 0
+    from sqlalchemy import select, update
+
+    from doc_assistant.db.models import Concept
+    from doc_assistant.db.session import session_scope
+
+    with session_scope() as session:
+        present = set(
+            session.execute(select(Concept.id).where(Concept.id.in_(ids))).scalars().all()
+        )
+        if present:
+            session.execute(
+                update(Concept).where(Concept.id.in_(present)).values(graph_include=False)
+            )
+    return len(present)
+
+
 def remove_concepts(ids: set[str]) -> int:
-    """Delete concepts (and their aliases) by id. Returns the number removed."""
+    """Hard-delete concepts (and their aliases) by id. Returns the number removed.
+
+    **The explicit-deletion primitive — reserved for a separately-confirmed path, NOT the noise
+    classifier** (E0.1 / KI-20). Deleting a ``Concept`` also deletes its ADR-015 keyword family and
+    cascades into presence/edges/gaps, so the curation stages route through :func:`demote_concepts`
+    instead (demote, don't delete — ADR-018). Kept for a deliberate "purge this vocabulary" action
+    that first confirms intent."""
     if not ids:
         return 0
     from sqlalchemy import delete
@@ -410,6 +448,18 @@ def remove_concepts(ids: set[str]) -> int:
         session.execute(delete(ConceptAlias).where(ConceptAlias.concept_id.in_(ids)))
         session.execute(delete(Concept).where(Concept.id.in_(ids)))
     return len(ids)
+
+
+def apply_plan(plan: CurationPlan) -> tuple[int, int]:
+    """Execute a curation plan: **demote** the flagged non-concepts, then fold the near-dups.
+
+    The library seam the ``curate_concepts`` runner drives on ``--apply`` (E0.1) — so the
+    demote-not-delete decision lives here, tested, rather than in the CLI shell. Artifact +
+    ``classify_noise`` verdicts route through :func:`demote_concepts` (``graph_include=False``,
+    keeping the row + its ADR-015 keyword family); only near-duplicate merges drop a row (its
+    surface forms fold into the survivor first, so no vocabulary is lost). Returns
+    ``(n_demoted, n_merged)``."""
+    return demote_concepts(plan.demote_ids), apply_merges(plan.merges)
 
 
 def apply_merges(plans: list[MergePlan]) -> int:

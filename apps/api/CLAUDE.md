@@ -15,8 +15,9 @@ else. Endpoints own no retrieval/provenance/claim logic (non-negotiable #3).
   no paid calls (cpc §13).
 - `handle_message` is a sync blocking generator iterated on the event loop — single-user desktop
   design; a multi-client server would need `anyio.to_thread` (documented, not built).
-- The API does **not** `init_db()` on startup — a stale DB 500s until an ingest or a manual
-  `python -m doc_assistant.db.migrations` runs (known gap; see DEVLOG S2 entry).
+- The API **does** `init_db()` in the lifespan (KI-23) — idempotent + additive. A **failed**
+  migration fails the boot (E0.5a), never a swallow: a half-migrated answer-path schema would 500
+  every turn, so refusing to start is the honest failure.
 - Adding/changing a route ⇒ update `models.py` + `types.ts` + the integration tests together.
 
 **Tests:** `tests/integration/test_api_*.py`.

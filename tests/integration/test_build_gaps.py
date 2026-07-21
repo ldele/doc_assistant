@@ -272,15 +272,17 @@ def test_promoted_stochastic_survives_rebuild_and_resuggest(env: Path) -> None:
 
 
 def test_stochastic_rows_survive_a_deterministic_rebuild(env: Path) -> None:
-    # A promoted stochastic suggestion (the deferred Tier-2a ceiling's output shape)
-    # must not be wiped by a deterministic rebuild — only deterministic rows replace.
+    # A promoted stochastic suggestion on a LIVE graph concept must not be wiped by a
+    # deterministic rebuild — only deterministic rows replace. (E0.2 changed the contract: a
+    # stochastic row whose anchor left the vocabulary IS reaped now — see the reconcile test
+    # below. "leaf" is graph_include=True, so it stays.)
     _seed_curated_concepts()
     _seed_claims()
     _write_skeleton(env / "skeleton")
     with session_scope() as session:
         session.add(
             GapRow(
-                concept_id="candidate-concept",
+                concept_id="leaf",
                 tier="t2a",
                 determinism="stochastic",
                 kind="suggested_concept",
@@ -294,6 +296,51 @@ def test_stochastic_rows_survive_a_deterministic_rebuild(env: Path) -> None:
         )
     assert len(stochastic) == 1
     assert stochastic[0].status == "promoted"
+
+
+def test_orphaned_stochastic_gap_is_reconciled_away(env: Path) -> None:
+    """E0.2 / KI-17: a stochastic gap anchored on a concept that has left the graph vocabulary
+    (excluded via graph_include=False, or deleted) is deleted on the next deterministic `--apply`
+    — while a stochastic gap on a still-included concept keeps its status. This is the fix for the
+    live symptom of 27 gaps served over a 13-node skeleton (10 orphaned). Fails today: no reconcile
+    pass runs on a deterministic-only apply, so both rows would survive."""
+    from doc_assistant.knowledge.concept_skeleton import set_graph_include
+
+    _seed_curated_concepts()
+    _write_skeleton(env / "skeleton")
+    set_graph_include("hub", False)  # hub leaves the graph vocabulary — its gap is now an orphan
+    with session_scope() as session:
+        session.add_all(
+            [
+                GapRow(  # orphan: anchored on the now-excluded "hub"
+                    concept_id="hub",
+                    tier="t2a",
+                    determinism="stochastic",
+                    kind="thin_area",
+                    status="promoted",  # even a human decision does not keep an orphan alive
+                ),
+                GapRow(  # live: anchored on still-included "sole"
+                    concept_id="sole",
+                    tier="t2a",
+                    determinism="stochastic",
+                    kind="thin_area",
+                    status="promoted",
+                ),
+            ]
+        )
+
+    result = build_gaps(apply=True, skeleton_dir=env / "skeleton", min_degree=2)
+    assert result.n_reconciled == 1
+
+    with session_scope() as session:
+        stochastic = {
+            r.concept_id: r
+            for r in session.execute(
+                select(GapRow).where(GapRow.determinism == "stochastic")
+            ).scalars()
+        }
+    assert "hub" not in stochastic  # the orphan was reaped
+    assert stochastic["sole"].status == "promoted"  # the live triage survived
 
 
 def test_no_document_or_concept_mutation(env: Path) -> None:

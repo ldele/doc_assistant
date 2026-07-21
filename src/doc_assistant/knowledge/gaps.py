@@ -226,6 +226,7 @@ class GapsResult:
     n_suggested: int = (
         0  # Tier-2a stochastic ceiling rows written this run (0 unless suggest+apply)
     )
+    n_reconciled: int = 0  # orphaned stochastic rows deleted this run (E0.2 / KI-17)
 
 
 def load_unsupported_claims() -> list[ClaimForGap]:
@@ -332,6 +333,55 @@ def _write_stochastic_gap_rows(suggestions: list[Gap], version: str) -> int:
     return written
 
 
+def _reconcile_stochastic_gaps(live_concept_ids: set[str]) -> int:
+    """Delete stochastic gap rows anchored on a concept that has left the graph vocabulary (KI-17).
+
+    :func:`_write_stochastic_gap_rows` is a status-preserving upsert with **no delete pass**, so a
+    stochastic row whose anchor concept is later excluded (``graph_include`` → ``False``) or
+    deleted becomes immortal — ``load_graph_view`` then serves gaps against concepts the skeleton
+    no longer contains (the live symptom: 27 gaps over a 13-node skeleton, 10 orphaned from the
+    pre-ADR-018 vocabulary). A **reconcile, not a blanket delete**: a row on a concept still in the
+    ``graph_include``-filtered vocabulary is untouched, so a human's promote/dismiss survives a
+    rebuild (the compounding arrow); only the orphans are reaped. ``suggest_for_thin`` always
+    anchors a suggestion's ``concept_id`` on an existing under-connected concept (the suggested
+    *target* lives in ``evidence``), so a live suggestion is never an orphan by construction.
+
+    Returns the number of rows deleted. An empty ``live_concept_ids`` (0 graph concepts) reaps
+    every stochastic row — correct: with no vocabulary, all of them are orphans."""
+    from sqlalchemy import select
+
+    from doc_assistant.db.models import GapRow
+    from doc_assistant.db.session import session_scope
+
+    with session_scope() as session:
+        rows = list(
+            session.execute(select(GapRow).where(GapRow.determinism == "stochastic")).scalars()
+        )
+        orphans = [r for r in rows if r.concept_id not in live_concept_ids]
+        for row in orphans:
+            session.delete(row)
+    return len(orphans)
+
+
+def derive_min_degree(skeleton: ConceptSkeleton) -> int:
+    """Corpus-derive the ``under_connected`` degree floor from a skeleton's own distribution.
+
+    The in-app rebuild route (E0.3) has no CLI ``--min-degree`` to pass, and a hardcoded literal
+    would be a corpus-tuned magic number (``.claude/CONTEXT.md``). So derive it the way the CLI
+    default was set (``scripts/build_gaps.py``): the **first quartile (Q1)** of the *connected*
+    nodes' degrees (degree-0 nodes are ``isolated``, a distinct kind, excluded here). A concept
+    below Q1 edges is "thin" relative to this corpus. Fails safe to ``1`` (flags nothing as
+    under-connected) when there are too few connected nodes to form a quartile — the honest
+    degrade on a tiny or edgeless graph, not a guess."""
+    import statistics
+
+    degrees = sorted(n.degree for n in skeleton.nodes if n.degree > 0)
+    if len(degrees) < 4:
+        return 1
+    q1 = statistics.quantiles(degrees, n=4)[0]
+    return max(1, round(q1))
+
+
 def load_gaps() -> list[Gap]:
     """Read the persisted ``gaps`` sidecar back — the read half of the row writers.
 
@@ -428,8 +478,13 @@ def build_gaps(
     all_gaps = t1 + t2a
 
     version = str(skeleton.meta.get("graph_version", ""))
+    n_reconciled = 0
     if apply:
         _write_gap_rows(all_gaps, version)
+        # E0.2 / KI-17: hoisted OUT of the suggest branch so a deterministic-only `--apply` (the
+        # KI-17 repro) still reaps stochastic rows orphaned by a vocabulary change. Keyed on the
+        # graph_include-filtered `concepts` already loaded above.
+        n_reconciled = _reconcile_stochastic_gaps({cid for cid, _ in concepts})
 
     n_suggested = 0
     if suggest and apply:
@@ -447,4 +502,5 @@ def build_gaps(
         n_t2a=len(t2a),
         applied=apply,
         n_suggested=n_suggested,
+        n_reconciled=n_reconciled,
     )

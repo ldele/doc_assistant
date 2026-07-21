@@ -188,6 +188,49 @@ def test_dry_run_writes_nothing(env: Path) -> None:
     assert _count(ConceptPresenceRow) == 0
 
 
+def test_plain_rebuild_preserves_node_b_stance(env: Path) -> None:
+    """E0.5b: a plain ``--apply`` (Node A, no ``--enrich``) must NOT wipe Node-B stance. It
+    recomputes structure only, so it re-attaches the stance/relation of edges that still exist
+    instead of dropping them — otherwise corpus-wide epistemics goes dark on every in-app rebuild
+    (the G6-run footgun). Fails today: without ``_reattach_stance`` the rebuilt edge is stance-less
+    and its ``concept_edges.stance_json`` is NULL."""
+    ids = _seed()
+    skeleton_dir = env / "skeleton"
+    presence = _fake_presence(ids)
+
+    r1 = build_concept_skeleton(
+        apply=True, min_cooccurrence=1, presence_loader=presence, skeleton_dir=skeleton_dir
+    )
+    assert r1.skeleton.edges[0].stance_by_doc == ()  # Node A carries no stance
+    assert r1.skeleton.edges[0].relation is None
+
+    # Simulate a Node-B enrich by injecting stance/relation into the on-disk skeleton.json (the
+    # artifact the next rebuild reads) + the concept_edges row.
+    path = skeleton_dir / "skeleton.json"
+    data = json.loads(path.read_text(encoding="utf-8"))
+    stance = [[ids["d1"], "supports"], [ids["d2"], "contradicts"]]
+    for e in data["edges"]:
+        e["stance"] = stance
+        e["relation"] = "is evaluated with"
+        e["provenance"] = sorted(set(e["provenance"]) | {"llm_relation"})
+    path.write_text(json.dumps(data), encoding="utf-8")
+
+    # A plain rebuild — no --enrich.
+    r2 = build_concept_skeleton(
+        apply=True, min_cooccurrence=1, presence_loader=presence, skeleton_dir=skeleton_dir
+    )
+    e2 = r2.skeleton.edges[0]
+    assert e2.relation == "is evaluated with"
+    assert e2.stance_by_doc == ((ids["d1"], "supports"), (ids["d2"], "contradicts"))
+    assert "llm_relation" in e2.provenance
+
+    # ...and the preserved stance reached the concept_edges DB row, not just skeleton.json.
+    with session_scope() as session:
+        row = session.execute(select(ConceptEdge)).scalar_one()
+    assert row.stance_json is not None
+    assert json.loads(row.stance_json) == stance
+
+
 def test_build_never_touches_chunk_store(env: Path) -> None:
     ids = _seed()
     skeleton_dir = env / "skeleton"

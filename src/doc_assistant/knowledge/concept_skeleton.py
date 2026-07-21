@@ -1277,6 +1277,69 @@ def load_skeleton(*, skeleton_dir: Path | None = None) -> ConceptSkeleton | None
     return skeleton_from_dict(data)
 
 
+#: The provenance token Node B (the LLM relation/stance pass) stamps on an annotated edge. Named
+#: here (not imported from ``concept_skeleton_enrich``, which imports *this* module) to keep the
+#: stance-preservation seam free of a circular import.
+_LLM_RELATION = "llm_relation"
+
+
+def _load_existing_stance(
+    skeleton_dir: Path | None,
+) -> dict[tuple[str, str], tuple[tuple[tuple[str, str], ...], str | None]]:
+    """Read the *prior* skeleton's Node-B stance, keyed by canonical concept-pair (E0.5b).
+
+    Empty when there is no prior skeleton (first build) or it was never enriched (no edge carries
+    a stance/relation). Read from the on-disk ``skeleton.json`` *before* this run overwrites it."""
+    existing = load_skeleton(skeleton_dir=skeleton_dir)
+    if existing is None:
+        return {}
+    return {
+        (e.source_concept_id, e.target_concept_id): (e.stance_by_doc, e.relation)
+        for e in existing.edges
+        if e.stance_by_doc or e.relation
+    }
+
+
+def _reattach_stance(
+    edges: list[SkeletonEdge],
+    preserved: dict[tuple[str, str], tuple[tuple[tuple[str, str], ...], str | None]],
+) -> list[SkeletonEdge]:
+    """Restore preserved Node-B stance/relation onto freshly-recomputed structural edges (E0.5b).
+
+    A plain (no-``--enrich``) rebuild recomputes structure only. Without this it would drop the
+    expensive LLM stance/relation Node B produced — corpus-wide epistemics then goes dark (the
+    G6-run footgun; ``scripts/CLAUDE.md``). Re-attach by canonical concept-pair: an edge whose pair
+    still exists regains its stance, the ``llm_relation`` provenance token, and the weight that
+    follows; a genuinely new edge (no prior stance) is unchanged; a vanished edge simply isn't in
+    ``edges``. An ``--enrich`` pass re-derives every edge's annotation from scratch
+    (``concept_skeleton_enrich.annotate_relations`` sets ``stance_by_doc=()`` on the ones it
+    skips), so this preservation is transparent there and only protects the plain rebuild.
+
+    Known bound: a stance entry for a document removed since the last enrich lingers until a real
+    ``--enrich`` re-runs — preserving stale-but-mostly-right stance beats wiping all of it, and the
+    refresh path (Ollama, RTX box, KI-4) is where the true correction happens."""
+    if not preserved:
+        return edges
+    out: list[SkeletonEdge] = []
+    for e in edges:
+        saved = preserved.get((e.source_concept_id, e.target_concept_id))
+        if saved is None:
+            out.append(e)
+            continue
+        stance_by_doc, relation = saved
+        prov = e.provenance | {_LLM_RELATION}
+        out.append(
+            replace(
+                e,
+                provenance=prov,
+                relation=relation,
+                stance_by_doc=stance_by_doc,
+                weight=edge_weight(prov, e.n_cooccurrence_chunks, e.provenance_strength),
+            )
+        )
+    return out
+
+
 def build_concept_skeleton(
     *,
     apply: bool,
@@ -1290,6 +1353,7 @@ def build_concept_skeleton(
     presence_loader: Any = None,
     doc_graph_loader: Any = None,
     doc_years_loader: Any = None,
+    stance_loader: Any = None,
     skeleton_dir: Path | None = None,
 ) -> SkeletonResult:
     """Build the deterministic concept skeleton (Node A) — **zero LLM calls**.
@@ -1307,6 +1371,11 @@ def build_concept_skeleton(
     (once, at build time) so ``node_weights_for_epistemics`` can compare supporting- vs
     contradicting-document years for a contested node. A year-less corpus yields an empty map —
     ``direction`` stays ``contested``/``stable`` exactly as before this sprint (back-compat).
+
+    E0.5b: a plain ``apply`` (Node A, no ``--enrich``) **preserves** any existing Node-B stance for
+    edges that still exist (``_reattach_stance``) instead of wiping it — so an in-app rebuild
+    (ADR-017 B1) does not silently darken corpus-wide epistemics. ``--enrich`` re-derives stance
+    from scratch, so preservation is transparent there. ``stance_loader`` is the DI seam for tests.
     """
     from doc_assistant.config import (
         CONCEPT_SKELETON_DIR,
@@ -1337,6 +1406,11 @@ def build_concept_skeleton(
     edges = cooccurrence_edges(presences, min_cooccurrence=min_cooc)
     edges = add_citation_provenance(edges, citation_pairs, doc_index)
     edges = add_similarity_provenance(edges, doc_sim_pairs, doc_index)
+    # E0.5b: this Node-A pass computes structure only and does NOT regenerate Node-B stance, so
+    # preserve any existing stance for edges that still exist rather than silently wiping it (the
+    # G6-run footgun). An --enrich pass overwrites it from scratch, so this is a no-op there.
+    load_stance = stance_loader or _load_existing_stance
+    edges = _reattach_stance(edges, load_stance(root))
 
     nodes = [
         ConceptNode(

@@ -394,6 +394,11 @@ class ChunkEpistemics(Base):
         String, ForeignKey("documents.id", ondelete="CASCADE"), nullable=False, index=True
     )
     chunk_index: Mapped[int] = mapped_column(Integer, nullable=False)
+    # E1.1 (KI-8): the authoritative, segmentation-agnostic join key — `{doc}:{chunk_index}` for a
+    # baseline chunk, `{doc}:p{parent_index}` for a PC parent. Nullable for back-compat: a row
+    # written before this column existed reads its key from `{document_id}:{chunk_index}` (the
+    # regenerable table fills `chunk_key` on the next `compute_epistemics --apply`).
+    chunk_key: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
 
     n_claims: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     n_contested: Mapped[int] = mapped_column(Integer, nullable=False, default=0)

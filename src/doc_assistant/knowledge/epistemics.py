@@ -21,17 +21,17 @@ never calls an LLM (the only LLM cost in Feature 7 is the graph extraction itsel
 unique-source rule (a chunk whose only claim is the corpus's sole source on its topic)
 is preserved end-to-end: such a chunk is **neutral**, never marked.
 
-Surfacing v1 is markers + a reviewer failure tag. Wiring the markers into the live
-answer's evidence layer (which needs a stable chunk key plumbed through retrieval) is a
-documented follow-up; this module ships the deterministic engine + sidecar + the
-marker-derivation join, all guard-tested.
+Surfacing is markers + a reviewer failure tag. The live marker join (E1.1 / KI-8) keys a
+retrieved chunk against the sidecar by its ``chunk_key`` — a direct lookup for both the
+baseline (flat) and PC-parent (default) segmentations, since ``build_epistemics`` projects
+onto both. This replaced PR-M1's coarse PC-parent text-containment, which lost ~40% of
+markers at parent boundaries.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
 
 import structlog
 
@@ -62,32 +62,20 @@ _MIN_CONCEPT_LEN = 3
 class ChunkEpistemics:
     """Projected per-chunk epistemic summary (the ``chunk_epistemics`` row payload).
 
-    Keyed by the stable composite ``{document_id}:{chunk_index}`` (Chroma's own ids are
-    auto-generated UUIDs and unstable across re-ingest). ``coverage_summary`` counts the
-    chunk's claim-nodes by coverage class; ``markers`` is the derived evidence-layer
-    surface (empty for a clean chunk → quiet-on-clean).
+    ``chunk_key`` is the stable composite the live marker join keys on — ``{doc}:{chunk_index}``
+    for a baseline chunk, ``{doc}:p{parent_index}`` for a PC parent (E1.1 / KI-8). Chroma's own
+    ids are auto-generated UUIDs and unstable across re-ingest, so the composite is authoritative.
+    ``coverage_summary`` counts the chunk's claim-nodes by coverage class; ``markers`` is the
+    derived evidence-layer surface (empty for a clean chunk → quiet-on-clean).
     """
 
     document_id: str
     chunk_index: int
+    chunk_key: str
     n_claims: int
     n_contested: int
     n_superseded_trend: int
     coverage_summary: dict[str, int] = field(default_factory=dict)
-    markers: list[str] = field(default_factory=list)
-
-    @property
-    def chunk_key(self) -> str:
-        return f"{self.document_id}:{self.chunk_index}"
-
-
-@dataclass
-class MarkedChunk:
-    """A marked baseline chunk, carrying its text for the PC-mode containment join (ADR-1,
-    PR-M1). ``markers`` is non-empty by construction (only marked chunks are loaded)."""
-
-    chunk_index: int
-    text: str
     markers: list[str] = field(default_factory=list)
 
 
@@ -150,6 +138,7 @@ def concepts_in_text(text: str, labels_by_id: dict[str, str]) -> list[str]:
 
 
 def project_chunk(
+    chunk_key: str,
     document_id: str,
     chunk_index: int,
     present_node_ids: list[str],
@@ -172,6 +161,7 @@ def project_chunk(
     return ChunkEpistemics(
         document_id=document_id,
         chunk_index=chunk_index,
+        chunk_key=chunk_key,
         n_claims=len(seen),
         n_contested=n_contested,
         n_superseded_trend=n_superseded,
@@ -183,19 +173,21 @@ def project_chunk(
 def project_chunk_weights(
     skeleton: ConceptSkeleton,
     weights: dict[str, NodeWeight],
-    doc_chunks: list[tuple[str, int, str]],
+    doc_chunks: list[tuple[str, str, int, str]],
 ) -> list[ChunkEpistemics]:
-    """Project node weights onto chunks (pure). ``doc_chunks`` = (document_id,
-    chunk_index, text). Only chunks that contain at least one weighted concept get a
-    row — a chunk with no claims carries no epistemic signal and is omitted."""
+    """Project node weights onto chunks (pure). ``doc_chunks`` = (chunk_key, document_id,
+    chunk_index, text) — the ``chunk_key`` carries the segmentation (``{doc}:{idx}`` baseline
+    or ``{doc}:p{idx}`` parent, E1.1), so the same projection serves both. Only chunks that
+    contain at least one weighted concept get a row — a chunk with no claims carries no
+    epistemic signal and is omitted."""
     labels_by_id = {n.id: n.label for n in skeleton.nodes}
     rows: list[ChunkEpistemics] = []
-    for document_id, chunk_index, text in doc_chunks:
+    for chunk_key, document_id, chunk_index, text in doc_chunks:
         present = concepts_in_text(text, labels_by_id)
         if not present:
             continue
-        rows.append(project_chunk(document_id, chunk_index, present, weights))
-    rows.sort(key=lambda r: (r.document_id, r.chunk_index))
+        rows.append(project_chunk(chunk_key, document_id, chunk_index, present, weights))
+    rows.sort(key=lambda r: r.chunk_key)
     return rows
 
 
@@ -216,31 +208,6 @@ def markers_for_chunk_keys(
     return out
 
 
-def markers_for_parent(parent_text: str, marked: list[MarkedChunk]) -> list[str]:
-    """Markers for a retrieved parent chunk (PC mode) via text containment (pure, ADR-1).
-
-    A marked baseline chunk "belongs to" the parent when its (stripped) text is contained
-    in the parent text. Returns the de-duplicated union of all matching markers in
-    first-seen order; empty when nothing matches (quiet-on-clean). Containment is
-    deliberately coarse at parent boundaries — markers are an advisory chip, not a gate,
-    so over-attribution within a parent is acceptable and fail-safe. The precise
-    re-projection of epistemics onto PC parents is the documented upgrade if this proves
-    too coarse (see `docs/archive/pr-m1-epistemics-markers.md` ADR-1, option 2)."""
-    if not parent_text or not marked:
-        return []
-    out: list[str] = []
-    seen: set[str] = set()
-    for mc in marked:
-        text = mc.text.strip()
-        if not text or text not in parent_text:
-            continue
-        for marker in mc.markers:
-            if marker not in seen:
-                seen.add(marker)
-                out.append(marker)
-    return out
-
-
 def graph_version(skeleton: ConceptSkeleton) -> str:
     """The skeleton's own structural fingerprint (for sidecar staleness).
 
@@ -255,13 +222,13 @@ def graph_version(skeleton: ConceptSkeleton) -> str:
 # ============================================================
 
 
-def load_doc_chunks() -> list[tuple[str, int, str]]:
-    """Load (document_id, chunk_index, text) for every baseline chunk from Chroma.
+def load_doc_chunks() -> list[tuple[str, str, int, str]]:
+    """Load (chunk_key, document_id, chunk_index, text) for every baseline chunk from Chroma.
 
     Keyed off the baseline collection (which carries ``chunk_index`` in metadata); the
-    parent-child store uses parent/child indices instead and is left for the live-
-    surfacing follow-up. Chunks lacking a ``document_id``/``chunk_index`` (e.g. figure
-    chunks) are skipped. Returns ``[]`` if Chroma is absent."""
+    ``chunk_key`` is the composite ``{doc}:{chunk_index}`` the flat-mode marker join uses.
+    Chunks lacking a ``document_id``/``chunk_index`` (e.g. figure chunks) are skipped. Returns
+    ``[]`` if Chroma is absent. See :func:`load_pc_parent_chunks` for the PC-parent segment."""
     from doc_assistant.config import CHROMA_PATH
     from doc_assistant.embeddings import get_collection_name
 
@@ -280,7 +247,7 @@ def load_doc_chunks() -> list[tuple[str, int, str]]:
     data = coll.get(include=["documents", "metadatas"])
     documents = data.get("documents") or []
     metadatas = data.get("metadatas") or []
-    out: list[tuple[str, int, str]] = []
+    out: list[tuple[str, str, int, str]] = []
     for text, meta in zip(documents, metadatas, strict=False):
         if not text or not isinstance(meta, dict):
             continue
@@ -288,15 +255,74 @@ def load_doc_chunks() -> list[tuple[str, int, str]]:
         chunk_index = meta.get("chunk_index")
         if document_id is None or chunk_index is None:
             continue
-        out.append((str(document_id), int(chunk_index), str(text)))
+        out.append(
+            (f"{document_id}:{int(chunk_index)}", str(document_id), int(chunk_index), str(text))
+        )
+    return out
+
+
+def load_pc_parent_chunks() -> list[tuple[str, str, int, str]]:
+    """Load (chunk_key, document_id, parent_index, parent_text) for every PC parent (E1.1 / KI-8).
+
+    The parent-child segmentation the default retrieval mode actually returns. Reads the PC store
+    (``PC_CHROMA_PATH``), de-duplicates child rows to one entry per parent via ``parent_index``
+    (the parent text is denormalised onto every child), and builds the ADR-4 composite key
+    ``{doc}:p{parent_index}`` — so the live marker join for a retrieved parent is a direct key
+    lookup, not the coarse text-containment that lost ~40% of markers at parent boundaries. Mirrors
+    ``concept_skeleton.load_presence_inputs``; returns ``[]`` if the PC collection is absent."""
+    from doc_assistant.config import PC_CHROMA_PATH
+    from doc_assistant.embeddings import get_collection_name
+
+    try:
+        import chromadb
+    except ImportError:  # pragma: no cover - dep present in dev env
+        return []
+
+    client = chromadb.PersistentClient(path=PC_CHROMA_PATH)
+    try:
+        coll = client.get_collection(get_collection_name())
+    except Exception:
+        log.warning(
+            "no_pc_collection", hint="run ingest first; PC-parent epistemics will be empty"
+        )
+        return []
+
+    data = coll.get(include=["metadatas"])
+    metadatas = data.get("metadatas") or []
+    seen: set[tuple[str, int]] = set()
+    out: list[tuple[str, str, int, str]] = []
+    for meta in metadatas:
+        if not isinstance(meta, dict):
+            continue
+        document_id = meta.get("document_id")
+        parent_index = meta.get("parent_index")
+        parent_text = meta.get("parent_text")
+        if document_id is None or parent_index is None or not parent_text:
+            continue
+        key_tuple = (str(document_id), int(parent_index))
+        if key_tuple in seen:
+            continue
+        seen.add(key_tuple)
+        out.append(
+            (
+                f"{document_id}:p{int(parent_index)}",
+                str(document_id),
+                int(parent_index),
+                str(parent_text),
+            )
+        )
     return out
 
 
 def load_epistemics_index() -> dict[str, list[str]]:
     """Read the ``chunk_epistemics`` sidecar into a ``{chunk_key: markers}`` index.
 
-    The read-side counterpart of ``build_epistemics`` — what the live evidence layer
-    will consult to mark retrieved chunks (deferred wiring)."""
+    The read-side counterpart of ``build_epistemics`` and the seam the live marker join consults
+    (E1.1). Keys on the row's stored ``chunk_key`` — so both segmentations resolve: a baseline
+    row (``{doc}:{idx}``, flat mode) and a PC-parent row (``{doc}:p{idx}``, default mode). Falls
+    back to ``{document_id}:{chunk_index}`` for a row written before the ``chunk_key`` column
+    existed (a migrated-but-not-recomputed DB still joins flat rows; parent rows arrive on the
+    next ``compute_epistemics --apply``)."""
     from sqlalchemy import select
     from sqlalchemy.exc import OperationalError
 
@@ -309,7 +335,8 @@ def load_epistemics_index() -> dict[str, list[str]]:
             for row in session.execute(select(ChunkEpistemicsRow)).scalars():
                 markers = derive_markers(row.n_contested, row.n_superseded_trend)
                 if markers:
-                    index[f"{row.document_id}:{row.chunk_index}"] = markers
+                    key = row.chunk_key or f"{row.document_id}:{row.chunk_index}"
+                    index[key] = markers
     except OperationalError:
         # The chunk_epistemics sidecar table doesn't exist on this DB (the 7d engine never
         # ran) — treat as "no markers", consistent with the quiet-on-absent design.
@@ -317,96 +344,15 @@ def load_epistemics_index() -> dict[str, list[str]]:
     return index
 
 
-def _load_baseline_texts(document_ids: list[str]) -> dict[tuple[str, int], str]:
-    """Fetch baseline-chunk text for the given docs from Chroma, keyed by
-    ``(document_id, chunk_index)`` — the text side of the PC-mode marker join.
-
-    Mirrors ``load_doc_chunks``'s read pattern but scoped to ``document_ids`` and indexed
-    by key. Returns ``{}`` if Chroma / the baseline collection is absent."""
-    from doc_assistant.config import CHROMA_PATH
-    from doc_assistant.embeddings import get_collection_name
-
-    try:
-        import chromadb
-    except ImportError:  # pragma: no cover - dep present in dev env
-        return {}
-
-    client = chromadb.PersistentClient(path=CHROMA_PATH)
-    try:
-        coll = client.get_collection(get_collection_name())
-    except Exception:
-        return {}
-
-    where: Any = {"document_id": {"$in": document_ids}} if document_ids else None
-    data = coll.get(where=where, include=["documents", "metadatas"])
-    documents = data.get("documents") or []
-    metadatas = data.get("metadatas") or []
-    out: dict[tuple[str, int], str] = {}
-    for text, meta in zip(documents, metadatas, strict=False):
-        if not text or not isinstance(meta, dict):
-            continue
-        document_id = meta.get("document_id")
-        chunk_index = meta.get("chunk_index")
-        if document_id is None or chunk_index is None:
-            continue
-        out[(str(document_id), int(chunk_index))] = str(text)
-    return out
-
-
-def load_marked_chunks(document_ids: list[str]) -> dict[str, list[MarkedChunk]]:
-    """Marked baseline chunks for the given docs, keyed by ``document_id`` — the read side
-    the PC-mode marker join (ADR-1 containment) consults.
-
-    Joins the ``chunk_epistemics`` sidecar rows that carry a marker (scoped to
-    ``document_ids``) to each row's baseline chunk text in Chroma. Returns ``{}`` when the
-    sidecar / graph is absent or no requested doc is marked — so a turn with no markers is
-    a clean no-op (byte-identical), and a fresh checkout (no graph) surfaces nothing."""
-    if not document_ids:
-        return {}
-
-    from sqlalchemy import select
-    from sqlalchemy.exc import OperationalError
-
-    from doc_assistant.db.models import ChunkEpistemics as ChunkEpistemicsRow
-    from doc_assistant.db.session import session_scope
-
-    marked: dict[tuple[str, int], list[str]] = {}
-    try:
-        with session_scope() as session:
-            stmt = select(ChunkEpistemicsRow).where(
-                ChunkEpistemicsRow.document_id.in_(document_ids)
-            )
-            for row in session.execute(stmt).scalars():
-                markers = derive_markers(row.n_contested, row.n_superseded_trend)
-                if markers:
-                    marked[(str(row.document_id), int(row.chunk_index))] = markers
-    except OperationalError:  # chunk_epistemics table absent → no markers (see above)
-        return {}
-    if not marked:
-        return {}
-
-    texts = _load_baseline_texts(document_ids)
-    out: dict[str, list[MarkedChunk]] = {}
-    for (document_id, chunk_index), markers in marked.items():
-        text = texts.get((document_id, chunk_index))
-        if text is None:  # re-ingest drift: a marked row with no current baseline chunk
-            continue
-        out.setdefault(document_id, []).append(
-            MarkedChunk(chunk_index=chunk_index, text=text, markers=markers)
-        )
-    for chunks in out.values():
-        chunks.sort(key=lambda mc: mc.chunk_index)
-    return out
-
-
 def build_epistemics(*, apply: bool, skeleton_dir: Path | None = None) -> EpistemicsResult:
     """Compute per-chunk epistemic weights from the concept skeleton; write the sidecar.
 
     Read-only + free (no LLM): loads ``skeleton.json``, computes node weights, projects
-    them onto baseline chunks via structural attribution. ``apply`` replaces the
-    ``chunk_epistemics`` table (regenerable sidecar — dropped + rebuilt with the skeleton);
-    a dry run computes + reports but writes nothing. Idempotent: same skeleton + same
-    chunks → identical rows. Never touches the chunk store."""
+    them onto **both** the baseline and the PC-parent chunk segmentations via structural
+    attribution (E1.1 / KI-8 — so the live marker join is a direct key lookup for either
+    retrieval mode). ``apply`` replaces the ``chunk_epistemics`` table (regenerable sidecar —
+    dropped + rebuilt with the skeleton); a dry run computes + reports but writes nothing.
+    Idempotent: same skeleton + same chunks → identical rows. Never touches the chunk store."""
     import json
 
     from doc_assistant.config import CONCEPT_SKELETON_DIR
@@ -423,7 +369,11 @@ def build_epistemics(*, apply: bool, skeleton_dir: Path | None = None) -> Episte
     weights = node_weights_for_epistemics(skeleton)
     version = graph_version(skeleton)
 
-    doc_chunks = load_doc_chunks()
+    # E1.1 (KI-8): project onto BOTH segmentations — baseline chunks (flat-mode join) and PC
+    # parents (the default retrieval mode's join). Same weights, same structural attribution;
+    # the chunk_key carried on each row distinguishes them, so the live join is a direct key
+    # lookup for either mode rather than the text-containment that lost ~40% of parent markers.
+    doc_chunks = load_doc_chunks() + load_pc_parent_chunks()
     rows = project_chunk_weights(skeleton, weights, doc_chunks)
 
     applied = apply
@@ -469,6 +419,7 @@ def _write_rows(rows: list[ChunkEpistemics], version: str) -> None:
             ChunkEpistemicsRow(
                 document_id=r.document_id,
                 chunk_index=r.chunk_index,
+                chunk_key=r.chunk_key,
                 n_claims=r.n_claims,
                 n_contested=r.n_contested,
                 n_superseded_trend=r.n_superseded_trend,

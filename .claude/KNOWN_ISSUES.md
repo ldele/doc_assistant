@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-07-21 (E0 correctness batch: KI-17/20/21 RESOLVED) · class: living -->
+<!-- status: active · updated: 2026-07-21 (E0: KI-17/20/21 RESOLVED · E1.1: KI-8 RESOLVED) · class: living -->
 
 # KNOWN ISSUES
 
@@ -57,7 +57,19 @@ narrative. Numbering is global and never reused (see the KI-23 note in the archi
   `uv venv --clear --python …` → `uv sync --all-extras`). Behind a TLS-inspecting proxy, prefix uv
   commands with `UV_NATIVE_TLS=1`. Offline work (ingest/embeddings/retrieval) is unaffected either way.
 
-## KI-8 — PC→baseline marker mapping (PR-M1) is coarse at parent boundaries — OPEN (advisory, fail-safe)
+## KI-8 — PC→baseline marker mapping (PR-M1) is coarse at parent boundaries — RESOLVED (2026-07-21, E1.1)
+- **Resolved (2026-07-21, E1.1 — re-projection, option 2):** `build_epistemics` now projects the
+  marker sidecar onto **both** segmentations — baseline chunks and PC parents — via the same
+  structural attribution, each row carrying an authoritative `chunk_key` (`{doc}:{idx}` or
+  `{doc}:p{parent_index}`, a new additive column). `_chunk_key` returns the parent key for a PC
+  parent, and `_attach_markers` joins **both** modes by a direct key lookup against
+  `load_epistemics_index()` — the coarse `markers_for_parent` text-containment (and
+  `load_marked_chunks`/`MarkedChunk`) is retired. The blanket-`except` also gained a WARNING log
+  (silent failure + always-on strip = silently-lying UI). Guard: `test_reprojects_onto_pc_parents_
+  keyed_by_parent_index` + the inverted `test_chunk_key_parent_child_chunk_uses_parent_key`. Live $0
+  probe on a copy (one injected stance): 196 PC-parent keys join directly (was 0), and 28/196 marked
+  parents (14% here) would have been missed by containment. **Do not** reintroduce containment
+  mapping. (Ready to commit — not yet committed.)
 - **Symptom:** In the default parent-child retrieval mode, the live 7d marker chip maps a marked baseline
   chunk onto a retrieved parent by **text containment** (`epistemics.markers_for_parent`): a parent gets a
   marker if it *contains* a marked chunk's text. The two collections are independent segmentations, so a

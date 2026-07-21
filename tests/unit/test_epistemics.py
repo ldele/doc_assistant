@@ -18,11 +18,9 @@ from doc_assistant.knowledge.concept_skeleton import (
 from doc_assistant.knowledge.epistemics import (
     MARKER_CONTESTED,
     MARKER_SUPERSEDED,
-    MarkedChunk,
     concepts_in_text,
     derive_markers,
     markers_for_chunk_keys,
-    markers_for_parent,
     project_chunk,
     project_chunk_weights,
 )
@@ -95,7 +93,7 @@ def test_project_chunk_aggregates_coverage_and_marks_contested():
         "bm25": NodeWeight("bm25", 1, 1, 0.5, "contested", "contested"),
         "rag": NodeWeight("rag", 3, 0, 1.0, "stable", "corroborated"),
     }
-    row = project_chunk("doc1", 2, ["bm25", "rag"], weights)
+    row = project_chunk("doc1:2", "doc1", 2, ["bm25", "rag"], weights)
     assert row.chunk_key == "doc1:2"
     assert row.n_claims == 2
     assert row.n_contested == 1
@@ -103,9 +101,18 @@ def test_project_chunk_aggregates_coverage_and_marks_contested():
     assert row.markers == [MARKER_CONTESTED]
 
 
+def test_project_chunk_carries_pc_parent_key():
+    # E1.1 (KI-8): the projection is segmentation-agnostic — a parent chunk_key is stored verbatim,
+    # so build_epistemics can project onto PC parents ({doc}:p{idx}) exactly like baseline chunks.
+    weights = {"bm25": NodeWeight("bm25", 1, 1, 0.5, "contested", "contested")}
+    row = project_chunk("doc1:p4", "doc1", 4, ["bm25"], weights)
+    assert row.chunk_key == "doc1:p4"
+    assert row.markers == [MARKER_CONTESTED]
+
+
 def test_project_chunk_unique_source_stays_quiet():
     weights = {"hyde": NodeWeight("hyde", 1, 0, 1.0, "stable", "unique")}
-    row = project_chunk("doc1", 0, ["hyde"], weights)
+    row = project_chunk("doc1:0", "doc1", 0, ["hyde"], weights)
     assert row.n_claims == 1
     assert row.coverage_summary["unique"] == 1
     assert row.markers == []  # the only source on its topic is never marked
@@ -139,9 +146,9 @@ def test_project_chunk_weights_maps_to_right_chunks_and_omits_empty():
     skeleton = analyze_skeleton(nodes, edges, seed=42)
     weights = node_weights_for_epistemics(skeleton)
     doc_chunks = [
-        ("doc-colbert", 0, "this chunk explains colbert and ranking together"),
-        ("doc-hyde", 0, "a hyde prompting trick that nobody else covers"),
-        ("doc-empty", 0, "totally unrelated prose with none of the concepts"),
+        ("doc-colbert:0", "doc-colbert", 0, "this chunk explains colbert and ranking together"),
+        ("doc-hyde:0", "doc-hyde", 0, "a hyde prompting trick that nobody else covers"),
+        ("doc-empty:0", "doc-empty", 0, "totally unrelated prose with none of the concepts"),
     ]
     rows = project_chunk_weights(skeleton, weights, doc_chunks)
     by_key = {r.chunk_key: r for r in rows}
@@ -166,56 +173,14 @@ def test_markers_for_chunk_keys_returns_only_marked():
     assert out == {"d:1": [MARKER_CONTESTED]}  # clean + unknown keys stay quiet
 
 
-# ============================================================
-# PR-M1 — PC→baseline containment mapping (markers_for_parent)
-# ============================================================
-
-
-def test_markers_for_parent_contained_chunk_surfaces_markers():
-    parent = "Long parent passage. Synapses are discrete junctions. More text."
-    marked = [
-        MarkedChunk(
-            chunk_index=2, text="Synapses are discrete junctions.", markers=[MARKER_CONTESTED]
-        )
-    ]
-    assert markers_for_parent(parent, marked) == [MARKER_CONTESTED]
-
-
-def test_markers_for_parent_uncontained_chunk_is_quiet():
-    parent = "A passage about ion channels and gating."
-    marked = [
-        MarkedChunk(
-            chunk_index=0, text="Reticular continuity of the net.", markers=[MARKER_CONTESTED]
-        )
-    ]
-    assert markers_for_parent(parent, marked) == []
-
-
-def test_markers_for_parent_unions_multiple_chunks_deduped():
-    parent = "alpha beta gamma delta"
-    marked = [
-        MarkedChunk(chunk_index=0, text="alpha beta", markers=[MARKER_CONTESTED]),
-        MarkedChunk(
-            chunk_index=1, text="gamma delta", markers=[MARKER_SUPERSEDED, MARKER_CONTESTED]
-        ),
-    ]
-    # First-seen order, de-duplicated across chunks.
-    assert markers_for_parent(parent, marked) == [MARKER_CONTESTED, MARKER_SUPERSEDED]
-
-
-def test_markers_for_parent_empty_inputs():
-    assert markers_for_parent("", [MarkedChunk(0, "x", [MARKER_CONTESTED])]) == []
-    assert markers_for_parent("some text", []) == []
-
-
 def test_epistemics_reads_tolerate_missing_table(tmp_path, monkeypatch):
     # An older library.db has no chunk_epistemics table (the 7d engine never ran). The read
-    # side must return empty, not raise — else every answer crashes the marker join (PR-M1).
+    # side must return empty, not raise — else every answer crashes the marker join.
     from sqlalchemy import create_engine
     from sqlalchemy.orm import sessionmaker
 
     from doc_assistant.db import session as session_mod
-    from doc_assistant.knowledge.epistemics import load_epistemics_index, load_marked_chunks
+    from doc_assistant.knowledge.epistemics import load_epistemics_index
 
     engine = create_engine(f"sqlite:///{tmp_path / 'no_tables.db'}", future=True)  # empty schema
     factory = sessionmaker(bind=engine, autoflush=False, autocommit=False, future=True)
@@ -223,6 +188,5 @@ def test_epistemics_reads_tolerate_missing_table(tmp_path, monkeypatch):
     monkeypatch.setattr(session_mod, "_SessionLocal", factory)
     try:
         assert load_epistemics_index() == {}
-        assert load_marked_chunks(["doc1", "doc2"]) == {}
     finally:
         engine.dispose()

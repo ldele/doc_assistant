@@ -25,7 +25,7 @@ from doc_assistant.chat_controller import (
     TurnResult,
     _build_retrieved_chunks,
 )
-from doc_assistant.knowledge.epistemics import MARKER_CONTESTED, MARKER_SUPERSEDED, MarkedChunk
+from doc_assistant.knowledge.epistemics import MARKER_CONTESTED, MARKER_SUPERSEDED
 from doc_assistant.reviewer import ReviewResult
 
 # ============================================================
@@ -168,10 +168,12 @@ def test_chunk_key_zero_index_is_not_dropped():
     assert _build_retrieved_chunks(scored)[0].chunk_key == "doc1:0"
 
 
-def test_chunk_key_parent_child_chunk_is_none():
-    # PC parents carry parent_index, never chunk_index → None (M1 owns the mapping).
+def test_chunk_key_parent_child_chunk_uses_parent_key():
+    # E1.1 (KI-8): a PC parent carries parent_index (never chunk_index) → {doc}:p{parent_index}.
+    # build_epistemics re-projects markers onto this key, so the live join is a direct lookup
+    # (was None + coarse text-containment, which lost ~40% of markers at parent boundaries).
     scored = [(_doc("x", document_id="doc1", parent_index=2, filename="a.pdf"), 0.5)]
-    assert _build_retrieved_chunks(scored)[0].chunk_key is None
+    assert _build_retrieved_chunks(scored)[0].chunk_key == "doc1:p2"
 
 
 def test_chunk_key_missing_document_id_is_none():
@@ -361,7 +363,7 @@ def test_provenance_failure_is_caught(monkeypatch):
 
 
 def _pc_sources() -> list[tuple[Document, float]]:
-    """Three PC parents (parent_index, no chunk_index → chunk_key None)."""
+    """Three PC parents (parent_index, no chunk_index → chunk_key {doc}:p{parent_index})."""
     return [
         (
             _doc(
@@ -410,19 +412,19 @@ def test_markers_flat_join(monkeypatch, temp_db):
     assert "⚠ contested in corpus" in result.sources_md  # chip in the shared block
 
 
-def test_markers_pc_join_via_containment(monkeypatch, temp_db):
-    # PC parent: no chunk_key → containment mapping (ADR-1).
+def test_markers_pc_join_via_chunk_key(monkeypatch, temp_db):
+    # E1.1 (KI-8): a PC parent now joins DIRECTLY on its {doc}:p{parent_index} key against the
+    # marker index — build_epistemics re-projected markers onto the parent segmentation, retiring
+    # the coarse text-containment. d1's parent (parent_index 0) → key "d1:p0".
     monkeypatch.setattr(chat_controller, "is_library_query", lambda t: False)
     monkeypatch.setattr(chat_controller, "EPISTEMICS_MARKERS_ENABLED", True)  # R7: off by default
-    marked = {
-        "d1": [MarkedChunk(chunk_index=0, text="discrete junctions", markers=[MARKER_SUPERSEDED])]
-    }
-    monkeypatch.setattr(chat_controller, "load_marked_chunks", lambda ids: marked)
+    monkeypatch.setattr(
+        chat_controller, "load_epistemics_index", lambda: {"d1:p0": [MARKER_SUPERSEDED]}
+    )
     controller = ChatController(rag=FakeRAG(_pc_sources(), ["Answer [1]."]))
     result = _final(_results(controller, Session(), "q"))
-    # d1's parent text contains "discrete junctions" → marker attached; others quiet.
-    assert result.sources[0].markers == [MARKER_SUPERSEDED]
-    assert result.sources[1].markers == [] and result.sources[2].markers == []
+    assert result.sources[0].markers == [MARKER_SUPERSEDED]  # d1:p0 joined directly
+    assert result.sources[1].markers == [] and result.sources[2].markers == []  # d2:p1/d3:p0 clean
     assert "⚠ trend superseded" in result.sources_md
 
 
@@ -432,18 +434,35 @@ def test_markers_absent_is_byte_identical(monkeypatch, temp_db):
     monkeypatch.setattr(chat_controller, "is_library_query", lambda t: False)
     monkeypatch.setattr(chat_controller, "EPISTEMICS_MARKERS_ENABLED", True)
     monkeypatch.setattr(chat_controller, "load_epistemics_index", lambda: {})
-    monkeypatch.setattr(chat_controller, "load_marked_chunks", lambda ids: {})
     controller = ChatController(rag=FakeRAG(_three_clean_sources(), ["Answer [1]."]))
     result = _final(_results(controller, Session(), "q"))
     assert all(s.markers == [] for s in result.sources)
     assert "⚠" not in result.sources_md  # quiet-on-clean → no chip
 
 
-def test_marker_load_failure_does_not_break_turn(monkeypatch, temp_db):
-    # Markers are advisory — a read failure (e.g. the chunk_epistemics table absent on an
-    # older DB) must leave sources unmarked, never crash the turn / SSE stream.
+class _FakeLog:
+    """Records ``.warning`` events; no-ops (chainably) every other structlog method — so the
+    assertion doesn't depend on the global structlog→stdlib config (``capture_logs``/``caplog``
+    both hinge on it being bridged, which only holds once some earlier test configured it)."""
+
+    def __init__(self) -> None:
+        self.warnings: list[str] = []
+
+    def warning(self, event: str, **_kw: object) -> None:
+        self.warnings.append(event)
+
+    def __getattr__(self, _name: str):  # info/debug/error/bind/... → chainable no-op
+        return lambda *a, **k: self
+
+
+def test_marker_load_failure_does_not_break_turn_but_warns(monkeypatch, temp_db):
+    # Markers are advisory — a read failure (e.g. the chunk_epistemics table absent on an older DB)
+    # must leave sources unmarked, never crash the turn / SSE stream. E1.1: but never silently —
+    # under ADR-027's always-on strip a swallowed failure is a silently-lying UI, so it WARNs.
     monkeypatch.setattr(chat_controller, "is_library_query", lambda t: False)
     monkeypatch.setattr(chat_controller, "EPISTEMICS_MARKERS_ENABLED", True)  # exercise the load
+    fake_log = _FakeLog()
+    monkeypatch.setattr(chat_controller, "log", fake_log)
 
     def _boom():
         raise RuntimeError("no such table: chunk_epistemics")
@@ -453,6 +472,7 @@ def test_marker_load_failure_does_not_break_turn(monkeypatch, temp_db):
     result = _final(_results(controller, Session(), "q"))
     assert result.answer == "Answer [1]."
     assert all(s.markers == [] for s in result.sources)
+    assert "attach_markers_failed" in fake_log.warnings  # observable, not silently swallowed
 
 
 def test_markers_enabled_by_default(monkeypatch, temp_db):
@@ -471,7 +491,6 @@ def test_markers_enabled_by_default(monkeypatch, temp_db):
     assert "⚠ contested in corpus" in result.sources_md
 
     monkeypatch.setattr(chat_controller, "load_epistemics_index", lambda: {})
-    monkeypatch.setattr(chat_controller, "load_marked_chunks", lambda ids: {})
     controller = ChatController(rag=FakeRAG(_three_clean_sources(), ["Answer [1]."]))
     result = _final(_results(controller, Session(), "q"))
     assert all(s.markers == [] for s in result.sources)
@@ -488,10 +507,7 @@ def test_markers_disabled_via_opt_out_flag(monkeypatch, temp_db):
     monkeypatch.setattr(
         chat_controller,
         "load_epistemics_index",
-        lambda: loads.append("flat") or {"d1:0": [MARKER_CONTESTED]},
-    )
-    monkeypatch.setattr(
-        chat_controller, "load_marked_chunks", lambda ids: loads.append("pc") or {}
+        lambda: loads.append("index") or {"d1:0": [MARKER_CONTESTED]},
     )
     controller = ChatController(rag=FakeRAG(_three_clean_sources(), ["Answer [1]."]))
     result = _final(_results(controller, Session(), "q"))

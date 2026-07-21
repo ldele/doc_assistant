@@ -43,6 +43,10 @@ def env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Path]:
         bind=engine, autoflush=False, autocommit=False, future=True, expire_on_commit=False
     )
     monkeypatch.setattr(epistemics, "load_doc_chunks", lambda: list(_CHUNKS))
+    # E1.1: build_epistemics also projects the PC-parent segmentation; stub it off by default so
+    # these baseline-focused tests don't read the real PC Chroma store. The re-projection test
+    # below overrides it explicitly.
+    monkeypatch.setattr(epistemics, "load_pc_parent_chunks", lambda: [])
     try:
         yield tmp_path
     finally:
@@ -77,9 +81,9 @@ _SKELETON_EDGES = [
 ]
 
 _CHUNKS = [
-    ("doc-colbert", 0, "this chunk explains colbert and ranking together"),
-    ("doc-hyde", 0, "a hyde prompting trick that nobody else covers"),
-    ("doc-empty", 0, "totally unrelated prose with none of the concepts"),
+    ("doc-colbert:0", "doc-colbert", 0, "this chunk explains colbert and ranking together"),
+    ("doc-hyde:0", "doc-hyde", 0, "a hyde prompting trick that nobody else covers"),
+    ("doc-empty:0", "doc-empty", 0, "totally unrelated prose with none of the concepts"),
 ]
 
 
@@ -125,6 +129,31 @@ def test_apply_writes_rows_and_marks_contested(env: Path) -> None:
     assert set(by_key) == {"doc-colbert:0", "doc-hyde:0"}
     assert by_key["doc-colbert:0"].n_contested >= 1
     assert by_key["doc-hyde:0"].n_contested == 0  # the unique-source chunk stays clean
+
+
+def test_reprojects_onto_pc_parents_keyed_by_parent_index(
+    env: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """E1.1 / KI-8: build_epistemics projects onto the PC-parent segmentation too, so a retrieved
+    parent joins the marker index directly by its ``{doc}:p{parent_index}`` key — the fix for the
+    ~40% of markers the old text-containment lost at parent boundaries. Fails today: nothing
+    projects onto parents, so no ``doc-colbert:p0`` row exists and the PC join finds nothing."""
+    _seed_docs(["doc-colbert", "doc-hyde"])
+    _write_skeleton(env / "skeleton")
+    # A PC parent whose text carries the contested colbert<->ranking pair. Its underlying baseline
+    # chunk would straddle a parent boundary (not a substring of this parent), so the retired
+    # containment path would have missed it — re-projection marks the parent directly.
+    monkeypatch.setattr(
+        epistemics,
+        "load_pc_parent_chunks",
+        lambda: [("doc-colbert:p0", "doc-colbert", 0, "a parent passage on colbert and ranking")],
+    )
+
+    build_epistemics(apply=True, skeleton_dir=env / "skeleton")
+
+    index = load_epistemics_index()
+    assert MARKER_CONTESTED in index.get("doc-colbert:p0", [])  # parent key joined directly
+    assert MARKER_CONTESTED in index.get("doc-colbert:0", [])  # baseline key still joins too
 
 
 def test_superseded_row_and_marker(env: Path) -> None:

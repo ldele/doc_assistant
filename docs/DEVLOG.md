@@ -11,6 +11,69 @@ Format: What changed | Why | Rejected alternatives | What it opens
 > (moved verbatim 2026-07-21). This file keeps 2026-07-15 onward.
 
 ---
+## 2026-07-21 — E1.1: marker-join trustworthiness — KI-8 re-projection (correctness core)
+
+Spec: `docs/specs/feature-e1-marker-join.md` (ROADMAP row E1). The honesty prerequisite for ADR-027's
+always-on source-evaluation strip (E2): the 7d marker chip — the join E2 renders — silently
+under-reported by **~40%** in the default parent-child retrieval mode. **Correctness core only**; the
+`_handle_rag` extraction (E1.2) is a separate refactor, deferred. **Staged, not committed** (cpc §13).
+Full suite **1176 passed / 1 skipped**; ruff · `ruff format` · `mypy --strict src` · bandit ·
+docs_check 0/0 · integrity_check 0/0.
+
+**The defect (KI-8).** `chunk_epistemics` was keyed on the **baseline** segmentation
+(`{doc}:{chunk_index}`). In default PC mode retrieval returns **parents** (`parent_index`, never
+`chunk_index`), so `_chunk_key` returned `None` and `_attach_markers` fell back to
+`markers_for_parent` — a strict **substring-containment** test. A 1000-char baseline chunk cannot be a
+substring of a parent it only partially overlaps (200-char overlap), so a marked chunk straddling a
+parent boundary was contained in *neither* parent and its markers vanished (review WE-7 — systematic
+false *negatives*, not fail-safe over-attribution).
+
+**The fix (KI-8 option 2 — re-projection).** Project the node weights **directly onto the PC parent
+segmentation** with the same structural attribution the baseline projection uses, keyed
+`{doc}:p{parent_index}` (the ADR-4 composite `concept_skeleton.load_presence_inputs` already builds).
+The PC join is now a **direct key lookup** — the coarse containment path is retired.
+
+**What.**
+- **E1.1a — schema.** Additive nullable `chunk_key` VARCHAR on `chunk_epistemics` (+ `_ADDITIVE_COLUMNS`,
+  indexed): the authoritative, segmentation-agnostic join key. The regenerable table fills it on the
+  next `compute_epistemics --apply`; `load_epistemics_index` falls back to `{doc}:{chunk_index}` when
+  it is NULL, so a migrated-but-not-recomputed DB still joins flat rows (parent rows arrive on
+  recompute) — a clean transition, no hard backfill.
+- **E1.1b — projection.** `ChunkEpistemics.chunk_key` is now a stored field (was a derived property);
+  `project_chunk`/`project_chunk_weights` carry it. `load_doc_chunks` yields baseline keys; new
+  `load_pc_parent_chunks` yields `{doc}:p{parent_index}` (mirrors `load_presence_inputs`).
+  `build_epistemics` projects `load_doc_chunks() + load_pc_parent_chunks()` — both segmentations, one
+  attribution rule. Retired `markers_for_parent` / `load_marked_chunks` / `MarkedChunk` /
+  `_load_baseline_texts` (no remaining consumer).
+- **E1.1c — controller.** `_chunk_key` returns `{doc}:p{parent_index}` for a PC parent; `_attach_markers`
+  joins **both** modes on `sv.chunk_key` against a single index (loaded once), dropping the containment
+  branch and the now-unused `scored` arg. The blanket `except` gains a **WARNING log**
+  (`attach_markers_failed`) — advisory markers still never break a turn, but under an always-on strip a
+  silent failure is a silently-lying UI, so it must be observable.
+
+**Guard tests (each fails against pre-fix code).** `test_reprojects_onto_pc_parents_keyed_by_parent_index`
+(a parent's `{doc}:p{idx}` key carries the marker — fails today: nothing projected onto parents);
+`test_chunk_key_parent_child_chunk_uses_parent_key` (inverts the old `…_is_none`);
+`test_markers_pc_join_via_chunk_key` (direct join, no containment); `test_marker_load_failure_…_but_warns`
+(the WARNING fires — asserted via a fake logger, not `capture_logs`/`caplog`, which both hinge on the
+global structlog→stdlib bridge being already configured and so flake across the suite);
+`test_project_chunk_carries_pc_parent_key`. Updated `test_compute_epistemics` (stub `load_pc_parent_chunks`,
+4-tuple chunks, + the re-projection case), `test_turn_parity`, `test_epistemics` (retired containment
+tests + new signatures), and the E0.4 empty-input test (stub the new loader).
+
+**Live $0 probe** (isolated copies of the real 76-doc DB + skeleton; real Chroma read only; originals
+byte-unchanged). This box has no Node-B stance, so one contested stance was injected to make a marker
+exist, then the **real** re-projection ran: 11961 baseline + 5617 PC parents loaded → the marker index
+now carries **196 PC-parent keys (was 0)**; a retrieved parent's `_chunk_key` resolves directly against
+it; and **28 of 196 marked parents (14% on this single-concept sample) would have been left unmarked by
+the retired containment** — the systematic false-negative direction KI-8 describes, on real data.
+
+**Opens.** E1.2 (`_handle_rag` extraction, ~287 lines) before E2/E3 wire into it. Marker *quality*
+(RG-019 `contested` denominator; Node-B stance regen on the RTX box) is unchanged — E1 fixes the
+*join*, not the *data*. The old PR-M1 ADR-1 (containment) and the `feature-7d` "deferred live surfacing"
+note are now superseded by the direct-key join.
+
+---
 ## 2026-07-21 — E0 correctness batch: five P0 fixes before the always-on epistemics surfaces
 
 Spec: `docs/specs/feature-e0-correctness-batch.md` (from `docs/PLAN_2026-07-21_exploration-epistemics.md`

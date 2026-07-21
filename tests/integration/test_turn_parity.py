@@ -193,7 +193,6 @@ def test_byte_identical_when_markers_absent(temp_db, monkeypatch):
     no-op — no chip, every `markers` empty, and `sources_md` is the citation-only form.
     This is the eval-comparability guarantee (markers must not perturb a clean turn)."""
     monkeypatch.setattr(chat_controller, "load_epistemics_index", lambda: {})
-    monkeypatch.setattr(chat_controller, "load_marked_chunks", lambda ids: {})
     _, result = _events(["Neurons meet at synapses [1]."], temp_db, monkeypatch)
 
     assert all(s.markers == [] for s in result.sources)

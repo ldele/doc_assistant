@@ -49,6 +49,11 @@ _ADDITIVE_COLUMNS: list[tuple[str, str, str, str | None]] = [
     # ADR-025 F2 — the folder retrieval scope a turn ran under, on the (pre-existing)
     # answer_records table. NULL on every existing row, which reads correctly as "unscoped".
     ("answer_records", "retrieval_scope_json", "TEXT", None),
+    # E1.1 (KI-8) — the segmentation-agnostic marker join key on the (regenerable)
+    # chunk_epistemics table. NULL on existing rows, which read_epistemics_index falls back to
+    # `{document_id}:{chunk_index}`; the next `compute_epistemics --apply` fills it (incl. the new
+    # `{doc}:p{parent_index}` parent rows). Indexed: the live marker join is a per-turn lookup.
+    ("chunk_epistemics", "chunk_key", "VARCHAR", "ix_chunk_epistemics_chunk_key"),
 ]
 
 

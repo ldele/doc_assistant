@@ -98,6 +98,7 @@ def test_empty_input_degrades_honestly(
         # guarded, so build_epistemics returns an honest empty result instead of raising.
         _write_empty_skeleton(skel_dir)
         monkeypatch.setattr(epistemics, "load_doc_chunks", lambda: [])
+        monkeypatch.setattr(epistemics, "load_pc_parent_chunks", lambda: [])  # E1.1 segmentation
         result = epistemics.build_epistemics(apply=True, skeleton_dir=skel_dir)
         assert result.rows == []
         assert result.n_nodes == 0

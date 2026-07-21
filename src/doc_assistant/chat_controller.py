@@ -50,10 +50,7 @@ from doc_assistant.ingest.figures import load_figure_image_paths
 from doc_assistant.knowledge.epistemics import (
     MARKER_CONTESTED,
     MARKER_SUPERSEDED,
-    MarkedChunk,
     load_epistemics_index,
-    load_marked_chunks,
-    markers_for_parent,
 )
 from doc_assistant.library import folder_doc_hashes, get_folder
 from doc_assistant.pipeline import RAGPipeline, format_citation
@@ -466,19 +463,24 @@ def _format_provenance_card(
 
 
 def _chunk_key(meta: dict[str, Any]) -> str | None:
-    """Epistemics-format join key (ADR-2): ``{document_id}:{chunk_index}`` for a flat
-    /baseline chunk; ``None`` for a parent-child chunk (which carries ``parent_index``,
-    not ``chunk_index``) or a row missing ``document_id``.
+    """Epistemics-format join key (ADR-2 / E1.1): ``{document_id}:{chunk_index}`` for a flat
+    /baseline chunk, ``{document_id}:p{parent_index}`` for a PC parent (which carries
+    ``parent_index``, not ``chunk_index``). ``None`` only when ``document_id`` is missing.
 
-    Do **not** invent a ``p{parent_index}`` key — it cannot join against
-    ``epistemics.load_epistemics_index`` and would mask the gap. The PC→baseline
-    mapping is PR-M1's decision.
+    Both keys are now first-class: ``build_epistemics`` projects the marker sidecar onto **both**
+    segmentations (KI-8 re-projection), so ``load_epistemics_index`` resolves either directly —
+    no more coarse PC-parent text containment.
     """
     document_id = meta.get("document_id")
+    if document_id is None:
+        return None
     chunk_index = meta.get("chunk_index")
-    if document_id is not None and chunk_index is not None:
+    if chunk_index is not None:
         return f"{document_id}:{chunk_index}"
-    return None  # TODO(PR-M1): PC→baseline chunk-key mapping for parent chunks
+    parent_index = meta.get("parent_index")
+    if parent_index is not None:
+        return f"{document_id}:p{parent_index}"
+    return None
 
 
 def _build_retrieved_chunks(
@@ -808,53 +810,43 @@ class ChatController:
     def _attach_markers(
         self,
         sources: list[SourceView],
-        scored: list[tuple[Document, float]],
         *,
         enabled: bool = EPISTEMICS_MARKERS_ENABLED,
     ) -> None:
-        """PR-M1: attach 7d epistemics markers (contested / superseded-trend) to each
-        source. Flat chunks join directly on ``chunk_key`` against the marker index; PC
-        parents map via text containment (ADR-1). Read-only, no LLM, no provider touched
-        (honors the credit guard). A clean no-op — every ``markers`` stays empty — when the
-        epistemics sidecar is absent/empty, so the turn is byte-identical to before. The
-        read sides are loaded at most once per turn (Decision 6).
+        """Attach 7d epistemics markers (contested / superseded-trend) to each source (E1.1 /
+        KI-8). Every source — flat baseline chunk **and** PC parent — joins directly on
+        ``chunk_key`` against a single marker index (``build_epistemics`` projects onto both
+        segmentations, so a retrieved parent's ``{doc}:p{parent_index}`` key resolves without the
+        old text-containment that dropped ~40% of markers). Read-only, no LLM, no provider touched
+        (honors the credit guard); the index is loaded at most once per turn. A clean no-op — every
+        ``markers`` stays empty — when the epistemics sidecar is absent/empty, so the turn is
+        byte-identical to before.
 
-        Defensive: markers are advisory (inform, never block), so **any** failure to load
-        them — e.g. the ``chunk_epistemics`` table absent on an older DB, a Chroma hiccup —
-        leaves the sources unmarked rather than breaking the turn.
+        Defensive: markers are advisory (inform, never block), so **any** failure to load them —
+        e.g. the ``chunk_epistemics`` table absent on an older DB, a Chroma hiccup — leaves the
+        sources unmarked rather than breaking the turn. But it is **logged at WARNING**: under
+        ADR-027's always-on evaluation strip a silently-swallowed failure is a silently-lying UI.
 
-        ``enabled`` defaults to the locked ``EPISTEMICS_MARKERS_ENABLED`` config default; a
-        caller passes the per-turn effective value (U1b / ADR-010 amendment) to override it.
-        When disabled this returns before any load, so every ``markers`` stays empty and the
-        turn is the byte-identical M0/M1 path."""
+        ``enabled`` defaults to the locked ``EPISTEMICS_MARKERS_ENABLED`` config default; a caller
+        passes the per-turn effective value (U1b / ADR-010 amendment) to override it. When disabled
+        this returns before any load, so every ``markers`` stays empty and the turn is the
+        byte-identical M0/M1 path."""
         if not enabled:
             return
         try:
-            document_ids = [
-                str(d) for d in (doc.metadata.get("document_id") for doc, _ in scored) if d
-            ]
-            index: dict[str, list[str]] | None = None
-            marked_by_doc: dict[str, list[MarkedChunk]] | None = None
-            for sv, (doc, _score) in zip(sources, scored, strict=True):
-                if sv.chunk_key is not None:
-                    if index is None:
-                        index = load_epistemics_index()
-                    markers = index.get(sv.chunk_key)
-                    if markers:
-                        sv.markers = list(markers)
+            index = load_epistemics_index()
+            if not index:
+                return
+            for sv in sources:
+                if sv.chunk_key is None:
                     continue
-                document_id = doc.metadata.get("document_id")
-                if not document_id:
-                    continue
-                if marked_by_doc is None:
-                    marked_by_doc = load_marked_chunks(document_ids)
-                markers = markers_for_parent(
-                    doc.page_content, marked_by_doc.get(str(document_id), [])
-                )
+                markers = index.get(sv.chunk_key)
                 if markers:
-                    sv.markers = markers
-        except Exception:
-            return  # advisory markers must never break a turn
+                    sv.markers = list(markers)
+        except Exception as exc:
+            # Advisory markers must never break a turn — but never silently, either (see above).
+            log.warning("attach_markers_failed", error=str(exc))
+            return
 
     def _handle_rag(
         self,
@@ -943,8 +935,9 @@ class ChatController:
         fig_paths = load_figure_image_paths(fig_ids) if fig_ids else {}
 
         sources = _build_source_views(scored, fig_paths)
-        # PR-M1: 7d markers (no-op when sidecar absent); enabled= is U1b's per-turn override.
-        self._attach_markers(sources, scored, enabled=eff_markers_enabled)
+        # E1.1: 7d markers via a direct chunk_key join (no-op when sidecar absent); enabled= is
+        # U1b's per-turn override.
+        self._attach_markers(sources, enabled=eff_markers_enabled)
         retrieved_chunks = _build_retrieved_chunks(
             scored, reviewer_evidence_chars=eff_reviewer_evidence_chars
         )

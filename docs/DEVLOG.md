@@ -11,6 +11,56 @@ Format: What changed | Why | Rejected alternatives | What it opens
 > (moved verbatim 2026-07-21). This file keeps 2026-07-15 onward.
 
 ---
+## 2026-07-22 — E4: document-connections panel (ADR-027 D1) — the exploration surface, per-doc
+
+ROADMAP row E4. The plan's headline gap closed: `doc_similarities` (470 edges, all 47 docs) and
+the citation graph (2,859 extracted / 9 resolved in-corpus) were computed and reachable by **no
+endpoint** — dead to the UI. Now: one endpoint + one panel in the Library document view.
+**Staged, not committed** (cpc §13). Full suite **1208 passed** (+9); ruff · `ruff format` ·
+`mypy --strict src` (65) · bandit · **svelte-check 0/0 (138)** · **npm test 34/34**.
+
+**Shape (user decision, 2026-07-22): per-doc panel, NOT a top-level network mode.** At 9 resolved
+citation edges a corpus-wide network view renders near-empty (the exact "empty Graph reads as
+broken" complaint), and it would entangle the parked Graph-destination fork (ADR-025 fork 5).
+**The graph/navigation treatment stays an OPEN GATE, per the user** — v1 is deliberately
+list-shaped, and a depth-1 ego graph is exactly `cites` + `cited_by`, so a later iteration
+(SVG ego view, corpus-level view, depth param) reads the same bundle without an API break.
+Recorded in ui-checklist.
+
+**Backend.** `library.document_connections(doc_id, related_limit, external_cap, embedding_model)`
+→ `DocConnections | None` — assembles the *existing* read models (`similar_docs` + `cites_out`
+split internal/external + `cited_by` deduped by source doc with `n_citations`); None = unknown doc
+(404). The similarity read is scoped to the active embedder (edges from another model describe a
+different geometry — never mixed). `external_refs` = the titled slice of unresolved citations,
+capped at `EXTERNAL_REFS_CAP=50` (a wire-size bound, not corpus-tuned) with `external_total`
+alongside — no silent truncation. Empty sidecars → empty lists (0-doc contract).
+
+**Wire + frontend.** `GET /api/library/documents/{id}/connections` → `DocConnectionsPayload`
+(4 sub-payloads); `types.ts` mirrors. New `DocConnections.svelte` in `LibraryBrowser` under the
+doc header: Related papers (cosine chip) · Cites / Cited by (in-library links, ×n badge) ·
+collapsed "References (N extracted, not in your library)" with a showing-N-of-M cap note.
+Advisory: load failure degrades to one quiet line; all-empty bundle renders one honest muted
+line. Click-through = `onOpenDocument` threaded from App.svelte — the D1 hop (doc → related doc,
+panel reloads) is the feature.
+
+**Live $0 verify (real corpus).** DPR doc: all 4 sections (10 related · cites → dpr/rag/sbert
+set · cited-by · "References (33 extracted)"); clicked the top related link → doc view swapped to
+the RAG paper, panel reloaded (13 links) — the exploration loop works. b2a1754a via API: 10
+related (top specter2@0.952), 3 in-corpus cites, 50-of-60 external cap, 404 probe clean. 0 console
+errors; 375px 0-overflow (also with the refs list open); dark-theme tokens resolve.
+
+**Rejected.** Top-level citation-network mode (near-empty at 9 edges + entangles the parked
+Graph-destination fork); the APIRouter split of `api/main.py` before adding the route (the plan
+suggests it "before E4/E5" — one ~15-line route doesn't justify a ~200-line refactor riding the
+same diff; owed before E5's larger route surface, see Opens); returning a separate `graph` payload
+(depth-1 ego ≡ cites+cited_by — derivable, YAGNI).
+
+**Opens.** The graph/navigation iteration gate (user, explicit). E5 (gap list) next — do the
+`APIRouter` split with it. Citation resolution is thin (9 edges): re-running
+`scripts/extract_citations.py --apply` after corpus growth (or improving the resolver) would
+enrich the panel for free. External refs later feed the B13 gap→acquisition loop (own ADR).
+
+---
 ## 2026-07-22 — E3: persisted epistemics answer-layer toggle (ADR-027 D2) — full-stack
 
 ROADMAP row E3 (ADR-027 D2 — the last unbuilt half of the surfacing split). Whether epistemics

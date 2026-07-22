@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-07-21 (compacted: done-row status cells + trailing prose trimmed to pointers; detail in linked specs/ADRs/archives) · class: living -->
+<!-- status: active · updated: 2026-07-22 (E0–E2 cells trued to commit hashes; E3/E4 built — staged) · class: living -->
 
 # ROADMAP — doc_assistant
 
@@ -124,7 +124,7 @@ architectural context per feature.
 | E1.2 | `_handle_rag` extraction (278→198 lines): `_resolve_turn_knobs` / `_capture_provenance_and_review` / `_build_claims_block` seams — before E2/E3 wire epistemics into it (pure refactor, byte-identical) | done (`8e14531`) | `docs/PLAN_2026-07-21_exploration-epistemics.md` |
 | E2 | ADR-027 D3 — always-on source-evaluation strip: per-source coverage/direction + doc year + rerank score + `graph_version` freshness, below every answer (never gated by E3's toggle). Full-stack (backend join + wire + `SourceEvaluation.svelte`). RG-019 denominator deferred (measurement-gated; moot at 0 stance) | done (`44e5950`) | `docs/specs/feature-e2-source-evaluation-strip.md` · `docs/decisions/ADR-027-epistemics-surfacing-split.md` |
 | E3 | ADR-027 D2 — epistemics answer-layer toggle: persisted settings default (`app_settings`, in-app "Answer epistemics" toggle) layered under U1b's per-turn override and over the env default; effective value recorded per turn in `AnswerRecord.epistemics_markers_enabled` (ADR-011 discipline); never hides the D3 strip | built — staged (awaiting commit) | `docs/decisions/ADR-027-epistemics-surfacing-split.md` |
-| E4 | Exploration surfaces: related-papers panel (`similar_docs`/doc_vectors) + citation-network view — computed today, reachable by no endpoint | planned | `docs/PLAN_2026-07-21_exploration-epistemics.md` |
+| E4 | Exploration surfaces (ADR-027 D1): per-doc Connections panel in the Library doc view — related papers (`doc_similarities`, active-embedder-scoped) + in-corpus cites/cited-by + capped external references; `GET /api/library/documents/{id}/connections` + `DocConnections.svelte`; click-through doc→doc hop. **Shape decided by user 2026-07-22: per-doc panel, not a top-level network mode; graph/navigation treatment is an explicit open iteration gate** (see ui-checklist) | built — staged (awaiting commit) | `docs/PLAN_2026-07-21_exploration-epistemics.md` |
 | E5 | Gap list surface — first-class "what to add next" list (kind/concept/status, promote/dismiss); depends on E0's rebuild coherence; pairs with the ui-checklist "Graph destination" rethink | planned | `docs/PLAN_2026-07-21_exploration-epistemics.md` · `docs/decisions/ADR-004-gap-detection-layer.md` |
 
 *(The prose below is a compressed pointer set — 2026-07-21. Full historical narrative for the

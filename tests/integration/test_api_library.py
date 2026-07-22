@@ -124,3 +124,57 @@ def test_library_endpoints(temp_db: None) -> None:
     # --- guard: the reads mutated nothing ---
     with session_scope() as session:
         assert session.query(Document).count() == 3
+
+
+# ============================================================
+# ADR-027 D1 (E4) — GET /api/library/documents/{id}/connections
+# ============================================================
+
+
+def test_document_connections_route_returns_bundle(temp_db) -> None:
+    from doc_assistant.db.models import Citation, DocSimilarity
+    from doc_assistant.embeddings import get_active_model_name
+
+    a = _seed_doc("subject.pdf")
+    b = _seed_doc("neighbour.pdf")
+    c = _seed_doc("citer.pdf")
+    with session_scope() as session:
+        session.add(
+            DocSimilarity(
+                source_document_id=a,
+                target_document_id=b,
+                embedding_model=get_active_model_name(),  # what the route scopes to
+                score=0.93,
+            )
+        )
+        session.add(Citation(source_document_id=a, target_document_id=b, target_title="Nb"))
+        session.add(Citation(source_document_id=c, target_document_id=a, target_title="Subj"))
+        session.add(Citation(source_document_id=a, target_title="External only", target_year=2020))
+
+    client = TestClient(create_app(controller=FakeController({})))
+    r = client.get(f"/api/library/documents/{a}/connections")
+    assert r.status_code == 200
+    body = r.json()
+    assert [x["document_id"] for x in body["related"]] == [b]
+    assert body["related"][0]["filename"] == "neighbour.pdf"
+    assert [x["document_id"] for x in body["cites"]] == [b]
+    assert [x["document_id"] for x in body["cited_by"]] == [c]
+    assert body["cited_by"][0]["n_citations"] == 1
+    assert [x["title"] for x in body["external_refs"]] == ["External only"]
+    assert body["external_total"] == 1
+
+
+def test_document_connections_route_404_for_unknown_doc(temp_db) -> None:
+    client = TestClient(create_app(controller=FakeController({})))
+    assert client.get("/api/library/documents/nope/connections").status_code == 404
+
+
+def test_document_connections_route_empty_bundle_for_bare_doc(temp_db) -> None:
+    # A known doc with no sidecar rows: 200 + all-empty lists (honest degrade), never a 404/500.
+    a = _seed_doc("bare.pdf")
+    client = TestClient(create_app(controller=FakeController({})))
+    r = client.get(f"/api/library/documents/{a}/connections")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["related"] == [] and body["cites"] == [] and body["cited_by"] == []
+    assert body["external_refs"] == [] and body["external_total"] == 0

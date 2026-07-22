@@ -10,6 +10,7 @@ import type {
   ConversationDetail,
   ConversationSummary,
   Decision,
+  DocConnections,
   GraphRebuildStatus,
   Health,
   IngestStatus,
@@ -77,6 +78,16 @@ export async function getLibraryDocument(docId: string): Promise<LibraryDocument
   const r = await fetch(`${API_BASE}/api/library/documents/${encodeURIComponent(docId)}`)
   if (!r.ok) throw new Error(`library document failed: ${r.status}`)
   return (await r.json()) as LibraryDocumentChunks
+}
+
+/** One document's exploration bundle (ADR-027 D1, E4): related papers + citation edges +
+ *  extracted external references. Pure sidecar read, $0. 404 unknown. */
+export async function getDocConnections(docId: string): Promise<DocConnections> {
+  const r = await fetch(
+    `${API_BASE}/api/library/documents/${encodeURIComponent(docId)}/connections`,
+  )
+  if (!r.ok) throw new Error(`document connections failed: ${r.status}`)
+  return (await r.json()) as DocConnections
 }
 
 /** Set a document's user metadata overrides (title/authors/year). The editor sends the whole form;

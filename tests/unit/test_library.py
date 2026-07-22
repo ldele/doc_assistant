@@ -192,3 +192,142 @@ def test_group_children_empty():
     from doc_assistant.library import group_children
 
     assert group_children([]) == []
+
+
+# ============================================================
+# ADR-027 D1 (E4) — document_connections (the exploration bundle)
+# ============================================================
+
+
+def _seed_document(filename: str) -> str:
+    from doc_assistant.db.models import Document
+    from doc_assistant.db.session import session_scope
+
+    with session_scope() as session:
+        doc = Document(
+            filename=filename,
+            source_original=f"/tmp/{filename}",
+            doc_hash=f"hash-{filename}",
+            format="pdf",
+        )
+        session.add(doc)
+        session.flush()
+        return str(doc.id)
+
+
+def _seed_similarity(
+    source_id: str, target_id: str, score: float, model: str = "bge-base"
+) -> None:
+    from doc_assistant.db.models import DocSimilarity
+    from doc_assistant.db.session import session_scope
+
+    with session_scope() as session:
+        session.add(
+            DocSimilarity(
+                source_document_id=source_id,
+                target_document_id=target_id,
+                embedding_model=model,
+                score=score,
+            )
+        )
+
+
+def _seed_citation(
+    source_id: str,
+    *,
+    target_id: str | None = None,
+    title: str | None = None,
+    year: int | None = None,
+) -> None:
+    from doc_assistant.db.models import Citation
+    from doc_assistant.db.session import session_scope
+
+    with session_scope() as session:
+        session.add(
+            Citation(
+                source_document_id=source_id,
+                target_document_id=target_id,
+                target_title=title,
+                target_year=year,
+                extraction_method="regex",
+            )
+        )
+
+
+def test_document_connections_unknown_doc_is_none(temp_database):
+    from doc_assistant.library import document_connections
+
+    assert document_connections("no-such-id") is None
+
+
+def test_document_connections_empty_sidecars_degrade_to_empty_lists(temp_database):
+    # The 0-doc/0-sidecar contract: a known doc with nothing computed returns an all-empty
+    # bundle, never an error — the panel renders an honest empty state from this.
+    from doc_assistant.library import document_connections
+
+    doc = _seed_document("a.pdf")
+    bundle = document_connections(doc)
+    assert bundle is not None
+    assert bundle.related == []
+    assert bundle.cites == []
+    assert bundle.cited_by == []
+    assert bundle.external_refs == []
+    assert bundle.external_total == 0
+
+
+def test_document_connections_related_scoped_to_embedding_model(temp_database):
+    # The similarity read is scoped to the embedder in use — edges computed under another
+    # model must not leak into the panel (they describe a different geometry).
+    from doc_assistant.library import document_connections
+
+    a, b = _seed_document("a.pdf"), _seed_document("b.pdf")
+    _seed_similarity(a, b, 0.91, model="bge-base")
+    scoped = document_connections(a, embedding_model="bge-base")
+    other = document_connections(a, embedding_model="specter2")
+    assert scoped is not None and [r.target_document_id for r in scoped.related] == [b]
+    assert other is not None and other.related == []
+
+
+def test_document_connections_splits_internal_and_external_citations(temp_database):
+    from doc_assistant.library import document_connections
+
+    a, b = _seed_document("a.pdf"), _seed_document("b.pdf")
+    _seed_citation(a, target_id=b, title="Resolved in-corpus paper")
+    _seed_citation(a, title="External titled ref", year=2019)
+    _seed_citation(a)  # unresolved AND untitled — not showable, not counted
+
+    bundle = document_connections(a)
+    assert bundle is not None
+    assert [c.target_document_id for c in bundle.cites] == [b]
+    assert [e.target_title for e in bundle.external_refs] == ["External titled ref"]
+    assert bundle.external_total == 1  # the untitled row is excluded from the count too
+
+
+def test_document_connections_dedupes_cited_by_with_count(temp_database):
+    # A doc citing the subject 3 times is ONE row with n_citations=3 — the panel lists
+    # documents, not raw citation rows.
+    from doc_assistant.library import document_connections
+
+    a, c = _seed_document("subject.pdf"), _seed_document("citer.pdf")
+    for _ in range(3):
+        _seed_citation(c, target_id=a, title="Subject paper")
+
+    bundle = document_connections(a)
+    assert bundle is not None
+    assert len(bundle.cited_by) == 1
+    assert bundle.cited_by[0].document_id == c
+    assert bundle.cited_by[0].n_citations == 3
+
+
+def test_document_connections_caps_external_refs_but_reports_total(temp_database):
+    # No silent truncation: the list is capped, the total is the full titled count.
+    from doc_assistant.library import document_connections
+
+    a = _seed_document("a.pdf")
+    for i in range(5):
+        _seed_citation(a, title=f"External ref {i}")
+
+    bundle = document_connections(a, external_cap=2)
+    assert bundle is not None
+    assert len(bundle.external_refs) == 2
+    assert bundle.external_total == 5

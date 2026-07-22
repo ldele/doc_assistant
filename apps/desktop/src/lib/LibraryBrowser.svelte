@@ -5,8 +5,12 @@
   // no model. NULL metadata (title/authors/year, health) is omitted, never shown blank.
   import type { LibraryDocumentChunks } from './types'
   import { getLibraryDocument } from './api'
+  import DocConnections from './DocConnections.svelte'
 
-  let { docId }: { docId: string | null } = $props()
+  let {
+    docId,
+    onOpenDocument,
+  }: { docId: string | null; onOpenDocument?: (id: string) => void } = $props()
 
   let detail = $state<LibraryDocumentChunks | null>(null)
   let loading = $state(false)
@@ -54,6 +58,10 @@
       {#if detail.authors}<p class="metaextra"><strong>Authors</strong> {detail.authors}</p>{/if}
       {#if detail.year != null}<p class="metaextra"><strong>Year</strong> {detail.year}</p>{/if}
     </header>
+
+    <!-- E4 (ADR-027 D1): the exploration panel — related papers + citation edges. Advisory;
+         degrades to one quiet line on failure, renders an honest empty when nothing is computed. -->
+    <DocConnections docId={detail.id} {onOpenDocument} />
 
     {#if detail.parents.length === 0}
       <p class="hint">No chunks stored for this document.</p>

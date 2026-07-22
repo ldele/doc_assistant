@@ -1166,7 +1166,7 @@
           </div>
 
           {#if libraryDocId !== null}
-            <LibraryBrowser docId={libraryDocId} />
+            <LibraryBrowser docId={libraryDocId} onOpenDocument={openDocument} />
           {:else}
             <section class="libmain">
               {#if documents.length === 0}

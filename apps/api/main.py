@@ -45,6 +45,7 @@ from apps.api.models import (
     ConversationMetaUpdate,
     ConversationSummaryPayload,
     DeleteResultPayload,
+    DocConnectionsPayload,
     ExportRequest,
     FolderCreate,
     FolderMembers,
@@ -536,6 +537,23 @@ def create_app(
         if view is None:
             raise HTTPException(status_code=404, detail="document not found")
         return LibraryDocumentChunksPayload.from_view(view)
+
+    @app.get("/api/library/documents/{doc_id}/connections")
+    def get_document_connections(doc_id: str) -> DocConnectionsPayload:
+        """One document's exploration bundle (ADR-027 D1, ROADMAP E4): related papers
+        (``doc_similarities``, scoped to the active embedder), resolved in-corpus citation
+        edges both directions, and the extracted-but-unresolved external references.
+
+        A pure sidecar read — no model, no Chroma, no LLM. 404 for an unknown document; a
+        known document with empty sidecars returns empty lists (honest degrade, 0-doc
+        contract). List-shaped by design: a later graph/navigation iteration reads the same
+        bundle (recorded open gate, E4 DEVLOG)."""
+        from doc_assistant.library import document_connections
+
+        bundle = document_connections(doc_id, embedding_model=get_active_model_name())
+        if bundle is None:
+            raise HTTPException(status_code=404, detail="document not found")
+        return DocConnectionsPayload.from_bundle(bundle)
 
     @app.patch("/api/library/documents/{doc_id}")
     def patch_library_document(doc_id: str, body: LibraryDocumentMetaUpdate) -> dict[str, bool]:

@@ -13,12 +13,13 @@
     ConceptGraphNode,
     ConceptPresence,
     Gap,
-    GapKind,
     GraphRebuildStatus,
     LibraryDocument,
   } from './types'
   import { authorLabel, docLabel } from './library'
+  import { GAP_META, gapRank, gapVisible } from './gaps'
   import { forceLayout, type Point } from './forceLayout'
+  import GapList from './GapList.svelte'
   import Icon from './Icon.svelte'
 
   let {
@@ -48,21 +49,14 @@
   const ZOOM_MIN = 0.4
   const ZOOM_MAX = 3
 
-  // Gap taxonomy → how it ranks and reads. `tone` picks the reserved semantic colour (single_source
-  // is the danger-toned product thesis; softer kinds warn). `hiddenByDefault` keeps `under_connected`
-  // out of the lens until the user opts in — it is the noisy, graph-shaped kind (RG-014). Stance is an
-  // EDGE property (Node B, deferred), so a node gap badge and an edge stance never collide (B9).
-  const GAP_META: Record<GapKind, { rank: number; tone: 'danger' | 'warn'; label: string; blurb: string; hiddenByDefault?: boolean }> = {
-    single_source: { rank: 0, tone: 'danger', label: 'Single source', blurb: 'Appears in only one document — no independent corroboration.' },
-    unsourced_claim: { rank: 1, tone: 'warn', label: 'Unsourced claims', blurb: 'Carries claims the corpus does not cite (count is approximate).' },
-    citation_missing: { rank: 2, tone: 'warn', label: 'Citation missing', blurb: 'A citation could not be resolved to a source.' },
-    thin_bridge: { rank: 3, tone: 'warn', label: 'Thin bridge', blurb: 'Connects two areas through a single fragile edge.' },
-    isolated: { rank: 3, tone: 'warn', label: 'Isolated', blurb: 'Has no edges to the rest of the graph.' },
-    thin_area: { rank: 4, tone: 'warn', label: 'Thin area', blurb: 'Sits in a sparsely covered region of the corpus.' },
-    suggested_link: { rank: 5, tone: 'warn', label: 'Suggested link', blurb: 'A plausible missing connection.' },
-    suggested_concept: { rank: 5, tone: 'warn', label: 'Suggested concept', blurb: 'A concept the corpus implies but does not name.' },
-    under_connected: { rank: 6, tone: 'warn', label: 'Under-connected', blurb: 'Low graph degree — noisy at a small vocabulary; grows more meaningful as the graph fills in.', hiddenByDefault: true },
-  }
+  // Gap taxonomy (ranks, tones, blurbs, the under-connected opt-in) lives in the pure, shared,
+  // node-tested `./gaps` module (RG-014) — imported above so this lens and the E5 GapList agree.
+
+  // Rail mode (E5): the concept index, or the first-class gap list (a triageable list is the right
+  // renderer for the gap payload — RG-014's strong kinds are list-shaped, not graph-shaped). The
+  // GapList is self-contained (fetches its own effective-status data) so it can later move out of
+  // the graph view without coupling (the recorded Graph-destination iteration gate).
+  let railMode = $state<'concepts' | 'gaps'>('concepts')
 
   let query = $state('')
   let gapsOnly = $state(false)
@@ -110,12 +104,16 @@
   function visibleGaps(conceptId: string): Gap[] {
     const gs = gapsByConcept.get(conceptId) ?? []
     return gs
-      .filter((g) => showUnderConnected || !GAP_META[g.kind]?.hiddenByDefault)
-      .sort((a, b) => (GAP_META[a.kind]?.rank ?? 9) - (GAP_META[b.kind]?.rank ?? 9))
+      // A dismissed gap is triaged-away — it drops out of the graph lens too (E5): `status` is the
+      // effective value the server already resolved (override ?? row), so this stays in sync with
+      // the GapList. Promoted gaps stay visible (they are being acted on, not resolved).
+      .filter((g) => g.status !== 'dismissed')
+      .filter((g) => gapVisible(g.kind, showUnderConnected))
+      .sort((a, b) => gapRank(a.kind) - gapRank(b.kind))
   }
   function bestRank(conceptId: string): number {
     const vg = visibleGaps(conceptId)
-    return vg.length ? (GAP_META[vg[0].kind]?.rank ?? 9) : Infinity
+    return vg.length ? gapRank(vg[0].kind) : Infinity
   }
 
   // The index: filtered by search + the gap lens, then ordered by the strong signal — concepts with a
@@ -293,6 +291,32 @@
             </button>
           </div>
         {/if}
+
+        <!-- Rail mode (E5): the concept index, or the first-class triageable gap list. -->
+        <div class="railmode segmented" role="tablist" aria-label="Rail mode">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={railMode === 'concepts'}
+            class:active={railMode === 'concepts'}
+            onclick={() => (railMode = 'concepts')}
+          >
+            Concepts
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={railMode === 'gaps'}
+            class:active={railMode === 'gaps'}
+            onclick={() => (railMode = 'gaps')}
+          >
+            Gaps
+          </button>
+        </div>
+
+        {#if railMode === 'gaps'}
+          <GapList onSelectConcept={(id) => void selectConcept(id)} />
+        {:else}
         <div class="searchrow">
           <Icon name="search" size={14} />
           <input bind:value={query} placeholder="Search concepts" aria-label="Search concepts" />
@@ -342,6 +366,7 @@
             <p class="empty-list muted">No concepts match.</p>
           {/each}
         </div>
+        {/if}
       </aside>
 
       <!-- Right: the ego graph + details for the selected concept. -->
@@ -560,6 +585,30 @@
   }
   .stale span {
     flex: 1;
+  }
+  .railmode {
+    display: flex;
+    gap: 2px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 2px;
+    background: var(--surface);
+  }
+  .railmode button {
+    flex: 1;
+    border: none;
+    border-radius: 6px;
+    padding: 3px var(--space-3);
+    background: none;
+    color: var(--fg-2);
+    font: inherit;
+    font-size: var(--text-sm);
+    cursor: pointer;
+  }
+  .railmode button.active {
+    background: var(--bg);
+    color: var(--fg);
+    font-weight: 600;
   }
   .searchrow {
     display: flex;

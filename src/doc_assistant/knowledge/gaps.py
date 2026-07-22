@@ -382,6 +382,47 @@ def derive_min_degree(skeleton: ConceptSkeleton) -> int:
     return max(1, round(q1))
 
 
+def load_gap_overrides() -> dict[tuple[str, str], GapStatus]:
+    """Read the triage override sidecar as ``{(concept_id, kind): status}`` (ADR-017 C1, E5).
+
+    Empty when no gap has been triaged — the normal state. This is the durable half of the gap
+    lifecycle: it survives ``build_gaps``'s delete-and-rebuild of the deterministic rows.
+    """
+    from sqlalchemy import select
+
+    from doc_assistant.db.models import GapTriage
+    from doc_assistant.db.session import session_scope
+
+    with session_scope() as session:
+        rows = session.execute(select(GapTriage)).scalars()
+        return {(r.concept_id, r.kind): cast(GapStatus, r.status) for r in rows}
+
+
+def set_gap_status(concept_id: str, kind: str, status: GapStatus) -> None:
+    """Record (or clear) a user's triage verdict on one gap (ADR-017 C1, E5).
+
+    ``promoted``/``dismissed`` upsert an override row; ``surfaced`` (the default) **removes** it —
+    a reset returns the gap to whatever the detector says. Keyed on ``(concept_id, kind)``, so
+    it is stable across the deterministic rebuild that replaces the ``gaps`` rows themselves.
+    """
+    if status not in ("surfaced", "promoted", "dismissed"):
+        raise ValueError(f"invalid gap status {status!r}")
+
+    from doc_assistant.db.models import GapTriage
+    from doc_assistant.db.session import session_scope
+
+    with session_scope() as session:
+        existing = session.get(GapTriage, (concept_id, kind))
+        if status == "surfaced":
+            if existing is not None:  # reset = delete the override
+                session.delete(existing)
+            return
+        if existing is None:
+            session.add(GapTriage(concept_id=concept_id, kind=kind, status=status))
+        else:
+            existing.status = status
+
+
 def load_gaps() -> list[Gap]:
     """Read the persisted ``gaps`` sidecar back — the read half of the row writers.
 
@@ -390,10 +431,13 @@ def load_gaps() -> list[Gap]:
     An **empty list means the sidecar has not been built yet** — the normal state before
     ``build_gaps --apply`` — never an error.
 
-    ``status`` here is the row's own value. Per **ADR-017 C1** a user's dismissal/promotion is a
-    *user override* that lives in its own sidecar (deterministic rows are delete-and-replace, so
-    a status written here would not survive a rebuild); a consumer that shows triage state must
-    resolve ``override ?? this``.
+    ``status`` is the **effective** value (ADR-017 C1, E5): a user's triage override from the
+    ``gap_triage`` sidecar wins over the row's own status (``override ?? row.status``). This makes
+    every consumer — the graph node-badge lens *and* the E5 gap list — agree on whether a gap is
+    surfaced/promoted/dismissed, and it is why a dismissal survives ``build_gaps``'s
+    delete-and-rebuild of the deterministic rows (the override lives in a table the rebuild never
+    touches). Stochastic rows keep their own persisted status when un-overridden — the override is
+    only consulted when present, so C1's "must not double-write stochastic status" holds.
     """
     import json
 
@@ -402,6 +446,7 @@ def load_gaps() -> list[Gap]:
     from doc_assistant.db.models import GapRow
     from doc_assistant.db.session import session_scope
 
+    overrides = load_gap_overrides()
     with session_scope() as session:
         rows = list(
             session.execute(select(GapRow).order_by(GapRow.kind, GapRow.concept_id)).scalars()
@@ -414,7 +459,7 @@ def load_gaps() -> list[Gap]:
                 kind=cast(GapKind, r.kind),
                 evidence=GapEvidence(fact_ids=tuple(json.loads(r.evidence_json or "[]"))),
                 rating=r.rating,
-                status=cast(GapStatus, r.status),
+                status=overrides.get((r.concept_id, r.kind), cast(GapStatus, r.status)),
             )
             for r in rows
         ]

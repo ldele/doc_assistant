@@ -110,6 +110,32 @@ def load_graph_view() -> GraphView | None:
     return GraphView(skeleton=skeleton, gaps=tuple(gaps), staleness=staleness)
 
 
+@dataclass(frozen=True)
+class GapListItem:
+    """One gap for the first-class gap-list surface (ROADMAP E5): a :class:`Gap` with its concept
+    **label resolved server-side**.
+
+    The graph payload carries labels only on nodes (the KI-15 one-id-space contract, and a
+    consumer there joins by id). The gap *list* is a standalone surface — not joined to a rendered
+    graph — so it needs the human label attached. For a deterministic gap the label comes from the
+    curated vocabulary; for a stochastic suggestion whose ``concept_id`` is a candidate not yet a
+    ``Concept``, the label falls back to the ``concept_id`` itself (which *is* the candidate
+    string). ``status`` is the effective value already resolved by ``load_gaps`` (override wins).
+    """
+
+    gap: Gap
+    label: str
+
+
+def load_gap_list() -> list[GapListItem]:
+    """The gap list with concept labels resolved (E5). Empty when no gaps are built (0-doc/
+    pre-build) — never an error. Ordering is the detector's (kind, concept_id); the UI applies the
+    RG-014 presentation order (strong list-shaped kinds first, ``under_connected`` opt-in)."""
+    concepts, _aliases = load_concepts()
+    labels = {cid: label for cid, label in concepts}
+    return [GapListItem(gap=g, label=labels.get(g.concept_id, g.concept_id)) for g in load_gaps()]
+
+
 def load_concept_presence(concept_id: str) -> list[ConceptPresence]:
     """Every document one concept appears in, with the chunk keys it appears in.
 

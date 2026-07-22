@@ -166,16 +166,18 @@ def test_export_empty_session_is_400():
 
 
 def test_figure_served_and_missing(tmp_path, monkeypatch):
-    import apps.api.main as api_main
+    # The /api/figures route lives in the chat router (APIRouter split), so its
+    # load_figure_image_paths reference is patched there, not on apps.api.main.
+    import apps.api.routers.chat as chat_router
 
     png = tmp_path / "fig.png"
     png.write_bytes(b"\x89PNG\r\n\x1a\n")  # PNG magic — enough for a served-bytes check
-    monkeypatch.setattr(api_main, "load_figure_image_paths", lambda ids: {"fig1": str(png)})
+    monkeypatch.setattr(chat_router, "load_figure_image_paths", lambda ids: {"fig1": str(png)})
     client = _client()
     ok = client.get("/api/figures/fig1")
     assert ok.status_code == 200 and ok.headers["content-type"] == "image/png"
 
-    monkeypatch.setattr(api_main, "load_figure_image_paths", lambda ids: {})
+    monkeypatch.setattr(chat_router, "load_figure_image_paths", lambda ids: {})
     assert client.get("/api/figures/missing").status_code == 404
 
 

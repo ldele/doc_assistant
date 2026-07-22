@@ -392,3 +392,71 @@ def test_route_rebuild_409_while_one_is_running(env: Path) -> None:
         assert "already running" in r.json()["detail"]
     finally:
         release.set()
+
+
+# ---------- the gap list + triage routes (E5) ----------
+
+
+def _seed_gap(concept_id: str, kind: str, *, determinism: str = "deterministic") -> None:
+    with session_scope() as s:
+        s.add(
+            GapRow(
+                concept_id=concept_id,
+                tier="t1",
+                determinism=determinism,
+                kind=kind,
+                evidence_json=json.dumps(["d1"]),
+                status="surfaced",
+                graph_version="cafef00d",
+            )
+        )
+
+
+def test_gap_list_route_resolves_labels_and_status(env: Path) -> None:
+    _seed_concepts((_A, "Embeddings"), (_B, "BM25"))
+    _seed_gap(_B, "single_source")
+    r = _client().get("/api/concepts/gaps")
+    assert r.status_code == 200
+    body = r.json()
+    assert len(body) == 1
+    assert body[0]["concept_id"] == _B
+    assert body[0]["label"] == "BM25"  # resolved server-side
+    assert body[0]["kind"] == "single_source"
+    assert body[0]["status"] == "surfaced"  # effective (no override yet)
+
+
+def test_gap_list_route_empty_when_no_gaps_built(env: Path) -> None:
+    # 0-doc / pre-build: an empty list, never a 404/500 (the honest degrade).
+    r = _client().get("/api/concepts/gaps")
+    assert r.status_code == 200
+    assert r.json() == []
+
+
+def test_triage_route_persists_and_reflects_in_the_list(env: Path) -> None:
+    _seed_concepts((_B, "BM25"))
+    _seed_gap(_B, "single_source")
+    client = _client()
+
+    r = client.post(
+        "/api/concepts/gaps/triage",
+        json={"concept_id": _B, "kind": "single_source", "status": "dismissed"},
+    )
+    assert r.status_code == 200 and r.json() == {"ok": True}
+    # The list now serves the effective (overridden) status.
+    item = client.get("/api/concepts/gaps").json()[0]
+    assert item["status"] == "dismissed"
+
+    # Reset clears the override → back to the detector's default.
+    client.post(
+        "/api/concepts/gaps/triage",
+        json={"concept_id": _B, "kind": "single_source", "status": "surfaced"},
+    )
+    assert client.get("/api/concepts/gaps").json()[0]["status"] == "surfaced"
+
+
+def test_triage_route_rejects_an_unknown_status(env: Path) -> None:
+    r = _client().post(
+        "/api/concepts/gaps/triage",
+        json={"concept_id": _B, "kind": "single_source", "status": "bogus"},
+    )
+    assert r.status_code == 422  # the Literal enum rejects it at the wire boundary

@@ -351,3 +351,102 @@ def test_no_document_or_concept_mutation(env: Path) -> None:
     with session_scope() as session:
         concept_count = session.execute(select(func.count()).select_from(Concept)).scalar_one()
     assert concept_count == 5  # the sidecar never touches the curated vocabulary
+
+
+# ============================================================
+# ADR-017 C1 (E5) — gap triage override sidecar
+# ============================================================
+
+
+def test_triage_override_wins_over_row_status(env: Path) -> None:
+    # load_gaps resolves the EFFECTIVE status: an override in the gap_triage sidecar beats the
+    # deterministic row's own "surfaced" (ADR-017 C1).
+    from doc_assistant.knowledge.gaps import load_gaps, set_gap_status
+
+    _seed_curated_concepts()
+    _seed_claims()
+    _write_skeleton(env / "skeleton")
+    build_gaps(apply=True, skeleton_dir=env / "skeleton", min_degree=2)
+
+    set_gap_status("sole", "single_source", "dismissed")
+    sole = [g for g in load_gaps() if g.concept_id == "sole" and g.kind == "single_source"]
+    assert sole and sole[0].status == "dismissed"
+    # An un-triaged gap is unaffected — the override is consulted only when present.
+    iso = [g for g in load_gaps() if g.concept_id == "iso" and g.kind == "isolated"]
+    assert iso and iso[0].status == "surfaced"
+
+
+def test_dismissal_survives_a_deterministic_rebuild(env: Path) -> None:
+    # THE POINT of the separate sidecar (ADR-017 C1): deterministic gap rows are delete-and-replace
+    # on build_gaps, but the triage override lives in a table the rebuild never touches, so a
+    # dismissal is durable across the acquire loop's rebuild.
+    from doc_assistant.knowledge.gaps import load_gaps, set_gap_status
+
+    _seed_curated_concepts()
+    _seed_claims()
+    _write_skeleton(env / "skeleton")
+    build_gaps(apply=True, skeleton_dir=env / "skeleton", min_degree=2)
+    set_gap_status("sole", "single_source", "dismissed")
+
+    # Rebuild the deterministic rows from scratch (as the in-app rebuild route does).
+    build_gaps(apply=True, skeleton_dir=env / "skeleton", min_degree=2)
+
+    sole = [g for g in load_gaps() if g.concept_id == "sole" and g.kind == "single_source"]
+    assert sole and sole[0].status == "dismissed"  # the row was replaced; the verdict persisted
+
+
+def test_reset_deletes_the_override(env: Path) -> None:
+    from doc_assistant.knowledge.gaps import load_gap_overrides, load_gaps, set_gap_status
+
+    _seed_curated_concepts()
+    _seed_claims()
+    _write_skeleton(env / "skeleton")
+    build_gaps(apply=True, skeleton_dir=env / "skeleton", min_degree=2)
+
+    set_gap_status("sole", "single_source", "promoted")
+    assert ("sole", "single_source") in load_gap_overrides()
+    set_gap_status("sole", "single_source", "surfaced")  # reset
+    assert ("sole", "single_source") not in load_gap_overrides()  # row deleted
+    sole = [g for g in load_gaps() if g.concept_id == "sole" and g.kind == "single_source"]
+    assert sole and sole[0].status == "surfaced"  # back to the detector's default
+
+
+def test_set_gap_status_rejects_an_invalid_status(env: Path) -> None:
+    from doc_assistant.knowledge.gaps import set_gap_status
+
+    with pytest.raises(ValueError, match="invalid gap status"):
+        set_gap_status("sole", "single_source", "bogus")  # type: ignore[arg-type]
+
+
+def test_gap_list_resolves_labels(env: Path) -> None:
+    # The list surface resolves the concept UUID → label (the graph payload carries labels only on
+    # nodes; a flat list needs them attached). A concept_id with no Concept falls back to itself.
+    from doc_assistant.knowledge.concept_graph_view import load_gap_list
+
+    _seed_curated_concepts()
+    _seed_claims()
+    _write_skeleton(env / "skeleton")
+    build_gaps(apply=True, skeleton_dir=env / "skeleton", min_degree=2)
+
+    items = load_gap_list()
+    assert items  # gaps exist
+    by_concept = {(it.gap.concept_id, it.gap.kind): it for it in items}
+    assert by_concept[("sole", "single_source")].label == "Sole"  # resolved from the vocabulary
+
+
+def test_triage_is_keyed_on_concept_and_kind(env: Path) -> None:
+    # A concept can carry more than one gap kind; triaging one kind must not touch another.
+    from doc_assistant.knowledge.gaps import load_gaps, set_gap_status
+
+    _seed_curated_concepts()
+    _seed_claims()
+    _write_skeleton(env / "skeleton")
+    build_gaps(apply=True, skeleton_dir=env / "skeleton", min_degree=2)
+
+    # "leaf" carries under_connected; give it a second, made-up kind via a different key and verify
+    # isolation by dismissing only one.
+    set_gap_status("leaf", "under_connected", "dismissed")
+    gaps = {(g.concept_id, g.kind): g.status for g in load_gaps()}
+    assert gaps[("leaf", "under_connected")] == "dismissed"
+    # iso's own gap is a different (concept, kind) and stays surfaced.
+    assert gaps[("iso", "isolated")] == "surfaced"

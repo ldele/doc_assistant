@@ -600,6 +600,34 @@ class GapRow(Base):
     )
 
 
+class GapTriage(Base):
+    """A user's triage verdict on one gap — a *user override* in its own sidecar (ADR-017 C1,
+    ROADMAP E5), keyed on ``(concept_id, kind)``.
+
+    Why a separate table and not ``GapRow.status``: deterministic ``gaps`` rows are
+    **delete-and-replaced** on every ``build_gaps`` run (regenerable sidecar, ADR-004), so a
+    dismissal written onto the row would not survive the next rebuild — and a rebuild is part of
+    the acquire loop the gap surface exists to close (gap → ingest → rebuild). Triage is a
+    *judgment*, not derived data, so it lives here and outlives the rebuild. The **effective**
+    status a consumer shows is ``override ?? GapRow.status`` (``load_gaps`` resolves it), exactly
+    as ``DocumentMeta`` makes a user edit win over the auto-extracted default (ADR-013 A2).
+
+    ``concept_id`` is **not** a foreign key — for a stochastic suggestion it may be a candidate
+    label that is not yet a ``Concept`` (mirrors ``GapRow.concept_id``'s own note). A row exists
+    only once the user acts; resetting to the derived default deletes it. Additive table
+    (``create_all``), no migration — same pattern as ``DocumentMeta``/``ConversationMeta``.
+    """
+
+    __tablename__ = "gap_triage"
+
+    concept_id: Mapped[str] = mapped_column(String, primary_key=True)
+    kind: Mapped[str] = mapped_column(String, primary_key=True)
+    # promoted | dismissed — the two user verdicts. "surfaced" (the derived default) is the
+    # *absence* of a row, never a stored value: a reset deletes the override.
+    status: Mapped[str] = mapped_column(String, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, onupdate=_utcnow)
+
+
 # ============================================================
 # AnswerRecord — Phase 5 / Integrity Chunk 1 (provenance card).
 # ============================================================

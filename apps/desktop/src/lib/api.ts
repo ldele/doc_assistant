@@ -11,6 +11,8 @@ import type {
   ConversationSummary,
   Decision,
   DocConnections,
+  GapListItem,
+  GapStatus,
   GraphRebuildStatus,
   Health,
   IngestStatus,
@@ -470,6 +472,29 @@ export async function getConceptGraph(): Promise<ConceptGraph | null> {
   if (r.status === 404) return null
   if (!r.ok) throw new Error(await errorDetail(r, 'concept graph'))
   return (await r.json()) as ConceptGraph
+}
+
+/** The first-class gap list (E5, ADR-004): every detected gap with its concept label + effective
+ *  triage status. Pure sidecar read, $0. Empty list = no gaps built (0-doc / pre-build), not an error. */
+export async function getGapList(): Promise<GapListItem[]> {
+  const r = await fetch(`${API_BASE}/api/concepts/gaps`)
+  if (!r.ok) throw new Error(await errorDetail(r, 'gap list'))
+  return (await r.json()) as GapListItem[]
+}
+
+/** Record (or reset) a user's triage verdict on one gap (ADR-017 C1). `surfaced` resets to the
+ *  detector's default. Keyed on (concept_id, kind) so it survives the deterministic rebuild. */
+export async function triageGap(
+  conceptId: string,
+  kind: string,
+  status: GapStatus,
+): Promise<void> {
+  const r = await fetch(`${API_BASE}/api/concepts/gaps/triage`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ concept_id: conceptId, kind, status }),
+  })
+  if (!r.ok) throw new Error(await errorDetail(r, 'triage gap'))
 }
 
 /** Where one concept appears, down to the chunk keys — the ego view's navigation payload. Served

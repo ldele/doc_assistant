@@ -11,6 +11,99 @@ Format: What changed | Why | Rejected alternatives | What it opens
 > (moved verbatim 2026-07-21). This file keeps 2026-07-15 onward.
 
 ---
+## 2026-07-22 — APIRouter split of `apps/api/main.py` (pure refactor, behavior-identical)
+
+The refactor the plan deferred through E4 and E5 (a behavior-preserving move doesn't belong inside a
+feature diff), now its own increment. `apps/api/main.py` had grown to **1009 lines / 42 routes** in
+one file; split into per-domain `APIRouter` modules. **Staged, not committed** (cpc §13). Full suite
+**1218 passed** (unchanged from pre-split — the behavior-preservation proof); ruff · `ruff format` ·
+`mypy --strict src` (65) · bandit. Frontend untouched.
+
+**Structure.** `main.py` **1009 → 159 lines** — now only `create_app`: the lifespan (schema migration
++ controller), `app.state` wiring + the `ingest_fn`/`rebuild_graph_fn`/`controller_factory` test seams,
+CORS, and seven `include_router` calls. Routes moved to `apps/api/routers/{health,chat,conversations,
+library,concepts,settings,sources}.py` — one `APIRouter` per domain. Cross-router glue (the `app.state`
+status dataclasses + their `202+poll` serializers, the settings read view, the lazy default job
+runners) moved to `apps/api/services.py`. **Dependency direction is one-way:** `main` and routers import
+from `services`; routers never import from `main` (no cycle). `chat`-only helpers (`_sse`,
+`_event_stream`) live in the chat router.
+
+**Behavior-preserving contract.** Every handler already read state via `request.app.state.*` + module
+helpers, never a `create_app` local — so the move is `@app.get` → `@router.get`, nothing more. Route
+declaration order preserved within each router (the load-bearing one: `/api/concepts/gaps` before the
+parameterised `/api/concepts/{concept_id}/…`). `create_app`'s signature is byte-identical (the public
+seam — 49 test call-sites unchanged). `_settings_view` + `_default_rebuild_graph` are re-exported from
+`main` (via `__all__`) so the two tests importing them by name still resolve; `init_db` stays imported
+in `main` so the startup-migration monkeypatch target holds.
+
+**Test churn (2, both legitimate consequences of a moved symbol).** `test_figure_served_and_missing`
+patched `apps.api.main.load_figure_image_paths` → repointed to `apps.api.routers.chat` (where the
+figure route now imports it). No other monkeypatch targeted a moved symbol (grep-verified).
+
+**Live $0 smoke.** Booted the real app; one endpoint per router returned correctly (health 200, a
+provenance-source 404-as-expected, all domain reads 200); real data flows (47 docs / 15 gaps / 16 039
+chunks via the split app); 0 server errors. Route enumeration: 42 API routes, same set as pre-split.
+
+**Rejected.** Distributing the status dataclasses across their routers and having `main` import from 4
+routers (a shared `services.py` is simpler to reason about + keeps the import graph acyclic); a
+top-level `routers/` re-export shim (the explicit `include_router` list in `create_app` is the clearest
+manifest). **Opens.** `library.py` (the backend service module, ~1.7k lines) is the other half of the
+plan's "split by domain" note — a separate, larger refactor, not bundled here. `apps/` isn't in the
+`mypy --strict` gate (only `src`); a `ServerSentEvent` attr-export stub would be needed to add it —
+noted, not done.
+
+---
+## 2026-07-22 — E5: first-class gap list + triage (ADR-004 / ADR-017 C1) — panel in the Graph view
+
+ROADMAP row E5 (last E-track row). Gaps were computed (ADR-004) but reachable only *embedded* in the
+graph payload, joined to nodes — no first-class list, no triage. Now: a triageable gap list in the
+Graph view with a durable dismiss/promote override. **Staged, not committed** (cpc §13). Full suite
+**1218 passed** (+10 backend); ruff · `ruff format` · `mypy --strict src` (65) · bandit · **svelte-check
+0/0 (140)** · **npm test 41/41** (+7 gaps.ts) · docs 0/0 · integrity 0/0.
+
+**The load-bearing decision (ADR-017 C1): triage is a user override in its OWN sidecar.** New
+`GapTriage` table keyed on `(concept_id, kind)` — *not* `GapRow.status`. Deterministic `gaps` rows are
+delete-and-replaced on every `build_gaps` run (regenerable, ADR-004), and a rebuild is part of the
+acquire loop the surface exists to close, so a dismissal written onto the row would not survive it.
+`load_gaps` now resolves the **effective** status = `override ?? row.status` (one source of truth — the
+graph node-badge lens and the list agree; a dismissal removes the gap from both). Mirrors `DocumentMeta`
+(ADR-013). Additive table via `create_all`, no migration. `set_gap_status(surfaced)` = reset = delete the
+override. Stochastic rows keep their own persisted status when un-overridden (C1's "don't double-write").
+
+**Backend/API.** `load_gap_overrides` / `set_gap_status` (gaps.py); `load_gap_list` +
+`GapListItem` (concept_graph_view.py) resolves the concept UUID → label (the flat list needs it; the
+graph carries labels only on nodes, KI-15) with a fallback to the id itself for stochastic candidates.
+`GET /api/concepts/gaps` (label + effective status; empty when unbuilt) + `POST /api/concepts/gaps/triage`
+(`{concept_id, kind, status}`; `surfaced` resets; the `Literal` enum 422s a bad status).
+
+**Frontend.** Extracted the gap taxonomy to a **pure, node-tested** `lib/gaps.ts` (GAP_META + rank/tone
++ `orderGaps`/`gapVisible`) — shared by ConceptGraph (which now imports it instead of an inline copy) and
+the new `GapList.svelte`. ConceptGraph gains a rail-mode toggle **Concepts | Gaps**; `visibleGaps` now
+drops `dismissed` gaps from the node lens too. `GapList` is **self-contained** (fetches its own
+effective-status data, owns its triage writes) so it can move out of the graph without coupling when the
+Graph-destination fork settles — the recorded iteration gate. RG-014 presentation preserved: strong
+list-shaped kinds first, `under_connected` opt-in; dismissed hidden (recoverable via a "Show dismissed"
+toggle); Promote/Dismiss/Reset per row; `onSelectConcept` jumps the ego view.
+
+**Live $0 verify (real corpus, 16k chunks).** API: 15 gaps served with labels + effective status.
+Triaged a real UUID-keyed `single_source` gap → dismissed → **triggered a real graph rebuild (202+poll,
+deletes+rebuilds the deterministic rows) → the dismissal SURVIVED** (C1's whole point, proven end-to-end).
+Reset deletes the override. `bogus` status → 422. UI: rail toggle renders; Dismiss dropped the row from
+the worklist (15→14 open) and surfaced a "Show dismissed" toggle; the toggle reveals it with a dismissed
+tag + Promote/Reset; Reset restores it; a concept link jumps the ego view to that concept (SVG rendered).
+0 console errors; 375px 0-overflow; dark tokens resolve. Box left clean (0 overrides).
+
+**Rejected.** Storing triage on `GapRow.status` (dies on the rebuild — the exact B14 trap the grill
+originally got wrong); a second corpus-wide graph surface (RG-014: the gap payload is list-shaped, and the
+Graph-destination fork is parked); the plan's `APIRouter` split of `api/main.py` "with E5" — a
+behavior-preserving ~200-line refactor doesn't belong inside a feature diff; owed as its own increment
+before the next route-heavy work.
+
+**Opens.** The `APIRouter` split (own commit). Triage currently has no bulk action; the gap→acquisition
+loop (B13, own ADR) attaches to `promoted` later. `suggested_concept` volume swings with `gap_suggest`
+runs — the list shows them but leads with the deterministic strong kinds.
+
+---
 ## 2026-07-22 — E4: document-connections panel (ADR-027 D1) — the exploration surface, per-doc
 
 ROADMAP row E4. The plan's headline gap closed: `doc_similarities` (470 edges, all 47 docs) and

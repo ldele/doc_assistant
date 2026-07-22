@@ -34,7 +34,11 @@ if TYPE_CHECKING:
         ConversationTurn,
     )
     from doc_assistant.ingest.registry import SourceView as RegistrySourceView
-    from doc_assistant.knowledge.concept_graph_view import GraphStaleness, GraphView
+    from doc_assistant.knowledge.concept_graph_view import (
+        GapListItem,
+        GraphStaleness,
+        GraphView,
+    )
     from doc_assistant.knowledge.concept_skeleton import (
         Community,
         ConceptNode,
@@ -939,6 +943,45 @@ class GapPayload(BaseModel):
             rating=g.rating,
             status=g.status,
         )
+
+
+class GapListItemPayload(BaseModel):
+    """One gap for the first-class gap-list surface (ROADMAP E5) — a gap with its concept `label`
+    resolved server-side and the **effective** `status` (a user triage override wins; ADR-017 C1).
+    Distinct from `GapPayload`, which rides in the graph payload and joins labels by node id."""
+
+    concept_id: str
+    label: str
+    kind: str
+    tier: str
+    determinism: str
+    fact_ids: list[str]
+    rating: float | None
+    status: str  # effective: surfaced | promoted | dismissed
+
+    @classmethod
+    def from_item(cls, item: GapListItem) -> GapListItemPayload:
+        g = item.gap
+        return cls(
+            concept_id=g.concept_id,
+            label=item.label,
+            kind=g.kind,
+            tier=g.tier,
+            determinism=g.determinism,
+            fact_ids=list(g.evidence.fact_ids),
+            rating=g.rating,
+            status=g.status,
+        )
+
+
+class GapTriageRequest(BaseModel):
+    """POST body to triage one gap (ADR-017 C1, E5). `status` is the user's verdict; `surfaced`
+    resets it to the detector's default (deletes the override). Keyed on `(concept_id, kind)` — the
+    stable identity that survives the deterministic gaps' delete-and-rebuild."""
+
+    concept_id: str = Field(min_length=1)
+    kind: str = Field(min_length=1)
+    status: Literal["surfaced", "promoted", "dismissed"]
 
 
 class GraphStalenessPayload(BaseModel):

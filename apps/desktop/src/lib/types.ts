@@ -402,6 +402,23 @@ export interface Gap {
   status: string
 }
 
+export type GapStatus = 'surfaced' | 'promoted' | 'dismissed'
+
+// One gap for the first-class gap list (E5). Mirrors apps/api/models.py::GapListItemPayload — a
+// gap with its concept `label` resolved server-side and the *effective* triage status (a user
+// override wins; ADR-017 C1). Distinct from `Gap` (which rides inside the graph payload and joins
+// labels by node id).
+export interface GapListItem {
+  concept_id: string
+  label: string
+  kind: GapKind
+  tier: string
+  determinism: string
+  fact_ids: string[]
+  rating: number | null
+  status: GapStatus
+}
+
 // The skeleton is a build artifact and the Manage-keywords view writes Concept rows live, so drift
 // is structural, not a defect: the UI reports it and offers a rebuild (never auto-rebuilds).
 export interface GraphStaleness {

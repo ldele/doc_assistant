@@ -395,6 +395,19 @@ export async function setLlmProvider(provider: string, model: string): Promise<S
   return (await r.json()) as Settings
 }
 
+/** Persist the answer-layer epistemics default (ADR-027 D2, E3) — whether contested/superseded
+ *  chips may appear on answer sources. Takes effect on the next turn; the RAG-sandbox session
+ *  override still wins per-turn. Never affects the always-on source-evaluation strip (D3). */
+export async function setMarkersEnabled(enabled: boolean): Promise<Settings> {
+  const r = await fetch(`${API_BASE}/api/settings`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ epistemics_markers_enabled: enabled }),
+  })
+  if (!r.ok) throw new Error(await errorDetail(r, 'save epistemics setting'))
+  return (await r.json()) as Settings
+}
+
 /** Kick off a background re-index. No `paths` = the whole saved source folder (minus exclusions);
  *  a `paths` list (rel_paths) = ingest exactly that selection. 409 if one is already running,
  *  400 if any path is invalid (the detail names the offenders). */

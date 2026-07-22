@@ -83,6 +83,10 @@ class AnswerProvenance:
     # {folder_id, folder_name, doc_count}. The integrity requirement is that a scoped answer
     # can never be mistaken for a whole-library one after the fact.
     retrieval_scope: dict[str, Any] | None = None
+    # ADR-027 D2 (E3) — whether epistemics was allowed to touch the answer layer on this turn
+    # (the effective value after U1b override > persisted setting > config default). None = a
+    # pre-E3 record: honestly "unknown", never coerced to either boolean.
+    epistemics_markers_enabled: bool | None = None
 
     def to_json_dict(self) -> dict[str, Any]:
         """Return a JSON-serialisable dict (datetimes → isoformat strings)."""
@@ -152,6 +156,7 @@ def record_answer(
     session_id: str | None = None,
     error: str | None = None,
     retrieval_scope: dict[str, Any] | None = None,
+    epistemics_markers_enabled: bool | None = None,
 ) -> str:
     """Persist one answer record. Returns the new ``id``."""
     # Exclude the transient fields — the wide reviewer-only `full_text` and the 7d join key
@@ -181,6 +186,7 @@ def record_answer(
             retrieval_scope_json=(
                 json.dumps(retrieval_scope) if retrieval_scope is not None else None
             ),
+            epistemics_markers_enabled=epistemics_markers_enabled,
         )
         session.add(record)
         session.flush()
@@ -293,6 +299,7 @@ def _row_to_provenance(row: AnswerRecord) -> AnswerProvenance:
         retrieval_scope=(
             json.loads(row.retrieval_scope_json) if row.retrieval_scope_json else None
         ),
+        epistemics_markers_enabled=row.epistemics_markers_enabled,
     )
 
 

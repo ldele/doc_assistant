@@ -30,6 +30,13 @@ from doc_assistant.chat_controller import (
 )
 
 
+@pytest.fixture(autouse=True)
+def _isolate_user_settings(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """E3: _resolve_turn_knobs reads the persisted answer-layer default per turn — isolate it
+    from the dev box's real settings.json so parity can never depend on local state."""
+    monkeypatch.setattr(chat_controller.app_settings, "SETTINGS_PATH", tmp_path / "settings.json")
+
+
 @pytest.fixture
 def temp_db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     from sqlalchemy import create_engine

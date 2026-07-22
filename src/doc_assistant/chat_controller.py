@@ -320,11 +320,15 @@ def _overrides_note(
     eff_multi_query: bool,
     eff_markers_enabled: bool = EPISTEMICS_MARKERS_ENABLED,
     eff_reviewer_evidence_chars: int = REVIEWER_EVIDENCE_CHARS,
+    markers_default: bool = EPISTEMICS_MARKERS_ENABLED,
 ) -> str:
     """ADR-010 Decision 5: provenance shows the *effective* knob values and flags any that
     differ from the locked default. Returns "" (no-op, byte-identical turn) when every
-    effective value equals its config default — i.e. ``overrides=None`` or an all-``None``
-    ``RagOverrides``. The last two params are U1b's niche knobs (SPRINT-011)."""
+    effective value equals its default — i.e. ``overrides=None`` or an all-``None``
+    ``RagOverrides``. The markers baseline is ``markers_default`` — the *persisted-effective*
+    default (ADR-027 D2, E3), not the raw config constant: the persisted toggle is the user's
+    chosen default, and stamping it "Session override (this answer only)" on every turn would
+    be a provenance lie. Only a genuine per-turn U1b diff fires the note."""
     diffs = []
     if eff_top_k != TOP_K:
         diffs.append(f"top_k={eff_top_k} (default {TOP_K})")
@@ -332,10 +336,9 @@ def _overrides_note(
         diffs.append(f"synthesis_mode={eff_synthesis_mode} (default {SYNTHESIS_MODE})")
     if eff_multi_query != USE_MULTI_QUERY:
         diffs.append(f"multi_query={eff_multi_query} (default {USE_MULTI_QUERY})")
-    if eff_markers_enabled != EPISTEMICS_MARKERS_ENABLED:
+    if eff_markers_enabled != markers_default:
         diffs.append(
-            f"epistemics_markers_enabled={eff_markers_enabled} "
-            f"(default {EPISTEMICS_MARKERS_ENABLED})"
+            f"epistemics_markers_enabled={eff_markers_enabled} (default {markers_default})"
         )
     if eff_reviewer_evidence_chars != REVIEWER_EVIDENCE_CHARS:
         diffs.append(
@@ -350,11 +353,16 @@ def _overrides_note(
 def _resolve_turn_knobs(overrides: RagOverrides | None) -> _TurnKnobs:
     """Resolve the effective per-turn knobs from ``overrides`` + the locked defaults (ADR-010).
 
-    Request-scoped: reads ``overrides`` and the config constants, never a module global, so
-    concurrent turns on the shared controller cannot leak. ``None`` = the locked default.
-    ``multi_query`` here is the *effective* value carried into the provenance note only — the
-    retrieval call passes the RAW ``overrides.use_multi_query`` (``None`` → the pipeline's own
-    default), a deliberately distinct path this resolution does not touch."""
+    Request-scoped: reads ``overrides``, the config constants, and (for the markers knob) the
+    persisted answer-layer default — never a module global, so concurrent turns on the shared
+    controller cannot leak. ``None`` = the default. The markers baseline is E3's three-layer
+    resolution (ADR-027 D2): per-turn U1b override > persisted setting > config default —
+    ``app_settings.effective_markers_enabled()`` supplies the lower two layers, re-read each
+    turn so a Settings toggle applies from the very next turn without a restart (the ADR-011
+    ``effective_llm`` precedent). ``multi_query`` here is the *effective* value carried into
+    the provenance note only — the retrieval call passes the RAW ``overrides.use_multi_query``
+    (``None`` → the pipeline's own default), a deliberately distinct path this resolution does
+    not touch."""
     top_k = overrides.top_k if overrides and overrides.top_k is not None else TOP_K
     synthesis_mode = (
         overrides.synthesis_mode if overrides and overrides.synthesis_mode else SYNTHESIS_MODE
@@ -364,8 +372,9 @@ def _resolve_turn_knobs(overrides: RagOverrides | None) -> _TurnKnobs:
         if overrides is None or overrides.use_multi_query is None
         else overrides.use_multi_query
     )
+    markers_default = app_settings.effective_markers_enabled()
     markers_enabled = (
-        EPISTEMICS_MARKERS_ENABLED
+        markers_default
         if overrides is None or overrides.epistemics_markers_enabled is None
         else overrides.epistemics_markers_enabled
     )
@@ -381,7 +390,12 @@ def _resolve_turn_knobs(overrides: RagOverrides | None) -> _TurnKnobs:
         markers_enabled=markers_enabled,
         reviewer_evidence_chars=reviewer_evidence_chars,
         overrides_note=_overrides_note(
-            top_k, synthesis_mode, multi_query, markers_enabled, reviewer_evidence_chars
+            top_k,
+            synthesis_mode,
+            multi_query,
+            markers_enabled,
+            reviewer_evidence_chars,
+            markers_default=markers_default,
         ),
     )
 
@@ -704,6 +718,9 @@ class _ProvenanceInputs:
     scope_view: ScopeView | None
     turn_provider: str
     turn_model: str
+    # ADR-027 D2 (E3): the effective answer-layer epistemics flag for this turn, snapshotted
+    # into the AnswerRecord (ADR-011 instrument discipline).
+    markers_enabled: bool
 
 
 @dataclass(frozen=True)
@@ -1025,6 +1042,7 @@ class ChatController:
                 latency_ms=pin.latency_ms,
                 session_id=pin.session_id,
                 retrieval_scope=_scope_dict(pin.scope_view),
+                epistemics_markers_enabled=pin.markers_enabled,
             )
             prov = AnswerProvenance(
                 id=record_id,
@@ -1179,6 +1197,7 @@ class ChatController:
                     overrides_note=knobs.overrides_note,
                     scope=scope_view,
                     source_eval=source_eval,
+                    markers_enabled=knobs.markers_enabled,
                 )
             )
             return
@@ -1211,6 +1230,7 @@ class ChatController:
                 scope_view=scope_view,
                 turn_provider=turn_provider,
                 turn_model=turn_model,
+                markers_enabled=knobs.markers_enabled,
             )
         )
         record_id = prov_out.record_id
@@ -1308,6 +1328,7 @@ class ChatController:
         overrides_note: str = "",
         scope: ScopeView | None = None,
         source_eval: SourceEvalSummary | None = None,
+        markers_enabled: bool | None = None,
     ) -> TurnResult:
         """``synthesis_mode=human`` (locked default or a per-turn ADR-010 override) —
         evidence only; no interpretation call. Records provenance silently (no card shown),
@@ -1325,6 +1346,7 @@ class ChatController:
                 latency_ms=(time.monotonic() - turn_start) * 1000.0,
                 session_id=session.session_id,
                 retrieval_scope=_scope_dict(scope),
+                epistemics_markers_enabled=markers_enabled,
             )
         self._append_export_turn(
             session,

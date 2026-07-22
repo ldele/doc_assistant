@@ -655,6 +655,13 @@ class AnswerRecord(Base):
     # pollute every eval join keyed on that hash.
     retrieval_scope_json: Mapped[str | None] = mapped_column(Text, nullable=True)
 
+    # ADR-027 D2 (E3): whether epistemics was allowed to touch the answer layer on this turn —
+    # the *effective* value after the three-layer resolution (U1b per-turn override > persisted
+    # setting > config default), snapshotted per ADR-011's instrument discipline. NULL = a
+    # pre-E3 row, which honestly reads back as "unknown", never as either boolean. Not folded
+    # into `prompt_version` for the same reason as the scope: it never reaches the prompt.
+    epistemics_markers_enabled: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+
     # Cost + latency telemetry.
     token_input: Mapped[int | None] = mapped_column(Integer, nullable=True)
     token_output: Mapped[int | None] = mapped_column(Integer, nullable=True)

@@ -156,7 +156,6 @@ def _settings_view() -> dict[str, Any]:
         CANDIDATE_K,
         CHILD_CHUNK_OVERLAP,
         CHILD_CHUNK_SIZE,
-        EPISTEMICS_MARKERS_ENABLED,
         PAID_PROVIDERS,
         PARENT_CHUNK_OVERLAP,
         PARENT_CHUNK_SIZE,
@@ -184,7 +183,11 @@ def _settings_view() -> dict[str, Any]:
         # The locked defaults for the RAG-sandbox toggles (ADR-010 + the U1b amendment) — the
         # sandbox section needs these to render each control's un-overridden state correctly.
         "use_multi_query": USE_MULTI_QUERY,
-        "epistemics_markers_enabled": EPISTEMICS_MARKERS_ENABLED,
+        # ADR-027 D2 (E3): the *effective* answer-layer default (persisted choice if set, else
+        # the config default) — never the raw constant, which would go stale the moment the
+        # user toggles it (the same rule as provider/model above). Doubles as the sandbox
+        # baseline: U1b's un-overridden state IS the persisted default now.
+        "epistemics_markers_enabled": app_settings.effective_markers_enabled(),
         "reviewer_evidence_chars": REVIEWER_EVIDENCE_CHARS,
         "parent_chunk": [PARENT_CHUNK_SIZE, PARENT_CHUNK_OVERLAP],
         "child_chunk": [CHILD_CHUNK_SIZE, CHILD_CHUNK_OVERLAP],
@@ -844,6 +847,10 @@ def create_app(
                 controller.reconfigure(body.llm_provider, body.llm_model)
             except ValueError as e:
                 raise HTTPException(status_code=400, detail=str(e)) from e
+        # ADR-027 D2 (E3): persist the answer-layer epistemics default. A plain bool — no
+        # validation to fail; applies from the next turn (_resolve_turn_knobs re-reads it).
+        if body.epistemics_markers_enabled is not None:
+            app_settings.set_markers_enabled(body.epistemics_markers_enabled)
         return _full_settings(request.app)
 
     @app.post("/api/ingest", status_code=202)

@@ -54,6 +54,11 @@ _ADDITIVE_COLUMNS: list[tuple[str, str, str, str | None]] = [
     # `{document_id}:{chunk_index}`; the next `compute_epistemics --apply` fills it (incl. the new
     # `{doc}:p{parent_index}` parent rows). Indexed: the live marker join is a per-turn lookup.
     ("chunk_epistemics", "chunk_key", "VARCHAR", "ix_chunk_epistemics_chunk_key"),
+    # ADR-027 D2 (E3) — the effective answer-layer epistemics flag on the (pre-existing)
+    # answer_records table. NULL on every existing row, which reads correctly as "unknown"
+    # (pre-E3 turns recorded no such instrument snapshot). Unindexed: written per turn, read
+    # only by per-record provenance lookups.
+    ("answer_records", "epistemics_markers_enabled", "BOOLEAN", None),
 ]
 
 

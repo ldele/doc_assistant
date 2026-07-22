@@ -81,3 +81,49 @@ def test_effective_llm_prefers_the_persisted_selection(
     monkeypatch.setattr(config, "ANTHROPIC_API_KEY", None)  # ollama needs no key
     app_settings.set_llm_selection("ollama", "llama3.1:8b")
     assert app_settings.effective_llm() == ("ollama", "llama3.1:8b")
+
+
+# ============================================================
+# ADR-027 D2 (E3) — the persisted answer-layer epistemics toggle
+# ============================================================
+
+
+def test_markers_enabled_absent_by_default(settings_file: Path) -> None:
+    assert app_settings.get_markers_enabled() is None
+
+
+def test_markers_enabled_round_trips_both_values(settings_file: Path) -> None:
+    app_settings.set_markers_enabled(False)
+    assert app_settings.get_markers_enabled() is False
+    assert app_settings.load_user_settings()["epistemics_markers_enabled"] is False
+    app_settings.set_markers_enabled(True)
+    assert app_settings.get_markers_enabled() is True
+
+
+def test_effective_markers_falls_back_to_config_default(
+    settings_file: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(config, "EPISTEMICS_MARKERS_ENABLED", True)
+    assert app_settings.effective_markers_enabled() is True
+    monkeypatch.setattr(config, "EPISTEMICS_MARKERS_ENABLED", False)
+    assert app_settings.effective_markers_enabled() is False
+
+
+def test_effective_markers_prefers_the_persisted_choice(
+    settings_file: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The persisted choice wins over the config default IN BOTH DIRECTIONS — a persisted
+    # False must not be shadowed by a True default, and vice versa (ADR-027 D2's layering).
+    monkeypatch.setattr(config, "EPISTEMICS_MARKERS_ENABLED", True)
+    app_settings.set_markers_enabled(False)
+    assert app_settings.effective_markers_enabled() is False
+    monkeypatch.setattr(config, "EPISTEMICS_MARKERS_ENABLED", False)
+    app_settings.set_markers_enabled(True)
+    assert app_settings.effective_markers_enabled() is True
+
+
+def test_markers_enabled_ignores_a_non_bool_stored_value(settings_file: Path) -> None:
+    # A hand-edited settings.json ("true" as a string, 1, null) must degrade to "never set",
+    # not crash or truthiness-coerce — the same fail-safe posture as load_user_settings itself.
+    app_settings.save_user_settings({"epistemics_markers_enabled": "true"})
+    assert app_settings.get_markers_enabled() is None

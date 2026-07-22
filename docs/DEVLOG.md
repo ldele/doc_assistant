@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-07-21 · class: append-only -->
+<!-- status: active · updated: 2026-07-22 · class: append-only -->
 
 # DEVLOG — doc_assistant
 
@@ -9,6 +9,70 @@ Format: What changed | Why | Rejected alternatives | What it opens
 
 > Entries **2026-07-14 and earlier** live in [`docs/archive/DEVLOG-archive-001.md`](archive/DEVLOG-archive-001.md)
 > (moved verbatim 2026-07-21). This file keeps 2026-07-15 onward.
+
+---
+## 2026-07-22 — E3: persisted epistemics answer-layer toggle (ADR-027 D2) — full-stack
+
+ROADMAP row E3 (ADR-027 D2 — the last unbuilt half of the surfacing split). Whether epistemics
+*influences* the answer layer (the marker chips) is now a persisted user setting, layered as a
+**three-layer resolution**: U1b per-turn override > persisted setting > `EPISTEMICS_MARKERS_ENABLED`
+env default. The effective value is snapshotted per turn into `AnswerRecord` (ADR-011 instrument
+discipline). **Staged, not committed** (cpc §13). Full suite **1199 passed** (+17); ruff ·
+`ruff format` · `mypy --strict src` (65) · bandit · **svelte-check 0/0 (137)** · **npm test 34/34**
+· docs_check 0/0 · integrity_check 0/0 (492).
+
+**Backend.** `app_settings.get/set_markers_enabled` + `effective_markers_enabled()` (the
+`effective_llm` pattern — persisted if set, else config; re-read each turn so a toggle applies
+next-turn, no restart). `_resolve_turn_knobs` baselines the markers knob on the persisted-effective
+default; `_overrides_note` now takes `markers_default=` and compares against **it**, not the env
+constant — a persisted choice is the user's default, and stamping it "Session override (this answer
+only)" on every turn would be a provenance lie (the note fires only on a genuine per-turn U1b diff).
+New additive nullable `answer_records.epistemics_markers_enabled` (`_ADDITIVE_COLUMNS`; NULL = pre-E3
+row = honestly "unknown"), recorded on **both** result paths (AI + human-mode) via
+`_ProvenanceInputs.markers_enabled` / `record_answer(epistemics_markers_enabled=)`, read back in
+`AnswerProvenance`. Deliberately NOT folded into `prompt_version` (same rule as the F2 scope: it
+never reaches the prompt).
+
+**Wire + frontend.** `SettingsUpdate += epistemics_markers_enabled` (validator: the toggle alone is a
+valid body; empty body still 422). `_settings_view` serves the **effective** value (the raw constant
+would go stale on the first toggle — the provider/model rule), which also makes the U1b sandbox
+baseline correct for free. New "Answer epistemics" Settings section (persisted toggle, snaps back on
+error) between Provider and RAG sandbox; `api.ts setMarkersEnabled`; `types.ts` meaning-shift note.
+
+**Tests (+17).** Precedence unit tests (persisted beats config both directions; non-bool stored value
+degrades to "never set"); knob-layering tests incl. the two provenance-honesty pins (persisted-off →
+`overrides_note == ""`; override-vs-persisted diff reads `(default False)`); provenance round-trip
+(False recorded / legacy row → None); API round-trip (POST persists → GET serves effective; toggle-only
+body valid); the D3 boundary from the persisted side (persisted-off still attaches the evaluation
+strip); + an AnswerRecord snapshot assertion on a real (fake-RAG) turn. **Test-infra hardening:** 4
+files gained an autouse `SETTINGS_PATH` isolation fixture — `_resolve_turn_knobs`/`_settings_view` now
+read the persisted setting, so an unpatched suite would read the dev box's real `settings.json` (the
+KI-22 class of environmental mislabel, preempted). Existing tests patching the dead
+`chat_controller.EPISTEMICS_MARKERS_ENABLED` namespace copy were repointed at `config.` (the layer the
+resolution actually reads).
+
+**Live $0 verify (real corpus, ollama/llama3.1:8b — KI-4 honored, provider checked first).** Settings
+UI: new section renders (light, 375px → 0 overflow, 0 console errors); toggle off → `settings.json`
+gains `epistemics_markers_enabled: false` → GET serves False → the sandbox baseline follows; sandbox
+override flips session-only (file untouched — the boundary held live). One real SSE turn (step → 79
+tokens → result → done) recorded `epistemics_markers_enabled = 0` on the newest `answer_records` row.
+Boot migration verified live: `schema_migrated_at_startup` added the new column (plus, notably,
+`retrieval_scope_json` + `chunk_key` — this box's real DB had never received the E1.1/F2 columns; the
+KI-23 in-app migration caught all three). State restored after verify (key removed → "never set");
+side effect: one `e3-verify` conversation in this box's history.
+
+**Fix in passing.** `.env.example`'s `EPISTEMICS_MARKERS_ENABLED` block claimed "default off (R7)" —
+stale since the KI-7 retirement flipped the default to true; rewritten to state the real default + the
+three-layer resolution + the D2/D3 boundary. ROADMAP E0–E2 status cells trued up to their commit
+hashes (they read "staged" but the user committed them 2026-07-21).
+
+**Rejected.** Folding the flag into `prompt_version` (pollutes eval joins; never reaches the prompt);
+an unset/revert-to-default API affordance (YAGNI — the UI only sets true/false, and "never set" is
+recoverable by deleting the key); gating the D3 strip (ADR-027's boundary is explicit).
+
+**Opens.** E4 (exploration surfaces) / E5 (gap list) per the plan's sequence; RG-019 still deferred
+(measurement-gated, moot at 0 stance); Node-B stance regen on the RTX box to make the chips + strip
+non-trivial on real data.
 
 ---
 ## 2026-07-21 — E2: always-on source-evaluation strip (ADR-027 D3) — full-stack

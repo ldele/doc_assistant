@@ -1,6 +1,13 @@
 <script lang="ts">
   import type { Settings, IngestStatus, RagOverrides } from './types'
-  import { getSettings, setSourceDir, setLlmProvider, startIngest, getIngestStatus } from './api'
+  import {
+    getSettings,
+    setSourceDir,
+    setLlmProvider,
+    setMarkersEnabled,
+    startIngest,
+    getIngestStatus,
+  } from './api'
   import { onDestroy } from 'svelte'
   import { fade, fly } from 'svelte/transition'
   import { getTheme, setTheme, applyTheme, type Theme } from './theme'
@@ -55,6 +62,25 @@
   let llmModel = $state('')
   let llmBusy = $state(false)
   let llmError = $state<string | null>(null)
+
+  // ADR-027 D2 (E3) — the persisted answer-layer epistemics default. Distinct from the RAG
+  // sandbox's session-only override below: this one survives a restart and becomes the
+  // sandbox's baseline. On failure the checkbox snaps back to the server state (no lying UI).
+  let markersBusy = $state(false)
+  let markersError = $state<string | null>(null)
+
+  async function applyMarkersDefault(enabled: boolean): Promise<void> {
+    if (markersBusy) return
+    markersBusy = true
+    markersError = null
+    try {
+      settings = await setMarkersEnabled(enabled)
+    } catch (e) {
+      markersError = String(e)
+    } finally {
+      markersBusy = false
+    }
+  }
 
   async function applyProvider(): Promise<void> {
     if (llmBusy || !llmProvider || !llmModel.trim()) return
@@ -361,6 +387,29 @@
       <div aria-live="polite">
         {#if llmError}
           <p class="err" role="alert">{llmError}</p>
+        {/if}
+      </div>
+    </section>
+
+    <section>
+      <h3>Answer epistemics</h3>
+      <p class="hint">
+        Whether corpus epistemics (contested / superseded chips) may appear on an answer's
+        sources. Saved as your default; the per-source evaluation strip below answers is
+        always shown either way.
+      </p>
+      <label class="switch-row">
+        <input
+          type="checkbox"
+          checked={settings.epistemics_markers_enabled}
+          disabled={markersBusy}
+          onchange={(e) => void applyMarkersDefault((e.target as HTMLInputElement).checked)}
+        />
+        Epistemics chips in answers <span class="muted">(saved default)</span>
+      </label>
+      <div aria-live="polite">
+        {#if markersError}
+          <p class="err" role="alert">{markersError}</p>
         {/if}
       </div>
     </section>

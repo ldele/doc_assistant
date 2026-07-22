@@ -33,6 +33,17 @@ from doc_assistant.reviewer import ReviewResult
 # ============================================================
 
 
+@pytest.fixture(autouse=True)
+def _isolate_user_settings(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Point app_settings at a temp file for EVERY test in this module (E3).
+
+    ``_resolve_turn_knobs`` now reads the persisted answer-layer epistemics default
+    (ADR-027 D2) on every turn — without this, each turn test would read the dev box's real
+    ``settings.json``, and a box with the toggle persisted-off would silently flip marker
+    behavior in the suite (test-infra leak, the KI-22 class of mislabel)."""
+    monkeypatch.setattr(chat_controller.app_settings, "SETTINGS_PATH", tmp_path / "settings.json")
+
+
 @pytest.fixture
 def temp_db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     """Point the SQLAlchemy engine at a temp SQLite file and create schema."""
@@ -235,6 +246,52 @@ def test_resolve_turn_knobs_applies_overrides_and_notes_the_diff():
     k = _resolve_turn_knobs(RagOverrides(top_k=5, synthesis_mode="human"))
     assert k.top_k == 5 and k.synthesis_mode == "human"
     assert "top_k=5" in k.overrides_note and "synthesis_mode=human" in k.overrides_note
+
+
+# ============================================================
+# ADR-027 D2 (E3) — persisted answer-layer default layering
+# ============================================================
+
+
+def test_persisted_markers_default_applies_without_an_override():
+    # The persisted setting is layer 2 of the three-layer resolution: with no per-turn
+    # override, it beats the config default (which is True on this suite's env).
+    from doc_assistant.chat_controller import _resolve_turn_knobs
+
+    chat_controller.app_settings.set_markers_enabled(False)
+    k = _resolve_turn_knobs(None)
+    assert k.markers_enabled is False
+
+
+def test_persisted_markers_default_is_not_a_session_override():
+    # A persisted choice is the user's DEFAULT, not a per-turn override — stamping it
+    # "Session override (this answer only)" on every turn would be a provenance lie.
+    from doc_assistant.chat_controller import _resolve_turn_knobs
+
+    chat_controller.app_settings.set_markers_enabled(False)
+    k = _resolve_turn_knobs(None)
+    assert k.overrides_note == ""  # byte-identical turn — no lying override note
+
+
+def test_u1b_override_beats_the_persisted_default_and_notes_the_diff():
+    # Layer 1 (U1b per-turn) still wins over layer 2 (persisted), and the note's baseline is
+    # the PERSISTED default — the diff reads "=True (default False)", not vs the config value.
+    from doc_assistant.chat_controller import _resolve_turn_knobs
+
+    chat_controller.app_settings.set_markers_enabled(False)
+    k = _resolve_turn_knobs(RagOverrides(epistemics_markers_enabled=True))
+    assert k.markers_enabled is True
+    assert "epistemics_markers_enabled=True (default False)" in k.overrides_note
+
+
+def test_override_equal_to_the_persisted_default_fires_no_note():
+    # An override that matches the persisted default is a no-diff: no note, honest silence.
+    from doc_assistant.chat_controller import _resolve_turn_knobs
+
+    chat_controller.app_settings.set_markers_enabled(False)
+    k = _resolve_turn_knobs(RagOverrides(epistemics_markers_enabled=False))
+    assert k.markers_enabled is False
+    assert k.overrides_note == ""
 
 
 # ============================================================
@@ -467,7 +524,7 @@ def _stub_source_eval(monkeypatch, *, evals=None, current="gv1", sidecar="gv1", 
 def test_markers_flat_join(monkeypatch, temp_db):
     # D2 answer-surface markers: a flat chunk's contested evaluation → a chip when markers are on.
     monkeypatch.setattr(chat_controller, "is_library_query", lambda t: False)
-    monkeypatch.setattr(chat_controller, "EPISTEMICS_MARKERS_ENABLED", True)  # R7: off by default
+    monkeypatch.setattr(config, "EPISTEMICS_MARKERS_ENABLED", True)  # R7: off by default
     _stub_source_eval(monkeypatch, evals={"d1:0": _eval(coverage="contested")})
     controller = ChatController(rag=FakeRAG(_three_clean_sources(), ["Answer [1]."]))
     result = _final(_results(controller, Session(), "q"))
@@ -480,7 +537,7 @@ def test_markers_pc_join_via_chunk_key(monkeypatch, temp_db):
     # E1.1 (KI-8): a PC parent joins DIRECTLY on its {doc}:p{parent_index} key. d1's parent_index
     # 0 → key "d1:p0" (the re-projection retired the coarse text-containment).
     monkeypatch.setattr(chat_controller, "is_library_query", lambda t: False)
-    monkeypatch.setattr(chat_controller, "EPISTEMICS_MARKERS_ENABLED", True)
+    monkeypatch.setattr(config, "EPISTEMICS_MARKERS_ENABLED", True)
     _stub_source_eval(monkeypatch, evals={"d1:p0": _eval(superseded=True)})
     controller = ChatController(rag=FakeRAG(_pc_sources(), ["Answer [1]."]))
     result = _final(_results(controller, Session(), "q"))
@@ -492,7 +549,7 @@ def test_markers_pc_join_via_chunk_key(monkeypatch, temp_db):
 def test_markers_absent_is_byte_identical(monkeypatch, temp_db):
     # No concept graph → the strip no-ops: every markers empty, no chip, source_eval None.
     monkeypatch.setattr(chat_controller, "is_library_query", lambda t: False)
-    monkeypatch.setattr(chat_controller, "EPISTEMICS_MARKERS_ENABLED", True)
+    monkeypatch.setattr(config, "EPISTEMICS_MARKERS_ENABLED", True)
     _stub_source_eval(monkeypatch, current=None)
     controller = ChatController(rag=FakeRAG(_three_clean_sources(), ["Answer [1]."]))
     result = _final(_results(controller, Session(), "q"))
@@ -521,7 +578,7 @@ def test_source_evaluation_load_failure_does_not_break_turn_but_warns(monkeypatc
     # DB) must leave the turn intact, unmarked, no strip — but never silently: under an always-on
     # strip a swallowed failure is a silently-lying UI, so it WARNs.
     monkeypatch.setattr(chat_controller, "is_library_query", lambda t: False)
-    monkeypatch.setattr(chat_controller, "EPISTEMICS_MARKERS_ENABLED", True)
+    monkeypatch.setattr(config, "EPISTEMICS_MARKERS_ENABLED", True)
     fake_log = _FakeLog()
     monkeypatch.setattr(chat_controller, "log", fake_log)
     monkeypatch.setattr(chat_controller, "current_graph_version", lambda: "gv1")
@@ -565,7 +622,7 @@ def test_d3_strip_always_on_even_when_markers_disabled(monkeypatch, temp_db):
     # THE D3 boundary: the D2 influence toggle (markers) is OFF, but the assessment strip STILL
     # attaches per-source evaluation (coverage + year) + the freshness summary. D3 is not gated.
     monkeypatch.setattr(chat_controller, "is_library_query", lambda t: False)
-    monkeypatch.setattr(chat_controller, "EPISTEMICS_MARKERS_ENABLED", False)  # D2 influence off
+    monkeypatch.setattr(config, "EPISTEMICS_MARKERS_ENABLED", False)  # D2 influence off
     _stub_source_eval(monkeypatch, evals={"d1:0": _eval(coverage="contested")}, years={"d1": 2021})
     controller = ChatController(rag=FakeRAG(_three_clean_sources(), ["Answer [1]."]))
     result = _final(_results(controller, Session(), "q"))
@@ -606,13 +663,56 @@ def test_markers_disabled_via_opt_out_flag(monkeypatch, temp_db):
     # The D2 opt-out leaves the answer-surface markers empty even with a contested assessment —
     # but (D3) the evaluation is still attached. The toggle governs influence, not assessment.
     monkeypatch.setattr(chat_controller, "is_library_query", lambda t: False)
-    monkeypatch.setattr(chat_controller, "EPISTEMICS_MARKERS_ENABLED", False)
+    monkeypatch.setattr(config, "EPISTEMICS_MARKERS_ENABLED", False)
     _stub_source_eval(monkeypatch, evals={"d1:0": _eval(coverage="contested")})
     controller = ChatController(rag=FakeRAG(_three_clean_sources(), ["Answer [1]."]))
     result = _final(_results(controller, Session(), "q"))
     assert all(s.markers == [] for s in result.sources)  # no answer-surface chip
     assert "⚠" not in result.sources_md
     assert result.sources[0].evaluation is not None  # strip still assessed (D3)
+
+
+def test_persisted_default_gates_markers_and_is_recorded_in_provenance(monkeypatch, temp_db):
+    # E3 (ADR-027 D2): the persisted toggle gates the answer-surface chips exactly like the
+    # config default would, the D3 strip still attaches (the boundary), no "Session override"
+    # note fires (it's a default, not an override) — and the EFFECTIVE value lands on the
+    # AnswerRecord (ADR-011 instrument snapshot): False here, despite config saying True.
+    from sqlalchemy import select
+
+    from doc_assistant.db.models import AnswerRecord
+    from doc_assistant.db.session import session_scope
+
+    monkeypatch.setattr(chat_controller, "is_library_query", lambda t: False)
+    monkeypatch.setattr(config, "EPISTEMICS_MARKERS_ENABLED", True)  # config layer: on
+    chat_controller.app_settings.set_markers_enabled(False)  # persisted layer: off — wins
+    _stub_source_eval(monkeypatch, evals={"d1:0": _eval(coverage="contested")})
+    controller = ChatController(rag=FakeRAG(_three_clean_sources(), ["Answer [1]."]))
+    result = _final(_results(controller, Session(), "q"))
+    assert all(s.markers == [] for s in result.sources)  # persisted default gated the chips
+    assert result.sources[0].evaluation is not None  # D3 strip unaffected (ADR-027 boundary)
+    assert "Session override" not in result.provenance_card_md  # a default, not an override
+    with session_scope() as session:
+        recorded = session.execute(select(AnswerRecord.epistemics_markers_enabled)).scalar_one()
+    assert recorded is False  # the effective value, snapshotted
+
+
+def test_effective_markers_value_is_recorded_true_on_a_default_turn(monkeypatch, temp_db):
+    # The recording is the effective value, not merely "an override happened": a plain
+    # default-on turn records True (pre-E3 rows read back NULL/None — covered in
+    # test_provenance's round-trip).
+    from sqlalchemy import select
+
+    from doc_assistant.db.models import AnswerRecord
+    from doc_assistant.db.session import session_scope
+
+    monkeypatch.setattr(chat_controller, "is_library_query", lambda t: False)
+    monkeypatch.setattr(config, "EPISTEMICS_MARKERS_ENABLED", True)
+    _stub_source_eval(monkeypatch, evals={})
+    controller = ChatController(rag=FakeRAG(_three_clean_sources(), ["Answer [1]."]))
+    _final(_results(controller, Session(), "q"))
+    with session_scope() as session:
+        recorded = session.execute(select(AnswerRecord.epistemics_markers_enabled)).scalar_one()
+    assert recorded is True
 
 
 # ============================================================
@@ -670,7 +770,7 @@ def test_overrides_isolation_covers_all_five_fields(monkeypatch, temp_db):
     # monkeypatched to False only to give the override something to differ from; nothing here
     # touches the module during the turns themselves (no monkeypatch in that path).
     monkeypatch.setattr(chat_controller, "is_library_query", lambda t: False)
-    monkeypatch.setattr(chat_controller, "EPISTEMICS_MARKERS_ENABLED", False)
+    monkeypatch.setattr(config, "EPISTEMICS_MARKERS_ENABLED", False)
     _stub_source_eval(monkeypatch, evals={"d1:0": _eval(coverage="contested")})
     captured_full_text: list[str] = []
     real_record_answer = chat_controller.record_answer
@@ -712,7 +812,7 @@ def test_overrides_isolation_covers_all_five_fields(monkeypatch, temp_db):
 
 def test_epistemics_markers_override_per_turn(monkeypatch, temp_db):
     monkeypatch.setattr(chat_controller, "is_library_query", lambda t: False)
-    monkeypatch.setattr(chat_controller, "EPISTEMICS_MARKERS_ENABLED", False)  # locked: off
+    monkeypatch.setattr(config, "EPISTEMICS_MARKERS_ENABLED", False)  # locked: off
     _stub_source_eval(monkeypatch, evals={"d1:0": _eval(coverage="contested")})
     controller = ChatController(rag=FakeRAG(_three_clean_sources(), ["Answer [1]."]))
     result = _final(

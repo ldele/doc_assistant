@@ -133,6 +133,42 @@ def effective_llm() -> tuple[str, str]:
 
 
 # ============================================================
+# Epistemics answer-layer toggle (ADR-027 D2, E3)
+# ============================================================
+# Whether epistemics *influences* the answer layer (the marker chips on sources) — a persisted,
+# user-owned default layered between the config env default and U1b's per-turn sandbox override:
+#   per-turn RagOverrides.epistemics_markers_enabled  >  this setting  >  config default.
+# Governs the answer surface ONLY: the D3 source-evaluation strip is always-on and never reads
+# this (ADR-027's boundary). Same shape as the LLM selection above — a non-secret per-install
+# preference, so it survives a sidecar restart.
+
+
+def get_markers_enabled() -> bool | None:
+    """The persisted answer-layer epistemics choice, or ``None`` if the user never set one."""
+    stored = load_user_settings().get("epistemics_markers_enabled")
+    return stored if isinstance(stored, bool) else None
+
+
+def set_markers_enabled(enabled: bool) -> None:
+    """Persist whether epistemics may influence the answer layer (ADR-027 D2)."""
+    settings = load_user_settings()
+    settings["epistemics_markers_enabled"] = enabled
+    save_user_settings(settings)
+    log.info("epistemics_markers_enabled_set", enabled=enabled)
+
+
+def effective_markers_enabled() -> bool:
+    """The live answer-layer default: the persisted choice if present, else the config default
+    (``config.EPISTEMICS_MARKERS_ENABLED``). The per-turn resolution and the settings view both
+    read through this — mirroring :func:`effective_llm` — so a toggle and a fresh boot agree.
+    U1b's per-turn override is applied by the caller on top, never here (request-scoped)."""
+    stored = get_markers_enabled()
+    if stored is not None:
+        return stored
+    return config.EPISTEMICS_MARKERS_ENABLED
+
+
+# ============================================================
 # Demo-corpus bookkeeping (ADR-025 F3)
 # ============================================================
 # Two per-install pointers, not user-facing preferences: which folder holds the demo corpus, and

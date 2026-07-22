@@ -220,6 +220,20 @@ def test_record_answer_excludes_chunk_key_from_persistence(temp_db: Path):
     assert prov is not None and prov.retrieved_chunks[0].chunk_key is None
 
 
+def test_record_answer_roundtrips_epistemics_markers_enabled(temp_db: Path):
+    """ADR-027 D2 (E3): the effective answer-layer flag is snapshotted per record and reads
+    back as recorded — and a record written without it reads back None ("unknown", the honest
+    pre-E3 state), never coerced to either boolean."""
+    rid_off = record_answer(
+        query="q", answer="a", retrieved_chunks=[], epistemics_markers_enabled=False
+    )
+    rid_unknown = record_answer(query="q2", answer="a2", retrieved_chunks=[])
+    prov_off = get_record(rid_off)
+    prov_unknown = get_record(rid_unknown)
+    assert prov_off is not None and prov_off.epistemics_markers_enabled is False
+    assert prov_unknown is not None and prov_unknown.epistemics_markers_enabled is None
+
+
 def test_get_record_returns_none_for_missing(temp_db: Path):
     assert get_record("does-not-exist") is None
 

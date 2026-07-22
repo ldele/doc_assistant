@@ -131,6 +131,9 @@ export interface Settings {
   use_parent_child: boolean
   synthesis_mode: string
   use_multi_query: boolean
+  // ADR-027 D2 (E3): the *effective* persisted answer-layer epistemics default (the persisted
+  // toggle if set, else the config default) — same effective-value rule as provider/model.
+  // Doubles as the RAG-sandbox baseline; U1b's per-turn override still wins for the session.
   epistemics_markers_enabled: boolean
   reviewer_evidence_chars: number
   parent_chunk: [number, number]

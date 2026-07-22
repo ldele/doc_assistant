@@ -134,6 +134,48 @@ def test_post_settings_source_dir_only_backward_compat(
     assert fake.reconfigure_calls == []
 
 
+# ============================================================
+# ADR-027 D2 (E3) — the persisted answer-layer epistemics toggle
+# ============================================================
+
+
+def test_post_settings_persists_epistemics_toggle(
+    settings_file: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("doc_assistant.config.EPISTEMICS_MARKERS_ENABLED", True)
+    client = TestClient(create_app(controller=FakeController()))
+    r = client.post("/api/settings", json={"epistemics_markers_enabled": False})
+    assert r.status_code == 200
+    assert r.json()["epistemics_markers_enabled"] is False
+    # persisted: a fresh GET reflects the choice (the effective value, not the config default)
+    assert client.get("/api/settings").json()["epistemics_markers_enabled"] is False
+    # and it survives to the module layer the turn resolution reads
+    from doc_assistant import app_settings
+
+    assert app_settings.get_markers_enabled() is False
+
+
+def test_settings_view_serves_the_effective_epistemics_default(
+    settings_file: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Never set → the config default; set → the persisted choice wins (ADR-011's effective-value
+    # rule, same as provider/model — the raw constant would go stale on the first toggle).
+    monkeypatch.setattr("doc_assistant.config.EPISTEMICS_MARKERS_ENABLED", False)
+    client = TestClient(create_app(controller=FakeController()))
+    assert client.get("/api/settings").json()["epistemics_markers_enabled"] is False
+    client.post("/api/settings", json={"epistemics_markers_enabled": True})
+    assert client.get("/api/settings").json()["epistemics_markers_enabled"] is True
+
+
+def test_post_settings_toggle_only_body_is_valid(settings_file: Path) -> None:
+    # The toggle alone satisfies the at-least-one-field validator; an empty body still 422s.
+    client = TestClient(create_app(controller=FakeController()))
+    assert (
+        client.post("/api/settings", json={"epistemics_markers_enabled": True}).status_code == 200
+    )
+    assert client.post("/api/settings", json={}).status_code == 422
+
+
 def test_settings_view_reports_providers_list(
     settings_file: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

@@ -199,6 +199,24 @@ CANDIDATE_K = int(os.getenv("CANDIDATE_K", "20"))
 if CANDIDATE_K < TOP_K:
     raise ValueError(f"CANDIDATE_K ({CANDIDATE_K}) must be >= TOP_K ({TOP_K})")
 
+# Upper bound on the number of candidates fed to the cross-encoder reranker in one turn.
+# Single-query retrieval (the shipped default — USE_MULTI_QUERY defaults false) unions at most
+# 2*CANDIDATE_K docs across the two ensemble arms, so this cap PROVABLY never bites the default
+# path. Multi-query (opt-in / U1 per-turn override) unions candidates across up to 4 query
+# phrasings, which grew the rerank input — and thus the CPU cross-encoder cost — roughly 4x
+# unbounded. The cap bounds that. Expressed relative to CANDIDATE_K so it scales with the
+# candidate budget rather than being a corpus-tuned magic number, and stays > 2*CANDIDATE_K so
+# the single-query path is byte-identical (guarded by a test). Candidates accumulate
+# original-query-first with first-seen dedup, so the truncation drops the lowest-priority
+# cross-variation tail, never the primary query's hits. The multiplier is a cost/recall tradeoff
+# on the multi-query path — eval-gated (RIGOR_TODO RG-022), not a validated optimum.
+RERANK_CANDIDATE_CAP = int(os.getenv("RERANK_CANDIDATE_CAP", str(CANDIDATE_K * 3)))
+if RERANK_CANDIDATE_CAP < 2 * CANDIDATE_K:
+    raise ValueError(
+        f"RERANK_CANDIDATE_CAP ({RERANK_CANDIDATE_CAP}) must be >= 2*CANDIDATE_K "
+        f"({2 * CANDIDATE_K}) or it would truncate the single-query default path"
+    )
+
 # Hybrid-retrieval ensemble weight on the BM25 (sparse) arm; the vector (dense)
 # arm gets the complement (1 - BM25_WEIGHT), so the two always sum to 1.0. LOCKED
 # at 0.4 (vector 0.6) but "vibes-locked" — the split was never measured

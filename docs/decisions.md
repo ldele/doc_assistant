@@ -37,3 +37,4 @@ the locked retrieval/chunking settings that predate per-file ADRs.
 | [ADR-025](decisions/ADR-025-corpus-folders-retrieval-scope.md) | Corpus groups = folders; query-time doc-hash retrieval scoping; per-turn scope in provenance | accepted (built, F1+F2+F3) |
 | [ADR-026](decisions/ADR-026-rebuild-migrations.md) | Rebuild migrations for shape changes SQLite can't ALTER; `document_meta` gets its missing FK | accepted (built) |
 | [ADR-027](decisions/ADR-027-epistemics-surfacing-split.md) | Epistemics surfacing split: assessment always-on (source-evaluation strip), influence opt-in (answer layer) | accepted |
+| [ADR-028](decisions/ADR-028-concept-taxonomy-polyhierarchy-skos.md) | Concept taxonomy amendment: unified typed polyhierarchical SKOS graph (amends ADR-019 — supersedes C1/D1/D6, reverses D9) | accepted |

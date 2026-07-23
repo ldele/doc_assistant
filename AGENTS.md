@@ -68,6 +68,15 @@ When both could do it: stay in the tool that's already open.
 
 ## Handoff protocol
 
+**Trigger (non-negotiable gate).** Any user signal to stop, pause, wrap up, hand off, or switch tools
+— "let's stop", "that's it for today", "hand off", "switch to Cowork/Code", "pick this up later" — is
+a **MUST-run session-close**: write the baton entry **before yielding the turn**, in the same response
+that acknowledges the stop. Do not end such a turn without it. If unsure whether the session did
+anything worth recording, write the entry anyway (a one-line "no code change; next: X" baton is cheap;
+a lost handoff is not). This is the one step that keeps the next session — or the next tool — able to
+resume; skipping it is a protocol violation, not a judgment call. Run
+`python tools/conventions/rungate.py keypoint session-close` to get the full close checklist.
+
 End of any non-trivial session: add a baton entry to `.claude/SESSION.md` — **newest on top**, heading
 `## YYYY-MM-DD — <Code|Cowork> — <topic>` — active tool, what's done, which tool picks up, next action
 by file (file:line where possible). Append-only; correct with a new entry, never rewrite old ones.

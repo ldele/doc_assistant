@@ -14,6 +14,7 @@ Model-free: a bare pipeline (``__new__``) with fake retrievers/reranker, plus a 
 
 from __future__ import annotations
 
+from collections import OrderedDict
 from typing import Any
 
 import pytest
@@ -66,7 +67,7 @@ def _rig(monkeypatch: pytest.MonkeyPatch) -> RAGPipeline:
     rag = RAGPipeline.__new__(RAGPipeline)
     docs = _docs()
     rag._bm25_docs = docs
-    rag._scoped = None
+    rag._scoped = OrderedDict()
     rag._weights = [0.4, 0.6]
     rag.bm25_weight = 0.4
     rag.db = _RecordingDb(docs)
@@ -92,7 +93,7 @@ def test_scope_none_uses_the_prebuilt_ensemble_and_builds_no_filter(
     assert len(out) == 4
     assert rag.unscoped_calls == ["bm25"]  # type: ignore[attr-defined]
     assert rag.db.calls == []  # no retriever rebuilt, so no filter was ever constructed
-    assert rag._scoped is None
+    assert not rag._scoped  # the unscoped path never populates the scoped cache
 
 
 def test_retrieve_passes_scope_through(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -156,23 +157,55 @@ def test_a_scope_naming_no_indexed_chunk_falls_back_to_vector_only(
     assert _in_clause(rag.db.calls[0]) == {"ghost"}
 
 
-# --- S5: the single-slot cache ----------------------------------------------------------------- #
+# --- S5: the LRU scoped-ensemble cache ------------------------------------------------- #
 
 
-def test_repeated_scope_reuses_the_ensemble_and_a_changed_scope_rebuilds(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_repeated_scope_reuses_the_ensemble(monkeypatch: pytest.MonkeyPatch) -> None:
     rag = _rig(monkeypatch)
 
     rag.retrieve_with_scores("bm25", top_k=10, scope=frozenset({"a", "b"}))
     rag.retrieve_with_scores("bm25", top_k=10, scope=frozenset({"a", "b"}))
-    assert len(rag.db.calls) == 1  # second turn hit the cache
+    assert len(rag.db.calls) == 1  # second turn hit the cache — no rebuild
 
-    # A membership edit changes the key, so the slot self-invalidates — no stale scope.
+    # A different scope is a different key, so it builds once.
     rag.retrieve_with_scores("bm25", top_k=10, scope=frozenset({"a"}))
     assert len(rag.db.calls) == 2
     assert _in_clause(rag.db.calls[1]) == {"a"}
 
-    # And back again: one slot, so the earlier scope is genuinely rebuilt, not silently reused.
-    rag.retrieve_with_scores("bm25", top_k=10, scope=frozenset({"a", "b"}))
+
+def test_lru_keeps_alternating_scopes_warm(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The whole point of the LRU over the old single slot: alternating between two folders must
+    NOT rebuild BM25 every turn. Under the single slot this sequence rebuilt on every switch."""
+    rag = _rig(monkeypatch)
+    ab, a = frozenset({"a", "b"}), frozenset({"a"})
+
+    rag.retrieve_with_scores("bm25", top_k=10, scope=ab)  # build ab
+    rag.retrieve_with_scores("bm25", top_k=10, scope=a)  # build a
+    assert len(rag.db.calls) == 2
+
+    # Alternate back and forth: both are still warm, so no further rebuilds.
+    rag.retrieve_with_scores("bm25", top_k=10, scope=ab)
+    rag.retrieve_with_scores("bm25", top_k=10, scope=a)
+    rag.retrieve_with_scores("bm25", top_k=10, scope=ab)
+    assert len(rag.db.calls) == 2  # single-slot would have made this 5
+
+
+def test_lru_evicts_the_least_recently_used_scope_past_capacity(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The cache is bounded: once more than _SCOPED_ENSEMBLE_CACHE_SIZE distinct scopes are seen,
+    the least-recently-used one is evicted and must be rebuilt when it returns."""
+    monkeypatch.setattr("doc_assistant.pipeline._SCOPED_ENSEMBLE_CACHE_SIZE", 2)
+    rag = _rig(monkeypatch)
+    a, b, c = frozenset({"a"}), frozenset({"b"}), frozenset({"c"})
+
+    rag.retrieve_with_scores("bm25", top_k=10, scope=a)  # build a  -> cache [a]
+    rag.retrieve_with_scores("bm25", top_k=10, scope=b)  # build b  -> cache [a, b]
+    rag.retrieve_with_scores("bm25", top_k=10, scope=c)  # build c  -> evicts a, cache [b, c]
     assert len(rag.db.calls) == 3
+
+    rag.retrieve_with_scores("bm25", top_k=10, scope=b)  # b still warm -> no rebuild
+    assert len(rag.db.calls) == 3
+
+    rag.retrieve_with_scores("bm25", top_k=10, scope=a)  # a was evicted -> rebuild
+    assert len(rag.db.calls) == 4

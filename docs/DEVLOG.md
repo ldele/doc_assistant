@@ -11,6 +11,44 @@ Format: What changed | Why | Rejected alternatives | What it opens
 > (moved verbatim 2026-07-21). This file keeps 2026-07-15 onward.
 
 ---
+## 2026-07-23 — Retrieval hygiene: scoped-ensemble LRU + reranker-input cap under multi-query
+
+Two cost fixes from the plan's post-E5 "retrieval hygiene" note (`docs/PLAN_2026-07-21_exploration-epistemics.md`),
+both in `pipeline.py`. **Staged, not committed** (cpc §13). Full suite **1221 passed / 1 skipped**
+(+3 net); ruff · `ruff format` · `mypy --strict src` · bandit. Backend-only, frontend untouched.
+
+**(1) Scoped-ensemble memo: single slot → small LRU.** The folder-scoped ensemble (ADR-025 F2 /
+RG-020) was memoised in **one** slot keyed on the scope's hash set, so alternating between two
+folders rebuilt the BM25 arm (~20 µs/chunk, measured RG-020) on *every* turn. Replaced with an
+`OrderedDict` LRU (`_SCOPED_ENSEMBLE_CACHE_SIZE = 4`): `get`+`move_to_end` on hit, `popitem(last=False)`
+past capacity. **Provably non-degrading** — the cached object is byte-for-byte the ensemble a rebuild
+would produce; only *when* a rebuild happens changes. `scope=None` (the whole-corpus default path)
+never enters the cache. Guard tests: the alternating-scopes-stay-warm case (single slot made it 5
+rebuilds; LRU makes it 2) and an eviction case at a monkeypatched size of 2.
+
+**(2) Cap the cross-encoder input under multi-query.** Multi-query (opt-in — `USE_MULTI_QUERY`
+defaults false / U1 per-turn override) unions candidates across up to 4 query phrasings, growing the
+rerank input — and thus the CPU cross-encoder cost — ~4× unbounded. New `RERANK_CANDIDATE_CAP`
+(config, env-overridable, default `CANDIDATE_K * 3` = 60) truncates `all_candidates` before the
+`reranker.predict` call. **The single-query default path is byte-identical**: a single query unions at
+most `2*CANDIDATE_K` (= 40) across the two ensemble arms (the EnsembleRetriever-returns-full-union fact
+already documented at `config.py` BM25_WEIGHT), and the cap is validated `>= 2*CANDIDATE_K` at import,
+so it provably never bites there. Candidates accumulate original-query-first with first-seen dedup, so
+the truncated tail is the lowest-priority cross-variation hits, never the primary query's. Guard tests:
+the default cap leaves a full `2*CANDIDATE_K` single-query pool untouched; a capped multi-query union
+keeps exactly the original query's candidates.
+
+**Why / rejected.** *LRU size 4, a named structural constant not a tunable:* it trades a little
+memory (each entry holds a BM25 index over its subset) for latency and never affects output, so it is
+not eval-gated. *The reranker cap's default multiplier IS a cost/recall tradeoff on the multi-query
+path* — filed as **RG-022** (eval-gated), not asserted as an optimum; it ships now only because
+multi-query is off by default, so nothing in the shipped default path changes. Rejected: capping
+per-query contribution (more code, same effect since dedup already orders original-first); making the
+LRU size env-configurable (memory/latency knob, not a quality one — a named constant is honest and
+simpler). **Opens:** RG-022 (validate the cap multiplier on the MQ path once a reason to run MQ by
+default exists); the scoped-BM25 subset-statistics question (RG-020 part a) is unchanged by this.
+
+---
 ## 2026-07-22 — APIRouter split of `apps/api/main.py` (pure refactor, behavior-identical)
 
 The refactor the plan deferred through E4 and E5 (a behavior-preserving move doesn't belong inside a

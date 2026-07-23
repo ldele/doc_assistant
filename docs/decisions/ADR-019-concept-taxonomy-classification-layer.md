@@ -2,7 +2,8 @@
 
 # ADR-019 — Concept taxonomy: a curated classification layer over the derived concept graph
 
-- **Status:** accepted
+- **Status:** accepted (amended in part by [ADR-028](ADR-028-concept-taxonomy-polyhierarchy-skos.md),
+  2026-07-23 — supersedes Decisions C1/D1/D6, partially reverses D9; the rest stands)
 - **Date:** 2026-07-18
 - **Deciders:** user + Claude Code (routed from the 2026-07-18 `grill-me` — 8 branches resolved,
   1 parked-then-resolved by a research pass; ledger in `.claude/SESSION.md`)

@@ -174,6 +174,72 @@ def test_use_multi_query_none_follows_the_global(monkeypatch: pytest.MonkeyPatch
     assert calls2 == []
 
 
+# ---- RERANK_CANDIDATE_CAP: bound the cross-encoder input under multi-query --------------
+
+
+class _RecordingReranker:
+    """Records how many (query, doc) pairs each rerank call received."""
+
+    def __init__(self) -> None:
+        self.pair_counts: list[int] = []
+
+    def predict(self, pairs: list) -> list[float]:
+        self.pair_counts.append(len(pairs))
+        return [1.0 - 0.001 * i for i in range(len(pairs))]
+
+
+def _docs_for(tag: str, n: int) -> list[Document]:
+    return [
+        Document(page_content=f"{tag}-{i}", metadata={"doc_hash": f"{tag}{i}", "filename": tag})
+        for i in range(n)
+    ]
+
+
+def test_default_cap_never_truncates_the_single_query_path(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The shipped default (multi-query off) unions at most 2*CANDIDATE_K docs across the two
+    ensemble arms, and the default cap is >= that — so the reranker sees every candidate and the
+    default answer path is byte-identical to before the cap existed."""
+    from doc_assistant.config import CANDIDATE_K, RERANK_CANDIDATE_CAP
+
+    assert RERANK_CANDIDATE_CAP >= 2 * CANDIDATE_K  # the guarantee, asserted directly
+
+    monkeypatch.setattr("doc_assistant.pipeline.USE_MULTI_QUERY", False)
+    monkeypatch.setattr("doc_assistant.pipeline.USE_PARENT_CHILD", False)
+    rag = _bare_pipeline()
+    docs = _docs_for("s", 2 * CANDIDATE_K)  # the single-query maximum (both arms, disjoint)
+    rag.ensemble = RunnableLambda(lambda _q: docs)
+    reranker = _RecordingReranker()
+    rag.reranker = reranker
+
+    rag.retrieve_with_scores("q", top_k=10)
+
+    assert reranker.pair_counts == [2 * CANDIDATE_K]  # nothing truncated
+
+
+def test_multi_query_union_is_capped_keeping_original_query_first(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Under multi-query the union of per-phrasing candidates is bounded to RERANK_CANDIDATE_CAP.
+    Candidates accumulate original-query-first with first-seen dedup, so the survivors are the
+    primary query's hits — the low-priority cross-variation tail is what gets dropped."""
+    monkeypatch.setattr("doc_assistant.pipeline.USE_PARENT_CHILD", False)
+    monkeypatch.setattr("doc_assistant.pipeline.RERANK_CANDIDATE_CAP", 3)
+    rag = _bare_pipeline()
+    rag.expand_query = lambda _q: ["q", "v"]  # type: ignore[method-assign]
+    orig, var = _docs_for("orig", 3), _docs_for("var", 3)
+    rag.ensemble = RunnableLambda(lambda q: orig if q == "q" else var)
+    reranker = _RecordingReranker()
+    rag.reranker = reranker
+
+    out = rag.retrieve_with_scores("q", top_k=10, use_multi_query=True)
+
+    # 6 unique candidates were accumulated (orig-0..2 then var-0..2); the cap keeps the first 3.
+    assert reranker.pair_counts == [3]
+    assert {doc.metadata["filename"] for doc, _ in out} == {"orig"}
+
+
 # ---- ADR-011 / SPRINT-012 (U1c): the generation-model swap seam -------------------------
 
 

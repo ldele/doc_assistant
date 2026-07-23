@@ -1,6 +1,7 @@
 """RAG pipeline: retrieval, reranking, and answer generation."""
 
 import hashlib
+from collections import OrderedDict
 from collections.abc import Generator
 from typing import Any
 
@@ -20,6 +21,7 @@ from doc_assistant.config import (
     LLM_PROVIDER,
     OLLAMA_HOST,
     PC_CHROMA_PATH,
+    RERANK_CANDIDATE_CAP,
     TOP_K,
     USE_MULTI_QUERY,
     USE_PARENT_CHILD,
@@ -33,6 +35,16 @@ from doc_assistant.knowledge.keywords import tokenize
 from doc_assistant.prompts import ANSWER_PROMPT, MULTI_QUERY_PROMPT, REWRITE_PROMPT
 
 log = structlog.get_logger(__name__)
+
+# How many distinct folder scopes keep a prebuilt ensemble warm (ADR-025 F2 / RG-020). The
+# scoped BM25 arm is rebuilt over the folder subset (~20 µs/chunk measured), so a single slot
+# forced a full rebuild whenever the user alternated between two folders. A small LRU keeps the
+# recently-used scopes warm instead. Bounded (not unbounded) because each entry holds a BM25
+# index over its subset — memory, not correctness. A named structural constant, not a tunable:
+# it trades a little memory for latency and never affects retrieval output (the cached ensemble
+# is byte-for-byte the one a rebuild would produce). scope=None (the whole-corpus default path)
+# never enters this cache — it uses the prebuilt self.ensemble.
+_SCOPED_ENSEMBLE_CACHE_SIZE = 4
 
 
 def resolve_ensemble_weights(bm25_weight: float | None) -> list[float]:
@@ -132,10 +144,12 @@ class RAGPipeline:
         # Kept for ADR-025 F2: a folder-scoped turn rebuilds the BM25 arm over the subset of
         # these docs, so the corpus has to survive construction. Nothing mutates it.
         self._bm25_docs = all_docs
-        # Single-slot memo for the scoped ensemble, keyed on the exact hash set. The UI scope is
-        # sticky, so consecutive turns share a key; a membership edit changes the key and the
-        # slot self-invalidates (no TTL, no staleness window). See the F2 spec, S5.
-        self._scoped: tuple[frozenset[str], EnsembleRetriever] | None = None
+        # LRU memo for scoped ensembles, keyed on the exact hash set. The UI scope is sticky, so
+        # consecutive turns share a key; a membership edit changes the key and that entry is never
+        # reused (no TTL, no staleness window — the key IS the identity). Holding several scopes
+        # (not one) means alternating between folders reuses each instead of rebuilding BM25 every
+        # turn. See the F2 spec S5 / RG-020; bounded by _SCOPED_ENSEMBLE_CACHE_SIZE.
+        self._scoped: OrderedDict[frozenset[str], EnsembleRetriever] = OrderedDict()
         self._weights = weights
         vector = self.db.as_retriever(
             search_kwargs={
@@ -200,16 +214,19 @@ class RAGPipeline:
         - vector — the same ``keep_for_retrieval`` filter ANDed with ``doc_hash $in [...]``;
         - BM25 — a fresh index over the subset of ``self._bm25_docs``.
 
-        The BM25 rebuild is the real cost (~20 µs/chunk measured), so the result is memoised in
-        one slot keyed on ``scope`` itself. ``self.db``/``self.embeddings``/``self.reranker`` are
-        untouched: ``as_retriever`` is a thin wrapper, so nothing expensive is reloaded.
+        The BM25 rebuild is the real cost (~20 µs/chunk measured), so the result is memoised in a
+        small LRU keyed on ``scope`` itself (``_SCOPED_ENSEMBLE_CACHE_SIZE`` entries).
+        ``self.db``/``self.embeddings``/``self.reranker`` are untouched: ``as_retriever`` is a thin
+        wrapper, so nothing expensive is reloaded.
 
         Note the scoped BM25 arm scores against **subset statistics** (avgdl/IDF differ from the
         global index). That is correct — the arm is told to rank within the folder — but it means
         scoped and unscoped scores are not directly comparable (RG-020).
         """
-        if self._scoped is not None and self._scoped[0] == scope:
-            return self._scoped[1]
+        cached = self._scoped.get(scope)
+        if cached is not None:
+            self._scoped.move_to_end(scope)  # mark most-recently-used
+            return cached
 
         vector = self.db.as_retriever(
             search_kwargs={
@@ -234,7 +251,10 @@ class RAGPipeline:
             log.warning("scoped_bm25_empty", scope_size=len(scope))
             ensemble = EnsembleRetriever(retrievers=[vector], weights=[1.0])
         log.info("scoped_ensemble_built", docs=len(scope), chunks=len(subset))
-        self._scoped = (scope, ensemble)
+        self._scoped[scope] = ensemble
+        self._scoped.move_to_end(scope)  # newest = most-recently-used
+        while len(self._scoped) > _SCOPED_ENSEMBLE_CACHE_SIZE:
+            self._scoped.popitem(last=False)  # evict least-recently-used
         return ensemble
 
     def retrieve(
@@ -298,6 +318,20 @@ class RAGPipeline:
 
         if not all_candidates:
             return []
+
+        # Bound the cross-encoder input (RERANK_CANDIDATE_CAP). Single-query retrieval unions at
+        # most 2*CANDIDATE_K docs, which is < the cap, so the default path is byte-identical; the
+        # cap only bites the opt-in multi-query path, where the union grew ~4x. Candidates are
+        # accumulated original-query-first with first-seen dedup, so truncating the tail drops the
+        # lowest-priority cross-variation hits, never the primary query's. (RG-022.)
+        if len(all_candidates) > RERANK_CANDIDATE_CAP:
+            log.info(
+                "rerank_input_capped",
+                candidates=len(all_candidates),
+                cap=RERANK_CANDIDATE_CAP,
+                queries=len(queries),
+            )
+            all_candidates = all_candidates[:RERANK_CANDIDATE_CAP]
 
         # Rerank against the original query
         pairs = [[query, doc.page_content] for doc in all_candidates]

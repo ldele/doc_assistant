@@ -371,3 +371,50 @@ a verdict measured at one vocabulary size does not transfer to another).
   has ever been ingested on the box.
 - **Until then:** the manual rule stands — benchmark on the clean eval-10 index only
   (`evals/README.md` states it; the download-default guard test pins the fetch side).
+
+## RG-022 — `RERANK_CANDIDATE_CAP` multiplier is a cost/recall tradeoff on the multi-query path, unvalidated
+
+- **Severity:** degrades (multi-query path only) · **Status:** open · **Added:** 2026-07-23
+  (retrieval-hygiene sprint)
+- **What was deferred:** `RERANK_CANDIDATE_CAP` (default `CANDIDATE_K * 3` = 60) bounds the number of
+  candidates fed to the cross-encoder in one turn. It **provably never bites the single-query default
+  path** (single-query unions ≤ `2*CANDIDATE_K` and the cap is validated `>= 2*CANDIDATE_K` at import),
+  so the shipped default is byte-identical. But when multi-query is on (opt-in via `USE_MULTI_QUERY`
+  or the U1 per-turn override), the cap truncates the cross-phrasing candidate union — a real
+  **cost vs recall** tradeoff whose default multiplier (`3`) is chosen for a bounded worst case
+  (~4× → ~3×), **not measured**.
+- **The experiment owed:** on the eval-10 index with multi-query forced on, sweep the cap
+  (`2*CANDIDATE_K` … unbounded) and record answer-quality (the eval scorers) vs rerank latency;
+  confirm the recall knee sits at or below the shipped default. Record in `tests/eval/baselines/`.
+- **Why deferred, not assumed:** multi-query is **off by default**, so this changes nothing in the
+  shipped path today; it becomes blocking only if MQ is ever promoted toward a default (which is its
+  own eval-gated decision — the ADR-010 sandbox exposes MQ precisely to measure it first).
+- **Until then:** the cap is a cost ceiling, not a tuned optimum — do not cite MQ retrieval quality
+  under the cap as validated. Override `RERANK_CANDIDATE_CAP` (env) to reproduce the pre-cap
+  unbounded behaviour for a sweep.
+
+## RG-023 — epistemic-health detectors parked pending cost measurement + a heterogeneous corpus
+
+- **Severity:** blocks a feature (not a shipped path) · **Status:** open · **Added:** 2026-07-23
+  (ADR-019 taxonomy grill — the parked epistemic-health cluster)
+- **What was deferred:** the epistemic-health detector layer (its own future **ADR-EH**), sequenced
+  **after the concept graph / taxonomy is validated** (user decision, 2026-07-23). Design captured in
+  `docs/PLAN_2026-07-23_concept-graph-taxonomy-epistemics.md` §4–6. The grill **could not lock** these
+  because their deciding reasons are unmeasured numbers, not judgment:
+  - **Per-concept contradiction / hedging / citation-density** — the answer-level versions exist
+    (reviewer `citation_density`/`hedging_adequacy`, per-answer). The per-concept versions imply an
+    LLM pass over each concept's evidence chunks; cost scales with concept × chunks and is **unmeasured**.
+  - **Source-trust scoring** — needs the **heterogeneous corpus** it exists to protect (Wikipedia /
+    web / personal notes); on an all-papers box there's nothing to differentiate, so the tiering can't
+    be validated. Precondition for widening ingestion beyond peer-reviewed papers (the "quality list", B13).
+  - **Dual + non-paper staleness** — the semantic `superseded_trend` is built; document-age staleness
+    and its meaning for undated/non-paper content (SOPs, notes) is a new detector.
+  - **Content-type degradation** — citation-dependent mechanics must degrade honestly on books/SOPs/notes
+    (no abstract/references section); the 0-doc robustness contract generalized to content type.
+  - **Degree-based-detector retirement** — gated by **RG-015** (coverage-detector precision).
+- **The experiment owed (before ADR-EH can lock):** measure the per-concept LLM pass cost offline on
+  messy real output + a local model (cost-discipline); build a small heterogeneous test corpus to
+  validate source-tiering; then grill ADR-EH.
+- **Until then:** the taxonomy (ADR-019 amendment) ships and is *used* (navigation, coverage math, gap
+  surfacing) without the epistemic-health synthesis. Do not build per-concept detectors on the
+  association-only graph (Node B stance NULL, KI-4) — measure first.

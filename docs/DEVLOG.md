@@ -11,13 +11,14 @@ Format: What changed | Why | Rejected alternatives | What it opens
 > (moved verbatim 2026-07-21). This file keeps 2026-07-15 onward.
 
 ---
-## 2026-07-23 — Taxonomy increment 1 (ADR-028): schema + write seam + ANZSRC seed
+## 2026-07-23 — Taxonomy increment 1 (ADR-028): schema + write seam + full ANZSRC seed + consumer guard
 
-Built the durable substrate for the concept taxonomy, the first increment of
+Built the concept-taxonomy substrate, the first increment of
 [ADR-028](decisions/ADR-028-concept-taxonomy-polyhierarchy-skos.md) to the design-locked spec
-`docs/specs/feature-taxonomy-seed-schema.md`. **$0, zero-LLM, backend + data only. Staged, not
-committed** (cpc §13). Full suite **1236 passed** (+15); `ruff` · `ruff format` · `mypy --strict src`
-(66 files) · `bandit` clean; `docs_check`/`integrity_check` 0/0.
+`docs/specs/feature-taxonomy-seed-schema.md`, **complete with the full ANZSRC 2020 FoR trunk and
+seeded into the live DB**. **$0, zero-LLM, backend + data only. Staged, not committed** (cpc §13).
+Full suite **1238 passed** (+17); `ruff` · `ruff format` · `mypy --strict src` (66 files) · `bandit`
+clean; `docs_check`/`integrity_check` 0/0.
 
 **What.**
 - **T1a `kind` column on `concepts`** (`db/models.py` + `db/migrations.py` `_ADDITIVE_COLUMNS`):
@@ -37,30 +38,45 @@ committed** (cpc §13). Full suite **1236 passed** (+15); `ruff` · `ruff format
 - **T3 seeder** — `scripts/seed_taxonomy.py` (dry-run default, `--apply`, prints the CC-BY attribution
   every run) over `data/anzsrc_2020_for.json`. Field nodes key on a **stable UUID5** derived from the
   ANZSRC code (idempotent across runs/machines); group→division links go through `add_hierarchy_edge`.
-- **14 guard tests** (`tests/unit/test_taxonomy.py`, the 9 DoD + 5 coverage), each fails against the
-  pre-increment code.
+- **16 guard tests** (`tests/unit/test_taxonomy.py`, the 9 DoD + 5 seam-coverage + 2 consumer-guard),
+  each fails against the pre-increment code.
 
-**The one deviation, deliberately surfaced — the 213 group-level codes are NOT shipped.** The data file
-carries the **23 ANZSRC divisions** (verified against a reliable source) but leaves `groups` empty. Reason:
-the CC-BY provenance obligation + accuracy bar make it wrong to hand-transcribe 213 government codes from
-memory, and `WebFetch` returns a summarizing small-model answer (silent-truncation risk), not verifiable
-raw data — exactly the "no unverified data at scale" rule this project holds. The 23-division trunk is
-itself a correct, useful seed (the corpus maps onto divisions), and the 4-digit groups are a clean
-idempotent add once sourced. Guard test 8 asserts idempotency + structural rollup against the file's
-*actual* contents, so it stays green and auto-validates when the groups land.
+**The full ANZSRC data (23 divisions + 213 groups) — sourced authoritatively, not from memory.** The
+user supplied the official ANZSRC 2020 FoR **SKOS/Turtle** (`anzsrc-2020-for-20210429.ttl`,
+linked.data.gov.au). A stdlib transform (no rdflib) extracted `skos:notation`/`prefLabel`/`broader` per
+concept → the 23 two-digit divisions + 213 four-digit groups (6-digit fields skipped — grafted on demand,
+ADR-028 D7), division labels normalised from the source's uppercase to sentence case. **Hard-verified**
+before writing: exactly 23 + 213, every group rolls to a real division (`code[:2]`), anchors present
+(4602 Artificial intelligence, 4611 Machine learning, 3209 Neurosciences). This replaced the memory/fetch
+route — deliberately declined earlier as unverifiable data at scale (the `WebFetch` endpoint 404'd and its
+summarizing answer can't guarantee verbatim completeness).
+
+**Consumer guard (ADR-028 D4) — the prerequisite for seeding safely.** Several `select(Concept)` consumers
+assumed every row is text-bearing; seeding 236 abstract domains would flood them. Wired the `kind="concept"`
+filter into `library.list_keyword_families` (the always-on families UI — would have shown 236 field names),
+`concept_skeleton.load_glossary`, `list_keyword_candidates`, `concept_curation.load_concepts` +
+`rank_keyword_candidates` (a near-dup merge must never fold a domain into a concept), and the family-rename
+clash check. `load_concepts` (graph vocabulary) needed no change — its `graph_include` filter already
+excludes domains. Two guard tests pin families/glossary domain-exclusion.
+
+**Seeded into the live DB, verified invisible.** `init_db` (applying the new `kind` migration, backfilling
+the 26 existing rows to `concept`) → `seed_taxonomy --apply`: **236 domains** (`source=anzsrc`,
+`graph_include=False`) + **213 `in_field` edges**. API-level check on the real corpus: `list_keyword_families`
+26, `load_glossary` 26, graph vocabulary 26, `presence_nodes` 26 — all unchanged; `load_taxonomy` sees 262
+nodes / 213 edges. A pre-seed backup sits at `data/library.db.bak-pretaxonomy` (gitignored).
 
 **Why now.** ADR-028 accepted, nothing built; the schema is the foundation every later increment (curation
-UI, auto-propose, coverage math) writes against. Ships first, alone.
+UI, auto-propose, coverage math) writes against.
 
-**Rejected.** (a) Hand-encoding the 213 groups from memory — fails the rigor/provenance bar. (b) Fetching
-+ transcribing them via `WebFetch` this session — the endpoint 404'd and the summarizing fetch can't
-guarantee verbatim completeness; surfaced as a user decision instead. (c) Storing the hierarchy in
-`concept_edges` — a rebuild would wipe it (the whole point of the separate table).
+**Rejected.** (a) Hand-encoding the 213 groups from memory / a summarizing fetch — fails the rigor +
+CC-BY-provenance bar; superseded by the user's official TTL. (b) Storing the hierarchy in `concept_edges` —
+a rebuild would wipe it (the whole point of the separate table). (c) Seeding before wiring the consumer
+guard — would have flooded the families UI and risked curation merge-corruption.
 
-**What it opens.** The group-sourcing decision (fetch-and-verify vs. drop-in the official ABS
-spreadsheet). Then increment 2 (curation UI to edit the DAG), increment 3 (auto-propose `in_field`
-parents where NULL, $0/Ollama, KI-4), and coverage math (`load_taxonomy` is its substrate). The
-About/Settings CC-BY attribution UI is required before the taxonomy ships to users (spec T4).
+**What it opens.** Increment 2 (curation UI to edit the DAG), increment 3 (auto-propose `in_field` parents
+where NULL, $0/Ollama, KI-4), and coverage math (`load_taxonomy` is its substrate). The About/Settings
+CC-BY attribution UI is required before the taxonomy ships to users (spec T4). Committing the ~1 MB source
+`.ttl` for provenance is the user's call (currently untracked in `data/`).
 
 ---
 ## 2026-07-23 — Concept-system docs consolidation (no code change)

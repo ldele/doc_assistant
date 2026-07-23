@@ -1,15 +1,14 @@
 <!-- status: built · updated: 2026-07-23 · owner: Code · plan: docs/decisions/ADR-028-concept-taxonomy-polyhierarchy-skos.md (increment 1) -->
 
-> **BUILT 2026-07-23 (staged) — one caveat.** All the engineering landed and is gate-green: the `kind`
-> column + additive migration (T1a), the `concept_hierarchy` + `document_field` tables (T1b/c),
-> `knowledge/taxonomy.py` (T2), `scripts/seed_taxonomy.py` + `data/anzsrc_2020_for.json` (T3), and 14
-> guard tests (`tests/unit/test_taxonomy.py`) — `ruff`/`mypy --strict src`/`bandit` clean, full suite
-> **1236 passed**. **The one deviation from the DoD:** the seed data file ships the **23 ANZSRC divisions
-> (verified) but not the 213 four-digit groups** — those need an *authoritative* import (the CC-BY
-> provenance + accuracy bar rules out transcribing 213 government codes from memory or a summarizing
-> fetch). Guard test 8 asserts idempotency + structure against the file's *actual* contents, so it stays
-> green and re-validates automatically once the groups land. Sourcing the 213 groups is the open decision
-> — see the DEVLOG entry 2026-07-23 and T3 below.
+> **BUILT + SEEDED 2026-07-23 (staged) — DoD met.** All the engineering landed and is gate-green: the
+> `kind` column + additive migration (T1a), the `concept_hierarchy` + `document_field` tables (T1b/c),
+> `knowledge/taxonomy.py` (T2), `scripts/seed_taxonomy.py` + `data/anzsrc_2020_for.json` (T3, the **full
+> 23 divisions + 213 groups** from the user-supplied official ANZSRC 2020 FoR SKOS/TTL), the `kind="concept"`
+> consumer guard (ADR-028 D4 — families/glossary/curation, so the seeded domains don't flood existing
+> surfaces), and 16 guard tests (`tests/unit/test_taxonomy.py`) — `ruff`/`mypy --strict src`/`bandit` clean,
+> full suite **1238 passed**. **Seeded into the live DB** (236 domains + 213 `in_field` edges; families /
+> glossary / graph / presence verified still 26). Follow-ups: the About/Settings CC-BY attribution UI (T4)
+> before user-facing ship, and increments 2 (curation UI) / 3 (auto-propose). See the DEVLOG 2026-07-23.
 
 # Feature spec — Taxonomy increment 1: seed + schema
 

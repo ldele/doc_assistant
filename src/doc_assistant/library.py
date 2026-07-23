@@ -860,11 +860,16 @@ def _build_family(session: Any, concept: Any) -> KeywordFamily:
 
 
 def list_keyword_families() -> list[KeywordFamily]:
-    """All curated concepts as keyword families, each with its union doc_count."""
+    """All curated concepts as keyword families, each with its union doc_count.
+
+    Excludes ``kind="domain"`` taxonomy field nodes (ADR-028 D4) — an abstract ANZSRC field is not
+    a keyword family, and the seeded ~236 of them would otherwise flood the Library filter."""
     from doc_assistant.db.models import Concept
 
     with session_scope() as session:
-        concepts = list(session.execute(select(Concept)).scalars())
+        concepts = list(
+            session.execute(select(Concept).where(Concept.kind == "concept")).scalars()
+        )
         families = [_build_family(session, c) for c in concepts]
     families.sort(key=lambda f: f.canonical.casefold())
     return families
@@ -948,6 +953,7 @@ def rename_keyword_family(concept_id: str, new_canonical: str) -> KeywordFamily 
                 select(Concept).where(
                     func.lower(Concept.label) == new_canonical.casefold(),
                     Concept.id != concept_id,
+                    Concept.kind == "concept",  # a family rename can't clash with a taxonomy field
                 )
             )
             .scalars()

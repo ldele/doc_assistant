@@ -5,35 +5,1171 @@
     "license": "CC BY 4.0",
     "license_url": "https://creativecommons.org/licenses/by/4.0/",
     "source_url": "https://www.abs.gov.au/statistics/classifications/australian-and-new-zealand-standard-research-classification-anzsrc/latest-release",
+    "source_file": "anzsrc-2020-for-20210429.ttl (SKOS/Turtle, linked.data.gov.au)",
     "attribution": "Contains Australian and New Zealand Standard Research Classification (ANZSRC) 2020 Fields of Research data © Commonwealth of Australia (Australian Bureau of Statistics), used under CC BY 4.0.",
     "levels": "division (2-digit) + group (4-digit) only — the seed trunk (ADR-028 Decision 7). 6-digit fields are grafted on demand.",
     "retrieved": "2026-07-23",
-    "completeness": "divisions: complete (23, verified). groups: PENDING an authoritative import — do not hand-transcribe (213 codes, unverified data at scale). See docs/specs/feature-taxonomy-seed-schema.md T3 and the DEVLOG entry dated 2026-07-23."
+    "completeness": "divisions: 23 (complete). groups: 213 (complete). Both extracted from the official ANZSRC 2020 FoR SKOS Turtle; division labels normalised from the source's uppercase prefLabel to sentence case."
   },
   "divisions": [
-    {"code": "30", "label": "Agricultural, veterinary and food sciences"},
-    {"code": "31", "label": "Biological sciences"},
-    {"code": "32", "label": "Biomedical and clinical sciences"},
-    {"code": "33", "label": "Built environment and design"},
-    {"code": "34", "label": "Chemical sciences"},
-    {"code": "35", "label": "Commerce, management, tourism and services"},
-    {"code": "36", "label": "Creative arts and writing"},
-    {"code": "37", "label": "Earth sciences"},
-    {"code": "38", "label": "Economics"},
-    {"code": "39", "label": "Education"},
-    {"code": "40", "label": "Engineering"},
-    {"code": "41", "label": "Environmental sciences"},
-    {"code": "42", "label": "Health sciences"},
-    {"code": "43", "label": "History, heritage and archaeology"},
-    {"code": "44", "label": "Human society"},
-    {"code": "45", "label": "Indigenous studies"},
-    {"code": "46", "label": "Information and computing sciences"},
-    {"code": "47", "label": "Language, communication and culture"},
-    {"code": "48", "label": "Law and legal studies"},
-    {"code": "49", "label": "Mathematical sciences"},
-    {"code": "50", "label": "Philosophy and religious studies"},
-    {"code": "51", "label": "Physical sciences"},
-    {"code": "52", "label": "Psychology"}
+    {
+      "code": "30",
+      "label": "Agricultural, veterinary and food sciences"
+    },
+    {
+      "code": "31",
+      "label": "Biological sciences"
+    },
+    {
+      "code": "32",
+      "label": "Biomedical and clinical sciences"
+    },
+    {
+      "code": "33",
+      "label": "Built environment and design"
+    },
+    {
+      "code": "34",
+      "label": "Chemical sciences"
+    },
+    {
+      "code": "35",
+      "label": "Commerce, management, tourism and services"
+    },
+    {
+      "code": "36",
+      "label": "Creative arts and writing"
+    },
+    {
+      "code": "37",
+      "label": "Earth sciences"
+    },
+    {
+      "code": "38",
+      "label": "Economics"
+    },
+    {
+      "code": "39",
+      "label": "Education"
+    },
+    {
+      "code": "40",
+      "label": "Engineering"
+    },
+    {
+      "code": "41",
+      "label": "Environmental sciences"
+    },
+    {
+      "code": "42",
+      "label": "Health sciences"
+    },
+    {
+      "code": "43",
+      "label": "History, heritage and archaeology"
+    },
+    {
+      "code": "44",
+      "label": "Human society"
+    },
+    {
+      "code": "45",
+      "label": "Indigenous studies"
+    },
+    {
+      "code": "46",
+      "label": "Information and computing sciences"
+    },
+    {
+      "code": "47",
+      "label": "Language, communication and culture"
+    },
+    {
+      "code": "48",
+      "label": "Law and legal studies"
+    },
+    {
+      "code": "49",
+      "label": "Mathematical sciences"
+    },
+    {
+      "code": "50",
+      "label": "Philosophy and religious studies"
+    },
+    {
+      "code": "51",
+      "label": "Physical sciences"
+    },
+    {
+      "code": "52",
+      "label": "Psychology"
+    }
   ],
-  "groups": []
+  "groups": [
+    {
+      "code": "3001",
+      "label": "Agricultural biotechnology",
+      "division": "30"
+    },
+    {
+      "code": "3002",
+      "label": "Agriculture, land and farm management",
+      "division": "30"
+    },
+    {
+      "code": "3003",
+      "label": "Animal production",
+      "division": "30"
+    },
+    {
+      "code": "3004",
+      "label": "Crop and pasture production",
+      "division": "30"
+    },
+    {
+      "code": "3005",
+      "label": "Fisheries sciences",
+      "division": "30"
+    },
+    {
+      "code": "3006",
+      "label": "Food sciences",
+      "division": "30"
+    },
+    {
+      "code": "3007",
+      "label": "Forestry sciences",
+      "division": "30"
+    },
+    {
+      "code": "3008",
+      "label": "Horticultural production",
+      "division": "30"
+    },
+    {
+      "code": "3009",
+      "label": "Veterinary sciences",
+      "division": "30"
+    },
+    {
+      "code": "3099",
+      "label": "Other agricultural, veterinary and food sciences",
+      "division": "30"
+    },
+    {
+      "code": "3101",
+      "label": "Biochemistry and cell biology",
+      "division": "31"
+    },
+    {
+      "code": "3102",
+      "label": "Bioinformatics and computational biology",
+      "division": "31"
+    },
+    {
+      "code": "3103",
+      "label": "Ecology",
+      "division": "31"
+    },
+    {
+      "code": "3104",
+      "label": "Evolutionary biology",
+      "division": "31"
+    },
+    {
+      "code": "3105",
+      "label": "Genetics",
+      "division": "31"
+    },
+    {
+      "code": "3106",
+      "label": "Industrial biotechnology",
+      "division": "31"
+    },
+    {
+      "code": "3107",
+      "label": "Microbiology",
+      "division": "31"
+    },
+    {
+      "code": "3108",
+      "label": "Plant biology",
+      "division": "31"
+    },
+    {
+      "code": "3109",
+      "label": "Zoology",
+      "division": "31"
+    },
+    {
+      "code": "3199",
+      "label": "Other biological sciences",
+      "division": "31"
+    },
+    {
+      "code": "3201",
+      "label": "Cardiovascular medicine and haematology",
+      "division": "32"
+    },
+    {
+      "code": "3202",
+      "label": "Clinical sciences",
+      "division": "32"
+    },
+    {
+      "code": "3203",
+      "label": "Dentistry",
+      "division": "32"
+    },
+    {
+      "code": "3204",
+      "label": "Immunology",
+      "division": "32"
+    },
+    {
+      "code": "3205",
+      "label": "Medical biochemistry and metabolomics",
+      "division": "32"
+    },
+    {
+      "code": "3206",
+      "label": "Medical biotechnology",
+      "division": "32"
+    },
+    {
+      "code": "3207",
+      "label": "Medical microbiology",
+      "division": "32"
+    },
+    {
+      "code": "3208",
+      "label": "Medical physiology",
+      "division": "32"
+    },
+    {
+      "code": "3209",
+      "label": "Neurosciences",
+      "division": "32"
+    },
+    {
+      "code": "3210",
+      "label": "Nutrition and dietetics",
+      "division": "32"
+    },
+    {
+      "code": "3211",
+      "label": "Oncology and carcinogenesis",
+      "division": "32"
+    },
+    {
+      "code": "3212",
+      "label": "Ophthalmology and optometry",
+      "division": "32"
+    },
+    {
+      "code": "3213",
+      "label": "Paediatrics",
+      "division": "32"
+    },
+    {
+      "code": "3214",
+      "label": "Pharmacology and pharmaceutical sciences",
+      "division": "32"
+    },
+    {
+      "code": "3215",
+      "label": "Reproductive medicine",
+      "division": "32"
+    },
+    {
+      "code": "3299",
+      "label": "Other biomedical and clinical sciences",
+      "division": "32"
+    },
+    {
+      "code": "3301",
+      "label": "Architecture",
+      "division": "33"
+    },
+    {
+      "code": "3302",
+      "label": "Building",
+      "division": "33"
+    },
+    {
+      "code": "3303",
+      "label": "Design",
+      "division": "33"
+    },
+    {
+      "code": "3304",
+      "label": "Urban and regional planning",
+      "division": "33"
+    },
+    {
+      "code": "3399",
+      "label": "Other built environment and design",
+      "division": "33"
+    },
+    {
+      "code": "3401",
+      "label": "Analytical chemistry",
+      "division": "34"
+    },
+    {
+      "code": "3402",
+      "label": "Inorganic chemistry",
+      "division": "34"
+    },
+    {
+      "code": "3403",
+      "label": "Macromolecular and materials chemistry",
+      "division": "34"
+    },
+    {
+      "code": "3404",
+      "label": "Medicinal and biomolecular chemistry",
+      "division": "34"
+    },
+    {
+      "code": "3405",
+      "label": "Organic chemistry",
+      "division": "34"
+    },
+    {
+      "code": "3406",
+      "label": "Physical chemistry",
+      "division": "34"
+    },
+    {
+      "code": "3407",
+      "label": "Theoretical and computational chemistry",
+      "division": "34"
+    },
+    {
+      "code": "3499",
+      "label": "Other chemical sciences",
+      "division": "34"
+    },
+    {
+      "code": "3501",
+      "label": "Accounting, auditing and accountability",
+      "division": "35"
+    },
+    {
+      "code": "3502",
+      "label": "Banking, finance and investment",
+      "division": "35"
+    },
+    {
+      "code": "3503",
+      "label": "Business systems in context",
+      "division": "35"
+    },
+    {
+      "code": "3504",
+      "label": "Commercial services",
+      "division": "35"
+    },
+    {
+      "code": "3505",
+      "label": "Human resources and industrial relations",
+      "division": "35"
+    },
+    {
+      "code": "3506",
+      "label": "Marketing",
+      "division": "35"
+    },
+    {
+      "code": "3507",
+      "label": "Strategy, management and organisational behaviour",
+      "division": "35"
+    },
+    {
+      "code": "3508",
+      "label": "Tourism",
+      "division": "35"
+    },
+    {
+      "code": "3509",
+      "label": "Transportation, logistics and supply chains",
+      "division": "35"
+    },
+    {
+      "code": "3599",
+      "label": "Other commerce, management, tourism and services",
+      "division": "35"
+    },
+    {
+      "code": "3601",
+      "label": "Art history, theory and criticism",
+      "division": "36"
+    },
+    {
+      "code": "3602",
+      "label": "Creative and professional writing",
+      "division": "36"
+    },
+    {
+      "code": "3603",
+      "label": "Music",
+      "division": "36"
+    },
+    {
+      "code": "3604",
+      "label": "Performing arts",
+      "division": "36"
+    },
+    {
+      "code": "3605",
+      "label": "Screen and digital media",
+      "division": "36"
+    },
+    {
+      "code": "3606",
+      "label": "Visual arts",
+      "division": "36"
+    },
+    {
+      "code": "3699",
+      "label": "Other creative arts and writing",
+      "division": "36"
+    },
+    {
+      "code": "3701",
+      "label": "Atmospheric sciences",
+      "division": "37"
+    },
+    {
+      "code": "3702",
+      "label": "Climate change science",
+      "division": "37"
+    },
+    {
+      "code": "3703",
+      "label": "Geochemistry",
+      "division": "37"
+    },
+    {
+      "code": "3704",
+      "label": "Geoinformatics",
+      "division": "37"
+    },
+    {
+      "code": "3705",
+      "label": "Geology",
+      "division": "37"
+    },
+    {
+      "code": "3706",
+      "label": "Geophysics",
+      "division": "37"
+    },
+    {
+      "code": "3707",
+      "label": "Hydrology",
+      "division": "37"
+    },
+    {
+      "code": "3708",
+      "label": "Oceanography",
+      "division": "37"
+    },
+    {
+      "code": "3709",
+      "label": "Physical geography and environmental geoscience",
+      "division": "37"
+    },
+    {
+      "code": "3799",
+      "label": "Other earth sciences",
+      "division": "37"
+    },
+    {
+      "code": "3801",
+      "label": "Applied economics",
+      "division": "38"
+    },
+    {
+      "code": "3802",
+      "label": "Econometrics",
+      "division": "38"
+    },
+    {
+      "code": "3803",
+      "label": "Economic theory",
+      "division": "38"
+    },
+    {
+      "code": "3899",
+      "label": "Other economics",
+      "division": "38"
+    },
+    {
+      "code": "3901",
+      "label": "Curriculum and pedagogy",
+      "division": "39"
+    },
+    {
+      "code": "3902",
+      "label": "Education policy, sociology and philosophy",
+      "division": "39"
+    },
+    {
+      "code": "3903",
+      "label": "Education systems",
+      "division": "39"
+    },
+    {
+      "code": "3904",
+      "label": "Specialist studies in education",
+      "division": "39"
+    },
+    {
+      "code": "3999",
+      "label": "Other education",
+      "division": "39"
+    },
+    {
+      "code": "4001",
+      "label": "Aerospace engineering",
+      "division": "40"
+    },
+    {
+      "code": "4002",
+      "label": "Automotive engineering",
+      "division": "40"
+    },
+    {
+      "code": "4003",
+      "label": "Biomedical engineering",
+      "division": "40"
+    },
+    {
+      "code": "4004",
+      "label": "Chemical engineering",
+      "division": "40"
+    },
+    {
+      "code": "4005",
+      "label": "Civil engineering",
+      "division": "40"
+    },
+    {
+      "code": "4006",
+      "label": "Communications engineering",
+      "division": "40"
+    },
+    {
+      "code": "4007",
+      "label": "Control engineering, mechatronics and robotics",
+      "division": "40"
+    },
+    {
+      "code": "4008",
+      "label": "Electrical engineering",
+      "division": "40"
+    },
+    {
+      "code": "4009",
+      "label": "Electronics, sensors and digital hardware",
+      "division": "40"
+    },
+    {
+      "code": "4010",
+      "label": "Engineering practice and education",
+      "division": "40"
+    },
+    {
+      "code": "4011",
+      "label": "Environmental engineering",
+      "division": "40"
+    },
+    {
+      "code": "4012",
+      "label": "Fluid mechanics and thermal engineering",
+      "division": "40"
+    },
+    {
+      "code": "4013",
+      "label": "Geomatic engineering",
+      "division": "40"
+    },
+    {
+      "code": "4014",
+      "label": "Manufacturing engineering",
+      "division": "40"
+    },
+    {
+      "code": "4015",
+      "label": "Maritime engineering",
+      "division": "40"
+    },
+    {
+      "code": "4016",
+      "label": "Materials engineering",
+      "division": "40"
+    },
+    {
+      "code": "4017",
+      "label": "Mechanical engineering",
+      "division": "40"
+    },
+    {
+      "code": "4018",
+      "label": "Nanotechnology",
+      "division": "40"
+    },
+    {
+      "code": "4019",
+      "label": "Resources engineering and extractive metallurgy",
+      "division": "40"
+    },
+    {
+      "code": "4099",
+      "label": "Other engineering",
+      "division": "40"
+    },
+    {
+      "code": "4101",
+      "label": "Climate change impacts and adaptation",
+      "division": "41"
+    },
+    {
+      "code": "4102",
+      "label": "Ecological applications",
+      "division": "41"
+    },
+    {
+      "code": "4103",
+      "label": "Environmental biotechnology",
+      "division": "41"
+    },
+    {
+      "code": "4104",
+      "label": "Environmental management",
+      "division": "41"
+    },
+    {
+      "code": "4105",
+      "label": "Pollution and contamination",
+      "division": "41"
+    },
+    {
+      "code": "4106",
+      "label": "Soil sciences",
+      "division": "41"
+    },
+    {
+      "code": "4199",
+      "label": "Other environmental sciences",
+      "division": "41"
+    },
+    {
+      "code": "4201",
+      "label": "Allied health and rehabilitation science",
+      "division": "42"
+    },
+    {
+      "code": "4202",
+      "label": "Epidemiology",
+      "division": "42"
+    },
+    {
+      "code": "4203",
+      "label": "Health services and systems",
+      "division": "42"
+    },
+    {
+      "code": "4204",
+      "label": "Midwifery",
+      "division": "42"
+    },
+    {
+      "code": "4205",
+      "label": "Nursing",
+      "division": "42"
+    },
+    {
+      "code": "4206",
+      "label": "Public health",
+      "division": "42"
+    },
+    {
+      "code": "4207",
+      "label": "Sports science and exercise",
+      "division": "42"
+    },
+    {
+      "code": "4208",
+      "label": "Traditional, complementary and integrative medicine",
+      "division": "42"
+    },
+    {
+      "code": "4299",
+      "label": "Other health sciences",
+      "division": "42"
+    },
+    {
+      "code": "4301",
+      "label": "Archaeology",
+      "division": "43"
+    },
+    {
+      "code": "4302",
+      "label": "Heritage, archive and museum studies",
+      "division": "43"
+    },
+    {
+      "code": "4303",
+      "label": "Historical studies",
+      "division": "43"
+    },
+    {
+      "code": "4399",
+      "label": "Other history, heritage and archaeology",
+      "division": "43"
+    },
+    {
+      "code": "4401",
+      "label": "Anthropology",
+      "division": "44"
+    },
+    {
+      "code": "4402",
+      "label": "Criminology",
+      "division": "44"
+    },
+    {
+      "code": "4403",
+      "label": "Demography",
+      "division": "44"
+    },
+    {
+      "code": "4404",
+      "label": "Development studies",
+      "division": "44"
+    },
+    {
+      "code": "4405",
+      "label": "Gender studies",
+      "division": "44"
+    },
+    {
+      "code": "4406",
+      "label": "Human geography",
+      "division": "44"
+    },
+    {
+      "code": "4407",
+      "label": "Policy and administration",
+      "division": "44"
+    },
+    {
+      "code": "4408",
+      "label": "Political science",
+      "division": "44"
+    },
+    {
+      "code": "4409",
+      "label": "Social work",
+      "division": "44"
+    },
+    {
+      "code": "4410",
+      "label": "Sociology",
+      "division": "44"
+    },
+    {
+      "code": "4499",
+      "label": "Other human society",
+      "division": "44"
+    },
+    {
+      "code": "4501",
+      "label": "Aboriginal and Torres Strait Islander culture, language and history",
+      "division": "45"
+    },
+    {
+      "code": "4502",
+      "label": "Aboriginal and Torres Strait Islander education",
+      "division": "45"
+    },
+    {
+      "code": "4503",
+      "label": "Aboriginal and Torres Strait Islander environmental knowledges and management",
+      "division": "45"
+    },
+    {
+      "code": "4504",
+      "label": "Aboriginal and Torres Strait Islander health and wellbeing",
+      "division": "45"
+    },
+    {
+      "code": "4505",
+      "label": "Aboriginal and Torres Strait Islander peoples, society and community",
+      "division": "45"
+    },
+    {
+      "code": "4506",
+      "label": "Aboriginal and Torres Strait Islander sciences",
+      "division": "45"
+    },
+    {
+      "code": "4507",
+      "label": "Te ahurea, reo me te hītori o te Māori (Māori culture, language and history)",
+      "division": "45"
+    },
+    {
+      "code": "4508",
+      "label": "Mātauranga Māori (Māori education)",
+      "division": "45"
+    },
+    {
+      "code": "4509",
+      "label": "Ngā mātauranga taiao o te Māori (Māori environmental knowledges)",
+      "division": "45"
+    },
+    {
+      "code": "4510",
+      "label": "Te hauora me te oranga o te Māori (Māori health and wellbeing)",
+      "division": "45"
+    },
+    {
+      "code": "4511",
+      "label": "Ngā tāngata, te porihanga me ngā hapori o te Māori (Māori peoples, society and community)",
+      "division": "45"
+    },
+    {
+      "code": "4512",
+      "label": "Ngā pūtaiao Māori (Māori sciences)",
+      "division": "45"
+    },
+    {
+      "code": "4513",
+      "label": "Pacific Peoples culture, language and history",
+      "division": "45"
+    },
+    {
+      "code": "4514",
+      "label": "Pacific Peoples education",
+      "division": "45"
+    },
+    {
+      "code": "4515",
+      "label": "Pacific Peoples environmental knowledges",
+      "division": "45"
+    },
+    {
+      "code": "4516",
+      "label": "Pacific Peoples health and wellbeing",
+      "division": "45"
+    },
+    {
+      "code": "4517",
+      "label": "Pacific Peoples sciences",
+      "division": "45"
+    },
+    {
+      "code": "4518",
+      "label": "Pacific Peoples society and community",
+      "division": "45"
+    },
+    {
+      "code": "4519",
+      "label": "Other Indigenous data, methodologies and global Indigenous studies",
+      "division": "45"
+    },
+    {
+      "code": "4599",
+      "label": "Other Indigenous studies",
+      "division": "45"
+    },
+    {
+      "code": "4601",
+      "label": "Applied computing",
+      "division": "46"
+    },
+    {
+      "code": "4602",
+      "label": "Artificial intelligence",
+      "division": "46"
+    },
+    {
+      "code": "4603",
+      "label": "Computer vision and multimedia computation",
+      "division": "46"
+    },
+    {
+      "code": "4604",
+      "label": "Cybersecurity and privacy",
+      "division": "46"
+    },
+    {
+      "code": "4605",
+      "label": "Data management and data science",
+      "division": "46"
+    },
+    {
+      "code": "4606",
+      "label": "Distributed computing and systems software",
+      "division": "46"
+    },
+    {
+      "code": "4607",
+      "label": "Graphics, augmented reality and games",
+      "division": "46"
+    },
+    {
+      "code": "4608",
+      "label": "Human-centred computing",
+      "division": "46"
+    },
+    {
+      "code": "4609",
+      "label": "Information systems",
+      "division": "46"
+    },
+    {
+      "code": "4610",
+      "label": "Library and information studies",
+      "division": "46"
+    },
+    {
+      "code": "4611",
+      "label": "Machine learning",
+      "division": "46"
+    },
+    {
+      "code": "4612",
+      "label": "Software engineering",
+      "division": "46"
+    },
+    {
+      "code": "4613",
+      "label": "Theory of computation",
+      "division": "46"
+    },
+    {
+      "code": "4699",
+      "label": "Other information and computing sciences",
+      "division": "46"
+    },
+    {
+      "code": "4701",
+      "label": "Communication and media studies",
+      "division": "47"
+    },
+    {
+      "code": "4702",
+      "label": "Cultural studies",
+      "division": "47"
+    },
+    {
+      "code": "4703",
+      "label": "Language studies",
+      "division": "47"
+    },
+    {
+      "code": "4704",
+      "label": "Linguistics",
+      "division": "47"
+    },
+    {
+      "code": "4705",
+      "label": "Literary studies",
+      "division": "47"
+    },
+    {
+      "code": "4799",
+      "label": "Other language, communication and culture",
+      "division": "47"
+    },
+    {
+      "code": "4801",
+      "label": "Commercial law",
+      "division": "48"
+    },
+    {
+      "code": "4802",
+      "label": "Environmental and resources law",
+      "division": "48"
+    },
+    {
+      "code": "4803",
+      "label": "International and comparative law",
+      "division": "48"
+    },
+    {
+      "code": "4804",
+      "label": "Law in context",
+      "division": "48"
+    },
+    {
+      "code": "4805",
+      "label": "Legal systems",
+      "division": "48"
+    },
+    {
+      "code": "4806",
+      "label": "Private law and civil obligations",
+      "division": "48"
+    },
+    {
+      "code": "4807",
+      "label": "Public law",
+      "division": "48"
+    },
+    {
+      "code": "4899",
+      "label": "Other law and legal studies",
+      "division": "48"
+    },
+    {
+      "code": "4901",
+      "label": "Applied mathematics",
+      "division": "49"
+    },
+    {
+      "code": "4902",
+      "label": "Mathematical physics",
+      "division": "49"
+    },
+    {
+      "code": "4903",
+      "label": "Numerical and computational mathematics",
+      "division": "49"
+    },
+    {
+      "code": "4904",
+      "label": "Pure mathematics",
+      "division": "49"
+    },
+    {
+      "code": "4905",
+      "label": "Statistics",
+      "division": "49"
+    },
+    {
+      "code": "4999",
+      "label": "Other mathematical sciences",
+      "division": "49"
+    },
+    {
+      "code": "5001",
+      "label": "Applied ethics",
+      "division": "50"
+    },
+    {
+      "code": "5002",
+      "label": "History and philosophy of specific fields",
+      "division": "50"
+    },
+    {
+      "code": "5003",
+      "label": "Philosophy",
+      "division": "50"
+    },
+    {
+      "code": "5004",
+      "label": "Religious studies",
+      "division": "50"
+    },
+    {
+      "code": "5005",
+      "label": "Theology",
+      "division": "50"
+    },
+    {
+      "code": "5099",
+      "label": "Other philosophy and religious studies",
+      "division": "50"
+    },
+    {
+      "code": "5101",
+      "label": "Astronomical sciences",
+      "division": "51"
+    },
+    {
+      "code": "5102",
+      "label": "Atomic, molecular and optical physics",
+      "division": "51"
+    },
+    {
+      "code": "5103",
+      "label": "Classical physics",
+      "division": "51"
+    },
+    {
+      "code": "5104",
+      "label": "Condensed matter physics",
+      "division": "51"
+    },
+    {
+      "code": "5105",
+      "label": "Medical and biological physics",
+      "division": "51"
+    },
+    {
+      "code": "5106",
+      "label": "Nuclear and plasma physics",
+      "division": "51"
+    },
+    {
+      "code": "5107",
+      "label": "Particle and high energy physics",
+      "division": "51"
+    },
+    {
+      "code": "5108",
+      "label": "Quantum physics",
+      "division": "51"
+    },
+    {
+      "code": "5109",
+      "label": "Space sciences",
+      "division": "51"
+    },
+    {
+      "code": "5110",
+      "label": "Synchrotrons and accelerators",
+      "division": "51"
+    },
+    {
+      "code": "5199",
+      "label": "Other physical sciences",
+      "division": "51"
+    },
+    {
+      "code": "5201",
+      "label": "Applied and developmental psychology",
+      "division": "52"
+    },
+    {
+      "code": "5202",
+      "label": "Biological psychology",
+      "division": "52"
+    },
+    {
+      "code": "5203",
+      "label": "Clinical and health psychology",
+      "division": "52"
+    },
+    {
+      "code": "5204",
+      "label": "Cognitive and computational psychology",
+      "division": "52"
+    },
+    {
+      "code": "5205",
+      "label": "Social and personality psychology",
+      "division": "52"
+    },
+    {
+      "code": "5299",
+      "label": "Other psychology",
+      "division": "52"
+    }
+  ]
 }

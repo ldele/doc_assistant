@@ -329,7 +329,11 @@ def rank_keyword_candidates() -> list[RankedCandidate]:
                 .group_by(Keyword.name)
             )
         }
-        concepts = list(session.execute(select(Concept)).scalars())
+        # kind="concept" only — never rank/merge against an abstract taxonomy field (ADR-028 D4):
+        # a near-dup merge must not be able to fold a domain node into a concept.
+        concepts = list(
+            session.execute(select(Concept).where(Concept.kind == "concept")).scalars()
+        )
         promoted = {c.label for c in concepts}
         in_graph = {c.label for c in concepts if c.graph_include}
         authors = [a for (a,) in session.execute(select(Document.authors)) if a]
@@ -351,14 +355,20 @@ def rank_keyword_candidates() -> list[RankedCandidate]:
 
 
 def load_concepts() -> list[tuple[str, str]]:
-    """All curated concepts as ``(id, label)``, sorted by id (stable)."""
+    """Curated text-bearing concepts as ``(id, label)``, sorted by id (stable).
+
+    Excludes ``kind="domain"`` taxonomy field nodes (ADR-028 D4): this feeds near-dup merge
+    detection, and a domain must never become a merge candidate against a concept."""
     from sqlalchemy import select
 
     from doc_assistant.db.models import Concept
     from doc_assistant.db.session import session_scope
 
     with session_scope() as session:
-        rows = [(str(c.id), c.label) for c in session.execute(select(Concept)).scalars()]
+        rows = [
+            (str(c.id), c.label)
+            for c in session.execute(select(Concept).where(Concept.kind == "concept")).scalars()
+        ]
     rows.sort(key=lambda r: r[0])
     return rows
 

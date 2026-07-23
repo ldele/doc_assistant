@@ -349,3 +349,34 @@ def test_seed_data_file_has_ccby_attribution():
     assert "Australian Bureau of Statistics" in meta["attribution"]
     assert "CC BY" in meta["attribution"]
     assert meta["source_url"].startswith("https://")
+
+
+# ============================================================
+# Consumer guards — domain nodes must not leak into the always-on concept surfaces (ADR-028 D4)
+# ============================================================
+
+
+def test_list_keyword_families_excludes_domains(temp_db):
+    """The Library keyword-families list must not surface abstract taxonomy field nodes — else the
+    seeded ~236 ANZSRC domains would flood the filter."""
+    from doc_assistant.db.session import session_scope
+    from doc_assistant.library import list_keyword_families
+
+    with session_scope() as s:
+        _concept(s, "real-concept", kind="concept", label="Dense retrieval")
+        _concept(s, "anzsrc-46", kind="domain", label="Information and computing sciences")
+
+    families = list_keyword_families()
+    assert [f.canonical for f in families] == ["Dense retrieval"]
+
+
+def test_load_glossary_excludes_domains(temp_db):
+    from doc_assistant.db.session import session_scope
+    from doc_assistant.knowledge.concept_skeleton import load_glossary
+
+    with session_scope() as s:
+        _concept(s, "real-concept", kind="concept", label="BM25")
+        _concept(s, "anzsrc-49", kind="domain", label="Mathematical sciences")
+
+    labels = [e.label for e in load_glossary()]
+    assert labels == ["BM25"]

@@ -848,7 +848,11 @@ def list_keyword_candidates() -> list[KeywordCandidate]:
 
     with session_scope() as session:
         keywords = [k.name for k in session.execute(select(Keyword)).scalars()]
-        concept_labels = {c.label for c in session.execute(select(Concept)).scalars()}
+        # A keyword is "promoted" only when it matches a real concept, not a taxonomy field (D4).
+        concept_labels = {
+            c.label
+            for c in session.execute(select(Concept).where(Concept.kind == "concept")).scalars()
+        }
     return [
         KeywordCandidate(name=name, promoted=name in concept_labels)
         for name in sorted(set(keywords))
@@ -1060,7 +1064,10 @@ def load_glossary() -> list[GlossaryEntry]:
     from doc_assistant.db.session import session_scope
 
     with session_scope() as session:
-        concepts = list(session.execute(select(Concept)).scalars())
+        # kind="concept" only — taxonomy field nodes are not glossary entries (ADR-028 D4).
+        concepts = list(
+            session.execute(select(Concept).where(Concept.kind == "concept")).scalars()
+        )
         entries = [
             GlossaryEntry(
                 label=c.label,

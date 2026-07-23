@@ -11,6 +11,58 @@ Format: What changed | Why | Rejected alternatives | What it opens
 > (moved verbatim 2026-07-21). This file keeps 2026-07-15 onward.
 
 ---
+## 2026-07-23 — Taxonomy increment 1 (ADR-028): schema + write seam + ANZSRC seed
+
+Built the durable substrate for the concept taxonomy, the first increment of
+[ADR-028](decisions/ADR-028-concept-taxonomy-polyhierarchy-skos.md) to the design-locked spec
+`docs/specs/feature-taxonomy-seed-schema.md`. **$0, zero-LLM, backend + data only. Staged, not
+committed** (cpc §13). Full suite **1236 passed** (+15); `ruff` · `ruff format` · `mypy --strict src`
+(66 files) · `bandit` clean; `docs_check`/`integrity_check` 0/0.
+
+**What.**
+- **T1a `kind` column on `concepts`** (`db/models.py` + `db/migrations.py` `_ADDITIVE_COLUMNS`):
+  `"concept"` (text-bearing) | `"domain"` (abstract field node). The migration DDL
+  `VARCHAR NOT NULL DEFAULT 'concept'` **backfills every existing row in the same ALTER** — the KI-25
+  discipline made explicit (an additive column whose absent value would change behaviour ships its
+  backfill in the same change). Indexed in the model *and* the migration so fresh and migrated DBs match.
+- **T1b/c two new tables** (`create_all`, additive — no migration): `concept_hierarchy` (the curated
+  `is_a`/`in_field` DAG, polyhierarchy-native) and `document_field` (doc→field m2m, `origin`
+  curated|proposed). Both live **beside** `Concept`, so a `build_concept_skeleton` rebuild — which drops
+  the derived `concept_edges` — cannot wipe them (the KI-17/KI-20 class; the load-bearing guard is test 6).
+- **T2 `knowledge/taxonomy.py`** — the sole sanctioned write seam. `add_hierarchy_edge` enforces the
+  acyclicity invariant (ADR-028 D3) via a whole-graph `nx.is_directed_acyclic_graph` check, idempotent on
+  the unique key; `attach_document_field` validates the target is a `kind="domain"` node; `presence_nodes`
+  is the single canonical `kind="concept"` accessor (ADR-028 D4 — the domain-exclusion written once, not
+  scattered); `load_taxonomy` returns the read-only `DiGraph`.
+- **T3 seeder** — `scripts/seed_taxonomy.py` (dry-run default, `--apply`, prints the CC-BY attribution
+  every run) over `data/anzsrc_2020_for.json`. Field nodes key on a **stable UUID5** derived from the
+  ANZSRC code (idempotent across runs/machines); group→division links go through `add_hierarchy_edge`.
+- **14 guard tests** (`tests/unit/test_taxonomy.py`, the 9 DoD + 5 coverage), each fails against the
+  pre-increment code.
+
+**The one deviation, deliberately surfaced — the 213 group-level codes are NOT shipped.** The data file
+carries the **23 ANZSRC divisions** (verified against a reliable source) but leaves `groups` empty. Reason:
+the CC-BY provenance obligation + accuracy bar make it wrong to hand-transcribe 213 government codes from
+memory, and `WebFetch` returns a summarizing small-model answer (silent-truncation risk), not verifiable
+raw data — exactly the "no unverified data at scale" rule this project holds. The 23-division trunk is
+itself a correct, useful seed (the corpus maps onto divisions), and the 4-digit groups are a clean
+idempotent add once sourced. Guard test 8 asserts idempotency + structural rollup against the file's
+*actual* contents, so it stays green and auto-validates when the groups land.
+
+**Why now.** ADR-028 accepted, nothing built; the schema is the foundation every later increment (curation
+UI, auto-propose, coverage math) writes against. Ships first, alone.
+
+**Rejected.** (a) Hand-encoding the 213 groups from memory — fails the rigor/provenance bar. (b) Fetching
++ transcribing them via `WebFetch` this session — the endpoint 404'd and the summarizing fetch can't
+guarantee verbatim completeness; surfaced as a user decision instead. (c) Storing the hierarchy in
+`concept_edges` — a rebuild would wipe it (the whole point of the separate table).
+
+**What it opens.** The group-sourcing decision (fetch-and-verify vs. drop-in the official ABS
+spreadsheet). Then increment 2 (curation UI to edit the DAG), increment 3 (auto-propose `in_field`
+parents where NULL, $0/Ollama, KI-4), and coverage math (`load_taxonomy` is its substrate). The
+About/Settings CC-BY attribution UI is required before the taxonomy ships to users (spec T4).
+
+---
 ## 2026-07-23 — Concept-system docs consolidation (no code change)
 
 Brought the concept-graph / keyword / taxonomy documentation into a "clean state" after a long,

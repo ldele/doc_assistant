@@ -59,6 +59,13 @@ _ADDITIVE_COLUMNS: list[tuple[str, str, str, str | None]] = [
     # (pre-E3 turns recorded no such instrument snapshot). Unindexed: written per turn, read
     # only by per-record provenance lookups.
     ("answer_records", "epistemics_markers_enabled", "BOOLEAN", None),
+    # ADR-028 (taxonomy T1a) — node kind on the (pre-existing) concepts table. The literal
+    # DEFAULT 'concept' backfills every existing row in the same ALTER (KI-25 discipline: an
+    # additive column whose absent value would change behaviour ships its backfill in the same
+    # change — every pre-existing Concept is a concept, never a domain, so this is safe and
+    # correct). Indexed: presence_nodes() filters on it. NOT NULL is legal here because the
+    # DEFAULT supplies a value for the backfilled rows.
+    ("concepts", "kind", "VARCHAR NOT NULL DEFAULT 'concept'", "ix_concepts_kind"),
 ]
 
 

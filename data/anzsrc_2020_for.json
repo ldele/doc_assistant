@@ -1,0 +1,39 @@
+{
+  "_meta": {
+    "classification": "ANZSRC 2020 Fields of Research (FoR)",
+    "publisher": "Australian Bureau of Statistics",
+    "license": "CC BY 4.0",
+    "license_url": "https://creativecommons.org/licenses/by/4.0/",
+    "source_url": "https://www.abs.gov.au/statistics/classifications/australian-and-new-zealand-standard-research-classification-anzsrc/latest-release",
+    "attribution": "Contains Australian and New Zealand Standard Research Classification (ANZSRC) 2020 Fields of Research data © Commonwealth of Australia (Australian Bureau of Statistics), used under CC BY 4.0.",
+    "levels": "division (2-digit) + group (4-digit) only — the seed trunk (ADR-028 Decision 7). 6-digit fields are grafted on demand.",
+    "retrieved": "2026-07-23",
+    "completeness": "divisions: complete (23, verified). groups: PENDING an authoritative import — do not hand-transcribe (213 codes, unverified data at scale). See docs/specs/feature-taxonomy-seed-schema.md T3 and the DEVLOG entry dated 2026-07-23."
+  },
+  "divisions": [
+    {"code": "30", "label": "Agricultural, veterinary and food sciences"},
+    {"code": "31", "label": "Biological sciences"},
+    {"code": "32", "label": "Biomedical and clinical sciences"},
+    {"code": "33", "label": "Built environment and design"},
+    {"code": "34", "label": "Chemical sciences"},
+    {"code": "35", "label": "Commerce, management, tourism and services"},
+    {"code": "36", "label": "Creative arts and writing"},
+    {"code": "37", "label": "Earth sciences"},
+    {"code": "38", "label": "Economics"},
+    {"code": "39", "label": "Education"},
+    {"code": "40", "label": "Engineering"},
+    {"code": "41", "label": "Environmental sciences"},
+    {"code": "42", "label": "Health sciences"},
+    {"code": "43", "label": "History, heritage and archaeology"},
+    {"code": "44", "label": "Human society"},
+    {"code": "45", "label": "Indigenous studies"},
+    {"code": "46", "label": "Information and computing sciences"},
+    {"code": "47", "label": "Language, communication and culture"},
+    {"code": "48", "label": "Law and legal studies"},
+    {"code": "49", "label": "Mathematical sciences"},
+    {"code": "50", "label": "Philosophy and religious studies"},
+    {"code": "51", "label": "Physical sciences"},
+    {"code": "52", "label": "Psychology"}
+  ],
+  "groups": []
+}

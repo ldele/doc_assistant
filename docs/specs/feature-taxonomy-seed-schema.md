@@ -1,4 +1,15 @@
-<!-- status: design-locked · created: 2026-07-23 · owner: Code · plan: docs/decisions/ADR-028-concept-taxonomy-polyhierarchy-skos.md (increment 1) -->
+<!-- status: built · updated: 2026-07-23 · owner: Code · plan: docs/decisions/ADR-028-concept-taxonomy-polyhierarchy-skos.md (increment 1) -->
+
+> **BUILT 2026-07-23 (staged) — one caveat.** All the engineering landed and is gate-green: the `kind`
+> column + additive migration (T1a), the `concept_hierarchy` + `document_field` tables (T1b/c),
+> `knowledge/taxonomy.py` (T2), `scripts/seed_taxonomy.py` + `data/anzsrc_2020_for.json` (T3), and 14
+> guard tests (`tests/unit/test_taxonomy.py`) — `ruff`/`mypy --strict src`/`bandit` clean, full suite
+> **1236 passed**. **The one deviation from the DoD:** the seed data file ships the **23 ANZSRC divisions
+> (verified) but not the 213 four-digit groups** — those need an *authoritative* import (the CC-BY
+> provenance + accuracy bar rules out transcribing 213 government codes from memory or a summarizing
+> fetch). Guard test 8 asserts idempotency + structure against the file's *actual* contents, so it stays
+> green and re-validates automatically once the groups land. Sourcing the 213 groups is the open decision
+> — see the DEVLOG entry 2026-07-23 and T3 below.
 
 # Feature spec — Taxonomy increment 1: seed + schema
 

@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-07-19 (ADR-021 big-project layout: AGENTS.md entry + module CLAUDE.md files + cpc 1.2.3 vendored) · class: living -->
+<!-- status: active · updated: 2026-07-23 (concept-system truth-fixes: box corpus state, ADR-018 committed) · class: living -->
 
 # CONTEXT — doc_assistant
 

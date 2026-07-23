@@ -447,8 +447,15 @@ class Concept(Base):
     folder_id: Mapped[str | None] = mapped_column(
         String, ForeignKey("folders.id", ondelete="SET NULL"), nullable=True
     )
-    # "keyword" (promoted from a Keyword candidate) | "manual".
+    # "keyword" (promoted from a Keyword candidate) | "manual" | "anzsrc" (seeded field node).
     source: Mapped[str] = mapped_column(String, nullable=False, default="manual")
+    # ADR-028 — node kind. "concept" = a text-bearing concept (matched against document
+    # text via presence); "domain" = an abstract field node (zero presence, seeded from
+    # ANZSRC). The typed taxonomy hierarchy spans both, so both share this one id-space.
+    # PRESENCE-ASSUMING CODE MUST READ ONLY kind="concept" — go through the single canonical
+    # `knowledge.taxonomy.presence_nodes()` accessor, never a scattered `WHERE kind` clause.
+    # Non-null with a "concept" default: every pre-existing row is a concept, never a domain.
+    kind: Mapped[str] = mapped_column(String, nullable=False, default="concept", index=True)
     # Curated glossary gloss — a short definition of the concept. Optional; feeds the
     # semantic-distance layer (embed the definition, richer than the bare label).
     definition: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -485,6 +492,68 @@ class ConceptAlias(Base):
     concept: Mapped[Concept] = relationship("Concept", back_populates="aliases")
 
     __table_args__ = (UniqueConstraint("concept_id", "alias", name="uq_concept_alias"),)
+
+
+class ConceptHierarchy(Base):
+    """A curated taxonomy edge — the user's classification DAG (ADR-028).
+
+    CURATED user data, and the load-bearing property is that it **survives a skeleton
+    rebuild**: it lives here beside `Concept`/`ConceptAlias` (not in the derived
+    `ConceptEdge`, which is dropped + rebuilt every `build_concept_skeleton` run). Storing
+    the hierarchy in `concept_edges` would let a routine rebuild wipe it — the KI-17/KI-20
+    class of bug. Additive via `create_all` — no migration.
+
+    `source --is_a--> target` is concept→broader concept; `source --in_field--> target` is
+    concept→field or field→field. Polyhierarchy-native (many rows per `source_id`); the
+    combined `is_a`/`in_field` graph is kept acyclic by `knowledge.taxonomy.add_hierarchy_edge`,
+    the only sanctioned writer.
+    """
+
+    __tablename__ = "concept_hierarchy"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid4()))
+    source_id: Mapped[str] = mapped_column(
+        String, ForeignKey("concepts.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    target_id: Mapped[str] = mapped_column(
+        String, ForeignKey("concepts.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    # "is_a" (concept → broader concept) | "in_field" (concept/field → broader field).
+    type: Mapped[str] = mapped_column(String, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
+
+    __table_args__ = (
+        UniqueConstraint("source_id", "target_id", "type", name="uq_concept_hierarchy_edge"),
+    )
+
+
+class DocumentField(Base):
+    """A curated (or auto-proposed) link from a document to a taxonomy field (ADR-028).
+
+    Many-to-many: a document may sit under several fields, a field over many documents.
+    `concept_id` must resolve to a `kind="domain"` node (enforced by
+    `knowledge.taxonomy.attach_document_field`). Covers the documents that carry no concept
+    presence, which a derived-only "fields of the concepts it mentions" rule is blind to.
+    Additive via `create_all` — no migration.
+
+    `origin`: "curated" (a user edit — always wins) | "proposed" (an auto-fill the user may
+    override). The ADR-019 E1 seam; auto-propose itself is a later increment.
+    """
+
+    __tablename__ = "document_field"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid4()))
+    document_id: Mapped[str] = mapped_column(
+        String, ForeignKey("documents.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    concept_id: Mapped[str] = mapped_column(
+        String, ForeignKey("concepts.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    # "curated" (user edit, wins) | "proposed" (auto-fill, overridable).
+    origin: Mapped[str] = mapped_column(String, nullable=False, default="curated")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
+
+    __table_args__ = (UniqueConstraint("document_id", "concept_id", name="uq_document_field"),)
 
 
 class ConceptEdge(Base):

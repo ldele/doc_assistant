@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-07-20 (ADR-024: evals/ results folder pointer) · class: living -->
+<!-- status: active · updated: 2026-07-23 (concept & knowledge system map) · class: living -->
 
 # Architecture
 

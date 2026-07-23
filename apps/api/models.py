@@ -47,6 +47,11 @@ if TYPE_CHECKING:
     )
     from doc_assistant.knowledge.gaps import Gap
     from doc_assistant.knowledge.keyword_families import FamilyProposal
+    from doc_assistant.knowledge.taxonomy_view import (
+        FieldDetail,
+        TaxonomyField,
+        TaxonomyView,
+    )
     from doc_assistant.library import (
         DocConnections,
         DocumentChunkView,
@@ -1050,3 +1055,96 @@ class ConceptPresencePayload(BaseModel):
             chunk_keys=list(p.chunk_keys),
             n_mentions=p.n_mentions,
         )
+
+
+# ============================================================
+# Taxonomy (ADR-028 increment 2a) — the curated field forest + coverage
+# ============================================================
+
+
+class TaxonomyFieldPayload(BaseModel):
+    """One field (a `kind="domain"` node) with its structure + coverage counts.
+
+    `*_direct` = attached straight to this field; `*_rollup` = the distinct set under this field or
+    any narrower descendant (set-semantics, ADR-028 D6). Every count is 0 until concepts/documents
+    are attached — the honest zero-state, not a missing value.
+    """
+
+    id: str
+    label: str
+    parent_ids: list[str]
+    child_ids: list[str]
+    n_concepts_direct: int
+    n_documents_direct: int
+    n_concepts_rollup: int
+    n_documents_rollup: int
+
+    @classmethod
+    def from_field(cls, f: TaxonomyField) -> TaxonomyFieldPayload:
+        return cls(
+            id=f.id,
+            label=f.label,
+            parent_ids=list(f.parent_ids),
+            child_ids=list(f.child_ids),
+            n_concepts_direct=f.n_concepts_direct,
+            n_documents_direct=f.n_documents_direct,
+            n_concepts_rollup=f.n_concepts_rollup,
+            n_documents_rollup=f.n_documents_rollup,
+        )
+
+
+class TaxonomyViewPayload(BaseModel):
+    """The whole field forest + corpus-level totals (the classification denominators)."""
+
+    fields: list[TaxonomyFieldPayload]
+    roots: list[str]
+    n_concepts_total: int
+    n_documents_total: int
+    n_unassigned_concepts: int
+
+    @classmethod
+    def from_view(cls, v: TaxonomyView) -> TaxonomyViewPayload:
+        return cls(
+            fields=[TaxonomyFieldPayload.from_field(f) for f in v.fields],
+            roots=list(v.roots),
+            n_concepts_total=v.n_concepts_total,
+            n_documents_total=v.n_documents_total,
+            n_unassigned_concepts=v.n_unassigned_concepts,
+        )
+
+
+class FieldMemberPayload(BaseModel):
+    """A directly-attached member (a concept or a document) of one field."""
+
+    id: str
+    label: str
+
+
+class FieldDetailPayload(BaseModel):
+    """One field's directly-attached concepts + documents + rollup counts (a drill-in)."""
+
+    id: str
+    label: str
+    concepts: list[FieldMemberPayload]
+    documents: list[FieldMemberPayload]
+    n_concepts_rollup: int
+    n_documents_rollup: int
+
+    @classmethod
+    def from_detail(cls, d: FieldDetail) -> FieldDetailPayload:
+        return cls(
+            id=d.id,
+            label=d.label,
+            concepts=[FieldMemberPayload(id=i, label=lbl) for i, lbl in d.concepts],
+            documents=[FieldMemberPayload(id=i, label=lbl) for i, lbl in d.documents],
+            n_concepts_rollup=d.n_concepts_rollup,
+            n_documents_rollup=d.n_documents_rollup,
+        )
+
+
+class HierarchyEdgeRequest(BaseModel):
+    """Add/remove one curated hierarchy edge (`source --type--> target`)."""
+
+    source_id: str
+    target_id: str
+    type: Literal["is_a", "in_field"]

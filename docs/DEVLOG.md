@@ -11,6 +11,55 @@ Format: What changed | Why | Rejected alternatives | What it opens
 > (moved verbatim 2026-07-21). This file keeps 2026-07-15 onward.
 
 ---
+## 2026-07-23 — Taxonomy increment 2a (ADR-028): the curation backend (read model + read/write API)
+
+Built the **serve + edit backend** for the taxonomy, increment 2a of
+[ADR-028](decisions/ADR-028-concept-taxonomy-polyhierarchy-skos.md) to the spec
+`docs/specs/feature-taxonomy-curation.md`. Increment 1 seeded a disconnected field forest (236 fields,
+0 members); this is the read model a UI renders + the HTTP endpoints that attach concepts/documents and
+edit the hierarchy. **Backend only, $0, zero-LLM. Staged.** `ruff` · `mypy --strict src` (67 files) ·
+`bandit` clean · `svelte-check` 0/0 · `docs_check`/`integrity_check` 0/0.
+
+**What.**
+- **`knowledge/taxonomy_view.py`** — the read model: `load_taxonomy_view()` assembles the field forest
+  (each `kind="domain"` node with parents/children + direct + rolled-up concept/doc counts) and
+  corpus totals; `load_field_detail(id)` drills into one field's direct members. **Rollup is
+  set-semantics (ADR-028 D6)** — a field's coverage = the *distinct* set of concepts/docs for which it
+  is an ancestor (via `nx.ancestors` over the hierarchy DAG), deduped by id, so a concept under two
+  groups of one division counts **once** at the division. Honest zero-state (everything 0 until members
+  attach). Pure read, no LLM/network.
+- **`apps/api/routers/taxonomy.py`** — thin shell over the `taxonomy.py` seam: `GET /api/taxonomy`
+  (forest + coverage; 200 with 0s on an empty forest, not 404 — the trunk is bundled data),
+  `GET /api/taxonomy/fields/{id}` (404 for a non-domain id), `POST/DELETE /api/taxonomy/hierarchy`
+  (add/remove an edge — **attaching a concept to a field is just an `in_field` edge**, same endpoint;
+  409 on a cycle, 404 on a missing id, 422 on a bad type via the Literal), `POST
+  /api/taxonomy/documents/{doc}/fields/{field}` (400 `NotADomainError`, 404 no-such-doc). Registered in
+  `main.py`; payloads in `models.py`; mirrored in `types.ts` (consumed by 2b).
+- **12 new tests** — view-model units in `test_taxonomy.py` (rollup crosses group→division; polyhierarchy
+  dedup; document rollup; `field_detail` None-vs-empty) + route integration in
+  `tests/integration/test_api_taxonomy.py` (status-code mapping via `create_app(controller=…)`).
+
+**Live on the seeded corpus.** `GET /api/taxonomy` → 200: **236 fields, 23 roots, 26 concepts (26
+unassigned — the honest zero-state), 76 documents total**; Machine learning → 1 parent (Information and
+computing sciences), 0 rollup concepts. Attach-then-read (in a test) shows a concept on a group rolling
+up to its division.
+
+**Why this slice.** The graph shipped its read model first (PR-G1) before any renderer; same order. 2a is
+fork-free and verifiable on this box. The **frontend taxonomy view is 2b** — it needs live-app
+verification and is where ADR-019 D11's "dedicated view, deep-linked like Manage-keywords" placement lands
+(and where the app-shell nav track is settled).
+
+**Rejected.** (a) Building the Svelte view now — bundles a forky, live-verify-heavy frontend into a
+backend PR (build protocol: one PR per session). (b) A separate `attach-concept` endpoint — a concept→field
+attachment *is* an `in_field` edge, so `POST /hierarchy` already covers it; a second endpoint would be two
+ways to write one fact. (c) Deriving coverage from concept mentions — the taxonomy is explicit attachment
+(ADR-028 D6), and the 25/47 concept-less docs need `document_field`, which a derived rule can't see.
+
+**What it opens.** 2b (the Svelte taxonomy view); increment 3 (auto-propose `in_field` parents where a
+concept is unassigned — all 26 are, today — $0/Ollama, KI-4); coverage-based gap detectors (RG-015). The
+CC-BY attribution UI (T4) is still required before user-facing ship.
+
+---
 ## 2026-07-23 — Taxonomy increment 1 (ADR-028): schema + write seam + full ANZSRC seed + consumer guard
 
 Built the concept-taxonomy substrate, the first increment of

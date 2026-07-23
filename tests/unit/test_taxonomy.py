@@ -380,3 +380,110 @@ def test_load_glossary_excludes_domains(temp_db):
 
     labels = [e.label for e in load_glossary()]
     assert labels == ["BM25"]
+
+
+# ============================================================
+# taxonomy_view read model (increment 2a) — forest + set-semantics rollup coverage
+# ============================================================
+
+
+def _field(session, fid: str, label: str | None = None) -> Concept:
+    return _concept(session, fid, kind="domain", label=label or fid.upper())
+
+
+def test_taxonomy_view_zero_state_and_unassigned(temp_db):
+    """A seeded field forest with no members: totals honest, rollups 0, concepts unassigned."""
+    from doc_assistant.db.session import session_scope
+    from doc_assistant.knowledge.taxonomy import add_hierarchy_edge
+    from doc_assistant.knowledge.taxonomy_view import load_taxonomy_view
+
+    with session_scope() as s:
+        _field(s, "div", "Information and computing sciences")
+        _field(s, "grp", "Machine learning")
+        add_hierarchy_edge(s, "grp", "div", "in_field")  # group -> division
+        _concept(s, "c1", kind="concept", label="Embeddings")
+        _concept(s, "c2", kind="concept", label="BM25")
+
+    view = load_taxonomy_view()
+    assert len(view.fields) == 2
+    assert view.roots == ("div",)  # the division has no broader parent
+    assert view.n_concepts_total == 2
+    assert view.n_unassigned_concepts == 2  # neither concept attached yet
+    assert all(f.n_concepts_rollup == 0 and f.n_documents_rollup == 0 for f in view.fields)
+
+
+def test_taxonomy_view_rollup_crosses_group_to_division(temp_db):
+    """Attaching a concept to a group rolls up to the division (DoD 2)."""
+    from doc_assistant.db.session import session_scope
+    from doc_assistant.knowledge.taxonomy import add_hierarchy_edge
+    from doc_assistant.knowledge.taxonomy_view import load_taxonomy_view
+
+    with session_scope() as s:
+        _field(s, "div")
+        _field(s, "grp")
+        add_hierarchy_edge(s, "grp", "div", "in_field")
+        _concept(s, "c1", kind="concept")
+        add_hierarchy_edge(s, "c1", "grp", "in_field")  # attach concept to the group
+
+    by_id = {f.id: f for f in load_taxonomy_view().fields}
+    assert by_id["grp"].n_concepts_direct == 1
+    assert by_id["div"].n_concepts_direct == 0
+    assert by_id["div"].n_concepts_rollup == 1  # rollup crosses grp -> div
+    assert load_taxonomy_view().n_unassigned_concepts == 0
+
+
+def test_taxonomy_view_rollup_dedups_polyhierarchy(temp_db):
+    """A concept under two groups of one division counts ONCE at the division (DoD 6)."""
+    from doc_assistant.db.session import session_scope
+    from doc_assistant.knowledge.taxonomy import add_hierarchy_edge
+    from doc_assistant.knowledge.taxonomy_view import load_taxonomy_view
+
+    with session_scope() as s:
+        _field(s, "div")
+        _field(s, "g1")
+        _field(s, "g2")
+        add_hierarchy_edge(s, "g1", "div", "in_field")
+        add_hierarchy_edge(s, "g2", "div", "in_field")
+        _concept(s, "c1", kind="concept")
+        add_hierarchy_edge(s, "c1", "g1", "in_field")
+        add_hierarchy_edge(s, "c1", "g2", "in_field")  # same concept, two parents
+
+    by_id = {f.id: f for f in load_taxonomy_view().fields}
+    assert by_id["div"].n_concepts_rollup == 1  # deduped by id, not 2
+
+
+def test_taxonomy_view_document_rollup(temp_db):
+    from doc_assistant.db.session import session_scope
+    from doc_assistant.knowledge.taxonomy import add_hierarchy_edge, attach_document_field
+    from doc_assistant.knowledge.taxonomy_view import load_taxonomy_view
+
+    with session_scope() as s:
+        s.add(Document(id="d1", filename="p.pdf", source_original="p", doc_hash="h", format="pdf"))
+        _field(s, "div")
+        _field(s, "grp")
+        add_hierarchy_edge(s, "grp", "div", "in_field")
+        s.flush()
+        attach_document_field(s, "d1", "grp")
+
+    by_id = {f.id: f for f in load_taxonomy_view().fields}
+    assert by_id["grp"].n_documents_direct == 1
+    assert by_id["div"].n_documents_rollup == 1  # doc rolls up to the division
+
+
+def test_load_field_detail(temp_db):
+    from doc_assistant.db.session import session_scope
+    from doc_assistant.knowledge.taxonomy import add_hierarchy_edge
+    from doc_assistant.knowledge.taxonomy_view import load_field_detail
+
+    with session_scope() as s:
+        _field(s, "grp", "Machine learning")
+        _concept(s, "c1", kind="concept", label="Embeddings")
+        add_hierarchy_edge(s, "c1", "grp", "in_field")
+
+    detail = load_field_detail("grp")
+    assert detail is not None
+    assert detail.label == "Machine learning"
+    assert detail.concepts == (("c1", "Embeddings"),)
+    # a concept id or an unknown id is not a field -> None (distinct from a real-but-empty field)
+    assert load_field_detail("c1") is None
+    assert load_field_detail("nope") is None

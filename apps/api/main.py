@@ -39,6 +39,7 @@ from apps.api.routers import (
     library,
     settings,
     sources,
+    taxonomy,
 )
 from apps.api.services import (
     _default_ingest,
@@ -148,6 +149,7 @@ def create_app(
     app.include_router(conversations.router)
     app.include_router(library.router)
     app.include_router(concepts.router)
+    app.include_router(taxonomy.router)
     app.include_router(settings.router)
     app.include_router(sources.router)
 

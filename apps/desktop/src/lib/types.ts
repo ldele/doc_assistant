@@ -453,3 +453,49 @@ export interface GraphRebuildStatus {
   graph_version: string | null
   message: string | null
 }
+
+// ============================================================
+// Taxonomy (ADR-028 increment 2a) — the curated field forest + coverage.
+// Mirrors apps/api/models.py TaxonomyViewPayload / FieldDetailPayload / HierarchyEdgeRequest.
+// `*_direct` = attached straight to this field; `*_rollup` = the distinct set under this field or
+// any narrower descendant (set-semantics, ADR-028 D6). Every count is 0 until members attach.
+// ============================================================
+export interface TaxonomyField {
+  id: string
+  label: string
+  parent_ids: string[]
+  child_ids: string[]
+  n_concepts_direct: number
+  n_documents_direct: number
+  n_concepts_rollup: number
+  n_documents_rollup: number
+}
+
+export interface TaxonomyView {
+  fields: TaxonomyField[]
+  roots: string[]
+  n_concepts_total: number
+  n_documents_total: number
+  n_unassigned_concepts: number
+}
+
+export interface FieldMember {
+  id: string
+  label: string
+}
+
+export interface FieldDetail {
+  id: string
+  label: string
+  concepts: FieldMember[]
+  documents: FieldMember[]
+  n_concepts_rollup: number
+  n_documents_rollup: number
+}
+
+// source --type--> target (narrower -> broader). `in_field` also attaches a concept to a field.
+export interface HierarchyEdgeRequest {
+  source_id: string
+  target_id: string
+  type: 'is_a' | 'in_field'
+}

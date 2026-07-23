@@ -1,5 +1,13 @@
 <!-- status: active · updated: 2026-07-23 · class: disposable -->
 
+> **STATUS 2026-07-23.** The **taxonomy-shape spine (§1–2, §6, §7 step 1–2) is CANONICALISED** — it
+> became [ADR-028](decisions/ADR-028-concept-taxonomy-polyhierarchy-skos.md) (the ADR-019 amendment) +
+> the design-locked spec `docs/specs/feature-taxonomy-seed-schema.md`. Read those, not this note, for
+> the taxonomy decision. **§3 (graph→RAG) and §4–5 (the epistemic-health cluster + cost model) are NOT
+> yet canonical** — they are parked to a future **ADR-EH**, gated by `.claude/RIGOR_TODO.md` **RG-023**,
+> which cites *this note's §4–6* as its live design reference. So this file is kept, not deleted: it is
+> the working design for the parked epistemic-health strand. Do not plan taxonomy work off it.
+
 # Concept graph → taxonomy → epistemic health — vision & pre-grill design note
 
 **What this is.** A working note that clarifies *what we want from the concept-graph feature and where

@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-07-20 · class: living -->
+<!-- status: active · updated: 2026-07-23 · class: living -->
 
 # RIGOR_TODO — deferred rigor tracker
 

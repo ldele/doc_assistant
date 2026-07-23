@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-07-22 (E5 gap-list + triage shipped in the Graph view; E4 iteration-gate row noted) · class: living -->
+<!-- status: active · updated: 2026-07-23 (E5 gap-list + triage shipped in the Graph view; E4 iteration-gate row noted) · class: living -->
 
 # UI checklist — doc_assistant (Phase 8, kept open)
 

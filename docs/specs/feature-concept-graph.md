@@ -1,23 +1,34 @@
+<!-- status: mostly-built · updated: 2026-07-23 · class: append-only -->
+
 # Spec — Concept graph (a corroboration/coverage instrument that is also a navigation surface)
 
-**Status:** **DESIGN-LOCKED 2026-07-17** (grilled `grill-me`: 12 branches, 11 resolved / 1 parked; ledger at
-foot). Boundaries in **ADR-017**; the gap layer it surfaces is **ADR-004**; the vocabulary it reads is
-**ADR-015**, which reserved this track by name. **PR-G1 ✅ BUILT 2026-07-17, COMMITTED** (`/api/concepts/graph*` routes are in `apps/api/main.py` at HEAD; marker corrected 2026-07-20 — it had read "staged, not committed" for three days after the commit landed).**
+> **Canonical map:** `docs/architecture.md` → *Concept & knowledge system* holds the one-page picture of
+> how this feature relates to keyword families, the two graph layers, and the (unbuilt) taxonomy. This
+> spec is the design + build record for the **graph/gap UI** specifically.
 
-**Owner:** Claude Code. **Never bundle:** ~~PR-G1 serve~~ **BUILT** → ~~PR-G2a index+ego+chunks~~ **BUILT** →
-PR-G2b gaps as a destination → PR-G2c Library entry → ~~PR-G4 Node B~~ **RUN** (see the PR-G4 section).
+**Status (2026-07-23):** DESIGN-LOCKED 2026-07-17 (grilled `grill-me`: 12 branches, 11 resolved / 1 parked;
+ledger at foot). Boundaries in **ADR-017**; the gap layer it surfaces is **ADR-004**; the vocabulary it
+reads is **ADR-015**. Build state:
+
+| PR | What | State |
+|---|---|---|
+| PR-G1 | serve the read model | ✅ built + committed 2026-07-17 (routes now in `apps/api/routers/concepts.py` after the APIRouter split, `a878868`) |
+| PR-G2a | concept index + gap lens + ego + chunk nav | ✅ built + committed (`b02e2dc`) |
+| PR-G4 | run Node B | ✅ code built + run 2026-07-18; **but stance is NULL on the current DB (0/70 edges annotated, measured 2026-07-23) — the graph is association-only until a re-`--enrich` on the RTX box, KI-4** — see the PR-G4 section |
+| PR-G2b | gaps as a first-class destination + triage | ✅ **delivered by ROADMAP E5** (`a878868`): `GapList.svelte` + `GapTriage` sidecar + `GET /api/concepts/gaps` / `POST …/triage`; KI-17 (orphaned rows) resolved 2026-07-21 (E0.2) |
+| PR-G2c | Library entry (doc → its concepts) | ◻ **not built** — E4 (`1535cf0`) shipped a related-papers *Connections* panel instead; the doc→concepts reverse/ego view is still open |
+
+**Owner:** Claude Code.
 
 **⚠ Read `## The verdict` before designing any screen.** The gap payload is **~50% precise** and the strong
 half is **list-shaped, not graph-shaped**. A spec that leads with the pretty part ships the noise.
 
-> **⚠ TWO BOXES, TWO CORPORA — this spec's live numbers are not universal (added 2026-07-18).** PR-G1/G2a,
-> ADR-017 and `## The verdict` were measured on the **RTX box: 76 docs, 26 concepts, 14 gaps**. The **CPU
-> box carries 47 docs, 688 keywords, 357 concepts** and *none* of the labels this spec cites (`Res2Net`,
-> `PHATE`, `SBERT`, `Embeddings`) exist there. **Do not treat a live-verified number here as reproducible
-> on the box in front of you — re-measure.** The CPU box's vocabulary has since been rescoped to **13**
-> graph concepts / 19 edges / 15 gaps by **ADR-018** (`graph_include`), which also means
-> **`## The verdict`'s "single_source is the strong signal" ranking is un-retested at that size** — see
-> the PR-G2b note.
+> **⚠ RE-MEASURE PER BOX — this spec's live numbers are not universal.** `## The verdict` and PR-G1/G2a were
+> measured at **76 docs / 26 concepts / 14 gaps**. The primary dev box now *also* carries **76 docs / 26
+> concepts** (all `source=manual`, all `graph_include=1`, clean vocabulary — measured 2026-07-23), so the
+> cited labels (`Res2Net`, `PHATE`, `SBERT`, `Embeddings`) do resolve here again; but corpus state drifts
+> between boxes and over time (it was once 47 docs / 357 concepts). **Do not treat a live-verified number
+> here as reproducible on the box in front of you — re-measure.**
 
 ---
 
@@ -186,25 +197,20 @@ overflow. **Gate:** `svelte-check` 0/0, `vite build` clean (157 modules), still 
 - **Deep-link "Edit this concept"** → the Manage-keywords view (ADR-017 A1). The graph never writes the
   vocabulary.
 
-### PR-G2b — gaps as a first-class destination + triage
+### PR-G2b — gaps as a first-class destination + triage — ✅ DELIVERED by ROADMAP E5 (`a878868`)
 
-> **⚠ RE-MEASURE THE ORDERING FIRST (2026-07-18).** "Strong kinds first" inherits `## The verdict`'s
-> ranking, measured at **26 concepts / 14 gaps** on the RTX box. After ADR-018 the CPU box sits at **13
-> concepts / 15 gaps**, and the kinds are nearly **flat** — `thin_bridge` 4 · `isolated` 3 ·
-> `single_source` 3 · `under_connected` 3 · `unsourced_claim` 2. `single_source` is no longer
-> self-evidently the headline, and `under_connected`'s "graph-degree noise at n=26" argument needs
-> restating at n=13. **Re-derive the verdict on the box you build on; do not rubber-stamp it.**
-> Also blocked on **KI-17** — 10 orphaned stochastic gap rows are served today, and a gap you cannot
-> resolve to a concept is a gap you cannot triage.
+Built as `GapList.svelte` (self-contained, fetches + writes its own triage) + pure `lib/gaps.ts` (the
+RG-014 kind-ranking + tones) + `GapTriage` sidecar keyed on `(concept_id, kind)` (via `create_all`, the
+`figures` precedent — not `_ADDITIVE_COLUMNS`) + `GET /api/concepts/gaps` / `POST …/triage`. `GapRow.status`
+renders as **effective = override ?? "surfaced"**; `promoted` is the action slot the parked acquire loop
+(B13) attaches to. The load-bearing guard test (dismiss a *deterministic* gap → `build_gaps --apply` → the
+dismissal survives) ships with it, and **KI-17** (orphaned stochastic rows) was resolved 2026-07-21 (E0.2),
+so no gap is served that can't resolve to a concept.
 
-- Promote the gap lens to its own surface: the findings, grouped by kind, **strong kinds first**.
-- **Triage (dismiss/promote) via the ADR-017 C1 override sidecar** — new table keyed on `(concept_id, kind)`,
-  landing via `create_all` (the `figures` precedent), **not** `_ADDITIVE_COLUMNS` (that handles columns).
-  `GapRow.status` renders as **effective = override ?? "surfaced"**.
-- **Guard test (load-bearing):** dismiss a **deterministic** gap → `build_gaps --apply` → **the dismissal
-  survives.** This is the exact behaviour that is broken today (`gaps.py:257` deletes deterministic rows;
-  verified live: `dismissed` → `surfaced`).
-- `promoted` is the **action slot** the parked acquire loop (B13) attaches to. Do not repurpose it.
+> **⚠ RE-DERIVE THE ORDERING PER BOX.** "Strong kinds first" inherits `## The verdict`'s ranking, measured
+> at 26 concepts / 14 gaps. The kind mix and whether `single_source` is self-evidently the headline shift
+> with corpus size and the `graph_include` scope — re-measure on the box you build on rather than
+> rubber-stamping the ranking. `lib/gaps.ts` centralises it so a re-derivation is a one-file change.
 
 ### PR-G2c — Library entry (doc → its concepts)
 

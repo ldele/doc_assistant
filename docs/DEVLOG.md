@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-07-22 · class: append-only -->
+<!-- status: active · updated: 2026-07-23 · class: append-only -->
 
 # DEVLOG — doc_assistant
 
@@ -9,6 +9,53 @@ Format: What changed | Why | Rejected alternatives | What it opens
 
 > Entries **2026-07-14 and earlier** live in [`docs/archive/DEVLOG-archive-001.md`](archive/DEVLOG-archive-001.md)
 > (moved verbatim 2026-07-21). This file keeps 2026-07-15 onward.
+
+---
+## 2026-07-23 — Concept-system docs consolidation (no code change)
+
+Brought the concept-graph / keyword / taxonomy documentation into a "clean state" after a long,
+meandering implementation. **Docs only — zero code, zero data mutation.** Both doc gates green
+(`docs_check --strict` / `integrity_check` **0/0**).
+
+**What changed.**
+- **New canonical map** in `docs/architecture.md` → *Concept & knowledge system*: the one-page picture
+  the feature never had — one `Concept` table with four hats (keyword candidate → concept → keyword
+  family → taxonomy node), the **two distinct graph layers** (derived `concept_edges`, rebuilt every
+  run, vs curated `concept_hierarchy`, survives a rebuild — the KI-17/KI-20 load-bearing rule), what
+  reads the graph (epistemics / gaps / wiki), and the current build state.
+- **`GLOSSARY.md`:** fixed six stale `Authoritative in:` paths that still pointed at the pre-ADR-023
+  flat layout (`src/doc_assistant/*.py` → `.../knowledge/*.py`); added **C-011 domain/`kind`** and
+  **C-012 concept hierarchy** for the ADR-028 taxonomy terms (both flagged *decided, unbuilt*).
+- **`docs/specs/feature-concept-graph.md`:** replaced the strikethrough-laden header with a build-state
+  table (PR-G2b **delivered by E5** — KI-17 resolved, triage shipped; routes moved to
+  `apps/api/routers/concepts.py`); corrected the stale "TWO BOXES" note (this box is now 76 docs / 26
+  concepts, not 47/357; labels resolve again; Node-B stance NULL); pointed the spec at the new
+  architecture map.
+- **`.claude/CONTEXT.md`:** ADR-018 "staged" → committed (G8 done); the "47 docs / 688 kw / 357 concepts"
+  open-question bullet corrected to the box's actual **76 / 60 / 26** clean state.
+- **`.env.example`:** the wiki-communities comment pointed at the **deleted** `scripts.build_concept_graph`
+  and the empty **decoy** `data/graph/graph.json` → corrected to `build_concept_skeleton` /
+  `data/skeleton/skeleton.json`.
+- **Hygiene:** the two disposable PLAN notes kept `active` (both are still cited as `plan:` provenance
+  by specs / ADR-028 / RG-023 — archiving would break those pointers) with completion banners; bumped
+  four stale `updated:` headers (decisions.md, ROADMAP, ui-checklist, RIGOR_TODO) the prior commit left
+  behind, clearing `docs_check --strict`.
+
+**Why.** The concept system spans ADR-006/008/015/017/018/019/023/028 plus ~6 specs and two PLAN notes;
+truth had drifted (deleted-module pointers, a decoy artifact, box-state numbers, pre-split module paths)
+and there was no single map. Read-only data inventory (this box, `data/library.db`) confirmed the
+vocabulary is **clean** — 26 curated concepts, zero junk to demote.
+
+**Rejected.** (a) A full rewrite of `feature-concept-graph.md` — its verdict/traps/grill-ledger are a
+valuable append-only record; targeted truth-fixes + a status table beat a risky rewrite. (b) Archiving
+the two superseded PLAN notes per the cpc lifecycle rule — they are live `plan:` provenance for canonical
+specs/ADRs; moving them breaks references, so `active` + a banner is the honest state.
+
+**What it opens.** Data-curation decisions surfaced for the user (not actioned): `chunk_epistemics` empty
+(markers/E2 strip dark — `compute_epistemics` is $0), Node-B stance regen (LLM cost call, RTX box / KI-4),
+`gap_triage` table absent on this DB (predates the E0 model — `init_db` creates it), and the stale
+`data/graph/graph.json` decoy (safe to delete). The taxonomy build (ADR-028 increment 1,
+`docs/specs/feature-taxonomy-seed-schema.md`) remains the next code sprint.
 
 ---
 ## 2026-07-23 — Retrieval hygiene: scoped-ensemble LRU + reranker-input cap under multi-query

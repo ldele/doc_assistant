@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-07-21 · class: living -->
+<!-- status: active · updated: 2026-07-23 · class: living -->
 
 # Decisions — index
 

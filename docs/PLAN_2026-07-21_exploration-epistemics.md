@@ -1,4 +1,12 @@
-<!-- status: active · updated: 2026-07-21 · class: disposable -->
+<!-- status: active · updated: 2026-07-23 · class: disposable -->
+
+> **✅ COMPLETE 2026-07-23 — kept as the provenance record for its rows.** Every increment this plan
+> sequenced is done and committed: **E0** correctness batch, **E1.1/E1.2** marker-join + `_handle_rag`
+> extraction, **E2** source-evaluation strip, **E3** answer-layer toggle, **E4** Connections panel, and
+> the **RH1** retrieval-hygiene / APIRouter-split follow-ups (see `docs/ROADMAP.md` E-rows + the SESSION
+> baton). The "After the E-track" scale mechanics (KI-18/19) remain open but are tracked in
+> `.claude/KNOWN_ISSUES.md` / `.claude/RIGOR_TODO.md`, not here. Do not plan *new* work off this file —
+> it stays only because the E0/E1/E2 specs and the E4/E5/RH1 ROADMAP rows cite it as their `plan:` origin.
 
 # PLAN 2026-07-21 — exploration & epistemics surface (external review → wired increments)
 

@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-07-19 · class: living -->
+<!-- status: active · updated: 2026-07-23 · class: living -->
 
 # GLOSSARY — doc_assistant
 
@@ -27,7 +27,7 @@ presence matching; the unit both the concept skeleton and keyword families are b
 never auto-promoted; the user promotes one into a `Concept` (`promote_keyword`). The 2026-07-05
 `--promote-all` incident (ADR-018) is why this boundary is load-bearing.
 **Forbidden:** —
-**Authoritative in:** `src/doc_assistant/keywords.py` + `db/models.py::Keyword`
+**Authoritative in:** `src/doc_assistant/knowledge/keywords.py` + `db/models.py::Keyword`
 
 ## C-003 — keyword family
 
@@ -36,7 +36,7 @@ never auto-promoted; the user promotes one into a `Concept` (`promote_keyword`).
 the `Concept` table with the graph and is **deliberately unfiltered** by `graph_include`.
 ("tag family" is the historical spec name — do not reintroduce it in new code or UI.)
 **Forbidden:** `tag family`, `tag`
-**Authoritative in:** `src/doc_assistant/keyword_families.py` + `library.list_keyword_families`
+**Authoritative in:** `src/doc_assistant/knowledge/keyword_families.py` + `library.list_keyword_families`
 
 ## C-004 — concept skeleton (the graph artifact)
 
@@ -45,7 +45,7 @@ the `Concept` table with the graph and is **deliberately unfiltered** by `graph_
 co-occurrence with citation/similarity provenance), persisted as `concept_edges` + `skeleton.json`;
 rebuilt, never hand-edited. "Concept graph" names the *feature/UI view* over it, not the artifact.
 **Forbidden:** `knowledge graph`
-**Authoritative in:** `src/doc_assistant/concept_skeleton.py`
+**Authoritative in:** `src/doc_assistant/knowledge/concept_skeleton.py`
 
 ## C-005 — Node A / Node B
 
@@ -54,7 +54,7 @@ rebuilt, never hand-edited. "Concept graph" names the *feature/UI view* over it,
 with relation/stance and never creates a node or edge. Host rebuild is `--apply --enrich` together
 (`--apply` alone wipes Node-B annotations).
 **Forbidden:** —
-**Authoritative in:** `concept_skeleton.py` / `concept_skeleton_enrich.py`
+**Authoritative in:** `knowledge/concept_skeleton.py` / `knowledge/concept_skeleton_enrich.py`
 
 ## C-006 — gap
 
@@ -63,7 +63,7 @@ with relation/stance and never creates a node or edge. Host rebuild is `--apply 
 rebuild; stochastic kinds (`suggested_*`) are status-preserving upserts — two different write
 disciplines (the KI-17 orphan class lives in that difference).
 **Forbidden:** —
-**Authoritative in:** `src/doc_assistant/gaps.py`
+**Authoritative in:** `src/doc_assistant/knowledge/gaps.py`
 
 ## C-007 — epistemics markers
 
@@ -71,7 +71,7 @@ disciplines (the KI-17 orphan class lives in that difference).
 **Definition:** Advisory chunk-level chips derived from skeleton node weights; inform-don't-block —
 they never change synthesis, ranking, or the answer (byte-identical when absent).
 **Forbidden:** `confidence score`
-**Authoritative in:** `src/doc_assistant/epistemics.py`
+**Authoritative in:** `src/doc_assistant/knowledge/epistemics.py`
 
 ## C-008 — graph_include
 
@@ -80,7 +80,29 @@ they never change synthesis, ranking, or the answer (byte-identical when absent)
 families ignore it by design. The curation verb is **demote** (`set_graph_include(cid, False)`),
 never delete — unfamiliar short labels are usually real specialist vocabulary.
 **Forbidden:** —
-**Authoritative in:** `db/models.py::Concept.graph_include` + `concept_skeleton.load_concepts`
+**Authoritative in:** `db/models.py::Concept.graph_include` + `knowledge/concept_skeleton.load_concepts`
+
+## C-011 — domain / `kind` (taxonomy node kind) — *decided, unbuilt*
+
+**Canonical:** `domain` (a `Concept` with `kind="domain"`)
+**Definition:** An abstract field node (e.g. *machine learning*, *neuroscience*) with zero text presence,
+seeded from ANZSRC, sharing the `Concept` table via a `kind` column (`concept` | `domain`) so typed
+hierarchy edges can span both (ADR-028 Decision 4, supersedes ADR-019 C1). Presence/gap detectors must
+read only `kind="concept"` — via the single canonical `presence_nodes()` accessor, never scattered
+`WHERE kind` clauses. **Not yet built** — spec: `docs/specs/feature-taxonomy-seed-schema.md` (T1a).
+**Forbidden:** `field node`, `category`
+**Authoritative in:** `docs/decisions/ADR-028-concept-taxonomy-polyhierarchy-skos.md` (spec: `feature-taxonomy-seed-schema.md`)
+
+## C-012 — concept hierarchy (curated classification DAG) — *decided, unbuilt*
+
+**Canonical:** `concept hierarchy`
+**Definition:** The user's curated `is_a`/`in_field` edges — a polyhierarchical, acyclic SKOS-shaped DAG
+over `Concept` nodes, stored in a new `concept_hierarchy` table that **survives a skeleton rebuild**
+(distinct from the derived, rebuilt-every-run `concept_edges`; ADR-028 Decision 5). This is the
+*classification* layer; `concept_edges` is the *association* layer. Documents attach to `domain` nodes via
+a `document_field` many-to-many (ADR-028 Decision 6). **Not yet built.**
+**Forbidden:** `concept tree` (it is a DAG, not a tree — polyhierarchy per ADR-028), `taxonomy tree`
+**Authoritative in:** `docs/decisions/ADR-028-concept-taxonomy-polyhierarchy-skos.md` (spec: `feature-taxonomy-seed-schema.md`; future `knowledge/taxonomy.py`)
 
 ## C-009 — Enrichment-Layer Pattern
 

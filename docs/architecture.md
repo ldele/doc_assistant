@@ -172,6 +172,54 @@ is tuned for short, section-headed papers and degrades on long, chaptered books.
 All chunk sizes and retrieval weights are **locked settings** — changed only via an
 eval-harness experiment, never edited ad hoc. See `.claude/CONTEXT.md`.
 
+## Concept & knowledge system
+
+The Phase-7 knowledge layer has grown over many increments (ADR-006/008/015/017/018/019/023/028).
+This is the canonical map of how its pieces relate; the module list is in *Module responsibilities*
+above, and each design choice is in the ADR named beside it.
+
+**One table, four hats.** Everything hangs off a single `Concept` table (`db/models.py::Concept`) —
+one id-space by deliberate choice (PR-G1 fixed the KI-15 id/label confusion by making it so). The same
+row is read four ways:
+
+1. **Keyword candidate → Concept.** `Keyword` rows are per-document mined terms (`knowledge/keywords.py`,
+   ADR-006 contrastive termhood) — *candidates only*, never auto-promoted. The user promotes one into a
+   curated `Concept` (`promote_keyword`). The 2026-07-05 `--promote-all` flood (ADR-018) is why that
+   boundary is load-bearing.
+2. **keyword family** — a `Concept` whose `ConceptAlias` rows hold member keyword names, used to collapse
+   near-duplicates (`llm`/`llms`) in the Library filter (ADR-015). Families **ignore `graph_include`** by
+   design; the graph respects it. Same rows, two consumers — the boundary ADR-015 named and ADR-018 paid for.
+3. **concept-skeleton node** — a `Concept` with `graph_include=true` becomes a node in the derived graph.
+4. **taxonomy node** *(decided, unbuilt)* — under ADR-028 a `Concept` also carries a `kind`
+   (`concept` | `domain`), letting abstract field nodes share the id-space.
+
+**Two graph layers over the same nodes.** These are distinct and must not be conflated:
+
+| Layer | What | Store | Lifecycle | ADR |
+|---|---|---|---|---|
+| **Derived** (association) | co-occurrence edges + Louvain communities (Node A), optionally LLM relation/stance (Node B) | `concept_edges` + `data/skeleton/skeleton.json` | **dropped & rebuilt** every `build_concept_skeleton` run (~7 s, deterministic) | ADR-008 |
+| **Curated** (classification) | the user's `is_a`/`in_field` hierarchy — a polyhierarchical SKOS DAG | `concept_hierarchy` table *(spec'd, unbuilt)* | **survives a rebuild** — lives beside `Concept`, never in `concept_edges` | ADR-019→ADR-028 |
+
+The load-bearing rule: **curated structure must never live in `concept_edges`**, because a routine rebuild
+would wipe it (the KI-17/KI-20 class of bug). Node A is zero-LLM; **Node B is a confined LLM pass that
+only annotates existing edges** — it never creates a node or edge, and `build_concept_skeleton --apply`
+*without* `--enrich` silently wipes its annotations (rebuild with `--apply --enrich` together).
+
+**What reads the graph.** `epistemics.py` projects skeleton node weights onto chunks (`chunk_epistemics`)
+→ the answer-path markers + E2 source strip; `gaps.py` runs deterministic detectors over the skeleton
+(`isolated`/`single_source`/`thin_bridge`/`under_connected`/`unsourced_claim`) → the gap list, with a
+`gap_triage` override table that survives rebuilds; `wiki.py` clusters over communities. All are
+**read-only over the vocabulary** — the graph UI never edits concepts, it deep-links to Manage-keywords
+(ADR-017 A1). The single write surface for the curated hierarchy will be a dedicated taxonomy view (ADR-028).
+
+**Current build state (2026-07-23).** Node A skeleton, keyword families, gap layer, epistemics projection,
+and the read-only graph/gap UI are **built and shipped**. The taxonomy layer (`kind`, `concept_hierarchy`,
+`document_field`, `knowledge/taxonomy.py`, `seed_taxonomy`) is **decided (ADR-028) and design-locked
+(`docs/specs/feature-taxonomy-seed-schema.md`) but not yet built**. Node-B stance regeneration is a local-LLM
+cost decision (KI-4, RTX box). The superseded open-vocabulary `concept_graph.py` was deleted 2026-07-07
+(KI-7); `data/graph/graph.json` is a stale empty decoy from that era — the live artifact is
+`data/skeleton/skeleton.json`.
+
 ## Document health model
 
 Each ingested document is scored on five signals: chunk count, chunks-per-page ratio, average chunk length, section detection rate, reference-flagged chunk ratio.

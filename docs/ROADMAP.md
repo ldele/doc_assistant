@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-07-22 (E3/E4/E5 built — E-track complete; E5 gap-list+triage staged) · class: living -->
+<!-- status: active · updated: 2026-07-23 (E3/E4/E5 built — E-track complete; E5 gap-list+triage staged) · class: living -->
 
 # ROADMAP — doc_assistant
 

@@ -31,6 +31,7 @@
     onRebuild,
     onOpenDocument,
     onManageConcept,
+    onPlaceConcept,
     loadPresence,
   }: {
     graph: ConceptGraph | null
@@ -41,6 +42,7 @@
     onRebuild: () => void
     onOpenDocument: (docId: string) => void
     onManageConcept: (conceptId: string, label: string) => void
+    onPlaceConcept: (conceptId: string, label: string) => void
     loadPresence: (conceptId: string) => Promise<ConceptPresence[]>
   } = $props()
 
@@ -392,6 +394,14 @@
                 title="Edit this concept in Manage keywords"
               >
                 <Icon name="pencil" size={13} /> Edit
+              </button>
+              <button
+                class="ghost sm"
+                onclick={() => onPlaceConcept(selectedNode.id, selectedNode.label)}
+                type="button"
+                title="Place this concept in the field taxonomy"
+              >
+                <Icon name="tag" size={13} /> Place
               </button>
             </div>
           </div>

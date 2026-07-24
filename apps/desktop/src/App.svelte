@@ -4,13 +4,17 @@
     ConceptGraph as ConceptGraphData,
     ConversationDetail,
     ConversationSummary,
+    FieldDetail,
+    FieldMember,
     GraphRebuildStatus,
     Health,
+    HierarchyEdgeRequest,
     KeywordFamily,
     KeywordFamilyProposal,
     LibraryDocument,
     LibraryFolder,
     RagOverrides,
+    TaxonomyView,
     TurnResult,
   } from './lib/types'
   import {
@@ -24,6 +28,11 @@
     detectKeywordFamilies,
     getConceptGraph,
     getConceptPresence,
+    getFieldDetail,
+    getTaxonomy,
+    addHierarchyEdge,
+    removeHierarchyEdge,
+    attachDocumentField,
     getConversation,
     getGraphRebuildStatus,
     getHealth,
@@ -59,6 +68,7 @@
   import LibraryDeleteConfirm from './lib/LibraryDeleteConfirm.svelte'
   import CompareCard from './lib/CompareCard.svelte'
   import ConceptGraph from './lib/ConceptGraph.svelte'
+  import LibraryTaxonomy from './lib/LibraryTaxonomy.svelte'
   import GlobalSearch from './lib/GlobalSearch.svelte'
   import Icon from './lib/Icon.svelte'
   import {
@@ -191,6 +201,19 @@
   let graphLoaded = false
   let graphRebuildState = $state<GraphRebuildStatus['state']>('idle')
 
+  // Taxonomy view (docs/specs/feature-taxonomy-view.md, ADR-028 2b). A dedicated modal that renders
+  // the curated field forest + *places* concepts/documents onto it. App owns the data; LibraryTaxonomy
+  // is a dumb renderer. Opened from the Library rail, or from a graph node's Place action (which
+  // preselects that concept via `taxonomyFocusConceptId`). Decoupled from the top-level nav — it's a
+  // global overlay like Settings/Search, so it opens from any mode.
+  let taxonomyOpen = $state(false)
+  let taxonomyView = $state<TaxonomyView | null>(null)
+  let taxonomyFieldDetail = $state<FieldDetail | null>(null)
+  let taxonomyConcepts = $state<FieldMember[]>([])
+  let taxonomyFocusConceptId = $state<string | null>(null)
+  let taxonomyLoading = $state(false)
+  let taxonomyError = $state<string | null>(null)
+
   async function loadConceptGraph(): Promise<void> {
     graphLoading = true
     graphError = null
@@ -242,6 +265,102 @@
   function manageConcept(_conceptId: string, _label: string): void {
     selectMode('library')
     manageKeywordsOpen = true
+  }
+
+  // Taxonomy modal (feature-taxonomy-view.md, 2b). Open lazy-loads the forest + the doc list (for the
+  // attach picker) + the concept vocabulary. `focusConceptId` (from a graph node's Place action)
+  // preselects that concept for placement. Inform-don't-block throughout.
+  // NB: a default-valued param, not `focusConceptId?: string` — the `<script lang="ts">` transform
+  // strips the type annotation but leaves the `?`, emitting invalid JS (`focusConceptId?`). svelte-check
+  // type-checks the source and misses it; it only breaks at runtime. Keep optional params defaulted here.
+  async function openTaxonomy(focusConceptId: string | null = null): Promise<void> {
+    taxonomyOpen = true
+    taxonomyFocusConceptId = focusConceptId
+    taxonomyError = null
+    taxonomyFieldDetail = null
+    if (!documentsLoaded) void refreshDocuments()
+    void ensureTaxonomyConcepts()
+    taxonomyLoading = true
+    try {
+      taxonomyView = await getTaxonomy()
+    } catch (e) {
+      taxonomyError = e instanceof Error ? e.message : String(e)
+    } finally {
+      taxonomyLoading = false
+    }
+  }
+  function closeTaxonomy(): void {
+    taxonomyOpen = false
+    taxonomyFocusConceptId = null
+  }
+
+  // The attach picker's vocabulary = the graph nodes (spec ledger #7 — 2a serves no concept list).
+  // Reuse the already-loaded graph when present, else fetch it. On failure the picker stays empty.
+  async function ensureTaxonomyConcepts(): Promise<void> {
+    if (taxonomyConcepts.length > 0) return
+    try {
+      const g = conceptGraph ?? (await getConceptGraph())
+      taxonomyConcepts = (g?.nodes ?? []).map((n) => ({ id: n.id, label: n.label }))
+    } catch {
+      // leave empty — attach-concept just has nothing to offer
+    }
+  }
+
+  async function selectTaxonomyField(fieldId: string): Promise<void> {
+    try {
+      taxonomyFieldDetail = await getFieldDetail(fieldId)
+    } catch (e) {
+      taxonomyError = e instanceof Error ? e.message : String(e)
+    }
+  }
+
+  // Write-then-refetch: the server owns counts + acyclicity, so re-pull the view + the open field's
+  // detail after every mutation rather than patching the tree by hand (mirrors the folder handlers).
+  async function reloadTaxonomy(): Promise<void> {
+    try {
+      taxonomyView = await getTaxonomy()
+    } catch {
+      // keep the prior view
+    }
+    const id = taxonomyFieldDetail?.id
+    if (id !== undefined) {
+      try {
+        taxonomyFieldDetail = await getFieldDetail(id)
+      } catch {
+        // keep the prior detail
+      }
+    }
+  }
+
+  async function taxonomyAddEdge(body: HierarchyEdgeRequest): Promise<void> {
+    taxonomyError = null
+    try {
+      await addHierarchyEdge(body)
+    } catch (e) {
+      taxonomyError = e instanceof Error ? e.message : String(e)
+      return
+    }
+    await reloadTaxonomy()
+  }
+  async function taxonomyRemoveEdge(body: HierarchyEdgeRequest): Promise<void> {
+    taxonomyError = null
+    try {
+      await removeHierarchyEdge(body)
+    } catch (e) {
+      taxonomyError = e instanceof Error ? e.message : String(e)
+      return
+    }
+    await reloadTaxonomy()
+  }
+  async function taxonomyAttachDocument(docId: string, fieldId: string): Promise<void> {
+    taxonomyError = null
+    try {
+      await attachDocumentField(docId, fieldId)
+    } catch (e) {
+      taxonomyError = e instanceof Error ? e.message : String(e)
+      return
+    }
+    await reloadTaxonomy()
   }
 
   // Grid ⇄ list toggle — a client-only view preference, persisted like theme/panel widths.
@@ -1018,6 +1137,7 @@
     onSelectMode={selectMode}
     onSelectCollection={selectCollection}
     onManageFolders={openManageFolders}
+    onOpenTaxonomy={() => openTaxonomy()}
     onClose={() => (sidebarOpen = false)}
     onPin={pinConversation}
     onArchive={archiveConversation}
@@ -1238,6 +1358,7 @@
             openDocument(id)
           }}
           onManageConcept={manageConcept}
+          onPlaceConcept={(id) => openTaxonomy(id)}
           loadPresence={getConceptPresence}
         />
       {:else}
@@ -1461,6 +1582,23 @@
     onSelectChat={searchOpenChat}
     onSelectDoc={searchOpenDoc}
     onClose={closeSearch}
+  />
+{/if}
+
+{#if taxonomyOpen}
+  <LibraryTaxonomy
+    view={taxonomyView}
+    fieldDetail={taxonomyFieldDetail}
+    loading={taxonomyLoading}
+    error={taxonomyError}
+    {documents}
+    concepts={taxonomyConcepts}
+    focusConceptId={taxonomyFocusConceptId}
+    onSelectField={selectTaxonomyField}
+    onAddEdge={taxonomyAddEdge}
+    onRemoveEdge={taxonomyRemoveEdge}
+    onAttachDocument={taxonomyAttachDocument}
+    onClose={closeTaxonomy}
   />
 {/if}
 

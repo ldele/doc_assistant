@@ -16,6 +16,9 @@ from `src/` (non-negotiable #3, `.claude/CONTEXT.md`).
   (375px, no overflow), 0 console errors, $0/offline where possible.
 - Product name is **Provenote** (ADR-012): wordmark/window title only — package/binary names stay
   `doc_assistant`; do not "finish" the rename.
+- **No optional params in `<script lang="ts">` functions.** The TS-strip drops the type but leaves the
+  `?`, emitting `function f(x?)` → `SyntaxError: Unexpected token '?'` that blanks the whole app mount —
+  and `svelte-check` passes it (it checks the source). Use a defaulted param: `x: T | null = null`.
 - Dev run: `npm run dev` (Vite :1420) against `just api` (:8001), or `just app` for both.
 
 **Tests:** `npm test` (Node's built-in `node:test`, zero deps; pure `lib/*.ts` only — since PR-2.5)

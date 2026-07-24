@@ -33,6 +33,7 @@
     onSelectMode,
     onSelectCollection,
     onManageFolders,
+    onOpenTaxonomy,
     onClose,
     onPin,
     onArchive,
@@ -53,6 +54,7 @@
     onSelectMode: (mode: 'chat' | 'library' | 'graph') => void
     onSelectCollection: (c: LibraryCollection) => void
     onManageFolders: () => void
+    onOpenTaxonomy: () => void
     onClose?: () => void
     onPin: (sessionId: string, pinned: boolean) => void
     onArchive: (sessionId: string, archived: boolean) => void
@@ -426,6 +428,13 @@
           <span class="treeicon"><Icon name="library" size={14} /></span>
           <span class="treelabel">All documents</span>
           <span class="count">{documents.length}</span>
+        </button>
+
+        <!-- Taxonomy (ADR-028 2b) — a dedicated field-forest modal; an action, not a collection
+             filter, so no active/count. Deep-linked from a graph node's Place action too. -->
+        <button class="treerow" onclick={onOpenTaxonomy} type="button" title="Organise concepts + documents into research fields">
+          <span class="treeicon"><Icon name="tag" size={14} /></span>
+          <span class="treelabel">Taxonomy</span>
         </button>
 
         <div class="section-head-row">

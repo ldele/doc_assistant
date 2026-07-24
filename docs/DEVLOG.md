@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-07-23 · class: append-only -->
+<!-- status: active · updated: 2026-07-24 · class: append-only -->
 
 # DEVLOG — doc_assistant
 
@@ -9,6 +9,94 @@ Format: What changed | Why | Rejected alternatives | What it opens
 
 > Entries **2026-07-14 and earlier** live in [`docs/archive/DEVLOG-archive-001.md`](archive/DEVLOG-archive-001.md)
 > (moved verbatim 2026-07-21). This file keeps 2026-07-15 onward.
+
+---
+## 2026-07-24 — Taxonomy increment 2b (ADR-028): the Svelte taxonomy view (placement modal)
+
+Built the **renderer** for the taxonomy, increment 2b to the spec `docs/specs/feature-taxonomy-view.md`
+(placement grill 2026-07-24). 2a served the field forest + coverage read model; this is the modal that
+renders it and *places* concepts/documents onto it. **Frontend only, $0, zero-LLM — nothing in `src/` or
+`apps/api/` touched.** `svelte-check` 0/0 · `npm test` **45 pass** (+4) · `docs_check`/`integrity_check` 0/0.
+
+**What.**
+- **`lib/taxonomy.ts`** — pure `buildForest(view) -> TaxonomyRow[]`: flattens the field DAG into ordered
+  indented rows (root then `child_ids`), guarded by the **ancestor set of the current path** (not a global
+  visited set — that would suppress a poly-parented subtree's second expansion). Diamonds terminate
+  guard-free; the guard only fires on a corrupt-DB cycle. `lib/taxonomy.test.ts` — 4 node:test cases
+  (order+depth, poly-parent expands under both, cycle truncates, empty→[]).
+- **`lib/LibraryTaxonomy.svelte`** — a dedicated modal (grill: not a tab in Manage-keywords), reusing the
+  scrim+dialog+Esc shell. Left: the 236-field forest with rollup badges + a label search that flattens on
+  query. Right: the selected field's detail — removable concept chips, read-only doc rows (2a has no
+  doc-detach route), and **attach-concept / attach-document** pickers. Honest zero-state header ("N not
+  yet placed"); `focusConceptId` shows a "Placing: <label>" banner + preselects the attach picker.
+- **`lib/api.ts`** — 5 self-contained client fns (`getTaxonomy`/`getFieldDetail`/`addHierarchyEdge`/
+  `removeHierarchyEdge`/`attachDocumentField`); `removeHierarchyEdge` is the client's first DELETE with a
+  JSON body. Error `detail` surfaced via the existing `errorDetail` helper (so the 409 cycle message shows).
+- **`App.svelte`** — owns the data (`taxonomyView`/`FieldDetail`/`Concepts`/`FocusConceptId`/loading/error),
+  `openTaxonomy`/`closeTaxonomy`, write-then-refetch mutation handlers. Concept-picker vocabulary =
+  `getConceptGraph().nodes → {id,label}` (ledger #7). **Entry points:** a **Sidebar** "Taxonomy" rail
+  action (beside Manage-folders) + a **graph node "Place"** sibling to Edit (`ConceptGraph.svelte`, new
+  `onPlaceConcept`) that opens the modal with the concept preselected (D11). The modal is a top-level
+  overlay — opens from any mode, so demoting Graph later can't strand it (grill: fully decoupled).
+
+**Why.** The grill locked 2b as a Library-reached modal, decoupled from the parked demote-Graph nav fork.
+The renderer needed live-app verification (screenshots time out on this box — `read_page`+`javascript_tool`).
+
+**⚠ Gotcha (cost me the mount, worth carrying).** An **optional parameter** `focusConceptId?: string` in a
+`<script lang="ts">` function compiles to invalid JS: the project's TS-strip drops the `: string` type but
+**leaves the `?`**, emitting `function openTaxonomy(focusConceptId?)` → `SyntaxError: Unexpected token '?'`,
+which silently fails the whole app mount (blank `#app`, no console error the preview tool surfaced).
+`svelte-check` type-checks the *source* and passes it. **Rule: default optional params in svelte `lang=ts`
+(`x: T | null = null`), never `x?: T`.** Recorded in `apps/desktop/CLAUDE.md`.
+
+**Live-verified ($0, real 76-doc / 30,882-chunk corpus, DB restored to baseline after):** forest 236
+fields / 23 roots, header **26 concepts / 76 docs / 26 not-placed**, all rollups 0 (honest zero-state).
+Attaching BM25 to a group ticked that group to **1·0** *and* its division's rollup to **1·0** (set-semantics
+crosses the group→division edge); removing reverted both + returned "26 not placed". The 409 cycle guard,
+exercised at the API level (a division→group edge closing the seeded loop), threw the backend's cycle
+message with **no partial write**. Graph "Place" opened the modal over Graph mode with the concept
+preselected. Dark + 375px: single-column, **0 overflow, 0 console errors**.
+
+**Rejected.** Field re-parenting UI (ledger #6 — ANZSRC structure rarely moves; the only cycle-capable
+edit, deferred with its 409-UI test). A global-visited forest walk (breaks render-under-both). Wiring the
+Library Collections rail (ledger #4 — a later increment).
+
+**What it opens.** Increment 3 — auto-propose `in_field` parents for the 26 unassigned concepts
+($0/Ollama, KI-4, RTX box). Later: Collections-rail population; a document-detach route; the field
+re-parenting control (+ its cycle-409 UI surface).
+
+---
+## 2026-07-24 — Taxonomy 2b spec review: narrowed to placement-only + concept-picker source (docs only)
+
+Code-grounded review of `docs/specs/feature-taxonomy-view.md` (increment 2b) against the shipped 2a
+backend + the existing frontend; amendments applied to the spec. **Docs only — no code touched.**
+
+**What.** Four findings, all folded in (grill-ledger rows #6–7 added):
+- **Narrowed 2b to placement-only (#6).** The overview promised "edits the hierarchy" but T3 specified
+  no field→field re-parenting control — and that is the *only* edit that can trip the 409 cycle guard
+  (concepts are never edge targets). Resolution: 2b ships concept→field attach/detach + document→field
+  attach; re-parenting stays API-only; DoD 5's cycle-409 check moved to the API level (`javascript_tool`
+  → api client), since no UI path can form a cycle.
+- **Named the concept-picker source (#7).** DoD required attaching a concept via the UI, but no prop or
+  endpoint supplied the attachable vocabulary (2a serves only counts; `FieldDetail` only already-attached
+  members). Resolution: feed from `getConceptGraph().nodes` → `{ id, label }`; accepted limitation:
+  demoted (`graph_include=false`) concepts aren't offered — reopener recorded. T3 gains
+  `concepts`/`focusConceptId` props; T4 gains `taxonomyConcepts`/`taxonomyFocusConceptId` + the graph
+  deep-link becomes a `manageConcept` **sibling** calling `openTaxonomy(conceptId)`.
+- **Pinned the tree guard as ancestor-path, not global-visited.** T2's tests conflicted otherwise: a
+  global visited set terminates but stops a poly-parented subtree expanding under its second parent.
+  Test wording fixed too (termination case is a *cycle*; a diamond terminates guard-free).
+- **Truth-fix in T1:** `api.ts` has no shared `request`/`fetchJson` helper — fns are self-contained
+  `fetch` + throw + typed cast; noted `removeHierarchyEdge` is the client's first DELETE-with-body.
+
+**Why.** DoD 5/6 were unbuildable as written (no cycle-capable UI path; no concept list to pick from);
+the guard ambiguity would have produced a test conflict mid-build.
+
+**Rejected.** Building the re-parent control now (ANZSRC structure rarely moves; keeps the modal
+simple); a new vocabulary-list endpoint (2a untouched — the graph client fn already serves the 26).
+
+**Opens.** Ledger #6/#7 reopeners: a re-parent control when curation needs it (giving the 409 guard a
+UI test); a vocabulary-list endpoint if demoted concepts ever need placement.
 
 ---
 ## 2026-07-23 — Taxonomy increment 2a (ADR-028): the curation backend (read model + read/write API)

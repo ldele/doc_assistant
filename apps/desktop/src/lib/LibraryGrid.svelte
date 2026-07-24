@@ -13,6 +13,9 @@
     view,
     activeKeywords = [],
     keywordsOf = (d) => d.keywords,
+    selectMode = false,
+    selectedIds = [],
+    onToggleSelect,
     onOpenDocument,
     onEditMetadata,
     onReveal,
@@ -22,10 +25,15 @@
     documents: LibraryDocument[]
     view: 'grid' | 'list'
     activeKeywords?: string[]
+    // Select mode (batch add-to-folder): tile clicks toggle membership in `selectedIds` instead of
+    // opening the document; the ⋯ menu hides. App owns the selection — this stays a dumb renderer.
+    selectMode?: boolean
+    selectedIds?: string[]
     // Tag families (PR-2.6): collapse a document's raw keywords into display **units**, so a
     // family renders as its single canonical chip. Defaults to the raw list, which is what keeps
     // the no-families path byte-identical — App passes `familyUnitsOf(familyCanonicalMap(...))`.
     keywordsOf?: (d: LibraryDocument) => string[]
+    onToggleSelect: (id: string) => void
     onOpenDocument: (id: string) => void
     onEditMetadata: (id: string) => void
     onReveal: (id: string) => void
@@ -114,15 +122,23 @@
   <div class="grid">
     {#each documents as d (d.id)}
       {@const units = tileUnits(d)}
+      {@const isSel = selectMode && selectedIds.includes(d.id)}
       <div class="tile" class:menuopen={openMenuFor === d.id}>
         <button
           class="tilebody"
-          onclick={() => onOpenDocument(d.id)}
+          class:selected={isSel}
+          onclick={() => (selectMode ? onToggleSelect(d.id) : onOpenDocument(d.id))}
           type="button"
           title={d.filename}
           aria-label={docLabel(d)}
+          aria-pressed={selectMode ? isSel : undefined}
         >
           <span class="tilehead">
+            {#if selectMode}
+              <span class="selbox" class:on={isSel} aria-hidden="true">
+                {#if isSel}<Icon name="check" size={11} />{/if}
+              </span>
+            {/if}
             <span class="docmark"><Icon name="file-text" size={16} /></span>
             <span class="fmt">{d.format}</span>
             {#if d.customized}<span class="editmark" title="Edited metadata"></span>{/if}
@@ -150,28 +166,39 @@
             {/if}
           </span>
         </button>
-        <button
-          class="tileact"
-          title="More options"
-          aria-label="Document options"
-          aria-haspopup="menu"
-          onclick={(e) => openMenu(d.id, e)}
-          type="button"><Icon name="ellipsis" size={15} /></button
-        >
+        {#if !selectMode}
+          <button
+            class="tileact"
+            title="More options"
+            aria-label="Document options"
+            aria-haspopup="menu"
+            onclick={(e) => openMenu(d.id, e)}
+            type="button"><Icon name="ellipsis" size={15} /></button
+          >
+        {/if}
       </div>
     {/each}
   </div>
 {:else}
   <div class="rows">
     {#each documents as d (d.id)}
+      {@const isSel = selectMode && selectedIds.includes(d.id)}
       <div class="row" class:menuopen={openMenuFor === d.id}>
         <button
           class="rowbody"
-          onclick={() => onOpenDocument(d.id)}
+          class:selected={isSel}
+          class:selmode={selectMode}
+          onclick={() => (selectMode ? onToggleSelect(d.id) : onOpenDocument(d.id))}
           type="button"
           title={d.filename}
           aria-label={docLabel(d)}
+          aria-pressed={selectMode ? isSel : undefined}
         >
+          {#if selectMode}
+            <span class="selbox rowsel" class:on={isSel} aria-hidden="true">
+              {#if isSel}<Icon name="check" size={11} />{/if}
+            </span>
+          {/if}
           <span class="name"
             >{d.title ?? d.filename}{#if d.customized}<span
                 class="editmark inline"
@@ -188,14 +215,16 @@
             >
           </span>
         </button>
-        <button
-          class="rowact"
-          title="More options"
-          aria-label="Document options"
-          aria-haspopup="menu"
-          onclick={(e) => openMenu(d.id, e)}
-          type="button"><Icon name="ellipsis" size={14} /></button
-        >
+        {#if !selectMode}
+          <button
+            class="rowact"
+            title="More options"
+            aria-label="Document options"
+            aria-haspopup="menu"
+            onclick={(e) => openMenu(d.id, e)}
+            type="button"><Icon name="ellipsis" size={14} /></button
+          >
+        {/if}
       </div>
     {/each}
   </div>
@@ -254,6 +283,37 @@
   .tile.menuopen .tilebody {
     border-color: var(--accent);
     box-shadow: var(--shadow-1);
+  }
+  /* Select mode (batch add-to-folder): a checkbox-style indicator, accent ring when picked. */
+  .tilebody.selected,
+  .rowbody.selected {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 1px var(--accent);
+  }
+  .selbox {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 15px;
+    height: 15px;
+    border: 1.5px solid var(--border);
+    border-radius: 4px;
+    background: var(--bg);
+    color: var(--accent-fg);
+    flex: none;
+  }
+  .selbox.on {
+    background: var(--accent);
+    border-color: var(--accent);
+  }
+  .rowsel {
+    position: absolute;
+    left: 0.55rem;
+    top: 50%;
+    transform: translateY(-50%);
+  }
+  .rowbody.selmode {
+    padding-left: 2.1rem;
   }
   .tilehead {
     display: flex;

@@ -31,6 +31,7 @@
     open = false,
     collapsed = false,
     onToggleCollapse,
+    onOpenSearch,
     graphRail = null,
     onNew,
     onSelect,
@@ -55,6 +56,7 @@
     open?: boolean
     collapsed?: boolean
     onToggleCollapse: () => void
+    onOpenSearch: () => void
     graphRail?: Snippet | null
     onNew: () => void
     onSelect: (sessionId: string) => void
@@ -274,10 +276,11 @@
         <Icon name="waypoints" size={14} /> Graph
       </button>
       </div>
-      <!-- Collapse lives with the thing it collapses (spec b rework): sidebar top row, not the
-           header. Desktop-only — collapsing the mobile drawer is meaningless (the scrim closes it). -->
+      <!-- The top-left cluster (collapse · search): the collapse lives with the thing it collapses,
+           and the global search sits beside it. Collapse is desktop-only (collapsing the mobile
+           drawer is meaningless); search stays on mobile — the drawer is its home there. -->
       <button
-        class="collapse"
+        class="topbtn hide-mobile"
         onclick={onToggleCollapse}
         aria-label="Collapse sidebar"
         title="Collapse sidebar"
@@ -285,10 +288,16 @@
       >
         <Icon name="panel-left" size={15} />
       </button>
+      <button
+        class="topbtn"
+        onclick={onOpenSearch}
+        aria-label="Search chats and documents"
+        title="Search  (Ctrl/⌘ K)"
+        type="button"
+      >
+        <Icon name="search" size={15} />
+      </button>
     </div>
-    {#if mode === 'chat'}
-      <button class="new" onclick={onNew} type="button"><Icon name="rotate-ccw" size={15} /> New chat</button>
-    {/if}
   </div>
 
   {#if (mode === 'chat' && conversations.length > 0) || (mode === 'library' && documents.length > 0)}
@@ -413,6 +422,12 @@
 
   {#if mode === 'chat'}
     <nav class="list" aria-label="Conversation history" onscroll={closeMenu}>
+      <!-- New chat as a tree-style row (like Library's "All documents" and Graph's "Taxonomy") —
+           each rail opens with the same slim row idiom instead of a chunky filled button. -->
+      <button class="treerow" onclick={onNew} type="button">
+        <span class="treeicon"><Icon name="plus" size={14} /></span>
+        <span class="treelabel">New chat</span>
+      </button>
       {#if conversations.length === 0}
         <p class="empty">No conversations yet. Ask a question to start one.</p>
       {:else}
@@ -543,6 +558,15 @@
   >
     <Icon name="panel-left" size={16} />
   </button>
+  <button
+    class="railbtn"
+    onclick={onOpenSearch}
+    aria-label="Search chats and documents"
+    title="Search  (Ctrl/⌘ K)"
+    type="button"
+  >
+    <Icon name="search" size={16} />
+  </button>
   <div class="railsep"></div>
   <button
     class="railbtn"
@@ -627,7 +651,7 @@
     display: flex;
     gap: 0.3rem;
   }
-  .collapse {
+  .topbtn {
     font: inherit;
     cursor: pointer;
     flex: none;
@@ -640,12 +664,12 @@
     align-items: center;
     justify-content: center;
   }
-  .collapse:hover {
+  .topbtn:hover {
     color: var(--fg);
     background: var(--surface-2);
   }
   @media (max-width: 720px) {
-    .collapse {
+    .topbtn.hide-mobile {
       display: none;
     }
   }
@@ -668,20 +692,6 @@
     background: var(--surface-2);
     color: var(--fg);
     font-weight: 600;
-  }
-  .new {
-    font: inherit;
-    cursor: pointer;
-    padding: 0.45rem;
-    border-radius: 8px;
-    border: 1px solid var(--border);
-    background: var(--surface-2);
-    color: var(--fg);
-    font-weight: 600;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0.4rem;
   }
   /* Search + sort toolbar — fixed header strip above the scrolling list. */
   .toolbar {

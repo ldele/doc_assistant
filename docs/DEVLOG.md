@@ -11,6 +11,55 @@ Format: What changed | Why | Rejected alternatives | What it opens
 > (moved verbatim 2026-07-21). This file keeps 2026-07-15 onward.
 
 ---
+## 2026-07-24 — UI cleanup pass 2: full-width banner, top-left collapse·search cluster, slim New-chat, folder-picker filters, Library multi-select → add-to-folder
+
+Second play-feedback pass — cross-mode layout homogeneity + folder ergonomics. **Frontend only, $0,
+zero-LLM — nothing in `src/` or `apps/api/` touched.** `svelte-check` 0/0 · `npm test` **50 pass**.
+Live-verified on :1421 (read_page + computed styles; light+dark, desktop+375px, 0 console errors).
+
+**What.**
+- **Banner spans the full content width in all three modes.** `<header>` was hoisted out of `<main>`
+  into `.content` (new `.viewport` wrapper centers each mode's `<main>` below it). Previously the
+  header lived inside `main`, whose 820px chat cap vs 1500px library/graph cap made the banner jump
+  width/centering between modes. Header now carries its own `1rem` side padding (it no longer inherits
+  main's gutter). Verified: header x/width identical across Chat/Library/Graph (== `.content`).
+- **Top-left cluster = collapse · search** (the conventional chat-app shell): the global-search
+  trigger moved from the header `.actions` into the sidebar's top row beside the collapse button, and
+  onto the collapsed mini-rail. Header `.actions` now holds only chat-Export + Settings. Ctrl/⌘-K
+  unchanged; search stays visible on mobile (the drawer is its home there), collapse is desktop-only.
+- **"New chat" slimmed** from the chunky full-width filled button to a tree-style row (`+ New chat`)
+  at the top of the chat list — matching Library's "All documents" and Graph's "Taxonomy" row idiom,
+  so every rail opens the same way. New `plus` icon.
+- **Folder picker (Manage folders) made findable:** search now matches title/**author**/**filename**
+  (via the grid's `filterDocs`, was display-label-only — a doc was unfindable by filename or 2nd
+  author); added quick **type chips** (only when the corpus has ≥2 formats) + an **Unfiled** chip
+  (docs in no folder yet, the common case when building one) + an "N shown" count.
+- **Library multi-select → add to folder** (new). A **Select** toggle beside the view switch turns
+  tiles/rows into checkboxes; a slim action bar shows "N selected · Add to folder… · Clear · Done".
+  The folder menu lists folders (or routes to Manage folders when there are none). Selection is
+  App-owned (`libSelected`); LibraryGrid stays a dumb renderer (`selectMode`/`selectedIds`/
+  `onToggleSelect` props, ⋯ menu hidden in select mode). New `square-check-big` icon.
+
+**Why.** Play feedback: the banner felt non-standard because it resized between modes; the button
+cluster didn't match the conventional menu·collapse·search top-left; New chat was oversized; adding
+many documents to a folder one-⋯-menu-at-a-time was tedious and the picker couldn't find docs by
+filename/author.
+
+**Folders are organization + opt-in scope, not RAG isolation** (restated for the record, unchanged):
+default retrieval is whole-corpus; a folder only scopes a turn when explicitly picked beside the
+composer (ADR-025 F2/F4), with a visible scope chip + provenance. Multi-select is add-to-folder only.
+
+**Rejected.** **Bulk delete in the select bar** — the recorded position is "multi-select bulk delete
+deferred (needs ADR)" (ui-checklist), so selection stays add-to-folder-only this pass. Keeping search
+in the header (breaks the conventional top-left cluster). A 4th ⋯ menu item for multi-select (the
+menu geometry is hardcoded for 3 items, `LibraryGrid.svelte`; a toolbar toggle sidesteps that).
+
+**What it opens.** Bulk delete now has a natural home (the select bar) once its ADR lands. The
+hoisted-header structure is the frame a future back/forward nav cluster would slot into (deferred —
+it needs a real navigation history). `openMenu`'s hardcoded height is still a footgun for future menu
+items. Folder-picker type chips are dormant on this single-format corpus (all-PDF).
+
+---
 ## 2026-07-24 — UI cleanup: collapse control into the sidebar, graph rail into the shared Sidebar, chat-only Export, filter/search differentiation
 
 Four post-play irritations fixed in one pass (grilled 2026-07-24; all four forks user-resolved to the

@@ -9,7 +9,7 @@
   // — which was the point of writing it as a removable statement.
   import { untrack } from 'svelte'
   import type { LibraryDocument, LibraryFolder } from './types'
-  import { docLabel } from './library'
+  import { docLabel, filterDocs, typeGroups } from './library'
   import Icon from './Icon.svelte'
 
   let {
@@ -71,12 +71,21 @@
   // document. Safe as a one-shot initialiser because the overlay is mounted fresh on every open.
   let docQuery = $state(untrack(() => initialDocQuery))
   let pending = $state<Set<string>>(new Set())
+  // Quick narrowing lenses for the picker — same vocabulary as the Library rail: a type chip
+  // (only offered when the corpus has ≥2 formats) and an "Unfiled" chip for docs in no folder yet
+  // (the common case when building a new folder).
+  let typeFilter = $state<string | null>(null)
+  let unfiledOnly = $state(false)
+  const types = $derived(typeGroups(documents))
   const memberIds = $derived(
     new Set(selected ? documents.filter((d) => d.folder_ids.includes(selected.id)).map((d) => d.id) : []),
   )
   const shownDocs = $derived.by(() => {
-    const q = docQuery.trim().toLowerCase()
-    const list = q === '' ? documents : documents.filter((d) => docLabel(d).toLowerCase().includes(q))
+    // Same match fields as the Library grid search (title/label, filename, authors) — the picker
+    // used to match the display label only, which made known docs unfindable by filename.
+    let list = filterDocs(documents, docQuery)
+    if (typeFilter !== null) list = list.filter((d) => d.format === typeFilter)
+    if (unfiledOnly) list = list.filter((d) => d.folder_ids.length === 0 || memberIds.has(d.id))
     return [...list].sort((a, b) => docLabel(a).localeCompare(docLabel(b)))
   })
   function togglePending(id: string): void {
@@ -193,8 +202,34 @@
           class="search"
           type="search"
           bind:value={docQuery}
-          placeholder="Search {documents.length} documents…"
+          placeholder="Search {documents.length} documents — title, author, filename…"
         />
+        <div class="pickfilters">
+          {#if types.length >= 2}
+            {#each types as g (g.value)}
+              <button
+                class="chip"
+                class:on={typeFilter === g.value}
+                aria-pressed={typeFilter === g.value}
+                onclick={() => (typeFilter = typeFilter === g.value ? null : g.value)}
+                type="button"
+              >
+                {g.value.toUpperCase()} <span class="chipcount">{g.count}</span>
+              </button>
+            {/each}
+          {/if}
+          <button
+            class="chip"
+            class:on={unfiledOnly}
+            aria-pressed={unfiledOnly}
+            onclick={() => (unfiledOnly = !unfiledOnly)}
+            title="Only documents not yet in any folder (plus this folder's members)"
+            type="button"
+          >
+            Unfiled
+          </button>
+          <span class="shown">{shownDocs.length} shown</span>
+        </div>
         <div class="picker">
           {#each shownDocs as d (d.id)}
             {@const isMember = memberIds.has(d.id)}
@@ -218,7 +253,7 @@
               {/if}
             </label>
           {:else}
-            <p class="hint">No document matches “{docQuery}”.</p>
+            <p class="hint">No document matches the current search/filters.</p>
           {/each}
         </div>
         <button class="secondary" onclick={applyPending} disabled={pending.size === 0} type="button">
@@ -343,6 +378,45 @@
     width: 100%;
     font-size: 0.8rem;
     margin-bottom: 0.4rem;
+  }
+  .pickfilters {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.3rem;
+    margin-bottom: 0.4rem;
+  }
+  .chip {
+    font: inherit;
+    font-size: 0.7rem;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 0.1rem 0.55rem;
+    background: var(--surface-2);
+    color: var(--fg-2);
+  }
+  .chip:hover {
+    color: var(--fg);
+  }
+  .chip.on {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: var(--accent-fg);
+    font-weight: 600;
+  }
+  .chipcount {
+    font-variant-numeric: tabular-nums;
+    opacity: 0.8;
+  }
+  .shown {
+    margin-left: auto;
+    font-size: 0.7rem;
+    color: var(--fg-2);
+    font-variant-numeric: tabular-nums;
   }
   .primary {
     font: inherit;

@@ -181,6 +181,24 @@
   let manageFoldersOpen = $state(false)
   let manageFolderId = $state<string | null>(null)
   let manageFolderQuery = $state('')
+
+  // Library select mode (batch add-to-folder). Selection is App-owned (LibraryGrid stays dumb);
+  // bulk delete is deliberately NOT here — deferred pending its own ADR (ui-checklist).
+  let libSelectMode = $state(false)
+  let libSelected = $state<string[]>([])
+  let libAddMenuOpen = $state(false)
+  function toggleLibSelected(id: string): void {
+    libSelected = libSelected.includes(id) ? libSelected.filter((x) => x !== id) : [...libSelected, id]
+  }
+  function exitLibSelect(): void {
+    libSelectMode = false
+    libSelected = []
+    libAddMenuOpen = false
+  }
+  function addSelectionToFolder(folderId: string): void {
+    if (libSelected.length > 0) addDocsToFolder(folderId, libSelected)
+    exitLibSelect()
+  }
   let folderError = $state<string | null>(null)
 
   // Tag families (feature-tag-families.md, PR-1). Loaded alongside the document list;
@@ -1171,6 +1189,7 @@
     open={sidebarOpen}
     collapsed={sidebarCollapsed}
     onToggleCollapse={toggleSidebar}
+    onOpenSearch={openSearch}
     {graphRail}
     onNew={newConversation}
     onSelect={openConversation}
@@ -1193,8 +1212,10 @@
   ></div>
 
   <div class="content">
-    <main class:wide={mode === 'library' || mode === 'graph'}>
-      <header>
+    <!-- The banner spans the full content width in every mode (it used to live inside <main>,
+         whose 820px chat cap made the header jump between modes). Only the view bodies keep
+         per-mode measures below. -->
+    <header>
         <button class="hamburger" onclick={() => (sidebarOpen = true)} aria-label="Open conversations">
           <Icon name="menu" />
         </button>
@@ -1214,9 +1235,7 @@
           </div>
         </div>
         <div class="actions">
-          <button class="ghost" onclick={openSearch} aria-label="Search chats and documents" title="Search  (Ctrl/⌘ K)">
-            <Icon name="search" size={15} />
-          </button>
+          <!-- Search moved to the sidebar's top cluster (collapse · search); Ctrl/⌘-K still works. -->
           {#if mode === 'chat'}
             <!-- Export is a chat-only action (conversation transcript) — hidden elsewhere. -->
             <button
@@ -1230,8 +1249,10 @@
             <Icon name="settings" />
           </button>
         </div>
-      </header>
+    </header>
 
+    <div class="viewport">
+    <main class:wide={mode === 'library' || mode === 'graph'}>
       {#if mode === 'library'}
         <div class="library">
           <div class="libnav">
@@ -1314,8 +1335,66 @@
                   type="button"><Icon name="list" size={15} /></button
                 >
               </div>
+              {#if documents.length > 0}
+                <button
+                  class="selecttoggle"
+                  class:active={libSelectMode}
+                  aria-pressed={libSelectMode}
+                  onclick={() => (libSelectMode ? exitLibSelect() : (libSelectMode = true))}
+                  title="Select documents to add to a folder"
+                  type="button"
+                >
+                  <Icon name="square-check-big" size={14} /> Select
+                </button>
+              {/if}
             {/if}
           </div>
+
+          {#if libSelectMode && libraryDocId === null}
+            <div class="selectbar" role="toolbar" aria-label="Selection actions">
+              <span class="selcount">{libSelected.length} selected</span>
+              <div class="addwrap">
+                <button
+                  class="selact primaryish"
+                  disabled={libSelected.length === 0}
+                  aria-haspopup="menu"
+                  aria-expanded={libAddMenuOpen}
+                  onclick={() => (libAddMenuOpen = !libAddMenuOpen)}
+                  type="button"
+                >
+                  <Icon name="folder" size={13} /> Add to folder…
+                </button>
+                {#if libAddMenuOpen}
+                  <div class="sort-backdrop" onclick={() => (libAddMenuOpen = false)} role="presentation"></div>
+                  <div class="sortmenu" role="menu">
+                    {#each folders as f (f.id)}
+                      <button class="sortitem" role="menuitem" onclick={() => addSelectionToFolder(f.id)} type="button">
+                        <span class="tick"><Icon name="folder" size={13} /></span>
+                        {f.name}
+                      </button>
+                    {:else}
+                      <button
+                        class="sortitem"
+                        role="menuitem"
+                        onclick={() => {
+                          libAddMenuOpen = false
+                          openManageFolders()
+                        }}
+                        type="button"
+                      >
+                        <span class="tick"><Icon name="plus" size={13} /></span>
+                        No folders yet — create one…
+                      </button>
+                    {/each}
+                  </div>
+                {/if}
+              </div>
+              <button class="selact" disabled={libSelected.length === 0} onclick={() => (libSelected = [])} type="button">
+                Clear
+              </button>
+              <button class="selact" onclick={exitLibSelect} type="button">Done</button>
+            </div>
+          {/if}
 
           {#if libraryDocId !== null}
             <LibraryBrowser docId={libraryDocId} onOpenDocument={openDocument} />
@@ -1366,6 +1445,9 @@
                     view={libraryView}
                     activeKeywords={libraryKeywords}
                     {keywordsOf}
+                    selectMode={libSelectMode}
+                    selectedIds={libSelected}
+                    onToggleSelect={toggleLibSelected}
                     onOpenDocument={openDocument}
                     onEditMetadata={(id) => (editingDocId = id)}
                     onReveal={revealDoc}
@@ -1530,6 +1612,7 @@
       </footer>
       {/if}
     </main>
+    </div>
   </div>
 </div>
 
@@ -1685,13 +1768,22 @@
     flex: 1;
     min-width: 0;
     display: flex;
+    flex-direction: column;
+    height: 100vh;
+    overflow: hidden;
+  }
+  /* The header spans .content; the viewport centers each mode's <main> below it. */
+  .viewport {
+    flex: 1;
+    min-height: 0;
+    display: flex;
     justify-content: center;
     overflow: hidden;
   }
   main {
     width: 100%;
     max-width: 820px;
-    height: 100vh;
+    height: 100%;
     display: flex;
     flex-direction: column;
     padding: 0 1rem;
@@ -1703,11 +1795,13 @@
     max-width: 1500px;
   }
   header {
+    flex: none;
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: var(--space-2);
-    padding: var(--space-3) 0;
+    /* Full-width banner: it no longer inherits main's 1rem gutter, so it carries its own. */
+    padding: var(--space-3) 1rem;
     border-bottom: 1px solid var(--border);
   }
   .hamburger {
@@ -1914,6 +2008,75 @@
   .viewtoggle button.active {
     background: var(--surface-2);
     color: var(--accent);
+  }
+  /* Select mode (batch add-to-folder) — toggle beside the view switch + a slim action bar. */
+  .selecttoggle {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    font: inherit;
+    font-size: 0.78rem;
+    padding: 0.28rem 0.55rem;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface);
+    color: var(--fg-2);
+    cursor: pointer;
+  }
+  .selecttoggle:hover {
+    color: var(--fg);
+    border-color: var(--accent);
+  }
+  .selecttoggle.active {
+    background: var(--surface-2);
+    color: var(--accent);
+    border-color: var(--accent);
+  }
+  .selectbar {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.35rem 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .selcount {
+    font-size: 0.78rem;
+    color: var(--fg-2);
+    font-variant-numeric: tabular-nums;
+    min-width: 6.5em;
+  }
+  .addwrap {
+    position: relative;
+    flex: none;
+  }
+  .addwrap .sortmenu {
+    left: 0;
+    right: auto;
+  }
+  .selact {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    font: inherit;
+    font-size: 0.78rem;
+    padding: 0.26rem 0.55rem;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface);
+    color: var(--fg);
+    cursor: pointer;
+  }
+  .selact:hover:not(:disabled) {
+    border-color: var(--accent);
+  }
+  .selact:disabled {
+    opacity: 0.5;
+    cursor: default;
+  }
+  .selact.primaryish {
+    background: var(--surface-2);
+    font-weight: 600;
   }
   .libmain {
     flex: 1;

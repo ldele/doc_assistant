@@ -11,6 +11,61 @@ Format: What changed | Why | Rejected alternatives | What it opens
 > (moved verbatim 2026-07-21). This file keeps 2026-07-15 onward.
 
 ---
+## 2026-07-24 — UI cleanup pass 3: unified top toolbar (browser-chrome shell) + back/forward view history + ☰ app menu
+
+Reshaped the whole shell to the browser-chrome pattern the user kept referencing. **Frontend only,
+$0, zero-LLM — nothing in `src/` or `apps/api/` touched.** `svelte-check` 0/0 · `npm test` **50 pass**.
+Live-verified on :1421 with the api backend up (30,882 chunks): full nav-history retrace, all menus,
+collapse, mobile, dark — 0 console errors.
+
+**Why.** The user was lukewarm on the split-chrome shell (mode pills in the sidebar + brand/actions in
+a header bar) and asked for the two remaining browser-toolbar pieces: **← → back/forward** ("go back
+window", full view history) and a **☰ app menu** (shortcuts/settings/more). Both only make sense once
+the shell commits to a single top toolbar, so we unparked and did the restructure (user chose "unified
+top toolbar" + "every view you visit" for history).
+
+**What.**
+- **Unified top toolbar** (`App.svelte`): `.app` is now a column — a full-width `.topbar` over a
+  `.below` row (sidebar │ resizer │ content). The bar carries `☰ · ⊟ · ← → · brand · [Chat|Library|
+  Graph] · 🔍 · ⚙`. The mode switch **moved out of the sidebar** into the toolbar; the sidebar is now
+  purely the contextual list. The old in-`main` `<header>` is gone (that was pass-2's full-width
+  banner; now the toolbar spans the actual window, above the sidebar too).
+- **Collapse simplified**: with the mode tabs + search always in the toolbar, collapsing just hides
+  the rail (+ resizer) — the pass-1 **mini-rail is removed** (redundant). `sidebarCollapsed` persists.
+- **Back/forward view history** (`App.svelte`): a passive `$effect` observes the navigable snapshot
+  `{mode, libraryCollection, libraryDocId, graphSelectedId}` and records an entry on any change (cap
+  50, `untrack` so the stack write doesn't self-trigger). `navBack`/`navForward` replay an entry
+  through the real navigation paths; setting `navIndex` first makes the observer see the restored
+  state already matches and not re-record. A new navigation after going back truncates the forward
+  tail. Chat is tracked at mode granularity (opening a past conversation stays an in-rail affordance).
+  Verified: Chat→Library→doc→Graph→concept records 5 steps; back retraces to Chat (arrow disables at
+  the ends); forward re-walks; a fresh nav kills the forward tail.
+- **☰ app menu**: Settings, Keyboard shortcuts, Export transcript (chat-only), About Provenote.
+  Two small new modals — **`ShortcutsDialog.svelte`** (Ctrl/⌘K, Enter, Shift+Enter, Esc; ⌘ vs Ctrl by
+  platform) and **`AboutDialog.svelte`** (product blurb + live corpus stats + the standing **ANZSRC
+  CC-BY 4.0** attribution the taxonomy seed owes, ADR-028). Settings keeps its own ⚙ fast path too.
+- **Sidebar** (`Sidebar.svelte`): dropped the `.top`/mode-pills/collapse/search cluster and the
+  mini-rail + their props (`onSelectMode`, `collapsed`, `onToggleCollapse`, `onOpenSearch`) — the bar
+  owns all of that now. On mobile the drawer re-anchors to `.below` (`position: absolute`) so it
+  slides in **under** the toolbar, which stays visible/usable (was overlapping it).
+- New icons: `arrow-right`, `keyboard`, `info`.
+
+**Responsive.** Toolbar sheds weight as it narrows: the model/chunk subtitle hides < 1080px, then the
+tab labels go icon-only + the wordmark hides < 780px. Mobile keeps ☰/drawer-⊟/←→/search; no overflow
+at 375px.
+
+**Rejected.** Bolting ← → and ☰ onto the old split shell (kept the very split the user disliked). A
+full app-menu-only settings (kept ⚙ as the fast path). Tracking chat conversation-opens as history
+steps (noisy; the sidebar already navigates those). A full-height mobile drawer over the toolbar
+(re-anchored below it instead).
+
+**What it opens.** This unparks the demote-Graph fork by making the mode switch a toolbar concern —
+Graph now lives as a toolbar tab like the others; where it *belongs* is still an open product question,
+but the shell no longer forces it into the sidebar. History is in-memory per session (not persisted).
+The two new modals are the first non-Confirm info dialogs — a shared modal shell is now clearly worth
+extracting (six hand-rolled scrim+card copies and counting).
+
+---
 ## 2026-07-24 — UI cleanup pass 2: full-width banner, top-left collapse·search cluster, slim New-chat, folder-picker filters, Library multi-select → add-to-folder
 
 Second play-feedback pass — cross-mode layout homogeneity + folder ergonomics. **Frontend only, $0,

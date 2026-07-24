@@ -36,6 +36,9 @@
     | 'panel-left'
     | 'plus'
     | 'square-check-big'
+    | 'arrow-right'
+    | 'keyboard'
+    | 'info'
 
   let { name, size = 18 }: { name: IconName; size?: number } = $props()
 </script>
@@ -151,6 +154,20 @@
     <path d="M5 12h14" /><path d="M12 5v14" />
   {:else if name === 'square-check-big'}
     <path d="M21 10.5V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h12.5" /><path d="m9 11 3 3L22 4" />
+  {:else if name === 'arrow-right'}
+    <path d="M5 12h14" /><path d="m12 5 7 7-7 7" />
+  {:else if name === 'keyboard'}
+    <path d="M10 8h.01" /><path d="M12 12h.01" /><path d="M14 8h.01" /><path d="M16 12h.01" /><path
+      d="M18 8h.01"
+    /><path d="M6 8h.01" /><path d="M7 16h10" /><path d="M8 12h.01" /><rect
+      width="20"
+      height="16"
+      x="2"
+      y="4"
+      rx="2"
+    />
+  {:else if name === 'info'}
+    <circle cx="12" cy="12" r="10" /><path d="M12 16v-4" /><path d="M12 8h.01" />
   {/if}
 </svg>
 

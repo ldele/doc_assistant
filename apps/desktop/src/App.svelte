@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { untrack } from 'svelte'
   import type {
     CompareResult,
     ConceptGraph as ConceptGraphData,
@@ -70,6 +71,8 @@
   import CompareCard from './lib/CompareCard.svelte'
   import ConceptGraph from './lib/ConceptGraph.svelte'
   import GraphIndex from './lib/GraphIndex.svelte'
+  import ShortcutsDialog from './lib/ShortcutsDialog.svelte'
+  import AboutDialog from './lib/AboutDialog.svelte'
   import LibraryTaxonomy from './lib/LibraryTaxonomy.svelte'
   import GlobalSearch from './lib/GlobalSearch.svelte'
   import Icon from './lib/Icon.svelte'
@@ -88,6 +91,7 @@
     filterDocs,
     keywordFacets,
     sortDocs,
+    sameCollection,
   } from './lib/library'
   import { searchEverything } from './lib/search'
   import appMark from './assets/brand/app-mark.png'
@@ -588,6 +592,75 @@
     } catch {
       /* ignore — collapse state just won't persist */
     }
+  }
+
+  // App menu (☰) + its two info modals (keyboard shortcuts, about). The menu is the top-toolbar's
+  // "more" surface; Settings has its own gear too (a fast path), so it appears in both.
+  let appMenuOpen = $state(false)
+  let showShortcuts = $state(false)
+  let showAbout = $state(false)
+
+  // Browser-style navigation history (top-toolbar ← →). A "view" is the navigable snapshot: the
+  // mode plus each mode's location (library collection + open document, graph selection). A passive
+  // $effect observes those four fields and records a new entry whenever they change; ← / → replay a
+  // recorded entry through the real navigation paths. Chat is tracked at mode granularity (opening a
+  // past conversation is its own in-rail affordance, not a history step).
+  type NavEntry = {
+    mode: 'chat' | 'library' | 'graph'
+    collection: LibraryCollection
+    docId: string | null
+    graphId: string | null
+  }
+  const NAV_CAP = 50
+  let navStack = $state<NavEntry[]>([])
+  let navIndex = $state(-1)
+  const canNavBack = $derived(navIndex > 0)
+  const canNavForward = $derived(navIndex >= 0 && navIndex < navStack.length - 1)
+  function navEq(a: NavEntry, b: NavEntry): boolean {
+    return (
+      a.mode === b.mode &&
+      a.docId === b.docId &&
+      a.graphId === b.graphId &&
+      sameCollection(a.collection, b.collection)
+    )
+  }
+  $effect(() => {
+    // Tracked reads (the deps): a change to any of these is a navigation.
+    const entry: NavEntry = {
+      mode,
+      collection: libraryCollection,
+      docId: libraryDocId,
+      graphId: graphSelectedId,
+    }
+    // Untracked: reading/writing the stack here must not feed back into this effect.
+    untrack(() => {
+      const top = navStack[navIndex]
+      if (top && navEq(top, entry)) return
+      let base = navStack.slice(0, navIndex + 1)
+      base.push(entry)
+      if (base.length > NAV_CAP) base = base.slice(base.length - NAV_CAP)
+      navStack = base
+      navIndex = base.length - 1
+    })
+  })
+  // Replay through the real navigation functions so their side effects (lazy-loads, closing the
+  // citation panel) fire; setting navIndex first means the observer sees the restored state already
+  // matches navStack[navIndex] and does not re-record it.
+  function applyNav(e: NavEntry): void {
+    selectMode(e.mode)
+    libraryCollection = e.collection
+    libraryDocId = e.docId
+    graphSelectedId = e.graphId
+  }
+  function navBack(): void {
+    if (navIndex <= 0) return
+    navIndex -= 1
+    applyNav(navStack[navIndex])
+  }
+  function navForward(): void {
+    if (navIndex >= navStack.length - 1) return
+    navIndex += 1
+    applyNav(navStack[navIndex])
   }
 
   function startResize(e: PointerEvent): void {
@@ -1177,6 +1250,140 @@
 {/snippet}
 
 <div class="app" class:collapsed={sidebarCollapsed} style="--sidebar-width: {sidebarWidth}px">
+  <!-- Unified top toolbar (browser-chrome shell): one bar across the whole window carrying the app
+       menu, sidebar toggle, back/forward, brand, the mode tabs, and search/settings — the pattern
+       replaces the old split of mode-pills-in-sidebar + actions-in-header. -->
+  <div class="topbar">
+    <div class="tb-cluster">
+      <div class="menuwrap">
+        <button
+          class="tb-btn"
+          class:on={appMenuOpen}
+          onclick={() => (appMenuOpen = !appMenuOpen)}
+          aria-label="Menu"
+          aria-haspopup="menu"
+          aria-expanded={appMenuOpen}
+          title="Menu"
+          type="button"><Icon name="menu" size={17} /></button
+        >
+        {#if appMenuOpen}
+          <div class="menu-backdrop" onclick={() => (appMenuOpen = false)} role="presentation"></div>
+          <div class="appmenu" role="menu">
+            <button class="appmenuitem" role="menuitem" onclick={() => { appMenuOpen = false; showSettings = true }} type="button">
+              <Icon name="settings" size={15} /> Settings
+            </button>
+            <button class="appmenuitem" role="menuitem" onclick={() => { appMenuOpen = false; showShortcuts = true }} type="button">
+              <Icon name="keyboard" size={15} /> Keyboard shortcuts
+            </button>
+            {#if mode === 'chat'}
+              <button
+                class="appmenuitem"
+                role="menuitem"
+                disabled={viewing === null && resumedHistory === null && turns.length === 0}
+                onclick={() => { appMenuOpen = false; doExport() }}
+                type="button"
+              >
+                <Icon name="download" size={15} /> Export transcript
+              </button>
+            {/if}
+            <div class="appmenusep"></div>
+            <button class="appmenuitem" role="menuitem" onclick={() => { appMenuOpen = false; showAbout = true }} type="button">
+              <Icon name="info" size={15} /> About Provenote
+            </button>
+          </div>
+        {/if}
+      </div>
+      <!-- Sidebar toggle: desktop collapses inline, mobile opens the off-canvas drawer. -->
+      <button
+        class="tb-btn hide-mobile"
+        onclick={toggleSidebar}
+        aria-label={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+        aria-pressed={sidebarCollapsed}
+        title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+        type="button"><Icon name="panel-left" size={16} /></button
+      >
+      <button
+        class="tb-btn only-mobile"
+        onclick={() => (sidebarOpen = true)}
+        aria-label="Open sidebar"
+        title="Open sidebar"
+        type="button"><Icon name="panel-left" size={16} /></button
+      >
+      <button
+        class="tb-btn"
+        onclick={navBack}
+        disabled={!canNavBack}
+        aria-label="Back"
+        title="Back"
+        type="button"><Icon name="arrow-left" size={16} /></button
+      >
+      <button
+        class="tb-btn"
+        onclick={navForward}
+        disabled={!canNavForward}
+        aria-label="Forward"
+        title="Forward"
+        type="button"><Icon name="arrow-right" size={16} /></button
+      >
+    </div>
+
+    <div class="brand">
+      <span class="mark"><img src={appMark} alt="" width="28" height="28" /></span>
+      <div class="brandtext">
+        <span class="wordmark">proven<span class="wm-accent">ote</span></span>
+        {#if status === 'ready' && health}
+          <span class="meta">
+            {health.chunk_count.toLocaleString()} chunks · {health.model} · {health.embedding_model}
+          </span>
+        {:else if status === 'connecting'}
+          <span class="meta">starting the engine…</span>
+        {:else}
+          <span class="meta err">backend unreachable. Run <code>just api</code></span>
+        {/if}
+      </div>
+    </div>
+
+    <!-- Mode tabs (Chat/Library/Graph) — moved out of the sidebar into the toolbar. -->
+    <div class="tb-modes" role="tablist" aria-label="Workspace">
+      <button
+        class="tb-mode"
+        class:active={mode === 'chat'}
+        role="tab"
+        aria-selected={mode === 'chat'}
+        onclick={() => selectMode('chat')}
+        type="button"><Icon name="message-square" size={15} /><span class="tb-modelabel">Chat</span></button
+      >
+      <button
+        class="tb-mode"
+        class:active={mode === 'library'}
+        role="tab"
+        aria-selected={mode === 'library'}
+        onclick={() => selectMode('library')}
+        type="button"><Icon name="library" size={15} /><span class="tb-modelabel">Library</span></button
+      >
+      <button
+        class="tb-mode"
+        class:active={mode === 'graph'}
+        role="tab"
+        aria-selected={mode === 'graph'}
+        onclick={() => selectMode('graph')}
+        type="button"><Icon name="waypoints" size={15} /><span class="tb-modelabel">Graph</span></button
+      >
+    </div>
+
+    <div class="tb-spacer"></div>
+
+    <div class="tb-cluster">
+      <button class="tb-btn" onclick={openSearch} aria-label="Search chats and documents" title="Search  (Ctrl/⌘ K)" type="button">
+        <Icon name="search" size={16} />
+      </button>
+      <button class="tb-btn" onclick={() => (showSettings = true)} aria-label="Settings" title="Settings" type="button">
+        <Icon name="settings" size={17} />
+      </button>
+    </div>
+  </div>
+
+  <div class="below">
   <Sidebar
     {mode}
     {conversations}
@@ -1187,13 +1394,9 @@
     {libraryCollection}
     bind:libraryQuery
     open={sidebarOpen}
-    collapsed={sidebarCollapsed}
-    onToggleCollapse={toggleSidebar}
-    onOpenSearch={openSearch}
     {graphRail}
     onNew={newConversation}
     onSelect={openConversation}
-    onSelectMode={selectMode}
     onSelectCollection={selectCollection}
     onManageFolders={openManageFolders}
     onOpenTaxonomy={() => openTaxonomy()}
@@ -1212,45 +1415,6 @@
   ></div>
 
   <div class="content">
-    <!-- The banner spans the full content width in every mode (it used to live inside <main>,
-         whose 820px chat cap made the header jump between modes). Only the view bodies keep
-         per-mode measures below. -->
-    <header>
-        <button class="hamburger" onclick={() => (sidebarOpen = true)} aria-label="Open conversations">
-          <Icon name="menu" />
-        </button>
-        <div class="brand">
-          <span class="mark"><img src={appMark} alt="" width="32" height="32" /></span>
-          <div class="brandtext">
-            <span class="wordmark">proven<span class="wm-accent">ote</span></span>
-            {#if status === 'ready' && health}
-              <span class="meta">
-                {health.chunk_count.toLocaleString()} chunks · {health.model} · {health.embedding_model}
-              </span>
-            {:else if status === 'connecting'}
-              <span class="meta">starting the engine…</span>
-            {:else}
-              <span class="meta err">backend unreachable. Run <code>just api</code></span>
-            {/if}
-          </div>
-        </div>
-        <div class="actions">
-          <!-- Search moved to the sidebar's top cluster (collapse · search); Ctrl/⌘-K still works. -->
-          {#if mode === 'chat'}
-            <!-- Export is a chat-only action (conversation transcript) — hidden elsewhere. -->
-            <button
-              class="ghost"
-              onclick={doExport}
-              disabled={viewing === null && resumedHistory === null && turns.length === 0}
-              ><Icon name="download" size={15} /> Export</button
-            >
-          {/if}
-          <button class="ghost" onclick={() => (showSettings = true)} aria-label="Settings">
-            <Icon name="settings" />
-          </button>
-        </div>
-    </header>
-
     <div class="viewport">
     <main class:wide={mode === 'library' || mode === 'graph'}>
       {#if mode === 'library'}
@@ -1614,10 +1778,24 @@
     </main>
     </div>
   </div>
+  </div>
 </div>
 
 {#if showSettings}
   <Settings onClose={() => (showSettings = false)} onCorpusChanged={refreshHealth} bind:overrides />
+{/if}
+
+{#if showShortcuts}
+  <ShortcutsDialog onClose={() => (showShortcuts = false)} />
+{/if}
+
+{#if showAbout}
+  <AboutDialog
+    chunks={health?.chunk_count ?? null}
+    model={health?.model ?? null}
+    embedding={health?.embedding_model ?? null}
+    onClose={() => (showAbout = false)}
+  />
 {/if}
 
 {#if activeCitation && activeSource}
@@ -1734,7 +1912,16 @@
 <style>
   .app {
     display: flex;
+    flex-direction: column;
     height: 100vh;
+  }
+  /* The window below the full-width toolbar: sidebar │ resizer │ content. Positioned so the mobile
+     off-canvas drawer anchors here (below the toolbar) rather than over it. */
+  .below {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    position: relative;
   }
   /* Drag handle between the sidebar and the content — a thin hit area with a hover cue. */
   .resizer {
@@ -1756,10 +1943,13 @@
       display: none;
     }
   }
-  /* Collapsed sidebar (spec sub-item b) — desktop only. The sidebar hides itself (and shows its
-     mini-rail) via its own `collapsed` prop; here only the drag handle leaves flow. The min-width
-     guard leaves the mobile off-canvas drawer untouched. */
+  /* Collapsed sidebar — desktop only. The toolbar keeps the mode tabs + search reachable, so
+     collapsing simply hides the rail + its handle (no mini-rail needed). The min-width guard
+     leaves the mobile off-canvas drawer untouched. */
   @media (min-width: 721px) {
+    .app.collapsed :global(.sidebar) {
+      display: none;
+    }
     .app.collapsed .resizer {
       display: none;
     }
@@ -1769,10 +1959,9 @@
     min-width: 0;
     display: flex;
     flex-direction: column;
-    height: 100vh;
+    min-height: 0;
     overflow: hidden;
   }
-  /* The header spans .content; the viewport centers each mode's <main> below it. */
   .viewport {
     flex: 1;
     min-height: 0;
@@ -1794,38 +1983,156 @@
   main.wide {
     max-width: 1500px;
   }
-  header {
+
+  /* ---- top toolbar (browser-chrome shell) ---- */
+  .topbar {
     flex: none;
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    gap: var(--space-2);
-    /* Full-width banner: it no longer inherits main's 1rem gutter, so it carries its own. */
-    padding: var(--space-3) 1rem;
+    gap: var(--space-3);
+    padding: 0.45rem 0.7rem;
     border-bottom: 1px solid var(--border);
+    background: var(--bg);
   }
-  .hamburger {
-    display: none;
+  .tb-cluster {
+    display: flex;
+    align-items: center;
+    gap: 0.12rem;
+    flex: none;
+  }
+  .tb-spacer {
+    flex: 1;
+    min-width: var(--space-2);
+  }
+  .tb-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     font: inherit;
     cursor: pointer;
-    border: 1px solid var(--border);
-    background: var(--surface-2);
-    color: var(--fg);
+    border: 1px solid transparent;
+    background: none;
+    color: var(--fg-2);
     border-radius: 8px;
-    padding: 0.2rem 0.55rem;
+    padding: 0.32rem;
+  }
+  .tb-btn:hover:not(:disabled),
+  .tb-btn.on {
+    color: var(--fg);
+    background: var(--surface-2);
+  }
+  .tb-btn:disabled {
+    opacity: 0.32;
+    cursor: default;
+  }
+  .menuwrap {
+    position: relative;
+    display: inline-flex;
+  }
+  .only-mobile {
+    display: none;
+  }
+  @media (max-width: 720px) {
+    .hide-mobile {
+      display: none;
+    }
+    .only-mobile {
+      display: inline-flex;
+    }
+  }
+  /* App menu (☰) dropdown — mirrors the library sort menu idiom. */
+  .menu-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 30;
+  }
+  .appmenu {
+    position: absolute;
+    z-index: 31;
+    top: calc(100% + 6px);
+    left: 0;
+    min-width: 212px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    box-shadow: var(--shadow-2);
+    padding: 0.3rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.05rem;
+  }
+  .appmenuitem {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    width: 100%;
+    padding: 0.45rem 0.55rem;
+    border: none;
+    background: none;
+    color: var(--fg);
+    border-radius: 6px;
+    cursor: pointer;
+    font: inherit;
+    font-size: 0.85rem;
+    text-align: left;
+  }
+  .appmenuitem:hover:not(:disabled) {
+    background: var(--surface-2);
+  }
+  .appmenuitem:disabled {
+    opacity: 0.45;
+    cursor: default;
+  }
+  .appmenusep {
+    height: 1px;
+    background: var(--border);
+    margin: 0.25rem 0.3rem;
+  }
+  /* Mode tabs — segmented control in the toolbar. */
+  .tb-modes {
+    display: flex;
+    align-items: center;
+    gap: 0.2rem;
+    flex: none;
+    border: 1px solid var(--border);
+    border-radius: 9px;
+    padding: 2px;
+    background: var(--surface);
+  }
+  .tb-mode {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    font: inherit;
+    font-size: 0.82rem;
+    cursor: pointer;
+    border: none;
+    border-radius: 7px;
+    padding: 0.28rem 0.6rem;
+    background: none;
+    color: var(--fg-2);
+  }
+  .tb-mode:hover {
+    color: var(--fg);
+  }
+  .tb-mode.active {
+    background: var(--bg);
+    color: var(--fg);
+    font-weight: 600;
+    box-shadow: var(--shadow-1);
   }
   .brand {
     display: flex;
     align-items: center;
-    gap: var(--space-3);
-    flex: 1;
+    gap: var(--space-2);
+    flex: none;
     min-width: 0;
   }
   .mark {
     flex: none;
-    width: 32px;
-    height: 32px;
-    border-radius: 9px;
+    width: 28px;
+    height: 28px;
+    border-radius: 8px;
     overflow: hidden;
     display: inline-flex;
     align-items: center;
@@ -1845,9 +2152,10 @@
   }
   .wordmark {
     font-family: var(--font-serif);
-    font-size: var(--text-title);
+    font-size: 1.1rem;
     line-height: 1.15;
     color: var(--fg);
+    white-space: nowrap;
   }
   .wm-accent {
     color: var(--accent-wordmark);
@@ -1855,9 +2163,29 @@
   .meta {
     font-size: var(--text-meta);
     color: var(--fg-2);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
   .meta.err {
     color: var(--warn-fg);
+  }
+  /* Toolbar crowding: drop the model/chunk subtitle first, then the tab labels (icon-only). */
+  @media (max-width: 1080px) {
+    .meta {
+      display: none;
+    }
+  }
+  @media (max-width: 780px) {
+    .tb-modelabel {
+      display: none;
+    }
+    .tb-mode {
+      padding: 0.28rem 0.45rem;
+    }
+    .brandtext {
+      display: none;
+    }
   }
   .conversation {
     flex: 1;
@@ -2215,11 +2543,6 @@
     height: 1px;
     background: var(--border);
   }
-  .actions {
-    display: flex;
-    gap: 0.4rem;
-    align-items: center;
-  }
   .banner {
     border: 1px solid var(--border);
     border-radius: 12px;
@@ -2353,21 +2676,9 @@
       animation: none;
     }
   }
-  .ghost {
-    font-size: 0.82rem;
-    padding: 0.3rem 0.7rem;
-    display: inline-flex;
-    align-items: center;
-    gap: 0.3rem;
-  }
   .compare {
     font-size: 0.82rem;
     white-space: nowrap;
     color: var(--fg-2);
-  }
-  @media (max-width: 720px) {
-    .hamburger {
-      display: inline-flex;
-    }
   }
 </style>

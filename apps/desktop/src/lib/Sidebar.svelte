@@ -29,13 +29,9 @@
     libraryCollection,
     libraryQuery = $bindable(''),
     open = false,
-    collapsed = false,
-    onToggleCollapse,
-    onOpenSearch,
     graphRail = null,
     onNew,
     onSelect,
-    onSelectMode,
     onSelectCollection,
     onManageFolders,
     onOpenTaxonomy,
@@ -54,13 +50,9 @@
     libraryCollection: LibraryCollection
     libraryQuery?: string
     open?: boolean
-    collapsed?: boolean
-    onToggleCollapse: () => void
-    onOpenSearch: () => void
     graphRail?: Snippet | null
     onNew: () => void
     onSelect: (sessionId: string) => void
-    onSelectMode: (mode: 'chat' | 'library' | 'graph') => void
     onSelectCollection: (c: LibraryCollection) => void
     onManageFolders: () => void
     onOpenTaxonomy: () => void
@@ -241,65 +233,9 @@
   }
 </script>
 
-<aside class="sidebar" class:open class:collapsed>
-  <div class="top">
-    <div class="modes-row">
-      <div class="modes" role="tablist" aria-label="Workspace">
-      <button
-        class="mode"
-        class:active={mode === 'chat'}
-        role="tab"
-        aria-selected={mode === 'chat'}
-        type="button"
-        onclick={() => onSelectMode('chat')}
-      >
-        <Icon name="message-square" size={14} /> Chat
-      </button>
-      <button
-        class="mode"
-        class:active={mode === 'library'}
-        role="tab"
-        aria-selected={mode === 'library'}
-        type="button"
-        onclick={() => onSelectMode('library')}
-      >
-        <Icon name="library" size={14} /> Library
-      </button>
-      <button
-        class="mode"
-        class:active={mode === 'graph'}
-        role="tab"
-        aria-selected={mode === 'graph'}
-        type="button"
-        onclick={() => onSelectMode('graph')}
-      >
-        <Icon name="waypoints" size={14} /> Graph
-      </button>
-      </div>
-      <!-- The top-left cluster (collapse · search): the collapse lives with the thing it collapses,
-           and the global search sits beside it. Collapse is desktop-only (collapsing the mobile
-           drawer is meaningless); search stays on mobile — the drawer is its home there. -->
-      <button
-        class="topbtn hide-mobile"
-        onclick={onToggleCollapse}
-        aria-label="Collapse sidebar"
-        title="Collapse sidebar"
-        type="button"
-      >
-        <Icon name="panel-left" size={15} />
-      </button>
-      <button
-        class="topbtn"
-        onclick={onOpenSearch}
-        aria-label="Search chats and documents"
-        title="Search  (Ctrl/⌘ K)"
-        type="button"
-      >
-        <Icon name="search" size={15} />
-      </button>
-    </div>
-  </div>
-
+<!-- The mode switch + collapse + search moved to the top toolbar (App). The sidebar is now purely
+     the contextual list for the active mode. -->
+<aside class="sidebar" class:open>
   {#if (mode === 'chat' && conversations.length > 0) || (mode === 'library' && documents.length > 0)}
     <div class="toolbar">
       <div class="search">
@@ -545,61 +481,6 @@
   {/if}
 </aside>
 
-<!-- Collapsed mini-rail (desktop only, CSS-gated by the 721px media query — never template-gated,
-     so a persisted collapsed flag cannot leak into the mobile drawer, which always renders the full
-     sidebar above). Keeps the mode switch reachable while collapsed. -->
-<div class="minirail" class:on={collapsed} role="navigation" aria-label="Workspace (collapsed)">
-  <button
-    class="railbtn"
-    onclick={onToggleCollapse}
-    aria-label="Expand sidebar"
-    title="Expand sidebar"
-    type="button"
-  >
-    <Icon name="panel-left" size={16} />
-  </button>
-  <button
-    class="railbtn"
-    onclick={onOpenSearch}
-    aria-label="Search chats and documents"
-    title="Search  (Ctrl/⌘ K)"
-    type="button"
-  >
-    <Icon name="search" size={16} />
-  </button>
-  <div class="railsep"></div>
-  <button
-    class="railbtn"
-    class:active={mode === 'chat'}
-    onclick={() => onSelectMode('chat')}
-    aria-label="Chat"
-    title="Chat"
-    type="button"
-  >
-    <Icon name="message-square" size={16} />
-  </button>
-  <button
-    class="railbtn"
-    class:active={mode === 'library'}
-    onclick={() => onSelectMode('library')}
-    aria-label="Library"
-    title="Library"
-    type="button"
-  >
-    <Icon name="library" size={16} />
-  </button>
-  <button
-    class="railbtn"
-    class:active={mode === 'graph'}
-    onclick={() => onSelectMode('graph')}
-    aria-label="Graph"
-    title="Graph"
-    type="button"
-  >
-    <Icon name="waypoints" size={16} />
-  </button>
-</div>
-
 {#if openMenuFor && menuConvo}
   <div class="menu-backdrop" onclick={closeMenu} role="presentation"></div>
   <div class="menu" style="left: {menuPos.x}px; top: {menuPos.y}px" role="menu">
@@ -633,65 +514,6 @@
     flex-direction: column;
     background: var(--bg);
     overflow: hidden;
-  }
-  .top {
-    padding: 0.8rem;
-    border-bottom: 1px solid var(--border);
-    display: flex;
-    flex-direction: column;
-    gap: 0.6rem;
-  }
-  .modes-row {
-    display: flex;
-    align-items: stretch;
-    gap: 0.3rem;
-  }
-  .modes {
-    flex: 1;
-    display: flex;
-    gap: 0.3rem;
-  }
-  .topbtn {
-    font: inherit;
-    cursor: pointer;
-    flex: none;
-    border: 1px solid transparent;
-    background: none;
-    color: var(--fg-2);
-    border-radius: 8px;
-    padding: 0.3rem;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-  }
-  .topbtn:hover {
-    color: var(--fg);
-    background: var(--surface-2);
-  }
-  @media (max-width: 720px) {
-    .topbtn.hide-mobile {
-      display: none;
-    }
-  }
-  .mode {
-    flex: 1;
-    font: inherit;
-    cursor: pointer;
-    padding: 0.35rem;
-    border-radius: 8px;
-    border: 1px solid var(--border);
-    background: var(--surface);
-    color: var(--fg-2);
-    font-size: 0.82rem;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0.35rem;
-  }
-  .mode.active {
-    background: var(--surface-2);
-    color: var(--fg);
-    font-weight: 600;
   }
   /* Search + sort toolbar — fixed header strip above the scrolling list. */
   .toolbar {
@@ -1073,59 +895,14 @@
   .scrim {
     display: none;
   }
-  /* Collapsed mini-rail — hidden except on desktop while collapsed (see the markup comment). */
-  .minirail {
-    display: none;
-  }
-  @media (min-width: 721px) {
-    .sidebar.collapsed {
-      display: none;
-    }
-    .minirail.on {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 0.35rem;
-      width: 48px;
-      flex-shrink: 0;
-      height: 100vh;
-      padding: 0.8rem 0;
-      border-right: 1px solid var(--border);
-      background: var(--bg);
-    }
-  }
-  .railbtn {
-    font: inherit;
-    cursor: pointer;
-    border: 1px solid transparent;
-    background: none;
-    color: var(--fg-2);
-    border-radius: 8px;
-    padding: 0.4rem;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-  }
-  .railbtn:hover {
-    color: var(--fg);
-    background: var(--surface);
-  }
-  .railbtn.active {
-    color: var(--fg);
-    background: var(--surface-2);
-    border-color: var(--border);
-  }
-  .railsep {
-    width: 24px;
-    height: 1px;
-    background: var(--border);
-    margin: 0.15rem 0;
-  }
 
   @media (max-width: 720px) {
+    /* Off-canvas drawer, anchored to the .below wrapper (App sets position: relative) so it slides
+       in *under* the top toolbar, which stays visible and usable. */
     .sidebar {
-      position: fixed;
+      position: absolute;
       top: 0;
+      bottom: 0;
       left: 0;
       width: min(85vw, 320px);
       z-index: 20;
@@ -1138,7 +915,7 @@
     }
     .scrim {
       display: block;
-      position: fixed;
+      position: absolute;
       inset: 0;
       background: rgba(0, 0, 0, 0.35);
       z-index: 15;

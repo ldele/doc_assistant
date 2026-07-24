@@ -11,6 +11,36 @@ Format: What changed | Why | Rejected alternatives | What it opens
 > (moved verbatim 2026-07-21). This file keeps 2026-07-15 onward.
 
 ---
+## 2026-07-24 — UI cleanup pass 3b: corpus/model info → bottom status bar (toolbar keeps a small mark)
+
+Small follow-up to pass 3. The corpus/model subtitle (`N chunks · model · embedding`) moved out of the
+toolbar brand into a new full-width **bottom status bar** — it's ambient status, not navigation, so the
+status-bar footer is its idiomatic home; the toolbar keeps just the small mark + wordmark as the
+identity anchor (user's call: "keep a small mark top-left"). **Frontend only, $0.** `svelte-check` 0/0 ·
+`npm test` **50 pass** · live-verified (no overflow any mode, mobile, dark, 0 console errors).
+
+**What.**
+- `App.svelte` — brand in the toolbar is now mark + wordmark only. New `.statusbar` as the last child
+  of `.app` (flex column: toolbar · below · statusbar): a connection dot (green ready / amber
+  connecting / red down) + the corpus/model text, thin (~26px), full width under sidebar + content,
+  `role="status"`. Same three health branches the toolbar meta used.
+- `Sidebar.svelte` — **bugfix surfaced by this change**: `.sidebar` was `height: 100vh`, which now
+  overshot by the toolbar height (the rail sits inside `.below`, between toolbar and status bar, not
+  the full window) → 47px of phantom vertical scroll. Changed to `height: 100%`. The mobile drawer
+  (absolute in `.below`) inherits the fix and now ends exactly at the status bar.
+
+**Why.** Ambient status belongs in a status bar (IDE/editor convention), not in the action bar; moving
+it also de-crowds the toolbar. Brand stays top-left where identity anchors are conventionally expected.
+
+**Rejected.** Moving the whole brand (logo + wordmark) into the status bar — a headless top bar reads as
+off; kept the mark up top. A chat-only status bar — the bar spans all modes for consistency (thin +
+quiet so it never competes with the composer sitting just above it in chat).
+
+**What it opens.** The status bar is now a natural home for other ambient signals later (scope, sync,
+indexing progress). `--ok` (green) has no token yet — used an inline `#2e9e5b` fallback; worth adding a
+success token to the palette if this recurs.
+
+---
 ## 2026-07-24 — UI cleanup pass 3: unified top toolbar (browser-chrome shell) + back/forward view history + ☰ app menu
 
 Reshaped the whole shell to the browser-chrome pattern the user kept referencing. **Frontend only,

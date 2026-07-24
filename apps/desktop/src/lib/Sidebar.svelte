@@ -508,7 +508,9 @@
   .sidebar {
     width: var(--sidebar-width, 260px);
     flex-shrink: 0;
-    height: 100vh;
+    /* 100% of the .below row (between the toolbar and the status bar) — not 100vh, which would
+       overshoot by the toolbar's height now that the sidebar no longer spans the full window. */
+    height: 100%;
     border-right: 1px solid var(--border);
     display: flex;
     flex-direction: column;

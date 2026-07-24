@@ -1327,19 +1327,12 @@
       >
     </div>
 
+    <!-- Brand = identity anchor only (small mark + wordmark). The corpus/model status moved to the
+         bottom status bar — it's ambient status, not navigation. -->
     <div class="brand">
-      <span class="mark"><img src={appMark} alt="" width="28" height="28" /></span>
+      <span class="mark"><img src={appMark} alt="" width="26" height="26" /></span>
       <div class="brandtext">
         <span class="wordmark">proven<span class="wm-accent">ote</span></span>
-        {#if status === 'ready' && health}
-          <span class="meta">
-            {health.chunk_count.toLocaleString()} chunks · {health.model} · {health.embedding_model}
-          </span>
-        {:else if status === 'connecting'}
-          <span class="meta">starting the engine…</span>
-        {:else}
-          <span class="meta err">backend unreachable. Run <code>just api</code></span>
-        {/if}
       </div>
     </div>
 
@@ -1779,6 +1772,27 @@
     </div>
   </div>
   </div>
+
+  <!-- Bottom status bar (ambient, full-width): connection dot + corpus/model info. Thin and quiet so
+       it never competes with the chat composer sitting just above it. -->
+  <div class="statusbar" role="status" aria-live="polite">
+    <span
+      class="status-dot"
+      class:ok={status === 'ready'}
+      class:wait={status === 'connecting'}
+      class:off={status === 'down'}
+      aria-hidden="true"
+    ></span>
+    {#if status === 'ready' && health}
+      <span class="status-meta">
+        {health.chunk_count.toLocaleString()} chunks · {health.model} · {health.embedding_model}
+      </span>
+    {:else if status === 'connecting'}
+      <span class="status-meta">starting the engine…</span>
+    {:else}
+      <span class="status-meta err">backend unreachable. Run <code>just api</code></span>
+    {/if}
+  </div>
 </div>
 
 {#if showSettings}
@@ -2160,22 +2174,7 @@
   .wm-accent {
     color: var(--accent-wordmark);
   }
-  .meta {
-    font-size: var(--text-meta);
-    color: var(--fg-2);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-  .meta.err {
-    color: var(--warn-fg);
-  }
-  /* Toolbar crowding: drop the model/chunk subtitle first, then the tab labels (icon-only). */
-  @media (max-width: 1080px) {
-    .meta {
-      display: none;
-    }
-  }
+  /* Toolbar crowding: drop the tab labels (icon-only) then the wordmark, keeping the mark. */
   @media (max-width: 780px) {
     .tb-modelabel {
       display: none;
@@ -2186,6 +2185,48 @@
     .brandtext {
       display: none;
     }
+  }
+
+  /* ---- bottom status bar (ambient) ---- */
+  .statusbar {
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.25rem 0.9rem;
+    border-top: 1px solid var(--border);
+    background: var(--bg);
+    min-height: 1.6rem;
+  }
+  .status-dot {
+    flex: none;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--fg-2);
+  }
+  .status-dot.ok {
+    background: var(--ok, #2e9e5b);
+  }
+  .status-dot.wait {
+    background: var(--warn-fg);
+  }
+  .status-dot.off {
+    background: var(--danger);
+  }
+  .status-meta {
+    font-size: var(--text-meta);
+    color: var(--fg-2);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-width: 0;
+  }
+  .status-meta.err {
+    color: var(--warn-fg);
+  }
+  .status-meta code {
+    font-size: 0.92em;
   }
   .conversation {
     flex: 1;

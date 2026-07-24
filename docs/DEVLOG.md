@@ -11,6 +11,34 @@ Format: What changed | Why | Rejected alternatives | What it opens
 > (moved verbatim 2026-07-21). This file keeps 2026-07-15 onward.
 
 ---
+## 2026-07-24 — Replace native `window.confirm()` for conversation delete with an in-app dialog
+
+Swapped the OS-chrome confirm ("localhost:1420 says…") shown when deleting a conversation for a
+standard in-app modal. **Frontend only, $0, zero-LLM — nothing in `src/` or `apps/api/` touched.**
+`svelte-check` 0/0 · `npm test` **45 pass**. Live-verified: dialog opens from the conversation
+options menu, centers with a scrim, Delete is danger-red with a trash icon, Cancel/Esc/scrim-click
+back out, and cancelling leaves the conversation intact (no console errors).
+
+**What.**
+- **`lib/ConfirmDialog.svelte`** (new) — a generic scrim+card confirm dialog modeled on
+  `LibraryDeleteConfirm`'s house style (Esc / scrim-click / Cancel close; `tone: 'danger' | 'default'`,
+  danger carries the trash icon + red styling). Reusable, not conversation-specific.
+- **`App.svelte`** — `deleteConversation(sid)` no longer calls `window.confirm()`; it opens the dialog
+  via `pendingDeleteConvId` state, with `confirmDeleteConversation()` doing the soft-delete
+  (`updateConversationMeta deleted:true`) and a `deleteConvBusy` guard. On error the dialog stays open
+  to retry. Sidebar's `onDelete` contract is unchanged.
+
+**Why.** The native `confirm()` broke the app's look and reads as untrustworthy OS chrome; the app
+already had a matching modal pattern (`LibraryDeleteConfirm`) but hardcoded to documents.
+
+**Rejected.** A one-off `ConversationDeleteConfirm` (would proliferate near-identical modals);
+refactoring `LibraryDeleteConfirm` to consume the new generic (out of scope — its body is doc-specific
+with chunk counts, left untouched).
+
+**What it opens.** Other native `confirm()`/`alert()` sites (if any) can now migrate to `ConfirmDialog`;
+`LibraryDeleteConfirm` could later be re-expressed on top of it.
+
+---
 ## 2026-07-24 — Taxonomy increment 2b (ADR-028): the Svelte taxonomy view (placement modal)
 
 Built the **renderer** for the taxonomy, increment 2b to the spec `docs/specs/feature-taxonomy-view.md`

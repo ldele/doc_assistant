@@ -66,6 +66,7 @@
   import LibraryManageFolders from './lib/LibraryManageFolders.svelte'
   import LibraryMetaEditor from './lib/LibraryMetaEditor.svelte'
   import LibraryDeleteConfirm from './lib/LibraryDeleteConfirm.svelte'
+  import ConfirmDialog from './lib/ConfirmDialog.svelte'
   import CompareCard from './lib/CompareCard.svelte'
   import ConceptGraph from './lib/ConceptGraph.svelte'
   import LibraryTaxonomy from './lib/LibraryTaxonomy.svelte'
@@ -577,14 +578,17 @@
     window.addEventListener('pointermove', onMove)
     window.addEventListener('pointerup', onUp)
   }
-  async function deleteConversation(sid: string): Promise<void> {
-    // Soft-delete is reversible, but there's no restore UI yet — confirm to avoid a mis-click.
-    if (
-      !window.confirm(
-        'Delete this conversation? It is removed from your history; the underlying records are kept.',
-      )
-    )
-      return
+  // Soft-delete is reversible, but there's no restore UI yet — confirm via an in-app dialog (not the
+  // native window.confirm, which shows OS "localhost says" chrome) to avoid a mis-click.
+  let pendingDeleteConvId = $state<string | null>(null)
+  let deleteConvBusy = $state(false)
+  function deleteConversation(sid: string): void {
+    pendingDeleteConvId = sid
+  }
+  async function confirmDeleteConversation(): Promise<void> {
+    const sid = pendingDeleteConvId
+    if (sid === null) return
+    deleteConvBusy = true
     try {
       await updateConversationMeta(sid, { deleted: true })
       // If the deleted chat is the one on screen (viewed, resumed, or live), start fresh.
@@ -592,9 +596,12 @@
         newConversation()
       }
       await refreshConversations()
+      pendingDeleteConvId = null
     } catch (e) {
       console.error('delete failed', e)
+      // Leave the dialog open so the user can retry or cancel.
     }
+    deleteConvBusy = false
   }
 
   // Readiness gate (PR-M4): the frozen sidecar takes a few seconds to load models before
@@ -1521,6 +1528,17 @@
     busy={deleteBusy}
     onConfirm={confirmDelete}
     onClose={() => (deletingDocId = null)}
+  />
+{/if}
+
+{#if pendingDeleteConvId !== null}
+  <ConfirmDialog
+    title="Delete this conversation?"
+    body="It is removed from your history; the underlying records are kept."
+    confirmLabel="Delete"
+    busy={deleteConvBusy}
+    onConfirm={confirmDeleteConversation}
+    onClose={() => (pendingDeleteConvId = null)}
   />
 {/if}
 

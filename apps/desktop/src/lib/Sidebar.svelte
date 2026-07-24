@@ -6,6 +6,7 @@
   // pinned grouped into their own section) or the library navigation tree (All documents →
   // Collections → Types → Added → Keywords; the doc list itself moved to the main-pane grid).
   // Persistent column on desktop; an off-canvas drawer under 720px.
+  import type { Snippet } from 'svelte'
   import type { ConversationSummary, LibraryDocument, LibraryFolder } from './types'
   import {
     type LibraryCollection,
@@ -28,6 +29,9 @@
     libraryCollection,
     libraryQuery = $bindable(''),
     open = false,
+    collapsed = false,
+    onToggleCollapse,
+    graphRail = null,
     onNew,
     onSelect,
     onSelectMode,
@@ -49,6 +53,9 @@
     libraryCollection: LibraryCollection
     libraryQuery?: string
     open?: boolean
+    collapsed?: boolean
+    onToggleCollapse: () => void
+    graphRail?: Snippet | null
     onNew: () => void
     onSelect: (sessionId: string) => void
     onSelectMode: (mode: 'chat' | 'library' | 'graph') => void
@@ -232,9 +239,10 @@
   }
 </script>
 
-<aside class="sidebar" class:open>
+<aside class="sidebar" class:open class:collapsed>
   <div class="top">
-    <div class="modes" role="tablist" aria-label="Workspace">
+    <div class="modes-row">
+      <div class="modes" role="tablist" aria-label="Workspace">
       <button
         class="mode"
         class:active={mode === 'chat'}
@@ -265,6 +273,18 @@
       >
         <Icon name="waypoints" size={14} /> Graph
       </button>
+      </div>
+      <!-- Collapse lives with the thing it collapses (spec b rework): sidebar top row, not the
+           header. Desktop-only — collapsing the mobile drawer is meaningless (the scrim closes it). -->
+      <button
+        class="collapse"
+        onclick={onToggleCollapse}
+        aria-label="Collapse sidebar"
+        title="Collapse sidebar"
+        type="button"
+      >
+        <Icon name="panel-left" size={15} />
+      </button>
     </div>
     {#if mode === 'chat'}
       <button class="new" onclick={onNew} type="button"><Icon name="rotate-ccw" size={15} /> New chat</button>
@@ -274,29 +294,30 @@
   {#if (mode === 'chat' && conversations.length > 0) || (mode === 'library' && documents.length > 0)}
     <div class="toolbar">
       <div class="search">
-        <Icon name="search" size={14} />
+        <Icon name="search" size={13} />
         {#if mode === 'chat'}
-          <input type="text" bind:value={query} placeholder="Search chats" aria-label="Search chats" />
+          <input type="text" bind:value={query} placeholder="Filter chats…" aria-label="Filter chats" />
           {#if query}
-            <button class="clear" onclick={() => (query = '')} aria-label="Clear search" type="button">
+            <button class="clear" onclick={() => (query = '')} aria-label="Clear filter" type="button">
               <Icon name="x" size={13} />
             </button>
           {/if}
         {:else}
-          <!-- Library search filters the active collection shown in the grid (Decision 5a). -->
+          <!-- Library filter narrows the active collection shown in the grid (Decision 5a).
+               "Filter", not "Search" — the Ctrl/⌘-K overlay is the one global search. -->
           <input
             type="text"
             bind:value={libraryQuery}
             placeholder={libraryCollection.kind === 'all'
-              ? 'Search library'
-              : `Search ${collectionLabel(libraryCollection, folderNames)}`}
-            aria-label="Search library"
+              ? 'Filter library…'
+              : `Filter ${collectionLabel(libraryCollection, folderNames)}…`}
+            aria-label="Filter library"
           />
           {#if libraryQuery}
             <button
               class="clear"
               onclick={() => (libraryQuery = '')}
-              aria-label="Clear search"
+              aria-label="Clear filter"
               type="button"
             >
               <Icon name="x" size={13} />
@@ -430,13 +451,6 @@
           <span class="count">{documents.length}</span>
         </button>
 
-        <!-- Taxonomy (ADR-028 2b) — a dedicated field-forest modal; an action, not a collection
-             filter, so no active/count. Deep-linked from a graph node's Place action too. -->
-        <button class="treerow" onclick={onOpenTaxonomy} type="button" title="Organise concepts + documents into research fields">
-          <span class="treeicon"><Icon name="tag" size={14} /></span>
-          <span class="treelabel">Taxonomy</span>
-        </button>
-
         <div class="section-head-row">
           <p class="section-header">Folders</p>
           <button class="managelink" onclick={onManageFolders} type="button">Manage…</button>
@@ -501,8 +515,66 @@
 
       {/if}
     </nav>
+  {:else if mode === 'graph'}
+    <nav class="list graphrail" aria-label="Concept index">
+      <!-- Taxonomy (ADR-028 2b) — a dedicated field-forest modal; an action, not a filter, so no
+           active/count. Lives with the graph (concept space); also deep-linked from a node's Place. -->
+      <button class="treerow" onclick={onOpenTaxonomy} type="button" title="Organise concepts + documents into research fields">
+        <span class="treeicon"><Icon name="tag" size={14} /></span>
+        <span class="treelabel">Taxonomy</span>
+      </button>
+      <!-- The concept index itself is App-composed (GraphIndex) — the graph data + selection live
+           in App, and threading them through this component's props would double its surface. -->
+      {@render graphRail?.()}
+    </nav>
   {/if}
 </aside>
+
+<!-- Collapsed mini-rail (desktop only, CSS-gated by the 721px media query — never template-gated,
+     so a persisted collapsed flag cannot leak into the mobile drawer, which always renders the full
+     sidebar above). Keeps the mode switch reachable while collapsed. -->
+<div class="minirail" class:on={collapsed} role="navigation" aria-label="Workspace (collapsed)">
+  <button
+    class="railbtn"
+    onclick={onToggleCollapse}
+    aria-label="Expand sidebar"
+    title="Expand sidebar"
+    type="button"
+  >
+    <Icon name="panel-left" size={16} />
+  </button>
+  <div class="railsep"></div>
+  <button
+    class="railbtn"
+    class:active={mode === 'chat'}
+    onclick={() => onSelectMode('chat')}
+    aria-label="Chat"
+    title="Chat"
+    type="button"
+  >
+    <Icon name="message-square" size={16} />
+  </button>
+  <button
+    class="railbtn"
+    class:active={mode === 'library'}
+    onclick={() => onSelectMode('library')}
+    aria-label="Library"
+    title="Library"
+    type="button"
+  >
+    <Icon name="library" size={16} />
+  </button>
+  <button
+    class="railbtn"
+    class:active={mode === 'graph'}
+    onclick={() => onSelectMode('graph')}
+    aria-label="Graph"
+    title="Graph"
+    type="button"
+  >
+    <Icon name="waypoints" size={16} />
+  </button>
+</div>
 
 {#if openMenuFor && menuConvo}
   <div class="menu-backdrop" onclick={closeMenu} role="presentation"></div>
@@ -545,9 +617,37 @@
     flex-direction: column;
     gap: 0.6rem;
   }
+  .modes-row {
+    display: flex;
+    align-items: stretch;
+    gap: 0.3rem;
+  }
   .modes {
+    flex: 1;
     display: flex;
     gap: 0.3rem;
+  }
+  .collapse {
+    font: inherit;
+    cursor: pointer;
+    flex: none;
+    border: 1px solid transparent;
+    background: none;
+    color: var(--fg-2);
+    border-radius: 8px;
+    padding: 0.3rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .collapse:hover {
+    color: var(--fg);
+    background: var(--surface-2);
+  }
+  @media (max-width: 720px) {
+    .collapse {
+      display: none;
+    }
   }
   .mode {
     flex: 1;
@@ -591,6 +691,8 @@
     padding: 0.5rem 0.8rem;
     border-bottom: 1px solid var(--border);
   }
+  /* A *filter* of the visible list, styled lighter than the header's global search (Ctrl/⌘-K) so
+     the two read as different tools: transparent fill, smaller type, border only. */
   .search {
     flex: 1;
     min-width: 0;
@@ -600,7 +702,7 @@
     padding: 0.3rem 0.5rem;
     border: 1px solid var(--border);
     border-radius: 8px;
-    background: var(--surface);
+    background: transparent;
     color: var(--fg-2);
   }
   .search:focus-within {
@@ -611,7 +713,7 @@
     flex: 1;
     min-width: 0;
     font: inherit;
-    font-size: 0.82rem;
+    font-size: 0.78rem;
     border: none;
     background: none;
     color: var(--fg);
@@ -704,6 +806,11 @@
     display: flex;
     flex-direction: column;
     gap: 0.15rem;
+  }
+  /* The graph rail hosts its own scrolling regions (concept list / gap list) — the outer nav must
+     not double-scroll. */
+  .list.graphrail {
+    overflow-y: hidden;
   }
   .empty {
     color: var(--fg-2);
@@ -955,6 +1062,54 @@
   }
   .scrim {
     display: none;
+  }
+  /* Collapsed mini-rail — hidden except on desktop while collapsed (see the markup comment). */
+  .minirail {
+    display: none;
+  }
+  @media (min-width: 721px) {
+    .sidebar.collapsed {
+      display: none;
+    }
+    .minirail.on {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0.35rem;
+      width: 48px;
+      flex-shrink: 0;
+      height: 100vh;
+      padding: 0.8rem 0;
+      border-right: 1px solid var(--border);
+      background: var(--bg);
+    }
+  }
+  .railbtn {
+    font: inherit;
+    cursor: pointer;
+    border: 1px solid transparent;
+    background: none;
+    color: var(--fg-2);
+    border-radius: 8px;
+    padding: 0.4rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .railbtn:hover {
+    color: var(--fg);
+    background: var(--surface);
+  }
+  .railbtn.active {
+    color: var(--fg);
+    background: var(--surface-2);
+    border-color: var(--border);
+  }
+  .railsep {
+    width: 24px;
+    height: 1px;
+    background: var(--border);
+    margin: 0.15rem 0;
   }
 
   @media (max-width: 720px) {

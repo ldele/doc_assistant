@@ -11,6 +11,53 @@ Format: What changed | Why | Rejected alternatives | What it opens
 > (moved verbatim 2026-07-21). This file keeps 2026-07-15 onward.
 
 ---
+## 2026-07-24 — UI cleanup: collapse control into the sidebar, graph rail into the shared Sidebar, chat-only Export, filter/search differentiation
+
+Four post-play irritations fixed in one pass (grilled 2026-07-24; all four forks user-resolved to the
+recommended option). **Frontend only, $0, zero-LLM — nothing in `src/` or `apps/api/` touched.** The
+parked demote-Graph fork (ADR-025 fork 5) is untouched: Graph keeps its top-level nav slot — this fills
+its empty rail, it does not move the destination. `svelte-check` 0/0 · `npm test` **50 pass** (+5).
+Live-verified on :1421 (read_page + computed styles; light+dark, desktop+375px, 0 console errors).
+
+**What.**
+- **Collapse control** moved from the header (where it read as part of the brand block) into the
+  sidebar's own top row; collapsed now shows a **48px mini-rail** (expand button + icon-only
+  Chat/Library/Graph, still switchable). CSS-gated to ≥721px — a persisted collapsed flag cannot leak
+  into the mobile drawer, which always renders the full sidebar. `.app.collapsed` now only hides the
+  resizer; the sidebar hides itself via its `collapsed` prop.
+- **Graph rail**: the concept index (Concepts/Gaps tabs, filter, lenses, list) moved out of
+  ConceptGraph's in-view `aside.index` into the shared Sidebar — one rail, not an empty shared rail
+  beside a private one. New **`lib/GraphIndex.svelte`** (dumb renderer), composed by App and injected
+  via a **snippet prop** (`graphRail`) so Sidebar doesn't grow ~8 graph props. Selection
+  (`graphSelectedId`) + the under-connected lens lifted to App — the rail badges and the ego panel's
+  gap notes/dots must agree; a hygiene `$effect` clears selection if a rebuild drops the concept.
+  ConceptGraph is now the full-width ego/detail panel; presence loads in an `$effect` on the
+  `selectedId` prop with a cancellation flag (rapid-click out-of-order guard). GapList moved untouched
+  (built relocatable, E5). Index filtering/sorting extracted to pure `conceptIndexRows` /
+  `visibleConceptGaps` in **`lib/gaps.ts`** (+5 node:test cases).
+- **Taxonomy entry** moved from the Library rail to the Graph rail (it's concept-space; same modal,
+  same graph-node Place deep-link).
+- **Export** renders only in chat mode — it exports the conversation transcript and was a permanently
+  greyed button on Library/Graph.
+- **Sidebar search boxes** are now visibly *filters*: "Filter chats… / Filter library… / Filter
+  concepts…" placeholders, transparent fill, smaller type — the Ctrl/⌘-K overlay stays the one
+  global search (spec A1 integrity boundary unchanged).
+
+**Why.** Play feedback: the collapse button read as brand chrome; Graph showed a dead shared rail next
+to its real one; Export was inert on 2 of 3 views; two same-styled search boxes implied redundancy.
+
+**Rejected.** Keeping the collapse toggle in the header far-left (still header clutter; the control
+belongs to what it collapses); a taxonomy field-tree as the graph rail (keeps the double-rail);
+threading graph data through Sidebar props (snippet keeps Sidebar dumb); removing the sidebar filters
+outright (in-place narrowing of the library grid is real utility).
+
+**What it opens.** The graph rail now lives in the sidebar frame the demote-Graph fork will eventually
+reshape — whatever that grill decides, the index is already a self-contained component. GraphIndex's
+rail-local filter state resets on mode switch (accepted; lift to App if it grates). The duplicated
+sort-menu markup (App library vs Sidebar chat) and duplicated `relTime()` (Sidebar/GlobalSearch) remain
+known cleanup candidates.
+
+---
 ## 2026-07-24 — Replace native `window.confirm()` for conversation delete with an in-app dialog
 
 Swapped the OS-chrome confirm ("localhost:1420 says…") shown when deleting a conversation for a

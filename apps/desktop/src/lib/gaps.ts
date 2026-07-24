@@ -8,7 +8,7 @@
 // and stays out of the lens until the user opts in. `tone` picks the reserved semantic colour
 // (single_source is the danger-toned thesis; softer kinds warn). Stance is an EDGE property (Node B,
 // deferred), so a node gap badge and an edge stance never collide (B9).
-import type { GapKind } from './types'
+import type { ConceptGraphNode, Gap, GapKind } from './types'
 
 export interface GapMeta {
   rank: number
@@ -106,4 +106,49 @@ export function orderGaps<T>(
     const r = gapRank(ka.kind) - gapRank(kb.kind)
     return r !== 0 ? r : ka.label.localeCompare(kb.label)
   })
+}
+
+/**
+ * Effective gap lens for one concept: dismissed gaps are triaged-away and drop out (`status` is the
+ * server-resolved effective value, so this stays in sync with the GapList; promoted gaps stay — they
+ * are being acted on, not resolved), `under_connected` is opt-in, and the rest sort strongest-first.
+ */
+export function visibleConceptGaps(gaps: readonly Gap[], showUnderConnected: boolean): Gap[] {
+  return gaps
+    .filter((g) => g.status !== 'dismissed')
+    .filter((g) => gapVisible(g.kind, showUnderConnected))
+    .sort((a, b) => gapRank(a.kind) - gapRank(b.kind))
+}
+
+export interface ConceptIndexRow {
+  node: ConceptGraphNode
+  gaps: Gap[]
+  rank: number
+}
+
+/**
+ * The concept index (rail): filtered by a case-insensitive label query and the gap lenses, then
+ * ordered by the strong signal — concepts with a visible gap first (best/lowest rank first), the
+ * rest alphabetically. Pure; does not mutate inputs.
+ */
+export function conceptIndexRows(
+  nodes: readonly ConceptGraphNode[],
+  gapsByConcept: ReadonlyMap<string, readonly Gap[]>,
+  query: string,
+  gapsOnly: boolean,
+  showUnderConnected: boolean,
+): ConceptIndexRow[] {
+  const q = query.trim().toLowerCase()
+  const rows = nodes
+    .filter((n) => q === '' || n.label.toLowerCase().includes(q))
+    .map((n) => {
+      const gaps = visibleConceptGaps(gapsByConcept.get(n.id) ?? [], showUnderConnected)
+      return { node: n, gaps, rank: gaps.length ? gapRank(gaps[0].kind) : Infinity }
+    })
+    .filter((r) => !gapsOnly || r.gaps.length > 0)
+  rows.sort((a, b) => {
+    if (a.rank !== b.rank) return a.rank - b.rank
+    return a.node.label.localeCompare(b.node.label)
+  })
+  return rows
 }

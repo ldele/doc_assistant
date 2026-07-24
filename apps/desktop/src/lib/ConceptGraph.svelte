@@ -1,9 +1,10 @@
 <script lang="ts">
   // Concept-graph view (docs/specs/feature-concept-graph.md PR-G2a, ADR-017). A DESTINATION, not a
-  // modal: the left rail is a searchable concept index with a gap lens; selecting a concept opens a
+  // modal: selecting a concept (in the sidebar's GraphIndex rail, which App composes) opens a
   // depth-1 ego graph (hand-rolled SVG + the seeded force layout) and a details panel that navigates
-  // concept → document → the chunks where it appears. Read-only for the vocabulary (ADR-017 A1): the
-  // only write is a deep-link to the Manage-keywords view. The graph observes; it never edits.
+  // concept → document → the chunks where it appears. Selection + the under-connected lens are
+  // App-owned props — the rail and this panel must agree. Read-only for the vocabulary (ADR-017 A1):
+  // the only write is a deep-link to the Manage-keywords view. The graph observes; it never edits.
   //
   // The gaps are the payload, not decoration (ADR-004). Per RG-014 the strong signal is `single_source`
   // (the corroboration thesis) — it leads; `under_connected` measures graph degree, is dominated by
@@ -17,9 +18,8 @@
     LibraryDocument,
   } from './types'
   import { authorLabel, docLabel } from './library'
-  import { GAP_META, gapRank, gapVisible } from './gaps'
+  import { GAP_META, visibleConceptGaps } from './gaps'
   import { forceLayout, type Point } from './forceLayout'
-  import GapList from './GapList.svelte'
   import Icon from './Icon.svelte'
 
   let {
@@ -28,10 +28,13 @@
     error,
     documents,
     rebuildState,
+    selectedId,
+    showUnderConnected,
     onRebuild,
     onOpenDocument,
     onManageConcept,
     onPlaceConcept,
+    onSelectConcept,
     loadPresence,
   }: {
     graph: ConceptGraph | null
@@ -39,10 +42,13 @@
     error: string | null
     documents: LibraryDocument[]
     rebuildState: GraphRebuildStatus['state']
+    selectedId: string | null
+    showUnderConnected: boolean
     onRebuild: () => void
     onOpenDocument: (docId: string) => void
     onManageConcept: (conceptId: string, label: string) => void
     onPlaceConcept: (conceptId: string, label: string) => void
+    onSelectConcept: (id: string) => void
     loadPresence: (conceptId: string) => Promise<ConceptPresence[]>
   } = $props()
 
@@ -52,18 +58,8 @@
   const ZOOM_MAX = 3
 
   // Gap taxonomy (ranks, tones, blurbs, the under-connected opt-in) lives in the pure, shared,
-  // node-tested `./gaps` module (RG-014) — imported above so this lens and the E5 GapList agree.
-
-  // Rail mode (E5): the concept index, or the first-class gap list (a triageable list is the right
-  // renderer for the gap payload — RG-014's strong kinds are list-shaped, not graph-shaped). The
-  // GapList is self-contained (fetches its own effective-status data) so it can later move out of
-  // the graph view without coupling (the recorded Graph-destination iteration gate).
-  let railMode = $state<'concepts' | 'gaps'>('concepts')
-
-  let query = $state('')
-  let gapsOnly = $state(false)
-  let showUnderConnected = $state(false)
-  let selectedId = $state<string | null>(null)
+  // node-tested `./gaps` module (RG-014) — imported above so this lens and the rail's GraphIndex
+  // agree (the index itself, with its rail mode/filter/lenses, lives in the sidebar now).
   let presence = $state<ConceptPresence[]>([])
   let presenceLoading = $state(false)
   let expandedDocId = $state<string | null>(null)
@@ -103,37 +99,11 @@
     return m
   })
 
+  // The effective gap lens (dismissed dropped, under-connected opt-in) — shared with GraphIndex via
+  // the pure `./gaps` module so badges there and notes/dots here always agree.
   function visibleGaps(conceptId: string): Gap[] {
-    const gs = gapsByConcept.get(conceptId) ?? []
-    return gs
-      // A dismissed gap is triaged-away — it drops out of the graph lens too (E5): `status` is the
-      // effective value the server already resolved (override ?? row), so this stays in sync with
-      // the GapList. Promoted gaps stay visible (they are being acted on, not resolved).
-      .filter((g) => g.status !== 'dismissed')
-      .filter((g) => gapVisible(g.kind, showUnderConnected))
-      .sort((a, b) => gapRank(a.kind) - gapRank(b.kind))
+    return visibleConceptGaps(gapsByConcept.get(conceptId) ?? [], showUnderConnected)
   }
-  function bestRank(conceptId: string): number {
-    const vg = visibleGaps(conceptId)
-    return vg.length ? gapRank(vg[0].kind) : Infinity
-  }
-
-  // The index: filtered by search + the gap lens, then ordered by the strong signal — concepts with a
-  // visible gap first (best/lowest rank first), the rest alphabetically. Coverage + corroboration read
-  // top-down.
-  const indexRows = $derived.by(() => {
-    const q = query.trim().toLowerCase()
-    const rows = (graph?.nodes ?? [])
-      .filter((n) => q === '' || n.label.toLowerCase().includes(q))
-      .filter((n) => !gapsOnly || visibleGaps(n.id).length > 0)
-      .map((n) => ({ node: n, gaps: visibleGaps(n.id), rank: bestRank(n.id) }))
-    rows.sort((a, b) => {
-      if (a.rank !== b.rank) return a.rank - b.rank
-      return a.node.label.localeCompare(b.node.label)
-    })
-    return rows
-  })
-  const gapConceptCount = $derived((graph?.nodes ?? []).filter((n) => visibleGaps(n.id).length > 0).length)
 
   const selectedNode = $derived(selectedId ? (nodeById.get(selectedId) ?? null) : null)
 
@@ -167,21 +137,35 @@
     return n.doc_ids.length
   }
 
-  async function selectConcept(id: string): Promise<void> {
-    selectedId = id
+  // Selection arrives as a prop (the rail lives in the sidebar): each change resets the per-concept
+  // panel state and fetches presence. The cancellation flag guards rapid re-selection — a stale
+  // response must not overwrite the newer concept's data.
+  $effect(() => {
+    const id = selectedId
     expandedDocId = null
     presence = []
     panX = 0
     panY = 0
-    presenceLoading = true
-    try {
-      presence = await loadPresence(id)
-    } catch {
-      presence = [] // navigation degrades to doc-level; the ego still renders
-    } finally {
+    if (id === null) {
       presenceLoading = false
+      return
     }
-  }
+    let cancelled = false
+    presenceLoading = true
+    loadPresence(id)
+      .then((p) => {
+        if (!cancelled) presence = p
+      })
+      .catch(() => {
+        if (!cancelled) presence = [] // navigation degrades to doc-level; the ego still renders
+      })
+      .finally(() => {
+        if (!cancelled) presenceLoading = false
+      })
+    return () => {
+      cancelled = true
+    }
+  })
 
   function persistZoom(): void {
     try {
@@ -281,98 +265,18 @@
       </button>
     </div>
   {:else}
-    <div class="cols">
-      <!-- Left: the concept index — the home of this view. -->
-      <aside class="index" aria-label="Concept index">
-        {#if staleBehind > 0}
-          <div class="stale" role="status">
-            <Icon name="triangle-alert" size={14} />
-            <span>Graph is {staleBehind} concept{staleBehind === 1 ? '' : 's'} behind your vocabulary.</span>
-            <button class="linkish" onclick={onRebuild} disabled={rebuilding} type="button">
-              {rebuilding ? 'Rebuilding…' : 'Rebuild'}
-            </button>
-          </div>
-        {/if}
+    {#if staleBehind > 0}
+      <div class="stale" role="status">
+        <Icon name="triangle-alert" size={14} />
+        <span>Graph is {staleBehind} concept{staleBehind === 1 ? '' : 's'} behind your vocabulary.</span>
+        <button class="linkish" onclick={onRebuild} disabled={rebuilding} type="button">
+          {rebuilding ? 'Rebuilding…' : 'Rebuild'}
+        </button>
+      </div>
+    {/if}
 
-        <!-- Rail mode (E5): the concept index, or the first-class triageable gap list. -->
-        <div class="railmode segmented" role="tablist" aria-label="Rail mode">
-          <button
-            type="button"
-            role="tab"
-            aria-selected={railMode === 'concepts'}
-            class:active={railMode === 'concepts'}
-            onclick={() => (railMode = 'concepts')}
-          >
-            Concepts
-          </button>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={railMode === 'gaps'}
-            class:active={railMode === 'gaps'}
-            onclick={() => (railMode = 'gaps')}
-          >
-            Gaps
-          </button>
-        </div>
-
-        {#if railMode === 'gaps'}
-          <GapList onSelectConcept={(id) => void selectConcept(id)} />
-        {:else}
-        <div class="searchrow">
-          <Icon name="search" size={14} />
-          <input bind:value={query} placeholder="Search concepts" aria-label="Search concepts" />
-          {#if query}
-            <button class="clearq" onclick={() => (query = '')} aria-label="Clear search" type="button">
-              <Icon name="x" size={13} />
-            </button>
-          {/if}
-        </div>
-        <div class="lenses">
-          <button
-            class="lens"
-            class:on={gapsOnly}
-            aria-pressed={gapsOnly}
-            onclick={() => (gapsOnly = !gapsOnly)}
-            type="button"
-            title="Show only concepts with a detected gap"
-          >
-            Gaps only <span class="count">{gapConceptCount}</span>
-          </button>
-          <label class="toggle" title="Under-connected is noisy at this vocabulary size (RG-014)">
-            <input type="checkbox" bind:checked={showUnderConnected} />
-            Include under-connected
-          </label>
-        </div>
-        <div class="clist" role="listbox" aria-label="Concepts">
-          {#each indexRows as row (row.node.id)}
-            {@const g = row.gaps[0]}
-            <button
-              class="crow"
-              class:sel={row.node.id === selectedId}
-              role="option"
-              aria-selected={row.node.id === selectedId}
-              onclick={() => selectConcept(row.node.id)}
-              type="button"
-            >
-              <span class="dot" style="background:{commColor(row.node)}" aria-hidden="true"></span>
-              <span class="clabel">{row.node.label}</span>
-              {#if g}
-                <span class="badge {GAP_META[g.kind].tone}" title={GAP_META[g.kind].blurb}>
-                  {GAP_META[g.kind].label}{row.gaps.length > 1 ? ` +${row.gaps.length - 1}` : ''}
-                </span>
-              {/if}
-              <span class="dcount" title="{docCount(row.node)} documents">{docCount(row.node)}</span>
-            </button>
-          {:else}
-            <p class="empty-list muted">No concepts match.</p>
-          {/each}
-        </div>
-        {/if}
-      </aside>
-
-      <!-- Right: the ego graph + details for the selected concept. -->
-      <section class="ego" aria-label="Concept neighbourhood">
+    <!-- The ego graph + details for the concept selected in the sidebar's index. -->
+    <section class="ego" aria-label="Concept neighbourhood">
         {#if !selectedNode}
           <div class="ego-hint muted">
             <Icon name="waypoints" size={24} />
@@ -448,11 +352,11 @@
                       role="button"
                       tabindex="0"
                       aria-label={n.label}
-                      onclick={() => selectConcept(id)}
+                      onclick={() => onSelectConcept(id)}
                       onkeydown={(ev) => {
                         if (ev.key === 'Enter' || ev.key === ' ') {
                           ev.preventDefault()
-                          void selectConcept(id)
+                          onSelectConcept(id)
                         }
                       }}
                     >
@@ -518,7 +422,6 @@
           </div>
         {/if}
       </section>
-    </div>
   {/if}
 </div>
 
@@ -528,6 +431,8 @@
     min-height: 0;
     display: flex;
     flex-direction: column;
+    gap: var(--space-3);
+    padding: var(--space-4);
   }
 
   /* Empty / loading / error states — centred card, mirrors the chat empty state. */
@@ -566,22 +471,6 @@
     cursor: default;
   }
 
-  .cols {
-    flex: 1;
-    min-height: 0;
-    display: grid;
-    grid-template-columns: minmax(240px, 320px) 1fr;
-    gap: var(--space-4);
-    padding: var(--space-4);
-  }
-
-  /* ---- index ---- */
-  .index {
-    display: flex;
-    flex-direction: column;
-    min-height: 0;
-    gap: var(--space-2);
-  }
   .stale {
     display: flex;
     align-items: center;
@@ -596,122 +485,6 @@
   .stale span {
     flex: 1;
   }
-  .railmode {
-    display: flex;
-    gap: 2px;
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: 2px;
-    background: var(--surface);
-  }
-  .railmode button {
-    flex: 1;
-    border: none;
-    border-radius: 6px;
-    padding: 3px var(--space-3);
-    background: none;
-    color: var(--fg-2);
-    font: inherit;
-    font-size: var(--text-sm);
-    cursor: pointer;
-  }
-  .railmode button.active {
-    background: var(--bg);
-    color: var(--fg);
-    font-weight: 600;
-  }
-  .searchrow {
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: var(--space-2) var(--space-3);
-    color: var(--fg-2);
-    background: var(--surface);
-  }
-  .searchrow input {
-    flex: 1;
-    border: none;
-    background: none;
-    font: inherit;
-    color: var(--fg);
-    outline: none;
-  }
-  .clearq {
-    border: none;
-    background: none;
-    color: var(--fg-2);
-    cursor: pointer;
-    display: inline-flex;
-    padding: 0;
-  }
-  .lenses {
-    display: flex;
-    align-items: center;
-    gap: var(--space-3);
-    flex-wrap: wrap;
-    font-size: var(--text-sm);
-  }
-  .lens {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--space-2);
-    border: 1px solid var(--border);
-    border-radius: 999px;
-    padding: 2px var(--space-3);
-    background: var(--surface);
-    color: var(--fg);
-    font: inherit;
-    font-size: var(--text-sm);
-    cursor: pointer;
-  }
-  .lens.on {
-    background: var(--accent);
-    color: var(--accent-fg);
-    border-color: var(--accent);
-  }
-  .lens .count {
-    font-variant-numeric: tabular-nums;
-    opacity: 0.8;
-  }
-  .toggle {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--space-1);
-    color: var(--fg-2);
-    cursor: pointer;
-  }
-  .clist {
-    flex: 1;
-    min-height: 0;
-    overflow-y: auto;
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-    padding-right: 2px;
-  }
-  .crow {
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
-    width: 100%;
-    text-align: left;
-    border: 1px solid transparent;
-    border-radius: 7px;
-    padding: var(--space-2) var(--space-2);
-    background: none;
-    color: var(--fg);
-    font: inherit;
-    cursor: pointer;
-  }
-  .crow:hover {
-    background: var(--surface);
-  }
-  .crow.sel {
-    background: var(--surface-2);
-    border-color: var(--border);
-  }
   .dot {
     width: 10px;
     height: 10px;
@@ -722,41 +495,10 @@
     width: 14px;
     height: 14px;
   }
-  .clabel {
-    flex: 1;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-  .badge {
-    font-size: var(--text-meta);
-    padding: 1px 7px;
-    border-radius: 999px;
-    white-space: nowrap;
-  }
-  .badge.danger {
-    color: var(--danger);
-    border: 1px solid var(--danger);
-  }
-  .badge.warn {
-    color: var(--warn-fg);
-    border: 1px solid var(--warn-border);
-    background: var(--warn-bg);
-  }
-  .dcount {
-    font-size: var(--text-meta);
-    color: var(--fg-2);
-    font-variant-numeric: tabular-nums;
-    min-width: 1.5em;
-    text-align: right;
-  }
-  .empty-list {
-    padding: var(--space-3);
-    font-size: var(--text-sm);
-  }
 
-  /* ---- ego ---- */
+  /* ---- ego (fills the main pane — the index rail lives in the sidebar) ---- */
   .ego {
+    flex: 1;
     min-height: 0;
     overflow-y: auto;
     display: flex;
@@ -973,17 +715,6 @@
   @keyframes spin {
     to {
       transform: rotate(360deg);
-    }
-  }
-
-  /* Mobile: stack the index above the ego; the app supports 375px. */
-  @media (max-width: 720px) {
-    .cols {
-      grid-template-columns: 1fr;
-      grid-template-rows: auto 1fr;
-    }
-    .index {
-      max-height: 40vh;
     }
   }
 </style>

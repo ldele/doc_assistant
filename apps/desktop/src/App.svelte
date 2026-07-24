@@ -69,6 +69,7 @@
   import ConfirmDialog from './lib/ConfirmDialog.svelte'
   import CompareCard from './lib/CompareCard.svelte'
   import ConceptGraph from './lib/ConceptGraph.svelte'
+  import GraphIndex from './lib/GraphIndex.svelte'
   import LibraryTaxonomy from './lib/LibraryTaxonomy.svelte'
   import GlobalSearch from './lib/GlobalSearch.svelte'
   import Icon from './lib/Icon.svelte'
@@ -201,6 +202,20 @@
   let graphError = $state<string | null>(null)
   let graphLoaded = false
   let graphRebuildState = $state<GraphRebuildStatus['state']>('idle')
+  // Graph selection + the under-connected lens are App-owned: the sidebar's GraphIndex rail and
+  // ConceptGraph's ego panel both read them, so they must agree.
+  let graphSelectedId = $state<string | null>(null)
+  let graphShowUnderConnected = $state(false)
+  function selectGraphConcept(id: string): void {
+    graphSelectedId = id
+    sidebarOpen = false // mobile drawer: selecting navigates, like selectCollection
+  }
+  // Hygiene (mirrors the chatScopeFolderId guard): a rebuild can drop the selected concept.
+  $effect(() => {
+    if (conceptGraph && graphSelectedId !== null && !conceptGraph.nodes.some((n) => n.id === graphSelectedId)) {
+      graphSelectedId = null
+    }
+  })
 
   // Taxonomy view (docs/specs/feature-taxonomy-view.md, ADR-028 2b). A dedicated modal that renders
   // the curated field forest + *places* concepts/documents onto it. App owns the data; LibraryTaxonomy
@@ -1128,6 +1143,21 @@
 
 <svelte:window onkeydown={onGlobalKey} />
 
+<!-- The graph-mode sidebar rail. App composes it (data + selection are App-owned) and hands it to
+     Sidebar as a snippet, so Sidebar stays a dumb renderer without ~8 more graph props. -->
+{#snippet graphRail()}
+  <GraphIndex
+    nodes={conceptGraph?.nodes ?? []}
+    gaps={conceptGraph?.gaps ?? []}
+    selectedId={graphSelectedId}
+    bind:showUnderConnected={graphShowUnderConnected}
+    loading={graphLoading}
+    built={conceptGraph !== null}
+    graphError={graphError}
+    onSelectConcept={selectGraphConcept}
+  />
+{/snippet}
+
 <div class="app" class:collapsed={sidebarCollapsed} style="--sidebar-width: {sidebarWidth}px">
   <Sidebar
     {mode}
@@ -1139,6 +1169,9 @@
     {libraryCollection}
     bind:libraryQuery
     open={sidebarOpen}
+    collapsed={sidebarCollapsed}
+    onToggleCollapse={toggleSidebar}
+    {graphRail}
     onNew={newConversation}
     onSelect={openConversation}
     onSelectMode={selectMode}
@@ -1165,16 +1198,6 @@
         <button class="hamburger" onclick={() => (sidebarOpen = true)} aria-label="Open conversations">
           <Icon name="menu" />
         </button>
-        <button
-          class="collapse-toggle"
-          onclick={toggleSidebar}
-          aria-label={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-          aria-pressed={sidebarCollapsed}
-          title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-          type="button"
-        >
-          <Icon name="panel-left" size={16} />
-        </button>
         <div class="brand">
           <span class="mark"><img src={appMark} alt="" width="32" height="32" /></span>
           <div class="brandtext">
@@ -1194,13 +1217,15 @@
           <button class="ghost" onclick={openSearch} aria-label="Search chats and documents" title="Search  (Ctrl/⌘ K)">
             <Icon name="search" size={15} />
           </button>
-          <button
-            class="ghost"
-            onclick={doExport}
-            disabled={mode !== 'chat' ||
-              (viewing === null && resumedHistory === null && turns.length === 0)}
-            ><Icon name="download" size={15} /> Export</button
-          >
+          {#if mode === 'chat'}
+            <!-- Export is a chat-only action (conversation transcript) — hidden elsewhere. -->
+            <button
+              class="ghost"
+              onclick={doExport}
+              disabled={viewing === null && resumedHistory === null && turns.length === 0}
+              ><Icon name="download" size={15} /> Export</button
+            >
+          {/if}
           <button class="ghost" onclick={() => (showSettings = true)} aria-label="Settings">
             <Icon name="settings" />
           </button>
@@ -1359,6 +1384,8 @@
           error={graphError}
           {documents}
           rebuildState={graphRebuildState}
+          selectedId={graphSelectedId}
+          showUnderConnected={graphShowUnderConnected}
           onRebuild={rebuildGraph}
           onOpenDocument={(id) => {
             selectMode('library')
@@ -1366,6 +1393,7 @@
           }}
           onManageConcept={manageConcept}
           onPlaceConcept={(id) => openTaxonomy(id)}
+          onSelectConcept={selectGraphConcept}
           loadPresence={getConceptPresence}
         />
       {:else}
@@ -1645,14 +1673,10 @@
       display: none;
     }
   }
-  /* Collapsed sidebar (spec sub-item b) — desktop only. The rail + its drag handle are removed
-     from flow so the content fills the width; the header's collapse toggle brings them back at the
-     persisted width. `:global(.sidebar)` reaches the child component's root (the class lives in
-     Sidebar.svelte); the min-width guard leaves the mobile off-canvas drawer untouched. */
+  /* Collapsed sidebar (spec sub-item b) — desktop only. The sidebar hides itself (and shows its
+     mini-rail) via its own `collapsed` prop; here only the drag handle leaves flow. The min-width
+     guard leaves the mobile off-canvas drawer untouched. */
   @media (min-width: 721px) {
-    .app.collapsed :global(.sidebar) {
-      display: none;
-    }
     .app.collapsed .resizer {
       display: none;
     }
@@ -1695,25 +1719,6 @@
     color: var(--fg);
     border-radius: 8px;
     padding: 0.2rem 0.55rem;
-  }
-  /* Desktop collapse toggle (spec b). Shares the header-left slot with the hamburger, split by the
-     720 px breakpoint: hamburger on mobile, collapse toggle on desktop. */
-  .collapse-toggle {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    flex: none;
-    font: inherit;
-    cursor: pointer;
-    border: 1px solid var(--border);
-    background: var(--surface-2);
-    color: var(--fg-2);
-    border-radius: 8px;
-    padding: 0.3rem;
-  }
-  .collapse-toggle:hover {
-    color: var(--fg);
-    background: var(--surface);
   }
   .brand {
     display: flex;
@@ -2200,9 +2205,6 @@
   @media (max-width: 720px) {
     .hamburger {
       display: inline-flex;
-    }
-    .collapse-toggle {
-      display: none;
     }
   }
 </style>

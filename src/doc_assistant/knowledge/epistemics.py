@@ -35,6 +35,7 @@ from pathlib import Path
 
 import structlog
 
+from doc_assistant.chroma_read import get_all
 from doc_assistant.knowledge.concept_skeleton import (
     ConceptSkeleton,
     NodeWeight,
@@ -244,7 +245,7 @@ def load_doc_chunks() -> list[tuple[str, str, int, str]]:
         log.warning("no_baseline_collection", hint="run ingest first; epistemics will be empty")
         return []
 
-    data = coll.get(include=["documents", "metadatas"])
+    data = get_all(coll, include=["documents", "metadatas"])
     documents = data.get("documents") or []
     metadatas = data.get("metadatas") or []
     out: list[tuple[str, str, int, str]] = []
@@ -287,7 +288,7 @@ def load_pc_parent_chunks() -> list[tuple[str, str, int, str]]:
         )
         return []
 
-    data = coll.get(include=["metadatas"])
+    data = get_all(coll, include=["metadatas"])
     metadatas = data.get("metadatas") or []
     seen: set[tuple[str, int]] = set()
     out: list[tuple[str, str, int, str]] = []

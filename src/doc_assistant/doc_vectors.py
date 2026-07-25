@@ -31,6 +31,7 @@ import numpy as np
 import structlog
 from sqlalchemy import select
 
+from doc_assistant.chroma_read import get_all
 from doc_assistant.config import CHROMA_PATH
 from doc_assistant.db.models import Document
 from doc_assistant.db.session import session_scope
@@ -181,7 +182,7 @@ def load_chunk_embeddings_by_document() -> dict[str, list[np.ndarray]]:
         )
         return {}
 
-    data = coll.get(include=["embeddings", "metadatas"])
+    data = get_all(coll, include=["embeddings", "metadatas"])
     raw_embeddings = data.get("embeddings")
     metadatas = data.get("metadatas") or []
     if raw_embeddings is None or len(raw_embeddings) == 0:

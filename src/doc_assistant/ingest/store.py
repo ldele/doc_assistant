@@ -12,6 +12,7 @@ from datetime import datetime, timezone
 from langchain_chroma import Chroma
 from sqlalchemy import select
 
+from doc_assistant.chroma_read import get_all
 from doc_assistant.db.models import Document as DBDocument
 from doc_assistant.db.models import Figure, IngestionEvent
 from doc_assistant.db.session import session_scope
@@ -20,7 +21,7 @@ from .figures import figure_chunk_text
 
 
 def get_indexed_hashes(db: Chroma) -> set[str]:
-    data = db.get(include=["metadatas"])
+    data = get_all(db, include=["metadatas"])
     return {m.get("doc_hash") for m in data["metadatas"] if m and m.get("doc_hash")}
 
 

@@ -16,6 +16,7 @@ trade-offs (including this one — dangling links) are recorded in
 | `docs/PLAN_<date>_*.md` | Dated planning docs for a work track. |
 | `docs/REVIEW_<date>_*.md` | Internal review reports. |
 | `docs/ui-checklist.md` | The UI punch list / iteration gates. |
+| `docs/archive/lab4tech/` | The retired second machine's baton history (49 rotated archives + its final baton), rescued from its backup 2026-07-25. Per-machine session history — and the only record of the 2026-07-23/24 taxonomy + UI sessions. |
 
 **What *is* the public record:** [`README.md`](../README.md) ·
 [`docs/decisions.md`](decisions.md) (the ADR index) · [`docs/specs/`](specs/) ·

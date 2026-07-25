@@ -33,6 +33,8 @@ from typing import Any
 
 import structlog
 
+from doc_assistant.chroma_read import get_all
+
 log = structlog.get_logger(__name__)
 
 
@@ -1081,6 +1083,12 @@ def load_glossary() -> list[GlossaryEntry]:
     return entries
 
 
+#: Document ids per `$in` filter in :func:`load_presence_inputs`. Structural bound on SQL
+#: parameters per statement, not a corpus-tuned threshold; row-level paging is the shared
+#: helper's job (`chroma_read.get_all`, which documents the 2026-07-25 failure).
+_PRESENCE_ID_BATCH = 50
+
+
 def load_presence_inputs(document_ids: list[str] | None = None) -> list[tuple[str, str, str]]:
     """Parent-chunk text for presence matching: ``[(chunk_key, document_id, text)]``.
 
@@ -1103,9 +1111,18 @@ def load_presence_inputs(document_ids: list[str] | None = None) -> list[tuple[st
         log.warning("no_pc_collection", hint="run ingest first; skeleton presence will be empty")
         return []
 
-    where: Any = {"document_id": {"$in": document_ids}} if document_ids else None
-    data = coll.get(where=where, include=["metadatas"])
-    metadatas = data.get("metadatas") or []
+    metadatas: list[Any] = []
+    if document_ids:
+        for start in range(0, len(document_ids), _PRESENCE_ID_BATCH):
+            batch = document_ids[start : start + _PRESENCE_ID_BATCH]
+            metadatas.extend(
+                get_all(coll, where={"document_id": {"$in": batch}}, include=["metadatas"]).get(
+                    "metadatas"
+                )
+                or []
+            )
+    else:
+        metadatas = list(get_all(coll, include=["metadatas"]).get("metadatas") or [])
     seen: set[tuple[str, int]] = set()
     out: list[tuple[str, str, str]] = []
     for meta in metadatas:

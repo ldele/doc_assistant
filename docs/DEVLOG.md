@@ -60,6 +60,123 @@ the pre-commit cache. Reading or setting exclusions needs elevation, so it is th
 excluding those three paths is the usual remedy if a cold commit still drags.
 
 ---
+## 2026-07-25 — Corpus transfer: 47 → 97 documents, then the full enrichment chain re-run on the enlarged corpus
+
+The retired machine's 50 remaining source PDFs (153 MB) arrived in its backup and were ingested
+here. **Its `library.db` was NOT adopted** — the vector store could not come with it (KI-11 puts
+Chroma under `%PROGRAMDATA%` on a non-ASCII data path, so no repo-folder backup contains it), and a
+`library.db` whose chunk rows point at absent embeddings is worse than no DB. Re-ingest from
+`data/sources/` was the only coherent path, and it is also self-verifying: hash-dedupe proved the
+old 47 were untouched (`added=50, errors=0, skipped=47`).
+
+**Chain, in dependency order, all $0 (local Ollama / CPU embeddings):**
+
+| Stage | Before | After |
+|---|---|---|
+| documents | 47 | **97** |
+| parent-child chunks | ~16k | **33,163** |
+| `doc_similarities` | 470 edges / 47 docs | **970 / 97** (needed `--force`: the runner skips when edges exist, so new docs would have got none) |
+| `citations` | 2,859 (**9** in-corpus) | **4,825 (25 in-corpus)** — the bigger corpus resolves more references into real edges |
+| `keywords` | 688 | **1,376**, 1,376 distinct (checked — the exact doubling is coincidence, not duplication) |
+| concept skeleton | 13 nodes / 19 edges | 13 / 19, **all 19 Node-B annotated** (relation + per-doc stance), 6 communities, presence in 30 docs |
+| `chunk_epistemics` | — | **743** rows |
+| gaps | 15 | 16 deterministic + 2 stochastic preserved, **0 orphans** (the KI-17/E0 reconcile holding at 97 docs) |
+| taxonomy placement | 47/47 docs proposed | **97/97 — 0 unclassified** (+50 proposals, 100 calls, **0 abstentions**, all `origin="proposed"`) |
+
+**The graph vocabulary did not grow, and that is the honest read:** 13 `graph_include` concepts over
+97 documents. Doubling the corpus doubled the *keywords* (1,376) but the curated map is unchanged, so
+concept presence covers 30 of 97 documents. `scripts/rank_candidates.py` now has twice the evidence
+to rank promotion candidates from — the cheapest real improvement available, and a curation call
+(ADR-018's opt-in boundary), not something to auto-apply.
+
+**It broke the app mid-chain** — the parent-child store crossed SQLite's parameter ceiling and every
+unpaged Chroma read started failing, including the BM25 build in `RAGPipeline.__init__`. Diagnosis,
+fix and guard are the KI-27 entry above; the chain resumed after it.
+
+**Verified live after the rebuild ($0):** a real SSE turn cited `dpr_karpukhin_2020.pdf` ×5 +
+`rag_lewis_2020.pdf`, top reranker 0.9795, source-evaluation strip populated
+(`coverage: contested`, `n_claims`, `year`), `is_local: true`.
+
+**The taxonomy pass repeated its known failure shape, now with more evidence (RG-015).** Confident
+and right where the title is real (`Attention Is All You Need`→Machine learning 1.00, `Deep Residual
+Learning`→Computer vision 1.00, `hodgkin_huxley_1952`→Medical physiology 0.90,
+`Automatic Classification of Heart…`→Cardiovascular medicine 0.90). Confident and meaningless where
+the title is page furniture: **`Disclaimer`→Neurosciences 0.80**, `Graphical abstract`→Medical
+biotechnology 0.80, and two author-line titles placed on the authors' names. Zero abstentions across
+100 calls, again — **the model does not decline, so placement quality is bounded by title quality,
+and confidence carries no information** (0.8/0.9/1.0 only). Coverage-based gap detectors must count
+**curated** links; the read model's `n_*_proposed` split exists for exactly this.
+
+**Found in that verification — a metadata defect that is *wrong*, not missing:**
+`dpr_karpukhin_2020.pdf` is recorded as **`year=2012`** (it is 2020) and `rag_lewis_2020.pdf` has no
+year at all. Year drives the G3/G6 median-per-side `superseded_trend` rule, so a mis-extracted year
+can invert a direction verdict — and the strip presents it to the user as fact. Unusable titles are
+now 13/97 (7 `OPEN ACCESS` banners + 1 `Disclaimer` + 5 null, all old scans). **KI-26 widened** from
+banner titles to metadata extraction generally, with the year rule spelled out.
+
+**Rejected.** Copying the retired box's `library.db` (embeddings absent → a DB that lies).
+`--rebuild` (KI-24: it deletes and re-derives everything, discarding folders/tags/metadata overrides
+— the dedupe made it unnecessary). Restoring the CUDA wheel first: the venv is on `2.12.0+cpu`
+despite the box having a working GPU, but measured ingest was ~25 s/doc, so a multi-GB download to
+save ~20 minutes was not worth the venv surgery mid-chain. (It *is* worth doing before the next
+embedding-heavy run — noted in the baton.)
+
+**What it opens.** `data/sources_manifest.yaml` still describes 77 entries for 97 files — the 50 new
+ones have no recorded provenance, so `sync_sources` cannot re-fetch them. Node-B stance now exists
+for all 19 edges, which makes the epistemics chips and the D3 strip non-trivial again (they were
+association-only). And RG-015's precision question can finally be asked on a corpus that is not
+tiny.
+
+---
+## 2026-07-25 — KI-27: unpaged Chroma reads are a correctness cliff, not a perf risk — the corpus transfer took chat down at 33k chunks
+
+Found by ingesting the transferred corpus (entry below). **Filed separately because the lesson is
+not about the corpus:** the C4 scale review (2026-07-19) listed "unpaginated whole-corpus loads"
+under *performance*. It is not. Chroma's SQLite backend binds **one SQL parameter per returned
+row**, so a whole-store `get()` **fails outright** — `too many SQL variables` — the moment a
+collection passes SQLite's **32766** ceiling. A step function, not a slope.
+
+**What broke.** The ingest took the parent-child store from ~16k to **33,163** chunks (47 → 97
+docs). That is 397 rows past the ceiling, and it took out `compute_epistemics`,
+`build_concept_skeleton`, and — the one that matters — **`RAGPipeline.__init__`**, whose BM25 index
+build reads the whole store. The pipeline could not *construct*, so **chat was down, not degraded**.
+The baseline store (12,800 rows) was still under the ceiling, which is why ingest and
+`compute_doc_vectors` kept working and the first crash looked module-specific. It took a second
+failure, in a different module, to show it was a class.
+
+**Fix.** New `src/doc_assistant/chroma_read.py` → `get_all(collection, where=, include=)`: pages via
+`limit`/`offset` and concatenates per key, so a caller sees exactly what an unpaged read would have
+returned. `PAGE_SIZE = 5000` is a **structural** bound on parameters-per-statement, not a tuned
+threshold — the parametrised test asserts page size 1, 7 and 100 all return the identical result.
+Applied to every whole-store read: `pipeline.py` (BM25 build + `chunk_count`), `epistemics.py` (×2),
+`concept_skeleton.load_presence_inputs` (which additionally batches its `$in` document filter — a
+second, smaller ceiling), `doc_vectors.py`, `ingest/store.py`, `ingest/cleanup.py` (×2).
+
+**Typing note.** `get_all`'s first parameter is `Any`, deliberately and with a comment: the callers
+are a raw `chromadb.Collection` *and* LangChain's `Chroma` wrapper, whose `get` signatures differ in
+the `include` literal type. A `Protocol` would type-check exactly one of them — a fiction.
+
+**Guard.** `tests/unit/test_chroma_read.py` (+8) drives a fake collection that **counts pages**, so
+"no single call exceeds the page size" is asserted rather than assumed, alongside order
+preservation, the empty-collection contract (0 docs is legitimate), filter pass-through, and
+page-size independence. Full suite **1290 passed**.
+
+**Live proof ($0, ollama/llama3.1:8b):** API boot rebuilt the BM25 index over all 33,163 chunks
+(`building_keyword_index` → `bm25_excludes count=0`), `/api/health` served `chunk_count: 33163`, and
+a real SSE turn returned a cited answer — 10 sources, top reranker 0.9795, all citing
+`dpr_karpukhin_2020.pdf`/`rag_lewis_2020.pdf`, `usage.is_local: true`, `cost_usd: null`.
+
+**Rejected.** Raising the page size to "just above the corpus" (the same cliff, moved). Catching the
+error and falling back (it is a query the code should not be issuing). Fixing only the module that
+crashed first — the second failure is what proved it was systemic. Leaving `pipeline.py` for later:
+it is the one that means *chat is down*.
+
+**What it opens.** Two reads remain unpaged **by construction, not oversight** — `wiki.py` (one
+document, `limit=per_doc`) and `library.py`/`ingest` hash lookups — all bounded filters. Worth a
+sweep if a new whole-store reader appears. And the C4 review's other "corpus-linear hot paths"
+deserve re-reading with this lens: which of them are actually cliffs?
+
+---
 ## 2026-07-25 — ADR-029: the working state goes local — all of `.claude/` + PLAN/REVIEW docs + the UI checklist untracked
 
 The user retired the second machine ("we won't be using the other pc anymore… we can conveniently

@@ -35,6 +35,10 @@ CLAUDE.local.md
 .claude/
 # Rotated-out baton entries (cpc rotation, ADR-018 rule 11) — local-only, like the baton itself.
 docs/archive/SESSION-archive-*.md
+# The retired Lab4Tech box's baton history, rescued from its backup 2026-07-25 (49 rotated archives
+# + its final baton). Same class as the above — per-machine session history, local-only. It is the
+# only record of the 2026-07-23/24 taxonomy + UI sessions, which were never batoned on this box.
+docs/archive/lab4tech/
 # Working docs, local-only for the same reason (ADR-029): dated planning docs, review reports and
 # the UI punch list are working notes, not the project's public record (which is README · ADRs ·
 # specs · DEVLOG · ROADMAP). Committed docs still link to them — docs/local-only.md explains why

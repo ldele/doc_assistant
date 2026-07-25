@@ -12,6 +12,7 @@ from langchain_community.retrievers import BM25Retriever
 from langchain_core.documents import Document
 from sentence_transformers import CrossEncoder
 
+from doc_assistant.chroma_read import get_all
 from doc_assistant.config import (
     ANTHROPIC_API_KEY,
     BM25_WEIGHT,
@@ -133,7 +134,9 @@ class RAGPipeline:
         )
 
         log.info("building_keyword_index")
-        data = self.db.get(include=["documents", "metadatas"])
+        # Paged: an unpaged whole-store read fails past SQLite's parameter ceiling, and this
+        # runs in __init__ — so at 33k chunks it broke pipeline *construction* (chroma_read).
+        data = get_all(self.db, include=["documents", "metadatas"])
         all_docs = [
             Document(page_content=text, metadata=meta or {})
             for text, meta in zip(data["documents"], data["metadatas"], strict=True)
@@ -407,7 +410,7 @@ class RAGPipeline:
             yield chunk.content if hasattr(chunk, "content") else str(chunk)
 
     def chunk_count(self) -> int:
-        return len(self.db.get(include=[])["ids"])
+        return len(get_all(self.db, include=[])["ids"])
 
     def expand_query(self, query: str) -> list[str]:
         """Generate 3 alternative phrasings of the query.

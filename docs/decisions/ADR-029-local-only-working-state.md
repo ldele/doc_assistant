@@ -114,3 +114,38 @@ is behind" note carry no publication cost, which is a mild but continuous tax re
 - ⚠ **The backup mitigation is a recommendation, not a mechanism** — the same class of failure ADR-020
   diagnosed ("a manual ritual with no mechanism behind it does not happen"). Option 3 is the mechanism
   if this proves true again.
+
+## Post-transfer correction (2026-07-25, same day)
+
+The retired box's checkout arrived (`E:\Backups\PC - Lab4Tech\Github\doc_assistant`) hours after this
+ADR was written, and it **settles the Consequences section's last bullet differently than predicted**.
+Recorded here rather than by editing above, since this file is append-only.
+
+1. **RG-014 was never lost, and the transfer is not what saved it.** This ADR said its citations would
+   be "permanently unverifiable" if the tracker did not arrive. In fact the tracker's RG-014 *section*
+   was already gone — the retired box's own `RIGOR_TODO.md` carried the identical RG set to this box's,
+   still with the "FIRST SYNC MUST BE A MERGE" procedure block in its header, so **ADR-020's owed merge
+   was never performed there**; its pre-ADR-020 local text had been overwritten by the tracked copy.
+   What saved the finding is that the full measurement was written into the **committed, append-only
+   DEVLOG** (`## 2026-07-17 — RG-014: … VERDICT ~50% precision`) — present on this box the whole time.
+   RG-007 was likewise reconstructed from the retired box's baton archive, and RG-002–006 close as moot
+   (the open-vocabulary graph they tuned is deleted, KI-7). `.claude/RIGOR_TODO.md` now carries all of
+   this; the two-box gap is closed.
+2. **The generalisable lesson, which strengthens this ADR rather than weakening it:** a finding is safe
+   because it lives in a *published, append-only* record, not because its tracker is synced. Keeping
+   working state local is therefore fine **provided measurements land in the DEVLOG (or an ADR/spec)**,
+   with the tracker as an index. That is now the standing rule for anything cited as authority.
+3. **The backup gap this ADR names is real but narrower than feared:** the private eval fixtures
+   (`tests/eval/cases.yaml`, `eval_set.json`, `qualitative_questions.md`, the `strict_*` baselines,
+   `docs/library.bib`) were **byte-identical** on both boxes, so nothing was owed there either. What
+   genuinely existed only on the retired box: its 49 rotated baton archives + final baton (rescued to
+   the gitignored `docs/archive/lab4tech/` — the only record of the 2026-07-23/24 taxonomy and UI
+   sessions), its Claude agent memories (durable ones merged), and **50 source PDFs** the corpus here
+   never had.
+4. **One thing did not survive, and no backup could have carried it as configured:** the retired box's
+   **Chroma vector store**. `chroma/` + `chroma_pc/` live outside `data/` on Windows when the data path
+   is non-ASCII (KI-11 relocates them under `%PROGRAMDATA%`), so a repo-folder backup necessarily
+   misses them. Its `library.db` is therefore **not adoptable on its own** — the chunk rows would point
+   at embeddings that do not exist here. The corpus can only come across by copying `data/sources/` and
+   re-ingesting. *Worth generalising: any backup plan for this project must name the Chroma path
+   explicitly, or it silently backs up a corpus that cannot be restored.*

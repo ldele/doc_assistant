@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-07-23 · class: living -->
+<!-- status: active · updated: 2026-07-25 (ADR-029 added; ADR-020 superseded) · class: living -->
 
 # Decisions — index
 

@@ -16,6 +16,7 @@ import structlog
 from langchain_chroma import Chroma
 from sqlalchemy import select
 
+from doc_assistant.chroma_read import get_all
 from doc_assistant.db.models import Document as DBDocument
 from doc_assistant.db.session import session_scope
 
@@ -78,7 +79,7 @@ def cleanup_orphans_sqlite(db_for_metadata: Chroma) -> list[str]:
     changed (e.g. tables spliced into its cached ``.md``). Returns the orphan
     hashes for downstream Chroma cleanup.
     """
-    data = db_for_metadata.get(include=["metadatas"])
+    data = get_all(db_for_metadata, include=["metadatas"])
     hash_to_meta: dict[str, dict[str, Any]] = {}
     for meta in data["metadatas"]:
         if meta and meta.get("doc_hash"):
@@ -130,7 +131,7 @@ def cleanup_orphans_chroma(
     orphan_set = set(orphan_hashes)
     orphan_caches: list[Path] = []
     if also_clean_cache:
-        data = db.get(include=["metadatas"])
+        data = get_all(db, include=["metadatas"])
         for meta in data["metadatas"]:
             if not meta or meta.get("doc_hash") not in orphan_set:
                 continue

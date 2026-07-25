@@ -9,6 +9,9 @@ build/
 .pytest_cache/
 .coverage
 .mypy_cache/
+# `just typecheck-strict` keeps the divergent flag set in its own cache dir, so the two option
+# sets can't cold-start each other (2.4s vs 40.5s — see the justfile note).
+.mypy_cache-strict/
 .files/
 
 # Editor
@@ -22,17 +25,23 @@ build/
 # AGENTS.md (canonical entry file) + CLAUDE.md (its one-line @AGENTS.md stub) + the module
 # CLAUDE.md files are COMMITTED — shared, public-safe agent instructions (ADR-021).
 # Personal/transient notes go in CLAUDE.local.md (gitignored).
-# .claude/ is gitignored EXCEPT the Tier-1 canonical-facts files (committed): CONTEXT.md +
-# KNOWN_ISSUES.md + RIGOR_TODO.md. The SESSION.md baton (and everything else in .claude/) stays
-# local. (ADR-001; RIGOR_TODO.md added by ADR-020 — it tracks PROJECT validation debt, not
-# per-machine state, and keeping it local left the two boxes holding disjoint item sets.)
+# ALL of .claude/ is local working state (ADR-029, 2026-07-25): CONTEXT.md, KNOWN_ISSUES.md and
+# RIGOR_TODO.md left the allowlist with the second machine. ADR-020 committed RIGOR_TODO.md purely
+# to converge two boxes' disjoint copies; with one box git is not a sync mechanism, only a
+# publication channel, and these files are addressed to the builder, not to a reader of a public
+# repo. AGENTS.md's digest is what an out-of-clone reader gets; see docs/local-only.md.
+# ⚠ Consequence: nothing here has an off-machine copy any more — back up .claude/ yourself.
 CLAUDE.local.md
-.claude/*
-!.claude/CONTEXT.md
-!.claude/KNOWN_ISSUES.md
-!.claude/RIGOR_TODO.md
+.claude/
 # Rotated-out baton entries (cpc rotation, ADR-018 rule 11) — local-only, like the baton itself.
 docs/archive/SESSION-archive-*.md
+# Working docs, local-only for the same reason (ADR-029): dated planning docs, review reports and
+# the UI punch list are working notes, not the project's public record (which is README · ADRs ·
+# specs · DEVLOG · ROADMAP). Committed docs still link to them — docs/local-only.md explains why
+# those links don't resolve in a clone.
+docs/PLAN_*.md
+docs/REVIEW_*.md
+docs/ui-checklist.md
 # Local-only convention gates that depend on a private tooling repo — never shared (see ADR-001).
 .pre-commit-config.cpc.yaml
 tools/conventions/

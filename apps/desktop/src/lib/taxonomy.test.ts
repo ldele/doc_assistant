@@ -16,6 +16,8 @@ const field = (id: string, child_ids: string[], parent_ids: string[] = []): Taxo
   n_documents_direct: 0,
   n_concepts_rollup: 0,
   n_documents_rollup: 0,
+  n_concepts_proposed: 0,
+  n_documents_proposed: 0,
 })
 
 const view = (roots: string[], fields: TaxonomyField[]): TaxonomyView => ({

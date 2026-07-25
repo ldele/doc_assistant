@@ -8,7 +8,7 @@
   // attach a document to a field. No field→field re-parenting here — that is the only edit that can
   // trip the 409 cycle guard, and it stays API-only in 2b. Documents are attach-only (2a serves no
   // detach route), so attached-document rows are read-only.
-  import type { FieldDetail, FieldMember, LibraryDocument, TaxonomyView } from './types'
+  import type { FieldDetail, LabelledOption, LibraryDocument, TaxonomyView } from './types'
   import { buildForest } from './taxonomy'
   import { docLabel } from './library'
   import Icon from './Icon.svelte'
@@ -32,7 +32,8 @@
     loading: boolean
     error: string | null
     documents: LibraryDocument[]
-    concepts: FieldMember[] // the attachable vocabulary (graph nodes → {id,label}, spec ledger #7)
+    concepts: LabelledOption[] // the attachable vocabulary (graph nodes, spec ledger #7 — no link,
+    // so no origin: an *attached* member is a FieldMember, an offerable one is not
     focusConceptId: string | null // graph deep-link: preselect this concept for placement
     onSelectField: (fieldId: string) => void
     onAddEdge: (body: { source_id: string; target_id: string; type: 'is_a' | 'in_field' }) => void

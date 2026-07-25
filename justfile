@@ -62,6 +62,23 @@ sidecar:
 test:
     uv run --extra {{torch}} --extra dev pytest tests/unit tests/integration
 
+# Type-check exactly as CI and the pre-commit hook do (`uv run mypy src/`).
+#
+# ⚠ USE THIS, NOT `mypy --strict src`. Strictness already comes from [tool.mypy] strict=true, so
+# the flag adds nothing — except that it ALSO re-enables warn_unused_ignores (pyproject turns it
+# off), which makes it a DIFFERENT option set. mypy keys its incremental cache on the options, so
+# alternating the two forms invalidates the whole cache every time: measured on this repo,
+# `mypy src` is 2.4s warm and 40.5s right after a `--strict` run. That flip-flop was making every
+# commit pay ~40s in the pre-commit mypy hook. Same reason CI uses the bare form.
+typecheck:
+    uv run --no-sync mypy src
+
+# Escape hatch for the divergent flag set, pinned to its OWN cache dir so it cannot cold-start
+# `typecheck` (or be cold-started by it). Note it is *stricter than CI*: it reports unused
+# `type: ignore`s, which the shipped config deliberately allows.
+typecheck-strict:
+    uv run --no-sync mypy --strict --cache-dir .mypy_cache-strict src
+
 # Verify the active torch wheel + CUDA availability on this machine.
 torch-check:
     uv run --extra {{torch}} python -c "import torch; print(torch.__version__, 'cuda', torch.cuda.is_available())"

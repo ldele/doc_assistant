@@ -24,12 +24,15 @@ import networkx as nx
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from doc_assistant.db.models import Concept, ConceptHierarchy, DocumentField
+from doc_assistant.db.models import Concept, ConceptHierarchy, Document, DocumentField
 
 # The two curated hierarchy edge types (ADR-028 Decision 2). ``related`` (the associative
 # Node-A/B layer) is deliberately NOT here — it lives in the derived ``concept_edges``.
 HIERARCHY_EDGE_TYPES: frozenset[str] = frozenset({"is_a", "in_field"})
+#: Link provenance, shared by both curated tables (ADR-028 D8): ``curated`` = a user edit or the
+#: ANZSRC seed (always wins); ``proposed`` = an auto-fill awaiting accept-or-delete.
 DOCUMENT_FIELD_ORIGINS: frozenset[str] = frozenset({"curated", "proposed"})
+HIERARCHY_ORIGINS: frozenset[str] = DOCUMENT_FIELD_ORIGINS
 
 
 class TaxonomyCycleError(ValueError):
@@ -58,26 +61,33 @@ def _hierarchy_edges(session: Session) -> list[tuple[str, str]]:
 
 
 def add_hierarchy_edge(
-    session: Session, source_id: str, target_id: str, edge_type: str
+    session: Session, source_id: str, target_id: str, edge_type: str, origin: str = "curated"
 ) -> ConceptHierarchy:
-    """Add one curated hierarchy edge, rejecting anything that would close a cycle.
+    """Add one hierarchy edge, rejecting anything that would close a cycle.
 
     ``source --edge_type--> target``: ``is_a`` = concept → broader concept; ``in_field`` =
     concept/field → broader field. The sole sanctioned writer of ``concept_hierarchy`` — the
     acyclicity invariant (ADR-028 D3) is enforced *here*, so no other path can smuggle a cycle in.
 
-    Idempotent on the unique key ``(source_id, target_id, type)``: a re-add returns the existing
-    row untouched. Flushes so a bad foreign key (a source/target that is not a real concept)
-    surfaces as an ``IntegrityError`` within this call, not later.
+    Idempotent on the unique key ``(source_id, target_id, type)``, with one deliberate exception:
+    a **curated** write over an existing ``proposed`` row *promotes* it in place (ADR-028 D8's
+    accept primitive — accepting a proposal is the same call the UI already makes to attach). The
+    reverse never happens: a ``proposed`` write leaves a ``curated`` row untouched, so an
+    auto-propose pass can never quietly overwrite the user's own placement. Flushes so a bad
+    foreign key (a source/target that is not a real concept) surfaces as an ``IntegrityError``
+    within this call, not later.
 
     Raises:
-        ValueError: ``edge_type`` is not one of :data:`HIERARCHY_EDGE_TYPES`.
+        ValueError: ``edge_type``/``origin`` is not one of :data:`HIERARCHY_EDGE_TYPES` /
+            :data:`HIERARCHY_ORIGINS`.
         TaxonomyCycleError: the edge would make the hierarchy cyclic (incl. a self-edge).
     """
     if edge_type not in HIERARCHY_EDGE_TYPES:
         raise ValueError(
             f"edge_type must be one of {sorted(HIERARCHY_EDGE_TYPES)}, got {edge_type!r}"
         )
+    if origin not in HIERARCHY_ORIGINS:
+        raise ValueError(f"origin must be one of {sorted(HIERARCHY_ORIGINS)}, got {origin!r}")
 
     existing = session.execute(
         select(ConceptHierarchy).where(
@@ -87,6 +97,9 @@ def add_hierarchy_edge(
         )
     ).scalar_one_or_none()
     if existing is not None:
+        if origin == "curated" and existing.origin != "curated":
+            existing.origin = "curated"  # accept: promote the proposal, don't duplicate it
+            session.flush()
         return existing
 
     # Cycle check over the whole hierarchy (is_a + in_field): add the candidate to the current
@@ -104,7 +117,9 @@ def add_hierarchy_edge(
             path = [source_id, target_id]
         raise TaxonomyCycleError(source_id, target_id, path)
 
-    edge = ConceptHierarchy(source_id=source_id, target_id=target_id, type=edge_type)
+    edge = ConceptHierarchy(
+        source_id=source_id, target_id=target_id, type=edge_type, origin=origin
+    )
     session.add(edge)
     session.flush()
     return edge
@@ -165,6 +180,28 @@ def attach_document_field(
     return link
 
 
+def detach_document_field(session: Session, document_id: str, field_id: str) -> int:
+    """Remove a document→field link by its pair. Returns the number of rows removed.
+
+    The counterpart :func:`attach_document_field` shipped without (increment 2a had no caller).
+    D8's contract — a proposal the user *accepts or deletes* — makes it required: without a detach,
+    a machine-proposed document classification could never be rejected. Origin-agnostic: the user
+    may equally undo their own curated attach.
+    """
+    rows = list(
+        session.execute(
+            select(DocumentField).where(
+                DocumentField.document_id == document_id,
+                DocumentField.concept_id == field_id,
+            )
+        ).scalars()
+    )
+    for row in rows:
+        session.delete(row)
+    session.flush()
+    return len(rows)
+
+
 def presence_nodes(session: Session) -> list[Concept]:
     """The single canonical accessor for text-bearing concepts (``kind="concept"``).
 
@@ -175,16 +212,55 @@ def presence_nodes(session: Session) -> list[Concept]:
     return list(session.execute(select(Concept).where(Concept.kind == "concept")).scalars().all())
 
 
+def unplaced_concepts(session: Session, *, graph_only: bool = True) -> list[Concept]:
+    """Text-bearing concepts with **no** ``in_field`` edge yet — the auto-propose input set.
+
+    Reads through :func:`presence_nodes`' kind guard, so an abstract ``kind="domain"`` field node
+    is never returned (a field has no field parent to propose, and the seeded trunk's own
+    ``in_field`` edges are not placements). ``graph_only`` (the default) narrows to the curated
+    graph vocabulary (``graph_include`` true) — ADR-018's boundary between the concept map and the
+    breadth-first keyword families, which the taxonomy augments (ADR-019 D1). Pass
+    ``graph_only=False`` to widen to every promoted keyword. Origin is ignored: a concept carrying
+    a *proposed* placement is already placed and is not re-proposed.
+
+    Returns ``[]`` on an empty corpus — the honest zero-state, not an error.
+    """
+    placed = set(
+        session.execute(
+            select(ConceptHierarchy.source_id).where(ConceptHierarchy.type == "in_field")
+        )
+        .scalars()
+        .all()
+    )
+    concepts = presence_nodes(session)
+    if graph_only:
+        concepts = [c for c in concepts if c.graph_include]
+    return [c for c in concepts if c.id not in placed]
+
+
+def unclassified_documents(session: Session) -> list[Document]:
+    """Documents with no ``document_field`` link yet — the document half of the propose input.
+
+    The 25-of-47 concept-less documents ADR-028 D6 exists for are in here by construction: this
+    asks only about the *explicit* link, never about derived concept presence. ``[]`` at 0 docs.
+    """
+    classified = set(session.execute(select(DocumentField.document_id)).scalars().all())
+    documents = list(session.execute(select(Document)).scalars().all())
+    return [d for d in documents if d.id not in classified]
+
+
 def load_taxonomy(session: Session) -> nx.DiGraph:
     """The curated hierarchy as a read-only ``networkx.DiGraph`` (nodes + edges carry attrs).
 
     Nodes = every ``Concept`` (attrs: ``kind``, ``label``), so isolated and domain nodes are
-    present; edges = every ``concept_hierarchy`` row oriented ``source → target`` (attr: ``type``).
-    The substrate later increments traverse for coverage rollup; this build never writes.
+    present; edges = every ``concept_hierarchy`` row oriented ``source → target`` (attrs: ``type``,
+    ``origin``). The substrate later increments traverse for coverage rollup; this build never
+    writes. ``origin`` rides along so a reader can tell a curated placement from a proposed one
+    without a second query (ADR-028 D8).
     """
     graph: nx.DiGraph = nx.DiGraph()
     for concept in session.execute(select(Concept)).scalars().all():
         graph.add_node(concept.id, kind=concept.kind, label=concept.label)
     for row in session.execute(select(ConceptHierarchy)).scalars().all():
-        graph.add_edge(row.source_id, row.target_id, type=row.type)
+        graph.add_edge(row.source_id, row.target_id, type=row.type, origin=row.origin)
     return graph

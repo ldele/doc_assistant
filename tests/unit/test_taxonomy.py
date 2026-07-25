@@ -483,7 +483,141 @@ def test_load_field_detail(temp_db):
     detail = load_field_detail("grp")
     assert detail is not None
     assert detail.label == "Machine learning"
-    assert detail.concepts == (("c1", "Embeddings"),)
+    assert [(m.id, m.label, m.origin) for m in detail.concepts] == [
+        ("c1", "Embeddings", "curated")
+    ]
     # a concept id or an unknown id is not a field -> None (distinct from a real-but-empty field)
     assert load_field_detail("c1") is None
     assert load_field_detail("nope") is None
+
+
+# ============================================================
+# Increment 3 (ADR-028 D8) — link origin: the migration, promote-never-demote, the unplaced sets
+# ============================================================
+
+
+def test_migration_adds_hierarchy_origin_and_backfills_curated(tmp_path):
+    """A `concept_hierarchy` predating `origin` gains it and every existing edge reads "curated" —
+    a proposal cannot predate the pass that makes them (KI-25 backfill-in-the-same-change).
+    Non-vacuous: the column is asserted absent before the migration runs."""
+    from doc_assistant.db.migrations import _apply_additive_columns
+
+    engine = create_engine(f"sqlite:///{tmp_path / 'old.db'}", future=True)
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "CREATE TABLE concept_hierarchy (id VARCHAR PRIMARY KEY, source_id VARCHAR "
+                "NOT NULL, target_id VARCHAR NOT NULL, type VARCHAR NOT NULL)"
+            )
+        )
+        conn.execute(
+            text(
+                "INSERT INTO concept_hierarchy (id, source_id, target_id, type) "
+                "VALUES ('e1', 'grp', 'div', 'in_field')"
+            )
+        )
+
+    assert "origin" not in {c["name"] for c in inspect(engine).get_columns("concept_hierarchy")}
+
+    added = _apply_additive_columns(engine)
+
+    assert "concept_hierarchy.origin" in added
+    with engine.connect() as conn:
+        assert (
+            conn.execute(text("SELECT origin FROM concept_hierarchy WHERE id='e1'")).scalar_one()
+            == "curated"
+        )
+    engine.dispose()
+
+
+def test_proposed_edge_is_promoted_by_a_curated_write_and_never_demoted(temp_db):
+    """Accepting a proposal is just the curated write of the same edge: one row, flipped in place.
+    The reverse never happens — a propose pass cannot overwrite the user's own placement."""
+    from doc_assistant.db.session import session_scope
+
+    with session_scope() as s:
+        _concept(s, "c1")
+        _concept(s, "div", kind="domain")
+        proposed = add_hierarchy_edge(s, "c1", "div", "in_field", origin="proposed")
+        assert proposed.origin == "proposed"
+
+        accepted = add_hierarchy_edge(s, "c1", "div", "in_field")  # curated default = accept
+        assert accepted.id == proposed.id  # promoted in place, not duplicated
+        assert accepted.origin == "curated"
+
+        again = add_hierarchy_edge(s, "c1", "div", "in_field", origin="proposed")
+        assert again.origin == "curated"  # no demotion
+        assert len(s.execute(select(ConceptHierarchy)).scalars().all()) == 1
+
+
+def test_add_hierarchy_edge_rejects_unknown_origin(temp_db):
+    from doc_assistant.db.session import session_scope
+
+    with session_scope() as s:
+        _concept(s, "a")
+        _concept(s, "b")
+        with pytest.raises(ValueError):
+            add_hierarchy_edge(s, "a", "b", "in_field", origin="guessed")
+
+
+def test_unplaced_concepts_excludes_placed_domains_and_non_graph(temp_db):
+    """The propose input set: no placed concept, no domain node, graph vocabulary by default."""
+    from doc_assistant.db.session import session_scope
+    from doc_assistant.knowledge.taxonomy import unplaced_concepts
+
+    with session_scope() as s:
+        s.add(Concept(id="in_graph", label="In graph", kind="concept", graph_include=True))
+        s.add(Concept(id="placed", label="Placed", kind="concept", graph_include=True))
+        s.add(Concept(id="family", label="Family only", kind="concept", graph_include=False))
+        s.add(Concept(id="div", label="A field", kind="domain", graph_include=False))
+        s.flush()
+        add_hierarchy_edge(s, "placed", "div", "in_field", origin="proposed")
+
+        # a *proposed* placement still counts as placed — it is not re-proposed
+        assert [c.id for c in unplaced_concepts(s)] == ["in_graph"]
+        assert sorted(c.id for c in unplaced_concepts(s, graph_only=False)) == [
+            "family",
+            "in_graph",
+        ]
+
+
+def test_unclassified_documents_excludes_attached(temp_db):
+    from doc_assistant.db.session import session_scope
+    from doc_assistant.knowledge.taxonomy import unclassified_documents
+
+    with session_scope() as s:
+        s.add(
+            Document(id="d1", filename="a.pdf", source_original="a", doc_hash="h1", format="pdf")
+        )
+        s.add(
+            Document(id="d2", filename="b.pdf", source_original="b", doc_hash="h2", format="pdf")
+        )
+        _field(s, "div")
+        s.flush()
+        attach_document_field(s, "d1", "div", origin="proposed")
+
+        assert [d.id for d in unclassified_documents(s)] == ["d2"]
+
+
+def test_view_breaks_out_the_proposed_share(temp_db):
+    """DoD 9 at the read model: a proposed attachment is counted, and marked as proposed."""
+    from doc_assistant.db.session import session_scope
+    from doc_assistant.knowledge.taxonomy_view import load_field_detail, load_taxonomy_view
+
+    with session_scope() as s:
+        _field(s, "grp", "Machine learning")
+        _concept(s, "c1", kind="concept", label="Curated one")
+        _concept(s, "c2", kind="concept", label="Proposed one")
+        add_hierarchy_edge(s, "c1", "grp", "in_field")
+        add_hierarchy_edge(s, "c2", "grp", "in_field", origin="proposed")
+
+    field = {f.id: f for f in load_taxonomy_view().fields}["grp"]
+    assert field.n_concepts_direct == 2  # counts stay origin-inclusive
+    assert field.n_concepts_proposed == 1  # the machine-proposed share is subtractable
+
+    detail = load_field_detail("grp")
+    assert detail is not None
+    assert {m.label: m.origin for m in detail.concepts} == {
+        "Curated one": "curated",
+        "Proposed one": "proposed",
+    }

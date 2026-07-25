@@ -155,6 +155,43 @@ def test_attach_document_field(client: TestClient) -> None:
     # non-existent document -> 404
     assert client.post("/api/taxonomy/documents/ghost/fields/grp").status_code == 404
 
+    # detach is the reject half (ADR-028 D8) and is idempotent
+    r = client.delete("/api/taxonomy/documents/d1/fields/grp")
+    assert r.status_code == 200 and r.json()["removed"] == 1
+    assert client.delete("/api/taxonomy/documents/d1/fields/grp").json()["removed"] == 0
+
+
+def test_proposed_links_are_marked_on_the_wire(client: TestClient) -> None:
+    """DoD 9 (increment 3): a proposal reaches the UI *labelled* as one, and an accept (the same
+    curated POST) flips it — so the frontend can never render a machine guess as a user edit."""
+    _seed_field("grp", "ML")
+    _seed_field("c1", "Embeddings", kind="concept")
+    with session_scope() as s:
+        s.add(Document(id="d1", filename="p.pdf", source_original="p", doc_hash="h", format="pdf"))
+    with session_scope() as s:
+        from doc_assistant.knowledge.taxonomy import add_hierarchy_edge, attach_document_field
+
+        add_hierarchy_edge(s, "c1", "grp", "in_field", origin="proposed")
+        attach_document_field(s, "d1", "grp", origin="proposed")
+
+    detail = client.get("/api/taxonomy/fields/grp").json()
+    assert [m["origin"] for m in detail["concepts"]] == ["proposed"]
+    assert [m["origin"] for m in detail["documents"]] == ["proposed"]
+    field = {f["id"]: f for f in client.get("/api/taxonomy").json()["fields"]}["grp"]
+    assert (field["n_concepts_direct"], field["n_concepts_proposed"]) == (1, 1)
+    assert (field["n_documents_direct"], field["n_documents_proposed"]) == (1, 1)
+
+    # accepting = the existing curated write of the same edge (no new endpoint, ADR-028 D8)
+    assert (
+        client.post(
+            "/api/taxonomy/hierarchy",
+            json={"source_id": "c1", "target_id": "grp", "type": "in_field"},
+        ).status_code
+        == 201
+    )
+    accepted = client.get("/api/taxonomy/fields/grp").json()
+    assert [m["origin"] for m in accepted["concepts"]] == ["curated"]
+
 
 def test_field_detail_404_for_non_field(client: TestClient) -> None:
     _seed_field("grp", "ML")

@@ -520,6 +520,11 @@ class ConceptHierarchy(Base):
     )
     # "is_a" (concept → broader concept) | "in_field" (concept/field → broader field).
     type: Mapped[str] = mapped_column(String, nullable=False)
+    # "curated" (a user edit / the ANZSRC seed — always wins) | "proposed" (an auto-fill the
+    # user accepts or deletes; ADR-028 D8, increment 3). Same vocabulary as
+    # `DocumentField.origin`. A curated write over a proposed row PROMOTES it in place (the
+    # accept primitive); a proposed write never demotes a curated row.
+    origin: Mapped[str] = mapped_column(String, nullable=False, default="curated")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
 
     __table_args__ = (

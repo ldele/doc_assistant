@@ -119,3 +119,18 @@ def attach_document(document_id: str, field_id: str) -> dict[str, Any]:
         except NotADomainError as e:
             raise HTTPException(status_code=400, detail=str(e)) from e
     return {"ok": True, "document_id": document_id, "field_id": field_id}
+
+
+@router.delete("/api/taxonomy/documents/{document_id}/fields/{field_id}")
+def detach_document(document_id: str, field_id: str) -> dict[str, int]:
+    """Remove a document→field link. Idempotent (``removed`` 0 if absent).
+
+    The reject half of ADR-028 D8: an auto-proposed classification must be removable, or
+    "the user accepts or deletes it" is not a property the product has. Origin-agnostic — it also
+    undoes a curated attach, mirroring ``DELETE /api/taxonomy/hierarchy``."""
+    from doc_assistant.db.session import session_scope
+    from doc_assistant.knowledge.taxonomy import detach_document_field
+
+    with session_scope() as session:
+        removed = detach_document_field(session, document_id, field_id)
+    return {"removed": removed}

@@ -1078,6 +1078,10 @@ class TaxonomyFieldPayload(BaseModel):
     n_documents_direct: int
     n_concepts_rollup: int
     n_documents_rollup: int
+    # Of the *direct* members, how many arrived as an auto-proposal (ADR-028 D8) rather than a
+    # user edit. The direct/rollup counts stay origin-inclusive; this is the subtractable share.
+    n_concepts_proposed: int = 0
+    n_documents_proposed: int = 0
 
     @classmethod
     def from_field(cls, f: TaxonomyField) -> TaxonomyFieldPayload:
@@ -1090,6 +1094,8 @@ class TaxonomyFieldPayload(BaseModel):
             n_documents_direct=f.n_documents_direct,
             n_concepts_rollup=f.n_concepts_rollup,
             n_documents_rollup=f.n_documents_rollup,
+            n_concepts_proposed=f.n_concepts_proposed,
+            n_documents_proposed=f.n_documents_proposed,
         )
 
 
@@ -1114,10 +1120,15 @@ class TaxonomyViewPayload(BaseModel):
 
 
 class FieldMemberPayload(BaseModel):
-    """A directly-attached member (a concept or a document) of one field."""
+    """A directly-attached member (a concept or a document) of one field.
+
+    `origin` is "curated" (a user edit or the ANZSRC seed) or "proposed" (an ADR-028 D8 auto-fill
+    awaiting accept-or-delete) — the UI must not render a machine guess as the user's own edit.
+    """
 
     id: str
     label: str
+    origin: str = "curated"
 
 
 class FieldDetailPayload(BaseModel):
@@ -1135,8 +1146,12 @@ class FieldDetailPayload(BaseModel):
         return cls(
             id=d.id,
             label=d.label,
-            concepts=[FieldMemberPayload(id=i, label=lbl) for i, lbl in d.concepts],
-            documents=[FieldMemberPayload(id=i, label=lbl) for i, lbl in d.documents],
+            concepts=[
+                FieldMemberPayload(id=m.id, label=m.label, origin=m.origin) for m in d.concepts
+            ],
+            documents=[
+                FieldMemberPayload(id=m.id, label=m.label, origin=m.origin) for m in d.documents
+            ],
             n_concepts_rollup=d.n_concepts_rollup,
             n_documents_rollup=d.n_documents_rollup,
         )

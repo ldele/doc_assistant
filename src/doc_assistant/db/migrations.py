@@ -66,6 +66,11 @@ _ADDITIVE_COLUMNS: list[tuple[str, str, str, str | None]] = [
     # correct). Indexed: presence_nodes() filters on it. NOT NULL is legal here because the
     # DEFAULT supplies a value for the backfilled rows.
     ("concepts", "kind", "VARCHAR NOT NULL DEFAULT 'concept'", "ix_concepts_kind"),
+    # ADR-028 D8 (taxonomy T3) — link provenance on the (increment-1) concept_hierarchy table.
+    # The literal DEFAULT backfills every existing row in the same ALTER (KI-25 discipline):
+    # every pre-increment-3 edge is the ANZSRC seed or a user edit, i.e. curated — a proposal
+    # cannot predate the pass that makes them. Unindexed: read with the row, never filtered on.
+    ("concept_hierarchy", "origin", "VARCHAR NOT NULL DEFAULT 'curated'", None),
 ]
 
 

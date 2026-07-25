@@ -23,6 +23,11 @@ Full stack + locked settings: `.claude/CONTEXT.md`.
 
 ## Coordination files (read in this order)
 
+> **All four are local-only working state (ADR-029) — they are not in the repo.** On the dev machine
+> they are exactly where this list says; in a fresh clone they do not exist, and this file's
+> Non-negotiables digest is what you get. See `docs/local-only.md`. They also have **no off-machine
+> copy** any more: back up `.claude/` yourself.
+
 1. `.claude/SESSION.md` — handoff baton: who worked last, what's done/uncommitted, what's next, which tool picks up.
 2. `.claude/CONTEXT.md` — canonical facts: stack, locked settings, provider config, phase map, open questions.
 3. `docs/DEVLOG.md` (top entries — newest first) — per-change history. *(Lives in `docs/`, not `.claude/` — do not move or duplicate.)*
@@ -52,6 +57,10 @@ module, read that module's file and stay inside its boundary:
   eval-harness experiment (`--repeat`, beat the control, record a baseline). Table: `.claude/CONTEXT.md`.
 - `structlog` only, no `print()` in `src/` (ADR-003); exceptions chain (`raise X from e`); no
   secrets in code (`.env` gitignored).
+- **Type-check with `uv run --no-sync mypy src`** (`just typecheck` if you have `just`) —
+  **never `mypy --strict src`**. The flag is redundant (`strict=true` is in `pyproject.toml`) and it
+  changes the option set, so it wipes mypy's incremental cache both ways: the next commit's hook then
+  takes ~40 s instead of ~2 s. Full note: `.claude/CONTEXT.md` §8.
 - Engineering preferences (design principles + working protocol) live in cpc **CONVENTIONS**
   §12/§13 — read there, don't restate. The cpc gates run **locally only** from the vendored,
   gitignored `tools/conventions/` — never in CI (cpc is private, this repo is public;

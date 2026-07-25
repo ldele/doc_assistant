@@ -11,6 +11,188 @@ Format: What changed | Why | Rejected alternatives | What it opens
 > (moved verbatim 2026-07-21). This file keeps 2026-07-15 onward.
 
 ---
+## 2026-07-25 — Slow commits diagnosed: `mypy --strict` was invalidating the incremental cache on every alternation (45s → 6.7s)
+
+**Complaint (user):** commits on this machine are slow, expected to be "a lot of hooks or checks at
+once". **Measured instead:** the hook battery is cheap and **one hook was paying a full cold mypy on
+almost every commit**.
+
+**The mechanism.** `[tool.mypy]` already sets `strict = true` *and* `warn_unused_ignores = false`.
+Passing `--strict` on the CLI re-enables `warn_unused_ignores`, so it is a **different option set** —
+and mypy keys its incremental cache on the options, so it discards the cache. The project's own
+agent-facing docs prescribed `mypy --strict src`, while the pre-commit hook (and CI) run the bare
+`mypy src`. Every alternation therefore cold-started the other form:
+
+| command | timing on this box |
+|---|---|
+| `mypy src` (hook/CI form), warm | **2.4 s** |
+| `mypy --strict src` after that | 40.9 s |
+| `mypy src` again (now cold) | **40.5 s** ← every commit after a `--strict` run |
+| `mypy src` once more (warm) | 2.3 s |
+
+**Fix.** One canonical local command — `uv run --no-sync mypy src` — recorded where the habit comes
+from: `.claude/CONTEXT.md` non-negotiable **§8** (with the numbers), the `AGENTS.md` digest,
+`src/doc_assistant/CLAUDE.md`, and this session's spec's Gate line. New `justfile` recipes
+`typecheck` (canonical) and `typecheck-strict`, the latter pinned to `--cache-dir
+.mypy_cache-strict` so the divergent flag set **cannot** cold-start the canonical one (verified: two
+strict runs in a row, bare form still 2.3 s afterwards); `.mypy_cache-strict/` gitignored.
+
+**Rejected.** Dropping mypy from the hook (it is the pre-check that keeps CI green). Scoping
+mypy/bandit to staged files (`pass_filenames: false` + whole-tree paths is deliberate CI parity — the
+hook's own comment explains it, and whole-tree keeps the cost flat rather than diff-dependent).
+Removing `strict=true` in favour of the flag (would make CI's bare invocation non-strict).
+
+**Where the remaining ~6.7 s goes** (whole staged tree, warm, measured with `pre-commit run
+--verbose`): mypy 2.3 · bandit 1.6 · detect-secrets 0.9 · hygiene hooks 0.5 · ruff + ruff-format 0.05
+· pre-commit's own stash/restore + env checks ≈ 1.3. `git status` is 0.04 s, and the hook envs
+(`~/.cache/pre-commit`, 8 envs / 203 MB) are stable — neither was implicated. Pre-push adds ~6.5 s
+(cpc `test_api_check` 4.6 · `docs_check` 1.8 · `push_guard` 0.1).
+
+**Also found while measuring:** the staged tree had one real `E501` (a docstring line in
+`knowledge/taxonomy.py` added after the last lint run) — the hook was *failing*, not just slow, which
+is its own contribution to "commits are slow" via retry cycles. Fixed. Worth remembering that
+pre-commit checks the **staged** content (it stashes unstaged work first), so a fix that is not
+`git add`-ed does not clear a hook failure.
+
+**Not measured / left to the user:** whether a *post-boot* first commit is slower still because
+Windows Defender real-time scanning is on with no exclusions for `.venv` (48 k files), the repo, or
+the pre-commit cache. Reading or setting exclusions needs elevation, so it is the user's call —
+excluding those three paths is the usual remedy if a cold commit still drags.
+
+---
+## 2026-07-25 — ADR-029: the working state goes local — all of `.claude/` + PLAN/REVIEW docs + the UI checklist untracked
+
+The user retired the second machine ("we won't be using the other pc anymore… we can conveniently
+hide more stuff in .gitignore"), which **kills ADR-020's deciding premise**: it committed
+`.claude/RIGOR_TODO.md` *specifically* to converge two boxes' disjoint copies ("git is the mechanism
+the ritual was missing"). With one box git is not a sync mechanism for these files at all — only a
+publication channel, on a repo that is public and read as a portfolio.
+
+**What.** `.gitignore`: `.claude/*` + allowlist → plain `.claude/`; new `docs/PLAN_*.md`,
+`docs/REVIEW_*.md`, `docs/ui-checklist.md`. `git rm --cached` on the 7 files (all still on disk):
+`.claude/{CONTEXT,KNOWN_ISSUES,RIGOR_TODO}.md`, both `PLAN_2026-07-2x` docs,
+`REVIEW_2026-07-19_scale-robustness.md`, `ui-checklist.md`. New
+`docs/decisions/ADR-029-local-only-working-state.md` (supersedes ADR-020, amends ADR-001's allowlist
+— now empty, narrows ADR-022's publish set); ADR-020 marked superseded in the index.
+
+**Why (and the costs, which are real).** These files are addressed to the builder, not the reader.
+But: **~40 committed documents link to them** (109 occurrences of `ui-checklist|PLAN_2026|REVIEW_2026`
+— measured, not estimated), so a clone gets dangling links; and **git was the off-machine copy**,
+which disappears exactly as the second machine does. Both are named in the ADR rather than glossed,
+with three mitigations shipped: new committed **`docs/local-only.md`** (what's local + why + what the
+public record *is*), an `AGENTS.md` banner over the coordination list (a clone has none of these; the
+digest is what you get; back up `.claude/` yourself), and the recommendation that a private sibling
+repo is the upgrade path if the backup gap bites.
+
+**Rejected.** Status quo (publishes internal validation debt + half-finished punch lists for a sync
+benefit that no longer exists). A private submodule *now* — the better end state, but a second repo to
+run for a solo project; kept as the named reverse-if. Untracking `RIGOR_TODO.md` alone (leaves exactly
+the planning docs the user objected to). Rewriting the 109 references — would churn append-only history
+(DEVLOG, sprint archives) whose value is being verbatim.
+
+**What it opens.** ADR-020's owed merge is now conditional on the pending data transfer: **RG-014**
+(cited as authority in ADR-017/018/019 + `feature-concept-graph.md`), RG-007 and possibly
+RG-003/005/006 exist only on the retired box's copy. If that file doesn't arrive, those citations are
+permanently unverifiable and must be treated as such. Also newly unreachable: **G4**
+(`SPRINT-004-ki10-frozen-os-trust`) needed a TLS-MITM box to verify — that was the retired machine.
+
+---
+## 2026-07-25 — Taxonomy increment 3 (ADR-028 D8): auto-propose placements, propose-only, $0 on local Ollama
+
+The taxonomy could be filled by hand (increments 1/2a/2b) but nothing was placed, so ADR-028 D6's
+coverage math read 0 everywhere. This is the first-pass filler: one quarantined local-LLM pass that
+**proposes** an `in_field` parent per unplaced concept and a field per unclassified document, written
+as `origin="proposed"` links the user accepts or deletes. Spec:
+`docs/specs/feature-taxonomy-auto-propose.md` (written first, DoD 1–9).
+
+**What.**
+- **Schema:** `ConceptHierarchy.origin` (`curated`|`proposed`, non-null, default curated) + the
+  `_ADDITIVE_COLUMNS` row with a **literal DEFAULT** so the ALTER backfills existing rows in the same
+  change (KI-25) — every pre-increment edge is the seed or a user edit; a proposal cannot predate the
+  pass that makes them.
+- **Seam (`knowledge/taxonomy.py`):** `add_hierarchy_edge(..., origin=)` where a **curated write over
+  a proposed row promotes it in place** — that *is* the accept primitive, so accepting needs no new
+  endpoint — and a proposed write never demotes a curated row. New `unplaced_concepts(graph_only=)` /
+  `unclassified_documents()`; `load_taxonomy` now carries `origin` on each edge.
+- **Pass (`knowledge/taxonomy_propose.py`, new):** **two-stage narrowing** — division (~23 options)
+  then group *within that division* (~10) — because a small local model chooses far better twice-small
+  than once-from-236, and the intermediate answer is itself a valid placement target. **Abstention is
+  first-class** at both stages: stage-1 "none" ⇒ no proposal (a wrong placement inflates the very
+  coverage this layer exists to make trustworthy); stage-2 "none" ⇒ the **division placement stands**
+  (`field_id == division_id` marks it). Confidence = the chain's **weakest present link**, and is
+  `None` rather than fabricated when the model gives no usable number. `propose_placements` is DB-free
+  and writes nothing; `run_propose` owns the session either side of it (the `gaps.build_gaps` shape).
+- **Runner (`scripts/propose_taxonomy.py`):** dry run = scope + call budget with **zero LLM calls**;
+  `--apply` runs and writes. `TAXONOMY_PROPOSE_LLM_{PROVIDER,MODEL}` default to Ollama explicitly
+  (KI-4 — this is the highest-volume of the three confined passes, so an inherited paid default would
+  be the worst footgun of the set) and `--apply` routes through `assert_provider_intent` before any
+  client exists. `--limit`/`--all-concepts` always print what they dropped or skipped.
+- **Wire:** `TaxonomyField.n_{concepts,documents}_proposed` + `FieldMember.origin` through
+  `taxonomy_view` → payloads → `types.ts`; `FieldMember extends LabelledOption`, and the attach
+  picker's vocabulary is now `LabelledOption` (an *offerable* concept has no link, so no origin —
+  TX2b had reused `FieldMember` for it).
+
+**Why zero calls on a dry run** (not "run the LLM, just don't write"): `assert_provider_intent`
+deliberately no-ops when `apply=False`, so a calling dry run with `--provider anthropic` would bill
+without ever tripping the guard. "No `--apply`" has to mean "no spend".
+
+**Coverage counting decision.** `*_direct`/`*_rollup` stay **origin-inclusive** — a proposed link is
+genuinely attached, pending review — with the proposed share broken out at the *direct* level so a
+consumer can subtract. No rollup-level breakdown until something consumes it: that is the
+coverage-based gap detectors, which stay gated behind **RG-015** and should require curated links,
+because auto-propose precision is unmeasured. This ADR-028 "must revisit" (the display rule) is now
+decided for the read model; the UI half is TX3b.
+
+**Rejected.** A separate proposals table (the distinction needed is the provenance of *one link*, and
+`DocumentField.origin` already established the vocabulary; two stores would drift). One-shot over all
+236 fields (weakest form of the question for an 8B model). Forcing a placement when the model is
+unsure. Clamping an out-of-range index into range (it would manufacture a placement the model never
+chose — an out-of-range answer is a parse failure). `is_a` proposals (a different judgment, no seeded
+candidates).
+
+**Gate.** ruff/format clean · `mypy --strict src` 69 files · bandit 0/0 · **pytest 1282 passed** ·
+`svelte-check` 0/0 (146) · `npm test` 50 pass · `docs_check --strict` 0/0 · `integrity_check` 0/0
+(518). New/extended tests: 15 in `tests/unit/test_taxonomy_propose.py` (scripted call-**counting**
+fake client — the "zero items/no fields/dry run ⇒ zero calls" contracts are asserted, not assumed),
+6 in `test_taxonomy.py`, 1 new API integration test + detach assertions on the existing attach test.
+
+**A hole this increment exposed, closed in it:** `attach_document_field` had no counterpart, so a
+*proposed* document classification could never be rejected — "the user accepts or deletes" was not a
+property the product had. Added `taxonomy.detach_document_field` + `DELETE
+/api/taxonomy/documents/{id}/fields/{id}` + `api.ts detachDocumentField` (origin-agnostic: it also
+undoes a curated attach, mirroring `DELETE /hierarchy`).
+
+**Live on this box ($0, ollama/llama3.1:8b).** Its DB **predated increment 1 entirely** — no `kind`
+column, no taxonomy tables (the 07-23/24 taxonomy work was verified on the now-retired machine). So
+the run was: back up `library.db` → `init_db()` added `concepts.kind` + created both tables →
+`seed_taxonomy --apply` (236 domains + 213 edges) → dry run (13 in-scope concepts + 47 documents = 60
+items, ≤120 calls, **344 out-of-graph concepts reported as skipped**, zero LLM calls) → `--apply`:
+**120 calls, 60 proposals, 0 abstentions, 0 division-only, 13 + 47 rows written.** Then live over the
+running API: 236 fields / 23 roots intact · unassigned 357→344 · **rollup crosses group→division with
+proposals included** (Information and computing sciences 10c/15d rolled up, 0 direct) · every member
+serves `origin:"proposed"` · **accept = the plain curated POST promoted in place** (direct stayed 9,
+proposed 9→8) · new DELETE removes 1 then 0. Box restored (the accept test's edge was deleted and
+re-proposed — same placement at temperature 0).
+
+**Quality, read honestly (this is RG-015's first evidence, logged there).** 13/13 concepts plausible —
+`cre`→Genetics, `dbs`/`ntsr1`→Neurosciences, `pddl`→Artificial intelligence, a good counter to the
+twice-made "unfamiliar short label = junk" error — but **every** IR concept landed in *Machine
+learning* although ANZSRC has 4605 Information retrieval: expect coarse, not wild. **~9 of 47
+documents are clearly wrong**, each from one salient token hijacking the choice (`SciRepEval`→
+Astronomical sciences, `Res2Net`→Mechanical engineering, `Leroy: Library Learning…`→Library studies).
+**7 more were unplaceable for a reason that is not the model's:** their title is the literal string
+`OPEN ACCESS` — Frontiers PDFs whose banner became the title, filed as **KI-26** (it hits the Library
+list and citations too, not just this pass). And **confidence is not a signal** — every value was
+0.8/0.9/1.0, the same flat-rating pathology `gap_suggest` showed on llama3.1:8b; do not rank or
+auto-accept on it. The proposals were left in place (origin-marked, rejectable).
+
+**What it opens.** **TX3b:** the proposal badge + accept/reject in `LibraryTaxonomy.svelte` (accept =
+the existing curated POST, reject = the existing DELETE) and an unplaced queue. **RG-015** should now
+measure placement precision on a sample before any detector trusts it. The `--all-concepts` run over
+this box's 344 keyword-family concepts is available but deliberately not the default (ADR-018's
+boundary).
+
+---
 ## 2026-07-24 — UI cleanup pass 3b: corpus/model info → bottom status bar (toolbar keeps a small mark)
 
 Small follow-up to pass 3. The corpus/model subtitle (`N chunks · model · embedding`) moved out of the

@@ -6,12 +6,12 @@
     ConversationDetail,
     ConversationSummary,
     FieldDetail,
-    FieldMember,
     GraphRebuildStatus,
     Health,
     HierarchyEdgeRequest,
     KeywordFamily,
     KeywordFamilyProposal,
+    LabelledOption,
     LibraryDocument,
     LibraryFolder,
     RagOverrides,
@@ -247,7 +247,7 @@
   let taxonomyOpen = $state(false)
   let taxonomyView = $state<TaxonomyView | null>(null)
   let taxonomyFieldDetail = $state<FieldDetail | null>(null)
-  let taxonomyConcepts = $state<FieldMember[]>([])
+  let taxonomyConcepts = $state<LabelledOption[]>([])
   let taxonomyFocusConceptId = $state<string | null>(null)
   let taxonomyLoading = $state(false)
   let taxonomyError = $state<string | null>(null)

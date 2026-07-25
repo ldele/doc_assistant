@@ -29,7 +29,7 @@ the locked retrieval/chunking settings that predate per-file ADRs.
 | [ADR-017](decisions/ADR-017-concept-graph-ui-boundaries.md) | Concept-graph UI boundaries (read-only graph; one write surface) | accepted |
 | [ADR-018](decisions/ADR-018-graph-vocabulary-scope.md) | Graph vocabulary scoped by additive **opt-in** `graph_include` | accepted |
 | [ADR-019](decisions/ADR-019-concept-taxonomy-classification-layer.md) | Concept taxonomy = curated classification layer (ANZSRC backbone); designed, unbuilt | accepted |
-| [ADR-020](decisions/ADR-020-share-rigor-todo-via-git.md) | `RIGOR_TODO.md` shared via git (project debt, not per-machine state) | accepted |
+| [ADR-020](decisions/ADR-020-share-rigor-todo-via-git.md) | `RIGOR_TODO.md` shared via git (project debt, not per-machine state) | **superseded by ADR-029** |
 | [ADR-021](decisions/ADR-021-adopt-cpc-big-project-layout.md) | cpc big-project layout: `AGENTS.md` entry + module `CLAUDE.md` + vendored gates | accepted |
 | [ADR-022](decisions/ADR-022-docs-system-rationalization.md) | Docs system rationalized for scale (this index; monolith archived; DEVLOG inverted) | accepted |
 | [ADR-023](decisions/ADR-023-knowledge-subpackage.md) | Backend restructure: `knowledge/` subpackage for concept graph / keywords / wiki / gaps | accepted |
@@ -38,3 +38,4 @@ the locked retrieval/chunking settings that predate per-file ADRs.
 | [ADR-026](decisions/ADR-026-rebuild-migrations.md) | Rebuild migrations for shape changes SQLite can't ALTER; `document_meta` gets its missing FK | accepted (built) |
 | [ADR-027](decisions/ADR-027-epistemics-surfacing-split.md) | Epistemics surfacing split: assessment always-on (source-evaluation strip), influence opt-in (answer layer) | accepted |
 | [ADR-028](decisions/ADR-028-concept-taxonomy-polyhierarchy-skos.md) | Concept taxonomy amendment: unified typed polyhierarchical SKOS graph (amends ADR-019 — supersedes C1/D1/D6, reverses D9) | accepted |
+| [ADR-029](decisions/ADR-029-local-only-working-state.md) | Working state stays local on a public repo: all of `.claude/` + dated PLAN/REVIEW docs + the UI checklist untracked (supersedes ADR-020; single machine as of 2026-07-25) | accepted |

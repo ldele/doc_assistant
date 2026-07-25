@@ -471,6 +471,14 @@ CONCEPT_SKELETON_LLM_MODEL = os.getenv("CONCEPT_SKELETON_LLM_MODEL", "llama3.1:8
 GAP_SUGGEST_LLM_PROVIDER = os.getenv("GAP_SUGGEST_LLM_PROVIDER", "ollama")
 GAP_SUGGEST_LLM_MODEL = os.getenv("GAP_SUGGEST_LLM_MODEL", "llama3.1:8b")
 
+# Taxonomy auto-propose (ADR-028 D8 / taxonomy_propose.py) — same confined-suggestion profile
+# again: LOCAL Ollama *explicitly*, NOT LLM_PROVIDER (KI-4 credit-leak guard). It is also the
+# highest-volume of the three (one pass over every unplaced concept + unclassified document, two
+# calls each), so an inherited paid default would be the most expensive footgun of the set.
+# `taxonomy_propose.py` never reads these — only scripts/propose_taxonomy.py resolves them.
+TAXONOMY_PROPOSE_LLM_PROVIDER = os.getenv("TAXONOMY_PROPOSE_LLM_PROVIDER", "ollama")
+TAXONOMY_PROPOSE_LLM_MODEL = os.getenv("TAXONOMY_PROPOSE_LLM_MODEL", "llama3.1:8b")
+
 
 # ============================================================
 # Keyword extraction (concept-skeleton vocabulary seed) — KI-13

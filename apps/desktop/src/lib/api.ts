@@ -576,6 +576,20 @@ export async function attachDocumentField(docId: string, fieldId: string): Promi
   if (!r.ok) throw new Error(await errorDetail(r, 'attach document to field'))
 }
 
+/** Remove a document→field link. Idempotent (`removed` 0 if absent). The reject half of the
+ *  auto-propose loop (ADR-028 D8) — and equally undoes a curated attach. */
+export async function detachDocumentField(
+  docId: string,
+  fieldId: string,
+): Promise<{ removed: number }> {
+  const r = await fetch(
+    `${API_BASE}/api/taxonomy/documents/${encodeURIComponent(docId)}/fields/${encodeURIComponent(fieldId)}`,
+    { method: 'DELETE' },
+  )
+  if (!r.ok) throw new Error(await errorDetail(r, 'detach document from field'))
+  return (await r.json()) as { removed: number }
+}
+
 /** Pull a human message out of a FastAPI error body, falling back to the status code. `detail` is
  *  usually a string, but the selective-ingest 400 sends `{error, offenders}` — render that too. */
 async function errorDetail(r: Response, what: string): Promise<string> {

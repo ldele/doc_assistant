@@ -469,6 +469,10 @@ export interface TaxonomyField {
   n_documents_direct: number
   n_concepts_rollup: number
   n_documents_rollup: number
+  // Of the direct members, the share that arrived as an auto-proposal (ADR-028 D8). The
+  // direct/rollup counts themselves stay origin-inclusive.
+  n_concepts_proposed: number
+  n_documents_proposed: number
 }
 
 export interface TaxonomyView {
@@ -479,9 +483,17 @@ export interface TaxonomyView {
   n_unassigned_concepts: number
 }
 
-export interface FieldMember {
+// An attachable/attached thing by id+label. Used for the attach picker's vocabulary, which has no
+// link and therefore no origin — so it is NOT the same type as an attached member below.
+export interface LabelledOption {
   id: string
   label: string
+}
+
+// `origin`: 'curated' (a user edit or the ANZSRC seed) | 'proposed' (an auto-fill awaiting
+// accept-or-delete). A proposal must never render as the user's own placement (increment 3b).
+export interface FieldMember extends LabelledOption {
+  origin: 'curated' | 'proposed'
 }
 
 export interface FieldDetail {

@@ -25,7 +25,15 @@ from doc_assistant.knowledge.taxonomy import load_taxonomy
 
 @dataclass(frozen=True)
 class TaxonomyField:
-    """One field node (a ``kind="domain"`` concept) with its structure + coverage counts."""
+    """One field node (a ``kind="domain"`` concept) with its structure + coverage counts.
+
+    The ``*_direct``/``*_rollup`` counts are **origin-inclusive**: an auto-proposed link (ADR-028
+    D8) is genuinely attached, pending review, so hiding it would under-report what the tree shows.
+    The ``*_proposed`` counts break out the machine-proposed share of the *direct* members so a
+    consumer can subtract; a rollup-level breakdown is deliberately not built until something
+    consumes it — the coverage-based gap detectors, which stay gated behind RG-015 and should
+    require curated links precisely because auto-propose precision is unmeasured.
+    """
 
     id: str
     label: str
@@ -35,6 +43,8 @@ class TaxonomyField:
     n_documents_direct: int  # documents attached straight to this field
     n_concepts_rollup: int  # distinct concepts under this field or any narrower descendant
     n_documents_rollup: int  # distinct documents under this field or any narrower descendant
+    n_concepts_proposed: int = 0  # of n_concepts_direct, how many are origin="proposed"
+    n_documents_proposed: int = 0  # of n_documents_direct, how many are origin="proposed"
 
 
 @dataclass(frozen=True)
@@ -49,13 +59,27 @@ class TaxonomyView:
 
 
 @dataclass(frozen=True)
+class FieldMember:
+    """One directly-attached member of a field: a concept or a document, plus its link origin.
+
+    ``origin`` is ``"curated"`` (a user edit or the seed) or ``"proposed"`` (ADR-028 D8 auto-fill
+    awaiting accept-or-delete). It travels to the UI so a machine guess is never presented as the
+    user's own placement.
+    """
+
+    id: str
+    label: str
+    origin: str
+
+
+@dataclass(frozen=True)
 class FieldDetail:
     """One field's directly-attached members (for a drill-in), plus its rollup counts."""
 
     id: str
     label: str
-    concepts: tuple[tuple[str, str], ...]  # direct (concept_id, label)
-    documents: tuple[tuple[str, str], ...]  # direct (document_id, title-or-filename)
+    concepts: tuple[FieldMember, ...]  # direct concept members
+    documents: tuple[FieldMember, ...]  # direct document members (title-or-filename as label)
     n_concepts_rollup: int
     n_documents_rollup: int
 
@@ -65,13 +89,13 @@ def _kind(graph: nx.DiGraph, node: str) -> str:
     return str(kind) if kind is not None else ""
 
 
-def _field_doc_map(session) -> dict[str, set[str]]:  # type: ignore[no-untyped-def]
-    """field_id -> set of directly-attached document ids (from ``document_field``)."""
-    out: dict[str, set[str]] = {}
-    for concept_id, document_id in session.execute(
-        select(DocumentField.concept_id, DocumentField.document_id)
+def _field_doc_map(session) -> dict[str, dict[str, str]]:  # type: ignore[no-untyped-def]
+    """field_id -> {directly-attached document id: link origin} (from ``document_field``)."""
+    out: dict[str, dict[str, str]] = {}
+    for concept_id, document_id, origin in session.execute(
+        select(DocumentField.concept_id, DocumentField.document_id, DocumentField.origin)
     ).all():
-        out.setdefault(concept_id, set()).add(document_id)
+        out.setdefault(concept_id, {})[document_id] = origin
     return out
 
 
@@ -94,9 +118,14 @@ def load_taxonomy_view() -> TaxonomyView:
         if data.get("type") == "in_field":
             in_field.add_edge(src, tgt)
 
-    def direct_concepts(field: str) -> set[str]:
-        # concepts C with C --in_field--> field (C is a predecessor of `field` in in_field)
-        return {p for p in in_field.predecessors(field) if _kind(graph, p) == "concept"}
+    def direct_concepts(field: str) -> dict[str, str]:
+        # concepts C with C --in_field--> field (C is a predecessor of `field` in in_field),
+        # mapped to the link's origin so the proposed share is countable (ADR-028 D8).
+        return {
+            p: str(graph.edges[p, field].get("origin", "curated"))
+            for p in in_field.predecessors(field)
+            if _kind(graph, p) == "concept"
+        }
 
     fields: list[TaxonomyField] = []
     roots: list[str] = []
@@ -117,18 +146,22 @@ def load_taxonomy_view() -> TaxonomyView:
         domains_under = {n for n in under if _kind(graph, n) == "domain"}
         docs_rollup: set[str] = set()
         for d in domains_under:
-            docs_rollup |= field_docs.get(d, set())
+            docs_rollup |= set(field_docs.get(d, {}))
 
+        concept_origins = direct_concepts(field)
+        doc_origins = field_docs.get(field, {})
         fields.append(
             TaxonomyField(
                 id=field,
                 label=str(graph.nodes[field].get("label", "")),
                 parent_ids=parents,
                 child_ids=children,
-                n_concepts_direct=len(direct_concepts(field)),
-                n_documents_direct=len(field_docs.get(field, set())),
+                n_concepts_direct=len(concept_origins),
+                n_documents_direct=len(doc_origins),
                 n_concepts_rollup=len(concepts_rollup),
                 n_documents_rollup=len(docs_rollup),
+                n_concepts_proposed=sum(1 for o in concept_origins.values() if o == "proposed"),
+                n_documents_proposed=sum(1 for o in doc_origins.values() if o == "proposed"),
             )
         )
 
@@ -169,10 +202,16 @@ def load_field_detail(field_id: str) -> FieldDetail | None:
             p for p in in_field.predecessors(field_id) if _kind(graph, p) == "concept"
         )
         concepts = tuple(
-            (cid, str(graph.nodes[cid].get("label", ""))) for cid in direct_concept_ids
+            FieldMember(
+                id=cid,
+                label=str(graph.nodes[cid].get("label", "")),
+                origin=str(graph.edges[cid, field_id].get("origin", "curated")),
+            )
+            for cid in direct_concept_ids
         )
 
-        doc_ids = sorted(field_docs.get(field_id, set()))
+        doc_origins = field_docs.get(field_id, {})
+        doc_ids = sorted(doc_origins)
         titles: dict[str, str] = {}
         if doc_ids:
             for did, title, filename in session.execute(
@@ -181,14 +220,17 @@ def load_field_detail(field_id: str) -> FieldDetail | None:
                 )
             ).all():
                 titles[did] = title or filename
-        documents = tuple((did, titles.get(did, did)) for did in doc_ids)
+        documents = tuple(
+            FieldMember(id=did, label=titles.get(did, did), origin=doc_origins[did])
+            for did in doc_ids
+        )
 
         under = nx.ancestors(graph, field_id) | {field_id}
         concepts_rollup = {n for n in under if _kind(graph, n) == "concept"}
         domains_under = {n for n in under if _kind(graph, n) == "domain"}
         docs_rollup: set[str] = set()
         for d in domains_under:
-            docs_rollup |= field_docs.get(d, set())
+            docs_rollup |= set(field_docs.get(d, {}))
 
     return FieldDetail(
         id=field_id,

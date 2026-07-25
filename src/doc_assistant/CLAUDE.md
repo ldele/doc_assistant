@@ -22,7 +22,10 @@
 - `structlog` only, no `print()` (ADR-003); library code never configures logging.
 - **Robustness contract:** every module must handle an empty corpus (0 docs) without crashing and
   avoid corpus-tuned constants — thresholds derive from data or are named structural constants.
-- `mypy --strict` is the bar; exceptions chain (`raise X from e`).
+- Strict typing is the bar (`[tool.mypy] strict=true`) — run **`uv run --no-sync mypy src`**,
+  **never `mypy --strict src`**: the flag changes the option set, so it invalidates mypy's cache both
+  ways and makes the next commit's hook take ~40s instead of ~2s (add
+  `--cache-dir .mypy_cache-strict` if you do want it). Exceptions chain (`raise X from e`).
 
 **Tests:** `tests/unit/` + `tests/integration/` (mirror module names).
 

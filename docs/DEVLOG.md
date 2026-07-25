@@ -60,6 +60,65 @@ the pre-commit cache. Reading or setting exclusions needs elevation, so it is th
 excluding those three paths is the usual remedy if a cold commit still drags.
 
 ---
+## 2026-07-25 — KI-26 fixed: six metadata-extraction failure shapes, measured on the corpus rather than guessed
+
+Titles **14 → 6** unusable (5 of the 6 now honest `None`), banner titles **9 → 1**, years **75 → 89
+of 97**. Method: diagnose each failing document against its *real* cached markdown, fix one shape at
+a time, and re-diff the whole 97-document corpus after every change — so "fixed" is a count, not an
+impression. The diff also gates regressions: **0 titles lost** at every step.
+
+**The six shapes** (each has a guard test built from the real document, reduced):
+1. **Page furniture wins the title pick.** `OPEN ACCESS`, `Disclaimer`, `Graphical abstract`,
+   `ORIGINAL ARTICLE` are *headings above the title* in publisher front matter. Added to
+   `_SKIP_HEADINGS` — exact-match only, so "Meta-analysis of X" is never touched.
+2. **Frontiers titles are recoverable, not lost.** Their front matter carries a self-citation
+   (`… (2024) <title>. _Front. Neuroanat._ 18:…`), so the title is **read back** rather than
+   guessed. Recovered all 7. The first version of this regex required a specific terminator and
+   worked on the real file but failed the reduced test — over-fitted to one sample; it now keys on
+   the italic-journal boundary alone.
+3. **The author line became the title** on two documents, because the title was a **bold line** and
+   the authors were the **heading**, and the picker preferred headings. Now **position beats markup
+   level**. Worth stating plainly: *no capitalisation heuristic can separate "Junyu Ren Lek-Heng
+   Lim" from "Attention Is All You Need"* — order can, and does.
+4. **The year came from someone else's paper.** With no publication keyword in DPR's header, the
+   loose scan ran the whole 3k head and hit a citation year in the abstract → **2012** for a 2020
+   paper. The loose tier is now bounded to the **front matter** (cut at abstract/introduction), so
+   it is structurally unable to read a reference as a publication date.
+5. **Tier order + reach.** `published`/`copyright`/`©` now outrank `received`/`accepted` (submission
+   ≠ publication — that alone fixed a 2020-vs-2021); the keyword window may **cross a line break**
+   (PMC manuscripts wrap, which had been costing the authoritative tier entirely); a **journal
+   running header** (`… VOL. 51, NO. 7, JULY 2004`) is a tier; and a **filename year** fills in
+   below all of them — but never overrides a date the document states about itself. The filename
+   tier also refuses arXiv-shaped names, because `1904.01169v3.pdf` is not the year 1904.
+6. **Dead code, found by removing the thing that hid it.** `_JOURNAL_HEADER` is anchored `^[A-Z]`
+   but `_is_skippable_heading` lowercases first — so the journal-citation skip **never fired**. The
+   H1-over-H2 preference had been compensating for it. Removing that preference surfaced it
+   immediately as a failure of the repo's own `test_title_prefers_h1_over_h2`.
+
+**Downstream redone, because the inputs changed** — the point of fixing extraction is what consumes
+it: the 10 documents whose titles were corrected had their taxonomy proposals **deleted and
+re-proposed** (they had been classified on `OPEN ACCESS` and on author names), and the re-run is
+visibly better — `Cajal's legacy in the digital era`→Neurosciences 1.00, `In search of relevance…`→
+Political science, `Low-dimensional topology of deep neural networks`→Pure mathematics. And
+`compute_epistemics` was re-run because **18 document years moved** and G3/G6's `superseded_trend`
+is a median-year-per-side rule.
+
+**Rejected.** A capitalisation/name-shape heuristic for author-line titles (see 3 — it fails on real
+titles). Clearing a stale title to `None` under `--force` (the runner declines to overwrite with
+nothing; that is the safer default, so one stale `Disclaimer` row stays until re-ingest or a user
+edit via the ADR-013 metadata editor). Trusting the filename year over the document (four
+arXiv-vs-conference disagreements remain, and in each the document's published year is the better
+answer). Chasing the 5 title-less old scans — they have no heading anywhere in the extracted
+markdown, so `None` is the correct output, and their years now come from their filenames.
+
+**Gate:** ruff/format · mypy 69 files · `tests/unit/test_metadata_extractor.py` **34 passed** (+11).
+
+**What it opens.** RG-015's precision measurement is now unblocked — it was measuring the extractor
+as much as the classifier while 14% of titles were garbage. And `confidence` in `DocMetadata` still
+weights title/authors/year/DOI equally; now that the tiers differ sharply in trustworthiness, a
+year's contribution arguably ought to depend on *which* tier produced it.
+
+---
 ## 2026-07-25 — Corpus transfer: 47 → 97 documents, then the full enrichment chain re-run on the enlarged corpus
 
 The retired machine's 50 remaining source PDFs (153 MB) arrived in its backup and were ingested

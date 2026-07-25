@@ -180,3 +180,122 @@ def test_extract_metadata_arxiv_year_overrides_loose_year():
     md = "## **Paper**\n\n**Foo, Bar**\n\nCites (Smith, 1996) earlier work."
     m = extract_metadata(md, filename="1707.01836v1.pdf")
     assert m.year == 2017
+
+
+# ============================================================
+# KI-26 — banner titles, author-line titles, and years read from the wrong place.
+# Each case below is a *real document* from the corpus, reduced to the shape that broke it.
+# ============================================================
+
+
+def test_frontiers_banner_is_not_a_title_and_the_citation_block_supplies_the_real_one():
+    """`fnana-*.pdf`: the access banner is an H2 *above* the title, so it won the pick — 7 of 97
+    documents were stored as "OPEN ACCESS". The real title is in the self-citation block."""
+    md = (
+        "TYPE Review PUBLISHED 29 October 2024 DOI 10.3389/fnana.2024.1419108\n\n"
+        "## OPEN ACCESS\n\n"
+        "EDITED BY Huijiao Liu, China Agricultural University, China\n\n"
+        "CITATION\n\n"
+        "Pedrao LFAT, Medeiros POS and Falquetto B (2024) Parkinson's disease models and death "
+        "signaling: what do we know until now? _Front. Neuroanat._ 18:1419108. doi: 10.3389/x\n\n"
+        "## COPYRIGHT\n"
+    )
+    meta = extract_metadata(md, filename="fnana-18-1419108.pdf")
+    assert meta.title == (
+        "Parkinson's disease models and death signaling: what do we know until now?"
+    )
+    assert meta.year == 2024
+
+
+def test_page_furniture_is_never_a_title():
+    for banner in ("OPEN ACCESS", "Disclaimer", "Graphical abstract", "ORIGINAL ARTICLE"):
+        md = f"## {banner}\n\n## **The actual paper title goes here**\n\nbody"
+        assert _extract_title(md) == "The actual paper title goes here", banner
+
+
+def test_bold_title_beats_a_later_author_heading():
+    """`2606.31856v1.pdf` / `41304_2021_Article_335.pdf`: the title is a bold line and the
+    *authors* are the heading. Preferring headings stored the authors as the title on both."""
+    md = (
+        "**Low-dimensional topology of deep neural networks**\n\n"
+        "## **Junyu Ren**[1] **Lek-Heng Lim**[1]\n\n"
+        "## **Abstract**\n\nWe study layered models…\n"
+    )
+    assert _extract_title(md) == "Low-dimensional topology of deep neural networks"
+
+
+def test_a_real_title_that_looks_like_names_is_still_a_title():
+    """The counter-example that rules out any capitalisation heuristic for author lines."""
+    md = "## **Attention Is All You Need**\n\n## **Abstract**\n\nThe dominant sequence…\n"
+    assert _extract_title(md) == "Attention Is All You Need"
+
+
+def test_year_ignores_citation_years_in_the_abstract():
+    """`dpr_karpukhin_2020.pdf`: no publication keyword in the header, so the unbounded loose scan
+    reached into the abstract and returned a *cited* paper's year — it was stored as 2012."""
+    md = (
+        "## **Dense Passage Retrieval for Open-Domain Question Answering**\n\n"
+        "**Vladimir Karpukhin, Barlas Oguz, Sewon Min**\n\nFacebook AI\n\n"
+        "## **Abstract**\n\n"
+        "Traditional sparse models such as TF-IDF or BM25 (Robertson, 2012) are the de facto…\n"
+    )
+    assert extract_metadata(md, filename="dpr_karpukhin_2020.pdf").year == 2020
+    assert _extract_year(md) is None  # nothing in the front matter claims a year
+
+
+def test_published_year_beats_accepted_year():
+    """`41304_2021_Article_335.pdf`: "Accepted: 14 December 2020 / Published online: 10 June 2021"
+    was read as 2020 — the submission date, not the publication date."""
+    md = "# **A paper**\n\nAccepted: 14 December 2020 / Published online: 10 June 2021\n"
+    assert _extract_year(md) == 2021
+
+
+def test_published_keyword_may_cross_a_line_break():
+    """PMC author manuscripts wrap the line; a `[^\n]` gap missed it and fell through to the PMC
+    *availability* year (`nihms-326467.pdf` was stored as 2013 for a 2012 paper)."""
+    md = (
+        "NIH Public Access **Author Manuscript**\n\n"
+        "_Curr Opin Neurobiol_. Author manuscript; available in PMC 2013 February 1.\n\n"
+        "## Published in final edited form as:\n\n"
+        "Curr Opin Neurobiol. 2012 February ; 22(1): 144\n"
+    )
+    assert _extract_year(md) == 2012
+
+
+def test_journal_running_header_supplies_the_year():
+    """`chazal_2004-ecg.pdf`: the issue date lives in the IEEE running header, and the only keyword
+    in the document is its 2003 submission date."""
+    md = (
+        "IEEE TRANSACTIONS ON BIOMEDICAL ENGINEERING, VOL. 51, NO. 7, JULY 2004 1196\n\n"
+        "## Automatic Classification of Heartbeats\n\n"
+        "Manuscript received April 25, 2003; revised January 2004.\n"
+    )
+    assert _extract_year(md) == 2004
+
+
+def test_filename_year_fills_in_but_never_overrides_the_document():
+    """A filename year is the *downloader's* claim: better than a loose scan, weaker than the
+    document stating its own date."""
+    scan = "SOME OLD SCANNED PAPER\n\nbody text with no metadata at all\n"
+    assert extract_metadata(scan, filename="hebb_1949.pdf").year == 1949
+    stated = "# **A paper**\n\nPublished 3 March 2018\n"
+    assert extract_metadata(stated, filename="paper_2017.pdf").year == 2018
+
+
+def test_arxiv_id_in_a_filename_is_not_a_year():
+    """`1904.01169v3.pdf` is arXiv 2019, not the year 1904 — the arXiv tier owns that filename."""
+    from doc_assistant.metadata_extractor import _year_from_filename
+
+    assert _year_from_filename("1904.01169v3.pdf") is None
+    assert _arxiv_year_from_filename("1904.01169v3.pdf") == 2019
+    assert _year_from_filename("dpr_karpukhin_2020.pdf") == 2020
+    assert _year_from_filename("PIIS0002929724003008.pdf") is None  # digits inside a longer token
+
+
+def test_journal_citation_heading_is_skipped_case_insensitively():
+    """The skip rule was dead code: `_is_skippable_heading` lowercases, `_JOURNAL_HEADER` was
+    anchored on `^[A-Z]`. Only the (now removed) H1-over-H2 preference was hiding it."""
+    from doc_assistant.metadata_extractor import _is_skippable_heading
+
+    assert _is_skippable_heading("J. Physiol. (1952) 117, 500-544")
+    assert not _is_skippable_heading("Dense Passage Retrieval for Open-Domain Question Answering")

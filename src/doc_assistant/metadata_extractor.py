@@ -21,19 +21,55 @@ _DOI_URL = re.compile(
     re.IGNORECASE,
 )
 
+# Two keyword tiers, because they are not equally authoritative (KI-26): *published* and
+# *copyright* date the publication, while *received* and *accepted* date the submission — often the
+# year before. `41304_2021_Article_335.pdf` says "Accepted: 14 December 2020 / Published online:
+# 10 June 2021" and was being recorded as 2020.
+#
+# The gap may cross a line break: PMC author manuscripts wrap as "Published in final edited form
+# as:\nCurr Opin Neurobiol. 2012 February", and a `[^\n]` gap stopped at the newline — so the
+# authoritative tier missed and the year fell through to a weaker one (2013, the PMC *availability*
+# date). 60 chars with DOTALL keeps the window tight enough that only the keyword's own year is in
+# reach.
+# `©` is included because it is *the* canonical copyright mark and the word "copyright" often does
+# not accompany it — IEEE prints "0018-9294/04$20.00 © 2004 IEEE", which is why
+# `chazal_2004-ecg.pdf` was falling through to its 2003 submission date (KI-26).
 _YEAR_PUBLISHED = re.compile(
-    r"(?:published|received|accepted|copyright|\(c\))[^\n]{0,40}(19\d{2}|20\d{2})",
+    r"(?:published|copyright|©|\(c\))[\s\S]{0,60}?(19\d{2}|20\d{2})",
+    re.IGNORECASE,
+)
+_YEAR_SUBMITTED = re.compile(
+    r"(?:received|accepted|submitted)[\s\S]{0,60}?(19\d{2}|20\d{2})",
     re.IGNORECASE,
 )
 _YEAR_PARENS = re.compile(r"\((19\d{2}|20\d{2})\)")
 _YEAR_LOOSE = re.compile(r"\b(19\d{2}|20\d{2})\b")
 
+# A month adjacent to a year — the shape a journal running header uses for the issue date
+# ("IEEE TRANSACTIONS ON BIOMEDICAL ENGINEERING, VOL. 51, NO. 7, JULY 2004"). Without it,
+# `chazal_2004-ecg.pdf` fell through to its *submission* year, 2003 (KI-26). Both orders occur
+# ("JULY 2004", "2009 September"). Front-matter only, and below the tiers where the document
+# states its date explicitly.
+_MONTH = (
+    r"(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?"
+    r"|sep(?:t|tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)"
+)
+_YEAR_MONTH = re.compile(
+    rf"(?:{_MONTH}\s+((?:19|20)\d{{2}})|((?:19|20)\d{{2}})\s+{_MONTH})",
+    re.IGNORECASE,
+)
+
 # arxiv identifier "1707.01836" -> year 2017
 _ARXIV_ID = re.compile(r"\b(\d{2})(\d{2})\.\d{4,5}(?:v\d+)?\b")
 
-# Journal-header patterns ("J. Physiol. (1952) 117, 500-544")
+# Journal-header patterns ("J. Physiol. (1952) 117, 500-544").
+# IGNORECASE is load-bearing, not cosmetic: `_is_skippable_heading` lowercases before testing, so
+# an anchored `^[A-Z]` never matched and this rule was **dead code**. It went unnoticed because the
+# old title picker preferred H1 over H2 and the journal line is usually the H2 — remove that
+# preference (KI-26) and the dead rule surfaces immediately as a regression.
 _JOURNAL_HEADER = re.compile(
     r"^[A-Z][A-Za-z .&]+\s*\(?\d{4}\)?[,;:\s]*\d+",
+    re.IGNORECASE,
 )
 
 _SKIP_HEADINGS = {
@@ -55,6 +91,43 @@ _SKIP_HEADINGS = {
     "results",
     "methods",
     "tools and resources",
+    # Journal front matter and page furniture (KI-26). These are *headings* in the extracted
+    # markdown — a Frontiers PDF leads with "## OPEN ACCESS" above the editorial block — so the
+    # length filter does not catch them and they were being stored as the document's title on
+    # 9 of 97 documents. Add a term here only if it can never be a real title.
+    "open access",
+    "edited by",
+    "reviewed by",
+    "correspondence",
+    "citation",
+    "copyright",
+    "disclaimer",
+    "graphical abstract",
+    "highlights",
+    "keywords",
+    "key words",
+    "funding",
+    "acknowledgments",
+    "acknowledgements",
+    "data availability statement",
+    "conflict of interest",
+    "publisher's note",
+    "special issue article",
+    "original research",
+    "original article",
+    "review article",
+    "research paper",
+    "brief communication",
+    "short communication",
+    "letter to the editor",
+    "case report",
+    "editorial",
+    "erratum",
+    "correction",
+    "systematic review",
+    "specialty section",
+    "author contributions",
+    "supplementary material",
 }
 
 _SKIP_LINE_PATTERNS = [
@@ -138,39 +211,69 @@ def _is_skippable_heading(text: str) -> bool:
     return bool(_JOURNAL_HEADER.match(normalized))
 
 
-def _extract_title(head: str) -> str | None:
-    """Pick the first non-skippable markdown heading as title.
+def _citation_block_title(head: str) -> str | None:
+    """Recover a title from a publisher CITATION block (Frontiers and friends).
 
-    Prefers H1 over H2/H3 — some papers have a journal-citation H2
-    ("J. Physiol. (1952)...") before the actual H1 title. Title is the
-    most semantically prominent heading available.
+    Frontiers front matter puts the access banner and editorial block *above* the title, but it
+    also prints a full self-citation:
+
+        CITATION
+        Pedrão LFAT, … and Falquetto B (2024) Parkinson's disease models and death
+        signaling: what do we know until now? _Front. Neuroanat._ 18:1419108. doi: …
+
+    The title is what sits between the year and the italicised journal name, so it can be read
+    back exactly rather than guessed. Deliberately narrow: it needs the ``(YYYY)`` … ``_`` shape,
+    so a document without it yields ``None`` rather than a wrong answer (KI-26).
     """
-    lines = head.split("\n")
+    # The boundary is the italicised journal name, not a particular punctuation mark: titles end in
+    # "?", ".", or nothing at all, so requiring a specific terminator only fits one publisher's
+    # sample. Match up to the `_Journal_` marker and trim whatever trailing punctuation is there.
+    m = re.search(
+        r"\((?:19|20)\d{2}\)\s*(?P<title>[^\n]{10,300}?)\s*(?=_[A-Z])",
+        head,
+    )
+    if m is None:
+        return None
+    title = _clean_markdown(m.group("title")).strip().rstrip(".,;:")
+    return title or None
 
-    by_level: dict[int, str] = {}
-    for line in lines:
-        m = re.match(r"^(#{1,3})\s+(.+?)\s*$", line)
-        if m is None:
-            continue
-        level = len(m.group(1))
-        text = _clean_markdown(m.group(2))
-        if _is_skippable_heading(text):
-            continue
-        if len(text) < 10:
-            continue
-        by_level.setdefault(level, text)
 
-    for level in (1, 2, 3):
-        if level in by_level:
-            return by_level[level]
+def _title_candidates(head: str) -> list[str]:
+    """Ordered title candidates: headings and standalone bold lines, in document order.
 
-    for line in lines:
+    **Position beats markup level** (KI-26). The old rule preferred H1 → H2 → H3 and only fell
+    back to bold lines if no heading survived, which loses whenever a publisher marks the title
+    bold and the *author list* as a heading — the real shape of `2606.31856v1.pdf`
+    (``**Low-dimensional topology…**`` then ``## **Junyu Ren** **Lek-Heng Lim**``) and
+    `41304_2021_Article_335.pdf`. That mis-picked the authors as the title on both, and no
+    capitalisation heuristic can separate "Junyu Ren Lek-Heng Lim" from "Attention Is All You
+    Need" — but *order* separates them cleanly. The level-preference this replaces existed to skip
+    a journal-citation H2 before the real H1, which :func:`_is_skippable_heading` already rejects.
+    """
+    candidates: list[str] = []
+    for line in head.split("\n"):
         if any(p.search(line) for p in _SKIP_LINE_PATTERNS):
             continue
-        m = re.match(r"^\s*\*\*([^*]{20,})\*\*\s*$", line)
-        if m:
-            return _clean_markdown(m.group(1))
-    return None
+        heading = re.match(r"^(#{1,3})\s+(.+?)\s*$", line)
+        if heading is not None:
+            text = _clean_markdown(heading.group(2))
+        else:
+            bold = re.match(r"^\s*\*\*([^*]{10,})\*\*\s*$", line)
+            if bold is None:
+                continue
+            text = _clean_markdown(bold.group(1))
+        if len(text) < 10 or _is_skippable_heading(text):
+            continue
+        candidates.append(text)
+    return candidates
+
+
+def _extract_title(head: str) -> str | None:
+    """The first non-skippable title candidate, else a publisher CITATION block."""
+    candidates = _title_candidates(head)
+    if candidates:
+        return candidates[0]
+    return _citation_block_title(head)
 
 
 def _extract_doi(head: str) -> str | None:
@@ -183,8 +286,50 @@ def _extract_doi(head: str) -> str | None:
     return None
 
 
-def _extract_year(head: str) -> int | None:
-    """Prefer years near publication keywords; arxiv ID; then any year."""
+def _front_matter(head: str) -> str:
+    """The head up to the abstract/introduction — where publication years live.
+
+    Everything after it is prose, and prose is full of *other papers'* years. Scanning the whole
+    head for a loose year is how `dpr_karpukhin_2020.pdf` came to be recorded as **2012**: no
+    publication keyword in its header, so the loose scan fell through to a citation year in the
+    abstract (KI-26). Cutting at the abstract makes the loose tier structurally unable to read a
+    reference as a publication date.
+    """
+    cut = re.search(r"^\s*#{0,3}\s*\**\s*(abstract|introduction|summary)\b", head, re.I | re.M)
+    return head[: cut.start()] if cut else head
+
+
+def _doi_year(doi: str | None) -> int | None:
+    """A 4-digit year embedded in a DOI suffix (Frontiers: ``10.3389/fnana.2024.1419108``).
+
+    Only accepts a year delimited by dots/slashes, so a 4-digit article number cannot pose as one.
+    """
+    if not doi:
+        return None
+    m = re.search(r"[./]((?:19|20)\d{2})[./]", doi)
+    return int(m.group(1)) if m else None
+
+
+def _has_authoritative_year(head: str, doi: str | None) -> bool:
+    """Did the document *state* its year (publication keyword or DOI), rather than us infer it?
+
+    The dividing line for whether a filename year may override the head (KI-26).
+    """
+    return (
+        _YEAR_PUBLISHED.search(head) is not None
+        or _YEAR_SUBMITTED.search(head) is not None
+        or _doi_year(doi) is not None
+    )
+
+
+def _extract_year(head: str, *, doi: str | None = None) -> int | None:
+    """Publication year, most-trustworthy signal first.
+
+    Order (KI-26): an explicit publication keyword → an arXiv id → a year embedded in the DOI →
+    a parenthesised or loose year **restricted to the front matter**. Each tier is a *statement
+    about this document*; the loose tier is last and bounded because it is the only one that can
+    confuse another paper's year for this one's.
+    """
     m = _YEAR_PUBLISHED.search(head)
     if m is not None:
         try:
@@ -198,9 +343,25 @@ def _extract_year(head: str) -> int | None:
         # arxiv started in 1991; assume 91-99 = 19xx, else 20xx
         return 1900 + yy if yy >= 91 else 2000 + yy
 
-    m = _YEAR_PARENS.search(head)
-    if m is None:
-        m = _YEAR_LOOSE.search(head)
+    from_doi = _doi_year(doi)
+    if from_doi is not None:
+        return from_doi
+
+    front = _front_matter(head)
+    m = _YEAR_MONTH.search(front)
+    if m is not None:
+        year = m.group(1) or m.group(2)
+        if year:
+            return int(year)
+
+    m = _YEAR_SUBMITTED.search(head)
+    if m is not None:
+        try:
+            return int(m.group(1))
+        except (ValueError, IndexError):
+            pass
+
+    m = _YEAR_PARENS.search(front) or _YEAR_LOOSE.search(front)
     if m is None:
         return None
     try:
@@ -272,6 +433,24 @@ def _arxiv_year_from_filename(filename: str | None) -> int | None:
     return 1900 + yy if yy >= 91 else 2000 + yy
 
 
+def _year_from_filename(filename: str | None) -> int | None:
+    """A delimited 4-digit year in the filename (``dpr_karpukhin_2020.pdf`` → 2020).
+
+    A weaker claim than a publication keyword — it is whatever the *downloader* named the file —
+    but far stronger than a loose year scraped out of prose, and this corpus names files
+    ``author_year`` throughout. Requires a `_`/`-`/`.`/space delimiter so a 4-digit id inside a
+    longer token (``41304_2021_Article_335`` is fine; ``PIIS0002929724003008`` is not) cannot pose
+    as a year.
+    """
+    if not filename:
+        return None
+    if _ARXIV_ID.search(filename) is not None:
+        return None  # "1904.01169v3" is an arXiv id, not the year 1904 — that tier owns it
+    stem = filename.rsplit(".", 1)[0]
+    years = [int(y) for y in re.findall(r"(?:^|[ _\-.])((?:19|20)\d{2})(?:$|[ _\-.])", stem)]
+    return max(years) if years else None
+
+
 def extract_metadata(markdown: str, *, filename: str | None = None) -> DocMetadata:
     """Pull title / authors / year / DOI from a doc's extracted markdown.
 
@@ -281,10 +460,18 @@ def extract_metadata(markdown: str, *, filename: str | None = None) -> DocMetada
     head = markdown[:_HEAD_CHARS]
     title = _extract_title(head)
     doi = _extract_doi(head)
-    year_from_head = _extract_year(head)
+    year_from_head = _extract_year(head, doi=doi)
     arxiv_year = _arxiv_year_from_filename(filename)
     # Prefer arXiv year over loose head-year because head can pick up
     # spurious in-text citation years.
     year = arxiv_year if arxiv_year is not None else year_from_head
+    # A filename year outranks a *loose* head year for the same reason (KI-26): the head tier that
+    # can be wrong is the unkeyworded one, and the filename is at least a claim about this file.
+    # It never overrides the keyword/arXiv/DOI tiers — `_extract_year` returns those, and they are
+    # statements the document makes about itself.
+    if year is None or (arxiv_year is None and not _has_authoritative_year(head, doi)):
+        from_filename = _year_from_filename(filename)
+        if from_filename is not None:
+            year = from_filename
     authors = _extract_authors(head, title)
     return DocMetadata(title=title, authors=authors, year=year, doi=doi)

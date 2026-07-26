@@ -11,6 +11,51 @@ Format: What changed | Why | Rejected alternatives | What it opens
 > (moved verbatim 2026-07-21). This file keeps 2026-07-15 onward.
 
 ---
+## 2026-07-26 — step 5 phase 2 (second slice): `LibraryPane` out, and why it takes 29 props
+
+**What changed.** The Library workspace leaves `App.svelte` with its styles:
+`library/LibraryPane.svelte` (205 lines of markup + 251 of CSS). **App.svelte 2,081 → 1,659** —
+948 script / ~140 markup / ~570 style. Since the pass started it is **2,725 → 1,659 (−39%)**.
+
+**A finding that removed work:** the *graph* pane needed no extraction at all. Its branch is 19
+lines and is already a single `<ConceptGraph …/>` invocation — the component *is* the pane. Only
+library and chat were ever real.
+
+**Why this one takes an explicit 29-prop contract, unlike `Topbar`'s 8.** `Topbar` could import
+`shell` because that state is genuinely shell-owned and its module is a leaf. The Library pane's
+derived pipeline (`facetList`, `keywordsOf`, `visibleDocs`) is not: it is computed from documents ×
+**keyword families** × folders, and family state is the domain step 4 deliberately left in App
+because a family write also re-points the live facet selection (PR-2.5 D5) — three domains in one
+function. Extracting it just to shorten a prop list would break the boundary this whole pass has
+been protecting.
+
+So the pane is **presentational with a written-out dependency surface**. For a leaf view that is
+arguably the better shape anyway: the contract is 29 lines at the top of the file stating exactly
+what the Library needs, instead of an implicit reach into module state. It only reads `prefs.svelte`
+(its own view/sort preferences) and the pure helpers from `library.ts` directly.
+
+**Method note.** Rather than hand-derive the contract, the markup was extracted mechanically and
+`svelte-check` was used as the oracle: every unbound name it reported became a prop or a callback.
+That surfaced six I would have missed (`selectCollection`, `folderNames`, `openManageFolders`,
+`onSetDocId`, `onClearSelection`, plus the `KeywordFacet` type living in `library.ts`, not
+`core/types`). It also caught one prop I had invented and never used — `onSetQuery`, dropped, since
+an unused entry in a contract that exists to document dependencies is worse than none.
+
+**Verified.** `svelte-check` **180 files, 0 errors, 0 warnings** (0 warnings again the real signal:
+251 lines of CSS moved scope and nothing was orphaned); `npm test` 50/50; 0 console errors. Live at
+1280px: CSS intact after the move (`.library` flex:1, `.libnav`, `.crumb` 12.3px, `.viewtoggle`),
+97 tiles; and every callback exercised — drill into a document and Back (97 tiles restored),
+select mode in/out (Add to folder · Clear · Done, tile toggling), the keyword-filter overlay,
+grid/list round-tripping through localStorage, and collection select (Demo corpus → 18 tiles with
+a "Library › Demo corpus" breadcrumb → All documents → 97). 375px dark: 0 overflow, **0 offending
+elements** measured against the viewport.
+
+**Remaining.** Only the chat pane (~132 lines of markup). It is the awkward one: `convoEl` and
+`taEl` are bound DOM refs that App's scroll-pinning `$effect`, `autogrow`, `resetComposer` and
+`taEl?.focus()` all reach for, so extracting it means moving chat state into a rune module first —
+the phase-1 pattern again, applied to the domain step 4 named as most coupled.
+
+---
 ## 2026-07-26 — step 5 phase 2 (first slice): `Topbar` + `StatusBar` out of App.svelte
 
 **What changed.** The two pieces of pure chrome leave `App.svelte` **with their styles**:

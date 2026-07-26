@@ -8,7 +8,7 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
 
-from apps.api.models import IngestRequest, SourceFilePayload, SourcePatch
+from apps.api.models.sources import IngestRequest, SourceFilePayload, SourcePatch
 from apps.api.services import _ingest_status_dict, _IngestStatus, log
 from doc_assistant import app_settings
 from doc_assistant.db.session import session_scope

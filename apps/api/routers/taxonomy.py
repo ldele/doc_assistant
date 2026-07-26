@@ -12,7 +12,7 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException
 
-from apps.api.models import (
+from apps.api.models.taxonomy import (
     FieldDetailPayload,
     HierarchyEdgeRequest,
     TaxonomyViewPayload,

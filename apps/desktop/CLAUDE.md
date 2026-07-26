@@ -5,13 +5,18 @@ from `src/` (non-negotiable #3, `.claude/CONTEXT.md`).
 
 **Key files**
 - `src/App.svelte` — shell (`sidebar│main│drawer`), mode switch (chat/library/graph), theme.
-- `src/lib/api.ts` — the one API client; `src/lib/types.ts` — wire types, mirror `apps/api/models.py`.
-- `src/lib/*.svelte` — components (Turn, SourcePanel, Settings, Library*, ConceptGraph, Sources…).
-- `src/app.css` + `src/lib/fonts.css` — "paper & ink" tokens (4 theme blocks), vendored fonts.
-- `src/lib/theme.ts` — System/Light/Dark toggle, `localStorage`, never a backend setting.
+- `src/lib/<domain>/` — one folder per domain, matching `apps/api/routers/`: `chat/` · `library/` ·
+  `graph/` · `settings/`, plus two with no API counterpart — `shell/` (sidebar, search, dialogs,
+  `Icon.svelte`) and `core/` (`api.ts`, `types.ts`, `theme.ts`, `fonts.css`). End-to-end table:
+  `docs/architecture.md` § `apps/` — the domain spine.
+- `src/lib/core/api.ts` — the one API client; `src/lib/core/types.ts` — wire types, mirror
+  `apps/api/models/`. `src/app.css` + `src/lib/core/fonts.css` — "paper & ink" tokens, vendored fonts.
+- `src/lib/core/theme.ts` — System/Light/Dark toggle, `localStorage`, never a backend setting.
+- Naming trap: `settings/Sources.svelte` is **ingestion** (files on disk); the *citation* sources of
+  an answer are `chat/Source*.svelte`.
 
 **Rules that bite here**
-- Wire-type drift: change `apps/api/models.py` ⇒ update `types.ts` in the same change.
+- Wire-type drift: change `apps/api/models/<domain>.py` ⇒ update `core/types.ts` in the same change.
 - Verify with `npm run check` (`svelte-check` 0 errors) + live preview: light + dark + mobile
   (375px, no overflow), 0 console errors, $0/offline where possible.
 - Product name is **Provenote** (ADR-012): wordmark/window title only — package/binary names stay

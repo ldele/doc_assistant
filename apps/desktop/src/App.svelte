@@ -17,7 +17,7 @@
     RagOverrides,
     TaxonomyView,
     TurnResult,
-  } from './lib/types'
+  } from './lib/core/types'
   import {
     addDocumentsToFolder,
     addFamilyMember,
@@ -53,29 +53,29 @@
     streamChat,
     updateConversationMeta,
     updateDocumentMeta,
-  } from './lib/api'
-  import Turn from './lib/Turn.svelte'
-  import ReadonlyTurn from './lib/ReadonlyTurn.svelte'
-  import Settings from './lib/Settings.svelte'
-  import SourcePanel from './lib/SourcePanel.svelte'
-  import Sidebar from './lib/Sidebar.svelte'
-  import LibraryBrowser from './lib/LibraryBrowser.svelte'
-  import LibraryGrid from './lib/LibraryGrid.svelte'
-  import LibraryFilterStrip from './lib/LibraryFilterStrip.svelte'
-  import LibraryKeywordFilter from './lib/LibraryKeywordFilter.svelte'
-  import LibraryManageKeywords from './lib/LibraryManageKeywords.svelte'
-  import LibraryManageFolders from './lib/LibraryManageFolders.svelte'
-  import LibraryMetaEditor from './lib/LibraryMetaEditor.svelte'
-  import LibraryDeleteConfirm from './lib/LibraryDeleteConfirm.svelte'
-  import ConfirmDialog from './lib/ConfirmDialog.svelte'
-  import CompareCard from './lib/CompareCard.svelte'
-  import ConceptGraph from './lib/ConceptGraph.svelte'
-  import GraphIndex from './lib/GraphIndex.svelte'
-  import ShortcutsDialog from './lib/ShortcutsDialog.svelte'
-  import AboutDialog from './lib/AboutDialog.svelte'
-  import LibraryTaxonomy from './lib/LibraryTaxonomy.svelte'
-  import GlobalSearch from './lib/GlobalSearch.svelte'
-  import Icon from './lib/Icon.svelte'
+  } from './lib/core/api'
+  import Turn from './lib/chat/Turn.svelte'
+  import ReadonlyTurn from './lib/chat/ReadonlyTurn.svelte'
+  import Settings from './lib/settings/Settings.svelte'
+  import SourcePanel from './lib/chat/SourcePanel.svelte'
+  import Sidebar from './lib/shell/Sidebar.svelte'
+  import LibraryBrowser from './lib/library/LibraryBrowser.svelte'
+  import LibraryGrid from './lib/library/LibraryGrid.svelte'
+  import LibraryFilterStrip from './lib/library/LibraryFilterStrip.svelte'
+  import LibraryKeywordFilter from './lib/library/LibraryKeywordFilter.svelte'
+  import LibraryManageKeywords from './lib/library/LibraryManageKeywords.svelte'
+  import LibraryManageFolders from './lib/library/LibraryManageFolders.svelte'
+  import LibraryMetaEditor from './lib/library/LibraryMetaEditor.svelte'
+  import LibraryDeleteConfirm from './lib/library/LibraryDeleteConfirm.svelte'
+  import ConfirmDialog from './lib/shell/ConfirmDialog.svelte'
+  import CompareCard from './lib/chat/CompareCard.svelte'
+  import ConceptGraph from './lib/graph/ConceptGraph.svelte'
+  import GraphIndex from './lib/graph/GraphIndex.svelte'
+  import ShortcutsDialog from './lib/shell/ShortcutsDialog.svelte'
+  import AboutDialog from './lib/shell/AboutDialog.svelte'
+  import LibraryTaxonomy from './lib/library/LibraryTaxonomy.svelte'
+  import GlobalSearch from './lib/shell/GlobalSearch.svelte'
+  import Icon from './lib/shell/Icon.svelte'
   import {
     type LibraryCollection,
     type LibrarySort,
@@ -92,8 +92,8 @@
     keywordFacets,
     sortDocs,
     sameCollection,
-  } from './lib/library'
-  import { searchEverything } from './lib/search'
+  } from './lib/library/library'
+  import { searchEverything } from './lib/shell/search'
   import appMark from './assets/brand/app-mark.png'
 
   interface TurnState {

@@ -19,14 +19,13 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import FileResponse
 from sse_starlette.sse import EventSourceResponse, ServerSentEvent
 
-from apps.api.models import (
+from apps.api.models.chat import (
     AdjudicateRequest,
     ChatRequest,
-    CompareRequest,
-    CompareResultPayload,
     ExportRequest,
     TurnResultPayload,
 )
+from apps.api.models.compare import CompareRequest, CompareResultPayload
 from apps.api.sessions import SessionStore
 from doc_assistant.chat_controller import (
     ChatController,

@@ -112,6 +112,41 @@ docs/                 # architecture, ADRs (docs/decisions/), specs, roadmap, th
 data/                 # runtime data (sources, caches, vector stores, SQLite) — not committed
 ```
 
+### `apps/` — the domain spine
+
+Both shells are organised on **one axis: the domain**, and the domain words are the same on
+both sides of the wire. To review a feature end to end, read one row.
+
+| Domain | Wire model | Route | Desktop UI |
+|---|---|---|---|
+| chat | `models/chat.py` | `routers/chat.py` | `lib/chat/` (Turn, SourcePanel, ClaimReview…) |
+| compare | `models/compare.py` | `routers/chat.py` (`/api/compare`) | `lib/chat/CompareCard.svelte` |
+| conversations | `models/conversations.py` | `routers/conversations.py` | `lib/shell/Sidebar.svelte` |
+| library | `models/library.py` | `routers/library/documents.py` | `lib/library/` (Grid, Browser, MetaEditor…) |
+| connections | `models/connections.py` | `routers/library/documents.py` | `lib/library/DocConnections.svelte` |
+| folders | `models/folders.py` | `routers/library/folders.py` | `lib/library/LibraryManageFolders.svelte` |
+| keywords | `models/keywords.py` | `routers/library/keywords.py` | `lib/library/LibraryManageKeywords.svelte` |
+| concepts / graph | `models/concepts.py` | `routers/concepts.py` | `lib/graph/` (ConceptGraph, GraphIndex, GapList) |
+| taxonomy | `models/taxonomy.py` | `routers/taxonomy.py` | `lib/library/LibraryTaxonomy.svelte` |
+| settings | `models/settings.py` | `routers/settings.py` | `lib/settings/Settings.svelte` |
+| sources (ingestion) | `models/sources.py` | `routers/sources.py` | `lib/settings/Sources.svelte` |
+| health | — | `routers/health.py` | `lib/shell/` (status bar) |
+
+Two frontend folders have no API counterpart, by design:
+
+- `lib/shell/` — chrome that belongs to no domain: sidebar, global search, dialogs, `Icon.svelte`
+  (the one component imported across every folder).
+- `lib/core/` — the wire boundary itself: `api.ts` (the single client), `types.ts` (mirrors
+  `apps/api/models/`), `theme.ts`, `fonts.css`.
+
+Two naming traps this table exists to prevent:
+
+- **`sources` is ingestion, not citations.** `models/sources.py` and `lib/settings/Sources.svelte`
+  are files on disk; the *citation* sources of an answer are `SourceViewPayload` in `models/chat.py`
+  and `lib/chat/Source*.svelte`.
+- **`library` is three sub-domains.** Documents, folders and keyword families all live under
+  `/api/library/*` and are split one module per sub-domain on both sides.
+
 ## Two-tier caching
 
 1. **Extraction cache** (`data/cache/*.md`): mirrors `data/sources/` structure.

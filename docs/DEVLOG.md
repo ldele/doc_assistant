@@ -11,6 +11,75 @@ Format: What changed | Why | Rejected alternatives | What it opens
 > (moved verbatim 2026-07-21). This file keeps 2026-07-15 onward.
 
 ---
+## 2026-07-26 — `apps/` reviewability pass: one domain axis across both shells (steps 0–3 of 6)
+
+**What changed.** Three structural moves, no behaviour change anywhere.
+
+1. **`apps/api/models.py` (1,165 lines) → `apps/api/models/`** — 12 domain modules + `_common`,
+   cut along the file's *own* pre-existing banner sections and named to match `routers/`:
+   `chat` · `compare` · `conversations` · `library` · `connections` · `folders` · `keywords` ·
+   `sources` · `concepts` · `taxonomy` · `settings`. The 7 routers now import from their domain
+   module, so the import line names the domain; `__init__` re-exports flat for back-compat (the
+   one remaining consumer is `tests/unit/test_api_models.py`).
+2. **`apps/api/routers/library.py` (301 lines) → `routers/library/`** — it was the only router
+   bundling three sub-domains (documents 7 routes, folders 6, keyword-families 7). Now one module
+   each, composed in `__init__`, so `main.create_app` is untouched. The three path prefixes are
+   disjoint, so include order carries no matching meaning; order *within* each module is
+   load-bearing and was preserved verbatim.
+3. **`apps/desktop/src/lib/` (43 flat files) → 6 domain folders** — `chat/` · `library/` ·
+   `graph/` · `settings/` · `shell/` · `core/`. Pure `git mv` + import rewrites, no renames: git
+   reports every file as `R`, so the diff reads as moves. Deliberately *not* combined with
+   dropping the `Library` prefix — a move+rename diff is exactly what makes a refactor
+   unreviewable, which would defeat the point.
+
+**Why.** `apps/api` had already solved this with the APIRouter split and `apps/desktop` never
+got it: the API was 8 domain routers with one 1,165-line outlier, the frontend was a flat bag of
+30 components + 8 logic modules + 4 tests + the client + the wire types. One rule now holds on
+both sides — *one domain per module, and the domain word is the same on both sides of the wire* —
+so reviewing a feature end to end is reading one row of the table now in
+`docs/architecture.md` § `apps/` — the domain spine.
+
+**Two naming traps the map exists to prevent**, both found by reading rather than assuming:
+`Sources.svelte` is **selective ingestion** (files on disk, matching `routers/sources.py`), *not*
+the citation sources of an answer — those are `chat/Source*.svelte` / `models/chat.py`. And
+`/api/library/*` is three sub-domains, not one.
+
+**Rejected.** (a) Splitting `models.py` but leaving routers importing the flat `__init__` — keeps
+the diff smaller but throws away the main benefit, since the import line no longer says which
+domain a route serves. (b) Renaming `LibraryGrid.svelte` → `library/Grid.svelte` in the same
+pass — correct end state, wrong moment (see above); left for a follow-up. (c) Rewriting the
+`models.py` pointers in ADR-010 / ROADMAP TX2b / the feature specs — those are dated historical
+records and stay as written; only the *live* pointers were repointed (`core/types.ts`'s 14
+`Mirrors …::Payload` comments, `vite.config.ts`).
+
+**Verified.** `ruff` clean; `mypy src` clean (69 files); **161 API tests pass** (every test that
+imports `apps.api`). Frontend `svelte-check` **146 files, 0 errors, 0 warnings** and `npm test`
+**50/50** — both identical to the pre-move baseline. Live preview: all three modes render
+(chat shell + history, Library grid, Graph index/gaps), 0 console errors, About dialog opens with
+`app-mark.png` loaded and both vendored fonts `loaded`; 375px dark = **0 horizontal overflow**.
+
+**What the live preview caught that the gates did not.** `svelte-check` and `npm test` both passed
+while the app was *broken*: `AboutDialog.svelte` imports `../assets/brand/app-mark.png` and
+`fonts.css` has four `url('../assets/fonts/…')` — **asset** paths, invisible to a TS type-check
+and to node:test, and Vite failed to resolve them. This is the same class as the
+`function f(x?)` footgun already in `apps/desktop/CLAUDE.md`: the type gate is not the run gate.
+A path-only refactor still needs the preview.
+
+**What it opens.** Steps 4–6 of the plan, each its own session: `App.svelte` is still **2,725
+lines** (70 `$state`, 19 `$derived`, 5 `$effect`, 83 functions, 22 child components) — split its
+script into per-domain Svelte 5 `.svelte.ts` rune modules (the 5 `$effect` blocks are the
+cross-domain coupling points and must be inventoried first), then its markup+style into pane
+components, then mirror the `models/` split into `core/types.ts` + `core/api.ts`.
+Note `.svelte.ts` modules cannot run under `node:test`, so that split must not absorb any of the
+pure tested logic (`library.ts`, `search.ts`, `gaps.ts`, `taxonomy.ts`) — that line stays hard.
+
+**Found in passing, not fixed** (own change, deliberately not folded into a move-only diff):
+`graph/GapList.svelte` line 25 contains a **literal NUL byte** as a composite-key separator
+(`` `${it.concept_id}\x00${it.kind}` ``). Git and grep classify the file as **binary**, so it
+never renders a readable diff — an actively anti-reviewable file. Replacing the raw byte with the
+escape `\0` is runtime-identical and makes it text.
+
+---
 ## 2026-07-26 — KI-26 residual: a leading dash rode into the stored title (`- PASSAGE RE RANKING WITH BERT`)
 
 **What changed.** `_clean_markdown` now strips a leading run of bullet/dash glyphs

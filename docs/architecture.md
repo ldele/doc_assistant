@@ -96,6 +96,22 @@ This table is non-exhaustive — it covers the core ingest/runtime modules. The 
 
 **Boundary rule:** `apps/` contains no business logic. All logic lives in `src/doc_assistant/`. The UI layer calls the library layer; never the reverse.
 
+## Repository layout
+
+```
+src/doc_assistant/    # core library — the RAG answer path lives at the top level
+  db/                 #   SQLAlchemy models + additive migrations
+  ingest/             #   extract → markdown → chunk → embed → store (+ tables/figures/citations)
+  knowledge/          #   corpus-derived layer: keywords, concept skeleton, wiki, gaps, epistemics
+  eval/               #   the eval harness (runner, scorers, result store)
+apps/                 # UIs — thin shells, no business logic (FastAPI/SSE · Tauri/Svelte · CLI)
+scripts/              # idempotent enrichment/eval runners + build tooling
+tests/                # unit, integration, eval harness cases + committed baselines
+evals/                # benchmark results — the write-ups + how to reproduce each number
+docs/                 # architecture, ADRs (docs/decisions/), specs, roadmap, the demo GIF
+data/                 # runtime data (sources, caches, vector stores, SQLite) — not committed
+```
+
 ## Two-tier caching
 
 1. **Extraction cache** (`data/cache/*.md`): mirrors `data/sources/` structure.

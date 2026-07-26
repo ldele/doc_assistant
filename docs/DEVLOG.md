@@ -11,6 +11,57 @@ Format: What changed | Why | Rejected alternatives | What it opens
 > (moved verbatim 2026-07-21). This file keeps 2026-07-15 onward.
 
 ---
+## 2026-07-26 — README restructured 338→142 lines (setup/usage split out), demo GIF re-recorded on the current UI, em-dashes removed
+
+**What changed.** (1) **README cut from 338 lines / 22.9 KB to 142 / 8.0 KB**, with nothing dropped,
+only relocated. New [`docs/setup.md`](setup.md) takes install, torch extras, hardware guidance,
+local-LLM specs, Docker and the Windows SSL fix; new [`docs/usage.md`](usage.md) takes ingest/launch,
+the demo corpus, enrichment passes, library commands, `sync_sources` and the test matrix;
+`docs/architecture.md` gains the repository-layout tree, which otherwise had no home. Kept in the
+README: the mermaid diagram (renders natively on GitHub, unlike ASCII), the benchmark table with its
+variance column, and Limitations. The ~140 lines of Setup + Usage were what pushed Benchmarks and
+Limitations below the fold, which is the wrong order for the two sections that carry the evidence.
+
+(2) **Three stale claims corrected while moving them.** `just api` **does not exist** as a recipe
+(the justfile has `app`/`desktop`/`sidecar`/`test`/`typecheck`/`check`/`lint`, no `api`) — the README
+had been handing readers a command that fails; replaced with the real invocation lifted from
+`scripts/launch_app.ps1`: `uv run --no-sync uvicorn apps.api.main:app --host 127.0.0.1 --port 8001`.
+Test count 1,015 → **1,306**. "mypy --strict clean" → "mypy (strict)", since AGENTS.md forbids that
+flag (it thrashes the incremental cache) and `strict=true` is already in `pyproject.toml`. The
+local-model limitation was rewritten from "~flat 0.8 gap ratings" to this session's measured numbers.
+
+(3) **Em-dashes and AI-writing tells removed** from all three files. 28 flagged by
+`ai-tell-detector`'s deterministic scanner (all em-dash asides; zero buzzword or construction hits),
+plus code-comment and table-cell dashes the scanner does not reach. Final state: **0 em-dashes, 0
+tells** across README/setup/usage. Retained `→`, `≥`, `≈` — technical notation, not punctuation.
+
+(4) **Demo GIF re-recorded on the current UI** (`docs/assets/provenote-demo.gif`): 960×600,
+**13 frames, 23.1 s, 0.83 MB — down from 1.73 MB**. Recorded against the live **97-document /
+33,163-chunk** corpus on **`ollama/llama3.1:8b` ($0**, confirmed on `/api/health` before recording;
+KI-4). Storyboard unchanged: empty state → sample chip → streamed cited answer → sources + citation
+side panel → Library grid → concept-graph ego view. The new StatusBar means every frame now carries
+`33,163 chunks · ollama/llama3.1:8b · bge-base`, which evidences the local-and-real claim for free,
+and the Library grid shows the **KI-26-fixed titles** rather than the `OPEN ACCESS` banners the old
+GIF captured.
+
+**Why the recorder needed work.** The Topbar/StatusBar pass moved the mode switcher from
+`.modes button.mode` to `.tb-modes button.tb-mode[role=tab]`, so the old storyboard would have
+recorded three Chat frames and called it done. Rather than guess selectors from the Svelte source, a
+`probe_dom.js` pass read them off the running app first; the recorder now also **logs what it
+matched at each beat** (`sources: {...}`, `citelink: {...}`, `graph concept picked: ...`), so a
+future stale selector surfaces as a named miss instead of a silently boring frame.
+
+**Rejected:** committing the recorder into `scripts/` — still undeclared puppeteer-core/Pillow deps,
+same call as 2026-07-19; the toolkit lives in the session scratchpad and survived retrieval from the
+prior session's, which is evidence the arrangement is workable. Also rejected: clearing the chat
+history rows that show in the GIF sidebar (real data; no DELETE endpoint) and re-running the ego
+layout to un-clip the `hard negatives` node label (cosmetic, one node, not worth a re-record).
+
+**What it opens.** The Library grid's first card is `- PASSAGE RE RANKING WITH BERT`, a leading-dash
+title artifact — a fourth KI-26 residual, and the one most visible to a reader since it sorts first.
+The concept-graph ego view clips node labels at the box edge on a 1280×800 viewport.
+
+---
 ## 2026-07-26 — RG-015 labelled precision run (3 instruments, n=97) + KI-28: thinking models returned an empty completion through `OllamaClient`
 
 **What changed.** `src/doc_assistant/llm.py`: `OllamaClient` gains

@@ -64,10 +64,31 @@ the model for the taxonomy's ambiguity; both a lenient and a strict number are r
 (5) *Blame the model for `middleton-2001.pdf`* — it has **0 extracted body characters**; excluded
 as an extractor fact, not a classifier failure.
 
-**What it opens.** (a) **The same exposure exists in the streaming answer path** —
-`pipeline.build_chat_model` builds `OllamaLLM` against `/api/generate` with no reasoning flag, so
-a thinking model can leak its reasoning into the streamed answer; untouched because it changes
-user-facing output. (b) **Three more KI-26 title residuals**, all recoverable from cached
+**What it opens.** (a) **The streaming answer path is affected too — but not the way this entry
+first claimed.** The claim here was that `pipeline.build_chat_model` (`OllamaLLM` on
+`/api/generate`, no reasoning flag) would let a thinking model *leak its reasoning into the
+answer*. That was inferred from the code and it is **wrong**: measured on the shipped constructor,
+the answer text is clean and correctly cited — Ollama keeps reasoning out of the content on
+`/api/generate` as well. What actually happens is that the reasoning is generated and streamed as
+**empty content deltas**, invisible in the final string and highly visible to anyone watching
+tokens arrive:
+
+| model | time to first *visible* char | empty chunks before it |
+|---|---|---|
+| `qwen3.5:9b` | 11.99s · 15.17s · 12.79s | 236 · 713 · 539 |
+| `llama3.1:8b` | 5.93s (cold) · 2.39s · 2.42s | 1 |
+
+Warm-to-warm that is **~12.8s vs ~2.4s to first token (~5×)**, with the answer completing <0.2s
+after it — so essentially the whole wall clock is dead UI, and thinking length is unstable
+(236→713 empty chunks on three identical prompts). **No one hits this today**: `LLM_MODEL`
+defaults to the Anthropic analysis model, or `llama3.1:8b` locally. It becomes reachable now that
+`qwen3.5:9b` is on the box and is the taxonomy default. **Deliberately not fixed**, because unlike
+KI-28 it is a real trade, not a free win: there, thinking output was unreadable by construction;
+here the reasoning may improve a user-facing RAG answer, and no one has measured that side.
+`OllamaLLM` does expose `reasoning`, so the symmetric one-liner is available — the alternative,
+and the better fit for this project's "inform, don't block" rule, is to leave thinking on and
+surface a *thinking…* state during the empty-delta phase, since the defect is the **silent** dead
+air rather than the latency. (b) **Three more KI-26 title residuals**, all recoverable from cached
 markdown: `mdl_tutorial_grunwald_2004` (title is the plain unmarked first line — the picker seems
 to need a heading or bold), `ai_usage_cards_2023` (`Preprint of the paper:` + self-citation, same
 family as the Frontiers fix), `nihms-326467` (`Published in final edited form as:` hiding **Human

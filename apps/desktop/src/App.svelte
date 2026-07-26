@@ -2,20 +2,13 @@
   import { untrack } from 'svelte'
   import type {
     CompareResult,
-    ConceptGraph as ConceptGraphData,
     ConversationDetail,
-    ConversationSummary,
-    FieldDetail,
-    GraphRebuildStatus,
     Health,
-    HierarchyEdgeRequest,
     KeywordFamily,
     KeywordFamilyProposal,
-    LabelledOption,
     LibraryDocument,
     LibraryFolder,
     RagOverrides,
-    TaxonomyView,
     TurnResult,
   } from './lib/core/types'
   import {
@@ -27,23 +20,14 @@
     deleteFolder,
     deleteKeywordFamily,
     detectKeywordFamilies,
-    getConceptGraph,
     getConceptPresence,
-    getFieldDetail,
-    getTaxonomy,
-    addHierarchyEdge,
-    removeHierarchyEdge,
-    attachDocumentField,
     getConversation,
-    getGraphRebuildStatus,
     getHealth,
     exportConversation,
-    listConversations,
     listFolders,
     listKeywordFamilies,
     deleteDocument,
     listLibraryDocuments,
-    rebuildConceptGraph,
     removeDocumentFromFolder,
     removeFamilyMember,
     renameFolder,
@@ -94,6 +78,40 @@
     sameCollection,
   } from './lib/library/library'
   import { searchEverything } from './lib/shell/search'
+  // Per-domain reactive state (`.svelte.ts` = a rune module). Cross-domain orchestration —
+  // selectMode, the nav-history observer, the readiness gate, the chat-scope guard — stays in
+  // this file on purpose: splitting it would only hide the coupling across import graphs.
+  import {
+    graph,
+    graphLoaded,
+    loadConceptGraph,
+    rebuildGraph,
+    useGraphHygiene,
+  } from './lib/graph/graph.svelte'
+  import {
+    closeTaxonomy,
+    openTaxonomy,
+    selectTaxonomyField,
+    taxonomy,
+    taxonomyAddEdge,
+    taxonomyAttachDocument,
+    taxonomyRemoveEdge,
+  } from './lib/library/taxonomy.svelte'
+  import { LIB_SORTS, libPrefs, setLibrarySort, setLibraryView } from './lib/library/prefs.svelte'
+  import {
+    SIDEBAR_MAX,
+    SIDEBAR_MIN,
+    sidebarPrefs,
+    startSidebarResize,
+    toggleSidebarCollapsed,
+  } from './lib/shell/prefs.svelte'
+  import {
+    archiveConversation,
+    conversations,
+    pinConversation,
+    refreshConversations,
+    renameConversation,
+  } from './lib/chat/conversations.svelte'
   import appMark from './assets/brand/app-mark.png'
 
   interface TurnState {
@@ -136,7 +154,6 @@
 
   // Conversation history (feature-conversation-history.md). `viewing` is the session_id shown as a
   // read-only transcript; `null` means the live chat (composer + claims bound to `sessionId`).
-  let conversations = $state<ConversationSummary[]>([])
   let viewing = $state<string | null>(null)
   let viewedConvo = $state<ConversationDetail | null>(null)
   // Resume (fresh-context): a reopened past chat the user chose to *continue*. Its turns render
@@ -169,7 +186,7 @@
   let keywordFilterOpen = $state(false)
   let documentsLoaded = false
   // The overlay's results, derived from the live chat + document lists (both already client-side).
-  const searchResults = $derived(searchEverything(searchQuery, conversations, documents))
+  const searchResults = $derived(searchEverything(searchQuery, conversations.list, documents))
 
   // Folders (ADR-025 F1, docs/specs/feature-corpus-folders.md). Manual Library organisation.
   // The rail renders this list rather than deriving groups from `documents`, so a folder with
@@ -215,88 +232,19 @@
   let detecting = $state(false)
   let detectError = $state<string | null>(null)
 
-  // Concept graph (feature-concept-graph.md PR-G2a, ADR-017). Lazy-loaded on first entry to the
-  // Graph mode; `null` after a load means "never built" (a 404 — the normal first run), which the
-  // view renders as a build affordance. Rebuild is a 202 + poll job (B1/ADR-017 B1); while it runs
-  // `graphRebuildState` is 'running' and the graph is refetched once it settles.
-  let conceptGraph = $state<ConceptGraphData | null>(null)
-  let graphLoading = $state(false)
-  let graphError = $state<string | null>(null)
-  let graphLoaded = false
-  let graphRebuildState = $state<GraphRebuildStatus['state']>('idle')
-  // Graph selection + the under-connected lens are App-owned: the sidebar's GraphIndex rail and
-  // ConceptGraph's ego panel both read them, so they must agree.
-  let graphSelectedId = $state<string | null>(null)
-  let graphShowUnderConnected = $state(false)
+  // Concept graph — state + its loader/rebuild live in `lib/graph/graph.svelte.ts`; lazy-loaded on
+  // first entry to Graph mode (see selectMode). Only the cross-domain bits stay here.
   function selectGraphConcept(id: string): void {
-    graphSelectedId = id
+    graph.selectedId = id
     sidebarOpen = false // mobile drawer: selecting navigates, like selectCollection
   }
-  // Hygiene (mirrors the chatScopeFolderId guard): a rebuild can drop the selected concept.
-  $effect(() => {
-    if (conceptGraph && graphSelectedId !== null && !conceptGraph.nodes.some((n) => n.id === graphSelectedId)) {
-      graphSelectedId = null
-    }
-  })
+  useGraphHygiene() // intra-domain: a rebuild can drop the selected concept
 
   // Taxonomy view (docs/specs/feature-taxonomy-view.md, ADR-028 2b). A dedicated modal that renders
   // the curated field forest + *places* concepts/documents onto it. App owns the data; LibraryTaxonomy
   // is a dumb renderer. Opened from the Library rail, or from a graph node's Place action (which
-  // preselects that concept via `taxonomyFocusConceptId`). Decoupled from the top-level nav — it's a
+  // preselects that concept via `taxonomy.focusConceptId`). Decoupled from the top-level nav — it's a
   // global overlay like Settings/Search, so it opens from any mode.
-  let taxonomyOpen = $state(false)
-  let taxonomyView = $state<TaxonomyView | null>(null)
-  let taxonomyFieldDetail = $state<FieldDetail | null>(null)
-  let taxonomyConcepts = $state<LabelledOption[]>([])
-  let taxonomyFocusConceptId = $state<string | null>(null)
-  let taxonomyLoading = $state(false)
-  let taxonomyError = $state<string | null>(null)
-
-  async function loadConceptGraph(): Promise<void> {
-    graphLoading = true
-    graphError = null
-    try {
-      conceptGraph = await getConceptGraph()
-    } catch (e) {
-      graphError = e instanceof Error ? e.message : String(e)
-    } finally {
-      graphLoading = false
-      graphLoaded = true
-    }
-  }
-
-  // Kick a rebuild and poll the status route until it settles, then refetch the graph. Deterministic
-  // and ~7s; the view stays usable throughout (inform, don't block).
-  async function rebuildGraph(): Promise<void> {
-    if (graphRebuildState === 'running') return
-    graphRebuildState = 'running'
-    try {
-      await rebuildConceptGraph()
-    } catch (e) {
-      graphRebuildState = 'error'
-      graphError = e instanceof Error ? e.message : String(e)
-      return
-    }
-    const poll = async (): Promise<void> => {
-      try {
-        const st = await getGraphRebuildStatus()
-        graphRebuildState = st.state
-        if (st.state === 'running') {
-          setTimeout(() => void poll(), 700)
-          return
-        }
-        if (st.state === 'error') {
-          graphError = st.message ?? 'rebuild failed'
-          return
-        }
-        await loadConceptGraph() // 'done' → pull the fresh graph
-      } catch (e) {
-        graphRebuildState = 'error'
-        graphError = e instanceof Error ? e.message : String(e)
-      }
-    }
-    void poll()
-  }
 
   // Deep-link from a graph node to curate its concept (ADR-017 A1 — the graph never writes the
   // vocabulary; the Manage-keywords view owns every edit). Switches to Library and opens the view.
@@ -305,148 +253,13 @@
     manageKeywordsOpen = true
   }
 
-  // Taxonomy modal (feature-taxonomy-view.md, 2b). Open lazy-loads the forest + the doc list (for the
-  // attach picker) + the concept vocabulary. `focusConceptId` (from a graph node's Place action)
-  // preselects that concept for placement. Inform-don't-block throughout.
-  // NB: a default-valued param, not `focusConceptId?: string` — the `<script lang="ts">` transform
-  // strips the type annotation but leaves the `?`, emitting invalid JS (`focusConceptId?`). svelte-check
-  // type-checks the source and misses it; it only breaks at runtime. Keep optional params defaulted here.
-  async function openTaxonomy(focusConceptId: string | null = null): Promise<void> {
-    taxonomyOpen = true
-    taxonomyFocusConceptId = focusConceptId
-    taxonomyError = null
-    taxonomyFieldDetail = null
+  // Cross-domain wrapper over the taxonomy module: the attach picker lists *documents*, which
+  // lazy-load only on entering the Library, so a user who opens the modal from Chat or Graph would
+  // otherwise get an empty picker. The document list is library state, so the pull stays here
+  // rather than reaching across from `taxonomy.svelte.ts`.
+  function openTaxonomyView(focusConceptId: string | null = null): void {
     if (!documentsLoaded) void refreshDocuments()
-    void ensureTaxonomyConcepts()
-    taxonomyLoading = true
-    try {
-      taxonomyView = await getTaxonomy()
-    } catch (e) {
-      taxonomyError = e instanceof Error ? e.message : String(e)
-    } finally {
-      taxonomyLoading = false
-    }
-  }
-  function closeTaxonomy(): void {
-    taxonomyOpen = false
-    taxonomyFocusConceptId = null
-  }
-
-  // The attach picker's vocabulary = the graph nodes (spec ledger #7 — 2a serves no concept list).
-  // Reuse the already-loaded graph when present, else fetch it. On failure the picker stays empty.
-  async function ensureTaxonomyConcepts(): Promise<void> {
-    if (taxonomyConcepts.length > 0) return
-    try {
-      const g = conceptGraph ?? (await getConceptGraph())
-      taxonomyConcepts = (g?.nodes ?? []).map((n) => ({ id: n.id, label: n.label }))
-    } catch {
-      // leave empty — attach-concept just has nothing to offer
-    }
-  }
-
-  async function selectTaxonomyField(fieldId: string): Promise<void> {
-    try {
-      taxonomyFieldDetail = await getFieldDetail(fieldId)
-    } catch (e) {
-      taxonomyError = e instanceof Error ? e.message : String(e)
-    }
-  }
-
-  // Write-then-refetch: the server owns counts + acyclicity, so re-pull the view + the open field's
-  // detail after every mutation rather than patching the tree by hand (mirrors the folder handlers).
-  async function reloadTaxonomy(): Promise<void> {
-    try {
-      taxonomyView = await getTaxonomy()
-    } catch {
-      // keep the prior view
-    }
-    const id = taxonomyFieldDetail?.id
-    if (id !== undefined) {
-      try {
-        taxonomyFieldDetail = await getFieldDetail(id)
-      } catch {
-        // keep the prior detail
-      }
-    }
-  }
-
-  async function taxonomyAddEdge(body: HierarchyEdgeRequest): Promise<void> {
-    taxonomyError = null
-    try {
-      await addHierarchyEdge(body)
-    } catch (e) {
-      taxonomyError = e instanceof Error ? e.message : String(e)
-      return
-    }
-    await reloadTaxonomy()
-  }
-  async function taxonomyRemoveEdge(body: HierarchyEdgeRequest): Promise<void> {
-    taxonomyError = null
-    try {
-      await removeHierarchyEdge(body)
-    } catch (e) {
-      taxonomyError = e instanceof Error ? e.message : String(e)
-      return
-    }
-    await reloadTaxonomy()
-  }
-  async function taxonomyAttachDocument(docId: string, fieldId: string): Promise<void> {
-    taxonomyError = null
-    try {
-      await attachDocumentField(docId, fieldId)
-    } catch (e) {
-      taxonomyError = e instanceof Error ? e.message : String(e)
-      return
-    }
-    await reloadTaxonomy()
-  }
-
-  // Grid ⇄ list toggle — a client-only view preference, persisted like theme/panel widths.
-  function loadLibraryView(): 'grid' | 'list' {
-    try {
-      const v = localStorage.getItem('libraryView')
-      if (v === 'grid' || v === 'list') return v
-    } catch {
-      /* ignore — fall back to default */
-    }
-    return 'grid'
-  }
-  let libraryView = $state<'grid' | 'list'>(loadLibraryView())
-  function setLibraryView(v: 'grid' | 'list'): void {
-    libraryView = v
-    try {
-      localStorage.setItem('libraryView', v)
-    } catch {
-      /* ignore — view just won't persist */
-    }
-  }
-
-  // Library sort — a client-only preference, persisted like the view toggle.
-  const LIB_SORTS: { key: LibrarySort; label: string }[] = [
-    { key: 'title-az', label: 'Title (A–Z)' },
-    { key: 'author-az', label: 'Author (A–Z)' },
-    { key: 'pub-desc', label: 'Publication date (newest)' },
-    { key: 'added-desc', label: 'Added date (newest)' },
-  ]
-  function loadLibrarySort(): LibrarySort {
-    try {
-      const v = localStorage.getItem('librarySort')
-      if (LIB_SORTS.some((s) => s.key === v)) return v as LibrarySort
-    } catch {
-      /* ignore — fall back to default */
-    }
-    return 'title-az'
-  }
-  let librarySort = $state<LibrarySort>(loadLibrarySort())
-  let libSortOpen = $state(false)
-  function setLibrarySort(v: LibrarySort): void {
-    librarySort = v
-    libSortOpen = false
-    try {
-      localStorage.setItem('librarySort', v)
-    } catch {
-      /* ignore — just won't persist */
-    }
+    void openTaxonomy(focusConceptId)
   }
 
   // Pipeline: active collection → search filter (Decision 5a) → keyword facets (AND) → sort.
@@ -472,7 +285,7 @@
   // counts raw keywords over the whole library rather than family units over a collection.
   const rawKeywordDocCounts = $derived(unitDocCounts(documents))
   const visibleDocs = $derived(
-    sortDocs(facetFilter(searchedDocs, libraryKeywords, keywordsOf), librarySort),
+    sortDocs(facetFilter(searchedDocs, libraryKeywords, keywordsOf), libPrefs.sort),
   )
   // The corpus's full raw-keyword universe (unfiltered by collection/search), for the Manage view.
   const allKeywords = $derived.by(() => {
@@ -524,76 +337,6 @@
     }
   }
 
-  // History is a sidecar read — a failure must never break the chat (inform, don't block).
-  async function refreshConversations(): Promise<void> {
-    try {
-      conversations = await listConversations()
-    } catch {
-      // keep the prior list
-    }
-  }
-
-  // Conversation management (pin / archive / soft-delete): PATCH the flag, then refresh the list.
-  async function pinConversation(sid: string, pinned: boolean): Promise<void> {
-    try {
-      await updateConversationMeta(sid, { pinned })
-      await refreshConversations()
-    } catch (e) {
-      console.error('pin failed', e)
-    }
-  }
-  async function archiveConversation(sid: string, archived: boolean): Promise<void> {
-    try {
-      await updateConversationMeta(sid, { archived })
-      await refreshConversations()
-    } catch (e) {
-      console.error('archive failed', e)
-    }
-  }
-  async function renameConversation(sid: string, title: string): Promise<void> {
-    try {
-      await updateConversationMeta(sid, { title })
-      await refreshConversations()
-    } catch (e) {
-      console.error('rename failed', e)
-    }
-  }
-
-  // Resizable left sidebar. Width is a client-only view preference (like the theme toggle),
-  // persisted in localStorage; clamped so it can't be dragged uselessly narrow or wide.
-  const SIDEBAR_MIN = 200
-  const SIDEBAR_MAX = 480
-  function loadSidebarWidth(): number {
-    try {
-      const v = Number(localStorage.getItem('sidebarWidth'))
-      return v >= SIDEBAR_MIN && v <= SIDEBAR_MAX ? v : 260
-    } catch {
-      return 260
-    }
-  }
-  let sidebarWidth = $state(loadSidebarWidth())
-
-  // Collapsible sidebar (spec sub-item b). A desktop-only view preference — the same class as the
-  // theme + width above (client-only, localStorage, never a backend setting). Collapsing hides the
-  // rail via `.app.collapsed` under a min-width guard; the mobile off-canvas drawer (`sidebarOpen`)
-  // is untouched. Expanding restores the persisted width unchanged (collapse ≠ resize).
-  function loadSidebarCollapsed(): boolean {
-    try {
-      return localStorage.getItem('sidebarCollapsed') === '1'
-    } catch {
-      return false
-    }
-  }
-  let sidebarCollapsed = $state(loadSidebarCollapsed())
-  function toggleSidebar(): void {
-    sidebarCollapsed = !sidebarCollapsed
-    try {
-      localStorage.setItem('sidebarCollapsed', sidebarCollapsed ? '1' : '0')
-    } catch {
-      /* ignore — collapse state just won't persist */
-    }
-  }
-
   // App menu (☰) + its two info modals (keyboard shortcuts, about). The menu is the top-toolbar's
   // "more" surface; Settings has its own gear too (a fast path), so it appears in both.
   let appMenuOpen = $state(false)
@@ -630,7 +373,7 @@
       mode,
       collection: libraryCollection,
       docId: libraryDocId,
-      graphId: graphSelectedId,
+      graphId: graph.selectedId,
     }
     // Untracked: reading/writing the stack here must not feed back into this effect.
     untrack(() => {
@@ -650,7 +393,7 @@
     selectMode(e.mode)
     libraryCollection = e.collection
     libraryDocId = e.docId
-    graphSelectedId = e.graphId
+    graph.selectedId = e.graphId
   }
   function navBack(): void {
     if (navIndex <= 0) return
@@ -663,27 +406,6 @@
     applyNav(navStack[navIndex])
   }
 
-  function startResize(e: PointerEvent): void {
-    e.preventDefault()
-    const onMove = (ev: PointerEvent) => {
-      sidebarWidth = Math.min(SIDEBAR_MAX, Math.max(SIDEBAR_MIN, ev.clientX))
-    }
-    const onUp = () => {
-      window.removeEventListener('pointermove', onMove)
-      window.removeEventListener('pointerup', onUp)
-      document.body.style.cursor = ''
-      document.body.style.userSelect = ''
-      try {
-        localStorage.setItem('sidebarWidth', String(Math.round(sidebarWidth)))
-      } catch {
-        /* ignore — width just won't persist */
-      }
-    }
-    document.body.style.cursor = 'col-resize'
-    document.body.style.userSelect = 'none'
-    window.addEventListener('pointermove', onMove)
-    window.addEventListener('pointerup', onUp)
-  }
   // Soft-delete is reversible, but there's no restore UI yet — confirm via an in-app dialog (not the
   // native window.confirm, which shows OS "localhost says" chrome) to avoid a mis-click.
   let pendingDeleteConvId = $state<string | null>(null)
@@ -1029,7 +751,7 @@
     if (m === 'graph') {
       // The ego panel resolves doc_ids → titles from the library list, so it must be loaded too.
       if (!documentsLoaded) void refreshDocuments()
-      if (!graphLoaded) void loadConceptGraph()
+      if (!graphLoaded()) void loadConceptGraph()
     }
   }
 
@@ -1238,18 +960,18 @@
      Sidebar as a snippet, so Sidebar stays a dumb renderer without ~8 more graph props. -->
 {#snippet graphRail()}
   <GraphIndex
-    nodes={conceptGraph?.nodes ?? []}
-    gaps={conceptGraph?.gaps ?? []}
-    selectedId={graphSelectedId}
-    bind:showUnderConnected={graphShowUnderConnected}
-    loading={graphLoading}
-    built={conceptGraph !== null}
-    graphError={graphError}
+    nodes={graph.data?.nodes ?? []}
+    gaps={graph.data?.gaps ?? []}
+    selectedId={graph.selectedId}
+    bind:showUnderConnected={graph.showUnderConnected}
+    loading={graph.loading}
+    built={graph.data !== null}
+    graphError={graph.error}
     onSelectConcept={selectGraphConcept}
   />
 {/snippet}
 
-<div class="app" class:collapsed={sidebarCollapsed} style="--sidebar-width: {sidebarWidth}px">
+<div class="app" class:collapsed={sidebarPrefs.collapsed} style="--sidebar-width: {sidebarPrefs.width}px">
   <!-- Unified top toolbar (browser-chrome shell): one bar across the whole window carrying the app
        menu, sidebar toggle, back/forward, brand, the mode tabs, and search/settings — the pattern
        replaces the old split of mode-pills-in-sidebar + actions-in-header. -->
@@ -1296,10 +1018,10 @@
       <!-- Sidebar toggle: desktop collapses inline, mobile opens the off-canvas drawer. -->
       <button
         class="tb-btn hide-mobile"
-        onclick={toggleSidebar}
-        aria-label={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-        aria-pressed={sidebarCollapsed}
-        title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+        onclick={toggleSidebarCollapsed}
+        aria-label={sidebarPrefs.collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+        aria-pressed={sidebarPrefs.collapsed}
+        title={sidebarPrefs.collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
         type="button"><Icon name="panel-left" size={16} /></button
       >
       <button
@@ -1379,7 +1101,7 @@
   <div class="below">
   <Sidebar
     {mode}
-    {conversations}
+    conversations={conversations.list}
     {documents}
     {folders}
     liveSessionId={sessionId}
@@ -1392,7 +1114,7 @@
     onSelect={openConversation}
     onSelectCollection={selectCollection}
     onManageFolders={openManageFolders}
-    onOpenTaxonomy={() => openTaxonomy()}
+    onOpenTaxonomy={() => openTaxonomyView()}
     onClose={() => (sidebarOpen = false)}
     onPin={pinConversation}
     onArchive={archiveConversation}
@@ -1404,7 +1126,7 @@
     role="separator"
     aria-orientation="vertical"
     aria-label="Resize sidebar"
-    onpointerdown={startResize}
+    onpointerdown={startSidebarResize}
   ></div>
 
   <div class="content">
@@ -1443,30 +1165,30 @@
               <div class="libsort">
                 <button
                   class="sortbtn"
-                  onclick={() => (libSortOpen = !libSortOpen)}
+                  onclick={() => (libPrefs.sortOpen = !libPrefs.sortOpen)}
                   aria-haspopup="menu"
-                  aria-expanded={libSortOpen}
+                  aria-expanded={libPrefs.sortOpen}
                   title="Sort documents"
                   type="button"><Icon name="arrow-up-down" size={15} /></button
                 >
-                {#if libSortOpen}
+                {#if libPrefs.sortOpen}
                   <div
                     class="sort-backdrop"
-                    onclick={() => (libSortOpen = false)}
+                    onclick={() => (libPrefs.sortOpen = false)}
                     role="presentation"
                   ></div>
                   <div class="sortmenu" role="menu">
                     {#each LIB_SORTS as s}
                       <button
                         class="sortitem"
-                        class:on={librarySort === s.key}
+                        class:on={libPrefs.sort === s.key}
                         role="menuitemradio"
-                        aria-checked={librarySort === s.key}
+                        aria-checked={libPrefs.sort === s.key}
                         onclick={() => setLibrarySort(s.key)}
                         type="button"
                       >
                         <span class="tick"
-                          >{#if librarySort === s.key}<Icon name="check" size={13} />{/if}</span
+                          >{#if libPrefs.sort === s.key}<Icon name="check" size={13} />{/if}</span
                         >
                         {s.label}
                       </button>
@@ -1476,18 +1198,18 @@
               </div>
               <div class="viewtoggle" role="group" aria-label="Layout">
                 <button
-                  class:active={libraryView === 'grid'}
+                  class:active={libPrefs.view === 'grid'}
                   onclick={() => setLibraryView('grid')}
                   aria-label="Grid view"
-                  aria-pressed={libraryView === 'grid'}
+                  aria-pressed={libPrefs.view === 'grid'}
                   title="Grid view"
                   type="button"><Icon name="layout-grid" size={15} /></button
                 >
                 <button
-                  class:active={libraryView === 'list'}
+                  class:active={libPrefs.view === 'list'}
                   onclick={() => setLibraryView('list')}
                   aria-label="List view"
-                  aria-pressed={libraryView === 'list'}
+                  aria-pressed={libPrefs.view === 'list'}
                   title="List view"
                   type="button"><Icon name="list" size={15} /></button
                 >
@@ -1599,7 +1321,7 @@
                 {:else}
                   <LibraryGrid
                     documents={visibleDocs}
-                    view={libraryView}
+                    view={libPrefs.view}
                     activeKeywords={libraryKeywords}
                     {keywordsOf}
                     selectMode={libSelectMode}
@@ -1618,20 +1340,20 @@
         </div>
       {:else if mode === 'graph'}
         <ConceptGraph
-          graph={conceptGraph}
-          loading={graphLoading}
-          error={graphError}
+          graph={graph.data}
+          loading={graph.loading}
+          error={graph.error}
           {documents}
-          rebuildState={graphRebuildState}
-          selectedId={graphSelectedId}
-          showUnderConnected={graphShowUnderConnected}
+          rebuildState={graph.rebuildState}
+          selectedId={graph.selectedId}
+          showUnderConnected={graph.showUnderConnected}
           onRebuild={rebuildGraph}
           onOpenDocument={(id) => {
             selectMode('library')
             openDocument(id)
           }}
           onManageConcept={manageConcept}
-          onPlaceConcept={(id) => openTaxonomy(id)}
+          onPlaceConcept={(id) => openTaxonomyView(id)}
           onSelectConcept={selectGraphConcept}
           loadPresence={getConceptPresence}
         />
@@ -1906,15 +1628,15 @@
   />
 {/if}
 
-{#if taxonomyOpen}
+{#if taxonomy.open}
   <LibraryTaxonomy
-    view={taxonomyView}
-    fieldDetail={taxonomyFieldDetail}
-    loading={taxonomyLoading}
-    error={taxonomyError}
+    view={taxonomy.view}
+    fieldDetail={taxonomy.fieldDetail}
+    loading={taxonomy.loading}
+    error={taxonomy.error}
     {documents}
-    concepts={taxonomyConcepts}
-    focusConceptId={taxonomyFocusConceptId}
+    concepts={taxonomy.concepts}
+    focusConceptId={taxonomy.focusConceptId}
     onSelectField={selectTaxonomyField}
     onAddEdge={taxonomyAddEdge}
     onRemoveEdge={taxonomyRemoveEdge}

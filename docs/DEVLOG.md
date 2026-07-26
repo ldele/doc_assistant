@@ -11,6 +11,54 @@ Format: What changed | Why | Rejected alternatives | What it opens
 > (moved verbatim 2026-07-21). This file keeps 2026-07-15 onward.
 
 ---
+## 2026-07-26 — App.svelte step 4: the domains that actually decouple → `.svelte.ts` rune modules
+
+**What changed.** Five per-domain rune modules pulled out of `App.svelte`'s script, which drops
+**1,233 → 955 lines**: `graph/graph.svelte.ts` (99) · `library/taxonomy.svelte.ts` (118) ·
+`library/prefs.svelte.ts` (60) · `shell/prefs.svelte.ts` (67) · `chat/conversations.svelte.ts` (48).
+
+**Why it is a *partial* step 4, on purpose.** The plan said "split the script into 8 per-domain
+state modules". Inventorying the coupling first (the prerequisite this plan flagged) showed that
+would be a mistake. Of the 5 `$effect` blocks, **3 are irreducibly cross-domain**: the nav-history
+observer reads mode + library collection + library docId + graph selection; the readiness gate
+writes health/status and kicks conversations + folders; the chat-scope guard reads folders and
+writes chat state. `selectMode` orchestrates four domains and `refreshFamilies` writes the facet
+selection as well as the family list.
+
+Forcing those into modules buys nothing and costs the thing the whole pass is for: coupling that
+is currently **visible in one file** would become **invisible**, spread across an implicit import
+graph — and two of the three would need import cycles to express at all. So the rule applied was:
+extract a domain only when it is genuinely self-contained; leave cross-domain orchestration in
+`App.svelte`, which is exactly what an app shell is for.
+
+**Not extracted, and why:** *keyword families* — every mutation re-runs `remapSelection` over the
+facet selection against the document list (PR-2.5 D5: a family write changes what a facet *unit*
+is, so a live selection must be re-pointed or the grid silently empties behind a chip that still
+looks selectable). That is three domains in one function and it stays put. *conversations* was
+extracted only as far as the list + pin/archive/rename; `openConversation`/`resumeConversation`/
+soft-delete all write live chat state, so they stayed.
+
+**Svelte 5 shape.** State is one exported `$state` **object** per module, not separate `let`s — an
+imported binding cannot be reassigned across a module boundary, so `graph.selectedId = x` is the
+only form that works. `$effect` cannot run at module top level (no effect context), so the one
+intra-domain effect is exported as `useGraphHygiene()` and called from App during init.
+`.svelte.ts` modules need the compiler and **cannot run under `node:test`** — so the pure, tested
+modules (`library.ts`, `search.ts`, `gaps.ts`, `taxonomy.ts`) were left untouched beside them. The
+extension is the marker: `taxonomy.ts` is pure and tested, `taxonomy.svelte.ts` is reactive state.
+
+**Verified.** `svelte-check` **151 files, 0 errors, 0 warnings**; `npm test` **50/50**. Live, with
+0 console errors: cross-module reactivity confirmed (clicking a GraphIndex concept updates
+`graph.selectedId` and the ego panel re-renders); sidebar collapse and library view/sort each
+toggle, apply, and round-trip through localStorage (all restored to their prior values); the
+taxonomy modal opens on the full ANZSRC forest (357 concepts · 97 documents · 236 fields) and its
+drill-in populates **both** pickers — 14 concepts read from `graph.data` across the module
+boundary, 98 documents from App's lazy-load wrapper. 1280px light and the 375px path both at
+0 horizontal overflow.
+
+**What it opens.** Step 5 (markup + style → pane components) is now the bigger remaining win:
+`App.svelte` is still 2,447 lines, of which **1,492 are markup + style**, not script.
+
+---
 ## 2026-07-26 — `GapList.svelte` was a **binary file** to git: raw NUL byte → the `\0` escape
 
 **What changed.** One byte. `apps/desktop/src/lib/graph/GapList.svelte:25` builds the `busy`-Set

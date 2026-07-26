@@ -3,7 +3,6 @@
   import type {
     CompareResult,
     ConversationDetail,
-    Health,
     KeywordFamily,
     KeywordFamilyProposal,
     LibraryDocument,
@@ -105,6 +104,9 @@
     startSidebarResize,
     toggleSidebarCollapsed,
   } from './lib/shell/prefs.svelte'
+  // Shell chrome state (leaf module — imports no sibling state). Phase 2 lets the pane components
+  // import this directly instead of taking ~20 props each.
+  import { shell } from './lib/shell/shell.svelte'
   import {
     archiveConversation,
     conversations,
@@ -130,12 +132,9 @@
   // id from ↻ New must trigger updates.
   let sessionId = $state(freshSessionId())
 
-  let health = $state<Health | null>(null)
-  let status = $state<'connecting' | 'ready' | 'down'>('connecting')
   let turns = $state<TurnState[]>([])
   let input = $state('')
   let sending = $state(false)
-  let showSettings = $state(false)
   // ADR-010: the RAG-sandbox overrides for this app session. In-memory only — a fresh
   // launch always starts from {} (locked defaults), never persisted to disk.
   let overrides = $state<RagOverrides>({})
@@ -161,20 +160,16 @@
   // to the same conversation and persist. The in-memory backend session starts fresh (empty
   // history), so new questions are standalone corpus queries — no replay of the old turns.
   let resumedHistory = $state<ConversationDetail | null>(null)
-  let sidebarOpen = $state(false) // mobile drawer
 
   // Global-search overlay (docs/specs/feature-app-shell-search-collapse.md, sub-item a). A
   // navigation search over chats + documents, opened from the header or Cmd/Ctrl-K. App owns the
   // query + derives the results (searchEverything is pure/tested); GlobalSearch just renders.
-  let searchOpen = $state(false)
-  let searchQuery = $state('')
 
   // Library space (feature-library-browser.md L1; nav redesign feature-library-redesign.md L4
   // Phase A). `mode` swaps the sidebar + main pane between Chat and Library; the chat state
   // (turns/viewing/sessionId) is untouched by the switch. Navigation model: the rail picks the
   // active *collection*, the main pane shows it as an inventory grid, and opening a document
   // drills down in place to the chunk view (breadcrumb + Back walk back up).
-  let mode = $state<'chat' | 'library' | 'graph'>('chat')
   let documents = $state<LibraryDocument[]>([])
   let libraryCollection = $state<LibraryCollection>({ kind: 'all' })
   let libraryDocId = $state<string | null>(null)
@@ -186,7 +181,7 @@
   let keywordFilterOpen = $state(false)
   let documentsLoaded = false
   // The overlay's results, derived from the live chat + document lists (both already client-side).
-  const searchResults = $derived(searchEverything(searchQuery, conversations.list, documents))
+  const searchResults = $derived(searchEverything(shell.searchQuery, conversations.list, documents))
 
   // Folders (ADR-025 F1, docs/specs/feature-corpus-folders.md). Manual Library organisation.
   // The rail renders this list rather than deriving groups from `documents`, so a folder with
@@ -236,7 +231,7 @@
   // first entry to Graph mode (see selectMode). Only the cross-domain bits stay here.
   function selectGraphConcept(id: string): void {
     graph.selectedId = id
-    sidebarOpen = false // mobile drawer: selecting navigates, like selectCollection
+    shell.sidebarOpen = false // mobile drawer: selecting navigates, like selectCollection
   }
   useGraphHygiene() // intra-domain: a rebuild can drop the selected concept
 
@@ -330,8 +325,8 @@
   // reflect the new corpus (the backend rebuilds the controller before reporting "done").
   async function refreshHealth(): Promise<void> {
     try {
-      health = await getHealth()
-      status = 'ready'
+      shell.health = await getHealth()
+      shell.status = 'ready'
     } catch {
       // leave the prior health/status; a transient blip shouldn't blank the header
     }
@@ -339,9 +334,6 @@
 
   // App menu (☰) + its two info modals (keyboard shortcuts, about). The menu is the top-toolbar's
   // "more" surface; Settings has its own gear too (a fast path), so it appears in both.
-  let appMenuOpen = $state(false)
-  let showShortcuts = $state(false)
-  let showAbout = $state(false)
 
   // Browser-style navigation history (top-toolbar ← →). A "view" is the navigable snapshot: the
   // mode plus each mode's location (library collection + open document, graph selection). A passive
@@ -370,7 +362,7 @@
   $effect(() => {
     // Tracked reads (the deps): a change to any of these is a navigation.
     const entry: NavEntry = {
-      mode,
+      mode: shell.mode,
       collection: libraryCollection,
       docId: libraryDocId,
       graphId: graph.selectedId,
@@ -442,8 +434,8 @@
         try {
           const h = await getHealth()
           if (!cancelled) {
-            health = h
-            status = 'ready'
+            shell.health = h
+            shell.status = 'ready'
             void refreshConversations()
             // The composer's scope selector needs the folder list even if the user never
             // opens the Library.
@@ -454,7 +446,7 @@
           await new Promise((r) => setTimeout(r, 1000))
         }
       }
-      if (!cancelled) status = 'down'
+      if (!cancelled) shell.status = 'down'
     })()
     return () => {
       cancelled = true
@@ -592,7 +584,7 @@
     nextId = 0
     sessionId = freshSessionId()
     pinned = true
-    sidebarOpen = false
+    shell.sidebarOpen = false
     taEl?.focus()
   }
 
@@ -613,14 +605,14 @@
     input = ''
     resetComposer()
     pinned = true
-    sidebarOpen = false
+    shell.sidebarOpen = false
     taEl?.focus()
   }
 
   // Open a past conversation read-only (H2). Selecting the live chat returns to it; the live
   // chat's in-memory state is never destroyed by viewing an old one.
   async function openConversation(sid: string): Promise<void> {
-    sidebarOpen = false
+    shell.sidebarOpen = false
     activeCitation = null
     if (sid === sessionId) {
       viewing = null
@@ -724,7 +716,7 @@
     manageFolderQuery = ''
     manageFoldersOpen = true
     folderError = null
-    sidebarOpen = false
+    shell.sidebarOpen = false
     void refreshFolders()
   }
 
@@ -739,8 +731,8 @@
   // Switch between Chat and Library. Entering Library closes any open citation panel and lazy-loads
   // the document list once; the live chat's in-memory state is preserved across the switch.
   function selectMode(m: 'chat' | 'library' | 'graph'): void {
-    mode = m
-    sidebarOpen = false
+    shell.mode = m
+    shell.sidebarOpen = false
     activeCitation = null
     if (m === 'chat' && folders.length === 0) void refreshFolders()
     if (m === 'library' && !documentsLoaded) {
@@ -760,36 +752,36 @@
   function selectCollection(c: LibraryCollection): void {
     libraryCollection = c
     libraryDocId = null
-    sidebarOpen = false
+    shell.sidebarOpen = false
   }
 
   function openDocument(id: string): void {
     libraryDocId = id
-    sidebarOpen = false
+    shell.sidebarOpen = false
   }
 
   // Global search (spec sub-item a). Opening refreshes both lists (inform-don't-block): documents
   // lazy-load only on entering the Library, so a chat-only user must still be able to find a paper.
   function openSearch(): void {
-    searchQuery = ''
-    searchOpen = true
+    shell.searchQuery = ''
+    shell.searchOpen = true
     void refreshConversations()
     if (!documentsLoaded) void refreshDocuments()
   }
   function closeSearch(): void {
-    searchOpen = false
+    shell.searchOpen = false
   }
   // Reuse the existing entry points (spec A6): a chat opens in Chat mode, a document in Library
   // mode. selectMode already lazy-loads what each mode needs; opening a doc in chat mode shows
   // nothing. Close the overlay on select.
   function searchOpenChat(sid: string): void {
-    searchOpen = false
-    if (mode !== 'chat') selectMode('chat')
+    shell.searchOpen = false
+    if (shell.mode !== 'chat') selectMode('chat')
     void openConversation(sid)
   }
   function searchOpenDoc(id: string): void {
-    searchOpen = false
-    if (mode !== 'library') selectMode('library')
+    shell.searchOpen = false
+    if (shell.mode !== 'library') selectMode('library')
     openDocument(id)
   }
   // Cmd/Ctrl-K toggles the overlay (spec A2). preventDefault so the browser's own find/location
@@ -797,7 +789,7 @@
   function onGlobalKey(e: KeyboardEvent): void {
     if ((e.metaKey || e.ctrlKey) && (e.key === 'k' || e.key === 'K')) {
       e.preventDefault()
-      if (searchOpen) closeSearch()
+      if (shell.searchOpen) closeSearch()
       else openSearch()
     }
   }
@@ -980,36 +972,36 @@
       <div class="menuwrap">
         <button
           class="tb-btn"
-          class:on={appMenuOpen}
-          onclick={() => (appMenuOpen = !appMenuOpen)}
+          class:on={shell.appMenuOpen}
+          onclick={() => (shell.appMenuOpen = !shell.appMenuOpen)}
           aria-label="Menu"
           aria-haspopup="menu"
-          aria-expanded={appMenuOpen}
+          aria-expanded={shell.appMenuOpen}
           title="Menu"
           type="button"><Icon name="menu" size={17} /></button
         >
-        {#if appMenuOpen}
-          <div class="menu-backdrop" onclick={() => (appMenuOpen = false)} role="presentation"></div>
+        {#if shell.appMenuOpen}
+          <div class="menu-backdrop" onclick={() => (shell.appMenuOpen = false)} role="presentation"></div>
           <div class="appmenu" role="menu">
-            <button class="appmenuitem" role="menuitem" onclick={() => { appMenuOpen = false; showSettings = true }} type="button">
+            <button class="appmenuitem" role="menuitem" onclick={() => { shell.appMenuOpen = false; shell.showSettings = true }} type="button">
               <Icon name="settings" size={15} /> Settings
             </button>
-            <button class="appmenuitem" role="menuitem" onclick={() => { appMenuOpen = false; showShortcuts = true }} type="button">
+            <button class="appmenuitem" role="menuitem" onclick={() => { shell.appMenuOpen = false; shell.showShortcuts = true }} type="button">
               <Icon name="keyboard" size={15} /> Keyboard shortcuts
             </button>
-            {#if mode === 'chat'}
+            {#if shell.mode === 'chat'}
               <button
                 class="appmenuitem"
                 role="menuitem"
                 disabled={viewing === null && resumedHistory === null && turns.length === 0}
-                onclick={() => { appMenuOpen = false; doExport() }}
+                onclick={() => { shell.appMenuOpen = false; doExport() }}
                 type="button"
               >
                 <Icon name="download" size={15} /> Export transcript
               </button>
             {/if}
             <div class="appmenusep"></div>
-            <button class="appmenuitem" role="menuitem" onclick={() => { appMenuOpen = false; showAbout = true }} type="button">
+            <button class="appmenuitem" role="menuitem" onclick={() => { shell.appMenuOpen = false; shell.showAbout = true }} type="button">
               <Icon name="info" size={15} /> About Provenote
             </button>
           </div>
@@ -1026,7 +1018,7 @@
       >
       <button
         class="tb-btn only-mobile"
-        onclick={() => (sidebarOpen = true)}
+        onclick={() => (shell.sidebarOpen = true)}
         aria-label="Open sidebar"
         title="Open sidebar"
         type="button"><Icon name="panel-left" size={16} /></button
@@ -1062,25 +1054,25 @@
     <div class="tb-modes" role="tablist" aria-label="Workspace">
       <button
         class="tb-mode"
-        class:active={mode === 'chat'}
+        class:active={shell.mode === 'chat'}
         role="tab"
-        aria-selected={mode === 'chat'}
+        aria-selected={shell.mode === 'chat'}
         onclick={() => selectMode('chat')}
         type="button"><Icon name="message-square" size={15} /><span class="tb-modelabel">Chat</span></button
       >
       <button
         class="tb-mode"
-        class:active={mode === 'library'}
+        class:active={shell.mode === 'library'}
         role="tab"
-        aria-selected={mode === 'library'}
+        aria-selected={shell.mode === 'library'}
         onclick={() => selectMode('library')}
         type="button"><Icon name="library" size={15} /><span class="tb-modelabel">Library</span></button
       >
       <button
         class="tb-mode"
-        class:active={mode === 'graph'}
+        class:active={shell.mode === 'graph'}
         role="tab"
-        aria-selected={mode === 'graph'}
+        aria-selected={shell.mode === 'graph'}
         onclick={() => selectMode('graph')}
         type="button"><Icon name="waypoints" size={15} /><span class="tb-modelabel">Graph</span></button
       >
@@ -1092,7 +1084,7 @@
       <button class="tb-btn" onclick={openSearch} aria-label="Search chats and documents" title="Search  (Ctrl/⌘ K)" type="button">
         <Icon name="search" size={16} />
       </button>
-      <button class="tb-btn" onclick={() => (showSettings = true)} aria-label="Settings" title="Settings" type="button">
+      <button class="tb-btn" onclick={() => (shell.showSettings = true)} aria-label="Settings" title="Settings" type="button">
         <Icon name="settings" size={17} />
       </button>
     </div>
@@ -1100,7 +1092,7 @@
 
   <div class="below">
   <Sidebar
-    {mode}
+    mode={shell.mode}
     conversations={conversations.list}
     {documents}
     {folders}
@@ -1108,14 +1100,14 @@
     viewingSessionId={viewing}
     {libraryCollection}
     bind:libraryQuery
-    open={sidebarOpen}
+    open={shell.sidebarOpen}
     {graphRail}
     onNew={newConversation}
     onSelect={openConversation}
     onSelectCollection={selectCollection}
     onManageFolders={openManageFolders}
     onOpenTaxonomy={() => openTaxonomyView()}
-    onClose={() => (sidebarOpen = false)}
+    onClose={() => (shell.sidebarOpen = false)}
     onPin={pinConversation}
     onArchive={archiveConversation}
     onDelete={deleteConversation}
@@ -1131,8 +1123,8 @@
 
   <div class="content">
     <div class="viewport">
-    <main class:wide={mode === 'library' || mode === 'graph'}>
-      {#if mode === 'library'}
+    <main class:wide={shell.mode === 'library' || shell.mode === 'graph'}>
+      {#if shell.mode === 'library'}
         <div class="library">
           <div class="libnav">
             {#if libraryDocId !== null || libraryCollection.kind !== 'all'}
@@ -1338,7 +1330,7 @@
             </section>
           {/if}
         </div>
-      {:else if mode === 'graph'}
+      {:else if shell.mode === 'graph'}
         <ConceptGraph
           graph={graph.data}
           loading={graph.loading}
@@ -1392,7 +1384,7 @@
             {/each}
             <div class="resume-divider"><span>continuing below</span></div>
           {/if}
-          {#if status === 'ready' && health && health.chunk_count === 0}
+          {#if shell.status === 'ready' && shell.health && shell.health.chunk_count === 0}
             <div class="banner">
               <span class="state-mark"><Icon name="library" size={26} /></span>
               <strong>No documents indexed yet</strong>
@@ -1400,7 +1392,7 @@
                 Point doc_assistant at a folder of your documents to get started. It'll index them
                 locally, then you can ask questions grounded in them.
               </p>
-              <button class="primary" onclick={() => (showSettings = true)}>Choose a folder…</button>
+              <button class="primary" onclick={() => (shell.showSettings = true)}>Choose a folder…</button>
             </div>
           {:else if turns.length === 0 && !resumedHistory}
             <div class="empty">
@@ -1500,16 +1492,16 @@
   <div class="statusbar" role="status" aria-live="polite">
     <span
       class="status-dot"
-      class:ok={status === 'ready'}
-      class:wait={status === 'connecting'}
-      class:off={status === 'down'}
+      class:ok={shell.status === 'ready'}
+      class:wait={shell.status === 'connecting'}
+      class:off={shell.status === 'down'}
       aria-hidden="true"
     ></span>
-    {#if status === 'ready' && health}
+    {#if shell.status === 'ready' && shell.health}
       <span class="status-meta">
-        {health.chunk_count.toLocaleString()} chunks · {health.model} · {health.embedding_model}
+        {shell.health.chunk_count.toLocaleString()} chunks · {shell.health.model} · {shell.health.embedding_model}
       </span>
-    {:else if status === 'connecting'}
+    {:else if shell.status === 'connecting'}
       <span class="status-meta">starting the engine…</span>
     {:else}
       <span class="status-meta err">backend unreachable. Run <code>just api</code></span>
@@ -1517,20 +1509,20 @@
   </div>
 </div>
 
-{#if showSettings}
-  <Settings onClose={() => (showSettings = false)} onCorpusChanged={refreshHealth} bind:overrides />
+{#if shell.showSettings}
+  <Settings onClose={() => (shell.showSettings = false)} onCorpusChanged={refreshHealth} bind:overrides />
 {/if}
 
-{#if showShortcuts}
-  <ShortcutsDialog onClose={() => (showShortcuts = false)} />
+{#if shell.showShortcuts}
+  <ShortcutsDialog onClose={() => (shell.showShortcuts = false)} />
 {/if}
 
-{#if showAbout}
+{#if shell.showAbout}
   <AboutDialog
-    chunks={health?.chunk_count ?? null}
-    model={health?.model ?? null}
-    embedding={health?.embedding_model ?? null}
-    onClose={() => (showAbout = false)}
+    chunks={shell.health?.chunk_count ?? null}
+    model={shell.health?.model ?? null}
+    embedding={shell.health?.embedding_model ?? null}
+    onClose={() => (shell.showAbout = false)}
   />
 {/if}
 
@@ -1618,9 +1610,9 @@
   />
 {/if}
 
-{#if searchOpen}
+{#if shell.searchOpen}
   <GlobalSearch
-    bind:query={searchQuery}
+    bind:query={shell.searchQuery}
     results={searchResults}
     onSelectChat={searchOpenChat}
     onSelectDoc={searchOpenDoc}

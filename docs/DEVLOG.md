@@ -11,6 +11,47 @@ Format: What changed | Why | Rejected alternatives | What it opens
 > (moved verbatim 2026-07-21). This file keeps 2026-07-15 onward.
 
 ---
+## 2026-07-26 — step 5 phase 1: `shell/shell.svelte.ts`, the leaf module the pane split needs
+
+**What changed.** The last of `App.svelte`'s non-domain state moves to one rune module: `mode`,
+`sidebarOpen`, `appMenuOpen`, `showShortcuts`, `showAbout`, `showSettings`, `searchOpen`,
+`searchQuery`, `health`, `status`. Script 955 → **947**, 68 call sites rewritten.
+
+**Why this is phase 1 and not the pane split itself.** Measuring first (again) changed the plan:
+the markup region references **40+ App identifiers**. Extracting `Topbar`/`StatusBar`/`LibraryPane`
+as prop-taking components would thread twenty-odd props into each — *less* reviewable than the
+2,400-line file they came from, which defeats the point. `shell.svelte.ts` is deliberately a
+**leaf** (it imports nothing from any sibling state module), so in phase 2 the panes can `import
+{ shell }` instead. That is the whole reason this is a separate, boring commit.
+
+**Still in App.svelte, unchanged:** the nav-history `$effect` (reads `shell.mode` *and* library
+collection/docId *and* graph selection), the readiness gate (writes `shell.health`/`shell.status`
+but also kicks conversations + folders), `selectMode` (lazy-loads four domains) and the chat-scope
+guard. Orchestration stays where it is visible.
+
+**Why this one was not a blanket find-and-replace.** `mode`, `status` and `health` collide with
+things that must not change: `class="tb-mode"`, `class="status-dot"`, `class="statusbar"`,
+`role="status"`, the `NavEntry` type's own `mode:` field, and `/api/health` in comments — a
+word-boundary regex matches `status-dot` (the `-` is a boundary) and would have written
+`class="shell.status-dot"`. So those three were rewritten **line-by-line against an explicit,
+asserted list**; only the seven unambiguous identifiers got a global regex. Three shapes needed
+hand-editing: the `{mode}` shorthand prop → `mode={shell.mode}`, the `mode,` object shorthand in
+the nav entry → `mode: shell.mode,`, and `bind:query={searchQuery}`.
+
+**Verified.** `svelte-check` **177 files, 0/0**; `npm test` **50/50**; the `<style>` block has zero
+diff lines. Live, 0 console errors: the readiness gate drives the status bar through its real
+states (`connecting` + `wait` dot → `ok` dot + "33,163 chunks · ollama/llama3.1:8b · bge-base");
+mode tabs, app menu (3 items), shortcuts modal, Settings drawer, and Cmd-K search all round-trip
+(typing "dense" filters, Cmd-K closes); 375px dark at 0 horizontal overflow.
+
+**A measurement trap worth recording.** The mobile drawer *looked* broken — `.open` applied but
+`transform` stayed at `translateX(-100%)`. It was not a regression: `document.visibilityState` is
+**`hidden`** in this harness (the pane does not composite, which is also why `screenshot` times
+out), so CSS transitions never advance — `getAnimations()` showed the animation stuck at
+`currentTime: 0`. Setting `transition: none` and re-measuring gave `translateX(0)`: correct. When a
+CSS-driven state looks stuck here, neutralise the transition before calling it a bug.
+
+---
 ## 2026-07-26 — step 6: `core/types.ts` + `core/api.ts` split by domain, mirroring `apps/api/models/`
 
 **What changed.** The two wire-boundary files became packages named for the same domains as

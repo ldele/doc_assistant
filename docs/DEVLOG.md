@@ -11,6 +11,44 @@ Format: What changed | Why | Rejected alternatives | What it opens
 > (moved verbatim 2026-07-21). This file keeps 2026-07-15 onward.
 
 ---
+## 2026-07-26 — step 6: `core/types.ts` + `core/api.ts` split by domain, mirroring `apps/api/models/`
+
+**What changed.** The two wire-boundary files became packages named for the same domains as
+`apps/api/models/` and `apps/api/routers/`: `core/types/` (12 modules from 513 lines) and
+`core/api/` (12 clients + `_base.ts` from 631). Each keeps an `index.ts` barrel, so every existing
+`from '../core/types'` / `'../core/api'` still resolves — no consumer churn — while a wire change
+is now a **one-file diff** you can line up against `models/<domain>.py`.
+
+Two shared pieces were hoisted into `api/_base.ts`: `API_BASE` and `errorDetail` (the FastAPI
+`detail` unwrapper, which handles both the plain-string and the structured-offenders shapes).
+Cross-domain type coupling turned out to be a single edge — `conversations` imports `TurnScope`
+from `chat` — which is a good sign the domain lines are real.
+
+**Rejected.** Pointing all ~25 component imports at the domain modules in the same pass. The
+barrel gives the whole reviewability benefit (the split is what makes the diff one-file); rewriting
+every import site is churn that would bury it. The barrels say "prefer the domain module" for new
+code instead.
+
+**Two silent-truncation bugs caught by asserting, not by reading.** Splitting by parsing is exactly
+where quiet data loss hides, so both files were split mechanically and then **proved equivalent**:
+every declaration re-parsed from the originals and compared body-by-body after normalising
+comments and whitespace. That caught (1) `export type GapKind` losing its entire 9-member union —
+a brace-matching heuristic that returned `i+1` for a multi-line type alias — and (2) the private
+`errorDetail` helper being swallowed into one module, breaking six others. The second surfaced as
+24 `svelte-check` errors; **the first would have compiled if the next line had not happened to be
+another `export`.** Final check: types 51/51 and api 54/54 declarations present and byte-identical,
+modulo the two intended `export` additions.
+
+**Verified.** `svelte-check` **176 files, 0 errors, 0 warnings**; `npm test` **50/50**. Live: after
+clearing the Vite cache (a deleted module lingers in the dev server's graph — same restart dance as
+the step-3 asset paths), all three modes render, 0 horizontal overflow. Proved the split is what
+actually loads rather than trusting an absent error: `performance.getEntriesByType('resource')`
+shows **all 14 `core/api/*` modules fetched**, the old flat `core/api.ts` **not fetched**, and zero
+failed requests. Worth noting the browser console buffer is **cumulative across navigations** in
+this harness — 16 stale HMR errors from before the restart persisted through a hard reload and
+looked like a live failure; the server log and the resource timings were the honest signals.
+
+---
 ## 2026-07-26 — App.svelte step 4: the domains that actually decouple → `.svelte.ts` rune modules
 
 **What changed.** Five per-domain rune modules pulled out of `App.svelte`'s script, which drops

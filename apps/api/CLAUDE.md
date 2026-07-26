@@ -13,7 +13,7 @@ else. Endpoints own no retrieval/provenance/claim logic (non-negotiable #3).
 - `services.py` — cross-router glue: `app.state` status dataclasses + their `202+poll` serializers,
   the settings read view, the lazy default job runners. Imported by `main` and routers, neither back.
 - `models/` — Pydantic wire models, one module per domain **named to match `routers/`** (the
-  contract `apps/desktop/src/lib/core/types.ts` mirrors). Import from the domain module
+  contract `apps/desktop/src/lib/core/types/` mirrors). Import from the domain module
   (`from apps.api.models.folders import …`); the flat re-export in `__init__` is back-compat only.
   The end-to-end domain table is in `docs/architecture.md` § `apps/` — the domain spine.
 - `sessions.py` — per-session state (RAG overrides live per session, never module-global).
@@ -29,7 +29,7 @@ else. Endpoints own no retrieval/provenance/claim logic (non-negotiable #3).
 - The API **does** `init_db()` in the lifespan (KI-23) — idempotent + additive. A **failed**
   migration fails the boot (E0.5a), never a swallow: a half-migrated answer-path schema would 500
   every turn, so refusing to start is the honest failure.
-- Adding/changing a route ⇒ update `models/<domain>.py` + `core/types.ts` + the tests together.
+- Adding/changing a route ⇒ update `models/<domain>.py` + `core/types/<domain>.ts` + the tests together.
   A test that monkeypatches a route's dependency patches it on **its router module**, not `main`.
 
 **Tests:** `tests/integration/test_api_*.py`.

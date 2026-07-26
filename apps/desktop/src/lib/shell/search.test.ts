@@ -5,7 +5,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 
 import { searchEverything } from './search.ts'
-import type { ConversationSummary, LibraryDocument } from '../core/types.ts'
+import type { ConversationSummary, LibraryDocument } from '../core/types/index.ts'
 
 const chat = (
   session_id: string,

@@ -7,16 +7,18 @@ from `src/` (non-negotiable #3, `.claude/CONTEXT.md`).
 - `src/App.svelte` — shell (`sidebar│main│drawer`), mode switch (chat/library/graph), theme.
 - `src/lib/<domain>/` — one folder per domain, matching `apps/api/routers/`: `chat/` · `library/` ·
   `graph/` · `settings/`, plus two with no API counterpart — `shell/` (sidebar, search, dialogs,
-  `Icon.svelte`) and `core/` (`api.ts`, `types.ts`, `theme.ts`, `fonts.css`). End-to-end table:
+  `Icon.svelte`) and `core/` (the wire boundary + theme/fonts). End-to-end table:
   `docs/architecture.md` § `apps/` — the domain spine.
-- `src/lib/core/api.ts` — the one API client; `src/lib/core/types.ts` — wire types, mirror
-  `apps/api/models/`. `src/app.css` + `src/lib/core/fonts.css` — "paper & ink" tokens, vendored fonts.
+- `src/lib/core/api/<domain>.ts` + `src/lib/core/types/<domain>.ts` — the wire boundary, one
+  module per `apps/api/models/` domain (barrels re-export, so `../core/api` still resolves).
+  `src/app.css` + `src/lib/core/fonts.css` — "paper & ink" tokens, vendored fonts.
 - `src/lib/core/theme.ts` — System/Light/Dark toggle, `localStorage`, never a backend setting.
 - Naming trap: `settings/Sources.svelte` is **ingestion** (files on disk); the *citation* sources of
   an answer are `chat/Source*.svelte`.
 
 **Rules that bite here**
-- Wire-type drift: change `apps/api/models/<domain>.py` ⇒ update `core/types.ts` in the same change.
+- Wire-type drift: change `apps/api/models/<domain>.py` ⇒ update `core/types/<domain>.ts` in the
+  same change. Same word both sides — that is the point of the split.
 - Verify with `npm run check` (`svelte-check` 0 errors) + live preview: light + dark + mobile
   (375px, no overflow), 0 console errors, $0/offline where possible.
 - Product name is **Provenote** (ADR-012): wordmark/window title only — package/binary names stay

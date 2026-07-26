@@ -136,8 +136,10 @@ Two frontend folders have no API counterpart, by design:
 
 - `lib/shell/` — chrome that belongs to no domain: sidebar, global search, dialogs, `Icon.svelte`
   (the one component imported across every folder).
-- `lib/core/` — the wire boundary itself: `api.ts` (the single client), `types.ts` (mirrors
-  `apps/api/models/`), `theme.ts`, `fonts.css`.
+- `lib/core/` — the wire boundary itself, split by the same domain names: `api/<domain>.ts`
+  (thin fetch clients, shared base + error unwrapper in `_base.ts`) and `types/<domain>.ts`
+  (mirrors `apps/api/models/<domain>.py`), plus `theme.ts` and `fonts.css`. Both carry an
+  `index.ts` barrel, so `from '../core/api'` still resolves; prefer the domain module.
 
 Two naming traps this table exists to prevent:
 

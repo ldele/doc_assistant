@@ -20,7 +20,7 @@ import {
   splitRareFacets,
   unitDocCounts,
 } from './library.ts'
-import type { KeywordFamily, LibraryDocument } from '../core/types.ts'
+import type { KeywordFamily, LibraryDocument } from '../core/types/index.ts'
 
 const family = (canonical: string, aliases: string[], doc_count = 0): KeywordFamily =>
   ({ id: canonical, canonical, aliases, doc_count }) as KeywordFamily

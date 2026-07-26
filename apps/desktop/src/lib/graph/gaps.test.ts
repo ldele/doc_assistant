@@ -9,7 +9,7 @@ import {
   visibleConceptGaps,
   conceptIndexRows,
 } from './gaps.ts'
-import type { ConceptGraphNode, Gap, GapKind } from '../core/types.ts'
+import type { ConceptGraphNode, Gap, GapKind } from '../core/types/index.ts'
 
 test('every GapKind has taxonomy metadata', () => {
   const kinds: GapKind[] = [

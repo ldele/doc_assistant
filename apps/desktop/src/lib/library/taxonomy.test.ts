@@ -5,7 +5,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 
 import { buildForest } from './taxonomy.ts'
-import type { TaxonomyField, TaxonomyView } from '../core/types.ts'
+import type { TaxonomyField, TaxonomyView } from '../core/types/index.ts'
 
 const field = (id: string, child_ids: string[], parent_ids: string[] = []): TaxonomyField => ({
   id,

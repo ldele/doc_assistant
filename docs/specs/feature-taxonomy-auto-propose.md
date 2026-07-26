@@ -102,7 +102,8 @@ attribution UI (T4, already partly landed in `AboutDialog`) · `is_a` proposals 
 - `--apply` → run the pass and write `origin="proposed"` rows (`add_hierarchy_edge(origin="proposed")` /
   `attach_document_field(origin="proposed")`). `--concepts-only` / `--documents-only`, `--limit N`,
   `--all-concepts`, `--provider`/`--model` (default `TAXONOMY_PROPOSE_LLM_PROVIDER=ollama` /
-  `_MODEL=llama3.1:8b`, KI-4) routed through `llm.assert_provider_intent` **before** any client exists.
+  `_MODEL=qwen3.5:9b` — was `llama3.1:8b` until RG-015 measured the three local instruments on the
+  97-doc corpus, KI-4) routed through `llm.assert_provider_intent` **before** any client exists.
 - Concept context = up to 3 titles of documents the concept is present in (`concept_presence`, when the
   skeleton has been built) + its aliases + definition; document context = authors + year.
 - Prints one line per proposal (`item → division / group  conf`) and the abstain/skip counts.

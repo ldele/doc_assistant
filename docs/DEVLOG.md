@@ -11,6 +11,83 @@ Format: What changed | Why | Rejected alternatives | What it opens
 > (moved verbatim 2026-07-21). This file keeps 2026-07-15 onward.
 
 ---
+## 2026-07-26 — RG-015 labelled precision run (3 instruments, n=97) + KI-28: thinking models returned an empty completion through `OllamaClient`
+
+**What changed.** `src/doc_assistant/llm.py`: `OllamaClient` gains
+`reasoning: bool | None = False` (mapped to Ollama's `think`) and now logs
+`ollama_empty_completion` instead of silently returning `""`. Four guard tests in
+`tests/unit/test_llm.py`. Docs: RG-015 in `.claude/RIGOR_TODO.md` gains the measurement it has
+owed since 2026-07-18; new KI-28.
+
+**Why.** The task was RG-015's precision run on a current local model. `qwen3.5:9b` scored zero —
+3/3 `taxonomy_propose_unparseable` — which looks exactly like an incapable model. It was the
+adapter. A thinking model writes its reasoning to Ollama's separate `message.thinking` field,
+drawn from the **same `num_predict` budget** as the answer; `OllamaClient` sent
+`num_predict=max_tokens` (256, from `taxonomy_propose.DEFAULT_MAX_TOKENS`) and read only
+`message.content`, so the response came back `done_reason="length"` with `content=""`. Probed
+against `/api/chat`: think-on/256 → `''`; think-off/256 → `{"choice": 3, "confidence": 1}` in 14
+tokens; think-on/2048 → correct but far slower. Reasoning-off is the right default for an adapter
+whose entire job is one short JSON object. The empty-completion warning is the load-bearing half:
+`complete()` returns `str` and every caller parses it, so `""` was indistinguishable downstream
+from "the model answered nonsense" — the bug hid four layers from its cause, and would have hit
+the reviewer, eval judge, `gap_suggest` and `taxonomy_propose` identically and silently.
+
+**The measurement (division-level, ground truth hand-labelled from the real publications and
+written to disk before any model's answers were opened).** Scored in two strata because
+`_document_context` sends **only title + authors + year** — title quality is the entire input, not
+merely correlated with output quality.
+
+| Instrument | A (real title, n=89) | B (no/furniture title, n=8) | Overall | Abstentions |
+|---|---|---|---|---|
+| always-answer-majority baseline | — | — | 60% | — |
+| `llama3.1:8b` (shipped default) | 82% | 88% | 82% | 0 |
+| `qwen2.5:7b` | 72% | 50% | 70% | 2 |
+| `qwen3.5:9b` | **88%** | 75% | **87%** | 0 |
+
+Newer is not automatically better: `qwen2.5:7b` is a year old and **loses to the incumbent**, with
+a different attractor rather than fewer errors. `qwen3.5:9b` beats it by 5 points overall. All
+three clear the 60% majority baseline comfortably, so the binding constraint is input quality, not
+model choice. **Confidence measured, not eyeballed:** `qwen2.5:7b` is *anti*-correlated
+(mean 0.674 correct vs 0.700 wrong; all 27 errors carry 0.70, its maximum — a ≥0.7 auto-accept
+admits 100% of them); `qwen3.5:9b` separates by only +0.042. The "never threshold on confidence"
+rule is now a measurement.
+
+**Rejected.** (1) *Raise `max_tokens` instead of disabling reasoning* — works (verified at 2048)
+but pays reasoning tokens on every call of a pure classification task, and leaves the silent-empty
+failure one budget-overrun away. (2) *Hardcode `think: false`* — the reviewer path may genuinely
+want a trace; a parameter with a documented default costs nothing. (3) *Leave the fix in
+scratchpad and report the defect* — rejected by the user; the measured configuration should be the
+shipped one, and the full pass was re-run through the shipped runner to confirm it (220 calls, 0
+unparseable, 0 empty completions, reproducing the shim run placement-for-placement). (4) *Score
+against a single correct division* — 51 of 97 documents are genuinely dual-coded, so this charges
+the model for the taxonomy's ambiguity; both a lenient and a strict number are reported instead.
+(5) *Blame the model for `middleton-2001.pdf`* — it has **0 extracted body characters**; excluded
+as an extractor fact, not a classifier failure.
+
+**What it opens.** (a) **The same exposure exists in the streaming answer path** —
+`pipeline.build_chat_model` builds `OllamaLLM` against `/api/generate` with no reasoning flag, so
+a thinking model can leak its reasoning into the streamed answer; untouched because it changes
+user-facing output. (b) **Three more KI-26 title residuals**, all recoverable from cached
+markdown: `mdl_tutorial_grunwald_2004` (title is the plain unmarked first line — the picker seems
+to need a heading or bold), `ai_usage_cards_2023` (`Preprint of the paper:` + self-citation, same
+family as the Frontiers fix), `nihms-326467` (`Published in final edited form as:` hiding **Human
+Connectomics**). (c) The lexical failure mode is now legible and identical across models — one
+salient token captures the placement; `qwen3.5:9b`'s sharpest case is *"political scienc\*"* →
+**Chemical sciences** at 0.8 confidence, 4/4 political-science documents wrong, ruled out as an
+index bug by replaying stage-1 and resolving the index by hand.
+
+**Config switched (user decision, same session).** `TAXONOMY_PROPOSE_LLM_MODEL` default
+`llama3.1:8b` → **`qwen3.5:9b`** (`config.py`), with the runner's `--help` and `.env.example`
+updated to match — the first of the three confined-suggestion instruments to diverge from
+`llama3.1:8b`, and it diverges on a measurement rather than a preference. Two consequences worth
+stating plainly: the default now **requires a 6.6 GB `ollama pull qwen3.5:9b`** on a fresh box
+(recorded in `.env.example`), and it is a **thinking** model, so it is only usable *because* of
+the KI-28 fix above — on the previous adapter this default would have produced zero proposals and
+looked like a broken model. The stored proposals in `library.db` are already qwen3.5:9b's, so
+config and data now agree; `CONCEPT_SKELETON_LLM_MODEL` and `GAP_SUGGEST_LLM_MODEL` are untouched
+(neither has been measured this way — do not assume the result transfers).
+
+---
 ## 2026-07-25 — Slow commits diagnosed: `mypy --strict` was invalidating the incremental cache on every alternation (45s → 6.7s)
 
 **Complaint (user):** commits on this machine are slow, expected to be "a lot of hooks or checks at

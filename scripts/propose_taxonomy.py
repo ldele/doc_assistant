@@ -113,7 +113,7 @@ def main() -> int:
     parser.add_argument(
         "--model",
         default=None,
-        help="LLM model (default TAXONOMY_PROPOSE_LLM_MODEL=llama3.1:8b)",
+        help="LLM model (default TAXONOMY_PROPOSE_LLM_MODEL=qwen3.5:9b — RG-015 measured)",
     )
     args = parser.parse_args()
 

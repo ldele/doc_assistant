@@ -30,6 +30,19 @@ Locked design choices
   version-recorded reference model (``REVIEWER_MODEL`` / ``JUDGE_MODEL``)
   so cross-run numbers stay comparable; moving them to local is a config
   flip, gated on calibration — never silent.
+* **Ollama reasoning is off by default.** This adapter's whole job is to
+  return a short JSON object, and on a thinking model the reasoning is
+  emitted first and eats the same ``num_predict`` budget. Measured against
+  ``/api/chat`` with ``qwen3.5:9b`` and the taxonomy pass's own 256-token
+  budget: think on → ``done_reason="length"``, ``message.content == ""``;
+  think off → ``{"choice": 3, "confidence": 1}`` in 14 tokens. Because
+  ``message.thinking`` is a separate field the adapter never read, this
+  failed as an *empty string*, so the caller logged "unparseable" and a
+  perfectly capable model read as an incapable one. Off is therefore the
+  right default for a one-shot JSON call; a caller that wants the trace
+  passes ``reasoning=True`` and must raise ``max_tokens`` to match.
+  ``think`` is accepted by non-thinking models too (verified on
+  ``llama3.1:8b`` and ``qwen2.5:7b``), so this is safe across the board.
 """
 
 from __future__ import annotations
@@ -185,11 +198,20 @@ class OllamaClient:
     ``Client.chat()``, which rejects ``temperature`` (``TypeError:
     Client.chat() got an unexpected keyword argument 'temperature'``).
     A fresh client per call is cheap — construction does no network I/O.
+
+    ``reasoning`` maps to Ollama's ``think`` and **defaults to False** — see
+    the module docstring's locked choice. Pass ``reasoning=None`` to restore
+    the model's own default, or ``True`` to keep the trace (langchain then
+    files it under ``additional_kwargs["reasoning_content"]`` and leaves the
+    content clean, at the cost of generating it).
     """
 
-    def __init__(self, model: str, *, host: str | None = None) -> None:
+    def __init__(
+        self, model: str, *, host: str | None = None, reasoning: bool | None = False
+    ) -> None:
         self.model = model
         self._host = host or config.OLLAMA_HOST
+        self.reasoning = reasoning
 
     def complete(self, messages: list[Message], *, temperature: float, max_tokens: int) -> str:
         from langchain_ollama import ChatOllama
@@ -205,13 +227,28 @@ class OllamaClient:
             # mode constrains the output to valid JSON so the caller's
             # json.loads doesn't choke on prose or an empty completion.
             format="json",
+            reasoning=self.reasoning,
         )
         lc_messages = [(m["role"], m["content"]) for m in messages]
         result = client.invoke(lc_messages)
         content = getattr(result, "content", result)
         if isinstance(content, list):
             content = " ".join(str(c) for c in content)
-        return str(content).strip()
+        text = str(content).strip()
+        if not text:
+            # An empty completion is the one failure this adapter must never
+            # return silently: every caller parses the string, so "" surfaces
+            # downstream as "the model gave an unusable answer" when the real
+            # cause is upstream (budget exhausted, reasoning re-enabled, a
+            # server-side stop). Name it here or it gets misdiagnosed as model
+            # incompetence — which is exactly what happened before this guard.
+            log.warning(
+                "ollama_empty_completion",
+                model=self.model,
+                max_tokens=max_tokens,
+                reasoning=self.reasoning,
+            )
+        return text
 
 
 # ============================================================

@@ -476,8 +476,19 @@ GAP_SUGGEST_LLM_MODEL = os.getenv("GAP_SUGGEST_LLM_MODEL", "llama3.1:8b")
 # highest-volume of the three (one pass over every unplaced concept + unclassified document, two
 # calls each), so an inherited paid default would be the most expensive footgun of the set.
 # `taxonomy_propose.py` never reads these — only scripts/propose_taxonomy.py resolves them.
+#
+# The model is `qwen3.5:9b`, not the `llama3.1:8b` its two siblings above use, and that is a
+# measured choice rather than a preference: RG-015 ran the whole 97-document corpus through three
+# local instruments against hand-labelled ground truth (division level, defensible-set scoring,
+# ground truth fixed before any placement was read). qwen3.5:9b 87% · llama3.1:8b 82% ·
+# qwen2.5:7b 70%, over a 60% always-answer-majority baseline. It is also the only one of the three
+# whose confidence correlates with correctness at all (+0.042 vs qwen2.5's **-0.026**) — still far
+# too weak to threshold on, but not actively misleading. Full run: `docs/DEVLOG.md` (2026-07-26)
+# and `.claude/RIGOR_TODO.md` RG-015. NOTE: this is a *thinking* model — it only works because
+# `llm.OllamaClient` now sends `reasoning=False` (KI-28); with reasoning on, its answer never
+# reaches `message.content` inside the 256-token budget and every item reads as unparseable.
 TAXONOMY_PROPOSE_LLM_PROVIDER = os.getenv("TAXONOMY_PROPOSE_LLM_PROVIDER", "ollama")
-TAXONOMY_PROPOSE_LLM_MODEL = os.getenv("TAXONOMY_PROPOSE_LLM_MODEL", "llama3.1:8b")
+TAXONOMY_PROPOSE_LLM_MODEL = os.getenv("TAXONOMY_PROPOSE_LLM_MODEL", "qwen3.5:9b")
 
 
 # ============================================================

@@ -50,13 +50,16 @@ class _FakeChatOllamaResult:
 class _FakeChatOllama:
     last_init: ClassVar[dict[str, Any]] = {}
     last_invoke: ClassVar[dict[str, Any]] = {}
+    #: what the fake server returns — overridden to reproduce the empty completion a
+    #: thinking model produces when its reasoning exhausts ``num_predict``.
+    content: ClassVar[str] = "  hello from ollama  "
 
     def __init__(self, **kwargs: Any) -> None:
         type(self).last_init = kwargs
 
     def invoke(self, messages: Any, **kwargs: Any) -> _FakeChatOllamaResult:
         type(self).last_invoke = {"messages": messages, "kwargs": kwargs}
-        return _FakeChatOllamaResult("  hello from ollama  ")
+        return _FakeChatOllamaResult(type(self).content)
 
 
 @pytest.fixture
@@ -226,6 +229,78 @@ def test_ollama_complete_sets_params_on_model_not_invoke(patched_sdks: None):
     # invoke() must NOT carry these — that is exactly what broke against a
     # live ollama server.
     assert _FakeChatOllama.last_invoke["kwargs"] == {}
+
+
+# ============================================================
+# OllamaClient reasoning (thinking models)
+# ============================================================
+
+
+class _FakeLog:
+    """Records ``.warning`` events; every other structlog method is a chainable no-op — so the
+    assertion doesn't depend on structlog being bridged to stdlib logging."""
+
+    def __init__(self) -> None:
+        self.warnings: list[tuple[str, dict[str, Any]]] = []
+
+    def warning(self, event: str, **kw: Any) -> None:
+        self.warnings.append((event, kw))
+
+    def __getattr__(self, _name: str):  # info/debug/error/bind/... → chainable no-op
+        return lambda *a, **k: self
+
+
+def test_ollama_disables_reasoning_by_default(patched_sdks: None):
+    """Regression: a thinking model emits its reasoning into ``message.thinking`` and burns the
+    same ``num_predict`` budget, so with reasoning left at the model's default the adapter got
+    ``content == ""`` and every caller logged "unparseable" — a working model reading as a broken
+    one. Verified against a live server with qwen3.5:9b at the taxonomy pass's 256-token budget.
+    """
+    client = llm.make_client("ollama", "qwen3.5:9b")
+    client.complete([{"role": "user", "content": "hi"}], temperature=0.0, max_tokens=256)
+    assert _FakeChatOllama.last_init["reasoning"] is False
+
+
+@pytest.mark.parametrize("reasoning", [True, None])
+def test_ollama_reasoning_is_overridable(patched_sdks: None, reasoning: bool | None):
+    """A caller that wants the trace (or the model's own default) can still ask for it."""
+    client = llm.OllamaClient("qwen3.5:9b", reasoning=reasoning)
+    client.complete([{"role": "user", "content": "hi"}], temperature=0.0, max_tokens=2048)
+    assert _FakeChatOllama.last_init["reasoning"] is reasoning
+
+
+def test_ollama_empty_completion_warns(
+    patched_sdks: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An empty completion must be named, not returned silently.
+
+    Every caller parses the returned string, so "" is indistinguishable downstream from "the
+    model answered nonsense" — which is precisely how the reasoning bug hid. The adapter is the
+    only layer that knows the budget and the reasoning flag, so it is the layer that must say so.
+    """
+    fake_log = _FakeLog()
+    monkeypatch.setattr(llm, "log", fake_log)
+    monkeypatch.setattr(_FakeChatOllama, "content", "   ")
+
+    client = llm.make_client("ollama", "qwen3.5:9b")
+    out = client.complete([{"role": "user", "content": "hi"}], temperature=0.0, max_tokens=256)
+
+    assert out == ""  # still returns a string — the caller's contract is unchanged
+    events = [e for e, _ in fake_log.warnings]
+    assert "ollama_empty_completion" in events
+    payload = dict(fake_log.warnings[0][1])
+    assert payload["model"] == "qwen3.5:9b"
+    assert payload["max_tokens"] == 256
+
+
+def test_ollama_non_empty_completion_does_not_warn(
+    patched_sdks: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fake_log = _FakeLog()
+    monkeypatch.setattr(llm, "log", fake_log)
+    client = llm.make_client("ollama", "llama3")
+    client.complete([{"role": "user", "content": "hi"}], temperature=0.0, max_tokens=256)
+    assert fake_log.warnings == []
 
 
 # ============================================================

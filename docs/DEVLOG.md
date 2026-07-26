@@ -11,6 +11,44 @@ Format: What changed | Why | Rejected alternatives | What it opens
 > (moved verbatim 2026-07-21). This file keeps 2026-07-15 onward.
 
 ---
+## 2026-07-26 — `GapList.svelte` was a **binary file** to git: raw NUL byte → the `\0` escape
+
+**What changed.** One byte. `apps/desktop/src/lib/graph/GapList.svelte:25` builds the `busy`-Set
+dedup key as `` `${it.concept_id}<NUL>${it.kind}` `` — and the separator was a **literal 0x00 byte**
+in the source, not an escape. `file` reported `application/octet-stream`, and **git rendered every
+change to the file as `Binary files … differ`** while grep skipped its contents entirely. Replaced
+the raw byte with the two-character escape `\0`.
+
+**Why it matters.** A file git cannot diff is a file that cannot be reviewed — it silently opts out
+of code review, and grep-based auditing never sees it. Found during the `apps/` reviewability pass
+(entry below) and deliberately held back from that commit: folding a content fix into a move-only
+diff is the exact thing that makes refactors unreviewable.
+
+**Runtime-identical, proven not assumed.** In a JS/TS template literal `\0` *is* the NUL escape:
+``node -e`` on `` `${a}\0${b}` `` vs `a + String.fromCharCode(0) + b` → `true`, codepoints
+`120,0,121`. The composite key is byte-for-byte what it was. The one hazard — `\0` followed by a
+digit is a legacy octal escape and a SyntaxError in strict mode — does not apply: the next
+character is `$`. Asserted in the edit script rather than eyeballed.
+
+**Rejected.** A distinct printable separator (``, `::`) — a behaviour change to a dedup key
+for no benefit, and it would need its own reasoning about collision-safety against UUIDs and gap
+kinds. The point was to make the file text, not to redesign the key.
+
+**Gotcha worth remembering.** The first byte-level edit script **silently did nothing**: passed
+through a `<<'PY'` heredoc, `b"\\0"` reached Python as `b"\x00"` (len 1), so the replace was
+NUL→NUL. It only surfaced because the script asserted `len(new) == len(d) + 1`. Without that
+assert the run would have reported success on an unchanged file. When editing bytes through a
+shell heredoc, build the literal from explicit values (`bytes([0x5C, 0x30])`) and assert the size
+delta — do not trust backslashes to survive the trip.
+
+**Verified.** `file -bi` → `text/html; charset=utf-8` (was `application/octet-stream`); the staged
+blob has **0 NUL bytes**; a simulated follow-up edit now renders as a **readable line-level diff**
+instead of "Binary files differ". `svelte-check` 146 files 0/0 · `npm test` 50/50. Live: Graph →
+Gaps renders 18 open gaps; **Promote round-trips 200 OK and changed exactly 1 of 18** (the busy-Set
+key still targets a single item — no collision), then **all 18 were reset to `surfaced`, restoring
+the pre-test baseline exactly**. 0 console errors, `$0` (ollama/llama3.1:8b).
+
+---
 ## 2026-07-26 — `apps/` reviewability pass: one domain axis across both shells (steps 0–3 of 6)
 
 **What changed.** Three structural moves, no behaviour change anywhere.

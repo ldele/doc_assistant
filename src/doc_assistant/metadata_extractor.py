@@ -185,6 +185,15 @@ class DocMetadata:
         return min(score, 1.0)
 
 
+#: Bullet / dash glyphs that can open an extracted heading. A title never legitimately starts with
+#: one, so a leading run of them is always an extraction artifact. Written as codepoints because
+#: ruff's RUF001 rejects ambiguous dash literals in source, and because a reader cannot tell a
+#: HYPHEN from a HYPHEN-MINUS by eye: U+002D hyphen-minus, U+2010..U+2015 (hyphen, non-breaking
+#: hyphen, figure dash, en dash, em dash, horizontal bar), and the bullet glyphs U+2022 bullet,
+#: U+00B7 middle dot, U+2023 triangular bullet, U+25AA small square, U+25CF black circle.
+_LEADING_BULLET = re.compile(r"^[-\u2010-\u2015\u2022\u00b7\u2023\u25aa\u25cf]+\s*")
+
+
 def _clean_markdown(text: str) -> str:
     """Strip markdown markers and affiliation brackets, collapse whitespace."""
     text = re.sub(r"\*+", "", text)
@@ -192,6 +201,12 @@ def _clean_markdown(text: str) -> str:
     text = re.sub(r"\[[^\]]*\]", "", text)
     text = text.replace("\\", "")  # markdown escape / hard-break artifacts (e.g. "WIESEL\")
     text = re.sub(r"\s+", " ", text).strip()
+    # A leading bullet or dash is never part of a title — it is a list glyph, or a hyphen the PDF
+    # wrapped into the heading. `reranking_bert_nogueira_2019.pdf` extracts as
+    # `## - PASSAGE RE RANKING WITH BERT` (the hyphen of "RE-RANKING" landing at the front), and
+    # the stored title rode into the library grid, the taxonomy prompt, and every layer keyed on
+    # the title. Strip it here, where every candidate path already passes through.
+    text = _LEADING_BULLET.sub("", text).strip()
     return text
 
 

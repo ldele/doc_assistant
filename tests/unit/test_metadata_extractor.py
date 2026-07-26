@@ -1,5 +1,7 @@
 """Tests for document-level metadata extraction (Phase 4)."""
 
+import pytest
+
 from doc_assistant.metadata_extractor import (
     _arxiv_year_from_filename,
     _clean_markdown,
@@ -147,6 +149,47 @@ def test_title_skips_publisher_copyright_line():
         "# The Past, Present, and Future State of the Field\n\nbody"
     )
     assert _extract_title(md) == "The Past, Present, and Future State of the Field"
+
+
+def test_title_strips_leading_dash_artifact():
+    """Real shape of `reranking_bert_nogueira_2019.pdf` (KI-26 residual).
+
+    The hyphen of "RE-RANKING" lands at the front of the heading during extraction, and the
+    leading dash rode all the way into the library grid, where it sorted the document first.
+    """
+    md = "## - PASSAGE RE RANKING WITH BERT\n\n## **Rodrigo Nogueira**\n\nbody"
+    assert _extract_title(md) == "PASSAGE RE RANKING WITH BERT"
+
+
+@pytest.mark.parametrize(
+    ("codepoint", "name"),
+    [
+        (0x002D, "HYPHEN-MINUS"),
+        (0x2013, "EN DASH"),
+        (0x2014, "EM DASH"),
+        (0x2022, "BULLET"),
+        (0x00B7, "MIDDLE DOT"),
+        (0x25AA, "BLACK SMALL SQUARE"),
+        (0x25CF, "BLACK CIRCLE"),
+    ],
+)
+def test_title_strips_any_leading_bullet_glyph(codepoint: int, name: str):
+    """Whatever glyph the extractor emits, a title never legitimately opens on one.
+
+    Parametrized by codepoint rather than by literal: ruff's RUF001 rejects ambiguous dash
+    characters in source, and the number says which dash it is without asking the reader to tell
+    an en dash from an em dash at a glance. ``name`` only labels the test id.
+    """
+    glyph = chr(codepoint)
+    assert _extract_title(f"# {glyph} A substantial paper title\n\nbody") == (
+        "A substantial paper title"
+    )
+
+
+def test_title_keeps_internal_and_trailing_dashes():
+    """Only a *leading* run is stripped: hyphenated words and en-dash ranges must survive."""
+    md = "# Cross-encoder re-ranking for open-domain QA\n\nbody"
+    assert _extract_title(md) == "Cross-encoder re-ranking for open-domain QA"
 
 
 # ============================================================

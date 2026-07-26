@@ -11,6 +11,46 @@ Format: What changed | Why | Rejected alternatives | What it opens
 > (moved verbatim 2026-07-21). This file keeps 2026-07-15 onward.
 
 ---
+## 2026-07-26 — KI-26 residual: a leading dash rode into the stored title (`- PASSAGE RE RANKING WITH BERT`)
+
+**What changed.** `_clean_markdown` now strips a leading run of bullet/dash glyphs
+(`-‐-―•·‣▪●`) from every title candidate. `reranking_bert_nogueira_2019.pdf` extracts as
+`## - PASSAGE RE RANKING WITH BERT` — the hyphen of "RE-RANKING" landing at the front of the
+heading — and that dash was stored, so the document sorted **first** in the library grid and was the
+opening card of the freshly-recorded README GIF. Fixed at `_clean_markdown` rather than in the
+title picker because every candidate path (headings, bold lines, the citation-block fallback,
+`_is_skippable_heading`) already runs through it.
+
+**Verified the same way KI-26 was.** Re-diffed the extractor against all 97 stored titles rather
+than spot-checking the one: **2 differ, 1 changes, 0 lost.** The fix is
+`- PASSAGE RE RANKING WITH BERT` → `PASSAGE RE RANKING WITH BERT`; the other difference is the
+already-known stale `Disclaimer` row on `FPG_007_CriticalCareinNeurology_2012.pdf`, where the
+extractor correctly returns `None` and the runner declines to overwrite a value with nothing. So
+the blast radius is exactly one document, which is what a punctuation strip should be.
+
+**Applied and re-derived.** `extract_doc_metadata --doc 06ea458a0072 --apply --force` (plain
+`--apply` reported `Total field updates: 0` — the runner only fills *empty* fields, so correcting an
+existing wrong value needs `--force`; worth knowing before assuming a re-run heals bad data). Then
+the layer that consumed the old string was redone: the document's `proposed` placement was deleted
+and re-proposed, landing on **Machine learning at 0.95** where the old run had made the same call
+on the dashed string. That re-propose also served as live confirmation that the shipped runner now
+resolves `qwen3.5:9b` through the KI-28-fixed adapter (2 calls, 0 abstentions, 0 unparseable).
+
+**Tests:** +9 in `tests/unit/test_metadata_extractor.py` (43 total) — the real Nogueira shape, a
+parametrized sweep over all seven glyphs, and a guard that *internal and trailing* dashes survive
+(`Cross-encoder re-ranking for open-domain QA`), since the failure mode of an over-broad strip is
+mangling legitimately hyphenated titles.
+
+**Rejected:** stripping in `_title_candidates` only (would leave the citation-block fallback and
+the skip-heading comparison seeing the dash); a general "strip all leading punctuation" (quotes and
+parentheses do open real titles).
+
+**What it opens.** Three KI-26 residuals still stand, all recoverable from cached markdown and all
+listed in the baton: `mdl_tutorial_grunwald_2004` (plain unmarked first line), `ai_usage_cards_2023`
+(`Preprint of the paper:` + self-citation), `nihms-326467` (`Published in final edited form as:`
+hiding **Human Connectomics**). The `Disclaimer` row needs `--force` or the ADR-013 metadata editor.
+
+---
 ## 2026-07-26 — README restructured 338→142 lines (setup/usage split out), demo GIF re-recorded on the current UI, em-dashes removed
 
 **What changed.** (1) **README cut from 338 lines / 22.9 KB to 142 / 8.0 KB**, with nothing dropped,

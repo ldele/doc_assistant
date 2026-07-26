@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-07-23 (concept & knowledge system map) · class: living -->
+<!-- status: active · updated: 2026-07-26 (repository layout moved here from the README) · class: living -->
 
 # Architecture
 

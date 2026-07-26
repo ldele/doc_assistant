@@ -11,6 +11,46 @@ Format: What changed | Why | Rejected alternatives | What it opens
 > (moved verbatim 2026-07-21). This file keeps 2026-07-15 onward.
 
 ---
+## 2026-07-26 — step 5 phase 2 (first slice): `Topbar` + `StatusBar` out of App.svelte
+
+**What changed.** The two pieces of pure chrome leave `App.svelte` **with their styles**:
+`shell/Topbar.svelte` (122 lines of markup + 188 of CSS) and `shell/StatusBar.svelte` (20 + 41).
+`App.svelte` **2,439 → 2,081** lines; its `<style>` block drops **229 lines**.
+
+**This is what phase 1 bought.** `Topbar` reads `shell` and `sidebarPrefs` straight from the leaf
+rune modules, so it needs only **8 props** — the nav-history cursor (`canBack`/`canForward` +
+their two callbacks) and four things App genuinely owns (`onSelectMode`, which lazy-loads four
+domains; `onOpenSearch`; `exportDisabled`, which depends on live turn state; `onExport`). Before
+phase 1 the same component would have taken about twenty. `StatusBar` takes **zero** props: it
+renders `shell.status`/`shell.health`, which App's readiness gate writes.
+
+**Verified.** `svelte-check` **179 files, 0 errors, 0 warnings** — the 0 *warnings* matters here,
+since Svelte reports unused CSS selectors, so an orphaned rule left behind in App would have shown
+up. `npm test` 50/50. Live at 1280px, 0 console errors: styles survived the scope move (topbar 47px
+with its 1px rule, status dot the green 7px circle, corpus line intact); all 8 props exercised —
+mode switch, **nav history round-trips across the new component boundary** (Library → Back → Chat
+→ Forward → Library, with Forward correctly re-enabling), Export present-but-disabled with no
+turns, search overlay opens. At 375px the moved media queries still fire exactly as their comment
+promises: tab labels drop, then the wordmark, the mark stays, mobile/desktop buttons swap, 0
+horizontal overflow.
+
+**A false alarm worth recording, because it will recur.** First measurement said the topbar was
+**21px wide with 363px of horizontal overflow** — alarming, and it looked like the CSS scope move
+had broken the flex column. It had not: `innerWidth` was **0**. The Browser pane was not displaying
+(`visibilityState: 'hidden'`), so the viewport had collapsed and every width was an intrinsic
+min-content measurement. `resize_window` with a *preset* did not re-establish it; passing explicit
+`width`/`height` did, and then `.app` and all three children measured 1280 with 0 overflow. Two
+sessions running now, the harness has produced a convincing-looking layout "bug" that was purely a
+measurement artifact (see the phase-1 entry's stalled CSS transition). **Check `innerWidth` and
+`visibilityState` before believing a geometry regression.**
+
+**Remaining for phase 2.** `App.svelte` is 2,081 lines: 949 script / ~560 markup / ~570 style. The
+three mode panes (library / graph / chat) are the rest, and they are harder than the chrome — they
+read genuinely App-owned domain state (documents, folders, keywords, turns, citations), so each
+wants either its domain's rune module or a deliberate prop contract. Chrome first was the right
+order precisely because it needed no such decision.
+
+---
 ## 2026-07-26 — step 5 phase 1: `shell/shell.svelte.ts`, the leaf module the pane split needs
 
 **What changed.** The last of `App.svelte`'s non-domain state moves to one rune module: `mode`,

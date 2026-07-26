@@ -59,6 +59,8 @@
   import LibraryTaxonomy from './lib/library/LibraryTaxonomy.svelte'
   import GlobalSearch from './lib/shell/GlobalSearch.svelte'
   import Icon from './lib/shell/Icon.svelte'
+  import Topbar from './lib/shell/Topbar.svelte'
+  import StatusBar from './lib/shell/StatusBar.svelte'
   import {
     type LibraryCollection,
     type LibrarySort,
@@ -114,7 +116,6 @@
     refreshConversations,
     renameConversation,
   } from './lib/chat/conversations.svelte'
-  import appMark from './assets/brand/app-mark.png'
 
   interface TurnState {
     id: number
@@ -967,128 +968,16 @@
   <!-- Unified top toolbar (browser-chrome shell): one bar across the whole window carrying the app
        menu, sidebar toggle, back/forward, brand, the mode tabs, and search/settings — the pattern
        replaces the old split of mode-pills-in-sidebar + actions-in-header. -->
-  <div class="topbar">
-    <div class="tb-cluster">
-      <div class="menuwrap">
-        <button
-          class="tb-btn"
-          class:on={shell.appMenuOpen}
-          onclick={() => (shell.appMenuOpen = !shell.appMenuOpen)}
-          aria-label="Menu"
-          aria-haspopup="menu"
-          aria-expanded={shell.appMenuOpen}
-          title="Menu"
-          type="button"><Icon name="menu" size={17} /></button
-        >
-        {#if shell.appMenuOpen}
-          <div class="menu-backdrop" onclick={() => (shell.appMenuOpen = false)} role="presentation"></div>
-          <div class="appmenu" role="menu">
-            <button class="appmenuitem" role="menuitem" onclick={() => { shell.appMenuOpen = false; shell.showSettings = true }} type="button">
-              <Icon name="settings" size={15} /> Settings
-            </button>
-            <button class="appmenuitem" role="menuitem" onclick={() => { shell.appMenuOpen = false; shell.showShortcuts = true }} type="button">
-              <Icon name="keyboard" size={15} /> Keyboard shortcuts
-            </button>
-            {#if shell.mode === 'chat'}
-              <button
-                class="appmenuitem"
-                role="menuitem"
-                disabled={viewing === null && resumedHistory === null && turns.length === 0}
-                onclick={() => { shell.appMenuOpen = false; doExport() }}
-                type="button"
-              >
-                <Icon name="download" size={15} /> Export transcript
-              </button>
-            {/if}
-            <div class="appmenusep"></div>
-            <button class="appmenuitem" role="menuitem" onclick={() => { shell.appMenuOpen = false; shell.showAbout = true }} type="button">
-              <Icon name="info" size={15} /> About Provenote
-            </button>
-          </div>
-        {/if}
-      </div>
-      <!-- Sidebar toggle: desktop collapses inline, mobile opens the off-canvas drawer. -->
-      <button
-        class="tb-btn hide-mobile"
-        onclick={toggleSidebarCollapsed}
-        aria-label={sidebarPrefs.collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-        aria-pressed={sidebarPrefs.collapsed}
-        title={sidebarPrefs.collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-        type="button"><Icon name="panel-left" size={16} /></button
-      >
-      <button
-        class="tb-btn only-mobile"
-        onclick={() => (shell.sidebarOpen = true)}
-        aria-label="Open sidebar"
-        title="Open sidebar"
-        type="button"><Icon name="panel-left" size={16} /></button
-      >
-      <button
-        class="tb-btn"
-        onclick={navBack}
-        disabled={!canNavBack}
-        aria-label="Back"
-        title="Back"
-        type="button"><Icon name="arrow-left" size={16} /></button
-      >
-      <button
-        class="tb-btn"
-        onclick={navForward}
-        disabled={!canNavForward}
-        aria-label="Forward"
-        title="Forward"
-        type="button"><Icon name="arrow-right" size={16} /></button
-      >
-    </div>
-
-    <!-- Brand = identity anchor only (small mark + wordmark). The corpus/model status moved to the
-         bottom status bar — it's ambient status, not navigation. -->
-    <div class="brand">
-      <span class="mark"><img src={appMark} alt="" width="26" height="26" /></span>
-      <div class="brandtext">
-        <span class="wordmark">proven<span class="wm-accent">ote</span></span>
-      </div>
-    </div>
-
-    <!-- Mode tabs (Chat/Library/Graph) — moved out of the sidebar into the toolbar. -->
-    <div class="tb-modes" role="tablist" aria-label="Workspace">
-      <button
-        class="tb-mode"
-        class:active={shell.mode === 'chat'}
-        role="tab"
-        aria-selected={shell.mode === 'chat'}
-        onclick={() => selectMode('chat')}
-        type="button"><Icon name="message-square" size={15} /><span class="tb-modelabel">Chat</span></button
-      >
-      <button
-        class="tb-mode"
-        class:active={shell.mode === 'library'}
-        role="tab"
-        aria-selected={shell.mode === 'library'}
-        onclick={() => selectMode('library')}
-        type="button"><Icon name="library" size={15} /><span class="tb-modelabel">Library</span></button
-      >
-      <button
-        class="tb-mode"
-        class:active={shell.mode === 'graph'}
-        role="tab"
-        aria-selected={shell.mode === 'graph'}
-        onclick={() => selectMode('graph')}
-        type="button"><Icon name="waypoints" size={15} /><span class="tb-modelabel">Graph</span></button
-      >
-    </div>
-
-    <div class="tb-spacer"></div>
-
-    <div class="tb-cluster">
-      <button class="tb-btn" onclick={openSearch} aria-label="Search chats and documents" title="Search  (Ctrl/⌘ K)" type="button">
-        <Icon name="search" size={16} />
-      </button>
-      <button class="tb-btn" onclick={() => (shell.showSettings = true)} aria-label="Settings" title="Settings" type="button">
-        <Icon name="settings" size={17} />
-      </button>
-    </div>
-  </div>
+  <Topbar
+    canBack={canNavBack}
+    canForward={canNavForward}
+    onNavBack={navBack}
+    onNavForward={navForward}
+    onSelectMode={selectMode}
+    onOpenSearch={openSearch}
+    exportDisabled={viewing === null && resumedHistory === null && turns.length === 0}
+    onExport={doExport}
+  />
 
   <div class="below">
   <Sidebar
@@ -1487,26 +1376,7 @@
   </div>
   </div>
 
-  <!-- Bottom status bar (ambient, full-width): connection dot + corpus/model info. Thin and quiet so
-       it never competes with the chat composer sitting just above it. -->
-  <div class="statusbar" role="status" aria-live="polite">
-    <span
-      class="status-dot"
-      class:ok={shell.status === 'ready'}
-      class:wait={shell.status === 'connecting'}
-      class:off={shell.status === 'down'}
-      aria-hidden="true"
-    ></span>
-    {#if shell.status === 'ready' && shell.health}
-      <span class="status-meta">
-        {shell.health.chunk_count.toLocaleString()} chunks · {shell.health.model} · {shell.health.embedding_model}
-      </span>
-    {:else if shell.status === 'connecting'}
-      <span class="status-meta">starting the engine…</span>
-    {:else}
-      <span class="status-meta err">backend unreachable. Run <code>just api</code></span>
-    {/if}
-  </div>
+  <StatusBar />
 </div>
 
 {#if shell.showSettings}
@@ -1712,236 +1582,7 @@
     max-width: 1500px;
   }
 
-  /* ---- top toolbar (browser-chrome shell) ---- */
-  .topbar {
-    flex: none;
-    display: flex;
-    align-items: center;
-    gap: var(--space-3);
-    padding: 0.45rem 0.7rem;
-    border-bottom: 1px solid var(--border);
-    background: var(--bg);
-  }
-  .tb-cluster {
-    display: flex;
-    align-items: center;
-    gap: 0.12rem;
-    flex: none;
-  }
-  .tb-spacer {
-    flex: 1;
-    min-width: var(--space-2);
-  }
-  .tb-btn {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    font: inherit;
-    cursor: pointer;
-    border: 1px solid transparent;
-    background: none;
-    color: var(--fg-2);
-    border-radius: 8px;
-    padding: 0.32rem;
-  }
-  .tb-btn:hover:not(:disabled),
-  .tb-btn.on {
-    color: var(--fg);
-    background: var(--surface-2);
-  }
-  .tb-btn:disabled {
-    opacity: 0.32;
-    cursor: default;
-  }
-  .menuwrap {
-    position: relative;
-    display: inline-flex;
-  }
-  .only-mobile {
-    display: none;
-  }
-  @media (max-width: 720px) {
-    .hide-mobile {
-      display: none;
-    }
-    .only-mobile {
-      display: inline-flex;
-    }
-  }
-  /* App menu (☰) dropdown — mirrors the library sort menu idiom. */
-  .menu-backdrop {
-    position: fixed;
-    inset: 0;
-    z-index: 30;
-  }
-  .appmenu {
-    position: absolute;
-    z-index: 31;
-    top: calc(100% + 6px);
-    left: 0;
-    min-width: 212px;
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    box-shadow: var(--shadow-2);
-    padding: 0.3rem;
-    display: flex;
-    flex-direction: column;
-    gap: 0.05rem;
-  }
-  .appmenuitem {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    width: 100%;
-    padding: 0.45rem 0.55rem;
-    border: none;
-    background: none;
-    color: var(--fg);
-    border-radius: 6px;
-    cursor: pointer;
-    font: inherit;
-    font-size: 0.85rem;
-    text-align: left;
-  }
-  .appmenuitem:hover:not(:disabled) {
-    background: var(--surface-2);
-  }
-  .appmenuitem:disabled {
-    opacity: 0.45;
-    cursor: default;
-  }
-  .appmenusep {
-    height: 1px;
-    background: var(--border);
-    margin: 0.25rem 0.3rem;
-  }
-  /* Mode tabs — segmented control in the toolbar. */
-  .tb-modes {
-    display: flex;
-    align-items: center;
-    gap: 0.2rem;
-    flex: none;
-    border: 1px solid var(--border);
-    border-radius: 9px;
-    padding: 2px;
-    background: var(--surface);
-  }
-  .tb-mode {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.35rem;
-    font: inherit;
-    font-size: 0.82rem;
-    cursor: pointer;
-    border: none;
-    border-radius: 7px;
-    padding: 0.28rem 0.6rem;
-    background: none;
-    color: var(--fg-2);
-  }
-  .tb-mode:hover {
-    color: var(--fg);
-  }
-  .tb-mode.active {
-    background: var(--bg);
-    color: var(--fg);
-    font-weight: 600;
-    box-shadow: var(--shadow-1);
-  }
-  .brand {
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
-    flex: none;
-    min-width: 0;
-  }
-  .mark {
-    flex: none;
-    width: 28px;
-    height: 28px;
-    border-radius: 8px;
-    overflow: hidden;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    box-shadow: var(--shadow-1);
-  }
-  .mark img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-    display: block;
-  }
-  .brandtext {
-    display: flex;
-    flex-direction: column;
-    min-width: 0;
-  }
-  .wordmark {
-    font-family: var(--font-serif);
-    font-size: 1.1rem;
-    line-height: 1.15;
-    color: var(--fg);
-    white-space: nowrap;
-  }
-  .wm-accent {
-    color: var(--accent-wordmark);
-  }
-  /* Toolbar crowding: drop the tab labels (icon-only) then the wordmark, keeping the mark. */
-  @media (max-width: 780px) {
-    .tb-modelabel {
-      display: none;
-    }
-    .tb-mode {
-      padding: 0.28rem 0.45rem;
-    }
-    .brandtext {
-      display: none;
-    }
-  }
 
-  /* ---- bottom status bar (ambient) ---- */
-  .statusbar {
-    flex: none;
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    padding: 0.25rem 0.9rem;
-    border-top: 1px solid var(--border);
-    background: var(--bg);
-    min-height: 1.6rem;
-  }
-  .status-dot {
-    flex: none;
-    width: 7px;
-    height: 7px;
-    border-radius: 50%;
-    background: var(--fg-2);
-  }
-  .status-dot.ok {
-    background: var(--ok, #2e9e5b);
-  }
-  .status-dot.wait {
-    background: var(--warn-fg);
-  }
-  .status-dot.off {
-    background: var(--danger);
-  }
-  .status-meta {
-    font-size: var(--text-meta);
-    color: var(--fg-2);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    min-width: 0;
-  }
-  .status-meta.err {
-    color: var(--warn-fg);
-  }
-  .status-meta code {
-    font-size: 0.92em;
-  }
   .conversation {
     flex: 1;
     overflow-y: auto;

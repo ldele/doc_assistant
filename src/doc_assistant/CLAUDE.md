@@ -6,8 +6,11 @@
 **Layout (ADR-023)**
 - Top level — the RAG answer path: `pipeline.py` (hybrid retrieval + rerank), `chat_controller.py`
   (turn orchestration), `llm.py` (provider-agnostic clients), `synthesis.py`, `provenance.py`,
-  `reviewer*.py`, `prompts.py`, `config.py`, plus app services (`library.py`, `conversations.py`,
+  `reviewer*.py`, `prompts.py`, `config.py`, plus app services (`conversations.py`,
   `app_settings.py`, `compare.py`, `health.py`, `export.py`) and `doc_vectors.py`.
+- `library/` — the document-store API, one module per sub-domain, named to match
+  `apps/api/routers/library/`: `models` · `documents` · `pins` · `folders` · `keywords` ·
+  `chunks` · `citations` · `similarity`. `__init__` re-exports flat for the existing callers.
 - `db/` — SQLAlchemy models + session + **additive** migrations (`_ADDITIVE_COLUMNS`).
 - `ingest/` — extract → markdown → chunk → embed → store (locked path) + registry/cache/figures/tables.
 - `knowledge/` — the corpus-derived layer: keywords/families, concept skeleton (Node A/B) +
@@ -26,6 +29,10 @@
   **never `mypy --strict src`**: the flag changes the option set, so it invalidates mypy's cache both
   ways and makes the next commit's hook take ~40s instead of ~2s (add
   `--cache-dir .mypy_cache-strict` if you do want it). Exceptions chain (`raise X from e`).
+- **Monkeypatch the module that OWNS a helper**, never a package that re-exports it: a
+  re-exported name is a *separate binding*, so patching `doc_assistant.library.<name>` leaves
+  the real caller untouched and the test silently runs the real thing (verified — it would
+  have opened a file manager). Patch `library.documents._reveal_in_file_manager`.
 
 **Tests:** `tests/unit/` + `tests/integration/` (mirror module names).
 

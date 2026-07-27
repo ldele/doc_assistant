@@ -11,6 +11,46 @@ Format: What changed | Why | Rejected alternatives | What it opens
 > (moved verbatim 2026-07-21). This file keeps 2026-07-15 onward.
 
 ---
+## 2026-07-27 — `library.py` 1,528 → a `library/` package (the `src/` twin of the apps/ pass)
+
+**What changed.** `src/doc_assistant/library.py` becomes a package of 8 sub-domain modules +
+a re-exporting `__init__`, cut along its own banner sections and **named to match
+`apps/api/routers/library/`**: `models` (67) · `documents` (319) · `pins` (195) · `folders` (199) ·
+`keywords` (273) · `chunks` (135) · `citations` (174) · `similarity` (133).
+
+**Scoped before cutting** (the discipline that changed the plan in step 4). The section dependency
+graph is **acyclic with five leaves** — only `similarity→citations` (3), `query→models` (2),
+`pins→{models,documents}`, `folders→{documents,keywords}` (1 each). 27 import sites across
+apps/scripts/tests, all preserved by the barrel.
+
+**The hazard scoping predicted, verified empirically.** `tests/integration/test_document_meta.py`
+did `import doc_assistant.library as lib; monkeypatch.setattr(lib, "_reveal_in_file_manager", …)`.
+After the split that name is a **re-exported binding on the package**, not the one
+`reveal_document_source` resolves. Proven at the REPL, not assumed:
+
+    patching the package changes what the caller resolves?  False
+    patching the owning module changes it?                  True
+
+So the patch would have silently missed and the test would have run the **real** function — opening
+a file manager during the suite. Both sites now patch `doc_assistant.library.documents`, and the
+rule is in `src/doc_assistant/CLAUDE.md`: **patch the module that owns a helper, never a package
+that re-exports it.** It is the Python twin of the "patch it on its router module, not `main`" rule
+already in `apps/api/CLAUDE.md` — a barrel buys compatibility and hides binding identity.
+
+**Verified.** Declaration-level equivalence proved the same way as the `types.ts`/`api.ts` splits
+(which caught two silent truncations): **67/67 declarations present**, bodies byte-identical after
+normalising comments/whitespace, with the only two diffs being ruff's `UP037` unquoting
+`list["SimilarDoc"]` / `list["FamilyProposal"]` — safe because every module carries
+`from __future__ import annotations`. `ruff` clean, `ruff format` clean, **`mypy src` clean (77
+files, up from 69)**, and the **full suite green: 1,315 passed**.
+
+**Generation note.** The modules were generated mechanically (bodies + per-module import resolution
+computed from actual name usage), which got the imports ~90% right and left exactly two classes of
+miss that ruff caught: `log` used without `structlog` appearing in the body, and a `TYPE_CHECKING`
+guard whose import lived in the shared header. Worth remembering: deriving imports from usage
+misses names introduced by *convention* rather than by reference.
+
+---
 ## 2026-07-26 — step 5 phase 2 complete: `ChatPane` + `chat.svelte.ts`; App.svelte 2,725 → 1,245
 
 **What changed.** The last pane, and the one that blocked the rest: `chat/chat.svelte.ts` (state +

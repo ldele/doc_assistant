@@ -142,7 +142,9 @@ def test_resolve_source_path_prefers_existing_then_none(tmp_path: Path) -> None:
 def test_reveal_document_source(
     temp_db: None, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    import doc_assistant.library as lib
+    # patch on the OWNING module: `library/__init__` re-exports a separate binding,
+    # so patching the package would leave the real caller untouched.
+    import doc_assistant.library.documents as lib
 
     real = tmp_path / "paper.pdf"
     real.write_text("x")
@@ -181,7 +183,9 @@ def test_patch_and_reset_routes(temp_db: None) -> None:
 
 
 def test_reveal_route(temp_db: None, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    import doc_assistant.library as lib
+    # patch on the OWNING module: `library/__init__` re-exports a separate binding,
+    # so patching the package would leave the real caller untouched.
+    import doc_assistant.library.documents as lib
 
     real = tmp_path / "paper.pdf"
     real.write_text("x")

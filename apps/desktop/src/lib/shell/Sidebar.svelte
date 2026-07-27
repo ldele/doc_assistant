@@ -468,16 +468,19 @@
     </nav>
   {:else if mode === 'graph'}
     <nav class="list graphrail" aria-label="Concept index">
-      <!-- Taxonomy (ADR-028 2b) — a dedicated field-forest modal; an action, not a filter, so no
-           active/count. Lives with the graph (concept space); also deep-linked from a node's Place. -->
-      <button class="treerow" onclick={onOpenTaxonomy} type="button" title="Organise concepts + documents into research fields">
-        <span class="treeicon"><Icon name="tag" size={14} /></span>
-        <span class="treelabel">Taxonomy</span>
-      </button>
       <!-- The concept index itself is App-composed (GraphIndex) — the graph data + selection live
            in App, and threading them through this component's props would double its surface. -->
       {@render graphRail?.()}
     </nav>
+    <!-- Taxonomy (ADR-028 2b) — a dedicated field-forest modal; an action, not a filter, so no
+         active/count. Parked in a pinned footer *outside* the scrolling rail: it is a destination
+         rather than an index entry, so it should not drift away as the concept list scrolls. -->
+    <div class="railfoot">
+      <button class="treerow" onclick={onOpenTaxonomy} type="button" title="Organise concepts + documents into research fields">
+        <span class="treeicon"><Icon name="tag" size={14} /></span>
+        <span class="treelabel">Taxonomy</span>
+      </button>
+    </div>
   {/if}
 </aside>
 
@@ -632,6 +635,13 @@
     width: 14px;
     display: inline-flex;
     flex: none;
+  }
+  /* Pinned rail footer — sits below the scrolling `.list`, so its action stays reachable no
+     matter how long the concept index gets. `flex: none` keeps it out of the scroll region. */
+  .railfoot {
+    flex: none;
+    padding: 0.4rem;
+    border-top: 1px solid var(--border);
   }
   .list {
     flex: 1;

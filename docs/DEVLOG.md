@@ -11,6 +11,43 @@ Format: What changed | Why | Rejected alternatives | What it opens
 > (moved verbatim 2026-07-21). This file keeps 2026-07-15 onward.
 
 ---
+## 2026-07-27 — Tracks 1–3 into the ROADMAP + three topbar/rail placement changes
+
+**Roadmap.** ADR-030..033's twelve increments now sit in the PR table: `MM1–MM3` (document outline
+layer → `doc_map` read model → `DocumentMap.svelte`), `T1–T5` (source-trust indicators; T5 parked
+as the first network feature), `RP1–RP4` (generation presets). Flagged in the preamble that all four
+ADRs are **stubs** — each says "needs `grill-me` before the Decision section is filled" — so those
+rows are scope, not contract.
+
+**One collision worth noting:** the plan numbers its Reports track `R1–R4`, but `R1–R4` are already
+taken in the ROADMAP by the 2026-07 remediation rows (ingest hygiene, concept presence, keyword
+termhood, skeleton provenance). Renumbered **`RP1–RP4`** here, with the mapping stated in the
+preamble — the ROADMAP is a shared ID namespace and silently reusing an id would have made two
+different things look like one.
+
+**UI placement (user request).**
+1. **Brand → right.** The `provenote` mark + wordmark move out of the left cluster into the right
+   one, beside Settings. No CSS change needed: `.brand` is `flex: none` and position-agnostic, and
+   the 780px rule that drops the wordmark (keeping the mark) still applies.
+2. **Search → left.** The magnifier moves from the right cluster to between the sidebar toggle and
+   back/forward. It opens a *navigation* overlay, so it now sits with the other navigation
+   affordances rather than next to Settings.
+3. **Taxonomy → pinned rail footer.** On the Graph rail it was the first row of the scrolling
+   concept index; it is a destination, not an index entry, so it moved out of the `<nav>` into a
+   `.railfoot` sibling. `.sidebar` is already a flex column with the list at `flex: 1;
+   overflow-y: auto`, so a `flex: none` sibling pins to the bottom with no positioning hacks.
+
+**Verified.** `svelte-check` 182 files 0/0, `npm test` 50/50, 0 console errors. Live at 1280px the
+toolbar reads left→right **Menu · Collapse · Search · Back · Forward · tabs … brand · Settings**,
+0 overflow; 375px dark keeps the mark, drops the wordmark, 0 overflow.
+
+The footer's "unscrollable" claim was **proved, not assumed** — and the first attempt was a vacuous
+test: `.graphrail` reports `scrollHeight == clientHeight` because `GraphIndex` renders its own
+inner `.clist` scroller. Scrolling *that* element by 395px left the footer at exactly the same
+`top` (348 → 348). A pinned-element test that never actually scrolled anything would have passed
+either way.
+
+---
 ## 2026-07-27 — `chat_controller.py` 1,423 → a package, and the re-export trap billing 66 tests
 
 **What changed.** Five modules + a barrel: `session` (63, ADR-3 caller-owned state) · `views` (121,

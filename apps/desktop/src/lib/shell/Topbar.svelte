@@ -91,6 +91,11 @@
       title="Open sidebar"
       type="button"><Icon name="panel-left" size={16} /></button
     >
+    <!-- Search sits with the sidebar toggle, ahead of back/forward: it opens a navigation overlay,
+         so it belongs with the other navigation affordances rather than with Settings. -->
+    <button class="tb-btn" onclick={onOpenSearch} aria-label="Search chats and documents" title="Search  (Ctrl/⌘ K)" type="button">
+      <Icon name="search" size={16} />
+    </button>
     <button
       class="tb-btn"
       onclick={onNavBack}
@@ -107,15 +112,6 @@
       title="Forward"
       type="button"><Icon name="arrow-right" size={16} /></button
     >
-  </div>
-
-  <!-- Brand = identity anchor only (small mark + wordmark). The corpus/model status moved to the
-       bottom status bar — it's ambient status, not navigation. -->
-  <div class="brand">
-    <span class="mark"><img src={appMark} alt="" width="26" height="26" /></span>
-    <div class="brandtext">
-      <span class="wordmark">proven<span class="wm-accent">ote</span></span>
-    </div>
   </div>
 
   <!-- Mode tabs (Chat/Library/Graph) — moved out of the sidebar into the toolbar. -->
@@ -149,9 +145,14 @@
   <div class="tb-spacer"></div>
 
   <div class="tb-cluster">
-    <button class="tb-btn" onclick={onOpenSearch} aria-label="Search chats and documents" title="Search  (Ctrl/⌘ K)" type="button">
-      <Icon name="search" size={16} />
-    </button>
+    <!-- Brand = identity anchor only (small mark + wordmark), parked on the right beside Settings.
+         The corpus/model status lives in the bottom status bar — ambient, not navigation. -->
+    <div class="brand">
+      <span class="mark"><img src={appMark} alt="" width="26" height="26" /></span>
+      <div class="brandtext">
+        <span class="wordmark">proven<span class="wm-accent">ote</span></span>
+      </div>
+    </div>
     <button class="tb-btn" onclick={() => (shell.showSettings = true)} aria-label="Settings" title="Settings" type="button">
       <Icon name="settings" size={17} />
     </button>

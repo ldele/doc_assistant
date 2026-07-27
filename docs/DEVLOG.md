@@ -11,6 +11,34 @@ Format: What changed | Why | Rejected alternatives | What it opens
 > (moved verbatim 2026-07-21). This file keeps 2026-07-15 onward.
 
 ---
+## 2026-07-27 — session-close conformance: the cpc gate caught five header errors and four warnings
+
+**What changed.** Running `rungate.py keypoint session-close` before handoff (rather than at the
+end of the *next* session) surfaced nine issues, all now fixed:
+
+- **`status:` header vocabulary is closed.** `docs_check.HEADER_RE` accepts exactly
+  `active|superseded|archived`. The four new ADRs carried `status: draft` and my
+  `SESSION-archive-002.md` carried `status: archive` — none matched, so all five read as *missing*
+  a header. The HTML comment tracks **document lifecycle**; an ADR's own `**Status:** proposed`
+  line in the body is a different axis and stays untouched. Fixed to `active` / `archived`.
+- **Living docs need their `updated:` bumped when edited** (rule 12): `architecture.md` said
+  2026-07-26, `ROADMAP.md` said 2026-07-25, both committed today. Bumped — and the stale
+  parenthetical on `architecture.md` ("repository layout moved here from the README") replaced with
+  what actually changed.
+- **Module `CLAUDE.md` files were over the 40-line cap** (41 and 42) after this pass added rules.
+  Compressed rather than raising the cap; nothing dropped.
+
+**Why it is worth a DEVLOG entry.** Two of these would have silently misled: a `status: draft`
+header looks *more* careful than `active`, but the checker treats it as absent, so the file drops
+out of conformance scanning entirely. And a `updated:` date that lags the last commit is exactly
+the signal rule 12 exists to catch — a living doc that looks current but isn't.
+
+**Verified.** `docs_check --strict` **0 errors, 0 warnings** (was 5/4) · `generate --check` OK ·
+`ruff` clean over `src/`+`tests/`+`apps/` · `mypy src` 82 files · `svelte-check` 182 files 0/0 ·
+`npm test` 50/50. Python suite unchanged since `598b570` (1,315 passed); nothing in this entry
+touches runtime code.
+
+---
 ## 2026-07-27 — Tracks 1–3 into the ROADMAP + three topbar/rail placement changes
 
 **Roadmap.** ADR-030..033's twelve increments now sit in the PR table: `MM1–MM3` (document outline

@@ -21,21 +21,19 @@
 
 **Rules that bite here**
 - **Locked settings** live in `config.py` — change only via an eval-harness experiment
-  (`.claude/CONTEXT.md` table). Enrichment modules are sidecars: additive tables/files, idempotent,
-  never touch the chunk store.
+  (`.claude/CONTEXT.md` table). Enrichment modules are sidecars: additive, idempotent, never touch
+  the chunk store.
 - `structlog` only, no `print()` (ADR-003); library code never configures logging.
-- **Robustness contract:** every module must handle an empty corpus (0 docs) without crashing and
-  avoid corpus-tuned constants — thresholds derive from data or are named structural constants.
+- **Robustness contract:** handle an empty corpus (0 docs) without crashing; no corpus-tuned
+  constants — thresholds derive from data or are named structural constants.
 - Strict typing is the bar (`[tool.mypy] strict=true`) — run **`uv run --no-sync mypy src`**,
   **never `mypy --strict src`**: the flag changes the option set, so it wipes mypy's cache both ways
   and the next commit's hook takes ~40s instead of ~2s. Exceptions chain (`raise X from e`).
-- **Monkeypatch the module that OWNS a name**, never a package that re-exports it — a re-export
-  is a *separate binding*. Patching `library.<name>` silently misses (it would have opened a file
-  manager); the `chat_controller` split broke **66 tests** the same way. Patch
-  `library.documents._reveal_in_file_manager`, `chat_controller.controller.is_library_query`,
-  `chat_controller.helpers.SYNTHESIS_MODE`. Patching an *attribute on a shared module object*
-  (`chat_controller.app_settings.SETTINGS_PATH`) is fine through any binding — only **rebinding a
-  name** needs the owning module.
+- **Monkeypatch the module that OWNS a name**, never a package that re-exports it — a re-export is
+  a *separate binding*, so patching `library.<name>` silently misses (66 tests broke this way in the
+  `chat_controller` split). Use `library.documents._reveal_in_file_manager`,
+  `chat_controller.controller.is_library_query`, `chat_controller.helpers.SYNTHESIS_MODE`. Setting an
+  *attribute on a shared module object* (`app_settings.SETTINGS_PATH`) is fine through any binding.
 
 **Tests:** `tests/unit/` + `tests/integration/` (mirror module names).
 

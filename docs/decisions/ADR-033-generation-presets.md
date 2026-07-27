@@ -1,4 +1,4 @@
-<!-- status: draft · updated: 2026-07-27 · class: append-only -->
+<!-- status: active · updated: 2026-07-27 · class: append-only -->
 
 # ADR-033 — Generation presets: frozen citation contract, swappable brief
 

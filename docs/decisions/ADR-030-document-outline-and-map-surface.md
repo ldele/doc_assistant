@@ -1,4 +1,4 @@
-<!-- status: draft · updated: 2026-07-27 · class: append-only -->
+<!-- status: active · updated: 2026-07-27 · class: append-only -->
 
 # ADR-030 — Document outline layer and the per-document map surface
 

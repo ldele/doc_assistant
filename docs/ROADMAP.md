@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-07-25 (TX3 auto-propose built — staged; RH1/TX1/TX2a/TX2b cells trued up to their commits) · class: living -->
+<!-- status: active · updated: 2026-07-27 (TX3 auto-propose built — staged; RH1/TX1/TX2a/TX2b cells trued up to their commits) · class: living -->
 
 # ROADMAP — doc_assistant
 

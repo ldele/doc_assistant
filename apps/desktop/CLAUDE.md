@@ -22,9 +22,8 @@ from `src/` (non-negotiable #3, `.claude/CONTEXT.md`).
 - **`.svelte.ts` can't run under `node:test`** (needs the compiler). Keep pure, tested logic in
   plain `.ts` beside it — the extension is the marker (`taxonomy.ts` tested, `taxonomy.svelte.ts`
   state). `$effect` can't run at module top level: export a `useXxx()` hook, call it from a script.
-- **Renaming a variable breaks Svelte shorthand** — `{x}`, `x,` and `bind:x` each need hand-editing,
-  and a rename regex must exclude `<` or `<input` becomes `<chat.input` (bit 3× on 2026-07-26).
-  A `const` prop can't be bound: use `$bindable()`.
+- **Renaming a variable breaks Svelte shorthand** — `{x}`, `x,` and `bind:x` each need hand-editing;
+  a rename regex must exclude `<` or `<input` becomes `<chat.input`. A `const` prop needs `$bindable()`.
 - **No optional params in `<script lang="ts">` functions.** The TS-strip drops the type but leaves the
   `?`, emitting `function f(x?)` → `SyntaxError: Unexpected token '?'` that blanks the whole app mount —
   and `svelte-check` passes it (it checks the source). Use a defaulted param: `x: T | null = null`.

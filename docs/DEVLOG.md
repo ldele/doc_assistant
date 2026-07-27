@@ -11,6 +11,54 @@ Format: What changed | Why | Rejected alternatives | What it opens
 > (moved verbatim 2026-07-21). This file keeps 2026-07-15 onward.
 
 ---
+## 2026-07-26 — step 5 phase 2 complete: `ChatPane` + `chat.svelte.ts`; App.svelte 2,725 → 1,245
+
+**What changed.** The last pane, and the one that blocked the rest: `chat/chat.svelte.ts` (state +
+DOM mechanics) and `chat/ChatPane.svelte` (130 markup + 243 CSS). **`App.svelte` 1,659 → 1,245** —
+901 script / ~75 markup / ~270 style. Across the whole pass: **2,725 → 1,245, −54%**.
+
+**Why chat needed a module where Library did not.** `convoEl` and `taEl` are *bound DOM refs*, and
+both sides need them: the pane binds them, but App's `newConversation`/`resumeConversation` still
+call `chat.taEl?.focus()` after the pane mounted them. Props cannot express that. Putting them in
+the rune module — `bind:this={chat.convoEl}` — is what made the extraction possible at all.
+
+The autoscroll `$effect` moved with them as `useChatAutoscroll(viewing)`, taking `viewing` as a
+**getter thunk** rather than a value: it is conversation-view state App owns, and the effect must
+re-run when it changes (opening a past chat scrolls to the bottom too). `pinned` and `nextId`
+stayed **non-reactive** module locals behind setters — `pinned` is written on every scroll event,
+so making it `$state` would have made the autoscroll effect re-run on scroll, i.e. a feedback loop.
+
+**Still in App, deliberately:** `send` (needs the folder scope + refreshes conversations),
+`doCompare`, `doExport`, `newConversation`, `resumeConversation`, and the `activeSource` derivation
+— every one spans chat × conversations × folders.
+
+**Three shorthand traps, all caught by the compiler.** Rewriting `overrides` → `chat.overrides`
+turned `bind:overrides` into `bind:chat.overrides` (invalid). This is the third instance of the
+same class this pass — after `{conversations}` and `{mode}` — so it is now a known cost of
+renaming a variable that appears in Svelte shorthand: **`{x}`, `x,` and `bind:x` all need
+hand-editing.** The regex also had to exclude `<` from its lookbehind, or `<input`/`<textarea`
+would have become `<chat.input`.
+
+**One deliberate reversal.** The scope `<select>` first became `value=… onchange=…` because a
+`const` prop cannot be bound — but `<option value={null}>` makes string round-tripping through the
+DOM subtly wrong, and this is the ADR-025 F2 retrieval scope, where a silent mistake means answers
+scoped to the wrong folder. Switched to `$bindable()` so `bind:value` is preserved exactly as
+before. Faithful beats clever on the answer path.
+
+**Verified.** `svelte-check` **182 files, 0 errors, 0 warnings**; `npm test` 50/50; 0 console
+errors. Live at 1280px, every boundary crossing exercised: a sample chip fills the composer (App
+writes `chat.input` → module → the pane's bound textarea, Send enables); **autogrow 62 → 160px**
+through the module's DOM ref, and back to 60 on clear; the scope `$bindable` round-trips with its
+`.scopepick.scoped` class; opening a past conversation renders the read-only replay **and
+autoscrolls to the bottom** — the effect firing across the module boundary, the single riskiest
+part of this change; a citation click still opens the source panel; Back-to-current restores the
+composer. 375px dark: 0 overflow, 0 offending elements.
+
+**Step 5 is done, and so is the plan.** All six steps complete. `App.svelte` is now a shell: the
+cross-domain orchestration (nav history, readiness gate, `selectMode`, the chat-scope guard, the
+conversation/chat lifecycle) plus overlay wiring — which is what an app shell should be.
+
+---
 ## 2026-07-26 — step 5 phase 2 (second slice): `LibraryPane` out, and why it takes 29 props
 
 **What changed.** The Library workspace leaves `App.svelte` with its styles:

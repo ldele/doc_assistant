@@ -1,13 +1,11 @@
 <script lang="ts">
   import { untrack } from 'svelte'
   import type {
-    CompareResult,
     ConversationDetail,
     KeywordFamily,
     KeywordFamilyProposal,
     LibraryDocument,
     LibraryFolder,
-    RagOverrides,
     TurnResult,
   } from './lib/core/types'
   import {
@@ -37,8 +35,7 @@
     updateConversationMeta,
     updateDocumentMeta,
   } from './lib/core/api'
-  import Turn from './lib/chat/Turn.svelte'
-  import ReadonlyTurn from './lib/chat/ReadonlyTurn.svelte'
+  import ChatPane from './lib/chat/ChatPane.svelte'
   import Settings from './lib/settings/Settings.svelte'
   import SourcePanel from './lib/chat/SourcePanel.svelte'
   import Sidebar from './lib/shell/Sidebar.svelte'
@@ -50,14 +47,12 @@
   import LibraryMetaEditor from './lib/library/LibraryMetaEditor.svelte'
   import LibraryDeleteConfirm from './lib/library/LibraryDeleteConfirm.svelte'
   import ConfirmDialog from './lib/shell/ConfirmDialog.svelte'
-  import CompareCard from './lib/chat/CompareCard.svelte'
   import ConceptGraph from './lib/graph/ConceptGraph.svelte'
   import GraphIndex from './lib/graph/GraphIndex.svelte'
   import ShortcutsDialog from './lib/shell/ShortcutsDialog.svelte'
   import AboutDialog from './lib/shell/AboutDialog.svelte'
   import LibraryTaxonomy from './lib/library/LibraryTaxonomy.svelte'
   import GlobalSearch from './lib/shell/GlobalSearch.svelte'
-  import Icon from './lib/shell/Icon.svelte'
   import Topbar from './lib/shell/Topbar.svelte'
   import StatusBar from './lib/shell/StatusBar.svelte'
   import {
@@ -108,6 +103,15 @@
   // import this directly instead of taking ~20 props each.
   import { shell } from './lib/shell/shell.svelte'
   import {
+    chat,
+    freshSessionId,
+    nextTurnId,
+    resetComposer,
+    resetTurnIds,
+    setPinned,
+    useChatAutoscroll,
+  } from './lib/chat/chat.svelte'
+  import {
     archiveConversation,
     conversations,
     pinConversation,
@@ -115,49 +119,21 @@
     renameConversation,
   } from './lib/chat/conversations.svelte'
 
-  interface TurnState {
-    id: number
-    question: string
-    answer: string
-    result: TurnResult | null
-    streaming: boolean
-    error: string | null
-  }
-
-  function freshSessionId(): string {
-    return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
-  }
-  // $state: the sidebar's "current" marker + the citation-source derivation read this, so a fresh
-  // id from ↻ New must trigger updates.
-  let sessionId = $state(freshSessionId())
-
-  let turns = $state<TurnState[]>([])
-  let input = $state('')
-  let sending = $state(false)
-  // ADR-010: the RAG-sandbox overrides for this app session. In-memory only — a fresh
-  // launch always starts from {} (locked defaults), never persisted to disk.
-  let overrides = $state<RagOverrides>({})
-  let nextId = 0
-
-  // A/B-compare (U6): a per-turn retrieval diff (locked defaults vs the session override). $0 —
-  // retrieval only, no answer generation. The result is an ephemeral card, not a chat turn.
-  let compareResult = $state<CompareResult | null>(null)
-  let comparing = $state(false)
   // The Test-override button only exists while a retrieval-affecting override is set — with none,
   // both sides retrieve identically and the button is dead weight (2026-07-13 UX review). Settings
-  // writes these fields only when touched; Reset returns overrides to {}.
+  // writes these fields only when touched; Reset returns chat.overrides to {}.
   const hasRetrievalOverride = $derived(
-    overrides.top_k != null || overrides.use_multi_query != null,
+    chat.overrides.top_k != null || chat.overrides.use_multi_query != null,
   )
 
   // Conversation history (feature-conversation-history.md). `viewing` is the session_id shown as a
-  // read-only transcript; `null` means the live chat (composer + claims bound to `sessionId`).
+  // read-only transcript; `null` means the live chat (composer + claims bound to `chat.sessionId`).
   let viewing = $state<string | null>(null)
   let viewedConvo = $state<ConversationDetail | null>(null)
-  // Resume (fresh-context): a reopened past chat the user chose to *continue*. Its turns render
-  // read-only above the composer for reference; `sessionId` is switched to it so new turns thread
+  // Resume (fresh-context): a reopened past chat the user chose to *continue*. Its chat.turns render
+  // read-only above the composer for reference; `chat.sessionId` is switched to it so new chat.turns thread
   // to the same conversation and persist. The in-memory backend session starts fresh (empty
-  // history), so new questions are standalone corpus queries — no replay of the old turns.
+  // history), so new questions are standalone corpus queries — no replay of the old chat.turns.
   let resumedHistory = $state<ConversationDetail | null>(null)
 
   // Global-search overlay (docs/specs/feature-app-shell-search-collapse.md, sub-item a). A
@@ -166,7 +142,7 @@
 
   // Library space (feature-library-browser.md L1; nav redesign feature-library-redesign.md L4
   // Phase A). `mode` swaps the sidebar + main pane between Chat and Library; the chat state
-  // (turns/viewing/sessionId) is untouched by the switch. Navigation model: the rail picks the
+  // (chat.turns/viewing/chat.sessionId) is untouched by the switch. Navigation model: the rail picks the
   // active *collection*, the main pane shows it as an inventory grid, and opening a document
   // drills down in place to the chunk view (breadcrumb + Back walk back up).
   let documents = $state<LibraryDocument[]>([])
@@ -187,7 +163,7 @@
   // zero members is still visible and therefore fillable (spec D3). `folderError` surfaces a
   // 400 (blank/collision) in the Manage view without blocking anything else.
   let folders = $state<LibraryFolder[]>([])
-  // ADR-025 F2 — the chat retrieval scope. Sticky across turns, in memory ONLY: a reload
+  // ADR-025 F2 — the chat retrieval scope. Sticky across chat.turns, in memory ONLY: a reload
   // returns to the whole library. Persisting it is the rejected option — a scope you forgot
   // you set silently narrows every future answer, which is the exact lie the integrity layer
   // exists to prevent. Deliberately separate from `libraryCollection`: filtering the Library
@@ -233,6 +209,10 @@
     shell.sidebarOpen = false // mobile drawer: selecting navigates, like selectCollection
   }
   useGraphHygiene() // intra-domain: a rebuild can drop the selected concept
+  // Chat transcript autoscroll. `viewing` is passed as a getter because it is conversation-view
+  // state owned here, and the effect must re-run when it changes (opening a past chat scrolls
+  // to the bottom too).
+  useChatAutoscroll(() => viewing)
 
   // Taxonomy view (docs/specs/feature-taxonomy-view.md, ADR-028 2b). A dedicated modal that renders
   // the curated field forest + *places* concepts/documents onto it. App owns the data; LibraryTaxonomy
@@ -295,30 +275,24 @@
 
   // Which citation panel is open — keyed by a turn *key* (a live turn's id as string, or a past
   // turn's record_id) so a click resolves against the right turn in either mode.
-  let activeCitation = $state<{ turnKey: string; n: number } | null>(null)
   const activeSource = $derived.by(() => {
-    if (!activeCitation) return null
+    if (!chat.activeCitation) return null
     // Read-only transcripts (a viewed chat, or a resumed chat's history) key by record_id;
-    // a resumed chat also has live turns below, so fall through to those if not found here.
+    // a resumed chat also has live chat.turns below, so fall through to those if not found here.
     const detail = viewedConvo ?? resumedHistory
     if (detail) {
-      const t = detail.turns.find((t) => t.record_id === activeCitation!.turnKey)
-      const s = t?.sources.find((s) => s.n === activeCitation!.n)
+      const t = detail.turns.find((t) => t.record_id === chat.activeCitation!.turnKey)
+      const s = t?.sources.find((s) => s.n === chat.activeCitation!.n)
       // A rehydrated source is degraded — no markers/figures/evaluation (not persisted). Shape it
       // as a SourceView so SourcePanel/SourceCard render it unchanged.
       if (s) {
         return { n: s.n, citation: s.citation, excerpt: s.excerpt, figure_id: null, chunk_key: null, markers: [], reranker_score: 0, evaluation: null }
       }
     }
-    const t = turns.find((t) => String(t.id) === activeCitation!.turnKey)
-    return t?.result?.sources.find((s) => s.n === activeCitation!.n) ?? null
+    const t = chat.turns.find((t) => String(t.id) === chat.activeCitation!.turnKey)
+    return t?.result?.sources.find((s) => s.n === chat.activeCitation!.n) ?? null
   })
 
-  let convoEl = $state<HTMLElement | null>(null)
-  let taEl = $state<HTMLTextAreaElement | null>(null)
-  // Follow a streaming answer only while the reader is already at the bottom, so a long
-  // response never yanks them away from something they scrolled up to re-read.
-  let pinned = true
 
   // Re-pull /api/health after an ingest so the header chunk count + the empty-corpus banner
   // reflect the new corpus (the backend rebuilds the controller before reporting "done").
@@ -411,7 +385,7 @@
     try {
       await updateConversationMeta(sid, { deleted: true })
       // If the deleted chat is the one on screen (viewed, resumed, or live), start fresh.
-      if (viewing === sid || resumedHistory?.session_id === sid || sessionId === sid) {
+      if (viewing === sid || resumedHistory?.session_id === sid || chat.sessionId === sid) {
         newConversation()
       }
       await refreshConversations()
@@ -460,33 +434,6 @@
     }
   })
 
-  // Keep the newest content in view as tokens stream in / a turn is added / a chat is opened —
-  // but only when the reader is pinned to the bottom (see `pinned`).
-  $effect(() => {
-    const last = turns[turns.length - 1]
-    void last?.answer
-    void turns.length
-    void viewing
-    if (pinned && convoEl) convoEl.scrollTop = convoEl.scrollHeight
-  })
-
-  // A reader who has scrolled up to re-read is no longer pinned; snap back on once they
-  // return to the bottom (small slack so it engages just before the exact edge).
-  function onConvoScroll(): void {
-    if (!convoEl) return
-    pinned = convoEl.scrollHeight - convoEl.scrollTop - convoEl.clientHeight < 80
-  }
-
-  // Grow the composer with its content up to a cap, then let it scroll. Reset to the base
-  // height after a send (measuring `scrollHeight` on empty content would keep the tall size).
-  function autogrow(): void {
-    if (!taEl) return
-    taEl.style.height = 'auto'
-    taEl.style.height = `${Math.min(taEl.scrollHeight, 160)}px`
-  }
-  function resetComposer(): void {
-    if (taEl) taEl.style.height = 'auto'
-  }
 
   // Sample questions for the empty state — corpus-agnostic openers that run one-click on any
   // library. Picking one only prefills the existing composer (no turn sent, no new behavior); the
@@ -497,20 +444,20 @@
     'What are the key findings, with citations?',
   ]
   function useSample(q: string): void {
-    input = q
-    taEl?.focus()
+    chat.input = q
+    chat.taEl?.focus()
   }
 
   async function send(): Promise<void> {
-    const text = input.trim()
-    if (!text || sending) return
-    input = ''
+    const text = chat.input.trim()
+    if (!text || chat.sending) return
+    chat.input = ''
     resetComposer()
-    pinned = true // sending jumps the reader to their own new turn
-    sending = true
+    setPinned(true) // chat.sending jumps the reader to their own new turn
+    chat.sending = true
     const idx =
-      turns.push({
-        id: nextId++,
+      chat.turns.push({
+        id: nextTurnId(),
         question: text,
         answer: '',
         result: null,
@@ -518,16 +465,16 @@
         error: null,
       }) - 1
     try {
-      for await (const ev of streamChat(text, sessionId, overrides, undefined, chatScopeFolderId)) {
-        if (ev.event === 'token') turns[idx].answer += ev.data
-        else if (ev.event === 'result') turns[idx].result = JSON.parse(ev.data) as TurnResult
+      for await (const ev of streamChat(text, chat.sessionId, chat.overrides, undefined, chatScopeFolderId)) {
+        if (ev.event === 'token') chat.turns[idx].answer += ev.data
+        else if (ev.event === 'result') chat.turns[idx].result = JSON.parse(ev.data) as TurnResult
         // `step` events are advisory; ignored for now.
       }
     } catch (e) {
-      turns[idx].error = String(e)
+      chat.turns[idx].error = String(e)
     } finally {
-      turns[idx].streaming = false
-      sending = false
+      chat.turns[idx].streaming = false
+      chat.sending = false
       // The finished turn is now persisted — refresh the sidebar so this chat appears/updates.
       void refreshConversations()
     }
@@ -543,16 +490,16 @@
   // A/B-compare (U6): retrieve the current question under the locked defaults and the session
   // override, and show the source-set diff. $0 (no LLM); the composer text is left intact.
   async function doCompare(): Promise<void> {
-    const text = input.trim()
-    if (!text || sending || comparing) return
-    comparing = true
+    const text = chat.input.trim()
+    if (!text || chat.sending || chat.comparing) return
+    chat.comparing = true
     try {
-      compareResult = await compareRetrieval(text, overrides, chatScopeFolderId)
-      pinned = true // bring the fresh compare card into view
+      chat.compareResult = await compareRetrieval(text, chat.overrides, chatScopeFolderId)
+      setPinned(true) // bring the fresh compare card into view
     } catch (e) {
       console.error('compare failed', e)
     } finally {
-      comparing = false
+      chat.comparing = false
     }
   }
 
@@ -560,60 +507,60 @@
     try {
       // Export the conversation on screen: the viewed past chat, else the live/resumed session.
       // The backend sources the transcript from the durable records by id, so both work.
-      await exportConversation(viewing ?? sessionId, false)
+      await exportConversation(viewing ?? chat.sessionId, false)
     } catch (e) {
       console.error('export failed', e)
     }
   }
 
-  // Clear the conversation and start a fresh question (U4). Resets the on-screen turns, any open
-  // citation panel, the read-only view, and the composer — and mints a new sessionId so the
+  // Clear the conversation and start a fresh question (U4). Resets the on-screen chat.turns, any open
+  // citation panel, the read-only view, and the composer — and mints a new chat.sessionId so the
   // backend doesn't thread the previous conversation's context into the next question. Session
-  // overrides (ADR-010) are left as-is: a deliberate sandbox setting, not conversation state.
+  // chat.overrides (ADR-010) are left as-is: a deliberate sandbox setting, not conversation state.
   function newConversation(): void {
-    if (sending) return
-    turns = []
-    activeCitation = null
-    compareResult = null
+    if (chat.sending) return
+    chat.turns = []
+    chat.activeCitation = null
+    chat.compareResult = null
     viewing = null
     viewedConvo = null
     resumedHistory = null
-    input = ''
+    chat.input = ''
     resetComposer()
-    nextId = 0
-    sessionId = freshSessionId()
-    pinned = true
+    resetTurnIds()
+    chat.sessionId = freshSessionId()
+    setPinned(true)
     shell.sidebarOpen = false
-    taEl?.focus()
+    chat.taEl?.focus()
   }
 
-  // Continue a viewed past chat (fresh-context resume). Switch the live session to it: its turns
-  // become read-only reference above the composer, and new turns thread to the same session_id
+  // Continue a viewed past chat (fresh-context resume). Switch the live session to it: its chat.turns
+  // become read-only reference above the composer, and new chat.turns thread to the same session_id
   // (so they append + persist). The backend session for this id starts empty — new questions are
   // standalone corpus queries, not a replay of the old conversation (memory is a later increment).
   function resumeConversation(): void {
     if (!viewedConvo || !viewing) return
     resumedHistory = viewedConvo
-    sessionId = viewing
+    chat.sessionId = viewing
     viewing = null
     viewedConvo = null
-    turns = []
-    nextId = 0
-    activeCitation = null
-    compareResult = null
-    input = ''
+    chat.turns = []
+    resetTurnIds()
+    chat.activeCitation = null
+    chat.compareResult = null
+    chat.input = ''
     resetComposer()
-    pinned = true
+    setPinned(true)
     shell.sidebarOpen = false
-    taEl?.focus()
+    chat.taEl?.focus()
   }
 
   // Open a past conversation read-only (H2). Selecting the live chat returns to it; the live
   // chat's in-memory state is never destroyed by viewing an old one.
   async function openConversation(sid: string): Promise<void> {
     shell.sidebarOpen = false
-    activeCitation = null
-    if (sid === sessionId) {
+    chat.activeCitation = null
+    if (sid === chat.sessionId) {
       viewing = null
       viewedConvo = null
       return
@@ -621,7 +568,7 @@
     try {
       viewedConvo = await getConversation(sid)
       viewing = sid
-      pinned = true
+      setPinned(true)
     } catch (e) {
       console.error('open conversation failed', e)
     }
@@ -630,7 +577,7 @@
   function backToCurrent(): void {
     viewing = null
     viewedConvo = null
-    activeCitation = null
+    chat.activeCitation = null
   }
 
   // Library documents are a sidecar read — a failure must never break the app (inform, don't block).
@@ -732,7 +679,7 @@
   function selectMode(m: 'chat' | 'library' | 'graph'): void {
     shell.mode = m
     shell.sidebarOpen = false
-    activeCitation = null
+    chat.activeCitation = null
     if (m === 'chat' && folders.length === 0) void refreshFolders()
     if (m === 'library' && !documentsLoaded) {
       void refreshDocuments()
@@ -973,7 +920,7 @@
     onNavForward={navForward}
     onSelectMode={selectMode}
     onOpenSearch={openSearch}
-    exportDisabled={viewing === null && resumedHistory === null && turns.length === 0}
+    exportDisabled={viewing === null && resumedHistory === null && chat.turns.length === 0}
     onExport={doExport}
   />
 
@@ -983,7 +930,7 @@
     conversations={conversations.list}
     {documents}
     {folders}
-    liveSessionId={sessionId}
+    liveSessionId={chat.sessionId}
     viewingSessionId={viewing}
     {libraryCollection}
     bind:libraryQuery
@@ -1067,137 +1014,21 @@
           loadPresence={getConceptPresence}
         />
       {:else}
-      <section class="conversation" bind:this={convoEl} onscroll={onConvoScroll}>
-        {#if viewing && viewedConvo}
-          <p class="readonly-note">
-            Viewing a past conversation (read-only).
-            <button class="linkish" onclick={resumeConversation}>Continue this chat</button>
-            ·
-            <button class="linkish" onclick={backToCurrent}>Back to current chat</button>
-          </p>
-          {#each viewedConvo.turns as t (t.record_id)}
-            <ReadonlyTurn
-              question={t.question}
-              answer={t.answer}
-              scope={t.scope}
-              onCitationClick={(n) => (activeCitation = { turnKey: t.record_id, n })}
-              activeCitationN={activeCitation?.turnKey === t.record_id ? activeCitation.n : null}
-            />
-          {/each}
-        {:else}
-          {#if resumedHistory}
-            <p class="readonly-note resumed">
-              Continuing <strong>{resumedHistory.title}</strong> · earlier turns are shown for
-              reference. New questions start fresh — grounded in your corpus, not the old chat.
-            </p>
-            {#each resumedHistory.turns as t (t.record_id)}
-              <ReadonlyTurn
-                question={t.question}
-                answer={t.answer}
-                scope={t.scope}
-                onCitationClick={(n) => (activeCitation = { turnKey: t.record_id, n })}
-                activeCitationN={activeCitation?.turnKey === t.record_id ? activeCitation.n : null}
-              />
-            {/each}
-            <div class="resume-divider"><span>continuing below</span></div>
-          {/if}
-          {#if shell.status === 'ready' && shell.health && shell.health.chunk_count === 0}
-            <div class="banner">
-              <span class="state-mark"><Icon name="library" size={26} /></span>
-              <strong>No documents indexed yet</strong>
-              <p>
-                Point doc_assistant at a folder of your documents to get started. It'll index them
-                locally, then you can ask questions grounded in them.
-              </p>
-              <button class="primary" onclick={() => (shell.showSettings = true)}>Choose a folder…</button>
-            </div>
-          {:else if turns.length === 0 && !resumedHistory}
-            <div class="empty">
-              <span class="state-mark"><Icon name="book-open-text" size={26} /></span>
-              <h2>Ask your library a question</h2>
-              <p>
-                Every answer is grounded in your own documents, with inline citations, provenance,
-                and per-claim review.
-              </p>
-              <div class="chips">
-                {#each sampleQuestions as q}
-                  <button class="chip" onclick={() => useSample(q)}>{q}</button>
-                {/each}
-              </div>
-            </div>
-          {/if}
-          {#each turns as t (t.id)}
-            <Turn
-              question={t.question}
-              answer={t.answer}
-              result={t.result}
-              streaming={t.streaming}
-              error={t.error}
-              onCitationClick={(n) => (activeCitation = { turnKey: String(t.id), n })}
-              activeCitationN={activeCitation?.turnKey === String(t.id) ? activeCitation.n : null}
-            />
-          {/each}
-          {#if compareResult}
-            <CompareCard result={compareResult} onClose={() => (compareResult = null)} />
-          {/if}
-        {/if}
-      </section>
-
-      <footer>
-        {#if viewing}
-          <div class="viewing-bar">
-            <button class="back" onclick={backToCurrent}
-              ><Icon name="arrow-left" size={15} /> Back to current chat</button
-            >
-            <button class="resume" onclick={resumeConversation}
-              ><Icon name="rotate-ccw" size={15} /> Continue this chat</button
-            >
-          </div>
-        {:else}
-          <textarea
-            bind:this={taEl}
-            bind:value={input}
-            onkeydown={onKey}
-            oninput={autogrow}
-            placeholder="Ask your documents…  (Enter to send, Shift+Enter for newline)"
-            rows="2"
-            disabled={sending}
-          ></textarea>
-          {#if hasRetrievalOverride}
-            <button
-              class="compare"
-              onclick={doCompare}
-              disabled={sending || comparing || input.trim() === ''}
-              title="See how your override changes retrieval for this question: locked defaults vs override, sources only, no answer ($0)"
-              type="button"
-            >
-              {comparing ? 'Comparing…' : 'Test override'}
-            </button>
-          {/if}
-          {#if folders.length > 0}
-            <!-- ADR-025 F2 scope selector. Session-sticky, never persisted (see chatScopeFolderId).
-                 "All documents" is always the first option, so returning to the whole library is
-                 one click and never a hidden state. -->
-            <label class="scopepick" class:scoped={chatScopeFolderId !== null}>
-              <Icon name="folder" size={13} />
-              <select
-                bind:value={chatScopeFolderId}
-                disabled={sending}
-                aria-label="Search scope"
-                title="Which documents this question searches"
-              >
-                <option value={null}>All documents</option>
-                {#each folders as f (f.id)}
-                  <option value={f.id}>{f.name} ({f.doc_count})</option>
-                {/each}
-              </select>
-            </label>
-          {/if}
-          <button class="send" onclick={send} disabled={sending || input.trim() === ''} aria-busy={sending}>
-            {#if sending}<span class="spinner" aria-hidden="true"></span>{:else}Send{/if}
-          </button>
-        {/if}
-      </footer>
+        <ChatPane
+          {viewing}
+          {viewedConvo}
+          {resumedHistory}
+          {folders}
+          bind:chatScopeFolderId
+          {hasRetrievalOverride}
+          {sampleQuestions}
+          onSend={send}
+          {onKey}
+          onCompare={doCompare}
+          onUseSample={useSample}
+          onResume={resumeConversation}
+          onBackToCurrent={backToCurrent}
+        />
       {/if}
     </main>
     </div>
@@ -1208,7 +1039,7 @@
 </div>
 
 {#if shell.showSettings}
-  <Settings onClose={() => (shell.showSettings = false)} onCorpusChanged={refreshHealth} bind:overrides />
+  <Settings onClose={() => (shell.showSettings = false)} onCorpusChanged={refreshHealth} bind:overrides={chat.overrides} />
 {/if}
 
 {#if shell.showShortcuts}
@@ -1224,8 +1055,8 @@
   />
 {/if}
 
-{#if activeCitation && activeSource}
-  <SourcePanel source={activeSource} onClose={() => (activeCitation = null)} />
+{#if chat.activeCitation && activeSource}
+  <SourcePanel source={activeSource} onClose={() => (chat.activeCitation = null)} />
 {/if}
 
 {#if editingDoc}
@@ -1411,247 +1242,4 @@
   }
 
 
-  .conversation {
-    flex: 1;
-    overflow-y: auto;
-    padding: var(--space-2) 0;
-  }
-  /* Empty + first-run states share one centered, mark-led layout (V2). */
-  .empty,
-  .banner {
-    max-width: 540px;
-    margin: var(--space-6) auto 0;
-    text-align: center;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-  }
-  .state-mark {
-    flex: none;
-    width: 46px;
-    height: 46px;
-    border-radius: 12px;
-    background: var(--surface-2);
-    color: var(--accent);
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    margin-bottom: var(--space-4);
-  }
-  .empty h2,
-  .banner strong {
-    font-family: var(--font-serif);
-    font-size: var(--text-title);
-    font-weight: 600;
-    color: var(--fg);
-    margin: 0;
-  }
-  .empty p,
-  .banner p {
-    color: var(--fg-2);
-    font-size: var(--text-sm);
-    line-height: 1.6;
-    max-width: 46ch;
-    margin: var(--space-2) 0 var(--space-4);
-  }
-  .chips {
-    display: flex;
-    flex-wrap: wrap;
-    gap: var(--space-2);
-    justify-content: center;
-  }
-  .chip {
-    font-size: var(--text-sm);
-    color: var(--accent);
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 999px;
-    padding: var(--space-2) var(--space-3);
-  }
-  .chip:hover {
-    border-color: var(--accent);
-  }
-  .readonly-note {
-    font-size: 0.78rem;
-    color: var(--fg-2);
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: 0.4rem 0.7rem;
-    margin: 0 0 0.5rem;
-  }
-  .linkish {
-    font: inherit;
-    font-size: inherit;
-    background: none;
-    border: none;
-    color: var(--accent);
-    cursor: pointer;
-    padding: 0;
-    text-decoration: underline;
-  }
-  /* Resume banner: tinted with the accent so "continuing" reads distinct from "viewing". */
-  .readonly-note.resumed {
-    background: color-mix(in srgb, var(--accent) 8%, var(--surface));
-    border-color: color-mix(in srgb, var(--accent) 25%, var(--border));
-    color: var(--fg);
-  }
-  .readonly-note.resumed strong {
-    font-weight: 600;
-  }
-  .resume-divider {
-    display: flex;
-    align-items: center;
-    gap: 0.6rem;
-    margin: 0.4rem 0 0.8rem;
-    color: var(--fg-2);
-    font-size: 0.72rem;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-  }
-  .resume-divider::before,
-  .resume-divider::after {
-    content: '';
-    flex: 1;
-    height: 1px;
-    background: var(--border);
-  }
-  .banner {
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    background: var(--surface);
-    box-shadow: var(--shadow-1);
-    padding: var(--space-6) var(--space-5);
-  }
-  .banner .primary {
-    background: var(--accent);
-    color: var(--accent-fg);
-    border-color: var(--accent);
-    font-weight: 600;
-    padding: 0.45rem 1.1rem;
-  }
-  footer {
-    display: flex;
-    gap: var(--space-2);
-    padding: var(--space-3) 0;
-    border-top: 1px solid var(--border);
-  }
-  textarea {
-    flex: 1;
-    resize: none;
-    font: inherit;
-    padding: 0.5rem 0.6rem;
-    border-radius: 8px;
-    border: 1px solid var(--border);
-    background: var(--surface);
-    color: var(--fg);
-    min-height: 3.4rem;
-    max-height: 160px;
-    overflow-y: auto;
-  }
-  button {
-    font: inherit;
-    cursor: pointer;
-    border-radius: 8px;
-    border: 1px solid var(--border);
-    background: var(--surface-2);
-    color: var(--fg);
-    padding: 0 1rem;
-  }
-  button:disabled {
-    opacity: 0.5;
-    cursor: default;
-  }
-  .viewing-bar {
-    display: flex;
-    gap: 0.5rem;
-    width: 100%;
-  }
-  .back {
-    flex: 1;
-    padding: 0.6rem;
-    color: var(--fg-2);
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0.3rem;
-  }
-  .resume {
-    flex: 1;
-    padding: 0.6rem;
-    background: var(--accent);
-    color: var(--accent-fg);
-    border-color: var(--accent);
-    font-weight: 600;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0.3rem;
-  }
-  .send {
-    background: var(--accent);
-    color: var(--accent-fg);
-    border-color: var(--accent);
-    font-weight: 600;
-    min-width: 4.4rem;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-  }
-  /* ADR-025 F2 scope selector — reads as a quiet control until a scope is set, then it is
-     tinted so a narrowed conversation is visible without opening anything. */
-  .scopepick {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.3rem;
-    flex: none;
-    padding: 0.25rem 0.4rem;
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    color: var(--fg-2);
-    background: var(--surface);
-  }
-  .scopepick.scoped {
-    color: var(--accent);
-    border-color: var(--accent);
-    background: color-mix(in srgb, var(--accent) 10%, transparent);
-  }
-  .scopepick select {
-    font: inherit;
-    font-size: 0.78rem;
-    max-width: 11rem;
-    border: none;
-    background: none;
-    color: inherit;
-    cursor: pointer;
-  }
-  .scopepick select:focus {
-    outline: none;
-  }
-  .scopepick select:disabled {
-    cursor: not-allowed;
-  }
-  .spinner {
-    width: 0.95em;
-    height: 0.95em;
-    border: 2px solid var(--accent-fg);
-    border-top-color: transparent;
-    border-radius: 50%;
-    animation: spin 0.6s linear infinite;
-  }
-  @keyframes spin {
-    to {
-      transform: rotate(360deg);
-    }
-  }
-  @media (prefers-reduced-motion: reduce) {
-    .spinner {
-      animation: none;
-    }
-  }
-  .compare {
-    font-size: 0.82rem;
-    white-space: nowrap;
-    color: var(--fg-2);
-  }
 </style>

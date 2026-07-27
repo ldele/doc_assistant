@@ -11,6 +11,45 @@ Format: What changed | Why | Rejected alternatives | What it opens
 > (moved verbatim 2026-07-21). This file keeps 2026-07-15 onward.
 
 ---
+## 2026-07-27 — `chat_controller.py` 1,423 → a package, and the re-export trap billing 66 tests
+
+**What changed.** Five modules + a barrel: `session` (63, ADR-3 caller-owned state) · `views` (121,
+the pure render payload `apps/api/models/chat.py` mirrors) · `events` (39, the `TurnEvent` union) ·
+`helpers` (493, pure formatters + turn-knob resolution) · `controller` (770, `ChatController`).
+Dependency direction is strictly **session/views → events/helpers → controller**.
+
+**The cycles in the first dependency scan were fake.** A naive name-reference scan reported
+`session→controller`, `helpers→controller`, `views→session`, i.e. no valid layering. Every one
+turned out to be a **docstring mention** — `` ``ChatController`` `` in a class doc, a Sphinx
+`:meth:` cross-reference. Only `events→views` (`result: TurnResult`) was a real code edge. Checking
+each candidate line by hand instead of trusting the count is what made the split possible; the
+regex would have said "don't do this".
+
+**Then the re-export trap, at scale.** The `library` split predicted it and cost 2 test lines; here
+it broke **66 tests**, because `test_chat_controller.py`/`test_turn_parity.py`/`test_retrieval_scope.py`
+patch *module-level imported names* on `chat_controller` — `is_library_query` (39×),
+`current_graph_version`, `record_answer`, `SYNTHESIS_MODE`, `adjudicate_claim`, `RAGPipeline`… Once
+those bindings live in `controller.py`/`helpers.py`, `setattr(chat_controller, …)` writes to the
+package and the real caller never sees it.
+
+The fix needed a distinction worth writing down: **rebinding a name** must target the owning module
+(`chat_controller.controller.is_library_query`, `chat_controller.helpers.SYNTHESIS_MODE` — note the
+config constants belong to `helpers`, since `_resolve_turn_knobs` consumes them), whereas
+**setting an attribute on a shared module object** (`chat_controller.app_settings.SETTINGS_PATH`)
+works through any binding, so `app_settings` is simply re-exported. 57 call sites repointed.
+
+**Three misses the mechanical generator made**, each caught by a different gate — worth knowing the
+pattern: (1) `log` used without `structlog` in the body, so no logger was bound — *ruff*;
+(2) `TurnEvent = Token | Step | Result` is a **module-level type alias**, invisible to a `def`/`class`
+scanner, so `controller` lost its import and the barrel lost the export — *ruff*; (3) test patch
+targets — *pytest*, 66 of them. Static analysis of a file tells you what is *defined*; it does not
+tell you what the rest of the repo *reaches into*.
+
+**Verified.** 34/34 declarations present, **zero body diffs**, and both module-level assignments
+(`TurnEvent`, `_MARKER_LABELS`) confirmed present. `ruff` + `ruff format` clean over `src/` and
+`tests/`, `mypy src` clean (**82 files**), full suite **1,315 passed** — the exact pre-split count.
+
+---
 ## 2026-07-27 — `library.py` 1,528 → a `library/` package (the `src/` twin of the apps/ pass)
 
 **What changed.** `src/doc_assistant/library.py` becomes a package of 8 sub-domain modules +

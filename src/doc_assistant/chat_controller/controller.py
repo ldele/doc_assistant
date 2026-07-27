@@ -1,25 +1,8 @@
-"""UI-agnostic turn orchestration (PR-M0 — Tauri desktop-shell migration).
+"""``ChatController`` — the turn orchestration itself.
 
-The whole RAG/integrity turn — slash-command dispatch, pending claim-edit handling,
-library-query routing, history-aware rewrite, retrieval, figure lookup, source
-assembly, ``SYNTHESIS_MODE=human`` branch, answer streaming, provenance capture,
-confidence-signal gating + (flagged-only) reviewer call, claim segmentation + eager
-persistence, citation audit, usage accounting, and export stashing — used to live
-inside the original web-UI ``on_message`` handler, interleaved with UI rendering.
-
-This module lifts that orchestration out of the UI so any frontend renders the same
-value object. ``ChatController.handle_message`` yields a stream of :class:`TurnEvent`
-(streamed ``Token``s + ``Step`` status updates) terminating in a :class:`Result`
-wrapping a :class:`TurnResult` — everything a renderer needs, as data. The desktop
-and CLI apps (and, in PR-M2, FastAPI) become thin renderers over this stream.
-
-**No UI-framework import here.** No generation logic moves: ``pipeline.stream_answer``
-etc. are called exactly as before. This is a *move*, not a redesign — behaviour is
-frozen and guarded by ``tests/integration/test_turn_parity.py``.
-
-See ``docs/archive/pr-m0-chat-controller.md`` and
-``docs/decisions/ADR-002-tauri-fastapi-desktop-shell.md``.
-"""
+Slash-command dispatch, library-query routing, history-aware rewrite, retrieval, figure lookup,
+source assembly, answer streaming, provenance capture, confidence gating + (flagged-only) reviewer,
+claim segmentation + persistence, citation audit, usage accounting and export stashing."""
 
 from __future__ import annotations
 
@@ -27,20 +10,43 @@ import contextlib
 import hashlib
 import time
 from collections.abc import Iterator
-from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Literal
 
 import structlog
 from langchain_core.documents import Document
 
 from doc_assistant import app_settings, compare, conversations, export
+from doc_assistant.chat_controller.events import Result, Step, Token, TurnEvent
+from doc_assistant.chat_controller.helpers import (
+    _build_claims_block,
+    _build_retrieved_chunks,
+    _build_source_views,
+    _export_sources,
+    _format_provenance_card,
+    _is_local,
+    _ProvenanceInputs,
+    _ProvenanceOutcome,
+    _resolve_scope,
+    _resolve_turn_knobs,
+    _scope_dict,
+    _scope_label,
+    _scope_note,
+    _sources_block,
+)
+from doc_assistant.chat_controller.session import RagOverrides, Session
+from doc_assistant.chat_controller.views import (
+    ClaimView,
+    ScopeView,
+    SourceEpistemics,
+    SourceEvalSummary,
+    SourceView,
+    TurnResult,
+    UsageView,
+)
 from doc_assistant.commands import execute_command, parse_command
 from doc_assistant.config import (
     EPISTEMICS_MARKERS_ENABLED,
-    REVIEWER_EVIDENCE_CHARS,
-    SYNTHESIS_MODE,
     TOP_K,
     USE_MULTI_QUERY,
     USE_PARENT_CHILD,
@@ -48,688 +54,29 @@ from doc_assistant.config import (
 from doc_assistant.embeddings import get_active_model_name
 from doc_assistant.ingest.figures import load_figure_image_paths
 from doc_assistant.knowledge.epistemics import (
-    MARKER_CONTESTED,
-    MARKER_SUPERSEDED,
     ChunkEval,
     current_graph_version,
     derive_markers,
     load_source_evaluations,
 )
-from doc_assistant.library import document_years, folder_doc_hashes, get_folder
+from doc_assistant.library import document_years
 from doc_assistant.pipeline import RAGPipeline, format_citation
 from doc_assistant.prompts import ANSWER_PROMPT
 from doc_assistant.provenance import (
     AnswerProvenance,
-    ConfidenceSignals,
     RetrievedChunk,
     adjudicate_claim,
     compute_confidence_signals,
     prompt_version_hash,
     record_answer,
-    record_claims,
     template_hash,
 )
 from doc_assistant.query_router import answer_library_query, is_library_query
 from doc_assistant.reviewer import ReviewResult, persist_review, review_answer
-from doc_assistant.synthesis import (
-    MARKER_OK,
-    Claim,
-    audit_citations,
-    render_evidence_markdown,
-    segment_claims,
-)
+from doc_assistant.synthesis import audit_citations, render_evidence_markdown
 from doc_assistant.tracking import TokenCounter
 
 log = structlog.get_logger(__name__)
-
-# ============================================================
-# Session state (ADR-3) — caller-owned, injected into every call
-# ============================================================
-
-
-@dataclass
-class Session:
-    """Per-conversation state. Caller-owned; injected into every ``ChatController``
-    call. The controller holds no per-turn state in globals — it is stateless across
-    turns except for this injected object (multi-session later is non-breaking)."""
-
-    history: list[dict[str, str]] = field(default_factory=list)
-    counter: TokenCounter = field(default_factory=TokenCounter)
-    export_turns: list[export.ExportTurn] = field(default_factory=list)
-    awaiting_edit: dict[str, Any] | None = None
-    session_id: str = field(default_factory=lambda: time.strftime("%Y%m%d-%H%M%S"))
-
-
-@dataclass(frozen=True)
-class RagOverrides:
-    """Session-scoped, per-turn RAG knob overrides (ADR-010 / feature-rag-sandbox.md).
-    ``None`` (a field or the whole object) = use the locked default. Non-persistent: never
-    written to config/.env/app_settings, and never assigned to a module global — threaded
-    as an explicit request-scoped parameter so concurrent turns on the shared
-    ``ChatController`` singleton cannot leak overrides into each other.
-
-    ``epistemics_markers_enabled``/``reviewer_evidence_chars`` (U1b, SPRINT-011, ADR-010's
-    2026-07-10 amendment) are the two "must revisit" niche knobs — same non-persistent,
-    request-scoped mechanics as the original three."""
-
-    top_k: int | None = None
-    synthesis_mode: str | None = None  # "ai" | "human"
-    use_multi_query: bool | None = None
-    epistemics_markers_enabled: bool | None = None
-    reviewer_evidence_chars: int | None = None
-
-
-@dataclass(frozen=True)
-class _TurnKnobs:
-    """The effective per-turn RAG knobs (ADR-010), resolved once from a ``RagOverrides`` plus the
-    locked config defaults, together with the provenance ``overrides_note`` derived from them. A
-    ``None`` field (or ``overrides=None``) = the locked default. See ``_resolve_turn_knobs``."""
-
-    top_k: int
-    synthesis_mode: str
-    multi_query: bool
-    markers_enabled: bool
-    reviewer_evidence_chars: int
-    overrides_note: str
-
-
-# ============================================================
-# View models (pure render payload — no UI framework types)
-# ============================================================
-
-
-@dataclass
-class ScopeView:
-    """The retrieval scope one turn ran under (ADR-025 F2) — render-ready.
-
-    Present only on a scoped turn; ``None`` on ``TurnResult`` means the whole library. This is
-    a **content filter** (which documents), not a quality knob, which is why it rides beside
-    ``RagOverrides`` rather than inside it (docs/specs/feature-corpus-folders-scope.md, S1).
-
-    ``folder_name is None`` means the folder was deleted between the user picking it and the
-    turn running: ``doc_count`` is then 0 and the turn honestly retrieves nothing rather than
-    quietly widening to every document (S3).
-    """
-
-    folder_id: str
-    folder_name: str | None
-    doc_count: int
-
-
-@dataclass(frozen=True)
-class SourceEpistemics:
-    """One source's epistemic assessment for the always-on D3 strip (ADR-027). ``coverage`` is the
-    most-cautionary claim class in the source's chunk (``corroborated``/``unique``/``contested``,
-    or ``None`` = not assessed); ``superseded`` flags a superseded-trend claim; ``year`` is the
-    doc's publication year. Always attached (D3 is not gated by the D2/E3 influence toggle)."""
-
-    coverage: str | None
-    superseded: bool
-    n_claims: int
-    year: int | None
-
-
-@dataclass(frozen=True)
-class SourceEvalSummary:
-    """Strip-level freshness for the D3 source-evaluation surface (ADR-027). ``graph_version`` is
-    the build stamp the epistemics sidecar was computed under; ``stale`` is True when the concept
-    graph has since been rebuilt without re-running ``compute_epistemics`` (the strip says so, not
-    hides it). ``None`` on ``TurnResult`` = no sidecar / 0-doc — the strip degrades to nothing."""
-
-    graph_version: str | None
-    stale: bool
-
-
-@dataclass
-class SourceView:
-    """One retrieved source, render-ready (side panel / sources block)."""
-
-    n: int
-    citation: str  # format_citation(doc, n)
-    excerpt: str  # ~800-char side-panel preview (with trailing "..." when truncated)
-    figure_path: str | None  # resolved PNG path (local desktop render); never crosses the API
-    chunk_key: str | None  # ADR-2; the 7d marker join key
-    markers: list[str] = field(default_factory=list)  # PR-M1: contested / superseded_trend (D2)
-    figure_id: str | None = None  # PR-M3: the id the web/API renders via GET /api/figures/{id}
-    reranker_score: float = 0.0  # per-source rerank score (D3 strip signal, ADR-027)
-    evaluation: SourceEpistemics | None = None  # always-on per-source assessment (D3)
-
-
-@dataclass
-class ClaimView:
-    """A flagged claim needing adjudication (clean claims are not surfaced)."""
-
-    claim_id: str
-    n: int
-    text: str
-    badge: str  # "unsupported" | "weakly grounded"
-
-
-@dataclass
-class UsageView:
-    turn_input: int
-    turn_output: int
-    session_total: int
-    cost_usd: float | None  # None under local provider (no metered cost)
-    is_local: bool
-
-
-@dataclass
-class TurnResult:
-    """The full render payload for one turn. Renderers map fields to widgets only —
-    no business logic. The markdown blocks are pre-rendered by the pure formatters."""
-
-    answer: str  # the raw answer text (no appended blocks)
-    mode: Literal["ai", "human"]
-    sources: list[SourceView]
-    flagged_claims: list[ClaimView]
-    usage: UsageView
-    standalone_query: str  # post-rewrite query actually searched
-    record_id: str | None  # provenance id (for /review, /export-record)
-    # Pre-rendered markdown blocks (built by the existing pure formatters):
-    provenance_card_md: str
-    claim_review_md: str
-    sources_md: str
-    usage_md: str
-    citation_note_md: str  # "" when citations are clean
-    # A written export file to offer for download (set by the /export slash command;
-    # None otherwise). Lets the renderer attach a download widget without re-deriving
-    # dispatch — preserves the original /export behaviour across the UI split.
-    download_path: Path | None = None
-    # ADR-025 F2 — the retrieval scope this turn ran under; None = the whole library. The
-    # renderer MUST surface this whenever it is set: an answer drawn from a subset of the
-    # corpus that doesn't say so is the failure this feature was built to prevent.
-    scope: ScopeView | None = None
-    # ADR-027 D3 — strip-level freshness for the always-on source-evaluation surface (per-source
-    # assessment rides on each SourceView.evaluation). None = no sidecar / 0-doc → no strip.
-    source_eval: SourceEvalSummary | None = None
-
-
-# ============================================================
-# TurnEvent — a tagged union streamed by handle_message
-# ============================================================
-
-
-@dataclass
-class Token:
-    """One streamed answer-token delta."""
-
-    text: str
-
-
-@dataclass
-class Step:
-    """A progress status update (retrieval / rewrite). Advisory; renderers may show it."""
-
-    name: str
-    status: str
-
-
-@dataclass
-class Result:
-    """The terminal event: the finished TurnResult."""
-
-    result: TurnResult
-
-
-TurnEvent = Token | Step | Result
-
-
-# ============================================================
-# Helpers (pure formatters, moved out of the original UI handler)
-# ============================================================
-
-
-def _is_local(provider: str) -> bool:
-    """Whether ``provider`` is the local/free Ollama backend.
-
-    ADR-011 (U1c, desktop provider switch): takes the caller's **effective** provider
-    (``self.rag.provider``) rather than reading the import-time ``LLM_PROVIDER`` constant, so this
-    stays truthful after a live switch. No default — every call site must say which provider it
-    means.
-    """
-    return provider.lower() == "ollama"
-
-
-# PR-M1 — human labels for the 7d evidence-layer markers (advisory chip, not a gate).
-_MARKER_LABELS = {
-    MARKER_CONTESTED: "contested in corpus",
-    MARKER_SUPERSEDED: "trend superseded",
-}
-
-
-def _marker_chip(markers: list[str]) -> str:
-    """A quiet inline chip for a source's 7d markers (PR-M1). Returns "" when clean, so a
-    turn with no markers renders **byte-identically** to before (eval-comparability)."""
-    if not markers:
-        return ""
-    labels = [_MARKER_LABELS.get(m, m) for m in markers]
-    return " — ⚠ " + " · ".join(labels)
-
-
-def _sources_block(sources: list[SourceView]) -> str:
-    """The visible "Sources:" list — each line is ``citation`` + (PR-M1 marker chip, if
-    any). Byte-identical to the citation-only form when no source carries a marker."""
-    lines = [sv.citation + _marker_chip(sv.markers) for sv in sources]
-    return "\n\n---\n**Sources:**\n" + "\n".join(lines)
-
-
-def _overrides_note(
-    eff_top_k: int,
-    eff_synthesis_mode: str,
-    eff_multi_query: bool,
-    eff_markers_enabled: bool = EPISTEMICS_MARKERS_ENABLED,
-    eff_reviewer_evidence_chars: int = REVIEWER_EVIDENCE_CHARS,
-    markers_default: bool = EPISTEMICS_MARKERS_ENABLED,
-) -> str:
-    """ADR-010 Decision 5: provenance shows the *effective* knob values and flags any that
-    differ from the locked default. Returns "" (no-op, byte-identical turn) when every
-    effective value equals its default — i.e. ``overrides=None`` or an all-``None``
-    ``RagOverrides``. The markers baseline is ``markers_default`` — the *persisted-effective*
-    default (ADR-027 D2, E3), not the raw config constant: the persisted toggle is the user's
-    chosen default, and stamping it "Session override (this answer only)" on every turn would
-    be a provenance lie. Only a genuine per-turn U1b diff fires the note."""
-    diffs = []
-    if eff_top_k != TOP_K:
-        diffs.append(f"top_k={eff_top_k} (default {TOP_K})")
-    if eff_synthesis_mode != SYNTHESIS_MODE:
-        diffs.append(f"synthesis_mode={eff_synthesis_mode} (default {SYNTHESIS_MODE})")
-    if eff_multi_query != USE_MULTI_QUERY:
-        diffs.append(f"multi_query={eff_multi_query} (default {USE_MULTI_QUERY})")
-    if eff_markers_enabled != markers_default:
-        diffs.append(
-            f"epistemics_markers_enabled={eff_markers_enabled} (default {markers_default})"
-        )
-    if eff_reviewer_evidence_chars != REVIEWER_EVIDENCE_CHARS:
-        diffs.append(
-            f"reviewer_evidence_chars={eff_reviewer_evidence_chars} "
-            f"(default {REVIEWER_EVIDENCE_CHARS})"
-        )
-    if not diffs:
-        return ""
-    return "\n\n🧪 **Session override (this answer only):** " + " · ".join(diffs)
-
-
-def _resolve_turn_knobs(overrides: RagOverrides | None) -> _TurnKnobs:
-    """Resolve the effective per-turn knobs from ``overrides`` + the locked defaults (ADR-010).
-
-    Request-scoped: reads ``overrides``, the config constants, and (for the markers knob) the
-    persisted answer-layer default — never a module global, so concurrent turns on the shared
-    controller cannot leak. ``None`` = the default. The markers baseline is E3's three-layer
-    resolution (ADR-027 D2): per-turn U1b override > persisted setting > config default —
-    ``app_settings.effective_markers_enabled()`` supplies the lower two layers, re-read each
-    turn so a Settings toggle applies from the very next turn without a restart (the ADR-011
-    ``effective_llm`` precedent). ``multi_query`` here is the *effective* value carried into
-    the provenance note only — the retrieval call passes the RAW ``overrides.use_multi_query``
-    (``None`` → the pipeline's own default), a deliberately distinct path this resolution does
-    not touch."""
-    top_k = overrides.top_k if overrides and overrides.top_k is not None else TOP_K
-    synthesis_mode = (
-        overrides.synthesis_mode if overrides and overrides.synthesis_mode else SYNTHESIS_MODE
-    )
-    multi_query = (
-        USE_MULTI_QUERY
-        if overrides is None or overrides.use_multi_query is None
-        else overrides.use_multi_query
-    )
-    markers_default = app_settings.effective_markers_enabled()
-    markers_enabled = (
-        markers_default
-        if overrides is None or overrides.epistemics_markers_enabled is None
-        else overrides.epistemics_markers_enabled
-    )
-    reviewer_evidence_chars = (
-        overrides.reviewer_evidence_chars
-        if overrides and overrides.reviewer_evidence_chars is not None
-        else REVIEWER_EVIDENCE_CHARS
-    )
-    return _TurnKnobs(
-        top_k=top_k,
-        synthesis_mode=synthesis_mode,
-        multi_query=multi_query,
-        markers_enabled=markers_enabled,
-        reviewer_evidence_chars=reviewer_evidence_chars,
-        overrides_note=_overrides_note(
-            top_k,
-            synthesis_mode,
-            multi_query,
-            markers_enabled,
-            reviewer_evidence_chars,
-            markers_default=markers_default,
-        ),
-    )
-
-
-def _resolve_scope(
-    scope_folder_id: str | None,
-) -> tuple[frozenset[str] | None, ScopeView | None]:
-    """Resolve a folder id into ``(doc_hash scope, ScopeView)`` for one turn (ADR-025 F2).
-
-    ``None`` in, ``(None, None)`` out — the unscoped path, byte-identical to pre-F2.
-
-    A folder that is unknown, deleted, or empty resolves to an **empty** frozenset, never to
-    ``None``: the caller must then retrieve nothing. Collapsing "I couldn't honour your scope"
-    into "I searched everything" is precisely the silent-lie failure this feature exists to
-    prevent, so the two cases are kept structurally distinct all the way down.
-
-    A resolution failure (a broken DB read) is treated the same way — empty, not unscoped.
-    """
-    if scope_folder_id is None:
-        return None, None
-    try:
-        hashes = folder_doc_hashes(scope_folder_id)
-        folder = get_folder(scope_folder_id)
-    except Exception as e:  # pragma: no cover - defensive; a scope must never widen on error
-        log.warning("scope_resolve_failed", folder_id=scope_folder_id, error=str(e))
-        return frozenset(), ScopeView(folder_id=scope_folder_id, folder_name=None, doc_count=0)
-    if folder is None:
-        log.warning("scope_folder_missing", folder_id=scope_folder_id)
-    return (
-        frozenset(hashes),
-        ScopeView(
-            folder_id=scope_folder_id,
-            folder_name=folder.name if folder is not None else None,
-            doc_count=len(hashes),
-        ),
-    )
-
-
-def _scope_dict(scope: ScopeView | None) -> dict[str, Any] | None:
-    """``ScopeView`` → the JSON shape persisted in ``answer_records.retrieval_scope_json``.
-    ``None`` stays ``None`` so an unscoped turn writes NULL, exactly like every pre-F2 row."""
-    if scope is None:
-        return None
-    return {
-        "folder_id": scope.folder_id,
-        "folder_name": scope.folder_name,
-        "doc_count": scope.doc_count,
-    }
-
-
-def _scope_label(scope: ScopeView | None) -> str | None:
-    """One-line scope label for surfaces that show a constraint rather than a full note
-    (the A/B compare card). ``None`` on an unscoped run."""
-    if scope is None:
-        return None
-    if scope.folder_name is None:
-        return "a folder that no longer exists (0 documents)"
-    return f"{scope.folder_name} ({scope.doc_count} document{'' if scope.doc_count == 1 else 's'})"
-
-
-def _scope_note(scope: ScopeView | None) -> str:
-    """Provenance-card line naming the scope. ``""`` on an unscoped turn, so the default turn
-    stays byte-identical (the turn-parity test pins this)."""
-    if scope is None:
-        return ""
-    where = f"**{scope.folder_name}**" if scope.folder_name else "a folder that no longer exists"
-    return (
-        f"\n\n🔎 **Retrieval scope (this answer only):** {where} — "
-        f"{scope.doc_count} document{'' if scope.doc_count == 1 else 's'} searched, "
-        "not the whole library."
-    )
-
-
-def _format_review_block(review: ReviewResult | None) -> str:
-    """Render the reviewer's verdict as a sub-section of the provenance card."""
-    if review is None:
-        return ""
-    if review.error:
-        return f"\n\n**Reviewer:** _failed — {review.error}_"
-    bits = [
-        f"faithfulness `{review.faithfulness}/5`",
-        f"citation density `{review.citation_density}/5`",
-        f"hedging `{review.hedging_adequacy}/5`",
-        f"unsupported claims: `{review.unsupported_claims_count}`",
-    ]
-    notes = f"  \n_Reviewer notes:_ {review.notes}" if review.notes else ""
-    return "\n\n**Reviewer assessment:** " + " · ".join(bits) + notes
-
-
-def _token_suffix(prov: AnswerProvenance, *, is_local: bool) -> str:
-    """Header token tag — provider-aware. Local models report no usage, so a
-    `0 tokens` figure would be misleading; show `local` instead."""
-    if is_local:
-        return " · local"
-    total = (prov.token_input or 0) + (prov.token_output or 0)
-    return f" · {total:,} tokens"
-
-
-def _format_provenance_card(
-    prov: AnswerProvenance,
-    signals: ConfidenceSignals,
-    *,
-    review: ReviewResult | None = None,
-    is_local: bool = False,
-) -> str:
-    """Render an AnswerProvenance as a plain-markdown card (no raw HTML).
-
-    Clean answers get a compact three-line block; when a confidence signal
-    fires the block expands with the signal breakdown, the reviewer verdict,
-    and the full per-source reranker scores, led by a ⚠ chip. Filenames are
-    not repeated — they live in the always-visible "Sources:" block; the card
-    keys scores by source number. Full per-chunk metadata is in the DB /
-    `/export-record`.
-    """
-    id8 = prov.id[:8]
-    latency_s = (prov.latency_ms or 0.0) / 1000.0
-    meta = (
-        f"**Model** `{prov.model_name or '?'}` · "
-        f"**Embedding** `{prov.embedding_model or '?'}` · "
-        f"**top_k** {prov.top_k} · **parent-child** {prov.use_parent_child}"
-    )
-    hint = f"_Review:_ `/review {id8}` · _Export:_ `/export-record {id8}`"
-
-    if not signals.any():
-        top = (
-            f" · **top reranker** `{signals.max_score:.3f}`"
-            if signals.max_score is not None
-            else ""
-        )
-        return (
-            f"\n\n---\n"
-            f"🔍 **Provenance** — `{id8}` · {latency_s:.1f}s"
-            f"{_token_suffix(prov, is_local=is_local)}{top}  \n"
-            f"{meta}  \n"
-            f"{hint}"
-        )
-
-    sig_lines = (
-        f"- max reranker score: `{signals.max_score:.3f}`"
-        f"{' ⚠' if signals.weak_retrieval else ''}  \n"
-        f"- top-3 score span: `{signals.top3_span:.3f}`"
-        f"{' ⚠' if signals.score_cluster_concern else ''}  \n"
-        f"- unique source documents: `{signals.unique_sources}`"
-        f"{' ⚠' if signals.single_source_risk else ''}"
-    )
-    score_lines = "\n".join(
-        f"- [{i + 1}] reranker `{c.reranker_score:.3f}`"
-        if c.reranker_score is not None
-        else f"- [{i + 1}] reranker `-`"
-        for i, c in enumerate(prov.retrieved_chunks)
-    )
-    review_block = _format_review_block(review)
-    return (
-        f"\n\n---\n"
-        f"⚠ **Low confidence: {', '.join(signals.reasons)}** — "
-        f"`{id8}` · {latency_s:.1f}s{_token_suffix(prov, is_local=is_local)}  \n"
-        f"{meta}  \n"
-        f"**Prompt version** `{prov.prompt_version or '?'}`\n\n"
-        f"**Confidence signals**  \n{sig_lines}"
-        f"{review_block}\n\n"
-        f"**Reranker scores** (by source number above)\n{score_lines}\n\n"
-        f"{hint}"
-    )
-
-
-def _chunk_key(meta: dict[str, Any]) -> str | None:
-    """Epistemics-format join key (ADR-2 / E1.1): ``{document_id}:{chunk_index}`` for a flat
-    /baseline chunk, ``{document_id}:p{parent_index}`` for a PC parent (which carries
-    ``parent_index``, not ``chunk_index``). ``None`` only when ``document_id`` is missing.
-
-    Both keys are now first-class: ``build_epistemics`` projects the marker sidecar onto **both**
-    segmentations (KI-8 re-projection), so ``load_epistemics_index`` resolves either directly —
-    no more coarse PC-parent text containment.
-    """
-    document_id = meta.get("document_id")
-    if document_id is None:
-        return None
-    chunk_index = meta.get("chunk_index")
-    if chunk_index is not None:
-        return f"{document_id}:{chunk_index}"
-    parent_index = meta.get("parent_index")
-    if parent_index is not None:
-        return f"{document_id}:p{parent_index}"
-    return None
-
-
-def _build_retrieved_chunks(
-    scored: list[tuple[Document, float]],
-    *,
-    reviewer_evidence_chars: int = REVIEWER_EVIDENCE_CHARS,
-) -> list[RetrievedChunk]:
-    """Build the provenance RetrievedChunk list from (doc, score) pairs.
-
-    ``reviewer_evidence_chars`` (U1b / ADR-010 amendment) defaults to the locked config
-    value — callers pass the per-turn effective value to override it, request-scoped."""
-    chunks: list[RetrievedChunk] = []
-    for doc, score in scored:
-        meta = doc.metadata
-        chunks.append(
-            RetrievedChunk(
-                filename=meta.get("filename"),
-                doc_id=meta.get("document_id") or meta.get("doc_hash"),
-                page=meta.get("page"),
-                section=meta.get("section"),
-                reranker_score=float(score),
-                chunk_excerpt=doc.page_content[:300],
-                # Wider grounding for the reviewer (not persisted/displayed).
-                full_text=doc.page_content[:reviewer_evidence_chars],
-                chunk_key=_chunk_key(meta),
-            )
-        )
-    return chunks
-
-
-def _build_source_views(
-    scored: list[tuple[Document, float]], fig_paths: dict[str, str]
-) -> list[SourceView]:
-    """Build the render-ready source list (side-panel preview + figure path + key)."""
-    views: list[SourceView] = []
-    for i, (doc, score) in enumerate(scored):
-        meta = doc.metadata
-        preview = doc.page_content[:800] + ("..." if len(doc.page_content) > 800 else "")
-        figure_id = meta.get("figure_id") or None
-        figure_path = fig_paths.get(figure_id) if figure_id else None
-        views.append(
-            SourceView(
-                n=i + 1,
-                citation=format_citation(doc, i + 1),
-                excerpt=preview,
-                figure_path=figure_path,
-                chunk_key=_chunk_key(meta),
-                figure_id=figure_id,
-                reranker_score=round(float(score), 4),  # D3 strip signal (ADR-027)
-            )
-        )
-    return views
-
-
-def _build_claim_review(claims: list[Claim], claim_ids: list[str]) -> tuple[str, list[ClaimView]]:
-    """Render the adjudication section + per-claim view-models for *flagged* claims only.
-
-    Quiet on clean answers (UX: inform, don't clutter): claims marked ``ok`` get
-    no view-model; only ``weak``/``unsupported`` claims surface accept/reject/edit.
-    All claims are persisted regardless (the eager adjudication log). The pure split
-    of the old ``_build_claim_review`` (Decision 5): returns the markdown block + a list
-    of :class:`ClaimView`; the renderer builds its own buttons from the view-models.
-    """
-    flagged = [(c, cid) for c, cid in zip(claims, claim_ids, strict=True) if c.marker != MARKER_OK]
-    if not flagged:
-        return (
-            f"\n\n---\n🔎 **Interpretation** — all {len(claims)} claim(s) grounded "
-            "in cited evidence.",
-            [],
-        )
-    lines = [f"\n\n---\n⚠ **{len(flagged)} claim(s) to review** (evidence vs interpretation):"]
-    views: list[ClaimView] = []
-    for c, cid in flagged:
-        n = c.claim_index + 1
-        badge = "unsupported" if c.marker != "weak" else "weakly grounded"
-        lines.append(f"- **#{n}** {c.text}  _({badge})_")
-        views.append(ClaimView(claim_id=cid, n=n, text=c.text, badge=badge))
-    return "\n".join(lines), views
-
-
-def _build_claims_block(
-    record_id: str, full_answer: str, retrieved_chunks: list[RetrievedChunk]
-) -> tuple[str, list[ClaimView]]:
-    """Chunk 2a: segment the answer into claims, eager-persist them, and render the review block
-    for the flagged ones (E1.2 — lifted from ``_handle_rag``). Advisory: any failure collapses to
-    a "Claim adjudication unavailable" note + no flagged claims, never breaking the turn. Called
-    only with a real ``record_id`` (the caller guards on it — no record, no claims)."""
-    try:
-        claims = segment_claims(full_answer, retrieved_chunks)
-        claim_ids = record_claims(record_id, claims)
-        return _build_claim_review(claims, claim_ids)
-    except Exception as e:
-        return f"\n\n_⚠ Claim adjudication unavailable: {e}_", []
-
-
-def _export_sources(
-    scored: list[tuple[Document, float]], fig_paths: dict[str, str]
-) -> list[export.ExportSource]:
-    """Map (doc, score) pairs to the export's source view (figure paths attached)."""
-    sources: list[export.ExportSource] = []
-    for i, (doc, score) in enumerate(scored):
-        meta = doc.metadata
-        fig_id = meta.get("figure_id", "")
-        is_figure = meta.get("chunk_type") == "figure"
-        sources.append(
-            export.ExportSource(
-                n=i + 1,
-                filename=meta.get("filename"),
-                page=meta.get("page"),
-                section=meta.get("section"),
-                reranker_score=float(score),
-                is_figure=is_figure,
-                image_path=fig_paths.get(fig_id) if is_figure else None,
-                excerpt=doc.page_content[:300],
-            )
-        )
-    return sources
-
-
-@dataclass(frozen=True)
-class _ProvenanceInputs:
-    """The inputs to one turn's provenance + reviewer capture (E1.2 — bundled so the extracted
-    :meth:`ChatController._capture_provenance_and_review` stays a single-argument seam)."""
-
-    standalone: str
-    original_query: str | None
-    full_answer: str
-    retrieved_chunks: list[RetrievedChunk]
-    model_name: str | None
-    embedding_model: str
-    top_k: int
-    token_input: int
-    token_output: int
-    latency_ms: float
-    session_id: str
-    scope_view: ScopeView | None
-    turn_provider: str
-    turn_model: str
-    # ADR-027 D2 (E3): the effective answer-layer epistemics flag for this turn, snapshotted
-    # into the AnswerRecord (ADR-011 instrument discipline).
-    markers_enabled: bool
-
-
-@dataclass(frozen=True)
-class _ProvenanceOutcome:
-    """What one turn's provenance + reviewer capture produced (E1.2)."""
-
-    record_id: str | None
-    provenance_block: str
-    review: ReviewResult | None
 
 
 # ============================================================

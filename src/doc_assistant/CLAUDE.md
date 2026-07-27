@@ -4,10 +4,14 @@
 `apps/` render it; `scripts/` drive it; neither owns logic (non-negotiable #3).
 
 **Layout (ADR-023)**
-- Top level — the RAG answer path: `pipeline.py` (hybrid retrieval + rerank), `chat_controller.py`
-  (turn orchestration), `llm.py` (provider-agnostic clients), `synthesis.py`, `provenance.py`,
-  `reviewer*.py`, `prompts.py`, `config.py`, plus app services (`library.py`, `conversations.py`,
-  `app_settings.py`, `compare.py`, `health.py`, `export.py`) and `doc_vectors.py`.
+- Top level — the RAG answer path: `pipeline.py` (hybrid retrieval + rerank), `llm.py`,
+  `synthesis.py`, `provenance.py`, `reviewer*.py`, `prompts.py`, `config.py`, plus app services
+  (`conversations.py`, `app_settings.py`, `compare.py`, `health.py`, `export.py`), `doc_vectors.py`.
+- `chat_controller/` — turn orchestration: `session` · `views` · `events` · `helpers` ·
+  `controller` (direction: session/views → events/helpers → controller).
+- `library/` — the document-store API, sub-domain names matching `apps/api/routers/library/`:
+  `models` · `documents` · `pins` · `folders` · `keywords` · `chunks` · `citations` · `similarity`.
+  Both packages re-export flat from `__init__` for existing callers.
 - `db/` — SQLAlchemy models + session + **additive** migrations (`_ADDITIVE_COLUMNS`).
 - `ingest/` — extract → markdown → chunk → embed → store (locked path) + registry/cache/figures/tables.
 - `knowledge/` — the corpus-derived layer: keywords/families, concept skeleton (Node A/B) +
@@ -17,15 +21,19 @@
 
 **Rules that bite here**
 - **Locked settings** live in `config.py` — change only via an eval-harness experiment
-  (`.claude/CONTEXT.md` table). Enrichment modules are sidecars: additive tables/files, idempotent,
-  never touch the chunk store.
+  (`.claude/CONTEXT.md` table). Enrichment modules are sidecars: additive, idempotent, never touch
+  the chunk store.
 - `structlog` only, no `print()` (ADR-003); library code never configures logging.
-- **Robustness contract:** every module must handle an empty corpus (0 docs) without crashing and
-  avoid corpus-tuned constants — thresholds derive from data or are named structural constants.
+- **Robustness contract:** handle an empty corpus (0 docs) without crashing; no corpus-tuned
+  constants — thresholds derive from data or are named structural constants.
 - Strict typing is the bar (`[tool.mypy] strict=true`) — run **`uv run --no-sync mypy src`**,
-  **never `mypy --strict src`**: the flag changes the option set, so it invalidates mypy's cache both
-  ways and makes the next commit's hook take ~40s instead of ~2s (add
-  `--cache-dir .mypy_cache-strict` if you do want it). Exceptions chain (`raise X from e`).
+  **never `mypy --strict src`**: the flag changes the option set, so it wipes mypy's cache both ways
+  and the next commit's hook takes ~40s instead of ~2s. Exceptions chain (`raise X from e`).
+- **Monkeypatch the module that OWNS a name**, never a package that re-exports it — a re-export is
+  a *separate binding*, so patching `library.<name>` silently misses (66 tests broke this way in the
+  `chat_controller` split). Use `library.documents._reveal_in_file_manager`,
+  `chat_controller.controller.is_library_query`, `chat_controller.helpers.SYNTHESIS_MODE`. Setting an
+  *attribute on a shared module object* (`app_settings.SETTINGS_PATH`) is fine through any binding.
 
 **Tests:** `tests/unit/` + `tests/integration/` (mirror module names).
 

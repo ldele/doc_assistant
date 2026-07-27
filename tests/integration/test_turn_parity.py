@@ -115,7 +115,7 @@ def _sources() -> list[tuple[Document, float]]:
 
 
 def _events(tokens: list[str], temp_db, monkeypatch) -> tuple[list[object], TurnResult]:
-    monkeypatch.setattr(chat_controller, "is_library_query", lambda t: False)
+    monkeypatch.setattr(chat_controller.controller, "is_library_query", lambda t: False)
     controller = ChatController(rag=FakeRAG(_sources(), tokens))
     events = list(controller.handle_message(Session(), "How do neurons connect?"))
     result = next(e.result for e in events if isinstance(e, Result))
@@ -201,7 +201,7 @@ def test_byte_identical_when_markers_absent(temp_db, monkeypatch):
     This is the eval-comparability guarantee (markers must not perturb a clean turn)."""
     # ADR-027 D3: no concept graph → the always-on source-evaluation strip no-ops (source_eval
     # None), so the turn is byte-identical to the pre-strip form.
-    monkeypatch.setattr(chat_controller, "current_graph_version", lambda: None)
+    monkeypatch.setattr(chat_controller.controller, "current_graph_version", lambda: None)
     _, result = _events(["Neurons meet at synapses [1]."], temp_db, monkeypatch)
 
     assert all(s.markers == [] for s in result.sources)

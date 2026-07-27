@@ -154,7 +154,7 @@ def _scope_json() -> list[str | None]:
 
 
 def test_scoped_turn_resolves_membership_records_and_announces(monkeypatch, temp_db) -> None:
-    monkeypatch.setattr(chat_controller, "is_library_query", lambda t: False)
+    monkeypatch.setattr(chat_controller.controller, "is_library_query", lambda t: False)
     folder_id = _folder_with("a.pdf", "b.pdf")
     rag = FakeRAG()
     controller = ChatController(rag=rag)
@@ -184,7 +184,7 @@ def test_scoped_turn_resolves_membership_records_and_announces(monkeypatch, temp
 
 def test_human_mode_scoped_turn_also_announces_and_records(monkeypatch, temp_db) -> None:
     """The second result builder — a chip on only one path is a lie on the other (S8)."""
-    monkeypatch.setattr(chat_controller, "is_library_query", lambda t: False)
+    monkeypatch.setattr(chat_controller.controller, "is_library_query", lambda t: False)
     folder_id = _folder_with("a.pdf")
     controller = ChatController(rag=FakeRAG())
 
@@ -205,7 +205,7 @@ def test_human_mode_scoped_turn_also_announces_and_records(monkeypatch, temp_db)
 
 def test_deleted_folder_searches_nothing_rather_than_everything(monkeypatch, temp_db) -> None:
     """The core integrity assertion: an unhonourable scope must not become 'searched all'."""
-    monkeypatch.setattr(chat_controller, "is_library_query", lambda t: False)
+    monkeypatch.setattr(chat_controller.controller, "is_library_query", lambda t: False)
     folder_id = _folder_with("a.pdf")
     delete_folder(folder_id)
     rag = FakeRAG()
@@ -223,7 +223,7 @@ def test_deleted_folder_searches_nothing_rather_than_everything(monkeypatch, tem
 
 
 def test_empty_folder_searches_nothing(monkeypatch, temp_db) -> None:
-    monkeypatch.setattr(chat_controller, "is_library_query", lambda t: False)
+    monkeypatch.setattr(chat_controller.controller, "is_library_query", lambda t: False)
     folder = create_folder("Empty")
     _seed_doc("a.pdf")  # exists in the library, but not in this folder
     rag = FakeRAG()
@@ -237,7 +237,7 @@ def test_empty_folder_searches_nothing(monkeypatch, temp_db) -> None:
 
 
 def test_unknown_folder_id_searches_nothing(monkeypatch, temp_db) -> None:
-    monkeypatch.setattr(chat_controller, "is_library_query", lambda t: False)
+    monkeypatch.setattr(chat_controller.controller, "is_library_query", lambda t: False)
     _seed_doc("a.pdf")
     rag = FakeRAG()
     controller = ChatController(rag=rag)
@@ -252,7 +252,7 @@ def test_unknown_folder_id_searches_nothing(monkeypatch, temp_db) -> None:
 
 
 def test_unscoped_turn_passes_none_records_null_and_says_nothing(monkeypatch, temp_db) -> None:
-    monkeypatch.setattr(chat_controller, "is_library_query", lambda t: False)
+    monkeypatch.setattr(chat_controller.controller, "is_library_query", lambda t: False)
     _folder_with("a.pdf")  # a folder exists; not selecting it must change nothing
     rag = FakeRAG()
     controller = ChatController(rag=rag)
@@ -268,7 +268,7 @@ def test_unscoped_turn_passes_none_records_null_and_says_nothing(monkeypatch, te
 def test_scope_does_not_leak_between_turns(monkeypatch, temp_db) -> None:
     """The ADR-010 isolation obligation, applied to the scope: a scoped turn must not make the
     next turn scoped. Nothing is stored on the session, so this proves the wiring, not a reset."""
-    monkeypatch.setattr(chat_controller, "is_library_query", lambda t: False)
+    monkeypatch.setattr(chat_controller.controller, "is_library_query", lambda t: False)
     folder_id = _folder_with("a.pdf")
     rag = FakeRAG()
     controller = ChatController(rag=rag)
@@ -287,7 +287,7 @@ def test_chat_route_forwards_the_scope_and_returns_it_on_the_wire(monkeypatch, t
     from apps.api.main import create_app
     from fastapi.testclient import TestClient
 
-    monkeypatch.setattr(chat_controller, "is_library_query", lambda t: False)
+    monkeypatch.setattr(chat_controller.controller, "is_library_query", lambda t: False)
     folder_id = _folder_with("a.pdf")
     controller = ChatController(rag=FakeRAG())
     client = TestClient(create_app(controller=controller))  # type: ignore[arg-type]
@@ -312,7 +312,7 @@ def test_chat_route_defaults_to_unscoped(monkeypatch, temp_db) -> None:
     from apps.api.main import create_app
     from fastapi.testclient import TestClient
 
-    monkeypatch.setattr(chat_controller, "is_library_query", lambda t: False)
+    monkeypatch.setattr(chat_controller.controller, "is_library_query", lambda t: False)
     controller = ChatController(rag=FakeRAG())
     client = TestClient(create_app(controller=controller))  # type: ignore[arg-type]
 

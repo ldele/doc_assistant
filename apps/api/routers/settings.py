@@ -6,7 +6,7 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
 
-from apps.api.models import SettingsUpdate
+from apps.api.models.settings import SettingsUpdate
 from apps.api.services import _full_settings
 from doc_assistant import app_settings
 from doc_assistant.chat_controller import ChatController

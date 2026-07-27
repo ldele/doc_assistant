@@ -1,23 +1,13 @@
 <script lang="ts">
   import { untrack } from 'svelte'
   import type {
-    CompareResult,
-    ConceptGraph as ConceptGraphData,
     ConversationDetail,
-    ConversationSummary,
-    FieldDetail,
-    GraphRebuildStatus,
-    Health,
-    HierarchyEdgeRequest,
     KeywordFamily,
     KeywordFamilyProposal,
-    LabelledOption,
     LibraryDocument,
     LibraryFolder,
-    RagOverrides,
-    TaxonomyView,
     TurnResult,
-  } from './lib/types'
+  } from './lib/core/types'
   import {
     addDocumentsToFolder,
     addFamilyMember,
@@ -27,23 +17,14 @@
     deleteFolder,
     deleteKeywordFamily,
     detectKeywordFamilies,
-    getConceptGraph,
     getConceptPresence,
-    getFieldDetail,
-    getTaxonomy,
-    addHierarchyEdge,
-    removeHierarchyEdge,
-    attachDocumentField,
     getConversation,
-    getGraphRebuildStatus,
     getHealth,
     exportConversation,
-    listConversations,
     listFolders,
     listKeywordFamilies,
     deleteDocument,
     listLibraryDocuments,
-    rebuildConceptGraph,
     removeDocumentFromFolder,
     removeFamilyMember,
     renameFolder,
@@ -53,33 +34,30 @@
     streamChat,
     updateConversationMeta,
     updateDocumentMeta,
-  } from './lib/api'
-  import Turn from './lib/Turn.svelte'
-  import ReadonlyTurn from './lib/ReadonlyTurn.svelte'
-  import Settings from './lib/Settings.svelte'
-  import SourcePanel from './lib/SourcePanel.svelte'
-  import Sidebar from './lib/Sidebar.svelte'
-  import LibraryBrowser from './lib/LibraryBrowser.svelte'
-  import LibraryGrid from './lib/LibraryGrid.svelte'
-  import LibraryFilterStrip from './lib/LibraryFilterStrip.svelte'
-  import LibraryKeywordFilter from './lib/LibraryKeywordFilter.svelte'
-  import LibraryManageKeywords from './lib/LibraryManageKeywords.svelte'
-  import LibraryManageFolders from './lib/LibraryManageFolders.svelte'
-  import LibraryMetaEditor from './lib/LibraryMetaEditor.svelte'
-  import LibraryDeleteConfirm from './lib/LibraryDeleteConfirm.svelte'
-  import ConfirmDialog from './lib/ConfirmDialog.svelte'
-  import CompareCard from './lib/CompareCard.svelte'
-  import ConceptGraph from './lib/ConceptGraph.svelte'
-  import GraphIndex from './lib/GraphIndex.svelte'
-  import ShortcutsDialog from './lib/ShortcutsDialog.svelte'
-  import AboutDialog from './lib/AboutDialog.svelte'
-  import LibraryTaxonomy from './lib/LibraryTaxonomy.svelte'
-  import GlobalSearch from './lib/GlobalSearch.svelte'
-  import Icon from './lib/Icon.svelte'
+  } from './lib/core/api'
+  import ChatPane from './lib/chat/ChatPane.svelte'
+  import Settings from './lib/settings/Settings.svelte'
+  import SourcePanel from './lib/chat/SourcePanel.svelte'
+  import Sidebar from './lib/shell/Sidebar.svelte'
+  import LibraryPane from './lib/library/LibraryPane.svelte'
+  import LibraryGrid from './lib/library/LibraryGrid.svelte'
+  import LibraryKeywordFilter from './lib/library/LibraryKeywordFilter.svelte'
+  import LibraryManageKeywords from './lib/library/LibraryManageKeywords.svelte'
+  import LibraryManageFolders from './lib/library/LibraryManageFolders.svelte'
+  import LibraryMetaEditor from './lib/library/LibraryMetaEditor.svelte'
+  import LibraryDeleteConfirm from './lib/library/LibraryDeleteConfirm.svelte'
+  import ConfirmDialog from './lib/shell/ConfirmDialog.svelte'
+  import ConceptGraph from './lib/graph/ConceptGraph.svelte'
+  import GraphIndex from './lib/graph/GraphIndex.svelte'
+  import ShortcutsDialog from './lib/shell/ShortcutsDialog.svelte'
+  import AboutDialog from './lib/shell/AboutDialog.svelte'
+  import LibraryTaxonomy from './lib/library/LibraryTaxonomy.svelte'
+  import GlobalSearch from './lib/shell/GlobalSearch.svelte'
+  import Topbar from './lib/shell/Topbar.svelte'
+  import StatusBar from './lib/shell/StatusBar.svelte'
   import {
     type LibraryCollection,
     type LibrarySort,
-    collectionLabel,
     docLabel,
     folderNameMap,
     docsFor,
@@ -92,72 +70,81 @@
     keywordFacets,
     sortDocs,
     sameCollection,
-  } from './lib/library'
-  import { searchEverything } from './lib/search'
-  import appMark from './assets/brand/app-mark.png'
+  } from './lib/library/library'
+  import { searchEverything } from './lib/shell/search'
+  // Per-domain reactive state (`.svelte.ts` = a rune module). Cross-domain orchestration —
+  // selectMode, the nav-history observer, the readiness gate, the chat-scope guard — stays in
+  // this file on purpose: splitting it would only hide the coupling across import graphs.
+  import {
+    graph,
+    graphLoaded,
+    loadConceptGraph,
+    rebuildGraph,
+    useGraphHygiene,
+  } from './lib/graph/graph.svelte'
+  import {
+    closeTaxonomy,
+    openTaxonomy,
+    selectTaxonomyField,
+    taxonomy,
+    taxonomyAddEdge,
+    taxonomyAttachDocument,
+    taxonomyRemoveEdge,
+  } from './lib/library/taxonomy.svelte'
+  import { LIB_SORTS, libPrefs, setLibrarySort, setLibraryView } from './lib/library/prefs.svelte'
+  import {
+    SIDEBAR_MAX,
+    SIDEBAR_MIN,
+    sidebarPrefs,
+    startSidebarResize,
+    toggleSidebarCollapsed,
+  } from './lib/shell/prefs.svelte'
+  // Shell chrome state (leaf module — imports no sibling state). Phase 2 lets the pane components
+  // import this directly instead of taking ~20 props each.
+  import { shell } from './lib/shell/shell.svelte'
+  import {
+    chat,
+    freshSessionId,
+    nextTurnId,
+    resetComposer,
+    resetTurnIds,
+    setPinned,
+    useChatAutoscroll,
+  } from './lib/chat/chat.svelte'
+  import {
+    archiveConversation,
+    conversations,
+    pinConversation,
+    refreshConversations,
+    renameConversation,
+  } from './lib/chat/conversations.svelte'
 
-  interface TurnState {
-    id: number
-    question: string
-    answer: string
-    result: TurnResult | null
-    streaming: boolean
-    error: string | null
-  }
-
-  function freshSessionId(): string {
-    return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
-  }
-  // $state: the sidebar's "current" marker + the citation-source derivation read this, so a fresh
-  // id from ↻ New must trigger updates.
-  let sessionId = $state(freshSessionId())
-
-  let health = $state<Health | null>(null)
-  let status = $state<'connecting' | 'ready' | 'down'>('connecting')
-  let turns = $state<TurnState[]>([])
-  let input = $state('')
-  let sending = $state(false)
-  let showSettings = $state(false)
-  // ADR-010: the RAG-sandbox overrides for this app session. In-memory only — a fresh
-  // launch always starts from {} (locked defaults), never persisted to disk.
-  let overrides = $state<RagOverrides>({})
-  let nextId = 0
-
-  // A/B-compare (U6): a per-turn retrieval diff (locked defaults vs the session override). $0 —
-  // retrieval only, no answer generation. The result is an ephemeral card, not a chat turn.
-  let compareResult = $state<CompareResult | null>(null)
-  let comparing = $state(false)
   // The Test-override button only exists while a retrieval-affecting override is set — with none,
   // both sides retrieve identically and the button is dead weight (2026-07-13 UX review). Settings
-  // writes these fields only when touched; Reset returns overrides to {}.
+  // writes these fields only when touched; Reset returns chat.overrides to {}.
   const hasRetrievalOverride = $derived(
-    overrides.top_k != null || overrides.use_multi_query != null,
+    chat.overrides.top_k != null || chat.overrides.use_multi_query != null,
   )
 
   // Conversation history (feature-conversation-history.md). `viewing` is the session_id shown as a
-  // read-only transcript; `null` means the live chat (composer + claims bound to `sessionId`).
-  let conversations = $state<ConversationSummary[]>([])
+  // read-only transcript; `null` means the live chat (composer + claims bound to `chat.sessionId`).
   let viewing = $state<string | null>(null)
   let viewedConvo = $state<ConversationDetail | null>(null)
-  // Resume (fresh-context): a reopened past chat the user chose to *continue*. Its turns render
-  // read-only above the composer for reference; `sessionId` is switched to it so new turns thread
+  // Resume (fresh-context): a reopened past chat the user chose to *continue*. Its chat.turns render
+  // read-only above the composer for reference; `chat.sessionId` is switched to it so new chat.turns thread
   // to the same conversation and persist. The in-memory backend session starts fresh (empty
-  // history), so new questions are standalone corpus queries — no replay of the old turns.
+  // history), so new questions are standalone corpus queries — no replay of the old chat.turns.
   let resumedHistory = $state<ConversationDetail | null>(null)
-  let sidebarOpen = $state(false) // mobile drawer
 
   // Global-search overlay (docs/specs/feature-app-shell-search-collapse.md, sub-item a). A
   // navigation search over chats + documents, opened from the header or Cmd/Ctrl-K. App owns the
   // query + derives the results (searchEverything is pure/tested); GlobalSearch just renders.
-  let searchOpen = $state(false)
-  let searchQuery = $state('')
 
   // Library space (feature-library-browser.md L1; nav redesign feature-library-redesign.md L4
   // Phase A). `mode` swaps the sidebar + main pane between Chat and Library; the chat state
-  // (turns/viewing/sessionId) is untouched by the switch. Navigation model: the rail picks the
+  // (chat.turns/viewing/chat.sessionId) is untouched by the switch. Navigation model: the rail picks the
   // active *collection*, the main pane shows it as an inventory grid, and opening a document
   // drills down in place to the chunk view (breadcrumb + Back walk back up).
-  let mode = $state<'chat' | 'library' | 'graph'>('chat')
   let documents = $state<LibraryDocument[]>([])
   let libraryCollection = $state<LibraryCollection>({ kind: 'all' })
   let libraryDocId = $state<string | null>(null)
@@ -169,14 +156,14 @@
   let keywordFilterOpen = $state(false)
   let documentsLoaded = false
   // The overlay's results, derived from the live chat + document lists (both already client-side).
-  const searchResults = $derived(searchEverything(searchQuery, conversations, documents))
+  const searchResults = $derived(searchEverything(shell.searchQuery, conversations.list, documents))
 
   // Folders (ADR-025 F1, docs/specs/feature-corpus-folders.md). Manual Library organisation.
   // The rail renders this list rather than deriving groups from `documents`, so a folder with
   // zero members is still visible and therefore fillable (spec D3). `folderError` surfaces a
   // 400 (blank/collision) in the Manage view without blocking anything else.
   let folders = $state<LibraryFolder[]>([])
-  // ADR-025 F2 — the chat retrieval scope. Sticky across turns, in memory ONLY: a reload
+  // ADR-025 F2 — the chat retrieval scope. Sticky across chat.turns, in memory ONLY: a reload
   // returns to the whole library. Persisting it is the rejected option — a scope you forgot
   // you set silently narrows every future answer, which is the exact lie the integrity layer
   // exists to prevent. Deliberately separate from `libraryCollection`: filtering the Library
@@ -215,88 +202,23 @@
   let detecting = $state(false)
   let detectError = $state<string | null>(null)
 
-  // Concept graph (feature-concept-graph.md PR-G2a, ADR-017). Lazy-loaded on first entry to the
-  // Graph mode; `null` after a load means "never built" (a 404 — the normal first run), which the
-  // view renders as a build affordance. Rebuild is a 202 + poll job (B1/ADR-017 B1); while it runs
-  // `graphRebuildState` is 'running' and the graph is refetched once it settles.
-  let conceptGraph = $state<ConceptGraphData | null>(null)
-  let graphLoading = $state(false)
-  let graphError = $state<string | null>(null)
-  let graphLoaded = false
-  let graphRebuildState = $state<GraphRebuildStatus['state']>('idle')
-  // Graph selection + the under-connected lens are App-owned: the sidebar's GraphIndex rail and
-  // ConceptGraph's ego panel both read them, so they must agree.
-  let graphSelectedId = $state<string | null>(null)
-  let graphShowUnderConnected = $state(false)
+  // Concept graph — state + its loader/rebuild live in `lib/graph/graph.svelte.ts`; lazy-loaded on
+  // first entry to Graph mode (see selectMode). Only the cross-domain bits stay here.
   function selectGraphConcept(id: string): void {
-    graphSelectedId = id
-    sidebarOpen = false // mobile drawer: selecting navigates, like selectCollection
+    graph.selectedId = id
+    shell.sidebarOpen = false // mobile drawer: selecting navigates, like selectCollection
   }
-  // Hygiene (mirrors the chatScopeFolderId guard): a rebuild can drop the selected concept.
-  $effect(() => {
-    if (conceptGraph && graphSelectedId !== null && !conceptGraph.nodes.some((n) => n.id === graphSelectedId)) {
-      graphSelectedId = null
-    }
-  })
+  useGraphHygiene() // intra-domain: a rebuild can drop the selected concept
+  // Chat transcript autoscroll. `viewing` is passed as a getter because it is conversation-view
+  // state owned here, and the effect must re-run when it changes (opening a past chat scrolls
+  // to the bottom too).
+  useChatAutoscroll(() => viewing)
 
   // Taxonomy view (docs/specs/feature-taxonomy-view.md, ADR-028 2b). A dedicated modal that renders
   // the curated field forest + *places* concepts/documents onto it. App owns the data; LibraryTaxonomy
   // is a dumb renderer. Opened from the Library rail, or from a graph node's Place action (which
-  // preselects that concept via `taxonomyFocusConceptId`). Decoupled from the top-level nav — it's a
+  // preselects that concept via `taxonomy.focusConceptId`). Decoupled from the top-level nav — it's a
   // global overlay like Settings/Search, so it opens from any mode.
-  let taxonomyOpen = $state(false)
-  let taxonomyView = $state<TaxonomyView | null>(null)
-  let taxonomyFieldDetail = $state<FieldDetail | null>(null)
-  let taxonomyConcepts = $state<LabelledOption[]>([])
-  let taxonomyFocusConceptId = $state<string | null>(null)
-  let taxonomyLoading = $state(false)
-  let taxonomyError = $state<string | null>(null)
-
-  async function loadConceptGraph(): Promise<void> {
-    graphLoading = true
-    graphError = null
-    try {
-      conceptGraph = await getConceptGraph()
-    } catch (e) {
-      graphError = e instanceof Error ? e.message : String(e)
-    } finally {
-      graphLoading = false
-      graphLoaded = true
-    }
-  }
-
-  // Kick a rebuild and poll the status route until it settles, then refetch the graph. Deterministic
-  // and ~7s; the view stays usable throughout (inform, don't block).
-  async function rebuildGraph(): Promise<void> {
-    if (graphRebuildState === 'running') return
-    graphRebuildState = 'running'
-    try {
-      await rebuildConceptGraph()
-    } catch (e) {
-      graphRebuildState = 'error'
-      graphError = e instanceof Error ? e.message : String(e)
-      return
-    }
-    const poll = async (): Promise<void> => {
-      try {
-        const st = await getGraphRebuildStatus()
-        graphRebuildState = st.state
-        if (st.state === 'running') {
-          setTimeout(() => void poll(), 700)
-          return
-        }
-        if (st.state === 'error') {
-          graphError = st.message ?? 'rebuild failed'
-          return
-        }
-        await loadConceptGraph() // 'done' → pull the fresh graph
-      } catch (e) {
-        graphRebuildState = 'error'
-        graphError = e instanceof Error ? e.message : String(e)
-      }
-    }
-    void poll()
-  }
 
   // Deep-link from a graph node to curate its concept (ADR-017 A1 — the graph never writes the
   // vocabulary; the Manage-keywords view owns every edit). Switches to Library and opens the view.
@@ -305,148 +227,13 @@
     manageKeywordsOpen = true
   }
 
-  // Taxonomy modal (feature-taxonomy-view.md, 2b). Open lazy-loads the forest + the doc list (for the
-  // attach picker) + the concept vocabulary. `focusConceptId` (from a graph node's Place action)
-  // preselects that concept for placement. Inform-don't-block throughout.
-  // NB: a default-valued param, not `focusConceptId?: string` — the `<script lang="ts">` transform
-  // strips the type annotation but leaves the `?`, emitting invalid JS (`focusConceptId?`). svelte-check
-  // type-checks the source and misses it; it only breaks at runtime. Keep optional params defaulted here.
-  async function openTaxonomy(focusConceptId: string | null = null): Promise<void> {
-    taxonomyOpen = true
-    taxonomyFocusConceptId = focusConceptId
-    taxonomyError = null
-    taxonomyFieldDetail = null
+  // Cross-domain wrapper over the taxonomy module: the attach picker lists *documents*, which
+  // lazy-load only on entering the Library, so a user who opens the modal from Chat or Graph would
+  // otherwise get an empty picker. The document list is library state, so the pull stays here
+  // rather than reaching across from `taxonomy.svelte.ts`.
+  function openTaxonomyView(focusConceptId: string | null = null): void {
     if (!documentsLoaded) void refreshDocuments()
-    void ensureTaxonomyConcepts()
-    taxonomyLoading = true
-    try {
-      taxonomyView = await getTaxonomy()
-    } catch (e) {
-      taxonomyError = e instanceof Error ? e.message : String(e)
-    } finally {
-      taxonomyLoading = false
-    }
-  }
-  function closeTaxonomy(): void {
-    taxonomyOpen = false
-    taxonomyFocusConceptId = null
-  }
-
-  // The attach picker's vocabulary = the graph nodes (spec ledger #7 — 2a serves no concept list).
-  // Reuse the already-loaded graph when present, else fetch it. On failure the picker stays empty.
-  async function ensureTaxonomyConcepts(): Promise<void> {
-    if (taxonomyConcepts.length > 0) return
-    try {
-      const g = conceptGraph ?? (await getConceptGraph())
-      taxonomyConcepts = (g?.nodes ?? []).map((n) => ({ id: n.id, label: n.label }))
-    } catch {
-      // leave empty — attach-concept just has nothing to offer
-    }
-  }
-
-  async function selectTaxonomyField(fieldId: string): Promise<void> {
-    try {
-      taxonomyFieldDetail = await getFieldDetail(fieldId)
-    } catch (e) {
-      taxonomyError = e instanceof Error ? e.message : String(e)
-    }
-  }
-
-  // Write-then-refetch: the server owns counts + acyclicity, so re-pull the view + the open field's
-  // detail after every mutation rather than patching the tree by hand (mirrors the folder handlers).
-  async function reloadTaxonomy(): Promise<void> {
-    try {
-      taxonomyView = await getTaxonomy()
-    } catch {
-      // keep the prior view
-    }
-    const id = taxonomyFieldDetail?.id
-    if (id !== undefined) {
-      try {
-        taxonomyFieldDetail = await getFieldDetail(id)
-      } catch {
-        // keep the prior detail
-      }
-    }
-  }
-
-  async function taxonomyAddEdge(body: HierarchyEdgeRequest): Promise<void> {
-    taxonomyError = null
-    try {
-      await addHierarchyEdge(body)
-    } catch (e) {
-      taxonomyError = e instanceof Error ? e.message : String(e)
-      return
-    }
-    await reloadTaxonomy()
-  }
-  async function taxonomyRemoveEdge(body: HierarchyEdgeRequest): Promise<void> {
-    taxonomyError = null
-    try {
-      await removeHierarchyEdge(body)
-    } catch (e) {
-      taxonomyError = e instanceof Error ? e.message : String(e)
-      return
-    }
-    await reloadTaxonomy()
-  }
-  async function taxonomyAttachDocument(docId: string, fieldId: string): Promise<void> {
-    taxonomyError = null
-    try {
-      await attachDocumentField(docId, fieldId)
-    } catch (e) {
-      taxonomyError = e instanceof Error ? e.message : String(e)
-      return
-    }
-    await reloadTaxonomy()
-  }
-
-  // Grid ⇄ list toggle — a client-only view preference, persisted like theme/panel widths.
-  function loadLibraryView(): 'grid' | 'list' {
-    try {
-      const v = localStorage.getItem('libraryView')
-      if (v === 'grid' || v === 'list') return v
-    } catch {
-      /* ignore — fall back to default */
-    }
-    return 'grid'
-  }
-  let libraryView = $state<'grid' | 'list'>(loadLibraryView())
-  function setLibraryView(v: 'grid' | 'list'): void {
-    libraryView = v
-    try {
-      localStorage.setItem('libraryView', v)
-    } catch {
-      /* ignore — view just won't persist */
-    }
-  }
-
-  // Library sort — a client-only preference, persisted like the view toggle.
-  const LIB_SORTS: { key: LibrarySort; label: string }[] = [
-    { key: 'title-az', label: 'Title (A–Z)' },
-    { key: 'author-az', label: 'Author (A–Z)' },
-    { key: 'pub-desc', label: 'Publication date (newest)' },
-    { key: 'added-desc', label: 'Added date (newest)' },
-  ]
-  function loadLibrarySort(): LibrarySort {
-    try {
-      const v = localStorage.getItem('librarySort')
-      if (LIB_SORTS.some((s) => s.key === v)) return v as LibrarySort
-    } catch {
-      /* ignore — fall back to default */
-    }
-    return 'title-az'
-  }
-  let librarySort = $state<LibrarySort>(loadLibrarySort())
-  let libSortOpen = $state(false)
-  function setLibrarySort(v: LibrarySort): void {
-    librarySort = v
-    libSortOpen = false
-    try {
-      localStorage.setItem('librarySort', v)
-    } catch {
-      /* ignore — just won't persist */
-    }
+    void openTaxonomy(focusConceptId)
   }
 
   // Pipeline: active collection → search filter (Decision 5a) → keyword facets (AND) → sort.
@@ -472,7 +259,7 @@
   // counts raw keywords over the whole library rather than family units over a collection.
   const rawKeywordDocCounts = $derived(unitDocCounts(documents))
   const visibleDocs = $derived(
-    sortDocs(facetFilter(searchedDocs, libraryKeywords, keywordsOf), librarySort),
+    sortDocs(facetFilter(searchedDocs, libraryKeywords, keywordsOf), libPrefs.sort),
   )
   // The corpus's full raw-keyword universe (unfiltered by collection/search), for the Manage view.
   const allKeywords = $derived.by(() => {
@@ -488,117 +275,38 @@
 
   // Which citation panel is open — keyed by a turn *key* (a live turn's id as string, or a past
   // turn's record_id) so a click resolves against the right turn in either mode.
-  let activeCitation = $state<{ turnKey: string; n: number } | null>(null)
   const activeSource = $derived.by(() => {
-    if (!activeCitation) return null
+    if (!chat.activeCitation) return null
     // Read-only transcripts (a viewed chat, or a resumed chat's history) key by record_id;
-    // a resumed chat also has live turns below, so fall through to those if not found here.
+    // a resumed chat also has live chat.turns below, so fall through to those if not found here.
     const detail = viewedConvo ?? resumedHistory
     if (detail) {
-      const t = detail.turns.find((t) => t.record_id === activeCitation!.turnKey)
-      const s = t?.sources.find((s) => s.n === activeCitation!.n)
+      const t = detail.turns.find((t) => t.record_id === chat.activeCitation!.turnKey)
+      const s = t?.sources.find((s) => s.n === chat.activeCitation!.n)
       // A rehydrated source is degraded — no markers/figures/evaluation (not persisted). Shape it
       // as a SourceView so SourcePanel/SourceCard render it unchanged.
       if (s) {
         return { n: s.n, citation: s.citation, excerpt: s.excerpt, figure_id: null, chunk_key: null, markers: [], reranker_score: 0, evaluation: null }
       }
     }
-    const t = turns.find((t) => String(t.id) === activeCitation!.turnKey)
-    return t?.result?.sources.find((s) => s.n === activeCitation!.n) ?? null
+    const t = chat.turns.find((t) => String(t.id) === chat.activeCitation!.turnKey)
+    return t?.result?.sources.find((s) => s.n === chat.activeCitation!.n) ?? null
   })
 
-  let convoEl = $state<HTMLElement | null>(null)
-  let taEl = $state<HTMLTextAreaElement | null>(null)
-  // Follow a streaming answer only while the reader is already at the bottom, so a long
-  // response never yanks them away from something they scrolled up to re-read.
-  let pinned = true
 
   // Re-pull /api/health after an ingest so the header chunk count + the empty-corpus banner
   // reflect the new corpus (the backend rebuilds the controller before reporting "done").
   async function refreshHealth(): Promise<void> {
     try {
-      health = await getHealth()
-      status = 'ready'
+      shell.health = await getHealth()
+      shell.status = 'ready'
     } catch {
       // leave the prior health/status; a transient blip shouldn't blank the header
     }
   }
 
-  // History is a sidecar read — a failure must never break the chat (inform, don't block).
-  async function refreshConversations(): Promise<void> {
-    try {
-      conversations = await listConversations()
-    } catch {
-      // keep the prior list
-    }
-  }
-
-  // Conversation management (pin / archive / soft-delete): PATCH the flag, then refresh the list.
-  async function pinConversation(sid: string, pinned: boolean): Promise<void> {
-    try {
-      await updateConversationMeta(sid, { pinned })
-      await refreshConversations()
-    } catch (e) {
-      console.error('pin failed', e)
-    }
-  }
-  async function archiveConversation(sid: string, archived: boolean): Promise<void> {
-    try {
-      await updateConversationMeta(sid, { archived })
-      await refreshConversations()
-    } catch (e) {
-      console.error('archive failed', e)
-    }
-  }
-  async function renameConversation(sid: string, title: string): Promise<void> {
-    try {
-      await updateConversationMeta(sid, { title })
-      await refreshConversations()
-    } catch (e) {
-      console.error('rename failed', e)
-    }
-  }
-
-  // Resizable left sidebar. Width is a client-only view preference (like the theme toggle),
-  // persisted in localStorage; clamped so it can't be dragged uselessly narrow or wide.
-  const SIDEBAR_MIN = 200
-  const SIDEBAR_MAX = 480
-  function loadSidebarWidth(): number {
-    try {
-      const v = Number(localStorage.getItem('sidebarWidth'))
-      return v >= SIDEBAR_MIN && v <= SIDEBAR_MAX ? v : 260
-    } catch {
-      return 260
-    }
-  }
-  let sidebarWidth = $state(loadSidebarWidth())
-
-  // Collapsible sidebar (spec sub-item b). A desktop-only view preference — the same class as the
-  // theme + width above (client-only, localStorage, never a backend setting). Collapsing hides the
-  // rail via `.app.collapsed` under a min-width guard; the mobile off-canvas drawer (`sidebarOpen`)
-  // is untouched. Expanding restores the persisted width unchanged (collapse ≠ resize).
-  function loadSidebarCollapsed(): boolean {
-    try {
-      return localStorage.getItem('sidebarCollapsed') === '1'
-    } catch {
-      return false
-    }
-  }
-  let sidebarCollapsed = $state(loadSidebarCollapsed())
-  function toggleSidebar(): void {
-    sidebarCollapsed = !sidebarCollapsed
-    try {
-      localStorage.setItem('sidebarCollapsed', sidebarCollapsed ? '1' : '0')
-    } catch {
-      /* ignore — collapse state just won't persist */
-    }
-  }
-
   // App menu (☰) + its two info modals (keyboard shortcuts, about). The menu is the top-toolbar's
   // "more" surface; Settings has its own gear too (a fast path), so it appears in both.
-  let appMenuOpen = $state(false)
-  let showShortcuts = $state(false)
-  let showAbout = $state(false)
 
   // Browser-style navigation history (top-toolbar ← →). A "view" is the navigable snapshot: the
   // mode plus each mode's location (library collection + open document, graph selection). A passive
@@ -627,10 +335,10 @@
   $effect(() => {
     // Tracked reads (the deps): a change to any of these is a navigation.
     const entry: NavEntry = {
-      mode,
+      mode: shell.mode,
       collection: libraryCollection,
       docId: libraryDocId,
-      graphId: graphSelectedId,
+      graphId: graph.selectedId,
     }
     // Untracked: reading/writing the stack here must not feed back into this effect.
     untrack(() => {
@@ -650,7 +358,7 @@
     selectMode(e.mode)
     libraryCollection = e.collection
     libraryDocId = e.docId
-    graphSelectedId = e.graphId
+    graph.selectedId = e.graphId
   }
   function navBack(): void {
     if (navIndex <= 0) return
@@ -663,27 +371,6 @@
     applyNav(navStack[navIndex])
   }
 
-  function startResize(e: PointerEvent): void {
-    e.preventDefault()
-    const onMove = (ev: PointerEvent) => {
-      sidebarWidth = Math.min(SIDEBAR_MAX, Math.max(SIDEBAR_MIN, ev.clientX))
-    }
-    const onUp = () => {
-      window.removeEventListener('pointermove', onMove)
-      window.removeEventListener('pointerup', onUp)
-      document.body.style.cursor = ''
-      document.body.style.userSelect = ''
-      try {
-        localStorage.setItem('sidebarWidth', String(Math.round(sidebarWidth)))
-      } catch {
-        /* ignore — width just won't persist */
-      }
-    }
-    document.body.style.cursor = 'col-resize'
-    document.body.style.userSelect = 'none'
-    window.addEventListener('pointermove', onMove)
-    window.addEventListener('pointerup', onUp)
-  }
   // Soft-delete is reversible, but there's no restore UI yet — confirm via an in-app dialog (not the
   // native window.confirm, which shows OS "localhost says" chrome) to avoid a mis-click.
   let pendingDeleteConvId = $state<string | null>(null)
@@ -698,7 +385,7 @@
     try {
       await updateConversationMeta(sid, { deleted: true })
       // If the deleted chat is the one on screen (viewed, resumed, or live), start fresh.
-      if (viewing === sid || resumedHistory?.session_id === sid || sessionId === sid) {
+      if (viewing === sid || resumedHistory?.session_id === sid || chat.sessionId === sid) {
         newConversation()
       }
       await refreshConversations()
@@ -720,8 +407,8 @@
         try {
           const h = await getHealth()
           if (!cancelled) {
-            health = h
-            status = 'ready'
+            shell.health = h
+            shell.status = 'ready'
             void refreshConversations()
             // The composer's scope selector needs the folder list even if the user never
             // opens the Library.
@@ -732,7 +419,7 @@
           await new Promise((r) => setTimeout(r, 1000))
         }
       }
-      if (!cancelled) status = 'down'
+      if (!cancelled) shell.status = 'down'
     })()
     return () => {
       cancelled = true
@@ -747,33 +434,6 @@
     }
   })
 
-  // Keep the newest content in view as tokens stream in / a turn is added / a chat is opened —
-  // but only when the reader is pinned to the bottom (see `pinned`).
-  $effect(() => {
-    const last = turns[turns.length - 1]
-    void last?.answer
-    void turns.length
-    void viewing
-    if (pinned && convoEl) convoEl.scrollTop = convoEl.scrollHeight
-  })
-
-  // A reader who has scrolled up to re-read is no longer pinned; snap back on once they
-  // return to the bottom (small slack so it engages just before the exact edge).
-  function onConvoScroll(): void {
-    if (!convoEl) return
-    pinned = convoEl.scrollHeight - convoEl.scrollTop - convoEl.clientHeight < 80
-  }
-
-  // Grow the composer with its content up to a cap, then let it scroll. Reset to the base
-  // height after a send (measuring `scrollHeight` on empty content would keep the tall size).
-  function autogrow(): void {
-    if (!taEl) return
-    taEl.style.height = 'auto'
-    taEl.style.height = `${Math.min(taEl.scrollHeight, 160)}px`
-  }
-  function resetComposer(): void {
-    if (taEl) taEl.style.height = 'auto'
-  }
 
   // Sample questions for the empty state — corpus-agnostic openers that run one-click on any
   // library. Picking one only prefills the existing composer (no turn sent, no new behavior); the
@@ -784,20 +444,20 @@
     'What are the key findings, with citations?',
   ]
   function useSample(q: string): void {
-    input = q
-    taEl?.focus()
+    chat.input = q
+    chat.taEl?.focus()
   }
 
   async function send(): Promise<void> {
-    const text = input.trim()
-    if (!text || sending) return
-    input = ''
+    const text = chat.input.trim()
+    if (!text || chat.sending) return
+    chat.input = ''
     resetComposer()
-    pinned = true // sending jumps the reader to their own new turn
-    sending = true
+    setPinned(true) // chat.sending jumps the reader to their own new turn
+    chat.sending = true
     const idx =
-      turns.push({
-        id: nextId++,
+      chat.turns.push({
+        id: nextTurnId(),
         question: text,
         answer: '',
         result: null,
@@ -805,16 +465,16 @@
         error: null,
       }) - 1
     try {
-      for await (const ev of streamChat(text, sessionId, overrides, undefined, chatScopeFolderId)) {
-        if (ev.event === 'token') turns[idx].answer += ev.data
-        else if (ev.event === 'result') turns[idx].result = JSON.parse(ev.data) as TurnResult
+      for await (const ev of streamChat(text, chat.sessionId, chat.overrides, undefined, chatScopeFolderId)) {
+        if (ev.event === 'token') chat.turns[idx].answer += ev.data
+        else if (ev.event === 'result') chat.turns[idx].result = JSON.parse(ev.data) as TurnResult
         // `step` events are advisory; ignored for now.
       }
     } catch (e) {
-      turns[idx].error = String(e)
+      chat.turns[idx].error = String(e)
     } finally {
-      turns[idx].streaming = false
-      sending = false
+      chat.turns[idx].streaming = false
+      chat.sending = false
       // The finished turn is now persisted — refresh the sidebar so this chat appears/updates.
       void refreshConversations()
     }
@@ -830,16 +490,16 @@
   // A/B-compare (U6): retrieve the current question under the locked defaults and the session
   // override, and show the source-set diff. $0 (no LLM); the composer text is left intact.
   async function doCompare(): Promise<void> {
-    const text = input.trim()
-    if (!text || sending || comparing) return
-    comparing = true
+    const text = chat.input.trim()
+    if (!text || chat.sending || chat.comparing) return
+    chat.comparing = true
     try {
-      compareResult = await compareRetrieval(text, overrides, chatScopeFolderId)
-      pinned = true // bring the fresh compare card into view
+      chat.compareResult = await compareRetrieval(text, chat.overrides, chatScopeFolderId)
+      setPinned(true) // bring the fresh compare card into view
     } catch (e) {
       console.error('compare failed', e)
     } finally {
-      comparing = false
+      chat.comparing = false
     }
   }
 
@@ -847,60 +507,60 @@
     try {
       // Export the conversation on screen: the viewed past chat, else the live/resumed session.
       // The backend sources the transcript from the durable records by id, so both work.
-      await exportConversation(viewing ?? sessionId, false)
+      await exportConversation(viewing ?? chat.sessionId, false)
     } catch (e) {
       console.error('export failed', e)
     }
   }
 
-  // Clear the conversation and start a fresh question (U4). Resets the on-screen turns, any open
-  // citation panel, the read-only view, and the composer — and mints a new sessionId so the
+  // Clear the conversation and start a fresh question (U4). Resets the on-screen chat.turns, any open
+  // citation panel, the read-only view, and the composer — and mints a new chat.sessionId so the
   // backend doesn't thread the previous conversation's context into the next question. Session
-  // overrides (ADR-010) are left as-is: a deliberate sandbox setting, not conversation state.
+  // chat.overrides (ADR-010) are left as-is: a deliberate sandbox setting, not conversation state.
   function newConversation(): void {
-    if (sending) return
-    turns = []
-    activeCitation = null
-    compareResult = null
+    if (chat.sending) return
+    chat.turns = []
+    chat.activeCitation = null
+    chat.compareResult = null
     viewing = null
     viewedConvo = null
     resumedHistory = null
-    input = ''
+    chat.input = ''
     resetComposer()
-    nextId = 0
-    sessionId = freshSessionId()
-    pinned = true
-    sidebarOpen = false
-    taEl?.focus()
+    resetTurnIds()
+    chat.sessionId = freshSessionId()
+    setPinned(true)
+    shell.sidebarOpen = false
+    chat.taEl?.focus()
   }
 
-  // Continue a viewed past chat (fresh-context resume). Switch the live session to it: its turns
-  // become read-only reference above the composer, and new turns thread to the same session_id
+  // Continue a viewed past chat (fresh-context resume). Switch the live session to it: its chat.turns
+  // become read-only reference above the composer, and new chat.turns thread to the same session_id
   // (so they append + persist). The backend session for this id starts empty — new questions are
   // standalone corpus queries, not a replay of the old conversation (memory is a later increment).
   function resumeConversation(): void {
     if (!viewedConvo || !viewing) return
     resumedHistory = viewedConvo
-    sessionId = viewing
+    chat.sessionId = viewing
     viewing = null
     viewedConvo = null
-    turns = []
-    nextId = 0
-    activeCitation = null
-    compareResult = null
-    input = ''
+    chat.turns = []
+    resetTurnIds()
+    chat.activeCitation = null
+    chat.compareResult = null
+    chat.input = ''
     resetComposer()
-    pinned = true
-    sidebarOpen = false
-    taEl?.focus()
+    setPinned(true)
+    shell.sidebarOpen = false
+    chat.taEl?.focus()
   }
 
   // Open a past conversation read-only (H2). Selecting the live chat returns to it; the live
   // chat's in-memory state is never destroyed by viewing an old one.
   async function openConversation(sid: string): Promise<void> {
-    sidebarOpen = false
-    activeCitation = null
-    if (sid === sessionId) {
+    shell.sidebarOpen = false
+    chat.activeCitation = null
+    if (sid === chat.sessionId) {
       viewing = null
       viewedConvo = null
       return
@@ -908,7 +568,7 @@
     try {
       viewedConvo = await getConversation(sid)
       viewing = sid
-      pinned = true
+      setPinned(true)
     } catch (e) {
       console.error('open conversation failed', e)
     }
@@ -917,7 +577,7 @@
   function backToCurrent(): void {
     viewing = null
     viewedConvo = null
-    activeCitation = null
+    chat.activeCitation = null
   }
 
   // Library documents are a sidecar read — a failure must never break the app (inform, don't block).
@@ -1002,7 +662,7 @@
     manageFolderQuery = ''
     manageFoldersOpen = true
     folderError = null
-    sidebarOpen = false
+    shell.sidebarOpen = false
     void refreshFolders()
   }
 
@@ -1017,9 +677,9 @@
   // Switch between Chat and Library. Entering Library closes any open citation panel and lazy-loads
   // the document list once; the live chat's in-memory state is preserved across the switch.
   function selectMode(m: 'chat' | 'library' | 'graph'): void {
-    mode = m
-    sidebarOpen = false
-    activeCitation = null
+    shell.mode = m
+    shell.sidebarOpen = false
+    chat.activeCitation = null
     if (m === 'chat' && folders.length === 0) void refreshFolders()
     if (m === 'library' && !documentsLoaded) {
       void refreshDocuments()
@@ -1029,7 +689,7 @@
     if (m === 'graph') {
       // The ego panel resolves doc_ids → titles from the library list, so it must be loaded too.
       if (!documentsLoaded) void refreshDocuments()
-      if (!graphLoaded) void loadConceptGraph()
+      if (!graphLoaded()) void loadConceptGraph()
     }
   }
 
@@ -1038,36 +698,36 @@
   function selectCollection(c: LibraryCollection): void {
     libraryCollection = c
     libraryDocId = null
-    sidebarOpen = false
+    shell.sidebarOpen = false
   }
 
   function openDocument(id: string): void {
     libraryDocId = id
-    sidebarOpen = false
+    shell.sidebarOpen = false
   }
 
   // Global search (spec sub-item a). Opening refreshes both lists (inform-don't-block): documents
   // lazy-load only on entering the Library, so a chat-only user must still be able to find a paper.
   function openSearch(): void {
-    searchQuery = ''
-    searchOpen = true
+    shell.searchQuery = ''
+    shell.searchOpen = true
     void refreshConversations()
     if (!documentsLoaded) void refreshDocuments()
   }
   function closeSearch(): void {
-    searchOpen = false
+    shell.searchOpen = false
   }
   // Reuse the existing entry points (spec A6): a chat opens in Chat mode, a document in Library
   // mode. selectMode already lazy-loads what each mode needs; opening a doc in chat mode shows
   // nothing. Close the overlay on select.
   function searchOpenChat(sid: string): void {
-    searchOpen = false
-    if (mode !== 'chat') selectMode('chat')
+    shell.searchOpen = false
+    if (shell.mode !== 'chat') selectMode('chat')
     void openConversation(sid)
   }
   function searchOpenDoc(id: string): void {
-    searchOpen = false
-    if (mode !== 'library') selectMode('library')
+    shell.searchOpen = false
+    if (shell.mode !== 'library') selectMode('library')
     openDocument(id)
   }
   // Cmd/Ctrl-K toggles the overlay (spec A2). preventDefault so the browser's own find/location
@@ -1075,7 +735,7 @@
   function onGlobalKey(e: KeyboardEvent): void {
     if ((e.metaKey || e.ctrlKey) && (e.key === 'k' || e.key === 'K')) {
       e.preventDefault()
-      if (searchOpen) closeSearch()
+      if (shell.searchOpen) closeSearch()
       else openSearch()
     }
   }
@@ -1238,162 +898,50 @@
      Sidebar as a snippet, so Sidebar stays a dumb renderer without ~8 more graph props. -->
 {#snippet graphRail()}
   <GraphIndex
-    nodes={conceptGraph?.nodes ?? []}
-    gaps={conceptGraph?.gaps ?? []}
-    selectedId={graphSelectedId}
-    bind:showUnderConnected={graphShowUnderConnected}
-    loading={graphLoading}
-    built={conceptGraph !== null}
-    graphError={graphError}
+    nodes={graph.data?.nodes ?? []}
+    gaps={graph.data?.gaps ?? []}
+    selectedId={graph.selectedId}
+    bind:showUnderConnected={graph.showUnderConnected}
+    loading={graph.loading}
+    built={graph.data !== null}
+    graphError={graph.error}
     onSelectConcept={selectGraphConcept}
   />
 {/snippet}
 
-<div class="app" class:collapsed={sidebarCollapsed} style="--sidebar-width: {sidebarWidth}px">
+<div class="app" class:collapsed={sidebarPrefs.collapsed} style="--sidebar-width: {sidebarPrefs.width}px">
   <!-- Unified top toolbar (browser-chrome shell): one bar across the whole window carrying the app
        menu, sidebar toggle, back/forward, brand, the mode tabs, and search/settings — the pattern
        replaces the old split of mode-pills-in-sidebar + actions-in-header. -->
-  <div class="topbar">
-    <div class="tb-cluster">
-      <div class="menuwrap">
-        <button
-          class="tb-btn"
-          class:on={appMenuOpen}
-          onclick={() => (appMenuOpen = !appMenuOpen)}
-          aria-label="Menu"
-          aria-haspopup="menu"
-          aria-expanded={appMenuOpen}
-          title="Menu"
-          type="button"><Icon name="menu" size={17} /></button
-        >
-        {#if appMenuOpen}
-          <div class="menu-backdrop" onclick={() => (appMenuOpen = false)} role="presentation"></div>
-          <div class="appmenu" role="menu">
-            <button class="appmenuitem" role="menuitem" onclick={() => { appMenuOpen = false; showSettings = true }} type="button">
-              <Icon name="settings" size={15} /> Settings
-            </button>
-            <button class="appmenuitem" role="menuitem" onclick={() => { appMenuOpen = false; showShortcuts = true }} type="button">
-              <Icon name="keyboard" size={15} /> Keyboard shortcuts
-            </button>
-            {#if mode === 'chat'}
-              <button
-                class="appmenuitem"
-                role="menuitem"
-                disabled={viewing === null && resumedHistory === null && turns.length === 0}
-                onclick={() => { appMenuOpen = false; doExport() }}
-                type="button"
-              >
-                <Icon name="download" size={15} /> Export transcript
-              </button>
-            {/if}
-            <div class="appmenusep"></div>
-            <button class="appmenuitem" role="menuitem" onclick={() => { appMenuOpen = false; showAbout = true }} type="button">
-              <Icon name="info" size={15} /> About Provenote
-            </button>
-          </div>
-        {/if}
-      </div>
-      <!-- Sidebar toggle: desktop collapses inline, mobile opens the off-canvas drawer. -->
-      <button
-        class="tb-btn hide-mobile"
-        onclick={toggleSidebar}
-        aria-label={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-        aria-pressed={sidebarCollapsed}
-        title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-        type="button"><Icon name="panel-left" size={16} /></button
-      >
-      <button
-        class="tb-btn only-mobile"
-        onclick={() => (sidebarOpen = true)}
-        aria-label="Open sidebar"
-        title="Open sidebar"
-        type="button"><Icon name="panel-left" size={16} /></button
-      >
-      <button
-        class="tb-btn"
-        onclick={navBack}
-        disabled={!canNavBack}
-        aria-label="Back"
-        title="Back"
-        type="button"><Icon name="arrow-left" size={16} /></button
-      >
-      <button
-        class="tb-btn"
-        onclick={navForward}
-        disabled={!canNavForward}
-        aria-label="Forward"
-        title="Forward"
-        type="button"><Icon name="arrow-right" size={16} /></button
-      >
-    </div>
-
-    <!-- Brand = identity anchor only (small mark + wordmark). The corpus/model status moved to the
-         bottom status bar — it's ambient status, not navigation. -->
-    <div class="brand">
-      <span class="mark"><img src={appMark} alt="" width="26" height="26" /></span>
-      <div class="brandtext">
-        <span class="wordmark">proven<span class="wm-accent">ote</span></span>
-      </div>
-    </div>
-
-    <!-- Mode tabs (Chat/Library/Graph) — moved out of the sidebar into the toolbar. -->
-    <div class="tb-modes" role="tablist" aria-label="Workspace">
-      <button
-        class="tb-mode"
-        class:active={mode === 'chat'}
-        role="tab"
-        aria-selected={mode === 'chat'}
-        onclick={() => selectMode('chat')}
-        type="button"><Icon name="message-square" size={15} /><span class="tb-modelabel">Chat</span></button
-      >
-      <button
-        class="tb-mode"
-        class:active={mode === 'library'}
-        role="tab"
-        aria-selected={mode === 'library'}
-        onclick={() => selectMode('library')}
-        type="button"><Icon name="library" size={15} /><span class="tb-modelabel">Library</span></button
-      >
-      <button
-        class="tb-mode"
-        class:active={mode === 'graph'}
-        role="tab"
-        aria-selected={mode === 'graph'}
-        onclick={() => selectMode('graph')}
-        type="button"><Icon name="waypoints" size={15} /><span class="tb-modelabel">Graph</span></button
-      >
-    </div>
-
-    <div class="tb-spacer"></div>
-
-    <div class="tb-cluster">
-      <button class="tb-btn" onclick={openSearch} aria-label="Search chats and documents" title="Search  (Ctrl/⌘ K)" type="button">
-        <Icon name="search" size={16} />
-      </button>
-      <button class="tb-btn" onclick={() => (showSettings = true)} aria-label="Settings" title="Settings" type="button">
-        <Icon name="settings" size={17} />
-      </button>
-    </div>
-  </div>
+  <Topbar
+    canBack={canNavBack}
+    canForward={canNavForward}
+    onNavBack={navBack}
+    onNavForward={navForward}
+    onSelectMode={selectMode}
+    onOpenSearch={openSearch}
+    exportDisabled={viewing === null && resumedHistory === null && chat.turns.length === 0}
+    onExport={doExport}
+  />
 
   <div class="below">
   <Sidebar
-    {mode}
-    {conversations}
+    mode={shell.mode}
+    conversations={conversations.list}
     {documents}
     {folders}
-    liveSessionId={sessionId}
+    liveSessionId={chat.sessionId}
     viewingSessionId={viewing}
     {libraryCollection}
     bind:libraryQuery
-    open={sidebarOpen}
+    open={shell.sidebarOpen}
     {graphRail}
     onNew={newConversation}
     onSelect={openConversation}
     onSelectCollection={selectCollection}
     onManageFolders={openManageFolders}
-    onOpenTaxonomy={() => openTaxonomy()}
-    onClose={() => (sidebarOpen = false)}
+    onOpenTaxonomy={() => openTaxonomyView()}
+    onClose={() => (shell.sidebarOpen = false)}
     onPin={pinConversation}
     onArchive={archiveConversation}
     onDelete={deleteConversation}
@@ -1404,416 +952,111 @@
     role="separator"
     aria-orientation="vertical"
     aria-label="Resize sidebar"
-    onpointerdown={startResize}
+    onpointerdown={startSidebarResize}
   ></div>
 
   <div class="content">
     <div class="viewport">
-    <main class:wide={mode === 'library' || mode === 'graph'}>
-      {#if mode === 'library'}
-        <div class="library">
-          <div class="libnav">
-            {#if libraryDocId !== null || libraryCollection.kind !== 'all'}
-              <button class="libback" onclick={libraryBack} aria-label="Back" title="Back">
-                <Icon name="arrow-left" size={15} />
-              </button>
-            {/if}
-            <nav class="crumbs" aria-label="Library location">
-              <button
-                class="crumb"
-                onclick={() => selectCollection({ kind: 'all' })}
-                disabled={libraryDocId === null && libraryCollection.kind === 'all'}
-                type="button">Library</button
-              >
-              {#if libraryCollection.kind !== 'all'}
-                <span class="crumbsep"><Icon name="chevron-right" size={13} /></span>
-                <button
-                  class="crumb"
-                  onclick={() => (libraryDocId = null)}
-                  disabled={libraryDocId === null}
-                  type="button">{collectionLabel(libraryCollection, folderNames)}</button
-                >
-              {/if}
-              {#if openDoc}
-                <span class="crumbsep"><Icon name="chevron-right" size={13} /></span>
-                <span class="crumb current" title={openDoc.filename}>{docLabel(openDoc)}</span>
-              {/if}
-            </nav>
-            {#if libraryDocId === null}
-              <div class="libsort">
-                <button
-                  class="sortbtn"
-                  onclick={() => (libSortOpen = !libSortOpen)}
-                  aria-haspopup="menu"
-                  aria-expanded={libSortOpen}
-                  title="Sort documents"
-                  type="button"><Icon name="arrow-up-down" size={15} /></button
-                >
-                {#if libSortOpen}
-                  <div
-                    class="sort-backdrop"
-                    onclick={() => (libSortOpen = false)}
-                    role="presentation"
-                  ></div>
-                  <div class="sortmenu" role="menu">
-                    {#each LIB_SORTS as s}
-                      <button
-                        class="sortitem"
-                        class:on={librarySort === s.key}
-                        role="menuitemradio"
-                        aria-checked={librarySort === s.key}
-                        onclick={() => setLibrarySort(s.key)}
-                        type="button"
-                      >
-                        <span class="tick"
-                          >{#if librarySort === s.key}<Icon name="check" size={13} />{/if}</span
-                        >
-                        {s.label}
-                      </button>
-                    {/each}
-                  </div>
-                {/if}
-              </div>
-              <div class="viewtoggle" role="group" aria-label="Layout">
-                <button
-                  class:active={libraryView === 'grid'}
-                  onclick={() => setLibraryView('grid')}
-                  aria-label="Grid view"
-                  aria-pressed={libraryView === 'grid'}
-                  title="Grid view"
-                  type="button"><Icon name="layout-grid" size={15} /></button
-                >
-                <button
-                  class:active={libraryView === 'list'}
-                  onclick={() => setLibraryView('list')}
-                  aria-label="List view"
-                  aria-pressed={libraryView === 'list'}
-                  title="List view"
-                  type="button"><Icon name="list" size={15} /></button
-                >
-              </div>
-              {#if documents.length > 0}
-                <button
-                  class="selecttoggle"
-                  class:active={libSelectMode}
-                  aria-pressed={libSelectMode}
-                  onclick={() => (libSelectMode ? exitLibSelect() : (libSelectMode = true))}
-                  title="Select documents to add to a folder"
-                  type="button"
-                >
-                  <Icon name="square-check-big" size={14} /> Select
-                </button>
-              {/if}
-            {/if}
-          </div>
-
-          {#if libSelectMode && libraryDocId === null}
-            <div class="selectbar" role="toolbar" aria-label="Selection actions">
-              <span class="selcount">{libSelected.length} selected</span>
-              <div class="addwrap">
-                <button
-                  class="selact primaryish"
-                  disabled={libSelected.length === 0}
-                  aria-haspopup="menu"
-                  aria-expanded={libAddMenuOpen}
-                  onclick={() => (libAddMenuOpen = !libAddMenuOpen)}
-                  type="button"
-                >
-                  <Icon name="folder" size={13} /> Add to folder…
-                </button>
-                {#if libAddMenuOpen}
-                  <div class="sort-backdrop" onclick={() => (libAddMenuOpen = false)} role="presentation"></div>
-                  <div class="sortmenu" role="menu">
-                    {#each folders as f (f.id)}
-                      <button class="sortitem" role="menuitem" onclick={() => addSelectionToFolder(f.id)} type="button">
-                        <span class="tick"><Icon name="folder" size={13} /></span>
-                        {f.name}
-                      </button>
-                    {:else}
-                      <button
-                        class="sortitem"
-                        role="menuitem"
-                        onclick={() => {
-                          libAddMenuOpen = false
-                          openManageFolders()
-                        }}
-                        type="button"
-                      >
-                        <span class="tick"><Icon name="plus" size={13} /></span>
-                        No folders yet — create one…
-                      </button>
-                    {/each}
-                  </div>
-                {/if}
-              </div>
-              <button class="selact" disabled={libSelected.length === 0} onclick={() => (libSelected = [])} type="button">
-                Clear
-              </button>
-              <button class="selact" onclick={exitLibSelect} type="button">Done</button>
-            </div>
-          {/if}
-
-          {#if libraryDocId !== null}
-            <LibraryBrowser docId={libraryDocId} onOpenDocument={openDocument} />
-          {:else}
-            <section class="libmain">
-              {#if documents.length === 0}
-                <div class="libempty">
-                  <span class="state-mark"><Icon name="library" size={26} /></span>
-                  <strong>No documents indexed yet</strong>
-                  <p>Point doc_assistant at a folder of your documents to fill the library.</p>
-                </div>
-              {:else}
-                <LibraryFilterStrip
-                  selected={libraryKeywords}
-                  resultCount={visibleDocs.length}
-                  hasKeywords={facetList.length > 0}
-                  onOpen={() => (keywordFilterOpen = true)}
-                  onRemove={toggleKeywordFacet}
-                  onClear={clearKeywordFacets}
-                />
-                {#if visibleDocs.length === 0}
-                  <div class="libempty">
-                    <span class="state-mark"><Icon name="search" size={26} /></span>
-                    {#if libraryQuery.trim() !== '' || libraryKeywords.length > 0}
-                      <strong>No documents match your filters</strong>
-                      <p>
-                        Nothing in {collectionLabel(libraryCollection, folderNames)} matches{#if libraryQuery.trim() !== ''}
-                          “{libraryQuery.trim()}”{/if}.
-                      </p>
-                      {#if libraryKeywords.length > 0}
-                        <button class="widen" onclick={clearKeywordFacets} type="button">
-                          Clear keyword filters
-                        </button>
-                      {/if}
-                      {#if libraryCollection.kind !== 'all'}
-                        <button class="widen" onclick={searchAll} type="button">
-                          Search all {documents.length} documents
-                        </button>
-                      {/if}
-                    {:else}
-                      <strong>Nothing in {collectionLabel(libraryCollection, folderNames)}</strong>
-                      <p>This collection is empty right now.</p>
-                    {/if}
-                  </div>
-                {:else}
-                  <LibraryGrid
-                    documents={visibleDocs}
-                    view={libraryView}
-                    activeKeywords={libraryKeywords}
-                    {keywordsOf}
-                    selectMode={libSelectMode}
-                    selectedIds={libSelected}
-                    onToggleSelect={toggleLibSelected}
-                    onOpenDocument={openDocument}
-                    onEditMetadata={(id) => (editingDocId = id)}
-                    onReveal={revealDoc}
-                    onAddToFolder={openManageFoldersForDoc}
-                    onDelete={(id) => (deletingDocId = id)}
-                  />
-                {/if}
-              {/if}
-            </section>
-          {/if}
-        </div>
-      {:else if mode === 'graph'}
-        <ConceptGraph
-          graph={conceptGraph}
-          loading={graphLoading}
-          error={graphError}
+    <main class:wide={shell.mode === 'library' || shell.mode === 'graph'}>
+      {#if shell.mode === 'library'}
+        <LibraryPane
           {documents}
-          rebuildState={graphRebuildState}
-          selectedId={graphSelectedId}
-          showUnderConnected={graphShowUnderConnected}
+          {visibleDocs}
+          {facetList}
+          {keywordsOf}
+          {openDoc}
+          {folderNames}
+          {libraryCollection}
+          {libraryDocId}
+          {libraryQuery}
+          {libraryKeywords}
+          {folders}
+          {libSelectMode}
+          {libSelected}
+          {libAddMenuOpen}
+          onLibraryBack={libraryBack}
+          onOpenDocument={openDocument}
+          onSearchAll={searchAll}
+          onSelectCollection={selectCollection}
+          onSetDocId={(id) => (libraryDocId = id)}
+          onToggleKeywordFacet={toggleKeywordFacet}
+          onClearKeywordFacets={clearKeywordFacets}
+          onOpenKeywordFilter={() => (keywordFilterOpen = true)}
+          onEnterSelectMode={() => (libSelectMode = true)}
+          onExitSelectMode={exitLibSelect}
+          onToggleSelected={toggleLibSelected}
+          onSetAddMenuOpen={(open) => (libAddMenuOpen = open)}
+          onAddSelectionToFolder={addSelectionToFolder}
+          onClearSelection={() => (libSelected = [])}
+          onOpenManageFolders={openManageFolders}
+          onEditDoc={(id) => (editingDocId = id)}
+          onDeleteDoc={(id) => (deletingDocId = id)}
+          onRevealDoc={revealDoc}
+          onManageFoldersForDoc={openManageFoldersForDoc}
+        />
+      {:else if shell.mode === 'graph'}
+        <ConceptGraph
+          graph={graph.data}
+          loading={graph.loading}
+          error={graph.error}
+          {documents}
+          rebuildState={graph.rebuildState}
+          selectedId={graph.selectedId}
+          showUnderConnected={graph.showUnderConnected}
           onRebuild={rebuildGraph}
           onOpenDocument={(id) => {
             selectMode('library')
             openDocument(id)
           }}
           onManageConcept={manageConcept}
-          onPlaceConcept={(id) => openTaxonomy(id)}
+          onPlaceConcept={(id) => openTaxonomyView(id)}
           onSelectConcept={selectGraphConcept}
           loadPresence={getConceptPresence}
         />
       {:else}
-      <section class="conversation" bind:this={convoEl} onscroll={onConvoScroll}>
-        {#if viewing && viewedConvo}
-          <p class="readonly-note">
-            Viewing a past conversation (read-only).
-            <button class="linkish" onclick={resumeConversation}>Continue this chat</button>
-            ·
-            <button class="linkish" onclick={backToCurrent}>Back to current chat</button>
-          </p>
-          {#each viewedConvo.turns as t (t.record_id)}
-            <ReadonlyTurn
-              question={t.question}
-              answer={t.answer}
-              scope={t.scope}
-              onCitationClick={(n) => (activeCitation = { turnKey: t.record_id, n })}
-              activeCitationN={activeCitation?.turnKey === t.record_id ? activeCitation.n : null}
-            />
-          {/each}
-        {:else}
-          {#if resumedHistory}
-            <p class="readonly-note resumed">
-              Continuing <strong>{resumedHistory.title}</strong> · earlier turns are shown for
-              reference. New questions start fresh — grounded in your corpus, not the old chat.
-            </p>
-            {#each resumedHistory.turns as t (t.record_id)}
-              <ReadonlyTurn
-                question={t.question}
-                answer={t.answer}
-                scope={t.scope}
-                onCitationClick={(n) => (activeCitation = { turnKey: t.record_id, n })}
-                activeCitationN={activeCitation?.turnKey === t.record_id ? activeCitation.n : null}
-              />
-            {/each}
-            <div class="resume-divider"><span>continuing below</span></div>
-          {/if}
-          {#if status === 'ready' && health && health.chunk_count === 0}
-            <div class="banner">
-              <span class="state-mark"><Icon name="library" size={26} /></span>
-              <strong>No documents indexed yet</strong>
-              <p>
-                Point doc_assistant at a folder of your documents to get started. It'll index them
-                locally, then you can ask questions grounded in them.
-              </p>
-              <button class="primary" onclick={() => (showSettings = true)}>Choose a folder…</button>
-            </div>
-          {:else if turns.length === 0 && !resumedHistory}
-            <div class="empty">
-              <span class="state-mark"><Icon name="book-open-text" size={26} /></span>
-              <h2>Ask your library a question</h2>
-              <p>
-                Every answer is grounded in your own documents, with inline citations, provenance,
-                and per-claim review.
-              </p>
-              <div class="chips">
-                {#each sampleQuestions as q}
-                  <button class="chip" onclick={() => useSample(q)}>{q}</button>
-                {/each}
-              </div>
-            </div>
-          {/if}
-          {#each turns as t (t.id)}
-            <Turn
-              question={t.question}
-              answer={t.answer}
-              result={t.result}
-              streaming={t.streaming}
-              error={t.error}
-              onCitationClick={(n) => (activeCitation = { turnKey: String(t.id), n })}
-              activeCitationN={activeCitation?.turnKey === String(t.id) ? activeCitation.n : null}
-            />
-          {/each}
-          {#if compareResult}
-            <CompareCard result={compareResult} onClose={() => (compareResult = null)} />
-          {/if}
-        {/if}
-      </section>
-
-      <footer>
-        {#if viewing}
-          <div class="viewing-bar">
-            <button class="back" onclick={backToCurrent}
-              ><Icon name="arrow-left" size={15} /> Back to current chat</button
-            >
-            <button class="resume" onclick={resumeConversation}
-              ><Icon name="rotate-ccw" size={15} /> Continue this chat</button
-            >
-          </div>
-        {:else}
-          <textarea
-            bind:this={taEl}
-            bind:value={input}
-            onkeydown={onKey}
-            oninput={autogrow}
-            placeholder="Ask your documents…  (Enter to send, Shift+Enter for newline)"
-            rows="2"
-            disabled={sending}
-          ></textarea>
-          {#if hasRetrievalOverride}
-            <button
-              class="compare"
-              onclick={doCompare}
-              disabled={sending || comparing || input.trim() === ''}
-              title="See how your override changes retrieval for this question: locked defaults vs override, sources only, no answer ($0)"
-              type="button"
-            >
-              {comparing ? 'Comparing…' : 'Test override'}
-            </button>
-          {/if}
-          {#if folders.length > 0}
-            <!-- ADR-025 F2 scope selector. Session-sticky, never persisted (see chatScopeFolderId).
-                 "All documents" is always the first option, so returning to the whole library is
-                 one click and never a hidden state. -->
-            <label class="scopepick" class:scoped={chatScopeFolderId !== null}>
-              <Icon name="folder" size={13} />
-              <select
-                bind:value={chatScopeFolderId}
-                disabled={sending}
-                aria-label="Search scope"
-                title="Which documents this question searches"
-              >
-                <option value={null}>All documents</option>
-                {#each folders as f (f.id)}
-                  <option value={f.id}>{f.name} ({f.doc_count})</option>
-                {/each}
-              </select>
-            </label>
-          {/if}
-          <button class="send" onclick={send} disabled={sending || input.trim() === ''} aria-busy={sending}>
-            {#if sending}<span class="spinner" aria-hidden="true"></span>{:else}Send{/if}
-          </button>
-        {/if}
-      </footer>
+        <ChatPane
+          {viewing}
+          {viewedConvo}
+          {resumedHistory}
+          {folders}
+          bind:chatScopeFolderId
+          {hasRetrievalOverride}
+          {sampleQuestions}
+          onSend={send}
+          {onKey}
+          onCompare={doCompare}
+          onUseSample={useSample}
+          onResume={resumeConversation}
+          onBackToCurrent={backToCurrent}
+        />
       {/if}
     </main>
     </div>
   </div>
   </div>
 
-  <!-- Bottom status bar (ambient, full-width): connection dot + corpus/model info. Thin and quiet so
-       it never competes with the chat composer sitting just above it. -->
-  <div class="statusbar" role="status" aria-live="polite">
-    <span
-      class="status-dot"
-      class:ok={status === 'ready'}
-      class:wait={status === 'connecting'}
-      class:off={status === 'down'}
-      aria-hidden="true"
-    ></span>
-    {#if status === 'ready' && health}
-      <span class="status-meta">
-        {health.chunk_count.toLocaleString()} chunks · {health.model} · {health.embedding_model}
-      </span>
-    {:else if status === 'connecting'}
-      <span class="status-meta">starting the engine…</span>
-    {:else}
-      <span class="status-meta err">backend unreachable. Run <code>just api</code></span>
-    {/if}
-  </div>
+  <StatusBar />
 </div>
 
-{#if showSettings}
-  <Settings onClose={() => (showSettings = false)} onCorpusChanged={refreshHealth} bind:overrides />
+{#if shell.showSettings}
+  <Settings onClose={() => (shell.showSettings = false)} onCorpusChanged={refreshHealth} bind:overrides={chat.overrides} />
 {/if}
 
-{#if showShortcuts}
-  <ShortcutsDialog onClose={() => (showShortcuts = false)} />
+{#if shell.showShortcuts}
+  <ShortcutsDialog onClose={() => (shell.showShortcuts = false)} />
 {/if}
 
-{#if showAbout}
+{#if shell.showAbout}
   <AboutDialog
-    chunks={health?.chunk_count ?? null}
-    model={health?.model ?? null}
-    embedding={health?.embedding_model ?? null}
-    onClose={() => (showAbout = false)}
+    chunks={shell.health?.chunk_count ?? null}
+    model={shell.health?.model ?? null}
+    embedding={shell.health?.embedding_model ?? null}
+    onClose={() => (shell.showAbout = false)}
   />
 {/if}
 
-{#if activeCitation && activeSource}
-  <SourcePanel source={activeSource} onClose={() => (activeCitation = null)} />
+{#if chat.activeCitation && activeSource}
+  <SourcePanel source={activeSource} onClose={() => (chat.activeCitation = null)} />
 {/if}
 
 {#if editingDoc}
@@ -1896,9 +1139,9 @@
   />
 {/if}
 
-{#if searchOpen}
+{#if shell.searchOpen}
   <GlobalSearch
-    bind:query={searchQuery}
+    bind:query={shell.searchQuery}
     results={searchResults}
     onSelectChat={searchOpenChat}
     onSelectDoc={searchOpenDoc}
@@ -1906,15 +1149,15 @@
   />
 {/if}
 
-{#if taxonomyOpen}
+{#if taxonomy.open}
   <LibraryTaxonomy
-    view={taxonomyView}
-    fieldDetail={taxonomyFieldDetail}
-    loading={taxonomyLoading}
-    error={taxonomyError}
+    view={taxonomy.view}
+    fieldDetail={taxonomy.fieldDetail}
+    loading={taxonomy.loading}
+    error={taxonomy.error}
     {documents}
-    concepts={taxonomyConcepts}
-    focusConceptId={taxonomyFocusConceptId}
+    concepts={taxonomy.concepts}
+    focusConceptId={taxonomy.focusConceptId}
     onSelectField={selectTaxonomyField}
     onAddEdge={taxonomyAddEdge}
     onRemoveEdge={taxonomyRemoveEdge}
@@ -1998,728 +1241,5 @@
     max-width: 1500px;
   }
 
-  /* ---- top toolbar (browser-chrome shell) ---- */
-  .topbar {
-    flex: none;
-    display: flex;
-    align-items: center;
-    gap: var(--space-3);
-    padding: 0.45rem 0.7rem;
-    border-bottom: 1px solid var(--border);
-    background: var(--bg);
-  }
-  .tb-cluster {
-    display: flex;
-    align-items: center;
-    gap: 0.12rem;
-    flex: none;
-  }
-  .tb-spacer {
-    flex: 1;
-    min-width: var(--space-2);
-  }
-  .tb-btn {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    font: inherit;
-    cursor: pointer;
-    border: 1px solid transparent;
-    background: none;
-    color: var(--fg-2);
-    border-radius: 8px;
-    padding: 0.32rem;
-  }
-  .tb-btn:hover:not(:disabled),
-  .tb-btn.on {
-    color: var(--fg);
-    background: var(--surface-2);
-  }
-  .tb-btn:disabled {
-    opacity: 0.32;
-    cursor: default;
-  }
-  .menuwrap {
-    position: relative;
-    display: inline-flex;
-  }
-  .only-mobile {
-    display: none;
-  }
-  @media (max-width: 720px) {
-    .hide-mobile {
-      display: none;
-    }
-    .only-mobile {
-      display: inline-flex;
-    }
-  }
-  /* App menu (☰) dropdown — mirrors the library sort menu idiom. */
-  .menu-backdrop {
-    position: fixed;
-    inset: 0;
-    z-index: 30;
-  }
-  .appmenu {
-    position: absolute;
-    z-index: 31;
-    top: calc(100% + 6px);
-    left: 0;
-    min-width: 212px;
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    box-shadow: var(--shadow-2);
-    padding: 0.3rem;
-    display: flex;
-    flex-direction: column;
-    gap: 0.05rem;
-  }
-  .appmenuitem {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    width: 100%;
-    padding: 0.45rem 0.55rem;
-    border: none;
-    background: none;
-    color: var(--fg);
-    border-radius: 6px;
-    cursor: pointer;
-    font: inherit;
-    font-size: 0.85rem;
-    text-align: left;
-  }
-  .appmenuitem:hover:not(:disabled) {
-    background: var(--surface-2);
-  }
-  .appmenuitem:disabled {
-    opacity: 0.45;
-    cursor: default;
-  }
-  .appmenusep {
-    height: 1px;
-    background: var(--border);
-    margin: 0.25rem 0.3rem;
-  }
-  /* Mode tabs — segmented control in the toolbar. */
-  .tb-modes {
-    display: flex;
-    align-items: center;
-    gap: 0.2rem;
-    flex: none;
-    border: 1px solid var(--border);
-    border-radius: 9px;
-    padding: 2px;
-    background: var(--surface);
-  }
-  .tb-mode {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.35rem;
-    font: inherit;
-    font-size: 0.82rem;
-    cursor: pointer;
-    border: none;
-    border-radius: 7px;
-    padding: 0.28rem 0.6rem;
-    background: none;
-    color: var(--fg-2);
-  }
-  .tb-mode:hover {
-    color: var(--fg);
-  }
-  .tb-mode.active {
-    background: var(--bg);
-    color: var(--fg);
-    font-weight: 600;
-    box-shadow: var(--shadow-1);
-  }
-  .brand {
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
-    flex: none;
-    min-width: 0;
-  }
-  .mark {
-    flex: none;
-    width: 28px;
-    height: 28px;
-    border-radius: 8px;
-    overflow: hidden;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    box-shadow: var(--shadow-1);
-  }
-  .mark img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-    display: block;
-  }
-  .brandtext {
-    display: flex;
-    flex-direction: column;
-    min-width: 0;
-  }
-  .wordmark {
-    font-family: var(--font-serif);
-    font-size: 1.1rem;
-    line-height: 1.15;
-    color: var(--fg);
-    white-space: nowrap;
-  }
-  .wm-accent {
-    color: var(--accent-wordmark);
-  }
-  /* Toolbar crowding: drop the tab labels (icon-only) then the wordmark, keeping the mark. */
-  @media (max-width: 780px) {
-    .tb-modelabel {
-      display: none;
-    }
-    .tb-mode {
-      padding: 0.28rem 0.45rem;
-    }
-    .brandtext {
-      display: none;
-    }
-  }
 
-  /* ---- bottom status bar (ambient) ---- */
-  .statusbar {
-    flex: none;
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    padding: 0.25rem 0.9rem;
-    border-top: 1px solid var(--border);
-    background: var(--bg);
-    min-height: 1.6rem;
-  }
-  .status-dot {
-    flex: none;
-    width: 7px;
-    height: 7px;
-    border-radius: 50%;
-    background: var(--fg-2);
-  }
-  .status-dot.ok {
-    background: var(--ok, #2e9e5b);
-  }
-  .status-dot.wait {
-    background: var(--warn-fg);
-  }
-  .status-dot.off {
-    background: var(--danger);
-  }
-  .status-meta {
-    font-size: var(--text-meta);
-    color: var(--fg-2);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    min-width: 0;
-  }
-  .status-meta.err {
-    color: var(--warn-fg);
-  }
-  .status-meta code {
-    font-size: 0.92em;
-  }
-  .conversation {
-    flex: 1;
-    overflow-y: auto;
-    padding: var(--space-2) 0;
-  }
-  /* Library pane (L4): breadcrumb/Back/view-toggle bar over the grid or the drilled chunk view. */
-  .library {
-    flex: 1;
-    min-height: 0;
-    display: flex;
-    flex-direction: column;
-  }
-  .libnav {
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
-    padding: var(--space-2) 0;
-    border-bottom: 1px solid var(--border);
-    min-height: 2.4rem;
-  }
-  .libback {
-    flex: none;
-    display: inline-flex;
-    align-items: center;
-    padding: 0.28rem 0.5rem;
-    color: var(--fg-2);
-  }
-  .libback:hover {
-    color: var(--fg);
-  }
-  .crumbs {
-    flex: 1;
-    min-width: 0;
-    display: flex;
-    align-items: center;
-    gap: 0.2rem;
-    overflow: hidden;
-  }
-  .crumb {
-    font: inherit;
-    font-size: var(--text-sm);
-    cursor: pointer;
-    border: none;
-    background: none;
-    color: var(--accent);
-    padding: 0.15rem 0.25rem;
-    border-radius: 6px;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    min-width: 0;
-  }
-  .crumb:hover:not(:disabled) {
-    background: var(--surface);
-  }
-  /* The current location isn't a link — a disabled tail crumb reads as "you are here". */
-  .crumb:disabled,
-  .crumb.current {
-    color: var(--fg);
-    cursor: default;
-    opacity: 1;
-    font-weight: 600;
-  }
-  .crumbsep {
-    color: var(--fg-2);
-    display: inline-flex;
-    flex: none;
-  }
-  .libsort {
-    position: relative;
-    flex: none;
-  }
-  .sortbtn {
-    display: inline-flex;
-    align-items: center;
-    padding: 0.28rem 0.5rem;
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    background: var(--surface);
-    color: var(--fg-2);
-    cursor: pointer;
-  }
-  .sortbtn:hover {
-    color: var(--fg);
-    border-color: var(--accent);
-  }
-  .sort-backdrop {
-    position: fixed;
-    inset: 0;
-    z-index: 20;
-  }
-  .sortmenu {
-    position: absolute;
-    z-index: 21;
-    top: calc(100% + 4px);
-    right: 0;
-    min-width: 200px;
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    box-shadow: var(--shadow-2);
-    padding: 0.25rem;
-  }
-  .sortitem {
-    display: flex;
-    align-items: center;
-    gap: 0.35rem;
-    width: 100%;
-    padding: 0.4rem 0.5rem;
-    border: none;
-    background: none;
-    color: var(--fg);
-    border-radius: 6px;
-    cursor: pointer;
-    font: inherit;
-    font-size: 0.82rem;
-    text-align: left;
-    white-space: nowrap;
-  }
-  .sortitem:hover {
-    background: var(--surface-2);
-  }
-  .sortitem.on {
-    color: var(--accent);
-  }
-  .sortitem .tick {
-    display: inline-flex;
-    width: 13px;
-    flex: none;
-  }
-  .viewtoggle {
-    flex: none;
-    display: inline-flex;
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    overflow: hidden;
-  }
-  .viewtoggle button {
-    border: none;
-    border-radius: 0;
-    background: var(--surface);
-    color: var(--fg-2);
-    padding: 0.28rem 0.55rem;
-    display: inline-flex;
-    align-items: center;
-  }
-  .viewtoggle button.active {
-    background: var(--surface-2);
-    color: var(--accent);
-  }
-  /* Select mode (batch add-to-folder) — toggle beside the view switch + a slim action bar. */
-  .selecttoggle {
-    flex: none;
-    display: inline-flex;
-    align-items: center;
-    gap: 0.3rem;
-    font: inherit;
-    font-size: 0.78rem;
-    padding: 0.28rem 0.55rem;
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    background: var(--surface);
-    color: var(--fg-2);
-    cursor: pointer;
-  }
-  .selecttoggle:hover {
-    color: var(--fg);
-    border-color: var(--accent);
-  }
-  .selecttoggle.active {
-    background: var(--surface-2);
-    color: var(--accent);
-    border-color: var(--accent);
-  }
-  .selectbar {
-    display: flex;
-    align-items: center;
-    gap: 0.4rem;
-    padding: 0.35rem 0;
-    border-bottom: 1px solid var(--border);
-  }
-  .selcount {
-    font-size: 0.78rem;
-    color: var(--fg-2);
-    font-variant-numeric: tabular-nums;
-    min-width: 6.5em;
-  }
-  .addwrap {
-    position: relative;
-    flex: none;
-  }
-  .addwrap .sortmenu {
-    left: 0;
-    right: auto;
-  }
-  .selact {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.3rem;
-    font: inherit;
-    font-size: 0.78rem;
-    padding: 0.26rem 0.55rem;
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    background: var(--surface);
-    color: var(--fg);
-    cursor: pointer;
-  }
-  .selact:hover:not(:disabled) {
-    border-color: var(--accent);
-  }
-  .selact:disabled {
-    opacity: 0.5;
-    cursor: default;
-  }
-  .selact.primaryish {
-    background: var(--surface-2);
-    font-weight: 600;
-  }
-  .libmain {
-    flex: 1;
-    overflow-y: auto;
-    min-width: 0;
-  }
-  .libempty {
-    max-width: 540px;
-    margin: var(--space-6) auto 0;
-    text-align: center;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-  }
-  .libempty strong {
-    font-family: var(--font-serif);
-    font-size: var(--text-title);
-    font-weight: 600;
-    color: var(--fg);
-  }
-  .libempty p {
-    color: var(--fg-2);
-    font-size: var(--text-sm);
-    line-height: 1.6;
-    max-width: 46ch;
-    margin: var(--space-2) 0 var(--space-4);
-  }
-  .widen {
-    font-size: var(--text-sm);
-    color: var(--accent);
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 999px;
-    padding: var(--space-2) var(--space-3);
-  }
-  .widen:hover {
-    border-color: var(--accent);
-  }
-  /* Empty + first-run states share one centered, mark-led layout (V2). */
-  .empty,
-  .banner {
-    max-width: 540px;
-    margin: var(--space-6) auto 0;
-    text-align: center;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-  }
-  .state-mark {
-    flex: none;
-    width: 46px;
-    height: 46px;
-    border-radius: 12px;
-    background: var(--surface-2);
-    color: var(--accent);
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    margin-bottom: var(--space-4);
-  }
-  .empty h2,
-  .banner strong {
-    font-family: var(--font-serif);
-    font-size: var(--text-title);
-    font-weight: 600;
-    color: var(--fg);
-    margin: 0;
-  }
-  .empty p,
-  .banner p {
-    color: var(--fg-2);
-    font-size: var(--text-sm);
-    line-height: 1.6;
-    max-width: 46ch;
-    margin: var(--space-2) 0 var(--space-4);
-  }
-  .chips {
-    display: flex;
-    flex-wrap: wrap;
-    gap: var(--space-2);
-    justify-content: center;
-  }
-  .chip {
-    font-size: var(--text-sm);
-    color: var(--accent);
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 999px;
-    padding: var(--space-2) var(--space-3);
-  }
-  .chip:hover {
-    border-color: var(--accent);
-  }
-  .readonly-note {
-    font-size: 0.78rem;
-    color: var(--fg-2);
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: 0.4rem 0.7rem;
-    margin: 0 0 0.5rem;
-  }
-  .linkish {
-    font: inherit;
-    font-size: inherit;
-    background: none;
-    border: none;
-    color: var(--accent);
-    cursor: pointer;
-    padding: 0;
-    text-decoration: underline;
-  }
-  /* Resume banner: tinted with the accent so "continuing" reads distinct from "viewing". */
-  .readonly-note.resumed {
-    background: color-mix(in srgb, var(--accent) 8%, var(--surface));
-    border-color: color-mix(in srgb, var(--accent) 25%, var(--border));
-    color: var(--fg);
-  }
-  .readonly-note.resumed strong {
-    font-weight: 600;
-  }
-  .resume-divider {
-    display: flex;
-    align-items: center;
-    gap: 0.6rem;
-    margin: 0.4rem 0 0.8rem;
-    color: var(--fg-2);
-    font-size: 0.72rem;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-  }
-  .resume-divider::before,
-  .resume-divider::after {
-    content: '';
-    flex: 1;
-    height: 1px;
-    background: var(--border);
-  }
-  .banner {
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    background: var(--surface);
-    box-shadow: var(--shadow-1);
-    padding: var(--space-6) var(--space-5);
-  }
-  .banner .primary {
-    background: var(--accent);
-    color: var(--accent-fg);
-    border-color: var(--accent);
-    font-weight: 600;
-    padding: 0.45rem 1.1rem;
-  }
-  footer {
-    display: flex;
-    gap: var(--space-2);
-    padding: var(--space-3) 0;
-    border-top: 1px solid var(--border);
-  }
-  textarea {
-    flex: 1;
-    resize: none;
-    font: inherit;
-    padding: 0.5rem 0.6rem;
-    border-radius: 8px;
-    border: 1px solid var(--border);
-    background: var(--surface);
-    color: var(--fg);
-    min-height: 3.4rem;
-    max-height: 160px;
-    overflow-y: auto;
-  }
-  button {
-    font: inherit;
-    cursor: pointer;
-    border-radius: 8px;
-    border: 1px solid var(--border);
-    background: var(--surface-2);
-    color: var(--fg);
-    padding: 0 1rem;
-  }
-  button:disabled {
-    opacity: 0.5;
-    cursor: default;
-  }
-  .viewing-bar {
-    display: flex;
-    gap: 0.5rem;
-    width: 100%;
-  }
-  .back {
-    flex: 1;
-    padding: 0.6rem;
-    color: var(--fg-2);
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0.3rem;
-  }
-  .resume {
-    flex: 1;
-    padding: 0.6rem;
-    background: var(--accent);
-    color: var(--accent-fg);
-    border-color: var(--accent);
-    font-weight: 600;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0.3rem;
-  }
-  .send {
-    background: var(--accent);
-    color: var(--accent-fg);
-    border-color: var(--accent);
-    font-weight: 600;
-    min-width: 4.4rem;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-  }
-  /* ADR-025 F2 scope selector — reads as a quiet control until a scope is set, then it is
-     tinted so a narrowed conversation is visible without opening anything. */
-  .scopepick {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.3rem;
-    flex: none;
-    padding: 0.25rem 0.4rem;
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    color: var(--fg-2);
-    background: var(--surface);
-  }
-  .scopepick.scoped {
-    color: var(--accent);
-    border-color: var(--accent);
-    background: color-mix(in srgb, var(--accent) 10%, transparent);
-  }
-  .scopepick select {
-    font: inherit;
-    font-size: 0.78rem;
-    max-width: 11rem;
-    border: none;
-    background: none;
-    color: inherit;
-    cursor: pointer;
-  }
-  .scopepick select:focus {
-    outline: none;
-  }
-  .scopepick select:disabled {
-    cursor: not-allowed;
-  }
-  .spinner {
-    width: 0.95em;
-    height: 0.95em;
-    border: 2px solid var(--accent-fg);
-    border-top-color: transparent;
-    border-radius: 50%;
-    animation: spin 0.6s linear infinite;
-  }
-  @keyframes spin {
-    to {
-      transform: rotate(360deg);
-    }
-  }
-  @media (prefers-reduced-motion: reduce) {
-    .spinner {
-      animation: none;
-    }
-  }
-  .compare {
-    font-size: 0.82rem;
-    white-space: nowrap;
-    color: var(--fg-2);
-  }
 </style>

@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-07-26 (repository layout moved here from the README) · class: living -->
+<!-- status: active · updated: 2026-07-27 (library/ + chat_controller/ packages) · class: living -->
 
 # Architecture
 
@@ -81,9 +81,9 @@ flowchart TD
 | `doc_assistant.extractors` | Convert any supported format → markdown | Returns `str`; raises `ExtractionError` on failure |
 | `doc_assistant.ingest` (package — pipeline: `cache` · `chunking` · `store` · `cleanup` · `registry` (S1 `SourceFile` source registry + selection-scoped ingest) + `__init__` orchestration / `__main__` CLI; document-feature extraction: `citations` · `tables` · `tables_marker` · `figures` · `regions`) | Extract, chunk, embed, store; orphan cleanup + partial-write self-heal; source scan/select (`--files`/`--dry-run`, exclude flags); table/figure/citation extraction (sidecar) | Idempotent per content hash; per-document failures isolated; selection never bypasses the locked six-stage ingest |
 | `doc_assistant.pipeline` | RAG runtime: retrieve, rerank, generate | Returns `Answer` with citations; raises `PipelineError` |
-| `doc_assistant.chat_controller` | UI-agnostic turn orchestration | Yields `TurnEvent`s → `TurnResult`; no UI-framework import (PR-M0) |
+| `doc_assistant.chat_controller` (package — `session` · `views` · `events` · `helpers` · `controller`; direction is strictly session/views → events/helpers → controller) | UI-agnostic turn orchestration | Yields `TurnEvent`s → `TurnResult`; no UI-framework import (PR-M0) |
 | `doc_assistant.health` | Document health scoring and classification | Pure function; no I/O; returns `HealthResult` |
-| `doc_assistant.library` | Document store queries (browse, filter, tag) + the Library's write paths: `DocumentMeta` overrides (ADR-013) and `delete_document` (ADR-014 — trash-first source-file recycle, then row/meta/chunks/figures/cache) | Queries + two explicit, ADR-recorded write paths; UI-framework-agnostic |
+| `doc_assistant.library` (package — `models` · `documents` · `pins` · `folders` · `keywords` · `chunks` · `citations` · `similarity`; sub-domain names match `apps/api/routers/library/`) | Document store queries (browse, filter, tag) + the Library's write paths: `DocumentMeta` overrides (ADR-013) and `delete_document` (ADR-014 — trash-first source-file recycle, then row/meta/chunks/figures/cache) | Queries + two explicit, ADR-recorded write paths; UI-framework-agnostic |
 | `doc_assistant.knowledge` (package — `keywords` · `keyword_families` · `concept_skeleton` (Node A) · `concept_skeleton_enrich` (Node B) · `concept_curation` · `concept_semantics` · `concept_graph_view` · `wiki` · `gaps` · `gap_suggest` · `epistemics`) | The Phase-7 knowledge layer: mined vocabulary, curated concept skeleton, wiki notes, gap detection, chunk epistemics — all derived *from* the corpus (ADR-023) | Enrichment-Layer Pattern throughout: additive sidecars, idempotent `scripts/` runners, never writes the chunk store; the answer path reads it but never depends on it |
 | `doc_assistant.prompts` | Prompt templates | Pure string interpolation; no I/O |
 | `doc_assistant.tracking` | Token usage tracking and cost estimation | Append-only; never raises |
@@ -111,6 +111,43 @@ evals/                # benchmark results — the write-ups + how to reproduce e
 docs/                 # architecture, ADRs (docs/decisions/), specs, roadmap, the demo GIF
 data/                 # runtime data (sources, caches, vector stores, SQLite) — not committed
 ```
+
+### `apps/` — the domain spine
+
+Both shells are organised on **one axis: the domain**, and the domain words are the same on
+both sides of the wire. To review a feature end to end, read one row.
+
+| Domain | Wire model | Route | Desktop UI |
+|---|---|---|---|
+| chat | `models/chat.py` | `routers/chat.py` | `lib/chat/` (Turn, SourcePanel, ClaimReview…) |
+| compare | `models/compare.py` | `routers/chat.py` (`/api/compare`) | `lib/chat/CompareCard.svelte` |
+| conversations | `models/conversations.py` | `routers/conversations.py` | `lib/shell/Sidebar.svelte` |
+| library | `models/library.py` | `routers/library/documents.py` | `lib/library/` (Grid, Browser, MetaEditor…) |
+| connections | `models/connections.py` | `routers/library/documents.py` | `lib/library/DocConnections.svelte` |
+| folders | `models/folders.py` | `routers/library/folders.py` | `lib/library/LibraryManageFolders.svelte` |
+| keywords | `models/keywords.py` | `routers/library/keywords.py` | `lib/library/LibraryManageKeywords.svelte` |
+| concepts / graph | `models/concepts.py` | `routers/concepts.py` | `lib/graph/` (ConceptGraph, GraphIndex, GapList) |
+| taxonomy | `models/taxonomy.py` | `routers/taxonomy.py` | `lib/library/LibraryTaxonomy.svelte` |
+| settings | `models/settings.py` | `routers/settings.py` | `lib/settings/Settings.svelte` |
+| sources (ingestion) | `models/sources.py` | `routers/sources.py` | `lib/settings/Sources.svelte` |
+| health | — | `routers/health.py` | `lib/shell/` (status bar) |
+
+Two frontend folders have no API counterpart, by design:
+
+- `lib/shell/` — chrome that belongs to no domain: sidebar, global search, dialogs, `Icon.svelte`
+  (the one component imported across every folder).
+- `lib/core/` — the wire boundary itself, split by the same domain names: `api/<domain>.ts`
+  (thin fetch clients, shared base + error unwrapper in `_base.ts`) and `types/<domain>.ts`
+  (mirrors `apps/api/models/<domain>.py`), plus `theme.ts` and `fonts.css`. Both carry an
+  `index.ts` barrel, so `from '../core/api'` still resolves; prefer the domain module.
+
+Two naming traps this table exists to prevent:
+
+- **`sources` is ingestion, not citations.** `models/sources.py` and `lib/settings/Sources.svelte`
+  are files on disk; the *citation* sources of an answer are `SourceViewPayload` in `models/chat.py`
+  and `lib/chat/Source*.svelte`.
+- **`library` is three sub-domains.** Documents, folders and keyword families all live under
+  `/api/library/*` and are split one module per sub-domain on both sides.
 
 ## Two-tier caching
 

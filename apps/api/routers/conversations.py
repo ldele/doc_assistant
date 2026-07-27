@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException
 
-from apps.api.models import (
+from apps.api.models.conversations import (
     ConversationDetailPayload,
     ConversationMetaUpdate,
     ConversationSummaryPayload,

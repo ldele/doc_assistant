@@ -11,6 +11,517 @@ Format: What changed | Why | Rejected alternatives | What it opens
 > (moved verbatim 2026-07-21). This file keeps 2026-07-15 onward.
 
 ---
+## 2026-07-27 — session-close conformance: the cpc gate caught five header errors and four warnings
+
+**What changed.** Running `rungate.py keypoint session-close` before handoff (rather than at the
+end of the *next* session) surfaced nine issues, all now fixed:
+
+- **`status:` header vocabulary is closed.** `docs_check.HEADER_RE` accepts exactly
+  `active|superseded|archived`. The four new ADRs carried `status: draft` and my
+  `SESSION-archive-002.md` carried `status: archive` — none matched, so all five read as *missing*
+  a header. The HTML comment tracks **document lifecycle**; an ADR's own `**Status:** proposed`
+  line in the body is a different axis and stays untouched. Fixed to `active` / `archived`.
+- **Living docs need their `updated:` bumped when edited** (rule 12): `architecture.md` said
+  2026-07-26, `ROADMAP.md` said 2026-07-25, both committed today. Bumped — and the stale
+  parenthetical on `architecture.md` ("repository layout moved here from the README") replaced with
+  what actually changed.
+- **Module `CLAUDE.md` files were over the 40-line cap** (41 and 42) after this pass added rules.
+  Compressed rather than raising the cap; nothing dropped.
+
+**Why it is worth a DEVLOG entry.** Two of these would have silently misled: a `status: draft`
+header looks *more* careful than `active`, but the checker treats it as absent, so the file drops
+out of conformance scanning entirely. And a `updated:` date that lags the last commit is exactly
+the signal rule 12 exists to catch — a living doc that looks current but isn't.
+
+**Verified.** `docs_check --strict` **0 errors, 0 warnings** (was 5/4) · `generate --check` OK ·
+`ruff` clean over `src/`+`tests/`+`apps/` · `mypy src` 82 files · `svelte-check` 182 files 0/0 ·
+`npm test` 50/50. Python suite unchanged since `598b570` (1,315 passed); nothing in this entry
+touches runtime code.
+
+---
+## 2026-07-27 — Tracks 1–3 into the ROADMAP + three topbar/rail placement changes
+
+**Roadmap.** ADR-030..033's twelve increments now sit in the PR table: `MM1–MM3` (document outline
+layer → `doc_map` read model → `DocumentMap.svelte`), `T1–T5` (source-trust indicators; T5 parked
+as the first network feature), `RP1–RP4` (generation presets). Flagged in the preamble that all four
+ADRs are **stubs** — each says "needs `grill-me` before the Decision section is filled" — so those
+rows are scope, not contract.
+
+**One collision worth noting:** the plan numbers its Reports track `R1–R4`, but `R1–R4` are already
+taken in the ROADMAP by the 2026-07 remediation rows (ingest hygiene, concept presence, keyword
+termhood, skeleton provenance). Renumbered **`RP1–RP4`** here, with the mapping stated in the
+preamble — the ROADMAP is a shared ID namespace and silently reusing an id would have made two
+different things look like one.
+
+**UI placement (user request).**
+1. **Brand → right.** The `provenote` mark + wordmark move out of the left cluster into the right
+   one, beside Settings. No CSS change needed: `.brand` is `flex: none` and position-agnostic, and
+   the 780px rule that drops the wordmark (keeping the mark) still applies.
+2. **Search → left.** The magnifier moves from the right cluster to between the sidebar toggle and
+   back/forward. It opens a *navigation* overlay, so it now sits with the other navigation
+   affordances rather than next to Settings.
+3. **Taxonomy → pinned rail footer.** On the Graph rail it was the first row of the scrolling
+   concept index; it is a destination, not an index entry, so it moved out of the `<nav>` into a
+   `.railfoot` sibling. `.sidebar` is already a flex column with the list at `flex: 1;
+   overflow-y: auto`, so a `flex: none` sibling pins to the bottom with no positioning hacks.
+
+**Verified.** `svelte-check` 182 files 0/0, `npm test` 50/50, 0 console errors. Live at 1280px the
+toolbar reads left→right **Menu · Collapse · Search · Back · Forward · tabs … brand · Settings**,
+0 overflow; 375px dark keeps the mark, drops the wordmark, 0 overflow.
+
+The footer's "unscrollable" claim was **proved, not assumed** — and the first attempt was a vacuous
+test: `.graphrail` reports `scrollHeight == clientHeight` because `GraphIndex` renders its own
+inner `.clist` scroller. Scrolling *that* element by 395px left the footer at exactly the same
+`top` (348 → 348). A pinned-element test that never actually scrolled anything would have passed
+either way.
+
+---
+## 2026-07-27 — `chat_controller.py` 1,423 → a package, and the re-export trap billing 66 tests
+
+**What changed.** Five modules + a barrel: `session` (63, ADR-3 caller-owned state) · `views` (121,
+the pure render payload `apps/api/models/chat.py` mirrors) · `events` (39, the `TurnEvent` union) ·
+`helpers` (493, pure formatters + turn-knob resolution) · `controller` (770, `ChatController`).
+Dependency direction is strictly **session/views → events/helpers → controller**.
+
+**The cycles in the first dependency scan were fake.** A naive name-reference scan reported
+`session→controller`, `helpers→controller`, `views→session`, i.e. no valid layering. Every one
+turned out to be a **docstring mention** — `` ``ChatController`` `` in a class doc, a Sphinx
+`:meth:` cross-reference. Only `events→views` (`result: TurnResult`) was a real code edge. Checking
+each candidate line by hand instead of trusting the count is what made the split possible; the
+regex would have said "don't do this".
+
+**Then the re-export trap, at scale.** The `library` split predicted it and cost 2 test lines; here
+it broke **66 tests**, because `test_chat_controller.py`/`test_turn_parity.py`/`test_retrieval_scope.py`
+patch *module-level imported names* on `chat_controller` — `is_library_query` (39×),
+`current_graph_version`, `record_answer`, `SYNTHESIS_MODE`, `adjudicate_claim`, `RAGPipeline`… Once
+those bindings live in `controller.py`/`helpers.py`, `setattr(chat_controller, …)` writes to the
+package and the real caller never sees it.
+
+The fix needed a distinction worth writing down: **rebinding a name** must target the owning module
+(`chat_controller.controller.is_library_query`, `chat_controller.helpers.SYNTHESIS_MODE` — note the
+config constants belong to `helpers`, since `_resolve_turn_knobs` consumes them), whereas
+**setting an attribute on a shared module object** (`chat_controller.app_settings.SETTINGS_PATH`)
+works through any binding, so `app_settings` is simply re-exported. 57 call sites repointed.
+
+**Three misses the mechanical generator made**, each caught by a different gate — worth knowing the
+pattern: (1) `log` used without `structlog` in the body, so no logger was bound — *ruff*;
+(2) `TurnEvent = Token | Step | Result` is a **module-level type alias**, invisible to a `def`/`class`
+scanner, so `controller` lost its import and the barrel lost the export — *ruff*; (3) test patch
+targets — *pytest*, 66 of them. Static analysis of a file tells you what is *defined*; it does not
+tell you what the rest of the repo *reaches into*.
+
+**Verified.** 34/34 declarations present, **zero body diffs**, and both module-level assignments
+(`TurnEvent`, `_MARKER_LABELS`) confirmed present. `ruff` + `ruff format` clean over `src/` and
+`tests/`, `mypy src` clean (**82 files**), full suite **1,315 passed** — the exact pre-split count.
+
+---
+## 2026-07-27 — `library.py` 1,528 → a `library/` package (the `src/` twin of the apps/ pass)
+
+**What changed.** `src/doc_assistant/library.py` becomes a package of 8 sub-domain modules +
+a re-exporting `__init__`, cut along its own banner sections and **named to match
+`apps/api/routers/library/`**: `models` (67) · `documents` (319) · `pins` (195) · `folders` (199) ·
+`keywords` (273) · `chunks` (135) · `citations` (174) · `similarity` (133).
+
+**Scoped before cutting** (the discipline that changed the plan in step 4). The section dependency
+graph is **acyclic with five leaves** — only `similarity→citations` (3), `query→models` (2),
+`pins→{models,documents}`, `folders→{documents,keywords}` (1 each). 27 import sites across
+apps/scripts/tests, all preserved by the barrel.
+
+**The hazard scoping predicted, verified empirically.** `tests/integration/test_document_meta.py`
+did `import doc_assistant.library as lib; monkeypatch.setattr(lib, "_reveal_in_file_manager", …)`.
+After the split that name is a **re-exported binding on the package**, not the one
+`reveal_document_source` resolves. Proven at the REPL, not assumed:
+
+    patching the package changes what the caller resolves?  False
+    patching the owning module changes it?                  True
+
+So the patch would have silently missed and the test would have run the **real** function — opening
+a file manager during the suite. Both sites now patch `doc_assistant.library.documents`, and the
+rule is in `src/doc_assistant/CLAUDE.md`: **patch the module that owns a helper, never a package
+that re-exports it.** It is the Python twin of the "patch it on its router module, not `main`" rule
+already in `apps/api/CLAUDE.md` — a barrel buys compatibility and hides binding identity.
+
+**Verified.** Declaration-level equivalence proved the same way as the `types.ts`/`api.ts` splits
+(which caught two silent truncations): **67/67 declarations present**, bodies byte-identical after
+normalising comments/whitespace, with the only two diffs being ruff's `UP037` unquoting
+`list["SimilarDoc"]` / `list["FamilyProposal"]` — safe because every module carries
+`from __future__ import annotations`. `ruff` clean, `ruff format` clean, **`mypy src` clean (77
+files, up from 69)**, and the **full suite green: 1,315 passed**.
+
+**Generation note.** The modules were generated mechanically (bodies + per-module import resolution
+computed from actual name usage), which got the imports ~90% right and left exactly two classes of
+miss that ruff caught: `log` used without `structlog` appearing in the body, and a `TYPE_CHECKING`
+guard whose import lived in the shared header. Worth remembering: deriving imports from usage
+misses names introduced by *convention* rather than by reference.
+
+---
+## 2026-07-26 — step 5 phase 2 complete: `ChatPane` + `chat.svelte.ts`; App.svelte 2,725 → 1,245
+
+**What changed.** The last pane, and the one that blocked the rest: `chat/chat.svelte.ts` (state +
+DOM mechanics) and `chat/ChatPane.svelte` (130 markup + 243 CSS). **`App.svelte` 1,659 → 1,245** —
+901 script / ~75 markup / ~270 style. Across the whole pass: **2,725 → 1,245, −54%**.
+
+**Why chat needed a module where Library did not.** `convoEl` and `taEl` are *bound DOM refs*, and
+both sides need them: the pane binds them, but App's `newConversation`/`resumeConversation` still
+call `chat.taEl?.focus()` after the pane mounted them. Props cannot express that. Putting them in
+the rune module — `bind:this={chat.convoEl}` — is what made the extraction possible at all.
+
+The autoscroll `$effect` moved with them as `useChatAutoscroll(viewing)`, taking `viewing` as a
+**getter thunk** rather than a value: it is conversation-view state App owns, and the effect must
+re-run when it changes (opening a past chat scrolls to the bottom too). `pinned` and `nextId`
+stayed **non-reactive** module locals behind setters — `pinned` is written on every scroll event,
+so making it `$state` would have made the autoscroll effect re-run on scroll, i.e. a feedback loop.
+
+**Still in App, deliberately:** `send` (needs the folder scope + refreshes conversations),
+`doCompare`, `doExport`, `newConversation`, `resumeConversation`, and the `activeSource` derivation
+— every one spans chat × conversations × folders.
+
+**Three shorthand traps, all caught by the compiler.** Rewriting `overrides` → `chat.overrides`
+turned `bind:overrides` into `bind:chat.overrides` (invalid). This is the third instance of the
+same class this pass — after `{conversations}` and `{mode}` — so it is now a known cost of
+renaming a variable that appears in Svelte shorthand: **`{x}`, `x,` and `bind:x` all need
+hand-editing.** The regex also had to exclude `<` from its lookbehind, or `<input`/`<textarea`
+would have become `<chat.input`.
+
+**One deliberate reversal.** The scope `<select>` first became `value=… onchange=…` because a
+`const` prop cannot be bound — but `<option value={null}>` makes string round-tripping through the
+DOM subtly wrong, and this is the ADR-025 F2 retrieval scope, where a silent mistake means answers
+scoped to the wrong folder. Switched to `$bindable()` so `bind:value` is preserved exactly as
+before. Faithful beats clever on the answer path.
+
+**Verified.** `svelte-check` **182 files, 0 errors, 0 warnings**; `npm test` 50/50; 0 console
+errors. Live at 1280px, every boundary crossing exercised: a sample chip fills the composer (App
+writes `chat.input` → module → the pane's bound textarea, Send enables); **autogrow 62 → 160px**
+through the module's DOM ref, and back to 60 on clear; the scope `$bindable` round-trips with its
+`.scopepick.scoped` class; opening a past conversation renders the read-only replay **and
+autoscrolls to the bottom** — the effect firing across the module boundary, the single riskiest
+part of this change; a citation click still opens the source panel; Back-to-current restores the
+composer. 375px dark: 0 overflow, 0 offending elements.
+
+**Step 5 is done, and so is the plan.** All six steps complete. `App.svelte` is now a shell: the
+cross-domain orchestration (nav history, readiness gate, `selectMode`, the chat-scope guard, the
+conversation/chat lifecycle) plus overlay wiring — which is what an app shell should be.
+
+---
+## 2026-07-26 — step 5 phase 2 (second slice): `LibraryPane` out, and why it takes 29 props
+
+**What changed.** The Library workspace leaves `App.svelte` with its styles:
+`library/LibraryPane.svelte` (205 lines of markup + 251 of CSS). **App.svelte 2,081 → 1,659** —
+948 script / ~140 markup / ~570 style. Since the pass started it is **2,725 → 1,659 (−39%)**.
+
+**A finding that removed work:** the *graph* pane needed no extraction at all. Its branch is 19
+lines and is already a single `<ConceptGraph …/>` invocation — the component *is* the pane. Only
+library and chat were ever real.
+
+**Why this one takes an explicit 29-prop contract, unlike `Topbar`'s 8.** `Topbar` could import
+`shell` because that state is genuinely shell-owned and its module is a leaf. The Library pane's
+derived pipeline (`facetList`, `keywordsOf`, `visibleDocs`) is not: it is computed from documents ×
+**keyword families** × folders, and family state is the domain step 4 deliberately left in App
+because a family write also re-points the live facet selection (PR-2.5 D5) — three domains in one
+function. Extracting it just to shorten a prop list would break the boundary this whole pass has
+been protecting.
+
+So the pane is **presentational with a written-out dependency surface**. For a leaf view that is
+arguably the better shape anyway: the contract is 29 lines at the top of the file stating exactly
+what the Library needs, instead of an implicit reach into module state. It only reads `prefs.svelte`
+(its own view/sort preferences) and the pure helpers from `library.ts` directly.
+
+**Method note.** Rather than hand-derive the contract, the markup was extracted mechanically and
+`svelte-check` was used as the oracle: every unbound name it reported became a prop or a callback.
+That surfaced six I would have missed (`selectCollection`, `folderNames`, `openManageFolders`,
+`onSetDocId`, `onClearSelection`, plus the `KeywordFacet` type living in `library.ts`, not
+`core/types`). It also caught one prop I had invented and never used — `onSetQuery`, dropped, since
+an unused entry in a contract that exists to document dependencies is worse than none.
+
+**Verified.** `svelte-check` **180 files, 0 errors, 0 warnings** (0 warnings again the real signal:
+251 lines of CSS moved scope and nothing was orphaned); `npm test` 50/50; 0 console errors. Live at
+1280px: CSS intact after the move (`.library` flex:1, `.libnav`, `.crumb` 12.3px, `.viewtoggle`),
+97 tiles; and every callback exercised — drill into a document and Back (97 tiles restored),
+select mode in/out (Add to folder · Clear · Done, tile toggling), the keyword-filter overlay,
+grid/list round-tripping through localStorage, and collection select (Demo corpus → 18 tiles with
+a "Library › Demo corpus" breadcrumb → All documents → 97). 375px dark: 0 overflow, **0 offending
+elements** measured against the viewport.
+
+**Remaining.** Only the chat pane (~132 lines of markup). It is the awkward one: `convoEl` and
+`taEl` are bound DOM refs that App's scroll-pinning `$effect`, `autogrow`, `resetComposer` and
+`taEl?.focus()` all reach for, so extracting it means moving chat state into a rune module first —
+the phase-1 pattern again, applied to the domain step 4 named as most coupled.
+
+---
+## 2026-07-26 — step 5 phase 2 (first slice): `Topbar` + `StatusBar` out of App.svelte
+
+**What changed.** The two pieces of pure chrome leave `App.svelte` **with their styles**:
+`shell/Topbar.svelte` (122 lines of markup + 188 of CSS) and `shell/StatusBar.svelte` (20 + 41).
+`App.svelte` **2,439 → 2,081** lines; its `<style>` block drops **229 lines**.
+
+**This is what phase 1 bought.** `Topbar` reads `shell` and `sidebarPrefs` straight from the leaf
+rune modules, so it needs only **8 props** — the nav-history cursor (`canBack`/`canForward` +
+their two callbacks) and four things App genuinely owns (`onSelectMode`, which lazy-loads four
+domains; `onOpenSearch`; `exportDisabled`, which depends on live turn state; `onExport`). Before
+phase 1 the same component would have taken about twenty. `StatusBar` takes **zero** props: it
+renders `shell.status`/`shell.health`, which App's readiness gate writes.
+
+**Verified.** `svelte-check` **179 files, 0 errors, 0 warnings** — the 0 *warnings* matters here,
+since Svelte reports unused CSS selectors, so an orphaned rule left behind in App would have shown
+up. `npm test` 50/50. Live at 1280px, 0 console errors: styles survived the scope move (topbar 47px
+with its 1px rule, status dot the green 7px circle, corpus line intact); all 8 props exercised —
+mode switch, **nav history round-trips across the new component boundary** (Library → Back → Chat
+→ Forward → Library, with Forward correctly re-enabling), Export present-but-disabled with no
+turns, search overlay opens. At 375px the moved media queries still fire exactly as their comment
+promises: tab labels drop, then the wordmark, the mark stays, mobile/desktop buttons swap, 0
+horizontal overflow.
+
+**A false alarm worth recording, because it will recur.** First measurement said the topbar was
+**21px wide with 363px of horizontal overflow** — alarming, and it looked like the CSS scope move
+had broken the flex column. It had not: `innerWidth` was **0**. The Browser pane was not displaying
+(`visibilityState: 'hidden'`), so the viewport had collapsed and every width was an intrinsic
+min-content measurement. `resize_window` with a *preset* did not re-establish it; passing explicit
+`width`/`height` did, and then `.app` and all three children measured 1280 with 0 overflow. Two
+sessions running now, the harness has produced a convincing-looking layout "bug" that was purely a
+measurement artifact (see the phase-1 entry's stalled CSS transition). **Check `innerWidth` and
+`visibilityState` before believing a geometry regression.**
+
+**Remaining for phase 2.** `App.svelte` is 2,081 lines: 949 script / ~560 markup / ~570 style. The
+three mode panes (library / graph / chat) are the rest, and they are harder than the chrome — they
+read genuinely App-owned domain state (documents, folders, keywords, turns, citations), so each
+wants either its domain's rune module or a deliberate prop contract. Chrome first was the right
+order precisely because it needed no such decision.
+
+---
+## 2026-07-26 — step 5 phase 1: `shell/shell.svelte.ts`, the leaf module the pane split needs
+
+**What changed.** The last of `App.svelte`'s non-domain state moves to one rune module: `mode`,
+`sidebarOpen`, `appMenuOpen`, `showShortcuts`, `showAbout`, `showSettings`, `searchOpen`,
+`searchQuery`, `health`, `status`. Script 955 → **947**, 68 call sites rewritten.
+
+**Why this is phase 1 and not the pane split itself.** Measuring first (again) changed the plan:
+the markup region references **40+ App identifiers**. Extracting `Topbar`/`StatusBar`/`LibraryPane`
+as prop-taking components would thread twenty-odd props into each — *less* reviewable than the
+2,400-line file they came from, which defeats the point. `shell.svelte.ts` is deliberately a
+**leaf** (it imports nothing from any sibling state module), so in phase 2 the panes can `import
+{ shell }` instead. That is the whole reason this is a separate, boring commit.
+
+**Still in App.svelte, unchanged:** the nav-history `$effect` (reads `shell.mode` *and* library
+collection/docId *and* graph selection), the readiness gate (writes `shell.health`/`shell.status`
+but also kicks conversations + folders), `selectMode` (lazy-loads four domains) and the chat-scope
+guard. Orchestration stays where it is visible.
+
+**Why this one was not a blanket find-and-replace.** `mode`, `status` and `health` collide with
+things that must not change: `class="tb-mode"`, `class="status-dot"`, `class="statusbar"`,
+`role="status"`, the `NavEntry` type's own `mode:` field, and `/api/health` in comments — a
+word-boundary regex matches `status-dot` (the `-` is a boundary) and would have written
+`class="shell.status-dot"`. So those three were rewritten **line-by-line against an explicit,
+asserted list**; only the seven unambiguous identifiers got a global regex. Three shapes needed
+hand-editing: the `{mode}` shorthand prop → `mode={shell.mode}`, the `mode,` object shorthand in
+the nav entry → `mode: shell.mode,`, and `bind:query={searchQuery}`.
+
+**Verified.** `svelte-check` **177 files, 0/0**; `npm test` **50/50**; the `<style>` block has zero
+diff lines. Live, 0 console errors: the readiness gate drives the status bar through its real
+states (`connecting` + `wait` dot → `ok` dot + "33,163 chunks · ollama/llama3.1:8b · bge-base");
+mode tabs, app menu (3 items), shortcuts modal, Settings drawer, and Cmd-K search all round-trip
+(typing "dense" filters, Cmd-K closes); 375px dark at 0 horizontal overflow.
+
+**A measurement trap worth recording.** The mobile drawer *looked* broken — `.open` applied but
+`transform` stayed at `translateX(-100%)`. It was not a regression: `document.visibilityState` is
+**`hidden`** in this harness (the pane does not composite, which is also why `screenshot` times
+out), so CSS transitions never advance — `getAnimations()` showed the animation stuck at
+`currentTime: 0`. Setting `transition: none` and re-measuring gave `translateX(0)`: correct. When a
+CSS-driven state looks stuck here, neutralise the transition before calling it a bug.
+
+---
+## 2026-07-26 — step 6: `core/types.ts` + `core/api.ts` split by domain, mirroring `apps/api/models/`
+
+**What changed.** The two wire-boundary files became packages named for the same domains as
+`apps/api/models/` and `apps/api/routers/`: `core/types/` (12 modules from 513 lines) and
+`core/api/` (12 clients + `_base.ts` from 631). Each keeps an `index.ts` barrel, so every existing
+`from '../core/types'` / `'../core/api'` still resolves — no consumer churn — while a wire change
+is now a **one-file diff** you can line up against `models/<domain>.py`.
+
+Two shared pieces were hoisted into `api/_base.ts`: `API_BASE` and `errorDetail` (the FastAPI
+`detail` unwrapper, which handles both the plain-string and the structured-offenders shapes).
+Cross-domain type coupling turned out to be a single edge — `conversations` imports `TurnScope`
+from `chat` — which is a good sign the domain lines are real.
+
+**Rejected.** Pointing all ~25 component imports at the domain modules in the same pass. The
+barrel gives the whole reviewability benefit (the split is what makes the diff one-file); rewriting
+every import site is churn that would bury it. The barrels say "prefer the domain module" for new
+code instead.
+
+**Two silent-truncation bugs caught by asserting, not by reading.** Splitting by parsing is exactly
+where quiet data loss hides, so both files were split mechanically and then **proved equivalent**:
+every declaration re-parsed from the originals and compared body-by-body after normalising
+comments and whitespace. That caught (1) `export type GapKind` losing its entire 9-member union —
+a brace-matching heuristic that returned `i+1` for a multi-line type alias — and (2) the private
+`errorDetail` helper being swallowed into one module, breaking six others. The second surfaced as
+24 `svelte-check` errors; **the first would have compiled if the next line had not happened to be
+another `export`.** Final check: types 51/51 and api 54/54 declarations present and byte-identical,
+modulo the two intended `export` additions.
+
+**Verified.** `svelte-check` **176 files, 0 errors, 0 warnings**; `npm test` **50/50**. Live: after
+clearing the Vite cache (a deleted module lingers in the dev server's graph — same restart dance as
+the step-3 asset paths), all three modes render, 0 horizontal overflow. Proved the split is what
+actually loads rather than trusting an absent error: `performance.getEntriesByType('resource')`
+shows **all 14 `core/api/*` modules fetched**, the old flat `core/api.ts` **not fetched**, and zero
+failed requests. Worth noting the browser console buffer is **cumulative across navigations** in
+this harness — 16 stale HMR errors from before the restart persisted through a hard reload and
+looked like a live failure; the server log and the resource timings were the honest signals.
+
+---
+## 2026-07-26 — App.svelte step 4: the domains that actually decouple → `.svelte.ts` rune modules
+
+**What changed.** Five per-domain rune modules pulled out of `App.svelte`'s script, which drops
+**1,233 → 955 lines**: `graph/graph.svelte.ts` (99) · `library/taxonomy.svelte.ts` (118) ·
+`library/prefs.svelte.ts` (60) · `shell/prefs.svelte.ts` (67) · `chat/conversations.svelte.ts` (48).
+
+**Why it is a *partial* step 4, on purpose.** The plan said "split the script into 8 per-domain
+state modules". Inventorying the coupling first (the prerequisite this plan flagged) showed that
+would be a mistake. Of the 5 `$effect` blocks, **3 are irreducibly cross-domain**: the nav-history
+observer reads mode + library collection + library docId + graph selection; the readiness gate
+writes health/status and kicks conversations + folders; the chat-scope guard reads folders and
+writes chat state. `selectMode` orchestrates four domains and `refreshFamilies` writes the facet
+selection as well as the family list.
+
+Forcing those into modules buys nothing and costs the thing the whole pass is for: coupling that
+is currently **visible in one file** would become **invisible**, spread across an implicit import
+graph — and two of the three would need import cycles to express at all. So the rule applied was:
+extract a domain only when it is genuinely self-contained; leave cross-domain orchestration in
+`App.svelte`, which is exactly what an app shell is for.
+
+**Not extracted, and why:** *keyword families* — every mutation re-runs `remapSelection` over the
+facet selection against the document list (PR-2.5 D5: a family write changes what a facet *unit*
+is, so a live selection must be re-pointed or the grid silently empties behind a chip that still
+looks selectable). That is three domains in one function and it stays put. *conversations* was
+extracted only as far as the list + pin/archive/rename; `openConversation`/`resumeConversation`/
+soft-delete all write live chat state, so they stayed.
+
+**Svelte 5 shape.** State is one exported `$state` **object** per module, not separate `let`s — an
+imported binding cannot be reassigned across a module boundary, so `graph.selectedId = x` is the
+only form that works. `$effect` cannot run at module top level (no effect context), so the one
+intra-domain effect is exported as `useGraphHygiene()` and called from App during init.
+`.svelte.ts` modules need the compiler and **cannot run under `node:test`** — so the pure, tested
+modules (`library.ts`, `search.ts`, `gaps.ts`, `taxonomy.ts`) were left untouched beside them. The
+extension is the marker: `taxonomy.ts` is pure and tested, `taxonomy.svelte.ts` is reactive state.
+
+**Verified.** `svelte-check` **151 files, 0 errors, 0 warnings**; `npm test` **50/50**. Live, with
+0 console errors: cross-module reactivity confirmed (clicking a GraphIndex concept updates
+`graph.selectedId` and the ego panel re-renders); sidebar collapse and library view/sort each
+toggle, apply, and round-trip through localStorage (all restored to their prior values); the
+taxonomy modal opens on the full ANZSRC forest (357 concepts · 97 documents · 236 fields) and its
+drill-in populates **both** pickers — 14 concepts read from `graph.data` across the module
+boundary, 98 documents from App's lazy-load wrapper. 1280px light and the 375px path both at
+0 horizontal overflow.
+
+**What it opens.** Step 5 (markup + style → pane components) is now the bigger remaining win:
+`App.svelte` is still 2,447 lines, of which **1,492 are markup + style**, not script.
+
+---
+## 2026-07-26 — `GapList.svelte` was a **binary file** to git: raw NUL byte → the `\0` escape
+
+**What changed.** One byte. `apps/desktop/src/lib/graph/GapList.svelte:25` builds the `busy`-Set
+dedup key as `` `${it.concept_id}<NUL>${it.kind}` `` — and the separator was a **literal 0x00 byte**
+in the source, not an escape. `file` reported `application/octet-stream`, and **git rendered every
+change to the file as `Binary files … differ`** while grep skipped its contents entirely. Replaced
+the raw byte with the two-character escape `\0`.
+
+**Why it matters.** A file git cannot diff is a file that cannot be reviewed — it silently opts out
+of code review, and grep-based auditing never sees it. Found during the `apps/` reviewability pass
+(entry below) and deliberately held back from that commit: folding a content fix into a move-only
+diff is the exact thing that makes refactors unreviewable.
+
+**Runtime-identical, proven not assumed.** In a JS/TS template literal `\0` *is* the NUL escape:
+``node -e`` on `` `${a}\0${b}` `` vs `a + String.fromCharCode(0) + b` → `true`, codepoints
+`120,0,121`. The composite key is byte-for-byte what it was. The one hazard — `\0` followed by a
+digit is a legacy octal escape and a SyntaxError in strict mode — does not apply: the next
+character is `$`. Asserted in the edit script rather than eyeballed.
+
+**Rejected.** A distinct printable separator (``, `::`) — a behaviour change to a dedup key
+for no benefit, and it would need its own reasoning about collision-safety against UUIDs and gap
+kinds. The point was to make the file text, not to redesign the key.
+
+**Gotcha worth remembering.** The first byte-level edit script **silently did nothing**: passed
+through a `<<'PY'` heredoc, `b"\\0"` reached Python as `b"\x00"` (len 1), so the replace was
+NUL→NUL. It only surfaced because the script asserted `len(new) == len(d) + 1`. Without that
+assert the run would have reported success on an unchanged file. When editing bytes through a
+shell heredoc, build the literal from explicit values (`bytes([0x5C, 0x30])`) and assert the size
+delta — do not trust backslashes to survive the trip.
+
+**Verified.** `file -bi` → `text/html; charset=utf-8` (was `application/octet-stream`); the staged
+blob has **0 NUL bytes**; a simulated follow-up edit now renders as a **readable line-level diff**
+instead of "Binary files differ". `svelte-check` 146 files 0/0 · `npm test` 50/50. Live: Graph →
+Gaps renders 18 open gaps; **Promote round-trips 200 OK and changed exactly 1 of 18** (the busy-Set
+key still targets a single item — no collision), then **all 18 were reset to `surfaced`, restoring
+the pre-test baseline exactly**. 0 console errors, `$0` (ollama/llama3.1:8b).
+
+---
+## 2026-07-26 — `apps/` reviewability pass: one domain axis across both shells (steps 0–3 of 6)
+
+**What changed.** Three structural moves, no behaviour change anywhere.
+
+1. **`apps/api/models.py` (1,165 lines) → `apps/api/models/`** — 12 domain modules + `_common`,
+   cut along the file's *own* pre-existing banner sections and named to match `routers/`:
+   `chat` · `compare` · `conversations` · `library` · `connections` · `folders` · `keywords` ·
+   `sources` · `concepts` · `taxonomy` · `settings`. The 7 routers now import from their domain
+   module, so the import line names the domain; `__init__` re-exports flat for back-compat (the
+   one remaining consumer is `tests/unit/test_api_models.py`).
+2. **`apps/api/routers/library.py` (301 lines) → `routers/library/`** — it was the only router
+   bundling three sub-domains (documents 7 routes, folders 6, keyword-families 7). Now one module
+   each, composed in `__init__`, so `main.create_app` is untouched. The three path prefixes are
+   disjoint, so include order carries no matching meaning; order *within* each module is
+   load-bearing and was preserved verbatim.
+3. **`apps/desktop/src/lib/` (43 flat files) → 6 domain folders** — `chat/` · `library/` ·
+   `graph/` · `settings/` · `shell/` · `core/`. Pure `git mv` + import rewrites, no renames: git
+   reports every file as `R`, so the diff reads as moves. Deliberately *not* combined with
+   dropping the `Library` prefix — a move+rename diff is exactly what makes a refactor
+   unreviewable, which would defeat the point.
+
+**Why.** `apps/api` had already solved this with the APIRouter split and `apps/desktop` never
+got it: the API was 8 domain routers with one 1,165-line outlier, the frontend was a flat bag of
+30 components + 8 logic modules + 4 tests + the client + the wire types. One rule now holds on
+both sides — *one domain per module, and the domain word is the same on both sides of the wire* —
+so reviewing a feature end to end is reading one row of the table now in
+`docs/architecture.md` § `apps/` — the domain spine.
+
+**Two naming traps the map exists to prevent**, both found by reading rather than assuming:
+`Sources.svelte` is **selective ingestion** (files on disk, matching `routers/sources.py`), *not*
+the citation sources of an answer — those are `chat/Source*.svelte` / `models/chat.py`. And
+`/api/library/*` is three sub-domains, not one.
+
+**Rejected.** (a) Splitting `models.py` but leaving routers importing the flat `__init__` — keeps
+the diff smaller but throws away the main benefit, since the import line no longer says which
+domain a route serves. (b) Renaming `LibraryGrid.svelte` → `library/Grid.svelte` in the same
+pass — correct end state, wrong moment (see above); left for a follow-up. (c) Rewriting the
+`models.py` pointers in ADR-010 / ROADMAP TX2b / the feature specs — those are dated historical
+records and stay as written; only the *live* pointers were repointed (`core/types.ts`'s 14
+`Mirrors …::Payload` comments, `vite.config.ts`).
+
+**Verified.** `ruff` clean; `mypy src` clean (69 files); **161 API tests pass** (every test that
+imports `apps.api`). Frontend `svelte-check` **146 files, 0 errors, 0 warnings** and `npm test`
+**50/50** — both identical to the pre-move baseline. Live preview: all three modes render
+(chat shell + history, Library grid, Graph index/gaps), 0 console errors, About dialog opens with
+`app-mark.png` loaded and both vendored fonts `loaded`; 375px dark = **0 horizontal overflow**.
+
+**What the live preview caught that the gates did not.** `svelte-check` and `npm test` both passed
+while the app was *broken*: `AboutDialog.svelte` imports `../assets/brand/app-mark.png` and
+`fonts.css` has four `url('../assets/fonts/…')` — **asset** paths, invisible to a TS type-check
+and to node:test, and Vite failed to resolve them. This is the same class as the
+`function f(x?)` footgun already in `apps/desktop/CLAUDE.md`: the type gate is not the run gate.
+A path-only refactor still needs the preview.
+
+**What it opens.** Steps 4–6 of the plan, each its own session: `App.svelte` is still **2,725
+lines** (70 `$state`, 19 `$derived`, 5 `$effect`, 83 functions, 22 child components) — split its
+script into per-domain Svelte 5 `.svelte.ts` rune modules (the 5 `$effect` blocks are the
+cross-domain coupling points and must be inventoried first), then its markup+style into pane
+components, then mirror the `models/` split into `core/types.ts` + `core/api.ts`.
+Note `.svelte.ts` modules cannot run under `node:test`, so that split must not absorb any of the
+pure tested logic (`library.ts`, `search.ts`, `gaps.ts`, `taxonomy.ts`) — that line stays hard.
+
+**Found in passing, not fixed** (own change, deliberately not folded into a move-only diff):
+`graph/GapList.svelte` line 25 contains a **literal NUL byte** as a composite-key separator
+(`` `${it.concept_id}\x00${it.kind}` ``). Git and grep classify the file as **binary**, so it
+never renders a readable diff — an actively anti-reviewable file. Replacing the raw byte with the
+escape `\0` is runtime-identical and makes it text.
+
+---
 ## 2026-07-26 — KI-26 residual: a leading dash rode into the stored title (`- PASSAGE RE RANKING WITH BERT`)
 
 **What changed.** `_clean_markdown` now strips a leading run of bullet/dash glyphs

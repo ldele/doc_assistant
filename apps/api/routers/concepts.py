@@ -13,7 +13,7 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
 
-from apps.api.models import (
+from apps.api.models.concepts import (
     ConceptGraphPayload,
     ConceptPresencePayload,
     GapListItemPayload,

@@ -36,7 +36,6 @@ from typing import Any, Protocol
 import structlog
 from pydantic import BaseModel, Field
 
-from doc_assistant import config
 from doc_assistant.config import (
     FIGURE_CAPTION_DESC_MIN_CHARS,
     FIGURE_DIR,
@@ -493,9 +492,11 @@ class AnthropicVisionDescriber:
     def __init__(self, *, api_key: str | None = None) -> None:
         from anthropic import Anthropic
 
+        from doc_assistant import credentials
         from doc_assistant.llm import os_trust_http_client
 
-        kwargs: dict[str, Any] = {"api_key": api_key or config.ANTHROPIC_API_KEY}
+        # Resolved per client (ADR-034): env key first, then the one saved in the app.
+        kwargs: dict[str, Any] = {"api_key": api_key or credentials.resolve_key("anthropic")}
         http_client = os_trust_http_client()
         if http_client is not None:  # OS-trust TLS for corporate MITM proxies (KI-10)
             kwargs["http_client"] = http_client

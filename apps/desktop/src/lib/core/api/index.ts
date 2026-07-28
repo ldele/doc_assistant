@@ -14,6 +14,7 @@ export { listFolders, createFolder, renameFolder, deleteFolder, addDocumentsToFo
 export { listKeywordFamilies, createKeywordFamily, renameKeywordFamily, addFamilyMember, removeFamilyMember, deleteKeywordFamily, detectKeywordFamilies } from './keywords'
 export { compareRetrieval } from './compare'
 export { getSettings, setSourceDir, setLlmProvider, setMarkersEnabled } from './settings'
+export { getSetup, saveAnthropicKey, clearAnthropicKey } from './setup'
 export { startIngest, getSources, patchSource, getIngestStatus } from './sources'
 export { getConceptGraph, getGapList, triageGap, getConceptPresence, rebuildConceptGraph, getGraphRebuildStatus } from './concepts'
 export { getTaxonomy, getFieldDetail, addHierarchyEdge, removeHierarchyEdge, attachDocumentField, detachDocumentField } from './taxonomy'

@@ -12,6 +12,7 @@
   import { fade, fly } from 'svelte/transition'
   import { getTheme, setTheme, applyTheme, type Theme } from '../core/theme'
   import Icon from '../shell/Icon.svelte'
+  import ProviderSetup from './ProviderSetup.svelte'
   import Sources from './Sources.svelte'
 
   // Slide the drawer in/out — but collapse to an instant swap when the OS asks for reduced motion.
@@ -250,6 +251,11 @@
   {:else if !settings}
     <p class="muted">Loading…</p>
   {:else}
+    <!-- First (ADR-034): on a fresh install this is the only section that matters, and it says
+         so — a provider and a folder. `load(true)` keeps a provider switch made in there from
+         leaving the "Active:" line below stale. -->
+    <ProviderSetup onProviderChanged={() => void load(true)} />
+
     <section>
       <h3>Display</h3>
       <div class="segmented" role="radiogroup" aria-label="Theme">
@@ -357,15 +363,15 @@
     <section>
       <h3>Provider &amp; model</h3>
       <p class="hint">
-        Switch between already-configured providers. Takes effect on your next question, no
-        restart. The API key stays in <code>.env</code>.
+        The advanced form of the switch in <strong>Getting started</strong> above: any provider,
+        any model name. Takes effect on your next question, no restart.
       </p>
 
       <label for="llm-provider">Provider</label>
       <select id="llm-provider" bind:value={llmProvider} disabled={llmBusy}>
         {#each settings.providers as p (p.id)}
           <option value={p.id} disabled={!p.available}>
-            {p.id} ({p.paid ? 'metered' : 'local'}){p.available ? '' : ' · add its key to .env'}
+            {p.id} ({p.paid ? 'metered' : 'local'}){p.available ? '' : ' · needs a key'}
           </option>
         {/each}
       </select>

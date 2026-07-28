@@ -38,6 +38,7 @@ from apps.api.routers import (
     health,
     library,
     settings,
+    setup,
     sources,
     taxonomy,
 )
@@ -151,6 +152,7 @@ def create_app(
     app.include_router(concepts.router)
     app.include_router(taxonomy.router)
     app.include_router(settings.router)
+    app.include_router(setup.router)
     app.include_router(sources.router)
 
     return app

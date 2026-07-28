@@ -505,3 +505,161 @@ def test_guard_assume_yes_skips_abort_window(
     assert "PAID API RUN" in err  # banner still prints (never silent)
     assert "Ctrl-C" not in err
     assert no_sleep == []  # automation: no interactive pause
+
+
+# ============================================================
+# ADR-034 — the in-app key store reaches every Anthropic call site
+# ============================================================
+
+
+def test_stored_key_is_used_when_the_env_has_none(
+    patched_sdks: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The whole point of ADR-034: a packaged install has no .env, so the key saved in the app must
+    # reach the SDK. Regression guard for the separate-binding trap — a call site that read an
+    # import-time constant would silently keep sending an empty key.
+    monkeypatch.setattr(config, "ANTHROPIC_API_KEY", None)
+    from doc_assistant import credentials
+
+    credentials.set_stored_key("anthropic", "sk-ant-from-app")
+    client = llm.AnthropicClient("claude-haiku-4-5-20251001")
+    assert client._client.api_key == "sk-ant-from-app"  # pragma: allowlist secret
+    assert llm.provider_available("anthropic") is True
+
+
+def test_cost_guard_accepts_a_key_saved_in_the_app(
+    monkeypatch: pytest.MonkeyPatch, no_sleep: list[float], capsys: pytest.CaptureFixture[str]
+) -> None:
+    # ...and still prints the banner. An in-app key must not become a quiet way to spend.
+    monkeypatch.setattr(config, "ANTHROPIC_API_KEY", None)
+    from doc_assistant import credentials
+
+    credentials.set_stored_key("anthropic", "sk-ant-from-app")
+    llm.assert_provider_intent("anthropic", operation="op", abort_seconds=0)
+    assert "PAID API RUN" in capsys.readouterr().err
+
+
+# ============================================================
+# ADR-034 — provider probes (setup path only; never on the answer path)
+# ============================================================
+
+
+class _FakeResponse:
+    def __init__(self, payload: Any, *, status: int = 200) -> None:
+        self._payload = payload
+        self.status_code = status
+
+    def raise_for_status(self) -> None:
+        if self.status_code >= 400:
+            raise RuntimeError(f"HTTP {self.status_code}")
+
+    def json(self) -> Any:
+        return self._payload
+
+
+def test_ollama_probe_lists_installed_models(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: dict[str, Any] = {}
+
+    def _get(url: str, **kwargs: Any) -> _FakeResponse:
+        calls["url"] = url
+        calls["timeout"] = kwargs.get("timeout")
+        return _FakeResponse({"models": [{"name": "qwen3.5:9b"}, {"name": "llama3.1:8b"}]})
+
+    monkeypatch.setattr("httpx.get", _get)
+    reachable, models, detail = llm.ollama_probe("http://localhost:11434/")
+    assert (reachable, detail) == (True, None)
+    assert models == ("llama3.1:8b", "qwen3.5:9b")  # sorted, so the UI order is stable
+    assert calls["url"] == "http://localhost:11434/api/tags"  # trailing slash not doubled
+    assert calls["timeout"] == llm.PROBE_TIMEOUT_SECONDS
+
+
+def test_ollama_probe_never_raises_when_the_server_is_down(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # An absent local server is the NORMAL first-run state, not an error condition.
+    def _boom(url: str, **kwargs: Any) -> _FakeResponse:
+        raise OSError("connection refused")
+
+    monkeypatch.setattr("httpx.get", _boom)
+    reachable, models, detail = llm.ollama_probe("http://localhost:11434")
+    assert (reachable, models) == (False, ())
+    assert "11434" in (detail or "")  # the message names the host the user must fix
+
+
+def test_ollama_probe_distinguishes_running_but_empty(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("httpx.get", lambda url, **k: _FakeResponse({"models": []}))
+    reachable, models, detail = llm.ollama_probe()
+    assert (reachable, models) == (True, ())
+    assert "no models" in (detail or "")
+
+
+def test_ollama_probe_tolerates_a_shape_it_does_not_know(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Ollama has used both `name` and `model` keys; an unrecognized payload must degrade to
+    # "reachable, models unknown", never crash the setup panel.
+    monkeypatch.setattr(
+        "httpx.get", lambda url, **k: _FakeResponse({"models": [{"model": "m:1"}]})
+    )
+    assert llm.ollama_probe()[1] == ("m:1",)
+    monkeypatch.setattr("httpx.get", lambda url, **k: _FakeResponse("not a dict"))
+    assert llm.ollama_probe()[0] is True
+
+
+def test_verify_anthropic_key_ok_uses_a_free_metadata_call(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    seen: dict[str, Any] = {}
+
+    class _Models:
+        def list(self, **kwargs: Any) -> object:
+            seen["list"] = kwargs
+            return object()
+
+    class _Client:
+        def __init__(self, **kwargs: Any) -> None:
+            seen["init"] = kwargs
+            self.models = _Models()
+            self.messages = None  # a completion call would be a paid one — there must be none
+
+    monkeypatch.setattr("anthropic.Anthropic", _Client)
+    status, detail = llm.verify_anthropic_key(" sk-ant-padded ")
+    assert status == "ok"
+    assert detail
+    assert seen["init"]["api_key"] == "sk-ant-padded"  # pragma: allowlist secret
+    assert seen["init"]["max_retries"] == 0  # a first-run probe must not hang on retries
+    assert "list" in seen
+
+
+def test_verify_anthropic_key_rejects_a_bad_key(monkeypatch: pytest.MonkeyPatch) -> None:
+    class _Client:
+        def __init__(self, **kwargs: Any) -> None:
+            self.models = self
+
+        def list(self, **kwargs: Any) -> object:
+            err = RuntimeError("unauthorized")
+            err.status_code = 401  # type: ignore[attr-defined]
+            raise err
+
+    monkeypatch.setattr("anthropic.Anthropic", _Client)
+    status, detail = llm.verify_anthropic_key("sk-ant-wrong")
+    assert status == "invalid"
+    assert "rejected" in detail.lower()
+
+
+def test_verify_anthropic_key_reports_no_verdict_when_offline(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # No network is NOT evidence the key is bad — the caller stores it and says so.
+    class _Client:
+        def __init__(self, **kwargs: Any) -> None:
+            self.models = self
+
+        def list(self, **kwargs: Any) -> object:
+            raise OSError("getaddrinfo failed")
+
+    monkeypatch.setattr("anthropic.Anthropic", _Client)
+    status, _ = llm.verify_anthropic_key("sk-ant-maybe-fine")
+    assert status == "unreachable"
+
+
+def test_verify_anthropic_key_rejects_an_empty_key() -> None:
+    assert llm.verify_anthropic_key("   ")[0] == "invalid"

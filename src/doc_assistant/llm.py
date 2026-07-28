@@ -54,7 +54,7 @@ from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 import structlog
 
-from doc_assistant import config
+from doc_assistant import config, credentials
 
 if TYPE_CHECKING:
     import httpx
@@ -162,7 +162,9 @@ class AnthropicClient:
         from anthropic import Anthropic
 
         self.model = model
-        kwargs: dict[str, Any] = {"api_key": api_key or config.ANTHROPIC_API_KEY}
+        # Resolved at construction, not import: an in-app key (ADR-034) can be saved while the
+        # process is running, and every client built after that must see it.
+        kwargs: dict[str, Any] = {"api_key": api_key or credentials.resolve_key("anthropic")}
         http_client = os_trust_http_client()
         if http_client is not None:  # OS-trust TLS for corporate MITM proxies (KI-10)
             kwargs["http_client"] = http_client
@@ -305,14 +307,19 @@ def get_judge_client() -> LLMClient:
 
 
 def provider_available(provider: str) -> bool:
-    """Whether ``provider`` can actually run right now.
+    """Whether ``provider`` is *configured* — i.e. its credential is present.
 
-    Anthropic needs ``ANTHROPIC_API_KEY``; Ollama (local) needs nothing. Generalizes the check
+    Anthropic needs a key — ``.env`` or the in-app store (:func:`credentials.resolve_key`,
+    ADR-034); Ollama (local) needs none, so it is always "configured". Generalizes the check
     ``reviewer_available`` already did (ADR-011 U1c) — reused by the settings-view provider list
     (fork E) and ``app_settings.set_llm_selection`` (never persist a choice that can't run).
+
+    Deliberately **not** a reachability check: a local Ollama server that is merely not running
+    yet must not make the selection invalid (inform-don't-block). Reachability is a separate,
+    network-touching question — :func:`ollama_probe`, aggregated by :mod:`doc_assistant.readiness`.
     """
     if provider.lower() == "anthropic":
-        return bool(config.ANTHROPIC_API_KEY)
+        return bool(credentials.resolve_key("anthropic"))
     return True
 
 
@@ -325,6 +332,91 @@ def reviewer_available(provider: str | None = None) -> bool:
     check availability for a followed switch instead of the pinned default.
     """
     return provider_available(provider if provider is not None else config.REVIEWER_PROVIDER)
+
+
+# ============================================================
+# Provider probes (first-run setup — ADR-034)
+# ============================================================
+# `provider_available` answers "is a credential configured?" from local state alone. These two
+# answer the *other* first-run question — "will a turn actually work?" — and they touch the
+# network, so they are separate functions a caller opts into, never called on the answer path.
+# Aggregation + the user-facing next step live in `doc_assistant.readiness`.
+
+PROBE_TIMEOUT_SECONDS = 2.0
+"""Wall-clock budget for one setup probe. Structural, not tuned: a first-run panel must answer
+within a keystroke's patience, and both probes talk to a local server or a single cloud GET."""
+
+
+def ollama_probe(
+    host: str | None = None, *, timeout: float = PROBE_TIMEOUT_SECONDS
+) -> tuple[bool, tuple[str, ...], str | None]:
+    """Ask a local Ollama server what it has installed.
+
+    Returns ``(reachable, models, detail)``: ``models`` are the installed model tags (e.g.
+    ``("llama3.1:8b", "qwen3.5:9b")``) and ``detail`` is a user-facing reason when
+    ``reachable`` is False. Never raises — an unreachable local server is the *normal* state
+    before the user installs Ollama, not an error condition.
+    """
+    import httpx
+
+    base = (host or config.OLLAMA_HOST).rstrip("/")
+    try:
+        response = httpx.get(f"{base}/api/tags", timeout=timeout)
+        response.raise_for_status()
+        payload = response.json()
+    except Exception as e:
+        log.info("ollama_probe_failed", host=base, error=str(e))
+        return False, (), f"No Ollama server answering at {base}"
+    raw = payload.get("models") if isinstance(payload, dict) else None
+    models: list[str] = []
+    if isinstance(raw, list):
+        for entry in raw:
+            name = entry.get("name") or entry.get("model") if isinstance(entry, dict) else None
+            if isinstance(name, str) and name:
+                models.append(name)
+    if not models:
+        # Reachable but empty is its own state, and the fix is different (pull a model, not
+        # start the server) — so it must not be reported as "unreachable".
+        return True, (), f"Ollama is running at {base} but has no models installed"
+    return True, tuple(sorted(models)), None
+
+
+def verify_anthropic_key(key: str, *, timeout: float = PROBE_TIMEOUT_SECONDS) -> tuple[str, str]:
+    """Check an Anthropic key with a **free** call, returning ``(status, detail)``.
+
+    ``status`` is one of:
+
+    * ``"ok"`` — the key authenticated.
+    * ``"invalid"`` — the API rejected it (401/403). A caller storing keys must refuse this one.
+    * ``"unreachable"`` — no verdict: no network, a proxy, a timeout, an SDK that is absent. The
+      key may well be fine, so a caller stores it and says it could not be checked
+      (inform-don't-block) rather than discarding what the user typed.
+
+    Uses ``models.list()`` — a metadata GET that consumes **no tokens and bills nothing** — so
+    first-run verification can never surprise a user with a charge (KI-4's discipline applied to
+    the setup path).
+    """
+    cleaned = key.strip()
+    if not cleaned:
+        return "invalid", "The key is empty."
+    try:
+        from anthropic import Anthropic
+    except Exception as e:  # pragma: no cover - the SDK is a declared dependency
+        return "unreachable", f"The Anthropic SDK is unavailable ({e})."
+    kwargs: dict[str, Any] = {"api_key": cleaned, "timeout": timeout, "max_retries": 0}
+    http_client = os_trust_http_client()
+    if http_client is not None:  # OS-trust TLS for corporate MITM proxies (KI-10)
+        kwargs["http_client"] = http_client
+    try:
+        Anthropic(**kwargs).models.list(limit=1)
+    except Exception as e:
+        status_code = getattr(e, "status_code", None)
+        if status_code in (401, 403):
+            log.info("anthropic_key_rejected", status_code=status_code)
+            return "invalid", "The API rejected this key. Check it in the Anthropic Console."
+        log.info("anthropic_key_unverified", error=str(e))
+        return "unreachable", f"Could not reach the Anthropic API to check the key ({e})."
+    return "ok", "Key verified."
 
 
 # ============================================================
@@ -383,10 +475,11 @@ def assert_provider_intent(
     if key not in config.PAID_PROVIDERS:
         return  # local / free — nothing to spend
 
-    if key == "anthropic" and not config.ANTHROPIC_API_KEY:
+    if key == "anthropic" and not credentials.resolve_key("anthropic"):
         raise ProviderCostError(
             f"{operation}: --apply with --provider anthropic needs ANTHROPIC_API_KEY "
-            "in your .env (or run a local provider, e.g. --provider ollama)."
+            "in your .env — or a key saved in the desktop app's Setup panel "
+            "(or run a local provider, e.g. --provider ollama)."
         )
 
     border = "=" * 72

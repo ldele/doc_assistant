@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-07-24 · class: append-only -->
+<!-- status: active · updated: 2026-07-28 · class: append-only -->
 
 # DEVLOG — doc_assistant
 
@@ -9,6 +9,129 @@ Format: What changed | Why | Rejected alternatives | What it opens
 
 > Entries **2026-07-14 and earlier** live in [`docs/archive/DEVLOG-archive-001.md`](archive/DEVLOG-archive-001.md)
 > (moved verbatim 2026-07-21). This file keeps 2026-07-15 onward.
+
+---
+## 2026-07-28 (2) — detect-secrets blocked the release commit: two false positives + a baseline 18 findings stale
+
+**What changed.** The `detect-secrets` pre-commit hook failed on the v0.3.0 commit. It was working
+correctly — two things were wrong, and only one was mine:
+
+1. **Two real false positives in the new tests.** `assert client._client.api_key == "sk-ant-from-app"`
+   and `assert seen["init"]["api_key"] == "sk-ant-padded"` match the `Secret Keyword` detector
+   (keyword `api_key` + a quoted literal). Marked with `# pragma: allowlist secret` — the documented
+   mechanism, and self-documenting at the line, which a baseline entry is not. The other new
+   fake-key literals do not match the detector's patterns and needed nothing.
+2. **`.secrets.baseline` had been stale since 2026-07-04.** It carried **10** `Hex High Entropy
+   String` findings for `tests/eval/corpus_manifest.yaml`; that file now has **28** — the demo corpus
+   grew from 10 to ~30 papers (`0c777d8`) and nobody refreshed the baseline, because the hook scans
+   **staged** files on a real commit and the manifest is rarely staged. So `pre-commit run
+   --all-files` — the battery you would run before a release — had been failing on a file nobody had
+   touched. Refreshed with `detect-secrets scan --baseline .secrets.baseline`; the diff is exactly
+   +18 `Hex High Entropy String` rows in that one file (sha256 checksums of public papers), **no new
+   files, no new finding types, plugins/filters unchanged** — verified by diffing the parsed JSON,
+   not by reading the patch.
+
+**Also learned:** the hook refuses to run against an **unstaged** baseline ("`git add
+.secrets.baseline` to fix this") — so a baseline edit must be staged in the same breath, or the hook
+reports nothing useful and looks broken.
+
+**Deliberately NOT changed.** `pre-commit run --all-files` also rewrote three unrelated tracked
+files, and I reverted all three: `data/anzsrc-2020-for-20210429.ttl` (28 trailing-whitespace strips
+**inside `"""…"""@en` literals** — that is upstream CC-BY vocabulary data, and stripping a space
+inside a literal changes the literal), plus two Android icon XMLs missing a final newline
+(`icons/android/mipmap-anydpi-v26/ic_launcher.xml`, `icons/android/values/ic_launcher_background.xml`
+— note `c8d17ce` fixed two *different* XMLs). None of them can block a commit that does not stage
+them; sweeping them into a release commit would have been the wrong trade.
+
+**Gate.** Whole hook battery on the staged set (what a real commit runs): ruff · ruff format · mypy ·
+bandit · **detect-secrets** · hygiene — all **Passed**; `test_llm.py` 47 passed. 48 staged paths,
+nothing unstaged.
+
+---
+## 2026-07-28 — first-run setup in the app (ADR-034) + v0.3.0 release prep: BYOK key entry, honest Ollama detection
+
+**What changed.** The release-blocking half of "hand this to a testing user": setup no longer
+requires editing a file or reading the source. Four defects found while building it, all real:
+
+1. **A key entered at runtime could never have worked.** `pipeline.build_chat_model` read
+   `ANTHROPIC_API_KEY` through a module-level `from config import …` binding — the *separate
+   binding* trap this repo has now paid for three times. Every Anthropic call site
+   (`AnthropicClient`, `build_chat_model`, the figure VLM client, `assert_provider_intent`) now
+   resolves per construction via the new `credentials.resolve_key`. A `src/doc_assistant/CLAUDE.md`
+   rule now says never to read the constant at a call site.
+2. **`provider_available("ollama")` was unconditionally `True`** — "Ollama (local) needs nothing".
+   Nothing checked whether a server was running or a model pulled, so the picker offered Ollama to
+   a machine that had never installed it and the user found out from a transport error. New
+   `llm.ollama_probe` answers reachability + installed models; `provider_available` keeps its
+   local-state meaning (a credential is present) because a *stopped* local server must not
+   invalidate a selection the user legitimately wants.
+3. **The empty chat screen named only half the problem** ("No documents indexed yet") whether or not
+   a provider could answer. It now renders the backend's outstanding-step list.
+4. **Four planning ADRs (030–033) had files but no rows in `docs/decisions.md`.** Indexed.
+
+**New modules.** `credentials.py` (one reader of key material: `<data home>/credentials.json`,
+env-wins precedence, `key_source`/`key_hint` for display, never logged) · `readiness.py` (the
+first-run picture: per-provider configured/reachable/models/action + a step list) ·
+`apps/api/routers/setup.py` + `models/setup.py` (`GET /api/setup`, `POST`/`DELETE
+/api/setup/anthropic-key` — the only route that accepts a secret) ·
+`apps/desktop/.../settings/ProviderSetup.svelte` + `settings/setup.ts` (tested helpers) ·
+`ChatController.refresh_chat_model()` (rebuild from current credentials without persisting a choice
+the user did not make) · `library.count_documents()`.
+
+**Why (the two decisions worth the words).** *Storage:* a data-home file, **not** the OS keychain
+ADR-011 recorded as the north-star — that path carries an unvalidated PyInstaller bundling risk
+("the exact class of freeze problem KI-9/KI-10 already cost this project"), and shipping it inside
+the release whose purpose is a smooth first run inverts the cost/benefit. The cost is stated in the
+UI and the README: plaintext on disk. *Precedence:* the environment wins over the stored key,
+because the CLI reads the import-time constant and cannot see the store — the alternative is an app
+and a CLI silently using different keys. The panel names the live source, so it can never show a key
+it is not sending.
+
+**Verification is free by construction.** A key is checked with `models.list()` — a metadata GET
+that bills nothing — and the three outcomes are distinct: rejected (400, **nothing stored**),
+unverifiable (stored + the reason: offline is not evidence a key is bad), ok. First-run setup can
+never surprise a user with a charge (KI-4's discipline on a new path).
+
+**Rejected alternatives.** App writes `.env` (co-authoring a file the user hand-edits; no `.env`
+exists in a packaged install) · keychain via `keyring` (above) · session-only in-memory key (re-entry
+every launch) · store-then-verify (a typo leaves a broken install looking configured) · probing
+Anthropic on every settings read (rate limits, and an offline box waits on a timeout) · collapsing
+"configured" and "reachable" into one flag (they have different fixes, and one would block a
+selection the other should only warn about) · `len(list_documents())` for the count.
+
+**Live verification, $0.** A second API instance on a temp data home (`DOC_DATA_DIR`, unreachable
+`OLLAMA_HOST`) gave a genuine first-run install: `GET /api/setup` reported 0 chunks + "No Ollama
+server answering", and the chat pane rendered "One step to go" unmocked. Against the real Anthropic
+API a bogus key returned **400 and stored nothing**; with `ANTHROPIC_BASE_URL` pointed at a dead
+port, a fake key stored with `verification: "unreachable"`, and `DELETE` removed it. On the real
+install (97 docs / 33,163 chunks) the setup panel reported both providers ready — including the
+9 models Ollama actually has — and one real `ollama/llama3.1:8b` turn returned 10 sources, top
+reranker 0.9854 on `dpr_karpukhin_2020.pdf`, `is_local: true`. Temp data home + its ProgramData
+Chroma namespace removed afterwards; the real data home never received a `credentials.json`.
+
+**Two harness notes.** (a) With `visibilityState: hidden`, a Svelte state change lands one
+round-trip later and a `transition:fly` panel stays off-screen — measure after a second call and
+neutralize the transform, or you will file a working drawer as broken. (b) `load_dotenv()` walks up
+from the **module file**, not the cwd, so the repo `.env` is found no matter where the process
+starts; a keyless state cannot be produced by changing directory.
+
+**Release prep (v0.3.0).** Version aligned across `pyproject.toml`, `package.json`,
+`tauri.conf.json`, `Cargo.toml`/`Cargo.lock` (0.2.0/0.1.0 → **0.3.0**; nothing was ever tagged, so
+this is the first release number that means anything). New `CHANGELOG.md` and `docs/QUICKSTART.md`;
+README/setup/`.env.example` updated to say the app configures its own engine; `architecture.md`
+gained the `setup` domain row.
+
+**Gate.** ruff + format clean · `mypy src` 82 files · **pytest 1357 passed** (+42: 12 credentials,
+12 readiness, 8 probes/key-resolution, 10 setup-route) · `svelte-check` 186 files 0/0 ·
+`npm test` 58/58 (+8) · `docs_check --strict` 0/0 · live preview 0 console errors, no page-level
+overflow at 1280.
+
+**What it opens.** The keychain move is now a one-module change behind `credentials` (ADR-034 names
+it as the reversal path). A second keyed provider is a row in `_KEYED_PROVIDERS`. Still owed for a
+real installer release: a fresh PyInstaller sidecar + `tauri build` (the existing bundle is from
+2026-06-24 and still named `doc_assistant_0.1.0`), and RG-012 Tier-2 on a clean box. `tests/conftest.py`
+is this repo's first autouse fixture — it exists so a key saved in the app cannot change the suite's
+verdict.
 
 ---
 ## 2026-07-27 — session-close conformance: the cpc gate caught five header errors and four warnings

@@ -5,33 +5,33 @@
 
 **Layout (ADR-023)**
 - Top level — the RAG answer path: `pipeline.py` (hybrid retrieval + rerank), `llm.py`,
-  `synthesis.py`, `provenance.py`, `reviewer*.py`, `prompts.py`, `config.py`, plus app services
-  (`conversations.py`, `app_settings.py`, `compare.py`, `health.py`, `export.py`), `doc_vectors.py`.
+  `synthesis.py`, `provenance.py`, `reviewer*.py`, `prompts.py`, `config.py`, `doc_vectors.py`, plus
+  app services (`conversations` · `app_settings` · `credentials` · `readiness` · `compare` ·
+  `health` · `export`).
 - `chat_controller/` — turn orchestration: `session` · `views` · `events` · `helpers` ·
   `controller` (direction: session/views → events/helpers → controller).
-- `library/` — the document-store API, sub-domain names matching `apps/api/routers/library/`:
-  `models` · `documents` · `pins` · `folders` · `keywords` · `chunks` · `citations` · `similarity`.
-  Both packages re-export flat from `__init__` for existing callers.
+- `library/` — document-store API, sub-domains matching `apps/api/routers/library/`: `models` ·
+  `documents` · `pins` · `folders` · `keywords` · `chunks` · `citations` · `similarity`. Both Both packages re-export flat from `__init__`.
 - `db/` — SQLAlchemy models + session + **additive** migrations (`_ADDITIVE_COLUMNS`).
-- `ingest/` — extract → markdown → chunk → embed → store (locked path) + registry/cache/figures/tables.
-- `knowledge/` — the corpus-derived layer: keywords/families, concept skeleton (Node A/B) +
-  curation/semantics/graph view, wiki, gaps, epistemics. All Enrichment-Layer sidecars; the answer
-  path reads it, never depends on it.
-- `eval/` — the eval harness (runner, scorers, cases, store).
+  `ingest/` — extract → markdown → chunk → embed → store (locked) + registry/cache/figures/tables.
+  `eval/` — the eval harness (runner, scorers, cases, store).
+- `knowledge/` — corpus-derived layer: keywords/families, concept skeleton (Node A/B) +
+  curation/semantics/graph view, wiki, gaps, epistemics. All sidecars; the answer path reads it,
+  never depends on it.
 
 **Rules that bite here**
 - **Locked settings** live in `config.py` — change only via an eval-harness experiment
-  (`.claude/CONTEXT.md` table). Enrichment modules are sidecars: additive, idempotent, never touch
-  the chunk store.
+  (`.claude/CONTEXT.md` table). Sidecars stay additive, idempotent, off the chunk store.
 - `structlog` only, no `print()` (ADR-003); library code never configures logging.
+- **Never read `config.ANTHROPIC_API_KEY` at a call site** — resolve per construction via
+  `credentials.resolve_key` (ADR-034), else an in-app key is silently missed. Never log key material.
 - **Robustness contract:** handle an empty corpus (0 docs) without crashing; no corpus-tuned
   constants — thresholds derive from data or are named structural constants.
-- Strict typing is the bar (`[tool.mypy] strict=true`) — run **`uv run --no-sync mypy src`**,
-  **never `mypy --strict src`**: the flag changes the option set, so it wipes mypy's cache both ways
-  and the next commit's hook takes ~40s instead of ~2s. Exceptions chain (`raise X from e`).
-- **Monkeypatch the module that OWNS a name**, never a package that re-exports it — a re-export is
-  a *separate binding*, so patching `library.<name>` silently misses (66 tests broke this way in the
-  `chat_controller` split). Use `library.documents._reveal_in_file_manager`,
+- Type-check with **`uv run --no-sync mypy src`**, never `--strict` (why: `.claude/CONTEXT.md` §8).
+  Exceptions chain (`raise X from e`).
+- **Monkeypatch the module that OWNS a name**, never a package that re-exports it — a re-export is a
+  *separate binding*, so patching `library.<name>` silently misses (66 tests broke this way in the
+  `chat_controller` split): use `library.documents._reveal_in_file_manager`,
   `chat_controller.controller.is_library_query`, `chat_controller.helpers.SYNTHESIS_MODE`. Setting an
   *attribute on a shared module object* (`app_settings.SETTINGS_PATH`) is fine through any binding.
 

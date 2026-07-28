@@ -15,6 +15,7 @@
   import CompareCard from './CompareCard.svelte'
   import { autogrow, chat, onConvoScroll } from './chat.svelte'
   import { shell } from '../shell/shell.svelte'
+  import { outstandingSteps } from '../settings/setup'
   import type { ConversationDetail, LibraryFolder } from '../core/types'
 
   interface Props {
@@ -41,6 +42,10 @@
     hasRetrievalOverride, sampleQuestions,
     onSend, onKey, onCompare, onUseSample, onResume, onBackToCurrent,
   }: Props = $props()
+
+  // The outstanding first-run steps (ADR-034), shaped by the same tested helper the Settings
+  // panel uses so the two surfaces can never disagree about what is left.
+  const setupSteps = $derived(outstandingSteps(shell.setup))
 </script>
 
 <section class="conversation" bind:this={chat.convoEl} onscroll={onConvoScroll}>
@@ -77,15 +82,19 @@
       {/each}
       <div class="resume-divider"><span>continuing below</span></div>
     {/if}
-    {#if shell.status === 'ready' && shell.health && shell.health.chunk_count === 0}
+    {#if shell.status === 'ready' && shell.setup && !shell.setup.ready}
+      <!-- ADR-034: the setup banner replaced a documents-only one. A first-run install needs an
+           answer engine *and* documents, and the backend already knows which are missing — so the
+           card lists exactly what is left instead of naming only the half it used to check. -->
       <div class="banner">
         <span class="state-mark"><Icon name="library" size={26} /></span>
-        <strong>No documents indexed yet</strong>
-        <p>
-          Point doc_assistant at a folder of your documents to get started. It'll index them
-          locally, then you can ask questions grounded in them.
-        </p>
-        <button class="primary" onclick={() => (shell.showSettings = true)}>Choose a folder…</button>
+        <strong>{setupSteps.length === 1 ? 'One step to go' : 'Two steps to get started'}</strong>
+        <ul class="todo">
+          {#each setupSteps as step (step.id)}
+            <li><strong>{step.title}</strong> — {step.detail}</li>
+          {/each}
+        </ul>
+        <button class="primary" onclick={() => (shell.showSettings = true)}>Finish setup…</button>
       </div>
     {:else if chat.turns.length === 0 && !resumedHistory}
       <div class="empty">
@@ -211,13 +220,31 @@
     color: var(--fg);
     margin: 0;
   }
-  .empty p,
-  .banner p {
+  .empty p {
     color: var(--fg-2);
     font-size: var(--text-sm);
     line-height: 1.6;
     max-width: 46ch;
     margin: var(--space-2) 0 var(--space-4);
+  }
+  /* The outstanding-steps list (ADR-034): left-aligned inside the centered card, because these
+     are instructions to read in order, not a headline. */
+  .banner .todo {
+    list-style: none;
+    margin: var(--space-2) 0 var(--space-4);
+    padding: 0;
+    text-align: left;
+    max-width: 46ch;
+    display: grid;
+    gap: var(--space-1);
+    color: var(--fg-2);
+    font-size: var(--text-sm);
+    line-height: 1.55;
+  }
+  .banner .todo strong {
+    font-family: inherit;
+    font-size: inherit;
+    color: var(--fg);
   }
   .chips {
     display: flex;

@@ -20,6 +20,7 @@
     getConceptPresence,
     getConversation,
     getHealth,
+    getSetup,
     exportConversation,
     listFolders,
     listKeywordFamilies,
@@ -303,6 +304,18 @@
     } catch {
       // leave the prior health/status; a transient blip shouldn't blank the header
     }
+    // ADR-034: indexing a folder can complete the setup checklist, so the banner must re-read it.
+    void refreshSetup()
+  }
+
+  // First-run readiness (ADR-034). Failure is silent on purpose: this drives an advisory banner,
+  // and a blip must not put a "finish setup" card in front of a working install.
+  async function refreshSetup(): Promise<void> {
+    try {
+      shell.setup = await getSetup()
+    } catch {
+      // keep whatever we last knew
+    }
   }
 
   // App menu (☰) + its two info modals (keyboard shortcuts, about). The menu is the top-toolbar's
@@ -409,6 +422,7 @@
           if (!cancelled) {
             shell.health = h
             shell.status = 'ready'
+            void refreshSetup() // ADR-034 — what this install still needs, if anything
             void refreshConversations()
             // The composer's scope selector needs the folder list even if the user never
             // opens the Library.

@@ -1,9 +1,13 @@
-<!-- status: active · updated: 2026-07-26 (split out of README) · class: living -->
+<!-- status: active · updated: 2026-07-28 (ADR-034: the answer engine is configurable in-app) · class: living -->
 
 # Setup
 
 Install, hardware, Docker, and the platform gotchas. For day-to-day commands see
 [`usage.md`](usage.md); for the design see [`architecture.md`](architecture.md).
+
+> **Trying it for the first time?** [`QUICKSTART.md`](QUICKSTART.md) is the 10-minute path — install,
+> pick an answer engine (API key or Ollama) from inside the app, index a folder, ask something. This
+> file is the reference behind it.
 
 ## Install
 
@@ -18,8 +22,16 @@ uv sync --extra cu130   # NVIDIA GPU box (CUDA): GPU-accelerated embedder + rera
 # add `--extra dev` for the test/lint toolchain, e.g.  uv sync --extra cu130 --extra dev
 # on the GPU box, prefix run commands too, e.g.        uv run --extra cu130 python -m doc_assistant.ingest
 
-cp .env.example .env   # then fill in your API key
+cp .env.example .env   # optional — the answer engine is also configurable in the app
 ```
+
+**The `.env` step is optional.** Since ADR-034 the app configures its own answer engine:
+**Settings → Getting started** takes an Anthropic API key (verified before it is saved, stored in
+the data home on this machine) or points at a local Ollama server, and shows which of the two
+first-run steps are still outstanding. `.env` remains the path for CLI/enrichment runs and for
+anything you want pinned per checkout — and **a key in `.env` wins** over one saved in the app, with
+the app naming the live source so the two cannot disagree silently. Details:
+[`QUICKSTART.md`](QUICKSTART.md) §2.
 
 **Use Python 3.12.** 3.14 is not yet supported at runtime (some native dependencies aren't
 cp314-stable; see `.claude/KNOWN_ISSUES.md` KI-2).
@@ -53,6 +65,11 @@ reranker, not the generation model.
 Two workloads can run on your machine: the **retrieval models** always do; the **chat LLM** does too
 *if* you choose [Ollama](https://ollama.com) instead of the Claude API. With the default API path,
 only the retrieval models run on your hardware.
+
+Ollama needs no key and no configuration file: install it, `ollama pull llama3.1:8b`, then pick the
+model in **Settings → Getting started → Ollama**. The panel probes the server
+(`OLLAMA_HOST`, default `http://localhost:11434`) and lists what is installed, so "not running" and
+"no models installed" are told apart — they have different fixes.
 
 Provenote's local default is an 8B model (e.g. `llama3.1:8b`, 4-bit quantized):
 

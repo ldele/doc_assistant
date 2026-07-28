@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-07-27 (library/ + chat_controller/ packages) · class: living -->
+<!-- status: active · updated: 2026-07-28 (setup domain row — ADR-034) · class: living -->
 
 # Architecture
 
@@ -129,6 +129,7 @@ both sides of the wire. To review a feature end to end, read one row.
 | concepts / graph | `models/concepts.py` | `routers/concepts.py` | `lib/graph/` (ConceptGraph, GraphIndex, GapList) |
 | taxonomy | `models/taxonomy.py` | `routers/taxonomy.py` | `lib/library/LibraryTaxonomy.svelte` |
 | settings | `models/settings.py` | `routers/settings.py` | `lib/settings/Settings.svelte` |
+| setup (first run) | `models/setup.py` | `routers/setup.py` | `lib/settings/ProviderSetup.svelte` |
 | sources (ingestion) | `models/sources.py` | `routers/sources.py` | `lib/settings/Sources.svelte` |
 | health | — | `routers/health.py` | `lib/shell/` (status bar) |
 

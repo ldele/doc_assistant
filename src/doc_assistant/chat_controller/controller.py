@@ -124,6 +124,20 @@ class ChatController:
         app_settings.set_llm_selection(provider, model)
         self.rag.set_chat_model(provider, model)
 
+    def refresh_chat_model(self) -> tuple[str, str]:
+        """Rebuild the generation model from the *current* credentials, changing no selection.
+
+        ADR-034: a key saved in the app while the process runs must reach the next turn. The
+        pipeline's chat model was constructed with whatever key existed at boot (for a first-run
+        install: none), so the credential change is only live once the model is rebuilt — hence a
+        method distinct from :meth:`reconfigure`, which persists a *choice* the user did not make
+        here. Returns the effective ``(provider, model)`` for the caller to report.
+        """
+        provider, model = app_settings.effective_llm()
+        self.rag.set_chat_model(provider, model)
+        log.info("chat_model_refreshed", provider=provider, model=model)
+        return provider, model
+
     def compare_retrieval(
         self,
         text: str,

@@ -87,18 +87,28 @@ weight sweep, caveats and reproduction steps, live in [`evals/`](evals/README.md
 
 ```bash
 uv sync --extra cu130 --extra dev        # or --extra cpu on a GPU-less box
-cp .env.example .env                     # then fill in your API key
 uv run python -m scripts.download_corpus --demo   # no corpus yet? 28 papers from arXiv
 uv run python -m doc_assistant.ingest
 just app                                 # backend + desktop UI
 ```
 
+Then open **Settings → Getting started** and pick an answer engine: paste an Anthropic API key
+(checked before it is saved, stored on your machine only) or point at a local
+[Ollama](https://ollama.com) server for a free, fully offline run. Both paths are configurable
+in-app, so there is no file to edit; `.env` still works and takes precedence if you prefer it.
+
+First run, step by step: [`docs/QUICKSTART.md`](docs/QUICKSTART.md).
 Full install, hardware guidance and Docker: [`docs/setup.md`](docs/setup.md).
 Everyday commands, enrichment passes and tests: [`docs/usage.md`](docs/usage.md).
 
 ## Limitations
 
-Current as of 2026-07-26; the full ledger lives in `.claude/KNOWN_ISSUES.md`.
+Current as of 2026-07-28; the full ledger lives in `.claude/KNOWN_ISSUES.md`.
+
+- **An API key entered in the app is stored in plain text** in your data folder — weaker than an OS
+  keychain, which is the recorded upgrade path
+  ([ADR-034](docs/decisions/ADR-034-in-app-provider-setup.md)). Use `.env`, which takes precedence,
+  if you would rather manage the key yourself.
 
 - **Validated at ~100 documents, not yet at thousands.** Retrieval quality is benchmarked and holds,
   but a [scale review](docs/REVIEW_2026-07-19_scale-robustness.md) found corpus-linear hot paths and
@@ -115,19 +125,21 @@ Current as of 2026-07-26; the full ledger lives in `.claude/KNOWN_ISSUES.md`.
 
 ## Status
 
-**Phase 6 + 7 in progress (2026-07-26).** Shipped: core RAG, the eval harness, the document store and
-library workspace, citation and doc-similarity graphs, the research-integrity layer (provenance,
-evidence/interpretation split, separate-context reviewer), a provider-agnostic LLM layer with live
-in-app switching between Claude API and local Ollama, figures and tables, the corpus wiki, and the
-full concept-graph stack with gap detection. **1,306 tests · ruff / mypy (strict) / bandit clean.**
+**v0.3.0 (2026-07-28) — the first release meant for outside testers.** Phase 6 + 7 in progress.
+Shipped: core RAG, the eval harness, the document store and library workspace, citation and
+doc-similarity graphs, the research-integrity layer (provenance, evidence/interpretation split,
+separate-context reviewer), a provider-agnostic LLM layer with in-app setup and live switching
+between Claude API and local Ollama, figures and tables, the corpus wiki, and the full concept-graph
+stack with gap detection. **1,357 tests · ruff / mypy (strict) / bandit clean.**
 
-Next: the scale review's P0 robustness fixes, then the concept-taxonomy curation UI. Full roadmap:
-[`docs/ROADMAP.md`](docs/ROADMAP.md).
+Next: the scale review's P0 robustness fixes, then the document-map and source-trust tracks. Release
+notes: [`CHANGELOG.md`](CHANGELOG.md). Full roadmap: [`docs/ROADMAP.md`](docs/ROADMAP.md).
 
 ## Documentation
 
 | | |
 |---|---|
+| [Quickstart](docs/QUICKSTART.md) | First run in ~10 minutes: API key or Ollama, then your documents |
 | [60-second walkthrough](docs/DEMO.md) | What to look at first |
 | [Setup](docs/setup.md) · [Usage](docs/usage.md) | Install, hardware, Docker · commands, enrichment, tests |
 | [Architecture](docs/architecture.md) | Data flow and module contracts |

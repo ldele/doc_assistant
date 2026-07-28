@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-07-25 (ADR-029 added; ADR-020 superseded) · class: living -->
+<!-- status: active · updated: 2026-07-28 (ADR-034 added; ADR-030..033 indexed — the four planning stubs had files but no index rows) · class: living -->
 
 # Decisions — index
 
@@ -39,3 +39,8 @@ the locked retrieval/chunking settings that predate per-file ADRs.
 | [ADR-027](decisions/ADR-027-epistemics-surfacing-split.md) | Epistemics surfacing split: assessment always-on (source-evaluation strip), influence opt-in (answer layer) | accepted |
 | [ADR-028](decisions/ADR-028-concept-taxonomy-polyhierarchy-skos.md) | Concept taxonomy amendment: unified typed polyhierarchical SKOS graph (amends ADR-019 — supersedes C1/D1/D6, reverses D9) | accepted |
 | [ADR-029](decisions/ADR-029-local-only-working-state.md) | Working state stays local on a public repo: all of `.claude/` + dated PLAN/REVIEW docs + the UI checklist untracked (supersedes ADR-020; single machine as of 2026-07-25) | accepted |
+| [ADR-030](decisions/ADR-030-document-outline-and-map-surface.md) | Document outline layer + the per-document map surface | proposed (stub) |
+| [ADR-031](decisions/ADR-031-source-trust-indicators.md) | Source-trust indicators: named signals, no composite score | proposed (stub) |
+| [ADR-032](decisions/ADR-032-outbound-source-verification.md) | Outbound source verification: the first network feature | proposed (stub) |
+| [ADR-033](decisions/ADR-033-generation-presets.md) | Generation presets: frozen citation contract, swappable brief | proposed (stub) |
+| [ADR-034](decisions/ADR-034-in-app-provider-setup.md) | First-run setup in the app: in-app API key in a data-home file (not a keychain) + provider readiness; extends ADR-011's v1 | accepted (built) |

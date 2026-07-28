@@ -12,9 +12,9 @@ from langchain_community.retrievers import BM25Retriever
 from langchain_core.documents import Document
 from sentence_transformers import CrossEncoder
 
+from doc_assistant import credentials
 from doc_assistant.chroma_read import get_all
 from doc_assistant.config import (
-    ANTHROPIC_API_KEY,
     BM25_WEIGHT,
     CANDIDATE_K,
     CHROMA_PATH,
@@ -97,14 +97,20 @@ def build_chat_model(provider: str, model: str) -> Any:
 
     Intentionally separate from ``llm.LLMClient``: the chat path streams tokens
     through a LangChain model, a different contract from the one-shot ``complete()``
-    used by the reviewer and eval judge."""
+    used by the reviewer and eval judge.
+
+    The API key is resolved **here, per build** (``credentials.resolve_key``) rather than read
+    from an import-time constant: ADR-034 lets a user save a key while the app is running, and a
+    module-level ``from config import ANTHROPIC_API_KEY`` binding could never see it — the same
+    separate-binding trap the module notes in ``src/doc_assistant/CLAUDE.md``. The controller
+    rebuilds its chat model after a key change, so the next turn picks the new key up."""
     if provider.lower() == "anthropic":
         from langchain_anthropic import ChatAnthropic
         from pydantic import SecretStr
 
         return ChatAnthropic(  # type: ignore[call-arg]
             model=model,
-            api_key=SecretStr(ANTHROPIC_API_KEY or ""),
+            api_key=SecretStr(credentials.resolve_key("anthropic") or ""),
             max_tokens=1024,
             streaming=True,
         )

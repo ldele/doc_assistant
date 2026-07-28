@@ -102,6 +102,35 @@ def _full_settings(app: FastAPI) -> dict[str, Any]:
     }
 
 
+def setup_state_dict(app: FastAPI, *, probe: bool = True) -> dict[str, Any]:
+    """Serialize ``readiness.setup_state`` for ``GET /api/setup`` (ADR-034).
+
+    The counts come from here because the shell is what holds the controller and the library
+    session; the *judgement* (what is ready, what to do next) is entirely
+    ``doc_assistant.readiness`` — this function adds no rules of its own.
+
+    ``document_count`` degrades to 0 if the library cannot be read: a first-run install may have no
+    schema yet, and a setup view that 500s is worse than one reporting "nothing indexed" — which is
+    the truth in that state anyway.
+    """
+    from dataclasses import asdict
+
+    from doc_assistant.readiness import setup_state
+
+    controller: ChatController = app.state.controller
+    try:
+        from doc_assistant.library import count_documents
+
+        documents = count_documents()
+    except Exception as e:
+        log.warning("setup_document_count_failed", error=str(e))
+        documents = 0
+    state = setup_state(
+        chunk_count=controller.chunk_count(), document_count=documents, probe=probe
+    )
+    return asdict(state)
+
+
 @dataclass
 class _IngestStatus:
     """Background-ingest progress, read by GET /api/ingest/status (guarded by a lock)."""

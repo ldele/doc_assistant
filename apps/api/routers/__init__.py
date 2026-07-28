@@ -11,5 +11,6 @@ import from ``apps.api.main`` (that would be a cycle). One domain per module:
 - ``library`` — documents, folders, keyword families (the Library browser's write + read paths).
 - ``concepts`` — the concept-graph read model, the gap list + triage, and the rebuild trigger.
 - ``settings`` — the user-settable runtime settings (source dir, provider switch, epistemics).
+- ``setup`` — first-run readiness + the in-app API key (the only route that accepts a secret).
 - ``sources`` — selective ingestion: the registry scan/patch + the ingest job.
 """

@@ -13,7 +13,7 @@
 //   · the chat-scope guard — reads folders, writes chat state.
 // Those are orchestration. Moving them would trade coupling you can see for coupling you cannot.
 
-import type { Health } from '../core/types'
+import type { Health, SetupState } from '../core/types'
 
 export type Mode = 'chat' | 'library' | 'graph'
 export type ConnectionStatus = 'connecting' | 'ready' | 'down'
@@ -43,4 +43,9 @@ export const shell = $state({
    *  successful poll — the status bar renders "starting the engine…" until then. */
   health: null as Health | null,
   status: 'connecting' as ConnectionStatus,
+
+  /** First-run readiness (ADR-034), pulled once the backend answers and re-pulled after a
+   *  provider/corpus change. `null` while unknown — the chat pane shows no setup banner until
+   *  the answer is in, because guessing would flash "not set up" at a set-up install. */
+  setup: null as SetupState | null,
 })

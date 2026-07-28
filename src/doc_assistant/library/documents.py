@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any
 
 import structlog
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from doc_assistant.db.models import Document, DocumentMeta, Folder, Tag
 from doc_assistant.db.session import session_scope
@@ -89,6 +89,18 @@ def list_documents(
                 )
             )
         return summaries
+
+
+def count_documents() -> int:
+    """How many live (non-archived) documents the library holds.
+
+    A ``COUNT`` rather than ``len(list_documents())``: the caller (the first-run setup view) wants
+    one number, and building a ``DocumentSummary`` per document — plus loading every override row —
+    to discard all of it would scale the cost with the corpus for nothing (KI-18 discipline).
+    """
+    with session_scope() as session:
+        query = select(func.count()).select_from(Document).where(Document.is_archived.is_(False))
+        return int(session.execute(query).scalar_one())
 
 
 def document_years(document_ids: list[str]) -> dict[str, int]:

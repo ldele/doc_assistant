@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-07-27 (TX3 auto-propose built — staged; RH1/TX1/TX2a/TX2b cells trued up to their commits) · class: living -->
+<!-- status: active · updated: 2026-07-28 (RL1 release-readiness row — ADR-034) · class: living -->
 
 # ROADMAP — doc_assistant
 
@@ -147,6 +147,7 @@ architectural context per feature.
 | RP2 | Report as a job: dry run, **cost preview**, progress, per-section provenance | planned | `docs/decisions/ADR-033-generation-presets.md` · `docs/PLAN_2026-07-27_maps-trust-reports.md` Track 3 |
 | RP3 | Trust-annotated sections + evidence appendix | planned | `docs/decisions/ADR-033-generation-presets.md` · `docs/PLAN_2026-07-27_maps-trust-reports.md` Track 3 |
 | RP4 | Report rendering through `export.py` | planned | `docs/decisions/ADR-033-generation-presets.md` · `docs/PLAN_2026-07-27_maps-trust-reports.md` Track 3 |
+| RL1 | **Release readiness (v0.3.0)** — first-run setup inside the app so a tester needs no file editing: `credentials.py` (in-app Anthropic key, data-home file, env-wins precedence, free `models.list()` verification, never logged/echoed) + `readiness.py` (per-provider configured/reachable/models/action + a step list) + `GET /api/setup` · `POST`/`DELETE /api/setup/anthropic-key` + `ProviderSetup.svelte` + the outstanding-steps chat banner. Fixes three lies the old surface told: a runtime key was never sent (import-time binding in `build_chat_model`), `provider_available("ollama")` was unconditionally true, and the empty state named only the corpus half. Plus `CHANGELOG.md`, `docs/QUICKSTART.md`, version alignment at 0.3.0 | done (staged 2026-07-28) | `docs/decisions/ADR-034-in-app-provider-setup.md` · DEVLOG 2026-07-28 |
 
 *(The prose below is a compressed pointer set — 2026-07-21. Full historical narrative for the
 closed items lives in the linked ADRs/specs/sprint archives and `docs/archive/doc-assistant-roadmap.md`.)*

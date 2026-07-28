@@ -10,6 +10,7 @@ export type { ClaimView, Decision, RagOverrides, SourceEpistemics, SourceEvalSum
 export type { Health } from './health'
 export type { ConversationDetail, ConversationSource, ConversationSummary, ConversationTurn } from './conversations'
 export type { ProviderOption, Settings } from './settings'
+export type { ApiKeyResult, ProviderReadiness, SetupState, SetupStep } from './setup'
 export type { IngestStatus, SourceFile } from './sources'
 export type { LibraryChild, LibraryDocument, LibraryDocumentChunks, LibraryParent } from './library'
 export type { LibraryFolder } from './folders'

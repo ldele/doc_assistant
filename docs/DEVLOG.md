@@ -11,6 +11,48 @@ Format: What changed | Why | Rejected alternatives | What it opens
 > (moved verbatim 2026-07-21). This file keeps 2026-07-15 onward.
 
 ---
+## 2026-07-28 (3) — verification pass over the graph + library surfaces: one fix, one new known issue (KI-29)
+
+**What changed.** `apps/desktop/src/lib/graph/ConceptGraph.svelte` — the "Appears in N documents"
+rows printed the authors **twice**: `docTitle()` returned `docLabel(d)`, which appends `· first
+author` for the breadcrumb/search case, while the row renders `docByline()` (`authors · year`)
+immediately after it. Read live as *"A Primer on Motion Capture… · Alexander Mathis et al."* then
+*"Alexander Mathis et al. · 2020"*. `docTitle` now returns `d.title || d.filename`; `docLabel` is no
+longer imported there. Verified live over HMR: the row is now title / byline / mention count.
+`library.ts` is untouched — `docLabel` is right for the breadcrumb, the folder picker and the
+`aria-label` on a grid tile, none of which render a separate byline.
+
+**Verified working, and cross-checked against the API rather than eyeballed** (97 docs / 33,163
+chunks / ollama): concept graph 13 nodes / 19 edges / 6 communities, `stale: false`,
+`n_concepts_in_db == n_concepts_in_skeleton`, Node-B relations present (`is combined with`, provenance
+incl. `llm_relation`); **0 orphaned gaps** across all 18 (the KI-17 regression check) with every gap
+label resolving; the ego view renders 8 circles / 14 lines / 6 labels for a degree-5 concept and its
+presence panel matches the node's 10 `doc_ids`; library grid 97 tiles with the date buckets summing
+to 97 and the folder count matching the API (Demo corpus 18); the reading view groups 92 parents /
+478 children, summing exactly to `child_count`; taxonomy serves 236 fields / 23 roots / 344 unassigned
+concepts (= 357 − 13 `graph_include`, as ADR-018 intends) with a sensible rollup; keyword families
+357 with 0 blank or duplicate canonicals; connections serve related + external refs. 0 console errors,
+no page-level overflow at 1280.
+
+**Found, logged, NOT fixed — KI-29.** The reading view showed `<!-- page:N -->` as literal text. The
+view is not the bug: it exists to show *what the retriever stored*. `build_parent_child_chunks`
+(`ingest/chunking.py:160`) never applies `clean_chunk_text` to the child `page_content` or to
+`parent_text`, while the baseline path does (`ingest/__init__.py:170`) — and parent-child is the
+**default** retrieval mode, so the cleaned path is the one nothing uses at answer time. Measured, not
+inferred: a real turn returned 10 sources of which **2 excerpts carried a marker**, and nothing strips
+them in `pipeline.py`/`synthesis.py`/`chat_controller/` — so it is in the evidence block the LLM reads
+and in the passage the user sees, and the child text was embedded with it.
+
+**Why it is a decision and not a commit:** the correct fix (strip in the builder, matching the
+baseline path) means the 33,163 stored children were embedded on different text than new ones would
+be, so it needs a **full re-ingest** (~40 min, $0 local) to be coherent. Stripping at retrieval fixes
+prompt + display with no re-ingest but leaves the store as-is. Both options, their costs and the
+"do not fix it in the view" warning are in `.claude/KNOWN_ISSUES.md` KI-29. Same class as KI-26's
+`_JOURNAL_HEADER`: a documented stripper that is never called on the path that matters.
+
+**Gate.** svelte-check 186 files 0/0 · npm test 58/58 · docs_check --strict 0/0.
+
+---
 ## 2026-07-28 (2) — detect-secrets blocked the release commit: two false positives + a baseline 18 findings stale
 
 **What changed.** The `detect-secrets` pre-commit hook failed on the v0.3.0 commit. It was working

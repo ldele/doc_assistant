@@ -17,7 +17,7 @@
     GraphRebuildStatus,
     LibraryDocument,
   } from '../core/types'
-  import { authorLabel, docLabel } from '../library/library'
+  import { authorLabel } from '../library/library'
   import { GAP_META, visibleConceptGaps } from './gaps'
   import { forceLayout, type Point } from './forceLayout'
   import Icon from '../shell/Icon.svelte'
@@ -223,9 +223,13 @@
   function presenceFor(docId: string): ConceptPresence | undefined {
     return presence.find((p) => p.document_id === docId)
   }
+  // Title ONLY — never `docLabel`, which appends "· first author" for the breadcrumb/search case
+  // where there is no separate byline. This row renders `docByline` right beside it, so docLabel
+  // printed the authors twice ("A Primer… · Mathis et al." then "Mathis et al. · 2020").
   function docTitle(docId: string): string {
     const d = docById.get(docId)
-    return d ? docLabel(d) : docId
+    if (!d) return docId
+    return d.title || d.filename
   }
   function docByline(docId: string): string {
     const d = docById.get(docId)

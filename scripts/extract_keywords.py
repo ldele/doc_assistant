@@ -9,7 +9,7 @@ dependency. Populates the ``keywords`` table (``source="extracted"``), which
 Usage:
     python -m scripts.extract_keywords                     # dry-run all (rank, no writes)
     python -m scripts.extract_keywords --apply             # write Keyword rows + links
-    python -m scripts.extract_keywords --doc <id>          # one document (IDF still corpus-wide)
+    python -m scripts.extract_keywords --doc <id|hash>     # scopes the WRITE only (see --doc help)
     python -m scripts.extract_keywords --apply --force     # re-extract (clear old extracted)
     python -m scripts.extract_keywords --top-k 20          # override keywords-per-doc
 
@@ -33,6 +33,7 @@ from doc_assistant.config import (
     KEYWORDS_PER_DOC,
 )
 from doc_assistant.knowledge.keywords import KeywordExtractionResult, extract_keywords
+from doc_assistant.library.documents import DocumentPrefixError, resolve_document_prefix
 
 if sys.platform == "win32" and hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
@@ -60,7 +61,13 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--apply", action="store_true", help="Write Keyword rows (no LLM)")
     parser.add_argument("--force", action="store_true", help="Re-extract (clear old extracted)")
-    parser.add_argument("--doc", default=None, metavar="ID", help="Only this document id")
+    parser.add_argument(
+        "--doc",
+        default=None,
+        metavar="DOC",
+        help="Scope the WRITE to one document (id prefix or doc_hash prefix). The corpus TF-IDF "
+        "is global by construction, so this does NOT make the run meaningfully faster (~4%%).",
+    )
     parser.add_argument(
         "--mode",
         choices=("per-doc", "corpus-band", "contrastive"),
@@ -86,6 +93,14 @@ def main() -> int:
     )
     args = parser.parse_args()
 
+    document_id: str | None = None
+    if args.doc:
+        try:
+            document_id = resolve_document_prefix(args.doc).id
+        except DocumentPrefixError as exc:
+            print(str(exc))
+            return 1
+
     mode = {"corpus-band": "corpus_band", "contrastive": "contrastive"}.get(args.mode, "per_doc")
     top_k = args.top_k
     if top_k is None:
@@ -94,7 +109,7 @@ def main() -> int:
     result = extract_keywords(
         apply=args.apply,
         force=args.force,
-        document_id=args.doc,
+        document_id=document_id,
         top_k=top_k,
         ngram_max=KEYWORD_NGRAM_MAX,
         min_chars=KEYWORD_MIN_CHARS,

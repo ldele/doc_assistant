@@ -31,6 +31,7 @@ from doc_assistant.ingest.citations import (
     extract_from_markdown,
     match_to_library,
 )
+from doc_assistant.library.documents import DocumentPrefixError, resolve_document_prefix
 
 if sys.platform == "win32" and hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
@@ -189,15 +190,25 @@ def main() -> int:
     parser.add_argument(
         "--force", action="store_true", help="Re-extract docs that already have citations"
     )
-    parser.add_argument("--doc", type=str, help="Limit to one doc_hash or id prefix")
+    parser.add_argument(
+        "--doc", type=str, help="Limit to one document (id prefix or doc_hash prefix)"
+    )
     args = parser.parse_args()
+
+    doc_ref = None
+    if args.doc:
+        try:
+            doc_ref = resolve_document_prefix(args.doc)
+        except DocumentPrefixError as exc:
+            print(str(exc))
+            return 1
 
     with session_scope() as session:
         stmt = select(
             Document.id, Document.filename, Document.source_cache, Document.source_original
         ).where(Document.is_archived.is_(False))
-        if args.doc:
-            stmt = stmt.where(Document.doc_hash.startswith(args.doc))
+        if doc_ref is not None:
+            stmt = stmt.where(Document.id == doc_ref.id)
         docs = [tuple(r) for r in session.execute(stmt).all()]
 
     if not docs:

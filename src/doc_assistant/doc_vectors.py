@@ -193,7 +193,16 @@ def load_chunk_embeddings_by_document() -> dict[str, list[np.ndarray]]:
     grouped: dict[str, list[np.ndarray]] = {}
     dropped_no_id = 0
 
-    for vec, meta in zip(raw_embeddings, metadatas, strict=False):
+    # `strict=True` deliberately: these two come from the same paged read and must be the same
+    # length. They silently were not (KI-31) — `get_all` truncated `embeddings` to one page while
+    # `metadatas` accumulated, and `strict=False` quietly discarded the surplus, so similarity
+    # edges were built from the first 5,000 chunks of the corpus. Fail loudly instead.
+    if len(raw_embeddings) != len(metadatas):
+        raise RuntimeError(
+            f"embeddings/metadatas length mismatch reading {collection_name}: "
+            f"{len(raw_embeddings)} vs {len(metadatas)} — the paged read dropped rows"
+        )
+    for vec, meta in zip(raw_embeddings, metadatas, strict=True):
         meta = meta or {}
         doc_id_raw = meta.get("document_id")
         doc_id: str | None = str(doc_id_raw) if doc_id_raw else None

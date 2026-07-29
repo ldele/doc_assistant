@@ -542,3 +542,219 @@ canonical detail in `docs/archive/`.
 - **Pointer:** `docs/specs/feature-corpus-folders-demo.md` M9 (where it was found while specifying
   the F3 trigger) · ADR-025 · `docs/specs/feature-corpus-folders.md` D6 (folder delete never
   touches documents — the inverse direction, which *is* safe).
+
+## KI-30 — `--doc` means three different things across four sidecar runners; two reject a real document id — RESOLVED (2026-07-29)
+
+**Found** by the stage profile (`tests/eval/baselines/stage_profile_2026-07-28.md`), while measuring
+whether the enrichment layer can run incrementally. It largely cannot, and the flag is why.
+
+| Runner | `--doc` matches | What it scopes |
+|---|---|---|
+| `extract_keywords` | document **id** | the write; the corpus TF-IDF still loads everything |
+| `compute_doc_vectors` | id **or** hash prefix | the **report** only — its help says "computation is always global" |
+| `extract_citations` | **`doc_hash` prefix only** | the work — but help claims "one doc_hash or id prefix" |
+| `extract_doc_metadata` | **`doc_hash` prefix only** | the work — same wrong help text |
+| `compute_epistemics`, `build_gaps`, `build_concept_skeleton` | no flag at all | full recompute only |
+
+**Symptom:** `python -m scripts.extract_citations --doc <document id>` exits 1 with
+`No documents matched.` — because it filters `Document.doc_hash.startswith(...)`
+(`scripts/extract_citations.py:200`, `extract_doc_metadata.py:172`) while every other surface in the
+app (the API, the graph, the library grid, `list_documents()`) identifies a document by **`id`**. The
+help text actively misleads: it promises id support that is not implemented.
+
+**Why it matters more than a flag bug:** `extract_citations` is the **slowest sidecar measured**
+(54.1 s over 97 documents, superlinear in reference count), so it is exactly where per-document
+scoping would pay — and it is the one that cannot be driven by the id a caller has. Meanwhile
+`extract_keywords --doc <id>` saves **4%** (3.97 s vs 4.14 s) because scoping the write does not scope
+the work (KI-18, now with a number).
+
+**Fix:** one shared resolver — accept an id prefix **or** a hash prefix in every runner (the
+`compute_doc_vectors._resolve_doc_filter` behaviour is the right one), with matching help text, and a
+guard test per runner that a real `Document.id` resolves. Then, separately, make the *work* scoped
+where the module allows it (citations and metadata are per-document by nature; keywords is
+corpus-global by construction and should say so instead of pretending).
+
+**Workaround until then:** pass a `doc_hash` prefix to `extract_citations` / `extract_doc_metadata`
+(`select doc_hash from documents where id like '<id>%'`), and do not expect `--doc` to reduce runtime
+on `extract_keywords` or `compute_doc_vectors`.
+
+
+**Fix (shipped 2026-07-29).** One shared resolver — `library.documents.resolve_document_prefix`
+(`DocumentRef` / `DocumentPrefixError`) — is now the single entry point behind every runner's
+`--doc`. It tries an **id prefix first**, falls back to a **doc_hash prefix**, escapes `LIKE`
+wildcards, and raises a CLI-ready message that names the candidates when a prefix is ambiguous. All
+four runners call it; `compute_doc_vectors._resolve_doc_filter` (the previous best behaviour) was
+deleted in favour of it, and the help text on each runner now states what it actually scopes —
+including `extract_keywords`, which now says out loud that scoping the write does **not** scope the
+corpus TF-IDF.
+
+**Verified on the live corpus (97 docs, $0):** the exact command in the symptom above,
+`extract_citations --doc <document id>`, returns the document instead of exiting 1 — **7.4 s scoped
+vs 54 s whole-corpus** (most of the 7.4 s is interpreter startup). A hash prefix still resolves; an
+unknown prefix still exits 1; an ambiguous prefix names the candidates.
+
+**Guard tests — do not undo:** `tests/unit/test_doc_prefix_resolver.py` (15). The first pins the
+regression (a real `Document.id` resolves); others pin id-beats-hash precedence, the ambiguous and
+empty-corpus paths, and that `_` cannot act as a `LIKE` wildcard. Two wiring tests assert each
+runner imports the shared resolver and that the two hash-only runners no longer contain
+`doc_hash.startswith` — a correct resolver nobody calls fixes nothing.
+
+**Deliberately left alone:** `library.pins.find_document_by_short_id` is a *third* variant (id-only,
+returns `None`). Its contract is what the chat pin flow needs; unifying it would change pin
+behaviour for no current gain. If a fifth surface appears, unify then.
+
+**Still true, and separate:** the *work* is only scoped where the module allows it. Citations and
+metadata are per-document by nature and now genuinely scope. `extract_keywords` and
+`compute_doc_vectors` remain corpus-global by construction (KI-18) — the flag no longer pretends
+otherwise, but it does not make them faster.
+
+## KI-29 — the parent-child path never strips `<!-- page:N -->`, so markers reach the prompt, the excerpts and the embeddings — RESOLVED (2026-07-29)
+
+**Found** while verifying the library reading view for the v0.3.0 release. The view showed
+`<!-- page:1 -->` as literal text. The view is not the bug — it is an inspection view of *what the
+retriever stored*, and it is reporting honestly.
+
+**The asymmetry.** `ingest/__init__.py:170` builds baseline chunks as
+`page_content=clean_chunk_text(chunk_text)` — the stripper whose docstring is *"Remove page markers
+from displayed text (keep them only for metadata)"* (`ingest/chunking.py:109`). The parent-child
+builder, `build_parent_child_chunks` (`ingest/chunking.py:160`), applies it to **neither** the child
+`page_content` **nor** the `parent_text` metadata. Parent-child is the **default** retrieval mode
+(`USE_PARENT_CHILD=true`, a locked setting), so the cleaned path is the one nothing uses at answer
+time.
+
+**Measured on the live corpus (2026-07-28), not inferred:** a real `ollama/llama3.1:8b` turn returned
+10 sources and **2 of the 10 excerpts contained a page marker** — e.g.
+`… _retrieves_ and _generates_ the answers, respectively. <!-- page:3 --> At run-time, DPR applies …`.
+Nothing strips markers on the answer path (checked `pipeline.py`, `synthesis.py`,
+`chat_controller/`), so the same string is what the **user reads in the source panel** and what the
+**LLM receives as evidence**. The child text was also **embedded** with the markers in it.
+
+**Impact, in order of seriousness:** (1) prompt noise the model must ignore, in the evidence block of
+every parent-child turn; (2) an HTML comment shown to the user inside a cited passage; (3) embeddings
+computed over text containing the marker. None of it is a wrong answer — it is quality debt on the
+default path, which is why it survived this long.
+
+**Fix — two options, and the cost is the deciding factor (the user's call):**
+1. **Strip at retrieval** (`pipeline.py`, where the passage/parent text is assembled). No re-ingest,
+   fixes the prompt and the display together. Leaves the stored/embedded text as-is, so the reading
+   view keeps showing markers — consistent with its "what is stored" contract.
+2. **Strip in `build_parent_child_chunks`** (both `page_content` and `parent_text`) — the correct
+   place, matching the baseline path. But the 33,163 stored child chunks were **embedded with the
+   markers**, so it needs a **full re-embed** for the vector side to agree. Extraction is
+   content-cached, so nothing is re-extracted. Do not ship the change without the re-embed, or new
+   and old documents would be embedded on different text.
+
+   **⚠ The cost argument for option 1 has evaporated — re-cost it before deciding.** The ~17 min
+   figure was measured on **CPU torch**. This box moved to the `cu130` wheel on 2026-07-29 and the
+   same projection is now **~2.1 min** (3.8 ms/chunk x 33,163 —
+   `tests/eval/baselines/stage_profile_2026-07-29.md`). *(Revision history: guessed ~40 min →
+   measured ~17 min on CPU → measured ~2 min on GPU. Never quote one of these without its device.)*
+   **Recommendation as of 2026-07-29: take option 2.** It was only ever the runner-up on cost, it is
+   the correct place, and a 2-minute re-embed is a coffee break rather than a project.
+   *Option 1 remains the fallback if the re-embed must not happen for an unrelated reason.*
+
+**Do not "fix" it in `library/chunks.py` or the frontend.** The reading view's stated job is to show
+what the retriever stored (`library/chunks.py` docstring, `group_children`); stripping there would
+make the one honest window into the store lie about it.
+
+**Guard test to add with either fix:** a document whose text contains a page marker → no marker in
+the child `page_content`, in `parent_text`, or in a retrieved passage. The class of bug is the same as
+KI-26's `_JOURNAL_HEADER`: a stripper that exists, is documented, and is simply never called on the
+path that matters.
+
+**Pointer:** `ingest/chunking.py:109` (`clean_chunk_text`) · `ingest/chunking.py:160`
+(`build_parent_child_chunks`) · `ingest/__init__.py:170` (the path that does it right) ·
+`extractors.py:58` (where the marker is written).
+
+**Fix (shipped 2026-07-29) — option 2, the user's call once the cost changed.** The re-embed that
+made option 1 the pragmatic choice cost ~17 min on CPU and **~2 min on the GPU**
+(`tests/eval/baselines/stage_profile_2026-07-29.md`), so the correct place won.
+`build_parent_child_chunks` now applies `clean_chunk_text` to **both** the child `page_content` and
+the `parent_text` metadata. Stripping happens at assembly, **not** on `text` up front, so chunk
+boundaries and the table-caption binding in `_table_aware_parents` see exactly the same input as
+before — only the stored text changes. Page *numbers* are untouched: this path never derived them
+from the chunk body.
+
+**Measured on the live corpus, before and after** (not inferred — the whole store was scanned):
+
+| | before | after |
+|---|---:|---:|
+| child `page_content` containing a marker | **3,312** of 33,163 (10.0%) | **0** |
+| `parent_text` containing a marker | **16,254** of 33,163 (49.0%) | **0** |
+| baseline store (the path that was always right) | 0 | 0 |
+| empty chunks in either store | — | 0 |
+
+Nearly **half** of all parent texts — the block that reaches the LLM as evidence — carried at least
+one marker. The KI's original "2 of 10 excerpts" was an understatement of the exposure.
+
+**Live end-to-end check ($0):** a real `retrieve_with_scores` turn returned 10 sources with **0**
+markers in any `page_content` or `parent_text`, on the same DPR/RAG material the original failing
+excerpt came from.
+
+**It uncovered a second bug, and that is the part to remember.** The re-embed failed on
+`middleton-2001.pdf` with `Expected Embeddings to be non-empty list ... in upsert`. That document is
+a **scan with no text layer**: its entire cached markdown is 290 characters of 15 page markers and
+nothing else. Before the fix those markers were **embedded as if they were content**; after it the
+document correctly yields zero chunks — and Chroma rejects an empty upsert. `ingest` now guards both
+`add_documents` calls on a non-empty list and logs `no_indexable_text`, so such a document is
+recorded honestly with `chunk_count=0` and health `broken` (the KI-24 sweep keeps its library row)
+instead of aborting the run. **The robustness contract cuts both ways: 0 chunks is a state to report,
+not to crash on.** Rebuild after the guard: **97 added, 0 errors**.
+
+**Guard tests — do not undo:** `tests/integration/ingest/test_page_marker_stripping.py` (11). They
+assert on the *chunker's output*, never on the stripper, because the bug was always that a working
+stripper was not called on the path that matters. Covered: no marker in child text, none in
+`parent_text`, the prose survives (a silent truncation would also pass a marker check), no empty
+chunk is stored, `child_index` stays contiguous, every child is still a substring of its cleaned
+parent (the invariant a half-applied fix would break), and the marker-only scan yields zero chunks.
+**Verified non-vacuous:** reverting `build_parent_child_chunks` fails 5 of them.
+
+**Consequence for any other install:** the fix is in the chunker, so an existing corpus keeps its
+markers until `python -m doc_assistant.ingest --rebuild` is run. On this box that is ~4 minutes.
+
+## KI-31 — `get_all` silently truncated `embeddings` to one page, so document similarity was computed over 39% of the corpus — RESOLVED (2026-07-29)
+
+**Found** 2026-07-29 while re-running `compute_doc_vectors` after the KI-29 re-embed. The report
+said **"Documents in library: 37"** on a 97-document corpus. The number was wrong, not the corpus.
+
+**The bug, in one line.** `chroma_read.get_all` concatenated pages with
+`if isinstance(value, list): out[key].extend(value)` — but **chromadb returns `embeddings` as a
+`numpy.ndarray`**, not a list. An ndarray failed that test and fell through to
+`elif key not in out: out[key] = value`, which **keeps the first page and discards every page
+after it**. So a read of the 12,786-chunk baseline store returned **5,000 embeddings and 12,786
+metadatas**.
+
+**Why nobody noticed for four days.** The caller zipped the two with
+`zip(raw_embeddings, metadatas, strict=False)` — `strict=False` throws the surplus away without a
+word. Downstream everything looked healthy: edges were produced, scores were plausible, the graph
+rendered. It simply described 37 of 96 documents. **A silent truncation that produces well-formed
+output is the worst shape a bug can take**, and both halves — the ndarray check and the
+non-strict zip — had to be wrong at once for it to be invisible.
+
+**Blast radius: exactly one caller.** `doc_vectors.load_chunk_embeddings_by_document` is the only
+`get_all` call that requests `embeddings`; the other nine ask for `documents` / `metadatas` / `ids`,
+which are plain lists and paged correctly all along. So the damage is confined to the
+`doc_similarities` table — the related-documents panel and the similarity graph — and **nothing on
+the answer path** (BM25 build, retrieval, epistemics) was affected.
+
+**Introduced by** the KI-27 paging fix (2026-07-25), which replaced unpaged `coll.get()` calls. The
+unpaged read returned everything in one call, so the ndarray never needed concatenating — the
+regression arrived with the fix for a different failure and was invisible to that fix's own tests,
+because the fake collection in `tests/unit/test_chroma_read.py` returned a **list for every key**.
+The one type that breaks concatenation was the one type never exercised.
+
+**Fix (2026-07-29).** `chroma_read._is_array` (duck-typed on `shape` + `__len__`, so the module
+keeps no numpy import) extends the concatenation branch to numpy arrays. Independently,
+`load_chunk_embeddings_by_document` now **raises** on a length mismatch and zips with
+`strict=True`, so if paging ever drops rows again it fails loudly instead of quietly shrinking the
+corpus.
+
+**Measured before/after** on the live corpus: `get_all(include=["embeddings","metadatas"])`
+returned **5,000 / 12,786** before and **12,786 / 12,786** after; `compute_doc_vectors` went from
+**37 documents / 370 edges** to **96 / 960**. Edges recomputed and persisted.
+
+**Guard tests — do not undo:** `tests/unit/test_chroma_read.py::FakeCollectionWithEmbeddings` plus
+two tests that pin (a) embeddings are concatenated across pages, not truncated, and (b) each
+embedding row stays paired with its own metadata. **Verified non-vacuous:** restoring the
+`isinstance(value, list)` check fails exactly those two. **Any new fake collection must return an
+ndarray for `embeddings`** — a list-returning fake cannot see this class of bug.

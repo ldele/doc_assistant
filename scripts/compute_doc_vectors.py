@@ -13,7 +13,7 @@ Usage::
     python -m scripts.compute_doc_vectors                  # dry-run
     python -m scripts.compute_doc_vectors --apply          # write edges
     python -m scripts.compute_doc_vectors --apply --force  # recompute
-    python -m scripts.compute_doc_vectors --doc <hash>     # report one doc
+    python -m scripts.compute_doc_vectors --doc <id|hash>  # report one doc (compute stays global)
 """
 
 from __future__ import annotations
@@ -34,6 +34,7 @@ from doc_assistant.doc_vectors import (
     compute_similarity_edges,
     load_chunk_embeddings_by_document,
 )
+from doc_assistant.library.documents import DocumentPrefixError, resolve_document_prefix
 
 if sys.platform == "win32" and hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
@@ -86,26 +87,6 @@ def _filename_lookup(doc_ids: list[str]) -> dict[str, str]:
             select(Document.id, Document.filename).where(Document.id.in_(doc_ids))
         ).all()
         return {str(r[0]): str(r[1]) for r in rows}
-
-
-def _resolve_doc_filter(doc_arg: str) -> str | None:
-    """Map ``--doc`` (id-prefix or hash-prefix) to a Document.id."""
-    with session_scope() as session:
-        by_id = (
-            session.execute(select(Document.id).where(Document.id.like(f"{doc_arg}%")))
-            .scalars()
-            .all()
-        )
-        if len(by_id) == 1:
-            return str(by_id[0])
-        by_hash = (
-            session.execute(select(Document.id).where(Document.doc_hash.like(f"{doc_arg}%")))
-            .scalars()
-            .all()
-        )
-        if len(by_hash) == 1:
-            return str(by_hash[0])
-        return None
 
 
 def _format_report(
@@ -179,9 +160,10 @@ def main() -> int:
 
     filter_doc_id: str | None = None
     if args.doc:
-        filter_doc_id = _resolve_doc_filter(args.doc)
-        if filter_doc_id is None:
-            print(f"--doc '{args.doc}' did not uniquely resolve to one document.")
+        try:
+            filter_doc_id = resolve_document_prefix(args.doc).id
+        except DocumentPrefixError as exc:
+            print(str(exc))
             return 1
 
     print("Reading chunk embeddings from Chroma...")

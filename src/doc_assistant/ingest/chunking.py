@@ -163,16 +163,38 @@ def build_parent_child_chunks(text: str, base_metadata: dict[str, Any]) -> list[
     Table-aware (see ``_table_aware_parents``): spliced table blocks stay whole and
     travel with their caption, so a wide table's values stay retrievable. Documents
     without spliced tables chunk exactly as before.
+
+    **Page markers are stripped from both the child ``page_content`` and the
+    ``parent_text`` metadata** (KI-29). This path is the default retrieval mode, so its
+    text is what gets embedded, what the LLM receives as evidence, and what the user
+    reads in the source panel — a ``<!-- page:N -->`` left in it leaks into all three.
+    The stripping happens here, at assembly, rather than on ``text`` up front, so that
+    chunk boundaries and the table-caption binding in ``_table_aware_parents`` are
+    computed on exactly the same input as before; only the stored text changes. Page
+    *numbers* are unaffected — the parent-child path never derived them from the chunk
+    body (the baseline path reads them from the full text before the chunk, see
+    ``extract_chunk_metadata``).
+
+    A child that is nothing but a marker cleans down to the empty string; those are
+    dropped rather than embedded, and ``child_index`` stays contiguous within a parent.
     """
     parents = _table_aware_parents(text)
     children: list[Document] = []
     for parent_idx, parent_text in enumerate(parents):
-        for child_idx, child_text in enumerate(_pc_child_splitter.split_text(parent_text)):
+        clean_parent = clean_chunk_text(parent_text)
+        if not clean_parent:
+            continue
+        child_idx = 0
+        for child_text in _pc_child_splitter.split_text(parent_text):
+            clean_child = clean_chunk_text(child_text)
+            if not clean_child:
+                continue
             meta = {
                 **base_metadata,
-                "parent_text": parent_text,
+                "parent_text": clean_parent,
                 "parent_index": parent_idx,
                 "child_index": child_idx,
             }
-            children.append(Document(page_content=child_text, metadata=meta))
+            children.append(Document(page_content=clean_child, metadata=meta))
+            child_idx += 1
     return children

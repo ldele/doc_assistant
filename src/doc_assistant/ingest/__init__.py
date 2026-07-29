@@ -165,9 +165,18 @@ def process_one_document(
 
             extra = extract_chunk_metadata(chunk_text, text, chunk_start)
 
+            # A chunk that is nothing but page markers cleans down to "" — never embed it.
+            # `extract_chunk_metadata` above already read the page number off the *raw*
+            # text, so dropping the body loses nothing. A scan with no text layer produces
+            # a cache of markers only, so this can empty the document entirely (guarded at
+            # the store writes below, KI-29).
+            cleaned = clean_chunk_text(chunk_text)
+            if not cleaned:
+                continue
+
             documents.append(
                 Document(
-                    page_content=clean_chunk_text(chunk_text),
+                    page_content=cleaned,
                     metadata={
                         "source_original": str(path),
                         "source_cache": str(get_cache_path(path)),
@@ -247,11 +256,20 @@ def process_one_document(
         # --- Vector-store writes. BOTH must land before the SQLite row is committed
         # (F1): the row write below is the last step, so an exception in either Chroma
         # write aborts the document with no orphaned Document row left behind.
+        #
+        # Both adds are guarded on a non-empty list: Chroma raises "Expected Embeddings to
+        # be non-empty list" on an empty upsert, which would abort the document. A scanned
+        # PDF with no text layer extracts to page markers and nothing else, so once those
+        # are stripped (KI-29) it legitimately yields zero chunks. That is not an error —
+        # it is a document with nothing to retrieve, and it must still reach the SQLite
+        # write below so its row records `chunk_count=0` and health `broken` instead of
+        # vanishing or crashing the run.
         existing_baseline = db.get(where={"doc_hash": h}, include=[])
         if existing_baseline["ids"]:
             log.info("removing_existing_baseline", count=len(existing_baseline["ids"]), hash=h)
             db.delete(ids=existing_baseline["ids"])
-        db.add_documents(documents)
+        if documents:
+            db.add_documents(documents)
 
         pc_chunks = build_parent_child_chunks(text, pc_base_metadata)
 
@@ -278,7 +296,17 @@ def process_one_document(
         if existing_pc["ids"]:
             log.info("removing_existing_pc", count=len(existing_pc["ids"]), hash=h)
             pc_db.delete(ids=existing_pc["ids"])
-        pc_db.add_documents(pc_chunks)
+        if pc_chunks:
+            pc_db.add_documents(pc_chunks)
+
+        if not documents and not pc_chunks:
+            log.warning(
+                "no_indexable_text",
+                file=path.name,
+                page_markers=len(PAGE_MARKER.findall(text)),
+                hint="extraction produced no text (likely a scan with no text layer); the "
+                "document is recorded with chunk_count=0 and is not retrievable",
+            )
 
         # --- Both vector stores updated; commit the Document row + its ingestion event
         # last, keyed by the pre-resolved document_id already stamped into the chunks.

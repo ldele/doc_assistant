@@ -48,7 +48,10 @@ so they benefit a lot from GPU acceleration. Install the matching torch extra ab
 `sentence-transformers` then auto-selects the device at runtime (CUDA → MPS → CPU):
 
 - **NVIDIA / CUDA.** `uv sync --extra cu130`. Best supported and the only path benchmarked here:
-  retrieve + rerank ~70 ms on an RTX 4070. Recommended.
+  retrieve + rerank **~300 ms** on an RTX 4070 (97 documents / 33k chunks, `CANDIDATE_K=20`),
+  against ~900 ms for the same corpus on CPU. Recommended. Indicative, not a guarantee — the number
+  moves with corpus size; method and full tables in
+  `tests/eval/baselines/stage_profile_2026-07-29.md`.
 - **Apple Silicon (M-series).** PyTorch's MPS (Metal) backend is auto-detected, so the embedder and
   reranker use the Mac's GPU with no config change. Faster than CPU, though generally slower than a
   discrete CUDA card and **not benchmarked here** (MPS also occasionally falls back to CPU for

@@ -124,6 +124,72 @@ def document_years(document_ids: list[str]) -> dict[str, int]:
     return years
 
 
+class DocumentPrefixError(ValueError):
+    """A ``--doc`` prefix matched no document, or matched more than one.
+
+    Carries a CLI-ready message so every runner reports the same thing (KI-30).
+    """
+
+
+@dataclass(frozen=True)
+class DocumentRef:
+    """The identifiers a sidecar runner needs for one document.
+
+    Both are carried because the enrichment layer is split on which one it keys by: the
+    citation/metadata tables filter on ``doc_hash``, while every user-facing surface (the API,
+    the graph, the library grid, ``list_documents``) hands out ``id``.
+    """
+
+    id: str
+    doc_hash: str
+    filename: str
+
+
+def resolve_document_prefix(prefix: str) -> DocumentRef:
+    """Resolve a ``--doc`` argument (an ``id`` or ``doc_hash`` prefix) to exactly one document.
+
+    The single entry point behind every runner's ``--doc`` flag (KI-30). Before this existed the
+    flag meant three different things across four runners, and two of them rejected the very id
+    the rest of the app hands out.
+
+    ``id`` is tried first and wins outright: that is the identifier a caller actually has. Only
+    when the prefix matches no id at all does it fall back to ``doc_hash``, so the hashes printed
+    by the older runners keep working. Archived documents are included — a runner that wants them
+    excluded filters its own work set; refusing to *resolve* them would make the flag lie.
+
+    Wildcards are escaped, so a literal ``_`` in a prefix cannot silently act as a single-character
+    ``LIKE`` wildcard.
+
+    Raises:
+        DocumentPrefixError: when the prefix is blank, matches nothing, or is ambiguous.
+    """
+    if not prefix.strip():
+        raise DocumentPrefixError("--doc needs a non-empty id or doc_hash prefix.")
+
+    with session_scope() as session:
+        for column, label in ((Document.id, "id"), (Document.doc_hash, "doc_hash")):
+            rows = session.execute(
+                select(Document.id, Document.doc_hash, Document.filename)
+                .where(column.startswith(prefix, autoescape=True))
+                .order_by(Document.filename)
+            ).all()
+            if len(rows) == 1:
+                doc_id, doc_hash, filename = rows[0]
+                return DocumentRef(id=str(doc_id), doc_hash=str(doc_hash), filename=str(filename))
+            if len(rows) > 1:
+                names = ", ".join(f"{r[0][:8]} ({r[2]})" for r in rows[:5])
+                more = f", +{len(rows) - 5} more" if len(rows) > 5 else ""
+                raise DocumentPrefixError(
+                    f"--doc {prefix!r} is ambiguous: {len(rows)} documents share that "
+                    f"{label} prefix — {names}{more}. Pass more characters."
+                )
+
+    raise DocumentPrefixError(
+        f"--doc {prefix!r} matched no document (tried it as an id prefix, then as a "
+        f"doc_hash prefix)."
+    )
+
+
 def get_document_details(doc_id: str) -> DocumentDetails | None:
     """Return everything we know about a single document."""
     with session_scope() as session:

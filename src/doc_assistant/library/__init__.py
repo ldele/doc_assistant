@@ -42,6 +42,8 @@ from doc_assistant.library.citations import (
 )
 from doc_assistant.library.documents import (
     DeleteResult,
+    DocumentPrefixError,
+    DocumentRef,
     _dedup_override,
     _reveal_in_file_manager,
     clear_document_meta,
@@ -50,6 +52,7 @@ from doc_assistant.library.documents import (
     document_years,
     get_document_details,
     list_documents,
+    resolve_document_prefix,
     resolve_source_path,
     reveal_document_source,
     set_document_meta,
@@ -117,6 +120,8 @@ __all__ = [
     "DocConnections",
     "DocumentChunkView",
     "DocumentDetails",
+    "DocumentPrefixError",
+    "DocumentRef",
     "DocumentSummary",
     "FolderSummary",
     "GraphEdge",
@@ -173,6 +178,7 @@ __all__ = [
     "remove_pinned_sources",
     "rename_folder",
     "rename_keyword_family",
+    "resolve_document_prefix",
     "resolve_source_path",
     "reveal_document_source",
     "set_document_meta",

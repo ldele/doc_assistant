@@ -96,3 +96,46 @@ def test_page_size_is_a_bound_not_a_behaviour_change(page_size):
     out = get_all(coll, include=["metadatas"], page_size=page_size)
 
     assert [m["i"] for m in out["metadatas"]] == list(range(50))
+
+
+class FakeCollectionWithEmbeddings(FakeCollection):
+    """Chroma's *real* return shape: `embeddings` is a numpy array, everything else a list.
+
+    ``FakeCollection`` above returns a list for every key, which is precisely why KI-31 survived
+    the original paging tests — the one type that breaks concatenation was never exercised.
+    """
+
+    def get(self, *, limit=None, offset=0, where=None, include=None):
+        import numpy as np
+
+        out = super().get(limit=limit, offset=offset, where=where, include=include)
+        if include is None or "embeddings" in include:
+            out["embeddings"] = np.array([[float(r["i"]), 0.5] for r in out["metadatas"]])
+        return out
+
+
+def test_numpy_embeddings_are_concatenated_across_pages_not_truncated():
+    """KI-31: `embeddings` came back as an ndarray, so only page 1 survived.
+
+    The corpus effect was silent — `metadatas` accumulated all 12,786 rows while `embeddings`
+    held 5,000, and the caller's `zip(..., strict=False)` discarded the surplus. Document
+    similarity was therefore computed over 37 of 96 documents.
+    """
+    n = PAGE_SIZE * 2 + 11
+    coll = FakeCollectionWithEmbeddings(n)
+
+    out = get_all(coll, include=["embeddings", "metadatas"])
+
+    assert len(out["embeddings"]) == n, "embeddings truncated to a single page"
+    assert len(out["embeddings"]) == len(out["metadatas"]), "embeddings/metadatas out of step"
+
+
+def test_embedding_rows_stay_aligned_with_their_metadata():
+    """Concatenating in the wrong order would be worse than truncating — pin the pairing."""
+    n = PAGE_SIZE + 3
+    coll = FakeCollectionWithEmbeddings(n)
+
+    out = get_all(coll, include=["embeddings", "metadatas"])
+
+    for meta, vec in zip(out["metadatas"], out["embeddings"], strict=True):
+        assert vec[0] == float(meta["i"]), f"row {meta['i']} paired with embedding {vec[0]}"

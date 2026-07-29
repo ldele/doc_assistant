@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-07-28 · class: append-only -->
+<!-- status: active · updated: 2026-07-29 · class: append-only -->
 
 # DEVLOG — doc_assistant
 
@@ -9,6 +9,194 @@ Format: What changed | Why | Rejected alternatives | What it opens
 
 > Entries **2026-07-14 and earlier** live in [`docs/archive/DEVLOG-archive-001.md`](archive/DEVLOG-archive-001.md)
 > (moved verbatim 2026-07-21). This file keeps 2026-07-15 onward.
+
+---
+## 2026-07-29 (4) — KI-31: `get_all` dropped every page of embeddings after the first; document similarity ran on 39% of the corpus
+
+**What changed.** `chroma_read.get_all` concatenated pages with `isinstance(value, list)`, but
+chromadb returns **`embeddings` as a `numpy.ndarray`** — which failed that test and fell through to
+"keep the first page, discard the rest". New `_is_array` (duck-typed on `shape` + `__len__`, so the
+module keeps no numpy import) extends the concatenation branch. Separately,
+`doc_vectors.load_chunk_embeddings_by_document` now raises on a length mismatch and zips
+`strict=True`.
+
+**Why / how it was found.** Re-running `compute_doc_vectors` after the KI-29 re-embed reported
+**"Documents in library: 37"** on a 97-document corpus. A read of the 12,786-chunk baseline store
+was returning **5,000 embeddings against 12,786 metadatas**, and the caller's
+`zip(..., strict=False)` discarded the surplus without a word.
+
+**Measured, before → after:** `get_all` 5,000/12,786 → **12,786/12,786**; `compute_doc_vectors`
+**37 documents / 370 edges → 96 / 960**. Edges recomputed and persisted.
+
+**Blast radius is exactly one caller.** `load_chunk_embeddings_by_document` is the only `get_all`
+call that requests `embeddings`; the other nine ask for `documents`/`metadatas`/`ids`, all plain
+lists, and paged correctly throughout. Damage was confined to `doc_similarities` — the
+related-documents panel and the similarity graph. **Nothing on the answer path** (BM25 build,
+retrieval, epistemics) was affected.
+
+**The lesson worth keeping.** This arrived *with* the KI-27 paging fix on 2026-07-25 — the unpaged
+read it replaced returned everything in one call, so the ndarray never needed concatenating. It was
+invisible to that fix's own tests because the fake collection returned a **list for every key**: the
+one type that breaks concatenation was the one type never exercised. **A silent truncation that
+still produces well-formed output is the worst shape a bug can take** — edges were produced, scores
+were plausible, the graph rendered, and it described 37 of 96 documents.
+
+**Rejected.** Importing numpy into `chroma_read` for an `isinstance` check — the module pages a
+store, it does not do numerics; duck-typing keeps the dependency out.
+
+**Guard tests:** `FakeCollectionWithEmbeddings` (returns an ndarray, like the real thing) plus two
+tests pinning cross-page concatenation and row/metadata alignment. **Verified non-vacuous:**
+restoring the old check fails exactly those two.
+
+---
+## 2026-07-29 (3) — KI-29 closed: the parent-child chunker now strips page markers (option 2, + the re-embed)
+
+**What changed.** `build_parent_child_chunks` applies `clean_chunk_text` to **both** the child
+`page_content` and the `parent_text` metadata. Stripping happens at assembly, **not** on `text` up
+front, so chunk boundaries and the table-caption binding in `_table_aware_parents` see exactly the
+same input as before — only the stored text changes. Corpus re-embedded (`ingest --rebuild`, 4:01).
+
+**Why option 2 and not the cheap patch.** The re-embed was the only argument for option 1, and the
+GPU move cut it from ~17 min to ~2 min (entry 1 today). The user chose the correct place.
+
+**Measured on the live corpus, before → after** (the whole store was scanned, not sampled):
+
+| | before | after |
+|---|---:|---:|
+| child `page_content` with a marker | **3,312** / 33,163 (10.0%) | **0** |
+| `parent_text` with a marker | **16,254** / 33,163 (49.0%) | **0** |
+| baseline store (always did it right) | 0 | 0 |
+
+**Nearly half of all parent texts** — the evidence block the LLM receives — carried a marker. KI-29's
+original "2 of 10 excerpts" understated it. Live `retrieve_with_scores`: 10 sources, **0** markers.
+
+**It uncovered a second bug, and that is the part worth remembering.** The re-embed failed on
+`middleton-2001.pdf`: `Expected Embeddings to be non-empty list ... in upsert`. That document is a
+**scan with no text layer** — its whole cached markdown is 290 characters of 15 page markers.
+*Before* this change those markers were **embedded as if they were content**; after it the document
+correctly yields zero chunks, and Chroma rejects an empty upsert. `ingest` now guards both
+`add_documents` calls on a non-empty list, drops baseline chunks that clean to empty, and logs
+`no_indexable_text` — so the document is recorded honestly as `chunk_count=0` / health `broken`
+(the KI-24 sweep keeps its library row) instead of aborting the run. **0 chunks is a state to
+report, not to crash on.** Re-run: **97 added, 0 errors**, and the document is now correctly flagged
+`broken: only 0 chunk(s) produced`.
+
+**Rejected.** (a) *Stripping `text` up front, before `_table_aware_parents`* — removing
+`
+<!-- page:N -->
+` leaves a blank line, which `_split_trailing_paragraph` reads as a paragraph
+boundary; that would quietly change table-caption absorption. Assembly-time stripping leaves the
+splitters' input byte-identical. (b) *Fixing it in `library/chunks.py` or the frontend* — the reading
+view's job is to show what the retriever stored; stripping there would make the one honest window
+into the store lie about it. (c) *Renumbering `chunk_index` after dropping empties* — indices come
+from `enumerate(raw_chunks)`, so survivors keep their original index and `chunk_epistemics`'
+`(document_id, chunk_index)` / `{doc}:p{parent_index}` keys stay aligned across the re-embed.
+
+**Guard tests:** `tests/integration/ingest/test_page_marker_stripping.py` (11), asserting on the
+*chunker's output* rather than the stripper — the bug was always that a working stripper was not
+called on the path that matters. **Verified non-vacuous:** reverting the change fails 5 of them.
+
+**What it opens / carried.** The fix is in the chunker, so any existing corpus keeps its markers
+until `ingest --rebuild` is run (~4 min here). `doc_similarities` was recomputed afterwards
+(see entry 4); `compute_epistemics` was left alone — its keys survived the re-embed by construction.
+
+---
+## 2026-07-29 (2) — KI-30 closed: one shared `--doc` resolver behind all four sidecar runners
+
+**What changed.** `library.documents.resolve_document_prefix` (+ `DocumentRef`,
+`DocumentPrefixError`) is now the single entry point behind every runner's `--doc`. It tries an
+**id prefix first**, falls back to a **doc_hash prefix**, escapes `LIKE` wildcards, and raises a
+CLI-ready message naming the candidates when a prefix is ambiguous. All four runners
+(`extract_citations`, `extract_doc_metadata`, `compute_doc_vectors`, `extract_keywords`) call it;
+`compute_doc_vectors._resolve_doc_filter` — the previous best-behaved variant, and the model for
+this one — was deleted in its favour.
+
+**Why.** KI-30: the flag meant three different things across four runners, and the two that filter
+on `doc_hash` rejected the very `Document.id` that the API, the graph, the library grid and
+`list_documents()` all hand out. `extract_citations --doc <document id>` exited 1 with "No documents
+matched." while its own help promised id support. That is the slowest sidecar (54 s whole-corpus),
+so it is exactly where per-document scoping pays, and it was the one that could not be driven by the
+id a caller actually has.
+
+**Verified on the live corpus (97 docs, $0).** The exact command from the KI-30 symptom now returns
+the document: **7.4 s scoped vs 54 s whole-corpus** (most of the 7.4 s is interpreter startup — the
+*work* is genuinely scoped). Hash prefixes still resolve; an unknown prefix still exits **1**; `--doc
+f` reports `3 documents share that id prefix — f027a3d4 (41111_2021_Article_191.pdf), fe739b78
+(ai_usage_cards_2023.pdf), f9cea60a (elife-61909-v3.pdf)`.
+
+**Help text now states what each runner actually scopes** — including `extract_keywords`, which says
+out loud that scoping the write does **not** scope the corpus TF-IDF (~4% saving, KI-18). The flag
+no longer pretends to be an incremental switch where the module is corpus-global by construction.
+
+**Rejected.** (a) *Making all four runners scope the work* — `extract_keywords` and
+`compute_doc_vectors` are corpus-global by construction; the honest fix is to say so, not to fake
+it. (b) *Unifying `library.pins.find_document_by_short_id` too* — a third variant (id-only, returns
+`None`), but its contract is what the chat pin flow needs and changing it would alter pin behaviour
+for no current gain. Left deliberately, noted in the archived KI-30. (c) *A shared helper module
+under `scripts/`* — this is business logic; `src/` owns it (non-negotiable #3).
+
+**Guard tests:** `tests/unit/test_doc_prefix_resolver.py` (15). The first pins the regression
+itself; others pin id-beats-hash precedence, ambiguity, blank input, the **0-document** corpus
+(robustness contract), and that `_` cannot act as a `LIKE` wildcard. Two wiring tests assert each
+runner imports the shared resolver and that neither hash-only runner still contains
+`doc_hash.startswith` — **a correct resolver nobody calls fixes nothing**.
+
+**What it opens.** Per-document enrichment is now drivable from an id, which is the precondition for
+running citations/metadata incrementally on ingest instead of as a whole-corpus batch. Not wired to
+ingest here.
+
+---
+## 2026-07-29 (1) — the GPU wheel: query 3.1x, re-embed 7.9x, launch unchanged; a wrong setup.md claim corrected
+
+**What changed.** `uv sync --extra cu130 --extra dev` on this box (RTX 4070, `DOC_TORCH=cu130` was
+already set machine-wide; the venv had drifted to the CPU wheel). **No code changed** — neither
+`get_embeddings()` nor the `CrossEncoder` construction pins a device, so both auto-select CUDA once
+the CUDA wheel is present. New baseline recorded at
+`tests/eval/baselines/stage_profile_2026-07-29.md`; the 07-28 CPU baseline was **not** edited.
+
+**Why.** Item 1 of the 07-28 baton: every transformer figure in that baseline was CPU-side on a box
+with an idle GPU, which put a device caveat on the two conclusions that mattered (the rerank share
+of the query budget, and the re-embed cost).
+
+**Measured** (same instrument, same flags, same corpus, same sampled documents):
+
+| Stage | CPU (07-28) | GPU (07-29) | Speedup |
+|---|---:|---:|---:|
+| `retrieve_with_scores` (retrieve + rerank + expand) | 907 ms | **296 ms** | **3.1x** |
+| ⇒ cross-encoder rerank + expand, by difference | ~680 ms | **~134 ms** | ~5.1x |
+| embed rate | 31.6 ms/chunk | **3.8 ms/chunk** | **8.3x** |
+| ⇒ full re-embed of 33,163 chunks (projected) | ~17 min | **~2.1 min** | 7.9x |
+| BM25 search / index build | 28 ms / 698 ms | 26.7 ms / 662 ms | 1.0x (pure CPU — expected) |
+| cold PDF -> markdown extraction | 15.2 s/doc | **14.7 s/doc** | **1.0x — no gain** |
+| cold launch, fresh process | 11.7 s | **12.10 s** | **none — marginally worse** |
+
+**Three conclusions from the 07-28 baseline change, and one negative result matters most.**
+(a) *"The reranker is three quarters of the retrieval budget, the one part worth optimizing"* — on
+the GPU it is **~45%** of a sub-300 ms budget. Nothing in the query path is worth optimising now.
+(b) **KI-29's cost argument collapses**: the re-embed that made option 1 (patch at retrieval) the
+pragmatic choice is now ~2 min, so option 2 (fix `build_parent_child_chunks`, the correct place) is
+affordable. Re-costed in KI-29; the user's call, recommendation recorded. (c) **Extraction is not a
+GPU workload** — 14.7 s/doc vs 15.2 s, within noise. It is the most expensive per-document cost in
+the system and any future ingest-throughput work has to target it, not embedding.
+
+**Launch got slightly *worse*, and that is stated rather than averaged away:** CUDA context init
+costs ~0.4 s and buys nothing at startup, which is dominated by Python imports + embedder weights.
+The profiler takes a **single** cold sample, so the extra three fresh-process runs (12.58 / 12.10 /
+12.14 / 11.90 s) were measured by hand — one sample cannot support a 0.4 s claim.
+
+**A user-facing claim was wrong and is now corrected.** `docs/setup.md` promised **~70 ms**
+retrieve+rerank on an RTX 4070. Measured on an RTX 4070, on this corpus: **296 ms** — ~4x
+optimistic. (The 07-28 baseline attributed this claim to the README; it is `docs/setup.md:50`.) The
+line now carries the measured figure, the CPU comparison, the corpus it was measured on, and a
+pointer to the baseline — indicative, not a guarantee.
+
+**Rejected.** Pinning `device="cuda"` anywhere in code — `sentence-transformers` already resolves
+`cuda -> mps -> cpu`, and hardcoding it would break the CPU/CI path for zero gain.
+
+**What it opens / carried.** Chunking-parameter sweeps and embedding-model swaps cost ~2 min per arm
+instead of ~17, so those experiments become practical. **Carried:** the frozen-sidecar build
+(`just build-sidecar`) expects a **CPU-synced** venv (KI-3), so a release build now needs
+`uv sync --extra cpu --extra dev` first and a re-sync back afterwards.
 
 ---
 ## 2026-07-28 (5) — per-document cost estimates (mean/best/worst, named) + the reranker goes lazy: 16.1 s -> 11.7 s launch

@@ -22,6 +22,7 @@ from sqlalchemy import select, update
 from doc_assistant.config import CACHE_PATH, DOCS_PATH
 from doc_assistant.db.models import Document
 from doc_assistant.db.session import session_scope
+from doc_assistant.library.documents import DocumentPrefixError, resolve_document_prefix
 from doc_assistant.metadata_extractor import DocMetadata, extract_metadata
 
 if sys.platform == "win32" and hasattr(sys.stdout, "reconfigure"):
@@ -154,8 +155,18 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--apply", action="store_true", help="Write changes to DB")
     parser.add_argument("--force", action="store_true", help="Overwrite non-null fields")
-    parser.add_argument("--doc", type=str, help="Limit to one doc_hash or id prefix")
+    parser.add_argument(
+        "--doc", type=str, help="Limit to one document (id prefix or doc_hash prefix)"
+    )
     args = parser.parse_args()
+
+    doc_ref = None
+    if args.doc:
+        try:
+            doc_ref = resolve_document_prefix(args.doc)
+        except DocumentPrefixError as exc:
+            print(str(exc))
+            return 1
 
     with session_scope() as session:
         stmt = select(
@@ -168,8 +179,8 @@ def main() -> int:
             Document.year,
             Document.doi,
         ).where(Document.is_archived.is_(False))
-        if args.doc:
-            stmt = stmt.where(Document.doc_hash.startswith(args.doc))
+        if doc_ref is not None:
+            stmt = stmt.where(Document.id == doc_ref.id)
         docs = [tuple(r) for r in session.execute(stmt).all()]
 
     if not docs:

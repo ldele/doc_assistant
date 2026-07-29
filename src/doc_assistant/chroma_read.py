@@ -26,6 +26,15 @@ from typing import Any
 PAGE_SIZE = 5000
 
 
+def _is_array(value: Any) -> bool:
+    """True for a numpy-style array (what chromadb returns for ``embeddings``).
+
+    Duck-typed rather than ``isinstance(value, np.ndarray)`` so this module keeps no numpy
+    import of its own: it exists to page a store, not to do numerics.
+    """
+    return hasattr(value, "shape") and hasattr(value, "__len__")
+
+
 def get_all(
     # `Any`, deliberately: the two callers are a raw `chromadb.Collection` and LangChain's
     # `Chroma` wrapper. Both expose a `get(where=, include=, limit=, offset=)`, but their
@@ -56,7 +65,13 @@ def get_all(
         page = collection.get(limit=page_size, offset=offset, **kwargs)
         n = len(page.get("ids") or [])
         for key, value in page.items():
-            if isinstance(value, list):
+            if isinstance(value, list) or _is_array(value):
+                # `_is_array` is load-bearing, not defensive: chromadb returns `embeddings` as a
+                # **numpy array** and every other key as a plain list. An ndarray fails
+                # `isinstance(value, list)`, so without this branch the fall-through below kept
+                # only the FIRST page of embeddings while `metadatas` accumulated all of them —
+                # a silent truncation to `page_size` rows, invisible because the caller zipped
+                # the two with `strict=False`. See KI-31.
                 out.setdefault(key, []).extend(value)
             elif key not in out:
                 out[key] = value

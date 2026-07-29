@@ -310,3 +310,51 @@ def test_stream_answer_llm_pin_defeats_the_lazy_bind_race(
 
     assert "".join(pinned) == "OLD"  # pinned: the snapshotted instrument generates
     assert "".join(unpinned) == "NEW"  # unpinned control: the lazy bind picks up the swap
+
+
+# ---- the reranker loads lazily (stage_profile_2026-07-28 baseline) ----------
+
+
+def test_reranker_is_not_loaded_until_it_is_used(monkeypatch: pytest.MonkeyPatch) -> None:
+    """~4.4 s of every cold launch rides on this staying lazy (measured, not guessed).
+
+    The eager `__init__` attribute cost 3.7 s of weight loading before any question existed. This
+    guards the property's three obligations: don't load on construction, load once on first touch,
+    and cache thereafter (the rerank path reads `self.reranker` per turn).
+    """
+    constructed: list[str] = []
+
+    class _CountingCrossEncoder:
+        def __init__(self, name: str, **kwargs: object) -> None:
+            constructed.append(name)
+
+        def predict(self, pairs: list) -> list[float]:
+            return [1.0] * len(pairs)
+
+    monkeypatch.setattr("doc_assistant.pipeline.CrossEncoder", _CountingCrossEncoder)
+    rag = _bare_pipeline()
+    rag._reranker = None  # exactly what __init__ leaves behind
+
+    assert constructed == []  # nothing loaded merely by having a pipeline
+    first = rag.reranker
+    assert len(constructed) == 1
+    assert rag.reranker is first  # cached — not rebuilt on every turn
+    assert len(constructed) == 1
+
+
+def test_assigning_a_reranker_bypasses_the_load(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The setter is why every other test in this file can inject a fake by plain assignment."""
+
+    def _explode(*_a: object, **_k: object) -> None:
+        raise AssertionError("a real CrossEncoder must never be built when one was injected")
+
+    monkeypatch.setattr("doc_assistant.pipeline.CrossEncoder", _explode)
+    rag = _bare_pipeline()
+
+    class _Fake:
+        def predict(self, pairs: list) -> list[float]:
+            return [0.5] * len(pairs)
+
+    injected = _Fake()
+    rag.reranker = injected
+    assert rag.reranker is injected

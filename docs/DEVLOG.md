@@ -11,6 +11,150 @@ Format: What changed | Why | Rejected alternatives | What it opens
 > (moved verbatim 2026-07-21). This file keeps 2026-07-15 onward.
 
 ---
+## 2026-07-28 (5) — per-document cost estimates (mean/best/worst, named) + the reranker goes lazy: 16.1 s -> 11.7 s launch
+
+**What changed.**
+
+1. **`scripts/profile_stages.py` now samples per document** instead of profiling one median file:
+   `--docs N` picks N documents **spread across the size distribution, always including both
+   extremes** (so "best/worst" comes from the real tails, not from whichever file sorted first), and
+   every stage reports **mean / best / worst with the document named**. `--extract` adds cold
+   extraction per sampled document (off by default — it is the slowest per-document stage, so
+   sampling it costs N times that). Embedding is measured over the document's **whole** chunk set,
+   not a fixed 64-chunk batch, because batch effects are real at both ends of an 11x size range.
+2. **`RAGPipeline.reranker` is now a lazily-loading property** (recommendation 2 from the baseline),
+   with a setter so the existing `rag.reranker = fake` test idiom keeps working.
+
+**Measured, 8 documents spanning 0.1 MB -> 32.4 MB** (full tables in
+`tests/eval/baselines/stage_profile_2026-07-28.md` §5):
+
+| Stage | Mean | Best | Worst |
+|---|---:|---:|---:|
+| read cached markdown | 0.4 ms | 0.2 ms | 0.8 ms |
+| chunk parent-child | 7.5 ms | 1.0 ms | 19.3 ms |
+| embed one document | **12.0 s** | 2.8 s (`rnn_regularization_zaremba_2014`) | **30.2 s** (`2203.07436v4`) |
+| embed rate | 31.6 ms/chunk | 27.8 | 36.7 |
+| extract (COLD) | **15.2 s** | 5.7 s | **36.7 s** |
+
+**The estimator that falls out, and it is the useful part:** **~4.0 child chunks per 1,000
+characters** (range 3.85-4.30 across a 14x span in chunk count) and **~32 ms/chunk** (±14%) ⇒
+**embed ≈ 128 ms per 1,000 characters**, ±15%. So a document's ingest cost is predictable from its
+extracted character count *before* embedding anything.
+
+**And the trap in that:** **file size is the wrong predictor.** `31870-130793-1-PB.pdf` is 1.5 MB but
+39k chars (165 chunks, 4.9 s) while `fpos-6-1305055.pdf` is 0.6 MB with 56k chars (216 chunks,
+6.8 s) — MB tracks embedded images and scan quality, not text volume. Any progress bar or cost
+estimate must be driven by extracted characters, which are available the moment extraction finishes.
+
+**The lazy reranker, measured both sides.** Cold launch **16.1 s -> 11.7 s** (11.99/11.63/11.51 over
+3 fresh processes): **~4.4 s saved**, better than the 3.7 s the component split predicted. **Stated
+as the trade it is:** the launch is 4.4 s shorter and the *first* question of a session is ~3.7 s
+longer (it absorbs the load). Right side of the trade for a desktop app — the readiness gate unblocks
+the UI sooner and a first question is usually preceded by typing — but not a free win.
+
+**Verified live, $0:** construction leaves `_reranker is None`; the first query logs
+`loading_reranker`, returns 10 sources, and scores stay **sigmoid-bounded in [0, 1]** — which the
+integrity layer depends on (`_sigmoid_activation_kwarg` exists precisely so a library upgrade cannot
+silently switch to raw logits). Warm query top score 0.98. Full suite **1357 passed**, unchanged: the
+setter is why every existing test that injects a fake reranker still works.
+
+**A latent hole the change exposed.** Typing the property revealed that the `reranker.predict` call
+site had **never been type-checked** — the eager attribute was inferred as untyped. mypy now checks
+it, and reports that the sentence-transformers stub models only a *single* pair or a flat list, never
+the batch-of-pairs form that is the documented way to score N candidates. The call keeps its shipped
+runtime shape with a narrow, explained `# type: ignore[arg-type]`; the point worth keeping is that
+**an opaque attribute silently disabled type checking on its every use**.
+
+**Guard tests** (`tests/unit/test_pipeline_retrieval.py`): the property must not load on
+construction, must load exactly once on first touch, and must cache; plus the setter must bypass the
+real load entirely. Without these the 4.4 s reverts the first time someone "simplifies" the property
+back to an attribute.
+
+**Rejected alternatives.** Profiling one median document (hides an 11x spread and cannot answer
+"worst case") · reporting only a mean (the worst document is the one that sets a progress bar's
+honesty) · predicting cost from file size (measured wrong above) · a source-scanning test asserting
+`__init__` contains no `CrossEncoder(` (brittle; the behavioural guards cover the regression that
+matters) · loading the reranker in a background thread at startup (hides the cost rather than moving
+it, and racing the first query for the GIL is worse than a visible one-off).
+
+**What it opens (kept for tomorrow, in order).** (1) The remaining recommendations: install the CUDA
+torch extra — every transformer figure here is CPU on a GPU box; persist the BM25 index (1.8 s now,
+but it is the startup component that scales with the corpus). (2) **KI-30** — one shared `--doc`
+resolver accepting id *or* hash prefix, with matching help and a guard test per runner; incremental
+enrichment is unreachable until then, and `extract_citations` (54 s) is where the saving is. (3) The
+KI-29 decision, now against a measured ~17 min re-embed.
+
+**Gate.** ruff + format clean · `mypy src` 84 files · **pytest 1357 passed** · `docs_check --strict`
+0/0.
+
+---
+## 2026-07-28 (4) — stage profile: where the time actually lives, so "must we re-embed?" stops being a guess
+
+**What changed.** New `scripts/profile_stages.py` — times startup, query and ingest stage by stage on
+the live corpus at **$0** (no provider constructed, no generation, the embedding measurement writes
+nothing), plus `--sidecars`, which shells out to the real runners in dry-run mode to compare
+**scoped vs whole-corpus** cost. Full table + method + the classification:
+`tests/eval/baselines/stage_profile_2026-07-28.md`.
+
+**Why, and why it is a script and not a one-off.** The ask was to separate what can run at runtime
+from what is batch-only, so a re-scan/re-embed stops being routine. That is a measurement, and this
+repo's discipline is that a measurement gets an instrument and a recorded baseline — the numbers move
+with corpus size and torch device, so a re-run has to be one command.
+
+**The five numbers that matter** (97 docs / 33,163 chunks, **CPU torch on a GPU box**):
+- **Cold launch 16.1 s** (15.95/16.14/16.62), decomposed by cumulative subprocess measurement:
+  imports **6.8 s** · embedder **2.4 s** · **reranker 3.7 s** · store read + BM25 build + chat model
+  **~3.2 s**. Only the last row scales with the corpus.
+- **Query 907 ms** for retrieve+rerank, of which the **cross-encoder is ~680 ms (75%)** — vector
+  search 179 ms, BM25 28 ms, question embed 16 ms.
+- **A re-scan is already free: 0.3 ms** to read a document's cached markdown (ingest dedupes by
+  hash). What is expensive is **embedding: 30.5 ms/chunk**, i.e. **~13 s per document** and
+  **~17 min for the whole corpus**.
+- **Cold extraction is 24.2 s per document** — the real first-ingest cost (~40 min for 97 docs), and
+  the reason the cache exists.
+- **`extract_citations` is the slowest sidecar at 54.1 s** whole-corpus; everything else is 0.6-5.6 s.
+
+**Two findings the profile turned up, both filed.**
+- **KI-30:** `--doc` means three different things across four runners, and `extract_citations` /
+  `extract_doc_metadata` filter on **`doc_hash`** while their help promises "doc_hash or id prefix" —
+  so passing a real document id exits 1. Nothing in the enrichment layer is meaningfully incremental
+  yet: `extract_keywords --doc` saves **4%** (3.97 s vs 4.14 s) because scoping the write does not
+  scope the corpus TF-IDF (KI-18, now with a number), and `compute_doc_vectors --doc` filters only
+  the report by its own admission.
+- **KI-29's re-embed cost was a guess (~40 min) and is now measured (~17 min)** — corrected in place
+  with a note that the measurement supersedes it. That is the number the KI-29 decision should be
+  made against.
+
+**A reconciliation, not a contradiction.** KI-18 quotes the epistemics projection at "~34 s @ 47
+docs"; this profile measures **5.61 s @ 97 docs**. Both are right: the cost is
+O(chunks x **vocabulary**), and ADR-018 cut the graph vocabulary 357 -> 13 (~27x). Exactly the trap
+KI-19 warns about — do not cite these constants without the experiment attached.
+
+**Honesty notes kept in the baseline.** (a) The first in-process embedder load of a session measured
+**30.7 s** against 2.4 s marginal in a warm-cache subprocess — that is the OS file cache, so 16 s is
+not the worst case and 30.7 s is not the load cost; both are stated rather than averaged away.
+(b) Dry-run sidecar timings were **verified to do the full computation** (both `compute_epistemics`
+and `extract_citations` print per-document results without `--apply`), so they are compute numbers
+minus DB writes, not skipped work. (c) The full re-embed figure is extrapolated from a 64-chunk batch
+and labelled as such.
+
+**Rejected alternatives.** Micro-instrumenting each sidecar internally (timing the public entry
+points answers the incrementality question and cannot drift from what a user runs) · a single
+end-to-end "ingest one document" timing (it hides the extract/chunk/embed split, which is the whole
+point) · averaging the cold-cache outlier into the median (it would have buried a real
+first-launch-after-boot effect) · running the 17-minute re-embed to confirm the projection (the
+per-chunk rate is the reusable number; the total is arithmetic).
+
+**What it opens.** Ranked recommendations in the baseline: (1) install the CUDA torch extra — every
+transformer number here is CPU on a GPU box, and it is the same two stages a GPU fixes; (2) defer the
+eager reranker load in `RAGPipeline.__init__` for **3.7 s off every launch**; (3) persist the BM25
+index — 1.8 s today, but it is the startup component that scales with the corpus and it is rebuilt
+from scratch every launch; (4) fix KI-30 before optimizing the enrichment layer, since incremental
+runs are unreachable until then.
+
+**Gate.** ruff + format clean · `mypy src` 84 files · `docs_check --strict` 0/0.
+
+---
 ## 2026-07-28 (3) — verification pass over the graph + library surfaces: one fix, one new known issue (KI-29)
 
 **What changed.** `apps/desktop/src/lib/graph/ConceptGraph.svelte` — the "Appears in N documents"

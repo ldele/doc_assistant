@@ -184,8 +184,11 @@ class RAGPipeline:
             log.warning("empty_index", hint="vector-only until documents are ingested")
             self.ensemble = EnsembleRetriever(retrievers=[vector], weights=[1.0])
 
-        log.info("loading_reranker")
-        self.reranker = CrossEncoder("BAAI/bge-reranker-base", **_sigmoid_activation_kwarg())
+        # The reranker is loaded **lazily** (see the `reranker` property): its weights are a
+        # measured 3.7 s of a 16.1 s cold launch, and nothing needs it until a question has already
+        # been retrieved for — by which point the first query absorbs the load invisibly.
+        # Baseline: tests/eval/baselines/stage_profile_2026-07-28.md.
+        self._reranker: CrossEncoder | None = None
 
         log.info("loading_llm")
         # The *effective* generation provider/model — starts at the config default; a caller
@@ -194,6 +197,25 @@ class RAGPipeline:
         self.provider = LLM_PROVIDER
         self.model = LLM_MODEL
         self.llm = self._build_llm()
+
+    @property
+    def reranker(self) -> CrossEncoder:
+        """The cross-encoder, loaded on first use and cached for the process lifetime.
+
+        A property rather than an eager attribute so that constructing a pipeline — which the API
+        does in its lifespan, before any question exists — does not pay the weight load. Callers
+        still read ``self.reranker``, so the seam is invisible to them; a test stubbing the
+        reranker can keep assigning to it (the setter below) or set ``_reranker`` directly.
+        """
+        if self._reranker is None:
+            log.info("loading_reranker")
+            self._reranker = CrossEncoder("BAAI/bge-reranker-base", **_sigmoid_activation_kwarg())
+        return self._reranker
+
+    @reranker.setter
+    def reranker(self, value: CrossEncoder) -> None:
+        """Kept so existing code (and tests) can inject a fake by plain assignment."""
+        self._reranker = value
 
     def _build_llm(self) -> Any:
         """Build the streaming analysis model from ``LLM_PROVIDER``/``LLM_MODEL``."""
@@ -342,9 +364,14 @@ class RAGPipeline:
             )
             all_candidates = all_candidates[:RERANK_CANDIDATE_CAP]
 
-        # Rerank against the original query
+        # Rerank against the original query.
+        # The ignore is the sentence-transformers stub, not this call: its `predict` overloads
+        # model a *single* pair or a flat list, never the batch-of-pairs form that is the
+        # documented (and shipped) way to score N candidates. Making `reranker` a typed property
+        # is what surfaced it — the eager attribute had been inferred as untyped, so this call site
+        # was never checked at all. Runtime shape is unchanged.
         pairs = [[query, doc.page_content] for doc in all_candidates]
-        scores = self.reranker.predict(pairs)
+        scores = self.reranker.predict(pairs)  # type: ignore[arg-type]
         ranked: list[tuple[Document, float]] = sorted(
             zip(all_candidates, scores, strict=True),
             key=lambda x: x[1],

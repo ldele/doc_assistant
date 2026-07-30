@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-07-30 (created: the cost/scale record + the optimisation trade-off ledger) · class: living -->
+<!-- status: active · updated: 2026-07-31 (created 07-30: the cost/scale record + the trade-off ledger; §3/§5 rewritten for ADR-036/037) · class: living -->
 
 # Performance, cost and scale — the measured record
 

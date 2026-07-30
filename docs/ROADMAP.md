@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-07-30 (PF1-PF3 all done: the performance record, KI-32 steps 1-2, and the knob question closed as ADR-037) · class: living -->
+<!-- status: active · updated: 2026-07-31 (PF1-PF3 all done: the performance record, KI-32 steps 1-2, and the knob question closed as ADR-037) · class: living -->
 
 # ROADMAP — doc_assistant
 

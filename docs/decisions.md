@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-07-30 (ADR-036 on disk; ADR-037 closes the knob question) · class: living -->
+<!-- status: active · updated: 2026-07-31 (ADR-036 on disk; ADR-037 closes the knob question) · class: living -->
 
 # Decisions — index
 

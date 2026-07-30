@@ -263,3 +263,53 @@ def test_the_sparse_retriever_returns_documents_for_the_ensemble(tmp_path, monke
     hits = SparseRetriever(index=rag._sparse, k=5, scope=scope).invoke("dense passage retrieval")
 
     assert hits and all(isinstance(d, Document) for d in hits)
+
+
+class TestRebuild:
+    """`rebuild_sparse_index` (ADR-037) — the Settings button's backend.
+
+    The failure it must not have is silent: rebuilding the file while the ensemble keeps querying
+    the old handle would report success and serve stale results, and nothing downstream would
+    notice.
+    """
+
+    def test_it_rebuilds_from_the_current_store_and_rewires_the_ensemble(
+        self, tmp_path, monkeypatch
+    ):
+        rag = _constructed(tmp_path, monkeypatch)
+        assert rag._sparse is not None and rag._sparse.chunks == 3
+        before = rag.ensemble.retrievers[0].index
+
+        # The corpus changed underneath the running process.
+        fresh = [("a brand new chunk about frogs", {"doc_hash": "zzz", "parent_index": 0})]
+        rag.db = _FakeChroma(fresh)
+
+        chunks = rag.rebuild_sparse_index()
+
+        assert chunks == 1
+        assert rag._sparse.doc_hashes() == {"zzz"}
+        # 2 and 3: the prebuilt ensemble and the scoped memo must not hold the old handle.
+        assert rag.ensemble.retrievers[0].index is rag._sparse
+        assert rag.ensemble.retrievers[0].index is not before
+        assert rag._scoped == {}
+        assert [d.page_content for d in rag.ensemble.retrievers[0].invoke("frogs")] == [
+            "a brand new chunk about frogs"
+        ]
+
+    def test_the_scoped_memo_is_cleared_so_a_folder_turn_cannot_serve_the_old_index(
+        self, tmp_path, monkeypatch
+    ):
+        rag = _constructed(tmp_path, monkeypatch)
+        rag._ensemble_for(frozenset({"aaa"}))
+        assert rag._scoped
+
+        rag.rebuild_sparse_index()
+
+        assert rag._scoped == {}
+
+    def test_it_refuses_when_the_on_disk_arm_is_not_live(self, tmp_path, monkeypatch):
+        """Reporting success for work that could not happen is the failure this guards."""
+        rag = _constructed(tmp_path, monkeypatch, sparse=False)
+
+        with pytest.raises(RuntimeError, match="not active"):
+            rag.rebuild_sparse_index()

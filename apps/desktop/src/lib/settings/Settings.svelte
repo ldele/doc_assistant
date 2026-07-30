@@ -7,6 +7,7 @@
     setMarkersEnabled,
     startIngest,
     getIngestStatus,
+    reindexKeywords,
   } from '../core/api'
   import { onDestroy } from 'svelte'
   import { fade, fly } from 'svelte/transition'
@@ -14,6 +15,7 @@
   import Icon from '../shell/Icon.svelte'
   import ProviderSetup from './ProviderSetup.svelte'
   import Sources from './Sources.svelte'
+  import { describeIndex, formatBytes, perDocument } from './corpus'
 
   // Slide the drawer in/out — but collapse to an instant swap when the OS asks for reduced motion.
   const animate =
@@ -93,6 +95,33 @@
       llmError = String(e)
     } finally {
       llmBusy = false
+    }
+  }
+
+  // ADR-037 — the Corpus panel. `indexInfo` derives the label + the honest memory sentence from
+  // the payload's `keyword_index.mode`; the two arms say opposite things about memory.
+  let reindexing = $state(false)
+  let reindexError = $state<string | null>(null)
+  const indexInfo = $derived(
+    settings
+      ? describeIndex(settings.corpus)
+      : { label: '', memory: '', rebuildable: false }
+  )
+
+  // Non-destructive and bounded (the index is derived data the next launch would rebuild anyway),
+  // so no confirmation step — inform, don't block. The response carries refreshed settings, so the
+  // panel updates without a second request.
+  async function rebuildIndex(): Promise<void> {
+    if (reindexing) return
+    reindexing = true
+    reindexError = null
+    try {
+      const fresh = await reindexKeywords()
+      if (!cancelled) settings = fresh
+    } catch (e) {
+      if (!cancelled) reindexError = String(e)
+    } finally {
+      if (!cancelled) reindexing = false
     }
   }
 
@@ -353,11 +382,36 @@
     <section>
       <h3>Corpus</h3>
       <dl>
-        <dt>Indexed chunks</dt>
-        <dd>{settings.chunk_count.toLocaleString()}</dd>
+        <dt>Library</dt>
+        <dd>
+          {settings.corpus.documents.toLocaleString()} documents ·
+          {settings.corpus.chunks.toLocaleString()} chunks
+        </dd>
+        <dt>Disk</dt>
+        <dd>
+          {formatBytes(settings.corpus.disk.total_bytes)}
+          {#if perDocument(settings.corpus.disk.total_bytes, settings.corpus.documents)}
+            <span class="muted"
+              >· {perDocument(settings.corpus.disk.total_bytes, settings.corpus.documents)}</span
+            >
+          {/if}
+        </dd>
+        <dt>Keyword index</dt>
+        <dd class="index-row">
+          <span>{indexInfo.label}</span>
+          {#if indexInfo.rebuildable}
+            <button class="ghost" onclick={rebuildIndex} disabled={reindexing || busy}>
+              {reindexing ? 'Rebuilding…' : 'Rebuild'}
+            </button>
+          {/if}
+        </dd>
         <dt>Data home</dt>
         <dd class="path">{settings.data_home}</dd>
       </dl>
+      <p class="banner">{indexInfo.memory}</p>
+      {#if reindexError}
+        <p class="banner err">{reindexError}</p>
+      {/if}
     </section>
 
     <section>
@@ -742,6 +796,19 @@
   .switch-row input {
     width: auto;
     accent-color: var(--accent);
+  }
+  /* ADR-037 — the Corpus panel's index row: label left, the bounded rebuild action right. */
+  .index-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+  }
+  .index-row .ghost {
+    margin-top: 0;
+    padding: 0.2rem 0.55rem;
+    font-size: 0.76rem;
+    flex: none;
   }
   .ghost {
     margin-top: 0.8rem;

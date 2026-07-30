@@ -13,7 +13,13 @@ export { getDocConnections } from './connections'
 export { listFolders, createFolder, renameFolder, deleteFolder, addDocumentsToFolder, removeDocumentFromFolder } from './folders'
 export { listKeywordFamilies, createKeywordFamily, renameKeywordFamily, addFamilyMember, removeFamilyMember, deleteKeywordFamily, detectKeywordFamilies } from './keywords'
 export { compareRetrieval } from './compare'
-export { getSettings, setSourceDir, setLlmProvider, setMarkersEnabled } from './settings'
+export {
+  getSettings,
+  setSourceDir,
+  setLlmProvider,
+  setMarkersEnabled,
+  reindexKeywords,
+} from './settings'
 export { getSetup, saveAnthropicKey, clearAnthropicKey } from './setup'
 export { startIngest, getSources, patchSource, getIngestStatus } from './sources'
 export { getConceptGraph, getGapList, triageGap, getConceptPresence, rebuildConceptGraph, getGraphRebuildStatus } from './concepts'

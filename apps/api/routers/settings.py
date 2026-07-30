@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sqlite3
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
@@ -43,3 +44,30 @@ def post_settings(request: Request, body: SettingsUpdate) -> dict[str, Any]:
     if body.epistemics_markers_enabled is not None:
         app_settings.set_markers_enabled(body.epistemics_markers_enabled)
     return _full_settings(request.app)
+
+
+@router.post("/api/settings/reindex-keywords")
+def reindex_keywords(request: Request) -> dict[str, Any]:
+    """Rebuild the on-disk keyword index and swap it into the live pipeline (ADR-037).
+
+    **Not destructive, and that is why it needs no confirmation:** the index is derived data that
+    the next launch would rebuild anyway once the corpus fingerprint moves. The button exists to
+    save that restart after an ingest.
+
+    Synchronous on purpose. It is 2.8 s on a 33k-chunk corpus and minutes at the 10k-document
+    contract — bounded work with a definite end, unlike a full re-ingest, so a job runner with
+    polling would be machinery for nothing. If it ever stops being bounded, it becomes a `202`
+    + status route like the graph rebuild, not a longer spinner.
+
+    409 when the on-disk arm is not live (`DOC_SPARSE_INDEX=0` or a build that failed at
+    construction): reporting success for work that could not happen is the failure this route
+    exists to avoid.
+    """
+    controller: ChatController = request.app.state.controller
+    try:
+        chunks = controller.rag.rebuild_sparse_index()
+    except RuntimeError as e:
+        raise HTTPException(status_code=409, detail=str(e)) from e
+    except (OSError, sqlite3.Error) as e:
+        raise HTTPException(status_code=500, detail=f"index rebuild failed: {e}") from e
+    return {"chunks": chunks, **_full_settings(request.app)}

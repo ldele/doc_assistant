@@ -89,16 +89,20 @@ def _settings_view() -> dict[str, Any]:
 
 
 def _full_settings(app: FastAPI) -> dict[str, Any]:
-    """Read view: the locked knobs plus the data home, the user's source folder, chunk_count."""
+    """Read view: the locked knobs plus the data home, the user's source folder, corpus facts."""
     controller: ChatController = app.state.controller
     source = app_settings.get_source_dir()
+    chunks = controller.chunk_count()
     return {
         **_settings_view(),
         "data_home": str(DATA_PATH),
         "source_dir": str(source),
         "source_dir_exists": source.is_dir(),
         "supported_formats": SUPPORTED_NOTE,
-        "chunk_count": controller.chunk_count(),
+        "chunk_count": chunks,
+        # ADR-037: what this corpus costs on this machine. Assembled by the controller (it needs
+        # the live pipeline's arm, not the presence of a file); the shell only serializes it.
+        "corpus": controller.corpus_stats().as_dict(),
     }
 
 

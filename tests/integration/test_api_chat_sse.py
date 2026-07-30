@@ -43,6 +43,20 @@ def _turn_result() -> TurnResult:
     )
 
 
+class _FakeRag:
+    """The pipeline surface the settings payload needs: which sparse arm is live (ADR-036/037)."""
+
+    def __init__(self, on_disk: bool = True) -> None:
+        self.sparse_index_active = on_disk
+        self.rebuilds = 0
+
+    def rebuild_sparse_index(self) -> int:
+        if not self.sparse_index_active:
+            raise RuntimeError("the on-disk keyword index is not active; nothing to rebuild")
+        self.rebuilds += 1
+        return 4242
+
+
 class FakeController:
     """Canned TurnEvent stream — no pipeline, no DB, no LLM."""
 
@@ -51,9 +65,22 @@ class FakeController:
         # ADR-010: every handle_message call's `overrides` arg, in call order.
         self.received_overrides: list[object] = []
         self.received_scopes: list[str | None] = []
+        self.rag = _FakeRag()
 
     def chunk_count(self) -> int:
         return 7
+
+    def corpus_stats(self):
+        from doc_assistant import corpus_stats as stats
+
+        return stats.corpus_stats(
+            documents=1,
+            chunks=self.chunk_count(),
+            keyword_index_on_disk=self.rag.sparse_index_active,
+        )
+
+    def rebuild_keyword_index(self) -> int:
+        return self.rag.rebuild_sparse_index()
 
     def handle_message(
         self,

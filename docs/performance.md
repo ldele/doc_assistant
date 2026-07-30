@@ -259,34 +259,37 @@ money only. That distinction is what decides whether a knob is safe to expose (�
 "Locked" means the project rule in `.claude/CONTEXT.md`: change only via an eval-harness experiment
 that beats the control beyond its variance.
 
-## 5. Should the cost knobs be user-facing? (open decision)
+## 5. Should the cost knobs be user-facing? **Decided 2026-07-30 — no** (ADR-037)
 
-The question is live because the app is getting solid enough to be pointed at a real library, and a
-few hundred documents is not a lot. A recommendation, not a decision:
+The question was filed as PF2 while the sparse arm still held the corpus in RAM. **ADR-036 dissolved
+most of its premise**: of the knobs §4 proposed exposing, the BM25 snapshot became legacy-only, the
+scoped-cache size lost the cost it traded against, the ingest knobs turned out to be read only by
+`scripts/` (CLI runners with their own flags), and the one new switch — `DOC_SPARSE_INDEX` — is
+**not** output-neutral, which was the test that made a knob safe to expose. What remained was a
+single minor toggle, while the need behind the request (*will this hold a big library?*) had been
+answered in engineering.
 
-**Tier A — expose, as a small set of presets rather than switches.** Every knob this optimisation
-pass introduced is **output-neutral**: the BM25 snapshot, reranker laziness, the scoped cache, ingest
-workers. They cannot change an answer, so exposing them does not touch the locked-settings
-discipline. Presets read better than four checkboxes, e.g. *Fast launch* (today's default), *Fast
-first answer* (eager reranker), *Small disk* (no snapshot). Each preset should state its measured
-trade in the UI, using this file's numbers.
+**So the app ships the answer, not the controls**
+([ADR-037](decisions/ADR-037-corpus-facts-not-performance-knobs.md)). Settings → **Corpus** reports
+documents, chunks, disk total and per document, which keyword-index implementation is serving, its
+size and when it was built, and one sentence about memory — plus one bounded action, *Rebuild*, for
+the keyword index only. Three sub-decisions worth carrying:
 
-**Tier B — leave as it is.** The quality knobs already have a home: ADR-010's per-turn sandbox
-(non-persistent, recorded in provenance so an answer can always be traced to the knobs that produced
-it). That design is right. The one gap worth considering is *persisting* a sandbox choice (today
-`TOP_K` is per-turn only) — which would need the provenance record to keep naming the effective
-value, not the default.
+- **No performance presets, and no restart semantics.** Every knob in §4 is decided at pipeline
+  construction and there is no live rebuild path, so exposing one would mean either building that
+  path or asking users to restart for a second of launch time.
+- **The rebuild button is the index, never the corpus.** A keyword-index rebuild is derived data the
+  next launch would regenerate anyway (2.8 s here, minutes at 10k documents). A *full* re-index is
+  hours at that size with no progress or resumability — a button for it would be the worst reading
+  of inform-don't-block.
+- **The memory line states the shape, never a live number.** "Memory does not grow with your
+  library" is the decision-relevant fact and is now true by construction; a live RSS figure needs a
+  new dependency, fluctuates, and is dominated by model weights a user would misread as their
+  corpus's cost.
 
-**Tier C — keep locked, but show them.** `CANDIDATE_K`, `BM25_WEIGHT`, chunk sizes, the embedder:
-read-only in the UI for transparency, with the re-index cost quoted from the estimator (~4 chunks per
-1,000 characters × ~3.8 ms/chunk on this GPU), and the change path staying in the CLI + eval harness.
-Silently letting a user change these would make every quality claim in `evals/` unattributable.
-
-**The caveat that matters most.** No knob buys past §3's memory ceiling. If the plan is thousands of
-documents, the work is **PF3 / KI-32** (get the BM25 index off the Python heap) plus resumable
-parallel extraction — a settings page would only let a user choose which symptom to meet first.
-
-**Next step:** `grill-me` on the exposure decision, then an ADR. Roadmap row **PF2**.
+**The knobs in §4 stay exactly where they are:** environment variables, documented here, a developer
+rollback surface. ADR-010's per-turn sandbox still owns the *quality* knobs, and the eval-locked
+settings stay locked.
 
 ## 6. Measurement debt
 

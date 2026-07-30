@@ -11,6 +11,64 @@ Format: What changed | Why | Rejected alternatives | What it opens
 > (moved verbatim 2026-07-21). This file keeps 2026-07-15 onward.
 
 ---
+## 2026-07-30 (4) — PF2 closed as **no knobs**: ADR-036 dissolved the premise, so the app ships corpus facts instead
+
+**What changed.** New `corpus_stats.py` (documents, chunks, disk per artifact, which keyword-index
+arm is live + its size and build time), `ChatController.corpus_stats()` / `rebuild_keyword_index()`,
+`RAGPipeline.sparse_index_active` + `rebuild_sparse_index()`, `POST
+/api/settings/reindex-keywords`, the `corpus` block on `GET /api/settings`, and the Settings →
+**Corpus** section rendering it through a tested pure module (`settings/corpus.ts`). 20 guard tests
+(8 backend, 3 route, 9 frontend). ADR-037 records the decision; ROADMAP PF2 closed.
+
+**The finding that decided it.** PF2 was filed while the sparse arm still held the corpus in RAM.
+Checking its proposed knob list against the code *after* ADR-036 — before asking the user anything —
+found the premise mostly gone: `DOC_BM25_CACHE` now only affects the legacy arm; the
+scoped-ensemble cache size lost the rebuild cost it traded against; `MARKER_MAX_WORKERS` /
+`MAX_VLM_CALLS_PER_DOC` / `FIGURE_RENDER_DPI` are read **only by `scripts/`**, never by the in-app
+ingest; and the one new switch, `DOC_SPARSE_INDEX`, is **not output-neutral**, which was the test
+that made a knob safe to expose. What remained was a single minor toggle — while the need behind the
+request ("a few hundred documents is not a lot") had already been met in engineering.
+
+**So the question put to the user was the right one to ask**, and all three answers are theirs:
+corpus facts in Settings rather than presets or documentation-only; **one** bounded action (rebuild
+the keyword index, not a full re-index — that is hours at 10k documents with no progress yet); and
+the memory line **states the shape, never a live number** (a live RSS figure needs a new dependency,
+fluctuates, and is dominated by model weights a user would misread as their corpus's cost).
+
+**The design rule worth keeping: the sentence is frontend copy, `keyword_index.mode` is the wire.**
+The two arms say *opposite* things about memory — on-disk keeps it flat, the legacy in-RAM arm grows
+at ~5.9 KB/chunk. A pre-rendered sentence from the backend would be one refactor away from
+reassuring a user whose process is doing the reverse. For the same reason `corpus_stats` reports the
+**live pipeline's** arm rather than whether an index file exists: a stale file beside the legacy arm
+would otherwise answer the reassuring way. Both are pinned by tests.
+
+**Rejected.** (a) *The three-tier preset proposal* in `performance.md` §5 — written pre-ADR-036, and
+its Tier A is now empty; §5 is rewritten to record why. (b) *Reading `controller.rag._sparse` from
+the router* — the shell would have owned logic (non-negotiable #3); the assembly moved to the
+controller and the pipeline grew a public `sparse_index_active`. (c) *A `202` + status route for the
+rebuild* — it is seconds here and minutes at 10k documents, bounded work with a definite end, so
+polling machinery would buy nothing; the ADR names the condition that would change that. (d) *A
+confirmation dialog* — the index is derived data the next launch would rebuild anyway; a confirm
+would imply a risk that does not exist.
+
+**The rebuild's real hazard, and the test for it.** Swapping a live index means three things move
+together — the handle, the prebuilt ensemble whose `SparseRetriever` binds it, and the scoped-
+ensemble LRU whose entries bind it too. Miss any one and the app serves results from the index the
+user just replaced, with no error anywhere. `TestRebuild` pins all three plus the 409 when the
+on-disk arm is not live.
+
+**Gates:** ruff + format clean · `mypy src` **87 files** · **pytest 1498 passed** (+18) ·
+`svelte-check` **187 files 0/0** · **npm test 67/67** (+9) · `docs_check --strict` 0/0.
+**Live-verified** on the real corpus (97 documents / 33,105 chunks): the panel reads *97 documents ·
+33,105 chunks · 589 MB · 6.1 MB per document · on disk, 39 MB, built 4 h ago*; clicking **Rebuild**
+went `built 4 h ago` → `Rebuilding…` → `built just now` with no console errors, and retrieval after
+the live swap still returned 10 sources led by `dpr_karpukhin_2020.pdf`. Checked at 1280 px and at
+375 px dark (no overflow, label and button do not collide). ⚠ The pane reports
+`visibilityState: hidden`, which freezes the fly transition and parks the drawer off-screen — the
+trap recorded twice before; geometry was measured after neutralising the transform, and the section
+matches its siblings' box exactly.
+
+---
 ## 2026-07-30 (3) — ADR-036: the sparse arm moves to an on-disk SQLite/FTS5 index. **195 → 21 MB, no corpus in RAM** — and retrieval changes, so it was gated on an A/B
 
 **What changed.** New `sparse_index.py`: one SQLite database beside the Chroma store holding chunk

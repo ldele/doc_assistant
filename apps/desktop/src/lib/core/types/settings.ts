@@ -33,6 +33,29 @@ export interface Settings {
   source_dir_exists: boolean
   supported_formats: string
   chunk_count: number
+  // ADR-037 — what this corpus costs on this machine. Assembled by the controller from
+  // doc_assistant/corpus_stats.py; `keyword_index.mode` is the field the panel's memory
+  // sentence keys on, because the honest sentence differs per arm.
+  corpus: CorpusFacts
+}
+
+export interface CorpusFacts {
+  documents: number
+  chunks: number
+  disk: {
+    vector_store_bytes: number
+    baseline_store_bytes: number
+    keyword_index_bytes: number
+    document_store_bytes: number
+    extraction_cache_bytes: number
+    total_bytes: number
+  }
+  keyword_index: {
+    // 'on_disk' (ADR-036, memory flat) | 'in_memory' (legacy arm, memory grows) | 'disabled'
+    mode: 'on_disk' | 'in_memory' | 'disabled'
+    bytes: number | null
+    built_at: string | null
+  }
 }
 // One entry in the settings view's provider picker (ADR-011, U1c). `available: false` means the
 // provider's credential is missing (e.g. no ANTHROPIC_API_KEY) — the UI disables that option.

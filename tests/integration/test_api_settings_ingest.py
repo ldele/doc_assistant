@@ -17,14 +17,39 @@ from apps.api.main import create_app
 from fastapi.testclient import TestClient
 
 
+class _FakeRag:
+    """The pipeline surface the settings payload needs: which sparse arm is live (ADR-036/037)."""
+
+    def __init__(self, on_disk: bool = True) -> None:
+        self.sparse_index_active = on_disk
+        self.rebuilds = 0
+
+    def rebuild_sparse_index(self) -> int:
+        if not self.sparse_index_active:
+            raise RuntimeError("the on-disk keyword index is not active; nothing to rebuild")
+        self.rebuilds += 1
+        return 4242
+
+
 class FakeController:
     def __init__(self, count: int = 0) -> None:
         self._count = count
         # ADR-011 (U1c): every reconfigure() call, in order.
         self.reconfigure_calls: list[tuple[str, str]] = []
+        self.rag = _FakeRag()
 
     def chunk_count(self) -> int:
         return self._count
+
+    def corpus_stats(self):
+        from doc_assistant import corpus_stats as stats
+
+        return stats.corpus_stats(
+            documents=1, chunks=self._count, keyword_index_on_disk=self.rag.sparse_index_active
+        )
+
+    def rebuild_keyword_index(self) -> int:
+        return self.rag.rebuild_sparse_index()
 
     def reconfigure(self, provider: str, model: str) -> None:
         # Exercises the SAME validation/persistence a real ChatController.reconfigure runs
@@ -250,3 +275,44 @@ def test_ingest_rejects_concurrent_run(settings_file: Path) -> None:
     assert client.post("/api/ingest").status_code == 409  # second rejected while running
     release.set()
     _poll_until(client, state="done")
+
+
+# ---- ADR-037: the Corpus panel's facts + the bounded rebuild action ----
+
+
+def test_settings_carries_the_corpus_facts(settings_file: Path) -> None:
+    """The panel reads straight from this payload, so its shape is the contract."""
+    client = TestClient(create_app(controller=FakeController(count=42)))
+
+    corpus = client.get("/api/settings").json()["corpus"]
+
+    assert corpus["chunks"] == 42
+    assert corpus["keyword_index"]["mode"] == "on_disk"
+    assert "total_bytes" in corpus["disk"]
+
+
+def test_reindex_keywords_rebuilds_and_returns_the_refreshed_settings(settings_file: Path) -> None:
+    controller = FakeController(count=42)
+    client = TestClient(create_app(controller=controller))
+
+    body = client.post("/api/settings/reindex-keywords")
+
+    assert body.status_code == 200
+    assert body.json()["chunks"] == 4242  # the rebuild's own count, not the corpus count
+    assert controller.rag.rebuilds == 1
+    # The response doubles as a settings refresh, so the panel needs no second request.
+    assert "corpus" in body.json()
+
+
+def test_reindex_keywords_is_409_when_the_on_disk_arm_is_not_live(settings_file: Path) -> None:
+    """`DOC_SPARSE_INDEX=0` (or a failed build): reporting success for work that could not happen
+    is exactly the lie this route must not tell."""
+    controller = FakeController(count=42)
+    controller.rag.sparse_index_active = False
+    client = TestClient(create_app(controller=controller))
+
+    body = client.post("/api/settings/reindex-keywords")
+
+    assert body.status_code == 409
+    assert "not active" in body.json()["detail"]
+    assert controller.rag.rebuilds == 0

@@ -337,6 +337,59 @@ class RAGPipeline:
             log.warning("sparse_index_build_failed", error=str(e), path=str(path))
             return None
 
+    @property
+    def sparse_index_active(self) -> bool:
+        """Whether the **on-disk** sparse arm (ADR-036) is the one serving this process.
+
+        False means the legacy in-RAM arm is live, which is a materially different machine to be:
+        it reintroduces the corpus-linear memory KI-32 measured. Public because the answer is a
+        fact about the running pipeline that the settings surface reports; `_sparse` itself stays
+        private.
+        """
+        return self._sparse is not None
+
+    def rebuild_sparse_index(self) -> int:
+        """Rebuild the on-disk keyword index from the store and swap it into the live pipeline.
+
+        The index self-heals at the next launch (a changed corpus moves the fingerprint), so this
+        exists only to save a restart after an ingest — which is why the Settings panel offers it
+        and why it is **not** destructive: it rewrites derived data that can always be rebuilt.
+
+        Three things have to move together, and forgetting any one of them serves stale results
+        from an index the user just rebuilt:
+
+        1. the handle (`self._sparse`) — the old one is closed, so its file can be replaced;
+        2. the prebuilt whole-corpus ensemble, whose `SparseRetriever` binds the old handle;
+        3. the scoped-ensemble LRU, whose entries bind it too.
+
+        Returns the number of chunks indexed. Raises `RuntimeError` when the on-disk arm is not the
+        live one (`DOC_SPARSE_INDEX=0`, or a build that failed at construction): silently doing
+        nothing would report success for work that did not happen.
+        """
+        if self._sparse is None:
+            raise RuntimeError("the on-disk keyword index is not active; nothing to rebuild")
+
+        collection = get_collection_name(get_active_model_name())
+        chroma_path = PC_CHROMA_PATH if USE_PARENT_CHILD else CHROMA_PATH
+        path = sparse_index.index_path(chroma_path)
+        stamp = sparse_index.fingerprint_from_pages(
+            collection, ([str(i) for i in page["ids"]] for page in iter_pages(self.db, include=[]))
+        )
+
+        self._sparse.close()
+        rebuilt = sparse_index.SparseIndex.build(path, stamp, self._iter_retrievable_chunks())
+        self._sparse = rebuilt
+        self._scoped.clear()
+        vector = self.db.as_retriever(
+            search_kwargs={"k": CANDIDATE_K, "filter": {"keep_for_retrieval": {"$ne": False}}}
+        )
+        self.ensemble = EnsembleRetriever(
+            retrievers=[SparseRetriever(index=rebuilt, k=CANDIDATE_K), vector],
+            weights=list(self._weights),
+        )
+        log.info("sparse_index_rebuilt", chunks=rebuilt.chunks)
+        return rebuilt.chunks
+
     def _iter_retrievable_chunks(self) -> Iterator[tuple[str, dict[str, Any]]]:
         """Stream ``(text, metadata)`` for every chunk the retriever is allowed to return.
 

@@ -16,7 +16,7 @@ from pathlib import Path
 import structlog
 from langchain_core.documents import Document
 
-from doc_assistant import app_settings, compare, conversations, export
+from doc_assistant import app_settings, compare, conversations, corpus_stats, export, library
 from doc_assistant.chat_controller.events import Result, Step, Token, TurnEvent
 from doc_assistant.chat_controller.helpers import (
     _build_claims_block,
@@ -111,6 +111,23 @@ class ChatController:
 
     def chunk_count(self) -> int:
         return self.rag.chunk_count()
+
+    def corpus_stats(self) -> corpus_stats.CorpusStats:
+        """What this corpus costs on this machine (ADR-037) — the Settings "Corpus" panel's facts.
+
+        Assembled here rather than in the API shell because it needs the **live pipeline's** arm
+        (whether the on-disk keyword index is the one actually serving), and reaching through a
+        controller into a pipeline's private state from a router would put logic in the shell.
+        """
+        return corpus_stats.corpus_stats(
+            documents=library.count_documents(),
+            chunks=self.chunk_count(),
+            keyword_index_on_disk=self.rag.sparse_index_active,
+        )
+
+    def rebuild_keyword_index(self) -> int:
+        """Rebuild the on-disk keyword index and swap it in; returns the chunk count (ADR-037)."""
+        return self.rag.rebuild_sparse_index()
 
     def reconfigure(self, provider: str, model: str) -> None:
         """Switch the live generation provider/model (ADR-011, U1c desktop provider switch).

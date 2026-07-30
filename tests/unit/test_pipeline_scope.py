@@ -66,6 +66,9 @@ def _rig(monkeypatch: pytest.MonkeyPatch) -> RAGPipeline:
     monkeypatch.setattr("doc_assistant.pipeline.USE_MULTI_QUERY", False)
     rag = RAGPipeline.__new__(RAGPipeline)
     docs = _docs()
+    # These tests exercise the legacy in-RAM arm (still shipped as the ADR-036 fallback);
+    # `None` selects it explicitly. The on-disk arm has its own file, test_pipeline_sparse_arm.py.
+    rag._sparse = None
     rag._bm25_docs = docs
     rag._scoped = OrderedDict()
     rag._weights = [0.4, 0.6]

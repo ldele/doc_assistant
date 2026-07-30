@@ -35,7 +35,9 @@ Full stack + locked settings: `.claude/CONTEXT.md`.
    **Resolved** index; closed issues in full at `docs/archive/KNOWN_ISSUES-resolved-001.md`.
 
 Reference: `docs/ROADMAP.md` · `docs/architecture.md` · `docs/decisions/` (ADRs — living index
-`docs/decisions.md`, ADR-022) · `docs/specs/` · `GLOSSARY.md` (pinned vocabulary).
+`docs/decisions.md`, ADR-022) · `docs/specs/` · `GLOSSARY.md` (pinned vocabulary) ·
+`docs/performance.md` (cost/scale record + the optimisation trade-off ledger; quality lives in
+`evals/README.md`).
 
 ## Sub-module focus (big-project layout, ADR-021)
 

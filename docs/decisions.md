@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-07-29 (ADR-035 added — BM25 launch snapshot) · class: living -->
+<!-- status: active · updated: 2026-07-30 (ADR-036 — the sparse arm moves on disk) · class: living -->
 
 # Decisions — index
 
@@ -45,3 +45,4 @@ the locked retrieval/chunking settings that predate per-file ADRs.
 | [ADR-033](decisions/ADR-033-generation-presets.md) | Generation presets: frozen citation contract, swappable brief | proposed (stub) |
 | [ADR-034](decisions/ADR-034-in-app-provider-setup.md) | First-run setup in the app: in-app API key in a data-home file (not a keychain) + provider readiness; extends ADR-011's v1 | accepted (built) |
 | [ADR-035](decisions/ADR-035-bm25-index-persistence.md) | Persist the BM25 arm as a pure-data snapshot (no third-party classes on disk), fingerprinted on chunk ids + tokeniser source | accepted (built) |
+| [ADR-036](decisions/ADR-036-sparse-index-on-disk.md) | Move the sparse arm off the Python heap into an SQLite/FTS5 index (memory stops scaling with the corpus; ranking changes, gated on an A/B) | accepted (built) |

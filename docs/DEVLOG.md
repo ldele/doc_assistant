@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-07-29 · class: append-only -->
+<!-- status: active · updated: 2026-07-30 · class: append-only -->
 
 # DEVLOG — doc_assistant
 
@@ -9,6 +9,232 @@ Format: What changed | Why | Rejected alternatives | What it opens
 
 > Entries **2026-07-14 and earlier** live in [`docs/archive/DEVLOG-archive-001.md`](archive/DEVLOG-archive-001.md)
 > (moved verbatim 2026-07-21). This file keeps 2026-07-15 onward.
+
+---
+## 2026-07-30 (3) — ADR-036: the sparse arm moves to an on-disk SQLite/FTS5 index. **195 → 21 MB, no corpus in RAM** — and retrieval changes, so it was gated on an A/B
+
+**What changed.** New `sparse_index.py`: one SQLite database beside the Chroma store holding chunk
+text + metadata, a **contentless FTS5 index** over the same `keywords.tokenize` token stream, and the
+parent blocks in their own table. `RAGPipeline` wires a `SparseRetriever` into the ensemble instead of
+`BM25Retriever`, resolves parent text through the index, and scopes a folder turn with
+`WHERE doc_hash IN (...)` inside the ranked query instead of rebuilding an index over a subset.
+`chroma_read.iter_pages` (new, `get_all` now a thin accumulator over it) lets the build stream.
+`DOC_SPARSE_INDEX=0` keeps the legacy in-RAM arm. **KI-32 is resolved and archived.**
+
+**Measured on the live corpus (97 docs / 33,105 chunks), on-disk vs in-RAM, separate processes:**
+
+| | in-RAM (control) | on-disk (shipped) | |
+|---|---:|---:|---|
+| Python heap after construction | 185 MB | **21 MB** | **8.8×**, and **0 chunks resident** |
+| Construction | 4.53 s | **2.79 s** | 1.6× |
+| Sparse arm per query | 66.6 ms | **27.4 ms** | 2.4× |
+| `retrieve_with_scores` per turn | 336 ms | **279 ms** | 1.2× |
+| On disk | 39.9 MB snapshot | 40.7 MB index | ~equal |
+
+**Why FTS5 and not an exact-equivalence rewrite.** Option B — reimplementing Okapi over an SQLite
+postings table — would have preserved ranking *exactly*, and was rejected on its slope: the in-RAM
+arm's semantics are "score every document containing any query term", stopwords included, so
+reproducing them on disk means reading most of the corpus per query, in Python. It would have
+inherited the cost profile this work exists to remove. Tantivy was rejected for the packaging risk
+(KI-9) with no gain over FTS5.
+
+**So retrieval changes, and that is the honest cost.** FTS5's `bm25()` is k1=1.2 with no IDF floor;
+`rank_bm25` was k1=1.5, epsilon=0.25. Spiked *before* committing to the design: **84% of top-20
+candidates agree**. End to end, after the cross-encoder re-scores the union: **8 of 10 public eval
+queries return a byte-identical final top-10**, 2 differ by one document, and recall against the
+cases' expected citations is **identical at 1.0000** on pre@5/pre@10/post@5/post@10. ⚠ **Both arms
+score a perfect 1.0000, so that instrument has a ceiling** — it demonstrates parity at the resolution
+available and cannot see a small regression. Hence `DOC_SPARSE_INDEX=0` stays until the A/B is
+repeated on a discriminating case set.
+
+**Three things the probes corrected, each after being wrong first.**
+1. **Chroma is not corpus-resident.** A stage-by-stage working-set probe first showed **+449 MB** on
+   "the first vector query", which read as *the vector store is now the ceiling*. Isolating the embed
+   step moved all 449 MB to **CUDA context initialisation**; the vector query itself costs **+1 MB**.
+   A wrong conclusion about the next piece of work, avoided by one more measurement.
+2. **The launch id scan was the last corpus-linear allocation.** Collecting chunk ids to fingerprint
+   the store peaked at **3.1 MB (94 B/chunk ⇒ ~0.3 GB at the contract)**. The fingerprint now streams
+   page by page and is order-independent by **summing** per-id digests rather than sorting them —
+   sorting is what forced the list into memory. Same digest, proven by a test.
+3. **The first memory-property test was vacuous.** It asserted `_bm25_docs == []` on a rig that had
+   set that attribute itself, so it passed with the in-RAM load reintroduced. Rewritten to construct a
+   **real** `RAGPipeline` with fakes only at its boundaries; it now fails when the guard is removed.
+
+**Rejected.** (a) *Deleting the in-RAM arm now* — it is the rollback and it was the control for the
+A/B; deleting it before the eval can discriminate would leave no way back from a quality regression
+nobody can currently see. (b) *Keeping the scoped-ensemble LRU's rationale* — the ~20 µs/chunk
+rebuild it existed for is gone; the memo stays because it still serves the fallback path, and the
+comment now says so rather than implying a cost that no longer exists. (c) *An `AND` MATCH expression*
+— FTS5's default for a bare term list, and it would have silently returned a fraction of the
+candidates. (d) *Serving a stale index* — unlike `bm25_cache`, this **is** the arm, so a stale or
+corrupt database is rebuilt, never used.
+
+**Guard tests: 52 new** (`test_sparse_index.py` 36 + `test_pipeline_sparse_arm.py` 16; suite
+1432 → 1484), split the way ADR-035's were: *semantics* (OR-not-AND, tokenizer parity
+including `cross-encoder`, scope applied before `LIMIT`, FTS5 operators in user text treated as data),
+*refusal* (stale ids, wrong collection, changed tokeniser, corrupt file, foreign database, failed
+build leaving no half-index), and *the memory property* itself. Two existing rigs
+(`test_pipeline_scope.py`, `test_pipeline_parent_texts.py`) now set `_sparse = None` explicitly —
+they pin the fallback arm, which is still shipped.
+
+**A defect the tests caught, worth keeping.** `fingerprint` originally imported `tokenize` at module
+level, so monkeypatching `keywords.tokenize` could not invalidate the index — the separate-binding
+trap `src/doc_assistant/CLAUDE.md` already records, one layer down. Now imported per call.
+
+**Live-verified, $0** (Ollama `llama3.1:8b`): one real `ChatController` turn returned **10 sources**,
+top `dpr_karpukhin_2020.pdf` at **0.9795**, scores **sigmoid-bounded in [0,1]** (the integrity layer
+depends on that), no page markers in the evidence, clean citation note, `_bm25_docs` empty throughout.
+
+**Gates:** ruff + format clean · `mypy src` **86 files** · **pytest 1484 passed** (+52) ·
+`docs_check --strict` 0/0. `.gitignore` covers the new 41 MB artifact — the same trap ADR-035 hit,
+caught this time before staging.
+
+**What it opens.** Backend RAM is now **flat at ~2 GB**, so the binding constraint moves to the
+**first ingest** (~41 h of single-threaded extraction at 10k documents) and then to disk (~60 GB).
+Launch still scans every chunk id (~0.2 s at 33k, ~20 s projected); the successor for that is an
+ingest-side version stamp, which would also retire chromadb's ~159 MB paged-read high-water mark.
+
+---
+## 2026-07-30 (2) — KI-32 step 1: `parent_text` deduplicated out of the in-RAM corpus. Predicted 3x, measured **1.36x** — and the shortfall is the finding
+
+**What changed.** `pipeline._split_parent_texts` lifts `parent_text` out of every chunk's metadata
+into one `(doc_hash, parent_index) -> text` entry, and `pipeline._parent_text_for` re-attaches it for
+the parents a turn actually returns. `bm25_cache` payload **v2** carries the map instead of ~5.5
+copies per parent (`_CACHE_VERSION` bumped, so an existing snapshot is rebuilt, never reinterpreted).
+17 new guard tests (`test_pipeline_parent_texts.py` 14, `test_bm25_cache.py` 28 -> 31).
+
+**Measured on the live corpus (97 docs / 33,105 chunks, 6,045 parents = 5.5 children each):**
+
+| | before | after | |
+|---|---:|---:|---|
+| Python heap for the BM25 corpus | 265 MB | **195 MB** | **1.36x** (8,012 → 5,892 B/chunk) |
+| Snapshot on disk | 85.2 MB | **39.9 MB** | **2.1x** |
+| `RAGPipeline()` construction | 5.81 / 5.97 s | 5.62 / 5.82 s | unchanged within noise |
+| Retrieval output | — | — | **identical**: 3 queries, 10 sources each, same documents, same scores |
+
+**The prediction was 3x and it was wrong, so the interesting result is the attribution.** The estimate
+came from arithmetic on text sizes (a 400-char child carrying a 2,000-char parent, ~5 copies). The
+duplication factor was right (5.5) and the mechanism was right; the premise that text dominates was
+not. `tracemalloc` by allocation site, per chunk: **~1.4 KB Chroma metadata dicts + strings · ~1.4 KB
+BM25 token strings retained by the index · ~0.8 KB `BM25Okapi.doc_freqs` (one dict per chunk) ·
+~0.6 KB pydantic `Document` overhead · ~0.4 KB child text · ~0.4 KB parent text.** **The chunk text is
+~8% of the footprint.** So step 2 (index off the heap) is not an increment on step 1 — it removes the
+token strings, the frequency dicts and the `Document` materialisation, ~85% of what remains. Every
+downstream claim was corrected: RAM ≈ 2 GB + **2.0** MB/document (was 2.7), 16 GB wall ~**5,000**
+documents (was ~3,700), contract **~22 GB** (was ~29).
+
+**Equivalence, and how it was proved without a second build.** In one process: run the queries on the
+shipped path, then restore `parent_text` into the same `_bm25_docs` metadata from the map, empty the
+map, and re-run. That reproduces the pre-change form against the same store, so a diff is a real
+difference and not a corpus or cache artefact. Identical on all three queries.
+
+**Metadata first, map second — the order is load-bearing.** The vector arm returns documents straight
+from Chroma, which still stores `parent_text` on every child, and a document ingested *while the app
+is running* can only be expanded that way (the map is a construction-time snapshot). Preferring
+metadata keeps that case working exactly as before and makes the change invisible to every existing
+caller and test; the map is only what the BM25 arm now needs.
+
+**Rejected.** (a) *Fetching the top-K parents from Chroma per turn* — the original KI-32 sketch. A
+deduplicated in-memory map gets the same reduction with no per-turn I/O and no chance of the store and
+RAM disagreeing; the fetch only becomes necessary in step 2, when the documents stop being resident at
+all. (b) *Map-only lookup, dropping the metadata branch* — it would silently drop hits for
+documents ingested after construction, and "silently drops hits" is the exact failure shape this
+change had to avoid. (c) *Copying metadata instead of deleting the key* — holds both forms at once and
+saves nothing; the in-place delete is what lets the duplicates be collected. (d) *Removing
+`parent_text` from what Chroma stores* — that is a storage change forcing a re-embed, and the
+enrichment layer reads it from the store (`epistemics`, `concept_skeleton`, `library/chunks`).
+
+**Guard tests, and they are non-vacuous.** Reverting `_parent_text_for` to the old
+`doc.metadata.get("parent_text")` fails **3 of 13** in the new file (measured before the 14th, the
+folder-scoped one, was added), including the equivalence test.
+One test asserts the *absence* of `parent_text` in the in-RAM metadata, i.e. it fails if someone
+restores the duplicates; one asserts that with an empty map those candidates vanish, which is what
+makes the "still expands" test mean something. Cache side: a payload missing `parents` is **refused**
+rather than read as "no parents" (that would drop every BM25-only hit), and a v1-fingerprinted
+snapshot is stale by construction.
+
+**Gates:** ruff + format clean · `mypy src` **85 files** · **pytest 1432 passed** (+17) ·
+`docs_check --strict` 0/0.
+
+**What it opens.** PF3 / KI-32 step 2, now with attribution instead of a guess about where the memory
+is. Also worth noting for it: the snapshot halved but construction did not get faster, so unpickling
+was never the launch cost — the launch cost is building the index and materialising documents, which
+is precisely what step 2 removes.
+
+---
+## 2026-07-30 — the cost/scale record gets one home, and the optimisation pass gets an honest ledger (KI-32 found by measuring)
+
+**What changed.** New `docs/performance.md` (living): launch/query/ingest/sidecar cost, memory, disk,
+an **optimisation trade-off ledger**, linear projections to 1k and 10k documents, the knob inventory,
+a recommendation on which knobs should become user-facing, and a measurement-debt list. Pointers
+added from `README.md` (doc table + the Benchmarks section + a corrected Limitations bullet),
+`docs/setup.md` (hardware), `evals/README.md` (routing row), `AGENTS.md` (Reference line). ROADMAP
+rows **PF1-PF3**. Two new measurements recorded in
+`tests/eval/baselines/memory_and_lazy_reranker_2026-07-30.md`. **No source code changed.**
+
+**Why a second file and not one benchmark page.** `evals/README.md` is the *quality* record, produced
+by the eval harness over a fixed question set. Cost is a different instrument, a different corpus
+condition (device, file cache) and a different audience question. Splitting on that axis keeps **one
+home per number**; the alternative was a third copy of the quality table, which is the shape things
+drift in. Both files now route to each other explicitly so neither reads as the whole story.
+
+**Two figures measured because the ledger could not be written without them.**
+1. **The answer path's memory, which had never been measured.** `tracemalloc` around
+   `RAGPipeline()`: **265 MB of Python heap for 33,105 chunks = ~8.0 KB/chunk** (working set 1,821 MB
+   before the reranker, 2,327 MB after). Cross-checked against the 85 MB snapshot of the same corpus
+   (2.6 KB/chunk packed) — ~3x for live Python objects is what `str`/`dict` overhead predicts, so the
+   two agree. Projected at the 10,000-document contract: **~27 GB**. Filed as **KI-32**.
+2. **The lazy-reranker penalty on the current wheel.** Recorded as ~3.7 s from a CPU split; measured
+   on `cu130` it is **~5.0-5.3 s** (weight load 4.84-5.03 s + 0.2-0.3 s CUDA warm-up, steady-state
+   `predict` 0.01-0.02 s). **The trade got sharper on both sides with the GPU, not better**: shorter
+   launch, longer first answer, much faster answers after. The 07-28 baseline is append-only and was
+   not edited; the correction lives in the new baseline and the ledger.
+
+**The conclusion the ledger forced, and it is not flattering.** ADR-035 made the launch of a design
+that **cannot reach 10k documents** faster. It was still the right call (that is where the slope was,
+and the cache is correct, fingerprinted and disableable), but it lowered a constant and left both the
+O(corpus) shape and the RAM ceiling untouched — and by removing the symptom (a slow launch) it removed
+the thing that would have surfaced the ceiling. The usable form of the finding is a formula, not a
+verdict: **backend RAM ≈ 2 GB + ~2.7 MB per document**, so ~4.7 GB at 1,000 documents, a practical
+wall **under 4,000 on a 16 GB box**, ~9,000 on 32 GB, and ~29 GB for the contract. A few hundred
+documents is cheap; a few thousand works; past that it is a redesign (PF3), and no setting bridges it.
+
+**Two things verification changed while the tables were being written, both worth keeping.**
+1. **Where the 8 KB/chunk actually goes: not the chunk text.** Every child chunk carries its
+   **parent's full text** in metadata (`ingest/chunking.py:194`), so ~5 children each hold a copy of
+   the same 2,000-character parent. ~2.4 KB/chunk of text × ~3x for live Python objects ≈ the measured
+   8.0 KB. That makes step 1 of KI-32 a **bounded** change rather than a redesign (drop `parent_text`
+   from the in-RAM copy, look the top-K parents up instead) — but not a free one, since
+   `retrieve_with_scores` reads `parent_text` off the winning candidate to build the parent it
+   returns. ⚠ **The "~3x, wall moves to ~10,000 documents" predicted here was wrong** — it was built
+   on this same text-size arithmetic. Implemented the same day: **1.36x**. See the entry above.
+2. **Disk was understated: `ingest` writes BOTH vector stores** unconditionally
+   (`ingest/__init__.py:272` baseline, `:300` parent-child), and only the parent-child one serves the
+   default answer path. 120 MB of the 628 MB here, ~19% at any size. Not a bug (flat mode and some
+   sidecars read the baseline store) but it belongs in a disk estimate, so the per-document figure is
+   **6.5 MB**, not the 5.2 MB the parent-child store alone would suggest.
+
+**On the knob question (PF2), the useful distinction turned out to be output-neutrality.** Every knob
+this optimisation pass introduced (BM25 snapshot, reranker laziness, the scoped-ensemble LRU, ingest
+workers) trades time/space/money and **cannot change what an answer says** — so exposing those does
+not touch the locked-settings rule at all, while `TOP_K`/`CANDIDATE_K`/chunk sizes/embedder cannot be
+exposed without either an eval experiment or making `evals/` unattributable. Recommendation recorded,
+decision deliberately **not** made here: it wants `grill-me` and an ADR.
+
+**Rejected.** (a) *Folding cost into `evals/README.md`* — see above. (b) *Editing the 07-28 baseline
+with the corrected 5 s penalty* — those files are append-only for exactly this reason; a new dated
+baseline plus a ledger row keeps the history readable. (c) *Filing the memory ceiling under KI-18* —
+KI-18/19 are scoped to `knowledge/`, and this is the answer path, which is why nobody had found it
+there. (d) *Adding a `--memory` mode to `scripts/profile_stages.py` now* — the right home, but this
+increment is docs; recorded as debt with the method written out so it is reproducible meanwhile.
+(e) *Quoting a new end-to-end launch figure* — the snapshot's 2.7x is a **stage** measurement, and
+inventing a launch total from it would be exactly the arithmetic-dressed-as-measurement this file
+exists to stop. Logged as debt instead.
+
+**What it opens.** PF2 (the exposure ADR) · PF3 / KI-32 (the sparse arm off the heap, plus resumable
+parallel extraction — ~41 h projected at 10k documents, and extraction is GPU-immune) · a synthetic
+≥1k-document corpus, which is the only way to test the linear assumption every projection here rests
+on (RG-016 already wants one).
 
 ---
 ## 2026-07-29 (5) — ADR-035: the BM25 arm launches from a persisted snapshot (5.36 s -> 1.99 s)

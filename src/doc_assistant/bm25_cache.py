@@ -7,11 +7,19 @@ corpus on every launch. Measured at 97 documents / 33,105 chunks that is 1.058 s
 cannot open.
 
 **What is stored, and what deliberately is not.** The payload holds only stdlib types —
-`(text, metadata)` tuples and lists of token strings. The `Document` / `BM25Okapi` /
-`BM25Retriever` objects are reconstructed at load. Pickling the live retriever would be ~0.15 s
-faster and would make the on-disk format an implementation detail of a third-party class, where a
-langchain upgrade could deserialise into a subtly different object rather than fail outright. It
-is a trade ADR-035 rejects: this blob cannot hold a foreign class, so that mode does not exist.
+`(text, metadata)` tuples, lists of token strings, and (since payload v2) a `(doc_hash,
+parent_index) -> parent_text` map. The `Document` / `BM25Okapi` / `BM25Retriever` objects are
+reconstructed at load. Pickling the live retriever would be ~0.15 s faster and would make the
+on-disk format an implementation detail of a third-party class, where a langchain upgrade could
+deserialise into a subtly different object rather than fail outright. It is a trade ADR-035
+rejects: this blob cannot hold a foreign class, so that mode does not exist.
+
+**Payload v2 (2026-07-30, KI-32 step 1) stores each parent text ONCE.** Chroma denormalises a
+parent's full text into every one of its children (measured 5.5 on the live corpus: 6,045 parents
+across 33,105 chunks), so the v1 payload carried that many copies of every parent. Measured effect:
+the file went **85.2 MB -> 39.9 MB (2.1x)** and the in-RAM corpus **265 MB -> 195 MB (1.36x)**. The
+map is keyed on `(doc_hash, parent_index)` and the per-chunk metadata no longer holds
+`parent_text`; `pipeline` re-attaches the text for the handful of parents a turn actually returns.
 
 **Every failure path falls back to the live build.** A missing, stale, corrupt, truncated or
 unreadable cache logs and returns ``None``. There is no code path in which a bad cache yields a
@@ -37,9 +45,15 @@ log = structlog.get_logger(__name__)
 #: Bumped when the payload *shape* changes in a way the content fingerprint cannot see.
 #: Tokeniser changes do **not** need a bump — they are fingerprinted from source (see
 #: `_fingerprint`).
-_CACHE_VERSION = 1
+#: v2 (2026-07-30, KI-32 step 1): `parent_text` moved out of per-chunk metadata into a deduplicated
+#: `parents` map. A v1 file is stale by fingerprint, so an existing snapshot is rebuilt, not
+#: misread.
+_CACHE_VERSION = 2
 
 CACHE_FILENAME = "bm25_index.pkl"
+
+#: One entry per parent block: ``(doc_hash, parent_index) -> parent_text``.
+ParentTexts = dict[tuple[str, int], str]
 
 
 def _cache_path(chroma_path: str) -> Path:
@@ -93,11 +107,15 @@ def enabled() -> bool:
 
 def load(
     chroma_path: str, collection_name: str, chunk_ids: list[str]
-) -> tuple[list[tuple[str, dict[str, Any]]], list[list[str]]] | None:
-    """Return ``(docs, tokens)`` from the snapshot, or ``None`` to signal "build it live".
+) -> tuple[list[tuple[str, dict[str, Any]]], list[list[str]], ParentTexts] | None:
+    """Return ``(docs, tokens, parents)`` from the snapshot, or ``None`` to signal "build it live".
 
     ``None`` is the answer for every unhappy path — disabled, absent, stale, corrupt, or holding a
     payload that fails its own internal consistency check.
+
+    ``parents`` maps ``(doc_hash, parent_index)`` to the parent text that the per-chunk
+    metadata no longer carries (payload v2). It is legitimately **empty** in flat
+    (non-parent-child) mode, so an empty map is not a reason to refuse the payload.
     """
     if not enabled():
         log.info("bm25_cache_disabled")
@@ -135,8 +153,16 @@ def load(
         )
         return None
 
-    log.info("bm25_cache_hit", chunks=len(docs))
-    return docs, tokens
+    parents = payload.get("parents")
+    if not isinstance(parents, dict):
+        # v2 always writes a dict (empty in flat mode). Anything else means a payload this code
+        # does not understand, and a missing parent map degrades retrieval silently — a
+        # parent-child turn would drop every BM25-only hit rather than expand it. Refuse.
+        log.warning("bm25_cache_no_parent_map", type=type(parents).__name__)
+        return None
+
+    log.info("bm25_cache_hit", chunks=len(docs), parents=len(parents))
+    return docs, tokens, parents
 
 
 def save(
@@ -145,6 +171,7 @@ def save(
     chunk_ids: list[str],
     docs: list[tuple[str, dict[str, Any]]],
     tokens: list[list[str]],
+    parents: ParentTexts,
 ) -> bool:
     """Write the snapshot. Returns whether it landed; a failure is logged, never raised.
 
@@ -163,6 +190,7 @@ def save(
         "fingerprint": _fingerprint(collection_name, chunk_ids),
         "docs": docs,
         "tokens": tokens,
+        "parents": parents,
     }
     tmp_name: str | None = None
     try:
@@ -172,7 +200,12 @@ def save(
             pickle.dump(payload, fh, protocol=5)
         os.replace(tmp_name, path)
         tmp_name = None
-        log.info("bm25_cache_written", chunks=len(docs), mb=round(path.stat().st_size / 1e6, 1))
+        log.info(
+            "bm25_cache_written",
+            chunks=len(docs),
+            parents=len(parents),
+            mb=round(path.stat().st_size / 1e6, 1),
+        )
         return True
     except Exception as e:
         log.warning("bm25_cache_write_failed", error=str(e), path=str(path))

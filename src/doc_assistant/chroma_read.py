@@ -18,6 +18,7 @@ by construction (one document, one hash) may call ``get()`` directly.
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from typing import Any
 
 #: Rows per page. A structural bound on SQL parameters per statement, **not** a corpus-tuned
@@ -35,11 +36,44 @@ def _is_array(value: Any) -> bool:
     return hasattr(value, "shape") and hasattr(value, "__len__")
 
 
-def get_all(
+def iter_pages(
     # `Any`, deliberately: the two callers are a raw `chromadb.Collection` and LangChain's
     # `Chroma` wrapper. Both expose a `get(where=, include=, limit=, offset=)`, but their
     # signatures differ in the `include` literal type, so no Protocol satisfies both — a
     # structural type here would be a fiction that only type-checks one of the two.
+    collection: Any,
+    *,
+    where: dict[str, Any] | None = None,
+    include: list[str] | None = None,
+    page_size: int = PAGE_SIZE,
+) -> Iterator[dict[str, Any]]:
+    """Yield the collection one bounded page at a time.
+
+    The walk :func:`get_all` performs, without the accumulation. A consumer that writes each page
+    somewhere else (the sparse index build, ADR-036) then never holds more than one page — which
+    matters precisely at the corpus sizes this module exists for: accumulating 3.4M chunks to build
+    an on-disk index would reintroduce the peak the index is meant to remove.
+
+    An empty collection yields exactly one (empty) page, so a caller can rely on seeing at least
+    one — the same "one query, honest empty result" property `get_all` has.
+    """
+    kwargs: dict[str, Any] = {}
+    if where is not None:
+        kwargs["where"] = where
+    if include is not None:
+        kwargs["include"] = include
+
+    offset = 0
+    while True:
+        page = collection.get(limit=page_size, offset=offset, **kwargs)
+        n = len(page.get("ids") or [])
+        yield page
+        if n < page_size:
+            return
+        offset += n
+
+
+def get_all(
     collection: Any,
     *,
     where: dict[str, Any] | None = None,
@@ -53,17 +87,8 @@ def get_all(
     unpaged call would have returned — ``ids`` always present, the rest as requested. A short page
     ends the walk, so an empty collection costs one query and returns empty lists.
     """
-    kwargs: dict[str, Any] = {}
-    if where is not None:
-        kwargs["where"] = where
-    if include is not None:
-        kwargs["include"] = include
-
     out: dict[str, Any] = {}
-    offset = 0
-    while True:
-        page = collection.get(limit=page_size, offset=offset, **kwargs)
-        n = len(page.get("ids") or [])
+    for page in iter_pages(collection, where=where, include=include, page_size=page_size):
         for key, value in page.items():
             if isinstance(value, list) or _is_array(value):
                 # `_is_array` is load-bearing, not defensive: chromadb returns `embeddings` as a
@@ -75,10 +100,8 @@ def get_all(
                 out.setdefault(key, []).extend(value)
             elif key not in out:
                 out[key] = value
-        if n < page_size:
-            # Guarantee the requested keys exist even when the collection is empty.
-            out.setdefault("ids", [])
-            for key in include or []:
-                out.setdefault(key, [])
-            return out
-        offset += n
+    # Guarantee the requested keys exist even when the collection is empty.
+    out.setdefault("ids", [])
+    for key in include or []:
+        out.setdefault(key, [])
+    return out

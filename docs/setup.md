@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-07-29 (GPU retrieve+rerank figure corrected to the measured ~300 ms) · class: living -->
+<!-- status: active · updated: 2026-07-30 (RAM is flat since ADR-036) · class: living -->
 
 # Setup
 
@@ -62,6 +62,12 @@ so they benefit a lot from GPU acceleration. Install the matching torch extra ab
 
 The chat LLM is separate (Claude API or local Ollama), so the above is about the local embedder and
 reranker, not the generation model.
+
+**How much RAM and disk your corpus needs**, what each stage costs, and where the current design
+stops scaling: [`performance.md`](performance.md). Short version for planning, measured at 97
+documents: about **6 MB of disk per document**, and backend RAM of about **2 GB flat** — both search
+indexes live on disk, so RAM no longer grows with the corpus (ADR-036). What does grow is the first
+ingest, roughly 15 seconds per document of PDF extraction, and disk.
 
 ## Running the LLM locally
 

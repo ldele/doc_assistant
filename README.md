@@ -83,6 +83,10 @@ index; the generated-answer scorers wobble run-to-run around stable means. Cases
 strict, not tuned to score 1.0. Full results, including the embedder comparison, chunk-size sweep,
 weight sweep, caveats and reproduction steps, live in [`evals/`](evals/README.md).
 
+Cost is measured separately from quality: launch and per-turn latency, ingest throughput, memory,
+disk, and what each of those does as the corpus grows are in
+[`docs/performance.md`](docs/performance.md).
+
 ## Quick start
 
 ```bash
@@ -110,10 +114,16 @@ Current as of 2026-07-28; the full ledger lives in `.claude/KNOWN_ISSUES.md`.
   ([ADR-034](docs/decisions/ADR-034-in-app-provider-setup.md)). Use `.env`, which takes precedence,
   if you would rather manage the key yourself.
 
-- **Validated at ~100 documents, not yet at thousands.** Retrieval quality is benchmarked and holds,
-  but a [scale review](docs/REVIEW_2026-07-19_scale-robustness.md) found corpus-linear hot paths and
-  thresholds tuned on the current corpus in the *enrichment* layer. They are catalogued with a
-  prioritized fix plan. Don't bulk-ingest 10k documents before those land.
+- **Validated at ~100 documents, not yet at thousands.** Retrieval quality is benchmarked and holds.
+  Memory used to be the limit and no longer is: both search indexes now live on disk, so backend RAM
+  measures flat at about 2 GB regardless of corpus size
+  ([ADR-036](docs/decisions/ADR-036-sparse-index-on-disk.md)). What binds now is the first ingest,
+  which is dominated by PDF extraction at roughly 15 seconds per document, single-threaded, and disk
+  at about 6 MB per document. Numbers and projections: [`docs/performance.md`](docs/performance.md).
+  The *enrichment* layer still has its own corpus-linear hot paths and corpus-tuned thresholds,
+  catalogued with a prioritized fix plan in the
+  [scale review](docs/REVIEW_2026-07-19_scale-robustness.md), so don't bulk-ingest thousands of
+  documents before those land.
 - **Local-model ceilings are real, and measured.** Small local models place documents into a
   taxonomy at 70-87% precision depending on the model, and their self-reported confidence carries
   almost no signal. On one model it was *anti*-correlated with correctness. Never auto-accept on it.
@@ -145,7 +155,8 @@ notes: [`CHANGELOG.md`](CHANGELOG.md). Full roadmap: [`docs/ROADMAP.md`](docs/RO
 | [Architecture](docs/architecture.md) | Data flow and module contracts |
 | [Decisions](docs/decisions.md) | ADR index, and why each non-obvious choice was made |
 | [How answers work](docs/how-answers-work.md) | Evidence/interpretation split, grounding markers |
-| [Evals](evals/README.md) | Benchmark write-ups and reproduction |
+| [Evals](evals/README.md) | Quality benchmark write-ups and reproduction |
+| [Performance](docs/performance.md) | Speed, memory, disk, the trade each optimisation made, and what happens at 10x |
 
 Agent-facing coordination lives in `AGENTS.md`, deliberately separate from this README.
 

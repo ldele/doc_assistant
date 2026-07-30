@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-07-20 · class: living -->
+<!-- status: active · updated: 2026-07-30 (cross-link: cost/scale lives in docs/performance.md) · class: living -->
 
 # Evals — benchmark results
 
@@ -16,6 +16,7 @@ scores each answer on retrieval and answer-quality signals. This folder is the f
 | Public question set + pinned public-corpus manifest | [`tests/eval/cases.public.yaml`](../tests/eval/cases.public.yaml) · [`tests/eval/corpus_manifest.yaml`](../tests/eval/corpus_manifest.yaml) |
 | Committed reference baselines — diff new runs against these | [`tests/eval/baselines/`](../tests/eval/baselines/) |
 | Run log — every `run_eval` invocation appends here | `data/eval.duckdb` (gitignored working DB, regenerated on first run) |
+| **Cost** — latency, memory, disk, scale trade-offs (a different instrument, deliberately a different file) | [`docs/performance.md`](../docs/performance.md) |
 
 Two question sets exist. The **public 10-case set** runs on a corpus anyone can rebuild from arXiv —
 every published number below comes from it. A **private 35-case set** (`tests/eval/cases.yaml`,

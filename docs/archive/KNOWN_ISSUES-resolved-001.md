@@ -758,3 +758,66 @@ two tests that pin (a) embeddings are concatenated across pages, not truncated, 
 embedding row stays paired with its own metadata. **Verified non-vacuous:** restoring the
 `isinstance(value, list)` check fails exactly those two. **Any new fake collection must return an
 ndarray for `embeddings`** — a list-returning fake cannot see this class of bug.
+
+---
+
+## KI-32 — the **answer path** held the whole BM25 corpus in RAM: linear, no ceiling — **RESOLVED (2026-07-30, ADR-036)**
+- **Symptom:** `RAGPipeline.__init__` materialises every chunk as a `Document` and keeps the list for
+  the life of the process (`pipeline.py`, `self._bm25_docs`), plus the `BM25Okapi` index over the
+  same corpus. **Measured 2026-07-30 on the live corpus: 265 MB of Python heap for 33,105 chunks =
+  ~8.0 KB/chunk** (process working set 1,821 MB before the reranker, 2,327 MB after). Linear in
+  chunks, with no cap and no eviction. **After step 1 (below): 195 MB = ~5.9 KB/chunk.**
+- **STEP 1 DONE (2026-07-30) — and it under-delivered, which is the useful part.** `parent_text` is
+  deduplicated out of per-chunk metadata into a `(doc_hash, parent_index) -> text` map
+  (`_split_parent_texts` + `_parent_text_for`, snapshot payload v2). Predicted ~3x from arithmetic on
+  text sizes; **measured 1.36x on the heap (265 -> 195 MB) and 2.1x on disk (85.2 -> 39.9 MB)**, with
+  retrieval **verified identical** on the live corpus and construction time unchanged. Attribution
+  then showed why: **the chunk text is ~8% of the footprint.** Per chunk it is ~1.4 KB Chroma
+  metadata dicts + strings, ~1.4 KB BM25 token strings held by the index, ~0.8 KB
+  `BM25Okapi.doc_freqs` dicts, ~0.6 KB pydantic `Document` overhead, ~0.4 KB child text, ~0.4 KB
+  parent text. **Never estimate this footprint from text sizes again** — measure it
+  (`tests/eval/baselines/memory_and_lazy_reranker_2026-07-30.md` §3).
+- **Cause:** the BM25 arm has always been built in memory at construction; ADR-025 F2 (folder-scoped
+  retrieval) then made the materialised corpus **load-bearing** — a scoped turn rebuilds the arm over
+  a subset of `_bm25_docs`, so "don't keep the documents" is not available without replacing F2 too.
+  ADR-035 persisted the same data to disk to cut *launch time* and deliberately did not address
+  memory.
+- **Impact while it was open (arithmetic from one measured point — ~340 chunks/doc), post-step-1:**
+  backend RAM ≈ **2 GB + ~2.0 MB per document**, so ~4.0 GB at 1,000 documents and **~22 GB at the
+  10,000-document robustness contract**. Practical wall on a 16 GB box is around **5,000 documents**
+  (was ~3,700 before step 1); a 32 GB box reaches ~13,000, so the contract is attainable on generous
+  hardware, not typical hardware. This is the **answer path**, not the enrichment layer — KI-18/KI-19
+  cover `knowledge/`, and neither mentions this.
+- **Distinct from KI-27** (which fixed the unpaged *read* past SQLite's parameter ceiling): paging the
+  read made construction survive; it still ends with the whole corpus resident.
+- **Workaround while it was open:** none. `DOC_BM25_CACHE=0` changed launch time, not memory (that
+  cache was a launch accelerator over the same in-RAM structure).
+- **STEP 2 DONE (2026-07-30, ADR-036) — the ceiling is gone.** The sparse arm is an **SQLite/FTS5
+  index** beside the vector store (`sparse_index.py`): chunk text + metadata in a table, a contentless
+  FTS5 index over the same `keywords.tokenize` token stream, parents in their own table, `Document`s
+  built for the returned rows only, and ADR-025 F2 scoping as a `WHERE doc_hash IN (...)` inside the
+  ranked query instead of a subset rebuild. **Heap 195 → 21 MB with no corpus resident**; construction
+  4.53 → 2.79 s; sparse query 66.6 → 27.4 ms; per turn 336 → 279 ms.
+- **What the working-set probe settled:** nothing in the answer path is corpus-resident any more —
+  index open **+1 MB**, sparse query **+0 MB**, *vector* query **+1 MB** (Chroma is not corpus-resident
+  either; an earlier probe that seemed to show +449 MB was measuring CUDA context init). Backend RAM is
+  now **~2 GB flat** (embedder 800 MB + CUDA 450 MB + reranker ~500 MB in use).
+- **The cost, and it is real: retrieval changed.** FTS5's `bm25()` (k1=1.2, no IDF floor) is not
+  `rank_bm25`'s (k1=1.5, epsilon=0.25) — 84% candidate overlap, 8/10 public queries return an
+  identical final top-10, 2 differ by one document, recall identical at 1.0000 on every metric. **The
+  public case set has a ceiling** (both arms perfect), so parity is demonstrated at the available
+  resolution, not proven. `DOC_SPARSE_INDEX=0` restores the legacy arm; keep it until the A/B is
+  repeated on a discriminating case set.
+- **Left open, tracked in `docs/performance.md` §6:** launch still scans every chunk id to fingerprint
+  the store (~0.2 s at 33k, ~20 s projected at 10k docs) and chromadb's paged read has a ~159 MB
+  working-set high-water mark. Both want an ingest-side version stamp. Neither is a memory ceiling.
+- **Do not undo:** the `if self._sparse is None:` guard around `_load_bm25_corpus` is the single line
+  standing between this and a silent return of the 195 MB — pinned by
+  `tests/unit/test_pipeline_sparse_arm.py::TestTheMemoryProperty` (verified non-vacuous). Likewise the
+  OR-joined, quoted FTS5 expression (a bare term list means AND) and the scope inside the ranked query
+  (scoping after `LIMIT` would silently thin a folder's results).
+- **Pointer:** `docs/decisions/ADR-036-sparse-index-on-disk.md` (the decision) ·
+  `tests/eval/baselines/sparse_index_2026-07-30.md` (the A/B) ·
+  `tests/eval/baselines/memory_and_lazy_reranker_2026-07-30.md` §3 (the attribution) ·
+  `docs/performance.md` §3 · ROADMAP rows **PF2a**/**PF3** ·
+  `docs/decisions/ADR-035-bm25-index-persistence.md` (superseded in practice).

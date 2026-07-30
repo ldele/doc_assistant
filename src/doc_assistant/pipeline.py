@@ -1,20 +1,23 @@
 """RAG pipeline: retrieval, reranking, and answer generation."""
 
 import hashlib
+import sqlite3
 from collections import OrderedDict
-from collections.abc import Generator
-from typing import Any
+from collections.abc import Generator, Iterator
+from typing import Any, ClassVar
 
 import structlog
 from langchain_chroma import Chroma
 from langchain_classic.retrievers import EnsembleRetriever
 from langchain_community.retrievers import BM25Retriever
 from langchain_core.documents import Document
+from langchain_core.retrievers import BaseRetriever
+from pydantic import ConfigDict
 from rank_bm25 import BM25Okapi
 from sentence_transformers import CrossEncoder
 
-from doc_assistant import bm25_cache, credentials
-from doc_assistant.chroma_read import get_all
+from doc_assistant import bm25_cache, credentials, sparse_index
+from doc_assistant.chroma_read import get_all, iter_pages
 from doc_assistant.config import (
     BM25_WEIGHT,
     CANDIDATE_K,
@@ -35,6 +38,7 @@ from doc_assistant.embeddings import (
 )
 from doc_assistant.knowledge.keywords import tokenize
 from doc_assistant.prompts import ANSWER_PROMPT, MULTI_QUERY_PROMPT, REWRITE_PROMPT
+from doc_assistant.sparse_index import SparseIndex
 
 log = structlog.get_logger(__name__)
 
@@ -139,6 +143,64 @@ def _build_bm25(docs: list[Document], tokens: list[list[str]] | None) -> BM25Ret
     return BM25Retriever.from_documents(docs, preprocess_func=tokenize)
 
 
+class SparseRetriever(BaseRetriever):
+    """LangChain retriever over the on-disk sparse index (ADR-036).
+
+    A thin adapter, deliberately: `EnsembleRetriever` only needs
+    ``invoke(query) -> list[Document]`` and fuses arms by **reciprocal rank**, so this returns its
+    ``k`` best in order and never has to reconcile score scales with the vector arm. ``scope`` is
+    bound per instance rather than passed per call because the ensemble's interface takes a query
+    and nothing else; a scoped turn constructs its own (cheap — no index is rebuilt, unlike the
+    in-RAM arm this replaces).
+    """
+
+    index: SparseIndex
+    k: int
+    scope: frozenset[str] | None = None
+
+    # `SparseIndex` is a plain class, not a pydantic model, and BaseRetriever is one.
+    model_config: ClassVar[ConfigDict] = ConfigDict(arbitrary_types_allowed=True)
+
+    def _get_relevant_documents(self, query: str, *, run_manager: Any = None) -> list[Document]:
+        return self.index.search(query, self.k, scope=self.scope)
+
+
+def _split_parent_texts(docs: list[Document]) -> bm25_cache.ParentTexts:
+    """Lift ``parent_text`` out of every chunk's metadata into one entry per parent (KI-32 step 1).
+
+    **Mutates the metadata dicts in place, on purpose.** Chroma hands back a fresh dict per
+    chunk, and deleting the string is what lets the ~4.5 duplicate copies of each parent become
+    garbage; a copy-instead-of-delete version would hold both forms at once and save nothing.
+
+    **Measured on the live corpus, and smaller than predicted:** the duplicates were **80 MB of the
+    265 MB** the corpus held (8.0 -> 5.9 KB/chunk, 1.36x), not the ~70% that reasoning about text
+    sizes suggested. The chunk text is only ~8% of the footprint; the rest is the sparse index's
+    own token strings and per-document frequency dicts, plus Python object overhead on 33k
+    `Document`s and metadata dicts. That is a fact about where step 2 has to aim, recorded in
+    `tests/eval/baselines/memory_and_lazy_reranker_2026-07-30.md` and `docs/performance.md`.
+
+    Keyed on ``(doc_hash, parent_index)``. A chunk missing either key keeps its text in metadata
+    rather than being dropped or guessed at: with no identity there is nothing to key on, and
+    `_parent_text_for` reads metadata first anyway, so such a chunk still expands.
+
+    Flat (non-parent-child) chunks have no ``parent_text`` at all, so this is a no-op there and the
+    map is legitimately empty.
+    """
+    parents: bm25_cache.ParentTexts = {}
+    for doc in docs:
+        meta = doc.metadata
+        text = meta.get("parent_text")
+        if not text:
+            continue
+        doc_hash = meta.get("doc_hash")
+        parent_index = meta.get("parent_index")
+        if doc_hash is None or parent_index is None:
+            continue
+        parents.setdefault((str(doc_hash), int(parent_index)), str(text))
+        del meta["parent_text"]
+    return parents
+
+
 class RAGPipeline:
     def __init__(self, *, bm25_weight: float | None = None) -> None:
         weights = resolve_ensemble_weights(bm25_weight)
@@ -160,15 +222,28 @@ class RAGPipeline:
         )
 
         log.info("building_keyword_index")
-        all_docs, cached_tokens = self._load_bm25_corpus(chroma_path, collection)
-        # Kept for ADR-025 F2: a folder-scoped turn rebuilds the BM25 arm over the subset of
-        # these docs, so the corpus has to survive construction. Nothing mutates it.
+        # ADR-036 / KI-32 step 2: the sparse arm normally lives **on disk**, so nothing below is
+        # corpus-sized in memory. `self._sparse` is None only when the index is disabled or could
+        # not be built, in which case the legacy in-RAM arm below is used instead.
+        self._sparse = self._open_sparse_index(chroma_path, collection)
+        # Legacy in-RAM arm (ADR-035 + KI-32 step 1). Populated **only** on the fallback path:
+        # loading it is exactly the ~195 MB the on-disk index exists to avoid.
+        all_docs: list[Document] = []
+        cached_tokens: list[list[str]] | None = None
+        self._parent_texts: bm25_cache.ParentTexts = {}
+        if self._sparse is None:
+            all_docs, cached_tokens, self._parent_texts = self._load_bm25_corpus(
+                chroma_path, collection
+            )
+        # Kept for ADR-025 F2 on the fallback path: a folder-scoped turn rebuilds the BM25 arm over
+        # the subset of these docs. Empty when the on-disk index is serving, which is the point.
         self._bm25_docs = all_docs
         # LRU memo for scoped ensembles, keyed on the exact hash set. The UI scope is sticky, so
         # consecutive turns share a key; a membership edit changes the key and that entry is never
-        # reused (no TTL, no staleness window — the key IS the identity). Holding several scopes
-        # (not one) means alternating between folders reuses each instead of rebuilding BM25 every
-        # turn. See the F2 spec S5 / RG-020; bounded by _SCOPED_ENSEMBLE_CACHE_SIZE.
+        # reused (no TTL, no staleness window — the key IS the identity). It was built when a
+        # scoped turn meant rebuilding BM25 over the subset (~20 µs/chunk, RG-020); with the
+        # on-disk arm scoping is a WHERE clause, so the memo now only saves retriever construction.
+        # See the F2 spec S5; bounded by _SCOPED_ENSEMBLE_CACHE_SIZE.
         self._scoped: OrderedDict[frozenset[str], EnsembleRetriever] = OrderedDict()
         self._weights = weights
         vector = self.db.as_retriever(
@@ -177,7 +252,13 @@ class RAGPipeline:
                 "filter": {"keep_for_retrieval": {"$ne": False}},
             }
         )
-        if all_docs:
+        if self._sparse is not None and self._sparse.chunks:
+            log.info("ensemble_weights", bm25=weights[0], vector=weights[1], arm="sparse_index")
+            self.ensemble = EnsembleRetriever(
+                retrievers=[SparseRetriever(index=self._sparse, k=CANDIDATE_K), vector],
+                weights=weights,
+            )
+        elif all_docs:
             # R6: BM25's default preprocess_func is a bare ``text.split()`` — case-sensitive,
             # punctuation attached ("BM25?" never matches "bm25"), so the 0.4 ensemble arm was
             # handicapped. ``keywords.tokenize`` casefolds + emits tech-aware tokens
@@ -185,7 +266,7 @@ class RAGPipeline:
             # query at retrieval time, so index and query tokenization stay symmetric.
             bm25 = _build_bm25(all_docs, cached_tokens)
             bm25.k = CANDIDATE_K
-            log.info("ensemble_weights", bm25=weights[0], vector=weights[1])
+            log.info("ensemble_weights", bm25=weights[0], vector=weights[1], arm="in_ram_bm25")
             self.ensemble = EnsembleRetriever(retrievers=[bm25, vector], weights=weights)
         else:
             # Empty library (fresh install / nothing ingested): BM25Retriever
@@ -209,13 +290,80 @@ class RAGPipeline:
         self.model = LLM_MODEL
         self.llm = self._build_llm()
 
+    def _open_sparse_index(self, chroma_path: str, collection: str) -> SparseIndex | None:
+        """Open the on-disk sparse arm, building it if the corpus moved (ADR-036).
+
+        ``None`` means "use the legacy in-RAM arm": the feature is switched off
+        (``DOC_SPARSE_INDEX=0``), or the build failed. A failure is logged and degraded from, never
+        raised — an unwritable data home must not stop the app from answering, it must only make it
+        answer the expensive way.
+
+        The build streams pages straight from Chroma into SQLite, so it never materialises the
+        corpus (`chroma_read.iter_pages`); a build that accumulated first would pay the peak the
+        index exists to remove.
+        """
+        if not sparse_index.enabled():
+            log.info("sparse_index_disabled", hint="DOC_SPARSE_INDEX=0; using the in-RAM BM25 arm")
+            return None
+
+        # Ids only — no documents, metadata or embeddings — so this is a measured ~0.2 s at 33k
+        # chunks against the seconds a full read costs. It is the corpus fingerprint (ADR-035/036).
+        # Streamed page by page rather than collected: accumulating the id list measured **159 MB
+        # of working set at 33k chunks** and was, after this ADR, the only corpus-linear memory
+        # left at launch. The digest is order-independent, so paging cannot change it.
+        empty = True
+
+        def id_pages() -> Iterator[list[str]]:
+            nonlocal empty
+            for page in iter_pages(self.db, include=[]):
+                ids = [str(i) for i in page["ids"]]
+                if ids:
+                    empty = False
+                yield ids
+
+        path = sparse_index.index_path(chroma_path)
+        stamp = sparse_index.fingerprint_from_pages(collection, id_pages())
+
+        opened = sparse_index.open_index(path, stamp)
+        if opened is not None:
+            return opened
+        if empty:
+            # Robustness contract: a 0-document corpus is a supported state. Building an empty
+            # index would only be a stale-file hazard for the first real ingest.
+            return None
+        try:
+            return sparse_index.SparseIndex.build(path, stamp, self._iter_retrievable_chunks())
+        except (OSError, sqlite3.Error) as e:
+            log.warning("sparse_index_build_failed", error=str(e), path=str(path))
+            return None
+
+    def _iter_retrievable_chunks(self) -> Iterator[tuple[str, dict[str, Any]]]:
+        """Stream ``(text, metadata)`` for every chunk the retriever is allowed to return.
+
+        The ``keep_for_retrieval is False`` exclusion mirrors the vector arm's filter, so both arms
+        see the same corpus — it is applied here, once, at build time, rather than per query.
+        """
+        excluded = 0
+        for page in iter_pages(self.db, include=["documents", "metadatas"]):
+            for text, meta in zip(page["documents"], page["metadatas"], strict=True):
+                if meta and meta.get("keep_for_retrieval") is False:
+                    excluded += 1
+                    continue
+                yield text, dict(meta or {})
+        log.info("bm25_excludes", count=excluded)
+
     def _load_bm25_corpus(
         self, chroma_path: str, collection: str
-    ) -> tuple[list[Document], list[list[str]] | None]:
+    ) -> tuple[list[Document], list[list[str]] | None, bm25_cache.ParentTexts]:
         """Materialise the BM25 corpus, from the persisted snapshot when it is valid (ADR-035).
 
-        Returns ``(docs, tokens)``. On a hit this skips the whole-store read *and* the tokenise
-        pass; the gap widens linearly with the corpus, which is the reason it exists.
+        Returns ``(docs, tokens, parent_texts)``. On a hit this skips the whole-store read *and*
+        the tokenise pass; the gap widens linearly with the corpus, which is the reason it exists.
+
+        ``parent_texts`` is the KI-32 step-1 split: the parent text that Chroma stores in
+        *every* child's metadata is lifted out into one entry per parent, and the per-chunk
+        metadata is left without it. Both paths below do this, so the in-RAM corpus never holds
+        the duplicates regardless of whether the snapshot hit.
 
         On a miss it reads the store, builds the corpus, and writes the snapshot for next launch.
         The write is best-effort: a read-only or full data home logs and is otherwise ignored.
@@ -231,8 +379,8 @@ class RAGPipeline:
 
         cached = bm25_cache.load(chroma_path, collection, chunk_ids)
         if cached is not None:
-            docs, tokens = cached
-            return [Document(page_content=t, metadata=m) for t, m in docs], tokens
+            docs, tokens, parents = cached
+            return [Document(page_content=t, metadata=m) for t, m in docs], tokens, parents
 
         # Paged: an unpaged whole-store read fails past SQLite's parameter ceiling, and this
         # runs in __init__ — so at 33k chunks it broke pipeline *construction* (chroma_read).
@@ -244,8 +392,10 @@ class RAGPipeline:
         ]
         log.info("bm25_excludes", count=len(data["documents"]) - len(all_docs))
 
+        parent_texts = _split_parent_texts(all_docs)
+
         if not all_docs:
-            return all_docs, None
+            return all_docs, None, parent_texts
 
         # Tokenise once, here: the result serves both the snapshot and the index built from it.
         # Guarded on `enabled()` so a disabled cache does not pay for a payload nothing stores —
@@ -259,9 +409,33 @@ class RAGPipeline:
                 chunk_ids,
                 [(d.page_content, d.metadata) for d in all_docs],
                 tokens,
+                parent_texts,
             )
-            return all_docs, tokens
-        return all_docs, None
+            return all_docs, tokens, parent_texts
+        return all_docs, None, parent_texts
+
+    def _parent_text_for(self, doc: Document) -> str | None:
+        """The parent block a candidate belongs to, or ``None`` if there is none to expand into.
+
+        **Metadata first, then the store, and the order is deliberate.** The vector arm returns
+        documents straight from Chroma, which still stores `parent_text` on every child, and a
+        document ingested *after* this pipeline was constructed can only be expanded that way —
+        both the on-disk `parents` table (ADR-036) and the in-RAM map are snapshots of the corpus
+        at construction time. Preferring metadata therefore keeps the live-ingest case working
+        exactly as it did before KI-32, and makes this change invisible to any caller that hands in
+        a fully-populated document (including every existing test). The lookup is what the sparse
+        arm needs, since its chunks no longer carry the text.
+        """
+        text = doc.metadata.get("parent_text")
+        if text:
+            return str(text)
+        doc_hash = doc.metadata.get("doc_hash")
+        parent_index = doc.metadata.get("parent_index")
+        if doc_hash is None or parent_index is None:
+            return None
+        if self._sparse is not None:
+            return self._sparse.parent_text(str(doc_hash), int(parent_index))
+        return self._parent_texts.get((str(doc_hash), int(parent_index)))
 
     @property
     def reranker(self) -> CrossEncoder:
@@ -308,16 +482,21 @@ class RAGPipeline:
         rejected because recall collapses exactly when the scope is small):
 
         - vector — the same ``keep_for_retrieval`` filter ANDed with ``doc_hash $in [...]``;
-        - BM25 — a fresh index over the subset of ``self._bm25_docs``.
+        - sparse — a ``WHERE doc_hash IN (...)`` inside the ranked query (ADR-036), or, on the
+          fallback path, a fresh in-RAM index over the subset of ``self._bm25_docs``.
 
-        The BM25 rebuild is the real cost (~20 µs/chunk measured), so the result is memoised in a
-        small LRU keyed on ``scope`` itself (``_SCOPED_ENSEMBLE_CACHE_SIZE`` entries).
+        **The cost this memo was built for is gone on the on-disk arm.** Scoping used to mean
+        rebuilding BM25 over the subset (~20 µs/chunk measured, RG-020), which is why the result
+        is memoised in a small LRU keyed on ``scope`` (``_SCOPED_ENSEMBLE_CACHE_SIZE`` entries).
+        With the index on disk the scoped arm is one bound parameter list, so the memo now saves
+        only retriever construction — kept because it is harmless and still saves the *fallback*
+        path, which is where the real cost lives.
         ``self.db``/``self.embeddings``/``self.reranker`` are untouched: ``as_retriever`` is a thin
         wrapper, so nothing expensive is reloaded.
 
-        Note the scoped BM25 arm scores against **subset statistics** (avgdl/IDF differ from the
-        global index). That is correct — the arm is told to rank within the folder — but it means
-        scoped and unscoped scores are not directly comparable (RG-020).
+        Note the scoped sparse arm scores against **subset statistics** (avgdl/IDF differ from the
+        global index) on both implementations. That is correct — the arm is told to rank within the
+        folder — but it means scoped and unscoped scores are not directly comparable (RG-020).
         """
         cached = self._scoped.get(scope)
         if cached is not None:
@@ -335,6 +514,31 @@ class RAGPipeline:
                 },
             }
         )
+        subset: list[Document] = []
+        if self._sparse is not None:
+            in_index = self._sparse.doc_hashes() & scope
+            if in_index:
+                ensemble = EnsembleRetriever(
+                    retrievers=[
+                        SparseRetriever(
+                            index=self._sparse, k=CANDIDATE_K, scope=frozenset(in_index)
+                        ),
+                        vector,
+                    ],
+                    weights=list(self._weights),
+                )
+            else:
+                # Same honest degradation as the fallback path below: the scope names documents the
+                # sparse index does not hold, so the sparse arm has nothing to contribute.
+                log.warning("scoped_sparse_empty", scope_size=len(scope))
+                ensemble = EnsembleRetriever(retrievers=[vector], weights=[1.0])
+            log.info("scoped_ensemble_built", docs=len(scope), arm="sparse_index")
+            self._scoped[scope] = ensemble
+            self._scoped.move_to_end(scope)
+            while len(self._scoped) > _SCOPED_ENSEMBLE_CACHE_SIZE:
+                self._scoped.popitem(last=False)
+            return ensemble
+
         subset = [d for d in self._bm25_docs if d.metadata.get("doc_hash") in scope]
         if subset:
             bm25 = BM25Retriever.from_documents(subset, preprocess_func=tokenize)
@@ -450,7 +654,11 @@ class RAGPipeline:
             seen_parents: set[tuple[Any, ...]] = set()
             deduped: list[tuple[Document, float]] = []
             for doc, score in ranked:
-                parent_text = doc.metadata.get("parent_text")
+                # KI-32 step 1: the BM25 arm's copy of a chunk no longer carries `parent_text`, so
+                # the text is resolved here (metadata first, then the per-parent map) instead of
+                # being read off the candidate. Only the parents that actually win are touched —
+                # <= TOP_K dict lookups per turn against ~5x the corpus held in RAM.
+                parent_text = self._parent_text_for(doc)
                 parent_key = (
                     doc.metadata.get("filename"),
                     doc.metadata.get("parent_index"),

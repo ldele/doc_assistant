@@ -51,13 +51,19 @@ def _ids(n: int) -> list[str]:
     return [f"chunk-{i:04d}" for i in range(n)]
 
 
-def _save(store: str, docs: list[Document], tokens: list[list[str]] | None = None) -> bool:
+def _save(
+    store: str,
+    docs: list[Document],
+    tokens: list[list[str]] | None = None,
+    parents: bm25_cache.ParentTexts | None = None,
+) -> bool:
     return bm25_cache.save(
         store,
         "langchain",
         _ids(len(docs)),
         [(d.page_content, d.metadata) for d in docs],
         tokens if tokens is not None else [tokenize(d.page_content) for d in docs],
+        parents if parents is not None else {},
     )
 
 
@@ -95,10 +101,21 @@ class TestEquivalence:
 
         loaded = bm25_cache.load(store, "langchain", _ids(len(docs)))
         assert loaded is not None
-        payload_docs, tokens = loaded
+        payload_docs, tokens, parents = loaded
         assert [t for t, _ in payload_docs] == _TEXTS
         assert [m["i"] for _, m in payload_docs] == list(range(len(_TEXTS)))
         assert tokens == [tokenize(t) for t in _TEXTS]
+        assert parents == {}
+
+    def test_the_parent_map_round_trips_with_its_tuple_keys(self, store):
+        """Payload v2 (KI-32 step 1): parent text is stored once, keyed on (doc_hash, index)."""
+        docs = _docs()
+        parents = {("abc123", 0): "the first parent block", ("abc123", 1): "the second one"}
+        assert _save(store, docs, parents=parents)
+
+        loaded = bm25_cache.load(store, "langchain", _ids(len(docs)))
+        assert loaded is not None
+        assert loaded[2] == parents
 
 
 # ============================================================
@@ -194,6 +211,32 @@ class TestRefusesRatherThanServesAWrongIndex:
 
         assert bm25_cache.load(store, "langchain", _ids(len(docs))) is None
 
+    def test_a_payload_without_the_parent_map_is_refused(self, store):
+        """A v1-shaped payload must not be read as "no parents".
+
+        Serving it would look fine and retrieve worse: with `parent_text` gone from metadata *and*
+        no map, every BM25-only hit would fail to expand and be dropped from the answer. Same
+        silent-degradation shape as KI-31, so the load seam refuses instead.
+        """
+        docs = _docs()
+        _save(store, docs)
+        path = Path(store).parent / bm25_cache.CACHE_FILENAME
+        payload = pickle.loads(path.read_bytes())  # a fixture this test just wrote
+        del payload["parents"]
+        path.write_bytes(pickle.dumps(payload, protocol=5))
+
+        assert bm25_cache.load(store, "langchain", _ids(len(docs))) is None
+
+    def test_a_snapshot_from_the_previous_payload_version_is_stale(self, store, monkeypatch):
+        """`_CACHE_VERSION` is in the fingerprint: v1 files are rebuilt, never reinterpreted."""
+        monkeypatch.setattr(bm25_cache, "_CACHE_VERSION", 1)
+        docs = _docs()
+        _save(store, docs)
+        assert bm25_cache.load(store, "langchain", _ids(len(docs))) is not None
+
+        monkeypatch.setattr(bm25_cache, "_CACHE_VERSION", 2)
+        assert bm25_cache.load(store, "langchain", _ids(len(docs))) is None
+
     def test_build_ignores_tokens_whose_length_disagrees(self):
         """Belt and braces at the build seam, not just the load seam."""
         docs = _docs()
@@ -228,7 +271,7 @@ class TestSwitchAndEmptyCorpus:
 
     def test_an_empty_corpus_writes_nothing(self, store):
         """Robustness contract: 0 documents is a supported state, and a no-op here."""
-        assert bm25_cache.save(store, "langchain", [], [], []) is False
+        assert bm25_cache.save(store, "langchain", [], [], [], {}) is False
         assert not (Path(store).parent / bm25_cache.CACHE_FILENAME).exists()
 
     def test_an_unwritable_destination_is_logged_not_raised(self, store, monkeypatch):

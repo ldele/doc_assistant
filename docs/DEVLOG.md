@@ -11,6 +11,65 @@ Format: What changed | Why | Rejected alternatives | What it opens
 > (moved verbatim 2026-07-21). This file keeps 2026-07-15 onward.
 
 ---
+## 2026-07-29 (5) — ADR-035: the BM25 arm launches from a persisted snapshot (5.36 s -> 1.99 s)
+
+**What changed.** New `bm25_cache.py` + `RAGPipeline._load_bm25_corpus` / `_build_bm25`. The BM25
+corpus is written once to a snapshot beside the Chroma store and reloaded on subsequent launches
+instead of being re-read from Chroma and re-tokenised every time. ADR-035 carries the full
+reasoning; `.gitignore` excludes the artifact (85 MB, pure derived data).
+
+**Why this and not something else.** With the reranker lazy (07-28) and the GPU wheel in (07-29),
+this is the **only startup component that scales with the corpus** — everything ahead of it (Python
+imports, embedder weights) is a constant. At the 10,000-document contract the step alone projects to
+minutes, so the 1.7-5 s today is not the problem; the slope is.
+
+**The constraint that picked the design.** `self._bm25_docs` is retained for ADR-025 F2
+folder-scoped retrieval, so the documents must be materialised regardless — "persist the index"
+could never mean "skip loading the corpus". Whatever is persisted has to carry the documents too.
+
+**Measured, cache off vs on, interleaved across 4 rounds** so machine-load drift hits both arms
+equally: **5.359 s -> 1.990 s, 2.7x**. Retrieval verified **identical** on the live corpus — three
+queries, 10 sources each, same documents and same scores with the cache off and on.
+
+**What is stored, and what deliberately is not.** Only stdlib types: `(text, metadata)` tuples plus
+token lists, with `Document` / `BM25Okapi` / `BM25Retriever` reconstructed at load. Pickling the live
+retriever measured **0.354 s** (vs ~0.50 s) and was **rejected**: it makes the on-disk format an
+implementation detail of a third-party class, where a langchain upgrade can deserialise into a
+subtly different object instead of failing outright. A cache whose worst failure is "retrieval
+quietly changes" is the wrong trade for 150 ms — especially in the same session that paid for KI-31.
+
+**Two things measurement caught that reasoning had not.**
+1. **The first fingerprint never hit — not once.** It keyed on `chroma.sqlite3`'s mtime, on the
+   reasoning that ingest is the only writer. But **opening a `chromadb.PersistentClient` rewrites
+   that mtime even for a pure read**, so every launch invalidated the snapshot it had just written.
+   The fingerprint is now the **sorted chunk ids** (0.221 s for 33,105 ids, against 5.389 s for the
+   full read it guards) plus the collection name and `inspect.getsource(tokenize)`. Both directions
+   are pinned: replaced ids invalidate; touching the store file alone does not.
+2. **The miss path tokenised the corpus twice** — once inside `BM25Retriever.from_documents` and
+   again to build the payload — and did it *even with the cache disabled*, because argument
+   expressions evaluate before the call. Now it tokenises once and hands the terms to both, and
+   skips the work entirely when `DOC_BM25_CACHE=0`.
+
+**Honesty note on the absolute numbers.** The same whole-store read measured **1.06 s** early in the
+session and **5.39 s** later the same day on an unchanged store — OS file-cache state dominates.
+Quote the interleaved **ratio**, not either absolute; the ADR says so too.
+
+**Rejected.** (a) *Persisting only the index, not the documents* — impossible given F2 above.
+(b) *Documents without pre-tokenised terms* — measured 0.921 s, leaves the tokenise pass on the
+table. (c) *`collection.count()` as the staleness signal* — 0.011 s and tempting, but blind to a
+`--rebuild`, which replaces every chunk while keeping the count identical.
+
+**Costs, stated.** ~85 MB on disk here (~9 GB projected at 10k documents, comparable to the store
+itself), and the first launch after an ingest pays the write. `DOC_BM25_CACHE=0` disables it without
+a code change, so a suspected cache problem can be ruled out without deleting files.
+
+**Guard tests:** `tests/unit/test_bm25_cache.py` (28), split into *equivalence* (identical scores and
+identical returned documents vs a freshly built index) and *refusal* — stale, corrupt, truncated,
+not-a-dict, mis-paired docs/tokens, changed tokeniser, changed collection, reordered ids, empty
+corpus, unwritable destination, no leftover temp files. The refusal half is the point: a cache over a
+retrieval input must fail to a slower launch, never to a different answer.
+
+---
 ## 2026-07-29 (4) — KI-31: `get_all` dropped every page of embeddings after the first; document similarity ran on 39% of the corpus
 
 **What changed.** `chroma_read.get_all` concatenated pages with `isinstance(value, list)`, but

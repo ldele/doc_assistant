@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-07-28 (ADR-034: the answer engine is configurable in-app) · class: living -->
+<!-- status: active · updated: 2026-07-29 (GPU retrieve+rerank figure corrected to the measured ~300 ms) · class: living -->
 
 # Setup
 

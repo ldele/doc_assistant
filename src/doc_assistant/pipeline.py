@@ -10,9 +10,10 @@ from langchain_chroma import Chroma
 from langchain_classic.retrievers import EnsembleRetriever
 from langchain_community.retrievers import BM25Retriever
 from langchain_core.documents import Document
+from rank_bm25 import BM25Okapi
 from sentence_transformers import CrossEncoder
 
-from doc_assistant import credentials
+from doc_assistant import bm25_cache, credentials
 from doc_assistant.chroma_read import get_all
 from doc_assistant.config import (
     BM25_WEIGHT,
@@ -119,6 +120,25 @@ def build_chat_model(provider: str, model: str) -> Any:
     return OllamaLLM(model=model, base_url=OLLAMA_HOST)
 
 
+def _build_bm25(docs: list[Document], tokens: list[list[str]] | None) -> BM25Retriever:
+    """Build the BM25 retriever, reusing pre-tokenised terms when the snapshot supplied them.
+
+    Both branches must produce the *same* index — the cached path exists to skip re-tokenising
+    33k chunks (a measured 0.2 s here, ~20 s at the 10k-document contract), not to change what
+    BM25 scores. ``BM25Retriever.from_documents`` would re-run ``tokenize`` over every text, so
+    the cached branch constructs the retriever directly from the terms it already has.
+
+    A mismatched length is treated as no cache at all rather than trusted: pairing document *i*
+    with document *j*'s terms would corrupt retrieval silently, which is precisely the failure
+    shape KI-31 cost this project. ADR-035.
+    """
+    if tokens is not None and len(tokens) == len(docs):
+        return BM25Retriever(
+            vectorizer=BM25Okapi(tokens), docs=docs, preprocess_func=tokenize, k=CANDIDATE_K
+        )
+    return BM25Retriever.from_documents(docs, preprocess_func=tokenize)
+
+
 class RAGPipeline:
     def __init__(self, *, bm25_weight: float | None = None) -> None:
         weights = resolve_ensemble_weights(bm25_weight)
@@ -140,16 +160,7 @@ class RAGPipeline:
         )
 
         log.info("building_keyword_index")
-        # Paged: an unpaged whole-store read fails past SQLite's parameter ceiling, and this
-        # runs in __init__ — so at 33k chunks it broke pipeline *construction* (chroma_read).
-        data = get_all(self.db, include=["documents", "metadatas"])
-        all_docs = [
-            Document(page_content=text, metadata=meta or {})
-            for text, meta in zip(data["documents"], data["metadatas"], strict=True)
-            if not (meta and meta.get("keep_for_retrieval") is False)
-        ]
-        excluded = len(data["documents"]) - len(all_docs)
-        log.info("bm25_excludes", count=excluded)
+        all_docs, cached_tokens = self._load_bm25_corpus(chroma_path, collection)
         # Kept for ADR-025 F2: a folder-scoped turn rebuilds the BM25 arm over the subset of
         # these docs, so the corpus has to survive construction. Nothing mutates it.
         self._bm25_docs = all_docs
@@ -172,7 +183,7 @@ class RAGPipeline:
             # handicapped. ``keywords.tokenize`` casefolds + emits tech-aware tokens
             # ("BM25" -> "bm25", "cross-encoder" intact). LangChain applies the same func to the
             # query at retrieval time, so index and query tokenization stay symmetric.
-            bm25 = BM25Retriever.from_documents(all_docs, preprocess_func=tokenize)
+            bm25 = _build_bm25(all_docs, cached_tokens)
             bm25.k = CANDIDATE_K
             log.info("ensemble_weights", bm25=weights[0], vector=weights[1])
             self.ensemble = EnsembleRetriever(retrievers=[bm25, vector], weights=weights)
@@ -197,6 +208,60 @@ class RAGPipeline:
         self.provider = LLM_PROVIDER
         self.model = LLM_MODEL
         self.llm = self._build_llm()
+
+    def _load_bm25_corpus(
+        self, chroma_path: str, collection: str
+    ) -> tuple[list[Document], list[list[str]] | None]:
+        """Materialise the BM25 corpus, from the persisted snapshot when it is valid (ADR-035).
+
+        Returns ``(docs, tokens)``. On a hit this skips the whole-store read *and* the tokenise
+        pass; the gap widens linearly with the corpus, which is the reason it exists.
+
+        On a miss it reads the store, builds the corpus, and writes the snapshot for next launch.
+        The write is best-effort: a read-only or full data home logs and is otherwise ignored.
+        **The miss path tokenises exactly once** — the terms it computes for the snapshot are also
+        returned, so `_build_bm25` reuses them instead of `BM25Retriever.from_documents` re-running
+        `tokenize` over every chunk. Tokenising twice on the one launch that is already the slow
+        one would be a strange way to pay for a cache.
+        """
+        # Ids only — no documents, metadata or embeddings — so this is a measured ~0.11 s at 33k
+        # chunks against the 1.06 s a full read costs. It is the corpus fingerprint (ADR-035): the
+        # store file's mtime cannot serve, because opening Chroma rewrites it even on a pure read.
+        chunk_ids = [str(i) for i in get_all(self.db, include=[])["ids"]]
+
+        cached = bm25_cache.load(chroma_path, collection, chunk_ids)
+        if cached is not None:
+            docs, tokens = cached
+            return [Document(page_content=t, metadata=m) for t, m in docs], tokens
+
+        # Paged: an unpaged whole-store read fails past SQLite's parameter ceiling, and this
+        # runs in __init__ — so at 33k chunks it broke pipeline *construction* (chroma_read).
+        data = get_all(self.db, include=["documents", "metadatas"])
+        all_docs = [
+            Document(page_content=text, metadata=meta or {})
+            for text, meta in zip(data["documents"], data["metadatas"], strict=True)
+            if not (meta and meta.get("keep_for_retrieval") is False)
+        ]
+        log.info("bm25_excludes", count=len(data["documents"]) - len(all_docs))
+
+        if not all_docs:
+            return all_docs, None
+
+        # Tokenise once, here: the result serves both the snapshot and the index built from it.
+        # Guarded on `enabled()` so a disabled cache does not pay for a payload nothing stores —
+        # argument expressions are evaluated before the call, so an unguarded `save(...)` would
+        # tokenise the whole corpus and then be thrown away.
+        if bm25_cache.enabled():
+            tokens = [tokenize(d.page_content) for d in all_docs]
+            bm25_cache.save(
+                chroma_path,
+                collection,
+                chunk_ids,
+                [(d.page_content, d.metadata) for d in all_docs],
+                tokens,
+            )
+            return all_docs, tokens
+        return all_docs, None
 
     @property
     def reranker(self) -> CrossEncoder:

@@ -1,0 +1,48 @@
+# Don't copy these into the build context.
+#
+# The filename matters: Docker reads `.dockerignore` **exactly**. This file was committed as
+# `.dockerignore.md` (2026-06-26) and was therefore inert for 173 commits — every build shipped
+# `data/` (590 MB here), `.venv/` and `node_modules/` into the context.
+.venv/
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.pytest_cache/
+.coverage
+.mypy_cache/
+.ruff_cache/
+
+# Frontend — the image serves the headless API; the Tauri GUI runs on the host.
+node_modules/
+apps/desktop/node_modules/
+apps/desktop/src-tauri/target/
+dist/
+
+# Editor
+.vscode/
+.idea/
+
+# Secrets — should always come from env at runtime
+.env
+
+# Runtime data — bind-mounted from host instead
+data/
+
+# Docker artifacts
+Dockerfile
+docker-compose.yml
+.dockerignore
+
+# Git
+.git/
+.gitignore
+
+# Docs not needed in image
+README.md
+LICENSE
+
+# OS
+.DS_Store
+Thumbs.db

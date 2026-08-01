@@ -1,3 +1,9 @@
+# Runs the headless API as a service against YOUR host corpus and YOUR key.
+#
+# That makes it the wrong tool for verifying a release: the bind-mount below inherits the host
+# `data/` and `env_file` inherits the host `.env`, so a "clean" run is nothing of the kind. For a
+# clean-room check, clone into an empty directory and start from an empty data home instead — the
+# v0.4.0 clean-room run in docs/DEVLOG.md is the worked example.
 services:
   doc-assistant:
     build: .

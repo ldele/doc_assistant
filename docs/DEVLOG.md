@@ -11,6 +11,68 @@ Format: What changed | Why | Rejected alternatives | What it opens
 > (moved verbatim 2026-07-21). This file keeps 2026-07-15 onward.
 
 ---
+## 2026-08-01 (6) — v0.4.0 verified from a clean clone on Linux; the Dockerfile's CPU-torch trick was silently defeated by `pip`
+
+**What changed.** No source code. `.dockerignore.md` → **`.dockerignore`**, the Dockerfile switched
+from `pip` to `uv`, and a header on `docker-compose.yml`.
+
+**The clean-room run (WSL2, Ubuntu 26.04, system Python 3.14).** A fresh `git clone` of the v0.4.0
+tag carries tracked files only — no `.env`, no `.venv` — which is how this box finally produced the
+**keyless first-run state the 2026-07-28 session recorded as impossible here** (`load_dotenv()` walks
+up from the module file, so the repo `.env` always loads on Windows no matter where the process
+starts).
+
+| Step | Result |
+|---|---|
+| `uv sync --extra cpu --extra dev` (verbatim from QUICKSTART) | exit 0, **113 s** |
+| Interpreter chosen | **3.12.13**, fetched automatically on a 3.14 host |
+| Cold start → `/api/health` 200 | **~30 s**, downloading **419 MB** to an empty HF cache |
+| `/api/setup`, no key + no documents | `active_ready=False chunk_count=0 ready=False` — honest |
+| Ollama probe | `ollama_probe_failed … Connection refused` — reported, not assumed |
+| `/api/compare` at 0 documents | empty lists, no crash (the robustness contract) |
+| `download_corpus` → `ingest` | 10 papers, **10 added / 0 errors**, 524 s (51.7 s/paper, CPU) |
+| Warm start | **10 s** |
+| Retrieval | **2,301 chunks**, `arm=sparse_index`, `keyword index: on_disk`, 10 sources, top 0.9967 |
+
+The top documents match the Windows run for the same query (`hyde_gao_2022` · `bge_cpack_xiao_2023` ·
+`rag_lewis_2020` · `dpr_karpukhin_2020`), and 2,301 chunks is the same count — so ingest and
+retrieval are reproducible across platform, which nothing had checked before.
+
+**Two things I asserted before running it, both wrong, both corrected by the run.**
+1. *"`requires-python = ">=3.10"` means nothing enforces the 3.12 pin."* A **tracked
+   `.python-version` (3.12)** enforces it, and uv honoured it on a 3.14 host. The residual gap is
+   narrow: `.python-version` binds uv, not pip, so `pip install -e .` would still accept 3.10+.
+2. *"`data/` in a fresh clone is unexpected."* It is correct — two tracked files, the ANZSRC CC-BY
+   taxonomy that TX1 deliberately commits.
+
+**A measurement that weakens a recorded argument.** KI-9 justified bundling ~1.5 GB of weights into
+the installer with a **≈218 s** first-run HuggingFace download. Measured here: **~30 s / 419 MB**.
+Not a contradiction — that figure was June, on the *frozen* build, in Windows Sandbox, and it
+predates the **lazy reranker** (2026-07-28), which moved the reranker's weights off the launch path
+entirely. So the download is now smaller and later than the number the bundling decision rests on.
+The decision stands (the user parked the installer question); the *evidence* for it is weaker than
+the record says, and that is worth knowing before anyone cites the 218 s again.
+
+**What this is NOT.** Generation was never exercised there — the clean box has no key and no Ollama,
+which is precisely why it could test the keyless state. So this closes the **source-install** gate,
+not **RG-012 Tier-2**, which is about a frozen Windows binary on a Python-free box and remains open.
+
+**The Docker bug, and it was load-bearing.** `pip install -e ".[cpu]"` cannot honour the CPU-torch
+routing: `[tool.uv.sources]` maps torch to the `pytorch-cpu` index **only under uv**, so pip saw
+nothing but `torch>=2.12` and resolved it from PyPI — whose Linux wheel bundles CUDA, pulling
+several GB of `nvidia-*` into an image with no GPU. This is the exact trap `ci.yml` documents. Now
+`uv sync --locked --extra cpu`, which also honours `uv.lock` (pip ignored it entirely). The base is
+pinned to `python:3.12-slim` with the KI-2 reason attached, and the healthcheck `start-period` rose
+to 300 s to cover the model download measured above.
+
+**`.dockerignore.md` was inert for 173 commits.** Docker reads `.dockerignore` exactly, so every
+build shipped `data/` (590 MB here), `.venv/` and `node_modules/` into the context.
+
+**Untested, and stated as such: Docker is not installed on this box**, so none of the Dockerfile
+changes have been built. The `ghcr.io/astral-sh/uv:0.12.1` pin was at least verified to resolve
+(registry manifest, HTTP 200) rather than guessed. `docker compose build` is owed before trusting it.
+
+---
 ## 2026-08-01 (5) — v0.4.0: walkthrough, version bump, release notes. **Source release; the installer stays stale on purpose**
 
 **What changed.** Version 0.3.0 → **0.4.0** across all five strings (`pyproject.toml` ·

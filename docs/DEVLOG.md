@@ -11,6 +11,50 @@ Format: What changed | Why | Rejected alternatives | What it opens
 > (moved verbatim 2026-07-21). This file keeps 2026-07-15 onward.
 
 ---
+## 2026-08-01 (5) — v0.4.0: walkthrough, version bump, release notes. **Source release; the installer stays stale on purpose**
+
+**What changed.** Version 0.3.0 → **0.4.0** across all five strings (`pyproject.toml` ·
+`package.json` · `tauri.conf.json` · `Cargo.toml` · `Cargo.lock`, the last matched on its own package
+entry so the `dtor`/`urlpattern` crates at 0.3.0 are untouched), a CHANGELOG entry, and the README
+status block. No source code.
+
+**Why 0.4.0 and not 0.3.1.** ADR-036 changed retrieval ranking and ADR-038 **removed** two documented
+environment switches (`DOC_SPARSE_INDEX`, `DOC_BM25_CACHE`). Removing an interface is not a patch.
+
+**Walkthrough first, $0 on `ollama/llama3.1:8b`** — the release claim needed evidence, not the test
+suite's word. One real turn returned a grounded answer with **10 inline citations**, 10 sources, the
+source-evaluation strip (scores 0.98 → 0.47, sigmoid-bounded), the provenance card and `0 tokens ·
+local`. Conversation history put the new turn on top; Library served 97 documents with titles and
+years; the graph served 13 nodes / 19 edges / 6 communities / 18 gaps; Settings → Corpus read
+`on_disk, 40.7 MB`. **0 console errors.**
+
+**Two findings the walkthrough produced, both now in the CHANGELOG's Known limits.**
+1. **`contested` has saturated, and it is measured rather than suspected: 53.3% of assessed chunks**
+   (396 of 743) versus **3.9%** carrying `corroborated`. In the live turn, 8 of 10 sources read
+   *contested* — on "what is dense passage retrieval vs BM25", which is not a controversy. This is
+   exactly RG-019's prediction (53.6% at 47 documents, monotone in corpus size) holding at 97. The
+   integrity strip is the product thesis and it is currently closer to noise than signal.
+2. **The answer copies the source's voice** — "Our dense retriever outperforms…", first person, as
+   if the app wrote the paper. An 8B artifact, but the first thing a tester will notice.
+
+**Release shape: source only, deliberately.** The bundled installer is `doc_assistant_0.1.0` from
+2026-06-24 — pre-rename, pre-icon, pre-ADR-034, and pre-everything in this release. Shipping it would
+ship a different app, so the CHANGELOG says plainly that this is a source release. **RG-012 Tier-2
+(blocks-ship) stays open**: no cited turn has ever run on a clean, Python-free box.
+
+**The installer question, closed for now by the user** ("we don't need it for now"). It was
+investigated rather than deferred blind: a *smaller* installer means downloading model weights from
+HuggingFace at first run, which is the design KI-9 measured and rejected — **≈218 s** of first-run
+download and an offline launch that never goes green, against a bundled build whose cold start
+**did not regress** (30.9 s) for 385 MB → 1.6 GB. One thing has changed since: ADR-034 built a
+first-run readiness surface, so weights could become a visible, resumable step rather than a silent
+hang. That is a different proposal from the rejected one and would need its own ADR; not written,
+because it is not wanted yet.
+
+**Gates:** ruff + format clean · `mypy src` 86 files · **pytest 1446** · `svelte-check` 187 0/0 ·
+**npm 68/68** · `docs_check --strict` 0/0 · all five version strings verified aligned at 0.4.0.
+
+---
 ## 2026-08-01 (4) — Corrected the "retrieval is deterministic" claim; ADR-039 proposes an OCR sidecar (docs only)
 
 **What changed.** No source behaviour. (a) The determinism claim is corrected where it was asserted:

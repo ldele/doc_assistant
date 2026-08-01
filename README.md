@@ -135,12 +135,12 @@ Current as of 2026-07-28; the full ledger lives in `.claude/KNOWN_ISSUES.md`.
 
 ## Status
 
-**v0.3.0 (2026-07-28) — the first release meant for outside testers.** Phase 6 + 7 in progress.
-Shipped: core RAG, the eval harness, the document store and library workspace, citation and
-doc-similarity graphs, the research-integrity layer (provenance, evidence/interpretation split,
+**v0.4.0 (2026-08-01) — backend memory no longer grows with your library.** Phase 6 + 7 in
+progress. Shipped: core RAG, the eval harness, the document store and library workspace, citation
+and doc-similarity graphs, the research-integrity layer (provenance, evidence/interpretation split,
 separate-context reviewer), a provider-agnostic LLM layer with in-app setup and live switching
 between Claude API and local Ollama, figures and tables, the corpus wiki, and the full concept-graph
-stack with gap detection. **1,357 tests · ruff / mypy (strict) / bandit clean.**
+stack with gap detection. **1,446 tests · ruff / mypy / bandit clean.**
 
 Next: the scale review's P0 robustness fixes, then the document-map and source-trust tracks. Release
 notes: [`CHANGELOG.md`](CHANGELOG.md). Full roadmap: [`docs/ROADMAP.md`](docs/ROADMAP.md).

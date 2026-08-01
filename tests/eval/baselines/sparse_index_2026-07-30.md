@@ -22,7 +22,13 @@ single process would report the sum of both arms' memory and prove nothing about
 only, **$0**, no generation. The recall instrument is the one
 `scripts/sweep_bm25_weight.py` already uses (`_recall_at_k` over each case's `expected_citations`,
 bidirectional substring), so this is the project's existing measurement pointed at a new variable.
-Retrieval is deterministic on both arms, which is what `--repeat` buys elsewhere.
+Retrieval was assumed deterministic on both arms, which is what `--repeat` buys elsewhere.
+**Correction (2026-08-01, appended — the run above is not re-recorded):** that assumption is false.
+A same-arm re-run on the private 35-case set disagreed on **1 of 35 cases**, so single-pass
+per-case comparisons carry a ~3% noise floor. Aggregate recall was unaffected (identical across
+runs), so this run's *numbers* stand; what does not stand is the claim that a per-case list is
+reproducible. The cause is cross-encoder tie-breaking, not either retrieval arm — see
+`sparse_arm_private35_2026-08-01.md` §4.
 
 ---
 

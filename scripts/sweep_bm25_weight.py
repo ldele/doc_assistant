@@ -1,4 +1,4 @@
-"""BM25/vector ensemble-weight sweep — retrieval-only, $0, deterministic.
+"""BM25/vector ensemble-weight sweep — retrieval-only, $0, near-deterministic.
 
 Sweeps the locked ``BM25_WEIGHT`` (the sparse arm's ensemble weight; vector arm =
 ``1 - w``) and measures retrieval **recall@K** against each case's
@@ -17,9 +17,18 @@ loop like ``sweep_chunking``):
   fully offline (no HTTPS, so KI-6's SSL crash can't bite). ``run_eval``'s free
   scorers still generate an answer per case (an LLM call), which the weight does
   not affect — pure overhead here.
-* Retrieval is **deterministic**, so one pass per arm is representative; the
-  ``--repeat`` intent (variance) is satisfied by determinism, not repetition
-  (``--repeat`` still runs N passes and asserts they agree).
+* Retrieval is **near-deterministic, not deterministic** — corrected 2026-08-01.
+  It was asserted here and in the ADR-036 baseline until a same-arm re-run over the
+  private 35-case set disagreed on **1 of 35 cases** (~3% case-level noise floor).
+  The divergence is *not* in either retrieval arm: the pre-rerank candidate list was
+  byte-identical across runs, and only the post-rerank parents moved. It is the
+  **cross-encoder breaking ties**, and it showed up on a case whose target document
+  has 0 chunks — with no true match, scores cluster and the tail order is decided by
+  ties. So a single pass is representative of the *aggregate* (recall means were
+  identical across runs) but not of any individual case's document list. Use
+  ``--repeat`` when a per-case comparison is what matters; it runs N passes and
+  reports disagreement rather than assuming there will be none.
+  Measured: ``tests/eval/baselines/sparse_arm_private35_2026-08-01.md`` §4.
 
 Two metrics per weight, to make the result *explanatory*:
 
@@ -172,7 +181,8 @@ def main() -> int:
         "--repeat",
         type=int,
         default=1,
-        help="Passes per weight. Retrieval is deterministic, so >1 asserts agreement. Default 1.",
+        help="Passes per weight. Retrieval is near-deterministic (~3% case-level noise), so >1 "
+        "reports disagreement rather than proving there is none. Default 1.",
     )
     parser.add_argument("--dry-run", action="store_true", help="Print the plan, load nothing")
     args = parser.parse_args()
@@ -183,7 +193,7 @@ def main() -> int:
     grid = _parse_grid(args.grid)
     control = BM25_WEIGHT
 
-    print("BM25/vector ensemble-weight sweep (retrieval-only, $0, deterministic)")
+    print("BM25/vector ensemble-weight sweep (retrieval-only, $0, near-deterministic)")
     print(f"  cases:       {args.cases}")
     print(f"  grid:        {grid}")
     print(f"  control:     BM25_WEIGHT={control} (vector {1.0 - control})")
@@ -225,7 +235,11 @@ def main() -> int:
         first = trials[0]
         if any(t != first for t in trials[1:]):
             disagreements += 1
-            print(f"! weight {w}: passes disagreed (retrieval expected deterministic)", flush=True)
+            print(
+                f"! weight {w}: passes disagreed — expected on ~3% of cases "
+                "(cross-encoder tie-breaking), suspicious if it moves the aggregate",
+                flush=True,
+            )
         rows.append((w, first))
         tag = "  <- control" if abs(w - control) < 1e-9 else ""
         print(f"[done] w={w:<4}{tag}", flush=True)

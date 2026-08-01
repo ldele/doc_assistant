@@ -21,7 +21,9 @@ import pytest
 from langchain_core.documents import Document
 from langchain_core.runnables import RunnableLambda
 
+from doc_assistant import sparse_index
 from doc_assistant.pipeline import RAGPipeline
+from doc_assistant.sparse_index import SparseIndex
 
 
 class _FakeReranker:
@@ -61,15 +63,19 @@ def _docs() -> list[Document]:
     ]
 
 
-def _rig(monkeypatch: pytest.MonkeyPatch) -> RAGPipeline:
+def _rig(monkeypatch: pytest.MonkeyPatch, tmp_path) -> RAGPipeline:
     monkeypatch.setattr("doc_assistant.pipeline.USE_PARENT_CHILD", False)
     monkeypatch.setattr("doc_assistant.pipeline.USE_MULTI_QUERY", False)
     rag = RAGPipeline.__new__(RAGPipeline)
     docs = _docs()
-    # These tests exercise the legacy in-RAM arm (still shipped as the ADR-036 fallback);
-    # `None` selects it explicitly. The on-disk arm has its own file, test_pipeline_sparse_arm.py.
-    rag._sparse = None
-    rag._bm25_docs = docs
+    # A **real** on-disk index over the same four documents. It used to be the legacy in-RAM arm
+    # selected by `_sparse = None`; ADR-038 retired that, and leaving `None` here would have left
+    # these tests silently exercising the vector-only path — `test_scope_filters_the_keyword_arm`
+    # would still pass, on the vector filter alone, while asserting nothing about a keyword arm.
+    path = tmp_path / "chroma" / sparse_index.INDEX_FILENAME
+    path.parent.mkdir(parents=True, exist_ok=True)
+    rag._sparse = SparseIndex.build(path, "fp", ((d.page_content, dict(d.metadata)) for d in docs))
+    rag._corpus_empty = False
     rag._scoped = OrderedDict()
     rag._weights = [0.4, 0.6]
     rag.bm25_weight = 0.4
@@ -87,9 +93,9 @@ def _rig(monkeypatch: pytest.MonkeyPatch) -> RAGPipeline:
 
 
 def test_scope_none_uses_the_prebuilt_ensemble_and_builds_no_filter(
-    monkeypatch: pytest.MonkeyPatch,
+    monkeypatch: pytest.MonkeyPatch, tmp_path
 ) -> None:
-    rag = _rig(monkeypatch)
+    rag = _rig(monkeypatch, tmp_path)
 
     out = rag.retrieve_with_scores("bm25", top_k=10)
 
@@ -99,8 +105,8 @@ def test_scope_none_uses_the_prebuilt_ensemble_and_builds_no_filter(
     assert not rag._scoped  # the unscoped path never populates the scoped cache
 
 
-def test_retrieve_passes_scope_through(monkeypatch: pytest.MonkeyPatch) -> None:
-    rag = _rig(monkeypatch)
+def test_retrieve_passes_scope_through(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
+    rag = _rig(monkeypatch, tmp_path)
     assert [d.metadata["doc_hash"] for d in rag.retrieve("bm25", top_k=10)] == ["a", "b", "c", "d"]
     assert [d.metadata["doc_hash"] for d in rag.retrieve("bm25", top_k=10, scope=frozenset({"a"}))]
 
@@ -109,11 +115,11 @@ def test_retrieve_passes_scope_through(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_empty_scope_returns_nothing_and_touches_no_retriever(
-    monkeypatch: pytest.MonkeyPatch,
+    monkeypatch: pytest.MonkeyPatch, tmp_path
 ) -> None:
     """The whole feature in one assertion: 'I can't honour your scope' must not become
     'I searched everything'."""
-    rag = _rig(monkeypatch)
+    rag = _rig(monkeypatch, tmp_path)
 
     assert rag.retrieve_with_scores("bm25", top_k=10, scope=frozenset()) == []
     assert rag.unscoped_calls == []  # type: ignore[attr-defined]
@@ -123,8 +129,8 @@ def test_empty_scope_returns_nothing_and_touches_no_retriever(
 # --- S6: both arms scope ----------------------------------------------------------------------- #
 
 
-def test_scope_filters_the_vector_arm(monkeypatch: pytest.MonkeyPatch) -> None:
-    rag = _rig(monkeypatch)
+def test_scope_filters_the_vector_arm(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
+    rag = _rig(monkeypatch, tmp_path)
 
     out = rag.retrieve_with_scores("vectors", top_k=10, scope=frozenset({"c", "d"}))
 
@@ -137,10 +143,13 @@ def test_scope_filters_the_vector_arm(monkeypatch: pytest.MonkeyPatch) -> None:
     assert {"keep_for_retrieval": {"$ne": False}} in kwargs["filter"]["$and"]
 
 
-def test_scope_filters_the_bm25_arm(monkeypatch: pytest.MonkeyPatch) -> None:
-    """The BM25 index is rebuilt over the subset, so an out-of-scope document cannot be
-    keyword-matched even when it is the best lexical hit."""
-    rag = _rig(monkeypatch)
+def test_scope_filters_the_keyword_arm(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
+    """The keyword arm is scoped inside its ranked query, so an out-of-scope document cannot be
+    keyword-matched even when it is the best lexical hit.
+
+    Non-vacuous check: `_docs()` gives "b" the same `bm25` term as "a", and the vector fake honours
+    the same scope, so a result set of exactly {"a"} can only come from both arms being scoped."""
+    rag = _rig(monkeypatch, tmp_path)
 
     out = rag.retrieve_with_scores("bm25", top_k=10, scope=frozenset({"a"}))
 
@@ -148,11 +157,11 @@ def test_scope_filters_the_bm25_arm(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_a_scope_naming_no_indexed_chunk_falls_back_to_vector_only(
-    monkeypatch: pytest.MonkeyPatch,
+    monkeypatch: pytest.MonkeyPatch, tmp_path
 ) -> None:
     """Documents in the folder but nothing retrievable: vector-only, still scoped — the scope is
     never widened to compensate for an empty BM25 subset."""
-    rag = _rig(monkeypatch)
+    rag = _rig(monkeypatch, tmp_path)
 
     out = rag.retrieve_with_scores("bm25", top_k=10, scope=frozenset({"ghost"}))
 
@@ -163,8 +172,8 @@ def test_a_scope_naming_no_indexed_chunk_falls_back_to_vector_only(
 # --- S5: the LRU scoped-ensemble cache ------------------------------------------------- #
 
 
-def test_repeated_scope_reuses_the_ensemble(monkeypatch: pytest.MonkeyPatch) -> None:
-    rag = _rig(monkeypatch)
+def test_repeated_scope_reuses_the_ensemble(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
+    rag = _rig(monkeypatch, tmp_path)
 
     rag.retrieve_with_scores("bm25", top_k=10, scope=frozenset({"a", "b"}))
     rag.retrieve_with_scores("bm25", top_k=10, scope=frozenset({"a", "b"}))
@@ -176,10 +185,10 @@ def test_repeated_scope_reuses_the_ensemble(monkeypatch: pytest.MonkeyPatch) -> 
     assert _in_clause(rag.db.calls[1]) == {"a"}
 
 
-def test_lru_keeps_alternating_scopes_warm(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_lru_keeps_alternating_scopes_warm(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
     """The whole point of the LRU over the old single slot: alternating between two folders must
     NOT rebuild BM25 every turn. Under the single slot this sequence rebuilt on every switch."""
-    rag = _rig(monkeypatch)
+    rag = _rig(monkeypatch, tmp_path)
     ab, a = frozenset({"a", "b"}), frozenset({"a"})
 
     rag.retrieve_with_scores("bm25", top_k=10, scope=ab)  # build ab
@@ -194,12 +203,12 @@ def test_lru_keeps_alternating_scopes_warm(monkeypatch: pytest.MonkeyPatch) -> N
 
 
 def test_lru_evicts_the_least_recently_used_scope_past_capacity(
-    monkeypatch: pytest.MonkeyPatch,
+    monkeypatch: pytest.MonkeyPatch, tmp_path
 ) -> None:
     """The cache is bounded: once more than _SCOPED_ENSEMBLE_CACHE_SIZE distinct scopes are seen,
     the least-recently-used one is evicted and must be rebuilt when it returns."""
     monkeypatch.setattr("doc_assistant.pipeline._SCOPED_ENSEMBLE_CACHE_SIZE", 2)
-    rag = _rig(monkeypatch)
+    rag = _rig(monkeypatch, tmp_path)
     a, b, c = frozenset({"a"}), frozenset({"b"}), frozenset({"c"})
 
     rag.retrieve_with_scores("bm25", top_k=10, scope=a)  # build a  -> cache [a]

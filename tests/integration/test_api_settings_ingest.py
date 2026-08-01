@@ -18,16 +18,22 @@ from fastapi.testclient import TestClient
 
 
 class _FakeRag:
-    """The pipeline surface the settings payload needs: which sparse arm is live (ADR-036/037)."""
+    """The pipeline surface the settings payload needs: is a keyword index live (ADR-036/037/038).
 
-    def __init__(self, on_disk: bool = True) -> None:
+    Mirrors the real refusal condition, which ADR-038 changed: an empty corpus is the only thing
+    that cannot be rebuilt. A pipeline with no index is precisely the one that *needs* the rebuild.
+    """
+
+    def __init__(self, on_disk: bool = True, *, empty: bool = False) -> None:
         self.sparse_index_active = on_disk
+        self.empty = empty
         self.rebuilds = 0
 
     def rebuild_sparse_index(self) -> int:
-        if not self.sparse_index_active:
-            raise RuntimeError("the on-disk keyword index is not active; nothing to rebuild")
+        if self.empty:
+            raise RuntimeError("the corpus is empty; there is nothing to index")
         self.rebuilds += 1
+        self.sparse_index_active = True
         return 4242
 
 
@@ -304,15 +310,29 @@ def test_reindex_keywords_rebuilds_and_returns_the_refreshed_settings(settings_f
     assert "corpus" in body.json()
 
 
-def test_reindex_keywords_is_409_when_the_on_disk_arm_is_not_live(settings_file: Path) -> None:
-    """`DOC_SPARSE_INDEX=0` (or a failed build): reporting success for work that could not happen
-    is exactly the lie this route must not tell."""
+def test_reindex_keywords_recovers_a_pipeline_with_no_index(settings_file: Path) -> None:
+    """ADR-038 inverted this route's behaviour. A failed build now means keyword matching is off,
+    so the rebuild must run — it is the recovery action, not a convenience."""
     controller = FakeController(count=42)
     controller.rag.sparse_index_active = False
     client = TestClient(create_app(controller=controller))
 
     body = client.post("/api/settings/reindex-keywords")
 
+    assert body.status_code == 200
+    assert controller.rag.rebuilds == 1
+    assert body.json()["corpus"]["keyword_index"]["mode"] == "on_disk"
+
+
+def test_reindex_keywords_is_409_on_an_empty_corpus(settings_file: Path) -> None:
+    """The one refusal left: reporting success for work that could not happen is the lie this
+    route must not tell."""
+    controller = FakeController(count=0)
+    controller.rag.empty = True
+    client = TestClient(create_app(controller=controller))
+
+    body = client.post("/api/settings/reindex-keywords")
+
     assert body.status_code == 409
-    assert "not active" in body.json()["detail"]
+    assert "empty" in body.json()["detail"]
     assert controller.rag.rebuilds == 0

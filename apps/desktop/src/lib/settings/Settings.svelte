@@ -98,14 +98,15 @@
     }
   }
 
-  // ADR-037 — the Corpus panel. `indexInfo` derives the label + the honest memory sentence from
-  // the payload's `keyword_index.mode`; the two arms say opposite things about memory.
+  // ADR-037 — the Corpus panel. `indexInfo` derives the label + the honest sentence from the
+  // payload's `keyword_index.mode`; the states say materially different things, and since ADR-038
+  // one of them (`unavailable`) means retrieval is running on one arm.
   let reindexing = $state(false)
   let reindexError = $state<string | null>(null)
   const indexInfo = $derived(
     settings
       ? describeIndex(settings.corpus)
-      : { label: '', memory: '', rebuildable: false }
+      : { label: '', memory: '', rebuildable: false, degraded: false }
   )
 
   // Non-destructive and bounded (the index is derived data the next launch would rebuild anyway),
@@ -398,7 +399,7 @@
         </dd>
         <dt>Keyword index</dt>
         <dd class="index-row">
-          <span>{indexInfo.label}</span>
+          <span class:degraded={indexInfo.degraded}>{indexInfo.label}</span>
           {#if indexInfo.rebuildable}
             <button class="ghost" onclick={rebuildIndex} disabled={reindexing || busy}>
               {reindexing ? 'Rebuilding…' : 'Rebuild'}
@@ -408,7 +409,7 @@
         <dt>Data home</dt>
         <dd class="path">{settings.data_home}</dd>
       </dl>
-      <p class="banner">{indexInfo.memory}</p>
+      <p class="banner" class:warn={indexInfo.degraded}>{indexInfo.memory}</p>
       {#if reindexError}
         <p class="banner err">{reindexError}</p>
       {/if}
@@ -752,6 +753,17 @@
     padding: 0.45rem 0.6rem;
     font-size: 0.78rem;
     margin: 0 0 0.7rem;
+  }
+  /* Two classes on purpose: `.banner` is declared after `.warn`, so at equal specificity it would
+     win and quietly neutralise the warning colours. ADR-038's degraded state must look degraded. */
+  .banner.warn {
+    color: var(--warn-fg);
+    background: var(--warn-bg);
+    border-color: var(--warn-border);
+  }
+  .degraded {
+    color: var(--warn-fg);
+    font-weight: 600;
   }
   .segmented {
     display: inline-flex;

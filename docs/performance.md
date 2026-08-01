@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-07-31 (created 07-30: the cost/scale record + the trade-off ledger; §3/§5 rewritten for ADR-036/037) · class: living -->
+<!-- status: active · updated: 2026-08-01 (ADR-038: the in-RAM arm is gone) · class: living -->
 
 # Performance, cost and scale — the measured record
 
@@ -147,14 +147,14 @@ Every row is a trade, not a free win. This is the section to read before "improv
 |---|---|---|---|---|
 | **Lazy reranker** (2026-07-28) | **4.4 s off every launch** | The **first question is ~5.0-5.3 s slower** (re-measured today on `cu130`; the recorded 3.7 s was a CPU figure — loading onto the GPU is slower, scoring is ~5x faster once warm). The +506 MB also arrives at first question, not at launch | Neutral: model weights are a constant | None. Hardcoded property; a knob candidate |
 | **CUDA wheel** (`cu130`, 2026-07-29) | Query **3.1x**, embed **8.3x**, re-embed 17 min → 2.1 min | **Launch ~0.4 s worse** (CUDA context buys nothing there). Per-machine venv discipline: the frozen sidecar build needs a **CPU** sync first (KI-3), so **the shipped binary is CPU** and a tester sees the CPU column, not this one | Helps the per-turn constant and the embed slope. **Does nothing for extraction**, the dominant ingest cost | `uv sync --extra cpu` |
-| **BM25 snapshot** (ADR-035, 2026-07-29) | Launch BM25 stage **2.7x** (interleaved A/B) | **40 MB on disk** (85 MB before KI-32 step 1) duplicating chunk text already in Chroma; the first launch after an ingest pays the write (~0.3 s); a `pickle` file in the data home | **Lowers the constant, keeps the O(corpus) slope.** Still reads every chunk id (0.22 s) on every launch, still rebuilds the index in RAM | `DOC_BM25_CACHE=0` |
+| **BM25 snapshot** (ADR-035, 2026-07-29) — **retired 2026-08-01, ADR-038** | Launch BM25 stage **2.7x** (interleaved A/B) | **40 MB on disk** (85 MB before KI-32 step 1) duplicating chunk text already in Chroma; the first launch after an ingest pays the write (~0.3 s); a `pickle` file in the data home | **Lowered the constant, kept the O(corpus) slope.** Deleted with the arm it cached | — (gone) |
 | **Scoped-ensemble LRU** (4 entries, RH1) | Alternating between folders stops rebuilding BM25 every turn | Up to 4 subset indexes held in RAM. Scoped BM25 scores against **subset statistics**, so scoped and unscoped scores are not comparable (RG-020) | Each entry is subset-sized, so it inherits the same memory shape | None (structural constant) |
 | **Extraction cache + hash dedupe** | A re-ingest of unchanged documents is **0.4 ms/document** | Disk for the markdown cache | **The good news of the ledger:** it is what makes re-running ingest over a large folder survivable | — |
 | **Builder-side page-marker strip** (KI-29) | Correct stored text; 49% of parent texts were carrying markers into the LLM's evidence | **A full re-embed** (~2.1 min here). Existing installs keep markers until `ingest --rebuild` | Any change to *stored text* is an O(corpus) re-embed: ~3.6 h projected at 10k documents | — |
 | **Shared `--doc` resolver** (KI-30) | `extract_citations` **54 s → 7.4 s** scoped | None | `extract_keywords` / `compute_doc_vectors` stay corpus-global **by construction**, so adding one document to a 10k corpus still triggers whole-corpus passes | — |
 | **`RERANK_CANDIDATE_CAP`** (= `CANDIDATE_K*3`, RH1) | Bounds cross-encoder cost under multi-query | Drops the lowest-priority cross-variation tail. Provably inert on the single-query default path | Bounded by construction | `RERANK_CANDIDATE_CAP` env |
 | **Deduplicated parent text** (KI-32 step 1, 2026-07-30) | Heap **265 → 195 MB (1.36x)**, snapshot **85 → 40 MB (2.1x)**, retrieval **identical** | A per-turn lookup instead of a carried string, and a second place the parent text can come from (metadata first, then the map). Snapshot payload v2, so an existing snapshot is rebuilt once | Cuts the per-document term ~26%: the wall moves ~3,700 → ~5,000 documents on 16 GB. **Does not change the shape** | None (the map *is* the corpus now) |
-| **Sparse arm on disk** (ADR-036 / KI-32 step 2, 2026-07-30) | Heap **195 → 21 MB (8.8x, no corpus resident)**, construction **4.53 → 2.79 s**, sparse query **66.6 → 27.4 ms**, per turn **336 → 279 ms** | **Retrieval changes**: FTS5's BM25 (k1=1.2, no IDF floor) is not `rank_bm25`'s. 84% candidate overlap; 8/10 public queries return an identical final top-10, 2 differ by one document; recall identical at 1.0000 but the instrument has a ceiling. Plus a second on-disk artifact (41 MB) and two code paths until the legacy arm is deleted | **Changes the shape.** Memory stops scaling with the corpus altogether; launch keeps an O(corpus) id scan | `DOC_SPARSE_INDEX=0` |
+| **Sparse arm on disk** (ADR-036 / KI-32 step 2, 2026-07-30; sole arm since ADR-038) | Heap **195 → 21 MB (8.8x, no corpus resident)**, construction **4.53 → 2.79 s**, sparse query **66.6 → 27.4 ms**, per turn **336 → 279 ms** | **Retrieval changes**: FTS5's BM25 (k1=1.2, no IDF floor) is not `rank_bm25`'s. Re-measured on the private 35-case set (2026-08-01): **post-rerank recall identical**, pre-rerank +0.0147 to the on-disk arm — but **9 of 35 queries return a different evidence set**. Plus a 41 MB on-disk artifact | **Changes the shape.** Memory stops scaling with the corpus altogether; launch keeps an O(corpus) id scan | — (no fallback since ADR-038; a failed build is vector-only and reported) |
 
 **The meta-trade worth naming.** The first four of these lowered a *constant* on the launch path.
 That is real, and it also removed the symptom that would have made the *slope* visible: launch no
@@ -210,13 +210,17 @@ stamp, so launch reads one row instead of every id. Not built; recorded in §6.
    folder scoping as a `WHERE` clause instead of a subset rebuild. **195 → 21 MB, no corpus
    resident**, and faster on every axis measured. The cost is that **retrieval changes** — FTS5's
    BM25 (k1=1.2, no IDF floor) is not `rank_bm25`'s — so it was gated on a quality A/B rather than
-   asserted: recall identical at 1.0000, 8 of 10 public queries returning a byte-identical final
-   top-10, 2 differing by one document. `DOC_SPARSE_INDEX=0` still restores the old arm.
+   asserted.
+3. **Retire the in-RAM arm** ([ADR-038](decisions/ADR-038-retire-the-in-ram-sparse-arm.md),
+   2026-08-01), once that A/B was repeated where the instrument could discriminate: on the private
+   35-case set, **post-rerank recall is identical** (0.7010 @5 / 0.7598 @10) and the only movement —
+   pre-rerank +0.0147 — favours the on-disk arm. There is now **one** keyword arm; a failed build
+   degrades to vector-only and is reported rather than absorbed.
 
-**A note on ADR-035, which this supersedes in practice.** Persisting the BM25 snapshot made the
+**A note on ADR-035, which ADR-038 supersedes outright.** Persisting the BM25 snapshot made the
 launch of a design that could not reach 10k documents faster. It was the right call at the time (it
 was where the slope was, the cache was correct and disableable, and it bought a measured 2.7x), but
-it lowered a constant while the shape stayed. The snapshot now serves only the fallback path.
+it lowered a constant while the shape stayed — and it cached a structure that no longer exists.
 
 **So what breaks first now?** On the evidence above, in order: **the first ingest** (~41 h of
 single-threaded extraction at 10k documents), then **disk** (~60 GB), then the enrichment layer's own
@@ -238,8 +242,6 @@ money only. That distinction is what decides whether a knob is safe to expose (�
 | Knob | Default | Trades | Changeable today | Output-neutral |
 |---|---|---|---|---|
 | torch extra (`cu130` / `cpu`) | per machine | ~3x query, ~8x embed | install time (`uv sync --extra …`) | yes (numerically near-identical, not bit-identical) |
-| `DOC_SPARSE_INDEX` | on | keyword arm on disk (flat RAM) vs the legacy in-RAM arm | env var | **no** — the two arms rank differently (ADR-036) |
-| `DOC_BM25_CACHE` | on | launch time vs ~40 MB of disk — **only affects the legacy arm** | env var | **yes** |
 | reranker laziness | lazy | 4.4 s launch vs ~5 s first answer | **not exposed** (hardcoded) | **yes** |
 | `_SCOPED_ENSEMBLE_CACHE_SIZE` | 4 | folder-switch latency vs RAM | **not exposed** (structural constant) | **yes** |
 | `MARKER_MAX_WORKERS` | 2 | table-extraction throughput vs CPU/RAM | env var | yes |
@@ -264,10 +266,11 @@ that beats the control beyond its variance.
 The question was filed as PF2 while the sparse arm still held the corpus in RAM. **ADR-036 dissolved
 most of its premise**: of the knobs §4 proposed exposing, the BM25 snapshot became legacy-only, the
 scoped-cache size lost the cost it traded against, the ingest knobs turned out to be read only by
-`scripts/` (CLI runners with their own flags), and the one new switch — `DOC_SPARSE_INDEX` — is
+`scripts/` (CLI runners with their own flags), and the one new switch — `DOC_SPARSE_INDEX` — was
 **not** output-neutral, which was the test that made a knob safe to expose. What remained was a
 single minor toggle, while the need behind the request (*will this hold a big library?*) had been
-answered in engineering.
+answered in engineering. (ADR-038 has since deleted both env switches outright, so the table above
+no longer lists them: the question is now moot rather than merely decided.)
 
 **So the app ships the answer, not the controls**
 ([ADR-037](decisions/ADR-037-corpus-facts-not-performance-knobs.md)). Settings → **Corpus** reports
@@ -296,10 +299,14 @@ settings stay locked.
 - **Launch was never re-measured end to end after the BM25 snapshot landed**, nor after the on-disk
   arm replaced it. Construction alone is measured (4.53 → 2.79 s); the whole-launch figure of record
   is still 12.10 s from before both.
-- **The sparse-arm A/B ran on an instrument with a ceiling.** Both arms scored 1.0000 on every recall
-  metric of the public 10-case set, so it demonstrates parity at the resolution available and cannot
-  see a small regression. Repeat it on the private 35-case set (or a larger public one) before
-  deleting the legacy arm and its switch.
+- **Answer-level equivalence of the two sparse arms was never measured** (the A/B closed the
+  retrieval question — post-rerank recall identical on the private 35-case set, 2026-08-01 — but
+  **9 of 35 queries returned a different evidence set**, and recall@k does not score the other slots
+  the LLM reads). Closing it means `contains_all`/`llm_judge` over those 35 cases: paid, and their
+  references are `author_verified: false` in places.
+- **Retrieval is not deterministic** — a same-arm re-run disagreed on 1 of 35 cases (~3% case-level
+  noise floor), traced to the cross-encoder breaking ties on a case whose target document has 0
+  chunks. `sweep_bm25_weight`'s docstring and the ADR-036 baseline both still assert determinism.
 - **The launch id scan is still O(corpus)** (~0.2 s at 33k, ~20 s projected at 10k documents), plus
   ~159 MB of working-set high-water inside chromadb's paged read. The fix is an ingest-side version
   stamp; not built.

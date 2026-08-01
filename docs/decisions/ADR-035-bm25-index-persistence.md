@@ -2,7 +2,10 @@
 
 # ADR-035 — Persist the BM25 arm as a pure-data snapshot, fingerprinted against the chunk store
 
-- **Status:** accepted (built 2026-07-29)
+- **Status:** superseded by [ADR-038](ADR-038-retire-the-in-ram-sparse-arm.md) (2026-08-01) — the
+  snapshot cached the in-RAM arm, which no longer exists. Kept for the record; `bm25_cache.py` is
+  deleted. Its durable lesson (fingerprint on chunk ids + tokeniser source, never the store's mtime)
+  lives on in `sparse_index.fingerprint`
 - **Date:** 2026-07-29
 - **Deciders:** user + Claude Code
 - **Measurement:** `tests/eval/baselines/stage_profile_2026-07-29.md` (the GPU baseline that

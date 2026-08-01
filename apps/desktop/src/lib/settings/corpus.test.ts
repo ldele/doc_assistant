@@ -70,18 +70,29 @@ test('describeIndex tells the truth about memory for the on-disk arm', () => {
   assert.match(d.label, /on disk, 39 MB/)
   assert.match(d.memory, /does not grow/)
   assert.equal(d.rebuildable, true)
+  assert.equal(d.degraded, false)
 })
 
-test('describeIndex does NOT claim flat memory on the legacy in-memory arm', () => {
+test('describeIndex says keyword search is OFF when the index is unavailable', () => {
+  // ADR-038: with the in-RAM fallback retired this state means retrieval is running on one arm.
   // The whole reason `mode` crosses the wire instead of a pre-rendered sentence.
-  const d = describeIndex(facts({ keyword_index: { mode: 'in_memory', bytes: null, built_at: null } }))
-  assert.match(d.label, /legacy/)
-  assert.match(d.memory, /grows with your library/)
-  assert.equal(d.rebuildable, false, 'there is no on-disk index to rebuild')
+  const d = describeIndex(facts({ keyword_index: { mode: 'unavailable', bytes: null, built_at: null } }))
+  assert.match(d.label, /unavailable/)
+  assert.match(d.memory, /Keyword search is off/)
+  assert.match(d.memory, /exact terms/)
+  assert.equal(d.degraded, true, 'a degraded install must not look like a healthy one')
+})
+
+test('describeIndex offers the rebuild precisely when the index is broken', () => {
+  // The inversion ADR-038 made: rebuilding is the recovery action, so it must be reachable in the
+  // state that needs it. Offering it only when things already work would be the wrong way round.
+  const broken = describeIndex(facts({ keyword_index: { mode: 'unavailable', bytes: null, built_at: null } }))
+  assert.equal(broken.rebuildable, true)
 })
 
 test('describeIndex handles an empty corpus without offering a rebuild', () => {
   const d = describeIndex(facts({ keyword_index: { mode: 'disabled', bytes: null, built_at: null } }))
   assert.match(d.memory, /Add documents/)
-  assert.equal(d.rebuildable, false)
+  assert.equal(d.rebuildable, false, 'nothing to index yet')
+  assert.equal(d.degraded, false, 'an empty library is not a degradation')
 })

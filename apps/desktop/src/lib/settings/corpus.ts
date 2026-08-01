@@ -47,14 +47,16 @@ export function builtAgo(iso: string | null, now: Date = new Date()): string {
 
 /** What the panel says about the keyword index and about memory.
  *
- * The memory sentence is the point of the whole panel, and it is **not** the same for both arms:
- * the on-disk index (ADR-036) keeps memory flat, while the legacy in-RAM arm grows with the
- * corpus — the ceiling KI-32 measured. Saying "flat" while the process holds the corpus would be
- * exactly the reassurance a user should not be given. */
+ * The sentence is the point of the whole panel, and it differs per state. `on_disk` (ADR-036) keeps
+ * memory flat and is the healthy case. `unavailable` is the one that matters: since ADR-038 retired
+ * the in-RAM fallback, a failed index build means keyword matching is **off** and the app is
+ * answering on the vector arm alone — so this says so plainly and offers the rebuild that fixes it,
+ * rather than letting a degraded install look identical to a healthy one. */
 export function describeIndex(facts: CorpusFacts): {
   label: string
   memory: string
   rebuildable: boolean
+  degraded: boolean
 } {
   const { mode, bytes, built_at } = facts.keyword_index
   const ago = builtAgo(built_at)
@@ -64,18 +66,24 @@ export function describeIndex(facts: CorpusFacts): {
       label: `on disk${size}${ago ? `, built ${ago}` : ''}`,
       memory: 'Memory does not grow with your library — both search indexes live on disk.',
       rebuildable: true,
+      degraded: false,
     }
   }
-  if (mode === 'in_memory') {
+  if (mode === 'unavailable') {
     return {
-      label: 'in memory (legacy)',
-      memory: 'Memory grows with your library on this setting — about 6 KB per chunk.',
-      rebuildable: false,
+      label: 'unavailable',
+      memory:
+        'Keyword search is off — answers are using meaning-based search only, so exact terms ' +
+        'may be missed. Rebuild to restore it.',
+      // Rebuildable precisely *because* it is broken: this is the recovery action (ADR-038).
+      rebuildable: true,
+      degraded: true,
     }
   }
   return {
     label: 'none yet',
     memory: 'Add documents to build a keyword index.',
     rebuildable: false,
+    degraded: false,
   }
 }

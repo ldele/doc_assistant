@@ -8,8 +8,9 @@ module reports documents, chunks, disk by artifact, and which keyword-index impl
 serving. It reports; it decides nothing.
 
 **Facts, not copy.** The panel's sentence about memory is frontend text; what crosses the wire is
-`keyword_index.mode`, because the honest sentence differs between the on-disk index (memory does
-not grow with the library) and the legacy in-RAM arm (it does). Phrasing lives where phrasing is.
+`keyword_index.mode`, because the honest sentence differs per state — the on-disk index means
+memory does not grow with the library, while `unavailable` means retrieval is running on one arm
+and the user has something to fix. Phrasing lives where phrasing is.
 
 **Never blocks.** Every size is best-effort: an unreadable or absent path contributes 0 rather
 than raising: a settings panel that fails to open teaches the user nothing (inform, don't block).
@@ -50,9 +51,16 @@ class KeywordIndexState:
     ``mode`` is the load-bearing field:
 
     * ``on_disk`` — the ADR-036 SQLite/FTS5 index. Memory does not grow with the corpus.
-    * ``in_memory`` — the legacy arm (``DOC_SPARSE_INDEX=0``, or a build that failed). Memory grows
-      at roughly 5.9 KB per chunk, which is the ceiling KI-32 recorded.
-    * ``disabled`` — no keyword arm at all (an empty corpus); retrieval is vector-only.
+    * ``unavailable`` — documents are indexed for vector search but the keyword index could not be
+      opened or built, so **retrieval is running on one arm**. Answers still come back; an exact
+      term the embedder does not place nearby will be missed. Rebuilding is the fix.
+    * ``disabled`` — no keyword arm because there is nothing to index (an empty corpus); retrieval
+      is vector-only and that is the correct, supported state.
+
+    ``unavailable`` replaced ``in_memory`` when ADR-038 retired the legacy arm. It is not a rename:
+    the old value meant "working, but the expensive way" and needed no user action, while this one
+    means a capability is *missing*. The reason the state has to be reported at all is that
+    retiring the fallback removed the silent recovery that used to absorb it.
     """
 
     mode: str
@@ -112,9 +120,11 @@ def _tree_bytes(path: str | Path) -> int:
 def _keyword_index_state(*, on_disk: bool, chunks: int) -> KeywordIndexState:
     path = sparse_index.index_path(PC_CHROMA_PATH)
     if not on_disk:
-        # The legacy arm, or none at all. Distinguished because the honest sentence differs: the
-        # in-memory arm reintroduces the corpus-linear footprint the on-disk one removed.
-        mode = "in_memory" if chunks else "disabled"
+        # No keyword arm. The two causes need different words: chunks with no index is a
+        # degradation the user should act on, while no chunks is simply an empty library.
+        # Size and build time are deliberately withheld — a stale file may well still be on disk,
+        # and reporting its bytes would describe an index that is not serving anything.
+        mode = "unavailable" if chunks else "disabled"
         return KeywordIndexState(mode=mode, bytes=None, built_at=None)
     try:
         stat = path.stat()
@@ -128,9 +138,10 @@ def corpus_stats(*, documents: int, chunks: int, keyword_index_on_disk: bool) ->
     """Assemble the panel's facts.
 
     ``keyword_index_on_disk`` is passed in rather than discovered: the answer is a property of the
-    **live pipeline** (which arm it actually wired at construction), not of whether a file happens
-    to exist on disk. A stale index file with the legacy arm running would otherwise report the
-    reassuring answer while the process holds the corpus in RAM.
+    **live pipeline** (whether it actually wired a keyword arm at construction), not of whether a
+    file happens to exist on disk. That distinction outlived the legacy arm it was written for — a
+    stale index file left behind by a failed build would otherwise report the reassuring answer
+    while the process retrieves on the vector arm alone.
     """
     vector = _tree_bytes(PC_CHROMA_PATH)
     baseline = _tree_bytes(CHROMA_PATH)

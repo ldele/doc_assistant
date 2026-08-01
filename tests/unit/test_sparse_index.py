@@ -57,7 +57,6 @@ def _ids(n: int) -> list[str]:
 
 @pytest.fixture
 def index(tmp_path, monkeypatch) -> SparseIndex:
-    monkeypatch.delenv("DOC_SPARSE_INDEX", raising=False)
     path = tmp_path / "chroma" / sparse_index.INDEX_FILENAME
     path.parent.mkdir()
     stamp = sparse_index.fingerprint("langchain", _ids(len(_CHUNKS)))
@@ -258,21 +257,11 @@ class TestRefusesRatherThanServesAWrongIndex:
 
 
 # ============================================================
-# The switch + the robustness contract
+# The robustness contract
 # ============================================================
 
 
-class TestSwitchAndEmptyCorpus:
-    @pytest.mark.parametrize("value", ["0", "false", "no", "FALSE", " 0 "])
-    def test_falsey_values_disable(self, monkeypatch, value):
-        monkeypatch.setenv("DOC_SPARSE_INDEX", value)
-        assert sparse_index.enabled() is False
-
-    @pytest.mark.parametrize("value", ["1", "true", "yes", "anything-else"])
-    def test_everything_else_leaves_it_on(self, monkeypatch, value):
-        monkeypatch.setenv("DOC_SPARSE_INDEX", value)
-        assert sparse_index.enabled() is True
-
+class TestEmptyCorpus:
     def test_an_empty_corpus_builds_an_empty_index_that_answers_nothing(self, tmp_path):
         """0 documents is a supported state, not an error (robustness contract)."""
         path = tmp_path / sparse_index.INDEX_FILENAME

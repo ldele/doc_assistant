@@ -11,6 +11,69 @@ Format: What changed | Why | Rejected alternatives | What it opens
 > (moved verbatim 2026-07-21). This file keeps 2026-07-15 onward.
 
 ---
+## 2026-08-01 (3) — ADR-038: the in-RAM sparse arm is deleted. One keyword arm, and a failed build now **says** keyword search is off
+
+**What changed.** `bm25_cache.py` (and its test file) deleted; `DOC_SPARSE_INDEX`, `DOC_BM25_CACHE`,
+`_load_bm25_corpus`, `_split_parent_texts`, `_build_bm25`, `_bm25_docs`, `_parent_texts`,
+`sparse_index.enabled()` and the in-RAM branch of `_ensemble_for` all gone. `sparse_index.py` is the
+keyword arm. ADR-038 records it; ADR-035 is marked superseded outright, ADR-036 amended.
+
+**Why now.** ADR-036 kept the old arm as a rollback because its A/B could only run on the public
+10-case set, where both arms scored a saturated **1.0000**. The 2026-08-01 (2) run repeated it on the
+private 35-case set — recall **0.70–0.83**, headroom everywhere, **post-rerank recall identical at
+both k**, and the only movement (pre@10 +0.0147) favouring the on-disk arm.
+
+**The part that needed designing rather than deleting: what a failed build now means.** Before, it
+fell back to a slower in-RAM arm that still did keyword matching, and the user was never told. Now
+there is nothing to fall back to — **retrieval runs on the vector arm alone** and an exact term the
+embedder does not place nearby is missed. Removing a silent recovery means the state has to be
+*said*:
+
+- **`keyword_index_unavailable` is deliberately not `not sparse_index_active`.** The latter is also
+  true for an empty library, which is a supported state and nothing to report. Conflating them would
+  either cry wolf on every fresh install or stay silent on a real degradation. Pinned by a test that
+  asserts both a failed build **and** an empty corpus.
+- `corpus_stats` reports `mode="unavailable"` (replacing `in_memory`) and **withholds the index's
+  size and build time** — a stale file may still be on disk, and its bytes would describe an index
+  serving nothing.
+- The panel says *"Keyword search is off — answers are using meaning-based search only, so exact
+  terms may be missed"*, styled as a warning.
+
+**An inversion worth noticing: `rebuild_sparse_index` used to raise when no index was live.** Correct
+then (the fallback was serving, so a rebuild was meaningless); wrong now, because that state is
+exactly what a rebuild fixes. It runs whether or not an index is live, and the route's only 409 left
+is an empty corpus.
+
+**A bug caught while writing it.** The first version read `self._corpus_empty` — a *construction-time*
+snapshot. A fresh install launches against 0 documents, so after the user's first ingest the Rebuild
+button would have refused with "the corpus is empty". Emptiness is now re-derived from the rebuild's
+own fingerprint scan. Guard test:
+`test_it_indexes_documents_ingested_after_an_empty_launch`.
+
+**A vacuity trap found in the existing suite.** `test_pipeline_scope.py` selected the legacy arm with
+`_sparse = None`. With that arm deleted the file still passed — because it was silently exercising
+the *vector-only* path, and the vector fake honours the scope filter too, so
+`test_scope_filters_the_bm25_arm` asserted nothing about a keyword arm at all. The rig now builds a
+**real** on-disk index over the same four documents. **Verified non-vacuous by sabotage:** unscoping
+the scoped `SparseRetriever` fails that test plus `test_a_scoped_turn_scopes_the_sparse_arm`, and
+nothing else.
+
+**Rejected.** (a) *Keep the flag, default it off* — a rollback nobody exercises is a second code path
+that rots; git history is the rollback. (b) *Build a fresh in-RAM index on failure* — that is the arm
+just deleted, minus the cache, at the moment the machine is already unhappy, and it restores the
+silence. (c) *Raise on a failed build* — an unwritable data home would stop the app answering at all
+(inform, don't block). (d) *Report `unavailable` with the stale file's size* — technically true,
+actively misleading.
+
+**Gates:** ruff + format clean · `mypy src` **86 files** (was 87) · **pytest 1445 passed** (1498
+before; net −53 as the legacy arm's tests went with it, +4 new) · `docs_check --strict` 0/0.
+
+**What it opens.** Answer-level equivalence is still unproven — 9 of 35 queries hand the model a
+different evidence set, and recall@k does not score the other slots. And `sweep_bm25_weight`'s
+docstring plus the ADR-036 baseline still assert "retrieval is deterministic", which 2026-08-01 (2)
+falsified.
+
+---
 ## 2026-08-01 (2) — Sparse-arm A/B repeated on the private 35-case set: shipped recall **identical**, but the arms return different evidence on 9 of 35 — and **retrieval is not deterministic**
 
 **What changed.** No source code. One new baseline

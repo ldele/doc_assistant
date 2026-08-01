@@ -5,7 +5,7 @@
 
 **Layout (ADR-023)**
 - Top level — the RAG answer path: `pipeline.py` (hybrid retrieval + rerank), `sparse_index.py`
-  (the keyword arm, on disk — ADR-036; `bm25_cache.py` is its legacy fallback), `llm.py`,
+  (the keyword arm, on disk and the only one since ADR-038), `llm.py`,
   `synthesis.py`, `provenance.py`, `reviewer*.py`, `prompts.py`, `config.py`, `doc_vectors.py`, plus
   app services (`conversations` · `app_settings` · `credentials` · `readiness` · `compare` ·
   `health` · `export`).

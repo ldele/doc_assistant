@@ -2,7 +2,10 @@
 
 # ADR-036 — Move the sparse retrieval arm off the Python heap into an SQLite/FTS5 index
 
-- **Status:** accepted (built 2026-07-30)
+- **Status:** accepted (built 2026-07-30); **amended by
+  [ADR-038](ADR-038-retire-the-in-ram-sparse-arm.md) (2026-08-01)** — the A/B this ADR asked for was
+  repeated on the private 35-case set, the shipped metric came back identical, and the in-RAM
+  fallback + `DOC_SPARSE_INDEX` are now deleted
 - **Date:** 2026-07-30
 - **Deciders:** user + Claude Code
 - **Supersedes in practice:** ADR-035's snapshot, which stays only as the fallback path's cache

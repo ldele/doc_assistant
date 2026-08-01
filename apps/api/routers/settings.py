@@ -59,9 +59,11 @@ def reindex_keywords(request: Request) -> dict[str, Any]:
     polling would be machinery for nothing. If it ever stops being bounded, it becomes a `202`
     + status route like the graph rebuild, not a longer spinner.
 
-    409 when the on-disk arm is not live (`DOC_SPARSE_INDEX=0` or a build that failed at
-    construction): reporting success for work that could not happen is the failure this route
-    exists to avoid.
+    **Since ADR-038 this is also the recovery action**, not only a convenience. With the legacy
+    in-RAM arm retired, a failed index build means keyword matching is off, and this route is what
+    turns it back on — so it deliberately runs when no index is live. The only 409 left is an empty
+    corpus: there is nothing to index, and reporting success for work that could not happen is the
+    failure this route exists to avoid.
     """
     controller: ChatController = request.app.state.controller
     try:

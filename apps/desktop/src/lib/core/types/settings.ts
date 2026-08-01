@@ -51,8 +51,9 @@ export interface CorpusFacts {
     total_bytes: number
   }
   keyword_index: {
-    // 'on_disk' (ADR-036, memory flat) | 'in_memory' (legacy arm, memory grows) | 'disabled'
-    mode: 'on_disk' | 'in_memory' | 'disabled'
+    // 'on_disk' (ADR-036, memory flat) | 'unavailable' (build failed → vector-only retrieval,
+    // ADR-038) | 'disabled' (empty corpus, nothing to index)
+    mode: 'on_disk' | 'unavailable' | 'disabled'
     bytes: number | null
     built_at: string | null
   }

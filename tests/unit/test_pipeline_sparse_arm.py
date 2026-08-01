@@ -64,7 +64,6 @@ class _FakeChroma:
 
 
 def _pipeline(tmp_path, monkeypatch, rows=None) -> RAGPipeline:
-    monkeypatch.delenv("DOC_SPARSE_INDEX", raising=False)
     monkeypatch.setattr("doc_assistant.pipeline.USE_PARENT_CHILD", True)
     monkeypatch.setattr("doc_assistant.pipeline.USE_MULTI_QUERY", False)
     rag = RAGPipeline.__new__(RAGPipeline)
@@ -72,14 +71,12 @@ def _pipeline(tmp_path, monkeypatch, rows=None) -> RAGPipeline:
     chroma_path = str(tmp_path / "chroma_pc")
     (tmp_path / "chroma_pc").mkdir(exist_ok=True)
     rag._sparse = rag._open_sparse_index(chroma_path, "langchain")
-    rag._bm25_docs = []
-    rag._parent_texts = {}
     rag._scoped = OrderedDict()
     rag._weights = [0.4, 0.6]
     return rag
 
 
-def _constructed(tmp_path, monkeypatch, rows=_ROWS, *, sparse: bool = True) -> RAGPipeline:
+def _constructed(tmp_path, monkeypatch, rows=_ROWS) -> RAGPipeline:
     """A **really constructed** pipeline: `__init__` runs, with fakes only at its boundaries.
 
     The rig above assigns the attributes itself, which is fine for behaviour tests and useless for
@@ -87,11 +84,8 @@ def _constructed(tmp_path, monkeypatch, rows=_ROWS, *, sparse: bool = True) -> R
     decision is tested where it is actually made.
     """
     store = tmp_path / "chroma_pc"
-    store.mkdir(exist_ok=True)
+    store.mkdir(parents=True, exist_ok=True)
     fake = _FakeChroma(rows)
-    # Set explicitly rather than deleted: the ambient environment must not decide which arm a
-    # test exercises.
-    monkeypatch.setenv("DOC_SPARSE_INDEX", "1" if sparse else "0")
     monkeypatch.setattr("doc_assistant.pipeline.PC_CHROMA_PATH", str(store))
     monkeypatch.setattr("doc_assistant.pipeline.USE_PARENT_CHILD", True)
     monkeypatch.setattr("doc_assistant.pipeline.get_embeddings", lambda _m: object())
@@ -106,25 +100,21 @@ class TestTheMemoryProperty:
     def test_construction_holds_no_corpus_in_ram(self, tmp_path, monkeypatch):
         """**The reason this module exists**, asserted against a real `__init__`.
 
-        `_bm25_docs` and `_parent_texts` are the two corpus-sized structures the on-disk arm
-        replaces. Verified non-vacuous: dropping the `if self._sparse is None:` guard around
-        `_load_bm25_corpus` — the single edit that would quietly restore the 195 MB — fails this.
+        Since ADR-038 there is no in-RAM arm to fall back to, so the property is simply that
+        nothing corpus-sized is held: the pipeline exposes no list of `Document`s and no
+        parent-text map, and the index reports its chunks from disk. A future edit that
+        reintroduced a corpus-sized attribute would be caught by the scan below.
         """
         rag = _constructed(tmp_path, monkeypatch)
 
         assert rag._sparse is not None
-        assert rag._bm25_docs == []
-        assert rag._parent_texts == {}
         assert rag._sparse.chunks == 3  # the excluded chunk is not indexed
-
-    def test_the_fallback_arm_still_loads_the_corpus_when_selected(self, tmp_path, monkeypatch):
-        """The other half: with the index switched off the legacy path must still work, or the
-        escape hatch is a lie."""
-        rag = _constructed(tmp_path, monkeypatch, sparse=False)
-
-        assert rag._sparse is None
-        assert len(rag._bm25_docs) == 3
-        assert rag._parent_texts  # the KI-32 step-1 map, populated on this path
+        corpus_sized = [
+            name
+            for name, value in vars(rag).items()
+            if isinstance(value, (list, dict)) and len(value) >= 3
+        ]
+        assert corpus_sized == [], f"pipeline holds corpus-sized state: {corpus_sized}"
 
     def test_the_rig_variant_holds_no_corpus_either(self, tmp_path, monkeypatch):
         rag = _pipeline(tmp_path, monkeypatch)
@@ -212,13 +202,6 @@ class TestWiring:
 
 
 class TestFallback:
-    def test_the_switch_selects_the_legacy_arm(self, tmp_path, monkeypatch):
-        monkeypatch.setenv("DOC_SPARSE_INDEX", "0")
-        rag = RAGPipeline.__new__(RAGPipeline)
-        rag.db = _FakeChroma(_ROWS)
-
-        assert rag._open_sparse_index(str(tmp_path / "chroma_pc"), "langchain") is None
-
     def test_an_empty_corpus_builds_no_index(self, tmp_path, monkeypatch):
         """Robustness contract: 0 documents is a supported state. Writing an empty index would
         only be a stale-file hazard for the first real ingest."""
@@ -228,8 +211,7 @@ class TestFallback:
         assert not (tmp_path / sparse_index.INDEX_FILENAME).exists()
 
     def test_a_build_failure_degrades_instead_of_raising(self, tmp_path, monkeypatch):
-        """An unwritable data home must make the app answer the expensive way, not refuse to
-        start."""
+        """An unwritable data home must not stop the app from answering (inform, don't block)."""
         rag = RAGPipeline.__new__(RAGPipeline)
         rag.db = _FakeChroma(_ROWS)
 
@@ -239,6 +221,32 @@ class TestFallback:
         monkeypatch.setattr(sparse_index.SparseIndex, "build", boom)
 
         assert rag._open_sparse_index(str(tmp_path / "chroma_pc"), "langchain") is None
+
+    def test_a_failed_build_over_a_real_corpus_reports_unavailable_not_empty(
+        self, tmp_path, monkeypatch
+    ):
+        """ADR-038's whole point. With no in-RAM arm to absorb it, a failed build means keyword
+        matching is **off** — and the two ways of having no index must not look alike: an empty
+        library is a supported state, this is a degradation the user has to be told about.
+
+        Non-vacuous by construction: collapsing `keyword_index_unavailable` to
+        `not sparse_index_active` makes the empty-corpus assertion below fail.
+        """
+
+        def boom(*a: Any, **k: Any) -> None:
+            raise OSError("read-only file system")
+
+        monkeypatch.setattr(sparse_index.SparseIndex, "build", boom)
+        degraded = _constructed(tmp_path, monkeypatch)
+
+        assert degraded.sparse_index_active is False
+        assert degraded.keyword_index_unavailable is True
+        # Vector-only, but still answering: one arm, no exception.
+        assert len(degraded.ensemble.retrievers) == 1
+
+        empty = _constructed(tmp_path / "empty", monkeypatch, rows=[])
+        assert empty.sparse_index_active is False
+        assert empty.keyword_index_unavailable is False, "an empty library is not a degradation"
 
     def test_a_stale_index_is_rebuilt_not_served(self, tmp_path, monkeypatch):
         """The corpus changed under a live index: opening must miss, and the rebuild must reflect
@@ -307,9 +315,48 @@ class TestRebuild:
 
         assert rag._scoped == {}
 
-    def test_it_refuses_when_the_on_disk_arm_is_not_live(self, tmp_path, monkeypatch):
-        """Reporting success for work that could not happen is the failure this guards."""
-        rag = _constructed(tmp_path, monkeypatch, sparse=False)
+    def test_it_recovers_a_pipeline_that_has_no_index(self, tmp_path, monkeypatch):
+        """ADR-038 inverted this. While the legacy arm existed, a pipeline with no live index was
+        still serving keyword results and a rebuild was meaningless, so this raised. Now that state
+        means keyword matching is off, and rebuilding is the *fix* — refusing would leave the user
+        with a button that declines to do the one thing it is for."""
+        calls = {"n": 0}
+        real_build = sparse_index.SparseIndex.build
 
-        with pytest.raises(RuntimeError, match="not active"):
+        def fail_once(*a: Any, **k: Any) -> Any:
+            calls["n"] += 1
+            if calls["n"] == 1:
+                raise OSError("read-only file system")
+            return real_build(*a, **k)
+
+        monkeypatch.setattr(sparse_index.SparseIndex, "build", fail_once)
+        rag = _constructed(tmp_path, monkeypatch)
+        assert rag.keyword_index_unavailable is True
+
+        chunks = rag.rebuild_sparse_index()
+
+        assert chunks == 3
+        assert rag.sparse_index_active is True
+        assert rag.keyword_index_unavailable is False
+        assert rag.ensemble.retrievers[0].index is rag._sparse
+
+    def test_it_refuses_on_an_empty_corpus(self, tmp_path, monkeypatch):
+        """The one refusal left: nothing to index, and an empty index file would just be a
+        stale-file hazard for the first real ingest."""
+        rag = _constructed(tmp_path, monkeypatch, rows=[])
+
+        with pytest.raises(RuntimeError, match="empty"):
             rag.rebuild_sparse_index()
+
+    def test_it_indexes_documents_ingested_after_an_empty_launch(self, tmp_path, monkeypatch):
+        """The regression the construction-time snapshot would have caused. A fresh install
+        launches against 0 documents, the user ingests, then presses Rebuild — reading
+        `_corpus_empty` from construction would refuse to index the documents just added."""
+        rag = _constructed(tmp_path, monkeypatch, rows=[])
+        assert rag._corpus_empty is True
+
+        rag.db = _FakeChroma(_ROWS)  # the ingest happened while the process was running
+        chunks = rag.rebuild_sparse_index()
+
+        assert chunks == 3
+        assert rag.sparse_index_active is True

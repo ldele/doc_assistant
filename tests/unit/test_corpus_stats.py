@@ -85,19 +85,20 @@ class TestKeywordIndexMode:
         assert state.built_at is not None and state.built_at.endswith("+00:00")
 
     def test_the_live_arm_wins_over_a_file_on_disk(self, data_home):
-        """**The lie this test exists to prevent.** A stale index file next to a process running
-        the legacy in-RAM arm must not report the reassuring answer: memory *is* growing with the
-        corpus in that configuration."""
+        """**The lie this test exists to prevent.** A stale index file left behind by a failed
+        build must not report the reassuring answer: the process is retrieving on the vector arm
+        alone, and the file on disk is serving nothing. Its bytes are withheld for the same
+        reason — they would describe an index that is not live."""
         (data_home / "sparse_index.sqlite3").write_bytes(b"x" * 4096)
 
         state = corpus_stats.corpus_stats(
             documents=2, chunks=50, keyword_index_on_disk=False
         ).keyword_index
 
-        assert state.mode == "in_memory"
+        assert state.mode == "unavailable"
         assert state.bytes is None
 
-    def test_an_empty_corpus_is_disabled_not_in_memory(self, data_home):
+    def test_an_empty_corpus_is_disabled_not_unavailable(self, data_home):
         """Robustness contract: 0 documents is supported, and there is no arm to describe."""
         state = corpus_stats.corpus_stats(
             documents=0, chunks=0, keyword_index_on_disk=False
@@ -127,4 +128,4 @@ def test_as_dict_is_json_shaped(data_home):
     assert payload["chunks"] == 99
     assert isinstance(payload["disk"], dict)
     assert isinstance(payload["keyword_index"], dict)
-    assert payload["keyword_index"]["mode"] == "in_memory"
+    assert payload["keyword_index"]["mode"] == "unavailable"

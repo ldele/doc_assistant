@@ -69,9 +69,8 @@ data/wiki/
 data/graph/
 data/skeleton/
 data/exports/
-# Derived BM25 launch snapshot (ADR-035) — ~85 MB at 33k chunks, rebuilt from the chunk store on
-# demand and fingerprint-invalidated, so it is pure cache. Sits beside the Chroma dirs above.
-# Only the legacy in-RAM arm (DOC_SPARSE_INDEX=0) still writes it.
+# Derived BM25 launch snapshot (ADR-035). Nothing writes it since ADR-038 retired the in-RAM arm;
+# kept ignored so a snapshot left over from an older checkout can never be committed by accident.
 data/bm25_index.pkl
 
 # Derived sparse retrieval index (ADR-036) — ~41 MB at 33k chunks, an SQLite/FTS5 rebuild of the

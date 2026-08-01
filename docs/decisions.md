@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-07-31 (ADR-036 on disk; ADR-037 closes the knob question) · class: living -->
+<!-- status: active · updated: 2026-08-01 (ADR-038) · class: living -->
 
 # Decisions — index
 
@@ -47,3 +47,4 @@ the locked retrieval/chunking settings that predate per-file ADRs.
 | [ADR-035](decisions/ADR-035-bm25-index-persistence.md) | Persist the BM25 arm as a pure-data snapshot (no third-party classes on disk), fingerprinted on chunk ids + tokeniser source | accepted (built) |
 | [ADR-036](decisions/ADR-036-sparse-index-on-disk.md) | Move the sparse arm off the Python heap into an SQLite/FTS5 index (memory stops scaling with the corpus; ranking changes, gated on an A/B) | accepted (built) |
 | [ADR-037](decisions/ADR-037-corpus-facts-not-performance-knobs.md) | Answer the scale question with corpus facts in Settings, not performance knobs; one bounded action (rebuild the keyword index) | accepted (built) |
+| [ADR-038](decisions/ADR-038-retire-the-in-ram-sparse-arm.md) | Retire the in-RAM BM25 arm — the on-disk index is the only keyword arm; a failed build degrades to vector-only and is reported, not absorbed | accepted (built) |

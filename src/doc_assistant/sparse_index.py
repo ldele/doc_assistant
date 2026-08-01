@@ -27,11 +27,12 @@ candidates**. What the user receives is unchanged far more often than that, beca
 cross-encoder re-scores the union of both arms — the end-to-end effect is measured in ADR-036 and
 `tests/eval/baselines/sparse_index_2026-07-30.md`, not assumed here.
 
-**Failure policy differs from `bm25_cache` on purpose.** That module was a cache over a structure
-that could always be rebuilt in memory, so every unhappy path fell back. This *is* the arm: a
-missing or stale database is rebuilt (once, from the store), and a corrupt one is rebuilt too, but
-there is no "serve it anyway" path. If the rebuild fails, the caller is told and falls back to the
-legacy in-RAM arm (`DOC_SPARSE_INDEX=0` forces that path).
+**Failure policy: this is the arm, and since ADR-038 it is the only one.** A missing or stale
+database is rebuilt (once, from the store), and a corrupt one is rebuilt too, but there is no
+"serve it anyway" path. If the rebuild fails there is nothing to fall back *to*: the pipeline
+degrades to vector-only retrieval and says so (`RAGPipeline.keyword_index_unavailable` →
+`corpus_stats` → the Settings panel), because a silent half-retrieval is the failure mode the
+retired in-RAM arm used to hide.
 """
 
 from __future__ import annotations
@@ -39,7 +40,6 @@ from __future__ import annotations
 import hashlib
 import inspect
 import json
-import os
 import sqlite3
 from collections.abc import Iterable, Iterator, Sequence
 from pathlib import Path
@@ -150,11 +150,6 @@ def fingerprint(collection_name: str, chunk_ids: list[str]) -> str:
     records; caught by a guard test rather than by reasoning.
     """
     return fingerprint_from_pages(collection_name, [chunk_ids])
-
-
-def enabled() -> bool:
-    """``DOC_SPARSE_INDEX=0`` restores the legacy in-RAM BM25 arm without a code change."""
-    return os.getenv("DOC_SPARSE_INDEX", "1").strip().lower() not in {"0", "false", "no"}
 
 
 def match_expression(query: str) -> str | None:
@@ -325,8 +320,8 @@ def _connect(path: Path) -> sqlite3.Connection:
 def open_index(path: Path, fingerprint: str) -> SparseIndex | None:
     """Open an existing index if it matches ``fingerprint``; ``None`` if absent, stale or corrupt.
 
-    ``None`` means "build it", never "serve it anyway" — unlike `bm25_cache`, this is the arm
-    itself, so a wrong answer here is a wrong answer to the user.
+    ``None`` means "build it", never "serve it anyway": this is the arm itself, so a wrong answer
+    here is a wrong answer to the user.
     """
     if not path.exists():
         return None

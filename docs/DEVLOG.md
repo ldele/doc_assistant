@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-07-30 · class: append-only -->
+<!-- status: active · updated: 2026-08-01 · class: append-only -->
 
 # DEVLOG — doc_assistant
 
@@ -9,6 +9,63 @@ Format: What changed | Why | Rejected alternatives | What it opens
 
 > Entries **2026-07-14 and earlier** live in [`docs/archive/DEVLOG-archive-001.md`](archive/DEVLOG-archive-001.md)
 > (moved verbatim 2026-07-21). This file keeps 2026-07-15 onward.
+
+---
+## 2026-08-01 — Public eval re-measured after KI-29 + ADR-036: **no scorer moved beyond its variance**
+
+**What changed.** No source code. One new baseline
+(`tests/eval/baselines/public_eval_2026-08-01.md`) and the `evals/README.md` headline re-pointed at
+it. The quality record had been describing an index that no longer existed: the locked reference is
+**2026-06-01**, and two changes since then touched the answer path without ever being scored end to
+end — **KI-29** (07-29) stripped `<!-- page:N -->` out of the LLM's evidence block, 49% of parent
+texts on the live corpus, followed by a full re-embed; **ADR-036** (07-30) swapped the keyword arm's
+ranking function, and FTS5's `bm25()` is not `rank_bm25`'s. ADR-036's own A/B measured only
+*recall*, where both arms scored a saturated 1.0000.
+
+**Result (n=5, `bge-base`, haiku generator + judge, `cu130`):** `citation_overlap` **1.000 ± 0.000**
+· `contains_all` **0.932 ± 0.014** · `llm_judge` **3.694 ± 0.258**. Against the 06-04 reproduction
+(1.000 / 0.927 / 3.738): **0.000 / +0.005 / −0.044**. Nothing moved.
+
+**Why 06-04 and not the 06-01 locked reference.** 06-01 does not record its generator model, and the
+DEVLOG shows `.env` was switched to `claude-haiku-4-5` on **2026-06-02** — after it was locked — while
+fixing the `load_dotenv(override=False)` bug that had been shadowing the key. 06-04 ran after that
+switch, so its generator is known to match today's. Comparing stochastic scorers across an unrecorded
+generator change would have been the wrong diff.
+
+**The isolation this needed, because the live corpus is 97 documents.** BM25/IDF statistics and the
+vector neighbourhood are corpus-global, so a run against the live index is not comparable to any
+committed baseline (RG-021). The run used a scratch `DOC_DATA_DIR` ingested from zero: **2,301 chunks
+/ 10 documents**, **0** markers in children *and* parent texts, `sparse_index_active=True` with the
+legacy in-RAM corpus empty. The check that actually proves it is after the fact — across all 50 turns
+exactly **10 distinct documents** were cited, and they are the eval 10.
+
+**Two things stated as limits rather than smoothed over.** (a) `citation_overlap` was *already*
+1.000, so it demonstrates no regression **at the available resolution**, not ranking parity — the
+same ceiling ADR-036 hit, and the reason `DOC_SPARSE_INDEX=0` and the legacy arm should stay until
+the A/B is repeated on a discriminating case set. (b) This run's `llm_judge` trial-mean std is
+**0.258**, roughly 3× June's, so it can only resolve judge changes larger than about ±0.5 — "no
+regression" is a **weak** claim on that scorer and a strong one on the other two.
+
+**The negative result worth keeping: KI-29 bought no measurable answer-quality gain here.** Removing
+markers from the evidence block was expected to help and did not move anything beyond noise. Its
+weakest link is stated in the baseline: marker density on the *public* corpus was never measured
+(10%/49% are 97-corpus figures), so a null result on a barely-affected corpus proves little.
+
+**A DB trap found while reading the results back.** `scores.value` is `DOUBLE NOT NULL` and a skipped
+judge call is persisted as **`value = 0.0` with `scoreable = false`**. A first pass that averaged raw
+`value` reported `sbert_motivation` at 2.933 and the overall judge mean at 3.620; filtering on
+`scoreable` gives 3.667 and 3.694. Any aggregate read straight from `data/eval.duckdb` must filter —
+the harness's own summary does.
+
+**Also observed, not fixed.** `run_eval`'s `--db` default is a literal `PROJECT_ROOT / "data" /
+"eval.duckdb"`, so it does **not** follow `DOC_DATA_DIR` like every other data artifact — these runs
+landed in the main log despite an isolated corpus. Harmless and arguably useful (one log makes runs
+comparable), but surprising enough to document. And `sbert_motivation`'s judge flake has now recurred
+in all three runs (3/5, 3/5, 1/5 skipped): the 06-01 baseline called it a KNOWN_ISSUES candidate "if
+it recurs", and it has, twice.
+
+**What it opens.** The quality record is current again. Still owed: the sparse A/B on an instrument
+that can discriminate (the private 35-case set is not on this box) before deleting the legacy arm.
 
 ---
 ## 2026-07-30 (4) — PF2 closed as **no knobs**: ADR-036 dissolved the premise, so the app ships corpus facts instead

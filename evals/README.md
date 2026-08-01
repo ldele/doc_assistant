@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-07-30 (cross-link: cost/scale lives in docs/performance.md) · class: living -->
+<!-- status: active · updated: 2026-08-01 (headline re-measured after KI-29 + ADR-036 — no scorer moved beyond variance) · class: living -->
 
 # Evals — benchmark results
 
@@ -27,17 +27,27 @@ redistributable; it gates day-to-day retrieval work but is not citable by third 
 
 The headline benchmark is **reproducible by anyone**: a public demo corpus of the 10 arXiv papers behind this project's own methods (RAG, dense retrieval, sentence embeddings, the BGE and SPECTER2 embedders, BERT re-ranking, ColBERT, HyDE, LLM-as-a-judge, AI Usage Cards). Nothing is re-hosted — [`corpus_manifest.yaml`](../tests/eval/corpus_manifest.yaml) pins each paper's arXiv ID + SHA-256 and a script fetches the PDFs.
 
-5 trials on `bge-base` (`--repeat 5`), reported as mean ± trial-mean std:
+5 trials on `bge-base` (`--repeat 5`), reported as mean ± trial-mean std. Latest run **2026-08-01**
+([baseline](../tests/eval/baselines/public_eval_2026-08-01.md)), with the locked June reference
+alongside it:
 
-| Scorer | Mean (n=5) | Trial-mean std | What it measures |
-|---|---:|---:|---|
-| `citation_overlap` (0-1) | **1.000** | 0.000 | retrieval cited the correct source |
-| `contains_all` (0-1) | **0.927** | 0.034 | answer surfaces the required facts |
-| `llm_judge` (1-5) | **3.894** | 0.075 | reference-graded answer quality |
+| Scorer | Mean (n=5) | Trial-mean std | 2026-06-04 reference | What it measures |
+|---|---:|---:|---:|---|
+| `citation_overlap` (0-1) | **1.000** | 0.000 | 1.000 ± 0.000 | retrieval cited the correct source |
+| `contains_all` (0-1) | **0.932** | 0.014 | 0.927 ± 0.027 | answer surfaces the required facts |
+| `llm_judge` (1-5) | **3.694** | 0.258 | 3.738 ± 0.093 | reference-graded answer quality |
 
-`citation_overlap` is **1.000 with zero variance** — retrieval depends only on the deterministic index, so it cites the right paper in all 10 cases, every trial. `contains_all` scores the stochastic generated answer, so single runs wobble (0.88–0.98) around a stable 0.927 mean. `llm_judge` **3.894/5** suggests the answers hold up — the `contains_all` shortfall looks more like phrasing than missing content. Cases are deliberately strict, not tuned to score 1.0. Committed reference results live in [`tests/eval/baselines/`](../tests/eval/baselines/).
+`citation_overlap` is **1.000 with zero variance** — retrieval depends only on the deterministic index, so it cites the right paper in all 10 cases, every trial. `contains_all` scores the stochastic generated answer, so single runs wobble around a stable mean. `llm_judge` **3.694/5** suggests the answers hold up — the `contains_all` shortfall looks more like phrasing than missing content. Cases are deliberately strict, not tuned to score 1.0. Committed reference results live in [`tests/eval/baselines/`](../tests/eval/baselines/).
 
-One honest caveat: the judge call on `sbert_motivation` is flaky — skipped in 3 of 5 trials (API timeout / JSON parse), so the `llm_judge` mean is over 47 of 50 scores.
+**Why the re-run.** Two changes since June touched the answer path without being scored end to end:
+KI-29 (2026-07-29) stripped `<!-- page:N -->` markers out of the LLM's evidence block, and
+[ADR-036](../docs/decisions/ADR-036-sparse-index-on-disk.md) (2026-07-30) replaced the keyword arm's
+ranking function (FTS5 `bm25()` ≠ `rank_bm25`'s). **No scorer moved beyond its variance.** Two
+caveats keep that honest: `citation_overlap` was already saturated at 1.000, so it shows *no
+regression at the available resolution* rather than ranking parity; and this run's `llm_judge` band
+(±0.258) is wide enough that only changes larger than roughly ±0.5 would have been visible.
+
+Two honest caveats on the instrument itself: the judge call on `sbert_motivation` is flaky across every run to date (skipped 3/5, 3/5 and 1/5 on 06-01, 06-04 and 08-01), so the `llm_judge` mean is over 49 of 50 scores here; and a skipped call is stored as `value = 0.0` with `scoreable = false`, so any aggregate read straight from `data/eval.duckdb` must filter on `scoreable`.
 
 ## Embedder comparison — `bge-base` vs `specter2`
 

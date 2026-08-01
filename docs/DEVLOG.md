@@ -11,6 +11,71 @@ Format: What changed | Why | Rejected alternatives | What it opens
 > (moved verbatim 2026-07-21). This file keeps 2026-07-15 onward.
 
 ---
+## 2026-08-01 (2) — Sparse-arm A/B repeated on the private 35-case set: shipped recall **identical**, but the arms return different evidence on 9 of 35 — and **retrieval is not deterministic**
+
+**What changed.** No source code. One new baseline
+(`tests/eval/baselines/sparse_arm_private35_2026-08-01.md`). ADR-036's A/B ran on the public 10-case
+set where both arms scored a perfect 1.0000 on all four recall metrics — parity at the instrument's
+ceiling, not proof — so the legacy in-RAM arm, `DOC_SPARSE_INDEX` and `bm25_cache.py` have shipped
+alongside the default ever since, waiting for a better instrument.
+
+**The blocker was not real, and that is the first finding.** Three baton entries recorded the private
+35-case set as absent from this box. `tests/eval/cases.yaml` is **tracked in the repo** (35 cases,
+dated 2026-05-28) and all 33 of its `expected_citations` fragments resolve against the live 97-document
+library — **35/35 runnable**. The project's own top-priority item had been parked on an unverified
+claim for four session entries. *Verify a "missing file" claim before inheriting it.*
+
+**Result ($0, retrieval only, one process per arm, the arm asserted rather than assumed).** The
+instrument discriminates this time — recall **0.70–0.83**, headroom in every direction:
+
+| | on-disk | in-RAM | Δ |
+|---|---:|---:|---:|
+| pre@5 | 0.8186 | 0.8186 | 0.0000 |
+| pre@10 | **0.8333** | 0.8186 | **+0.0147** |
+| post@5 | 0.7010 | 0.7010 | 0.0000 |
+| post@10 | 0.7598 | 0.7598 | 0.0000 |
+
+**Post-rerank — what the user receives — is identical at both k.** The single movement is pre-rerank
+and favours on-disk: `brain_network_hubs` surfaced `nihms-326467.pdf` at candidate rank 9 where the
+control missed it entirely (pre@10 1.0 vs 0.5) — and **it does not reach the user**, because both arms
+then return the identical three documents post-rerank. That is a second, independent instance of the
+2026-07-03 weight-sweep finding: the cross-encoder re-scores the full union, so candidate-order
+differences wash out. Arrived at by changing the ranking *function* this time, not the arm *weight*.
+
+**⚠ The finding the recall table cannot express: 9 of 35 queries (26%) return a different evidence
+set** — differing by *set*, not order, diverging as early as rank 2. Recall@k scores only whether the
+*expected* document is present; it says nothing about the other 8–9 slots, which are exactly what the
+LLM reads. Two arms can hand the model materially different evidence and score identically.
+
+**⚠ Control result — retrieval is NOT deterministic, and that assumption was load-bearing.** ADR-036's
+baseline says *"retrieval is deterministic on both arms, which is what `--repeat` buys elsewhere"*;
+`sweep_bm25_weight`'s docstring says the same. Re-running the on-disk arm against the unchanged index
+**disagreed on 1 of 35 cases**, so single-pass retrieval comparisons carry a ~3% case-level noise
+floor. Measure it; do not assume it away.
+
+**The noise is disjoint from the signal, which is what makes the 9/35 trustworthy** — and it is fully
+localised. The noisy case's *pre-rerank candidate list is byte-identical across runs* (same ten files,
+same order); only post-rerank parents moved, at ranks 5–6. So the flip is in the **cross-encoder**, not
+either retrieval arm. And the case explains its own ties: `middleton_frontal_subcortical`'s only
+expected citation is `middleton-2001.pdf`, which carries **`chunk_count=0, extraction_health='broken'`**
+— the text-layer-less scan KI-29 exposed. Its target is not in the index, recall is 0.0 in both arms
+and both runs, and with no true match the reranker scores cluster and the tail is decided by ties.
+
+**Rejected.** (a) *`run_eval` in a loop* — it generates an answer per case, which is paid and
+stochastic and which the arm does not affect; the weight-sweep's retrieval-only recall functions are
+the right instrument and were reused rather than reimplemented. (b) *Trusting `DOC_SPARSE_INDEX`* —
+the pipeline degrades silently to the in-RAM arm when the on-disk build fails, so the harness asserts
+`sparse_index_active` and refuses to record on a mismatch; without it, a failed build would have
+reported perfect parity for the worst possible reason.
+
+**What it opens.** The bar the baton set is cleared and deleting the legacy arm is now defensible —
+but it is a decision, not a measurement, and a separate increment. What is still unproven is *answer*
+equivalence: closing that needs `contains_all`/`llm_judge` over the 35 cases (paid, and the case
+file's own header warns its references are `author_verified: false` in places). Also opened: the
+non-determinism claim in ADR-036 and `sweep_bm25_weight` should be corrected, and `middleton-2001.pdf`
+is an unfixable 0-chunk case that will keep polluting any A/B run on this set.
+
+---
 ## 2026-08-01 — Public eval re-measured after KI-29 + ADR-036: **no scorer moved beyond its variance**
 
 **What changed.** No source code. One new baseline

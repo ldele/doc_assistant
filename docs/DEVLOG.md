@@ -11,6 +11,52 @@ Format: What changed | Why | Rejected alternatives | What it opens
 > (moved verbatim 2026-07-21). This file keeps 2026-07-15 onward.
 
 ---
+## 2026-08-01 (4) — Corrected the "retrieval is deterministic" claim; ADR-039 proposes an OCR sidecar (docs only)
+
+**What changed.** No source behaviour. (a) The determinism claim is corrected where it was asserted:
+`scripts/sweep_bm25_weight.py` (docstring, `--repeat` help, two console lines) and the ADR-036
+baseline, which gains a dated correction rather than being re-recorded — its *aggregate* numbers were
+unaffected, only the claim that a per-case list is reproducible. (b) New **ADR-039** (proposed) +
+roadmap row **EX1** + **RG-024/RG-025**.
+
+**The correction is specific, not a hedge.** The divergence is not in either retrieval arm: the
+pre-rerank candidate list was byte-identical across runs and only post-rerank parents moved, so it is
+the **cross-encoder breaking ties** — and it showed up on a case whose target document has 0 chunks,
+where nothing is a real match and scores cluster. Aggregate recall was identical across runs, so a
+single pass still represents the aggregate; it does not represent any individual case's document
+list.
+
+**ADR-039, and the reason it is not an LLM.** A PDF with no text layer extracts to nothing and the
+document is silently unreachable — measured today: **93 healthy / 2 marginal / 2 broken** of 97, with
+`middleton-2001.pdf` at `chunk_count=0`. The tempting move is to have a model investigate. **The
+diagnosis is already deterministic and strictly better:** `health.py` classifies with reasons, and
+KI-26 had already characterised this file (290 extracted characters, 15 of them page markers). What
+is missing is *remediation*, and for pixels-that-should-be-text that is **OCR** — deterministic — not
+inference.
+
+**The load-bearing decision inside it: OCR emits a text layer, not markdown.** The artifact is a
+searchable PDF at `<data>/ocr/<doc_hash>.pdf` which the extractor reads instead of the original, so
+`extract_pdf_pymupdf` stays the **only** extraction path and a recovered document becomes an ordinary
+one. Marker OCR (option 2) would have been cheaper to wire — it needs no system binary and already
+runs out-of-process for tables — but it emits markdown, forking extraction into two shapes that must
+stay compatible forever. This session deleted exactly that kind of second path (ADR-038), and KI-29
+is the record of what a path nobody exercises does to an answer.
+
+**A correction to something I said in this session:** Marker is **not** a project dependency. It is an
+external tool `scripts/extract_tables_marker.py` shells out to (`uvx --from marker-pdf
+marker_single`), and `extractors.py` raises for any `PDF_EXTRACTOR` other than `pymupdf`. That makes
+option 2 more expensive than it first looked, and it is the precedent for ADR-039's absent-tolerance
+rather than a free ride.
+
+**Gated, not assumed.** RG-025 blocks enabling recovery by default, on an asymmetry worth keeping:
+a document with no text layer is *honestly* absent, while one full of OCR garbage is retrievable,
+rerankable and **citable**. RG-024 records that the ~2% broken rate is one corpus at n=97 — two
+documents — and bounds nothing about a scan-heavy library.
+
+**Gates:** ruff + format clean · `docs_check --strict` 0/0 · `sweep_bm25_weight --dry-run` smoke-run
+(35 cases load, 34 scored).
+
+---
 ## 2026-08-01 (3) — ADR-038: the in-RAM sparse arm is deleted. One keyword arm, and a failed build now **says** keyword search is off
 
 **What changed.** `bm25_cache.py` (and its test file) deleted; `DOC_SPARSE_INDEX`, `DOC_BM25_CACHE`,

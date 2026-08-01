@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-08-01 (ADR-038) · class: living -->
+<!-- status: active · updated: 2026-08-01 (ADR-039) · class: living -->
 
 # Decisions — index
 
@@ -48,3 +48,4 @@ the locked retrieval/chunking settings that predate per-file ADRs.
 | [ADR-036](decisions/ADR-036-sparse-index-on-disk.md) | Move the sparse arm off the Python heap into an SQLite/FTS5 index (memory stops scaling with the corpus; ranking changes, gated on an A/B) | accepted (built) |
 | [ADR-037](decisions/ADR-037-corpus-facts-not-performance-knobs.md) | Answer the scale question with corpus facts in Settings, not performance knobs; one bounded action (rebuild the keyword index) | accepted (built) |
 | [ADR-038](decisions/ADR-038-retire-the-in-ram-sparse-arm.md) | Retire the in-RAM BM25 arm — the on-disk index is the only keyword arm; a failed build degrades to vector-only and is reported, not absorbed | accepted (built) |
+| [ADR-039](decisions/ADR-039-ocr-sidecar-for-scanned-pdfs.md) | Recover scanned PDFs with an opt-in OCR sidecar that restores a **text layer**, not markdown — so there stays exactly one extraction path | proposed |

@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-08-01 · class: append-only -->
+<!-- status: active · updated: 2026-08-02 · class: append-only -->
 
 # DEVLOG — doc_assistant
 
@@ -9,6 +9,97 @@ Format: What changed | Why | Rejected alternatives | What it opens
 
 > Entries **2026-07-14 and earlier** live in [`docs/archive/DEVLOG-archive-001.md`](archive/DEVLOG-archive-001.md)
 > (moved verbatim 2026-07-21). This file keeps 2026-07-15 onward.
+
+---
+## 2026-08-02 (1) — the v0.4.0 release commit left `uv.lock` at 0.3.0; **CI has been red on `main` since**, and the Docker build could never have worked
+
+**What changed.** Two config lines, no source code. `uv.lock`'s own project entry
+**0.3.0 → 0.4.0** (produced by `uv lock`, not hand-edited — the diff is exactly one line, zero
+dependency churn), and **`README.md` removed from `.dockerignore`**.
+
+**Why — and this is the part worth carrying.** The session opened on the baton's item 1,
+`docker compose build`, the verification owed for `a052703`. The build never ran (Docker Desktop on
+this box will not start its engine, below), but the two things that would have failed it were found
+anyway, and the first is much larger than the Docker item.
+
+**1. `uv sync --locked` fails at the v0.4.0 tag.** `47aabdd` bumped five version strings —
+`pyproject.toml` · `package.json` · `tauri.conf.json` · `Cargo.toml` · `Cargo.lock` — and
+**`uv.lock` was not one of them**. A uv lockfile records the project's *own* version, so it went
+stale the moment `pyproject.toml` said 0.4.0. Both `.github/workflows/ci.yml:36`
+(`uv sync --locked --extra cpu --extra dev`) and `Dockerfile:34` (`uv sync --locked --extra cpu`)
+pass `--locked`, whose entire job is to fail rather than silently re-resolve.
+
+**Confirmed against GitHub, not inferred** (`gh` is installed on this box now — the baton says it is
+not; that fact is stale). The public Actions API says CI went red **exactly at the release commit**
+and stayed red:
+
+| run | sha | conclusion |
+|---|---|---|
+| 2026-08-01T21:09Z | `a052703` | **failure** |
+| 2026-08-01T20:45Z | `47aabdd` | **failure** |
+| 2026-08-01T14:10Z | `0cc2c3d` | success |
+
+In both failed runs the failing step is **5, "Install dependencies"**, and steps 6–12 — ruff, ruff
+format, mypy, pytest, bandit, pip-audit, detect-secrets — are all **`skipped`**. So **no lint, type,
+test or security gate has run on `main` since the release**, and the v0.4.0 tag is CI-unverified.
+
+**Reproduced and fixed on Linux, with the exact commands.** In the `~/pv-clean` clean-room tree left
+warm by the 08-01 session, at `47aabdd` with the tag's shipped lockfile restored:
+`uv sync --locked --extra cpu --extra dev` → **exit 1**, `error: The lockfile at uv.lock needs to be
+updated, but --locked was provided`. After `uv lock`: the same command → **exit 0**, and the
+Dockerfile's `uv sync --locked --extra cpu` → **exit 0**.
+
+**Why five green local gate batteries missed it, which is the real lesson.** Nothing run locally
+passes `--locked`: `just`/`uv run`/pre-commit all use the plain form, which re-resolves in silence.
+**And the 08-01 clean-room run — the one ceremony designed to catch exactly this — used
+`uv sync --extra cpu --extra dev`, not CI's `uv sync --locked …`.** It therefore *repaired* the
+lockfile inside its own clone instead of failing on it. That is not a reconstruction: `~/pv-clean`
+still carried an uncommitted `M uv.lock` whose whole diff is `-version = "0.3.0"` /
+`+version = "0.4.0"`. **A clean-room check that does not run the shipped command validates a path
+nobody ships.**
+
+**2. `.dockerignore` excluded `README.md`, which the Dockerfile copies.** `pyproject.toml` declares
+`readme = "README.md"`, so setuptools needs the file present to build this project's own metadata
+during `uv sync`, and `Dockerfile:32` copies it for that reason. Docker matches `.dockerignore`
+exactly and drops excluded paths from the build context, so the `COPY` fails before uv ever runs.
+Both halves arrived together in the same unbuilt commit (`a052703` created `.dockerignore`; before
+it the file was inert under the wrong name, so every earlier build had `README.md`). The exclusion
+is now removed with the reason written at the line, so it is not re-added as tidy-up.
+
+**Verified / not verified — stated separately, because they are not the same.** The lockfile fix is
+verified end-to-end on Linux with both shipped commands. **The `.dockerignore` fix is reasoned, not
+built** — the same caveat entry (6) carries for the rest of the Dockerfile, and it does not clear
+yet. `docker compose build` is **still owed**.
+
+**Docker Desktop 4.84.0 will not start on this box.** Installed per-user
+(`%LOCALAPPDATA%\Programs\DockerDesktop`), CLI 29.6.2 / Compose v5.3.1. `docker version`, `docker
+info` and `docker desktop status` all **hang on the named pipe** rather than erroring. Diagnosed:
+WSL 2.7.11 is healthy and the `docker-desktop` distro boots by hand (kernel 6.18.33.2) but contains
+**no `dockerd`** — only `/init`; **no Docker Windows service exists at all** (`Get-Service` and
+`HKLM:\SYSTEM\CurrentControlSet\Services` both empty of docker entries); and `com.docker.backend` is
+alive and answering, with the GUI polling `ErrorReportAPI GET /diagnostics/status` once a second —
+the pattern of a startup-error screen waiting for a human. A clean kill-and-restart did not change
+it. Needs eyes on the window; not fixable from a shell.
+
+**Rejected.** Hand-editing the version line in `uv.lock` (ran `uv lock` instead — it is the
+canonical producer, and it proves no dependency churn rode along). Installing Docker Engine natively
+inside WSL Ubuntu to get a build (a sudo-level system change nobody asked for). Pre-emptively
+"fixing" the Dockerfile further while it remains unbuildable — the whole point of this item is that
+unbuilt Docker changes are how the repo got here.
+
+**A third stale version, found by checking the rest of the class.** `apps/desktop/package-lock.json`
+recorded `doc-assistant-desktop` at **0.1.0** against `package.json`'s 0.4.0 — stale since before
+0.2.0, and unlike `uv.lock` **harmless**: there is no frontend job in CI at all, so nothing gates on
+it, and npm reads the version from `package.json` regardless. Aligned anyway (both the root and
+`packages[""]` fields, the two npm itself writes) so the release ritual has no exceptions to
+remember.
+
+**What it opens.** **A release bumps seven version strings, not five** — the checklist is missing
+`uv.lock` and `package-lock.json`, and the first of those is the one that takes CI down. More
+useful than the checklist: **`uv lock --check` is the cheap gate that would have caught this before
+the tag** (it runs in ~1 s and needs no network), and it belongs either in the pre-commit battery or
+at the release keypoint. Worth pairing with the wider lesson — a local battery that never runs the
+*shipped* command can be green while `main` is red.
 
 ---
 ## 2026-08-01 (6) — v0.4.0 verified from a clean clone on Linux; the Dockerfile's CPU-torch trick was silently defeated by `pip`

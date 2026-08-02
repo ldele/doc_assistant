@@ -39,8 +39,11 @@ docker-compose.yml
 .git/
 .gitignore
 
-# Docs not needed in image
-README.md
+# Docs not needed in image.
+# README.md is deliberately NOT listed: `pyproject.toml` declares `readme = "README.md"`, so
+# setuptools needs the file present to build this project's own metadata during `uv sync`, and
+# the Dockerfile copies it for exactly that reason. Excluding it here removes it from the build
+# context and the COPY fails with "not found" before uv ever runs.
 LICENSE
 
 # OS

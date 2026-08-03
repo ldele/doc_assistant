@@ -11,6 +11,179 @@ Format: What changed | Why | Rejected alternatives | What it opens
 > (moved verbatim 2026-07-21). This file keeps 2026-07-15 onward.
 
 ---
+## 2026-08-02 (3) — ADR-040 option 5 executed: Node-B stance is judged **without the document** and flips with **list position**. `contested` is not measuring the corpus (KI-33)
+
+**What changed.** No source code. New instrument `scripts/validate_node_b_stance.py`, new baseline
+`tests/eval/baselines/node_b_stance_validity_2026-08-02.md`, **KI-33** filed, ADR-040 given an
+*Update* section that blocks every surfacing option behind a Node-B fix.
+
+**Why.** Entry (2) concluded `contested` was a surfacing problem and put "validate the stance
+extractor" first because every other option's value depended on the answer. It ran. The answer is
+worse than expected: the signal is not a measurement of the corpus at all.
+
+**Two structural facts, from the code, before any measurement.**
+1. **The model never sees the document.** `build_messages(present_labels, pair_labels)` composes the
+   entire user turn from concept labels and a numbered pair list — `annotate_relations`' own
+   docstring says so — while the system prompt asks for stance *"from the document's apparent
+   framing"*. There is no document in the prompt to have a framing.
+2. **There is no neutral stance.** `POLARITIES` = supports/refines/contradicts/supersedes, two of
+   them opposing, all mandatory. Citation-polarity corpora put neutral above 60% as the *majority*
+   class. The vocabulary cannot express the common case, and its boundary is a hair wide: `refines`
+   ("improves") supports, `supersedes` ("replaces") opposes, and the prompt's own example verb is
+   *"improves on"*.
+
+**The controlled experiment — one variable, four verdicts.** One document, same 7 present concepts,
+same 17 pairs, `llama3.1:8b`, temperature **0.0** (all shipped settings), varying **only the target
+pair's index** in the numbered list:
+
+| index | 0 | 2 | 4 | 8 | 12 | 16 |
+|---|---|---|---|---|---|---|
+| stance | supports | supports | **supersedes** | **contradicts** | **supersedes** | refines |
+
+Four distinct verdicts **crossing the supporting/opposing boundary**, from a list position. Replaying
+the five real documents' actual prompts reproduced **5/5** recorded stances, so this is the shipped
+pipeline's deterministic behaviour, not sampling noise.
+
+**A hypothesis refuted en route, kept because it cost a run.** The first guess was that the
+*co-present concept set* drove the variation. Nine realistic contexts with the pair held at index 0
+returned **`supports` 9/9** — stable and deterministic. It was position, not context. Two experiments
+to get there; *reasoning proposed, measurement decided* — the third time that pattern has paid this
+week.
+
+**Supporting evidence from the artifact.** The whole integrity layer is **65 stance assignments**,
+**30.8% opposing**, and **14 of 19 annotated edges carry more than one stance** (`re-ranking <-> BM25`
+takes all four across 5 documents). Relation and stance contradict each other: `is a component of` →
+`supersedes` ×2, `uses` → `contradicts` ×3, `builds upon` → all four.
+
+**This subsumes entry (2)'s domain confound rather than competing with it.** Pair-list length scales
+with a document's concept count, so dense documents → long lists → deep indices → opposing →
+`contested`; sparse documents → one pair → index 0 → `supports`. That *is* the 7/9-vs-0/4
+parent-field table. `cre`, `dbs`, `ntsr1`, `pddl` were never settled — their documents yield one pair.
+
+**Rejected.** Swapping the model (facts 1 and 2 are structural — any model inherits them); raising
+`max_tokens` (the JSON parses; KI-28 was a different failure); tuning the threshold (measured inert
+in entry 2). Also rejected: implementing option 2 now — it is still correct that `ns=0` is not
+contested, but the node it fixes came from a single `supersedes` on a one-pair prompt, so it was an
+artifact, not the "one real defect" entry (2) called it. **That correction is the honest cost of
+having measured the input second instead of first.**
+
+**What it opens.** A **Node-B redesign** with its own ADR: pass the passages where the two concepts
+co-occur, add a neutral/no-stance option, remove the position dependence (one pair per call or
+equivalent), and carry a hand-labelled ground-truth study on the RG-015 template — which is the only
+way to make an accuracy claim, since nothing here scores against ground truth. Until then `contested`
+should not be presented as an epistemic signal, and ADR-040's options 1/2/3/4/6 cannot be evaluated.
+Unquantified and worth knowing: what *share* of the 30.8% opposing is position-driven rather than
+prior-driven.
+
+---
+## 2026-08-02 (2) — RG-019 measured: the `contested` floor everyone planned to add is **inert**, and the saturation is a surfacing problem (ADR-040)
+
+**What changed.** No source code, and deliberately so. New instrument
+`scripts/measure_contested_density.py`, new baseline
+`tests/eval/baselines/contested_density_2026-08-02.md`, new **ADR-040** with its decision left open,
+and RG-019 rewritten from an untested hypothesis into a measured negative result.
+
+**Why.** The v0.4.0 walkthrough recorded the integrity strip — the product thesis — reading as
+noise: **53.3% of assessed chunks marked `contested`** against 3.9% `corroborated`, 8 of 10 sources
+in a live turn marked contested on a question that is not a controversy. Two records already agreed
+on the cause and the cure. RG-019: *"triggers on `nc >= 1` … derive a named floor (min disputing
+docs and/or an agreement-ratio band — the `MIN_DATED_DOCS_PER_SIDE` pattern)"*. ADR-027 shipped the
+always-on strip without it, noting the strip would otherwise "ship saturated". **Neither had been
+measured, and both are wrong.**
+
+**Measured, $0, every counterfactual re-projected onto the real 18,831 chunk segments.**
+
+| lever | density |
+|---|---|
+| shipped (`nc >= 1`) | **53.3%** — reproduces the walkthrough's 396/743 exactly, which is what validates the instrument |
+| `nc >= 2` — *the prescribed fix* | **53.0%** |
+| `nc >= 3` | 52.9% |
+| `agreement_ratio < 0.70` | 53.2% |
+| chunk rule "majority of claims contested" | 53.2% |
+
+**The prescription accounts for two chunks.** Only **1 of 7** contested nodes has `nc == 1`. The
+other six are the corpus's core vocabulary — BM25, dense retrieval, passage retrieval, contrastive
+learning, re-ranking, hard negatives — each with genuine two-sided stance across **5–11 documents**.
+`contested` is not misfiring; it is firing correctly on ordinary scholarly disagreement that the UI
+then presents as cautionary.
+
+**Three findings that outlive this item.**
+1. **The denominator was half-quoted.** 53.3% is of *assessed* chunks, and only **3.9% of the store
+   carries any claim** — marked chunks are **2.1%** of the store. Both true; the first alone
+   overstates the marker's reach ~25x. It is still the number a user sees, because retrieval returns
+   the chunks that carry claims.
+2. **There are two stacked `>= 1` thresholds, not one.** The node rule, and `derive_markers` marking
+   a chunk if *any* claim is contested. But **89% of assessed chunks carry exactly one claim**, so
+   any/majority/all are the same rule here (53.3 / 53.2 / 53.0%). `n_contested >= 2` does cut to
+   7.9% — by requiring two contested concepts in a chunk that mostly mentions one. A structural
+   silencer, not an epistemic threshold.
+3. **`agreement_ratio` is the only lever with range and the one that must not be used.** `<0.60` →
+   27.1%, `<0.50` → 0.5%. But the seven observed values sit in **0.545–0.714**: every effective
+   threshold is fitted to seven points on a 13-concept vocabulary. That is the
+   over-optimise-on-the-current-corpus failure KI-19 exists to forbid.
+
+**One real defect found.** `knowledge distillation` — `ns=0, nc=1, agreement=0.000`: zero supporting
+sources, one disputing. Coverage is decided **contested-first**, so the unique-source neutrality
+rule (Decision 4, "a sole source is never contested") never gets to judge it. A node with no support
+is not contested, it is unsourced. Structural, no constant, fixable in a line — **not** done here,
+because it lands with whichever ADR-040 option is chosen.
+
+**Rejected.** Landing `nc >= 2` to close the item (it would record a fix that changes 0.3 points and
+spend the corpus-tuning budget doing it). Picking a surfacing option unilaterally — the measurement
+kills option 1, it does not choose between "surface the ratio", "re-frame the label" and "validate
+the extractor first"; that is the user's call and ADR-040 says so in its status line.
+
+**The finding that reframed all of it, found by asking what the threshold was measuring *against*.**
+Every graph concept carries exactly one ANZSRC parent field (ADR-028) — **13/13 placed**. Joined:
+
+| parent field | concepts | contested |
+|---|---|---|
+| Machine learning | 6 | **4** |
+| Data management and data science | 3 | **3** |
+| Artificial intelligence · Neurosciences · Med. chemistry · Biochemistry | 1 each | **0** |
+
+**7 of 9 concepts in the two IR/ML fields are contested; 0 of 4 outside them.** `cre`, `dbs`,
+`ntsr1`, `pddl` are not uncontested because they are settled — they have **one source each**. The
+marker tracks *how densely the corpus covers a field*, not whether a claim is disputed, and all
+three levers operate on a per-concept rate whose dominant term is a variable that rate does not
+contain. **That is why no cut point works, and it is a stronger statement than "the levers are
+inert".**
+
+**The literature was checked, and it is unfavourable to every lever.** `agreement_ratio` is raw
+percent agreement — the statistic Cohen's κ and Krippendorff's α exist to replace, with Landis &
+Koch's bands as the standard cautionary tale about arbitrary cut points. Meta-analysis, the
+discipline that actually owns "do sources disagree" (Cochran's Q, Higgins' I²), offered its
+25/50/75% bands as tentative, is cautioned against mechanical application by the Cochrane Handbook,
+and finds I² non-discriminative for prevalence meta-analyses — the closest analogue; practice
+reports it with τ² and a prediction interval. Citation-polarity corpora put neutral citations above
+60% with contrasting/negative the **rarest** class, against ~45% opposing sources per node here —
+independent evidence that Node-B, not the corpus, produces this. Partial pooling / empirical-Bayes
+shrinkage toward a parent mean is the named method for the hierarchy, with James–Stein dominating
+raw group means for k≥3.
+
+**ADR-040 gained a sixth option — score contestedness against the parent field's base rate.** It is
+the only option that addresses the confound rather than routing around it, it removes the tunable
+(the reference class is derived from data), and **this project already made the same argument once**:
+ADR-006 rejected absolute keyword frequency for contrastive termhood against a background
+distribution. Deferred rather than rejected, for a falsifiable reason: four of six fields hold one
+concept, so no field base rate is estimable yet — a blocker that expires as `graph_include` grows
+past 13. The instrument prints the cross-tab, so the re-test is a re-run.
+
+**A framing kept even if every option is rejected:** *insufficient evidence is a state, not a low
+score.* The schema already encodes it (`unique` = sole source, held NEUTRAL, Decision 4) and
+contested-first precedence is what steals it — which makes the `ns=0` fix the first instance of a
+principle rather than a one-node patch.
+
+**What it opens.** The recommendation recorded in ADR-040 is **5 → 2 → 3, with 6 as the target
+shape**: validate the Node-B
+stance extractor first, because `llama3.1:8b` biased toward disagreement would reproduce this entire
+picture and nothing yet separates the two — and its calibration is already recorded as suspect
+(flat `rating` output, `gap_suggest_ollama_2026-07-08.md`). Then the `ns=0` gate regardless. Then
+prefer the continuous surface over a rename. Still owed and unchanged: RG-019's precision
+spot-check (this run argues structural correctness, it never reads the chunks) and density at a
+second corpus size — **monotonicity in corpus size, the original worry, is still untested**.
+
+---
 ## 2026-08-02 (1) — the v0.4.0 release commit left `uv.lock` at 0.3.0; **CI has been red on `main` since**, and the Docker build could never have worked
 
 **What changed.** Two config lines, no source code. `uv.lock`'s own project entry

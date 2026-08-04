@@ -255,7 +255,8 @@ def test_resolve_turn_knobs_applies_overrides_and_notes_the_diff():
 
 def test_persisted_markers_default_applies_without_an_override():
     # The persisted setting is layer 2 of the three-layer resolution: with no per-turn
-    # override, it beats the config default (which is True on this suite's env).
+    # override, it beats the config default — which is **False** since 2026-08-03 (KI-33).
+    # This test sets the persisted value explicitly, so it does not depend on that default.
     from doc_assistant.chat_controller import _resolve_turn_knobs
 
     chat_controller.app_settings.set_markers_enabled(False)
@@ -601,22 +602,30 @@ def test_source_evaluation_load_failure_does_not_break_turn_but_warns(monkeypatc
     assert "attach_source_evaluation_failed" in fake_log.warnings  # observable, not swallowed
 
 
-def test_markers_enabled_by_default(monkeypatch, temp_db):
-    # EPISTEMICS_MARKERS_ENABLED defaults True (KI-7 retirement / ADR-005 update). NOT setting the
-    # flag — this exercises the shipped default. A contested assessment surfaces a chip; a graph
-    # with no assessed source surfaces none.
+def test_markers_disabled_by_default(monkeypatch, temp_db):
+    # EPISTEMICS_MARKERS_ENABLED defaults **False** since 2026-08-03 (KI-33 / ADR-041): Node-B
+    # stance is judged with no document text in the prompt and its verdict moves with a concept
+    # pair's index in a generated list, so the chips encode list position rather than the corpus.
+    # NOT setting the flag — this exercises the shipped default. A contested assessment must stay
+    # silent. (Was `test_markers_enabled_by_default`; G1 turned it on, KI-33 turns it back off.)
     monkeypatch.setattr(chat_controller.controller, "is_library_query", lambda t: False)
+    _stub_source_eval(monkeypatch, evals={"d1:0": _eval(coverage="contested")})
+    controller = ChatController(rag=FakeRAG(_three_clean_sources(), ["Answer [1]."]))
+    result = _final(_results(controller, Session(), "q"))
+    assert all(s.markers == [] for s in result.sources)
+    assert "⚠" not in result.sources_md
+
+
+def test_markers_still_available_when_explicitly_enabled(monkeypatch, temp_db):
+    # The containment is a default, not a removal — nothing was deleted, so opting back in must
+    # still work. This is what makes the KI-33 flip reversible in one env var once ADR-041 lands.
+    monkeypatch.setattr(chat_controller.controller, "is_library_query", lambda t: False)
+    monkeypatch.setattr(config, "EPISTEMICS_MARKERS_ENABLED", True)
     _stub_source_eval(monkeypatch, evals={"d1:0": _eval(coverage="contested")})
     controller = ChatController(rag=FakeRAG(_three_clean_sources(), ["Answer [1]."]))
     result = _final(_results(controller, Session(), "q"))
     assert result.sources[0].markers == [MARKER_CONTESTED]
     assert "⚠ contested in corpus" in result.sources_md
-
-    _stub_source_eval(monkeypatch, evals={})  # graph exists, but no retrieved source is assessed
-    controller = ChatController(rag=FakeRAG(_three_clean_sources(), ["Answer [1]."]))
-    result = _final(_results(controller, Session(), "q"))
-    assert all(s.markers == [] for s in result.sources)
-    assert "⚠" not in result.sources_md
 
 
 # ============================================================

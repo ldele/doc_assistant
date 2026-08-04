@@ -369,7 +369,16 @@ REVIEWER_EVIDENCE_CHARS = int(os.getenv("REVIEWER_EVIDENCE_CHARS", "1500"))
 # docs/decisions/ADR-005-epistemics-markers-default-off.md (status note: superseded)
 # and .claude/KNOWN_ISSUES.md KI-7 (resolved). `EPISTEMICS_MARKERS_ENABLED=false`
 # still opts out for anyone who wants the byte-identical no-marker path.
-EPISTEMICS_MARKERS_ENABLED = os.getenv("EPISTEMICS_MARKERS_ENABLED", "true").lower() == "true"
+#
+# ⚠ FLIPPED BACK TO **false** 2026-08-03 (KI-33, ADR-040/ADR-041) — the same containment R7 used,
+# for the same reason, one layer down. Node-B stance is judged with **no document text in the
+# prompt**, has no neutral label, and its verdict changes with a concept pair's index in a
+# generated list (measured: one document, same 17 pairs, temperature 0 → four verdicts crossing
+# the supporting/opposing boundary). So the markers encode list position, not the corpus, and
+# 53.3% of assessed chunks carried one. G1 turned this on when Node B arrived; Node B has since
+# been shown invalid, so it goes off until ADR-041 lands a rebuild on evidence.
+# `EPISTEMICS_MARKERS_ENABLED=true` still opts back in — nothing was removed.
+EPISTEMICS_MARKERS_ENABLED = os.getenv("EPISTEMICS_MARKERS_ENABLED", "false").lower() == "true"
 
 
 # ============================================================

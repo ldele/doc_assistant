@@ -247,6 +247,12 @@ row is read four ways:
 4. **taxonomy node** *(decided, unbuilt)* — under ADR-028 a `Concept` also carries a `kind`
    (`concept` | `domain`), letting abstract field nodes share the id-space.
 
+> **Orientation:** [`knowledge-layer.md`](knowledge-layer.md) is the one-page map of what this whole
+> layer is *for* (corroboration · coverage · navigation), how the pieces connect, and — since
+> 2026-08-03 — a **trust table** marking which of its signals are sound. `contested` /
+> `superseded_trend` are **not** corpus measurements (KI-33, ADR-040/ADR-041); read that table before
+> citing any marker. This section stays the mechanism reference.
+
 **Two graph layers over the same nodes.** These are distinct and must not be conflated:
 
 | Layer | What | Store | Lifecycle | ADR |

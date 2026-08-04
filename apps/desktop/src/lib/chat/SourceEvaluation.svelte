@@ -31,16 +31,22 @@
     {#each sources as s (s.n)}
       <li>
         <span class="n">[{s.n}]</span>
+        <!-- KI-33 / ADR-041: the coverage + superseded chips are WITHHELD, not deleted. Both are
+             derived from Node-B stance, which is judged without the document in the prompt and
+             whose verdict moves with a pair's index in a generated list — so `contested`,
+             `corroborated` and `unique` alike encode list position, not the corpus. Restore the
+             two blocks below once Node B is rebuilt on evidence (ADR-041 option 1); the wire
+             field and the read model are deliberately left intact so nothing else has to change.
         {#if s.evaluation?.coverage}
-          <span class="cov cov-{s.evaluation.coverage}">{COVERAGE_LABEL[s.evaluation.coverage]}</span
-          >
+          <span class="cov cov-{s.evaluation.coverage}">{COVERAGE_LABEL[s.evaluation.coverage]}</span>
         {:else}
           <span class="cov cov-none">not assessed</span>
         {/if}
         {#if s.evaluation?.superseded}
-          <span class="sup" title="Newer sources dispute this — a superseded trend.">superseded</span
-          >
+          <span class="sup" title="Newer sources dispute this — a superseded trend.">superseded</span>
         {/if}
+        -->
+        <span class="cov cov-none" title="Per-source epistemic assessment is withheld pending a rebuild of the stance extractor (KI-33).">assessment withheld</span>
         {#if s.evaluation?.year != null}
           <span class="year">{s.evaluation.year}</span>
         {/if}
@@ -115,6 +121,7 @@
     white-space: nowrap;
     flex: none;
   }
+  /* KI-33 / ADR-041: withheld alongside their markup above — restore both blocks together.
   .cov-contested {
     color: var(--warn-fg);
     border-color: var(--warn-border);
@@ -127,15 +134,16 @@
   .cov-unique {
     color: var(--fg-2);
   }
-  .cov-none {
-    color: var(--fg-2);
-    opacity: 0.7;
-    font-style: italic;
-  }
   .sup {
     color: var(--danger);
     font-size: 0.72rem;
     flex: none;
+  }
+  */
+  .cov-none {
+    color: var(--fg-2);
+    opacity: 0.7;
+    font-style: italic;
   }
   .year {
     color: var(--fg-2);

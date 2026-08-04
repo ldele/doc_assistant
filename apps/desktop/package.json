@@ -1,7 +1,7 @@
 {
   "name": "doc-assistant-desktop",
   "private": true,
-  "version": "0.4.0",
+  "version": "0.4.1",
   "type": "module",
   "description": "Tauri desktop frontend for Provenote: a thin Svelte UI over the FastAPI/SSE boundary (PR-M3). No business logic; renders the API's TurnResult payload.",
   "scripts": {
@@ -13,6 +13,7 @@
   },
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "^5.0.0",
+    "@tauri-apps/cli": "^2.11.4",
     "@tsconfig/svelte": "^5.0.0",
     "svelte": "^5.0.0",
     "svelte-check": "^4.1.0",

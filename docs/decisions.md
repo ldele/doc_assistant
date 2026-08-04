@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-08-02 (ADR-040) · class: living -->
+<!-- status: active · updated: 2026-08-03 (ADR-041) · class: living -->
 
 # Decisions — index
 
@@ -50,3 +50,4 @@ the locked retrieval/chunking settings that predate per-file ADRs.
 | [ADR-038](decisions/ADR-038-retire-the-in-ram-sparse-arm.md) | Retire the in-RAM BM25 arm — the on-disk index is the only keyword arm; a failed build degrades to vector-only and is reported, not absorbed | accepted (built) |
 | [ADR-039](decisions/ADR-039-ocr-sidecar-for-scanned-pdfs.md) | Recover scanned PDFs with an opt-in OCR sidecar that restores a **text layer**, not markdown — so there stays exactly one extraction path | proposed |
 | [ADR-040](decisions/ADR-040-contested-is-a-surface-not-a-threshold.md) | `contested` saturates — RG-019's prescribed min-N floor is inert (53.3% → 53.0%), contestedness is confounded with the ANZSRC parent field (7/9 in two IR fields, 0/4 outside), and **option 5 then showed the input itself is invalid**: Node-B stance is judged without the document, has no neutral label, and flips with list position (KI-33). All surfacing options blocked behind a Node-B redesign | proposed (input invalidated) |
+| [ADR-041](decisions/ADR-041-node-b-stance-rebuild-or-retire.md) | **Epistemics stays** (user intent, 2026-08-03 — it is the feature, not an add-on). Node-B stance must be rebuilt on evidence (passages + a `neutral` label + one pair per call + a ground-truth gate); **first**, re-base per-concept status on the existing claim/citation layer, which serves "which claims are unsubstantiated" deterministically and fixes an edge-vs-concept unit mismatch. Retire explored and **withdrawn** | proposed (sequence open) |

@@ -7,6 +7,50 @@ versioning is [SemVer](https://semver.org/) on the `doc_assistant` package, and 
 The engineering record is finer-grained than this file: per-change entries live in
 [`docs/DEVLOG.md`](docs/DEVLOG.md), design decisions in [`docs/decisions.md`](docs/decisions.md).
 
+## [0.4.1] — 2026-08-03
+
+**The first release with a working installer.** 0.4.0 shipped as source only, because the bundled
+installer was still a June build of a much older app. This one carries a freshly frozen backend and
+a real Windows installer, and it withdraws a feature that was telling you something untrue.
+
+### Added
+
+- **A Windows installer that matches the code.** The bundled backend was re-frozen from this
+  release (it had been stuck at a 2026-06-24 build, pre-rename and pre-first-run-setup). Verified
+  standalone before bundling: the frozen backend answers `/api/health` in ~30 s against a
+  33,105-chunk library.
+
+### Changed
+
+- **Per-source "epistemic assessment" is withheld.** The chips that labelled each source
+  *contested* / *corroborated* / *single-source*, and the answer-layer marker chips, are off by
+  default. They were derived from a stance pass that is **judged without ever seeing the document
+  text**, has no "neutral" option, and whose verdict changes with where a concept pair happens to
+  land in a generated list. Measured: one document, identical inputs, position varied alone → four
+  different verdicts, crossing the supporting/opposing line; 53.3% of assessed passages carried a
+  marker. Nothing was deleted — `EPISTEMICS_MARKERS_ENABLED=true` opts back in — and the rebuild is
+  planned. The rest of the source-evaluation strip (document year, relevance score, graph
+  freshness) is unaffected and still shown.
+- **Everything else you can see is unchanged from 0.4.0.**
+
+### Fixed
+
+- **Continuous integration was red on `main` since the 0.4.0 release commit.** The release bumped
+  five version strings and missed `uv.lock`, which records the project's own version; both CI and
+  the Docker image install with `--locked`, which fails rather than silently re-resolving. Every
+  gate after dependency install — lint, types, tests, security — had been skipped since.
+- **The Docker build could never have succeeded** — `.dockerignore` excluded `README.md`, which the
+  Dockerfile copies and which the package build needs. (The image itself is still unbuilt on this
+  machine; the fix is reasoned, not yet exercised.)
+
+### Known limits
+
+- **A clean-machine install has not been verified yet** — the installer has not been driven through
+  one real cited answer on a machine with no Python and no toolchain. Until it has, treat this as a
+  beta.
+- The `contested` saturation described above is diagnosed but not repaired; the concept graph's
+  corroboration and gap detection are unaffected by it.
+
 ## [0.4.0] — 2026-08-01
 
 **The release that makes the library size stop mattering.** Memory used to grow with your corpus —

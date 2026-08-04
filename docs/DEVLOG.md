@@ -11,6 +11,230 @@ Format: What changed | Why | Rejected alternatives | What it opens
 > (moved verbatim 2026-07-21). This file keeps 2026-07-15 onward.
 
 ---
+## 2026-08-03 (3) — v0.4.1: the first installer since June, KI-33 contained before it ships — and **RG-012 Tier-2 still has no evidence**
+
+**What changed.** KI-33 containment (`config.py` default + `SourceEvaluation.svelte`), version 0.4.1
+across **seven** strings, a CHANGELOG entry, `@tauri-apps/cli` added as a devDependency, and two
+release artifacts. User priority for this stretch: *"focus on the binary release … to finally have a
+beta-release"*, with the KI-33 surfacing fix landed first.
+
+**The containment, and why it is a default rather than a deletion.** `EPISTEMICS_MARKERS_ENABLED`
+**true → false** — the same lever R7 used for KI-7 containment, now for a defect one layer down —
+and the strip's coverage + `superseded` chips commented out with the reason at the line, markup and
+CSS together so restoring is one contiguous uncomment. **All three coverage values go, not just
+`contested`:** `ns` and `nc` both derive from `stance_by_doc`, so `corroborated` and `unique` inherit
+the same defect. The strip keeps what is sound — year, relevance score, graph freshness.
+
+**Non-vacuous by construction.** The flip failed **exactly one** test —
+`test_markers_enabled_by_default`, the one encoding the old default. Renamed to
+`test_markers_disabled_by_default` and paired with a new
+`test_markers_still_available_when_explicitly_enabled`, so the suite now pins **both** the new
+default and that the opt-in still works. A containment nobody can prove reversible is a deletion.
+
+**The release.** Sidecar re-frozen on a CPU sync (KI-3): **1545.5 MB**, replacing a **2026-06-24**
+build — pre-rename, pre-icon, pre-ADR-034. Smoke-tested standalone *before* bundling, which is the
+step that catches what tests cannot: `/api/health` in ~30 s, **chunk_count 33,105**, no frozen-import
+failures. Then `Provenote_0.4.1_x64-setup.exe` (**1555.4 MB**) and `Provenote_0.4.1_x64_en-US.msi`
+(1546.7 MB) — the first installers since June and the first carrying the Provenote identity.
+
+**A root cause worth naming: the build recipe had rotted because it was never declared.**
+`npx tauri build` failed outright — `@tauri-apps/cli` was not a devDependency, not global, not
+anywhere. The June installer was built against undocumented machine state, so "how to build the
+installer" was unreproducible the moment that state changed. Now pinned at `^2.11.4` in
+`devDependencies`. **This is the same class of failure as the `uv.lock` miss** — a build input that
+nothing declared and nothing checked.
+
+**⚠ RG-012 Tier-2 IS STILL OPEN, and this session produced no evidence about it.** Two Windows
+Sandbox launches, ~30 minutes: the `.wsb` parses, all four mapped folders resolve, the output folder
+is host-writable, the VM boots and burns CPU — and `LogonCommand` writes **nothing**, even hardened
+to sleep 25 s and then immediately create a file before doing anything else. It is not executing in
+this Sandbox configuration. Root cause unknown. **Nothing here licenses any claim about the
+installer on a clean box**, and the CHANGELOG's *Known limits* says so in the release itself. The
+harness is left at `C:\rg012-host\` (ASCII path on purpose — `.wsb` parsing is unreliable with the
+accented profile path) with a self-contained `rg012-run.ps1` that installs silently, seeds three
+PDFs, ingests, asks one question and writes a PASS/FAIL verdict.
+
+**Machine state touched and restored.** Ollama was rebound to `0.0.0.0` (user-approved) so a sandbox
+could reach it, and is back to **127.0.0.1** with the env var cleared. The venv was CPU for the
+freeze and is back to **`cu130`, CUDA available**.
+
+**Rejected.** Shipping the binary as 0.4.0 — the user's choice, made when the delta was docs-only;
+landing KI-33 first made the binary behave differently from the `v0.4.0` tag, so it was re-raised and
+became **0.4.1**. Fixing the `postcss` advisory (build-time only, via `vite@6`, processes only
+first-party CSS, and a clean fix exists) — deferred rather than applied because it would have changed
+the toolchain underneath the gate run testing that exact build.
+
+**What it opens.** RG-012 Tier-2 needs a path that does not depend on `LogonCommand`: a hand-run in
+the sandbox, computer-use driving the VM, or a real second machine. Until one of them produces a
+cited turn, **this is a beta by its own CHANGELOG**. Then: `npm audit fix`, and the KL1–KL4 plan.
+
+---
+## 2026-08-03 (2) — Full review of the knowledge layer against the stated goal: **the acquisition half has no implementation**, and the one suggestion engine runs on the detector graded noise
+
+**What changed.** No source code. New `docs/PLAN_2026-08-03_knowledge-layer-to-goal.md` (local-only,
+ADR-029) — the in-depth review; new **§6b State of play** in the tracked `docs/knowledge-layer.md`;
+new ROADMAP rows **KL1–KL4** so the plan's items are visible in git rather than only in a gitignored
+file.
+
+**Method.** Read every governing artifact rather than working from memory: ROADMAP rows S1–S2 ·
+G1–G8 · E0–E5 · TX1–TX3 · MM1–MM3 · PF1–PF4; ADR-004/008/015/017/018/027/028/030–033/036–041; the
+concept-graph, gap-detection and taxonomy specs; RG-014/015/019; KI-18/19/33.
+
+**The goal decomposed into five testable capabilities** — C1 unsubstantiated claims · C2 per-concept
+classification · C3 gap exposure · C4 **acquisition direction** · C5 navigation — then mapped onto
+every built component.
+
+**Finding 1 — C4 is the goal's operative capability and has no sound implementation anywhere.** The
+goal's verb is *"should find more resources and documents."* **Every built detector looks inward** at
+what the corpus already holds. ADR-004 named the outward half precisely and deferred it — Tier-2b
+needs *"a representation of 'outside the known space'"* — and ADR-032 has been a stub since. No
+amount of repairing the inward detectors closes this; it is the largest distance between the product
+and the goal.
+
+**Finding 2 — the one suggestion engine runs on the one detector graded noise.** `gap_suggest` (G5)
+is the closest thing to C4 in the tree, and it fires one LLM call per **`under_connected`** concept —
+the kind RG-014 graded ❌ *"mostly noise… measures graph degree, dominated by vocabulary sparsity"*.
+Meanwhile **`single_source`**, the kind RG-014 graded *"TRUE POSITIVE — the product thesis"*, gets
+**no suggestion pass at all**. Re-pointing it is hours of work and the cheapest real progress toward
+the stated goal.
+
+**Finding 3 — C1 already works, on the wrong layer.** The answer path classifies claims by
+retrieval-derived support and says outright why (*markers never come from model confidence*). The
+concept layer ignores it and asks an LLM about labels. That is ADR-041 option 6, now KL1.
+
+**Finding 4 — C3 and C5 are genuinely strong**, which is worth stating plainly after two sessions of
+finding defects: `single_source`, the graph, ego navigation, the gap list with durable triage, the
+Connections panel and the taxonomy view are all built and sound. The per-document map (MM1–MM3,
+absorbing PR-G2c) is the one navigation piece missing, still gated on the ADR-030 stub.
+
+**The plan, phased so nothing is built on top of something that lies.** **A** make what exists tell
+the truth (the surfacing deadline · option 6 · `unsourced_claim` contamination · encode RG-014's
+grades in the gap list) → **B** the acquisition half (re-point `gap_suggest` · grill ADR-032 · the
+taxonomy as reference class) → **C** the per-file map (grill ADR-030 → MM1 → MM2 → MM3) → **D**
+Node-B rebuilt on evidence, ground-truth study as the gate → **E** measure the two unmeasured shipped
+layers (RG-015 taxonomy placement, RG-018 wiki flip). **B before C** deliberately: B1 is hours and
+moves the operative capability, C is weeks and improves navigation that already works.
+
+**Rejected.** Putting the whole review in the tracked docs (the dated-PLAN convention is local-only,
+ADR-029) — mirrored as §6b + KL1–KL4 instead, so the conclusions survive outside a gitignored file.
+Attaching effort estimates (the ordering is by dependency and goal-value; guessing hours would have
+dressed judgement as measurement).
+
+**What it opens.** Five things the review did **not** verify, listed in the plan's §6 — most
+importantly that `gap_suggest`'s restriction to `under_connected` is taken from CONTEXT.md and
+ADR-004 and **not re-read in `gap_suggest.py`** (confirm before doing B1), and that RG-014's verdict
+dates from 76 docs / 26 concepts against today's 97 / 13 — direction stable, numbers not.
+
+---
+## 2026-08-03 (1) — ADR-041 (rebuild-or-retire Node B) + the knowledge layer finally has a map with a trust table
+
+**What changed.** No source code. New **ADR-041**, new **`docs/knowledge-layer.md`**, a new
+**"Read before you touch — never assume"** section in `.claude/CONTEXT.md`, plus pointers from
+`AGENTS.md`, `architecture.md` and `src/doc_assistant/CLAUDE.md` so none of it depends on knowing
+it exists.
+
+**The CONTEXT.md table is the durable half.** Eight rows mapping *area of the app* → *what to read
+first* → *what assuming instead has actually cost* (the epistemics threshold chase; reverting the
+lazy reranker or the `_sparse is None` guard; page markers in the evidence block; curated structure
+in `concept_edges`; a "local" run billing the API). Plus two standing rules: **a spec's surface
+description is not its purpose** — with today's retire recommendation as the worked example, and the
+corollary that *months of deliberate work on a feature is evidence of intent, so ask what it is for
+before proposing to remove it* — and **re-measure per box; check a "known" fact before inheriting
+it** (three inherited claims were false this week: the private eval set, retrieval determinism, and
+`gh`/Docker being absent).
+
+**Also answered, since it came up as "I don't know if it was done":** the *explore concepts within a
+given file* feature is **not built**. It was **PR-G2c** (Library entry, doc → its concepts);
+`feature-concept-graph.md:19` records E4 shipping a related-papers Connections panel instead, and it
+has since been absorbed into **ROADMAP MM2** (`knowledge/doc_map.py` + `GET
+/api/library/documents/{id}/map`), gated on **ADR-030** — still a proposed stub needing `grill-me`,
+and already flagged in the baton as the one to do first because it blocks MM1.
+
+> **Date correction.** The three entries below are headed `2026-08-02`; that is wrong — **all of that
+> work was done on 2026-08-03**, in the same session as this entry, and the two baselines it
+> committed carry `2026-08-02` in their filenames for the same reason. Left as-is rather than
+> rewritten: the entries are append-only and already committed (`40888b1`), and a rename would
+> break the links pointing at them. Corrected here so the record is not silently off by a day.
+
+**Why the doc, and why now.** The user's read was that the docs are behind what we have on the
+concept graph — *"it is not clear what we are doing and why."* Checking rather than agreeing: the
+purpose **is** written down, and well. `docs/specs/feature-concept-graph.md` § *The job* (locked with
+the user 2026-07-17) states it as three questions — **corroboration** (*"is this concept backed by
+more than one source?"*), **coverage**, **navigation** — plus ADR-004's north star, *"the graph is
+the substrate; the gaps are the payload."* The mechanism is in `architecture.md`; the decisions are
+in nine ADRs. **Nothing connected them**, so nothing noticed when an output stopped matching the
+purpose. That is not hypothetical — it is precisely how `contested` shipped saturated and how
+RG-019's prescription went two weeks unchallenged. The missing artifact was never a description; it
+was a **trust table**.
+
+`docs/knowledge-layer.md` is that page: the job · the one-vocabulary rule · the two graph layers ·
+the end-to-end flow · who consumes what · **a per-signal trust table** · how to run it · the ADR
+reading order. It grades `single_source` ✅ (RG-014's "TRUE POSITIVE — the product thesis"),
+`unsourced_claim` ⚠️ (~33% contaminated), `under_connected` ❌ (noise at small vocabularies), and
+`contested`/`superseded_trend` ❌ **not a corpus measurement** (KI-33).
+
+**The finding that shaped ADR-041, and it came from re-reading the spec rather than the code.**
+**All three of B1's jobs are answered by counting documents** — corroboration is `len(doc_ids) >= 2`,
+coverage is presence per field, navigation is `node → doc_ids → chunk_keys`. All Node-A,
+deterministic, zero-LLM. **Stance answers a question B1 never asked** ("do the sources *disagree*?"),
+and it arrived later, via the 7d currency work and ADR-027's strip. The spec's own grounding note
+from design-lock records *"The epistemic dimension is empty … `contested_edges()` → `[]`"* — **the
+feature was designed, locked and graded useful before stance existed at all.**
+
+**So ADR-041 is not only "how to rebuild Node B" — it is whether to.** Five options: rebuild with the
+co-occurrence passages + a neutral label + one pair per call · **retire stance, keep Node A** ·
+keep the relation verb only · a deterministic tension proxy · park it. **Recommendation: retire**,
+reopening as a properly-scoped feature (with the ground-truth study budgeted from the start) only on
+an explicit product decision. Option 3 is explicitly warned against as a false compromise — the
+relation verb comes from the same text-free, position-sensitive prompt (the position probe produced
+*is used with · uses · is improved by · compared to · is compared to · improves on* for one pair) and
+`relation_by_pair` keeps whichever document answered first.
+
+**Costs stated honestly rather than waved through.** Retiring takes `contested` and
+`superseded_trend` out of the product — the CHANGELOG feature list, ADR-027 D3's strip column, the
+reviewer's `contested_evidence` tag — and **G3/G6's year-aware `superseded_trend` is collateral**: it
+is deterministic and correct in itself but rides on stance-derived direction, so it goes too unless
+re-based on `doc_years` alone. Whether that re-basing is feasible **has not been checked in code**,
+and ADR-041 says so in its Confidence section.
+
+**Rejected.** Writing a new "what is the concept graph" doc from scratch (the purpose was already
+written; duplicating it would have created a second source to drift). Agreeing that the docs were
+missing without looking — they were **scattered and stale, not absent**, and the fix for those is
+different.
+
+**Then the user supplied the decision input the ADR was waiting on, and it flipped the
+recommendation.** The stated intent: *"see which claims are unsubstantiated and where are the
+knowledge gaps … classify knowledge per concept in order to find the gaps where the user, for a given
+subject, should find more resources … We want epistemics feature. That is the idea."*
+
+**My "retire" recommendation was wrong, and the way it was wrong is worth keeping.** I read B1's spec
+text — corroboration/coverage/navigation, all document counts — and concluded stance "answers a
+question B1 never asked". That is true of the *text* and false of the *intent*. **A spec's surface
+description is not its purpose**, and I had just written a whole page arguing that the docs' problem
+was exactly this kind of disconnection. The measurement's finding is untouched (the current Node B
+cannot serve the goal); what changed is that "this implementation is invalid" and "the feature is
+unwanted" are different claims and only the first was ever supported.
+
+**Two things the correction produced that the retire framing had hidden.**
+1. **A unit mismatch nobody had named.** The goal is knowledge classified *per concept*; today's
+   epistemics classifies **edges** (concept pairs) and reaches concepts only by aggregation.
+2. **A cheaper first move — new ADR-041 option 6.** *"Which claims are unsubstantiated"* is a
+   **support** question, not a polarity one, and the project already has a working, deterministic,
+   retrieval-derived claim layer (`AnswerClaim`, `weakly grounded`/`unsupported`, `unsourced_claim`)
+   built on the principle `how-answers-work.md` states outright — markers come from retrieval
+   signals, never the model's own confidence. Re-basing per-concept status on it serves the headline
+   goal with no new LLM pass. It cannot do polarity, so option 1 still owns "these sources disagree".
+
+**Recommendation now: 6 → 1**, with option 4 (deterministic structure from the taxonomy) kept in view,
+because the user's *"concepts are linked in general to predictable things"* makes a gap **a deviation
+from expected structure** — which needs a source for the expectation, and ADR-028's curated taxonomy
+is the one already in the tree. Same reference-class argument ADR-040 reached from the other side.
+
+**What it opens.** The build sequence is open; the ADR no longer is. One thing keeps its deadline
+regardless: **the surfaces must stop presenting stance-derived output as an epistemic finding** until
+6 or 1 lands. Unscoped: whether `superseded_trend` survives on years alone.
+
+---
 ## 2026-08-02 (3) — ADR-040 option 5 executed: Node-B stance is judged **without the document** and flips with **list position**. `contested` is not measuring the corpus (KI-33)
 
 **What changed.** No source code. New instrument `scripts/validate_node_b_stance.py`, new baseline

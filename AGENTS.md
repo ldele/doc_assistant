@@ -37,7 +37,8 @@ Full stack + locked settings: `.claude/CONTEXT.md`.
 Reference: `docs/ROADMAP.md` · `docs/architecture.md` · `docs/decisions/` (ADRs — living index
 `docs/decisions.md`, ADR-022) · `docs/specs/` · `GLOSSARY.md` (pinned vocabulary) ·
 `docs/performance.md` (cost/scale record + the optimisation trade-off ledger; quality lives in
-`evals/README.md`).
+`evals/README.md`) · `docs/knowledge-layer.md` (**what the concept graph / gaps / epistemics are
+for, and which of their signals are trustworthy — read before believing any marker**).
 
 ## Sub-module focus (big-project layout, ADR-021)
 

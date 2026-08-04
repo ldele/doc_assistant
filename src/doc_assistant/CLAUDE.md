@@ -15,9 +15,9 @@
   packages re-export flat from `__init__`.
 - `db/` — SQLAlchemy models + session + **additive** migrations. `ingest/` — extract → markdown →
   chunk → embed → store (locked) + registry/cache/figures/tables. `eval/` — the eval harness.
-- `knowledge/` — corpus-derived layer: keywords/families, concept skeleton (Node A/B) +
-  curation/semantics/graph view, wiki, gaps, epistemics. All sidecars; the answer path reads it,
-  never depends on it.
+- `knowledge/` — corpus-derived layer: keywords/families, concept skeleton (Node A/B) + curation,
+  wiki, gaps, epistemics. Sidecars; the answer path reads it, never depends on it. **Read
+  `docs/knowledge-layer.md` first** — trust table: `contested` is NOT a measurement (KI-33).
 
 **Rules that bite here**
 - **Locked settings** live in `config.py` — change only via an eval-harness experiment

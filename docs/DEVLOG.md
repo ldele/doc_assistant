@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-08-02 · class: append-only -->
+<!-- status: active · updated: 2026-08-05 · class: append-only -->
 
 # DEVLOG — doc_assistant
 
@@ -9,6 +9,60 @@ Format: What changed | Why | Rejected alternatives | What it opens
 
 > Entries **2026-07-14 and earlier** live in [`docs/archive/DEVLOG-archive-001.md`](archive/DEVLOG-archive-001.md)
 > (moved verbatim 2026-07-21). This file keeps 2026-07-15 onward.
+
+---
+## 2026-08-05 (1) — RG-012 Tier-2 finally ran, and the shipped installer **could not ingest a single PDF** (KI-34)
+
+**What changed.** One line of `scripts/doc_assistant_api.spec` — `"pymupdf"` added beside `"fitz"` —
+plus **KI-34**. The gate itself ran for the first time in the project's history.
+
+**The finding.** Provenote 0.4.1 installed on a clean, Python-free Windows Sandbox. Install ✅,
+launch ✅, backend ✅, `/api/setup` ✅ (Ollama detected reachable, 9 models, `active_ready:true`,
+documents step correctly not-done). Then ingest of 3 PDFs: **`added=0, errors=3`, in 0.65 s** — far
+too fast to have attempted extraction. Every file, identically:
+
+```
+[Errno 2] No such file or directory:
+  ...\Temp\_MEI82922\pymupdf\layout/resources/onnx/layout_rf2.4.1+imf1.yaml
+```
+
+**Cause.** The spec collected **`"fitz"`** only. `fitz` is the *legacy import shim*; PyMuPDF's real
+distribution directory is **`pymupdf/`**, carrying data read at extraction time. `collect_all("fitz")`
+bundles the shim and none of it, so the frozen build **imports cleanly and then fails every PDF**.
+Verified after the fix: `collect_all("pymupdf")` yields **129 data files**, including the exact
+`layout_rf2.4.1+imf1.yaml` the error named.
+
+**Why five layers of green missed it, which is the part to carry.**
+1. **Invisible from source** — site-packages has the file, so the 1447-test suite, the eval harness
+   and the desktop dev loop all pass.
+2. **The v0.4.0 WSL clean-room run passed** for the same reason: it was a *source* install.
+3. **The standalone sidecar smoke this session ran passed too** — `/api/health` → 33,105 chunks —
+   because the missing file is read on the **extraction** path, not at import. **Booting a frozen
+   binary proves nothing about whether its data files were bundled.** A packaging gate must push a
+   real document end to end.
+
+**Two more findings from the same run, neither fixed.** (a) **First launch has a long
+dead-backend window** while 1.5 GB of onefile extracts before uvicorn binds — health lands in 10–20 s
+warm, but minutes cold, and the UI does not signal it convincingly. A tester's first impression.
+(b) The install folder is `Provenote/` while the executable is `doc-assistant-desktop.exe` — ADR-012's
+product/code identity split working exactly as designed, but undocumented and it cost two diagnostic
+rounds here.
+
+**Method note.** Three of my own harness bugs preceded the real one and each was mine, not the
+product's: a UTF-8-no-BOM script that Windows PowerShell 5.1 read as ANSI (em-dashes broke parsing —
+and *that* was the true cause of the two "LogonCommand never fires" failures I had blamed on Sandbox);
+`Select-Object -First 1` picking the **June 0.1.0** installer out of a folder holding both; and
+filtering for a guessed `Provenote.exe`. **Scripts that drive a gate are ASCII-only and never select
+an artifact incidentally** — both now enforced in the harness at `C:\rg012-host\`.
+
+**Rejected.** Calling the earlier "backend unreachable" a product bug — measured twice at ~10 s and
+~20 s to health, so it was extraction latency, not a failure. Declaring RG-012 Tier-2 passed on the
+strength of install + launch + health: the gate's actual claim is **a cited turn**, and ingest fails,
+so the answer is still unproven.
+
+**What it opens.** Rebuild (sidecar + installer) and rerun in a **fresh** sandbox — the gate should
+now reach the cited turn. Then: the first-launch extraction window deserves its own fix before any
+tester sees it, and the packaging gate should grow a real-document step so this class cannot recur.
 
 ---
 ## 2026-08-03 (3) — v0.4.1: the first installer since June, KI-33 contained before it ships — and **RG-012 Tier-2 still has no evidence**

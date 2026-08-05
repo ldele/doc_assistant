@@ -27,7 +27,14 @@ for pkg in (
     "tokenizers",
     "safetensors",
     "huggingface_hub",
-    "fitz",  # pymupdf
+    # BOTH names are required, and the second is the load-bearing one. `fitz` is only the legacy
+    # import shim; the real distribution directory is `pymupdf/`, and it carries data files
+    # (`pymupdf/layout/resources/onnx/*.yaml`) that are read at extraction time. Collecting `fitz`
+    # alone freezes a build that imports fine and then fails EVERY PDF at runtime with
+    # `[Errno 2] ... _MEI*/pymupdf/layout/resources/onnx/layout_rf*.yaml`. Found by RG-012 Tier-2
+    # on a clean box (2026-08-05); invisible from source, where site-packages has the file.
+    "fitz",  # legacy import alias
+    "pymupdf",  # the actual package + its layout/onnx data files
     "pymupdf4llm",
     "langchain",
     "langchain_core",

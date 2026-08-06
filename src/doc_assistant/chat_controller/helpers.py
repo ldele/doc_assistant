@@ -261,15 +261,27 @@ def _format_provenance_card(
     *,
     review: ReviewResult | None = None,
     is_local: bool = False,
+    source_strip_rendered: bool = False,
 ) -> str:
     """Render an AnswerProvenance as a plain-markdown card (no raw HTML).
 
     Clean answers get a compact three-line block; when a confidence signal
     fires the block expands with the signal breakdown, the reviewer verdict,
-    and the full per-source reranker scores, led by a ⚠ chip. Filenames are
+    and the full per-source retrieval-relevance scores, led by a ⚠ chip. Filenames are
     not repeated — they live in the always-visible "Sources:" block; the card
     keys scores by source number. Full per-chunk metadata is in the DB /
     `/export-record`.
+
+    **Every score here is retrieval relevance from the cross-encoder reranker — how well a chunk
+    matches the question. None of them is a judgement of the source's quality, and nothing in this
+    app produces one.** Said explicitly at each mention because the numbers sit beside the
+    epistemic assessment, where a bare decimal invites the other reading (user report 2026-08-05).
+
+    ``source_strip_rendered`` suppresses the per-source list: when the ADR-027 D3 strip is on
+    screen it already shows exactly these numbers, keyed the same way, so printing them again put
+    the same measure in two places on one answer. The card keeps the *aggregate* signals (max,
+    top-3 span) — those are the thresholds the confidence verdict is actually derived from, and
+    they appear nowhere else.
     """
     id8 = prov.id[:8]
     latency_s = (prov.latency_ms or 0.0) / 1000.0
@@ -282,7 +294,7 @@ def _format_provenance_card(
 
     if not signals.any():
         top = (
-            f" · **top reranker** `{signals.max_score:.3f}`"
+            f" · **best source relevance** `{signals.max_score:.3f}`"
             if signals.max_score is not None
             else ""
         )
@@ -295,18 +307,25 @@ def _format_provenance_card(
         )
 
     sig_lines = (
-        f"- max reranker score: `{signals.max_score:.3f}`"
+        f"- best source relevance: `{signals.max_score:.3f}`"
         f"{' ⚠' if signals.weak_retrieval else ''}  \n"
-        f"- top-3 score span: `{signals.top3_span:.3f}`"
+        f"- top-3 relevance span: `{signals.top3_span:.3f}`"
         f"{' ⚠' if signals.score_cluster_concern else ''}  \n"
         f"- unique source documents: `{signals.unique_sources}`"
         f"{' ⚠' if signals.single_source_risk else ''}"
     )
-    score_lines = "\n".join(
-        f"- [{i + 1}] reranker `{c.reranker_score:.3f}`"
-        if c.reranker_score is not None
-        else f"- [{i + 1}] reranker `-`"
-        for i, c in enumerate(prov.retrieved_chunks)
+    # Omitted when the source-evaluation strip already shows these numbers (see docstring).
+    score_block = (
+        ""
+        if source_strip_rendered
+        else "**Source relevance** (reranker score per source number above)\n"
+        + "\n".join(
+            f"- [{i + 1}] `{c.reranker_score:.3f}`"
+            if c.reranker_score is not None
+            else f"- [{i + 1}] `-`"
+            for i, c in enumerate(prov.retrieved_chunks)
+        )
+        + "\n\n"
     )
     review_block = _format_review_block(review)
     return (
@@ -317,7 +336,7 @@ def _format_provenance_card(
         f"**Prompt version** `{prov.prompt_version or '?'}`\n\n"
         f"**Confidence signals**  \n{sig_lines}"
         f"{review_block}\n\n"
-        f"**Reranker scores** (by source number above)\n{score_lines}\n\n"
+        f"{score_block}"
         f"{hint}"
     )
 
@@ -508,6 +527,11 @@ class _ProvenanceInputs:
     # ADR-027 D2 (E3): the effective answer-layer epistemics flag for this turn, snapshotted
     # into the AnswerRecord (ADR-011 instrument discipline).
     markers_enabled: bool
+    # Whether the always-on source-evaluation strip (ADR-027 D3) will render for this turn — i.e.
+    # whether the per-source rerank scores are ALREADY on screen. The provenance card omits its own
+    # copy of them when they are; see ``_provenance_card``. False when no concept graph exists, in
+    # which case the card is the only per-source surface and keeps the list.
+    source_strip_rendered: bool = False
 
 
 @dataclass(frozen=True)

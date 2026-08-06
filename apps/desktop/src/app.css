@@ -71,6 +71,13 @@
   --graph-edge: color-mix(in srgb, var(--fg) 18%, transparent);
   --graph-node-stroke: color-mix(in srgb, var(--fg) 32%, transparent);
 
+  /* Scrollbars, same color-mix trick — one declaration, both themes. Until 2026-08-05 the app
+     shipped no scrollbar styling at all, so every scrolling pane drew the raw OS bar: a bright
+     grey slab against the dark reading surface, the loudest thing on the page next to prose that
+     is deliberately quiet. */
+  --scrollbar-thumb: color-mix(in srgb, var(--fg) 20%, transparent);
+  --scrollbar-thumb-hover: color-mix(in srgb, var(--fg) 38%, transparent);
+
   font-family: var(--font-sans);
   font-size: 15px;
   line-height: 1.5;
@@ -197,6 +204,38 @@
 
 * {
   box-sizing: border-box;
+}
+
+/* Two ways to say the same thing, on purpose — they do NOT fight.
+   `scrollbar-color` is the standard property and is what Chromium (WebView2, the Windows Tauri
+   runtime) and Firefox use; when it is set to anything but `auto`, Chromium ignores the
+   ::-webkit-scrollbar pseudo-elements entirely, so the standard rule always wins where it is
+   supported. The ::-webkit- block below is the fallback for WebKit (macOS WKWebView), which does
+   not implement `scrollbar-color`. Declaring both is graceful degradation, not duplication. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--scrollbar-thumb) transparent;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track,
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  /* The transparent border + background-clip is what makes the thumb read as a slim pill with
+     breathing room, rather than a bar wedged against the edge of the pane. */
+  background: var(--scrollbar-thumb);
+  background-clip: content-box;
+  border: 2px solid transparent;
+  border-radius: 999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--scrollbar-thumb-hover);
+  background-clip: content-box;
 }
 
 body {

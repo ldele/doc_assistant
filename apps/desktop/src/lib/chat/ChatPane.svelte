@@ -188,7 +188,15 @@
   .conversation {
     flex: 1;
     overflow-y: auto;
-    padding: var(--space-2) 0;
+    /* Horizontal padding is load-bearing, not decoration. This pane scrolls, so its vertical
+       scrollbar eats ~15px off the *content* box (width 790 → clientWidth 775). With `padding: … 0`
+       every right-anchored child — the `.usage` token line, the source-evaluation score column,
+       both `margin-left: auto` — ended exactly ON that boundary and rendered underneath the bar:
+       "0 tokens · local" read as "0 tokens · loca". Keep a gutter wider than any scrollbar.
+       `scrollbar-gutter: stable` reserves the space even when no bar is showing, so a turn that
+       grows past the fold no longer shifts the whole column left by 15px as it appears. */
+    padding: var(--space-2) var(--space-3);
+    scrollbar-gutter: stable;
   }
   /* Empty + first-run states share one centered, mark-led layout (V2). */
   .empty,

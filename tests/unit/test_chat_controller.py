@@ -428,6 +428,57 @@ def test_claim_citing_only_a_nonexistent_source_reads_unresolved_not_uncited(mon
     assert result.flagged_claims[0].badge == "unresolved citation"
 
 
+def _low_confidence_card(*, source_strip_rendered: bool) -> str:
+    """Render the *expanded* provenance card (a fired signal) both ways."""
+    from doc_assistant.chat_controller.helpers import _format_provenance_card
+    from doc_assistant.provenance import AnswerProvenance, ConfidenceSignals, RetrievedChunk
+
+    prov = AnswerProvenance(
+        id="abcdef1234",
+        query="q",
+        answer="a",
+        retrieved_chunks=[
+            RetrievedChunk(filename="a.pdf", page=1, chunk_excerpt="x", reranker_score=0.9),
+            RetrievedChunk(filename="b.pdf", page=2, chunk_excerpt="y", reranker_score=0.4),
+        ],
+        top_k=10,
+    )
+    signals = ConfidenceSignals(
+        single_source_risk=True, max_score=0.9, top3_span=0.5, unique_sources=1
+    )
+    return _format_provenance_card(prov, signals, source_strip_rendered=source_strip_rendered)
+
+
+def test_provenance_card_drops_the_per_source_scores_when_the_strip_shows_them():
+    """One measure, one place (user report 2026-08-05).
+
+    The ADR-027 D3 strip lists per-source relevance for every answer it renders; the card used to
+    print the identical numbers again, keyed the same way, one decimal deeper. The *aggregate*
+    signals stay in the card either way — they are what the confidence verdict is derived from and
+    they appear nowhere else."""
+    with_strip = _low_confidence_card(source_strip_rendered=True)
+    assert "- [1]" not in with_strip  # no per-source list
+    assert "best source relevance" in with_strip  # the aggregate signal survives
+    assert "top-3 relevance span" in with_strip
+
+
+def test_provenance_card_keeps_the_per_source_scores_when_there_is_no_strip():
+    """No concept graph → no strip → the card is the ONLY per-source surface, so it must not
+    have been the thing that dropped them."""
+    without_strip = _low_confidence_card(source_strip_rendered=False)
+    assert "Source relevance" in without_strip
+    assert "- [1] `0.900`" in without_strip
+    assert "- [2] `0.400`" in without_strip
+
+
+def test_provenance_card_never_calls_a_relevance_score_a_quality_judgement():
+    """The number is cross-encoder retrieval relevance. Nothing in the app scores source quality,
+    so no surface may imply it does — the wording is the only thing preventing that reading."""
+    for card in (_low_confidence_card(source_strip_rendered=s) for s in (True, False)):
+        assert "reranker score" not in card.lower().replace("reranker score per source", "")
+        assert "quality" not in card.lower()
+
+
 def test_human_mode_returns_evidence_only(monkeypatch, temp_db):
     monkeypatch.setattr(chat_controller.controller, "is_library_query", lambda t: False)
     monkeypatch.setattr(chat_controller.helpers, "SYNTHESIS_MODE", "human")

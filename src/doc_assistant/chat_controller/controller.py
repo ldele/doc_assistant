@@ -478,7 +478,11 @@ class ChatController:
                     except Exception as e:
                         review = ReviewResult(error=f"reviewer setup failed: {e}")
             provenance_block = _format_provenance_card(
-                prov, signals, review=review, is_local=_is_local(pin.turn_provider)
+                prov,
+                signals,
+                review=review,
+                is_local=_is_local(pin.turn_provider),
+                source_strip_rendered=pin.source_strip_rendered,
             )
         except Exception as e:
             # Never let provenance failure break the answer.
@@ -609,6 +613,10 @@ class ChatController:
                 turn_provider=turn_provider,
                 turn_model=turn_model,
                 markers_enabled=knobs.markers_enabled,
+                # The strip renders iff we have both a summary and sources to list (Turn.svelte's
+                # own condition). When it does, it already shows the per-source relevance scores,
+                # so the card drops its duplicate copy of them.
+                source_strip_rendered=source_eval is not None and bool(sources),
             )
         )
         record_id = prov_out.record_id

@@ -11,6 +11,76 @@ Format: What changed | Why | Rejected alternatives | What it opens
 > (moved verbatim 2026-07-21). This file keeps 2026-07-15 onward.
 
 ---
+## 2026-08-05 (4) — pre-release UI pass: themed scrollbars, the answer column stops rendering under its own scrollbar, and "what is this 0.94?" answered
+
+**What changed.** Three reported defects, all in the answer surface (user report with screenshot).
+
+**1 · Scrollbars were unstyled — anywhere.** `grep scrollbar apps/desktop/src` returned **nothing**,
+so every scrolling pane drew the raw OS bar: a bright grey slab against a dark reading surface,
+and the loudest element on a page whose prose is deliberately quiet. Added `--scrollbar-thumb` /
+`--scrollbar-thumb-hover` to `app.css` using the same `color-mix(in srgb, var(--fg) N%, transparent)`
+trick `--graph-edge` already uses — **one declaration covers both themes**, because `var()` is
+late-bound. Declared twice on purpose and they do not fight: `scrollbar-color` is the standard
+property and wins in Chromium (WebView2, the Windows Tauri runtime) and Firefox — where it is set
+to anything but `auto`, Chromium ignores `::-webkit-scrollbar` entirely — and the `::-webkit-` block
+is the fallback for WKWebView, which has no `scrollbar-color`. Graceful degradation, not duplication.
+
+**2 · The answer column rendered underneath its own scrollbar.** Measured, not guessed:
+`section.conversation` had `padding: var(--space-2) 0` — **zero** horizontal — while scrolling, so
+its 15 px vertical bar ate the content box (`width 790` → `clientWidth 775`). Every right-anchored
+child sat exactly ON that boundary: `.usage` and the source-evaluation `.score` column both ended at
+x=1206 = the content edge, gap **0 px**, which is why the screenshot reads "0 tokens · **loca**".
+Fixed with a real gutter (`padding: var(--space-2) var(--space-3)`) plus `scrollbar-gutter: stable`,
+so the space is reserved even when no bar shows and a growing turn no longer shifts the whole column
+15 px left as it crosses the fold. Verified live: gap **0 → 11 px** for both elements, no body
+overflow. *This was never a "cut window" — nothing was clipped horizontally; content was drawn under
+an overlaying bar.*
+
+**3 · "Is 0.94 a relevance score or a quality score?" — a fair question the UI invited.** It is
+**retrieval relevance**: the cross-encoder reranker's score for that *chunk* against *this question*,
+the same number the ranking used. **Nothing in this app scores a source's quality.** But the number
+sat unlabelled, in a block headed *"Source evaluation"*, beside an epistemic assessment — and since
+KI-33 withheld that assessment, the strip's only real content **is** a year and this score. So the
+heading now promises an evaluation the row no longer delivers, and the bare decimal is the only
+thing left to read as one. Fixed by naming it: a legend under the heading (*"relevance = how well
+the retrieved passage matches your question (reranker score, 0–1). Not a judgement of the source."*)
+and a small-caps `relevance` unit beside every number, so a lone decimal is unambiguous even when
+the legend has scrolled away.
+
+**And the repetition, which was real.** On a low-confidence answer the provenance card printed
+`**Reranker scores** — [1] reranker 0.907 …`: the *same* measure, keyed the same way, one decimal
+deeper, on the same answer as the strip. The card now omits it when the strip is on screen
+(`_ProvenanceInputs.source_strip_rendered`, set from `source_eval is not None and bool(sources)` —
+`Turn.svelte`'s own render condition). It **keeps** the aggregate signals (`best source relevance`,
+`top-3 relevance span`), which appear nowhere else and are what the confidence verdict is derived
+from. Renamed throughout: "reranker" is our word, not the reader's.
+
+**Rejected.**
+- **Dropping the per-source list unconditionally.** The strip needs a concept graph
+  (`_attach_source_evaluation` returns `None` without one), so on a graph-less corpus the card is
+  the *only* per-source surface. Pinned both ways by test, so the de-dup cannot become a data loss.
+- **`overflow-x: hidden` on the conversation** to stop the clipping. It would hide the symptom and
+  silently swallow any genuinely too-wide child (a table, a long code block) instead of letting it
+  scroll. The defect was missing padding; fix the padding.
+- **A tooltip alone for the score.** It already had one (`title="Reranker relevance score…"`) and
+  the question still got asked — hover text is not documentation, and it does not exist on touch.
+- **Renaming the strip's "Source evaluation" heading.** Tempting while the assessment is withheld,
+  but the heading is right for what the strip is *for*; the honest fix is restoring the assessment
+  (ADR-041), not renaming the feature around a temporary containment.
+
+**What it opens.** The strip's heading over-promises while KI-33 holds — worth revisiting if the
+containment outlives the release. And the **source explorer** the same report asked for (chunk →
+parent → document) is filed in `docs/ui-checklist.md` §3, deliberately **not** built here: it is new
+capability, not a defect, and the pre-release pass is for defects.
+
+**Verified live**, real local turn (`ollama/llama3.1:8b`, $0, 12 s): score reads `relevance 0.87`,
+legend renders, card shows `best source relevance 0.872` with **no** per-source list, 11 px gap to
+the scrollbar, themed thumb applied. **Method note:** the first check appeared to *fail* — the card
+still said "top reranker". The API sidecar had been started before the edits and uvicorn was not run
+with `--reload`, so it was serving stale Python. **A frontend hot-reload proves nothing about the
+backend**; restart the sidecar before believing a backend-rendered string.
+
+---
 ## 2026-08-05 (3) — tell the user the free path cites less, where they choose it (KI-36 follow-through)
 
 **What changed.** Four lines of copy in `apps/desktop/src/lib/settings/ProviderSetup.svelte`'s

@@ -7,18 +7,27 @@ versioning is [SemVer](https://semver.org/) on the `doc_assistant` package, and 
 The engineering record is finer-grained than this file: per-change entries live in
 [`docs/DEVLOG.md`](docs/DEVLOG.md), design decisions in [`docs/decisions.md`](docs/decisions.md).
 
-## [0.4.1] — 2026-08-03
+## [0.4.1] — 2026-08-06
 
-**The first release with a working installer.** 0.4.0 shipped as source only, because the bundled
-installer was still a June build of a much older app. This one carries a freshly frozen backend and
-a real Windows installer, and it withdraws a feature that was telling you something untrue.
+**The first release with a working installer, verified on a clean machine.** 0.4.0 shipped as
+source only, because the bundled installer was still a June build of a much older app. This one
+carries a freshly frozen backend, a real Windows installer that has been installed and driven
+end-to-end on a machine with no Python and no toolchain, and it withdraws a feature that was
+telling you something untrue.
 
 ### Added
 
-- **A Windows installer that matches the code.** The bundled backend was re-frozen from this
-  release (it had been stuck at a 2026-06-24 build, pre-rename and pre-first-run-setup). Verified
-  standalone before bundling: the frozen backend answers `/api/health` in ~30 s against a
-  33,105-chunk library.
+- **A Windows installer that matches the code, and is proven to work.** The bundled backend was
+  re-frozen from this release (it had been stuck at a 2026-06-24 build, pre-rename and
+  pre-first-run-setup). **Installed on a clean, Python-free Windows machine and driven through a
+  real question:** install 177 s → backend healthy in ~30 s → three PDFs indexed into 322 passages
+  → a cited answer over ten sources in 14 s, entirely on a local model at no cost.
+- **The answer engine tells you what choosing it costs.** The local (Ollama) option now states,
+  where you pick it, that local models cite noticeably less of what they write: across 27 questions
+  on a 97-document library — same prompt, same retrieval — `llama3.1:8b` carried inline citations on
+  36% of its sentences and `qwen2.5:7b` on 14%, against 81% for Claude Haiku 4.5. Answers stay
+  grounded either way; more claims simply show as *uncited*. Nothing is gated — it is your call,
+  made with the number in front of you.
 
 ### Changed
 
@@ -31,7 +40,19 @@ a real Windows installer, and it withdraws a feature that was telling you someth
   marker. Nothing was deleted — `EPISTEMICS_MARKERS_ENABLED=true` opts back in — and the rebuild is
   planned. The rest of the source-evaluation strip (document year, relevance score, graph
   freshness) is unaffected and still shown.
-- **Everything else you can see is unchanged from 0.4.0.**
+- **Claims under an answer say what was actually checked.** A flagged claim used to read
+  *unsupported*, which sounded like a verdict on whether it was true. It never was: the check is
+  structural — does this sentence carry a citation that points at a real retrieved passage? So the
+  labels now say that. A sentence with no citation reads **uncited**; one citing a source number
+  that does not exist reads **unresolved citation**; *weakly grounded* is unchanged. This also ends
+  a genuine contradiction — the reviewer's own "unsupported claims: 0" could appear directly above
+  a list of claims labelled "unsupported", because the two meant different things. And when the
+  assistant correctly says your sources do not cover something, that is now reported as uncited
+  rather than as an accusation.
+- **The relevance number is labelled.** Each source row carries a score that is *retrieval
+  relevance* — how well that passage matches your question — and it was easy to read as a judgement
+  of the source's quality. Nothing in this app scores source quality. The column now says so, and
+  the same numbers are no longer printed twice on one answer.
 
 ### Fixed
 
@@ -42,14 +63,27 @@ a real Windows installer, and it withdraws a feature that was telling you someth
 - **The Docker build could never have succeeded** — `.dockerignore` excluded `README.md`, which the
   Dockerfile copies and which the package build needs. (The image itself is still unbuilt on this
   machine; the fix is reasoned, not yet exercised.)
+- **The installer could not read a single PDF.** The frozen backend bundled PyMuPDF's legacy import
+  shim instead of the package that carries its data files, so every PDF failed instantly on a real
+  install while working perfectly from source. Found only by installing on a clean machine — which
+  is now part of the release routine rather than an afterthought.
+- **Scrollbars, and an answer column that drew underneath its own scrollbar.** The app shipped no
+  scrollbar styling at all, so every scrolling pane drew the raw operating-system bar against the
+  reading surface. Separately, the answer column had no horizontal breathing room, so anything
+  aligned to its right edge — the token count, the per-source relevance score — was rendered under
+  the scrollbar and cut off.
 
 ### Known limits
 
-- **A clean-machine install has not been verified yet** — the installer has not been driven through
-  one real cited answer on a machine with no Python and no toolchain. Until it has, treat this as a
-  beta.
+- **Local models cite much less than a hosted one.** Measured above, and now stated in the app where
+  you choose your answer engine. The answers remain grounded in your documents; more of their
+  sentences simply carry no citation, and are marked accordingly.
 - The `contested` saturation described above is diagnosed but not repaired; the concept graph's
   corroboration and gap detection are unaffected by it.
+- **Scanned documents with no text layer stay unreachable.** A PDF that is images-only extracts to
+  nothing and cannot be retrieved. On the development library this affects 4 documents of 97, and
+  they account for *every* retrieval miss on the private evaluation set. Recovery by OCR is designed
+  and planned, not built.
 
 ## [0.4.0] — 2026-08-01
 

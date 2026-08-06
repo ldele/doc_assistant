@@ -16,12 +16,17 @@ How to build the installable Tauri desktop app: freeze the FastAPI backend as a 
 
 ## ✅ M4 finish checklist
 
-**Where we are (2026-06-22):** M0–M3 shipped; the API + streaming + the whole UI run **live
-against the real 27k-chunk corpus** (verified in dev). The PyInstaller freeze **works**; icons
-generated + `tauri build` run (icons + `Cargo.lock` committed). **Now at step 4 (rigor gates):**
-RG-010/011 are measurable on this box (`scripts/measure_latency.py`); **RG-012 (clean-machine
-smoke) is paused** until a machine restart frees up Windows Sandbox. Each detailed step is a
-section below.
+**Where we are (2026-08-06): M4 is DONE — the checklist below is kept as the procedure, not as
+open work.** The installer builds, installs on a clean Python-free box, and drives a real cited
+turn there (**RG-012 Tier 2 passed 2026-08-05, re-passed 2026-08-06 on the rebuilt 0.4.1
+artifact** — §5). Reference timings from that run: freeze **847 s**, `tauri build` **601 s**,
+silent install **177 s**, `/api/health` **~30 s**, 3 PDFs → 322 chunks in **~36 s**, cited turn
+**14 s**.
+
+> **The release rule this section exists to enforce: never ship an artifact you have not rebuilt
+> from the commit you are shipping, and never trust a green source tree as evidence about a frozen
+> binary.** The build that could not read a single PDF (KI-34) passed every test, every lint and a
+> source-install clean-room. Rebuild, then re-run §5.
 
 **0. Commit today's fixes first** *(they must be baked into the freeze)*
 - [ ] Commit the staged M4 follow-ups: data-dir relocation (`config.py`), missing-table
@@ -50,8 +55,9 @@ section below.
 **4. Close the ship-gate rigor items** *(§5; `.claude/RIGOR_TODO.md`)*
 - [ ] **RG-010** cold-start: time launch → first `/api/health 200`. Record. *(degrades)*
 - [ ] **RG-011** SSE first-token latency vs Chainlit, on the frozen build. ***(BLOCKS SHIP)***
-- [ ] **RG-012** clean-machine smoke: install + drive one real turn on a **second box with no
-      Python / no toolchain**. ***(BLOCKS SHIP)***
+- [x] **RG-012** clean-machine smoke: install + drive one real turn on a box with no Python / no
+      toolchain. **PASSED** 2026-08-05 (Windows Sandbox), re-passed 2026-08-06 on the rebuilt
+      artifact. Re-run it for **every** release — §5.
 
 **5. Then PR-M5** *(only after the installer ships + RG-011/012 pass)*
 - [ ] Delete `apps/chainlit_app.py` + `.chainlit/`, drop the `chainlit` dep, lift the Python-3.12
@@ -144,15 +150,37 @@ uv run --no-sync python -m scripts.measure_latency --launch dist\doc-assistant-a
   **same `ChatController`**, so only the freeze + the localhost HTTP/SSE hop differ — pass = not
   meaningfully slower.
 
-**RG-012 clean-machine smoke — needs a Python-free box.** ***Blocks ship.*** Easiest clean box:
-**Windows Sandbox** (built into Win 11 Pro — disposable, zero Python; enable via *Turn Windows
-features on/off → Windows Sandbox*, restart). Drag the installer in, install, launch.
-- Tier 1 (proves the *freeze*): the app + sidecar come up, health goes green, **no missing-module
-  / DLL error**. If it crashes, run the bundled `doc-assistant-api.exe` in the sandbox console,
-  read the traceback, add to the spec's `hiddenimports`/`datas`, rebuild, retry (1–3 rounds normal).
-- Tier 2 (full smoke — drive a real cited turn): needs the **data-home decision built** — the
-  sandbox has no corpus + no `DOC_DATA_DIR` → `chunk_count: 0`. Ship a seeded corpus or a first-run
-  ingest flow (the open product gap; see the checklist at the top).
+**RG-012 clean-machine smoke — needs a Python-free box. ✅ TIER 2 PASSED 2026-08-05, re-passed
+2026-08-06 on the rebuilt 0.4.1 installer.** Easiest clean box: **Windows Sandbox** (built into
+Win 11 Pro — disposable, zero Python; enable via *Turn Windows features on/off → Windows Sandbox*,
+restart).
+
+The gate is now automated. Harness lives at `C:\rg012-host\` (local-only, not in the repo):
+`rg012-tier2.wsb` maps `installer\ corpus\ script\ out\` and fires `script\rg012-run.ps1` from a
+`LogonCommand`; the script installs silently, launches the shell, waits for `/api/health`, seeds
+3 PDFs from `corpus\`, ingests them, drives one turn, and writes its verdict to `out\`.
+
+**Four traps this harness exists to avoid — every one of them cost a run:**
+1. **ASCII only, in both the `.ps1` and the `.wsb`.** Windows PowerShell 5.1 reads a UTF-8-no-BOM
+   file as ANSI, so one em-dash breaks parsing *before anything logs* — which is what the two
+   historical "LogonCommand never fires" reports actually were. Byte-check before trusting a run.
+2. **Map a STAGED COPY of the installer**, never `target\release\bundle\nsis` directly: a running
+   sandbox holds a handle on what it maps and will fail the next `tauri build` with os error 32.
+3. **Never pick the installer incidentally** (`Select-Object -First 1` grabbed the June 0.1.0 build
+   out of a folder holding both). Filter by product name, sort by build time.
+4. **The gate must assert the app's own contract, not restate it.** It counted `'\[\d+\]'` — stricter
+   than the app's citation parser — scored a passing turn as FAIL, and that false verdict was filed
+   as an application bug (KI-35). It now reports *resolved / unresolvable / uncited* separately.
+
+**Tier 2 needs an answer engine the sandbox can reach.** It uses the host's Ollama over the Default
+Switch address (`http://172.29.224.1:11434`), which requires Ollama bound beyond loopback
+(`OLLAMA_HOST=0.0.0.0:11434`, then restart it) for the duration of the run — **revert afterwards**.
+The data-home gap this section used to describe is closed: the app has a first-run ingest flow, so
+the sandbox seeds its own corpus and reaches `chunk_count > 0` unaided.
+
+**A packaging gate must push a real document end to end (KI-34).** Booting the frozen binary proves
+nothing about whether its *data files* were bundled: the build that could not read a single PDF
+started, served `/api/health`, and reported a healthy chunk count. Only extraction failed.
 
 **Parity** is already guarded in CI (`tests/integration/test_turn_parity.py`) — the Tauri app
 renders the same `TurnResult` as the CLI / Chainlit.

@@ -45,10 +45,11 @@ below — do not add facts, names, or numbers from outside them.
 
 Citing — the format matters as much as the content:
 - Cite EVERY substantive claim with its source number in square brackets — [1], [3],
-  etc. (the source headed "[Source 3: ...]" is cited as [3]). A claim with no [n]
+  etc. (the passage headed "Source 3 — ..." is cited as [3]). A claim with no [n]
   citation is treated as unsupported, so cite as you write.
 - A citation is ONLY a bracketed number. Write [3] — never [Source 3], [Ref 3], an author
   name, year, key (e.g. [Smith2020]), or file name (e.g. (paper.pdf)).
+- Square brackets appear nowhere in the sources — every "[n]" you write is a citation.
 - For several sources, cite them as separate brackets: [2][4] — never [2, 4] or [Sources 2, 4].
 - NEVER put words or a phrase inside square brackets — brackets are reserved for source
   numbers. Write the claim as plain prose followed by its citation: "BM25 is term-based [2]",

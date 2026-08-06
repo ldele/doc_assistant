@@ -11,6 +11,129 @@ Format: What changed | Why | Rejected alternatives | What it opens
 > (moved verbatim 2026-07-21). This file keeps 2026-07-15 onward.
 
 ---
+## 2026-08-06 (3) — RG-012 FAILED on a citation form, and the fix was to stop showing the model a bracket to copy
+
+**What changed.** `pipeline.format_docs_for_prompt` — the retrieved-passage header is no longer
+bracketed: `[Source 3: paper.pdf, page 4]` → `Source 3 — paper.pdf, page 4`. `prompts.py` updated to
+match, plus one new line: *"Square brackets appear nowhere in the sources — every `[n]` you write is
+a citation."* Two guard tests.
+
+**Why — a real RG-012 FAIL, and the genuine version of what KI-35 falsely claimed.** The re-run
+against the rebuilt installer produced a meticulously attributed answer that cited
+**`[Source 1: reranking_bert_nogueira_2019.pdf]`** six times — the *source header format*, copied
+verbatim. `synthesis._CITATION_TOKEN_RE` accepts a label plus digits, not a filename, so it resolves
+to nothing: **`valid=[]`, 6 malformed, 12/12 sentences uncited, all 12 claims badged `uncited`** on
+an answer that names and quotes its source in every paragraph. `prompts.py:47` has warned against
+exactly this since 2026-07-14 and the model did it anyway.
+
+**Three runs, same model, same question, three different citation forms** — the instability
+measured rather than asserted:
+
+| run | form | outcome |
+|---|---|---|
+| 2026-08-05 17:31 | `[Source 1]` ×3 | resolved (the 2026-07-14 tolerance covers it) |
+| 2026-08-06 14:13 | `[1]` ×5 | PASS |
+| 2026-08-06 20:10 | `[Source 1: paper.pdf]` ×6 | **unresolvable → FAIL** |
+
+**Chosen fix: remove the imitation target, not widen the reader.** Square brackets now appear
+**nowhere** in the context, leaving `[3]` in the instructions as the only bracketed thing in the
+entire prompt. The alternative — teaching the parser to swallow `[Source N: anything]` — was
+explicitly rejected: KI-35 itself warned that *"a silently-widened parser hides model drift"*, and
+that is precisely what it would have done here. The model would have gone on emitting a
+non-canonical form and we would have stopped being able to see it.
+
+**Measured after the change**, same question, 6 runs, shipped local default (`llama3.1:8b`, $0):
+**header-copies 0/6**; 5/6 clean canonical `[n]` (3–6 citations each, all resolving); the sixth
+flagged `[CLS]` — a BERT token quoted out of the source text, not a citation attempt, and the same
+benign "audit cries wolf" class already noted for bracketed phrases. **Caveat: 6 runs on one model.**
+The failure appeared in 1 of 3 runs before, so 6/6 is suggestive, not conclusive; RG-012 is the gate
+that decides.
+
+**Rejected.**
+- **Widening the parser to accept `[Source N: …]`.** Unambiguous, and tempting — but it converts a
+  visible defect into an invisible one. The header was the cause; fix the cause.
+- **Arguing harder in the prompt.** Five citation rules and a parenthetical naming this exact
+  confusion were already there and were ignored. A sixth rule is not a mechanism.
+- **Keeping brackets but changing the inner text** (e.g. `[3]` alone as the header). Then the
+  context contains bracketed numbers, and a model echoing one is *indistinguishable* from a real
+  citation — worse than either alternative.
+
+**RG-012 re-run after the full rebuild (sidecar re-frozen 646 s + installer re-bundled): PASS.**
+Install 202 s → health ~30 s → 3 PDFs / 322 chunks → cited turn 17 s → **4 resolved citations, 4
+canonical `[n]`, 0 labelled, 0 unresolvable.** Verified in that artifact: badges `uncited` ×6 /
+`weakly grounded` ×2 (KI-37), `best source relevance` present and the old `Reranker scores` heading
+gone, `citation_note_md` **empty** (audit clean — no malformed anything), and the answer's bracket
+tokens are exactly `[3] [1] [8] [7]`.
+
+**What it opens.** The audit still counts any bracketed token containing letters as a failed
+citation attempt, so a passage quoting `[CLS]`, or a model wrapping a phrase in brackets, produces a
+false "malformed citation" warning. Same disease as KI-35, one layer down; recorded in KI-36.
+
+**Harness note — Windows Sandbox runs ONE instance, and a stale VM silently eats the run.** Two
+launches produced a booted-but-idle sandbox whose `LogonCommand` never fired: `vmmemWindowsSandbox`
+from the previous run was still alive, and killing `WindowsSandboxServer` /
+`WindowsSandboxRemoteSession` does **not** take the VM down with it. Flat VM working-set (982 →
+984 MB over 30 s) is the tell — an installing sandbox climbs. **Wait for every
+`vmmemWindowsSandbox` to disappear before relaunching**, or the gate reports nothing and looks hung.
+
+---
+## 2026-08-06 (2) — the readiness gate no longer gives up, and stops telling users to run `just api` (KI-39)
+
+**What changed.** New `lib/shell/startup.ts` (pure, tested) + the readiness `$effect` in
+`App.svelte` + the status-bar copy. Frontend only — the sidecar is untouched, so the rebuild reused
+today's freeze.
+
+**Why.** Characterising the "first-launch dead-backend window" with the RG-012 numbers in hand
+turned up three facts that are individually defensible and jointly a bad first five minutes:
+1. **A 60 s budget** (60 polls × 1 s) against a PyInstaller **onefile** sidecar that extracts
+   ~1.5 GB to `%TEMP%` before uvicorn binds.
+2. **No retry.** The `$effect` reads no reactive state before its `await`, so it runs **once per
+   mount**; after the loop fell through there was no timer and no control to trigger one. Only a
+   relaunch recovered.
+3. **The message was a developer instruction** — `backend unreachable. Run just api`. A task runner
+   and a repo recipe that someone who installed an `.exe` does not have. **The app's only failure
+   message asked for something that cannot exist on the machine showing it.**
+
+The margin was thinner than it looked: RG-012 measured health at **~30 s — half the budget** — on an
+idle VM, NVMe, file cache warm from the install that had just written those bytes. Defender scans
+`%TEMP%`. Exceeding 60 s on a tester's machine is plausible, and that case was not "slow" but
+terminal *and* misdirecting.
+
+**The fix is the removal of a terminal state, not a bigger number.** Polling now backs off
+(1 s → 2 s → 5 s, bounded) and **never stops**; `startupPhase` only changes what is *said*:
+`connecting` → `slow` at 20 s ("a first launch can take a minute…") → `stalled` at 90 s, which shows
+the fault colour **while still polling**, so a backend that turns up at minute three lands the app in
+`ready` by itself.
+
+**Verified live, on the exact scenario that used to be unrecoverable** — UI up with no backend at
+all:
+
+| elapsed | status bar | dot |
+|---|---|---|
+| 0 s | starting the engine… | wait |
+| ~20 s | starting the engine — a first launch can take a minute… | wait |
+| ~90 s | still starting — retrying. Restart the app if it never arrives. | **red** |
+| backend started at ~170 s | 33,105 chunks · ollama/llama3.1:8b · bge-base | **ok** |
+
+**and the page was never reloaded** (`performance.getEntriesByType('navigation')[0].type ===
+'navigate'`). The old gate could not have done that from any elapsed time past 60 s.
+
+**Rejected.**
+- **Raising 60 → 120.** Trades one arbitrary cliff for another; the defect is that a terminal state
+  exists at all, not its size.
+- **Unbounded exponential backoff.** A late backend must still be noticed promptly; the delay caps
+  at 5 s deliberately.
+- **Dropping the red `down` state** so nothing ever looks broken. After 90 s something probably *is*
+  wrong and saying so is honest — the fix is that saying so no longer means giving up.
+- **A longer, fuller message.** The bar is `nowrap` + `text-overflow: ellipsis`, so a long sentence
+  is simply cut. Both new strings were measured against the 375 px width (297 px and 307 px against
+  335 px available); the fuller explanation is in a `title`.
+
+**What it opens.** **RG-010 (cold start) has still never been properly recorded** — one measurement
+on one fast VM is what we have, and that distribution is what decides whether the PyInstaller spec
+should move onefile→onedir, which is the deeper fix. Filed in KI-39.
+
+---
 ## 2026-08-06 (1) — **rebuilt the installer and RG-012 Tier-2 PASSED on it.** The release gate is closed
 
 **What changed.** No source. A full artifact rebuild — sidecar re-frozen, installer re-bundled — and

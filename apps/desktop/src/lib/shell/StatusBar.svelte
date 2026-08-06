@@ -15,14 +15,26 @@
     class:off={shell.status === 'down'}
     aria-hidden="true"
   ></span>
+  <!-- KI-39: this used to read "backend unreachable. Run `just api`" — a task runner and a repo
+       recipe that a tester who installed an .exe does not have. The app's ONLY failure message
+       asked for something that cannot exist on the machine showing it. Each line below is
+       actionable by the person reading it, and none of them claims the wait is over: the gate
+       keeps polling through every one of these states. -->
   {#if shell.status === 'ready' && shell.health}
     <span class="status-meta">
       {shell.health.chunk_count.toLocaleString()} chunks · {shell.health.model} · {shell.health.embedding_model}
     </span>
-  {:else if shell.status === 'connecting'}
+  {:else if shell.startupPhase === 'connecting'}
     <span class="status-meta">starting the engine…</span>
+  {:else if shell.startupPhase === 'slow'}
+    <!-- Kept short on purpose: this bar is nowrap + ellipsis, so a long sentence is simply cut. -->
+    <span class="status-meta" title="A first launch unpacks a large model bundle before the engine can answer.">
+      starting the engine — a first launch can take a minute…
+    </span>
   {:else}
-    <span class="status-meta err">backend unreachable. Run <code>just api</code></span>
+    <span class="status-meta err" title="The app keeps retrying on its own. If the engine never arrives, restart the app.">
+      still starting — retrying. Restart the app if it never arrives.
+    </span>
   {/if}
 </div>
 
@@ -64,8 +76,5 @@
   }
   .status-meta.err {
     color: var(--warn-fg);
-  }
-  .status-meta code {
-    font-size: 0.92em;
   }
 </style>

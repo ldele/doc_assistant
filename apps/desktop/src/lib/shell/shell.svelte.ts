@@ -14,6 +14,7 @@
 // Those are orchestration. Moving them would trade coupling you can see for coupling you cannot.
 
 import type { Health, SetupState } from '../core/types'
+import type { StartupPhase } from './startup'
 
 export type Mode = 'chat' | 'library' | 'graph'
 export type ConnectionStatus = 'connecting' | 'ready' | 'down'
@@ -43,6 +44,12 @@ export const shell = $state({
    *  successful poll — the status bar renders "starting the engine…" until then. */
   health: null as Health | null,
   status: 'connecting' as ConnectionStatus,
+
+  /** How long the backend has been silent, in words (KI-39). `'down'` above is now a *display*
+   *  state, never a terminal one: the gate keeps polling through `'stalled'`, so a backend that
+   *  arrives late still lands the app in `'ready'` without a relaunch. Timing + thresholds live in
+   *  the pure, tested `startup.ts`. */
+  startupPhase: 'connecting' as StartupPhase,
 
   /** First-run readiness (ADR-034), pulled once the backend answers and re-pulled after a
    *  provider/corpus change. `null` while unknown — the chat pane shows no setup banner until

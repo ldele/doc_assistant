@@ -709,14 +709,34 @@ def format_citation(doc: Document, idx: int) -> str:
 
 
 def format_docs_for_prompt(docs: list[Document]) -> str:
+    """Render the retrieved passages as the prompt's ``{context}``.
+
+    **The header is deliberately NOT bracketed** (changed 2026-08-06). It used to read
+    ``[Source 3: paper.pdf, page 4]`` — and models copied that shape into their prose as the
+    citation, emitting ``[Source 3: paper.pdf]`` where the contract asks for ``[3]``. Nothing
+    resolves that: `synthesis._CITATION_TOKEN_RE` accepts a label plus digits, not a filename, so a
+    meticulously attributed answer rendered with **every claim uncited** and no working links.
+    Measured on the shipped local default (`llama3.1:8b`), the same question produced three
+    different forms across three runs — `[Source 1]`, `[1]`, `[Source 1: paper.pdf]` — the last of
+    which failed RG-012 outright (2026-08-06).
+
+    ``prompts.py`` warns against copying the header, and the model copied it anyway. **So stop
+    showing it a bracketed number at all**: square brackets now appear nowhere in the context,
+    leaving ``[3]`` in the instructions as the only bracketed thing in the whole prompt. That
+    removes the imitation target rather than trying to out-argue it, and it is why the parser was
+    NOT widened to swallow the malformed form — a tolerant reader would have hidden the drift
+    instead of ending it.
+
+    Any change here moves ``prompt_version`` in the provenance record, which is what that hash is
+    for.
+    """
     parts: list[str] = []
     for i, doc in enumerate(docs):
         filename = doc.metadata.get("filename", "unknown")
         page = doc.metadata.get("page")
-        header = f"[Source {i + 1}: {filename}"
+        header = f"Source {i + 1} — {filename}"
         if page:
             header += f", page {page}"
-        header += "]"
         parts.append(f"{header}\n{doc.page_content}")
     return "\n\n---\n\n".join(parts)
 

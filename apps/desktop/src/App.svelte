@@ -103,6 +103,7 @@
   // Shell chrome state (leaf module — imports no sibling state). Phase 2 lets the pane components
   // import this directly instead of taking ~20 props each.
   import { shell } from './lib/shell/shell.svelte'
+  import { backoffDelayMs, startupPhase } from './lib/shell/startup'
   import {
     chat,
     freshSessionId,
@@ -410,30 +411,40 @@
     deleteConvBusy = false
   }
 
-  // Readiness gate (PR-M4): the frozen sidecar takes a few seconds to load models before
-  // it accepts requests. Poll /api/health until it answers (or give up after ~60s), then
-  // load the conversation history.
+  // Readiness gate (PR-M4): the frozen sidecar unpacks ~1.5 GB and loads models before it accepts
+  // requests. Poll /api/health until it answers — **without a deadline** (KI-39).
+  //
+  // This loop used to stop after 60 tries and set status 'down' for good, which made a slow first
+  // launch indistinguishable from a broken install and unrecoverable without a relaunch. It now
+  // backs off and keeps going; `startupPhase` only changes what the status bar SAYS. Timing and
+  // thresholds are in the pure, tested `startup.ts`.
   $effect(() => {
     let cancelled = false
+    const startedAt = Date.now()
     void (async () => {
-      for (let i = 0; i < 60 && !cancelled; i++) {
+      for (let attempt = 0; !cancelled; attempt++) {
         try {
           const h = await getHealth()
-          if (!cancelled) {
-            shell.health = h
-            shell.status = 'ready'
-            void refreshSetup() // ADR-034 — what this install still needs, if anything
-            void refreshConversations()
-            // The composer's scope selector needs the folder list even if the user never
-            // opens the Library.
-            void refreshFolders()
-          }
+          if (cancelled) return
+          shell.health = h
+          shell.status = 'ready'
+          shell.startupPhase = 'connecting' // reset, so a later drop-out starts its story afresh
+          void refreshSetup() // ADR-034 — what this install still needs, if anything
+          void refreshConversations()
+          // The composer's scope selector needs the folder list even if the user never
+          // opens the Library.
+          void refreshFolders()
           return
         } catch {
-          await new Promise((r) => setTimeout(r, 1000))
+          if (cancelled) return
+          const phase = startupPhase(Date.now() - startedAt)
+          shell.startupPhase = phase
+          // 'stalled' shows the fault colour, but the loop does NOT end — if the backend turns up
+          // at minute three, the app goes ready by itself.
+          shell.status = phase === 'stalled' ? 'down' : 'connecting'
+          await new Promise((r) => setTimeout(r, backoffDelayMs(attempt)))
         }
       }
-      if (!cancelled) shell.status = 'down'
     })()
     return () => {
       cancelled = true

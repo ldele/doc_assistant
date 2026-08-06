@@ -55,3 +55,31 @@ def test_format_docs_for_prompt_includes_filename():
     assert "page 5" in formatted
     assert "content one" in formatted
     assert "content two" in formatted
+
+
+def test_source_headers_carry_no_square_brackets():
+    """The prompt asks for `[3]`; the context must not show the model a bracketed number to copy.
+
+    The header used to read `[Source 3: paper.pdf, page 4]`, and models copied that shape verbatim
+    into their prose — `[Source 3: paper.pdf]` resolves to nothing, so a fully attributed answer
+    rendered with every claim uncited (RG-012 failure, 2026-08-06). Removing the imitation target
+    is only effective if it stays removed."""
+    docs = [
+        make_doc(content="one", filename="a.pdf"),
+        make_doc(content="two", filename="b.pdf", page=5),
+    ]
+    formatted = format_docs_for_prompt(docs)
+    assert "[" not in formatted and "]" not in formatted, formatted
+    # The number must still be there, and still be unambiguous.
+    assert "Source 1" in formatted
+    assert "Source 2" in formatted
+
+
+def test_a_bracket_in_the_passage_text_is_the_documents_own(monkeypatch):
+    """Only the HEADER is guaranteed bracket-free — a technical passage may legitimately contain
+    "[2]" as its own citation, and we neither strip nor escape it. Pinned so the assertion above is
+    not mistaken for a promise about the whole context block."""
+    docs = [make_doc(content="as shown in [2], BM25 is term-based", filename="a.pdf")]
+    formatted = format_docs_for_prompt(docs)
+    assert "[2]" in formatted  # untouched, by design
+    assert formatted.startswith("Source 1 — a.pdf")

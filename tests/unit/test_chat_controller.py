@@ -407,8 +407,25 @@ def test_uncited_claim_is_flagged(monkeypatch, temp_db):
     result = _final(_results(controller, Session(), "are neurons continuous?"))
     assert len(result.flagged_claims) == 1
     fc = result.flagged_claims[0]
-    assert fc.n == 1 and fc.badge == "unsupported" and fc.claim_id
+    # KI-37: the badge names what the structural marker found — no citation token at all —
+    # rather than "unsupported", which the LLM reviewer uses on the same card for a different
+    # thing (and which reads as an accusation on a correct refusal).
+    assert fc.n == 1 and fc.badge == "uncited" and fc.claim_id
     assert "claim(s) to review" in result.claim_review_md
+
+
+def test_claim_citing_only_a_nonexistent_source_reads_unresolved_not_uncited(monkeypatch, temp_db):
+    """KI-37: citing [9] against 3 sources is a *different* defect from citing nothing.
+
+    Both share ``MARKER_UNSUPPORTED``, so only the badge can tell them apart — and they need
+    different fixes (a hallucinated source number vs. an answer that never cited)."""
+    monkeypatch.setattr(chat_controller.controller, "is_library_query", lambda t: False)
+    controller = ChatController(
+        rag=FakeRAG(_three_clean_sources(), ["Neurons are discrete cells [9]."])
+    )
+    result = _final(_results(controller, Session(), "are neurons continuous?"))
+    assert len(result.flagged_claims) == 1
+    assert result.flagged_claims[0].badge == "unresolved citation"
 
 
 def test_human_mode_returns_evidence_only(monkeypatch, temp_db):

@@ -52,7 +52,10 @@
       {@const s = st(c.claim_id)}
       <div class="claim" class:resolved={s.status !== 'pending' && s.status !== 'error'}>
         <div class="claim-text">
-          <span class="badge {c.badge === 'unsupported' ? 'bad' : 'weak'}">{c.badge}</span>
+          <!-- Test the ONE benign label, not the severe ones: the backend splits "unsupported"
+               into "uncited" / "unresolved citation" (KI-37) and may split further, so a new
+               severe badge must default to `bad` rather than silently render as `weak`. -->
+          <span class="badge {c.badge === 'weakly grounded' ? 'weak' : 'bad'}">{c.badge}</span>
           <span>#{c.n} {c.text}</span>
         </div>
         {#if s.editing}

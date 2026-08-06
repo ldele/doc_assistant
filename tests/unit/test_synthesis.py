@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 from doc_assistant.provenance import ConfidenceSignals, RetrievedChunk
 from doc_assistant.synthesis import (
     MARKER_OK,
@@ -74,6 +77,24 @@ def test_cited_numbers_bare_lists() -> None:
 def test_cited_numbers_ignores_non_citations() -> None:
     # A BibTeX-ish key, a wrapped claim label, and a chemical bracket are NOT citations.
     assert cited_source_numbers("[karp2020dense] [term-based system] [Ca2+] [see 2]") == []
+
+
+def test_cited_numbers_matches_the_shared_contract_vectors() -> None:
+    """The citation contract is implemented on both sides of the wire; pin them to one file.
+
+    ``apps/desktop/src/lib/chat/citations.test.ts`` asserts the SAME vectors against the Svelte
+    parser, so a change made on one side and not the other fails that side's suite. KI-35: a
+    third implementation (the RG-012 gate) diverged unpinned, scored a passing turn as FAIL, and
+    the false verdict was filed as an application bug.
+    """
+    vectors = json.loads(
+        (Path(__file__).parents[1] / "fixtures" / "citation_vectors.json").read_text(
+            encoding="utf-8"
+        )
+    )["vectors"]
+    assert len(vectors) >= 18, "vectors were removed rather than added to"
+    for v in vectors:
+        assert cited_source_numbers(v["text"]) == v["expected"], v["name"]
 
 
 # --- robust forms feed audit + segment ---------------------------------------

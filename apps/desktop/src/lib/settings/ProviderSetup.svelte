@@ -244,6 +244,17 @@
         No key, no metering, nothing leaves your machine. Needs about 5 GB of disk for an 8B model,
         and is happiest with a GPU.
       </p>
+      <!-- The measured trade-off, stated where the choice is made (KI-36). Local models cite far
+           less than a hosted one on the SAME prompt and retrieval, so a local user meets a wall of
+           "uncited" claims with no explanation unless we give one here. Indicative, not a verdict:
+           the run size and corpus are named so it can be reproduced. Re-measure before editing the
+           numbers — method and per-case rows are in the 2026-08-05 (2) DEVLOG entry. -->
+      <p class="detail">
+        <strong>Expect fewer citations.</strong> Over 27 questions on a 97-document corpus — same
+        prompt, same retrieval — <code>llama3.1:8b</code> carried inline citations on 36% of its
+        sentences and <code>qwen2.5:7b</code> on 14%, against 81% for Claude Haiku 4.5. Answers stay
+        grounded in your documents; more claims will simply show as <em>uncited</em>.
+      </p>
       <p class="detail muted">Looking for a server at <code>{setup.ollama_host}</code>.</p>
 
       {#if ollama?.ready}

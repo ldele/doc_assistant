@@ -1,0 +1,112 @@
+{
+  "_readme": [
+    "THE inline-citation contract, in one place, read by BOTH implementations.",
+    "",
+    "The answer prompt documents the citation format as bare [n] (prompts.py). The parsers are",
+    "deliberately more tolerant than that, because models emit unambiguous variants and dropping",
+    "them would render a correctly-cited answer as uncited. That tolerance is a CONTRACT, and it",
+    "is implemented twice - once per side of the wire:",
+    "",
+    "  * backend   src/doc_assistant/synthesis.py       _CITATION_TOKEN_RE / cited_source_numbers",
+    "  * frontend  apps/desktop/src/lib/chat/citations.ts  CITE_BODY / citationNumbers",
+    "",
+    "Both test suites read THIS file, so the two cannot drift silently: a change on one side that",
+    "the other does not make fails that side's tests. Added 2026-08-05 after KI-35, where a third",
+    "implementation (the RG-012 gate's '\\[\\d+\\]') diverged, scored a passing turn as FAIL, and the",
+    "false verdict was filed as an app bug. Extend the vectors here, never in one suite alone.",
+    "",
+    "`expected` is the source numbers a parser must return, in order of appearance, with repeats."
+  ],
+  "vectors": [
+    {
+      "name": "canonical single and adjacent",
+      "text": "DPR [1] beats BM25 [2][3].",
+      "expected": [1, 2, 3]
+    },
+    {
+      "name": "labelled singular and plural",
+      "text": "Per [Source 2] and [Sources 3, 4].",
+      "expected": [2, 3, 4]
+    },
+    {
+      "name": "label matching is case-insensitive",
+      "text": "case-insensitive [source 5]",
+      "expected": [5]
+    },
+    {
+      "name": "ref label",
+      "text": "see [Ref 7] and [refs 8, 9]",
+      "expected": [7, 8, 9]
+    },
+    {
+      "name": "bare lists with the three separators",
+      "text": "Combined [2, 4] and [1 and 3] and [5; 6].",
+      "expected": [2, 4, 1, 3, 5, 6]
+    },
+    {
+      "name": "ampersand separator",
+      "text": "both [2 & 4]",
+      "expected": [2, 4]
+    },
+    {
+      "name": "internal whitespace is tolerated",
+      "text": "loose [ Source  6 ] spacing",
+      "expected": [6]
+    },
+    {
+      "name": "repeats are kept, in order",
+      "text": "First [1], then [2], then [1] again.",
+      "expected": [1, 2, 1]
+    },
+    {
+      "name": "out-of-range numbers still PARSE (range is the auditor's job, not the tokeniser's)",
+      "text": "AmadeusGPT enables analysis [2][11][17].",
+      "expected": [2, 11, 17]
+    },
+    {
+      "name": "a bibtex-style key is not a citation",
+      "text": "[karp2020dense]",
+      "expected": []
+    },
+    {
+      "name": "a bracketed phrase is not a citation",
+      "text": "[term-based system]",
+      "expected": []
+    },
+    {
+      "name": "a chemical formula is not a citation",
+      "text": "calcium [Ca2+] influx",
+      "expected": []
+    },
+    {
+      "name": "a bracketed sentence containing a number is not a citation",
+      "text": "[see 2]",
+      "expected": []
+    },
+    {
+      "name": "KI-36: number OUTSIDE the bracket, filename inside - resolves to nothing",
+      "text": "According to Source 6 [s41592-022-01443-0.pdf], DeepLabCut tracks identity.",
+      "expected": []
+    },
+    {
+      "name": "an inline filename in parens is not a citation",
+      "text": "as shown (dpr_kumar_2020.pdf)",
+      "expected": []
+    },
+    {
+      "name": "prose with no brackets at all",
+      "text": "The re-ranker re-scores retrieved documents and reorders them.",
+      "expected": []
+    },
+    {
+      "name": "empty brackets",
+      "text": "nothing here []",
+      "expected": []
+    },
+    {
+      "name": "a correct refusal cites nothing",
+      "text": "The provided text does not mention Liu et al.",
+      "expected": []
+    }
+  ]
+}

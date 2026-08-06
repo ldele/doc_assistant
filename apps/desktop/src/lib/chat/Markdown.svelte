@@ -1,6 +1,11 @@
 <script lang="ts">
   import { marked } from 'marked'
 
+  // Extensionless on purpose: `svelte-check` rejects a '.ts' import extension without
+  // allowImportingTsExtensions, while `node:test` (citations.test.ts) requires one. Vite
+  // resolves this to citations.ts; the two consumers just spell it differently.
+  import { CITE_ANYWHERE, CITE_EXACT, CITE_SPLIT } from './citations'
+
   // Content is our own backend's markdown (the answer + pre-rendered blocks) — trusted,
   // local, single-user. A hardened build would run it through DOMPurify.
   let {
@@ -45,14 +50,10 @@
     return false
   }
 
-  // Citation forms we recognise: canonical [2] AND the non-canonical-but-unambiguous ones the
-  // model emits — [Source 2], [Sources 2, 4], [2, 4], [2 and 4] — matching the backend parser
-  // (synthesis.cited_source_numbers). Presentation only: each resolved number renders as a clean
-  // clickable [n]; the source markdown is never rewritten. Non-global (no lastIndex state).
-  const CITE_BODY = String.raw`\[\s*(?:sources?|refs?)?\s*\d+(?:\s*(?:,|;|&|and)\s*\d+)*\s*\]`
-  const CITE_ANYWHERE = new RegExp(CITE_BODY, 'i')
-  const CITE_SPLIT = new RegExp(`(${CITE_BODY})`, 'i')
-  const CITE_EXACT = new RegExp(`^${CITE_BODY}$`, 'i')
+  // The citation forms we recognise (canonical [2] plus [Source 2] / [Sources 2, 4] / [2, 4] /
+  // [2 and 4]) now live in ./citations.ts — a plain module so `node:test` can run them, pinned
+  // against the backend parser by tests/fixtures/citation_vectors.json (KI-35). Presentation
+  // only: each resolved number renders as a clean clickable [n]; the markdown is never rewritten.
 
   // Turn citation markers into clickable buttons — but never inside a <code>/<pre> span (a
   // technical corpus can legitimately contain "[2]" as code, not a citation) and never by

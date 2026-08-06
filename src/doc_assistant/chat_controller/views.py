@@ -78,7 +78,9 @@ class ClaimView:
     claim_id: str
     n: int
     text: str
-    badge: str  # "unsupported" | "weakly grounded"
+    # Presentation label only — the persisted marker is unchanged. See
+    # ``chat_controller.helpers._claim_badge`` (KI-37) for why "unsupported" split in two.
+    badge: str  # "uncited" | "unresolved citation" | "weakly grounded"
 
 
 @dataclass

@@ -31,7 +31,7 @@ from doc_assistant.provenance import (
     record_claims,
 )
 from doc_assistant.reviewer import ReviewResult
-from doc_assistant.synthesis import MARKER_OK, Claim, segment_claims
+from doc_assistant.synthesis import MARKER_OK, MARKER_WEAK, Claim, segment_claims
 
 log = structlog.get_logger(__name__)
 
@@ -395,6 +395,23 @@ def _build_source_views(
     return views
 
 
+#: Presentation labels for a flagged claim's marker (KI-37 — see ``_build_claim_review``).
+#: ``uncited`` and ``unresolved citation`` both come from ``MARKER_UNSUPPORTED``; the split is
+#: ``Claim.citations``, which is empty only when the sentence carried no citation token at all.
+BADGE_WEAK = "weakly grounded"
+BADGE_UNCITED = "uncited"
+BADGE_UNRESOLVED = "unresolved citation"
+
+
+def _claim_badge(claim: Claim) -> str:
+    """The label a flagged claim shows: what the structural marker actually found."""
+    if claim.marker == MARKER_WEAK:
+        return BADGE_WEAK
+    # MARKER_UNSUPPORTED: either nothing was cited, or every number cited maps to no
+    # retrieved source (out-of-range). Different defects, different fixes — say which.
+    return BADGE_UNRESOLVED if claim.citations else BADGE_UNCITED
+
+
 def _build_claim_review(claims: list[Claim], claim_ids: list[str]) -> tuple[str, list[ClaimView]]:
     """Render the adjudication section + per-claim view-models for *flagged* claims only.
 
@@ -403,6 +420,15 @@ def _build_claim_review(claims: list[Claim], claim_ids: list[str]) -> tuple[str,
     All claims are persisted regardless (the eager adjudication log). The pure split
     of the old ``_build_claim_review`` (Decision 5): returns the markdown block + a list
     of :class:`ClaimView`; the renderer builds its own buttons from the view-models.
+
+    **Badges say what the marker measures, not more** (KI-37, 2026-08-05). The marker layer is
+    structural — it asks whether a sentence carries a citation that resolves to a retrieved
+    source, nothing about whether the sentence is *true*. It used to render that as
+    "unsupported", which (a) collided with the LLM reviewer's ``unsupported claims: N`` shown on
+    the same card, where the word means "contradicted by / outrunning the evidence", and (b) read
+    as an accusation on a *correct refusal* ("the sources do not mention X" cites nothing, and
+    should not). ``MARKER_UNSUPPORTED`` and the persisted ``AnswerClaim.marker`` are unchanged —
+    this is presentation only, and it splits the marker the same three ways the RG-012 gate does.
     """
     flagged = [(c, cid) for c, cid in zip(claims, claim_ids, strict=True) if c.marker != MARKER_OK]
     if not flagged:
@@ -415,7 +441,7 @@ def _build_claim_review(claims: list[Claim], claim_ids: list[str]) -> tuple[str,
     views: list[ClaimView] = []
     for c, cid in flagged:
         n = c.claim_index + 1
-        badge = "unsupported" if c.marker != "weak" else "weakly grounded"
+        badge = _claim_badge(c)
         lines.append(f"- **#{n}** {c.text}  _({badge})_")
         views.append(ClaimView(claim_id=cid, n=n, text=c.text, badge=badge))
     return "\n".join(lines), views

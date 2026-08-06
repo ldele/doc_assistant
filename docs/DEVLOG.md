@@ -11,6 +11,161 @@ Format: What changed | Why | Rejected alternatives | What it opens
 > (moved verbatim 2026-07-21). This file keeps 2026-07-15 onward.
 
 ---
+## 2026-08-05 (3) — tell the user the free path cites less, where they choose it (KI-36 follow-through)
+
+**What changed.** Four lines of copy in `apps/desktop/src/lib/settings/ProviderSetup.svelte`'s
+Ollama card, beside the existing "needs ~5 GB of disk, happiest with a GPU" trade-off sentence:
+the measured citation-coverage gap, with the run size and corpus named so it can be reproduced.
+
+**Why.** Entry (2) measured it: on the same prompt and the same retrieval, `llama3.1:8b` cites 36%
+of its sentences and `qwen2.5:7b` 14%, against 81% for Haiku. The integrity layer is right to flag
+the difference — but a first-run tester on Ollama meets a wall of `uncited` badges with nothing
+anywhere telling them the provider is the reason. **The measurement is useless to the user if it
+only lives in the DEVLOG.** `ProviderSetup` is both the first-run surface and the ongoing switcher
+(it is embedded in `Settings.svelte`), so one placement covers both moments of choice.
+
+**Tone, deliberately.** Indicative and reproducible, not a verdict: it states *n*, the corpus size
+and that prompt and retrieval were held constant, and it closes with what stays true —
+*"Answers stay grounded in your documents; more claims will simply show as uncited."* Inform, don't
+block: nothing is gated, the local option is not discouraged, and the number is the user's to weigh.
+
+**Rejected.**
+- **A computed field on `ProviderReadiness`** (backend → wire → `types.ts` → component). It is not
+  a verdict the backend can recompute — it is a benchmark result — and three layers of plumbing for
+  a static string is drift surface, not thinness. The card's existing trade-off copy sets the
+  precedent, and a comment at the line points at the DEVLOG method so the numbers cannot rot
+  silently.
+- **Warning at answer time instead** ("many claims are uncited because you are on a local model").
+  Better targeted, but it fires when the user can no longer act cheaply; the choice point is where
+  the information changes a decision. Worth revisiting *in addition*, not instead.
+- **Naming no model.** Vague hedging ("local models may cite less") is exactly the tone the project
+  rejects — the numbers are measured, so print them.
+
+**Verified live** (dev server, mocked nothing — this is static copy): renders in the Ollama card
+between the trade-off line and the host line; identical colour treatment to its sibling paragraphs
+in **dark and light**; at **375 px** its box is byte-identical to the two pre-existing `p.detail`
+siblings (`left 481, width 284`) — the overlay's own pre-existing offset at that width, not this
+change — and the body never scrolls horizontally. `svelte-check` 188 **0/0**, `npm test` **73/73**.
+
+**What it opens.** The Settings overlay does not reflow at 375 px (pre-existing, seen while
+checking this). And the frontend's health poll retries **21 times against a 500** while uvicorn
+binds — the cold-start window the baton lists as item 2, now with a number.
+
+---
+## 2026-08-05 (2) — KI-35 was a **bug in the gate, not the app**: RG-012 Tier-2 had passed. The real defect is citation *coverage* (KI-36/37/38)
+
+**What changed.** `.claude/KNOWN_ISSUES.md`: KI-35 rewritten as a corrected diagnosis; **KI-36**
+(citation coverage), **KI-37** (the `unsupported` collision, fixed), **KI-38** (the `load_dotenv`
+override hole) filed. The RG-012 gate at `C:\rg012-host\script\rg012-run.ps1` fixed (local-only
+harness). Two code changes, both consequences of the investigation rather than of the original
+report: the claim badge split (`helpers._claim_badge` + `ClaimReview.svelte`) and the citation
+contract pinned across the wire (`apps/desktop/src/lib/chat/citations.ts` extracted from
+`Markdown.svelte`, `tests/fixtures/citation_vectors.json` read by **both** suites).
+**Nothing in the citation *parser* changed — it was already right.**
+
+**Why.** KI-35 was the baton's #1 next action and it described a defect that does not exist. It
+claimed `llama3.1:8b` cites `[Source 1]`, that neither parser resolves that, and that the integrity
+layer therefore "inverts" on the shipped local path. Checked against the run's own archived
+`result.json`, with the shipped code: `cited_source_numbers` → `[1, 5, 2, 1]`; `audit_citations` →
+`valid=[1,2,5]`, `malformed=[]`, `clean=True`; the `[Source 5]` claim scored **`weakly grounded`**,
+not `unsupported`. **Both parsers have tolerated `[Source n]` since 2026-07-14** —
+`synthesis.py:35` and `Markdown.svelte:52`. The 13 flagged claims were the sentences that genuinely
+carried no citation: the model cited **4 of 16**. The integrity layer reported the truth.
+
+**The actual defect was one line of the gate.** `rg012-run.ps1` counted `'\[\d+\]'` — a *stricter*
+contract than the app implements — logged `FAIL: answer produced but not cited`, and that verdict
+was filed as an app bug. Re-scored with the app's own token: `resolved=4 canonical=0 labelled=4
+unresolvable=0` → **PASS**. **RG-012 Tier-2 passed on 2026-08-05**; the release's packaging gate has
+been green since KI-34 was fixed. The gate now separates three outcomes — resolved / unresolvable /
+no-bracket-at-all — because they need completely different fixes.
+
+**The rule, which is the reusable part: a verification gate must call the contract, never restate
+it.** A restated contract drifts, and because a gate is trusted, its false verdict gets filed
+against the code it was meant to protect. Same class as KI-34 one level up (there the gate tested
+too little; here it tested something never promised).
+
+**Then the measurement KI-35 should have been.** 35 private cases → the real `ChatController` on
+the live 97-doc corpus, provider forced local, $0.
+- **Retrieval first, to avoid confounding it:** recall 28/35. **All 7 misses are 4 documents the app
+  already labels degraded** (`middleton-2001.pdf` 0 chunks, `hubel_wiesel_1959.pdf` 1, `hodgkin_
+  huxley_1952.pdf` 7, `hebb_1949.pdf` 16). **Recall on healthy-document cases is 28/28.** That is
+  ROADMAP **EX1** / ADR-039's OCR case, now quantified: degraded documents are the *entire*
+  retrieval-recall gap, and they are all pre-1970 scans.
+- **Citation coverage on the remaining 27** (`llama3.1:8b`): pooled **79/217 = 36.4%**, and
+  **bimodal** — 11 answers cite nothing at all, 9 cite ≥85%, almost nothing between. 8 of the 11
+  zero-citation answers are substantive uncited assertions; 3 are correct refusals.
+- **The comparison that decides it** — same prompt, corpus, retrieval and cases:
+
+  | provider / model | pooled coverage | median | answers citing **nothing** |
+  |---|---|---|---|
+  | `anthropic/claude-haiku-4.5` | **155/191 = 81.2%** | 0.875 | **0 / 27** |
+  | `ollama/llama3.1:8b` (shipped local default) | 79/217 = 36.4% | 0.545 | 11 / 27 |
+  | `ollama/qwen2.5:7b` | 40/296 = 13.5% | 0.000 | 19 / 27 |
+
+  **So the prompt is not the defect** — a sixth citation rule is not what separates 81% from 36% —
+  and `llama3.1:8b` is already the better of the two locals. **KI-36 is a local-model capability
+  floor: an honest limitation of the free path to be *documented at the provider choice*, not a bug
+  to fix before release.** The integrity layer is working; it correctly reports that a local model's
+  answers are largely uncited. What a first-run Ollama tester lacks is any explanation of why.
+- **`[Source n]` appeared 0/81 times** across all three models — KI-35's premise does not reproduce.
+- Three *real* unresolvable forms showed, all rare and none of them the one filed: `Source 6
+  [file.pdf]` (number outside the bracket, filename inside), `[2][11][17]` against 10 sources, and —
+  on **Haiku** — claim text wrapped in brackets, `[a Bayesian non-parametric model …][7]`, the exact
+  anti-pattern `prompts.py:53` forbids. That last one makes the audit **cry wolf**: the citations
+  resolve (coverage 1.000) but the seven phrase-brackets are counted as failed citation attempts, so
+  a fully-cited answer renders "⚠ 7 malformed citation(s)". A bracketed phrase immediately followed
+  by a resolvable token is a style violation, not a citation attempt. Recorded in KI-36, not fixed.
+
+**KI-37, found in passing and fixed.** The RG-012 card renders the reviewer's **"unsupported
+claims: `0`"** directly above **"⚠ 13 claim(s) to review … *(unsupported)*"** — one word, two
+meanings, same view. Worse, `claim_marker` labelled a *correct refusal* `unsupported` (3 answers,
+16 badges), accusing the model exactly when it did the right thing. The badge now says what the
+structural marker actually found — **`uncited`** (no citation token) or **`unresolved citation`**
+(cites only numbers mapping to nothing) — the same three-way split the gate now makes. Presentation
+only: `MARKER_UNSUPPORTED` and the persisted `AnswerClaim.marker` are untouched, so there is no
+migration and `test_adjudication_persistence`'s marker triple still holds. `ClaimReview.svelte` now
+tests for the one *benign* label and defaults the rest to `bad`, so a future severe badge cannot
+silently render as mild.
+
+**The contract is now pinned across the wire.** `[n]` had three implementations (Python, Svelte,
+the gate) and a test on only one. The Svelte regex is extracted to a plain, dependency-free
+`lib/chat/citations.ts` — the module kind `node:test` can actually run — and both suites now assert
+the **same** `tests/fixtures/citation_vectors.json`. Verified the pin bites: deleting the
+`[Source n]` tolerance from the TS side fails 3 frontend tests, naming the vector. (The component
+imports it extensionless and the test imports it with `.ts`: `svelte-check` rejects the extension,
+`node:test` requires it.)
+
+**Rejected.**
+- **Widening the parser** (KI-35's proposed mitigation): already implemented, and it changes nothing
+  — the dominant failure is answers with no citation of any form, which no parser can reach.
+- **Editing the prompt now.** It already carries five explicit citation rules and one of them names
+  this exact confusion; a sixth on intuition is not a fix. Moving coverage is an eval-harness
+  experiment with a control (rigor-gate), not a prompt tweak.
+- **A refusal detector** for KI-37 — a heuristic wrong in both directions; renaming the badge to
+  what it measures makes the refusal case merely true, with no detector to get wrong.
+- **Archiving KI-35 as a resolved row.** The correction *is* the issue; compressing it to a row
+  would drop the lesson and leave the original wrong story as the memorable one.
+- **Filing the degraded-document finding as a new KI** — EX1/ADR-039 already own it; this run adds
+  evidence, not a new issue.
+
+**What it opens.** (a) **Tell the user why the free path cites less** — the measured 81/36/14 split
+belongs where the provider is chosen (first-run setup / provider picker), in the "inform, don't
+block" register. That is now the main open item from this work, and it is a UX change, not a
+retrieval or prompt one. (b) **The audit should stop crying wolf** on a bracketed phrase that is
+immediately followed by a resolvable citation (Haiku's one bad answer). (c) **EX1/OCR now has a
+measured payoff** — 7 of 7 retrieval misses, all pre-1970 scans. (d) The gate still restates the
+contract in PowerShell; the honest end-state is the API exposing the audit structurally so the gate
+asserts on the app's own verdict instead of a third regex. (e) Unmeasured: run-to-run variance
+(single repeat per model), and whether Sonnet differs from Haiku.
+
+**Method note.** Two harness bugs of mine preceded the results and both would have corrupted them:
+the first smoke run picked the two *worst* cases (both `hodgkin_huxley`, a `marginal` document) and
+read 0% coverage as a citation defect — it was a retrieval miss; and a `Set-Location` for `npm test`
+leaked into the next run's working directory. **Also: `config.py`'s `load_dotenv(override=True)`
+means `LLM_PROVIDER=ollama <cmd>` silently runs on Anthropic and bills** — filed as KI-38, with the
+seam that does work (`app_settings.get_llm_selection`, plus a separate line for the pinned reviewer).
+
+---
 ## 2026-08-05 (1) — RG-012 Tier-2 finally ran, and the shipped installer **could not ingest a single PDF** (KI-34)
 
 **What changed.** One line of `scripts/doc_assistant_api.spec` — `"pymupdf"` added beside `"fitz"` —

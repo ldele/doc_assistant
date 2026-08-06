@@ -11,6 +11,75 @@ Format: What changed | Why | Rejected alternatives | What it opens
 > (moved verbatim 2026-07-21). This file keeps 2026-07-15 onward.
 
 ---
+## 2026-08-06 (1) — **rebuilt the installer and RG-012 Tier-2 PASSED on it.** The release gate is closed
+
+**What changed.** No source. A full artifact rebuild — sidecar re-frozen, installer re-bundled — and
+the clean-machine gate re-run against it, because every fix since 2026-08-05 existed only in source
+and the installer that last passed was built at 14:58 the previous day. **KI-34's whole lesson is
+that a green source tree says nothing about a frozen binary**, so a release cannot rest on one.
+
+**Build.** `uv sync --extra cpu --extra dev --extra packaging` (KI-3: `build_sidecar` refuses to
+freeze a `+cu*` torch — the `cu130` wheel segfaults on a GPU-less box) → `just sidecar` (**847 s**)
+→ `npx tauri build` (**601 s**). Venv restored to `--extra cu130` afterwards; `cuda_available True`
+re-confirmed. **The sidecar came out at 1,562.1 MB — exactly the post-KI-34 reference** (1,545.5 MB
+was the broken build), so the `pymupdf` data files are bundled; the size is the cheapest possible
+regression check on that fix and it is worth keeping as one.
+
+**RG-012 Tier-2 — PASS**, on a Windows Sandbox reporting `python on PATH? False`:
+
+| step | result |
+|---|---|
+| silent install | **177 s** (330 s the previous day) |
+| files laid down | `doc-assistant-desktop.exe` 10.7 MB · `doc-assistant-api.exe` **1,562.1 MB** |
+| `/api/health` | **~30 s**, `chunk_count: 0`, `ollama/llama3.1:8b` |
+| `/api/setup` | ollama reachable (9 models), `active_ready: true`, documents step correctly not-done |
+| ingest 3 PDFs | **added=3, errors=0, 322 chunks**, ~36 s — KI-34 stays fixed |
+| turn | **14 s**, 10 sources |
+| citations | **5 resolved (5 canonical `[n]`, 0 labelled); 0 unresolvable** |
+
+**Every 2026-08-05 fix is verified present in the frozen binary**, which is the point of the
+exercise: `flagged_claims` badge as **`uncited` ×7 / `weakly grounded` ×3** (KI-37 — no
+"unsupported" anywhere), and the card reading **`best source relevance` / `top-3 relevance span`**
+with the old `**Reranker scores**` heading gone.
+
+**The de-dup's fallback branch got verified for free, and by accident.** The card *did* print the
+per-source list here — correctly: a fresh install has no concept graph, so
+`_attach_source_evaluation` returns `None`, `source_eval` is null, no strip renders, and the card
+is the only per-source surface. Between this run and the 2026-08-05 dev-app check, **both branches
+are now exercised end to end** — strip present → card omits, strip absent → card keeps.
+
+**The corrected gate also earned its keep immediately.** It reported
+`5 canonical, 0 labelled, 0 unresolvable` instead of a bare count — and the model used canonical
+`[n]` this time, on the same model and prompt that produced `[Source n]` the day before. **That is
+the third independent confirmation that KI-35's premise was a one-off** (0/54 in the coverage runs,
+plus this).
+
+**Harness change.** `rg012-tier2.wsb` gained a `LogonCommand` so the gate runs unattended. The two
+historical "LogonCommand never fires" failures were never Sandbox's fault — the script was
+UTF-8-no-BOM and PowerShell 5.1 read it as ANSI. It is ASCII-only now and I byte-checked it (0
+non-ASCII bytes) *before* trusting the command; the `.wsb` is byte-checked and XML-parsed too.
+
+**Rejected.** Shipping the artifact that passed on 2026-08-05 — it predates every fix, so the thing
+tested would not have been the thing shipped. Tier-1-only (skipping the answer engine) — it would
+not exercise the cited-turn path, which is exactly what the fixes touched.
+
+**⚠ Data loss, mine, recorded because the record must be honest.** Clearing `out\` for this run,
+I issued the delete after an archive command had been **rejected as a whole** by a path-protection
+guard — so its `New-Item`/`Copy-Item` never ran, and I did not check before deleting. The four
+2026-08-05 artifacts are gone (`Remove-Item` does not use the Recycle Bin; no shadow copies). A
+partial reconstruction recovered verbatim from the session that read them is at
+`C:\rg012-host\out-2026-08-05-RECONSTRUCTED\README.md` — complete for the answer,
+`flagged_claims`, `provenance_card_md` and `settings.json`; lines 3-26 of the log; fragments only
+of the SSE stream. **No conclusion is at risk** (every decisive number was transcribed into KI-35/
+36/37 and DEVLOG (2) beforehand, and the gate was re-scored against the real file while it
+existed), but the raw provenance for a headline finding is not recoverable. **Copy, confirm the
+copy, then delete — and never treat a failed command as a partially-applied one.**
+
+**What it opens.** The gate now overwrites `out\` on every run; it should stamp its output into a
+per-run folder instead. And `docs/desktop-packaging.md` still describes RG-012 as "paused" and
+Tier 2 as blocked on the data-home decision — both stale, now twice over.
+
+---
 ## 2026-08-05 (4) — pre-release UI pass: themed scrollbars, the answer column stops rendering under its own scrollbar, and "what is this 0.94?" answered
 
 **What changed.** Three reported defects, all in the answer surface (user report with screenshot).

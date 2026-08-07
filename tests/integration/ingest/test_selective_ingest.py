@@ -57,7 +57,7 @@ def _status(views: list, rel: str) -> str:
 
 def _mark_ingested(file: Path) -> None:
     """Simulate a completed ingest: a `Document` row + a cache file newer than the source."""
-    from doc_assistant.ingest.cache import get_cache_path
+    from doc_assistant.ingest.cache import get_cache_path, write_cache
 
     with session_scope() as s:
         s.add(
@@ -70,7 +70,7 @@ def _mark_ingested(file: Path) -> None:
         )
     cache = get_cache_path(file)
     cache.parent.mkdir(parents=True, exist_ok=True)
-    cache.write_text("cached", encoding="utf-8")
+    write_cache(cache, "cached")
     sm = file.stat().st_mtime
     os.utime(cache, (sm + 100, sm + 100))  # cache newer than source → fresh
 

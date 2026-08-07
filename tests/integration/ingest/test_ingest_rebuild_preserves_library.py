@@ -33,6 +33,7 @@ from doc_assistant.db.models import Base, DocumentMeta, Figure, Folder
 from doc_assistant.db.models import Document as DBDocument
 from doc_assistant.db.session import session_scope
 from doc_assistant.ingest import figures
+from doc_assistant.ingest.cache import write_cache
 
 _DOC_A = """<!-- page:1 -->
 # Dense retrieval
@@ -120,7 +121,7 @@ def _write_cached_source(docs: Path, name: str, content: str) -> Path:
     src.write_text("placeholder — bypassed by the fresh cache\n", encoding="utf-8")
     cached = ingest.get_cache_path(src)
     cached.parent.mkdir(parents=True, exist_ok=True)
-    cached.write_text(content, encoding="utf-8")
+    write_cache(cached, content)
     return src
 
 

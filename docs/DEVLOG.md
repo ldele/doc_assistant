@@ -11,6 +11,62 @@ Format: What changed | Why | Rejected alternatives | What it opens
 > (moved verbatim 2026-07-21). This file keeps 2026-07-15 onward.
 
 ---
+## 2026-08-07 (3) — the extraction cache now knows which extractor wrote it (KI-40), so yesterday's fix can actually reach a user
+
+**What changed.** `ingest/cache.py`: an `extraction_fingerprint()`, recorded beside every cached
+`.md` as `<name>.md.fp` and compared in `is_cache_fresh`; a `write_cache()` that writes the pair;
+`reason=` on the extraction log line. 9 new tests, 5 integration fixtures re-pointed.
+
+**Why.** The text-layer fallback recovers three documents from ~0 to 46k / 89k / 778k characters —
+**on a fresh ingest**. `is_cache_fresh` compared mtimes only, so on an existing library it changed
+nothing, silently. **Shipping it would have been inert for every current user**, which is the worst
+kind of release: the improvement is real, measured, and invisible to the people who have the
+problem. KI-14 and KI-29 both changed extraction output and both had the same hole.
+
+**Bump-free, copying the precedent already in this repo.** `sparse_index.fingerprint` hashes the
+tokeniser's source specifically so a change invalidates *"without anyone remembering to bump a
+constant"*. The same standard applies here, so the fingerprint hashes **every extractor function's
+`co_code`** — plus three things bytecode cannot see:
+- **module-level tunables**, referenced by *name* from a function so their values never reach
+  `co_code`. `_TEXT_LAYER_KEPT_MIN` is exactly that knob, and it changes output;
+- **`config.PDF_EXTRACTOR`**, which selects the extractor at all;
+- **the PyMuPDF / PyMuPDF4LLM versions** — a dependency upgrade changes extraction output with no
+  code change of ours.
+
+Plus `_EXTRACTION_VERSION`, a manual escape hatch for the residue (a changed string literal alters
+output without altering bytecode). **Bytecode, not source**, for two concrete reasons: PyInstaller
+ships `.pyc` so `inspect.getsource` raises in the frozen build, and hashing source would re-extract
+every library on a **comment** edit.
+
+**The cost is surfaced before it is paid, and that came for free.** `plan_files` is stat-only, so it
+reports the work without extracting: `--dry-run` now reads `would_reembed=97` **in 8 s**. Each
+re-extraction logs `reason="extractor_changed"`, so a one-off slow ingest is explained rather than
+mysterious.
+
+**Rejected.**
+- **Treating a fingerprint-less cache as fresh** (grandfathering existing libraries). It would have
+  made the upgrade path work on paper and deliver nothing — the exact defect being fixed.
+- **A hand-bumped version constant alone**, which is what the KI first proposed. The repo's own
+  precedent rejects it, and a forgotten bump reproduces this bug in full silence. It survives only
+  as the escape hatch.
+- **A header inside the `.md`.** Those bytes *are* the document text and are hashed into
+  `doc_hash`; anything added would change every document's identity.
+- **Writing the fingerprint first.** It could then vouch for a truncated `.md`. Written last, a
+  failed write costs one needless re-extraction and cannot lie.
+
+**A drift the tests caught, and the fix that removes the class.** 13 integration tests failed
+because five separate fixtures hand-wrote a cache entry as "a `.md`, newer than the source" — which
+is no longer what a cache entry *is*. Rather than patch five call sites, "a cache entry is the pair"
+now lives in one function (`write_cache`) that both the pipeline and the fixtures call. Five
+hand-rolled definitions are how the meaning drifted in the first place.
+
+**What it opens.** The first ingest after any extractor change re-extracts the library — inherent,
+per-change rather than per-launch, and now visible in the plan. On a 10k corpus that is the ~41 h
+figure from `performance.md`, so a future extractor change is a **release-note-worthy event**, not a
+silent one. The API/UI ingest path shows the plan less prominently than the CLI's `--dry-run`;
+worth a look when the Library UI is next touched.
+
+---
 ## 2026-08-07 (2) — EX1: three of the four "scanned" documents never needed OCR. Retrieval recall 28/35 → **34/35**
 
 **What changed.** A text-layer fallback inside `extract_pdf_pymupdf` (+ `_recover_lost_page`, a

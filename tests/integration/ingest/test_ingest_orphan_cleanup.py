@@ -30,6 +30,7 @@ from doc_assistant import config, ingest
 from doc_assistant.db.models import Base, Figure
 from doc_assistant.db.models import Document as DBDocument
 from doc_assistant.ingest import figures
+from doc_assistant.ingest.cache import write_cache
 
 _DOC_V1 = """<!-- page:1 -->
 # Retrieval study
@@ -106,7 +107,7 @@ def _write_cached_source(docs: Path, name: str, content: str) -> Path:
     src.write_text("placeholder — bypassed by the fresh cache\n", encoding="utf-8")
     cached = ingest.get_cache_path(src)
     cached.parent.mkdir(parents=True, exist_ok=True)
-    cached.write_text(content, encoding="utf-8")
+    write_cache(cached, content)
     return src
 
 
@@ -142,7 +143,7 @@ def test_content_change_leaves_exactly_one_hash(isolated_ingest: Path) -> None:
 
     # Simulate a Marker table-splice: rewrite the cache (source untouched, so the
     # cache stays fresh and the new content is what the re-ingest sees).
-    ingest.get_cache_path(src).write_text(_DOC_V2, encoding="utf-8")
+    write_cache(ingest.get_cache_path(src), _DOC_V2)
     new_hash = ingest.doc_hash(_DOC_V2)
     assert new_hash != old_hash
 
@@ -232,7 +233,7 @@ def test_orphan_cleanup_sweeps_figure_dir_on_content_change(
 
     # Splice tables into the cache (source untouched, cache stays fresh) => new hash;
     # old_hash is now a 'stale' orphan and its figure dir no longer matches any content.
-    ingest.get_cache_path(src).write_text(_DOC_V2, encoding="utf-8")
+    write_cache(ingest.get_cache_path(src), _DOC_V2)
     ingest.main()
 
     assert not old_dir.exists()

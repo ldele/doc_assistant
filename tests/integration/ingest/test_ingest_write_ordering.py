@@ -27,6 +27,7 @@ import doc_assistant.db.session as session_mod
 from doc_assistant import config, ingest
 from doc_assistant.db.models import Base, Figure
 from doc_assistant.db.models import Document as DBDocument
+from doc_assistant.ingest.cache import write_cache
 
 _DOC = """<!-- page:1 -->
 # A short paper
@@ -78,7 +79,7 @@ def _write_cached_source(docs: Path, name: str, content: str) -> Path:
     src.write_text("placeholder — bypassed by the fresh cache\n", encoding="utf-8")
     cached = ingest.get_cache_path(src)
     cached.parent.mkdir(parents=True, exist_ok=True)
-    cached.write_text(content, encoding="utf-8")
+    write_cache(cached, content)
     return src
 
 

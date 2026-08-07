@@ -1,4 +1,4 @@
-﻿<!-- status: active Â· updated: 2026-08-05 (KL1â€“KL4: knowledge layer to the stated goal) Â· class: living -->
+﻿<!-- status: active Â· updated: 2026-08-07 (KL1â€“KL4: knowledge layer to the stated goal) Â· class: living -->
 
 # ROADMAP â€” doc_assistant
 

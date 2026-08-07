@@ -11,6 +11,63 @@ Format: What changed | Why | Rejected alternatives | What it opens
 > (moved verbatim 2026-07-21). This file keeps 2026-07-15 onward.
 
 ---
+## 2026-08-06 (4) — release tooling: a preflight that encodes every trap that actually bit, and CI finally runs the frontend
+
+**What changed.** New `scripts/release_preflight.py` (+ `just preflight`), `docs/RELEASE.md`,
+`tests/unit/test_release_preflight.py`, a **frontend job in CI**, and `npm audit fix` (postcss
+→ 0 vulnerabilities).
+
+**Why.** Today's release was cut by hand and nearly went wrong four separate ways. None of those
+were interesting problems — they were all "did you actually do the thing" problems, which is what a
+script is for. **Every check in the preflight is an incident, not a best practice:**
+
+| Check | The incident |
+|---|---|
+| `versions` | v0.4.0 bumped four version strings and missed `uv.lock`. CI installs `--locked`, so the job died *before* the gates and `main` was ungated for days. |
+| `artifact_fresh` | The whole of 2026-08-06. Source-green says nothing about a frozen binary (KI-34). If the installer predates the code, the thing tested is not the thing shipped. |
+| `sidecar_size` | KI-34 is a size cliff — 1545.5 MiB broken vs 1562.1 MiB fixed. The cheapest possible check on a packaging bug that is invisible from source. |
+| `rg012` | Matches the installer build timestamp the harness logged against the installer on disk. **A PASS from a previous build is worse than no PASS** — it reads as evidence. |
+| `dev_commands` | KI-39: the app told users to run `just api`. |
+
+**Two of the five checks were wrong on their first run, both in the "looks green" direction** — and
+that is the part worth keeping:
+1. `sidecar_size` was written in **decimal MB** while every recorded reference number is **MiB**,
+   putting the floor at ~1478 MiB — *below both* the broken and fixed sizes. It would have passed
+   the exact build it exists to reject, while printing `[ok]`. **A units bug in a safety check is
+   worse than no check.**
+2. `dev_commands` matched `just \w+` and flagged **"just now", "just a", "just the"**. `just` is an
+   ordinary English word; only a real recipe name makes `just X` a command, so the names are now
+   parsed out of the justfile — which also keeps the check honest as recipes come and go.
+
+Both are pinned by tests, so neither can regress quietly.
+
+**CI had no frontend job at all.** The desktop app is half the product, and `npm test` (78 tests)
+plus `svelte-check` (189 files) ran on a developer's machine or not at all — every frontend fix
+today, including KI-39 and the citation-contract pin, was guarded only by me remembering. Added as
+its own job: `npm ci` (lockfile-exact, same discipline as `uv sync --locked`), `svelte-check`, then
+tests. Seconds long, no Python.
+
+**`npm audit fix`** (carried since 2026-08-05): postcss had a **high**-severity path-traversal
+advisory and the lockfile pinned **8.5.15 while the local tree had 8.5.25** — so CI would have
+installed the *vulnerable* one. Now 8.5.26, **0 vulnerabilities**, 78/78 + svelte-check still green.
+Build-time only, so the v0.4.1 artifact is unaffected and needs no rebuild.
+
+**Rejected.**
+- **Automating the CHANGELOG check beyond "the section exists".** A script cannot tell whether a
+  known limit is still true — and that is exactly the failure mode we hit (0.4.1 claimed the
+  clean-machine install was unverified for three days after it was verified). `docs/RELEASE.md` §2
+  makes it a judgment step instead of pretending.
+- **Making the preflight a pre-commit hook.** It reads build artifacts and the RG-012 archive;
+  most of it is meaningless mid-development and would train people to ignore it.
+- **A `release` recipe that runs the whole thing end to end.** The sequence has two ~10-minute
+  builds, a machine-level Ollama rebind and a VM in the middle. A checklist that a human drives
+  beats a script that pretends those are atomic.
+
+**What it opens.** `preflight` hard-codes the Windows harness path and the msvc triple — fine on the
+one build box, wrong the day there is another. And it cannot check the thing that matters most:
+whether the answers got worse.
+
+---
 ## 2026-08-06 (3) — RG-012 FAILED on a citation form, and the fix was to stop showing the model a bracket to copy
 
 **What changed.** `pipeline.format_docs_for_prompt` — the retrieved-passage header is no longer

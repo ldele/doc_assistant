@@ -58,6 +58,14 @@ sidecar-check:
 sidecar:
     uv run --no-sync python -m scripts.build_sidecar
 
+# Release preflight — the MECHANICAL half of docs/RELEASE.md. Read-only, seconds, exits non-zero on
+# a real problem. Checks the five version strings agree (incl. uv.lock), the artifact is newer than
+# every tracked source file, the sidecar did not lose a bundle (KI-34's size cliff), that RG-012
+# passed on THIS artifact, and that no developer command reached the shipped UI (KI-39).
+# A green run is necessary, not sufficient — the judgment steps are in docs/RELEASE.md.
+preflight:
+    uv run --no-sync python -m scripts.release_preflight
+
 # Full test suite (always needs dev).
 test:
     uv run --extra {{torch}} --extra dev pytest tests/unit tests/integration

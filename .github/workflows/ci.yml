@@ -60,3 +60,38 @@ jobs:
 
       - name: detect-secrets
         run: uv run detect-secrets scan --baseline .secrets.baseline
+
+  # The desktop app is half the product and CI did not touch it until 2026-08-06: `npm test`
+  # (node:test over the pure `lib/**/*.ts` modules) and `svelte-check` ran on a developer's machine
+  # or not at all. Both are seconds long and need no Python, so they get their own job — a red
+  # frontend must not be reported as a green build.
+  frontend:
+    name: Frontend — Types / Tests
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: apps/desktop
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          # node:test runs the .ts sources directly via native type stripping — no bundler, no
+          # ts-node, no extra dependency. That needs a modern Node; 22 is the floor.
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: apps/desktop/package-lock.json
+
+      - name: Install dependencies
+        # `npm ci` (not `install`) → installs exactly the lockfile, and fails if it is stale.
+        # Same discipline as `uv sync --locked` in the job above.
+        run: npm ci
+
+      - name: svelte-check
+        run: npm run check
+
+      - name: Unit tests
+        run: npm test

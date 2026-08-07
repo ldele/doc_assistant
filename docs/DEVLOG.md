@@ -11,6 +11,53 @@ Format: What changed | Why | Rejected alternatives | What it opens
 > (moved verbatim 2026-07-21). This file keeps 2026-07-15 onward.
 
 ---
+## 2026-08-07 (1) — the prompt fix cured the citation FORMAT and moved coverage not at all (KI-36 re-measured on shipped code)
+
+**What changed.** No code. One baseline —
+`tests/eval/baselines/citation_coverage_2026-08-07.md` — plus KI-36.
+
+**Why.** v0.4.1 ships a provider card publishing **36% / 14% / 81%** citation coverage, and those
+numbers were measured on the **previous** prompt. The 2026-08-06 header change altered how sources
+are presented to the model, so the app's own published claim about itself was unverified against
+the code that shipped. That is exactly the kind of quiet staleness that turned a CHANGELOG limit
+into a lie earlier this week.
+
+**Measured** — same 27 healthy-document cases, same exclusions, same settings, one variable:
+
+| provider / model | before | after (shipped) | Δ | citing nothing |
+|---|---|---|---|---|
+| `anthropic/claude-haiku-4.5` | 81.2% | **83.5%** | +2.4 pp | 0/27 → 0/27 |
+| `ollama/llama3.1:8b` | 36.4% | **37.6%** | +1.2 pp | 11/27 → **12/27** |
+| `ollama/qwen2.5:7b` | 13.5% | **18.0%** | +4.5 pp | 18/27 → 18/27 |
+
+**The finding is the negative, and it is worth as much as a positive would have been.** Every delta
+is same-signed but inside what a single repeat over 27 cases can resolve against ~3% case-level
+retrieval noise, so **none of it is reportable as an improvement**. Paired by case, `llama3.1:8b`
+had **no** answer that cited nothing start citing, and one that had cited stop.
+
+**So: prompt engineering fixed what prompt engineering could fix, and did not touch the rest.** The
+header change took header-copies 6 → 0 and RG-012 FAIL → PASS — a format defect, cured outright.
+Coverage sat still. **That is a second, independent line of evidence for KI-36's capability-floor
+conclusion:** the first was cross-provider (same prompt, 81% vs 36%), this is same-provider (changed
+prompt, same coverage). Two different cuts, same answer.
+
+**Rejected.**
+- **Updating the shipped provider card to 38 / 18 / 84.** Every delta is within noise, and changing
+  a shipped string means rebuilding and re-running RG-012 on a freshly tagged release — trading a
+  real risk (an unverified rebuild) for a cosmetic gain. Refresh it at the next release that
+  rebuilds anyway; the baseline records which column to use.
+- **Calling +4.5 pp on qwen an improvement.** It is the largest delta and the noisiest arm (13.5 →
+  18.0 with 18/27 answers still citing nothing). Reporting it would be exactly the "claim without a
+  control" this project's rigor gate exists to stop.
+- **Adding repeats now to settle the drift.** Worth doing before anyone acts on the drift; not
+  worth blocking a release that does not depend on it.
+
+**Correction to 2026-08-05 (2)** (append-only, so recorded here rather than edited there): that
+entry's table says `qwen2.5:7b` had **19/27** answers citing nothing. Recounting the stored rows
+gives **18/27**. The pooled figure (13.5%), the median (0.000) and every user-facing number derived
+from them are unaffected; only the count was wrong. Corrected in KI-36.
+
+---
 ## 2026-08-06 (4) — release tooling: a preflight that encodes every trap that actually bit, and CI finally runs the frontend
 
 **What changed.** New `scripts/release_preflight.py` (+ `just preflight`), `docs/RELEASE.md`,

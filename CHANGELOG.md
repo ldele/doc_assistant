@@ -7,6 +7,44 @@ versioning is [SemVer](https://semver.org/) on the `doc_assistant` package, and 
 The engineering record is finer-grained than this file: per-change entries live in
 [`docs/DEVLOG.md`](docs/DEVLOG.md), design decisions in [`docs/decisions.md`](docs/decisions.md).
 
+## [0.4.2] — 2026-08-07
+
+**Documents that were in your library but unreachable are now searchable.** Some PDFs —
+typically older scans that carry a text layer behind a page image — were being indexed
+almost empty. They appeared in the Library and never in an answer. Three such papers in the
+development library went from 1, 7 and 16 indexed passages to **61, 125 and 1,019**.
+
+### Fixed
+
+- **Scanned papers with a text layer are no longer indexed as blank.** The PDF reader treats
+  a full-page image as a picture and never reaches the text behind it, so the document was
+  stored with a handful of empty passages and could not be retrieved — while looking
+  perfectly normal in the Library. It now falls back to the page's own text layer when the
+  conversion loses it. On the development library this took retrieval from **28 of 35**
+  benchmark questions finding their source document to **34 of 35**, and library health from
+  93 healthy / 2 marginal / 2 broken to **96 healthy / 0 marginal / 1 broken**.
+- **Improvements to document reading now reach libraries you have already indexed.** The
+  extracted-text cache only noticed when a *file* changed, never when the *reader* improved —
+  so every past reading fix was invisible to anyone who had already added their documents.
+  It now also tracks which version of the reader produced each cached document. The first
+  indexing run after an upgrade re-reads your documents, once; **Index** shows how many
+  before it starts, and the app says why in its log.
+- A high-severity advisory in a build-time dependency (postcss). It never affected the
+  installed app, only the machine building it.
+
+### Known limits
+
+- **One kind of document is still unreachable: a scan with no text layer at all.** There is
+  nothing to fall back to — the page is only an image. Recovering those needs OCR, which is
+  designed but not built, and deliberately gated on measuring OCR quality first: text that is
+  wrong is worse than text that is absent, because absence is honest while garbage is
+  retrievable and citable. One document of 97 in the development library.
+- **Re-reading a large library takes a while.** Extraction is the slow part of indexing —
+  roughly a minute for a long book — and the run above is one-off, per improvement. Check the
+  count before starting if your library is large.
+- Local models still cite far less of what they write than a hosted one — unchanged, and
+  stated in the app where you choose your answer engine.
+
 ## [0.4.1] — 2026-08-06
 
 **The first release with a working installer, verified on a clean machine.** 0.4.0 shipped as

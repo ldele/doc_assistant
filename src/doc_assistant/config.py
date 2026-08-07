@@ -4,14 +4,38 @@ import os
 import sys
 from pathlib import Path
 
-from dotenv import load_dotenv
+from dotenv import dotenv_values, find_dotenv
 
-# override=True: .env is this app's config source of truth. Some host
-# environments (e.g. the Claude Code session env) export an *empty*
-# ANTHROPIC_API_KEY; with the python-dotenv default (override=False) that
-# empty value would shadow the real key in .env and break API mode. Letting
-# .env win is the least-surprising behaviour for a local-first, single-user app.
-load_dotenv(override=True)
+
+def _load_env(dotenv_path: str | None = None) -> None:
+    """Apply ``.env`` without letting it shadow a real environment variable.
+
+    Precedence: a **non-empty** process environment variable > ``.env`` > the code default.
+
+    The case this exists for: some hosts export an *empty* ``ANTHROPIC_API_KEY`` (the Claude
+    Code session env did), and under python-dotenv's default (``override=False``) that empty
+    value shadows the real key in ``.env`` and breaks API mode. The obvious cure —
+    ``load_dotenv(override=True)``, which this replaces — fixes it by making ``.env`` beat
+    **every** environment variable, and that silently disarms every env-var override the repo
+    relies on (KI-38):
+
+    * ``LLM_PROVIDER=ollama <cmd>`` runs on Anthropic anyway — *and bills*;
+    * ``scripts/sweep_chunking.py`` drives its grid through ``PARENT_CHUNK_SIZE`` /
+      ``CHILD_CHUNK_SIZE``, both of which ``.env.example`` ships uncommented, so the sweep
+      re-ingests the **same** configuration once per grid row and compares it with itself.
+
+    Neither failure raises, logs, or shows up in a result — which is why the narrow rule is
+    the one worth keeping: ``.env`` wins only where the environment has nothing real to say.
+    """
+    path = find_dotenv() if dotenv_path is None else dotenv_path
+    if not path:
+        return
+    for key, value in dotenv_values(path).items():
+        if value is not None and not os.environ.get(key, "").strip():
+            os.environ[key] = value
+
+
+_load_env()
 
 
 # ============================================================

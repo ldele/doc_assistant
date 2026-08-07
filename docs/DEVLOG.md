@@ -11,6 +11,56 @@ Format: What changed | Why | Rejected alternatives | What it opens
 > (moved verbatim 2026-07-21). This file keeps 2026-07-15 onward.
 
 ---
+## 2026-08-07 (5) — `.env` stops beating the environment (KI-38), and the chunking sweep turns out to have measured nothing (KI-41)
+
+**What changed.** `config.load_dotenv(override=True)` → `config._load_env()`, whose rule is: **a
+non-empty process environment variable wins; `.env` fills in the absent and the empty.** 7 tests in
+`tests/unit/test_config_env_precedence.py`. Corrections to the record where it now reads false:
+the locked-settings chunk-size row (`.claude/CONTEXT.md`), `evals/README.md` § Chunk sizes, and a
+dated correction appended to the 2026-06-06 baseline.
+
+**Why.** KI-38 recorded the override as a credit leak — `LLM_PROVIDER=ollama <cmd>` runs on
+Anthropic and bills. That was true and it is the smaller half. The override applied to **all 19 keys
+`.env` defines here**, and `.env.example` ships the chunk sizes uncommented, so
+`scripts/sweep_chunking.py` — whose entire mechanism is passing `PARENT_CHUNK_SIZE` /
+`CHILD_CHUNK_SIZE` to an ingest subprocess — had no effect on the thing it sweeps.
+
+**The finding, and it is measured rather than argued.** `case_results.token_input` scales with the
+evidence block, so a parent size of 1000 vs 3000 must move it. Across all **18** runs of the
+2026-06-06 sweep it does not move at all: mean **4326.7**, min **3582**, max **5106**, in every
+config — and **identical per case** between the control and parent 3000, all ten. The field is live
+elsewhere in the same DB (4372.7, 4615.8). **The sweep that closed the "defaults never measured"
+caveat compared one configuration with itself six times**, at a cost of ~6 full corpus re-embeds.
+The chunk-size lock is back to *unmeasured* — not wrong, unsupported.
+
+**One free result out of it.** Those six configs report `contains_all` 0.906–0.933 and `llm_judge`
+3.793–3.951 **on identical inputs**, which makes that spread a direct reading of the harness's noise
+floor at n=3 on the public 10. The baseline's own text called it "within the trial-to-trial noise
+bands" — right, for a reason it could not have known.
+
+**Rejected.**
+- **The fix the KI proposed** — threading an explicit provider argument through the answer path. It
+  addresses the provider symptom and would never have reached `PARENT_CHUNK_SIZE`; the defect is in
+  config loading, so that is where it is fixed. One place, one rule, whole class.
+- **Dropping `override=True` outright**, which the KI correctly ruled out: it re-opens the
+  empty-`ANTHROPIC_API_KEY` shadowing the original comment describes. Narrowing the override to
+  exactly the empty case keeps that protection — and it is what the comment already justified, so
+  the code now does what its own reason says.
+- **Changing `REVIEWER_PROVIDER_PINNED`.** The pin is ADR-011 U1c and deliberate. It stays; what
+  changes is that `REVIEWER_PROVIDER=ollama` in the environment now *works*, so the residual partial
+  leak has a cure instead of being unreachable.
+- **Re-running the sweep now.** It is a GPU-day of re-embedding and a deliberate call, not a
+  cleanup — and it should not run until it records what it ran.
+
+**What it opens.** `runs.config_json` stores `embedding_model` / `n_cases` / `scorers` and **no
+chunk sizes** — an experiment that does not record the setting it varies cannot be audited, which is
+exactly why this survived two months. Recording the varied settings is the precondition for any
+re-run. Unknown whether other env-driven experiments were affected: the two checked are clean —
+`sweep_bm25_weight.py` passes weights in-process, and the 2026-06-04 embedder A/B demonstrably took
+its `EMBEDDING_MODEL` override (its arms differ), which is consistent with it having run on the
+retired CPU box under a different `.env`.
+
+---
 ## 2026-08-07 (4) — the Windows encoding rules are written down as rules, not as one runbook's war story
 
 **What changed.** One rule, four homes: `.claude/CONTEXT.md` non-negotiable **#9** (canonical text),

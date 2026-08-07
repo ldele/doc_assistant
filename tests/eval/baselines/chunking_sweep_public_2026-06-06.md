@@ -51,6 +51,32 @@ config-specific failure). Configs 5–6 were re-run identically on the same box/
 re-run reproduced config 5 past the prior stop point with no issue. All six configs are one
 machine, one torch build, one judge model.
 
+---
+
+## ⚠ CORRECTION 2026-08-07 — this sweep did not vary what it claims to have varied (KI-41)
+
+**Everything above the line is left verbatim; none of its numbers are trustworthy as a comparison.**
+
+`scripts/sweep_chunking.py` passes each grid point as `PARENT_CHUNK_SIZE` / `CHILD_CHUNK_SIZE`
+environment variables to the ingest subprocess. `config.py` then called
+`load_dotenv(override=True)`, which overwrote all four with `.env`'s values before ingest read them
+(KI-38, fixed 2026-08-07). **Every config in the table ingested the same corpus.**
+
+Proven from the runs recorded below, not inferred: `case_results.token_input` is **identical per
+case across all six configs** (mean 4326.7, min 3582, max 5106, in all 18 runs) — including between
+parent 1000 and parent 3000, a 3x range that must move the evidence block. The field responds
+normally in other experiments in the same DB (4372.7, 4615.8).
+
+**So:** the "Decision" above is unsupported — the defaults are neither confirmed nor refuted. What
+the table *does* measure, usefully, is the harness's own noise floor: `contains_all` 0.906–0.933 and
+`llm_judge` 3.793–3.951 at n=3 on the public 10 came from **identical inputs**.
+
+**Re-running is now meaningful.** First make the run self-auditing: `runs.config_json` records
+`embedding_model` / `n_cases` / `scorers` and **no chunk sizes**, which is why this went unnoticed
+for two months.
+
+---
+
 **Run ids (`data/eval.duckdb`, 3 trials each)**
 - `2000/200 · 400/50` (control): d5a337a6, 7f1ebdbc, 6a969961
 - `2000/200 · 256/32`: b27adab0, 8f689796, ddab6d54

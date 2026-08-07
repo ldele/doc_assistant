@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-08-01 (headline re-measured after KI-29 + ADR-036 — no scorer moved beyond variance) · class: living -->
+<!-- status: active · updated: 2026-08-07 (chunk-size section corrected — the 2026-06-06 sweep measured nothing, KI-41) · class: living -->
 
 # Evals — benchmark results
 
@@ -74,13 +74,19 @@ Numbers + run ids: [`tests/eval/baselines/bge_vs_specter2_public_2026-06-04.md`]
 
 ## Chunk sizes
 
-The parent/child chunk sizes are the locked default `2000/200 · 400/50`. A 6-config sweep on
-the public corpus (`--repeat 3`, with judge) checked whether any alternative beats them —
-**none does**: the default is tied-best on `contains_all` (0.933) and best on `llm_judge`
-(3.951), and `citation_overlap` saturates at 1.000 across every config. A larger parent
-(3000/300) was weakest on the judge; a smaller `256/32` child matched the default with lower
-variance but didn't exceed it. So the defaults stand on measurement, not assumption. Full grid
-+ run ids: [`tests/eval/baselines/chunking_sweep_public_2026-06-06.md`](../tests/eval/baselines/chunking_sweep_public_2026-06-06.md).
+The parent/child chunk sizes are the locked default `2000/200 · 400/50`, and — corrected
+**2026-08-07** — **that default is unmeasured.** A 6-config sweep ran on the public corpus on
+2026-06-06 and reported that none of the alternatives beat it; the sweep passes each grid point
+through `PARENT_CHUNK_SIZE` / `CHILD_CHUNK_SIZE` environment variables, and a since-fixed config
+bug (`load_dotenv(override=True)`) overwrote all four from `.env` before ingest read them. **All six
+configs therefore ingested the same corpus.** It is proven, not suspected: the recorded prompt-token
+counts are identical per case across all 18 runs, including across a 3x parent-size range.
+
+What survives is a noise-floor reading — `contains_all` 0.906–0.933 and `llm_judge` 3.793–3.951 came
+from *identical* inputs, so that band is the harness's variance at `n=3` on the public 10, not a
+ranking. The environment bug is fixed, so a re-run would now measure what it claims to; it costs a
+full re-embed per config. Corrected grid + the proof:
+[`tests/eval/baselines/chunking_sweep_public_2026-06-06.md`](../tests/eval/baselines/chunking_sweep_public_2026-06-06.md).
 
 ## BM25 / vector mix
 

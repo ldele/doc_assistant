@@ -64,6 +64,12 @@ module, read that module's file and stay inside its boundary:
   **never `mypy --strict src`**. The flag is redundant (`strict=true` is in `pyproject.toml`) and it
   changes the option set, so it wipes mypy's incremental cache both ways: the next commit's hook then
   takes ~40 s instead of ~2 s. Full note: `.claude/CONTEXT.md` §8.
+- **Windows encoding — nothing here defaults to UTF-8, and neither pytest nor CI can see it.**
+  Console output is cp1252 (`scripts/*` entrypoints pin
+  `sys.stdout.reconfigure(encoding="utf-8")` behind a `hasattr` guard); file I/O defaults to the ANSI
+  codepage (pass `encoding="utf-8"` on **every** `open`/`read_text`/`write_text`); PowerShell 5.1
+  reads a BOM-less UTF-8 file as ANSI, so `.ps1`/`.wsb` stay **ASCII-only**. Full text +
+  the failures each rule comes from: `.claude/CONTEXT.md` §9, `docs/setup.md` § Windows: text encoding.
 - Engineering preferences (design principles + working protocol) live in cpc **CONVENTIONS**
   §12/§13 — read there, don't restate. The cpc gates run **locally only** from the vendored,
   gitignored `tools/conventions/` — never in CI (cpc is private, this repo is public;

@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-06-29 · class: runbook -->
+<!-- status: active · updated: 2026-08-07 (trap 1 now cites the general encoding rule) · class: runbook -->
 
 # Desktop packaging runbook (PR-M4)
 
@@ -164,6 +164,8 @@ The gate is now automated. Harness lives at `C:\rg012-host\` (local-only, not in
 1. **ASCII only, in both the `.ps1` and the `.wsb`.** Windows PowerShell 5.1 reads a UTF-8-no-BOM
    file as ANSI, so one em-dash breaks parsing *before anything logs* — which is what the two
    historical "LogonCommand never fires" reports actually were. Byte-check before trusting a run.
+   This is one of three Windows encoding defaults that bite here; the other two (cp1252 console,
+   ANSI file I/O) are in [`setup.md`](setup.md) § *Windows: text encoding*.
 2. **Map a STAGED COPY of the installer**, never `target\release\bundle\nsis` directly: a running
    sandbox holds a handle on what it maps and will fail the next `tauri build` with os error 32.
 3. **Never pick the installer incidentally** (`Select-Object -First 1` grabbed the June 0.1.0 build

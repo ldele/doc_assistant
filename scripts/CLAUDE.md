@@ -18,6 +18,9 @@ Pattern: runners re-derive; they never mutate the chunk store) plus dev/build to
 - **`build_concept_skeleton --apply` alone PRESERVES existing Node-B stance** (E0.5b) but does not
   *regenerate* it — to refresh stance from the corpus, run `--apply --enrich` (Ollama, KI-4). Pre-E0.5b
   a plain `--apply` silently wiped stance (the G6-run footgun; `.claude/CONTEXT.md` G6 note).
+- **Console encoding:** every entrypoint pins `sys.stdout.reconfigure(encoding="utf-8")` on win32
+  behind a `hasattr` guard (Jupyter's `OutStream` lacks it). Copy the existing header verbatim —
+  pytest and Linux CI both hide the cp1252 crash this prevents.
 - Enrichment runners need host `data/` access — they no-op in a sandbox (KI-5).
 - Runners run as modules (`python -m scripts.<name>`) inside the uv venv (`just eval`, `just ingest`).
 

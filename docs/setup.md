@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-07-30 (RAM is flat since ADR-036) · class: living -->
+<!-- status: active · updated: 2026-08-07 (new: Windows text-encoding rules) · class: living -->
 
 # Setup
 
@@ -123,6 +123,22 @@ interfaces: `OLLAMA_HOST=0.0.0.0 ollama serve`.
 docker compose down            # stop, keep data
 docker compose down -v         # stop, delete model cache volume
 ```
+
+## Windows: text encoding
+
+Windows is the primary development box and the desktop target, and three of its defaults are not
+UTF-8. **CI is Linux and pytest captures stdout through its own UTF-8 buffer, so neither one can
+fail on any of this** — a green suite is not evidence that a runner works in a real console.
+
+| Default | What breaks | The rule |
+|---|---|---|
+| Console output is **cp1252** | `print()` with `→ — ✓` raises `UnicodeEncodeError` | Entrypoints pin `sys.stdout.reconfigure(encoding="utf-8")` on win32, **behind a `hasattr` guard** — a Jupyter kernel's `OutStream` has no `reconfigure`, and the unguarded form once broke the import of all 13 runners |
+| File I/O uses the **ANSI codepage** | Accents, ligatures and math in the corpus round-trip wrong or raise | Pass `encoding="utf-8"` explicitly on every `open()` / `read_text()` / `write_text()`; cache writers go through `fsutil.atomic_write_text` (utf-8 by default) |
+| PowerShell 5.1 reads **BOM-less UTF-8 as ANSI** | One em-dash breaks the parse *before anything logs* | Keep `.ps1` / `.wsb` **ASCII-only** (or write a BOM), and byte-check before believing a run failed for the reason it appears to. Writing files back: `Set-Content` defaults to ANSI and `Out-File` to UTF-16 — pass `-Encoding utf8` |
+
+The file-I/O rule is a convention, not a lint: ruff's `PLW1514` is not enabled. The PowerShell rule
+is what the two "LogonCommand never fires" sandbox failures in
+[`desktop-packaging.md`](desktop-packaging.md) §5 actually were.
 
 ## Windows troubleshooting: SSL crash on a `uv`-managed Python
 

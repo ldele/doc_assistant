@@ -11,6 +11,42 @@ Format: What changed | Why | Rejected alternatives | What it opens
 > (moved verbatim 2026-07-21). This file keeps 2026-07-15 onward.
 
 ---
+## 2026-08-07 (4) — the Windows encoding rules are written down as rules, not as one runbook's war story
+
+**What changed.** One rule, four homes: `.claude/CONTEXT.md` non-negotiable **#9** (canonical text),
+an `AGENTS.md` digest bullet (the only version a fresh clone gets — `.claude/` is local-only), a
+`docs/setup.md` § *Windows: text encoding* table (contributor-facing), and a line in
+`scripts/CLAUDE.md`, which is where the console rule actually bites. `docs/desktop-packaging.md`
+§5 trap 1 now points at the general rule instead of standing alone.
+
+**Why.** All three defaults were already known and each had cost a run, but each was recorded only
+where it was discovered: the PowerShell-5.1-reads-BOM-less-UTF-8-as-ANSI trap lived inside the RG-012
+sandbox runbook (so it read as a sandbox quirk rather than a Windows one), the `sys.stdout`
+reconfigure existed as a copied header in **36** files (all 36 correctly `hasattr`-guarded, checked
+while writing this) with the reason recorded nowhere, and the
+`encoding="utf-8"` convention on file I/O was written down nowhere at all. A convention that lives
+only in existing code is one refactor from being dropped as noise.
+
+**The part worth carrying: none of this is gate-visible.** CI is Linux, pytest captures stdout
+through its own UTF-8 buffer, and ruff's `PLW1514` is not in `select` — so all three failures are
+green-suite failures. That sentence is now in the rule itself, because it is the reason the rule has
+to exist at all rather than being replaced by a check.
+
+**Rejected.**
+- **A lint instead of a rule** (enabling `PLW1514`) — it would cover the file-I/O third only, says
+  nothing about the console or PowerShell halves, and this repo's convention is that a locked
+  behaviour gets its rule text first. Worth doing on its own merits; recorded as an open, not folded
+  in here.
+- **One home instead of four.** `.claude/` is local-only, so a canonical-only rule is invisible in a
+  clone; a docs-only rule is invisible to an agent reading the entry file. The duplication is the
+  digest pattern the repo already uses for the other eight non-negotiables.
+- **Restating the rule in `src/doc_assistant/CLAUDE.md`** — the module files cap at 40 lines and are
+  explicitly not for project-wide rules; the file-I/O rule is already visible there as `fsutil`.
+
+**What it opens.** `PLW1514` is unselected, so nothing stops a new `open()` without `encoding=`.
+Enabling it is cheap and would need a sweep of the existing call sites first.
+
+---
 ## 2026-08-07 (3) — the extraction cache now knows which extractor wrote it (KI-40), so yesterday's fix can actually reach a user
 
 **What changed.** `ingest/cache.py`: an `extraction_fingerprint()`, recorded beside every cached

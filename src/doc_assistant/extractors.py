@@ -3,6 +3,7 @@
 import re
 from collections.abc import Callable
 from pathlib import Path
+from typing import Protocol
 
 from bs4 import BeautifulSoup
 
@@ -46,8 +47,48 @@ def strip_image_placeholders(md: str) -> str:
     return _COLLAPSE_BLANK_LINES.sub("\n\n", stripped)
 
 
+# Everything that is markup or scaffolding rather than content, for the "did the markdown keep the
+# page?" comparison below: page markers, image placeholders, heading hashes, table pipes, rules.
+_PAGE_MARKER = re.compile(r"<!--\s*page:\d+\s*-->")
+_NON_CONTENT = re.compile(r"[#*|\-\s]+")
+
+# A page whose markdown retains less than this share of its text layer has been LOST, not merely
+# reformatted, and the text layer is used instead.
+#
+# **Structural, not corpus-tuned.** The two populations do not overlap or even come close
+# (measured 2026-08-07, this corpus): 14 healthy PDFs over 28 pages kept **97.3%-108.9%** (ratios
+# slightly exceed 1.0 because markdown adds structure the raw text lacks), while the three
+# scan-with-text-layer documents kept **0.0%-3.2%**. Any value in that ~94-point gap selects the
+# same pages; 0.5 is the middle of it. If a future corpus lands *between* these populations, that
+# is a real signal to re-measure, not to nudge the constant.
+_TEXT_LAYER_KEPT_MIN = 0.5
+
+
+def _substantive_len(text: str) -> int:
+    """Length of ``text`` ignoring whitespace and pure-markup characters."""
+    return len(_NON_CONTENT.sub("", _PAGE_MARKER.sub("", text)))
+
+
 def extract_pdf_pymupdf(pdf_path: Path) -> str:
-    """PDF extraction with page markers preserved as HTML comments."""
+    """PDF extraction with page markers preserved as HTML comments.
+
+    **Falls back to the page's text layer when the markdown conversion loses it.** A scanned page
+    that carries an invisible OCR text layer behind a full-page image is rendered by PyMuPDF4LLM as
+    a *picture placeholder* — the text never reaches the markdown — and `strip_image_placeholders`
+    (KI-14) then removes even that, leaving a heading marker or nothing at all. The document
+    survives ingest with a handful of empty chunks and becomes silently unretrievable.
+
+    Measured on this corpus (2026-08-07): three documents lost **97-100%** of their text this way —
+    `hubel_wiesel_1959` kept 86 characters of 45,995, `hodgkin_huxley_1952` 3,219 of 88,754,
+    `hebb_1949` 5,117 of 776,162 — and together they accounted for **6 of the 7** retrieval misses
+    on the private eval set. Their text layers are good (88-94% word-like across sampled pages);
+    nothing needed OCR, the extractor was simply discarding what was already there.
+
+    The fallback stays **inside this one extraction path** — the same principle that decided
+    ADR-039 — so a recovered page flows onward through page markers, chunking, table splicing and
+    the health scorer exactly like any other. It cannot fire on a healthy page: see
+    ``_TEXT_LAYER_KEPT_MIN``.
+    """
     import pymupdf
     import pymupdf4llm
 
@@ -57,9 +98,42 @@ def extract_pdf_pymupdf(pdf_path: Path) -> str:
         # Mark the start of each page so chunks can be tagged
         parts.append(f"\n<!-- page:{page_num + 1} -->\n")
         page_md = pymupdf4llm.to_markdown(str(pdf_path), pages=[page_num])
-        parts.append(page_md)
+        parts.append(_recover_lost_page(doc, page_num, page_md))
     doc.close()  # type: ignore[no-untyped-call]
     return "\n".join(parts)
+
+
+class _TextPage(Protocol):
+    def get_text(self) -> str: ...
+
+
+class _PagedDoc(Protocol):
+    """Just enough of a PyMuPDF ``Document`` to read a page's text layer.
+
+    Structural, so the real ``pymupdf.Document`` satisfies it without an import and a stub can too
+    — which is what lets the recovery be tested without a PDF fixture.
+    """
+
+    def __getitem__(self, index: int, /) -> _TextPage: ...
+
+
+def _recover_lost_page(doc: _PagedDoc, page_num: int, page_md: str) -> str:
+    """Return ``page_md``, or the page's raw text layer when the markdown lost it.
+
+    Kept separate from :func:`extract_pdf_pymupdf` so it is testable without a real PDF, and so the
+    "is this page lost?" judgement has one home. Any failure to read the text layer returns the
+    markdown unchanged — a recovery that raises would be worse than the gap it fixes.
+    """
+    try:
+        raw = doc[page_num].get_text().strip()  # type: ignore[index]
+    except Exception:
+        return page_md
+    raw_len = _substantive_len(raw)
+    if raw_len == 0:
+        return page_md  # genuinely no text layer (a true scan) — OCR territory, not this
+    if _substantive_len(page_md) >= _TEXT_LAYER_KEPT_MIN * raw_len:
+        return page_md
+    return raw
 
 
 def extract_epub(epub_path: Path) -> str:

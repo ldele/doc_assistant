@@ -11,6 +11,79 @@ Format: What changed | Why | Rejected alternatives | What it opens
 > (moved verbatim 2026-07-21). This file keeps 2026-07-15 onward.
 
 ---
+## 2026-08-07 (2) — EX1: three of the four "scanned" documents never needed OCR. Retrieval recall 28/35 → **34/35**
+
+**What changed.** A text-layer fallback inside `extract_pdf_pymupdf` (+ `_recover_lost_page`, a
+`Protocol` pair to keep it testable, 9 guard tests), and **KI-40**. No OCR, no new dependency, no
+system binary, no second extraction path.
+
+**Why — the premise of ADR-039 was right as a category and wrong about which documents are in it.**
+EX1 was scoped as "scanned PDFs have no text layer, so OCR them". Before installing anything, I
+looked at the four degraded documents. **Three of them already carry a good text layer:**
+
+| document | health | `page.get_text()` | what the extractor cached | word-like |
+|---|---|---|---|---|
+| `hebb_1949` | marginal | **776,162 chars** | 5,117 | 94% |
+| `hodgkin_huxley_1952` | marginal | **88,754** | 3,219 | 72% |
+| `hubel_wiesel_1959` | broken | **45,995** | 86 | 88% |
+| `middleton-2001` | broken | **0** | 0 | — (a true scan) |
+
+**Mechanism, reproduced on the shipped extractor** (so it was live, not a stale cache): PyMuPDF4LLM
+sees a full-page image, emits `**==> picture [331 x 154] intentionally omitted <==**` and never
+reaches the invisible text behind it; `strip_image_placeholders` (KI-14) then removes even that,
+leaving `## ##`. Measured retention on those pages: **0.0%–3.2%**.
+
+**The fallback is licensed by a measurement, not a guess.** The two populations do not overlap or
+come close — 14 healthy PDFs over 28 pages kept **97.3%–108.9%** (over 100% because markdown *adds*
+structure), the degraded ones **0.0%–3.2%**. A ~94-point gap with nothing in it, so a threshold in
+the middle is **structural, not corpus-tuned** — which is what the robustness contract actually
+demands. `_TEXT_LAYER_KEPT_MIN = 0.5`, and a test asserts it stays inside the measured gap.
+
+**Result, end to end:**
+
+| document | chunks before | chunks after | health |
+|---|---|---|---|
+| `hubel_wiesel_1959` | 1 | **61** | broken → **healthy** |
+| `hodgkin_huxley_1952` | 7 | **125** | marginal → **healthy** |
+| `hebb_1949` | 16 | **1,019** | marginal → **healthy** |
+| `middleton-2001` | 0 | 0 | broken (unchanged — correctly) |
+
+Corpus health **93/2/2 → 96 healthy / 0 marginal / 1 broken**. **Retrieval recall on the private
+35-case set: 28/35 → 34/35.** The single remaining miss is `middleton_frontal_subcortical`, whose
+document is the one genuine no-text-layer scan.
+
+**So ADR-039's actual scope is now one document in 97**, not four — and that document is the case
+the ADR describes exactly. The OCR work is still worth doing and still gated on RG-025; it is simply
+much smaller, and it no longer blocks the recall gap it was thought to own.
+
+**Rejected.**
+- **Installing Tesseract + Ghostscript first.** Neither is present, both are system binaries, and
+  three of the four documents turned out not to need them. Looking at the documents cost minutes and
+  removed the dependency question from 75% of the problem.
+- **Fixing this in the health scorer.** `health.py` was right: these documents *were* broken as
+  ingested. The defect was upstream of the label.
+- **Suppressing the placeholder differently / tuning KI-14's stripper.** The placeholder is a
+  symptom; the text never reached the markdown in the first place.
+- **A ratio derived from these four documents.** That would be corpus-tuned. The threshold is
+  justified by the *gap between two populations*, and the test pins it to that gap rather than to a
+  value.
+
+**What it opens — and it is bigger than this fix (KI-40).** `is_cache_fresh` compares **mtimes
+only**, so the cached `.md` is never invalidated when the *extractor* changes. **Shipping this fix
+does nothing for any library that has already ingested** — including every existing user. KI-29 and
+KI-14 both changed extraction output and both had the same hole. The pattern to copy is already in
+this repo: `sparse_index` fingerprints its inputs and logs `sparse_index_stale`. Until then the cure
+is manual, and it has a trap: re-extraction changes `doc_hash`, `_existing_document_id` matches on
+`doc_hash`, so a `--files` re-ingest **mints a second row and skips orphan cleanup** — measured here
+as 97 → 100 documents, each file listed twice with different health. A plain `ingest` reconciles it
+(`cleanup_orphans_sqlite` handles "the pre-change hash of a document whose content changed"), which
+is what was run: back to 97.
+
+Also: the corpus grew by ~1,200 chunks, so the 2026-08-07 citation-coverage baseline was measured
+against a *slightly different* corpus than the one now on disk. It compares before/after within
+itself, so its conclusion stands, but a future re-run will not be exactly comparable.
+
+---
 ## 2026-08-07 (1) — the prompt fix cured the citation FORMAT and moved coverage not at all (KI-36 re-measured on shipped code)
 
 **What changed.** No code. One baseline —

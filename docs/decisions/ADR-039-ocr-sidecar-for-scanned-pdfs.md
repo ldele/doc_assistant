@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-08-01 · class: append-only -->
+<!-- status: active · updated: 2026-08-07 · class: append-only -->
 
 # ADR-039 — Recover scanned PDFs with an opt-in OCR sidecar that restores a text layer, not markdown
 
@@ -110,3 +110,36 @@ nothing.
 - ⚠ **The engine choice is architectural, not empirical.** Option 1 wins on "one extraction path" and
   absent-tolerance, not on measured accuracy against options 2 and 3; RG-025 is where that comparison
   would happen if the first implementation disappoints.
+
+## Amendment — 2026-08-07: the premise held, the population did not
+
+**The decision stands. Its scope shrinks from four documents to one.**
+
+Before installing Tesseract, the four documents this ADR was written for were examined directly.
+**Three of them already carry a good text layer** — `page.get_text()` returns 45,995 / 88,754 /
+776,162 characters at 88% / 72% / 94% word-like across sampled pages. They were never OCR cases.
+`extract_pdf_pymupdf` was *discarding* text that was already present: PyMuPDF4LLM renders a
+full-page-image page as a picture placeholder and never reaches the invisible text behind it, then
+`strip_image_placeholders` (KI-14) removes the placeholder too. Retention measured **0.0%–3.2%** on
+those pages against **97.3%–108.9%** on 28 healthy pages — two populations with a ~94-point gap.
+
+Fixed by a text-layer fallback **inside the existing extraction path**, which is this ADR's own
+deciding principle applied one level earlier. Result: those three went 1 / 7 / 16 chunks →
+**61 / 125 / 1,019**, all `healthy`, and retrieval recall on the private 35-case set went
+**28/35 → 34/35** (DEVLOG 2026-08-07 (2)).
+
+**What remains for OCR is `middleton-2001.pdf`** — 15 pages, **zero** extractable characters, every
+page an image. That is exactly the document this ADR describes, and it is now **1 of 97 (~1%)**, not
+4. Everything above still applies to it: option 1, opt-in, absent-tolerant, gated on RG-025.
+
+**What this changes about the reasoning, and it is worth carrying:**
+
+- **The `broken`/`marginal` health labels were correct but did not imply "needs OCR".** They measure
+  *what ingest produced*, not *what the file contains*. This ADR read a symptom as a diagnosis, and
+  the two happened to coincide for one document out of four.
+- **The sizing in Confidence — "93 healthy / 2 marginal / 2 broken" — was accurate and still
+  mis-scoped the work by 4×.** The corpus statistic was never the question; the per-document cause
+  was.
+- **RG-024 (the ~2% broken rate bounds nothing) gets sharper, not weaker.** The true
+  no-text-layer rate on this corpus is **~1%**, and the rate of *extractor-lost* text was **~3%** —
+  three times larger, and previously invisible because it wore the same label.

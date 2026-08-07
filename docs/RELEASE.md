@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-08-06 · class: runbook -->
+<!-- status: active · updated: 2026-08-07 · class: runbook -->
 
 # Release runbook
 
@@ -43,6 +43,9 @@ uv run --no-sync python -m scripts.release_preflight
 # 6. tag, then push
 git tag -a vX.Y.Z -m "..."
 git push origin main && git push origin vX.Y.Z
+
+# 7. delete the PREVIOUS installer + msi — after the push, never before (§8)
+ls apps/desktop/src-tauri/target/release/bundle/{nsis,msi}
 ```
 
 ---
@@ -145,6 +148,39 @@ makes it fine. If it is not empty, you are tagging something you did not test.
 
 `git push origin main && git push origin vX.Y.Z`. Publishing is deliberate and separate: everything
 above is reversible, this is not.
+
+**Both halves.** `git push origin main` does **not** push tags. v0.4.1's tag sat only on the build
+machine for a day because the second command was skipped — the commits were public and the thing
+they were tagged as was not.
+
+## 8 · Delete the previous installer
+
+**After the push, never before.** Once the tag is on the remote the artifact is reproducible from
+it, so deleting the old one costs nothing but a rebuild; before that, it is the only copy.
+
+```bash
+cd apps/desktop/src-tauri/target/release/bundle
+rm nsis/Provenote_<PREVIOUS>_x64-setup.exe msi/Provenote_<PREVIOUS>_x64_en-US.msi
+```
+
+Both formats — `tauri build` emits an NSIS `.exe` **and** an MSI, and only the `.exe` is what
+anyone installs, so the MSI is the one that quietly accumulates.
+
+**Why this is a step and not housekeeping.** A stale installer sitting beside a fresh one is the
+condition that once had the RG-012 harness install a **two-month-old build** and report its results
+as the new release's. The harness now filters by product name and sorts by build time, and
+`preflight`'s `artifacts` check warns when more than one is present — but both of those are
+mitigations for a mess that does not need to exist. One version in the directory, and neither
+mitigation is ever load-bearing.
+
+**The disk cost is the lesser reason, and still real:** each release leaves **~3.1 GiB** behind
+(1,572 MiB exe + 1,563 MiB msi) and nothing prunes it. Three releases had accumulated 9.2 GiB by
+0.4.2.
+
+Keep only the version you just tagged. Every earlier one is rebuildable from its tag — that is what
+tags are for — and the current one must stay, because `preflight`'s `rg012` check matches the
+harness's recorded build timestamp against the installer on disk. Deleting the *current* artifact
+does not just lose a file, it loses the evidence that the release passed its gate.
 
 ---
 

@@ -36,6 +36,7 @@ from doc_assistant.eval import (
 )
 from doc_assistant.eval.adapters import embedding_callable, rag_pipeline_adapter
 from doc_assistant.eval.report import format_aggregate, format_flaky_cases, format_run_summary
+from doc_assistant.eval.run_settings import run_defining_settings
 
 if sys.platform == "win32" and hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
@@ -137,7 +138,10 @@ def main() -> int:
     def _progress(i: int, total: int, case: object) -> None:
         print(f"  [{i + 1:>2}/{total}] {getattr(case, 'id', '?')}")
 
-    with Store(args.db) as store:
+    # settings_provider: every run records the chunk/retrieval settings that produced it, so a
+    # sweep's own output can contradict its note. Without it, KI-41's six identical configs were
+    # indistinguishable in the record for two months.
+    with Store(args.db, settings_provider=run_defining_settings) as store:
         run_ids: list[str] = []
         for trial in range(args.repeat):
             if args.repeat > 1:

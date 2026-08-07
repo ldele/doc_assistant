@@ -11,6 +11,53 @@ Format: What changed | Why | Rejected alternatives | What it opens
 > (moved verbatim 2026-07-21). This file keeps 2026-07-15 onward.
 
 ---
+## 2026-08-07 (6) — an eval run now records the settings that produced it (RG-026's precondition)
+
+**What changed.** New `eval/run_settings.py` — `run_defining_settings()`, a snapshot of the 13
+config values that determine what a run measures (the six chunk sizes, the embedder, and
+`use_parent_child` / `use_multi_query` / `top_k` / `candidate_k` / `bm25_weight` /
+`rerank_candidate_cap`). `Store` takes a `settings_provider` and merges the snapshot **under** the
+caller's `config`, so an explicit per-run override (`run_eval --bm25-weight`) still wins — the
+recorded value is always the one that ran. New `Store.run_config(run_id)` so a past run can be
+audited at all. `scripts/run_eval.py` wires it; 9 tests.
+
+**Why.** KI-41: the 2026-06-06 chunking sweep swept one configuration six times and **nothing in
+the run record could contradict its notes** — `config_json` held `embedding_model` / `n_cases` /
+`scorers` and no chunk sizes. That is why it took two months and an unrelated investigation to
+find. RG-026 makes recording the varied settings the precondition for re-running the sweep, and
+this is that precondition.
+
+**The design was wrong first, and the suite said so.** The obvious shape — merge the snapshot
+inside `persist_run`, importing `run_defining_settings` at the top of `store.py` — makes it
+impossible for a runner to forget, and I built that first. It fails
+`test_eval_harness_isolation.py`: `doc_assistant.eval` must import **no** app wiring, because the
+harness is designed to be lifted into a standalone repo (ADR-003 Decision 8), and `run_settings`
+reaches into `config` by nature. Injection is the shape that satisfies both — the coupling sits at
+the project's edge of the harness, and a lifted copy drops one file.
+
+**The cost of that is real and is written down where it bites:** a new runner must remember the
+argument, so the rule is in `scripts/CLAUDE.md` and in both docstrings. A guarantee enforced by
+construction would have been better; the extractability contract is worth more, and it is
+test-enforced while "remember the argument" is not.
+
+**Rejected.**
+- **Backfilling old rows** with today's config values. Their geometry is genuinely unknown —
+  substituting a plausible value would convert "unrecorded" into a false record, which is worse
+  than the gap. `run_config` returns exactly what is there, and its docstring says to read with
+  `.get()` and report "not recorded".
+- **Recording every config knob.** A record nobody trusts to be minimal is a record nobody reads.
+  The membership rule is "changing it changes what the run measures", so worker counts, caches and
+  the lazy reranker are deliberately absent.
+- **Surfacing the settings in `format_run_summary`.** Worth doing when someone is comparing runs;
+  it is a different change and would not have caught KI-41 (the sweep printed per-config notes
+  that *looked* right).
+
+**What it opens.** RG-026's precondition is met, so a chunking re-run would now be self-auditing —
+still a GPU-day, still the user's call. Nothing reads the new fields yet: a `sweep`-side assertion
+that the arms actually differ (fail loudly when two grid points record identical settings) is the
+natural next guard, and it is the one that would have turned KI-41 into a first-run error.
+
+---
 ## 2026-08-07 (5) — `.env` stops beating the environment (KI-38), and the chunking sweep turns out to have measured nothing (KI-41)
 
 **What changed.** `config.load_dotenv(override=True)` → `config._load_env()`, whose rule is: **a

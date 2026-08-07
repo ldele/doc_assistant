@@ -21,6 +21,9 @@ Pattern: runners re-derive; they never mutate the chunk store) plus dev/build to
 - **Console encoding:** every entrypoint pins `sys.stdout.reconfigure(encoding="utf-8")` on win32
   behind a `hasattr` guard (Jupyter's `OutStream` lacks it). Copy the existing header verbatim —
   pytest and Linux CI both hide the cp1252 crash this prevents.
+- **Any new eval runner must build its store as `Store(db, settings_provider=run_defining_settings)`**
+  — the harness cannot import app config (extractability, ADR-003 D8), so the wiring is the
+  runner's job. A run that does not record what it swept cannot be audited (KI-41).
 - Enrichment runners need host `data/` access — they no-op in a sandbox (KI-5).
 - Runners run as modules (`python -m scripts.<name>`) inside the uv venv (`just eval`, `just ingest`).
 

@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import json
 import uuid
+from collections.abc import Callable
 from datetime import datetime, timezone
 from pathlib import Path
 from types import TracebackType
@@ -90,7 +91,23 @@ _SCHEMA = [
 class Store:
     """DuckDB-backed persistence for eval runs."""
 
-    def __init__(self, db_path: str | Path) -> None:
+    def __init__(
+        self,
+        db_path: str | Path,
+        *,
+        settings_provider: Callable[[], dict[str, Any]] | None = None,
+    ) -> None:
+        """``settings_provider`` supplies the settings that define what a run measured.
+
+        Injected rather than imported, because this module must not reach into app config: the
+        harness is designed to be lifted into a standalone repo (ADR-003 Decision 8, pinned by
+        ``tests/unit/test_eval_harness_isolation.py``, which fails on a ``doc_assistant.config``
+        import here). In this project, pass
+        :func:`doc_assistant.eval.run_settings.run_defining_settings` — **every real runner
+        must**, or its runs record only what the caller happened to pass, which is the hole
+        KI-41 fell through. Left out, the Store still works and records nothing extra.
+        """
+        self._settings_provider = settings_provider
         self.db_path = str(db_path)
         # ":memory:" stays in-memory; anything else opens a file (DuckDB creates it).
         if self.db_path != ":memory:":
@@ -128,8 +145,15 @@ class Store:
         config: dict[str, Any] | None = None,
         note: str | None = None,
     ) -> str:
-        """Persist one Runner.run() output. Returns the new run_id."""
+        """Persist one Runner.run() output. Returns the new run_id.
+
+        ``config`` is merged **over** the Store's ``settings_provider`` snapshot, so a run
+        records the settings that determined what it measured *and* a caller that overrode one
+        for this run (``run_eval --bm25-weight``) still wins — the recorded value is the one
+        that actually ran, whichever way it was set.
+        """
         run_id = str(uuid.uuid4())
+        settings = self._settings_provider() if self._settings_provider is not None else {}
         started_at = min((r.timestamp for r in results), default=_utcnow())
         finished_at = max((r.timestamp for r in results), default=started_at)
 
@@ -143,7 +167,7 @@ class Store:
                     started_at,
                     finished_at,
                     system_name,
-                    json.dumps(config or {}),
+                    json.dumps({**settings, **(config or {})}),
                     len(results),
                     note,
                 ],
@@ -210,6 +234,21 @@ class Store:
             }
             for r in rows
         ]
+
+    def run_config(self, run_id: str) -> dict[str, Any]:
+        """The settings recorded for one run — ``{}`` for an unknown run.
+
+        **Rows written before 2026-08-07 carry only what their caller passed** (typically
+        ``embedding_model`` / ``n_cases`` / ``scorers`` and no chunk sizes), so a caller must
+        treat every key as optional: read with ``.get()`` and say "not recorded" rather than
+        substituting today's value. An old run's geometry is genuinely unknown — that is the
+        finding of KI-41, not a gap to paper over.
+        """
+        row = self.conn.execute("SELECT config_json FROM runs WHERE id = ?", [run_id]).fetchone()
+        if row is None or not row[0]:
+            return {}
+        loaded: dict[str, Any] = json.loads(row[0])
+        return loaded
 
     def scorer_means(self, run_id: str) -> dict[str, float]:
         """Mean score per scorer for one run, over scoreable cases only.

@@ -11,6 +11,63 @@ Format: What changed | Why | Rejected alternatives | What it opens
 > (moved verbatim 2026-07-21). This file keeps 2026-07-15 onward.
 
 ---
+## 2026-08-08 (3) — OCR of the one true scan is good enough to retrieve (RG-025, 3 of 4); Marker turns out to be unrunnable (KI-42)
+
+**What changed.** Measurement only, no source change. New baseline
+`tests/eval/baselines/ocr_quality_middleton_2026-08-08.md`; RG-025 advanced 3 of 4 items and left
+open on the fourth; **KI-42 filed**.
+
+**Why.** ADR-039 chose its OCR engine on architecture, not accuracy, and RG-025 gates enabling
+recovery: *a document with no text layer is honestly absent, while one full of OCR garbage is
+retrievable, rerankable and citable.* The user installed Tesseract + Ghostscript, so the
+measurement became possible.
+
+**Result — it clears the bar.** All **15 pages** of `middleton-2001.pdf` (0 chars of text layer,
+now the *only* non-healthy document in the library) read in **21 s**: **87.0% word-like**, zero
+empty pages, against real-text-layer controls at 88.5–92.1%. Hand-read of p006 against the rendered
+image: **one error in ~850 chars** of body text. Retrieval, in an isolated corpus against 8
+topically adjacent real papers: **4/4 rank-1**, and clean on a negative control.
+
+**Two things the numbers would have said wrong without looking.** The low-scoring pages (79–83%)
+are the **references section** — initials, volumes and page ranges score as "not word-like" while
+being read correctly, so the metric is a garbage detector, not an accuracy score. And the noise that
+*is* real is **1.0% of characters**, confined to figure interiors (`MDpl`→`wippt`, arrows→`j j | j`)
+— which is the genuine finding: prose is excellent, **diagram labels are not**, and those are
+exactly the plausible-but-wrong tokens that become citable.
+
+**A near-miss worth recording (non-negotiable #9).** A `§` misread showed in-terminal as `�` and
+looked like an encoding bug. The file is **valid UTF-8, zero U+FFFD** — the bytes are `\xc2\xa7`
+and the cp1252 console could not render them. An OCR error was one step from being filed as a
+corruption bug. Byte-check before believing the console.
+
+**Then the Marker comparison failed, and took a shipped runner with it.** `uvx --from marker-pdf
+marker_single` now dies at the **layout** stage: current `surya` spawns a backend — `vllm` wants a
+running Docker daemon (auto-selected because this box has an NVIDIA GPU), `llamacpp` wants an
+uninstalled `llama-server`. **`scripts/extract_tables_marker.py` resolves Marker through the same
+command**, so high-fidelity table extraction does not run here at all, and nothing surfaced it: the
+runner's guard checks whether `uvx` *exists*, not whether Marker *works*. Root cause is that
+`uvx --from marker-pdf` is **unpinned** — `eval_marker_tables.py:85` still promises "the pinned
+marker-pdf version at build time" and no pin exists anywhere. **KI-42.**
+
+**Rejected.**
+- **Installing `ocrmypdf` first.** RG-025 asks whether the *text* is worth retrieving; Tesseract is
+  the engine ocrmypdf wraps, so the wrapper adds a dependency ahead of the evidence that justifies
+  it. ADR-039 puts the sidecar after this measurement, and that order was kept.
+- **Starting Docker / installing llama.cpp to unblock Marker.** Both are system-level installs on
+  the user's machine pulling multi-GB artifacts, to satisfy a comparison item — reported instead of
+  performed.
+- **Calling RG-025 closed.** Three of four items is not four; its contract names the Marker
+  comparison as the precondition for "concluding the engine choice was right".
+- **Reading the 87% as an accuracy score.** It is a word-shape heuristic, confounded by content
+  type — the references pages prove it.
+
+**What it opens.** Building ADR-039's sidecar behind its runner is now justified; enabling recovery
+by default still is not (that needs the broken-rate work, RG-023/RG-024). Figure interiors argue
+for letting the existing figures layer own figure regions rather than letting OCR emit them as
+prose. And KI-42 should be fixed — pin `marker-pdf`, and make the guard probe the capability
+instead of the launcher — before any future Marker comparison can be reproducible.
+
+---
 ## 2026-08-08 (2) — the chunk sizes are measured for the first time (RG-026 closed, KI-41 resolved)
 
 **What changed.** Two chunking sweeps, both self-audited, replacing the void 2026-06-06 run.

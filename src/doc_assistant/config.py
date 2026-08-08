@@ -281,6 +281,17 @@ MARKER_MAX_WORKERS = int(os.getenv("MARKER_MAX_WORKERS", "2"))
 # stack. Only applies to the `uvx` path (an on-PATH `marker_single` is used as-is).
 MARKER_PYTHON = os.getenv("MARKER_PYTHON", "3.12")
 
+# Marker version `uvx` fetches. **Pinned deliberately — an unpinned `uvx --from
+# marker-pdf` re-resolves to the latest release on every invocation, so the table
+# path changes with upstream and without a commit** (KI-42). marker-pdf 2.0.0 moved
+# surya's inference to spawned backends: `vllm`, auto-selected whenever an NVIDIA GPU
+# is present, shells out to `docker run`; the `llamacpp` fallback needs a
+# `llama-server` binary. Both fail at the *layout* stage, before any OCR, so the
+# whole runner dies on a box that has neither. 1.10.2 is the last 1.x and is
+# verified working here (2026-08-08). Bump only after re-running the runner end to
+# end — the failure mode is a hard stop, not a quality regression.
+MARKER_VERSION = os.getenv("MARKER_VERSION", "1.10.2")
+
 
 # ============================================================
 # Chunking configuration (Phase 6 — chunking experiment)
@@ -329,6 +340,25 @@ FIGURE_RENDER_DPI = int(os.getenv("FIGURE_RENDER_DPI", "150"))
 # `regions.IMAGE_AREA_MIN` (0.05), which is the page-dominance threshold for
 # classifying a whole page as a photo; this is the smaller per-region floor.
 FIGURE_MIN_AREA_FRACTION = float(os.getenv("FIGURE_MIN_AREA_FRACTION", "0.02"))
+
+# Ceiling: an image region this large IS the page, not a figure on it. A scanned
+# document is one full-page image per page, and with only a floor above, every page
+# of a scan became a "figure" — `hebb_1949.pdf` produced **365 figures for 365 pages**
+# (exactly 1.00/page, zero captions), and 46% of the whole corpus's figure rows were
+# page scans (measured 2026-08-08, 1452 rows).
+#
+# **Structural, not corpus-tuned** — the area-fraction distribution is bimodal with an
+# effectively empty band: 783 rows below 0.7, **1** row in [0.7, 0.9), 669 at/above 0.9.
+# Any cut in that gap selects the same rows (0.80 / 0.85 / 0.90 all partition 669/783
+# identically); 0.85 is its middle. The two sides are different populations, not a
+# continuum: below the cut **51%** carry a caption, at/above it **16%** — and in the
+# top bucket (>=1.0 of the page) only **7%**.
+#
+# Paired with a caption exemption in `figures.detect_figure_regions`: a page-sized
+# region WITH a caption is a genuine full-page plate and is kept (109 of them here).
+# A scan has no text layer, so it has no caption to find — which is what makes the
+# caption the right discriminator rather than a second area heuristic.
+FIGURE_MAX_AREA_FRACTION = float(os.getenv("FIGURE_MAX_AREA_FRACTION", "0.85"))
 
 
 # ============================================================

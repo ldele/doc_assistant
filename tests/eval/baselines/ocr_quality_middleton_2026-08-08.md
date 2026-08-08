@@ -5,7 +5,8 @@ recovery path is built. The asymmetry RG-025 names is the whole point: a documen
 layer is *honestly absent*, while one full of OCR garbage is retrievable, rerankable and
 **citable** — so a bad recovery degrades answers in a way the current failure does not.
 
-**Status: 3 of 4 required items done. The Marker comparison is BLOCKED — RG-025 stays open.**
+**Status: all 4 items done.** The Marker comparison was blocked mid-session by KI-42 (Marker
+unrunnable), then unblocked by pinning `marker-pdf==1.10.2` — see §5.
 
 **Setup**
 - Target: `data/sources/middleton-2001.pdf` — **15 pages, 0 characters** of text layer across the
@@ -91,36 +92,56 @@ KI-11 relocation trap) alongside **8 topically adjacent real papers** from the l
 
 **4/4 rank-1 on questions it genuinely answers; no false positive on one it does not.**
 
-## 5. ❌ Marker comparison — BLOCKED, and it broke something else
+## 5. Marker comparison (ADR-039 option 2) — done, after unblocking it
 
-ADR-039 option 2 could **not** be evaluated. `uvx --from marker-pdf marker_single` now fails at the
-**layout** stage (not merely OCR) because current `surya` routes inference through a backend:
+**It was blocked first, and that mattered more than the comparison.** `uvx --from marker-pdf` was
+**unpinned**, so it resolved to **marker-pdf 2.0.0**, which routes surya's inference through a
+spawned backend — `vllm` (auto-picked on an NVIDIA GPU) wants a running Docker daemon, `llamacpp`
+wants an uninstalled `llama-server`. Both die at the **layout** stage, before any OCR. Since
+`scripts/extract_tables_marker.py` resolves Marker through the same command, the shipped table path
+was broken too. Filed and fixed as **KI-42** (pinned to `1.10.2`, the last 1.x); the table runner
+then found **7 tables** in `rag_lewis_2020.pdf` in 40 s.
 
-- `vllm` (auto-selected when an NVIDIA GPU is present) → `docker run` against a daemon that is not
-  running, plus a container image pull;
-- `llamacpp` → needs a `llama-server` binary that is not installed, and whose documented install
-  path covers only macOS/Linux.
+**Head-to-head on the same 3 pages** (0-based 0, 5, 13 — title, figure-heavy body, references):
 
-**This is not only an RG-025 gap — it breaks a shipped runner.**
-`scripts/extract_tables_marker.py` resolves Marker through the *same* unpinned
-`uvx --from marker-pdf` command, so the table-extraction enrichment path is broken on this machine
-too. `eval_marker_tables.py:85` still says it runs "against the pinned marker-pdf version at build
-time"; **there is no pin anywhere in the repo.** Filed as **KI-42**.
+| | Tesseract + Ghostscript | Marker 1.10.2 |
+|---|---:|---:|
+| word-like | **85.8%** | 85.5% |
+| tokens | 1083 | 990 |
+| hyphen-split line breaks | **17** | **3** |
+| time, these 3 pages | ~4 s | **122 s** |
+| whole 15-page document | **21 s** | not run (~10 min projected) |
+| extra dependency | 2 small system binaries | a multi-GB model stack |
 
-**What it does and does not tell us.** It says nothing about Marker's *accuracy*. It does say
-ADR-039's dependency-surface argument has moved further in option 1's favour: Tesseract + Ghostscript
-read all 15 pages in 21 s from two small system binaries, while option 2 now needs Docker or
-llama.cpp plus a multi-GB model before it will emit a character.
+**Reading.**
+- **Raw character accuracy is a tie** — 85.8% vs 85.5% is inside the noise of the metric, and
+  neither engine produced garbage.
+- **Marker is meaningfully better at *reflow*.** It rejoins words split across a line break;
+  Tesseract does not, leaving **88 hyphen-split words across the full document**
+  (`re-\nviewed`, `cortico-\nspinal`). Those are a **real retrieval defect** — a query for
+  "corticospinal" will not match `cortico-` + `spinal`. Marker also emits structure (`##` headings)
+  and extracts the page's figure as a separate image.
+- **Tesseract is ~30x faster** (≈1.4 s/page vs ≈40 s/page) on two small binaries rather than a
+  model stack that, on this box, needed a *pin* to run at all.
+
+**Conclusion: ADR-039's option 1 stands, with one amendment.** The dependency and cost argument that
+decided it has only strengthened — Marker's own runnability turned out to be version-fragile, which
+is precisely the risk "one extraction path, absent-tolerant" was chosen to avoid. But Marker's
+reflow advantage is real and cheap to close: **the sidecar should de-hyphenate line-broken words**,
+which is deterministic text normalisation, not a second engine. That is now the one concrete
+quality task the OCR runner inherits.
 
 ## Verdict
 
-**On the evidence gathered, OCR recovery of this document clears the bar RG-025 set.** The text is
-~87% word-like (inside the healthy band once the references confound is accounted for), no page is
-empty, sub-1% of characters are noise confined to figure interiors, and the recovered document wins
-4/4 contested retrievals without polluting an unrelated one.
+**OCR recovery of this document clears the bar RG-025 set, and the engine choice is confirmed.**
+The text is ~87% word-like (inside the healthy band once the references confound is accounted for),
+no page is empty, sub-1% of characters are noise confined to figure interiors, and the recovered
+document wins 4/4 contested retrievals without polluting an unrelated one. Against Marker it ties
+on accuracy at ~1/30th the cost, losing only on hyphen reflow — which is a post-process, not an
+engine choice.
 
-**RG-025 stays OPEN** on the Marker comparison, which its contract requires before "concluding the
-engine choice was right".
+**RG-025 can close.** Two conditions carry forward into the build: de-hyphenate, and keep recovery
+opt-in.
 
 **Scope honesty:** one document, 15 pages; two pages hand-read closely. This licenses building
 ADR-039's sidecar behind its runner — it does **not** license enabling recovery by default, which
@@ -128,8 +149,11 @@ needs the broken-rate measurement (RG-023/RG-024) on a heterogeneous corpus.
 
 ## Carried forward
 
-1. **Figure interiors should not reach retrieval as prose.** The cheapest guard is to keep ADR-039's
+1. **De-hyphenate line-broken words in the sidecar** — 88 of them in this document, each one a word
+   that will not match a keyword query. The single highest-value fix, and deterministic.
+2. **Figure interiors should not reach retrieval as prose.** The cheapest guard is to keep ADR-039's
    "visibly marked as OCR-derived" rule and let the existing figures layer own figure regions.
-2. **KI-26's title extractor will start reading OCR'd front matter** — p001 OCRs cleanly here, but
+3. **KI-26's title extractor will start reading OCR'd front matter** — p001 OCRs cleanly here, but
    that is one sample.
-3. **Pin `marker-pdf`** (KI-42) before trusting any future Marker comparison to be reproducible.
+4. ✅ **`marker-pdf` is pinned** (KI-42, `config.MARKER_VERSION`), so a future re-comparison is
+   reproducible. Bump it only with an end-to-end runner check — the failure mode is a hard stop.

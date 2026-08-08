@@ -16,9 +16,11 @@ so re-run the citation + doc-vector enrichment afterwards. Marker is slow and lo
 multi-GB models, so docs run in a **bounded pool** (``MARKER_MAX_WORKERS``); failures
 are isolated per document.
 
-Pinned: confirm ``marker-pdf`` version + the ``--paginate_output`` delimiter on the
-machine you run this on (the RTX/GPU box). pdfplumber stays as a no-dep fallback
-(``scripts/extract_tables.py``); this Marker pass supersedes it.
+**Marker is version-pinned** (``config.MARKER_VERSION``) — it was not, and marker-pdf
+2.0.0 made the whole runner unrunnable here without a Docker daemon or ``llama-server``
+(KI-42). Re-confirm the ``--paginate_output`` delimiter whenever that pin moves.
+pdfplumber stays as a no-dep fallback (``scripts/extract_tables.py``); this Marker pass
+supersedes it.
 
 Usage:
     python -m scripts.extract_tables_marker                  # dry-run all PDFs
@@ -48,7 +50,11 @@ from doc_assistant.ingest.tables_marker import (
     splice_tables_inline,
     strip_pdfplumber_block,
 )
-from scripts.eval_marker_tables import _marker_command, _marker_to_markdown
+from scripts.eval_marker_tables import (
+    MarkerUnavailableError,
+    _marker_command,
+    _marker_to_markdown,
+)
 from scripts.extract_tables import _resolve_cache_path, _resolve_pdf_path
 
 if sys.platform == "win32" and hasattr(sys.stdout, "reconfigure"):
@@ -86,6 +92,10 @@ def _run_one(
     out_dir.mkdir(parents=True, exist_ok=True)
     try:
         marker_md = _marker_to_markdown(pdf_path, pages, out_dir, paginate=True)
+    except MarkerUnavailableError:
+        # Deliberately NOT swallowed into a status row: Marker being unrunnable is one
+        # fact about the machine, not 97 facts about the documents (KI-42).
+        raise
     except Exception as e:
         return {**row, "status": "error", "note": f"{type(e).__name__}: {e}"}
 
@@ -117,10 +127,18 @@ def _format_report(rows: list[dict[str, object]]) -> str:
         f"{'filename':<55} {'status':<11} {'tables':>6} note",
         "-" * 76,
     ]
-    for r in sorted(rows, key=lambda x: (-int(x["tables"]), str(x["filename"]))):
+
+    # Errors first, and never truncated. Sorting by table count buried every failure
+    # below every success, and the 30-char note cut the cause off mid-word — between
+    # them a total outage was unreadable in a 97-row report (KI-42).
+    def _rank(r: dict[str, object]) -> tuple[int, int, str]:
+        return (0 if r["status"] == "error" else 1, -int(r["tables"]), str(r["filename"]))
+
+    for r in sorted(rows, key=_rank):
+        note = str(r["note"])
         out.append(
-            f"{str(r['filename'])[:54]:<55} {r['status']!s:<11} "
-            f"{int(r['tables']):>6} {str(r['note'])[:30]}"
+            f"{str(r['filename'])[:54]:<55} {r['status']!s:<11} {int(r['tables']):>6} "
+            f"{note if r['status'] == 'error' else note[:30]}"
         )
     return "\n".join(out)
 
@@ -163,13 +181,23 @@ def main() -> int:
         f"(apply={args.apply}, force={args.force}, workers={args.workers})..."
     )
     rows: list[dict[str, object]] = []
-    with ThreadPoolExecutor(max_workers=max(1, args.workers)) as pool:
-        futures = [
-            pool.submit(_run_one, fn, sc, so, apply=args.apply, force=args.force)
-            for fn, sc, so in docs
-        ]
-        for fut in as_completed(futures):
-            rows.append(fut.result())
+    try:
+        with ThreadPoolExecutor(max_workers=max(1, args.workers)) as pool:
+            futures = [
+                pool.submit(_run_one, fn, sc, so, apply=args.apply, force=args.force)
+                for fn, sc, so in docs
+            ]
+            for fut in as_completed(futures):
+                rows.append(fut.result())
+    except MarkerUnavailableError as e:
+        print(f"\nMarker cannot run on this machine — stopping after {len(rows)} document(s).")
+        print(f"  {e}")
+        print(
+            "\nNothing was left half-written: the splice only happens after a successful\n"
+            "Marker run. Lower-fidelity fallback that does work:\n"
+            "  python -m scripts.extract_tables"
+        )
+        return 1
 
     print(_format_report(rows))
     print(

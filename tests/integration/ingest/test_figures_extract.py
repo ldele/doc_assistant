@@ -233,3 +233,63 @@ def test_load_figure_image_paths_returns_only_existing_files(env: SimpleNamespac
     paths = figures.load_figure_image_paths([pid, gid, cid])
     assert paths == {pid: str(real_png)}  # missing-file and caption-only excluded
     assert figures.load_figure_image_paths([]) == {}  # empty input → no DB hit
+
+
+# ============================================================
+# Page-scan ceiling + `--force` must be able to CLEAR (2026-08-08)
+# ============================================================
+# A scanned page is one full-page image, and with only an area floor every page of a
+# scan became a "figure": `hebb_1949.pdf` produced 365 for 365 pages. Adding the ceiling
+# exposed a second bug — `--force` was guarded by `and regions`, so a document that
+# legitimately drops to ZERO kept its stale rows forever, which is precisely what left
+# those 365 rows in place after the ceiling had correctly rejected all of them.
+
+
+def _build_page_scan_pdf(path: Path) -> None:
+    """A page that IS one image, with no caption — i.e. a scanned page."""
+    import pymupdf
+
+    doc = pymupdf.open()
+    page = doc.new_page(width=300, height=400)
+    pix = pymupdf.Pixmap(pymupdf.csRGB, pymupdf.IRect(0, 0, 300, 400))
+    pix.set_rect(pix.irect, (128, 128, 128))
+    page.insert_image(pymupdf.Rect(0, 0, 300, 400), stream=pix.tobytes("png"))
+    doc.save(str(path))
+    doc.close()
+
+
+def test_page_scan_yields_no_figures(env: SimpleNamespace, tmp_path: Path) -> None:
+    scan = tmp_path / "scan.pdf"
+    _build_page_scan_pdf(scan)
+    assert detect_figure_regions(str(scan)) == []
+
+
+def test_force_clears_rows_when_detection_drops_to_zero(
+    env: SimpleNamespace, tmp_path: Path
+) -> None:
+    doc_id = _seed_document(env.pdf)
+    # 1. a real figure is detected and persisted
+    row = _run(doc_id, env.pdf, apply=True, force=False)
+    assert row["figures"] == 1
+    assert len(_get_figures(doc_id)) == 1
+
+    # 2. the same document now yields nothing (here: it is a page scan). Before the fix
+    #    the runner reported "no-figures" while the old row silently survived.
+    scan = tmp_path / "scan.pdf"
+    _build_page_scan_pdf(scan)
+    cleared = _run(doc_id, scan, apply=True, force=True)
+    assert cleared["status"] == "no-figures"
+    assert cleared["note"] == "cleared (0 figures)"
+    assert _get_figures(doc_id) == [], "stale figure rows survived a --force re-run"
+
+
+def test_without_force_a_zero_detection_leaves_rows_alone(
+    env: SimpleNamespace, tmp_path: Path
+) -> None:
+    # The clear is `--force`-only: a plain re-run must stay idempotent and non-destructive.
+    doc_id = _seed_document(env.pdf)
+    _run(doc_id, env.pdf, apply=True, force=False)
+    scan = tmp_path / "scan.pdf"
+    _build_page_scan_pdf(scan)
+    _run(doc_id, scan, apply=True, force=False)
+    assert len(_get_figures(doc_id)) == 1

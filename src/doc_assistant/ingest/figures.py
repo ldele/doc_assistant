@@ -39,6 +39,7 @@ from pydantic import BaseModel, Field
 from doc_assistant.config import (
     FIGURE_CAPTION_DESC_MIN_CHARS,
     FIGURE_DIR,
+    FIGURE_MAX_AREA_FRACTION,
     FIGURE_MIN_AREA_FRACTION,
 )
 
@@ -264,6 +265,32 @@ def _page_geometry(page: object) -> tuple[list[BBox], list[BBox], BBox]:
     return image_bboxes, drawing_rects, page_bbox
 
 
+def is_page_scan(bbox: BBox | None, page_bbox: BBox, *, caption: str | None) -> bool:
+    """True when this region is the *page itself* rather than a figure on it.
+
+    A scanned document is one full-page image per page. With only an area **floor**
+    (``FIGURE_MIN_AREA_FRACTION``) every such page qualified as a figure:
+    ``hebb_1949.pdf`` yielded 365 figures for 365 pages, and 46% of the corpus's figure
+    rows were page scans (measured 2026-08-08).
+
+    **The caption is the discriminator, not the area alone.** A genuine full-page plate
+    carries a caption; a scanned page has no text layer, so there is no caption to
+    pair. That keeps the 109 real full-page figures this corpus does contain, instead
+    of trading one systematic error for another.
+
+    Caption-only regions (``bbox is None``) are never page scans — they exist only
+    because a caption was found.
+    """
+    if bbox is None:
+        return False
+    if caption is not None and caption.strip():
+        return False
+    page_area = _area(page_bbox)
+    if page_area <= 0:
+        return False
+    return (_area(bbox) / page_area) >= FIGURE_MAX_AREA_FRACTION
+
+
 def detect_figure_regions(pdf_path: str) -> list[FigureRegion]:
     """Detect figure regions across a PDF, paired with captions. Impure.
 
@@ -304,6 +331,8 @@ def detect_figure_regions(pdf_path: str) -> list[FigureRegion]:
                     if pair is not None:
                         caption, caption_bbox = pair
                         remaining.remove(pair)
+                if is_page_scan(bbox, page_bbox, caption=caption):
+                    continue
                 out.append(
                     FigureRegion(
                         page=page_no,

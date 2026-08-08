@@ -11,6 +11,118 @@ Format: What changed | Why | Rejected alternatives | What it opens
 > (moved verbatim 2026-07-21). This file keeps 2026-07-15 onward.
 
 ---
+## 2026-08-08 (5) — the figure pipeline was wrong in three independent ways; 45 rows → 962 real ones
+
+**What changed.** `config.FIGURE_MAX_AREA_FRACTION = 0.85` + `figures.is_page_scan` (a page-sized
+region with no caption is the page, not a figure); `extract_figures`'s `--force` can now **clear** a
+document to zero instead of only replacing. 20 unit tests + 3 integration tests. **KI-43 filed** for
+the third fault, which needs a decision rather than a patch.
+
+**Why.** The user reported the image pipeline "not working well at all". The `figures` table read
+**0 rows**. It had held 45. A re-derive produced 1522. So it had been running at a few percent of
+its true size, and 46% of what it *did* produce was not figures.
+
+**Fault 1 — silent data loss (KI-43, open).** `document_id = _existing_document_id(h) or str(uuid4())`
+keys identity on the hash of the **extracted markdown**. Any extraction change mints a new id and
+orphans every id-keyed sidecar. Measured: 11 of 97 documents changed id across the chunking sweep,
+and **all 10 that owned figures were among them** — not coincidence, because the 2026-08-07
+text-layer fallback fires on exactly the image-heavy documents. `chunk_epistemics` 743 → 445,
+`concept_presence` 66 → 31. The comment above that line claims figures stay linked; the table-splice
+runner's docstring concedes the opposite. **The project's own table splice triggers it.**
+
+**Fault 2 — a scanned page is not a figure.** `select_region_bboxes` had an area floor and no
+ceiling, so a scan (one full-page image per page) yielded one "figure" per page: `hebb_1949.pdf`
+gave **365 for 365 pages**, exactly 1.00/page, zero captions.
+
+**The cut is structural, and the distribution says so.** Area-fraction over 1452 rows is bimodal
+with an effectively empty band: **783 below 0.7, one row in [0.7, 0.9), 669 at/above 0.9** — cuts at
+0.80 / 0.85 / 0.90 partition it identically, so 0.85 is the middle of a gap rather than a tuned
+number (the same shape as `_TEXT_LAYER_KEPT_MIN`). The two sides are different populations:
+**51%** captioned below, **16%** above, and only **7%** in the top bucket. **The caption is the
+discriminator, not the area** — a genuine full-page plate has a caption, a scan has no text layer so
+it has none. That keeps the 109 real full-page figures instead of trading one systematic error for
+another.
+
+**Fault 3 — `--force` could replace but not remove.** Found only because fixing fault 2 exposed it:
+`hebb_1949` still read 365 rows *after* the ceiling correctly rejected all of them, because the
+persist call was guarded by `and regions`. A document that legitimately drops to zero kept its rows
+forever, and the runner printed `no-figures` while the database said 365. **The runner's own output
+was right and nothing reconciled it against stored state** — the same shape as KI-42.
+
+**Result, and it is validated rather than counted.** 45 → **962 figures across 92 documents**;
+captioned rate **37% → 59%**; per-doc max 365 → 105, median 7; 936 PNGs, **0 rows pointing at a
+missing file**. `hebb_1949` and `middleton-2001` correctly hold zero. Spot-checked crops against
+their captions — e.g. `nihms-66884.pdf` p30 is a cleanly-bounded two-panel schematic matching
+"Fig. 3. A schematic model for generating goal directed movements".
+
+**Rejected.**
+- **Restoring the 45 rows from the pre-sweep backup.** They were stale *and* mostly page scans;
+  figures are derived data, so re-deriving is both correct and cheaper than reconciling ids.
+- **Rejecting page-sized regions on area alone.** Simpler, and it would have destroyed the 109
+  genuine full-page plates — swapping a false-positive problem for a false-negative one.
+- **Fixing KI-43 in place** by carrying the id forward on a filename match. It is the right fix and
+  it changes the locked ingest path plus every id-keyed sidecar; that wants an ADR, not an edit made
+  while fixing something else.
+- **Tuning the ceiling per corpus.** The empty band is the justification; a value chosen to make
+  this library's numbers look right would be exactly the corpus-tuned constant the robustness
+  contract forbids.
+
+**What it opens.** Figures are re-derived but **not yet described** — `describe_figures` (the paid
+VLM pass) has never run against this set, so `vlm_description` is empty and Feature 4c's
+`chunk_type='figure'` chunks do not exist yet. That is the next step and it costs money. KI-43
+remains the standing hazard: **until it is fixed, re-run `extract_figures --apply` after any
+extraction change, PDF-library upgrade, or table splice.**
+
+---
+## 2026-08-08 (4) — Marker is pinned and its failures are legible (KI-42 fixed); RG-025 closes on the comparison it unblocked
+
+**What changed.** `config.MARKER_VERSION = "1.10.2"`, used as `uvx --from marker-pdf==<version>`;
+a new `MarkerUnavailableError` that `extract_tables_marker` refuses to swallow; and a report that
+sorts errors **first** with their cause **untruncated**. 10 tests in
+`tests/unit/test_marker_availability.py`. RG-025 closed, its baseline updated with the head-to-head.
+
+**Why.** KI-42: `uvx --from marker-pdf` was unpinned, so it resolved to **marker-pdf 2.0.0**, whose
+surya routes inference through a spawned backend — `vllm` wants a running Docker daemon (auto-picked
+on an NVIDIA GPU), `llamacpp` wants an uninstalled `llama-server`. Both die at the *layout* stage,
+so the shipped table path did not run on this machine at all.
+
+**The invisibility was the worse half, and it had three independent causes.** The availability guard
+checked that `uvx` **exists** — it does; the failure is two layers deeper. Every failure was then
+swallowed into a per-document status row, its note **clamped to 30 characters** (cutting
+`RuntimeError: marker_single e|xited...` mid-word), and error rows sorted by table count, which put
+them **below every success** in a 97-row report. A total outage was formatted to look like scattered
+per-document noise.
+
+**The fix rests on one asymmetry:** *a document with no tables still exits 0*. So a non-zero exit is
+never a fact about the PDF — it is a fact about the machine, and the run stops and says so instead
+of producing 96 more useless rows.
+
+**Verified end to end, not just in tests:** the runner found **7 tables** in `rag_lewis_2020.pdf` in
+40 s on the pinned version.
+
+**RG-025 closed with the comparison this unblocked.** Tesseract+Ghostscript vs Marker 1.10.2 on the
+same 3 pages: **85.8% vs 85.5%** word-like — a tie on accuracy, at **~1/30th** the runtime (≈1.4 s
+vs ≈40 s per page) and without a model stack. **ADR-039 option 1 confirmed**, and its
+dependency-surface argument is stronger than when it was made, since Marker's runnability turned out
+to be version-fragile. Marker's one real edge is **reflow**: Tesseract leaves **88 hyphen-split
+words** across the document (`cortico-\nspinal` will not match a query for "corticospinal"), so
+**de-hyphenation is now the named quality task the OCR sidecar inherits** — a deterministic
+post-process, not a second engine.
+
+**Rejected.**
+- **A cheap capability probe** (`marker_single --help`) as the guard. It would have passed on 2.0.0 —
+  the break is at model-spawn time. A real probe must run Marker on a page, which costs ~2 min; the
+  pin plus fail-fast gets the same protection for free.
+- **Starting Docker / installing llama.cpp** to make 2.0.0 work. Multi-GB system installs on the
+  user's machine to satisfy a comparison, when the last working release is one pin away.
+- **Floating the pin** (`>=1.10,<2`). The whole defect is that an unpinned escape hatch changes
+  without a commit; a range is a smaller version of the same bug.
+
+**What it opens.** The table path runs again, so a `--apply` splice pass across the corpus is now
+possible — **but note it rewrites the markdown cache, which changes `doc_hash`, which orphans
+id-keyed sidecars (KI-43)**. Re-run the enrichment chain after any splice.
+
+---
 ## 2026-08-08 (3) — OCR of the one true scan is good enough to retrieve (RG-025, 3 of 4); Marker turns out to be unrunnable (KI-42)
 
 **What changed.** Measurement only, no source change. New baseline

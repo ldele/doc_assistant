@@ -32,7 +32,7 @@ from pathlib import Path
 
 from sqlalchemy import select
 
-from doc_assistant.config import DATA_PATH, MARKER_PYTHON
+from doc_assistant.config import DATA_PATH, MARKER_PYTHON, MARKER_VERSION
 from doc_assistant.db.models import Document
 from doc_assistant.db.session import session_scope
 from doc_assistant.ingest.regions import analyze_pages
@@ -49,20 +49,44 @@ OUT_DIR = DATA_PATH / "tables_debug"
 _MARKER_TIMEOUT_S = 3600
 
 
+class MarkerUnavailableError(RuntimeError):
+    """Marker itself could not run — a *systemic* failure, not a per-document one.
+
+    Kept distinct from every other error because the two need opposite handling: a
+    document with no tables still exits 0, so a **non-zero exit means the tool is
+    broken here**, and grinding through the remaining documents produces one useless
+    row each instead of one legible cause (KI-42 — that is exactly how a total Marker
+    outage read as 97 unrelated per-document errors, each truncated to 30 characters
+    in the report).
+    """
+
+
 def _marker_command() -> list[str] | None:
     """Resolve how to invoke Marker *out-of-process*.
 
     Marker cannot co-resolve with our pinned torch/transformers stack, so it is
     never imported in-process (see the module docstring). Prefer a
-    ``marker_single`` already on PATH; otherwise fetch it on demand via ``uvx``.
-    Returns the command prefix, or ``None`` if neither is available.
+    ``marker_single`` already on PATH; otherwise fetch the **pinned** version on
+    demand via ``uvx``.
+
+    Returns the command prefix, or ``None`` if neither is available. Note what this
+    check can and cannot tell you: it proves a *launcher* exists, not that Marker
+    runs. A guard that tests the launcher reports green on a broken path — see
+    :class:`MarkerUnavailableError`, which is what actually catches that.
     """
     local = shutil.which("marker_single")
     if local is not None:
         return [local]
     uvx = shutil.which("uvx")
     if uvx is not None:
-        return [uvx, "--python", MARKER_PYTHON, "--from", "marker-pdf", "marker_single"]
+        return [
+            uvx,
+            "--python",
+            MARKER_PYTHON,
+            "--from",
+            f"marker-pdf=={MARKER_VERSION}",
+            "marker_single",
+        ]
     return None
 
 
@@ -81,12 +105,12 @@ def _marker_to_markdown(
     Marker wrote; raises ``RuntimeError`` if Marker is unavailable or fails.
 
     ``paginate`` adds ``--paginate_output`` so per-page boundaries survive (the 4a
-    ingest path needs them for page attribution). NOTE: confirm the flag name
-    against the pinned marker-pdf version at build time (see the 4a spec).
+    ingest path needs them for page attribution). The flag name is confirmed against
+    ``config.MARKER_VERSION`` — a real pin as of KI-42; re-confirm it when that moves.
     """
     base = _marker_command()
     if base is None:
-        raise RuntimeError("neither 'marker_single' nor 'uvx' found on PATH")
+        raise MarkerUnavailableError("neither 'marker_single' nor 'uvx' found on PATH")
     marker_out = out_dir / "marker_out"
     marker_out.mkdir(parents=True, exist_ok=True)
     cmd = [
@@ -104,7 +128,13 @@ def _marker_to_markdown(
     print("  $ " + " ".join(cmd))
     proc = subprocess.run(cmd, timeout=_MARKER_TIMEOUT_S, check=False)
     if proc.returncode != 0:
-        raise RuntimeError(f"marker_single exited with code {proc.returncode}")
+        # A document with nothing to find still exits 0, so a non-zero exit is Marker
+        # failing, not this PDF being unusual. Systemic ⇒ stop the run (KI-42).
+        raise MarkerUnavailableError(
+            f"marker_single exited with code {proc.returncode} — its traceback is in the "
+            f"output above. If this happens on the first document it is Marker that cannot "
+            f"run here, not the PDF: check that marker-pdf=={MARKER_VERSION} still resolves."
+        )
     md_files = sorted(marker_out.glob("**/*.md"))
     if not md_files:
         raise RuntimeError(f"Marker produced no markdown under {marker_out}")

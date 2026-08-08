@@ -176,12 +176,17 @@ def _run_one(
         row["captioned"] = sum(1 for r in regions if r.caption)
         if not regions:
             row["status"] = "no-figures"
-        if apply and regions:
+        # `and regions` used to guard this call, so a document that legitimately drops to
+        # **zero** figures kept its old rows forever — `--force` never reached its delete.
+        # That is exactly how `hebb_1949.pdf` held 365 stale page-scan rows *after* the
+        # page-scan ceiling correctly rejected all of them. --force must be able to
+        # remove, not only replace.
+        if apply and (regions or force):
             rendered = _apply_figures(
                 document_id, doc_hash, pdf_path, regions, dpi=dpi, force=force
             )
             row["rendered"] = rendered
-            row["note"] = "written"
+            row["note"] = "written" if regions else "cleared (0 figures)"
     except Exception as e:
         row["status"] = "error"
         row["note"] = f"{type(e).__name__}: {e}"

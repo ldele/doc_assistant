@@ -20,7 +20,23 @@ Cost & safety
   sample, or stage a smaller library).
 * ``--with-llm-judge`` calls the Anthropic API once per case per config —
   budget before enabling.
-* ``--dry-run`` prints the plan (configs + commands) without touching anything.
+* ``--dry-run`` prints the plan (configs + commands) without ingesting or evaluating. It
+  **does** run the preflight below, which is the cheap way to prove a sweep is wired before
+  paying a GPU-day for it.
+
+Preflight — why this sweep refuses to start (KI-41 / RG-026)
+------------------------------------------------------------
+The grid travels to the ingest subprocess through the environment, and until 2026-08-07
+``config.load_dotenv(override=True)`` overwrote all four variables from ``.env`` — which
+``.env.example`` ships uncommented — before ingest read them. The 2026-06-06 sweep therefore
+re-embedded the **same** configuration six times and compared it with itself. Nothing raised,
+nothing logged, and the run record held no chunk sizes to contradict the note; it cost ~6 full
+corpus re-embeds and stood as the evidence for a locked setting for two months.
+
+So before the first re-embed, every arm is asked what it would *actually* run under, and the
+sweep stops unless each arm gets the settings it asked for and no two arms are the same
+experiment. A driver whose variable is silently ignored fails in the "no effect" direction,
+which reads as a confirmed default — the one failure a negative result cannot survive.
 
 Usage::
 
@@ -32,10 +48,13 @@ Usage::
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import subprocess
 import sys
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from typing import Any
 
 
 @dataclass(frozen=True)
@@ -55,13 +74,29 @@ class ChunkConfig:
         )
 
     @property
-    def env(self) -> dict[str, str]:
+    def asked(self) -> dict[str, int]:
+        """What this arm intends to vary, keyed as ``run_defining_settings`` keys.
+
+        Named in the recorded vocabulary rather than the environment's so the preflight can
+        compare intent against the run record directly, with no translation table to drift.
+        """
         return {
-            "PARENT_CHUNK_SIZE": str(self.parent_size),
-            "PARENT_CHUNK_OVERLAP": str(self.parent_overlap),
-            "CHILD_CHUNK_SIZE": str(self.child_size),
-            "CHILD_CHUNK_OVERLAP": str(self.child_overlap),
+            "parent_chunk_size": self.parent_size,
+            "parent_chunk_overlap": self.parent_overlap,
+            "child_chunk_size": self.child_size,
+            "child_chunk_overlap": self.child_overlap,
         }
+
+    @property
+    def env(self) -> dict[str, str]:
+        """The subprocess environment carrying :attr:`asked` into ingest and eval.
+
+        ``config.py`` reads these as the upper-cased setting names, so that is how they are
+        derived — one source of truth. If the two naming schemes ever diverge, the arm sets a
+        variable nothing reads and the preflight says so on the next run: its ``effective``
+        comes back at the default while ``asked`` did not change.
+        """
+        return {key.upper(): str(value) for key, value in self.asked.items()}
 
 
 # Default grid. Index 0 is the current locked default (the baseline to beat).
@@ -74,6 +109,108 @@ DEFAULT_GRID: list[ChunkConfig] = [
     ChunkConfig(3000, 300, 400, 50),  # larger parent — broader LLM context
     ChunkConfig(1000, 100, 256, 32),  # small/small — precision regime
 ]
+
+
+# The preflight probe. It calls ``run_defining_settings`` — the very function that writes
+# ``config_json`` on every eval run — rather than reading the config constants itself. A
+# verification gate must call the contract, never restate it: a restated gate can disagree with
+# the thing it guards and be believed anyway (the RG-012 false failure, 2026-08-07).
+_PROBE = (
+    "import json;"
+    "from doc_assistant.eval.run_settings import run_defining_settings;"
+    "print(json.dumps(run_defining_settings()))"
+)
+
+
+def probe_settings(env: Mapping[str, str]) -> dict[str, Any]:
+    """Ask a subprocess under ``env`` which run-defining settings it would use.
+
+    A subprocess, not an in-process read, because that *is* the channel under test: ``config``
+    resolves the environment once at import, and the sweep's ingest and eval are subprocesses.
+    Reading the parent's own already-imported config would test nothing.
+
+    Raises ``RuntimeError`` if the probe cannot answer — never a default, never a guess. A
+    preflight that cannot resolve the settings has not shown they are right.
+    """
+    proc = subprocess.run(
+        [sys.executable, "-c", _PROBE],
+        env=dict(env),
+        capture_output=True,
+        text=True,
+        encoding="utf-8",  # Windows: pipes decode as cp1252 otherwise (non-negotiable #9)
+        check=False,
+    )
+    if proc.returncode != 0:
+        detail = (proc.stderr or "").strip().splitlines()
+        raise RuntimeError(detail[-1] if detail else f"probe exited {proc.returncode}")
+    try:
+        settings = json.loads(proc.stdout)
+    except json.JSONDecodeError as e:
+        raise RuntimeError(f"probe printed no settings JSON: {proc.stdout.strip()[:120]!r}") from e
+    if not isinstance(settings, dict):
+        raise RuntimeError(f"probe returned {type(settings).__name__}, expected an object")
+    return settings
+
+
+def ineffective_settings(cfg: ChunkConfig, effective: Mapping[str, Any]) -> list[str]:
+    """The settings this arm asked for that its run would not actually use.
+
+    Empty means the grid reaches the code. Non-empty is KI-41 exactly: the arm sets the
+    variable, and something between the variable and ``config`` wins.
+    """
+    return [
+        f"{key}: asked {asked}, effective {effective.get(key, '<not recorded>')!r}"
+        for key, asked in cfg.asked.items()
+        if effective.get(key) != asked
+    ]
+
+
+def duplicate_arms(resolved: Sequence[tuple[str, Mapping[str, Any]]]) -> list[tuple[str, str]]:
+    """Pairs of arms that would record identical run-defining settings.
+
+    Compares the **whole** snapshot rather than the chunk sizes alone: two arms recording the
+    same settings are indistinguishable in ``data/eval.duckdb`` whatever made them so, and a
+    difference the record cannot show is a difference the comparison cannot use.
+    """
+    first_seen: dict[str, str] = {}
+    duplicates: list[tuple[str, str]] = []
+    for note, settings in resolved:
+        fingerprint = json.dumps(settings, sort_keys=True, default=str)
+        first = first_seen.setdefault(fingerprint, note)
+        if first != note:
+            duplicates.append((first, note))
+    return duplicates
+
+
+def preflight(grid: Sequence[ChunkConfig]) -> list[str]:
+    """Check the grid reaches the code, before a single corpus is re-embedded.
+
+    Returns the problems found; empty means the sweep is safe to run.
+    """
+    print(f"Preflight: resolving what each of the {len(grid)} configs would actually run under.")
+    problems: list[str] = []
+    resolved: list[tuple[str, Mapping[str, Any]]] = []
+    for cfg in grid:
+        try:
+            effective = probe_settings({**os.environ, **cfg.env})
+        except RuntimeError as e:
+            problems.append(f"{cfg.note}: could not resolve its settings - {e}")
+            print(f"  [ERROR ] {cfg.note}")
+            continue
+        resolved.append((cfg.note, effective))
+        mismatches = ineffective_settings(cfg, effective)
+        problems.extend(f"{cfg.note} -> {m}" for m in mismatches)
+        print(
+            f"  [{'OK' if not mismatches else 'IGNORED':6}] effective "
+            f"parent={effective.get('parent_chunk_size')}/"
+            f"{effective.get('parent_chunk_overlap')} "
+            f"child={effective.get('child_chunk_size')}/{effective.get('child_chunk_overlap')}"
+        )
+    problems.extend(
+        f"same experiment twice: {first!r} and {second!r} record identical settings"
+        for first, second in duplicate_arms(resolved)
+    )
+    return problems
 
 
 def _run(cmd: list[str], env: dict[str, str], *, dry_run: bool) -> int:
@@ -126,6 +263,22 @@ def main() -> int:
     grid = DEFAULT_GRID
     print(f"Chunking sweep: {len(grid)} configs, --repeat {args.repeat}")
     print("Each config = full re-ingest (re-embed) + eval. This is slow by design.\n")
+
+    # Before anything is re-embedded, and in --dry-run too: a sweep whose grid does not reach
+    # the code produces a confident negative result about a configuration it never ran (KI-41).
+    problems = preflight(grid)
+    if problems:
+        print("\nPreflight FAILED. Nothing was ingested or evaluated.")
+        for problem in problems:
+            print(f"  - {problem}")
+        print(
+            "\nAn arm whose setting is overwritten measures the control, so the sweep would\n"
+            "report 'no effect' for a configuration it never ran. Check the variables above\n"
+            "against .env, which takes effect for any the environment leaves empty and which\n"
+            ".env.example ships with the chunk sizes uncommented (KI-38/KI-41)."
+        )
+        return 1
+    print("Preflight OK: every config reaches the code, and no two are the same experiment.\n")
 
     failures: list[str] = []
     for i, cfg in enumerate(grid, start=1):

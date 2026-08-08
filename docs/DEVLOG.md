@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-08-05 · class: append-only -->
+<!-- status: active · updated: 2026-08-08 · class: append-only -->
 
 # DEVLOG — doc_assistant
 
@@ -9,6 +9,62 @@ Format: What changed | Why | Rejected alternatives | What it opens
 
 > Entries **2026-07-14 and earlier** live in [`docs/archive/DEVLOG-archive-001.md`](archive/DEVLOG-archive-001.md)
 > (moved verbatim 2026-07-21). This file keeps 2026-07-15 onward.
+
+---
+## 2026-08-08 (1) — the chunking sweep now refuses to run a grid that does not reach the code (KI-41's first-run error)
+
+**What changed.** A preflight in `scripts/sweep_chunking.py`, run before the first re-embed and in
+`--dry-run` too. For each of the 6 arms it spawns the interpreter the sweep spawns, under that
+arm's environment, and asks what settings the run would actually use — then fails the whole sweep
+unless **(a)** every arm gets the four values it asked for and **(b)** no two arms resolve to
+identical run-defining settings. Exit 1, nothing ingested. New pure helpers `probe_settings` /
+`ineffective_settings` / `duplicate_arms` / `preflight`; 15 tests.
+
+**Why.** KI-41 / RG-026, which names this as the thing worth adding before the re-run itself: the
+2026-06-06 sweep drove its grid through `PARENT_CHUNK_SIZE` / `CHILD_CHUNK_SIZE`, `.env` overwrote
+them (KI-38), and six arms re-embedded the same corpus. It took ~6 corpus re-embeds and two months
+to notice, because **the failure direction was "no effect"** — which is indistinguishable from a
+confirmed default. The previous change made a run *record* what it ran; this one makes a sweep
+*check* it, before the GPU-day rather than after.
+
+**The probe calls the contract instead of restating it.** It runs
+`run_defining_settings()` — the same function that writes `config_json` on every eval run — so the
+gate and the record cannot disagree. That is the rule the RG-012 false failure earned on 2026-08-07
+(a gate that restated the citation contract more strictly than the app, and was believed). It also
+has to be a **subprocess**: `config` resolves the environment once at import, and the sweep's
+ingest and eval are subprocesses — reading the parent's own config would test nothing.
+
+**Verified against the real config module, not only fakes.** With an arm's variables arriving blank
+(`_load_env` treats empty as absent, so `.env` fills them — a live override path today), the
+preflight reports `parent_chunk_size: asked 3000, effective 2000` **and** flags the arm as the
+control's duplicate. Live on this box the full grid passes in ~4 s, all six distinct.
+
+**Audited the other driver while here, since RG-026 says the failure generalises.**
+`scripts/sweep_bm25_weight.py` is **clean** — it passes the weight in-process to
+`resolve_ensemble_weights()` and rebuilds only the `EnsembleRetriever`; no environment, no
+subprocess. It also already carries the property this preflight adds: `pre@5` moves across weights
+while `post@5` is flat, which is positive evidence that the instrument discriminates. The
+2026-07-03 negative result stands.
+
+**Rejected.**
+- **Checking distinctness only** (RG-026's literal wording). It catches the 6-identical-arms shape
+  but not a grid that resolves to six *wrong* values distinctly, and it can only report after the
+  arms have run. Comparing asked-vs-effective per arm is strictly stronger and available before
+  the first re-embed.
+- **A `--skip-preflight` escape hatch.** The failure this guards reads as a normal result, so the
+  moment skipping is available it will be skipped on the run that needed it. There is no
+  environment where the sweep can run but the probe cannot — the probe is the sweep's own
+  interpreter.
+- **Asserting post-hoc on `Store.run_config(run_id)`.** Correct and complementary, but it spends
+  two re-embeds before it can speak, and the point of the row is to spend nothing.
+- **Comparing only the chunk keys for duplicates.** Two arms recording the same *whole* snapshot
+  are the same experiment whatever made them so; a difference the record cannot show is a
+  difference the comparison cannot use.
+
+**What it opens.** RG-026's remaining item is now only the sweep itself (~a GPU-day, 6 configs,
+still the user's call) — and `--dry-run` is now the cheap proof it is wired first. The same
+asked-vs-effective check would fit any future driver that varies a setting through a channel it
+does not own; nothing enforces that on the next one but the note in `scripts/CLAUDE.md`.
 
 ---
 ## 2026-08-07 (6) — an eval run now records the settings that produced it (RG-026's precondition)

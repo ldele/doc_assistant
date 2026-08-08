@@ -24,6 +24,10 @@ Pattern: runners re-derive; they never mutate the chunk store) plus dev/build to
 - **Any new eval runner must build its store as `Store(db, settings_provider=run_defining_settings)`**
   — the harness cannot import app config (extractability, ADR-003 D8), so the wiring is the
   runner's job. A run that does not record what it swept cannot be audited (KI-41).
+- **A sweep that varies a setting through a channel it does not own must prove the setting arrived,
+  before it spends anything.** Copy `sweep_chunking.preflight`: resolve each arm in a subprocess
+  under that arm's environment via `run_defining_settings`, fail unless asked == effective and no
+  two arms match. Silent overwrite fails as "no effect", which reads as a confirmed default (KI-41).
 - Enrichment runners need host `data/` access — they no-op in a sandbox (KI-5).
 - Runners run as modules (`python -m scripts.<name>`) inside the uv venv (`just eval`, `just ingest`).
 

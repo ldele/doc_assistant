@@ -11,6 +11,65 @@ Format: What changed | Why | Rejected alternatives | What it opens
 > (moved verbatim 2026-07-21). This file keeps 2026-07-15 onward.
 
 ---
+## 2026-08-08 (2) — the chunk sizes are measured for the first time (RG-026 closed, KI-41 resolved)
+
+**What changed.** Two chunking sweeps, both self-audited, replacing the void 2026-06-06 run.
+New baselines `tests/eval/baselines/chunking_sweep_public_2026-08-08.md` (verified-10, paid
+`claude-haiku-4-5` + judge, 22 min) and `chunking_sweep_private_2026-08-08.md` (**97 docs / 35
+cases**, local `llama3.1:8b`, `--with-embedding`, ~3.5 h). `.claude/CONTEXT.md`'s locked row goes
+from ⚠ UNMEASURED to ✅ MEASURED; RG-026 closed; KI-41 resolved.
+
+**The audit, which is the point.** Each run recorded **6 distinct geometries** across its 18 runs
+(the void run: one geometry, six notes claiming otherwise), and on the paid run `token_input`
+spans **2529 → 7044** — parent 3000 reads 7044 against the control's 4627, +52%, exactly as the
+evidence-block size demands. That is the same instrument that convicted the old sweep, answering
+the other way.
+
+**The verdict: keep `2000/200 · 400/50`, now on evidence.** Nothing beats the control beyond its
+variance on either corpus. On the 35-case run it is the most balanced point in the grid — 2nd on
+retrieval, tied-1st on `contains_all`, 2nd on embedding — and no other config is top-two on more
+than one metric. **The defaults survived, which is what the void run also claimed; the difference
+is that this time the claim has an audit trail.**
+
+**The real finding is a trade-off, not a winner.** `citation_overlap` **stops saturating** on the
+private corpus (0.877–0.946, where the public 10 pinned it at 1.000 for every config) — a real
+corpus supplies the distractors that make retrieval measurable, so retrieval experiments belong
+there from now on. And it splits: **smaller child (256/32) retrieves best** (0.946 vs 0.936, at
+*zero* trial variance since retrieval is deterministic) while scoring **worst** on answers (0.734);
+**larger parent (3000/300) answers best** (0.785) at +52% tokens. Child = what gets retrieved,
+parent = what the model reads. The control is the balance point.
+
+**The confound I could not remove, stated rather than buried.** The private run's generator was
+`llama3.1:8b` (36% citation coverage vs Haiku's 81%, KI-36) — the user's cost choice. So
+`contains_all` there is measured through a weak model, and Haiku scored that same 256/32 child at
+0.919 (level with its control) where llama put it 0.04 down. **The small-child answer penalty may
+be a local-model artifact.** `citation_overlap` is immune (computed pre-generation) and is flagged
+in the baseline as the one number to trust.
+
+**Operational notes.** The public sweep ran in an **isolated data home** so the working library was
+never rebuilt — verified first, because `CHROMA_PATH` does *not* derive from `DATA_PATH` (a
+non-ASCII path relocates the store under `ProgramData`, the KI-11 fix). The private sweep did
+rebuild the live library six times; it was restored to the locked geometry afterwards (3m50s,
+97 docs, 0 errors, retrieval spot-checked). Its first config paid a full re-extraction — the first
+ingest since KI-40, so every cache entry lacked a `.fp` sidecar and was stale by definition.
+
+**Rejected.**
+- **Trusting the "GPU-day" estimate.** It predates the CUDA wheel; a full re-embed is ~2.1 min and
+  chunk sizes are not in the extraction fingerprint. Both sweeps together cost under 4 h.
+- **Running the private sweep with the LLM judge on Ollama.** `llama3.1:8b`'s ratings are known
+  flat (~0.8, non-discriminating), so it would have roughly doubled a 3.5 h run for a signal that
+  would have to be discounted. `--with-embedding` is free and local, and was used instead.
+- **Backfilling a cost verdict from the token win.** `1000/100 · 256/32` at −45% input tokens is
+  the most tempting result here, and it is exactly the one the weak-generator confound sits on.
+  Recorded as a lead with a named successor experiment, not taken.
+
+**What it opens.** The successor experiment is specified in the private baseline: re-run configs
+1/2/5/6 on the 97-doc corpus with the **shipped Haiku generator** + judge, which isolates the
+confound and is what would let the 45% cost win be banked. Also open: `citation_overlap` saturating
+on the public set means the public regime cannot rank retrieval changes at all — worth saying
+wherever that corpus is offered as the eval.
+
+---
 ## 2026-08-08 (1) — the chunking sweep now refuses to run a grid that does not reach the code (KI-41's first-run error)
 
 **What changed.** A preflight in `scripts/sweep_chunking.py`, run before the first re-embed and in

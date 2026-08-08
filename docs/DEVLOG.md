@@ -11,6 +11,49 @@ Format: What changed | Why | Rejected alternatives | What it opens
 > (moved verbatim 2026-07-21). This file keeps 2026-07-15 onward.
 
 ---
+## 2026-08-08 (6) — ADR-042: a document's identity is its source, not its extraction (KI-43's decision)
+
+**What changed.** `docs/decisions/ADR-042-document-identity-is-the-source-not-its-extraction.md`
+(**proposed**) + its row in the living index + **RG-027** in `.claude/RIGOR_TODO.md`. No code.
+
+**Why.** KI-43 is a design fault, not a bug with a patch: `document_id` is resolved from the hash of
+the **extracted markdown**, so any extraction change mints a new id and orphans every id-keyed
+sidecar. Fixing it in place would have edited the locked ingest path and every sidecar's key while
+the session was busy with something else.
+
+**The framing that decided it:** `doc_hash` is answering two questions with opposite requirements —
+*"is my extraction current?"* (must change when extraction changes) and *"which document is this?"*
+(must not). No single hash can do both, so the fix is to separate them: identity becomes the
+**source file's bytes**; `doc_hash` keeps the cache/version job.
+
+**A second observation sharpened it into something more useful than a re-key.** `extract_figures`
+opens the **PDF** — markdown is not an input — so keying figures to the extraction output was a
+category error, not a fragile choice. But that is not true of every sidecar: `chunk_epistemics` and
+`concept_presence` are keyed to chunk indices and *should* die when chunking changes. So the ADR
+splits sidecars into **source-derived** (must survive) and **extraction-derived** (invalidate
+**loudly**). Deleting the latter is not the error; deleting them silently is.
+
+**Rejected** (each recorded in full in the ADR):
+- **Identity = source path.** Cheapest, and it regresses the move/rename property the current design
+  deliberately bought — *and* is unsafe in the other direction: replacing a file at the same path
+  inherits the previous document's sidecars, turning a loud loss into a quiet wrongness.
+- **Keep content identity, migrate sidecar rows on change.** Correctness would depend on a
+  hand-maintained list of id-keyed tables, so the next sidecar anyone adds is silently omitted — the
+  same class of defect that produced this one.
+- **Detect-and-warn only.** Adopted as an **interim, not an alternative**: it makes the loss visible
+  without preventing it, and it stays useful after the migration because it verifies the invariant
+  the ADR asserts rather than assuming it.
+
+**Status is honest: `proposed`, not accepted.** The direction is settled and the defect is measured,
+but the migration is unbuilt and its backfill unvalidated — nothing yet shows that assigning a
+`source_hash` to 97 existing documents preserves every sidecar link, nor that the source file is
+always available and stable to hash. Both are ⚠-marked in the ADR's Confidence section and owned by
+**RG-027**.
+
+**What it opens.** RG-027 is the gate. Until it closes, the standing rule stands: **re-run
+`extract_figures --apply` after any extraction change, PDF-library upgrade, or table splice.**
+
+---
 ## 2026-08-08 (5) — the figure pipeline was wrong in three independent ways; 45 rows → 962 real ones
 
 **What changed.** `config.FIGURE_MAX_AREA_FRACTION = 0.85` + `figures.is_page_scan` (a page-sized

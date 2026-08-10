@@ -11,6 +11,66 @@ Format: What changed | Why | Rejected alternatives | What it opens
 > (moved verbatim 2026-07-21). This file keeps 2026-07-15 onward.
 
 ---
+## 2026-08-10 — the Library document view is five ordered blocks, chunks cost nothing until asked for, and the References block's links had to be verified before they could ship
+
+**What changed.** The document view (`LibraryBrowser.svelte`) is now **Metadata → Connections →
+Chunks → Figures → References**, each with a heading, an anchor, and a sticky nav strip that jumps
+between them. Chunks is **collapsed by default and not fetched until opened**. A new
+`GET /api/library/documents/{id}/references` + `DocReferences.svelte` render the paper's own
+bibliography at the foot of the view, with the entries already in the library as links. The
+outgoing half of the connections bundle (`cites`, `external_refs`, `external_total`) moved into
+that endpoint and is gone from `DocConnections`.
+
+**Why (user feedback, 2026-08-09).** Two rows: the organisation was liked but *"the structure is
+not legible"*, and a references block was wanted at the bottom where *"a reference already in the
+library is a link"*. The chunk collapse was raised as a **performance** concern, and it is one —
+measured here, the detail payload is a **median 170 KB and up to 1.85 MB** per document (663
+parent blocks + 2,608 children for `hebb_1949.pdf`), all of it rendered eagerly on open. Live on a
+142-block paper: opening the document is **924 DOM nodes**, expanding Chunks adds **2,984**, and
+collapsing returns to 924. Opening a document now transfers no chunk text at all — the header
+reads the summary the Library list already holds.
+
+**The part that nearly shipped broken.** The block's headline feature is the link, so the links
+were measured first. **13 of the 16 stored resolutions in this library are false** — one
+document's reference *"A review of graph neural networks and pretrained language models"* pointed
+at a paper on axonal projections in mouse whisker cortex. Cause: `match_to_library`'s second rule
+matches **first-author surname + year with no title comparison**, and resolution is computed only
+at insert time, so it also never re-runs (**KI-45**, filed with both halves and the fix sketch).
+In a research-integrity app a false "you own this paper" is worse than no link at all.
+
+**So the read side verifies what the write side asserted** (`resolution_is_credible`): exact DOI,
+or title ratio ≥ `FUZZY_TITLE_THRESHOLD` (the matcher's own 0.80, now a shared constant), or one
+normalised title contained whole in the other. Corpus-wide that takes the presented links from
+**16 to 4**, and all four check out by eye. A rejected resolution keeps its place in the list and
+loses only its link — the paper does cite it.
+
+**Containment is why the threshold did not have to move.** A strict ratio also rejected a *true*
+match: the regex prefixes titles with the tail of the author list (*"A., Lopes, G., … Real-time,
+low-latency closed-loop feedback …"*), scoring 0.78. Containment recovered exactly that one and
+admitted **none** of the 12 false links, which score 0.11-0.37 and contain nothing. The
+populations are cleanly separated, which is the evidence that the defect is upstream and not a
+threshold to tune.
+
+**Two more things the real data showed, both fixed.** `target_year` carries 5 impossible values
+(2034-2089, lifted out of identifiers) — harmless at 0.1% of 4,282, except that sorting
+newest-first put **every one of them at the top of the block**, so `plausible_year` drops what
+cannot be a publication year and they sink instead. And a `scrollIntoView({behavior:'smooth'})`
+across the ~76,000 px of an expanded document is an animation, not a jump; it is instant now.
+
+**Rejected.** Keeping `cites` in the connections bundle *and* adding a References block — the two
+would have shown the same document's outgoing citations under two headings, split by whether the
+match happened to resolve. Capping the reference list by simple truncation: the cap spends its
+budget on linked rows first, so a paper with 346 references cannot lose the one entry the reader
+can actually open. Sorting the owned references to the top: the block is a bibliography, and
+re-ordering it to flatter one feature would misrepresent it.
+
+**What it opens.** KI-45's write-side fix (~19 more correct links, none of them reachable from the
+UI until resolution re-runs). A `Citation` ordinal column, which is the only way the list could be
+in the paper's own order — today it is year-descending, and the block says so. The other consumers
+of `target_document_id` (`cited_by`, `graph_subgraph`, `wiki.py`, `concept_skeleton.py`) are still
+reading the unverified rows.
+
+---
 ## 2026-08-09 (2) — the page-scan discriminator was defeated by OCR: 109 "full-page plates" were 3 scanned PDFs
 
 **What changed.** `is_page_scan` now requires **two** conditions to exempt a full-page region, not

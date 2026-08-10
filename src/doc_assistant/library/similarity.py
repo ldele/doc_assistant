@@ -8,7 +8,7 @@ from sqlalchemy import select
 
 from doc_assistant.db.models import Document
 from doc_assistant.db.session import session_scope
-from doc_assistant.library.citations import CitationEdge, cited_by, cites_out
+from doc_assistant.library.citations import cited_by
 
 # ============================================================
 # Similarity queries (Phase 4 close-out)
@@ -39,51 +39,43 @@ class CitedByDoc:
 class DocConnections:
     """The exploration bundle for one document (ADR-027 D1, ROADMAP E4).
 
-    List-shaped on purpose: the v1 panel renders lists, and a depth-1 ego graph is exactly
-    ``cites`` + ``cited_by`` — a later graph/navigation iteration reads the same bundle (the
-    recorded open gate; see the E4 DEVLOG entry). ``external_refs`` is the *titled* slice of
-    the unresolved citations (the showable population), capped; ``external_total`` is the full
-    titled count so the UI can say "showing N of M" honestly.
+    **This document's neighbourhood — not its bibliography.** ``related`` is semantic
+    (``doc_similarities``); ``cited_by`` is the reverse citation edge, a fact about *other*
+    documents. The outgoing side — the paper's own reference list — moved to
+    ``citations.document_references`` when the Library gained a References block (2026-08-10):
+    a reader wants one bibliography, in one place, including the references that resolved to
+    nothing, and duplicating the resolved half here made the two blocks disagree about what
+    the paper cites.
+
+    List-shaped on purpose: a later graph/navigation iteration reads the same bundle (the
+    recorded open gate; see the E4 DEVLOG entry).
     """
 
     related: list[SimilarDoc]
-    cites: list[CitationEdge]  # resolved, in-corpus only
     cited_by: list[CitedByDoc]
-    external_refs: list[CitationEdge]  # unresolved + titled, capped
-    external_total: int
-
-
-# Payload cap for the external-references list — a wire-size bound (raw extraction yields
-# ~50-60 refs per paper), not a corpus-tuned threshold: the full count still travels as
-# `external_total`, nothing is hidden silently.
-EXTERNAL_REFS_CAP = 50
 
 
 def document_connections(
     doc_id: str,
     *,
     related_limit: int = 10,
-    external_cap: int = EXTERNAL_REFS_CAP,
     embedding_model: str | None = None,
 ) -> DocConnections | None:
-    """Assemble one document's exploration bundle (E4): related papers + citation edges.
+    """Assemble one document's exploration bundle (E4): related papers + incoming citations.
 
     Pure read over the existing sidecars (``doc_similarities`` + ``citations``) — no model, no
     network. Returns ``None`` when the document is unknown (the API maps that to 404). Empty
     corpus / empty sidecars degrade to empty lists, never an error (the 0-doc contract).
     ``embedding_model`` scopes the similarity read to the embedder in use — callers should pass
     the active model name so the panel never mixes edges from different embedders.
+
+    The paper's own references are ``citations.document_references``, not this bundle.
     """
     with session_scope() as session:
         if session.get(Document, doc_id) is None:
             return None
 
     related = similar_docs(doc_id, limit=related_limit, embedding_model=embedding_model)
-    all_cites = cites_out(doc_id)
-    in_corpus = [c for c in all_cites if c.target_document_id is not None]
-    titled_external = [
-        c for c in all_cites if c.target_document_id is None and c.target_title is not None
-    ]
 
     # Dedupe incoming citations by source document (a doc citing the subject 3 times is one
     # row with n_citations=3, not 3 rows) — preserving cited_by()'s filename ordering.
@@ -96,13 +88,7 @@ def document_connections(
                 document_id=source_id, filename=filename, n_citations=1
             )
 
-    return DocConnections(
-        related=related,
-        cites=in_corpus,
-        cited_by=list(by_source.values()),
-        external_refs=titled_external[:external_cap],
-        external_total=len(titled_external),
-    )
+    return DocConnections(related=related, cited_by=list(by_source.values()))
 
 
 def similar_docs(

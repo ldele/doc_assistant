@@ -221,7 +221,7 @@
     {/if}
 
     {#if libraryDocId !== null}
-      <LibraryBrowser docId={libraryDocId} onOpenDocument={onOpenDocument} />
+      <LibraryBrowser docId={libraryDocId} doc={openDoc} onOpenDocument={onOpenDocument} />
     {:else}
       <section class="libmain">
         {#if documents.length === 0}

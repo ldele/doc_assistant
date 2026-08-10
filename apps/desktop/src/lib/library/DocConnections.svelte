@@ -1,7 +1,9 @@
 <script lang="ts">
   // Document connections panel (ADR-027 D1 — E4 exploration surface). Renders one document's
-  // pre-computed neighbourhood: related papers (doc_similarities), resolved in-corpus citation
-  // edges both directions, and the extracted-but-unresolved external references (collapsed).
+  // pre-computed **neighbourhood**: related papers (doc_similarities) and the library documents
+  // that cite it. What this paper itself cites is the References block at the foot of the view —
+  // moved out 2026-08-10, because a reader asking "what does this cite" was being shown the
+  // resolved half here and the unresolved half there.
   // Advisory + read-only: a load failure degrades to one quiet line, never blocking the doc
   // view. List-shaped v1 by design — the graph/navigation treatment is a recorded open gate
   // (E4 DEVLOG); a later iteration reads the same bundle.
@@ -35,11 +37,7 @@
   })
 
   const empty = $derived(
-    conn !== null &&
-      conn.related.length === 0 &&
-      conn.cites.length === 0 &&
-      conn.cited_by.length === 0 &&
-      conn.external_total === 0,
+    conn !== null && conn.related.length === 0 && conn.cited_by.length === 0,
   )
 
   function open(id: string): void {
@@ -69,20 +67,6 @@
         </ul>
       {/if}
 
-      {#if conn.cites.length > 0}
-        <h4>Cites <span class="muted">(in your library)</span></h4>
-        <ul>
-          {#each conn.cites as c, i (c.document_id + '-' + i)}
-            <li>
-              <button class="doclink" onclick={() => open(c.document_id)}>
-                {c.title ?? c.filename ?? c.document_id.slice(0, 8)}
-              </button>
-              {#if c.year != null}<span class="muted">{c.year}</span>{/if}
-            </li>
-          {/each}
-        </ul>
-      {/if}
-
       {#if conn.cited_by.length > 0}
         <h4>Cited by <span class="muted">(in your library)</span></h4>
         <ul>
@@ -95,44 +79,21 @@
         </ul>
       {/if}
 
-      {#if conn.external_total > 0}
-        <details class="external">
-          <summary>References ({conn.external_total} extracted, not in your library)</summary>
-          <ul>
-            {#each conn.external_refs as e, i (i)}
-              <li class="ref">
-                <span class="reftitle">{e.title}</span>
-                {#if e.authors}<span class="muted"> — {e.authors}</span>{/if}
-                {#if e.year != null}<span class="muted"> ({e.year})</span>{/if}
-              </li>
-            {/each}
-          </ul>
-          {#if conn.external_refs.length < conn.external_total}
-            <p class="muted capnote">
-              Showing the first {conn.external_refs.length} of {conn.external_total}.
-            </p>
-          {/if}
-        </details>
-      {/if}
     {/if}
   </section>
 {/if}
 
 <style>
+  /* One block among five (Metadata → Connections → Chunks → Figures → References): same
+     heading treatment and spacing as its siblings, so the order reads as structure. */
   .connections {
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    background: var(--surface);
-    padding: 0.6rem 0.75rem;
-    margin-bottom: 0.6rem;
+    margin-top: 1.25rem;
   }
   h3 {
-    margin: 0 0 0.2rem;
-    font-size: 0.82rem;
+    margin: 0 0 0.5rem;
+    font-size: 0.9rem;
     font-weight: 600;
-    color: var(--fg-2);
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
+    color: var(--fg);
   }
   h4 {
     margin: 0.55rem 0 0.2rem;
@@ -179,29 +140,6 @@
     border-radius: 6px;
     padding: 0 0.3rem;
     white-space: nowrap;
-  }
-  .external {
-    margin-top: 0.55rem;
-    border-top: 1px dashed var(--border);
-    padding-top: 0.4rem;
-  }
-  .external summary {
-    cursor: pointer;
-    font-size: 0.78rem;
-    color: var(--accent);
-    user-select: none;
-  }
-  .ref {
-    display: block;
-    font-size: 0.8rem;
-    line-height: 1.45;
-    overflow-wrap: anywhere;
-  }
-  .reftitle {
-    color: var(--fg);
-  }
-  .capnote {
-    margin: 0.3rem 0 0;
   }
   .connerr {
     color: var(--warn-fg);

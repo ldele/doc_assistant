@@ -1,4 +1,4 @@
-﻿<!-- status: active Â· updated: 2026-08-08 (ADR-042) Â· class: living -->
+﻿<!-- status: active Â· updated: 2026-08-10 (ADR-042; header date synced to the commit) Â· class: living -->
 
 # Decisions â€” index
 

@@ -63,7 +63,13 @@ def temp_db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     engine.dispose()
 
 
-def _seed_doc(filename: str, *, archived: bool = False, chunk_count: int | None = None) -> str:
+def _seed_doc(
+    filename: str,
+    *,
+    archived: bool = False,
+    chunk_count: int | None = None,
+    title: str | None = None,
+) -> str:
     with session_scope() as session:
         doc = Document(
             filename=filename,
@@ -72,6 +78,7 @@ def _seed_doc(filename: str, *, archived: bool = False, chunk_count: int | None 
             format="pdf",
             is_archived=archived,
             chunk_count=chunk_count,
+            title=title,
         )
         session.add(doc)
         session.flush()
@@ -157,11 +164,11 @@ def test_document_connections_route_returns_bundle(temp_db) -> None:
     body = r.json()
     assert [x["document_id"] for x in body["related"]] == [b]
     assert body["related"][0]["filename"] == "neighbour.pdf"
-    assert [x["document_id"] for x in body["cites"]] == [b]
     assert [x["document_id"] for x in body["cited_by"]] == [c]
     assert body["cited_by"][0]["n_citations"] == 1
-    assert [x["title"] for x in body["external_refs"]] == ["External only"]
-    assert body["external_total"] == 1
+    # The neighbourhood, not the bibliography: what `a` cites is /references (2026-08-10).
+    assert "cites" not in body
+    assert "external_refs" not in body
 
 
 def test_document_connections_route_404_for_unknown_doc(temp_db) -> None:
@@ -176,5 +183,55 @@ def test_document_connections_route_empty_bundle_for_bare_doc(temp_db) -> None:
     r = client.get(f"/api/library/documents/{a}/connections")
     assert r.status_code == 200
     body = r.json()
-    assert body["related"] == [] and body["cites"] == [] and body["cited_by"] == []
-    assert body["external_refs"] == [] and body["external_total"] == 0
+    assert body["related"] == [] and body["cited_by"] == []
+
+
+# ============================================================
+# GET /api/library/documents/{id}/references — the References block
+# ============================================================
+
+
+def test_document_references_route_lists_the_whole_bibliography(temp_db) -> None:
+    # Every extracted reference, resolved or not, in one list — and the resolved one carries
+    # the document_id that makes it a link.
+    from doc_assistant.db.models import Citation
+
+    a = _seed_doc("subject.pdf")
+    # The title matters: a stored resolution is re-checked against the document it names
+    # before it is presented as a link (library.citations.resolution_is_credible).
+    owned = _seed_doc("owned.pdf", title="Owned paper")
+    with session_scope() as session:
+        session.add(
+            Citation(
+                source_document_id=a,
+                target_document_id=owned,
+                target_title="Owned paper",
+                target_year=2021,
+            )
+        )
+        session.add(Citation(source_document_id=a, target_title="Elsewhere", target_year=2020))
+        # No year at all — sorts last (nulls_last), and still appears: an unparseable line is
+        # a reference the paper makes.
+        session.add(Citation(source_document_id=a, raw_citation_text="[3] unparseable"))
+
+    client = TestClient(create_app(controller=FakeController({})))
+    r = client.get(f"/api/library/documents/{a}/references")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["total"] == 3 and body["shown"] == 3 and body["in_library"] == 1
+    assert [x["document_id"] for x in body["references"]] == [owned, None, None]
+    assert body["references"][0]["filename"] == "owned.pdf"
+
+
+def test_document_references_route_404_for_unknown_doc(temp_db) -> None:
+    client = TestClient(create_app(controller=FakeController({})))
+    assert client.get("/api/library/documents/nope/references").status_code == 404
+
+
+def test_document_references_route_empty_list_for_bare_doc(temp_db) -> None:
+    # A document whose references were never extracted: 200 + an empty list, never a 404.
+    a = _seed_doc("bare.pdf")
+    client = TestClient(create_app(controller=FakeController({})))
+    r = client.get(f"/api/library/documents/{a}/references")
+    assert r.status_code == 200
+    assert r.json() == {"references": [], "total": 0, "in_library": 0, "shown": 0}

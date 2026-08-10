@@ -199,7 +199,7 @@ def test_group_children_empty():
 # ============================================================
 
 
-def _seed_document(filename: str) -> str:
+def _seed_document(filename: str, *, title: str | None = None) -> str:
     from doc_assistant.db.models import Document
     from doc_assistant.db.session import session_scope
 
@@ -209,6 +209,7 @@ def _seed_document(filename: str) -> str:
             source_original=f"/tmp/{filename}",
             doc_hash=f"hash-{filename}",
             format="pdf",
+            title=title,
         )
         session.add(doc)
         session.flush()
@@ -238,6 +239,9 @@ def _seed_citation(
     target_id: str | None = None,
     title: str | None = None,
     year: int | None = None,
+    authors: str | None = None,
+    doi: str | None = None,
+    raw: str | None = None,
 ) -> None:
     from doc_assistant.db.models import Citation
     from doc_assistant.db.session import session_scope
@@ -249,6 +253,9 @@ def _seed_citation(
                 target_document_id=target_id,
                 target_title=title,
                 target_year=year,
+                target_authors=authors,
+                target_doi=doi,
+                raw_citation_text=raw,
                 extraction_method="regex",
             )
         )
@@ -269,10 +276,7 @@ def test_document_connections_empty_sidecars_degrade_to_empty_lists(temp_databas
     bundle = document_connections(doc)
     assert bundle is not None
     assert bundle.related == []
-    assert bundle.cites == []
     assert bundle.cited_by == []
-    assert bundle.external_refs == []
-    assert bundle.external_total == 0
 
 
 def test_document_connections_related_scoped_to_embedding_model(temp_database):
@@ -288,19 +292,21 @@ def test_document_connections_related_scoped_to_embedding_model(temp_database):
     assert other is not None and other.related == []
 
 
-def test_document_connections_splits_internal_and_external_citations(temp_database):
+def test_document_connections_carries_no_outgoing_citations(temp_database):
+    # The bundle is this document's *neighbourhood*, not its bibliography (2026-08-10): what it
+    # cites belongs to `document_references`, in one list. A guard, not a tautology — putting
+    # the resolved half back here is exactly how the two blocks would start disagreeing.
     from doc_assistant.library import document_connections
 
     a, b = _seed_document("a.pdf"), _seed_document("b.pdf")
     _seed_citation(a, target_id=b, title="Resolved in-corpus paper")
     _seed_citation(a, title="External titled ref", year=2019)
-    _seed_citation(a)  # unresolved AND untitled — not showable, not counted
 
     bundle = document_connections(a)
     assert bundle is not None
-    assert [c.target_document_id for c in bundle.cites] == [b]
-    assert [e.target_title for e in bundle.external_refs] == ["External titled ref"]
-    assert bundle.external_total == 1  # the untitled row is excluded from the count too
+    assert not hasattr(bundle, "cites")
+    assert not hasattr(bundle, "external_refs")
+    assert bundle.cited_by == []  # a cites b, so b is cited_by a — a itself is cited by nobody
 
 
 def test_document_connections_dedupes_cited_by_with_count(temp_database):
@@ -319,15 +325,223 @@ def test_document_connections_dedupes_cited_by_with_count(temp_database):
     assert bundle.cited_by[0].n_citations == 3
 
 
-def test_document_connections_caps_external_refs_but_reports_total(temp_database):
-    # No silent truncation: the list is capped, the total is the full titled count.
-    from doc_assistant.library import document_connections
+# ============================================================
+# document_references — the Library document view's References block
+# ============================================================
+
+
+def test_resolution_is_credible_rejects_the_surname_year_false_positive():
+    # The real shape of the defect (measured 2026-08-10): `match_to_library`'s rule 2 needs
+    # only first-author surname + year, so a 2024 knowledge-graph reference resolved to a 2024
+    # paper on mouse whisker cortex. 13 of this library's 16 stored resolutions look like this.
+    from doc_assistant.library.citations import resolution_is_credible
+
+    assert not resolution_is_credible(
+        parsed_title="A review of graph neural networks and pretrained language models",
+        parsed_doi=None,
+        library_title="Cell class-specific long-range axonal projections of neurons in mouse",
+        library_doi=None,
+    )
+
+
+def test_resolution_is_credible_accepts_a_matching_title_and_an_exact_doi():
+    from doc_assistant.library.citations import resolution_is_credible
+
+    assert resolution_is_credible(
+        parsed_title="From local to global: A graph rag approach to query-focused summarization",
+        parsed_doi=None,
+        library_title="From Local to Global: A GraphRAG Approach to Query-Focused Summarization",
+        library_doi=None,
+    )
+    # A DOI both sides carry is decisive on its own — titles need not agree at all.
+    assert resolution_is_credible(
+        parsed_title=None,
+        parsed_doi="10.1038/S41592-022-01443-0",
+        library_title="Something else entirely",
+        library_doi="10.1038/s41592-022-01443-0",
+    )
+
+
+def test_resolution_is_credible_accepts_a_title_buried_in_an_author_prefix():
+    # The case a strict ratio loses: the regex prefixes the title with the tail of the author
+    # list, scoring 0.78 on a *true* match. Containment recovers it — and on the real corpus
+    # admitted none of the 12 false links, which contain nothing and score 0.11-0.37.
+    from doc_assistant.library.citations import resolution_is_credible
+
+    assert resolution_is_credible(
+        parsed_title=(
+            "A., Lopes, G., Saunders, J. L., Mathis, A. & Mathis, M. W. Real-time, "
+            "low-latency closed-loop feedback using markerless posture tracking"
+        ),
+        parsed_doi=None,
+        library_title=(
+            "Real-time, low-latency closed-loop feedback using markerless posture tracking"
+        ),
+        library_doi=None,
+    )
+
+
+def test_resolution_is_credible_needs_a_title_on_both_sides():
+    # A resolution that cannot be checked is not credible: it came from a rule that never
+    # compared titles in the first place.
+    from doc_assistant.library.citations import resolution_is_credible
+
+    assert not resolution_is_credible(
+        parsed_title=None, parsed_doi=None, library_title="A Title", library_doi=None
+    )
+    assert not resolution_is_credible(
+        parsed_title="A Title", parsed_doi=None, library_title=None, library_doi=None
+    )
+
+
+def test_resolution_is_credible_ignores_a_short_coincidental_containment():
+    # "a survey" sits inside hundreds of titles — containment only counts for a fragment long
+    # enough that sharing it is evidence rather than coincidence.
+    from doc_assistant.library.citations import resolution_is_credible
+
+    assert not resolution_is_credible(
+        parsed_title="A survey",
+        parsed_doi=None,
+        library_title="A survey of techniques for constructing chinese knowledge graphs",
+        library_doi=None,
+    )
+
+
+def test_plausible_year_drops_what_cannot_be_a_publication_year():
+    from datetime import date
+
+    from doc_assistant.library.citations import plausible_year
+
+    today = date(2026, 8, 10)
+    assert plausible_year(2024, today=today) == 2024
+    assert plausible_year(1901, today=today) == 1901
+    assert plausible_year(2027, today=today) == 2027  # in press, carries next year's date
+    assert plausible_year(2089, today=today) is None  # an identifier the regex lifted
+    assert plausible_year(1799, today=today) is None
+    assert plausible_year(None, today=today) is None
+
+
+def test_document_references_unlinks_a_resolution_that_does_not_check_out(temp_database):
+    # End to end: the reference stays in the list (the paper does cite it), the link does not.
+    from doc_assistant.db.models import Document
+    from doc_assistant.db.session import session_scope
+    from doc_assistant.library import document_references
+
+    a, b = _seed_document("a.pdf"), _seed_document("b.pdf")
+    with session_scope() as session:
+        session.get(Document, b).title = "Mamba-UNet: pure visual mamba for medical images"
+    _seed_citation(a, target_id=b, title="QAGCN: answering multi-relation questions", year=2024)
+
+    view = document_references(a)
+    assert view is not None
+    assert view.total == 1 and view.shown == 1
+    assert view.in_library == 0
+    assert view.references[0].target_document_id is None
+    assert view.references[0].title == "QAGCN: answering multi-relation questions"
+
+
+def test_document_references_sinks_an_impossible_year_instead_of_heading_the_list(temp_database):
+    # Sorting newest-first on the raw field put "(2089)" at the top of the block — the first
+    # thing the reader sees, and a number no reference in this corpus actually carries.
+    from doc_assistant.library import document_references
 
     a = _seed_document("a.pdf")
-    for i in range(5):
-        _seed_citation(a, title=f"External ref {i}")
+    _seed_citation(a, title="Junk year", year=2089)
+    _seed_citation(a, title="Real paper", year=2015)
 
-    bundle = document_connections(a, external_cap=2)
-    assert bundle is not None
-    assert len(bundle.external_refs) == 2
-    assert bundle.external_total == 5
+    view = document_references(a)
+    assert view is not None
+    assert [r.title for r in view.references] == ["Real paper", "Junk year"]
+    assert [r.year for r in view.references] == [2015, None]
+
+
+def test_document_references_unknown_doc_is_none(temp_database):
+    from doc_assistant.library import document_references
+
+    assert document_references("no-such-id") is None
+
+
+def test_document_references_no_citations_is_an_empty_list_not_none(temp_database):
+    # The 0-doc contract: "this paper's bibliography was never extracted" is an ordinary
+    # state the panel renders as an honest empty, not a 404.
+    from doc_assistant.library import document_references
+
+    view = document_references(_seed_document("a.pdf"))
+    assert view is not None
+    assert view.references == []
+    assert (view.total, view.in_library, view.shown) == (0, 0, 0)
+
+
+def test_document_references_keeps_unresolved_and_untitled_rows(temp_database):
+    # The whole point of a *bibliography*: a reference that matched nothing, and one that
+    # parsed no title at all, are still references this paper makes. 243 of this corpus's
+    # 4,374 rows are untitled — dropping them would misstate what the paper cites (the
+    # connections bundle drops them by design, which is why it is not this block's source).
+    from doc_assistant.library import document_references
+
+    a = _seed_document("a.pdf")
+    b = _seed_document("b.pdf", title="Owned paper")
+    _seed_citation(a, target_id=b, title="Owned paper", year=2021)
+    _seed_citation(a, title="Not in the library", year=2020)
+    _seed_citation(a, raw="[3] a line the regex could not parse", year=2019)
+
+    view = document_references(a)
+    assert view is not None
+    assert view.total == 3
+    assert view.shown == 3
+    assert view.in_library == 1
+    assert [r.target_document_id for r in view.references] == [b, None, None]
+
+
+def test_document_references_marks_the_owned_row_with_the_library_title(temp_database):
+    # The parsed title is extraction output; the owned document's own title is the one the
+    # library vouches for, so the link renders from that when the two disagree.
+    from doc_assistant.library import document_references
+
+    a = _seed_document("a.pdf")
+    b = _seed_document("b.pdf", title="Attention Is All You Need")
+    _seed_citation(a, target_id=b, title="attention is all you need. In")
+
+    view = document_references(a)
+    assert view is not None
+    ref = view.references[0]
+    assert ref.target_document_id == b
+    assert ref.library_title == "Attention Is All You Need"
+    assert ref.title == "attention is all you need. In"
+    assert ref.target_filename == "b.pdf"
+
+
+def test_document_references_cap_never_drops_a_reference_you_own(temp_database):
+    # The cap is a wire-size bound, and the rows worth the budget are the ones the reader can
+    # actually open. A resolved reference sitting at position 300 of 346 must survive a cap of
+    # 2 — otherwise the block's one interactive feature disappears on exactly the long
+    # bibliographies where it matters.
+    from doc_assistant.library import document_references
+
+    a = _seed_document("a.pdf")
+    owned = _seed_document("owned.pdf", title="Owned paper")
+    for i in range(5):
+        _seed_citation(a, title=f"External ref {i}", year=2020 - i)
+    _seed_citation(a, target_id=owned, title="Owned paper", year=1990)  # sorts last by year
+
+    view = document_references(a, cap=2)
+    assert view is not None
+    assert view.total == 6
+    assert view.shown == 2
+    assert view.in_library == 1  # counted over ALL references, not the shown slice
+    assert owned in [r.target_document_id for r in view.references]
+
+
+def test_document_references_are_ordered_newest_first(temp_database):
+    # The paper's own numbering is not recorded (Citation has no ordinal and its id is a
+    # uuid4), so the order is year-descending — and the panel says so rather than implying
+    # the list is the paper's own.
+    from doc_assistant.library import document_references
+
+    a = _seed_document("a.pdf")
+    for year in (1998, 2024, 2011):
+        _seed_citation(a, title=f"Ref {year}", year=year)
+
+    view = document_references(a)
+    assert view is not None
+    assert [r.year for r in view.references] == [2024, 2011, 1998]

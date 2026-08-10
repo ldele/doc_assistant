@@ -398,10 +398,16 @@ def _title_similarity(a: str, b: str) -> float:
     return SequenceMatcher(None, na, nb).ratio()
 
 
+# Ratio at or above which two normalised titles are taken to name the same paper. Shared with
+# `library.citations`, which re-checks a stored resolution before presenting it as a link —
+# both sides must agree on what "the same paper" means.
+FUZZY_TITLE_THRESHOLD = 0.80
+
+
 def match_to_library(
     parsed: ParsedCitation,
     *,
-    fuzzy_title_threshold: float = 0.80,
+    fuzzy_title_threshold: float = FUZZY_TITLE_THRESHOLD,
 ) -> str | None:
     """Return Document.id if `parsed` matches a row in the library, else None.
 

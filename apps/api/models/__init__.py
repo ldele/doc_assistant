@@ -11,8 +11,9 @@ does not pull the heavy ``chat_controller`` → ``pipeline`` → torch chain.
 **Layout.** One module per domain, named to match ``apps/api/routers/`` so a wire change and
 its route are the same word on both sides:
 
-``chat`` · ``compare`` · ``conversations`` · ``library`` · ``connections`` · ``folders`` ·
-``keywords`` · ``sources`` · ``concepts`` · ``taxonomy`` · ``settings`` (+ ``_common``).
+``chat`` · ``compare`` · ``conversations`` · ``library`` · ``connections`` · ``references`` ·
+``folders`` · ``keywords`` · ``sources`` · ``concepts`` · ``taxonomy`` · ``settings``
+(+ ``_common``).
 
 Prefer importing from the domain module (``from apps.api.models.folders import FolderCreate``)
 — the import line then says which domain the route belongs to. The flat re-export below is kept
@@ -54,9 +55,7 @@ from apps.api.models.concepts import (
 )
 from apps.api.models.connections import (
     CitedByPayload,
-    CorpusCitationPayload,
     DocConnectionsPayload,
-    ExternalRefPayload,
     RelatedDocPayload,
 )
 from apps.api.models.conversations import (
@@ -87,6 +86,7 @@ from apps.api.models.library import (
     LibraryDocumentPayload,
     LibraryParentPayload,
 )
+from apps.api.models.references import DocReferencesPayload, ReferencePayload
 from apps.api.models.settings import SettingsUpdate
 from apps.api.models.sources import IngestRequest, SourceFilePayload, SourcePatch
 from apps.api.models.taxonomy import (
@@ -117,11 +117,10 @@ __all__ = [
     "ConversationSourcePayload",
     "ConversationSummaryPayload",
     "ConversationTurnPayload",
-    "CorpusCitationPayload",
     "DeleteResultPayload",
     "DocConnectionsPayload",
+    "DocReferencesPayload",
     "ExportRequest",
-    "ExternalRefPayload",
     "FieldDetailPayload",
     "FieldMemberPayload",
     "FolderCreate",
@@ -145,6 +144,7 @@ __all__ = [
     "LibraryFolderPayload",
     "LibraryParentPayload",
     "RagOverrides",
+    "ReferencePayload",
     "RelatedDocPayload",
     "ScopePayload",
     "SettingsUpdate",

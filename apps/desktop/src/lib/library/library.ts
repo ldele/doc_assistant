@@ -2,7 +2,12 @@
 // Collections are computed from the LibraryDocument payload the API already ships
 // (Decision 5: Phase A filters client-side) — no backend involvement; Phase B wires
 // server-side folders + the folder-tree endpoint.
-import type { KeywordFamily, LibraryDocument, LibraryFolder } from '../core/types'
+import type {
+  DocumentReference,
+  KeywordFamily,
+  LibraryDocument,
+  LibraryFolder,
+} from '../core/types'
 
 export type DateBucket = 'today' | 'week' | 'month' | 'earlier'
 
@@ -369,6 +374,27 @@ export function splitInheritedFamilies(families: KeywordFamily[]): {
   const inherited: KeywordFamily[] = []
   for (const f of families) (f.aliases.length === 0 && f.doc_count === 0 ? inherited : real).push(f)
   return { real, inherited }
+}
+
+// How one extracted reference is labelled in the References block.
+//
+// Every field of a reference can be null — the extractor is a regex over a bibliography, and
+// 243 of this corpus's 4,374 rows parsed no title at all. Dropping those would misrepresent the
+// paper's reference list, so each one still renders, from the best label it has: the owned
+// document's own title (the only one the library vouches for) → the parsed title → the raw
+// citation line → the DOI. `null` means the row carried nothing at all and the caller should
+// say so rather than render an empty bullet.
+export function referenceLabel(ref: DocumentReference): string | null {
+  const pick = (s: string | null): string | null => {
+    const t = (s ?? '').trim()
+    return t === '' ? null : t
+  }
+  return (
+    pick(ref.library_title) ??
+    pick(ref.title) ??
+    pick(ref.raw_text) ??
+    (pick(ref.doi) === null ? null : `doi:${pick(ref.doi)}`)
+  )
 }
 
 // Case-insensitive substring filter used by the pickers that got too long to scan (PR-2.7 F3).

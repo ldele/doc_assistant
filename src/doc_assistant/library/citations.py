@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import date
 from typing import Any
 
 from sqlalchemy import select
@@ -92,6 +93,210 @@ def cites_out(doc_id: str) -> list[CitationEdge]:
             .order_by(Citation.target_year.desc().nulls_last(), Citation.target_authors)
         )
         return [_row_to_edge(r) for r in session.execute(stmt).all()]
+
+
+# ============================================================
+# The reference list (the Library document view's References block)
+# ============================================================
+# The bibliography as the *paper* carries it, not as the graph sees it: one list, every
+# extracted reference in it, and the ones that are already in the library carrying the id
+# that makes them a link. `document_connections` deliberately splits the same rows into
+# resolved/unresolved for the exploration panel — a reader looking at a reference list
+# wants neither split nor a semantic neighbour.
+
+
+# A title fragment shorter than this can be contained by coincidence ("a survey" sits inside
+# hundreds of titles). Structural, not corpus-tuned: it bounds what "one title contains the
+# other" is allowed to mean, and no value of it can admit a title that is merely similar.
+MIN_CONTAINED_TITLE_CHARS = 20
+
+
+def resolution_is_credible(
+    *,
+    parsed_title: str | None,
+    parsed_doi: str | None,
+    library_title: str | None,
+    library_doi: str | None,
+) -> bool:
+    """Does a stored ``target_document_id`` actually agree with the document it names?
+
+    **Read-side check, and it is load-bearing.** ``match_to_library`` resolves a reference at
+    *extraction* time, and one of its three rules — first-author surname + publication year —
+    requires no title agreement whatsoever. On a corpus with many same-year papers by common
+    surnames it fires constantly and wrongly: measured on this library 2026-08-10, **13 of the
+    16 stored resolutions were false**, e.g. "A review of graph neural networks and pretrained
+    language models" resolved to a paper on axonal projections in mouse whisker cortex. A
+    reference list that renders those as links would assert, in a research-integrity app, that
+    the user owns a paper they do not.
+
+    Two signals, both about the title (the DOI is decisive when both sides carry one):
+
+    * ratio ≥ ``FUZZY_TITLE_THRESHOLD`` — the matcher's own definition of "the same paper";
+    * **containment** — the shorter normalised title appears whole inside the longer. This is
+      what a strict ratio misses: the regex often prefixes a title with the tail of the author
+      list ("A., Lopes, G., … Real-time, low-latency closed-loop feedback …"), which drags a
+      true match to 0.78. On the real corpus containment recovered that one true link and
+      admitted **none** of the 12 false ones (they score 0.11-0.37 and contain nothing).
+
+    A rejected resolution does not remove the reference — the paper still cites it. It only
+    stops being a link.
+    """
+    from doc_assistant.ingest.citations import (
+        FUZZY_TITLE_THRESHOLD,
+        _normalize_for_match,
+        _title_similarity,
+    )
+
+    if parsed_doi and library_doi and parsed_doi.strip().lower() == library_doi.strip().lower():
+        return True
+    if not parsed_title or not library_title:
+        # No title on either side leaves nothing to check against. The resolution came from a
+        # rule that never compared titles, so "unverifiable" is treated as "not credible".
+        return False
+    if _title_similarity(parsed_title, library_title) >= FUZZY_TITLE_THRESHOLD:
+        return True
+    a, b = _normalize_for_match(parsed_title), _normalize_for_match(library_title)
+    shorter, longer = (a, b) if len(a) <= len(b) else (b, a)
+    return len(shorter) >= MIN_CONTAINED_TITLE_CHARS and shorter in longer
+
+
+# A publication year outside this window is extraction noise, not a year: the regex sometimes
+# lifts an identifier or a page number out of a reference line (5 of this corpus's 4,282 parsed
+# years land in 2034-2089). Structural bounds — nothing below is corpus-tuned — but they matter
+# for ordering as much as for display: sorting newest-first would otherwise put every corrupt
+# value at the top of the list, where it is the first thing the reader sees.
+MIN_PLAUSIBLE_YEAR = 1800
+
+
+def plausible_year(year: int | None, *, today: date | None = None) -> int | None:
+    """The year if it can be a publication year, else ``None`` (unknown, shown as nothing)."""
+    if year is None:
+        return None
+    latest = (today or date.today()).year + 1  # a paper can carry next year's date in press
+    return year if MIN_PLAUSIBLE_YEAR <= year <= latest else None
+
+
+@dataclass
+class DocumentReference:
+    """One entry in a document's reference list.
+
+    ``target_document_id`` is the whole point: set ⇒ this reference is a document the user
+    already owns, and the UI renders it as a link. ``title``/``authors``/``year``/``doi``
+    are *extraction output* parsed from ``raw_text`` — shown as such, never as metadata the
+    library vouches for. ``library_title`` is the owned document's own title, which is the
+    trustworthy label when the two disagree.
+    """
+
+    raw_text: str | None
+    title: str | None
+    authors: str | None
+    year: int | None
+    doi: str | None
+    target_document_id: str | None
+    target_filename: str | None
+    library_title: str | None
+
+
+@dataclass
+class DocumentReferences:
+    """A document's reference list + the counts that keep a capped list honest.
+
+    ``total`` is every extracted reference, ``in_library`` how many resolve to an owned
+    document, ``shown`` the length of ``references`` — so the UI can say "showing N of M"
+    rather than truncating in silence.
+    """
+
+    references: list[DocumentReference]
+    total: int
+    in_library: int
+    shown: int
+
+
+# Payload bound for the reference list. A wire-size cap, not a corpus-tuned threshold: the
+# full count travels as `total`, and `document_references` spends the budget on the resolved
+# rows first, so raising or lowering it can never drop a reference the user owns.
+REFERENCES_CAP = 200
+
+
+def document_references(doc_id: str, *, cap: int = REFERENCES_CAP) -> DocumentReferences | None:
+    """One document's reference list, or ``None`` if the document is unknown (⇒ 404).
+
+    A pure read over the ``citations`` sidecar — no model, no network, no writes. A document
+    with no extracted references returns an empty list, not ``None`` (the 0-doc contract):
+    "this paper's bibliography was never extracted" is an ordinary state, not an error.
+
+    **Every stored resolution is re-checked here** (``resolution_is_credible``). One that no
+    longer agrees with the document it names keeps its place in the list and loses only its
+    link — see that function for why the write side cannot be trusted on its own.
+
+    **Order is year-descending, then authors** — the paper's own numbering is *not recorded*
+    (``Citation`` has no ordinal column and its id is a uuid4, so insertion order is not
+    recoverable), and the UI says so rather than implying the list is the paper's. Years that
+    cannot be years are dropped first, so they sink instead of heading the list.
+
+    **The cap never drops a reference the user owns:** linked rows are taken first, the
+    remainder fills with the rest, and the merged list is re-sorted into one order.
+    """
+    with session_scope() as session:
+        if session.get(Document, doc_id) is None:
+            return None
+
+    edges = cites_out(doc_id)
+    # `cites_out` drops Citation.id, so re-read the owned rows' own title + doi by id — both
+    # are what a stored resolution is checked against.
+    library_meta: dict[str, tuple[str | None, str | None]] = {}
+    owned_ids = {e.target_document_id for e in edges if e.target_document_id is not None}
+    if owned_ids:
+        with session_scope() as session:
+            library_meta = {
+                str(i): (t, d)
+                for i, t, d in session.execute(
+                    select(Document.id, Document.title, Document.doi).where(
+                        Document.id.in_(owned_ids)
+                    )
+                ).all()
+            }
+
+    refs: list[DocumentReference] = []
+    for e in edges:
+        lib_title, lib_doi = library_meta.get(e.target_document_id or "", (None, None))
+        linked = e.target_document_id is not None and resolution_is_credible(
+            parsed_title=e.target_title,
+            parsed_doi=e.target_doi,
+            library_title=lib_title,
+            library_doi=lib_doi,
+        )
+        refs.append(
+            DocumentReference(
+                raw_text=e.raw_text,
+                title=e.target_title,
+                authors=e.target_authors,
+                year=plausible_year(e.target_year),
+                doi=e.target_doi,
+                target_document_id=e.target_document_id if linked else None,
+                target_filename=e.target_filename if linked else None,
+                library_title=lib_title if linked else None,
+            )
+        )
+
+    # Re-sort on the *cleaned* year. Python's sort is stable, so `cites_out`'s author ordering
+    # survives inside each year.
+    refs.sort(key=lambda r: (r.year is None, -(r.year or 0)))
+    in_library = sum(1 for r in refs if r.target_document_id is not None)
+
+    if len(refs) > cap:
+        owned = [(i, r) for i, r in enumerate(refs) if r.target_document_id is not None]
+        rest = [(i, r) for i, r in enumerate(refs) if r.target_document_id is None]
+        kept = owned[:cap] + rest[: max(0, cap - len(owned))]
+        # Restore the single reading order the caller was promised.
+        refs = [r for _, r in sorted(kept, key=lambda pair: pair[0])]
+
+    return DocumentReferences(
+        references=refs,
+        total=len(edges),
+        in_library=in_library,
+        shown=len(refs),
+    )
 
 
 def cited_by(doc_id: str) -> list[tuple[str, str, str | None]]:

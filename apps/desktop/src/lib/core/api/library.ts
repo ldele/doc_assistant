@@ -4,6 +4,7 @@
 
 import { API_BASE } from './_base'
 import type {
+  DocReferences,
   LibraryDocumentFigures,
   LibraryDocument,
   LibraryDocumentChunks,
@@ -77,4 +78,15 @@ export async function getDocumentFigures(docId: string): Promise<LibraryDocument
   )
   if (!r.ok) throw new Error(`document figures failed: ${r.status}`)
   return (await r.json()) as LibraryDocumentFigures
+}
+
+/** One document's reference list — the paper's own bibliography, including the entries that
+ *  resolved to nothing. 404 for an unknown document; never-extracted references come back as
+ *  an empty list. */
+export async function getDocumentReferences(docId: string): Promise<DocReferences> {
+  const r = await fetch(
+    `${API_BASE}/api/library/documents/${encodeURIComponent(docId)}/references`,
+  )
+  if (!r.ok) throw new Error(`document references failed: ${r.status}`)
+  return (await r.json()) as DocReferences
 }

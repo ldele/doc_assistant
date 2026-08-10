@@ -17,10 +17,11 @@ import {
   orderedUnits,
   remapSelection,
   splitInheritedFamilies,
+  referenceLabel,
   splitRareFacets,
   unitDocCounts,
 } from './library.ts'
-import type { KeywordFamily, LibraryDocument } from '../core/types/index.ts'
+import type { DocumentReference, KeywordFamily, LibraryDocument } from '../core/types/index.ts'
 
 const family = (canonical: string, aliases: string[], doc_count = 0): KeywordFamily =>
   ({ id: canonical, canonical, aliases, doc_count }) as KeywordFamily
@@ -244,4 +245,40 @@ test('F3: filterByQuery is a case-insensitive substring match, empty query = ide
   assert.deepEqual(filterByQuery(items, 'imagenet', (s) => s), ['ImageNet', 'imagenette'])
   assert.deepEqual(filterByQuery(items, 'bm', (s) => s), ['BM25'])
   assert.deepEqual(filterByQuery(items, 'zzz', (s) => s), [])
+})
+
+// --- References block: how a half-parsed reference is labelled --------------------------
+// Every field of an extracted reference can be null (243 of this corpus's 4,374 rows parsed
+// no title), and each one still has to render as *something* — an empty bullet in a
+// bibliography reads as a bug, not as a reference the regex could not parse.
+
+const ref = (o: Partial<DocumentReference> = {}): DocumentReference => ({
+  raw_text: null,
+  title: null,
+  authors: null,
+  year: null,
+  doi: null,
+  document_id: null,
+  filename: null,
+  library_title: null,
+  ...o,
+})
+
+test('references: the owned document’s own title wins over the parsed one', () => {
+  // The parsed title is regex output; the library title is the only one the app vouches for.
+  assert.equal(
+    referenceLabel(ref({ library_title: 'Attention Is All You Need', title: 'attention is al' })),
+    'Attention Is All You Need',
+  )
+})
+
+test('references: falls back title → raw line → doi, and blanks do not count as a label', () => {
+  assert.equal(referenceLabel(ref({ title: 'A parsed title' })), 'A parsed title')
+  assert.equal(referenceLabel(ref({ title: '   ', raw_text: '[7] Smith et al.' })), '[7] Smith et al.')
+  assert.equal(referenceLabel(ref({ doi: '10.1000/xyz' })), 'doi:10.1000/xyz')
+})
+
+test('references: a row carrying nothing at all returns null, for the caller to say so', () => {
+  assert.equal(referenceLabel(ref()), null)
+  assert.equal(referenceLabel(ref({ title: '', raw_text: '  ', doi: '' })), null)
 })

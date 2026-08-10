@@ -34,11 +34,14 @@ from doc_assistant.library.chunks import (
 from doc_assistant.library.citations import (
     CitationEdge,
     CitationGraph,
+    DocumentReference,
+    DocumentReferences,
     GraphEdge,
     GraphNode,
     _row_to_edge,
     cited_by,
     cites_out,
+    document_references,
     graph_subgraph,
 )
 from doc_assistant.library.documents import (
@@ -129,6 +132,8 @@ __all__ = [
     "DocumentFigureView",
     "DocumentPrefixError",
     "DocumentRef",
+    "DocumentReference",
+    "DocumentReferences",
     "DocumentSummary",
     "FigureView",
     "FolderSummary",
@@ -166,6 +171,7 @@ __all__ = [
     "delete_keyword_family",
     "detect_family_candidates",
     "document_connections",
+    "document_references",
     "document_years",
     "find_document_by_short_id",
     "folder_doc_hashes",

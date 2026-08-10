@@ -1,7 +1,7 @@
 """Library documents — the browser's read + write paths (feature-library-browser.md, L1).
 
-List, drill in to chunks, the E4 connections bundle (ADR-027 D1), the ADR-013 metadata
-override + reset, reveal-in-file-manager, and the ADR-014 safe delete.
+List, drill in to chunks, the E4 connections bundle (ADR-027 D1), the reference list, the
+ADR-013 metadata override + reset, reveal-in-file-manager, and the ADR-014 safe delete.
 
 Reads use lazy ``doc_assistant.library`` imports; chunk/delete reads go through the live Chroma
 handle on ``ChatController.rag.db``.
@@ -19,6 +19,7 @@ from apps.api.models.library import (
     LibraryDocumentMetaUpdate,
     LibraryDocumentPayload,
 )
+from apps.api.models.references import DocReferencesPayload
 from doc_assistant.chat_controller import ChatController
 from doc_assistant.embeddings import get_active_model_name
 
@@ -82,13 +83,34 @@ def get_document_connections(doc_id: str) -> DocConnectionsPayload:
     A pure sidecar read — no model, no Chroma, no LLM. 404 for an unknown document; a
     known document with empty sidecars returns empty lists (honest degrade, 0-doc
     contract). List-shaped by design: a later graph/navigation iteration reads the same
-    bundle (recorded open gate, E4 DEVLOG)."""
+    bundle (recorded open gate, E4 DEVLOG).
+
+    The document's *own* reference list is ``/references``, not this bundle."""
     from doc_assistant.library import document_connections
 
     bundle = document_connections(doc_id, embedding_model=get_active_model_name())
     if bundle is None:
         raise HTTPException(status_code=404, detail="document not found")
     return DocConnectionsPayload.from_bundle(bundle)
+
+
+@router.get("/api/library/documents/{doc_id}/references")
+def get_document_references(doc_id: str) -> DocReferencesPayload:
+    """One document's reference list — the paper's bibliography, in one list.
+
+    Every extracted reference, including the ones that resolved to nothing: a bibliography
+    with the unmatched entries removed would misrepresent what the paper cites. The entries
+    that *did* resolve carry a ``document_id``, which is what lets the UI open them.
+
+    A pure sidecar read over the ``citations`` table — no model, no Chroma, no LLM, no
+    network. 404 for an unknown document; a document whose references were never extracted
+    returns an empty list (the 0-doc contract), not an error."""
+    from doc_assistant.library import document_references
+
+    view = document_references(doc_id)
+    if view is None:
+        raise HTTPException(status_code=404, detail="document not found")
+    return DocReferencesPayload.from_view(view)
 
 
 @router.patch("/api/library/documents/{doc_id}")

@@ -63,6 +63,11 @@ data/issues/
 data/library.db
 data/eval.duckdb
 data/eval.duckdb.wal
+# Dated hand-made safety copies of the two databases above (`library.db.bak-20260808-preswep`,
+# `eval.duckdb.bak-20260808`). The bare names are ignored but a suffixed copy was NOT, so
+# `git add -A` staged 14 MB of the private corpus's metadata into a public repo (caught
+# 2026-08-09, before any commit). Ignore the whole family, not the two names that bit.
+data/*.bak*
 data/tables_debug/
 data/figures/
 data/wiki/

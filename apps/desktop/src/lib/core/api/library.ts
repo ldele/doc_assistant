@@ -4,6 +4,7 @@
 
 import { API_BASE } from './_base'
 import type {
+  LibraryDocumentFigures,
   LibraryDocument,
   LibraryDocumentChunks,
 } from '../types'
@@ -67,3 +68,13 @@ export async function deleteDocument(docId: string): Promise<DeleteResult> {
 // Folders (ADR-025 F1, docs/specs/feature-corpus-folders.md). Manual Library organisation over
 // the previously dormant Folder schema. Since F2 a folder can also scope a chat turn's
 // retrieval — see `streamChat`'s `scopeFolderId`.
+
+/** One document's figures (Library L1b) — a pure sidecar read, separate from its text chunks.
+ *  404 for an unknown document; a document with no figures returns an empty list. */
+export async function getDocumentFigures(docId: string): Promise<LibraryDocumentFigures> {
+  const r = await fetch(
+    `${API_BASE}/api/library/documents/${encodeURIComponent(docId)}/figures`,
+  )
+  if (!r.ok) throw new Error(`document figures failed: ${r.status}`)
+  return (await r.json()) as LibraryDocumentFigures
+}

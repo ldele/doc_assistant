@@ -15,6 +15,7 @@ from apps.api.models.connections import DocConnectionsPayload
 from apps.api.models.library import (
     DeleteResultPayload,
     LibraryDocumentChunksPayload,
+    LibraryDocumentFiguresPayload,
     LibraryDocumentMetaUpdate,
     LibraryDocumentPayload,
 )
@@ -48,6 +49,28 @@ def get_library_document(request: Request, doc_id: str) -> LibraryDocumentChunks
     if view is None:
         raise HTTPException(status_code=404, detail="document not found")
     return LibraryDocumentChunksPayload.from_view(view)
+
+
+@router.get("/api/library/documents/{doc_id}/figures")
+def get_document_figures(doc_id: str) -> LibraryDocumentFiguresPayload:
+    """One document's figures, addressed **separately from its text chunks** (L1b).
+
+    A figure is a different kind of object from prose — an image with a caption — so it gets
+    its own panel rather than being interleaved into the chunk browser.
+
+    A pure sidecar read: the 4b `Figure` rows plus the 4c VLM descriptions. No Chroma, no
+    model, no LLM. 404 for an unknown document; a known document with no detectable figures
+    returns an empty list (the 0-figure contract, not an error).
+
+    Each figure reports whether it is **retrievable** — a figure enters retrieval only once it
+    has a description — and, when it is not, why. Listing figures without that would show
+    images the assistant cannot actually see, with nothing to distinguish them."""
+    from doc_assistant.library import list_document_figures
+
+    view = list_document_figures(doc_id)
+    if view is None:
+        raise HTTPException(status_code=404, detail="document not found")
+    return LibraryDocumentFiguresPayload.from_view(view)
 
 
 @router.get("/api/library/documents/{doc_id}/connections")

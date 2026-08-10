@@ -47,3 +47,33 @@ export interface LibraryDocumentChunks {
   parents: LibraryParent[]
   child_count: number
 }
+
+/** One figure in the per-document figure panel (Library L1b).
+ *
+ * `retrievable` is the field that matters: a figure enters retrieval only once it has a
+ * description, so a panel that showed every row identically would display images the
+ * assistant cannot actually see. `not_retrievable_reason` says why, already phrased for a
+ * reader (the backend translates the audit enum). */
+export interface LibraryFigure {
+  id: string
+  page: number
+  kind: string | null
+  caption: string | null
+  description: string | null
+  extraction_method: string | null
+  has_image: boolean
+  retrievable: boolean
+  not_retrievable_reason: string | null
+}
+
+/** A document's figures, addressed separately from its text chunks. */
+export interface LibraryDocumentFigures {
+  id: string
+  filename: string
+  title: string | null
+  figures: LibraryFigure[]
+  total: number
+  retrievable_count: number
+  captioned_count: number
+  missing_image_count: number
+}

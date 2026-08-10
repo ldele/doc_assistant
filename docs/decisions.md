@@ -1,4 +1,4 @@
-﻿<!-- status: active Â· updated: 2026-08-05 (ADR-041) Â· class: living -->
+﻿<!-- status: active Â· updated: 2026-08-08 (ADR-042) Â· class: living -->
 
 # Decisions â€” index
 

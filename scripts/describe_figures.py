@@ -40,6 +40,7 @@ from doc_assistant.ingest.figures import (
     SKIP_IMAGE_MISSING,
     AnthropicVisionDescriber,
     FigureDescriber,
+    describe_error_reason,
     describe_figure,
     should_describe,
 )
@@ -83,10 +84,11 @@ def _describe_doc(
         "described": 0,
         "skipped": 0,
         "errors": 0,
-        "note": "",
+        "error_reasons": [],
     }
 
     updates: dict[str, dict[str, object]] = {}
+    reasons: list[str] = []  # distinct failure reasons, for the report's error section
     planned = 0
     described = skipped = errors = 0
 
@@ -124,7 +126,10 @@ def _describe_doc(
             }
             described += 1
         except Exception as e:  # per-figure isolation: one bad call doesn't abort the doc
-            updates[fig_id] = {"vlm_call_skipped_reason": f"error: {type(e).__name__}"}
+            reason = describe_error_reason(e)
+            updates[fig_id] = {"vlm_call_skipped_reason": reason}
+            if reason not in reasons:
+                reasons.append(reason)
             errors += 1
 
     if apply and updates:
@@ -133,6 +138,7 @@ def _describe_doc(
     row["described"] = described
     row["skipped"] = skipped
     row["errors"] = errors
+    row["error_reasons"] = reasons
     return row
 
 
@@ -162,6 +168,17 @@ def _format_report(rows: list[dict[str, object]], *, apply: bool, model: str) ->
             f"{int(r['skipped']):>4} "
             f"{int(r['errors']):>4}"
         )
+
+    # Failures, untruncated and named (KI-42's lesson): a run that reports only a count
+    # cannot say what went wrong, and the next diagnosis costs another paid pass.
+    failed = [r for r in rows if int(r["errors"])]
+    if failed:
+        out.append("")
+        out.append(f"Failures ({total_errors} call(s)) — reason as recorded:")
+        for r in sorted(failed, key=lambda x: -int(x["errors"])):
+            out.append(f"  {r['filename']} ({int(r['errors'])}):")
+            for reason in list(r["error_reasons"]):  # type: ignore[call-overload]
+                out.append(f"    {reason}")
     return "\n".join(out)
 
 

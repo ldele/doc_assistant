@@ -29,18 +29,20 @@ from __future__ import annotations
 
 import base64
 import re
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol
 
 import structlog
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from doc_assistant.config import (
     FIGURE_CAPTION_DESC_MIN_CHARS,
     FIGURE_DIR,
     FIGURE_MAX_AREA_FRACTION,
     FIGURE_MIN_AREA_FRACTION,
+    FIGURE_PLATE_MAX_TEXT_LINES,
 )
 
 from .regions import FIGURE_CAPTION_RE, RegionKind, analyze_pages
@@ -242,6 +244,23 @@ def _caption_blocks(page: object) -> list[tuple[str, BBox]]:
     return out
 
 
+def text_line_count(page: object) -> int:
+    """How many non-blank text lines the page carries. Impure (reads the page).
+
+    The input to ``is_page_scan``'s second condition. Lines rather than characters because a
+    caption split across blocks — which PyMuPDF does routinely — corrupts a character measure of
+    "text besides the caption" while leaving a line count intact.
+    """
+    raw = page.get_text("dict")  # type: ignore[attr-defined]
+    return sum(
+        1
+        for block in raw.get("blocks", [])
+        if block.get("type") == 0
+        for line in block.get("lines", [])
+        if "".join(span.get("text", "") for span in line.get("spans", [])).strip()
+    )
+
+
 def _page_geometry(page: object) -> tuple[list[BBox], list[BBox], BBox]:
     """Pull ``(image_bboxes, drawing_rects, page_bbox)`` from a PyMuPDF page."""
     raw = page.get_text("dict")  # type: ignore[attr-defined]
@@ -265,7 +284,13 @@ def _page_geometry(page: object) -> tuple[list[BBox], list[BBox], BBox]:
     return image_bboxes, drawing_rects, page_bbox
 
 
-def is_page_scan(bbox: BBox | None, page_bbox: BBox, *, caption: str | None) -> bool:
+def is_page_scan(
+    bbox: BBox | None,
+    page_bbox: BBox,
+    *,
+    caption: str | None,
+    page_text_lines: int = 0,
+) -> bool:
     """True when this region is the *page itself* rather than a figure on it.
 
     A scanned document is one full-page image per page. With only an area **floor**
@@ -273,22 +298,38 @@ def is_page_scan(bbox: BBox | None, page_bbox: BBox, *, caption: str | None) -> 
     ``hebb_1949.pdf`` yielded 365 figures for 365 pages, and 46% of the corpus's figure
     rows were page scans (measured 2026-08-08).
 
-    **The caption is the discriminator, not the area alone.** A genuine full-page plate
-    carries a caption; a scanned page has no text layer, so there is no caption to
-    pair. That keeps the 109 real full-page figures this corpus does contain, instead
-    of trading one systematic error for another.
+    **Two conditions exempt a full-page region, not one.** It must carry a caption *and* the
+    page must hold at most ``FIGURE_PLATE_MAX_TEXT_LINES`` lines of text — that is, the page is
+    the plate, its caption, and a running head.
+
+    The caption alone was the original rule, reasoning that "a scanned page has no text layer, so
+    there is no caption to pair". **That is false of a scan WITH OCR**, which is what three
+    documents here are: the text layer puts a ``Fig. N`` block on every page, pairing succeeds,
+    and every page becomes a figure. Measured 2026-08-09: **109 of 962 rows were whole pages** —
+    81 of 81 in one scanned book — and **55 had already been paid for at the VLM**. The
+    2026-08-08 claim that these were "109 real full-page plates" was wrong; visual inspection
+    found genuine plates at 4-13 lines and pages of prose at 25-117.
+
+    **What this deliberately does not do.** A scanned page carrying prose *and* an inline figure
+    (``hodgkin_huxley_1952.pdf`` p2 — a real circuit diagram under 45 lines of text) is rejected
+    with the rest. That is a measured limit, not an oversight: the figure's location lives in the
+    pixels, not the text layer, and every text-geometry signal tried on 2026-08-09 — caption
+    share, line count, the tallest text-free band — ranked that page *below* pages holding no
+    figure at all (band 0.091 vs 0.095-0.110). Losing it beats keeping 81 pages of prose.
+    Recovering it needs the pixel analysis ``regions.py`` keeps out of the v1 hot path.
 
     Caption-only regions (``bbox is None``) are never page scans — they exist only
     because a caption was found.
     """
     if bbox is None:
         return False
-    if caption is not None and caption.strip():
-        return False
     page_area = _area(page_bbox)
     if page_area <= 0:
         return False
-    return (_area(bbox) / page_area) >= FIGURE_MAX_AREA_FRACTION
+    if (_area(bbox) / page_area) < FIGURE_MAX_AREA_FRACTION:
+        return False  # not a full-page region at all — nothing here applies
+    has_caption = bool(caption and caption.strip())
+    return not (has_caption and page_text_lines <= FIGURE_PLATE_MAX_TEXT_LINES)
 
 
 def detect_figure_regions(pdf_path: str) -> list[FigureRegion]:
@@ -318,6 +359,8 @@ def detect_figure_regions(pdf_path: str) -> list[FigureRegion]:
                 image_bboxes, drawing_rects, kind=kind, page_bbox=page_bbox
             )
             remaining = _caption_blocks(page)
+            # Counted once per page, not per region: the page-scan test asks about the page.
+            page_lines = text_line_count(page)
 
             for bbox, method in candidates:
                 caption: str | None = None
@@ -331,7 +374,7 @@ def detect_figure_regions(pdf_path: str) -> list[FigureRegion]:
                     if pair is not None:
                         caption, caption_bbox = pair
                         remaining.remove(pair)
-                if is_page_scan(bbox, page_bbox, caption=caption):
+                if is_page_scan(bbox, page_bbox, caption=caption, page_text_lines=page_lines):
                     continue
                 out.append(
                     FigureRegion(
@@ -394,6 +437,31 @@ class FigureDescription(BaseModel):
         default=None, description="Main trend or relationship shown, if any, else null."
     )
 
+    @field_validator("key_quantities", mode="before")
+    @classmethod
+    def _coerce_key_quantities(cls, value: Any) -> Any:
+        """Accept the shapes the VLM actually returns, not only the one it was asked for.
+
+        **Measured, not defensive:** 96 of 549 calls in the first full-corpus pass (17.5%)
+        failed validation, and the recorded message — visible only once
+        :func:`describe_error_reason` kept it — named one cause: on a figure carrying
+        several values Haiku returns ``key_quantities`` as a single comma-joined *string*
+        instead of a list. A forced tool-use schema constrains the shape it is asked for,
+        not the shape it returns.
+
+        The string is kept **whole** rather than split on commas. This field is display
+        text (``to_text`` joins it back with "; "), so splitting buys nothing and can lose:
+        we do not know where the model intended the item boundaries, and ``1,000 ms`` would
+        become two quantities that were never in the figure.
+        """
+        if value is None:
+            return []
+        if isinstance(value, str):
+            return [value] if value.strip() else []
+        if isinstance(value, list):
+            return [v if isinstance(v, str) else str(v) for v in value]
+        return value
+
     def to_text(self) -> str:
         """Render to a single natural-language string for embedding."""
         parts = [self.summary.strip(), f"Figure type: {self.figure_type.strip()}."]
@@ -441,6 +509,104 @@ def figure_chunk_text(caption: str | None, vlm_description: str) -> str:
     if cap and desc:
         return f"{cap}\n\n{desc}"
     return desc or cap
+
+
+# ============================================================
+# Where a figure BELONGS in the prose (its parent context)
+# ============================================================
+# A figure chunk retrieves on its own text (caption + description) but the model
+# should read it inside the passage that *uses* it — "as shown in Fig. 3, the
+# activation collapses" is what makes the figure mean something. Before this, a
+# figure was `parent == child`: self-contained, and cited by the answer with no
+# surrounding argument.
+
+_LABEL_RE = re.compile(r"^\s*(?:figure|fig)\s*\.?\s*([0-9]+(?:\.[0-9]+)*[a-z]?)", re.IGNORECASE)
+# Separators inside a reference list: "Figures 2.1 and 2.2", "Figs 2.1, 2.2", and ranges
+# written with an en/em dash. Those two are spelled as \u escapes rather than glyphs: they
+# must be matched (papers use them), but ruff RUF001/RUF003 reject the raw characters as
+# visually ambiguous with a hyphen.
+_LIST_SEP = "(?:\\s*(?:,|and|&|to|\\u2013|\\u2014|-)\\s*|\\s+)"
+_WS_RE = re.compile(r"\s+")
+
+
+def figure_label(caption: str | None) -> str | None:
+    """The figure's number as printed — ``Figure 2.2. The revised…`` -> ``2.2``.
+
+    Returns ``None`` when the caption does not open with a figure label, which is the
+    honest answer for a caption-only row or a mis-paired block: without a label there is
+    nothing to search the prose for, and guessing would attach the figure to an unrelated
+    passage.
+    """
+    if not caption:
+        return None
+    match = _LABEL_RE.match(caption.strip())
+    return match.group(1) if match else None
+
+
+def _normalise(text: str) -> str:
+    return _WS_RE.sub(" ", text).strip()
+
+
+def reference_pattern(label: str) -> re.Pattern[str]:
+    """Matches a prose *reference* to figure ``label`` — ``Fig. 2.2``, ``Figures 2.1 and 2.2``.
+
+    The trailing guard is load-bearing: without it ``2.2`` also matches ``2.20``, so a
+    paper with twenty figures would attach figure 2.2 to figure 2.20's passage.
+    """
+    return re.compile(
+        rf"fig(?:ure)?s?\s*\.?\s*(?:[0-9][0-9.]*{_LIST_SEP})*{re.escape(label)}(?![0-9.])",
+        re.IGNORECASE,
+    )
+
+
+def find_figure_context(
+    caption: str | None,
+    parents: Sequence[str],
+) -> tuple[int | None, str]:
+    """Locate the prose parent a figure belongs to. Pure.
+
+    Returns ``(parent_index, how)`` where ``how`` is:
+
+    * ``"cited"`` — a parent *refers* to the figure (``as shown in Fig. 3``). This is the
+      one worth having: it is the passage that uses the figure to make a point.
+    * ``"placed"`` — no reference found, so the parent carrying the caption is used
+      instead. Weaker but honest: it is where the figure sits on the page.
+    * ``"none"`` — no label, or nothing matched. The figure stays self-contained.
+
+    The caption is **removed from a parent before searching it**, because the caption
+    itself contains the label — without that, every figure would "cite" itself and the
+    ``cited`` case would never be reachable.
+    """
+    label = figure_label(caption)
+    if label is None:
+        return None, "none"
+    pattern = reference_pattern(label)
+    cap_norm = _normalise(caption or "")
+    placed: int | None = None
+
+    for index, parent in enumerate(parents):
+        parent_norm = _normalise(parent)
+        body = parent_norm.replace(cap_norm, " ") if cap_norm else parent_norm
+        if pattern.search(body):
+            return index, "cited"
+        if placed is None and cap_norm and cap_norm in parent_norm:
+            placed = index
+    if placed is not None:
+        return placed, "placed"
+    return None, "none"
+
+
+def figure_parent_text(figure_text: str, context_text: str | None) -> str:
+    """The text an answer reads when a figure is retrieved.
+
+    The figure's own text comes **first** — it is what matched the query, so burying it
+    under a page of prose would invite the model to answer from the surrounding argument
+    and cite the figure for it. The citing passage follows as context.
+    """
+    context = (context_text or "").strip()
+    if not context:
+        return figure_text
+    return f"{figure_text}\n\n---\n\n{context}"
 
 
 # ---- The VLM call (impure boundary) ----------------------------------------
@@ -549,6 +715,36 @@ class AnthropicVisionDescriber:
         return FigureDescription.model_validate(extract_tool_use_input(response.content))
 
 
+# One retry, because the failure is transient rather than deterministic. The first
+# full-corpus pass (2026-08-08) lost **96 of 549 calls, 17.5%**, all `ValidationError`
+# — Haiku intermittently returns a tool payload that misses a required field — and the
+# same crop succeeded when re-run by hand. Without this, a paid pass needs a second
+# paid pass to converge.
+VLM_DESCRIBE_ATTEMPTS = 2
+
+# Cap for a persisted failure reason. Long enough to carry a pydantic message naming
+# the offending field; KI-42's 30-char clamp is the counter-example.
+ERROR_REASON_MAX_CHARS = 400
+
+
+def describe_error_reason(exc: BaseException, *, max_chars: int = ERROR_REASON_MAX_CHARS) -> str:
+    """Render a failed VLM call as a persistable ``vlm_call_skipped_reason``. Pure.
+
+    Records the exception's **message**, not just its class. The 2026-08-08 pass wrote
+    ``error: ValidationError`` 96 times and so could not say *which* field the model
+    omitted — the failure was undiagnosable without paying for another run (the same
+    shape as KI-42's truncated note). Whitespace is collapsed so the value stays one
+    readable line in the report and one cell in the DB.
+    """
+    message = _normalise(str(exc))
+    if not message:
+        return f"error: {type(exc).__name__}"
+    reason = f"error: {type(exc).__name__}: {message}"
+    if len(reason) > max_chars:
+        reason = reason[: max_chars - 3].rstrip() + "..."
+    return reason
+
+
 def describe_figure(
     image_path: Path,
     caption: str | None,
@@ -556,16 +752,39 @@ def describe_figure(
     *,
     model: str,
     max_tokens: int = 1024,
+    attempts: int = VLM_DESCRIBE_ATTEMPTS,
 ) -> FigureDescription:
-    """Read a figure PNG, base64-encode it, and describe it via ``describer``. Impure."""
+    """Read a figure PNG, base64-encode it, and describe it via ``describer``. Impure.
+
+    Calls ``describer`` up to ``attempts`` times; the **last** attempt's exception
+    propagates, so a deterministic failure still surfaces (with its message, via
+    ``describe_error_reason``) instead of being retried into silence. The image is read
+    and encoded once — a retry re-sends the same bytes, it does not re-read the file.
+    """
     image_b64 = base64.standard_b64encode(image_path.read_bytes()).decode("utf-8")
-    return describer.describe(
-        image_b64=image_b64,
-        media_type="image/png",
-        caption=caption or "",
-        model=model,
-        max_tokens=max_tokens,
-    )
+
+    def call() -> FigureDescription:
+        return describer.describe(
+            image_b64=image_b64,
+            media_type="image/png",
+            caption=caption or "",
+            model=model,
+            max_tokens=max_tokens,
+        )
+
+    # Attempts before the last one swallow-and-log; the final call is outside the loop
+    # so its failure is raised, not absorbed.
+    for attempt in range(1, max(1, attempts)):
+        try:
+            return call()
+        except Exception as e:
+            log.warning(
+                "vlm_describe_retry",
+                image=image_path.name,
+                attempt=attempt,
+                error=describe_error_reason(e),
+            )
+    return call()
 
 
 def load_figure_image_paths(figure_ids: list[str]) -> dict[str, str]:

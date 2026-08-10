@@ -191,6 +191,47 @@ def test_image_missing_is_recorded_not_fatal(env: Path) -> None:
     assert _figs_by_page(doc_id)[1].vlm_call_skipped_reason == "image_missing"
 
 
+class _FailingDescriber:
+    """Always raises — stands in for the ValidationError that cost 96 calls (2026-08-08)."""
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def describe(self, **_: object) -> FigureDescription:
+        self.calls += 1
+        raise ValueError("1 validation error for FigureDescription\nsummary\n  Field required")
+
+
+def test_failed_call_records_the_message_not_just_the_exception_type(env: Path) -> None:
+    doc_id = _seed(env)
+    failing = _FailingDescriber()
+
+    row = _run(doc_id, failing)
+
+    assert row["errors"] == 1
+    assert failing.calls == 2  # retried once before giving up
+    reason = _figs_by_page(doc_id)[1].vlm_call_skipped_reason
+    assert reason is not None
+    assert reason.startswith("error: ValueError:")
+    assert "summary Field required" in reason  # the diagnosable part, collapsed to one line
+    assert row["error_reasons"] == [reason]  # and the report can name it
+
+
+def test_a_failed_figure_is_retried_by_the_next_run(env: Path) -> None:
+    # The idempotency check is on `vlm_description`, not on the skip reason, so an
+    # errored row stays eligible — a plain re-run picks it up with no --force.
+    doc_id = _seed(env)
+    _run(doc_id, _FailingDescriber())
+    fake = _FakeDescriber()
+
+    _run(doc_id, fake)
+
+    assert fake.calls == 1
+    figs = _figs_by_page(doc_id)
+    assert figs[1].vlm_description is not None
+    assert figs[1].vlm_call_skipped_reason is None  # the error reason is cleared on success
+
+
 def test_figure_units_materialises_described_figure(env: Path) -> None:
     doc_id = _seed(env)
     _run(doc_id, _FakeDescriber())

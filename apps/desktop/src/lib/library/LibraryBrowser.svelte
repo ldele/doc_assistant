@@ -6,6 +6,7 @@
   import type { LibraryDocumentChunks } from '../core/types'
   import { getLibraryDocument } from '../core/api'
   import DocConnections from './DocConnections.svelte'
+  import DocFigures from './DocFigures.svelte'
 
   let {
     docId,
@@ -62,6 +63,10 @@
     <!-- E4 (ADR-027 D1): the exploration panel — related papers + citation edges. Advisory;
          degrades to one quiet line on failure, renders an honest empty when nothing is computed. -->
     <DocConnections docId={detail.id} {onOpenDocument} />
+
+    <!-- L1b: figures, addressed separately from the text chunks below — a figure is a
+         different kind of object, and the panel states which of them are searchable. -->
+    <DocFigures docId={detail.id} />
 
     {#if detail.parents.length === 0}
       <p class="hint">No chunks stored for this document.</p>

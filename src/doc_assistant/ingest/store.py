@@ -147,3 +147,24 @@ def figure_units(document_id: str) -> list[tuple[str, int, str]]:
         if text.strip():
             units.append((text, int(page), str(fig_id)))
     return units
+
+
+def figure_captions(document_id: str) -> dict[str, str]:
+    """``{figure_id: caption}`` for a document's captioned figures.
+
+    Deliberately separate from :func:`figure_units` rather than widening its tuple: that
+    signature is monkeypatched by ingest's write-ordering guard tests, and a caller that
+    patches only ``figure_units`` should still work — it simply finds no caption here,
+    which degrades a figure to a self-contained chunk (the pre-2026-08-09 behaviour)
+    instead of raising.
+
+    The caption is what carries the figure's printed label, and the label is the only
+    thing that can find the passage citing it.
+    """
+    with session_scope() as session:
+        rows = session.execute(
+            select(Figure.id, Figure.caption).where(
+                Figure.document_id == document_id, Figure.caption.is_not(None)
+            )
+        ).all()
+    return {str(fig_id): caption for fig_id, caption in rows if caption and caption.strip()}

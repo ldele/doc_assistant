@@ -57,8 +57,10 @@ from .cleanup import (
     cleanup_orphans_chroma,
     cleanup_orphans_sqlite,
 )
+from .figures import figure_parent_text, find_figure_context
 from .store import (
     _existing_document_id,
+    figure_captions,
     figure_units,
     get_document_row_hashes,
     get_indexed_hashes,
@@ -85,6 +87,7 @@ __all__ = [
     # cache + hashing
     "doc_hash",
     "extract_chunk_metadata",
+    "figure_captions",
     "figure_units",
     # embeddings passthrough (used by callers/tests via the ingest namespace)
     "get_active_model_name",
@@ -132,6 +135,28 @@ def load_documents() -> list[Document]:
             log.warning("document_error", file=path.name, error=str(e))
 
     return documents
+
+
+def _parents_in_order(pc_chunks: list[Document]) -> list[str]:
+    """The distinct parent texts of ``pc_chunks``, indexed by ``parent_index``.
+
+    Children carry their parent's text, so the parents are recovered from them rather
+    than re-chunked — re-splitting the document to find them again would be a second
+    source of truth that could drift from the one actually stored.
+
+    Gaps are impossible in practice (``build_parent_child_chunks`` emits contiguous
+    indices) but a gap would silently shift every later index, so the list is built by
+    position rather than by append order.
+    """
+    by_index: dict[int, str] = {}
+    for chunk in pc_chunks:
+        index = chunk.metadata.get("parent_index")
+        text = chunk.metadata.get("parent_text")
+        if isinstance(index, int) and isinstance(text, str):
+            by_index.setdefault(index, text)
+    if not by_index:
+        return []
+    return [by_index.get(i, "") for i in range(max(by_index) + 1)]
 
 
 def process_one_document(
@@ -273,21 +298,31 @@ def process_one_document(
 
         pc_chunks = build_parent_child_chunks(text, pc_base_metadata)
 
-        # A figure is an atomic retrieval unit (like a kept-whole table): one
-        # self-contained parent==child chunk each, appended after the prose parents.
+        # A figure retrieves on its own text but should be *read* inside the passage that
+        # uses it. Each figure keeps its own `parent_index` — sharing the citing parent's
+        # would let the dedup in `pipeline` (keyed on doc_hash+parent_index) drop the
+        # figure whenever the prose chunk was already retrieved — while its `parent_text`
+        # carries the citing passage alongside the figure's own text.
+        fig_captions = figure_captions(document_id) if fig_units else {}
+        prose_parents = _parents_in_order(pc_chunks)
         next_parent = max((c.metadata["parent_index"] for c in pc_chunks), default=-1) + 1
         for j, (fig_text, fig_page, fig_id) in enumerate(fig_units):
+            ctx_index, how = find_figure_context(fig_captions.get(fig_id), prose_parents)
+            context = prose_parents[ctx_index] if ctx_index is not None else None
             pc_chunks.append(
                 Document(
                     page_content=fig_text,
                     metadata={
                         **pc_base_metadata,
-                        "parent_text": fig_text,
+                        "parent_text": figure_parent_text(fig_text, context),
                         "parent_index": next_parent + j,
                         "child_index": 0,
                         "page": fig_page,
                         "chunk_type": "figure",
                         "figure_id": fig_id,
+                        # Which of the two rules placed it, so a reader can tell a passage
+                        # that argues from the figure from one that merely sits near it.
+                        "figure_context": how,
                     },
                 )
             )

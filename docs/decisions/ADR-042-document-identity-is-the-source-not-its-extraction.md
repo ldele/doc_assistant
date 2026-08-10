@@ -123,3 +123,55 @@ de-duplication and surprising if a user deliberately keeps two copies.
 - ⚠ **"Source bytes are stable" is an assumption on this machine**, not a measured property of a user's
   filesystem. It is the assumption the whole decision rests on, and it is the thing the reversal
   condition names.
+
+---
+
+## Amendment — 2026-08-08 (same day): identity is a minted key, not any hash
+
+**Raised by the user:** *identity should be associated with the document's metadata, so that the
+source file and the extracted text are both children of it.*
+
+**The model is right, and it is better than the decision above.** ADR-042 as written still
+conflates *the work* with *one file of it*: it moves identity from one derived artifact (the
+extracted text) to another (the source bytes). The user's framing puts the abstract document at
+the centre, with the PDF as one manifestation and the extraction as one derivation — both
+children. That is the correct object model, and it is what a research library actually contains:
+a paper, which may exist as a preprint *and* a published PDF.
+
+**But metadata cannot be the identity *key*.** In this codebase metadata is itself extracted
+(`extract_doc_metadata`), it is unreliable (KI-26: 14 documents had wrong titles), it is
+user-correctable by design (ADR-013 overrides), and it is sometimes absent. Deriving identity
+from it would mean **correcting a title changes the document's identity** — reintroducing exactly
+the defect this ADR exists to remove, with a new trigger.
+
+**Revised decision — identity is a stable opaque key, minted once and never recomputed.** That
+key already exists: `Document.id`, the UUID. The defect was never *which value we hash*; it is
+that **the id is re-minted** whenever the content hash moves. So:
+
+- **`Document.id` is the identity.** Assigned once, on first ingest, and never derived from
+  anything that can change.
+- **Metadata *describes* the identity** (title, authors, year, DOI). It is an attribute, and
+  correcting it is free.
+- **`source_hash` and `doc_hash` become *matching signals*, not keys** — evidence used to
+  recognise an incoming file as an existing document. A match cascade, strongest first: DOI when
+  present → source-bytes hash → path/filename → leave it to the user.
+- **A document may have several source files.** The user's model implies it and this makes it
+  representable; ADR-042's single source-bytes key could not.
+
+**What this changes in practice:** ingest stops asking *"what is this content's id?"* and starts
+asking *"which existing document is this file a manifestation of?"* — and when the answer is
+"none", it mints a new id. Sidecars keep pointing at the same identity through every extraction
+change, which was the whole point.
+
+**The sidecar split above is unaffected** — source-derived vs extraction-derived still holds, and
+extraction-derived sidecars must still be invalidated **loudly** rather than silently.
+
+**What this costs:** the matching cascade is a heuristic where the pure hash was not, so it can be
+*wrong* — two genuinely different documents merged, or one document split in two. That is a new
+failure mode ADR-042 did not have, and it is the thing RG-027 must now measure: not only "does the
+backfill preserve links" but "does the cascade ever match two documents that are not the same
+work". A wrong merge is worse than a missed one, so the cascade should refuse rather than guess,
+and leave unmatched files as new documents.
+
+**Status stays `proposed`** — this is a better decision, still unbuilt, and now with one more
+thing to validate.

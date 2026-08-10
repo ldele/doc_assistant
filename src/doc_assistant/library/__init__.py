@@ -10,7 +10,8 @@ lifecycle concerns.
 
 ``models`` (the returned dataclasses) · ``documents`` (queries + ADR-013 overrides + ADR-014
 delete) · ``pins`` (demo-corpus removal) · ``folders`` (ADR-025 F1) · ``keywords`` (tag families,
-ADR-015) · ``chunks`` (the L1 browser) · ``citations`` · ``similarity``.
+ADR-015) · ``chunks`` (the L1 browser) · ``figures`` (L1b, per-document figures) · ``citations`` ·
+``similarity``.
 
 Prefer importing the sub-module when you know it (``from doc_assistant.library.folders import
 create_folder``) — the import line then names the sub-domain. The flat re-export below keeps
@@ -56,6 +57,11 @@ from doc_assistant.library.documents import (
     resolve_source_path,
     reveal_document_source,
     set_document_meta,
+)
+from doc_assistant.library.figures import (
+    DocumentFigureView,
+    FigureView,
+    list_document_figures,
 )
 from doc_assistant.library.folders import (
     FolderSummary,
@@ -120,9 +126,11 @@ __all__ = [
     "DocConnections",
     "DocumentChunkView",
     "DocumentDetails",
+    "DocumentFigureView",
     "DocumentPrefixError",
     "DocumentRef",
     "DocumentSummary",
+    "FigureView",
     "FolderSummary",
     "GraphEdge",
     "GraphNode",
@@ -169,6 +177,7 @@ __all__ = [
     "graph_subgraph",
     "group_children",
     "library_summary",
+    "list_document_figures",
     "list_documents",
     "list_folders",
     "list_keyword_families",

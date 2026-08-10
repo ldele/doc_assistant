@@ -19,7 +19,13 @@ from pydantic import BaseModel
 from apps.api.models._common import _as_utc
 
 if TYPE_CHECKING:
-    from doc_assistant.library import DocumentChunkView, DocumentSummary, ParentBlock
+    from doc_assistant.library import (
+        DocumentChunkView,
+        DocumentFigureView,
+        DocumentSummary,
+        FigureView,
+        ParentBlock,
+    )
 
 
 class LibraryDocumentPayload(BaseModel):
@@ -136,4 +142,68 @@ class LibraryDocumentChunksPayload(BaseModel):
             health=v.health,
             parents=[LibraryParentPayload.from_block(b) for b in v.parents],
             child_count=v.child_count,
+        )
+
+
+class LibraryFigurePayload(BaseModel):
+    """One figure in the per-document figure panel (L1b).
+
+    Carries ``retrievable`` + ``not_retrievable_reason`` rather than only the raw columns: the
+    panel's job is to show which figures the assistant can actually see, and a list that looked
+    identical either way would hide that.
+    """
+
+    id: str
+    page: int
+    kind: str | None
+    caption: str | None
+    description: str | None
+    extraction_method: str | None
+    has_image: bool
+    retrievable: bool
+    not_retrievable_reason: str | None
+
+    @classmethod
+    def from_view(cls, v: FigureView) -> LibraryFigurePayload:
+        return cls(
+            id=v.id,
+            page=v.page,
+            kind=v.kind,
+            caption=v.caption,
+            description=v.description,
+            extraction_method=v.extraction_method,
+            has_image=v.has_image,
+            retrievable=v.retrievable,
+            not_retrievable_reason=v.not_retrievable_reason,
+        )
+
+
+class LibraryDocumentFiguresPayload(BaseModel):
+    """A document's figures, addressed separately from its text chunks.
+
+    Figures are a different kind of object from prose and get their own panel; the counts let
+    the header state the corpus truth ("10 figures, 2 searchable") without the client
+    recomputing it from the list.
+    """
+
+    id: str
+    filename: str
+    title: str | None
+    figures: list[LibraryFigurePayload]
+    total: int
+    retrievable_count: int
+    captioned_count: int
+    missing_image_count: int
+
+    @classmethod
+    def from_view(cls, v: DocumentFigureView) -> LibraryDocumentFiguresPayload:
+        return cls(
+            id=v.id,
+            filename=v.filename,
+            title=v.title,
+            figures=[LibraryFigurePayload.from_view(f) for f in v.figures],
+            total=v.total,
+            retrievable_count=v.retrievable_count,
+            captioned_count=v.captioned_count,
+            missing_image_count=v.missing_image_count,
         )

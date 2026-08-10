@@ -12,8 +12,11 @@ from __future__ import annotations
 from doc_assistant.ingest.figures import (
     SKIP_CAPTION_SUFFICIENT,
     SKIP_NO_IMAGE,
+    VLM_DESCRIBE_ATTEMPTS,
     FigureDescription,
     build_vlm_messages,
+    describe_error_reason,
+    describe_figure,
     extract_tool_use_input,
     figure_chunk_text,
     figure_image_path,
@@ -261,3 +264,119 @@ def test_extract_tool_use_input_raises_without_tool_use():
 
     with pytest.raises(ValueError, match="no tool_use"):
         extract_tool_use_input([{"type": "text", "text": "nope"}])
+
+
+# ============================================================
+# The shapes the VLM actually returns
+# ============================================================
+
+
+def test_key_quantities_accepts_a_comma_joined_string():
+    # The real 2026-08-08 failure: Haiku returns one string, not a list.
+    desc = FigureDescription(
+        figure_type="plot",
+        summary="Membrane response.",
+        key_quantities="100 mV, 40 m.mho/cm2, peak at 1-2 msec",
+    )
+    # Kept whole — splitting on the comma would invent boundaries the model never marked.
+    assert desc.key_quantities == ["100 mV, 40 m.mho/cm2, peak at 1-2 msec"]
+    assert "Key quantities: 100 mV, 40 m.mho/cm2, peak at 1-2 msec." in desc.to_text()
+
+
+def test_key_quantities_none_and_blank_become_empty():
+    def quantities(value):
+        return FigureDescription(figure_type="p", summary="s", key_quantities=value).key_quantities
+
+    assert quantities(None) == []
+    assert quantities("  ") == []
+
+
+def test_key_quantities_coerces_non_string_items():
+    desc = FigureDescription(figure_type="p", summary="s", key_quantities=[42, "40 mV"])
+    assert desc.key_quantities == ["42", "40 mV"]
+
+
+def test_key_quantities_still_rejects_a_shape_with_no_reading():
+    import pytest
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError):
+        FigureDescription(figure_type="p", summary="s", key_quantities={"a": 1})
+
+
+# ============================================================
+# A failed VLM call — the reason, and the retry
+# ============================================================
+
+
+def test_error_reason_carries_the_message_not_just_the_type():
+    reason = describe_error_reason(ValueError("summary: Field required"))
+    assert reason == "error: ValueError: summary: Field required"
+
+
+def test_error_reason_collapses_newlines_into_one_line():
+    # pydantic messages are multi-line; the value has to survive as one DB cell.
+    reason = describe_error_reason(ValueError("1 validation error\nsummary\n  Field required"))
+    assert "\n" not in reason
+    assert "summary Field required" in reason
+
+
+def test_error_reason_is_capped_but_keeps_the_head():
+    reason = describe_error_reason(ValueError("x" * 999), max_chars=60)
+    assert len(reason) == 60
+    assert reason.startswith("error: ValueError: xxx")
+    assert reason.endswith("...")
+
+
+def test_error_reason_falls_back_to_the_type_when_there_is_no_message():
+    assert describe_error_reason(RuntimeError()) == "error: RuntimeError"
+
+
+class _FlakyDescriber:
+    """Fails its first ``failures`` calls, then returns a description."""
+
+    def __init__(self, failures: int) -> None:
+        self.failures = failures
+        self.calls = 0
+
+    def describe(self, **_: object) -> FigureDescription:
+        self.calls += 1
+        if self.calls <= self.failures:
+            raise ValueError(f"transient {self.calls}")
+        return FigureDescription(figure_type="plot", summary="ok")
+
+
+def test_describe_figure_retries_a_transient_failure(tmp_path):
+    png = tmp_path / "f.png"
+    png.write_bytes(b"png-bytes")
+    flaky = _FlakyDescriber(failures=1)
+
+    result = describe_figure(png, "Figure 1.", flaky, model="m")
+
+    assert flaky.calls == 2  # one failure, one success — the pass does not need a re-run
+    assert result.summary == "ok"
+
+
+def test_describe_figure_raises_the_last_failure_when_attempts_run_out(tmp_path):
+    import pytest
+
+    png = tmp_path / "f.png"
+    png.write_bytes(b"png-bytes")
+    always = _FlakyDescriber(failures=99)
+
+    # A deterministic failure must still surface — retrying is not swallowing.
+    with pytest.raises(ValueError, match="transient 2"):
+        describe_figure(png, None, always, model="m")
+    assert always.calls == VLM_DESCRIBE_ATTEMPTS
+
+
+def test_describe_figure_attempts_one_makes_exactly_one_call(tmp_path):
+    import pytest
+
+    png = tmp_path / "f.png"
+    png.write_bytes(b"png-bytes")
+    always = _FlakyDescriber(failures=99)
+
+    with pytest.raises(ValueError):
+        describe_figure(png, None, always, model="m", attempts=1)
+    assert always.calls == 1

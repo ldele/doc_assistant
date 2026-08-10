@@ -360,6 +360,17 @@ FIGURE_MIN_AREA_FRACTION = float(os.getenv("FIGURE_MIN_AREA_FRACTION", "0.02"))
 # caption the right discriminator rather than a second area heuristic.
 FIGURE_MAX_AREA_FRACTION = float(os.getenv("FIGURE_MAX_AREA_FRACTION", "0.85"))
 
+# A full-page image is a genuine *plate* only if the page carries no more than this many lines of
+# text — its caption, a running head, a page number. Above it, the page is prose that happened to
+# be scanned as one image, and `is_page_scan` rejects it.
+#
+# This exists because the caption alone does not discriminate: a scan **with an OCR text layer**
+# has a "Fig. N" block on every page, which silently exempted every page of three scanned
+# documents (measured 2026-08-09 — 109 of 962 figure rows were whole pages, 55 of them already
+# VLM-described). Line count rather than character count, because a caption split across blocks
+# corrupts a character measure but not a line one.
+FIGURE_PLATE_MAX_TEXT_LINES = int(os.getenv("FIGURE_PLATE_MAX_TEXT_LINES", "20"))
+
 
 # ============================================================
 # Figure VLM description (Phase 6 / Feature 4c — gated, API-only)

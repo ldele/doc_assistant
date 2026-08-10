@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-08-08 · class: append-only -->
+<!-- status: active · updated: 2026-08-09 · class: append-only -->
 
 # DEVLOG — doc_assistant
 
@@ -9,6 +9,169 @@ Format: What changed | Why | Rejected alternatives | What it opens
 
 > Entries **2026-07-14 and earlier** live in [`docs/archive/DEVLOG-archive-001.md`](archive/DEVLOG-archive-001.md)
 > (moved verbatim 2026-07-21). This file keeps 2026-07-15 onward.
+
+---
+## 2026-08-09 (2) — the page-scan discriminator was defeated by OCR: 109 "full-page plates" were 3 scanned PDFs
+
+**What changed.** `is_page_scan` now requires **two** conditions to exempt a full-page region, not
+one: a caption **and** a page carrying at most `FIGURE_PLATE_MAX_TEXT_LINES` (20) lines of text.
+New `text_line_count` at the impure boundary feeds it, counted once per page.
+
+**Why.** The 2026-08-08 rule exempted any captioned full-page region, reasoning that "a scanned
+page has no text layer, so there is no caption to pair". **A scan with OCR does.** Three documents
+here are exactly that: the text layer puts a `Fig. N` block on every page, pairing succeeds, and
+every page is stored as a figure. Measured: **109 of 962 rows (11.3%) were whole pages** —
+`Computational_neuroanatomy.pdf` **81 of 81**, `hodgkin_huxley_1952.pdf` 22/23,
+`hubel_wiesel_1959.pdf` 6/9 — and **55 had already been paid for at the VLM**, describing a page of
+prose rather than a figure. The same entry's claim that these were "the 109 real full-page figures
+this corpus does contain" was wrong, and it was wrong because the number was never looked at.
+
+**How the threshold was chosen — three signals tried, two rejected.**
+- **Caption share of page text** — rejected: a body block that matches the caption regex inflates
+  it (`hodgkin_huxley` p1 paired a 1659-char "caption", so a page of prose scored 0.709).
+- **Tallest text-free band** (fraction of page height) — rejected, and this is the interesting one:
+  it ranked `hodgkin_huxley` p2, which **does** carry a real circuit diagram, at **0.091 — below
+  every pure-text page (0.095-0.110)**. The figure is small and inline, so it leaves no hole.
+- **Text line count** — kept. Immune to caption fragmentation (which corrupts any character
+  measure), and the two populations separate: verified-by-eye plates at **4-13 lines**, pages of
+  prose at **25-117**. The cut sits in the empty band, and a guard test asserts `13 < N < 25`.
+
+**Verified before applying, on the real PDFs:** the 3 scanned documents go **81→28, 23→1, 9→3**;
+three control documents (`transformer_vaswani_2017`, `1707.01836v1`, `cajal-lecture`) move by
+**exactly 0**. Then applied: **962 → 881 figures**, 43 survivors re-described (0 errors).
+
+**The limit, stated rather than hidden.** A scanned page carrying prose *and* an inline figure is
+now dropped with the rest — `hodgkin_huxley` p2's circuit diagram is a real loss. Every text-layer
+signal ranked that page below pages with no figure at all, because the figure's location is in the
+pixels, not the text layer. Recovering it needs the image analysis `regions.py` deliberately keeps
+out of the v1 hot path. Losing one figure beats keeping 81 pages of prose.
+
+**Rejected.** Tying the budget to `CHUNK_SIZE_CHILD` (a "paragraph of prose" is tempting, but it
+would make figure extraction change silently whenever the chunking sweep moves a locked setting).
+Self-calibrating against the document's median lines/page (more elegant, unvalidated today, and it
+drops the verified 13-line plate).
+
+**What it opens.** Pixel-level region detection inside a scanned page — the only way to recover an
+inline figure from a scan, and the same lever that would crop it instead of storing the page.
+
+---
+## 2026-08-09 (1) — the figure claim is VERIFIED end to end; the 17.5% VLM loss had one cause, and it was never transient
+
+**What changed.** Yesterday's headline — "the RAG can retrieve images" — was built but unproven,
+because no `chunk_type='figure'` chunk existed. It exists now: **575 figure chunks across 83
+documents**, and a figure retrieves and arrives inside the passage that cites it. Plus three code
+fixes the run itself forced.
+
+**The diagnosis, and why the fix was a one-line record.** The 2026-08-08 pass lost **96 of 549
+calls (17.5%)** to `ValidationError`, recorded as `f"error: {type(e).__name__}"` — the type without
+the message, so a 96-failure run was undiagnosable without paying for another one. That is KI-42's
+truncated-note defect in a second place. `describe_error_reason` now records the message
+(whitespace-collapsed, capped at 400 chars), and **the cause appeared within one minute of the
+re-run**: on a figure carrying several values Haiku returns `key_quantities` as one comma-joined
+**string**. A forced tool-use schema constrains the shape the model is *asked* for, not the shape
+it returns.
+
+**It was never transient, and the retry proved it.** A single retry was added on the belief
+(2026-08-08) that the failures were random — a hand re-run of one image had succeeded. Measured:
+of 153 calls, **31 failed both attempts**. If failures were independent at 17.5% only ~5 would
+have; ~20% failing twice means the per-figure probability is near 0.45 and **the same figures fail
+repeatedly** — the ones with many quantities. So the retry is worth keeping but is not the fix;
+`FigureDescription` now accepts the string shape. **Kept whole, not split on commas:** we do not
+know where the model intended item boundaries, and `1,000 ms` would become two quantities that
+were never in the figure.
+
+**Two corrections to yesterday's plan, both found by running it.**
+- **`ingest` alone is a no-op** — `--dry-run` reported `skip_unchanged=97, would_add=0`. The dedup
+  gate is `h in indexed` on the *extracted-text* hash, which a VLM pass never changes, so a
+  described figure cannot enter retrieval without `--rebuild`. Filed as **KI-44**: at 97 documents
+  that is ~4 min; at the contract's 10,000 it is hours, for a sidecar that changed nothing about
+  the text.
+- **Two dated DB backups were staged into this public repo** (`library.db.bak-…` 8.4 MB,
+  `eval.duckdb.bak-…` 5.5 MB — the private corpus's metadata). `.gitignore` covered the bare names
+  but not a suffixed copy. Unstaged before any commit; `data/*.bak*` now ignored.
+
+**Verified, with the numbers.** Rebuild: 97 added / 0 errors, and KI-43's own interim check run by
+hand around it — `figures` 962→962, `chunk_epistemics` 445→445, `concept_presence` 31→31, **0 ids
+changed**. Then: all **575** chunks open with the figure's own text; **231 carry a citing
+passage** (194 `cited`, 37 `placed`); **0** disagree with their `figure_context` flag; 4/4
+description-derived probes retrieved the figure (3 at rank 1), each arriving as figure-then-prose.
+
+**The honest part.** Those probes are *plumbing* — the query is built from the chunk's own text.
+On five natural questions written blind, **2 surfaced a figure** ("a diagram of the transformer
+architecture" → that paper's architecture figure at **rank 1**) and 3 did not. And the 60% of
+figures with `figure_context: none` is **not** a matching failure: **336 of 344 have no caption at
+all**, 2 have a caption the label parser cannot read (`"Source: by authors Figure 1. …"` — the
+regex anchors at the start), and only **6 of 962** are labelled-but-unmatched. The `none` bucket
+is a *4b captioning* observation, not a 4c one.
+
+**Rejected.** Splitting `key_quantities` on commas (invents boundaries). Loosening `_LABEL_RE` to
+`search` for those 2 captions (a mid-caption "Figure 1" would attach the wrong figure — 2 rows is
+not worth a wrong-attribution class). Writing figure chunks into Chroma directly to dodge the
+rebuild (it would verify a substitute for the real ingest path, which is the thing under test).
+
+**What it opens.** **87 figures remain eligible and undescribed** (31 that failed twice + 56 the
+per-document budget skipped) ≈ $0.17 — one of the three natural-query misses was a paper whose
+figures are in that set. KI-44 (an incremental trigger for sidecar-only changes). The 336
+caption-less figures: worth asking whether 4b's caption pairing is missing them or they genuinely
+have none.
+
+---
+## 2026-08-08 (7) — figures become retrievable *in context*, and browsable per paper (L1b)
+
+**What changed.** Two halves of the same goal — make the RAG able to answer with images.
+
+**RAG side.** A figure chunk's `parent_text` is no longer the figure alone. New pure helpers in
+`ingest/figures.py` — `figure_label`, `reference_pattern`, `find_figure_context`,
+`figure_parent_text` — locate the prose that *uses* a figure, and `ingest` attaches it. Two rules:
+**cited** (a passage says "as shown in Fig. 2.2") beats **placed** (the passage carrying the
+caption). 29 tests.
+
+**Library side.** New `library/figures.py` (`list_document_figures`) + payloads + route
+`GET /api/library/documents/{id}/figures` + `DocFigures.svelte`, wired into `LibraryBrowser`
+beside `DocConnections`. 15 tests.
+
+**Why the parent change.** Figures were `parent == child` — "atomic retrieval units", self-contained
+and citable with no surrounding argument. A figure means something *because of the passage that
+argues from it*; retrieving the description alone hands the model a caption and a shape. The user
+asked for the citing section as parent, with positional placement as fallback, and the two rules
+above are exactly that.
+
+**Three decisions inside it worth keeping.**
+- **The caption is stripped from a parent before searching it.** The caption contains the label
+  too, so without this every figure "cites" itself and the `cited` branch is unreachable — the
+  feature would have silently degraded to `placed` for every figure and still looked like it worked.
+- **The figure keeps its own `parent_index`.** Sharing the citing parent's would let `pipeline`'s
+  dedup (keyed `doc_hash`+`parent_index`) drop the figure whenever the prose chunk was already
+  retrieved — the figure would vanish from exactly the answers it is most relevant to.
+- **The figure's own text comes first in `parent_text`.** It is what matched the query; burying it
+  under a page of prose invites the model to answer from the surrounding argument and cite the
+  figure for it.
+
+**Why the library panel reports retrievability.** A figure enters retrieval only once it has a VLM
+description (`figure_units` filters on exactly that). A panel that listed rows without that
+distinction would show images the assistant cannot see, with nothing to tell them apart — so each
+card carries `retrievable` and, when false, a **translated** reason (`caption_sufficient` →
+"Caption already describes it"). Same posture as the rest of the UI: inform, don't hide.
+
+**Rejected.**
+- **Widening `figure_units`' tuple** to carry the caption. It is monkeypatched by ingest's
+  write-ordering guard tests; a separate `figure_captions()` means a caller that patches only
+  `figure_units` degrades to the old self-contained behaviour instead of raising.
+- **A fourth `/api/library/*` prefix** for figures. `/connections` is already a document
+  sub-resource in `documents.py`; a new prefix would have made the composition docstring false.
+- **Hiding non-retrievable figures.** They are the ones the user most needs to see — that is the
+  gap between what is in the paper and what the assistant can reach.
+- **Mixing figures into the chunk browser.** The user asked for them separate, and they are a
+  different kind of object; interleaving them into parent blocks would bury them in prose.
+
+**Measured, and the number is small.** Median figure is 787×376 → **327 image tokens** (median;
+mean 502), well under Haiku's 1600 cap — so ≈$0.002/figure, **~$1** for all 549 eligible. Sampled
+one document first: the description of `nihms-66884` p30 matches the two-panel schematic on the
+page, and it transcribed the state-space equations including `Σ` correctly.
+
+**What it opens.** The full VLM pass was still running at session close (189/962 described), so
+**no figure chunk exists yet** — `ingest` must run after it to materialise them, and the retrieval
+claim is unverified end to end. That is the first task next session.
 
 ---
 ## 2026-08-08 (6) — ADR-042: a document's identity is its source, not its extraction (KI-43's decision)

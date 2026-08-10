@@ -9,12 +9,16 @@
   // tidiness preference: the detail payload is a median 170 KB and up to 1.85 MB per document
   // on this corpus (663 parent blocks + 2,608 children for the largest), and the old view
   // rendered every parent's text plus every child node eagerly on open. Opening a document now
-  // costs zero chunk bytes; the text arrives when the reader asks for it.
+  // costs zero chunk bytes; the text arrives when the reader asks for it — and once they have
+  // asked, `chunkmemory` keeps that document open for the session, so the top ← → arrows come
+  // back to it as they left it.
   //
   // The header therefore reads the document summary the Library list already holds (`doc`)
   // rather than the chunk payload — the same fields, without the text.
+  import { untrack } from 'svelte'
   import type { LibraryDocument, LibraryDocumentChunks } from '../core/types'
   import { getLibraryDocument } from '../core/api'
+  import { rememberChunksOpen, wereChunksOpen } from './chunkmemory'
   import DocConnections from './DocConnections.svelte'
   import DocFigures from './DocFigures.svelte'
   import DocReferences from './DocReferences.svelte'
@@ -36,24 +40,30 @@
   let error = $state<string | null>(null)
   let chunksOpen = $state(false)
 
-  // A new document resets the block to closed and drops the previous payload — both because
-  // it belongs to another document and because holding 1.85 MB of text for a document the
-  // reader has left is the cost this block exists to avoid.
+  // Changing document always drops the previous payload — holding 1.85 MB of text for a
+  // document the reader has left is the cost this block exists to avoid. The *open state*,
+  // though, is remembered per document for the session (`chunkmemory`), so coming back via the
+  // top ← → arrows lands where they left off. Remembering the state costs one re-fetch;
+  // remembering the payload would cost the whole point.
+  //
+  // Wrapped in `untrack`: `startChunkLoad` reads `detail`/`loading`, and a synchronous read
+  // inside an effect makes them dependencies — the completing fetch would then re-run this
+  // effect, null the payload, and fetch again, forever.
   let token = 0
   $effect(() => {
-    void docId
-    chunksOpen = false
-    detail = null
-    error = null
-    loading = false
-    token++
+    const id = docId
+    untrack(() => {
+      detail = null
+      error = null
+      loading = false
+      token++
+      chunksOpen = wereChunksOpen(id)
+      if (chunksOpen && id) startChunkLoad(id)
+    })
   })
 
-  function toggleChunks(): void {
-    chunksOpen = !chunksOpen
-    if (!chunksOpen || detail !== null || loading) return
-    const id = docId
-    if (!id) return
+  function startChunkLoad(id: string): void {
+    if (detail !== null || loading) return
     loading = true
     const mine = ++token
     void (async () => {
@@ -66,6 +76,14 @@
         if (mine === token) loading = false
       }
     })()
+  }
+
+  function toggleChunks(): void {
+    chunksOpen = !chunksOpen
+    const id = docId
+    if (!id) return
+    rememberChunksOpen(id, chunksOpen)
+    if (chunksOpen) startChunkLoad(id)
   }
 
   // The nav strip and the block order are the same list — a block cannot be added to one and

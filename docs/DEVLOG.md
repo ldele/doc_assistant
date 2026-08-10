@@ -64,11 +64,27 @@ budget on linked rows first, so a paper with 346 references cannot lose the one 
 can actually open. Sorting the owned references to the top: the block is a bibliography, and
 re-ordering it to flatter one feature would misrepresent it.
 
+**Chunks remembers per document, for the session** (`chunkmemory.ts`, added on review): the reader
+asked that the top ← → arrows come back to a document as they left it. It remembers the **open
+flag keyed by document id, never the payload** — restoring the state costs one re-fetch (measured
+on this box: **27 ms / 258 KB** typical, **339 ms / 1.83 MB** for `hebb_1949.pdf`), while caching
+the text would mean holding that per visited document, which is the cost the block exists to
+avoid. Session-scoped, not `localStorage`: remembering "open" across launches would restore the
+eager render on a fresh start, where nobody has asked for anything yet. The restore runs inside
+`untrack` — `startChunkLoad` reads `detail`/`loading`, and a synchronous read in a Svelte 5 effect
+makes them dependencies, so the completing fetch would re-run the effect, null the payload, and
+fetch again forever.
+
+**Rejected on the same question:** persisting the preference globally (a remembered "open" would
+restore the 1.85 MB worst case on *every* navigation, which is the request inverted) and expanding
+by default (the old behaviour, and the reason the request exists).
+
 **What it opens.** KI-45's write-side fix (~19 more correct links, none of them reachable from the
 UI until resolution re-runs). A `Citation` ordinal column, which is the only way the list could be
 in the paper's own order — today it is year-descending, and the block says so. The other consumers
-of `target_document_id` (`cited_by`, `graph_subgraph`, `wiki.py`, `concept_skeleton.py`) are still
-reading the unverified rows.
+of `target_document_id` (`cited_by`, `graph_subgraph`, `concept_skeleton.py`'s provenance pairs,
+the CLI display) are still reading the unverified rows. And scroll position is *not* restored with
+the open state — coming back re-opens the block at its top.
 
 ---
 ## 2026-08-09 (2) — the page-scan discriminator was defeated by OCR: 109 "full-page plates" were 3 scanned PDFs

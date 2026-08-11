@@ -10,11 +10,18 @@
   import type { LibraryDocumentFigures } from '../core/types'
   import { getDocumentFigures } from '../core/api'
   import { API_BASE } from '../core/api/_base'
+  import FigureViewer from './FigureViewer.svelte'
 
   let { docId }: { docId: string } = $props()
 
   let data = $state<LibraryDocumentFigures | null>(null)
   let error = $state<string | null>(null)
+
+  // Full-size viewer (user request 2026-08-10). Only figures that have a rendered image can be
+  // opened, and the viewer steps through *that* list — so ← / → never lands on a card with
+  // nothing to show. `null` = closed.
+  let viewerIndex = $state<number | null>(null)
+  const viewable = $derived((data?.figures ?? []).filter((f) => f.has_image))
 
   // Last-write-wins token, mirroring DocConnections' own load guard: clicking through
   // documents quickly must not let a slow earlier response overwrite a newer one.
@@ -72,7 +79,14 @@
       {#each data.figures as fig (fig.id)}
         <li class="card" class:dim={!fig.retrievable}>
           {#if fig.has_image}
-            <img src={imageUrl(fig.id)} alt={fig.caption ?? `Figure on page ${fig.page}`} loading="lazy" />
+            <button
+              class="zoom"
+              type="button"
+              title="View full size"
+              onclick={() => (viewerIndex = viewable.findIndex((v) => v.id === fig.id))}
+            >
+              <img src={imageUrl(fig.id)} alt={fig.caption ?? `Figure on page ${fig.page}`} loading="lazy" />
+            </button>
           {:else}
             <div class="noimage">no image</div>
           {/if}
@@ -94,6 +108,15 @@
     </ul>
   {/if}
 </section>
+
+{#if viewerIndex !== null && viewable.length > 0}
+  <FigureViewer
+    figures={viewable}
+    index={viewerIndex}
+    onIndex={(i) => (viewerIndex = i)}
+    onClose={() => (viewerIndex = null)}
+  />
+{/if}
 
 <style>
   .figures {
@@ -134,6 +157,21 @@
      difference is legible at a glance, not that they are hidden. */
   .card.dim {
     opacity: 0.72;
+  }
+  /* The whole thumbnail is the affordance — a separate "expand" icon would be a second target
+     for the thing the reader is already pointing at. */
+  .zoom {
+    display: block;
+    width: 100%;
+    padding: 0;
+    border: none;
+    background: none;
+    cursor: zoom-in;
+    border-radius: 3px;
+  }
+  .zoom:hover img {
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
   }
   img {
     width: 100%;

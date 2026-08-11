@@ -376,6 +376,25 @@ export function splitInheritedFamilies(families: KeywordFamily[]): {
   return { real, inherited }
 }
 
+// The one line that stands for a collapsed parent block in the Chunks list.
+//
+// A list of "Block 0 / Block 1 / Block 2" is not navigable — the reader collapsed the blocks to
+// scan them, so each row has to say what is in it. The text is stored markdown, so the leading
+// decoration (`## `, `**`, `> `, list bullets) is stripped: it carries no meaning at one line
+// wide and pushes the words that do out of view. Truncation is at a word boundary, because a
+// preview cut mid-word reads as corruption.
+export function blockPreview(text: string | null, max: number = 90): string {
+  const flat = (text ?? '')
+    .replace(/\s+/g, ' ')
+    .replace(/^[#>\s]*/, '')
+    .replace(/[*_`]+/g, '')
+    .trim()
+  if (flat.length <= max) return flat
+  const cut = flat.slice(0, max)
+  const lastSpace = cut.lastIndexOf(' ')
+  return `${(lastSpace > max * 0.6 ? cut.slice(0, lastSpace) : cut).trimEnd()}…`
+}
+
 // How one extracted reference is labelled in the References block.
 //
 // Every field of a reference can be null — the extractor is a regex over a bibliography, and

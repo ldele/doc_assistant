@@ -11,6 +11,49 @@ Format: What changed | Why | Rejected alternatives | What it opens
 > (moved verbatim 2026-07-21). This file keeps 2026-07-15 onward.
 
 ---
+## 2026-08-10 (2) — the index moved out of the scroll, the blocks became a list, and a figure can finally be read
+
+**What changed.** Three refinements to the document view, all from looking at it in use.
+
+**1 · The index is above the metadata and outside the scrolling area.** It was a sticky strip
+*inside* the scroller, which meant it passed over the text as the reader scrolled — a bar that
+covers what you are reading is worse than no bar. `.browser` is now a flex column of a fixed
+`nav` + a `.scroller` that owns the overflow, so the strip is always visible and never overlaps
+anything. `scroll-margin-top` on the blocks drops from 3.6rem to 0.5rem: there is no longer a
+sticky element to clear. (`min-height: 0` on both is load-bearing — without it the flex child
+refuses to shrink and the inner scroller never gets a scrollbar.)
+
+**2 · Parent blocks are collapsed too, as a scannable list.** Each row is marker + `Block N` +
+**a preview of its text** + child count, opening to the full block. The preview is the point:
+`blockPreview` strips the leading markdown (`## `, `**`, `> `) that carries nothing at one line
+wide and truncates at a word boundary, because "Block 0 / Block 1 / Block 2" is not a list anyone
+can read. Expand-all / Collapse-all for the reader who does want the whole thing. Measured on the
+82-block paper: opening Chunks is now **842 DOM nodes instead of 2,089**, and 2,432 with every
+block expanded — so the default costs a third of what it did, and the ceiling is still reachable.
+
+**3 · Figures open full size, with a real zoom.** The cards cap images at 180 px, which is enough
+to recognise a figure and not enough to read one. `FigureViewer.svelte` (scrim + centered card +
+Esc, the `AboutDialog` pattern) has **two levels**: fit-to-window, then one click to natural size
+inside a scrolling frame — the browser's own scrolling is the pan, so no zoom library. ← / →
+step through the document's figures, and a new figure always starts fitted (carrying the previous
+one's zoom over would drop the reader into the middle of an image they have not seen whole).
+Verified on a full-page plate: thumbnail 180 px → fitted **914 px** → actual size **1755 px**,
+**9.8×**, stage scrolling. The viewer steps only over figures that *have* an image, so ← / →
+never lands on a card with nothing to show.
+
+**Rejected.** A click handler on the `<img>` for zoom — `svelte-check` flagged it, correctly:
+zooming has to be reachable from the keyboard, so it is a `<button>` wrapping the image and
+Space/Enter come free. A separate "expand" icon on each card: the thumbnail is already the thing
+the reader is pointing at.
+
+**What it opens.** Scroll position is still not restored with a document's remembered chunk
+state. The parent-block open set resets on document change (the block *list* is cheap; the open
+set is not worth persisting). And the chat-history cleanup the same review asked for — bulk
+delete, export-all, conversation folders — is logged in `docs/ui-checklist.md`, not built: both
+primitives exist (`App.svelte:392` soft delete, `POST /api/export` per conversation), so it is a
+bulk layer over them, and the folders half needs its own ADR (`Folder` is document-scoped, ADR-025).
+
+---
 ## 2026-08-10 — the Library document view is five ordered blocks, chunks cost nothing until asked for, and the References block's links had to be verified before they could ship
 
 **What changed.** The document view (`LibraryBrowser.svelte`) is now **Metadata → Connections →

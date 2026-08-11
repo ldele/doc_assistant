@@ -9,6 +9,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 
 import {
+  blockPreview,
   facetFilter,
   familyCanonicalMap,
   familyUnitsOf,
@@ -245,6 +246,32 @@ test('F3: filterByQuery is a case-insensitive substring match, empty query = ide
   assert.deepEqual(filterByQuery(items, 'imagenet', (s) => s), ['ImageNet', 'imagenette'])
   assert.deepEqual(filterByQuery(items, 'bm', (s) => s), ['BM25'])
   assert.deepEqual(filterByQuery(items, 'zzz', (s) => s), [])
+})
+
+// --- Chunks list: the line that stands for a collapsed parent block ----------------------
+
+test('blockPreview strips the markdown decoration that carries nothing at one line wide', () => {
+  // Real shape from this corpus: parent_text starts "## **Knowledge Graphs Meet Graph Neural…".
+  assert.equal(
+    blockPreview('## **Knowledge Graphs Meet Graph Neural Networks**', 90),
+    'Knowledge Graphs Meet Graph Neural Networks',
+  )
+  assert.equal(blockPreview('>  quoted   line\n\nwith  gaps', 90), 'quoted line with gaps')
+})
+
+test('blockPreview truncates at a word boundary — a mid-word cut reads as corruption', () => {
+  const out = blockPreview('the quick brown fox jumps over the lazy dog', 20)
+  assert.equal(out, 'the quick brown fox…')
+  assert.ok(!out.includes('jum'))
+})
+
+test('blockPreview falls back to a hard cut when one word exceeds the budget', () => {
+  assert.equal(blockPreview('supercalifragilisticexpialidocious', 10), 'supercalif…')
+})
+
+test('blockPreview handles an empty or missing block without throwing', () => {
+  assert.equal(blockPreview(null), '')
+  assert.equal(blockPreview('   '), '')
 })
 
 // --- References block: how a half-parsed reference is labelled --------------------------

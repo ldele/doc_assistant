@@ -18,6 +18,7 @@
   import { untrack } from 'svelte'
   import type { LibraryDocument, LibraryDocumentChunks } from '../core/types'
   import { getLibraryDocument } from '../core/api'
+  import { blockPreview } from './library'
   import { rememberChunksOpen, wereChunksOpen } from './chunkmemory'
   import DocConnections from './DocConnections.svelte'
   import DocFigures from './DocFigures.svelte'
@@ -56,6 +57,7 @@
       detail = null
       error = null
       loading = false
+      openParents = {}
       token++
       chunksOpen = wereChunksOpen(id)
       if (chunksOpen && id) startChunkLoad(id)
@@ -86,6 +88,23 @@
     if (chunksOpen) startChunkLoad(id)
   }
 
+  // Which parent blocks the reader has opened. Collapsed is the default here too, and for the
+  // same reason one level up: 82 blocks of prose rendered eagerly is what made the old view
+  // expensive, and a reader scanning for one passage wants the *list*, not all of it at once.
+  // Keyed by parent_index; reset when the document changes.
+  let openParents = $state<Record<number, boolean>>({})
+
+  function toggleParent(index: number): void {
+    openParents[index] = !openParents[index]
+  }
+
+  function setAllParents(open: boolean): void {
+    if (!detail) return
+    openParents = open
+      ? Object.fromEntries(detail.parents.map((p) => [p.parent_index, true]))
+      : {}
+  }
+
   // The nav strip and the block order are the same list — a block cannot be added to one and
   // forgotten in the other.
   const BLOCKS = [
@@ -96,9 +115,8 @@
     { id: 'doc-references', label: 'References' },
   ]
 
-  // Instant, not smooth: with Chunks expanded the document view is ~76,000 px tall (measured
-  // on a 142-block paper), and smooth-scrolling that distance is a multi-second animation
-  // rather than a jump.
+  // Instant, not smooth: with Chunks expanded the document view can be tens of thousands of
+  // pixels tall, and smooth-scrolling that distance is a multi-second animation, not a jump.
   function jumpTo(id: string): void {
     document.getElementById(id)?.scrollIntoView({ block: 'start' })
   }
@@ -108,6 +126,16 @@
   {#if !docId}
     <p class="hint">Select a document from the sidebar to read it.</p>
   {:else}
+    <!-- The index sits above the document and *outside* the scrolling area: as a sticky strip
+         inside it, it passed over the text as the reader scrolled. Here it stays put under the
+         breadcrumb band and never covers anything. -->
+    <nav class="blocknav" aria-label="Jump to a section of this document">
+      {#each BLOCKS as b (b.id)}
+        <button type="button" onclick={() => jumpTo(b.id)}>{b.label}</button>
+      {/each}
+    </nav>
+
+    <div class="scroller">
     <header class="dochead" id="doc-metadata">
       <h2>{doc?.title ?? doc?.filename ?? 'Document'}</h2>
       {#if doc}
@@ -130,12 +158,6 @@
         <p class="metaline">This document isn’t in the loaded library list.</p>
       {/if}
     </header>
-
-    <nav class="blocknav" aria-label="Jump to a section of this document">
-      {#each BLOCKS as b (b.id)}
-        <button type="button" onclick={() => jumpTo(b.id)}>{b.label}</button>
-      {/each}
-    </nav>
 
     <!-- E4 (ADR-027 D1): what this document is *near* + who cites it. What it cites is the
          References block at the foot. Advisory; degrades to one quiet line on failure. -->
@@ -174,22 +196,40 @@
         {:else if detail && detail.parents.length === 0}
           <p class="quiet">No chunks stored for this document.</p>
         {:else if detail}
+          <div class="listtools">
+            <button type="button" onclick={() => setAllParents(true)}>Expand all</button>
+            <button type="button" onclick={() => setAllParents(false)}>Collapse all</button>
+          </div>
+          <!-- A list of blocks, each opening to its own text. Every row carries a preview
+               because "Block 0 / Block 1 / Block 2" is not something a reader can scan. -->
           {#each detail.parents as p (p.parent_index)}
-            <article class="parent">
-              <div class="phead">Block {p.parent_index}</div>
-              <p class="blocktext">{p.parent_text}</p>
-              <details class="children">
-                <summary>{p.children.length} child chunk{p.children.length === 1 ? '' : 's'}</summary>
-                {#each p.children as c (c.child_index)}
-                  <div class="child">
-                    <div class="chead">
-                      #{c.child_index}
-                      {#if !c.retrievable}<span class="flag" title="Excluded from retrieval">not retrievable</span>{/if}
+            <article class="parent" class:open={openParents[p.parent_index]}>
+              <button
+                class="phead"
+                type="button"
+                aria-expanded={!!openParents[p.parent_index]}
+                onclick={() => toggleParent(p.parent_index)}
+              >
+                <span class="chev" class:open={openParents[p.parent_index]} aria-hidden="true">›</span>
+                <span class="plabel">Block {p.parent_index}</span>
+                <span class="ppreview">{blockPreview(p.parent_text)}</span>
+                <span class="pcount">{p.children.length}</span>
+              </button>
+              {#if openParents[p.parent_index]}
+                <p class="blocktext">{p.parent_text}</p>
+                <details class="children">
+                  <summary>{p.children.length} child chunk{p.children.length === 1 ? '' : 's'}</summary>
+                  {#each p.children as c (c.child_index)}
+                    <div class="child">
+                      <div class="chead">
+                        #{c.child_index}
+                        {#if !c.retrievable}<span class="flag" title="Excluded from retrieval">not retrievable</span>{/if}
+                      </div>
+                      <p class="childtext">{c.text}</p>
                     </div>
-                    <p class="childtext">{c.text}</p>
-                  </div>
-                {/each}
-              </details>
+                  {/each}
+                </details>
+              {/if}
             </article>
           {/each}
         {/if}
@@ -205,15 +245,26 @@
     <div class="block" id="doc-references">
       <DocReferences {docId} {onOpenDocument} />
     </div>
+    </div>
   {/if}
 </section>
 
 <style>
+  /* The pane is a column: a fixed index strip, then everything that scrolls. `min-height: 0`
+     is load-bearing — without it a flex child refuses to shrink and the inner scroller never
+     gets a scrollbar. */
   .browser {
     flex: 1;
-    overflow-y: auto;
-    padding: 0.8rem 0;
+    display: flex;
+    flex-direction: column;
     min-width: 0;
+    min-height: 0;
+  }
+  .scroller {
+    flex: 1;
+    overflow-y: auto;
+    min-height: 0;
+    padding: 0.8rem 0;
   }
   .hint {
     color: var(--fg-2);
@@ -249,17 +300,14 @@
     font-weight: 600;
     margin-right: 0.35rem;
   }
-  /* The strip is what makes the fixed block order navigable rather than merely present. */
+  /* The strip is what makes the fixed block order navigable rather than merely present. It sits
+     outside `.scroller`, so it is always there and never passes over the text. */
   .blocknav {
-    position: sticky;
-    top: 0;
-    z-index: 2;
+    flex: none;
     display: flex;
     flex-wrap: wrap;
     gap: 0.3rem;
-    padding: 0.35rem 0;
-    margin-bottom: 0.2rem;
-    background: var(--bg);
+    padding: 0 0 0.5rem;
     border-bottom: 1px solid var(--border);
   }
   .blocknav button {
@@ -277,9 +325,9 @@
     border-color: var(--accent);
   }
   .block {
-    /* Clears the sticky nav when jumped to, so a block's heading is never hidden under it.
-       Measured, not guessed: at 2.4rem the heading landed ~9 px *under* the 33 px strip. */
-    scroll-margin-top: 3.6rem;
+    /* No sticky strip to clear any more — just enough that a jumped-to heading is not flush
+       against the top edge. */
+    scroll-margin-top: 0.5rem;
   }
   .block h3 {
     font-size: 0.9rem;
@@ -320,21 +368,76 @@
     color: var(--warn-fg);
     opacity: 1;
   }
+  .listtools {
+    display: flex;
+    gap: 0.4rem;
+    margin-bottom: 0.5rem;
+  }
+  .listtools button {
+    background: none;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 0.05rem 0.55rem;
+    font: inherit;
+    font-size: 0.72rem;
+    color: var(--fg-2);
+    cursor: pointer;
+  }
+  .listtools button:hover {
+    color: var(--fg);
+    border-color: var(--accent);
+  }
   .parent {
     border: 1px solid var(--border);
     border-radius: 10px;
     background: var(--surface);
-    padding: 0.6rem 0.75rem;
-    margin-bottom: 0.6rem;
-  }
-  .phead {
-    font-size: 0.72rem;
-    color: var(--fg-2);
-    font-weight: 600;
     margin-bottom: 0.35rem;
+    overflow: hidden;
+  }
+  /* Collapsed, a block is one scannable row: marker, label, preview, child count. */
+  .phead {
+    display: flex;
+    align-items: baseline;
+    gap: 0.5rem;
+    width: 100%;
+    background: none;
+    border: none;
+    padding: 0.45rem 0.7rem;
+    font: inherit;
+    font-size: 0.78rem;
+    color: var(--fg-2);
+    cursor: pointer;
+    text-align: left;
+  }
+  .phead:hover {
+    background: var(--surface-2, var(--bg));
+  }
+  .plabel {
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  .ppreview {
+    flex: 1;
+    min-width: 0;
+    color: var(--fg);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .pcount {
+    flex: none;
+    font-size: 0.68rem;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 0 0.3rem;
+  }
+  .parent.open .ppreview {
+    /* Once the block is open its own text is right below — the preview would repeat it. */
+    visibility: hidden;
   }
   .blocktext {
     margin: 0;
+    padding: 0 0.75rem 0.6rem;
     white-space: pre-wrap;
     overflow-wrap: anywhere;
     font-size: 0.95rem;
@@ -342,7 +445,7 @@
     font-family: var(--font-serif);
   }
   .children {
-    margin-top: 0.5rem;
+    margin: 0 0.75rem 0.6rem;
     border-top: 1px dashed var(--border);
     padding-top: 0.4rem;
   }

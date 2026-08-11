@@ -11,6 +11,51 @@ Format: What changed | Why | Rejected alternatives | What it opens
 > (moved verbatim 2026-07-21). This file keeps 2026-07-15 onward.
 
 ---
+## 2026-08-11 (2) — the UI checklist is prioritised instead of exhaustive (90 KB → 20 KB), and the 2026-08-11 feature set is queued behind keyword quality
+
+**What changed.** `docs/ui-checklist.md` rewritten: a **§1 priority queue** at the front, then open
+work by theme, verification debt, a compressed Shipped section, and the per-feature review gate.
+Seven new user asks (2026-08-11) folded in. The pre-rewrite file is kept **verbatim** at
+`.claude/ui-checklist-archive-001.md`.
+
+**Why.** It had grown to **90 KB / 202 lines**, with single rows running 11,480 characters —
+entire diagnostic essays restating what DEVLOG, the ADRs and KNOWN_ISSUES already own. A board you
+cannot scan is not a board: nothing said what to build *next*.
+
+**The archive is local-only, deliberately.** `docs/ui-checklist.md` is gitignored working state
+(ADR-029) but `docs/archive/` is **tracked** — putting the verbatim copy there would have pushed
+local working notes into a public repo. It went to `.claude/` instead, which is already the
+gitignored home for that class of file. Several rows carried measurements that exist nowhere else,
+so freezing rather than deleting was the only safe compression.
+
+**What the compression preserved.** Each row now points at its source instead of repeating it, but
+the *load-bearing* constraints stayed inline, because they are the ones that get re-derived
+expensively when lost: `ANSWER_PROMPT`'s citing block is the integrity layer's wire format, not a
+prompt · `EMBEDDING_MODEL` is the catastrophic knob and is governed by nothing · BM25's `avgdl` is
+corpus-global, so per-document chunking is contained but not free · reference order is not
+recoverable from today's schema · a keyword that looks like junk is usually specialist vocabulary.
+A coverage diff against the archive caught **four open items** the first pass silently dropped
+(two shipped-feature defects, the RAG-governance row, conversation rename) — they were restored.
+
+**Priorities, as the user set them.** P1 **keyword quality** — explicitly ahead of the advanced
+RAG/chat modes, and it is repair rather than research: all three causes were already traced
+(extractor truncation on `.`/`/`, no suppression list, an undemoted 1-doc tail). P2 **LLM-assisted
+ingestion** (opt-in, over the programmatic default). P3 **projects**. P4 chat modes. P5 search.
+P6 KI-45. P7 settings.
+
+**The one synthesis worth recording.** Conversation folders, a home/project picker, and per-folder
+concepts arrived as three separate asks across two days — they are **one feature**. Building them
+separately yields three grouping systems that disagree about what a "project" is. The checklist now
+says so and gates all three behind a single ADR.
+
+**Rejected.** Deleting the long rows outright (several held the only copy of a measurement).
+Splitting the board into per-theme files (the point is one scannable queue). Archiving to
+`docs/archive/` (tracked — would leak local state).
+
+**What it opens.** The Project ADR is now the blocking artifact for three queued features. P2 needs
+a spec + a cost-gate decision before any LLM ingestion pass runs.
+
+---
 ## 2026-08-11 — chat history gets a cleanup: the whole thing exports to one file, then many chats delete at once
 
 **What changed.** `POST /api/conversations/export` renders every conversation into one markdown

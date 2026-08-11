@@ -55,6 +55,18 @@ Splitting the board into per-theme files (the point is one scannable queue). Arc
 **What it opens.** The Project ADR is now the blocking artifact for three queued features. P2 needs
 a spec + a cost-gate decision before any LLM ingestion pass runs.
 
+**Follow-up the same day — P1's baseline overturned P1's own queued fix.** Measuring before planning
+(`docs/PLAN_2026-08-11_ingestion-quality.md`) found the keyword layer at **1,376 keywords, 98% on a
+single document, exactly one reaching five documents, 15 per document, and 15 of 97 documents with
+none**. The checklist's framing — "60 keywords, 50% singleton, demote the tail" — was measured at 76
+documents and had gone stale in kind, not degree: at 98% singletons the layer does not partition the
+corpus at all. Two samples gave the mechanism: `transformer_vaswani_2017.pdf` spends **9 of its 15
+slots** on overlapping shingles of one figure artifact (`eos` / `eos pad` / `pad` / `pad br` /
+`eos pad br`), and `nihms-66884.pdf` spends **11 of 15** on shingles of the PMC running header. So
+the ranked defects are page furniture → shingle overlap → stale enrichment → the `_TOKEN_RE` `.`/`/`
+truncation → author leakage — and **the fix that was queued first is fourth**. Recorded as a memory
+because the stale number had already misled the plan once.
+
 ---
 ## 2026-08-11 — chat history gets a cleanup: the whole thing exports to one file, then many chats delete at once
 

@@ -11,6 +11,69 @@ Format: What changed | Why | Rejected alternatives | What it opens
 > (moved verbatim 2026-07-21). This file keeps 2026-07-15 onward.
 
 ---
+## 2026-08-11 (4) — a whitespace hook wanted to edit a CC-BY vocabulary (ADR-043), and chasing it found four docs already corrupted by the encoding hazard this project documents
+
+**What changed.** `docs/decisions/ADR-043-received-content-is-preserved-verbatim.md` (new) +
+its index row; `.pre-commit-config.yaml` gained one `exclude` with its reasoning inline; the two
+Android adaptive-icon XMLs got their missing final newline; and **four tracked docs were repaired
+from double-encoded text**: `docs/ROADMAP.md`, `docs/architecture.md`, `docs/knowledge-layer.md`,
+`docs/decisions.md`.
+
+**Why the hook was wrong, which is the ADR.** `pre-commit run --all-files` had been red for weeks on
+`data/anzsrc-2020-for-20210429.ttl`. Read as a formatting nit it is an obvious fix. It is not one:
+**28 of 28** trailing-whitespace hits sit **inside Turtle `"""…"""` literals** (`skos:definition`,
+`skos:scopeNote`), so the hook was editing the text of a classification published by the Australian
+Bureau of Statistics. The file is vendored under **CC BY 4.0**, `data/anzsrc_2020_for.json` cites it
+in `_meta.source_file` as the artifact it was derived from, and **nothing parses it at runtime** —
+no `.ttl`/`rdflib`/`turtle`/`skos` reference anywhere in `src/`, `scripts/`, `tests/`, `apps/`;
+rdflib is not a dependency. So the edit bought nothing and cost the only property the file has.
+Excluded, not obeyed. ADR-043 generalises it to two tests a formatter must pass — *did we author
+it* and *is whitespace load-bearing* — and records the direction the user asked for: the same rule
+applies to **ingest**, where it is currently bent on the user's own documents
+(`strip_image_placeholders` KI-14, marker stripping KI-29, de-hyphenation RG-025), and where a
+genuine judgement call should become a **user option** with an opinionated default.
+
+**Then the hunt for that class of bug found the class already realised.** Surveying all **166**
+tracked markdown files for the Windows encoding hazard the project names as non-negotiable #9 turned
+up **four double-encoded files — exactly the four carrying a UTF-8 BOM**, which is the signature of
+one tool having read UTF-8 as the ANSI codepage and re-saved: `ROADMAP.md` (228 occurrences),
+`architecture.md` (113), `knowledge-layer.md` (60), `decisions.md` (12). Two of the four are linked
+from the README, so this was public. `architecture.md`'s flow diagram rendered `â†“`/`â†’` instead
+of `↓`/`→`, and **`knowledge-layer.md`'s trust table** — the one `AGENTS.md` tells every agent to
+read *before believing any marker* — had a severity column of `âš ï¸` and `âŒ` instead of ⚠️ and ❌.
+
+**The repair needed three attempts, and the first two failures are the interesting part.**
+1. **Blanket `encode('cp1252').decode('utf-8')`** is the textbook inverse and is valid only if
+   *every* non-ASCII character is damaged. A guard tested that per file and **refused three of the
+   four** — they mix damaged text with correct characters (`→`), and the blanket form would have
+   corrupted the good ones. Only `architecture.md` was uniformly damaged.
+2. **Targeted runs, cp1252 only**, cleared all visible mojibake but left **9 control characters**:
+   cp1252 leaves `0x81/0x8D/0x8F/0x90/0x9D` undefined, so any sequence containing them cannot
+   round-trip through it. Those were emoji — `⚠️`'s U+FE0F variation selector and `❌`.
+3. **Per-character byte mapping (cp1252, then latin-1)** finished it. `❌` (E2 9D 8C) mojibakes to
+   `â` + U+009D + `Œ`, where U+009D is encodable **only** by latin-1 and `Œ` (U+0152) **only** by
+   cp1252 — the run mixes codecs, so the mapping has to be per character, not per run.
+
+**Verified, not assumed.** All four: **0 mojibake, 0 BOM, 0 control characters**. Every ASCII-only
+line byte-identical and line counts stable in each pass (the check that proves only damaged
+characters moved), and pre-existing correct `→` preserved rather than re-mangled. `pre-commit
+--all-files` **all 11 hooks Passed, exit 0** — the actual goal, since a full run that is always red
+trains people to ignore it. `docs_check --strict` 0/0.
+
+**Rejected.** Stripping the `.ttl` literals (mutates a published dataset for nothing). Deleting the
+`.ttl` (destroys the attribution chain its derived JSON cites). Fetching it on demand like the eval
+corpus (that pattern exists for large, redistribution-fraught PDFs; neither applies to a 926 KB
+CC-BY vocabulary). Rewriting `6484004` to split the release commit out of the `chore(hooks)` subject
+— **it is already on `origin/main`**, so the history is public and stays as-is.
+
+**What it opens.** ADR-043's user-facing half is direction with no design: how a normalisation record
+is stored, surfaced, and paid for at 10,000 documents is unsolved, and de-hyphenation (RG-025) now
+inherits a constraint it did not have — reversible and inspectable, not merely correct on average.
+Also unresolved: nothing prevents the encoding damage recurring. Every one of those four files was
+committed broken and no gate noticed; a `docs_check` rule for BOM + mojibake in tracked text would
+have caught all four at the commit that introduced them.
+
+---
 ## 2026-08-11 (3) — release prep for v0.5.0: the front docs stopped overstating the product, and the demo GIF stopped leaking the author's chat history
 
 **What changed.** The reader-facing set (`README.md`, `evals/README.md`, `docs/DEMO.md`,

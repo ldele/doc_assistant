@@ -59,6 +59,21 @@ class ConversationMetaUpdate(BaseModel):
     title: str | None = None
 
 
+class ConversationBulkUpdate(BaseModel):
+    """POST body for the sidebar's "delete selected" — the same soft-delete as the single-row
+    PATCH, applied to a list in one transaction. ``deleted=False`` restores, so a mis-click is
+    undoable by the same route that made it."""
+
+    session_ids: list[str]
+    deleted: bool = True
+
+
+class ConversationBulkResult(BaseModel):
+    """How many conversations the bulk action touched (deduped ids)."""
+
+    updated: int
+
+
 class ConversationSourcePayload(BaseModel):
     n: int
     citation: str

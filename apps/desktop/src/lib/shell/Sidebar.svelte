@@ -40,6 +40,7 @@
     onArchive,
     onDelete,
     onRename,
+    onDeleteMany,
   }: {
     mode: 'chat' | 'library' | 'graph'
     conversations: ConversationSummary[]
@@ -61,7 +62,12 @@
     onArchive: (sessionId: string, archived: boolean) => void
     onDelete: (sessionId: string) => void
     onRename: (sessionId: string, title: string) => void
+    /** Bulk soft-delete of the ticked conversations. The *selection* stays local to this
+     *  component — nothing else in the app needs to know which rows are ticked, unlike the
+     *  Library's select mode, where the main pane's add-to-folder menu participates too. */
+    onDeleteMany: (sessionIds: string[]) => void
   } = $props()
+
 
   // Inline rename: "Rename" in the ⋯ menu turns the row's title into an editable input.
   let editingId = $state<string | null>(null)
@@ -145,6 +151,36 @@
   const sortedConvos = $derived(sortConvos(matchedConvos, sortKey))
   const pinnedConvos = $derived(sortedConvos.filter((c) => c.pinned))
   const otherConvos = $derived(sortedConvos.filter((c) => !c.pinned))
+
+  // --- Select mode: tick several chats, delete them in one action (user request 2026-08-10).
+  let selectMode = $state(false)
+  let selected = $state<string[]>([])
+  const visibleIds = $derived([...pinnedConvos, ...otherConvos].map((c) => c.session_id))
+  const allVisibleSelected = $derived(
+    visibleIds.length > 0 && visibleIds.every((id) => selected.includes(id)),
+  )
+
+  function enterSelect(): void {
+    selectMode = true
+    selected = []
+  }
+  function exitSelect(): void {
+    selectMode = false
+    selected = []
+  }
+  function toggleSelected(sid: string): void {
+    selected = selected.includes(sid) ? selected.filter((s) => s !== sid) : [...selected, sid]
+  }
+  function toggleAllVisible(): void {
+    // "All" means what is on screen — the filter and the archived toggle are part of the
+    // selection the user is looking at, so select-all must not reach past them.
+    selected = allVisibleSelected ? [] : [...visibleIds]
+  }
+  function deleteSelected(): void {
+    if (selected.length === 0) return
+    onDeleteMany([...selected])
+    exitSelect()
+  }
   // Library nav-tree groups (L4 Decision 3), computed client-side from the payload. Types/Added
   // render only with ≥2 entries (Decision 3a — a one-option filter is noise). Keywords are no
   // longer a nav group — they moved to the main-pane facet bar as a multi-select filter.
@@ -271,6 +307,14 @@
         {/if}
       </div>
       {#if mode === 'chat'}
+        <button
+          class="sortbtn"
+          class:on={selectMode}
+          onclick={() => (selectMode ? exitSelect() : enterSelect())}
+          title={selectMode ? 'Leave select mode' : 'Select chats to delete'}
+          aria-pressed={selectMode}
+          type="button"><Icon name="check" size={15} /></button
+        >
         <div class="sortwrap" bind:this={sortwrapEl}>
           <button
             class="sortbtn"
@@ -309,8 +353,28 @@
       class="convrow"
       class:active={isActive(c.session_id)}
       class:menuopen={openMenuFor === c.session_id}
+      class:picked={selectMode && selected.includes(c.session_id)}
     >
-      {#if editingId === c.session_id}
+      {#if selectMode}
+        <!-- The whole row toggles the tick: in select mode there is nothing else a click on a
+             chat could sensibly mean, and a 13px checkbox is a poor target. -->
+        <button
+          class="rowmain pickrow"
+          aria-pressed={selected.includes(c.session_id)}
+          onclick={() => toggleSelected(c.session_id)}
+          type="button"
+        >
+          <span class="tickbox" aria-hidden="true">
+            {#if selected.includes(c.session_id)}<Icon name="check" size={12} />{/if}
+          </span>
+          <span class="pickbody">
+            <span class="title">{c.title}</span>
+            <span class="rowmeta">
+              <span>{relTime(c.last_at)} · {c.turn_count} turn{c.turn_count === 1 ? '' : 's'}</span>
+            </span>
+          </span>
+        </button>
+      {:else if editingId === c.session_id}
         <input
           class="rename-input"
           bind:value={editValue}
@@ -357,13 +421,30 @@
   {/snippet}
 
   {#if mode === 'chat'}
+    {#if selectMode}
+      <div class="selbar">
+        <button class="selact" onclick={toggleAllVisible} type="button">
+          {allVisibleSelected ? 'Clear' : 'All'}
+        </button>
+        <span class="selcount">{selected.length} selected</span>
+        <button
+          class="selact danger"
+          disabled={selected.length === 0}
+          onclick={deleteSelected}
+          type="button">Delete</button
+        >
+        <button class="selact" onclick={exitSelect} type="button">Done</button>
+      </div>
+    {/if}
     <nav class="list" aria-label="Conversation history" onscroll={closeMenu}>
       <!-- New chat as a tree-style row (like Library's "All documents" and Graph's "Taxonomy") —
            each rail opens with the same slim row idiom instead of a chunky filled button. -->
-      <button class="treerow" onclick={onNew} type="button">
-        <span class="treeicon"><Icon name="plus" size={14} /></span>
-        <span class="treelabel">New chat</span>
-      </button>
+      {#if !selectMode}
+        <button class="treerow" onclick={onNew} type="button">
+          <span class="treeicon"><Icon name="plus" size={14} /></span>
+          <span class="treelabel">New chat</span>
+        </button>
+      {/if}
       {#if conversations.length === 0}
         <p class="empty">No conversations yet. Ask a question to start one.</p>
       {:else}
@@ -711,6 +792,70 @@
   .convrow.active {
     background: var(--surface-2);
     border-color: var(--border);
+  }
+  /* --- select mode ------------------------------------------------------------------ */
+  .convrow.picked {
+    background: color-mix(in srgb, var(--accent) 12%, transparent);
+    border-color: var(--accent);
+  }
+  .pickrow {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+  }
+  .pickbody {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    flex: 1;
+  }
+  .tickbox {
+    flex: none;
+    width: 15px;
+    height: 15px;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--accent);
+  }
+  .convrow.picked .tickbox {
+    border-color: var(--accent);
+  }
+  .selbar {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.3rem 0.5rem;
+    border-bottom: 1px solid var(--border);
+  }
+  .selcount {
+    margin-right: auto;
+    font-size: 0.72rem;
+    color: var(--fg-2);
+  }
+  .selact {
+    background: none;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 0.05rem 0.55rem;
+    font: inherit;
+    font-size: 0.72rem;
+    color: var(--fg-2);
+    cursor: pointer;
+  }
+  .selact:hover:not(:disabled) {
+    color: var(--fg);
+    border-color: var(--accent);
+  }
+  .selact:disabled {
+    opacity: 0.45;
+    cursor: default;
+  }
+  .selact.danger:not(:disabled) {
+    color: var(--danger-fg, #d9534f);
+    border-color: color-mix(in srgb, var(--danger-fg, #d9534f) 45%, transparent);
   }
   .rowmain {
     text-align: left;

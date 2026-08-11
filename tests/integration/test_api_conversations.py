@@ -110,3 +110,59 @@ def test_patch_conversation_pin_archive_soft_delete(temp_db: None) -> None:
     assert [c["session_id"] for c in client.get("/api/conversations").json()] == ["s1"]
     client.patch("/api/conversations/s2", json={"deleted": False})
     assert {c["session_id"] for c in client.get("/api/conversations").json()} == {"s1", "s2"}
+
+
+# ============================================================
+# Chat-history cleanup — POST /api/conversations/export + /bulk
+# ============================================================
+
+
+def test_export_history_endpoint_returns_a_markdown_file(temp_db: None) -> None:
+    _seed("s1", "first question", datetime(2026, 7, 13, 10, 0, 0))
+    _seed("s2", "second question", datetime(2026, 7, 13, 11, 0, 0))
+
+    r = _client().post("/api/conversations/export")
+    assert r.status_code == 200
+    assert r.headers["content-type"].startswith("text/markdown")
+    assert "provenote-chat-history.md" in r.headers.get("content-disposition", "")
+    body = r.text
+    assert "Chat history export" in body
+    assert "first question" in body and "second question" in body
+
+
+def test_export_history_on_empty_history_is_200_not_400(temp_db: None) -> None:
+    # A first-run backup should be a file that says there is nothing yet, not an error.
+    r = _client().post("/api/conversations/export")
+    assert r.status_code == 200
+    assert "No conversations to export yet" in r.text
+
+
+def test_export_route_is_not_shadowed_by_the_session_id_route(temp_db: None) -> None:
+    # `/export` and `/bulk` are literals declared before `/{session_id}`. If that order ever
+    # slipped, this POST would 404 as "conversation not found" instead of returning a file.
+    _seed("s1", "a question", datetime(2026, 7, 13, 10, 0, 0))
+    assert _client().post("/api/conversations/export").status_code == 200
+
+
+def test_bulk_delete_endpoint_hides_the_selected_conversations(temp_db: None) -> None:
+    for sid in ("a", "b", "c"):
+        _seed(sid, f"question {sid}", datetime(2026, 7, 13, 10, 0, 0))
+    client = _client()
+
+    r = client.post("/api/conversations/bulk", json={"session_ids": ["a", "b"]})
+    assert r.status_code == 200 and r.json() == {"updated": 2}
+    assert [c["session_id"] for c in client.get("/api/conversations").json()] == ["c"]
+
+    # Restored by the same route — a mis-click is undoable.
+    assert client.post(
+        "/api/conversations/bulk", json={"session_ids": ["a", "b"], "deleted": False}
+    ).json() == {"updated": 2}
+    assert len(client.get("/api/conversations").json()) == 3
+
+
+def test_bulk_delete_with_an_empty_list_changes_nothing(temp_db: None) -> None:
+    _seed("a", "a question", datetime(2026, 7, 13, 10, 0, 0))
+    client = _client()
+    r = client.post("/api/conversations/bulk", json={"session_ids": []})
+    assert r.json() == {"updated": 0}
+    assert len(client.get("/api/conversations").json()) == 1

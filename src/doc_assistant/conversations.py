@@ -24,7 +24,7 @@ from sqlalchemy import func, select
 
 from doc_assistant.db.models import AnswerRecord, ConversationMeta
 from doc_assistant.db.session import session_scope
-from doc_assistant.export import ExportSource, ExportTurn
+from doc_assistant.export import ExportSource, ExportTurn, render_conversation_markdown
 
 _TITLE_MAX = 80
 
@@ -137,6 +137,117 @@ def set_conversation_meta(
             meta.deleted_at = datetime.now(timezone.utc) if deleted else None
         if title is not None:
             meta.title_override = title.strip() or None
+
+
+def set_conversations_deleted(session_ids: list[str], *, deleted: bool = True) -> int:
+    """Soft-delete (or restore) many conversations at once. Returns how many rows were touched.
+
+    One transaction, not N: the sidebar's "delete selected" is a single user action, and half of
+    it succeeding is a worse outcome than none of it. Same semantics as ``set_conversation_meta``
+    per row — ``deleted_at`` stamped or cleared, ``AnswerRecord`` provenance untouched — so a
+    bulk delete is exactly N single deletes and is undone the same way.
+
+    Unknown or duplicate ids are not an error: the sidecar row is created on first action, so
+    "delete a conversation that has no meta row yet" is the ordinary case, and the count returned
+    is of ids processed, deduped.
+    """
+    unique = list(dict.fromkeys(sid for sid in session_ids if sid))
+    if not unique:
+        return 0
+    stamp = datetime.now(timezone.utc) if deleted else None
+    with session_scope() as session:
+        existing = {
+            m.session_id: m
+            for m in session.execute(
+                select(ConversationMeta).where(ConversationMeta.session_id.in_(unique))
+            )
+            .scalars()
+            .all()
+        }
+        for sid in unique:
+            meta = existing.get(sid)
+            if meta is None:
+                meta = ConversationMeta(session_id=sid)
+                session.add(meta)
+            meta.deleted_at = stamp
+    return len(unique)
+
+
+def all_conversation_ids(*, include_deleted: bool = False) -> list[str]:
+    """Every conversation id, newest-active first — **uncapped**, unlike ``list_conversations``.
+
+    The list view caps at ~100 by design (Decision 10). An *export* must not: a backup that
+    silently omits the 101st conversation is worse than no backup, because the omission is
+    invisible exactly when it matters.
+    """
+    with session_scope() as session:
+        stmt = (
+            select(AnswerRecord.session_id)
+            .where(AnswerRecord.session_id.is_not(None))
+            .group_by(AnswerRecord.session_id)
+            .order_by(func.max(AnswerRecord.created_at).desc())
+        )
+        if not include_deleted:
+            stmt = stmt.where(
+                AnswerRecord.session_id.not_in(
+                    select(ConversationMeta.session_id).where(
+                        ConversationMeta.deleted_at.is_not(None)
+                    )
+                )
+            )
+        return [str(row[0]) for row in session.execute(stmt).all()]
+
+
+@dataclass(frozen=True)
+class HistoryExport:
+    """The whole chat history as one markdown document, plus what it actually covered."""
+
+    markdown: str
+    conversation_count: int
+    turn_count: int
+
+
+def export_all_conversations(*, dev: bool = False, include_deleted: bool = False) -> HistoryExport:
+    """Render every conversation into a single markdown document.
+
+    This exists to be run **before** a bulk delete: the sidebar's delete is a soft delete, but
+    "your rows are still in the database" is not a restore path a person can act on, so the
+    cleanup flow offers a file first.
+
+    One document rather than a zip of many: it is greppable, it opens anywhere, and it needs no
+    archive handling on either side. Conversations are separated by a rule and each carries its
+    own heading with the session id, so a single conversation stays findable inside it.
+    """
+    ids = all_conversation_ids(include_deleted=include_deleted)
+    titles = {c.session_id: c.title for c in list_conversations(limit=len(ids) or 1)}
+
+    parts: list[str] = []
+    total_turns = 0
+    for sid in ids:
+        turns = conversation_export_turns(sid)
+        if not turns:  # a session_id with no persisted turns contributes nothing
+            continue
+        total_turns += len(turns)
+        parts.append(
+            render_conversation_markdown(
+                turns,
+                title=titles.get(sid) or _truncate(turns[0].question),
+                subtitle=f"session {sid}",
+                dev=dev,
+            )
+        )
+
+    header = [
+        "# Chat history export",
+        "",
+        f"_{len(parts)} conversation(s) · {total_turns} turn(s)._",
+        "",
+    ]
+    if not parts:
+        header.append("_No conversations to export yet._")
+        return HistoryExport("\n".join(header) + "\n", 0, 0)
+    body = "\n\n---\n\n".join(parts)
+    return HistoryExport("\n".join(header) + "\n" + body, len(parts), total_turns)
 
 
 def list_conversations(limit: int = 100) -> list[ConversationSummary]:

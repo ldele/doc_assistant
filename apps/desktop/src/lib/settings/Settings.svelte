@@ -8,6 +8,7 @@
     startIngest,
     getIngestStatus,
     reindexKeywords,
+    exportAllConversations,
   } from '../core/api'
   import { onDestroy } from 'svelte'
   import { fade, fly } from 'svelte/transition'
@@ -33,6 +34,22 @@
     onCorpusChanged,
     overrides = $bindable(),
   }: { onClose: () => void; onCorpusChanged: () => void; overrides: RagOverrides } = $props()
+
+  // Chat-history export. A failure is shown, not swallowed: the whole point of the button is to
+  // be trusted before a delete, so a silent no-op would be the worst outcome it could have.
+  let exporting = $state(false)
+  let exportError = $state<string | null>(null)
+  async function exportHistory(): Promise<void> {
+    exporting = true
+    exportError = null
+    try {
+      await exportAllConversations()
+    } catch (e) {
+      exportError = `Export failed: ${e instanceof Error ? e.message : String(e)}`
+    } finally {
+      exporting = false
+    }
+  }
 
   let theme = $state<Theme>(getTheme())
 
@@ -317,6 +334,21 @@
           Dark
         </button>
       </div>
+    </section>
+
+    <!-- Chat history (user request 2026-08-10). Export lives here rather than next to the
+         sidebar's delete because it is a whole-history action, and because the order matters:
+         the file is the copy you can act on, the soft delete is not. -->
+    <section>
+      <h3>Chat history</h3>
+      <p class="hint">
+        Every conversation in one markdown file — uncapped, unlike the sidebar list. Delete chats
+        from the sidebar’s select mode (✓).
+      </p>
+      <button class="ghost" onclick={exportHistory} disabled={exporting} type="button">
+        {exporting ? 'Exporting…' : 'Export all conversations'}
+      </button>
+      {#if exportError}<p class="err">{exportError}</p>{/if}
     </section>
 
     <section>

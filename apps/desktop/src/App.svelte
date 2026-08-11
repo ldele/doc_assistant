@@ -33,6 +33,7 @@
     resetDocumentMeta,
     revealDocument,
     streamChat,
+    bulkUpdateConversations,
     updateConversationMeta,
     updateDocumentMeta,
   } from './lib/core/api'
@@ -391,6 +392,32 @@
   let deleteConvBusy = $state(false)
   function deleteConversation(sid: string): void {
     pendingDeleteConvId = sid
+  }
+
+  // Bulk delete from the sidebar's select mode. Same soft delete, one transaction — and the
+  // confirmation names the export, because "the records are still in the database" is not a
+  // restore path the user can act on and a file is.
+  let pendingDeleteConvIds = $state<string[]>([])
+  async function confirmDeleteConversations(): Promise<void> {
+    const ids = pendingDeleteConvIds
+    if (ids.length === 0) return
+    deleteConvBusy = true
+    try {
+      await bulkUpdateConversations(ids, true)
+      if (
+        (viewing !== null && ids.includes(viewing)) ||
+        (resumedHistory !== null && ids.includes(resumedHistory.session_id)) ||
+        ids.includes(chat.sessionId)
+      ) {
+        newConversation()
+      }
+      await refreshConversations()
+      pendingDeleteConvIds = []
+    } catch (e) {
+      console.error('bulk delete failed', e)
+    } finally {
+      deleteConvBusy = false
+    }
   }
   async function confirmDeleteConversation(): Promise<void> {
     const sid = pendingDeleteConvId
@@ -971,6 +998,7 @@
     onArchive={archiveConversation}
     onDelete={deleteConversation}
     onRename={renameConversation}
+    onDeleteMany={(ids) => (pendingDeleteConvIds = ids)}
   />
   <div
     class="resizer"
@@ -1110,6 +1138,19 @@
     busy={deleteConvBusy}
     onConfirm={confirmDeleteConversation}
     onClose={() => (pendingDeleteConvId = null)}
+  />
+{/if}
+
+{#if pendingDeleteConvIds.length > 0}
+  <ConfirmDialog
+    title="Delete {pendingDeleteConvIds.length} conversation{pendingDeleteConvIds.length === 1
+      ? ''
+      : 's'}?"
+    body="They are removed from your history; the underlying records are kept. To keep a readable copy, export your history from Settings first."
+    confirmLabel="Delete {pendingDeleteConvIds.length}"
+    busy={deleteConvBusy}
+    onConfirm={confirmDeleteConversations}
+    onClose={() => (pendingDeleteConvIds = [])}
   />
 {/if}
 

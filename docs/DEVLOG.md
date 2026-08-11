@@ -11,6 +11,64 @@ Format: What changed | Why | Rejected alternatives | What it opens
 > (moved verbatim 2026-07-21). This file keeps 2026-07-15 onward.
 
 ---
+## 2026-08-11 — chat history gets a cleanup: the whole thing exports to one file, then many chats delete at once
+
+**What changed.** `POST /api/conversations/export` renders every conversation into one markdown
+file; `POST /api/conversations/bulk` soft-deletes (or restores) a list of them in one transaction.
+In the UI: a **✓ select mode** in the sidebar's chat rail (tick rows, All/Clear, Delete, Done) and
+an **"Export all conversations"** action in a new Settings → *Chat history* section.
+
+**Why (user request 2026-08-10).** *"An easy way to clean-up the historic — maybe in settings a
+full export + delete history; or a select option to select chats so I can delete many at once."*
+Both primitives already existed — single-conversation soft delete and per-conversation export —
+so this is the bulk layer over them, not new capability.
+
+**Export lands before delete, and that ordering is the design.** The sidebar's delete is a *soft*
+delete: the `AnswerRecord` rows survive, which is right for provenance and useless as a restore
+path — nobody cleans up their history confident that "the rows are still in the database". So the
+file comes first, the confirmation dialog names it (*"To keep a readable copy, export your history
+from Settings first"*), and the Settings section sits above the destructive control rather than
+beside it.
+
+**The export is uncapped, and that is the point.** `list_conversations` stops at ~100 by design
+(Decision 10). An export that inherited that cap would omit conversations *invisibly*, exactly
+when the file is being relied on — so `all_conversation_ids` is a separate, uncapped read.
+Measured on the real history: the sidebar shows **100**, the export wrote **184 conversations /
+188 turns / 347 KB**. Eighty-four would have gone missing silently.
+
+**One document, not a zip:** greppable, opens anywhere, no archive handling on either side. Each
+conversation keeps its own heading and session id so a single one stays findable inside it.
+
+**Bulk delete is one transaction, not N requests** — "delete selected" is a single user action and
+half of it landing is worse than none of it. Per-row semantics are identical to the existing
+single delete, so it is undone by the same route with `deleted: false`, which is what makes the
+confirmation honest. Unknown and duplicate ids are not errors: the sidecar row is created on first
+action, so "delete a conversation with no meta row" is the ordinary case.
+
+**Kept local:** the *selection* lives in `Sidebar.svelte`, not App. Nothing else in the app needs
+to know which rows are ticked — unlike the Library's select mode, where the main pane's
+add-to-folder menu participates, which is why that one lives in App. Two new props instead of
+seven.
+
+**Rejected.** A hard delete (the provenance layer is the product; a cleanup that destroys evidence
+is a different feature needing its own ADR). Looping the existing single-delete endpoint N times
+from the client. Putting export-all next to the sidebar's delete button — it is a whole-history
+action, and the confirmation already points at it. **Conversation folders**, the third thing asked
+for, are *not* built: `Folder` is document-scoped (ADR-025), so grouping chats is a new
+relationship and needs its own ADR rather than a schema reuse.
+
+**Verified live on the real history ($0).** Select mode ticks rows and counts them (100 tickboxes,
+"2 selected"), the dialog reads *"Delete 2 conversations?"*, confirming exits select mode; bulk
+delete + restore verified **by exact session id** (the list count proves nothing here — with 184
+conversations behind a 100-row cap, deleting 2 just lets 2 more fill in). The history was left
+exactly as found: 184 live, 1 soft-deleted, and that one was already deleted ~16 h before this
+session — checked by timestamp rather than assumed.
+
+**What it opens.** Conversation folders (ADR needed). An age-based retention policy, still parked.
+And the export is whole-history only — a "export just these selected chats" would fall out of the
+same two pieces if it is ever wanted.
+
+---
 ## 2026-08-10 (2) — the index moved out of the scroll, the blocks became a list, and a figure can finally be read
 
 **What changed.** Three refinements to the document view, all from looking at it in use.

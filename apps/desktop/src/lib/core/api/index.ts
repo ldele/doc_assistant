@@ -6,7 +6,7 @@
 export { streamChat, adjudicate, figureUrl } from './chat'
 export type { SSEvent } from './chat'
 export { getHealth } from './health'
-export { listConversations, getConversation, updateConversationMeta, exportConversation } from './conversations'
+export { listConversations, getConversation, updateConversationMeta, exportConversation, bulkUpdateConversations, exportAllConversations } from './conversations'
 export { deleteDocument, getDocumentFigures, getDocumentReferences, getLibraryDocument, listLibraryDocuments, resetDocumentMeta, revealDocument, updateDocumentMeta } from './library'
 export type { DeleteResult } from './library'
 export { getDocConnections } from './connections'

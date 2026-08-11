@@ -16,9 +16,11 @@ import pytest
 
 from doc_assistant.conversations import (
     conversation_export_turns,
+    export_all_conversations,
     get_conversation,
     list_conversations,
     set_conversation_meta,
+    set_conversations_deleted,
 )
 from doc_assistant.db.models import AnswerRecord
 from doc_assistant.db.session import session_scope
@@ -258,3 +260,88 @@ def test_rename_sets_and_reverts_title(temp_db: Path):
     # a blank title reverts to the derived first-question title
     set_conversation_meta("s1", title="   ")
     assert list_conversations()[0].title == "the original question"
+
+
+# ============================================================
+# Chat-history cleanup (user request 2026-08-10): export-all, then bulk delete
+# ============================================================
+
+
+def test_export_all_conversations_covers_every_conversation(temp_db: Path):
+    _seed("s1", "first question", answer="first answer", when=datetime(2026, 7, 13, 10, 0, 0))
+    _seed("s1", "follow up", answer="second answer", when=datetime(2026, 7, 13, 10, 5, 0))
+    _seed("s2", "another chat", answer="third answer", when=datetime(2026, 7, 13, 11, 0, 0))
+
+    result = export_all_conversations()
+    assert (result.conversation_count, result.turn_count) == (2, 3)
+    for text in ("first question", "follow up", "another chat", "third answer"):
+        assert text in result.markdown
+    # Each conversation is findable inside the single document by its session id.
+    assert "session s1" in result.markdown and "session s2" in result.markdown
+
+
+def test_export_all_is_uncapped_where_the_list_is_not(temp_db: Path):
+    # The sidebar stops at ~100 by design. An export that quietly stopped there too would omit
+    # conversations exactly when the file is being relied on as a backup.
+    for i in range(105):
+        _seed(f"s{i:03d}", f"question {i}", when=datetime(2026, 7, 13, 10, 0, 0))
+
+    assert len(list_conversations()) == 100
+    assert export_all_conversations().conversation_count == 105
+
+
+def test_export_all_excludes_soft_deleted_and_says_so_in_the_counts(temp_db: Path):
+    _seed("keep", "kept question", when=datetime(2026, 7, 13, 10, 0, 0))
+    _seed("gone", "deleted question", when=datetime(2026, 7, 13, 11, 0, 0))
+    set_conversation_meta("gone", deleted=True)
+
+    result = export_all_conversations()
+    assert result.conversation_count == 1
+    assert "kept question" in result.markdown
+    assert "deleted question" not in result.markdown
+    # ...but they are still recoverable when explicitly asked for.
+    assert export_all_conversations(include_deleted=True).conversation_count == 2
+
+
+def test_export_all_on_an_empty_history_is_a_document_not_an_error(temp_db: Path):
+    # A first-run user asking for a backup should get a file that says there is nothing yet.
+    result = export_all_conversations()
+    assert (result.conversation_count, result.turn_count) == (0, 0)
+    assert "No conversations to export yet" in result.markdown
+
+
+def test_bulk_delete_hides_many_at_once_and_is_undone_the_same_way(temp_db: Path):
+    for sid in ("a", "b", "c"):
+        _seed(sid, f"question {sid}", when=datetime(2026, 7, 13, 10, 0, 0))
+
+    assert set_conversations_deleted(["a", "b"]) == 2
+    assert [c.session_id for c in list_conversations()] == ["c"]
+
+    assert set_conversations_deleted(["a", "b"], deleted=False) == 2
+    assert sorted(c.session_id for c in list_conversations()) == ["a", "b", "c"]
+
+
+def test_bulk_delete_dedupes_and_tolerates_an_unknown_id(temp_db: Path):
+    # The sidecar row is created on first action, so "delete a conversation with no meta row"
+    # is the ordinary case — not an error to report at the user.
+    _seed("a", "question a", when=datetime(2026, 7, 13, 10, 0, 0))
+    assert set_conversations_deleted(["a", "a", "never-existed"]) == 2
+    assert list_conversations() == []
+
+
+def test_bulk_delete_of_nothing_is_a_no_op(temp_db: Path):
+    _seed("a", "question a", when=datetime(2026, 7, 13, 10, 0, 0))
+    assert set_conversations_deleted([]) == 0
+    assert set_conversations_deleted(["", "  "][:1]) == 0
+    assert len(list_conversations()) == 1
+
+
+def test_bulk_delete_retains_the_answer_records(temp_db: Path):
+    # Soft delete: the provenance the app was built to keep survives a history cleanup, which is
+    # also why the export exists — the file is the copy a person can actually act on.
+    from sqlalchemy import func, select
+
+    _seed("a", "question a", when=datetime(2026, 7, 13, 10, 0, 0))
+    set_conversations_deleted(["a"])
+    with session_scope() as session:
+        assert session.execute(select(func.count(AnswerRecord.id))).scalar_one() == 1

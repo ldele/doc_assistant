@@ -50,4 +50,35 @@ export async function exportConversation(sessionId: string, dev: boolean): Promi
   URL.revokeObjectURL(url)
 }
 
+/** Soft-delete (or restore) many conversations in one request. Returns how many were touched.
+ *  One call, not N: "delete selected" is a single user action and half of it landing is worse
+ *  than none. Restore with `deleted: false` — the same route undoes a mis-click. */
+export async function bulkUpdateConversations(
+  sessionIds: string[],
+  deleted: boolean = true,
+): Promise<number> {
+  const r = await fetch(`${API_BASE}/api/conversations/bulk`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ session_ids: sessionIds, deleted }),
+  })
+  if (!r.ok) throw new Error(`bulk conversation update failed: ${r.status}`)
+  return ((await r.json()) as { updated: number }).updated
+}
+
+/** Download the whole chat history as one markdown file. Uncapped — unlike the sidebar list,
+ *  which stops at ~100. Offered *before* bulk delete: soft-deleted rows stay in the database,
+ *  but that is not a restore path a person can act on; a file is. */
+export async function exportAllConversations(): Promise<void> {
+  const r = await fetch(`${API_BASE}/api/conversations/export`, { method: 'POST' })
+  if (!r.ok) throw new Error(`history export failed: ${r.status}`)
+  const blob = await r.blob()
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = 'provenote-chat-history.md'
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
 export type { TurnResult }

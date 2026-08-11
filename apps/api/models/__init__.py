@@ -59,6 +59,8 @@ from apps.api.models.connections import (
     RelatedDocPayload,
 )
 from apps.api.models.conversations import (
+    ConversationBulkResult,
+    ConversationBulkUpdate,
     ConversationDetailPayload,
     ConversationMetaUpdate,
     ConversationSourcePayload,
@@ -112,6 +114,8 @@ __all__ = [
     "ConceptGraphNodePayload",
     "ConceptGraphPayload",
     "ConceptPresencePayload",
+    "ConversationBulkResult",
+    "ConversationBulkUpdate",
     "ConversationDetailPayload",
     "ConversationMetaUpdate",
     "ConversationSourcePayload",

@@ -71,6 +71,15 @@ repos:
     rev: v4.6.0
     hooks:
       - id: trailing-whitespace
+        # data/anzsrc-2020-for-20210429.ttl is a VENDORED upstream artifact — the official
+        # ANZSRC 2020 SKOS/Turtle file from linked.data.gov.au, kept verbatim so the derived
+        # data/anzsrc_2020_for.json can cite it (`_meta.source_file`) under CC BY 4.0.
+        # Every one of its 28 trailing-whitespace hits sits INSIDE a `"""..."""` literal
+        # (skos:definition / skos:scopeNote), so stripping them rewrites the vocabulary's
+        # own text rather than reformatting the file. Nothing parses it at runtime — rdflib
+        # is not even a dependency — so the fix is worth exactly nothing and the cost is a
+        # third-party dataset that no longer matches what was published. Excluded, not edited.
+        exclude: ^data/anzsrc-2020-for-.*\.ttl$
       - id: end-of-file-fixer
       - id: check-yaml
       - id: check-toml

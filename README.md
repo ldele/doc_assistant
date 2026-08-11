@@ -10,7 +10,7 @@ provenance record, separates what your sources *say* from what the model *infers
 re-graded by a separate reviewer. The RAG techniques here are established ones; what this adds is the
 integrity layer and the measurement behind it.
 
-![Provenote demo: ask a question, get a streamed cited answer, open a source, browse the library, explore the concept graph](docs/assets/provenote-demo.gif)
+![Provenote demo: ask a question, watch a cited answer stream in, open the passage behind a citation, filter the library, read a document as five ordered blocks, open one of its figures, then explore the concept graph](docs/assets/provenote-demo.gif)
 
 ## Why it's built this way
 
@@ -32,10 +32,16 @@ integrity layer and the measurement behind it.
 - **Citation and concept graphs.** Resolved reference edges, plus a deterministic concept skeleton
   (the LLM only annotates existing edges, it never invents structure) with gap detection that
   surfaces single-source concepts and thin bridges as leads to read next.
-- **Knowledge-currency markers.** Advisory `contested` and `superseded trend` chips derived from
-  cross-document stance and publication years. They inform; they never gate.
-- **Library workspace.** Browsable grid with filters, per-chunk reading view, editable metadata that
-  survives re-ingest, safe delete (OS trash first), selective ingestion, derived corpus wiki.
+- **Knowledge-currency markers — built, and currently opt-in.** Advisory `contested` and
+  `superseded trend` chips derived from cross-document stance and publication years; they inform,
+  they never gate. They ship **off** (`EPISTEMICS_MARKERS_ENABLED=true` enables them) because the
+  stance pass behind them judges without seeing the document text — see Limitations.
+- **Library workspace.** Browsable grid with filters and folders; each document opens as five
+  ordered blocks — metadata, connections, passages, figures, references — with the full
+  bibliography and the figures extracted from the paper, readable at full size. Editable metadata
+  that survives re-ingest, safe delete (OS trash first), selective ingestion, derived corpus wiki.
+- **A chat history you can keep tidy.** Conversations are searchable and renameable, exportable as
+  one markdown file, and removable in bulk — a soft delete that the same control undoes.
 - **Measurable quality.** Eval harness with six scorers (deterministic plus LLM judge), DuckDB result
   store, per-turn cost tracking.
 
@@ -70,18 +76,22 @@ CLI. Data flow and module contracts: [`docs/architecture.md`](docs/architecture.
 
 Quality is measured, not asserted. The eval harness runs the full pipeline (retrieve, rerank,
 generate) over a fixed question set on a public 10-paper arXiv corpus that anyone can rebuild.
-5 trials on `bge-base`, reported as mean ± trial-mean std:
+5 trials on `bge-base`, latest run 2026-08-01, reported as mean ± trial-mean std:
 
 | Scorer | Mean (n=5) | Trial-mean std | What it measures |
 |---|---:|---:|---|
 | `citation_overlap` (0-1) | **1.000** | 0.000 | retrieval cited the correct source |
-| `contains_all` (0-1) | **0.927** | 0.034 | answer surfaces the required facts |
-| `llm_judge` (1-5) | **3.894** | 0.075 | reference-graded answer quality |
+| `contains_all` (0-1) | **0.932** | 0.014 | answer surfaces the required facts |
+| `llm_judge` (1-5) | **3.694** | 0.258 | reference-graded answer quality |
 
 `citation_overlap` is 1.000 with zero variance because retrieval depends only on the deterministic
 index; the generated-answer scorers wobble run-to-run around stable means. Cases are deliberately
-strict, not tuned to score 1.0. Full results, including the embedder comparison, chunk-size sweep,
-weight sweep, caveats and reproduction steps, live in [`evals/`](evals/README.md).
+strict, not tuned to score 1.0. Two caveats travel with these numbers: `citation_overlap` is
+saturated on a 10-paper corpus, so it shows *no regression at the available resolution* rather than
+ranking quality — on the 97-document library the same scorer spans 0.877-0.946 and does
+discriminate; and this run's `llm_judge` band is wide enough that only changes larger than about
+±0.5 would be visible. Full results, including the embedder comparison, the chunk-size sweep, the
+weight sweep and reproduction steps, live in [`evals/`](evals/README.md).
 
 Cost is measured separately from quality: launch and per-turn latency, ingest throughput, memory,
 disk, and what each of those does as the corpus grows are in
@@ -107,12 +117,26 @@ Everyday commands, enrichment passes and tests: [`docs/usage.md`](docs/usage.md)
 
 ## Limitations
 
-Current as of 2026-07-28; the full ledger lives in `.claude/KNOWN_ISSUES.md`.
+Re-read for this release; the full ledger lives in `.claude/KNOWN_ISSUES.md`.
 
 - **An API key entered in the app is stored in plain text** in your data folder — weaker than an OS
   keychain, which is the recorded upgrade path
   ([ADR-034](docs/decisions/ADR-034-in-app-provider-setup.md)). Use `.env`, which takes precedence,
   if you would rather manage the key yourself.
+
+- **A scanned page with no text layer at all is unreachable.** Documents whose text hides *behind* a
+  page image are now read correctly, but a pure image has nothing to fall back to. Recovering those
+  needs OCR, which is designed and deliberately not built until its quality is measured — text that
+  is wrong is worse than text that is absent, because absence is honest while garbage is retrievable
+  and citable. One document of 97 in the development library.
+
+- **Most reference links into your own library are withheld, on purpose.** A document's bibliography
+  is shown in full, but the *links* from a reference to the copy in your library are re-checked
+  before being offered, and only exact-DOI or title-agreeing matches survive. On the development
+  library that is 4 links where 16 are stored: the matcher resolves on first-author surname and year
+  with no title comparison, and it runs once at ingest, so it is frozen at whatever your library
+  looked like that day. Withholding is the honest half of the fix; the matcher itself is next
+  (KI-45).
 
 - **Validated at ~100 documents, not yet at thousands.** Retrieval quality is benchmarked and holds.
   Memory used to be the limit and no longer is: both search indexes now live on disk, so backend RAM
@@ -124,26 +148,38 @@ Current as of 2026-07-28; the full ledger lives in `.claude/KNOWN_ISSUES.md`.
   catalogued with a prioritized fix plan in the
   [scale review](docs/REVIEW_2026-07-19_scale-robustness.md), so don't bulk-ingest thousands of
   documents before those land.
-- **Local-model ceilings are real, and measured.** Small local models place documents into a
-  taxonomy at 70-87% precision depending on the model, and their self-reported confidence carries
-  almost no signal. On one model it was *anti*-correlated with correctness. Never auto-accept on it.
+- **Local-model ceilings are real, and measured.** A local model cites far less of what it writes:
+  across 27 questions on a 97-document library — same prompt, same retrieval — `llama3.1:8b`
+  carried inline citations on 36% of its sentences and `qwen2.5:7b` on 14%, against 81% for Claude
+  Haiku. Answers stay grounded either way; more claims simply show as *uncited*. Small local models
+  also place documents into a taxonomy at 70-87% precision, and their self-reported confidence
+  carries almost no signal — on one model it was *anti*-correlated with correctness. Never
+  auto-accept on it. Nothing is gated: the app states this where you choose the engine.
 - **Document metadata extraction is imperfect.** A handful of documents still yield no title, or
-  publisher furniture instead of one, and downstream layers that key on the title inherit that.
+  publisher furniture instead of one, and downstream layers that key on the title inherit that —
+  the reference-link limitation above is the visible consequence.
+- **Per-source "epistemic assessment" is off by default.** The chips labelling a source *contested*
+  / *corroborated* / *single-source* are withheld: they came from a stance pass that judges without
+  ever seeing the document text and whose verdict moves with list position (one document, identical
+  inputs, position varied alone → four different verdicts). Nothing was deleted —
+  `EPISTEMICS_MARKERS_ENABLED=true` opts back in — and the rebuild is planned. Document year,
+  relevance score and graph freshness are unaffected and still shown.
 - **Single-user, local-first by design.** The FastAPI backend serves one desktop app on localhost;
   multi-client serving would need threadpool offloading (documented, not built).
 - **Tested primarily on Windows** plus CI on Linux; macOS (MPS) paths work but are unbenchmarked.
 
 ## Status
 
-**v0.4.0 (2026-08-01) — backend memory no longer grows with your library.** Phase 6 + 7 in
+**v0.5.0 (2026-08-11) — the library became somewhere to read, not just a list.** Phase 6 + 7 in
 progress. Shipped: core RAG, the eval harness, the document store and library workspace, citation
 and doc-similarity graphs, the research-integrity layer (provenance, evidence/interpretation split,
 separate-context reviewer), a provider-agnostic LLM layer with in-app setup and live switching
 between Claude API and local Ollama, figures and tables, the corpus wiki, and the full concept-graph
-stack with gap detection. **1,446 tests · ruff / mypy / bandit clean.**
+stack with gap detection. **1,647 tests · ruff / mypy / bandit clean.**
 
-Next: the scale review's P0 robustness fixes, then the document-map and source-trust tracks. Release
-notes: [`CHANGELOG.md`](CHANGELOG.md). Full roadmap: [`docs/ROADMAP.md`](docs/ROADMAP.md).
+Next: keyword quality — the extracted keyword layer is measured and does not yet partition a
+corpus (1,376 keywords, 98% of them on a single document) — then opt-in LLM-assisted ingestion.
+Release notes: [`CHANGELOG.md`](CHANGELOG.md). Full roadmap: [`docs/ROADMAP.md`](docs/ROADMAP.md).
 
 ## Documentation
 

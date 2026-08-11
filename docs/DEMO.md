@@ -1,22 +1,28 @@
-<!-- status: active · updated: 2026-07-19 · class: living -->
+<!-- status: active · updated: 2026-08-11 · class: living -->
 
 # Demo — 60-second walkthrough
 
 What to run, what to ask, and what to look at so a first-time reader sees the point quickly.
-(The README's GIF — `docs/assets/provenote-demo.gif` — is this walkthrough on film: chip →
-streamed cited answer → source panel → library grid → concept graph.)
+(The README's GIF — `docs/assets/provenote-demo.gif` — is this walkthrough on film: a question →
+streamed cited answer → source panel → library document view → concept graph.)
+
+**Setting it up for real, rather than skimming?** [`QUICKSTART.md`](QUICKSTART.md) is the supported
+10-minute path — it picks the answer engine from inside the app, with no file to edit.
 
 ## Run it
 
 ```bash
 git clone <repo> && cd doc_assistant
-uv sync
-cp .env.example .env          # add ANTHROPIC_API_KEY (or run fully local — uncomment the Ollama stanza in .env.example, no key needed)
+uv sync --extra cpu --extra dev            # or --extra cu130 on an NVIDIA box
 # drop a few PDFs in data/sources/ (any public papers work)
 uv run python -m doc_assistant.ingest      # extract -> chunk -> embed -> store (incremental after first run)
 ```
 
 First run downloads the embedder + reranker (a few hundred MB) and builds the index; subsequent runs are incremental.
+
+The answer engine is chosen **in the app** — **Settings → Getting started** takes an Anthropic API
+key (verified before it is saved) or points at a local Ollama server for a free, fully offline run.
+`.env` still works and takes precedence if you prefer to pin it per checkout.
 
 Then pick a UI:
 
@@ -47,7 +53,8 @@ Pick questions whose answers live *inside* the documents, not in the model's tra
 2. **The provenance card.** On a weak/flagged answer it expands: retrieved chunks, model, token cost, confidence signals. Clean answers stay quiet. `/export-record <id>` dumps the full audit JSON.
 3. **The reviewer.** On a flagged answer a separate-context reviewer re-grades faithfulness / citation density / hedging. Run `/review <id>` on any past answer.
 4. **The citation graph.** `/cites <doc>`, `/cited-by <doc>`, `/similar <doc>` — references resolved against your own library, plus embedding-similarity edges.
-5. **The Library and Graph tabs.** Browse the corpus as a filterable grid (edit metadata, exclude files, safe-delete); switch to Graph for the curated concept skeleton — gap badges (`single source`, `thin bridge`, `isolated`) are reading leads, and clicking a concept shows its neighbourhood plus the documents it appears in.
+5. **The Library tab.** Browse the corpus as a filterable grid (edit metadata, exclude files, safe-delete), then **open a document**: it lays out as five ordered blocks with a jump-nav — *Metadata* (title, authors, year, keywords, extraction health), *Connections* (semantically similar papers, scored), *Chunks* (the passages as indexed, collapsed until asked for), *Figures* (extracted figure images and captions, clickable to full size), *References* (the whole bibliography, with links to any copy already in your library).
+6. **The Graph tab.** The curated concept skeleton — gap badges (`single source`, `thin bridge`, `isolated`) are reading leads, and clicking a concept shows its neighbourhood plus the documents it appears in.
 
 ## What this is showing
 

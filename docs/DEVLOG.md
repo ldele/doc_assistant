@@ -11,6 +11,75 @@ Format: What changed | Why | Rejected alternatives | What it opens
 > (moved verbatim 2026-07-21). This file keeps 2026-07-15 onward.
 
 ---
+## 2026-08-11 (3) — release prep for v0.5.0: the front docs stopped overstating the product, and the demo GIF stopped leaking the author's chat history
+
+**What changed.** The reader-facing set (`README.md`, `evals/README.md`, `docs/DEMO.md`,
+`CHANGELOG.md`), a re-recorded `docs/assets/provenote-demo.gif`, and the 0.4.2 → **0.5.0** bump
+across all five places (`pyproject.toml`, `uv.lock` re-locked not hand-edited,
+`apps/desktop/package.json`, `apps/desktop/src-tauri/tauri.conf.json`, `CHANGELOG.md`).
+
+**Three of the doc fixes were defects, not staleness — all three flattered the product.**
+
+1. **The README's benchmark table quoted `llm_judge` 3.894 ± 0.075.** That is the **2026-06-01**
+   column, and `public_eval_2026-08-01.md` says in so many words to compare against 06-04 rather
+   than 06-01, because the 06-01 baseline does not record its generator model (`.env` switched to
+   `claude-haiku-4-5` on 06-02, *after* it was locked). The current committed run is **3.694 ±
+   0.258** — i.e. the README was publishing the highest of three numbers and the least trustworthy
+   one. Now 2026-08-01 across the board, with the two caveats that keep it honest: `citation_overlap`
+   is saturated on a 10-paper corpus (no regression *at the available resolution*, not ranking
+   parity), and the judge band only resolves changes larger than about ±0.5.
+2. **`evals/README.md` still declared the chunk-size lock "unmeasured".** True on 2026-08-07, false
+   from 2026-08-08 — RG-026 closed with two self-audited sweeps. Rewritten with the actual verdict:
+   the lock holds, *and* un-beaten is not optimal (child `256/32` retrieves best at −45% input
+   tokens; parent `3000/300` answers best; the control is the balanced point), plus the one
+   experiment that would settle it — re-running the private grid on a strong generator, since the
+   small-child answer penalty was measured through `llama3.1:8b` and Haiku does not reproduce it.
+3. **The README sold the `contested` / `superseded trend` chips as a shipped feature** while its own
+   Limitations section said they were withheld. They default **off** (KI-33, since 0.4.1). Both
+   places now agree.
+
+**Limitations was re-read line by line, per the runbook's rule that a stale limit becomes a lie.**
+Three added: a scan with no text layer at all is unreachable (1 of 97); **most in-library reference
+links are withheld** (4 presented where 16 are stored, because 12 were wrong — KI-45); epistemics
+off by default. The local-model bullet gained the citation-coverage numbers (36% / 14% vs 81%),
+which are what a reader actually feels, rather than only the taxonomy-precision figure.
+
+**The GIF was re-recorded, and the interesting part is what it was showing.** The old cut framed the
+chat with the sidebar open — which renders the **author's real chat history**, personal research
+questions, into a public README. The recorder now collapses the sidebar for the chat beats and
+*asserts* `aside.sidebar` is 0 px wide before filming. Two more guards, both from failures observed
+this session: it **aborts unless the status bar reads `ollama/`** (`.env` is all-Anthropic, so an
+unguarded run bills the API — KI-4), and every beat logs what it matched and exits non-zero on a
+miss. `make_gif.py` now selects frames **by label instead of index**, because the storyboard gained
+four beats and every hardcoded number shifted — the positional plan resolved those to
+"skip (missing)" and would have written a silently shorter film while reporting success.
+New storyboard adds the 0.5.0 surface: library filter → the five-block document view → figures →
+a figure at full size. 960×600, 18 frames, 29.6 s, 0.97 MB, recorded on `llama3.1:8b` at $0.
+
+**A bad first draw is also recorded, because it is a real product signal:** the first document
+filmed showed **4 of its 5 figures as "no image"**. That is an honest empty state (caption found, no
+image region located), not a bug — but corpus-wide **811 of 881 figures do carry an image**, so the
+draw was unrepresentative. Chose the demo document by querying `figures.image_path` rather than by
+eye, and the recorder now counts placeholders and reports a bad draw as a named miss.
+
+**Why.** v0.4.2 is two releases behind the code (46 source files changed since that tag), and the
+README's Status block still read v0.4.0 / 1,446 tests. A release is the moment the front docs are
+read by people who cannot check them against the source.
+
+**Rejected.** Updating `docs/performance.md`'s "97 documents / 33,105 chunks" to today's 36,574 —
+those figures are measurement-bound, and re-labelling them would attribute results to a corpus that
+was never measured. Committing the GIF toolkit into `scripts/` (third refusal: puppeteer-core and
+Pillow would both be undeclared deps). Letting `pre-commit --all-files` keep its whitespace/EOF
+rewrites of three unrelated checked-in files — reverted, so the release diff is only the release.
+
+**What it opens.** `release_preflight` is green on `versions` and `changelog` and red only on
+`tree_clean` (this commit) and **`artifact_fresh`** — the sidecar and installer still date from
+2026-08-07 and must be rebuilt from the tagged commit before v0.5.0 can carry an artifact
+(`docs/RELEASE.md` §4-5, then the RG-012 Tier-2 clean-machine gate). Separately, **KI-39's entry was
+corrected**: it was fixed on 2026-08-06 and had read OPEN ever since; what remains open is the
+RG-010 cold-start distribution, which is a measurement, not that defect.
+
+---
 ## 2026-08-11 (2) — the UI checklist is prioritised instead of exhaustive (90 KB → 20 KB), and the 2026-08-11 feature set is queued behind keyword quality
 
 **What changed.** `docs/ui-checklist.md` rewritten: a **§1 priority queue** at the front, then open

@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-08-07 (chunk-size section corrected — the 2026-06-06 sweep measured nothing, KI-41) · class: living -->
+<!-- status: active · updated: 2026-08-11 (chunk sizes re-measured 2026-08-08 — RG-026 closed, the lock holds) · class: living -->
 
 # Evals — benchmark results
 
@@ -74,19 +74,47 @@ Numbers + run ids: [`tests/eval/baselines/bge_vs_specter2_public_2026-06-04.md`]
 
 ## Chunk sizes
 
-The parent/child chunk sizes are the locked default `2000/200 · 400/50`, and — corrected
-**2026-08-07** — **that default is unmeasured.** A 6-config sweep ran on the public corpus on
-2026-06-06 and reported that none of the alternatives beat it; the sweep passes each grid point
-through `PARENT_CHUNK_SIZE` / `CHILD_CHUNK_SIZE` environment variables, and a since-fixed config
-bug (`load_dotenv(override=True)`) overwrote all four from `.env` before ingest read them. **All six
-configs therefore ingested the same corpus.** It is proven, not suspected: the recorded prompt-token
-counts are identical per case across all 18 runs, including across a 3x parent-size range.
+The parent/child chunk sizes are the locked default `2000/200 · 400/50`, and as of **2026-08-08**
+that default is **measured and kept** — after a year-long detour through a sweep that measured
+nothing.
 
-What survives is a noise-floor reading — `contains_all` 0.906–0.933 and `llm_judge` 3.793–3.951 came
-from *identical* inputs, so that band is the harness's variance at `n=3` on the public 10, not a
-ranking. The environment bug is fixed, so a re-run would now measure what it claims to; it costs a
-full re-embed per config. Corrected grid + the proof:
-[`tests/eval/baselines/chunking_sweep_public_2026-06-06.md`](../tests/eval/baselines/chunking_sweep_public_2026-06-06.md).
+**The void run.** A 6-config sweep on 2026-06-06 reported that no alternative beat the default. It
+passed each grid point through `PARENT_CHUNK_SIZE` / `CHILD_CHUNK_SIZE` environment variables, and a
+since-fixed config bug (`load_dotenv(override=True)`, KI-38) overwrote all four from `.env` before
+ingest read them — so **all six arms ingested the same corpus**, and the run compared one
+configuration with itself six times (KI-41). Proven, not suspected: prompt-token counts were
+identical per case across all 18 runs, including across a 3x parent-size range. Read
+[that file](../tests/eval/baselines/chunking_sweep_public_2026-06-06.md) now only for its
+noise-floor reading.
+
+**The re-run, twice.** Both arms record all six distinct geometries and a `token_input` that spans
+2529 → 7044 where the void run read 4326.7 everywhere — the same instrument answering the other way.
+
+| Run | Corpus | Generator | Baseline |
+|---|---|---|---|
+| Public | the eval 10, in an isolated data home | Claude Haiku (paid) | [`chunking_sweep_public_2026-08-08.md`](../tests/eval/baselines/chunking_sweep_public_2026-08-08.md) |
+| Private | 97 documents / 35 multi-paper cases | `llama3.1:8b` (local, free) | [`chunking_sweep_private_2026-08-08.md`](../tests/eval/baselines/chunking_sweep_private_2026-08-08.md) |
+
+**Verdict: the lock holds — nothing beats the control beyond its variance.** But *un-beaten is not
+optimal*, and the private run is the first to make chunk size measurable at all: on the public 10
+`citation_overlap` saturates at 1.000 for every config and cannot discriminate, while on 97
+documents it spans **0.877 → 0.946**. Retrieval experiments belong on the larger corpus.
+
+The grid shows a coherent trade-off rather than a winner — the child chunk is what gets *retrieved*,
+the parent is what the model *reads*:
+
+- **Smaller child (`256/32`) retrieves best** (0.946 vs the control's 0.936, zero trial variance) and
+  is much cheaper — the public run's `1000/100 · 256/32` arm ran on **45% fewer input tokens**.
+- **The same config answers worst** (`contains_all` 0.734–0.740 against the control's 0.777).
+- **Larger parent (`3000/300`) answers best** (0.785) at control-level retrieval.
+- **The control is the balanced point** — 2nd on retrieval, tied-1st on `contains_all`, 2nd on
+  `embedding_similarity`; no other config is top-two on more than one.
+
+**The open question that would settle it.** The small-child answer penalty was measured through a
+weak local generator. Haiku scored that same `256/32` child at **0.919** `contains_all` — level with
+its own control — where `llama3.1:8b` puts it 0.04 *below*. So the penalty may be an artifact of a
+weak model needing more context, in which case the cheaper, better-retrieving config wins outright.
+Re-running the private grid on a strong generator is the experiment that decides it.
 
 ## BM25 / vector mix
 

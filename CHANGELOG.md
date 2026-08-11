@@ -7,6 +7,76 @@ versioning is [SemVer](https://semver.org/) on the `doc_assistant` package, and 
 The engineering record is finer-grained than this file: per-change entries live in
 [`docs/DEVLOG.md`](docs/DEVLOG.md), design decisions in [`docs/decisions.md`](docs/decisions.md).
 
+## [0.5.0] — 2026-08-11
+
+**Your library became somewhere to read, not just a list of what you own.** Opening a document
+used to show metadata and little else. It now lays out as five ordered blocks — what the document
+is, what it connects to, the passages as indexed, its figures, and its full bibliography — with a
+jump-nav across the top. Alongside it, the chat history finally has a way to be tidied.
+
+### Added
+
+- **A document view in five blocks: Metadata, Connections, Chunks, Figures, References.** Each has
+  a heading, an anchor, and a sticky jump-nav that stays put while the page scrolls. Opening a
+  document **transfers no passage text at all** — the Chunks block is collapsed and unfetched until
+  you ask for it, and the header reads a summary the library list already has. Detail payloads
+  measure a median of 170 KB (worst case 1.85 MB, a 663-block book); on a 142-block paper the view
+  is 924 DOM nodes collapsed and 3,908 expanded.
+- **Passages are a scannable list, not a wall of text.** Parent blocks are collapsed to a marker, a
+  preview line and a child count, with Expand-all / Collapse-all. Which document you left expanded
+  is remembered per document for the session, so paging back and forth with the ← → arrows finds
+  each one as you left it. Only the open flag is remembered — never the text.
+- **Figures, extracted and readable.** A document's figures appear with their captions and open at
+  full size. Each says whether the assistant can *retrieve* that figure, which is a different thing
+  from showing it: turning a figure into something searchable needs a paid vision pass that is
+  deliberately skipped when the caption already describes the image. Across the development library
+  811 of 881 extracted figures carry an image region; the rest are captions whose image could not be
+  located, and they say so rather than rendering blank.
+- **The whole bibliography, with links to what you already own.** Every parsed reference is listed,
+  including entries that matched nothing, capped at 200 with "showing N of M" — and the cap spends
+  its budget on linked rows first, so a 346-reference paper cannot lose the one entry you can
+  actually open.
+- **Export your entire chat history as one markdown file**, and delete conversations in bulk.
+  Settings → Chat history → Export all writes every conversation, not the 100 the sidebar shows: on
+  the development history that is **184 conversations / 188 turns / 347 KB**, where an export
+  inheriting the sidebar's cap would have silently dropped 84. Bulk delete is a soft delete applied
+  in one transaction, and the same control restores it.
+
+### Changed
+
+- **A real environment variable now beats `.env`.** Setting a variable for one command — most
+  importantly `LLM_PROVIDER=ollama` — used to be silently ignored because `.env` was loaded with
+  override, so a run you had told to stay local could still bill the API.
+- **The parent/child chunk sizes are now measured, and kept.** The 2026-06-06 sweep that once
+  justified them was void: an environment bug meant all six arms indexed the same corpus, so it
+  compared one configuration with itself six times. Re-swept twice — the public 10 on Claude Haiku
+  and 97 documents / 35 questions on a local model. Nothing beats the default beyond its variance,
+  so the lock holds, but the grid shows a real trade-off rather than a winner, and a smaller child
+  chunk retrieves better on 45% fewer input tokens. Details and the experiment that would settle it:
+  [`evals/README.md`](evals/README.md).
+- **Full-page scans are no longer mistaken for figures**, and the figure pass can be cleared and
+  re-run with `--force`.
+
+### Known limits
+
+- **Most reference links into your own library are withheld, deliberately.** The bibliography is
+  shown in full, but a *link* from a reference to your copy is re-checked before it is offered, and
+  only an exact DOI or an agreeing title survives. On the development library that is **4 links
+  presented where 16 are stored** — the other 12 were wrong, pointing at unrelated papers. The
+  matcher resolves on first-author surname and year with no title comparison, and it runs only when
+  a document is first indexed, so it is frozen at whatever your library held that day. Showing four
+  correct links beats showing sixteen of which twelve lie; repairing the matcher is next.
+- **A scan with no text layer at all is still unreachable** — unchanged from 0.4.2, one document of
+  97 here. OCR is designed and gated on measuring its quality first.
+- **Local models still cite far less of what they write than a hosted one** — unchanged: 36%
+  (`llama3.1:8b`) and 14% (`qwen2.5:7b`) of sentences against 81% for Claude Haiku, on the same
+  prompt and retrieval over 27 questions.
+- **Per-source "epistemic assessment" remains off by default** (since 0.4.1), so the source strip
+  reads *assessment withheld* on every row. The stance pass behind it judges without seeing the
+  document text; it is being rebuilt rather than quietly re-enabled.
+- **Validated at ~100 documents.** The enrichment layer still has corpus-linear hot paths; don't
+  bulk-ingest thousands before those land.
+
 ## [0.4.2] — 2026-08-07
 
 **Documents that were in your library but unreachable are now searchable.** Some PDFs —

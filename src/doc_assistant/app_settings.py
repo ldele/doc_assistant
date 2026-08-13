@@ -203,3 +203,71 @@ def mark_demo_backfill_done() -> None:
     settings["demo_backfill_done"] = True
     save_user_settings(settings)
     log.info("demo_backfill_marked_done")
+
+
+# ============================================================
+# Update check (ADR-044)
+# ============================================================
+# Whether the app may check *automatically* for a newer release, and when it last did. Same
+# per-install, non-secret shape as the settings above. Two things to keep straight:
+#   * The toggle governs the AUTOMATIC daily check only. A manual "check now" always runs — an
+#     explicit press is its own consent, and gating it would make "I don't know if I'm current"
+#     unreachable for a user who declined background traffic (ADR-044).
+#   * It defaults to OFF. This app makes no outbound calls the user did not ask for, and a
+#     default-on version check would be the first one.
+
+
+def get_update_check_enabled() -> bool:
+    """Whether automatic daily update checks are on. Off unless the user turned them on."""
+    return load_user_settings().get("update_check_enabled") is True
+
+
+def set_update_check_enabled(enabled: bool) -> None:
+    """Persist the automatic-update-check choice (ADR-044)."""
+    settings = load_user_settings()
+    settings["update_check_enabled"] = enabled
+    save_user_settings(settings)
+    log.info("update_check_enabled_set", enabled=enabled)
+
+
+def get_update_last_checked() -> str | None:
+    """ISO timestamp of the last completed check, or ``None`` if it has never run."""
+    stored = load_user_settings().get("update_last_checked")
+    return stored if isinstance(stored, str) and stored else None
+
+
+def set_update_last_checked(when: str) -> None:
+    """Record when a check completed, so the automatic one stays at most daily.
+
+    Written for a *failed* check too: the rate limit exists to protect the endpoint and the
+    user's network, and retrying a down server every launch would defeat it.
+    """
+    settings = load_user_settings()
+    settings["update_last_checked"] = when
+    save_user_settings(settings)
+
+
+def get_update_last_seen_version() -> str | None:
+    """The newest release version the last successful check saw, or ``None``.
+
+    Deliberately the *version*, not the verdict. A stored "an update is available" would keep
+    saying so after the user installed it, and a stored "current" would keep saying so after a
+    release was cut; storing the observed version instead lets the verdict be **recomputed**
+    against the running version on every read, so both of those correct themselves.
+    """
+    stored = load_user_settings().get("update_last_seen_version")
+    return stored if isinstance(stored, str) and stored else None
+
+
+def set_update_last_seen_version(version: str | None) -> None:
+    """Remember the newest release the last check saw; ``None`` clears it (a failed check).
+
+    Clearing matters: keeping the previous answer after a failure would show a verdict with a
+    fresh "checked at" stamp that no successful check backs (ADR-044's three-state rule).
+    """
+    settings = load_user_settings()
+    if version:
+        settings["update_last_seen_version"] = version
+    else:
+        settings.pop("update_last_seen_version", None)
+    save_user_settings(settings)

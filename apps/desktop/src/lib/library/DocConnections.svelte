@@ -9,6 +9,7 @@
   // (E4 DEVLOG); a later iteration reads the same bundle.
   import type { DocConnections } from '../core/types'
   import { getDocConnections } from '../core/api'
+  import { RELATED_CAVEAT, rankLabel } from './connections'
 
   let {
     docId,
@@ -54,14 +55,19 @@
       <p class="muted">No connections computed for this document yet.</p>
     {:else}
       {#if conn.related.length > 0}
-        <h4>Related papers <span class="muted">(semantic similarity)</span></h4>
+        <!-- A RANK, never the score (REVIEW 2026-08-12 §2b R1). The doc vector mean-pools every
+             chunk, so same-field papers collapse: 750 edges, median 0.918, against a 0.5
+             threshold. The ordering survives that; the number does not, and "0.92" invites
+             exactly the reading the data cannot support. -->
+        <h4>Related papers <span class="muted">(nearest first)</span></h4>
+        <p class="caveat">{RELATED_CAVEAT}</p>
         <ul>
-          {#each conn.related as r (r.document_id)}
+          {#each conn.related as r, i (r.document_id)}
             <li>
+              <span class="rank" aria-label="{rankLabel(i)} nearest">{rankLabel(i)}</span>
               <button class="doclink" onclick={() => open(r.document_id)}>
                 {r.title ?? r.filename}
               </button>
-              <span class="score" title="cosine similarity">{r.score.toFixed(2)}</span>
             </li>
           {/each}
         </ul>
@@ -140,6 +146,21 @@
     border-radius: 6px;
     padding: 0 0.3rem;
     white-space: nowrap;
+  }
+  /* Leads the row rather than trailing it: the rank is an index into the list, not a measurement
+     of the paper beside it, and putting it first stops it reading as a score. */
+  .rank {
+    font-size: 0.7rem;
+    color: var(--fg-2);
+    font-variant-numeric: tabular-nums;
+    min-width: 1.9rem;
+    flex: none;
+  }
+  .caveat {
+    margin: 0 0 0.3rem;
+    font-size: 0.72rem;
+    color: var(--fg-2);
+    line-height: 1.35;
   }
   .connerr {
     color: var(--warn-fg);

@@ -9,6 +9,7 @@
   import Icon from './Icon.svelte'
   import { shell, type Mode } from './shell.svelte'
   import { sidebarPrefs, toggleSidebarCollapsed } from './prefs.svelte'
+  import { GRAPH_TAB_ENABLED } from '../core/features'
   import appMark from '../../assets/brand/app-mark.png'
 
   interface Props {
@@ -132,14 +133,17 @@
       onclick={() => onSelectMode('library')}
       type="button"><Icon name="library" size={15} /><span class="tb-modelabel">Library</span></button
     >
-    <button
-      class="tb-mode"
-      class:active={shell.mode === 'graph'}
-      role="tab"
-      aria-selected={shell.mode === 'graph'}
-      onclick={() => onSelectMode('graph')}
-      type="button"><Icon name="waypoints" size={15} /><span class="tb-modelabel">Graph</span></button
-    >
+    <!-- Hidden for 0.6 — see core/features.ts GRAPH_TAB_ENABLED for why, and to bring it back. -->
+    {#if GRAPH_TAB_ENABLED}
+      <button
+        class="tb-mode"
+        class:active={shell.mode === 'graph'}
+        role="tab"
+        aria-selected={shell.mode === 'graph'}
+        onclick={() => onSelectMode('graph')}
+        type="button"><Icon name="waypoints" size={15} /><span class="tb-modelabel">Graph</span></button
+      >
+    {/if}
   </div>
 
   <div class="tb-spacer"></div>

@@ -112,7 +112,9 @@ def _newest_source() -> tuple[Path | None, datetime | None]:
 
 
 def check_versions() -> Check:
-    """All five version strings must agree — including uv.lock (the v0.4.0 CI break)."""
+    """All six version strings must agree — including uv.lock (the v0.4.0 CI break) and the
+    `__version__` constant the update check compares against (ADR-044: a stale constant makes
+    the app compare itself to a lie)."""
     found: dict[str, str] = {}
     pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
     found["pyproject.toml"] = pyproject["project"]["version"]
@@ -120,6 +122,10 @@ def check_versions() -> Check:
     lock = (ROOT / "uv.lock").read_text(encoding="utf-8")
     m = re.search(r'name = "doc-assistant"\s*\nversion = "([^"]+)"', lock)
     found["uv.lock"] = m.group(1) if m else "(not found)"
+
+    init = (ROOT / "src/doc_assistant/__init__.py").read_text(encoding="utf-8")
+    mv = re.search(r'^__version__ = "([^"]+)"', init, re.MULTILINE)
+    found["src/doc_assistant/__init__.py"] = mv.group(1) if mv else "(not found)"
 
     for rel in ("apps/desktop/package.json", "apps/desktop/src-tauri/tauri.conf.json"):
         data = json.loads((ROOT / rel).read_text(encoding="utf-8"))

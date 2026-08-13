@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { Settings, IngestStatus, RagOverrides } from '../core/types'
+  import type { Settings, IngestStatus, RagOverrides, UpdateStatus } from '../core/types'
   import {
     getSettings,
     setSourceDir,
@@ -9,7 +9,11 @@
     getIngestStatus,
     reindexKeywords,
     exportAllConversations,
+    getUpdateStatus,
+    checkForUpdate,
+    setAutoUpdateCheck,
   } from '../core/api'
+  import { describeUpdate } from './updates'
   import { onDestroy } from 'svelte'
   import { fade, fly } from 'svelte/transition'
   import { getTheme, setTheme, applyTheme, type Theme } from '../core/theme'
@@ -102,6 +106,43 @@
     }
   }
 
+  // ADR-044 — the update check. Notification only; nothing here can install anything.
+  // `update` is null until the first read; the section renders a neutral line rather than
+  // guessing a state, because guessing "up to date" is exactly the failure this feature must
+  // not have. A failed *check* is not an error to show in red — it comes back as state
+  // 'unknown' with a reason, and only a transport failure lands in `updateError`.
+  let update = $state<UpdateStatus | null>(null)
+  let updateBusy = $state(false)
+  let updateError = $state<string | null>(null)
+
+  async function runUpdateCheck(): Promise<void> {
+    if (updateBusy) return
+    updateBusy = true
+    updateError = null
+    try {
+      update = await checkForUpdate()
+    } catch (e) {
+      updateError = `Update check failed: ${e instanceof Error ? e.message : String(e)}`
+    } finally {
+      updateBusy = false
+    }
+  }
+
+  async function applyAutoCheck(enabled: boolean): Promise<void> {
+    if (updateBusy) return
+    updateBusy = true
+    updateError = null
+    try {
+      update = await setAutoUpdateCheck(enabled)
+      // Turning it on should answer the question it implies, not wait a day to do it.
+      if (enabled) update = await checkForUpdate()
+    } catch (e) {
+      updateError = `Couldn't save that: ${e instanceof Error ? e.message : String(e)}`
+    } finally {
+      updateBusy = false
+    }
+  }
+
   async function applyProvider(): Promise<void> {
     if (llmBusy || !llmProvider || !llmModel.trim()) return
     llmBusy = true
@@ -180,6 +221,16 @@
       }
     } catch (e) {
       if (!silent) loadError = String(e)
+    }
+    // ADR-044: free in the default configuration — this reads the cached answer and only
+    // touches the network if the user opted in and a check is due. Deliberately after the
+    // settings load and independently caught: the panel must open even if it fails.
+    try {
+      const u = await getUpdateStatus()
+      if (!cancelled) update = u
+    } catch {
+      // Leave `update` null — the section says "version unknown until the first check"
+      // rather than inventing a state. No red error for a background read nobody asked for.
     }
   }
 
@@ -485,11 +536,21 @@
     </section>
 
     <section>
-      <h3>Answer epistemics</h3>
+      <h3>Answer epistemics <span class="muted">(experimental)</span></h3>
       <p class="hint">
         Whether corpus epistemics (contested / superseded chips) may appear on an answer's
         sources. Saved as your default; the per-source evaluation strip below answers is
         always shown either way.
+      </p>
+      <!-- Off by default, and said plainly rather than left as a silent default
+           (REVIEW 2026-08-12 §2b R3 · KI-33 · ADR-041). A user turning this on deserves to know
+           what they are turning on; a user leaving it off deserves to know they are not missing
+           a measurement. -->
+      <p class="hint">
+        <strong>Known limitation:</strong> these chips come from a stance pass that judges a topic
+        <em>without reading the document</em>, has no “neutral” verdict, and can change its answer
+        when the same pair appears in a different order. They are a prompt to go and look, not a
+        finding. Off by default until that is rebuilt on evidence.
       </p>
       <label class="switch-row">
         <input
@@ -633,6 +694,56 @@
         </dd>
       </dl>
       <p class="hint">These are locked defaults (changed only via the eval harness).</p>
+    </section>
+
+    <!-- Updates (ADR-044). Notification only: this app never downloads or installs anything.
+         The toggle governs the *automatic* daily check; "Check now" always runs, because an
+         explicit press is its own consent and gating it would leave a user who declined
+         background traffic with no way to find out whether they're current. -->
+    <section>
+      <h3>Updates</h3>
+      <p class="hint">
+        Provenote can check whether a newer version has been published, and link you to it.
+        It never downloads or installs anything — you stay in control of what runs on your
+        machine.
+      </p>
+      <label class="switch-row">
+        <input
+          type="checkbox"
+          checked={update?.auto_check_enabled ?? false}
+          disabled={updateBusy}
+          onchange={(e) => void applyAutoCheck((e.target as HTMLInputElement).checked)}
+        />
+        Check for updates automatically <span class="muted">(once a day)</span>
+      </label>
+      <p class="hint">
+        When on, Provenote asks GitHub for the latest release version once a day. Nothing about
+        you or your documents is sent — no queries, no titles, no identifier.
+      </p>
+
+      <div class="update-status" aria-live="polite">
+        {#if update}
+          {@const line = describeUpdate(update)}
+          <p class:ok={line.tone === 'ok'} class:muted={line.tone === 'muted'}>
+            <strong>{line.headline}</strong>
+          </p>
+          <p class="hint">{line.detail}</p>
+          {#if line.showLink}
+            <a class="primary link-button" href={update.release_url} target="_blank" rel="noreferrer noopener">
+              Open the release page
+            </a>
+          {/if}
+        {:else}
+          <p class="muted">Provenote {'—'} version unknown until the first check.</p>
+        {/if}
+        {#if updateError}
+          <p class="err" role="alert">{updateError}</p>
+        {/if}
+      </div>
+
+      <button class="ghost" onclick={runUpdateCheck} disabled={updateBusy} type="button">
+        {updateBusy ? 'Checking…' : 'Check now'}
+      </button>
     </section>
   {/if}
 </div>
@@ -840,6 +951,27 @@
   .switch-row input {
     width: auto;
     accent-color: var(--accent);
+  }
+  /* ADR-044 — the update verdict. Boxed so the state reads as a standing fact about this
+     install rather than as transient feedback from the button below it. */
+  .update-status {
+    margin-top: 0.7rem;
+    padding: 0.6rem 0.7rem;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--bg-2, transparent);
+  }
+  .update-status p {
+    margin: 0;
+  }
+  .update-status p + p {
+    margin-top: 0.25rem;
+  }
+  /* An <a> styled as the primary button: this is a link on purpose — it opens the release page
+     in the browser, and must never look like an in-app install action (ADR-044). */
+  .link-button {
+    display: inline-block;
+    text-decoration: none;
   }
   /* ADR-037 — the Corpus panel's index row: label left, the bounded rebuild action right. */
   .index-row {

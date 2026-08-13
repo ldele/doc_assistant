@@ -41,6 +41,7 @@ from apps.api.routers import (
     setup,
     sources,
     taxonomy,
+    updates,
 )
 from apps.api.services import (
     _default_ingest,
@@ -154,6 +155,7 @@ def create_app(
     app.include_router(settings.router)
     app.include_router(setup.router)
     app.include_router(sources.router)
+    app.include_router(updates.router)
 
     return app
 

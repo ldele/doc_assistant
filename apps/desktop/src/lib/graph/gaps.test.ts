@@ -8,6 +8,7 @@ import {
   orderGaps,
   visibleConceptGaps,
   conceptIndexRows,
+  filterGapRows,
 } from './gaps.ts'
 import type { ConceptGraphNode, Gap, GapKind } from '../core/types/index.ts'
 
@@ -146,4 +147,48 @@ test('conceptIndexRows is pure — inputs unmutated', () => {
     ['B', 'A'],
   )
   assert.equal(byConcept.get('c1')?.length, 1)
+})
+
+// --- filterGapRows: the Gaps-tab filter box (ui-checklist §2) ---------------------------------
+
+const gapRow = (label: string, kind: GapKind): { kind: GapKind; label: string } => ({ kind, label })
+const rowKey = (r: { kind: GapKind; label: string }): { kind: GapKind; label: string } => r
+
+test('filterGapRows matches the concept label, case-insensitively', () => {
+  const rows = [gapRow('Transformers', 'single_source'), gapRow('Retrieval', 'thin_bridge')]
+  assert.deepEqual(
+    filterGapRows(rows, rowKey, 'TRANS').map((r) => r.label),
+    ['Transformers'],
+  )
+})
+
+test('filterGapRows also matches the gap KIND, which is what people actually type', () => {
+  // "single" is the list's own vocabulary for a class of problem, not a concept name — filtering
+  // on the label alone would return nothing and read as "no such gaps".
+  const rows = [gapRow('Transformers', 'single_source'), gapRow('Retrieval', 'thin_bridge')]
+  assert.deepEqual(
+    filterGapRows(rows, rowKey, 'single').map((r) => r.label),
+    ['Transformers'],
+  )
+})
+
+test('filterGapRows returns everything for an empty or whitespace query', () => {
+  const rows = [gapRow('A', 'single_source'), gapRow('B', 'isolated')]
+  assert.equal(filterGapRows(rows, rowKey, '').length, 2)
+  assert.equal(filterGapRows(rows, rowKey, '   ').length, 2)
+})
+
+test('filterGapRows returns empty rather than everything when nothing matches', () => {
+  const rows = [gapRow('A', 'single_source')]
+  assert.deepEqual(filterGapRows(rows, rowKey, 'zzz'), [])
+})
+
+test('filterGapRows is pure — the input array is not mutated or aliased', () => {
+  const rows = [gapRow('B', 'single_source'), gapRow('A', 'isolated')]
+  const out = filterGapRows(rows, rowKey, '')
+  assert.notEqual(out, rows)
+  assert.deepEqual(
+    rows.map((r) => r.label),
+    ['B', 'A'],
+  )
 })

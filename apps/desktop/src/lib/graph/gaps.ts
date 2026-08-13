@@ -120,6 +120,28 @@ export function visibleConceptGaps(gaps: readonly Gap[], showUnderConnected: boo
     .sort((a, b) => gapRank(a.kind) - gapRank(b.kind))
 }
 
+/**
+ * Filter a gap list by a free-text query over the concept label **and the gap kind's label**
+ * (`ui-checklist` §2 — a filter box in the Gaps tab).
+ *
+ * Matching the kind as well as the concept is the point: the list's own vocabulary is what a user
+ * types when they want one class of problem. "single" should find every Single-source row, not
+ * only a concept that happens to be called that. Empty/whitespace query returns everything.
+ */
+export function filterGapRows<T>(
+  items: readonly T[],
+  keyOf: (item: T) => { kind: GapKind; label: string },
+  query: string,
+): T[] {
+  const q = query.trim().toLowerCase()
+  if (q === '') return [...items]
+  return items.filter((it) => {
+    const k = keyOf(it)
+    const kindLabel = GAP_META[k.kind]?.label ?? k.kind
+    return k.label.toLowerCase().includes(q) || kindLabel.toLowerCase().includes(q)
+  })
+}
+
 export interface ConceptIndexRow {
   node: ConceptGraphNode
   gaps: Gap[]

@@ -7,6 +7,48 @@ versioning is [SemVer](https://semver.org/) on the `doc_assistant` package, and 
 The engineering record is finer-grained than this file: per-change entries live in
 [`docs/DEVLOG.md`](docs/DEVLOG.md), design decisions in [`docs/decisions.md`](docs/decisions.md).
 
+## [Unreleased]
+
+### Added
+
+- **Provenote can tell you when a newer version has been published** — and that is deliberately all
+  it does. Settings → Updates shows what version you're running, checks GitHub for the latest
+  release, and links you to it. It never downloads or installs anything: you decide what runs on
+  your machine. Automatic checking is **off by default** and, when you turn it on, runs at most
+  once a day; the **Check now** button works either way. Nothing about you or your documents is
+  sent — the request asks for a version number and carries no query, title or identifier.
+  ([ADR-044](docs/decisions/ADR-044-update-notification-not-delivery.md))
+
+### Changed
+
+- **Document keywords are about the document again.** Four causes fixed at once. Running headers
+  and journal stamps used to dominate — one paper spent 11 of its 15 slots on *"Exp Brain Res.
+  Author manuscript; available in PMC…"* — and another spent 9 on overlapping fragments of a
+  single figure label. Bibliographies contributed author surnames and citation debris. And the
+  tokeniser split on `.` and `/`, so `16p11.2` was stored as `16p11` and `GPT-3.5` as `GPT-3` —
+  quietly renaming a genetic locus and a model. Across a 97-document library: overlapping
+  fragments **27% → 0%** of slots, documents with no keywords at all **15 → 1**, citation
+  fragments gone. Re-index from Settings to apply it to your own library.
+- **Related papers are ranked, not scored.** The panel showed a similarity number that looked far
+  more precise than it was — whole-document similarity puts every paper in a field within a few
+  hundredths of every other. It now shows position (1st, 2nd, 3rd) and says why.
+- **The contested / superseded chips are labelled experimental** wherever they appear, with the
+  known limitation stated in Settings. They remain off by default.
+
+### Removed
+
+- **The Graph tab is hidden for now.** The concept graph and gap list are unchanged underneath and
+  nothing was deleted — but the page is empty until the graph is built, and an empty page reads as
+  a broken one. It returns once it has a home worth navigating to.
+
+### Known limits
+
+- **The update check needs published GitHub releases to see.** Until releases are cut for the
+  tags, it honestly reports that it can't compare rather than claiming you're up to date.
+- **Keywords describe a document; they don't group your library.** After the fix above they are
+  accurate, but 97% still appear on exactly one document — useful for finding a paper, not for
+  slicing a collection into topics.
+
 ## [0.5.0] — 2026-08-11
 
 **Your library became somewhere to read, not just a list of what you own.** Opening a document

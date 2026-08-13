@@ -104,14 +104,23 @@
         aria-pressed={gapsOnly}
         onclick={() => (gapsOnly = !gapsOnly)}
         type="button"
-        title="Show only concepts with a detected gap"
+        title="Hide every concept the gap detector found nothing wrong with, leaving only the worklist."
       >
         Gaps only <span class="count">{gapConceptCount}</span>
       </button>
-      <label class="toggle" title="Under-connected is noisy at this vocabulary size (RG-014)">
-        <input type="checkbox" bind:checked={showUnderConnected} />
+      <!-- Same control style as `Gaps only` beside it (ui-checklist §2): both are on/off lenses
+           over the same list, and a checkbox next to a pressed-state button read as two different
+           kinds of thing doing one job. -->
+      <button
+        class="lens"
+        class:on={showUnderConnected}
+        aria-pressed={showUnderConnected}
+        onclick={() => (showUnderConnected = !showUnderConnected)}
+        type="button"
+        title="Under-connected measures graph degree. It is noisy at this vocabulary size (RG-014), so it is hidden until you ask for it."
+      >
         Include under-connected
-      </label>
+      </button>
     </div>
     <div class="clist" role="listbox" aria-label="Concepts">
       {#each indexRows as row (row.node.id)}
@@ -247,13 +256,6 @@
   .lens .count {
     font-variant-numeric: tabular-nums;
     opacity: 0.8;
-  }
-  .toggle {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--space-1);
-    color: var(--fg-2);
-    cursor: pointer;
   }
   .clist {
     flex: 1;

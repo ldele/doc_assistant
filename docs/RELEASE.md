@@ -52,17 +52,23 @@ ls apps/desktop/src-tauri/target/release/bundle/{nsis,msi}
 
 ## 1 · Version bump
 
-Five places, and `uv.lock` is the one that gets missed:
+Six places, and `uv.lock` is the one that gets missed:
 
 | File | Field |
 |---|---|
 | `pyproject.toml` | `version` |
 | `uv.lock` | the `doc-assistant` package entry — re-lock, do not hand-edit |
+| `src/doc_assistant/__init__.py` | `__version__` — what the running app reports (ADR-044) |
 | `apps/desktop/package.json` | `version` |
 | `apps/desktop/src-tauri/tauri.conf.json` | `version` |
 | `CHANGELOG.md` | a dated `## [X.Y.Z]` section |
 
-`preflight` checks all five. **Why it matters:** v0.4.0 bumped the others and missed `uv.lock`,
+`preflight` checks all six, and `tests/unit/test_version.py` catches `__init__.py` drifting from
+`pyproject.toml` at commit time rather than release time. **Why `__version__` matters:** it is what
+the update check compares against the newest published release. Stale, and the app compares itself
+to a lie — offering an "update" it already is, or staying quiet about one it is not.
+
+**Why the rest matters:** v0.4.0 bumped the others and missed `uv.lock`,
 which records the project's own version. CI and the Docker build install with `--locked`, which
 *fails* rather than silently re-resolving — so every gate after dependency-install was skipped on
 `main` for days, and nobody saw a red build because the job died before the gates ran.
@@ -152,6 +158,21 @@ above is reversible, this is not.
 **Both halves.** `git push origin main` does **not** push tags. v0.4.1's tag sat only on the build
 machine for a day because the second command was skipped — the commits were public and the thing
 they were tagged as was not.
+
+## 7b · Cut the GitHub release — this is a step now, not a courtesy
+
+**Since ADR-044 the app checks `releases/latest` and shows the user what it finds.** A pushed tag
+with no *release object* behind it is invisible to that check: every install reports "no published
+release to compare against" forever, which is honest and useless. Pushing the tag is not publishing.
+
+```bash
+gh release create vX.Y.Z --title "Provenote X.Y.Z" --notes-file <notes>
+```
+
+Attach the NSIS `.exe` as a release asset, or the link the app hands the user leads to a page with
+nothing to install on it. And **repeat any "not yet verified" caveat from the tag annotation in the
+release body** — the release page is the surface people actually read; a caveat that lives only in
+`git show` is a caveat nobody sees.
 
 ## 8 · Delete the previous installer
 

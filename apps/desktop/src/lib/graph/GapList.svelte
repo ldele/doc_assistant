@@ -10,7 +10,8 @@
   // to that concept.
   import type { GapListItem, GapKind, GapStatus } from '../core/types'
   import { getGapList, triageGap } from '../core/api'
-  import { GAP_META, gapVisible, orderGaps } from './gaps'
+  import Icon from '../shell/Icon.svelte'
+  import { GAP_META, filterGapRows, gapVisible, orderGaps } from './gaps'
 
   let { onSelectConcept }: { onSelectConcept?: (conceptId: string) => void } = $props()
 
@@ -19,6 +20,9 @@
   let error = $state<string | null>(null)
   let showUnderConnected = $state(false)
   let showDismissed = $state(false)
+  // Filter box (ui-checklist §2). Matches the concept label *and* the gap kind, so "single"
+  // finds every Single-source row — the list's own vocabulary is what people type.
+  let query = $state('')
   // Guards a triage round-trip per (concept_id, kind) so double-clicks can't race.
   let busy = $state<Set<string>>(new Set())
 
@@ -39,11 +43,16 @@
 
   // RG-014 presentation: strong list-shaped kinds first; `under_connected` opt-in; dismissed hidden
   // unless the user asks (so a dismissal actually clears the worklist, but stays recoverable).
+  const gapKey = (it: GapListItem): { kind: GapKind; label: string } => ({
+    kind: it.kind,
+    label: it.label,
+  })
+
   const visible = $derived.by(() => {
     const rows = items
       .filter((it) => gapVisible(it.kind, showUnderConnected))
       .filter((it) => showDismissed || it.status !== 'dismissed')
-    return orderGaps(rows, (it) => ({ kind: it.kind, label: it.label }))
+    return orderGaps(filterGapRows(rows, gapKey, query), gapKey)
   })
 
   const openCount = $derived(items.filter((it) => it.status === 'surfaced').length)
@@ -78,19 +87,52 @@
       under-supported concepts.
     </p>
   {:else}
-    <div class="lenses">
-      <span class="tally" title="Surfaced (untriaged) gaps">{openCount} open</span>
-      <label class="toggle" title="Under-connected is noisy at this vocabulary size (RG-014)">
-        <input type="checkbox" bind:checked={showUnderConnected} />
-        Include under-connected
-      </label>
-      {#if dismissedCount > 0}
-        <label class="toggle">
-          <input type="checkbox" bind:checked={showDismissed} />
-          Show dismissed ({dismissedCount})
-        </label>
+    <div class="searchrow">
+      <Icon name="search" size={13} />
+      <input
+        bind:value={query}
+        placeholder="Filter gaps…"
+        aria-label="Filter gaps by concept or kind"
+      />
+      {#if query}
+        <button class="clearq" onclick={() => (query = '')} aria-label="Clear filter" type="button">
+          <Icon name="x" size={13} />
+        </button>
       {/if}
     </div>
+
+    <!-- One control style for the two lenses (ui-checklist §2): both are on/off filters over the
+         same list, so both are pressed-state buttons. A checkbox beside a button read as two
+         different kinds of thing doing the same job. -->
+    <div class="lenses">
+      <span class="tally" title="Surfaced (untriaged) gaps">{openCount} open</span>
+      <button
+        class="lens"
+        class:on={showUnderConnected}
+        aria-pressed={showUnderConnected}
+        onclick={() => (showUnderConnected = !showUnderConnected)}
+        type="button"
+        title="Under-connected measures graph degree. It is noisy at this vocabulary size (RG-014), so it is hidden until you ask for it."
+      >
+        Include under-connected
+      </button>
+      {#if dismissedCount > 0}
+        <button
+          class="lens"
+          class:on={showDismissed}
+          aria-pressed={showDismissed}
+          onclick={() => (showDismissed = !showDismissed)}
+          type="button"
+          title="Dismissed gaps stay recoverable — this shows them again without un-dismissing them."
+        >
+          Show dismissed <span class="count">{dismissedCount}</span>
+        </button>
+      {/if}
+    </div>
+
+    {#if visible.length === 0}
+      <p class="muted">No gap matches “{query}”.</p>
+    {/if}
 
     <ul>
       {#each visible as it (key(it))}
@@ -166,11 +208,64 @@
     font-weight: 600;
     color: var(--fg);
   }
-  .toggle {
+  /* Same shapes as the concept rail's controls (GraphIndex.svelte) — the two panels are the
+     same rail, so a filter box and a lens must not look like different inventions per tab. */
+  .searchrow {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 0.3rem 0.5rem;
+    color: var(--fg-2);
+    background: transparent;
+  }
+  .searchrow:focus-within {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 22%, transparent);
+  }
+  .searchrow input {
+    flex: 1;
+    min-width: 0;
+    border: none;
+    background: none;
+    font: inherit;
+    font-size: 0.78rem;
+    color: var(--fg);
+    outline: none;
+  }
+  .clearq {
+    border: none;
+    background: none;
+    color: var(--fg-2);
+    cursor: pointer;
+    display: inline-flex;
+    padding: 0;
+  }
+  .clearq:hover {
+    color: var(--fg);
+  }
+  .lens {
     display: inline-flex;
     align-items: center;
     gap: var(--space-2);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 2px var(--space-3);
+    background: var(--surface);
+    color: var(--fg);
+    font: inherit;
+    font-size: var(--text-sm);
     cursor: pointer;
+  }
+  .lens.on {
+    background: var(--accent);
+    color: var(--accent-fg);
+    border-color: var(--accent);
+  }
+  .count {
+    font-size: var(--text-meta);
+    opacity: 0.8;
   }
   ul {
     list-style: none;

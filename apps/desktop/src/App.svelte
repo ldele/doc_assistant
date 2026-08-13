@@ -37,6 +37,7 @@
     updateConversationMeta,
     updateDocumentMeta,
   } from './lib/core/api'
+  import { GRAPH_TAB_ENABLED } from './lib/core/features'
   import ChatPane from './lib/chat/ChatPane.svelte'
   import Settings from './lib/settings/Settings.svelte'
   import SourcePanel from './lib/chat/SourcePanel.svelte'
@@ -729,6 +730,10 @@
   // Switch between Chat and Library. Entering Library closes any open citation panel and lazy-loads
   // the document list once; the live chat's in-memory state is preserved across the switch.
   function selectMode(m: 'chat' | 'library' | 'graph'): void {
+    // The Graph tab is hidden for 0.6 (core/features.ts). The tab is gone, but this function is
+    // also the nav-history restore path (line ~373), so it is guarded here too: landing on a mode
+    // with no way to leave it is the one failure a hidden tab can still cause.
+    if (m === 'graph' && !GRAPH_TAB_ENABLED) m = 'chat'
     shell.mode = m
     shell.sidebarOpen = false
     chat.activeCitation = null

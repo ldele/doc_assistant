@@ -10,14 +10,26 @@
     if (m === 'superseded_trend') return 'trend superseded'
     return m
   }
+
+  // These chips are OFF by default and are labelled experimental wherever they appear
+  // (REVIEW 2026-08-12 §2b R3). KI-33: the stance pass they rest on judges a concept pair with
+  // **no document text in the prompt**, has no neutral label, and its verdict moves with the
+  // pair's position in a generated list. So a chip is a prompt to go look, never a finding —
+  // and the tooltip has to say which, because a warning triangle beside a citation does not
+  // read as "exploratory" on its own. The rebuild is ADR-041.
+  const MARKER_TOOLTIP =
+    'Experimental. A hint from your corpus’s concept graph that this topic may be disputed — ' +
+    'it is not a measurement, and it can be wrong. Treat it as a prompt to check the sources ' +
+    'yourself, never as a verdict on them.'
 </script>
 
 <article class="source">
   <header>
     <span class="cite">{source.citation}</span>
     {#each source.markers as m (m)}
-      <span class="chip" title="From your corpus's concept graph (advisory, not a gate)">
+      <span class="chip" title={MARKER_TOOLTIP}>
         <Icon name="triangle-alert" size={12} /> {markerLabel(m)}
+        <span class="chip-exp">experimental</span>
       </span>
     {/each}
   </header>
@@ -54,6 +66,16 @@
     display: inline-flex;
     align-items: center;
     gap: 0.25rem;
+  }
+  /* Rides inside the chip rather than beside it, so the qualifier cannot be separated from the
+     claim it qualifies by a line wrap (REVIEW 2026-08-12 §2b R3). */
+  .chip-exp {
+    font-size: 0.62rem;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+    opacity: 0.75;
+    border-left: 1px solid currentColor;
+    padding-left: 0.3rem;
   }
   .figure {
     max-width: 100%;

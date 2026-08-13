@@ -33,7 +33,56 @@ log = structlog.get_logger(__name__)
 
 # Tech-token aware: keeps internal +/- so "bm25", "cross-encoder", "gpt-4", "specter2"
 # survive as single tokens. Splits on everything else (whitespace, punctuation, markdown).
-_TOKEN_RE = re.compile(r"[a-z0-9]+(?:[-+][a-z0-9]+)*")
+#
+# D5 — `.` and `/` are also kept, but **only when the next character is a digit**. That is the
+# whole of what separates a designator from prose: `16p11.2` and `c57bl/6` are one term each,
+# while `e.g` / `i.e` / `arxiv.org` split as they always did (the character after the separator
+# is a letter). Without this the tokeniser truncated at the separator — `16p11.2` became
+# `16p11`, `C57BL/6` became `c57bl` — silently renaming a locus and a mouse strain.
+# The residual leak this opens (`fig.2`, whose head is a stopword) is closed in
+# `candidate_terms` by checking the pre-separator head against the stopword sets.
+_TOKEN_RE = re.compile(r"[a-z0-9]+(?:[-+][a-z0-9]+|[./]\d[a-z0-9]*)*")
+
+#: A token's head — the part before its first `.` or `/`. `arxiv.org` -> `arxiv`, `fig.2` -> `fig`.
+_TOKEN_HEAD = re.compile(r"^[^./]+")
+
+# D4 — citation artifacts by SHAPE, never by vocabulary.
+#
+# ⚠ The rule that governs this whole section: **a surname is not junk.** `cajal`, `cre`, `dbs`,
+# `16p11`, `c57bl` are real specialist vocabulary in this corpus and have been mistaken for noise
+# twice. So there is no name list here and there must never be one — author names are removed by
+# deleting the *place* they pile up (the reference section, below), not by deciding which words
+# look like people. A surname that survives that appears in the document's own prose, which is
+# exactly when it is a real term for that document ("Shadmehr's model").
+#
+# These two patterns are pure shape and match nothing in the protected list above:
+#   `2014a` / `2015b` — a citation year with a disambiguating letter.
+#   `e04250`          — a publisher article id (eLife-style: one letter, then >=4 digits).
+#   `10.18653`        — a DOI registrant prefix. Only visible once D5 stopped splitting on `.`,
+#                       which is why it is fixed here rather than having been there all along.
+_CITATION_YEAR_SUFFIX = re.compile(r"^\d{4}[a-z]$")
+_ARTICLE_ID = re.compile(r"^[a-z]\d{4,}$")
+_DOI_PREFIX = re.compile(r"^10\.\d{4,5}$")
+
+#: Headings that begin a bibliography. Matched as a *whole line* only, so the word appearing
+#: mid-sentence never triggers a cut.
+#:
+#: The emphasis markers are load-bearing, not defensive: a first pass without them fired on only
+#: **25 of 97** documents, because PyMuPDF4LLM's dominant rendering is ``## **References**`` (32
+#: of the sampled headings) with ``_REFERENCES_`` behind it. Matching the plain form alone would
+#: have looked like a working fix while missing three quarters of the corpus.
+_REFERENCE_HEADING = re.compile(
+    r"^[ \t]*#{0,6}[ \t]*(?:\d+\.?[ \t]*)?[*_]{0,2}[ \t]*"
+    r"(?:references|bibliography|works[ \t]+cited|literature[ \t]+cited)"
+    r"[ \t]*[*_]{0,2}[ \t]*:?[ \t]*$",
+    re.IGNORECASE | re.MULTILINE,
+)
+
+#: **Structural, not corpus-tuned.** A bibliography sits in the back of a document; requiring the
+#: heading past the halfway mark is what stops a paper that merely *discusses* references early
+#: from having its body amputated. Cheap insurance against the one catastrophic failure this
+#: function has available to it.
+REFERENCE_SECTION_MIN_POSITION = 0.5
 
 #: English function words + academic-paper boilerplate. Kept deliberately compact — the
 #: user still curates (a Keyword is a *candidate only*, redesign Decision 1); over-pruning
@@ -331,9 +380,178 @@ class ScoredKeyword:
     df: int  # number of documents in the corpus containing the term
 
 
+# --------------------------------------------------------------------------- #
+# D1 — page furniture. Running headers/footers dominate TF before anything else runs.
+# --------------------------------------------------------------------------- #
+
+#: The page marker the chunker writes into cached markdown. Imported by value rather than from
+#: ``ingest.chunking`` to keep this module's pure core free of ingest imports (ADR-023).
+_PAGE_MARKER = re.compile(r"<!--\s*page:(\d+)\s*-->")
+
+#: Runs of digits collapse to one placeholder when deciding whether two lines are "the same"
+#: line of furniture. "Page 3 of 12" and "Page 4 of 12" are one running footer, not two lines.
+_DIGITS = re.compile(r"\d+")
+
+#: **Structural, not corpus-tuned** (the robustness contract). Furniture is defined by *repeating
+#: across a document's own pages*, so the threshold is a fraction of that document's page count and
+#: carries no assumption about corpus size, domain, or publisher. Half is deliberately
+#: conservative: a running header appears on essentially every page, while a genuine sentence
+#: repeated on half a paper's pages does not exist.
+FURNITURE_PAGE_FRACTION = 0.5
+
+#: ...and a floor, because "repeats on half the pages" is meaningless at 1-2 pages, where it would
+#: describe an ordinary two-page paper's every shared line.
+FURNITURE_MIN_PAGES = 3
+
+
+def _furniture_key(line: str) -> str:
+    """Normalised identity of a line for repetition counting (digit- and case-blind)."""
+    return _DIGITS.sub("#", line.strip().casefold())
+
+
+def split_pages(text: str) -> list[str]:
+    """Split cached markdown on ``<!-- page:N -->`` markers into per-page blocks.
+
+    Returns a single block for input with no markers (EPUB/HTML/MD, and any PDF whose extractor
+    did not emit them) — which is what makes :func:`strip_page_furniture` a no-op there rather
+    than a guess.
+    """
+    parts = _PAGE_MARKER.split(text)
+    if len(parts) == 1:
+        return [text]
+    # re.split with one capture group yields [before, page_no, block, page_no, block, ...].
+    return [parts[0], *parts[2::2]]
+
+
+def strip_page_furniture(
+    text: str,
+    *,
+    page_fraction: float = FURNITURE_PAGE_FRACTION,
+    min_pages: int = FURNITURE_MIN_PAGES,
+) -> str:
+    """Remove lines that repeat across a document's pages — running headers, journal stamps.
+
+    **This is the single largest defect in the keyword layer** (measured 2026-08-11 on the live
+    97-document corpus): on ``nihms-66884.pdf``, **11 of 15** keyword slots were shingles of the
+    PMC running header *"Exp Brain Res. Author manuscript; available in PMC 2008 September 26"*.
+    It repeats on every page, so its term frequency beats the paper's actual subject matter.
+
+    The signal is **position and repetition, not vocabulary** — which is why this is not another
+    stopword list. ``VENUE_STOPWORDS`` cannot scale to it: every publisher has a different stamp,
+    and the words in them (``brain``, ``september``) are not junk anywhere else.
+
+    Degrades to the identity function when the text has no page markers or too few pages, because
+    with nothing to repeat *across*, "repeated" has no meaning (0-document robustness in
+    miniature: the honest answer to an unanswerable question is to change nothing).
+    """
+    pages = split_pages(text)
+    if len(pages) < min_pages:
+        return text
+    seen_on: dict[str, set[int]] = defaultdict(set)
+    for i, page in enumerate(pages):
+        for line in page.splitlines():
+            key = _furniture_key(line)
+            if key:  # blank lines are structure, not furniture
+                seen_on[key].add(i)
+    threshold = max(min_pages, math.ceil(page_fraction * len(pages)))
+    furniture = {key for key, seen in seen_on.items() if len(seen) >= threshold}
+    if not furniture:
+        return text
+    kept = [ln for ln in text.splitlines() if _furniture_key(ln) not in furniture]
+    log.debug("page_furniture_stripped", pages=len(pages), lines=len(furniture))
+    return "\n".join(kept)
+
+
+# --------------------------------------------------------------------------- #
+# D2 — overlapping shingles. One phrase must not eat a document's whole budget.
+# --------------------------------------------------------------------------- #
+
+
+def _is_contiguous_subspan(inner: tuple[str, ...], outer: tuple[str, ...]) -> bool:
+    """Whether ``inner`` appears as a contiguous run of tokens inside ``outer``."""
+    n, m = len(inner), len(outer)
+    if n > m:
+        return False
+    return any(outer[i : i + n] == inner for i in range(m - n + 1))
+
+
+def suppress_nested(scored: list[ScoredKeyword], *, top_k: int) -> list[ScoredKeyword]:
+    """Take the top ``top_k``, skipping any term that overlaps one already taken.
+
+    **The second largest defect** (measured 2026-08-11): ``transformer_vaswani_2017.pdf`` spent
+    **9 of its 15 slots** on ``eos`` · ``eos pad`` · ``pad`` · ``pad br`` · ``eos pad br`` … —
+    five slots for one artifact in one figure. n-gram candidate generation emits every window, so
+    a frequent phrase necessarily produces a frequent sub-phrase, and both score well.
+
+    Greedy over the existing rank order, so the **highest-scoring** member of each overlapping
+    family wins and the rest are dropped: a term is skipped if it is a contiguous sub-span of an
+    accepted term *or* contains one. That direction matters — dropping only sub-spans would let
+    ``eos pad br`` in after ``eos``, and dropping only super-spans would keep the fragments.
+
+    Deliberately **not** applied to the ``contrastive`` mode, which already discounts nested terms
+    through C-value, nor to ``corpus_band``, whose exposure to this is via page furniture and is
+    fixed at source by :func:`strip_page_furniture`.
+    """
+    accepted: list[ScoredKeyword] = []
+    accepted_tokens: list[tuple[str, ...]] = []
+    for cand in scored:
+        tokens = tuple(cand.term.split())
+        if any(
+            _is_contiguous_subspan(tokens, other) or _is_contiguous_subspan(other, tokens)
+            for other in accepted_tokens
+        ):
+            continue
+        accepted.append(cand)
+        accepted_tokens.append(tokens)
+        if len(accepted) >= top_k:
+            break
+    return accepted
+
+
+def strip_reference_section(
+    text: str, *, min_position: float = REFERENCE_SECTION_MIN_POSITION
+) -> str:
+    """Cut everything from a ``References`` / ``Bibliography`` heading to the end of the document.
+
+    **This is D4's real fix, and it is deliberately structural.** Author surnames dominate keyword
+    output because a bibliography repeats fifty of them, several times each — not because surnames
+    are inherently junk. Removing the *place* they accumulate keeps every surname that earns its
+    keep in the document's own prose, and needs no opinion about which words are people's names.
+    That matters: ``cajal``, ``cre``, ``dbs``, ``16p11`` and ``c57bl`` are real vocabulary in this
+    corpus and have twice been mistaken for noise.
+
+    Only a **whole-line** heading counts, and only past ``min_position`` of the way through, so a
+    document that discusses references in prose cannot lose its body. Returns ``text`` unchanged
+    when no qualifying heading exists — including for any document with no bibliography at all.
+    """
+    if not text:
+        return text
+    cutoff = int(min_position * len(text))
+    for match in _REFERENCE_HEADING.finditer(text):
+        if match.start() >= cutoff:
+            log.debug("reference_section_stripped", cut_at=match.start(), total=len(text))
+            return text[: match.start()]
+    return text
+
+
 def tokenize(text: str) -> list[str]:
-    """Case-folded tech-aware word tokens (``BM25`` → ``bm25``, ``cross-encoder`` intact)."""
+    """Case-folded tech-aware word tokens (``BM25`` → ``bm25``, ``cross-encoder`` intact).
+
+    Designators keep an internal ``.``/``/`` when a digit follows it (``16p11.2``, ``c57bl/6``);
+    everything else splits there as before (``e.g``, ``arxiv.org``). See :data:`_TOKEN_RE`.
+    """
     return _TOKEN_RE.findall(text.casefold())
+
+
+def is_citation_artifact(token: str) -> bool:
+    """Whether ``token`` is a citation *shape*: ``2014a``, ``e04250``, or a DOI prefix.
+
+    Shape only. Nothing here inspects vocabulary, so no real term can be caught by adding a word
+    to a list later — the failure mode this function is written to avoid.
+    """
+    return bool(
+        _CITATION_YEAR_SUFFIX.match(token) or _ARTICLE_ID.match(token) or _DOI_PREFIX.match(token)
+    )
 
 
 def candidate_terms(
@@ -352,6 +570,11 @@ def candidate_terms(
     both go), if it is shorter than ``min_chars`` (letters + digits, spaces excluded), or if
     it contains no alphabetic character (pure numbers / IDs are not keywords). Order/repetition
     is preserved so the caller can count term frequency directly.
+
+    Two D4/D5 rules join those. A token is also rejected when its **head** — the part before its
+    first ``.``/``/`` — is a stopword, which is what keeps ``fig.2`` and ``arxiv.org`` out now
+    that :data:`_TOKEN_RE` can hold a separator; and when it is a citation *shape*
+    (:func:`is_citation_artifact`). Neither rule consults a vocabulary of names.
     """
     terms: list[str] = []
     n = len(tokens)
@@ -359,6 +582,16 @@ def candidate_terms(
         for i in range(n - size + 1):
             gram = tokens[i : i + size]
             if any(tok in stopwords or tok in venue_stopwords for tok in gram):
+                continue
+            if any(is_citation_artifact(tok) for tok in gram):
+                continue
+            # `fig.2` / `arxiv.org` survive tokenisation as one token, so the stopword check
+            # above misses them — the head is what carries the meaning, so test that too.
+            if any(
+                (head := _TOKEN_HEAD.match(tok).group()) != tok  # type: ignore[union-attr]
+                and (head in stopwords or head in venue_stopwords)
+                for tok in gram
+            ):
                 continue
             # A repeated single token ("outflux outflux outflux") is an OCR/extraction
             # artifact, never a keyphrase — weirdness would otherwise rank it highly (RG-001/R3).
@@ -383,6 +616,9 @@ def tf_idf_keywords(
     the log-damped TF stops a term repeated hundreds of times from dominating, and the
     smoothed IDF keeps corpus-ubiquitous terms positive but low. Fully deterministic:
     ties break by term ascending, so the output is byte-stable across runs.
+
+    The top ``top_k`` are taken through :func:`suppress_nested` (D2), so one phrase cannot spend
+    a document's whole budget on its own shingles.
     """
     n_docs = len(doc_terms)
     per_doc_counts: dict[str, Counter[str]] = {
@@ -402,7 +638,7 @@ def tf_idf_keywords(
             score = (1.0 + math.log(tf)) * idf
             scored.append(ScoredKeyword(term=term, score=score, tf=tf, df=df))
         scored.sort(key=lambda s: (-s.score, s.term))
-        ranked[doc_id] = scored[:top_k]
+        ranked[doc_id] = suppress_nested(scored, top_k=top_k)
     return ranked
 
 
@@ -732,8 +968,19 @@ def extract_keywords(
     """
     corpus = load_document_texts()  # whole corpus → stable statistics
     filenames = {doc_id: fname for doc_id, fname, _ in corpus}
+    # D1 runs *before* tokenisation, per document: furniture is defined by repeating across that
+    # document's own pages, so it cannot be judged on the corpus-wide token stream. Doing it here
+    # rather than at ingest keeps the primary chunk store untouched (Enrichment-Layer Pattern) —
+    # the answer path still sees the document exactly as extracted.
+    # D1 then D4: furniture first (it is judged per *page*, so it must see the whole document),
+    # then the bibliography. Order matters only in that direction — cutting the references first
+    # would remove pages that the furniture pass needs in order to count repetition.
     doc_terms = {
-        doc_id: candidate_terms(tokenize(text), ngram_max=ngram_max, min_chars=min_chars)
+        doc_id: candidate_terms(
+            tokenize(strip_reference_section(strip_page_furniture(text))),
+            ngram_max=ngram_max,
+            min_chars=min_chars,
+        )
         for doc_id, _, text in corpus
     }
 

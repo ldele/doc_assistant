@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-08-13 (ADR-044 update check; ADR-045 taxonomy display rule) · class: living -->
+<!-- status: active · updated: 2026-08-14 (ADR-044 update check; ADR-045 taxonomy display rule) · class: living -->
 
 # Decisions — index
 

@@ -11,6 +11,67 @@ Format: What changed | Why | Rejected alternatives | What it opens
 > (moved verbatim 2026-07-21). This file keeps 2026-07-15 onward.
 
 ---
+## 2026-08-13 — ADR-045 (taxonomy display rule), and the auto-propose run that says the scope is the bug
+
+**What changed.** New `docs/decisions/ADR-045-taxonomy-display-rule-and-document-identity.md` + its
+index row; RG-015 in `.claude/RIGOR_TODO.md` gains a third evidence section. No code.
+
+**ADR-045 fills a gap ADR-028 names in its own "Must revisit": *"the display rule is unspecified."***
+A document shows its attached nodes **minus any that is an ancestor of another** (so a concept placed
+under both `optics` and `neuroscience` shows both — neither subsumes the other); search and filter
+match the **full ancestor closure**; attachment happens only at the most specific node and ancestors
+are derived, never stored. Both rules degrade to identity on an unplaced vocabulary, which is not a
+future edge case — it is the path 344 of 357 concepts take today.
+
+**Why it matters beyond tidiness:** this is the actual fix for the partitioning failure measured
+twice on 2026-08-12. `rag` is `df=1` and always will be; `machine learning` is not. Under closure a
+97%-singleton vocabulary still filters cleanly, with **no change to extraction and no re-ingest**.
+Two further decisions, both taken to keep something out of the vocabulary: a document identity key
+(`rag_lewis_2020`) is a **computed field, not a `Concept` row** — it is an identifier, `df=1`
+forever, and admitting it would manufacture 97 permanent singletons in the facet being repaired; and
+bibliographic type/origin are **metadata columns**, because "is a journal article" is not "belongs to
+a research field" and modelling it as `in_field` gives that edge two meanings.
+
+**Then the measurement, because ADR-045 makes placement load-bearing.** Under closure a wrong
+placement silently *widens a filter*, so `propose_taxonomy --apply --all-concepts --limit 25` ran on
+`qwen3.5:9b` (49 calls, ~2 min, $0) before anything bulk. Judged against each term's own source
+document: **~4 right · ~8 coarse · ~12 wrong**, and the wrong ones are not near-misses —
+`acdc`→**Music** (the ACDC cardiac-MRI benchmark, from a Mamba-UNet segmentation paper),
+`alpha`→**Analytical chemistry** (an EEG band), `actor`→**Performing arts** (actor–critic RL),
+`accessory`→**built environment** (from a Cajal neuroanatomy paper).
+
+**The finding is not "the model is bad".** On the **13 curated `graph_include` concepts** a *weaker*
+model (llama3.1:8b, 2026-07-25) was **13/13 plausible**. On raw keyword rows a *stronger* model is
+half wrong. **The variable is scope, not capability** — `--all-concepts` crosses the ADR-018
+boundary on purpose and hands the classifier 344 rows nobody curated, ~40% of which are not concepts
+at all (venue artifacts `aclweb`/`aclanthology`, orphans with no document links, and bare fragments
+like `alpha`/`actor` that only mean something inside a phrase). So `graph_include` is a
+**precondition for auto-propose working**, not bookkeeping.
+
+**Confidence is still not a signal, third independent confirmation:** 0.80–0.95 across the sample,
+`acdc`→Music at 0.80 and a correct placement at 0.80.
+
+**A correction worth more than the run.** The taxonomy has **never had a human-accepted concept
+placement**: all 37 concept→field links were `origin='proposed'`; the 213 `curated` edges are the
+ANZSRC trunk itself (domain→domain). Every earlier statement of the form "13 concepts are placed"
+should have said *proposed*. State which, always — they have never meant the same thing here.
+
+**Disposition.** The 24 rows were deleted via `taxonomy.remove_hierarchy_edge` (back to 213 curated
++ 13 older proposals); backup `data/library.db.bak-20260813-pretaxonomy`. The remaining 333 were not
+run. ⚠ **`--limit N` takes the alphabetically-first N**, so this was an `a*` sample — enough to
+answer "usable in bulk?" (no), not enough to quote as a precision figure.
+
+**Rejected.** Running the remaining 333 (would have written ~330 rows of this quality into a layer
+ADR-045 just made load-bearing). Keeping the 24 as a labelled sample (the taxonomy view would show
+`acdc → Music`, and a wrong placement that is *visible* is how a feature teaches something false —
+the exact failure the 2026-08-12 relabels were about).
+
+**What it opens.** The sequence is now clear and is upstream of the classifier: curate the
+vocabulary, clean the D4/D5 residue out of it, then place a small set — by hand or with a stronger
+model — and only then trust coverage. RG-015's original debt (per-kind detector precision) is
+untouched and still needs the detectors to exist.
+
+---
 ## 2026-08-12 (4) — keyword quality D4 + D5: the bibliography is where surnames come from, and the tokeniser was renaming genes
 
 **What changed.** `knowledge/keywords.py` gains `strip_reference_section`, `is_citation_artifact`,

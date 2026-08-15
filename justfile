@@ -68,8 +68,8 @@ profile *ARGS:
 app:
     powershell -NoProfile -ExecutionPolicy Bypass -File scripts/launch_app.ps1
 
-# Launch the desktop frontend (Svelte/Vite) in dev — pair with `just api` in another shell
-# (or `cd apps/desktop && npx tauri dev` for the native Tauri window).
+# For the native Tauri window, run `cd apps/desktop && npx tauri dev` instead.
+# Launch the desktop frontend (Svelte/Vite) in dev — pair with `just api` in another shell.
 desktop:
     cd apps/desktop && npm run dev
 
@@ -89,11 +89,12 @@ sidecar-check:
 sidecar:
     uv run --no-sync python -m scripts.build_sidecar
 
-# Release preflight — the MECHANICAL half of docs/RELEASE.md. Read-only, seconds, exits non-zero on
-# a real problem. Checks the five version strings agree (incl. uv.lock), the artifact is newer than
-# every tracked source file, the sidecar did not lose a bundle (KI-34's size cliff), that RG-012
-# passed on THIS artifact, and that no developer command reached the shipped UI (KI-39).
-# A green run is necessary, not sufficient — the judgment steps are in docs/RELEASE.md.
+# Read-only, seconds, exits non-zero on a real problem. Checks the five version strings agree
+# (incl. uv.lock), the artifact is newer than every tracked source file, the sidecar did not lose a
+# bundle (KI-34's size cliff), that RG-012 passed on THIS artifact, and that no developer command
+# reached the shipped UI (KI-39). A green run is necessary, not sufficient — the judgment steps
+# are in docs/RELEASE.md.
+# Release preflight — the MECHANICAL half of docs/RELEASE.md.
 preflight:
     uv run --no-sync python -m scripts.release_preflight
 
@@ -101,20 +102,20 @@ preflight:
 test:
     uv run --extra {{torch}} --extra dev pytest tests/unit tests/integration
 
-# Type-check exactly as CI and the pre-commit hook do (`uv run mypy src/`).
-#
 # ⚠ USE THIS, NOT `mypy --strict src`. Strictness already comes from [tool.mypy] strict=true, so
 # the flag adds nothing — except that it ALSO re-enables warn_unused_ignores (pyproject turns it
 # off), which makes it a DIFFERENT option set. mypy keys its incremental cache on the options, so
 # alternating the two forms invalidates the whole cache every time: measured on this repo,
 # `mypy src` is 2.4s warm and 40.5s right after a `--strict` run. That flip-flop was making every
 # commit pay ~40s in the pre-commit mypy hook. Same reason CI uses the bare form.
+# Type-check exactly as CI and the pre-commit hook do (`uv run mypy src/`).
 typecheck:
     uv run --no-sync mypy src
 
-# Escape hatch for the divergent flag set, pinned to its OWN cache dir so it cannot cold-start
-# `typecheck` (or be cold-started by it). Note it is *stricter than CI*: it reports unused
-# `type: ignore`s, which the shipped config deliberately allows.
+# Pinned to its OWN cache dir so it cannot cold-start `typecheck` (or be cold-started by it). Note
+# it is *stricter than CI*: it reports unused `type: ignore`s, which the shipped config
+# deliberately allows.
+# Escape hatch for the divergent `--strict` flag set — prefer `just typecheck`.
 typecheck-strict:
     uv run --no-sync mypy --strict --cache-dir .mypy_cache-strict src
 

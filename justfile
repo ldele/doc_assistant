@@ -33,6 +33,37 @@ ingest *ARGS:
 eval *ARGS:
     uv run --extra {{torch}} python -m scripts.run_eval {{ARGS}}
 
+# --- optimisation instruments (the locked-settings workflow) -----------------------------------
+# `just --list` shows only the LAST comment line above a recipe, so the detail lives here and each
+# recipe below keeps a one-line summary.
+#
+# Locked settings change ONLY on an eval win (.claude/CONTEXT.md): sweep, beat the control beyond
+# its variance, record a baseline in tests/eval/baselines/. Both sweeps take --dry-run — it prints
+# the grid and the exact commands and touches nothing. Always start there.
+#
+# ⚠ A run is comparable only to baselines taken on the SAME corpus. Extra documents are retrieval
+# distractors, so a public-case run against the private 97-doc index is NOT the committed public
+# baseline (evals/README.md): the public 10 need an isolated data home, while the private 35-case
+# set matches the indexed library. The public set also saturates citation_overlap at 1.000 and so
+# cannot discriminate retrieval changes — retrieval experiments belong on the larger corpus.
+#
+# ⚠ sweep-chunking's preflight is load-bearing: it asserts every config actually reaches the code
+# and that no two grid points are the same experiment. That guard exists because the 2026-06-06 run
+# compared one configuration with itself six times and reported a verdict (KI-41). Never trust a
+# chunking result from a run that skipped it.
+
+# BM25/vector ensemble-weight sweep — retrieval-only, $0, near-deterministic, no re-embed.
+sweep-bm25 *ARGS:
+    uv run --extra {{torch}} python -m scripts.sweep_bm25_weight {{ARGS}}
+
+# Parent/child chunk-size sweep — re-embeds the corpus per grid point (slow; GPU strongly advised).
+sweep-chunking *ARGS:
+    uv run --extra {{torch}} python -m scripts.sweep_chunking {{ARGS}}
+
+# Stage-by-stage pipeline profile (startup/query/ingest budgets) — local, $0, writes nothing.
+profile *ARGS:
+    uv run --extra {{torch}} python -m scripts.profile_stages {{ARGS}}
+
 # One-shot app launch: API + desktop UI in their own windows, wait for health, open browser.
 app:
     powershell -NoProfile -ExecutionPolicy Bypass -File scripts/launch_app.ps1

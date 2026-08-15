@@ -11,6 +11,44 @@ Format: What changed | Why | Rejected alternatives | What it opens
 > (moved verbatim 2026-07-21). This file keeps 2026-07-15 onward.
 
 ---
+## 2026-08-15 — the shipped v0.5.1 re-tested on a clean box: RG-012 PASS, and RG-028 closes as contention
+
+**What changed.** No code. `.claude/RIGOR_TODO.md`: **RG-028 closed**, RG-012's gate-defect table
+gains run 4 and its status line the 2026-08-15 re-pass. `docs/desktop-packaging.md` §5 gains a
+log-reading note. Evidence archived to `C:\rg012-host\out-2026-08-15-v0.5.1-run4-PASS-devstack-down\`
+(local-only, like the whole harness).
+
+**What was run.** RG-012 Tier-2 against the **published** 0.5.1 installer — the staged copy hashes
+`985331FF…`, matching both the bundle and the SHA-256 that was verified against the GitHub asset, so
+this tested the bytes users download, not a look-alike rebuild. Windows Sandbox, `python on PATH?
+False`: silent install **235 s** → `/api/health` **~40 s** → 3 PDFs → **322 chunks** → one turn,
+**16 s**, 10 sources, **5 resolved citations (5 canonical `[n]`, 0 unresolvable)** → **PASS**.
+`release_preflight` was green on all nine checks beforehand.
+
+**Why it mattered — RG-028 asked for exactly one number.** The 0.5.1 release runs measured 178/194/78 s
+against 14 s (0.4.1) and 17 s (0.4.2) on the same question, corpus, model and box. The entry named
+the deciding experiment: re-run **with the dev stack down and Ollama freshly restarted**; near
+14–17 s means contention, over 100 s means a real regression in the shipped artifact. It came back
+**16 s**. The cause was host contention — my own dev stack sharing the GPU with a 97-document
+corpus's embedder and reranker — and the answer path is exonerated without bisecting `v0.4.2..v0.5.1`.
+**322 chunks also re-confirms KI-34**: extraction genuinely works in the frozen binary.
+
+**Rejected alternatives.** *Bisect the answer path first* — the entry itself ranked contention as the
+likelier cause and the experiment was far cheaper; bisecting would have burned a session to reach the
+same place. *Download the GitHub asset to test "what users get"* — the hash already proves the local
+staged copy is byte-identical, so a 1.5 GB download would have added a network round-trip, not
+evidence. *Close RG-012's flakiness finding on the strength of a green run* — see below.
+
+**What it opens.** **RG-012's citation verdict stays open and that is deliberate.** Run 4 passed, which
+moves the failure rate from 1-in-3 to 1-in-4 on a byte-identical healthy artifact — it is one more
+sample, not a fix, and the cause (KI-36's bimodal citing on `llama3.1:8b`) is untouched. The green run
+is precisely when a flaky blocks-ship gate gets quietly retired, so the entry now says so in terms.
+Its two cheap fixes (drive the gate's one turn with a paid model, or assert across N turns) remain the
+work. Also opened: **dev-stack-up is now a known confounder for any RG-012 timing** — check 8001/1420
+are clear before reading a turn time as signal. The 16 s is **not** promoted to `docs/performance.md`
+or RG-010/011: one sandbox run over a 3-document corpus is a gate observation, not a benchmark.
+
+---
 ## 2026-08-13 — ADR-045 (taxonomy display rule), and the auto-propose run that says the scope is the bug
 
 **What changed.** New `docs/decisions/ADR-045-taxonomy-display-rule-and-document-identity.md` + its

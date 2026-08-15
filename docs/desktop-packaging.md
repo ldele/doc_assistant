@@ -180,6 +180,20 @@ Switch address (`http://172.29.224.1:11434`), which requires Ollama bound beyond
 The data-home gap this section used to describe is closed: the app has a first-run ingest flow, so
 the sandbox seeds its own corpus and reaches `chunk_count > 0` unaided.
 
+**Reading the log: mojibake in the harness's JSON dumps is the harness, not the app.** The
+`settings:` and `setup readiness:` lines come from PowerShell 5.1's `Invoke-RestMethod`, which falls
+back to **Latin-1** when a JSON response carries no `charset` in its `Content-Type`. So the `·` in
+`SUPPORTED_NOTE` ("pdf · epub · html …") — UTF-8 bytes `C2 B7` — surfaces in `out\rg012.log` as the
+two characters `U+00C2 U+00B7` (a capital A-circumflex before the dot). The shipped string is fine:
+`apps/api/services.py` holds clean single `C2 B7` sequences and the Svelte UI reads it with
+`fetch()`, which decodes JSON as UTF-8 per spec (verified 2026-08-15). **Do not file this as a
+shipped mojibake** — that is the KI-35 shape, a gate artifact mistaken for an application defect.
+Confirm against the source bytes before believing any encoding defect this log appears to show.
+
+(This paragraph deliberately *names* the mojibake characters instead of printing them:
+`tests/unit/test_docs_encoding.py` scans tracked docs for that byte pair and cannot tell a quoted
+example from a leak, so writing it literally fails the guard — as it did when this note was drafted.)
+
 **A packaging gate must push a real document end to end (KI-34).** Booting the frozen binary proves
 nothing about whether its *data files* were bundled: the build that could not read a single PDF
 started, served `/api/health`, and reported a healthy chunk count. Only extraction failed.

@@ -83,6 +83,42 @@ def test_run_records_the_locked_retrieval_settings(
     assert recorded["embedding_model"] == config.EMBEDDING_MODEL
 
 
+def test_run_records_the_generator(
+    store: Store, results: list[EvalResult], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Which LLM wrote the answers is part of what the run measured (found 2026-08-15).
+
+    `contains_all` scores the generated text, so a run that does not name its generator cannot
+    be compared to one that used a different model — and every run in the store did exactly that
+    until this key existed.
+    """
+    monkeypatch.setattr(config, "LLM_PROVIDER", "ollama")
+    monkeypatch.setattr(config, "LLM_MODEL", "llama3.1:8b")
+
+    recorded = store.run_config(store.persist_run(results, system_name="t"))
+
+    assert recorded["llm_provider"] == "ollama"
+    assert recorded["llm_model"] == "llama3.1:8b"
+
+
+def test_two_runs_on_different_generators_are_distinguishable(
+    store: Store, results: list[EvalResult], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The 2026-08-15 property: same retrieval settings, different model, visible in the record.
+
+    A local-model control and a Haiku re-run are different experiments. Without this they are two
+    identical-looking rows whose answer scores differ, which reads as a pipeline improvement.
+    """
+    monkeypatch.setattr(config, "LLM_PROVIDER", "ollama")
+    monkeypatch.setattr(config, "LLM_MODEL", "llama3.1:8b")
+    local = store.persist_run(results, system_name="t", note="control")
+    monkeypatch.setattr(config, "LLM_PROVIDER", "anthropic")
+    monkeypatch.setattr(config, "LLM_MODEL", "claude-haiku-4-5-20251001")
+    paid = store.persist_run(results, system_name="t", note="re-run")
+
+    assert store.run_config(local)["llm_model"] != store.run_config(paid)["llm_model"]
+
+
 def test_caller_config_wins_over_the_snapshot(
     store: Store, results: list[EvalResult], monkeypatch: pytest.MonkeyPatch
 ) -> None:

@@ -22,6 +22,17 @@ experiment that does not record the setting it varies cannot be audited**, and a
 variable is silently ignored fails in the "no effect" direction — which reads as a confirmed
 default.
 
+**The same hole, found again 2026-08-15 — one layer up.** ``config_json`` recorded the embedder
+but never the *generator*, so no run in the store said which LLM wrote its answers. A 5-trial
+control run on the private 35 scored ``contains_all`` **0.822** where the 2026-08-08 control
+recorded **0.777** — read as an improvement, it is nothing of the kind: that run generated with
+``llama3.1:8b`` and this one inherited ``.env``'s Anthropic Haiku. The tell that it was the
+generator and not the pipeline is that ``citation_overlap`` reproduced to the digit (0.9363 vs
+0.936), because retrieval is deterministic and generator-independent. The Haiku-vs-llama split
+across the 2026-08-08 arms existed only in ``evals/README.md`` prose — recoverable by a human
+reading a document, not by anything auditing the data. Hence ``llm_provider`` / ``llm_model``
+below.
+
 **Membership rule:** a value belongs here if changing it changes what the run measures. That is
 narrower than "every knob" — cost/latency settings that cannot move a score (worker counts,
 cache toggles, the lazy reranker) are deliberately absent, because a record nobody trusts to be
@@ -54,6 +65,11 @@ def run_defining_settings() -> dict[str, Any]:
         "child_chunk_overlap": config.CHILD_CHUNK_OVERLAP,
         "baseline_chunk_size": config.BASELINE_CHUNK_SIZE,
         "baseline_chunk_overlap": config.BASELINE_CHUNK_OVERLAP,
+        # Generator — which LLM wrote the answers. `contains_all` and any judge score are
+        # measurements OF this model; two runs with different generators are different
+        # experiments, however identical the retrieval settings look.
+        "llm_provider": config.LLM_PROVIDER,
+        "llm_model": config.LLM_MODEL,
         # Retrieval — the locked settings table, minus the ones already named above.
         "embedding_model": config.EMBEDDING_MODEL,
         "use_parent_child": config.USE_PARENT_CHILD,

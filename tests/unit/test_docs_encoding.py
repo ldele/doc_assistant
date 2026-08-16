@@ -100,7 +100,12 @@ def test_no_tracked_text_file_is_double_encoded() -> None:
 # separator character quotes it literally, inside backticks. Exempting it by (file, codepoint)
 # rather than globally keeps every other stray control a failure — and the companion test below
 # asserts the exemption is still earned, so it expires by itself if that prose ever goes.
-ALLOWED_CONTROLS: dict[str, set[str]] = {"docs/DEVLOG.md": {"U+001F"}}
+#
+# **Moved 2026-08-15**: was `docs/DEVLOG.md`, until the log was rotated and the entry holding it
+# went to `DEVLOG-archive-002.md` (line ~1612). The companion test caught the move by failing —
+# which is the whole point of it, so re-point the key rather than deleting the exemption.
+# Rotating a doc moves its exemptions too; expect this key to follow the content again.
+ALLOWED_CONTROLS: dict[str, set[str]] = {"docs/archive/DEVLOG-archive-002.md": {"U+001F"}}
 
 
 @pytest.mark.skipif(not TRACKED, reason="git unavailable; nothing to scan")

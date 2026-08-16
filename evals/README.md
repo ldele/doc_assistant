@@ -23,6 +23,29 @@ every published number below comes from it. A **private 35-case set** (`tests/ev
 gitignored) runs on the author's personal research library, which is mostly copyrighted and not
 redistributable; it gates day-to-day retrieval work but is not citable by third parties.
 
+> **The private arm is LOCAL-ONLY, and the two arms are never compared** (decided 2026-08-15).
+> The private 35 runs on `llama3.1:8b` — free, and 35 cases × N trials on a paid model is a real
+> bill for a set nobody outside this machine can cite anyway. The public arm keeps its paid
+> generator, because its numbers are the published ones.
+>
+> **So an answer-quality score from one arm must never be read against the other.** They differ by
+> generator *and* corpus, and either difference alone is enough to make the comparison meaningless.
+> This is not hypothetical: on 2026-08-15 a private run inherited Haiku and scored `contains_all`
+> **0.822** against the local control's **0.777** — a 6% "improvement" that was entirely the model
+> swap (RG-029). Retrieval scores are the exception, being generator-independent.
+>
+> **`run_eval` has no `--provider` flag and `.env` defaults to `anthropic`, so a bare invocation on
+> the private set silently violates this and bills.** Set the generator explicitly:
+>
+> ```bash
+> LLM_PROVIDER=ollama LLM_MODEL=llama3.1:8b uv run python -m scripts.run_eval --repeat 5
+> ```
+>
+> A non-empty process environment variable beats `.env` (that precedence is the KI-38 fix, and
+> `config._load_env` exists to guarantee it). Since RG-029, `config_json` records `llm_provider` +
+> `llm_model` on every run, so the arm a run belongs to is now checkable in the data rather than
+> assumed — verify there before trusting any cross-run comparison.
+
 ## The headline benchmark
 
 The headline benchmark is **reproducible by anyone**: a public demo corpus of the 10 arXiv papers behind this project's own methods (RAG, dense retrieval, sentence embeddings, the BGE and SPECTER2 embedders, BERT re-ranking, ColBERT, HyDE, LLM-as-a-judge, AI Usage Cards). Nothing is re-hosted — [`corpus_manifest.yaml`](../tests/eval/corpus_manifest.yaml) pins each paper's arXiv ID + SHA-256 and a script fetches the PDFs.

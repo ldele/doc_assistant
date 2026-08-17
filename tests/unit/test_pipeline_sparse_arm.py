@@ -263,6 +263,43 @@ class TestFallback:
         assert rebuilt.doc_hashes() == {"zzz"}
 
 
+class TestIndexedDocHashes:
+    """`indexed_doc_hashes` — the corpus an eval run measured (RG-021).
+
+    It reuses the same three states the fallback tests above pin, and the reason it must keep
+    them apart is that it feeds a *record*: "0 documents" and "I could not tell" are different
+    facts about a run, and collapsing them to one empty value would make a degraded run look
+    like a clean run over an empty corpus.
+    """
+
+    def test_a_live_index_answers_with_its_documents(self, tmp_path, monkeypatch):
+        """Excluded chunks are already gone: the arm is built through the same
+        `keep_for_retrieval` filter the vector arm applies, so `ccc` is not in the corpus the
+        run could retrieve from."""
+        rag = _constructed(tmp_path, monkeypatch)
+
+        assert rag.indexed_doc_hashes == {"aaa", "bbb"}
+
+    def test_an_empty_corpus_is_an_empty_set_not_none(self, tmp_path, monkeypatch):
+        empty = _constructed(tmp_path / "empty", monkeypatch, rows=[])
+
+        assert empty.indexed_doc_hashes == set()
+        assert empty.indexed_doc_hashes is not None
+
+    def test_a_failed_build_over_a_real_corpus_is_unknown(self, tmp_path, monkeypatch):
+        """The one honest `None`: retrieval ran vector-only and this process never learned what
+        the store held, so the run cannot claim a composition it did not observe."""
+
+        def boom(*a: Any, **k: Any) -> None:
+            raise OSError("read-only file system")
+
+        monkeypatch.setattr(sparse_index.SparseIndex, "build", boom)
+        degraded = _constructed(tmp_path, monkeypatch)
+
+        assert degraded.keyword_index_unavailable is True
+        assert degraded.indexed_doc_hashes is None
+
+
 @pytest.mark.parametrize("scope", [None, frozenset({"aaa"})])
 def test_the_sparse_retriever_returns_documents_for_the_ensemble(tmp_path, monkeypatch, scope):
     """`EnsembleRetriever` fuses by reciprocal rank, so the arm only owes it an ordered list."""

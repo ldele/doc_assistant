@@ -152,6 +152,30 @@ def fingerprint(collection_name: str, chunk_ids: list[str]) -> str:
     return fingerprint_from_pages(collection_name, [chunk_ids])
 
 
+def doc_set_digest(doc_hashes: Iterable[str]) -> str:
+    """Identify a *corpus* — the set of documents an index holds — as one hex digest.
+
+    SHA-256 over the sorted ``doc_hash`` values joined by newlines, so the same document set
+    digests the same however it was paged, ordered or de-duplicated on the way in.
+
+    **Deliberately not :func:`fingerprint`, and the difference is the point.** That one identifies
+    an index *build*: it hashes chunk ids, so re-ingesting the very same documents at a different
+    chunk size moves it. This one moves only when a document joins or leaves. An eval run needs
+    both questions answered separately — a chunking sweep is *supposed* to change the geometry
+    while holding the corpus fixed, and a single fingerprint cannot say that the second half held
+    (RG-021).
+
+    A 0-document corpus digests like any other: it is a real composition, comparable to another 0,
+    not an absence.
+    """
+    digest = hashlib.sha256()
+    # `set` before `sorted`, so the guarantee holds for the natural streaming caller too: a
+    # `doc_hash` column yields one row per chunk, and a digest that counted repeats would move
+    # on a re-chunk — the one thing this identity exists to be immune to.
+    digest.update("\n".join(sorted(set(doc_hashes))).encode("utf-8"))
+    return digest.hexdigest()
+
+
 def match_expression(query: str) -> str | None:
     """Turn a user query into an FTS5 MATCH expression, or ``None`` if it has no terms.
 

@@ -274,3 +274,68 @@ class TestEmptyCorpus:
 
     def test_the_index_path_sits_beside_the_store(self):
         assert sparse_index.index_path("/data/chroma_pc") == Path("/data") / "sparse_index.sqlite3"
+
+
+# ============================================================
+# Corpus identity (RG-021)
+# ============================================================
+
+
+class TestDocSetDigest:
+    """`doc_set_digest` identifies the *documents* an index holds, where `fingerprint`
+    identifies a *build*. An eval run needs the first: it has to say whether two runs measured
+    the same corpus, across re-ingests that legitimately change every chunk id."""
+
+    def test_order_and_duplicates_do_not_change_it(self):
+        """It is fed a set today, but the guarantee is about the document set, not the container:
+        any iterable describing the same documents must digest the same."""
+        assert sparse_index.doc_set_digest(["bbb", "aaa"]) == sparse_index.doc_set_digest(
+            ["aaa", "bbb"]
+        )
+        assert sparse_index.doc_set_digest(["aaa", "aaa", "bbb"]) == sparse_index.doc_set_digest(
+            {"aaa", "bbb"}
+        )
+
+    def test_one_extra_document_moves_it(self):
+        """The RG-021 case in one line: a demo collection ingested beside the eval corpus."""
+        assert sparse_index.doc_set_digest(["aaa", "bbb"]) != sparse_index.doc_set_digest(
+            ["aaa", "bbb", "demo"]
+        )
+
+    def test_the_empty_corpus_has_a_digest(self):
+        """0 documents is a composition, comparable to another 0 — not a missing value."""
+        assert sparse_index.doc_set_digest([]) == sparse_index.doc_set_digest(set())
+        assert len(sparse_index.doc_set_digest([])) == 64
+
+    def test_it_survives_a_rechunk_where_the_build_fingerprint_does_not(self, tmp_path):
+        """**Why both exist.** A chunking sweep must change the geometry and hold the corpus
+        fixed; one digest cannot assert both halves. Here the same two documents are re-indexed
+        as different chunks: the build fingerprint moves (fresh ids), the corpus digest does not.
+        """
+        path = tmp_path / sparse_index.INDEX_FILENAME
+        coarse = [
+            ("dense passage retrieval encodes questions and passages", {"doc_hash": "aaa"}),
+            ("colbert uses late interaction over token embeddings", {"doc_hash": "bbb"}),
+        ]
+        fine = [
+            ("dense passage retrieval", {"doc_hash": "aaa"}),
+            ("encodes questions and passages", {"doc_hash": "aaa"}),
+            ("colbert uses late interaction", {"doc_hash": "bbb"}),
+            ("over token embeddings", {"doc_hash": "bbb"}),
+        ]
+
+        before = SparseIndex.build(path, "fp-coarse", iter(coarse))
+        coarse_docs, coarse_stamp = (
+            before.doc_hashes(),
+            sparse_index.fingerprint("langchain", _ids(len(coarse))),
+        )
+        before.close()
+        after = SparseIndex.build(path, "fp-fine", iter(fine))
+        fine_docs, fine_stamp = (
+            after.doc_hashes(),
+            sparse_index.fingerprint("langchain", _ids(len(fine))),
+        )
+        after.close()
+
+        assert coarse_stamp != fine_stamp  # the build changed
+        assert sparse_index.doc_set_digest(coarse_docs) == sparse_index.doc_set_digest(fine_docs)

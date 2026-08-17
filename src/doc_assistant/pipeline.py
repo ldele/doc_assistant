@@ -294,6 +294,30 @@ class RAGPipeline:
         """
         return self._sparse is None and not self._corpus_empty
 
+    @property
+    def indexed_doc_hashes(self) -> set[str] | None:
+        """Every document retrieval can currently reach, or ``None`` when that is unknowable.
+
+        This is the corpus an eval run actually measured (RG-021). BM25/IDF statistics and the
+        vector neighbourhood are corpus-*global*, so a run over an index carrying documents the
+        baseline never saw — a demo collection ingested on the same box — is not comparable to
+        that baseline even with perfect per-query scoping, and nothing in the run record could
+        show it. Read from the keyword arm because that arm **is** the BM25 corpus: it is built
+        through the same ``keep_for_retrieval`` filter the vector arm applies, so both see one
+        document set.
+
+        Three states, not two. A live index answers with its hashes; an **empty corpus** answers
+        ``set()``, which is a real composition (0 documents, comparable to another 0) rather than
+        an absence; ``None`` is kept for the single case where the answer is genuinely unknown —
+        a keyword index that failed to build over a non-empty corpus
+        (:attr:`keyword_index_unavailable`), where this process ran vector-only and never learned
+        what the store held. A caller recording this must keep those apart: "0 documents" and "I
+        could not tell" are different facts about a run.
+        """
+        if self._sparse is not None:
+            return self._sparse.doc_hashes()
+        return None if self.keyword_index_unavailable else set()
+
     def rebuild_sparse_index(self) -> int:
         """Rebuild the on-disk keyword index from the store and swap it into the live pipeline.
 

@@ -37,6 +37,26 @@ below.
 narrower than "every knob" — cost/latency settings that cannot move a score (worker counts,
 cache toggles, the lazy reranker) are deliberately absent, because a record nobody trusts to be
 minimal is a record nobody reads.
+
+**Two things that belong to a run record and deliberately are not in this snapshot.**
+
+*Index composition* (RG-021 — how many documents the index held, and which) is recorded by
+``scripts/run_eval.py`` from ``RAGPipeline.indexed_doc_hashes``, not read from config, because
+config does not know it: the corpus is state on disk, and the only honest source is the index
+the run actually retrieved over. Asking the live pipeline also means no second copy of the
+"which collection is active" rule to drift out of step with the one in ``pipeline.py``. The
+cost is the usual one — a new runner must record it, exactly as it must pass this provider —
+and ``scripts/CLAUDE.md`` carries both rules together.
+
+*Synthesis mode* was expected here (the 2026-08-15 baton asks for it, on the reasoning that
+``ai`` versus ``human`` changes the answer and therefore ``contains_all``). It is **not** here,
+because it does not change what *this harness* measures: ``eval/adapters.py`` drives
+``pipeline.retrieve`` and ``pipeline.stream_answer`` directly, and ``stream_answer`` is a bare
+``ANSWER_PROMPT | llm`` chain. ``SYNTHESIS_MODE`` is read only in ``chat_controller.helpers``,
+which the eval path never enters — so recording it would pin a setting the run did not honour,
+which is the RG-029 defect with the sign flipped. The wider consequence is worth stating where
+someone will read it: **the eval harness measures the raw answer path, not the shipped one** —
+no synthesis split, no provenance, no reviewer. If that changes, this key becomes mandatory.
 """
 
 from __future__ import annotations

@@ -18,6 +18,78 @@ Format: What changed | Why | Rejected alternatives | What it opens
 > is individually small and correct, so unbounded growth is invisible per commit.
 
 ---
+## 2026-08-17 — an eval run now records the corpus it measured and the generator it used, and a paid one says so before it spends
+
+**What changed.** Three keys and a flag, closing the "make the run record and the run agree" class
+that RG-029 opened and RG-021 kept open.
+
+- `sparse_index.doc_set_digest(doc_hashes)` — SHA-256 over the sorted, de-duplicated `doc_hash`
+  set. A *corpus* identity, deliberately not `fingerprint`, which identifies a *build*: chunk ids
+  move on every re-ingest, so it cannot answer "same documents?" — the question a chunking sweep
+  needs answered while the geometry is changing under it.
+- `RAGPipeline.indexed_doc_hashes` — every document retrieval can currently reach, read from the
+  keyword arm because that arm **is** the BM25 corpus (same `keep_for_retrieval` filter as the
+  vector arm). Three states: the hashes, `set()` for an empty corpus, `None` only when a build
+  failed over a non-empty corpus and this process genuinely never learned what the store held.
+- `scripts/run_eval.py` records `index_doc_count` + `index_doc_digest` (RG-021) and
+  `llm_provider` / `llm_model` **as the run actually ran them**, and grows `--provider` /
+  `--model`. A paid generator now trips `llm.assert_provider_intent` — the same banner + 3 s abort
+  window every enrichment runner has had since Feature 7.
+
+**Why the composition comes from the pipeline and not from `run_defining_settings`.** Config does
+not know the corpus; it is state on disk. Asking the live pipeline is also the only source that
+cannot drift from `pipeline.py`'s own "which collection is active" rule — a second copy of that
+resolution in the harness edge is exactly the restated-gate failure `sweep_chunking`'s preflight
+docstring warns about. The cost is the usual injection cost: a new runner must record it, so
+`scripts/CLAUDE.md` now carries that rule beside the `settings_provider` one.
+
+**Why `--provider` refuses to change provider without `--model`.** `.env` pairs `anthropic` with
+`claude-haiku-4-5-…`; inheriting that model under `--provider ollama` hands Ollama a name it has
+never heard of, and it fails once per case, minutes in. The error names the model it refused to
+inherit and the flag that fixes it.
+
+**`synthesis_mode` was asked for and is deliberately NOT recorded — the finding is bigger than the
+key.** `ai` vs `human` does change the answer, but not this harness's answer: `eval/adapters.py`
+calls `pipeline.retrieve` + `pipeline.stream_answer` directly, and `stream_answer` is a bare
+`ANSWER_PROMPT | llm` chain. `SYNTHESIS_MODE` is read only in `chat_controller.helpers`, which the
+eval path never enters. Recording it would pin a setting the run did not honour — RG-029 with the
+sign flipped. The consequence worth carrying: **the eval harness measures the raw answer path, not
+the shipped one** (no synthesis split, no provenance, no reviewer). Written into
+`eval/run_settings.py`'s docstring, where the membership rule lives.
+
+**Verified, $0.** One case over the live corpus on `llama3.1:8b` into a scratch DuckDB:
+`config_json` came back with `index_doc_count 96`, a 64-char digest, and `llm_provider ollama` —
+which is proof the override reached the record, since `config.LLM_PROVIDER` still reads
+`anthropic`. The paid banner was confirmed on the default path by killing the process inside its
+own abort window, before the pipeline loaded. Unit tests: corpus digest (order/duplicate
+independence, one-extra-document sensitivity, and that it survives a re-chunk where the build
+fingerprint does not), the pipeline's three states, and both CLI helpers.
+
+**The first thing the new key found.** The index holds **96** documents where `library.db` holds
+**97**: `middleton-2001.pdf` has `chunk_count = 0` and `extraction_health = 'broken'`, so it has
+never been retrievable. Every eval run on this box has been over 96 documents, and now says so.
+Not a regression and not caused by this change — but it is the shape RG-021 predicted, found on
+the first read, and it is very likely the same document as the carried "one document still
+extracting zero keywords" item (no text, no keywords).
+
+**Rejected alternatives.** *Composition from `library.db`* — it is the registry, not the index:
+its non-archived filter does not match what retrieval can reach (archiving hides a document from
+the UI, not from BM25), and it would have reported 97. *Composition inside
+`run_defining_settings`* — it would reach the sweeps for free, but that function is a pure
+config snapshot called on every `persist_run`, including in unit tests and in the sweep's probe
+subprocess; giving it disk I/O makes the suite depend on machine state and CI has no index at
+all. *Recording `synthesis_mode` anyway* — see above. *A bare `nosec`-style default flip to
+`ollama`* — moving the default is a policy change with an eval consequence; the flag plus the
+banner makes the current default impossible to trip over accidentally, which was the actual
+defect.
+
+**What it opens.** RG-021's **build** half is done; its **warn** half is not — nothing yet
+compares a run's composition against the baseline it is being read beside, and the 70 historical
+runs carry no composition to compare against (same unattributable-history problem RG-029 has).
+`sweep_bm25_weight.py` still writes its own baseline markdown rather than persisting runs, so it
+records none of this. And `middleton-2001.pdf` needs a decision: re-extract, or accept 96.
+
+---
 ## 2026-08-16 — `just clean` exists because `cargo clean` would delete the one installer with no copy anywhere
 
 **What changed.** New `scripts/clean_build.ps1` + a `clean *ARGS` recipe in the `justfile`. It drops

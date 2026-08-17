@@ -34,17 +34,34 @@ redistributable; it gates day-to-day retrieval work but is not citable by third 
 > **0.822** against the local control's **0.777** — a 6% "improvement" that was entirely the model
 > swap (RG-029). Retrieval scores are the exception, being generator-independent.
 >
-> **`run_eval` has no `--provider` flag and `.env` defaults to `anthropic`, so a bare invocation on
-> the private set silently violates this and bills.** Set the generator explicitly:
+> **`.env` defaults to `anthropic`, so a bare invocation on the private set still bills** — every
+> case generates an answer regardless of which scorers you asked for. Name the generator:
+>
+> ```bash
+> uv run python -m scripts.run_eval --provider ollama --model llama3.1:8b --repeat 5
+> ```
+>
+> The environment form works too, and is what to use for anything that shells out to `run_eval`
+> (the sweeps do):
 >
 > ```bash
 > LLM_PROVIDER=ollama LLM_MODEL=llama3.1:8b uv run python -m scripts.run_eval --repeat 5
 > ```
 >
 > A non-empty process environment variable beats `.env` (that precedence is the KI-38 fix, and
-> `config._load_env` exists to guarantee it). Since RG-029, `config_json` records `llm_provider` +
-> `llm_model` on every run, so the arm a run belongs to is now checkable in the data rather than
-> assumed — verify there before trusting any cross-run comparison.
+> `config._load_env` exists to guarantee it). Since 2026-08-17 a **paid** generator also prints a
+> cost banner and waits 3 s before anything loads, so the leak is loud rather than silent — but the
+> default is still `anthropic` and nothing *refuses* the run; the flag is a control only if you use
+> it. Since RG-029, `config_json` records `llm_provider` + `llm_model` on every run, so the arm a
+> run belongs to is checkable in the data rather than assumed — verify there before trusting any
+> cross-run comparison.
+>
+> **Also recorded since 2026-08-17 (RG-021): `index_doc_count` + `index_doc_digest`** — which
+> documents the index held, so a run over a corpus that has since grown (or that carries a demo
+> collection) is visibly a different experiment. BM25/IDF statistics are corpus-global, so this
+> matters even when per-query scoping is perfect. Note the count is what **retrieval can reach**,
+> not what the library lists: on this box that is 96, not 97, because one document extracted to
+> zero chunks.
 
 ## The headline benchmark
 

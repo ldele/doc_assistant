@@ -18,6 +18,45 @@ Format: What changed | Why | Rejected alternatives | What it opens
 > is individually small and correct, so unbounded growth is invisible per commit.
 
 ---
+## 2026-08-16 — `just clean` exists because `cargo clean` would delete the one installer with no copy anywhere
+
+**What changed.** New `scripts/clean_build.ps1` + a `clean *ARGS` recipe in the `justfile`. It drops
+`target/debug` in full and everything under `target/release` **except `bundle/`**. Flags: `-DryRun`
+(report only), `-Registry` (also drop `~/.cargo/registry/src`), `-Force` (override the guard). Invoked
+through `powershell -File` like the existing `app:` recipe, because `set windows-shell := cmd.exe` means
+recipe bodies are single commands. ASCII-only per the `.ps1` rule (§9).
+
+**Why `cargo clean` is the wrong tool here specifically.** It wipes all of `target/`, and this repo's
+`target/` holds two things that are not intermediates: the current installers in `target/release/bundle`
+(3.06 GB at 0.5.1) and a 1.53 GB build-time copy of the frozen sidecar. Of those installers **only the
+NSIS `.exe` is attached to the GitHub release — the MSI exists nowhere else on earth**, and `cargo clean`
+offers no way to keep it while dropping the rest. Measured on this box today: `target/` was 5.97 GB, of
+which 2.89 GB was reclaimable with zero loss. The frozen sidecar in `src-tauri/binaries/` is outside
+`target/` and so was never at risk — worth stating, since it is the artifact that costs a PyInstaller
+re-freeze.
+
+**Why the active-build guard is scoped rather than machine-wide.** First cut refused to run whenever any
+`cargo`/`rustc` lived. On this machine that is close to always — a `cargo build --workspace` and a
+`cargo test -p harper-core` from an unrelated project blocked it twice while it was being written, and
+during the final verification **24 foreign `rustc` processes** were alive. A guard that always cries wolf
+is one you learn to `-Force` past, so it now blocks on what each scope can actually break: a build **in
+this repo** blocks the target clean (detected via `rustc`/`link` absolute `--out-dir`, with a fresh
+`target/` mtime as the cwd-independent backstop), while **any** build blocks `-Registry`, since that cache
+is shared with every Rust project on the box. Both branches were verified live: the target clean proceeded
+with 24 foreign processes running, and `-Registry` aborted against the same 24.
+
+**Rejected alternatives.** *Plain `cargo clean` in the recipe* — the whole point is that it takes the
+installers and gives nothing back cheaply. *Dry-run by default*, matching `scripts/`' enrichment-runner
+convention — a `clean` that cleans nothing is a worse surprise than one that does; `-DryRun` is opt-in and
+exempt from the guard instead, so looking is always free. *Registry cleanup in the default path* — it is a
+cache shared across projects, so it stays opt-in. *Teaching the recipe to prune installers* — that is
+`docs/RELEASE.md` §8's job and it is deliberately manual and deliberately about the **previous** release.
+
+**What it opens.** Nothing deletes an installer without a human: §8 remains the only path. The wider
+finding this came from is that **this repo was never the disk problem** — the reclaimable GB on this box
+sit in *other* projects' `target/` dirs (~18 GB across two of them), which no recipe here should touch.
+
+---
 ## 2026-08-15 (3) — the DEVLOG had grown to 8,244 lines because nothing made rotation happen; now a test does
 
 **What changed.** 112 entries (**2026-07-15 → 2026-08-01**) moved verbatim to new

@@ -123,6 +123,22 @@ typecheck-strict:
 torch-check:
     uv run --extra {{torch}} python -c "import torch; print(torch.__version__, 'cuda', torch.cuda.is_available())"
 
+# ⚠ NOT `cargo clean` — that wipes all of target/, which here also holds the current installers
+# (target/release/bundle, ~3.1 GB at 0.5.1; only the NSIS .exe is on the GitHub release, so the MSI
+# has no copy anywhere) and a ~1.5 GB build-time copy of the frozen sidecar. This drops only the
+# recompilable half: target/debug in full, target/release except bundle/. The frozen sidecar in
+# src-tauri/binaries is outside target/ and so is never at risk — no run of this forces a re-freeze.
+# Installer pruning stays manual and stays in docs/RELEASE.md §8. The active-build guard is scoped to
+# what each scope can actually break: a build in THIS repo blocks the target clean, while any build
+# on the machine blocks `-Registry` (that cache is shared). Other projects compile here constantly,
+# so a machine-wide guard would just train you to pass -Force.
+# Flags: `-DryRun` reports and deletes nothing (never blocked); `-Registry` also drops
+# ~/.cargo/registry/src (~1.3 GB, re-extracted offline from the .crate tarballs — shared with every
+# Rust project on the machine, hence opt-in); `-Force` overrides the guard.
+# Reclaim Rust build space — keeps the release installers and the frozen sidecar.
+clean *ARGS:
+    powershell -NoProfile -ExecutionPolicy Bypass -File scripts/clean_build.ps1 {{ARGS}}
+
 # --- cpc conventions (vendored, LOCAL-ONLY — ADR-021) -----------------------------------------
 # tools/conventions/ is gitignored (private tooling, public repo — ADR-001/ADR-007); on a fresh
 # clone these recipes are unavailable by design. Facade only (cpc ADR-011): each recipe aliases a

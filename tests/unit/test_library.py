@@ -708,3 +708,130 @@ def test_the_year_used_for_analysis_stays_the_extracted_one(temp_database):
     doc_id = _doc_with_override(year_override=1999)
 
     assert document_years([doc_id]) == {doc_id: 2001}
+
+
+# ============================================================
+# graph_subgraph — the citation-network view
+# ============================================================
+#
+# Added 2026-08-20: this function was at **0% coverage** while being one of the four surfaces
+# KI-45 names as still trusting `Citation.target_document_id` unguarded (the References block
+# re-checks resolutions at read time; the graph does not). Its traversal is also the only place
+# in the module that walks *both* citation directions and dedupes, so a wrong edge here is a
+# wrong picture of the corpus rather than a wrong row in a list.
+
+
+def test_graph_subgraph_of_an_unknown_document_is_empty_not_an_error(temp_database):
+    """An id that is not in the library must render an empty panel, not raise into the UI."""
+    from doc_assistant.library.citations import graph_subgraph
+
+    graph = graph_subgraph("no-such-id")
+    assert graph.nodes == []
+    assert graph.edges == []
+
+
+def test_graph_subgraph_marks_exactly_one_centre(temp_database):
+    from doc_assistant.library.citations import graph_subgraph
+
+    a, b = _seed_document("a.pdf"), _seed_document("b.pdf")
+    _seed_citation(a, target_id=b)
+
+    graph = graph_subgraph(a)
+    centres = [n.id for n in graph.nodes if n.is_center]
+    assert centres == [a]
+
+
+def test_graph_subgraph_of_an_isolated_document_is_the_document_alone(temp_database):
+    """The 0-edge case: a paper nothing cites and that resolves to nothing still has a node."""
+    from doc_assistant.library.citations import graph_subgraph
+
+    lonely = _seed_document("lonely.pdf")
+    graph = graph_subgraph(lonely)
+    assert [n.id for n in graph.nodes] == [lonely]
+    assert graph.edges == []
+
+
+def test_graph_subgraph_walks_both_directions_at_depth_one(temp_database):
+    """The centre's neighbourhood is what it cites *and* what cites it — a citation graph read
+    in one direction only shows half the relationship the panel claims to draw."""
+    from doc_assistant.library.citations import graph_subgraph
+
+    centre = _seed_document("centre.pdf")
+    cited = _seed_document("cited.pdf")
+    citing = _seed_document("citing.pdf")
+    _seed_citation(centre, target_id=cited)
+    _seed_citation(citing, target_id=centre)
+
+    graph = graph_subgraph(centre)
+    assert {n.id for n in graph.nodes} == {centre, cited, citing}
+    assert {(e.source, e.target) for e in graph.edges} == {(centre, cited), (citing, centre)}
+
+
+def test_graph_subgraph_excludes_unresolved_citations(temp_database):
+    """A reference to a paper outside the library has no node to point at.
+
+    `target_document_id IS NULL` is the majority of any real bibliography (36 references on the
+    recovered scan, 0 library matches), so admitting them would swamp the view with stubs.
+    """
+    from doc_assistant.library.citations import graph_subgraph
+
+    centre = _seed_document("centre.pdf")
+    _seed_citation(centre, title="Some Paper We Do Not Own", year=1998)
+
+    graph = graph_subgraph(centre)
+    assert [n.id for n in graph.nodes] == [centre]
+    assert graph.edges == []
+
+
+def test_graph_subgraph_depth_one_does_not_reach_the_second_hop(temp_database):
+    """`depth` is the panel's cost control; if it does not bound the walk it bounds nothing."""
+    from doc_assistant.library.citations import graph_subgraph
+
+    a, b, c = _seed_document("a.pdf"), _seed_document("b.pdf"), _seed_document("c.pdf")
+    _seed_citation(a, target_id=b)
+    _seed_citation(b, target_id=c)
+
+    assert {n.id for n in graph_subgraph(a, depth=1).nodes} == {a, b}
+    assert {n.id for n in graph_subgraph(a, depth=2).nodes} == {a, b, c}
+
+
+def test_graph_subgraph_deduplicates_repeated_edges(temp_database):
+    """A paper citing another one eleven times is one edge, not eleven.
+
+    Real bibliographies do this constantly — nine of one document's eleven stored resolutions
+    pointed at two papers (KI-45) — and an undeduped edge list would render as a thick smear.
+    """
+    from doc_assistant.library.citations import graph_subgraph
+
+    a, b = _seed_document("a.pdf"), _seed_document("b.pdf")
+    for i in range(5):
+        _seed_citation(a, target_id=b, raw=f"[{i}] ibid.")
+
+    graph = graph_subgraph(a)
+    assert [(e.source, e.target) for e in graph.edges] == [(a, b)]
+
+
+def test_graph_subgraph_terminates_on_a_citation_cycle(temp_database):
+    """Two papers citing each other must not walk forever when depth exceeds the graph."""
+    from doc_assistant.library.citations import graph_subgraph
+
+    a, b = _seed_document("a.pdf"), _seed_document("b.pdf")
+    _seed_citation(a, target_id=b)
+    _seed_citation(b, target_id=a)
+
+    graph = graph_subgraph(a, depth=5)
+    assert {n.id for n in graph.nodes} == {a, b}
+    assert {(e.source, e.target) for e in graph.edges} == {(a, b), (b, a)}
+
+
+def test_graph_subgraph_carries_the_titles_the_panel_labels_nodes_with(temp_database):
+    from doc_assistant.library.citations import graph_subgraph
+
+    a = _seed_document("a.pdf", title="The Citing Paper")
+    b = _seed_document("b.pdf", title="The Cited Paper")
+    _seed_citation(a, target_id=b)
+
+    by_id = {n.id: n for n in graph_subgraph(a).nodes}
+    assert by_id[a].title == "The Citing Paper"
+    assert by_id[b].title == "The Cited Paper"
+    assert by_id[b].filename == "b.pdf"

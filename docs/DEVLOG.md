@@ -18,6 +18,159 @@ Format: What changed | Why | Rejected alternatives | What it opens
 > is individually small and correct, so unbounded growth is invisible per commit.
 
 ---
+## 2026-08-20 (3) — the frontend's largest untested module, tested with the runner already in the repo
+
+**What changed.** New `apps/desktop/src/lib/graph/forceLayout.test.ts` (19 tests). The frontend
+suite goes **108 to 127**, still `node --test`, still zero new dependencies.
+
+**Why this module.** At 189 lines `forceLayout.ts` was the largest untested file in the frontend,
+and its own header states the case for testing it: *"the layout is the risk; determinism is the
+safety net"*. The safety net had nothing checking it. It is also pure — node ids in, a
+`Map<string, Point>` out, no DOM — so it needs none of the harness the repo lacks.
+
+**Asserted as properties, not as a golden snapshot.** Every claim the module makes about itself in
+prose is now a test: identical input gives identical positions; a different `seed` gives a
+different layout (without that second half the first would also pass if the seed were ignored and
+the layout were merely constant); no coordinate is ever non-finite, including the dense all-pairs
+case the EPS floor exists for and a 40-node graph past the spec's 21-node hub; every node lands
+inside the padded box, and a larger padding demonstrably shrinks the occupied area; unknown edge
+endpoints are ignored, so an unfiltered edge list lays out identically to a pre-filtered one, which
+is what the docstring invites callers to rely on. A snapshot of 300 cooled iterations would break
+on any tuning change while proving none of that.
+
+**The degenerate cases are the robustness contract in the graph**: zero nodes returns an empty map
+instead of throwing, one node is centred, one node with a self-edge stays finite, and two nodes
+never end up coincident (they would render as a single dot). Exactly one behavioural claim is made
+— a bonded pair settles closer than an unbonded one — and it is kept deliberately weak, because
+anything tighter is a snapshot of the cooling schedule wearing a property's clothes.
+
+**Rejected alternatives.** *Adding vitest + jsdom + @testing-library/svelte first* — it is the
+right next step and the standing gap is real (**39 `.svelte` components cannot be tested at all**
+under `node --test`, which is why yesterday's CSS source-order bug and the four-read-path merge bug
+were both caught by eye rather than by a test), but it is a tooling decision with a lockfile
+change, and it should not ride along inside a test-writing commit. `forceLayout` needed none of it.
+*Testing `conversations.svelte.ts` in the same pass* — it is the other module worth covering (it
+owns the new `archiveConversations`), but it is `$state`-backed and fetch-driven, so it wants the
+harness decision made first.
+
+**What it opens.** The component harness question, unchanged and now the largest single gap in the
+project's testing. Also worth noting for whoever takes it: the frontend runner is
+`node --test src/**/*.test.ts`, so a test file placed outside `src/` runs nowhere and reports
+nothing.
+
+---
+## 2026-08-20 (2) — the two other untested user-facing read paths: the chat router and the citation graph
+
+**What changed.** New `tests/unit/test_query_router.py` (45 tests) and a `graph_subgraph` section
+appended to `tests/unit/test_library.py` (9 tests). `query_router.py` goes **29% to 100%**;
+`library/citations.py` **73% to 99%**. Same ranked coverage pass that produced the extractor work
+above; these were the next two entries on it where the uncovered code is read by a user.
+
+**`query_router` was the lowest-covered module that runs on a user request.** `ChatController`
+consults `is_library_query` on *every* message (`chat_controller/controller.py:305`); a match
+short-circuits the entire RAG pipeline and `answer_library_query`'s string is shown verbatim.
+Neither half had a test.
+
+The load-bearing part is the negative lookahead `_NOT_TOPICAL`, which is what keeps *"show my
+papers about RAG"* out of the metadata branch. If it regresses, a content question silently
+receives a document count — no exception, no log line, no way to notice except reading the answer.
+**The test asserts both halves of that difference**: the bare phrase must match *and* the
+qualified one must not. Asserting only the rejection would keep passing if the pattern stopped
+matching altogether, leaving a green test guarding nothing — which is the failure mode that made
+KI-41's chunking sweep compare one configuration with itself six times.
+
+Also now pinned: the empty-library branches (`answer_library_query` on 0 documents names
+`data/sources/` rather than returning a bare zero), the "documents exist but have no add dates"
+case that refuses to nominate a latest, the `and N more` truncation on long broken lists — a
+silent cap would read as *these are all of them* — and, over every phrasing the router claims,
+that an answer actually comes back. That last one is the contract *between* the two functions,
+which is where a blank reply to the user would come from.
+
+**`graph_subgraph` had 0% coverage** and is one of the four surfaces KI-45 names as still trusting
+`Citation.target_document_id` unguarded — the References block re-checks resolutions at read time,
+the citation graph does not. It is also the only traversal in the module that walks both
+directions and dedupes. Pinned: exactly one centre, both directions at depth 1, unresolved
+citations excluded (a bibliography is mostly external — 36 references and 0 library matches on the
+recovered scan), `depth` actually bounding the walk, repeated citations collapsing to one edge
+(nine of one document's eleven resolutions pointed at two papers), termination on a cycle, and an
+unknown id returning an empty graph instead of raising into the panel.
+
+**One line is deliberately left uncovered.** `citations.py:343` — the `if nid in visited: continue`
+guard — is unreachable as the traversal is written: a node only enters `next_frontier` when it is
+not already in `nodes`, and every visited node is in `nodes`, so no node can be queued twice. It is
+defensive, and deleting a defensive guard to buy a coverage point is the wrong trade. Recorded here
+so the next coverage pass does not re-litigate it.
+
+**Rejected alternatives.** *A new `test_citations_graph.py`* — `temp_database` is defined locally
+in `test_library.py`, and copying a 40-line engine-patching fixture to a second file is how the two
+copies start drifting (the same argument that made `effective_metadata` one function yesterday).
+*Patching `doc_assistant.library.list_documents` for the router tests* — `query_router` binds both
+names at import, so patching the source module leaves this module's references untouched; the
+patch targets `doc_assistant.query_router`, the trap `chat_controller/__init__.py` already
+documents.
+
+**What it opens.** The router's regexes are still English-only and pattern-based; the tests pin the
+behaviour, not its adequacy. And `graph_subgraph` is now tested but still *unguarded* — KI-45's
+false resolutions reach it exactly as before. A test that pins current behaviour is not a fix, and
+the write-side precision fix is still the thing that matters there.
+
+---
+## 2026-08-20 — five of the seven supported formats had no extraction test at all; now they do
+
+**What changed.** New `tests/unit/test_extractors_formats.py` (37 tests). `extractors.py` goes
+from **44% to 91%** line coverage. The only lines still uncovered are `extract_pdf_pymupdf`'s body
+(92-103, 262), which needs a committed PDF.
+
+**Why, measured before writing anything.** A coverage pass over the whole suite (1,839 tests, 89%
+overall) put `extractors.py` at the bottom of the ranked list with **lines 141-220 never executed
+once** — that range is the entirety of `extract_epub`, `extract_html`, `extract_docx`,
+`extract_rtf` and `extract_odt`. `test_extractors.py` covered format *detection*, `.txt`/`.md`, and
+the PDF placeholder strip; five of the seven extensions in `SUPPORTED_EXTENSIONS` had no test
+touching their extractor. That is the app's front door, in the subsystem with the most tracked
+defects (KI-14/26/34/40/42/43/44/46/47 — nine issues, three of the five currently open).
+
+**What the tests assert**, beyond "output is non-empty": the structure heuristic per format (DOCX
+style names to `#`/`##`/`###`; the EPUB Dublin Core title leading as an H1; HTML heading
+conversion), the one content decision `extract_html` makes (script/style/nav/footer are
+decomposed — stated per tag, so a future edit to that tuple fails on the tag it dropped), RTF
+control-word stripping and ANSI escape decoding, dispatch through `extract_to_markdown` for all
+five, `.htm` and `.html` reaching the same extractor, and `get_format_status`'s advisories.
+
+**Every format asserts a non-ASCII round-trip**, because that is the failure this project has
+already shipped: nothing on Windows defaults to UTF-8 (CONTEXT.md section 9), four tracked docs
+were committed double-encoded, and an extractor that mangles an accent produces garbage that still
+*reads* as prose — so it passes ingest, reaches the chunk store, and nothing downstream notices.
+`test_html_reads_as_utf8_regardless_of_the_ansi_codepage` pins the explicit `encoding="utf-8"` on
+that read specifically.
+
+**Two defects surfaced while writing the fixtures. Neither is fixed here** — they are extraction
+*content* decisions, not test bugs, and fixing them changes `doc_hash` for every affected document
+(ADR-042), which is not a thing to do inside a test commit:
+- **EPUB pulls the navigation document into the body.** `get_items_of_type(ITEM_DOCUMENT)` includes
+  the generated nav/TOC item, so a book's markdown ends with its own table of contents as prose.
+  The tests assert title, headings and body are present; they deliberately do **not** assert the
+  nav text is absent, so the wart is not cemented as expected behaviour.
+- **`extract_html` leaks `<head><title>` into the text.** Only script/style/nav/footer are
+  decomposed, so `soup.get_text()` emits the title as a bare leading line, indistinguishable from
+  body prose. Same shape as the page-furniture problem behind the keyword layer's singleton rate.
+
+**Rejected alternatives.** *Committed binary fixtures* — better at catching producer variance, but
+an opaque blob in a public repo, and every writer library here (`python-docx`, `odfpy`,
+`ebooklib`) is a **base** runtime dependency, so an in-test fixture can never skip for a missing
+library and shows the reader the input beside the required output. HTML and RTF are hand-authored
+markup, so those two are producer-independent regardless. *Conditional skips per format* — the
+suite has 8 skip markers and all 8 are environment-conditional; a skip here would hide exactly the
+breakage the file exists to catch. *A literally empty EPUB body for the zero-content case* —
+`ebooklib` cannot serialise one (lxml raises "Document is empty" building the nav), so it would
+have tested the fixture builder; a whitespace-only paragraph tests the extractor.
+
+**What it opens.** These are round-trips through the same library that wrote the file, so they
+cannot prove the extractors survive files from *other* producers — the variance that broke tier-1
+citation parsing (KI-45). Said explicitly in the module docstring rather than left implied. Closing
+the PDF gap (92-103) needs a committed fixture and is the same binary-in-a-public-repo decision,
+deferred. The two leaks above want an issue each before anyone re-ingests.
+
+---
 ## 2026-08-19 (3) — a metadata override applied in the Library grid and not on the document's own page
 
 **What changed.** ADR-013's `override ?? auto` merge now lives in one function,

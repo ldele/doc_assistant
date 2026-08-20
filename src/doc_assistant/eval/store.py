@@ -30,6 +30,10 @@ import duckdb
 from doc_assistant.eval.results import EvalResult
 
 
+class RunPrefixError(ValueError):
+    """A run-id prefix that matched no run, or more than one."""
+
+
 def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
@@ -217,6 +221,26 @@ class Store:
     # Reads
     # ============================================================
 
+    def resolve_run_id(self, prefix: str) -> str:
+        """Full run id from a prefix — the 8-character form the runners print is enough.
+
+        Ambiguity raises rather than picking: silently choosing one of two matching runs would
+        produce a result about a run the caller never named. Lives on the store rather than in a
+        runner because every CLI that takes a run id needs it, and two copies of a resolver are
+        two chances to resolve differently.
+        """
+        if not prefix.strip():
+            raise RunPrefixError("Empty run id.")
+        rows = self.conn.execute(
+            "SELECT id FROM runs WHERE id LIKE ? ORDER BY started_at", [f"{prefix}%"]
+        ).fetchall()
+        if not rows:
+            raise RunPrefixError(f"No run id starts with {prefix!r}.")
+        if len(rows) > 1:
+            matches = ", ".join(str(r[0])[:12] for r in rows[:5])
+            raise RunPrefixError(f"{len(rows)} runs start with {prefix!r}: {matches} ...")
+        return str(rows[0][0])
+
     def list_runs(self, limit: int = 20) -> list[dict[str, Any]]:
         rows = self.conn.execute(
             "SELECT id, started_at, finished_at, system_name, n_cases, note "
@@ -249,6 +273,19 @@ class Store:
             return {}
         loaded: dict[str, Any] = json.loads(row[0])
         return loaded
+
+    def case_ids(self, run_id: str) -> list[str]:
+        """Every case id this run actually recorded a result for, sorted.
+
+        The case set is what a run asked, and it is not recoverable from ``config_json``: that
+        holds ``n_cases``, a count, and two runs of 35 cases can be two different sets of 35 (the
+        public 10 and the private 35 have both been re-authored in place). Comparability needs the
+        identity, so it reads the rows the run actually wrote.
+        """
+        rows = self.conn.execute(
+            "SELECT case_id FROM case_results WHERE run_id = ? ORDER BY case_id", [run_id]
+        ).fetchall()
+        return [str(r[0]) for r in rows]
 
     def scorer_means(self, run_id: str) -> dict[str, float]:
         """Mean score per scorer for one run, over scoreable cases only.

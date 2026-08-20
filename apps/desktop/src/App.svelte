@@ -117,6 +117,7 @@
   } from './lib/chat/chat.svelte'
   import {
     archiveConversation,
+    archiveConversations,
     conversations,
     pinConversation,
     refreshConversations,
@@ -1004,6 +1005,7 @@
     onDelete={deleteConversation}
     onRename={renameConversation}
     onDeleteMany={(ids) => (pendingDeleteConvIds = ids)}
+    onArchiveMany={archiveConversations}
   />
   <div
     class="resizer"

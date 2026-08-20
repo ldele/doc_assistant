@@ -1,19 +1,33 @@
 """Eval reporting helpers (generic).
 
-Two views:
+Views:
 
 * ``format_run_summary`` — markdown table of mean score per scorer.
 * ``diff_runs`` — pairwise per-case delta between two runs against the
   same eval set.
+* ``compare_runs`` / ``format_comparability`` — whether that delta means
+  anything at all (see :mod:`doc_assistant.eval.comparability`). A diff
+  answers "how much did the number move"; a comparison answers "is this
+  the same experiment", and printing the first without the second is how
+  a model swap came to read as a 6% pipeline win (RG-029).
 
 Pure formatting + arithmetic; the store does all DB access.
 """
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
 
+from doc_assistant.eval.comparability import (
+    Comparison,
+    Difference,
+    Stage,
+    State,
+    Status,
+    compare,
+)
 from doc_assistant.eval.store import Store
 
 
@@ -124,6 +138,127 @@ def format_flaky_cases(rows: list[dict[str, Any]]) -> str:
         lines.append(
             f"| {r['scorer_name']} | {r['case_id']} | {r['n_scored']} | {r['n_skipped']} |"
         )
+    return "\n".join(lines)
+
+
+def compare_runs(
+    store: Store, run_a_id: str, run_b_id: str, *, varying: Sequence[str] = ()
+) -> Comparison:
+    """Comparability of two stored runs, judged on what they recorded — and on their case sets.
+
+    The case set is passed in as an extra difference rather than left to ``n_cases``, because a
+    count is not an identity: two runs of 35 cases can be two different sets of 35, and the
+    private set has been re-authored in place more than once. When both runs recorded their
+    per-case rows the check is exact; a run with no rows at all (an empty run) leaves it unknown,
+    which is the honest answer rather than a vacuous match.
+    """
+    cases_a, cases_b = store.case_ids(run_a_id), store.case_ids(run_b_id)
+    if not cases_a or not cases_b:
+        which = "A" if not cases_a else "B"
+        case_diff = Difference(
+            "case_set",
+            Stage.CASES,
+            State.UNKNOWN,
+            detail=f"run {which} recorded no per-case rows",
+        )
+    elif set(cases_a) == set(cases_b):
+        case_diff = Difference(
+            "case_set", Stage.CASES, State.SAME, value_a=f"{len(cases_a)} cases"
+        )
+    else:
+        only_a = sorted(set(cases_a) - set(cases_b))
+        only_b = sorted(set(cases_b) - set(cases_a))
+        case_diff = Difference(
+            "case_set",
+            Stage.CASES,
+            State.DIFFERENT,
+            value_a=f"{len(cases_a)} cases, {len(only_a)} not in B",
+            value_b=f"{len(cases_b)} cases, {len(only_b)} not in A",
+        )
+
+    scorers = sorted(
+        {r["scorer_name"] for r in store.case_scores(run_a_id)}
+        & {r["scorer_name"] for r in store.case_scores(run_b_id)}
+    )
+    return compare(
+        store.run_config(run_a_id),
+        store.run_config(run_b_id),
+        scorers,
+        extra_differences=(case_diff,),
+        varying=varying,
+    )
+
+
+_STATUS_MARK = {
+    Status.COMPARABLE: "ok",
+    Status.UNKNOWN: "UNKNOWN",
+    Status.NOT_COMPARABLE: "NOT COMPARABLE",
+}
+
+
+def format_comparability(
+    comparison: Comparison, *, run_a_label: str = "A", run_b_label: str = "B"
+) -> str:
+    """Markdown verdict: per scorer, then the evidence it was judged on.
+
+    Ordered verdict-first because that is the sentence a reader needs before they look at any
+    number — and unrecorded settings get their own section rather than being folded in with the
+    equal ones, since "we checked and it matched" and "nobody wrote it down" are the two claims
+    this whole layer exists to keep apart.
+    """
+    lines = [
+        f"## Comparability: {run_a_label} vs {run_b_label}",
+        "",
+        f"**Overall: {_STATUS_MARK[comparison.status]}** "
+        f"(the worst verdict across {len(comparison.verdicts)} shared scorer(s))",
+        "",
+    ]
+    if comparison.ineffective_variation:
+        # Above the verdict table on purpose: a void experiment is worse news than an
+        # incomparable one, because its numbers look valid and answer a question nobody asked.
+        keys = ", ".join(d.key for d in comparison.ineffective_variation)
+        lines += [
+            f"> **The declared variable did not change: {keys}.** These two runs were meant to "
+            "differ there and do not, so whatever they show is one configuration compared with "
+            "itself — the KI-41 shape. Check that the setting reached the code (a sweep driving "
+            "its grid through the environment can be silently overwritten by `.env`).",
+            "",
+        ]
+    if comparison.verdicts:
+        lines += [
+            "| Scorer | Verdict | Why |",
+            "|---|---|---|",
+        ]
+        for v in comparison.verdicts:
+            lines.append(f"| {v.scorer_name} | {_STATUS_MARK[v.status]} | {v.reason} |")
+    else:
+        lines.append("_The two runs share no scorer, so there is nothing to compare._")
+
+    differing = comparison.by_state(State.DIFFERENT)
+    intended = [d for d in differing if d.key in comparison.varying]
+    unintended = [d for d in differing if d.key not in comparison.varying]
+    if intended:
+        lines += ["", f"**Varied on purpose ({len(intended)})**", ""]
+        lines += [f"- {d.stage.value} · {d.describe()}" for d in intended]
+    if unintended:
+        heading = "Differing settings NOT declared" if comparison.varying else "Differing settings"
+        lines += ["", f"**{heading} ({len(unintended)})**", ""]
+        lines += [f"- {d.stage.value} · {d.describe()}" for d in unintended]
+
+    unknown = comparison.by_state(State.UNKNOWN)
+    if unknown:
+        lines += [
+            "",
+            f"**Not recorded ({len(unknown)}) — cannot be ruled out**",
+            "",
+        ]
+        lines += [f"- {d.stage.value} · {d.describe()}" for d in unknown]
+        lines += [
+            "",
+            "_An unrecorded setting is never assumed to have matched. Runs from before a key "
+            "existed cannot be back-filled: an inference would be indistinguishable from a "
+            "recording, which is the defect the keys were added to prevent (RG-029)._",
+        ]
     return "\n".join(lines)
 
 

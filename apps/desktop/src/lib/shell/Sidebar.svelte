@@ -41,6 +41,7 @@
     onDelete,
     onRename,
     onDeleteMany,
+    onArchiveMany,
   }: {
     mode: 'chat' | 'library' | 'graph'
     conversations: ConversationSummary[]
@@ -66,6 +67,10 @@
      *  component — nothing else in the app needs to know which rows are ticked, unlike the
      *  Library's select mode, where the main pane's add-to-folder menu participates too. */
     onDeleteMany: (sessionIds: string[]) => void
+    /** Bulk archive/unarchive of the ticked conversations. Archiving is reversible and hides
+     *  nothing the user cannot get back from the "Show archived" toggle, so it applies straight
+     *  away — unlike delete, which routes through a confirm in the parent. */
+    onArchiveMany: (sessionIds: string[], archived: boolean) => void
   } = $props()
 
 
@@ -179,6 +184,17 @@
   function deleteSelected(): void {
     if (selected.length === 0) return
     onDeleteMany([...selected])
+    exitSelect()
+  }
+  // Archive is a toggle, decided by what is ticked: all-archived means the user is looking at the
+  // "Show archived" list and wants them back, anything else means archive. One button, no mode.
+  const selectedAllArchived = $derived(
+    selected.length > 0 &&
+      selected.every((sid) => conversations.find((c) => c.session_id === sid)?.archived === true),
+  )
+  function archiveSelected(): void {
+    if (selected.length === 0) return
+    onArchiveMany([...selected], !selectedAllArchived)
     exitSelect()
   }
   // Library nav-tree groups (L4 Decision 3), computed client-side from the payload. Types/Added
@@ -428,12 +444,17 @@
         </button>
         <span class="selcount">{selected.length} selected</span>
         <button
+          class="selact"
+          disabled={selected.length === 0}
+          onclick={archiveSelected}
+          type="button">{selectedAllArchived ? 'Unarchive' : 'Archive'}</button
+        >
+        <button
           class="selact danger"
           disabled={selected.length === 0}
           onclick={deleteSelected}
           type="button">Delete</button
         >
-        <button class="selact" onclick={exitSelect} type="button">Done</button>
       </div>
     {/if}
     <nav class="list" aria-label="Conversation history" onscroll={closeMenu}>
@@ -798,10 +819,15 @@
     background: color-mix(in srgb, var(--accent) 12%, transparent);
     border-color: var(--accent);
   }
-  .pickrow {
+  /* Two classes on purpose. This element is also `.rowmain`, which sets `flex-direction: column`
+     for the normal row; at equal specificity the later rule won, so the tick stacked ON TOP of the
+     title and centred, clipping long names (reported 2026-08-19). Raising specificity here makes
+     the row layout independent of where either rule sits in the file. */
+  .rowmain.pickrow {
     display: flex;
+    flex-direction: row;
     align-items: center;
-    gap: 0.45rem;
+    gap: 0.55rem;
   }
   .pickbody {
     display: flex;
@@ -823,25 +849,28 @@
   .convrow.picked .tickbox {
     border-color: var(--accent);
   }
+  /* Sized to be read and hit: this bar is the only way out of a destructive mode, and at
+     0.72rem/0.05rem padding it read as a caption rather than a toolbar (reported 2026-08-19). */
   .selbar {
     display: flex;
     align-items: center;
-    gap: 0.35rem;
-    padding: 0.3rem 0.5rem;
+    gap: 0.4rem;
+    padding: 0.5rem 0.6rem;
     border-bottom: 1px solid var(--border);
   }
   .selcount {
     margin-right: auto;
-    font-size: 0.72rem;
+    font-size: 0.8rem;
     color: var(--fg-2);
   }
   .selact {
     background: none;
     border: 1px solid var(--border);
     border-radius: 999px;
-    padding: 0.05rem 0.55rem;
+    padding: 0.3rem 0.7rem;
     font: inherit;
-    font-size: 0.72rem;
+    font-size: 0.8rem;
+    line-height: 1.2;
     color: var(--fg-2);
     cursor: pointer;
   }

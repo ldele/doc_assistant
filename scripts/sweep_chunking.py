@@ -312,8 +312,18 @@ def main() -> int:
     )
     for f in failures:
         print(f"  - {f}")
-    print("\nCompare configs via the eval harness aggregate, filtering on the notes above")
-    print("(each config's runs are tagged with its 'chunk-sweep | ...' note in data/eval.duckdb).")
+    # The grid's own keys, so this hint cannot drift from what the sweep actually varied.
+    varied = " ".join(sorted(DEFAULT_GRID[0].asked))
+    print("\nEach config's runs are tagged with its 'chunk-sweep | ...' note in data/eval.duckdb.")
+    print("Read two arms against each other with the comparability check, declaring the grid")
+    print("as the independent variable -- the arms are then not flagged for the thing they")
+    print("vary, while anything ELSE that moved (the corpus above all) still blocks:")
+    print("")
+    print("    python -m scripts.compare_runs --list")
+    print(f"    python -m scripts.compare_runs <control-run> <arm-run> --varying {varied}")
+    print("")
+    print("If it reports that a declared variable did NOT change, the preflight passed and the")
+    print("arms still measured one configuration twice -- that is KI-41, read from the record.")
     return 1 if failures else 0
 
 

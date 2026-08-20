@@ -26,6 +26,37 @@ log = structlog.get_logger(__name__)
 # ============================================================
 
 
+def effective_metadata(
+    doc: Document, meta: DocumentMeta | None
+) -> tuple[str | None, str | None, int | None]:
+    """The title/authors/year a reader should see: the user's override, else what extraction found.
+
+    ADR-013's merge rule, in one place because it was in two. `list_documents` applied it inline
+    while `get_document_details` returned the raw columns, so the same document showed a corrected
+    title in the grid and the original on its own page — found 2026-08-19 on an OCR-derived title,
+    where the difference between the two was the whole point of editing it.
+
+    `or` rather than a None-check on the override, matching the original: an override stored as an
+    empty string falls back to the extracted value. ADR-013 clears a blank field rather than
+    storing one, so this is a belt-and-braces path, not the normal one.
+    """
+    title = (
+        meta.title_override if meta and meta.title_override is not None else None
+    ) or doc.title
+    authors = (
+        meta.authors_override if meta and meta.authors_override is not None else None
+    ) or doc.authors
+    year = (meta.year_override if meta and meta.year_override is not None else None) or doc.year
+    return title, authors, year
+
+
+def is_customized(meta: DocumentMeta | None) -> bool:
+    """Whether the user has overridden any field — what a Reset affordance keys off."""
+    return meta is not None and any(
+        v is not None for v in (meta.title_override, meta.authors_override, meta.year_override)
+    )
+
+
 def list_documents(
     health: str | None = None,
     format: str | None = None,
@@ -61,14 +92,8 @@ def list_documents(
         summaries: list[DocumentSummary] = []
         for d in docs:
             m = overrides.get(d.id)
-            title = (m.title_override if m and m.title_override is not None else None) or d.title
-            authors = (
-                m.authors_override if m and m.authors_override is not None else None
-            ) or d.authors
-            year = (m.year_override if m and m.year_override is not None else None) or d.year
-            customized = m is not None and any(
-                v is not None for v in (m.title_override, m.authors_override, m.year_override)
-            )
+            title, authors, year = effective_metadata(d, m)
+            customized = is_customized(m)
             summaries.append(
                 DocumentSummary(
                     id=d.id,
@@ -115,6 +140,11 @@ def document_years(document_ids: list[str]) -> dict[str, int]:
     from doc_assistant.db.models import Document
     from doc_assistant.db.session import session_scope
 
+    # Deliberately the EXTRACTED year, not the ADR-013 override. This feeds the year-aware
+    # epistemics rule (G3), which is an analysis over what the corpus says, not a display of what
+    # the user prefers to see — and silently re-deriving `superseded_trend` from a metadata edit
+    # would make a knowledge-layer verdict move for a reason no baseline records. If that is ever
+    # wanted it is a decision with an eval, not a consistency fix.
     years: dict[str, int] = {}
     with session_scope() as session:
         stmt = select(Document.id, Document.year).where(Document.id.in_(document_ids))
@@ -197,6 +227,14 @@ def get_document_details(doc_id: str) -> DocumentDetails | None:
         if not doc:
             return None
 
+        # The same override merge the grid applies (ADR-013). Without it this view answered
+        # with the extracted values, so editing a title fixed the list but not the page it
+        # was edited on.
+        meta = session.execute(
+            select(DocumentMeta).where(DocumentMeta.document_id == doc.id)
+        ).scalar_one_or_none()
+        title, authors, year = effective_metadata(doc, meta)
+
         history = [
             {
                 "timestamp": e.timestamp,
@@ -212,9 +250,9 @@ def get_document_details(doc_id: str) -> DocumentDetails | None:
         return DocumentDetails(
             id=doc.id,
             filename=doc.filename,
-            title=doc.title,
-            authors=doc.authors,
-            year=doc.year,
+            title=title,
+            authors=authors,
+            year=year,
             doi=doc.doi,
             notes=doc.notes,
             format=doc.format,

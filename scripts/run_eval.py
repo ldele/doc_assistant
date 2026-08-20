@@ -51,8 +51,15 @@ from doc_assistant.eval import (
     load_cases_yaml,
 )
 from doc_assistant.eval.adapters import embedding_callable, rag_pipeline_adapter
-from doc_assistant.eval.report import format_aggregate, format_flaky_cases, format_run_summary
+from doc_assistant.eval.report import (
+    compare_runs,
+    format_aggregate,
+    format_comparability,
+    format_flaky_cases,
+    format_run_summary,
+)
 from doc_assistant.eval.run_settings import run_defining_settings
+from doc_assistant.eval.store import RunPrefixError
 
 if sys.platform == "win32" and hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
@@ -157,6 +164,18 @@ def main() -> int:
         type=str,
         default=None,
         help="Model for answer generation. Default: config LLM_MODEL (paired with --provider).",
+    )
+    parser.add_argument(
+        "--baseline",
+        type=str,
+        default=None,
+        metavar="RUN_ID",
+        help=(
+            "After the run, report whether it may be compared to this earlier run "
+            "(an id prefix is enough). Closes the RG-021 loop: a run over a corpus, "
+            "generator or geometry the baseline never saw is a different experiment, "
+            "and this says so instead of leaving two means side by side."
+        ),
     )
     parser.add_argument(
         "--bm25-weight",
@@ -288,6 +307,28 @@ def main() -> int:
             print()
             print(format_run_summary(store, run_id))
             print(f"Trial run id: {run_id}")
+
+        if args.baseline:
+            print()
+            try:
+                baseline_id = store.resolve_run_id(args.baseline)
+            except RunPrefixError as e:
+                # Not fatal: the run happened and its numbers are already persisted. Refusing to
+                # print them because the *comparison* argument was wrong would throw away the
+                # expensive half over the cheap half.
+                print(f"--baseline: {e} The run itself is unaffected.")
+            else:
+                # Trial 1 stands for the group: the trials of one invocation share their settings
+                # by construction, so comparing each of them to the baseline would print the same
+                # verdict N times.
+                print(
+                    format_comparability(
+                        compare_runs(store, baseline_id, run_ids[0]),
+                        run_a_label=f"baseline `{baseline_id[:8]}`",
+                        run_b_label=f"this run `{run_ids[0][:8]}`"
+                        + (f" (trial 1 of {args.repeat})" if args.repeat > 1 else ""),
+                    )
+                )
 
         print()
         if args.repeat > 1:

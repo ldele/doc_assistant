@@ -9,8 +9,9 @@ from typing import Any
 
 import structlog
 
-from doc_assistant.db.models import Document
+from doc_assistant.db.models import Document, DocumentMeta
 from doc_assistant.db.session import session_scope
+from doc_assistant.library.documents import effective_metadata
 
 log = structlog.get_logger(__name__)
 
@@ -116,9 +117,11 @@ def get_document_chunks(doc_id: str, chroma: Any) -> DocumentChunkView | None:
         d_id = str(doc.id)
         d_filename = doc.filename
         d_format = doc.format
-        d_title = doc.title
-        d_authors = doc.authors
-        d_year = doc.year
+        # The user's overrides win over what extraction found (ADR-013). This header is the title
+        # a reader sees on the document's own page, and it showed the extracted value while the
+        # Library grid beside it showed the corrected one (2026-08-19).
+        meta = session.get(DocumentMeta, doc_id)
+        d_title, d_authors, d_year = effective_metadata(doc, meta)
         d_chunk_count = doc.chunk_count
         d_health = doc.extraction_health
 

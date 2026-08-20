@@ -7,6 +7,34 @@ versioning is [SemVer](https://semver.org/) on the `doc_assistant` package, and 
 The engineering record is finer-grained than this file: per-change entries live in
 [`docs/DEVLOG.md`](docs/DEVLOG.md), design decisions in [`docs/decisions.md`](docs/decisions.md).
 
+## [Unreleased]
+
+**Nothing here changes what the app does for you yet.** The work since 0.5.1 has gone into the
+machinery that decides whether a quality claim about Provenote is true — worth stating plainly
+rather than padding this file, and worth knowing if you were expecting new features.
+
+### Changed
+
+- **Benchmark numbers now say what produced them, and the app can tell you when two of them
+  cannot be compared.** Every eval run records the corpus it searched, the model that wrote the
+  answers, and the retrieval settings that were live; a new check reads that record and reports,
+  per metric, whether two runs measured the same thing. This exists because a five-trial run in
+  August looked like a 6% improvement and was a model swap — a number nobody could have caught by
+  reading it. Published results carry the same record, so they can be checked against a later run
+  without access to the machine that produced them. Documentation: [`evals/README.md`](evals/README.md).
+
+### Known limits
+
+- **Scanned PDFs are only read if your system has an OCR engine, and the installer does not
+  include one.** A PDF that is pure page images — no selectable text — extracts to nothing and is
+  marked *broken* in your library. If a `tesseract` binary happens to be on your PATH, the
+  extractor will quietly use it and read the pages instead. Two machines running the same version
+  can therefore build different libraries from the same file, and there is currently no setting,
+  message or log line that tells you which one you are getting. Deliberate recovery of scanned
+  documents — opt-in, and marked so you can see which text came from OCR — is designed but not
+  built ([ADR-039](docs/decisions/ADR-039-ocr-sidecar-for-scanned-pdfs.md)).
+- **Everything under *Known limits* for 0.5.1 still applies.**
+
 ## [0.5.1] — 2026-08-14
 
 ### Added

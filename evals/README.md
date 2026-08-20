@@ -201,6 +201,66 @@ uv run python -m scripts.sweep_bm25_weight --cases tests/eval/cases.public.yaml 
 uv run python -m scripts.run_eval --cases tests/eval/cases.public.yaml --bm25-weight 0.5 --with-llm-judge
 ```
 
+### Before reading two runs against each other
+
+A delta only means something if the two runs measured the same thing. Since 2026-08-18 that is a
+command rather than a judgement call:
+
+```bash
+uv run python -m scripts.compare_runs --list           # which runs pin what they measured
+uv run python -m scripts.compare_runs 57960670 5ab8a60e   # verdict, then the numbers
+uv run python -m scripts.run_eval --provider ollama --model llama3.1:8b --baseline 57960670
+```
+
+It reports **per scorer**, because one differing setting does not invalidate everything equally.
+`citation_overlap` is computed from the *retrieved documents* before a token is generated, so it
+survives a generator swap; `contains_all`, `embedding_similarity` and `llm_judge` read the answer
+and do not. A corpus, chunk-geometry or case-set change invalidates all of them. Exit codes are
+`0` comparable / `3` unknown / `4` not comparable — **unknown is not 0 on purpose.**
+
+For a **sweep**, declare the independent variable so the arms are not flagged for the very
+thing they were built to vary — and so the opposite mistake is caught:
+
+```bash
+uv run python -m scripts.compare_runs A B --varying child_chunk_size child_chunk_overlap
+```
+
+Everything outside that list still blocks, which is the useful direction: a sweep's real risk
+is that something *besides* the grid moved. And a declared variable that comes back identical
+exits `5` with a banner — that is KI-41, where six arms re-ingested one configuration because
+`.env` overwrote the grid, and the result read as "no config beats the default".
+
+**Most runs in the store answer UNKNOWN, and that is correct.** No run before 2026-08-15 records
+its generator and none before 2026-08-17 records its corpus, because those keys did not exist.
+Nothing is inferred to fill the gap — not from a run's note, not from a sibling run — since a
+back-filled guess would be indistinguishable from a recording, which is the failure the keys were
+added to prevent (RG-029). Those runs are readable; they are not comparable.
+
+### Recording a new baseline
+
+`tests/eval/baselines/` is the committed record, and `data/eval.duckdb` is **not** committed —
+so a baseline whose setup is only prose leaves a fresh clone with the conclusions and none of
+the evidence. Emit the mechanical half from the run record instead:
+
+```bash
+uv run python -m scripts.emit_baseline <run-id> <run-id> \
+    --title "Sparse arm, private 35" --out tests/eval/baselines/my_result_2026-08-18.md
+```
+
+It writes the settings, corpus composition, generator and aggregate table, plus a provenance
+block that `compare_runs --against <file>` reads later. **It refuses to emit from runs that are
+not one experiment** — a baseline averages its trials, so mixing two would present them as one
+number. **Then fill the TODO it leaves:** the caveats are what make a baseline worth keeping,
+and no emitter can derive them.
+
+```bash
+uv run python -m scripts.compare_runs <new-run> --against tests/eval/baselines/<file>.md
+```
+
+Baselines written before 2026-08-18 carry no provenance block, so that check reports *unknown*
+against them and says which facts the document never recorded. That is a statement about the
+document, not about the new run.
+
 **The demo collection is deliberately excluded from every number above.** The manifest also
 carries 18 `collection: demo` papers (the arXiv subset of the rumoured
 [Sutskever→Carmack reading list](https://30papers.com/), added 2026-07-20), fetched only via

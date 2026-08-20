@@ -18,6 +18,279 @@ Format: What changed | Why | Rejected alternatives | What it opens
 > is individually small and correct, so unbounded growth is invisible per commit.
 
 ---
+## 2026-08-19 (3) — a metadata override applied in the Library grid and not on the document's own page
+
+**What changed.** ADR-013's `override ?? auto` merge now lives in one function,
+`effective_metadata`, and **all four read paths that display a document use it**:
+`list_documents` (which already merged, inline), `get_document_details`, `get_document_chunks`
+(the document page's own header) and `list_document_figures`. Three of the four did not.
+
+**How it surfaced.** Correcting the OCR-derived title on the recovered scan
+(*"A Revised Neuroanatom of Frontal—Subcortical Cireuits"* → *"…Neuroanatomy of
+Frontal-Subcortical Circuits"*) wrote the override correctly and changed nothing on the page it
+was edited on. The list endpoint returned the corrected title; the detail endpoint returned the
+extracted one. `list_documents` merged inline, `get_document_details` read `doc.title` straight —
+the same rule written twice, and the second copy was simply missing.
+
+**Worth noting about the write path: it was already right.** The PATCH cleared `year_override`
+because the submitted 2001 equalled the extracted 2001 — ADR-013's "an effective value equal to the
+default clears that field" — so only title and authors persisted. The bug was entirely on the read
+side, which is why editing appeared to half-work rather than fail.
+
+**One path deliberately does NOT merge.** `document_years` feeds the year-aware epistemics rule
+(G3), which is an analysis of what the corpus *says*, not a display of what the user prefers to
+see. Letting a metadata edit move a `superseded_trend` verdict would change a knowledge-layer
+result for a reason no baseline records — that is a decision with an eval behind it, not a
+consistency fix. Said in a comment at the call site and pinned by a test.
+
+**Guarded by eight tests**, the load-bearing one being *every display surface agrees on the title*
+— stated once over all four paths, so a fifth surface added without the merge fails in the suite
+rather than in a screenshot. Also pinned: no override means both report what
+extraction found (the override stays additive), and a title-only override leaves authors and year
+extracted.
+
+**Rejected alternative.** *Merging in the detail function too* — that is the fix that created the
+bug: two copies of one rule, drifting the moment someone touches one. The helper is the point, not
+the call site.
+
+**What it opens.** Nothing else reads `Document.title` directly for display — checked — but the
+same shape exists wherever an additive sidecar has a "merge for display" step. Also unresolved: the
+extracted values under the override are still the OCR ones, which is correct (ADR-043 keeps
+received content verbatim; the override is a separate, inspectable layer) but means a re-extraction
+never silently corrects them.
+
+---
+## 2026-08-19 (2) — chat select mode reviewed: the tick was stacked ON the row by a CSS ordering accident, and the reported "connection issues" were another project's dev server
+
+**What changed** (`Sidebar.svelte`, `App.svelte`, `conversations.svelte.ts`), from a live review:
+
+- **The tick now sits left of the title, email-client style.** It had been rendering *above* the
+  row and centred, clipping names. The markup was always right — the tick precedes the body in the
+  DOM — and the cause was CSS: the element carries both `.pickrow` (`display:flex`) and `.rowmain`
+  (`flex-direction: column`, for the normal row). Equal specificity, so **source order decided it**,
+  and `.rowmain` is defined 60 lines later. Fixed as `.rowmain.pickrow` — a two-class selector, so
+  the row layout no longer depends on where either rule sits in the file. Verified in the running
+  app: `flex-direction: row`, tick at x=15 and body at x=39, vertically centred, and **all 100 rows
+  share one left edge**, with titles truncating on `text-overflow: ellipsis` instead of being cut.
+- **The action bar is sized like a toolbar** (0.5rem padding, 0.8rem type, 41px tall against ~24px)
+  — it is the only way out of a destructive mode and it read as a caption.
+- **"Done" is gone.** The header toggle already reads *Leave select mode* and does the same thing;
+  two controls for one action, and the redundant one sat where a confirm button would.
+- **Bulk archive added**, mirroring bulk delete. It is a *toggle*: when every ticked chat is already
+  archived the button reads **Unarchive**, which is what the "Show archived" view needs. Applied
+  immediately rather than through a confirm — archiving is reversible and the toggle right below it
+  brings them back (delete keeps its confirm). `archiveConversations` PATCHes concurrently and
+  refreshes the list **once**: N single-archive calls would each refresh, rerendering the sidebar
+  under the user mid-action. A failure is logged per conversation and does not abandon the rest.
+
+**Verified end to end in the running app, and the data left exactly as found** — ticked one chat,
+Archive, confirmed archived server-side; re-selected it under "Show archived", confirmed the button
+now read *Unarchive*, clicked it, confirmed 100 conversations / 0 archived again.
+
+**The "connection issue inside library" was not a defect in this app.** Reported as
+`TypeError: Failed to fetch` on connections, chunks, figures and references. The API was healthy
+throughout (200s in ~14 ms directly on 8001). **Port 1420 was being served by a different
+project's dev server** — the page at `localhost:1420` is titled "Scribe", and
+`localhost:1420/api/health` returns **404 with that project's HTML**. Provenote's Vite owns `/api`
+as a proxy to 8001; with the port taken (and `strictPort: true`), an already-open Provenote window
+keeps rendering while every later `/api` call goes to a server that has never heard of it. Same
+cause for the graph panel. Re-verified on the alt port from `.claude/launch.json`: connections,
+figures, references and the document payload (66 parent blocks) all 200.
+
+**Two diagnostic notes worth keeping.** `curl http://127.0.0.1:1420` reported nothing while
+`localhost:1420` answered — Vite binds `::1` only, so an IPv4 probe says "dead" about a server that
+is running; check both before concluding a process is down (I concluded it once and was wrong).
+And the *shape* of the error was the tell: `Failed to fetch` is connection-level, so it points at
+who is answering the port, not at the handler.
+
+**Rejected alternatives.** *Setting `flex-direction: row` on `.pickrow` alone* — it would work today
+and break again the next time a rule is appended below it. *A checkbox `<input>`* — the whole row is
+the target on purpose (a 15px hit area in a list is poor), and the tick is presentational. *A
+confirm for bulk archive* — reversible actions that ask twice train people to click through
+confirms. *Leaving "Done"* — the user's point stands: the escape hatch already exists above it.
+
+---
+## 2026-08-19 — the corpus's one broken document is recovered (96 → 97 retrievable), and the reason it was broken is not what it looked like
+
+**What changed.** No code. `middleton-2001.pdf` — 15 pages, `extraction_health='broken'`,
+`chunk_count=0`, the only unhealthy document in the library — is now **healthy, 52 chunks, and
+retrieved rank 1** on three of the RG-025 baseline's queries against the full 97-document library.
+`data/library.db.bak-20260819-preocr` is the pre-change backup.
+
+**The finding is the trigger, not the text.** RG-025 measured this document's OCR a fortnight ago
+and concluded the text was worth retrieving; that was never in doubt. What is new is that **the
+shipped extractor produced it on its own**: same code, same pinned dependencies, same PDF, 0
+characters on 2026-08-08 and **34,600 today**. PyMuPDF4LLM finds a `tesseract` binary on `PATH` and
+OCRs pages with no text layer. Nothing in the repo changed — the box's `PATH` did. Filed as
+**KI-47**, because extraction output is supposed to be a function of things the cache fingerprint
+can hash, and an external binary is not one of them: the stale 349-byte extraction stayed "fresh"
+forever with a fingerprint that still matched the live one to the digit. **The installer ships no
+OCR** (`tesseract` is a system binary; the spec, README and setup docs never mention it), so the
+app's real behaviour on a scan is still the 0-character one and this box is the outlier.
+
+**A second defect fell out of the fix.** `doc_hash` hashes the extracted *text*, so recovery mints a
+**new document identity** — and the old row survived a full cleanup pass, leaving the file in the
+library twice. `cleanup_orphans_sqlite` builds its candidate set from **Chroma metadata**, so a
+document with **zero chunks is invisible to the orphan sweep** and its row can never be classified
+stale. That is the shape of every recovery, not a one-off: a broken document has no chunks by
+definition. Filed as **KI-46**; the stale row was removed with the same `session.delete(row)` call
+cleanup uses (FK cascades drop the outbound enrichment), guarded on `chunk_count == 0` plus a
+healthy sibling — **not** through the app's delete path, which would have sent the source PDF to the
+Recycle Bin (ADR-014).
+
+**One measured improvement over the 2026-08-08 run, unexpectedly.** That baseline's single
+highest-value carried item was *de-hyphenate line-broken words* — raw Tesseract left **88** of them
+(`cortico-` + `spinal` never matching a query for `corticospinal`). This path leaves **0**: mean
+line length 250 characters, 3 lines ending in a hyphen, and `corticospinal` present intact. The
+reflow defect that motivated the work does not occur here.
+
+**Rejected alternatives.** *`--rebuild`* — it wipes the vector store and re-embeds all 97 documents
+to fix one. *Hand-running Ghostscript + Tesseract and pasting the text in* (what the baseline did)
+— unreproducible, and it would put unmarked OCR prose in the library by a path no runner owns.
+*`delete_document`* — bins the source file. *Fixing the cleanup blind spot inline* — a real change
+to a core ingest path, which deserves its own tests rather than riding on a data repair.
+
+**What it opens.** The corpus is now **97 retrievable documents, digest changed** — so by the
+comparability layer's own rules every earlier run (96 documents) is *not comparable* to anything run
+from here, and `compare_runs` will now say so instead of leaving it to memory. ADR-039 is still
+**proposed**: what happened today is recovery that is neither opt-in nor marked as OCR-derived,
+which is exactly what that ADR wanted to avoid — recovered text now enters as ordinary prose that
+retrieval and citation cannot distinguish from a real text layer.
+
+---
+## 2026-08-18 (2) — a committed baseline now carries its own evidence, so it can be checked without the run store
+
+**What changed.** New `eval/baseline_doc.py` + `scripts/emit_baseline.py` (+ `just emit-baseline`)
+write a baseline document **from the run record**, and `compare_runs --against <file>` checks a
+later run against that document.
+
+**The gap.** `tests/eval/baselines/` is the committed reference record; `data/eval.duckdb` is
+gitignored. So the numbers travel and the evidence does not — a fresh clone holds ~30 documents
+whose setup sections were typed by hand, and nothing can contradict them. That is exactly where the
+last error hid: the Haiku-vs-llama split across the 2026-08-08 arms lived only in prose, and prose
+is recoverable by a human reading the right file and by nothing else.
+
+**What the emitter writes, and what it refuses to write.** Settings, corpus composition, generator,
+judge, and the aggregate table — copied from `config_json`, never re-derived — plus a visible fenced
+JSON provenance block (visible, not an HTML comment: the reader should see exactly what the checker
+reads). It **refuses to emit from runs that are not one experiment**, because a baseline averages
+its trials and mixing two would present them as one number; the refusal prints the comparability
+report that explains why, and exits 4. It writes `TODO` for the judgement, because the caveats are
+what make a baseline worth keeping and no emitter can derive them. A key the runs disagreed on is
+**dropped**, not taken from the first trial, and then renders as "not recorded" — the document
+cannot vouch for it.
+
+**Older baselines parse to nothing, on purpose.** `parse_provenance` returns `{}` for a document
+with no block, a malformed block, or a JSON block that is not provenance — so `--against` an
+existing hand-written baseline reports *unknown across the board* and says the document never
+recorded those facts. Verified against the real folder: every committed baseline parses without
+raising, and the check against `chunking_sweep_private_2026-08-08.md` names 20 unrecorded settings
+rather than inventing agreement.
+
+**Verified end to end, $0.** Emitted a baseline from the two identical-settings validation runs,
+then checked runs against the committed file: the matching run exits **0**, the qwen2.5:3b run exits
+**4** with `contains_all` not comparable and `citation_overlap` still fine, and the hand-written
+baseline path exits **3** with the "carries no provenance block" note. 27 new unit tests.
+
+**Rejected alternatives.** *An HTML-comment block* — hidden from the reader, which invites the
+document and its record to drift; this layer exists because a claim and its evidence drifted apart.
+*Emitting the caveats too* — an emitter can produce a table, not a judgement, and a baseline that is
+only numbers is what the project already has too many of. *Taking the first trial's value when
+trials disagree* — it would state something no reader could act on. *Raising on a baseline with no
+provenance* — a checker that rejects the entire existing corpus of baselines is a checker nobody
+runs; `{}` and an honest "unknown" is the useful behaviour. *Back-filling provenance into the ~30
+existing documents* — the same rule as everywhere else here: an inference must not become
+indistinguishable from a recording.
+
+**A document that argues with itself is caught too.** `table_drift` compares the visible results
+table against the document's own provenance block and reports any row where they disagree — the
+small nasty failure where someone tidies a number in the pretty table, or copies a document and
+edits it, while the machine block still carries the original. Verified by tampering with an emitted
+baseline: the check names the scorer and both values before the verdict, because the reader needs
+to know which half of the document they have been quoting.
+
+**What it opens.** The existing baselines stay unpinned unless someone re-runs and re-emits them,
+which is a deliberate non-goal — their numbers are still valid readings, they simply cannot be
+machine-checked. No gate *requires* a new baseline to carry a block, so the discipline is still a
+habit rather than a rule; and drift is only checked on the mean, not on the std or the counts.
+
+---
+## 2026-08-18 — the harness now answers "may these two runs be compared?", per scorer, and says UNKNOWN when nobody wrote it down
+
+**What changed.** Yesterday's entry made a run record what it measured. This makes something *read*
+that record. New `eval/comparability.py` (generic, no app import — it travels with the harness),
+plus `report.compare_runs` / `format_comparability`, a `scripts/compare_runs.py` CLI, a
+`--baseline RUN_ID` flag on `run_eval`, and `just compare`.
+
+**The idea it encodes, which this project had already written by hand twice.** A score depends on a
+*prefix* of the pipeline: cases → index → retrieval → generation. `citation_overlap` and
+`figure_retrieval` read the **retrieved documents** (`output.citations`, `output.raw["retrieved"]`,
+both filled from `pipeline.retrieve` before a token is generated), so they survive a generator swap.
+Everything else reads `output.answer` and does not. That asymmetry is exactly what localised RG-029
+— `citation_overlap` reproduced to the digit while `contains_all` moved — and it is the reasoning in
+the generator caveat at the top of `chunking_sweep_private_2026-08-08.md`. A hand-written caveat
+protects only the reader who opens the right file, so now one differing setting yields **per-scorer**
+verdicts rather than a wholesale pass/fail.
+
+**Three states, and UNKNOWN is the common case, not the corner one.** Of the 75 runs in the live
+store, **not one** records its generator or its corpus. So the honest verdict for almost every
+historical pair is *unknown*, and the layer says so: an unrecorded setting is never assumed to have
+matched, and it is never inferred — not from the run's `note` prose, not from a sibling run. The
+five annotated Haiku trials carry their generator in `note` precisely so that an inference cannot be
+mistaken for a recording, and `--list` shows them as "not recorded" for the same reason.
+
+**Verified against real runs, $0.** Three one-case runs on the live 96-document index over local
+Ollama, two of them differing *only* in generator:
+
+| | `contains_all` | `citation_overlap` | verdict |
+|---|---:|---:|---|
+| llama3.1:8b vs llama3.1:8b | 0.500 → 0.500 | 1.000 → 1.000 | **comparable**, exit 0 |
+| llama3.1:8b vs qwen2.5:3b | **0.500 → 1.000** | 1.000 → 1.000 | **not comparable** on `contains_all`, comparable on `citation_overlap`, exit 4 |
+
+The second row is RG-029 reproduced deliberately: a 3B model "beats" an 8B one by +0.500 on the
+answer score while the retrieval score does not move a digit. Also verified on the real 75-run
+store, where every pair comes back UNKNOWN with the missing keys named.
+
+**`--varying` is the half that makes it useful to a sweep, and it catches KI-41 from the record.**
+A sweep *intends* to differ in one setting, so a bare comparison would object to the experiment
+itself. Declaring the independent variable (`--varying child_chunk_size`) stops that difference
+blocking while **everything else still blocks** — which is the useful direction, because a sweep's
+real risk is that something besides the grid moved. The opposite failure gets its own field and its
+own exit code: a declared variable that came back **identical** means the arms are one configuration
+compared with itself, which is KI-41 exactly (the 2026-06-06 sweep drove its grid through
+environment variables `.env` silently overwrote). Verified on two real runs: verdict `ok`, and a
+banner above the table saying the declared variable did not change, exit `5`. Note the deliberate
+split — those runs *are* comparable; it is the experiment between them that is void, so it must not
+be folded into the comparability status. `sweep_chunking`'s preflight catches this before a run;
+this catches it afterwards, from the record, where a preflight-less runner cannot hide it.
+
+**Two smaller things fell out of building it.** `judge_provider` / `judge_model` are now recorded —
+`llm_judge` grades with a model that is *not* the generator, so two runs can share a generator and
+still have been graded differently; it is the same membership rule as yesterday's keys, and its
+absence would have been an invisible hole in exactly the scorer that costs money. And
+`Store.resolve_run_id` now owns prefix resolution, so `run_eval --baseline` and `compare_runs` cannot
+resolve an id two different ways.
+
+**Rejected alternatives.** *A plain config diff* — it would flag `trial_index` (which differs by
+design between trials of one experiment) and would report a generator swap as invalidating
+everything, including the one number that survives it; the per-scorer prefix is the whole value.
+*Treating an unrecorded setting as unchanged* — that is precisely the assumption RG-029 was, and it
+would return the store to printing two means side by side. *Parsing the `note` prose* to recover the
+five attributed Haiku trials — the annotation exists because a back-filled inference must stay
+distinguishable from a recording. *Suppressing the score tables on a NOT COMPARABLE verdict* —
+informing beats blocking; a suppressed table sends the reader to the raw store, where there is no
+verdict at all. *Comparing every trial against the baseline under `--repeat N`* — the trials share
+their settings by construction, so it would print the same verdict N times. *Folding an
+ineffective variation into the comparability status* — "these runs cannot be compared" and "these
+runs are identical when they should not be" are opposite diagnoses with opposite fixes.
+
+**What it opens.** RG-021 is now closed end to end (record + warn). Not built: nothing *emits* a
+baseline markdown from a run record, so `tests/eval/baselines/` stays hand-written; nothing compares
+a run against a *committed baseline file* (only against another stored run); and the 75 historical
+runs remain permanently unknown, which is a fact about them, not a gap to fill. `sweep_bm25_weight`
+still persists nothing, so it participates in none of this.
+
+---
 ## 2026-08-17 — an eval run now records the corpus it measured and the generator it used, and a paid one says so before it spends
 
 **What changed.** Three keys and a flag, closing the "make the run record and the run agree" class

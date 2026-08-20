@@ -545,3 +545,166 @@ def test_document_references_are_ordered_newest_first(temp_database):
     view = document_references(a)
     assert view is not None
     assert [r.year for r in view.references] == [2024, 2011, 1998]
+
+
+# ============================================================
+# ADR-013 metadata overrides — the list and the detail view must agree
+# ============================================================
+
+
+def _doc_with_override(title_override=None, authors_override=None, year_override=None):
+    """One document with extracted values, plus whatever override the test wants."""
+    from doc_assistant.db.models import Document, DocumentMeta
+    from doc_assistant.db.session import session_scope
+
+    with session_scope() as session:
+        doc = Document(
+            id="doc-1",
+            filename="scan.pdf",
+            doc_hash="hash-1",
+            format="pdf",
+            source_original="/docs/scan.pdf",
+            title="A Revised Neuroanatom of Cireuits",  # as OCR read it
+            authors="FRANK A. MIDDLETON PETER L. STRICK",
+            year=2001,
+            chunk_count=52,
+            extraction_health="healthy",
+        )
+        session.add(doc)
+        if any(v is not None for v in (title_override, authors_override, year_override)):
+            session.add(
+                DocumentMeta(
+                    document_id="doc-1",
+                    title_override=title_override,
+                    authors_override=authors_override,
+                    year_override=year_override,
+                )
+            )
+    return "doc-1"
+
+
+def test_the_detail_view_applies_a_title_override(temp_database):
+    """The bug this pins (2026-08-19): the grid showed the corrected title and the document's own
+    page showed the raw extracted one, because the merge lived in `list_documents` alone."""
+    from doc_assistant.library import get_document_details
+
+    doc_id = _doc_with_override(title_override="A Revised Neuroanatomy of Circuits")
+
+    details = get_document_details(doc_id)
+
+    assert details is not None
+    assert details.title == "A Revised Neuroanatomy of Circuits"
+
+
+def test_the_list_and_the_detail_view_agree(temp_database):
+    """The property that keeps them from drifting again: one document, one answer."""
+    from doc_assistant.library import get_document_details, list_documents
+
+    doc_id = _doc_with_override(
+        title_override="A Revised Neuroanatomy of Circuits",
+        authors_override="Frank A. Middleton, Peter L. Strick",
+    )
+
+    listed = next(d for d in list_documents() if d.id == doc_id)
+    details = get_document_details(doc_id)
+
+    assert details is not None
+    assert (details.title, details.authors, details.year) == (
+        listed.title,
+        listed.authors,
+        listed.year,
+    )
+
+
+def test_without_an_override_both_report_what_extraction_found(temp_database):
+    """The override is additive: with none stored, nothing is invented or hidden."""
+    from doc_assistant.library import get_document_details, list_documents
+
+    doc_id = _doc_with_override()
+
+    listed = next(d for d in list_documents() if d.id == doc_id)
+    details = get_document_details(doc_id)
+
+    assert details is not None
+    assert details.title == "A Revised Neuroanatom of Cireuits" == listed.title
+    assert details.year == 2001
+
+
+def test_a_partial_override_leaves_the_other_fields_extracted(temp_database):
+    """Overriding the title must not blank the authors — each field stands alone (ADR-013)."""
+    from doc_assistant.library import get_document_details
+
+    doc_id = _doc_with_override(title_override="A Revised Neuroanatomy of Circuits")
+
+    details = get_document_details(doc_id)
+
+    assert details is not None
+    assert details.authors == "FRANK A. MIDDLETON PETER L. STRICK"
+    assert details.year == 2001
+
+
+class _EmptyChroma:
+    """Chroma-shaped `get()` with no chunks — these tests are about the header, not the body."""
+
+    def get(self, *, where=None, include=None):
+        return {"documents": [], "metadatas": []}
+
+
+def test_the_document_page_header_applies_the_override(temp_database):
+    """The surface the user actually reported: the page title stayed as extraction read it while
+    the grid beside it showed the correction (2026-08-19). `get_document_chunks` is a separate
+    read path from both `list_documents` and `get_document_details`."""
+    from doc_assistant.library import get_document_chunks
+
+    doc_id = _doc_with_override(
+        title_override="A Revised Neuroanatomy of Circuits",
+        authors_override="Frank A. Middleton, Peter L. Strick",
+    )
+
+    view = get_document_chunks(doc_id, _EmptyChroma())
+
+    assert view is not None
+    assert view.title == "A Revised Neuroanatomy of Circuits"
+    assert view.authors == "Frank A. Middleton, Peter L. Strick"
+
+
+def test_the_figures_block_applies_the_override(temp_database):
+    """Otherwise one document is named two different things on one screen."""
+    from doc_assistant.library.figures import list_document_figures
+
+    doc_id = _doc_with_override(title_override="A Revised Neuroanatomy of Circuits")
+
+    view = list_document_figures(doc_id)
+
+    assert view is not None
+    assert view.title == "A Revised Neuroanatomy of Circuits"
+
+
+def test_every_display_surface_agrees_on_the_title(temp_database):
+    """The property, stated once over all four read paths. A fifth surface added later without
+    the merge fails here rather than in a screenshot."""
+    from doc_assistant.library import get_document_chunks, get_document_details, list_documents
+    from doc_assistant.library.figures import list_document_figures
+
+    doc_id = _doc_with_override(title_override="A Revised Neuroanatomy of Circuits")
+
+    titles = {
+        "list": next(d for d in list_documents() if d.id == doc_id).title,
+        "details": get_document_details(doc_id).title,
+        "chunks": get_document_chunks(doc_id, _EmptyChroma()).title,
+        "figures": list_document_figures(doc_id).title,
+    }
+
+    assert set(titles.values()) == {"A Revised Neuroanatomy of Circuits"}, titles
+
+
+def test_the_year_used_for_analysis_stays_the_extracted_one(temp_database):
+    """Deliberate asymmetry: `document_years` feeds the year-aware epistemics rule, which is an
+    analysis of what the corpus says — not a display. A metadata edit must not silently move a
+    knowledge-layer verdict; that is a decision with an eval behind it, not a consistency fix.
+    """
+    from doc_assistant.library.documents import document_years
+
+    doc_id = _doc_with_override(year_override=1999)
+
+    assert document_years([doc_id]) == {doc_id: 2001}

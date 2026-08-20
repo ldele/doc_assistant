@@ -46,3 +46,25 @@ export function archiveConversation(sid: string, archived: boolean): Promise<voi
 export function renameConversation(sid: string, title: string): Promise<void> {
   return setMeta(sid, { title }, 'rename')
 }
+
+/** Archive (or unarchive) several conversations, then refresh the list once.
+ *
+ * Not `sids.map(archiveConversation)`: each of those refreshes the whole list on completion, so N
+ * archives would fire N list reloads and the sidebar would rerender under the user mid-action. The
+ * PATCHes still run concurrently — they are independent rows — and one refresh follows them all.
+ * A failure is logged per conversation and does not abandon the rest: a partial archive the user
+ * can see and redo beats an all-or-nothing that silently stops halfway.
+ */
+export async function archiveConversations(sids: string[], archived: boolean): Promise<void> {
+  if (sids.length === 0) return
+  await Promise.all(
+    sids.map(async (sid) => {
+      try {
+        await updateConversationMeta(sid, { archived })
+      } catch (e) {
+        console.error('archive failed', sid, e)
+      }
+    }),
+  )
+  await refreshConversations()
+}

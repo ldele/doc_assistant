@@ -18,6 +18,163 @@ Format: What changed | Why | Rejected alternatives | What it opens
 > is individually small and correct, so unbounded growth is invisible per commit.
 
 ---
+## 2026-08-20 (7) — a ledger of when each aspect of the project was last actually reviewed
+
+**What changed.** New `.claude/REVIEWS.md`, and a fifth row in `AGENTS.md`'s coordination list
+pointing at it. Six aspects — documentation/presentation, backend, frontend, unit testing, the cpc
+system (lint, gates, CI/CD, vault), UX/UI + MCP — each with a cadence, a last-reviewed date, and a
+log entry recording what that pass did **not** cover.
+
+**Why a new file rather than a section of the baton.** `SESSION.md` is append-only with a 10-entry
+cap; a cadence table needs to be *updated in place* and to survive rotation, and it would have been
+archived out of existence inside two weeks. The DEVLOG is the wrong home for the opposite reason —
+it records changes, and the useful signal here is the **absence** of one.
+
+**The design decision that makes it worth having: `never` is a legal value, rendered as loudly as a
+date.** Seeded honestly from the record rather than from optimism, and two rows came back `never`:
+- **Backend code** — no dedicated pass is recorded, ever. Feature work and incidental fixing, yes;
+  a read end to end, no. `KNOWN_ISSUES.md` shows where that lands — nine tracked defects in
+  ingest/extraction alone.
+- **Frontend code** — never *as a code pass*. 2026-08-19 was a live behavioural review of one
+  feature, which is a different thing, and recording it as "frontend reviewed" is exactly the
+  overstatement this file exists to prevent.
+
+Two more rows are marked **partial** for the same reason: the 2026-08-19 cpc pass audited gate
+wiring only (CI, the lint rule set and the vault were untouched), and **MCP has never been reviewed
+because it does not exist** — the Global CLI + MCP server is parked (`docs/ROADMAP.md`, user call
+2026-07-13). An empty cell there would read as an oversight rather than as a fact.
+
+**Rejected alternatives.** *A section inside `SESSION.md`* — see above; the cap kills it. *Tracking
+it in the repo* — it is working state (ADR-029), so it lives in `.claude/` with the rest; the file
+says how to move it under `docs/` if it should ever be public, and nothing depends on the location.
+*Recording only completed reviews* — that reproduces the blind spot the file exists to remove.
+
+**Flagged for the cpc default template**, as the user asked, with a section at the foot naming the
+two properties that must survive generalisation: `never` as a first-class value, and every log
+entry stating its own gaps. A partial review recorded as a bare date reads as full coverage six
+months later, which is worse than no entry at all.
+
+**One thing it caught immediately.** `AGENTS.md` said "All four are local-only working state" about
+a list whose third item is `docs/DEVLOG.md` — which is tracked. Corrected while adding the fifth
+row.
+
+---
+## 2026-08-20 (6) — a fake document id read as a secret; fixed at the source rather than in the baseline
+
+**What changed.** One id in `tests/unit/test_commands_formatters.py`:
+`"abcdef0123456789abcdef0123456789"` became `"document-under-test-000000000000"`.
+
+**Why.** The `detect-secrets` pre-commit hook failed on the change set. The finding was a **Hex
+High Entropy String** — a 32-character hex document id invented as a test fixture. Not a secret,
+but indistinguishable from one by entropy.
+
+**The fix was to stop generating the false positive, not to record it.** `git add .secrets.baseline`
+was the offered path and would have worked, but a baseline entry carries a `line_number`: it goes
+stale the moment anything above it moves, and the next contributor inherits a suppression whose
+subject they cannot locate. The other builders in that file already use patterned ids
+(`f"{name}aaaa…"`, `"f"*32`, `f"{i:032d}"`) and none of them trips the detector; this one was the
+odd case, so it was made to match. `.secrets.baseline` is unchanged — no new suppression exists.
+
+Commented at the site, because the reason a test id avoids hex is not self-evident and the obvious
+"tidy-up" is to put it back.
+
+**Verified:** the full hook set passes over the change set (ruff · ruff format · bandit ·
+detect-secrets · hygiene), and `.secrets.baseline` shows no diff.
+
+---
+## 2026-08-20 (5) — extraction checked against committed documents, and the third defect that found
+
+**What changed.** New `tests/fixtures/documents/` holding a real `treatise.epub` and a
+hand-authored `article.html`, a `make_fixtures.py` regenerator, a README, and
+`tests/unit/test_extraction_fixtures.py` (28 passing, 4 xfailed). `.gitattributes` gains
+`*.epub binary`.
+
+**Why, and it is the gap the morning's work admitted to.** `test_extractors_formats.py` builds each
+fixture with the same library that reads it back, and says so in its own docstring: a round-trip
+cannot prove anything about files from *other* producers. These files are **frozen artifacts** —
+once committed they stop tracking what `ebooklib` emits today, so the assertions keep describing
+what a real file on disk does.
+
+**They immediately found a third defect, and it is the worst of the three.** `get_text(separator=
+"
+")` breaks a line at **every inline tag boundary**, so `Emphasis <em>inside</em> a sentence`
+arrives as three lines. It affects EPUB and HTML alike. Scientific prose italicises constantly —
+gene names, species, emphasis — so this shatters sentences across the corpus, degrading both the
+embedding and the BM25 token stream, and **no health check would ever flag it**: every character is
+still present. The two already recorded in entry (1) are confirmed here on real files rather than
+inferred: the EPUB nav document lands as trailing prose under a heading repeating the book title,
+and the HTML `<title>` lands as the first line, above the real `<h1>`.
+
+**All three are pinned as `xfail(strict=True)` — the first use of xfail in this suite.** Asserting
+the broken output would cement the wart as the contract; a plain comment rots. `strict=True` makes
+the test **fail when the bug is fixed**, so whoever fixes it is told to come back and update the
+expectation. None is fixed here because each changes extraction *content* and therefore `doc_hash`
+for every affected document (ADR-042) — decisions, not patches.
+
+**`strict=True` earned its keep within the hour: it caught a bad test of mine.** The first draft of
+the sentence-fragmentation test normalised newlines away before asserting, which rejoins the
+fragments — so it passed against the broken output and XPASSed loudly instead of sitting there
+green and worthless. It now asserts per line.
+
+**Two smaller things the fixtures forced.** `*.epub binary` in `.gitattributes`: `* text=auto`
+decides by heuristic, and a zip that gets line-ending normalisation is an unreadable file — the
+suite also asserts the committed container still starts with `PK`. And the `&minus;` sign in the
+HTML fixture is referred to in the test as `chr(0x2212)`, because a literal U+2212 is exactly what
+ruff's RUF001 confusables rule rejects — the same rule that stopped `test_docs_encoding.py` quoting
+its own evidence.
+
+**Rejected alternatives.** *Generating these at test time too* — that is the existing file, and it
+is the thing this one exists to complement. *Asserting current (broken) behaviour* — it reads as
+approval and gives a future fixer nothing. *Fixing the three defects here* — they change every
+affected document's identity; that belongs with a re-ingest plan, not a test commit.
+
+**What it opens.** A decision on all three defects, which is now a single conversation with three
+tripwires attached. Also noted while reading real output: bs4 raises `XMLParsedAsHTMLWarning` on
+EPUB chapters (`extractors.py:152` parses XHTML with the `lxml` HTML parser), and both extractors
+emit long runs of blank lines that nothing collapses.
+
+---
+## 2026-08-20 (4) — the CLI's formatters and the eval harness's one adapter
+
+**What changed.** New `tests/unit/test_commands_formatters.py` (42 tests) and
+`tests/unit/test_eval_adapters.py` (21 tests). `commands.py` was **16%** — the largest single
+uncovered block in `src/` at 215 lines — and `eval/adapters.py` **26%**.
+
+**`commands.py` is the CLI's entire user-facing surface and is almost all pure.** `test_commands.py`
+covered `parse_command` and a few `execute_command` branches; every formatter had nothing. The
+interesting behaviour in them turns out to be **truncation** — six independent caps (authors 50,
+titles 80, keywords 10, citation snippets 120, external references 30, graph nodes 25), each
+deciding how much of the truth the user sees. Where the code reports what it hid, that report is
+now asserted; where a cap changes the output shape entirely, both sides are. Also pinned: health
+grouping is worst-first (a broken document must not sort below a healthy one), a null health lands
+in `unknown` rather than raising, absent optional fields are omitted rather than rendered as empty
+labels, and the mermaid graph escapes double quotes in a filename — an unescaped one ends the label
+early and corrupts the whole diagram.
+
+**`eval/adapters.py` is small but structurally special.** Its own docstring calls it *the only
+module in `doc_assistant.eval` that depends on the rest of `doc_assistant`*, so it is the seam
+Feature 5 cuts along. The two things it owns are both silent-corruption risks rather than crashes:
+a **fresh `TokenCounter` per query** (a leaked one would make every row after the first overstate
+cost while still looking plausible) and the **citation list** that `citation_overlap` — the
+harness's *zero-variance* scorer — reads. Deduplication, first-appearance order, skipping chunks
+with no filename, and `0 tokens -> None` (unknown cost, not free) are now all asserted.
+
+The pipeline is a hand-rolled ~20-line stub, not a `Mock`: it documents the shape an adapter must
+present, and unlike a `Mock` it fails when a refactor changes that shape instead of accepting any
+call at all.
+
+**Rejected alternative.** *Testing `execute_command`'s remaining branches* — they reach SQLite,
+DuckDB and config, so they are integration tests wearing a unit test's clothes. The formatters they
+delegate to are where the logic and the line count both are.
+
+**A tooling trap worth writing down.** `pytest --cov=doc_assistant.eval.adapters` (dotted target)
+**fails at collection** with `ModuleNotFoundError: No module named '_duckdb._sqltypes'`. Coverage
+imports the named module very early, which pulls the `doc_assistant.eval` package and `store.py`'s
+top-level `import duckdb` into a partially-initialised C extension. duckdb 1.5.3 imports fine
+normally and the full suite passes; only that invocation trips. Use `--cov=src/doc_assistant`
+(path form) — which is what the full run uses — and do not go hunting for a duckdb bug.
+
+---
 ## 2026-08-20 (3) — the frontend's largest untested module, tested with the runner already in the repo
 
 **What changed.** New `apps/desktop/src/lib/graph/forceLayout.test.ts` (19 tests). The frontend

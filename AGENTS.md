@@ -23,7 +23,7 @@ Full stack + locked settings: `.claude/CONTEXT.md`.
 
 ## Coordination files (read in this order)
 
-> **All four are local-only working state (ADR-029) — they are not in the repo.** On the dev machine
+> **All of these but the DEVLOG are local-only working state (ADR-029) — they are not in the repo.** On the dev machine
 > they are exactly where this list says; in a fresh clone they do not exist, and this file's
 > Non-negotiables digest is what you get. See `docs/local-only.md`. They also have **no off-machine
 > copy** any more: back up `.claude/` yourself.
@@ -33,6 +33,9 @@ Full stack + locked settings: `.claude/CONTEXT.md`.
 3. `docs/DEVLOG.md` (top entries — newest first) — per-change history. *(Lives in `docs/`, not `.claude/` — do not move or duplicate.)*
 4. `.claude/KNOWN_ISSUES.md` — open weaknesses, recurring failures, workarounds, plus a one-line
    **Resolved** index; closed issues in full at `docs/archive/KNOWN_ISSUES-resolved-001.md`.
+5. `.claude/REVIEWS.md` — when each aspect (docs · backend · frontend · tests · cpc · UX/UI+MCP) was
+   last reviewed as a whole, and what each pass did **not** cover. `never` is a legal value and the
+   most useful one: it marks what nobody has read end to end.
 
 Reference: `docs/ROADMAP.md` · `docs/architecture.md` · `docs/decisions/` (ADRs — living index
 `docs/decisions.md`, ADR-022) · `docs/specs/` · `GLOSSARY.md` (pinned vocabulary) ·

@@ -18,6 +18,146 @@ Format: What changed | Why | Rejected alternatives | What it opens
 > is individually small and correct, so unbounded growth is invisible per commit.
 
 ---
+## 2026-08-21 (2) — the add-documents SPEC, and the accept surface turns out to need a spike first
+
+**What changed.** New `docs/specs/feature-add-documents.md` — the code-level contract for Track A
+(AD1-AD4) and Track C (CS1-CS2) of the ingestion plan, under ADR-046. Contracts per file, 15 test
+cases written before the code, a DoD, the task-level decision ledger from the grill, and an open-
+questions table.
+
+**The finding that reshaped the spec: there is no way to get a filesystem path yet.** Measured
+2026-08-21 — `src-tauri/Cargo.toml` carries **only** `tauri-plugin-shell`; `capabilities/
+default.json` grants `core:default` plus one sidecar-execute permission; and `package.json` has
+exactly **one** runtime dependency (`marked`), which `forceLayout.ts` calls *"a deliberate 1-dep
+artifact"*. So the accept surface is not a UI task sitting on ready infrastructure:
+- a **dialog plugin** means a Rust dependency, a registration, a capability *and* a second npm
+  dependency — which breaks a stated project property, so it is a decision, not a detail;
+- the **Tauri drag-drop event** is believed to carry real paths and may need neither, but that is
+  belief, not evidence;
+- an **HTML `<input type="file">`** is believed insufficient (a webview yields `File` objects with
+  no path, and every contract in the spec is path-based).
+
+Rather than design around a guess, the spec opens with **W0**, a gating spike whose definition of
+done is a working round-trip that prints a real path, plus a note recording the chosen route and
+whether it adds a dependency. **AD1's contracts are marked provisional until W0 lands.** Writing the
+UI first and discovering the path problem during the build is the failure this avoids.
+
+**Contracts recorded** (all additive, all reusing what ships): `SourceFile` gains `root_id` /
+`origin` / `source_sha256` with a new `SourceRoot` table and a `uq(root_id, rel_path)` replacing
+today's `rel_path` key · `registry` goes per-root · a new `library/add.py` splits **`inspect`
+(no mutation)** from **`add` (no extraction)** · `delete_document` gains `delete_file: bool = False`
+per ADR-046 · two API routes that mutate nothing until confirmed · a pure
+`dropzone.svelte.ts` for verdict sorting and pagination, testable under the `node --test` runner the
+repo already has, because the alternative is another untestable component.
+
+**Definition of done includes a corpus fact, deliberately:** not done until an **EPUB and an HTML
+file** have been added and indexed through the UI. The corpus is 97/97 PDF, so those paths are
+otherwise untested in the wild — the same gap that let three extraction defects sit undetected until
+2026-08-20.
+
+**Also recorded, unresolved:** `docs_check --strict` flipped from **0/0 to 15 errors** during this
+session, all of them rule-11a ordering violations in `docs/archive/SESSION-archive-001.md` and
+`-002.md`. Both are gitignored, local-only, and were last written **before** any of today's work;
+neither was touched. The flip is **unexplained** — the gate ran 0/0 six times earlier today with
+those files in their current state. What is *not* in doubt is that the content genuinely is
+oldest-first: `.claude/SESSION.md` records that archive 001 holds *"the pre-convention
+bottom-appended tail"*, so those entries predate the newest-on-top rule. **They should not be
+reordered** — rewriting an append-only historical record to satisfy a linter is the wrong repair.
+Archive 002's header claims "Newest first" while its body is oldest-first, which is a real (small)
+inconsistency worth fixing in the header rather than the body.
+
+---
+## 2026-08-21 — ADR-046: an added document is copied in or referenced in place, and three contracts move
+
+**What changed.** New `docs/decisions/ADR-046-added-documents-copy-or-reference.md`, indexed in
+`docs/decisions.md`, with **ADR-014's row annotated as partially amended**. It records the scoped
+grill's three ADR-class resolutions (`docs/PLAN_2026-08-20_user-friendly-ingestion.md` §8,
+branches 1, 2 and 5) — not one decision, three.
+
+**The decision, and that it overruled the recommendation.** Both modes — copy-in **and**
+reference-in-place — ship in v1. The recommendation was copy-in-first with the reference model
+merely *designed*; the user chose the larger option, and the deciding reason is the part worth
+keeping: **it is the only option that does not make the Zotero adapter a second migration.**
+Copy-in-first would build the copy path, then rebuild `SourceFile`'s key and re-decide delete when
+the adapter arrives. The ADR records the recommendation, the overrule and the reason, because an
+ADR is a record of a decision rather than of who was right.
+
+**Why it is three contracts and not a UI task.** Each was verified in code before being written down:
+- **`SourceFile` becomes `(root, rel_path)`.** It is keyed by `rel_path`, documented *"relative to
+  the source dir"*, with **no root column** — so referencing a file that lives elsewhere is a
+  **schema** change. This is the fact that makes the whole feature bigger than it looks.
+- **ADR-014 is amended.** `delete_document` sends the source to the Recycle Bin **first**. Safe only
+  while the source folder is Provenote's own; with reference-in-place it would take files out of a
+  user's Zotero folder. Delete now asks, defaults to **library-only**, and **must name the real
+  path** when the file is referenced — the accepted risk of a per-delete choice is a mis-click, and
+  showing the destination is what makes the click informed, so it is part of the decision rather
+  than copy-writing. **This absorbs the queued "library-only delete" checklist row**, which was
+  never a separate feature.
+- **Add-time identity becomes `sha256(source bytes)`.** There is no cheap pre-extraction identity
+  today: the duplicate gate is `doc_hash(text)` on the *extracted* text and fires only after
+  `load_or_extract`. Source-hash identity is the direction ADR-042 already chose and RG-027 has yet
+  to build, so the add path **deliberately leads** it. The ADR states the consequence plainly so it
+  is not later read as drift: **two identities coexist until RG-027** — source-hash answers
+  *"already added?"*, `doc_hash(extracted)` answers *"already indexed?"*, and they can disagree.
+
+**Rejected alternatives** (all four options are in the ADR): copy-in only — cheapest, ignores the
+organisation the user already has; reference only — no copy path for users who want the app to own
+its files; copy-in with reference merely designed — the recommendation, kept in the ADR as the
+documented fallback with a note that nothing built for the chosen path is wasted if it is taken.
+
+**What it opens.** The SPEC (`docs/specs/feature-add-documents.md`) is now unblocked and is the next
+artifact; the task-level resolutions (indexing ticked by default, pagination, partial-copy failure)
+are deliberately **not** in the ADR because they change no existing contract, and belong in the
+SPEC's own ledger. RG-030 gates the review sheet's *no text layer* row, not this decision.
+
+---
+## 2026-08-20 (9) — a plan for the one thing the app cannot do: accept a document
+
+**What changed.** New `docs/PLAN_2026-08-20_user-friendly-ingestion.md` — three tracks, wireframes,
+a grill list, and the process route from here to code.
+
+**The finding it is built on.** Provenote indexes a folder well and **cannot accept a document**.
+Grep across `apps/desktop/src` returns no file picker, no drag-and-drop, no upload endpoint
+anywhere; the entire front door is a text box reading *"Paste the full path to the folder holding
+your documents."* Everything downstream of that step already exists and is tested — registry scan,
+selection resolution with up-front validation, background job, status polling, per-file exclude.
+The plan therefore adds one step and reuses `POST /api/ingest` unchanged.
+
+**Two structural facts turned up while measuring, and both change the shape of the feature:**
+1. **`SourceFile` is single-root by construction** — keyed by `rel_path`, *"relative to the source
+   dir"*, with no root column. "Add documents from anywhere" is a **schema** change, not a UI one.
+2. **Delete bins the user's file.** `delete_document` moves the source to the Recycle Bin *first*
+   (ADR-014). Safe today because the folder is Provenote's own; the moment a document can be
+   registered in place, deleting it takes a file out of the user's Zotero folder.
+
+So the innocuous-looking question *"where does an added document live?"* is an ADR with a schema
+consequence and a delete-semantics consequence — **queued as ADR-046**, and it also absorbs the
+separately-queued *"library-only delete"* checklist row, which turns out not to be a separate item
+at all. Recommendation recorded: copy-in for v1, with the reference model *designed* in the ADR so
+the planned Zotero adapter is not later found to be blocked on a decision nobody wrote down.
+
+**A second track that needs no decision.** Making ingestion easy makes KI-47 urgent: the shipped
+installer has no OCR, so a scanned PDF becomes a 0-chunk `broken` document with no explanation.
+Today that is hidden behind a CLI most users never run. The plan detects it **at add time** and
+says so in the review sheet, and notes that Track B beats most of Track A on value if the ADR
+stalls.
+
+**Wireframes are in the plan** (empty state · review sheet · per-file indexing progress · the two
+Settings changes), ASCII so they diff and survive in git. The review sheet is the load-bearing one:
+nothing is copied or indexed before the user sees per-file verdicts, and the unsupported rows carry
+`get_format_status`'s advisory **verbatim** — that string already exists and already names the fix.
+
+**Rejected alternative.** *Writing the spec now.* `docs/ui-checklist.md` says this item "needs a
+grill to scope" and it is right — nine open branches are listed in the plan (duplicate rule, folder
+recursion depth, mid-batch copy failure, batch caps…). Writing a contract over unresolved branches
+is how a spec becomes fiction. Route recorded: **grill-me → ADR-046 → `docs/specs/
+feature-add-documents.md` → ROADMAP/ui-checklist rows → build**.
+
+**Explicitly out of scope**, with owners: P2's LLM-assisted ingestion (quality, not friendliness),
+P7's settings reorganisation (only the folder picker and its relabel are taken here), the Zotero
+adapter, and ADR-039's OCR recovery.
+
+---
 ## 2026-08-20 (7) — a ledger of when each aspect of the project was last actually reviewed
 
 **What changed.** New `.claude/REVIEWS.md`, and a fifth row in `AGENTS.md`'s coordination list

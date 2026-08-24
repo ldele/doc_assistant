@@ -7,15 +7,14 @@ tests close that gap for the two formats where the structure is richest: a real 
 artifacts — regenerate the EPUB only via `make_fixtures.py`, and only when you mean to change what
 is asserted here.
 
-**Three defects are pinned as `xfail(strict=True)`, not asserted away.** They are real extraction
-bugs found by these fixtures; fixing any of them changes `doc_hash` for every affected document
-(ADR-042), so they are decisions rather than patches and none is fixed here. `strict=True` matters:
-the test **fails when the bug is fixed**, so the tripwire tells whoever fixes it to come and update
-the expectation, instead of quietly passing and leaving a stale comment behind. This is the first
-use of xfail in the suite — the alternative was asserting the broken output, which would cement the
-wart as the contract.
+**These fixtures found three real extraction defects, all now FIXED** (2026-08-20, same day).
+They were first pinned as `xfail(strict=True)` while the fix was still a decision; each flipped to
+a failing XPASS the moment `_soup_to_markdown` landed, which is precisely what a strict xfail is
+for. They are plain regression guards below. Fixing them was near-free because the blast radius
+was **zero** — the corpus was 97/97 PDF, and only EPUB and HTML reach this code path, so no
+document needed re-ingesting (ADR-042).
 
-The three:
+The three, kept here because the fixtures exist to keep them fixed:
 
 1. **EPUB emits its own navigation document as prose.** `get_items_of_type(ITEM_DOCUMENT)` returns
    the generated `nav.xhtml` alongside real chapters, so a book's markdown ends with its table of
@@ -156,15 +155,15 @@ def test_html_keeps_link_text_while_dropping_the_href(html_md: str) -> None:
 
 
 # ============================================================
-# Known defects — pinned so a fix trips the tripwire
+# The three defects these fixtures found — FIXED 2026-08-20, now regression guards
 # ============================================================
+#
+# Each of these arrived as `xfail(strict=True)` while the defect stood, and each flipped to a
+# failing XPASS the moment `_soup_to_markdown` landed — which is exactly what the tripwire was
+# for. They are plain assertions now. The blast radius was zero: the corpus was 97/97 PDF, and
+# only EPUB and HTML reach this code path, so nothing needed re-ingesting (ADR-042).
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="DEFECT: get_items_of_type(ITEM_DOCUMENT) includes the generated nav.xhtml, so the "
-    "table of contents is emitted as body prose. Fixing it changes doc_hash (ADR-042).",
-)
 def test_epub_does_not_emit_its_navigation_document_as_prose(epub_md: str) -> None:
     """The book's own TOC should not be indexed as content.
 
@@ -176,22 +175,12 @@ def test_epub_does_not_emit_its_navigation_document_as_prose(epub_md: str) -> No
     assert "A Treatise on Cortical Microcircuits" not in tail
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="DEFECT: only script/style/nav/footer are decomposed, so <head><title> reaches "
-    "get_text() and leads the output. Fixing it changes doc_hash (ADR-042).",
-)
 def test_html_does_not_leak_the_page_title_into_the_body(html_md: str) -> None:
     """`<title>` is site furniture: it carries the journal name and an em dash, and it lands
     above the real `<h1>` where nothing downstream can tell it from an opening sentence."""
     assert "Journal of Synthetic Neuroscience" not in html_md
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="DEFECT: get_text(separator='\\n') breaks a line at every inline tag boundary, so "
-    "<em>/<strong>/<a> shatter sentences. Fixing it changes doc_hash (ADR-042).",
-)
 @pytest.mark.parametrize("fixture_name", ["epub_md", "html_md"])
 def test_inline_markup_does_not_split_a_sentence(
     request: pytest.FixtureRequest, fixture_name: str

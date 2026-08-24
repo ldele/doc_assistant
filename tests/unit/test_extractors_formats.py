@@ -345,3 +345,74 @@ def test_get_format_status_still_advises_on_an_unmapped_extension() -> None:
     assert not supported
     assert advice is not None
     assert ".jpg" in advice
+
+
+# ============================================================
+# `_soup_to_markdown` — the rule EPUB and HTML now share (2026-08-20)
+# ============================================================
+#
+# Unifying the two extractors onto one helper gave EPUB three behaviours it never had: chrome
+# removal, `<head>` removal, and inline-tag unwrapping. Those are asserted here rather than in
+# `test_extraction_fixtures.py`, because reaching them needs chapter markup the committed fixture
+# deliberately does not carry.
+
+
+def _epub_with_chapter_markup(path: Path, body: str) -> Path:
+    from ebooklib import epub
+
+    book = epub.EpubBook()
+    book.set_identifier("id-chapter-markup")
+    book.set_title("Book Title")
+    book.set_language("en")
+    chapter = epub.EpubHtml(title="Ch1", file_name="ch1.xhtml", lang="en")
+    chapter.content = (
+        f"<html><head><title>CHAPTER HEAD TITLE</title></head><body>{body}</body></html>"
+    )
+    book.add_item(chapter)
+    book.toc = (chapter,)
+    book.spine = ["nav", chapter]
+    book.add_item(epub.EpubNcx())
+    book.add_item(epub.EpubNav())
+    epub.write_epub(str(path), book)
+    return path
+
+
+def test_epub_chapter_head_titles_do_not_reach_the_text(tmp_path: Path) -> None:
+    """Real publisher EPUBs put a `<title>` in every chapter's `<head>`; before the shared helper
+    each one landed in the body as a bare line."""
+    path = _epub_with_chapter_markup(tmp_path / "a.epub", "<p>Real body prose.</p>")
+    md = extract_epub(path)
+    assert "Real body prose." in md
+    assert "CHAPTER HEAD TITLE" not in md
+
+
+def test_epub_drops_page_chrome_the_same_way_html_does(tmp_path: Path) -> None:
+    """EPUB never removed script/style/nav/footer — the two extractors held the same rule twice
+    and had drifted. One helper now, so they cannot disagree again."""
+    path = _epub_with_chapter_markup(
+        tmp_path / "a.epub",
+        "<nav>NAV CHROME</nav><p>Body.</p><script>SCRIPT CHROME</script>"
+        "<style>STYLE CHROME</style><footer>FOOTER CHROME</footer>",
+    )
+    md = extract_epub(path)
+    assert "Body." in md
+    for marker in ("NAV CHROME", "SCRIPT CHROME", "STYLE CHROME", "FOOTER CHROME"):
+        assert marker not in md, f"{marker} survived EPUB extraction"
+
+
+def test_epub_keeps_a_sentence_whole_across_inline_markup(tmp_path: Path) -> None:
+    path = _epub_with_chapter_markup(
+        tmp_path / "a.epub", "<p>The <em>Drosophila</em> gene <strong>white</strong> is named.</p>"
+    )
+    lines = extract_epub(path).splitlines()
+    assert any("Drosophila" in line and "white" in line for line in lines)
+
+
+def test_block_elements_still_separate_after_inline_unwrapping(tmp_path: Path) -> None:
+    """The guard on the fix: `separator="\n"` is what keeps paragraphs and list items apart, so
+    unwrapping inline tags must not let two blocks run together into one line."""
+    path = _write_html(tmp_path / "a.html")
+    lines = [line for line in extract_html(path).splitlines() if line.strip()]
+    assert any(line.strip() == "More prose." for line in lines), (
+        "a block element merged into its neighbour"
+    )

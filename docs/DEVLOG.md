@@ -267,6 +267,52 @@ P7's settings reorganisation (only the folder picker and its relabel are taken h
 adapter, and ADR-039's OCR recovery.
 
 ---
+## 2026-08-20 (8) — the three extraction defects are fixed, and the tripwires fired on cue
+
+**What changed.** `extractors.py`: a new `_soup_to_markdown` helper, shared by `extract_epub` and
+`extract_html`. All three defects found by the committed fixtures are fixed; the four
+`xfail(strict=True)` markers are gone and their tests are plain regression guards.
+
+**Fixed at zero cost, because the blast radius was measured first.** The corpus is **97 documents,
+97 PDF — zero EPUB, zero HTML**. Only those two formats reach the BeautifulSoup path (PDF goes
+through PyMuPDF4LLM, DOCX/ODT/RTF through their own libraries), so **no document needed
+re-ingesting**. Entries (1) and (5) deferred these as "decisions, not patches" on the ADR-042
+re-ingest cost — correct in general, but that cost is *currently zero* and only ever grows. Doing it
+before ingestion gets easy is the cheapest this will ever be.
+
+**The fixes.**
+- **EPUB nav** — skip `EpubNav` items in the `ITEM_DOCUMENT` loop. The generated navigation
+  document is a manifest item like any other, which is why it was being emitted as body prose.
+- **`<head>`** — added to the decompose list, so a page or chapter `<title>` can no longer land
+  above the real `<h1>` as a bare line.
+- **Inline fragmentation** — `unwrap()` every inline tag, then `soup.smooth()`, *then* `get_text`.
+  The separator stays `
+`: it is what keeps `<p>`, `<li>` and headings apart, and changing it
+  would have run blocks together. **`smooth()` is the load-bearing call** — without it the newline
+  simply moves from the tag boundary to the boundary between the adjacent text nodes an unwrap
+  leaves behind, and nothing improves.
+
+**One helper, not two.** The two extractors held the same rule twice and **had already drifted** —
+HTML dropped page chrome and EPUB did not. That is the exact shape of the ADR-013 display bug fixed
+on 2026-08-19, so unifying them was the point rather than a tidy-up. EPUB consequently gains chrome
+removal and `<head>` removal it never had; three new tests pin that, using chapter markup the
+committed fixture deliberately does not carry.
+
+**The strict xfails did their job.** All four flipped to failing XPASS the moment the helper landed
+— the suite refused to let a fixed defect sit behind a stale marker. Converting them to plain
+assertions was the mechanical last step, which is precisely the workflow `strict=True` exists to
+force.
+
+**Also pinned:** that block elements *still* separate after inline unwrapping. That is the one way
+this fix could have gone wrong, so it is asserted rather than assumed.
+
+**What it opens.** `extract_epub` still parses XHTML with the `lxml` **HTML** parser
+(`XMLParsedAsHTMLWarning`, two per run) — correct output today, but a parser choice nobody has
+decided. Both extractors still emit long runs of blank lines that nothing collapses. And the
+fixtures now guard formats the live corpus does not contain, which is the point: the guard is in
+place *before* the first EPUB arrives.
+
+---
 ## 2026-08-20 (7) — a ledger of when each aspect of the project was last actually reviewed
 
 **What changed.** New `.claude/REVIEWS.md`, and a fifth row in `AGENTS.md`'s coordination list

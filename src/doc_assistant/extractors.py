@@ -136,6 +136,45 @@ def _recover_lost_page(doc: _PagedDoc, page_num: int, page_md: str) -> str:
     return raw
 
 
+# Page furniture rather than content. `head` matters as much as the rest: `get_text()` reaches it,
+# so a page `<title>` otherwise lands above the real `<h1>` as a bare line that nothing downstream
+# can distinguish from an opening sentence.
+_NON_CONTENT_TAGS = ("head", "script", "style", "nav", "footer")
+
+# Inline elements — their boundaries sit *inside* a sentence. `get_text(separator="\n")` emits a
+# newline at every tag boundary, so `must not <strong>split</strong> it` arrives as three lines;
+# unwrapping them first removes the boundary rather than trying to repair the text afterwards.
+# The separator itself has to stay `\n`: it is what keeps `<p>`, `<li>` and headings apart.
+_INLINE_TAGS = (
+    "a", "abbr", "b", "cite", "code", "em", "i", "mark",
+    "q", "s", "small", "span", "strong", "sub", "sup", "u",
+)  # fmt: skip
+
+
+def _soup_to_markdown(soup: BeautifulSoup) -> str:
+    """Reduce parsed HTML to markdown-ish text. Shared by the EPUB and HTML extractors.
+
+    One function on purpose. These two extractors held the same rule twice and had already drifted
+    apart — HTML dropped page chrome and EPUB did not — which is the shape of the ADR-013 display
+    bug (2026-08-19): a rule written twice is a rule that disagrees with itself.
+
+    Order matters. Chrome goes first so its text can never reach the output; headings are converted
+    while they are still elements; inline tags are unwrapped and the tree smoothed **last**, so the
+    adjacent text nodes an unwrap leaves behind are merged into one before ``get_text`` sees them.
+    Without ``smooth()`` the newline simply moves from the tag boundary to the string boundary.
+    """
+    for tag in soup(list(_NON_CONTENT_TAGS)):
+        tag.decompose()
+    for level in range(1, 7):
+        for tag in soup.find_all(f"h{level}"):
+            tag.replace_with(f"\n{'#' * level} {tag.get_text()}\n")
+    for name in _INLINE_TAGS:
+        for tag in soup.find_all(name):
+            tag.unwrap()
+    soup.smooth()
+    return str(soup.get_text(separator="\n").strip())
+
+
 def extract_epub(epub_path: Path) -> str:
     """Extract EPUB to markdown by parsing inner HTML."""
     from ebooklib import ITEM_DOCUMENT, epub
@@ -149,13 +188,11 @@ def extract_epub(epub_path: Path) -> str:
         parts.append(f"# {title[0][0]}\n")
 
     for item in book.get_items_of_type(ITEM_DOCUMENT):
-        soup = BeautifulSoup(item.get_content(), "lxml")
-        # Convert headings to markdown
-        for level in range(1, 7):
-            for tag in soup.find_all(f"h{level}"):
-                tag.replace_with(f"\n{'#' * level} {tag.get_text()}\n")
-        # Get clean text from remaining content
-        text = soup.get_text(separator="\n").strip()
+        # The generated navigation document is a manifest item like any other, so this loop would
+        # otherwise emit the book's own table of contents as body prose.
+        if isinstance(item, epub.EpubNav):
+            continue
+        text = _soup_to_markdown(BeautifulSoup(item.get_content(), "lxml"))
         if text:
             parts.append(text)
 
@@ -164,15 +201,9 @@ def extract_epub(epub_path: Path) -> str:
 
 def extract_html(html_path: Path) -> str:
     """Extract HTML to markdown-ish text."""
-    soup = BeautifulSoup(html_path.read_text(encoding="utf-8", errors="ignore"), "lxml")
-    # Remove scripts and styles
-    for tag in soup(["script", "style", "nav", "footer"]):
-        tag.decompose()
-    # Convert headings
-    for level in range(1, 7):
-        for tag in soup.find_all(f"h{level}"):
-            tag.replace_with(f"\n{'#' * level} {tag.get_text()}\n")
-    return soup.get_text(separator="\n").strip()
+    return _soup_to_markdown(
+        BeautifulSoup(html_path.read_text(encoding="utf-8", errors="ignore"), "lxml")
+    )
 
 
 def extract_docx(docx_path: Path) -> str:

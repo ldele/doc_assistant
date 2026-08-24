@@ -18,6 +18,115 @@ Format: What changed | Why | Rejected alternatives | What it opens
 > is individually small and correct, so unbounded growth is invisible per commit.
 
 ---
+## 2026-08-24 — AD3a: documents can be added for real, and the live test caught what the type gate could not
+
+**What changed.** `apply_add` / `undo_add` in `library/add.py`, the `origin` column + migration,
+`POST /api/documents/add` and `/undo-add`, and the review sheet's primary action. **A document can
+now be dropped into Provenote and land in the library.**
+
+**Scoped as AD3a, and the split is a finding rather than a shortcut.** ADR-046 chose *both*
+placement modes for v1. The schema half of reference-in-place is cheap — `source_roots` is a new
+table (`create_all` covers it), `root_id` is additive, and `rel_path`'s uniqueness turns out to be
+a **separate unique index** (`ix_source_files_rel_path`), so it can be swapped without a table
+rebuild. **The cost is the call sites:** `scan_sources`, `derive_status`, `resolve_selection` and
+`list_sources` are all keyed on a bare root-relative path and each needs the root dimension first.
+That is AD3b. ADR-046 is unchanged.
+
+**`reference` is accepted and refused, not silently downgraded.** `apply_add` raises
+`NotImplementedError`, the API answers **501**, and the sheet shows the radio **disabled with the
+reason**. Hiding the option would misrepresent the decision; enabling it would copy files to a
+place the user did not choose. Pinned by a test asserting the refusal is *total* — no copy lands
+under any name.
+
+**The failure story is the honest half (grill branch 6).** `apply_add` stops at the first failure
+and returns `added` / `failed` / **`not_attempted`** — the files after the failure were never
+touched, and reporting them as "skipped" would be a lie. The sheet then offers *Keep the N* or
+*Undo all*. `undo_add` deletes outright rather than binning (ADR-014): these are copies the app
+made seconds ago and the user is rejecting, so nothing is at risk — and it **refuses any row whose
+`origin` is not `copied`**, which is the ADR-014 amendment enforced where it cannot be forgotten.
+
+**A name collision does not overwrite.** Two different papers can share a filename, and ADR-043
+keeps received content verbatim, so a second `paper.pdf` becomes `paper-2.pdf`. Byte-identical
+files never reach here — those are AD2 `duplicate` verdicts.
+
+**Indexing is not done inside `apply_add`.** It is a separate call to the existing
+`POST /api/ingest` with an explicit `paths` list (spec constraint 4), so the system keeps one
+ingest path rather than two. The sheet indexes **only what actually landed**, never what a stopped
+run failed to reach.
+
+**⚠ THE LIVE TEST EARNED ITS KEEP: the sheet unmounted before the user could see the outcome.**
+`onAdded` cleared the staged paths, and the staged paths are also what keep the sheet mounted — so
+on success the sheet vanished mid-flow and **the Undo button was unreachable**. svelte-check was
+green, 39 backend tests were green, and the bug was invisible to both. Clearing now belongs to
+`onClose`. This is `apps/desktop/CLAUDE.md`'s "the type gate is not the run gate" rule paying for
+itself twice in three days.
+
+**Verified against the real library, and it was left exactly as found.** Baseline 97 documents /
+97 source_files / 97 files on disk. Staged one throwaway file **with indexing switched off** (so
+nothing reached Chroma), added it — copy on disk, row with `origin='copied'` and a hash, documents
+still 97 — then undid it through the UI. **Final state: 97 / 97 / 97, no probe row, no probe
+file.**
+
+**What it opens.** AD3b (reference-in-place) with the call-site work named above. AD4 (the empty
+state). RG-030 still gates AD2's fourth verdict. And the `[+ Add documents]` button placement is
+still open — recommendation on record: the Library header row with Sort/Grid/List/Select, plus an
+app-menu entry for the Chat case.
+
+---
+## 2026-08-21 (5) — AD2: the review sheet, and a duplicate check that does not read the library
+
+**What changed.** `src/doc_assistant/library/add.py` (new), `POST /api/documents/inspect`, the
+`source_sha256` column + its migration, `AddDocuments.svelte`, and the wire types/client for both.
+**2,055 python tests** (was 2,029 — the 26 added here) - **145 frontend** - svelte-check 205/0 -
+mypy `src` 92/0 - ruff clean.
+
+**The design point worth keeping: size is the discriminator, sha256 only ever confirms.** ADR-046
+made add-time identity the sha256 of the source bytes, and the obvious implementation hashes every
+registered file on every inspect — hundreds of megabytes at 97 documents, for a question that is
+almost always "no". Instead `inspect` builds a `{size: [rows]}` index from the registry's
+**already-scanned** `size` column and hashes only rows whose byte length a candidate actually
+matches. In the common case the library is never read at all. **Asserted by counting reads**, not
+by trusting the comment: `test_no_registered_file_is_hashed_when_no_size_matches` monkeypatches
+`sha256_file` and requires an empty call list.
+
+**`source_sha256` needed a real migration, not `create_all`.** `source_files` already exists in
+every live database, and `create_all` never ALTERs an existing table (`migrations.py:33` says so).
+Registered in `_ADDITIVE_COLUMNS` with an index, and **applied to the live library** — the column
+lands NULL everywhere and is deliberately **not backfilled**: filling it means reading every source
+file, and the cache fills itself on exactly the paths that need it. NULL reads as *"not computed
+yet"*, never as *"not a duplicate"* — the size index decides what gets compared, so the two cannot
+be confused.
+
+**`inspect` and `apply` are two endpoints so constraint 2 stays structural.** Nothing is copied,
+registered or indexed before the sheet is confirmed; `inspect`'s only write is the hash cache on
+rows it already had to read. Asserted at both levels — unit
+(`test_inspect_adds_no_registry_rows`) and over the wire (`test_inspecting_registers_nothing`).
+
+**The no-text-layer verdict is deliberately absent.** RG-030 gates it and its cost across a
+500-file batch is unmeasured; shipping it on a guess is the thing that entry exists to prevent.
+The other three verdicts do not need it.
+
+**AD2 stops at reviewing, and the sheet says so.** No disabled "Add" to nowhere — copy-vs-reference
+and indexing are AD3. The `advisory` string is rendered **verbatim** from `get_format_status`; the
+frontend never re-derives which formats are supported, because that list in a second language is
+the ADR-013 shape.
+
+**Verified live against the real API** (5 real paths, one nonexistent):
+`5 files - 3 would be added`, rows ordered **unsupported, unreadable, then the three adds** —
+grill branch 7 holding in the running UI — with *"Format .toml is not supported."* passed through
+untouched. Sheet closed and staged state cleared, so the app was left as found.
+
+**Two incidentals worth writing down.** The API runs without `--reload`, so a newly added route
+**404s until the server is restarted** — the sheet's error branch surfaced it correctly rather than
+spinning, which is how it was caught. And `Icon.svelte`'s `IconName` is declared in the instance
+script, so it **cannot be imported**; a narrower literal union at the call site is the fix, not a
+change to Icon.
+
+**What it opens.** AD3 (copy/register + index) is next and needs the multi-root schema from
+ADR-046. RG-030 still gates the fourth verdict. The `[+ Add documents]` button's placement is under
+discussion — it does not affect this sheet, which is why AD2 proceeded.
+
+---
 ## 2026-08-21 (2) — the add-documents SPEC, and the accept surface turns out to need a spike first
 
 **What changed.** New `docs/specs/feature-add-documents.md` — the code-level contract for Track A

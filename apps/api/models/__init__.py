@@ -90,7 +90,14 @@ from apps.api.models.library import (
 )
 from apps.api.models.references import DocReferencesPayload, ReferencePayload
 from apps.api.models.settings import SettingsUpdate
-from apps.api.models.sources import IngestRequest, SourceFilePayload, SourcePatch
+from apps.api.models.sources import (
+    FileVerdictPayload,
+    IngestRequest,
+    InspectRequest,
+    InspectResponse,
+    SourceFilePayload,
+    SourcePatch,
+)
 from apps.api.models.taxonomy import (
     FieldDetailPayload,
     FieldMemberPayload,
@@ -127,6 +134,7 @@ __all__ = [
     "ExportRequest",
     "FieldDetailPayload",
     "FieldMemberPayload",
+    "FileVerdictPayload",
     "FolderCreate",
     "FolderMembers",
     "FolderRename",
@@ -136,6 +144,8 @@ __all__ = [
     "GraphStalenessPayload",
     "HierarchyEdgeRequest",
     "IngestRequest",
+    "InspectRequest",
+    "InspectResponse",
     "KeywordFamilyCreate",
     "KeywordFamilyMember",
     "KeywordFamilyPayload",

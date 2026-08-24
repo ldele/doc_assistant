@@ -983,6 +983,21 @@ class SourceFile(Base):
     # --files/paths pick overrides it). The one field that genuinely needs persistence.
     excluded: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
+    # ADR-046: identity for the *add* question ("do I already have these bytes?"), as opposed to
+    # `Document.doc_hash`, which is over the EXTRACTED text and answers "already indexed?". The two
+    # deliberately coexist until RG-027 collapses them, and they can disagree.
+    #
+    # Nullable and lazily filled: rows predating AD2 have never been hashed, and `library/add.py`
+    # only ever fills a row it already had to read to answer a duplicate question. A NULL here
+    # means "not yet computed", never "no duplicate" — the size index decides what gets hashed.
+    source_sha256: Mapped[str | None] = mapped_column(String, nullable=True, default=None)
+
+    # ADR-046 - did the app copy this file in, or is it referencing the user's own? It decides
+    # what delete may do: a *referenced* original must never be binned (ADR-014 is amended for
+    # exactly this). Defaults to 'copied' because every row predating AD3 lives under the source
+    # dir by construction, so the backfill value is the truth rather than a guess.
+    origin: Mapped[str] = mapped_column(String, nullable=False, default="copied")
+
     first_seen: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
     # Refreshed to now on every scan that still sees the file; a vanished file keeps its old
     # last_seen and derives `missing`.

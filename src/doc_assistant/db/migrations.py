@@ -71,6 +71,18 @@ _ADDITIVE_COLUMNS: list[tuple[str, str, str, str | None]] = [
     # every pre-increment-3 edge is the ANZSRC seed or a user edit, i.e. curated — a proposal
     # cannot predate the pass that makes them. Unindexed: read with the row, never filtered on.
     ("concept_hierarchy", "origin", "VARCHAR NOT NULL DEFAULT 'curated'", None),
+    # ADR-046 / AD2 — source-bytes identity on the (pre-existing) source_files table. NULL on
+    # every existing row and deliberately NOT backfilled: filling it means reading every source
+    # file, and `library/add.py` only hashes a row when a candidate's *size* already matches, so
+    # the cache fills itself on the paths that actually need it. NULL reads as "not computed
+    # yet", never as "not a duplicate" — the size index, not this column, decides what is
+    # compared. Indexed: the duplicate lookup is per-candidate on every inspect.
+    ("source_files", "source_sha256", "VARCHAR", "ix_source_files_source_sha256"),
+    # ADR-046 / AD3 - copied-vs-referenced provenance on source_files. The literal DEFAULT
+    # backfills every existing row in the same ALTER (KI-25 discipline): every pre-AD3 row was
+    # discovered by scanning the source dir, so it IS a copy - a fact, not an assumption.
+    # NOT NULL is legal because the DEFAULT supplies the backfilled value.
+    ("source_files", "origin", "VARCHAR NOT NULL DEFAULT 'copied'", None),
 ]
 
 

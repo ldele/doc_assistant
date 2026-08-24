@@ -13,6 +13,7 @@ from pydantic import BaseModel
 
 if TYPE_CHECKING:
     from doc_assistant.ingest.registry import SourceView as RegistrySourceView
+    from doc_assistant.library.add import FileVerdict
 
 
 class IngestRequest(BaseModel):
@@ -55,3 +56,96 @@ class SourceFilePayload(BaseModel):
             excluded=v.excluded,
             doc_type=v.doc_type,
         )
+
+
+class InspectRequest(BaseModel):
+    """POST /api/documents/inspect body (AD2). Absolute paths from the drop or the picker.
+
+    Directories are allowed and expand recursively server-side — the client never walks a folder,
+    because the recursion rule belongs with `registry.scan_sources`, not in two places.
+    """
+
+    paths: list[str]
+
+
+class FileVerdictPayload(BaseModel):
+    """What the review sheet renders for one candidate. Mirrors ``library.add.FileVerdict``.
+
+    ``advisory`` is passed through verbatim from ``get_format_status`` for unsupported files, so
+    the UI never rewrites the sentence that names the conversion target.
+    """
+
+    path: str
+    name: str
+    verdict: str
+    size: int | None
+    sha256: str | None
+    advisory: str | None
+    duplicate_of: str | None
+    selected_by_default: bool
+
+    @classmethod
+    def from_verdict(cls, v: FileVerdict) -> FileVerdictPayload:
+        return cls(
+            path=v.path,
+            name=v.name,
+            verdict=v.verdict,
+            size=v.size,
+            sha256=v.sha256,
+            advisory=v.advisory,
+            duplicate_of=v.duplicate_of,
+            selected_by_default=v.selected_by_default,
+        )
+
+
+class InspectResponse(BaseModel):
+    """Verdicts plus the counts the sheet's header states.
+
+    Already sorted: every non-``add`` verdict precedes every ``add`` (grill branch 7), so a
+    paginated first page always carries the warnings, duplicates and unsupported files, and
+    "and N more" only ever means clean ones.
+    """
+
+    files: list[FileVerdictPayload]
+    counts: dict[str, int]
+
+
+class AddRequest(BaseModel):
+    """POST /api/documents/add body (AD3).
+
+    ``mode`` is ADR-046's placement choice. ``reference`` is decided but unbuilt (AD3b) and is
+    refused with a 501 rather than quietly copying — a silent fallback would put the user's files
+    somewhere they did not choose.
+    """
+
+    paths: list[str]
+    mode: str = "copy"
+
+
+class AddOutcomePayload(BaseModel):
+    """What happened to one file. Per-file, never a batch total."""
+
+    path: str
+    name: str
+    ok: bool
+    rel_path: str | None
+    error: str | None
+
+
+class AddResultPayload(BaseModel):
+    """Applied, failed, and — the honest half — never attempted.
+
+    The run stops at the first failure (grill branch 6), so files after it were not skipped by
+    choice; naming them separately is what lets the UI offer *Keep the N* / *Undo all* truthfully.
+    """
+
+    added: list[AddOutcomePayload]
+    failed: AddOutcomePayload | None
+    not_attempted: list[str]
+    stopped_early: bool
+
+
+class UndoAddRequest(BaseModel):
+    """POST /api/documents/undo-add body — the ``rel_path``s a just-completed add reported."""
+
+    rel_paths: list[str]

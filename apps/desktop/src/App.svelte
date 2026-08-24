@@ -43,6 +43,8 @@
   import SourcePanel from './lib/chat/SourcePanel.svelte'
   import Sidebar from './lib/shell/Sidebar.svelte'
   import LibraryPane from './lib/library/LibraryPane.svelte'
+  import Icon from './lib/shell/Icon.svelte'
+  import AddDocuments from './lib/library/AddDocuments.svelte'
   import LibraryGrid from './lib/library/LibraryGrid.svelte'
   import LibraryKeywordFilter from './lib/library/LibraryKeywordFilter.svelte'
   import LibraryManageKeywords from './lib/library/LibraryManageKeywords.svelte'
@@ -105,6 +107,12 @@
   // Shell chrome state (leaf module — imports no sibling state). Phase 2 lets the pane components
   // import this directly instead of taking ~20 props each.
   import { shell } from './lib/shell/shell.svelte'
+  import {
+    accept,
+    clearPending,
+    watchDrops,
+  } from './lib/library/accept.svelte'
+  import { previewNames, remainderLabel, summarise } from './lib/library/accept'
   import { backoffDelayMs, startupPhase } from './lib/shell/startup'
   import {
     chat,
@@ -349,6 +357,22 @@
       sameCollection(a.collection, b.collection)
     )
   }
+  // AD1 — window-level drag-drop. Tauri intercepts the OS drag before the DOM sees it, so this
+  // is the only route to real paths; in a browser `watchDrops` subscribes to nothing and the
+  // returned teardown is a no-op, so no branch is needed here.
+  // AD2 — the review sheet. Opens itself when files arrive: a user who just dropped a folder
+  // has already asked the question, so making them find a button would be a second ask.
+  //
+  // The staged paths are ALSO what keep the sheet mounted, so clearing them belongs to
+  // `onClose`, never to `onAdded`: clearing on success unmounted the sheet before the outcome
+  // (and the Undo button) could be seen. Caught by the AD3 live test, invisible to svelte-check.
+  let reviewingAdd = $state(false)
+  $effect(() => {
+    if (accept.pending.length > 0) reviewingAdd = true
+  })
+
+  $effect(() => watchDrops())
+
   $effect(() => {
     // Tracked reads (the deps): a change to any of these is a navigation.
     const entry: NavEntry = {
@@ -968,6 +992,18 @@
 {/snippet}
 
 <div class="app" class:collapsed={sidebarPrefs.collapsed} style="--sidebar-width: {sidebarPrefs.width}px">
+  <!-- AD1: the drop target is the whole window, because a user dragging a paper has no reason to
+       aim. It is presentational only — `accept.dragging` is driven by tauri://drag-enter/leave and
+       never appears in a browser, where those events do not exist. -->
+  {#if accept.dragging}
+    <div class="dropveil" aria-hidden="true">
+      <div class="dropcard">
+        <Icon name="plus" size={22} />
+        <strong>Drop to add documents</strong>
+        <span>PDF · EPUB · HTML · DOCX · MD · ODT · RTF</span>
+      </div>
+    </div>
+  {/if}
   <!-- Unified top toolbar (browser-chrome shell): one bar across the whole window carrying the app
        menu, sidebar toggle, back/forward, brand, the mode tabs, and search/settings — the pattern
        replaces the old split of mode-pills-in-sidebar + actions-in-header. -->
@@ -981,6 +1017,34 @@
     exportDisabled={viewing === null && resumedHistory === null && chat.turns.length === 0}
     onExport={doExport}
   />
+
+  <!-- AD1 ends here on purpose: files are STAGED, never applied. The review sheet that turns
+       these into per-file verdicts is AD2, and copy/register/index is AD3. Showing the count and
+       the names (rather than a disabled "Continue") keeps this build node honest — it reports
+       exactly what it can do. -->
+  {#if accept.pending.length > 0}
+    <div class="staged" role="status">
+      <Icon name="file-text" size={15} />
+      <strong>{summarise(accept.pending)}</strong>
+      <span class="stagednames">
+        {previewNames(accept.pending).join(' · ')}
+        {#if remainderLabel(accept.pending)}<em>{remainderLabel(accept.pending)}</em>{/if}
+      </span>
+      <button class="stagedreview" onclick={() => (reviewingAdd = true)} type="button">Review</button>
+      <button class="stagedclear" onclick={clearPending} type="button">Clear</button>
+    </div>
+  {/if}
+
+  {#if reviewingAdd && accept.pending.length > 0}
+    <AddDocuments
+      paths={accept.pending}
+      onClose={() => {
+        reviewingAdd = false
+        clearPending()
+      }}
+      onAdded={() => void refreshDocuments()}
+    />
+  {/if}
 
   <div class="below">
   <Sidebar
@@ -1298,6 +1362,76 @@
     display: flex;
     justify-content: center;
     overflow: hidden;
+  }
+  /* ---- AD1 accept surface ---- */
+  .dropveil {
+    position: fixed;
+    inset: 0;
+    z-index: 60;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: color-mix(in srgb, var(--bg) 78%, transparent);
+    pointer-events: none;
+  }
+  .dropcard {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 2rem 3rem;
+    border: 2px dashed var(--accent);
+    border-radius: 12px;
+    background: var(--bg);
+    color: var(--accent);
+    box-shadow: var(--shadow-2);
+  }
+  .dropcard span {
+    font-size: var(--text-meta);
+    color: var(--fg-2);
+  }
+  .staged {
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 0.7rem;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+    font-size: var(--text-sm);
+  }
+  .stagednames {
+    color: var(--fg-2);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .stagednames em {
+    font-style: normal;
+    opacity: 0.75;
+  }
+  .stagedreview {
+    margin-left: auto;
+    flex: none;
+    background: var(--accent);
+    border: 1px solid var(--accent);
+    border-radius: 999px;
+    padding: 0.2rem 0.8rem;
+    font: inherit;
+    font-size: var(--text-meta);
+    color: var(--accent-fg);
+    cursor: pointer;
+  }
+  .stagedclear {
+    flex: none;
+    background: none;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 0.2rem 0.7rem;
+    font: inherit;
+    font-size: var(--text-meta);
+    color: var(--fg-2);
+    cursor: pointer;
   }
   main {
     width: 100%;

@@ -18,6 +18,92 @@ Format: What changed | Why | Rejected alternatives | What it opens
 > is individually small and correct, so unbounded growth is invisible per commit.
 
 ---
+## 2026-08-24 (3) — the W0 assertions run in a real Tauri window, and the spec's own expectation was wrong
+
+**What changed.** `docs/specs/feature-add-documents.md` §W0 gains the runtime result. No code
+changed — a temporary probe was added, run, and removed (`svelte-check` back to 205/0, no residue).
+
+**How a devtools-only check was run without devtools.** A Tauri window's console is not reachable
+from an agent session, so the two §W0 one-liners could not simply be pasted anywhere. The probe
+executed them inside the webview and **reported by pinging the API with the payload in a query
+string** — uvicorn logs every request path, so the answer came back through the server log. The
+app's CSP already allows `connect-src http://127.0.0.1:8001`, so this needed no config change.
+
+**Result, and both assertions pass:**
+```json
+{"tauriKeys": ["app","core","dpi","event","image","menu","mocks","path","tray",
+               "webview","webviewWindow","window"],
+ "isTauri": true, "canReceiveDrops": true, "canPickFiles": true,
+ "listenOk": true, "listenError": null, "href": "http://localhost:1420/"}
+```
+`withGlobalTauri` injects the API · `listen('tauri://drag-drop')` registers · the picker is
+reachable · and `href` proves the window loaded **this** app rather than the other project that
+periodically owns 1420 — the exact confusion §W0 warned about.
+
+**⚠ The run falsified an expectation I had written into the spec.** §W0 said to expect `dialog`
+among `Object.keys(window.__TAURI__)`. **It is absent** — `tauri-plugin-dialog` registers itself
+with `Object.defineProperty`, which defaults to **`enumerable: false`**, so the plugin is present
+and fully working (`canPickFiles: true`) while invisible to `Object.keys`. A future reader
+following the old instruction would have concluded the plugin failed to register and gone looking
+for a bug that does not exist. The corrected probe is
+`typeof window.__TAURI__.dialog?.open === "function"`.
+
+**Still unproven, and stated as such:** that a real OS drag delivers a **non-empty `paths` array**.
+The *subscription* is now confirmed at runtime and the *payload shape* from
+`tauri/src/manager/window.rs`; the gap is one human drag, which no probe can perform.
+
+**A stale comment found in passing.** `lib.rs` says *"in dev there is no frozen binary (run the
+backend separately with `just api`)"* — but a `binaries/doc-assistant-api` sidecar exists on this
+machine, so `tauri dev` spawned it and it failed to bind 8001 against the already-running dev API.
+Non-fatal by design; the comment is simply out of date, and the port clash is confusing if
+unexpected.
+
+**Rejected alternative.** *Declaring W0 done on the source evidence alone* — the sources were
+right about the mechanism and wrong about what the check would look like, which is precisely the
+difference between reading a contract and exercising it.
+
+**What it opens.** The Tauri question no longer blocks a merge. What remains is a judgment call:
+the feature is deliberately partial (AD3b, AD4 unbuilt) and nothing is committed.
+
+---
+## 2026-08-24 (2) — the Add-documents button moves to the Library header row
+
+**What changed.** `[+ Add documents]` leaves the app toolbar and joins the Library header row
+(`LibraryPane.svelte`, `.libnav`) beside Sort / View / Select. An **"Add documents…" entry is added
+to the app menu** so the action stays reachable from Chat.
+
+**Why (user's call, and the reasoning is worth keeping).** Three things pointed the same way:
+- The toolbar's right cluster is **identity + config by design** — `Topbar.svelte` says it in a
+  comment: *"Brand = identity anchor only (small mark + wordmark), parked on the right beside
+  Settings."* Everything else in that bar is navigation. An action there was the odd one out, and
+  had to be styled like chrome to fit — exactly wrong for a pane's primary action.
+- It acts on the Library's content, and that row already holds the document actions.
+- **Not** the keyword row: that is the facet bar, and "Filter by keyword" is a filter, not an
+  action. Mixing a create-action into a filter row mixes two grammars.
+
+**The cost was named before the move and is mitigated, not ignored.** In the toolbar the button was
+reachable from Chat; in the pane it is not. The app-menu entry costs no new chrome and restores
+that reach — and window-wide drag-drop was never mode-specific anyway. Without it the move would
+have been a straight loss of capability from one mode.
+
+**Now a filled accent button** rather than toolbar chrome — which is the point of the move. It
+still degrades the same way outside the Tauri window: **visible, disabled, and saying why**
+(*"Adding documents works in the desktop app."*), because hiding it would make a browser look like
+a missing feature.
+
+**Verified live, and one trap re-encountered.** First geometry read came back with every
+coordinate near zero and `Select` apparently absent — because the Browser pane was hidden and
+`window.innerWidth` was **0**, exactly as `apps/desktop/CLAUDE.md` warns ("a hidden pane collapses
+it to 0"). Forcing a 1280 viewport gave the real numbers: **Sort 941 · View 980 · Select 1053 ·
+Add 1132**, all on one row, Add last and right-aligned; disabled styling computed correctly
+(`--surface` background, opacity 0.7, `--text-sm`). The structural check (`.libnav` children:
+`crumbs · libsort · viewtoggle · selecttoggle · addbtn`) was valid either way and is what confirmed
+the placement while the geometry was garbage.
+
+**Gates:** svelte-check 205/0 · 145 frontend · 39 add-documents tests. Wireframe screen 1 still
+shows the button in the toolbar and is now **out of date** — it needs the same move.
+
+---
 ## 2026-08-24 — AD3a: documents can be added for real, and the live test caught what the type gate could not
 
 **What changed.** `apply_add` / `undo_add` in `library/add.py`, the `origin` column + migration,
@@ -125,6 +211,110 @@ change to Icon.
 **What it opens.** AD3 (copy/register + index) is next and needs the multi-root schema from
 ADR-046. RG-030 still gates the fourth verdict. The `[+ Add documents]` button's placement is under
 discussion — it does not affect this sheet, which is why AD2 proceeded.
+
+---
+## 2026-08-21 (4) — AD1: the app can accept a document, and the CSS trap from 2026-08-19 fired again
+
+**What changed.** The accept surface. `withGlobalTauri: true`, the dialog plugin, a `[+ Add
+documents]` button beside Settings, a window-wide drop target, and a staged-files summary. **145
+frontend tests** (was 127), svelte-check 202/0, `cargo check` exit 0.
+
+**Config (W0's route, applied).** `tauri.conf.json` gains `withGlobalTauri: true`; `Cargo.toml`
+gains `tauri-plugin-dialog = "2"`; `lib.rs` registers it; `capabilities/default.json` grants
+**`dialog:allow-open`** and nothing more — the plugin's own `dialog:default` would also grant
+`message` and `save`, which nothing uses. **No npm dependency was added**; the frontend is still a
+1-dep artifact.
+
+**A config comment nearly broke the build.** The first attempt documented the flag with a
+`"_comment_withGlobalTauri"` key. `tauri-utils`' `AppConfig` is `#[serde(deny_unknown_fields)]`
+(`config.rs:3006`), so that would have failed to parse at build time — caught by checking the
+struct rather than by waiting for the compiler. **`tauri.conf.json` takes no comments;** the
+rationale lives in the spec and here.
+
+**Code.** `lib/core/tauri.ts` is the **only** module allowed to touch `window.__TAURI__`, and every
+export degrades instead of throwing: outside the Tauri window `isTauri()` is false, subscribing
+returns a no-op teardown, and the picker resolves to `null`. That matters because the entire
+dev/test loop for this app runs in a plain browser, where the global does not exist.
+`lib/library/accept.ts` is pure and fully tested (18 cases); `accept.svelte.ts` holds the staged
+paths and **cannot write anything** — no copy, no register, no index — which is how spec constraint
+2 stays true by construction rather than by discipline.
+
+**`accept.ts` deliberately does not filter by extension.** The format list lives in
+`extractors.is_supported` / `get_format_status`, and AD2 computes verdicts server-side from it.
+Filtering client-side would put that list in a second language and let the two drift — the ADR-013
+shape (one rule, two copies, one stale).
+
+**AD1 ends at *staged*, and says so.** Dropping files shows a summary bar naming the count and the
+first three files, with a Clear. There is no disabled "Continue" to nowhere: the review sheet is
+AD2 and the apply step is AD3. A build node that reports exactly what it can do beats one that
+mimes the finished feature.
+
+**The 2026-08-19 CSS accident repeated, and was caught by measuring rather than looking.**
+`.tb-add` and `.tb-btn` tie on specificity, so `.tb-btn:disabled` — 27 lines later — won: computed
+`opacity: 0.32` instead of 0.55 and `font-size: 15px` instead of `--text-sm`. Fixed as
+`.tb-btn.tb-add`, the same two-class remedy the tick-row bug got, with a comment saying not to
+simplify it back. **Re-measured after the fix: 0.55 and 12.3px.** A screenshot would not have shown
+either value.
+
+**Verified in the running app** (browser, where `window.__TAURI__` is `undefined`): the button
+renders between the brand and Settings — x 985 (brand) / **1095 (add)** / 1241 (settings) — is
+**disabled**, and its tooltip reads *"Adding documents works in the desktop app."* rather than
+being hidden. Staging six paths (one a duplicate) yielded **five** pending and the bar
+*"5 files ready · hubel-wiesel-1959.pdf · cajal-1899.pdf · treatise.epub · and 2 more"* — Windows
+and POSIX basenames both correct; Clear emptied it. The console's 15 x 500 are `/api/health`
+cold-start polls that recovered on the 16th, unrelated to this change.
+
+**What it opens.** The two W0 runtime assertions still have to run in a real Tauri window — nothing
+here proves the injection works, only that the code degrades correctly without it. AD2 (the review
+sheet) is next and replaces the staged bar. RG-030 still gates AD2's no-text-layer row.
+
+---
+## 2026-08-21 (3) — W0: the accept surface costs zero npm dependencies, and HTML5 drag-drop was never on the table
+
+**What changed.** `docs/specs/feature-add-documents.md` §W0 resolved; open question 1 closed;
+AD1's contracts are no longer provisional.
+
+**The answer is better than the spike was written to expect.** The spec assumed a file picker meant
+a second npm dependency, breaking the *"deliberate 1-dep artifact"* property the frontend claims.
+It does not. **`withGlobalTauri: true` injects the Tauri JS API on `window.__TAURI__`, and plugins
+inject themselves into the same global — so the whole accept surface adds no npm package at all.**
+
+**Every claim read from the pinned crate sources rather than from memory** (`tauri` locked 2.11.3,
+2.11.2 vendored):
+- `tauri/src/manager/window.rs` emits `tauri://drag-drop` with a payload built as
+  **`paths: Some(paths), position`** — the event carries real filesystem paths.
+- `tauri/scripts/bundle.global.js` (what `withGlobalTauri` injects) contains all four `tauri://drag-*`
+  event names, an `onDragDropEvent` helper, and exports `core` / `event` / `webview`.
+- `tauri-plugin-dialog-2.7.1/api-iife.js` does
+  `Object.defineProperty(window.__TAURI__, "dialog", {…})` — the picker rides the same global.
+- `tauri-utils/src/config.rs:3075` documents `with_global_tauri` as the injection switch, default
+  **false**.
+
+**The HTML5 route was not merely worse — it was never possible.** `drag_drop_enabled` defaults
+**true**, and its doc string says *"Disabling it is **required** to use HTML5 drag and drop on the
+frontend on Windows."* Turning it off to get HTML5 events would also surrender the paths that every
+contract in the spec is built on. Recorded so nobody re-proposes it.
+
+**Total cost:** one config line, one Rust dependency (`tauri-plugin-dialog`, already in the local
+cargo registry), one plugin registration, one capability permission — `dialog:allow-open`, narrower
+than the plugin's `dialog:default`, which also grants `message` and `save` that nothing needs.
+
+**What was NOT done, stated rather than glossed.** W0's original DoD asked for a live round-trip
+printing a real path. **It was not run.** That needs an OS-level drag into a native Tauri window;
+this session can drive a browser but cannot perform a desktop drag, and a Tauri window's console is
+not reachable from the Browser pane. The **decision** W0 exists to make is settled by the sources;
+what remains is confirmation. Two one-line devtools assertions are written into §W0 to run at AD1's
+first build, and the DoD now names them explicitly instead of quietly dropping the requirement.
+
+**A design constraint the spike surfaced, which AD1 must build around:** `window.__TAURI__` exists
+**only inside the Tauri window**. The entire dev/test loop for this app runs in a plain browser
+(port 5731 all session), where it is `undefined`. The accept surface has to degrade there — drop
+target inert, button hidden or self-explaining — rather than throw. Also noted: `devUrl` is
+hardcoded to 1420, a port another project on this machine periodically owns (baton 2026-08-19), and
+`tauri dev` will silently load whatever answers it.
+
+**What it opens.** AD1 is unblocked. RG-030 (the page-1 text-layer probe's cost) still gates AD2's
+warning row and is untouched by this.
 
 ---
 ## 2026-08-21 (2) — the add-documents SPEC, and the accept surface turns out to need a spike first

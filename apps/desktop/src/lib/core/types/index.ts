@@ -12,6 +12,7 @@ export type { ConversationDetail, ConversationSource, ConversationSummary, Conve
 export type { ProviderOption, Settings } from './settings'
 export type { ApiKeyResult, ProviderReadiness, SetupState, SetupStep } from './setup'
 export type { IngestStatus, SourceFile } from './sources'
+export type { AddVerdict, FileVerdict, InspectResponse } from './documents'
 export type { LibraryChild, LibraryDocument, LibraryDocumentChunks, LibraryDocumentFigures, LibraryFigure, LibraryParent } from './library'
 export type { LibraryFolder } from './folders'
 export type { KeywordFamily, KeywordFamilyProposal } from './keywords'

@@ -10,6 +10,8 @@ export { listConversations, getConversation, updateConversationMeta, exportConve
 export { deleteDocument, getDocumentFigures, getDocumentReferences, getLibraryDocument, listLibraryDocuments, resetDocumentMeta, revealDocument, updateDocumentMeta } from './library'
 export type { DeleteResult } from './library'
 export { getDocConnections } from './connections'
+export { addDocuments, indexPaths, inspectDocuments, undoAddDocuments } from './documents'
+export type { AddMode, AddOutcome, AddResult } from './documents'
 export { listFolders, createFolder, renameFolder, deleteFolder, addDocumentsToFolder, removeDocumentFromFolder } from './folders'
 export { listKeywordFamilies, createKeywordFamily, renameKeywordFamily, addFamilyMember, removeFamilyMember, deleteKeywordFamily, detectKeywordFamilies } from './keywords'
 export { compareRetrieval } from './compare'

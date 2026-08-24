@@ -10,6 +10,7 @@
   import { shell, type Mode } from './shell.svelte'
   import { sidebarPrefs, toggleSidebarCollapsed } from './prefs.svelte'
   import { GRAPH_TAB_ENABLED } from '../core/features'
+  import { canAccept, pickDocuments, unavailableReason } from '../library/accept.svelte'
   import appMark from '../../assets/brand/app-mark.png'
 
   interface Props {
@@ -52,6 +53,19 @@
       {#if shell.appMenuOpen}
         <div class="menu-backdrop" onclick={() => (shell.appMenuOpen = false)} role="presentation"></div>
         <div class="appmenu" role="menu">
+          <!-- The add-documents action lives in the Library header row (2026-08-24), where it sits
+               with the other document actions. This entry is what keeps it reachable from Chat —
+               without it, moving the button out of the toolbar would cost that reach entirely. -->
+          <button
+            class="appmenuitem"
+            role="menuitem"
+            onclick={() => { shell.appMenuOpen = false; void pickDocuments() }}
+            disabled={!canAccept()}
+            title={unavailableReason() ?? 'Add documents'}
+            type="button"
+          >
+            <Icon name="plus" size={15} /> Add documents…
+          </button>
           <button class="appmenuitem" role="menuitem" onclick={() => { shell.appMenuOpen = false; shell.showSettings = true }} type="button">
             <Icon name="settings" size={15} /> Settings
           </button>

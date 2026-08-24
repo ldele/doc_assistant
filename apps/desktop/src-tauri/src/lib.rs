@@ -10,6 +10,9 @@ use tauri_plugin_shell::ShellExt;
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
+        // AD1: file/folder picker for Add documents. Reachable from JS only as
+        // `window.__TAURI__.dialog` (withGlobalTauri), and only `open` is permitted.
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             // Spawn the bundled FastAPI sidecar. In dev there is no frozen binary (run the
             // backend separately with `just api`), so a missing sidecar is non-fatal.

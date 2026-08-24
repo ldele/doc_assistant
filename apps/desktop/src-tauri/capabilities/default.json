@@ -1,13 +1,21 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Default capability for the main window — allows spawning the API sidecar (PR-M4).",
-  "windows": ["main"],
+  "description": "Default capability for the main window - spawning the API sidecar (PR-M4) and opening the file/folder picker for Add documents (AD1). `dialog:allow-open` only: the plugin's `dialog:default` would also grant message/save, which nothing uses.",
+  "windows": [
+    "main"
+  ],
   "permissions": [
     "core:default",
     {
       "identifier": "shell:allow-execute",
-      "allow": [{ "name": "binaries/doc-assistant-api", "sidecar": true }]
-    }
+      "allow": [
+        {
+          "name": "binaries/doc-assistant-api",
+          "sidecar": true
+        }
+      ]
+    },
+    "dialog:allow-open"
   ]
 }

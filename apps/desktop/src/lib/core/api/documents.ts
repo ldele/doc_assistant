@@ -21,14 +21,24 @@ export async function inspectDocuments(paths: string[]): Promise<InspectResponse
   return (await r.json()) as InspectResponse
 }
 
-/** ADR-046 placement. `reference` is decided but unbuilt (AD3b); the API answers 501 for it. */
+/**
+ * ADR-046 placement, **both modes built since AD3b**. `copy` puts the file in the Provenote
+ * folder and the app owns it; `reference` registers it where it already lives and the app must
+ * never delete it.
+ */
 export type AddMode = 'copy' | 'reference'
 
 export interface AddOutcome {
   path: string
   name: string
   ok: boolean
+  /** Where it landed, relative to its own root — for display. */
   rel_path: string | null
+  /**
+   * The identifier to send back for undo or indexing. Since AD3b a bare `rel_path` no longer
+   * identifies a row: two roots may hold the same relative path, so always round-trip this.
+   */
+  key: string | null
   error: string | null
 }
 
@@ -45,7 +55,7 @@ export interface AddResult {
  * a separate call to `/api/ingest` with an explicit `paths` list, so the system has one ingest
  * path rather than two.
  *
- * 409 while an ingest is running; 501 for `reference` until AD3b lands.
+ * 409 while an ingest is running.
  */
 export async function addDocuments(paths: string[], mode: AddMode = 'copy'): Promise<AddResult> {
   const r = await fetch(`${API_BASE}/api/documents/add`, {
@@ -57,12 +67,17 @@ export async function addDocuments(paths: string[], mode: AddMode = 'copy'): Pro
   return (await r.json()) as AddResult
 }
 
-/** Reverse a just-completed add. Only removes copies the app made — never a referenced original. */
-export async function undoAddDocuments(relPaths: string[]): Promise<number> {
+/**
+ * Reverse a just-completed add. Drops the registry rows; deletes the file **only** when the app
+ * made the copy itself — a referenced original is never touched.
+ *
+ * Takes the `key` of each outcome, not its `rel_path`.
+ */
+export async function undoAddDocuments(keys: string[]): Promise<number> {
   const r = await fetch(`${API_BASE}/api/documents/undo-add`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ rel_paths: relPaths }),
+    body: JSON.stringify({ rel_paths: keys }),
   })
   if (!r.ok) throw new Error(await errorDetail(r, 'undo add'))
   return ((await r.json()) as { undone: number }).undone

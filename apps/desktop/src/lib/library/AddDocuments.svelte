@@ -1,10 +1,10 @@
 <script lang="ts">
   // AD2 + AD3 — the review sheet: what would happen to each file, then make it happen.
   //
-  // ADR-046 chose both placement modes for v1, but only `copy` is built (AD3b owes
-  // reference-in-place: the registry is keyed on a root-relative path and needs a root dimension
-  // first). The radio therefore SHOWS both and disables the unbuilt one with the reason — hiding
-  // it would misrepresent the decision, and enabling it would put files where nobody chose.
+  // ADR-046 chose both placement modes for v1 and AD3b built the second, so the radio is a real
+  // control: `copy` puts the files in the Provenote folder, `reference` registers them where they
+  // already live. The wording says which one touches the user's own folders, because that is the
+  // consequence they cannot undo by guessing.
   //
   // Every verdict comes from the server (`POST /api/documents/inspect`) and arrives already
   // sorted, exceptions first. Nothing is re-sorted or re-classified here: the format list lives
@@ -12,7 +12,7 @@
 
   import Icon from '../shell/Icon.svelte'
   import { addDocuments, indexPaths, inspectDocuments, undoAddDocuments } from '../core/api/documents'
-  import type { AddResult } from '../core/api/documents'
+  import type { AddMode, AddResult } from '../core/api/documents'
   import type { FileVerdict, InspectResponse } from '../core/types/documents'
 
   interface Props {
@@ -31,6 +31,9 @@
   let shown = $state(50)
 
   // AD3 state.
+  // ADR-046 placement. Defaults to `copy`: it is the mode that cannot surprise anyone, since
+  // everything it touches is Provenote's own folder.
+  let mode = $state<AddMode>('copy')
   let indexNow = $state(true) // ticked by default (grill branch 8): one gesture, drop to searchable
   let applying = $state(false)
   let applied = $state<AddResult | null>(null)
@@ -93,11 +96,11 @@
     applying = true
     applyError = null
     try {
-      const result = await addDocuments(addable.map((f) => f.path), 'copy')
+      const result = await addDocuments(addable.map((f) => f.path), mode)
       applied = result
       // Index only what actually landed — never what the run did not reach.
       if (indexNow && !result.stopped_early && result.added.length > 0) {
-        await indexPaths(result.added.map((o) => o.rel_path).filter((p): p is string => !!p))
+        await indexPaths(result.added.map((o) => o.key).filter((k): k is string => !!k))
       }
       if (!result.stopped_early) onAdded?.()
     } catch (e: unknown) {
@@ -111,7 +114,7 @@
     if (!applied) return
     undoing = true
     try {
-      await undoAddDocuments(applied.added.map((o) => o.rel_path).filter((p): p is string => !!p))
+      await undoAddDocuments(applied.added.map((o) => o.key).filter((k): k is string => !!k))
       applied = null
       onAdded?.()
       onClose()
@@ -192,12 +195,26 @@
       <fieldset class="where">
         <legend>Where they go</legend>
         <label class="opt">
-          <input type="radio" name="mode" value="copy" checked disabled={applying} />
+          <input
+            type="radio"
+            name="mode"
+            value="copy"
+            checked={mode === 'copy'}
+            onchange={() => (mode = 'copy')}
+            disabled={applying}
+          />
           <span>Copy into my Provenote folder</span>
         </label>
-        <label class="opt disabled" title="Not built yet — see ADR-046 / AD3b">
-          <input type="radio" name="mode" value="reference" disabled />
-          <span>Leave them where they are <em>— not available yet</em></span>
+        <label class="opt">
+          <input
+            type="radio"
+            name="mode"
+            value="reference"
+            checked={mode === 'reference'}
+            onchange={() => (mode = 'reference')}
+            disabled={applying}
+          />
+          <span>Leave them where they are <em>— Provenote will not move or copy them</em></span>
         </label>
       </fieldset>
 
@@ -374,9 +391,6 @@
     gap: 0.45rem;
     font-size: var(--text-sm);
     padding: 0.15rem 0;
-  }
-  .opt.disabled {
-    opacity: 0.55;
   }
   .opt em {
     font-style: normal;

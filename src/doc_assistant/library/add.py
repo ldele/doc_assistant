@@ -26,11 +26,14 @@ import hashlib
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
 import structlog
 
 from doc_assistant.extractors import get_format_status
+
+if TYPE_CHECKING:  # import cost only — the ORM session is a type here, never constructed
+    from sqlalchemy.orm import Session
 
 log = structlog.get_logger(__name__)
 
@@ -56,7 +59,8 @@ class FileVerdict:
     size: int | None = None
     sha256: str | None = None
     advisory: str | None = None
-    #: Set on `duplicate`: the `rel_path` of the registered file this one matches.
+    #: Set on `duplicate`: the `registry.source_key` of the registered file this one matches —
+    #: a key, not a bare rel_path, since AD3b made the library span roots.
     duplicate_of: str | None = None
 
     @property
@@ -102,21 +106,47 @@ def expand_paths(paths: Iterable[Path]) -> list[Path]:
     return out
 
 
-def _size_index(session: object) -> dict[int, list[tuple[str, str | None]]]:
-    """`{size: [(rel_path, cached_sha256), ...]}` for every registered source file.
+@dataclass(frozen=True)
+class _Registered:
+    """One registry row as the duplicate check needs it: its key, where it really is, its hash."""
 
-    Built from the registry's stat-only columns, so it costs one query and no file reads.
+    key: str
+    path: Path
+    sha256: str | None
+
+
+def _size_index(session: Session) -> dict[int, list[_Registered]]:
+    """`{size: [(key, absolute_path, cached_sha256), ...]}` for every registered source file.
+
+    Built from the registry's stat-only columns joined to each row's root, so it costs one query
+    and no file reads. **The join is what makes duplicate detection span roots** (AD3b): before
+    it, every rel_path was resolved against the library folder, so a file registered under a
+    *referenced* root resolved to a path that does not exist, the read failed, and the candidate
+    came back `add` — silently re-adding something the library already had.
     """
     from sqlalchemy import select
 
-    from doc_assistant.db.models import SourceFile
+    from doc_assistant.db.models import SourceFile, SourceRoot
+    from doc_assistant.ingest.registry import source_key
 
-    index: dict[int, list[tuple[str, str | None]]] = {}
-    rows = session.execute(  # type: ignore[attr-defined]
-        select(SourceFile.rel_path, SourceFile.size, SourceFile.source_sha256)
+    index: dict[int, list[_Registered]] = {}
+    rows = session.execute(
+        select(
+            SourceFile.root_id,
+            SourceFile.rel_path,
+            SourceFile.size,
+            SourceFile.source_sha256,
+            SourceRoot.path,
+        ).join(SourceRoot, SourceFile.root_id == SourceRoot.id)
     ).all()
-    for rel_path, size, cached in rows:
-        index.setdefault(int(size), []).append((str(rel_path), cached))
+    for root_id, rel_path, size, cached, root_path in rows:
+        index.setdefault(int(size), []).append(
+            _Registered(
+                key=source_key(str(root_id), str(rel_path)),
+                path=Path(str(root_path)) / str(rel_path),
+                sha256=cached,
+            )
+        )
     return index
 
 
@@ -132,11 +162,19 @@ def inspect(paths: Sequence[Path], *, source_dir: Path | None = None) -> list[Fi
     from doc_assistant.app_settings import get_source_dir
     from doc_assistant.db.session import session_scope
 
-    root = (source_dir or get_source_dir()).resolve()
+    library = (source_dir or get_source_dir()).resolve()
     candidates = expand_paths(paths)
     verdicts: list[FileVerdict] = []
 
     with session_scope() as session:
+        # Make the stored library-root path match the configured source dir before anything
+        # resolves against it: `_size_index` joins each row to its root's path, so a stale entry
+        # here would send every duplicate check looking in the wrong folder. Idempotent, and it
+        # adds no rows — the "inspect registers nothing" guarantee is about the registry, not
+        # about refusing to keep a path honest.
+        from doc_assistant.ingest.registry import ensure_library_root
+
+        ensure_library_root(session, library)
         index = _size_index(session)
         newly_hashed: dict[str, str] = {}
 
@@ -172,21 +210,21 @@ def inspect(paths: Sequence[Path], *, source_dir: Path | None = None) -> list[Fi
             # library is hashed only when a collision is actually possible.
             digest: str | None = None
             duplicate_of: str | None = None
-            for rel_path, cached in index.get(size, []):
+            for candidate in index.get(size, []):
+                cached = candidate.sha256
                 if cached is None:
-                    registered = root / rel_path
                     try:
-                        cached = sha256_file(registered)
+                        cached = sha256_file(candidate.path)
                     except OSError:
                         continue  # a registered file that has since vanished cannot be matched
-                    newly_hashed[rel_path] = cached
+                    newly_hashed[candidate.key] = cached
                 if digest is None:
                     try:
                         digest = sha256_file(path)
                     except OSError:
                         break
                 if digest == cached:
-                    duplicate_of = rel_path
+                    duplicate_of = candidate.key
                     break
 
             if duplicate_of is not None:
@@ -213,22 +251,31 @@ def inspect(paths: Sequence[Path], *, source_dir: Path | None = None) -> list[Fi
     return verdicts
 
 
-def _cache_hashes(session: object, hashes: dict[str, str]) -> None:
-    """Persist hashes computed while answering a duplicate question. Never computes new ones."""
+def _cache_hashes(session: Session, hashes: dict[str, str]) -> None:
+    """Persist hashes computed while answering a duplicate question. Never computes new ones.
+
+    Keyed by `registry.source_key`, not by `rel_path`: since AD3b the same relative path may exist
+    under two roots, and matching on `rel_path` alone would write one root's hash onto the other's
+    row — a wrong cached identity, which is worse than no cache at all.
+    """
     from sqlalchemy import select
 
-    from doc_assistant.db.models import SourceFile
+    from doc_assistant.db.models import SourceFile, SourceRoot
+    from doc_assistant.ingest.registry import split_key
 
+    known = {r.id for r in session.execute(select(SourceRoot)).scalars()}
+    wanted = {split_key(key, known): digest for key, digest in hashes.items()}
     rows = (
-        session.execute(  # type: ignore[attr-defined]
-            select(SourceFile).where(SourceFile.rel_path.in_(list(hashes)))
+        session.execute(
+            select(SourceFile).where(SourceFile.rel_path.in_({rel for _root, rel in wanted}))
         )
         .scalars()
         .all()
     )
     for row in rows:
-        row.source_sha256 = hashes[row.rel_path]
-    log.info("source_hashes_cached", count=len(rows))
+        digest = wanted.get((row.root_id, row.rel_path))
+        if digest is not None and row.source_sha256 is None:
+            row.source_sha256 = digest
 
 
 def sort_for_review(verdicts: Sequence[FileVerdict]) -> list[FileVerdict]:
@@ -254,10 +301,9 @@ def summarise(verdicts: Sequence[FileVerdict]) -> dict[str, int]:
 # AD3 — apply. Copy the file in, register it, and stop honestly on failure.
 # ============================================================
 
-#: Modes from ADR-046. `reference` is decided and specced but NOT built (AD3b): the schema is
-#: cheap, but `registry.scan_sources` / `derive_status` / `resolve_selection` / `list_sources` are
-#: all keyed on a bare root-relative `rel_path` and each needs the root dimension first. Accepting
-#: the value here and refusing it loudly beats pretending it works.
+#: Placement modes from ADR-046. **Both are built since AD3b** — `copy` puts the file in the
+#: library folder and the app owns it; `reference` registers it where it already lives and the app
+#: must never bin it.
 AddMode = Literal["copy", "reference"]
 
 
@@ -268,7 +314,12 @@ class AddOutcome:
     path: str
     name: str
     ok: bool
+    #: Where the file landed, **relative to its own root** — `library/rag.pdf`, not a key. Kept
+    #: honest and separate from `key` rather than overloaded: this is what a human reads.
     rel_path: str | None = None
+    #: `registry.source_key(root_id, rel_path)` — the identifier undo and selection take. Since
+    #: AD3b a bare `rel_path` no longer identifies a row on its own.
+    key: str | None = None
     error: str | None = None
 
 
@@ -278,7 +329,7 @@ class AddResult:
 
     `not_attempted` is the honest half: the run **stops at the first failure** (grill branch 6),
     so the files after it were never touched and must not read as skipped-by-choice. The caller
-    asks the user to keep what landed or undo it, which is why `added` carries `rel_path`s — undo
+    asks the user to keep what landed or undo it, which is why `added` carries a `key` — undo
     needs to name exactly what to remove, not re-derive it.
     """
 
@@ -312,7 +363,15 @@ def _free_destination(root: Path, name: str) -> Path:
 def apply_add(
     paths: Sequence[Path], *, mode: AddMode = "copy", source_dir: Path | None = None
 ) -> AddResult:
-    """Copy each file into the library folder and register it. **Indexing is not done here.**
+    """Bring each file into the library and register it. **Indexing is not done here.**
+
+    Two placement modes, both shipping in v1 (ADR-046, over a recommendation of copy-in-first):
+
+    * ``copy`` — the file is copied into the library folder and registered under the **library**
+      root. The app owns the copy, so delete may bin it.
+    * ``reference`` — nothing is copied. The file is registered where it already lives, under a
+      **referenced** root for its parent folder, and `origin='referenced'` is what stops delete
+      from ever binning a file the app does not own (ADR-014 as amended).
 
     Separation on purpose: indexing goes through the existing `POST /api/ingest` with an explicit
     `paths` list (spec constraint 4), so there is one ingest path in the system rather than two.
@@ -322,17 +381,12 @@ def apply_add(
     import shutil
 
     from doc_assistant.app_settings import get_source_dir
-    from doc_assistant.db.models import SourceFile
+    from doc_assistant.db.models import LIBRARY_ROOT_ID, SourceFile
     from doc_assistant.db.session import session_scope
+    from doc_assistant.ingest import registry
 
-    if mode == "reference":
-        raise NotImplementedError(
-            "reference-in-place is decided (ADR-046) but not built (AD3b): the source registry "
-            "is keyed on a root-relative path and needs a root dimension first."
-        )
-
-    root = (source_dir or get_source_dir()).resolve()
-    root.mkdir(parents=True, exist_ok=True)
+    library = (source_dir or get_source_dir()).resolve()
+    library.mkdir(parents=True, exist_ok=True)
 
     added: list[AddOutcome] = []
     failed: AddOutcome | None = None
@@ -343,59 +397,117 @@ def apply_add(
             remaining.append(str(src))
             continue
         try:
-            dest = _free_destination(root, src.name)
-            shutil.copy2(src, dest)
-            rel = dest.relative_to(root).as_posix()
-            stat = dest.stat()
             with session_scope() as session:
+                registry.ensure_library_root(session, library)
+                if mode == "copy":
+                    dest = _free_destination(library, src.name)
+                    shutil.copy2(src, dest)
+                    root_id, rel = LIBRARY_ROOT_ID, dest.relative_to(library).as_posix()
+                else:
+                    dest = src.resolve()
+                    root_id, rel = _reference_target(session, dest, library)
+                stat = dest.stat()
                 session.add(
                     SourceFile(
+                        root_id=root_id,
                         rel_path=rel,
                         format=dest.suffix.lstrip(".").lower(),
                         size=stat.st_size,
                         mtime=stat.st_mtime,
                         source_sha256=sha256_file(dest),
-                        origin="copied",
+                        origin="copied" if mode == "copy" else "referenced",
                     )
                 )
-            added.append(AddOutcome(path=str(src), name=src.name, ok=True, rel_path=rel))
+            added.append(
+                AddOutcome(
+                    path=str(src),
+                    name=src.name,
+                    ok=True,
+                    rel_path=rel,
+                    key=registry.source_key(root_id, rel),
+                )
+            )
         except (OSError, ValueError) as e:
-            log.warning("add_failed", path=str(src), error=str(e))
+            log.warning("add_failed", path=str(src), mode=mode, error=str(e))
             failed = AddOutcome(path=str(src), name=src.name, ok=False, error=str(e))
             remaining.extend(str(p) for p in paths[i + 1 :])
             break
 
-    log.info("add_applied", added=len(added), failed=failed is not None, left=len(remaining))
+    log.info(
+        "add_applied", mode=mode, added=len(added), failed=failed is not None, left=len(remaining)
+    )
     return AddResult(added=added, failed=failed, not_attempted=remaining)
 
 
-def undo_add(rel_paths: Sequence[str], *, source_dir: Path | None = None) -> int:
-    """Reverse an apply: delete the copies and their registry rows. Returns how many were undone.
+def _reference_target(session: Session, dest: Path, library: Path) -> tuple[str, str]:
+    """Pick the root a referenced file registers under, and its path relative to that root.
 
-    Deletes outright rather than sending to the Recycle Bin (ADR-014): these are copies the app
-    made seconds ago and the user is explicitly rejecting, so the original is untouched and there
-    is nothing to recover. **Only ever called with `rel_path`s this module just created**, which
-    is why it cannot reach a referenced original.
+    A file that already sits **inside the library folder** is registered under the library root
+    rather than getting a second root pointing at the same place — otherwise the same bytes would
+    hold two rows with two origins, and delete would branch on whichever one it happened to read.
+    Its origin still records ``referenced``: the app did not put it there, so it must not bin it.
+
+    Everything else registers under a root for its **parent directory**. Per-directory rather than
+    per-file so that referencing twenty papers out of one Zotero folder yields one root, and
+    per-parent rather than per-ancestor because guessing how far up the user meant would be
+    guessing — a folder the user drops is handled by the caller expanding it, and each contained
+    file lands under its own directory's root.
+    """
+    from doc_assistant.db.models import LIBRARY_ROOT_ID
+    from doc_assistant.ingest import registry
+
+    if not dest.is_file():
+        raise OSError(f"not a file: {dest}")
+    try:
+        return LIBRARY_ROOT_ID, dest.relative_to(library).as_posix()
+    except ValueError:
+        pass
+    root = registry.register_root(session, dest.parent)
+    return root.id, dest.name
+
+
+def undo_add(rel_paths: Sequence[str], *, source_dir: Path | None = None) -> int:
+    """Reverse an apply: drop the registry rows, and delete only the files the app itself made.
+
+    The two halves are deliberately separate since AD3b, because the two placement modes undo
+    differently:
+
+    * ``copied`` — the row goes **and** the file goes. Deleted outright rather than sent to the
+      Recycle Bin (ADR-014): it is a copy the app made seconds ago and the user is explicitly
+      rejecting, so the original is untouched and there is nothing to recover.
+    * ``referenced`` — the row goes and **the file is never touched**. It is the user's own file
+      sitting in their own folder; un-adding it from the library must not reach outside. This is
+      the ADR-014 amendment enforced where it cannot be forgotten.
+
+    Accepts `registry.source_key`s or bare rel_paths (library root). Returns how many rows went.
     """
     from sqlalchemy import select
 
     from doc_assistant.app_settings import get_source_dir
-    from doc_assistant.db.models import SourceFile
+    from doc_assistant.db.models import SourceFile, SourceRoot
     from doc_assistant.db.session import session_scope
+    from doc_assistant.ingest import registry
 
-    root = (source_dir or get_source_dir()).resolve()
+    library = (source_dir or get_source_dir()).resolve()
     undone = 0
     with session_scope() as session:
+        known = {r.id for r in session.execute(select(SourceRoot)).scalars()}
+        wanted = {registry.split_key(k, known) for k in rel_paths}
+        if not wanted:
+            return 0
         rows = (
-            session.execute(select(SourceFile).where(SourceFile.rel_path.in_(list(rel_paths))))
+            session.execute(
+                select(SourceFile).where(SourceFile.rel_path.in_({rel for _root, rel in wanted}))
+            )
             .scalars()
             .all()
         )
         for row in rows:
-            if row.origin != "copied":
-                continue  # never remove a file the app does not own
-            with contextlib.suppress(OSError):
-                (root / row.rel_path).unlink()
+            if (row.root_id, row.rel_path) not in wanted:
+                continue  # same rel_path under a root the caller did not name
+            if row.origin == "copied":
+                with contextlib.suppress(OSError):
+                    (library / row.rel_path).unlink()
             session.delete(row)
             undone += 1
     log.info("add_undone", count=undone)

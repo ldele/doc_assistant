@@ -7,7 +7,7 @@ the watched folder, not retrieved passages.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 from pydantic import BaseModel
 
@@ -28,6 +28,9 @@ class SourcePatch(BaseModel):
 
     rel_path: str
     excluded: bool | None = None
+    #: ADR-046 (AD3b) — which root `rel_path` is relative to. Defaults to the library root, so a
+    #: client written before multi-root keeps working unchanged.
+    root_id: str = "library"
 
 
 class SourceFilePayload(BaseModel):
@@ -44,6 +47,14 @@ class SourceFilePayload(BaseModel):
     status: str
     excluded: bool
     doc_type: str | None
+    #: ADR-046 (AD3b). `rel_path` is relative to this root and is no longer unique on its own;
+    #: `key` is the pair the client should send back for selection or PATCH.
+    root_id: str = "library"
+    root_kind: str = "library"
+    #: False when the root is unreachable right now (unplugged drive, offline share). Its files
+    #: read ``missing``, and this is what lets the UI say *why* instead of implying deletion.
+    root_available: bool = True
+    key: str = ""
 
     @classmethod
     def from_view(cls, v: RegistrySourceView) -> SourceFilePayload:
@@ -55,6 +66,10 @@ class SourceFilePayload(BaseModel):
             status=v.status,
             excluded=v.excluded,
             doc_type=v.doc_type,
+            root_id=v.root_id,
+            root_kind=v.root_kind,
+            root_available=v.root_available,
+            key=f"{v.root_id}:{v.rel_path}",
         )
 
 
@@ -113,13 +128,14 @@ class InspectResponse(BaseModel):
 class AddRequest(BaseModel):
     """POST /api/documents/add body (AD3).
 
-    ``mode`` is ADR-046's placement choice. ``reference`` is decided but unbuilt (AD3b) and is
-    refused with a 501 rather than quietly copying — a silent fallback would put the user's files
-    somewhere they did not choose.
+    ``mode`` is ADR-046's placement choice, and **both modes work since AD3b**. Typed as a
+    ``Literal`` so FastAPI rejects anything else with its own 422 before the handler runs — the
+    library's `AddMode` is the same two values, so this is one contract rather than a hand-rolled
+    check that could drift from it.
     """
 
     paths: list[str]
-    mode: str = "copy"
+    mode: Literal["copy", "reference"] = "copy"
 
 
 class AddOutcomePayload(BaseModel):
@@ -128,7 +144,11 @@ class AddOutcomePayload(BaseModel):
     path: str
     name: str
     ok: bool
+    #: Where it landed, relative to its own root — for display.
     rel_path: str | None
+    #: The identifier to send back to `/api/documents/undo-add` (AD3b: `rel_path` alone no
+    #: longer identifies a row, because two roots may hold the same relative path).
+    key: str | None = None
     error: str | None
 
 
@@ -146,6 +166,10 @@ class AddResultPayload(BaseModel):
 
 
 class UndoAddRequest(BaseModel):
-    """POST /api/documents/undo-add body — the ``rel_path``s a just-completed add reported."""
+    """POST /api/documents/undo-add body — the ``key``s a just-completed add reported.
+
+    Still named ``rel_paths`` on the wire for compatibility; a bare rel_path is accepted and read
+    as the library root, so a pre-AD3b client is unaffected.
+    """
 
     rel_paths: list[str]

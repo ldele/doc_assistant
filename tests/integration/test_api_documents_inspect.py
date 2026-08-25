@@ -53,6 +53,14 @@ def temp_database(monkeypatch):
     from doc_assistant.db.models import Base
 
     Base.metadata.create_all(engine)
+    # AD3b: `SourceFile.root_id` carries a literal DEFAULT pointing at the library root, and the
+    # FK is enforced — so the row has to exist before anything inserts. `init_db` guarantees this
+    # in production (`_seed_library_root`); this fixture stands in for it.
+    from doc_assistant.db.models import LIBRARY_ROOT_ID, SourceRoot
+
+    with sessionmaker(bind=engine, future=True)() as s:
+        s.add(SourceRoot(id=LIBRARY_ROOT_ID, path=str(Path(path).parent), kind="library"))
+        s.commit()
     yield path
     engine.dispose()
     with contextlib.suppress(OSError):
@@ -152,7 +160,7 @@ def test_a_duplicate_is_named_against_the_file_it_matches(client, tmp_path):
     copy = _write(tmp_path / "downloads" / "same-paper.pdf", body_bytes)
     (row,) = client.post("/api/documents/inspect", json={"paths": [str(copy)]}).json()["files"]
     assert row["verdict"] == "duplicate"
-    assert row["duplicate_of"] == "cajal-1899.pdf"
+    assert row["duplicate_of"] == "library:cajal-1899.pdf", "a key, not a bare rel_path (AD3b)"
     assert row["selected_by_default"] is False
 
 
@@ -213,15 +221,27 @@ def test_undo_removes_what_add_created(client, tmp_path):
     assert sorted(p.name for p in tmp_path.glob("*.pdf")) == []
 
 
-def test_reference_mode_is_refused_with_501_not_silently_copied(client, tmp_path):
-    """ADR-046 decided it; AD3b builds it. A silent copy would put files where nobody chose."""
-    src = _write(tmp_path / "inbox" / "a.pdf", b"a")
-    r = client.post("/api/documents/add", json={"paths": [str(src)], "mode": "reference"})
-    assert r.status_code == 501
-    assert "reference-in-place" in r.json()["detail"]
-    # The refusal must be total: no copy landed in the library root under any name.
-    assert list(tmp_path.glob("*.pdf")) == []
-    assert src.exists()
+def test_reference_mode_registers_over_the_wire_without_copying(client, tmp_path):
+    """AD3b: ADR-046's second placement mode, end to end. Nothing is copied anywhere."""
+    # Deliberately OUTSIDE the library root (which this fixture sets to tmp_path): a file that
+    # already lives inside the library is a different case, registered under the library root —
+    # see test_a_file_already_inside_the_library_references_the_library_root.
+    with tempfile.TemporaryDirectory() as elsewhere:
+        src = _write(Path(elsewhere) / "a.pdf", b"a")
+        r = client.post("/api/documents/add", json={"paths": [str(src)], "mode": "reference"})
+        assert r.status_code == 200
+        body = r.json()
+        assert body["failed"] is None and len(body["added"]) == 1
+        assert body["added"][0]["key"], "the client needs a key to undo with"
+        assert src.exists(), "the original stays where the user keeps it"
+        # No copy may have landed in the library root.
+        assert list(tmp_path.glob("*.pdf")) == []
+
+        listed = client.get("/api/sources").json()
+        referenced = [f for f in listed if f["root_kind"] == "referenced"]
+        assert len(referenced) == 1, "the referenced file shows up in the registry listing"
+        assert referenced[0]["rel_path"] == "a.pdf"
+        assert referenced[0]["key"] == f"{referenced[0]['root_id']}:a.pdf"
 
 
 def test_an_unknown_mode_is_a_422(client, tmp_path):

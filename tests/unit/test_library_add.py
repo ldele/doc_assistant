@@ -47,6 +47,14 @@ def temp_database(monkeypatch):
     from doc_assistant.db.models import Base
 
     Base.metadata.create_all(engine)
+    # AD3b: `SourceFile.root_id` carries a literal DEFAULT pointing at the library root, and the
+    # FK is enforced — so the row has to exist before anything inserts. `init_db` guarantees this
+    # in production (`_seed_library_root`); this fixture stands in for it.
+    from doc_assistant.db.models import LIBRARY_ROOT_ID, SourceRoot
+
+    with sessionmaker(bind=engine, future=True)() as s:
+        s.add(SourceRoot(id=LIBRARY_ROOT_ID, path=str(Path(path).parent), kind="library"))
+        s.commit()
     yield path
     engine.dispose()
     with contextlib.suppress(OSError):
@@ -130,7 +138,7 @@ def test_identical_bytes_under_a_different_name_read_as_duplicate(temp_database,
     candidate = _write(tmp_path / "downloads" / "renamed-copy.pdf", body)
     (v,) = inspect([candidate], source_dir=tmp_path)
     assert v.verdict == "duplicate"
-    assert v.duplicate_of == "cajal-1899.pdf"
+    assert v.duplicate_of == "library:cajal-1899.pdf", "a key, not a bare rel_path (AD3b)"
     assert not v.selected_by_default
 
 
@@ -390,30 +398,116 @@ def test_undo_removes_exactly_what_apply_added(temp_database, tmp_path):
         assert session.execute(select(func.count()).select_from(SourceFile)).scalar_one() == 0
 
 
-def test_undo_refuses_to_delete_a_referenced_file(temp_database, tmp_path):
-    """The ADR-014 amendment, enforced where it cannot be forgotten: undo owns copies only."""
+def test_undo_never_deletes_a_referenced_file_but_does_drop_its_row(temp_database, tmp_path):
+    """The ADR-014 amendment, enforced where it cannot be forgotten.
+
+    Undoing a *reference* add has to remove the row — the user is rejecting the add — while
+    leaving the file alone, because the app never owned it. Before AD3b undo refused the row
+    outright, which after AD3b would have stranded it in the library forever.
+    """
+    from sqlalchemy import func, select
+
     from doc_assistant.db.models import SourceFile
     from doc_assistant.db.session import session_scope
-    from doc_assistant.library.add import undo_add
+    from doc_assistant.library.add import apply_add, undo_add
 
-    root = tmp_path / "library"
-    kept = _write(root / "theirs.pdf", b"not ours")
+    theirs = _write(tmp_path / "zotero" / "theirs.pdf", b"not ours")
+    result = apply_add([theirs], mode="reference", source_dir=tmp_path / "library")
+    key = result.added[0].key
+    assert key is not None
+
+    assert undo_add([key], source_dir=tmp_path / "library") == 1
+    assert theirs.exists(), "undo must never delete a file the app does not own"
     with session_scope() as session:
-        session.add(
-            SourceFile(rel_path="theirs.pdf", format="pdf", size=8, mtime=0.0, origin="referenced")
-        )
-
-    assert undo_add(["theirs.pdf"], source_dir=root) == 0
-    assert kept.exists()
+        assert session.execute(select(func.count()).select_from(SourceFile)).scalar_one() == 0
 
 
-def test_reference_mode_refuses_loudly_rather_than_silently_copying(temp_database, tmp_path):
-    """AD3b is not built. Accepting the value and doing a copy would be the worst outcome."""
+def test_reference_mode_registers_in_place_and_copies_nothing(temp_database, tmp_path):
+    """AD3b: the file is registered where it lives. Not one byte is written into the library."""
+    from sqlalchemy import select
+
+    from doc_assistant.db.models import SourceFile
+    from doc_assistant.db.session import session_scope
     from doc_assistant.library.add import apply_add
 
-    src = _write(tmp_path / "a.pdf", b"a")
-    with pytest.raises(NotImplementedError, match="reference-in-place"):
-        apply_add([src], mode="reference", source_dir=tmp_path / "library")
+    theirs = _write(tmp_path / "zotero" / "paper.pdf", b"theirs")
+    library = tmp_path / "library"
+
+    result = apply_add([theirs], mode="reference", source_dir=library)
+
+    assert result.failed is None and len(result.added) == 1
+    assert theirs.exists(), "the original must stay put"
+    assert list(library.rglob("*.pdf")) == [], "reference mode must copy nothing into the library"
+    with session_scope() as session:
+        row = session.execute(select(SourceFile)).scalar_one()
+        assert row.origin == "referenced"
+        assert row.rel_path == "paper.pdf"
+        assert row.root_id != "library", "a referenced file gets its own root"
+
+
+def test_a_duplicate_is_found_even_when_it_lives_under_a_referenced_root(temp_database, tmp_path):
+    """AD3b regression guard: duplicate detection has to span roots.
+
+    Before the root join, `_size_index` resolved every registered `rel_path` against the *library*
+    folder — so a file registered under a referenced root resolved to a path that does not exist,
+    the read failed, and the candidate came back a clean `add`. The library would then hold the
+    same bytes twice, which is exactly what the duplicate gate exists to prevent.
+    """
+    from doc_assistant.library.add import apply_add, inspect
+
+    library = tmp_path / "library"
+    zotero = tmp_path / "zotero"
+    original = _write(zotero / "paper.pdf", b"%PDF-1.4 the same bytes")
+    apply_add([original], mode="reference", source_dir=library)
+
+    # The same bytes arriving again under a different name, from somewhere else entirely.
+    again = _write(tmp_path / "inbox" / "copy-of-paper.pdf", b"%PDF-1.4 the same bytes")
+    (v,) = inspect([again], source_dir=library)
+
+    assert v.verdict == "duplicate"
+    assert v.duplicate_of is not None and v.duplicate_of.endswith(":paper.pdf")
+
+
+def test_referencing_two_files_from_one_folder_makes_one_root(temp_database, tmp_path):
+    """Roots are per-directory, so a twenty-paper Zotero folder does not mint twenty roots."""
+    from sqlalchemy import select
+
+    from doc_assistant.db.models import SourceRoot
+    from doc_assistant.db.session import session_scope
+    from doc_assistant.library.add import apply_add
+
+    a = _write(tmp_path / "zotero" / "a.pdf", b"a")
+    b = _write(tmp_path / "zotero" / "b.pdf", b"bb")
+    apply_add([a, b], mode="reference", source_dir=tmp_path / "library")
+
+    with session_scope() as session:
+        referenced = (
+            session.execute(select(SourceRoot).where(SourceRoot.kind == "referenced"))
+            .scalars()
+            .all()
+        )
+        assert len(referenced) == 1
+
+
+def test_a_file_already_inside_the_library_references_the_library_root(temp_database, tmp_path):
+    """No second root pointing at the same folder — that would give one file two origins."""
+    from sqlalchemy import select
+
+    from doc_assistant.db.models import SourceFile
+    from doc_assistant.db.session import session_scope
+    from doc_assistant.library.add import apply_add
+
+    library = tmp_path / "library"
+    inside = _write(library / "already.pdf", b"here")
+
+    apply_add([inside], mode="reference", source_dir=library)
+
+    with session_scope() as session:
+        row = session.execute(select(SourceFile)).scalar_one()
+        assert row.root_id == "library"
+        assert row.origin == "referenced", (
+            "the app still did not put it there, so it may not bin it"
+        )
 
 
 def test_applying_nothing_is_a_valid_empty_result(temp_database, tmp_path):

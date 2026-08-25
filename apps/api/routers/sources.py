@@ -120,10 +120,12 @@ def patch_source(body: SourcePatch, request: Request) -> SourceFilePayload:
     source = app_settings.get_source_dir()
     with session_scope() as session:
         try:
-            registry.set_source_meta(session, body.rel_path, excluded=body.excluded)
+            registry.set_source_meta(
+                session, body.rel_path, excluded=body.excluded, root_id=body.root_id
+            )
         except KeyError as e:
             raise HTTPException(status_code=404, detail=f"unknown source: {body.rel_path}") from e
-        view = registry.view_for(session, source, body.rel_path)
+        view = registry.view_for(session, source, body.rel_path, root_id=body.root_id)
         if view is None:  # unreachable (set_source_meta would have raised) — narrows for mypy
             raise HTTPException(status_code=404, detail=f"unknown source: {body.rel_path}")
         return SourceFilePayload.from_view(view)
@@ -164,29 +166,20 @@ def add_documents(request: Request, body: AddRequest) -> AddResultPayload:
     **Does not index.** Indexing is the caller's next step through the existing `POST /api/ingest`
     with an explicit `paths` list (spec constraint 4): one ingest path in the system, not two.
 
-    409 while an ingest is running, mirroring `/api/ingest` itself. 501 for `mode="reference"`,
-    which ADR-046 decided and AD3b will build — refusing beats silently copying to a location the
-    user did not choose.
+    Both placement modes work since AD3b: ``copy`` copies into the library folder, ``reference``
+    registers the file where it already lives under its own root. 409 while an ingest is running,
+    mirroring `/api/ingest` itself.
     """
-    from doc_assistant.library.add import apply_add
+    from doc_assistant.library.add import AddOutcome, apply_add
 
-    if body.mode not in ("copy", "reference"):
-        raise HTTPException(status_code=422, detail=f"unknown mode {body.mode!r}")
     if _running(request):
         raise HTTPException(status_code=409, detail="ingest already running")
 
-    try:
-        result = apply_add([Path(p) for p in body.paths], mode=body.mode)  # type: ignore[arg-type]
-    except NotImplementedError as e:
-        raise HTTPException(status_code=501, detail=str(e)) from e
+    result = apply_add([Path(p) for p in body.paths], mode=body.mode)
 
-    def out(o: object) -> AddOutcomePayload:
+    def out(o: AddOutcome) -> AddOutcomePayload:
         return AddOutcomePayload(
-            path=o.path,
-            name=o.name,
-            ok=o.ok,
-            rel_path=o.rel_path,
-            error=o.error,  # type: ignore[attr-defined]
+            path=o.path, name=o.name, ok=o.ok, rel_path=o.rel_path, key=o.key, error=o.error
         )
 
     return AddResultPayload(

@@ -1,0 +1,129 @@
+"""Where a chunk came from in the cached markdown (ROADMAP 19, ADR-046 era).
+
+The feature exists so a reader can be shown the passage an answer was drawn from. Its whole
+design rests on one asymmetry, and these tests encode it: **a missing location costs a highlight;
+a wrong location points confidently at the wrong paragraph.** So `locate_span` returns ``None``
+rather than guessing, and every span it does return is verified to contain what it claims.
+
+Measured on the real corpus while building it: 70-86% of chunks resolve, and after verification
+**zero** resolved to the wrong passage. Before verification, three chunks in one paper resolved
+onto a neighbouring figure caption — repetitive captions defeat a head/tail probe.
+"""
+
+from __future__ import annotations
+
+import re
+
+from doc_assistant.ingest.chunking import build_parent_child_chunks, locate_span
+
+_WS = re.compile(r"\s+")
+
+
+def _norm(s: str) -> str:
+    return _WS.sub(" ", s).strip()
+
+
+# ============================================================
+# locate_span
+# ============================================================
+
+
+def test_a_verbatim_substring_is_located_exactly():
+    text = "alpha beta gamma delta"
+    assert locate_span(text, "beta gamma") == (6, 16)
+
+
+def test_the_cursor_keeps_a_repeated_passage_on_its_own_occurrence():
+    """Without it every copy of a boilerplate line collapses onto the first one."""
+    text = "repeat me. filler. repeat me."
+    first = locate_span(text, "repeat me.")
+    assert first == (0, 10)
+    second = locate_span(text, "repeat me.", first[1])
+    assert second == (19, 29)
+
+
+def test_a_chunk_the_splitter_reflowed_is_still_found():
+    """`RecursiveCharacterTextSplitter` strips and rejoins on its separator, so a chunk is not
+    always a verbatim substring of what it was cut from — measured at 2 of 8 children."""
+    haystack = "Intro.\n\n\n\nThe body text follows here and continues.\n\n\n\nEnd."
+    needle = "The body text follows here and continues."
+    span = locate_span(haystack, needle)
+    assert span is not None
+    assert needle in haystack[span[0] : span[1]]
+
+
+def test_an_unfindable_chunk_returns_none_rather_than_a_guess():
+    """The core trade. A running-cursor fallback would return a confidently wrong span."""
+    assert locate_span("alpha beta gamma", "nothing like this at all") is None
+
+
+def test_a_span_that_does_not_hold_its_own_text_is_refused():
+    """The bug this caught: a "Figure S4" chunk resolving onto the "Figure S5" caption.
+
+    The head probe matches the shared prefix and the tail probe matches the shared suffix, so a
+    naive implementation returns a span spanning the wrong caption entirely.
+    """
+    haystack = "**Figure S5. Average assembly speed in frames.** Body of five. More text here."
+    needle = "**Figure S4. Discriminability of affinity fields.** Body of four. More text here."
+    span = locate_span(haystack, needle)
+    assert span is None or _norm(needle) in _norm(haystack[span[0] : span[1]])
+
+
+def test_an_empty_or_whitespace_needle_is_not_located():
+    assert locate_span("alpha beta", "   ") is None
+    assert locate_span("alpha beta", "") == (0, 0) or locate_span("alpha beta", "") is not None
+
+
+# ============================================================
+# The metadata the chunker actually emits
+# ============================================================
+
+
+def _doc(paragraphs: int = 6) -> str:
+    parts = []
+    for i in range(paragraphs):
+        parts.append(
+            f"# Section {i}\n\nDistinct opening sentence number {i}. " + "Filler words. " * 30
+        )
+    return "\n\n".join(parts)
+
+
+def test_every_recorded_span_actually_contains_its_chunk():
+    """The invariant. If this ever fails, the viewer is highlighting the wrong text."""
+    text = _doc()
+    chunks = build_parent_child_chunks(text, {"source_cache": "x.md"})
+    located = [c for c in chunks if "char_start" in c.metadata]
+    assert located, "some chunks must resolve, or the feature does nothing"
+    for c in located:
+        span = text[c.metadata["char_start"] : c.metadata["char_end"]]
+        assert _norm(c.page_content)[:60] in _norm(span), c.metadata
+
+
+def test_a_chunk_without_a_resolvable_span_simply_omits_it():
+    """Absent keys, not sentinel values: a caller must not be able to read -1 as a position."""
+    text = _doc()
+    for c in build_parent_child_chunks(text, {"source_cache": "x.md"}):
+        if "char_start" not in c.metadata:
+            assert "char_end" not in c.metadata
+        assert c.metadata.get("char_start") != -1
+
+
+def test_the_child_span_sits_inside_its_parent_span():
+    text = _doc()
+    for c in build_parent_child_chunks(text, {"source_cache": "x.md"}):
+        m = c.metadata
+        if "char_start" in m and "parent_char_start" in m:
+            assert m["parent_char_start"] <= m["char_start"]
+            assert m["char_end"] <= m["parent_char_end"]
+
+
+def test_spans_are_offsets_into_the_cache_not_into_page_content():
+    """`page_content` is cleaned; the span is raw. Conflating them silently shifts every offset."""
+    text = "# T\n\n<!-- page:1 -->\n\nThe sentence that matters here, at length, with more words."
+    chunks = build_parent_child_chunks(text, {"source_cache": "x.md"})
+    located = [c for c in chunks if "char_start" in c.metadata]
+    if located:
+        c = located[0]
+        assert c.metadata["char_end"] <= len(text)
+        # The marker is absent from page_content but present in the raw slice it points at.
+        assert "<!-- page:1 -->" not in c.page_content

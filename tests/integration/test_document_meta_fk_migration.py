@@ -187,7 +187,9 @@ def test_orphan_sweep_no_longer_leaves_an_override_behind(legacy_db: Engine) -> 
 
     removed = cleanup_orphans_sqlite(_FakeChroma())  # type: ignore[arg-type]
 
-    assert removed == ["hash-gone.pdf"]
+    # ADR-047 split the return into gone/stale; a missing source file is `gone`.
+    assert removed.gone == ["hash-gone.pdf"]
+    assert removed.stale == []
     assert _overrides(legacy_db) == {}
 
 

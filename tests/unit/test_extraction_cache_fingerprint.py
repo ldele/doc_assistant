@@ -42,7 +42,7 @@ def _write_pair(tmp_path: Path, *, fingerprint: str | None) -> tuple[Path, Path]
 
 
 def test_matching_fingerprint_is_fresh(tmp_path: Path) -> None:
-    original, cached = _write_pair(tmp_path, fingerprint=extraction_fingerprint())
+    original, cached = _write_pair(tmp_path, fingerprint=extraction_fingerprint(".pdf"))
     assert is_cache_fresh(original, cached) is True
 
 
@@ -62,7 +62,7 @@ def test_a_different_fingerprint_is_stale(tmp_path: Path) -> None:
 
 def test_source_newer_than_cache_still_wins(tmp_path: Path) -> None:
     """The original mtime rule must survive: a fingerprint match cannot vouch for stale content."""
-    original, cached = _write_pair(tmp_path, fingerprint=extraction_fingerprint())
+    original, cached = _write_pair(tmp_path, fingerprint=extraction_fingerprint(".pdf"))
     import os
     import time
 
@@ -78,40 +78,40 @@ def test_changing_a_tunable_changes_the_fingerprint(monkeypatch: pytest.MonkeyPa
     hashed explicitly — bytecode hashing alone would miss it."""
     from doc_assistant import extractors
 
-    before = extraction_fingerprint()
+    before = extraction_fingerprint(".pdf")
     extraction_fingerprint.cache_clear()
     monkeypatch.setattr(extractors, "_TEXT_LAYER_KEPT_MIN", 0.9)
-    assert extraction_fingerprint() != before
+    assert extraction_fingerprint(".pdf") != before
 
 
 def test_changing_the_selected_extractor_changes_the_fingerprint(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    before = extraction_fingerprint()
+    before = extraction_fingerprint(".pdf")
     extraction_fingerprint.cache_clear()
     monkeypatch.setattr(cache_mod.config, "PDF_EXTRACTOR", "something-else")
-    assert extraction_fingerprint() != before
+    assert extraction_fingerprint(".pdf") != before
 
 
 def test_changing_extractor_logic_changes_the_fingerprint(monkeypatch: pytest.MonkeyPatch) -> None:
     """The bump-free half: editing an extractor must invalidate without touching a constant."""
     from doc_assistant import extractors
 
-    before = extraction_fingerprint()
+    before = extraction_fingerprint(".pdf")
     extraction_fingerprint.cache_clear()
 
     def _different(md: str) -> str:
         return md + "changed"
 
     monkeypatch.setattr(extractors, "strip_image_placeholders", _different)
-    assert extraction_fingerprint() != before
+    assert extraction_fingerprint(".pdf") != before
 
 
 def test_fingerprint_is_stable_across_calls() -> None:
     """It keys a cache; an unstable value would re-extract the library on every run."""
-    a = extraction_fingerprint()
+    a = extraction_fingerprint(".pdf")
     extraction_fingerprint.cache_clear()
-    assert extraction_fingerprint() == a
+    assert extraction_fingerprint(".pdf") == a
 
 
 def test_fingerprint_path_is_a_sibling_not_a_header(tmp_path: Path) -> None:
@@ -199,8 +199,157 @@ def test_a_referenced_cache_entry_can_go_stale_like_any_other(tmp_path, monkeypa
 
     cached = get_cache_path(src)
     cached.parent.mkdir(parents=True, exist_ok=True)
-    write_cache(cached, "# x")
+    write_cache(cached, "# x", source=src)
     assert is_cache_fresh(src, cached), "a just-written cache is fresh"
 
     os.utime(src, (cached.stat().st_mtime + 10, cached.stat().st_mtime + 10))
     assert not is_cache_fresh(src, cached), "a newer source must invalidate it"
+
+
+# ============================================================
+# Per-format scoping (KI-48). Two failure modes, opposite directions:
+# under-invalidating serves text no current version would produce (KI-40 again), while
+# over-invalidating re-extracts a corpus for a change that could not have touched it.
+# ============================================================
+
+_FORMATS = (".pdf", ".epub", ".html", ".docx", ".rtf", ".odt", ".txt")
+
+
+def _fingerprints() -> dict[str, str]:
+    from doc_assistant.ingest.cache import extraction_fingerprint
+
+    extraction_fingerprint.cache_clear()
+    return {suffix: extraction_fingerprint(suffix) for suffix in _FORMATS}
+
+
+def test_every_format_has_its_own_identity():
+    """If two formats share a fingerprint, one of them is invalidated by the other's changes."""
+    fps = _fingerprints()
+    assert len(set(fps.values())) == len(_FORMATS), fps
+
+
+def test_a_format_entry_point_is_inside_its_own_scope():
+    """The KI-40 reintroduction guard, and it caught a real bug.
+
+    Every non-PDF format is dispatched through the `_EXTRACTORS` dict, which is a *runtime*
+    lookup — so a static walk from `extract_to_markdown` never reaches `extract_epub`, and an
+    EPUB fix would not invalidate one EPUB cache. Measured before the seeds were added: the
+    `.epub` closure held two functions and neither was `extract_epub`.
+    """
+    from doc_assistant import extractors
+    from doc_assistant.ingest.cache import _extraction_closure
+
+    entries = {fn.__name__ for fn in extractors._EXTRACTORS.values()}
+    entries.add("extract_pdf_pymupdf")
+    for suffix in _FORMATS:
+        entry = extractors._EXTRACTORS.get(suffix)
+        name = entry.__name__ if entry else "extract_pdf_pymupdf"
+        blocked = frozenset(entries - {name})
+        fns, _consts, _mods = _extraction_closure(blocked, (getattr(extractors, name),))
+        assert name in fns, f"{suffix}: {name} is outside its own fingerprint scope"
+
+
+def test_changing_one_formats_helper_leaves_the_others_alone(monkeypatch):
+    """The whole point of KI-48: an EPUB/HTML fix must not re-extract 97 PDFs."""
+    from doc_assistant import extractors
+
+    before = _fingerprints()
+    original = extractors._soup_to_markdown
+
+    def patched(soup):
+        return original(soup) + ""
+
+    monkeypatch.setattr(extractors, "_soup_to_markdown", patched)
+    after = _fingerprints()
+
+    assert after[".epub"] != before[".epub"], "EPUB uses the helper and must notice"
+    assert after[".html"] != before[".html"], "HTML uses the helper and must notice"
+    for untouched in (".pdf", ".docx", ".rtf", ".odt", ".txt"):
+        assert after[untouched] == before[untouched], f"{untouched} does not use it"
+
+
+def test_a_pdf_only_tunable_moves_only_pdf(monkeypatch):
+    """`_TEXT_LAYER_KEPT_MIN` is referenced by name, so its VALUE never reaches co_code."""
+    from doc_assistant import extractors
+
+    before = _fingerprints()
+    monkeypatch.setattr(extractors, "_TEXT_LAYER_KEPT_MIN", 0.75)
+    after = _fingerprints()
+
+    assert after[".pdf"] != before[".pdf"]
+    for untouched in (".epub", ".html", ".docx", ".rtf", ".odt", ".txt"):
+        assert after[untouched] == before[untouched]
+
+
+def test_a_shared_exit_step_moves_every_format(monkeypatch):
+    """`strip_image_placeholders` runs for all of them, so narrowing must not lose it (KI-14)."""
+    from doc_assistant import extractors
+
+    before = _fingerprints()
+    original = extractors.strip_image_placeholders
+
+    def patched(md):
+        return original(md)
+
+    monkeypatch.setattr(extractors, "strip_image_placeholders", patched)
+    after = _fingerprints()
+
+    for suffix in _FORMATS:
+        assert after[suffix] != before[suffix], f"{suffix} missed a change to the shared exit"
+
+
+def test_the_fingerprint_does_not_embed_a_memory_address():
+    """Determinism across processes. `_EXTRACTORS` reprs its functions **with their addresses**,
+    so hashing that repr would give a different answer every run and no cache would ever read
+    fresh again. Caught by measurement, not review."""
+    from doc_assistant import extractors
+    from doc_assistant.ingest.cache import _stable_repr
+
+    rendered = _stable_repr(extractors._EXTRACTORS)
+    assert " at 0x" not in rendered and " object at " not in rendered, rendered
+    assert _stable_repr(extractors._EXTRACTORS) == rendered, "must be stable within a run too"
+
+
+def test_a_regex_constant_is_hashed_by_its_pattern():
+    """The pattern is the part that changes behaviour; `re.compile` objects repr stably anyway,
+    but pinning it means a flags-only change is still visible."""
+    import re as _re
+
+    from doc_assistant.ingest.cache import _stable_repr
+
+    assert _stable_repr(_re.compile("a+", _re.I)) != _stable_repr(_re.compile("a+"))
+    assert _stable_repr(_re.compile("a+")) != _stable_repr(_re.compile("b+"))
+
+
+def test_scoping_failure_falls_back_to_the_whole_module(monkeypatch):
+    """Over-invalidating costs CPU; under-invalidating serves stale text.
+
+    The fallback picks CPU.
+    """
+    from doc_assistant.ingest import cache as cache_mod
+
+    def boom(*_a, **_k):
+        raise RuntimeError("walk exploded")
+
+    monkeypatch.setattr(cache_mod, "_extraction_closure", boom)
+    cache_mod.extraction_fingerprint.cache_clear()
+    assert cache_mod.extraction_fingerprint(".pdf") == cache_mod._whole_module_fingerprint()
+    cache_mod.extraction_fingerprint.cache_clear()
+
+
+def test_the_cache_pair_round_trips_per_format(tmp_path, monkeypatch):
+    """End to end: what `write_cache` records is what `is_cache_fresh` accepts, per format."""
+    from doc_assistant import config
+    from doc_assistant.ingest.cache import get_cache_path, is_cache_fresh, write_cache
+
+    monkeypatch.setattr(config, "DOCS_PATH", tmp_path / "sources")
+    monkeypatch.setattr(config, "CACHE_PATH", tmp_path / "cache")
+
+    for name in ("a.pdf", "b.epub", "c.html", "d.txt"):
+        src = tmp_path / "sources" / name
+        src.parent.mkdir(parents=True, exist_ok=True)
+        src.write_bytes(b"x")
+        cached = get_cache_path(src)
+        cached.parent.mkdir(parents=True, exist_ok=True)
+        write_cache(cached, "# x", source=src)
+        assert is_cache_fresh(src, cached), f"{name} must read fresh right after being written"

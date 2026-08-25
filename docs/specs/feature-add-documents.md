@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-08-24 (W0 runtime-confirmed; button moved to the Library header row) · class: living -->
+<!-- status: active · updated: 2026-08-25 (AD3b landed; open question 3 resolved) · class: living -->
 
 # Spec — Add documents: the accept surface (AD1–AD4) + the Settings changes it forces (CS1–CS2)
 
@@ -222,7 +222,7 @@ sorting + pagination — **testable under `node --test`, and it must be**) ·
 - W0 recorded with evidence and the route named (**done 2026-08-21**); the two runtime
   assertions **confirmed in a real Tauri window 2026-08-24**. Outstanding: one human drag,
   to prove a real drop delivers a non-empty `paths` array.
-- **AD3b landed 2026-08-24** — `SourceRoot`, `SourceFile.root_id`, the `(root_id, rel_path)` key,
+- **AD3b landed 2026-08-25** — `SourceRoot`, `SourceFile.root_id`, the `(root_id, rel_path)` key,
   multi-root scan/selection/exclusion, and `apply_add(mode="reference")`. Two consequences worth
   reading before touching this area: the wire identifier for a registered file is now
   `registry.source_key` (`"<root_id>:<rel_path>"`, bare rel_path still means the library root),
@@ -242,7 +242,7 @@ sorting + pagination — **testable under `node --test`, and it must be**) ·
 |---|---|---|
 | 1 | Which accept route, and does it add an npm dep? | **resolved 2026-08-21** — `withGlobalTauri` + injected API; **no npm dep**; see W0 |
 | 2 | Cost of the page-1 text-layer probe across a 500-file batch | **parked — RG-030** |
-| 3 | Does a referenced root need a "re-scan on app start" pass, or is missing-detection on demand enough? | **resolved 2026-08-24** — **on demand is enough; no startup pass.** `scan_sources` already runs whenever the Library loads, so a vanished file derives `missing` the moment anyone looks, and one behaviour covers both root kinds. A startup pass would `rglob` every referenced root at launch — on a network share or an unplugged drive that is slow or blocking, at the worst possible moment (RG-012 tracks cold start). **Consequence, decided with it:** an unreachable *root* is not the same fact as deleted *files*, so `RootView.available` is derived per scan and `SourceView.root_available` carries it, letting the UI say "the drive is not connected" instead of showing 400 identical `missing` badges. Availability is never persisted — a drive that is unplugged now may be back in a second |
+| 3 | Does a referenced root need a "re-scan on app start" pass, or is missing-detection on demand enough? | **resolved 2026-08-25** — **on demand is enough; no startup pass.** `scan_sources` already runs whenever the Library loads, so a vanished file derives `missing` the moment anyone looks, and one behaviour covers both root kinds. A startup pass would `rglob` every referenced root at launch — on a network share or an unplugged drive that is slow or blocking, at the worst possible moment (RG-012 tracks cold start). **Consequence, decided with it:** an unreachable *root* is not the same fact as deleted *files*, so `RootView.available` is derived per scan and `SourceView.root_available` carries it, letting the UI say "the drive is not connected" instead of showing 400 identical `missing` badges. Availability is never persisted — a drive that is unplugged now may be back in a second |
 
 *(cpc `docs_check` rule 15 fails a started sprint with an `open` row — resolve 1 and 3 at
 sprint-start, not mid-build.)*

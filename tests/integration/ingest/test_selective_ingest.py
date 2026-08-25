@@ -70,7 +70,7 @@ def _mark_ingested(file: Path) -> None:
         )
     cache = get_cache_path(file)
     cache.parent.mkdir(parents=True, exist_ok=True)
-    write_cache(cache, "cached")
+    write_cache(cache, "cached", source=file)
     sm = file.stat().st_mtime
     os.utime(cache, (sm + 100, sm + 100))  # cache newer than source → fresh
 

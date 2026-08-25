@@ -79,7 +79,7 @@ def _write_cached_source(docs: Path, name: str, content: str) -> Path:
     src.write_text("placeholder — bypassed by the fresh cache\n", encoding="utf-8")
     cached = ingest.get_cache_path(src)
     cached.parent.mkdir(parents=True, exist_ok=True)
-    write_cache(cached, content)
+    write_cache(cached, content, source=src)
     return src
 
 

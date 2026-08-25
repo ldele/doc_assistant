@@ -1,8 +1,8 @@
-<!-- status: active · updated: 2026-08-24 (AD3b built — both placement modes ship) · class: append-only -->
+<!-- status: active · updated: 2026-08-25 (AD3b built — both placement modes ship) · class: append-only -->
 
 # ADR-046 — A document you add is either copied in or referenced in place, and the app must know which
 
-- **Status:** accepted — **copy-in and reference-in-place both built** (AD1-AD3b, 2026-08-24); the amended-delete half (`delete_document(delete_file=...)`) is still design
+- **Status:** accepted — **copy-in and reference-in-place both built** (AD1-AD3a 2026-08-24, AD3b 2026-08-25); the amended-delete half (`delete_document(delete_file=...)`) is still design
 - **Date:** 2026-08-21
 - **Deciders:** user (product direction, 2026-08-21 scoped grill), Claude (Claude Code session
   2026-08-21)

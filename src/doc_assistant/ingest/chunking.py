@@ -125,6 +125,62 @@ def _split_trailing_paragraph(text: str) -> tuple[str, str]:
     return text[: boundary.end()], text[boundary.end() :]
 
 
+#: How much of a chunk's head and tail is used to locate it when it is not a verbatim substring.
+#: Long enough to be distinctive in running prose, short enough to survive the splitter's
+#: whitespace handling at both ends.
+_LOCATE_PROBE_CHARS = 60
+
+#: Span verification compares raw markdown with cleaned chunk text, so whitespace must not decide.
+_WHITESPACE = re.compile(r"\s+")
+
+
+def _span_holds(haystack: str, span: tuple[int, int], needle: str) -> bool:
+    """Does the resolved span actually contain what it claims? Whitespace-insensitively.
+
+    The head/tail probe can land on the wrong occurrence when a document repeats near-identical
+    passages — measured on a real paper, a chunk about "Figure S4" resolved onto the "Figure S5"
+    caption. Verifying here converts that from a *wrong* answer into *no* answer, which is the
+    trade this feature is built on. Normalised because the span is raw markdown while the chunk
+    has been through `clean_chunk_text`, so page markers and collapsed blank lines differ.
+    """
+    window = _WHITESPACE.sub(" ", haystack[span[0] : span[1]])
+    return _WHITESPACE.sub(" ", needle).strip() in window
+
+
+def locate_span(haystack: str, needle: str, cursor: int = 0) -> tuple[int, int] | None:
+    """Where ``needle`` sits in ``haystack`` at or after ``cursor``, or ``None`` if unresolvable.
+
+    **The splitter does not emit verbatim substrings.** `RecursiveCharacterTextSplitter` strips
+    each piece and rejoins on its separator, so a chunk whose original text held (say) three
+    newlines comes back holding two and `str.find` misses it outright. Measured on ordinary
+    prose: 2 of 8 children did not match exactly.
+
+    So an exact search is tried first, then the head and tail are probed independently and the
+    span is taken between them. When even that fails this returns ``None`` — deliberately, rather
+    than falling back to the running cursor. A *missing* offset costs the reader a highlight and
+    the caller can still match the text at read time; a *wrong* offset points confidently at the
+    wrong paragraph, which is worse than not answering. Searching from ``cursor`` is what keeps a
+    passage that repeats verbatim mapped to its own occurrence.
+    """
+    exact = haystack.find(needle, cursor)
+    if exact != -1:
+        return exact, exact + len(needle)  # exact by construction; no verification needed
+
+    stripped = needle.strip()
+    if not stripped:
+        return None
+    head = stripped[:_LOCATE_PROBE_CHARS]
+    start = haystack.find(head, cursor)
+    if start == -1:
+        return None
+    tail = stripped[-_LOCATE_PROBE_CHARS:]
+    tail_at = haystack.find(tail, start)
+    if tail_at == -1:
+        return None
+    span = (start, tail_at + len(tail))
+    return span if _span_holds(haystack, span, stripped) else None
+
+
 def _table_aware_parents(text: str) -> list[str]:
     """Split ``text`` into parent passages, keeping spliced tables retrievable.
 
@@ -177,15 +233,34 @@ def build_parent_child_chunks(text: str, base_metadata: dict[str, Any]) -> list[
 
     A child that is nothing but a marker cleans down to the empty string; those are
     dropped rather than embedded, and ``child_index`` stays contiguous within a parent.
+
+    **``char_start`` / ``char_end`` locate the chunk in the cached markdown** — the file
+    ``source_cache`` names — and deliberately span the *raw* text, before ``clean_chunk_text``
+    removed page markers. They are what lets a reader be shown where an answer came from
+    (ROADMAP 19) without re-deriving it per query, which is the ingest-once-amortises rule: the
+    corpus is read far more often than it is written. Three things they are **not**: an offset
+    into ``page_content`` (that is the cleaned text), an offset into the source PDF (use ``page``
+    for that), and a promise of exactness when a passage repeats verbatim — the cursor makes
+    each occurrence map to itself, but a pathological duplicate can still land on the wrong one.
     """
     parents = _table_aware_parents(text)
     children: list[Document] = []
+    parent_cursor = 0
     for parent_idx, parent_text in enumerate(parents):
+        parent_span = locate_span(text, parent_text, parent_cursor)
+        if parent_span is not None:
+            parent_cursor = parent_span[1]
+
         clean_parent = clean_chunk_text(parent_text)
         if not clean_parent:
             continue
         child_idx = 0
+        child_cursor = 0
         for child_text in _pc_child_splitter.split_text(parent_text):
+            child_span = locate_span(parent_text, child_text, child_cursor)
+            if child_span is not None:
+                child_cursor = child_span[1]
+
             clean_child = clean_chunk_text(child_text)
             if not clean_child:
                 continue
@@ -195,6 +270,13 @@ def build_parent_child_chunks(text: str, base_metadata: dict[str, Any]) -> list[
                 "parent_index": parent_idx,
                 "child_index": child_idx,
             }
+            # Spans in the CACHED MARKDOWN — absent when unresolvable rather than guessed.
+            if parent_span is not None:
+                meta["parent_char_start"] = parent_span[0]
+                meta["parent_char_end"] = parent_span[1]
+                if child_span is not None:
+                    meta["char_start"] = parent_span[0] + child_span[0]
+                    meta["char_end"] = parent_span[0] + child_span[1]
             children.append(Document(page_content=clean_child, metadata=meta))
             child_idx += 1
     return children

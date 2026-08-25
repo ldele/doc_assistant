@@ -18,7 +18,139 @@ Format: What changed | Why | Rejected alternatives | What it opens
 > is individually small and correct, so unbounded growth is invisible per commit.
 
 ---
-## 2026-08-24 (5) — a referenced file could be registered but never ingested, and the corpus turned out to be uncached
+## 2026-08-25 (5) — the corpus is re-ingested, and a full re-extraction is a four-day job at 10k documents
+
+**What changed.** No code. The 97-document library was re-extracted and re-embedded end to end,
+after the identity work below made that non-destructive. **6m31s**, because the caches were warm
+from the two earlier passes; the cold run took 61 minutes.
+
+**Nothing was lost, and that is the measured claim rather than the hopeful one.** Against the
+pre-run backup: documents 97→97, figures 881→881, keywords 1455→1455, epistemics 445→445,
+concept_presence 31→31, document_field 82→82, folders 18→18, metadata overrides 1→1, and
+**97/97 document ids preserved — 0 lost, 0 new**. Every figure's `doc_hash` agrees with its
+document. Chunks moved 13,925 → 14,957, which is the point. KI-48's symptom is gone: all 97
+documents now derive `ingested` rather than `changed`.
+
+**Scaling, since it was asked and is worth keeping (n=96, one run, this box, cu130).** Time tracks
+**pages, not bytes** — r=+0.73 against page count, r=+0.37 against file size. About **1.06 s/page
+plus 2.5 s fixed** per document; 1.19 s/page on the mean. The bytes correlation is real but weak
+and comes from OCR: `elife-04250-v1.pdf` took 414 s for **21 pages**, while `hebb_1949.pdf` took
+507 s for 365. Megabytes are close to useless as an estimate; pages are not.
+
+**⚠ THE PROJECTION MUST USE THE MEAN, NOT THE MEDIAN, and I got that wrong first time.** The
+distribution has a heavy right tail — mean 34.6 s/doc against a median of 17.5 — so a
+median-based total halves the real answer. Total time is `n × mean`:
+
+| corpus | full re-extraction |
+|---|---|
+| 100 | ~1 h |
+| 1,000 | ~9.6 h |
+| **10,000** | **~96 h** |
+
+The per-page figure agrees independently: 10,000 documents at this corpus's 30 pages/doc is ~98 h.
+**Against the ~10,000-document robustness contract, that makes "never invalidate a cache you did
+not have to" a scaling requirement rather than a nicety** — which is exactly what the per-format
+fingerprint below buys.
+
+**Chunk locations are live at 81% (baseline) / 63% (parent-child) of chunks, across 78 of 97
+documents.** The 19 missing documents extracted identically, so they were skipped and never
+re-chunked; they carry no spans and fall back to read-time matching. **Careful reading the
+coverage:** `Chroma.get(limit=N)` returns earliest-inserted chunks, which are exactly those 19 —
+sampling that way reports 0% and looks like a total failure. Ask for a document whose hash moved.
+
+**What it opens.** Those 19 documents gain spans only on a forced re-chunk. The figure PNGs remain
+11% resolvable (88/811) — **pre-existing**, unrelated to this work, and worth its own look.
+
+---
+## 2026-08-25 (4) — a re-extraction destroyed 767 figure rows, because the sweep runs before identity
+
+**What changed.** `cleanup_orphans_sqlite` returns `OrphanHashes(gone, stale)` instead of one list
+and deletes rows for `gone` only; `cleanup_orphan_figures` receives `gone` plus stale hashes no
+`Figure` row claims; `store.repoint_figures` carries a document's figures onto its new hash. Filed
+as the fix for a real data loss, not a hypothetical.
+
+**⛔ WHAT HAPPENED.** ADR-047 gave `_existing_document_id` a source-path fallback so a document
+survives its own re-extraction. It was verified in isolation — 97/97 documents kept their identity
+— and then the real re-ingest **destroyed 767 of 881 figure rows, 1,170 keywords and 381
+epistemics rows, reporting `exit=0` throughout.**
+
+The fallback never ran. `main()` executes the orphan sweep **first**, and that pass was hash-keyed
+too: it re-extracts every file, finds 78 hashes no Document row still matches, classifies them
+`stale`, and deletes those rows — FK-cascading the sidecars — before `_existing_document_id` is
+ever consulted. Restored from backup, verified count-for-count. **Filed as KI-49**, because the
+shape recurs: a component was proved and the system was not.
+
+**The distinction that fixes it.** A source file that is **gone** ends its document — row, chunks,
+figure PNGs. A source file that is **still there** and merely extracts differently does not: only
+the chunks are dead. Those were one list, which is precisely how a maintenance operation came to
+delete data.
+
+**Figures were the only sidecar needing real work.** Everything else — keywords, epistemics,
+concept_presence, folders, metadata overrides, document_field — is keyed on `document_id` alone
+and survives automatically once the row is not deleted. `figures` is keyed **both** ways, plus
+on-disk PNGs under `FIGURE_DIR/{doc_hash}/` whose **absolute** paths are stored in `image_path`,
+so `repoint_figures` does three things together: rename the directory, rewrite the stored path,
+set the new hash. Worth carrying rather than regenerating — a figure is a crop of *the PDF's own
+page*, so a **text** extractor change cannot invalidate it, and regenerating means paying for 881
+VLM descriptions again.
+
+**And narrowing the sweep opened a leak, which the test suite caught.** A stale directory with no
+`Figure` row behind it has nothing to move it and nothing to read it. `hashes_with_no_figure_rows`
+splits those out so they are still collected. The failing test was not relaxed; it became two.
+
+**Verified the way the first attempt was not: a full ingest against a faithful 1.1 GB copy of
+`data/` before touching anything.** That trial caught two further problems that would have made it
+meaningless — copying changes the paths the identity fallback matches on (so the DB's
+`source_original` had to be rewritten), and **`_chroma_base()` silently relocates the vector store
+to `%PROGRAMDATA%` when `DATA_PATH` is non-ASCII**, which the scratchpad path is once resolved
+(`C:\Users\Lucas Délez\…`). The first trial therefore ran against an empty Chroma, classified
+nothing, and exercised none of the fix.
+
+**What it opens.** KI-49. The `%PROGRAMDATA%` relocation is deliberate (a documented chromadb
+persistence bug) but invisible at the point of use — any tooling pointing `DOC_DATA_DIR` under a
+non-ASCII home gets a fresh store rather than the real one.
+
+---
+## 2026-08-25 (3) — extraction identity, scoped per format and no longer hostage to the extractor
+
+**What changed.** `extraction_fingerprint(suffix)` is scoped to one format's call graph;
+`get_cache_path`/`is_cache_fresh`/`write_cache` carry the suffix; chunks record where they came
+from; and ADR-047 makes a document's identity its source file rather than its extracted text.
+
+**KI-48, fixed at the cause.** The fingerprint hashed the bytecode of *every* function in
+`extractors`, so an EPUB/HTML-only refactor invalidated all 97 **PDF** caches — a whole-corpus
+re-extraction for a change that provably could not alter a single PDF. The scope is now the
+transitive closure of what one format actually executes, walked from `extract_to_markdown` with
+the *other* formats' entry points blocked, so a shared post-processing step is picked up
+automatically and a per-format one is not. Measured: `_soup_to_markdown` moves `.epub`/`.html` and
+nothing else; `_TEXT_LAYER_KEPT_MIN` moves `.pdf` and nothing else; `strip_image_placeholders`
+moves all seven. Any failure in the walk falls back to the whole-module scope — over-invalidating
+costs CPU, under-invalidating serves text no current version would produce (KI-40).
+
+**⚠ TWO BUGS THE MEASUREMENT CAUGHT THAT REVIEW DID NOT.** Every non-PDF format is dispatched
+through the `_EXTRACTORS` **dict**, a runtime lookup a static walk cannot follow — so `.epub`'s
+closure held two functions and `extract_epub` was not one of them. **An EPUB fix would not have
+invalidated a single EPUB cache: KI-40 reintroduced, silently.** And `_EXTRACTORS` reprs its
+functions *with their memory addresses*, so hashing it gave a different answer every process and
+no cache would ever have read fresh again. Both are pinned by tests; determinism is asserted
+across three separate processes.
+
+**Chunk locations came almost free** (ROADMAP 19): the baseline path already computed the offset
+for `extract_chunk_metadata` and threw it away. The parent/child path needed the cursor walk, and
+there the splitter does **not** emit verbatim substrings — it strips and rejoins on its separator,
+so 2 of 8 children were unfindable by `str.find`. `locate_span` probes head and tail, then
+**verifies the span contains its own text** and returns `None` when it cannot. That check is not
+decoration: without it three chunks in one paper resolved onto a neighbouring figure caption. A
+missing location costs a highlight; a wrong one points confidently at the wrong paragraph.
+
+**Rejected:** a hand-maintained format→dependency map (it rots, and the failure is silent);
+sentinel `-1` offsets (a caller reads them as a position).
+
+**What it opens.** ADR-047's remainder is RG-027's: identity is now *path*-shaped, so a file moved
+between folders still reads as new.
+
+---
+## 2026-08-25 (2) — a referenced file could be registered but never ingested, and the corpus turned out to be uncached
 
 **What changed.** `get_cache_path` resolves for a file anywhere on disk, the AD3b migration is
 applied to the live library, and KI-48 records what checking that turned up.
@@ -48,7 +180,7 @@ every one of them was found by scanning the source dir.
 **⚠ AND THE CHECK THAT WAS SUPPOSED TO BE A FORMALITY FOUND KI-48.** Confirming no cache entry had
 moved also revealed that **97 of 97 are stale** — recorded fingerprint `2ce7639c…`, current
 `686aa2df…`. Cause: `extraction_fingerprint()` hashes the bytecode of every function in
-`extractors`, so this morning's `f285212` (EPUB/HTML only) invalidated the **PDF** caches too;
+`extractors`, so yesterday's `f285212` (EPUB/HTML only) invalidated the **PDF** caches too;
 bytecode hashing cannot tell which format a change touched. That commit's DEVLOG says *"blast
 radius zero … so nothing was re-ingested"* — true of the output then, **wrong about the cache**.
 Worse, re-extracting today is not a no-op: measured on 3 of 97, the fresh text differs, which is
@@ -64,7 +196,7 @@ schema field and a re-ingest — and **KI-48's pending re-extraction is the chea
 if it is ever wanted.
 
 ---
-## 2026-08-24 (4) — AD3b: the registry grows a root, and the key that was never unique alone
+## 2026-08-25 — AD3b: the registry grows a root, and the key that was never unique alone
 
 **What changed.** `SourceRoot` + `SourceFile.root_id` + the `(root_id, rel_path)` unique index, an
 ADR-026 rebuild migration, a multi-root `registry`, `apply_add(mode="reference")`, and the sheet's

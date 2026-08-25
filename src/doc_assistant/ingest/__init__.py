@@ -56,6 +56,7 @@ from .cleanup import (
     cleanup_orphan_figures,
     cleanup_orphans_chroma,
     cleanup_orphans_sqlite,
+    hashes_with_no_figure_rows,
 )
 from .figures import figure_parent_text, find_figure_context
 from .store import (
@@ -64,6 +65,7 @@ from .store import (
     figure_units,
     get_document_row_hashes,
     get_indexed_hashes,
+    repoint_figures,
     upsert_document_in_sqlite,
 )
 
@@ -97,12 +99,14 @@ __all__ = [
     "get_embeddings",
     # store helpers
     "get_indexed_hashes",
+    "hashes_with_no_figure_rows",
     "is_cache_fresh",
     # orchestration (defined here)
     "load_documents",
     "load_or_extract",
     "main",
     "process_one_document",
+    "repoint_figures",
     "upsert_document_in_sqlite",
 ]
 
@@ -211,6 +215,12 @@ def process_one_document(
                         "chunk_index": i,
                         "page": extra["page"],
                         "section": extra["section"],
+                        # Span in the cached markdown (ROADMAP 19). `chunk_start` was already
+                        # computed above for `extract_chunk_metadata` and thrown away; the end is
+                        # the raw chunk's own length, since this splitter's output IS the slice
+                        # it was cut from (unlike the parent/child path — see `locate_span`).
+                        "char_start": chunk_start,
+                        "char_end": chunk_start + len(chunk_text),
                     },
                 )
             )
@@ -244,7 +254,10 @@ def process_one_document(
         # chunks. The id is needed up front because it is stamped into every chunk's
         # metadata and is the key figure_units() queries on.
         # Coupling: ingest <-> db Document (this id) <-> both Chroma collections.
-        document_id = _existing_document_id(h) or str(uuid4())
+        document_id = _existing_document_id(h, path) or str(uuid4())
+        # The identity survived but the content moved (ADR-047): carry the figures across before
+        # anything reads them by hash. No-op when the hash is unchanged or there are no figures.
+        repoint_figures(document_id, h)
 
         # Stamp health and document_id onto chunks
         for doc in documents:
@@ -520,10 +533,15 @@ def main(
     # `files=` selection), otherwise a partial walk would falsely flag everything outside the
     # scope as missing-on-disk.
     if not skip_cleanup and not force_rebuild and scope is None and files is None:
-        orphan_hashes = cleanup_orphans_sqlite(db)
-        cleanup_orphans_chroma(db, orphan_hashes, also_clean_cache=True)
-        cleanup_orphans_chroma(pc_db, orphan_hashes, also_clean_cache=False)
-        cleanup_orphan_figures(orphan_hashes)
+        orphans = cleanup_orphans_sqlite(db)
+        # Vectors die for both kinds; figure PNGs only for a source that is actually gone
+        # (ADR-047 — a re-extracted document keeps its figures, which are crops of the PDF).
+        cleanup_orphans_chroma(db, orphans.dead_chunk_hashes, also_clean_cache=True)
+        cleanup_orphans_chroma(pc_db, orphans.dead_chunk_hashes, also_clean_cache=False)
+        # `gone` documents are over, so their crops go. A `stale` hash keeps its crops only
+        # while a Figure row still claims them — `store.repoint_figures` moves those to the new
+        # hash. One with no rows behind it is a dead directory nothing will ever read (ADR-047).
+        cleanup_orphan_figures(orphans.gone + hashes_with_no_figure_rows(orphans.stale))
 
     # The dedup gate is the INTERSECTION of the two stores on purpose: a hash counts as
     # "already indexed" only when it is present in BOTH the baseline and the parent-child

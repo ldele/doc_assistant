@@ -392,26 +392,22 @@ def _resolve_walk_root(scope: str | None) -> Path:
 def _drop_excluded(walked: list[Path]) -> tuple[list[Path], int]:
     """Drop files flagged ``excluded`` in the registry from an implicit walk (Decision 5).
 
-    Exclusions are keyed by rel_path under the configured source dir; a walked file outside that
-    dir (a ``--path`` elsewhere) can't match an exclusion and is kept. Returns ``(kept, skipped)``.
-    Registry / app_settings are imported lazily to keep the locked core's top-level imports intact.
+    Since AD3b the registry hands back **absolute** path keys spanning every root, so this is a
+    membership test rather than a rel_path reconstruction against one source dir — which also
+    retires the old caveat that a file walked from outside that dir could never match an
+    exclusion. Returns ``(kept, skipped)``. Registry is imported lazily to keep the locked core's
+    top-level imports intact.
     """
-    from doc_assistant import app_settings
     from doc_assistant.ingest import registry
 
     with session_scope() as session:
-        excluded = registry.excluded_rel_paths(session)
+        excluded = registry.excluded_paths(session)
     if not excluded:
         return walked, 0
-    source_dir = app_settings.get_source_dir().resolve()
     kept: list[Path] = []
     skipped = 0
     for f in walked:
-        try:
-            rel = f.resolve().relative_to(source_dir).as_posix()
-        except ValueError:
-            rel = ""
-        if rel and rel in excluded:
+        if registry.pathkey(f) in excluded:
             skipped += 1
         else:
             kept.append(f)

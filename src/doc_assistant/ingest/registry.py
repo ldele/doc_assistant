@@ -26,8 +26,8 @@ import structlog
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from doc_assistant.db.models import LIBRARY_ROOT_ID, SourceFile, SourceRoot, _utcnow
 from doc_assistant.db.models import Document as DBDocument
-from doc_assistant.db.models import SourceFile, _utcnow
 from doc_assistant.extractors import SUPPORTED_EXTENSIONS, is_supported
 from doc_assistant.ingest.cache import get_cache_path, is_cache_fresh
 
@@ -150,6 +150,36 @@ class SourceView:
     status: str
     excluded: bool
     doc_type: str | None
+    #: ADR-046 (AD3b) — which root this row belongs to. `rel_path` is relative to *this* root, so
+    #: the pair is the identity; `rel_path` alone stopped being unique when a second root existed.
+    root_id: str = LIBRARY_ROOT_ID
+    #: ``library`` or ``referenced`` — what delete branches on (ADR-014 as amended by ADR-046).
+    root_kind: str = "library"
+    #: False when the row's root is unreachable right now (unplugged drive, offline share). Its
+    #: files still derive ``missing``, but this says *why* — see `RootView.available`.
+    root_available: bool = True
+
+
+@dataclass(frozen=True)
+class RootView:
+    """One registered root plus whether it can be reached **right now**.
+
+    ``available`` is derived, never stored (see `db.models.SourceRoot`): a drive that is
+    unplugged this second may be back the next, so persisting it would create a second truth that
+    goes stale silently. It is the difference between *"your 400 documents were deleted"* and
+    *"the drive holding them is not connected"* — the honest-degradation contract makes that
+    distinction the app's job, not the user's to infer from 400 identical `missing` badges.
+    """
+
+    id: str
+    path: str
+    kind: str
+    available: bool
+
+
+def pathkey(p: Path | str) -> str:
+    """Public alias of `_pathkey` — the comparison key callers need to test `excluded_paths`."""
+    return _pathkey(p)
 
 
 def _pathkey(p: Path | str) -> str:
@@ -167,10 +197,13 @@ def _document_source_keys(session: Session) -> set[str]:
 
 
 def _cache_is_fresh(file: Path) -> bool:
-    """`is_cache_fresh` guarded for a source file outside the cache root (custom source dir).
+    """`is_cache_fresh`, guarded so one unresolvable path cannot crash a whole scan.
 
-    `get_cache_path` is `config.DOCS_PATH`-relative; a file elsewhere has no resolvable cache, so
-    treat it as not-fresh (it derives `new`/`changed`) rather than crash the whole scan.
+    Since AD3b `get_cache_path` resolves for a file anywhere on disk — a referenced file gets a
+    digest-keyed entry — so this no longer papers over "outside the library folder", which used to
+    make every referenced file read as `new` forever. The guard stays because the scan runs over
+    whatever is on disk and one pathological path should degrade to `new`/`changed`, not take the
+    listing down with it.
     """
     try:
         cached = get_cache_path(file)
@@ -179,47 +212,145 @@ def _cache_is_fresh(file: Path) -> bool:
     return is_cache_fresh(file, cached)
 
 
-def scan_sources(session: Session, source_dir: Path) -> list[SourceView]:
-    """Stat-only walk of ``source_dir``: upsert rows, refresh ``last_seen``, derive each status.
+def source_key(root_id: str, rel_path: str) -> str:
+    """The wire/selection identifier for one registered file: ``"<root_id>:<rel_path>"``.
+
+    A single opaque string rather than a pair because it travels through `validate_selection`,
+    the ingest `paths` list and the desktop client, all of which handle one identifier per file.
+    A bare `rel_path` remains a legal shorthand for the library root, so every caller written
+    before AD3b keeps working unchanged — see `split_key`.
+    """
+    return f"{root_id}:{rel_path}"
+
+
+def split_key(key: str, known_root_ids: set[str]) -> tuple[str, str]:
+    """Inverse of `source_key`, tolerant of the bare-`rel_path` shorthand.
+
+    The prefix before the first ``:`` is treated as a root id **only when it is actually one**.
+    That check is what makes the shorthand unambiguous: a POSIX filename may legally contain a
+    colon, so splitting blindly would turn `my:notes.pdf` into root ``my``. Unknown prefix →
+    the whole string is a library-root rel_path.
+    """
+    head, sep, tail = key.partition(":")
+    if sep and head in known_root_ids:
+        return head, tail
+    return LIBRARY_ROOT_ID, key
+
+
+def ensure_library_root(session: Session, source_dir: Path) -> SourceRoot:
+    """Get the one ``library`` root, creating it or refreshing its path.
+
+    The path is **updated in place** rather than re-seeded when the user moves their library
+    (`app_settings.get_source_dir()` changes): the row's id is what every `SourceFile.root_id`
+    points at, so replacing the row would orphan all of them. This is the only writer of the
+    library root's path, and it runs on every scan, so the row cannot drift from the setting.
+    """
+    root = session.get(SourceRoot, LIBRARY_ROOT_ID)
+    path = str(source_dir.resolve())
+    if root is None:
+        root = SourceRoot(id=LIBRARY_ROOT_ID, path=path, kind="library", added_at=_utcnow())
+        session.add(root)
+        session.flush()
+    elif root.path != path:
+        log.info("library_root_moved", was=root.path, now=path)
+        root.path = path
+        session.flush()
+    return root
+
+
+def register_root(session: Session, path: Path) -> SourceRoot:
+    """Get (or create) the ``referenced`` root for a folder the user keeps their own files in.
+
+    Idempotent on the resolved path, so referencing a second file from a folder already
+    registered reuses the root instead of minting a duplicate. Never returns the library root:
+    a path *inside* the library folder is a copy-in, not a reference, and `library/add.py`
+    rejects that before it gets here.
+    """
+    resolved = str(path.resolve())
+    existing = session.execute(select(SourceRoot).where(SourceRoot.kind == "referenced")).scalars()
+    for root in existing:
+        if _pathkey(root.path) == _pathkey(resolved):
+            return root
+    root = SourceRoot(path=resolved, kind="referenced", added_at=_utcnow())
+    session.add(root)
+    session.flush()
+    return root
+
+
+def _root_available(root: SourceRoot) -> bool:
+    """Can this root be reached right now? A stat, not a walk — it runs before every scan.
+
+    `Path.is_dir()` on a disconnected network share can block, but it is the same call the scan
+    itself would make one line later; doing it here means the answer is *"the root is gone"*
+    rather than *"every file under it vanished at once"*.
+    """
+    try:
+        return Path(root.path).is_dir()
+    except OSError:  # unreachable UNC path, permission denied on the mount point
+        return False
+
+
+def list_roots(session: Session, source_dir: Path) -> list[RootView]:
+    """Every registered root, library first, each with its live availability."""
+    ensure_library_root(session, source_dir)
+    roots = session.execute(select(SourceRoot)).scalars().all()
+    ordered = sorted(roots, key=lambda r: (r.kind != "library", r.path))
+    return [
+        RootView(id=r.id, path=r.path, kind=r.kind, available=_root_available(r)) for r in ordered
+    ]
+
+
+def scan_root(
+    session: Session, root: SourceRoot, *, available: bool | None = None
+) -> list[SourceView]:
+    """Stat-only walk of one root: upsert its rows, refresh ``last_seen``, derive each status.
 
     No extraction, hashing, or content reads — listing a large corpus is instant. A file that has
-    vanished keeps its row (it derives ``missing``); a re-appeared file refreshes in place. Returns
-    every row (present + missing), rel_path-sorted, with a freshly derived status.
+    vanished keeps its row (it derives ``missing``); a re-appeared file refreshes in place.
+
+    **An unavailable root is not walked at all.** Its rows are returned untouched, still deriving
+    ``missing`` but carrying ``root_available=False``, and critically their ``last_seen`` is *not*
+    refreshed and no row is deleted — an unplugged drive must not look like a deletion, and the
+    rows have to survive it being plugged back in.
     """
     now = _utcnow()
-    root = source_dir.resolve()
-    on_disk: dict[str, Path] = {}
-    for p in root.rglob("*"):
-        if p.is_file() and is_supported(p):
-            on_disk[p.relative_to(root).as_posix()] = p
-
     rows: dict[str, SourceFile] = {
-        r.rel_path: r for r in session.execute(select(SourceFile)).scalars()
+        r.rel_path: r
+        for r in session.execute(select(SourceFile).where(SourceFile.root_id == root.id)).scalars()
     }
+    reachable = _root_available(root) if available is None else available
+
+    on_disk: dict[str, Path] = {}
+    if reachable:
+        base = Path(root.path).resolve()
+        for p in base.rglob("*"):
+            if p.is_file() and is_supported(p):
+                on_disk[p.relative_to(base).as_posix()] = p
+
+        for rel, path in on_disk.items():
+            stat = path.stat()
+            fmt = path.suffix.lower().lstrip(".")
+            row = rows.get(rel)
+            if row is None:
+                row = SourceFile(
+                    root_id=root.id,
+                    rel_path=rel,
+                    format=fmt,
+                    size=stat.st_size,
+                    mtime=stat.st_mtime,
+                    first_seen=now,
+                    last_seen=now,
+                )
+                session.add(row)
+                rows[rel] = row
+            else:
+                row.format = fmt
+                row.size = stat.st_size
+                row.mtime = stat.st_mtime
+                row.last_seen = now
+        session.flush()
+
     doc_keys = _document_source_keys(session)
-
-    for rel, path in on_disk.items():
-        stat = path.stat()
-        fmt = path.suffix.lower().lstrip(".")
-        row = rows.get(rel)
-        if row is None:
-            row = SourceFile(
-                rel_path=rel,
-                format=fmt,
-                size=stat.st_size,
-                mtime=stat.st_mtime,
-                first_seen=now,
-                last_seen=now,
-            )
-            session.add(row)
-            rows[rel] = row
-        else:
-            row.format = fmt
-            row.size = stat.st_size
-            row.mtime = stat.st_mtime
-            row.last_seen = now
-    session.flush()
-
     views: list[SourceView] = []
     for rel, row in sorted(rows.items()):
         disk_path = on_disk.get(rel)
@@ -238,42 +369,75 @@ def scan_sources(session: Session, source_dir: Path) -> list[SourceView]:
                 status=status,
                 excluded=row.excluded,
                 doc_type=row.doc_type,
+                root_id=root.id,
+                root_kind=root.kind,
+                root_available=reachable,
             )
         )
     return views
 
 
+def scan_sources(session: Session, source_dir: Path) -> list[SourceView]:
+    """Scan **every** registered root and return all rows, library root first (ADR-046, AD3b).
+
+    Was a single-root walk of ``source_dir`` until AD3b; ``source_dir`` now names the *library*
+    root specifically, which this keeps current via `ensure_library_root`. Ordering is
+    (library-first, root path, rel_path) so the list is stable across calls rather than
+    dict-ordered.
+    """
+    views: list[SourceView] = []
+    for rv in list_roots(session, source_dir):
+        root = session.get(SourceRoot, rv.id)
+        if root is not None:
+            views.extend(scan_root(session, root, available=rv.available))
+    return views
+
+
 def set_source_meta(
-    session: Session, rel_path: str, *, excluded: bool | None = None
+    session: Session,
+    rel_path: str,
+    *,
+    excluded: bool | None = None,
+    root_id: str = LIBRARY_ROOT_ID,
 ) -> SourceFile:
     """PATCH seam: update user intent on one registry row. v1 sets ``excluded`` only.
 
-    Raises ``KeyError(rel_path)`` for an unknown row (the API maps that to 404). ``doc_type`` is
+    Raises ``KeyError`` for an unknown row (the API maps that to 404). ``doc_type`` is
     intentionally not a parameter yet (dormant column) — it lands with the facet's activation.
+    ``root_id`` defaults to the library root so pre-AD3b callers are unchanged.
     """
     row = session.execute(
-        select(SourceFile).where(SourceFile.rel_path == rel_path)
+        select(SourceFile).where(SourceFile.rel_path == rel_path, SourceFile.root_id == root_id)
     ).scalar_one_or_none()
     if row is None:
-        raise KeyError(rel_path)
+        raise KeyError(source_key(root_id, rel_path))
     if excluded is not None:
         row.excluded = excluded
     session.flush()
     return row
 
 
-def view_for(session: Session, source_dir: Path, rel_path: str) -> SourceView | None:
-    """The current `SourceView` for one rel_path (freshly derived status), or ``None`` if no row.
+def view_for(
+    session: Session, source_dir: Path, rel_path: str, *, root_id: str = LIBRARY_ROOT_ID
+) -> SourceView | None:
+    """The current `SourceView` for one row (freshly derived status), or ``None`` if no row.
 
-    Used by ``PATCH /api/sources`` to echo the updated row without a full re-scan.
+    Used by ``PATCH /api/sources`` to echo the updated row without a full re-scan. ``source_dir``
+    is still taken so the library root's path stays current on this path too.
     """
     row = session.execute(
-        select(SourceFile).where(SourceFile.rel_path == rel_path)
+        select(SourceFile).where(SourceFile.rel_path == rel_path, SourceFile.root_id == root_id)
     ).scalar_one_or_none()
     if row is None:
         return None
-    disk_path = source_dir.resolve() / rel_path
-    if disk_path.is_file():
+    root = session.get(SourceRoot, root_id)
+    if root is None:  # unreachable while the FK holds — narrows for mypy
+        return None
+    if root.kind == "library":
+        ensure_library_root(session, source_dir)
+    available = _root_available(root)
+    disk_path = Path(root.path).resolve() / rel_path
+    if available and disk_path.is_file():
         status = derive_status(
             True, _cache_is_fresh(disk_path), _pathkey(disk_path) in _document_source_keys(session)
         )
@@ -287,15 +451,25 @@ def view_for(session: Session, source_dir: Path, rel_path: str) -> SourceView | 
         status=status,
         excluded=row.excluded,
         doc_type=row.doc_type,
+        root_id=root.id,
+        root_kind=root.kind,
+        root_available=available,
     )
 
 
-def excluded_rel_paths(session: Session) -> set[str]:
-    """The rel_paths currently flagged ``excluded`` — what an implicit ingest walk must skip."""
-    return {
-        r.rel_path
-        for r in session.execute(select(SourceFile).where(SourceFile.excluded.is_(True))).scalars()
-    }
+def excluded_paths(session: Session) -> set[str]:
+    """The **absolute** path keys of every row flagged ``excluded``, across all roots.
+
+    Absolute rather than root-relative since AD3b: an exclusion now has to be recognised on a
+    file walked from anywhere, and the old rel_path form silently could not match a file outside
+    the one source dir. Joining to the root here removes that whole class of near-miss.
+    """
+    rows = session.execute(
+        select(SourceFile.rel_path, SourceRoot.path)
+        .join(SourceRoot, SourceFile.root_id == SourceRoot.id)
+        .where(SourceFile.excluded.is_(True))
+    ).all()
+    return {_pathkey(Path(root_path) / rel) for rel, root_path in rows}
 
 
 def plan_files(session: Session, files: list[Path]) -> dict[str, int]:
@@ -322,25 +496,43 @@ def resolve_selection(
 ) -> list[Path]:
     """Turn a selection predicate into explicit absolute paths for `ingest.main(files=…)`.
 
-    - ``requested is None`` → every supported file on disk *minus* the ``excluded`` ones (an
-      implicit walk honors the standing exclusions; the skipped count is logged).
+    - ``requested is None`` → every supported file on disk under **every reachable root**, minus
+      the ``excluded`` ones (an implicit walk honors the standing exclusions; the skipped count is
+      logged).
     - a list → `validate_selection` against what is actually on disk (not the possibly-stale
-      registry), then absolute paths. An **explicit** pick **overrides** ``excluded`` (Decision 5),
-      logged. Raises `InvalidSelection` (→ API 400) if any path is unusable.
+      registry), then absolute paths. An **explicit** pick **overrides** ``excluded``
+      (Decision 5), logged. Raises `InvalidSelection` (→ API 400) if any path is unusable.
+
+    Entries may be `source_key`s (``"<root_id>:<rel_path>"``) or bare rel_paths, which mean the
+    library root — so a caller written before AD3b behaves exactly as it did.
+
+    **An unreachable root contributes nothing rather than raising.** Its files are genuinely not
+    ingestable right now, and failing the whole selection because one referenced drive is
+    unplugged would block ingesting the library that *is* present. They surface as ``missing`` in
+    the registry view, which is where that fact belongs.
     """
-    root = source_dir.resolve()
-    on_disk: dict[str, Path] = {
-        p.relative_to(root).as_posix(): p
-        for p in root.rglob("*")
-        if p.is_file() and is_supported(p)
-    }
-    excluded = excluded_rel_paths(session)
+    roots = list_roots(session, source_dir)
+    known_ids = {r.id for r in roots}
+
+    # (root_id, rel_path) -> absolute path, across every reachable root. A tuple key rather than
+    # a joined string so nothing downstream has to re-parse one.
+    on_disk: dict[tuple[str, str], Path] = {}
+    for rv in roots:
+        if not rv.available:
+            log.info("root_unavailable_skipped", root=rv.path, kind=rv.kind)
+            continue
+        base = Path(rv.path).resolve()
+        for p in base.rglob("*"):
+            if p.is_file() and is_supported(p):
+                on_disk[(rv.id, p.relative_to(base).as_posix())] = p
+
+    excluded = excluded_paths(session)
 
     if requested is None:
         kept: list[Path] = []
         skipped = 0
-        for rel, path in sorted(on_disk.items()):
-            if rel in excluded:
+        for _pair, path in sorted(on_disk.items()):
+            if _pathkey(path) in excluded:
                 skipped += 1
                 continue
             kept.append(path)
@@ -348,8 +540,30 @@ def resolve_selection(
             log.info("excluded_skipped", count=skipped)
         return kept
 
-    valid = validate_selection(requested, set(on_disk))
-    overridden = [rel for rel in valid if rel in excluded]
+    # Validate the **rel_path**, never the composite key. Prefixing a key onto a request before
+    # validating would defeat the traversal check outright: `PurePosixPath("library:../evil.pdf")`
+    # has parts `("library:..", "evil.pdf")`, so `".." in parts` is False and `../evil.pdf` walks
+    # straight through the guard. So requests are split by root first and each root's rel_paths
+    # are validated against that root's own on-disk set — which is also what keeps the offender
+    # lists reporting what the caller actually sent.
+    by_root: dict[str, list[str]] = {}
+    for raw in requested:
+        root_id, rel = split_key(raw, known_ids)
+        by_root.setdefault(root_id, []).append(rel)
+
+    merged: dict[str, list[str]] = {}
+    keys: list[str] = []
+    for root_id, rels in by_root.items():
+        known_rels = {rel for rid, rel in on_disk if rid == root_id}
+        try:
+            keys.extend(source_key(root_id, rel) for rel in validate_selection(rels, known_rels))
+        except InvalidSelection as e:
+            for reason, paths in e.offenders.items():
+                merged.setdefault(reason, []).extend(paths)
+    if merged:
+        raise InvalidSelection(merged)
+
+    overridden = [k for k in keys if _pathkey(on_disk[split_key(k, known_ids)]) in excluded]
     if overridden:
         log.info("excluded_overridden_by_explicit_selection", paths=overridden)
-    return [on_disk[rel] for rel in valid]
+    return [on_disk[split_key(k, known_ids)] for k in keys]

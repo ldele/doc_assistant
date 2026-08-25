@@ -21,10 +21,10 @@ from typing import Any, cast
 import structlog
 from sqlalchemy import MetaData, Table, inspect, text
 from sqlalchemy.engine import Engine
-from sqlalchemy.schema import CreateTable
+from sqlalchemy.schema import CreateIndex, CreateTable
 
 from doc_assistant.config import SQLITE_PATH
-from doc_assistant.db.models import Base, DocumentMeta
+from doc_assistant.db.models import Base, DocumentMeta, _utcnow
 from doc_assistant.db.session import get_engine
 
 log = structlog.get_logger(__name__)
@@ -161,6 +161,12 @@ def _rebuild_table(engine: Engine, model_table: Table, *, keep_where: str | None
             conn.execute(text(copy_sql))
             conn.execute(text(f"DROP TABLE {name}"))  # nosec B608
             conn.execute(text(f"ALTER TABLE {temp} RENAME TO {name}"))  # nosec B608
+            # Recreate the model's indexes. `CreateTable` renders the table only, and the old
+            # indexes died with the dropped table — so without this a rebuild silently returns a
+            # correctly-shaped but unindexed table. (Latent until AD3b: `document_meta`, the only
+            # previous caller, declares none.) Rendered against the live name, not the temp one.
+            for index in model_table.indexes:
+                conn.execute(text(str(CreateIndex(index).compile(engine))))
             violations = conn.execute(text("PRAGMA foreign_key_check")).fetchall()
             if violations:
                 raise RuntimeError(f"rebuilt {name} still violates a foreign key: {violations!r}")
@@ -220,6 +226,79 @@ def _rebuild_document_meta_fk(engine: Engine) -> str | None:
     return f"document_meta.document_id FK (+{len(orphans)} orphan row(s) dropped)"
 
 
+def _seed_library_root(engine: Engine) -> None:
+    """Guarantee the one ``library`` root row exists (ADR-046, AD3b).
+
+    A **structural invariant**, not a migration step, which is why it runs on every `init_db`
+    beside `create_all` rather than once: `SourceFile.root_id` carries the literal
+    ``DEFAULT 'library'``, so every row inserted without an explicit root — which is every
+    pre-AD3b code path and every test fixture — points here. If the row were merely seeded by the
+    one-time migration, a freshly created database would have the column, the FK, and nothing to
+    point at, and the first insert would fail on a foreign key rather than on anything meaningful.
+
+    ``INSERT OR IGNORE`` so it never disturbs an existing row: the path is owned at runtime by
+    `registry.ensure_library_root`, which is what tracks the user moving their library.
+    """
+    from doc_assistant.app_settings import get_source_dir
+    from doc_assistant.db.models import LIBRARY_ROOT_ID
+
+    with engine.connect().execution_options(isolation_level="AUTOCOMMIT") as conn:
+        conn.execute(
+            text(
+                "INSERT OR IGNORE INTO source_roots (id, path, kind, added_at) "
+                "VALUES (:id, :path, 'library', :now)"
+            ),
+            {"id": LIBRARY_ROOT_ID, "path": str(get_source_dir()), "now": _utcnow()},
+        )
+
+
+def _migrate_source_roots(engine: Engine) -> str | None:
+    """Give `source_files` its `root_id`, re-keying the registry on `(root, rel_path)` (ADR-046).
+
+    A rebuild (ADR-026) rather than an `ALTER TABLE ADD COLUMN`, and the reason is a SQLite rule
+    rather than a preference: with `PRAGMA foreign_keys=ON` — which `db/session.py` sets — SQLite
+    **refuses** to add a column carrying a `REFERENCES` clause unless its default is NULL, and a
+    nullable rootless row is precisely what this change exists to make impossible. The alternative,
+    adding the column without the FK, would leave a migrated database structurally different from
+    a freshly created one; that divergence is how `document_meta` ended up needing ADR-026 in the
+    first place.
+
+    Three things must happen in this order, and the order is load-bearing:
+
+    1. The `library` root row must exist **before** the rebuild, or the FK check at the end of it
+       fails on all 97 rows at once.
+    2. The rebuild copies every column the two shapes share; `root_id` is not among them, so the
+       literal ``DEFAULT 'library'`` on the new column is what backfills it (KI-25 discipline —
+       an additive column whose absent value would change behaviour ships its backfill with it).
+       Every pre-AD3b row *was* discovered by scanning the one source dir, so the library root is
+       a fact about those rows, not a guess.
+    3. The old ``UNIQUE`` on `rel_path` alone dies with the dropped table, and the model's
+       ``uq_source_files_root_rel`` replaces it — which is the whole point, since the same
+       `papers/rag.pdf` may now legitimately exist under two roots.
+
+    Idempotent: returns None once `root_id` is present. Returns a one-line description otherwise.
+    """
+    from doc_assistant.db.models import SourceFile
+
+    inspector = inspect(engine)
+    if "source_files" not in set(inspector.get_table_names()):
+        return None  # create_all just made it, correctly shaped
+    if any(c["name"] == "root_id" for c in inspector.get_columns("source_files")):
+        return None  # already migrated
+
+    with engine.connect().execution_options(isolation_level="AUTOCOMMIT") as conn:
+        rows = conn.execute(text("SELECT count(*) FROM source_files")).scalar_one()
+
+    _rebuild_table(engine, cast(Table, SourceFile.__table__))
+    log.info(
+        "rebuilt_table",
+        table="source_files",
+        added="root_id FK -> source_roots.id; key is now (root_id, rel_path)",
+        backfilled_rows=rows,
+    )
+    return f"source_files.root_id (+{rows} row(s) backfilled to the library root)"
+
+
 def init_db(reset: bool = False) -> list[str]:
     """Create all tables + apply additive column migrations. Safe to run repeatedly.
 
@@ -240,6 +319,7 @@ def init_db(reset: bool = False) -> list[str]:
 
     log.info("creating_tables", path=str(db_path))
     Base.metadata.create_all(engine)
+    _seed_library_root(engine)
     added = _apply_additive_columns(engine)
 
     # Rebuild migrations run last: they replace a whole table, so they must see the schema the
@@ -247,6 +327,11 @@ def init_db(reset: bool = False) -> list[str]:
     rebuilt = _rebuild_document_meta_fk(engine)
     if rebuilt is not None:
         added.append(rebuilt)
+    # AD3b (ADR-046): must follow create_all, which is what makes `source_roots` exist for the
+    # foreign key this rebuild adds.
+    rerooted = _migrate_source_roots(engine)
+    if rerooted is not None:
+        added.append(rerooted)
 
     # Verify
     inspector = inspect(engine)

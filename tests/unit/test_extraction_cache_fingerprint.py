@@ -9,6 +9,7 @@ stale.
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import pytest
@@ -120,3 +121,86 @@ def test_fingerprint_path_is_a_sibling_not_a_header(tmp_path: Path) -> None:
     fp = _fingerprint_path(cached)
     assert fp.parent == cached.parent
     assert fp.name == "paper.md.fp"
+
+
+# ============================================================
+# Cache paths for referenced files (ADR-046, AD3b).
+# ============================================================
+
+
+def test_a_library_file_keeps_the_mirror_cache_layout(tmp_path, monkeypatch):
+    """The path every already-extracted document depends on. Changing it re-extracts the corpus."""
+    from doc_assistant import config
+    from doc_assistant.ingest.cache import get_cache_path
+
+    monkeypatch.setattr(config, "DOCS_PATH", tmp_path / "sources")
+    monkeypatch.setattr(config, "CACHE_PATH", tmp_path / "cache")
+
+    got = get_cache_path(tmp_path / "sources" / "a" / "b.pdf")
+    assert got == tmp_path / "cache" / "a" / "b.md"
+
+
+def test_a_referenced_file_outside_the_library_still_resolves(tmp_path, monkeypatch):
+    """AD3b regression guard: this raised ValueError, so a referenced file could not be ingested.
+
+    `get_cache_path` is called unguarded on the ingest path, so the crash was not hypothetical —
+    and `registry._cache_is_fresh` swallowed the same error, which made every referenced file read
+    `new` forever.
+    """
+    from doc_assistant import config
+    from doc_assistant.ingest.cache import get_cache_path
+
+    monkeypatch.setattr(config, "DOCS_PATH", tmp_path / "sources")
+    monkeypatch.setattr(config, "CACHE_PATH", tmp_path / "cache")
+
+    got = get_cache_path(tmp_path / "zotero" / "theirs.pdf")
+    assert (tmp_path / "cache") in got.parents
+    assert got.name == "theirs.md"
+    assert got.suffix == ".md"
+
+
+def test_the_same_referenced_file_always_resolves_to_the_same_entry(tmp_path, monkeypatch):
+    """Otherwise the cache never hits and every listing re-extracts."""
+    from doc_assistant import config
+    from doc_assistant.ingest.cache import get_cache_path
+
+    monkeypatch.setattr(config, "DOCS_PATH", tmp_path / "sources")
+    monkeypatch.setattr(config, "CACHE_PATH", tmp_path / "cache")
+
+    one = get_cache_path(tmp_path / "zotero" / "theirs.pdf")
+    two = get_cache_path(tmp_path / "zotero" / "theirs.pdf")
+    assert one == two
+
+
+def test_same_name_in_two_folders_does_not_collide(tmp_path, monkeypatch):
+    """Two papers may share a filename; one cache entry for both would serve the wrong text."""
+    from doc_assistant import config
+    from doc_assistant.ingest.cache import get_cache_path
+
+    monkeypatch.setattr(config, "DOCS_PATH", tmp_path / "sources")
+    monkeypatch.setattr(config, "CACHE_PATH", tmp_path / "cache")
+
+    a = get_cache_path(tmp_path / "zotero" / "paper.pdf")
+    b = get_cache_path(tmp_path / "dropbox" / "paper.pdf")
+    assert a != b
+
+
+def test_a_referenced_cache_entry_can_go_stale_like_any_other(tmp_path, monkeypatch):
+    """The freshness contract must not quietly differ by root — it decides re-extraction."""
+    from doc_assistant import config
+    from doc_assistant.ingest.cache import get_cache_path, is_cache_fresh, write_cache
+
+    monkeypatch.setattr(config, "DOCS_PATH", tmp_path / "sources")
+    monkeypatch.setattr(config, "CACHE_PATH", tmp_path / "cache")
+
+    src = tmp_path / "zotero" / "theirs.html"
+    src.parent.mkdir(parents=True, exist_ok=True)
+    src.write_text("<html><body><p>x</p></body></html>", encoding="utf-8")
+
+    cached = get_cache_path(src)
+    cached.parent.mkdir(parents=True, exist_ok=True)
+    write_cache(cached, "# x")
+    assert is_cache_fresh(src, cached), "a just-written cache is fresh"
+
+    os.utime(src, (cached.stat().st_mtime + 10, cached.stat().st_mtime + 10))
+    assert not is_cache_fresh(src, cached), "a newer source must invalidate it"

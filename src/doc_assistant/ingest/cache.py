@@ -11,6 +11,7 @@ from __future__ import annotations
 import hashlib
 import importlib
 import inspect
+import os
 from functools import lru_cache
 from pathlib import Path
 
@@ -23,8 +24,38 @@ from doc_assistant.fsutil import atomic_write_text
 log = structlog.get_logger(__name__)
 
 
+#: Where caches for files outside the library folder live, under `config.CACHE_PATH`. A fixed
+#: subdirectory so the referenced half of the cache is inspectable and deletable on its own.
+_REFERENCED_CACHE_DIR = "referenced"
+
+
 def get_cache_path(original: Path) -> Path:
-    relative = original.relative_to(config.DOCS_PATH)
+    """The cached ``.md`` for a source file, wherever that file lives (ADR-046, AD3b).
+
+    A file **under the library folder** keeps the mirror layout it has always had:
+    `data/sources/a/b.pdf` -> `data/cache/a/b.md`. That path is unchanged on purpose — every
+    already-extracted document depends on it, and moving it would silently re-extract the whole
+    corpus.
+
+    A **referenced** file lives anywhere on disk, so there is no relative path to mirror. Its
+    cache is keyed by a digest of its case-normalised absolute path, which gives the three
+    properties the mirror layout gave for free: the same file always resolves to the same cache
+    entry, two files with the same name in different folders never collide, and the name stays
+    filesystem-legal whatever the source path contained. The digest is over the path rather than
+    the bytes because this has to resolve *before* the file is read — and cheaply, since
+    `registry.scan_root` calls it once per file on every listing.
+
+    The stem is kept alongside the digest so the cache directory is still human-readable when
+    someone goes looking for what a document extracted to.
+    """
+    try:
+        relative = original.relative_to(config.DOCS_PATH)
+    except ValueError:
+        digest = hashlib.sha1(
+            os.path.normcase(os.path.abspath(str(original))).encode("utf-8"),
+            usedforsecurity=False,
+        ).hexdigest()[:16]
+        return config.CACHE_PATH / _REFERENCED_CACHE_DIR / digest / f"{original.stem}.md"
     return config.CACHE_PATH / relative.with_suffix(".md")
 
 

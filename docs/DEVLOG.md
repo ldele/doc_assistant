@@ -18,6 +18,120 @@ Format: What changed | Why | Rejected alternatives | What it opens
 > is individually small and correct, so unbounded growth is invisible per commit.
 
 ---
+## 2026-08-24 (5) — a referenced file could be registered but never ingested, and the corpus turned out to be uncached
+
+**What changed.** `get_cache_path` resolves for a file anywhere on disk, the AD3b migration is
+applied to the live library, and KI-48 records what checking that turned up.
+
+**AD3b shipped a document you could add and then not use.** `get_cache_path` did
+`original.relative_to(config.DOCS_PATH)`, which **raises** for anything outside the library folder.
+It is called **unguarded** at four points on the ingest path, so ingesting a referenced document
+was a `ValueError`, not a degraded result. `registry._cache_is_fresh` swallowed the same error and
+returned False, which is why nothing screamed: every referenced file simply derived `new` forever
+and looked like it was merely waiting to be ingested. Registration worked, so the failure sat one
+step past the part AD3b tested.
+
+**The fix keeps the library's layout byte-identical.** A file under the library folder still mirrors —
+its path under `data/sources/` reappears under `data/cache/` with an `.md` suffix — verified across
+all 97 documents, because moving
+that path would silently re-extract the corpus. A referenced file has no relative path to mirror, so
+its entry is keyed by a digest of its case-normalised absolute path: same file → same entry, same
+filename in two folders → no collision, any source path → a legal filename. Digest over the *path*,
+not the bytes, because it must resolve before the file is read and `scan_root` asks once per file
+per listing. Proven end to end: extract → cache hit on re-extract → touch the source → stale.
+
+**The migration ran on the real library.** Backup `data/library.db.bak-20260824-preroots`. 97 rows,
+0 NULLs, 0 FK violations, `integrity_check ok`, the library root pointing at `data/sources`, and
+all four indexes present. `origin` is `copied` on all 97, which is a fact rather than a default —
+every one of them was found by scanning the source dir.
+
+**⚠ AND THE CHECK THAT WAS SUPPOSED TO BE A FORMALITY FOUND KI-48.** Confirming no cache entry had
+moved also revealed that **97 of 97 are stale** — recorded fingerprint `2ce7639c…`, current
+`686aa2df…`. Cause: `extraction_fingerprint()` hashes the bytecode of every function in
+`extractors`, so this morning's `f285212` (EPUB/HTML only) invalidated the **PDF** caches too;
+bytecode hashing cannot tell which format a change touched. That commit's DEVLOG says *"blast
+radius zero … so nothing was re-ingested"* — true of the output then, **wrong about the cache**.
+Worse, re-extracting today is not a no-op: measured on 3 of 97, the fresh text differs, which is
+**KI-47** (Tesseract is now on PATH so scans OCR) and walks straight into **KI-43** (identity is
+the extracted content, so changed text orphans every id-keyed sidecar). Filed with three options
+and no decision taken — it is a call about the corpus, not a bug to patch.
+
+**What it opens.** ROADMAP 18 and 19, from the user: a document viewer in a Library right-split
+(gated on the file being reachable — `root_available` already answers that, and `page` is already
+on every chunk, so page-level costs no ingest change), and locating a cited chunk in its source
+text. The second has a real fork: read-time matching works on today's corpus, exact offsets need a
+schema field and a re-ingest — and **KI-48's pending re-extraction is the cheap moment** for that
+if it is ever wanted.
+
+---
+## 2026-08-24 (4) — AD3b: the registry grows a root, and the key that was never unique alone
+
+**What changed.** `SourceRoot` + `SourceFile.root_id` + the `(root_id, rel_path)` unique index, an
+ADR-026 rebuild migration, a multi-root `registry`, `apply_add(mode="reference")`, and the sheet's
+radio becoming a real control. **A document can now be added without being copied anywhere.**
+
+**The rebuild was forced by a SQLite rule, not chosen.** With `PRAGMA foreign_keys=ON` — which
+`db/session.py` sets — SQLite **refuses** `ADD COLUMN` carrying a `REFERENCES` clause unless the
+default is NULL, and a nullable rootless row is precisely what this change exists to prevent. The
+alternative (add the column without the FK) leaves a migrated database structurally different from
+a fresh one, which is how `document_meta` earned ADR-026 in the first place. So: rebuild, with the
+literal `DEFAULT 'library'` doing the backfill *during the copy* — `_rebuild_table` only carries
+columns present in both shapes, so the server default is load-bearing, not decoration.
+**Measured on a copy of the real library: 97 rows, 0 NULLs, FK clean, idempotent on re-run.**
+
+**`_rebuild_table` silently dropped every index, and nobody had noticed.** `CreateTable` renders
+the table only; the old indexes die with the dropped table. It was latent because `document_meta`,
+its only previous caller, declares none — `source_files` declares four. Fixed there rather than
+worked around here. The same pass found `source_sha256` indexed on live databases by the AD2
+migration but **not declared on the model**, so a fresh database never had that index; declaring it
+fixes the divergence and makes the rebuild preserve it.
+
+**⚠ THE ONE THAT WOULD HAVE BEEN A SECURITY BUG.** Canonicalising each selection request to
+`"<root_id>:<rel_path>"` *before* validating it defeats the traversal guard outright:
+`PurePosixPath("library:../evil.pdf").parts` is `("library:..", "evil.pdf")`, so `".." in parts` is
+**False** and `../evil.pdf` walks straight through a check written to stop exactly that. Caught by
+an existing test (`test_resolve_selection_rejects_bad_paths`) that I had assumed was reporting a
+cosmetic message change. Requests are now split by root **first** and each root's rel_paths
+validated against that root's own on-disk set — which also restores offender fidelity. Pinned by a
+new guard that asserts both spellings still read as traversal.
+
+**Duplicate detection was quietly single-root.** `_size_index` resolved every registered `rel_path`
+against the *library* folder, so a row under a referenced root resolved to a path that does not
+exist, the read raised, and the candidate came back a clean `add` — the library would hold the same
+bytes twice, which is the one thing that gate exists to prevent. The index now joins each row to
+its root and carries a real absolute path. This is the second time in this feature that a bare
+`rel_path` turned out to be a lie; `duplicate_of` and the hash cache are both keyed by
+`source_key` now.
+
+**Undo had to change meaning, not just plumbing.** It previously *refused* any row whose origin was
+not `copied` — correct while reference mode did not exist, and stranding after AD3b: the user
+rejects a reference add and the row stays forever. Undo now always drops the row and deletes the
+file **only** when the app made the copy. That is the ADR-014 amendment enforced where it cannot be
+forgotten.
+
+**Open question 3 is resolved, and it bought a state.** Missing-detection stays **on demand** — no
+startup pass, because `rglob`-ing every referenced root at launch is slow or blocking on exactly
+the paths most likely to be network or removable, at the worst moment (RG-012). The consequence,
+decided with it: an unreachable **root** is not the same fact as deleted **files**, so availability
+is derived per scan (never stored — a drive unplugged now may be back in a second) and an
+unavailable root keeps its rows *and their `last_seen`* untouched. A disconnected drive must not
+be indistinguishable from the user losing 400 documents.
+
+**A limitation I chose rather than hid: referenced roots are per-*parent-directory*.** `apply_add`
+receives files, not the gesture that produced them — a dropped folder is already expanded by the
+time it arrives — so a file's root is its own parent. Drop a Zotero folder with twenty
+subdirectories and you get twenty referenced roots, one per subdirectory. Nothing breaks (each
+root scans correctly, and referencing twenty papers from *one* folder still yields one root), but
+the roots list is noisier than it should be. Fixing it properly means passing the original drop
+set through so a dropped directory can become the root; that is a signature change through the API
+and was out of AD3b's scope. Recorded here rather than discovered later.
+
+**What it opens.** The delete half of ADR-046 (`delete_document(delete_file=…)`, spec cases 6 and
+7) is still unbuilt — the schema it branches on now exists, so it is no longer blocked. AD4,
+CS1/CS2 and RG-030 are untouched. **Not proven:** no referenced document has been ingested end to
+end through the UI, and the spec's own DoD still wants an EPUB and an HTML file added that way.
+
+---
 ## 2026-08-24 (3) — the W0 assertions run in a real Tauri window, and the spec's own expectation was wrong
 
 **What changed.** `docs/specs/feature-add-documents.md` §W0 gains the runtime result. No code

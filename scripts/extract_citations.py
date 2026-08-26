@@ -193,7 +193,32 @@ def main() -> int:
     parser.add_argument(
         "--doc", type=str, help="Limit to one document (id prefix or doc_hash prefix)"
     )
+    parser.add_argument(
+        "--reresolve",
+        action="store_true",
+        help=(
+            "Re-point stored citations using the CURRENT matcher and library, without "
+            "re-extracting anything. Use after a matcher fix or when the library has grown "
+            "(KI-45). Honours --apply; dry by default."
+        ),
+    )
     args = parser.parse_args()
+
+    if args.reresolve:
+        from doc_assistant.library.citations import reresolve_stored_citations
+
+        stats = reresolve_stored_citations(apply=args.apply)
+        print(
+            f"Re-resolved {stats['rows']} stored citation(s):\n"
+            f"  linked before : {stats['before']}\n"
+            f"  linked after  : {stats['after']}\n"
+            f"  gained        : {stats['gained']}\n"
+            f"  lost          : {stats['lost']}  (resolution no longer credible)\n"
+            f"  re-pointed    : {stats['changed']}"
+        )
+        if not args.apply:
+            print("\nDry run. Pass --apply to write.")
+        return 0
 
     doc_ref = None
     if args.doc:

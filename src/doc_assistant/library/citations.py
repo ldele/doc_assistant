@@ -6,10 +6,19 @@ from dataclasses import dataclass, field
 from datetime import date
 from typing import Any
 
+import structlog
 from sqlalchemy import select
 
-from doc_assistant.db.models import Document
+from doc_assistant.db.models import Citation, Document
 from doc_assistant.db.session import session_scope
+from doc_assistant.ingest.citations import (
+    MIN_CONTAINED_TITLE_CHARS,
+    resolution_is_credible,
+)
+
+log = structlog.get_logger(__name__)
+
+__all__ = ["MIN_CONTAINED_TITLE_CHARS", "resolution_is_credible"]
 
 # ============================================================
 # Citation queries (Phase 4)
@@ -103,61 +112,6 @@ def cites_out(doc_id: str) -> list[CitationEdge]:
 # that makes them a link. `document_connections` deliberately splits the same rows into
 # resolved/unresolved for the exploration panel — a reader looking at a reference list
 # wants neither split nor a semantic neighbour.
-
-
-# A title fragment shorter than this can be contained by coincidence ("a survey" sits inside
-# hundreds of titles). Structural, not corpus-tuned: it bounds what "one title contains the
-# other" is allowed to mean, and no value of it can admit a title that is merely similar.
-MIN_CONTAINED_TITLE_CHARS = 20
-
-
-def resolution_is_credible(
-    *,
-    parsed_title: str | None,
-    parsed_doi: str | None,
-    library_title: str | None,
-    library_doi: str | None,
-) -> bool:
-    """Does a stored ``target_document_id`` actually agree with the document it names?
-
-    **Read-side check, and it is load-bearing.** ``match_to_library`` resolves a reference at
-    *extraction* time, and one of its three rules — first-author surname + publication year —
-    requires no title agreement whatsoever. On a corpus with many same-year papers by common
-    surnames it fires constantly and wrongly: measured on this library 2026-08-10, **13 of the
-    16 stored resolutions were false**, e.g. "A review of graph neural networks and pretrained
-    language models" resolved to a paper on axonal projections in mouse whisker cortex. A
-    reference list that renders those as links would assert, in a research-integrity app, that
-    the user owns a paper they do not.
-
-    Two signals, both about the title (the DOI is decisive when both sides carry one):
-
-    * ratio ≥ ``FUZZY_TITLE_THRESHOLD`` — the matcher's own definition of "the same paper";
-    * **containment** — the shorter normalised title appears whole inside the longer. This is
-      what a strict ratio misses: the regex often prefixes a title with the tail of the author
-      list ("A., Lopes, G., … Real-time, low-latency closed-loop feedback …"), which drags a
-      true match to 0.78. On the real corpus containment recovered that one true link and
-      admitted **none** of the 12 false ones (they score 0.11-0.37 and contain nothing).
-
-    A rejected resolution does not remove the reference — the paper still cites it. It only
-    stops being a link.
-    """
-    from doc_assistant.ingest.citations import (
-        FUZZY_TITLE_THRESHOLD,
-        _normalize_for_match,
-        _title_similarity,
-    )
-
-    if parsed_doi and library_doi and parsed_doi.strip().lower() == library_doi.strip().lower():
-        return True
-    if not parsed_title or not library_title:
-        # No title on either side leaves nothing to check against. The resolution came from a
-        # rule that never compared titles, so "unverifiable" is treated as "not credible".
-        return False
-    if _title_similarity(parsed_title, library_title) >= FUZZY_TITLE_THRESHOLD:
-        return True
-    a, b = _normalize_for_match(parsed_title), _normalize_for_match(library_title)
-    shorter, longer = (a, b) if len(a) <= len(b) else (b, a)
-    return len(shorter) >= MIN_CONTAINED_TITLE_CHARS and shorter in longer
 
 
 # A publication year outside this window is extraction noise, not a year: the regex sometimes
@@ -387,3 +341,60 @@ def graph_subgraph(doc_id: str, depth: int = 1) -> CitationGraph:
             edge_keys.add(key)
             deduped.append(e)
     return CitationGraph(nodes=list(nodes.values()), edges=deduped)
+
+
+def reresolve_stored_citations(*, apply: bool = False) -> dict[str, int]:
+    """Recompute ``target_document_id`` for every stored citation. Returns a before/after count.
+
+    **Resolution was frozen at extraction time** (KI-45 defect 2): `target_document_id` is
+    computed once, when the citing document is parsed, so each row records what the library looked
+    like that day. The corpus has since grown and gained titles and DOIs, and — more importantly —
+    the matcher itself has been corrected. Neither improvement reaches a stored row on its own,
+    because `extract_citations` returns early for a document that already has rows.
+
+    This pass closes that gap without re-extraction: it re-runs the *current* matcher over the
+    *stored* parsed fields. No PDF is opened, no text is re-parsed, nothing is deleted. A row
+    whose reference no longer resolves has its link cleared, which is the honest outcome — the
+    paper still cites it, we simply no longer claim to hold it.
+
+    Dry by default. ``apply=False`` reports what would change and writes nothing.
+    """
+    from doc_assistant.ingest.citations import ParsedCitation, match_to_library
+
+    stats = {"rows": 0, "before": 0, "after": 0, "gained": 0, "lost": 0, "changed": 0}
+    with session_scope() as session:
+        rows = session.execute(select(Citation)).scalars().all()
+        for row in rows:
+            stats["rows"] += 1
+            old = row.target_document_id
+            if old:
+                stats["before"] += 1
+            parsed = ParsedCitation(
+                raw_text=row.raw_citation_text or "",
+                doi=row.target_doi,
+                title=row.target_title,
+                authors=row.target_authors,
+                year=row.target_year,
+                extraction_method=row.extraction_method or "",
+                confidence=row.confidence or 0.0,
+            )
+            new = match_to_library(parsed)
+            # A self-citation is not a link worth storing: a document's own reference list
+            # resolving to itself tells the reader nothing and pollutes the citation graph.
+            if new == row.source_document_id:
+                new = None
+            if new:
+                stats["after"] += 1
+            if new != old:
+                if old and not new:
+                    stats["lost"] += 1
+                elif new and not old:
+                    stats["gained"] += 1
+                else:
+                    stats["changed"] += 1
+                if apply:
+                    row.target_document_id = new
+        if not apply:
+            session.rollback()
+    log.info("citations_reresolved", **stats, applied=apply)
+    return stats

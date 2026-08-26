@@ -68,14 +68,13 @@ from .store import (
     repoint_figures,
     upsert_document_in_sqlite,
 )
+from .workers import resolve_workers, warm_extraction_cache
 
 log = structlog.get_logger(__name__)
 
 __all__ = [
-    # markers / config-driven splitter factories (chunking)
     "PAGE_MARKER",
     "_existing_document_id",
-    # cleanup
     "_find_orphan_hashes",
     "_make_baseline_splitter",
     "_make_child_splitter",
@@ -86,28 +85,26 @@ __all__ = [
     "cleanup_orphans_chroma",
     "cleanup_orphans_sqlite",
     "compute_health_signals",
-    # cache + hashing
     "doc_hash",
     "extract_chunk_metadata",
     "figure_captions",
     "figure_units",
-    # embeddings passthrough (used by callers/tests via the ingest namespace)
     "get_active_model_name",
     "get_cache_path",
     "get_collection_name",
     "get_document_row_hashes",
     "get_embeddings",
-    # store helpers
     "get_indexed_hashes",
     "hashes_with_no_figure_rows",
     "is_cache_fresh",
-    # orchestration (defined here)
     "load_documents",
     "load_or_extract",
     "main",
     "process_one_document",
     "repoint_figures",
+    "resolve_workers",
     "upsert_document_in_sqlite",
+    "warm_extraction_cache",
 ]
 
 
@@ -460,6 +457,7 @@ def _dry_run_plan(scope: str | None, files: list[Path] | None) -> dict[str, int]
 def main(
     force_rebuild: bool = False,
     skip_cleanup: bool = False,
+    workers: str | int | None = None,
     scope: str | None = None,
     files: list[Path] | None = None,
     dry_run: bool = False,
@@ -597,6 +595,17 @@ def main(
     # produced" — the set the KI-24 sweep needs. Never assume the rebuild's wipe left it empty:
     # a hash still in `indexed` when the loop starts was NOT reproduced by this run.
     indexed_before = set(indexed)
+
+    # Extraction is ~89% of ingest cost and is per-document and independent, so it is warmed in
+    # parallel here and the loop below then finds every cache fresh (see `ingest.workers`). The
+    # loop itself stays serial: embedding is GPU-bound and already batched, and concurrent writers
+    # on one Chroma collection is a corruption risk rather than a speed-up. A budget of 1 skips
+    # this entirely and the run is byte-identical to the pre-2026-08-25 behaviour.
+    if to_process:
+        from doc_assistant import app_settings
+
+        budget = workers if workers is not None else app_settings.get_ingest_budget()
+        warm_extraction_cache(to_process, resolve_workers(budget))
 
     stats: dict[str, int] = {"added": 0, "skipped": 0, "error": 0}
     for path in tqdm(to_process, desc="Processing"):

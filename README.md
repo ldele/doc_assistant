@@ -97,6 +97,40 @@ Cost is measured separately from quality: launch and per-turn latency, ingest th
 disk, and what each of those does as the corpus grows are in
 [`docs/performance.md`](docs/performance.md).
 
+### How long does indexing take?
+
+Estimates, not promises — the real number depends on your machine and your documents. What is
+stable is the **shape**: which part of the work costs what. Measured on a 97-document library
+(2,859 pages) on a 28-core desktop with a GPU.
+
+| Your document | First index | Re-opening it later |
+|---|---|---|
+| A 30-page paper with selectable text | **~15 seconds** | instant — the result is cached |
+| The same paper, if it needs OCR | **~35 seconds** | instant |
+| A 300-page scanned book | **several minutes**, nearly all OCR | instant |
+| A `.txt` or `.md` file | **milliseconds** — no extraction needed | instant |
+
+**Estimate by page count, not file size.** Measured on this corpus, a 15 MB / 20-page paper indexed
+*faster* than a 5 MB / 22-page one. Megabytes tell you almost nothing; pages tell you most of it.
+
+**Where the time actually goes**, for a typical paper:
+
+| | share |
+|---|---:|
+| Reading the PDF and turning it into text | **~90%** |
+| Building the search index (embedding) | ~5% |
+| Everything else — figures, citations, keywords, metadata | ~5% combined |
+
+That first row is why indexing feels slow, and it is why the app only does it **once per
+document**: the result is cached, so re-opening, re-searching and even re-indexing an unchanged
+library are effectively free. Adding one paper to a large library costs one paper, not the library.
+
+**Indexing does not take over your computer.** By default Provenote extracts two documents at a
+time, which measured **1.47x faster** than one-at-a-time while leaving the rest of your machine
+alone. More workers help surprisingly little — 14 of them only reached 1.74x — so the polite
+setting is very nearly the fast one. You can change it if you want to (`--workers off | light |
+balanced | full`), and even `full` deliberately leaves half your cores free.
+
 ## Quick start
 
 ```bash

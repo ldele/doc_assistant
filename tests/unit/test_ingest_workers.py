@@ -52,14 +52,36 @@ def test_no_budget_ever_takes_the_whole_machine():
 
 
 def test_budgets_are_ordered():
-    order = [resolve_workers(b, cpu_count=32) for b in ("off", "light", "balanced", "full")]
-    assert order == sorted(order), order
+    """At **every** core count, not just a generous one.
+
+    This assertion used to be pinned to `cpu_count=32`, which is exactly where the ladder was
+    still monotonic: `cores // 4` gave `balanced` one worker at 4 cores and `cores // 2` gave
+    `full` one at 2, both *below* `light`'s two, so moving up a rung on an ordinary laptop
+    silently bought serial extraction. A ladder is a claim about the whole range, and pinning it
+    to one point tested the claim where it could not fail.
+    """
+    for cores in range(1, 65):
+        order = [resolve_workers(b, cpu_count=cores) for b in ("off", "light", "balanced", "full")]
+        assert order == sorted(order), f"cpu_count={cores}: {order}"
 
 
 def test_a_small_machine_never_gets_a_silly_number():
     """A 2-core laptop must not be told to run 8 extractors."""
     for budget in BUDGETS:
         assert 1 <= resolve_workers(budget, cpu_count=2) <= 2
+
+
+def test_no_budget_is_ever_below_the_default():
+    """`light` is the floor for everything above it — the inversion, stated directly.
+
+    Ranges are what let the original small-machine test walk past this: `1 <= n <= 2` passes for
+    both the right answer and the wrong one. This compares the rungs to each other instead.
+    """
+    for cores in range(1, 65):
+        floor = resolve_workers("light", cpu_count=cores)
+        for budget in ("balanced", "full"):
+            got = resolve_workers(budget, cpu_count=cores)
+            assert got >= floor, f"{budget} gave {got} < light's {floor} at cpu_count={cores}"
 
 
 def test_a_single_core_machine_is_always_serial():

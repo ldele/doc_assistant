@@ -327,6 +327,14 @@ def scan_root(
             if p.is_file() and is_supported(p):
                 on_disk[p.relative_to(base).as_posix()] = p
 
+        # ⚠ `origin` decides whether delete may bin the file (ADR-014 as amended by ADR-046), so
+        # a scan must state it rather than fall through to the column DEFAULT — which is
+        # ``'copied'``, and would mark **every file the walk discovers under a referenced root**
+        # as one the app owns. Measured before this line existed: referencing one paper out of a
+        # Zotero folder registered that folder as a root, and the next scan claimed ownership of
+        # every other document in it.
+        scanned_origin = "copied" if root.kind == "library" else "referenced"
+
         for rel, path in on_disk.items():
             stat = path.stat()
             fmt = path.suffix.lower().lstrip(".")
@@ -338,6 +346,7 @@ def scan_root(
                     format=fmt,
                     size=stat.st_size,
                     mtime=stat.st_mtime,
+                    origin=scanned_origin,
                     first_seen=now,
                     last_seen=now,
                 )
@@ -348,6 +357,17 @@ def scan_root(
                 row.size = stat.st_size
                 row.mtime = stat.st_mtime
                 row.last_seen = now
+                # Repair the impossible combination, and only that one. ``copied`` under a
+                # referenced root cannot be true — `library/add.py` writes ``copied`` only with
+                # the library root — so a row saying it was written by the DEFAULT, before the
+                # line above existed. The reverse is legal and never touched: a file already
+                # sitting inside the library folder registers under the *library* root with
+                # ``origin='referenced'`` (`_reference_target`), because the app did not put it
+                # there. Self-healing on the next scan rather than a migration, since the scan is
+                # what owns these rows.
+                if root.kind != "library" and row.origin == "copied":
+                    log.info("source_origin_repaired", root=root.path, rel_path=rel)
+                    row.origin = "referenced"
         session.flush()
 
     doc_keys = _document_source_keys(session)

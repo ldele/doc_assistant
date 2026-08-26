@@ -33,7 +33,11 @@ import structlog
 from doc_assistant.extractors import get_format_status
 
 if TYPE_CHECKING:  # import cost only — the ORM session is a type here, never constructed
+    from datetime import datetime
+
     from sqlalchemy.orm import Session
+
+    from doc_assistant.db.models import SourceFile
 
 log = structlog.get_logger(__name__)
 
@@ -377,8 +381,16 @@ def apply_add(
     `paths` list (spec constraint 4), so there is one ingest path in the system rather than two.
 
     Stops at the first failure and reports what was added, what failed and what was never tried.
+    **Every failure comes back as that report**, including a database one: the registry's
+    ``(root_id, rel_path)`` uniqueness is enforced, and re-registering an already-registered file
+    — a referenced path added twice, or one whose size changed since the last scan so `inspect`'s
+    size index missed it — raises `IntegrityError`, which is neither `OSError` nor `ValueError`.
+    Letting it escape took the whole `AddResult` with it, so the files that *had* landed were
+    reported to nobody and could not be undone.
     """
     import shutil
+
+    from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
     from doc_assistant.app_settings import get_source_dir
     from doc_assistant.db.models import LIBRARY_ROOT_ID, SourceFile
@@ -396,11 +408,16 @@ def apply_add(
         if failed is not None:
             remaining.append(str(src))
             continue
+        # The one file this iteration created, if any. Claimed *before* the copy so a copy that
+        # dies partway leaves a truncated file this knows to remove; `_free_destination`
+        # guarantees the name was free, so it is ours to delete and never the user's.
+        copied_to: Path | None = None
         try:
             with session_scope() as session:
                 registry.ensure_library_root(session, library)
                 if mode == "copy":
                     dest = _free_destination(library, src.name)
+                    copied_to = dest
                     shutil.copy2(src, dest)
                     root_id, rel = LIBRARY_ROOT_ID, dest.relative_to(library).as_posix()
                 else:
@@ -418,6 +435,7 @@ def apply_add(
                         origin="copied" if mode == "copy" else "referenced",
                     )
                 )
+            copied_to = None  # registered — it belongs to the library now, not to this attempt
             added.append(
                 AddOutcome(
                     path=str(src),
@@ -427,9 +445,22 @@ def apply_add(
                     key=registry.source_key(root_id, rel),
                 )
             )
-        except (OSError, ValueError) as e:
-            log.warning("add_failed", path=str(src), mode=mode, error=str(e))
-            failed = AddOutcome(path=str(src), name=src.name, ok=False, error=str(e))
+        except (OSError, ValueError, SQLAlchemyError) as e:
+            # `session_scope` rolled the database back; the filesystem has no such thing. A copy
+            # this run made and failed to register would be invisible to `undo_add` (no row, no
+            # key) and perfectly visible to the next `scan_root`, which would adopt it as a
+            # document the user was just told had failed to add.
+            if copied_to is not None:
+                with contextlib.suppress(OSError):
+                    copied_to.unlink()
+            # Only claim "already registered" when the driver actually said UNIQUE. An
+            # `IntegrityError` could in principle be a foreign-key failure instead, and a
+            # confident wrong cause is worse than an ugly right one (KI-37).
+            message = str(e)
+            if isinstance(e, IntegrityError) and "unique" in message.lower():
+                message = f"{src.name} is already registered in the library"
+            log.warning("add_failed", path=str(src), mode=mode, error=message)
+            failed = AddOutcome(path=str(src), name=src.name, ok=False, error=message)
             remaining.extend(str(p) for p in paths[i + 1 :])
             break
 
@@ -466,6 +497,15 @@ def _reference_target(session: Session, dest: Path, library: Path) -> tuple[str,
     return root.id, dest.name
 
 
+#: How long after a row was created ``undo_add`` will still delete the file behind it. Structural,
+#: not tuned: it bounds *undo* to the action it undoes. The affordance is offered by a sheet that
+#: is still open from the add, so minutes are generous — while a key replayed later (a retried
+#: request, a stale client, a script) meets a registry row that is simply removed, leaving the
+#: bytes for the next scan to re-register. That asymmetry is the whole point: a file left behind
+#: is recoverable, a file deleted is not (KI-49).
+UNDO_DELETE_WINDOW_SECONDS = 30 * 60
+
+
 def undo_add(rel_paths: Sequence[str], *, source_dir: Path | None = None) -> int:
     """Reverse an apply: drop the registry rows, and delete only the files the app itself made.
 
@@ -479,18 +519,33 @@ def undo_add(rel_paths: Sequence[str], *, source_dir: Path | None = None) -> int
       sitting in their own folder; un-adding it from the library must not reach outside. This is
       the ADR-014 amendment enforced where it cannot be forgotten.
 
+    **Three conditions gate the delete, and each closes a measured hole.** The row's root must be
+    the *library* root — the path is resolved through that root rather than assumed to be under
+    the library folder, which is how a key naming a file in the user's Zotero folder came to
+    delete an unrelated same-named document out of the library. ``origin`` must be ``copied``.
+    And the row must be younger than :data:`UNDO_DELETE_WINDOW_SECONDS`, so this is an undo of a
+    just-completed add rather than a delete-by-key for anything the app ever copied in. A
+    declined delete is logged, never silent; the row still goes either way.
+
     Accepts `registry.source_key`s or bare rel_paths (library root). Returns how many rows went.
     """
+    from datetime import timedelta
+
     from sqlalchemy import select
 
     from doc_assistant.app_settings import get_source_dir
-    from doc_assistant.db.models import SourceFile, SourceRoot
+    from doc_assistant.db.models import SourceFile, SourceRoot, _utcnow
     from doc_assistant.db.session import session_scope
     from doc_assistant.ingest import registry
 
     library = (source_dir or get_source_dir()).resolve()
+    cutoff = _utcnow() - timedelta(seconds=UNDO_DELETE_WINDOW_SECONDS)
     undone = 0
     with session_scope() as session:
+        # The delete resolves each row against **its own root's stored path**, so that path has to
+        # be current before anything is unlinked — otherwise a library the user moved since the
+        # add would send the unlink at the old folder.
+        registry.ensure_library_root(session, library)
         known = {r.id for r in session.execute(select(SourceRoot)).scalars()}
         wanted = {registry.split_key(k, known) for k in rel_paths}
         if not wanted:
@@ -506,9 +561,43 @@ def undo_add(rel_paths: Sequence[str], *, source_dir: Path | None = None) -> int
             if (row.root_id, row.rel_path) not in wanted:
                 continue  # same rel_path under a root the caller did not name
             if row.origin == "copied":
-                with contextlib.suppress(OSError):
-                    (library / row.rel_path).unlink()
+                _delete_copied_file(session, row, library=library, cutoff=cutoff)
             session.delete(row)
             undone += 1
     log.info("add_undone", count=undone)
     return undone
+
+
+def _delete_copied_file(
+    session: Session, row: SourceFile, *, library: Path, cutoff: datetime
+) -> bool:
+    """Bin the file behind one ``copied`` row, or explain in the log why it was left alone.
+
+    Split out so the three conditions read as three conditions. Returns whether the file went.
+    """
+    from datetime import timezone
+
+    from doc_assistant.db.models import LIBRARY_ROOT_ID, SourceRoot
+
+    if row.root_id != LIBRARY_ROOT_ID:
+        # `origin='copied'` under a non-library root is not a fact the app can act on: copy mode
+        # only ever writes the library root, so this row was written by something else and its
+        # `rel_path` is relative to a folder that is not the library.
+        log.warning("undo_delete_declined", reason="not_library_root", rel_path=row.rel_path)
+        return False
+    # `DateTime` carries no timezone in SQLite, so a value written from `_utcnow()` (aware, UTC)
+    # reads back naive. Comparing the two raises rather than mis-ordering, which is the good
+    # failure mode — but this guard must not be the thing that breaks undo, so the naive read is
+    # re-stamped as what it provably is.
+    first_seen = row.first_seen
+    if first_seen is not None and first_seen.tzinfo is None:
+        first_seen = first_seen.replace(tzinfo=timezone.utc)
+    if first_seen is None or first_seen < cutoff:
+        log.warning("undo_delete_declined", reason="outside_undo_window", rel_path=row.rel_path)
+        return False
+    root = session.get(SourceRoot, row.root_id)
+    base = Path(root.path) if root is not None else library
+    with contextlib.suppress(OSError):
+        (base / row.rel_path).unlink()
+        return True
+    return False

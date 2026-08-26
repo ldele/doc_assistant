@@ -297,3 +297,68 @@ def test_traversal_is_still_caught_when_a_root_prefix_is_involved(temp_database,
             with pytest.raises(InvalidSelection) as ei:
                 resolve_selection(session, library, [attempt])
             assert ei.value.offenders["traversal"], f"{attempt!r} must read as traversal"
+
+
+# ============================================================
+# Exclusions survive path normalisation (review finding 2)
+# ============================================================
+
+
+def test_an_exclusion_still_applies_when_the_walk_root_is_a_short_path(temp_database, tmp_path):
+    """The two sides of the exclusion test must meet in the same normalised form.
+
+    `SourceRoot.path` is stored resolved; `registry.pathkey` normalises case and separators but
+    does **not** expand 8.3 short names, junctions or symlinks. When `_resolve_walk_root` returned
+    `config.DOCS_PATH` raw, a data dir reached through any of those produced keys that could never
+    match, and every standing exclusion was silently ignored — `skipped=0`, no error, no warning.
+
+    Windows-only because 8.3 aliasing is the cheap way to make `abspath` and `resolve` disagree
+    without creating a symlink (which needs privileges).
+    """
+    import ctypes
+
+    from doc_assistant import config
+    from doc_assistant.db.models import LIBRARY_ROOT_ID, SourceFile, SourceRoot
+    from doc_assistant.db.session import session_scope
+    from doc_assistant.ingest import _drop_excluded, _resolve_walk_root
+
+    if os.name != "nt":
+        pytest.skip("8.3 short names are a Windows filesystem feature")
+
+    sources = tmp_path / "A Folder With A Long Name"
+    sources.mkdir()
+    (sources / "excluded.pdf").write_bytes(b"%PDF-1.4 x")
+
+    buf = ctypes.create_unicode_buffer(1024)
+    if not ctypes.windll.kernel32.GetShortPathNameW(str(sources), buf, 1024):
+        pytest.skip("8.3 name generation is disabled on this volume")
+    short = Path(buf.value)
+    if short == sources:
+        pytest.skip("no distinct 8.3 alias for this path")
+
+    with session_scope() as session:
+        # The fixture already seeded the root, as `init_db` would; point it at this test's folder
+        # in the same *resolved* form every writer of `SourceRoot.path` uses.
+        root = session.get(SourceRoot, LIBRARY_ROOT_ID)
+        assert root is not None
+        root.path = str(sources.resolve())
+        session.flush()
+        session.add(
+            SourceFile(
+                root_id=LIBRARY_ROOT_ID,
+                rel_path="excluded.pdf",
+                format="pdf",
+                size=10,
+                mtime=0.0,
+                excluded=True,
+            )
+        )
+
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(config, "DOCS_PATH", short)
+        walk_root = _resolve_walk_root(None)
+        walked = [p for p in walk_root.rglob("*") if p.is_file()]
+        kept, skipped = _drop_excluded(walked)
+
+    assert skipped == 1, "the exclusion must be honoured through the short-name alias"
+    assert kept == []

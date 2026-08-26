@@ -42,8 +42,16 @@ log = structlog.get_logger(__name__)
 #:   very nearly the fast one and there is no reason to make anyone choose.
 #: * ``balanced`` — a quarter of the cores. Worth ~0.2x more than ``light`` here; offered because
 #:   the curve is corpus- and machine-dependent and someone ingesting overnight may want it.
-#: * ``full``     — half. **Never all of them**, on purpose: OCR pages are memory-hungry and the
-#:   machine still belongs to its user.
+#: * ``full``     — half. **Never all of them** on a machine with cores to spare, on purpose: OCR
+#:   pages are memory-hungry and the machine still belongs to its user.
+#:
+#: **The ladder is monotonic, which the fractions alone were not.** Every rung is floored at the
+#: one below it, so ``balanced`` and ``full`` can never resolve to fewer workers than ``light`` —
+#: `cores // 4` used to hand ``balanced`` a single worker on a 4-core laptop. The floor is what
+#: makes the small-machine end of the table degenerate rather than inverted: below 5 cores every
+#: budget above ``off`` lands on ``light``'s two, which is the whole box at 2 cores. That is the
+#: default's own behaviour (``light`` is ``min(2, cores)``), not an escalation — the honest read
+#: is that a 2-core machine has one meaningful choice, ``off`` or not.
 #:
 #: **Why it plateaus is not known.** Two hypotheses were tested and both failed: the long-tail
 #: document (the slowest here is 50 s, far under the 211 s floor observed at 14 workers) and
@@ -81,11 +89,18 @@ def resolve_workers(budget: str | int | None = None, *, cpu_count: int | None = 
 
     if name == "off":
         return 1
+    light = min(2, cores)
     if name == "light":
-        return min(2, cores)
+        return light
+    # ⚠ Each rung is floored at the one below it, and that floor is the fix rather than a
+    # nicety. The fractions alone were **not monotonic on a small machine**: `cores // 4` gave
+    # `balanced` 1 worker at 4 cores and `cores // 2` gave `full` 1 at 2 cores, while `light`
+    # gave 2 — so a user on an ordinary 4-core laptop who moved *up* from the default to make
+    # ingest faster silently got serial extraction. A budget is a ceiling on politeness; it must
+    # never ask for less work than a politer one.
     if name == "full":
-        return max(2, cores // 2) if cores > 2 else 1
-    return max(2, cores // 4) if cores > 4 else 1  # balanced
+        return max(light, cores // 2)
+    return max(light, cores // 4)  # balanced
 
 
 def _extract_one(path_str: str) -> tuple[str, str | None]:

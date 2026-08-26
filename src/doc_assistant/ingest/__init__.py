@@ -387,9 +387,17 @@ def _resolve_walk_root(scope: str | None) -> Path:
     Accepts an absolute path, a path relative to the CWD, or a path
     relative to DOCS_PATH. Returns the resolved path. Raises FileNotFoundError
     if nothing matches.
+
+    **Resolved in both branches, and the default one is why this is load-bearing.** Paths from
+    this walk are compared against the registry by `_drop_excluded`, whose keys are built from
+    `SourceRoot.path` — written *resolved* by `registry.ensure_library_root`. `registry.pathkey`
+    normalises case and separators but does not expand 8.3 short names, junctions or symlinks, so
+    an unresolved walk root produced keys that could never match and every standing exclusion
+    silently stopped applying. Returning `config.DOCS_PATH` raw was the one branch that did not
+    keep this function's own promise.
     """
     if scope is None:
-        return config.DOCS_PATH
+        return config.DOCS_PATH.resolve()
     candidates = [Path(scope), Path.cwd() / scope, config.DOCS_PATH / scope]
     for c in candidates:
         if c.exists():
@@ -407,6 +415,15 @@ def _drop_excluded(walked: list[Path]) -> tuple[list[Path], int]:
     retires the old caveat that a file walked from outside that dir could never match an
     exclusion. Returns ``(kept, skipped)``. Registry is imported lazily to keep the locked core's
     top-level imports intact.
+
+    ⚠ **Precondition: ``walked`` must already be resolved.** `registry.pathkey` normalises case
+    and separators without touching the filesystem — deliberately, since it also keys paths whose
+    file may be gone — so it cannot reconcile an 8.3 short name, a junction or a symlink against
+    the *resolved* form every writer of `SourceRoot.path` stores. The two sides meeting in the
+    same form is an invariant held at the ends: `_resolve_walk_root` resolves, and
+    `ensure_library_root` / `register_root` / `_seed_library_root` all store resolved. Break
+    either end and this returns ``skipped=0`` — no error, no warning, every standing exclusion
+    quietly ignored.
     """
     from doc_assistant.ingest import registry
 

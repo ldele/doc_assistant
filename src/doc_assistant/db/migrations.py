@@ -238,6 +238,12 @@ def _seed_library_root(engine: Engine) -> None:
 
     ``INSERT OR IGNORE`` so it never disturbs an existing row: the path is owned at runtime by
     `registry.ensure_library_root`, which is what tracks the user moving their library.
+
+    **Stored resolved**, matching `ensure_library_root` and `register_root`. Every reader compares
+    root paths through `registry.pathkey`, which normalises case and separators but does not
+    expand 8.3 short names, junctions or symlinks — so "``SourceRoot.path`` is resolved" has to
+    hold for *every* writer or the comparison silently misses. Seeding the raw
+    `get_source_dir()` also made the next scan log a spurious ``library_root_moved``.
     """
     from doc_assistant.app_settings import get_source_dir
     from doc_assistant.db.models import LIBRARY_ROOT_ID
@@ -248,7 +254,7 @@ def _seed_library_root(engine: Engine) -> None:
                 "INSERT OR IGNORE INTO source_roots (id, path, kind, added_at) "
                 "VALUES (:id, :path, 'library', :now)"
             ),
-            {"id": LIBRARY_ROOT_ID, "path": str(get_source_dir()), "now": _utcnow()},
+            {"id": LIBRARY_ROOT_ID, "path": str(get_source_dir().resolve()), "now": _utcnow()},
         )
 
 

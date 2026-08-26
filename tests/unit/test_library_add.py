@@ -19,7 +19,7 @@ import tempfile
 from pathlib import Path
 
 import pytest
-from sqlalchemy import create_engine, event
+from sqlalchemy import create_engine, event, select
 from sqlalchemy.orm import sessionmaker
 
 
@@ -515,3 +515,142 @@ def test_applying_nothing_is_a_valid_empty_result(temp_database, tmp_path):
 
     result = apply_add([], source_dir=tmp_path / "library")
     assert result.added == [] and result.failed is None and result.not_attempted == []
+
+
+# ============================================================
+# Failure containment and the delete guard (review findings 1, 4, 5)
+# ============================================================
+
+
+def test_re_registering_a_file_is_a_reported_failure_not_an_exception(temp_database, tmp_path):
+    """A DB constraint is a failure like any other — it must not escape with the whole report.
+
+    `apply_add` caught `(OSError, ValueError)` only, so the registry's `(root_id, rel_path)`
+    uniqueness raised `IntegrityError` straight out of the function. The caller lost `added`
+    entirely, which is the one thing undo needs.
+    """
+    from doc_assistant.library.add import apply_add
+
+    library = tmp_path / "library"
+    paper = _write(tmp_path / "zotero" / "paper.pdf", b"%PDF-1.4 z")
+
+    first = apply_add([paper], mode="reference", source_dir=library)
+    assert len(first.added) == 1
+
+    other = _write(tmp_path / "zotero" / "other.pdf", b"%PDF-1.4 o")
+    again = apply_add([other, paper], mode="reference", source_dir=library)
+
+    assert [o.name for o in again.added] == ["other.pdf"], "what landed is still reported"
+    assert again.failed is not None and again.failed.name == "paper.pdf"
+    assert "already registered" in (again.failed.error or ""), again.failed.error
+    assert again.stopped_early
+
+
+def test_a_copy_that_fails_to_register_does_not_survive_on_disk(temp_database, tmp_path):
+    """The database rolls back; the filesystem does not — so the copy has to be undone by hand.
+
+    An orphaned copy is invisible to `undo_add` (no row, no key) and perfectly visible to the
+    next `scan_root`, which would adopt a document the user was told had failed.
+    """
+    from doc_assistant.library import add as add_mod
+
+    library = tmp_path / "library"
+    paper = _write(tmp_path / "in" / "paper.pdf", b"%PDF-1.4 p")
+
+    def boom(_path):
+        raise OSError("disk went away mid-add")
+
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(add_mod, "sha256_file", boom)
+        result = add_mod.apply_add([paper], source_dir=library)
+
+    assert result.failed is not None
+    assert list(library.glob("*.pdf")) == [], "the half-added copy must not be left behind"
+    assert paper.exists(), "the user's original is never touched"
+
+
+def test_undo_will_not_delete_a_file_outside_the_library_root(temp_database, tmp_path):
+    """The confirmed cross-root deletion: a key naming a referenced file binned a library one.
+
+    `undo_add` built the delete path as ``library / rel_path`` whatever root the row belonged to,
+    so a referenced row marked ``copied`` reached across and removed an unrelated same-named
+    document out of the library folder.
+    """
+    from doc_assistant.db.models import SourceFile
+    from doc_assistant.db.session import session_scope
+    from doc_assistant.ingest import registry
+    from doc_assistant.library.add import apply_add, undo_add
+
+    library = tmp_path / "library"
+    added = _write(tmp_path / "zotero" / "paper.pdf", b"%PDF-1.4 mine")
+    _write(tmp_path / "zotero" / "notes.pdf", b"%PDF-1.4 zotero notes")
+    victim = _write(library / "notes.pdf", b"%PDF-1.4 a DIFFERENT, months-old document")
+
+    apply_add([added], mode="reference", source_dir=library)
+    with session_scope() as session:
+        registry.scan_sources(session, library)
+        row = session.execute(
+            select(SourceFile).where(SourceFile.rel_path == "notes.pdf")
+        ).scalars()
+        keys = [registry.source_key(r.root_id, r.rel_path) for r in row if r.root_id != "library"]
+
+    undo_add(keys, source_dir=library)
+    assert victim.exists(), "a row under another root must never reach into the library folder"
+
+
+def test_a_scan_never_claims_ownership_of_a_referenced_folder(temp_database, tmp_path):
+    """`origin` decides whether delete may bin the file, so a scan must state it.
+
+    It fell through to the column DEFAULT (``'copied'``), so referencing one paper out of a
+    folder made the app claim every other document in it.
+    """
+    from doc_assistant.db.models import SourceFile, SourceRoot
+    from doc_assistant.db.session import session_scope
+    from doc_assistant.ingest import registry
+    from doc_assistant.library.add import apply_add
+
+    library = tmp_path / "library"
+    added = _write(tmp_path / "zotero" / "paper.pdf", b"%PDF-1.4 mine")
+    _write(tmp_path / "zotero" / "never-added.pdf", b"%PDF-1.4 not mine")
+
+    apply_add([added], mode="reference", source_dir=library)
+    with session_scope() as session:
+        registry.scan_sources(session, library)
+    with session_scope() as session:
+        rows = session.execute(
+            select(SourceFile.rel_path, SourceFile.origin, SourceRoot.kind).join(
+                SourceRoot, SourceFile.root_id == SourceRoot.id
+            )
+        ).all()
+
+    claimed = [rel for rel, origin, kind in rows if kind == "referenced" and origin == "copied"]
+    assert claimed == [], f"the app claimed files it did not put there: {claimed}"
+
+
+def test_undo_declines_to_delete_outside_its_window_but_still_drops_the_row(
+    temp_database, tmp_path
+):
+    """Undo is an undo, not a delete-by-key for anything the app ever copied in.
+
+    The row still goes — leaving a file the next scan re-registers is recoverable, deleting one
+    is not (KI-49).
+    """
+    from datetime import timedelta
+
+    from doc_assistant.db.models import SourceFile, _utcnow
+    from doc_assistant.db.session import session_scope
+    from doc_assistant.library.add import UNDO_DELETE_WINDOW_SECONDS, apply_add, undo_add
+
+    library = tmp_path / "library"
+    paper = _write(tmp_path / "in" / "paper.pdf", b"%PDF-1.4 p")
+    result = apply_add([paper], source_dir=library)
+    key = result.added[0].key
+    landed = library / "paper.pdf"
+    assert landed.exists()
+
+    with session_scope() as session:
+        row = session.execute(select(SourceFile)).scalar_one()
+        row.first_seen = _utcnow() - timedelta(seconds=UNDO_DELETE_WINDOW_SECONDS + 60)
+
+    assert undo_add([key], source_dir=library) == 1, "the row still goes"
+    assert landed.exists(), "a stale key must not bin a file the user has kept"

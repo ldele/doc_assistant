@@ -362,3 +362,58 @@ def test_an_exclusion_still_applies_when_the_walk_root_is_a_short_path(temp_data
 
     assert skipped == 1, "the exclusion must be honoured through the short-name alias"
     assert kept == []
+
+
+def test_an_explicit_pick_under_an_unplugged_root_does_not_fail_the_whole_selection(
+    temp_database, tmp_path
+):
+    """An unreachable root contributes nothing; it must not veto the library that is present.
+
+    Its files are absent from `on_disk`, so validating against it reported every one of them as
+    `unknown` and raised `InvalidSelection` — a 400 for the whole request because one reference
+    drive was unplugged. They are dropped with a count instead, exactly as the implicit branch
+    already does, and read `missing` in the registry view.
+    """
+    from doc_assistant.db.models import LIBRARY_ROOT_ID, SourceRoot
+    from doc_assistant.db.session import session_scope
+    from doc_assistant.ingest import registry
+
+    library = tmp_path / "library"
+    here = _write(library / "present.pdf")
+    gone_root = tmp_path / "unplugged-drive"  # deliberately never created
+
+    with session_scope() as session:
+        root = session.get(SourceRoot, LIBRARY_ROOT_ID)
+        assert root is not None
+        root.path = str(library.resolve())
+        session.add(SourceRoot(id="offline", path=str(gone_root), kind="referenced"))
+        session.flush()
+        registry.scan_sources(session, library)
+
+    with session_scope() as session:
+        resolved = registry.resolve_selection(
+            session, library, ["present.pdf", "offline:on-the-drive.pdf"]
+        )
+
+    assert [p.name for p in resolved] == [here.name], (
+        "the reachable pick must still resolve; the unplugged one is dropped, not fatal"
+    )
+
+
+def test_an_unknown_file_under_a_reachable_root_still_raises(temp_database, tmp_path):
+    """The complement — dropping unreachable roots must not soften validation generally."""
+    from doc_assistant.db.models import LIBRARY_ROOT_ID, SourceRoot
+    from doc_assistant.db.session import session_scope
+    from doc_assistant.ingest import registry
+
+    library = tmp_path / "library"
+    _write(library / "present.pdf")
+    with session_scope() as session:
+        root = session.get(SourceRoot, LIBRARY_ROOT_ID)
+        assert root is not None
+        root.path = str(library.resolve())
+        session.flush()
+        registry.scan_sources(session, library)
+
+    with session_scope() as session, pytest.raises(registry.InvalidSelection):
+        registry.resolve_selection(session, library, ["no-such-file.pdf"])

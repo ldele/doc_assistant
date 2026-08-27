@@ -64,3 +64,21 @@ export function remainderLabel(paths: readonly NativePath[], limit = 3): string 
   if (hidden <= 0) return ''
   return hidden === 1 ? 'and 1 more' : `and ${hidden} more`
 }
+
+/**
+ * The file a `source_key` names, as a person would say it.
+ *
+ * `registry.source_key` is `"<root_id>:<rel_path>"` since AD3b, so the key carries a raw uuid for
+ * anything under a referenced root. It is an identifier — undo and selection take it — and never a
+ * label, so only the file's own name is shown. Lives here rather than in the component because a
+ * `.svelte` file cannot be reached by `node:test` (apps/desktop/CLAUDE.md).
+ *
+ * A bare rel_path (the pre-AD3b shorthand) has no root prefix and is handled by the same code: a
+ * POSIX filename may legally contain a colon, so the split is on the FIRST one only, and a key
+ * that turns out to be a plain name still yields that name.
+ */
+export function sourceKeyName(key: string): string {
+  const colon = key.indexOf(':')
+  const rel = colon === -1 ? key : key.slice(colon + 1)
+  return basename(rel) || basename(key) || key
+}

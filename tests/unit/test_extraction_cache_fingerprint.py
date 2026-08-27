@@ -228,25 +228,59 @@ def test_every_format_has_its_own_identity():
     assert len(set(fps.values())) == len(_FORMATS), fps
 
 
-def test_a_format_entry_point_is_inside_its_own_scope():
-    """The KI-40 reintroduction guard, and it caught a real bug.
+def test_a_change_to_a_formats_entry_point_moves_only_that_format(monkeypatch):
+    """The KI-40 reintroduction guard, rewritten so it can actually fail.
 
-    Every non-PDF format is dispatched through the `_EXTRACTORS` dict, which is a *runtime*
-    lookup — so a static walk from `extract_to_markdown` never reaches `extract_epub`, and an
-    EPUB fix would not invalidate one EPUB cache. Measured before the seeds were added: the
-    `.epub` closure held two functions and neither was `extract_epub`.
+    It used to hand `_extraction_closure` the entry point as a *seed* and then assert the seed
+    came back in the result — which every seed does, unconditionally, by construction. The
+    tautology hid the invariant it was named for: that a format's own extractor is hashed into
+    that format's fingerprint, and into no other's.
+
+    Stated behaviourally instead. Every non-PDF format is dispatched through the `_EXTRACTORS`
+    dict, a *runtime* lookup a static walk cannot follow, so without the seeds `extract_epub` is
+    unreachable from `extract_to_markdown` and an EPUB fix would not invalidate one EPUB cache.
+    Measured before the seeds existed: the `.epub` closure held two functions and neither was
+    `extract_epub`.
     """
     from doc_assistant import extractors
-    from doc_assistant.ingest.cache import _extraction_closure
 
-    entries = {fn.__name__ for fn in extractors._EXTRACTORS.values()}
-    entries.add("extract_pdf_pymupdf")
+    # Formats sharing one entry function move together, and that is correct — `.txt` and `.md`
+    # are both `extract_text`. Grouped so "the others" means the ones that genuinely differ.
+    by_entry: dict[str, list[str]] = {}
     for suffix in _FORMATS:
         entry = extractors._EXTRACTORS.get(suffix)
-        name = entry.__name__ if entry else "extract_pdf_pymupdf"
-        blocked = frozenset(entries - {name})
-        fns, _consts, _mods = _extraction_closure(blocked, (getattr(extractors, name),))
-        assert name in fns, f"{suffix}: {name} is outside its own fingerprint scope"
+        by_entry.setdefault(entry.__name__ if entry else "extract_pdf_pymupdf", []).append(suffix)
+
+    for name, owned in by_entry.items():
+        before = _fingerprints()
+        original = getattr(extractors, name)
+
+        def patched(*args, _o=original, **kwargs):
+            return _o(*args, **kwargs)
+
+        # Impersonate the function it replaces, so this models *editing that extractor* rather
+        # than rebinding the name to something foreign. Without it the closure records the
+        # wrapper's own `__name__`, the hashing loop's `getattr(extractors, name)` misses, and
+        # the whole thing falls back to the module-wide fingerprint — which moves every format
+        # and would make this test pass for the wrong reason.
+        patched.__name__ = name
+        patched.__qualname__ = name
+        patched.__module__ = extractors.__name__
+
+        monkeypatch.setattr(extractors, name, patched)
+        after = _fingerprints()
+        monkeypatch.undo()
+
+        for suffix in owned:
+            assert after[suffix] != before[suffix], (
+                f"{suffix}: a change to its own entry point {name} left its fingerprint alone — "
+                "that cache would serve text no current version produces (KI-40)"
+            )
+        for suffix in _FORMATS:
+            if suffix not in owned:
+                assert after[suffix] == before[suffix], (
+                    f"{suffix} was invalidated by a change to {name}, which it does not run"
+                )
 
 
 def test_changing_one_formats_helper_leaves_the_others_alone(monkeypatch):
@@ -353,3 +387,58 @@ def test_the_cache_pair_round_trips_per_format(tmp_path, monkeypatch):
         cached.parent.mkdir(parents=True, exist_ok=True)
         write_cache(cached, "# x", source=src)
         assert is_cache_fresh(src, cached), f"{name} must read fresh right after being written"
+
+
+def test_a_renamed_extractor_does_not_silently_re_extract_the_corpus(monkeypatch):
+    """A function whose `__name__` differs from its attribute must not collapse the scope.
+
+    The closure returned function *names*, and the caller then re-resolved each one with
+    `getattr(extractors, name)`. For an alias — or any decorator that does not carry
+    `functools.wraps` — that lookup raised, the blanket `except` caught it, and the fingerprint
+    silently became the **whole-module** one. Safe in direction (it over-invalidates) and
+    expensive in fact: a corpus-wide re-extraction, 61 min for 97 documents and ~55 h projected
+    at 10,000, triggered by a rename that could not change a single byte of output.
+
+    The tell is precise: under the defect the format's fingerprint *equals* `suffix=None`'s.
+    """
+    import structlog
+
+    from doc_assistant import extractors
+    from doc_assistant.ingest.cache import extraction_fingerprint
+
+    original = extractors.extract_docx
+
+    def wrapper(*args, **kwargs):
+        return original(*args, **kwargs)
+
+    # Deliberately NOT impersonating: `__name__` stays "wrapper" while the attribute is
+    # "extract_docx". This is what an alias or a bare decorator looks like.
+    wrapper.__module__ = extractors.__name__
+    monkeypatch.setattr(extractors, "extract_docx", wrapper)
+
+    with structlog.testing.capture_logs() as logs:
+        extraction_fingerprint.cache_clear()
+        docx = extraction_fingerprint(".docx")
+        whole = extraction_fingerprint(None)
+
+    assert docx != whole, "the scope collapsed to whole-module — every format would re-extract"
+    assert not [entry for entry in logs if entry.get("event") == "extraction_fingerprint_fallback"]
+
+
+def test_the_other_formats_are_untouched_by_a_renamed_extractor(monkeypatch):
+    """The complement: a `.docx`-only change must still leave the other six alone."""
+    from doc_assistant import extractors
+
+    before = _fingerprints()
+    original = extractors.extract_docx
+
+    def wrapper(*args, **kwargs):
+        return original(*args, **kwargs)
+
+    wrapper.__module__ = extractors.__name__
+    monkeypatch.setattr(extractors, "extract_docx", wrapper)
+    after = _fingerprints()
+
+    assert after[".docx"] != before[".docx"], "its own change must still be noticed"
+    for untouched in (".pdf", ".epub", ".html", ".rtf", ".odt", ".txt"):
+        assert after[untouched] == before[untouched], f"{untouched} re-extracts for nothing"

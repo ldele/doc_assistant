@@ -571,6 +571,17 @@ def resolve_selection(
         root_id, rel = split_key(raw, known_ids)
         by_root.setdefault(root_id, []).append(rel)
 
+    # An unreachable root contributes nothing to `on_disk`, so validating against it would report
+    # every one of its files as `unknown` and fail the **whole** selection — blocking the library
+    # that is present because a reference drive is unplugged. Dropped with a count instead, which
+    # is what the implicit branch above already does; those files read `missing` in the registry
+    # view, which is where "not here right now" belongs.
+    unreachable = {rv.id for rv in roots if not rv.available}
+    for root_id in list(by_root):
+        if root_id in unreachable:
+            dropped = by_root.pop(root_id)
+            log.info("root_unavailable_selection_skipped", root_id=root_id, count=len(dropped))
+
     merged: dict[str, list[str]] = {}
     keys: list[str] = []
     for root_id, rels in by_root.items():

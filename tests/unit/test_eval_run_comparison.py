@@ -94,6 +94,26 @@ class TestResolveRunId:
         with pytest.raises(RunPrefixError, match="Empty run id"):
             store.resolve_run_id("   ")
 
+    def test_a_prefix_wildcard_does_not_match_a_run_it_does_not_start(self, store: Store) -> None:
+        """`_` is a single-character wildcard in a LIKE pattern, and ids are not user-chosen.
+
+        Unescaped, `a_c` matched `abc12345` — and because exactly one run matched, it resolved
+        silently rather than raising, handing back a run the caller never named. That is the one
+        outcome this resolver exists to prevent, so it has to be the one it cannot do.
+        """
+        for rid in ("abc12345", "aXc12345"):
+            store.conn.execute(
+                "INSERT INTO runs (id, started_at, finished_at, system_name, config_json, "
+                "n_cases, note) VALUES (?, now(), now(), 't', '{}', 1, NULL)",
+                [rid],
+            )
+
+        with pytest.raises(RunPrefixError, match="No run id starts with"):
+            store.resolve_run_id("a_c")
+        with pytest.raises(RunPrefixError, match="No run id starts with"):
+            store.resolve_run_id("%5")
+        assert store.resolve_run_id("abc123") == "abc12345", "an ordinary prefix still resolves"
+
 
 class TestCaseSets:
     def test_the_same_questions_compare_clean(self, store: Store) -> None:

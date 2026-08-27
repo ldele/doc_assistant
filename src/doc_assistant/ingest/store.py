@@ -7,6 +7,7 @@ or orchestration logic lives here.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -42,7 +43,33 @@ def get_document_row_hashes() -> set[str]:
     return {str(h) for h in rows if h}
 
 
-def _existing_document_id(doc_hash: str, source_original: str | Path | None = None) -> str | None:
+def build_path_index() -> dict[str, str]:
+    """``{pathkey(source_original): document_id}`` for every Document row, in one query.
+
+    Built once per ingest run and handed to `_existing_document_id`, which otherwise re-reads the
+    whole table for **every** document whose normalised path it has to resolve. That is the
+    common case during a corpus-wide re-extraction — every hash moves, so the hash lookup misses
+    for all of them — which made the ADR-047 identity fallback O(documents²) against the ~10,000
+    document robustness contract.
+
+    Safe to build once and reuse for the run: each source path is processed exactly once, so a
+    row written later in the same run can never be the answer to a lookup made earlier. It is
+    deliberately **not** module-level state — a stale map in a long-lived API process, or shared
+    between tests, would resolve a document to an id the database no longer holds.
+    """
+    from doc_assistant.ingest.registry import pathkey
+
+    with session_scope() as session:
+        rows = session.execute(select(DBDocument.id, DBDocument.source_original)).all()
+    return {pathkey(source): str(row_id) for row_id, source in rows if source}
+
+
+def _existing_document_id(
+    doc_hash: str,
+    source_original: str | Path | None = None,
+    *,
+    path_index: Mapping[str, str] | None = None,
+) -> str | None:
     """The id of the Document row this content already has, if any (ADR-047).
 
     Read-only. ``process_one_document`` calls this to resolve the id a re-ingest must reuse — so
@@ -88,6 +115,15 @@ def _existing_document_id(doc_hash: str, source_original: str | Path | None = No
         from doc_assistant.ingest.registry import pathkey
 
         wanted = pathkey(source_original)
+        # `path_index` is the run-scoped map `build_path_index` prepared; without it this falls
+        # back to reading the table, which is correct but O(documents) *per document*.
+        if path_index is not None:
+            found = path_index.get(wanted)
+            if found is not None:
+                log.info(
+                    "document_id_reused_by_path", source=str(source_original), match="normalised"
+                )
+            return found
         rows = session.execute(select(DBDocument.id, DBDocument.source_original)).all()
         for row_id, row_source in rows:
             if row_source and pathkey(row_source) == wanted:
@@ -129,15 +165,30 @@ def repoint_figures(document_id: str, new_hash: str) -> int:
 
         for old_hash in old_hashes:
             src_dir, dest_dir = figure_dir(old_hash), figure_dir(new_hash)
-            if src_dir.exists() and not dest_dir.exists():
-                try:
-                    dest_dir.parent.mkdir(parents=True, exist_ok=True)
-                    src_dir.rename(dest_dir)
-                except OSError as e:
-                    # Leave the rows pointing at the old location rather than half-moving them:
-                    # a stored `image_path` that resolves is worth more than a tidy hash.
-                    log.warning("figure_dir_move_failed", document_id=document_id, error=str(e))
-                    return 0
+            if not src_dir.exists():
+                continue  # nothing on disk to carry; the rows below still move
+            if dest_dir.exists():
+                # The destination is already populated, so the rename cannot happen — and the
+                # rows must not move without it. Repointing them anyway sent every `image_path`
+                # into a directory that does not hold those crops, and left the real ones behind
+                # under a hash `hashes_with_no_figure_rows` would then read as dead and delete.
+                # Bailing keeps every stored path resolving, which is the same trade the OSError
+                # arm below makes.
+                log.warning(
+                    "figure_dir_move_skipped",
+                    reason="destination_exists",
+                    document_id=document_id,
+                    dest=str(dest_dir),
+                )
+                return 0
+            try:
+                dest_dir.parent.mkdir(parents=True, exist_ok=True)
+                src_dir.rename(dest_dir)
+            except OSError as e:
+                # Leave the rows pointing at the old location rather than half-moving them:
+                # a stored `image_path` that resolves is worth more than a tidy hash.
+                log.warning("figure_dir_move_failed", document_id=document_id, error=str(e))
+                return 0
 
         moved = 0
         for row in rows:

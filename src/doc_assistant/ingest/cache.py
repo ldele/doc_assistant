@@ -101,11 +101,11 @@ def _referenced(code: CodeType) -> tuple[set[str], set[str]]:
 
 
 def _extraction_closure(
-    blocked: frozenset[str], seeds: tuple[Any, ...] = ()
-) -> tuple[list[str], list[str], list[str]]:
+    blocked: frozenset[str], seeds: tuple[str, ...] = ()
+) -> tuple[dict[str, Any], list[str], list[str]]:
     """Walk out from ``extract_to_markdown`` **and** ``seeds``, never entering ``blocked``.
 
-    Returns (function names, constant names, top-level module names), each sorted.
+    Returns (``{attribute name: function}``, constant names, top-level module names).
 
     Walking from the dispatcher is what picks up whatever it does to *every* format — today
     ``strip_image_placeholders`` at the single exit — so a shared post-processing step added later
@@ -118,20 +118,31 @@ def _extraction_closure(
     not invalidate a single EPUB cache — KI-40 reintroduced, silently. Seeding the walk with the
     format's own entry function is what closes that hole. Measured, not assumed: before this, the
     `.epub` closure held two functions and neither was `extract_epub`.
+
+    **Keyed and returned by the name the function is bound to on the module, and the *object* is
+    carried out rather than the name alone.** Both halves matter, and for the same reason: the
+    caller used to hash ``getattr(extractors, name).__code__``, re-resolving a name this walk had
+    already resolved. A function whose ``__name__`` differs from its attribute — an alias, or any
+    decorator that does not carry ``functools.wraps`` — made that lookup raise, and the caller's
+    blanket ``except`` turned it into the whole-module fingerprint: a silent, corpus-wide
+    re-extraction (61 min for 97 documents; ~55 h projected at 10,000) triggered by a rename.
     """
     from doc_assistant import extractors
 
     functions: dict[str, Any] = {}
     constants: set[str] = set()
     modules: set[str] = set()
-    stack = [extractors.extract_to_markdown, *seeds]
+    stack: list[tuple[str, Any]] = [("extract_to_markdown", extractors.extract_to_markdown)]
+    for seed in seeds:
+        obj = getattr(extractors, seed, None)
+        if inspect.isfunction(obj):
+            stack.append((seed, obj))
 
     while stack:
-        fn = stack.pop()
-        name = fn.__name__
-        if name in functions:
+        attr, fn = stack.pop()
+        if attr in functions:
             continue
-        functions[name] = fn
+        functions[attr] = fn
         names, imports = _referenced(fn.__code__)
         modules |= {m.split(".")[0] for m in imports}
         for ref in names:
@@ -140,7 +151,7 @@ def _extraction_closure(
                 continue  # an attribute name, a builtin, or a local — not this module's global
             if inspect.isfunction(obj) and obj.__module__ == extractors.__name__:
                 if ref not in blocked:
-                    stack.append(obj)
+                    stack.append((ref, obj))
             elif inspect.ismodule(obj):
                 modules.add(obj.__name__.split(".")[0])
             elif inspect.isclass(obj) or inspect.isbuiltin(obj):
@@ -152,7 +163,7 @@ def _extraction_closure(
             else:
                 constants.add(ref)  # a module-level tunable; its VALUE changes output
 
-    return sorted(functions), sorted(constants), sorted(modules)
+    return functions, sorted(constants), sorted(modules)
 
 
 def _stable_repr(obj: object) -> str:
@@ -250,19 +261,39 @@ def extraction_fingerprint(suffix: str | None = None) -> str:
     from doc_assistant import extractors
 
     try:
-        entries = {fn.__name__ for fn in extractors._EXTRACTORS.values()}
-        entries.add(extractors.extract_pdf_pymupdf.__name__)
+        # By the name each function is **bound to on the module**, never by its ``__name__``.
+        # `blocked` is tested against the attribute names the walk reads out of ``co_names``, so a
+        # function whose ``__name__`` differs from its attribute — an alias, or a decorator without
+        # `functools.wraps` — would put a string in `blocked` that the walk can never match, and
+        # the other formats' entry points would quietly stay inside this format's scope.
+        attr_of = {
+            id(obj): attr
+            for attr, obj in vars(extractors).items()
+            if inspect.isfunction(obj) and obj.__module__ == extractors.__name__
+        }
+        entries = {attr_of.get(id(fn), fn.__name__) for fn in extractors._EXTRACTORS.values()}
+        pdf_entry = attr_of.get(
+            id(extractors.extract_pdf_pymupdf), extractors.extract_pdf_pymupdf.__name__
+        )
+        entries.add(pdf_entry)
         if suffix is None:
             required: str | None = None
             blocked: frozenset[str] = frozenset()  # every entry stays reachable
         else:
             entry = extractors._EXTRACTORS.get(suffix)
-            required = entry.__name__ if entry else extractors.extract_pdf_pymupdf.__name__
+            required = (
+                attr_of.get(id(entry), getattr(entry, "__name__", "")) if entry else pdf_entry
+            )
             blocked = frozenset(entries - {required})
-        seeds = () if required is None else (getattr(extractors, required),)
+        seeds = () if required is None else (required,)
         functions, constants, modules = _extraction_closure(blocked, seeds)
-        if required is not None and required not in functions:
-            raise RuntimeError(f"{required} is unreachable from extract_to_markdown")
+        # There is deliberately no "is `required` reachable?" assertion here. It read as the
+        # KI-40 guard and could not fail: `required` is passed in as a *seed*, and every seed is
+        # recorded unconditionally — which is the entire reason seeds exist, since the
+        # `_EXTRACTORS` dispatch is a runtime lookup no static walk can follow. The invariant it
+        # appeared to protect (a format's own extractor is hashed into that format's
+        # fingerprint) is real, and is checked behaviourally by
+        # `test_a_change_to_a_formats_entry_point_moves_only_that_format` — where it can fail.
     except Exception as e:
         log.warning("extraction_fingerprint_fallback", suffix=suffix, error=str(e))
         return _whole_module_fingerprint()
@@ -272,9 +303,11 @@ def extraction_fingerprint(suffix: str | None = None) -> str:
     h.update(b"scope:" + (suffix or "*").encode())
     if suffix is None or suffix == ".pdf":
         h.update(str(config.PDF_EXTRACTOR).encode())
-    for name in functions:
+    # The walk already resolved these; hashing the object it handed back rather than re-resolving
+    # the name is what keeps a rename from silently costing a whole-corpus re-extraction.
+    for name in sorted(functions):
         h.update(name.encode())
-        h.update(getattr(extractors, name).__code__.co_code)
+        h.update(functions[name].__code__.co_code)
     for name in constants:
         h.update(f"{name}={_stable_repr(getattr(extractors, name))}".encode())
     for name in modules:

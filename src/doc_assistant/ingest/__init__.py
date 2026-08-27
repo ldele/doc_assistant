@@ -19,6 +19,7 @@ keeps working unchanged after the split. Path/model config is read dynamically v
 from __future__ import annotations
 
 import shutil
+from collections.abc import Mapping
 from pathlib import Path
 from uuid import uuid4
 
@@ -61,6 +62,7 @@ from .cleanup import (
 from .figures import figure_parent_text, find_figure_context
 from .store import (
     _existing_document_id,
+    build_path_index,
     figure_captions,
     figure_units,
     get_document_row_hashes,
@@ -80,6 +82,7 @@ __all__ = [
     "_make_child_splitter",
     "_make_parent_splitter",
     "build_parent_child_chunks",
+    "build_path_index",
     "clean_chunk_text",
     "cleanup_orphan_figures",
     "cleanup_orphans_chroma",
@@ -166,6 +169,7 @@ def process_one_document(
     pc_db: Chroma,
     splitter: RecursiveCharacterTextSplitter,
     indexed: set[str],
+    path_index: Mapping[str, str] | None = None,
 ) -> str:
     try:
         text = load_or_extract(path)
@@ -251,7 +255,7 @@ def process_one_document(
         # chunks. The id is needed up front because it is stamped into every chunk's
         # metadata and is the key figure_units() queries on.
         # Coupling: ingest <-> db Document (this id) <-> both Chroma collections.
-        document_id = _existing_document_id(h, path) or str(uuid4())
+        document_id = _existing_document_id(h, path, path_index=path_index) or str(uuid4())
         # The identity survived but the content moved (ADR-047): carry the figures across before
         # anything reads them by hash. No-op when the hash is unchanged or there are no figures.
         repoint_figures(document_id, h)
@@ -624,9 +628,18 @@ def main(
         budget = workers if workers is not None else app_settings.get_ingest_budget()
         warm_extraction_cache(to_process, resolve_workers(budget))
 
+    # ADR-047's identity fallback resolves a document by its *normalised* source path, and during
+    # a corpus-wide re-extraction every hash has moved, so that fallback is the path taken for
+    # every document rather than the exception. Read once here instead of once per document:
+    # per-document it was O(documents²), which the ~10,000-document robustness contract does not
+    # survive. Built before the loop and not refreshed inside it on purpose — each source path is
+    # processed exactly once, so a row this run writes later cannot be the answer to an earlier
+    # lookup.
+    path_index = build_path_index()
+
     stats: dict[str, int] = {"added": 0, "skipped": 0, "error": 0}
     for path in tqdm(to_process, desc="Processing"):
-        result = process_one_document(path, db, pc_db, splitter, indexed)
+        result = process_one_document(path, db, pc_db, splitter, indexed, path_index)
         stats[result] += 1
 
     _assign_demo_folder(get_document_row_hashes() - rows_before)

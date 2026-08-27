@@ -11,7 +11,11 @@ export interface FileVerdict {
   sha256: string | null
   /** For `unsupported`, `get_format_status`'s own sentence — render it verbatim. */
   advisory: string | null
-  /** For `duplicate`, the `rel_path` of the registered file it matches. */
+  /**
+   * For `duplicate`, the `registry.source_key` of the registered file it matches —
+   * `"<root_id>:<rel_path>"` since AD3b, so it carries a raw uuid for a referenced root. It is an
+   * identifier, not a label: show the file's name, not the key.
+   */
   duplicate_of: string | null
   selected_by_default: boolean
 }

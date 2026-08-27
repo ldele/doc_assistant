@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import re
 import unicodedata
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from difflib import SequenceMatcher
 
@@ -496,10 +497,41 @@ def resolution_is_credible(
     return len(shorter) >= MIN_CONTAINED_TITLE_CHARS and shorter in longer
 
 
+@dataclass(frozen=True)
+class LibraryCandidate:
+    """One non-archived library document, in exactly the fields the matcher compares.
+
+    A snapshot rather than a live row so the whole library can be read **once** and matched against
+    many references. `reresolve_stored_citations` walks every stored citation, and each call to
+    `match_to_library` used to open its own session and scan the document table twice — O(citations
+    x documents) with a fresh session per row, against the ~10,000-document robustness contract.
+    """
+
+    id: str
+    title: str | None
+    authors: str | None
+    year: int | None
+    doi: str | None
+
+
+def load_library_candidates() -> list[LibraryCandidate]:
+    """Every non-archived document, in one query. Pass to `match_to_library` to reuse it."""
+    with session_scope() as session:
+        rows = session.execute(
+            select(
+                Document.id, Document.title, Document.authors, Document.year, Document.doi
+            ).where(Document.is_archived.is_(False))
+        ).all()
+    return [
+        LibraryCandidate(id=str(r[0]), title=r[1], authors=r[2], year=r[3], doi=r[4]) for r in rows
+    ]
+
+
 def match_to_library(
     parsed: ParsedCitation,
     *,
     fuzzy_title_threshold: float = FUZZY_TITLE_THRESHOLD,
+    candidates: Sequence[LibraryCandidate] | None = None,
 ) -> str | None:
     """Return Document.id if `parsed` matches a row in the library, else None.
 
@@ -513,74 +545,67 @@ def match_to_library(
     earns its place above rule 3, because within same-surname/same-year candidates a *contained*
     title is safe to accept — which is how a true match the regex prefixed with an author-list
     tail (scoring 0.78, under the ratio threshold) is recovered.
+
+    ``candidates`` is the library read once by `load_library_candidates`; omitted, this reads it
+    itself, which is the right thing for a one-off match and the wrong thing in a loop.
+
+    **The DOI rule compares in Python, and that is a fix rather than a port.** It was
+    ``Document.doi.ilike(parsed.doi)``, and ``ilike`` reads ``_`` and ``%`` in the *parsed* DOI as
+    wildcards — so a reference to ``10.1234/abc_def`` could match ``10.1234/abcXdef``, a different
+    paper. DOIs legitimately contain underscores.
     """
-    with session_scope() as session:
-        if parsed.doi:
-            stmt = select(Document.id).where(
-                Document.doi.is_not(None),
-                Document.is_archived.is_(False),
-                Document.doi.ilike(parsed.doi),
-            )
-            row = session.execute(stmt).scalar_one_or_none()
-            if row is not None:
-                return str(row)
+    rows = candidates if candidates is not None else load_library_candidates()
 
-        surname = _first_author_surname(parsed.authors)
-        if surname and parsed.year is not None:
-            author_year_stmt = select(
-                Document.id, Document.authors, Document.title, Document.doi
-            ).where(
-                Document.is_archived.is_(False),
-                Document.year == parsed.year,
-                Document.authors.is_not(None),
-            )
-            for doc_id, doc_authors, doc_title, doc_doi in session.execute(author_year_stmt).all():
-                doc_surname = _first_author_surname(doc_authors)
-                if not doc_surname or doc_surname != surname:
-                    continue
-                # ⚠ KI-45: surname+year alone is not evidence. On a corpus holding many same-year
-                # papers by common surnames it fired constantly and wrongly — 13 of 16 stored
-                # resolutions were false, and one document had 9 of its 11 links pointing at two
-                # unrelated papers. The pair now only *narrows the candidates*; the title still
-                # has to agree before the match is accepted.
-                if resolution_is_credible(
-                    parsed_title=parsed.title,
-                    parsed_doi=parsed.doi,
-                    library_title=doc_title,
-                    library_doi=doc_doi,
-                ):
-                    return str(doc_id)
+    if parsed.doi:
+        wanted_doi = parsed.doi.strip().lower()
+        for c in rows:
+            if c.doi and c.doi.strip().lower() == wanted_doi:
+                return c.id
 
-        if parsed.title and len(parsed.title) >= 10:
-            title_stmt = select(Document.id, Document.title, Document.doi).where(
-                Document.is_archived.is_(False),
-                Document.title.is_not(None),
-            )
-            best_id: str | None = None
-            best_title: str | None = None
-            best_doi: str | None = None
-            best_score = 0.0
-            for doc_id, doc_title, doc_doi in session.execute(title_stmt).all():
-                score = _title_similarity(parsed.title, doc_title)
-                if score > best_score:
-                    best_score = score
-                    best_id = str(doc_id)
-                    best_title = doc_title
-                    best_doi = doc_doi
-            # The best candidate still has to pass the same test rule 2 does. One predicate for
-            # "these are the same paper", used by every rule and by the read side, so the three
-            # cannot drift apart again — which is how the surname+year rule came to disagree with
-            # the reference list's own idea of a credible link (KI-45).
-            if (
-                best_id is not None
-                and best_score >= fuzzy_title_threshold
-                and resolution_is_credible(
-                    parsed_title=parsed.title,
-                    parsed_doi=parsed.doi,
-                    library_title=best_title,
-                    library_doi=best_doi,
-                )
+    surname = _first_author_surname(parsed.authors)
+    if surname and parsed.year is not None:
+        for c in rows:
+            if c.year != parsed.year or not c.authors:
+                continue
+            if _first_author_surname(c.authors) != surname:
+                continue
+            # ⚠ KI-45: surname+year alone is not evidence. On a corpus holding many same-year
+            # papers by common surnames it fired constantly and wrongly — 13 of 16 stored
+            # resolutions were false, and one document had 9 of its 11 links pointing at two
+            # unrelated papers. The pair now only *narrows the candidates*; the title still
+            # has to agree before the match is accepted.
+            if resolution_is_credible(
+                parsed_title=parsed.title,
+                parsed_doi=parsed.doi,
+                library_title=c.title,
+                library_doi=c.doi,
             ):
-                return best_id
+                return c.id
+
+    if parsed.title and len(parsed.title) >= 10:
+        best: LibraryCandidate | None = None
+        best_score = 0.0
+        for c in rows:
+            if c.title is None:
+                continue
+            score = _title_similarity(parsed.title, c.title)
+            if score > best_score:
+                best_score = score
+                best = c
+        # The best candidate still has to pass the same test rule 2 does. One predicate for
+        # "these are the same paper", used by every rule and by the read side, so the three
+        # cannot drift apart again — which is how the surname+year rule came to disagree with
+        # the reference list's own idea of a credible link (KI-45).
+        if (
+            best is not None
+            and best_score >= fuzzy_title_threshold
+            and resolution_is_credible(
+                parsed_title=parsed.title,
+                parsed_doi=parsed.doi,
+                library_title=best.title,
+                library_doi=best.doi,
+            )
+        ):
+            return best.id
 
     return None

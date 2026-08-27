@@ -63,7 +63,7 @@ def _cli() -> None:
         default=None,
         help=(
             "How much of this machine extraction may use: off | light | balanced | full, or an "
-            "explicit number. Defaults to the saved setting (balanced). Output-neutral — it "
+            "explicit number. Defaults to the saved setting (light). Output-neutral — it "
             "changes how long ingest takes, never what it produces. `DOC_INGEST_WORKERS` "
             "overrides it."
         ),

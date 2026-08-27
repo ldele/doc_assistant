@@ -16,6 +16,7 @@ from __future__ import annotations
 import contextlib
 import os
 import tempfile
+from pathlib import Path
 
 import pytest
 from sqlalchemy import create_engine, event, select
@@ -193,3 +194,117 @@ def test_replacing_the_file_at_a_path_inherits_the_identity(temp_database):
 
     first = _first_ingest()
     assert _existing_document_id("an-entirely-unrelated-document", SRC) == first
+
+
+# ============================================================
+# The run-scoped path index — same answers, one query instead of one per document.
+# ============================================================
+
+
+def test_the_path_index_answers_exactly_as_the_table_scan_did(temp_database):
+    """Equivalence is the whole requirement: this is an optimisation, not a behaviour change.
+
+    The fallback re-read every Document row for each document whose normalised path it had to
+    resolve — the common case during a corpus-wide re-extraction, since every hash moves, so the
+    identity fallback was O(documents²) against the ~10,000-document contract.
+    """
+    from doc_assistant.ingest.store import _existing_document_id, build_path_index
+
+    first = _ingest("doc-0001", doc_hash="hash-v1")
+    _ingest("doc-0002", doc_hash="other-hash", source=r"C:\library\second.pdf")
+    index = build_path_index()
+
+    for probe in (SRC, r"c:\LIBRARY\paper.pdf", "C:/library/paper.pdf"):
+        assert _existing_document_id("hash-v2-CHANGED", probe, path_index=index) == first
+        assert _existing_document_id("hash-v2-CHANGED", probe) == first, "the scan agrees"
+
+    # And it must not invent a match the scan would not have made.
+    assert _existing_document_id("hash-x", r"C:\library\never.pdf", path_index=index) is None
+    assert _existing_document_id("hash-x", r"C:\library\never.pdf") is None
+
+
+def test_the_path_index_never_overrides_an_exact_hash_match(temp_database):
+    """Rule 1 still wins: the index is consulted only after the hash and exact-path lookups."""
+    from doc_assistant.ingest.store import _existing_document_id, build_path_index
+
+    first = _ingest("doc-0001", doc_hash="hash-v1")
+    index = build_path_index()
+    assert _existing_document_id("hash-v1", path_index=index) == first
+    assert _existing_document_id("hash-v1", r"C:\somewhere\else.pdf", path_index=index) == first
+
+
+# ============================================================
+# Carrying the figures across (ADR-047) — all three updates, or none.
+# ============================================================
+
+
+def _figure(document_id: str, doc_hash: str, image_path: str) -> None:
+    from doc_assistant.db.models import Figure
+    from doc_assistant.db.session import session_scope
+
+    with session_scope() as session:
+        session.add(
+            Figure(
+                document_id=document_id,
+                doc_hash=doc_hash,
+                page=1,
+                kind="figure",
+                image_path=image_path,
+            )
+        )
+
+
+def test_figures_move_with_the_document_when_the_directory_can_be_renamed(
+    temp_database, tmp_path, monkeypatch
+):
+    from doc_assistant.db.models import Figure
+    from doc_assistant.db.session import session_scope
+    from doc_assistant.ingest import figures as figures_mod
+    from doc_assistant.ingest.store import repoint_figures
+
+    monkeypatch.setattr(figures_mod, "FIGURE_DIR", tmp_path / "figures")
+    _ingest("doc-0001", doc_hash="hash-v1")
+    old = figures_mod.figure_dir("hash-v1")
+    old.mkdir(parents=True)
+    (old / "page1_fig0.png").write_bytes(b"\x89PNG")
+    _figure("doc-0001", "hash-v1", str(old / "page1_fig0.png"))
+
+    assert repoint_figures("doc-0001", "hash-v2") == 1
+
+    with session_scope() as session:
+        row = session.execute(select(Figure)).scalar_one()
+        assert row.doc_hash == "hash-v2"
+        assert Path(row.image_path).exists(), "the stored path must still resolve"
+
+
+def test_figures_do_not_move_when_the_destination_is_already_occupied(
+    temp_database, tmp_path, monkeypatch
+):
+    """All three updates or none — the rows must not outrun the directory.
+
+    The rename is skipped when the destination exists, but the row updates used to run anyway:
+    every `image_path` was rewritten into a directory that does not hold those crops, and the
+    real ones were left under a hash `hashes_with_no_figure_rows` would then read as dead and
+    delete. Bailing keeps every stored path resolving.
+    """
+    from doc_assistant.db.models import Figure
+    from doc_assistant.db.session import session_scope
+    from doc_assistant.ingest import figures as figures_mod
+    from doc_assistant.ingest.store import repoint_figures
+
+    monkeypatch.setattr(figures_mod, "FIGURE_DIR", tmp_path / "figures")
+    _ingest("doc-0001", doc_hash="hash-v1")
+    old = figures_mod.figure_dir("hash-v1")
+    old.mkdir(parents=True)
+    (old / "page1_fig0.png").write_bytes(b"\x89PNG")
+    _figure("doc-0001", "hash-v1", str(old / "page1_fig0.png"))
+    figures_mod.figure_dir("hash-v2").mkdir(parents=True)  # already occupied
+
+    assert repoint_figures("doc-0001", "hash-v2") == 0, "nothing moved, so nothing is repointed"
+
+    with session_scope() as session:
+        row = session.execute(select(Figure)).scalar_one()
+        assert row.doc_hash == "hash-v1", (
+            "the row must not claim a hash its crops do not sit under"
+        )
+        assert Path(row.image_path).exists()

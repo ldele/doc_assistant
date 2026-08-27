@@ -14,6 +14,7 @@
   import { addDocuments, indexPaths, inspectDocuments, undoAddDocuments } from '../core/api/documents'
   import type { AddMode, AddResult } from '../core/api/documents'
   import type { FileVerdict, InspectResponse } from '../core/types/documents'
+  import { sourceKeyName } from './accept'
 
   interface Props {
     /** Absolute paths staged by the accept surface (AD1). */
@@ -75,10 +76,18 @@
     return 'triangle-alert'
   }
 
-  /** The one-line reason. `advisory` is the server's own sentence and is never rewritten. */
+  /**
+   * The one-line reason. `advisory` is the server's own sentence and is never rewritten — but a
+   * duplicate's advisory ("Already in your library.") always arrives set, which used to make the
+   * `duplicate_of` branch below unreachable and left the user told *that* a file is a duplicate
+   * and never *which* one. The duplicate case is answered first for that reason.
+   */
   function reason(f: FileVerdict): string {
+    if (f.verdict === 'duplicate') {
+      const of = f.duplicate_of ? ` — matches ${sourceKeyName(f.duplicate_of)}` : ''
+      return `${f.advisory ?? 'Already in your library.'}${of}`
+    }
     if (f.advisory) return f.advisory
-    if (f.verdict === 'duplicate') return `Already in your library${f.duplicate_of ? ` — ${f.duplicate_of}` : ''}`
     return ''
   }
 

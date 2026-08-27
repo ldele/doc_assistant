@@ -29,6 +29,37 @@ import duckdb
 
 from doc_assistant.eval.results import EvalResult
 
+#: Escape character for the ``LIKE`` prefix match. A backslash rather than anything exotic
+#: because it is what both DuckDB and SQLite spell it as. One definition, used by the escaper
+#: below **and** spliced into the statement it belongs to — the two must agree, and the way to
+#: guarantee that is not to write the character twice.
+_LIKE_ESCAPE = "\\"
+
+#: The whole statement, assembled once at import. Deliberately **not** an f-string at the
+#: ``execute`` call: interpolating anything into a SQL string there is a shape worth not having
+#: even when the value is a constant, and bandit flags it (B608) on sight rather than reasoning
+#: about the value — which is the right instinct for it to have. The caller's untrusted input is
+#: the bound ``?`` parameter and never reaches this string.
+_RESOLVE_RUN_SQL = (
+    "SELECT id FROM runs WHERE id LIKE ? ESCAPE '"  # nosec B608 -- the only interpolation is
+    + _LIKE_ESCAPE  # this module's own escape character; the prefix is a bind marker
+    + "' ORDER BY started_at"
+)
+
+
+def _like_prefix(prefix: str) -> str:
+    """``prefix`` as a literal ``LIKE`` pattern — its wildcards defused, nothing rejected.
+
+    ``_`` matches any single character in a ``LIKE`` pattern and ``%`` matches anything, so an
+    unescaped prefix can match ids it does not start with. Escaping rather than validating the
+    character set on purpose: a whitelist would also refuse the synthetic run ids tests and
+    older stores use, and refusing a legitimate id is a worse failure than the one being fixed.
+    The escape character goes first, or it would re-escape the escapes added after it.
+    """
+    escaped = prefix.replace(_LIKE_ESCAPE, _LIKE_ESCAPE * 2)
+    escaped = escaped.replace("%", _LIKE_ESCAPE + "%").replace("_", _LIKE_ESCAPE + "_")
+    return f"{escaped}%"
+
 
 class RunPrefixError(ValueError):
     """A run-id prefix that matched no run, or more than one."""
@@ -228,12 +259,15 @@ class Store:
         produce a result about a run the caller never named. Lives on the store rather than in a
         runner because every CLI that takes a run id needs it, and two copies of a resolver are
         two chances to resolve differently.
+
+        **The prefix is matched literally.** It reaches a ``LIKE`` pattern, where ``_`` matches any
+        single character and ``%`` matches any run — so an unescaped ``a_c`` would match ``abc``
+        and could resolve, silently and singly, to a run the caller did not name: the one outcome
+        this function exists to prevent. `_like_prefix` defuses those.
         """
         if not prefix.strip():
             raise RunPrefixError("Empty run id.")
-        rows = self.conn.execute(
-            "SELECT id FROM runs WHERE id LIKE ? ORDER BY started_at", [f"{prefix}%"]
-        ).fetchall()
+        rows = self.conn.execute(_RESOLVE_RUN_SQL, [_like_prefix(prefix)]).fetchall()
         if not rows:
             raise RunPrefixError(f"No run id starts with {prefix!r}.")
         if len(rows) > 1:

@@ -18,7 +18,26 @@ from doc_assistant.ingest.citations import (
 
 log = structlog.get_logger(__name__)
 
-__all__ = ["MIN_CONTAINED_TITLE_CHARS", "resolution_is_credible"]
+# Both this module's own public names **and** the two re-exports. Listing only the re-exports
+# declared this module's API to be two symbols it does not own and hid every one it does — which
+# is what `import *` and any tooling that honours `__all__` would then have believed.
+__all__ = [
+    "MIN_CONTAINED_TITLE_CHARS",
+    "REFERENCES_CAP",
+    "CitationEdge",
+    "CitationGraph",
+    "DocumentReference",
+    "DocumentReferences",
+    "GraphEdge",
+    "GraphNode",
+    "cited_by",
+    "cites_out",
+    "document_references",
+    "graph_subgraph",
+    "plausible_year",
+    "reresolve_stored_citations",
+    "resolution_is_credible",
+]
 
 # ============================================================
 # Citation queries (Phase 4)
@@ -359,7 +378,16 @@ def reresolve_stored_citations(*, apply: bool = False) -> dict[str, int]:
 
     Dry by default. ``apply=False`` reports what would change and writes nothing.
     """
-    from doc_assistant.ingest.citations import ParsedCitation, match_to_library
+    from doc_assistant.ingest.citations import (
+        ParsedCitation,
+        load_library_candidates,
+        match_to_library,
+    )
+
+    # Read the library **once**, before the session below opens. Left to itself `match_to_library`
+    # opens its own session per call and scans the document table twice inside it — a nested
+    # session per citation row, and O(citations x documents) overall.
+    candidates = load_library_candidates()
 
     stats = {"rows": 0, "before": 0, "after": 0, "gained": 0, "lost": 0, "changed": 0}
     with session_scope() as session:
@@ -378,7 +406,7 @@ def reresolve_stored_citations(*, apply: bool = False) -> dict[str, int]:
                 extraction_method=row.extraction_method or "",
                 confidence=row.confidence or 0.0,
             )
-            new = match_to_library(parsed)
+            new = match_to_library(parsed, candidates=candidates)
             # A self-citation is not a link worth storing: a document's own reference list
             # resolving to itself tells the reader nothing and pollutes the citation graph.
             if new == row.source_document_id:

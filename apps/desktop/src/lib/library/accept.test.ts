@@ -6,7 +6,14 @@
 
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { basename, dedupePaths, previewNames, remainderLabel, summarise } from './accept.ts'
+import {
+  basename,
+  dedupePaths,
+  previewNames,
+  remainderLabel,
+  sourceKeyName,
+  summarise,
+} from './accept.ts'
 
 const WIN = 'C:\\Users\\Lucas\\Zotero\\storage\\ABC123\\cajal-1899.pdf'
 const NIX = '/home/lucas/papers/cajal-1899.pdf'
@@ -110,4 +117,37 @@ test('the preview never bounds the batch — only the label', () => {
 test('a limit of zero is honoured without producing a negative remainder', () => {
   assert.deepEqual(previewNames(['a', 'b'], 0), [])
   assert.equal(remainderLabel(['a', 'b'], 0), 'and 2 more')
+})
+
+
+// `sourceKeyName` — a duplicate's match, named for a reader rather than for the API.
+//
+// The review sheet used to show nothing at all here: the server always sets `advisory` on a
+// duplicate, so the branch that named the matched file was unreachable. Reaching it exposed the
+// other half of the problem — `duplicate_of` is a `source_key`, so naming it raw would have shown
+// the user a uuid.
+
+test('a library key shows the file, not the "library:" prefix', () => {
+  assert.equal(sourceKeyName('library:cajal-1899.pdf'), 'cajal-1899.pdf')
+})
+
+test('a referenced key never shows its uuid', () => {
+  const key = 'b0d8a4e8-55be-429c-96fc-a8bd34980891:papers/rag.pdf'
+  const shown = sourceKeyName(key)
+  assert.equal(shown, 'rag.pdf')
+  assert.ok(!shown.includes('b0d8a4e8'), 'a root uuid must never reach the user')
+})
+
+test('a bare rel_path — the pre-AD3b shorthand — still names its file', () => {
+  assert.equal(sourceKeyName('papers/rag.pdf'), 'rag.pdf')
+  assert.equal(sourceKeyName('rag.pdf'), 'rag.pdf')
+})
+
+test('a filename containing a colon does not lose its head', () => {
+  // Only the FIRST colon splits, and a name with no root prefix still resolves to itself.
+  assert.equal(sourceKeyName('library:notes: draft.pdf'), 'notes: draft.pdf')
+})
+
+test('a windows-separated rel_path is handled like a posix one', () => {
+  assert.equal(sourceKeyName(String.raw`library:sub\dir\paper.pdf`), 'paper.pdf')
 })

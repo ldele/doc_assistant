@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-08-15 · class: append-only -->
+<!-- status: active · updated: 2026-08-27 · class: append-only -->
 
 # DEVLOG — doc_assistant
 
@@ -16,6 +16,244 @@ Format: What changed | Why | Rejected alternatives | What it opens
 > the oldest entries into a new `DEVLOG-archive-NNN.md` and update the list above — **do not raise
 > the cap.** The cap exists because this log reached 8,244 lines before anyone noticed: every entry
 > is individually small and correct, so unbounded growth is invisible per commit.
+
+---
+## 2026-08-27 — The AD3b migration, run against a real pre-AD3b database and then given the test it never had
+
+**What changed.** `tests/integration/test_source_roots_migration.py` — 8 tests over the project's
+second rebuild migration, which shipped with **none**.
+
+**Why it was worth checking by hand first.** `_migrate_source_roots` does
+`CREATE temp → copy → DROP TABLE → RENAME` on a table holding data users cannot regenerate (their
+`excluded` flags), and it runs on every `init_db` — every app start. `data/library.db.bak-20260824-preroots`
+is a genuine 97-document pre-AD3b database, so it was run against a **copy** of it (the original's
+mtime is unchanged; the live `data/library.db` was never opened). Result: 27 tables → 28, 97 rows →
+97 with every `rel_path`, `size`, `excluded` and `source_sha256` byte-identical, all backfilled to
+the library root, 0 rows pointing at a missing root, `PRAGMA foreign_key_check` clean, second run a
+no-op.
+
+**And then the same database was driven, not just inspected** — KI-49's lesson is that a component
+proved is not a system proved. A scan with the sources folder absent left all 97 rows and reported
+them `missing` with `root_available=False` (an unplugged drive is not a deletion); restoring two
+files produced 2 present / 95 missing and **no duplicate rows**; `library.add.inspect` found a
+byte-identical file and returned `duplicate_of='library:…'`; and the new UNIQUE and the FK both
+refused a bad insert.
+
+**⚠ The `CreateIndex` loop in `_rebuild_table` is load-bearing for CORRECTNESS, not tidiness, and
+the code comment undersells it.** Removing it and re-running these tests leaves the migrated table
+with `sqlite_autoindex_source_files_1` — the primary-key autoindex — **and nothing else**. The
+composite key is declared as `Index(..., unique=True)` in `__table_args__` rather than as a
+`UniqueConstraint`, so it *lives in an index*: without the loop, `uq_source_files_root_rel` never
+exists and the key the whole migration is for is not enforced at all. AD2's
+`ix_source_files_source_sha256` goes with it. Three of the eight tests catch this.
+
+**Rejected:** keeping the one-off script as the record (it proves the migration works once, on one
+machine, against one database — the pre-AD3b DDL is now pinned verbatim in the test instead) ·
+asserting on the backup file itself from the test suite (it is gitignored local data; a test that
+only runs on this machine is not a gate).
+
+**What it opens.** `.claude/REVIEWS.md` still records backend and frontend as **never** reviewed as
+a whole — this pass reviewed a diff, not the modules. The add-documents UI has still never been
+launched: `svelte-check` and `node:test` cannot see a mount failure (apps/desktop/CLAUDE.md).
+
+---
+## 2026-08-26 (5) — The loose thread from entry (4): a rename could silently re-extract the whole corpus
+
+**What changed.** `_extraction_closure` now returns `{attribute name: function}` and the caller
+hashes the **object it was handed** instead of re-resolving the name with
+`getattr(extractors, name)`. The walk keys on the name a function is *bound to on the module*
+rather than on its `__name__`.
+
+**The defect, found while writing the finding-12 test rather than by reading the code.** The
+closure returned names; the caller looked each one up again. A function whose `__name__` differs
+from its attribute — an alias, or any decorator that does not carry `functools.wraps` — made that
+lookup raise `AttributeError`, the blanket `except` caught it, and the per-format fingerprint
+silently became the **whole-module** one. Direction-safe (it over-invalidates) and expensive in
+fact: a corpus-wide re-extraction, **61 min for 97 documents and ~55 h projected at 10,000**,
+triggered by a rename that could not change one byte of output. Entry (4) left it alone as
+out-of-scope; it is fixed here.
+
+**A second copy of the same mistake, in the same function.** `blocked` was built from
+`fn.__name__` too, but it is tested against the attribute names the walk reads out of `co_names` —
+so the same mismatch would have put an unmatchable string in `blocked` and quietly left the
+*other* formats' entry points inside this format's scope. That one has no symptom at all: it
+under-invalidates, which is the KI-40 failure the whole layer exists to prevent. Both now derive
+from one `id(obj) -> attribute` map over `vars(extractors)`.
+
+**Two tests, and the tell is precise.** Under the defect the format's fingerprint *equals*
+`extraction_fingerprint(None)`, so `test_a_renamed_extractor_does_not_silently_re_extract_the_corpus`
+asserts it does not — and that no `extraction_fingerprint_fallback` was logged, via
+`structlog.testing.capture_logs`. The complement pins that the other six formats are untouched.
+Both verified against the reinstated name round-trip: red before, green after.
+
+**Rejected:** returning the constants as objects too (their names *are* attribute names by
+construction — each came from a successful `getattr` on the same module in the same call — so
+that lookup cannot raise; adding churn there would be motion, not safety) · keeping a name-keyed
+API and hardening the lookup with a `getattr(..., None)` guard (it would silently drop the
+function from the hash instead of raising, turning a loud over-invalidation into a quiet
+under-invalidation — strictly worse).
+
+---
+## 2026-08-26 (4) — The rest of the branch review: nine findings, and one of them was hiding behind a test that could not fail
+
+**What changed.** Findings 6-14 from the `feat/eval-comparability` review, fixed. Two are scaling
+work against the 10k-document contract, four are correctness, three are honesty-of-the-record.
+
+**⚠ Two guards in this branch asserted things that were true by construction.** Both were written
+to catch a real defect and neither could ever fail:
+
+1. `extraction_fingerprint` raised if the format's extractor was "unreachable from
+   `extract_to_markdown`" — but that extractor is passed in as a **seed**, and every seed is
+   recorded unconditionally. That is the entire reason seeds exist (the `_EXTRACTORS` dispatch is
+   a runtime lookup no static walk can follow). The guard is gone; the invariant it was named for
+   is now `test_a_change_to_a_formats_entry_point_moves_only_that_format`, which patches each
+   format's entry point and asserts that format's fingerprint moves and no other's does.
+   **Verified by deleting the seeds: the new test fails, the old one passed.**
+2. `test_a_format_entry_point_is_inside_its_own_scope` did the same thing in the test suite —
+   handed `_extraction_closure` the entry point as a seed, then asserted the seed came back.
+   Replaced by the behavioural version above.
+
+That is the same shape as the `test_budgets_are_ordered` finding earlier today. Three in one
+branch is a pattern worth naming: **a guard written from the inside of the mechanism tends to
+assert the mechanism's own construction.** The behavioural form — change the input, watch the
+output move — cannot be satisfied that way.
+
+**6 · The identity fallback was O(documents²).** `_existing_document_id` re-read every Document
+row to resolve one normalised path, and during a corpus-wide re-extraction *every* hash moves, so
+that fallback is the path taken for every document rather than the exception. `build_path_index`
+reads it once per run and `main` threads it through. Deliberately not module-level state: a stale
+map in the long-lived API process, or shared between tests, resolves a document to an id the
+database no longer holds. Safe to build once because each source path is processed exactly once.
+
+**7 · `repoint_figures` moved rows without moving the directory.** When the destination hash's
+directory already existed the rename was skipped — and the row updates ran anyway, rewriting every
+`image_path` into a directory that does not hold those crops and leaving the real ones under a
+hash `hashes_with_no_figure_rows` would then read as dead and delete. It now bails, the same trade
+the `OSError` arm already made: a stored path that resolves beats a tidy hash.
+
+**8 · The review sheet never said *which* file a duplicate matched.** The server always sets
+`advisory` on a duplicate, so the branch naming the match was unreachable. Reaching it exposed the
+other half: `duplicate_of` is a `source_key`, so naming it raw would have shown the user a root
+uuid. `sourceKeyName` renders the filename, and it lives in `accept.ts` rather than the component
+because a `.svelte` file cannot be reached by `node:test` (apps/desktop/CLAUDE.md).
+
+**9 · `resolve_run_id` let LIKE wildcards through.** `_` matches any single character, so `a_c`
+matched `abc12345` — and because exactly one run matched it resolved *silently*, handing back a
+run the caller never named, which is the one outcome that resolver exists to prevent. Escaped
+rather than character-validated: a whitelist would also have refused the synthetic ids the tests
+and older stores use, and refusing a legitimate id is a worse failure than the one being fixed.
+
+**10 · `--workers --help` named the wrong default** (`balanced`; it is `light`).
+
+**11 · An unplugged reference drive failed the whole selection.** An unreachable root contributes
+nothing to `on_disk`, so validating against it reported every one of its files as `unknown` and
+raised — a 400 for the entire request, blocking the library that *is* present, which is exactly
+what `resolve_selection`'s own docstring said it avoided. Its files are dropped with a count now,
+as the implicit branch already did. A guard test pins that an unknown file under a *reachable*
+root still raises, so this did not soften validation generally.
+
+**13 · `library/citations.py`'s `__all__` declared two symbols it does not own** and hid the six it
+does. Latent (nothing star-imports it) but wrong for anything honouring `__all__`.
+
+**14 · `reresolve_stored_citations` opened a nested session per citation row**, each scanning the
+document table twice — O(citations x documents). `load_library_candidates` reads the library once
+and `match_to_library` takes it. **That rewrite fixed a bug nobody had filed:** the DOI rule was
+`Document.doi.ilike(parsed.doi)`, and `ilike` reads `_` and `%` in the *parsed* DOI as wildcards.
+DOIs legitimately contain underscores, so `10.1234/abc_def` could match a different paper. Same
+defect as finding 9, in a different table.
+
+**Verification.** Every new regression test was run against the real pre-fix code and seen to fail
+— including one where the first attempt did **not** fail, because the revert was not faithful
+(replacing the `dest_dir.exists()` guard let the rename raise `FileExistsError`, which the OSError
+arm caught and turned into the same return value). Restoring the actual original made it fail.
+A revert that does not reproduce the bug proves nothing about the test.
+
+**Rejected:** a `source_key` column on `Document` with a migration for finding 6 (the run-scoped
+map costs one query and no schema risk; a column is the right answer if this ever needs to be
+correct across a run rather than within one) · validating the run-id character set instead of
+escaping (see 9) · fixing the fingerprint's silent whole-module fallback when a function's
+`__name__` does not match its module attribute — **found while writing the finding-12 test, not
+filed before, and left alone**: it degrades safely (over-invalidates) but its cost is a full
+re-extraction, so it is worth its own look.
+
+**What it opens.** The `__name__`-mismatch fallback above. The nine findings are closed; the five
+from entry (3) were the severe half.
+
+---
+## 2026-08-26 (3) — Review of `feat/eval-comparability` before merge: five findings fixed, and two of them could delete a file
+
+**What changed.** A full `/code-review` of the branch against `main` (15 commits, 100 files,
++19,398/-826 — none of it read by anyone but its author) produced 14 findings. The five most
+severe are fixed here; the rest are recorded in the review and left for a follow-up.
+
+**⚠ The two that mattered were both about deleting the user's files, and neither raised anything.**
+
+1. **`scan_root` claimed ownership of folders it had no business owning.** It never set `origin`,
+   so every row it created took the column DEFAULT — `'copied'`, the value that tells delete it may
+   bin the file. Reference *one* paper out of a Zotero folder and `register_root` registers that
+   folder; the next scan then walks it and marks **every other document in it** as app-owned.
+2. **`undo_add` built its delete path as `library / rel_path` whatever root the row belonged to.**
+   Combined with (1): a key naming `notes.pdf` in the user's Zotero folder deleted an unrelated,
+   months-old `notes.pdf` out of the library folder. Reproduced end to end before the fix; the
+   Zotero file survived and the library file did not.
+
+   `origin` is now stated by the scan from its root's kind, and the impossible combination
+   (`copied` under a `referenced` root) is repaired in place on the next scan — self-healing rather
+   than a migration, since the scan is what owns these rows. The reverse is legal and untouched: a
+   file already inside the library folder registers under the *library* root with
+   `origin='referenced'`. The delete now resolves through the row's own root, requires the library
+   root, and requires the row to be younger than `UNDO_DELETE_WINDOW_SECONDS` — undo is an undo,
+   not a delete-by-key for anything the app ever copied in. A declined delete is logged; the row
+   goes either way, because a file left for the next scan to re-register is recoverable and a
+   deleted one is not (KI-49).
+
+**3 · A failure that took the failure report with it.** `apply_add` caught `(OSError, ValueError)`,
+so the registry's `(root_id, rel_path)` uniqueness — reachable by re-referencing a path, or by a
+library file whose size changed since the last scan so `inspect`'s size index missed it — raised
+`IntegrityError` straight out of the function. The client got a 500 and lost `added` entirely,
+which is the one thing undo needs. Now reported as a per-file failure like any other, with a
+sentence instead of a driver's SQL string.
+
+**4 · A failed copy outlived its own rollback.** `shutil.copy2` runs inside the `session_scope`,
+and the filesystem does not roll back. An orphaned copy is invisible to `undo_add` (no row, no key)
+and perfectly visible to the next `scan_root`, which would adopt a document the user was just told
+had failed to add. The destination is now claimed *before* the copy, so a copy that dies partway is
+cleaned up too.
+
+**5 · Exclusions silently stopped applying.** `_drop_excluded` swapped `f.resolve()` for
+`registry.pathkey`, which normalises case and separators but deliberately does no filesystem read —
+so it cannot reconcile an 8.3 short name, junction or symlink against the *resolved* form every
+writer of `SourceRoot.path` stores. Reproduced: `skipped=0`, no error, no warning, Decision 5's
+standing exclusions quietly ignored. `_resolve_walk_root` now resolves in both branches (it already
+promised to in its docstring), `_seed_library_root` stores resolved like the other two writers, and
+the precondition is stated where it can bite.
+
+**6 · The worker budgets were not a ladder.** `balanced` returned 1 worker at 4 cores and `full`
+returned 1 at 2, while `light` returned 2 — so a user on an ordinary laptop moving *up* from the
+default to speed up ingest silently got serial extraction. Each rung is now floored at the one
+below it.
+
+**⚠ The ordering test existed and could not fail.** `test_budgets_are_ordered` asserted exactly
+this invariant, pinned to `cpu_count=32` — the one region where the fractions were still monotonic.
+The next test looked straight at `cpu_count=2` and asserted only `1 <= n <= 2`, which passes for
+both the right answer and the wrong one. A ladder is a claim about a whole range; testing it at one
+point tested it where it could not fail. It now sweeps 1..64, and a second test compares the rungs
+to each other rather than to a range.
+
+**Every regression test was verified to fail without its fix** — all 8, by reverting the five fixes
+and re-running. A guard that has never been seen red is not a guard (KI-41).
+
+**Rejected:** making `registry.pathkey` resolve (its no-I/O property is deliberate, and it also
+keys paths whose file is gone, where `resolve()` does nothing useful) · a migration for the bad
+`origin` rows (the scan already rewrites these rows every run, so repairing there needs no new
+machinery and heals databases that never run a migration) · scoping `undo_add` to un-indexed rows
+(the sheet indexes before offering Undo when *Index now* is ticked, so it would break the ordinary
+path).
+
+**What it opens.** Nine findings remain unfixed and are listed in the review: the `_existing_document_id`
+O(n²) path scan against the 10k-document contract, `repoint_figures` rewriting rows without moving
+the directory, the dead `duplicate_of` branch in the review sheet (the user is never told *which*
+file a duplicate matches), `resolve_run_id`'s unescaped LIKE wildcards, and five smaller ones.
 
 ---
 ## 2026-08-26 (2) — KI-45 part 1: a citation link now has to agree on the title, and one word is enough to disagree

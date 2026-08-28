@@ -271,3 +271,33 @@ def set_update_last_seen_version(version: str | None) -> None:
     else:
         settings.pop("update_last_seen_version", None)
     save_user_settings(settings)
+
+
+def get_ingest_budget() -> str:
+    """How much of this machine an ingest may use: ``off`` | ``light`` | ``balanced`` | ``full``.
+
+    A **politeness** control, not a performance knob — see `ingest.workers`. It is output-neutral
+    (worker count cannot change what an answer says), which is the test ADR-037 used to decide
+    whether a knob is safe to expose, and it is read per ingest run rather than at pipeline
+    construction, so ADR-037's "no restart semantics" objection does not apply either.
+    """
+    from doc_assistant.ingest.workers import BUDGETS, DEFAULT_BUDGET
+
+    value = load_user_settings().get("ingest_budget")
+    if isinstance(value, str) and value.strip().lower() in BUDGETS:
+        return value.strip().lower()
+    return DEFAULT_BUDGET
+
+
+def set_ingest_budget(budget: str) -> str:
+    """Persist the ingest politeness budget. Returns what was stored."""
+    from doc_assistant.ingest.workers import BUDGETS
+
+    name = budget.strip().lower()
+    if name not in BUDGETS:
+        raise ValueError(f"unknown ingest budget {budget!r}; expected one of {', '.join(BUDGETS)}")
+    settings = load_user_settings()
+    settings["ingest_budget"] = name
+    save_user_settings(settings)
+    log.info("ingest_budget_set", budget=name)
+    return name

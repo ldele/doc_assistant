@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-08-01 (ADR-038: the in-RAM arm is gone) · class: living -->
+<!-- status: active · updated: 2026-08-26 (per-stage cost shares; the worker budget) · class: living -->
 
 # Performance, cost and scale — the measured record
 
@@ -84,6 +84,70 @@ measured ~35 s against ~2.4 s warm. That is the file cache, not the code.
 | Embed | **3.8 ms/chunk** (GPU) · 31.6 ms/chunk (CPU) | ~4.0 child chunks per 1,000 characters |
 | ⇒ **embed ≈ 15 ms per 1,000 characters of text** | | file size in MB is the **wrong** predictor; characters is the right one |
 | Full re-embed of the corpus | **~2.1 min** (GPU) · ~17 min (CPU) | forced by any change to stored chunk text |
+
+### What each stage costs, as a share — the portable version
+
+**Read this table for the shape, not the seconds.** Absolute times depend on the machine, the
+document and whether OCR fires; the *ratios* between stages have held across every measurement so
+far and are what should inform a design decision.
+
+The reference unit is **one 30-page digital PDF** — a typical journal article or preprint, which is
+what this corpus mostly holds (97 documents, 2,859 pages, ~30 pages each).
+
+| Stage | Share of a first ingest | Order of magnitude | Scales with |
+|---|---:|---|---|
+| **PDF → markdown** | **~90%** | tens of seconds | **pages** (r=+0.73), not bytes (r=+0.37) |
+| Embedding | ~5% | seconds | characters of text (~4 child chunks per 1,000 chars) |
+| Figure detection | ~1% | sub-second | pages (renders each at `FIGURE_RENDER_DPI`) |
+| Citation extraction | ~1% | sub-second | references per document |
+| Epistemics · keywords · doc-vectors · gaps | <1% each | milliseconds | corpus for keywords/doc-vectors (see below) |
+| Chunking | ~0% | milliseconds | characters |
+| **Metadata** | **~0%** | milliseconds | nothing much — it is the cheapest stage by three orders of magnitude |
+| *Figure VLM description* | *separate* | *seconds per figure, and money* | *figures; a paid pass, run on demand* |
+
+**Four things this table is for.**
+
+1. **Extraction is the only stage worth optimising.** Everything else combined is ~3 s against its
+   ~34 s. A change that halves metadata cost saves nothing anyone can perceive; a change that
+   halves extraction halves ingest.
+2. **Estimate with pages, never megabytes.** Measured: a 15.4 MB / 20-page paper took 20.5 s while
+   a 4.8 MB / 22-page one took 37.4 s. File size is close to useless as a predictor.
+3. **OCR roughly doubles extraction.** A/B on this corpus: 1.4x–2.8x slower for +0% to +8% text —
+   on one arXiv preprint, **11 extra seconds for 3 extra characters**. It fires far more than
+   expected (87 of 97 documents, 1,128 of 2,859 pages) because `pymupdf4llm` finds a `tesseract`
+   binary on PATH (KI-47).
+4. **Two passes are corpus-global by construction** — `extract_keywords` and `compute_doc_vectors`
+   recompute over the whole library, so adding one document to a 10,000-document corpus still pays
+   a whole-corpus pass. That is the scaling problem, and it is not solved by making them faster.
+
+**Indicative absolutes on the reference machine** (Windows, 28 logical cores, RTX + `cu130`, warm
+model): a 30-page digital PDF costs **~15 s without OCR, ~35 s with**. A 300-page scanned book is
+minutes, dominated entirely by OCR. A `.txt` or `.md` file is milliseconds — it skips extraction
+altogether.
+
+**A re-ingest is the worst case and should be rare.** An unchanged document re-scans in ~0.4 ms
+because the extraction cache answers first; the per-format fingerprint (KI-48) exists so that an
+unrelated change cannot invalidate that cache for every format at once.
+
+#### Parallel extraction — measured, and more modest than it looks
+
+Extraction is per-document and independent, so it is warmed in parallel before the serial loop
+(`ingest.workers`). **16 documents, 28 logical cores, cold cache each round:**
+
+| workers | wall | speedup |
+|---:|---:|---:|
+| 1 (serial) | 367.7 s | 1.00x |
+| **2** | 250.1 s | **1.47x** |
+| 4 | 218.8 s | 1.68x |
+| 7 | 212.1 s | 1.73x |
+| 14 | 211.1 s | 1.74x |
+
+**Two workers buy 85% of the entire achievable gain, for 2 cores instead of 14** — which is why
+the default budget is `light` and why the polite setting costs almost nothing. It does **not**
+scale with cores, and the reason is not established: the long-tail hypothesis fails (the slowest
+document here is 50 s, well under the 211 s floor) and so does OpenMP contention
+(`OMP_THREAD_LIMIT=1` measured marginally *worse*, 225 s vs 217 s). Recorded as measured-but-
+unexplained. Anyone projecting a large ingest should use **~1.5x**, not the core count.
 
 ### Enrichment sidecars (CPU-bound by nature; figures pre-date the GPU wheel)
 

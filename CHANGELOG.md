@@ -7,6 +7,78 @@ versioning is [SemVer](https://semver.org/) on the `doc_assistant` package, and 
 The engineering record is finer-grained than this file: per-change entries live in
 [`docs/DEVLOG.md`](docs/DEVLOG.md), design decisions in [`docs/decisions.md`](docs/decisions.md).
 
+## [Unreleased]
+
+### Added
+
+- **You can add documents from inside the app.** Drop files or a folder onto the window, or use
+  *Add documents…* in the app menu or above the Library. Before anything is copied or indexed you
+  get a review sheet saying what will happen to each file — added, already in your library,
+  unsupported format, or unreadable — with the exceptions sorted above the ordinary additions, so
+  a long list cannot bury one. A dropped folder is read all the way down and the total is stated
+  before you commit. Nothing is copied, registered or indexed until you confirm, and *Undo all* is
+  offered immediately afterwards.
+- **Your documents no longer have to live in Provenote's own folder.** Adding a file is now a
+  choice between *copy it in*, where the app owns the copy, and *reference it where it is*, where
+  the file stays yours: a referenced file is never moved, altered or deleted by the app, and
+  removing it from your library removes only the app's record of it. When the folder holding it
+  cannot be reached — an external drive, a share that is offline — the app says that location is
+  unavailable rather than showing you a library full of missing documents.
+  ([ADR-046](docs/decisions/ADR-046-added-documents-copy-or-reference.md))
+
+### Changed
+
+- **Improving how a document is read no longer disconnects everything attached to it.** A
+  document's identity used to be the text extracted from it, so any extraction fix gave it a new
+  identity and cut it loose from its figure descriptions, keywords, folder assignments and any
+  metadata you had corrected by hand. Measured on a 97-document library before the fix: a single
+  extractor change would have orphaned 4,123 rows, 19 of which nothing could regenerate. A
+  document is now identified by the file it came from.
+  ([ADR-047](docs/decisions/ADR-047-document-identity-survives-re-extraction.md))
+- **A citation only becomes a link when the titles agree.** A reference used to be matched to a
+  paper in your library on first-author surname and year alone, which on a collection holding
+  several same-year papers by common surnames is not evidence: on the working library 13 of the 16
+  stored links were wrong — one review of graph neural networks pointed at a paper on mouse
+  whisker cortex. Matching now requires the titles to agree as well. On that same library the
+  links went from 16 to 41, the 12 false ones dropped and the rest checked by hand; your own
+  numbers will differ.
+- **A title you correct shows up everywhere.** Editing a document's title fixed the Library list
+  but not the document's own page, which still showed the extracted version — most visible on the
+  OCR-derived titles that most need correcting.
+- **EPUB files no longer read their own table of contents as body text**, and page furniture is
+  dropped from EPUB as it already was from HTML.
+- **Indexing can use more than one core, and you can say how many.** Off, light (the default,
+  two), balanced or full — never the whole machine. It changes only how long indexing takes, never
+  what it produces. On this machine two workers bought most of the achievable gain, and the curve
+  flattens well before the core count; expect that to vary with your machine and your documents.
+
+- **Benchmark numbers now say what produced them, and the app can tell you when two of them
+  cannot be compared.** Every eval run records the corpus it searched, the model that wrote the
+  answers, and the retrieval settings that were live; a new check reads that record and reports,
+  per metric, whether two runs measured the same thing. This exists because a five-trial run in
+  August looked like a 6% improvement and was a model swap — a number nobody could have caught by
+  reading it. Published results carry the same record, so they can be checked against a later run
+  without access to the machine that produced them. Documentation: [`evals/README.md`](evals/README.md).
+
+### Known limits
+
+- **Citation links are worked out when a document is first read, and are not revisited.** Adding
+  the paper a reference points at will not turn that reference into a link on its own — the
+  earlier document has to be read again. Refreshing them without re-reading anything is possible
+  from the command line today; it is not yet a button.
+- **A file you rename or move outside the app is treated as a new document.** Its indexed content
+  is recognised, so it is not read or embedded twice, but anything recorded against the old path —
+  an exclusion you set, for instance — does not follow it.
+- **Scanned PDFs are only read if your system has an OCR engine, and the installer does not
+  include one.** A PDF that is pure page images — no selectable text — extracts to nothing and is
+  marked *broken* in your library. If a `tesseract` binary happens to be on your PATH, the
+  extractor will quietly use it and read the pages instead. Two machines running the same version
+  can therefore build different libraries from the same file, and there is currently no setting,
+  message or log line that tells you which one you are getting. Deliberate recovery of scanned
+  documents — opt-in, and marked so you can see which text came from OCR — is designed but not
+  built ([ADR-039](docs/decisions/ADR-039-ocr-sidecar-for-scanned-pdfs.md)).
+- **Everything under *Known limits* for 0.5.1 still applies.**
+
 ## [0.5.1] — 2026-08-14
 
 ### Added

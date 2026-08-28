@@ -944,22 +944,63 @@ class DocumentMeta(Base):
 
 
 # ============================================================
-# SourceFile — selective-ingestion registry (feature-selective-ingestion.md, S1).
+# SourceRoot / SourceFile — selective-ingestion registry (feature-selective-ingestion.md, S1),
+# made multi-root by ADR-046 (AD3b).
 # ============================================================
+
+#: The id of the one `library` root — the folder Provenote keeps copied-in documents in.
+#: A fixed sentinel rather than a uuid on purpose: the AD3b migration has to backfill every
+#: pre-existing `SourceFile` to it, and a constant makes that a literal column DEFAULT (so the
+#: ADR-026 rebuild carries the value across without a second UPDATE pass) and makes re-running
+#: the migration a no-op. Referenced roots get uuids like everything else.
+LIBRARY_ROOT_ID = "library"
+
+
+class SourceRoot(Base):
+    """A folder the registry scans. Exactly one is the ``library`` root; the rest are referenced.
+
+    ADR-046: a document you add is either **copied** into the library folder or **referenced**
+    where it already lives, and the app must know which — because delete branches on it (ADR-014
+    as amended) and because a referenced file is the user's own, sitting in their Zotero/Dropbox
+    folder. Referencing a file outside the one source dir is what makes this a schema change
+    rather than a UI one: `SourceFile` was keyed by `rel_path` alone, with no root column.
+
+    ``path`` is absolute. It is *not* unique-indexed for the library root, whose path follows
+    `app_settings.get_source_dir()` and therefore changes when the user moves their library —
+    the row is updated in place rather than re-seeded, so `root_id` references never dangle.
+
+    **Availability is not stored here.** Whether a root is reachable right now (an unplugged
+    drive, an offline share) is a fact about the filesystem this second, exactly like
+    `registry.derive_status`'s output — so it is derived at read time by
+    `registry.scan_roots`, never persisted. Storing it would create a second truth that goes
+    stale the moment a drive is plugged back in.
+    """
+
+    __tablename__ = "source_roots"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid4()))
+    #: Absolute path to the folder. POSIX or native separators as the OS gave them.
+    path: Mapped[str] = mapped_column(String, nullable=False)
+    #: ``library`` (Provenote's own folder, exactly one) or ``referenced`` (the user's own).
+    kind: Mapped[str] = mapped_column(String, nullable=False, default="referenced", index=True)
+    added_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
 
 
 class SourceFile(Base):
-    """One discovered file under the current source dir — pre-ingest bookkeeping.
+    """One discovered file under one registered `SourceRoot` — pre-ingest bookkeeping.
 
     Populated by `ingest/registry.py::scan_sources` with a **stat-only** walk (no
     extraction, no hashing, no content reads — listing a large corpus is instant).
     Persists **identity** (`rel_path`, `format`, `size`, `mtime`, `first_seen`/`last_seen`)
     and **user intent** (`excluded`); ingestion *status* is never stored — it is derived at
-    read time from the cache mtime + the `Document` rows (`registry.derive_status`). Keyed by
-    `rel_path` (POSIX separators, relative to the source dir); a rename orphans the row (v1
-    limitation — the content-hash dedup gate still prevents re-embedding, so only per-path
-    metadata is lost). No FK to `Document` (linkage is a read-time join on `source_original`,
-    nothing to drift). Rides the additive `init_db()` `create_all`, like `Figure`.
+    read time from the cache mtime + the `Document` rows (`registry.derive_status`). No FK to
+    `Document` (linkage is a read-time join on `source_original`, nothing to drift). Rides the
+    additive `init_db()` `create_all`, like `Figure`.
+
+    **Keyed by `(root_id, rel_path)` since ADR-046 (AD3b)** — `rel_path` alone was the key while
+    there was exactly one source dir, and it is POSIX-separated and relative to its own root. A
+    rename still orphans the row (unchanged v1 limitation: the content-hash dedup gate prevents
+    re-embedding, so only per-path metadata is lost).
 
     `doc_type` ships **dormant** (grill lock 2026-07-15): the column exists but nothing seeds,
     reads, or writes it in v1 — the source is flat all-PDF, so per-file classification is
@@ -969,10 +1010,32 @@ class SourceFile(Base):
     """
 
     __tablename__ = "source_files"
+    __table_args__ = (
+        # Expressed as a unique *Index* rather than a UniqueConstraint deliberately: SQLite can
+        # `CREATE UNIQUE INDEX` on a live table but cannot `ALTER` a constraint onto one, so this
+        # form is reachable by migration as well as by `create_all`. It replaces the old
+        # `unique=True` on `rel_path` alone.
+        Index("uq_source_files_root_rel", "root_id", "rel_path", unique=True),
+    )
 
     id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid4()))
-    # rel_path is the identity key: POSIX-style, relative to the current source dir.
-    rel_path: Mapped[str] = mapped_column(String, nullable=False, unique=True, index=True)
+
+    # ADR-046 (AD3b): a registered file is `(root, rel_path)`, not `rel_path`. The FK is real and
+    # enforced (`PRAGMA foreign_keys=ON`) — an FK-less link is exactly what let `document_meta`
+    # rows outlive their document until ADR-026 had to rebuild the table, and there is no reason
+    # to repeat it. `server_default` is load-bearing, not decoration: the ADR-026 rebuild copies
+    # only columns present in both shapes, so the literal DEFAULT is what backfills every
+    # pre-AD3b row to the library root during the copy itself (KI-25 discipline).
+    root_id: Mapped[str] = mapped_column(
+        String,
+        ForeignKey("source_roots.id"),
+        nullable=False,
+        server_default=LIBRARY_ROOT_ID,
+        index=True,
+    )
+    # rel_path is POSIX-style and relative to **its own root** — no longer unique on its own,
+    # because the same `papers/rag.pdf` may legitimately exist under two different roots.
+    rel_path: Mapped[str] = mapped_column(String, nullable=False, index=True)
     format: Mapped[str] = mapped_column(String, nullable=False)  # suffix sans dot, lowercased
     size: Mapped[int] = mapped_column(Integer, nullable=False)
     mtime: Mapped[float] = mapped_column(Float, nullable=False)  # source st_mtime at last scan
@@ -982,6 +1045,27 @@ class SourceFile(Base):
     # User intent: an excluded file is skipped by every *implicit* ingest walk (an explicit
     # --files/paths pick overrides it). The one field that genuinely needs persistence.
     excluded: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
+    # ADR-046: identity for the *add* question ("do I already have these bytes?"), as opposed to
+    # `Document.doc_hash`, which is over the EXTRACTED text and answers "already indexed?". The two
+    # deliberately coexist until RG-027 collapses them, and they can disagree.
+    #
+    # Nullable and lazily filled: rows predating AD2 have never been hashed, and `library/add.py`
+    # only ever fills a row it already had to read to answer a duplicate question. A NULL here
+    # means "not yet computed", never "no duplicate" — the size index decides what gets hashed.
+    # `index=True` matches what the AD2 migration already created on live databases
+    # (`ix_source_files_source_sha256`). Without it declared here, `create_all` would leave a
+    # FRESH database without the index a migrated one has — and the AD3b rebuild, which recreates
+    # indexes from the model, would drop it.
+    source_sha256: Mapped[str | None] = mapped_column(
+        String, nullable=True, default=None, index=True
+    )
+
+    # ADR-046 - did the app copy this file in, or is it referencing the user's own? It decides
+    # what delete may do: a *referenced* original must never be binned (ADR-014 is amended for
+    # exactly this). Defaults to 'copied' because every row predating AD3 lives under the source
+    # dir by construction, so the backfill value is the truth rather than a guess.
+    origin: Mapped[str] = mapped_column(String, nullable=False, default="copied")
 
     first_seen: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
     # Refreshed to now on every scan that still sees the file; a vanished file keeps its old

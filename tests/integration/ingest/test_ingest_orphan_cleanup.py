@@ -107,7 +107,7 @@ def _write_cached_source(docs: Path, name: str, content: str) -> Path:
     src.write_text("placeholder — bypassed by the fresh cache\n", encoding="utf-8")
     cached = ingest.get_cache_path(src)
     cached.parent.mkdir(parents=True, exist_ok=True)
-    write_cache(cached, content)
+    write_cache(cached, content, source=src)
     return src
 
 
@@ -143,7 +143,7 @@ def test_content_change_leaves_exactly_one_hash(isolated_ingest: Path) -> None:
 
     # Simulate a Marker table-splice: rewrite the cache (source untouched, so the
     # cache stays fresh and the new content is what the re-ingest sees).
-    write_cache(ingest.get_cache_path(src), _DOC_V2)
+    write_cache(ingest.get_cache_path(src), _DOC_V2, source=src)
     new_hash = ingest.doc_hash(_DOC_V2)
     assert new_hash != old_hash
 
@@ -216,10 +216,44 @@ def test_orphan_cleanup_sweeps_figure_dir_for_gone_source(
     assert (figures.figure_dir(keep_hash) / "page1_fig0.png").exists()
 
 
-def test_orphan_cleanup_sweeps_figure_dir_on_content_change(
+def test_a_figure_dir_with_no_rows_is_swept_on_content_change(
     isolated_ingest: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A content change orphans the old hash; its now-dead figure dir is swept too (G1)."""
+    """A dead directory nothing claims is still garbage-collected (G1, narrowed by ADR-047).
+
+    The sweep used to take every stale hash's directory. Since ADR-047 a re-extracted document
+    keeps its figures and `store.repoint_figures` MOVES them, so only a directory with no
+    `Figure` row behind it — nothing to move it, nothing to read it — is genuinely dead.
+    """
+    docs = isolated_ingest
+    fig_root = docs.parent / "figures"
+    monkeypatch.setattr(figures, "FIGURE_DIR", fig_root)
+
+    src = _write_cached_source(docs, "paper.md", _DOC_V1)
+    ingest.main()
+    old_hash = ingest.doc_hash(_DOC_V1)
+    old_dir = figures.figure_dir(old_hash)
+    old_dir.mkdir(parents=True, exist_ok=True)
+    (old_dir / "page1_fig0.png").write_bytes(b"fake")  # no Figure ROW references it
+
+    # Splice tables into the cache (source untouched, cache stays fresh) => new hash.
+    write_cache(ingest.get_cache_path(src), _DOC_V2, source=src)
+    ingest.main()
+
+    assert not old_dir.exists()
+
+
+def test_a_re_extracted_documents_figures_move_rather_than_die(
+    isolated_ingest: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The ADR-047 half: crops of the PDF's pages survive a TEXT extractor change.
+
+    Deleting them is what destroyed 767 figure rows on the live library. Here the directory
+    follows the document to its new hash, PNG and all, and the row follows with it.
+    """
+    from doc_assistant.db.models import Figure
+    from doc_assistant.db.session import session_scope
+
     docs = isolated_ingest
     fig_root = docs.parent / "figures"
     monkeypatch.setattr(figures, "FIGURE_DIR", fig_root)
@@ -231,12 +265,29 @@ def test_orphan_cleanup_sweeps_figure_dir_on_content_change(
     old_dir.mkdir(parents=True, exist_ok=True)
     (old_dir / "page1_fig0.png").write_bytes(b"fake")
 
-    # Splice tables into the cache (source untouched, cache stays fresh) => new hash;
-    # old_hash is now a 'stale' orphan and its figure dir no longer matches any content.
-    write_cache(ingest.get_cache_path(src), _DOC_V2)
+    with session_scope() as session:
+        doc_id = session.execute(select(DBDocument.id)).scalars().first()
+        session.add(
+            Figure(
+                document_id=doc_id,
+                doc_hash=old_hash,
+                page=1,
+                kind="figure",
+                image_path=str(old_dir / "page1_fig0.png"),
+            )
+        )
+
+    write_cache(ingest.get_cache_path(src), _DOC_V2, source=src)
     ingest.main()
 
-    assert not old_dir.exists()
+    new_hash = ingest.doc_hash(_DOC_V2)
+    new_dir = figures.figure_dir(new_hash)
+    assert new_dir.exists(), "the directory must follow the document to its new hash"
+    assert (new_dir / "page1_fig0.png").exists(), "the crop itself must survive"
+    with session_scope() as session:
+        (fig,) = session.execute(select(Figure)).scalars().all()
+        assert fig.doc_hash == new_hash, "the row must be repointed"
+        assert Path(str(fig.image_path)).exists(), "and its stored path must still resolve"
 
 
 def test_figure_rows_cascade_on_document_delete(isolated_ingest: Path) -> None:

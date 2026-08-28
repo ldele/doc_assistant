@@ -21,8 +21,9 @@ from pathlib import Path
 import structlog
 from sqlalchemy import select
 
-from doc_assistant.db.models import Document, Figure
+from doc_assistant.db.models import Document, DocumentMeta, Figure
 from doc_assistant.db.session import session_scope
+from doc_assistant.library.documents import effective_metadata
 
 log = structlog.get_logger(__name__)
 
@@ -134,7 +135,9 @@ def list_document_figures(document_id: str) -> DocumentFigureView | None:
         return DocumentFigureView(
             id=str(doc.id),
             filename=str(doc.filename),
-            title=doc.title,
+            # ADR-013: show the user's corrected title here too, or the same document is named
+            # two different things on one screen.
+            title=effective_metadata(doc, session.get(DocumentMeta, str(doc.id)))[0],
             figures=figures,
             total=len(figures),
             retrievable_count=sum(1 for f in figures if f.retrievable),

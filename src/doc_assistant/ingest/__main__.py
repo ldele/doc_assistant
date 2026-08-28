@@ -58,6 +58,16 @@ def _cli() -> None:
             "exit WITHOUT loading the embedding model or opening Chroma."
         ),
     )
+    parser.add_argument(
+        "--workers",
+        default=None,
+        help=(
+            "How much of this machine extraction may use: off | light | balanced | full, or an "
+            "explicit number. Defaults to the saved setting (light). Output-neutral — it "
+            "changes how long ingest takes, never what it produces. `DOC_INGEST_WORKERS` "
+            "overrides it."
+        ),
+    )
     args = parser.parse_args()
     # --files / --path / --rebuild are mutually exclusive (main() re-checks; fail fast here too).
     chosen = [
@@ -78,6 +88,7 @@ def _cli() -> None:
         scope=args.path,
         files=file_paths,
         dry_run=args.dry_run,
+        workers=args.workers,
     )
 
 

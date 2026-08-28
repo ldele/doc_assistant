@@ -7,7 +7,7 @@ Pattern: runners re-derive; they never mutate the chunk store) plus dev/build to
 **Key files**
 - Enrichment: `extract_*`, `enrich_metadata`, `compute_*`, `build_concept_skeleton`, `build_gaps`,
   `build_wiki`, `seed_concepts`, `rank_candidates`, `backfill_graph_include`, `normalize_cache`.
-- Eval/measure: `run_eval`, `sweep_*`, `self_eval`, `measure_latency`, `eval_marker_tables`.
+- Eval/measure: `run_eval`, `compare_runs`, `emit_baseline`, `sweep_*`, `self_eval`, `measure_latency`.
 - `conventions.toml` — cpc gate config (**not a script**; cpc-mandated path, see ADR-021).
 - `archive/` — retained one-time migrations, excluded from lint; never run.
 

@@ -8,11 +8,17 @@ read dynamically (``config.X``) so a single seam is monkeypatch-able in tests.
 
 from __future__ import annotations
 
+import dis
 import hashlib
 import importlib
 import inspect
-from functools import lru_cache
+import os
+import re
+from collections.abc import Mapping
+from functools import cache
 from pathlib import Path
+from types import CodeType
+from typing import Any
 
 import structlog
 
@@ -23,8 +29,38 @@ from doc_assistant.fsutil import atomic_write_text
 log = structlog.get_logger(__name__)
 
 
+#: Where caches for files outside the library folder live, under `config.CACHE_PATH`. A fixed
+#: subdirectory so the referenced half of the cache is inspectable and deletable on its own.
+_REFERENCED_CACHE_DIR = "referenced"
+
+
 def get_cache_path(original: Path) -> Path:
-    relative = original.relative_to(config.DOCS_PATH)
+    """The cached ``.md`` for a source file, wherever that file lives (ADR-046, AD3b).
+
+    A file **under the library folder** keeps the mirror layout it has always had:
+    `data/sources/a/b.pdf` -> `data/cache/a/b.md`. That path is unchanged on purpose — every
+    already-extracted document depends on it, and moving it would silently re-extract the whole
+    corpus.
+
+    A **referenced** file lives anywhere on disk, so there is no relative path to mirror. Its
+    cache is keyed by a digest of its case-normalised absolute path, which gives the three
+    properties the mirror layout gave for free: the same file always resolves to the same cache
+    entry, two files with the same name in different folders never collide, and the name stays
+    filesystem-legal whatever the source path contained. The digest is over the path rather than
+    the bytes because this has to resolve *before* the file is read — and cheaply, since
+    `registry.scan_root` calls it once per file on every listing.
+
+    The stem is kept alongside the digest so the cache directory is still human-readable when
+    someone goes looking for what a document extracted to.
+    """
+    try:
+        relative = original.relative_to(config.DOCS_PATH)
+    except ValueError:
+        digest = hashlib.sha1(
+            os.path.normcase(os.path.abspath(str(original))).encode("utf-8"),
+            usedforsecurity=False,
+        ).hexdigest()[:16]
+        return config.CACHE_PATH / _REFERENCED_CACHE_DIR / digest / f"{original.stem}.md"
     return config.CACHE_PATH / relative.with_suffix(".md")
 
 
@@ -44,33 +80,128 @@ def _fingerprint_path(cached: Path) -> Path:
 _EXTRACTION_VERSION = 2
 
 
-@lru_cache(maxsize=1)
-def extraction_fingerprint() -> str:
-    """Identity of the extraction pipeline: bump-free invalidation of the markdown cache (KI-40).
+def _referenced(code: CodeType) -> tuple[set[str], set[str]]:
+    """(global names referenced, modules imported) by a code object and everything nested in it.
 
-    The cached ``.md`` is derived from **(source bytes, extractor code, extractor config,
-    extraction dependencies)**, but freshness used to track only the first — so every extraction
-    improvement this project shipped was invisible to anyone who had already ingested. KI-14
-    (image placeholders), KI-29 (page markers in the embeddings) and the 2026-08-07 text-layer
-    fallback all had that hole: the corpus that most needs a fix was the one guaranteed not to get
-    it.
+    Nested code objects matter: a comprehension or a closure compiles to its own object, so a call
+    made only from inside one would otherwise be invisible to the walk.
+    """
+    names = set(code.co_names)
+    imports = {
+        i.argval
+        for i in dis.get_instructions(code)
+        if i.opname == "IMPORT_NAME" and isinstance(i.argval, str)
+    }
+    for const in code.co_consts:
+        if isinstance(const, CodeType):
+            sub_names, sub_imports = _referenced(const)
+            names |= sub_names
+            imports |= sub_imports
+    return names, imports
 
-    Components, and why each:
 
-    * **the extractors' bytecode** — every function defined in ``extractors``, hashed by
-      ``co_code``. This is the sparse-index precedent applied here: a logic change must invalidate
-      the cache *without anyone remembering to bump a constant*. Bytecode, not source, so it works
-      in the frozen build (PyInstaller ships ``.pyc``, and ``inspect.getsource`` would raise), and
-      so comments and docstrings — which cannot change output — do not force a re-extraction of
-      the whole library;
-    * **the tunables bytecode cannot see** — module-level constants are referenced by *name* from a
-      function, so their values never appear in ``co_code``. ``_TEXT_LAYER_KEPT_MIN`` is exactly
-      such a knob, and changing it changes output;
-    * **``config.PDF_EXTRACTOR``** — selects which extractor runs at all;
-    * **the extraction dependencies' versions** — a PyMuPDF upgrade changes extraction output
-      without a line of our code changing, and that is a real cause, not a hypothetical.
+def _extraction_closure(
+    blocked: frozenset[str], seeds: tuple[str, ...] = ()
+) -> tuple[dict[str, Any], list[str], list[str]]:
+    """Walk out from ``extract_to_markdown`` **and** ``seeds``, never entering ``blocked``.
 
-    Cached for the process: it is asked once per document and the answer cannot change mid-run.
+    Returns (``{attribute name: function}``, constant names, top-level module names).
+
+    Walking from the dispatcher is what picks up whatever it does to *every* format — today
+    ``strip_image_placeholders`` at the single exit — so a shared post-processing step added later
+    cannot silently fall outside a format's identity. Blocking the *other* formats' entry points
+    narrows the result back to this one.
+
+    **``seeds`` is not an optimisation, it is a correctness requirement.** Every non-PDF format is
+    dispatched through the ``_EXTRACTORS`` dict, which is a runtime lookup: a static walk cannot
+    follow it, so `extract_epub` is unreachable from `extract_to_markdown` and an EPUB fix would
+    not invalidate a single EPUB cache — KI-40 reintroduced, silently. Seeding the walk with the
+    format's own entry function is what closes that hole. Measured, not assumed: before this, the
+    `.epub` closure held two functions and neither was `extract_epub`.
+
+    **Keyed and returned by the name the function is bound to on the module, and the *object* is
+    carried out rather than the name alone.** Both halves matter, and for the same reason: the
+    caller used to hash ``getattr(extractors, name).__code__``, re-resolving a name this walk had
+    already resolved. A function whose ``__name__`` differs from its attribute — an alias, or any
+    decorator that does not carry ``functools.wraps`` — made that lookup raise, and the caller's
+    blanket ``except`` turned it into the whole-module fingerprint: a silent, corpus-wide
+    re-extraction (61 min for 97 documents; ~55 h projected at 10,000) triggered by a rename.
+    """
+    from doc_assistant import extractors
+
+    functions: dict[str, Any] = {}
+    constants: set[str] = set()
+    modules: set[str] = set()
+    stack: list[tuple[str, Any]] = [("extract_to_markdown", extractors.extract_to_markdown)]
+    for seed in seeds:
+        obj = getattr(extractors, seed, None)
+        if inspect.isfunction(obj):
+            stack.append((seed, obj))
+
+    while stack:
+        attr, fn = stack.pop()
+        if attr in functions:
+            continue
+        functions[attr] = fn
+        names, imports = _referenced(fn.__code__)
+        modules |= {m.split(".")[0] for m in imports}
+        for ref in names:
+            obj = getattr(extractors, ref, None)
+            if obj is None:
+                continue  # an attribute name, a builtin, or a local — not this module's global
+            if inspect.isfunction(obj) and obj.__module__ == extractors.__name__:
+                if ref not in blocked:
+                    stack.append((ref, obj))
+            elif inspect.ismodule(obj):
+                modules.add(obj.__name__.split(".")[0])
+            elif inspect.isclass(obj) or inspect.isbuiltin(obj):
+                # An imported symbol (`BeautifulSoup`): its package version is what matters,
+                # because the behaviour lives there rather than here.
+                origin = getattr(obj, "__module__", None)
+                if origin:
+                    modules.add(origin.split(".")[0])
+            else:
+                constants.add(ref)  # a module-level tunable; its VALUE changes output
+
+    return functions, sorted(constants), sorted(modules)
+
+
+def _stable_repr(obj: object) -> str:
+    """A representation that is identical across processes. Addresses are the trap.
+
+    `repr()` of anything holding function or object references embeds a memory address
+    (`<function extract_epub at 0x...>`), which changes every run — so hashing it would make the
+    fingerprint non-deterministic and no cache entry would ever read fresh again. Measured, not
+    theorised: `_EXTRACTORS` is exactly such a value.
+
+    A compiled regex reprs its pattern, which is the part that changes behaviour. A mapping is
+    reduced to its sorted keys because that is its structural contribution — any *function* it
+    holds is already hashed on its own by the closure walk.
+    """
+    if isinstance(obj, re.Pattern):
+        return f"re({obj.pattern!r},{obj.flags})"
+    if isinstance(obj, Mapping):
+        return f"keys({sorted(map(str, obj))})"
+    text = repr(obj)
+    if " at 0x" in text or " object at " in text:
+        return f"<unstable {type(obj).__name__}>"
+    return text
+
+
+def _module_version(name: str) -> str:
+    """A dependency's version for fingerprinting. Absent and unversioned are distinct answers."""
+    try:
+        mod = importlib.import_module(name)
+    except Exception:
+        return "absent"
+    version = getattr(mod, "__version__", None) or getattr(mod, "VersionBind", None)
+    return str(version) if version else "unversioned"
+
+
+def _whole_module_fingerprint() -> str:
+    """The pre-KI-48 scope: every function in ``extractors``.
+
+    The safe answer whenever per-format scoping cannot be trusted.
     """
     from doc_assistant import extractors
 
@@ -78,21 +209,109 @@ def extraction_fingerprint() -> str:
     h.update(str(_EXTRACTION_VERSION).encode())
     h.update(str(config.PDF_EXTRACTOR).encode())
     h.update(repr(extractors._TEXT_LAYER_KEPT_MIN).encode())
-
     for name, fn in sorted(inspect.getmembers(extractors, inspect.isfunction)):
         if getattr(fn, "__module__", None) != extractors.__name__:
-            continue  # re-exported from elsewhere; not this module's behaviour
+            continue
         h.update(name.encode())
         h.update(fn.__code__.co_code)
-
     for module_name in ("pymupdf", "pymupdf4llm"):
-        try:
-            mod = importlib.import_module(module_name)
-            version = getattr(mod, "__version__", None) or getattr(mod, "VersionBind", "?")
-        except Exception:
-            version = "absent"
-        h.update(f"{module_name}={version}".encode())
+        h.update(f"{module_name}={_module_version(module_name)}".encode())
+    return h.hexdigest()[:16]
 
+
+@cache
+def extraction_fingerprint(suffix: str | None = None) -> str:
+    """Identity of the extraction pipeline **for one format**: bump-free invalidation (KI-40).
+
+    The cached ``.md`` is derived from **(source bytes, extractor code, extractor config,
+    extraction dependencies)**, but freshness used to track only the first — so every extraction
+    improvement this project shipped was invisible to anyone who had already ingested. KI-14
+    (image placeholders), KI-29 (page markers in the embeddings) and the 2026-08-07 text-layer
+    fallback all had that hole: the corpus that most needs a fix was the one guaranteed not to
+    get it.
+
+    **Scoped per format since KI-48.** Hashing every function in ``extractors`` meant an
+    EPUB/HTML-only change invalidated all 97 PDF caches — a whole-corpus re-extraction for a fix
+    that provably could not alter a single PDF — because bytecode hashing cannot tell which format
+    a change touched. The scope is now the transitive closure of what *this* format's extraction
+    actually executes, derived by walking the call graph rather than from a list somebody has to
+    remember to update. ``suffix=None`` keeps the whole-module scope.
+
+    What goes in, and why each:
+
+    * **the reachable functions' bytecode** — a logic change must invalidate the cache *without
+      anyone remembering to bump a constant*. Bytecode, not source, so it works in the frozen
+      build (PyInstaller ships ``.pyc``, and ``inspect.getsource`` would raise), and so comments
+      and docstrings — which cannot change output — do not force a re-extraction;
+    * **the module-level constants those functions reference** — a global is referenced by *name*
+      from a function, so its value never appears in ``co_code``. ``_TEXT_LAYER_KEPT_MIN`` is
+      exactly such a knob, and changing it changes output. Collected by the walk, so a new one
+      cannot be forgotten the way the old hand-listed single entry could;
+    * **the dependency versions reached from those functions** — a PyMuPDF upgrade changes
+      extraction output without a line of our code changing, and that is a real cause, not a
+      hypothetical;
+    * **``config.PDF_EXTRACTOR``**, for PDFs only — it selects which extractor runs at all.
+
+    **Failure is safe by construction.** Any error in the walk falls back to the whole-module
+    fingerprint: over-invalidating costs CPU, while under-invalidating silently serves text no
+    current version would produce, which is the KI-40 failure this exists to prevent.
+
+    Cached per suffix: it is asked once per document and cannot change mid-run.
+    """
+    from doc_assistant import extractors
+
+    try:
+        # By the name each function is **bound to on the module**, never by its ``__name__``.
+        # `blocked` is tested against the attribute names the walk reads out of ``co_names``, so a
+        # function whose ``__name__`` differs from its attribute — an alias, or a decorator without
+        # `functools.wraps` — would put a string in `blocked` that the walk can never match, and
+        # the other formats' entry points would quietly stay inside this format's scope.
+        attr_of = {
+            id(obj): attr
+            for attr, obj in vars(extractors).items()
+            if inspect.isfunction(obj) and obj.__module__ == extractors.__name__
+        }
+        entries = {attr_of.get(id(fn), fn.__name__) for fn in extractors._EXTRACTORS.values()}
+        pdf_entry = attr_of.get(
+            id(extractors.extract_pdf_pymupdf), extractors.extract_pdf_pymupdf.__name__
+        )
+        entries.add(pdf_entry)
+        if suffix is None:
+            required: str | None = None
+            blocked: frozenset[str] = frozenset()  # every entry stays reachable
+        else:
+            entry = extractors._EXTRACTORS.get(suffix)
+            required = (
+                attr_of.get(id(entry), getattr(entry, "__name__", "")) if entry else pdf_entry
+            )
+            blocked = frozenset(entries - {required})
+        seeds = () if required is None else (required,)
+        functions, constants, modules = _extraction_closure(blocked, seeds)
+        # There is deliberately no "is `required` reachable?" assertion here. It read as the
+        # KI-40 guard and could not fail: `required` is passed in as a *seed*, and every seed is
+        # recorded unconditionally — which is the entire reason seeds exist, since the
+        # `_EXTRACTORS` dispatch is a runtime lookup no static walk can follow. The invariant it
+        # appeared to protect (a format's own extractor is hashed into that format's
+        # fingerprint) is real, and is checked behaviourally by
+        # `test_a_change_to_a_formats_entry_point_moves_only_that_format` — where it can fail.
+    except Exception as e:
+        log.warning("extraction_fingerprint_fallback", suffix=suffix, error=str(e))
+        return _whole_module_fingerprint()
+
+    h = hashlib.sha256()
+    h.update(str(_EXTRACTION_VERSION).encode())
+    h.update(b"scope:" + (suffix or "*").encode())
+    if suffix is None or suffix == ".pdf":
+        h.update(str(config.PDF_EXTRACTOR).encode())
+    # The walk already resolved these; hashing the object it handed back rather than re-resolving
+    # the name is what keeps a rename from silently costing a whole-corpus re-extraction.
+    for name in sorted(functions):
+        h.update(name.encode())
+        h.update(functions[name].__code__.co_code)
+    for name in constants:
+        h.update(f"{name}={_stable_repr(getattr(extractors, name))}".encode())
+    for name in modules:
+        h.update(f"{name}={_module_version(name)}".encode())
     return h.hexdigest()[:16]
 
 
@@ -113,7 +332,7 @@ def is_cache_fresh(original: Path, cached: Path) -> bool:
         recorded = fp.read_text(encoding="utf-8").strip()
     except OSError:
         return False  # never fingerprinted, or unreadable → re-extract
-    return recorded == extraction_fingerprint()
+    return recorded == extraction_fingerprint(original.suffix.lower())
 
 
 def _stale_reason(original: Path, cached: Path) -> str:
@@ -130,8 +349,14 @@ def _stale_reason(original: Path, cached: Path) -> str:
     return "extractor_changed"
 
 
-def write_cache(cached: Path, text: str) -> None:
+def write_cache(cached: Path, text: str, *, source: Path) -> None:
     """Write a cache entry: the markdown **and** the fingerprint of the extractor that made it.
+
+    ``source`` is the file the text was extracted *from*, and it is required rather than optional
+    because the fingerprint is scoped per format since KI-48: a caller that guessed wrong — or
+    omitted it and got the whole-module scope — would write an entry that `is_cache_fresh` can
+    never match, re-extracting that document on every single run. Passing the source makes the
+    two sides derive the scope from the same fact.
 
     A cache entry is that *pair* — a ``.md`` without its ``.fp`` reads as stale (KI-40). This is
     the single place that fact lives, so callers cannot half-write one. Tests that fabricate a
@@ -146,7 +371,7 @@ def write_cache(cached: Path, text: str) -> None:
     run — wasteful but correct. The reverse order could vouch for a truncated ``.md``.
     """
     atomic_write_text(cached, text)
-    atomic_write_text(_fingerprint_path(cached), extraction_fingerprint())
+    atomic_write_text(_fingerprint_path(cached), extraction_fingerprint(source.suffix.lower()))
 
 
 def load_or_extract(original: Path) -> str:
@@ -156,7 +381,7 @@ def load_or_extract(original: Path) -> str:
 
     log.info("extracting", file=original.name, reason=_stale_reason(original, cached))
     text = extract_to_markdown(original, pdf_extractor=config.PDF_EXTRACTOR)
-    write_cache(cached, text)
+    write_cache(cached, text, source=original)
     return text
 
 

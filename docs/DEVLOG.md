@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-08-15 · class: append-only -->
+<!-- status: active · updated: 2026-08-28 · class: append-only -->
 
 # DEVLOG — doc_assistant
 
@@ -16,6 +16,1750 @@ Format: What changed | Why | Rejected alternatives | What it opens
 > the oldest entries into a new `DEVLOG-archive-NNN.md` and update the list above — **do not raise
 > the cap.** The cap exists because this log reached 8,244 lines before anyone noticed: every entry
 > is individually small and correct, so unbounded growth is invisible per commit.
+
+---
+## 2026-08-28 (2) — The add-documents feature was driven for the first time, and undo turns out to stop one table short
+
+**What changed.** No production code — a walkthrough, and `.claude/KNOWN_ISSUES.md` KI-51. AD1-AD3b
+is the branch's headline feature and had never been exercised; it now has been, in the native Tauri
+window and against the live 97-document library, which was restored to baseline afterwards and
+verified row-for-row against `data/library.db.bak-20260828-prewalkthrough`.
+
+**What works, confirmed by driving it.** The picker stages paths and the review sheet opens with
+them. Verdicts are right and come from the server: an unsupported file carries its advisory, and a
+*renamed copy* of an already-ingested PDF was caught as a duplicate by content hash — exceptions
+sorted above clean files, as the docstring claims. Both placement modes work: `copy` puts the file
+in the library with `origin='copied'`, `reference` registers a new `referenced` root and copies
+nothing. Index-now indexes. Undo, clicked in the UI for the first time, deleted the copy and left
+the user's own file **byte-identical** (sha256 before and after) — the ADR-014 amendment holding.
+In a plain browser the button is disabled and says why, which is the honest degradation.
+
+**Why it found what the gates could not.** `svelte-check` (205/0) and `node:test` (150) cannot
+reach a `.svelte` component at all, and the Python suite tests `undo_add` against `source_files`
+only. Nothing anywhere indexes a document and *then* undoes it — which is the one sequence that
+breaks.
+
+**What it found (KI-51, three parts).** Undo drops the registry row and stops: after index-now the
+`documents` row and its 4 chunks **survive**, so the library still lists — and can still cite — a
+document whose file the app just deleted (97->98 documents and 39,131->39,135 chunks persisted
+across the undo; the proper `DELETE` afterwards reported `chunks_removed: 4`). In reference mode the
+`source_roots` row survives too, so the next scan re-discovers the file as `new` and the next
+"index all" would re-ingest exactly what was undone. And because `POST /api/ingest` is a 202 that
+`indexPaths` does not await, "Undo all" is offered while the indexing it would undo is still
+running.
+
+**Rejected.** Fixing it in this session. It is scope, not a regression — every guard the 2026-08-27
+review added to `undo_add` held — and the branch is being merged for the CI fix, not for new
+behaviour. Filed with the reproduction rather than patched in a hurry beside a merge.
+
+**What it opens.** KI-51. A fix belongs in `undo_add` (which already resolves each row through its
+own root, so it can also drop a `documents` row it can prove the same add created, and drop a
+`referenced` root once its last file goes) plus an awaited `indexPaths`. Any fix must keep
+reference mode incapable of touching the user's file.
+
+---
+## 2026-08-28 (1) — CI had been red for four commits over two path literals that only mean what they say on Windows
+
+**What changed.** `tests/unit/test_document_identity.py` — the hardcoded `C:\library\...` constants
+became platform-selected, and the "same file, different spelling" probes became a
+platform-appropriate tuple. No production code.
+
+**Why.** `test_the_path_comparison_is_normalised` and
+`test_the_path_index_answers_exactly_as_the_table_scan_did` asserted that `c:\LIBRARY\paper.pdf`
+and `C:/library/paper.pdf` resolve to the same document as `C:\library\paper.pdf`. They do — on
+Windows. `_pathkey` is `os.path.normcase(os.path.abspath(...))`, deliberately the **host** OS's
+semantics, because `source_original` is always written by the machine the library runs on. On the
+Linux runner `normcase` is identity and a drive letter is not a drive, so both tests failed while
+passing on every developer's machine. Green locally, red in CI since `a289d3f` (2026-08-25) —
+four consecutive failed runs, all the same two tests.
+
+**Rejected: skipping the tests off Windows.** It would have gone green by never running the
+ADR-047 fallback in CI again — the opposite of what the failure was telling us. Instead each
+platform is probed with spellings that are genuinely equivalent *on it*: case and separators on
+Windows, redundant `.`/`..` segments on POSIX. Both branches were verified before pushing — the
+Windows one by running the suite, the POSIX one by rebinding `os.path` to `posixpath` and checking
+every chosen spelling collapses onto `SRC` and nothing else does. That check earned its keep:
+`//library/paper.pdf` does **not** collapse (POSIX reserves a leading double slash and Python
+preserves it), so it was excluded rather than shipped as a third probe that would have failed in CI.
+
+**What it opens.** Nothing structural, but it names a gap: CI runs Linux and every developer runs
+Windows, so a path-literal assumption is invisible until push. The two files that carry `C:\`
+literals are now `tests/unit/ingest/test_registry.py` (one, harmless — it asserts a rejection) and
+this one.
+
+---
+## 2026-08-27 — The AD3b migration, run against a real pre-AD3b database and then given the test it never had
+
+**What changed.** `tests/integration/test_source_roots_migration.py` — 8 tests over the project's
+second rebuild migration, which shipped with **none**.
+
+**Why it was worth checking by hand first.** `_migrate_source_roots` does
+`CREATE temp → copy → DROP TABLE → RENAME` on a table holding data users cannot regenerate (their
+`excluded` flags), and it runs on every `init_db` — every app start. `data/library.db.bak-20260824-preroots`
+is a genuine 97-document pre-AD3b database, so it was run against a **copy** of it (the original's
+mtime is unchanged; the live `data/library.db` was never opened). Result: 27 tables → 28, 97 rows →
+97 with every `rel_path`, `size`, `excluded` and `source_sha256` byte-identical, all backfilled to
+the library root, 0 rows pointing at a missing root, `PRAGMA foreign_key_check` clean, second run a
+no-op.
+
+**And then the same database was driven, not just inspected** — KI-49's lesson is that a component
+proved is not a system proved. A scan with the sources folder absent left all 97 rows and reported
+them `missing` with `root_available=False` (an unplugged drive is not a deletion); restoring two
+files produced 2 present / 95 missing and **no duplicate rows**; `library.add.inspect` found a
+byte-identical file and returned `duplicate_of='library:…'`; and the new UNIQUE and the FK both
+refused a bad insert.
+
+**⚠ The `CreateIndex` loop in `_rebuild_table` is load-bearing for CORRECTNESS, not tidiness, and
+the code comment undersells it.** Removing it and re-running these tests leaves the migrated table
+with `sqlite_autoindex_source_files_1` — the primary-key autoindex — **and nothing else**. The
+composite key is declared as `Index(..., unique=True)` in `__table_args__` rather than as a
+`UniqueConstraint`, so it *lives in an index*: without the loop, `uq_source_files_root_rel` never
+exists and the key the whole migration is for is not enforced at all. AD2's
+`ix_source_files_source_sha256` goes with it. Three of the eight tests catch this.
+
+**Rejected:** keeping the one-off script as the record (it proves the migration works once, on one
+machine, against one database — the pre-AD3b DDL is now pinned verbatim in the test instead) ·
+asserting on the backup file itself from the test suite (it is gitignored local data; a test that
+only runs on this machine is not a gate).
+
+**What it opens.** `.claude/REVIEWS.md` still records backend and frontend as **never** reviewed as
+a whole — this pass reviewed a diff, not the modules. The add-documents UI has still never been
+launched: `svelte-check` and `node:test` cannot see a mount failure (apps/desktop/CLAUDE.md).
+
+---
+## 2026-08-26 (5) — The loose thread from entry (4): a rename could silently re-extract the whole corpus
+
+**What changed.** `_extraction_closure` now returns `{attribute name: function}` and the caller
+hashes the **object it was handed** instead of re-resolving the name with
+`getattr(extractors, name)`. The walk keys on the name a function is *bound to on the module*
+rather than on its `__name__`.
+
+**The defect, found while writing the finding-12 test rather than by reading the code.** The
+closure returned names; the caller looked each one up again. A function whose `__name__` differs
+from its attribute — an alias, or any decorator that does not carry `functools.wraps` — made that
+lookup raise `AttributeError`, the blanket `except` caught it, and the per-format fingerprint
+silently became the **whole-module** one. Direction-safe (it over-invalidates) and expensive in
+fact: a corpus-wide re-extraction, **61 min for 97 documents and ~55 h projected at 10,000**,
+triggered by a rename that could not change one byte of output. Entry (4) left it alone as
+out-of-scope; it is fixed here.
+
+**A second copy of the same mistake, in the same function.** `blocked` was built from
+`fn.__name__` too, but it is tested against the attribute names the walk reads out of `co_names` —
+so the same mismatch would have put an unmatchable string in `blocked` and quietly left the
+*other* formats' entry points inside this format's scope. That one has no symptom at all: it
+under-invalidates, which is the KI-40 failure the whole layer exists to prevent. Both now derive
+from one `id(obj) -> attribute` map over `vars(extractors)`.
+
+**Two tests, and the tell is precise.** Under the defect the format's fingerprint *equals*
+`extraction_fingerprint(None)`, so `test_a_renamed_extractor_does_not_silently_re_extract_the_corpus`
+asserts it does not — and that no `extraction_fingerprint_fallback` was logged, via
+`structlog.testing.capture_logs`. The complement pins that the other six formats are untouched.
+Both verified against the reinstated name round-trip: red before, green after.
+
+**Rejected:** returning the constants as objects too (their names *are* attribute names by
+construction — each came from a successful `getattr` on the same module in the same call — so
+that lookup cannot raise; adding churn there would be motion, not safety) · keeping a name-keyed
+API and hardening the lookup with a `getattr(..., None)` guard (it would silently drop the
+function from the hash instead of raising, turning a loud over-invalidation into a quiet
+under-invalidation — strictly worse).
+
+---
+## 2026-08-26 (4) — The rest of the branch review: nine findings, and one of them was hiding behind a test that could not fail
+
+**What changed.** Findings 6-14 from the `feat/eval-comparability` review, fixed. Two are scaling
+work against the 10k-document contract, four are correctness, three are honesty-of-the-record.
+
+**⚠ Two guards in this branch asserted things that were true by construction.** Both were written
+to catch a real defect and neither could ever fail:
+
+1. `extraction_fingerprint` raised if the format's extractor was "unreachable from
+   `extract_to_markdown`" — but that extractor is passed in as a **seed**, and every seed is
+   recorded unconditionally. That is the entire reason seeds exist (the `_EXTRACTORS` dispatch is
+   a runtime lookup no static walk can follow). The guard is gone; the invariant it was named for
+   is now `test_a_change_to_a_formats_entry_point_moves_only_that_format`, which patches each
+   format's entry point and asserts that format's fingerprint moves and no other's does.
+   **Verified by deleting the seeds: the new test fails, the old one passed.**
+2. `test_a_format_entry_point_is_inside_its_own_scope` did the same thing in the test suite —
+   handed `_extraction_closure` the entry point as a seed, then asserted the seed came back.
+   Replaced by the behavioural version above.
+
+That is the same shape as the `test_budgets_are_ordered` finding earlier today. Three in one
+branch is a pattern worth naming: **a guard written from the inside of the mechanism tends to
+assert the mechanism's own construction.** The behavioural form — change the input, watch the
+output move — cannot be satisfied that way.
+
+**6 · The identity fallback was O(documents²).** `_existing_document_id` re-read every Document
+row to resolve one normalised path, and during a corpus-wide re-extraction *every* hash moves, so
+that fallback is the path taken for every document rather than the exception. `build_path_index`
+reads it once per run and `main` threads it through. Deliberately not module-level state: a stale
+map in the long-lived API process, or shared between tests, resolves a document to an id the
+database no longer holds. Safe to build once because each source path is processed exactly once.
+
+**7 · `repoint_figures` moved rows without moving the directory.** When the destination hash's
+directory already existed the rename was skipped — and the row updates ran anyway, rewriting every
+`image_path` into a directory that does not hold those crops and leaving the real ones under a
+hash `hashes_with_no_figure_rows` would then read as dead and delete. It now bails, the same trade
+the `OSError` arm already made: a stored path that resolves beats a tidy hash.
+
+**8 · The review sheet never said *which* file a duplicate matched.** The server always sets
+`advisory` on a duplicate, so the branch naming the match was unreachable. Reaching it exposed the
+other half: `duplicate_of` is a `source_key`, so naming it raw would have shown the user a root
+uuid. `sourceKeyName` renders the filename, and it lives in `accept.ts` rather than the component
+because a `.svelte` file cannot be reached by `node:test` (apps/desktop/CLAUDE.md).
+
+**9 · `resolve_run_id` let LIKE wildcards through.** `_` matches any single character, so `a_c`
+matched `abc12345` — and because exactly one run matched it resolved *silently*, handing back a
+run the caller never named, which is the one outcome that resolver exists to prevent. Escaped
+rather than character-validated: a whitelist would also have refused the synthetic ids the tests
+and older stores use, and refusing a legitimate id is a worse failure than the one being fixed.
+
+**10 · `--workers --help` named the wrong default** (`balanced`; it is `light`).
+
+**11 · An unplugged reference drive failed the whole selection.** An unreachable root contributes
+nothing to `on_disk`, so validating against it reported every one of its files as `unknown` and
+raised — a 400 for the entire request, blocking the library that *is* present, which is exactly
+what `resolve_selection`'s own docstring said it avoided. Its files are dropped with a count now,
+as the implicit branch already did. A guard test pins that an unknown file under a *reachable*
+root still raises, so this did not soften validation generally.
+
+**13 · `library/citations.py`'s `__all__` declared two symbols it does not own** and hid the six it
+does. Latent (nothing star-imports it) but wrong for anything honouring `__all__`.
+
+**14 · `reresolve_stored_citations` opened a nested session per citation row**, each scanning the
+document table twice — O(citations x documents). `load_library_candidates` reads the library once
+and `match_to_library` takes it. **That rewrite fixed a bug nobody had filed:** the DOI rule was
+`Document.doi.ilike(parsed.doi)`, and `ilike` reads `_` and `%` in the *parsed* DOI as wildcards.
+DOIs legitimately contain underscores, so `10.1234/abc_def` could match a different paper. Same
+defect as finding 9, in a different table.
+
+**Verification.** Every new regression test was run against the real pre-fix code and seen to fail
+— including one where the first attempt did **not** fail, because the revert was not faithful
+(replacing the `dest_dir.exists()` guard let the rename raise `FileExistsError`, which the OSError
+arm caught and turned into the same return value). Restoring the actual original made it fail.
+A revert that does not reproduce the bug proves nothing about the test.
+
+**Rejected:** a `source_key` column on `Document` with a migration for finding 6 (the run-scoped
+map costs one query and no schema risk; a column is the right answer if this ever needs to be
+correct across a run rather than within one) · validating the run-id character set instead of
+escaping (see 9) · fixing the fingerprint's silent whole-module fallback when a function's
+`__name__` does not match its module attribute — **found while writing the finding-12 test, not
+filed before, and left alone**: it degrades safely (over-invalidates) but its cost is a full
+re-extraction, so it is worth its own look.
+
+**What it opens.** The `__name__`-mismatch fallback above. The nine findings are closed; the five
+from entry (3) were the severe half.
+
+---
+## 2026-08-26 (3) — Review of `feat/eval-comparability` before merge: five findings fixed, and two of them could delete a file
+
+**What changed.** A full `/code-review` of the branch against `main` (15 commits, 100 files,
++19,398/-826 — none of it read by anyone but its author) produced 14 findings. The five most
+severe are fixed here; the rest are recorded in the review and left for a follow-up.
+
+**⚠ The two that mattered were both about deleting the user's files, and neither raised anything.**
+
+1. **`scan_root` claimed ownership of folders it had no business owning.** It never set `origin`,
+   so every row it created took the column DEFAULT — `'copied'`, the value that tells delete it may
+   bin the file. Reference *one* paper out of a Zotero folder and `register_root` registers that
+   folder; the next scan then walks it and marks **every other document in it** as app-owned.
+2. **`undo_add` built its delete path as `library / rel_path` whatever root the row belonged to.**
+   Combined with (1): a key naming `notes.pdf` in the user's Zotero folder deleted an unrelated,
+   months-old `notes.pdf` out of the library folder. Reproduced end to end before the fix; the
+   Zotero file survived and the library file did not.
+
+   `origin` is now stated by the scan from its root's kind, and the impossible combination
+   (`copied` under a `referenced` root) is repaired in place on the next scan — self-healing rather
+   than a migration, since the scan is what owns these rows. The reverse is legal and untouched: a
+   file already inside the library folder registers under the *library* root with
+   `origin='referenced'`. The delete now resolves through the row's own root, requires the library
+   root, and requires the row to be younger than `UNDO_DELETE_WINDOW_SECONDS` — undo is an undo,
+   not a delete-by-key for anything the app ever copied in. A declined delete is logged; the row
+   goes either way, because a file left for the next scan to re-register is recoverable and a
+   deleted one is not (KI-49).
+
+**3 · A failure that took the failure report with it.** `apply_add` caught `(OSError, ValueError)`,
+so the registry's `(root_id, rel_path)` uniqueness — reachable by re-referencing a path, or by a
+library file whose size changed since the last scan so `inspect`'s size index missed it — raised
+`IntegrityError` straight out of the function. The client got a 500 and lost `added` entirely,
+which is the one thing undo needs. Now reported as a per-file failure like any other, with a
+sentence instead of a driver's SQL string.
+
+**4 · A failed copy outlived its own rollback.** `shutil.copy2` runs inside the `session_scope`,
+and the filesystem does not roll back. An orphaned copy is invisible to `undo_add` (no row, no key)
+and perfectly visible to the next `scan_root`, which would adopt a document the user was just told
+had failed to add. The destination is now claimed *before* the copy, so a copy that dies partway is
+cleaned up too.
+
+**5 · Exclusions silently stopped applying.** `_drop_excluded` swapped `f.resolve()` for
+`registry.pathkey`, which normalises case and separators but deliberately does no filesystem read —
+so it cannot reconcile an 8.3 short name, junction or symlink against the *resolved* form every
+writer of `SourceRoot.path` stores. Reproduced: `skipped=0`, no error, no warning, Decision 5's
+standing exclusions quietly ignored. `_resolve_walk_root` now resolves in both branches (it already
+promised to in its docstring), `_seed_library_root` stores resolved like the other two writers, and
+the precondition is stated where it can bite.
+
+**6 · The worker budgets were not a ladder.** `balanced` returned 1 worker at 4 cores and `full`
+returned 1 at 2, while `light` returned 2 — so a user on an ordinary laptop moving *up* from the
+default to speed up ingest silently got serial extraction. Each rung is now floored at the one
+below it.
+
+**⚠ The ordering test existed and could not fail.** `test_budgets_are_ordered` asserted exactly
+this invariant, pinned to `cpu_count=32` — the one region where the fractions were still monotonic.
+The next test looked straight at `cpu_count=2` and asserted only `1 <= n <= 2`, which passes for
+both the right answer and the wrong one. A ladder is a claim about a whole range; testing it at one
+point tested it where it could not fail. It now sweeps 1..64, and a second test compares the rungs
+to each other rather than to a range.
+
+**Every regression test was verified to fail without its fix** — all 8, by reverting the five fixes
+and re-running. A guard that has never been seen red is not a guard (KI-41).
+
+**Rejected:** making `registry.pathkey` resolve (its no-I/O property is deliberate, and it also
+keys paths whose file is gone, where `resolve()` does nothing useful) · a migration for the bad
+`origin` rows (the scan already rewrites these rows every run, so repairing there needs no new
+machinery and heals databases that never run a migration) · scoping `undo_add` to un-indexed rows
+(the sheet indexes before offering Undo when *Index now* is ticked, so it would break the ordinary
+path).
+
+**What it opens.** Nine findings remain unfixed and are listed in the review: the `_existing_document_id`
+O(n²) path scan against the 10k-document contract, `repoint_figures` rewriting rows without moving
+the directory, the dead `duplicate_of` branch in the review sheet (the user is never told *which*
+file a duplicate matches), `resolve_run_id`'s unescaped LIKE wildcards, and five smaller ones.
+
+---
+## 2026-08-26 (2) — KI-45 part 1: a citation link now has to agree on the title, and one word is enough to disagree
+
+**What changed.** `resolution_is_credible` moves into `ingest/citations.py` (its dependencies all
+live there; the library layer re-exports it), `match_to_library`'s rules 2 **and** 3 now call it,
+a word-coverage test joins the ratio, and `--reresolve` re-points stored rows without
+re-extracting. **Applied to the live library: 16 links → 41.**
+
+**The defect.** Rule 2 matched **first-author surname + publication year with no title comparison
+at all**. On a 97-document corpus holding many same-year papers by common surnames it fired
+constantly: 13 of 16 stored resolutions were false, one document had 9 of its 11 links pointing at
+two unrelated papers. A read-side guard (2026-08-10) hid this from the References block by
+re-checking at render time, but every other consumer — `cited_by`, the citation-network view, the
+concept graph's provenance annotators, the CLI — still trusted the rows.
+
+**One predicate, used everywhere.** Rule 2 now only *narrows the candidates*; the title decides.
+Rule 3 calls the same function rather than comparing ratios itself, so the write rules and the read
+guard cannot drift apart again — which is exactly how the surname+year rule came to disagree with
+the reference list's own idea of a credible link.
+
+**⚠ AND THE FIRST VERSION OF THE FIX CREATED THREE NEW FALSE LINKS.** Verifying the 40 proposed
+links by hand — rather than trusting the count — found *"Bidirectional recurrent neural networks"*
+resolving to *"Relational recurrent neural networks"*, and *"…grammars"* to *"…regularization"*.
+`SequenceMatcher` scores those **0.91 and 0.80**, over `FUZZY_TITLE_THRESHOLD`, because two long
+titles differing in one decisive word are mostly the same characters. **The ratio cannot see a
+substitution.** Comparing the *sets* of words can: measured over all 40, every false link scored
+word-coverage **0.75** and every true one **0.88 or above**, so `MIN_TITLE_WORD_COVERAGE = 0.80`
+sits in an empty measured band rather than being tuned to a target. Coverage is deliberately
+asymmetric — a reference is often a prefix, or carries an author-list tail, so extra words in the
+longer title are expected; a *missing* word is the signal.
+
+**Result on the live library** (backup `data/library.db.bak-20260826-precitations`): 4,410 rows
+unchanged, nothing deleted, **12 false links dropped** (exactly the set the read-side guard was
+already hiding) and **37 gained**, every one inspected by hand. Self-resolutions are refused —
+a document's own reference list resolving to itself is noise in the citation graph.
+
+**Rejected:** raising `FUZZY_TITLE_THRESHOLD` to compensate (KI-45 says not to, and it would have
+cost true matches at 0.91 while still admitting the 0.91 false one — the ratio is the wrong
+instrument, not the wrong number).
+
+**What it opens.** KI-45 part 2 — **freshness** — is still unbuilt: resolution re-runs only when
+asked, so ingesting a paper does not yet re-point references that name it. `--reresolve` is the
+manual form of that, and is what a future ingest hook would call.
+
+---
+## 2026-08-26 — the ingest politeness budget, and two performance claims of mine that were wrong
+
+**What changed.** `ingest/workers.py` (budget resolver + parallel extraction warm-up), an
+`ingest_budget` setting, `--workers`, `DOC_INGEST_WORKERS`, `multiprocessing.freeze_support()` at
+the sidecar entry point, and the measured cost model written into `docs/performance.md` §1b and the
+README.
+
+**A politeness control, not a performance knob — and that distinction is what makes it legal.**
+ADR-037 keeps cost knobs out of the UI, but its test was **output-neutral**: a knob that trades only
+time is safe to expose. Worker count cannot change what an answer says, so it passes. Its other
+objection — *"no restart semantics; every knob is decided at pipeline construction"* — does not
+apply either, because ingest is a discrete invoked run, not construction. The budget is resolved
+**per run** so the eventual multi-user build passes its own number instead of inheriting a desktop
+preference.
+
+**⚠ I CLAIMED ~8x FROM PARALLELISM. IT IS 1.74x.** The reasoning — "extraction is 89% of cost and
+serial on 28 cores" — assumed the work was single-threaded. Measured (16 documents, cold cache each
+round): serial 367.7 s · 2 workers 250.1 s (**1.47x**) · 4 → 1.68x · 7 → 1.73x · 14 → 1.74x. The
+10k projection moves from the ~13 h I quoted to **~55 h**, against ~96 h serial.
+
+**Two explanations tested, both false.** The long-tail document: the slowest here is 50 s, far under
+the 211 s floor observed at 14 workers. OpenMP contention: `OMP_THREAD_LIMIT=1` measured marginally
+**worse** (225 s vs 217 s). Recorded as measured-but-unexplained rather than guessed at a third
+time; the docs tell anyone projecting a large ingest to use ~1.5x, not their core count.
+
+**The measurement chose the default, and it vindicates the user's instinct.** Two workers buy
+**85% of the entire achievable gain for 2 cores instead of 14**, so `light` is the default: the
+polite setting is very nearly the fast one, and nobody has to trade one for the other. Even `full`
+deliberately leaves half the cores.
+
+**⛔ AND IT CAUGHT A BUG THAT WOULD HAVE SHIPPED: there was no `freeze_support()` anywhere.**
+Windows spawns rather than forks, so every child re-imports `__main__` — and in a PyInstaller
+bundle that is the *whole application*, so each worker would have started **another API server**
+instead of extracting a PDF. Found because my own benchmark runner lacked the guard and recursed.
+`freeze_support()` is now called at the sidecar entry point, **and** `warm_extraction_cache`
+refuses to parallelise when `sys.frozen` is set until a packaged build has been observed doing it
+correctly — a fork bomb of sidecars is bad enough to warrant declining by default.
+`DOC_INGEST_PARALLEL_FROZEN` lifts the guard for that verification without a code change.
+
+**The cost model is now documented for two audiences**, because the shape is what transfers and the
+seconds are not. Per-stage shares for a reference 30-page digital PDF: **extraction ~90%**, embedding
+~5%, everything else (figures, citations, keywords, epistemics, metadata) ~5% combined. Estimate by
+**pages, not megabytes** — measured, a 15 MB/20-page paper indexed faster than a 5 MB/22-page one.
+**Metadata is the cheapest stage by three orders of magnitude**, which retires the idea that a
+Calibre-style cheap-metadata path would save meaningful time; the useful version of that idea is a
+*shallow ingest* that defers extraction entirely, which is a different feature.
+
+**Rejected:** a boolean on/off (it offers 1 or 28, and 28 is the monopolising the control exists to
+prevent); parallelising the whole document loop (embedding is GPU-bound and already batched, and
+concurrent writers on one Chroma collection is a corruption risk).
+
+**What it opens.** Why the curve plateaus is unexplained. The frozen guard needs one packaged-build
+verification to lift. **OCR remains the larger unclaimed win** — measured at 1.4-2.8x of extraction
+for +0-8% text, on a corpus whose text layers the project already documented as good — but it
+changes stored text, so it is an eval-harness question, not a judgement call.
+
+---
+## 2026-08-25 (5) — the corpus is re-ingested, and a full re-extraction is a four-day job at 10k documents
+
+**What changed.** No code. The 97-document library was re-extracted and re-embedded end to end,
+after the identity work below made that non-destructive. **6m31s**, because the caches were warm
+from the two earlier passes; the cold run took 61 minutes.
+
+**Nothing was lost, and that is the measured claim rather than the hopeful one.** Against the
+pre-run backup: documents 97→97, figures 881→881, keywords 1455→1455, epistemics 445→445,
+concept_presence 31→31, document_field 82→82, folders 18→18, metadata overrides 1→1, and
+**97/97 document ids preserved — 0 lost, 0 new**. Every figure's `doc_hash` agrees with its
+document. Chunks moved 13,925 → 14,957, which is the point. KI-48's symptom is gone: all 97
+documents now derive `ingested` rather than `changed`.
+
+**Scaling, since it was asked and is worth keeping (n=96, one run, this box, cu130).** Time tracks
+**pages, not bytes** — r=+0.73 against page count, r=+0.37 against file size. About **1.06 s/page
+plus 2.5 s fixed** per document; 1.19 s/page on the mean. The bytes correlation is real but weak
+and comes from OCR: `elife-04250-v1.pdf` took 414 s for **21 pages**, while `hebb_1949.pdf` took
+507 s for 365. Megabytes are close to useless as an estimate; pages are not.
+
+**⚠ THE PROJECTION MUST USE THE MEAN, NOT THE MEDIAN, and I got that wrong first time.** The
+distribution has a heavy right tail — mean 34.6 s/doc against a median of 17.5 — so a
+median-based total halves the real answer. Total time is `n × mean`:
+
+| corpus | full re-extraction |
+|---|---|
+| 100 | ~1 h |
+| 1,000 | ~9.6 h |
+| **10,000** | **~96 h** |
+
+The per-page figure agrees independently: 10,000 documents at this corpus's 30 pages/doc is ~98 h.
+**Against the ~10,000-document robustness contract, that makes "never invalidate a cache you did
+not have to" a scaling requirement rather than a nicety** — which is exactly what the per-format
+fingerprint below buys.
+
+**⚠ AND THE HEADLINE NUMBER HIDES WHERE THE TIME GOES — 89% of it is extraction, done SERIALLY on
+a 28-core box.** Three full runs over the same 97 documents and the same work split (78 processed,
+19 skipped) separate the phases cleanly:
+
+| run | extraction | wall clock |
+|---|---|---|
+| cold caches | 97 documents extracted | **61 min** |
+| warm caches | 0 extracted (verified 97/97 fresh) | **6.5 min** |
+
+So extraction is ~54.5 min of the 61 — **~34 s/document** — and chunk + embed + store is ~5 s/doc
+across two Chroma collections. The dominant phase is single-threaded while 28 logical cores sit
+idle: roughly **4% CPU utilisation** during the part that costs 89% of the time.
+
+**That reframes the 10,000-document projection.** ~96 h is a *serial* number, not a floor. Extraction
+is per-document and independent, so a process pool over it is the obvious lever — at 8 workers the
+cold pass here would be ~7 min rather than 54, and 10k documents lands nearer ~13 h. Embedding
+should stay as it is (GPU, already batched). Not attempted, and it needs care — PyMuPDF wants
+processes rather than threads, and OCR pages are memory-hungry — but the measurement says the
+headroom is real and large. **Filed as the honest reading of the scaling answer: the cost is not
+that extraction is slow per page, it is that we do one page at a time.**
+
+**Chunk locations are live at 81% (baseline) / 63% (parent-child) of chunks, across 78 of 97
+documents.** The 19 missing documents extracted identically, so they were skipped and never
+re-chunked; they carry no spans and fall back to read-time matching. **Careful reading the
+coverage:** `Chroma.get(limit=N)` returns earliest-inserted chunks, which are exactly those 19 —
+sampling that way reports 0% and looks like a total failure. Ask for a document whose hash moved.
+
+**What it opens.** Those 19 documents gain spans only on a forced re-chunk. The figure PNGs remain
+11% resolvable (88/811) — **pre-existing**, unrelated to this work, and worth its own look.
+
+---
+## 2026-08-25 (4) — a re-extraction destroyed 767 figure rows, because the sweep runs before identity
+
+**What changed.** `cleanup_orphans_sqlite` returns `OrphanHashes(gone, stale)` instead of one list
+and deletes rows for `gone` only; `cleanup_orphan_figures` receives `gone` plus stale hashes no
+`Figure` row claims; `store.repoint_figures` carries a document's figures onto its new hash. Filed
+as the fix for a real data loss, not a hypothetical.
+
+**⛔ WHAT HAPPENED.** ADR-047 gave `_existing_document_id` a source-path fallback so a document
+survives its own re-extraction. It was verified in isolation — 97/97 documents kept their identity
+— and then the real re-ingest **destroyed 767 of 881 figure rows, 1,170 keywords and 381
+epistemics rows, reporting `exit=0` throughout.**
+
+The fallback never ran. `main()` executes the orphan sweep **first**, and that pass was hash-keyed
+too: it re-extracts every file, finds 78 hashes no Document row still matches, classifies them
+`stale`, and deletes those rows — FK-cascading the sidecars — before `_existing_document_id` is
+ever consulted. Restored from backup, verified count-for-count. **Filed as KI-49**, because the
+shape recurs: a component was proved and the system was not.
+
+**The distinction that fixes it.** A source file that is **gone** ends its document — row, chunks,
+figure PNGs. A source file that is **still there** and merely extracts differently does not: only
+the chunks are dead. Those were one list, which is precisely how a maintenance operation came to
+delete data.
+
+**Figures were the only sidecar needing real work.** Everything else — keywords, epistemics,
+concept_presence, folders, metadata overrides, document_field — is keyed on `document_id` alone
+and survives automatically once the row is not deleted. `figures` is keyed **both** ways, plus
+on-disk PNGs under `FIGURE_DIR/{doc_hash}/` whose **absolute** paths are stored in `image_path`,
+so `repoint_figures` does three things together: rename the directory, rewrite the stored path,
+set the new hash. Worth carrying rather than regenerating — a figure is a crop of *the PDF's own
+page*, so a **text** extractor change cannot invalidate it, and regenerating means paying for 881
+VLM descriptions again.
+
+**And narrowing the sweep opened a leak, which the test suite caught.** A stale directory with no
+`Figure` row behind it has nothing to move it and nothing to read it. `hashes_with_no_figure_rows`
+splits those out so they are still collected. The failing test was not relaxed; it became two.
+
+**Verified the way the first attempt was not: a full ingest against a faithful 1.1 GB copy of
+`data/` before touching anything.** That trial caught two further problems that would have made it
+meaningless — copying changes the paths the identity fallback matches on (so the DB's
+`source_original` had to be rewritten), and **`_chroma_base()` silently relocates the vector store
+to `%PROGRAMDATA%` when `DATA_PATH` is non-ASCII**, which the scratchpad path is once resolved
+(`C:\Users\Lucas Délez\…`). The first trial therefore ran against an empty Chroma, classified
+nothing, and exercised none of the fix.
+
+**What it opens.** KI-49. The `%PROGRAMDATA%` relocation is deliberate (a documented chromadb
+persistence bug) but invisible at the point of use — any tooling pointing `DOC_DATA_DIR` under a
+non-ASCII home gets a fresh store rather than the real one.
+
+---
+## 2026-08-25 (3) — extraction identity, scoped per format and no longer hostage to the extractor
+
+**What changed.** `extraction_fingerprint(suffix)` is scoped to one format's call graph;
+`get_cache_path`/`is_cache_fresh`/`write_cache` carry the suffix; chunks record where they came
+from; and ADR-047 makes a document's identity its source file rather than its extracted text.
+
+**KI-48, fixed at the cause.** The fingerprint hashed the bytecode of *every* function in
+`extractors`, so an EPUB/HTML-only refactor invalidated all 97 **PDF** caches — a whole-corpus
+re-extraction for a change that provably could not alter a single PDF. The scope is now the
+transitive closure of what one format actually executes, walked from `extract_to_markdown` with
+the *other* formats' entry points blocked, so a shared post-processing step is picked up
+automatically and a per-format one is not. Measured: `_soup_to_markdown` moves `.epub`/`.html` and
+nothing else; `_TEXT_LAYER_KEPT_MIN` moves `.pdf` and nothing else; `strip_image_placeholders`
+moves all seven. Any failure in the walk falls back to the whole-module scope — over-invalidating
+costs CPU, under-invalidating serves text no current version would produce (KI-40).
+
+**⚠ TWO BUGS THE MEASUREMENT CAUGHT THAT REVIEW DID NOT.** Every non-PDF format is dispatched
+through the `_EXTRACTORS` **dict**, a runtime lookup a static walk cannot follow — so `.epub`'s
+closure held two functions and `extract_epub` was not one of them. **An EPUB fix would not have
+invalidated a single EPUB cache: KI-40 reintroduced, silently.** And `_EXTRACTORS` reprs its
+functions *with their memory addresses*, so hashing it gave a different answer every process and
+no cache would ever have read fresh again. Both are pinned by tests; determinism is asserted
+across three separate processes.
+
+**Chunk locations came almost free** (ROADMAP 19): the baseline path already computed the offset
+for `extract_chunk_metadata` and threw it away. The parent/child path needed the cursor walk, and
+there the splitter does **not** emit verbatim substrings — it strips and rejoins on its separator,
+so 2 of 8 children were unfindable by `str.find`. `locate_span` probes head and tail, then
+**verifies the span contains its own text** and returns `None` when it cannot. That check is not
+decoration: without it three chunks in one paper resolved onto a neighbouring figure caption. A
+missing location costs a highlight; a wrong one points confidently at the wrong paragraph.
+
+**Rejected:** a hand-maintained format→dependency map (it rots, and the failure is silent);
+sentinel `-1` offsets (a caller reads them as a position).
+
+**What it opens.** ADR-047's remainder is RG-027's: identity is now *path*-shaped, so a file moved
+between folders still reads as new.
+
+---
+## 2026-08-25 (2) — a referenced file could be registered but never ingested, and the corpus turned out to be uncached
+
+**What changed.** `get_cache_path` resolves for a file anywhere on disk, the AD3b migration is
+applied to the live library, and KI-48 records what checking that turned up.
+
+**AD3b shipped a document you could add and then not use.** `get_cache_path` did
+`original.relative_to(config.DOCS_PATH)`, which **raises** for anything outside the library folder.
+It is called **unguarded** at four points on the ingest path, so ingesting a referenced document
+was a `ValueError`, not a degraded result. `registry._cache_is_fresh` swallowed the same error and
+returned False, which is why nothing screamed: every referenced file simply derived `new` forever
+and looked like it was merely waiting to be ingested. Registration worked, so the failure sat one
+step past the part AD3b tested.
+
+**The fix keeps the library's layout byte-identical.** A file under the library folder still mirrors —
+its path under `data/sources/` reappears under `data/cache/` with an `.md` suffix — verified across
+all 97 documents, because moving
+that path would silently re-extract the corpus. A referenced file has no relative path to mirror, so
+its entry is keyed by a digest of its case-normalised absolute path: same file → same entry, same
+filename in two folders → no collision, any source path → a legal filename. Digest over the *path*,
+not the bytes, because it must resolve before the file is read and `scan_root` asks once per file
+per listing. Proven end to end: extract → cache hit on re-extract → touch the source → stale.
+
+**The migration ran on the real library.** Backup `data/library.db.bak-20260824-preroots`. 97 rows,
+0 NULLs, 0 FK violations, `integrity_check ok`, the library root pointing at `data/sources`, and
+all four indexes present. `origin` is `copied` on all 97, which is a fact rather than a default —
+every one of them was found by scanning the source dir.
+
+**⚠ AND THE CHECK THAT WAS SUPPOSED TO BE A FORMALITY FOUND KI-48.** Confirming no cache entry had
+moved also revealed that **97 of 97 are stale** — recorded fingerprint `2ce7639c…`, current
+`686aa2df…`. Cause: `extraction_fingerprint()` hashes the bytecode of every function in
+`extractors`, so yesterday's `f285212` (EPUB/HTML only) invalidated the **PDF** caches too;
+bytecode hashing cannot tell which format a change touched. That commit's DEVLOG says *"blast
+radius zero … so nothing was re-ingested"* — true of the output then, **wrong about the cache**.
+Worse, re-extracting today is not a no-op: measured on 3 of 97, the fresh text differs, which is
+**KI-47** (Tesseract is now on PATH so scans OCR) and walks straight into **KI-43** (identity is
+the extracted content, so changed text orphans every id-keyed sidecar). Filed with three options
+and no decision taken — it is a call about the corpus, not a bug to patch.
+
+**What it opens.** ROADMAP 18 and 19, from the user: a document viewer in a Library right-split
+(gated on the file being reachable — `root_available` already answers that, and `page` is already
+on every chunk, so page-level costs no ingest change), and locating a cited chunk in its source
+text. The second has a real fork: read-time matching works on today's corpus, exact offsets need a
+schema field and a re-ingest — and **KI-48's pending re-extraction is the cheap moment** for that
+if it is ever wanted.
+
+---
+## 2026-08-25 — AD3b: the registry grows a root, and the key that was never unique alone
+
+**What changed.** `SourceRoot` + `SourceFile.root_id` + the `(root_id, rel_path)` unique index, an
+ADR-026 rebuild migration, a multi-root `registry`, `apply_add(mode="reference")`, and the sheet's
+radio becoming a real control. **A document can now be added without being copied anywhere.**
+
+**The rebuild was forced by a SQLite rule, not chosen.** With `PRAGMA foreign_keys=ON` — which
+`db/session.py` sets — SQLite **refuses** `ADD COLUMN` carrying a `REFERENCES` clause unless the
+default is NULL, and a nullable rootless row is precisely what this change exists to prevent. The
+alternative (add the column without the FK) leaves a migrated database structurally different from
+a fresh one, which is how `document_meta` earned ADR-026 in the first place. So: rebuild, with the
+literal `DEFAULT 'library'` doing the backfill *during the copy* — `_rebuild_table` only carries
+columns present in both shapes, so the server default is load-bearing, not decoration.
+**Measured on a copy of the real library: 97 rows, 0 NULLs, FK clean, idempotent on re-run.**
+
+**`_rebuild_table` silently dropped every index, and nobody had noticed.** `CreateTable` renders
+the table only; the old indexes die with the dropped table. It was latent because `document_meta`,
+its only previous caller, declares none — `source_files` declares four. Fixed there rather than
+worked around here. The same pass found `source_sha256` indexed on live databases by the AD2
+migration but **not declared on the model**, so a fresh database never had that index; declaring it
+fixes the divergence and makes the rebuild preserve it.
+
+**⚠ THE ONE THAT WOULD HAVE BEEN A SECURITY BUG.** Canonicalising each selection request to
+`"<root_id>:<rel_path>"` *before* validating it defeats the traversal guard outright:
+`PurePosixPath("library:../evil.pdf").parts` is `("library:..", "evil.pdf")`, so `".." in parts` is
+**False** and `../evil.pdf` walks straight through a check written to stop exactly that. Caught by
+an existing test (`test_resolve_selection_rejects_bad_paths`) that I had assumed was reporting a
+cosmetic message change. Requests are now split by root **first** and each root's rel_paths
+validated against that root's own on-disk set — which also restores offender fidelity. Pinned by a
+new guard that asserts both spellings still read as traversal.
+
+**Duplicate detection was quietly single-root.** `_size_index` resolved every registered `rel_path`
+against the *library* folder, so a row under a referenced root resolved to a path that does not
+exist, the read raised, and the candidate came back a clean `add` — the library would hold the same
+bytes twice, which is the one thing that gate exists to prevent. The index now joins each row to
+its root and carries a real absolute path. This is the second time in this feature that a bare
+`rel_path` turned out to be a lie; `duplicate_of` and the hash cache are both keyed by
+`source_key` now.
+
+**Undo had to change meaning, not just plumbing.** It previously *refused* any row whose origin was
+not `copied` — correct while reference mode did not exist, and stranding after AD3b: the user
+rejects a reference add and the row stays forever. Undo now always drops the row and deletes the
+file **only** when the app made the copy. That is the ADR-014 amendment enforced where it cannot be
+forgotten.
+
+**Open question 3 is resolved, and it bought a state.** Missing-detection stays **on demand** — no
+startup pass, because `rglob`-ing every referenced root at launch is slow or blocking on exactly
+the paths most likely to be network or removable, at the worst moment (RG-012). The consequence,
+decided with it: an unreachable **root** is not the same fact as deleted **files**, so availability
+is derived per scan (never stored — a drive unplugged now may be back in a second) and an
+unavailable root keeps its rows *and their `last_seen`* untouched. A disconnected drive must not
+be indistinguishable from the user losing 400 documents.
+
+**A limitation I chose rather than hid: referenced roots are per-*parent-directory*.** `apply_add`
+receives files, not the gesture that produced them — a dropped folder is already expanded by the
+time it arrives — so a file's root is its own parent. Drop a Zotero folder with twenty
+subdirectories and you get twenty referenced roots, one per subdirectory. Nothing breaks (each
+root scans correctly, and referencing twenty papers from *one* folder still yields one root), but
+the roots list is noisier than it should be. Fixing it properly means passing the original drop
+set through so a dropped directory can become the root; that is a signature change through the API
+and was out of AD3b's scope. Recorded here rather than discovered later.
+
+**What it opens.** The delete half of ADR-046 (`delete_document(delete_file=…)`, spec cases 6 and
+7) is still unbuilt — the schema it branches on now exists, so it is no longer blocked. AD4,
+CS1/CS2 and RG-030 are untouched. **Not proven:** no referenced document has been ingested end to
+end through the UI, and the spec's own DoD still wants an EPUB and an HTML file added that way.
+
+---
+## 2026-08-24 (3) — the W0 assertions run in a real Tauri window, and the spec's own expectation was wrong
+
+**What changed.** `docs/specs/feature-add-documents.md` §W0 gains the runtime result. No code
+changed — a temporary probe was added, run, and removed (`svelte-check` back to 205/0, no residue).
+
+**How a devtools-only check was run without devtools.** A Tauri window's console is not reachable
+from an agent session, so the two §W0 one-liners could not simply be pasted anywhere. The probe
+executed them inside the webview and **reported by pinging the API with the payload in a query
+string** — uvicorn logs every request path, so the answer came back through the server log. The
+app's CSP already allows `connect-src http://127.0.0.1:8001`, so this needed no config change.
+
+**Result, and both assertions pass:**
+```json
+{"tauriKeys": ["app","core","dpi","event","image","menu","mocks","path","tray",
+               "webview","webviewWindow","window"],
+ "isTauri": true, "canReceiveDrops": true, "canPickFiles": true,
+ "listenOk": true, "listenError": null, "href": "http://localhost:1420/"}
+```
+`withGlobalTauri` injects the API · `listen('tauri://drag-drop')` registers · the picker is
+reachable · and `href` proves the window loaded **this** app rather than the other project that
+periodically owns 1420 — the exact confusion §W0 warned about.
+
+**⚠ The run falsified an expectation I had written into the spec.** §W0 said to expect `dialog`
+among `Object.keys(window.__TAURI__)`. **It is absent** — `tauri-plugin-dialog` registers itself
+with `Object.defineProperty`, which defaults to **`enumerable: false`**, so the plugin is present
+and fully working (`canPickFiles: true`) while invisible to `Object.keys`. A future reader
+following the old instruction would have concluded the plugin failed to register and gone looking
+for a bug that does not exist. The corrected probe is
+`typeof window.__TAURI__.dialog?.open === "function"`.
+
+**Still unproven, and stated as such:** that a real OS drag delivers a **non-empty `paths` array**.
+The *subscription* is now confirmed at runtime and the *payload shape* from
+`tauri/src/manager/window.rs`; the gap is one human drag, which no probe can perform.
+
+**A stale comment found in passing.** `lib.rs` says *"in dev there is no frozen binary (run the
+backend separately with `just api`)"* — but a `binaries/doc-assistant-api` sidecar exists on this
+machine, so `tauri dev` spawned it and it failed to bind 8001 against the already-running dev API.
+Non-fatal by design; the comment is simply out of date, and the port clash is confusing if
+unexpected.
+
+**Rejected alternative.** *Declaring W0 done on the source evidence alone* — the sources were
+right about the mechanism and wrong about what the check would look like, which is precisely the
+difference between reading a contract and exercising it.
+
+**What it opens.** The Tauri question no longer blocks a merge. What remains is a judgment call:
+the feature is deliberately partial (AD3b, AD4 unbuilt) and nothing is committed.
+
+---
+## 2026-08-24 (2) — the Add-documents button moves to the Library header row
+
+**What changed.** `[+ Add documents]` leaves the app toolbar and joins the Library header row
+(`LibraryPane.svelte`, `.libnav`) beside Sort / View / Select. An **"Add documents…" entry is added
+to the app menu** so the action stays reachable from Chat.
+
+**Why (user's call, and the reasoning is worth keeping).** Three things pointed the same way:
+- The toolbar's right cluster is **identity + config by design** — `Topbar.svelte` says it in a
+  comment: *"Brand = identity anchor only (small mark + wordmark), parked on the right beside
+  Settings."* Everything else in that bar is navigation. An action there was the odd one out, and
+  had to be styled like chrome to fit — exactly wrong for a pane's primary action.
+- It acts on the Library's content, and that row already holds the document actions.
+- **Not** the keyword row: that is the facet bar, and "Filter by keyword" is a filter, not an
+  action. Mixing a create-action into a filter row mixes two grammars.
+
+**The cost was named before the move and is mitigated, not ignored.** In the toolbar the button was
+reachable from Chat; in the pane it is not. The app-menu entry costs no new chrome and restores
+that reach — and window-wide drag-drop was never mode-specific anyway. Without it the move would
+have been a straight loss of capability from one mode.
+
+**Now a filled accent button** rather than toolbar chrome — which is the point of the move. It
+still degrades the same way outside the Tauri window: **visible, disabled, and saying why**
+(*"Adding documents works in the desktop app."*), because hiding it would make a browser look like
+a missing feature.
+
+**Verified live, and one trap re-encountered.** First geometry read came back with every
+coordinate near zero and `Select` apparently absent — because the Browser pane was hidden and
+`window.innerWidth` was **0**, exactly as `apps/desktop/CLAUDE.md` warns ("a hidden pane collapses
+it to 0"). Forcing a 1280 viewport gave the real numbers: **Sort 941 · View 980 · Select 1053 ·
+Add 1132**, all on one row, Add last and right-aligned; disabled styling computed correctly
+(`--surface` background, opacity 0.7, `--text-sm`). The structural check (`.libnav` children:
+`crumbs · libsort · viewtoggle · selecttoggle · addbtn`) was valid either way and is what confirmed
+the placement while the geometry was garbage.
+
+**Gates:** svelte-check 205/0 · 145 frontend · 39 add-documents tests. Wireframe screen 1 still
+shows the button in the toolbar and is now **out of date** — it needs the same move.
+
+---
+## 2026-08-24 — AD3a: documents can be added for real, and the live test caught what the type gate could not
+
+**What changed.** `apply_add` / `undo_add` in `library/add.py`, the `origin` column + migration,
+`POST /api/documents/add` and `/undo-add`, and the review sheet's primary action. **A document can
+now be dropped into Provenote and land in the library.**
+
+**Scoped as AD3a, and the split is a finding rather than a shortcut.** ADR-046 chose *both*
+placement modes for v1. The schema half of reference-in-place is cheap — `source_roots` is a new
+table (`create_all` covers it), `root_id` is additive, and `rel_path`'s uniqueness turns out to be
+a **separate unique index** (`ix_source_files_rel_path`), so it can be swapped without a table
+rebuild. **The cost is the call sites:** `scan_sources`, `derive_status`, `resolve_selection` and
+`list_sources` are all keyed on a bare root-relative path and each needs the root dimension first.
+That is AD3b. ADR-046 is unchanged.
+
+**`reference` is accepted and refused, not silently downgraded.** `apply_add` raises
+`NotImplementedError`, the API answers **501**, and the sheet shows the radio **disabled with the
+reason**. Hiding the option would misrepresent the decision; enabling it would copy files to a
+place the user did not choose. Pinned by a test asserting the refusal is *total* — no copy lands
+under any name.
+
+**The failure story is the honest half (grill branch 6).** `apply_add` stops at the first failure
+and returns `added` / `failed` / **`not_attempted`** — the files after the failure were never
+touched, and reporting them as "skipped" would be a lie. The sheet then offers *Keep the N* or
+*Undo all*. `undo_add` deletes outright rather than binning (ADR-014): these are copies the app
+made seconds ago and the user is rejecting, so nothing is at risk — and it **refuses any row whose
+`origin` is not `copied`**, which is the ADR-014 amendment enforced where it cannot be forgotten.
+
+**A name collision does not overwrite.** Two different papers can share a filename, and ADR-043
+keeps received content verbatim, so a second `paper.pdf` becomes `paper-2.pdf`. Byte-identical
+files never reach here — those are AD2 `duplicate` verdicts.
+
+**Indexing is not done inside `apply_add`.** It is a separate call to the existing
+`POST /api/ingest` with an explicit `paths` list (spec constraint 4), so the system keeps one
+ingest path rather than two. The sheet indexes **only what actually landed**, never what a stopped
+run failed to reach.
+
+**⚠ THE LIVE TEST EARNED ITS KEEP: the sheet unmounted before the user could see the outcome.**
+`onAdded` cleared the staged paths, and the staged paths are also what keep the sheet mounted — so
+on success the sheet vanished mid-flow and **the Undo button was unreachable**. svelte-check was
+green, 39 backend tests were green, and the bug was invisible to both. Clearing now belongs to
+`onClose`. This is `apps/desktop/CLAUDE.md`'s "the type gate is not the run gate" rule paying for
+itself twice in three days.
+
+**Verified against the real library, and it was left exactly as found.** Baseline 97 documents /
+97 source_files / 97 files on disk. Staged one throwaway file **with indexing switched off** (so
+nothing reached Chroma), added it — copy on disk, row with `origin='copied'` and a hash, documents
+still 97 — then undid it through the UI. **Final state: 97 / 97 / 97, no probe row, no probe
+file.**
+
+**What it opens.** AD3b (reference-in-place) with the call-site work named above. AD4 (the empty
+state). RG-030 still gates AD2's fourth verdict. And the `[+ Add documents]` button placement is
+still open — recommendation on record: the Library header row with Sort/Grid/List/Select, plus an
+app-menu entry for the Chat case.
+
+---
+## 2026-08-21 (5) — AD2: the review sheet, and a duplicate check that does not read the library
+
+**What changed.** `src/doc_assistant/library/add.py` (new), `POST /api/documents/inspect`, the
+`source_sha256` column + its migration, `AddDocuments.svelte`, and the wire types/client for both.
+**2,055 python tests** (was 2,029 — the 26 added here) - **145 frontend** - svelte-check 205/0 -
+mypy `src` 92/0 - ruff clean.
+
+**The design point worth keeping: size is the discriminator, sha256 only ever confirms.** ADR-046
+made add-time identity the sha256 of the source bytes, and the obvious implementation hashes every
+registered file on every inspect — hundreds of megabytes at 97 documents, for a question that is
+almost always "no". Instead `inspect` builds a `{size: [rows]}` index from the registry's
+**already-scanned** `size` column and hashes only rows whose byte length a candidate actually
+matches. In the common case the library is never read at all. **Asserted by counting reads**, not
+by trusting the comment: `test_no_registered_file_is_hashed_when_no_size_matches` monkeypatches
+`sha256_file` and requires an empty call list.
+
+**`source_sha256` needed a real migration, not `create_all`.** `source_files` already exists in
+every live database, and `create_all` never ALTERs an existing table (`migrations.py:33` says so).
+Registered in `_ADDITIVE_COLUMNS` with an index, and **applied to the live library** — the column
+lands NULL everywhere and is deliberately **not backfilled**: filling it means reading every source
+file, and the cache fills itself on exactly the paths that need it. NULL reads as *"not computed
+yet"*, never as *"not a duplicate"* — the size index decides what gets compared, so the two cannot
+be confused.
+
+**`inspect` and `apply` are two endpoints so constraint 2 stays structural.** Nothing is copied,
+registered or indexed before the sheet is confirmed; `inspect`'s only write is the hash cache on
+rows it already had to read. Asserted at both levels — unit
+(`test_inspect_adds_no_registry_rows`) and over the wire (`test_inspecting_registers_nothing`).
+
+**The no-text-layer verdict is deliberately absent.** RG-030 gates it and its cost across a
+500-file batch is unmeasured; shipping it on a guess is the thing that entry exists to prevent.
+The other three verdicts do not need it.
+
+**AD2 stops at reviewing, and the sheet says so.** No disabled "Add" to nowhere — copy-vs-reference
+and indexing are AD3. The `advisory` string is rendered **verbatim** from `get_format_status`; the
+frontend never re-derives which formats are supported, because that list in a second language is
+the ADR-013 shape.
+
+**Verified live against the real API** (5 real paths, one nonexistent):
+`5 files - 3 would be added`, rows ordered **unsupported, unreadable, then the three adds** —
+grill branch 7 holding in the running UI — with *"Format .toml is not supported."* passed through
+untouched. Sheet closed and staged state cleared, so the app was left as found.
+
+**Two incidentals worth writing down.** The API runs without `--reload`, so a newly added route
+**404s until the server is restarted** — the sheet's error branch surfaced it correctly rather than
+spinning, which is how it was caught. And `Icon.svelte`'s `IconName` is declared in the instance
+script, so it **cannot be imported**; a narrower literal union at the call site is the fix, not a
+change to Icon.
+
+**What it opens.** AD3 (copy/register + index) is next and needs the multi-root schema from
+ADR-046. RG-030 still gates the fourth verdict. The `[+ Add documents]` button's placement is under
+discussion — it does not affect this sheet, which is why AD2 proceeded.
+
+---
+## 2026-08-21 (4) — AD1: the app can accept a document, and the CSS trap from 2026-08-19 fired again
+
+**What changed.** The accept surface. `withGlobalTauri: true`, the dialog plugin, a `[+ Add
+documents]` button beside Settings, a window-wide drop target, and a staged-files summary. **145
+frontend tests** (was 127), svelte-check 202/0, `cargo check` exit 0.
+
+**Config (W0's route, applied).** `tauri.conf.json` gains `withGlobalTauri: true`; `Cargo.toml`
+gains `tauri-plugin-dialog = "2"`; `lib.rs` registers it; `capabilities/default.json` grants
+**`dialog:allow-open`** and nothing more — the plugin's own `dialog:default` would also grant
+`message` and `save`, which nothing uses. **No npm dependency was added**; the frontend is still a
+1-dep artifact.
+
+**A config comment nearly broke the build.** The first attempt documented the flag with a
+`"_comment_withGlobalTauri"` key. `tauri-utils`' `AppConfig` is `#[serde(deny_unknown_fields)]`
+(`config.rs:3006`), so that would have failed to parse at build time — caught by checking the
+struct rather than by waiting for the compiler. **`tauri.conf.json` takes no comments;** the
+rationale lives in the spec and here.
+
+**Code.** `lib/core/tauri.ts` is the **only** module allowed to touch `window.__TAURI__`, and every
+export degrades instead of throwing: outside the Tauri window `isTauri()` is false, subscribing
+returns a no-op teardown, and the picker resolves to `null`. That matters because the entire
+dev/test loop for this app runs in a plain browser, where the global does not exist.
+`lib/library/accept.ts` is pure and fully tested (18 cases); `accept.svelte.ts` holds the staged
+paths and **cannot write anything** — no copy, no register, no index — which is how spec constraint
+2 stays true by construction rather than by discipline.
+
+**`accept.ts` deliberately does not filter by extension.** The format list lives in
+`extractors.is_supported` / `get_format_status`, and AD2 computes verdicts server-side from it.
+Filtering client-side would put that list in a second language and let the two drift — the ADR-013
+shape (one rule, two copies, one stale).
+
+**AD1 ends at *staged*, and says so.** Dropping files shows a summary bar naming the count and the
+first three files, with a Clear. There is no disabled "Continue" to nowhere: the review sheet is
+AD2 and the apply step is AD3. A build node that reports exactly what it can do beats one that
+mimes the finished feature.
+
+**The 2026-08-19 CSS accident repeated, and was caught by measuring rather than looking.**
+`.tb-add` and `.tb-btn` tie on specificity, so `.tb-btn:disabled` — 27 lines later — won: computed
+`opacity: 0.32` instead of 0.55 and `font-size: 15px` instead of `--text-sm`. Fixed as
+`.tb-btn.tb-add`, the same two-class remedy the tick-row bug got, with a comment saying not to
+simplify it back. **Re-measured after the fix: 0.55 and 12.3px.** A screenshot would not have shown
+either value.
+
+**Verified in the running app** (browser, where `window.__TAURI__` is `undefined`): the button
+renders between the brand and Settings — x 985 (brand) / **1095 (add)** / 1241 (settings) — is
+**disabled**, and its tooltip reads *"Adding documents works in the desktop app."* rather than
+being hidden. Staging six paths (one a duplicate) yielded **five** pending and the bar
+*"5 files ready · hubel-wiesel-1959.pdf · cajal-1899.pdf · treatise.epub · and 2 more"* — Windows
+and POSIX basenames both correct; Clear emptied it. The console's 15 x 500 are `/api/health`
+cold-start polls that recovered on the 16th, unrelated to this change.
+
+**What it opens.** The two W0 runtime assertions still have to run in a real Tauri window — nothing
+here proves the injection works, only that the code degrades correctly without it. AD2 (the review
+sheet) is next and replaces the staged bar. RG-030 still gates AD2's no-text-layer row.
+
+---
+## 2026-08-21 (3) — W0: the accept surface costs zero npm dependencies, and HTML5 drag-drop was never on the table
+
+**What changed.** `docs/specs/feature-add-documents.md` §W0 resolved; open question 1 closed;
+AD1's contracts are no longer provisional.
+
+**The answer is better than the spike was written to expect.** The spec assumed a file picker meant
+a second npm dependency, breaking the *"deliberate 1-dep artifact"* property the frontend claims.
+It does not. **`withGlobalTauri: true` injects the Tauri JS API on `window.__TAURI__`, and plugins
+inject themselves into the same global — so the whole accept surface adds no npm package at all.**
+
+**Every claim read from the pinned crate sources rather than from memory** (`tauri` locked 2.11.3,
+2.11.2 vendored):
+- `tauri/src/manager/window.rs` emits `tauri://drag-drop` with a payload built as
+  **`paths: Some(paths), position`** — the event carries real filesystem paths.
+- `tauri/scripts/bundle.global.js` (what `withGlobalTauri` injects) contains all four `tauri://drag-*`
+  event names, an `onDragDropEvent` helper, and exports `core` / `event` / `webview`.
+- `tauri-plugin-dialog-2.7.1/api-iife.js` does
+  `Object.defineProperty(window.__TAURI__, "dialog", {…})` — the picker rides the same global.
+- `tauri-utils/src/config.rs:3075` documents `with_global_tauri` as the injection switch, default
+  **false**.
+
+**The HTML5 route was not merely worse — it was never possible.** `drag_drop_enabled` defaults
+**true**, and its doc string says *"Disabling it is **required** to use HTML5 drag and drop on the
+frontend on Windows."* Turning it off to get HTML5 events would also surrender the paths that every
+contract in the spec is built on. Recorded so nobody re-proposes it.
+
+**Total cost:** one config line, one Rust dependency (`tauri-plugin-dialog`, already in the local
+cargo registry), one plugin registration, one capability permission — `dialog:allow-open`, narrower
+than the plugin's `dialog:default`, which also grants `message` and `save` that nothing needs.
+
+**What was NOT done, stated rather than glossed.** W0's original DoD asked for a live round-trip
+printing a real path. **It was not run.** That needs an OS-level drag into a native Tauri window;
+this session can drive a browser but cannot perform a desktop drag, and a Tauri window's console is
+not reachable from the Browser pane. The **decision** W0 exists to make is settled by the sources;
+what remains is confirmation. Two one-line devtools assertions are written into §W0 to run at AD1's
+first build, and the DoD now names them explicitly instead of quietly dropping the requirement.
+
+**A design constraint the spike surfaced, which AD1 must build around:** `window.__TAURI__` exists
+**only inside the Tauri window**. The entire dev/test loop for this app runs in a plain browser
+(port 5731 all session), where it is `undefined`. The accept surface has to degrade there — drop
+target inert, button hidden or self-explaining — rather than throw. Also noted: `devUrl` is
+hardcoded to 1420, a port another project on this machine periodically owns (baton 2026-08-19), and
+`tauri dev` will silently load whatever answers it.
+
+**What it opens.** AD1 is unblocked. RG-030 (the page-1 text-layer probe's cost) still gates AD2's
+warning row and is untouched by this.
+
+---
+## 2026-08-21 (2) — the add-documents SPEC, and the accept surface turns out to need a spike first
+
+**What changed.** New `docs/specs/feature-add-documents.md` — the code-level contract for Track A
+(AD1-AD4) and Track C (CS1-CS2) of the ingestion plan, under ADR-046. Contracts per file, 15 test
+cases written before the code, a DoD, the task-level decision ledger from the grill, and an open-
+questions table.
+
+**The finding that reshaped the spec: there is no way to get a filesystem path yet.** Measured
+2026-08-21 — `src-tauri/Cargo.toml` carries **only** `tauri-plugin-shell`; `capabilities/
+default.json` grants `core:default` plus one sidecar-execute permission; and `package.json` has
+exactly **one** runtime dependency (`marked`), which `forceLayout.ts` calls *"a deliberate 1-dep
+artifact"*. So the accept surface is not a UI task sitting on ready infrastructure:
+- a **dialog plugin** means a Rust dependency, a registration, a capability *and* a second npm
+  dependency — which breaks a stated project property, so it is a decision, not a detail;
+- the **Tauri drag-drop event** is believed to carry real paths and may need neither, but that is
+  belief, not evidence;
+- an **HTML `<input type="file">`** is believed insufficient (a webview yields `File` objects with
+  no path, and every contract in the spec is path-based).
+
+Rather than design around a guess, the spec opens with **W0**, a gating spike whose definition of
+done is a working round-trip that prints a real path, plus a note recording the chosen route and
+whether it adds a dependency. **AD1's contracts are marked provisional until W0 lands.** Writing the
+UI first and discovering the path problem during the build is the failure this avoids.
+
+**Contracts recorded** (all additive, all reusing what ships): `SourceFile` gains `root_id` /
+`origin` / `source_sha256` with a new `SourceRoot` table and a `uq(root_id, rel_path)` replacing
+today's `rel_path` key · `registry` goes per-root · a new `library/add.py` splits **`inspect`
+(no mutation)** from **`add` (no extraction)** · `delete_document` gains `delete_file: bool = False`
+per ADR-046 · two API routes that mutate nothing until confirmed · a pure
+`dropzone.svelte.ts` for verdict sorting and pagination, testable under the `node --test` runner the
+repo already has, because the alternative is another untestable component.
+
+**Definition of done includes a corpus fact, deliberately:** not done until an **EPUB and an HTML
+file** have been added and indexed through the UI. The corpus is 97/97 PDF, so those paths are
+otherwise untested in the wild — the same gap that let three extraction defects sit undetected until
+2026-08-20.
+
+**Also recorded, unresolved:** `docs_check --strict` flipped from **0/0 to 15 errors** during this
+session, all of them rule-11a ordering violations in `docs/archive/SESSION-archive-001.md` and
+`-002.md`. Both are gitignored, local-only, and were last written **before** any of today's work;
+neither was touched. The flip is **unexplained** — the gate ran 0/0 six times earlier today with
+those files in their current state. What is *not* in doubt is that the content genuinely is
+oldest-first: `.claude/SESSION.md` records that archive 001 holds *"the pre-convention
+bottom-appended tail"*, so those entries predate the newest-on-top rule. **They should not be
+reordered** — rewriting an append-only historical record to satisfy a linter is the wrong repair.
+Archive 002's header claims "Newest first" while its body is oldest-first, which is a real (small)
+inconsistency worth fixing in the header rather than the body.
+
+---
+## 2026-08-21 — ADR-046: an added document is copied in or referenced in place, and three contracts move
+
+**What changed.** New `docs/decisions/ADR-046-added-documents-copy-or-reference.md`, indexed in
+`docs/decisions.md`, with **ADR-014's row annotated as partially amended**. It records the scoped
+grill's three ADR-class resolutions (`docs/PLAN_2026-08-20_user-friendly-ingestion.md` §8,
+branches 1, 2 and 5) — not one decision, three.
+
+**The decision, and that it overruled the recommendation.** Both modes — copy-in **and**
+reference-in-place — ship in v1. The recommendation was copy-in-first with the reference model
+merely *designed*; the user chose the larger option, and the deciding reason is the part worth
+keeping: **it is the only option that does not make the Zotero adapter a second migration.**
+Copy-in-first would build the copy path, then rebuild `SourceFile`'s key and re-decide delete when
+the adapter arrives. The ADR records the recommendation, the overrule and the reason, because an
+ADR is a record of a decision rather than of who was right.
+
+**Why it is three contracts and not a UI task.** Each was verified in code before being written down:
+- **`SourceFile` becomes `(root, rel_path)`.** It is keyed by `rel_path`, documented *"relative to
+  the source dir"*, with **no root column** — so referencing a file that lives elsewhere is a
+  **schema** change. This is the fact that makes the whole feature bigger than it looks.
+- **ADR-014 is amended.** `delete_document` sends the source to the Recycle Bin **first**. Safe only
+  while the source folder is Provenote's own; with reference-in-place it would take files out of a
+  user's Zotero folder. Delete now asks, defaults to **library-only**, and **must name the real
+  path** when the file is referenced — the accepted risk of a per-delete choice is a mis-click, and
+  showing the destination is what makes the click informed, so it is part of the decision rather
+  than copy-writing. **This absorbs the queued "library-only delete" checklist row**, which was
+  never a separate feature.
+- **Add-time identity becomes `sha256(source bytes)`.** There is no cheap pre-extraction identity
+  today: the duplicate gate is `doc_hash(text)` on the *extracted* text and fires only after
+  `load_or_extract`. Source-hash identity is the direction ADR-042 already chose and RG-027 has yet
+  to build, so the add path **deliberately leads** it. The ADR states the consequence plainly so it
+  is not later read as drift: **two identities coexist until RG-027** — source-hash answers
+  *"already added?"*, `doc_hash(extracted)` answers *"already indexed?"*, and they can disagree.
+
+**Rejected alternatives** (all four options are in the ADR): copy-in only — cheapest, ignores the
+organisation the user already has; reference only — no copy path for users who want the app to own
+its files; copy-in with reference merely designed — the recommendation, kept in the ADR as the
+documented fallback with a note that nothing built for the chosen path is wasted if it is taken.
+
+**What it opens.** The SPEC (`docs/specs/feature-add-documents.md`) is now unblocked and is the next
+artifact; the task-level resolutions (indexing ticked by default, pagination, partial-copy failure)
+are deliberately **not** in the ADR because they change no existing contract, and belong in the
+SPEC's own ledger. RG-030 gates the review sheet's *no text layer* row, not this decision.
+
+---
+## 2026-08-20 (9) — a plan for the one thing the app cannot do: accept a document
+
+**What changed.** New `docs/PLAN_2026-08-20_user-friendly-ingestion.md` — three tracks, wireframes,
+a grill list, and the process route from here to code.
+
+**The finding it is built on.** Provenote indexes a folder well and **cannot accept a document**.
+Grep across `apps/desktop/src` returns no file picker, no drag-and-drop, no upload endpoint
+anywhere; the entire front door is a text box reading *"Paste the full path to the folder holding
+your documents."* Everything downstream of that step already exists and is tested — registry scan,
+selection resolution with up-front validation, background job, status polling, per-file exclude.
+The plan therefore adds one step and reuses `POST /api/ingest` unchanged.
+
+**Two structural facts turned up while measuring, and both change the shape of the feature:**
+1. **`SourceFile` is single-root by construction** — keyed by `rel_path`, *"relative to the source
+   dir"*, with no root column. "Add documents from anywhere" is a **schema** change, not a UI one.
+2. **Delete bins the user's file.** `delete_document` moves the source to the Recycle Bin *first*
+   (ADR-014). Safe today because the folder is Provenote's own; the moment a document can be
+   registered in place, deleting it takes a file out of the user's Zotero folder.
+
+So the innocuous-looking question *"where does an added document live?"* is an ADR with a schema
+consequence and a delete-semantics consequence — **queued as ADR-046**, and it also absorbs the
+separately-queued *"library-only delete"* checklist row, which turns out not to be a separate item
+at all. Recommendation recorded: copy-in for v1, with the reference model *designed* in the ADR so
+the planned Zotero adapter is not later found to be blocked on a decision nobody wrote down.
+
+**A second track that needs no decision.** Making ingestion easy makes KI-47 urgent: the shipped
+installer has no OCR, so a scanned PDF becomes a 0-chunk `broken` document with no explanation.
+Today that is hidden behind a CLI most users never run. The plan detects it **at add time** and
+says so in the review sheet, and notes that Track B beats most of Track A on value if the ADR
+stalls.
+
+**Wireframes are in the plan** (empty state · review sheet · per-file indexing progress · the two
+Settings changes), ASCII so they diff and survive in git. The review sheet is the load-bearing one:
+nothing is copied or indexed before the user sees per-file verdicts, and the unsupported rows carry
+`get_format_status`'s advisory **verbatim** — that string already exists and already names the fix.
+
+**Rejected alternative.** *Writing the spec now.* `docs/ui-checklist.md` says this item "needs a
+grill to scope" and it is right — nine open branches are listed in the plan (duplicate rule, folder
+recursion depth, mid-batch copy failure, batch caps…). Writing a contract over unresolved branches
+is how a spec becomes fiction. Route recorded: **grill-me → ADR-046 → `docs/specs/
+feature-add-documents.md` → ROADMAP/ui-checklist rows → build**.
+
+**Explicitly out of scope**, with owners: P2's LLM-assisted ingestion (quality, not friendliness),
+P7's settings reorganisation (only the folder picker and its relabel are taken here), the Zotero
+adapter, and ADR-039's OCR recovery.
+
+---
+## 2026-08-20 (8) — the three extraction defects are fixed, and the tripwires fired on cue
+
+**What changed.** `extractors.py`: a new `_soup_to_markdown` helper, shared by `extract_epub` and
+`extract_html`. All three defects found by the committed fixtures are fixed; the four
+`xfail(strict=True)` markers are gone and their tests are plain regression guards.
+
+**Fixed at zero cost, because the blast radius was measured first.** The corpus is **97 documents,
+97 PDF — zero EPUB, zero HTML**. Only those two formats reach the BeautifulSoup path (PDF goes
+through PyMuPDF4LLM, DOCX/ODT/RTF through their own libraries), so **no document needed
+re-ingesting**. Entries (1) and (5) deferred these as "decisions, not patches" on the ADR-042
+re-ingest cost — correct in general, but that cost is *currently zero* and only ever grows. Doing it
+before ingestion gets easy is the cheapest this will ever be.
+
+**The fixes.**
+- **EPUB nav** — skip `EpubNav` items in the `ITEM_DOCUMENT` loop. The generated navigation
+  document is a manifest item like any other, which is why it was being emitted as body prose.
+- **`<head>`** — added to the decompose list, so a page or chapter `<title>` can no longer land
+  above the real `<h1>` as a bare line.
+- **Inline fragmentation** — `unwrap()` every inline tag, then `soup.smooth()`, *then* `get_text`.
+  The separator stays `
+`: it is what keeps `<p>`, `<li>` and headings apart, and changing it
+  would have run blocks together. **`smooth()` is the load-bearing call** — without it the newline
+  simply moves from the tag boundary to the boundary between the adjacent text nodes an unwrap
+  leaves behind, and nothing improves.
+
+**One helper, not two.** The two extractors held the same rule twice and **had already drifted** —
+HTML dropped page chrome and EPUB did not. That is the exact shape of the ADR-013 display bug fixed
+on 2026-08-19, so unifying them was the point rather than a tidy-up. EPUB consequently gains chrome
+removal and `<head>` removal it never had; three new tests pin that, using chapter markup the
+committed fixture deliberately does not carry.
+
+**The strict xfails did their job.** All four flipped to failing XPASS the moment the helper landed
+— the suite refused to let a fixed defect sit behind a stale marker. Converting them to plain
+assertions was the mechanical last step, which is precisely the workflow `strict=True` exists to
+force.
+
+**Also pinned:** that block elements *still* separate after inline unwrapping. That is the one way
+this fix could have gone wrong, so it is asserted rather than assumed.
+
+**What it opens.** `extract_epub` still parses XHTML with the `lxml` **HTML** parser
+(`XMLParsedAsHTMLWarning`, two per run) — correct output today, but a parser choice nobody has
+decided. Both extractors still emit long runs of blank lines that nothing collapses. And the
+fixtures now guard formats the live corpus does not contain, which is the point: the guard is in
+place *before* the first EPUB arrives.
+
+---
+## 2026-08-20 (7) — a ledger of when each aspect of the project was last actually reviewed
+
+**What changed.** New `.claude/REVIEWS.md`, and a fifth row in `AGENTS.md`'s coordination list
+pointing at it. Six aspects — documentation/presentation, backend, frontend, unit testing, the cpc
+system (lint, gates, CI/CD, vault), UX/UI + MCP — each with a cadence, a last-reviewed date, and a
+log entry recording what that pass did **not** cover.
+
+**Why a new file rather than a section of the baton.** `SESSION.md` is append-only with a 10-entry
+cap; a cadence table needs to be *updated in place* and to survive rotation, and it would have been
+archived out of existence inside two weeks. The DEVLOG is the wrong home for the opposite reason —
+it records changes, and the useful signal here is the **absence** of one.
+
+**The design decision that makes it worth having: `never` is a legal value, rendered as loudly as a
+date.** Seeded honestly from the record rather than from optimism, and two rows came back `never`:
+- **Backend code** — no dedicated pass is recorded, ever. Feature work and incidental fixing, yes;
+  a read end to end, no. `KNOWN_ISSUES.md` shows where that lands — nine tracked defects in
+  ingest/extraction alone.
+- **Frontend code** — never *as a code pass*. 2026-08-19 was a live behavioural review of one
+  feature, which is a different thing, and recording it as "frontend reviewed" is exactly the
+  overstatement this file exists to prevent.
+
+Two more rows are marked **partial** for the same reason: the 2026-08-19 cpc pass audited gate
+wiring only (CI, the lint rule set and the vault were untouched), and **MCP has never been reviewed
+because it does not exist** — the Global CLI + MCP server is parked (`docs/ROADMAP.md`, user call
+2026-07-13). An empty cell there would read as an oversight rather than as a fact.
+
+**Rejected alternatives.** *A section inside `SESSION.md`* — see above; the cap kills it. *Tracking
+it in the repo* — it is working state (ADR-029), so it lives in `.claude/` with the rest; the file
+says how to move it under `docs/` if it should ever be public, and nothing depends on the location.
+*Recording only completed reviews* — that reproduces the blind spot the file exists to remove.
+
+**Flagged for the cpc default template**, as the user asked, with a section at the foot naming the
+two properties that must survive generalisation: `never` as a first-class value, and every log
+entry stating its own gaps. A partial review recorded as a bare date reads as full coverage six
+months later, which is worse than no entry at all.
+
+**One thing it caught immediately.** `AGENTS.md` said "All four are local-only working state" about
+a list whose third item is `docs/DEVLOG.md` — which is tracked. Corrected while adding the fifth
+row.
+
+---
+## 2026-08-20 (6) — a fake document id read as a secret; fixed at the source rather than in the baseline
+
+**What changed.** One id in `tests/unit/test_commands_formatters.py`:
+`"abcdef0123456789abcdef0123456789"` became `"document-under-test-000000000000"`.
+
+**Why.** The `detect-secrets` pre-commit hook failed on the change set. The finding was a **Hex
+High Entropy String** — a 32-character hex document id invented as a test fixture. Not a secret,
+but indistinguishable from one by entropy.
+
+**The fix was to stop generating the false positive, not to record it.** `git add .secrets.baseline`
+was the offered path and would have worked, but a baseline entry carries a `line_number`: it goes
+stale the moment anything above it moves, and the next contributor inherits a suppression whose
+subject they cannot locate. The other builders in that file already use patterned ids
+(`f"{name}aaaa…"`, `"f"*32`, `f"{i:032d}"`) and none of them trips the detector; this one was the
+odd case, so it was made to match. `.secrets.baseline` is unchanged — no new suppression exists.
+
+Commented at the site, because the reason a test id avoids hex is not self-evident and the obvious
+"tidy-up" is to put it back.
+
+**Verified:** the full hook set passes over the change set (ruff · ruff format · bandit ·
+detect-secrets · hygiene), and `.secrets.baseline` shows no diff.
+
+---
+## 2026-08-20 (5) — extraction checked against committed documents, and the third defect that found
+
+**What changed.** New `tests/fixtures/documents/` holding a real `treatise.epub` and a
+hand-authored `article.html`, a `make_fixtures.py` regenerator, a README, and
+`tests/unit/test_extraction_fixtures.py` (28 passing, 4 xfailed). `.gitattributes` gains
+`*.epub binary`.
+
+**Why, and it is the gap the morning's work admitted to.** `test_extractors_formats.py` builds each
+fixture with the same library that reads it back, and says so in its own docstring: a round-trip
+cannot prove anything about files from *other* producers. These files are **frozen artifacts** —
+once committed they stop tracking what `ebooklib` emits today, so the assertions keep describing
+what a real file on disk does.
+
+**They immediately found a third defect, and it is the worst of the three.** `get_text(separator=
+"
+")` breaks a line at **every inline tag boundary**, so `Emphasis <em>inside</em> a sentence`
+arrives as three lines. It affects EPUB and HTML alike. Scientific prose italicises constantly —
+gene names, species, emphasis — so this shatters sentences across the corpus, degrading both the
+embedding and the BM25 token stream, and **no health check would ever flag it**: every character is
+still present. The two already recorded in entry (1) are confirmed here on real files rather than
+inferred: the EPUB nav document lands as trailing prose under a heading repeating the book title,
+and the HTML `<title>` lands as the first line, above the real `<h1>`.
+
+**All three are pinned as `xfail(strict=True)` — the first use of xfail in this suite.** Asserting
+the broken output would cement the wart as the contract; a plain comment rots. `strict=True` makes
+the test **fail when the bug is fixed**, so whoever fixes it is told to come back and update the
+expectation. None is fixed here because each changes extraction *content* and therefore `doc_hash`
+for every affected document (ADR-042) — decisions, not patches.
+
+**`strict=True` earned its keep within the hour: it caught a bad test of mine.** The first draft of
+the sentence-fragmentation test normalised newlines away before asserting, which rejoins the
+fragments — so it passed against the broken output and XPASSed loudly instead of sitting there
+green and worthless. It now asserts per line.
+
+**Two smaller things the fixtures forced.** `*.epub binary` in `.gitattributes`: `* text=auto`
+decides by heuristic, and a zip that gets line-ending normalisation is an unreadable file — the
+suite also asserts the committed container still starts with `PK`. And the `&minus;` sign in the
+HTML fixture is referred to in the test as `chr(0x2212)`, because a literal U+2212 is exactly what
+ruff's RUF001 confusables rule rejects — the same rule that stopped `test_docs_encoding.py` quoting
+its own evidence.
+
+**Rejected alternatives.** *Generating these at test time too* — that is the existing file, and it
+is the thing this one exists to complement. *Asserting current (broken) behaviour* — it reads as
+approval and gives a future fixer nothing. *Fixing the three defects here* — they change every
+affected document's identity; that belongs with a re-ingest plan, not a test commit.
+
+**What it opens.** A decision on all three defects, which is now a single conversation with three
+tripwires attached. Also noted while reading real output: bs4 raises `XMLParsedAsHTMLWarning` on
+EPUB chapters (`extractors.py:152` parses XHTML with the `lxml` HTML parser), and both extractors
+emit long runs of blank lines that nothing collapses.
+
+---
+## 2026-08-20 (4) — the CLI's formatters and the eval harness's one adapter
+
+**What changed.** New `tests/unit/test_commands_formatters.py` (42 tests) and
+`tests/unit/test_eval_adapters.py` (21 tests). `commands.py` was **16%** — the largest single
+uncovered block in `src/` at 215 lines — and `eval/adapters.py` **26%**.
+
+**`commands.py` is the CLI's entire user-facing surface and is almost all pure.** `test_commands.py`
+covered `parse_command` and a few `execute_command` branches; every formatter had nothing. The
+interesting behaviour in them turns out to be **truncation** — six independent caps (authors 50,
+titles 80, keywords 10, citation snippets 120, external references 30, graph nodes 25), each
+deciding how much of the truth the user sees. Where the code reports what it hid, that report is
+now asserted; where a cap changes the output shape entirely, both sides are. Also pinned: health
+grouping is worst-first (a broken document must not sort below a healthy one), a null health lands
+in `unknown` rather than raising, absent optional fields are omitted rather than rendered as empty
+labels, and the mermaid graph escapes double quotes in a filename — an unescaped one ends the label
+early and corrupts the whole diagram.
+
+**`eval/adapters.py` is small but structurally special.** Its own docstring calls it *the only
+module in `doc_assistant.eval` that depends on the rest of `doc_assistant`*, so it is the seam
+Feature 5 cuts along. The two things it owns are both silent-corruption risks rather than crashes:
+a **fresh `TokenCounter` per query** (a leaked one would make every row after the first overstate
+cost while still looking plausible) and the **citation list** that `citation_overlap` — the
+harness's *zero-variance* scorer — reads. Deduplication, first-appearance order, skipping chunks
+with no filename, and `0 tokens -> None` (unknown cost, not free) are now all asserted.
+
+The pipeline is a hand-rolled ~20-line stub, not a `Mock`: it documents the shape an adapter must
+present, and unlike a `Mock` it fails when a refactor changes that shape instead of accepting any
+call at all.
+
+**Rejected alternative.** *Testing `execute_command`'s remaining branches* — they reach SQLite,
+DuckDB and config, so they are integration tests wearing a unit test's clothes. The formatters they
+delegate to are where the logic and the line count both are.
+
+**A tooling trap worth writing down.** `pytest --cov=doc_assistant.eval.adapters` (dotted target)
+**fails at collection** with `ModuleNotFoundError: No module named '_duckdb._sqltypes'`. Coverage
+imports the named module very early, which pulls the `doc_assistant.eval` package and `store.py`'s
+top-level `import duckdb` into a partially-initialised C extension. duckdb 1.5.3 imports fine
+normally and the full suite passes; only that invocation trips. Use `--cov=src/doc_assistant`
+(path form) — which is what the full run uses — and do not go hunting for a duckdb bug.
+
+---
+## 2026-08-20 (3) — the frontend's largest untested module, tested with the runner already in the repo
+
+**What changed.** New `apps/desktop/src/lib/graph/forceLayout.test.ts` (19 tests). The frontend
+suite goes **108 to 127**, still `node --test`, still zero new dependencies.
+
+**Why this module.** At 189 lines `forceLayout.ts` was the largest untested file in the frontend,
+and its own header states the case for testing it: *"the layout is the risk; determinism is the
+safety net"*. The safety net had nothing checking it. It is also pure — node ids in, a
+`Map<string, Point>` out, no DOM — so it needs none of the harness the repo lacks.
+
+**Asserted as properties, not as a golden snapshot.** Every claim the module makes about itself in
+prose is now a test: identical input gives identical positions; a different `seed` gives a
+different layout (without that second half the first would also pass if the seed were ignored and
+the layout were merely constant); no coordinate is ever non-finite, including the dense all-pairs
+case the EPS floor exists for and a 40-node graph past the spec's 21-node hub; every node lands
+inside the padded box, and a larger padding demonstrably shrinks the occupied area; unknown edge
+endpoints are ignored, so an unfiltered edge list lays out identically to a pre-filtered one, which
+is what the docstring invites callers to rely on. A snapshot of 300 cooled iterations would break
+on any tuning change while proving none of that.
+
+**The degenerate cases are the robustness contract in the graph**: zero nodes returns an empty map
+instead of throwing, one node is centred, one node with a self-edge stays finite, and two nodes
+never end up coincident (they would render as a single dot). Exactly one behavioural claim is made
+— a bonded pair settles closer than an unbonded one — and it is kept deliberately weak, because
+anything tighter is a snapshot of the cooling schedule wearing a property's clothes.
+
+**Rejected alternatives.** *Adding vitest + jsdom + @testing-library/svelte first* — it is the
+right next step and the standing gap is real (**39 `.svelte` components cannot be tested at all**
+under `node --test`, which is why yesterday's CSS source-order bug and the four-read-path merge bug
+were both caught by eye rather than by a test), but it is a tooling decision with a lockfile
+change, and it should not ride along inside a test-writing commit. `forceLayout` needed none of it.
+*Testing `conversations.svelte.ts` in the same pass* — it is the other module worth covering (it
+owns the new `archiveConversations`), but it is `$state`-backed and fetch-driven, so it wants the
+harness decision made first.
+
+**What it opens.** The component harness question, unchanged and now the largest single gap in the
+project's testing. Also worth noting for whoever takes it: the frontend runner is
+`node --test src/**/*.test.ts`, so a test file placed outside `src/` runs nowhere and reports
+nothing.
+
+---
+## 2026-08-20 (2) — the two other untested user-facing read paths: the chat router and the citation graph
+
+**What changed.** New `tests/unit/test_query_router.py` (45 tests) and a `graph_subgraph` section
+appended to `tests/unit/test_library.py` (9 tests). `query_router.py` goes **29% to 100%**;
+`library/citations.py` **73% to 99%**. Same ranked coverage pass that produced the extractor work
+above; these were the next two entries on it where the uncovered code is read by a user.
+
+**`query_router` was the lowest-covered module that runs on a user request.** `ChatController`
+consults `is_library_query` on *every* message (`chat_controller/controller.py:305`); a match
+short-circuits the entire RAG pipeline and `answer_library_query`'s string is shown verbatim.
+Neither half had a test.
+
+The load-bearing part is the negative lookahead `_NOT_TOPICAL`, which is what keeps *"show my
+papers about RAG"* out of the metadata branch. If it regresses, a content question silently
+receives a document count — no exception, no log line, no way to notice except reading the answer.
+**The test asserts both halves of that difference**: the bare phrase must match *and* the
+qualified one must not. Asserting only the rejection would keep passing if the pattern stopped
+matching altogether, leaving a green test guarding nothing — which is the failure mode that made
+KI-41's chunking sweep compare one configuration with itself six times.
+
+Also now pinned: the empty-library branches (`answer_library_query` on 0 documents names
+`data/sources/` rather than returning a bare zero), the "documents exist but have no add dates"
+case that refuses to nominate a latest, the `and N more` truncation on long broken lists — a
+silent cap would read as *these are all of them* — and, over every phrasing the router claims,
+that an answer actually comes back. That last one is the contract *between* the two functions,
+which is where a blank reply to the user would come from.
+
+**`graph_subgraph` had 0% coverage** and is one of the four surfaces KI-45 names as still trusting
+`Citation.target_document_id` unguarded — the References block re-checks resolutions at read time,
+the citation graph does not. It is also the only traversal in the module that walks both
+directions and dedupes. Pinned: exactly one centre, both directions at depth 1, unresolved
+citations excluded (a bibliography is mostly external — 36 references and 0 library matches on the
+recovered scan), `depth` actually bounding the walk, repeated citations collapsing to one edge
+(nine of one document's eleven resolutions pointed at two papers), termination on a cycle, and an
+unknown id returning an empty graph instead of raising into the panel.
+
+**One line is deliberately left uncovered.** `citations.py:343` — the `if nid in visited: continue`
+guard — is unreachable as the traversal is written: a node only enters `next_frontier` when it is
+not already in `nodes`, and every visited node is in `nodes`, so no node can be queued twice. It is
+defensive, and deleting a defensive guard to buy a coverage point is the wrong trade. Recorded here
+so the next coverage pass does not re-litigate it.
+
+**Rejected alternatives.** *A new `test_citations_graph.py`* — `temp_database` is defined locally
+in `test_library.py`, and copying a 40-line engine-patching fixture to a second file is how the two
+copies start drifting (the same argument that made `effective_metadata` one function yesterday).
+*Patching `doc_assistant.library.list_documents` for the router tests* — `query_router` binds both
+names at import, so patching the source module leaves this module's references untouched; the
+patch targets `doc_assistant.query_router`, the trap `chat_controller/__init__.py` already
+documents.
+
+**What it opens.** The router's regexes are still English-only and pattern-based; the tests pin the
+behaviour, not its adequacy. And `graph_subgraph` is now tested but still *unguarded* — KI-45's
+false resolutions reach it exactly as before. A test that pins current behaviour is not a fix, and
+the write-side precision fix is still the thing that matters there.
+
+---
+## 2026-08-20 — five of the seven supported formats had no extraction test at all; now they do
+
+**What changed.** New `tests/unit/test_extractors_formats.py` (37 tests). `extractors.py` goes
+from **44% to 91%** line coverage. The only lines still uncovered are `extract_pdf_pymupdf`'s body
+(92-103, 262), which needs a committed PDF.
+
+**Why, measured before writing anything.** A coverage pass over the whole suite (1,839 tests, 89%
+overall) put `extractors.py` at the bottom of the ranked list with **lines 141-220 never executed
+once** — that range is the entirety of `extract_epub`, `extract_html`, `extract_docx`,
+`extract_rtf` and `extract_odt`. `test_extractors.py` covered format *detection*, `.txt`/`.md`, and
+the PDF placeholder strip; five of the seven extensions in `SUPPORTED_EXTENSIONS` had no test
+touching their extractor. That is the app's front door, in the subsystem with the most tracked
+defects (KI-14/26/34/40/42/43/44/46/47 — nine issues, three of the five currently open).
+
+**What the tests assert**, beyond "output is non-empty": the structure heuristic per format (DOCX
+style names to `#`/`##`/`###`; the EPUB Dublin Core title leading as an H1; HTML heading
+conversion), the one content decision `extract_html` makes (script/style/nav/footer are
+decomposed — stated per tag, so a future edit to that tuple fails on the tag it dropped), RTF
+control-word stripping and ANSI escape decoding, dispatch through `extract_to_markdown` for all
+five, `.htm` and `.html` reaching the same extractor, and `get_format_status`'s advisories.
+
+**Every format asserts a non-ASCII round-trip**, because that is the failure this project has
+already shipped: nothing on Windows defaults to UTF-8 (CONTEXT.md section 9), four tracked docs
+were committed double-encoded, and an extractor that mangles an accent produces garbage that still
+*reads* as prose — so it passes ingest, reaches the chunk store, and nothing downstream notices.
+`test_html_reads_as_utf8_regardless_of_the_ansi_codepage` pins the explicit `encoding="utf-8"` on
+that read specifically.
+
+**Two defects surfaced while writing the fixtures. Neither is fixed here** — they are extraction
+*content* decisions, not test bugs, and fixing them changes `doc_hash` for every affected document
+(ADR-042), which is not a thing to do inside a test commit:
+- **EPUB pulls the navigation document into the body.** `get_items_of_type(ITEM_DOCUMENT)` includes
+  the generated nav/TOC item, so a book's markdown ends with its own table of contents as prose.
+  The tests assert title, headings and body are present; they deliberately do **not** assert the
+  nav text is absent, so the wart is not cemented as expected behaviour.
+- **`extract_html` leaks `<head><title>` into the text.** Only script/style/nav/footer are
+  decomposed, so `soup.get_text()` emits the title as a bare leading line, indistinguishable from
+  body prose. Same shape as the page-furniture problem behind the keyword layer's singleton rate.
+
+**Rejected alternatives.** *Committed binary fixtures* — better at catching producer variance, but
+an opaque blob in a public repo, and every writer library here (`python-docx`, `odfpy`,
+`ebooklib`) is a **base** runtime dependency, so an in-test fixture can never skip for a missing
+library and shows the reader the input beside the required output. HTML and RTF are hand-authored
+markup, so those two are producer-independent regardless. *Conditional skips per format* — the
+suite has 8 skip markers and all 8 are environment-conditional; a skip here would hide exactly the
+breakage the file exists to catch. *A literally empty EPUB body for the zero-content case* —
+`ebooklib` cannot serialise one (lxml raises "Document is empty" building the nav), so it would
+have tested the fixture builder; a whitespace-only paragraph tests the extractor.
+
+**What it opens.** These are round-trips through the same library that wrote the file, so they
+cannot prove the extractors survive files from *other* producers — the variance that broke tier-1
+citation parsing (KI-45). Said explicitly in the module docstring rather than left implied. Closing
+the PDF gap (92-103) needs a committed fixture and is the same binary-in-a-public-repo decision,
+deferred. The two leaks above want an issue each before anyone re-ingests.
+
+---
+## 2026-08-19 (3) — a metadata override applied in the Library grid and not on the document's own page
+
+**What changed.** ADR-013's `override ?? auto` merge now lives in one function,
+`effective_metadata`, and **all four read paths that display a document use it**:
+`list_documents` (which already merged, inline), `get_document_details`, `get_document_chunks`
+(the document page's own header) and `list_document_figures`. Three of the four did not.
+
+**How it surfaced.** Correcting the OCR-derived title on the recovered scan
+(*"A Revised Neuroanatom of Frontal—Subcortical Cireuits"* → *"…Neuroanatomy of
+Frontal-Subcortical Circuits"*) wrote the override correctly and changed nothing on the page it
+was edited on. The list endpoint returned the corrected title; the detail endpoint returned the
+extracted one. `list_documents` merged inline, `get_document_details` read `doc.title` straight —
+the same rule written twice, and the second copy was simply missing.
+
+**Worth noting about the write path: it was already right.** The PATCH cleared `year_override`
+because the submitted 2001 equalled the extracted 2001 — ADR-013's "an effective value equal to the
+default clears that field" — so only title and authors persisted. The bug was entirely on the read
+side, which is why editing appeared to half-work rather than fail.
+
+**One path deliberately does NOT merge.** `document_years` feeds the year-aware epistemics rule
+(G3), which is an analysis of what the corpus *says*, not a display of what the user prefers to
+see. Letting a metadata edit move a `superseded_trend` verdict would change a knowledge-layer
+result for a reason no baseline records — that is a decision with an eval behind it, not a
+consistency fix. Said in a comment at the call site and pinned by a test.
+
+**Guarded by eight tests**, the load-bearing one being *every display surface agrees on the title*
+— stated once over all four paths, so a fifth surface added without the merge fails in the suite
+rather than in a screenshot. Also pinned: no override means both report what
+extraction found (the override stays additive), and a title-only override leaves authors and year
+extracted.
+
+**Rejected alternative.** *Merging in the detail function too* — that is the fix that created the
+bug: two copies of one rule, drifting the moment someone touches one. The helper is the point, not
+the call site.
+
+**What it opens.** Nothing else reads `Document.title` directly for display — checked — but the
+same shape exists wherever an additive sidecar has a "merge for display" step. Also unresolved: the
+extracted values under the override are still the OCR ones, which is correct (ADR-043 keeps
+received content verbatim; the override is a separate, inspectable layer) but means a re-extraction
+never silently corrects them.
+
+---
+## 2026-08-19 (2) — chat select mode reviewed: the tick was stacked ON the row by a CSS ordering accident, and the reported "connection issues" were another project's dev server
+
+**What changed** (`Sidebar.svelte`, `App.svelte`, `conversations.svelte.ts`), from a live review:
+
+- **The tick now sits left of the title, email-client style.** It had been rendering *above* the
+  row and centred, clipping names. The markup was always right — the tick precedes the body in the
+  DOM — and the cause was CSS: the element carries both `.pickrow` (`display:flex`) and `.rowmain`
+  (`flex-direction: column`, for the normal row). Equal specificity, so **source order decided it**,
+  and `.rowmain` is defined 60 lines later. Fixed as `.rowmain.pickrow` — a two-class selector, so
+  the row layout no longer depends on where either rule sits in the file. Verified in the running
+  app: `flex-direction: row`, tick at x=15 and body at x=39, vertically centred, and **all 100 rows
+  share one left edge**, with titles truncating on `text-overflow: ellipsis` instead of being cut.
+- **The action bar is sized like a toolbar** (0.5rem padding, 0.8rem type, 41px tall against ~24px)
+  — it is the only way out of a destructive mode and it read as a caption.
+- **"Done" is gone.** The header toggle already reads *Leave select mode* and does the same thing;
+  two controls for one action, and the redundant one sat where a confirm button would.
+- **Bulk archive added**, mirroring bulk delete. It is a *toggle*: when every ticked chat is already
+  archived the button reads **Unarchive**, which is what the "Show archived" view needs. Applied
+  immediately rather than through a confirm — archiving is reversible and the toggle right below it
+  brings them back (delete keeps its confirm). `archiveConversations` PATCHes concurrently and
+  refreshes the list **once**: N single-archive calls would each refresh, rerendering the sidebar
+  under the user mid-action. A failure is logged per conversation and does not abandon the rest.
+
+**Verified end to end in the running app, and the data left exactly as found** — ticked one chat,
+Archive, confirmed archived server-side; re-selected it under "Show archived", confirmed the button
+now read *Unarchive*, clicked it, confirmed 100 conversations / 0 archived again.
+
+**The "connection issue inside library" was not a defect in this app.** Reported as
+`TypeError: Failed to fetch` on connections, chunks, figures and references. The API was healthy
+throughout (200s in ~14 ms directly on 8001). **Port 1420 was being served by a different
+project's dev server** — the page at `localhost:1420` is titled "Scribe", and
+`localhost:1420/api/health` returns **404 with that project's HTML**. Provenote's Vite owns `/api`
+as a proxy to 8001; with the port taken (and `strictPort: true`), an already-open Provenote window
+keeps rendering while every later `/api` call goes to a server that has never heard of it. Same
+cause for the graph panel. Re-verified on the alt port from `.claude/launch.json`: connections,
+figures, references and the document payload (66 parent blocks) all 200.
+
+**Two diagnostic notes worth keeping.** `curl http://127.0.0.1:1420` reported nothing while
+`localhost:1420` answered — Vite binds `::1` only, so an IPv4 probe says "dead" about a server that
+is running; check both before concluding a process is down (I concluded it once and was wrong).
+And the *shape* of the error was the tell: `Failed to fetch` is connection-level, so it points at
+who is answering the port, not at the handler.
+
+**Rejected alternatives.** *Setting `flex-direction: row` on `.pickrow` alone* — it would work today
+and break again the next time a rule is appended below it. *A checkbox `<input>`* — the whole row is
+the target on purpose (a 15px hit area in a list is poor), and the tick is presentational. *A
+confirm for bulk archive* — reversible actions that ask twice train people to click through
+confirms. *Leaving "Done"* — the user's point stands: the escape hatch already exists above it.
+
+---
+## 2026-08-19 — the corpus's one broken document is recovered (96 → 97 retrievable), and the reason it was broken is not what it looked like
+
+**What changed.** No code. `middleton-2001.pdf` — 15 pages, `extraction_health='broken'`,
+`chunk_count=0`, the only unhealthy document in the library — is now **healthy, 52 chunks, and
+retrieved rank 1** on three of the RG-025 baseline's queries against the full 97-document library.
+`data/library.db.bak-20260819-preocr` is the pre-change backup.
+
+**The finding is the trigger, not the text.** RG-025 measured this document's OCR a fortnight ago
+and concluded the text was worth retrieving; that was never in doubt. What is new is that **the
+shipped extractor produced it on its own**: same code, same pinned dependencies, same PDF, 0
+characters on 2026-08-08 and **34,600 today**. PyMuPDF4LLM finds a `tesseract` binary on `PATH` and
+OCRs pages with no text layer. Nothing in the repo changed — the box's `PATH` did. Filed as
+**KI-47**, because extraction output is supposed to be a function of things the cache fingerprint
+can hash, and an external binary is not one of them: the stale 349-byte extraction stayed "fresh"
+forever with a fingerprint that still matched the live one to the digit. **The installer ships no
+OCR** (`tesseract` is a system binary; the spec, README and setup docs never mention it), so the
+app's real behaviour on a scan is still the 0-character one and this box is the outlier.
+
+**A second defect fell out of the fix.** `doc_hash` hashes the extracted *text*, so recovery mints a
+**new document identity** — and the old row survived a full cleanup pass, leaving the file in the
+library twice. `cleanup_orphans_sqlite` builds its candidate set from **Chroma metadata**, so a
+document with **zero chunks is invisible to the orphan sweep** and its row can never be classified
+stale. That is the shape of every recovery, not a one-off: a broken document has no chunks by
+definition. Filed as **KI-46**; the stale row was removed with the same `session.delete(row)` call
+cleanup uses (FK cascades drop the outbound enrichment), guarded on `chunk_count == 0` plus a
+healthy sibling — **not** through the app's delete path, which would have sent the source PDF to the
+Recycle Bin (ADR-014).
+
+**One measured improvement over the 2026-08-08 run, unexpectedly.** That baseline's single
+highest-value carried item was *de-hyphenate line-broken words* — raw Tesseract left **88** of them
+(`cortico-` + `spinal` never matching a query for `corticospinal`). This path leaves **0**: mean
+line length 250 characters, 3 lines ending in a hyphen, and `corticospinal` present intact. The
+reflow defect that motivated the work does not occur here.
+
+**Rejected alternatives.** *`--rebuild`* — it wipes the vector store and re-embeds all 97 documents
+to fix one. *Hand-running Ghostscript + Tesseract and pasting the text in* (what the baseline did)
+— unreproducible, and it would put unmarked OCR prose in the library by a path no runner owns.
+*`delete_document`* — bins the source file. *Fixing the cleanup blind spot inline* — a real change
+to a core ingest path, which deserves its own tests rather than riding on a data repair.
+
+**What it opens.** The corpus is now **97 retrievable documents, digest changed** — so by the
+comparability layer's own rules every earlier run (96 documents) is *not comparable* to anything run
+from here, and `compare_runs` will now say so instead of leaving it to memory. ADR-039 is still
+**proposed**: what happened today is recovery that is neither opt-in nor marked as OCR-derived,
+which is exactly what that ADR wanted to avoid — recovered text now enters as ordinary prose that
+retrieval and citation cannot distinguish from a real text layer.
+
+---
+## 2026-08-18 (2) — a committed baseline now carries its own evidence, so it can be checked without the run store
+
+**What changed.** New `eval/baseline_doc.py` + `scripts/emit_baseline.py` (+ `just emit-baseline`)
+write a baseline document **from the run record**, and `compare_runs --against <file>` checks a
+later run against that document.
+
+**The gap.** `tests/eval/baselines/` is the committed reference record; `data/eval.duckdb` is
+gitignored. So the numbers travel and the evidence does not — a fresh clone holds ~30 documents
+whose setup sections were typed by hand, and nothing can contradict them. That is exactly where the
+last error hid: the Haiku-vs-llama split across the 2026-08-08 arms lived only in prose, and prose
+is recoverable by a human reading the right file and by nothing else.
+
+**What the emitter writes, and what it refuses to write.** Settings, corpus composition, generator,
+judge, and the aggregate table — copied from `config_json`, never re-derived — plus a visible fenced
+JSON provenance block (visible, not an HTML comment: the reader should see exactly what the checker
+reads). It **refuses to emit from runs that are not one experiment**, because a baseline averages
+its trials and mixing two would present them as one number; the refusal prints the comparability
+report that explains why, and exits 4. It writes `TODO` for the judgement, because the caveats are
+what make a baseline worth keeping and no emitter can derive them. A key the runs disagreed on is
+**dropped**, not taken from the first trial, and then renders as "not recorded" — the document
+cannot vouch for it.
+
+**Older baselines parse to nothing, on purpose.** `parse_provenance` returns `{}` for a document
+with no block, a malformed block, or a JSON block that is not provenance — so `--against` an
+existing hand-written baseline reports *unknown across the board* and says the document never
+recorded those facts. Verified against the real folder: every committed baseline parses without
+raising, and the check against `chunking_sweep_private_2026-08-08.md` names 20 unrecorded settings
+rather than inventing agreement.
+
+**Verified end to end, $0.** Emitted a baseline from the two identical-settings validation runs,
+then checked runs against the committed file: the matching run exits **0**, the qwen2.5:3b run exits
+**4** with `contains_all` not comparable and `citation_overlap` still fine, and the hand-written
+baseline path exits **3** with the "carries no provenance block" note. 27 new unit tests.
+
+**Rejected alternatives.** *An HTML-comment block* — hidden from the reader, which invites the
+document and its record to drift; this layer exists because a claim and its evidence drifted apart.
+*Emitting the caveats too* — an emitter can produce a table, not a judgement, and a baseline that is
+only numbers is what the project already has too many of. *Taking the first trial's value when
+trials disagree* — it would state something no reader could act on. *Raising on a baseline with no
+provenance* — a checker that rejects the entire existing corpus of baselines is a checker nobody
+runs; `{}` and an honest "unknown" is the useful behaviour. *Back-filling provenance into the ~30
+existing documents* — the same rule as everywhere else here: an inference must not become
+indistinguishable from a recording.
+
+**A document that argues with itself is caught too.** `table_drift` compares the visible results
+table against the document's own provenance block and reports any row where they disagree — the
+small nasty failure where someone tidies a number in the pretty table, or copies a document and
+edits it, while the machine block still carries the original. Verified by tampering with an emitted
+baseline: the check names the scorer and both values before the verdict, because the reader needs
+to know which half of the document they have been quoting.
+
+**What it opens.** The existing baselines stay unpinned unless someone re-runs and re-emits them,
+which is a deliberate non-goal — their numbers are still valid readings, they simply cannot be
+machine-checked. No gate *requires* a new baseline to carry a block, so the discipline is still a
+habit rather than a rule; and drift is only checked on the mean, not on the std or the counts.
+
+---
+## 2026-08-18 — the harness now answers "may these two runs be compared?", per scorer, and says UNKNOWN when nobody wrote it down
+
+**What changed.** Yesterday's entry made a run record what it measured. This makes something *read*
+that record. New `eval/comparability.py` (generic, no app import — it travels with the harness),
+plus `report.compare_runs` / `format_comparability`, a `scripts/compare_runs.py` CLI, a
+`--baseline RUN_ID` flag on `run_eval`, and `just compare`.
+
+**The idea it encodes, which this project had already written by hand twice.** A score depends on a
+*prefix* of the pipeline: cases → index → retrieval → generation. `citation_overlap` and
+`figure_retrieval` read the **retrieved documents** (`output.citations`, `output.raw["retrieved"]`,
+both filled from `pipeline.retrieve` before a token is generated), so they survive a generator swap.
+Everything else reads `output.answer` and does not. That asymmetry is exactly what localised RG-029
+— `citation_overlap` reproduced to the digit while `contains_all` moved — and it is the reasoning in
+the generator caveat at the top of `chunking_sweep_private_2026-08-08.md`. A hand-written caveat
+protects only the reader who opens the right file, so now one differing setting yields **per-scorer**
+verdicts rather than a wholesale pass/fail.
+
+**Three states, and UNKNOWN is the common case, not the corner one.** Of the 75 runs in the live
+store, **not one** records its generator or its corpus. So the honest verdict for almost every
+historical pair is *unknown*, and the layer says so: an unrecorded setting is never assumed to have
+matched, and it is never inferred — not from the run's `note` prose, not from a sibling run. The
+five annotated Haiku trials carry their generator in `note` precisely so that an inference cannot be
+mistaken for a recording, and `--list` shows them as "not recorded" for the same reason.
+
+**Verified against real runs, $0.** Three one-case runs on the live 96-document index over local
+Ollama, two of them differing *only* in generator:
+
+| | `contains_all` | `citation_overlap` | verdict |
+|---|---:|---:|---|
+| llama3.1:8b vs llama3.1:8b | 0.500 → 0.500 | 1.000 → 1.000 | **comparable**, exit 0 |
+| llama3.1:8b vs qwen2.5:3b | **0.500 → 1.000** | 1.000 → 1.000 | **not comparable** on `contains_all`, comparable on `citation_overlap`, exit 4 |
+
+The second row is RG-029 reproduced deliberately: a 3B model "beats" an 8B one by +0.500 on the
+answer score while the retrieval score does not move a digit. Also verified on the real 75-run
+store, where every pair comes back UNKNOWN with the missing keys named.
+
+**`--varying` is the half that makes it useful to a sweep, and it catches KI-41 from the record.**
+A sweep *intends* to differ in one setting, so a bare comparison would object to the experiment
+itself. Declaring the independent variable (`--varying child_chunk_size`) stops that difference
+blocking while **everything else still blocks** — which is the useful direction, because a sweep's
+real risk is that something besides the grid moved. The opposite failure gets its own field and its
+own exit code: a declared variable that came back **identical** means the arms are one configuration
+compared with itself, which is KI-41 exactly (the 2026-06-06 sweep drove its grid through
+environment variables `.env` silently overwrote). Verified on two real runs: verdict `ok`, and a
+banner above the table saying the declared variable did not change, exit `5`. Note the deliberate
+split — those runs *are* comparable; it is the experiment between them that is void, so it must not
+be folded into the comparability status. `sweep_chunking`'s preflight catches this before a run;
+this catches it afterwards, from the record, where a preflight-less runner cannot hide it.
+
+**Two smaller things fell out of building it.** `judge_provider` / `judge_model` are now recorded —
+`llm_judge` grades with a model that is *not* the generator, so two runs can share a generator and
+still have been graded differently; it is the same membership rule as yesterday's keys, and its
+absence would have been an invisible hole in exactly the scorer that costs money. And
+`Store.resolve_run_id` now owns prefix resolution, so `run_eval --baseline` and `compare_runs` cannot
+resolve an id two different ways.
+
+**Rejected alternatives.** *A plain config diff* — it would flag `trial_index` (which differs by
+design between trials of one experiment) and would report a generator swap as invalidating
+everything, including the one number that survives it; the per-scorer prefix is the whole value.
+*Treating an unrecorded setting as unchanged* — that is precisely the assumption RG-029 was, and it
+would return the store to printing two means side by side. *Parsing the `note` prose* to recover the
+five attributed Haiku trials — the annotation exists because a back-filled inference must stay
+distinguishable from a recording. *Suppressing the score tables on a NOT COMPARABLE verdict* —
+informing beats blocking; a suppressed table sends the reader to the raw store, where there is no
+verdict at all. *Comparing every trial against the baseline under `--repeat N`* — the trials share
+their settings by construction, so it would print the same verdict N times. *Folding an
+ineffective variation into the comparability status* — "these runs cannot be compared" and "these
+runs are identical when they should not be" are opposite diagnoses with opposite fixes.
+
+**What it opens.** RG-021 is now closed end to end (record + warn). Not built: nothing *emits* a
+baseline markdown from a run record, so `tests/eval/baselines/` stays hand-written; nothing compares
+a run against a *committed baseline file* (only against another stored run); and the 75 historical
+runs remain permanently unknown, which is a fact about them, not a gap to fill. `sweep_bm25_weight`
+still persists nothing, so it participates in none of this.
 
 ---
 ## 2026-08-17 — an eval run now records the corpus it measured and the generator it used, and a paid one says so before it spends
@@ -2217,491 +3961,3 @@ so the answer is still unproven.
 **What it opens.** Rebuild (sidecar + installer) and rerun in a **fresh** sandbox — the gate should
 now reach the cited turn. Then: the first-launch extraction window deserves its own fix before any
 tester sees it, and the packaging gate should grow a real-document step so this class cannot recur.
-
----
-## 2026-08-03 (3) — v0.4.1: the first installer since June, KI-33 contained before it ships — and **RG-012 Tier-2 still has no evidence**
-
-**What changed.** KI-33 containment (`config.py` default + `SourceEvaluation.svelte`), version 0.4.1
-across **seven** strings, a CHANGELOG entry, `@tauri-apps/cli` added as a devDependency, and two
-release artifacts. User priority for this stretch: *"focus on the binary release … to finally have a
-beta-release"*, with the KI-33 surfacing fix landed first.
-
-**The containment, and why it is a default rather than a deletion.** `EPISTEMICS_MARKERS_ENABLED`
-**true → false** — the same lever R7 used for KI-7 containment, now for a defect one layer down —
-and the strip's coverage + `superseded` chips commented out with the reason at the line, markup and
-CSS together so restoring is one contiguous uncomment. **All three coverage values go, not just
-`contested`:** `ns` and `nc` both derive from `stance_by_doc`, so `corroborated` and `unique` inherit
-the same defect. The strip keeps what is sound — year, relevance score, graph freshness.
-
-**Non-vacuous by construction.** The flip failed **exactly one** test —
-`test_markers_enabled_by_default`, the one encoding the old default. Renamed to
-`test_markers_disabled_by_default` and paired with a new
-`test_markers_still_available_when_explicitly_enabled`, so the suite now pins **both** the new
-default and that the opt-in still works. A containment nobody can prove reversible is a deletion.
-
-**The release.** Sidecar re-frozen on a CPU sync (KI-3): **1545.5 MB**, replacing a **2026-06-24**
-build — pre-rename, pre-icon, pre-ADR-034. Smoke-tested standalone *before* bundling, which is the
-step that catches what tests cannot: `/api/health` in ~30 s, **chunk_count 33,105**, no frozen-import
-failures. Then `Provenote_0.4.1_x64-setup.exe` (**1555.4 MB**) and `Provenote_0.4.1_x64_en-US.msi`
-(1546.7 MB) — the first installers since June and the first carrying the Provenote identity.
-
-**A root cause worth naming: the build recipe had rotted because it was never declared.**
-`npx tauri build` failed outright — `@tauri-apps/cli` was not a devDependency, not global, not
-anywhere. The June installer was built against undocumented machine state, so "how to build the
-installer" was unreproducible the moment that state changed. Now pinned at `^2.11.4` in
-`devDependencies`. **This is the same class of failure as the `uv.lock` miss** — a build input that
-nothing declared and nothing checked.
-
-**⚠ RG-012 Tier-2 IS STILL OPEN, and this session produced no evidence about it.** Two Windows
-Sandbox launches, ~30 minutes: the `.wsb` parses, all four mapped folders resolve, the output folder
-is host-writable, the VM boots and burns CPU — and `LogonCommand` writes **nothing**, even hardened
-to sleep 25 s and then immediately create a file before doing anything else. It is not executing in
-this Sandbox configuration. Root cause unknown. **Nothing here licenses any claim about the
-installer on a clean box**, and the CHANGELOG's *Known limits* says so in the release itself. The
-harness is left at `C:\rg012-host\` (ASCII path on purpose — `.wsb` parsing is unreliable with the
-accented profile path) with a self-contained `rg012-run.ps1` that installs silently, seeds three
-PDFs, ingests, asks one question and writes a PASS/FAIL verdict.
-
-**Machine state touched and restored.** Ollama was rebound to `0.0.0.0` (user-approved) so a sandbox
-could reach it, and is back to **127.0.0.1** with the env var cleared. The venv was CPU for the
-freeze and is back to **`cu130`, CUDA available**.
-
-**Rejected.** Shipping the binary as 0.4.0 — the user's choice, made when the delta was docs-only;
-landing KI-33 first made the binary behave differently from the `v0.4.0` tag, so it was re-raised and
-became **0.4.1**. Fixing the `postcss` advisory (build-time only, via `vite@6`, processes only
-first-party CSS, and a clean fix exists) — deferred rather than applied because it would have changed
-the toolchain underneath the gate run testing that exact build.
-
-**What it opens.** RG-012 Tier-2 needs a path that does not depend on `LogonCommand`: a hand-run in
-the sandbox, computer-use driving the VM, or a real second machine. Until one of them produces a
-cited turn, **this is a beta by its own CHANGELOG**. Then: `npm audit fix`, and the KL1–KL4 plan.
-
----
-## 2026-08-03 (2) — Full review of the knowledge layer against the stated goal: **the acquisition half has no implementation**, and the one suggestion engine runs on the detector graded noise
-
-**What changed.** No source code. New `docs/PLAN_2026-08-03_knowledge-layer-to-goal.md` (local-only,
-ADR-029) — the in-depth review; new **§6b State of play** in the tracked `docs/knowledge-layer.md`;
-new ROADMAP rows **KL1–KL4** so the plan's items are visible in git rather than only in a gitignored
-file.
-
-**Method.** Read every governing artifact rather than working from memory: ROADMAP rows S1–S2 ·
-G1–G8 · E0–E5 · TX1–TX3 · MM1–MM3 · PF1–PF4; ADR-004/008/015/017/018/027/028/030–033/036–041; the
-concept-graph, gap-detection and taxonomy specs; RG-014/015/019; KI-18/19/33.
-
-**The goal decomposed into five testable capabilities** — C1 unsubstantiated claims · C2 per-concept
-classification · C3 gap exposure · C4 **acquisition direction** · C5 navigation — then mapped onto
-every built component.
-
-**Finding 1 — C4 is the goal's operative capability and has no sound implementation anywhere.** The
-goal's verb is *"should find more resources and documents."* **Every built detector looks inward** at
-what the corpus already holds. ADR-004 named the outward half precisely and deferred it — Tier-2b
-needs *"a representation of 'outside the known space'"* — and ADR-032 has been a stub since. No
-amount of repairing the inward detectors closes this; it is the largest distance between the product
-and the goal.
-
-**Finding 2 — the one suggestion engine runs on the one detector graded noise.** `gap_suggest` (G5)
-is the closest thing to C4 in the tree, and it fires one LLM call per **`under_connected`** concept —
-the kind RG-014 graded ❌ *"mostly noise… measures graph degree, dominated by vocabulary sparsity"*.
-Meanwhile **`single_source`**, the kind RG-014 graded *"TRUE POSITIVE — the product thesis"*, gets
-**no suggestion pass at all**. Re-pointing it is hours of work and the cheapest real progress toward
-the stated goal.
-
-**Finding 3 — C1 already works, on the wrong layer.** The answer path classifies claims by
-retrieval-derived support and says outright why (*markers never come from model confidence*). The
-concept layer ignores it and asks an LLM about labels. That is ADR-041 option 6, now KL1.
-
-**Finding 4 — C3 and C5 are genuinely strong**, which is worth stating plainly after two sessions of
-finding defects: `single_source`, the graph, ego navigation, the gap list with durable triage, the
-Connections panel and the taxonomy view are all built and sound. The per-document map (MM1–MM3,
-absorbing PR-G2c) is the one navigation piece missing, still gated on the ADR-030 stub.
-
-**The plan, phased so nothing is built on top of something that lies.** **A** make what exists tell
-the truth (the surfacing deadline · option 6 · `unsourced_claim` contamination · encode RG-014's
-grades in the gap list) → **B** the acquisition half (re-point `gap_suggest` · grill ADR-032 · the
-taxonomy as reference class) → **C** the per-file map (grill ADR-030 → MM1 → MM2 → MM3) → **D**
-Node-B rebuilt on evidence, ground-truth study as the gate → **E** measure the two unmeasured shipped
-layers (RG-015 taxonomy placement, RG-018 wiki flip). **B before C** deliberately: B1 is hours and
-moves the operative capability, C is weeks and improves navigation that already works.
-
-**Rejected.** Putting the whole review in the tracked docs (the dated-PLAN convention is local-only,
-ADR-029) — mirrored as §6b + KL1–KL4 instead, so the conclusions survive outside a gitignored file.
-Attaching effort estimates (the ordering is by dependency and goal-value; guessing hours would have
-dressed judgement as measurement).
-
-**What it opens.** Five things the review did **not** verify, listed in the plan's §6 — most
-importantly that `gap_suggest`'s restriction to `under_connected` is taken from CONTEXT.md and
-ADR-004 and **not re-read in `gap_suggest.py`** (confirm before doing B1), and that RG-014's verdict
-dates from 76 docs / 26 concepts against today's 97 / 13 — direction stable, numbers not.
-
----
-## 2026-08-03 (1) — ADR-041 (rebuild-or-retire Node B) + the knowledge layer finally has a map with a trust table
-
-**What changed.** No source code. New **ADR-041**, new **`docs/knowledge-layer.md`**, a new
-**"Read before you touch — never assume"** section in `.claude/CONTEXT.md`, plus pointers from
-`AGENTS.md`, `architecture.md` and `src/doc_assistant/CLAUDE.md` so none of it depends on knowing
-it exists.
-
-**The CONTEXT.md table is the durable half.** Eight rows mapping *area of the app* → *what to read
-first* → *what assuming instead has actually cost* (the epistemics threshold chase; reverting the
-lazy reranker or the `_sparse is None` guard; page markers in the evidence block; curated structure
-in `concept_edges`; a "local" run billing the API). Plus two standing rules: **a spec's surface
-description is not its purpose** — with today's retire recommendation as the worked example, and the
-corollary that *months of deliberate work on a feature is evidence of intent, so ask what it is for
-before proposing to remove it* — and **re-measure per box; check a "known" fact before inheriting
-it** (three inherited claims were false this week: the private eval set, retrieval determinism, and
-`gh`/Docker being absent).
-
-**Also answered, since it came up as "I don't know if it was done":** the *explore concepts within a
-given file* feature is **not built**. It was **PR-G2c** (Library entry, doc → its concepts);
-`feature-concept-graph.md:19` records E4 shipping a related-papers Connections panel instead, and it
-has since been absorbed into **ROADMAP MM2** (`knowledge/doc_map.py` + `GET
-/api/library/documents/{id}/map`), gated on **ADR-030** — still a proposed stub needing `grill-me`,
-and already flagged in the baton as the one to do first because it blocks MM1.
-
-> **Date correction.** The three entries below are headed `2026-08-02`; that is wrong — **all of that
-> work was done on 2026-08-03**, in the same session as this entry, and the two baselines it
-> committed carry `2026-08-02` in their filenames for the same reason. Left as-is rather than
-> rewritten: the entries are append-only and already committed (`40888b1`), and a rename would
-> break the links pointing at them. Corrected here so the record is not silently off by a day.
-
-**Why the doc, and why now.** The user's read was that the docs are behind what we have on the
-concept graph — *"it is not clear what we are doing and why."* Checking rather than agreeing: the
-purpose **is** written down, and well. `docs/specs/feature-concept-graph.md` § *The job* (locked with
-the user 2026-07-17) states it as three questions — **corroboration** (*"is this concept backed by
-more than one source?"*), **coverage**, **navigation** — plus ADR-004's north star, *"the graph is
-the substrate; the gaps are the payload."* The mechanism is in `architecture.md`; the decisions are
-in nine ADRs. **Nothing connected them**, so nothing noticed when an output stopped matching the
-purpose. That is not hypothetical — it is precisely how `contested` shipped saturated and how
-RG-019's prescription went two weeks unchallenged. The missing artifact was never a description; it
-was a **trust table**.
-
-`docs/knowledge-layer.md` is that page: the job · the one-vocabulary rule · the two graph layers ·
-the end-to-end flow · who consumes what · **a per-signal trust table** · how to run it · the ADR
-reading order. It grades `single_source` ✅ (RG-014's "TRUE POSITIVE — the product thesis"),
-`unsourced_claim` ⚠️ (~33% contaminated), `under_connected` ❌ (noise at small vocabularies), and
-`contested`/`superseded_trend` ❌ **not a corpus measurement** (KI-33).
-
-**The finding that shaped ADR-041, and it came from re-reading the spec rather than the code.**
-**All three of B1's jobs are answered by counting documents** — corroboration is `len(doc_ids) >= 2`,
-coverage is presence per field, navigation is `node → doc_ids → chunk_keys`. All Node-A,
-deterministic, zero-LLM. **Stance answers a question B1 never asked** ("do the sources *disagree*?"),
-and it arrived later, via the 7d currency work and ADR-027's strip. The spec's own grounding note
-from design-lock records *"The epistemic dimension is empty … `contested_edges()` → `[]`"* — **the
-feature was designed, locked and graded useful before stance existed at all.**
-
-**So ADR-041 is not only "how to rebuild Node B" — it is whether to.** Five options: rebuild with the
-co-occurrence passages + a neutral label + one pair per call · **retire stance, keep Node A** ·
-keep the relation verb only · a deterministic tension proxy · park it. **Recommendation: retire**,
-reopening as a properly-scoped feature (with the ground-truth study budgeted from the start) only on
-an explicit product decision. Option 3 is explicitly warned against as a false compromise — the
-relation verb comes from the same text-free, position-sensitive prompt (the position probe produced
-*is used with · uses · is improved by · compared to · is compared to · improves on* for one pair) and
-`relation_by_pair` keeps whichever document answered first.
-
-**Costs stated honestly rather than waved through.** Retiring takes `contested` and
-`superseded_trend` out of the product — the CHANGELOG feature list, ADR-027 D3's strip column, the
-reviewer's `contested_evidence` tag — and **G3/G6's year-aware `superseded_trend` is collateral**: it
-is deterministic and correct in itself but rides on stance-derived direction, so it goes too unless
-re-based on `doc_years` alone. Whether that re-basing is feasible **has not been checked in code**,
-and ADR-041 says so in its Confidence section.
-
-**Rejected.** Writing a new "what is the concept graph" doc from scratch (the purpose was already
-written; duplicating it would have created a second source to drift). Agreeing that the docs were
-missing without looking — they were **scattered and stale, not absent**, and the fix for those is
-different.
-
-**Then the user supplied the decision input the ADR was waiting on, and it flipped the
-recommendation.** The stated intent: *"see which claims are unsubstantiated and where are the
-knowledge gaps … classify knowledge per concept in order to find the gaps where the user, for a given
-subject, should find more resources … We want epistemics feature. That is the idea."*
-
-**My "retire" recommendation was wrong, and the way it was wrong is worth keeping.** I read B1's spec
-text — corroboration/coverage/navigation, all document counts — and concluded stance "answers a
-question B1 never asked". That is true of the *text* and false of the *intent*. **A spec's surface
-description is not its purpose**, and I had just written a whole page arguing that the docs' problem
-was exactly this kind of disconnection. The measurement's finding is untouched (the current Node B
-cannot serve the goal); what changed is that "this implementation is invalid" and "the feature is
-unwanted" are different claims and only the first was ever supported.
-
-**Two things the correction produced that the retire framing had hidden.**
-1. **A unit mismatch nobody had named.** The goal is knowledge classified *per concept*; today's
-   epistemics classifies **edges** (concept pairs) and reaches concepts only by aggregation.
-2. **A cheaper first move — new ADR-041 option 6.** *"Which claims are unsubstantiated"* is a
-   **support** question, not a polarity one, and the project already has a working, deterministic,
-   retrieval-derived claim layer (`AnswerClaim`, `weakly grounded`/`unsupported`, `unsourced_claim`)
-   built on the principle `how-answers-work.md` states outright — markers come from retrieval
-   signals, never the model's own confidence. Re-basing per-concept status on it serves the headline
-   goal with no new LLM pass. It cannot do polarity, so option 1 still owns "these sources disagree".
-
-**Recommendation now: 6 → 1**, with option 4 (deterministic structure from the taxonomy) kept in view,
-because the user's *"concepts are linked in general to predictable things"* makes a gap **a deviation
-from expected structure** — which needs a source for the expectation, and ADR-028's curated taxonomy
-is the one already in the tree. Same reference-class argument ADR-040 reached from the other side.
-
-**What it opens.** The build sequence is open; the ADR no longer is. One thing keeps its deadline
-regardless: **the surfaces must stop presenting stance-derived output as an epistemic finding** until
-6 or 1 lands. Unscoped: whether `superseded_trend` survives on years alone.
-
----
-## 2026-08-02 (3) — ADR-040 option 5 executed: Node-B stance is judged **without the document** and flips with **list position**. `contested` is not measuring the corpus (KI-33)
-
-**What changed.** No source code. New instrument `scripts/validate_node_b_stance.py`, new baseline
-`tests/eval/baselines/node_b_stance_validity_2026-08-02.md`, **KI-33** filed, ADR-040 given an
-*Update* section that blocks every surfacing option behind a Node-B fix.
-
-**Why.** Entry (2) concluded `contested` was a surfacing problem and put "validate the stance
-extractor" first because every other option's value depended on the answer. It ran. The answer is
-worse than expected: the signal is not a measurement of the corpus at all.
-
-**Two structural facts, from the code, before any measurement.**
-1. **The model never sees the document.** `build_messages(present_labels, pair_labels)` composes the
-   entire user turn from concept labels and a numbered pair list — `annotate_relations`' own
-   docstring says so — while the system prompt asks for stance *"from the document's apparent
-   framing"*. There is no document in the prompt to have a framing.
-2. **There is no neutral stance.** `POLARITIES` = supports/refines/contradicts/supersedes, two of
-   them opposing, all mandatory. Citation-polarity corpora put neutral above 60% as the *majority*
-   class. The vocabulary cannot express the common case, and its boundary is a hair wide: `refines`
-   ("improves") supports, `supersedes` ("replaces") opposes, and the prompt's own example verb is
-   *"improves on"*.
-
-**The controlled experiment — one variable, four verdicts.** One document, same 7 present concepts,
-same 17 pairs, `llama3.1:8b`, temperature **0.0** (all shipped settings), varying **only the target
-pair's index** in the numbered list:
-
-| index | 0 | 2 | 4 | 8 | 12 | 16 |
-|---|---|---|---|---|---|---|
-| stance | supports | supports | **supersedes** | **contradicts** | **supersedes** | refines |
-
-Four distinct verdicts **crossing the supporting/opposing boundary**, from a list position. Replaying
-the five real documents' actual prompts reproduced **5/5** recorded stances, so this is the shipped
-pipeline's deterministic behaviour, not sampling noise.
-
-**A hypothesis refuted en route, kept because it cost a run.** The first guess was that the
-*co-present concept set* drove the variation. Nine realistic contexts with the pair held at index 0
-returned **`supports` 9/9** — stable and deterministic. It was position, not context. Two experiments
-to get there; *reasoning proposed, measurement decided* — the third time that pattern has paid this
-week.
-
-**Supporting evidence from the artifact.** The whole integrity layer is **65 stance assignments**,
-**30.8% opposing**, and **14 of 19 annotated edges carry more than one stance** (`re-ranking <-> BM25`
-takes all four across 5 documents). Relation and stance contradict each other: `is a component of` →
-`supersedes` ×2, `uses` → `contradicts` ×3, `builds upon` → all four.
-
-**This subsumes entry (2)'s domain confound rather than competing with it.** Pair-list length scales
-with a document's concept count, so dense documents → long lists → deep indices → opposing →
-`contested`; sparse documents → one pair → index 0 → `supports`. That *is* the 7/9-vs-0/4
-parent-field table. `cre`, `dbs`, `ntsr1`, `pddl` were never settled — their documents yield one pair.
-
-**Rejected.** Swapping the model (facts 1 and 2 are structural — any model inherits them); raising
-`max_tokens` (the JSON parses; KI-28 was a different failure); tuning the threshold (measured inert
-in entry 2). Also rejected: implementing option 2 now — it is still correct that `ns=0` is not
-contested, but the node it fixes came from a single `supersedes` on a one-pair prompt, so it was an
-artifact, not the "one real defect" entry (2) called it. **That correction is the honest cost of
-having measured the input second instead of first.**
-
-**What it opens.** A **Node-B redesign** with its own ADR: pass the passages where the two concepts
-co-occur, add a neutral/no-stance option, remove the position dependence (one pair per call or
-equivalent), and carry a hand-labelled ground-truth study on the RG-015 template — which is the only
-way to make an accuracy claim, since nothing here scores against ground truth. Until then `contested`
-should not be presented as an epistemic signal, and ADR-040's options 1/2/3/4/6 cannot be evaluated.
-Unquantified and worth knowing: what *share* of the 30.8% opposing is position-driven rather than
-prior-driven.
-
----
-## 2026-08-02 (2) — RG-019 measured: the `contested` floor everyone planned to add is **inert**, and the saturation is a surfacing problem (ADR-040)
-
-**What changed.** No source code, and deliberately so. New instrument
-`scripts/measure_contested_density.py`, new baseline
-`tests/eval/baselines/contested_density_2026-08-02.md`, new **ADR-040** with its decision left open,
-and RG-019 rewritten from an untested hypothesis into a measured negative result.
-
-**Why.** The v0.4.0 walkthrough recorded the integrity strip — the product thesis — reading as
-noise: **53.3% of assessed chunks marked `contested`** against 3.9% `corroborated`, 8 of 10 sources
-in a live turn marked contested on a question that is not a controversy. Two records already agreed
-on the cause and the cure. RG-019: *"triggers on `nc >= 1` … derive a named floor (min disputing
-docs and/or an agreement-ratio band — the `MIN_DATED_DOCS_PER_SIDE` pattern)"*. ADR-027 shipped the
-always-on strip without it, noting the strip would otherwise "ship saturated". **Neither had been
-measured, and both are wrong.**
-
-**Measured, $0, every counterfactual re-projected onto the real 18,831 chunk segments.**
-
-| lever | density |
-|---|---|
-| shipped (`nc >= 1`) | **53.3%** — reproduces the walkthrough's 396/743 exactly, which is what validates the instrument |
-| `nc >= 2` — *the prescribed fix* | **53.0%** |
-| `nc >= 3` | 52.9% |
-| `agreement_ratio < 0.70` | 53.2% |
-| chunk rule "majority of claims contested" | 53.2% |
-
-**The prescription accounts for two chunks.** Only **1 of 7** contested nodes has `nc == 1`. The
-other six are the corpus's core vocabulary — BM25, dense retrieval, passage retrieval, contrastive
-learning, re-ranking, hard negatives — each with genuine two-sided stance across **5–11 documents**.
-`contested` is not misfiring; it is firing correctly on ordinary scholarly disagreement that the UI
-then presents as cautionary.
-
-**Three findings that outlive this item.**
-1. **The denominator was half-quoted.** 53.3% is of *assessed* chunks, and only **3.9% of the store
-   carries any claim** — marked chunks are **2.1%** of the store. Both true; the first alone
-   overstates the marker's reach ~25x. It is still the number a user sees, because retrieval returns
-   the chunks that carry claims.
-2. **There are two stacked `>= 1` thresholds, not one.** The node rule, and `derive_markers` marking
-   a chunk if *any* claim is contested. But **89% of assessed chunks carry exactly one claim**, so
-   any/majority/all are the same rule here (53.3 / 53.2 / 53.0%). `n_contested >= 2` does cut to
-   7.9% — by requiring two contested concepts in a chunk that mostly mentions one. A structural
-   silencer, not an epistemic threshold.
-3. **`agreement_ratio` is the only lever with range and the one that must not be used.** `<0.60` →
-   27.1%, `<0.50` → 0.5%. But the seven observed values sit in **0.545–0.714**: every effective
-   threshold is fitted to seven points on a 13-concept vocabulary. That is the
-   over-optimise-on-the-current-corpus failure KI-19 exists to forbid.
-
-**One real defect found.** `knowledge distillation` — `ns=0, nc=1, agreement=0.000`: zero supporting
-sources, one disputing. Coverage is decided **contested-first**, so the unique-source neutrality
-rule (Decision 4, "a sole source is never contested") never gets to judge it. A node with no support
-is not contested, it is unsourced. Structural, no constant, fixable in a line — **not** done here,
-because it lands with whichever ADR-040 option is chosen.
-
-**Rejected.** Landing `nc >= 2` to close the item (it would record a fix that changes 0.3 points and
-spend the corpus-tuning budget doing it). Picking a surfacing option unilaterally — the measurement
-kills option 1, it does not choose between "surface the ratio", "re-frame the label" and "validate
-the extractor first"; that is the user's call and ADR-040 says so in its status line.
-
-**The finding that reframed all of it, found by asking what the threshold was measuring *against*.**
-Every graph concept carries exactly one ANZSRC parent field (ADR-028) — **13/13 placed**. Joined:
-
-| parent field | concepts | contested |
-|---|---|---|
-| Machine learning | 6 | **4** |
-| Data management and data science | 3 | **3** |
-| Artificial intelligence · Neurosciences · Med. chemistry · Biochemistry | 1 each | **0** |
-
-**7 of 9 concepts in the two IR/ML fields are contested; 0 of 4 outside them.** `cre`, `dbs`,
-`ntsr1`, `pddl` are not uncontested because they are settled — they have **one source each**. The
-marker tracks *how densely the corpus covers a field*, not whether a claim is disputed, and all
-three levers operate on a per-concept rate whose dominant term is a variable that rate does not
-contain. **That is why no cut point works, and it is a stronger statement than "the levers are
-inert".**
-
-**The literature was checked, and it is unfavourable to every lever.** `agreement_ratio` is raw
-percent agreement — the statistic Cohen's κ and Krippendorff's α exist to replace, with Landis &
-Koch's bands as the standard cautionary tale about arbitrary cut points. Meta-analysis, the
-discipline that actually owns "do sources disagree" (Cochran's Q, Higgins' I²), offered its
-25/50/75% bands as tentative, is cautioned against mechanical application by the Cochrane Handbook,
-and finds I² non-discriminative for prevalence meta-analyses — the closest analogue; practice
-reports it with τ² and a prediction interval. Citation-polarity corpora put neutral citations above
-60% with contrasting/negative the **rarest** class, against ~45% opposing sources per node here —
-independent evidence that Node-B, not the corpus, produces this. Partial pooling / empirical-Bayes
-shrinkage toward a parent mean is the named method for the hierarchy, with James–Stein dominating
-raw group means for k≥3.
-
-**ADR-040 gained a sixth option — score contestedness against the parent field's base rate.** It is
-the only option that addresses the confound rather than routing around it, it removes the tunable
-(the reference class is derived from data), and **this project already made the same argument once**:
-ADR-006 rejected absolute keyword frequency for contrastive termhood against a background
-distribution. Deferred rather than rejected, for a falsifiable reason: four of six fields hold one
-concept, so no field base rate is estimable yet — a blocker that expires as `graph_include` grows
-past 13. The instrument prints the cross-tab, so the re-test is a re-run.
-
-**A framing kept even if every option is rejected:** *insufficient evidence is a state, not a low
-score.* The schema already encodes it (`unique` = sole source, held NEUTRAL, Decision 4) and
-contested-first precedence is what steals it — which makes the `ns=0` fix the first instance of a
-principle rather than a one-node patch.
-
-**What it opens.** The recommendation recorded in ADR-040 is **5 → 2 → 3, with 6 as the target
-shape**: validate the Node-B
-stance extractor first, because `llama3.1:8b` biased toward disagreement would reproduce this entire
-picture and nothing yet separates the two — and its calibration is already recorded as suspect
-(flat `rating` output, `gap_suggest_ollama_2026-07-08.md`). Then the `ns=0` gate regardless. Then
-prefer the continuous surface over a rename. Still owed and unchanged: RG-019's precision
-spot-check (this run argues structural correctness, it never reads the chunks) and density at a
-second corpus size — **monotonicity in corpus size, the original worry, is still untested**.
-
----
-## 2026-08-02 (1) — the v0.4.0 release commit left `uv.lock` at 0.3.0; **CI has been red on `main` since**, and the Docker build could never have worked
-
-**What changed.** Two config lines, no source code. `uv.lock`'s own project entry
-**0.3.0 → 0.4.0** (produced by `uv lock`, not hand-edited — the diff is exactly one line, zero
-dependency churn), and **`README.md` removed from `.dockerignore`**.
-
-**Why — and this is the part worth carrying.** The session opened on the baton's item 1,
-`docker compose build`, the verification owed for `a052703`. The build never ran (Docker Desktop on
-this box will not start its engine, below), but the two things that would have failed it were found
-anyway, and the first is much larger than the Docker item.
-
-**1. `uv sync --locked` fails at the v0.4.0 tag.** `47aabdd` bumped five version strings —
-`pyproject.toml` · `package.json` · `tauri.conf.json` · `Cargo.toml` · `Cargo.lock` — and
-**`uv.lock` was not one of them**. A uv lockfile records the project's *own* version, so it went
-stale the moment `pyproject.toml` said 0.4.0. Both `.github/workflows/ci.yml:36`
-(`uv sync --locked --extra cpu --extra dev`) and `Dockerfile:34` (`uv sync --locked --extra cpu`)
-pass `--locked`, whose entire job is to fail rather than silently re-resolve.
-
-**Confirmed against GitHub, not inferred** (`gh` is installed on this box now — the baton says it is
-not; that fact is stale). The public Actions API says CI went red **exactly at the release commit**
-and stayed red:
-
-| run | sha | conclusion |
-|---|---|---|
-| 2026-08-01T21:09Z | `a052703` | **failure** |
-| 2026-08-01T20:45Z | `47aabdd` | **failure** |
-| 2026-08-01T14:10Z | `0cc2c3d` | success |
-
-In both failed runs the failing step is **5, "Install dependencies"**, and steps 6–12 — ruff, ruff
-format, mypy, pytest, bandit, pip-audit, detect-secrets — are all **`skipped`**. So **no lint, type,
-test or security gate has run on `main` since the release**, and the v0.4.0 tag is CI-unverified.
-
-**Reproduced and fixed on Linux, with the exact commands.** In the `~/pv-clean` clean-room tree left
-warm by the 08-01 session, at `47aabdd` with the tag's shipped lockfile restored:
-`uv sync --locked --extra cpu --extra dev` → **exit 1**, `error: The lockfile at uv.lock needs to be
-updated, but --locked was provided`. After `uv lock`: the same command → **exit 0**, and the
-Dockerfile's `uv sync --locked --extra cpu` → **exit 0**.
-
-**Why five green local gate batteries missed it, which is the real lesson.** Nothing run locally
-passes `--locked`: `just`/`uv run`/pre-commit all use the plain form, which re-resolves in silence.
-**And the 08-01 clean-room run — the one ceremony designed to catch exactly this — used
-`uv sync --extra cpu --extra dev`, not CI's `uv sync --locked …`.** It therefore *repaired* the
-lockfile inside its own clone instead of failing on it. That is not a reconstruction: `~/pv-clean`
-still carried an uncommitted `M uv.lock` whose whole diff is `-version = "0.3.0"` /
-`+version = "0.4.0"`. **A clean-room check that does not run the shipped command validates a path
-nobody ships.**
-
-**2. `.dockerignore` excluded `README.md`, which the Dockerfile copies.** `pyproject.toml` declares
-`readme = "README.md"`, so setuptools needs the file present to build this project's own metadata
-during `uv sync`, and `Dockerfile:32` copies it for that reason. Docker matches `.dockerignore`
-exactly and drops excluded paths from the build context, so the `COPY` fails before uv ever runs.
-Both halves arrived together in the same unbuilt commit (`a052703` created `.dockerignore`; before
-it the file was inert under the wrong name, so every earlier build had `README.md`). The exclusion
-is now removed with the reason written at the line, so it is not re-added as tidy-up.
-
-**Verified / not verified — stated separately, because they are not the same.** The lockfile fix is
-verified end-to-end on Linux with both shipped commands. **The `.dockerignore` fix is reasoned, not
-built** — the same caveat entry (6) carries for the rest of the Dockerfile, and it does not clear
-yet. `docker compose build` is **still owed**.
-
-**Docker Desktop 4.84.0 will not start on this box.** Installed per-user
-(`%LOCALAPPDATA%\Programs\DockerDesktop`), CLI 29.6.2 / Compose v5.3.1. `docker version`, `docker
-info` and `docker desktop status` all **hang on the named pipe** rather than erroring. Diagnosed:
-WSL 2.7.11 is healthy and the `docker-desktop` distro boots by hand (kernel 6.18.33.2) but contains
-**no `dockerd`** — only `/init`; **no Docker Windows service exists at all** (`Get-Service` and
-`HKLM:\SYSTEM\CurrentControlSet\Services` both empty of docker entries); and `com.docker.backend` is
-alive and answering, with the GUI polling `ErrorReportAPI GET /diagnostics/status` once a second —
-the pattern of a startup-error screen waiting for a human. A clean kill-and-restart did not change
-it. Needs eyes on the window; not fixable from a shell.
-
-**Rejected.** Hand-editing the version line in `uv.lock` (ran `uv lock` instead — it is the
-canonical producer, and it proves no dependency churn rode along). Installing Docker Engine natively
-inside WSL Ubuntu to get a build (a sudo-level system change nobody asked for). Pre-emptively
-"fixing" the Dockerfile further while it remains unbuildable — the whole point of this item is that
-unbuilt Docker changes are how the repo got here.
-
-**A third stale version, found by checking the rest of the class.** `apps/desktop/package-lock.json`
-recorded `doc-assistant-desktop` at **0.1.0** against `package.json`'s 0.4.0 — stale since before
-0.2.0, and unlike `uv.lock` **harmless**: there is no frontend job in CI at all, so nothing gates on
-it, and npm reads the version from `package.json` regardless. Aligned anyway (both the root and
-`packages[""]` fields, the two npm itself writes) so the release ritual has no exceptions to
-remember.
-
-**What it opens.** **A release bumps seven version strings, not five** — the checklist is missing
-`uv.lock` and `package-lock.json`, and the first of those is the one that takes CI down. More
-useful than the checklist: **`uv lock --check` is the cheap gate that would have caught this before
-the tag** (it runs in ~1 s and needs no network), and it belongs either in the pre-commit battery or
-at the release keypoint. Worth pairing with the wider lesson — a local battery that never runs the
-*shipped* command can be green while `main` is red.

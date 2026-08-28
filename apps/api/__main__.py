@@ -63,4 +63,10 @@ def main() -> None:
 
 
 if __name__ == "__main__":
+    # Required before anything can spawn a process pool in a PyInstaller bundle: without it a
+    # child re-imports this module as `__main__` and starts a second API server instead of doing
+    # the work (`ingest.workers`). Harmless when not frozen.
+    import multiprocessing
+
+    multiprocessing.freeze_support()
     main()

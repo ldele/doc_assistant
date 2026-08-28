@@ -201,15 +201,33 @@ def test_mixed_format_no_heading_yields_zero_edges(temp_db: Path) -> None:
     assert ("paper_nohdr", "paper_a") not in actual
 
 
-def test_mixed_format_lncs_resolves_via_author_year(temp_db: Path) -> None:
-    """LNCS format strips DOI from refs -> matcher must fall back to author+year."""
+def test_mixed_format_lncs_is_not_resolved_on_a_misparse(temp_db: Path) -> None:
+    """A true citation the app cannot yet *evidence*, and must therefore not assert (KI-45).
+
+    This test asserted the opposite until 2026-08-26, and the change is the point. LNCS strips the
+    DOI, so resolution fell to rule 2 — first-author surname + year, **with no title check** — and
+    the link appeared. It appeared for the wrong reason: the LNCS line mis-parses. Measured, the
+    parser puts `"Origin, O.: The Original"` in *authors* and `"In: Synthetic Conf., pp. 1-10"` in
+    *title*, so the title it would compare is the **venue**.
+
+    Rule 2 resolving that anyway is exactly the defect KI-45 measured: on the real library the same
+    rule made 13 of 16 stored links false. A rule that resolves true and false citations
+    indiscriminately is not precision — it is noise that happens to contain signal, and in a
+    research-integrity app the noise is the expensive half.
+
+    So the honest state is **no link**: the paper does cite the other one, and the reference stays
+    in the list; the app simply stops claiming to have identified it. **What owes this link is the
+    LNCS parser** (the fixture calls the format a "known tier-1 weakness"), not a matcher rule
+    willing to guess. Fix the parse and it resolves on evidence.
+    """
     papers = mixed_format_scenario()
     mapping = _run_pipeline(papers)
     actual = _internal_edges(mapping)
 
-    # paper_lncs cites paper_a (Origin, O., 2005). DOI not in LNCS refs.
-    # author+year fallback in match_to_library should still resolve it.
-    assert ("paper_lncs", "paper_a") in actual
+    assert ("paper_lncs", "paper_a") not in actual
+
+    # The formats that DO parse still resolve — the fix is precision, not a retreat.
+    assert ("paper_clean", "paper_a") in actual
 
 
 # ============================================================

@@ -9,6 +9,7 @@ to detect a content change).
 from __future__ import annotations
 
 import shutil
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -18,6 +19,7 @@ from sqlalchemy import select
 
 from doc_assistant.chroma_read import get_all
 from doc_assistant.db.models import Document as DBDocument
+from doc_assistant.db.models import Figure
 from doc_assistant.db.session import session_scope
 
 from .cache import doc_hash, load_or_extract
@@ -71,13 +73,34 @@ def _find_orphan_hashes(
     return gone, stale
 
 
-def cleanup_orphans_sqlite(db_for_metadata: Chroma) -> list[str]:
-    """Remove SQLite rows for documents no current source still produces.
+@dataclass(frozen=True)
+class OrphanHashes:
+    """The two kinds of dead hash, kept apart because they have different consequences.
 
-    Two kinds of orphan are removed (see ``_find_orphan_hashes``): documents whose
-    source file is gone, and the pre-change hash of a document whose *content*
-    changed (e.g. tables spliced into its cached ``.md``). Returns the orphan
-    hashes for downstream Chroma cleanup.
+    * ``gone``  — the source file no longer exists. The document is over: its row, its chunks,
+      its figure PNGs all go.
+    * ``stale`` — the source file is still there and now extracts to different text. **Only the
+      chunks are dead.** The document, its identity and every sidecar hanging off that identity
+      survive (ADR-047).
+
+    They were one list until ADR-047, which is precisely how a re-extraction came to delete data.
+    """
+
+    gone: list[str]
+    stale: list[str]
+
+    @property
+    def dead_chunk_hashes(self) -> list[str]:
+        """Hashes whose *vectors* must go — both kinds, since neither still describes the file."""
+        return [*self.gone, *self.stale]
+
+
+def cleanup_orphans_sqlite(db_for_metadata: Chroma) -> OrphanHashes:
+    """Remove SQLite rows for documents whose source file is gone.
+
+    Classifies dead hashes into ``gone`` and ``stale`` (see ``_find_orphan_hashes``) and deletes
+    rows for ``gone`` only. Returns both, because the caller cleans Chroma for both and the
+    figure PNGs for neither-but-gone.
     """
     data = get_all(db_for_metadata, include=["metadatas"])
     hash_to_meta: dict[str, dict[str, Any]] = {}
@@ -86,32 +109,34 @@ def cleanup_orphans_sqlite(db_for_metadata: Chroma) -> list[str]:
             hash_to_meta[meta["doc_hash"]] = meta
 
     gone, stale = _find_orphan_hashes(hash_to_meta)
-    orphan_hashes = gone + stale
-    if not orphan_hashes:
-        return []
+    if not gone and not stale:
+        return OrphanHashes([], [])
 
+    # **Only `gone` deletes a row** (ADR-047). A `stale` hash means the source file is still
+    # there and merely extracts differently now — which is a re-extraction, not a disappearance.
+    # Deleting its row FK-cascades the citations and doc_similarities, orphans every sidecar
+    # keyed on the document id, and forces `process_one_document` to mint a fresh identity,
+    # defeating the ADR-047 fallback before it is ever consulted. Measured the day that was
+    # still the behaviour: a corpus-wide re-extraction destroyed 767 of 881 figure rows, 1,170
+    # keywords and 381 epistemics rows on a 97-document library.
     if stale:
-        # A content change mints a NEW document_id for the new hash, so any sidecar
-        # enrichment keyed to the OLD id is now stale. Deleting the old Document row
-        # FK-cascades its outbound citations + doc_similarities (ondelete=CASCADE)
-        # and NULLs inbound citation targets (ondelete=SET NULL); the new content
-        # starts with none. Re-run the citation / doc-vector enrichment afterwards.
         log.info(
-            "enrichment_dropped",
+            "content_changed_keeping_rows",
             count=len(stale),
-            hint="old enrichment (citations, doc_similarities) dropped; re-run to rebuild",
+            hint="source still present; the document keeps its id and sidecars (ADR-047). "
+            "Its pre-change chunks are removed from Chroma and re-embedded.",
         )
+    if gone:
+        log.info("removing_orphans", count=len(gone))
+        with session_scope() as session:
+            for h in gone:
+                doc = session.execute(
+                    select(DBDocument).where(DBDocument.doc_hash == h)
+                ).scalar_one_or_none()
+                if doc:
+                    session.delete(doc)
 
-    log.info("removing_orphans", count=len(orphan_hashes))
-    with session_scope() as session:
-        for h in orphan_hashes:
-            doc = session.execute(
-                select(DBDocument).where(DBDocument.doc_hash == h)
-            ).scalar_one_or_none()
-            if doc:
-                session.delete(doc)
-
-    return orphan_hashes
+    return OrphanHashes(gone=gone, stale=stale)
 
 
 def cleanup_orphans_chroma(
@@ -153,6 +178,26 @@ def cleanup_orphans_chroma(
         log.info("removed_orphan_caches", count=len(set(orphan_caches)))
 
 
+def hashes_with_no_figure_rows(hashes: list[str]) -> list[str]:
+    """Of ``hashes``, the ones no `Figure` row still claims — i.e. dead directories.
+
+    The complement of what `store.repoint_figures` rescues. A re-extracted document's figure
+    *rows* carry their PNGs to the new hash, so its old directory is not garbage — it has moved.
+    A directory with no rows behind it has nothing to move it and nothing to read it, so it is
+    exactly the leak the pre-ADR-047 blanket sweep used to catch by accident.
+    """
+    if not hashes:
+        return []
+    with session_scope() as session:
+        claimed = {
+            str(h)
+            for h in session.execute(
+                select(Figure.doc_hash).where(Figure.doc_hash.in_(hashes))
+            ).scalars()
+        }
+    return [h for h in hashes if h not in claimed]
+
+
 def cleanup_orphan_figures(orphan_hashes: list[str]) -> None:
     """Remove the on-disk figure PNG dirs for orphan documents.
 
@@ -165,9 +210,13 @@ def cleanup_orphan_figures(orphan_hashes: list[str]) -> None:
     never match the current content). Re-extraction writes the new hash's dir afresh.
 
     Gated by the same ``scope is None`` guard as the whole cleanup block (in ``main``);
-    a ``--path`` run must not delete out-of-scope figures. (Unlike ``also_clean_cache``,
-    an orthogonal *source-existence* gate, this sweep deliberately removes BOTH gone-
-    and stale-orphan figure dirs.)
+    a ``--path`` run must not delete out-of-scope figures.
+
+    **Pass it ``gone`` hashes only** (ADR-047). It used to receive stale ones too, on the
+    reasoning that a content change minted a new document whose old figure dir was dead. That
+    reasoning no longer holds: the document keeps its identity across a re-extraction, and its
+    figures are crops of *the PDF's pages* — the text extractor changing cannot invalidate them.
+    ``_repoint_figures`` moves the dir to the new hash instead.
 
     Coupling: ingest cleanup <-> the figures on-disk layout (``config.FIGURE_DIR /
     {doc_hash}/``, via ``figures.figure_dir``). If that layout changes, this follows it.

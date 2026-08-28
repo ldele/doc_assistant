@@ -29,6 +29,41 @@ import duckdb
 
 from doc_assistant.eval.results import EvalResult
 
+#: Escape character for the ``LIKE`` prefix match. A backslash rather than anything exotic
+#: because it is what both DuckDB and SQLite spell it as. One definition, used by the escaper
+#: below **and** spliced into the statement it belongs to — the two must agree, and the way to
+#: guarantee that is not to write the character twice.
+_LIKE_ESCAPE = "\\"
+
+#: The whole statement, assembled once at import. Deliberately **not** an f-string at the
+#: ``execute`` call: interpolating anything into a SQL string there is a shape worth not having
+#: even when the value is a constant, and bandit flags it (B608) on sight rather than reasoning
+#: about the value — which is the right instinct for it to have. The caller's untrusted input is
+#: the bound ``?`` parameter and never reaches this string.
+_RESOLVE_RUN_SQL = (
+    "SELECT id FROM runs WHERE id LIKE ? ESCAPE '"  # nosec B608 -- the only interpolation is
+    + _LIKE_ESCAPE  # this module's own escape character; the prefix is a bind marker
+    + "' ORDER BY started_at"
+)
+
+
+def _like_prefix(prefix: str) -> str:
+    """``prefix`` as a literal ``LIKE`` pattern — its wildcards defused, nothing rejected.
+
+    ``_`` matches any single character in a ``LIKE`` pattern and ``%`` matches anything, so an
+    unescaped prefix can match ids it does not start with. Escaping rather than validating the
+    character set on purpose: a whitelist would also refuse the synthetic run ids tests and
+    older stores use, and refusing a legitimate id is a worse failure than the one being fixed.
+    The escape character goes first, or it would re-escape the escapes added after it.
+    """
+    escaped = prefix.replace(_LIKE_ESCAPE, _LIKE_ESCAPE * 2)
+    escaped = escaped.replace("%", _LIKE_ESCAPE + "%").replace("_", _LIKE_ESCAPE + "_")
+    return f"{escaped}%"
+
+
+class RunPrefixError(ValueError):
+    """A run-id prefix that matched no run, or more than one."""
+
 
 def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
@@ -217,6 +252,29 @@ class Store:
     # Reads
     # ============================================================
 
+    def resolve_run_id(self, prefix: str) -> str:
+        """Full run id from a prefix — the 8-character form the runners print is enough.
+
+        Ambiguity raises rather than picking: silently choosing one of two matching runs would
+        produce a result about a run the caller never named. Lives on the store rather than in a
+        runner because every CLI that takes a run id needs it, and two copies of a resolver are
+        two chances to resolve differently.
+
+        **The prefix is matched literally.** It reaches a ``LIKE`` pattern, where ``_`` matches any
+        single character and ``%`` matches any run — so an unescaped ``a_c`` would match ``abc``
+        and could resolve, silently and singly, to a run the caller did not name: the one outcome
+        this function exists to prevent. `_like_prefix` defuses those.
+        """
+        if not prefix.strip():
+            raise RunPrefixError("Empty run id.")
+        rows = self.conn.execute(_RESOLVE_RUN_SQL, [_like_prefix(prefix)]).fetchall()
+        if not rows:
+            raise RunPrefixError(f"No run id starts with {prefix!r}.")
+        if len(rows) > 1:
+            matches = ", ".join(str(r[0])[:12] for r in rows[:5])
+            raise RunPrefixError(f"{len(rows)} runs start with {prefix!r}: {matches} ...")
+        return str(rows[0][0])
+
     def list_runs(self, limit: int = 20) -> list[dict[str, Any]]:
         rows = self.conn.execute(
             "SELECT id, started_at, finished_at, system_name, n_cases, note "
@@ -249,6 +307,19 @@ class Store:
             return {}
         loaded: dict[str, Any] = json.loads(row[0])
         return loaded
+
+    def case_ids(self, run_id: str) -> list[str]:
+        """Every case id this run actually recorded a result for, sorted.
+
+        The case set is what a run asked, and it is not recoverable from ``config_json``: that
+        holds ``n_cases``, a count, and two runs of 35 cases can be two different sets of 35 (the
+        public 10 and the private 35 have both been re-authored in place). Comparability needs the
+        identity, so it reads the rows the run actually wrote.
+        """
+        rows = self.conn.execute(
+            "SELECT case_id FROM case_results WHERE run_id = ? ORDER BY case_id", [run_id]
+        ).fetchall()
+        return [str(r[0]) for r in rows]
 
     def scorer_means(self, run_id: str) -> dict[str, float]:
         """Mean score per scorer for one run, over scoreable cases only.

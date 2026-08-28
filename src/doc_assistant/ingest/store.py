@@ -7,8 +7,11 @@ or orchestration logic lives here.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from datetime import datetime, timezone
+from pathlib import Path
 
+import structlog
 from langchain_chroma import Chroma
 from sqlalchemy import select
 
@@ -18,6 +21,8 @@ from doc_assistant.db.models import Figure, IngestionEvent
 from doc_assistant.db.session import session_scope
 
 from .figures import figure_chunk_text
+
+log = structlog.get_logger(__name__)
 
 
 def get_indexed_hashes(db: Chroma) -> set[str]:
@@ -38,19 +43,163 @@ def get_document_row_hashes() -> set[str]:
     return {str(h) for h in rows if h}
 
 
-def _existing_document_id(doc_hash: str) -> str | None:
-    """The id of the Document row already recorded for ``doc_hash``, if any.
+def build_path_index() -> dict[str, str]:
+    """``{pathkey(source_original): document_id}`` for every Document row, in one query.
 
-    Read-only. ``process_one_document`` calls this to resolve the id a re-ingest
-    must reuse (so the document's figures and other id-keyed sidecars stay linked)
-    *before* the Chroma writes — without committing a row. The row is written last,
-    only if both vector writes land (F1, see ``process_one_document``).
+    Built once per ingest run and handed to `_existing_document_id`, which otherwise re-reads the
+    whole table for **every** document whose normalised path it has to resolve. That is the
+    common case during a corpus-wide re-extraction — every hash moves, so the hash lookup misses
+    for all of them — which made the ADR-047 identity fallback O(documents²) against the ~10,000
+    document robustness contract.
+
+    Safe to build once and reuse for the run: each source path is processed exactly once, so a
+    row written later in the same run can never be the answer to a lookup made earlier. It is
+    deliberately **not** module-level state — a stale map in a long-lived API process, or shared
+    between tests, would resolve a document to an id the database no longer holds.
+    """
+    from doc_assistant.ingest.registry import pathkey
+
+    with session_scope() as session:
+        rows = session.execute(select(DBDocument.id, DBDocument.source_original)).all()
+    return {pathkey(source): str(row_id) for row_id, source in rows if source}
+
+
+def _existing_document_id(
+    doc_hash: str,
+    source_original: str | Path | None = None,
+    *,
+    path_index: Mapping[str, str] | None = None,
+) -> str | None:
+    """The id of the Document row this content already has, if any (ADR-047).
+
+    Read-only. ``process_one_document`` calls this to resolve the id a re-ingest must reuse — so
+    the document's figures and other id-keyed sidecars stay linked — *before* the Chroma writes,
+    without committing a row. The row is written last, only if both vector writes land (F1).
+
+    Two keys, tried in order:
+
+    1. **``doc_hash``** — the extracted text. Exact, and the answer whenever extraction is stable.
+    2. **``source_original``** — the file it came from. This is the ADR-047 fallback, and it is
+       what makes a document survive its own re-extraction: every extractor improvement changes
+       the text, which changes the hash, which under (1) alone minted a fresh id and cut loose
+       everything keyed to the old one. Measured on the live library before this existed: an
+       extractor change would have orphaned **4,123 rows**, including 881 figure descriptions and
+       19 rows nobody can regenerate (18 folder assignments and a metadata override the user
+       typed).
+
+    The path comparison is normalised (case and separators, via the registry's ``pathkey``) rather
+    than a raw string equality, because the same file reaches this code both resolved and
+    unresolved depending on the caller. The exact match is tried first so the common case stays a
+    single indexed lookup.
+
+    **The consequence, stated because it is a real trade:** a *different* document written to the
+    same path inherits the previous one's id and its sidecars. For a library where the path is the
+    document's address that is the intended reading — see ADR-047, which records why.
     """
     with session_scope() as session:
-        existing = session.execute(
+        by_hash = session.execute(
             select(DBDocument.id).where(DBDocument.doc_hash == doc_hash)
         ).scalar_one_or_none()
-        return str(existing) if existing is not None else None
+        if by_hash is not None:
+            return str(by_hash)
+        if source_original is None:
+            return None
+
+        exact = session.execute(
+            select(DBDocument.id).where(DBDocument.source_original == str(source_original))
+        ).scalar_one_or_none()
+        if exact is not None:
+            log.info("document_id_reused_by_path", source=str(source_original), match="exact")
+            return str(exact)
+
+        from doc_assistant.ingest.registry import pathkey
+
+        wanted = pathkey(source_original)
+        # `path_index` is the run-scoped map `build_path_index` prepared; without it this falls
+        # back to reading the table, which is correct but O(documents) *per document*.
+        if path_index is not None:
+            found = path_index.get(wanted)
+            if found is not None:
+                log.info(
+                    "document_id_reused_by_path", source=str(source_original), match="normalised"
+                )
+            return found
+        rows = session.execute(select(DBDocument.id, DBDocument.source_original)).all()
+        for row_id, row_source in rows:
+            if row_source and pathkey(row_source) == wanted:
+                log.info(
+                    "document_id_reused_by_path", source=str(source_original), match="normalised"
+                )
+                return str(row_id)
+        return None
+
+
+def repoint_figures(document_id: str, new_hash: str) -> int:
+    """Move a document's figures onto its new ``doc_hash`` after a re-extraction (ADR-047).
+
+    Figures are the one sidecar keyed *both* ways — ``document_id`` **and** ``doc_hash``, plus
+    on-disk PNGs under ``FIGURE_DIR/{doc_hash}/`` whose absolute paths are stored in
+    ``figures.image_path``. The id half survives a re-extraction on its own; the hash half does
+    not, so without this the rows would point at a hash no document has and a directory the next
+    figure pass would not write to.
+
+    They are worth carrying rather than regenerating: a figure is a crop of **the PDF's own
+    page**, so changing the *text* extractor cannot invalidate it — and regenerating means paying
+    for the VLM descriptions again (881 of them on the current library).
+
+    Three updates, and all three or none: rename the directory, repoint ``image_path``, set
+    ``doc_hash``. Returns how many rows moved. A missing directory is not an error — figure
+    detection may simply never have run for this document.
+    """
+    from doc_assistant.ingest.figures import figure_dir
+
+    with session_scope() as session:
+        rows = (
+            session.execute(select(Figure).where(Figure.document_id == document_id))
+            .scalars()
+            .all()
+        )
+        old_hashes = {str(r.doc_hash) for r in rows if r.doc_hash and r.doc_hash != new_hash}
+        if not rows or not old_hashes:
+            return 0
+
+        for old_hash in old_hashes:
+            src_dir, dest_dir = figure_dir(old_hash), figure_dir(new_hash)
+            if not src_dir.exists():
+                continue  # nothing on disk to carry; the rows below still move
+            if dest_dir.exists():
+                # The destination is already populated, so the rename cannot happen — and the
+                # rows must not move without it. Repointing them anyway sent every `image_path`
+                # into a directory that does not hold those crops, and left the real ones behind
+                # under a hash `hashes_with_no_figure_rows` would then read as dead and delete.
+                # Bailing keeps every stored path resolving, which is the same trade the OSError
+                # arm below makes.
+                log.warning(
+                    "figure_dir_move_skipped",
+                    reason="destination_exists",
+                    document_id=document_id,
+                    dest=str(dest_dir),
+                )
+                return 0
+            try:
+                dest_dir.parent.mkdir(parents=True, exist_ok=True)
+                src_dir.rename(dest_dir)
+            except OSError as e:
+                # Leave the rows pointing at the old location rather than half-moving them:
+                # a stored `image_path` that resolves is worth more than a tidy hash.
+                log.warning("figure_dir_move_failed", document_id=document_id, error=str(e))
+                return 0
+
+        moved = 0
+        for row in rows:
+            old_hash = str(row.doc_hash) if row.doc_hash else ""
+            if old_hash and old_hash != new_hash:
+                if row.image_path:
+                    row.image_path = str(row.image_path).replace(old_hash, new_hash)
+                row.doc_hash = new_hash
+                moved += 1
+        log.info("figures_repointed", document_id=document_id, count=moved)
+        return moved
 
 
 def upsert_document_in_sqlite(
@@ -73,12 +222,18 @@ def upsert_document_in_sqlite(
     **after** the Chroma writes succeed, so this commit is the last step of a
     document's ingest — a vector-write failure aborts before any row is written.
 
-    If a row with ``doc_hash`` exists, update it and log a re-ingestion event;
-    otherwise create a new row with ``document_id`` as its primary key.
+    Looked up by ``document_id`` — the id the caller already resolved — and **not** by
+    ``doc_hash`` (ADR-047). Those were the same question until the identity fallback existed;
+    they are not any more. A re-extraction reuses the id while the hash moves, so a hash lookup
+    would miss the row, fall through to the insert, and collide on the primary key. Resolving
+    identity is `_existing_document_id`'s job; this function's job is to write.
+
+    If the row exists, update it and log a re-ingestion event; otherwise create it with
+    ``document_id`` as its primary key.
     """
     with session_scope() as session:
         existing = session.execute(
-            select(DBDocument).where(DBDocument.doc_hash == doc_hash)
+            select(DBDocument).where(DBDocument.id == document_id)
         ).scalar_one_or_none()
 
         if existing:
@@ -86,6 +241,12 @@ def upsert_document_in_sqlite(
             existing.chunk_count = chunk_count
             existing.extractor_used = extractor_used
             existing.extracted_at = datetime.now(timezone.utc)
+            # The text may have changed under the same identity — that is the ADR-047 case, and
+            # the row has to record what it actually holds now.
+            existing.doc_hash = doc_hash
+            existing.source_original = source_original
+            existing.source_cache = source_cache
+            existing.extraction_health = extraction_health
             if page_count is not None:
                 existing.page_count = page_count
 

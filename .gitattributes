@@ -1,2 +1,7 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+
+# Binary test fixtures. `* text=auto` decides by heuristic; an EPUB is a zip, and a zip that
+# gets line-ending normalisation is an unreadable file. Stated explicitly rather than trusted
+# to detection (tests/unit/test_extraction_fixtures.py asserts the container still starts PK).
+*.epub binary

@@ -16,5 +16,8 @@ tauri-build = { version = "2", features = [] }
 tauri = { version = "2", features = [] }
 # Used in PR-M4 to spawn the bundled FastAPI sidecar binary; harmless to declare now.
 tauri-plugin-shell = "2"
+# AD1: the "Add documents" file/folder picker. Rust-side only — with `withGlobalTauri`
+# the plugin injects itself at `window.__TAURI__.dialog`, so it adds no npm dependency.
+tauri-plugin-dialog = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

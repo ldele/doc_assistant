@@ -8,7 +8,18 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
 
-from apps.api.models.sources import IngestRequest, SourceFilePayload, SourcePatch
+from apps.api.models.sources import (
+    AddOutcomePayload,
+    AddRequest,
+    AddResultPayload,
+    FileVerdictPayload,
+    IngestRequest,
+    InspectRequest,
+    InspectResponse,
+    SourceFilePayload,
+    SourcePatch,
+    UndoAddRequest,
+)
 from apps.api.services import _ingest_status_dict, _IngestStatus, log
 from doc_assistant import app_settings
 from doc_assistant.db.session import session_scope
@@ -109,10 +120,85 @@ def patch_source(body: SourcePatch, request: Request) -> SourceFilePayload:
     source = app_settings.get_source_dir()
     with session_scope() as session:
         try:
-            registry.set_source_meta(session, body.rel_path, excluded=body.excluded)
+            registry.set_source_meta(
+                session, body.rel_path, excluded=body.excluded, root_id=body.root_id
+            )
         except KeyError as e:
             raise HTTPException(status_code=404, detail=f"unknown source: {body.rel_path}") from e
-        view = registry.view_for(session, source, body.rel_path)
+        view = registry.view_for(session, source, body.rel_path, root_id=body.root_id)
         if view is None:  # unreachable (set_source_meta would have raised) — narrows for mypy
             raise HTTPException(status_code=404, detail=f"unknown source: {body.rel_path}")
         return SourceFilePayload.from_view(view)
+
+
+@router.post("/api/documents/inspect")
+def inspect_documents(body: InspectRequest) -> InspectResponse:
+    """AD2 — say what would happen to each candidate path. **Mutates nothing the user can see.**
+
+    This is the review sheet's only data source, and it is deliberately a separate call from the
+    one that applies anything (AD3): spec constraint 2 is that nothing is copied, registered or
+    indexed before the sheet has been shown and confirmed, and two endpoints is how that stays
+    true rather than remembered.
+
+    Directories expand recursively server-side, matching `registry.scan_sources`. An empty
+    `paths` is a valid request with an empty answer — a drop that yielded nothing is not an error.
+    """
+    from doc_assistant.library.add import inspect, sort_for_review, summarise
+
+    verdicts = inspect([Path(p) for p in body.paths])
+    return InspectResponse(
+        files=[FileVerdictPayload.from_verdict(v) for v in sort_for_review(verdicts)],
+        counts=summarise(verdicts),
+    )
+
+
+def _running(request: Request) -> bool:
+    """True while an ingest is in flight. Adding during one would race the registry scan."""
+    status: _IngestStatus = request.app.state.ingest_status
+    with request.app.state.ingest_lock:
+        return bool(status.state == "running")
+
+
+@router.post("/api/documents/add")
+def add_documents(request: Request, body: AddRequest) -> AddResultPayload:
+    """AD3 — copy the chosen files into the library folder and register them.
+
+    **Does not index.** Indexing is the caller's next step through the existing `POST /api/ingest`
+    with an explicit `paths` list (spec constraint 4): one ingest path in the system, not two.
+
+    Both placement modes work since AD3b: ``copy`` copies into the library folder, ``reference``
+    registers the file where it already lives under its own root. 409 while an ingest is running,
+    mirroring `/api/ingest` itself.
+    """
+    from doc_assistant.library.add import AddOutcome, apply_add
+
+    if _running(request):
+        raise HTTPException(status_code=409, detail="ingest already running")
+
+    result = apply_add([Path(p) for p in body.paths], mode=body.mode)
+
+    def out(o: AddOutcome) -> AddOutcomePayload:
+        return AddOutcomePayload(
+            path=o.path, name=o.name, ok=o.ok, rel_path=o.rel_path, key=o.key, error=o.error
+        )
+
+    return AddResultPayload(
+        added=[out(o) for o in result.added],
+        failed=out(result.failed) if result.failed else None,
+        not_attempted=result.not_attempted,
+        stopped_early=result.stopped_early,
+    )
+
+
+@router.post("/api/documents/undo-add")
+def undo_add_documents(request: Request, body: UndoAddRequest) -> dict[str, int]:
+    """Reverse a just-completed add — the *Undo all* half of grill branch 6.
+
+    Only removes rows whose `origin` is `copied`, so it can never delete a file the app does not
+    own (the ADR-014 amendment, enforced in the library rather than trusted to the caller).
+    """
+    from doc_assistant.library.add import undo_add
+
+    if _running(request):
+        raise HTTPException(status_code=409, detail="ingest already running")
+    return {"undone": undo_add(body.rel_paths)}

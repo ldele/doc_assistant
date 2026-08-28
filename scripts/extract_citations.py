@@ -28,7 +28,9 @@ from doc_assistant.db.models import Citation, Document
 from doc_assistant.db.session import session_scope
 from doc_assistant.ingest.citations import (
     ExtractionResult,
+    LibraryCandidate,
     extract_from_markdown,
+    load_library_candidates,
     match_to_library,
 )
 from doc_assistant.library.documents import DocumentPrefixError, resolve_document_prefix
@@ -73,7 +75,13 @@ def _find_cached_text(source_cache: str | None, source_original: str) -> str | N
     return None
 
 
-def _persist(doc_id: str, result: ExtractionResult, *, force: bool) -> int:
+def _persist(
+    doc_id: str,
+    result: ExtractionResult,
+    *,
+    force: bool,
+    candidates: list[LibraryCandidate],
+) -> int:
     """Write Citation rows for one doc. Returns rows inserted. Idempotent."""
     inserted = 0
     with session_scope() as session:
@@ -86,7 +94,7 @@ def _persist(doc_id: str, result: ExtractionResult, *, force: bool) -> int:
             session.execute(delete(Citation).where(Citation.source_document_id == doc_id))
 
         for parsed in result.citations:
-            target_id = match_to_library(parsed)
+            target_id = match_to_library(parsed, candidates=candidates)
             session.add(
                 Citation(
                     source_document_id=doc_id,
@@ -112,6 +120,7 @@ def _run_one(
     *,
     apply: bool,
     force: bool,
+    candidates: list[LibraryCandidate],
 ) -> dict[str, object]:
     """Process one document. Returns a row of stats."""
     text = _find_cached_text(source_cache, source_original)
@@ -130,7 +139,7 @@ def _run_one(
 
     matches = 0
     for parsed in result.citations:
-        if match_to_library(parsed) is not None:
+        if match_to_library(parsed, candidates=candidates) is not None:
             matches += 1
 
     row: dict[str, object] = {
@@ -144,7 +153,7 @@ def _run_one(
     }
 
     if apply:
-        inserted = _persist(doc_id, result, force=force)
+        inserted = _persist(doc_id, result, force=force, candidates=candidates)
         row["inserted"] = inserted
 
     return row
@@ -193,7 +202,32 @@ def main() -> int:
     parser.add_argument(
         "--doc", type=str, help="Limit to one document (id prefix or doc_hash prefix)"
     )
+    parser.add_argument(
+        "--reresolve",
+        action="store_true",
+        help=(
+            "Re-point stored citations using the CURRENT matcher and library, without "
+            "re-extracting anything. Use after a matcher fix or when the library has grown "
+            "(KI-45). Honours --apply; dry by default."
+        ),
+    )
     args = parser.parse_args()
+
+    if args.reresolve:
+        from doc_assistant.library.citations import reresolve_stored_citations
+
+        stats = reresolve_stored_citations(apply=args.apply)
+        print(
+            f"Re-resolved {stats['rows']} stored citation(s):\n"
+            f"  linked before : {stats['before']}\n"
+            f"  linked after  : {stats['after']}\n"
+            f"  gained        : {stats['gained']}\n"
+            f"  lost          : {stats['lost']}  (resolution no longer credible)\n"
+            f"  re-pointed    : {stats['changed']}"
+        )
+        if not args.apply:
+            print("\nDry run. Pass --apply to write.")
+        return 0
 
     doc_ref = None
     if args.doc:
@@ -216,8 +250,21 @@ def main() -> int:
         return 1
 
     print(f"Processing {len(docs)} document(s)... (apply={args.apply}, force={args.force})")
+    # The library, read once for the whole run. Left to itself `match_to_library` reads it per
+    # *reference* — and `_persist` calls it from inside an open session, so that was also a
+    # nested session per reference. Nothing here adds documents, so one snapshot is current
+    # for the run.
+    candidates = load_library_candidates()
     rows = [
-        _run_one(doc_id, fn, src_cache, src_orig, apply=args.apply, force=args.force)
+        _run_one(
+            doc_id,
+            fn,
+            src_cache,
+            src_orig,
+            apply=args.apply,
+            force=args.force,
+            candidates=candidates,
+        )
         for doc_id, fn, src_cache, src_orig in docs
     ]
     print(_format_report(rows, apply=args.apply))

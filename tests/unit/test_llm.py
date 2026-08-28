@@ -10,6 +10,7 @@ from __future__ import annotations
 import os
 from typing import Any, ClassVar
 
+import httpx
 import pytest
 
 from doc_assistant import config, llm
@@ -565,7 +566,7 @@ def test_ollama_probe_lists_installed_models(monkeypatch: pytest.MonkeyPatch) ->
         calls["timeout"] = kwargs.get("timeout")
         return _FakeResponse({"models": [{"name": "qwen3.5:9b"}, {"name": "llama3.1:8b"}]})
 
-    monkeypatch.setattr("httpx.get", _get)
+    monkeypatch.setattr(httpx, "get", _get)
     reachable, models, detail = llm.ollama_probe("http://localhost:11434/")
     assert (reachable, detail) == (True, None)
     assert models == ("llama3.1:8b", "qwen3.5:9b")  # sorted, so the UI order is stable
@@ -580,14 +581,14 @@ def test_ollama_probe_never_raises_when_the_server_is_down(
     def _boom(url: str, **kwargs: Any) -> _FakeResponse:
         raise OSError("connection refused")
 
-    monkeypatch.setattr("httpx.get", _boom)
+    monkeypatch.setattr(httpx, "get", _boom)
     reachable, models, detail = llm.ollama_probe("http://localhost:11434")
     assert (reachable, models) == (False, ())
     assert "11434" in (detail or "")  # the message names the host the user must fix
 
 
 def test_ollama_probe_distinguishes_running_but_empty(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("httpx.get", lambda url, **k: _FakeResponse({"models": []}))
+    monkeypatch.setattr(httpx, "get", lambda url, **k: _FakeResponse({"models": []}))
     reachable, models, detail = llm.ollama_probe()
     assert (reachable, models) == (True, ())
     assert "no models" in (detail or "")
@@ -597,10 +598,10 @@ def test_ollama_probe_tolerates_a_shape_it_does_not_know(monkeypatch: pytest.Mon
     # Ollama has used both `name` and `model` keys; an unrecognized payload must degrade to
     # "reachable, models unknown", never crash the setup panel.
     monkeypatch.setattr(
-        "httpx.get", lambda url, **k: _FakeResponse({"models": [{"model": "m:1"}]})
+        httpx, "get", lambda url, **k: _FakeResponse({"models": [{"model": "m:1"}]})
     )
     assert llm.ollama_probe()[1] == ("m:1",)
-    monkeypatch.setattr("httpx.get", lambda url, **k: _FakeResponse("not a dict"))
+    monkeypatch.setattr(httpx, "get", lambda url, **k: _FakeResponse("not a dict"))
     assert llm.ollama_probe()[0] is True
 
 

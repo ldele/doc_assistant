@@ -90,6 +90,13 @@ def run_defining_settings() -> dict[str, Any]:
         # experiments, however identical the retrieval settings look.
         "llm_provider": config.LLM_PROVIDER,
         "llm_model": config.LLM_MODEL,
+        # Scoring instrument — the judge is a *different* model from the generator, and
+        # `llm_judge` grades with it, so two runs can share a generator and still be graded by
+        # different judges. Recorded unconditionally rather than only when the judge ran: a key
+        # that appears only sometimes makes absence ambiguous, and absence has to keep meaning
+        # "not recorded". A run without the judge simply carries an unused pair.
+        "judge_provider": config.JUDGE_PROVIDER,
+        "judge_model": config.JUDGE_MODEL,
         # Retrieval — the locked settings table, minus the ones already named above.
         "embedding_model": config.EMBEDDING_MODEL,
         "use_parent_child": config.USE_PARENT_CHILD,

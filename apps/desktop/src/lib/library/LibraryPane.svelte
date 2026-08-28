@@ -13,6 +13,7 @@
   import LibraryBrowser from './LibraryBrowser.svelte'
   import LibraryFilterStrip from './LibraryFilterStrip.svelte'
   import { LIB_SORTS, libPrefs, setLibrarySort, setLibraryView } from './prefs.svelte'
+  import { accept, canAccept, pickDocuments, unavailableReason } from './accept.svelte'
   import {
     collectionLabel,
     docLabel,
@@ -171,6 +172,21 @@
             <Icon name="square-check-big" size={14} /> Select
           </button>
         {/if}
+        <!-- The primary action for this pane, so it lives with the other document actions rather
+             than in the app toolbar — whose right cluster is identity + config by design ("Brand =
+             identity anchor only, parked on the right beside Settings", Topbar.svelte). Moved here
+             2026-08-24 on the user's call. Outside the Tauri window there is no picker and no
+             drag-drop, so it stays visible, disabled, and SAYS WHY: hiding it would make a browser
+             look like a missing feature. Reachable from Chat via the app menu. -->
+        <button
+          class="addbtn"
+          onclick={() => void pickDocuments()}
+          disabled={!canAccept() || accept.picking}
+          title={unavailableReason() ?? 'Add documents'}
+          type="button"
+        >
+          <Icon name="plus" size={14} /> Add documents
+        </button>
       {/if}
     </div>
 
@@ -347,6 +363,31 @@
     color: var(--fg-2);
     display: inline-flex;
     flex: none;
+  }
+  /* The pane's primary action: filled accent, unlike the neutral view/sort toggles beside it.
+     A single class, and nothing else in this file targets `.addbtn` — but if a sibling rule is
+     ever added, give this one two classes rather than relying on source order (the 2026-08-19
+     tick-row accident, repeated in the toolbar on 2026-08-21). */
+  .addbtn {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    padding: 0.28rem 0.7rem;
+    border: 1px solid var(--accent);
+    border-radius: 8px;
+    background: var(--accent);
+    color: var(--accent-fg);
+    font: inherit;
+    font-size: var(--text-sm);
+    cursor: pointer;
+  }
+  .addbtn:disabled {
+    background: var(--surface);
+    border-color: var(--border);
+    color: var(--fg-2);
+    opacity: 0.7;
+    cursor: default;
   }
   .libsort {
     position: relative;

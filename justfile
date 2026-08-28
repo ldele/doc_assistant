@@ -33,6 +33,14 @@ ingest *ARGS:
 eval *ARGS:
     uv run --extra {{torch}} python -m scripts.run_eval {{ARGS}}
 
+# Compare two eval runs -- verdict first: may these numbers be read against each other at all?
+compare *ARGS:
+    uv run --extra {{torch}} python -m scripts.compare_runs {{ARGS}}
+
+# Write a baseline document from the run record, provenance block included (fill its TODO after).
+emit-baseline *ARGS:
+    uv run --extra {{torch}} python -m scripts.emit_baseline {{ARGS}}
+
 # --- optimisation instruments (the locked-settings workflow) -----------------------------------
 # `just --list` shows only the LAST comment line above a recipe, so the detail lives here and each
 # recipe below keeps a one-line summary.
@@ -46,6 +54,10 @@ eval *ARGS:
 # baseline (evals/README.md): the public 10 need an isolated data home, while the private 35-case
 # set matches the indexed library. The public set also saturates citation_overlap at 1.000 and so
 # cannot discriminate retrieval changes — retrieval experiments belong on the larger corpus.
+#
+# `just compare A B` now checks that mechanically (RG-021): it reports which scorers may be
+# read across two runs and which may not, and answers UNKNOWN rather than OK when a run did
+# not record what it measured. `just compare --list` shows which runs pin themselves at all.
 #
 # ⚠ sweep-chunking's preflight is load-bearing: it asserts every config actually reaches the code
 # and that no two grid points are the same experiment. That guard exists because the 2026-06-06 run

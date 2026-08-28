@@ -19,6 +19,7 @@ keeps working unchanged after the split. Path/model config is read dynamically v
 from __future__ import annotations
 
 import shutil
+from collections.abc import Mapping
 from pathlib import Path
 from uuid import uuid4
 
@@ -56,54 +57,57 @@ from .cleanup import (
     cleanup_orphan_figures,
     cleanup_orphans_chroma,
     cleanup_orphans_sqlite,
+    hashes_with_no_figure_rows,
 )
 from .figures import figure_parent_text, find_figure_context
 from .store import (
     _existing_document_id,
+    build_path_index,
     figure_captions,
     figure_units,
     get_document_row_hashes,
     get_indexed_hashes,
+    repoint_figures,
     upsert_document_in_sqlite,
 )
+from .workers import resolve_workers, warm_extraction_cache
 
 log = structlog.get_logger(__name__)
 
 __all__ = [
-    # markers / config-driven splitter factories (chunking)
     "PAGE_MARKER",
     "_existing_document_id",
-    # cleanup
     "_find_orphan_hashes",
     "_make_baseline_splitter",
     "_make_child_splitter",
     "_make_parent_splitter",
     "build_parent_child_chunks",
+    "build_path_index",
     "clean_chunk_text",
     "cleanup_orphan_figures",
     "cleanup_orphans_chroma",
     "cleanup_orphans_sqlite",
     "compute_health_signals",
-    # cache + hashing
     "doc_hash",
     "extract_chunk_metadata",
     "figure_captions",
     "figure_units",
-    # embeddings passthrough (used by callers/tests via the ingest namespace)
     "get_active_model_name",
     "get_cache_path",
     "get_collection_name",
     "get_document_row_hashes",
     "get_embeddings",
-    # store helpers
     "get_indexed_hashes",
+    "hashes_with_no_figure_rows",
     "is_cache_fresh",
-    # orchestration (defined here)
     "load_documents",
     "load_or_extract",
     "main",
     "process_one_document",
+    "repoint_figures",
+    "resolve_workers",
     "upsert_document_in_sqlite",
+    "warm_extraction_cache",
 ]
 
 
@@ -165,6 +169,7 @@ def process_one_document(
     pc_db: Chroma,
     splitter: RecursiveCharacterTextSplitter,
     indexed: set[str],
+    path_index: Mapping[str, str] | None = None,
 ) -> str:
     try:
         text = load_or_extract(path)
@@ -211,6 +216,12 @@ def process_one_document(
                         "chunk_index": i,
                         "page": extra["page"],
                         "section": extra["section"],
+                        # Span in the cached markdown (ROADMAP 19). `chunk_start` was already
+                        # computed above for `extract_chunk_metadata` and thrown away; the end is
+                        # the raw chunk's own length, since this splitter's output IS the slice
+                        # it was cut from (unlike the parent/child path — see `locate_span`).
+                        "char_start": chunk_start,
+                        "char_end": chunk_start + len(chunk_text),
                     },
                 )
             )
@@ -244,7 +255,10 @@ def process_one_document(
         # chunks. The id is needed up front because it is stamped into every chunk's
         # metadata and is the key figure_units() queries on.
         # Coupling: ingest <-> db Document (this id) <-> both Chroma collections.
-        document_id = _existing_document_id(h) or str(uuid4())
+        document_id = _existing_document_id(h, path, path_index=path_index) or str(uuid4())
+        # The identity survived but the content moved (ADR-047): carry the figures across before
+        # anything reads them by hash. No-op when the hash is unchanged or there are no figures.
+        repoint_figures(document_id, h)
 
         # Stamp health and document_id onto chunks
         for doc in documents:
@@ -377,9 +391,17 @@ def _resolve_walk_root(scope: str | None) -> Path:
     Accepts an absolute path, a path relative to the CWD, or a path
     relative to DOCS_PATH. Returns the resolved path. Raises FileNotFoundError
     if nothing matches.
+
+    **Resolved in both branches, and the default one is why this is load-bearing.** Paths from
+    this walk are compared against the registry by `_drop_excluded`, whose keys are built from
+    `SourceRoot.path` — written *resolved* by `registry.ensure_library_root`. `registry.pathkey`
+    normalises case and separators but does not expand 8.3 short names, junctions or symlinks, so
+    an unresolved walk root produced keys that could never match and every standing exclusion
+    silently stopped applying. Returning `config.DOCS_PATH` raw was the one branch that did not
+    keep this function's own promise.
     """
     if scope is None:
-        return config.DOCS_PATH
+        return config.DOCS_PATH.resolve()
     candidates = [Path(scope), Path.cwd() / scope, config.DOCS_PATH / scope]
     for c in candidates:
         if c.exists():
@@ -392,26 +414,31 @@ def _resolve_walk_root(scope: str | None) -> Path:
 def _drop_excluded(walked: list[Path]) -> tuple[list[Path], int]:
     """Drop files flagged ``excluded`` in the registry from an implicit walk (Decision 5).
 
-    Exclusions are keyed by rel_path under the configured source dir; a walked file outside that
-    dir (a ``--path`` elsewhere) can't match an exclusion and is kept. Returns ``(kept, skipped)``.
-    Registry / app_settings are imported lazily to keep the locked core's top-level imports intact.
+    Since AD3b the registry hands back **absolute** path keys spanning every root, so this is a
+    membership test rather than a rel_path reconstruction against one source dir — which also
+    retires the old caveat that a file walked from outside that dir could never match an
+    exclusion. Returns ``(kept, skipped)``. Registry is imported lazily to keep the locked core's
+    top-level imports intact.
+
+    ⚠ **Precondition: ``walked`` must already be resolved.** `registry.pathkey` normalises case
+    and separators without touching the filesystem — deliberately, since it also keys paths whose
+    file may be gone — so it cannot reconcile an 8.3 short name, a junction or a symlink against
+    the *resolved* form every writer of `SourceRoot.path` stores. The two sides meeting in the
+    same form is an invariant held at the ends: `_resolve_walk_root` resolves, and
+    `ensure_library_root` / `register_root` / `_seed_library_root` all store resolved. Break
+    either end and this returns ``skipped=0`` — no error, no warning, every standing exclusion
+    quietly ignored.
     """
-    from doc_assistant import app_settings
     from doc_assistant.ingest import registry
 
     with session_scope() as session:
-        excluded = registry.excluded_rel_paths(session)
+        excluded = registry.excluded_paths(session)
     if not excluded:
         return walked, 0
-    source_dir = app_settings.get_source_dir().resolve()
     kept: list[Path] = []
     skipped = 0
     for f in walked:
-        try:
-            rel = f.resolve().relative_to(source_dir).as_posix()
-        except ValueError:
-            rel = ""
-        if rel and rel in excluded:
+        if registry.pathkey(f) in excluded:
             skipped += 1
         else:
             kept.append(f)
@@ -451,6 +478,7 @@ def _dry_run_plan(scope: str | None, files: list[Path] | None) -> dict[str, int]
 def main(
     force_rebuild: bool = False,
     skip_cleanup: bool = False,
+    workers: str | int | None = None,
     scope: str | None = None,
     files: list[Path] | None = None,
     dry_run: bool = False,
@@ -524,10 +552,15 @@ def main(
     # `files=` selection), otherwise a partial walk would falsely flag everything outside the
     # scope as missing-on-disk.
     if not skip_cleanup and not force_rebuild and scope is None and files is None:
-        orphan_hashes = cleanup_orphans_sqlite(db)
-        cleanup_orphans_chroma(db, orphan_hashes, also_clean_cache=True)
-        cleanup_orphans_chroma(pc_db, orphan_hashes, also_clean_cache=False)
-        cleanup_orphan_figures(orphan_hashes)
+        orphans = cleanup_orphans_sqlite(db)
+        # Vectors die for both kinds; figure PNGs only for a source that is actually gone
+        # (ADR-047 — a re-extracted document keeps its figures, which are crops of the PDF).
+        cleanup_orphans_chroma(db, orphans.dead_chunk_hashes, also_clean_cache=True)
+        cleanup_orphans_chroma(pc_db, orphans.dead_chunk_hashes, also_clean_cache=False)
+        # `gone` documents are over, so their crops go. A `stale` hash keeps its crops only
+        # while a Figure row still claims them — `store.repoint_figures` moves those to the new
+        # hash. One with no rows behind it is a dead directory nothing will ever read (ADR-047).
+        cleanup_orphan_figures(orphans.gone + hashes_with_no_figure_rows(orphans.stale))
 
     # The dedup gate is the INTERSECTION of the two stores on purpose: a hash counts as
     # "already indexed" only when it is present in BOTH the baseline and the parent-child
@@ -584,9 +617,29 @@ def main(
     # a hash still in `indexed` when the loop starts was NOT reproduced by this run.
     indexed_before = set(indexed)
 
+    # Extraction is ~89% of ingest cost and is per-document and independent, so it is warmed in
+    # parallel here and the loop below then finds every cache fresh (see `ingest.workers`). The
+    # loop itself stays serial: embedding is GPU-bound and already batched, and concurrent writers
+    # on one Chroma collection is a corruption risk rather than a speed-up. A budget of 1 skips
+    # this entirely and the run is byte-identical to the pre-2026-08-25 behaviour.
+    if to_process:
+        from doc_assistant import app_settings
+
+        budget = workers if workers is not None else app_settings.get_ingest_budget()
+        warm_extraction_cache(to_process, resolve_workers(budget))
+
+    # ADR-047's identity fallback resolves a document by its *normalised* source path, and during
+    # a corpus-wide re-extraction every hash has moved, so that fallback is the path taken for
+    # every document rather than the exception. Read once here instead of once per document:
+    # per-document it was O(documents²), which the ~10,000-document robustness contract does not
+    # survive. Built before the loop and not refreshed inside it on purpose — each source path is
+    # processed exactly once, so a row this run writes later cannot be the answer to an earlier
+    # lookup.
+    path_index = build_path_index()
+
     stats: dict[str, int] = {"added": 0, "skipped": 0, "error": 0}
     for path in tqdm(to_process, desc="Processing"):
-        result = process_one_document(path, db, pc_db, splitter, indexed)
+        result = process_one_document(path, db, pc_db, splitter, indexed, path_index)
         stats[result] += 1
 
     _assign_demo_folder(get_document_row_hashes() - rows_before)

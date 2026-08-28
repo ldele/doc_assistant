@@ -545,3 +545,293 @@ def test_document_references_are_ordered_newest_first(temp_database):
     view = document_references(a)
     assert view is not None
     assert [r.year for r in view.references] == [2024, 2011, 1998]
+
+
+# ============================================================
+# ADR-013 metadata overrides — the list and the detail view must agree
+# ============================================================
+
+
+def _doc_with_override(title_override=None, authors_override=None, year_override=None):
+    """One document with extracted values, plus whatever override the test wants."""
+    from doc_assistant.db.models import Document, DocumentMeta
+    from doc_assistant.db.session import session_scope
+
+    with session_scope() as session:
+        doc = Document(
+            id="doc-1",
+            filename="scan.pdf",
+            doc_hash="hash-1",
+            format="pdf",
+            source_original="/docs/scan.pdf",
+            title="A Revised Neuroanatom of Cireuits",  # as OCR read it
+            authors="FRANK A. MIDDLETON PETER L. STRICK",
+            year=2001,
+            chunk_count=52,
+            extraction_health="healthy",
+        )
+        session.add(doc)
+        if any(v is not None for v in (title_override, authors_override, year_override)):
+            session.add(
+                DocumentMeta(
+                    document_id="doc-1",
+                    title_override=title_override,
+                    authors_override=authors_override,
+                    year_override=year_override,
+                )
+            )
+    return "doc-1"
+
+
+def test_the_detail_view_applies_a_title_override(temp_database):
+    """The bug this pins (2026-08-19): the grid showed the corrected title and the document's own
+    page showed the raw extracted one, because the merge lived in `list_documents` alone."""
+    from doc_assistant.library import get_document_details
+
+    doc_id = _doc_with_override(title_override="A Revised Neuroanatomy of Circuits")
+
+    details = get_document_details(doc_id)
+
+    assert details is not None
+    assert details.title == "A Revised Neuroanatomy of Circuits"
+
+
+def test_the_list_and_the_detail_view_agree(temp_database):
+    """The property that keeps them from drifting again: one document, one answer."""
+    from doc_assistant.library import get_document_details, list_documents
+
+    doc_id = _doc_with_override(
+        title_override="A Revised Neuroanatomy of Circuits",
+        authors_override="Frank A. Middleton, Peter L. Strick",
+    )
+
+    listed = next(d for d in list_documents() if d.id == doc_id)
+    details = get_document_details(doc_id)
+
+    assert details is not None
+    assert (details.title, details.authors, details.year) == (
+        listed.title,
+        listed.authors,
+        listed.year,
+    )
+
+
+def test_without_an_override_both_report_what_extraction_found(temp_database):
+    """The override is additive: with none stored, nothing is invented or hidden."""
+    from doc_assistant.library import get_document_details, list_documents
+
+    doc_id = _doc_with_override()
+
+    listed = next(d for d in list_documents() if d.id == doc_id)
+    details = get_document_details(doc_id)
+
+    assert details is not None
+    assert details.title == "A Revised Neuroanatom of Cireuits" == listed.title
+    assert details.year == 2001
+
+
+def test_a_partial_override_leaves_the_other_fields_extracted(temp_database):
+    """Overriding the title must not blank the authors — each field stands alone (ADR-013)."""
+    from doc_assistant.library import get_document_details
+
+    doc_id = _doc_with_override(title_override="A Revised Neuroanatomy of Circuits")
+
+    details = get_document_details(doc_id)
+
+    assert details is not None
+    assert details.authors == "FRANK A. MIDDLETON PETER L. STRICK"
+    assert details.year == 2001
+
+
+class _EmptyChroma:
+    """Chroma-shaped `get()` with no chunks — these tests are about the header, not the body."""
+
+    def get(self, *, where=None, include=None):
+        return {"documents": [], "metadatas": []}
+
+
+def test_the_document_page_header_applies_the_override(temp_database):
+    """The surface the user actually reported: the page title stayed as extraction read it while
+    the grid beside it showed the correction (2026-08-19). `get_document_chunks` is a separate
+    read path from both `list_documents` and `get_document_details`."""
+    from doc_assistant.library import get_document_chunks
+
+    doc_id = _doc_with_override(
+        title_override="A Revised Neuroanatomy of Circuits",
+        authors_override="Frank A. Middleton, Peter L. Strick",
+    )
+
+    view = get_document_chunks(doc_id, _EmptyChroma())
+
+    assert view is not None
+    assert view.title == "A Revised Neuroanatomy of Circuits"
+    assert view.authors == "Frank A. Middleton, Peter L. Strick"
+
+
+def test_the_figures_block_applies_the_override(temp_database):
+    """Otherwise one document is named two different things on one screen."""
+    from doc_assistant.library.figures import list_document_figures
+
+    doc_id = _doc_with_override(title_override="A Revised Neuroanatomy of Circuits")
+
+    view = list_document_figures(doc_id)
+
+    assert view is not None
+    assert view.title == "A Revised Neuroanatomy of Circuits"
+
+
+def test_every_display_surface_agrees_on_the_title(temp_database):
+    """The property, stated once over all four read paths. A fifth surface added later without
+    the merge fails here rather than in a screenshot."""
+    from doc_assistant.library import get_document_chunks, get_document_details, list_documents
+    from doc_assistant.library.figures import list_document_figures
+
+    doc_id = _doc_with_override(title_override="A Revised Neuroanatomy of Circuits")
+
+    titles = {
+        "list": next(d for d in list_documents() if d.id == doc_id).title,
+        "details": get_document_details(doc_id).title,
+        "chunks": get_document_chunks(doc_id, _EmptyChroma()).title,
+        "figures": list_document_figures(doc_id).title,
+    }
+
+    assert set(titles.values()) == {"A Revised Neuroanatomy of Circuits"}, titles
+
+
+def test_the_year_used_for_analysis_stays_the_extracted_one(temp_database):
+    """Deliberate asymmetry: `document_years` feeds the year-aware epistemics rule, which is an
+    analysis of what the corpus says — not a display. A metadata edit must not silently move a
+    knowledge-layer verdict; that is a decision with an eval behind it, not a consistency fix.
+    """
+    from doc_assistant.library.documents import document_years
+
+    doc_id = _doc_with_override(year_override=1999)
+
+    assert document_years([doc_id]) == {doc_id: 2001}
+
+
+# ============================================================
+# graph_subgraph — the citation-network view
+# ============================================================
+#
+# Added 2026-08-20: this function was at **0% coverage** while being one of the four surfaces
+# KI-45 names as still trusting `Citation.target_document_id` unguarded (the References block
+# re-checks resolutions at read time; the graph does not). Its traversal is also the only place
+# in the module that walks *both* citation directions and dedupes, so a wrong edge here is a
+# wrong picture of the corpus rather than a wrong row in a list.
+
+
+def test_graph_subgraph_of_an_unknown_document_is_empty_not_an_error(temp_database):
+    """An id that is not in the library must render an empty panel, not raise into the UI."""
+    from doc_assistant.library.citations import graph_subgraph
+
+    graph = graph_subgraph("no-such-id")
+    assert graph.nodes == []
+    assert graph.edges == []
+
+
+def test_graph_subgraph_marks_exactly_one_centre(temp_database):
+    from doc_assistant.library.citations import graph_subgraph
+
+    a, b = _seed_document("a.pdf"), _seed_document("b.pdf")
+    _seed_citation(a, target_id=b)
+
+    graph = graph_subgraph(a)
+    centres = [n.id for n in graph.nodes if n.is_center]
+    assert centres == [a]
+
+
+def test_graph_subgraph_of_an_isolated_document_is_the_document_alone(temp_database):
+    """The 0-edge case: a paper nothing cites and that resolves to nothing still has a node."""
+    from doc_assistant.library.citations import graph_subgraph
+
+    lonely = _seed_document("lonely.pdf")
+    graph = graph_subgraph(lonely)
+    assert [n.id for n in graph.nodes] == [lonely]
+    assert graph.edges == []
+
+
+def test_graph_subgraph_walks_both_directions_at_depth_one(temp_database):
+    """The centre's neighbourhood is what it cites *and* what cites it — a citation graph read
+    in one direction only shows half the relationship the panel claims to draw."""
+    from doc_assistant.library.citations import graph_subgraph
+
+    centre = _seed_document("centre.pdf")
+    cited = _seed_document("cited.pdf")
+    citing = _seed_document("citing.pdf")
+    _seed_citation(centre, target_id=cited)
+    _seed_citation(citing, target_id=centre)
+
+    graph = graph_subgraph(centre)
+    assert {n.id for n in graph.nodes} == {centre, cited, citing}
+    assert {(e.source, e.target) for e in graph.edges} == {(centre, cited), (citing, centre)}
+
+
+def test_graph_subgraph_excludes_unresolved_citations(temp_database):
+    """A reference to a paper outside the library has no node to point at.
+
+    `target_document_id IS NULL` is the majority of any real bibliography (36 references on the
+    recovered scan, 0 library matches), so admitting them would swamp the view with stubs.
+    """
+    from doc_assistant.library.citations import graph_subgraph
+
+    centre = _seed_document("centre.pdf")
+    _seed_citation(centre, title="Some Paper We Do Not Own", year=1998)
+
+    graph = graph_subgraph(centre)
+    assert [n.id for n in graph.nodes] == [centre]
+    assert graph.edges == []
+
+
+def test_graph_subgraph_depth_one_does_not_reach_the_second_hop(temp_database):
+    """`depth` is the panel's cost control; if it does not bound the walk it bounds nothing."""
+    from doc_assistant.library.citations import graph_subgraph
+
+    a, b, c = _seed_document("a.pdf"), _seed_document("b.pdf"), _seed_document("c.pdf")
+    _seed_citation(a, target_id=b)
+    _seed_citation(b, target_id=c)
+
+    assert {n.id for n in graph_subgraph(a, depth=1).nodes} == {a, b}
+    assert {n.id for n in graph_subgraph(a, depth=2).nodes} == {a, b, c}
+
+
+def test_graph_subgraph_deduplicates_repeated_edges(temp_database):
+    """A paper citing another one eleven times is one edge, not eleven.
+
+    Real bibliographies do this constantly — nine of one document's eleven stored resolutions
+    pointed at two papers (KI-45) — and an undeduped edge list would render as a thick smear.
+    """
+    from doc_assistant.library.citations import graph_subgraph
+
+    a, b = _seed_document("a.pdf"), _seed_document("b.pdf")
+    for i in range(5):
+        _seed_citation(a, target_id=b, raw=f"[{i}] ibid.")
+
+    graph = graph_subgraph(a)
+    assert [(e.source, e.target) for e in graph.edges] == [(a, b)]
+
+
+def test_graph_subgraph_terminates_on_a_citation_cycle(temp_database):
+    """Two papers citing each other must not walk forever when depth exceeds the graph."""
+    from doc_assistant.library.citations import graph_subgraph
+
+    a, b = _seed_document("a.pdf"), _seed_document("b.pdf")
+    _seed_citation(a, target_id=b)
+    _seed_citation(b, target_id=a)
+
+    graph = graph_subgraph(a, depth=5)
+    assert {n.id for n in graph.nodes} == {a, b}
+    assert {(e.source, e.target) for e in graph.edges} == {(a, b), (b, a)}
+
+
+def test_graph_subgraph_carries_the_titles_the_panel_labels_nodes_with(temp_database):
+    from doc_assistant.library.citations import graph_subgraph
+
+    a = _seed_document("a.pdf", title="The Citing Paper")
+    b = _seed_document("b.pdf", title="The Cited Paper")
+    _seed_citation(a, target_id=b)
+
+    by_id = {n.id: n for n in graph_subgraph(a).nodes}
+    assert by_id[a].title == "The Citing Paper"
+    assert by_id[b].title == "The Cited Paper"
+    assert by_id[b].filename == "b.pdf"

@@ -32,6 +32,8 @@
     | 'calendar'
     | 'tag'
     | 'chevron-right'
+    | 'chevron-up'
+    | 'chevron-down'
     | 'waypoints'
     | 'panel-left'
     | 'plus'
@@ -140,6 +142,10 @@
     /><circle cx="7.5" cy="7.5" r=".5" fill="currentColor" />
   {:else if name === 'chevron-right'}
     <path d="m9 18 6-6-6-6" />
+  {:else if name === 'chevron-up'}
+    <path d="m18 15-6-6-6 6" />
+  {:else if name === 'chevron-down'}
+    <path d="m6 9 6 6 6-6" />
   {:else if name === 'waypoints'}
     <circle cx="12" cy="4.5" r="2.5" /><path d="m10.2 6.3-3.9 3.9" /><circle
       cx="4.5"

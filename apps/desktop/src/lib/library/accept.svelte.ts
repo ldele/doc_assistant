@@ -21,7 +21,26 @@ export const accept = $state({
 
   /** True while the OS picker is open, so the button can't be double-fired. */
   picking: false,
+
+  /**
+   * True while the entry dialog is open — the step between "Add documents" and the OS picker.
+   *
+   * It exists because the button used to open the file picker directly, which made drag-and-drop
+   * undiscoverable: the window has always accepted a drop, but nothing in the UI ever said so
+   * unless you happened to already be dragging. The dialog names both routes in one place.
+   */
+  chooser: false,
 })
+
+/** Open the entry dialog. No-op where documents cannot be accepted at all (a plain browser). */
+export function openChooser(): void {
+  if (!canAccept()) return
+  accept.chooser = true
+}
+
+export function closeChooser(): void {
+  accept.chooser = false
+}
 
 /** Whether this build can accept documents at all. False in a plain browser. */
 export function canAccept(): boolean {
@@ -39,6 +58,10 @@ export function unavailableReason(): string | null {
 export function stagePaths(paths: readonly NativePath[]): void {
   if (paths.length === 0) return
   accept.pending = dedupePaths([...accept.pending, ...paths])
+  // The chooser's whole job was to get paths; once there are some, the review sheet is the next
+  // step and two stacked dialogs would just be in the way. Closing here rather than in each
+  // caller means a drop lands the same way a picked file does.
+  accept.chooser = false
 }
 
 export function clearPending(): void {

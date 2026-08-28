@@ -654,3 +654,177 @@ def test_undo_declines_to_delete_outside_its_window_but_still_drops_the_row(
 
     assert undo_add([key], source_dir=library) == 1, "the row still goes"
     assert landed.exists(), "a stale key must not bin a file the user has kept"
+
+
+# ============================================================
+# KI-51 — undo removes the document the add produced, and un-references an emptied root
+# ============================================================
+
+
+class _FakeChroma:
+    """The two calls `purge_document_record` makes, and a record of what was deleted.
+
+    A fake rather than a real Chroma (cpc §13): the assertion is *which ids undo asked to remove*,
+    and a real store would add an embedding model, a directory and several seconds to learn
+    nothing.
+    """
+
+    def __init__(self, ids_by_hash: dict[str, list[str]] | None = None) -> None:
+        self._ids = ids_by_hash or {}
+        self.deleted: list[str] = []
+
+    def get(self, where=None, include=None):
+        wanted = (where or {}).get("doc_hash")
+        return {"ids": list(self._ids.get(wanted, []))}
+
+    def delete(self, ids=None):
+        self.deleted.extend(ids or [])
+
+
+def _document_at(path, *, doc_hash: str, added_at=None) -> str:
+    """Insert a `Document` row pointing at `path`, as a completed ingest would have left it."""
+    from uuid import uuid4
+
+    from doc_assistant.db.models import Document, _utcnow
+    from doc_assistant.db.session import session_scope
+
+    doc_id = str(uuid4())
+    with session_scope() as session:
+        session.add(
+            Document(
+                id=doc_id,
+                filename=path.name,
+                source_original=str(path),
+                source_cache=None,
+                doc_hash=doc_hash,
+                format="pdf",
+                extractor_used="pymupdf",
+                extraction_health="ok",
+                chunk_count=3,
+                page_count=1,
+                added_at=added_at or _utcnow(),
+            )
+        )
+    return doc_id
+
+
+def test_undo_removes_the_document_the_add_produced(temp_database, tmp_path):
+    """KI-51 part 1. Undo used to drop the registry row and stop, leaving the library listing —
+    and able to cite — a document whose file undo had just deleted."""
+    from doc_assistant.db.models import Document
+    from doc_assistant.db.session import session_scope
+    from doc_assistant.library.add import apply_add, undo_add
+
+    library = tmp_path / "library"
+    src = _write(tmp_path / "inbox" / "paper.pdf", b"%PDF-1.4 hello")
+    result = apply_add([src], mode="copy", source_dir=library)
+    key = result.added[0].key
+
+    doc_id = _document_at(library / "paper.pdf", doc_hash="h-1")
+    chroma = _FakeChroma({"h-1": ["c1", "c2", "c3"]})
+
+    assert undo_add([key], source_dir=library, chroma_db=chroma) == 1
+    assert not (library / "paper.pdf").exists(), "the copy still goes"
+    with session_scope() as session:
+        assert session.get(Document, doc_id) is None, "the document must go with the row"
+    assert chroma.deleted == ["c1", "c2", "c3"], "its chunks must go too, or it stays retrievable"
+
+
+def test_undo_leaves_a_document_it_cannot_prove_this_add_created(temp_database, tmp_path):
+    """The guard. A path may already carry a document the user has had for months — under ADR-047
+    a replacement even inherits its id — and undo must not destroy it on their behalf."""
+    from datetime import timedelta
+
+    from doc_assistant.db.models import Document, _utcnow
+    from doc_assistant.db.session import session_scope
+    from doc_assistant.library.add import UNDO_DELETE_WINDOW_SECONDS, apply_add, undo_add
+
+    library = tmp_path / "library"
+    src = _write(tmp_path / "inbox" / "paper.pdf", b"%PDF-1.4 hello")
+    result = apply_add([src], mode="copy", source_dir=library)
+    key = result.added[0].key
+
+    old = _utcnow() - timedelta(seconds=UNDO_DELETE_WINDOW_SECONDS + 60)
+    doc_id = _document_at(library / "paper.pdf", doc_hash="h-old", added_at=old)
+    chroma = _FakeChroma({"h-old": ["c1"]})
+
+    assert undo_add([key], source_dir=library, chroma_db=chroma) == 1, "the row still goes"
+    with session_scope() as session:
+        assert session.get(Document, doc_id) is not None, "a pre-existing document must survive"
+    assert chroma.deleted == [], "and keep its chunks"
+
+
+def test_undo_without_a_chroma_handle_leaves_the_document_alone(temp_database, tmp_path):
+    """Half-removing is worse than not starting: dropping the row while its chunks stayed in the
+    index would leave the chunks retrievable with no document behind them."""
+    from doc_assistant.db.models import Document
+    from doc_assistant.db.session import session_scope
+    from doc_assistant.library.add import apply_add, undo_add
+
+    library = tmp_path / "library"
+    src = _write(tmp_path / "inbox" / "paper.pdf", b"%PDF-1.4 hello")
+    key = apply_add([src], mode="copy", source_dir=library).added[0].key
+    doc_id = _document_at(library / "paper.pdf", doc_hash="h-1")
+
+    assert undo_add([key], source_dir=library) == 1
+    with session_scope() as session:
+        assert session.get(Document, doc_id) is not None
+
+
+def test_undoing_the_last_file_un_references_the_root(temp_database, tmp_path):
+    """KI-51 part 2. The root used to survive, so the next scan re-found the file as `new` and the
+    next "index all" re-ingested exactly what the user had undone — without asking."""
+    from doc_assistant.db.models import SourceRoot
+    from doc_assistant.db.session import session_scope
+    from doc_assistant.library.add import apply_add, undo_add
+
+    library = tmp_path / "library"
+    src = _write(tmp_path / "mine" / "paper.pdf", b"%PDF-1.4 the user's own file")
+    key = apply_add([src], mode="reference", source_dir=library).added[0].key
+
+    with session_scope() as session:
+        roots = session.execute(select(SourceRoot)).scalars().all()
+        assert any(r.kind == "referenced" for r in roots), "precondition: a root was registered"
+
+    assert undo_add([key], source_dir=library) == 1
+    assert src.exists(), "the ADR-014 amendment still holds — the file is untouched"
+    with session_scope() as session:
+        roots = session.execute(select(SourceRoot)).scalars().all()
+        assert not any(r.kind == "referenced" for r in roots), "the reference must be withdrawn"
+
+
+def test_a_root_that_still_holds_files_is_kept(temp_database, tmp_path):
+    """Only an *emptied* root goes.
+
+    Undoing one file of several must not un-reference the whole folder.
+    """
+    from doc_assistant.db.models import SourceRoot
+    from doc_assistant.db.session import session_scope
+    from doc_assistant.library.add import apply_add, undo_add
+
+    library = tmp_path / "library"
+    one = _write(tmp_path / "mine" / "one.pdf", b"%PDF-1.4 one")
+    two = _write(tmp_path / "mine" / "two.pdf", b"%PDF-1.4 two")
+    result = apply_add([one, two], mode="reference", source_dir=library)
+    first = result.added[0].key
+
+    assert undo_add([first], source_dir=library) == 1
+    with session_scope() as session:
+        roots = session.execute(select(SourceRoot)).scalars().all()
+        assert any(r.kind == "referenced" for r in roots), "the other file still lives there"
+    assert two.exists()
+
+
+def test_the_library_root_is_never_dropped(temp_database, tmp_path):
+    """An empty library is a normal state, not a stale reference — it is the app's own folder."""
+    from doc_assistant.db.models import LIBRARY_ROOT_ID, SourceRoot
+    from doc_assistant.db.session import session_scope
+    from doc_assistant.library.add import apply_add, undo_add
+
+    library = tmp_path / "library"
+    src = _write(tmp_path / "inbox" / "paper.pdf", b"%PDF-1.4 hello")
+    key = apply_add([src], mode="copy", source_dir=library).added[0].key
+
+    assert undo_add([key], source_dir=library) == 1
+    with session_scope() as session:
+        assert session.get(SourceRoot, LIBRARY_ROOT_ID) is not None

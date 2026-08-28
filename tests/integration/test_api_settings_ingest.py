@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import threading
 import time
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -224,7 +225,9 @@ def test_ingest_runs_on_the_folder_and_reloads_controller(
     docs.mkdir()
     seen: dict[str, str] = {}
 
-    def fake_ingest(*, scope: str) -> dict[str, int]:
+    def fake_ingest(
+        *, scope: str, on_progress: Callable[[int, int, str | None], None] | None = None
+    ) -> dict[str, int]:
         seen["scope"] = scope
         return {"added": 3, "skipped": 1, "error": 0}
 
@@ -249,7 +252,9 @@ def test_ingest_runs_on_the_folder_and_reloads_controller(
 
 
 def test_ingest_surfaces_failure_in_status(settings_file: Path) -> None:
-    def boom(*, scope: str) -> dict[str, int]:
+    def boom(
+        *, scope: str, on_progress: Callable[[int, int, str | None], None] | None = None
+    ) -> dict[str, int]:
         raise RuntimeError("disk full")
 
     app = create_app(
@@ -267,7 +272,9 @@ def test_ingest_surfaces_failure_in_status(settings_file: Path) -> None:
 def test_ingest_rejects_concurrent_run(settings_file: Path) -> None:
     release = threading.Event()
 
-    def slow_ingest(*, scope: str) -> dict[str, int]:
+    def slow_ingest(
+        *, scope: str, on_progress: Callable[[int, int, str | None], None] | None = None
+    ) -> dict[str, int]:
         release.wait(timeout=5)
         return {"added": 0, "skipped": 0, "error": 0}
 

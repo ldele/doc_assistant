@@ -12,6 +12,7 @@ import contextlib
 import os
 import tempfile
 from pathlib import Path
+from typing import Any
 
 import pytest
 from apps.api.main import create_app
@@ -20,11 +21,36 @@ from sqlalchemy import create_engine, event, func, select
 from sqlalchemy.orm import sessionmaker
 
 
+class FakeChroma:
+    """The two calls `purge_document_record` makes, and a record of what was deleted.
+
+    Same shape as `tests/integration/test_document_delete.py`'s: `undo-add` reaches the index now
+    (KI-51 part 1 — undo removes the document the add produced, not just the registry row), so the
+    controller fake has to carry a `.rag.db` the way the real one does.
+    """
+
+    def __init__(self, ids_by_hash: dict[str, list[str]] | None = None) -> None:
+        self._ids = ids_by_hash or {}
+        self.deleted: list[str] = []
+
+    def get(self, *, where: dict[str, Any], include: list[str]) -> dict[str, Any]:
+        return {"ids": list(self._ids.get(where["doc_hash"], []))}
+
+    def delete(self, *, ids: list[str]) -> None:
+        self.deleted.extend(ids)
+
+
+class _FakeRag:
+    def __init__(self, db: FakeChroma) -> None:
+        self.db = db
+
+
 class FakeController:
     """The minimum surface `create_app` needs; inspect touches none of it."""
 
     def __init__(self) -> None:
         self.chunk_count = 0
+        self.rag = _FakeRag(FakeChroma())
 
     def corpus_stats(self) -> dict[str, int]:
         return {"chunk_count": 0}
@@ -219,6 +245,48 @@ def test_undo_removes_what_add_created(client, tmp_path):
     assert r.status_code == 200
     assert r.json() == {"undone": 3}
     assert sorted(p.name for p in tmp_path.glob("*.pdf")) == []
+
+
+def test_undo_reaches_the_index_over_the_wire(temp_database, tmp_path, monkeypatch):
+    """KI-51 part 1, at the boundary: the route must hand its Chroma handle to `undo_add`.
+
+    The unit tests cover the removal and its guards; this covers the *wiring*, which is exactly
+    what a route reaching for `controller.rag.db` can get wrong — and did, the first time it was
+    written against a fake controller that had no `.rag`.
+    """
+    from doc_assistant.db.models import Document
+    from doc_assistant.db.session import session_scope
+
+    monkeypatch.setenv("DOC_SOURCE_DIR", str(tmp_path))
+    chroma = FakeChroma({"h-wire": ["c1", "c2"]})
+    controller = FakeController()
+    controller.rag = _FakeRag(chroma)
+    c = TestClient(create_app(controller=controller))
+
+    src = _write(tmp_path / "in" / "paper.pdf", b"%PDF-1.4 wire")
+    key = c.post("/api/documents/add", json={"paths": [str(src)]}).json()["added"][0]["key"]
+
+    # Stand in for the ingest the user would have run: a Document row pointing at the copy.
+    with session_scope() as session:
+        session.add(
+            Document(
+                id="doc-wire",
+                filename="paper.pdf",
+                source_original=str(tmp_path / "paper.pdf"),
+                source_cache=None,
+                doc_hash="h-wire",
+                format="pdf",
+                extractor_used="pymupdf",
+                extraction_health="ok",
+                chunk_count=2,
+                page_count=1,
+            )
+        )
+
+    assert c.post("/api/documents/undo-add", json={"rel_paths": [key]}).json() == {"undone": 1}
+    with session_scope() as session:
+        assert session.get(Document, "doc-wire") is None, "the document must go with the row"
+    assert chroma.deleted == ["c1", "c2"], "and its chunks, or it stays retrievable"
 
 
 def test_reference_mode_registers_over_the_wire_without_copying(client, tmp_path):

@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-08-25 (AD3b landed; open question 3 resolved) · class: living -->
+<!-- status: active · updated: 2026-08-28 (EPUB + HTML round trip done; KI-53 filed) · class: living -->
 
 # Spec — Add documents: the accept surface (AD1–AD4) + the Settings changes it forces (CS1–CS2)
 
@@ -233,8 +233,14 @@ sorting + pagination — **testable under `node --test`, and it must be**) ·
 - A document can be added by drag-and-drop **and** by the button, in both modes, and indexed.
 - Delete asks, defaults to library-only, and names the path for referenced files.
 - `docs_check --strict` 0/0; DEVLOG entry per logical change; ADR-046 status → `accepted (built)`.
-- **Not done until** an EPUB and an HTML file have been added and indexed through the UI — the
-  corpus is 97/97 PDF, so those paths are otherwise untested in the wild.
+- ~~**Not done until** an EPUB and an HTML file have been added and indexed through the UI~~ —
+  **done 2026-08-28.** `tests/fixtures/documents/article.html` and `treatise.epub` were added
+  together through the chooser (which also exercised the multi-file path), indexed with 0 errors,
+  and rendered with correct EPUB/HTML type badges. Extraction was clean: accents survived, the
+  table round-tripped, all three chrome markers were stripped, and the content reached both vector
+  stores and the keyword index. **It found two defects in what the row says about them —
+  `extraction_health='broken'` for any short document and a hardcoded `extractor_used='pymupdf'`
+  — filed as KI-53.** DEVLOG 2026-08-28 (7).
 
 ## Open questions
 

@@ -61,18 +61,31 @@ def ingest_start(request: Request, body: IngestRequest | None = None) -> dict[st
         status.source_dir = str(source)
         status.added = status.skipped = status.errors = 0
         status.message = None
+        # Cleared with the counters, or the bar would open showing the *previous* run's position.
+        status.total = status.done = 0
+        status.current = None
+
+    def _on_progress(done: int, total: int, current: str | None) -> None:
+        """Copy one `ingest.main` progress tick onto the shared status.
+
+        Runs on the ingest thread, so it takes the same lock every reader takes. It only ever
+        *writes position* — never `added`/`skipped`/`errors`, which stay end-of-run outcomes.
+        """
+        with app_.state.ingest_lock:
+            status.done, status.total, status.current = done, total, current
 
     def _worker() -> None:
         try:
             if selection is not None:
-                stats = app_.state.ingest_fn(files=selection)
+                stats = app_.state.ingest_fn(files=selection, on_progress=_on_progress)
             else:
-                stats = app_.state.ingest_fn(scope=str(source))
+                stats = app_.state.ingest_fn(scope=str(source), on_progress=_on_progress)
         except Exception as e:  # surface any ingest failure to the status view
             log.exception("ingest_failed", source=str(source))
             with app_.state.ingest_lock:
                 status.state = "error"
                 status.message = str(e)
+                status.current = None  # nothing is in flight any more; the bar must not say it is
             return
         # Reload the controller so the new corpus is live BEFORE reporting "done" — a client
         # that sees "done" then reads chunk_count must get the updated count (BM25 + Chroma
@@ -90,6 +103,7 @@ def ingest_start(request: Request, body: IngestRequest | None = None) -> dict[st
             status.message = (
                 f"indexed {status.added} new, {status.skipped} unchanged, {status.errors} errors"
             )
+            status.current = None
             status.state = "done"
 
     threading.Thread(target=_worker, name="ingest", daemon=True).start()
@@ -196,9 +210,14 @@ def undo_add_documents(request: Request, body: UndoAddRequest) -> dict[str, int]
 
     Only removes rows whose `origin` is `copied`, so it can never delete a file the app does not
     own (the ADR-014 amendment, enforced in the library rather than trusted to the caller).
+
+    The controller's Chroma handle is passed through so undo can also remove the *document* the
+    add produced (KI-51 part 1) — without it, undoing an already-indexed add left the row and its
+    chunks behind, and the library went on listing a document whose file undo had just deleted.
     """
     from doc_assistant.library.add import undo_add
 
     if _running(request):
         raise HTTPException(status_code=409, detail="ingest already running")
-    return {"undone": undo_add(body.rel_paths)}
+    controller = request.app.state.controller
+    return {"undone": undo_add(body.rel_paths, chroma_db=controller.rag.db)}

@@ -9,6 +9,7 @@ Chroma. Ingested state is *simulated* (a `Document` row + a fresh cache file), n
 from __future__ import annotations
 
 import os
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -223,7 +224,10 @@ def test_api_sources_scan_patch_and_selective_ingest(sources_env: Path) -> None:
     seen: dict[str, object] = {}
 
     def fake_ingest(
-        *, scope: str | None = None, files: list[Path] | None = None
+        *,
+        scope: str | None = None,
+        files: list[Path] | None = None,
+        on_progress: Callable[[int, int, str | None], None] | None = None,
     ) -> dict[str, int]:
         seen["scope"] = scope
         seen["files"] = files
@@ -269,7 +273,10 @@ def test_api_ingest_no_body_still_works(sources_env: Path) -> None:
     seen: dict[str, object] = {}
 
     def fake_ingest(
-        *, scope: str | None = None, files: list[Path] | None = None
+        *,
+        scope: str | None = None,
+        files: list[Path] | None = None,
+        on_progress: Callable[[int, int, str | None], None] | None = None,
     ) -> dict[str, int]:
         seen["scope"] = scope
         seen["files"] = files

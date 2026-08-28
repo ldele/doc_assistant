@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-08-26 (per-stage cost shares; the worker budget) · class: living -->
+<!-- status: active · updated: 2026-08-28 (per-stage cost shares — written 2026-08-26, date bumped late) · class: living -->
 
 # Performance, cost and scale — the measured record
 

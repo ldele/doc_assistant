@@ -10,7 +10,7 @@
   import { shell, type Mode } from './shell.svelte'
   import { sidebarPrefs, toggleSidebarCollapsed } from './prefs.svelte'
   import { GRAPH_TAB_ENABLED } from '../core/features'
-  import { canAccept, pickDocuments, unavailableReason } from '../library/accept.svelte'
+  import { canAccept, openChooser, unavailableReason } from '../library/accept.svelte'
   import appMark from '../../assets/brand/app-mark.png'
 
   interface Props {
@@ -59,7 +59,7 @@
           <button
             class="appmenuitem"
             role="menuitem"
-            onclick={() => { shell.appMenuOpen = false; void pickDocuments() }}
+            onclick={() => { shell.appMenuOpen = false; openChooser() }}
             disabled={!canAccept()}
             title={unavailableReason() ?? 'Add documents'}
             type="button"

@@ -45,6 +45,7 @@
   import LibraryPane from './lib/library/LibraryPane.svelte'
   import Icon from './lib/shell/Icon.svelte'
   import AddDocuments from './lib/library/AddDocuments.svelte'
+  import AddDocumentsChooser from './lib/library/AddDocumentsChooser.svelte'
   import LibraryGrid from './lib/library/LibraryGrid.svelte'
   import LibraryKeywordFilter from './lib/library/LibraryKeywordFilter.svelte'
   import LibraryManageKeywords from './lib/library/LibraryManageKeywords.svelte'
@@ -113,6 +114,7 @@
     watchDrops,
   } from './lib/library/accept.svelte'
   import { previewNames, remainderLabel, summarise } from './lib/library/accept'
+  import { ingestRun, watchIngest } from './lib/core/ingest.svelte'
   import { backoffDelayMs, startupPhase } from './lib/shell/startup'
   import {
     chat,
@@ -372,6 +374,31 @@
   })
 
   $effect(() => watchDrops())
+
+  // Ambient ingest watch. Runs for the app's whole life rather than being owned by whichever
+  // screen started a run, because an ingest kicked off from the Sources panel — or from the CLI
+  // against the same backend — is just as worth showing as one started from the add sheet.
+  $effect(() => watchIngest())
+
+  // When a run *finishes*, re-read what it changed. Everything that shows the corpus previously
+  // refreshed on the 202 — i.e. before the run had indexed anything — so a just-added document was
+  // absent from the grid and the chunk count was stale until something else happened to refresh
+  // them. `lastSeenRun` is a plain `let`, not `$state`, so writing it here cannot re-trigger this
+  // effect; only `completedRuns` is tracked.
+  let lastSeenRun = 0
+  $effect(() => {
+    const n = ingestRun.completedRuns
+    if (n <= lastSeenRun) return
+    lastSeenRun = n
+    void refreshDocuments()
+    // The corpus size lives on `health`, and the status bar reads it straight from there.
+    void getHealth()
+      .then((h) => (shell.health = h))
+      .catch(() => {
+        /* the readiness gate owns reporting a lost backend; a stale count is not worth a second
+           error surface saying the same thing. */
+      })
+  })
 
   $effect(() => {
     // Tracked reads (the deps): a change to any of these is a navigation.
@@ -1033,6 +1060,12 @@
       <button class="stagedreview" onclick={() => (reviewingAdd = true)} type="button">Review</button>
       <button class="stagedclear" onclick={clearPending} type="button">Clear</button>
     </div>
+  {/if}
+
+  <!-- AD1 entry. Mounted at the root, not inside the Library pane, because the same dialog is
+       reachable from the app menu — and it must survive a mode switch mid-choice. -->
+  {#if accept.chooser}
+    <AddDocumentsChooser />
   {/if}
 
   {#if reviewingAdd && accept.pending.length > 0}

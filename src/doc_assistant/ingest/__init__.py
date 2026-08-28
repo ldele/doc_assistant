@@ -19,7 +19,7 @@ keeps working unchanged after the split. Path/model config is read dynamically v
 from __future__ import annotations
 
 import shutil
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from pathlib import Path
 from uuid import uuid4
 
@@ -73,6 +73,13 @@ from .store import (
 from .workers import resolve_workers, warm_extraction_cache
 
 log = structlog.get_logger(__name__)
+
+#: Called once per document as ``(done, total, current)``: ``done`` documents are finished, out of
+#: ``total``, and ``current`` is the file about to be processed — ``None`` on the final call, when
+#: nothing is in flight. Optional and purely observational: `main` never reads it back, and a
+#: caller that raises is logged and ignored (see `_report`), because a progress sink must not be
+#: able to kill a run that takes tens of minutes.
+ProgressFn = Callable[[int, int, str | None], None]
 
 __all__ = [
     "PAGE_MARKER",
@@ -475,6 +482,21 @@ def _dry_run_plan(scope: str | None, files: list[Path] | None) -> dict[str, int]
     return plan
 
 
+def _report(on_progress: ProgressFn | None, done: int, total: int, current: str | None) -> None:
+    """Call a progress sink, or explain in the log why the call was dropped.
+
+    Guarded for the same reason `_cache_is_fresh` is: this runs inside a loop that can be tens of
+    minutes long over thousands of documents, and a sink that raises — a closed socket, a UI that
+    went away — must not take the ingest down with it. The run is the product; the progress is not.
+    """
+    if on_progress is None:
+        return
+    try:
+        on_progress(done, total, current)
+    except Exception:
+        log.warning("ingest_progress_sink_failed", done=done, total=total, exc_info=True)
+
+
 def main(
     force_rebuild: bool = False,
     skip_cleanup: bool = False,
@@ -482,6 +504,7 @@ def main(
     scope: str | None = None,
     files: list[Path] | None = None,
     dry_run: bool = False,
+    on_progress: ProgressFn | None = None,
 ) -> dict[str, int]:
     # Selective ingestion (feature-selective-ingestion.md, S1). `files` is an explicit,
     # already-validated absolute path list (from `registry.resolve_selection` for the API, or CLI
@@ -638,9 +661,16 @@ def main(
     path_index = build_path_index()
 
     stats: dict[str, int] = {"added": 0, "skipped": 0, "error": 0}
-    for path in tqdm(to_process, desc="Processing"):
+    # `to_process` is already materialised, so the total is known before the first document —
+    # which is what lets the app show "4 of 12" rather than an unbounded spinner. Reported
+    # *before* each document so `current` names the file actually in flight, and once more after
+    # the loop with `current=None` so a watcher sees the run reach its own total.
+    total = len(to_process)
+    for done, path in enumerate(tqdm(to_process, desc="Processing")):
+        _report(on_progress, done, total, path.name)
         result = process_one_document(path, db, pc_db, splitter, indexed, path_index)
         stats[result] += 1
+    _report(on_progress, total, total, None)
 
     _assign_demo_folder(get_document_row_hashes() - rows_before)
 

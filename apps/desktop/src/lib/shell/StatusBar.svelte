@@ -5,6 +5,7 @@
   // Zero props by design — it renders `shell.status` / `shell.health`, which the readiness gate in
   // App.svelte writes. Ambient status, not navigation.
   import { shell } from './shell.svelte'
+  import IngestChip from './IngestChip.svelte'
 </script>
 
 <div class="statusbar" role="status" aria-live="polite">
@@ -36,12 +37,19 @@
       still starting — retrying. Restart the app if it never arrives.
     </span>
   {/if}
+
+  <!-- Right-hand end of the same bar: a run in flight, when there is one. Renders nothing at all
+       when idle, so the bar keeps its quiet resting state. -->
+  <IngestChip />
 </div>
 
 <style>
   /* ---- bottom status bar (ambient) ---- */
   .statusbar {
     flex: none;
+    /* The ingest chip's detail panel anchors to this bar (it opens upward, since the bar is the
+       app's last row), so the bar has to be the positioned ancestor. */
+    position: relative;
     display: flex;
     align-items: center;
     gap: 0.5rem;

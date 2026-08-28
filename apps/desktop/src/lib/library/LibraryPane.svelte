@@ -13,7 +13,7 @@
   import LibraryBrowser from './LibraryBrowser.svelte'
   import LibraryFilterStrip from './LibraryFilterStrip.svelte'
   import { LIB_SORTS, libPrefs, setLibrarySort, setLibraryView } from './prefs.svelte'
-  import { accept, canAccept, pickDocuments, unavailableReason } from './accept.svelte'
+  import { accept, canAccept, openChooser, unavailableReason } from './accept.svelte'
   import {
     collectionLabel,
     docLabel,
@@ -180,7 +180,7 @@
              look like a missing feature. Reachable from Chat via the app menu. -->
         <button
           class="addbtn"
-          onclick={() => void pickDocuments()}
+          onclick={openChooser}
           disabled={!canAccept() || accept.picking}
           title={unavailableReason() ?? 'Add documents'}
           type="button"

@@ -23,16 +23,20 @@ export type LibraryCollection =
   | { kind: 'date'; value: DateBucket }
   | { kind: 'folder'; value: string }
 
+// The labels have to say what the bucket *is*, because the buckets are relative and adjacent:
+// "Earlier" sat next to "This month" and read as a calendar term — this year? last year? — when it
+// actually means "added more than a month ago". Naming the boundary is the only way a reader can
+// tell which of two neighbouring buckets a document will be in.
 export const DATE_BUCKET_LABELS: Record<DateBucket, string> = {
   today: 'Today',
   week: 'This week',
   month: 'This month',
-  earlier: 'Earlier',
+  earlier: 'Over a month ago',
 }
 const DATE_BUCKET_ORDER: DateBucket[] = ['today', 'week', 'month', 'earlier']
 
 // Bucket an ISO added_at relative to now (Decision 3b). An unknown date buckets nowhere —
-// the doc stays reachable via All documents; claiming "Earlier" for an unknown date would
+// the doc stays reachable via All documents; claiming "Over a month ago" for an unknown date would
 // break L1's honest-empty rule.
 export function dateBucket(addedAt: string | null, now: Date): DateBucket | null {
   if (!addedAt) return null

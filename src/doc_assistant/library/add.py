@@ -26,7 +26,7 @@ import hashlib
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 import structlog
 
@@ -506,8 +506,14 @@ def _reference_target(session: Session, dest: Path, library: Path) -> tuple[str,
 UNDO_DELETE_WINDOW_SECONDS = 30 * 60
 
 
-def undo_add(rel_paths: Sequence[str], *, source_dir: Path | None = None) -> int:
-    """Reverse an apply: drop the registry rows, and delete only the files the app itself made.
+def undo_add(
+    rel_paths: Sequence[str],
+    *,
+    source_dir: Path | None = None,
+    chroma_db: Any | None = None,
+) -> int:
+    """Reverse an apply: drop the registry rows, the documents they produced, and only the files
+    the app itself made.
 
     The two halves are deliberately separate since AD3b, because the two placement modes undo
     differently:
@@ -526,6 +532,22 @@ def undo_add(rel_paths: Sequence[str], *, source_dir: Path | None = None) -> int
     And the row must be younger than :data:`UNDO_DELETE_WINDOW_SECONDS`, so this is an undo of a
     just-completed add rather than a delete-by-key for anything the app ever copied in. A
     declined delete is logged, never silent; the row still goes either way.
+
+    **Three things go, not one (KI-51).** The registry row was once all undo removed, which left an
+    add that had already been indexed only half undone: the `Document` row and its chunks survived,
+    so the library still listed — and could still cite — a document whose file undo had just
+    deleted. Undo now also:
+
+    * **removes the document the add produced**, when `chroma_db` is supplied and the document is
+      provably this add's (same resolved path, and `added_at` inside the undo window). Without a
+      `chroma_db` the row is left alone rather than orphaning its chunks — a caller that cannot
+      reach the index cannot finish the job, and half-removing is worse than not starting.
+    * **un-references a root it has just emptied**, so a `reference`-mode add that is undone stops
+      the folder being scanned. Previously the root survived, the next scan re-found the file as
+      `new`, and the following "index all" re-ingested exactly what the user had undone.
+
+    The library root is never dropped, however empty it gets: it is the app's own folder, not a
+    reference the user made.
 
     Accepts `registry.source_key`s or bare rel_paths (library root). Returns how many rows went.
     """
@@ -557,15 +579,134 @@ def undo_add(rel_paths: Sequence[str], *, source_dir: Path | None = None) -> int
             .scalars()
             .all()
         )
+        touched_roots: set[str] = set()
         for row in rows:
             if (row.root_id, row.rel_path) not in wanted:
                 continue  # same rel_path under a root the caller did not name
+            # Resolve before the row goes: afterwards the root lookup it needs may be gone too.
+            absolute = _row_path(session, row, library=library)
+            if chroma_db is not None:
+                _purge_document_for(absolute, chroma_db=chroma_db, cutoff=cutoff)
             if row.origin == "copied":
                 _delete_copied_file(session, row, library=library, cutoff=cutoff)
+            touched_roots.add(row.root_id)
             session.delete(row)
             undone += 1
+        # Flush so the emptiness check below sees the deletions above rather than the pre-undo
+        # state; the surrounding `session_scope` still owns the commit.
+        session.flush()
+        for root_id in touched_roots:
+            _drop_root_if_emptied(session, root_id)
     log.info("add_undone", count=undone)
     return undone
+
+
+def _row_path(session: Session, row: SourceFile, *, library: Path) -> Path:
+    """The absolute path a registry row names, resolved through **its own** root.
+
+    Never assume the library folder: a row under a referenced root is relative to the user's own
+    directory, and resolving it against the library is exactly the mistake that once deleted an
+    unrelated same-named document (see `_delete_copied_file`).
+    """
+    from doc_assistant.db.models import SourceRoot
+
+    root = session.get(SourceRoot, row.root_id)
+    base = Path(root.path) if root is not None else library
+    return base / row.rel_path
+
+
+def _purge_document_for(absolute: Path, *, chroma_db: Any, cutoff: datetime) -> bool:
+    """Remove the `Document` this add produced for `absolute`, if it is provably this add's.
+
+    **The guard is the whole function.** A path can carry a document the user already had — they
+    may be re-adding a file that was ingested months ago, or replacing one at a path that already
+    held something (the ADR-047 trade-off, where a new file inherits the previous document's id).
+    Removing that would destroy a document, its folder membership and its metadata overrides on the
+    strength of an undo the user meant to apply to *their own* add. So the document must have been
+    added inside the same window that lets undo delete a file, and a decline is logged, never
+    silent.
+
+    The file itself is not touched here — the caller owns that, because the two placement modes
+    disagree about it and only the caller knows which one this was.
+    """
+    from datetime import timezone
+
+    from sqlalchemy import select
+
+    from doc_assistant.db.models import Document as DBDocument
+    from doc_assistant.db.session import session_scope
+    from doc_assistant.ingest.registry import pathkey
+    from doc_assistant.library.documents import purge_document_record
+
+    wanted = pathkey(absolute)
+    with session_scope() as session:
+        rows = session.execute(
+            select(
+                DBDocument.id,
+                DBDocument.source_original,
+                DBDocument.added_at,
+                DBDocument.doc_hash,
+                DBDocument.source_cache,
+            )
+        ).all()
+    match = next(
+        (r for r in rows if r.source_original and pathkey(r.source_original) == wanted), None
+    )
+    if match is None:
+        return False
+
+    added_at = match.added_at
+    if added_at is not None and added_at.tzinfo is None:
+        # SQLite `DateTime` reads back naive; re-stamp it as the UTC it provably is, exactly as
+        # `_delete_copied_file` does for `first_seen`.
+        added_at = added_at.replace(tzinfo=timezone.utc)
+    if added_at is None or added_at < cutoff:
+        log.warning(
+            "undo_document_purge_declined",
+            reason="outside_undo_window",
+            document_id=str(match.id),
+            path=str(absolute),
+        )
+        return False
+
+    chunks = purge_document_record(
+        str(match.id), chroma_db, doc_hash=str(match.doc_hash), source_cache=match.source_cache
+    )
+    log.info(
+        "undo_document_purged",
+        document_id=str(match.id),
+        path=str(absolute),
+        chunks_removed=chunks,
+    )
+    return True
+
+
+def _drop_root_if_emptied(session: Session, root_id: str) -> bool:
+    """Drop a **referenced** root that no longer holds a single file. Returns whether it went.
+
+    Undoing the last file of a referenced root has to withdraw the reference too, or the folder
+    stays registered: the next `scan_sources` re-discovers the file as `new`, and the next
+    "index all" re-ingests precisely what the user undid — without asking. The library root is
+    exempt: it is the app's own folder and an empty library is a normal state, not a stale
+    reference.
+    """
+    from sqlalchemy import func, select
+
+    from doc_assistant.db.models import LIBRARY_ROOT_ID, SourceFile, SourceRoot
+
+    if root_id == LIBRARY_ROOT_ID:
+        return False
+    root = session.get(SourceRoot, root_id)
+    if root is None or root.kind != "referenced":
+        return False
+    remaining = session.execute(
+        select(func.count()).select_from(SourceFile).where(SourceFile.root_id == root_id)
+    ).scalar_one()
+    if remaining:
+        return False
+    session.delete(root)
+    log.info("undo_root_unreferenced", root_id=root_id, path=root.path)
+    return True
 
 
 def _delete_copied_file(

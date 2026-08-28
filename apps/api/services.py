@@ -13,6 +13,7 @@ or ingest logic.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -145,6 +146,14 @@ class _IngestStatus:
     skipped: int = 0
     errors: int = 0
     message: str | None = None
+    #: Progress, written per document by the `on_progress` sink the route installs. `total` is
+    #: known before the first document, so this is a real fraction rather than a spinner. `added`
+    #: / `skipped` / `errors` stay end-of-run totals — they are the *outcome*, not the position,
+    #: and reporting a partial outcome as if it were final is the failure this pair avoids.
+    total: int = 0
+    done: int = 0
+    #: The file in flight, or None when nothing is (before the first document, and after the last).
+    current: str | None = None
 
 
 @dataclass
@@ -171,6 +180,9 @@ def _ingest_status_dict(app: FastAPI) -> dict[str, Any]:
             "skipped": st.skipped,
             "errors": st.errors,
             "message": st.message,
+            "total": st.total,
+            "done": st.done,
+            "current": st.current,
         }
 
 
@@ -181,16 +193,21 @@ def _graph_rebuild_status_dict(app: FastAPI) -> dict[str, Any]:
 
 
 def _default_ingest(
-    *, scope: str | None = None, files: list[Path] | None = None
+    *,
+    scope: str | None = None,
+    files: list[Path] | None = None,
+    on_progress: Callable[[int, int, str | None], None] | None = None,
 ) -> dict[str, int]:
     """Lazy wrapper so importing this module doesn't pull the heavy ingest -> torch chain.
 
     ``scope`` = the whole source dir (honoring exclusions); ``files`` = an explicit, pre-resolved
     selection (selective ingestion, S1). The two are mutually exclusive at the ``main()`` layer.
+    ``on_progress`` is forwarded verbatim; the type is spelled out here rather than imported so
+    this module keeps its lazy-import property.
     """
     from doc_assistant.ingest import main as ingest_main
 
-    return ingest_main(scope=scope, files=files)
+    return ingest_main(scope=scope, files=files, on_progress=on_progress)
 
 
 def _default_rebuild_graph() -> str:

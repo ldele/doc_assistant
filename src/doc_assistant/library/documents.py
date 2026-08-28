@@ -382,6 +382,57 @@ class DeleteResult:
     chunks_removed: int  # chunks dropped from the live search index
 
 
+def purge_document_record(
+    document_id: str,
+    chroma_db: Any,
+    *,
+    doc_hash: str,
+    source_cache: str | None,
+) -> int:
+    """Remove a document *everywhere except the file on disk*. Returns the chunk count removed.
+
+    Split out of `delete_document` so `library.add.undo_add` can reuse it. The two callers differ
+    entirely on the file and not at all on the record: `delete_document` sends the source to the
+    Recycle Bin first, while undo either deletes the copy the app itself made or — for a referenced
+    file — must not touch it at all (the ADR-014 amendment). Keeping the record half in one place
+    is what stops undo from growing a second, drifting copy of "what removing a document means".
+
+    Removes: the ``Document`` row (FK-cascades citations / parts / similarities, and the
+    ``DocumentMeta`` override since ADR-026), the doc's chunks from the live Chroma store, its
+    figure directory and its cached markdown. Each on-disk step is guarded — a locked file leaves a
+    warning, not a half-removed document.
+    """
+    from doc_assistant.ingest.cleanup import cleanup_orphan_figures
+
+    with session_scope() as session:
+        meta = session.get(DocumentMeta, document_id)
+        if meta is not None:
+            session.delete(meta)
+        doc = session.get(Document, document_id)
+        if doc is not None:
+            session.delete(doc)
+
+    chunks_removed = 0
+    try:
+        found = chroma_db.get(where={"doc_hash": doc_hash}, include=[])
+        ids = list(found.get("ids", []))
+        chunks_removed = len(ids)
+        if ids:
+            chroma_db.delete(ids=ids)
+    except Exception as e:
+        log.warning("delete_chunks_failed", document_id=document_id, error=str(e))
+
+    cleanup_orphan_figures([doc_hash])
+    if source_cache:
+        cache_path = Path(source_cache)
+        if cache_path.exists():
+            try:
+                cache_path.unlink()
+            except OSError as e:
+                log.warning("delete_cache_failed", file=cache_path.name, error=str(e))
+    return chunks_removed
+
+
 def delete_document(document_id: str, chroma_db: Any) -> DeleteResult | None:
     """Safe-delete a document: source file → Recycle Bin, then drop its DB row + index chunks.
 
@@ -393,8 +444,6 @@ def delete_document(document_id: str, chroma_db: Any) -> DeleteResult | None:
     live Chroma store, its figure dir, and its cached ``.md``. ADR-014.
     """
     from send2trash import send2trash
-
-    from doc_assistant.ingest.cleanup import cleanup_orphan_figures
 
     with session_scope() as session:
         doc = session.get(Document, document_id)
@@ -416,36 +465,10 @@ def delete_document(document_id: str, chroma_db: Any) -> DeleteResult | None:
             log.warning("delete_trash_failed", document_id=document_id, error=str(e))
             raise RuntimeError(f"could not move {filename} to the Recycle Bin") from e
 
-    # 2. Drop the DB row (+ cascades). The override delete is redundant since ADR-026 gave
-    # document_meta a real FK, and is kept only so this path reads as the complete story.
-    with session_scope() as session:
-        meta = session.get(DocumentMeta, document_id)
-        if meta is not None:
-            session.delete(meta)
-        doc = session.get(Document, document_id)
-        if doc is not None:
-            session.delete(doc)
-
-    # 3. Remove the doc's chunks from the live search index (count for the caller).
-    chunks_removed = 0
-    try:
-        found = chroma_db.get(where={"doc_hash": doc_hash_val}, include=[])
-        ids = list(found.get("ids", []))
-        chunks_removed = len(ids)
-        if ids:
-            chroma_db.delete(ids=ids)
-    except Exception as e:
-        log.warning("delete_chunks_failed", document_id=document_id, error=str(e))
-
-    # 4. On-disk sidecars: figure dir (by hash) + the cached markdown.
-    cleanup_orphan_figures([doc_hash_val])
-    if source_cache:
-        cache_path = Path(source_cache)
-        if cache_path.exists():
-            try:
-                cache_path.unlink()
-            except OSError as e:
-                log.warning("delete_cache_failed", file=cache_path.name, error=str(e))
+    # 2-4. Everything except the file: the row (+ cascades), the chunks, the on-disk sidecars.
+    chunks_removed = purge_document_record(
+        document_id, chroma_db, doc_hash=doc_hash_val, source_cache=source_cache
+    )
 
     log.info(
         "document_deleted",

@@ -15,6 +15,7 @@
   import type { AddMode, AddResult } from '../core/api/documents'
   import type { FileVerdict, InspectResponse } from '../core/types/documents'
   import { sourceKeyName } from './accept'
+  import { ingestRun, noteIngestStarted } from '../core/ingest.svelte'
 
   interface Props {
     /** Absolute paths staged by the accept surface (AD1). */
@@ -40,6 +41,16 @@
   let applied = $state<AddResult | null>(null)
   let applyError = $state<string | null>(null)
   let undoing = $state(false)
+  /**
+   * True once this sheet has handed a batch to the indexer (KI-51 part 3).
+   *
+   * `indexPaths` resolves on the 202, so without this the sheet reported "Added N" and offered
+   * "Undo all" while the run was still reading the files — and undo deletes a copied file, out
+   * from under the extractor. Gated on *this sheet's* run rather than on any run: the API allows
+   * only one at a time (409), so while this is true, the run in flight is the one it started.
+   */
+  let startedIngest = $state(false)
+  const indexing = $derived(startedIngest && ingestRun.status?.state === 'running')
 
   $effect(() => {
     const wanted = paths
@@ -110,6 +121,13 @@
       // Index only what actually landed — never what the run did not reach.
       if (indexNow && !result.stopped_early && result.added.length > 0) {
         await indexPaths(result.added.map((o) => o.key).filter((k): k is string => !!k))
+        // `indexPaths` resolves on the 202 — when the run is *accepted*, not finished — so the
+        // status bar is what actually reports it. Telling the watcher now means the bar appears on
+        // this click rather than up to one idle poll later, which is the whole difference between
+        // "something is happening" and "did that do anything?". (KI-51 part 3 tracks the deeper
+        // issue: this sheet still says "Added" and offers Undo while that run is in flight.)
+        startedIngest = true
+        noteIngestStarted()
       }
       if (!result.stopped_early) onAdded?.()
     } catch (e: unknown) {
@@ -199,6 +217,12 @@
         {:else}
           <p class="ok"><Icon name="check" size={14} /> Added {applied.added.length}</p>
         {/if}
+        <!-- The add is finished; the indexing it kicked off is not. Saying only "Added N" read as
+             "all done", which is why undo was reachable mid-run. The status bar carries the
+             position; this line only has to stop the sheet from claiming otherwise. -->
+        {#if indexing}
+          <p class="muted">Still indexing — progress is in the status bar.</p>
+        {/if}
       </div>
     {:else}
       <fieldset class="where">
@@ -241,7 +265,15 @@
   <footer>
     {#if applied}
       {#if applied.added.length > 0}
-        <button class="secondary" onclick={undoAll} disabled={undoing} type="button">
+        <button
+          class="secondary"
+          onclick={undoAll}
+          disabled={undoing || indexing}
+          title={indexing
+            ? 'Available when indexing finishes — undoing now would delete a file the indexer is reading.'
+            : 'Undo all'}
+          type="button"
+        >
           {undoing ? 'Undoing…' : 'Undo all'}
         </button>
       {/if}

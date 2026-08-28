@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-08-27 · class: append-only -->
+<!-- status: active · updated: 2026-08-28 · class: append-only -->
 
 # DEVLOG — doc_assistant
 
@@ -16,6 +16,76 @@ Format: What changed | Why | Rejected alternatives | What it opens
 > the oldest entries into a new `DEVLOG-archive-NNN.md` and update the list above — **do not raise
 > the cap.** The cap exists because this log reached 8,244 lines before anyone noticed: every entry
 > is individually small and correct, so unbounded growth is invisible per commit.
+
+---
+## 2026-08-28 (2) — The add-documents feature was driven for the first time, and undo turns out to stop one table short
+
+**What changed.** No production code — a walkthrough, and `.claude/KNOWN_ISSUES.md` KI-51. AD1-AD3b
+is the branch's headline feature and had never been exercised; it now has been, in the native Tauri
+window and against the live 97-document library, which was restored to baseline afterwards and
+verified row-for-row against `data/library.db.bak-20260828-prewalkthrough`.
+
+**What works, confirmed by driving it.** The picker stages paths and the review sheet opens with
+them. Verdicts are right and come from the server: an unsupported file carries its advisory, and a
+*renamed copy* of an already-ingested PDF was caught as a duplicate by content hash — exceptions
+sorted above clean files, as the docstring claims. Both placement modes work: `copy` puts the file
+in the library with `origin='copied'`, `reference` registers a new `referenced` root and copies
+nothing. Index-now indexes. Undo, clicked in the UI for the first time, deleted the copy and left
+the user's own file **byte-identical** (sha256 before and after) — the ADR-014 amendment holding.
+In a plain browser the button is disabled and says why, which is the honest degradation.
+
+**Why it found what the gates could not.** `svelte-check` (205/0) and `node:test` (150) cannot
+reach a `.svelte` component at all, and the Python suite tests `undo_add` against `source_files`
+only. Nothing anywhere indexes a document and *then* undoes it — which is the one sequence that
+breaks.
+
+**What it found (KI-51, three parts).** Undo drops the registry row and stops: after index-now the
+`documents` row and its 4 chunks **survive**, so the library still lists — and can still cite — a
+document whose file the app just deleted (97->98 documents and 39,131->39,135 chunks persisted
+across the undo; the proper `DELETE` afterwards reported `chunks_removed: 4`). In reference mode the
+`source_roots` row survives too, so the next scan re-discovers the file as `new` and the next
+"index all" would re-ingest exactly what was undone. And because `POST /api/ingest` is a 202 that
+`indexPaths` does not await, "Undo all" is offered while the indexing it would undo is still
+running.
+
+**Rejected.** Fixing it in this session. It is scope, not a regression — every guard the 2026-08-27
+review added to `undo_add` held — and the branch is being merged for the CI fix, not for new
+behaviour. Filed with the reproduction rather than patched in a hurry beside a merge.
+
+**What it opens.** KI-51. A fix belongs in `undo_add` (which already resolves each row through its
+own root, so it can also drop a `documents` row it can prove the same add created, and drop a
+`referenced` root once its last file goes) plus an awaited `indexPaths`. Any fix must keep
+reference mode incapable of touching the user's file.
+
+---
+## 2026-08-28 (1) — CI had been red for four commits over two path literals that only mean what they say on Windows
+
+**What changed.** `tests/unit/test_document_identity.py` — the hardcoded `C:\library\...` constants
+became platform-selected, and the "same file, different spelling" probes became a
+platform-appropriate tuple. No production code.
+
+**Why.** `test_the_path_comparison_is_normalised` and
+`test_the_path_index_answers_exactly_as_the_table_scan_did` asserted that `c:\LIBRARY\paper.pdf`
+and `C:/library/paper.pdf` resolve to the same document as `C:\library\paper.pdf`. They do — on
+Windows. `_pathkey` is `os.path.normcase(os.path.abspath(...))`, deliberately the **host** OS's
+semantics, because `source_original` is always written by the machine the library runs on. On the
+Linux runner `normcase` is identity and a drive letter is not a drive, so both tests failed while
+passing on every developer's machine. Green locally, red in CI since `a289d3f` (2026-08-25) —
+four consecutive failed runs, all the same two tests.
+
+**Rejected: skipping the tests off Windows.** It would have gone green by never running the
+ADR-047 fallback in CI again — the opposite of what the failure was telling us. Instead each
+platform is probed with spellings that are genuinely equivalent *on it*: case and separators on
+Windows, redundant `.`/`..` segments on POSIX. Both branches were verified before pushing — the
+Windows one by running the suite, the POSIX one by rebinding `os.path` to `posixpath` and checking
+every chosen spelling collapses onto `SRC` and nothing else does. That check earned its keep:
+`//library/paper.pdf` does **not** collapse (POSIX reserves a leading double slash and Python
+preserves it), so it was excluded rather than shipped as a third probe that would have failed in CI.
+
+**What it opens.** Nothing structural, but it names a gap: CI runs Linux and every developer runs
+Windows, so a path-literal assumption is invisible until push. The two files that carry `C:\`
+literals are now `tests/unit/ingest/test_registry.py` (one, harmless — it asserts a rejection) and
+this one.
 
 ---
 ## 2026-08-27 — The AD3b migration, run against a real pre-AD3b database and then given the test it never had

@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-08-01 (ADR-038: the in-RAM arm is gone) · class: living -->
+<!-- status: active · updated: 2026-08-26 (per-stage cost shares; the worker budget) · class: living -->
 
 # Performance, cost and scale — the measured record
 

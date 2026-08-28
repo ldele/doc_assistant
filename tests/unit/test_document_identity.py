@@ -22,7 +22,31 @@ import pytest
 from sqlalchemy import create_engine, event, select
 from sqlalchemy.orm import sessionmaker
 
-SRC = r"C:\library\paper.pdf"
+# The resolver normalises with `os.path.normcase(os.path.abspath(...))` -- deliberately the
+# *host* OS's own path semantics, because `source_original` is always written by the machine
+# the library runs on. So the spellings that must collapse to one key are platform-specific:
+# Windows folds case and separators; POSIX folds neither, and only drops redundant separators
+# and `.`/`..` segments. These constants were hardcoded Windows literals, so two tests below
+# asserted a case-fold POSIX does not do -- green on every developer's machine, red on CI's
+# Linux runner. The fix is to probe each platform with spellings that are genuinely equivalent
+# on it, rather than to skip the tests off Windows and stop covering the fallback in CI.
+_WINDOWS = os.name == "nt"
+
+SRC = r"C:\library\paper.pdf" if _WINDOWS else "/library/paper.pdf"
+SECOND = r"C:\library\second.pdf" if _WINDOWS else "/library/second.pdf"
+OTHER = r"C:\library\other.pdf" if _WINDOWS else "/library/other.pdf"
+ABSENT = r"C:\library\never.pdf" if _WINDOWS else "/library/never.pdf"
+ELSEWHERE = r"C:\somewhere\else.pdf" if _WINDOWS else "/somewhere/else.pdf"
+
+# Other spellings of SRC that name the same file, and so must resolve to the same document.
+# Each must differ from SRC as a raw string, or the exact-match branch answers first and the
+# test proves nothing about the normalisation. `//library/paper.pdf` is deliberately NOT here:
+# POSIX reserves a leading double slash and Python preserves it, so it is a different key.
+EQUIVALENT_SPELLINGS = (
+    (r"c:\LIBRARY\paper.pdf", "C:/library/paper.pdf")
+    if _WINDOWS
+    else ("/library/./paper.pdf", "/library/sub/../paper.pdf")
+)
 
 
 @pytest.fixture
@@ -163,7 +187,7 @@ def test_a_different_file_does_not_inherit_an_identity(temp_database):
     from doc_assistant.ingest.store import _existing_document_id
 
     _first_ingest()
-    assert _existing_document_id("hash-other", r"C:\library\other.pdf") is None
+    assert _existing_document_id("hash-other", OTHER) is None
 
 
 def test_no_source_path_means_no_fallback(temp_database):
@@ -179,8 +203,9 @@ def test_the_path_comparison_is_normalised(temp_database):
     from doc_assistant.ingest.store import _existing_document_id
 
     first = _first_ingest()
-    assert _existing_document_id("hash-v2", r"c:\LIBRARY\paper.pdf") == first
-    assert _existing_document_id("hash-v2", "C:/library/paper.pdf") == first
+    for spelling in EQUIVALENT_SPELLINGS:
+        assert spelling != SRC, "an identical string is answered by the exact-match branch"
+        assert _existing_document_id("hash-v2", spelling) == first, spelling
 
 
 def test_replacing_the_file_at_a_path_inherits_the_identity(temp_database):
@@ -211,16 +236,16 @@ def test_the_path_index_answers_exactly_as_the_table_scan_did(temp_database):
     from doc_assistant.ingest.store import _existing_document_id, build_path_index
 
     first = _ingest("doc-0001", doc_hash="hash-v1")
-    _ingest("doc-0002", doc_hash="other-hash", source=r"C:\library\second.pdf")
+    _ingest("doc-0002", doc_hash="other-hash", source=SECOND)
     index = build_path_index()
 
-    for probe in (SRC, r"c:\LIBRARY\paper.pdf", "C:/library/paper.pdf"):
-        assert _existing_document_id("hash-v2-CHANGED", probe, path_index=index) == first
+    for probe in (SRC, *EQUIVALENT_SPELLINGS):
+        assert _existing_document_id("hash-v2-CHANGED", probe, path_index=index) == first, probe
         assert _existing_document_id("hash-v2-CHANGED", probe) == first, "the scan agrees"
 
     # And it must not invent a match the scan would not have made.
-    assert _existing_document_id("hash-x", r"C:\library\never.pdf", path_index=index) is None
-    assert _existing_document_id("hash-x", r"C:\library\never.pdf") is None
+    assert _existing_document_id("hash-x", ABSENT, path_index=index) is None
+    assert _existing_document_id("hash-x", ABSENT) is None
 
 
 def test_the_path_index_never_overrides_an_exact_hash_match(temp_database):
@@ -230,7 +255,7 @@ def test_the_path_index_never_overrides_an_exact_hash_match(temp_database):
     first = _ingest("doc-0001", doc_hash="hash-v1")
     index = build_path_index()
     assert _existing_document_id("hash-v1", path_index=index) == first
-    assert _existing_document_id("hash-v1", r"C:\somewhere\else.pdf", path_index=index) == first
+    assert _existing_document_id("hash-v1", ELSEWHERE, path_index=index) == first
 
 
 # ============================================================

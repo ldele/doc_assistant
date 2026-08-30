@@ -242,6 +242,16 @@ def build_parent_child_chunks(text: str, base_metadata: dict[str, Any]) -> list[
     into ``page_content`` (that is the cleaned text), an offset into the source PDF (use ``page``
     for that), and a promise of exactness when a passage repeats verbatim — the cursor makes
     each occurrence map to itself, but a pathological duplicate can still land on the wrong one.
+
+    **The cursor advances to each span's START, not its end, and that is load-bearing.** Both
+    splitters emit *overlapping* chunks (``PARENT_CHUNK_OVERLAP`` 200, ``CHILD_CHUNK_OVERLAP``
+    50), so the next chunk begins *before* the previous one ended. Searching onward from the
+    previous end therefore starts past the answer: `find` either misses it — no offset at all —
+    or lands on a later duplicate, which is a *wrong* offset presented confidently. Measured on
+    12 documents of the live corpus: advancing to the end located 2,761 of 3,652 spans and lost
+    **122 parents outright** (a lost parent takes all of its children with it); advancing to
+    ``start + 1`` locates all 3,652. The ``+ 1`` is what still keeps a verbatim repeat from
+    mapping twice onto the same occurrence.
     """
     parents = _table_aware_parents(text)
     children: list[Document] = []
@@ -249,7 +259,7 @@ def build_parent_child_chunks(text: str, base_metadata: dict[str, Any]) -> list[
     for parent_idx, parent_text in enumerate(parents):
         parent_span = locate_span(text, parent_text, parent_cursor)
         if parent_span is not None:
-            parent_cursor = parent_span[1]
+            parent_cursor = parent_span[0] + 1
 
         clean_parent = clean_chunk_text(parent_text)
         if not clean_parent:
@@ -259,7 +269,7 @@ def build_parent_child_chunks(text: str, base_metadata: dict[str, Any]) -> list[
         for child_text in _pc_child_splitter.split_text(parent_text):
             child_span = locate_span(parent_text, child_text, child_cursor)
             if child_span is not None:
-                child_cursor = child_span[1]
+                child_cursor = child_span[0] + 1
 
             clean_child = clean_chunk_text(child_text)
             if not clean_child:

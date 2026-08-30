@@ -8,6 +8,12 @@ rather than guessing, and every span it does return is verified to contain what 
 Measured on the real corpus while building it: 70-86% of chunks resolve, and after verification
 **zero** resolved to the wrong passage. Before verification, three chunks in one paper resolved
 onto a neighbouring figure caption — repetitive captions defeat a head/tail probe.
+
+**That 70-86% was a bug, not a property — corrected 2026-08-30.** It was the cursor advancing to
+each span's *end* while both splitters emit overlapping chunks, so every subsequent search began
+past its answer. Re-measured on 12 documents of the live corpus after the fix: 3,652 of 3,652,
+with **zero** parents lost against 122 before. The lesson is in the shape of the number: a rate
+that nobody could explain sat in this docstring for months as though it described the text.
 """
 
 from __future__ import annotations
@@ -127,3 +133,78 @@ def test_spans_are_offsets_into_the_cache_not_into_page_content():
         assert c.metadata["char_end"] <= len(text)
         # The marker is absent from page_content but present in the raw slice it points at.
         assert "<!-- page:1 -->" not in c.page_content
+
+
+# ============================================================
+# The cursor (found 2026-08-30)
+# ============================================================
+#
+# The 70-86% resolve rate this file's own docstring recorded was not a property of the text. It
+# was this: the cursor advanced to each span's END while both splitters emit OVERLAPPING chunks,
+# so every subsequent search started past the answer. A measurement was written down as a fact
+# without the cause being diagnosed, and it stayed for months.
+
+
+def _overlapping_document(sentences: int = 400) -> str:
+    """Unbroken prose — the shape that forces the splitter to OVERLAP consecutive parents.
+
+    This matters, and the first attempt at this fixture got it wrong. Paragraph-separated text
+    splits cleanly on its blank lines, so the parents barely overlap and the bug does not fire:
+    that version passed against the broken code and proved nothing. One wall of prose leaves the
+    splitter no separator to cut on, so every parent overlaps its predecessor by
+    ``PARENT_CHUNK_OVERLAP`` — which is exactly when a cursor parked at the previous span's *end*
+    begins past the next one.
+
+    Every sentence is distinct on purpose: a repeated phrase could let a later duplicate be found
+    by accident and mask the failure.
+    """
+    return " ".join(
+        f"Sentence {i} discusses topic {i} using wording that appears nowhere else in this "
+        f"document."
+        for i in range(sentences)
+    )
+
+
+def test_every_child_of_an_overlapping_document_gets_a_span() -> None:
+    """The regression. Pre-fix this loses 60 of 124 children — every other parent.
+
+    Asserts totality, not a rate. A rate is what let this hide for months as a property of the
+    corpus: this file's own docstring recorded "70-86% of chunks resolve" as a finding, when it
+    was the cursor skipping past overlapping chunks.
+    """
+    chunks = build_parent_child_chunks(_overlapping_document(), {"doc_hash": "h"})
+    assert chunks, "fixture produced no chunks"
+    missing = [c for c in chunks if c.metadata.get("char_start") is None]
+    assert missing == [], (
+        f"{len(missing)} of {len(chunks)} children have no span — the cursor is skipping past "
+        f"overlapping chunks again"
+    )
+
+
+def test_no_parent_is_lost_when_parents_overlap() -> None:
+    """A lost parent takes every one of its children's spans with it, so it is the expensive
+    half. Pre-fix, parents 1, 3, 5, 7 … were never located at all."""
+    chunks = build_parent_child_chunks(_overlapping_document(), {"doc_hash": "h"})
+    unlocated = sorted(
+        {c.metadata["parent_index"] for c in chunks if c.metadata.get("parent_char_start") is None}
+    )
+    assert unlocated == [], f"parents {unlocated} were never located"
+
+
+def test_spans_advance_within_a_parent_and_stay_inside_the_document() -> None:
+    """The cheap check that a `+1` cursor did not start matching things out of order.
+
+    Ordering is asserted **per parent**, not across the whole document — because parents overlap
+    by design, the first child of parent N+1 legitimately begins *before* the last child of
+    parent N. A first version of this test asserted global order and failed on correct output;
+    the overlap region really does belong to both parents.
+    """
+    text = _overlapping_document()
+    chunks = build_parent_child_chunks(text, {"doc_hash": "h"})
+    by_parent: dict[int, list[int]] = {}
+    for c in chunks:
+        s, e = c.metadata["char_start"], c.metadata["char_end"]
+        assert 0 <= s < e <= len(text), f"span ({s}, {e}) is outside a {len(text)}-char document"
+        by_parent.setdefault(c.metadata["parent_index"], []).append(s)
+    for parent_index, starts in by_parent.items():
+        assert starts == sorted(starts), f"parent {parent_index}'s children came back out of order"

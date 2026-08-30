@@ -22,6 +22,70 @@ Format: What changed | Why | Rejected alternatives | What it opens
 > is individually small and correct, so unbounded growth is invisible per commit.
 
 ---
+## 2026-08-30 (7) — A 70-86% resolve rate was written down as a property of the corpus. It was a cursor parked one chunk too far along
+
+**What changed.** `build_parent_child_chunks` advances its parent and child cursors to each
+located span's **start + 1** instead of its **end**. Two lines. Measured on 12 documents of the
+live corpus: **3,652 of 3,652 spans located, against 2,761 before — and 122 parents that were
+previously never located at all.**
+
+**How it was found — by checking a queued item's premise instead of trusting it.** ROADMAP 19
+("locate a chunk in its source text") frames two routes as a genuinely open choice: (a) read-time
+matching, (b) ingest-time offsets, where (b) is *"exact, needs a schema field + a re-ingest to
+backfill"*. The schema field turned out to already exist, so the real question was how much of the
+library already carries offsets. Counting them is where the trouble showed:
+
+* a first 400-chunk sample said **0%** — wrong, because `store.get(limit=400)` returns insertion
+  order and hit only the oldest documents. **A sample that is not random is not a sample;**
+* counted properly, **25,125 of 39,705 chunks (63.3%)** carry a span, no document is *fully*
+  spanned, and the 19 documents with none are exactly those ingested before the field landed;
+* figures legitimately have no span, so they were separated out: **76.1% of text chunks**, and
+  figures account for only 1.6% of the gap. They were not the explanation.
+
+**The reconciling fact.** Replaying `locate_span` over the same documents by hand resolved
+**100%** — which contradicted the store outright, and that contradiction is what located the bug.
+The replay advanced its cursor to each span's *start*; the shipped code advances to the *end*. Both
+splitters emit **overlapping** chunks (`PARENT_CHUNK_OVERLAP` 200, `CHILD_CHUNK_OVERLAP` 50), so the
+next chunk begins *before* the previous one ended and a search starting at the previous end begins
+past its own answer. Deterministic on a synthetic wall of prose: pre-fix it loses **every other
+parent** — 1, 3, 5, 7, 9, 11, 13, 15, 17, 19 — and 60 of 124 children with them.
+
+**The second failure mode is worse than the missing offsets.** A cursor past the true position does
+not only fail to find; it can find a *later duplicate* and record a confidently wrong offset. The
+locator's own docstring conceded that "a pathological duplicate can still land on the wrong one" —
+with the cursor mis-set, it needed no pathology.
+
+**This file's docstring had recorded the symptom for months.** `tests/unit/test_chunk_locations.py`
+opens with *"Measured on the real corpus while building it: 70-86% of chunks resolve"* — a
+measurement taken honestly, written down, and never explained. **A rate nobody can account for is a
+question, not a finding**, and this one described a defect rather than the text. The docstring now
+says so, with the after number beside it.
+
+**Two false starts, both worth keeping visible.** The first regression fixture used
+paragraph-separated prose and **passed against the broken code** — clean `\n\n` splits barely
+overlap, so the bug never fired; that is the "a revert that does not reproduce the bug proves
+nothing about the test" lesson arriving from the other direction. And the first ordering assertion
+demanded globally ascending starts, which **failed on correct output**: parents overlap by design,
+so the first child of parent N+1 legitimately begins before the last child of parent N. Ordering is
+asserted per parent now, and the docstring says why.
+
+**Rejected: advancing to the span start exactly.** `start + 1` costs nothing and keeps the property
+the cursor exists for — a passage that repeats verbatim maps to its own occurrence rather than
+matching the previous one twice.
+
+**What it does NOT do: fix the library.** Offsets are written at ingest, so the 25,125 already
+stored are the lossy ones and the 19 oldest documents still have none. Getting the full set means
+re-extracting, which as of today is a per-document button (ROADMAP 20/21) rather than a whole-corpus
+run — but it is ~15-35 s per document and it moves `doc_hash`, so it is the user's call, not a
+migration to run unasked.
+
+**What it opens.** ROADMAP 19's choice is now decided by measurement rather than left open: with the
+cursor fixed, route (b) resolves everything the locator can see, so (a) is a fallback for
+re-extraction-resistant documents rather than a competing design. The row is updated.
+
+**Gates:** pytest 2241/0 · mypy 94/0 · ruff clean · `docs_check --strict` 0/0.
+
+---
 ## 2026-08-30 (6) — The re-run earns its keep on the first real use: 15 titles a library had been missing, and a second extractor bug found by watching it work
 
 **What changed.** ROADMAP 21's selection flow was used in anger over the **16 documents in the live

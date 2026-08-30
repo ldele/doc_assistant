@@ -3,6 +3,12 @@
 # Spec — Remediation plan R1–R7: review findings → evaluate + fix (2026-07)
 
 > **📦 Archived — shipped; the historical code-level contract, archived here (2026-07-11).** Live status: ROADMAP rows R1–R7 (all done). The behaviour of record is the code + tests, not this spec.
+>
+> **The module paths below are historical (annotated 2026-08-29).** They record where code sat
+> on 2026-07-11; `concept_skeleton.py`, `epistemics.py`, `keywords.py` and
+> `concept_semantics.py` moved into `src/doc_assistant/knowledge/` at ADR-023, and the line
+> numbers are from that day's tree. Those references are plain text rather than links, so they
+> read as a record of where a thing was rather than as navigation that would 404.
 
 **Status:** ✅ **COMPLETE — all of R1–R7 landed (2026-07-02).** R1/R2/R3/R7 committed; R4 committed
 (`1374ed5`); R5 (decision run, **PASS** — ADR-008) + R6 (BM25 preprocess + hygiene) built and staged.
@@ -94,12 +100,12 @@ SBERT/ColBERT/RoBERTa doesn't just inflate `n_mentions`, it fabricates co-occurr
 everything in those papers, inflating the exact density metric RG-008 gates on. Running R5 without this fix
 produces a third confounded negative.
 
-**Fix:** `match_presence` ([concept_skeleton.py:154](../../src/doc_assistant/concept_skeleton.py)) — replace
+**Fix:** `match_presence` (`concept_skeleton.py:154`) — replace
 `low.count(form)` (line ~182) with a per-form compiled regex count. **Do not use `\b`**: it misbehaves on
 surface forms with edge `-`/`+` characters (`gpt-4`, `c++`). Use alnum lookarounds consistent with the
 keyword tokenizer's notion of a word: `(?<![a-z0-9])<re.escape(form)>(?![a-z0-9])` over the casefolded text
 (reference implementation shape: `epistemics.concepts_in_text`,
-[epistemics.py:122](../../src/doc_assistant/epistemics.py)). Precompile once per form.
+`epistemics.py:122`). Precompile once per form.
 - Add `CONCEPT_SKELETON_PRESENCE_MODE` config (`"boundary"` default, `"substring"` kept as the A/B lever for
   the R5 comparison). This changes the spec-locked Decision-2 primitive — update
   `docs/archive/concept-graph-redesign.md` (word-boundary was already its named upgrade lever) + DEVLOG.
@@ -121,7 +127,7 @@ indicative, re-derived on the box.
 ## R3 — Keyword termhood: contrastive scoring + nested-term fix (keywords.py)
 
 **Why:** both existing modes fail by construction, measured on two corpora: per-doc TF-IDF selects df≈1 terms
-(per-paper cliques); `corpus_band`'s `df·(1+ln tf)` ([keywords.py:359](../../src/doc_assistant/keywords.py))
+(per-paper cliques); `corpus_band`'s `df·(1+ln tf)` (`keywords.py:359`)
 is monotone in df, so it always grabs the most-shared = most-generic terms. The terminology-extraction
 literature's answer is **contrast against a reference corpus** ("weirdness" ratio) + **C-value** for nested
 multi-word terms. Both deterministic, zero-LLM, and the reference is external — so this does **not** violate
@@ -143,7 +149,7 @@ against the rejected alternatives:
   no general contrast; may still be layered on top of A later (published AWL, not tuned on our corpora).
 
 **Fix 1 — nested n-gram discount (fixes the unigram-dominance bias everywhere):**
-`candidate_terms` ([keywords.py:267](../../src/doc_assistant/keywords.py)) counts every occurrence of
+`candidate_terms` (`keywords.py:267`) counts every occurrence of
 "dense passage retrieval" also as its contained bigrams/unigrams, so a contained term's count is always ≥ its
 container's — frequency-ranked pools and rankings systematically favor single words. Add a C-value scoring
 step: `C(a) = log2(|a|+1) · (f(a) − mean f(b) over observed candidates b ⊋ a)` (the `+1` variant keeps
@@ -157,15 +163,15 @@ CLI `--mode contrastive` on `scripts/extract_keywords.py`; config knobs followin
 style. Defaults chosen a priori and frozen **before** looking at output (record them in the ADR).
 
 **Fix 3 — orphan sweep:** `_persist_keywords(force=True)`
-([keywords.py:466](../../src/doc_assistant/keywords.py)) clears links but orphaned `Keyword` rows persist and
+(`keywords.py:466`) clears links but orphaned `Keyword` rows persist and
 pollute `seed_concepts` candidates forever. After clearing, delete `Keyword` rows with zero remaining
 document links and no matching promoted `Concept` label.
 
 **Optional ride-alongs (small, same module cluster — drop if the PR grows):**
-`abstract_candidates` ranking ([concept_semantics.py:81](../../src/doc_assistant/concept_semantics.py)) is
+`abstract_candidates` ranking (`concept_semantics.py:81`) is
 frequency-first so the "multi-word phrases surface first" docstring only holds on ties — make phrase length
 primary (or score `count·len`); `anchor_ranked_candidates` pool
-([concept_semantics.py:209](../../src/doc_assistant/concept_semantics.py)) pools by raw frequency and
+(`concept_semantics.py:209`) pools by raw frequency and
 inherits the unigram bias — pool by per-doc TF-IDF or C-value instead. Plus a 20-minute measurement: count
 `extract_abstract` recall over both corpora (the regex requires a standalone "Abstract" heading; inline
 "Abstract—…" styles silently degrade the anchor to title-only).
@@ -194,7 +200,7 @@ persisted via an additive `strength_json` column on `concept_edges` (+ `_ADDITIV
 test). +6 tests; gate green (**718 passed / 1 skipped**). The saturated toy graph pins every strength at
 `1.0` as predicted; the partial-graph spread is the R5 measurement.
 
-**Why:** `_add_provenance` ([concept_skeleton.py:244](../../src/doc_assistant/concept_skeleton.py), any-pair
+**Why:** `_add_provenance` (`concept_skeleton.py:244`, any-pair
 test at ~line 269) asks "does *any* doc containing A link to *any* doc containing B?" — measured
 non-discriminating (run (a): similarity 100%, citation ~88%). A **ratio** stays deterministic and becomes a
 relative signal on a partial doc graph.
@@ -204,12 +210,12 @@ relative signal on a partial doc graph.
 db ∈ docs(B), da ≠ db}`. Keep the token in the `provenance` set when strength > 0 (the no-edge-creation
 invariant is untouched — this only annotates existing co-occurrence edges). Store strengths (new
 `provenance_strength` mapping on `SkeletonEdge`; co-occurrence keeps its count field).
-- `edge_weight` ([concept_skeleton.py:318](../../src/doc_assistant/concept_skeleton.py)): **preserve the
+- `edge_weight` (`concept_skeleton.py:318`): **preserve the
   locked invariant** (an edge with more provenance tokens always outranks one with fewer). Keep the integer
   part = token count; split the fractional tiebreak, e.g. `0.5·mean(strengths) + 0.5·(1 − 1/(1+cooc))`,
   still bounded < 1. Exact split is an in-PR decision; the invariant gets a guard test.
 - Touch **both** serialization directions (`skeleton_to_dict` / `skeleton_from_dict`,
-  [concept_skeleton.py:464](../../src/doc_assistant/concept_skeleton.py)) + `_write_skeleton_rows`
+  `concept_skeleton.py:464`) + `_write_skeleton_rows`
   (additive `strength_json` column or fold into `provenance_json`) + the `_graph_version` payload.
 - **Honest expectation:** on a saturated doc graph (public corpus, 100% similarity pairs) every strength is
   1.0 — no discrimination there *by construction*. The payoff is on partial graphs (multi-domain measured

@@ -127,7 +127,8 @@ cross-encoder re-scores the whole pool and its sort is what you see.
 **Epistemic markers are the case to watch.** Today they're purely advisory (a
 "contested in corpus" chip) and gated off by default. They are computed from the
 concept graph, *after* retrieval, and never touch ranking. This is a deliberate
-default (ADR-005), **not** a permanent design: once the corpus is large enough and
+default (ADR-005, superseded by ADR-027), **not** a permanent design: once the corpus is
+large enough and
 retrieval breadth (`TOP_K`/`CANDIDATE_K`) grows, promoting epistemic status into a
 ranking signal — down-weighting superseded or contested passages — is a plausible
 future change. If that happens, this table is the thing to update, because the signal

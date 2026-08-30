@@ -3,6 +3,11 @@
 > **Superseded 2026-06-20 (cpc adoption, ADR-001).** The living roadmap is now `docs/ROADMAP.md`
 > (reshaped to the cpc PR table). This file is the frozen original, kept for its detailed per-phase
 > prose and history. Do not edit; update `docs/ROADMAP.md` instead.
+>
+> **The module paths below are historical (annotated 2026-08-29).** They record where code sat
+> at this file's own date, and some of it has since moved — `tables_marker.py` now lives in
+> `src/doc_assistant/ingest/`. Those references are plain text rather than links, so they read
+> as a record of where a thing was rather than as navigation that would 404.
 
 # doc_assistant — roadmap additions
 
@@ -186,7 +191,7 @@ Spliced inline into the markdown cache.
 > **Update:** the 2026-06-02 RTX engine eval selected **Marker** as the primary table
 > engine, with **pdfplumber frozen as the no-dep fallback**. The caption-anchored,
 > page-anchored inline splice (+ de-dup of pymupdf4llm's lossy twin) lives in
-> [`tables_marker.py`](../src/doc_assistant/tables_marker.py), run out-of-process by
+> `tables_marker.py`, run out-of-process by
 > [`scripts/extract_tables_marker.py`](../scripts/extract_tables_marker.py). The
 > pdfplumber description below is the original plan / retained fallback. See
 > `docs/figures-and-tables.md` and `docs/specs/feature-4a-marker-table-ingest.md`.

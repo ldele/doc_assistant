@@ -821,3 +821,69 @@ ndarray for `embeddings`** — a list-returning fake cannot see this class of bu
   `tests/eval/baselines/memory_and_lazy_reranker_2026-07-30.md` §3 (the attribution) ·
   `docs/performance.md` §3 · ROADMAP rows **PF2a**/**PF3** ·
   `docs/decisions/ADR-035-bm25-index-persistence.md` (superseded in practice).
+
+## KI-53 — the ingest record described every document as a PDF, and called a complete extraction `broken` — **FIXED 2026-08-29**
+
+**Found by the first EPUB/HTML round trip through the UI** (2026-08-28). Both formats added,
+indexed and retrieved correctly — the defect was in what the row *said about* them.
+
+**1 · `extraction_health` called any short document `broken`.**
+`health.classify_document_health` opened with `if chunk_count <= 1: score -= 100`, returning
+`broken` before any other signal was considered. The two committed fixtures —
+`tests/fixtures/documents/article.html` (2,143 B) and `treatise.epub` (2,870 B) — each produce one
+baseline chunk, so both were filed `broken` and the document view rendered it verbatim:
+**"html · broken"**. Their extraction was clean (accents survived, the table round-tripped, all
+three chrome markers stripped) and they were genuinely retrievable. The rule conflated **short**
+with **failed**: tuned for papers, where one chunk really does mean collapse; simply wrong for a
+web article, a note or a short chapter.
+
+**2 · `extractor_used` was hardcoded** to `config.PDF_EXTRACTOR`, so an EPUB and an HTML file both
+recorded `pymupdf` — a PDF extractor that never touched them. Provenance, and false.
+
+**The fix, and the rule it installs.** *Broken* now means the extractor failed, so every rule that
+can return it states that text is missing **relative to its container**: nothing extracted at all;
+a paged document whose pages produced a single chunk; a lone fragment under `SCRAP_CHARS` (200).
+Where there is no container to compare against — an HTML page, an EPUB chapter — the classifier
+withholds the penalty rather than inventing one. `VERBATIM_FORMATS` (`txt`, `md`) are exempt from
+the fragment rule outright: reading a short file back is not a failure, it is the file.
+`extractors.extractor_name(path, pdf_extractor)` now follows the same branch the dispatch does.
+
+**Do not undo — three things.**
+
+- **`_EXTRACTOR_NAMES` must stay a *parallel* dict, never a second field on `_EXTRACTORS`.**
+  `ingest.cache.extraction_fingerprint` walks `_EXTRACTORS.values()` expecting callables, and any
+  exception in that walk falls back to the whole-module fingerprint — a re-extraction of every
+  cached document (this is KI-48, which cost 97 PDF caches for an EPUB-only change). The ten
+  fingerprints were captured before and after this change and are byte-identical. The drift a
+  parallel dict allows is bought back by `test_every_supported_format_names_its_extractor`.
+- **Characters per page is the only paged signal, and it is graded (`SCRAP_CHARS` 200 → broken,
+  `SPARSE_PAGE_CHARS` 500 → penalised).** Do not reintroduce a count-based companion. The two it
+  replaced — a `chunks_per_page < 2` floor firing at ~2,000 characters per page, and a flat
+  `chunk_count <= 3` penalty — measure the same thing in a unit that misleads: with a 1,000-char
+  baseline chunk, "fewer chunks than pages" *is* "under ~1,000 characters per page", and a 3-page
+  note with two full chunks was filed `broken` by exactly that reasoning.
+- **Health is asserted before the extractor** in
+  `tests/integration/ingest/test_ingest_record_honesty.py`. Reversed, the provenance failure masks
+  the health one and half the regression stops being tested.
+
+**Known blind spot, deliberately left.** With no page count and no container signal there is no way
+to detect a *large* unpaged file that yielded almost nothing — a 500 KB JS-heavy HTML page
+extracting to 900 characters reads as a short article. Passing the source file's size in would
+catch it, but a bytes→chars floor has to hold across raw HTML, zip-compressed EPUB and DOCX, where
+the honest ratio differs by more than an order of magnitude. Named in `health.py`'s docstring.
+
+**Not a retrieval bug, and the check that ruled it out.** Two chat turns failed to surface the
+fixtures, which looks alarming until you count the corpus: 98 real neuroscience papers against one
+2 KB synthetic article. The keyword index proves the content is there (1 hit for `Delacroix`), so
+that was ranking, not indexing. **Do not record it as a retrieval defect** without an experiment
+that controls for corpus competition.
+
+**One loose thread, on a single data point.** `Akesson` returns 0 keyword hits while the text holds
+`Åkesson` — the tokeniser appears not to fold accents, so an accented author name may not be
+findable by its ASCII spelling. One observation, not a measurement; a corpus with many accented
+names would settle it.
+
+**Guard tests:** `tests/unit/test_health.py` (7 new, 6 fail against the pre-fix code) ·
+`tests/unit/test_extractors_formats.py` (2 new) ·
+`tests/integration/ingest/test_ingest_record_honesty.py` (2, both halves proven pre-fix).
+**Pointer:** DEVLOG 2026-08-29 (1).

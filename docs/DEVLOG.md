@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-08-28 · class: append-only -->
+<!-- status: active · updated: 2026-08-29 · class: append-only -->
 
 # DEVLOG — doc_assistant
 
@@ -20,6 +20,330 @@ Format: What changed | Why | Rejected alternatives | What it opens
 > the oldest entries into a new `DEVLOG-archive-NNN.md` and update the list above — **do not raise
 > the cap.** The cap exists because this log reached 8,244 lines before anyone noticed: every entry
 > is individually small and correct, so unbounded growth is invisible per commit.
+
+---
+## 2026-08-29 (5) — Per-part re-ingest: the app can finally re-run one pass on one document, and it says what that costs first
+
+**What changed.** ROADMAP rows **20 and 21**, behind **ADR-048**. A new
+`src/doc_assistant/reingest.py` re-runs chosen parts of ingestion for chosen documents; a
+`202 + poll` route pair drives it; one dialog serves both entry points — the document panel's block
+nav (row 20) and the Library grid's Select mode (row 21). 20 new pytest cases, 11 new node:tests.
+
+**The roadmap filed one open question and the answer changed the shape.** It asked *which parts can
+re-run without moving `doc_hash`*. Answering it from `docs/performance.md` and the code turned up
+three more, and all four are in ADR-048:
+
+1. **The parts differ in cost by four orders of magnitude** — metadata is milliseconds (0.58 s for
+   the *whole corpus*), text is 14.7 s mean and ~35 s when OCR fires. Four equivalent-looking
+   checkboxes would be lying by omission, so every part carries a `cost` string, served from the
+   registry rather than copied into the client, and the dialog states it before anything runs.
+2. **Some passes have no per-document form at all.** `extract_keywords` and `compute_doc_vectors`
+   are corpus-global by construction — scoping keywords to one document was *measured* to save
+   **4%** — and epistemics and gaps have no scope flag. They are **named and declined** in the
+   dialog, because a user who cannot find a button deserves to know there is no button.
+3. **The selective ingest path skips cleanup, by construction.** `ingest.main` runs
+   `cleanup_orphans_*` only when `files is None`, and a per-document re-extract *is* the
+   `files is not None` branch. Re-extraction moves `doc_hash` (ADR-042) and ADR-047 keeps the row
+   attached — but the previous hash's chunks would stay in **both** stores and stay retrievable.
+   **Reproduced before it was fixed:** with the purge disabled, the guard test reports
+   `superseded chunks survived: {'baseline': 1, 'pc': 1}` — the document indexed twice. `_rerun_text`
+   now records the hash before it starts and purges it after, if it moved.
+4. **Metadata has a safe overwrite, and it is not obvious.** ADR-013 keeps a user's edits in the
+   separate `DocumentMeta` override table, so `Document.title` holds only the extractor's previous
+   answer. A re-run may replace it without touching anything a human typed — the opposite of the
+   usual `--force` hazard, and worth checking rather than assuming.
+
+**Parts run in registry order, so `text` runs last.** It rewrites the cached markdown that metadata
+and references read; running them first would derive from the text the user asked to replace. The
+dialog reports the same order it executes.
+
+**Row 21 cost nothing extra, which was the design.** `rerun` takes `document_ids: Sequence[str]`
+from the start, so the grid's select bar opens the *same* dialog with a list — no second component,
+no second cost statement to drift. One failing document is recorded as an error and the batch
+continues: a selection of forty must not be lost to one unreadable PDF.
+
+**Rejected: exposing the CLI runners over the API.** `scripts/extract_doc_metadata`,
+`extract_citations` and `extract_figures` already do per-document work behind `--doc`, and shelling
+out would have been the fastest path. But `apps/` are thin shells over `src/doc_assistant/`, never
+over `scripts/` (non-negotiable #3), and those runners' orchestration is written for a console
+report, not a caller. The orchestration moved into `src/` instead — where it should have been.
+**The duplication that leaves is real and is recorded rather than discovered later** (ADR-048's
+first consequence): those three runners still carry their own copies, so per-document metadata
+logic currently has two homes. Rewiring three working runners is its own increment.
+
+**Driving it on a real document found a metadata bug, and then a second one underneath.** Re-running
+metadata on `03-Zuo2014_NBR_fconn.pdf` — which had **no** title, authors, year or references — filled
+authors (`Xi-Nian Zuo, Xiu-Xia Xing`), year (2014) and 18 references correctly, and stored the title
+as **`~~Neuroscience and Biobehavioral Reviews~~`**, markers included. `_clean_markdown` stripped
+`*` and `_` and never `~`; that is now a one-line fix with a guard test that fails without it.
+Stripping the markers then made the real problem legible: the title picker had chosen the **journal
+name**, not the paper's title. That is **KI-54**, filed not fixed — the machinery to prevent it
+already exists (`_JOURNAL_HEADER`) and did not fire because it matches a *dated* journal header, and
+the fix must not be a list of journal names (that is corpus-tuning, which the robustness contract
+forbids).
+
+**Verified live on the real library, and it did real work.** Row 20: progress bar reading
+*"Re-running 03-Zuo2014_NBR_fconn.pdf · metadata"*, `0 of 2`, then the report — *"metadata · filled
+authors, title, year"* and *"references · 18 reference(s), 0 matched in your library"*. Row 21: three
+tiles selected → the same dialog titled *"3 documents"*, the summary multiplying to *"3 documents ·
+… each"*, the `text` confirmation appearing and gating the button until ticked. 0 new console
+errors; no horizontal overflow at 375 px (modal 345 px, every part row fitting). **The library is
+left as found plus the wins:** the title I wrote is reverted to NULL (it was worse than the filename
+it replaced), authors, year and the 18 references are kept, 98 documents and every `doc_hash`
+unchanged.
+
+**One thing driving the UI caught that no test would have.** The first cost summary rendered as
+*"1 document · about instant, per document."* The cost strings are already whole phrases, so the
+sentence had to be built around them rather than prefixed onto them. Now pinned by a test.
+
+**What it opens.** Re-running a part across the *whole* corpus from the app — still Settings' index
+button plus the CLI. And the three runners' duplicated orchestration, which now has a `src/` home to
+move into.
+
+**Gates:** pytest 2237/0 · mypy 94/0 · ruff clean · svelte-check 213/0 · node:test 192/192.
+
+---
+## 2026-08-29 (4) — Graph vocabulary gets the in-app toggle ADR-018 left as a follow-up, and the Graph tab stops being a dead end
+
+**What changed.** A concept can now be put on the concept graph, or taken off it, from **Manage
+keywords** — a per-row toggle, an "On the graph (N)" lens, and a line saying how many of your
+concepts are on it and what that means. Full stack: `library.set_family_graph_include` +
+`KeywordFamily.graph_include`, `graph_include` on the wire, the family `PATCH` extended, the
+`invalidateGraph()` latch drop, and two pure helpers in `library.ts` (+4 node:tests, +8 pytest).
+
+**This is not a new decision — it is the one ADR-018 already made and deferred.** That ADR's
+Consequences say it outright: *"Curation has no UI yet. Opting a concept in is CLI-only
+(`add_concept`, the backfill runner) until a follow-up PR adds the toggle. Its natural home is the
+Manage-keywords view, which keeps ADR-017 A1 intact (the graph still never writes the vocabulary —
+the keywords view does)."* So no ADR was written for this; the location, the polarity and the
+consequence were all settled in July. I had filed ROADMAP row 23 saying it "wants a decision before
+code" — that was wrong, and reading ADR-018 before starting is what corrected it.
+
+**Why it mattered enough to do today.** Re-enabling the Graph tab this morning surfaced that
+`graph_include=true` is set by **exactly one thing**: `scripts/curate_concepts.py`. Every in-app
+path (`create_keyword_family`, `promote_keyword`) creates concepts with it off, by ADR-018's own
+design. Measured here: 593 concepts, **13** on the graph, all `source='manual'`. A fresh install's
+graph was therefore empty with no in-app action that could ever change it — a shipped tab whose
+only escape hatch was a Python script the packaged app does not carry.
+
+**The feedback loop already existed and needed nothing new.** `concept_graph_view._staleness`
+re-reads `load_concepts()` on every render, so the moment the vocabulary moves, the graph says
+*"Graph is N concepts behind your vocabulary"* with the rebuild beside it. That is why
+`set_family_graph_include` deliberately does **not** trigger a rebuild: the skeleton is a derived
+sidecar (Enrichment-Layer Pattern), and a write path that kicks off a multi-second derived rebuild
+is exactly the coupling that pattern exists to prevent. The one thing that did need wiring was
+`invalidateGraph()` — the graph's lazy-load latch is one-shot, so a graph already loaded in this
+session would have kept reporting the pre-toggle count. Dropping the latch beats refetching: it
+pays for the fetch only if the user actually goes to look.
+
+**Two decisions inside the PATCH that are load-bearing.**
+
+- **Rename runs before the flag.** One PATCH carries two independent fields, and the rename is the
+  half that can 409 on a taken label. Running it first means a refused rename cannot leave a family
+  renamed-but-not-flagged, or flagged-but-not-renamed. `test_route_409_leaves_the_flag_alone`
+  checks that, not the docstring.
+- **An empty body is a 400, not a 200.** Both fields are optional so each can be sent alone (the
+  rename path predates the flag and still sends only `canonical`), but a body with neither is
+  always a caller bug, and returning a correct-looking payload for it hides the bug.
+
+**The lens is over ALL families, not the visible ones — and that is a bug I wrote and then found.**
+Most opted-in concepts have no member keywords and no documents, so `splitInheritedFamilies` files
+them as *glossary-only*, which the Manage view hides by default. Applying the lens to the visible
+subset showed an **empty list** while the count beside it said 13. Fixed by lensing the full set,
+and pinned by a node:test that asserts the fixture row really is glossary-only before asserting the
+lens reaches it — otherwise the test would pass on a fixture that never exercised the case.
+
+**Adding a write route exposed a disagreement the read side had been getting away with.**
+`list_keyword_families` excludes `kind="domain"` taxonomy field nodes (ADR-028 D4 — the 236 seeded
+ANZSRC fields are not keyword families), but `get_keyword_family` looked up by id with no kind
+filter and cheerfully returned one. Harmless while every family write arrived through a list the
+user had clicked; not harmless the moment an id-addressed route could set `graph_include`, because
+`load_concepts` filters on **that flag alone** — so a flagged field node would enter the graph
+vocabulary, and `db/models.py` states outright that presence-assuming code must read only
+`kind="concept"`. Both the lookup and the setter now refuse a non-concept row (the setter checks
+independently: reaching the read guard would mean the write had already landed). Pinned by a test
+that asserts at the **column**, not the status code — a 404 with the flag set would be exactly the
+failure it exists to prevent, and it fails without the guard.
+
+**Driving the new path found a bug that predates it, in the load latch.** `selectMode('library')`
+guarded *all three* library sidecar loads behind `!documentsLoaded` — but the graph path loads
+documents on its own (the ego panel resolves doc_ids → titles) **without** the family or folder
+lists. So once Graph had been visited, entering Library skipped both fetches for the rest of the
+session, and Manage keywords opened reading **"Families (0)"** on a library with 357. The graph's
+per-concept **Edit** button has had this since it shipped; it only became visible now because the
+empty state made that view a primary action reached directly from Graph. Fixed by giving families
+their own `familiesLoaded` latch and checking folders on their own terms — `documentsLoaded` was
+standing in for "the library's sidecars are loaded", and one caller loaded documents without them.
+Verified live: the same click now opens on *Families (253) · 13 of 357*. **Not unit-tested** —
+this is `App.svelte` orchestration, which `node:test` cannot run (apps/desktop/CLAUDE.md); the live
+drive is the gate, and it is the only thing that would have caught it.
+
+**Rejected: making the graph write its own vocabulary** (a "+ add to graph" button on a graph
+node). It is the more obvious place and it is what ADR-017 A1 forbids — the graph is a read surface
+over a vocabulary curated elsewhere, and letting it write would put two writers on one table with
+no story for which wins. The graph's existing "Edit" action already deep-links into Manage keywords;
+that is the seam.
+
+**Verified live** on the real library, and the library is restored exactly. Opened Manage keywords
+(13 of 357 · lens shows 13) → toggled **BM25** off (12 of 357, row leaves the lens) → the Graph
+showed *"⚠ Graph is 1 concept behind your vocabulary. [Rebuild]"* → toggled it back on (13 of 357) →
+the banner cleared. Both PATCHes 200, each followed by a family refetch and a `/api/concepts/graph`
+refetch (the latch drop, working). DB after: 236 anzsrc/0 · 344 keyword/0 · 13 manual/1 — identical
+to before, `BM25` back at `manual/1`. 0 new console errors; no horizontal overflow at 375px
+(`famhead` 301/301 with the extra button).
+
+**What it opens.** A user can now build graph vocabulary, so the caveats the ROADMAP files against
+the graph become testable rather than theoretical: whether 13 concepts is too thin is a question
+somebody can now answer by adding more. It also re-raises ADR-018's own consequence — *"the gap
+distribution must be re-measured, not assumed"* — because the vocabulary is no longer fixed at
+whatever the CLI left.
+
+---
+## 2026-08-29 (3) — Settings becomes a rail and five categories, because a flat list stopped scaling before it stopped growing
+
+**What changed.** The Settings drawer is now a **category rail + one pane** instead of one flat
+scroll of ten sections. Five categories — *Getting started · Documents · Provider & model ·
+Retrieval · General* — in a new pure `settings/sections.ts` (+5 `node:test`s). The panel widened
+from 420px to `min(760px, 96vw)` to pay for the rail; below 700px the rail becomes a horizontally
+scrolling strip above the pane. Section markup and logic are unchanged — they were regrouped, not
+rewritten.
+
+**Why a rail and not accordions or a search box.** Accordions keep the flat list and add a click;
+search answers "where is X" only for a user who already knows X is there. A rail answers the
+question a first-time reader actually has — *what kinds of thing can I change here* — and it is the
+seam that makes the next setting cheap: it joins a category, and the category says where it
+belongs. That was the ask ("so we can add more settings later"), and it is why the category list is
+data in a plain `.ts` rather than markup: it is testable, and adding one is an entry, not a
+refactor.
+
+**The landing category is read from state the shell already had.** `initialSection` returns `setup`
+while any setup step is outstanding and `documents` otherwise, computed from `shell.setup` —
+already loaded by App for the chat pane's banner. So a fresh install opens **on** the checklist
+(ADR-034) rather than opening elsewhere and jumping a moment later when a fetch of our own lands,
+and it costs no second request. The rail badges the outstanding count for the same reason, and only
+while it is non-zero: a badge that is always there is decoration.
+
+**Deliberately NOT `role="tablist"`.** Tabs carry a keyboard contract — roving tabindex, arrow-key
+movement — and a rail that claims the role without honouring it is worse for a screen-reader user
+than one that never claimed it. It is a `<nav>` of buttons with `aria-current="page"`; Tab reaches
+every category, which is what actually happens. `svelte-check` caught the first attempt
+(`<nav role="tablist">` is a non-interactive element with an interactive role) — the warning was
+right about more than the element name.
+
+**Two behaviours wired before they were needed, not after.** Switching category scrolls the new
+rail item into view and resets the pane to the top. Both only bite once the rail outgrows its box —
+which is precisely the "more settings later" case this restructure exists for. Without the second,
+a pane scrolled deep in Documents opens General halfway down a page the user has never seen.
+
+**Rejected: extracting each category into its own component.** It is the better long-term shape and
+it is what a bigger panel will want, but every section leans on the same ~80 lines of local CSS
+(`.hint`, `.err`, `dl`, `.switch-row`, the button styles), and Svelte scopes styles per component —
+so five components means five copies, or a global-CSS refactor whose specificity ties with the
+child components' own scoped rules and resolves on source order. The rail is the part that had to
+land; `sections.ts` is where the extraction starts when the panel earns it.
+
+**Verified live** at 1440x900 and 375x812, light and dark, 0 new console errors: all five
+categories render their own sections; `.body` is `195px 510px` wide and `1fr` narrow; the rail
+strip scrolls to keep the active item visible (`scrollLeft` 260, active fully in view) and the pane
+resets (297 → 0); no horizontal overflow at either width (`scrollWidth === innerWidth`).
+
+**What it opens.** Component extraction per category, once the shared CSS is worth moving. And the
+categories are now the obvious home for settings that do not exist yet — the selective re-ingest
+controls (ROADMAP 20/21) have a `Documents` to land in.
+
+---
+## 2026-08-29 (2) — The Graph tab is back, and its empty state now says the thing that is actually true
+
+**What changed.** `GRAPH_TAB_ENABLED` → `true` (ROADMAP row 22). With it, `ConceptGraph` and
+`GraphIndex` gained a **built-and-empty** state, distinct from the *never built* one they already
+had.
+
+**Why the flip needed more than the flip.** The tab was hidden on 2026-08-12 because an empty page
+reads as a failure, and the review that hid it
+(`docs/REVIEW_2026-08-12_release-readiness.md` §2b R4) asked for *either* a real empty state *or*
+the hide. Only the hide was done. Flipping the flag alone would have shipped the original defect to
+anyone whose graph is empty — and that is not hypothetical: a built graph with zero nodes fell into
+the `{:else}` arm, so the rail rendered its filter box over nothing and said **"No concepts
+match"**, blaming a query the user never typed, while the main pane invited them to *"Select a
+concept"* from a list with none.
+
+**And the empty state must not offer a build, because a build does not fix it.** Graph vocabulary
+is curated, not automatic (ADR-018): a concept enters at `graph_include=true`, and **only**
+`scripts/curate_concepts.py` sets it — `library.create_keyword_family` and
+`concept_skeleton.promote_keyword` both create concepts with it **off**. Measured on this library:
+593 concepts, `graph_include=1` on **13**, all `source='manual'`. So a fresh install's graph is
+empty and no in-app action can change that. The new state says so — *"Choosing that vocabulary
+isn't in the app yet, so rebuilding won't add anything on its own"* — and demotes the button to
+*Rebuild anyway*. A spinner-and-hope would have been the version that reads as broken.
+
+**Rejected: deleting the flag now that it is true.** The ADR's *second* reason for hiding is still
+open — placement is entangled with the Project ADR — so this tab may yet move. The flag is what
+keeps reversing or relocating the call at one line, which is the reason the file gives for having
+flags at all.
+
+**Verified live**: the tab renders 13 concepts with their gap badges, and selecting *contrastive
+learning* draws the ego graph (5 links) plus "Appears in 10 documents" with per-document mention
+counts. The empty state was driven by stubbing `/api/concepts/graph` to `nodes: []` in the page —
+rail reads *"Nothing in the graph yet."*, pane reads *"No concepts in the graph yet"*.
+
+**What it opens.** **In-app graph-vocabulary curation** — the missing route, and the thing that
+makes this tab mean anything on a library other than this one. It touches ADR-018's rule about what
+opts in, so it wants a decision before code. Filed as ROADMAP row 23.
+
+---
+## 2026-08-29 (1) — KI-53: the ingest record described every document as a PDF, and called a complete extraction broken
+
+**What changed.** Two honesty fixes in what ingestion *records*, both filed on 2026-08-28 from the
+first EPUB/HTML round trip and neither touching extraction itself, which was clean.
+
+1. **`health.classify_document_health` no longer equates short with broken.** It opened with
+   `chunk_count <= 1 → score -= 100`, so a 2 KB web article that extracted into one full chunk was
+   filed `broken` and the document view rendered **"html · broken"**. A user's rational response to
+   that is to delete a document that worked.
+2. **`extractor_used` names the extractor that ran.** It was `config.PDF_EXTRACTOR`
+   unconditionally, so an EPUB and an HTML file both recorded `pymupdf` — a PDF extractor that
+   never touched them. New `extractors.extractor_name(path, pdf_extractor)` follows the same branch
+   the dispatch does: `bs4`, `ebooklib+bs4`, `python-docx`, `odfpy`, `striprtf`, `verbatim`.
+
+**The rule the classifier now follows.** *Broken* means the extractor failed, so every rule that
+can return it is a statement about text missing **relative to its container**: nothing extracted at
+all; a paged document whose pages produced a single chunk (two pages of prose cannot fit in one
+1,000-char baseline chunk); a lone fragment under 200 chars. Where there is no container to compare
+against — an HTML page, an EPUB chapter — the honest answer is that we cannot tell, so it withholds
+the penalty instead of inventing one. `.txt`/`.md` are exempt from the fragment rule outright:
+reading a short file back is not a failure, it is the file.
+
+**Two count-based rules collapsed into one graded measurement, and that mattered.** The
+`chunks_per_page < 2` floor fired at ~2,000 characters per page — an ordinary sparse paper — and a
+flat `chunk_count <= 3` cost 50 points. Both are now **characters per page**, in two tiers: under
+200 (a scrap per page) the text layer failed and the document is `broken`; under 500 (half a
+baseline chunk) it is thin and merely penalised. Reviewing my own first version caught why this is
+not cosmetic: I had kept a `pages > chunk_count` penalty beside the yield rule, and it filed a
+3-page note with two *full* chunks as `broken` — with a 1,000-char baseline chunk, "fewer chunks
+than pages" simply *is* "under ~1,000 characters per page", stated in the unit that misleads.
+Zero blast radius on the live library: all 98 documents are `healthy` today, and a rule that only
+ever fires later can move a verdict toward healthy, never away.
+
+**The one hazard checked before touching anything.** `_EXTRACTOR_NAMES` is a *parallel* dict rather
+than a second field on `_EXTRACTORS`, because `ingest.cache.extraction_fingerprint` **walks**
+`_EXTRACTORS.values()` and a walk that trips falls back to the whole-module fingerprint — i.e. a
+re-extraction of every cached document (KI-48, which cost 97 PDF caches for an EPUB-only change).
+All ten fingerprints were captured before and after and are **byte-identical**. The drift a
+parallel dict allows is bought back by `test_every_supported_format_names_its_extractor`.
+
+**Rejected: passing the source file's size in as a yield signal.** It would catch the one failure
+this leaves uncovered — a 500 KB JS-heavy HTML page yielding 900 characters — but a bytes→chars
+floor has to hold across raw HTML, zip-compressed EPUB and DOCX, where the honest ratio differs by
+more than an order of magnitude. That is a calibration exercise, not a bug fix. The blind spot is
+named in the module docstring instead.
+
+**Every new test was run against the pre-fix code and seen to fail** — 7 of 8 new unit tests (the
+eighth, "a lone scrap is still broken", passed pre-fix for the wrong reason and is a loosening
+guard, not a regression test), and the integration test on both halves in turn: `article.html
+extracted into 1 chunk(s) and read broken`, then `assert 'pymupdf' == 'bs4'`. Health is asserted
+first precisely so the extractor assertion cannot mask it.
+
+**Gates:** pytest 2216/0 · mypy 93/0 · ruff clean · svelte-check 211/0 · node:test 181/181.
 
 ---
 ## 2026-08-28 (10) — CS1/CS2: the last spec item, and the last sentence describing the product Provenote used to be

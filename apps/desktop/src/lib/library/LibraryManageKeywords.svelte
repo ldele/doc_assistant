@@ -6,7 +6,13 @@
   // any other family), or delete it. Reuses the overlay's modal shell (scrim + centered dialog,
   // Esc-to-close). Dumb by design — App owns the families list + calls the API, then refreshes.
   import type { KeywordFamily, KeywordFamilyProposal } from '../core/types'
-  import { RARE_MAX_DOCS, filterByQuery, splitInheritedFamilies } from './library'
+  import {
+    RARE_MAX_DOCS,
+    applyGraphLens,
+    filterByQuery,
+    graphVocabulary,
+    splitInheritedFamilies,
+  } from './library'
   import Icon from '../shell/Icon.svelte'
 
   let {
@@ -18,6 +24,7 @@
     detectError,
     onCreate,
     onRename,
+    onSetOnGraph,
     onAddMember,
     onRemoveMember,
     onDelete,
@@ -34,6 +41,7 @@
     detectError: string | null
     onCreate: (canonical: string, members: string[]) => void
     onRename: (familyId: string, canonical: string) => void
+    onSetOnGraph: (familyId: string, include: boolean) => void
     onAddMember: (familyId: string, keyword: string) => void
     onRemoveMember: (familyId: string, keyword: string) => void
     onDelete: (familyId: string) => void
@@ -81,9 +89,19 @@
   let famQuery = $state('')
   let showInherited = $state(false)
   const famSplit = $derived(splitInheritedFamilies(families))
+
+  // ADR-018 graph vocabulary. The lens is over ALL families, not just the "real" ones: most of the
+  // opted-in concepts have no member keywords and no documents, so they land in the glossary-only
+  // group that this view hides by default — filtering the visible set would show an empty list
+  // while the count beside it said 13.
+  let graphOnly = $state(false)
+  const onGraph = $derived(graphVocabulary(families))
   const famShown = $derived(
     filterByQuery(
-      showInherited ? [...famSplit.real, ...famSplit.inherited] : famSplit.real,
+      applyGraphLens(
+        graphOnly || showInherited ? [...famSplit.real, ...famSplit.inherited] : famSplit.real,
+        graphOnly,
+      ),
       famQuery,
       (f) => `${f.canonical} ${f.aliases.join(' ')}`,
     ),
@@ -300,6 +318,15 @@
         {#if famSplit.inherited.length > 0}· {famSplit.inherited.length} glossary-only hidden (no
           members, no documents){/if}
       </p>
+      <!-- ADR-018's curation, in the view that ADR named as its home. Said plainly because the
+           default is *out* and the consequence is a blank Graph page: a user who never finds this
+           control has no way to know why their graph is empty. -->
+      <p class="hint">
+        <strong>{onGraph.length} of {families.length}</strong> are on the concept graph. The graph
+        maps a vocabulary you choose rather than every keyword in your library — add one with the
+        <Icon name="waypoints" size={12} /> button on its row. The graph itself updates when you
+        rebuild it, and it tells you when it is behind.
+      </p>
       {#if famSplit.real.length === 0 && famSplit.inherited.length === 0}
         <p class="hint">No families yet — create one above.</p>
       {:else}
@@ -308,7 +335,17 @@
             <Icon name="search" size={13} />
             <input bind:value={famQuery} placeholder="Search families" aria-label="Search families" />
           </div>
-          {#if famSplit.inherited.length > 0}
+          <button
+            class="linkbtn"
+            class:on={graphOnly}
+            aria-pressed={graphOnly}
+            onclick={() => (graphOnly = !graphOnly)}
+            type="button"
+            title="Show only the concepts that make up the graph vocabulary."
+          >
+            On the graph ({onGraph.length})
+          </button>
+          {#if famSplit.inherited.length > 0 && !graphOnly}
             <button class="linkbtn" onclick={() => (showInherited = !showInherited)} type="button">
               {showInherited ? 'Hide' : 'Show'} glossary-only ({famSplit.inherited.length})
             </button>
@@ -339,6 +376,21 @@
                     {f.canonical}
                   </button>
                   <span class="doccount">{f.doc_count} doc{f.doc_count === 1 ? '' : 's'}</span>
+                  <button
+                    class="iconbtn graph"
+                    class:on={f.graph_include}
+                    aria-pressed={f.graph_include}
+                    onclick={() => onSetOnGraph(f.id, !f.graph_include)}
+                    aria-label={f.graph_include
+                      ? `Take ${f.canonical} off the concept graph`
+                      : `Put ${f.canonical} on the concept graph`}
+                    title={f.graph_include
+                      ? 'On the concept graph — click to remove'
+                      : 'Not on the concept graph — click to add'}
+                    type="button"
+                  >
+                    <Icon name="waypoints" size={14} />
+                  </button>
                   <button
                     class="iconbtn danger"
                     onclick={() => onDelete(f.id)}
@@ -388,7 +440,16 @@
               {/if}
             </div>
           {:else}
-            <p class="hint">No families match “{famQuery.trim()}”.</p>
+            {#if graphOnly && famQuery.trim() === ''}
+              <p class="hint">
+                Nothing is on the concept graph yet. Add a concept with the <Icon
+                  name="waypoints"
+                  size={12}
+                /> button on its row, then rebuild the graph.
+              </p>
+            {:else}
+              <p class="hint">No families match “{famQuery.trim()}”.</p>
+            {/if}
           {/each}
         </div>
       {/if}
@@ -522,6 +583,19 @@
   }
   .iconbtn.danger:hover {
     color: var(--danger, #c0392b);
+  }
+  /* ADR-018 — the graph-vocabulary toggle. It is a two-state control on a row of one-shot
+     actions, so "on" has to read as a state and not as a hover: filled accent, not a tint. */
+  .iconbtn.graph.on {
+    color: var(--accent);
+    background: var(--surface-2);
+  }
+  .iconbtn.graph.on:hover {
+    color: var(--accent);
+  }
+  .linkbtn.on {
+    color: var(--accent);
+    font-weight: 600;
   }
   .body {
     flex: 1;

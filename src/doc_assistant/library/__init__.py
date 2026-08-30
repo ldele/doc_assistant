@@ -96,6 +96,7 @@ from doc_assistant.library.keywords import (
     list_keyword_families,
     remove_family_member,
     rename_keyword_family,
+    set_family_graph_include,
 )
 from doc_assistant.library.models import (
     DocumentDetails,
@@ -197,5 +198,6 @@ __all__ = [
     "resolve_source_path",
     "reveal_document_source",
     "set_document_meta",
+    "set_family_graph_include",
     "similar_docs",
 ]

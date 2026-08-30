@@ -14,9 +14,9 @@ from fastapi import APIRouter, HTTPException, Request
 from apps.api.models.keywords import (
     KeywordFamilyCreate,
     KeywordFamilyMember,
+    KeywordFamilyPatch,
     KeywordFamilyPayload,
     KeywordFamilyProposalPayload,
-    KeywordFamilyRename,
 )
 from doc_assistant.chat_controller import ChatController
 
@@ -46,23 +46,47 @@ def create_keyword_family_route(body: KeywordFamilyCreate) -> KeywordFamilyPaylo
 
 
 @router.patch("/api/library/keyword-families/{family_id}")
-def rename_keyword_family_route(family_id: str, body: KeywordFamilyRename) -> KeywordFamilyPayload:
-    """Rename a family's canonical label. 404 if unknown, 409 if the label is taken.
+def patch_keyword_family_route(family_id: str, body: KeywordFamilyPatch) -> KeywordFamilyPayload:
+    """Rename a family and/or set its ADR-018 graph-vocabulary flag. 404 unknown, 409 label taken.
+
+    Two independent edits share one PATCH because they are two fields of one row; the body sends
+    whichever it means. Order is deliberate: the **rename runs first**, so a request carrying both
+    cannot leave a family renamed-but-not-flagged (or the reverse) if the rename is the half that
+    409s — the flag write only happens once the row is known to be in its final shape.
 
     The uniqueness invariant lives in `library.rename_keyword_family` (PR-2.5 D1) — this shell
     only maps it to a status code. `KeywordFamilyExists` subclasses `ValueError`, so the
     ordering of these two handlers is load-bearing.
     """
-    from doc_assistant.library import KeywordFamilyExists, rename_keyword_family
+    from doc_assistant.library import (
+        KeywordFamilyExists,
+        get_keyword_family,
+        rename_keyword_family,
+        set_family_graph_include,
+    )
 
-    try:
-        family = rename_keyword_family(family_id, body.canonical)
-    except KeywordFamilyExists as e:
-        raise HTTPException(status_code=409, detail=str(e)) from e
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e)) from e
+    if body.canonical is None and body.graph_include is None:
+        raise HTTPException(status_code=400, detail="nothing to patch")
+
+    family = get_keyword_family(family_id)
     if family is None:
         raise HTTPException(status_code=404, detail="keyword family not found")
+
+    if body.canonical is not None:
+        try:
+            family = rename_keyword_family(family_id, body.canonical)
+        except KeywordFamilyExists as e:
+            raise HTTPException(status_code=409, detail=str(e)) from e
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e)) from e
+        if family is None:
+            raise HTTPException(status_code=404, detail="keyword family not found")
+
+    if body.graph_include is not None:
+        family = set_family_graph_include(family_id, body.graph_include)
+        if family is None:  # pragma: no cover - `get_keyword_family` above applies the same guards
+            raise HTTPException(status_code=404, detail="keyword family not found")
+
     return KeywordFamilyPayload.from_family(family)
 
 

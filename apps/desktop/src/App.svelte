@@ -32,6 +32,7 @@
     renameKeywordFamily,
     resetDocumentMeta,
     revealDocument,
+    setFamilyGraphInclude,
     streamChat,
     bulkUpdateConversations,
     updateConversationMeta,
@@ -52,6 +53,7 @@
   import LibraryManageFolders from './lib/library/LibraryManageFolders.svelte'
   import LibraryMetaEditor from './lib/library/LibraryMetaEditor.svelte'
   import LibraryDeleteConfirm from './lib/library/LibraryDeleteConfirm.svelte'
+  import ReingestDialog from './lib/library/ReingestDialog.svelte'
   import ConfirmDialog from './lib/shell/ConfirmDialog.svelte'
   import ConceptGraph from './lib/graph/ConceptGraph.svelte'
   import GraphIndex from './lib/graph/GraphIndex.svelte'
@@ -84,6 +86,7 @@
   import {
     graph,
     graphLoaded,
+    invalidateGraph,
     loadConceptGraph,
     rebuildGraph,
     useGraphHygiene,
@@ -170,6 +173,12 @@
   let libraryKeywords = $state<string[]>([])
   let keywordFilterOpen = $state(false)
   let documentsLoaded = false
+  // Families need their own latch, not `documentsLoaded`. The graph path loads documents (the ego
+  // panel resolves doc_ids → titles) without the family list, so once it has run, the library's
+  // `!documentsLoaded` guard skips the family fetch forever — and Manage keywords opens listing
+  // zero families on a library with 357. Found 2026-08-29 by making that view the graph empty
+  // state's primary action; the graph's per-concept "Edit" has had the same hole since it shipped.
+  let familiesLoaded = false
   // The overlay's results, derived from the live chat + document lists (both already client-side).
   const searchResults = $derived(searchEverything(shell.searchQuery, conversations.list, documents))
 
@@ -238,7 +247,14 @@
   // Deep-link from a graph node to curate its concept (ADR-017 A1 — the graph never writes the
   // vocabulary; the Manage-keywords view owns every edit). Switches to Library and opens the view.
   function manageConcept(_conceptId: string, _label: string): void {
-    selectMode('library')
+    curateVocabulary()
+  }
+
+  // The graph's empty state sends people here (ADR-018's curation lives in the keywords view, and
+  // ADR-017 A1 keeps the graph read-only over the vocabulary). Same destination as the per-concept
+  // "Edit" above, which is why that one now delegates — one door, one implementation.
+  function curateVocabulary(): void {
+    selectMode('library') // loads the family list if this session has not needed it yet
     manageKeywordsOpen = true
   }
 
@@ -699,6 +715,7 @@
   async function refreshFamilies(): Promise<void> {
     try {
       keywordFamilies = await listKeywordFamilies()
+      familiesLoaded = true
       // PR-2.5 D5 — a family write changes what a facet *unit* is, so a live selection has to be
       // re-pointed or the grid silently empties behind a chip that still looks selectable. The
       // Manage view is opened from the overlay, i.e. exactly where a selection is live. Mapped
@@ -790,10 +807,10 @@
     shell.sidebarOpen = false
     chat.activeCitation = null
     if (m === 'chat' && folders.length === 0) void refreshFolders()
-    if (m === 'library' && !documentsLoaded) {
-      void refreshDocuments()
-      void refreshFamilies()
-      void refreshFolders()
+    if (m === 'library') {
+      if (!documentsLoaded) void refreshDocuments()
+      if (!familiesLoaded) void refreshFamilies()
+      if (folders.length === 0) void refreshFolders()
     }
     if (m === 'graph') {
       // The ego panel resolves doc_ids → titles from the library list, so it must be loaded too.
@@ -935,6 +952,26 @@
     libraryKeywords = []
   }
 
+  // Per-part re-ingest (ADR-048, ROADMAP 20/21). App owns the dialog because App owns every other
+  // overlay — and because that is what lets the document panel and the grid's Select mode share
+  // one picker instead of two copies of the same cost statement.
+  let reingestTargets = $state<string[] | null>(null)
+  let reingestLabel = $state('')
+
+  function openReingest(ids: string[], label: string): void {
+    if (ids.length === 0) return
+    reingestTargets = ids
+    reingestLabel = label
+  }
+
+  // A finished re-run can have changed the metadata, the chunk count, the figures or the
+  // references — so the list is refetched wholesale rather than guessing which. The open
+  // document's own blocks refetch from their `docId` when the list identity changes.
+  async function afterReingest(): Promise<void> {
+    await refreshDocuments()
+    refreshHealth()
+  }
+
   // Tag-family curation (feature-tag-families.md, PR-1). Each write refreshes the family list
   // (inform-don't-block: a failure just leaves the prior list, same as the document writes above).
   async function createFamily(canonical: string, members: string[]): Promise<void> {
@@ -951,6 +988,22 @@
       await refreshFamilies()
     } catch {
       // keep the prior name
+    }
+  }
+  // ADR-018's curation flag, from the view the ADR named as its home. The graph never writes its
+  // own vocabulary (ADR-017 A1) — this is the library side of that line, and the graph finds out
+  // by re-reading it (its "N concepts behind your vocabulary" banner) rather than by being told.
+  async function setFamilyOnGraph(familyId: string, include: boolean): Promise<void> {
+    try {
+      await setFamilyGraphInclude(familyId, include)
+      await refreshFamilies()
+      // The graph's staleness is derived from the live vocabulary at read time, so a graph
+      // already loaded in this session would keep reporting the pre-toggle count until something
+      // refetched it. Drop the latch instead of refetching: re-entering the Graph reloads, and
+      // paying for a fetch the user may never look at is the wrong default.
+      invalidateGraph()
+    } catch {
+      // keep the prior flag — the checkbox re-renders from the refreshed list either way
     }
   }
   async function addFamilyMemberKeyword(familyId: string, keyword: string): Promise<void> {
@@ -1133,6 +1186,16 @@
           {folders}
           {libSelectMode}
           {libSelected}
+          onReingestDoc={() =>
+            openReingest(
+              libraryDocId ? [libraryDocId] : [],
+              openDoc?.title ?? openDoc?.filename ?? 'This document',
+            )}
+          onReingestSelection={() =>
+            openReingest(
+              libSelected,
+              libSelected.length === 1 ? '1 document' : `${libSelected.length} documents`,
+            )}
           {libAddMenuOpen}
           onLibraryBack={libraryBack}
           onOpenDocument={openDocument}
@@ -1169,6 +1232,7 @@
             openDocument(id)
           }}
           onManageConcept={manageConcept}
+          onCurateVocabulary={curateVocabulary}
           onPlaceConcept={(id) => openTaxonomyView(id)}
           onSelectConcept={selectGraphConcept}
           loadPresence={getConceptPresence}
@@ -1292,6 +1356,15 @@
   />
 {/if}
 
+{#if reingestTargets !== null}
+  <ReingestDialog
+    documentIds={reingestTargets}
+    label={reingestLabel}
+    onClose={() => (reingestTargets = null)}
+    onFinished={() => void afterReingest()}
+  />
+{/if}
+
 {#if manageKeywordsOpen}
   <LibraryManageKeywords
     families={keywordFamilies}
@@ -1302,6 +1375,7 @@
     {detectError}
     onCreate={createFamily}
     onRename={renameFamily}
+    onSetOnGraph={setFamilyOnGraph}
     onAddMember={addFamilyMemberKeyword}
     onRemoveMember={removeFamilyMemberKeyword}
     onDelete={deleteFamily}

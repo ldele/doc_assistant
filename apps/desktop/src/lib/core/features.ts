@@ -9,15 +9,25 @@
 /**
  * The Graph workspace (concept graph + gap list).
  *
- * **Hidden for 0.6 by user decision (2026-08-12).** Not because it is broken — because the page
- * is empty until the concept skeleton is built, and an empty page reads as a *failure* rather than
- * as "nothing here yet". Its placement is also explicitly undecided (it is entangled with the
- * Project ADR), so shipping the tab would be shipping a location we intend to move.
+ * **On since 2026-08-29** (ROADMAP row 22, user decision "before moving on to next release").
+ * Hidden for 0.6 on 2026-08-12 because the page was empty until the concept skeleton was built
+ * and an empty page reads as a *failure* rather than as "nothing here yet"
+ * (`docs/REVIEW_2026-08-12_release-readiness.md` §2b R4, which asked for either a real empty
+ * state or the hide). Both halves are answered now: the skeleton is built (13 concepts, 19 edges,
+ * 6 communities, not stale — measured 2026-08-28), and R4's actual remedy shipped with the flip —
+ * `ConceptGraph`/`GraphIndex` now separate *never built* from *built and empty*, so neither state
+ * can be read as a broken page.
  *
- * Everything behind it still works and is still tested: `/api/concepts/*` stays mounted, the gap
- * list keeps its triage writes, and `GraphIndex`/`ConceptGraph`/`GapList` are untouched. Flip this
- * to `true` to bring the tab back — nothing else needs to change.
+ * **The caveat that came with the flip, and how it was closed the same day.** Graph vocabulary is
+ * curated, not automatic (ADR-018): a concept joins the graph only at `graph_include=true`, and
+ * every in-app path (`create_keyword_family`, `promote_keyword`) creates concepts with it **off**.
+ * At the moment of the flip the only writer was `scripts/curate_concepts.py`, so this machine had
+ * 13 of its 593 concepts in the graph and a fresh install had an empty page nothing in the app
+ * could fill. That is now the Manage-keywords toggle (ROADMAP row 23 — the follow-up ADR-018 had
+ * already specified), and the empty state's primary action is the door to it.
  *
- * See `docs/REVIEW_2026-08-12_release-readiness.md` §2b R4.
+ * The second reason for hiding is also still open: placement is entangled with the Project ADR, so
+ * this tab may yet move. That is what keeps the flag here instead of deleting it — reversing or
+ * relocating the call stays one line.
  */
-export const GRAPH_TAB_ENABLED = false
+export const GRAPH_TAB_ENABLED = true

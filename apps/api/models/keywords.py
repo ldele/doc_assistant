@@ -23,10 +23,20 @@ class KeywordFamilyPayload(BaseModel):
     canonical: str
     aliases: list[str]
     doc_count: int
+    #: ADR-018 curation: whether this family's concept is part of the graph vocabulary. Not
+    #: nullable on the wire even though the column is — the client renders a two-state control,
+    #: and "unset" is not a third thing a user can mean.
+    graph_include: bool
 
     @classmethod
     def from_family(cls, f: KeywordFamily) -> KeywordFamilyPayload:
-        return cls(id=f.id, canonical=f.canonical, aliases=list(f.aliases), doc_count=f.doc_count)
+        return cls(
+            id=f.id,
+            canonical=f.canonical,
+            aliases=list(f.aliases),
+            doc_count=f.doc_count,
+            graph_include=f.graph_include,
+        )
 
 
 class KeywordFamilyCreate(BaseModel):
@@ -36,10 +46,17 @@ class KeywordFamilyCreate(BaseModel):
     members: list[str] = Field(default_factory=list)
 
 
-class KeywordFamilyRename(BaseModel):
-    """PATCH body to rename a family's canonical label."""
+class KeywordFamilyPatch(BaseModel):
+    """PATCH body: rename a family, put it on the graph, or both.
 
-    canonical: str = Field(min_length=1)
+    Both fields are optional so each may be sent alone — the rename path predates the graph flag
+    and still sends only ``canonical``. A body with neither field is a 400 rather than a silent
+    no-op: it is always a caller bug, and returning 200 for it would hide the bug behind a
+    correct-looking payload.
+    """
+
+    canonical: str | None = Field(default=None, min_length=1)
+    graph_include: bool | None = None
 
 
 class KeywordFamilyMember(BaseModel):

@@ -33,6 +33,7 @@
     onRebuild,
     onOpenDocument,
     onManageConcept,
+    onCurateVocabulary,
     onPlaceConcept,
     onSelectConcept,
     loadPresence,
@@ -47,6 +48,11 @@
     onRebuild: () => void
     onOpenDocument: (docId: string) => void
     onManageConcept: (conceptId: string, label: string) => void
+    /** Open the curation view with no concept preselected — the empty state's primary
+     *  action. Separate from `onManageConcept` rather than called with empty arguments:
+     *  "curate the vocabulary" and "edit this concept" are different intents, and a call
+     *  site passing `('', '')` is the kind of thing that survives long enough to mislead. */
+    onCurateVocabulary: () => void
     onPlaceConcept: (conceptId: string, label: string) => void
     onSelectConcept: (id: string) => void
     loadPresence: (conceptId: string) => Promise<ConceptPresence[]>
@@ -266,6 +272,30 @@
       </p>
       <button class="primary" onclick={onRebuild} disabled={rebuilding} type="button">
         {rebuilding ? 'Building…' : 'Build the graph'}
+      </button>
+    </div>
+  {:else if graph.nodes.length === 0}
+    <!-- Built, and empty. Distinct from the branch above, and the distinction is the whole point:
+         offering "Build the graph" here would promise that a rebuild fills the page, and it will
+         not. Graph vocabulary is curated (ADR-018) — a concept enters at `graph_include=true`, and
+         nothing a rebuild does sets it. So the primary action is the curation view, and the
+         rebuild is demoted to what it actually is: the step *after* choosing (REVIEW 2026-08-12
+         §2b R4, which asked for a real empty state rather than a page that reads as broken). -->
+    <div class="state">
+      <span class="state-mark"><Icon name="waypoints" size={28} /></span>
+      <strong>No concepts in the graph yet</strong>
+      <p class="muted">
+        The graph maps a <em>curated</em> vocabulary — concepts you have chosen — rather than every
+        keyword in your library, which is why it starts empty instead of full of noise.
+      </p>
+      <p class="muted">
+        Choose which concepts belong on it in <strong>Manage keywords</strong>, then rebuild.
+      </p>
+      <button class="primary" onclick={onCurateVocabulary} type="button">
+        Choose the vocabulary
+      </button>
+      <button class="ghost" onclick={onRebuild} disabled={rebuilding} type="button">
+        {rebuilding ? 'Rebuilding…' : 'Rebuild'}
       </button>
     </div>
   {:else}

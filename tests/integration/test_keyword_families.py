@@ -438,3 +438,156 @@ def test_rename_to_its_own_label_is_still_allowed(env: Path) -> None:
     assert rename_keyword_family(family.id, "llm") is not None
     renamed = rename_keyword_family(family.id, "LLM")
     assert renamed is not None and renamed.canonical == "LLM"
+
+
+# --- graph vocabulary (ADR-018's in-app curation, ROADMAP 23) --------------------------------- #
+#
+# ADR-018 added `graph_include` and left the toggle as an explicit follow-up: "Curation has no UI
+# yet... Its natural home is the Manage-keywords view." These cover the seam that follow-up added.
+# The polarity is the load-bearing part: opt-in is what makes re-flooding the graph structurally
+# impossible, so a family that nobody has touched must never read as included.
+
+
+def test_a_new_family_is_not_graph_vocabulary(env: Path) -> None:
+    """Opt-in, and it survives the round trip through `KeywordFamily`, not just the column."""
+    from doc_assistant.library import create_keyword_family
+
+    family = create_keyword_family("llm family", ["llm"])
+    assert family.graph_include is False
+
+
+def test_set_family_graph_include_round_trips(env: Path) -> None:
+    from doc_assistant.library import (
+        create_keyword_family,
+        list_keyword_families,
+        set_family_graph_include,
+    )
+
+    family_id = create_keyword_family("llm family", ["llm"]).id
+
+    assert set_family_graph_include(family_id, True).graph_include is True  # type: ignore[union-attr]
+    with session_scope() as session:
+        assert session.get(Concept, family_id).graph_include is True  # type: ignore[union-attr]
+    assert [f.graph_include for f in list_keyword_families()] == [True]
+
+    # Idempotent, and reversible — no row is deleted at any point (ADR-018's last consequence).
+    assert set_family_graph_include(family_id, True).graph_include is True  # type: ignore[union-attr]
+    assert set_family_graph_include(family_id, False).graph_include is False  # type: ignore[union-attr]
+    assert len(list_keyword_families()) == 1
+
+
+def test_set_family_graph_include_unknown_family_returns_none(env: Path) -> None:
+    from doc_assistant.library import set_family_graph_include
+
+    assert set_family_graph_include("nope", True) is None
+
+
+def test_toggling_graph_include_moves_the_graph_vocabulary(env: Path) -> None:
+    """The point of the whole feature: `load_concepts` is what the skeleton builds over.
+
+    Without this the toggle could write a column nobody reads. `load_concepts` is the single
+    consumer ADR-018 scoped, so it is the honest end of the assertion.
+    """
+    from doc_assistant.knowledge.concept_skeleton import load_concepts
+    from doc_assistant.library import create_keyword_family, set_family_graph_include
+
+    family_id = create_keyword_family("llm family", ["llm"]).id
+    concepts, _aliases = load_concepts()
+    assert concepts == [], "a family must not enter the graph vocabulary by existing"
+
+    set_family_graph_include(family_id, True)
+    concepts, _aliases = load_concepts()
+    assert [label for _cid, label in concepts] == ["llm family"]
+
+    set_family_graph_include(family_id, False)
+    concepts, _aliases = load_concepts()
+    assert concepts == []
+
+
+def test_route_patches_graph_include_alone(env: Path) -> None:
+    client = _client()
+    body = client.post(
+        "/api/library/keyword-families", json={"canonical": "llm family", "members": []}
+    ).json()
+    assert body["graph_include"] is False
+
+    r = client.patch(f"/api/library/keyword-families/{body['id']}", json={"graph_include": True})
+    assert r.status_code == 200
+    assert r.json()["graph_include"] is True and r.json()["canonical"] == "llm family"
+
+    # The rename path predates the flag and must still work sending only `canonical` — and must
+    # not reset the flag it never mentioned.
+    r = client.patch(f"/api/library/keyword-families/{body['id']}", json={"canonical": "renamed"})
+    assert r.status_code == 200
+    assert r.json()["canonical"] == "renamed" and r.json()["graph_include"] is True
+
+
+def test_route_patches_both_fields_together(env: Path) -> None:
+    client = _client()
+    family_id = client.post(
+        "/api/library/keyword-families", json={"canonical": "llm family", "members": []}
+    ).json()["id"]
+
+    r = client.patch(
+        f"/api/library/keyword-families/{family_id}",
+        json={"canonical": "renamed", "graph_include": True},
+    )
+    assert r.status_code == 200
+    assert r.json()["canonical"] == "renamed" and r.json()["graph_include"] is True
+
+
+def test_route_refuses_an_empty_patch(env: Path) -> None:
+    """A body with neither field is a caller bug; 200 would hide it behind a correct payload."""
+    client = _client()
+    family_id = client.post(
+        "/api/library/keyword-families", json={"canonical": "llm family", "members": []}
+    ).json()["id"]
+    assert client.patch(f"/api/library/keyword-families/{family_id}", json={}).status_code == 400
+
+
+def test_route_409_leaves_the_flag_alone(env: Path) -> None:
+    """Rename-first ordering: a refused rename must not half-apply the flag beside it."""
+    client = _client()
+    client.post("/api/library/keyword-families", json={"canonical": "taken", "members": []})
+    family_id = client.post(
+        "/api/library/keyword-families", json={"canonical": "llm family", "members": []}
+    ).json()["id"]
+
+    r = client.patch(
+        f"/api/library/keyword-families/{family_id}",
+        json={"canonical": "taken", "graph_include": True},
+    )
+    assert r.status_code == 409
+    still = [f for f in client.get("/api/library/keyword-families").json() if f["id"] == family_id]
+    assert still[0]["canonical"] == "llm family" and still[0]["graph_include"] is False
+
+
+def test_a_taxonomy_field_is_not_a_family_and_cannot_join_the_graph(env: Path) -> None:
+    """A `kind="domain"` node must be invisible to every family path, writes included.
+
+    `list_keyword_families` has always excluded ANZSRC field nodes (ADR-028 D4) while a lookup
+    by id returned one as a family, so an id-addressed family write could land on a taxonomy
+    node. The graph toggle is what made that matter: `load_concepts` filters on `graph_include`
+    **alone**, so a flagged field node would enter the graph vocabulary — and presence-assuming
+    code must read
+    only `kind="concept"` (`db/models.py`). The write guard is asserted at the column, because a
+    404 with the flag set would be the failure this is here to prevent.
+    """
+    from doc_assistant.library import get_keyword_family, set_family_graph_include
+
+    with session_scope() as session:
+        field = Concept(label="Biological sciences", source="anzsrc", kind="domain")
+        session.add(field)
+        session.flush()
+        field_id = str(field.id)
+
+    assert get_keyword_family(field_id) is None
+    assert set_family_graph_include(field_id, True) is None
+    with session_scope() as session:
+        assert not session.get(Concept, field_id).graph_include  # type: ignore[union-attr]
+
+    client = _client()
+    r = client.patch(f"/api/library/keyword-families/{field_id}", json={"graph_include": True})
+    assert r.status_code == 404
+    with session_scope() as session:
+        assert not session.get(Concept, field_id).graph_include  # type: ignore[union-attr]

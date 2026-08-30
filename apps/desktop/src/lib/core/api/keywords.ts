@@ -37,6 +37,24 @@ export async function renameKeywordFamily(
   if (!r.ok) throw new Error(await errorDetail(r, 'rename keyword family'))
   return (await r.json()) as KeywordFamily
 }
+/** Put a family's concept on the graph, or take it off (ADR-018's curation flag).
+ *
+ * The graph itself does not change until it is rebuilt — the skeleton is a derived sidecar. That
+ * is not hidden: the graph view re-reads the live vocabulary on every render and says how many
+ * concepts it is behind, with the rebuild beside it.
+ */
+export async function setFamilyGraphInclude(
+  familyId: string,
+  include: boolean,
+): Promise<KeywordFamily> {
+  const r = await fetch(`${API_BASE}/api/library/keyword-families/${encodeURIComponent(familyId)}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ graph_include: include }),
+  })
+  if (!r.ok) throw new Error(await errorDetail(r, 'set graph vocabulary'))
+  return (await r.json()) as KeywordFamily
+}
 /** Assign a keyword to a family, moving it off any other family it belonged to (ADR-015). */
 export async function addFamilyMember(familyId: string, keyword: string): Promise<KeywordFamily> {
   const r = await fetch(

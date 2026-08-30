@@ -17,6 +17,8 @@ import {
   keywordFacets,
   orderedUnits,
   remapSelection,
+  applyGraphLens,
+  graphVocabulary,
   splitInheritedFamilies,
   referenceLabel,
   splitRareFacets,
@@ -24,8 +26,12 @@ import {
 } from './library.ts'
 import type { DocumentReference, KeywordFamily, LibraryDocument } from '../core/types/index.ts'
 
-const family = (canonical: string, aliases: string[], doc_count = 0): KeywordFamily =>
-  ({ id: canonical, canonical, aliases, doc_count }) as KeywordFamily
+const family = (
+  canonical: string,
+  aliases: string[],
+  doc_count = 0,
+  graph_include = false,
+): KeywordFamily => ({ id: canonical, canonical, aliases, doc_count, graph_include }) as KeywordFamily
 
 const doc = (id: string, keywords: string[]): LibraryDocument =>
   ({ id, filename: `${id}.pdf`, keywords }) as unknown as LibraryDocument
@@ -308,4 +314,45 @@ test('references: falls back title → raw line → doi, and blanks do not count
 test('references: a row carrying nothing at all returns null, for the caller to say so', () => {
   assert.equal(referenceLabel(ref()), null)
   assert.equal(referenceLabel(ref({ title: '', raw_text: '  ', doi: '' })), null)
+})
+
+
+// --- ADR-018 graph vocabulary (ROADMAP 23) ---------------------------------------------------
+//
+// The polarity is the whole decision: opt-in is what keeps the families feature from re-flooding
+// the graph as it grows, so an untouched family must never be counted in.
+
+test('graph vocabulary is the opted-in subset, never the whole list', () => {
+  const fams = [
+    family('BM25', [], 3, true),
+    family('llm family', ['llm'], 5),
+    family('cre', [], 0, true),
+  ]
+  assert.deepEqual(
+    graphVocabulary(fams).map((f) => f.canonical),
+    ['BM25', 'cre'],
+  )
+})
+
+test('an untouched library has an empty graph vocabulary', () => {
+  assert.deepEqual(graphVocabulary([family('a', []), family('b', ['x'], 2)]), [])
+})
+
+test('the lens off is the identity, not an inversion', () => {
+  const fams = [family('BM25', [], 3, true), family('llm family', ['llm'], 5)]
+  assert.deepEqual(applyGraphLens(fams, false), fams)
+  assert.deepEqual(
+    applyGraphLens(fams, true).map((f) => f.canonical),
+    ['BM25'],
+  )
+})
+
+test('the lens reaches concepts the glossary-only split would hide', () => {
+  // Most opted-in concepts have no members and no documents, so they land in `inherited` — the
+  // group the Manage view hides by default. A lens applied to the visible set alone would show
+  // an empty list while the count beside it said 1.
+  const hidden = family('cre', [], 0, true)
+  const { inherited } = splitInheritedFamilies([hidden])
+  assert.deepEqual(inherited, [hidden], 'fixture assumption: this row IS glossary-only')
+  assert.deepEqual(applyGraphLens([hidden], true), [hidden])
 })

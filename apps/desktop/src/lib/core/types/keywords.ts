@@ -13,6 +13,10 @@ export interface KeywordFamily {
   canonical: string
   aliases: string[]
   doc_count: number
+  // ADR-018 curation: whether this family's concept is part of the *graph* vocabulary. Boolean on
+  // the wire though the column is nullable — a NULL reads as false server-side, because opt-in is
+  // what keeps the families feature from re-flooding the graph as it grows.
+  graph_include: boolean
 }
 // Detection (PR-2). A zero-LLM proposal — nothing has been written; accepting one calls the
 // create-family API above. Mirrors apps/api/models/keywords.py::KeywordFamilyProposalPayload.

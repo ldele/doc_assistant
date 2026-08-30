@@ -380,6 +380,20 @@ export function splitInheritedFamilies(families: KeywordFamily[]): {
   return { real, inherited }
 }
 
+// Graph vocabulary (ADR-018). A family's concept is on the concept graph only when it opts in,
+// and on a real library the opted-in set is a small minority of the rows — 13 of 357 here. So the
+// Manage-keywords view needs both halves: a count that says how small, and a lens that finds them.
+// Pure and separate from the component for the usual reason — `.ts` is testable under node:test,
+// `.svelte` is not.
+export function graphVocabulary(families: KeywordFamily[]): KeywordFamily[] {
+  return families.filter((f) => f.graph_include)
+}
+
+/** Apply the "on the graph" lens. `false` is the identity — the lens is off, not inverted. */
+export function applyGraphLens(families: KeywordFamily[], graphOnly: boolean): KeywordFamily[] {
+  return graphOnly ? graphVocabulary(families) : families
+}
+
 // The one line that stands for a collapsed parent block in the Chunks list.
 //
 // A list of "Block 0 / Block 1 / Block 2" is not navigable — the reader collapsed the blocks to

@@ -87,6 +87,11 @@
     <p class="railstate muted">Couldn’t load the concept graph.</p>
   {:else if !built}
     <p class="railstate muted">No concept graph yet — build it from the main panel.</p>
+  {:else if nodes.length === 0}
+    <!-- Built and empty. Without this the rail renders its filter box over an empty list and says
+         "No concepts match", blaming a query the user never typed. The main panel carries the
+         explanation (curated vocabulary, ADR-018); the rail just needs to not lie. -->
+    <p class="railstate muted">Nothing in the graph yet.</p>
   {:else}
     <div class="searchrow">
       <Icon name="search" size={13} />

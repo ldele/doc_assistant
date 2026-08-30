@@ -36,6 +36,16 @@ export function graphLoaded(): boolean {
   return loaded
 }
 
+/** Drop the lazy-load latch so the next entry into the Graph refetches.
+ *
+ * For writes that change what the graph would *say* without changing the graph: curating a
+ * concept into the vocabulary (ADR-018) moves `staleness`, which is derived server-side at read
+ * time, so a graph already loaded in this session would keep reporting the pre-toggle count.
+ * Dropping the latch rather than refetching keeps the cost where the user actually goes looking. */
+export function invalidateGraph(): void {
+  loaded = false
+}
+
 export async function loadConceptGraph(): Promise<void> {
   graph.loading = true
   graph.error = null

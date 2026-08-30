@@ -76,9 +76,9 @@ from apps.api.models.folders import (
 from apps.api.models.keywords import (
     KeywordFamilyCreate,
     KeywordFamilyMember,
+    KeywordFamilyPatch,
     KeywordFamilyPayload,
     KeywordFamilyProposalPayload,
-    KeywordFamilyRename,
 )
 from apps.api.models.library import (
     DeleteResultPayload,
@@ -87,6 +87,10 @@ from apps.api.models.library import (
     LibraryDocumentMetaUpdate,
     LibraryDocumentPayload,
     LibraryParentPayload,
+    ReingestOptionsPayload,
+    ReingestOutcomePayload,
+    ReingestPartPayload,
+    ReingestRequest,
 )
 from apps.api.models.references import DocReferencesPayload, ReferencePayload
 from apps.api.models.settings import SettingsUpdate
@@ -148,9 +152,9 @@ __all__ = [
     "InspectResponse",
     "KeywordFamilyCreate",
     "KeywordFamilyMember",
+    "KeywordFamilyPatch",
     "KeywordFamilyPayload",
     "KeywordFamilyProposalPayload",
-    "KeywordFamilyRename",
     "LibraryChildPayload",
     "LibraryDocumentChunksPayload",
     "LibraryDocumentMetaUpdate",
@@ -159,6 +163,10 @@ __all__ = [
     "LibraryParentPayload",
     "RagOverrides",
     "ReferencePayload",
+    "ReingestOptionsPayload",
+    "ReingestOutcomePayload",
+    "ReingestPartPayload",
+    "ReingestRequest",
     "RelatedDocPayload",
     "ScopePayload",
     "SettingsUpdate",

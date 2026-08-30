@@ -32,12 +32,16 @@ class KeywordFamily:
     ``aliases`` excludes the canonical label itself (mirrors ``GlossaryEntry``).
     ``doc_count`` is the number of documents carrying *any* member keyword (canonical or
     alias), matched case-insensitively against ``Keyword.name``.
+    ``graph_include`` is the ADR-018 curation flag: whether the concept behind this family is
+    part of the graph vocabulary. A NULL column reads as ``False`` — opt-in is the polarity that
+    makes re-flooding the graph structurally impossible, so an unset flag must never read as in.
     """
 
     id: str
     canonical: str
     aliases: list[str] = field(default_factory=list)
     doc_count: int = 0
+    graph_include: bool = False
 
 
 def _family_doc_count(session: Any, names: list[str]) -> int:
@@ -60,7 +64,11 @@ def _build_family(session: Any, concept: Any) -> KeywordFamily:
     aliases = sorted(a.alias for a in concept.aliases if a.alias != concept.label)
     doc_count = _family_doc_count(session, [concept.label, *aliases])
     return KeywordFamily(
-        id=str(concept.id), canonical=concept.label, aliases=aliases, doc_count=doc_count
+        id=str(concept.id),
+        canonical=concept.label,
+        aliases=aliases,
+        doc_count=doc_count,
+        graph_include=bool(concept.graph_include),
     )
 
 
@@ -81,12 +89,24 @@ def list_keyword_families() -> list[KeywordFamily]:
 
 
 def get_keyword_family(concept_id: str) -> KeywordFamily | None:
-    """One keyword family by id, or None if unknown."""
+    """One keyword family by id, or None if unknown.
+
+    ``kind="domain"`` taxonomy field nodes (ADR-028 D4) are **not** families and answer None here,
+    matching :func:`list_keyword_families`, which excludes them. The two disagreed until
+    2026-08-29: the list hid the 236 ANZSRC fields while a lookup by id happily returned one as
+    a family, so
+    every family write reachable by id — rename, add/remove member, and the new graph-vocabulary
+    toggle — would operate on a taxonomy node. That last one is the reason this got fixed rather
+    than noted: ``concept_skeleton.load_concepts`` filters on ``graph_include`` **alone**, so a
+    flagged field node would enter the graph vocabulary, and presence-assuming code must read only
+    ``kind="concept"`` (``db/models.py``). Unreachable through the UI, which lists families; the
+    API takes an id.
+    """
     from doc_assistant.db.models import Concept
 
     with session_scope() as session:
         concept = session.get(Concept, concept_id)
-        if concept is None:
+        if concept is None or concept.kind != "concept":
             return None
         return _build_family(session, concept)
 
@@ -180,6 +200,37 @@ def rename_keyword_family(concept_id: str, new_canonical: str) -> KeywordFamily 
 
     if not rename_concept(concept_id, new_canonical):
         return None
+    return get_keyword_family(concept_id)
+
+
+def set_family_graph_include(concept_id: str, include: bool) -> KeywordFamily | None:
+    """Put this family's concept on the graph, or take it off. None if the family is unknown.
+
+    **This is the in-app half of ADR-018's curation**, which that ADR left as an explicit
+    follow-up ("Curation has no UI yet... Its natural home is the Manage-keywords view"). The
+    home matters for more than tidiness: ADR-017 A1 says the graph never writes the vocabulary,
+    so the write has to live on the library side of that line, which is exactly where this is.
+
+    **Nothing about the built graph changes here.** The skeleton is a derived sidecar
+    (Enrichment-Layer Pattern), so a toggle moves the *vocabulary* and the graph stays as built
+    until it is rebuilt. That gap is not silent: ``concept_graph_view._staleness`` re-reads
+    ``load_concepts()`` on every render and reports the difference, so the graph view already
+    says "N concepts behind your vocabulary" and offers the rebuild. Do not add a rebuild here —
+    a write path that triggers a multi-second derived rebuild is the coupling the pattern exists
+    to prevent.
+
+    Idempotent: setting the value it already has is a no-op that still returns the family.
+    """
+    from doc_assistant.db.models import Concept
+
+    with session_scope() as session:
+        concept = session.get(Concept, concept_id)
+        # The kind check is repeated here rather than left to `get_keyword_family` below, because
+        # this one writes: reaching the read guard would mean the write had already landed.
+        if concept is None or concept.kind != "concept":
+            return None
+        concept.graph_include = include
+        session.flush()
     return get_keyword_family(concept_id)
 
 

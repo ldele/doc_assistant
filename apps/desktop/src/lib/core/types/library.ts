@@ -83,3 +83,48 @@ export interface LibraryDocumentFigures {
   captioned_count: number
   missing_image_count: number
 }
+
+// --- per-part re-ingest (ADR-048, ROADMAP 20/21) --------------------------------------------- //
+// Mirrors apps/api/models/library.py::Reingest*Payload.
+
+/** One re-runnable part. `cost` is served, never hardcoded here: it is what makes the control
+ *  honest, and a copy in the client would drift from `docs/performance.md` in silence. */
+export interface ReingestPart {
+  id: string
+  label: string
+  blurb: string
+  cost: string
+  // True only for `text`. Re-extraction changes `doc_hash` (ADR-042), which is why that one part
+  // is confirmed and the cheap three are not.
+  moves_identity: boolean
+}
+
+/** What the control offers — and, in `corpus_wide`, the passes it deliberately does not, so their
+ *  absence reads as a decision rather than a missing button. */
+export interface ReingestOptions {
+  parts: ReingestPart[]
+  corpus_wide: string[]
+}
+
+/** What one part did to one document. A `skipped` always carries its reason in `detail`. */
+export interface ReingestOutcome {
+  document_id: string
+  filename: string
+  part: string
+  status: string
+  detail: string
+}
+
+/** Poll shape. `total`/`done`/`current` are position; ok/skipped/errors are the end-of-run
+ *  outcome — the same split `IngestStatus` makes, and for the same reason. */
+export interface ReingestStatus {
+  state: 'idle' | 'running' | 'done' | 'error'
+  total: number
+  done: number
+  current: string | null
+  ok: number
+  skipped: number
+  errors: number
+  message: string | null
+  outcomes: ReingestOutcome[]
+}

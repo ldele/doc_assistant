@@ -20,6 +20,7 @@
   import { getLibraryDocument } from '../core/api'
   import { blockPreview } from './library'
   import { rememberChunksOpen, wereChunksOpen } from './chunkmemory'
+  import Icon from '../shell/Icon.svelte'
   import DocConnections from './DocConnections.svelte'
   import DocFigures from './DocFigures.svelte'
   import DocReferences from './DocReferences.svelte'
@@ -28,11 +29,15 @@
     docId,
     doc,
     onOpenDocument,
+    onReingest,
   }: {
     docId: string | null
     /** The open document's list summary — the metadata block's source. */
     doc: LibraryDocument | null
     onOpenDocument?: (id: string) => void
+    /** Open the re-run picker for this document (ADR-048). App owns the dialog, as it owns every
+     *  other overlay — so the grid's Select mode reuses the same one rather than a second copy. */
+    onReingest: () => void
   } = $props()
 
   // The chunk payload: null until the reader opens the Chunks block.
@@ -133,6 +138,12 @@
       {#each BLOCKS as b (b.id)}
         <button type="button" onclick={() => jumpTo(b.id)}>{b.label}</button>
       {/each}
+      <!-- ROADMAP 20 asked for this beside the block list, and that is the right place for a
+           different reason than symmetry: the blocks are what a re-run re-derives, so the action
+           belongs where the reader is already looking at the thing that came out wrong. -->
+      <button class="rerun" type="button" onclick={onReingest} title="Re-run part of ingestion for this document">
+        <Icon name="rotate-ccw" size={13} /> Re-run…
+      </button>
     </nav>
 
     <div class="scroller">
@@ -309,6 +320,12 @@
     gap: 0.3rem;
     padding: 0 0 0.5rem;
     border-bottom: 1px solid var(--border);
+  }
+  .blocknav .rerun {
+    margin-left: auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
   }
   .blocknav button {
     background: none;

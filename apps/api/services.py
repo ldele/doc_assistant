@@ -157,6 +157,37 @@ class _IngestStatus:
 
 
 @dataclass
+class _ReingestStatus:
+    """Background per-part re-ingest progress (ADR-048), read by the re-ingest status route.
+
+    Mirrors ``_IngestStatus`` for the same reason ``_GraphRebuildStatus`` does — this repo's shape
+    for app-triggered background work is 202 + poll. It carries the same position/outcome split:
+    ``total``/``done``/``current`` are *where the run is* and are written per (document, part),
+    while ``ok``/``skipped``/``errors`` are end-of-run totals. Reporting a partial outcome as a
+    final one is the failure that pair exists to prevent.
+
+    ``outcomes`` is the per-(document, part) report the panel renders when the run finishes — a
+    part that could not run says so, with its reason. It is capped because a row-21 selection can
+    be large and this dict is serialized on every poll.
+    """
+
+    state: str = "idle"  # idle | running | done | error
+    total: int = 0
+    done: int = 0
+    current: str | None = None
+    ok: int = 0
+    skipped: int = 0
+    errors: int = 0
+    message: str | None = None
+    outcomes: list[dict[str, str]] | None = None
+
+
+#: How many per-(document, part) outcomes the status route will carry. A row-21 run over the whole
+#: library would otherwise put thousands of rows on every poll; the counts above stay exact.
+REINGEST_OUTCOME_CAP = 200
+
+
+@dataclass
 class _GraphRebuildStatus:
     """Background concept-skeleton rebuild progress, read by the rebuild status route.
 
@@ -186,10 +217,39 @@ def _ingest_status_dict(app: FastAPI) -> dict[str, Any]:
         }
 
 
+def _reingest_status_dict(app: FastAPI) -> dict[str, Any]:
+    st: _ReingestStatus = app.state.reingest_status
+    with app.state.reingest_lock:
+        return {
+            "state": st.state,
+            "total": st.total,
+            "done": st.done,
+            "current": st.current,
+            "ok": st.ok,
+            "skipped": st.skipped,
+            "errors": st.errors,
+            "message": st.message,
+            "outcomes": list(st.outcomes or []),
+        }
+
+
 def _graph_rebuild_status_dict(app: FastAPI) -> dict[str, Any]:
     st: _GraphRebuildStatus = app.state.graph_rebuild_status
     with app.state.graph_rebuild_lock:
         return {"state": st.state, "graph_version": st.graph_version, "message": st.message}
+
+
+def _default_reingest(
+    document_ids: list[str],
+    parts: list[str],
+    *,
+    on_progress: Callable[[int, int, str | None], None] | None = None,
+) -> Any:
+    """Lazy wrapper over ``reingest.rerun`` — same reason as ``_default_ingest``: importing this
+    module must not pull the ingest -> torch chain, and only the `text` part ever needs it."""
+    from doc_assistant.reingest import rerun
+
+    return rerun(document_ids, parts, on_progress=on_progress)
 
 
 def _default_ingest(

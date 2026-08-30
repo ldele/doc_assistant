@@ -14,7 +14,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from apps.api.models._common import _as_utc
 
@@ -210,3 +210,53 @@ class LibraryDocumentFiguresPayload(BaseModel):
             captioned_count=v.captioned_count,
             missing_image_count=v.missing_image_count,
         )
+
+
+# ============================================================
+# Per-part re-ingest (ADR-048, ROADMAP 20/21)
+# ============================================================
+
+
+class ReingestPartPayload(BaseModel):
+    """One re-runnable part, as the registry declares it.
+
+    Served rather than hardcoded in the client on purpose: `cost` is the thing that makes the
+    control honest, and a copy of it in the UI would drift from `docs/performance.md` silently.
+    Mirrors ``doc_assistant.reingest.ReingestPart``.
+    """
+
+    id: str
+    label: str
+    blurb: str
+    cost: str
+    moves_identity: bool
+
+
+class ReingestOptionsPayload(BaseModel):
+    """What the re-run control offers, and what it deliberately does not.
+
+    ``corpus_wide`` names the passes that have no per-document form (ADR-048) so the UI can say
+    why there is no button, rather than leaving a user to conclude the feature is missing.
+    """
+
+    parts: list[ReingestPartPayload]
+    corpus_wide: list[str]
+
+
+class ReingestRequest(BaseModel):
+    """POST body: which documents, which parts. One document is row 20; many is row 21."""
+
+    document_ids: list[str] = Field(min_length=1)
+    parts: list[str] = Field(min_length=1)
+
+
+class ReingestOutcomePayload(BaseModel):
+    """What one part did to one document. ``status`` is ok | skipped | error, and a skip always
+    carries its reason in ``detail`` — 'nothing happened' is the failure this feature cannot
+    afford."""
+
+    document_id: str
+    filename: str
+    part: str
+    status: str
+    detail: str

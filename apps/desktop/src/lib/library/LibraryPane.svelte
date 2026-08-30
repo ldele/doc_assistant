@@ -62,6 +62,10 @@
     // --- per-document actions
     onEditDoc: (id: string) => void
     onDeleteDoc: (id: string) => void
+    /** Open the re-run picker for the open document (ROADMAP 20). */
+    onReingestDoc: () => void
+    /** Open the same picker for the grid selection (ROADMAP 21). */
+    onReingestSelection: () => void
     onRevealDoc: (id: string) => void
     onManageFoldersForDoc: (id: string) => void
   }
@@ -75,7 +79,7 @@
     onToggleKeywordFacet, onClearKeywordFacets, onOpenKeywordFilter,
     onEnterSelectMode, onExitSelectMode, onToggleSelected, onSetAddMenuOpen,
     onAddSelectionToFolder, onClearSelection, onOpenManageFolders,
-    onEditDoc, onDeleteDoc, onRevealDoc, onManageFoldersForDoc,
+    onEditDoc, onDeleteDoc, onReingestDoc, onReingestSelection, onRevealDoc, onManageFoldersForDoc,
   }: Props = $props()
 </script>
 
@@ -229,6 +233,17 @@
             </div>
           {/if}
         </div>
+        <!-- ROADMAP 21: the same operation as the document panel's, over the selection. It opens
+             the SAME dialog with a list instead of one id, so the parts and the cost statement
+             cannot drift between the two entry points. -->
+        <button
+          class="selact"
+          disabled={libSelected.length === 0}
+          onclick={() => onReingestSelection()}
+          type="button"
+        >
+          <Icon name="rotate-ccw" size={13} /> Re-run…
+        </button>
         <button class="selact" disabled={libSelected.length === 0} onclick={() => onClearSelection()} type="button">
           Clear
         </button>
@@ -237,7 +252,12 @@
     {/if}
 
     {#if libraryDocId !== null}
-      <LibraryBrowser docId={libraryDocId} doc={openDoc} onOpenDocument={onOpenDocument} />
+      <LibraryBrowser
+        docId={libraryDocId}
+        doc={openDoc}
+        onOpenDocument={onOpenDocument}
+        onReingest={onReingestDoc}
+      />
     {:else}
       <section class="libmain">
         {#if documents.length === 0}

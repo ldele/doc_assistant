@@ -9,6 +9,9 @@ handle on ``ChatController.rag.db``.
 
 from __future__ import annotations
 
+import threading
+
+import structlog
 from fastapi import APIRouter, HTTPException, Request
 
 from apps.api.models.connections import DocConnectionsPayload
@@ -18,11 +21,15 @@ from apps.api.models.library import (
     LibraryDocumentFiguresPayload,
     LibraryDocumentMetaUpdate,
     LibraryDocumentPayload,
+    ReingestOptionsPayload,
+    ReingestPartPayload,
+    ReingestRequest,
 )
 from apps.api.models.references import DocReferencesPayload
 from doc_assistant.chat_controller import ChatController
 from doc_assistant.embeddings import get_active_model_name
 
+log = structlog.get_logger(__name__)
 router = APIRouter()
 
 
@@ -176,3 +183,120 @@ def delete_library_document(
         trashed_file=result.trashed_file,
         chunks_removed=result.chunks_removed,
     )
+
+
+# --- per-part re-ingest (ADR-048, ROADMAP 20/21) ---------------------------------------------- #
+
+
+@router.get("/api/library/reingest/options")
+def reingest_options() -> ReingestOptionsPayload:
+    """What a re-run can do, straight from the registry — the client never hardcodes a cost.
+
+    Also names the passes that have **no** per-document form, because a user who cannot find a
+    button deserves to be told there is no button (ADR-048).
+    """
+    from doc_assistant.reingest import CORPUS_WIDE_PASSES, PARTS
+
+    return ReingestOptionsPayload(
+        parts=[
+            ReingestPartPayload(
+                id=p.id,
+                label=p.label,
+                blurb=p.blurb,
+                cost=p.cost,
+                moves_identity=p.moves_identity,
+            )
+            for p in PARTS
+        ],
+        corpus_wide=list(CORPUS_WIDE_PASSES),
+    )
+
+
+@router.post("/api/library/documents/reingest", status_code=202)
+def reingest_start(request: Request, body: ReingestRequest) -> dict[str, object]:
+    """Start a per-part re-run in the background. 202 + poll, like every other job here.
+
+    **409 while an ingest is running.** Both write the same chunk stores and the same `Document`
+    rows; letting them overlap would race a re-extract against a corpus scan for the same file.
+    The parts are validated *before* the 202 so a bad body is an error rather than a job that
+    fails a second later out of sight.
+    """
+    from doc_assistant.reingest import PART_IDS
+
+    unknown = sorted(set(body.parts) - PART_IDS)
+    if unknown:
+        raise HTTPException(status_code=400, detail={"error": "unknown parts", "parts": unknown})
+
+    app_ = request.app
+    if app_.state.ingest_status.state == "running":
+        raise HTTPException(status_code=409, detail="an indexing run is already in progress")
+
+    status = app_.state.reingest_status
+    with app_.state.reingest_lock:
+        if status.state == "running":
+            raise HTTPException(status_code=409, detail="a re-run is already in progress")
+        status.state = "running"
+        status.total = len(body.document_ids) * len(set(body.parts))
+        status.done = 0
+        status.current = None
+        status.ok = status.skipped = status.errors = 0
+        status.message = None
+        status.outcomes = None
+
+    def _on_progress(done: int, total: int, current: str | None) -> None:
+        with app_.state.reingest_lock:
+            status.done, status.total, status.current = done, total, current
+
+    def _worker() -> None:
+        from apps.api.services import REINGEST_OUTCOME_CAP
+
+        try:
+            result = app_.state.reingest_fn(
+                list(body.document_ids), list(body.parts), on_progress=_on_progress
+            )
+        except Exception as e:  # a crashed job must still leave a readable status
+            log.warning("reingest_failed", error=str(e))
+            with app_.state.reingest_lock:
+                status.state = "error"
+                status.message = f"{type(e).__name__}: {e}"
+                status.current = None
+            return
+        with app_.state.reingest_lock:
+            status.state = "done"
+            status.current = None
+            status.ok, status.skipped, status.errors = result.ok, result.skipped, result.errors
+            status.outcomes = [
+                {
+                    "document_id": o.document_id,
+                    "filename": o.filename,
+                    "part": o.part,
+                    "status": o.status,
+                    "detail": o.detail,
+                }
+                for o in result.outcomes[:REINGEST_OUTCOME_CAP]
+            ]
+            status.message = _reingest_message(result)
+
+    threading.Thread(target=_worker, daemon=True).start()
+    return {"started": True, "total": status.total}
+
+
+def _reingest_message(result: object) -> str:
+    """One line for the status bar. Counts, not adjectives — the detail is in `outcomes`."""
+    ok = getattr(result, "ok", 0)
+    skipped = getattr(result, "skipped", 0)
+    errors = getattr(result, "errors", 0)
+    parts = [f"{ok} re-run"]
+    if skipped:
+        parts.append(f"{skipped} skipped")
+    if errors:
+        parts.append(f"{errors} failed")
+    return " · ".join(parts)
+
+
+@router.get("/api/library/reingest/status")
+def reingest_status(request: Request) -> dict[str, object]:
+    """Poll the re-run. Same position/outcome split as the ingest status."""
+    from apps.api.services import _reingest_status_dict
+
+    return _reingest_status_dict(request.app)

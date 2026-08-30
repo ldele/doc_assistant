@@ -142,6 +142,19 @@ def test_clean_markdown_strips_backslash_artifacts():
     assert _clean_markdown("D. H. HUBEL\\ AND T. N. WIESEL\\") == "D. H. HUBEL AND T. N. WIESEL"
 
 
+def test_clean_markdown_strips_strikethrough():
+    """The sibling of the `*` and `_` strips, which this function had and this one did not.
+
+    Found 2026-08-29 by driving the per-part re-run over a real document: it stored
+    `~~Neuroscience and Biobehavioral Reviews~~` as the title, markers included, and `docLabel`
+    put that straight into the library grid.
+    """
+    assert _clean_markdown("~~Neuroscience and Biobehavioral Reviews~~") == (
+        "Neuroscience and Biobehavioral Reviews"
+    )
+    assert _clean_markdown("A ~single~ tilde too") == "A single tilde too"
+
+
 def test_title_skips_publisher_copyright_line():
     """A Springer-style licence line must not be mistaken for the title."""
     md = (

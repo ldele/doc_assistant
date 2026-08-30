@@ -198,6 +198,11 @@ def _clean_markdown(text: str) -> str:
     """Strip markdown markers and affiliation brackets, collapse whitespace."""
     text = re.sub(r"\*+", "", text)
     text = re.sub(r"_+", "", text)
+    # Strikethrough, the sibling marker the other two always had and this one did not. Found
+    # 2026-08-29 by driving the per-part re-run (ADR-048) over a real document: it stored
+    # `~~Neuroscience and Biobehavioral Reviews~~` as a title, markers and all, and that string
+    # went straight to the library grid.
+    text = re.sub(r"~+", "", text)
     text = re.sub(r"\[[^\]]*\]", "", text)
     text = text.replace("\\", "")  # markdown escape / hard-break artifacts (e.g. "WIESEL\")
     text = re.sub(r"\s+", " ", text).strip()

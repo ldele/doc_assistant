@@ -2,12 +2,14 @@
 // Pairs with apps/api/routers/library.py and apps/api/models/library.py; see
 // docs/architecture.md, section "apps/ — the domain spine".
 
-import { API_BASE } from './_base'
+import { API_BASE, errorDetail } from './_base'
 import type {
   DocReferences,
   LibraryDocumentFigures,
   LibraryDocument,
   LibraryDocumentChunks,
+  ReingestOptions,
+  ReingestStatus,
 } from '../types'
 
 /** List ingested documents for the Library browser (feature-library-browser.md, read-only). */
@@ -97,4 +99,28 @@ export async function getDocumentReferences(docId: string): Promise<DocReference
   )
   if (!r.ok) throw new Error(`document references failed: ${r.status}`)
   return (await r.json()) as DocReferences
+}
+
+/** What a re-run can do, and what it declines to do (ADR-048). */
+export async function getReingestOptions(): Promise<ReingestOptions> {
+  const r = await fetch(`${API_BASE}/api/library/reingest/options`)
+  if (!r.ok) throw new Error(await errorDetail(r, 'load re-run options'))
+  return (await r.json()) as ReingestOptions
+}
+
+/** Start a re-run. One document is ROADMAP 20; a selection is 21 — same call either way.
+ *  202 + poll, like every other background job here. */
+export async function startReingest(documentIds: string[], parts: string[]): Promise<void> {
+  const r = await fetch(`${API_BASE}/api/library/documents/reingest`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ document_ids: documentIds, parts }),
+  })
+  if (!r.ok) throw new Error(await errorDetail(r, 'start the re-run'))
+}
+
+export async function getReingestStatus(): Promise<ReingestStatus> {
+  const r = await fetch(`${API_BASE}/api/library/reingest/status`)
+  if (!r.ok) throw new Error(await errorDetail(r, 'read the re-run status'))
+  return (await r.json()) as ReingestStatus
 }

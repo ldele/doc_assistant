@@ -46,8 +46,10 @@ from apps.api.routers import (
 from apps.api.services import (
     _default_ingest,
     _default_rebuild_graph,
+    _default_reingest,
     _GraphRebuildStatus,
     _IngestStatus,
+    _ReingestStatus,
     _settings_view,
 )
 from apps.api.sessions import SessionStore
@@ -128,6 +130,11 @@ def create_app(
     app.state.ingest_lock = threading.Lock()
     app.state.graph_rebuild_status = _GraphRebuildStatus()
     app.state.graph_rebuild_lock = threading.Lock()
+    app.state.reingest_status = _ReingestStatus()
+    app.state.reingest_lock = threading.Lock()
+    # Injectable for the same reason `ingest_fn` is: a test drives the route without importing
+    # the heavy ingest -> torch chain.
+    app.state.reingest_fn = _default_reingest
     # Test seams (cpc §13): default to the real ingest + a fresh ChatController; tests inject
     # fakes so /api/ingest runs no real ingest / model reload.
     app.state.ingest_fn = ingest_fn or _default_ingest

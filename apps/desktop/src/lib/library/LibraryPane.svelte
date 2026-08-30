@@ -241,10 +241,31 @@
     {:else}
       <section class="libmain">
         {#if documents.length === 0}
+          <!-- AD4 — the first-run empty state IS the drop target.
+               The window has always accepted a drop; on the one screen that exists to say "there
+               is nothing here yet", saying nothing about how to change that was the gap. It
+               highlights from `accept.dragging`, the same window-level Tauri signal the chooser
+               and the full-window veil use — dropping anywhere works, this only says so.
+               The old copy said "Point doc_assistant at a folder", which named the code identity
+               rather than the product (ADR-012) and described the pre-AD3b model where the library
+               was a folder you aimed at rather than somewhere you add documents. -->
           <div class="libempty">
-            <span class="state-mark"><Icon name="library" size={26} /></span>
-            <strong>No documents indexed yet</strong>
-            <p>Point doc_assistant at a folder of your documents to fill the library.</p>
+            <div class="emptydrop" class:over={accept.dragging}>
+              <span class="state-mark"><Icon name="library" size={26} /></span>
+              <strong>{accept.dragging ? 'Drop them now' : 'Your library is empty'}</strong>
+              {#if canAccept()}
+                <p>Drag files or folders anywhere in this window, or add them from your computer.</p>
+                <p class="formats">PDF · EPUB · HTML · DOCX · MD · ODT · RTF</p>
+                <button class="emptyadd" onclick={openChooser} type="button">
+                  <Icon name="plus" size={15} />
+                  Add documents
+                </button>
+              {:else}
+                <!-- Honest degradation rather than a dead button: in a browser the accept surface
+                     does not exist at all, and saying so beats a control that cannot work. -->
+                <p>{unavailableReason()}</p>
+              {/if}
+            </div>
           </div>
         {:else}
           <LibraryFilterStrip
@@ -545,6 +566,50 @@
     overflow-y: auto;
     min-width: 0;
   }
+  /* AD4 — the empty state's drop target. Dashed, so it reads as somewhere things go rather than
+     as a card; the highlight is driven by the window-level drag signal, not by a DOM dragover
+     (Tauri intercepts the OS drag before the DOM sees it). */
+  .emptydrop {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    width: 100%;
+    padding: var(--space-6) var(--space-4);
+    border: 1.5px dashed var(--border);
+    border-radius: 12px;
+    transition: border-color 120ms ease, background 120ms ease;
+  }
+  .emptydrop.over {
+    border-color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 8%, transparent);
+  }
+  .formats {
+    font-size: var(--text-meta);
+    margin-top: calc(-1 * var(--space-2));
+  }
+  .emptyadd {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    font: inherit;
+    font-size: var(--text-sm);
+    cursor: pointer;
+    padding: var(--space-2) var(--space-3);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface);
+    color: var(--fg);
+  }
+  .emptyadd:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .emptydrop {
+      transition: none;
+    }
+  }
+
   .libempty {
     max-width: 540px;
     margin: var(--space-6) auto 0;

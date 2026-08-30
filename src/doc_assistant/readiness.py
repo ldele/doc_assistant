@@ -230,11 +230,15 @@ def setup_state(*, chunk_count: int, document_count: int = 0, probe: bool = True
                 f"{document_count} document{'s' if document_count != 1 else ''} indexed "
                 f"({chunk_count:,} chunks)."
                 if corpus_done
-                else "Nothing indexed yet. Point the app at a folder of PDFs, EPUBs, "
-                "HTML, DOCX or Markdown."
+                # CS2: "point the app at a folder" described the pre-AD3b model, where the library
+                # WAS a folder you aimed at. Documents are added to the library now — copied into
+                # it, or referenced where they live — so the sentence a first-run user reads has to
+                # name that, not the model it replaced.
+                else "Nothing indexed yet. Add documents from the Library, or index a "
+                "folder of PDFs, EPUBs, HTML, DOCX or Markdown."
             ),
             done=corpus_done,
-            action=None if corpus_done else "Choose a folder below, then index it.",
+            action=None if corpus_done else "Add documents from the Library.",
         ),
     )
     state = SetupState(

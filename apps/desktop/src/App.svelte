@@ -896,11 +896,14 @@
   const deletingDoc = $derived(
     deletingDocId ? (documents.find((d) => d.id === deletingDocId) ?? null) : null,
   )
-  async function confirmDelete(): Promise<void> {
+  // `deleteFile` is the choice the dialog just collected, per deletion — never a stored
+  // preference (ADR-046 §2 replaced an unconditional rule with a per-deletion question, and
+  // remembering the answer would quietly restore the rule).
+  async function confirmDelete(deleteFile: boolean): Promise<void> {
     if (deletingDocId === null) return
     deleteBusy = true
     try {
-      await deleteDocument(deletingDocId)
+      await deleteDocument(deletingDocId, deleteFile)
       if (libraryDocId === deletingDocId) libraryDocId = null
       await refreshDocuments()
       deletingDocId = null

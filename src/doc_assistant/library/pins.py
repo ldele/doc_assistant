@@ -115,8 +115,10 @@ def remove_pinned_sources(
 ) -> list[SourceRemoval]:
     """Safe-remove matched files: everything recoverable, nothing hard-deleted.
 
-    An ingested match goes through :func:`delete_document` (ADR-014 semantics — Recycle
-    Bin first, then row/chunks/sidecars) against ``chunk_stores[0]`` (the live index);
+    An ingested match goes through :func:`delete_document` with ``delete_file=True`` (ADR-014
+    semantics — Recycle Bin first, then row/chunks/sidecars) against ``chunk_stores[0]`` (the live
+    index). The flag is explicit because ADR-046 made library-only the *default* for that function;
+    this caller is removing a downloaded file, not un-listing a user's own document.
     the same document's chunks are then swept from any additional stores. A never-ingested
     match is simply moved to the OS trash, as is a matched file that survives its row
     delete (``source_original`` pointing elsewhere). Ambiguous matches are skipped. A
@@ -145,7 +147,12 @@ def remove_pinned_sources(
                 with session_scope() as session:
                     doc = session.get(Document, match.document_id)
                     doc_hash_val = doc.doc_hash if doc is not None else None
-                deleted = delete_document(match.document_id, live)
+                # `delete_file=True` explicitly: ADR-046 flipped `delete_document`'s default to
+                # library-only, which is right for a user deleting one document and wrong here.
+                # This function's contract is to remove a *downloaded demo file* along with its
+                # row — leaving the file behind would strand the download with nothing pointing at
+                # it. Stated rather than inherited, so the next default change cannot move it.
+                deleted = delete_document(match.document_id, live, delete_file=True)
                 if deleted is not None:
                     deleted_doc = True
                     trashed = deleted.trashed_file

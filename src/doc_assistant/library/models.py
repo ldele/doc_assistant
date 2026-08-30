@@ -37,6 +37,14 @@ class DocumentSummary:
     tags: list[str] = field(default_factory=list)
     keywords: list[str] = field(default_factory=list)
     added_at: datetime | None = None
+    #: Where the file actually is, verbatim from ``Document.source_original``.
+    #:
+    #: Carried on the list row because the delete dialog has to *name* it before offering to bin
+    #: it (ADR-046 §2): "…from C:\\Users\\…\\Zotero\\storage\\ABC123" rather than an
+    #: abstract "the file". Shown for every document, not only referenced ones — a copied
+    #: document's path is inside the Provenote folder, which is equally worth seeing before a
+    #: destructive click, and it means the UI needs no join to ``SourceFile.origin``.
+    source_path: str | None = None
 
 
 @dataclass

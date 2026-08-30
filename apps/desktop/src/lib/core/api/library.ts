@@ -58,8 +58,16 @@ export interface DeleteResult {
 }
 /** Safe-delete a document: source file → Recycle Bin, then drop its DB row + index chunks
  *  (ADR-014). Throws on failure (e.g. 409 when the file couldn't be moved to the Recycle Bin). */
-export async function deleteDocument(docId: string): Promise<DeleteResult> {
-  const r = await fetch(`${API_BASE}/api/library/documents/${encodeURIComponent(docId)}`, {
+/**
+ * Remove a document from the library; bin its source file only if `deleteFile` is true.
+ *
+ * Defaults to the safe branch, matching the server (ADR-046 §2 amended ADR-014, which used to bin
+ * the source unconditionally). The caller is asserting it showed the user the real path before
+ * passing true — `LibraryDocument.source_path` is there so it can.
+ */
+export async function deleteDocument(docId: string, deleteFile = false): Promise<DeleteResult> {
+  const q = deleteFile ? '?delete_file=true' : ''
+  const r = await fetch(`${API_BASE}/api/library/documents/${encodeURIComponent(docId)}${q}`, {
     method: 'DELETE',
   })
   if (!r.ok) throw new Error(`delete document failed: ${r.status}`)

@@ -18,6 +18,7 @@
   import { fade, fly } from 'svelte/transition'
   import { getTheme, setTheme, applyTheme, type Theme } from '../core/theme'
   import Icon from '../shell/Icon.svelte'
+  import { canPickFiles, pickPaths } from '../core/tauri'
   import ProviderSetup from './ProviderSetup.svelte'
   import Sources from './Sources.svelte'
   import { describeIndex, formatBytes, perDocument } from './corpus'
@@ -187,6 +188,7 @@
   let loadError = $state<string | null>(null)
   let dir = $state('')
   let busy = $state(false) // a save+ingest cycle is in flight
+  let picking = $state(false) // the OS folder picker is open, so Browse can't be double-fired
   let actionError = $state<string | null>(null)
   let ingest = $state<IngestStatus | null>(null)
   let inputEl = $state<HTMLInputElement | null>(null)
@@ -280,6 +282,32 @@
 
   // Feedback always refers to the path it was produced for — drop a stale ✓ / error once the
   // user edits the folder, so it never sits next to a path it no longer describes.
+  /**
+   * CS1 — choose the library folder with the OS picker instead of pasting a path.
+   *
+   * Fills the field rather than saving directly: the text input stays the override, and the user
+   * still confirms with the same button they would have used after typing. `pickPaths` resolves to
+   * `null` for a cancel *and* for "no picker at all", which is why the button is only rendered when
+   * `canPickFiles()` — the two cases are indistinguishable here by design.
+   */
+  async function browseForFolder(): Promise<void> {
+    if (picking) return
+    picking = true
+    try {
+      const chosen = await pickPaths({
+        directory: true,
+        multiple: false,
+        title: 'Choose the folder Provenote keeps your documents in',
+      })
+      if (chosen && chosen.length > 0) {
+        dir = chosen[0]
+        clearFeedback()
+      }
+    } finally {
+      picking = false
+    }
+  }
+
   function clearFeedback(): void {
     ingest = null
     actionError = null
@@ -404,21 +432,39 @@
 
     <section>
       <h3>Your documents</h3>
-      <label for="src">Source folder</label>
-      <input
-        id="src"
-        type="text"
-        bind:value={dir}
-        bind:this={inputEl}
-        oninput={clearFeedback}
-        onkeydown={onInputKey}
-        spellcheck="false"
-        placeholder="C:\path\to\your\documents"
-        disabled={busy}
-      />
+      <!-- CS2 — this folder is *where Provenote keeps the documents you add*, not "the folder
+           holding your documents". One sentence used to describe both models, which stopped being
+           true at AD3b: documents are added to the library (copied here, or referenced where they
+           live), and this folder is the copy destination. Pointing at a folder and indexing it
+           wholesale still works and is still offered below — it is just no longer what the folder
+           *is*. -->
+      <label for="src">Library folder</label>
+      <!-- CS1 — the picker is the primary route; the text field stays as an override, because a
+           path typed or pasted from elsewhere is a real workflow and a picker cannot express one
+           that does not exist yet (which the warning below is about). In a browser there is no
+           picker, so the button is not rendered at all rather than rendered dead. -->
+      <div class="srcrow">
+        <input
+          id="src"
+          type="text"
+          bind:value={dir}
+          bind:this={inputEl}
+          oninput={clearFeedback}
+          onkeydown={onInputKey}
+          spellcheck="false"
+          placeholder="C:\path\to\your\documents"
+          disabled={busy}
+        />
+        {#if canPickFiles()}
+          <button class="ghost browse" onclick={browseForFolder} disabled={busy || picking} type="button">
+            <Icon name="folder" size={14} />
+            {picking ? 'Choosing…' : 'Browse…'}
+          </button>
+        {/if}
+      </div>
       <p class="hint">
-        Paste the full path to the folder holding your documents, then index it. Supported:
-        {settings.supported_formats}.
+        Where Provenote keeps the documents you add — anything already in it can be indexed here
+        too. Supported: {settings.supported_formats}.
       </p>
       {#if settings.source_dir && !settings.source_dir_exists}
         <p class="warn"><Icon name="triangle-alert" size={14} /> The saved folder doesn't exist yet: <code>{settings.source_dir}</code></p>
@@ -824,6 +870,22 @@
   input:disabled,
   select:disabled {
     opacity: 0.6;
+  }
+  .srcrow {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+  }
+  .srcrow input {
+    flex: 1;
+    min-width: 0;
+  }
+  .browse {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    white-space: nowrap;
   }
   .hint {
     font-size: 0.76rem;

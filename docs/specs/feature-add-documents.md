@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-08-28 (EPUB + HTML round trip done; KI-53 filed) · class: living -->
+<!-- status: active · updated: 2026-08-28 (EPUB + HTML round trip; ADR-046 delete half; AD4; CS1/CS2 — all work items built) · class: living -->
 
 # Spec — Add documents: the accept surface (AD1–AD4) + the Settings changes it forces (CS1–CS2)
 
@@ -129,14 +129,41 @@ Copy **or** register per the user's choice, write `SourceFile`, refresh the pane
 **ticked by default** with a time estimate, and untickable for staging. A batch that fails part-way
 **stops and asks**: *Keep the N* / *Undo all*.
 
-### AD4 — first-run empty state
-The Library empty state becomes the drop target alongside the existing demo-corpus offer.
+### AD4 — first-run empty state — **done 2026-08-28**
+The Library empty state becomes the drop target. ~~alongside the existing demo-corpus offer~~ —
+**there is no demo-corpus offer in the UI to sit alongside.** The demo corpus is a CLI script
+(`scripts/download_corpus.py`); nothing in the app offers it, and `readiness.setup_state`'s
+`documents` step only says "Point the app at a folder". Recorded rather than invented: building a
+download offer to satisfy the wording would have been a feature nobody asked for.
 
-### CS1/CS2 — Settings
+Built: a dashed drop zone carrying the format list and an **Add documents** button that opens the
+AD1 chooser, highlighting from `accept.dragging` — the same window-level Tauri signal the chooser
+and the full-window veil use, since a DOM drop handler would never fire. Where the accept surface
+does not exist (a plain browser) the button is **not rendered at all** and the reason is shown
+instead — verified in both branches.
+
+It also retired the old copy, "Point doc_assistant at a folder of your documents", which named the
+**code identity** rather than the product (ADR-012 is wordmark-only) and described the pre-AD3b
+model where the library was a folder you aimed at rather than somewhere you add documents. The
+same stale sentence still lives in `readiness.setup_state` — that one is CS1/CS2's to fix.
+
+### CS1/CS2 — Settings — **done 2026-08-28**
 Folder picker replacing the paste-a-path input (text field kept as an override; the
 "folder doesn't exist yet" warning stays). Relabel: the folder is *where Provenote keeps the
 documents you add*, not *the folder holding your documents* — the same sentence currently describes
 both models. **Nothing else in Settings** — the reorganisation is P7.
+
+Built: **Library folder** (was "Source folder") with a **Browse…** button beside the field, opening
+a single-select folder picker titled *"Choose the folder Provenote keeps your documents in"*. The
+picker *fills the field*; the user still confirms with the same button they would have used after
+typing, so the text input remains a real override — which it has to be, because a picker cannot
+express a folder that does not exist yet, and that is exactly what the retained warning is about.
+`pickPaths` gained `multiple`/`title`, defaulting to the old behaviour so no other caller moved.
+No Browse button is rendered where there is no picker.
+
+The relabel also retired the *other* copy of the pre-AD3b sentence, in
+`readiness.setup_state` — it told first-run users to "Point the app at a folder", which is the
+model AD3b replaced. **Nothing else in Settings was touched.**
 
 ## Contract — `src/doc_assistant/db/models.py` (modified, additive)
 
@@ -227,11 +254,21 @@ sorting + pagination — **testable under `node --test`, and it must be**) ·
   reading before touching this area: the wire identifier for a registered file is now
   `registry.source_key` (`"<root_id>:<rel_path>"`, bare rel_path still means the library root),
   and duplicate detection joins each row to its root — resolving a `rel_path` against the library
-  folder is what silently missed duplicates under a referenced root. **Not yet done:** the delete
-  dialog half (`delete_document(delete_file=...)`, test cases 6 and 7), CS1/CS2, AD4.
+  folder is what silently missed duplicates under a referenced root.
+- **The delete half landed 2026-08-28** — `delete_document(*, delete_file=False)` (test cases 6 and
+  7), `DELETE /api/library/documents/{id}?delete_file=`, `source_path` on every library row, and a
+  dialog that asks, defaults to library-only and **names the path**. Closed KI-52 with it (the
+  registry row now goes with the file, and only with the file).
+- **AD4 landed 2026-08-28** — the empty state is the drop target.
+- **CS1/CS2 landed 2026-08-28** — folder picker + the relabel. **Every work item is now built**;
+  what remains of the DoD is the one human drag (below).
 - All 15 test cases pass; `just typecheck` clean; ruff clean; `svelte-check` 0/0.
 - A document can be added by drag-and-drop **and** by the button, in both modes, and indexed.
-- Delete asks, defaults to library-only, and names the path for referenced files.
+- ~~Delete asks, defaults to library-only, and names the path for referenced files.~~ — **done
+  2026-08-28.** The path is named for *every* document, not only referenced ones: a copied
+  document's path is equally worth seeing before a destructive click, and it means the UI needs no
+  join to `SourceFile.origin`. Where no path is recorded, the destructive option is not offered at
+  all — refusing to name the target is refusing the guarantee ADR-046 asked for.
 - `docs_check --strict` 0/0; DEVLOG entry per logical change; ADR-046 status → `accepted (built)`.
 - ~~**Not done until** an EPUB and an HTML file have been added and indexed through the UI~~ —
   **done 2026-08-28.** `tests/fixtures/documents/article.html` and `treatise.epub` were added

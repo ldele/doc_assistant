@@ -122,14 +122,20 @@ export function onDragHover(handler: (over: boolean) => void): () => void {
  * cancelled **or** when there is no picker (browser). Callers must not distinguish those two by
  * catching — check `canPickFiles()` first if the difference matters to the UI.
  */
-export async function pickPaths(opts: { directory?: boolean } = {}): Promise<string[] | null> {
+export async function pickPaths(
+  opts: { directory?: boolean; multiple?: boolean; title?: string } = {},
+): Promise<string[] | null> {
   const open = api()?.dialog?.open
   if (!open) return null
   try {
     const chosen = await open({
-      multiple: true,
+      // Defaults to true so every pre-CS1 caller is unchanged. Settings passes false: it is
+      // choosing *the* library folder, and a picker that lets you select three of them while the
+      // caller silently keeps the first is a dialog that lied about what it was asking.
+      multiple: opts.multiple ?? true,
       directory: opts.directory ?? false,
-      title: opts.directory ? 'Choose a folder of documents' : 'Choose documents',
+      title:
+        opts.title ?? (opts.directory ? 'Choose a folder of documents' : 'Choose documents'),
     })
     if (chosen === null) return null
     return Array.isArray(chosen) ? chosen : [chosen]

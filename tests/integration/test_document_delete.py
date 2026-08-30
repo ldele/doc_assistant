@@ -14,6 +14,7 @@ from typing import Any
 import pytest
 from apps.api.main import create_app
 from fastapi.testclient import TestClient
+from sqlalchemy import select
 
 from doc_assistant.db.models import Document
 from doc_assistant.db.session import session_scope
@@ -90,6 +91,7 @@ def test_delete_unknown_returns_none(temp_db: None) -> None:
 def test_delete_trashes_file_and_removes_row_and_chunks(
     temp_db: None, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """ADR-014's behaviour, now reached by opting in (`delete_file=True`) — spec case 7."""
     from doc_assistant.library import delete_document
 
     src = tmp_path / "paper.pdf"
@@ -99,7 +101,7 @@ def test_delete_trashes_file_and_removes_row_and_chunks(
     trashed: list[str] = []
     monkeypatch.setattr("send2trash.send2trash", lambda p: trashed.append(p))
 
-    result = delete_document(doc_id, chroma)
+    result = delete_document(doc_id, chroma, delete_file=True)
 
     assert result is not None
     assert result.trashed_file is True and result.chunks_removed == 3
@@ -118,7 +120,9 @@ def test_delete_when_file_already_gone(
         "send2trash.send2trash", lambda p: pytest.fail("should not trash a missing file")
     )
 
-    result = delete_document(doc_id, FakeChroma({}))
+    # Opts in deliberately: with `delete_file=False` this would pass without exercising anything,
+    # since nothing is trashed either way.
+    result = delete_document(doc_id, FakeChroma({}), delete_file=True)
 
     assert result is not None and result.trashed_file is False
     assert not _exists(doc_id)  # still removed from the library
@@ -139,7 +143,7 @@ def test_delete_aborts_when_trash_fails(
     monkeypatch.setattr("send2trash.send2trash", boom)
 
     with pytest.raises(RuntimeError):
-        delete_document(doc_id, FakeChroma({"hash-locked.pdf": ["c1"]}))
+        delete_document(doc_id, FakeChroma({"hash-locked.pdf": ["c1"]}), delete_file=True)
     assert _exists(doc_id)  # the row survives a failed trash — no orphaned indexed file
 
 
@@ -154,7 +158,7 @@ def test_delete_route(temp_db: None, tmp_path: Path, monkeypatch: pytest.MonkeyP
     monkeypatch.setattr("send2trash.send2trash", lambda p: None)
     client = _client(FakeChroma({"hash-paper.pdf": ["c1", "c2"]}))
 
-    r = client.delete(f"/api/library/documents/{doc_id}")
+    r = client.delete(f"/api/library/documents/{doc_id}?delete_file=true")
     assert r.status_code == 200
     assert r.json() == {"filename": "paper.pdf", "trashed_file": True, "chunks_removed": 2}
     assert not _exists(doc_id)
@@ -175,5 +179,130 @@ def test_delete_route_409_on_trash_failure(
     monkeypatch.setattr("send2trash.send2trash", boom)
     client = _client(FakeChroma({}))
 
-    assert client.delete(f"/api/library/documents/{doc_id}").status_code == 409
+    assert client.delete(f"/api/library/documents/{doc_id}?delete_file=true").status_code == 409
     assert _exists(doc_id)  # not deleted
+
+
+# ============================================================
+# ADR-046 §2 — delete asks, and defaults to library-only (spec cases 6 and 7)
+# ============================================================
+
+
+def test_delete_defaults_to_library_only_and_leaves_the_file(
+    temp_db: None, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Spec case 6, and the half of ADR-046 that changes what `delete` *means* by default.
+
+    ADR-014 binned the source unconditionally, which is right for a copy the app made and wrong for
+    a file the user keeps in their own folder. The default is now the branch that cannot destroy
+    anything.
+    """
+    from doc_assistant.library import delete_document
+
+    src = tmp_path / "mine.pdf"
+    src.write_text("the user's own file")
+    doc_id = _seed_doc("mine.pdf", source_original=str(src))
+    chroma = FakeChroma({"hash-mine.pdf": ["c1", "c2"]})
+    monkeypatch.setattr(
+        "send2trash.send2trash", lambda p: pytest.fail("the default must never bin a file")
+    )
+
+    result = delete_document(doc_id, chroma)
+
+    assert result is not None
+    assert result.trashed_file is False
+    assert src.exists(), "the file is the user's; library-only delete must not touch it"
+    assert src.read_text() == "the user's own file", "and must not rewrite it either"
+    assert result.chunks_removed == 2
+    assert chroma.deleted == ["c1", "c2"], "it does still leave the search index"
+    assert not _exists(doc_id), "and the library row still goes"
+
+
+def test_a_library_only_delete_keeps_the_registry_row(
+    temp_db: None, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The file is still on disk and no longer indexed — which is precisely `new`, not `missing`.
+
+    Keeping the row is what lets the next scan offer the file again, truthfully.
+    """
+    from doc_assistant.library import delete_document
+
+    src = tmp_path / "kept.pdf"
+    src.write_text("x")
+    doc_id = _seed_doc("kept.pdf", source_original=str(src))
+    _seed_source_row("kept.pdf", root_path=tmp_path)
+
+    delete_document(doc_id, FakeChroma({}))
+
+    assert _source_rows() == ["kept.pdf"], "the file is still there, so the row is still true"
+
+
+def test_deleting_the_file_forgets_the_registry_row(
+    temp_db: None, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """KI-52. The row used to survive, so a file the user deleted *through the app* came back as
+    `missing` in Sources — the app misreporting its own action, with no way to clear it."""
+    from doc_assistant.library import delete_document
+
+    src = tmp_path / "binned.pdf"
+    src.write_text("x")
+    doc_id = _seed_doc("binned.pdf", source_original=str(src))
+    _seed_source_row("binned.pdf", root_path=tmp_path)
+    monkeypatch.setattr("send2trash.send2trash", lambda p: None)
+
+    delete_document(doc_id, FakeChroma({}), delete_file=True)
+
+    assert _source_rows() == [], "the file is gone, so the row can only ever say `missing`"
+
+
+def test_forgetting_a_row_resolves_through_its_own_root(
+    temp_db: None, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A same-named file under another root must survive — the mistake that once deleted an
+    unrelated document out of the library (see `library/add.py::_delete_copied_file`)."""
+    from doc_assistant.library import delete_document
+
+    library = tmp_path / "library"
+    zotero = tmp_path / "zotero"
+    library.mkdir()
+    zotero.mkdir()
+    (library / "notes.pdf").write_text("library copy")
+    target = zotero / "notes.pdf"
+    target.write_text("the one being deleted")
+
+    doc_id = _seed_doc("notes.pdf", source_original=str(target))
+    _seed_source_row("notes.pdf", root_path=library, root_id="library")
+    _seed_source_row("notes.pdf", root_path=zotero, root_id="zot", kind="referenced")
+    monkeypatch.setattr("send2trash.send2trash", lambda p: None)
+
+    delete_document(doc_id, FakeChroma({}), delete_file=True)
+
+    with session_scope() as session:
+        from doc_assistant.db.models import SourceFile
+
+        remaining = [
+            (r.root_id, r.rel_path) for r in session.execute(select(SourceFile)).scalars()
+        ]
+    assert remaining == [("library", "notes.pdf")], "only the row under the named root goes"
+    assert (library / "notes.pdf").exists(), "the same-named library file is untouched"
+
+
+def _seed_source_row(
+    rel_path: str, *, root_path: Path, root_id: str = "library", kind: str = "library"
+) -> None:
+    from doc_assistant.db.models import SourceFile, SourceRoot
+
+    with session_scope() as session:
+        if session.get(SourceRoot, root_id) is None:
+            session.add(SourceRoot(id=root_id, path=str(root_path), kind=kind))
+            session.flush()
+        session.add(
+            SourceFile(root_id=root_id, rel_path=rel_path, format="pdf", size=1, mtime=0.0)
+        )
+
+
+def _source_rows() -> list[str]:
+    from doc_assistant.db.models import SourceFile
+
+    with session_scope() as session:
+        return sorted(r.rel_path for r in session.execute(select(SourceFile)).scalars())

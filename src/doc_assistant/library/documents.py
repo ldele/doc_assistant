@@ -111,6 +111,7 @@ def list_documents(
                     tags=[t.name for t in d.tags],
                     keywords=[k.name for k in d.keywords],
                     added_at=d.added_at,
+                    source_path=d.source_original,
                 )
             )
         return summaries
@@ -433,15 +434,64 @@ def purge_document_record(
     return chunks_removed
 
 
-def delete_document(document_id: str, chroma_db: Any) -> DeleteResult | None:
-    """Safe-delete a document: source file → Recycle Bin, then drop its DB row + index chunks.
+def _forget_source_row(source_original: str | None) -> bool:
+    """Drop the ``SourceFile`` row naming ``source_original``. Returns whether one went (KI-52).
 
-    Returns None if the document is unknown. The source file is moved to the OS Recycle Bin FIRST
-    (recoverable); only on success (or when the file is already gone) does the removal proceed, so
-    a locked/undeletable file leaves the library entry intact rather than orphaning a still-indexed
-    file on disk. Removal then: deletes the ``Document`` row (FK-cascades citations / parts /
-    similarities, and since ADR-026 the ``DocumentMeta`` override too), the doc's chunks from the
-    live Chroma store, its figure dir, and its cached ``.md``. ADR-014.
+    Matched through ``registry.pathkey`` rather than raw string equality, for the same reason
+    ``_existing_document_id`` does: the same file reaches the two tables spelled differently
+    depending on which caller wrote it. Resolving each row through **its own root** is what keeps a
+    referenced file in the user's folder from matching a same-named file in the library.
+    """
+    from sqlalchemy import select
+
+    from doc_assistant.db.models import SourceFile, SourceRoot
+    from doc_assistant.ingest.registry import pathkey
+
+    if not source_original:
+        return False
+    wanted = pathkey(source_original)
+    with session_scope() as session:
+        roots = {r.id: r.path for r in session.execute(select(SourceRoot)).scalars()}
+        for row in session.execute(select(SourceFile)).scalars():
+            base = roots.get(row.root_id)
+            if base is None:
+                continue
+            if pathkey(Path(base) / row.rel_path) == wanted:
+                session.delete(row)
+                log.info("source_row_forgotten", rel_path=row.rel_path, root_id=row.root_id)
+                return True
+    return False
+
+
+def delete_document(
+    document_id: str, chroma_db: Any, *, delete_file: bool = False
+) -> DeleteResult | None:
+    """Remove a document from the library, and — only if asked — its source file too.
+
+    Returns None if the document is unknown.
+
+    **ADR-046 §2 amends ADR-014: this no longer bins the source unconditionally.** ADR-014 made
+    "delete" mean "delete the file", which is right for a copy the app made and wrong for a file
+    the user keeps in their own folder and merely pointed the library at. The choice is now the
+    caller's, per deletion, and the safe branch is the default:
+
+    * ``delete_file=False`` (**default**) — *remove from library*. The row, its chunks, its figure
+      directory and its cached markdown go; **the source file is untouched.** The registry row is
+      also kept: the file is still on disk and not indexed, which is exactly what
+      ``derive_status`` reports as ``new`` — the file is a candidate again, which is true.
+    * ``delete_file=True`` — ADR-014's behaviour, now opt-in. **The ordering ADR-014 chose is
+      preserved**: the file goes to the Recycle Bin *first* (recoverable) and only on success does
+      the removal proceed, so a locked file leaves the library entry intact rather than orphaning a
+      still-indexed file on disk. The registry row goes too — see below.
+
+    **For a referenced document the caller must have shown the real path** before passing
+    ``delete_file=True``. That is a UI contract (ADR-046 §2) and cannot be enforced here; the
+    library exposes the path on ``DocumentSummary.source_path`` so the caller has no excuse.
+
+    **KI-52, fixed here:** the ``SourceFile`` registry row used to survive every delete, so a file
+    the user deleted *through the app* came back as ``missing`` in Sources — the app misreporting
+    its own action, with no way to clear it. The row now goes with the file, and only with the
+    file: when the source stays on disk, the row is still true.
     """
     from send2trash import send2trash
 
@@ -454,10 +504,12 @@ def delete_document(document_id: str, chroma_db: Any) -> DeleteResult | None:
         source_original = doc.source_original
         source_cache = doc.source_cache
 
-    # 1. Recycle the source file first (recoverable). A trash failure aborts the whole delete.
+    # 1. Recycle the source file first (recoverable) — only when the caller asked for it.
+    #    A trash failure aborts the whole delete, so the library never lists a document whose file
+    #    we failed to remove *and* whose row we removed anyway.
     path = resolve_source_path(source_original, filename)
     trashed = False
-    if path is not None:
+    if delete_file and path is not None:
         try:
             send2trash(str(path))
             trashed = True
@@ -470,9 +522,15 @@ def delete_document(document_id: str, chroma_db: Any) -> DeleteResult | None:
         document_id, chroma_db, doc_hash=doc_hash_val, source_cache=source_cache
     )
 
+    # The registry row is only false once the file is gone; while the file is on disk the row
+    # correctly says "here, and not indexed" (KI-52).
+    if delete_file:
+        _forget_source_row(source_original)
+
     log.info(
         "document_deleted",
         document_id=document_id,
+        delete_file=delete_file,
         trashed_file=trashed,
         chunks_removed=chunks_removed,
     )

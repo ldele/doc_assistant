@@ -416,3 +416,36 @@ def test_block_elements_still_separate_after_inline_unwrapping(tmp_path: Path) -
     assert any(line.strip() == "More prose." for line in lines), (
         "a block element merged into its neighbour"
     )
+
+
+# --- KI-53: the recorded extractor must be the one that ran ----------------------------------
+
+
+def test_every_supported_format_names_its_extractor():
+    """The provenance mapping cannot silently fall behind the dispatch table.
+
+    `_EXTRACTOR_NAMES` is deliberately parallel to `_EXTRACTORS` (folding them together would
+    change a dict shape that `extraction_fingerprint` walks, and a failed walk re-extracts the
+    whole corpus — KI-48). This is the check that buys that decision back: adding a format
+    without a name fails here rather than recording `unknown` on a user's document.
+    """
+    from pathlib import Path
+
+    from doc_assistant.extractors import SUPPORTED_EXTENSIONS, extractor_name
+
+    unnamed = [ext for ext in SUPPORTED_EXTENSIONS if extractor_name(Path(f"x{ext}")) == "unknown"]
+    assert unnamed == [], f"supported formats with no recorded extractor: {sorted(unnamed)}"
+
+
+def test_extractor_name_follows_the_dispatch_branch():
+    """Provenance follows the same branch extraction does — PDFs by config, the rest by suffix."""
+    from pathlib import Path
+
+    from doc_assistant.extractors import extractor_name
+
+    assert extractor_name(Path("paper.pdf"), pdf_extractor="pymupdf") == "pymupdf"
+    # The one that filed KI-53: an EPUB and an HTML file both recorded `pymupdf`.
+    assert extractor_name(Path("book.EPUB")) == "ebooklib+bs4"
+    assert extractor_name(Path("page.html")) == "bs4"
+    assert extractor_name(Path("notes.md")) == "verbatim"
+    assert extractor_name(Path("mystery.xyz")) == "unknown"

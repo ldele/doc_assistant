@@ -49,6 +49,8 @@ class LibraryDocumentPayload(BaseModel):
     tags: list[str]
     keywords: list[str]
     added_at: datetime | None
+    #: The file's real location — the delete dialog names it before offering to bin it (ADR-046).
+    source_path: str | None = None
 
     @classmethod
     def from_summary(cls, s: DocumentSummary) -> LibraryDocumentPayload:
@@ -68,6 +70,7 @@ class LibraryDocumentPayload(BaseModel):
             tags=list(s.tags),
             keywords=list(s.keywords),
             added_at=_as_utc(s.added_at) if s.added_at is not None else None,
+            source_path=s.source_path,
         )
 
 

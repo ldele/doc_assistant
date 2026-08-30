@@ -24,6 +24,12 @@ export interface LibraryDocument {
   tags: string[]
   keywords: string[]
   added_at: string | null // ISO 8601
+  /**
+   * Where the file actually is. The delete dialog must *name* it before offering to bin it
+   * (ADR-046 §2) — "…from C:\Users\…\Zotero\storage\ABC123", not an abstract
+   * "the file". Null only for a row whose source path was never recorded.
+   */
+  source_path: string | null
 }
 export interface LibraryChild {
   child_index: number

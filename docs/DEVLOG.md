@@ -22,6 +22,134 @@ Format: What changed | Why | Rejected alternatives | What it opens
 > is individually small and correct, so unbounded growth is invisible per commit.
 
 ---
+## 2026-08-28 (10) — CS1/CS2: the last spec item, and the last sentence describing the product Provenote used to be
+
+**What changed.** Settings' **Source folder** is now **Library folder**, with a **Browse…** button
+opening a single-select folder picker beside the text field. `pickPaths` gained `multiple` and
+`title` (defaulting to today's behaviour, so no other caller moved). `readiness.setup_state`'s
+first-run sentence was retired. Spec items CS1 and CS2 closed — **every AD/CS work item is now
+built**.
+
+**Why the relabel is not cosmetic.** One sentence — "Paste the full path to the folder holding your
+documents" — described *both* models at once, and only one of them is still true. Since AD3b the
+library is somewhere you **add** documents (copied in, or referenced where they live); it is not a
+folder you aim the app at. The folder is now named for what it is: *where Provenote keeps the
+documents you add — anything already in it can be indexed here too*, which keeps the
+index-a-folder path honestly on offer without pretending it is the folder's definition.
+
+**Why the text field stays.** The spec asked for it and the reason holds: a picker cannot express a
+folder that **does not exist yet**, and the "folder doesn't exist yet" warning directly below is
+about exactly that case. The picker *fills* the field rather than saving, so the confirm step is
+the same one a typist would use.
+
+**`multiple: false` matters more than it looks.** `pickPaths` defaulted to multi-select, which is
+right for documents and wrong here: a dialog that lets you select three folders while the caller
+silently keeps the first has lied about what it asked. The option defaults to the old value so
+every existing caller is untouched.
+
+**And the same stale sentence had a second home.** `readiness.setup_state` told first-run users to
+"Point the app at a folder of PDFs, EPUBs, HTML, DOCX or Markdown", with the action "Choose a
+folder below, then index it" — the pre-AD3b model again, on the *first* screen a new user reads.
+Now: "Add documents from the Library, or index a folder…". Two surfaces, one wrong idea; fixing one
+and leaving the other would have been worse than fixing neither, because it would look done.
+
+**Verified live** in the Tauri window: the section reads **Library folder** with the path and a
+**Browse…** button; clicking it opened a real folder picker titled "Choose the folder Provenote
+keeps your documents in" while the button showed *Choosing…*; cancelling restored the button and
+left the path — and the backend `source_dir` — unchanged.
+
+**What it opens.** The spec's DoD is now down to the **one human drag** and its `docs_check
+--strict` line. Nothing in Settings was reorganised (that is P7), deliberately.
+
+---
+## 2026-08-28 (9) — AD4: the empty state stops describing the old product and becomes the drop target
+
+**What changed.** `LibraryPane.svelte`'s zero-document state is now a dashed drop zone carrying the
+format list and an **Add documents** button into the AD1 chooser, highlighting from
+`accept.dragging`. Where the accept surface does not exist it renders the reason and **no button**.
+Spec item AD4 closed.
+
+**Why.** The one screen whose entire job is to say "there is nothing here yet" said nothing about
+how to change that. The window has always accepted a drop; a first-run user had no way to learn it.
+
+**What the old copy was actually saying.** "Point doc_assistant at a folder of your documents" —
+which named the **code identity** rather than the product (ADR-012 is wordmark-only, and this was
+the one string in the app breaking it), and described the *pre-AD3b* model where the library was a
+folder you aimed at rather than somewhere you add documents. Two stale things in eleven words, on
+the first screen a new user sees.
+
+**The spec said "alongside the existing demo-corpus offer", and there is no such offer.** The demo
+corpus is a CLI script (`scripts/download_corpus.py`); nothing in the app offers it, and
+`readiness.setup_state`'s `documents` step only says "Point the app at a folder". Recorded in the
+spec rather than invented — building a download offer to satisfy the wording would have been a
+feature nobody asked for, shipped on the strength of a phrase.
+
+**Rejected: a DOM `dragover` handler on the zone.** Tauri intercepts the OS drag before the DOM
+sees it, so it would never fire; the zone reads the same window-level signal the chooser and the
+full-window veil already use. It is an aiming point and a label — dropping anywhere still works.
+
+**Verified in both branches**, against a throwaway API pointed at an empty `DOC_DATA_DIR` so the
+real 98-document library was never touched: the Tauri window rendered the zone, the format list and
+the button; the browser rendered "Your library is empty / Adding documents works in the desktop
+app." with `hasAddButton: false` — no dead control.
+
+**What it opens.** CS1/CS2 is the last spec item, and it inherits the other half of the stale
+sentence: `readiness.setup_state` still tells users to "Point the app at a folder". The drag
+*highlight* is the one state not visually confirmed — the desktop-control grant here gives File
+Explorer click-tier, which blocks drag-and-drop, so `accept.dragging` was exercised through the
+chooser and not through a real drop.
+
+---
+## 2026-08-28 (8) — Delete stops meaning "delete the file": ADR-046's other half, and KI-52 with it
+
+**What changed.** `delete_document(document_id, chroma_db, *, delete_file: bool = False)` — the
+default is now **library-only**, and ADR-014's bin-first-then-remove is the opt-in branch.
+`DELETE /api/library/documents/{id}` takes `delete_file`; `source_path` ships on every library row
+(dataclass → pydantic → TS, one change); `LibraryDeleteConfirm.svelte` is now a two-option dialog
+with the pure wording in a tested `deletetarget.ts`. Closes **KI-52**. ADR-046 → `accepted (built)`.
+
+**Why.** ADR-046 §2 amended ADR-014 back in August and the half that *asks* was never built, so
+"delete" still meant "delete the file" — right for a copy the app made, wrong for a file the user
+keeps in their own folder and merely pointed the library at. The spec has carried it as outstanding
+since AD3b.
+
+**Naming the destination is part of the decision, not copy-writing** — the ADR says so. The
+accepted risk of a per-delete choice is a mis-click, and the path is what makes the click informed.
+Two consequences worth stating: the path is shown for **every** document, not only referenced ones
+(a copy's path is equally worth seeing, and it means the UI needs no join to `SourceFile.origin`),
+and where **no** path is recorded the destructive option is *not offered at all* — refusing to name
+the target is refusing the guarantee the ADR asked for, and a test pins that.
+
+**KI-52 fell out of it, which is why it was deferred to here.** The registry row now goes with the
+file — and only with the file. With `delete_file=False` the file is still on disk and no longer
+indexed, which is exactly what `derive_status` calls `new`: the row is still true, and keeping it
+is what lets the next scan offer the file again. `_forget_source_row` resolves each row through
+**its own root**, so a same-named file under another root survives; that is the mistake that once
+deleted an unrelated document out of the library, and it has a test.
+
+**Flipping a default breaks callers silently, and the suite is what said so.** Six tests failed:
+five asserted ADR-014's unconditional binning and were updated to opt in (they are now testing the
+opt-in branch, which is what they always meant), but the sixth was **production code** —
+`library/pins.py::remove_pinned_sources`, the demo-corpus removal, whose docstring says "Recycle
+Bin first". Left alone it would have quietly stopped binning, stranding every downloaded demo file
+with nothing pointing at it. It now passes `delete_file=True` explicitly, with a comment saying why,
+so the next default change cannot move it either.
+
+**Verified live** in the Tauri window on a throwaway document: the dialog opened with *Remove from
+library* preselected, read "The file stays where it is. Its 1 chunk leaves the search index."
+(singular verb — the first draft said "1 chunk leave", which is how a confirm dialog looks
+machine-generated at the moment it asks for trust), and named the destination as
+"Moves C:\Projects\doc_assistant\d…ources\delete-dialog-demo.md to your Recycle Bin". Choosing
+the second option changed the button from *Remove* to *Delete both*; confirming binned the file,
+dropped the row, and left **0** rows in `/api/sources` where the old code left one reading
+`missing` forever.
+
+**What it opens.** CS1/CS2 and AD4 are the last spec items, plus the one human drag. The
+`shortenPath` middle-ellipsis is deliberately dumb about path separators — it keeps both ends by
+character count, which is right for the cases seen so far and would need thought for a path whose
+filename alone exceeds the budget.
+
+---
 ## 2026-08-28 (7) — EPUB and HTML finally went through the UI, and the extraction was fine; what the row *says* about them is not
 
 **What changed.** No production code — a verification, plus `.claude/KNOWN_ISSUES.md` KI-53 and the

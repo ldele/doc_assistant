@@ -39,7 +39,7 @@ from doc_assistant.embeddings import (
     get_collection_name,
     get_embeddings,
 )
-from doc_assistant.extractors import is_supported
+from doc_assistant.extractors import extractor_name, is_supported
 
 from .cache import doc_hash, get_cache_path, is_cache_fresh, load_or_extract
 from .chunking import (
@@ -373,7 +373,7 @@ def process_one_document(
             source_cache=str(get_cache_path(path)),
             doc_hash=h,
             format=path.suffix.lower().lstrip("."),
-            extractor_used=config.PDF_EXTRACTOR,
+            extractor_used=extractor_name(path, config.PDF_EXTRACTOR),
             chunk_count=baseline_chunk_count,
             page_count=page_count,
             extraction_health=health.status,

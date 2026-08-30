@@ -271,6 +271,39 @@ _EXTRACTORS: dict[str, Callable[[Path], str]] = {
 # All supported extensions (including PDF)
 SUPPORTED_EXTENSIONS: set[str] = {".pdf", *_EXTRACTORS}
 
+#: What actually read the bytes, per format — recorded as provenance on every document (KI-53).
+#: Names the library that does the work, not the wrapper function, because that is the thing whose
+#: behaviour a reader would go and check.
+#:
+#: Deliberately a *parallel* mapping rather than a second field on ``_EXTRACTORS``: that dict's
+#: shape is walked by ``ingest.cache.extraction_fingerprint``, and a walk that trips falls back to
+#: the whole-module fingerprint — which is a re-extraction of every cached document (KI-48). The
+#: drift this costs is bought back by ``test_every_supported_format_names_its_extractor``.
+_EXTRACTOR_NAMES: dict[str, str] = {
+    ".epub": "ebooklib+bs4",
+    ".html": "bs4",
+    ".htm": "bs4",
+    ".docx": "python-docx",
+    ".odt": "odfpy",
+    ".rtf": "striprtf",
+    ".md": "verbatim",
+    ".txt": "verbatim",
+}
+
+
+def extractor_name(path: Path, pdf_extractor: str = "pymupdf") -> str:
+    """Name the extractor that ``extract_to_markdown`` would use for ``path``.
+
+    Provenance, not dispatch — it must follow the same branch the extraction does, which is why
+    PDFs return the configured extractor rather than a constant: that value is what selects the
+    code that runs. An unsupported suffix returns ``"unknown"`` instead of raising; recording the
+    absence of provenance is better than failing an ingest over a label.
+    """
+    suffix = path.suffix.lower()
+    if suffix == ".pdf":
+        return pdf_extractor
+    return _EXTRACTOR_NAMES.get(suffix, "unknown")
+
 
 def extract_to_markdown(path: Path, pdf_extractor: str = "pymupdf") -> str:
     """Main entry point: extract any supported file to markdown.

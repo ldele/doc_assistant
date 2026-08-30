@@ -149,14 +149,24 @@ def reveal_library_document(doc_id: str) -> dict[str, bool]:
 
 
 @router.delete("/api/library/documents/{doc_id}")
-def delete_library_document(doc_id: str, request: Request) -> DeleteResultPayload:
-    """Safe-delete a document: source file → Recycle Bin, then drop its DB row + index chunks
-    (ADR-014). 404 if unknown; 409 if the source file couldn't be moved to the Recycle Bin."""
+def delete_library_document(
+    doc_id: str, request: Request, delete_file: bool = False
+) -> DeleteResultPayload:
+    """Remove a document from the library; bin its source file only if asked (ADR-046 §2).
+
+    ``delete_file`` defaults to **False** — the safe half of the amendment to ADR-014, which used
+    to bin the source unconditionally. When true, ADR-014's bin-first-then-remove ordering is
+    preserved. 404 if unknown; 409 if the source file could not be moved to the Recycle Bin.
+
+    A client asking for ``delete_file=true`` on a *referenced* document is asserting it showed the
+    user the real path first (ADR-046 §2). That is a UI contract; the path ships on every library
+    row as ``source_path`` so the client can honour it.
+    """
     from doc_assistant.library import delete_document
 
     controller: ChatController = request.app.state.controller
     try:
-        result = delete_document(doc_id, controller.rag.db)
+        result = delete_document(doc_id, controller.rag.db, delete_file=delete_file)
     except RuntimeError as e:
         raise HTTPException(status_code=409, detail=str(e)) from e
     if result is None:

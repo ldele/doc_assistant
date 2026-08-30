@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-07-03 · class: living -->
+<!-- status: active · updated: 2026-08-30 · class: living -->
 
 # How answers work — evidence vs. interpretation
 

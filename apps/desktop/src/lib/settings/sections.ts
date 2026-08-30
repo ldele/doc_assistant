@@ -1,4 +1,4 @@
-// Settings categories — the drawer's navigation model (2026-08-29).
+// Settings categories — the drawer's navigation model (2026-08-30).
 //
 // The panel used to be one flat scroll of ten `<section>`s. That was legible at five and stopped
 // being legible before it stopped growing: everything a user might want was equidistant from

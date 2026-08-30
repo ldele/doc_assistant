@@ -4,7 +4,7 @@
 > (reshaped to the cpc PR table). This file is the frozen original, kept for its detailed per-phase
 > prose and history. Do not edit; update `docs/ROADMAP.md` instead.
 >
-> **The module paths below are historical (annotated 2026-08-29).** They record where code sat
+> **The module paths below are historical (annotated 2026-08-30).** They record where code sat
 > at this file's own date, and some of it has since moved — `tables_marker.py` now lives in
 > `src/doc_assistant/ingest/`. Those references are plain text rather than links, so they read
 > as a record of where a thing was rather than as navigation that would 404.

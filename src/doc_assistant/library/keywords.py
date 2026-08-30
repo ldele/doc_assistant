@@ -93,7 +93,7 @@ def get_keyword_family(concept_id: str) -> KeywordFamily | None:
 
     ``kind="domain"`` taxonomy field nodes (ADR-028 D4) are **not** families and answer None here,
     matching :func:`list_keyword_families`, which excludes them. The two disagreed until
-    2026-08-29: the list hid the 236 ANZSRC fields while a lookup by id happily returned one as
+    2026-08-30: the list hid the 236 ANZSRC fields while a lookup by id happily returned one as
     a family, so
     every family write reachable by id — rename, add/remove member, and the new graph-vocabulary
     toggle — would operate on a taxonomy node. That last one is the reason this got fixed rather

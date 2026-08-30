@@ -9,7 +9,7 @@
 /**
  * The Graph workspace (concept graph + gap list).
  *
- * **On since 2026-08-29** (ROADMAP row 22, user decision "before moving on to next release").
+ * **On since 2026-08-30** (ROADMAP row 22, user decision "before moving on to next release").
  * Hidden for 0.6 on 2026-08-12 because the page was empty until the concept skeleton was built
  * and an empty page reads as a *failure* rather than as "nothing here yet"
  * (`docs/REVIEW_2026-08-12_release-readiness.md` §2b R4, which asked for either a real empty

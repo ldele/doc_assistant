@@ -59,7 +59,7 @@
     }
   }
 
-  // Which category the drawer shows (2026-08-29). The panel is a rail + one pane rather than one
+  // Which category the drawer shows (2026-08-30). The panel is a rail + one pane rather than one
   // flat scroll: see `./sections.ts` for why, and for the list itself.
   //
   // Seeded from `shell.setup`, which App has *already* loaded for the chat pane's setup banner —

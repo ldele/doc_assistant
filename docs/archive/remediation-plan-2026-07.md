@@ -4,7 +4,7 @@
 
 > **📦 Archived — shipped; the historical code-level contract, archived here (2026-07-11).** Live status: ROADMAP rows R1–R7 (all done). The behaviour of record is the code + tests, not this spec.
 >
-> **The module paths below are historical (annotated 2026-08-29).** They record where code sat
+> **The module paths below are historical (annotated 2026-08-30).** They record where code sat
 > on 2026-07-11; `concept_skeleton.py`, `epistemics.py`, `keywords.py` and
 > `concept_semantics.py` moved into `src/doc_assistant/knowledge/` at ADR-023, and the line
 > numbers are from that day's tree. Those references are plain text rather than links, so they

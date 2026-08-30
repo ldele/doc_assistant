@@ -8,6 +8,7 @@ from doc_assistant.metadata_extractor import (
     _extract_doi,
     _extract_title,
     _extract_year,
+    _is_skippable_heading,
     _looks_like_author_line,
     extract_metadata,
 )
@@ -145,7 +146,7 @@ def test_clean_markdown_strips_backslash_artifacts():
 def test_clean_markdown_strips_strikethrough():
     """The sibling of the `*` and `_` strips, which this function had and this one did not.
 
-    Found 2026-08-29 by driving the per-part re-run over a real document: it stored
+    Found 2026-08-30 by driving the per-part re-run over a real document: it stored
     `~~Neuroscience and Biobehavioral Reviews~~` as the title, markers included, and `docLabel`
     put that straight into the library grid.
     """
@@ -153,6 +154,17 @@ def test_clean_markdown_strips_strikethrough():
         "Neuroscience and Biobehavioral Reviews"
     )
     assert _clean_markdown("A ~single~ tilde too") == "A single tilde too"
+
+
+def test_a_candidate_ending_in_a_colon_is_a_lead_in_not_a_title():
+    """ "Preprint of the paper:" is what comes *before* a title, and it was stored AS one.
+
+    Found 2026-08-30 by re-running metadata over the 16 untitled documents in the live library.
+    The mid-string colon that real titles use must survive — that is the half this could break.
+    """
+    assert _is_skippable_heading("Preprint of the paper:")
+    assert _is_skippable_heading("## Cite this article as:")
+    assert not _is_skippable_heading("ColBERT: Efficient and Effective Passage Search")
 
 
 def test_title_skips_publisher_copyright_line():

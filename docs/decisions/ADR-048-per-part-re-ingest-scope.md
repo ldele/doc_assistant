@@ -1,9 +1,9 @@
-<!-- status: active · updated: 2026-08-29 · class: append-only -->
+<!-- status: active · updated: 2026-08-30 · class: append-only -->
 
 # ADR-048 — Re-ingest is per part, and only the parts one document can honestly own
 
 - **Status:** accepted
-- **Date:** 2026-08-29
+- **Date:** 2026-08-30
 - **Deciders:** user (asked for ROADMAP rows 20/21), Claude Code (scope derived from the measured record)
 
 > **Scope.** This settles **which parts of ingestion can be re-run for a single document**, what the

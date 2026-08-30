@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-08-29 (ADR-048 per-part re-ingest scope) · class: living -->
+<!-- status: active · updated: 2026-08-30 (ADR-048 per-part re-ingest scope) · class: living -->
 
 # Decisions — index
 

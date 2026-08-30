@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-08-29 · class: append-only -->
+<!-- status: active · updated: 2026-08-30 · class: append-only -->
 
 # DEVLOG — doc_assistant
 
@@ -22,7 +22,58 @@ Format: What changed | Why | Rejected alternatives | What it opens
 > is individually small and correct, so unbounded growth is invisible per commit.
 
 ---
-## 2026-08-29 (5) — Per-part re-ingest: the app can finally re-run one pass on one document, and it says what that costs first
+## 2026-08-30 (6) — The re-run earns its keep on the first real use: 15 titles a library had been missing, and a second extractor bug found by watching it work
+
+**What changed.** ROADMAP 21's selection flow was used in anger over the **16 documents in the live
+library with no title**, and it exposed one more extractor defect, now fixed: a title candidate
+ending in `:` is a lead-in to something else, never the thing itself, so `_is_skippable_heading`
+rejects it.
+
+**Measuring first changed the plan, which is the point of measuring.** KI-54 (the title picker
+preferring a bare journal name) looked like it might be systemic. The right population is not the 82
+documents that already carry a title — an older picker wrote those — but what a re-run would write
+*now*, so `extract_metadata` was dry-run over the 16 untitled documents' cached markdown, writing
+nothing: **14 correct titles, 1 journal name, 1 lead-in fragment, 1 empty.** One document in
+sixteen. That is what downgraded KI-54 from "design a structural fix" to "correct one row in the
+metadata editor".
+
+**A screen that did not work, recorded so nobody rebuilds it.** A first pass over the 82 existing
+titles flagged 25 as "possible bare periodical names" using short + title-case + no verb + no
+digits. Eyeballing them showed ~23 were genuine paper titles — `Neural Turing Machines`,
+`Pointer Networks`, `Deep Residual Learning for Image Recognition`. That heuristic does not
+describe a journal name; it describes an ML paper title. It is named in KI-54 as a detector not to
+reuse.
+
+**Then the run itself, through the grid's Select mode.** 16 tiles selected, Metadata only, *"16
+documents · instant each."* — 16 outcomes, every one `filled`, and the library's NULL titles went
+**16 → 1**. Most rows also gained a year, several an author list or a DOI. `98` documents and
+`15,173` chunks unchanged throughout, because metadata touches neither identity nor the stores.
+
+**The second bug, and why the fix is better than a suppression.** `ai_usage_cards_2023.pdf` stored
+**`Preprint of the paper:`** — the line that precedes a title, stored as one. The guard rejects a
+candidate whose cleaned text ends in a colon; a real title carries its colon in the *middle*, which
+is left alone. Rejecting the lead-in let the picker fall through to the real answer:
+**`AI Usage Cards: Responsibly Reporting AI-generated Content`** — a title that contains a
+mid-string colon, so the same document proves the guard does not over-reach. Verified against the
+pre-fix code (fails), then driven through the app end to end.
+
+**Rejected: fixing the journal-name case at the same time.** It is one row in ninety-six. A
+periodical detector would be new heuristic risk across all of them to correct that one, and the
+first attempt at such a detector had already misfired on 23 real titles an hour earlier. It stays
+KI-54, with the metadata editor as the workaround — an ADR-013 override survives any number of
+re-runs.
+
+**A backup was taken before writing to the live library** (`data/library.db.bak-20260830-163740-premetadata`),
+because this was the first time the new feature wrote to 16 real rows at once.
+
+**What it opens.** The `~~` fix, this colon guard and KI-54 are all the same shape — the title
+picker accepting something that is adjacent to a title. If a third appears, that is the signal to
+rebuild the candidate ranking rather than keep adding guards.
+
+**Gates:** pytest 1798/0 (unit) · mypy 94/0 · ruff clean · `docs_check --strict` 0/0.
+
+---
+## 2026-08-30 (5) — Per-part re-ingest: the app can finally re-run one pass on one document, and it says what that costs first
 
 **What changed.** ROADMAP rows **20 and 21**, behind **ADR-048**. A new
 `src/doc_assistant/reingest.py` re-runs chosen parts of ingestion for chosen documents; a
@@ -103,7 +154,7 @@ move into.
 **Gates:** pytest 2237/0 · mypy 94/0 · ruff clean · svelte-check 213/0 · node:test 192/192.
 
 ---
-## 2026-08-29 (4) — Graph vocabulary gets the in-app toggle ADR-018 left as a follow-up, and the Graph tab stops being a dead end
+## 2026-08-30 (4) — Graph vocabulary gets the in-app toggle ADR-018 left as a follow-up, and the Graph tab stops being a dead end
 
 **What changed.** A concept can now be put on the concept graph, or taken off it, from **Manage
 keywords** — a per-row toggle, an "On the graph (N)" lens, and a line saying how many of your
@@ -199,7 +250,7 @@ distribution must be re-measured, not assumed"* — because the vocabulary is no
 whatever the CLI left.
 
 ---
-## 2026-08-29 (3) — Settings becomes a rail and five categories, because a flat list stopped scaling before it stopped growing
+## 2026-08-30 (3) — Settings becomes a rail and five categories, because a flat list stopped scaling before it stopped growing
 
 **What changed.** The Settings drawer is now a **category rail + one pane** instead of one flat
 scroll of ten sections. Five categories — *Getting started · Documents · Provider & model ·
@@ -252,7 +303,7 @@ categories are now the obvious home for settings that do not exist yet — the s
 controls (ROADMAP 20/21) have a `Documents` to land in.
 
 ---
-## 2026-08-29 (2) — The Graph tab is back, and its empty state now says the thing that is actually true
+## 2026-08-30 (2) — The Graph tab is back, and its empty state now says the thing that is actually true
 
 **What changed.** `GRAPH_TAB_ENABLED` → `true` (ROADMAP row 22). With it, `ConceptGraph` and
 `GraphIndex` gained a **built-and-empty** state, distinct from the *never built* one they already
@@ -291,7 +342,7 @@ makes this tab mean anything on a library other than this one. It touches ADR-01
 opts in, so it wants a decision before code. Filed as ROADMAP row 23.
 
 ---
-## 2026-08-29 (1) — KI-53: the ingest record described every document as a PDF, and called a complete extraction broken
+## 2026-08-30 (1) — KI-53: the ingest record described every document as a PDF, and called a complete extraction broken
 
 **What changed.** Two honesty fixes in what ingestion *records*, both filed on 2026-08-28 from the
 first EPUB/HTML round trip and neither touching extraction itself, which was clean.

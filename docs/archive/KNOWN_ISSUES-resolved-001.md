@@ -822,7 +822,7 @@ ndarray for `embeddings`** — a list-returning fake cannot see this class of bu
   `docs/performance.md` §3 · ROADMAP rows **PF2a**/**PF3** ·
   `docs/decisions/ADR-035-bm25-index-persistence.md` (superseded in practice).
 
-## KI-53 — the ingest record described every document as a PDF, and called a complete extraction `broken` — **FIXED 2026-08-29**
+## KI-53 — the ingest record described every document as a PDF, and called a complete extraction `broken` — **FIXED 2026-08-30**
 
 **Found by the first EPUB/HTML round trip through the UI** (2026-08-28). Both formats added,
 indexed and retrieved correctly — the defect was in what the row *said about* them.
@@ -886,4 +886,4 @@ names would settle it.
 **Guard tests:** `tests/unit/test_health.py` (7 new, 6 fail against the pre-fix code) ·
 `tests/unit/test_extractors_formats.py` (2 new) ·
 `tests/integration/ingest/test_ingest_record_honesty.py` (2, both halves proven pre-fix).
-**Pointer:** DEVLOG 2026-08-29 (1).
+**Pointer:** DEVLOG 2026-08-30 (1).

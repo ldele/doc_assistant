@@ -199,7 +199,7 @@ def _clean_markdown(text: str) -> str:
     text = re.sub(r"\*+", "", text)
     text = re.sub(r"_+", "", text)
     # Strikethrough, the sibling marker the other two always had and this one did not. Found
-    # 2026-08-29 by driving the per-part re-run (ADR-048) over a real document: it stored
+    # 2026-08-30 by driving the per-part re-run (ADR-048) over a real document: it stored
     # `~~Neuroscience and Biobehavioral Reviews~~` as a title, markers and all, and that string
     # went straight to the library grid.
     text = re.sub(r"~+", "", text)
@@ -216,8 +216,16 @@ def _clean_markdown(text: str) -> str:
 
 
 def _is_skippable_heading(text: str) -> bool:
-    normalized = _clean_markdown(text).lower().strip(": ")
+    cleaned = _clean_markdown(text)
+    normalized = cleaned.lower().strip(": ")
     if not normalized:
+        return True
+    # A candidate that ENDS in a colon is a lead-in to something else, never the thing itself:
+    # "Preprint of the paper:", "Cite this article as:". Real titles carry a colon in the MIDDLE
+    # ("ColBERT: Efficient and Effective Passage Search…"), which this leaves alone. Found
+    # 2026-08-30 by re-running metadata over 16 untitled documents: `ai_usage_cards_2023.pdf`
+    # stored "Preprint of the paper:" as its title, and `docLabel` put that in the library grid.
+    if cleaned.rstrip().endswith(":"):
         return True
     if normalized in _SKIP_HEADINGS:
         return True

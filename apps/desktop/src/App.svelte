@@ -176,7 +176,7 @@
   // Families need their own latch, not `documentsLoaded`. The graph path loads documents (the ego
   // panel resolves doc_ids → titles) without the family list, so once it has run, the library's
   // `!documentsLoaded` guard skips the family fetch forever — and Manage keywords opens listing
-  // zero families on a library with 357. Found 2026-08-29 by making that view the graph empty
+  // zero families on a library with 357. Found 2026-08-30 by making that view the graph empty
   // state's primary action; the graph's per-concept "Edit" has had the same hole since it shipped.
   let familiesLoaded = false
   // The overlay's results, derived from the live chat + document lists (both already client-side).

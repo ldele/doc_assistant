@@ -285,8 +285,19 @@ def build_parent_child_chunks(text: str, base_metadata: dict[str, Any]) -> list[
                 meta["parent_char_start"] = parent_span[0]
                 meta["parent_char_end"] = parent_span[1]
                 if child_span is not None:
-                    meta["char_start"] = parent_span[0] + child_span[0]
-                    meta["char_end"] = parent_span[0] + child_span[1]
+                    start = parent_span[0] + child_span[0]
+                    end = parent_span[0] + child_span[1]
+                    # **Verify the COMPOSED span, not just its two halves.** Each `locate_span`
+                    # above verified itself, but composition has a gap neither can see: if the
+                    # *parent* matched a duplicate occurrence, both finds were exact and the sum
+                    # still points at the wrong place. It needs a document that repeats a whole
+                    # ~2,000-char parent, so it is rare — and to be clear about the evidence,
+                    # **it is not currently observed**: all 39,087 spans on the live corpus hold.
+                    # Kept because it costs one comparison and the failure it prevents is the one
+                    # this feature is built to avoid — a *wrong* highlight rather than none.
+                    if _span_holds(text, (start, end), child_text):
+                        meta["char_start"] = start
+                        meta["char_end"] = end
             children.append(Document(page_content=clean_child, metadata=meta))
             child_idx += 1
     return children

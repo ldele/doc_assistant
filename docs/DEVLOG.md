@@ -22,6 +22,62 @@ Format: What changed | Why | Rejected alternatives | What it opens
 > is individually small and correct, so unbounded growth is invisible per commit.
 
 ---
+## 2026-08-30 (8) — The corpus is re-chunked: offsets go 63.3% to 100%, in 6m34s and without re-extracting a single file
+
+**What changed.** `ingest --rebuild` over all 98 documents, to claim the offsets the cursor fix
+(entry 7) made correct. **39,087 of 39,090 text chunks now carry a char span, and every one of them
+resolves to text containing its own chunk.** Nothing was re-extracted.
+
+**The cost estimate I gave was wrong by an order of magnitude, and checking the premise is what
+found it.** I had told the user "~40 minutes, moves every `doc_hash`" — conflating *re-extract* with
+*re-chunk*. The offsets are computed during chunking; the extraction fingerprints were byte-identical
+to this morning's (`chunking.py` is not in the extraction closure), so every cache was still fresh.
+The warmup confirmed it: 98 documents "extracted" in 16 seconds because it read them. So the real
+operation is re-chunk + re-embed:
+
+* **6m34s**, not 40 minutes — and no OCR, so none of the KI-47/KI-48 exposure a real re-extraction
+  carries;
+* **`doc_hash` did not move for a single document** (98/98 identical, ids identical), because the
+  extracted text never changed. ADR-047's identity fallback was not even needed.
+
+**Nothing was lost, and one thing was corrected.** Documents 98, `chunk_count` 15,173, figures 881,
+citations 4,428, folder memberships 18, keyword links 1,455, the one `DocumentMeta` override — all
+byte-identical across the rebuild. The store went from 624 figure chunks to **615**, which is
+exactly one per described figure (881 figures, 615 with a VLM description): the rebuild swept 9
+orphans that had accumulated. A correction, not a loss. The sparse index noticed the change by
+itself and rebuilt (39,705 chunks, 54.9 MB).
+
+**Three spans out of 39,090 are still absent, and they should be.** All three are picture-text
+blocks — OCR'd chart axis labels like `20 20 20` and `7 7` — where a head/tail probe cannot
+distinguish occurrences. The locator returns `None` rather than guessing, which is the trade the
+feature is built on.
+
+**I measured this wrong twice before measuring it right, and both errors are worth keeping.**
+
+1. A first pass reported **580 spans (1.5%) pointing at the wrong text** — alarming, since a wrong
+   highlight is the one failure this design refuses. It was my comparison: `page_content` has been
+   through `clean_chunk_text` (page markers stripped) while the cache slice is raw, so any chunk
+   straddling a `<!-- page:N -->` marker looked like a mismatch. Comparing like with like:
+   **39,087 of 39,087, zero mismatches.**
+2. Earlier, a 400-chunk sample of the store reported 0% coverage. `store.get(limit=400)` returns
+   insertion order, so it sampled only the oldest documents. **A sample that is not random is not a
+   sample.**
+
+**A guard was added on the false premise and is kept on an honest one.** Composing a parent offset
+with a child offset has a gap neither `locate_span` can see — if the parent matched a duplicate,
+both halves are exact and the sum is still wrong — so the composed span is now verified against the
+full text before it is recorded. Its first comment cited the 580 as evidence; that number was not
+real, and a fabricated measurement in a code comment is exactly the failure entry 7 was about. The
+comment now says plainly that the case **is not currently observed** (all 39,087 hold) and that the
+guard is kept for its cheapness, and the test says plainly that it **does not discriminate** — it
+is an invariant test, not a regression test.
+
+**No second rebuild is needed for that guard:** zero spans on this corpus fail it, so re-running
+would produce identical output. Verified by measurement rather than assumed.
+
+**Gates:** pytest 2242/0 · mypy 94/0 · ruff clean · `docs_check --strict` 0/0.
+
+---
 ## 2026-08-30 (7) — A 70-86% resolve rate was written down as a property of the corpus. It was a cursor parked one chunk too far along
 
 **What changed.** `build_parent_child_chunks` advances its parent and child cursors to each

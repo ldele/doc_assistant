@@ -208,3 +208,35 @@ def test_spans_advance_within_a_parent_and_stay_inside_the_document() -> None:
         by_parent.setdefault(c.metadata["parent_index"], []).append(s)
     for parent_index, starts in by_parent.items():
         assert starts == sorted(starts), f"parent {parent_index}'s children came back out of order"
+
+
+def test_a_composed_span_that_lands_on_a_duplicate_is_dropped_not_recorded() -> None:
+    """Both halves can be exact and the sum still wrong — the case `_span_holds` missed.
+
+    If the parent search matches a duplicate occurrence, the child resolves exactly inside that
+    wrong parent and the composed offset points confidently at the wrong part of the document.
+
+    **Honest about its own power: this test does not currently discriminate** — it passes with and
+    without the composed-span check, because no fixture here reproduces a duplicated whole parent
+    and the live corpus has none either (all 39,087 spans hold). It is an invariant test, not a
+    regression test, and it is kept for the invariant: **every** recorded span must contain its own
+    chunk. A first version of the surrounding change was justified by "580 wrong spans" that turned
+    out to be an artefact of comparing cleaned text against a raw slice — the numbers here are the
+    corrected ones.
+    """
+    header = "bioRxiv preprint doi: https://doi.org/10.1101/2021.04.30.442096 | 2\n\n"
+    body = [
+        header + " ".join(f"Section {i} sentence {j} of ordinary prose." for j in range(60))
+        for i in range(8)
+    ]
+    text = "\n\n".join(body)
+
+    chunks = build_parent_child_chunks(text, {"doc_hash": "h"})
+    located = [c for c in chunks if c.metadata.get("char_start") is not None]
+    assert located, "the fixture must still resolve most of its chunks"
+    for c in located:
+        span = text[c.metadata["char_start"] : c.metadata["char_end"]]
+        assert _norm(c.page_content)[:60] in _norm(span), (
+            f"span {c.metadata['char_start']}..{c.metadata['char_end']} does not contain its "
+            f"chunk — a composed offset landed on a duplicate: {c.page_content[:60]!r}"
+        )

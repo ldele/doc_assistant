@@ -53,6 +53,14 @@ class GraphStaleness:
     n_concepts_in_skeleton: int
     added_labels: tuple[str, ...]  # curated since the build — absent from the graph
     removed_ids: tuple[str, ...]  # in the graph but deleted from the vocabulary since
+    #: Documents the skeleton cites that the library can no longer resolve. A **third** kind of
+    #: staleness, and the one that was invisible: the other two watch the vocabulary, which the
+    #: user edits constantly, while this watches the corpus the graph was built *over*. A document
+    #: whose identity moved (every pre-ADR-047 re-extraction minted a new id) leaves a reference
+    #: nothing can resolve, and the view has no honest way to name it. Measured on the reference
+    #: library the day this was added: **10 of 10** referenced ids dead, across all 198 nodes.
+    missing_document_ids: tuple[str, ...] = ()
+    n_documents_in_skeleton: int = 0
 
 
 @dataclass(frozen=True)
@@ -64,20 +72,43 @@ class GraphView:
     staleness: GraphStaleness
 
 
+def _live_document_ids() -> set[str]:
+    """Every document the library still holds. One indexed column read, no join."""
+    from sqlalchemy import select
+
+    from doc_assistant.db.models import Document
+    from doc_assistant.db.session import session_scope
+
+    with session_scope() as session:
+        return {str(i) for i in session.execute(select(Document.id)).scalars()}
+
+
 def _staleness(skeleton: ConceptSkeleton) -> GraphStaleness:
-    """Compare the skeleton's nodes against the live vocabulary (cheap: two id sets)."""
+    """Compare the skeleton against the live vocabulary **and** the live corpus (three id sets).
+
+    The corpus half is not symmetric with the vocabulary half, on purpose. A document *added*
+    since the build is not staleness — the graph simply has not seen it yet, which is true of
+    every build the moment it finishes and is already covered by offering a rebuild. A document
+    the skeleton *cites* that no longer exists is different: it is a reference the view cannot
+    render, and without this it reached the user as a bare UUID in the title slot.
+    """
     concepts, _aliases = load_concepts()
     db_labels = {cid: label for cid, label in concepts}
     db_ids = set(db_labels)
     sk_ids = {n.id for n in skeleton.nodes}
     added = db_ids - sk_ids  # curated since the build
     removed = sk_ids - db_ids  # deleted since the build
+
+    cited_docs = {d for n in skeleton.nodes for d in n.doc_ids}
+    missing_docs = cited_docs - _live_document_ids()
     return GraphStaleness(
-        stale=bool(added or removed),
+        stale=bool(added or removed or missing_docs),
         n_concepts_in_db=len(db_ids),
         n_concepts_in_skeleton=len(sk_ids),
         added_labels=tuple(sorted(db_labels[i] for i in added)),
         removed_ids=tuple(sorted(removed)),
+        missing_document_ids=tuple(sorted(missing_docs)),
+        n_documents_in_skeleton=len(cited_docs),
     )
 
 

@@ -5,6 +5,7 @@
   import Provenance from './Provenance.svelte'
   import SourceEvaluation from './SourceEvaluation.svelte'
   import Icon from '../shell/Icon.svelte'
+  import { usageLabel } from './usage'
 
   let {
     question,
@@ -27,16 +28,7 @@
   // Glanceable turn cost — the same numbers the Provenance panel spells out, surfaced up front
   // so the reader sees the spend without expanding anything (inform, don't gate).
   const usage = $derived(result?.usage ?? null)
-  const tokens = $derived(usage ? (usage.turn_input + usage.turn_output).toLocaleString() : '')
-  const spend = $derived(
-    !usage
-      ? ''
-      : usage.is_local
-        ? 'local'
-        : usage.cost_usd != null
-          ? `$${usage.cost_usd.toFixed(4)}`
-          : 'n/a',
-  )
+  const usageText = $derived(usageLabel(usage))
 </script>
 
 <div class="turn">
@@ -108,7 +100,7 @@
           class="usage"
           title={`in ${usage.turn_input.toLocaleString()} · out ${usage.turn_output.toLocaleString()} · session ${usage.session_total.toLocaleString()} tokens`}
         >
-          {tokens} tokens · {spend}
+          {usageText}
         </div>
       {/if}
     {:else}

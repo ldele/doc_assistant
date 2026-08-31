@@ -25,6 +25,9 @@
   interface Props {
     // --- the document pipeline (App owns the state; these are its derived outputs)
     documents: LibraryDocument[]
+    /** Whether the list above is an answer yet — an empty list before the first fetch is
+     *  not one, and the empty state below is a claim about the user's library. */
+    documentsLoaded: boolean
     visibleDocs: LibraryDocument[]
     facetList: KeywordFacet[]
     keywordsOf: (d: LibraryDocument) => string[]
@@ -70,7 +73,7 @@
     onManageFoldersForDoc: (id: string) => void
   }
   const {
-    documents, visibleDocs, facetList, keywordsOf, openDoc,
+    documents, documentsLoaded, visibleDocs, facetList, keywordsOf, openDoc,
     libraryCollection, libraryDocId, libraryQuery, libraryKeywords, folders,
     libSelectMode, libSelected, libAddMenuOpen,
     folderNames,
@@ -260,7 +263,12 @@
       />
     {:else}
       <section class="libmain">
-        {#if documents.length === 0}
+        {#if documents.length === 0 && !documentsLoaded}
+          <!-- "Empty" and "not yet known" are different answers, and `documents` starts empty
+               either way. Without this the one screen whose job is to say "there is nothing here"
+               said it to a user with 98 documents for as long as the fetch took. -->
+          <p class="libloading">Loading your library…</p>
+        {:else if documents.length === 0}
           <!-- AD4 — the first-run empty state IS the drop target.
                The window has always accepted a drop; on the one screen that exists to say "there
                is nothing here yet", saying nothing about how to change that was the gap. It
@@ -630,6 +638,12 @@
     }
   }
 
+  .libloading {
+    margin: 2rem auto;
+    text-align: center;
+    color: var(--fg-2);
+    font-size: 0.85rem;
+  }
   .libempty {
     max-width: 540px;
     margin: var(--space-6) auto 0;

@@ -172,7 +172,10 @@
   // the two-pane picker overlay; the inline strip shows only the selected keywords + the trigger.
   let libraryKeywords = $state<string[]>([])
   let keywordFilterOpen = $state(false)
-  let documentsLoaded = false
+  // `$state`, not a plain `let`: it started as an internal fetch-once latch, and it is now also
+  // read by the Library to tell "empty" from "not yet known". A non-reactive latch passed as a
+  // prop leaves the loading line up forever (svelte-check catches exactly this).
+  let documentsLoaded = $state(false)
   // Families need their own latch, not `documentsLoaded`. The graph path loads documents (the ego
   // panel resolves doc_ids → titles) without the family list, so once it has run, the library's
   // `!documentsLoaded` guard skips the family fetch forever — and Manage keywords opens listing
@@ -1140,6 +1143,7 @@
   <Sidebar
     mode={shell.mode}
     conversations={conversations.list}
+    conversationsLoaded={conversations.loaded}
     {documents}
     {folders}
     liveSessionId={chat.sessionId}
@@ -1175,6 +1179,7 @@
       {#if shell.mode === 'library'}
         <LibraryPane
           {documents}
+          {documentsLoaded}
           {visibleDocs}
           {facetList}
           {keywordsOf}

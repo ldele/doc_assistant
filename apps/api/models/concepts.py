@@ -171,6 +171,10 @@ class GraphStalenessPayload(BaseModel):
     n_concepts_in_skeleton: int
     added_labels: list[str]
     removed_ids: list[str]
+    #: Documents the graph cites that the library can no longer resolve — the corpus half of
+    #: staleness, as opposed to the vocabulary half above.
+    missing_document_ids: list[str] = []
+    n_documents_in_skeleton: int = 0
 
     @classmethod
     def from_staleness(cls, s: GraphStaleness) -> GraphStalenessPayload:
@@ -180,6 +184,8 @@ class GraphStalenessPayload(BaseModel):
             n_concepts_in_skeleton=s.n_concepts_in_skeleton,
             added_labels=list(s.added_labels),
             removed_ids=list(s.removed_ids),
+            missing_document_ids=list(s.missing_document_ids),
+            n_documents_in_skeleton=s.n_documents_in_skeleton,
         )
 
 

@@ -22,6 +22,7 @@
   let {
     mode,
     conversations,
+    conversationsLoaded,
     documents,
     folders,
     liveSessionId,
@@ -45,6 +46,8 @@
   }: {
     mode: 'chat' | 'library' | 'graph'
     conversations: ConversationSummary[]
+    /** Whether the list above is an answer yet. An empty list before the first fetch is not one. */
+    conversationsLoaded: boolean
     documents: LibraryDocument[]
     folders: LibraryFolder[]
     liveSessionId: string
@@ -466,7 +469,9 @@
           <span class="treelabel">New chat</span>
         </button>
       {/if}
-      {#if conversations.length === 0}
+      {#if conversations.length === 0 && !conversationsLoaded}
+        <p class="empty">Loading…</p>
+      {:else if conversations.length === 0}
         <p class="empty">No conversations yet. Ask a question to start one.</p>
       {:else}
         {#if pinnedConvos.length > 0}

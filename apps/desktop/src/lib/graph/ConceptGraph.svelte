@@ -139,8 +139,18 @@
   function commColor(n: ConceptGraphNode): string {
     return `var(--comm-${((n.community % 12) + 12) % 12})`
   }
+  // The graph is a build artifact over the corpus *as it was*, so a node can cite a document the
+  // library no longer resolves — every pre-ADR-047 re-extraction minted a new id. Counting and
+  // listing only what resolves is what stops a bare UUID reaching the title slot; the count that
+  // did not resolve is reported beside it rather than quietly dropped.
+  function resolvedDocIds(n: ConceptGraphNode): string[] {
+    return n.doc_ids.filter((id) => docById.has(id))
+  }
   function docCount(n: ConceptGraphNode): number {
-    return n.doc_ids.length
+    return resolvedDocIds(n).length
+  }
+  function unresolvedDocCount(n: ConceptGraphNode): number {
+    return n.doc_ids.length - resolvedDocIds(n).length
   }
 
   // Selection arrives as a prop (the rail lives in the sidebar): each change resets the per-concept
@@ -234,7 +244,9 @@
   // printed the authors twice ("A Primer… · Mathis et al." then "Mathis et al. · 2020").
   function docTitle(docId: string): string {
     const d = docById.get(docId)
-    if (!d) return docId
+    // An identifier is not a label. The list only renders resolvable ids, so this is the
+    // belt-and-braces arm — and returning `docId` is precisely how UUIDs used to reach the user.
+    if (!d) return 'No longer in your library'
     return d.title || d.filename
   }
   function docByline(docId: string): string {
@@ -419,11 +431,21 @@
           <!-- concept → document → chunks -->
           <div class="sources">
             <h3>Appears in {docCount(selectedNode)} document{docCount(selectedNode) === 1 ? '' : 's'}</h3>
+            {#if unresolvedDocCount(selectedNode) > 0}
+              <!-- Inform, don't block: the resolvable half is still listed below. Said here rather
+                   than only in the staleness banner because this is where the missing rows would
+                   otherwise be, and a count that silently shrank would read as a bug. -->
+              <p class="muted">
+                {unresolvedDocCount(selectedNode)} more
+                {unresolvedDocCount(selectedNode) === 1 ? 'document is' : 'documents are'} cited by the
+                graph but no longer in your library — rebuild the graph to bring it up to date.
+              </p>
+            {/if}
             {#if presenceLoading}
               <p class="muted">Loading sources…</p>
             {/if}
             <ul class="doclist">
-              {#each selectedNode.doc_ids as docId (docId)}
+              {#each resolvedDocIds(selectedNode) as docId (docId)}
                 {@const pr = presenceFor(docId)}
                 <li class="docitem">
                   <button

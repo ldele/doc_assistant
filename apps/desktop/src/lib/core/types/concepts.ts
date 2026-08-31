@@ -79,6 +79,13 @@ export interface GraphStaleness {
   n_concepts_in_skeleton: number
   added_labels: string[]
   removed_ids: string[]
+  /**
+   * Documents the graph cites that the library can no longer resolve — the *corpus* half of
+   * staleness, where the two above watch the vocabulary. A document whose identity moved leaves a
+   * reference nothing can render, and before this the view printed the raw id in the title slot.
+   */
+  missing_document_ids: string[]
+  n_documents_in_skeleton: number
 }
 export interface ConceptGraph {
   graph_version: string

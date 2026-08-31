@@ -14,6 +14,15 @@ import type { ConversationSummary } from '../core/types'
 
 export const conversations = $state({
   list: [] as ConversationSummary[],
+
+  /**
+   * Has a fetch ever come back? **"Empty" and "not yet known" are different answers**, and the
+   * list starts empty either way — so without this the sidebar told a user with 88 conversations
+   * that they had none, for as long as the request took. Set on completion whether the request
+   * succeeded or failed: a failure keeps the prior list, and "we looked and could not tell you"
+   * is still an answer, where "still looking" is not.
+   */
+  loaded: false,
 })
 
 export async function refreshConversations(): Promise<void> {
@@ -21,6 +30,8 @@ export async function refreshConversations(): Promise<void> {
     conversations.list = await listConversations()
   } catch {
     // keep the prior list
+  } finally {
+    conversations.loaded = true
   }
 }
 

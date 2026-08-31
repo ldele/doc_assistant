@@ -8,12 +8,11 @@ from `src/` (non-negotiable #3, `.claude/CONTEXT.md`).
   `selectMode`, chat-scope guard, conversation/chat lifecycle) + overlay wiring.
 - `src/lib/<domain>/` — one folder per domain, mirroring `apps/api/routers/`: `chat` · `library` ·
   `graph` · `settings` (incl. `ProviderSetup.svelte` — ADR-034 first run; it renders `/api/setup`'s
-  verdicts, never recomputes them), plus `shell/` (Topbar, StatusBar, Sidebar, dialogs) and `core/`
-  (wire boundary + theme/fonts), neither with an API counterpart. Table + naming traps:
-  `docs/architecture.md` § `apps/` — the domain spine.
+  verdicts, never recomputes them), plus `shell/` and `core/` (wire boundary + theme/fonts), neither
+  with an API counterpart. Table + naming traps: `docs/architecture.md` § `apps/` — the domain spine.
 - `<domain>/*.svelte.ts` — **rune modules** holding that domain's `$state` (7). Export ONE `$state`
   *object*: an imported binding can't be reassigned across a module boundary.
-- `core/api|types/<domain>.ts` — one module per `apps/api/models/` domain (barrels re-export, so
+- `core/api|types/<domain>.ts` — one per `apps/api/models/` domain (barrels re-export, so
   `../core/api` resolves). `app.css`+`core/fonts.css` = tokens; `core/theme.ts` = the theme toggle.
 
 **Rules that bite here**
@@ -23,18 +22,19 @@ from `src/` (non-negotiable #3, `.claude/CONTEXT.md`).
   `.ts` beside it — the extension is the marker (`taxonomy.ts` tested, `taxonomy.svelte.ts` state);
   `$effect` needs a script, so export a `useXxx()` hook rather than running it at module top level.
 - **Renaming a variable breaks Svelte shorthand** — `{x}`, `x,` and `bind:x` each need hand-editing;
-  a rename regex must exclude `<` or `<input` becomes `<chat.input`. A `const` prop needs `$bindable()`.
+  a rename regex must exclude `<`. A `const` prop needs `$bindable()`.
 - **No optional params in `<script lang="ts">` functions.** The TS-strip drops the type but leaves the
   `?`, emitting `function f(x?)` → `SyntaxError: Unexpected token '?'` that blanks the whole app mount —
   and `svelte-check` passes it (it checks the source). Use a defaulted param: `x: T | null = null`.
 - **The type gate is not the run gate:** asset paths and mount failures are invisible to
   `svelte-check` *and* `node:test`. Verify with `npm run check` + live preview (light/dark/375px,
-  0 console errors, $0). Geometry odd? Check `innerWidth` — a hidden pane collapses it to 0, freezes
-  transitions, and defers a Svelte flush by a tick (DEVLOG 2026-07-26, 2026-07-28).
+  0 console errors, $0). Geometry odd? Check `innerWidth` — a hidden pane collapses it to 0, defers a
+  Svelte flush, and freezes transitions, which **strands an out-transitioning node in the DOM
+  forever** and reads as "the panel never closes". When DOM and state disagree, believe the state:
+  read the rune module from the page (DEVLOG 2026-07-26, 2026-07-28, 2026-08-31 (3)).
 - Product name: ADR-012 (wordmark only — never rename the package). Dev: `just app`.
 
 **Tests:** `npm test` (`node:test`, zero deps; pure `lib/**/*.ts` only) + `svelte-check` + live
-preview are the gate. A tested `.ts` module must avoid runtime *value* imports from siblings (node
-strips type-only imports, not extensionless value ones).
+preview are the gate. A tested `.ts` module importing a sibling needs the explicit `.ts` extension.
 
 <!-- Keep <=40 lines. Local only. If you're restating a project-wide rule, delete it and cite the code. -->

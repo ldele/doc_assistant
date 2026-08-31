@@ -97,6 +97,23 @@ def _seed_concepts(*ids_labels: tuple[str, str]) -> None:
         )
 
 
+def _seed_documents(*document_ids: str) -> None:
+    """The documents the toy skeleton cites. Staleness now compares against the live corpus too,
+    so a skeleton whose `doc_ids` point at nothing is *correctly* stale — seeding them is what
+    makes "not stale" mean what it says in the tests below."""
+    with session_scope() as s:
+        s.add_all(
+            Document(
+                id=i,
+                filename=f"{i}.pdf",
+                source_original=f"/tmp/{i}.pdf",
+                doc_hash=i,
+                format="pdf",
+            )
+            for i in document_ids
+        )
+
+
 def _seed_presence(concept_id: str, document_id: str, chunk_keys: list[str], n: int) -> None:
     """``concept_presence`` FKs both ``concepts.id`` and ``documents.id``, so the referents must
     exist first — the schema enforcing that is correct, not an obstacle to route around.
@@ -161,6 +178,7 @@ def test_graph_view_none_when_never_built(env: Path) -> None:
 def test_graph_view_assembles_skeleton_gaps_and_staleness(env: Path) -> None:
     _write_skeleton_json(env, _skeleton())
     _seed_concepts((_A, "Embeddings"), (_B, "BM25"))
+    _seed_documents("d1", "d2")
     with session_scope() as s:
         s.add(
             GapRow(
@@ -208,6 +226,42 @@ def test_staleness_fires_when_a_concept_was_curated_since_the_build(env: Path) -
     assert view.staleness.removed_ids == ()
 
 
+def test_staleness_fires_when_a_cited_document_is_no_longer_in_the_library(env: Path) -> None:
+    """The third kind of staleness, and the one that reached users as a bare UUID.
+
+    The other two watch the vocabulary, which the user edits constantly. This watches the corpus
+    the graph was built *over*: a document whose identity moved (every pre-ADR-047 re-extraction
+    minted a new id) leaves a reference nothing can resolve. Measured on the reference library the
+    day this was added: **10 of 10** cited ids dead, across all 198 nodes — and the view rendered
+    the id in the title slot because it had no way to know.
+    """
+    _write_skeleton_json(env, _skeleton())
+    _seed_concepts((_A, "Embeddings"), (_B, "BM25"))
+    _seed_documents("d1")  # d2 is gone
+
+    view = load_graph_view()
+    assert view is not None
+    assert view.staleness.stale is True
+    assert view.staleness.missing_document_ids == ("d2",)
+    assert view.staleness.n_documents_in_skeleton == 2
+    # The vocabulary is untouched — the two kinds must not be conflated.
+    assert view.staleness.added_labels == () and view.staleness.removed_ids == ()
+
+
+def test_a_document_added_since_the_build_is_not_staleness(env: Path) -> None:
+    """Deliberately asymmetric with the vocabulary rule. A document the graph has not seen is true
+    of every build the moment it finishes; a document it *cites* and cannot resolve is a broken
+    reference. Only the second is worth telling the user about."""
+    _write_skeleton_json(env, _skeleton())
+    _seed_concepts((_A, "Embeddings"), (_B, "BM25"))
+    _seed_documents("d1", "d2", "d3-added-later")
+
+    view = load_graph_view()
+    assert view is not None
+    assert view.staleness.missing_document_ids == ()
+    assert view.staleness.stale is False
+
+
 def test_staleness_fires_when_a_concept_was_deleted_since_the_build(env: Path) -> None:
     _write_skeleton_json(env, _skeleton())
     _seed_concepts((_A, "Embeddings"))  # _B deleted since
@@ -244,6 +298,7 @@ def _client(**kw: object) -> TestClient:
 def test_route_graph_200_shape(env: Path) -> None:
     _write_skeleton_json(env, _skeleton())
     _seed_concepts((_A, "Embeddings"), (_B, "BM25"))
+    _seed_documents("d1", "d2")
     r = _client().get("/api/concepts/graph")
     assert r.status_code == 200
     body = r.json()

@@ -673,6 +673,7 @@ def main(
     _report(on_progress, total, total, None)
 
     _assign_demo_folder(get_document_row_hashes() - rows_before)
+    _apply_imported_metadata()
 
     if force_rebuild:
         _sweep_rebuild_rows(rebuild_known_hashes, indexed - indexed_before)
@@ -684,6 +685,31 @@ def main(
         errors=stats["error"],
     )
     return stats
+
+
+def _apply_imported_metadata() -> None:
+    """Give newly indexed documents the metadata their catalogue already held (ADR-049).
+
+    An import records what Zotero (or another catalogue) said about a file *before* the file has
+    been extracted, because that is when the catalogue is being read. This is the other end of
+    that: the moment a `Document` row exists, the curated title, authors, year and DOI become its
+    metadata instead of whatever the first page of the PDF suggests.
+
+    Placed beside `_assign_demo_folder` because it is the same kind of step — a post-loop pass
+    over what the run produced — and it obeys the same rule: **it must never fail an ingest.** A
+    library with nothing imported does one indexed query and returns.
+    """
+    from doc_assistant.adapters.catalogue import apply_external_metadata
+    from doc_assistant.db.session import session_scope
+
+    try:
+        with session_scope() as session:
+            applied = apply_external_metadata(session)
+    except Exception as e:  # a metadata nicety must not lose a completed ingest
+        log.warning("imported_metadata_failed", error=str(e))
+        return
+    if applied.filled:
+        log.info("imported_metadata_applied", documents=applied.filled, fields=applied.fields)
 
 
 def _sweep_rebuild_rows(known_before: set[str], reproduced: set[str]) -> None:

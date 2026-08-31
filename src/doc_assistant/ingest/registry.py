@@ -277,6 +277,34 @@ def register_root(session: Session, path: Path) -> SourceRoot:
     return root
 
 
+def root_containing(session: Session, path: Path) -> SourceRoot | None:
+    """The registered ``referenced`` root this file already sits under, if there is one.
+
+    Reference-adding a file registers a root for its parent directory, which is right when the
+    user hands over a folder of papers and wrong when they hand over a *catalogue*: Zotero keeps
+    every attachment in its own `storage/<key>/` directory, so per-parent would mint one root per
+    document — five hundred rows, each stat-ed on every scan, for one library. Preferring a root
+    that already contains the file fixes that without guessing how far up the user meant, because
+    the ancestor is one they (or an import on their behalf) established explicitly.
+
+    The deepest match wins, so a nested root registered later still owns its own files. The
+    library root is not a candidate: a file inside the library folder is handled before this is
+    reached, and a *referenced* file must never be adopted by the root the app owns.
+    """
+    key = _pathkey(path)
+    best: SourceRoot | None = None
+    for root in session.execute(
+        select(SourceRoot).where(SourceRoot.kind == "referenced")
+    ).scalars():
+        prefix = _pathkey(root.path)
+        # `os.path.join(prefix, "")` appends the platform separator, so `C:\Papers` does not
+        # swallow `C:\PapersArchive` — a plain `startswith` on the bare prefix would.
+        contained = key == prefix or key.startswith(os.path.join(prefix, ""))
+        if contained and (best is None or len(_pathkey(best.path)) < len(prefix)):
+            best = root
+    return best
+
+
 def _root_available(root: SourceRoot) -> bool:
     """Can this root be reached right now? A stat, not a walk — it runs before every scan.
 

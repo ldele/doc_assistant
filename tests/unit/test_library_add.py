@@ -828,3 +828,104 @@ def test_the_library_root_is_never_dropped(temp_database, tmp_path):
     assert undo_add([key], source_dir=library) == 1
     with session_scope() as session:
         assert session.get(SourceRoot, LIBRARY_ROOT_ID) is not None
+
+
+def test_a_catalogue_batch_registers_one_root_not_one_per_document(temp_database, tmp_path):
+    """The Zotero shape, and the reason `reference_root` exists (ADR-049).
+
+    Zotero keeps every attachment in its own `storage/<key>/` folder, so the per-parent rule —
+    which is exactly right for a dropped folder — would mint one `SourceRoot` per document. Five
+    hundred rows for one library, each one stat-ed on every scan.
+    """
+    from sqlalchemy import select
+
+    from doc_assistant.db.models import SourceFile, SourceRoot
+    from doc_assistant.db.session import session_scope
+    from doc_assistant.library.add import apply_add
+
+    storage = tmp_path / "Zotero" / "storage"
+    files = [
+        _write(storage / f"KEY{n}" / f"paper{n}.pdf", f"paper {n}".encode()) for n in (1, 2, 3)
+    ]
+
+    result = apply_add(
+        files, mode="reference", source_dir=tmp_path / "library", reference_root=storage
+    )
+
+    assert len(result.added) == 3 and result.failed is None
+    with session_scope() as session:
+        roots = (
+            session.execute(select(SourceRoot).where(SourceRoot.kind == "referenced"))
+            .scalars()
+            .all()
+        )
+        assert len(roots) == 1
+        assert Path(roots[0].path) == storage.resolve()
+        rels = sorted(
+            r.rel_path
+            for r in session.execute(select(SourceFile)).scalars()
+            if r.root_id != "library"
+        )
+    # Relative to the catalogue's own folder, so the per-attachment directory is kept, not lost.
+    assert rels == ["KEY1/paper1.pdf", "KEY2/paper2.pdf", "KEY3/paper3.pdf"]
+
+
+def test_a_later_file_joins_a_root_that_already_contains_it(temp_database, tmp_path):
+    """Once a root exists above a file, it owns it — a second add must not mint a nested root.
+
+    Not a guess about how far up the user meant: the ancestor is one they already established.
+    """
+    from sqlalchemy import select
+
+    from doc_assistant.db.models import SourceFile, SourceRoot
+    from doc_assistant.db.session import session_scope
+    from doc_assistant.library.add import apply_add
+
+    papers = tmp_path / "Papers"
+    first = _write(papers / "a.pdf", b"a")
+    later = _write(papers / "2026" / "b.pdf", b"bb")
+
+    apply_add([first], mode="reference", source_dir=tmp_path / "library")
+    apply_add([later], mode="reference", source_dir=tmp_path / "library")
+
+    with session_scope() as session:
+        roots = (
+            session.execute(select(SourceRoot).where(SourceRoot.kind == "referenced"))
+            .scalars()
+            .all()
+        )
+        assert len(roots) == 1, [r.path for r in roots]
+        rels = sorted(
+            r.rel_path
+            for r in session.execute(select(SourceFile)).scalars()
+            if r.root_id != "library"
+        )
+    assert rels == ["2026/b.pdf", "a.pdf"]
+
+
+def test_a_sibling_folder_with_a_shared_prefix_is_not_adopted(temp_database, tmp_path):
+    r"""`C:\Papers` must not swallow `C:\PapersArchive` — a bare string prefix would."""
+    from sqlalchemy import select
+
+    from doc_assistant.db.models import SourceRoot
+    from doc_assistant.db.session import session_scope
+    from doc_assistant.library.add import apply_add
+
+    apply_add(
+        [_write(tmp_path / "Papers" / "a.pdf", b"a")],
+        mode="reference",
+        source_dir=tmp_path / "library",
+    )
+    apply_add(
+        [_write(tmp_path / "PapersArchive" / "b.pdf", b"bb")],
+        mode="reference",
+        source_dir=tmp_path / "library",
+    )
+
+    with session_scope() as session:
+        roots = (
+            session.execute(select(SourceRoot).where(SourceRoot.kind == "referenced"))
+            .scalars()
+            .all()
+        )
+    assert len(roots) == 2, [r.path for r in roots]

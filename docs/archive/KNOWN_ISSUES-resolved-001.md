@@ -887,3 +887,18 @@ names would settle it.
 `tests/unit/test_extractors_formats.py` (2 new) ·
 `tests/integration/ingest/test_ingest_record_honesty.py` (2, both halves proven pre-fix).
 **Pointer:** DEVLOG 2026-08-30 (1).
+
+
+---
+
+## KI-50 — 89% of the figure PNG crops were gone from disk; the rows and their VLM descriptions were not — **FIXED 2026-08-31**
+
+**The state, as filed and as repaired.** 881 `figures` rows · 811 carrying an `image_path` · **88 of those resolved on disk (11%)**. The crops were gone; the rows and the 615 **VLM descriptions** — the expensive part, and the part retrieval actually uses — were intact, so answer quality was never affected. What was lost was the ability to *show* the picture.
+
+**The repair: re-render, never re-detect.** Every row already carried its page and bbox, so `ingest.figures.restore_crops` reproduces the exact crop from what is recorded. Re-detecting to recover a *file* would risk moving the rectangle a description was written for, and a description on the wrong picture is worse than a missing picture. Reachable three ways: the `crops` re-run part per document, the Library grid's selection, and `scripts/extract_figures --repair-crops --apply` for the whole corpus. **723 restored, 0 still missing, 0 errors, 57 s**, verified against the database rather than the runner's own report (811/811 resolve, no zero-byte files, every crop's pixel size matching its bbox at 150 DPI; rows still 881, descriptions still 615).
+
+**Do not undo.** (1) The repair must not gain a re-detect step, and it must not write a row — that is what makes it safe to run over a whole library. (2) `extract_figures --force` is *not* the recovery path: it deletes the rows first, which is the KI-55 loss. (3) `cleanup_orphan_figures` takes **`gone` hashes only** (ADR-047) and `repoint_figures` moves a directory across a re-extraction rather than deleting it — those two are what stop this recurring.
+
+**Cause: never established, and now bounded.** All four retained backups (2026-08-24 onward) hold the identical 881/811 counts, and the ten stale directories on disk match no `doc_hash` current in any of them, so the loss predates every backup that exists. The standing hypothesis is an older `--rebuild` sweep. **If crops vanish again, trace it — do not just repair it.**
+
+**Guard tests:** `tests/integration/test_reingest_figure_crops.py` (9). **Pointer:** DEVLOG 2026-08-31 (1).

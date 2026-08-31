@@ -2,7 +2,7 @@
 // Pairs with apps/api/routers/sources.py (AD2).
 
 import { API_BASE, errorDetail } from './_base'
-import type { InspectResponse } from '../types/documents'
+import type { CatalogueScan, InspectResponse } from '../types/documents'
 
 /**
  * Ask what would happen to each candidate path. **Mutates nothing** — inspect and apply are two
@@ -57,11 +57,15 @@ export interface AddResult {
  *
  * 409 while an ingest is running.
  */
-export async function addDocuments(paths: string[], mode: AddMode = 'copy'): Promise<AddResult> {
+export async function addDocuments(
+  paths: string[],
+  mode: AddMode = 'copy',
+  referenceRoot: string | null = null,
+): Promise<AddResult> {
   const r = await fetch(`${API_BASE}/api/documents/add`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ paths, mode }),
+    body: JSON.stringify({ paths, mode, reference_root: referenceRoot }),
   })
   if (!r.ok) throw new Error(await errorDetail(r, 'add documents'))
   return (await r.json()) as AddResult
@@ -91,4 +95,22 @@ export async function indexPaths(paths: string[]): Promise<void> {
     body: JSON.stringify({ paths }),
   })
   if (!r.ok) throw new Error(await errorDetail(r, 'index documents'))
+}
+
+/**
+ * Read the user's Zotero library and get back the files in it. **Stages nothing and adds
+ * nothing** — the paths go through the same review sheet as a drag-and-drop, so the duplicate
+ * check and the copy-or-reference choice are the ones the user already knows.
+ *
+ * `dataDir` omitted means "look where Zotero puts it" (`~/Zotero`). A 404 here is the ordinary
+ * "no library there" answer, not a fault — its detail is a sentence written for the user.
+ */
+export async function scanZoteroLibrary(dataDir?: string): Promise<CatalogueScan> {
+  const r = await fetch(`${API_BASE}/api/catalogue/zotero/scan`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(dataDir ? { data_dir: dataDir } : {}),
+  })
+  if (!r.ok) throw new Error(await errorDetail(r, 'read the Zotero library'))
+  return (await r.json()) as CatalogueScan
 }

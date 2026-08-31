@@ -16,6 +16,14 @@ export const accept = $state({
   /** Paths the user has handed over, awaiting review. Empty is the resting state. */
   pending: [] as NativePath[],
 
+  /**
+   * The folder the pending paths all belong under, when they came from somewhere that *knows* —
+   * a catalogue import (ADR-049). `null` for a drop or a picker, where the per-parent rule is
+   * right. It exists because Zotero keeps every attachment in its own `storage/<key>/` folder, so
+   * without it a reference-add of one library would register one source root per document.
+   */
+  referenceRoot: null as string | null,
+
   /** True while a native drag is over the window — drives the drop overlay. */
   dragging: false,
 
@@ -54,9 +62,16 @@ export function unavailableReason(): string | null {
   return null
 }
 
-/** Stage paths for review. Merges with anything already pending and de-duplicates the result. */
-export function stagePaths(paths: readonly NativePath[]): void {
+/**
+ * Stage paths for review. Merges with anything already pending and de-duplicates the result.
+ *
+ * `root` is the folder the batch belongs under, for a caller that knows one (a catalogue import).
+ * Mixing a rooted batch with an unrooted one drops the root rather than applying it to files it
+ * does not describe — a wrong root would register documents under a folder they are not in.
+ */
+export function stagePaths(paths: readonly NativePath[], root: string | null = null): void {
   if (paths.length === 0) return
+  accept.referenceRoot = accept.pending.length === 0 ? root : null
   accept.pending = dedupePaths([...accept.pending, ...paths])
   // The chooser's whole job was to get paths; once there are some, the review sheet is the next
   // step and two stacked dialogs would just be in the way. Closing here rather than in each
@@ -66,6 +81,7 @@ export function stagePaths(paths: readonly NativePath[]): void {
 
 export function clearPending(): void {
   accept.pending = []
+  accept.referenceRoot = null
 }
 
 /** Open the OS picker. No-op outside Tauri; `pickPaths` already resolves to `null` there. */

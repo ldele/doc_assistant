@@ -26,3 +26,26 @@ export interface InspectResponse {
   /** Per-verdict counts plus `total`. */
   counts: Record<string, number>
 }
+
+/**
+ * What reading an outside catalogue (Zotero today) found — ROADMAP 17, ADR-049.
+ *
+ * Deliberately stops at *paths*: the review sheet, the duplicate rule and the copy-or-reference
+ * choice are the ones the app already has, and an import is just another way of reaching them.
+ */
+export interface CatalogueScan {
+  /** Human name of the catalogue, for the sentence the dialog writes. */
+  label: string
+  /** The folder the files live under — shown so the user can confirm it is the right library. */
+  root: string
+  /** Absolute paths, ready to stage. */
+  paths: string[]
+  found: number
+  /**
+   * Reason -> count for everything the catalogue held that was not staged. Shown, not summed: a
+   * bare "37 found" out of a 500-item library reads as a broken import.
+   */
+  skipped: Record<string, number>
+  /** How many of `paths` the catalogue could describe — the reason to import rather than browse. */
+  with_metadata: number
+}

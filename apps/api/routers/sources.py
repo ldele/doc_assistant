@@ -12,6 +12,8 @@ from apps.api.models.sources import (
     AddOutcomePayload,
     AddRequest,
     AddResultPayload,
+    CatalogueScanRequest,
+    CatalogueScanResponse,
     FileVerdictPayload,
     IngestRequest,
     InspectRequest,
@@ -145,6 +147,51 @@ def patch_source(body: SourcePatch, request: Request) -> SourceFilePayload:
         return SourceFilePayload.from_view(view)
 
 
+@router.post("/api/catalogue/zotero/scan")
+def scan_zotero(body: CatalogueScanRequest) -> CatalogueScanResponse:
+    """Read a Zotero library and return the files it holds — **staging nothing** (ROADMAP 17).
+
+    The deliberate shape of this route is that it stops where the existing add flow begins. It
+    returns absolute paths; the client stages them; the AD2 review sheet then says what would
+    happen to each one, including which are already in the library, and AD3 applies the user's
+    choice of copy or reference. Zotero gets no second add path, no second duplicate rule and no
+    second progress bar — which is also why importing a library you have already imported is
+    simply an add where everything reads as a duplicate.
+
+    The one thing it *does* write is `ExternalMetadata`: what the catalogue says about each file,
+    recorded now because this is when the catalogue is open. It is applied to documents at the
+    end of the next ingest (`ingest._apply_imported_metadata`), and it is keyed by path, so
+    recording it for a file the user then declines to add costs one unused row.
+
+    A missing or unreadable library is a **404 with a sentence in it**, not a 500: not having
+    Zotero installed is an ordinary state of the world, not a server fault.
+    """
+    from doc_assistant.adapters import zotero
+    from doc_assistant.adapters.catalogue import CatalogueUnavailable, record_external
+
+    try:
+        scan = zotero.read_library(
+            Path(body.data_dir) if body.data_dir else None,
+            base_dir=Path(body.base_dir) if body.base_dir else None,
+            include_snapshots=body.include_snapshots,
+        )
+    except CatalogueUnavailable as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+
+    if scan.documents:
+        with session_scope() as session:
+            record_external(session, scan.documents, source=zotero.SOURCE)
+
+    return CatalogueScanResponse(
+        label=scan.label,
+        root=str(scan.root),
+        paths=[str(d.path) for d in scan.documents],
+        found=len(scan.documents),
+        skipped=dict(scan.skipped),
+        with_metadata=sum(1 for d in scan.documents if d.title),
+    )
+
+
 @router.post("/api/documents/inspect")
 def inspect_documents(body: InspectRequest) -> InspectResponse:
     """AD2 — say what would happen to each candidate path. **Mutates nothing the user can see.**
@@ -189,7 +236,11 @@ def add_documents(request: Request, body: AddRequest) -> AddResultPayload:
     if _running(request):
         raise HTTPException(status_code=409, detail="ingest already running")
 
-    result = apply_add([Path(p) for p in body.paths], mode=body.mode)
+    result = apply_add(
+        [Path(p) for p in body.paths],
+        mode=body.mode,
+        reference_root=Path(body.reference_root) if body.reference_root else None,
+    )
 
     def out(o: AddOutcome) -> AddOutcomePayload:
         return AddOutcomePayload(

@@ -20,11 +20,16 @@
   interface Props {
     /** Absolute paths staged by the accept surface (AD1). */
     paths: string[]
+    /**
+     * The folder these paths all belong under, when the batch came from somewhere that knows —
+     * a catalogue import (ADR-049). `null` for a drop or a picker. Only `reference` uses it.
+     */
+    referenceRoot: string | null
     onClose: () => void
     /** Called after a successful add so the caller can clear the staged paths + refresh. */
     onAdded?: () => void
   }
-  const { paths, onClose, onAdded }: Props = $props()
+  const { paths, referenceRoot, onClose, onAdded }: Props = $props()
 
   let result = $state<InspectResponse | null>(null)
   let error = $state<string | null>(null)
@@ -116,7 +121,12 @@
     applying = true
     applyError = null
     try {
-      const result = await addDocuments(addable.map((f) => f.path), mode)
+      // The batch root only means anything for `reference` — `copy` has the library root already.
+      const result = await addDocuments(
+        addable.map((f) => f.path),
+        mode,
+        mode === 'reference' ? referenceRoot : null,
+      )
       applied = result
       // Index only what actually landed — never what the run did not reach.
       if (indexNow && !result.stopped_early && result.added.length > 0) {

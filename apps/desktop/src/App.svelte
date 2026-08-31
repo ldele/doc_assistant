@@ -1127,6 +1127,7 @@
   {#if reviewingAdd && accept.pending.length > 0}
     <AddDocuments
       paths={accept.pending}
+      referenceRoot={accept.referenceRoot}
       onClose={() => {
         reviewingAdd = false
         clearPending()

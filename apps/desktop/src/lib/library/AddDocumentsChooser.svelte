@@ -15,10 +15,60 @@
   // Once anything is staged, `stagePaths` closes this dialog and the review sheet (AD2) takes over.
 
   import Icon from '../shell/Icon.svelte'
-  import { accept, closeChooser, pickDocuments } from './accept.svelte'
+  import { scanZoteroLibrary } from '../core/api'
+  import { pickPaths } from '../core/tauri'
+  import { accept, closeChooser, pickDocuments, stagePaths } from './accept.svelte'
+  import { nothingToAdd } from './catalogue'
 
   /** Mirrors the server-side format list in words; the verdicts themselves come from AD2. */
   const FORMATS = 'PDF · EPUB · HTML · DOCX · MD · ODT · RTF'
+
+  // --- Import from Zotero (ROADMAP 17) --------------------------------------------------------
+  //
+  // A third *route to paths*, not a third add path. The scan hands back absolute paths and this
+  // stages them, so the review sheet, the duplicate check and the copy-or-reference choice are
+  // the ones the user already knows — and re-importing a library they have already imported is
+  // simply an add where everything reads as a duplicate.
+  //
+  // The default folder is tried first because it is right for almost everyone; the folder picker
+  // only appears once that has actually failed, so the common case is one click.
+  let zoteroBusy = $state(false)
+  let zoteroError = $state<string | null>(null)
+  let zoteroNote = $state<string | null>(null)
+  let askedForFolder = $state(false)
+
+  async function importFromZotero(dataDir: string | null = null): Promise<void> {
+    if (zoteroBusy) return
+    zoteroBusy = true
+    zoteroError = null
+    zoteroNote = null
+    try {
+      const scan = dataDir === null ? await scanZoteroLibrary() : await scanZoteroLibrary(dataDir)
+      if (scan.paths.length > 0) {
+        // The catalogue's own storage folder, so a reference-add registers one root rather than
+        // one per attachment. The adapter reports it precisely because it knows and we do not.
+        stagePaths(scan.paths, scan.root)
+        return
+      }
+      // Found the library, staged nothing. Say what was in it rather than "0 documents", which
+      // reads as a broken import when the reasons are all perfectly ordinary.
+      zoteroNote = nothingToAdd(scan.skipped)
+    } catch (e) {
+      zoteroError = e instanceof Error ? e.message : String(e)
+      askedForFolder = true
+    } finally {
+      zoteroBusy = false
+    }
+  }
+
+  async function chooseZoteroFolder(): Promise<void> {
+    const chosen = await pickPaths({
+      directory: true,
+      multiple: false,
+      title: 'Choose your Zotero data folder',
+    })
+    if (chosen && chosen.length > 0) await importFromZotero(chosen[0])
+  }
 
   function onKeydown(e: KeyboardEvent): void {
     if (e.key === 'Escape') closeChooser()
@@ -81,7 +131,32 @@
         <Icon name="folder" size={15} />
         Choose a folder…
       </button>
+      <button
+        class="route"
+        onclick={() => void importFromZotero()}
+        disabled={zoteroBusy || accept.picking}
+        type="button"
+      >
+        <Icon name="library" size={15} />
+        {zoteroBusy ? 'Reading your library…' : 'Import from Zotero…'}
+      </button>
     </div>
+
+    {#if zoteroError}
+      <!-- Not having Zotero, or keeping it elsewhere, is an ordinary state of the world. The
+           server's message is already a sentence written for a person, so it is shown verbatim
+           and followed by the one action that can fix it. -->
+      <p class="zotero err" role="alert">
+        {zoteroError}
+        {#if askedForFolder}
+          <button class="inline" onclick={() => void chooseZoteroFolder()} type="button">
+            Choose the folder…
+          </button>
+        {/if}
+      </p>
+    {:else if zoteroNote}
+      <p class="zotero">{zoteroNote}</p>
+    {/if}
 
     <!-- Said before anything is chosen, because it is the answer to "what is about to happen to my
          files?" — the placement choice itself lives in the review sheet, where it can be changed. -->
@@ -93,6 +168,24 @@
 </div>
 
 <style>
+  .zotero {
+    margin: 0.55rem 0 0;
+    font-size: 0.76rem;
+    line-height: 1.45;
+    color: var(--fg-2);
+  }
+  .zotero.err {
+    color: var(--danger, #c0392b);
+  }
+  .inline {
+    font: inherit;
+    color: var(--accent);
+    background: none;
+    border: none;
+    padding: 0;
+    cursor: pointer;
+    text-decoration: underline;
+  }
   .scrim {
     position: fixed;
     inset: 0;

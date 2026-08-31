@@ -136,6 +136,10 @@ class AddRequest(BaseModel):
 
     paths: list[str]
     mode: Literal["copy", "reference"] = "copy"
+    #: The folder the whole batch belongs under, when the caller knows — an import from a
+    #: catalogue that told it where its files live (ADR-049). Absent for a drop or a picker, where
+    #: the per-parent rule applies. Ignored for `copy`.
+    reference_root: str | None = None
 
 
 class AddOutcomePayload(BaseModel):
@@ -173,3 +177,36 @@ class UndoAddRequest(BaseModel):
     """
 
     rel_paths: list[str]
+
+
+class CatalogueScanRequest(BaseModel):
+    """POST /api/catalogue/zotero/scan body. Every field optional — the defaults are the ask.
+
+    `data_dir` absent means "look where Zotero puts it", which is right for almost everyone and
+    saves a folder picker. `base_dir` is Zotero's Linked Attachment Base Directory: a preference,
+    not a database value, so it cannot be discovered and has to be offered.
+    """
+
+    data_dir: str | None = None
+    base_dir: str | None = None
+    include_snapshots: bool = False
+
+
+class CatalogueScanResponse(BaseModel):
+    """What a catalogue holds, before anything is staged.
+
+    `skipped` is a reason -> count map, passed through verbatim: the client shows the reasons
+    rather than a total, because "412 found" beside nothing else looks like a broken import when
+    the library has 500 entries.
+    """
+
+    #: Human name of the catalogue, for the sentence the dialog writes.
+    label: str
+    #: The folder the files live under — shown so the user can confirm it is the right library.
+    root: str
+    #: Absolute paths, ready to hand to the existing review sheet.
+    paths: list[str]
+    found: int
+    skipped: dict[str, int]
+    #: How many of `paths` the catalogue could describe. The reason to import from Zotero at all.
+    with_metadata: int

@@ -365,7 +365,11 @@ def _free_destination(root: Path, name: str) -> Path:
 
 
 def apply_add(
-    paths: Sequence[Path], *, mode: AddMode = "copy", source_dir: Path | None = None
+    paths: Sequence[Path],
+    *,
+    mode: AddMode = "copy",
+    source_dir: Path | None = None,
+    reference_root: Path | None = None,
 ) -> AddResult:
     """Bring each file into the library and register it. **Indexing is not done here.**
 
@@ -376,6 +380,13 @@ def apply_add(
     * ``reference`` — nothing is copied. The file is registered where it already lives, under a
       **referenced** root for its parent folder, and `origin='referenced'` is what stops delete
       from ever binning a file the app does not own (ADR-014 as amended).
+
+    ``reference_root`` names the folder the whole batch belongs under, for a caller that *knows* —
+    an ingestion adapter reading a catalogue that told it where its files live (ADR-049). Without
+    it the per-parent rule applies, which is right for a dropped folder and catastrophic for a
+    Zotero library, where every attachment sits in its own `storage/<key>/` directory: one root
+    per document, each stat-ed on every scan. Given, it registers **one** root and every file in
+    the batch lands under it. Ignored for ``copy``, which has a root already.
 
     Separation on purpose: indexing goes through the existing `POST /api/ingest` with an explicit
     `paths` list (spec constraint 4), so there is one ingest path in the system rather than two.
@@ -399,6 +410,13 @@ def apply_add(
 
     library = (source_dir or get_source_dir()).resolve()
     library.mkdir(parents=True, exist_ok=True)
+
+    # Registered once, outside the loop: it is one root for the batch, and registering it per file
+    # would be the linear scan `register_root` does, repeated for every file in the import.
+    if mode == "reference" and reference_root is not None:
+        with session_scope() as session:
+            registry.ensure_library_root(session, library)
+            registry.register_root(session, reference_root)
 
     added: list[AddOutcome] = []
     failed: AddOutcome | None = None
@@ -478,11 +496,17 @@ def _reference_target(session: Session, dest: Path, library: Path) -> tuple[str,
     hold two rows with two origins, and delete would branch on whichever one it happened to read.
     Its origin still records ``referenced``: the app did not put it there, so it must not bin it.
 
-    Everything else registers under a root for its **parent directory**. Per-directory rather than
-    per-file so that referencing twenty papers out of one Zotero folder yields one root, and
-    per-parent rather than per-ancestor because guessing how far up the user meant would be
-    guessing — a folder the user drops is handled by the caller expanding it, and each contained
-    file lands under its own directory's root.
+    Otherwise, a **root already registered above this file wins** — the deepest one. That is not
+    the guess the next rule refuses to make: an ancestor root exists only because the user, or an
+    import acting for them, established it. It is also what keeps Zotero survivable, since Zotero
+    gives every attachment its own `storage/<key>/` directory and the per-parent rule would mint a
+    root per document.
+
+    Failing that, a root for the file's **parent directory**. Per-directory rather than per-file so
+    that referencing twenty papers out of one folder yields one root, and per-parent rather than
+    per-ancestor because guessing how far up the user meant would be guessing — a folder the user
+    drops is handled by the caller expanding it, and each contained file lands under its own
+    directory's root.
     """
     from doc_assistant.db.models import LIBRARY_ROOT_ID
     from doc_assistant.ingest import registry
@@ -493,6 +517,9 @@ def _reference_target(session: Session, dest: Path, library: Path) -> tuple[str,
         return LIBRARY_ROOT_ID, dest.relative_to(library).as_posix()
     except ValueError:
         pass
+    existing = registry.root_containing(session, dest)
+    if existing is not None:
+        return existing.id, dest.relative_to(Path(existing.path)).as_posix()
     root = registry.register_root(session, dest.parent)
     return root.id, dest.name
 

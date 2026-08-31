@@ -5,19 +5,19 @@
 
 **Layout (ADR-023)**
 - Top level — the RAG answer path: `pipeline.py` (hybrid retrieval + rerank), `sparse_index.py`
-  (the keyword arm, on disk and the only one since ADR-038), `llm.py`,
-  `synthesis.py`, `provenance.py`, `reviewer*.py`, `prompts.py`, `config.py`, `doc_vectors.py`, plus
-  app services (`conversations` · `app_settings` · `credentials` · `readiness` · `compare` ·
-  `health` · `export`).
+  (the keyword arm, on disk and the only one since ADR-038), `llm.py`, `synthesis.py`,
+  `provenance.py`, `reviewer*.py`, `prompts.py`, `config.py`, `doc_vectors.py`, plus app services
+  (`conversations` · `app_settings` · `credentials` · `readiness` · `compare` · `health` · `export`).
 - `chat_controller/` — turn orchestration: `session` · `views` · `events` · `helpers` · `controller`.
 - `library/` — document-store API, sub-domains matching `apps/api/routers/library/`: `models` ·
   `documents` · `pins` · `folders` · `keywords` · `chunks` · `citations` · `similarity`. Both
-  packages re-export flat from `__init__`.
+  packages re-export flat from `__init__`. `reingest.py` — per-part re-runs (ADR-048).
 - `db/` — SQLAlchemy models + session + **additive** migrations. `ingest/` — extract → markdown →
   chunk → embed → store (locked) + registry/cache/figures/tables. `eval/` — the eval harness.
-- `knowledge/` — corpus-derived layer: keywords/families, concept skeleton (Node A/B) + curation,
-  wiki, gaps, epistemics. Sidecars; the answer path reads it, never depends on it. **Read
-  `docs/knowledge-layer.md` first** — trust table: `contested` is NOT a measurement (KI-33).
+  `adapters/` — optional registry producers, never a dependency (ADR-049): `catalogue` neutral,
+  `zotero` the one module allowed to know a vendor schema.
+- `knowledge/` — corpus-derived sidecars: keywords/families, concept skeleton (Node A/B) + curation,
+  wiki, gaps, epistemics. **Read `docs/knowledge-layer.md` first** — `contested` is NOT a measurement.
 
 **Rules that bite here**
 - **Locked settings** live in `config.py` — change only via an eval-harness experiment

@@ -943,6 +943,62 @@ class DocumentMeta(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, onupdate=_utcnow)
 
 
+class ExternalMetadata(Base):
+    """What an outside catalogue said about a file, recorded when it was imported (ADR-049).
+
+    A reference manager's metadata is *curated by a person* — it is the reason someone keeps one —
+    so it is strictly better than what `metadata_extractor` can infer from a PDF's first page, and
+    KI-54 is a standing example of the gap. This table is where that answer is kept.
+
+    **Why a table and not just a write into `Document`.** Two reasons, both about time. The
+    metadata arrives at *import*, before the file has been extracted, so there is no `Document`
+    row to write it onto yet. And once there is one, `Document.title` means "the best answer the
+    machine has" — a slot every metadata re-run overwrites by design (`reingest._rerun_metadata`).
+    Keeping the catalogue's answer here makes it survive those, and makes the *provenance*
+    recoverable: with the row present, the library can say where a title came from instead of
+    presenting a curated one and a guessed one identically.
+
+    Keyed by ``(source, path_key)`` rather than ``document_id`` for the same reason: the file is
+    known before the document is. ``path_key`` is the normalised absolute path
+    (`ingest.registry.pathkey`), which is what `Document.source_original` is matched against.
+
+    Vendor-neutral by construction (the spec's ADR-3): ``source`` is a plain label
+    (``"zotero"``), and every column here is a field any reference manager has. Nothing in this
+    table, or in anything reading it, knows a vendor schema — that lives in
+    `adapters/zotero.py` alone.
+
+    Additive via ``create_all``, like `Figure` and `DocumentMeta`. No FK: the row legitimately
+    predates any document, and outliving one is the point rather than a leak — re-importing the
+    same library must not have to re-read the catalogue.
+    """
+
+    __tablename__ = "external_metadata"
+    __table_args__ = (
+        Index("uq_external_metadata_source_path", "source", "path_key", unique=True),
+    )
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid4()))
+    #: Which catalogue said this — ``"zotero"`` today. A label, never an import.
+    source: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    #: Normalised absolute path of the file the catalogue described (`registry.pathkey`).
+    path_key: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    #: The catalogue's own id for the item, for a later re-sync. Opaque to us.
+    external_key: Mapped[str | None] = mapped_column(String, nullable=True)
+
+    title: Mapped[str | None] = mapped_column(Text, nullable=True)
+    #: Comma-joined, matching `Document.authors` — the same convention the extractor writes.
+    authors: Mapped[str | None] = mapped_column(Text, nullable=True)
+    year: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    doi: Mapped[str | None] = mapped_column(String, nullable=True)
+    #: The catalogue's item type (``journalArticle``, ``book``, …) — the substrate for the dormant
+    #: `SourceFile.doc_type`, stored now so activating it needs no second import.
+    item_type: Mapped[str | None] = mapped_column(String, nullable=True)
+    #: JSON list of collection/shelf names the item sits in; the substrate for folders.
+    collections_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    imported_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, onupdate=_utcnow)
+
+
 # ============================================================
 # SourceRoot / SourceFile — selective-ingestion registry (feature-selective-ingestion.md, S1),
 # made multi-root by ADR-046 (AD3b).

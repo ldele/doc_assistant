@@ -7,10 +7,16 @@ export { streamChat, adjudicate, figureUrl } from './chat'
 export type { SSEvent } from './chat'
 export { getHealth } from './health'
 export { listConversations, getConversation, updateConversationMeta, exportConversation, bulkUpdateConversations, exportAllConversations } from './conversations'
-export { deleteDocument, getDocumentFigures, getDocumentReferences, getLibraryDocument, getReingestOptions, getReingestStatus, listLibraryDocuments, resetDocumentMeta, revealDocument, startReingest, updateDocumentMeta } from './library'
+export { deleteDocument, getChunkContext, getDocumentFigures, getDocumentReferences, getLibraryDocument, getReingestOptions, getReingestStatus, listLibraryDocuments, resetDocumentMeta, revealDocument, startReingest, updateDocumentMeta } from './library'
 export type { DeleteResult } from './library'
 export { getDocConnections } from './connections'
-export { addDocuments, indexPaths, inspectDocuments, undoAddDocuments } from './documents'
+export {
+  addDocuments,
+  indexPaths,
+  inspectDocuments,
+  scanZoteroLibrary,
+  undoAddDocuments,
+} from './documents'
 export type { AddMode, AddOutcome, AddResult } from './documents'
 export { listFolders, createFolder, renameFolder, deleteFolder, addDocumentsToFolder, removeDocumentFromFolder } from './folders'
 export { listKeywordFamilies, createKeywordFamily, renameKeywordFamily, setFamilyGraphInclude, addFamilyMember, removeFamilyMember, deleteKeywordFamily, detectKeywordFamilies } from './keywords'

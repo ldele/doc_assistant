@@ -16,6 +16,7 @@ from fastapi import APIRouter, HTTPException, Request
 
 from apps.api.models.connections import DocConnectionsPayload
 from apps.api.models.library import (
+    ChunkContextPayload,
     DeleteResultPayload,
     LibraryDocumentChunksPayload,
     LibraryDocumentFiguresPayload,
@@ -183,6 +184,27 @@ def delete_library_document(
         trashed_file=result.trashed_file,
         chunks_removed=result.chunks_removed,
     )
+
+
+@router.get("/api/library/chunk-context")
+def chunk_context(request: Request, key: str, window: int = 700) -> ChunkContextPayload:
+    """Where a cited chunk sits in its source — the passage plus what surrounds it (ROADMAP 19).
+
+    `key` is the epistemics-format `chunk_key` a citation already carries, so the client needs no
+    new identifier. **404 when the chunk cannot be placed** — an unresolved span, a cache that is
+    gone, an unknown key — because the alternative is a window centred on the wrong paragraph,
+    which is the failure this whole feature refuses.
+
+    `window` is a character radius, clamped: a caller asking for the whole document should read
+    the document, not this.
+    """
+    from doc_assistant.library import get_chunk_context
+
+    controller: ChatController = request.app.state.controller
+    ctx = get_chunk_context(key, controller.rag.db, window=max(100, min(window, 4000)))
+    if ctx is None:
+        raise HTTPException(status_code=404, detail="this chunk cannot be placed in its source")
+    return ChunkContextPayload.from_context(ctx)
 
 
 # --- per-part re-ingest (ADR-048, ROADMAP 20/21) ---------------------------------------------- #

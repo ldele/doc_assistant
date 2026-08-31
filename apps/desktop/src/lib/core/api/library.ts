@@ -4,6 +4,7 @@
 
 import { API_BASE, errorDetail } from './_base'
 import type {
+  ChunkContext,
   DocReferences,
   LibraryDocumentFigures,
   LibraryDocument,
@@ -123,4 +124,15 @@ export async function getReingestStatus(): Promise<ReingestStatus> {
   const r = await fetch(`${API_BASE}/api/library/reingest/status`)
   if (!r.ok) throw new Error(await errorDetail(r, 'read the re-run status'))
   return (await r.json()) as ReingestStatus
+}
+
+/** Where a cited chunk sits in its source. `null` when it cannot be placed (a 404) — an
+ *  unresolved span or a cache that is gone. Never an approximation. */
+export async function getChunkContext(chunkKey: string, window = 700): Promise<ChunkContext | null> {
+  const r = await fetch(
+    `${API_BASE}/api/library/chunk-context?key=${encodeURIComponent(chunkKey)}&window=${window}`,
+  )
+  if (r.status === 404) return null
+  if (!r.ok) throw new Error(await errorDetail(r, 'locate this passage'))
+  return (await r.json()) as ChunkContext
 }

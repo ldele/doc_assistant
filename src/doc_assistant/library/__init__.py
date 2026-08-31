@@ -26,8 +26,10 @@ from __future__ import annotations
 
 from doc_assistant.library.chunks import (
     ChunkChild,
+    ChunkContext,
     DocumentChunkView,
     ParentBlock,
+    get_chunk_context,
     get_document_chunks,
     group_children,
 )
@@ -123,6 +125,7 @@ from doc_assistant.library.similarity import (
 
 __all__ = [
     "ChunkChild",
+    "ChunkContext",
     "CitationEdge",
     "CitationGraph",
     "CitedByDoc",
@@ -177,6 +180,7 @@ __all__ = [
     "find_document_by_short_id",
     "folder_doc_hashes",
     "folder_document_ids",
+    "get_chunk_context",
     "get_document_chunks",
     "get_document_details",
     "get_folder",

@@ -81,6 +81,7 @@ from apps.api.models.keywords import (
     KeywordFamilyProposalPayload,
 )
 from apps.api.models.library import (
+    ChunkContextPayload,
     DeleteResultPayload,
     LibraryChildPayload,
     LibraryDocumentChunksPayload,
@@ -113,6 +114,7 @@ from apps.api.models.taxonomy import (
 __all__ = [
     "AdjudicateRequest",
     "ChatRequest",
+    "ChunkContextPayload",
     "CitedByPayload",
     "ClaimViewPayload",
     "CompareEffPayload",

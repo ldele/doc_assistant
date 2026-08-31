@@ -128,3 +128,23 @@ export interface ReingestStatus {
   message: string | null
   outcomes: ReingestOutcome[]
 }
+
+/** Where a cited chunk sits in its source (ROADMAP 19).
+ *  Mirrors apps/api/models/library.py::ChunkContextPayload.
+ *
+ *  `page` is often null and that is not a hole in the payload: the parent-child path — which is
+ *  what a chat citation comes from — records no page on the parent. The character position is
+ *  always there, so the UI leads with that and shows a page only when one exists. */
+export interface ChunkContext {
+  document_id: string
+  filename: string
+  text: string
+  before: string
+  after: string
+  char_start: number
+  char_end: number
+  doc_chars: number
+  page: number | null
+  at_document_start: boolean
+  at_document_end: boolean
+}

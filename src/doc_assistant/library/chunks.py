@@ -151,3 +151,134 @@ def get_document_chunks(doc_id: str, chroma: Any) -> DocumentChunkView | None:
         parents=parents,
         child_count=len(chunks),
     )
+
+
+# ============================================================
+# Where a chunk sits in its source (ROADMAP 19)
+# ============================================================
+
+
+@dataclass(frozen=True)
+class ChunkContext:
+    """A cited passage shown *in place* — the surrounding text, with the passage marked.
+
+    "Which document" is what a citation already says; this is the "where in it" half. The window
+    is read straight out of the cached markdown at the chunk's recorded span, so the reader sees
+    the passage with what came before and after it rather than a floating excerpt.
+
+    The offsets exist because ingest records them (`char_start`/`char_end`, ROADMAP 19) — nothing
+    here re-derives a position per query, which is the ingest-once-amortises rule. A chunk whose
+    span was never resolvable simply has no context to show, and the caller says so; it is not
+    approximated, because a window centred on the wrong paragraph is worse than no window.
+    """
+
+    document_id: str
+    filename: str
+    #: The passage itself, exactly as the span names it.
+    text: str
+    #: Cached markdown immediately before and after it, trimmed to a word boundary.
+    before: str
+    after: str
+    char_start: int
+    char_end: int
+    #: Total characters in the cached markdown — with `char_start`, the "34% of the way in" the
+    #: citation cannot otherwise say.
+    doc_chars: int
+    page: int | None
+    #: True when the window was cut at the start/end of the document rather than at `window`.
+    at_document_start: bool
+    at_document_end: bool
+
+
+def _trim_to_word(text: str, *, from_start: bool) -> str:
+    """Drop a partial word at the cut edge, so a window never opens mid-token."""
+    if from_start:
+        _, sep, rest = text.partition(" ")
+        return rest if sep else text
+    head, sep, _ = text.rpartition(" ")
+    return head if sep else text
+
+
+def _chunk_metadata(chunk_key: str, chroma: Any) -> tuple[str, dict[str, Any]] | None:
+    """Resolve an epistemics-format ``chunk_key`` to ``(document_id, metadata)``.
+
+    The two key shapes are the two segmentations (`chat_controller._chunk_key`):
+    ``{document_id}:{chunk_index}`` for a flat/baseline chunk and ``{document_id}:p{parent_index}``
+    for a parent-child parent — which is what a chat citation carries, since the parent is the unit
+    the LLM reads.
+    """
+    document_id, _, tail = chunk_key.rpartition(":")
+    if not document_id or not tail:
+        return None
+    if tail.startswith("p"):
+        field, raw = "parent_index", tail[1:]
+    else:
+        field, raw = "chunk_index", tail
+    try:
+        index = int(raw)
+    except ValueError:
+        return None
+    try:
+        got = chroma.get(
+            where={"$and": [{"document_id": document_id}, {field: index}]},
+            include=["metadatas"],
+            limit=1,
+        )
+    except Exception as e:  # a store that will not answer is a "no context", not a 500
+        log.warning("chunk_context_lookup_failed", chunk_key=chunk_key, error=str(e))
+        return None
+    metas = [m for m in (got.get("metadatas") or []) if m]
+    return (document_id, metas[0]) if metas else None
+
+
+def get_chunk_context(chunk_key: str, chroma: Any, *, window: int = 700) -> ChunkContext | None:
+    """The cached markdown around a cited chunk, or ``None`` when it cannot be placed.
+
+    ``None`` covers every honest failure — unknown key, a chunk whose span never resolved, a cache
+    file that is gone — and the caller reports it as "we cannot show where this sits" rather than
+    guessing at a position.
+    """
+    from pathlib import Path
+
+    found = _chunk_metadata(chunk_key, chroma)
+    if found is None:
+        return None
+    document_id, meta = found
+
+    # A parent-child citation is a *parent*: its span is the parent's, which is the passage the
+    # answer was actually drawn from. A flat chunk carries its own.
+    start = (
+        meta.get("parent_char_start") if "parent_char_start" in meta else meta.get("char_start")
+    )
+    end = meta.get("parent_char_end") if "parent_char_end" in meta else meta.get("char_end")
+    if start is None or end is None:
+        return None
+
+    cache = meta.get("source_cache")
+    if not cache or not Path(str(cache)).exists():
+        return None
+    try:
+        text = Path(str(cache)).read_text(encoding="utf-8")
+    except OSError as e:
+        log.warning("chunk_context_unreadable", file=str(cache), error=str(e))
+        return None
+
+    start, end = int(start), int(end)
+    if not (0 <= start < end <= len(text)):
+        return None  # a span the cache no longer supports: say nothing rather than slice wrongly
+
+    before_at = max(0, start - window)
+    after_to = min(len(text), end + window)
+    return ChunkContext(
+        document_id=document_id,
+        filename=str(meta.get("filename") or ""),
+        text=text[start:end],
+        before=_trim_to_word(text[before_at:start], from_start=True),
+        after=_trim_to_word(text[end:after_to], from_start=False),
+        char_start=start,
+        char_end=end,
+        doc_chars=len(text),
+        page=int(meta["page"]) if meta.get("page") is not None else None,
+        at_document_start=before_at == 0,
+        at_document_end=after_to == len(text),
+    )

@@ -2,6 +2,7 @@
   import type { SourceView } from '../core/types'
   import { figureUrl } from '../core/api'
   import Icon from '../shell/Icon.svelte'
+  import ChunkContextView from './ChunkContextView.svelte'
 
   let { source }: { source: SourceView } = $props()
 
@@ -37,6 +38,12 @@
     <img class="figure" src={figureUrl(source.figure_id)} alt={`figure for source ${source.n}`} />
   {/if}
   <p class="excerpt">{source.excerpt}</p>
+  <!-- ROADMAP 19. Only offered when the citation carries a `chunk_key`: without one there is
+       nothing to locate, and a dead control is worse than none. A figure source has no position
+       in the text either — its place is the page image, which is ROADMAP 18. -->
+  {#if source.chunk_key && !source.figure_id}
+    <ChunkContextView chunkKey={source.chunk_key} />
+  {/if}
 </article>
 
 <style>

@@ -20,6 +20,7 @@ from apps.api.models._common import _as_utc
 
 if TYPE_CHECKING:
     from doc_assistant.library import (
+        ChunkContext,
         DocumentChunkView,
         DocumentFigureView,
         DocumentSummary,
@@ -260,3 +261,41 @@ class ReingestOutcomePayload(BaseModel):
     part: str
     status: str
     detail: str
+
+
+class ChunkContextPayload(BaseModel):
+    """Where a cited chunk sits in its source (ROADMAP 19).
+
+    Mirrors ``doc_assistant.library.ChunkContext``. `page` is often null and that is not a gap in
+    this payload: the parent-child path — which is what a chat citation comes from — does not
+    record a page on the parent. The character position is what is always available, so the client
+    leads with that and shows a page only when there is one.
+    """
+
+    document_id: str
+    filename: str
+    text: str
+    before: str
+    after: str
+    char_start: int
+    char_end: int
+    doc_chars: int
+    page: int | None
+    at_document_start: bool
+    at_document_end: bool
+
+    @classmethod
+    def from_context(cls, c: ChunkContext) -> ChunkContextPayload:
+        return cls(
+            document_id=c.document_id,
+            filename=c.filename,
+            text=c.text,
+            before=c.before,
+            after=c.after,
+            char_start=c.char_start,
+            char_end=c.char_end,
+            doc_chars=c.doc_chars,
+            page=c.page,
+            at_document_start=c.at_document_start,
+            at_document_end=c.at_document_end,
+        )

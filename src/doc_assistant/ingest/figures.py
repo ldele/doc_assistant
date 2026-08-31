@@ -402,6 +402,87 @@ def render_region(page: object, bbox: BBox, out_path: Path, *, dpi: int) -> None
 
 
 # ============================================================
+# Crop restore (KI-50) — re-render a recorded region, without re-detecting it
+# ============================================================
+# The crops are the one part of a figure that lives outside the database, so they are the one
+# part that can go missing on their own: 723 of 811 had, on the reference library, while every
+# row and every paid VLM description survived intact.
+#
+# **This deliberately does not re-detect.** Detection is what decides *which* rectangle a
+# description describes; running it again to recover a file risks moving that rectangle, and a
+# description attached to a different picture is worse than a missing picture. Re-rendering the
+# bbox already on the row cannot move anything — it reproduces the exact crop the description
+# was written from.
+
+
+@dataclass(frozen=True)
+class CropRequest:
+    """One recorded region to re-render. Built from a `Figure` row; this module never reads one."""
+
+    figure_id: str
+    page: int  # 1-based, as stored
+    bbox: BBox
+    out_path: Path
+
+
+@dataclass(frozen=True)
+class CropRestore:
+    """What a restore pass did to one PDF.
+
+    ``failed`` is one human-readable line per crop that could not be produced, kept rather than
+    counted because the reasons differ (a page the PDF no longer has, an unreadable region) and a
+    bare count would not tell anyone which.
+    """
+
+    rendered: int
+    already_present: int
+    failed: tuple[str, ...]
+
+
+def restore_crops(
+    pdf_path: Path, requests: Sequence[CropRequest], *, dpi: int, overwrite: bool = False
+) -> CropRestore:
+    """Re-render the requests whose PNG is missing. Idempotent; opens the PDF once.
+
+    Present files are left alone unless ``overwrite`` — a repair pass must be safe to run twice,
+    and re-rendering a crop that is already there would only risk replacing a good file at a
+    different DPI than the one it was made with.
+
+    Per-crop ``try``/``except``: one region that will not render must not cost the other 722.
+    """
+    if not requests:
+        return CropRestore(0, 0, ())
+
+    pending = [r for r in requests if overwrite or not r.out_path.exists()]
+    already = len(requests) - len(pending)
+    if not pending:
+        return CropRestore(0, already, ())
+
+    import pymupdf
+
+    rendered = 0
+    failed: list[str] = []
+    doc = pymupdf.open(str(pdf_path))  # type: ignore[no-untyped-call]
+    try:
+        page_count = doc.page_count
+        for req in pending:
+            if not 1 <= req.page <= page_count:
+                failed.append(f"page {req.page} is past the end of the file ({page_count} pages)")
+                continue
+            try:
+                render_region(doc[req.page - 1], req.bbox, req.out_path, dpi=dpi)
+                rendered += 1
+            except Exception as e:
+                log.warning(
+                    "crop_restore_failed", figure_id=req.figure_id, page=req.page, error=str(e)
+                )
+                failed.append(f"page {req.page}: {type(e).__name__}")
+    finally:
+        doc.close()  # type: ignore[no-untyped-call]
+    return CropRestore(rendered=rendered, already_present=already, failed=tuple(failed))
+
+
+# ============================================================
 # Feature 4c — VLM figure description (gated, Anthropic-only)
 # ============================================================
 # Turns a 4b `Figure` (caption + PNG crop) into a structured description, so

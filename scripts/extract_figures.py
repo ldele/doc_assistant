@@ -229,6 +229,59 @@ def _format_report(rows: list[dict[str, object]], *, apply: bool) -> str:
     return "\n".join(out)
 
 
+def _missing_crops(doc_ids: list[str]) -> dict[str, int]:
+    """Per document, how many recorded figure regions have no PNG on disk."""
+    out: dict[str, int] = {}
+    with session_scope() as session:
+        rows = session.execute(
+            select(Figure.document_id, Figure.image_path).where(
+                Figure.document_id.in_(doc_ids), Figure.image_path.is_not(None)
+            )
+        ).all()
+    for document_id, image_path in rows:
+        if not Path(str(image_path)).exists():
+            out[str(document_id)] = out.get(str(document_id), 0) + 1
+    return out
+
+
+def _repair_crops(docs: list[tuple], *, apply: bool) -> int:
+    """Re-render the figure images that went missing, from the regions already recorded (KI-50).
+
+    The corpus-wide half of the app's per-document "Figure images" control. It lives here rather
+    than in the dialog for the reason ADR-048 gives: a pass with no honest per-document form
+    belongs to a runner, and "every document in the library" is exactly that.
+
+    It re-renders and nothing else — no detection, so no row is created, deleted or altered, and
+    the paid ``vlm_description`` on 552 of the reference library's rows is never at risk. Both
+    halves of that (no re-detect, no row write) are guarded in
+    ``tests/integration/test_reingest_figure_crops.py``.
+    """
+    from doc_assistant import reingest
+
+    by_id = {str(d[0]): str(d[2]) for d in docs}
+    missing = _missing_crops(list(by_id))
+    if not missing:
+        print(f"Every recorded figure region has its image. ({len(by_id)} document(s) checked.)")
+        return 0
+
+    total = sum(missing.values())
+    print(f"{total} missing figure image(s) across {len(missing)} document(s):")
+    for doc_id, count in sorted(missing.items(), key=lambda kv: -kv[1]):
+        print(f"  {by_id.get(doc_id, doc_id)[:60]:<62} {count:>4}")
+
+    if not apply:
+        print("\nDry run. Pass --apply to re-render them. No row is written either way.")
+        return 0
+
+    result = reingest.rerun(sorted(missing), ["crops"])
+    for outcome in result.outcomes:
+        if outcome.status != "ok":
+            print(f"  {outcome.status:<8} {outcome.filename[:50]:<52} {outcome.detail}")
+    still = sum(_missing_crops(list(by_id)).values())
+    print(f"\nRestored: {total - still} · still missing: {still} · errors: {result.errors}")
+    return 1 if result.errors else 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--apply", action="store_true", help="Write Figure rows + render PNGs")
@@ -236,6 +289,14 @@ def main() -> int:
         "--force", action="store_true", help="Re-extract docs that already have figure rows"
     )
     parser.add_argument("--doc", type=str, help="Limit to one doc_hash or id prefix")
+    parser.add_argument(
+        "--repair-crops",
+        action="store_true",
+        help=(
+            "Re-render only the PNGs that are missing, from the figure regions already "
+            "recorded (KI-50). Detects nothing and writes no row, so descriptions are safe."
+        ),
+    )
     parser.add_argument(
         "--dpi",
         type=int,
@@ -261,6 +322,12 @@ def main() -> int:
     if not docs:
         print("No documents matched.")
         return 1
+
+    if args.repair_crops:
+        if args.force:
+            print("--repair-crops re-renders what is already recorded; --force would re-detect.")
+            return 2
+        return _repair_crops(docs, apply=args.apply)
 
     print(f"Processing {len(docs)} document(s)... (apply={args.apply}, force={args.force})")
     rows = [

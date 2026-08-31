@@ -64,7 +64,13 @@ def _wait_for_done(client: TestClient, timeout: float = 5.0) -> dict[str, Any]:
 def test_options_serve_the_registry_including_what_is_declined(client: TestClient) -> None:
     """The client must not hardcode a cost — that is the whole honesty of the control."""
     body = client.get("/api/library/reingest/options").json()
-    assert [p["id"] for p in body["parts"]] == ["metadata", "figures", "references", "text"]
+    assert [p["id"] for p in body["parts"]] == [
+        "metadata",
+        "crops",
+        "figures",
+        "references",
+        "text",
+    ]
     for part in body["parts"]:
         assert part["cost"], part["id"]
     assert [p["id"] for p in body["parts"] if p["moves_identity"]] == ["text"]

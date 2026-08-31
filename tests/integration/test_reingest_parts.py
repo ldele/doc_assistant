@@ -110,6 +110,23 @@ def test_every_declared_part_has_a_runner_and_a_cost() -> None:
     assert [p.id for p in reingest.PARTS if p.moves_identity] == ["text"]
 
 
+def test_the_registry_order_is_cheapest_first() -> None:
+    """Two contracts ride on this order and neither is visible from the list itself.
+
+    `rerun` executes in registry order, which is why `text` is last — it replaces the cache the
+    cheap parts read. And the client's cost summary quotes the *last selected* part as the dearest
+    one, so a part inserted out of cost order makes the dialog understate the wait. Pinned as a
+    literal because the costs are prose and cannot be compared.
+    """
+    assert [p.id for p in reingest.PARTS] == [
+        "metadata",
+        "crops",
+        "figures",
+        "references",
+        "text",
+    ]
+
+
 def test_an_unknown_part_is_refused_before_anything_runs(env: Path) -> None:
     doc_id, _ = _ingest_one(env)
     with pytest.raises(reingest.UnknownPart):

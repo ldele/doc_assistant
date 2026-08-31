@@ -69,10 +69,14 @@
     <p class="quiet">No figures detected in this document.</p>
   {:else}
     {#if data.missing_image_count > 0}
-      <!-- Inform, don't block: the rows are still listed below. -->
+      <!-- Inform, don't block: the rows are still listed below, and a figure the assistant can
+           already describe stays searchable without its picture. Name the *cheap* part: "Figure
+           images" re-renders the recorded region and touches nothing else, where "Figures"
+           detects them again and can drop a description whose region moved (KI-50/KI-55). -->
       <p class="warn">
         {data.missing_image_count} figure{data.missing_image_count === 1 ? '' : 's'} lost their
-        rendered image — re-run the figure extraction pass.
+        rendered image — re-run <strong>Figure images</strong> to put them back. Descriptions and
+        search are unaffected.
       </p>
     {/if}
     <ul class="grid">

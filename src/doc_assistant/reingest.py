@@ -68,11 +68,25 @@ class ReingestPart:
     moves_identity: bool
 
 
+#: **Registry order is the contract**, twice over. It is the order `rerun` executes in — so `text`
+#: runs last, after the cheap parts have read the cache it is about to replace — and it is
+#: cheapest-first, which the client's cost summary relies on when it quotes the last selected part
+#: as the dearest one. A part inserted out of cost order makes that summary understate the wait.
 PARTS: tuple[ReingestPart, ...] = (
     ReingestPart(
         id="metadata",
         label="Metadata",
         blurb="Title, authors, year and DOI, re-read from the extracted text.",
+        cost="instant",
+        moves_identity=False,
+    ),
+    ReingestPart(
+        id="crops",
+        label="Figure images",
+        blurb=(
+            "Re-render the cropped images for the figure regions already recorded. "
+            "Keeps every description."
+        ),
         cost="instant",
         moves_identity=False,
     ),
@@ -232,9 +246,24 @@ def _rerun_metadata(doc: _DocRow) -> tuple[str, str]:
     """
     from sqlalchemy import update
 
+    from doc_assistant.adapters.catalogue import apply_external_metadata, external_for_path
     from doc_assistant.db.models import Document
     from doc_assistant.db.session import session_scope
     from doc_assistant.metadata_extractor import extract_metadata
+
+    # A catalogue's answer outranks the extractor's, so re-running metadata on an imported
+    # document re-applies what the catalogue said rather than replacing it with a guess
+    # (ADR-049). Without this the safest-looking box in the dialog would quietly undo the whole
+    # point of importing from Zotero — and would reintroduce KI-54 on exactly the documents that
+    # were immune to it.
+    with session_scope() as session:
+        imported = external_for_path(session, doc.source_original)
+        if imported is not None:
+            applied = apply_external_metadata(session, document_ids=[doc.id])
+            source = str(imported.source)
+            if applied.filled:
+                return "ok", f"restored the metadata from your {source} library"
+            return "skipped", f"already matches your {source} library"
 
     text = _cached_text(doc)
     if text is None:
@@ -258,17 +287,55 @@ def _rerun_metadata(doc: _DocRow) -> tuple[str, str]:
     return "ok", f"filled {', '.join(sorted(changes))}"
 
 
+def _row_bbox(row: Any) -> tuple[float, float, float, float] | None:
+    """A `Figure` row's rectangle, or None when it has none.
+
+    All four corners or nothing: a caption-only row legitimately has no rectangle, and a
+    half-filled one is a broken row that must not be read as a rectangle at some default corner.
+    """
+    corners = (row.bbox_x0, row.bbox_y0, row.bbox_x1, row.bbox_y1)
+    if any(v is None for v in corners):
+        return None
+    x0, y0, x1, y1 = (float(v) for v in corners)
+    return (x0, y0, x1, y1)
+
+
+def _figure_identity(
+    page: int, bbox: tuple[float, float, float, float] | None, caption: str | None
+) -> tuple[Any, ...]:
+    """A key that says "this is the same figure" across two detection runs.
+
+    **The bbox is the identity**, because the bbox is what a description describes. Rounded to
+    whole points so a float round-trip through SQLite cannot break a match; detection is
+    deterministic, so on an unchanged PDF with unchanged code every region matches exactly.
+
+    A caption-only row has no rectangle to compare, so it falls back to its caption text — the
+    only thing that distinguishes two of them on one page.
+    """
+    if bbox is None:
+        return (page, None, (caption or "").strip())
+    return (page, tuple(round(v) for v in bbox))
+
+
 def _rerun_figures(doc: _DocRow) -> tuple[str, str]:
     """Detect figure regions again and re-crop them, replacing this document's rows and PNGs.
 
     Detection only — the VLM description pass costs money per figure and is never part of a
     checklist (ADR-048, and the KI-4 credit-leak lesson).
 
+    **Descriptions are carried across the rebuild** (KI-55). Replacing the rows wholesale used to
+    discard `vlm_description`, so re-running the cheapest-looking box in the dialog silently threw
+    away the one expensive thing in the table — 552 paid descriptions on the reference library —
+    and, because retrieval admits a figure on its description rather than its image, it removed
+    those figures from search as well. A description is carried only when the new region is
+    recognisably the *same* region (`_figure_identity`); a region that moved gets no description,
+    because a description pointing at a different picture is worse than none.
+
     The clear-then-write is unconditional so a document that legitimately drops to **zero** figures
     loses its stale rows: guarding it on `regions` is the bug that left `hebb_1949.pdf` holding 365
     rejected page-scan rows after the ceiling correctly rejected all of them.
     """
-    from sqlalchemy import delete
+    from sqlalchemy import delete, select
 
     from doc_assistant.db.models import Figure
     from doc_assistant.db.session import session_scope
@@ -285,6 +352,17 @@ def _rerun_figures(doc: _DocRow) -> tuple[str, str]:
     if pdf is None:
         return "skipped", "the source file is not reachable"
 
+    # Read the descriptions *before* detection, so a crash between the two cannot lose them.
+    with session_scope() as session:
+        prior = {
+            _figure_identity(int(r.page), _row_bbox(r), r.caption): (
+                r.vlm_description,
+                r.vlm_call_skipped_reason,
+            )
+            for r in session.execute(select(Figure).where(Figure.document_id == doc.id)).scalars()
+        }
+    described_before = sum(1 for d, _ in prior.values() if d and d.strip())
+
     regions = detect_figure_regions(str(pdf))
 
     existing = figure_dir(doc.doc_hash)
@@ -294,6 +372,7 @@ def _rerun_figures(doc: _DocRow) -> tuple[str, str]:
     import pymupdf
 
     rendered = 0
+    carried = 0
     rows: list[Figure] = []
     handle = pymupdf.open(str(pdf))  # type: ignore[no-untyped-call]
     try:
@@ -308,6 +387,11 @@ def _rerun_figures(doc: _DocRow) -> tuple[str, str]:
                 image_path = str(out)
                 rendered += 1
             bbox = region.bbox
+            description, skipped = prior.get(
+                _figure_identity(region.page, bbox, region.caption), (None, None)
+            )
+            if description and description.strip():
+                carried += 1
             rows.append(
                 Figure(
                     document_id=doc.id,
@@ -321,6 +405,8 @@ def _rerun_figures(doc: _DocRow) -> tuple[str, str]:
                     caption=region.caption,
                     image_path=image_path,
                     extraction_method=region.extraction_method,
+                    vlm_description=description,
+                    vlm_call_skipped_reason=skipped,
                 )
             )
     finally:
@@ -332,8 +418,73 @@ def _rerun_figures(doc: _DocRow) -> tuple[str, str]:
             session.add(row)
 
     if not rows:
-        return "ok", "no figures found — previous figures cleared"
-    return "ok", f"{len(rows)} figure(s), {rendered} cropped"
+        lost = f", {described_before} description(s) lost with them" if described_before else ""
+        return "ok", f"no figures found — previous figures cleared{lost}"
+
+    detail = f"{len(rows)} figure(s), {rendered} cropped"
+    if carried:
+        detail += f", {carried} description(s) kept"
+    # Say it out loud rather than let a silent drop look like a clean run: this is the number that
+    # cost money, and a user who sees it can decide whether to re-describe.
+    dropped = described_before - carried
+    if dropped > 0:
+        detail += f", {dropped} dropped (their regions changed)"
+    return "ok", detail
+
+
+def _rerun_crops(doc: _DocRow) -> tuple[str, str]:
+    """Re-render the figure images this document is missing, from the regions already recorded.
+
+    The cheap, lossless half of `figures` (KI-50). It re-renders; it does **not** re-detect, so no
+    row is created, deleted or altered — including the `vlm_description` that cost money. A crop
+    is the only part of a figure that lives outside the database, so it is the only part that can
+    go missing on its own, and getting it back should not put anything else at risk.
+
+    `image_path` is left exactly as stored: it is what the library reads to decide `has_image`, and
+    the recorded path is where the file belonged all along.
+    """
+    from sqlalchemy import select
+
+    from doc_assistant.db.models import Figure
+    from doc_assistant.db.session import session_scope
+    from doc_assistant.ingest.figures import CropRequest, restore_crops
+
+    if doc.format != "pdf":
+        return "skipped", "figures are PDF-only"
+    pdf = _source_path(doc)
+    if pdf is None:
+        return "skipped", "the source file is not reachable"
+
+    with session_scope() as session:
+        rows = list(session.execute(select(Figure).where(Figure.document_id == doc.id)).scalars())
+        requests: list[CropRequest] = []
+        for r in rows:
+            bbox = _row_bbox(r)
+            if not r.image_path or bbox is None:
+                continue
+            requests.append(
+                CropRequest(
+                    figure_id=str(r.id),
+                    page=int(r.page),
+                    bbox=bbox,
+                    out_path=Path(str(r.image_path)),
+                )
+            )
+
+    if not requests:
+        return "skipped", "this document has no figure regions with an image"
+
+    result = restore_crops(pdf, requests, dpi=_figure_dpi())
+    if not result.rendered and not result.failed:
+        return "skipped", f"all {result.already_present} figure image(s) are already on disk"
+
+    detail = f"{result.rendered} image(s) restored"
+    if result.already_present:
+        detail += f", {result.already_present} already there"
+    if result.failed:
+        detail += f", {len(result.failed)} could not be rendered ({result.failed[0]})"
+        return "error", detail
+    return "ok", detail
 
 
 def _figure_dpi() -> int:
@@ -474,6 +625,7 @@ def _purge_superseded_chunks(doc_hash: str) -> int:
 _RUNNERS: dict[str, Callable[[_DocRow], tuple[str, str]]] = {
     "metadata": _rerun_metadata,
     "figures": _rerun_figures,
+    "crops": _rerun_crops,
     "references": _rerun_references,
     "text": _rerun_text,
 }

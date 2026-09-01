@@ -86,6 +86,12 @@ export interface GraphStaleness {
    */
   missing_document_ids: string[]
   n_documents_in_skeleton: number
+  /**
+   * The library's size. Pairs with `n_documents_in_skeleton` to state **coverage** — deliberately
+   * not phrased as "documents not yet in the graph", which would point at a rebuild that changes
+   * nothing: a document appears once it mentions a concept in the graph vocabulary.
+   */
+  n_documents_in_library: number
 }
 export interface ConceptGraph {
   graph_version: string

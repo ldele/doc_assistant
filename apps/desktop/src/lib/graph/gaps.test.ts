@@ -9,6 +9,7 @@ import {
   visibleConceptGaps,
   conceptIndexRows,
   filterGapRows,
+  graphCoverage,
 } from './gaps.ts'
 import type { ConceptGraphNode, Gap, GapKind } from '../core/types/index.ts'
 
@@ -191,4 +192,42 @@ test('filterGapRows is pure — the input array is not mutated or aliased', () =
     rows.map((r) => r.label),
     ['B', 'A'],
   )
+})
+
+// --- graph coverage ---------------------------------------------------------------------------
+
+const cov = (over: Record<string, number> = {}) =>
+  graphCoverage({
+    n_documents_in_skeleton: 30,
+    n_documents_in_library: 98,
+    n_concepts_in_db: 13,
+    ...over,
+  })
+
+test('coverage states the fraction and the rule that produces it', () => {
+  assert.equal(
+    cov(),
+    'Covers 30 of your 98 documents — a document appears once it mentions one of the 13 concepts on your graph.',
+  )
+})
+
+test('coverage never implies the rest are waiting for a rebuild', () => {
+  // The whole point: 68 uncited documents mention none of the graph's concepts, so a rebuild
+  // changes nothing for them. The sentence must not say "missing", "not yet" or "rebuild".
+  const s = cov().toLowerCase()
+  for (const word of ['missing', 'not yet', 'rebuild', 'pending']) {
+    assert.ok(!s.includes(word), `coverage should not say "${word}": ${s}`)
+  }
+})
+
+test('a graph covering the whole library says nothing', () => {
+  assert.equal(cov({ n_documents_in_skeleton: 98 }), '')
+})
+
+test('an empty library says nothing', () => {
+  assert.equal(cov({ n_documents_in_skeleton: 0, n_documents_in_library: 0 }), '')
+})
+
+test('one concept is not "one of the 1 concepts"', () => {
+  assert.match(cov({ n_concepts_in_db: 1 }), /mentions the one concept on your graph\.$/)
 })

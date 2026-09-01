@@ -24,6 +24,41 @@ Format: What changed | Why | Rejected alternatives | What it opens
 > is individually small and correct, so unbounded growth is invisible per commit.
 
 ---
+## 2026-08-31 (4) — The graph now says how much of the library it covers, and why the obvious version of that number would have lied
+
+**What changed.** `GraphStaleness` gains `n_documents_in_library`, and the Graph workspace states
+**"Covers 30 of your 98 documents — a document appears once it mentions one of the 13 concepts on
+your graph."** One field, one pure helper (`graph.graphCoverage`), 5 node:tests, 1 pytest case. No
+extra query: the live document set was already being read for `missing_document_ids`.
+
+**Entry (3) closed with the wrong open item, and checking it is what corrected the design.** It
+said *"nothing watches the inverse — documents the corpus has that the graph has never seen … a
+count of it would tell a user whether a rebuild is worth 10 seconds."* Measured before building it:
+the library holds **98** documents, the graph cites **30**, and the other **68** are not waiting for
+anything — they mention none of the **13** concepts in the graph vocabulary (of **593** curated). A
+rebuild would return the same 30. So "68 documents not yet in the graph" would have been a number
+that reads as a backlog, dressed a no-op button as the fix, and sent the user away from the lever
+that actually moves it: **curating vocabulary** (ADR-018, ROADMAP 23).
+
+**So the number is coverage, and it ships with the rule that produces it.** A fraction plus the
+sentence explaining the fraction, in plain text rather than a warning — partial coverage is how the
+feature works, not a fault. The test that matters asserts the *absence* of the misleading framing:
+the string must not contain "missing", "not yet", "rebuild" or "pending".
+
+**Rejected: a `built_at` timestamp in the skeleton.** The honest form of "documents added since the
+build" needs one, and `_graph_version` is documented as a **timestamp-free** fingerprint precisely
+so identical inputs produce a byte-identical `skeleton.json` (Decision 3). Stamping the artifact
+would trade a verified determinism property for a number that coverage already answers well enough.
+
+**Rejected: folding coverage into the staleness banner.** `stale` means *the graph is wrong* —
+vocabulary drift or a reference it cannot resolve. Coverage is neither, and putting it behind a
+warning icon would teach the user to dismiss the icon.
+
+**What it opens.** The 68 uncited documents are a **vocabulary** signal, not a graph one: 13 of 593
+curated concepts are on the graph, and that ratio — not a rebuild — is what decides coverage. The
+Manage-keywords view is where that would be worth surfacing.
+
+---
 ## 2026-08-31 (3) — Driving the app found four defects; three were real, and the fourth was the harness
 
 **What changed.** A sweep of Chat, Library, Graph and Settings against the live corpus, and the

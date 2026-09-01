@@ -18,7 +18,7 @@
     LibraryDocument,
   } from '../core/types'
   import { authorLabel } from '../library/library'
-  import { GAP_META, visibleConceptGaps } from './gaps'
+  import { GAP_META, graphCoverage, visibleConceptGaps } from './gaps'
   import { forceLayout, type Point } from './forceLayout'
   import Icon from '../shell/Icon.svelte'
 
@@ -234,6 +234,11 @@
   const staleBehind = $derived(
     graph ? graph.staleness.added_labels.length + graph.staleness.removed_ids.length : 0,
   )
+  // Coverage, stated with the rule that produces it. Not "68 documents are missing from the
+  // graph": they are not waiting for a rebuild, they mention none of the concepts on the graph,
+  // and a number that sent the user to a button changing nothing would be worse than silence.
+  // The sentence names the lever that does move it — the graph vocabulary (ADR-018, ROADMAP 23).
+  const coverage = $derived(graph ? graphCoverage(graph.staleness) : '')
   const rebuilding = $derived(rebuildState === 'running')
 
   function presenceFor(docId: string): ConceptPresence | undefined {
@@ -319,6 +324,10 @@
           {rebuilding ? 'Rebuilding…' : 'Rebuild'}
         </button>
       </div>
+    {/if}
+    {#if coverage}
+      <!-- Plain text, not a warning: partial coverage is how this feature works, not a fault. -->
+      <p class="coverage muted">{coverage}</p>
     {/if}
 
     <!-- The ego graph + details for the concept selected in the sidebar's index. -->
@@ -527,6 +536,10 @@
     cursor: default;
   }
 
+  .coverage {
+    margin: 0 0 0.5rem;
+    font-size: 0.74rem;
+  }
   .stale {
     display: flex;
     align-items: center;

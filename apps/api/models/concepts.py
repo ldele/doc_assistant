@@ -175,6 +175,8 @@ class GraphStalenessPayload(BaseModel):
     #: staleness, as opposed to the vocabulary half above.
     missing_document_ids: list[str] = []
     n_documents_in_skeleton: int = 0
+    #: The library's size, so the client can state coverage rather than guess at it.
+    n_documents_in_library: int = 0
 
     @classmethod
     def from_staleness(cls, s: GraphStaleness) -> GraphStalenessPayload:
@@ -186,6 +188,7 @@ class GraphStalenessPayload(BaseModel):
             removed_ids=list(s.removed_ids),
             missing_document_ids=list(s.missing_document_ids),
             n_documents_in_skeleton=s.n_documents_in_skeleton,
+            n_documents_in_library=s.n_documents_in_library,
         )
 
 

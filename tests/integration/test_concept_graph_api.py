@@ -262,6 +262,26 @@ def test_a_document_added_since_the_build_is_not_staleness(env: Path) -> None:
     assert view.staleness.stale is False
 
 
+def test_the_view_reports_library_size_so_coverage_can_be_stated(env: Path) -> None:
+    """Coverage, not a backlog. The graph holds documents that mention a concept in its
+    vocabulary, so the documents it does *not* cite are largely ones a rebuild would not add —
+    30 of 98 on the reference library, with 68 mentioning none of the 13 included concepts. The
+    view therefore reports both sizes and lets the client state the fraction; it does not offer a
+    count of "documents not yet in the graph", which would point at a button that changes nothing.
+    """
+    _write_skeleton_json(env, _skeleton())
+    _seed_concepts((_A, "Embeddings"), (_B, "BM25"))
+    _seed_documents("d1", "d2", "uncited-1", "uncited-2", "uncited-3")
+
+    view = load_graph_view()
+    assert view is not None
+    assert view.staleness.n_documents_in_skeleton == 2
+    assert view.staleness.n_documents_in_library == 5
+    # Uncited documents are not staleness — nothing is broken and nothing is pending.
+    assert view.staleness.missing_document_ids == ()
+    assert view.staleness.stale is False
+
+
 def test_staleness_fires_when_a_concept_was_deleted_since_the_build(env: Path) -> None:
     _write_skeleton_json(env, _skeleton())
     _seed_concepts((_A, "Embeddings"))  # _B deleted since

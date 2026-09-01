@@ -61,6 +61,16 @@ class GraphStaleness:
     #: library the day this was added: **10 of 10** referenced ids dead, across all 198 nodes.
     missing_document_ids: tuple[str, ...] = ()
     n_documents_in_skeleton: int = 0
+    #: How many documents the library holds, so the view can state its **coverage**.
+    #:
+    #: The obvious inverse of `missing_document_ids` — "documents the graph has not seen yet" —
+    #: would be a lie dressed as a number. A document appears in the graph once it mentions a
+    #: concept in the graph vocabulary; on the reference library that is **30 of 98**, and the
+    #: other 68 are not waiting for a rebuild, they mention none of the 13 included concepts (of
+    #: 593 curated). Reporting them as pending would send the user to a button that changes
+    #: nothing. The honest pair is coverage plus the rule that produces it — which points at
+    #: curating vocabulary (ADR-018, ROADMAP 23), the lever that actually moves it.
+    n_documents_in_library: int = 0
 
 
 @dataclass(frozen=True)
@@ -99,8 +109,9 @@ def _staleness(skeleton: ConceptSkeleton) -> GraphStaleness:
     added = db_ids - sk_ids  # curated since the build
     removed = sk_ids - db_ids  # deleted since the build
 
+    live_docs = _live_document_ids()
     cited_docs = {d for n in skeleton.nodes for d in n.doc_ids}
-    missing_docs = cited_docs - _live_document_ids()
+    missing_docs = cited_docs - live_docs
     return GraphStaleness(
         stale=bool(added or removed or missing_docs),
         n_concepts_in_db=len(db_ids),
@@ -109,6 +120,7 @@ def _staleness(skeleton: ConceptSkeleton) -> GraphStaleness:
         removed_ids=tuple(sorted(removed)),
         missing_document_ids=tuple(sorted(missing_docs)),
         n_documents_in_skeleton=len(cited_docs),
+        n_documents_in_library=len(live_docs),
     )
 
 

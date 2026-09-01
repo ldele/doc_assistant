@@ -5,6 +5,11 @@
    every component (all of which reference the vars — zero hardcoded hex) recolors for free.
    Reading surfaces opt into --font-serif; chrome stays --font-sans. */
 
+/* Native controls follow the app's theme, not the OS's.
+   Without this, a `<select>`'s popup, its options and the scrollbars are painted by the UA in the
+   system scheme — so on a dark app the folder-scope dropdown in chat opened as a light menu over a
+   dark screen (reported 2026-09-01). Declared beside the palettes rather than on the one control,
+   because the same mismatch was in all five `<select>`s and every scrollbar. */
 :root {
   --bg: #ffffff;
   --surface: #f8f7f3;
@@ -83,6 +88,7 @@
   line-height: 1.5;
   color: var(--fg);
   background: var(--bg);
+  color-scheme: light;
 }
 
 /* U1 — manual theme (lib/theme.ts). A `data-theme` attribute on <html> wins over the OS
@@ -123,6 +129,7 @@
 
   --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.35), 0 1px 3px rgba(0, 0, 0, 0.3);
   --shadow-2: 0 10px 30px rgba(0, 0, 0, 0.55);
+  color-scheme: dark;
 }
 
 :root[data-theme='light'] {
@@ -162,6 +169,7 @@
 
   --shadow-1: 0 1px 2px rgba(30, 28, 24, 0.05), 0 1px 3px rgba(30, 28, 24, 0.04);
   --shadow-2: 0 10px 30px rgba(30, 28, 24, 0.12);
+  color-scheme: light;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -199,6 +207,7 @@
 
     --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.35), 0 1px 3px rgba(0, 0, 0, 0.3);
     --shadow-2: 0 10px 30px rgba(0, 0, 0, 0.55);
+    color-scheme: dark;
   }
 }
 

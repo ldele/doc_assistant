@@ -24,6 +24,40 @@ Format: What changed | Why | Rejected alternatives | What it opens
 > is individually small and correct, so unbounded growth is invisible per commit.
 
 ---
+## 2026-09-01 (6) — Two UI corrections from using the app: controls too small to find, and a dropdown painted by the OS
+
+**What changed.** Both reported after driving the merged build in the native Tauri window.
+
+1. **The source pane's header controls were too small to find.** 0.15rem of padding under a 0.7rem
+   label, drawn in the muted `--fg-2`, inside a border that reads as part of the pane frame. Three
+   changes, no redesign: a real hit target (**26px** row, steppers squared to 26x26 from 23px wide,
+   close 29x26), the resting colour moved off `--fg-2` onto **`--fg`**, and hover that fills the
+   button rather than only tinting the glyph. The active fit preset now takes the accent as a
+   *fill* (`--accent` / `--accent-fg`) instead of tinting its text, so which mode is on is legible
+   at a glance. Focus rings added on all three groups.
+2. **The chat folder-scope dropdown did not match the app.** Its options and popup were painted by
+   the user agent in the **OS** scheme — a light menu over a dark app.
+
+**The second one was not a colour bug in that component.** `.scopepick select` sets
+`background: none`, so the closed control was already correct; what was wrong is that **the app
+never declared `color-scheme`**. Without it the UA paints every native widget in the system scheme
+regardless of the page's palette. So the fix is one declaration per theme state in `app.css`
+(`:root`, `[data-theme='dark']`, `[data-theme='light']`, and the `prefers-color-scheme` block) —
+next to the palettes, not on the one control, because the same mismatch was in **all five**
+`<select>`s and every native scrollbar fallback.
+
+**Verified live** in the running app, both themes: `color-scheme` resolves `dark` / `dark` / `light`
+across system-default, forced-dark and forced-light, and the scope `<select>` inherits it in all
+three. Control contrast checked in both — active preset indigo-on-white in light, and the close
+button now `#ece5d6` on dark where it was the muted `#a79e8b`.
+
+**Rejected.** *Styling `option` backgrounds directly* — works in Chromium, does nothing for the
+popup chrome or the scrollbars, and would need repeating in five places. *Hardcoding
+`color-scheme: dark` on the control* — correct in one theme and wrong in the other.
+
+**Gates.** node:test 257/257 · svelte-check 219/0. CSS-only plus one icon size; no logic touched.
+**$0 — no model call.**
+
 ## 2026-09-01 (5) — Row 18 closed out: a citation now opens its page, and the two branches no test could reach were driven for real
 
 **What changed.** Two gaps, both named in the 2026-09-01 (1) baton as unfinished.

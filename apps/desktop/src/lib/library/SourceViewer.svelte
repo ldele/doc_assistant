@@ -242,7 +242,7 @@
     </div>
     {/if}
     <button class="sclose" onclick={onClose} type="button" aria-label="Close the source view" title="Close">
-      <Icon name="x" size={14} />
+      <Icon name="x" size={15} />
     </button>
   </header>
 
@@ -343,7 +343,7 @@
     display: flex;
     align-items: center;
     gap: 0.4rem;
-    padding-bottom: 0.4rem;
+    padding-bottom: 0.5rem;
     border-bottom: 1px solid var(--border);
   }
   .stitle {
@@ -356,28 +356,12 @@
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-  .sfit {
-    margin-left: auto;
-    flex: none;
-    display: inline-flex;
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    overflow: hidden;
-  }
-  .sfit button {
-    border: none;
-    border-radius: 0;
-    background: var(--surface);
-    color: var(--fg-2);
-    font: inherit;
-    font-size: 0.7rem;
-    padding: 0.15rem 0.45rem;
-    cursor: pointer;
-  }
-  .sfit button.active {
-    background: var(--surface-2);
-    color: var(--accent);
-  }
+  /* The header controls were too small to find (user, 2026-09-01) — 0.15rem of padding on a
+     0.7rem label, in the muted `--fg-2`, against a pane border that reads as part of the frame.
+     Three changes, none of them a redesign: a real hit target (28px, the size a pointer expects
+     rather than the size the text needs), the resting colour moved off the muted token onto
+     `--fg`, and a hover that fills rather than only tinting the glyph. */
+  .sfit,
   .szoom {
     flex: none;
     display: inline-flex;
@@ -386,41 +370,73 @@
     border-radius: 8px;
     overflow: hidden;
   }
+  .sfit {
+    margin-left: auto;
+  }
+  .sfit button,
   .szoom button {
     border: none;
     border-radius: 0;
     background: var(--surface);
-    color: var(--fg-2);
-    font: inherit;
-    font-size: 0.72rem;
-    line-height: 1;
-    padding: 0.2rem 0.4rem;
-    cursor: pointer;
-  }
-  .szoom button:hover {
     color: var(--fg);
+    font: inherit;
+    font-size: 0.76rem;
+    line-height: 1;
+    min-height: 1.75rem;
+    padding: 0 0.6rem;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+  }
+  .sfit button:hover,
+  .szoom button:hover {
+    background: var(--surface-2);
+  }
+  .sfit button.active {
+    background: var(--accent);
+    color: var(--accent-fg);
+  }
+  /* The steppers carry a single glyph, so padding alone left them 23px wide against a 26px
+     row — square is the shape a pointer aims at. */
+  .szoom button {
+    padding: 0 0.4rem;
+    min-width: 1.75rem;
+    justify-content: center;
   }
   .szoomlabel {
-    min-width: 3.1rem;
-    text-align: center;
+    min-width: 3.4rem;
+    justify-content: center;
     font-variant-numeric: tabular-nums;
     border-left: 1px solid var(--border) !important;
     border-right: 1px solid var(--border) !important;
   }
   /* Pushed right whether or not the size controls are there — they carry the auto margin when
-     present, and this takes over when they are not. */
+     present, and this takes over when they are not. A square target rather than a pill: at this
+     size a circle reads as smaller than it is, which was half the findability problem. */
   .sclose {
     margin-left: auto;
-    background: none;
+    flex: none;
+    background: var(--surface);
     border: 1px solid var(--border);
-    border-radius: 999px;
-    padding: 0.1rem 0.35rem;
-    color: var(--fg-2);
+    border-radius: 8px;
+    min-width: 1.75rem;
+    min-height: 1.75rem;
+    color: var(--fg);
     cursor: pointer;
     display: inline-flex;
+    align-items: center;
+    justify-content: center;
   }
   .sclose:hover {
-    color: var(--fg);
+    background: var(--surface-2);
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+  .sfit button:focus-visible,
+  .szoom button:focus-visible,
+  .sclose:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
   }
   .sbody {
     flex: 1;

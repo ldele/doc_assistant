@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-08-11 (text repaired from double-encoded — the flow diagram's ↓/→ were unreadable; content unchanged since 2026-08-05 ADR-034) · class: living -->
+<!-- status: active · updated: 2026-09-01 (the `apps/` domain spine gains `library/source_view` + SourceViewer — ADR-050) · class: living -->
 
 # Architecture
 

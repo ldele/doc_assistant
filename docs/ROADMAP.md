@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-08-31 (row 17 done — Zotero import behind ADR-049; KI-50 repaired, KI-55 filed+fixed) · class: living -->
+<!-- status: active · updated: 2026-09-01 (row 18 done + closed out — the source viewer, ADR-050; row 24 filed — the on-image highlight, measured) · class: living -->
 
 # ROADMAP — doc_assistant
 

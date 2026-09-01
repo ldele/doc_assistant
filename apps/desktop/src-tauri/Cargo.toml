@@ -1,6 +1,6 @@
 [package]
 name = "doc-assistant-desktop"
-version = "0.4.1"
+version = "0.6.0"
 description = "doc_assistant desktop shell (Tauri 2) — hosts the Svelte UI; talks to the FastAPI backend over 127.0.0.1. The PyInstaller sidecar is wired in PR-M4."
 edition = "2021"
 rust-version = "1.77.2"

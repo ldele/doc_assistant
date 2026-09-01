@@ -9,4 +9,4 @@ make every CLI runner pay for it.
 #: the update check (ADR-044) compare against a lie. This is the sixth of the six places a
 #: release bumps — ``scripts/release_preflight.py`` and ``tests/unit/test_version.py`` both
 #: refuse to let it drift from ``pyproject.toml``. See ``docs/RELEASE.md`` §1.
-__version__ = "0.5.1"
+__version__ = "0.6.0"

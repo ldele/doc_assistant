@@ -7,10 +7,37 @@ versioning is [SemVer](https://semver.org/) on the `doc_assistant` package, and 
 The engineering record is finer-grained than this file: per-change entries live in
 [`docs/DEVLOG.md`](docs/DEVLOG.md), design decisions in [`docs/decisions.md`](docs/decisions.md).
 
-## [Unreleased]
+## [0.6.0] — 2026-09-01
 
 ### Added
 
+- **You can read a document beside its library entry.** Open any PDF in your library and its own
+  pages appear in a pane next to it — the page as it was printed, not the text pulled out of it.
+  Clicking a passage in **Chunks**, or *Show the page* on a citation in chat, opens the pane at the
+  page that passage came from. The pane fits the whole page by default, and you can switch to full
+  width, zoom in and out (Ctrl or Cmd with the scroll wheel), and drag the divider to give it more
+  room; zooming asks for a sharper render rather than magnifying a blurry one. A document whose
+  file has moved, or that lives on a drive that is not connected, says so and names the path
+  instead of showing a broken pane; a format that has no pages says that too.
+  ([ADR-050](docs/decisions/ADR-050-source-viewer-page-rendering.md))
+- **A citation can show you where it came from, in place.** Clicking a source in an answer offers
+  *In context*: the cited passage highlighted inside a window of the surrounding text, with how far
+  through the document it sits. A passage that cannot be placed says so rather than guessing.
+- **You can import from Zotero.** Point the app at a Zotero library and its attachments arrive in
+  the same review sheet as any other addition — same duplicate check, same choice between copying
+  a file in and referencing it where it is. Zotero's own titles, authors and years are kept and are
+  not overwritten by what the app reads out of the PDF.
+  ([ADR-049](docs/decisions/ADR-049-ingestion-adapters-and-external-metadata.md))
+- **You can re-run one part of reading a document, instead of all of it.** Metadata, figures,
+  references and text can each be redone on their own, for one document or a selection, and each
+  says what it will cost before it runs — they differ by four orders of magnitude. Passes that only
+  make sense across the whole library are named and declined rather than quietly missing.
+  ([ADR-048](docs/decisions/ADR-048-per-part-re-ingest-scope.md))
+- **The concept graph is back, and says how much of your library it covers.** It now states plainly
+  that it covers, say, 30 of your 98 documents, and why — a document appears once it mentions one
+  of the concepts on the graph. You can put a concept on the graph from **Manage keywords**, which
+  previously needed a script the app does not ship, so a fresh install's graph stayed empty forever.
+  ([ADR-018](docs/decisions/ADR-018-graph-vocabulary-scope.md))
 - **You can add documents from inside the app.** Drop files or a folder onto the window, or use
   *Add documents…* in the app menu or above the Library. Before anything is copied or indexed you
   get a review sheet saying what will happen to each file — added, already in your library,
@@ -60,8 +87,33 @@ The engineering record is finer-grained than this file: per-change entries live 
   reading it. Published results carry the same record, so they can be checked against a later run
   without access to the machine that produced them. Documentation: [`evals/README.md`](evals/README.md).
 
+- **Settings is a set of categories rather than one long scroll**, and the panel is wider on a
+  wide window.
+- **Native menus and dropdowns follow the app's theme.** The folder-scope dropdown in chat, and
+  every other system control, used to be painted in your operating system's colours — a light menu
+  over a dark app.
+
+### Fixed
+
+- **Figure images that had gone missing are back.** 723 of 881 figure crops on the working library
+  could not be shown; they are re-rendered from the position already recorded, without re-detecting
+  anything. Re-running the figure pass also used to discard descriptions that had been paid for —
+  552 of them — and now carries them across.
+- **Two indexing faults that lost text.** A cursor skipped past overlapping passages, leaving 30-40%
+  of them unable to say where in the document they came from (now 100%), and a composed passage
+  could record a position it did not occupy.
+- **A short document is no longer reported as broken** simply for being short, and the app now names
+  the tool that actually read each file instead of always naming the PDF reader.
+- **A heading that ends in a colon is a lead-in, not a title** — so a paper whose first line reads
+  *"Preprint of the paper:"* now takes the title underneath it.
+
 ### Known limits
 
+- **A cited passage is located on the page, but not marked on it.** The pane opens at the right
+  page; it does not yet highlight the passage within that page.
+- **A page number can occasionally be one page early.** For a small number of pages (measured at
+  0.2% across the library, concentrated in one scanned book) the text recorded for a page is
+  actually the previous page's, so a jump lands one page before the passage.
 - **Citation links are worked out when a document is first read, and are not revisited.** Adding
   the paper a reference points at will not turn that reference into a link on its own — the
   earlier document has to be read again. Refreshing them without re-reading anything is possible

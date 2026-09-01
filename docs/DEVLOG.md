@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-08-31 · class: append-only -->
+<!-- status: active · updated: 2026-09-01 · class: append-only -->
 
 # DEVLOG — doc_assistant
 
@@ -24,6 +24,290 @@ Format: What changed | Why | Rejected alternatives | What it opens
 > is individually small and correct, so unbounded growth is invisible per commit.
 
 ---
+## 2026-09-01 (5) — Row 18 closed out: a citation now opens its page, and the two branches no test could reach were driven for real
+
+**What changed.** Two gaps, both named in the 2026-09-01 (1) baton as unfinished.
+
+1. **A chat citation can open its page.** The source card gains **Show the page**, which navigates
+   to the Library and opens the pane where the passage is. `GET /api/library/chunk-page` now
+   returns `{document_id, page}` rather than a bare page: a chat citation carries a `chunk_key` and
+   **no document id**, and turning one into the other means reading the chunk store — so it happens
+   on the server rather than by parsing the key's shape in the client, where the second copy of
+   that contract would rot. New `library.locate_chunk` + `ChunkLocation`; `page_for_chunk` is now a
+   thin wrapper on it.
+   **It is offered for a figure too**, which the card's own comment had anticipated: a figure has
+   no position in the text, so the page image is the only place it can be shown.
+2. **The unavailable and text-only arms were driven**, against the live library, with a backup taken
+   first — a file moved out from under a document, then a document's `format` flipped to `epub`.
+   Both restored; the library matches `data/library.db.bak-20260901-183252-prearms` row for row.
+
+**And that is where the two real defects were, neither of which a test could have caught** — the
+corpus is 98/98 PDF with every file present, so no test fixture stands in for driving it:
+
+- **The size and zoom controls rendered over a document that has no page.** "Fit page | Width |
+  − 100% +" sat above the sentence *"The file is not where the library expects it"*. A dead
+  control, and this project's own rule is that a dead control is worse than none. Now gated on a
+  renderable page, with the close button taking the right-hand margin when they are absent.
+- **Two pieces of copy that were wrong.** The backend said *"a epub document has no pages"* — an
+  article cannot agree with a value read from the database, so it is now *"a document in EPUB
+  format"*. And the pane said the extracted text was **below** while its own hint said **beside**:
+  Chunks is beside the pane in the split layout and above it when stacked, so any direction is
+  wrong half the time. Both directions dropped.
+
+**A false defect, avoided by the project's own rule.** After the jump, the citation panel appeared
+to stay open over the Library — the DOM still held it 2 s later and a screenshot showed it. It had
+in fact closed; the node was mid-transition, exactly the stranding the baton warns about
+(2026-08-31 (3)). **When the DOM and the state disagree, believe the state**: querying again showed
+the card gone. Nothing was "fixed".
+
+**A test that had to be rewritten, for a reason worth keeping.** The first version of the route
+test monkeypatched `source_view.locate_chunk` and failed — the route resolves the name through the
+**package** re-export (`from doc_assistant.library import locate_chunk`), which is a separate
+binding. That is the trap in `src/doc_assistant/CLAUDE.md`, met from the other side. Rather than
+patch the re-export, the fake chunk store now holds real rows, so the tests exercise the real
+derivation — cache markers on disk, offset in the metadata, page derived.
+
+**Verified live.** A mocked `/api/chat` turn (fabricated sources, a **real** `chunk_key`; no model
+call, no cost — the discipline from the 2026-08 chat-UI note) → click the citation → **Show the
+page** → the Library opens `03-Zuo2014_NBR_fconn.pdf` at **"Page 10 of 19 · cited here"**, the page
+computed independently beforehand. Unavailable and text-only arms both render a sentence, no image,
+no broken image, no page nav, no size controls.
+
+**Gates.** pytest source-viewer suites **44/44** (+7) · node:test 257/257 · svelte-check 219/0 ·
+mypy 98/0 · ruff + format clean · bandit 0 · `detect-secrets` clean against the baseline.
+**$0 — no model call.**
+
+## 2026-09-01 (4) — The page fits because the reader decides how: a real zoom, a draggable split, and renders that get sharper instead of bigger
+
+**What changed.** The source pane stops being a fixed picture in a fixed box.
+
+1. **Zoom** — a `− 76% +` stepper beside the fit presets, **Ctrl/Cmd + wheel** (a bare wheel still
+   scrolls), and the reading itself is a button that returns to the chosen fit.
+2. **A draggable split** — a `separator` between the document and the pane, dragged with pointer
+   events (so trackpad, pen and touch all work), moved with ← → (Shift for a coarse step, Home to
+   centre), double-clicked to reset. Persisted, clamped to 25-75% so neither side can be dragged away.
+3. **Sharper renders, not magnification** — `GET …/page/{n}` takes a `dpi`, and the pane climbs a
+   ladder (110 → 150 → 200 → 260 → 330 → 400) as the page is drawn larger.
+
+**Why (3) is the part that matters.** Zoom on a fixed image is just blur. Asking the server to
+draw the page again at the resolution it is being displayed at is what makes zoom mean anything —
+verified live: at 354% the pane requested **260 dpi** and got a **1831px** render in place of the
+775px one, and stepping back out returned to 200 then 110.
+
+**Three decisions worth keeping.**
+
+- **Zoom is a multiple of the pane's width**, not of "actual size" — a page that was never on
+  paper here has no actual size, and a percentage of one would shift under the reader every time
+  they dragged the split. `Width` is therefore always 100%, and `Fit page` is whatever fits.
+- **The dpi ladder is quantised.** Requesting exactly what each zoom level needs would issue a
+  render per frame of a drag. Snapping **up** to a rung keeps it to a handful of fetches and never
+  asks for an image blurrier than the one it replaces. The ceiling is enforced server-side
+  (`clamp_dpi`, 72-400): render cost grows with the square of dpi, so an unbounded query parameter
+  is a work generator. Out-of-range is **clamped, not refused** — a zoom level is not a validation
+  error.
+- **`dpi` is clamped in the library, not the route.** One expression of the bound, called by the
+  route, so no caller can reach the renderer around it.
+
+**Two things the work corrected in itself.**
+
+- **A test disproved a claim in my own comment.** `renderDpi` said a 2x display makes the default
+  soft at rest. It does not: at the pane's real width (433 CSS px, 612pt page) the render needs 51
+  dpi at 1x and 102 at 2x, both under the 110 served. Device pixel ratio starts to bite once
+  *zoomed* (153 dpi at 1.5x on a 2x display) or on a pane dragged wide (212 dpi at 900px). Comment
+  corrected; the number is now pinned by a test, because nothing else would have caught it.
+- **The fit was inferred and raced.** The first version decided "has the reader zoomed?" by
+  comparing `zoom` against the computed fit — which is 1 before the box is measured, and 1 is also
+  a legitimate zoom, so the pane opened at 100% instead of fitted. Replaced by an explicit
+  `userZoomed` flag with the fit *derived*; a flag cannot race.
+
+**Also fixed while verifying.** The fit was measured against the body's **border** box, so a
+"fitted" page still needed 16px of scroll — `ResizeObserver`'s `contentRect` and the image's own
+2px border now give a true fit (measured: `scrollY: 0`). And `setPointerCapture` is wrapped: it
+throws for a pointer the browser no longer considers active, and the exception would abort
+`onSplitDown` *before* its listeners attach — a handle that looks grabbed and does nothing.
+
+**Verified live** on `cajal-lecture.pdf`: fitted at 72% with **0px scroll on both axes**; +/- and
+Ctrl+wheel step through 38% → 188% → 354% with the dpi ladder following; a plain wheel scrolls
+without zooming; a real mouse drag moved the pane 667 → 433px, persisted **0.438**, and the zoom
+re-fitted 49% → 76% on its own. Both themes.
+
+**Rejected.** *A zoom slider* — a stepper plus Ctrl+wheel covers coarse and fine without a control
+that is hard to hit at the pane's size. *Re-rendering at exactly the needed dpi* — see the ladder.
+*Refusing an out-of-range dpi with a 4xx* — the honest answer to "sharper than we draw" is the
+sharpest we draw.
+
+**Gates.** pytest source-viewer suites 37/37 (3 new dpi tests) · node:test **257/257** (+20) ·
+svelte-check **219/0** · mypy 98/0 · ruff + format clean · bandit 0. **$0 — no model call.**
+
+## 2026-09-01 (3) — No page in the corpus actually fit the source pane, including the ordinary ones
+
+**What changed.** The source pane gains a **Fit page / Width** toggle in its header, defaulting to
+**Fit page**, persisted client-side (`libPrefs.sourceFit`, localStorage, the same class as the
+theme toggle and the grid/list switch — never a backend setting).
+
+**Why.** The pane sized a page to the pane's *width* and let height scroll. Measured on the running
+app at 1280x720, that means **no page fits**, at any shape in the corpus:
+
+| Page aspect (h/w) | Example | Visible at fit-width | Width if fitted |
+|---|---|---:|---:|
+| 1.29 (US Letter, **57 of 98 docs**) | most of the corpus | **94%** | 405px of 433 |
+| 1.41 (A4, 19 docs) | European journals | 86% | 371px |
+| 1.57 | `cajal-lecture.pdf` | 77% | 333px |
+| 1.79 | `middleton-2001.pdf` | **67%** | 292px |
+
+Confirmed live rather than computed: the Cajal page rendered 433x679 into a 519px body — 178px of
+scroll to see the bottom of a page. Even the most common size in the library needed a scroll to
+show its last inch.
+
+**The default is the argument, not the toggle.** ADR-050 D1 already settled what this pane is for:
+the image carries *fidelity and provenance* — "this is the page it came from" — while row 19's
+extracted text is the reading and searching surface. A view whose job is **where** should show the
+whole page; a view that cannot show the whole page cannot answer that question. Fitting costs
+little on the common case — 405px against 433px, a 6% loss of width for the last 6% of the page —
+and the reader who does want to read has one click to Width, remembered thereafter.
+
+It also removes a prerequisite from ROADMAP 24: a highlight band low on a page is worth nothing if
+the pane opens showing the top two-thirds. Fit page means the band is on screen the moment it exists.
+
+**Verified live** on `cajal-lecture.pdf` (the 1.57 case): default **100% visible, 0px scroll**;
+toggled to Width **76%, 178px**; toggled back, 100%; the choice persisted. Both themes, and the
+stacked (<900px) layout, where the pane's own `max-height: 60vh` becomes the binding constraint and
+the page still fits inside it.
+
+**Rejected.** *Reclaiming chrome* — the pane spends 51px of 574 on its header and footer; even
+deleting both would not fit the 1.79 page. *Widening the pane* — a wider page is a **taller** one,
+so it makes fitting strictly worse. *Fit page with no escape* — at 41% scale the body text is not
+readable, and pretending otherwise would push people back to the OS viewer.
+
+**What it opens.** In the stacked layout the height cap binds while horizontal room goes unused, so
+the fitted page sits small between wide margins; raising the cap trades that against how far the
+reader must scroll past the pane. Left alone deliberately — it fits, which was the requirement.
+
+**Gates.** node:test 237/237 · svelte-check 219/0 · ruff clean · mypy 98/0. Frontend-only; the
+Python suite is unmoved from 2026-09-01 (1). **$0 — no model call.**
+
+## 2026-09-01 (2) — ADR-050 D5 measured: the on-image highlight is viable, and twice the measurement lied before it told the truth
+
+**What changed.** No code. ADR-050 gains a dated **Addendum** answering the question D5 left open —
+*can a cited passage be located as rectangles on its page image, and how accurately?* — and
+ROADMAP row 24 files the follow-on with what it actually costs. Read-only, $0, on the live corpus.
+
+**Why now.** D5 scoped the highlight out and called its accuracy "unmeasured", naming that the
+follow-on's first question. Answering it before anyone commits to building is cheaper than
+answering it afterwards, and the answer changes what the follow-on is.
+
+**What it found.**
+
+*Recall inverts with anchor length.* A **3-word** anchor places **91%** of single-page prose
+sentences; a **12-word** one places **69%** (730 sentences). Longer anchors cross line breaks,
+where hyphenation and the extractor's reflow stop matching. At 4 words: 90% placed, and only **5%**
+genuinely ambiguous.
+
+*The design the numbers point to is an envelope, not per-sentence rects.* Highlighting sentences
+individually leaves ~10% unlit and scattered through the passage, and a reader cannot read a gap as
+anything but "this part was not the evidence". A parent chunk is contiguous text, so highlighting
+the band between the first and last unambiguous anchor gives **97% median purity** (highlighted
+words that really are the passage; >= 90% on 88% of passages). Coverage measured 45% median, but
+that is a **floor, not a verdict** — the probe grouped anchors into columns by `int(x0 // 60)`,
+which splits an indented paragraph across two bands.
+
+**Two measurement traps, both of which produced a confident wrong answer first, and both worth
+keeping.** (1) The first run scored **68%** — because its needles still carried the cache's list
+markers and table pipes. It was measuring the probe. Cleaned, the same method scores **94%**.
+(2) "More than one rect" was then read as ambiguity, which made *longer* anchors look *less*
+precise — an inversion that should have been the tell. `search_for` returns one rect **per line a
+match spans**, so a wrapped phrase is indistinguishable from a repeated one until you separate them
+geometrically — and the rects of a wrapped phrase are horizontally **disjoint** (tail of one line,
+head of the next), so the natural test, "do they overlap in x?", misclassifies every one of them.
+Only a vertical test works. Ambiguity fell from a fictional 22-32% to a real **5-7%**.
+
+**Why it was not built this session.** The row implies a detail; the measurement says increment.
+Three things have to be solved that nothing had named: real column detection (the probe's proxy is
+not shippable), **43% of parent chunks straddle a page break** so the opening page can only ever
+show part of the passage and the pane must say so, and a stated policy for the 5% ambiguous anchors
+(decline, never guess). Filed as ROADMAP 24 with those three named, rather than started and left
+half-done.
+
+**Rejected.** *Building it on the 94% figure* — that number is single-page prose with tables
+excluded, and quoting it for the feature as a whole would be the same error the first probe made,
+one level up. *Per-sentence highlighting* — higher coverage, but its gaps make a false claim about
+what the evidence was. *Treating the 45% coverage as the answer* — it is an artifact of the probe's
+column proxy, and shipping a "known 45%" would bake in a limit that was never measured.
+
+**What it opens.** ROADMAP 24. Also a question worth asking before that is built: with 43% of
+parents crossing a page break, the highlight's honest unit may be *the passage across two pages*
+rather than one page's band — which is a pane-layout decision, not a locating one.
+
+**Gates.** Docs-only: `docs_check --strict` 0/0 · doc guards 9/9. No code changed, so the code
+gates are unmoved from 2026-09-01 (1). **$0 — no model call.**
+
+## 2026-09-01 (1) — ROADMAP 18: the document beside its library entry — and the row's stated reason for it being free was wrong
+
+**What changed.** A source pane on the Library document view (`SourceViewer.svelte`, opened from a
+new **Source** button beside Re-run), rendering the file itself one page at a time. Backend:
+`library/source_view.py` + three routes — `GET /api/library/documents/{id}/source` (can this be
+shown, and why not), `.../page/{n}` (PNG, rendered on demand), and `GET /api/library/chunk-page`
+(which page a cited chunk sits on). Behind **ADR-050**, which row 18 did not have.
+
+Each open parent block in **Chunks** now carries *"Show this page in the document"*, which resolves
+that block's chunk key — the same `{document_id}:p{parent_index}` a chat citation carries — and
+opens the pane there. ROADMAP 19 shows a passage in the extracted *text*; this shows the page of the
+original it came off.
+
+**Why.** Row 18 asked for it in 2026-08-25, and row 19 shipped the text half already noting the page
+image was 18's job.
+
+**The measurement that changed the design.** The row asserted *"page-level jump costs no ingest
+change — chunks already carry `page`"*. It does not hold for the path the app retrieves on:
+`USE_PARENT_CHILD` defaults true, and the parent-child store carries `page` on **615 of 39,705
+chunks (1.5%)** — all of them figure chunks, whose page comes from figure detection. The flat
+baseline store is 100%, and it is not the retrieval path. Building on the row as written would have
+produced a feature that worked on figures and nothing else.
+
+The conclusion survives for a different reason: the **cache** is page-annotated (`<!-- page:N -->`,
+`extractors.py:99`) on **98/98** documents, with marker count equal to `Document.page_count`
+exactly and sequential from 1, and chunks carry `parent_char_start` at 100% after row 19's re-chunk.
+So the page is a read-time scan of markers against an offset — the rule `chunking.extract_chunk_metadata`
+already applies at ingest for the flat store. `ChunkContext.page` therefore goes from **2.0% to
+98.0%** populated on the live path (measured over 300 sampled parents), which also fills in a field
+row 19's payload documented as permanently sparse. The remaining 2% are figure chunks, which have no
+text span to place — and `page_for_chunk` still gives them a page from the stored value, so a figure
+citation opens correctly where the *text* view honestly cannot show anything.
+
+**Cost, measured before choosing.** A page render is 19-31 ms and 140-261 KB (median over 18 pages of
+the 6 longest documents; 110 dpi ships). Nothing is pre-rendered or cached: the whole corpus is 2,973
+pages, or ~760 MB and ~90 s to render up front, to save 19 ms.
+
+**What driving it found — KI-57, and it is not this feature's bug.** Block 400 of `hebb_1949`
+resolves to page 202, but its text is visibly on page 201. The cause is upstream: markers 201 and 202
+delimit **byte-identical** segments — the cache holds page 201 twice and page 202 not at all.
+Measured: **13 of 355 pages (3.7%) in `hebb_1949`, all 13 exact duplicates**, against **1 of 657
+(0.2%)** across a 25-document sample. The marker *rule* is sound (342/355 and 656/657 segments match
+their own page); what is occasionally wrong is the text placed under a marker. Filed rather than
+fixed — the fix is an extraction change that re-invalidates every cache, and this is 0.2% of pages.
+The suspicion that `_recover_lost_page` causes it is **wrong**: the other two recovery documents are
+clean, 0 of 61.
+
+**Rejected.** *PDF.js in the frontend* — better on selectable text and in-page find, but puts
+document parsing in the thin shell, adds a worker and a Tauri CSP fight, and ships whole files to
+show one page; the searchable surface already exists as the extracted text. *Tauri asset protocol* —
+bypasses the ADR-002 boundary and dies in browser dev mode. *Backfilling `page` onto the
+parent-child store* — a 39,705-chunk re-chunk to persist something derivable for free and
+invalidated by the next extraction change. *Converting non-PDFs to PDF to give them pages* — invents
+pages a document never had; they degrade to their extracted text instead, which is what they are.
+
+**What it opens.** The passage highlight *on the page image* (ADR-050 D5, scoped out): offsets are
+not coordinates, so it needs `page.search_for`, whose accuracy against normalised extraction is
+**unmeasured** — that measurement is the follow-on's first question. Also: the pane is most of the
+substrate an annotation layer would need, and nothing about it is speculative yet. And KI-57 has a
+cheap exact detector if anyone picks it up — a page segment byte-identical to its predecessor found
+13 of 13 with no false positives.
+
+**Gates.** pytest **2349/0** (2315 + 34) · mypy 98/0 · ruff + format clean · bandit 0 ·
+svelte-check **219/0** · node:test **237/237** (216 + 21) · doc guards 9/9 · `docs_check --strict`
+0/0 · `test_api_check` 0/0 (240 files). Driven live on the real 98-document library in both themes
+and at 820px. **$0 — no model call.**
+
 ## 2026-08-31 (4) — The graph now says how much of the library it covers, and why the obvious version of that number would have lied
 
 **What changed.** `GraphStaleness` gains `n_documents_in_library`, and the Graph workspace states

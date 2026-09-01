@@ -4,7 +4,15 @@
   import Icon from '../shell/Icon.svelte'
   import ChunkContextView from './ChunkContextView.svelte'
 
-  let { source }: { source: SourceView } = $props()
+  let {
+    source,
+    onOpenInDocument = null,
+  }: {
+    source: SourceView
+    /** Open this citation's page in the Library's source pane. Absent when the shell cannot
+     *  navigate — the control is then not rendered rather than rendered dead. */
+    onOpenInDocument?: ((chunkKey: string) => void) | null
+  } = $props()
 
   function markerLabel(m: string): string {
     if (m === 'contested') return 'contested in corpus'
@@ -44,9 +52,36 @@
   {#if source.chunk_key && !source.figure_id}
     <ChunkContextView chunkKey={source.chunk_key} />
   {/if}
+  <!-- ROADMAP 18. Offered for a **figure** too, which the comment above anticipated: a figure
+       has no position in the text, so the page image is the only place it can be shown. -->
+  {#if source.chunk_key && onOpenInDocument}
+    {@const key = source.chunk_key}
+    <button class="inpage" type="button" onclick={() => onOpenInDocument(key)}>
+      <Icon name="book-open" size={12} />
+      Show the page
+    </button>
+  {/if}
 </article>
 
 <style>
+  .inpage {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    margin-top: 0.45rem;
+    background: none;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 0.1rem 0.55rem;
+    font: inherit;
+    font-size: 0.72rem;
+    color: var(--fg-2);
+    cursor: pointer;
+  }
+  .inpage:hover {
+    color: var(--fg);
+    border-color: var(--accent);
+  }
   .source {
     border: 1px solid var(--border);
     border-radius: 8px;

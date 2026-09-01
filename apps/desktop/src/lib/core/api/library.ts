@@ -5,12 +5,14 @@
 import { API_BASE, errorDetail } from './_base'
 import type {
   ChunkContext,
+  ChunkLocation,
   DocReferences,
   LibraryDocumentFigures,
   LibraryDocument,
   LibraryDocumentChunks,
   ReingestOptions,
   ReingestStatus,
+  SourceDocumentView,
 } from '../types'
 
 /** List ingested documents for the Library browser (feature-library-browser.md, read-only). */
@@ -135,4 +137,31 @@ export async function getChunkContext(chunkKey: string, window = 700): Promise<C
   if (r.status === 404) return null
   if (!r.ok) throw new Error(await errorDetail(r, 'locate this passage'))
   return (await r.json()) as ChunkContext
+}
+
+/** Whether a document's own file can be shown, and how big it is (ROADMAP 18).
+ *  `null` only for an unknown document (a 404). A file that has moved comes back as a normal
+ *  answer carrying `available: false` and a reason — see ADR-050 D4. */
+export async function getSourceDocumentView(documentId: string): Promise<SourceDocumentView | null> {
+  const r = await fetch(`${API_BASE}/api/library/documents/${encodeURIComponent(documentId)}/source`)
+  if (r.status === 404) return null
+  if (!r.ok) throw new Error(await errorDetail(r, 'open this document'))
+  return (await r.json()) as SourceDocumentView
+}
+
+/** The URL of one rendered page. Set as an `<img src>` — the browser does the fetching, so a
+ *  page that fails renders the img's own error state and the pane reads `available` for the why. */
+export function sourcePageUrl(documentId: string, page: number, dpi = 0): string {
+  const base = `${API_BASE}/api/library/documents/${encodeURIComponent(documentId)}/page/${page}`
+  // Omitted rather than sent as the default, so the common URL stays stable and cacheable.
+  return dpi > 0 ? `${base}?dpi=${Math.round(dpi)}` : base
+}
+
+/** Where a cited chunk is — its document, and its page when one can be said.
+ *  `null` only for a key the chunk store does not know (a 404). A known chunk that cannot be
+ *  *placed* comes back with `page: null`, and the viewer opens at page 1 claiming nothing. */
+export async function locateChunk(chunkKey: string): Promise<ChunkLocation | null> {
+  const r = await fetch(`${API_BASE}/api/library/chunk-page?key=${encodeURIComponent(chunkKey)}`)
+  if (!r.ok) return null
+  return (await r.json()) as ChunkLocation
 }

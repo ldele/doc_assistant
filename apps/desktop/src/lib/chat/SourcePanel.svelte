@@ -12,7 +12,17 @@
       : true
   const DUR = animate ? 180 : 0
 
-  let { source, onClose }: { source: SourceView; onClose: () => void } = $props()
+  let {
+    source,
+    onClose,
+    onOpenInDocument = null,
+  }: {
+    source: SourceView
+    onClose: () => void
+    /** Open this citation's page in the Library (ROADMAP 18). Threaded from App, which owns
+     *  cross-space navigation; null when the shell cannot offer it. */
+    onOpenInDocument?: ((chunkKey: string) => void) | null
+  } = $props()
 
   // Resizable width (drag the left edge). Client-only view preference in localStorage, like the
   // sidebar width and the theme toggle. Clamped, and capped at 92vw so it can't cover the screen.
@@ -114,7 +124,7 @@
       <Icon name="x" />
     </button>
   </header>
-  <SourceCard {source} />
+  <SourceCard {source} {onOpenInDocument} />
 </div>
 
 <style>

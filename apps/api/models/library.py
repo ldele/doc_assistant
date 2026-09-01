@@ -26,6 +26,7 @@ if TYPE_CHECKING:
         DocumentSummary,
         FigureView,
         ParentBlock,
+        SourceDocumentView,
     )
 
 
@@ -266,10 +267,11 @@ class ReingestOutcomePayload(BaseModel):
 class ChunkContextPayload(BaseModel):
     """Where a cited chunk sits in its source (ROADMAP 19).
 
-    Mirrors ``doc_assistant.library.ChunkContext``. `page` is often null and that is not a gap in
-    this payload: the parent-child path — which is what a chat citation comes from — does not
-    record a page on the parent. The character position is what is always available, so the client
-    leads with that and shows a page only when there is one.
+    Mirrors ``doc_assistant.library.ChunkContext``. **`page` is now populated for text parents
+    too** (ADR-050 D2): the parent-child path — which is what a chat citation comes from — still
+    does not *record* a page, but the cache's `<!-- page:N -->` markers plus the recorded offset
+    give one at read time. It stays nullable, because a cache without markers has no page to give,
+    and the character position remains the thing that is always available.
     """
 
     document_id: str
@@ -299,3 +301,51 @@ class ChunkContextPayload(BaseModel):
             at_document_start=c.at_document_start,
             at_document_end=c.at_document_end,
         )
+
+
+# ============================================================
+# Source viewer (ADR-050, ROADMAP 18)
+# ============================================================
+
+
+class SourceDocumentPayload(BaseModel):
+    """What the source pane needs before it renders anything — including why it cannot.
+
+    Deliberately not a 404 when the *file* is missing: the app knows this document, it just
+    cannot reach its bytes right now, and `available=False` + `reason` is the difference between
+    a broken pane and a sentence a user can act on (ADR-050 D4). `pageable` is False for a format
+    that has no pages at all, which is a property of the format and not a failure (D3).
+    """
+
+    document_id: str
+    filename: str
+    format: str
+    page_count: int | None
+    available: bool
+    pageable: bool
+    path: str | None = None
+    reason: str | None = None
+
+    @classmethod
+    def from_view(cls, v: SourceDocumentView) -> SourceDocumentPayload:
+        return cls(
+            document_id=v.document_id,
+            filename=v.filename,
+            format=v.format,
+            page_count=v.page_count,
+            available=v.available,
+            pageable=v.pageable,
+            path=v.path,
+            reason=v.reason,
+        )
+
+
+class ChunkLocationPayload(BaseModel):
+    """Where a cited chunk is (ADR-050 D2). Mirrors ``doc_assistant.library.ChunkLocation``.
+
+    ``page`` is nullable and ``document_id`` is not, which is the honest shape: a chunk always
+    belongs to a document, and cannot always be placed on a page.
+    """
+
+    document_id: str
+    page: int | None

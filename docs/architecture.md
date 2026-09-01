@@ -83,7 +83,7 @@ flowchart TD
 | `doc_assistant.pipeline` | RAG runtime: retrieve, rerank, generate | Returns `Answer` with citations; raises `PipelineError` |
 | `doc_assistant.chat_controller` (package — `session` · `views` · `events` · `helpers` · `controller`; direction is strictly session/views → events/helpers → controller) | UI-agnostic turn orchestration | Yields `TurnEvent`s → `TurnResult`; no UI-framework import (PR-M0) |
 | `doc_assistant.health` | Document health scoring and classification | Pure function; no I/O; returns `HealthResult` |
-| `doc_assistant.library` (package — `models` · `documents` · `pins` · `folders` · `keywords` · `chunks` · `citations` · `similarity`; sub-domain names match `apps/api/routers/library/`) | Document store queries (browse, filter, tag) + the Library's write paths: `DocumentMeta` overrides (ADR-013) and `delete_document` (ADR-014 — trash-first source-file recycle, then row/meta/chunks/figures/cache) | Queries + two explicit, ADR-recorded write paths; UI-framework-agnostic |
+| `doc_assistant.library` (package — `models` · `documents` · `pins` · `folders` · `keywords` · `chunks` · `citations` · `similarity` · `source_view`; sub-domain names match `apps/api/routers/library/`) | Document store queries (browse, filter, tag) + the Library's write paths: `DocumentMeta` overrides (ADR-013) and `delete_document` (ADR-014 — trash-first source-file recycle, then row/meta/chunks/figures/cache) | Queries + two explicit, ADR-recorded write paths; UI-framework-agnostic |
 | `doc_assistant.knowledge` (package — `keywords` · `keyword_families` · `concept_skeleton` (Node A) · `concept_skeleton_enrich` (Node B) · `concept_curation` · `concept_semantics` · `concept_graph_view` · `wiki` · `gaps` · `gap_suggest` · `epistemics`) | The Phase-7 knowledge layer: mined vocabulary, curated concept skeleton, wiki notes, gap detection, chunk epistemics — all derived *from* the corpus (ADR-023) | Enrichment-Layer Pattern throughout: additive sidecars, idempotent `scripts/` runners, never writes the chunk store; the answer path reads it but never depends on it |
 | `doc_assistant.prompts` | Prompt templates | Pure string interpolation; no I/O |
 | `doc_assistant.tracking` | Token usage tracking and cost estimation | Append-only; never raises |
@@ -122,7 +122,7 @@ both sides of the wire. To review a feature end to end, read one row.
 | chat | `models/chat.py` | `routers/chat.py` | `lib/chat/` (Turn, SourcePanel, ClaimReview…) |
 | compare | `models/compare.py` | `routers/chat.py` (`/api/compare`) | `lib/chat/CompareCard.svelte` |
 | conversations | `models/conversations.py` | `routers/conversations.py` | `lib/shell/Sidebar.svelte` |
-| library | `models/library.py` | `routers/library/documents.py` | `lib/library/` (Grid, Browser, MetaEditor…) |
+| library | `models/library.py` | `routers/library/documents.py` | `lib/library/` (Grid, Browser, MetaEditor, SourceViewer…) |
 | connections | `models/connections.py` | `routers/library/documents.py` | `lib/library/DocConnections.svelte` |
 | folders | `models/folders.py` | `routers/library/folders.py` | `lib/library/LibraryManageFolders.svelte` |
 | keywords | `models/keywords.py` | `routers/library/keywords.py` | `lib/library/LibraryManageKeywords.svelte` |

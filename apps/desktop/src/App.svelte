@@ -26,6 +26,7 @@
     listKeywordFamilies,
     deleteDocument,
     listLibraryDocuments,
+    locateChunk,
     removeDocumentFromFolder,
     removeFamilyMember,
     renameFolder,
@@ -859,6 +860,23 @@
     if (shell.mode !== 'library') selectMode('library')
     openDocument(id)
   }
+
+  // A chat citation asking to be shown in its source (ROADMAP 18). The chat side knows only a
+  // `chunk_key`; the server turns that into a document and a page, because the key's shape is a
+  // contract and a second copy of it in the client would rot.
+  let sourceJump = $state<{ docId: string; page: number | null; nonce: number } | null>(null)
+  let sourceJumpNonce = 0
+
+  async function openCitationInDocument(chunkKey: string): Promise<void> {
+    const found = await locateChunk(chunkKey)
+    // A chunk the store does not know cannot be shown anywhere; leaving the reader where they
+    // are beats navigating them to an empty Library.
+    if (!found) return
+    chat.activeCitation = null
+    if (shell.mode !== 'library') selectMode('library')
+    openDocument(found.document_id)
+    sourceJump = { docId: found.document_id, page: found.page, nonce: ++sourceJumpNonce }
+  }
   // Cmd/Ctrl-K toggles the overlay (spec A2). preventDefault so the browser's own find/location
   // bar never steals it; toggling closed is why it's not just `openSearch()`.
   function onGlobalKey(e: KeyboardEvent): void {
@@ -1178,6 +1196,7 @@
     <main class:wide={shell.mode === 'library' || shell.mode === 'graph'}>
       {#if shell.mode === 'library'}
         <LibraryPane
+          {sourceJump}
           {documents}
           {documentsLoaded}
           {visibleDocs}
@@ -1286,7 +1305,11 @@
 {/if}
 
 {#if chat.activeCitation && activeSource}
-  <SourcePanel source={activeSource} onClose={() => (chat.activeCitation = null)} />
+  <SourcePanel
+    source={activeSource}
+    onClose={() => (chat.activeCitation = null)}
+    onOpenInDocument={openCitationInDocument}
+  />
 {/if}
 
 {#if editingDoc}

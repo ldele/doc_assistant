@@ -132,9 +132,10 @@ export interface ReingestStatus {
 /** Where a cited chunk sits in its source (ROADMAP 19).
  *  Mirrors apps/api/models/library.py::ChunkContextPayload.
  *
- *  `page` is often null and that is not a hole in the payload: the parent-child path — which is
- *  what a chat citation comes from — records no page on the parent. The character position is
- *  always there, so the UI leads with that and shows a page only when one exists. */
+ *  `page` is now populated for text parents too (ADR-050 D2): the parent-child path — which is
+ *  what a chat citation comes from — still records no page, but the cache's page markers plus the
+ *  recorded offset give one at read time. It stays nullable, because a cache without markers has
+ *  no page to give, and the character position is the thing that is always there. */
 export interface ChunkContext {
   document_id: string
   filename: string
@@ -147,4 +148,32 @@ export interface ChunkContext {
   page: number | null
   at_document_start: boolean
   at_document_end: boolean
+}
+
+/** Whether a document can be shown in the source pane, and at what size (ROADMAP 18).
+ *  Mirrors apps/api/models/library.py::SourceViewPayload.
+ *
+ *  `available: false` is NOT an error state — the app knows this document, it just cannot reach
+ *  its bytes right now, and `reason` names the path so the pane can say which (ADR-050 D4).
+ *  `pageable: false` is a property of the format: a document with no pages is shown as its
+ *  extracted text (D3), not as a failure. */
+export interface SourceDocumentView {
+  document_id: string
+  filename: string
+  format: string
+  page_count: number | null
+  available: boolean
+  pageable: boolean
+  path: string | null
+  reason: string | null
+}
+
+/** Where a cited chunk is (ADR-050 D2).
+ *  Mirrors apps/api/models/library.py::ChunkLocationPayload.
+ *
+ *  `page` is nullable and `document_id` is not: a chunk always belongs to a document, and
+ *  cannot always be placed on a page. */
+export interface ChunkLocation {
+  document_id: string
+  page: number | null
 }

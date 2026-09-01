@@ -7,7 +7,7 @@ export { streamChat, adjudicate, figureUrl } from './chat'
 export type { SSEvent } from './chat'
 export { getHealth } from './health'
 export { listConversations, getConversation, updateConversationMeta, exportConversation, bulkUpdateConversations, exportAllConversations } from './conversations'
-export { deleteDocument, getChunkContext, getDocumentFigures, getDocumentReferences, getLibraryDocument, getReingestOptions, getReingestStatus, listLibraryDocuments, resetDocumentMeta, revealDocument, startReingest, updateDocumentMeta } from './library'
+export { deleteDocument, getChunkContext, getDocumentFigures, getDocumentReferences, getLibraryDocument, getReingestOptions, getReingestStatus, getSourceDocumentView, listLibraryDocuments, locateChunk, resetDocumentMeta, revealDocument, sourcePageUrl, startReingest, updateDocumentMeta } from './library'
 export type { DeleteResult } from './library'
 export { getDocConnections } from './connections'
 export {

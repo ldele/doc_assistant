@@ -23,6 +23,9 @@
   import type { LibraryDocument, LibraryFolder } from '../core/types'
 
   interface Props {
+    /** A chat citation asking for the source pane at a page (ADR-050 D2). Passed straight
+     *  through to the browser, which owns the pane. */
+    sourceJump?: { docId: string; page: number | null; nonce: number } | null
     // --- the document pipeline (App owns the state; these are its derived outputs)
     documents: LibraryDocument[]
     /** Whether the list above is an answer yet — an empty list before the first fetch is
@@ -73,6 +76,7 @@
     onManageFoldersForDoc: (id: string) => void
   }
   const {
+    sourceJump = null,
     documents, documentsLoaded, visibleDocs, facetList, keywordsOf, openDoc,
     libraryCollection, libraryDocId, libraryQuery, libraryKeywords, folders,
     libSelectMode, libSelected, libAddMenuOpen,
@@ -260,6 +264,7 @@
         doc={openDoc}
         onOpenDocument={onOpenDocument}
         onReingest={onReingestDoc}
+        {sourceJump}
       />
     {:else}
       <section class="libmain">

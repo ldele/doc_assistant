@@ -12,11 +12,12 @@ from __future__ import annotations
 import threading
 
 import structlog
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Request, Response
 
 from apps.api.models.connections import DocConnectionsPayload
 from apps.api.models.library import (
     ChunkContextPayload,
+    ChunkLocationPayload,
     DeleteResultPayload,
     LibraryDocumentChunksPayload,
     LibraryDocumentFiguresPayload,
@@ -25,10 +26,12 @@ from apps.api.models.library import (
     ReingestOptionsPayload,
     ReingestPartPayload,
     ReingestRequest,
+    SourceDocumentPayload,
 )
 from apps.api.models.references import DocReferencesPayload
 from doc_assistant.chat_controller import ChatController
 from doc_assistant.embeddings import get_active_model_name
+from doc_assistant.library.source_view import PAGE_RENDER_DPI
 
 log = structlog.get_logger(__name__)
 router = APIRouter()
@@ -205,6 +208,79 @@ def chunk_context(request: Request, key: str, window: int = 700) -> ChunkContext
     if ctx is None:
         raise HTTPException(status_code=404, detail="this chunk cannot be placed in its source")
     return ChunkContextPayload.from_context(ctx)
+
+
+# --- source viewer (ADR-050, ROADMAP 18) ------------------------------------------------------ #
+
+
+@router.get("/api/library/documents/{doc_id}/source")
+def document_source(doc_id: str) -> SourceDocumentPayload:
+    """Whether this document can be shown, and at what size — the pane's header (ADR-050).
+
+    **404 only for an unknown document.** A file that has moved, or a drive that is unplugged, is
+    a 200 carrying ``available=False`` and a reason naming the path: the app still knows
+    everything about this document except where its bytes are, and saying so is the whole point of
+    the availability gate (D4).
+    """
+    from doc_assistant.library import get_source_view
+
+    view = get_source_view(doc_id)
+    if view is None:
+        raise HTTPException(status_code=404, detail="document not found")
+    return SourceDocumentPayload.from_view(view)
+
+
+@router.get("/api/library/documents/{doc_id}/page/{page}")
+def document_page(doc_id: str, page: int, dpi: int = PAGE_RENDER_DPI) -> Response:
+    """One rendered page of the source document as a PNG (ADR-050 D1).
+
+    Rendered on demand and cached nowhere — 19-31 ms and 140-261 KB a page measured, against
+    ~760 MB and ~90 s to pre-render this corpus. ``page`` is 1-based, matching what is printed on
+    the page and what the cache's ``<!-- page:N -->`` markers count.
+
+    ``dpi`` is the zoom level: the viewer asks for a sharper render as the reader zooms in, rather
+    than magnifying one image into blur. It is **clamped, not validated** (`library.clamp_dpi`) —
+    the ceiling is what keeps this from being a work generator, since render cost grows with the
+    square of dpi.
+
+    Every failure is a 404 whose detail is a sentence meant for a person: an unknown document, a
+    format that has no pages, a file that is not on disk, a page outside the document. The client
+    renders the sentence rather than a broken image.
+    """
+    from doc_assistant.library import PageUnavailable, render_page
+
+    try:
+        data = render_page(doc_id, page, dpi=dpi)
+    except PageUnavailable as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+    # Immutable for the client's session: the same page of the same document renders identically
+    # until the file itself changes, and the pane flips pages often enough for that to matter.
+    return Response(
+        content=data,
+        media_type="image/png",
+        headers={"Cache-Control": "private, max-age=3600"},
+    )
+
+
+@router.get("/api/library/chunk-page")
+def chunk_page(request: Request, key: str) -> ChunkLocationPayload:
+    """Where a cited chunk is — which document, and which page of it.
+
+    The viewer's entry point from a chat citation, which carries a `chunk_key` and **no document
+    id**: turning one into the other means reading the chunk store, so it happens here rather
+    than by parsing the key's shape in the client.
+
+    A key nothing knows is a 404. A chunk that is known but cannot be *placed* is not — it comes
+    back with ``page: null``, because its document can still be opened, just at page 1 with no
+    claim about where in it the passage sits (ADR-050 D2).
+    """
+    from doc_assistant.library import locate_chunk
+
+    controller: ChatController = request.app.state.controller
+    found = locate_chunk(key, controller.rag.db)
+    if found is None:
+        raise HTTPException(status_code=404, detail="no such chunk")
+    return ChunkLocationPayload(document_id=found.document_id, page=found.page)
 
 
 # --- per-part re-ingest (ADR-048, ROADMAP 20/21) ---------------------------------------------- #

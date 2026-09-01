@@ -184,6 +184,9 @@ class ChunkContext:
     #: Total characters in the cached markdown — with `char_start`, the "34% of the way in" the
     #: citation cannot otherwise say.
     doc_chars: int
+    #: The page of the *original* this passage starts on. Stored when the chunk carried one (a
+    #: figure), otherwise derived from the cache's page markers (ADR-050 D2) — so it is populated
+    #: for text parents too, which never stored one. `None` only for a cache without markers.
     page: int | None
     #: True when the window was cut at the start/end of the document rather than at `window`.
     at_document_start: bool
@@ -267,6 +270,13 @@ def get_chunk_context(chunk_key: str, chroma: Any, *, window: int = 700) -> Chun
     if not (0 <= start < end <= len(text)):
         return None  # a span the cache no longer supports: say nothing rather than slice wrongly
 
+    # The page, when the chunk did not store one — which on the parent-child path is every chunk
+    # that is not a figure (615 of 39,705 carry one; ADR-050 D2). Derived from the cache's own
+    # `<!-- page:N -->` markers, which costs nothing here: text and offset are already read.
+    from doc_assistant.library.source_view import page_for_offset
+
+    page = int(meta["page"]) if meta.get("page") is not None else page_for_offset(text, start)
+
     before_at = max(0, start - window)
     after_to = min(len(text), end + window)
     return ChunkContext(
@@ -278,7 +288,7 @@ def get_chunk_context(chunk_key: str, chroma: Any, *, window: int = 700) -> Chun
         char_start=start,
         char_end=end,
         doc_chars=len(text),
-        page=int(meta["page"]) if meta.get("page") is not None else None,
+        page=page,
         at_document_start=before_at == 0,
         at_document_end=after_to == len(text),
     )

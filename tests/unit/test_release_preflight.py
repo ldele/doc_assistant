@@ -9,7 +9,10 @@ Two jobs:
 
 from __future__ import annotations
 
+import os
 import re
+import subprocess
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -163,3 +166,134 @@ def test_a_version_left_behind_in_any_single_file_fails(
     assert any(drifted in note and "0.4.1" in note for note in result.notes), (
         f"the report must name the stale file and its value; got {result.notes}"
     )
+
+
+# --- artifact_fresh: history, not mtimes -----------------------------------------
+
+
+def test_the_shipped_path_list_is_pinned() -> None:
+    """Same lesson as the version-source list: a freshness check is worth its path list.
+
+    A path missing from `SHIPPED_PATHS` is a change that can alter the installer while the
+    preflight reports the artifact fresh — invisible, exactly like the Cargo files were to
+    `versions`. `Cargo.lock`'s absence is deliberate and argued in the constant's comment."""
+    assert set(preflight.SHIPPED_PATHS) == {
+        "src/",
+        "apps/api/",
+        "pyproject.toml",
+        "uv.lock",
+        "scripts/build_sidecar.py",
+        "scripts/doc_assistant_api.spec",
+        "apps/desktop/src/",
+        "apps/desktop/index.html",
+        "apps/desktop/package.json",
+        "apps/desktop/vite.config.ts",
+        "apps/desktop/src-tauri/src/",
+        "apps/desktop/src-tauri/build.rs",
+        "apps/desktop/src-tauri/Cargo.toml",
+        "apps/desktop/src-tauri/tauri.conf.json",
+        "apps/desktop/src-tauri/icons/",
+    }
+    assert "apps/desktop/src-tauri/Cargo.lock" not in preflight.SHIPPED_PATHS
+    for path in preflight.SHIPPED_PATHS:
+        assert (Path(__file__).resolve().parents[2] / path).exists(), f"{path} does not exist"
+
+
+def _git(repo: Path, *args: str) -> None:
+    subprocess.run(("git", *args), cwd=repo, check=True, capture_output=True, text=True)
+
+
+def _write(repo: Path, rel: str, text: str) -> Path:
+    p = repo / rel
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(text, encoding="utf-8")
+    return p
+
+
+@pytest.fixture
+def repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """A throwaway repo with one shipped file and one that is not, each in its own commit."""
+    _git(tmp_path, "init", "-q", "-b", "main")
+    _git(tmp_path, "config", "user.email", "t@example.invalid")
+    _git(tmp_path, "config", "user.name", "test")
+    _write(tmp_path, "src/doc_assistant/__init__.py", '__version__ = "1.0.0"\n')
+    _git(tmp_path, "add", "-A")
+    _git(tmp_path, "commit", "-q", "-m", "shipped code")
+    monkeypatch.setattr(preflight, "ROOT", tmp_path)
+    return tmp_path
+
+
+def test_a_docs_commit_does_not_make_the_artifact_stale(repo: Path) -> None:
+    """The everyday case that must stay quiet: writing a DEVLOG entry changes no shipped byte."""
+    _write(repo, "docs/DEVLOG.md", "an entry\n")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", "docs: an entry")
+    found = preflight._newest_shipped_change()
+    assert found is not None
+    assert "shipped code" in found[0], f"a docs commit moved the freshness bar: {found[0]}"
+
+
+def test_a_checkout_that_only_touches_mtimes_does_not_make_the_artifact_stale(repo: Path) -> None:
+    """**The regression test.** `git checkout main` re-materialises files with today's date and
+    byte-identical content; the old mtime comparison called that a source edit and demanded a
+    rebuild that would have changed nothing (2026-09-02, blob `a789456…` on both sides)."""
+    stamped = repo / "src/doc_assistant/__init__.py"
+    future = datetime.now(tz=UTC).timestamp() + 86_400
+    os.utime(stamped, (future, future))
+    found = preflight._newest_shipped_change()
+    assert found is not None
+    # The premise, asserted so this test cannot quietly stop testing anything: under the old
+    # comparison that file *was* the newest thing in the tree, which is why it failed the check.
+    assert preflight._mtime_aware(stamped) > found[1], "the bumped mtime is not actually newer"
+    assert "shipped code" in found[0], f"an mtime bump was read as an edit: {found[0]}"
+    assert found[1] < datetime.now(tz=UTC) + timedelta(hours=1), "the future mtime leaked through"
+
+
+def test_an_uncommitted_edit_to_shipped_code_DOES_make_the_artifact_stale(repo: Path) -> None:
+    """mtime is still trusted where it means something: a file git reports as modified."""
+    _write(repo, "src/doc_assistant/__init__.py", '__version__ = "2.0.0"\n')
+    found = preflight._newest_shipped_change()
+    assert found is not None
+    assert "uncommitted" in found[0], f"an unsaved edit went unnoticed: {found[0]}"
+
+
+def test_a_committed_edit_to_shipped_code_moves_the_bar(repo: Path) -> None:
+    """The check must still do its job — this is the KI-34 case it exists for."""
+    _write(repo, "src/doc_assistant/__init__.py", '__version__ = "2.0.0"\n')
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", "feat: real change")
+    found = preflight._newest_shipped_change()
+    assert found is not None
+    assert "real change" in found[0], f"a shipped edit did not move the bar: {found[0]}"
+
+
+def test_the_lock_cargo_rewrites_during_the_build_is_not_a_source_edit(repo: Path) -> None:
+    """Cargo rewrites `Cargo.lock` *while building*, so every release ends with a lock newer than
+    the artifact it just produced. Counting it would fail this check on every release — which is
+    what happened at 0.6.0. See the argument in the `SHIPPED_PATHS` comment."""
+    _write(repo, "apps/desktop/src-tauri/Cargo.lock", 'name = "x"\nversion = "0.6.0"\n')
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", "chore: pin Cargo.lock")
+    found = preflight._newest_shipped_change()
+    assert found is not None
+    assert "shipped code" in found[0], f"the build's own output read as a source edit: {found[0]}"
+
+
+@pytest.mark.parametrize(
+    ("rel", "shipped"),
+    [
+        ("src/doc_assistant/rag.py", True),
+        ("uv.lock", True),
+        ("apps/desktop/src-tauri/icons/icon.ico", True),
+        ("uv.lock.bak", False),  # a bare startswith over the tuple would call this shipped
+        ("apps/desktop/src-tauri/icons.old/icon.ico", False),
+        ("apps/desktop/src-tauri/Cargo.lock", False),  # written by the build being judged
+        ("docs/DEVLOG.md", False),
+        ("tests/unit/test_release_preflight.py", False),
+        ("scripts/release_preflight.py", False),  # this file cannot make the artifact stale
+        ("apps/desktop/src-tauri/target/release/x.exe", False),  # build output
+    ],
+)
+def test_shipped_paths_match_exactly_not_by_bare_prefix(rel: str, shipped: bool) -> None:
+    """A directory entry matches by prefix; a file entry matches only itself."""
+    assert preflight._is_shipped(rel) is shipped

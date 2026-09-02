@@ -17,7 +17,10 @@ looking redundant:
   as much as its file list, which is why that list is now pinned by a test of its own.
 * ``artifact_fresh`` — the whole point of 2026-08-06. Source-green says **nothing** about a frozen
   binary (KI-34: the shipped build could not read a single PDF while every test passed). If the
-  installer predates the code, the thing tested is not the thing shipped.
+  installer predates the code, the thing tested is not the thing shipped. It compares **git
+  history**, not file mtimes: mtimes made it demand a rebuild after a plain ``git checkout``, which
+  re-materialises files with today's date and identical content (2026-09-02). A check that cries
+  wolf on a branch switch is a check that gets overridden by hand, which is how it stops working.
 * ``sidecar_size`` — KI-34 is detectable as a size cliff: 1545.5 MB broken vs 1562.1 MB fixed,
   because ``collect_all("fitz")`` silently dropped ~17 MB of PyMuPDF data files. The cheapest
   possible regression check on a packaging bug that is invisible from source.
@@ -68,9 +71,34 @@ CARGO_CRATE = "doc-assistant-desktop"
 SIDECAR_MIN_MIB = 1555.0
 KI34_BROKEN_MIB, KI34_FIXED_MIB = 1545.5, 1562.1
 
-# Source trees whose mtime the artifact must beat. `apps/desktop/src-tauri/target` is excluded by
-# construction (it is build output, not source).
-SOURCE_GLOBS = ("src/**/*.py", "apps/api/**/*.py", "apps/desktop/src/**/*")
+# Everything the artifact is built FROM. A change to any of these can change the shipped bytes; a
+# change to anything else — docs, tests, dev tooling, this file — cannot, and must not read as a
+# stale artifact. Pinned by a test, for the same reason the version-source list is: a freshness
+# check is worth exactly as much as its path list, and a path missing from it is invisible.
+#
+# `apps/desktop/src-tauri/target/` and `.../binaries/` are excluded by construction — they *are*
+# the build output. So is **`Cargo.lock`**, and that one is a judgment call worth stating: cargo
+# rewrites the lock while it builds, so the release build necessarily produces a lock newer than
+# the artifact it just made, and including it would fail this check on every single release. Its
+# one release-relevant field — the crate version — is covered by `versions` instead. The residual
+# gap that leaves: a dependency version changed in the lock without a rebuild is not caught here.
+SHIPPED_PATHS = (
+    "src/",  # the Python library, frozen into the sidecar
+    "apps/api/",  # the FastAPI app it serves
+    "pyproject.toml",  # the dependency set the freeze resolves
+    "uv.lock",  # ...and the versions it resolves to (cargo rewrites its lock; uv does not)
+    "scripts/build_sidecar.py",  # how the sidecar is frozen
+    "scripts/doc_assistant_api.spec",  # what goes into it — KI-34 lived in this file
+    "apps/desktop/src/",  # the Svelte UI
+    "apps/desktop/index.html",
+    "apps/desktop/package.json",
+    "apps/desktop/vite.config.ts",
+    "apps/desktop/src-tauri/src/",  # the Rust shell
+    "apps/desktop/src-tauri/build.rs",
+    "apps/desktop/src-tauri/Cargo.toml",
+    "apps/desktop/src-tauri/tauri.conf.json",  # bundle config, externalBin, version
+    "apps/desktop/src-tauri/icons/",
+)
 
 OK, FAIL, WARN, SKIP = "PASS", "FAIL", "WARN", "SKIP"
 
@@ -102,22 +130,69 @@ def _run(*args: str) -> str:
     ).stdout.strip()
 
 
-def _newest_source() -> tuple[Path | None, datetime | None]:
-    """The most recently edited tracked source file (git-tracked only, so build output and
-    scratch files cannot mask a stale artifact)."""
-    tracked = set(_run("git", "ls-files").splitlines())
-    newest_p: Path | None = None
-    newest_t: datetime | None = None
-    for rel in tracked:
-        if not rel.startswith(("src/", "apps/api/", "apps/desktop/src/")):
+def _mtime_aware(p: Path) -> datetime:
+    """A file's mtime as a timezone-aware local datetime, so it can be compared with a git date."""
+    return datetime.fromtimestamp(p.stat().st_mtime).astimezone()
+
+
+def _is_shipped(rel: str) -> bool:
+    """Does this repo-relative path go into the artifact? An entry ending in ``/`` is a directory.
+
+    Exact rather than a bare ``startswith`` over the whole tuple, which would read ``uv.lock.bak``
+    as ``uv.lock`` and any ``src-tauri/icons.old/`` as the icons.
+    """
+    return any(rel == p or (p.endswith("/") and rel.startswith(p)) for p in SHIPPED_PATHS)
+
+
+def _newest_shipped_change() -> tuple[str, datetime] | None:
+    """The most recent change to anything in `SHIPPED_PATHS` — ``(what, when)``, or ``None``.
+
+    Two sources, and the split is the whole point:
+
+    * **The working tree**, by mtime — but *only* for files git reports as modified. There, an
+      mtime means what it looks like it means: a person edited the file after the artifact was
+      built, and it is not in history yet to be dated any other way.
+    * **History**, by the committer date of the newest commit touching a shipped path. Everything
+      committed is dated from the commit, never from the file.
+
+    That second half is the fix. Judging *committed* files by mtime made this check fail whenever
+    git re-materialised a file — `git checkout main` on 2026-09-02 stamped today's date on a
+    `src/doc_assistant/__init__.py` whose content was byte-identical (blob ``a789456…`` at both
+    the built commit and HEAD), and the preflight demanded a rebuild that would have changed
+    nothing but timestamps. Content is what makes an artifact stale; a checkout is not an edit.
+
+    ``None`` when git will not answer at all — the caller warns rather than passing silently.
+    """
+    newest: tuple[str, datetime] | None = None
+
+    for line in _run("git", "status", "--porcelain").splitlines():
+        # `XY PATH`, but NOT sliced by column: `_run` strips the output, which eats the leading
+        # space of an unstaged ` M path` and shifts every offset by one. That silently cut the
+        # first character off every path and made this whole branch a no-op.
+        parts = line.split(maxsplit=1)
+        if len(parts) != 2:
             continue
-        p = ROOT / rel
-        if not p.is_file():
+        rel = parts[1].split(" -> ")[-1].strip().strip('"')  # a rename reports `old -> new`
+        if not _is_shipped(rel):
             continue
-        t = datetime.fromtimestamp(p.stat().st_mtime)
-        if newest_t is None or t > newest_t:
-            newest_p, newest_t = p, t
-    return newest_p, newest_t
+        path = ROOT / rel
+        if not path.is_file():  # a deletion has no mtime; the commit recording it will date it
+            continue
+        when = _mtime_aware(path)
+        if newest is None or when > newest[1]:
+            newest = (f"{rel} (uncommitted)", when)
+
+    logged = _run("git", "log", "-1", "--format=%h\x1f%cI\x1f%s", "--", *SHIPPED_PATHS)
+    fields = logged.split("\x1f", 2)
+    if len(fields) == 3:
+        short, iso, subject = fields
+        try:
+            when = datetime.fromisoformat(iso)
+        except ValueError:  # a git that dates commits differently must not crash the preflight
+            return newest
+        if newest is None or when > newest[1]:
+            newest = (f"{short} {subject}", when)
+    return newest
 
 
 def collect_versions() -> dict[str, str]:
@@ -212,25 +287,29 @@ def check_artifacts() -> tuple[Check, Path | None]:
 
 
 def check_artifact_fresh(installer: Path | None) -> Check:
-    """The artifact must be newer than the newest source edit. This is the KI-34 lesson as code."""
+    """The artifact must be newer than the newest change to what it is built from.
+
+    This is the KI-34 lesson as code: source-green says nothing about a frozen binary. What
+    counts as "a change" is `_newest_shipped_change` — git history for anything committed, and
+    mtime only for a file git says is dirty."""
     if installer is None:
         return Check("artifact_fresh", SKIP, "no artifact to compare")
-    newest_p, newest_t = _newest_source()
-    if newest_t is None:
-        return Check("artifact_fresh", WARN, "could not determine newest source file")
-    sidecar_t = datetime.fromtimestamp(SIDECAR.stat().st_mtime)
-    inst_t = datetime.fromtimestamp(installer.stat().st_mtime)
-    stale = [n for n, t in (("sidecar", sidecar_t), ("installer", inst_t)) if t < newest_t]
-    rel = newest_p.relative_to(ROOT) if newest_p else "?"
-    detail = f"newest source: {rel} @ {newest_t:%Y-%m-%d %H:%M}"
+    newest = _newest_shipped_change()
+    if newest is None:
+        return Check("artifact_fresh", WARN, "git would not say when shipped code last changed")
+    what, when = newest
+    sidecar_t = _mtime_aware(SIDECAR)
+    inst_t = _mtime_aware(installer)
+    stale = [n for n, t in (("sidecar", sidecar_t), ("installer", inst_t)) if t < when]
+    detail = f"newest shipped change: {what} @ {when:%Y-%m-%d %H:%M}"
     if stale:
         return Check(
             "artifact_fresh",
             FAIL,
-            f"{' and '.join(stale)} predate(s) the newest source edit — REBUILD",
+            f"{' and '.join(stale)} predate(s) the newest shipped change — REBUILD",
             [detail, f"sidecar {sidecar_t:%Y-%m-%d %H:%M}", f"installer {inst_t:%Y-%m-%d %H:%M}"],
         )
-    return Check("artifact_fresh", OK, "newer than every tracked source file", [detail])
+    return Check("artifact_fresh", OK, "newer than every shipped change", [detail])
 
 
 def check_sidecar_size() -> Check:

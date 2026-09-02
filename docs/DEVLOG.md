@@ -24,6 +24,66 @@ Format: What changed | Why | Rejected alternatives | What it opens
 > is individually small and correct, so unbounded growth is invisible per commit.
 
 ---
+## 2026-09-02 (2) — `artifact_fresh` judges git history, not file mtimes
+
+**What changed.** `check_artifact_fresh` no longer asks "is any tracked source file's mtime newer
+than the artifact?". It asks `_newest_shipped_change()`, which splits the question in two:
+
+- **committed** files are dated by the **committer date of the newest commit touching a shipped
+  path** — never by the file on disk;
+- **uncommitted** files are dated by mtime, which is the one place an mtime means what it looks
+  like it means: a person edited the file, and it is not in history yet to be dated any other way.
+
+`SOURCE_GLOBS` (dead — defined, never referenced) and `_newest_source` are gone. In their place
+`SHIPPED_PATHS` names the fifteen paths the artifact is actually built from, and `_is_shipped`
+matches them exactly: a `/`-terminated entry by prefix, a file entry only against itself.
+
+**Why.** The old comparison demanded a rebuild after a plain `git checkout main`, which
+re-materialises files with today's date and byte-identical content — `src/doc_assistant/__init__.py`
+was blob `a789456…` at both the built commit and HEAD, and the preflight called it a source edit
+(2026-09-02). A gate that cries wolf on a branch switch is a gate that gets overridden by hand,
+which is how it stops working. Content makes an artifact stale; a checkout is not an edit.
+
+The old path list was also short: it covered `src/`, `apps/api/` and `apps/desktop/src/` and
+**not** the Rust shell, `tauri.conf.json`, the PyInstaller spec or `build_sidecar.py` — so an edit
+to the spec, which is exactly where KI-34 lived, could not have marked the artifact stale. Same
+failure as the version check's two missing Cargo files, so it gets the same guard: the list is
+pinned by `test_the_shipped_path_list_is_pinned`, which also asserts every entry exists on disk.
+
+**`Cargo.lock` is deliberately excluded, and it is a judgment call.** Cargo rewrites the lock
+*while building*, so a release build necessarily ends with a lock newer than the artifact it just
+produced; counting it would fail this check on every release, which is what happened at 0.6.0. Its
+one release-relevant field (the crate version) is covered by `versions` instead. **Residual gap,
+stated rather than hidden:** a dependency version changed in the lock without a rebuild is not
+caught here. `uv.lock` stays *in* the list — nothing in the build rewrites it, so the asymmetry has
+a reason.
+
+**A bug found by probing rather than reasoning.** The first implementation read `git status
+--porcelain` and sliced `line[3:]` for the path. `_run` ends in `.stdout.strip()`, which eats the
+leading space of an unstaged ` M path`, shifting every offset by one: the path came out as
+`rc/doc_assistant/__init__.py`, failed `is_file()`, and the entire uncommitted branch was a silent
+no-op. One test caught it; two wrong guesses at the cause (a fatal pathspec, then a timestamp tie)
+were both disproved by running the thing in isolation. It now splits on whitespace and never
+depends on a column.
+
+**Six behavioural tests**, in a throwaway git repo with `ROOT` monkeypatched: a docs commit does
+not move the bar; an mtime-only bump does not (the regression test, which asserts its own premise —
+that the bumped file *is* the newest thing on disk — so it cannot quietly stop testing anything);
+an uncommitted shipped edit does; a committed shipped edit does; a `Cargo.lock` commit does not.
+
+**Rejected.** *Recording the built commit in a stamp file at build time* — the correct answer in
+the abstract, and still the better one if this ever needs to be exact. It was rejected here because
+existing artifacts carry no stamp, so the check would have to degrade to "cannot tell" for the very
+release that motivated the fix, and back-filling a stamp by hand is the "a PASS from a previous
+build reads as evidence" hazard this file already warns about. *Keeping mtimes and special-casing
+the checkout* — there is no way to tell a checkout from an edit by mtime, which is the whole point.
+
+**What it opens.** `artifact_fresh` now trusts commit dates, so a rebased or amended history with
+rewritten committer dates could in principle move the bar backwards. Committer dates are set at
+commit time and a rebase rewrites them to "now", so this is monotonic in practice on one machine;
+it would need revisiting if releases were ever cut from a rewritten branch.
+
+---
 ## 2026-09-02 — The version check now reads the two Cargo files, and its file list is a test
 
 **What changed.** `scripts/release_preflight.py`'s `versions` check went from five sources to

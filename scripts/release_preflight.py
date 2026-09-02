@@ -333,7 +333,13 @@ def check_sidecar_size() -> Check:
     )
 
 
-_CHOSEN = re.compile(r"installer chosen: (\S+) \(([\d,]+) MB, built ([^)]+)\)")
+# The harness logs its size as `[math]::Round($bytes/1MB, 1)`, so the number carries a decimal
+# fraction whenever it does not round to a whole number. `([\d,]+)` matched only the whole-number
+# case and every build before 0.6.0 happened to land there (1572.0 renders as "1572"); 0.6.0
+# rendered "1572.4" and the line stopped matching, so a PASS that had just been earned reported as
+# "no RG-012 run matches this installer" — which reads as *the gate ran against a different build*
+# and sends you to re-run a 20-minute clean-machine gate that already passed.
+_CHOSEN = re.compile(r"installer chosen: (\S+) \(([\d,]+(?:\.\d+)?) MB, built ([^)]+)\)")
 
 
 def check_rg012(installer: Path | None) -> Check:

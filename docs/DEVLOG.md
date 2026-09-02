@@ -24,6 +24,50 @@ Format: What changed | Why | Rejected alternatives | What it opens
 > is individually small and correct, so unbounded growth is invisible per commit.
 
 ---
+## 2026-09-02 (3) — RG-012 passed on 0.6.0, and the preflight could not see it
+
+**What changed.** One character class in `scripts/release_preflight.py`: `_CHOSEN` now reads
+`([\d,]+(?:\.\d+)?)` where it read `([\d,]+)`. Five parametrised tests pin the parse.
+
+**Why.** RG-012 Tier-2 passed on the 0.6.0 installer at 17:49 — clean Windows Sandbox, `python on
+PATH? False`, 181 s silent install, health at 210 s, 3 PDFs to 322 chunks, a 14 s turn with 10
+sources and 4 resolved citations, 0 unresolvable. `release_preflight` then reported **"no RG-012
+run matches this installer — the gate ran against a DIFFERENT build"**, with the archive count
+correctly up from 9 to 10. It had found the run and rejected it.
+
+The harness logs its size as `[math]::Round($bytes/1MB, 1)`. Every installer before this one
+happened to land on a whole number — 0.5.1 is 1572.0318 MiB, which renders as `1572` — so a pattern
+accepting digits and commas matched for four releases running. 0.6.0 is 1572.3855 MiB, renders
+`1572.4`, and the line stopped matching. The check had never been right; it had been lucky, with
+roughly a one-in-ten chance of exposure per build.
+
+**The failure direction is what makes this worth a log entry.** A parser that drops the record it
+is looking for reports *absence of evidence* — and this check's absence message is an accusation
+("the gate ran against a DIFFERENT build"). The rational response to it is to re-run a 20-minute
+clean-machine gate that has already passed, or to override the check by hand. Both are worse than
+the check not existing. This is the third instance today of one shape: `versions` never opened two
+files, `artifact_fresh` compared the wrong quantity, `rg012` could not parse its own harness. In
+each case the check *ran*, and what it silently failed to see was the thing it was for.
+
+**Rejected.** *Loosening to `([^)]+)`* — it would parse, but the size is the one field that makes
+the log line self-describing, and a pattern that accepts anything stops being a guard. *Making the
+harness print an integer* — the harness is the record; changing what it writes to suit a reader is
+backwards, and the archived logs would still not parse.
+
+**On what the PASS is worth.** The packaging half is strong: it is the half that found KI-34, and
+nothing else exercises the frozen artifact end to end. The citation half is one sample of a
+measurement `.claude/RIGOR_TODO.md` reopened on 2026-08-14 as unreliable — a coin flip on
+`llama3.1:8b`, where 0.5.1 failed once and passed twice on the same installer. Recorded in
+`docs/desktop-packaging.md` §5 so the next reader does not take "4 resolved citations" for a
+stability claim.
+
+**Host state.** The run needs Ollama reachable from the sandbox. Rather than the documented
+persistent `OLLAMA_HOST` user variable, this run set it **process-scoped** on a directly launched
+`ollama serve`, so there was nothing persistent to revert — verified afterwards: both env scopes
+empty, listener back to `127.0.0.1` only, gateway address refused, 9 models still served locally.
+Worth preferring next time: the documented procedure leaves a variable that has to be remembered.
+
+---
 ## 2026-09-02 (2) — `artifact_fresh` judges git history, not file mtimes
 
 **What changed.** `check_artifact_fresh` no longer asks "is any tracked source file's mtime newer

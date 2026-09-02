@@ -297,3 +297,40 @@ def test_the_lock_cargo_rewrites_during_the_build_is_not_a_source_edit(repo: Pat
 def test_shipped_paths_match_exactly_not_by_bare_prefix(rel: str, shipped: bool) -> None:
     """A directory entry matches by prefix; a file entry matches only itself."""
     assert preflight._is_shipped(rel) is shipped
+
+
+# --- rg012: parsing the harness log ------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("size", "why"),
+    [
+        ("1572", "a size that rounds to a whole number - every build before 0.6.0"),
+        ("1572.4", "a size with a decimal fraction - 0.6.0, which stopped matching"),
+        ("1,572.4", "a thousands separator, should the harness ever emit one"),
+    ],
+)
+def test_the_harness_log_line_parses_whatever_size_powershell_printed(size: str, why: str) -> None:
+    """`Round($bytes/1MB, 1)` prints a decimal fraction unless the size lands on a whole number.
+
+    The pattern accepted digits and commas only, so it matched by luck for four releases and then
+    silently stopped: 0.6.0's installer rounded to 1572.4, the line did not match, and a PASS
+    earned minutes earlier reported as "no RG-012 run matches this installer". A parser that drops
+    the record it is looking for fails as *absence of evidence*, which is the expensive direction -
+    it argues for re-running a 20-minute gate that already passed."""
+    stamp = "9/1/2026 10:53:16 PM"
+    line = f"installer chosen: Provenote_0.6.0_x64-setup.exe ({size} MB, built {stamp})"
+    m = preflight._CHOSEN.search(line)
+    assert m is not None, f"did not parse {why}"
+    assert m.group(2) == size
+    assert m.group(3) == stamp
+
+
+def test_the_parsed_timestamp_is_the_format_the_harness_actually_writes() -> None:
+    """The date is parsed with an exact `strptime` format, so the two must be pinned together."""
+    line = "installer chosen: x.exe (1572.4 MB, built 9/1/2026 10:53:16 PM)"
+    m = preflight._CHOSEN.search(line)
+    assert m is not None
+    assert datetime.strptime(m.group(3).strip(), "%m/%d/%Y %I:%M:%S %p") == datetime(
+        2026, 9, 1, 22, 53, 16
+    )

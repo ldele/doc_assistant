@@ -57,7 +57,8 @@ silent install **177 s**, `/api/health` **~30 s**, 3 PDFs → 322 chunks in **~3
 - [ ] **RG-011** SSE first-token latency vs Chainlit, on the frozen build. ***(BLOCKS SHIP)***
 - [x] **RG-012** clean-machine smoke: install + drive one real turn on a box with no Python / no
       toolchain. **PASSED** 2026-08-05 (Windows Sandbox), re-passed 2026-08-06 on the rebuilt
-      artifact. Re-run it for **every** release — §5.
+      artifact, and on every release since — most recently **0.6.0 (2026-09-02)**. Re-run it for
+      **every** release — §5.
 
 **5. Then PR-M5** *(only after the installer ships + RG-011/012 pass)*
 - [ ] Delete `apps/chainlit_app.py` + `.chainlit/`, drop the `chainlit` dep, lift the Python-3.12
@@ -150,10 +151,17 @@ uv run --no-sync python -m scripts.measure_latency --launch dist\doc-assistant-a
   **same `ChatController`**, so only the freeze + the localhost HTTP/SSE hop differ — pass = not
   meaningfully slower.
 
-**RG-012 clean-machine smoke — needs a Python-free box. ✅ TIER 2 PASSED 2026-08-05, re-passed
-2026-08-06 on the rebuilt 0.4.1 installer.** Easiest clean box: **Windows Sandbox** (built into
+**RG-012 clean-machine smoke — needs a Python-free box. ✅ TIER 2 PASSED 2026-08-05, re-passed on
+every release since; latest 0.6.0 on 2026-09-02** (181 s install, health 210 s, 322 chunks, cited
+turn 14 s). Easiest clean box: **Windows Sandbox** (built into
 Win 11 Pro — disposable, zero Python; enable via *Turn Windows features on/off → Windows Sandbox*,
 restart).
+
+**Read the two halves of a PASS differently.** The *packaging* half is strong evidence and is the
+half that found KI-34. The *citation* half is one sample of a measurement `.claude/RIGOR_TODO.md`
+reopened on 2026-08-14 as unreliable — a coin flip on `llama3.1:8b`, where 0.5.1 failed once and
+passed twice on the same artifact. A single cited turn says the pipeline can produce citations on
+a clean box, not that it reliably does.
 
 The gate is now automated. Harness lives at `C:\rg012-host\` (local-only, not in the repo):
 `rg012-tier2.wsb` maps `installer\ corpus\ script\ out\` and fires `script\rg012-run.ps1` from a

@@ -52,7 +52,8 @@ ls apps/desktop/src-tauri/target/release/bundle/{nsis,msi}
 
 ## 1 · Version bump
 
-Six places, and `uv.lock` is the one that gets missed:
+Eight places. `uv.lock` is the one a person forgets; the two Cargo files were missed by *everything*,
+including this table.
 
 | File | Field |
 |---|---|
@@ -61,9 +62,12 @@ Six places, and `uv.lock` is the one that gets missed:
 | `src/doc_assistant/__init__.py` | `__version__` — what the running app reports (ADR-044) |
 | `apps/desktop/package.json` | `version` |
 | `apps/desktop/src-tauri/tauri.conf.json` | `version` |
+| `apps/desktop/src-tauri/Cargo.toml` | `[package] version` |
+| `apps/desktop/src-tauri/Cargo.lock` | the `doc-assistant-desktop` entry — re-lock, see below |
 | `CHANGELOG.md` | a dated `## [X.Y.Z]` section |
 
-`preflight` checks all six, and `tests/unit/test_version.py` catches `__init__.py` drifting from
+`preflight` checks all seven version strings (the CHANGELOG has a check of its own), and
+`tests/unit/test_version.py` catches `__init__.py` drifting from
 `pyproject.toml` at commit time rather than release time. **Why `__version__` matters:** it is what
 the update check compares against the newest published release. Stale, and the app compares itself
 to a lie — offering an "update" it already is, or staying quiet about one it is not.
@@ -72,6 +76,32 @@ to a lie — offering an "update" it already is, or staying quiet about one it i
 which records the project's own version. CI and the Docker build install with `--locked`, which
 *fails* rather than silently re-resolving — so every gate after dependency-install was skipped on
 `main` for days, and nobody saw a red build because the job died before the gates ran.
+
+**Why the Cargo files are here.** They sat at `0.4.1` through **v0.4.2, v0.5.0 and v0.5.1** — three
+tagged releases — while `preflight` reported the versions green, because it never opened them and
+neither did this table. That is the opposite failure from `uv.lock`'s: not a file someone forgot to
+edit, but a file nothing was looking at. An agreement check is worth exactly as much as its file
+list, so the list is now pinned by `test_every_file_carrying_a_version_is_actually_read` — adding a
+version-carrying file to the repo means adding it *there* and *here*, or the next one drifts the
+same way.
+
+**The lock has an ordering trap.** Cargo rewrites `Cargo.lock` only when cargo *runs*, which on a
+release is during the build — i.e. **after** the release commit. So bump `Cargo.toml` by hand, then
+re-lock before committing:
+
+```powershell
+cargo update --manifest-path apps/desktop/src-tauri/Cargo.toml -p doc-assistant-desktop --offline
+```
+
+`--offline` is deliberate and it works: the lock already pins every dependency, so nothing needs
+downloading, and the run touches exactly that one line. **`cargo metadata` is not a substitute** —
+it wants metadata for every locked package, Android-only ones included, which this machine has
+never had a reason to download; it exits 101 under `--offline` and needs the network without it.
+Adding `--no-deps` makes it exit 0 and update nothing, which is worse.
+
+Skip the re-lock and the build writes it for you *after* the commit, `tree_clean` fails with a
+one-line `Cargo.lock` diff, and the tag no longer matches what was built — exactly what happened
+at 0.6.0.
 
 ## 2 · The CHANGELOG is a judgment step, not a formatting step
 

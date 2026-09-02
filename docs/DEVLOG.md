@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-09-01 · class: append-only -->
+<!-- status: active · updated: 2026-09-02 · class: append-only -->
 
 # DEVLOG — doc_assistant
 
@@ -22,6 +22,55 @@ Format: What changed | Why | Rejected alternatives | What it opens
 > the oldest entries into a new `DEVLOG-archive-NNN.md` and update the list above — **do not raise
 > the cap.** The cap exists because this log reached 8,244 lines before anyone noticed: every entry
 > is individually small and correct, so unbounded growth is invisible per commit.
+
+---
+## 2026-09-02 — The version check now reads the two Cargo files, and its file list is a test
+
+**What changed.** `scripts/release_preflight.py`'s `versions` check went from five sources to
+**seven**: `apps/desktop/src-tauri/Cargo.toml` (`[package] version`) and `Cargo.lock` (the
+`doc-assistant-desktop` entry, found by name in the package list) now join the five it already
+read. `collect_versions()` is split out of `check_versions()` so the *list of files* is importable
+and therefore testable, and `docs/RELEASE.md` §1 grew from six rows to eight.
+
+Three tests, in `tests/unit/test_release_preflight.py`:
+
+- **the source list, pinned by equality** — adding a version-carrying file means adding it here;
+- **no source may read as a sentinel** — `(not found)` and `(missing)` compare equal to each
+  other, so seven simultaneously-broken readers would have "agreed";
+- **a drift in any single file must FAIL**, parametrised over the source list rather than
+  spot-checked, so a file added to the list gets its negative case for free.
+
+**Why.** The `versions` check reported green while `Cargo.toml` and `Cargo.lock` held `0.4.1`
+through **v0.4.2, v0.5.0 and v0.5.1** — three tagged releases (verified by reading each tag:
+`git show vX.Y.Z:apps/desktop/src-tauri/Cargo.toml`). It never opened them, and neither did the
+runbook table. This is the *inverse* of the `uv.lock` incident that created the check: not a file
+someone forgot to edit, but a file nothing was looking at. An agreement check is worth exactly as
+much as its file list, and until now that list existed only inside a function body.
+
+Surfaced at 0.6.0 the hard way: the release build regenerated `Cargo.lock` from 0.4.1 to 0.6.0
+*after* the release commit, and `tree_clean` — not `versions` — was what caught it.
+
+**Verified by reverting the fix.** With the two Cargo sources removed from `collect_versions()`,
+exactly three tests fail (the list test and both Cargo drift cases) and the other 14 pass. The
+guard reproduces the historical bug rather than merely describing it.
+
+**The re-lock command is verified too.** `docs/RELEASE.md` §1 now carries
+`cargo update --manifest-path apps/desktop/src-tauri/Cargo.toml -p doc-assistant-desktop --offline`
+— run against a deliberately desynced tree, exit 0, one line changed, no network. `cargo metadata`
+was tried first and rejected on evidence: it wants metadata for every locked package including
+Android-only ones this box has never downloaded, so it exits **101** under `--offline` (after
+writing the lock) and needs the network without it; `--no-deps` exits 0 and updates nothing.
+
+**Rejected.** *Deriving the file list from the runbook table* — a docs parser is a second thing to
+break, and the table is prose. *Hand-editing `Cargo.lock`* — it is a lock; cargo overwrites it at
+build time anyway, which is precisely the failure being fixed. *Extending the existing
+"do they agree?" test* — it structurally cannot catch a missing source, which was the bug.
+
+**What it opens.** `artifact_fresh` has the same shape of weakness one layer over: it compares
+**mtimes**, so `git checkout main` re-materialising a byte-identical file (blob `a789456…` at both
+`ef4a6d8` and `663c290`) fails it. Comparing `git diff <built-commit> HEAD` instead would say what
+the check means. Not done here — it needs the built commit recorded next to the artifact, which is
+a change to the build, not to the check.
 
 ---
 ## 2026-09-01 (6) — Two UI corrections from using the app: controls too small to find, and a dropdown painted by the OS

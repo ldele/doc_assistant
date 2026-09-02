@@ -9,7 +9,11 @@ Two jobs:
 
 from __future__ import annotations
 
+import re
+from pathlib import Path
+
 import pytest
+from scripts import release_preflight as preflight
 from scripts.release_preflight import (
     KI34_BROKEN_MIB,
     KI34_FIXED_MIB,
@@ -17,12 +21,13 @@ from scripts.release_preflight import (
     _just_recipes,
     check_dev_commands,
     check_versions,
+    collect_versions,
 )
 
 # --- checks worth running on every push, not just at release time -----------------
 
 
-def test_all_five_version_strings_agree() -> None:
+def test_all_version_strings_agree() -> None:
     """v0.4.0 bumped four of them and missed `uv.lock`.
 
     CI and the Docker build install with `--locked`, which fails rather than re-resolving, so the
@@ -30,6 +35,35 @@ def test_all_five_version_strings_agree() -> None:
     days. Cheap to check, expensive to miss."""
     result = check_versions()
     assert result.status == "PASS", f"{result.detail}: {result.notes}"
+
+
+def test_every_file_carrying_a_version_is_actually_read() -> None:
+    """The list of sources, pinned — because the second version bug was a file nobody opened.
+
+    `apps/desktop/src-tauri/Cargo.toml` and its lock sat at 0.4.1 through v0.4.2, v0.5.0 and
+    v0.5.1 while `check_versions` reported green, because it never read them and neither did
+    `docs/RELEASE.md` §1. The test above cannot catch that: agreement among the files you *do*
+    read says nothing about the one you skip. Adding a version-carrying file to the repo means
+    adding it here and to the runbook table."""
+    assert set(collect_versions()) == {
+        "pyproject.toml",
+        "uv.lock",
+        "src/doc_assistant/__init__.py",
+        "apps/desktop/package.json",
+        "apps/desktop/src-tauri/tauri.conf.json",
+        "apps/desktop/src-tauri/Cargo.toml",
+        "apps/desktop/src-tauri/Cargo.lock",
+    }
+
+
+def test_no_version_source_reads_as_a_placeholder() -> None:
+    """A reader that quietly stops finding its value must not be able to look like agreement.
+
+    Every miss returns a sentinel — `(not found)`, `(missing)` — and sentinels compare equal to
+    each other, so a broken parse in *all* sources would make `check_versions` pass on seven
+    identical placeholders. Requiring each value to look like a version closes that."""
+    unparsed = {k: v for k, v in collect_versions().items() if not re.match(r"^\d+\.\d+\.\d+", v)}
+    assert not unparsed, f"not version strings — the reader is broken, not the version: {unparsed}"
 
 
 def test_no_developer_commands_in_shipped_ui() -> None:
@@ -73,3 +107,59 @@ def test_ordinary_english_is_not_a_dev_command(phrase: str) -> None:
     """Pins the false-positive fix: prose containing "just" must never trip the check."""
     word = phrase.split()[1]
     assert word not in _just_recipes()
+
+
+# --- does `versions` actually CATCH a drift, or only read the files? --------------
+
+
+VERSION_FILES: dict[str, str] = {
+    "pyproject.toml": '[project]\nname = "doc-assistant"\nversion = "{v}"\n',
+    "uv.lock": '[[package]]\nname = "doc-assistant"\nversion = "{v}"\n',
+    "src/doc_assistant/__init__.py": '__version__ = "{v}"\n',
+    "apps/desktop/package.json": '{{"name": "doc-assistant-desktop", "version": "{v}"}}\n',
+    "apps/desktop/src-tauri/tauri.conf.json": '{{"version": "{v}"}}\n',
+    "apps/desktop/src-tauri/Cargo.toml": (
+        '[package]\nname = "doc-assistant-desktop"\nversion = "{v}"\n'
+    ),
+    "apps/desktop/src-tauri/Cargo.lock": (
+        'version = 3\n\n[[package]]\nname = "serde"\nversion = "1.0.0"\n\n'
+        '[[package]]\nname = "doc-assistant-desktop"\nversion = "{v}"\n'
+    ),
+}
+
+
+def _fake_repo(tmp_path: Path, *, drifted: str | None = None) -> Path:
+    """A minimal tree carrying all seven version strings, one optionally left behind at 0.4.1."""
+    for rel, template in VERSION_FILES.items():
+        p = tmp_path / rel
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(template.format(v="0.4.1" if rel == drifted else "9.9.9"), encoding="utf-8")
+    return tmp_path
+
+
+def test_the_control_passes_when_every_source_agrees(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Without this, the drift tests below could pass for the wrong reason (a broken reader)."""
+    monkeypatch.setattr(preflight, "ROOT", _fake_repo(tmp_path))
+    result = check_versions()
+    assert result.status == "PASS", f"{result.detail}: {result.notes}"
+    assert "9.9.9" in result.detail
+
+
+@pytest.mark.parametrize("drifted", sorted(VERSION_FILES))
+def test_a_version_left_behind_in_any_single_file_fails(
+    drifted: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """One stale file out of seven must fail — for **every** file, not just the ones we remember.
+
+    Parametrised over the source list rather than spot-checked, because the failure this guards
+    was a file that was never looked at: a hand-written test would have covered the five someone
+    already had in mind, which is exactly the set that was not the problem. `Cargo.toml` and
+    `Cargo.lock` shipped at 0.4.1 through three tagged releases."""
+    monkeypatch.setattr(preflight, "ROOT", _fake_repo(tmp_path, drifted=drifted))
+    result = check_versions()
+    assert result.status == "FAIL", f"a stale {drifted} went unnoticed"
+    assert any(drifted in note and "0.4.1" in note for note in result.notes), (
+        f"the report must name the stale file and its value; got {result.notes}"
+    )

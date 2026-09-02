@@ -11,7 +11,10 @@ looking redundant:
 
 * ``versions``  — v0.4.0 bumped five version strings and missed ``uv.lock``. CI and the Docker
   build install with ``--locked``, which fails rather than re-resolving, so every gate after
-  dependency-install was skipped on ``main`` for days before anyone noticed.
+  dependency-install was skipped on ``main`` for days before anyone noticed. The two Cargo files
+  joined later, and from the *opposite* failure: this check never opened them, so they held 0.4.1
+  through v0.4.2, v0.5.0 and v0.5.1 while it reported green. An agreement check is worth exactly
+  as much as its file list, which is why that list is now pinned by a test of its own.
 * ``artifact_fresh`` — the whole point of 2026-08-06. Source-green says **nothing** about a frozen
   binary (KI-34: the shipped build could not read a single PDF while every test passed). If the
   installer predates the code, the thing tested is not the thing shipped.
@@ -47,6 +50,12 @@ ROOT = Path(__file__).resolve().parent.parent
 SIDECAR = ROOT / "apps/desktop/src-tauri/binaries/doc-assistant-api-x86_64-pc-windows-msvc.exe"
 BUNDLE = ROOT / "apps/desktop/src-tauri/target/release/bundle/nsis"
 RG012_ARCHIVES = Path("C:/rg012-host")
+
+# The Rust half of the version bump. The crate name differs from the Python package's, and the
+# lock records it under that name — so both have to be spelled out rather than derived.
+CARGO_TOML = "apps/desktop/src-tauri/Cargo.toml"
+CARGO_LOCK = "apps/desktop/src-tauri/Cargo.lock"
+CARGO_CRATE = "doc-assistant-desktop"
 
 # The sidecar carries bundled model weights + PyMuPDF data. A build that comes out materially
 # smaller has dropped something (KI-34).
@@ -111,10 +120,15 @@ def _newest_source() -> tuple[Path | None, datetime | None]:
     return newest_p, newest_t
 
 
-def check_versions() -> Check:
-    """All six version strings must agree — including uv.lock (the v0.4.0 CI break) and the
-    `__version__` constant the update check compares against (ADR-044: a stale constant makes
-    the app compare itself to a lie)."""
+def collect_versions() -> dict[str, str]:
+    """Every file that carries the project's own version, read. Keys are repo-relative paths.
+
+    Split out from `check_versions` so a test can pin **which files are read**, because the bug
+    that added the two Cargo entries was a *missing source*, not a wrong comparison: a check that
+    asks only "do the ones I open agree?" stays green forever while a file it never opens drifts.
+    `Cargo.toml` and `Cargo.lock` sat at 0.4.1 through v0.4.2, v0.5.0 and v0.5.1 — three tagged
+    releases — because neither this function nor `docs/RELEASE.md` §1 listed them.
+    """
     found: dict[str, str] = {}
     pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
     found["pyproject.toml"] = pyproject["project"]["version"]
@@ -131,9 +145,27 @@ def check_versions() -> Check:
         data = json.loads((ROOT / rel).read_text(encoding="utf-8"))
         found[rel] = data.get("version", "(missing)")
 
+    manifest = tomllib.loads((ROOT / CARGO_TOML).read_text(encoding="utf-8"))
+    found[CARGO_TOML] = str(manifest.get("package", {}).get("version", "(missing)"))
+
+    # The lock is the one source that cannot be bumped ahead of time and stay bumped: cargo
+    # rewrites it only when cargo *runs*, which on a release is during the build — after the
+    # release commit. It is a list of package tables, so the crate has to be found by name.
+    locked = tomllib.loads((ROOT / CARGO_LOCK).read_text(encoding="utf-8"))
+    crate = next((p for p in locked.get("package", []) if p.get("name") == CARGO_CRATE), None)
+    found[CARGO_LOCK] = str(crate.get("version", "(missing)")) if crate else "(not found)"
+
+    return found
+
+
+def check_versions() -> Check:
+    """All seven version strings must agree — including uv.lock (the v0.4.0 CI break), the two
+    Cargo files (silently 0.4.1 for three releases), and the `__version__` constant the update
+    check compares against (ADR-044: a stale constant makes the app compare itself to a lie)."""
+    found = collect_versions()
     distinct = set(found.values())
     if len(distinct) == 1:
-        return Check("versions", OK, f"all agree on {distinct.pop()}")
+        return Check("versions", OK, f"all {len(found)} agree on {distinct.pop()}")
     return Check(
         "versions",
         FAIL,

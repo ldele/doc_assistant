@@ -118,18 +118,19 @@ The engineering record is finer-grained than this file: per-change entries live 
   the paper a reference points at will not turn that reference into a link on its own — the
   earlier document has to be read again. Refreshing them without re-reading anything is possible
   from the command line today; it is not yet a button.
-- **A file you rename or move outside the app is treated as a new document.** Its indexed content
-  is recognised, so it is not read or embedded twice, but anything recorded against the old path —
-  an exclusion you set, for instance — does not follow it.
-- **Scanned PDFs are only read if your system has an OCR engine, and the installer does not
-  include one.** A PDF that is pure page images — no selectable text — extracts to nothing and is
-  marked *broken* in your library. If a `tesseract` binary happens to be on your PATH, the
-  extractor will quietly use it and read the pages instead. Two machines running the same version
-  can therefore build different libraries from the same file, and there is currently no setting,
-  message or log line that tells you which one you are getting. Deliberate recovery of scanned
-  documents — opt-in, and marked so you can see which text came from OCR — is designed but not
-  built ([ADR-039](docs/decisions/ADR-039-ocr-sidecar-for-scanned-pdfs.md)).
-- **Everything under *Known limits* for 0.5.1 still applies.**
+- **Moving or renaming a file outside the app loses anything recorded against its old path.** The
+  document itself survives: its content is recognised, so it is not read or embedded again, and its
+  figures, keywords and any corrections you typed stay attached. But an exclusion you set is
+  recorded against the path rather than the document, so it does not follow the file.
+- **Scanned PDFs are not read at all, and the app has no OCR.** A PDF that is pure page images —
+  no selectable text — extracts to nothing and is marked *broken* in your library. Nothing in the
+  app or the installer will read it, and having an OCR tool on your machine makes no difference.
+  Deliberate recovery of scanned documents — opt-in, and marked so you can see which text came from
+  OCR — is designed but not built
+  ([ADR-039](docs/decisions/ADR-039-ocr-sidecar-for-scanned-pdfs.md)).
+- **Everything under *Known limits* for 0.5.1 still applies, except the update check** — releases
+  are now published for the tags, so it compares against the newest one rather than reporting that
+  it cannot.
 
 ## [0.5.1] — 2026-08-14
 

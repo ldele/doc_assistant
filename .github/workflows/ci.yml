@@ -95,3 +95,65 @@ jobs:
 
       - name: Unit tests
         run: npm test
+
+  # The container is the third way this project ships (desktop installer · source checkout ·
+  # headless image) and it was the only one nothing verified: no job here referenced the Dockerfile
+  # between 2026-08-01 and 2026-09-04. In that window `uv sync --locked` could have gone stale in
+  # the image, or the pinned uv base tag could have vanished, and it would have surfaced only when
+  # somebody actually needed the container — which is where it was found (DEVLOG 2026-09-04).
+  docker:
+    name: Docker — Headless API image
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # The image is ~6.3 GB and a hosted runner has little more than that spare once the build
+      # cache is written too. These two directories are the largest things preinstalled that this
+      # job cannot use; dropping them buys ~10 GB and costs a few seconds.
+      - name: Free disk space
+        run: sudo rm -rf /usr/share/dotnet /opt/ghc
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build the image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          load: true
+          tags: doc-assistant:ci
+          # The dependency layer takes ~8 min to resolve and install, and the Dockerfile copies
+          # pyproject.toml + uv.lock before anything else precisely so it can be cached. Without
+          # this the job would pay that on every push to every branch.
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # A green build says the layers assembled. It does not say the image is the right one.
+      - name: The image must carry CPU torch, never CUDA
+        # The trap the Dockerfile documents at length: `pip install ".[cpu]"` ignores
+        # [tool.uv.sources], resolves torch from PyPI, and that Linux wheel bundles CUDA — several
+        # GB of nvidia-* packages in an image with no GPU. It still builds and still runs, so
+        # nothing else in this file would notice. Measured on the working image: 2.12.0+cpu, 0 nvidia-*.
+        #
+        # Asked of the package metadata, not of a site-packages listing. The first draft was
+        # `ls /app/.venv/lib/python*/site-packages | grep -c "^nvidia" || true`, which reports 0 —
+        # a pass — when the glob matches nothing at all, so relocating the venv would have turned
+        # this check off silently rather than failing. A check that cannot tell "none present"
+        # from "could not look" is worse than no check.
+        #
+        # Block scalar, not a plain one: these commands contain ": " inside f-strings, which YAML
+        # reads as a mapping key in an unquoted value. Written inline first, and it made the whole
+        # workflow unparseable.
+        run: |
+          docker run --rm doc-assistant:ci uv run --no-sync python -c 'import torch, importlib.metadata as md; assert torch.__version__.endswith("+cpu"), f"expected a +cpu wheel, got {torch.__version__}"; nv = sorted(n for d in md.distributions() if (n := (d.metadata["Name"] or "")).startswith("nvidia")); assert not nv, f"nvidia packages in the image: {nv}"; print("torch", torch.__version__, "| nvidia packages: 0")'
+
+      - name: The app must import inside the image
+        # KI-34 is the standing lesson here: a shipped artifact that started cleanly, served
+        # /api/health, reported a healthy chunk count — and could not read a single PDF. Importing
+        # is a floor, not a proof, but it is the cheapest check that the CMD would get anywhere.
+        # Booting to a green /api/health is deliberately NOT done: first run downloads the embedder
+        # and reranker, which is why the Dockerfile's HEALTHCHECK has a 300 s start period.
+        run: |
+          docker run --rm doc-assistant:ci uv run --no-sync python -c 'import apps.api, doc_assistant; print("apps.api ok; doc_assistant", doc_assistant.__version__)'

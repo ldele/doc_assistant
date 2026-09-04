@@ -122,12 +122,17 @@ The engineering record is finer-grained than this file: per-change entries live 
   document itself survives: its content is recognised, so it is not read or embedded again, and its
   figures, keywords and any corrections you typed stay attached. But an exclusion you set is
   recorded against the path rather than the document, so it does not follow the file.
-- **Scanned PDFs are not read at all, and the app has no OCR.** A PDF that is pure page images —
-  no selectable text — extracts to nothing and is marked *broken* in your library. Nothing in the
-  app or the installer will read it, and having an OCR tool on your machine makes no difference.
-  Deliberate recovery of scanned documents — opt-in, and marked so you can see which text came from
-  OCR — is designed but not built
-  ([ADR-039](docs/decisions/ADR-039-ocr-sidecar-for-scanned-pdfs.md)).
+- **Scanned PDFs are only read if your system happens to have an OCR engine, and the installer
+  does not include one.** A PDF that is pure page images — no selectable text — extracts to nothing
+  and is marked *broken* in your library. But if a `tesseract` binary is on your PATH, the PDF
+  reader finds it by itself and reads the pages instead. Nothing in the app asks for this or
+  reports it: the same scan produced **0 characters on one date and 34,600 on another**, on the
+  same machine, with nothing in the app changed — a `tesseract` install had appeared in between.
+  Two machines running the same version can therefore build different libraries from the same file,
+  and the extraction cache cannot see the difference, so the first result sticks. The installer
+  ships no OCR, so a fresh install gets the 0-character behaviour. Deliberate recovery of scanned
+  documents — opt-in, and marked so you can see which text came from OCR — is designed but not
+  built ([ADR-039](docs/decisions/ADR-039-ocr-sidecar-for-scanned-pdfs.md)).
 - **Everything under *Known limits* for 0.5.1 still applies, except the update check** — releases
   are now published for the tags, so it compares against the newest one rather than reporting that
   it cannot.

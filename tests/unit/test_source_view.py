@@ -11,11 +11,16 @@ marker layout the extractor actually writes (`extractors.py:99`).
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
 import pytest
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
 
+import doc_assistant.db.session as session_mod
+from doc_assistant.db.models import Base
 from doc_assistant.library import (
     PageUnavailable,
     get_source_view,
@@ -237,12 +242,33 @@ def test_an_unknown_key_locates_to_nothing(cache: Path) -> None:
 # --- the availability gate (D3/D4) ------------------------------------------------------------- #
 
 
-def test_an_unknown_document_has_no_view() -> None:
+@pytest.fixture
+def empty_library(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
+    """A schema-only database, so "no such document" is a lookup miss and not a missing table.
+
+    Without it the two tests below read whatever `SQLITE_URL` points at. On the dev box that is
+    the real library, the lookup misses, and they pass; on CI it is a file SQLAlchemy creates
+    empty on first connect, and they fail with `no such table: documents` — which is what kept
+    `main` red from 2026-09-02 to 2026-09-07 while the suite was green on Windows.
+    """
+    engine = create_engine(f"sqlite:///{tmp_path / 'library.db'}", future=True)
+    Base.metadata.create_all(engine)
+    monkeypatch.setattr(session_mod, "_engine", engine)
+    monkeypatch.setattr(
+        session_mod,
+        "_SessionLocal",
+        sessionmaker(bind=engine, autoflush=False, autocommit=False, future=True),
+    )
+    yield
+    engine.dispose()
+
+
+def test_an_unknown_document_has_no_view(empty_library: None) -> None:
     """`None` is the 404. It is *not* what a missing file returns — see the next test."""
     assert get_source_view("no-such-document") is None
 
 
-def test_rendering_an_unknown_document_is_refused_with_a_sentence() -> None:
+def test_rendering_an_unknown_document_is_refused_with_a_sentence(empty_library: None) -> None:
     with pytest.raises(PageUnavailable, match="document not found"):
         render_page("no-such-document", 1)
 

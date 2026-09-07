@@ -18,6 +18,7 @@ Offline and deterministic — `.md` sources and a fake embedder, so no PDF extra
 
 from __future__ import annotations
 
+import os
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -214,10 +215,20 @@ def test_an_in_app_edit_still_wins(env: Path) -> None:
 
 
 def test_matching_survives_a_differently_written_path(env: Path) -> None:
-    """The registry's own normalisation, so a separator or case difference is not a new file."""
+    """The registry's own normalisation — `pathkey` is `normcase(abspath(...))` — so a redundant
+    `..` segment is not a new file on any OS, and on Windows neither is a case difference.
+
+    The previous variant swapped `/` for `\\`. On POSIX that names a *different* file, so the
+    catalogue never matched and CI was red from the day the test was written; on Windows
+    `str(Path)` has no `/` to swap, so the test passed without testing anything.
+    """
     source = env / "paper.md"
     source.write_text(_BODY, encoding="utf-8")
-    _record(Path(str(source).replace("/", "\\")) if "/" in str(source) else source)
+    written = str(source.parent / "sub" / ".." / source.name)
+    if os.name == "nt":
+        written = written.upper()
+    assert written != str(source)
+    _record(Path(written))
     ingest.main()
     assert _document()["title"] == "What The Catalogue Says"
 

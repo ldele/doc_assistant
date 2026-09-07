@@ -26,6 +26,42 @@ Format: What changed | Why | Rejected alternatives | What it opens
 > is individually small and correct, so unbounded growth is invisible per commit.
 
 ---
+## 2026-09-07 (3) — CI on `main` was red for five days and seven pushes, including the release; two test-only fixes
+
+**What changed.** `tests/unit/test_source_view.py`: the two "unknown document" tests get an
+`empty_library` fixture — a temp SQLite with `Base.metadata.create_all` swapped into
+`db.session._engine/_SessionLocal` via `monkeypatch`. `tests/integration/test_external_metadata.py::
+test_matching_survives_a_differently_written_path`: the "differently written" variant is now
+`parent / "sub" / ".." / name` (upper-cased on Windows) instead of a `/`→`\` swap. Both files,
++41/−4, test-only; shipped code untouched.
+
+**Why.** `gh run list --branch main` shows every run since `3230703` (2026-09-02) red at `pytest
+with coverage`, last green `5405d44` (2026-08-28) — through the merge, the tag and the docs commit
+this morning — while the suite was 2,389/0 on the Windows dev box. Two causes. (1) The source-view
+tests read the real `session_scope()`: locally `data/library.db` has the schema so the lookup
+misses and passes; on CI `SQLITE_URL` names a file SQLAlchemy creates empty on first connect, so
+`no such table: documents`. Reproduced here with `DOC_DATA_DIR=<empty dir>` on the old file (both
+fail with exactly that error) and the fixed file (24/24). (2) `pathkey` is
+`normcase(abspath(...))`. The old variant, on POSIX, produced a relative filename with literal
+backslashes — a different file, so the catalogue entry never matched, red since the test was
+written on 2026-08-31; on Windows `str(Path)` contains no `/`, so the swap never fired and the
+test passed without testing anything. `abspath` collapses `..` lexically on both `posixpath` and
+`ntpath` (checked), so the new variant exercises the normalisation everywhere.
+
+**Rejected.** *An autouse DB-isolation fixture in `tests/conftest.py`* — the right end state, but
+it touches every test that reaches the database, which is not a fix to make blind on the day the
+suite is discovered to differ by platform. *`skipif(os.name != "nt")` on the path test* — hides
+the platform difference instead of testing it. *Dropping the case half* — kept on Windows only,
+because `normcase` folds case only there and a case-different path on ext4 *is* a different file.
+
+**What it opens.** Nobody looked at Actions for five days while three baton entries said "every
+gate green locally": the third instance of the CI-blind shape (uv.lock at 0.4.0 · the container
+until 2026-09-04 · this) and worth a KI with a session-start check (`gh run list --branch main
+--limit 1`). The two DB-isolating fixtures (`env` in the integration file, `empty_library` here)
+want a shared one in `conftest.py`.
+
+---
+
 ## 2026-09-07 (2) — v0.6.0 published; a README tell pass; §7b learns what the publish command actually does
 
 **What changed.** The GitHub release for `v0.6.0` exists and is Latest: id 383972486, asset

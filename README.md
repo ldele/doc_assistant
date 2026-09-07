@@ -14,32 +14,42 @@ integrity layer and the measurement behind it.
 
 ## Why it's built this way
 
-- **Settings are locked by experiment, not intuition.** `TOP_K`, parent-child retrieval, chunk sizes
-  and the BM25/vector mix were each chosen by measuring alternatives with the in-repo eval harness.
-  What didn't make the cut is recorded too, in [`docs/decisions.md`](docs/decisions.md).
+- **Settings were chosen by experiment.** `TOP_K`, parent-child retrieval, chunk sizes and the
+  BM25/vector mix were each picked by measuring alternatives with the in-repo eval harness. What
+  didn't make the cut is recorded too, in [`docs/decisions.md`](docs/decisions.md).
 - **Benchmarks anyone can re-run.** The headline numbers come from a public corpus pinned by arXiv ID
   and SHA-256, fetched by a script, reported with variance and caveats ([`evals/`](evals/README.md)).
 - **Growth by addition.** Every derived layer (citations, figures, tables, keywords, wiki, concept
-  graph) is an idempotent sidecar that never mutates the chunk store. New capability is a new module,
-  not a rewrite.
+  graph) is an idempotent sidecar that never mutates the chunk store. A new capability is a new
+  module.
 
 ## What it does
 
 - **Grounded answers with inline citations.** Page numbers and sections, every passage inspectable.
+- **The page behind a citation.** A citation can open the page it came from, rendered as it was
+  printed, in a pane next to the document's library entry. It can also show the passage *in
+  context*, highlighted inside the surrounding text with how far through the document it sits.
 - **Evidence vs. interpretation.** Each answer separates what your sources say from the model's
   synthesis, with per-claim grounding markers you can accept, reject or edit, so an inference is
   never mistaken for a fact ([how answers work](docs/how-answers-work.md)).
 - **Citation and concept graphs.** Resolved reference edges, plus a deterministic concept skeleton
   (the LLM only annotates existing edges, it never invents structure) with gap detection that
-  surfaces single-source concepts and thin bridges as leads to read next.
-- **Knowledge-currency markers — built, and currently opt-in.** Advisory `contested` and
-  `superseded trend` chips derived from cross-document stance and publication years; they inform,
-  they never gate. They ship **off** (`EPISTEMICS_MARKERS_ENABLED=true` enables them) because the
-  stance pass behind them judges without seeing the document text — see Limitations.
+  surfaces single-source concepts and thin bridges as leads to read next. The graph says how many
+  of your documents it covers, and a concept joins it from **Manage keywords**, inside the app.
+- **Knowledge-currency markers, currently opt-in.** Advisory `contested` and `superseded trend`
+  chips derived from cross-document stance and publication years. They never block anything, and
+  they ship **off** (`EPISTEMICS_MARKERS_ENABLED=true` enables them) because the stance pass behind
+  them judges without seeing the document text; see Limitations.
 - **Library workspace.** Browsable grid with filters and folders; each document opens as five
   ordered blocks — metadata, connections, passages, figures, references — with the full
   bibliography and the figures extracted from the paper, readable at full size. Editable metadata
   that survives re-ingest, safe delete (OS trash first), selective ingestion, derived corpus wiki.
+- **Add documents from inside the app.** Drop files or a folder onto the window, pick them, or
+  import from Zotero. A review sheet says what will happen to each file before anything is copied
+  or indexed, and every addition is a choice between *copy it in* and *reference it where it is*; a
+  referenced file is never moved, altered or deleted. One part of reading a document (metadata,
+  figures, references, text) can be re-run on its own, for one document or a selection, with its
+  cost stated first.
 - **A chat history you can keep tidy.** Conversations are searchable and renameable, exportable as
   one markdown file, and removable in bulk — a soft delete that the same control undoes.
 - **Measurable quality.** Eval harness with six scorers (deterministic plus LLM judge), DuckDB result
@@ -74,7 +84,7 @@ CLI. Data flow and module contracts: [`docs/architecture.md`](docs/architecture.
 
 ## Benchmarks
 
-Quality is measured, not asserted. The eval harness runs the full pipeline (retrieve, rerank,
+The numbers below come from the eval harness, which runs the full pipeline (retrieve, rerank,
 generate) over a fixed question set on a public 10-paper arXiv corpus that anyone can rebuild.
 5 trials on `bge-base`, latest run 2026-08-01, reported as mean ± trial-mean std:
 
@@ -85,8 +95,8 @@ generate) over a fixed question set on a public 10-paper arXiv corpus that anyon
 | `llm_judge` (1-5) | **3.694** | 0.258 | reference-graded answer quality |
 
 `citation_overlap` is 1.000 with zero variance because retrieval depends only on the deterministic
-index; the generated-answer scorers wobble run-to-run around stable means. Cases are deliberately
-strict, not tuned to score 1.0. Two caveats travel with these numbers: `citation_overlap` is
+index; the generated-answer scorers wobble run-to-run around stable means. The cases are strict,
+and none were tuned to score 1.0. Two caveats travel with these numbers: `citation_overlap` is
 saturated on a 10-paper corpus, so it shows *no regression at the available resolution* rather than
 ranking quality — on the 97-document library the same scorer spans 0.877-0.946 and does
 discriminate; and this run's `llm_judge` band is wide enough that only changes larger than about
@@ -99,9 +109,9 @@ disk, and what each of those does as the corpus grows are in
 
 ### How long does indexing take?
 
-Estimates, not promises — the real number depends on your machine and your documents. What is
-stable is the **shape**: which part of the work costs what. Measured on a 97-document library
-(2,859 pages) on a 28-core desktop with a GPU.
+These are estimates; the real number depends on your machine and your documents. What is stable
+is the **shape**: which part of the work costs what. Measured on a 97-document library (2,859
+pages) on a 28-core desktop with a GPU.
 
 | Your document | First index | Re-opening it later |
 |---|---|---|
@@ -110,8 +120,12 @@ stable is the **shape**: which part of the work costs what. Measured on a 97-doc
 | A 300-page scanned book | **several minutes**, nearly all OCR | instant |
 | A `.txt` or `.md` file | **milliseconds** — no extraction needed | instant |
 
+The two OCR rows apply only when an OCR engine (`tesseract`) is on your PATH: the app and the
+installer ship none, and without one a scanned page yields nothing (see Limitations).
+
 **Estimate by page count, not file size.** Measured on this corpus, a 15 MB / 20-page paper indexed
-*faster* than a 5 MB / 22-page one. Megabytes tell you almost nothing; pages tell you most of it.
+*faster* than a 5 MB / 22-page one. File size is a poor predictor of indexing time; page count is
+a good one.
 
 **Where the time actually goes**, for a typical paper:
 
@@ -123,15 +137,23 @@ stable is the **shape**: which part of the work costs what. Measured on a 97-doc
 
 That first row is why indexing feels slow, and it is why the app only does it **once per
 document**: the result is cached, so re-opening, re-searching and even re-indexing an unchanged
-library are effectively free. Adding one paper to a large library costs one paper, not the library.
+library are effectively free. Adding one paper to a large library costs one paper's worth of work.
 
 **Indexing does not take over your computer.** By default Provenote extracts two documents at a
 time, which measured **1.47x faster** than one-at-a-time while leaving the rest of your machine
-alone. More workers help surprisingly little — 14 of them only reached 1.74x — so the polite
-setting is very nearly the fast one. You can change it if you want to (`--workers off | light |
-balanced | full`), and even `full` deliberately leaves half your cores free.
+alone. More workers help little: 14 of them reached only 1.74x, so the default gives up very
+little speed. You can change it (`--workers off | light | balanced | full`), and even `full`
+leaves half your cores free.
 
 ## Quick start
+
+**Windows installer:** download `Provenote_<version>_x64-setup.exe` from the
+[latest release](https://github.com/ldele/doc_assistant/releases/latest) and run it. It is not
+code-signed, so SmartScreen will warn. It is a ~1.6 GB download because the embedding and
+re-ranking models are bundled, and it runs fully offline with a local [Ollama](https://ollama.com).
+Settings → Updates can tell you when a newer one is published; it never installs anything for you.
+
+**From source:**
 
 ```bash
 uv sync --extra cu130 --extra dev        # or --extra cpu on a GPU-less box
@@ -158,37 +180,43 @@ Re-read for this release; the full ledger lives in `.claude/KNOWN_ISSUES.md`.
   ([ADR-034](docs/decisions/ADR-034-in-app-provider-setup.md)). Use `.env`, which takes precedence,
   if you would rather manage the key yourself.
 
-- **A scanned page with no text layer at all is unreachable.** Documents whose text hides *behind* a
-  page image are now read correctly, but a pure image has nothing to fall back to. Recovering those
-  needs OCR, which is designed and deliberately not built until its quality is measured — text that
-  is wrong is worse than text that is absent, because absence is honest while garbage is retrievable
-  and citable. One document of 97 in the development library.
+- **Scanned PDFs are only read if your machine happens to have an OCR engine, and the app ships
+  none.** A PDF that is pure page images extracts to nothing and is marked *broken*. But if a
+  `tesseract` binary is on your PATH, the PDF reader finds it by itself and reads the pages — and
+  nothing in the app asks for this or reports it. The same scan produced 0 characters on one date
+  and 34,600 on another, on the same machine, with nothing in the app changed; two machines on the
+  same version can build different libraries from the same file, and the extraction cache keeps
+  whichever result came first (KI-47). Deliberate, opt-in OCR whose output is marked as such is
+  designed and not built ([ADR-039](docs/decisions/ADR-039-ocr-sidecar-for-scanned-pdfs.md)). One
+  document of 97 in the development library is a pure scan.
 
-- **Most reference links into your own library are withheld, on purpose.** A document's bibliography
-  is shown in full, but the *links* from a reference to the copy in your library are re-checked
-  before being offered, and only exact-DOI or title-agreeing matches survive. On the development
-  library that is 4 links where 16 are stored: the matcher resolves on first-author surname and year
-  with no title comparison, and it runs once at ingest, so it is frozen at whatever your library
-  looked like that day. Withholding is the honest half of the fix; the matcher itself is next
-  (KI-45).
+- **A reference links to a paper in your library only when the titles agree, and the links are
+  worked out once.** A document's bibliography is shown in full; a reference becomes a link only on
+  an exact DOI or an agreeing title, because surname-plus-year alone was wrong 13 times in 16 on the
+  development library (now 41 links, the 12 false ones gone, the rest checked by hand). Links are
+  computed when a document is first read and not revisited: adding the paper a reference points at
+  does not turn it into a link until the citing document is read again. A command-line pass
+  (`scripts.extract_citations --reresolve`) refreshes them without re-reading anything; it is not
+  yet a button.
 
 - **Validated at ~100 documents, not yet at thousands.** Retrieval quality is benchmarked and holds.
   Memory used to be the limit and no longer is: both search indexes now live on disk, so backend RAM
   measures flat at about 2 GB regardless of corpus size
   ([ADR-036](docs/decisions/ADR-036-sparse-index-on-disk.md)). What binds now is the first ingest,
-  which is dominated by PDF extraction at roughly 15 seconds per document, single-threaded, and disk
-  at about 6 MB per document. Numbers and projections: [`docs/performance.md`](docs/performance.md).
+  which is dominated by PDF extraction at roughly 15 seconds per document — two documents at a time
+  by default, see above — and disk at about 6 MB per document. Numbers and projections:
+  [`docs/performance.md`](docs/performance.md).
   The *enrichment* layer still has its own corpus-linear hot paths and corpus-tuned thresholds,
   catalogued with a prioritized fix plan in the
   [scale review](docs/REVIEW_2026-07-19_scale-robustness.md), so don't bulk-ingest thousands of
   documents before those land.
-- **Local-model ceilings are real, and measured.** A local model cites far less of what it writes:
-  across 27 questions on a 97-document library — same prompt, same retrieval — `llama3.1:8b`
-  carried inline citations on 36% of its sentences and `qwen2.5:7b` on 14%, against 81% for Claude
-  Haiku. Answers stay grounded either way; more claims simply show as *uncited*. Small local models
-  also place documents into a taxonomy at 70-87% precision, and their self-reported confidence
-  carries almost no signal — on one model it was *anti*-correlated with correctness. Never
-  auto-accept on it. Nothing is gated: the app states this where you choose the engine.
+- **Local models cite less, and the gap is measured.** Across 27 questions on a 97-document
+  library, with the same prompt and retrieval, `llama3.1:8b` carried inline citations on 36% of its
+  sentences and `qwen2.5:7b` on 14%, against 81% for Claude Haiku. Answers stay grounded either
+  way; more claims simply show as *uncited*. Small local models also place documents into a
+  taxonomy at 70-87% precision, and their self-reported confidence carries almost no signal; on one
+  model it was *anti*-correlated with correctness, so do not auto-accept on it. The app states this
+  where you choose the engine, and blocks nothing.
 - **Document metadata extraction is imperfect.** A handful of documents still yield no title, or
   publisher furniture instead of one, and downstream layers that key on the title inherit that —
   the reference-link limitation above is the visible consequence.
@@ -204,16 +232,21 @@ Re-read for this release; the full ledger lives in `.claude/KNOWN_ISSUES.md`.
 
 ## Status
 
-**v0.5.0 (2026-08-11) — the library became somewhere to read, not just a list.** Phase 6 + 7 in
-progress. Shipped: core RAG, the eval harness, the document store and library workspace, citation
-and doc-similarity graphs, the research-integrity layer (provenance, evidence/interpretation split,
-separate-context reviewer), a provider-agnostic LLM layer with in-app setup and live switching
-between Claude API and local Ollama, figures and tables, the corpus wiki, and the full concept-graph
-stack with gap detection. **1,647 tests · ruff / mypy / bandit clean.**
+**v0.6.0 (2026-09-01) — a citation now opens its page.** Phase 6 + 7 in progress. Shipped:
+core RAG, the eval harness, the document store and library workspace, a source pane that opens a
+citation at its page, adding documents from inside the app (dropped, picked or imported from
+Zotero; copied in or referenced in place), per-part re-ingest, citation and doc-similarity graphs,
+the research-integrity layer (provenance, evidence/interpretation split, separate-context
+reviewer), a provider-agnostic LLM layer with in-app setup and live switching between Claude API
+and local Ollama, figures and tables, the corpus wiki, and the concept-graph stack with gap
+detection and a stated coverage. **2,389 tests · ruff / mypy / bandit clean.** The Windows
+installer on the [releases page](https://github.com/ldele/doc_assistant/releases) is built from
+the tag and installed on a clean machine before it is published.
 
-Next: keyword quality — the extracted keyword layer is measured and does not yet partition a
-corpus (1,376 keywords, 98% of them on a single document) — then opt-in LLM-assisted ingestion.
-Release notes: [`CHANGELOG.md`](CHANGELOG.md). Full roadmap: [`docs/ROADMAP.md`](docs/ROADMAP.md).
+Next: marking the cited passage on the page image itself (measured viable, ROADMAP row 24). Still
+open: the extracted keyword layer is measured and does not partition a corpus (97% of keywords on
+a single document). Release notes: [`CHANGELOG.md`](CHANGELOG.md). Full roadmap:
+[`docs/ROADMAP.md`](docs/ROADMAP.md).
 
 ## Documentation
 
@@ -228,7 +261,7 @@ Release notes: [`CHANGELOG.md`](CHANGELOG.md). Full roadmap: [`docs/ROADMAP.md`]
 | [Evals](evals/README.md) | Quality benchmark write-ups and reproduction |
 | [Performance](docs/performance.md) | Speed, memory, disk, the trade each optimisation made, and what happens at 10x |
 
-Agent-facing coordination lives in `AGENTS.md`, deliberately separate from this README.
+Agent-facing coordination lives in `AGENTS.md`, kept separate from this README.
 
 ## License
 

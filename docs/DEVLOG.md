@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-09-04 · class: append-only -->
+<!-- status: active · updated: 2026-09-07 · class: append-only -->
 
 # DEVLOG — doc_assistant
 
@@ -26,6 +26,87 @@ Format: What changed | Why | Rejected alternatives | What it opens
 > is individually small and correct, so unbounded growth is invisible per commit.
 
 ---
+## 2026-09-07 (2) — v0.6.0 published; a README tell pass; §7b learns what the publish command actually does
+
+**What changed.** The GitHub release for `v0.6.0` exists and is Latest: id 383972486, asset
+`Provenote_0.6.0_x64-setup.exe` at 1,648,765,716 bytes with GitHub's own digest
+`sha256:2280…5bc4` equal to the local hash, body = `.claude/release-notes-0.6.0.md` (11,099
+chars, ends in the SHA-256 line). `releases/latest` now answers 0.6.0, so ADR-044's update check
+on a 0.5.1 install has something to compare against. `README.md`: a pass for writing tells — the
+contrastive slogans ("measured, not asserted", "estimates, not promises", "costs one paper, not
+the library"), the aphorisms ("megabytes tell you almost nothing"), three "deliberately", one
+"surprisingly", and two headline phrases added earlier today ("Your files, added your way", "the
+answer can show you its source"); every number and the bold-lead structure stayed. `docs/RELEASE.md`
+§7b: the command now carries the asset and `--verify-tag`, and the section says where the notes
+live, why they need a status header, and that the command drafts, uploads, then publishes.
+
+**Why.** Two `gh release create` runs raced: one from this session, one started a minute earlier
+from the Run button on the command shown in the previous message. The earlier one drafted,
+uploaded and published at 09:36:44Z; this session's uploaded a second copy to its own draft and
+failed the final flip with HTTP 422 "Release.tag_name already exists", after which gh deleted its
+draft — zero drafts remain, one release object, correct. The runbook did not say the command drafts
+first, so a draft with zero assets read as a failure mid-way, and nothing said to check
+`gh release list` before running it a second time.
+
+**Rejected.** Killing the second process once both were seen — one had already published by then,
+and gh's own cleanup handled the loser. Editing the entry below to say "published" — append-only;
+this entry is the correction.
+
+**What it opens.** `README.md`, `docs/DEVLOG.md`, `docs/RELEASE.md` are uncommitted. The GIF
+(storyboards in the baton) and the README alt text that goes with it. `docs/DEMO.md` and the KI-48
+heading, as noted below.
+
+---
+
+## 2026-09-07 — 0.6.0 release notes and README brought level with the tag; the release object itself is the user's command
+
+**What changed.** `README.md` re-read against the tagged code, the way `docs/RELEASE.md` §2 asks
+of the CHANGELOG — and two Limitations bullets were false. The OCR one said a pure scan "is
+unreachable" and that OCR is "deliberately not built"; KI-47 measured the opposite (PyMuPDF uses any
+`tesseract` on PATH, 0 → 34,600 characters on the same file), and the bullet now carries the
+corrected 0.6.0 text. The reference-links one still described the surname+year matcher, "4 links
+where 16 are stored", and named KI-45 as *next* — 0.6.0 requires title agreement (16 → 41 links,
+DEVLOG 2026-08-26), so it now says that, plus the real remaining limit: links are computed at first
+read and not revisited (`extract_citations --reresolve` refreshes them; not a button). The first
+ingest is no longer "single-threaded" (two workers by default). **Added:** a Windows-installer route
+at the top of Quick start — the README had no download pointer at all through two releases that
+shipped an installer; the source-pane / *In context* bullet; the add-documents / Zotero /
+per-part re-run bullet; the graph's coverage line; and a condition under the indexing-time table,
+whose two OCR rows are only true with `tesseract` on PATH. Status → v0.6.0, 2,389 tests.
+
+**The release notes** are drafted in the 0.5.1 body's shape at `.claude/release-notes-0.6.0.md`
+(gitignored, like the 0.5.1 body was never committed). They carry the corrected OCR limit and say
+in one sentence that the tagged `CHANGELOG.md` has it wrong; state the RG-012 verdict in two halves
+(packaging strong; citation one sample — 1 failure in 4 byte-identical runs on 0.5.1, RIGOR_TODO
+2026-08-14); and explain why a 0.5.1 library shows every document as *changed* after upgrading
+(`is_cache_fresh` compares the recorded fingerprint against the per-format one 0.6.0 computes, so
+every 0.5.1 cache reads stale — and ADR-047 means that re-read no longer orphans sidecars). The
+upgrade path itself was not gated and the notes say so. Gates re-run at HEAD, which equals the tag
+on `src apps scripts tests`: pytest **2,389/0** (9:33) · node:test 257/257 · mypy 98 files clean ·
+svelte-check 219 files 0/0 · `docs_check --strict` OK · docs-encoding guard 5/5. Installer
+SHA-256 `2280180840548023735044020e9a0e05ec418d06522909af66dbe4db9a5c5bc4`, 1,648,765,716 bytes.
+
+**Why.** `docs/RELEASE.md` §7b: since ADR-044 the app reads `releases/latest`, so a pushed tag with
+no release object is invisible to every install — 0.5.1 users cannot learn 0.6.0 exists until the
+object is there, and `gh release list` shows only 0.5.1 and 0.4.2. The README drifted the same way
+the CHANGELOG had: its Limitations were written for 0.5.0 and nobody re-read them at 0.6.0.
+
+**Rejected.** *Re-tagging onto `b5ad5de`* to carry the corrected CHANGELOG — the tag is public and
+peels to the source the installer was built from; moving it breaks the tested-equals-tagged diff §6
+depends on. The correction lives in the release body, which is what people read. *Creating the
+release from the agent session* — `gh release create` was refused by the permission classifier as
+a publish, which is the right call: §7 makes publishing the one deliberate, irreversible step. The
+exact command is in the baton. *Committing the notes under `docs/`* — the release page is the
+body's home and the CHANGELOG is the durable record; a third copy rots.
+
+**What it opens.** The release is one command away. The README GIF is a release stale (the 0.5.0
+storyboard: no source pane, no add-documents) — three slideshow storyboards are in the baton, per
+the user's ask. `docs/DEMO.md` still calls Connections *scored* (ranked since 0.5.1) and does not
+mention the source pane — not touched. `KNOWN_ISSUES.md` still heads KI-48 as OPEN while DEVLOG
+2026-08-25 (3) fixed it at the cause; the heading wants reconciling.
+
+---
+
 ## 2026-09-04 (2) — CI builds the container, and checks the two things a green build does not prove
 
 **What changed.** A third job in `.github/workflows/ci.yml`, alongside `ci` and `frontend`: free

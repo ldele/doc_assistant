@@ -196,11 +196,20 @@ with no *release object* behind it is invisible to that check: every install rep
 release to compare against" forever, which is honest and useless. Pushing the tag is not publishing.
 
 ```bash
-gh release create vX.Y.Z --title "Provenote X.Y.Z" --notes-file <notes>
+gh release create vX.Y.Z apps/desktop/src-tauri/target/release/bundle/nsis/Provenote_X.Y.Z_x64-setup.exe \
+  --verify-tag --title "Provenote X.Y.Z" --notes-file .claude/release-notes-X.Y.Z.md
 ```
 
 Attach the NSIS `.exe` as a release asset, or the link the app hands the user leads to a page with
-nothing to install on it. And **repeat any "not yet verified" caveat from the tag annotation in the
+nothing to install on it. Keep the notes at `.claude/release-notes-X.Y.Z.md` (gitignored; the
+release page is the body's home and the CHANGELOG is the record) with a `<!-- status: … -->`
+comment on line 1 — `docs_check --strict` scans `.claude/*.md` and fails without it, and GitHub
+does not render the comment. The command creates a **draft**, uploads the asset (1.6 GB, ten
+minutes or more), then publishes; a draft with zero assets and an `untagged-…` URL mid-way is the
+upload in progress, not a failure, and `releases/latest` keeps pointing at the previous release
+until the flip. Write the body in the previous release's shape (Install · What's new · Known
+limits · How this was verified · SHA-256), and state the RG-012 verdict in two halves — the
+packaging half is strong evidence, the citation half is one sample (`RIGOR_TODO` 2026-08-14). And **repeat any "not yet verified" caveat from the tag annotation in the
 release body** — the release page is the surface people actually read; a caveat that lives only in
 `git show` is a caveat nobody sees.
 

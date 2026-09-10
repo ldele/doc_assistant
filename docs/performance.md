@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-08-28 (per-stage cost shares — written 2026-08-26, date bumped late) · class: living -->
+<!-- status: active · updated: 2026-09-10 (scale-review path moved to docs/archive/local/, ADR-051) · class: living -->
 
 # Performance, cost and scale — the measured record
 

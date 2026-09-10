@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-08-11 (text repaired from double-encoded — the trust table's ⚠️/❌ column was unreadable; content unchanged since 2026-08-05) · class: living -->
+<!-- status: active · updated: 2026-09-10 (plan path moved to docs/plans/, ADR-051) · class: living -->
 
 # The knowledge layer — what the concept graph is for, and which of its signals you can trust
 

@@ -1,4 +1,4 @@
-<!-- status: design-locked · created: 2026-07-21 · owner: Code · plan: docs/PLAN_2026-07-21_exploration-epistemics.md (E2) · adr: ADR-027 D3 -->
+<!-- status: design-locked · created: 2026-07-21 · owner: Code · plan: docs/archive/local/PLAN_2026-07-21_exploration-epistemics.md (E2) · adr: ADR-027 D3 -->
 
 # Feature spec — E2: always-on source-evaluation strip (ADR-027 D3)
 

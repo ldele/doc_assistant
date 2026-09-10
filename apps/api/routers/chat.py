@@ -17,7 +17,7 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import FileResponse
-from sse_starlette.sse import EventSourceResponse, ServerSentEvent
+from sse_starlette import EventSourceResponse, ServerSentEvent
 
 from apps.api.models.chat import (
     AdjudicateRequest,

@@ -58,6 +58,7 @@ RG012_ARCHIVES = Path("C:/rg012-host")
 # lock records it under that name — so both have to be spelled out rather than derived.
 CARGO_TOML = "apps/desktop/src-tauri/Cargo.toml"
 CARGO_LOCK = "apps/desktop/src-tauri/Cargo.lock"
+PACKAGE_LOCK = "apps/desktop/package-lock.json"
 CARGO_CRATE = "doc-assistant-desktop"
 
 # The sidecar carries bundled model weights + PyMuPDF data. A build that comes out materially
@@ -220,6 +221,15 @@ def collect_versions() -> dict[str, str]:
         data = json.loads((ROOT / rel).read_text(encoding="utf-8"))
         found[rel] = data.get("version", "(missing)")
 
+    # `package-lock.json` records the project's own version twice (top level and the root
+    # `packages[""]` entry), and npm rewrites both only when npm *runs* — so a hand-bumped
+    # `package.json` leaves the lock behind. Found sitting at 0.4.2 through v0.5.0, v0.5.1 and
+    # v0.6.0 (2026-09-10), the same shape as the Cargo files: a file nothing was looking at.
+    lock_json = json.loads((ROOT / PACKAGE_LOCK).read_text(encoding="utf-8"))
+    found[PACKAGE_LOCK] = str(lock_json.get("version", "(missing)"))
+    root_entry = lock_json.get("packages", {}).get("", {})
+    found[f'{PACKAGE_LOCK} (packages[""])'] = str(root_entry.get("version", "(missing)"))
+
     manifest = tomllib.loads((ROOT / CARGO_TOML).read_text(encoding="utf-8"))
     found[CARGO_TOML] = str(manifest.get("package", {}).get("version", "(missing)"))
 
@@ -234,8 +244,9 @@ def collect_versions() -> dict[str, str]:
 
 
 def check_versions() -> Check:
-    """All seven version strings must agree — including uv.lock (the v0.4.0 CI break), the two
-    Cargo files (silently 0.4.1 for three releases), and the `__version__` constant the update
+    """All nine version strings must agree — including uv.lock (the v0.4.0 CI break), the two
+    Cargo files (silently 0.4.1 for three releases), `package-lock.json` (0.4.2 for three more),
+    and the `__version__` constant the update
     check compares against (ADR-044: a stale constant makes the app compare itself to a lie)."""
     found = collect_versions()
     distinct = set(found.values())
@@ -443,6 +454,43 @@ def check_dev_commands() -> Check:
     )
 
 
+# The two documents a person works from during a release, and which are assumed STALE unless
+# proven otherwise (user, 2026-09-10): the UX walkthrough grows a row for every surface that
+# shipped, and the security note's findings/floor tables move as steps land. A release cut against
+# last release's checklists tests last release. Judged by git history like `artifact_fresh`, not
+# by mtimes or a header date: "touched since the previous tag" is the fact that matters.
+CHECKLISTS = (
+    "docs/release-ux-checklist.md",
+    "docs/security.md",
+)
+
+
+def check_checklists_refreshed() -> Check:
+    """Each release checklist must carry a commit (or an uncommitted edit) since the previous tag.
+
+    An untouched checklist is not evidence that nothing changed — it is evidence that nobody
+    looked. The refresh procedure is docs/RELEASE.md §0; this only verifies it happened.
+    """
+    tag = _run("git", "describe", "--tags", "--abbrev=0")
+    if not tag:
+        return Check("checklists", SKIP, "no previous tag to compare against")
+    stale: list[str] = []
+    fresh: list[str] = []
+    for rel in CHECKLISTS:
+        if not (ROOT / rel).exists():
+            stale.append(f"{rel}: missing")
+            continue
+        committed = _run("git", "log", "--oneline", f"{tag}..HEAD", "--", rel)
+        dirty = _run("git", "status", "--porcelain", "--", rel)
+        if committed or dirty:
+            fresh.append(rel)
+        else:
+            stale.append(f"{rel}: no change since {tag} — refresh it (docs/RELEASE.md §0)")
+    if stale:
+        return Check("checklists", FAIL, f"{len(stale)} checklist(s) untouched since {tag}", stale)
+    return Check("checklists", OK, f"all {len(fresh)} touched since {tag}")
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--json", action="store_true", help="machine-readable output")
@@ -461,6 +509,7 @@ def main() -> int:
         check_sidecar_size(),
         check_rg012(installer),
         check_dev_commands(),
+        check_checklists_refreshed(),
     ]
 
     if args.json:

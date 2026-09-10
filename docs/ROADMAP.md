@@ -1,186 +1,257 @@
-<!-- status: active · updated: 2026-09-01 (row 18 done + closed out — the source viewer, ADR-050; row 24 filed — the on-image highlight, measured) · class: living -->
+<!-- status: active · updated: 2026-09-10 (the user's order: gaps with one security step per session → row 25 → the graph re-pass (row 75); row 62 done → archive; plans/reviews moved to docs/plans/ and docs/reviews/) · class: living -->
 
 # ROADMAP — doc_assistant
 
-The living roadmap: phase map, goals, and the machine-read PR table. This is the **source of
-intent**; `docs/decisions/` records the locked design choices (living index `docs/decisions.md`;
-pre-cpc rationale frozen at `docs/archive/decisions-monolith.md` — ADR-022), and `AGENTS.md` /
-`.claude/CONTEXT.md` point at both. The evaluation strategy and the verified-10 benchmark rule live
-in `tests/eval/TESTING.md`.
+The living roadmap: **one table of open work, grouped per feature**, then one section per feature
+saying what is shipped, what is next, and what gate the next step has to pass. This is the source
+of *intent*; `docs/decisions/` records the locked design choices (living index `docs/decisions.md`)
+and `AGENTS.md` / `.claude/CONTEXT.md` point at both. Evaluation strategy: `tests/eval/TESTING.md`.
 
-> Reshaped from `docs/doc-assistant-roadmap.md` on 2026-06-20 (cpc adoption, ADR-001): the PR table
-> now uses the cpc `| PR | Scope | Status | Spec |` columns so `roadmap_sync` can parse it. The full
-> original (detailed per-phase prose) is preserved, frozen, at `docs/archive/doc-assistant-roadmap.md`.
+> **Restructured 2026-09-10.** The file had grown to 108 rows, 87 of them done, in one flat table
+> whose rows restated the DEVLOG. Every done row moved **verbatim** to
+> [`docs/archive/ROADMAP-done-001.md`](archive/ROADMAP-done-001.md) (ids are never reused; cite
+> them from there). The UI checklist's queue (`docs/ui-checklist.md` §1–§3, local-only) was folded
+> in so there is one planning surface, not two. The pre-cpc narrative roadmap is still at
+> `docs/archive/doc-assistant-roadmap.md`.
+>
+> **How to read a row.** `Status` is one of `planned` (agreed, not started) · `gate first` (an ADR,
+> spec, grill or measurement must land before code) · `blocked` (waits on another row or a KI) ·
+> `deferred` / `parked` (deliberately not scheduled — the reason is in the row). One PR per session
+> (AGENTS.md build protocol). A row's *why* lives in its spec/ADR/DEVLOG, linked in `Spec` — do not
+> restate it here.
+
+## Where the product stands (2026-09-10)
+
+**v0.6.0 is published** (2026-09-04; installer + headless image + source checkout). Shipped and
+measured: hybrid RAG with page-level citations, the integrity layer (provenance, evidence vs
+interpretation, reviewer), figures, the curated concept graph + gap list + taxonomy substrate,
+folders with retrieval scope, add-documents (copy or reference), Zotero import, per-part re-ingest,
+the source viewer with page jump and in-context passage. Quality record: `evals/README.md`; cost
+record: `docs/performance.md`; what the knowledge layer's signals are worth: `docs/knowledge-layer.md`.
+
+**Now → next → later** (user's order, 2026-09-10 second session — supersedes the review's own suggestion from earlier that day):
+
+1. **Now — the gaps, three strands in parallel, one small security step every session.**
+   - *The release loop:* row 46 (the citation gate), then 61 (advisories = security step S-8).
+     Row 62 landed 2026-09-10.
+   - *Security, a little each session:* `docs/security.md` §4 is the ordered list; row **60** names
+     the current step. A session's security slot is one step — small code, its test, one line in
+     the doc. The full check (§6) runs once when the list is done.
+   - *The knowledge layer made to work:* **KL1** (tell the truth) → **53 + 54** ($0 measurements) →
+     **51** (a real concept hierarchy + TX3b) → **KL4** (measure the unmeasured) → **KL2** (the
+     acquisition half — design first, ADR-032).
+2. **Next — the feature:** row **25**, LLM-assisted ingestion (spec + ADR, then build), with 56
+   riding on it.
+3. **Later — the graph re-pass:** row **75** — a deliberate second pass over the Graph tab now that
+   the vocabulary, hierarchy and gap grades are honest: 52 · 57 · 50 · 43 (43 waits on KL3), plus a
+   UX pass on navigation. Then 47 (the Project ADR) and the rest of F4.
+
+## Sequence — the next sessions, in order
+
+Each line is one session; the security column is that session's step from `docs/security.md` §4.
+
+| # | Main work | Security step |
+|---|-----------|---------------|
+| 1 | 46 — the citation gate asserts over three turns ($0) | S-1 ingest size caps |
+| 2 | KL1 — the knowledge layer tells the truth (strip column · markers · `unsourced_claim` headings · RG-014 grades in the list) | S-2 walk cap |
+| 3 | 53 + 54 — the merge-cosine sweep and the denominator tests ($0) | S-3 sanitise `{@html}` + `devCsp` |
+| 4 | 51 — `is_a` edges among concepts + TX3b accept/reject | S-4 CSP residual |
+| 5 | KL4 — RG-015 placement quality · RG-018 community flip | S-5 host guard |
+| 6 | 61 — advisories triaged, `pip-audit` blocking | (= S-8, the whole slot) |
+| 7 | KL2 — ADR-032 grill: the acquisition half designed | S-6 launch token |
+| 8 | 25 — LLM-assisted ingestion: spec + ADR | S-7 source-viewer containment |
+| 9 | 25 — build, part 1 (the sidecar + the review surface) | S-10 the small ones |
+| 10 | 25 — build, part 2 (+ 56 concept marking at ingest) | S-11 security events in the log |
+| 11 | 75 — the graph re-pass (52 · 57 · 50; 43 if KL3 is done) | S-9 prompt fence (this session also runs the eval) |
+| 12 | The periodic full security check (§6) → `.claude/REVIEWS.md` row 7 | — |
 
 ## Goals
 
-1. Make the embedding layer swappable, with measured comparisons. (Per-project *routing* is deferred
-   until a model beats `bge-base` on an identifiable sub-corpus — no such win yet; the factory stays,
-   the routing layer waits.)
-2. Build a reproducible eval harness inside the project, designed to be extractable later.
-3. Promote figures and tables from lossy text artifacts to first-class structured content.
-4. Add a research-integrity layer: every answer carries a provenance record; synthesis splits into
-   evidence and interpretation; an LLM reviewer scores each interpretation against a rubric.
-5. Position the project against published standards (PRISMA-trAIce, AI Usage Cards, BE WISE) without
-   binding to any single vendor framework.
-6. Close the self-improvement loop: aggregate reviewer verdicts, separate reviewer bias from systemic
-   fault by anchoring against the verified eval set, surface recurring failure patterns — but only
-   above a minimum-N gate. Below the gate: instrumentation, not action.
-7. Add a self-organizing markdown "wiki" synthesis layer over the corpus — distilled, linked, cited
-   topic notes that make knowledge gaps computable. Feeds Phase 7 gap detection and Phase 9 review
-   generation.
+1. Swappable embedding layer with measured comparisons (per-project routing deferred: no model beats
+   `bge-base` on an identifiable sub-corpus yet).
+2. A reproducible eval harness inside the project, extractable later.
+3. Figures and tables as first-class structured content.
+4. A research-integrity layer: provenance per answer, evidence/interpretation split, a rubric reviewer.
+5. Position against published standards (PRISMA-trAIce, AI Usage Cards, BE WISE) without binding to one.
+6. Close the self-improvement loop above a minimum-N gate; below it, instrumentation only.
+7. A self-organising wiki/synthesis layer that makes knowledge gaps computable — and, the operative
+   half (user, 2026-08-03): **tell the user what to go read next**.
 
-## Phases
+**Historical phase ids** (still cited by ADRs and `.claude/CONTEXT.md`): phases 1–5 done; **6**
+(figures/tables + reviewer) → features F1/F3; **7** (gap detection + concept graph) → F5; **8**
+(iterative UI track) → every feature's UI rows + F12; **9** (literature-review generation) → F8.
 
-(Bullet list, not a table — the only machine-read table in this file is the PR table below, which
-`roadmap_sync` parses as the first markdown table.)
+## Open work — the PR table
 
-- **Phase 4 — Citation graph close-out** — doc-similarity edges. Status: done.
-- **Phase 5 — Embedding & eval foundation** — config-driven embedder, golden set, provenance. Status: done.
-- **Phase 6 — Figures/tables + dual-layer interpretation + reviewer + self-improvement loop** (per-project routing deferred). Status: in progress.
-- **Phase 7 — Gap detection** — wiki/synthesis layer + cross-document concept graph + the gap-detection layer over them. Status: in progress. *(The 2026-06-18 concept-graph redesign is **built and validated**: Node A skeleton 2026-06-30 + Node B enrichment PR #6, R5 PASS/ADR-008; the superseded open-vocabulary `concept_graph.py` was deleted 2026-07-07 — G1, KI-7 resolved. The gap layer's Tier-1 + Tier-2a floor and stochastic ceiling are built — G2/G5. Remaining: Tier 2b external reach, `citation_missing` floor.)*
-- **Phase 8 — UI polish** — settings page exposing the RAG sandbox knobs, plus ongoing chat/citation UX. Status: **open — iterative UI-polish track** (not closed). The five initial tracks (U2/U3/U1/U1b/U1c) are built **and committed** (`09afd0c`, 2026-07-11); the phase deliberately stays open for further UI elements and for the end-to-end verification still owed (live-UI smoke test of the sandbox knobs + provider switch on a real answer turn; RG-012 Tier-2). Living status + backlog: `docs/ui-checklist.md`. *(Chat-UI refinement shipped 2026-07-09 — `ee8fe8d`. **2026-07-10:** three more UI/UX tracks drafted then grilled — settings disclosure + manual dark mode, right-aligned chat bubble, click-to-open citation side panel — `docs/specs/feature-phase8-ui-upgrade.md` (**design-locked** for U1/U1b/U2/U3, build order U2→U3→U1→U1b→U1c). U2 + U3 built 2026-07-10. U1 built 2026-07-11 (SPRINT-010). U1b built 2026-07-11 (SPRINT-011) — the two ADR-010 "must revisit" niche knobs. **U1c built 2026-07-11** (SPRINT-012, ADR-011) — live desktop provider/model switching (v1: already-configured providers only, key stays in `.env`, no restart); v2 (in-app key entry via an OS keychain) is a recorded, un-built north-star.)*
-- **Phase 9 — Literature-review generation** — PRISMA-trAIce export. Status: planned.
-- **(no phase number) — Extract eval harness to a standalone repo** (Feature 5). Status: planned.
-- **(no phase number) — External literature discovery** — mine the enrichment layers (epistemics, authors, keywords/concepts, citation + concept graphs) to find related papers via **open-access APIs** (OpenAlex, Semantic Scholar, Crossref, arXiv, Unpaywall, CORE; Sci-Hub excluded — unauthorized distribution). Status: idea (tray, `docs/ui-checklist.md` §3; 2026-07-13). Needs its own ADR (first outbound-network feature on a local-first app); builds on the metadata-enrichment tray row.
-- **(no phase number) — Global CLI + MCP server** — expose the RAG beyond the desktop app (PATH-installed CLI, disabled by default; local stdio MCP tools). Status: **parked — post-review phase** (user call 2026-07-13; tray rows in `docs/ui-checklist.md` §3).
-- **(no phase number) — Exploration & epistemics surface (2026-07-21 plan)** — product decisions D1–D3 (`docs/decisions/ADR-027-epistemics-surfacing-split.md`): the app is primarily a corpus exploration/population tool; epistemics **assessment** always visible per-source (E2), epistemics **influence** on the answer layer user-optional (E3); the unrouted enrichment layers (similar docs, citation graph, gaps) get user-facing surfaces (E4/E5) after the correctness batch (E0) and the marker-join fix (E1). Plan: `docs/PLAN_2026-07-21_exploration-epistemics.md`; rows E0–E5 below; the UI-facing pieces join the Phase-8 iterative pool (`docs/ui-checklist.md` §3). Status: planned (E0 first).
+*(The only machine-read table in this file — `roadmap_sync` parses the first markdown table. Keep
+the `PR | Feature | Scope | Status | Spec` header. Ids continue the historical numbering; letters
+mark the older tracks.)*
 
-## PR order (Claude Code, one PR per session)
+| PR | Feature | Scope | Status | Spec |
+|----|---------|-------|--------|------|
+| 46 | F3 Chat | **RG-012's citation half** — the ship gate's citation verdict is a coin flip on `llama3.1:8b`; assert over 3 turns with ≥1 cited (option 2), $0, before the next release | planned — **blocks-ship** | `.claude/RIGOR_TODO.md` RG-012 (2026-08-14) · KI-35 · KI-36 |
+| 61 | F10 Platform | **Dependency advisories** — 66 across 16 packages with `pip-audit` on `continue-on-error`; `aiohttp` and `starlette` ship in the sidecar and the image. Triage: upgrade what the lock allows, pin an ignore-list with reasons for the rest, then make the step block on HIGH/critical | planned — own session | `.github/workflows/ci.yml` · `docs/security.md` |
+| 60 | F10 Platform | **Security — one step per session.** `docs/security.md` §4 is the ordered plan (S-1 … S-12, then the full check §6); this row names the **current step** and moves each session. Foundations that landed 2026-09-10: gates cover `apps/`, `npm audit` in CI, the Tauri config guard test, loopback compose, the floor + threat model written down | in progress — **current step: S-1 ingest size caps** | `docs/security.md` §4 · `docs/reviews/REVIEW_2026-09-10_project-review.md` §4 |
+| 73 | F12 Verification | **Live-turn verification batch** ($0, Ollama): sandbox knobs change retrieval on a real answer · provider switch end-to-end incl. the reviewer following it · epistemics marker chips render (KI-15's fix has never been seen live) · RH1 reranker cap under multi-query · RG-012 Tier-2 on the frozen build. Becomes the standing pre-release walkthrough | planned | `docs/release-ux-checklist.md` · `docs/ui-checklist.md` §3 (local) |
+| 25 | F1 Ingestion | **LLM-assisted ingestion mode** — opt-in pass over the programmatic default (Ollama-first, KI-4 guard): figure links, citation links, **reference order** (needs an additive ordinal column at extraction time — it cannot be backfilled), concept marking at ingest. Output is a durable, inspectable, re-derivable sidecar (Enrichment-Layer Pattern; ADR-043's "normalisation is a derived layer") | gate first — spec + ADR (new ingest mode, cost-gated) | `docs/plans/PLAN_2026-08-11_ingestion-quality.md` §2 (local) · `.claude/CONTEXT.md` direction note |
+| 75 | F5 Knowledge | **Graph re-pass** — a deliberate second pass over the Graph tab once the vocabulary, hierarchy and gap grades are honest (after 25): the `flat_field` detector (52) · gap-list / Connections navigation iteration (57) · placement of the gap list and Connections (50) · rich marker UI (43, waits on KL3) · a UX pass on the concept rail, ego view and empty states against `docs/release-ux-checklist.md` §4 | later — after 25 | rows 52 · 57 · 50 · 43 · `docs/knowledge-layer.md` |
+| 51 | F5 Knowledge | **Concept hierarchy for concepts** — `is_a` edges among curated concepts (ADR-019/ADR-028 machinery is built; the taxonomy is *empty*: 13 of 357 concepts placed, 0 `is_a`, ADR-045) + **TX3b** in-app accept/reject of proposed placements. Raised by the user three times | planned | ADR-028 · ADR-045 · `docs/specs/feature-taxonomy-auto-propose.md` |
+| KL1 | F5 Knowledge | **Knowledge layer tells the truth** (Phase A): stop presenting stance-derived output as an epistemic finding · ADR-041 option 6 — re-base per-concept status on the claim layer · fix `unsourced_claim` heading contamination (~33%) · encode RG-014's grades in the gap list (lead `single_source`, `under_connected` off by default, suppress `thin_bridge` hub endpoints) | planned | `docs/knowledge-layer.md` · ADR-040 · ADR-041 · KI-33 · `docs/plans/PLAN_2026-08-03_knowledge-layer-to-goal.md` Phase A (local) |
+| KL2 | F5 Knowledge | **The acquisition half** (Phase B) — the goal's operative capability, unimplemented: re-point `gap_suggest` off `under_connected` onto `single_source` (cheapest real win) · grill **ADR-032** then build the outbound reach (*"for subject X, read Y"*) · the taxonomy as the reference class for expected coverage | gate first — ADR-032 grill | ADR-004 (Tier-2b) · ADR-032 · PLAN 2026-08-03 Phase B |
+| KL3 | F5 Knowledge | **Node-B stance rebuilt on evidence** (Phase D, ADR-041 option 1): passages in the prompt + a `neutral` label + one pair per call; **a hand-labelled ground-truth set is the gate, not a follow-up**. Decide whether `superseded_trend` survives on `doc_years` alone | gate first — ground-truth set | ADR-041 · KI-33 · `tests/eval/baselines/node_b_stance_validity_2026-08-02.md` |
+| KL4 | F5 Knowledge | **Measure the two unmeasured shipped layers** (Phase E): RG-015 taxonomy placement quality (specced, never run) · RG-018 wiki community flip on the real corpus | planned ($0) | `.claude/RIGOR_TODO.md` RG-015 · RG-018 |
+| 52 | F5 Knowledge | **`flat_field` depth detector** (crossover review §3.1): a field whose concepts all sit at `is_a` depth ≤ 1 — a vocabulary with no taxonomy. Every Tier-1 detector counts edges; none measures depth, and ADR-028's acyclic `is_a` edges make depth well-defined. Only fires once row 51 produces `is_a` edges | blocked on 51 | `docs/reviews/REVIEW_2026-09-07_crossover-daily-learn.md` §3.1 (local) · ADR-028 D3 |
+| 53 | F5 Knowledge | **Sweep `CONCEPT_MERGE_COSINE`** (crossover §3.2): 0.80 / 0.85 / 0.90 over the current glossary, hand-scored on the pairs that change, filed as `tests/eval/baselines/concept_merge_cosine_<date>.md`. The reversible knob (`min_degree`) is measured; the irreversible one (a merge drops a row) is a default | planned ($0, one session) | crossover §3.2 · `config.py` `CONCEPT_MERGE_COSINE` · REVIEW 2026-07-19 CS-7 |
+| 54 | F5 Knowledge | **Denominator-parity tests** (crossover §3.3): every coverage number asserts its denominator against the artifact it describes — `presence_nodes()`'s `kind` guard vs the shipping node set; document-coverage math vs the document table (ADR-019 D6's "22 of 47" was caught by reading) | planned ($0) | crossover §3.3 · `knowledge/taxonomy.py` · ADR-028 D4 |
+| 55 | F5 Knowledge | **`citation_missing` floor** — named in `GapKind`, never built (the other Tier-2a deterministic kind) | planned | ADR-004 · `knowledge/gaps.py` |
+| 47 | F4 Projects | **Project ADR** — one grouping across documents · conversations · concepts (folders, home screen and per-project concept view are *one idea*, not three). Open: one shared tree or two? may a project scope retrieval like a document folder (ADR-025 F2)? per-project graph (= ADR-025 fork 5)? what happens to a project when its chats are soft-deleted? | gate first — ADR | `docs/ui-checklist.md` §2 Projects (local) · ADR-025 |
+| 48 | F4 Projects | **Home screen / project picker** — the first screen becomes "which project am I in" | blocked on 47 | — |
+| 49 | F4 Projects | **Conversation folders** — a new relationship (`Folder` is document-scoped, ADR-025 F1), never a schema reuse | blocked on 47 | ADR-025 |
+| 50 | F4 Projects | **Graph placement + gap-list home** — the Graph tab is back (row 22) but where the gap list and Connections ultimately live is the Project ADR's call | blocked on 47 | ADR-017 · RG-014 |
+| 37 | F3 Chat | **Chat modes** — named, user-customisable system prompts. **Hard boundary:** `ANSWER_PROMPT`'s citing block is the *wire format* `synthesis._CITATION_RE` parses (it broke once, 2026-07-14) — persona/task framing is editable, the citing block is not; `chat_controller` must hash the template per turn, not at construction, or provenance lies | gate first — spec | `docs/ui-checklist.md` §2 Chat (local) · `prompts.py` |
+| 38 | F3 Chat | **Structured/template answer mode** over extracted metadata, keywords, concepts | blocked on 37 | — |
+| 39 | F3 Chat | **RAG + Internet mode** — same family as KL2/T5 (transport spiked: stdlib `urllib` → Crossref 25/25). Own ADR: provider list, quality list, caching, provenance of an acquired source, offline degrade; inherits ADR-044's transport/privacy discipline | gate first — ADR | ADR-044 · ADR-032 |
+| 40 | F3 Chat | **Evidence-only mode polish** — `synthesis_mode=human` already answers with evidence only; the remaining decision is to force multi-query off and gate the rewrite so the mode is genuinely $0 | planned (small) | `chat_controller/controller.py` |
+| 41 | F3 Chat | **Unconstrained mode** — corpus restraint off, measurements on; which variant, and how the reviewer still grades groundedness | gate first — grill | — |
+| 42 | F3 Chat | **Highlight cited claims in the answer text** — presentation over `answer_claims` + `result.sources` (in the extracted markdown; the on-page half is row 24) | planned | `how-answers-work.md` |
+| 43 | F3 Chat | **Rich marker UI** — hover a contested/superseded chip → the corroborating documents. `contested` is not a measurement today | blocked on KL1/KL3 | `docs/knowledge-layer.md` §6 · KI-33 |
+| 44 | F3 Chat | **Resumable chat rehydration** — reopened chats are read-only; claims + reviewer joins are the follow-up | planned | `docs/specs/feature-conversation-resume.md` |
+| 45 | F3 Chat | **User-tunable RAG pipeline** — reopens ADR-010, whose non-persistence is the governance wall. Finding that motivated it: `TOP_K` was never the problem; **`EMBEDDING_MODEL` is the catastrophic knob and appears in neither ADR-010's split nor the locked-settings table** — map blast radius first | gate first — grill + ADR | ADR-010 · `.claude/ui-checklist-archive-001.md` (local) |
+| 24 | F2 Library | **Highlight the cited passage on the page image** — measured viable (4-word anchor places 90%, envelope 97% pure). Must solve: real column detection · 43% of parents straddle a page break (say so) · a stated decline-never-guess policy for ambiguous anchors | planned | ADR-050 Addendum · DEVLOG 2026-09-01 (2) |
+| 32 | F2 Library | **Source explorer: chunk → parent → document** from the citation panel (~1 endpoint + panel UI; `parent_index`/`_chunk_key` exist) | planned | — |
+| 33 | F2 Library | **Chunk editing + colour-coded chunk state** — editing collides with the Enrichment-Layer rule; split the read half (plain UI) from the write half (annotation sidecar) | gate first — ADR | memory note *future-user-annotatable-figures-chunks* |
+| 34 | F2 Library | **ADR-046's amended delete** — `delete_document` takes `delete_file`, asks, defaults to library-only, never bins a *referenced* file (the "still design" half of ADR-046) | planned | ADR-046 · ADR-014 |
+| 35 | F2 Library | **Missing-source badge** — the ui-checklist row named three `resolve_source_path` bugs; KI-52 fixed the registry half. **Verify what remains against the code before planning** | planned (verify first) | KI-52 · `docs/ui-checklist.md` §2 (local) |
+| 27 | F1 Ingestion | **Tables** — extraction code exists but **no table has ever landed** (Marker unrunnable here, KI-42 fixed the pin); diagnose on the live corpus before designing; styled table rendering after | gate first — diagnose | `docs/figures-and-tables.md` · KI-42 |
+| 26 | F1 Ingestion | **Keyword auto re-trigger on corpus growth** (P1 D3) — the same question as KI-44: a sidecar can only reach retrieval through a global `--rebuild` (~4 min at 97 docs, ~3.6 h at 10k) | planned | KI-44 · `docs/plans/PLAN_2026-08-11_ingestion-quality.md` (local) |
+| EX1 | F1 Ingestion | **OCR sidecar for true scans** (ADR-039) — 1 of 97 documents; opt-in, restores a text layer not markdown, Tesseract absent-tolerant (KI-47), **gated on RG-025** (wrong OCR text is worse than none). Parts (a) extractor-lost text and (c) KI-40 cache key are done | gate first — RG-025 | ADR-039 · RG-025 · KI-47 · KI-48 |
+| 28 | F1 Ingestion | **Extended metadata + Crossref autocomplete** — surface the stored DOI; add journal/url/article_type (~6 appends to `_ADDITIVE_COLUMNS`); local-text yield is hopeless, Crossref wins on all four. Shares the outbound transport with T5/39 | gate first — ADR-016 (number reserved) | `.claude/ui-checklist-archive-001.md` (local) · ADR-044 |
+| 29 | F1 Ingestion | **Calibre adapter** (one module + one route, ADR-049) **and** run the Zotero adapter against a real library — the tests prove the mapping, not the schema | planned | ADR-049 |
+| 31 | F1 Ingestion | **Ingest honesty — Track B of the add-documents plan** (per-file outcome instead of a batch total, retry, what changed); not started | planned | `docs/plans/PLAN_2026-08-20_user-friendly-ingestion.md` §4 (local) |
+| 30 | F1 Ingestion | **Per-document ingestion tuning** (a table-heavy paper chunked differently). Contained but not free: BM25 `avgdl` is corpus-global, `TOP_K` counts parents, splitters are import-time singletons | gate first — grill | `.claude/ui-checklist-archive-001.md` (local) |
+| 56 | F5 Knowledge | **Better concept highlighting** — mark concepts at ingest (rides on 25), more reliable than at read time | blocked on 25 | — |
+| MM1 | F6 Maps | **Document outline layer** — populate `DocumentPart` from the cached markdown; `char_start`/`char_end` + part→`parent_index`; idempotent backfill; no LLM | gate first — ADR-030 is a stub | ADR-030 · `docs/plans/PLAN_2026-07-27_maps-trust-reports.md` Track 1 (local) |
+| MM2 | F6 Maps | `knowledge/doc_map.py` read model + `GET /api/library/documents/{id}/map` + wire types | blocked on MM1 | ADR-030 |
+| MM3 | F6 Maps | `lib/library/treeLayout.ts` (pure, tested) + `DocumentMap.svelte`; cross-doc pivot by shared concept | blocked on MM2 | ADR-030 |
+| T1 | F7 Trust | `Document.source_type` + user override + deterministic partial derivation; **`unknown` is first-class** | gate first — ADR-031 is a stub | ADR-031 · PLAN 2026-07-27 Track 2 (local) |
+| T2 | F7 Trust | Provenance-completeness indicator over existing fields only | blocked on T1 | ADR-031 |
+| T3 | F7 Trust | Three-band source-evaluation strip — named signals, **no composite score** | blocked on T1 | ADR-031 |
+| T4 | F7 Trust | `knowledge/leads.py` — guided escalation, local tier; absorbs B13 | blocked on T1 | ADR-031 |
+| T5 | F7 Trust | **Outbound verification** — DOI backfill + Crossref/OpenAlex + `document_external` sidecar; the first *enrichment* network feature, own ADR + own gate | parked | ADR-032 · ADR-044 |
+| RP1 | F8 Reports | Prompt composer (**frozen citation contract** + swappable brief) + `report_presets` + built-ins + a citation-audit regression gate | gate first — ADR-033 is a stub | ADR-033 · PLAN 2026-07-27 Track 3 (local) |
+| RP2 | F8 Reports | Report as a job: dry run, **cost preview**, progress, per-section provenance | blocked on RP1 | ADR-033 |
+| RP3 | F8 Reports | Trust-annotated sections + evidence appendix | blocked on RP1, T3 | ADR-033 |
+| RP4 | F8 Reports | Rendering through `export.py` | blocked on RP1 | ADR-033 |
+| 14 | F8 Reports | Integrity Chunk 3: **PRISMA-trAIce export** | planned | — |
+| 58 | F9 Search | **Semantic search option** — global search is a literal client-side match (`lib/shell/search.ts`); add an optional embedding-cosine mode, keep literal as the default (instant, offline, predictable) | planned (small spec) | — |
+| 59 | F9 Search | **Recent searches** (last ~5) and **search over conversation content** (titles only today) — no favourites list (user: prefer grouping) | planned | — |
+| 63 | F10 Platform | **Slim installer as a user option** — download weights on first run. A *trade* against KI-9's offline-from-first-launch promise, not an improvement: two artifacts per release, touches KI-10 and splits RG-010 | gate first — ADR | KI-9 · KI-10 · RG-010 · `docs/RELEASE.md` |
+| 64 | F10 Platform | In-app API-key entry via an OS keychain (ADR-011 v2) | parked — keyring decision | ADR-011 · ADR-034 |
+| 65 | F10 Platform | Global CLI + local stdio MCP server over `pipeline.py` | parked — user call 2026-07-13, freeze the API surface first | — |
+| 15 | F10 Platform | Extract the eval harness to a standalone repo (Feature 5) | planned — after a real comparison has been produced with the integrated one | ADR-024 |
+| 66 | F10 Platform | Lift the Python 3.12 pin (KI-2) | blocked — external (native deps not cp314-stable) | KI-2 |
+| 6 | F11 Quality | Per-project embedder routing (Feature 1b) — re-run SPECTER2 `--repeat 5` first | deferred | `evals/README.md` |
+| 68 | F11 Quality | **Close or waive the open blocks-ship rigor items with a date** — RG-001/008 (edge precision gate), RG-014 (spec has not absorbed the verdict), RG-027 (ADR-042 identity migration + backfill). `rigor_gate.py` does not exist; the file is a manual discipline doc — say so or build it | planned | `.claude/RIGOR_TODO.md` |
+| 69 | F11 Quality | **`CANDIDATE_K=20` retest** on the private 35 with `--repeat` — the verdict has been "unvalidated" since 2026-06-13 | planned ($0) | `tests/eval/baselines/candidate_k_public_2026-06-13.md` · memory note *candidate-k-retest-needed* |
+| 70 | F11 Quality | **Backend code review as a module** (`.claude/REVIEWS.md` row 2 = never); start with `ingest/` (nine tracked defects) and `chat_controller/` | planned — Cowork-shaped | `.claude/REVIEWS.md` |
+| 71 | F11 Quality | **Frontend code review + a component test harness** — 39 `.svelte` components untestable under `node:test`; needs the lockfile decision (vitest + a Svelte testing library) and would automate half of `docs/release-ux-checklist.md` | planned | `.claude/REVIEWS.md` row 3 · `apps/desktop/CLAUDE.md` |
+| 74 | F12 Verification | **Two uncaptured defects** (user, 2026-07-21): the collapse-sidebar button and the global search bar misbehave — capture the exact symptom before fixing | planned — repro first | `docs/ui-checklist.md` §3 (local) |
 
-Each row is one PR. `Spec` links the code-level contract where one exists; the ADRs in
-`docs/decisions/` (and, for pre-cpc features, `docs/archive/decisions-monolith.md`) carry the
-architectural context per feature.
+## Features
 
-| PR | Scope | Status | Spec |
-|----|-------|--------|------|
-| 1 | Close Phase 4: doc vectors + similarity-edge backfill | done | — |
-| 2 | Feature 1: config-driven embedding layer (+ provider protocol) | done | `docs/specs/llm-provider-isolation.md` |
-| 3 | Feature 2: eval harness v0 | done | — |
-| 4 | Feature 3: golden eval set + BGE vs SPECTER2 comparison | done | — |
-| 5 | Integrity Chunk 1: provenance card | done | — |
-| 6 | Feature 1b: per-project embedder routing | deferred | — |
-| 7 | Feature 4a: table pass (Marker primary, pdfplumber fallback) | done | `docs/specs/feature-4a-marker-table-ingest.md` |
-| 8 | Feature 4b: figure detection + manifest | done | `docs/specs/feature-4b-figure-detection.md` |
-| 9 | Feature 4c: VLM figure description + figure-chunk emission + eval scorer | done | — |
-| 10 | Integrity Chunk 2a: dual interpretation + adjudication | done | `docs/specs/chunk-2a-dual-interpretation.md` |
-| 11 | Integrity Chunk 2b: reviewer agent | done | — |
-| 11.5 | Chunking sweep infra (Phase 2.4 reopened) | done | — |
-| 12 | Integrity Chunk 2c: reviewer aggregation & self-improvement loop (min-N gated) | done | — |
-| 13 | Feature 6: self-organizing wiki / synthesis layer (6a–6d) | done | — |
-| 14 | Integrity Chunk 3: PRISMA-trAIce export | planned | — |
-| 15 | Feature 5: extract eval harness to a standalone repo | planned | — |
-| 16 | Feature 7: cross-document concept graph (7a–7c) | done | — |
-| 17 | Ingestion adapters: Zotero (Calibre TBD) — optional producers for the S1 source registry, never a dependency | **done (2026-08-31, Zotero) — ADR-049.** An adapter returns *paths*, and the existing review sheet does the rest: same duplicate rule, same copy-or-reference choice, so re-importing a library you already have is just an add where everything reads as a duplicate. Split `adapters/catalogue.py` (neutral) + `adapters/zotero.py` (the only module that knows a `linkMode`), so Calibre is one module and one route. The half worth having is the curated metadata: a new `ExternalMetadata` slot **between** the extractor's guess and the user's own edit, keyed by path because it arrives before the document exists — and `_rerun_metadata` re-applies it rather than overwriting it. **Not yet run against a real Zotero library** (none on this machine): the tests build a database to the documented schema, so they prove the mapping, not the schema | done (Calibre still TBD) | `docs/decisions/ADR-049-ingestion-adapters-and-external-metadata.md` · `docs/specs/feature-selective-ingestion.md` (ADR-3) · DEVLOG 2026-08-31 (2) |
-| 18 | **Source viewer: the document beside its library entry** | **done (2026-09-01) — ADR-050.** A right-split pane rendering the file one page at a time: the server renders on demand (19-31 ms, 140-261 KB a page measured; nothing pre-rendered — the corpus would be ~760 MB) and the client is an `<img src>`, the same shape as `figureUrl`. **The row's own premise was wrong and the ADR corrects it:** it claimed the jump is free because *"chunks already carry `page`"*, but the live parent-child path carries one on **615 of 39,705 (1.5%)**, all figure chunks. It is free because the cache carries `<!-- page:N -->` on **98/98** documents and chunks carry `parent_char_start` at 100% after row 19's re-chunk — so `ChunkContext.page` went **2.0% -> 98.0%** populated. PDF renders pages; other formats degrade to their extracted text and say why; an unreachable file is a sentence naming the path, not a broken pane. Driving it found **KI-57** (a marker can carry the previous page's text — 0.2% of pages). The highlight *on the image* is scoped out: offsets are not coordinates. **Closed out 2026-09-01:** a chat citation opens its page (**Show the page**, figures included), the pane fits/zooms/resizes on the reader's terms, and the unavailable + non-PDF arms were driven against the live library rather than only tested — which is where the two real defects were | done | `docs/decisions/ADR-050-source-viewer-page-rendering.md` · DEVLOG 2026-09-01 (1)(3)(4)(5) |
-| 19 | **Locate a chunk in its source text** — a chat option that says *where* a cited chunk sits in the original | **done (2026-08-30).** Clicking a citation offers **In context**: the passage highlighted inside a window of the extracted text, with what surrounds it and a "N% of the way in". Route (b) throughout — it slices the offsets ingest recorded, never re-derives a position per query. Getting there took a chunk-cursor fix and a re-chunk (63.3% -> 100% span coverage, DEVLOG (7)(8)). Unplaceable chunks say so rather than guessing: 3 in 39,090 here. Shows the *extracted text*, not the page image — that is ROADMAP 18 | done | DEVLOG 2026-08-30 (7)(8)(9) |
-| 20 | **Selective re-ingest from the Library, per document and per part** — a control beside Metadata / Connections / Figures / References / Chunks that re-runs *chosen* parts for that document | done (2026-08-30) — **ADR-048** answers the open question the row filed. Four parts (metadata · figures · references · text), each stating its cost, because they differ by four orders of magnitude. The corpus-global passes are named and declined. `text` is the only one that moves `doc_hash`, and it purges the superseded chunks itself — `ingest.main` skips cleanup on the selective path, so without that a re-extract indexes the document twice (reproduced, then guarded) | `docs/decisions/ADR-048-per-part-re-ingest-scope.md` · DEVLOG 2026-08-30 (5) |
-| 21 | **Re-ingest a selection from the Library grid** — the same operation driven from the existing multi-select (`Select` mode) | done (2026-08-30) — the core takes `document_ids: Sequence[str]`, so this needed no second code path: the select bar opens the **same** dialog with a list instead of one id, and the cost statement multiplies by the selection size. One failing document does not abandon the rest of the batch | DEVLOG 2026-08-30 (5) |
-| 22 | **Re-enable the Graph workspace** — flip `GRAPH_TAB_ENABLED` in `apps/desktop/src/lib/core/features.ts` | done (2026-08-30) — **and it needed more than the flip.** The 2026-08-12 hide asked for *either* a real empty state *or* the hide (REVIEW §2b R4); only the hide was done, so a built-but-empty graph still fell into the populated arm — the rail said "No concepts match" over a query nobody typed. `ConceptGraph`/`GraphIndex` now separate *never built* from *built and empty*. The flag stays (placement is still entangled with the Project ADR) | DEVLOG 2026-08-30 (2) |
-| 23 | **In-app graph-vocabulary curation** — a per-row toggle, an "On the graph (N)" lens and a plain count in **Manage keywords**, so a concept can join the graph vocabulary without `scripts/curate_concepts.py`. Before this, `graph_include=true` had exactly one writer and it was a script the packaged app does not ship, so a fresh install's Graph tab was empty forever (measured 2026-08-30: 593 concepts, 13 in the graph, all `source='manual'`) | done (2026-08-30) — **no new ADR: this is the follow-up ADR-018 already specified**, including the location ("its natural home is the Manage-keywords view") and why the graph must not write its own vocabulary (ADR-017 A1). The row previously said it needed a decision first; reading the ADR corrected that | `docs/decisions/ADR-018-graph-vocabulary-scope.md` · DEVLOG 2026-08-30 (4) |
-| 24 | **Highlight the cited passage on the page image** — the half ADR-050 D5 scoped out of row 18. **Measured before filing (ADR-050 Addendum, 2026-09-01): viable.** A 4-word anchor places **90%** of single-page prose sentences with **5%** genuinely ambiguous, and a first-to-last-anchor *envelope* is **97% pure** (median) — it covers the passage, not its neighbours. Per-sentence rects are rejected: their gaps read as *"this part was not the evidence"*. **Three things the row must solve, none of them obvious:** real column detection (the probe's `x0 // 60` proxy is not shippable and is why its coverage figure of 45% is a floor, not a verdict) · **43% of parent chunks straddle a page break**, so the opening page can only ever show part and the pane has to say so · a stated policy for ambiguous anchors (decline, never guess). **One prerequisite is already done** — the pane defaults to *Fit page* (DEVLOG 2026-09-01 (3)), because a band low on a page is worth nothing if the pane opens on the top two-thirds | planned (2026-09-01) | `docs/decisions/ADR-050-source-viewer-page-rendering.md` Addendum · DEVLOG 2026-09-01 (2) |
-| M0 | Desktop shell: extract `ChatController` + `TurnResult` (UI-agnostic turn core) | done | `docs/archive/pr-m0-chat-controller.md` |
-| M1 | Desktop shell: live 7d epistemics-marker surfacing (pre-migration demo win) | done | `docs/archive/pr-m1-epistemics-markers.md` |
-| M2 | Desktop shell: FastAPI backend + SSE boundary | done | `docs/archive/pr-m2-fastapi-boundary.md` |
-| M3 | Desktop shell: Tauri frontend (Svelte 5 + Vite) | done | `docs/archive/pr-m3-tauri-frontend.md` |
-| M4 | Desktop shell: PyInstaller sidecar packaging + frozen CPU-torch pin | done (`77eb5f9`) | `docs/archive/pr-m4-sidecar-packaging.md` |
-| M5 | Desktop shell: delete Chainlit + lift the Python-3.12 pin (KI-2) | done | `docs/archive/pr-m5-decommission-chainlit.md` |
-| R1 | Ingest hygiene: strip PyMuPDF4LLM image placeholders + cache-normalization runner (closes KI-14) | done (`4da02e3`) | `docs/archive/remediation-plan-2026-07.md` |
-| R2 | Concept presence: word-boundary matching (RG-009 lever; de-confounds R5) | done (`338e55e`) | `docs/archive/remediation-plan-2026-07.md` |
-| R3 | Keyword termhood: contrastive scoring (`wordfreq` reference — decided 2026-07-02) + C-value nested-term fix + orphan sweep | built | `docs/archive/remediation-plan-2026-07.md` |
-| R4 | Concept skeleton: graded provenance strength (ratio, not boolean) | built | `docs/archive/remediation-plan-2026-07.md` |
-| R5 | RG-001/008/009 revalidation run + gap wizard-of-oz → edge-model go/no-go | done | `docs/archive/remediation-plan-2026-07.md` |
-| R6 | Core retrieval: BM25 `preprocess_func` + pipeline hygiene (eval-gated, before any weight sweep) | done | `docs/archive/remediation-plan-2026-07.md` |
-| R7 | KI-7 containment: 7d marker chip default-off until Node B (decided 2026-07-02: option a — `EPISTEMICS_MARKERS_ENABLED` kill-switch) | done (`591280d`) | `docs/archive/remediation-plan-2026-07.md` |
-| S1 | Selective ingestion backend: `SourceFile` registry + selection-scoped ingest (CLI `--files`/`--dry-run`, `GET/PATCH /api/sources`, `POST /api/ingest {paths}`) | done (`2893544`) | `docs/specs/feature-selective-ingestion.md` |
-| S2 | Selective ingestion UI: Tauri sources panel (status chips, select-by-status, exclude toggle, ingest-selected) | done (`7224f10`) | `docs/specs/feature-selective-ingestion.md` |
-| U2 | UI: chat layout — right-aligned, width-capped user bubble; RAG answer stays full-width, unbounded | done (`7ee1b1e`) | `docs/archive/sprints/SPRINT-008-chat-bubble-layout.md` · `docs/specs/feature-phase8-ui-upgrade.md` |
-| U3 | UI: citation side panel — click inline `[n]` to open a slide-over with that source's chunk detail (Chainlit-style); source cards no longer render inline by default | done (`8ba1ffc`) | `docs/archive/sprints/SPRINT-009-citation-side-panel.md` · `docs/specs/feature-phase8-ui-upgrade.md` |
-| U1 | UI: Settings disclosure (surface the full read-only knob set) + build the ADR-010 RAG sandbox knobs + a manual System/Light/Dark theme toggle (persisted client-side, not a backend setting) | done (`09afd0c`) | `docs/archive/sprints/SPRINT-010-settings-sandbox-theme.md` · `docs/specs/feature-rag-sandbox.md` |
-| U1b | UI: Settings — add the two ADR-010 "must revisit" niche knobs (`EPISTEMICS_MARKERS_ENABLED`, `REVIEWER_EVIDENCE_CHARS`) to the sandbox surface | done (`09afd0c`) | `docs/archive/sprints/SPRINT-011-settings-niche-knobs.md` · `docs/specs/feature-phase8-ui-upgrade.md` (ADR-010 amendment) |
-| U1c | UI: Settings — provider/API-key management (Anthropic ↔ Ollama switch, key storage) | done (`09afd0c`) | `docs/specs/feature-provider-switch.md` · `docs/decisions/ADR-011-desktop-provider-apikey-management.md` |
-| U4 | UI: "↻ New" conversation-reset button — clears turns + citation panel + composer and mints a fresh `sessionId` so backend context doesn't leak into the next question (session RAG overrides intentionally kept) | done (`9ce5690`) | — (ad-hoc from user request; precursor to the conversation-history sidebar) |
-| U5 | UI: app shell + conversation history — left sidebar listing past chats (backend-backed by the existing `AnswerRecord.session_id`), reopen read-only, `↻ New chat`; lays the `sidebar│main│drawer` shell the Library space reuses | done (`9ce5690`) | `docs/specs/feature-conversation-history.md` · `docs/archive/sprints/SPRINT-013-conversation-history.md` |
-| L1 | Library space: read-only chunk browser — the reserved "Library" sidebar tab lists ingested docs → open one → read its chunks as parent blocks (each expandable to its child chunks). Read-only, no model, no writes (SQLite `Document` + the live Chroma handle) | done (`aa288d9`) | `docs/specs/feature-library-browser.md` · `docs/archive/sprints/SPRINT-014-library-browser.md` |
-| U6 | A/B-compare sandbox (v1: retrieval diff) — a per-turn "Compare" action runs the query under locked defaults vs the session `RagOverrides` and shows the retrieved source sets side-by-side; $0 (no LLM). Full-answer 2× compare deferred | done (`c965418`) | `docs/specs/feature-ab-compare-sandbox.md` · `docs/archive/sprints/SPRINT-015-ab-compare.md` |
-| V1 | UI: visual-identity pass V1 — "paper & ink" design tokens (warm ivory/charcoal neutrals + deep-indigo accent + font-stack + 2 shadow tokens), Lucide inline-SVG icons replacing every chrome emoji glyph, Spectral serif on reading surfaces (Inter sans chrome) | **committed `35b8627` (2026-07-13, "UI: Beautification V1 (1/3)")** — frontend-only: re-keyed `app.css` (all four theme blocks) + new `Icon.svelte` + 9 components; **no `src/`/API/wire-type/behavior change**. `svelte-check` 0/0 (123 files); preview-harness-verified $0/offline on the real 76-doc corpus (palette light+dark via computed styles, 4 SVG icons / 0 chrome emoji in DOM, serif seam confirmed on Library `h2`+chunk text = Spectral stack vs Inter chrome, mobile 375px no-overflow, 0 console errors). **Fonts landed — vendored + committed** (4 latin-subset woff2 Spectral 400/italic/600 + Inter variable in `apps/desktop/src/assets/fonts/` + `lib/fonts.css` `@font-face`; all 4 faces verified loaded via `document.fonts`). **Light palette pulled to white/ivory** (user feedback on the live app — the first warm-ivory cut read too beige; `--bg #ffffff` + whisper-ivory surfaces; dark + accent unchanged). **V2** (layout rhythm + header/wordmark + empty states + ~70ch measure) + **V3** (Tauri app icon + branding + audit) queued; stop-early after V1 allowed | `docs/specs/feature-visual-identity.md` · `docs/archive/sprints/SPRINT-016-visual-identity-v1.md` (archived) |
-| V2 | UI: visual-identity pass V2 — layout rhythm: header/wordmark (serif `doc_assistant` + indigo book mark), a coherent spacing + type scale (`--space-*`/`--text-*`/`--measure` tokens), restyled empty + first-run states with clickable sample-question chips, and a ~70ch reading measure on answer/excerpt prose. Shell topology stays out (fork #9) | done (`4fd772c`) | `docs/specs/feature-visual-identity.md` · `docs/archive/sprints/SPRINT-017-visual-identity-v2.md` |
-| V3a | UI: visual-identity V3a — **rename `doc_assistant` → `Provenote`** (product identity: wordmark treatment B / `index.html` + Tauri window `title` / Tauri `productName` + `identifier` → `com.provenote.desktop` / README + `package.json` description) **+ a cross-screen polish audit**. Internal Python package, npm package name, and the `doc-assistant-api` sidecar binary keep `doc_assistant` (module ≠ product). App icon + branding assets carved to **V3b** | done (`181046c`) | `docs/specs/feature-visual-identity.md` §V3 · `docs/archive/sprints/SPRINT-018-visual-identity-v3a-rename.md` |
-| V3b | UI: visual-identity V3b — **Provenote app icon** + full platform icon-set regeneration. A designed **laurel wreath encircling an open book** on a violet rounded tile (open book = reading; laurel = scholarship/provenance; shares the header mark's book motif, a richer gradient jewel), supplied as a user 1024px master → `tauri icon` rewrites the `src-tauri/icons/*` set (PNG sizes + `.ico` 16→256 + `.icns` + Store + android/ios). Installer-identity split (Provenote product ≠ `doc_assistant` code) recorded in **ADR-012** | done (`487f2df`) | `docs/specs/feature-visual-identity.md` §V3b · `docs/decisions/ADR-012-provenote-installer-identity.md` · `docs/archive/sprints/SPRINT-019-visual-identity-v3b-icon.md` |
-| G1 | KI-7 retirement: delete `concept_graph.py`, re-point `epistemics.py`/`wiki.py` onto the Node-A/B `concept_skeleton` seam, flip `EPISTEMICS_MARKERS_ENABLED` default-on | done | `docs/archive/sprints/SPRINT-001-retire-concept-graph.md` |
-| G2 | Gap-detection layer: deterministic Tier-1 + Tier-2a floor (`gaps.py` + `GapRow` + `scripts/build_gaps.py`); stochastic ceiling out of scope | done | `docs/archive/sprints/SPRINT-002-gap-layer-deterministic.md` |
-| G3 | Year-aware skeleton → unlock `superseded_trend`: thread `Document.year` into the skeleton artifact so `node_weights_for_epistemics` marks a node superseded when its contradicting docs are newer than its supporting docs (relative polarity-over-time, parameter-free; fail-safe to `contested` on missing years). Deterministic, CPU-box, $0; `epistemics.py` unchanged | done (`d7528ab`) | `docs/archive/sprints/SPRINT-003-year-aware-superseded.md` |
-| G4 | KI-10 frozen OS-trust fix: diagnose (WARN entrypoint + on-proxy turn), hand `AnthropicClient` a guarded `httpx.Client(verify=truststore.SSLContext(...))` (shared helper, reused at the VLM seam), optional branch-A PyInstaller runtime hook; construction-only test (no paid call), on-proxy Step-C verification flips KI-10 | done (`5fc5964`) | `docs/archive/sprints/SPRINT-004-ki10-frozen-os-trust.md` |
-| G5 | Gap-detection Tier-2a **stochastic ceiling**: new `gap_suggest.py` — one quarantined, Ollama-default LLM call per Tier-1 `under_connected` node → rated `suggested_link`/`suggested_concept`/`thin_area` `Gap`s (`determinism="stochastic"`, `status="surfaced"`), never auto-written; `--suggest` wires `--provider`/`--model` + `assert_provider_intent`. Tier-2b + the idea-generator out of scope | done | `docs/archive/sprints/SPRINT-005-gap-stochastic-ceiling.md` |
-| G6 | Gate `superseded_trend` to a **≥2-dated-docs-per-side** confidence floor, then validate on the real corpus: one guard clause in `_aggregate_direction` demotes the thin single-doc fires G3 allowed (median-of-one is not an aggregate) to `contested`; `2` is a **named structural constant, not a `config.py` tunable** (definitional minimum for a median to aggregate — no eval-harness ceremony); `epistemics.py` + `_graph_version` unchanged | done (`cb166d4`) | `docs/archive/sprints/SPRINT-006-gate-superseded-confidence.md` |
-| G7 | Fix `epistemics.concepts_in_text` (KI-15): matches concept **labels**, not the curated skeleton's opaque `Concept.id` UUIDs, against chunk text — the id-matching bug meant the live answer-time contested/superseded_trend chips (PR-M1) never fired on the real corpus, independent of G3/G6's node-level correctness. Shares a new `concept_skeleton.compile_boundary_pattern` with Node A's own presence matcher (R2) so there's one boundary-matching definition, not two | done (`1e1e7eb`) | `docs/archive/sprints/SPRINT-007-fix-epistemics-label-attribution.md` |
-| L4 (Phase A) | Library redesign — nav-tree rail + inventory grid + drill-down. Rail becomes a navigation tree (All documents → Collections → Types → Added → Keywords); main pane is a 2-D inventory tile grid of the active collection, with a grid⇄list toggle; opening a doc drills down in place to the existing `LibraryBrowser` chunk view (breadcrumb `Library › Collection › Doc` + Back). Search scopes to the active collection with a "Search all" escape. Frontend-only, $0, no backend change (payload already carries `format`/`added_at`/`keywords`/`folders`); folder population is Phase B | done (`9f597df`) | `docs/specs/feature-library-redesign.md` · L4 Phase A |
-| L5 | Metadata enrichment (deterministic-first backfill) + keyword de-noising + grid layout fix — wire the unwired `metadata_extractor` onto `Document` at ingest + a `metadata_enrich.py` sidecar backfill runner (`scripts/enrich_metadata.py`, idempotent); `VENUE_STOPWORDS` + repeated-token filter in `keywords.py`; mode-aware main width + fixed-footprint tiles | done (`8f31fe3`) | — (backlog row, `docs/ui-checklist.md` §3; DEVLOG 2026-07-16) |
-| L6 | Manual metadata editing in the Library — user-editable title/authors/year via a `DocumentMeta` **override sidecar** (user-entered wins over extracted, survives re-ingest; the first UI write path into the registry) + reveal-in-explorer | done (`e549254`) | `docs/decisions/ADR-013-document-metadata-editing.md` |
-| L7 | Document safe-delete — single-doc delete from the Library `⋯` menu: source file → **OS Recycle Bin** (trash-first, abort-on-fail), then row + meta + chunks + figures + cache; confirmation dialog | done (`95817fc`) | `docs/decisions/ADR-014-document-safe-delete.md` |
-| L8 (F1) | **Corpus folders — folders end-to-end (CRUD + Library UI).** | done (`3969adb`) | `docs/specs/feature-corpus-folders.md` · `docs/decisions/ADR-025-corpus-folders-retrieval-scope.md` |
-| L9 (F2) | **Corpus folders — query-time retrieval scoping (the integrity piece).** | done (`0e45dd3`) | `docs/specs/feature-corpus-folders-scope.md` · `docs/decisions/ADR-025-corpus-folders-retrieval-scope.md` |
-| L10 (F3) | **Corpus folders — demo auto-assign (closes the ADR-025 carve).** | done (`217a122`) | `docs/specs/feature-corpus-folders-demo.md` · `docs/decisions/ADR-025-corpus-folders-retrieval-scope.md` |
-| G8 | **ADR-018 graph vocabulary scope** | done | `docs/decisions/ADR-018-graph-vocabulary-scope.md` |
-| C1 | cpc big-project layout: `AGENTS.md` entry + `CLAUDE.md` stub + module `CLAUDE.md` files (src/apps×2/scripts) + cpc 1.2.3 vendored on this box + `GLOSSARY.md` filled + conventions tooling separated from scripts | done | `docs/decisions/ADR-021-adopt-cpc-big-project-layout.md` |
-| C2 | Docs-system rationalization: per-artifact verdicts (ADRs/specs/sprints/features/DEVLOG/monolith), `decisions.md` → living index + monolith frozen to `docs/archive/decisions-monolith.md`, DEVLOG historical block inverted (newest-first everywhere) | done | `docs/decisions/ADR-022-docs-system-rationalization.md` |
-| C3 | Backend restructure: `src/doc_assistant/knowledge/` subpackage for the concept-graph / keywords / wiki / gaps / epistemics feature modules (db/ and ingest/ already exist; RAG pipeline stays top-level) | done | `docs/decisions/ADR-023-knowledge-subpackage.md` |
-| C4 | Scale-robustness review: knowledge-layer code vs specs/ADRs under the 0-doc + 10k-doc lenses (corpus-tuned constants, empty-state crashes, O(n²) blowups) | done | `docs/REVIEW_2026-07-19_scale-robustness.md` |
-| E0 | Correctness batch (plan 2026-07-21 §E0 = C4-review P0s): curation demote-not-delete (CS-5/KI-20), rebuild coherence (GP-4/KI-21 + KI-17 orphan reconcile), zero-doc honesty (WE-1/WE-9 + GP-7 contract test), `init_db` fail-fast at boot, stance-preserving rebuild (`--apply` without `--enrich` wipes Node B stances) | done (`9fa75a9`; KI-17/20/21 resolved) | `docs/PLAN_2026-07-21_exploration-epistemics.md` · `docs/specs/feature-e0-correctness-batch.md` |
-| E1.1 | Marker-join trustworthiness (correctness core): KI-8 re-projection (option 2) onto PC parents + `chunk_key` column + PC `_chunk_key` completion + WARNING log in `_attach_markers` — prerequisite for E2 | done (`f0e4495`; KI-8 resolved) | `docs/specs/feature-e1-marker-join.md` · `docs/PLAN_2026-07-21_exploration-epistemics.md` |
-| E1.2 | `_handle_rag` extraction (278→198 lines): `_resolve_turn_knobs` / `_capture_provenance_and_review` / `_build_claims_block` seams — before E2/E3 wire epistemics into it (pure refactor, byte-identical) | done (`8e14531`) | `docs/PLAN_2026-07-21_exploration-epistemics.md` |
-| E2 | ADR-027 D3 — always-on source-evaluation strip: per-source coverage/direction + doc year + rerank score + `graph_version` freshness, below every answer (never gated by E3's toggle). Full-stack (backend join + wire + `SourceEvaluation.svelte`). RG-019 denominator deferred (measurement-gated; moot at 0 stance) | done (`44e5950`) | `docs/specs/feature-e2-source-evaluation-strip.md` · `docs/decisions/ADR-027-epistemics-surfacing-split.md` |
-| E3 | ADR-027 D2 — epistemics answer-layer toggle: persisted settings default (`app_settings`, in-app "Answer epistemics" toggle) layered under U1b's per-turn override and over the env default; effective value recorded per turn in `AnswerRecord.epistemics_markers_enabled` (ADR-011 discipline); never hides the D3 strip | done (`064a94d`) | `docs/decisions/ADR-027-epistemics-surfacing-split.md` |
-| E4 | Exploration surfaces (ADR-027 D1): per-doc Connections panel in the Library doc view — related papers (`doc_similarities`, active-embedder-scoped) + in-corpus cites/cited-by + capped external references; `GET /api/library/documents/{id}/connections` + `DocConnections.svelte`; click-through doc→doc hop. **Shape decided by user 2026-07-22: per-doc panel, not a top-level network mode; graph/navigation treatment is an explicit open iteration gate** (see ui-checklist) | done (`1535cf0`) | `docs/PLAN_2026-07-21_exploration-epistemics.md` |
-| E5 | Gap list surface (ADR-004 / ADR-017 C1) — first-class triageable "what to add next" list in the Graph view: label-resolved gaps + effective status + promote/dismiss/reset, durable across the deterministic rebuild via a `GapTriage` override sidecar keyed on `(concept_id, kind)`; pure shared `lib/gaps.ts` taxonomy; `GET /api/concepts/gaps` + `POST …/triage`. Self-contained `GapList.svelte` (relocatable when the Graph-destination fork settles). **`APIRouter` split deferred to its own increment** | done (`a878868`, bundled with the APIRouter split) | `docs/PLAN_2026-07-21_exploration-epistemics.md` · `docs/decisions/ADR-004-gap-detection-layer.md` · `docs/decisions/ADR-017-concept-graph-ui-boundaries.md` |
-| RH1 | Retrieval hygiene: scoped-ensemble memo single slot → small LRU (`_SCOPED_ENSEMBLE_CACHE_SIZE=4`; alternating folders stopped rebuilding BM25 every turn) + `RERANK_CANDIDATE_CAP` (= `CANDIDATE_K*3`) bounding the cross-encoder input under multi-query. Backend-only; single-query default path byte-identical (cap validated `>= 2*CANDIDATE_K`). Cap multiplier eval-gated (RG-022) | done (`77fe8ec`) | `docs/PLAN_2026-07-21_exploration-epistemics.md` §"After the E-track" · RIGOR_TODO RG-020/RG-022 |
-| TX1 | Taxonomy increment 1 (ADR-028): the durable substrate — `kind` column on `concepts` (additive migration, backfills `concept`), new curated `concept_hierarchy` (survives a skeleton rebuild) + `document_field` tables, `knowledge/taxonomy.py` write seam (acyclic `add_hierarchy_edge`, `presence_nodes()` guard, `load_taxonomy`), `scripts/seed_taxonomy.py` + the full ANZSRC 2020 FoR CC-BY data (23 divisions + 213 groups, from the official SKOS/TTL), and the `kind="concept"` consumer guard (families/glossary/curation, ADR-028 D4). $0/zero-LLM. **Seeded into the live DB** (236 domains + 213 in_field edges; existing surfaces verified unaffected) | done (`8607826` + `6d45ba5`) | `docs/specs/feature-taxonomy-seed-schema.md` · `docs/decisions/ADR-028-concept-taxonomy-polyhierarchy-skos.md` |
-| TX2a | Taxonomy increment 2a (ADR-028): the curation **backend** — `knowledge/taxonomy_view.py` read model (field forest + set-semantics rollup coverage, ADR-028 D6) + `apps/api/routers/taxonomy.py` (GET forest/field-detail; POST/DELETE hierarchy edge — a concept→field attach IS an `in_field` edge; POST document→field; 409 cycle / 404 missing / 400 non-domain / 422 bad-type) + payloads + `types.ts` mirror. $0/zero-LLM. Live `GET /api/taxonomy` → 236 fields / 23 roots / 26 concepts (26 unassigned) / 76 docs. **Frontend view = TX2b** | done (`6bac376`) | `docs/specs/feature-taxonomy-curation.md` · `docs/decisions/ADR-028-concept-taxonomy-polyhierarchy-skos.md` |
-| TX2b | Taxonomy increment 2b (ADR-028): the Svelte taxonomy **view** — a dedicated placement modal (`lib/LibraryTaxonomy.svelte`) rendering the field forest via pure `lib/taxonomy.ts` `buildForest` (ancestor-path guard; +4 node:tests) + concept→field attach/detach + document→field attach; `lib/api.ts` client fns; `App.svelte` owns the data (write-then-refetch); entry from the Sidebar rail + a graph node "Place" deep-link (concept preselected, D11). Placement-only (no re-parent UI, ledger #6); decoupled modal, opens from any mode. $0/zero-LLM, frontend-only. Live-verified (attach ticks group+division rollup; 409 at API level; dark+375px 0-overflow) | done (`add52af`) | `docs/specs/feature-taxonomy-view.md` · `docs/decisions/ADR-028-concept-taxonomy-polyhierarchy-skos.md` |
-| TX3 | Taxonomy increment 3 (ADR-028 **D8**): auto-propose placements — `concept_hierarchy.origin` (`curated`\|`proposed`, additive migration w/ literal-DEFAULT backfill) + promote-on-curated-write / never-demote semantics (**accept = the existing curated POST**, no new endpoint) + `unplaced_concepts`/`unclassified_documents` accessors; new `knowledge/taxonomy_propose.py` — quarantined two-stage pass (**division → group within it**, abstention first-class, stage-2 abstain leaves the coarse division placement) taking a caller-built `LLMClient`; `scripts/propose_taxonomy.py` (dry-run default = **zero LLM calls**, `--apply` writes `origin="proposed"`, `TAXONOMY_PROPOSE_LLM_*`→Ollama + `assert_provider_intent`, `--limit`/`--all-concepts` with the skipped counts always printed); origin surfaced through the read model → payloads → `types.ts` (`n_*_proposed`, `FieldMember.origin`). Placement **quality is unmeasured by design** — RG-015 gates the coverage detectors. **UI accept/reject = TX3b** | built — staged (awaiting commit) | `docs/specs/feature-taxonomy-auto-propose.md` · `docs/decisions/ADR-028-concept-taxonomy-polyhierarchy-skos.md` |
-| RV1 | `apps/` reviewability pass (6 steps, 7 commits) — **one domain axis across both shells**, same word on both sides of the wire. Backend: `models.py` 1,165 → `models/` 13 domain modules (routers import their own), `routers/library.py` 301 → `library/{documents,folders,keywords}`. Frontend: `src/lib` 43 flat files → 6 domain folders (pure `git mv`, 43 renames); `core/types.ts`+`core/api.ts` → 25 domain modules behind barrels; **`App.svelte` 2,725 → 1,245 (−54%)** via 7 `.svelte.ts` rune modules + `Topbar`/`StatusBar`/`LibraryPane`/`ChatPane` (graph needed none — its branch was already one `<ConceptGraph/>` call). Largest `apps/api` file 1,165 → 229. Behaviour-neutral throughout; the coupled domains (keyword-family ↔ facet remap, chat ↔ conversations) were **deliberately left in the shell** so cross-domain coupling stays visible. Also fixed: `GapList.svelte` held a literal NUL byte, so git rendered it **binary** and it never showed a readable diff | done (`7309206` `7b9abc2` `8d1d971` `78ca6b6` `b932050` `51e8cdd` `b384cb2` `89f3b93`) | `docs/architecture.md` § `apps/` — the domain spine · DEVLOG 2026-07-26 |
+One block per feature: what is shipped (one line, pointers only), what is next, and the gate.
 
-> **Tracks 1–3 (2026-07-27)** — the four ADRs below are **stubs**: each says *"needs `grill-me` before the Decision section is filled"*, so these rows are scope, not contract. Full plan: `docs/PLAN_2026-07-27_maps-trust-reports.md` — its Reports track is numbered R1–R4 there; renumbered **RP1–RP4** here because `R1–R4` were taken by the 2026-07 remediation rows above.
+### F1 · Ingestion & document quality
 
-| MM1 | Document **outline layer** — populate `DocumentPart` from the cached markdown; `char_start`/`char_end` + part→`parent_index` mapping; idempotent backfill. The structural substrate every map node is anchored to (no LLM) | planned | `docs/decisions/ADR-030-document-outline-and-map-surface.md` · `docs/PLAN_2026-07-27_maps-trust-reports.md` Track 1 |
-| MM2 | `knowledge/doc_map.py` read model + `GET /api/library/documents/{id}/map` + wire types (absorbs PR-G2c) | planned | `docs/decisions/ADR-030-document-outline-and-map-surface.md` · `docs/PLAN_2026-07-27_maps-trust-reports.md` Track 1 |
-| MM3 | `lib/library/treeLayout.ts` (pure, tested) + `DocumentMap.svelte` panel in the doc view; cross-doc pivot by shared concept | planned | `docs/decisions/ADR-030-document-outline-and-map-surface.md` · `docs/PLAN_2026-07-27_maps-trust-reports.md` Track 1 |
-| KL1 | **Knowledge layer tells the truth** (Phase A): stop presenting stance-derived output as an epistemic finding (strip column · answer markers · CHANGELOG) · **ADR-041 option 6** — re-base per-concept status on the claim layer, fixing the edge-vs-concept unit mismatch · fix `unsourced_claim` heading contamination · encode RG-014's grades in the gap list (lead `single_source`, `under_connected` off by default, suppress `thin_bridge` hub endpoints) | planned | `docs/knowledge-layer.md` · `docs/decisions/ADR-040…` · `ADR-041…` · KI-33 · `docs/PLAN_2026-08-03_knowledge-layer-to-goal.md` Phase A |
-| KL2 | **The acquisition half** (Phase B) — the goal's operative capability, currently unimplemented: re-point `gap_suggest` off `under_connected` onto `single_source` (cheapest real win) · `grill-me` **ADR-032** then build the outbound reach (*"for subject X, read Y"*) · use the taxonomy as the reference class for expected coverage | planned | `docs/decisions/ADR-004-gap-detection-layer.md` (Tier-2b) · `ADR-032…` · `docs/PLAN_2026-08-03_knowledge-layer-to-goal.md` Phase B |
-| KL3 | **Node-B rebuilt on evidence** (Phase D, ADR-041 option 1): co-occurrence passages in the prompt + a `neutral`/`no_stance` label + one pair per call; **a hand-labelled ground-truth set is the gate, not a follow-up** (RG-015 template). Also: decide whether `superseded_trend` survives on `doc_years` alone | planned | `docs/decisions/ADR-041…` · KI-33 · `tests/eval/baselines/node_b_stance_validity_2026-08-02.md` |
-| KL4 | **Measure the two unmeasured shipped layers** (Phase E): RG-015 taxonomy placement quality (specced, never run) · RG-018 wiki community flip on the real corpus | planned | `.claude/RIGOR_TODO.md` · `docs/PLAN_2026-08-03_knowledge-layer-to-goal.md` Phase E |
-| T1 | `Document.source_type` + user override + deterministic partial derivation; **`unknown` is first-class** (never guessed into a verdict) | planned | `docs/decisions/ADR-031-source-trust-indicators.md` · `docs/PLAN_2026-07-27_maps-trust-reports.md` Track 2 |
-| T2 | Provenance-completeness indicator over existing fields only — no new extraction | planned | `docs/decisions/ADR-031-source-trust-indicators.md` · `docs/PLAN_2026-07-27_maps-trust-reports.md` Track 2 |
-| T3 | Three-band source-evaluation strip (named signals, **no composite score** — ADR-031's core decision) | planned | `docs/decisions/ADR-031-source-trust-indicators.md` · `docs/PLAN_2026-07-27_maps-trust-reports.md` Track 2 |
-| T4 | `knowledge/leads.py` — guided escalation, local tier; absorbs B13 | planned | `docs/decisions/ADR-031-source-trust-indicators.md` · `docs/PLAN_2026-07-27_maps-trust-reports.md` Track 2 |
-| T5 | **Parked.** Outbound verification — DOI backfill + Crossref/OpenAlex + `document_external` sidecar. The project's **first network feature**, hence its own ADR and its own gate | parked | `docs/decisions/ADR-032-outbound-source-verification.md` · `docs/PLAN_2026-07-27_maps-trust-reports.md` Track 2, T5 |
-| RP1 | Prompt composer (**frozen citation contract** + swappable brief) + `report_presets` table + built-ins + citation-audit regression gate | planned | `docs/decisions/ADR-033-generation-presets.md` · `docs/PLAN_2026-07-27_maps-trust-reports.md` Track 3 |
-| RP2 | Report as a job: dry run, **cost preview**, progress, per-section provenance | planned | `docs/decisions/ADR-033-generation-presets.md` · `docs/PLAN_2026-07-27_maps-trust-reports.md` Track 3 |
-| RP3 | Trust-annotated sections + evidence appendix | planned | `docs/decisions/ADR-033-generation-presets.md` · `docs/PLAN_2026-07-27_maps-trust-reports.md` Track 3 |
-| RP4 | Report rendering through `export.py` | planned | `docs/decisions/ADR-033-generation-presets.md` · `docs/PLAN_2026-07-27_maps-trust-reports.md` Track 3 |
-| PF1 | **Performance/cost record consolidated** — new `docs/performance.md`: one home for launch/query/ingest/sidecar cost, memory, disk, the **optimisation trade-off ledger** (what each 07-28/07-29 optimisation bought and what it cost), linear scale projections to 1k/10k documents, the knob inventory, and measurement debt. Quality stays in `evals/README.md` (different instrument, one home per number). Two figures measured for it: **BM25 arm memory ~8.0 KB/chunk** and the **lazy-reranker first-question penalty ~5.0-5.3 s on `cu130`** (the recorded 3.7 s was CPU). Docs only, no code | done (2026-07-30) | `docs/performance.md` · `tests/eval/baselines/memory_and_lazy_reranker_2026-07-30.md` · DEVLOG 2026-07-30 |
-| PF2 | **Cost-knob exposure decision — closed as *no knobs*, ADR-037.** A `grill-me` session against the post-ADR-036 code found the premise had dissolved: the BM25-snapshot knob is legacy-only, the scoped-cache size lost the cost it traded against, the ingest knobs are read only by `scripts/`, and `DOC_SPARSE_INDEX` is **not** output-neutral. Shipped instead: Settings → **Corpus** reports documents, chunks, disk (total + per document), which keyword-index arm is live, its size and build time, and one honest memory sentence keyed on `keyword_index.mode` — plus one bounded action, *Rebuild*, for the keyword index only (derived data; a full re-index is hours at 10k docs with no progress yet). New `corpus_stats.py` + `POST /api/settings/reindex-keywords` + `settings/corpus.ts`; 20 guard tests. Live-verified at 1280 and 375 px dark, 0 console errors | done (2026-07-30) | `docs/decisions/ADR-037-corpus-facts-not-performance-knobs.md` · `docs/performance.md` §5 · DEVLOG 2026-07-30 |
-| PF2a | **KI-32 step 1 — deduplicate `parent_text` out of the in-RAM corpus.** `_split_parent_texts` + `_parent_text_for` (metadata first, then a `(doc_hash, parent_index)` map) + snapshot payload **v2**. **Predicted ~3x, measured 1.36x** on the heap (265 → 195 MB, 8.0 → 5.9 KB/chunk) and **2.1x on disk** (85.2 → 39.9 MB); retrieval **identical** on the live corpus (3 queries, 10 sources, same documents and scores), construction time unchanged, 17 new guard tests (3 fail if the map lookup is reverted). Attribution then explained the shortfall: **chunk text is ~8% of the footprint**; the sparse index's own structures are ~45% and Python object overhead ~40%. The 16 GB wall moves ~3,700 → ~5,000 documents | done (2026-07-30) | `.claude/KNOWN_ISSUES.md` KI-32 · `tests/eval/baselines/memory_and_lazy_reranker_2026-07-30.md` §3 · DEVLOG 2026-07-30 |
-| PF3 | **Sparse arm off the Python heap (KI-32 step 2, ADR-036)** — an **SQLite/FTS5** index beside the vector store replaces the in-RAM `BM25Okapi`: chunk text + metadata in a table, a contentless FTS5 index over the same `keywords.tokenize` token stream (term parity enforced via `tokenchars '-+'`), parents in their own table, `Document`s built for returned rows only, ADR-025 F2 scoping as a `WHERE ... IN` inside the ranked query, and a **streaming order-independent fingerprint** so launch stops accumulating the id list. **Heap 195 → 21 MB with no corpus resident (8.8x); construction 4.53 → 2.79 s; sparse query 66.6 → 27.4 ms; per turn 336 → 279 ms.** Backend RAM is now flat (~2 GB) instead of 2 GB + 2 MB/document, so the 10k-document memory ceiling is gone. **Retrieval changes** (FTS5's BM25 ≠ rank_bm25's): 84% candidate overlap, 8/10 public queries identical final top-10, recall identical at 1.0000 — gated on an A/B, with `DOC_SPARSE_INDEX=0` kept as the rollback because that instrument has a ceiling. 52 guard tests | done (2026-07-30) | `docs/decisions/ADR-036-sparse-index-on-disk.md` · `tests/eval/baselines/sparse_index_2026-07-30.md` · DEVLOG 2026-07-30 |
-| PF4 | **Retire the in-RAM sparse arm (ADR-038).** The A/B ADR-036 gated the deletion on was believed blocked on a missing corpus; `tests/eval/cases.yaml` is in fact tracked and **35/35 cases run** against the live 97-doc library. Repeated retrieval-only ($0, one process per arm, the arm **asserted** not assumed) the instrument discriminates — recall **0.70–0.83**, not the public set's saturated 1.0000 — and **post-rerank recall is identical at both k**, with the only movement (pre@10 +0.0147) favouring the on-disk arm. Deleted: `bm25_cache.py`, `DOC_SPARSE_INDEX`, `DOC_BM25_CACHE`, `_load_bm25_corpus`, `_split_parent_texts`, `_build_bm25`, the in-RAM branch of `_ensemble_for`. **The cost, designed rather than deleted:** a failed build now means keyword search is *off*, so `keyword_index_unavailable` + `mode="unavailable"` + a warning banner report it, and *Rebuild* became the recovery action (it used to raise in exactly that state). Two findings recorded, not smoothed: **9 of 35 queries return a different evidence set**, and **retrieval is not deterministic** (~3% case-level noise, in the cross-encoder) | done (2026-08-01) | `docs/decisions/ADR-038-retire-the-in-ram-sparse-arm.md` · `tests/eval/baselines/sparse_arm_private35_2026-08-01.md` · DEVLOG 2026-08-01 |
-| EX1 | **Recover unreachable documents.** Split by cause 2026-08-07 after looking at the four degraded documents: **(a) extractor-lost text — DONE.** Three of the four already had good text layers that `extract_pdf_pymupdf` was discarding (PyMuPDF4LLM renders a full-page-image page as a picture placeholder; KI-14's stripper removes even that). A text-layer fallback inside the existing extraction path took them from 1/7/16 chunks to **61/125/1019**, all `healthy`, and retrieval recall on the private 35-case set **28/35 → 34/35**. Threshold is structural, not corpus-tuned: healthy pages keep 97.3-108.9%, lost pages 0.0-3.2%. **(b) true scans — OCR, still planned.** Now **1 document of 97**, `middleton-2001.pdf`: 15 pages, zero extractable characters. ADR-039 unchanged for it (opt-in sidecar, searchable PDF, one extraction path, Tesseract absent-tolerant) and still **gated on RG-025** — wrong OCR text is worse than none. Needs Tesseract + Ghostscript, neither installed. **(c) the upgrade path — KI-40, open.** The extraction cache is keyed on mtime alone, so (a) reaches no library that already ingested | (a) done · (b) planned · (c) open | `docs/decisions/ADR-039-ocr-sidecar-for-scanned-pdfs.md` (+ 2026-08-07 amendment) · DEVLOG 2026-08-07 (2) · `.claude/KNOWN_ISSUES.md` KI-40 · RG-024/RG-025 |
-| RL1 | **Release readiness (v0.3.0)** — first-run setup inside the app so a tester needs no file editing: `credentials.py` (in-app Anthropic key, data-home file, env-wins precedence, free `models.list()` verification, never logged/echoed) + `readiness.py` (per-provider configured/reachable/models/action + a step list) + `GET /api/setup` · `POST`/`DELETE /api/setup/anthropic-key` + `ProviderSetup.svelte` + the outstanding-steps chat banner. Fixes three lies the old surface told: a runtime key was never sent (import-time binding in `build_chat_model`), `provider_available("ollama")` was unconditionally true, and the empty state named only the corpus half. Plus `CHANGELOG.md`, `docs/QUICKSTART.md`, version alignment at 0.3.0 | done (staged 2026-07-28) | `docs/decisions/ADR-034-in-app-provider-setup.md` · DEVLOG 2026-07-28 |
+**Shipped:** extract → markdown → chunk → embed → store (locked); registry + cache (KI-40 fixed);
+figures (4b/4c); metadata extraction + manual override (ADR-013) + external catalogue slot (ADR-049);
+selective ingestion (S1/S2); add-documents copy-or-reference (ADR-046, AD1–AD3b); Zotero import
+(row 17); per-part re-ingest (ADR-048, rows 20/21); keyword de-noising D1/D2/D4/D5 (2026-08-12);
+document identity survives re-extraction (ADR-047); extractor-lost text recovered (EX1a).
+**Open defects that shape this feature:** KI-44 (sidecar → retrieval needs a global rebuild),
+KI-46 (zero-chunk duplicates), KI-47/48 (Tesseract, invalidated caches), KI-54 (title picker),
+KI-57 (page marker carries the previous page). **Next:** row **25** — it is the user's stated
+priority and the direction note in `.claude/CONTEXT.md` justifies its cost. **Gate:** a spec + ADR
+that names the sidecar schema and the cost statement (ADR-048's "say what it costs first").
 
-*(The prose below is a compressed pointer set — 2026-07-21. Full historical narrative for the
-closed items lives in the linked ADRs/specs/sprint archives and `docs/archive/doc-assistant-roadmap.md`.)*
+### F2 · Library & reading
 
-**Feature 7d (knowledge-currency layer)** — engine + live answer-time marker surfacing shipped
-(2026-06-17 / PR-M1); `superseded_trend` live on the real corpus (G3/G6). **Still deferred:** the
-`query_router` local/global seam (Decision 8). Spec: `docs/specs/feature-7d-knowledge-currency.md`.
+**Shipped:** chunk browser (L1), redesign (L4), folders + retrieval scope (ADR-025), keyword
+filter + families (ADR-015), safe delete (ADR-014), figure panel + viewer, references block,
+Connections panel (E4), source viewer with page jump (ADR-050, row 18), in-context passage (row
+19), graph-vocabulary toggle (row 23). **Next:** row **24** (the on-page highlight — measured
+viable, the design questions are listed in the row). Row 34 is small and closes an ADR's open half.
 
-**Desktop shell migration (M0–M5)** — **done:** Chainlit replaced by a Tauri + FastAPI/SSE shell.
-Rationale + sub-decisions in `docs/decisions/ADR-002-tauri-fastapi-desktop-shell.md`.
+### F3 · Chat & answers
 
-**Concept graph + gap detection** — Node A skeleton, Node B LLM enrichment, and the gap layer's
-Tier-1 + Tier-2a floor/ceiling are all built (G1/G2/G5; R5 PASS / ADR-008;
-`docs/decisions/ADR-004-gap-detection-layer.md`). **Still open:** Tier 2b external reach (deferred —
-idea-generator rejected, ADR-004 option 3), Zotero/Calibre ingest adapters (PR 17), an outbound
-**MCP-server** interface over `pipeline.py`. Remediation R1–R7: `docs/archive/remediation-plan-2026-07.md`.
+**Shipped:** streaming SSE chat, citation panel (U3), provenance + reviewer cards, A/B compare
+(U6), conversation history + cleanup (U5), source-evaluation strip (E2) with the stance-derived
+chips withheld (KI-33), epistemics toggle (E3), in-context + show-the-page from a citation.
+**Next:** row **46** first — it is the ship gate. Then row **37** (chat modes) with its hard
+boundary respected. Anything touching `contested` waits on KL1/KL3. Local-model citation coverage
+is a floor (KI-36: Haiku 81%, `llama3.1:8b` 36%) — every chat feature must state which model it
+was verified on.
+
+### F4 · Projects & navigation
+
+**Shipped:** the shell (sidebar │ main │ drawer), global navigation search (titles), the Graph tab
+with a real empty state (row 22). **Next:** row **47**, the Project ADR, *before* any of 48–50:
+three grouping systems that disagree is the failure to avoid. **Gate:** `grill-me` on the four
+open questions in the row.
+
+### F5 · Knowledge layer (concepts · taxonomy · gaps · epistemics)
+
+**Shipped:** curated vocabulary + deterministic skeleton (Node A) + confined LLM stance (Node B),
+gap detectors Tier-1 + Tier-2a floor/ceiling, gap list with durable triage (E5), taxonomy substrate
++ curation backend/view + auto-propose (TX1–TX3), graph coverage statement (2026-08-31), in-app
+vocabulary curation (row 23). **Read `docs/knowledge-layer.md` §6 before believing any number:**
+`single_source` is trustworthy, `under_connected` is noise at this vocabulary size, `contested` is
+**not a corpus measurement**. **Next (user's order, 2026-09-10, second session):** KL1 → 53 + 54 → 51 → KL4 → KL2, interleaved with the security
+steps; then, after row 25, the **graph re-pass** (row 75). Rows 52–54 come from the 2026-09-07
+crossover review; 52 waits on 51's `is_a` edges.
+
+### F6 · Document maps
+
+Per-document outline + map surface (MM1–MM3). Specced twice, built zero times; ADR-030 is a stub.
+**Gate:** grill ADR-030. Sequenced after KL1/KL2 by the 2026-08-03 review (Phase C).
+
+### F7 · Source trust
+
+Named signals, no composite score (ADR-031 stub); the outbound half (T5, ADR-032 stub) is parked
+and is the project's first *enrichment* network feature — ADR-044 (update check) already set the
+transport/privacy discipline it inherits. **Gate:** grill ADR-031.
+
+### F8 · Reports & literature review
+
+Generation presets on a frozen citation contract (ADR-033 stub) and the PRISMA-trAIce export (row
+14, Phase 9). **Gate:** grill ADR-033; RP3 also needs T3.
+
+### F9 · Search
+
+Two small rows (58, 59). The embedder is already loaded, so semantic search is cheap; the literal
+match stays the default.
+
+### F10 · Platform, release, security
+
+**Shipped:** Tauri + FastAPI/SSE shell (M0–M5), frozen sidecar + installer (KI-9/10/11, KI-34),
+in-app provider setup (ADR-034), update notification (ADR-044), release runbook + preflight
+(`docs/RELEASE.md`), CI for Python · frontend · Docker image (2026-09-04), seven tagged releases.
+**Next:** row **60** is standing — one security step per session from `docs/security.md` §4 (row
+62 landed 2026-09-10; 61 is step S-8). Row 63 is a trade the user has to make; 64/65 are parked by
+user call.
+
+### F11 · Quality, rigor, reviews
+
+The eval record is `evals/README.md`; the debt is `.claude/RIGOR_TODO.md` (four `blocks-ship`
+items open, no gate wired) and `.claude/REVIEWS.md` (backend and frontend never read as modules).
+**Next:** 68 (decide each open blocks-ship item), then 69 ($0). Rows 70/71 are review sessions,
+Cowork-shaped, and 71 also unlocks the automatable half of the release walkthrough.
+
+### F12 · Verification debt
+
+Built-but-never-driven surfaces (row 73) and two uncaptured defects (row 74). Row 73 is what keeps
+Phase 8 "open"; the pre-release walkthrough `docs/release-ux-checklist.md` exists so that this list
+stops growing — everything driven there before a release is no longer debt.
 
 ## What NOT to do
 
@@ -190,16 +261,20 @@ idea-generator rejected, ADR-004 option 3), Zotero/Calibre ingest adapters (PR 1
   corpus-gated decision.
 - Don't over-engineer the eval harness. Pydantic + pytest + DuckDB + Anthropic judge. No frameworks.
 - Don't extract the standalone eval repo before the integrated version produced a real comparison.
-- Don't splice figures into the markdown. Sidecar manifest only. Don't ship 4c before 4b.
+- Don't splice figures into the markdown. Sidecar manifest only.
 - Don't show self-reported LLM confidence. Use retrieval-derived uncertainty markers + reviewer output.
 - Don't auto-retry or auto-remediate on reviewer-flagged issues — surface them; the user decides.
 - Don't mine reviewer suggestions for "patterns" without the eval-set anchor (Chunk 2c).
 - Don't sweep chunking without re-embedding; don't change chunk-size defaults from a single run
   (use `--repeat` and beat the control beyond its variance).
-- Don't hand-author wiki notes — they're derived and regenerable. Don't treat the wiki as a RAG
-  replacement; it's additive.
+- Don't hand-author wiki notes — they're derived and regenerable. The wiki is additive, not a RAG
+  replacement.
 - Don't make the concept graph a graph database (NetworkX + a file artifact, build-time structure).
 - Don't let Zotero/Calibre adapters leak vendor specifics past the extractor boundary.
+- Don't build the three "project" groupings separately (row 47), and don't edit the citing block of
+  `ANSWER_PROMPT` from a chat-mode feature (row 37).
+- Don't add a surname list to the keyword filter — `cre`/`dbs`/`16p11`/`c57bl` are real terms
+  (memory note *corpus-is-multidomain-not-junk*).
 
 ## References
 

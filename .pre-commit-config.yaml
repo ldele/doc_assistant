@@ -1,6 +1,8 @@
 repos:
   # Ruff: lint + format (two separate hooks — order matters).
-  # Scope = src/ + tests/ ONLY, to mirror CI exactly (`uv run ruff check src/ tests/`,
+  # Scope = src/ tests/ apps/ scripts/, to mirror CI exactly (widened 2026-09-10: apps/api is
+  # the HTTP boundary and sat outside every gate; the note below predates that and is kept as-is).
+  # Historical: `uv run ruff check src/ tests/`,
   # `uv run ruff format --check src/ tests/` in .github/workflows/ci.yml). Without this,
   # the hook passed staged filenames and linted repo-wide — so a one-time reference script
   # under scripts/ (outside CI's lint scope, see [tool.ruff] src=["src","tests"]) could fail
@@ -14,11 +16,11 @@ repos:
     rev: v0.15.13
     hooks:
       - id: ruff
-        args: [--fix, src/, tests/]
+        args: [--fix, src/, tests/, apps/, scripts/]
         pass_filenames: false
         files: ^(src|tests)/
       - id: ruff-format
-        args: [src/, tests/]
+        args: [src/, tests/, apps/, scripts/]
         pass_filenames: false
         files: ^(src|tests)/
 

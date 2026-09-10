@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-08-07 · class: runbook -->
+<!-- status: active · updated: 2026-09-10 (§0: the checklists are assumed stale and preflight checks they were touched since the last tag) · class: runbook -->
 
 # Release runbook
 
@@ -21,6 +21,11 @@ the judgment steps.
 ## The short version
 
 ```bash
+# 0. refresh the two checklists FIRST — they are assumed stale (§0); preflight fails otherwise
+git log $(git describe --tags --abbrev=0)..HEAD --oneline -- apps/desktop/src apps/api src   # what shipped
+#    -> add a row per new/changed surface to docs/release-ux-checklist.md, move docs/security.md steps
+#       that landed to "done", bump both `updated:` headers
+
 # 1. mechanical checks (fast, read-only, run it early and often)
 uv run --no-sync python -m scripts.release_preflight
 
@@ -29,6 +34,9 @@ uv run --no-sync pytest -q
 uv run --no-sync mypy src
 npm --prefix apps/desktop test && npm --prefix apps/desktop run check
 uv run --no-sync python tools/conventions/rungate.py docs_check --root . --strict
+uv run --no-sync pip-audit                                  # security floor (docs/security.md)
+npm --prefix apps/desktop audit --audit-level=high
+uv run --no-sync bandit -r src apps -c pyproject.toml -q
 
 # 3. rebuild the artifact FROM the release commit  (see desktop-packaging.md §1-4)
 uv sync --extra cpu --extra dev --extra packaging   # KI-3: CPU torch only
@@ -37,6 +45,7 @@ npm --prefix apps/desktop exec tauri build           # ~10 min
 uv sync --extra cu130 --extra dev                    # restore the dev venv
 
 # 4. clean-machine gate — RG-012 Tier-2 (desktop-packaging.md §5)
+# 4b. drive every surface in the installed build — docs/release-ux-checklist.md (§5b below)
 # 5. preflight again — it now ties the RG-012 PASS to THIS artifact
 uv run --no-sync python -m scripts.release_preflight
 
@@ -50,10 +59,34 @@ ls apps/desktop/src-tauri/target/release/bundle/{nsis,msi}
 
 ---
 
+## 0 · Refresh the checklists — they are stale until you prove otherwise
+
+**Assume `docs/release-ux-checklist.md` and `docs/security.md` are out of date.** They are edited
+when someone remembers, and nobody remembers while building. A release driven against last
+release's walkthrough tests last release. So the first step of every release is to bring them level
+with what shipped, and `preflight`'s `checklists` check **fails** if either file has no commit (or
+uncommitted edit) since the previous tag — it verifies that the refresh happened, not that it was
+good.
+
+The refresh, concretely (10–20 minutes):
+
+1. List what shipped: `git log <previous-tag>..HEAD --oneline -- apps/desktop/src apps/api src`
+   and the CHANGELOG's `[Unreleased]` block.
+2. **UX walkthrough:** for every new or changed surface, add or amend a row under the right §
+   (steps → expect, including the empty and failed states); delete rows for removed surfaces; add
+   the new release's record table at the foot.
+3. **Security:** move the steps that landed to `done` in §4 and §5, re-rank §3 if a finding closed
+   or a new one was filed, and re-check §2's "holds" list against the diff (a new route, a new
+   `{@html}`, a new capability, a new dependency each need a line).
+4. Bump both `updated:` headers with one line saying what changed.
+
+Then the rest of this file.
+
 ## 1 · Version bump
 
-Eight places. `uv.lock` is the one a person forgets; the two Cargo files were missed by *everything*,
-including this table.
+Nine places. `uv.lock` is the one a person forgets; the two Cargo files were missed by *everything*,
+including this table — and so was `package-lock.json`, found at **0.4.2** on 2026-09-10 after three
+releases had shipped past it.
 
 | File | Field |
 |---|---|
@@ -61,12 +94,13 @@ including this table.
 | `uv.lock` | the `doc-assistant` package entry — re-lock, do not hand-edit |
 | `src/doc_assistant/__init__.py` | `__version__` — what the running app reports (ADR-044) |
 | `apps/desktop/package.json` | `version` |
+| `apps/desktop/package-lock.json` | `version` **twice** — top level and `packages[""]`; npm rewrites both only when npm *runs* (`npm install` / `npm audit fix`), so a hand-bumped `package.json` leaves the lock behind. Re-lock, do not hand-edit |
 | `apps/desktop/src-tauri/tauri.conf.json` | `version` |
 | `apps/desktop/src-tauri/Cargo.toml` | `[package] version` |
 | `apps/desktop/src-tauri/Cargo.lock` | the `doc-assistant-desktop` entry — re-lock, see below |
 | `CHANGELOG.md` | a dated `## [X.Y.Z]` section |
 
-`preflight` checks all seven version strings (the CHANGELOG has a check of its own), and
+`preflight` checks all nine version strings (the CHANGELOG has a check of its own), and
 `tests/unit/test_version.py` catches `__init__.py` drifting from
 `pyproject.toml` at commit time rather than release time. **Why `__version__` matters:** it is what
 the update check compares against the newest published release. Stale, and the app compares itself
@@ -127,6 +161,9 @@ Write for someone deciding whether to install it, not for the commit log:
 | Frontend types | `npm --prefix apps/desktop run check` | `svelte-check` |
 | Docs | `rungate.py docs_check --root . --strict` | |
 | Hooks | `uv run --no-sync pre-commit run` | ruff/format/mypy/bandit/secrets |
+| Checklists refreshed | `preflight` (`checklists`) | both files touched since the previous tag — §0 |
+| Security floor | `uv run --no-sync pip-audit` · `npm --prefix apps/desktop audit --audit-level=high` · `uv run --no-sync bandit -r src apps -c pyproject.toml -q` | the deterministic half of `docs/security.md`; `pip-audit` is still advisory in CI (ROADMAP 61) so read its output here |
+| UX/UI walkthrough | `docs/release-ux-checklist.md` | §5b — a person drives every surface in the **installed** build |
 
 > **`pre-commit` can eat your commit.** `ruff-format` **modifies files**, and a hook that modifies a
 > file *aborts the commit* while leaving everything staged — which looks exactly like success. If
@@ -168,6 +205,16 @@ Two traps:
 `preflight`'s `rg012` check then ties the PASS to **this artifact** by matching the installer build
 timestamp the harness logged. A PASS from a previous build is worse than no PASS — it reads as
 evidence for something that was never tested.
+
+## 5b · The UX/UI walkthrough — every surface, in the installed build
+
+`preflight` and the suites prove the code; nothing above proves that a person can use the product.
+Drive **`docs/release-ux-checklist.md`** end to end on the artifact from §3 — first run on an empty
+data home, then the real library, Ollama, $0 — and fill its record table into
+`.claude/release-notes-X.Y.Z.md`. Three rules that matter more than the list: drive the failure
+branch of every surface (empty · error · unavailable), name the build you drove, and write down what
+you did **not** drive. A blocker is a data-loss or a lie; everything else becomes a KI and a line
+under "Known limits" (§2). Log the pass in `.claude/REVIEWS.md` row 6.
 
 ## 6 · Tag
 

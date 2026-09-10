@@ -170,7 +170,6 @@ plugins = []
 
 [[tool.mypy.overrides]]
 module = [
-    "langchain.*",
     "langchain_core.*",
     "langchain_classic.*",
     "langchain_community.*",
@@ -227,3 +226,12 @@ torch = [
     { index = "pytorch-cpu", extra = "cpu" },
     { index = "pytorch-cu130", extra = "cu130" },
 ]
+
+# --- bandit ---
+# CI and pre-commit both pass `-c pyproject.toml`; until 2026-09-10 no section existed, so bandit
+# ran on defaults and the flag was decorative. Scope and skips are stated here so a change to
+# either is a reviewable diff, not a silent default. `tests/` is excluded because assert-heavy
+# test code trips B101 on every line and nothing in it ships.
+[tool.bandit]
+exclude_dirs = ["tests", ".venv", "build", "dist", "node_modules"]
+skips = []

@@ -6,7 +6,7 @@
 - **Date:** 2026-07-23
 - **Deciders:** user + Claude Code (routed from the 2026-07-23 `grill-me` — 7 taxonomy branches
   resolved, the epistemic-health cluster parked; ledger in
-  `docs/PLAN_2026-07-23_concept-graph-taxonomy-epistemics.md` §6)
+  `docs/plans/PLAN_2026-07-23_concept-graph-taxonomy-epistemics.md` §6)
 - **Amends [ADR-019](ADR-019-concept-taxonomy-classification-layer.md):** supersedes its Decisions
   **C1** (separate domain entity), **D1** (single-parent tree), and **D6** (document attaches via a
   single FK); partially reverses **D9** (no concept is-a). ADR-019's Decisions 1 (augment), 2/3
@@ -162,7 +162,7 @@ source-trust scoring, dual + non-paper staleness, content-type degradation, degr
 retirement) is **explicitly out of scope here** and parked to a dedicated future ADR (ADR-EH),
 sequenced *after* this taxonomy is validated. It is blocked on measurement (per-concept LLM-pass cost)
 and a heterogeneous corpus (source-trust); tracked in `RIGOR_TODO.md` **RG-023**, design in
-`docs/PLAN_2026-07-23_concept-graph-taxonomy-epistemics.md` §4–6.
+`docs/plans/PLAN_2026-07-23_concept-graph-taxonomy-epistemics.md` §4–6.
 
 ## Consequences
 

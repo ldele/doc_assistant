@@ -35,16 +35,17 @@ jobs:
         # --locked → fail if uv.lock is stale vs pyproject (no silent re-resolve in CI).
         run: uv sync --locked --extra cpu --extra dev
 
-      # --- Lint ---
+      # --- Lint --- (scope: src/ tests/ apps/ scripts/ — apps/api is the HTTP boundary and was
+      # outside every gate until 2026-09-10; all four commands passed on the whole tree that day)
       - name: Ruff lint
-        run: uv run ruff check src/ tests/
+        run: uv run ruff check src/ tests/ apps/ scripts/
 
       - name: Ruff format check
-        run: uv run ruff format --check src/ tests/
+        run: uv run ruff format --check src/ tests/ apps/ scripts/
 
       # --- Types ---
       - name: mypy
-        run: uv run mypy src/
+        run: uv run mypy src/ apps/
 
       # --- Tests (unit only — no API calls, no cost) ---
       - name: pytest with coverage
@@ -52,7 +53,7 @@ jobs:
 
       # --- Security ---
       - name: bandit SAST
-        run: uv run bandit -r src/ -c pyproject.toml
+        run: uv run bandit -r src/ apps/ -c pyproject.toml
 
       - name: pip-audit (advisory)
         continue-on-error: true
@@ -89,6 +90,11 @@ jobs:
         # `npm ci` (not `install`) → installs exactly the lockfile, and fails if it is stale.
         # Same discipline as `uv sync --locked` in the job above.
         run: npm ci
+
+      - name: npm audit (high and above)
+        # The JS tree had no vulnerability check at all until 2026-09-10; `marked` is the one
+        # runtime dependency and it sits in front of the only `{@html}` in the app.
+        run: npm audit --audit-level=high
 
       - name: svelte-check
         run: npm run check

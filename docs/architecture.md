@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-09-01 (the `apps/` domain spine gains `library/source_view` + SourceViewer — ADR-050) · class: living -->
+<!-- status: active · updated: 2026-09-10 (three stale claims corrected: sparse arm, taxonomy built, legacy eval harness) (the `apps/` domain spine gains `library/source_view` + SourceViewer — ADR-050) · class: living -->
 
 # Architecture
 
@@ -15,7 +15,7 @@ Embeddings (BGE-base) → Chroma vector store (data/chroma/)
              ↕
          SQLite document store (Folder → Document → Part → Chunk)
 ↓
-Hybrid retrieval (BM25 + vector, weights 0.4/0.6) → CANDIDATE_K (default 20) candidates per retriever
+Hybrid retrieval (keyword arm = on-disk SQLite/FTS5 index `sparse_index.py`, ADR-036/038 · vector arm = Chroma; `BM25_WEIGHT` 0.4/0.6 is inert post-rerank, measured 2026-07-03) → CANDIDATE_K (default 20) candidates per retriever
 ↓
 Cross-encoder reranker → TOP_K (default 10) parents (parent context returned)
 ↓
@@ -51,7 +51,7 @@ flowchart TD
 
     subgraph QRY["Query → Answer"]
         Q["User query"] --> ROUTE["query_router.py<br/>library vs content"]
-        ROUTE -->|content| RET["pipeline.retrieve<br/>BM25 0.4 + vector 0.6 → CANDIDATE_K=20 candidates/retriever"]
+        ROUTE -->|content| RET["pipeline.retrieve<br/>FTS5 sparse arm (sparse_index.py) + vector → CANDIDATE_K=20 candidates/retriever"]
         RET --> RR["cross-encoder rerank<br/>→ TOP_K=10 parents (+ scores)"]
         RR --> GEN["LLM generate<br/>Claude / Ollama (cited)"]
         GEN --> SYN["synthesis.py — Chunk 2a<br/>evidence (deterministic) + AI interpretation<br/>per-claim markers from rerank scores"]
@@ -272,11 +272,14 @@ only annotates existing edges** — it never creates a node or edge, and `build_
 **read-only over the vocabulary** — the graph UI never edits concepts, it deep-links to Manage-keywords
 (ADR-017 A1). The single write surface for the curated hierarchy will be a dedicated taxonomy view (ADR-028).
 
-**Current build state (2026-07-23).** Node A skeleton, keyword families, gap layer, epistemics projection,
-and the read-only graph/gap UI are **built and shipped**. The taxonomy layer (`kind`, `concept_hierarchy`,
-`document_field`, `knowledge/taxonomy.py`, `seed_taxonomy`) is **decided (ADR-028) and design-locked
-(`docs/specs/feature-taxonomy-seed-schema.md`) but not yet built**. Node-B stance regeneration is a local-LLM
-cost decision (KI-4, RTX box). The superseded open-vocabulary `concept_graph.py` was deleted 2026-07-07
+**Current build state (2026-09-10).** Node A skeleton, keyword families, gap layer, epistemics projection,
+and the read-only graph/gap UI are **built and shipped**. The taxonomy layer is **built** (TX1–TX3, 2026-07):
+`kind` column, curated `concept_hierarchy` + `document_field` tables, `knowledge/taxonomy.py` (write seam,
+acyclic), `taxonomy_view.py` (read model), `taxonomy_propose.py` (quarantined LLM proposals, ADR-028 D8),
+`apps/api/routers/taxonomy.py`, `LibraryTaxonomy.svelte`, `scripts/seed_taxonomy.py` (ANZSRC 2020 FoR) and
+`scripts/propose_taxonomy.py` — but the taxonomy is **empty of concept placements** (13 of 357 placed, 0 `is_a`;
+ADR-045). Node-B stance is **withheld from the UI** (KI-33, ADR-040/041); regeneration is a local-LLM cost
+decision (KI-4). The superseded open-vocabulary `concept_graph.py` was deleted 2026-07-07
 (KI-7); `data/graph/graph.json` is a stale empty decoy from that era — the live artifact is
 `data/skeleton/skeleton.json`.
 
@@ -324,7 +327,6 @@ tests/
 ├── integration/          # cross-module, may use temp files, mocked LLM
 │   └── test_<flow>.py
 └── eval/                 # RAG evaluation harness (not part of standard CI run)
-    ├── run_eval.py       # legacy recall@K harness (eval_set.json); canonical harness is scripts/run_eval.py
     ├── cases.yaml / cases.public.yaml   # consumed by scripts/run_eval.py
     ├── TESTING.md        # what each tier and scorer measures
     └── baselines/        # recorded eval baselines

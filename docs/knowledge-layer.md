@@ -203,7 +203,7 @@ layer is strong and where it is absent:
    suggestion pass at all. Re-pointing it is the cheapest real progress toward the goal.
 
 **The plan** — phased so nothing is built on top of something that lies — is in
-`docs/PLAN_2026-08-03_knowledge-layer-to-goal.md` (local-only, ADR-029), and its work items are
+`docs/plans/PLAN_2026-08-03_knowledge-layer-to-goal.md` (local-only, ADR-029), and its work items are
 mirrored as ROADMAP rows **KL1–KL4**.
 
 ---

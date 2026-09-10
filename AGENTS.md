@@ -16,8 +16,10 @@ dual interpretation, reviewer). Not a general-purpose chatbot — reliable answe
 documents, with measurable quality. **Robustness contract:** every feature must degrade honestly at
 **0 documents** and scale to **~10,000 documents** — no corpus-tuned magic numbers (`.claude/CONTEXT.md`).
 
-**State (2026-07-19):** Phase 6 + Phase 7 in progress; core RAG, eval harness, integrity layer,
-provider-agnostic LLM, figures/tables, wiki, and concept graph all shipped. Detail: `.claude/CONTEXT.md`.
+**State (2026-09-10):** **v0.6.0 published** (2026-09-04). Core RAG, eval harness, integrity layer,
+provider-agnostic LLM, figures, concept graph + gaps + taxonomy substrate, add-documents, Zotero import,
+per-part re-ingest and the source viewer are shipped; the plan is **per feature** in `docs/ROADMAP.md`
+(next three moves at its top). Detail: `.claude/CONTEXT.md`.
 **Stack:** Python 3.12 + uv; Chroma + SQLite; Svelte 5/Tauri + FastAPI; Claude API or local Ollama.
 Full stack + locked settings: `.claude/CONTEXT.md`.
 
@@ -41,7 +43,10 @@ Reference: `docs/ROADMAP.md` · `docs/architecture.md` · `docs/decisions/` (ADR
 `docs/decisions.md`, ADR-022) · `docs/specs/` · `GLOSSARY.md` (pinned vocabulary) ·
 `docs/performance.md` (cost/scale record + the optimisation trade-off ledger; quality lives in
 `evals/README.md`) · `docs/knowledge-layer.md` (**what the concept graph / gaps / epistemics are
-for, and which of their signals are trustworthy — read before believing any marker**).
+for, and which of their signals are trustworthy — read before believing any marker**) ·
+`docs/security.md` (threat model + the security floor) · `docs/release-ux-checklist.md` (what a
+person drives in the installed build before each release) · `docs/RELEASE.md` (the release runbook) ·
+`docs/plans/` + `docs/reviews/` (dated working plans and review reports — local-only by pattern, ADR-051).
 
 ## Sub-module focus (big-project layout, ADR-021)
 

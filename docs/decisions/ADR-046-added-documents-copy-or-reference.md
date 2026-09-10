@@ -8,7 +8,7 @@
   2026-08-21)
 - **Relates to:** ADR-014 (safe delete — **amended here**) · ADR-042 (document identity is the
   source, not its extraction — this ADR partially *leads* it) · ADR-029 (local-only working state) ·
-  `docs/PLAN_2026-08-20_user-friendly-ingestion.md` §2 + §8 (the grill ledger this records) ·
+  `docs/plans/PLAN_2026-08-20_user-friendly-ingestion.md` §2 + §8 (the grill ledger this records) ·
   `docs/ui-checklist.md` "Missing-source badge + library-only delete" (**absorbed**) ·
   `docs/ROADMAP.md` row 17 (Zotero/Calibre adapters — unblocked by this) · KI-46 · RG-027 · RG-030
 

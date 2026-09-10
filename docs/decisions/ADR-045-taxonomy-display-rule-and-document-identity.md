@@ -156,7 +156,7 @@ will drift. Ancestor closure over a DAG needs memoising per request at minimum. 
 affordance is new UI. And the honesty burden moves: with 344 concepts unplaced, a coarse filter
 returning few results means *the taxonomy is sparse*, not that the corpus is — the UI has to say
 which, or it reproduces the empty-Graph-page problem this project just hid a tab over
-(`docs/REVIEW_2026-08-12_release-readiness.md` §2b R4).
+(`docs/archive/local/REVIEW_2026-08-12_release-readiness.md` §2b R4).
 
 **Must revisit.** Placement accuracy and Decision 2's load-bearingness were tested the same day this
 ADR was written, and **bulk auto-placement failed** (RG-015, "THE `--all-concepts` RUN", 2026-08-13):

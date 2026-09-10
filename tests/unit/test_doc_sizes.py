@@ -22,6 +22,7 @@ make a red test green re-creates exactly the condition this guard exists to catc
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import pytest
@@ -72,3 +73,30 @@ def test_archives_are_exempt_by_construction() -> None:
         "An archive file is capped in CAPS. Archives absorb rotations and must stay uncapped, "
         "or rotating a doc simply moves the breach."
     )
+
+
+# --- entry count: the user's standard is "the newest 20", not a line budget -------------------
+
+DEVLOG_MAX_ENTRIES = 20  # mirrors [budgets] devlog_max_entries in scripts/conventions.toml
+
+
+def test_devlog_keeps_at_most_twenty_entries() -> None:
+    """The line cap above is the backstop; the standard is an ENTRY count (user, 2026-09-10).
+
+    cpc's `docs_check` rule 13b enforces the same number, but that gate is vendored, gitignored and
+    local-only (ADR-007), so a fresh clone or CI would never see it. `cpc-rotate --file devlog`
+    moves the oldest entries verbatim and verifies the bytes; run it, do not hand-cut."""
+    text = (REPO_ROOT / "docs/DEVLOG.md").read_text(encoding="utf-8")
+    entries = [ln for ln in text.splitlines() if ln.startswith("## ")]
+    assert len(entries) <= DEVLOG_MAX_ENTRIES, (
+        f"docs/DEVLOG.md holds {len(entries)} entries; the standard is {DEVLOG_MAX_ENTRIES}. "
+        "Rotate: python tools/conventions/cpc/rotate.py --root . --file devlog --write, "
+        "then update the archive range in the header."
+    )
+
+
+def test_devlog_entry_cap_matches_the_cpc_budget() -> None:
+    """Two numbers for one rule drift; pin them to each other."""
+    toml = (REPO_ROOT / "scripts/conventions.toml").read_text(encoding="utf-8")
+    m = re.search(r"^devlog_max_entries\s*=\s*(\d+)", toml, re.M)
+    assert m and int(m.group(1)) == DEVLOG_MAX_ENTRIES, "conventions.toml and this test disagree"

@@ -43,9 +43,12 @@ docs/archive/lab4tech/
 # the UI punch list are working notes, not the project's public record (which is README · ADRs ·
 # specs · DEVLOG · ROADMAP). Committed docs still link to them — docs/local-only.md explains why
 # those links don't resolve in a clone.
-docs/PLAN_*.md
-docs/REVIEW_*.md
+docs/plans/PLAN_*.md
+docs/reviews/REVIEW_*.md
 docs/ui-checklist.md
+# Archived working docs of the same classes (closed PLAN_/REVIEW_ docs, rotated CONTEXT/RIGOR narrative)
+# — local-only like their sources; docs/archive/ itself stays tracked (DEVLOG/KI/ROADMAP archives).
+docs/archive/local/
 # Local-only convention gates that depend on a private tooling repo — never shared (see ADR-001).
 .pre-commit-config.cpc.yaml
 tools/conventions/

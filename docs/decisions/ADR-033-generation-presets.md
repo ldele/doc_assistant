@@ -5,7 +5,7 @@
 - **Status:** proposed (stub — needs `grill-me` before the Decision section is filled)
 - **Date:** 2026-07-27
 - **Deciders:** user (product), Claude (Cowork planning session 2026-07-27)
-- **Plan:** `docs/PLAN_2026-07-27_maps-trust-reports.md` Track 3
+- **Plan:** `docs/plans/PLAN_2026-07-27_maps-trust-reports.md` Track 3
 
 ## Context
 

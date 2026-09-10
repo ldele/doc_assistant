@@ -46,7 +46,9 @@ def _cached_status() -> update_check.UpdateStatus:
         return update_check.UpdateStatus(
             "unknown", __version__, checked_at=last, reason="the last check did not complete"
         )
-    state = "update_available" if update_check.is_newer(seen, __version__) else "current"
+    state: update_check.UpdateState = (
+        "update_available" if update_check.is_newer(seen, __version__) else "current"
+    )
     return update_check.UpdateStatus(state, __version__, seen, checked_at=last)
 
 

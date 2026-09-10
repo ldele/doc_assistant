@@ -2,7 +2,7 @@
 
 # Spec — Add documents: the accept surface (AD1–AD4) + the Settings changes it forces (CS1–CS2)
 
-Implements Track A and Track C of `docs/PLAN_2026-08-20_user-friendly-ingestion.md` under
+Implements Track A and Track C of `docs/plans/PLAN_2026-08-20_user-friendly-ingestion.md` under
 **ADR-046**. Track B (ingest honesty) is specced separately and needs none of this.
 
 ## Goal
@@ -293,7 +293,7 @@ sprint-start, not mid-build.)*
 ## Decision ledger — scoped grill, 2026-08-21
 
 Full ledger with deciding reasons and "reopens if" in
-`docs/PLAN_2026-08-20_user-friendly-ingestion.md` §8. Task-level resolutions owned here:
+`docs/plans/PLAN_2026-08-20_user-friendly-ingestion.md` §8. Task-level resolutions owned here:
 
 | Branch | Resolution |
 |---|---|

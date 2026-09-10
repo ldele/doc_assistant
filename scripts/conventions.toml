@@ -11,6 +11,8 @@ entry_max_lines        = 600   # docs_check: root entry file (AGENTS.md) + .clau
 module_claude_max_lines = 40   # docs_check: each <module>/CLAUDE.md
 session_max_entries    = 10    # docs_check rule 11b (cpc ADR-018): baton cap; rotate older entries
                                # verbatim to docs/archive/SESSION-archive-NNN.md (local-only here)
+devlog_max_entries     = 20    # docs_check rule 13b (cpc ADR-023): DEVLOG keeps the newest 20 entries;
+                               # rotate the rest verbatim with `rotate.py --file devlog --write` (user standard, 2026-09-10)
 uses_max_files         = 12    # sprint_check: resolved `uses` read-set files (globs expanded)
 uses_max_lines         = 2500  # sprint_check: summed line count of resolved `uses` files
 # Token budgets (0 = off) — calibrate before enabling.
@@ -50,7 +52,25 @@ require_prior_art = false
 
 [keypoints]
 # Per-project extras per boundary: [keypoints.<name>] run = [...] / checklist = [...].
-# None registered yet — the deterministic floor (docs_check/sprint_check/generate) already runs.
+
+[keypoints.session-start]
+# CI on `main` was red for five days and seven pushes (2026-09-02 → 09-07) while three batons said
+# "every gate green locally" — the third instance of the CI-blind shape (KI-58). Print the last run
+# where the next session cannot miss it. `gh` prints and exits 0 whether the run is green or red, so
+# this line makes the state VISIBLE; reading the verdict is the checklist item below. Offline it
+# fails the floor, which is the honest outcome — you do not know the state of `main`.
+run = ["gh run list --branch main --limit 1"]
+checklist = ["Read the `gh run list` line above: if it is not `completed success`, the failed log names the test — fix that before anything else (KI-58)."]
+
+[keypoints.sprint-close]
+# The security floor and the UX walkthrough are judgment items here, not `run` lines, on purpose:
+# `pip-audit` reports 66 known advisories today (ROADMAP 61) and would fail every close until they
+# are triaged, and the walkthrough needs a person and an installed build. Both become deterministic
+# when their rows land (docs/security.md §4, docs/release-ux-checklist.md).
+checklist = [
+  "Security floor (docs/security.md §4): `uv run --no-sync pip-audit` · `npm --prefix apps/desktop audit --audit-level=high` · `uv run --no-sync bandit -r src apps -c pyproject.toml -q` — read the output; a new HIGH is a row in §3, not a shrug.",
+  "If this close precedes a release: drive docs/release-ux-checklist.md on the installed build and fill its record table into .claude/release-notes-X.Y.Z.md.",
+]
 
 [test_api]
 # cpc-test-api-check (CONVENTIONS §13, ADR-007): keep paid/live API calls out of tests.

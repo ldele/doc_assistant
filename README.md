@@ -208,7 +208,7 @@ Re-read for this release; the full ledger lives in `.claude/KNOWN_ISSUES.md`.
   [`docs/performance.md`](docs/performance.md).
   The *enrichment* layer still has its own corpus-linear hot paths and corpus-tuned thresholds,
   catalogued with a prioritized fix plan in the
-  [scale review](docs/REVIEW_2026-07-19_scale-robustness.md), so don't bulk-ingest thousands of
+  [scale review](docs/archive/local/REVIEW_2026-07-19_scale-robustness.md), so don't bulk-ingest thousands of
   documents before those land.
 - **Local models cite less, and the gap is measured.** Across 27 questions on a 97-document
   library, with the same prompt and retrieval, `llama3.1:8b` carried inline citations on 36% of its

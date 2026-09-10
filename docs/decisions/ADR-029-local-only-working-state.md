@@ -107,7 +107,7 @@ is behind" note carry no publication cost, which is a mild but continuous tax re
 - ✓ **The dangling-link count is measured, not estimated** — 109 occurrences across 40 files
   (`ui-checklist|PLAN_2026|REVIEW_2026`, 2026-07-25).
 - ⚠ **"Nothing of value is lost by not publishing"** — a judgment, not a measurement: the review
-  report (`REVIEW_2026-07-19_scale-robustness.md`) is arguably the best evidence in the repo of
+  report (`archive/local/REVIEW_2026-07-19_scale-robustness.md`) is arguably the best evidence in the repo of
   engineering rigor, and hiding it has a portfolio cost pulling the other way. Revisit if the repo is
   ever used as a work sample: the fix is to promote that one file's findings into an ADR or a spec,
   which are published.

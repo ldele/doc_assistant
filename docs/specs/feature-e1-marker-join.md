@@ -1,4 +1,4 @@
-<!-- status: design-locked · created: 2026-07-21 · owner: Code · plan: docs/PLAN_2026-07-21_exploration-epistemics.md (E1) -->
+<!-- status: design-locked · created: 2026-07-21 · owner: Code · plan: docs/archive/local/PLAN_2026-07-21_exploration-epistemics.md (E1) -->
 
 # Feature spec — E1.1: marker-join trustworthiness (KI-8 re-projection)
 

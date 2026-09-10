@@ -16,7 +16,7 @@ happens at 10x".
 |---|---|
 | Retrieval / answer quality, scorers, the public benchmark | [`evals/README.md`](../evals/README.md) |
 | Raw dated measurement runs (append-only, never edited) | [`tests/eval/baselines/`](../tests/eval/baselines/) |
-| The enrichment layer's scale audit (hot paths, tuned constants) | [`REVIEW_2026-07-19_scale-robustness.md`](REVIEW_2026-07-19_scale-robustness.md) |
+| The enrichment layer's scale audit (hot paths, tuned constants) | [`archive/local/REVIEW_2026-07-19_scale-robustness.md`](archive/local/REVIEW_2026-07-19_scale-robustness.md) |
 | Why a given design was chosen | [`decisions.md`](decisions.md) (ADR index) |
 | Open weaknesses and measurement debt | `.claude/KNOWN_ISSUES.md` · `.claude/RIGOR_TODO.md` (local-only) |
 
@@ -294,7 +294,7 @@ hot paths (KI-18/KI-19). None of those is a redesign; all three are known work.
 single-threaded, and extraction is the one stage a GPU does not touch. It needs parallelism, progress
 and resumability before anyone points the app at a big folder. The enrichment layer's own hot paths
 and corpus-tuned constants are catalogued separately in
-[`REVIEW_2026-07-19_scale-robustness.md`](REVIEW_2026-07-19_scale-robustness.md) (KI-18/KI-19).
+[`archive/local/REVIEW_2026-07-19_scale-robustness.md`](archive/local/REVIEW_2026-07-19_scale-robustness.md) (KI-18/KI-19).
 
 ---
 

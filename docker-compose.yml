@@ -9,7 +9,9 @@ services:
     build: .
     container_name: doc-assistant
     ports:
-      - "8001:8001"
+      # Loopback only: the API has no request authentication (docs/security.md), so an unqualified
+      # mapping would publish the whole corpus to the LAN. Override deliberately if you want that.
+      - "127.0.0.1:8001:8001"
     volumes:
       # Documents, cache, and chroma DB live on host
       - ./data:/app/data

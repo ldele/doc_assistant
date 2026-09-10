@@ -53,6 +53,8 @@ def test_every_file_carrying_a_version_is_actually_read() -> None:
         "uv.lock",
         "src/doc_assistant/__init__.py",
         "apps/desktop/package.json",
+        "apps/desktop/package-lock.json",
+        'apps/desktop/package-lock.json (packages[""])',
         "apps/desktop/src-tauri/tauri.conf.json",
         "apps/desktop/src-tauri/Cargo.toml",
         "apps/desktop/src-tauri/Cargo.lock",
@@ -63,7 +65,7 @@ def test_no_version_source_reads_as_a_placeholder() -> None:
     """A reader that quietly stops finding its value must not be able to look like agreement.
 
     Every miss returns a sentinel — `(not found)`, `(missing)` — and sentinels compare equal to
-    each other, so a broken parse in *all* sources would make `check_versions` pass on seven
+    each other, so a broken parse in *all* sources would make `check_versions` pass on nine
     identical placeholders. Requiring each value to look like a version closes that."""
     unparsed = {k: v for k, v in collect_versions().items() if not re.match(r"^\d+\.\d+\.\d+", v)}
     assert not unparsed, f"not version strings — the reader is broken, not the version: {unparsed}"
@@ -120,6 +122,10 @@ VERSION_FILES: dict[str, str] = {
     "uv.lock": '[[package]]\nname = "doc-assistant"\nversion = "{v}"\n',
     "src/doc_assistant/__init__.py": '__version__ = "{v}"\n',
     "apps/desktop/package.json": '{{"name": "doc-assistant-desktop", "version": "{v}"}}\n',
+    "apps/desktop/package-lock.json": (
+        '{{"name": "doc-assistant-desktop", "version": "{v}", '
+        '"packages": {{"": {{"name": "doc-assistant-desktop", "version": "{v}"}}}}}}\n'
+    ),
     "apps/desktop/src-tauri/tauri.conf.json": '{{"version": "{v}"}}\n',
     "apps/desktop/src-tauri/Cargo.toml": (
         '[package]\nname = "doc-assistant-desktop"\nversion = "{v}"\n'
@@ -132,7 +138,7 @@ VERSION_FILES: dict[str, str] = {
 
 
 def _fake_repo(tmp_path: Path, *, drifted: str | None = None) -> Path:
-    """A minimal tree carrying all seven version strings, one optionally left behind at 0.4.1."""
+    """A minimal tree carrying all nine version strings, one optionally left behind at 0.4.1."""
     for rel, template in VERSION_FILES.items():
         p = tmp_path / rel
         p.parent.mkdir(parents=True, exist_ok=True)
@@ -154,7 +160,7 @@ def test_the_control_passes_when_every_source_agrees(
 def test_a_version_left_behind_in_any_single_file_fails(
     drifted: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """One stale file out of seven must fail — for **every** file, not just the ones we remember.
+    """One stale file out of nine must fail — for **every** file, not just the ones we remember.
 
     Parametrised over the source list rather than spot-checked, because the failure this guards
     was a file that was never looked at: a hand-written test would have covered the five someone
@@ -334,3 +340,63 @@ def test_the_parsed_timestamp_is_the_format_the_harness_actually_writes() -> Non
     assert datetime.strptime(m.group(3).strip(), "%m/%d/%Y %I:%M:%S %p") == datetime(
         2026, 9, 1, 22, 53, 16
     )
+
+
+# --- checklists: assumed stale until touched after the previous tag ---------------------------
+
+
+def _tagged_repo_with_checklists(repo: Path) -> Path:
+    for rel in preflight.CHECKLISTS:
+        _write(repo, rel, "# checklist as of the last release" + chr(10))
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", "docs: checklists for 1.0.0")
+    _git(repo, "tag", "-a", "v1.0.0", "-m", "1.0.0")
+    return repo
+
+
+def test_the_checklist_list_is_pinned() -> None:
+    """Same lesson as the version files: a check is worth exactly its file list."""
+    assert set(preflight.CHECKLISTS) == {"docs/release-ux-checklist.md", "docs/security.md"}
+
+
+def test_untouched_checklists_fail_after_a_tag(repo: Path) -> None:
+    """The failure this exists for: a release cut against the previous release's walkthrough."""
+    _tagged_repo_with_checklists(repo)
+    _write(repo, "src/doc_assistant/__init__.py", '__version__ = "1.1.0"' + chr(10))
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", "feat: something shipped")
+    check = preflight.check_checklists_refreshed()
+    assert check.status == preflight.FAIL, check
+    assert len(check.notes) == len(preflight.CHECKLISTS)
+
+
+def test_a_committed_refresh_passes(repo: Path) -> None:
+    _tagged_repo_with_checklists(repo)
+    for rel in preflight.CHECKLISTS:
+        _write(repo, rel, "# refreshed for 1.1.0" + chr(10))
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", "docs: refresh the release checklists")
+    assert preflight.check_checklists_refreshed().status == preflight.OK
+
+
+def test_an_uncommitted_refresh_also_passes(repo: Path) -> None:
+    """The runbook refreshes them before the release commit; a dirty edit is one in progress."""
+    _tagged_repo_with_checklists(repo)
+    for rel in preflight.CHECKLISTS:
+        _write(repo, rel, "# refreshed, not yet committed" + chr(10))
+    assert preflight.check_checklists_refreshed().status == preflight.OK
+
+
+def test_one_stale_checklist_is_enough_to_fail(repo: Path) -> None:
+    _tagged_repo_with_checklists(repo)
+    _write(repo, preflight.CHECKLISTS[0], "# only this one refreshed" + chr(10))
+    check = preflight.check_checklists_refreshed()
+    assert check.status == preflight.FAIL
+    assert check.notes == [
+        f"{preflight.CHECKLISTS[1]}: no change since v1.0.0 — refresh it (docs/RELEASE.md §0)"
+    ]
+
+
+def test_no_tag_means_skip_not_fail(repo: Path) -> None:
+    """A first release has nothing to be stale against."""
+    assert preflight.check_checklists_refreshed().status == preflight.SKIP

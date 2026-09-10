@@ -1,10 +1,10 @@
-<!-- status: design-locked · created: 2026-07-21 · owner: Code · plan: docs/PLAN_2026-07-21_exploration-epistemics.md (E0) -->
+<!-- status: design-locked · created: 2026-07-21 · owner: Code · plan: docs/archive/local/PLAN_2026-07-21_exploration-epistemics.md (E0) -->
 
 # Feature spec — E0: correctness batch (P0s before the epistemics surfaces)
 
 Build contract for ROADMAP row **E0**. Turns the five bullets of
-`docs/PLAN_2026-07-21_exploration-epistemics.md` §E0 into a code-level sprint. These are the C4
-review's P0 correctness fixes (`docs/REVIEW_2026-07-19_scale-robustness.md`) plus one boot item.
+`docs/archive/local/PLAN_2026-07-21_exploration-epistemics.md` §E0 into a code-level sprint. These are the C4
+review's P0 correctness fixes (`docs/archive/local/REVIEW_2026-07-19_scale-robustness.md`) plus one boot item.
 
 **Why this sprint, why now.** ADR-027 makes the epistemics **assessment** always-on (D3: a
 per-source evaluation strip under every answer). *An always-on strip must not show false data.* E2–E5

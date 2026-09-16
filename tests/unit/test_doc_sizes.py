@@ -90,7 +90,7 @@ def test_devlog_keeps_at_most_twenty_entries() -> None:
     entries = [ln for ln in text.splitlines() if ln.startswith("## ")]
     assert len(entries) <= DEVLOG_MAX_ENTRIES, (
         f"docs/DEVLOG.md holds {len(entries)} entries; the standard is {DEVLOG_MAX_ENTRIES}. "
-        "Rotate: python tools/conventions/cpc/rotate.py --root . --file devlog --write, "
+        "Rotate: python tools/conventions/rungate.py rotate --root . --file devlog --write, "
         "then update the archive range in the header."
     )
 

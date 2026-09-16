@@ -176,6 +176,21 @@ PAID_PROVIDERS = frozenset({"anthropic"})
 
 PDF_EXTRACTOR = os.getenv("PDF_EXTRACTOR", "pymupdf")
 
+# Ingest size caps (docs/security.md S4, step S-1). Safety limits, not corpus tuning: they exist so
+# one hostile or broken file cannot exhaust memory, and they sit far above any real document —
+# the largest of this library's 98 is 31 MiB (2026-09-16). Checked before a file is opened: in
+# the add review sheet (`extractors.get_format_status`) and before extraction
+# (`ingest.cache.load_or_extract`).
+MAX_INGEST_FILE_BYTES = int(os.getenv("DOC_MAX_INGEST_BYTES", str(1 << 30)))
+# What an EPUB/DOCX/ODT says it expands to. CPython's zipfile truncates every entry at its declared
+# size, so the declared total bounds what ebooklib, python-docx and odfpy can decompress even when
+# an archive lies — `tests/unit/test_ingest_size_caps.py` pins that assumption.
+MAX_ARCHIVE_EXPANDED_BYTES = int(os.getenv("DOC_MAX_ARCHIVE_BYTES", str(1 << 30)))
+# Deflate cannot compress real data past ~1032:1 — that ceiling is reached only by a constant byte
+# stream — so an entry claiming 1000:1 or more is the shape of a zip bomb, not of a document.
+# Structural, so not an env knob.
+MAX_ARCHIVE_ENTRY_RATIO = 1000
+
 
 # ============================================================
 # HuggingFace token (read, faster downloads)

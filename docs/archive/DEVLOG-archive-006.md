@@ -1,14 +1,168 @@
 <!-- status: archived · updated: 2026-09-16 · class: append-only -->
 
-# DEVLOG — archive 006 (2026-08-12 (1) → 2026-08-31 (1))
+# DEVLOG — archive 006 (2026-08-12 (1) → 2026-08-31 (3))
 
 Older entries, moved verbatim from `docs/DEVLOG.md` on 2026-09-04 so the working log stays
 about recent work. Newest-first, same format, unedited. Rotated because the live log had
 reached 4,011 lines against the 4,000-line cap in `tests/unit/test_doc_sizes.py`, which fails
 before it can grow further. Cut on a date boundary so no day is split across two files.
 **Extended 2026-09-10** by `cpc-rotate` (56 entries, 2026-08-15 → 2026-08-30 (8), byte-verified) when the
-live log adopted a 20-entry cap, then once more the same day for the session's own entry; 2026-08-30 (1)–(9) are all here. **Extended 2026-09-16** by one entry, 2026-08-31 (1), when a new entry
-pushed the live log past 20; 2026-08-31 is now split across the two files.
+live log adopted a 20-entry cap, then once more the same day for the session's own entry; 2026-08-30 (1)–(9) are all here. **Extended 2026-09-16** by three entries, 2026-08-31 (1)–(3), one per new entry that
+pushed the live log past 20; 2026-08-31 is split across the two files ((4) is live).
+
+---
+
+## 2026-08-31 (3) — Driving the app found four defects; three were real, and the fourth was the harness
+
+**What changed.** A sweep of Chat, Library, Graph and Settings against the live corpus, and the
+fixes for what it found. Three code changes (graph staleness gains a corpus dimension, two empty
+states stop claiming emptiness before they know, the usage line stops reporting an unmeasured
+zero), one data rebuild, 8 new tests. **KI-56** filed and fixed the same hour.
+
+**1. The Graph cited documents that no longer exist, and printed their ids as titles.** Selecting a
+concept listed entries like `c495b879-9b57-427c-b61e-1767a35808a2` where a title belongs — 8 of the
+30 documents `skeleton.json` cited were gone, which is the pre-ADR-047 story: a re-extraction minted
+a new id and the build artifact kept the old one. Two faults, fixed separately:
+
+* **The view had no way to know.** `GraphStaleness` watched the *vocabulary* — concepts added or
+  deleted since the build — and nothing watched the **corpus the graph was built over**. It now
+  carries `missing_document_ids`, computed the same way (one id-set comparison at read time,
+  nothing persisted). Deliberately asymmetric with the vocabulary rule: a document *added* since
+  the build is not staleness (that is true of every build the moment it finishes), while a document
+  the graph *cites* and cannot resolve is a broken reference.
+* **The UI printed the key.** `docTitle` returned `docId` when the lookup missed — an identifier in
+  a label's place, which is the exact thing `FileVerdict.duplicate_of` warns about two folders away.
+  The list now renders only what resolves, the count follows it, and the shortfall is stated rather
+  than silently dropped.
+
+Then the data: `build_concept_skeleton --apply` is Node A, **zero LLM calls**, and took **10.5 s** —
+`8 of 30` dead references became **0 of 30**. Live afterwards: 5 documents, 5 real titles, no UUIDs.
+
+**2 and 3. Two surfaces asserted emptiness before they had an answer.** The Library said *"Your
+library is empty"* and the sidebar *"No conversations yet"* while their fetches were still in
+flight — a wrong claim standing where a loading state belongs, and the same distinction ADR-044
+draws for update checks (*a failed check is `unknown`, never "up to date"*). Both lists start empty
+whether or not anything has been asked, so **the fix is a latch, not a spinner**: render the empty
+state only once a fetch has completed, success or failure. `svelte-check` earned its place here —
+`documentsLoaded` was a plain `let`, fine as an internal fetch-once latch and silently non-reactive
+the moment it became a prop, which would have pinned the loading line up forever.
+
+**4. `0 tokens · local` reported a measurement of nothing where nothing was measured.** Ollama
+returns no usage, so the counters sat at their initial `0`. The line now reads **`local · tokens not
+reported`**. The zero is what is checked, not `is_local`: a local provider that *does* report counts
+should have them shown, and a *metered* zero is a real measurement that must not be relabelled —
+both pinned in `chat/usage.ts` (6 node:tests).
+
+**The fourth "defect" was mine, and it is worth more than the three fixes.** The report said the
+chat Source panel stayed open across Chat → Library → Graph, measured at 420x720 on all three. It
+does not. `selectMode` nulls `activeCitation` correctly — confirmed by reading the live rune module
+from the page, which showed `activeCitation === null` while the node was still in the DOM. The panel
+uses `transition:fly`, and its eleven animations all reported `playState: "finished"` at
+`currentTime: 0`: started while the automation pane was hidden at `innerWidth: 0`, so Svelte's
+transition-end callback never fired and the node was never removed. Its final transform put it at
+`left: 1280` in a 1280px viewport — **fully off-screen, scrim at opacity 0**, invisible to any user.
+That is the hidden-pane trap `apps/desktop/CLAUDE.md` documents in as many words, and it was walked
+into *after* dodging it once the same hour on a geometry question. **The lesson that generalises:
+when a DOM observation and the state disagree, the state is the app and the DOM is the harness.**
+
+**Four other things that looked like defects and were checked rather than reported.** 88
+conversations with repeated titles (genuinely 88 distinct sessions, three runs of one battery
+minutes apart on 2026-08-07); Enter-not-sending (the readiness gate during warm-up — it works);
+the source panel appearing clipped at the window edge (screenshot cropping; `scrollWidth ===
+clientWidth`); and two 500s at start-up (Vite proxying to uvicorn before it was listening).
+
+**And one mess, cleaned up.** Probing the Settings rail, a `querySelector('nav')` matched the
+sidebar instead and the loop clicked every row's action buttons, **pinning 75 conversations**.
+Restored by diffing against the morning's backup — 8 rows unpinned in place, 80 stray rows removed,
+`conversation_meta` back to **111 rows, 0 pinned, 0 differing, 0 lost**. Nothing archived, nothing
+deleted. The three test conversations are soft-deleted; the library is as found: 98 documents, 881
+figures, 615 descriptions, 1 root.
+
+**What the sweep confirmed working.** Retrieval put the right five papers behind a RAG question, and
+the reviewer caught the local model inventing `[24][26][27]` out of reference lists —
+*"0 valid citation(s); 25/28 sentences uncited; out-of-range citations"* — which is KI-36 exactly as
+documented, and which Settings had already predicted by quoting 36% for `llama3.1:8b` against 81%
+for Haiku. Row 19's *In context* on a real citation: *"1% of the way in · in the extracted text of
+rag_lewis_2020.pdf"*, highlight at 75 px inside a 223 px window. KI-50's crops render, and *Figure
+images* reports *"0 re-run · 1 skipped — all 3 figure image(s) are already on disk"*.
+
+**Rejected: auto-rebuilding the skeleton when it detects missing documents.** The module's own
+docstring already refuses this for the vocabulary case — *"never to auto-rebuild (that would spend
+the user's time unasked and destroy the seeded-layout determinism the view is verified with)"* — and
+the corpus case has no better claim on the user's time.
+
+**What it opens.** Nothing watches the *inverse*: documents the corpus has that the graph has never
+seen. That is ordinary lag rather than a broken reference, but a count of it would tell a user
+whether a rebuild is worth 10 seconds.
+
+---
+
+## 2026-08-31 (2) — Row 17: importing from Zotero is a route to the review sheet, and the catalogue's metadata is a slot the extractor cannot overwrite
+
+**What changed.** ROADMAP 17, behind **ADR-049**. A new `src/doc_assistant/adapters/` package —
+neutral `catalogue.py`, vendor `zotero.py` — plus `POST /api/catalogue/zotero/scan`, an
+`ExternalMetadata` table, and a third route in the Add-documents dialog. 25 new pytest cases for the
+reader, 10 for the metadata layer, 7 for the route, 3 for root scoping, 5 node:tests.
+
+**The shape is the decision: an adapter returns paths and stops.** The scan hands back absolute
+paths; the client stages them; the *existing* review sheet takes over. The proof that this was the
+right cut came free — importing a library that overlaps your corpus produced *"3 files · 1 would be
+added"*, with the two known files flagged as duplicates naming what they matched, and no code was
+written for that. Same duplicate rule, same copy-or-reference choice, same progress bar.
+
+**The half worth having is the metadata, and it needed a third slot.** A reference manager's title
+is curated by a person; `metadata_extractor` guesses from a PDF's first page and sometimes picks the
+journal name (KI-54, still open). But there was nowhere to put a curated answer: `Document.title` is
+the extractor's slot and every metadata pass overwrites it, and `DocumentMeta.*_override` is the
+user's own edit, which an import must never silently replace. So `ExternalMetadata` sits between
+them, keyed **by path rather than by document** — the metadata arrives before the file is extracted,
+and may never lead to a document at all. `ingest.main` applies it post-loop beside
+`_assign_demo_folder`, and **`_rerun_metadata` re-applies it rather than extracting**: without that,
+the safest-looking box in the re-run dialog would replace a curated title with a guess at it.
+
+**Driving it end to end found a scaling defect no test would have.** Reference-adding registers a
+root for a file's *parent directory*, and `_reference_target`'s docstring cites "a twenty-paper
+Zotero folder" as the case that solves. Zotero's real layout defeats it: **every attachment lives in
+its own `storage/<key>/` directory**, so one library would mint one `SourceRoot` per document — five
+hundred rows, each stat-ed on every scan, against a robustness contract that says 10,000 documents.
+Observed as three roots for three files, then fixed twice over: an adapter reports the catalogue's
+storage folder and it is passed through as the batch's root, and `_reference_target` now prefers an
+**already-registered root above the file**. Re-run: **one root, three files, rel_paths
+`ZOTATT001/…`.** The second half improves the ordinary case too, and is not the guess the per-parent
+rule refuses to make — an ancestor root exists only because someone established it.
+
+**The catalogue is read from a copy.** Zotero holds `zotero.sqlite` open; the file and its
+`-wal`/`-shm` companions are copied to a temp path and the copy opened read-only. A guard test
+asserts the user's database is byte-identical afterwards. Their library is not ours to risk for a
+feature they can live without.
+
+**Everything declined is counted under a reason, never summed.** *"412 a web-page snapshot · 88 not
+downloaded to this computer"* reads as a working filter; *"37 found"* out of a 500-item library reads
+as a broken import. Snapshots are off by default — a library of any age holds hundreds.
+
+**What these tests do not prove.** There is no Zotero on this machine, so the fixture *constructs* a
+database to the documented Zotero 5/6/7 schema. That makes the suite a proof of the **mapping**, not
+of the schema. Every query is written to fail with a sentence rather than a stack trace for exactly
+that reason, and optional parts (collections, creators) degrade to "no authors" rather than losing
+the import. **First contact with a real library is the open item**, and it is recorded in ADR-049
+rather than in a comment.
+
+**Verified live, on the real library, and left as found.** `~/Zotero` does not exist here, so the
+button produced the intended 404 sentence and its *Choose the folder…* fallback; pointed at a
+synthetic library built from two corpus PDFs plus one new one, it staged 3, flagged 2 duplicates,
+reference-added and indexed the third — and the document came back titled **"Notes On A Synthetic
+Paper · Ada Lovelace · 2026"**, which is what the catalogue said and not what the extractor would
+have derived. Then deleted, and the registry rows and roots removed: 98 documents, 98 source files,
+1 root, 0 external rows, 881 figures with 615 descriptions.
+
+**Rejected.** Writing the catalogue's answer into `DocumentMeta` (that is the user's slot — an import
+would overwrite what they typed); a separate Zotero add/index path (two duplicate rules that would
+drift); registering the catalogue's root during the scan (merely *looking* would create state nobody
+confirmed). All in ADR-049.
+
+**What it opens.** Calibre is now one module and one route. Collections and item types are recorded
+and unused — the substrate for the dormant `SourceFile.doc_type` and for folders. And the
+linked-attachment base directory has no UI, so those attachments are skipped with a reason.
 
 ---
 

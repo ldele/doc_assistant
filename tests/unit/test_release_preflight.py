@@ -9,6 +9,7 @@ Two jobs:
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import subprocess
@@ -340,6 +341,215 @@ def test_the_parsed_timestamp_is_the_format_the_harness_actually_writes() -> Non
     assert datetime.strptime(m.group(3).strip(), "%m/%d/%Y %I:%M:%S %p") == datetime(
         2026, 9, 1, 22, 53, 16
     )
+
+
+# --- rg012: two verdicts, the citation half judged with the app's own parser -----------------
+
+_BUILT = "9/1/2026 10:53:16 PM"
+_BUILT_AT = datetime(2026, 9, 1, 22, 53, 16)
+
+
+def _run_log(
+    *, python: str = "False", chunks: int | None = 322, turns: int | None = 3, built: str = _BUILT
+) -> str:
+    """A harness log in the shape `scripts/rg012/rg012-run.ps1` writes (pinned there too)."""
+    lines = [
+        f"[17:40:00] {preflight._RUN_START}",
+        f"[17:40:00] python on PATH? {python}   (must be False)",
+        f"[17:40:44] installer chosen: Provenote_0.6.0_x64-setup.exe (1572.4 MB, built {built})",
+    ]
+    if chunks is not None:
+        lines.append(f"[17:48:00] chunk_count after ingest: {chunks}")
+    if turns is not None:
+        lines.append(f"[17:48:01] turns planned: {turns}")
+    return "\n".join(lines) + "\n"
+
+
+def _answer(run_dir: Path, name: str, answer: str, n_sources: int = 10, bom: bool = True) -> None:
+    """A saved turn result. PowerShell 5.1's `Out-File -Encoding utf8` writes a BOM."""
+    payload = json.dumps({"answer": answer, "sources": [{}] * n_sources})
+    (run_dir / name).write_text(payload, encoding="utf-8-sig" if bom else "utf-8")
+
+
+def _run(tmp_path: Path, answers: list[str | None], **log: object) -> tuple[Path, str]:
+    run_dir = tmp_path / "run-20260916-120000"
+    run_dir.mkdir(parents=True)
+    text = _run_log(turns=len(answers), **log)  # type: ignore[arg-type]
+    (run_dir / "rg012.log").write_text(text, encoding="utf-8")
+    for k, answer in enumerate(answers, start=1):
+        if answer is not None:
+            _answer(run_dir, f"turn-{k}-result.json", answer)
+    return run_dir, text
+
+
+@pytest.mark.parametrize(
+    "answer",
+    [
+        "BERT re-ranks passages [1] and improves MRR [2].",
+        "BERT re-ranks passages [Source 1] and [Sources 2, 4].",
+    ],
+)
+def test_a_canonical_or_a_labelled_citation_is_cited(answer: str) -> None:
+    """The KI-35 shape: the harness once counted only `[n]` and scored `[Source n]` as uncited,
+    which was filed as an application bug. Judging with `audit_citations` cannot drift that way."""
+    assert preflight.classify_turn(1, {"answer": answer, "sources": [{}] * 10}).kind == "cited"
+
+
+@pytest.mark.parametrize(
+    ("answer", "why"),
+    [
+        (
+            "BERT re-ranks [Source 1: reranking_bert_nogueira_2019.pdf].",
+            "the 2026-08-06 run 2 form",
+        ),
+        ("BERT re-ranks passages [12].", "a source number past the ten retrieved"),
+    ],
+)
+def test_an_attempt_that_resolves_nothing_is_unresolved_not_uncited(answer: str, why: str) -> None:
+    """`0 valid / N attempts` is our contract broken; `0 / 0` is the model declining. Different
+    fixes, so they must never share a verdict."""
+    turn = preflight.classify_turn(1, {"answer": answer, "sources": [{}] * 10})
+    assert turn.kind == "unresolved", why
+
+
+def test_an_answer_with_no_citation_of_any_form_is_uncited() -> None:
+    turn = preflight.classify_turn(1, {"answer": "BERT re-ranks passages.", "sources": [{}] * 10})
+    assert turn.kind == "uncited"
+
+
+def test_one_cited_turn_of_three_passes_the_citation_half(tmp_path: Path) -> None:
+    """llama3.1:8b cites all-or-nothing per answer (KI-36): two declines are the model, not a
+    bug."""
+    run_dir, text = _run(tmp_path, ["No citation here.", "Cited [2].", "Also none."])
+    turns = preflight.read_run_turns(run_dir, preflight._last_run(text))
+    assert preflight.rg012_citation(turns).status == preflight.OK
+    assert preflight.rg012_packaging(text, turns).status == preflight.OK
+
+
+def test_no_cited_turn_fails_the_citation_half_and_leaves_packaging_green(tmp_path: Path) -> None:
+    """A citation FAIL must never read as a broken build (RIGOR_TODO RG-012, 2026-08-14)."""
+    run_dir, text = _run(tmp_path, ["None.", "None either.", "Still none."])
+    turns = preflight.read_run_turns(run_dir, text)
+    citation = preflight.rg012_citation(turns)
+    assert citation.status == preflight.FAIL
+    assert "grounding" in citation.detail
+    assert preflight.rg012_packaging(text, turns).status == preflight.OK
+
+
+def test_an_unresolved_turn_fails_even_when_another_turn_cited(tmp_path: Path) -> None:
+    run_dir, text = _run(tmp_path, ["Cited [1].", "Tried [Source 1: paper.pdf].", "None."])
+    citation = preflight.rg012_citation(preflight.read_run_turns(run_dir, text))
+    assert citation.status == preflight.FAIL
+    assert "prompt/parser" in citation.detail
+
+
+def test_a_turn_with_no_saved_answer_fails_both_halves_as_could_not_look(tmp_path: Path) -> None:
+    """A missing file is not evidence of an uncited answer; the check says it could not look."""
+    run_dir, text = _run(tmp_path, ["Cited [1].", None, "Cited [3]."])
+    turns = preflight.read_run_turns(run_dir, text)
+    assert [t.kind for t in turns] == ["cited", "missing", "cited"]
+    assert preflight.rg012_citation(turns).status == preflight.FAIL
+    assert "could not judge" in preflight.rg012_citation(turns).detail
+    assert preflight.rg012_packaging(text, turns).status == preflight.FAIL
+
+
+def test_an_unreadable_result_file_is_missing_not_a_crash(tmp_path: Path) -> None:
+    run_dir, text = _run(tmp_path, ["Cited [1].", "Cited [2].", "Cited [3]."])
+    (run_dir / "turn-2-result.json").write_text("{not json", encoding="utf-8")
+    turns = preflight.read_run_turns(run_dir, text)
+    assert turns[1].kind == "missing"
+    assert "unreadable" in turns[1].detail
+
+
+def test_the_result_file_reads_with_or_without_the_powershell_bom(tmp_path: Path) -> None:
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    _answer(run_dir, "turn-1-result.json", "Cited [1].", bom=True)
+    _answer(run_dir, "turn-2-result.json", "Cited [2].", bom=False)
+    turns = preflight.read_run_turns(run_dir, _run_log(turns=2))
+    assert [t.kind for t in turns] == ["cited", "cited"]
+
+
+def test_a_single_turn_run_cannot_pass_the_citation_half(tmp_path: Path) -> None:
+    """Every run before 2026-09-16 used one turn and one `result.json`. Reading such a run as a
+    pass
+    would let a stale copy of the harness restore the coin flip without anyone noticing."""
+    run_dir = tmp_path / "out-legacy"
+    run_dir.mkdir()
+    _answer(run_dir, "result.json", "Cited [1] and [2].")
+    text = _run_log(turns=None)
+    turns = preflight.read_run_turns(run_dir, text)
+    assert [t.kind for t in turns] == ["cited"]
+    citation = preflight.rg012_citation(turns)
+    assert citation.status == preflight.FAIL
+    assert "coin flip" in citation.detail
+    assert preflight.rg012_packaging(text, turns).status == preflight.OK
+
+
+def test_python_on_path_fails_packaging(tmp_path: Path) -> None:
+    run_dir, text = _run(tmp_path, ["Cited [1].", "Cited [1].", "Cited [1]."], python="True")
+    turns = preflight.read_run_turns(run_dir, text)
+    assert preflight.rg012_packaging(text, turns).status == preflight.FAIL
+
+
+def test_a_run_that_stopped_before_ingest_says_where_it_stopped(tmp_path: Path) -> None:
+    text = _run_log(chunks=None, turns=None) + "[17:45:00] FAIL: no /api/health after ~600s\n"
+    check = preflight.rg012_packaging(text, [])
+    assert check.status == preflight.FAIL
+    assert check.notes == ["[17:45:00] FAIL: no /api/health after ~600s"]
+
+
+def test_only_the_last_run_in_an_appended_log_is_judged() -> None:
+    """The 2026-08-15 archive holds runs 3 and 4 in one log. Reading the first installer line and
+    any pass line scored the file by its earliest good run; the last run is the one its saved
+    files belong to."""
+    first = _run_log(turns=None)
+    second = _run_log(chunks=0, turns=None)
+    last = preflight._last_run(first + second)
+    assert last.startswith(preflight._RUN_START)
+    assert "chunk_count after ingest: 0" in last
+    assert "chunk_count after ingest: 322" not in last
+    assert preflight.rg012_packaging(last, []).detail == "ingest produced 0 chunks"
+
+
+def _archive(root: Path, name: str, answers: list[str], age_s: int) -> None:
+    run_dir = root / "out" / name
+    run_dir.mkdir(parents=True)
+    log = run_dir / "rg012.log"
+    log.write_text(_run_log(turns=len(answers)), encoding="utf-8")
+    for k, answer in enumerate(answers, start=1):
+        _answer(run_dir, f"turn-{k}-result.json", answer)
+    t = datetime.now().timestamp() - age_s
+    os.utime(log, (t, t))
+
+
+def _installer(tmp_path: Path, built: datetime = _BUILT_AT) -> Path:
+    installer = tmp_path / "Provenote_0.6.0_x64-setup.exe"
+    installer.write_bytes(b"MZ")
+    os.utime(installer, (built.timestamp(), built.timestamp()))
+    return installer
+
+
+def test_the_newest_run_on_the_artifact_decides_and_earlier_runs_stay_visible(
+    tmp_path: Path,
+) -> None:
+    """Re-running until green is indistinguishable from ignoring the gate — so a later pass may
+    decide, but the failure before it is printed beside it, never silently dropped."""
+    archives = tmp_path / "host"
+    _archive(archives, "run-old", ["None.", "None.", "None."], age_s=3600)
+    _archive(archives, "run-new", ["Cited [1].", "None.", "Cited [4]."], age_s=60)
+    packaging, citation = preflight.check_rg012(_installer(tmp_path), archives)
+    assert (packaging.status, citation.status) == (preflight.OK, preflight.OK)
+    assert citation.detail.startswith("run-new:")
+    assert any("run-old" in n and "citation FAIL" in n for n in packaging.notes)
+
+
+def test_a_run_against_a_different_build_does_not_count(tmp_path: Path) -> None:
+    archives = tmp_path / "host"
+    _archive(archives, "run-1", ["Cited [1].", "Cited [2].", "Cited [3]."], age_s=60)
+    checks = preflight.check_rg012(_installer(tmp_path, datetime(2026, 9, 2, 9, 0, 0)), archives)
+    assert [c.status for c in checks] == [preflight.FAIL]
+    assert "DIFFERENT build" in checks[0].detail
 
 
 # --- checklists: assumed stale until touched after the previous tag ---------------------------

@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-09-10 (§0: the checklists are assumed stale and preflight checks they were touched since the last tag) · class: runbook -->
+<!-- status: active · updated: 2026-09-16 (§5: launch the tracked scripts/rg012 harness; rg012 is two checks over three turns; §0: the checklists are assumed stale) · class: runbook -->
 
 # Release runbook
 
@@ -189,6 +189,9 @@ Two traps:
 
 **This is the gate.** Procedure and its four traps: `docs/desktop-packaging.md` §5.
 
+- **Launch the tracked config, `scripts\rg012\rg012-tier2.wsb`.** It maps the repo's
+  `scripts\rg012` folder into the sandbox, so the run uses the reviewed harness; a copy of the
+  script anywhere else is stale by definition. Each run writes its own `out\run-<timestamp>\`.
 - Stage the installer as a **copy**; never map `target/release/bundle/nsis` into the sandbox (a
   running sandbox holds a handle and the next `tauri build` fails with os error 32).
 - **Windows Sandbox runs one instance, and a stale VM silently eats the run.** Killing
@@ -202,9 +205,14 @@ Two traps:
   machine, so the copy never ran and the delete did. That destroyed the evidence for a headline
   finding (see KI-35).
 
-`preflight`'s `rg012` check then ties the PASS to **this artifact** by matching the installer build
-timestamp the harness logged. A PASS from a previous build is worse than no PASS — it reads as
-evidence for something that was never tested.
+`preflight` then ties the run to **this artifact** by matching the installer build timestamp the
+harness logged, and reports it as **two checks**: `rg012_packaging` (a clean box, a real ingest, an
+answer to every turn) and `rg012_citation` (at least one of the three turns cited, none tried and
+failed — judged with the app's own `audit_citations`, not the harness's estimate). The newest run
+on the artifact decides and earlier ones are printed beside it, so a re-run until green shows. A
+PASS from a previous build is worse than no PASS — it reads as evidence for something that was
+never tested. A run from the single-turn harness (every run before 2026-09-16) fails the citation
+check as insufficient: one turn was a coin flip on `llama3.1:8b` (ROADMAP 46).
 
 ## 5b · The UX/UI walkthrough — every surface, in the installed build
 
@@ -256,7 +264,8 @@ minutes or more), then publishes; a draft with zero assets and an `untagged-…`
 upload in progress, not a failure, and `releases/latest` keeps pointing at the previous release
 until the flip. Write the body in the previous release's shape (Install · What's new · Known
 limits · How this was verified · SHA-256), and state the RG-012 verdict in two halves — the
-packaging half is strong evidence, the citation half is one sample (`RIGOR_TODO` 2026-08-14). And **repeat any "not yet verified" caveat from the tag annotation in the
+packaging half is strong evidence; the citation half says how many of the three turns cited, on
+which model (before 0.7.0 it was one sample, `RIGOR_TODO` 2026-08-14). And **repeat any "not yet verified" caveat from the tag annotation in the
 release body** — the release page is the surface people actually read; a caveat that lives only in
 `git show` is a caveat nobody sees.
 

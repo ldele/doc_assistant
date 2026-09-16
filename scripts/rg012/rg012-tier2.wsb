@@ -1,0 +1,29 @@
+<Configuration>
+  <!-- RG-012 Tier-2: install Provenote on a clean, Python-free Windows box and drive three turns.
+       Launch THIS file (double-click, or `WindowsSandbox.exe scripts\rg012\rg012-tier2.wsb`).
+       The script folder is mapped from the repo checkout, so the sandbox runs exactly the reviewed,
+       tracked rg012-run.ps1 - not a copy that can drift. Before 2026-09-16 it mapped
+       C:\rg012-host\script, an untracked copy no diff review could see.
+       The installer is mapped from a STAGED COPY, never from target\release\bundle\nsis directly:
+       a running sandbox holds a handle on whatever it maps, which locked the artifact mid-rebuild
+       and failed `tauri build` with os error 32 (2026-08-05). Stage, then map the copy.
+       All host paths ASCII-only: .wsb parsing is unreliable with accented paths. If the checkout
+       is not at C:\Projects\doc_assistant, edit the script HostFolder below. -->
+  <MappedFolders>
+    <MappedFolder><HostFolder>C:\rg012-host\installer</HostFolder><SandboxFolder>C:\rg012\installer</SandboxFolder><ReadOnly>true</ReadOnly></MappedFolder>
+    <MappedFolder><HostFolder>C:\rg012-host\corpus</HostFolder><SandboxFolder>C:\rg012\corpus</SandboxFolder><ReadOnly>true</ReadOnly></MappedFolder>
+    <MappedFolder><HostFolder>C:\Projects\doc_assistant\scripts\rg012</HostFolder><SandboxFolder>C:\rg012\script</SandboxFolder><ReadOnly>true</ReadOnly></MappedFolder>
+    <MappedFolder><HostFolder>C:\rg012-host\out</HostFolder><SandboxFolder>C:\rg012\out</SandboxFolder><ReadOnly>false</ReadOnly></MappedFolder>
+  </MappedFolders>
+  <Networking>Enable</Networking>
+  <MemoryInMB>8192</MemoryInMB>
+  <!-- Runs the gate unattended (added 2026-08-06). The two earlier "LogonCommand never fires"
+       failures were NOT Sandbox: rg012-run.ps1 was UTF-8-no-BOM and Windows PowerShell 5.1 read it
+       as ANSI, so its non-ASCII characters broke parsing before anything logged. The script is
+       ASCII-only now, and tests/unit/test_rg012_harness.py fails the suite if that ever changes.
+       -File (not -Command) so quoting cannot be reinterpreted; the script writes its own run
+       directory to the read-write out\ mapping, which is the only channel back to the host. -->
+  <LogonCommand>
+    <Command>powershell.exe -NoProfile -ExecutionPolicy Bypass -File C:\rg012\script\rg012-run.ps1</Command>
+  </LogonCommand>
+</Configuration>

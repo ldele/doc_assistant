@@ -1,6 +1,7 @@
 """Format-specific extractors. Each returns markdown text."""
 
 import re
+import zipfile
 from collections.abc import Callable
 from pathlib import Path
 from typing import Protocol
@@ -337,11 +338,100 @@ def is_supported(path: Path) -> bool:
     return path.suffix.lower() in SUPPORTED_EXTENSIONS
 
 
+class IngestRefusedError(ValueError):
+    """The library will not open this file: too large, or an archive shaped like a zip bomb.
+
+    The message is a sentence for the person who added the file (docs/security.md S4, step S-1).
+    """
+
+
+# The supported formats that are zip archives underneath; every other format is opened as itself.
+_ARCHIVE_FORMATS: dict[str, str] = {".epub": "EPUB", ".docx": "DOCX", ".odt": "ODT"}
+
+
+def _size_label(n: float) -> str:
+    for unit, scale in (("GB", 1 << 30), ("MB", 1 << 20), ("KB", 1 << 10)):
+        if n >= scale:
+            return f"{n / scale:.1f} {unit}"
+    return f"{int(n)} bytes"
+
+
+def ingest_refusal(
+    path: Path,
+    *,
+    max_bytes: int | None = None,
+    max_expanded: int | None = None,
+    max_ratio: float | None = None,
+) -> str | None:
+    """Why the library will not open ``path``, as a sentence — or ``None`` when it may.
+
+    Reads the file's size and, for EPUB/DOCX/ODT, the archive's central directory; decompresses
+    nothing. The declared sizes can be trusted as a bound: CPython's ``zipfile`` truncates every
+    entry at its declared size, and all three libraries read through it (pinned by
+    ``tests/unit/test_ingest_size_caps.py``). Caps default to ``config``.
+
+    **Deliberately unreachable from ``extract_to_markdown``.** The extraction fingerprint hashes
+    that call graph, so calling this from inside it would mark every cached document stale and
+    re-extract the whole corpus (KI-48). The callers are ``get_format_status`` (the add review
+    sheet) and ``ingest.cache.load_or_extract`` (just before extraction).
+    """
+    from doc_assistant import config
+
+    max_bytes = config.MAX_INGEST_FILE_BYTES if max_bytes is None else max_bytes
+    max_expanded = config.MAX_ARCHIVE_EXPANDED_BYTES if max_expanded is None else max_expanded
+    max_ratio = config.MAX_ARCHIVE_ENTRY_RATIO if max_ratio is None else max_ratio
+    try:
+        size = path.stat().st_size
+    except OSError:
+        return None  # unreadable is reported by whoever opens the file, in its own terms
+    if size > max_bytes:
+        return (
+            f"This file is {_size_label(size)}, over the {_size_label(max_bytes)} limit for one "
+            "document, so it was not opened."
+        )
+    kind = _ARCHIVE_FORMATS.get(path.suffix.lower())
+    if kind is None:
+        return None
+    try:
+        with zipfile.ZipFile(path) as archive:
+            entries = archive.infolist()
+    except (zipfile.BadZipFile, OSError, ValueError):
+        return (
+            f"This {kind} file is damaged or is not a real {kind} file — its archive could not be "
+            "read, so it was not opened."
+        )
+    expanded = sum(e.file_size for e in entries)
+    if expanded > max_expanded:
+        return (
+            f"This {kind} would expand to {_size_label(expanded)} when opened, over the "
+            f"{_size_label(max_expanded)} limit, so it was not opened."
+        )
+    for entry in entries:
+        if entry.file_size == 0:
+            continue
+        if entry.compress_size == 0 or entry.file_size / entry.compress_size >= max_ratio:
+            factor = (
+                "without limit"
+                if entry.compress_size == 0
+                else f"{entry.file_size / entry.compress_size:,.0f} times over"
+            )
+            return (
+                f"This {kind} holds a part that expands {factor} — real documents do not "
+                "compress like that, zip bombs do — so it was not opened."
+            )
+    return None
+
+
 def get_format_status(path: Path) -> tuple[bool, str | None]:
-    """Returns (supported, advisory_message)."""
+    """Returns (supported, advisory_message).
+
+    A supported format can still be refused — too large, or an archive shaped like a zip bomb
+    (``ingest_refusal``). The add review sheet shows the sentence verbatim.
+    """
     ext = path.suffix.lower()
     if ext in SUPPORTED_EXTENSIONS:
-        return True, None
+        refusal = ingest_refusal(path)
+        return refusal is None, refusal
     advice = {
         ".doc": "DOC format is not supported. Convert to DOCX or PDF first.",
         ".tex": "LaTeX is not supported yet. Compile to PDF first.",

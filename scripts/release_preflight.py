@@ -24,9 +24,15 @@ looking redundant:
 * ``sidecar_size`` — KI-34 is detectable as a size cliff: 1545.5 MB broken vs 1562.1 MB fixed,
   because ``collect_all("fitz")`` silently dropped ~17 MB of PyMuPDF data files. The cheapest
   possible regression check on a packaging bug that is invisible from source.
-* ``rg012`` — ties "the clean-machine gate passed" to **this exact artifact**, by matching the
-  installer build timestamp the harness logged against the installer on disk. A PASS from a
-  previous build is worse than no PASS, because it reads as evidence.
+* ``rg012_packaging`` / ``rg012_citation`` — tie "the clean-machine gate passed" to **this exact
+  artifact**, by matching the installer build timestamp the harness logged against the installer
+  on disk. A PASS from a previous build is worse than no PASS, because it reads as evidence. **Two
+  verdicts since 2026-09-16, never one:** the 0.5.1 installer failed its single cited turn once in
+  four runs of the same bytes (``llama3.1:8b`` cites all-or-nothing, KI-36), and a coin flip in a
+  ship gate trains its operator to re-run until green. So the harness asks three questions, the
+  citation half is judged here with the app's own ``audit_citations`` rather than the harness's
+  copy of the pattern (KI-35 was that copy drifting), and a citation FAIL cannot read as a broken
+  build. The **newest** run on the artifact decides; earlier ones are listed, not averaged away.
 * ``dev_commands`` — the app told users to run ``just api`` (KI-39): a task runner and a repo
   recipe that someone who installed an .exe does not have.
 
@@ -47,6 +53,8 @@ from datetime import datetime
 from pathlib import Path
 
 import tomllib
+
+from doc_assistant.synthesis import audit_citations
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -353,44 +361,216 @@ def check_sidecar_size() -> Check:
 _CHOSEN = re.compile(r"installer chosen: (\S+) \(([\d,]+(?:\.\d+)?) MB, built ([^)]+)\)")
 
 
-def check_rg012(installer: Path | None) -> Check:
-    """Did the clean-machine gate pass **on this artifact**?
+_RUN_START = "=== RG-012 Tier-2 start ==="
+_PYTHON_ON_PATH = re.compile(r"python on PATH\? (True|False)")
+_CHUNKS_AFTER_INGEST = re.compile(r"chunk_count after ingest: (\d+)")
+_TURNS_PLANNED = re.compile(r"turns planned: (\d+)")
+
+# The fewest turns a citation verdict may rest on. One turn is a coin flip on `llama3.1:8b`: the
+# byte-identical 0.5.1 installer failed 1 run in 4 on the same question (RIGOR_TODO RG-012,
+# 2026-08-14). A run from the single-turn harness (every run before 2026-09-16) is therefore judged
+# insufficient rather than passed — otherwise running a stale copy of the harness would quietly
+# restore the coin flip.
+RG012_MIN_TURNS = 3
+
+CITED, UNCITED, UNRESOLVED, MISSING = "cited", "uncited", "unresolved", "missing"
+
+
+@dataclass
+class Rg012Turn:
+    number: int
+    kind: str  # CITED | UNCITED | UNRESOLVED | MISSING
+    detail: str
+
+
+def _last_run(text: str) -> str:
+    """The last run in a harness log.
+
+    The harness appended to one log until 2026-09-16, so an ``out\\`` folder that was not cleared
+    held two runs — the 2026-08-15 archive holds runs 3 and 4. Reading the first installer line and
+    *any* pass line in such a file would score a failed re-run as a pass. Only the last run's turn
+    files survive on disk anyway, so the last run is the only one that can be judged.
+    """
+    i = text.rfind(_RUN_START)
+    return text if i < 0 else text[i:]
+
+
+def classify_turn(
+    number: int, payload: dict[str, object] | None, why_missing: str = ""
+) -> Rg012Turn:
+    """Judge one turn with the app's own citation audit — never a restatement of it (KI-35).
+
+    ``cited``: at least one in-range citation. ``unresolved``: nothing valid, but the model *tried*
+    (a malformed or out-of-range token) — a prompt/parser defect. ``uncited``: no citation of any
+    form — the model declining, which ``llama3.1:8b`` does on some answers (KI-36).
+    """
+    if payload is None:
+        return Rg012Turn(number, MISSING, why_missing or "no result was saved")
+    answer = payload.get("answer")
+    sources = payload.get("sources")
+    n_sources = len(sources) if isinstance(sources, list) else 0
+    audit = audit_citations(answer if isinstance(answer, str) else "", n_sources)
+    if audit.valid:
+        return Rg012Turn(number, CITED, f"{len(audit.valid)} of {n_sources} sources cited")
+    if audit.malformed or audit.out_of_range:
+        return Rg012Turn(number, UNRESOLVED, "; ".join(audit.reasons))
+    return Rg012Turn(number, UNCITED, f"no citation of any form ({n_sources} sources retrieved)")
+
+
+def read_run_turns(run_dir: Path, run: str) -> list[Rg012Turn]:
+    """Every turn the run planned, judged from the result files it saved beside its log.
+
+    The three-turn harness logs ``turns planned: N`` and writes ``turn-K-result.json``; the
+    single-turn harness before it wrote one ``result.json``. PowerShell 5.1's ``Out-File -Encoding
+    utf8`` writes a BOM, hence ``utf-8-sig``. A turn whose file is absent or unreadable is
+    ``missing`` — this check could not look, and says so instead of guessing.
+    """
+    planned = _TURNS_PLANNED.search(run)
+    if planned is None:
+        files = [run_dir / "result.json"]
+    else:
+        files = [run_dir / f"turn-{k}-result.json" for k in range(1, int(planned.group(1)) + 1)]
+    turns: list[Rg012Turn] = []
+    for k, path in enumerate(files, start=1):
+        if not path.is_file():
+            turns.append(
+                classify_turn(k, None, f"{path.name} was not written — the turn got no answer")
+            )
+            continue
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8-sig"))
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError) as e:
+            turns.append(classify_turn(k, None, f"{path.name} is unreadable ({type(e).__name__})"))
+            continue
+        turns.append(classify_turn(k, payload if isinstance(payload, dict) else None))
+    return turns
+
+
+def rg012_packaging(run: str, turns: list[Rg012Turn]) -> Check:
+    """The half that found KI-34: a clean box, a real ingest, and an answer to every turn."""
+    name = "rg012_packaging"
+    python = _PYTHON_ON_PATH.search(run)
+    if python is None:
+        return Check(
+            name, FAIL, "the log never says whether Python was on PATH — not a readable run"
+        )
+    if python.group(1) == "True":
+        return Check(name, FAIL, "Python was on PATH in the sandbox — not a clean machine")
+    chunks = _CHUNKS_AFTER_INGEST.search(run)
+    if chunks is None:
+        stops = [ln.strip() for ln in run.splitlines() if "FAIL:" in ln]
+        return Check(name, FAIL, "the run stopped before ingest finished", stops[-1:])
+    if int(chunks.group(1)) <= 0:
+        return Check(name, FAIL, "ingest produced 0 chunks")
+    missing = [t for t in turns if t.kind == MISSING]
+    if missing:
+        return Check(
+            name,
+            FAIL,
+            f"{len(missing)} of {len(turns)} turn(s) got no answer",
+            [f"turn {t.number}: {t.detail}" for t in missing],
+        )
+    return Check(
+        name,
+        OK,
+        f"clean box, {chunks.group(1)} chunks, {len(turns)} of {len(turns)} turn(s) answered",
+    )
+
+
+def rg012_citation(turns: list[Rg012Turn]) -> Check:
+    """At least one cited turn, none that tried to cite and failed, enough turns to mean it."""
+    name = "rg012_citation"
+    notes = [f"turn {t.number}: {t.kind} — {t.detail}" for t in turns]
+    missing = [t for t in turns if t.kind == MISSING]
+    if missing:
+        return Check(
+            name, FAIL, f"could not judge {len(missing)} turn(s) — no saved answer", notes
+        )
+    unresolved = [t for t in turns if t.kind == UNRESOLVED]
+    if unresolved:
+        return Check(
+            name,
+            FAIL,
+            f"{len(unresolved)} turn(s) tried to cite and nothing resolved — a prompt/parser "
+            "defect, not the model declining",
+            notes,
+        )
+    cited = sum(1 for t in turns if t.kind == CITED)
+    if cited == 0:
+        return Check(
+            name,
+            FAIL,
+            f"no turn cited (0 of {len(turns)}) — a grounding failure, not packaging",
+            notes,
+        )
+    if len(turns) < RG012_MIN_TURNS:
+        return Check(
+            name,
+            FAIL,
+            f"only {len(turns)} turn(s) — one turn is a coin flip on llama3.1:8b; re-run with "
+            f"scripts/rg012/rg012-run.ps1 ({RG012_MIN_TURNS} turns)",
+            notes,
+        )
+    return Check(
+        name, OK, f"{cited} of {len(turns)} turns cited (needs at least 1 — KI-36)", notes
+    )
+
+
+def _run_built_at(run: str) -> datetime | None:
+    m = _CHOSEN.search(run)
+    if not m:
+        return None
+    try:
+        return datetime.strptime(m.group(3).strip(), "%m/%d/%Y %I:%M:%S %p")
+    except ValueError:
+        return None
+
+
+def check_rg012(installer: Path | None, archives: Path | None = None) -> list[Check]:
+    """Did the clean-machine gate pass **on this artifact** — packaging and citation, separately?
 
     Matches the build timestamp the harness recorded against the installer on disk. A PASS from a
     previous build is worse than no PASS at all — it reads as evidence for something never tested.
+    The newest run on the artifact decides; earlier runs on it are listed with their verdicts, so
+    re-running until green is visible rather than silent.
     """
+    root = RG012_ARCHIVES if archives is None else archives
     if installer is None:
-        return Check("rg012", SKIP, "no artifact to match")
-    if not RG012_ARCHIVES.is_dir():
-        return Check("rg012", WARN, f"no harness at {RG012_ARCHIVES} (run on the build box)")
-    logs = list(RG012_ARCHIVES.glob("out*/rg012.log"))
+        return [Check("rg012", SKIP, "no artifact to match")]
+    if not root.is_dir():
+        return [Check("rg012", WARN, f"no harness at {root} (run on the build box)")]
+    logs = sorted(root.rglob("rg012.log"), key=lambda p: p.stat().st_mtime, reverse=True)
     if not logs:
-        return Check("rg012", FAIL, "no RG-012 run recorded — the clean-machine gate has not run")
+        return [
+            Check("rg012", FAIL, "no RG-012 run recorded — the clean-machine gate has not run")
+        ]
     inst_t = datetime.fromtimestamp(installer.stat().st_mtime).replace(second=0, microsecond=0)
-    matches: list[str] = []
-    for log in sorted(logs, key=lambda p: p.stat().st_mtime, reverse=True):
-        text = log.read_text(encoding="utf-8", errors="replace")
-        m = _CHOSEN.search(text)
-        if not m:
+    judged: list[tuple[str, Check, Check]] = []
+    for log in logs:
+        run = _last_run(log.read_text(encoding="utf-8", errors="replace"))
+        built = _run_built_at(run)
+        if built is None or built.replace(second=0, microsecond=0) != inst_t:
             continue
-        try:
-            built = datetime.strptime(m.group(3).strip(), "%m/%d/%Y %I:%M:%S %p")
-        except ValueError:
-            continue
-        if built.replace(second=0, microsecond=0) != inst_t:
-            continue
-        verdict = "PASS" if "TIER-2: PASS" in text else "FAIL"
-        matches.append(f"{log.parent.name}: {verdict}")
-        if verdict == "PASS":
-            return Check("rg012", OK, f"PASS on this artifact ({log.parent.name})")
-    if matches:
-        return Check("rg012", FAIL, "the run against this artifact did NOT pass", matches)
-    return Check(
-        "rg012",
-        FAIL,
-        "no RG-012 run matches this installer — the gate ran against a DIFFERENT build",
-        [f"installer built {inst_t:%Y-%m-%d %H:%M}", f"{len(logs)} archived run(s) found"],
-    )
+        turns = read_run_turns(log.parent, run)
+        judged.append((log.parent.name, rg012_packaging(run, turns), rg012_citation(turns)))
+    if not judged:
+        return [
+            Check(
+                "rg012",
+                FAIL,
+                "no RG-012 run matches this installer — the gate ran against a DIFFERENT build",
+                [f"installer built {inst_t:%Y-%m-%d %H:%M}", f"{len(logs)} archived run(s) found"],
+            )
+        ]
+    label, packaging, citation = judged[0]
+    earlier = [
+        f"earlier run on this artifact: {name} — packaging {p.status}, citation {c.status}"
+        for name, p, c in judged[1:]
+    ]
+    packaging.detail = f"{label}: {packaging.detail}"
+    citation.detail = f"{label}: {citation.detail}"
+    packaging.notes += earlier
+    return [packaging, citation]
 
 
 def _just_recipes() -> set[str]:
@@ -507,7 +687,7 @@ def main() -> int:
         artifacts,
         check_artifact_fresh(installer),
         check_sidecar_size(),
-        check_rg012(installer),
+        *check_rg012(installer),
         check_dev_commands(),
         check_checklists_refreshed(),
     ]

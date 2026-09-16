@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-08-07 (trap 1 now cites the general encoding rule) · class: runbook -->
+<!-- status: active · updated: 2026-09-16 (RG-012 harness tracked at scripts/rg012/, three turns, two preflight checks; trap 1 now cites the general encoding rule) · class: runbook -->
 
 # Desktop packaging runbook (PR-M4)
 
@@ -158,20 +158,30 @@ Win 11 Pro — disposable, zero Python; enable via *Turn Windows features on/off
 restart).
 
 **Read the two halves of a PASS differently.** The *packaging* half is strong evidence and is the
-half that found KI-34. The *citation* half is one sample of a measurement `.claude/RIGOR_TODO.md`
-reopened on 2026-08-14 as unreliable — a coin flip on `llama3.1:8b`, where 0.5.1 failed once and
-passed twice on the same artifact. A single cited turn says the pipeline can produce citations on
-a clean box, not that it reliably does.
+half that found KI-34. Up to 0.6.0 the *citation* half was one sample of a measurement
+`.claude/RIGOR_TODO.md` reopened on 2026-08-14 as unreliable — a coin flip on `llama3.1:8b`, where
+0.5.1 failed once in four runs of the same artifact. A single cited turn says the pipeline can
+produce citations on a clean box, not that it reliably does. **Since 2026-09-16 (ROADMAP 46) the
+gate asks three questions** — one per corpus document, each in its own session — and the two halves
+are two separate preflight checks, so a citation failure can never read as a broken build.
 
-The gate is now automated. Harness lives at `C:\rg012-host\` (local-only, not in the repo):
-`rg012-tier2.wsb` maps `installer\ corpus\ script\ out\` and fires `script\rg012-run.ps1` from a
-`LogonCommand`; the script installs silently, launches the shell, waits for `/api/health`, seeds
-3 PDFs from `corpus\`, ingests them, drives one turn, and writes its verdict to `out\`.
+The gate is automated, and **the harness is tracked in the repo at `scripts/rg012/`** (it lived
+only in `C:\rg012-host\script\` until 2026-09-16, where no diff review or test could see a change
+to the ship gate). Launch `scripts\rg012\rg012-tier2.wsb`: it maps the repo's `scripts\rg012` folder
+plus `C:\rg012-host\{installer,corpus,out}` and fires `rg012-run.ps1` from a `LogonCommand`. The
+script installs silently, launches the shell, waits for `/api/health`, seeds 3 PDFs from `corpus\`,
+ingests them, asks three questions, and writes everything to its own `out\run-<timestamp>\` — the
+log, and `turn-N-stream.txt` / `turn-N-result.json` per turn. The verdict that counts is computed
+on the host: `python -m scripts.release_preflight` re-reads each `turn-N-result.json` with
+`synthesis.audit_citations`, the app's own parser. The script's `(estimate)` lines are for whoever
+watches the sandbox. `tests/unit/test_rg012_harness.py` pins the text contract between the two —
+the log lines and file names the script writes and the preflight reads — and the ASCII rule below.
 
 **Four traps this harness exists to avoid — every one of them cost a run:**
 1. **ASCII only, in both the `.ps1` and the `.wsb`.** Windows PowerShell 5.1 reads a UTF-8-no-BOM
    file as ANSI, so one em-dash breaks parsing *before anything logs* — which is what the two
-   historical "LogonCommand never fires" reports actually were. Byte-check before trusting a run.
+   historical "LogonCommand never fires" reports actually were. The test suite now byte-checks
+   both files; if you edit them outside the repo, byte-check before trusting a run.
    This is one of three Windows encoding defaults that bite here; the other two (cp1252 console,
    ANSI file I/O) are in [`setup.md`](setup.md) § *Windows: text encoding*.
 2. **Map a STAGED COPY of the installer**, never `target\release\bundle\nsis` directly: a running
@@ -180,7 +190,10 @@ The gate is now automated. Harness lives at `C:\rg012-host\` (local-only, not in
    out of a folder holding both). Filter by product name, sort by build time.
 4. **The gate must assert the app's own contract, not restate it.** It counted `'\[\d+\]'` — stricter
    than the app's citation parser — scored a passing turn as FAIL, and that false verdict was filed
-   as an application bug (KI-35). It now reports *resolved / unresolvable / uncited* separately.
+   as an application bug (KI-35). Since 2026-09-16 the verdict is not computed in the script at
+   all: the preflight reads the saved answers with the app's `audit_citations` and names each turn
+   *cited / unresolved / uncited / missing* — `unresolved` (tried, nothing resolves) is a prompt or
+   parser defect, `uncited` is the model declining, `missing` means the check could not look.
 
 **Tier 2 needs an answer engine the sandbox can reach.** It uses the host's Ollama over the Default
 Switch address (`http://172.29.224.1:11434`), which requires Ollama bound beyond loopback

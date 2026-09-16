@@ -1,8 +1,8 @@
 # scripts/ — enrichment / eval / build CLI runners
 
 **Owns:** the idempotent CLI runners over `src/doc_assistant/` sidecar modules (Enrichment-Layer
-Pattern: runners re-derive; they never mutate the chunk store) plus dev/build tooling
-(`launch_app.ps1`, `build_sidecar.py`, `doc_assistant_api.spec`).
+Pattern: runners re-derive, never mutate the chunk store) plus dev/build tooling (`launch_app.ps1`,
+`build_sidecar.py`, `doc_assistant_api.spec`, `rg012/` — the ASCII-only clean-machine gate).
 
 **Key files**
 - Enrichment: `extract_*`, `enrich_metadata`, `compute_*`, `build_concept_skeleton`, `build_gaps`,

@@ -9,6 +9,19 @@ The engineering record is finer-grained than this file: per-change entries live 
 
 ## [Unreleased]
 
+### Security
+
+- **Oversized files and zip bombs are refused before they are opened.** A file over 1 GB, or an
+  EPUB/DOCX/ODT that would expand past 1 GB or holds a part compressed far beyond what real
+  documents allow, now gets a one-sentence explanation in the add review sheet instead of being
+  read into memory; a file that reaches ingest another way is refused the same way, per file.
+  `DOC_MAX_INGEST_BYTES` / `DOC_MAX_ARCHIVE_BYTES` raise the limits.
+
+### Changed
+
+- **The clean-machine release gate asks three questions, not one**, and reports packaging and
+  citation as separate verdicts (release tooling; no change to the app).
+
 ## [0.6.0] — 2026-09-04
 
 ### Added

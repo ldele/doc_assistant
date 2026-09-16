@@ -14,8 +14,8 @@ Format: What changed | Why | Rejected alternatives | What it opens
 > oldest entries **verbatim** into the highest-numbered archive and verifies the bytes; then update
 > the range below by hand (cpc ticket T-003). A day may be split across two files at the cut.
 > Older entries, newest-first, unedited:
-> **2026-08-12 (1) → 2026-08-31 (1)** in [`docs/archive/DEVLOG-archive-006.md`](archive/DEVLOG-archive-006.md)
-> (rotated 2026-09-04, 2026-09-10 and 2026-09-16) ·
+> **2026-08-12 (1) → 2026-08-31 (3)** in [`docs/archive/DEVLOG-archive-006.md`](archive/DEVLOG-archive-006.md)
+> (rotated 2026-09-04, 2026-09-10 and three times on 2026-09-16) ·
 > **2026-08-08 (1) → 2026-08-11 (4)** in [`docs/archive/DEVLOG-archive-005.md`](archive/DEVLOG-archive-005.md)
 > (rotated 2026-08-30) ·
 > **2026-08-05 → 2026-08-07** in [`docs/archive/DEVLOG-archive-004.md`](archive/DEVLOG-archive-004.md)
@@ -30,6 +30,107 @@ Format: What changed | Why | Rejected alternatives | What it opens
 > see an entry that is itself an ADR in disguise). When either trips, rotate — **do not raise
 > the cap.** The cap exists because this log reached 8,244 lines before anyone noticed: every entry
 > is individually small and correct, so unbounded growth is invisible per commit.
+
+---
+
+## 2026-09-16 (3) — Security S-1: oversized files and zip bombs are refused before they are opened, without re-extracting the corpus
+
+**What changed.** `extractors.ingest_refusal(path)` returns a sentence, or `None`: a file over
+`MAX_INGEST_FILE_BYTES` (1 GB, `DOC_MAX_INGEST_BYTES`); for EPUB/DOCX/ODT, an archive that cannot be
+read, that declares more than `MAX_ARCHIVE_EXPANDED_BYTES` expanded (1 GB, `DOC_MAX_ARCHIVE_BYTES`),
+or that holds an entry at ≥ `MAX_ARCHIVE_ENTRY_RATIO` (1000:1). It reads the size and the central
+directory only. Two callers: `get_format_status`, so the add review sheet shows the sentence
+verbatim as an `unsupported` row; and `ingest.cache.load_or_extract`, which raises
+`IngestRefusedError` (a `ValueError`) just before extraction, so a file that reaches ingest without
+the sheet is refused per file through the existing `document_error` path. `tests/unit/
+test_ingest_size_caps.py` (12): a file over the cap and a synthetic zip bomb are each refused with a
+sentence in the review sheet; an archive over its expanded cap; a damaged archive; real DOCX, ODT
+and EPUB are not refused; extraction never runs on a bomb; the check is outside every format's
+fingerprint closure; and CPython's `zipfile` truncating an entry at its declared size. Walkthrough §1
+gains the row, `security.md` S-1 → done and S-2 next, ROADMAP row 60 → S-2, CHANGELOG `[Unreleased]`.
+
+**Why.** `docs/security.md` S4: EPUB, DOCX and ODT are zip archives opened with no decompressed-size
+accounting, so one file in the corpus could exhaust memory — the cheapest local denial of service.
+
+**Two facts that shaped it.** (1) **Placement was forced by KI-48.** The extraction fingerprint
+hashes everything reachable from `extract_to_markdown`; a check inside it would have marked all 98
+cached documents stale and re-extracted the corpus. The fingerprints of all eight formats were
+recorded before and after the change and are identical, and a test now asserts `ingest_refusal`
+stays out of the closure. (2) **The declared sizes can be trusted as a bound.** Read in the CPython
+source, `ZipExtFile._read1` ends `data = data[:self._left]`: output stops at the declared size
+whatever the stream holds, and ebooklib, python-docx and odfpy all read through `zipfile`. So an
+archive that lies about its sizes is truncated and fails its CRC — pinned by a test that forges a
+central-directory size. The ratio check therefore catches the bomb *signature*; the expanded-total
+check is what bounds memory.
+
+**The numbers are structural, not tuned.** 1 GB sits ~33× above the largest document in this library
+(31 MiB, 98 PDFs); deflate cannot compress real data past ~1032:1 — only a constant stream reaches
+it — so 1000:1 is not a corpus constant. Both byte caps are env knobs; the ratio is not.
+
+**Rejected.** The check inside `extract_to_markdown` (a corpus-wide re-extraction, KI-48). A new
+`refused` verdict for the sheet — the frontend already renders the advisory verbatim beside a
+warning icon with no fixed label, so a new verdict would be a wire and UI change for no visible
+difference. Streaming decompression accounting — unnecessary once `zipfile`'s truncation is pinned.
+A page cap — PyMuPDF opens a large PDF lazily and page count is not the memory risk the finding
+names; noted as residual in `security.md` S4.
+
+**What it opens.** Residual in S4: a central directory with millions of entries is bounded only by
+the 1 GB file cap. S-11 (security events in the log) will give this control its own event; today a
+refusal is visible only as the sentence and as `document_error`. Next security step: S-2, the walk
+cap on `inspect`.
+
+---
+
+## 2026-09-16 (2) — Row 46: the ship gate asks three questions, reads its verdict with the app's own parser, and moves into the repo
+
+**What changed.** **The harness is tracked** at `scripts/rg012/` — `rg012-run.ps1` and
+`rg012-tier2.wsb`, which now maps that repo folder into the sandbox (it ran an untracked copy under
+`C:\rg012-host\script`, invisible to diff review and to tests; the host `.wsb` was replaced and the
+original kept beside it as `.bak-20260916-single-turn`). **Three turns:** one question per corpus
+document, each in its own session so no answer is shaped by another's history; one
+`out\run-<stamp>\` per run holding the log and `turn-N-stream.txt` / `turn-N-result.json`.
+**Two verdicts:** `release_preflight`'s `rg012` check became `rg012_packaging` (Python not on PATH,
+ingest produced chunks, every turn answered) and `rg012_citation` (≥1 turn cited, none *tried and
+failed*, at least `RG012_MIN_TURNS` = 3 turns), and the citation half is judged on the host with
+`synthesis.audit_citations` over the saved answers — each turn named *cited / unresolved / uncited /
+missing*. The script's own lines are now labelled `(estimate)`. **The newest run on the artifact
+decides**, and earlier runs on it are printed with their verdicts. **A reader bug fixed on the way:**
+the harness appended to one log, the 2026-08-15 archive holds two runs, and the preflight read the
+first installer line and *any* `TIER-2: PASS` in the file — a failed re-run after a pass would have
+read as a pass. It now judges the last run in a log. Tests: 15 new in `test_release_preflight.py` (17 cases), and a
+new `test_rg012_harness.py` pinning ASCII-only, the log lines and file names the script writes
+against the ones the preflight reads, ≥3 distinct questions, one session per turn, and that the
+`.wsb` launches the tracked script. `docs/RELEASE.md` §5 and `docs/desktop-packaging.md` §5 say how
+to run it and how to read it.
+
+**Why.** RIGOR_TODO RG-012 (2026-08-14): the byte-identical 0.5.1 installer failed its single cited
+turn once in four runs, because `llama3.1:8b` cites all-or-nothing per answer (KI-36). A blocks-ship
+gate that fails ~1 run in 4 on a healthy artifact trains its operator to re-run until green. Option
+2 ($0, local) over option 1 (a paid Haiku turn) per the roadmap row.
+
+**Verified without a sandbox run.** (1) `audit_citations` over the ten archived runs reproduces every
+recorded verdict, including the two FAIL kinds: 08-06 run 2's `[Source 1: file.pdf]` → *unresolved*,
+08-14 run 1 → *uncited*. (2) The tracked script is 0 non-ASCII bytes and 0 parse errors under
+Windows PowerShell 5.1.26100. (3) Sections 5–6 of the tracked script were run verbatim on the host
+with `Invoke-WebRequest` stubbed to replay archived streams — cited/uncited/unresolved gave
+packaging PASS + citation FAIL; a timed-out turn gave packaging FAIL + "could not judge" — and the
+preflight read those PowerShell-written, BOM-carrying files. That run also caught the estimate
+claiming a citation PASS with a turn missing; it now says `NOT JUDGED`. (4) The live preflight on
+this box reads the 0.6.0 run as `rg012_packaging PASS` / `rg012_citation FAIL — only 1 turn`, which
+is the honest reading of that record.
+
+**Rejected.** Keeping the verdict in PowerShell with a loop around the old regex — it leaves the
+KI-35 shape (a restated contract) in place and untestable. Option 1, a paid turn — makes the ship
+gate a billed path (KI-4). Accepting single-turn runs as a pass — a stale copy of the harness would
+quietly bring the coin flip back. Letting any PASS on the artifact win, as before — that *is*
+re-running until green. Keeping the harness local-only — the gate that decides a release was the one
+piece of release tooling no review could see.
+
+**What it opens.** Row 46 closes with **one sandbox run** of the new harness on the 0.6.0 installer:
+only that shows three turns completing inside the timeouts on a clean box (needs Ollama reachable
+beyond loopback — a host change, the user's call). RG-012 itself closes when two consecutive release
+gates agree. `rg012-diag.ps1` / `rg012-ingest.ps1` stay untracked in `C:\rg012-host\script\`
+(August diagnostics, not part of the gate).
 
 ---
 
@@ -918,159 +1019,5 @@ warning icon would teach the user to dismiss the icon.
 **What it opens.** The 68 uncited documents are a **vocabulary** signal, not a graph one: 13 of 593
 curated concepts are on the graph, and that ratio — not a rebuild — is what decides coverage. The
 Manage-keywords view is where that would be worth surfacing.
-
----
-
-## 2026-08-31 (3) — Driving the app found four defects; three were real, and the fourth was the harness
-
-**What changed.** A sweep of Chat, Library, Graph and Settings against the live corpus, and the
-fixes for what it found. Three code changes (graph staleness gains a corpus dimension, two empty
-states stop claiming emptiness before they know, the usage line stops reporting an unmeasured
-zero), one data rebuild, 8 new tests. **KI-56** filed and fixed the same hour.
-
-**1. The Graph cited documents that no longer exist, and printed their ids as titles.** Selecting a
-concept listed entries like `c495b879-9b57-427c-b61e-1767a35808a2` where a title belongs — 8 of the
-30 documents `skeleton.json` cited were gone, which is the pre-ADR-047 story: a re-extraction minted
-a new id and the build artifact kept the old one. Two faults, fixed separately:
-
-* **The view had no way to know.** `GraphStaleness` watched the *vocabulary* — concepts added or
-  deleted since the build — and nothing watched the **corpus the graph was built over**. It now
-  carries `missing_document_ids`, computed the same way (one id-set comparison at read time,
-  nothing persisted). Deliberately asymmetric with the vocabulary rule: a document *added* since
-  the build is not staleness (that is true of every build the moment it finishes), while a document
-  the graph *cites* and cannot resolve is a broken reference.
-* **The UI printed the key.** `docTitle` returned `docId` when the lookup missed — an identifier in
-  a label's place, which is the exact thing `FileVerdict.duplicate_of` warns about two folders away.
-  The list now renders only what resolves, the count follows it, and the shortfall is stated rather
-  than silently dropped.
-
-Then the data: `build_concept_skeleton --apply` is Node A, **zero LLM calls**, and took **10.5 s** —
-`8 of 30` dead references became **0 of 30**. Live afterwards: 5 documents, 5 real titles, no UUIDs.
-
-**2 and 3. Two surfaces asserted emptiness before they had an answer.** The Library said *"Your
-library is empty"* and the sidebar *"No conversations yet"* while their fetches were still in
-flight — a wrong claim standing where a loading state belongs, and the same distinction ADR-044
-draws for update checks (*a failed check is `unknown`, never "up to date"*). Both lists start empty
-whether or not anything has been asked, so **the fix is a latch, not a spinner**: render the empty
-state only once a fetch has completed, success or failure. `svelte-check` earned its place here —
-`documentsLoaded` was a plain `let`, fine as an internal fetch-once latch and silently non-reactive
-the moment it became a prop, which would have pinned the loading line up forever.
-
-**4. `0 tokens · local` reported a measurement of nothing where nothing was measured.** Ollama
-returns no usage, so the counters sat at their initial `0`. The line now reads **`local · tokens not
-reported`**. The zero is what is checked, not `is_local`: a local provider that *does* report counts
-should have them shown, and a *metered* zero is a real measurement that must not be relabelled —
-both pinned in `chat/usage.ts` (6 node:tests).
-
-**The fourth "defect" was mine, and it is worth more than the three fixes.** The report said the
-chat Source panel stayed open across Chat → Library → Graph, measured at 420x720 on all three. It
-does not. `selectMode` nulls `activeCitation` correctly — confirmed by reading the live rune module
-from the page, which showed `activeCitation === null` while the node was still in the DOM. The panel
-uses `transition:fly`, and its eleven animations all reported `playState: "finished"` at
-`currentTime: 0`: started while the automation pane was hidden at `innerWidth: 0`, so Svelte's
-transition-end callback never fired and the node was never removed. Its final transform put it at
-`left: 1280` in a 1280px viewport — **fully off-screen, scrim at opacity 0**, invisible to any user.
-That is the hidden-pane trap `apps/desktop/CLAUDE.md` documents in as many words, and it was walked
-into *after* dodging it once the same hour on a geometry question. **The lesson that generalises:
-when a DOM observation and the state disagree, the state is the app and the DOM is the harness.**
-
-**Four other things that looked like defects and were checked rather than reported.** 88
-conversations with repeated titles (genuinely 88 distinct sessions, three runs of one battery
-minutes apart on 2026-08-07); Enter-not-sending (the readiness gate during warm-up — it works);
-the source panel appearing clipped at the window edge (screenshot cropping; `scrollWidth ===
-clientWidth`); and two 500s at start-up (Vite proxying to uvicorn before it was listening).
-
-**And one mess, cleaned up.** Probing the Settings rail, a `querySelector('nav')` matched the
-sidebar instead and the loop clicked every row's action buttons, **pinning 75 conversations**.
-Restored by diffing against the morning's backup — 8 rows unpinned in place, 80 stray rows removed,
-`conversation_meta` back to **111 rows, 0 pinned, 0 differing, 0 lost**. Nothing archived, nothing
-deleted. The three test conversations are soft-deleted; the library is as found: 98 documents, 881
-figures, 615 descriptions, 1 root.
-
-**What the sweep confirmed working.** Retrieval put the right five papers behind a RAG question, and
-the reviewer caught the local model inventing `[24][26][27]` out of reference lists —
-*"0 valid citation(s); 25/28 sentences uncited; out-of-range citations"* — which is KI-36 exactly as
-documented, and which Settings had already predicted by quoting 36% for `llama3.1:8b` against 81%
-for Haiku. Row 19's *In context* on a real citation: *"1% of the way in · in the extracted text of
-rag_lewis_2020.pdf"*, highlight at 75 px inside a 223 px window. KI-50's crops render, and *Figure
-images* reports *"0 re-run · 1 skipped — all 3 figure image(s) are already on disk"*.
-
-**Rejected: auto-rebuilding the skeleton when it detects missing documents.** The module's own
-docstring already refuses this for the vocabulary case — *"never to auto-rebuild (that would spend
-the user's time unasked and destroy the seeded-layout determinism the view is verified with)"* — and
-the corpus case has no better claim on the user's time.
-
-**What it opens.** Nothing watches the *inverse*: documents the corpus has that the graph has never
-seen. That is ordinary lag rather than a broken reference, but a count of it would tell a user
-whether a rebuild is worth 10 seconds.
-
----
-
-## 2026-08-31 (2) — Row 17: importing from Zotero is a route to the review sheet, and the catalogue's metadata is a slot the extractor cannot overwrite
-
-**What changed.** ROADMAP 17, behind **ADR-049**. A new `src/doc_assistant/adapters/` package —
-neutral `catalogue.py`, vendor `zotero.py` — plus `POST /api/catalogue/zotero/scan`, an
-`ExternalMetadata` table, and a third route in the Add-documents dialog. 25 new pytest cases for the
-reader, 10 for the metadata layer, 7 for the route, 3 for root scoping, 5 node:tests.
-
-**The shape is the decision: an adapter returns paths and stops.** The scan hands back absolute
-paths; the client stages them; the *existing* review sheet takes over. The proof that this was the
-right cut came free — importing a library that overlaps your corpus produced *"3 files · 1 would be
-added"*, with the two known files flagged as duplicates naming what they matched, and no code was
-written for that. Same duplicate rule, same copy-or-reference choice, same progress bar.
-
-**The half worth having is the metadata, and it needed a third slot.** A reference manager's title
-is curated by a person; `metadata_extractor` guesses from a PDF's first page and sometimes picks the
-journal name (KI-54, still open). But there was nowhere to put a curated answer: `Document.title` is
-the extractor's slot and every metadata pass overwrites it, and `DocumentMeta.*_override` is the
-user's own edit, which an import must never silently replace. So `ExternalMetadata` sits between
-them, keyed **by path rather than by document** — the metadata arrives before the file is extracted,
-and may never lead to a document at all. `ingest.main` applies it post-loop beside
-`_assign_demo_folder`, and **`_rerun_metadata` re-applies it rather than extracting**: without that,
-the safest-looking box in the re-run dialog would replace a curated title with a guess at it.
-
-**Driving it end to end found a scaling defect no test would have.** Reference-adding registers a
-root for a file's *parent directory*, and `_reference_target`'s docstring cites "a twenty-paper
-Zotero folder" as the case that solves. Zotero's real layout defeats it: **every attachment lives in
-its own `storage/<key>/` directory**, so one library would mint one `SourceRoot` per document — five
-hundred rows, each stat-ed on every scan, against a robustness contract that says 10,000 documents.
-Observed as three roots for three files, then fixed twice over: an adapter reports the catalogue's
-storage folder and it is passed through as the batch's root, and `_reference_target` now prefers an
-**already-registered root above the file**. Re-run: **one root, three files, rel_paths
-`ZOTATT001/…`.** The second half improves the ordinary case too, and is not the guess the per-parent
-rule refuses to make — an ancestor root exists only because someone established it.
-
-**The catalogue is read from a copy.** Zotero holds `zotero.sqlite` open; the file and its
-`-wal`/`-shm` companions are copied to a temp path and the copy opened read-only. A guard test
-asserts the user's database is byte-identical afterwards. Their library is not ours to risk for a
-feature they can live without.
-
-**Everything declined is counted under a reason, never summed.** *"412 a web-page snapshot · 88 not
-downloaded to this computer"* reads as a working filter; *"37 found"* out of a 500-item library reads
-as a broken import. Snapshots are off by default — a library of any age holds hundreds.
-
-**What these tests do not prove.** There is no Zotero on this machine, so the fixture *constructs* a
-database to the documented Zotero 5/6/7 schema. That makes the suite a proof of the **mapping**, not
-of the schema. Every query is written to fail with a sentence rather than a stack trace for exactly
-that reason, and optional parts (collections, creators) degrade to "no authors" rather than losing
-the import. **First contact with a real library is the open item**, and it is recorded in ADR-049
-rather than in a comment.
-
-**Verified live, on the real library, and left as found.** `~/Zotero` does not exist here, so the
-button produced the intended 404 sentence and its *Choose the folder…* fallback; pointed at a
-synthetic library built from two corpus PDFs plus one new one, it staged 3, flagged 2 duplicates,
-reference-added and indexed the third — and the document came back titled **"Notes On A Synthetic
-Paper · Ada Lovelace · 2026"**, which is what the catalogue said and not what the extractor would
-have derived. Then deleted, and the registry rows and roots removed: 98 documents, 98 source files,
-1 root, 0 external rows, 881 figures with 615 descriptions.
-
-**Rejected.** Writing the catalogue's answer into `DocumentMeta` (that is the user's slot — an import
-would overwrite what they typed); a separate Zotero add/index path (two duplicate rules that would
-drift); registering the catalogue's root during the scan (merely *looking* would create state nobody
-confirmed). All in ADR-049.
-
-**What it opens.** Calibre is now one module and one route. Collections and item types are recorded
-and unused — the substrate for the dormant `SourceFile.doc_type` and for folders. And the
-linked-attachment base directory has no UI, so those attachments are skipped with a reason.
 
 ---

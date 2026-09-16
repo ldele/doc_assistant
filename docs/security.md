@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-09-10 (§0 + §4: one step per session; §6: the periodic full check and where its log goes) · class: living -->
+<!-- status: active · updated: 2026-09-16 (S-1 done: ingest size caps; S-2 next; §0 + §4: one step per session; §6: the periodic full check) · class: living -->
 
 # Security — the threat model, the plan, the floor, and the periodic check
 
@@ -74,7 +74,7 @@ and says so).
 | S1 | **No request authentication on the local API** — CORS is the only origin control, and DNS rebinding (T2) bypasses CORS entirely | `apps/api/main.py` | chained with S3, a web page can copy any readable file into the library, index it, and read the chunks back | S-5, S-6 |
 | S2 | **LLM output is rendered as raw HTML** — `marked.parse` → `{@html}`, no sanitiser; `marked` ≥ 14 no longer filters `javascript:` | `apps/desktop/src/lib/chat/Markdown.svelte` | T1: a quoted passage carries markup into the DOM. The CSP contains it in the packaged app; the dev loop has **no CSP** (`devCsp` unset). Residual even with CSP: `<form action>` / `<a href>` exfil and UI spoofing (`form-action`, `base-uri`, `object-src` do not inherit from `default-src`) | S-3, S-4 |
 | S3 | **`POST /api/documents/inspect` and `/add` accept arbitrary absolute paths** (by design — the picker sends them), and `inspect` walks a directory with no count/size cap | `apps/api/routers/sources.py` · `library/add.py` | with S1 this is the exfil path; alone it is an unbounded walk + hash of `C:\` on a request thread | S-2 (cap), S-6 (auth) |
-| S4 | **No size / page / archive-entry cap on ingest** — EPUB, DOCX, ODT are zip archives opened with no decompressed-size accounting | `extractors.py` | T1: a zip bomb in the corpus is unbounded memory; the cheapest local DoS | S-1 |
+| S4 | ~~**No size / page / archive-entry cap on ingest**~~ — EPUB, DOCX, ODT are zip archives opened with no decompressed-size accounting | `extractors.py` | T1: a zip bomb in the corpus is unbounded memory; the cheapest local DoS | **done 2026-09-16** (S-1) — residual: no page cap, and a central directory of millions of entries is bounded only by the 1 GB file cap |
 | S5 | **Document text enters the prompt with no data/instruction boundary** | `prompts.py` · `pipeline.py` | T1: *"ignore prior instructions"* inside a passage reads like evidence. Must not reintroduce a bracket-shaped delimiter; moves `prompt_version` | S-9 (eval-gated) |
 | S6 | **`pip-audit` cannot fail CI** (`continue-on-error`); 66 advisories / 16 packages on 2026-09-07 | `.github/workflows/ci.yml` | T5: a green check that never fails is not a control | S-8 |
 | S7 | ~~`apps/` outside every gate~~ | `ci.yml`, `.pre-commit-config.yaml` | — | **done 2026-09-10** |
@@ -91,8 +91,8 @@ row 60 names the current step; the DEVLOG entry of the session that does it is t
 
 | Step | What | Size | Done when | Status |
 |------|------|------|-----------|--------|
-| **S-1** | **Ingest size caps** (S4): a byte cap in `get_format_status`; a compressed/uncompressed ratio check before EPUB/DOCX/ODT are opened; the refusal is a sentence in the add review sheet, not a crash | small | a file over the cap and a synthetic zip bomb are each refused by name in a test; the walkthrough §1 gains the row | **next** |
-| S-2 | **Walk cap on `inspect`** (S3): `expand_paths` stops at N files / M bytes and returns 400 naming the cap | small | a test with N+1 files gets the 400 and the message names N | planned |
+| **S-1** | **Ingest size caps** (S4): a byte cap in `get_format_status`; a compressed/uncompressed ratio check before EPUB/DOCX/ODT are opened; the refusal is a sentence in the add review sheet, not a crash | small | a file over the cap and a synthetic zip bomb are each refused by name in a test; the walkthrough §1 gains the row | **done 2026-09-16** — `extractors.ingest_refusal`, checked in `get_format_status` and before extraction in `load_or_extract`; `tests/unit/test_ingest_size_caps.py` (12, incl. the zipfile truncation the cap relies on) |
+| S-2 | **Walk cap on `inspect`** (S3): `expand_paths` stops at N files / M bytes and returns 400 naming the cap | small | a test with N+1 files gets the 400 and the message names N | **next** |
 | S-3 | **Sanitise the one `{@html}`** (S2): `DOMPurify.sanitize` before `{@html}` in `Markdown.svelte`; set `devCsp` to the production CSP so the dev loop stops being unprotected | small (one dep, one line) | a `.md` document carrying `<img onerror>` and `[x](javascript:…)` renders as inert text in dev **and** in the installed build; walkthrough §3 gains the row | planned |
 | S-4 | **CSP residual** (S2): append `form-action 'none'; base-uri 'none'; object-src 'none'`; extend `test_desktop_security_config.py` | small | the test asserts the three directives; the installed build still loads pages and figures | planned |
 | S-5 | **Host guard** (S1a): `TrustedHostMiddleware` with `DOC_API_ALLOWED_HOSTS` defaulting to `127.0.0.1,localhost`; Docker sets its own | small | `create_app` returns 400 to a foreign `Host` in a test; the desktop still works | planned |

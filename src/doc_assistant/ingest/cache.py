@@ -23,7 +23,7 @@ from typing import Any
 import structlog
 
 from doc_assistant import config
-from doc_assistant.extractors import extract_to_markdown
+from doc_assistant.extractors import IngestRefusedError, extract_to_markdown, ingest_refusal
 from doc_assistant.fsutil import atomic_write_text
 
 log = structlog.get_logger(__name__)
@@ -375,10 +375,21 @@ def write_cache(cached: Path, text: str, *, source: Path) -> None:
 
 
 def load_or_extract(original: Path) -> str:
+    """The cached markdown for ``original``, extracting it first when the cache is stale.
+
+    Raises ``IngestRefusedError`` before opening a file that is over the size caps or an archive
+    shaped like a zip bomb (docs/security.md S-1). A fresh cache is served without the check: the
+    file is not opened. The check sits here rather than in ``extract_to_markdown`` because that
+    function's call graph is the extraction fingerprint — a change there re-extracts every
+    document (KI-48).
+    """
     cached = get_cache_path(original)
     if is_cache_fresh(original, cached):
         return cached.read_text(encoding="utf-8")
 
+    refusal = ingest_refusal(original)
+    if refusal is not None:
+        raise IngestRefusedError(refusal)
     log.info("extracting", file=original.name, reason=_stale_reason(original, cached))
     text = extract_to_markdown(original, pdf_extractor=config.PDF_EXTRACTOR)
     write_cache(cached, text, source=original)

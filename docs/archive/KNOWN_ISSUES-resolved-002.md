@@ -1,8 +1,8 @@
-<!-- status: archived · updated: 2026-09-10 · class: disposable -->
+<!-- status: archived · updated: 2026-09-16 · class: disposable -->
 
 # KNOWN ISSUES — resolved (archive 002)
 
-Closed entries moved **verbatim** out of `.claude/KNOWN_ISSUES.md` on 2026-09-10 (the file's own shape rule: open issues in full, closed ones as one-line index rows). Same split as archive 001. Numbering is global and never reused.
+Closed entries moved **verbatim** out of `.claude/KNOWN_ISSUES.md` on 2026-09-10, and KI-48 on 2026-09-16 (the file's own shape rule: open issues in full, closed ones as one-line index rows). Same split as archive 001. Numbering is global and never reused.
 
 ## KI-52 — deleting a document from the Library left its registry row behind, so the app reported a file as *missing* that the user deleted through the app — **FIXED 2026-08-28**
 
@@ -163,6 +163,56 @@ which runs `ingest.main()` end to end.
 
 **Do not** conclude from this that the sweep should never delete. A source file that is genuinely
 gone must still end its document; that half is asserted too.
+
+## KI-48 — the EPUB/HTML extractor fix invalidated all 97 PDF caches, and re-extracting them now lands on KI-47 and KI-43 — **FIXED 2026-08-25** (option 3; closed in the live file 2026-09-16)
+
+**Found:** 2026-08-25, checking that AD3b's `get_cache_path` change had not moved any existing
+cache entry. It had not — every library document still resolves to the same mirror path — but all
+**97 of 97 read stale**: recorded fingerprint `2ce7639c…`, current `686aa2df…`.
+
+**Cause, and it is working as designed.** `extraction_fingerprint()` hashes the *bytecode* of every
+function in `extractors`, which is KI-40's whole point: a logic change must invalidate the cache
+without anyone remembering to bump a constant. Commit `f285212` (2026-08-24) refactored `extract_epub` and
+`extract_html` onto a shared `_soup_to_markdown`, so the bytecode changed, so every cache entry
+went stale — **including the 97 PDFs, whose extraction path that commit does not touch.** Bytecode
+hashing cannot tell which format a change affected.
+
+**Why this is not just wasted CPU.** The DEVLOG for that commit says *"blast radius zero (corpus is
+97/97 PDF), so nothing was re-ingested"*. That was true of the *output* at the time and is **wrong
+about the cache**: the next ingest re-extracts all 97. And re-extraction today is not a no-op —
+measured on 3 of 97, fresh output differs from cached (124747→124938, 57239→57257, and one with an
+identical length but different bytes). That difference is **KI-47** (Tesseract is now on PATH, so
+scans OCR where they previously yielded nothing), not `f285212`. Which then walks into **KI-43**:
+identity is the extracted content, so changed text means changed `doc_hash` means every id-keyed
+sidecar (figures, epistemics, concept presence) is orphaned for the documents that move.
+
+**The user-visible symptom, confirmed against the real library 2026-08-25:** every document now
+derives **`changed`**, not `ingested` — `derive_status(file_exists=True, cache_fresh=False,
+has_document=True)` is `changed` by definition, and `cache_fresh` is False for all 97. So the
+Library pane shows the whole corpus as pending re-ingestion. **That is the honest reading** (the
+caches genuinely no longer match the current extractor), and it is *not* caused by the AD3b
+migration — it followed `f285212` the moment that commit existed in the tree. Anyone opening the
+app and seeing 97 `changed` badges is looking at this issue, not at a broken migration.
+
+**What is NOT the problem.** AD3b's cache change is not implicated: library files keep the exact
+mirror layout (a source's path under `data/sources/`, mirrored under `data/cache/` with an `.md`
+suffix), verified over all 97, and only files
+*outside* the library folder take the new digest-keyed path.
+
+**Options, none taken yet — this is a decision, not a bug to patch:**
+1. **Accept it** — re-extract the corpus once, knowing sidecars orphan per KI-43, and re-run the
+   enrichment passes after. Honest, costly, and the only option that leaves the library consistent
+   with today's extractor.
+2. **Pin Tesseract out of the run** for the re-extraction so KI-47 does not also fire, isolating
+   the change to `f285212`'s (nil) effect on PDFs. Cheapest way to make the re-extraction a true
+   no-op, at the cost of leaving the one scan unreadable again.
+3. **Make the fingerprint per-format** so an EPUB/HTML change cannot invalidate PDF caches. The
+   real fix, and the largest: it means splitting `extraction_fingerprint` by dispatch target.
+
+**Do not** work around it by re-recording the old fingerprint onto the new caches — that is
+KI-40 re-introduced, and it is the exact failure that let extraction fixes sit unused.
+
+**Closed 2026-09-16 (added at the move; the body above is verbatim).** Option 3 was taken the same day: `extraction_fingerprint(suffix)` is scoped to one format's call graph (DEVLOG 2026-08-25 (3), `a289d3f`, `src/doc_assistant/ingest/cache.py`), and the corpus was re-extracted once (DEVLOG 2026-08-25 (5)). Guards: `tests/unit/test_extraction_cache_fingerprint.py` `test_a_change_to_a_formats_entry_point_moves_only_that_format`, `test_changing_one_formats_helper_leaves_the_others_alone`, `test_a_renamed_extractor_does_not_silently_re_extract_the_corpus`. The heading stayed OPEN for three weeks after the fix, and the 0.6.0 ROADMAP listed it as an open defect.
 
 ## KI-42 — Marker is unrunnable on this box, so the table-extraction runner is silently broken; `marker-pdf` was never pinned — **FIXED 2026-08-08**
 

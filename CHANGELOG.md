@@ -7,7 +7,9 @@ versioning is [SemVer](https://semver.org/) on the `doc_assistant` package, and 
 The engineering record is finer-grained than this file: per-change entries live in
 [`docs/DEVLOG.md`](docs/DEVLOG.md), design decisions in [`docs/decisions.md`](docs/decisions.md).
 
-## [0.6.0] — 2026-09-01
+## [Unreleased]
+
+## [0.6.0] — 2026-09-04
 
 ### Added
 

@@ -1,6 +1,9 @@
 # Config for the vendored cpc gates (docs_check, sprint_check, keypoint, …). Tune per project;
-# do not silently raise to pass. Laid by cpc-init (standard profile); refreshed to the cpc 1.2.3
-# key set on 2026-07-19 (ADR-021) with this project's tuned values preserved.
+# do not silently raise to pass. Laid by cpc-init (standard profile); key set refreshed by hand on
+# 2026-07-19 (ADR-021, cpc 1.2.3) with this project's tuned values preserved. The vendored gates are
+# whatever tools/conventions/cpc/_VERSION says (1.8.0 since a re-vendor on 2026-08-22) — do not
+# restate a version here; the 1.2.3 line above stood unnoticed for 25 days. The settings audit
+# (`settings_doc --check-config`) reported no unknown or removed keys on 2026-09-16.
 
 [cpc]
 # The init profile this project was laid at (read by cpc-init-check, the completeness gate).
@@ -12,7 +15,8 @@ module_claude_max_lines = 40   # docs_check: each <module>/CLAUDE.md
 session_max_entries    = 10    # docs_check rule 11b (cpc ADR-018): baton cap; rotate older entries
                                # verbatim to docs/archive/SESSION-archive-NNN.md (local-only here)
 devlog_max_entries     = 20    # docs_check rule 13b (cpc ADR-023): DEVLOG keeps the newest 20 entries;
-                               # rotate the rest verbatim with `rotate.py --file devlog --write` (user standard, 2026-09-10)
+                               # rotate the rest verbatim with `python tools/conventions/rungate.py rotate --root . --file devlog --write`
+                               # (the shim; running cpc/rotate.py directly fails under .venv) (user standard, 2026-09-10)
 uses_max_files         = 12    # sprint_check: resolved `uses` read-set files (globs expanded)
 uses_max_lines         = 2500  # sprint_check: summed line count of resolved `uses` files
 # Token budgets (0 = off) — calibrate before enabling.

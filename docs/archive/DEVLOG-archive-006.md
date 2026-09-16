@@ -1,13 +1,82 @@
-<!-- status: archived · updated: 2026-09-10 · class: append-only -->
+<!-- status: archived · updated: 2026-09-16 · class: append-only -->
 
-# DEVLOG — archive 006 (2026-08-12 (1) → 2026-08-30 (9))
+# DEVLOG — archive 006 (2026-08-12 (1) → 2026-08-31 (1))
 
 Older entries, moved verbatim from `docs/DEVLOG.md` on 2026-09-04 so the working log stays
 about recent work. Newest-first, same format, unedited. Rotated because the live log had
 reached 4,011 lines against the 4,000-line cap in `tests/unit/test_doc_sizes.py`, which fails
 before it can grow further. Cut on a date boundary so no day is split across two files.
 **Extended 2026-09-10** by `cpc-rotate` (56 entries, 2026-08-15 → 2026-08-30 (8), byte-verified) when the
-live log adopted a 20-entry cap, then once more the same day for the session's own entry; 2026-08-30 (1)–(9) are all here.
+live log adopted a 20-entry cap, then once more the same day for the session's own entry; 2026-08-30 (1)–(9) are all here. **Extended 2026-09-16** by one entry, 2026-08-31 (1), when a new entry
+pushed the live log past 20; 2026-08-31 is now split across the two files.
+
+---
+
+## 2026-08-31 (1) — KI-50: the 723 missing figure crops are back, and the button that would have destroyed the descriptions no longer does
+
+**What changed.** Two opposite failures around the same rows. **KI-50** (open since 2026-08-27): 723
+of 811 cropped PNGs were gone from disk while every row and every paid VLM description survived.
+**KI-55** (found while fixing it, filed and fixed the same hour): `reingest._rerun_figures` rebuilt a
+document's rows from scratch and wrote `vlm_description=None` into every one of them. A new `crops`
+re-run part, `ingest.figures.restore_crops`, a `--repair-crops` mode on `scripts/extract_figures`,
+and the carry-over. 9 new pytest cases.
+
+**The repair re-renders; it does not re-detect.** Every row already carries the page and the bbox, so
+the crop can be reproduced exactly. Re-detecting to recover a *file* would risk moving the rectangle
+a description was written for — and a description attached to a different picture is worse than a
+missing picture, which is the rule the chunk locator already lives by. Measured on the live library
+before touching it: 811 rows with an `image_path`, **every one** with a complete bbox, a canonical
+path, and a page matching its filename. Nothing had to be guessed.
+
+**Result: 723 restored, 0 still missing, 0 errors, 57 seconds.** Verified against the database rather
+than the script's own report — 811/811 resolve, no zero-byte files, and every crop's pixel size
+matches its recorded bbox at 150 DPI. Rows unchanged at 881, descriptions unchanged at 615. ResNet's
+page-1 crop is the 56-layer-vs-20-layer training-error chart its caption describes.
+
+**KI-55 is the one that would have cost money.** `figures` looked like the cheapest useful box in the
+re-run dialog, and the banner on the figures panel said in as many words *"re-run the figure
+extraction pass"*. It deleted the rows and re-inserted them, so 552 paid descriptions on this library
+would have gone — and because retrieval admits a figure on its **description**, not its image, those
+figures would have dropped out of search as well. Descriptions are now carried across the rebuild,
+and the guard fails without the fix (checked by patching it back out: *"2 description(s) kept"* while
+every row came back `None`).
+
+**Carried only when the region is recognisably the same.** The identity key is the page plus the bbox
+rounded to whole points — the bbox *is* what a description describes. A region that moved gets no
+description and the run says so: *"…, 3 dropped (their regions changed)"*. Both directions are
+pinned, because "descriptions are kept" on its own would be satisfied by carrying them onto the wrong
+pictures.
+
+**A registry-ordering contract was about to break silently.** The client quotes the *last selected*
+part as the dearest one, so `PARTS` must stay cheapest-first — an assumption living only in a comment
+on the client. Inserting `crops` after `figures` would have made "instant" the quoted cost of a run
+including a "few seconds" part. It sits after `metadata` instead, and a test now pins the literal
+order with the reason.
+
+**Cause: still not established, and now bounded.** The four retained backups (2026-08-24 onward) all
+hold the identical 881/811 counts, and the ten stale directories on disk match no `doc_hash` current
+in any of them — so the loss predates every backup we have. The standing hypothesis remains an older
+`--rebuild` sweep. What *is* established is that the current code cannot repeat it:
+`cleanup_orphan_figures` takes `gone` hashes only since ADR-047, and `repoint_figures` moves a
+directory across a re-extraction rather than deleting it.
+
+**Rejected: `extract_figures --force`.** It is the existing way to re-make crops and it deletes the
+rows first — the exact loss KI-55 is about. Rejected too: a corpus-wide restore button in the app.
+This was a one-time repair; the per-document and per-selection controls cover stragglers, and ADR-048
+already puts corpus-wide passes in a runner rather than in the dialog.
+
+**The banner now names the cheap part.** It said "re-run the figure extraction pass", which pointed at
+the destructive one. It now says *"re-run **Figure images** to put them back. Descriptions and search
+are unaffected."*
+
+**Verified in the app:** ResNet's figures panel renders its three restored crops with no
+missing-image banner, the "no image" cards are the caption-only rows that never had one, and
+re-running *Figure images* reports **"0 re-run · 1 skipped — all 3 figure image(s) are already on
+disk"**.
+
+**What it opens.** The three CLI runners' duplicated per-document orchestration (ADR-048's first
+consequence) now has a fourth reason to move into `src/`. And KI-50's cause stays open — if crops
+vanish again, that is the signal to trace it rather than repair it.
 
 ---
 

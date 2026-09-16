@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-09-10 (plans/ and reviews/ folders, ADR-051) · class: living -->
+<!-- status: active · updated: 2026-09-16 (four gitignored paths the docs cite were missing from the table) · class: living -->
 
 # Local-only working docs
 
@@ -13,6 +13,10 @@ trade-offs (including this one — dangling links) are recorded in
 | `.claude/KNOWN_ISSUES.md` | Open weaknesses, recurring failures, workarounds (the `KI-nn` references). |
 | `.claude/RIGOR_TODO.md` | Deferred-rigor tracker — validation debt on work believed correct (the `RG-nn` references). |
 | `.claude/SESSION.md` | The cross-session handoff baton (always local — per-machine by nature). |
+| `docs/archive/SESSION-archive-<NNN>.md` | Older baton entries, rotated verbatim out of `.claude/SESSION.md` (local, like the baton). ROADMAP rows cite them as "baton YYYY-MM-DD". |
+| `.claude/REVIEWS.md` | The review ledger — when each aspect (docs · backend · frontend · tests · conventions · UX · security) was last reviewed as a whole, and what each pass did not cover. |
+| `.claude/NORTH_STAR.md` | Audience and register for the project's writing (the conventions standard's prose contract — not this repo's ADR-035). Laid as an unfilled template on 2026-08-22; ROADMAP row 89 decides whether it is filled or removed. |
+| `.claude/ui-checklist-archive-001.md` | The UI checklist frozen verbatim on 2026-08-11 — the source text several ROADMAP rows cite (§2 verification debt, §3 backlog). |
 | `docs/plans/PLAN_<date>_*.md` | Dated planning docs for a work track (folder since ADR-051; the folder's README is tracked). |
 | `docs/reviews/REVIEW_<date>_*.md` | Internal review reports (folder since ADR-051; the folder's README is tracked). |
 | `docs/ui-checklist.md` | The per-feature UI review gate (its queue moved into `docs/ROADMAP.md` on 2026-09-10). |

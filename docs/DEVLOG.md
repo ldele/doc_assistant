@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-09-10 · class: append-only -->
+<!-- status: active · updated: 2026-09-16 · class: append-only -->
 
 # DEVLOG — doc_assistant
 
@@ -9,12 +9,13 @@ Format: What changed | Why | Rejected alternatives | What it opens
 
 > **This file keeps the newest 20 entries** (`devlog_max_entries = 20` in `scripts/conventions.toml`,
 > cpc rule 13b, user standard 2026-09-10; `tests/unit/test_doc_sizes.py` pins the same number).
-> Rotate with `python tools/conventions/cpc/rotate.py --root . --file devlog --write` — it moves the
+> Rotate with `python tools/conventions/rungate.py rotate --root . --file devlog --write` (the shim —
+> calling `tools/conventions/cpc/rotate.py` directly fails under `.venv`; corrected 2026-09-16) — it moves the
 > oldest entries **verbatim** into the highest-numbered archive and verifies the bytes; then update
 > the range below by hand (cpc ticket T-003). A day may be split across two files at the cut.
 > Older entries, newest-first, unedited:
-> **2026-08-12 (1) → 2026-08-30 (9)** in [`docs/archive/DEVLOG-archive-006.md`](archive/DEVLOG-archive-006.md)
-> (rotated 2026-09-04 and 2026-09-10) ·
+> **2026-08-12 (1) → 2026-08-31 (1)** in [`docs/archive/DEVLOG-archive-006.md`](archive/DEVLOG-archive-006.md)
+> (rotated 2026-09-04, 2026-09-10 and 2026-09-16) ·
 > **2026-08-08 (1) → 2026-08-11 (4)** in [`docs/archive/DEVLOG-archive-005.md`](archive/DEVLOG-archive-005.md)
 > (rotated 2026-08-30) ·
 > **2026-08-05 → 2026-08-07** in [`docs/archive/DEVLOG-archive-004.md`](archive/DEVLOG-archive-004.md)
@@ -29,6 +30,56 @@ Format: What changed | Why | Rejected alternatives | What it opens
 > see an entry that is itself an ADR in disguise). When either trips, rotate — **do not raise
 > the cap.** The cap exists because this log reached 8,244 lines before anyone noticed: every entry
 > is individually small and correct, so unbounded growth is invisible per commit.
+
+---
+
+## 2026-09-16 — After the break: the plan is made true again, fourteen dropped follow-ups become rows, and the crossover's merge row turns out to aim at the wrong knob
+
+**What changed.** A docs pass after a post-release break; no code. **ROADMAP:** rows 35 · 37 · 47 ·
+73 · 74 cited `docs/ui-checklist.md` §2/§3, sections that left that file on 2026-09-10 — repointed
+at the rows they came from in the frozen `.claude/ui-checklist-archive-001.md`. Rows **53 · 54 ·
+51 re-scoped** after the 2026-09-07 crossover review was checked against the code and the live
+library: `CONCEPT_MERGE_COSINE` only feeds the read-only `suggest_concepts --near`, while the merge
+that deletes rows (`curate_concepts --dedup --apply`) uses a hard-coded 0.9, another embedder and
+another input; that merge deletes the dropped concept and `concept_hierarchy`'s cascade takes its
+curated placements with it; `set_graph_include` accepts a field node; graph coverage counts deleted
+documents; and nothing can write an `is_a` edge except a raw API call. So 53 is now *merges made
+safe, then one threshold measured*, 54 adds the kind guard, 51 needs an `is_a` write path; the
+sequence order is unchanged. KL1 also refreshes `knowledge-layer.md` §6 (presence is 534 chunk
+keys, not 1,781). **Fourteen new rows (76–89)** for follow-ups that had dropped out of every plan
+between the release and the restructure — the user's own 2026-08-24 asks (range selection in chat
+select mode, draggable dialogs), the Windows CI job + shared `empty_library` fixture KI-58 said row
+60 carried and it did not, parallel extraction never verified in the installed build, the README
+GIF / DEMO refresh, the process-scoped `OLLAMA_HOST` route, the stale frozen sidecar that `tauri dev`
+spawns, the 2026-09-10 review's hygiene moves, and three user decisions (`docs/sprints/`, the
+encoding guard for local docs, an unfilled `.claude/NORTH_STAR.md`). Rows 29 and 75 absorbed two
+small UI loose ends. **KI-48** closed — fixed 2026-08-25 (per-format fingerprint) but headed OPEN
+for three weeks; body moved verbatim to `docs/archive/KNOWN_ISSUES-resolved-002.md`. **CHANGELOG:**
+`## [Unreleased]` added; 0.6.0 dated 2026-09-04, the tag date, like every earlier release (it said
+the build date). **Conventions:** `scripts/conventions.toml` no longer claims the cpc 1.2.3 key set
+as the vendored version (the drop is 1.8.0, re-vendored 2026-08-22 with no record here); the rotate
+command in this header and in that file is the shim form. `docs/local-only.md` lists four gitignored
+paths the docs cite. **cpc:** tickets T-013 (generate/keypoint extras spawn without the gate env),
+T-014 (keypoints route to a skill the model cannot invoke), T-015 (a re-vendor leaves no trace in
+the consumer), T-016 (lift `release_preflight` — the user's 2026-09-02 ask); T-011/T-012's version
+corrected before their first commit. All uncommitted in the cpc checkout.
+
+**Why.** The user asked what was pending after the break and whether the crossover review held
+anything for the concept branch. Three independent read-only audits plus a re-read at source of
+every claim that decides a row; the full record, with file:line, is
+`docs/reviews/REVIEW_2026-09-16_post-break-state.md` (local).
+
+**Rejected.** Sweeping `CONCEPT_MERGE_COSINE` as row 53 said — it would have measured a preview no
+merge reads. Re-ordering the user's sequence to put merge safety first — the destructive path is a
+manual `--apply` nobody has run, so it only has to land before 51 writes curated edges, which the
+existing order already guarantees. Fixing the orphans inline (the OLLAMA route, the EPUB parser, the
+sidecar comment) — the user asked for rows, and a docs pass that also changes code is two commits
+pretending to be one. Re-vendoring cpc — its HEAD carries unreleased fixes and would stamp 1.9.1.
+Pruning `build/` `dist/` and the backups — deletes data; row 88 is the user's call.
+
+**What it opens.** Session 1 of the sequence is unchanged (row 46 + S-1). Row 53 may take two
+sessions; the sequence row says what moves if it does. The ~5 GB prune, the Docker upgrade and the
+three decisions in row 89 wait on the user.
 
 ---
 
@@ -1021,73 +1072,5 @@ confirmed). All in ADR-049.
 **What it opens.** Calibre is now one module and one route. Collections and item types are recorded
 and unused — the substrate for the dormant `SourceFile.doc_type` and for folders. And the
 linked-attachment base directory has no UI, so those attachments are skipped with a reason.
-
----
-
-## 2026-08-31 (1) — KI-50: the 723 missing figure crops are back, and the button that would have destroyed the descriptions no longer does
-
-**What changed.** Two opposite failures around the same rows. **KI-50** (open since 2026-08-27): 723
-of 811 cropped PNGs were gone from disk while every row and every paid VLM description survived.
-**KI-55** (found while fixing it, filed and fixed the same hour): `reingest._rerun_figures` rebuilt a
-document's rows from scratch and wrote `vlm_description=None` into every one of them. A new `crops`
-re-run part, `ingest.figures.restore_crops`, a `--repair-crops` mode on `scripts/extract_figures`,
-and the carry-over. 9 new pytest cases.
-
-**The repair re-renders; it does not re-detect.** Every row already carries the page and the bbox, so
-the crop can be reproduced exactly. Re-detecting to recover a *file* would risk moving the rectangle
-a description was written for — and a description attached to a different picture is worse than a
-missing picture, which is the rule the chunk locator already lives by. Measured on the live library
-before touching it: 811 rows with an `image_path`, **every one** with a complete bbox, a canonical
-path, and a page matching its filename. Nothing had to be guessed.
-
-**Result: 723 restored, 0 still missing, 0 errors, 57 seconds.** Verified against the database rather
-than the script's own report — 811/811 resolve, no zero-byte files, and every crop's pixel size
-matches its recorded bbox at 150 DPI. Rows unchanged at 881, descriptions unchanged at 615. ResNet's
-page-1 crop is the 56-layer-vs-20-layer training-error chart its caption describes.
-
-**KI-55 is the one that would have cost money.** `figures` looked like the cheapest useful box in the
-re-run dialog, and the banner on the figures panel said in as many words *"re-run the figure
-extraction pass"*. It deleted the rows and re-inserted them, so 552 paid descriptions on this library
-would have gone — and because retrieval admits a figure on its **description**, not its image, those
-figures would have dropped out of search as well. Descriptions are now carried across the rebuild,
-and the guard fails without the fix (checked by patching it back out: *"2 description(s) kept"* while
-every row came back `None`).
-
-**Carried only when the region is recognisably the same.** The identity key is the page plus the bbox
-rounded to whole points — the bbox *is* what a description describes. A region that moved gets no
-description and the run says so: *"…, 3 dropped (their regions changed)"*. Both directions are
-pinned, because "descriptions are kept" on its own would be satisfied by carrying them onto the wrong
-pictures.
-
-**A registry-ordering contract was about to break silently.** The client quotes the *last selected*
-part as the dearest one, so `PARTS` must stay cheapest-first — an assumption living only in a comment
-on the client. Inserting `crops` after `figures` would have made "instant" the quoted cost of a run
-including a "few seconds" part. It sits after `metadata` instead, and a test now pins the literal
-order with the reason.
-
-**Cause: still not established, and now bounded.** The four retained backups (2026-08-24 onward) all
-hold the identical 881/811 counts, and the ten stale directories on disk match no `doc_hash` current
-in any of them — so the loss predates every backup we have. The standing hypothesis remains an older
-`--rebuild` sweep. What *is* established is that the current code cannot repeat it:
-`cleanup_orphan_figures` takes `gone` hashes only since ADR-047, and `repoint_figures` moves a
-directory across a re-extraction rather than deleting it.
-
-**Rejected: `extract_figures --force`.** It is the existing way to re-make crops and it deletes the
-rows first — the exact loss KI-55 is about. Rejected too: a corpus-wide restore button in the app.
-This was a one-time repair; the per-document and per-selection controls cover stragglers, and ADR-048
-already puts corpus-wide passes in a runner rather than in the dialog.
-
-**The banner now names the cheap part.** It said "re-run the figure extraction pass", which pointed at
-the destructive one. It now says *"re-run **Figure images** to put them back. Descriptions and search
-are unaffected."*
-
-**Verified in the app:** ResNet's figures panel renders its three restored crops with no
-missing-image banner, the "no image" cards are the caption-only rows that never had one, and
-re-running *Figure images* reports **"0 re-run · 1 skipped — all 3 figure image(s) are already on
-disk"**.
-
-**What it opens.** The three CLI runners' duplicated per-document orchestration (ADR-048's first
-consequence) now has a fourth reason to move into `src/`. And KI-50's cause stays open — if crops
-vanish again, that is the signal to trace it rather than repair it.
 
 ---

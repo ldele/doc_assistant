@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-07-26 (split out of README) · class: living -->
+<!-- status: active · updated: 2026-09-17 (ingest limits: 1 GB per file, 50,000 files per add) · class: living -->
 
 # Usage
 

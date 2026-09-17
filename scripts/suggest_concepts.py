@@ -8,12 +8,15 @@ Three modes (combine freely):
   --near             curated concepts that are near-duplicates by embedding cosine (merge hints)
 
 None of them writes anything — these are curation aids. Pair them with `seed_concepts --add`.
-The embedder for the two semantic modes defaults to SPECTER2 (academic); override with --model.
+The two candidate modes default to SPECTER2 (academic); override with --model.
 
 Usage:
     python -m scripts.suggest_concepts --from-abstracts
     python -m scripts.suggest_concepts --anchor-ranked --top-k 12 --model specter2
-    python -m scripts.suggest_concepts --near --threshold 0.85 --model specter2
+    python -m scripts.suggest_concepts --near     # the pairs `curate_concepts --dedup` merges
+
+`--near` defaults to the merge's own embedder and threshold (CONCEPT_MERGE_MODEL /
+CONCEPT_MERGE_COSINE), so it previews the merge rather than a different comparison (ROADMAP 53).
 """
 
 from __future__ import annotations
@@ -25,6 +28,7 @@ from doc_assistant.config import (
     ABSTRACT_CONCEPTS_TOP_K,
     CONCEPT_EMBED_MODEL,
     CONCEPT_MERGE_COSINE,
+    CONCEPT_MERGE_MODEL,
 )
 from doc_assistant.knowledge.concept_semantics import (
     anchor_ranked_candidates,
@@ -67,7 +71,9 @@ def main() -> int:
         "--threshold", type=float, default=CONCEPT_MERGE_COSINE, help="Cosine threshold (--near)"
     )
     parser.add_argument(
-        "--model", default=CONCEPT_EMBED_MODEL, help="Embedding model for the semantic modes"
+        "--model",
+        default=None,
+        help=f"Embedding model (default {CONCEPT_EMBED_MODEL}; --near: {CONCEPT_MERGE_MODEL})",
     )
     args = parser.parse_args()
 
@@ -84,12 +90,9 @@ def main() -> int:
             print(f"\n{filename}\n  {shown}")
 
     if args.anchor_ranked:
-        results = anchor_ranked_candidates(
-            docs, top_k=args.top_k, pool_k=args.pool_k, model=args.model
-        )
-        print(
-            f"\n=== anchor-ranked candidates (model={args.model}, {len(results)} document(s)) ==="
-        )
+        model = args.model or CONCEPT_EMBED_MODEL
+        results = anchor_ranked_candidates(docs, top_k=args.top_k, pool_k=args.pool_k, model=model)
+        print(f"\n=== anchor-ranked candidates (model={model}, {len(results)} document(s)) ===")
         for _doc_id, filename, scored in results:
             if not scored:
                 print(f"\n{filename}\n  (no anchor/pool — skipped)")
@@ -98,10 +101,10 @@ def main() -> int:
             print(f"\n{filename}\n  {shown}")
 
     if args.near:
-        pairs = concept_merge_suggestions(threshold=args.threshold, model=args.model)
-        print(
-            f"\n=== near-duplicate concepts (model={args.model}, cosine >= {args.threshold}) ==="
-        )
+        near_model = args.model or CONCEPT_MERGE_MODEL
+        pairs = concept_merge_suggestions(threshold=args.threshold, model=near_model)
+        heading = f"near-duplicate concepts (model={near_model}, cosine >= {args.threshold})"
+        print(f"\n=== {heading} ===")
         if not pairs:
             print("  none above threshold")
         for p in pairs:

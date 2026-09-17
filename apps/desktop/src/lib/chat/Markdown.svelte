@@ -1,4 +1,5 @@
 <script lang="ts">
+  import DOMPurify from 'dompurify'
   import { marked } from 'marked'
 
   // Extensionless on purpose: `svelte-check` rejects a '.ts' import extension without
@@ -6,8 +7,13 @@
   // resolves this to citations.ts; the two consumers just spell it differently.
   import { CITE_ANYWHERE, CITE_EXACT, CITE_SPLIT } from './citations'
 
-  // Content is our own backend's markdown (the answer + pre-rendered blocks) — trusted,
-  // local, single-user. A hardened build would run it through DOMPurify.
+  // The answer is model output over your documents, so it can carry whatever markup a document
+  // did: a quoted `<img onerror>` or a `[link](javascript:…)` (marked >= 14 no longer filters
+  // that scheme). DOMPurify strips scripts, handlers and `javascript:` URLs before `{@html}`
+  // (docs/security.md S2, step S-3); the CSP is the second wall, not the only one. Nothing a
+  // markdown answer needs is a form control or a style block, so those go too — they are the
+  // spoofing half of S2. Citation buttons are added after this, by linkifyCitations, on the DOM.
+  const SANITIZE = { FORBID_TAGS: ['style', 'form', 'input', 'button', 'textarea', 'select'] }
   let {
     source = '',
     onCitationClick,
@@ -17,7 +23,7 @@
     onCitationClick?: (n: number) => void
     activeCitationN?: number | null
   } = $props()
-  const html = $derived(marked.parse(source, { async: false }))
+  const html = $derived(DOMPurify.sanitize(marked.parse(source, { async: false }), SANITIZE))
 
   let el = $state<HTMLDivElement | null>(null)
 

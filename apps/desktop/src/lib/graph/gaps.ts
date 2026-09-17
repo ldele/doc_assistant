@@ -185,17 +185,21 @@ export function conceptIndexRows(
  * curated). A pending-looking count would send the user to a button that changes nothing, so the
  * sentence states coverage and names the lever that does move it: the vocabulary (ADR-018).
  *
+ * Every number in the sentence describes the same artifact — the graph as built (ROADMAP 54). The
+ * concept count is the skeleton's, not the vocabulary's: after a concept is added and before the
+ * rebuild, the covered documents were produced by the old set, and the stale notice says so.
+ *
  * Returns `''` when there is nothing worth saying — an empty library, or a graph that already
  * covers all of it.
  */
 export function graphCoverage(s: {
   n_documents_in_skeleton: number
   n_documents_in_library: number
-  n_concepts_in_db: number
+  n_concepts_in_skeleton: number
 }): string {
   const { n_documents_in_skeleton: covered, n_documents_in_library: total } = s
   if (total === 0 || covered >= total) return ''
-  const concepts = s.n_concepts_in_db
+  const concepts = s.n_concepts_in_skeleton
   const which =
     concepts === 1 ? 'the one concept on your graph' : `one of the ${concepts} concepts on your graph`
   return `Covers ${covered} of your ${total} documents — a document appears once it mentions ${which}.`

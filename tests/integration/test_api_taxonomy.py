@@ -46,7 +46,8 @@ def client(temp_db: None) -> TestClient:
 
 def _seed_field(fid: str, label: str, *, kind: str = "domain") -> None:
     with session_scope() as s:
-        s.add(Concept(id=fid, label=label, kind=kind))
+        # A seeded concept is a graph concept: the header counts the graph vocabulary (ROADMAP 54).
+        s.add(Concept(id=fid, label=label, kind=kind, graph_include=kind == "concept"))
 
 
 def test_get_taxonomy_zero_state(client: TestClient) -> None:

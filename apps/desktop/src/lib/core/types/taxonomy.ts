@@ -27,8 +27,11 @@ export interface TaxonomyField {
 export interface TaxonomyView {
   fields: TaxonomyField[]
   roots: string[]
+  /** The graph vocabulary — what the Attach picker offers and auto-propose places (ROADMAP 54). */
   n_concepts_total: number
+  /** Documents the library shows (non-archived). */
   n_documents_total: number
+  /** Graph concepts with no field yet — exactly auto-propose's input set. */
   n_unassigned_concepts: number
 }
 // An attachable/attached thing by id+label. Used for the attach picker's vocabulary, which has no

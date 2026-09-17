@@ -77,13 +77,10 @@ def list_keyword_families() -> list[KeywordFamily]:
 
     Excludes ``kind="domain"`` taxonomy field nodes (ADR-028 D4) — an abstract ANZSRC field is not
     a keyword family, and the seeded ~236 of them would otherwise flood the Library filter."""
-    from doc_assistant.db.models import Concept
+    from doc_assistant.knowledge.taxonomy import presence_nodes
 
     with session_scope() as session:
-        concepts = list(
-            session.execute(select(Concept).where(Concept.kind == "concept")).scalars()
-        )
-        families = [_build_family(session, c) for c in concepts]
+        families = [_build_family(session, c) for c in presence_nodes(session)]
     families.sort(key=lambda f: f.canonical.casefold())
     return families
 
@@ -102,11 +99,11 @@ def get_keyword_family(concept_id: str) -> KeywordFamily | None:
     ``kind="concept"`` (``db/models.py``). Unreachable through the UI, which lists families; the
     API takes an id.
     """
-    from doc_assistant.db.models import Concept
+    from doc_assistant.knowledge.taxonomy import presence_node
 
     with session_scope() as session:
-        concept = session.get(Concept, concept_id)
-        if concept is None or concept.kind != "concept":
+        concept = presence_node(session, concept_id)
+        if concept is None:
             return None
         return _build_family(session, concept)
 
@@ -167,6 +164,7 @@ def rename_keyword_family(concept_id: str, new_canonical: str) -> KeywordFamily 
     """
     from doc_assistant.db.models import Concept, ConceptAlias
     from doc_assistant.knowledge.concept_skeleton import rename_concept
+    from doc_assistant.knowledge.taxonomy import presence_node
 
     new_canonical = new_canonical.strip()
     if not new_canonical:
@@ -187,7 +185,7 @@ def rename_keyword_family(concept_id: str, new_canonical: str) -> KeywordFamily 
         if clash is not None:
             raise KeywordFamilyExists(f"a keyword family named {new_canonical!r} already exists")
 
-        concept = session.get(Concept, concept_id)
+        concept = presence_node(session, concept_id)
         if concept is None:
             return None
         old_label = concept.label
@@ -221,13 +219,13 @@ def set_family_graph_include(concept_id: str, include: bool) -> KeywordFamily | 
 
     Idempotent: setting the value it already has is a no-op that still returns the family.
     """
-    from doc_assistant.db.models import Concept
+    from doc_assistant.knowledge.taxonomy import presence_node
 
     with session_scope() as session:
-        concept = session.get(Concept, concept_id)
-        # The kind check is repeated here rather than left to `get_keyword_family` below, because
+        concept = presence_node(session, concept_id)
+        # Resolved through the kind guard rather than left to `get_keyword_family` below, because
         # this one writes: reaching the read guard would mean the write had already landed.
-        if concept is None or concept.kind != "concept":
+        if concept is None:
             return None
         concept.graph_include = include
         session.flush()
@@ -242,14 +240,15 @@ def add_family_member(concept_id: str, keyword_name: str) -> KeywordFamily | Non
     already-member keyword is a no-op. (Does not check whether ``keyword_name`` collides
     with *another* family's canonical label — an edge case left to the Manage view.)
     """
-    from doc_assistant.db.models import Concept, ConceptAlias
+    from doc_assistant.db.models import ConceptAlias
+    from doc_assistant.knowledge.taxonomy import presence_node
 
     keyword_name = keyword_name.strip()
     if not keyword_name:
         raise ValueError("keyword_name must not be blank")
     lowered = keyword_name.casefold()
     with session_scope() as session:
-        concept = session.get(Concept, concept_id)
+        concept = presence_node(session, concept_id)
         if concept is None:
             return None
         others = (
@@ -279,11 +278,11 @@ def remove_family_member(concept_id: str, keyword_name: str) -> KeywordFamily | 
     A no-op if ``keyword_name`` isn't a member alias (idempotent) — the canonical label
     itself can't be "removed" this way; rename or delete the family instead.
     """
-    from doc_assistant.db.models import Concept
+    from doc_assistant.knowledge.taxonomy import presence_node
 
     lowered = keyword_name.strip().casefold()
     with session_scope() as session:
-        concept = session.get(Concept, concept_id)
+        concept = presence_node(session, concept_id)
         if concept is None:
             return None
         row = next((a for a in concept.aliases if a.alias.casefold() == lowered), None)

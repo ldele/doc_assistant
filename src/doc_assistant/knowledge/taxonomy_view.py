@@ -20,7 +20,7 @@ from sqlalchemy import func, select
 
 from doc_assistant.db.models import Document, DocumentField
 from doc_assistant.db.session import session_scope
-from doc_assistant.knowledge.taxonomy import load_taxonomy
+from doc_assistant.knowledge.taxonomy import load_taxonomy, presence_nodes, unplaced_concepts
 
 
 @dataclass(frozen=True)
@@ -53,9 +53,13 @@ class TaxonomyView:
 
     fields: tuple[TaxonomyField, ...]
     roots: tuple[str, ...]  # field ids with no broader (in_field) parent — the divisions
-    n_concepts_total: int  # curated text-bearing concepts (kind="concept")
-    n_documents_total: int  # documents in the corpus (the classification denominator)
-    n_unassigned_concepts: int  # concepts with no in_field edge to any field yet
+    #: The header's three numbers, each counted over the set it describes (ROADMAP 54). Concepts
+    #: are the **graph vocabulary** — what the Attach picker offers and auto-propose places — not
+    #: every keyword family: at 357 families and 13 graph concepts the old count said "344 not yet
+    #: placed", a number no button in the app could change.
+    n_concepts_total: int  # graph concepts (kind="concept", graph_include)
+    n_documents_total: int  # documents the library shows (non-archived) — the denominator
+    n_unassigned_concepts: int  # graph concepts with no in_field edge yet = auto-propose's input
 
 
 @dataclass(frozen=True)
@@ -105,11 +109,14 @@ def load_taxonomy_view() -> TaxonomyView:
         graph = load_taxonomy(session)
         field_docs = _field_doc_map(session)
         n_documents_total = int(
-            session.execute(select(func.count()).select_from(Document)).scalar_one()
+            session.execute(
+                select(func.count()).select_from(Document).where(Document.is_archived.is_(False))
+            ).scalar_one()
         )
+        n_graph_concepts = sum(1 for c in presence_nodes(session) if c.graph_include)
+        n_unplaced = len(unplaced_concepts(session))
 
     domains = [n for n in graph.nodes if _kind(graph, n) == "domain"]
-    concepts = [n for n in graph.nodes if _kind(graph, n) == "concept"]
 
     # in_field-only view for the field↔field structure (parents/children) and root detection.
     in_field = nx.DiGraph()
@@ -168,16 +175,12 @@ def load_taxonomy_view() -> TaxonomyView:
     fields.sort(key=lambda f: f.label.casefold())
     roots.sort(key=lambda fid: str(graph.nodes[fid].get("label", "")).casefold())
 
-    # A concept is "assigned" once it has any in_field edge to a field.
-    assigned = {
-        c for c in concepts if any(_kind(graph, s) == "domain" for s in in_field.successors(c))
-    }
     return TaxonomyView(
         fields=tuple(fields),
         roots=tuple(roots),
-        n_concepts_total=len(concepts),
+        n_concepts_total=n_graph_concepts,
         n_documents_total=n_documents_total,
-        n_unassigned_concepts=len(concepts) - len(assigned),
+        n_unassigned_concepts=n_unplaced,
     )
 
 

@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-09-16 (§1: size-cap, stated-limit and walk-cap rows; refresh rule; preflight enforces it) · class: runbook -->
+<!-- status: active · updated: 2026-09-17 (§3: hostile-markup row, S-3) · class: runbook -->
 
 # Release UX/UI walkthrough — what to drive before every release
 
@@ -80,6 +80,7 @@ scanned PDF). Most rows say which.
 - [ ] Session override: change a sandbox knob → the `Session override` note renders **and** the retrieved set changes; out-of-range → 422 surfaced as a sentence, never a silent clamp; the override does not persist across a new chat.
 - [ ] Human synthesis mode: evidence only, no interpretation call in the log.
 - [ ] Ask something the corpus cannot answer → a refusal that cites nothing, not a fabricated citation.
+- [ ] **Hostile markup is inert** (S-3): ingest a `.md` holding `<img src=x onerror=alert(1)>` and `[x](javascript:alert(1))`, ask about it until the answer quotes them → no dialog, the link does nothing, no broken-image icon from the handler; the devtools console shows no CSP violation raised by the app itself.
 - [ ] New chat resets turns, panel and composer; history sidebar reopens a chat read-only; rename · pin · export-all · bulk delete each work and each asks before deleting.
 
 ## 4 · Graph & gaps (real library)

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import inspect
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -11,6 +12,7 @@ from sqlalchemy.orm import sessionmaker
 
 import doc_assistant.db.session as session_mod
 import doc_assistant.knowledge.concept_semantics as cs
+from doc_assistant import config
 from doc_assistant.db.models import Base
 from doc_assistant.knowledge.concept_semantics import concept_merge_suggestions
 from doc_assistant.knowledge.concept_skeleton import add_concept
@@ -66,6 +68,52 @@ def test_merge_suggestions_empty_for_single_concept(
     add_concept("BM25")
     monkeypatch.setattr(cs, "embed_texts", _fake_embed)
     assert concept_merge_suggestions(threshold=0.5) == []
+
+
+def test_the_merge_preview_is_the_merge(env: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """ROADMAP 53 (2). The preview (``suggest_concepts --near``) and the merge
+    (``curate_concepts --dedup``) differed in threshold (0.85 vs a hard-coded 0.9), embedder
+    (specter2 vs bge-base) and text (label + definition vs label), so what the preview showed was
+    not what the merge did. Both now go through ``dedup_pairs``: same texts reach the embedder,
+    same model, same pairs — and an extraction artifact is a candidate in neither."""
+    import scripts.curate_concepts as curate_cli
+    import scripts.suggest_concepts as suggest_cli
+
+    from doc_assistant.knowledge.concept_curation import dedup_pairs, is_artifact, load_concepts
+
+    add_concept("dense retrieval", definition="Retrieval over learned dense vectors.")
+    add_concept("dense passage retrieval")
+    add_concept("dense 2015")  # an artifact label (pure-digit token)
+    calls: list[tuple[tuple[str, ...], str | None]] = []
+
+    def recording_embed(texts: list[str], *, model: str | None = None) -> list[list[float]]:
+        calls.append((tuple(texts), model))
+        return _fake_embed(texts, model=model)
+
+    monkeypatch.setattr(cs, "embed_texts", recording_embed)
+
+    preview = concept_merge_suggestions(threshold=0.9, model="bge-base")
+    survivors = [(cid, label) for cid, label in load_concepts() if not is_artifact(label)]
+    label_by_id = dict(survivors)
+    merge = [
+        (label_by_id[a], label_by_id[b], c)
+        for a, b, c in dedup_pairs(survivors, threshold=0.9, model="bge-base")
+    ]
+
+    assert [(p.label_a, p.label_b, p.cosine) for p in preview] == merge
+    assert calls[0] == calls[1]  # identical texts and model reach the embedder
+    assert "dense retrieval. Retrieval over learned dense vectors." in calls[0][0]
+    assert not any("2015" in text for text in calls[0][0])
+
+    # One pair of knobs: the library default and both CLIs name the merge's own model and
+    # threshold, never the candidate-extraction embedder (CONCEPT_EMBED_MODEL, SPECTER2 — which
+    # scores a median label pair 0.842 and would merge nearly everything; baseline 2026-09-17).
+    signature = inspect.signature(dedup_pairs).parameters
+    assert signature["threshold"].default == config.CONCEPT_MERGE_COSINE
+    assert signature["model"].default == config.CONCEPT_MERGE_MODEL
+    for cli in (curate_cli, suggest_cli):
+        source = Path(cli.__file__).read_text(encoding="utf-8")
+        assert "CONCEPT_MERGE_COSINE" in source and "CONCEPT_MERGE_MODEL" in source, cli.__name__
 
 
 def test_anchor_ranked_downranks_off_topic_boilerplate(monkeypatch: pytest.MonkeyPatch) -> None:

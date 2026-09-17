@@ -82,8 +82,8 @@ def test_noise_verdict_demotes_and_keeps_the_family(env: Path) -> None:
     _seed_family("cre-id", "cre", ["cre recombinase", "cre-lox"])
     plan = CurationPlan(llm_noise=[("cre-id", "cre")])
 
-    demoted, merged = apply_plan(plan)
-    assert (demoted, merged) == (1, 0)
+    demoted, outcome = apply_plan(plan)
+    assert (demoted, outcome.n_merged) == (1, 0)
 
     row = _get("cre-id")
     assert row is not None  # the row survived (a delete would have removed it — fails today)
@@ -119,6 +119,7 @@ def test_remove_concepts_is_the_reserved_hard_delete(env: Path) -> None:
 
 def test_empty_plan_writes_nothing(env: Path) -> None:
     _seed_family("c1", "keep", ["a"])
-    assert apply_plan(CurationPlan()) == (0, 0)
+    demoted, outcome = apply_plan(CurationPlan())
+    assert (demoted, outcome.n_merged) == (0, 0)
     row = _get("c1")
     assert row is not None and row.graph_include is True  # untouched

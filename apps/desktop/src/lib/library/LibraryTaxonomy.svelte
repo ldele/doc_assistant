@@ -119,7 +119,7 @@
       <h2>Taxonomy</h2>
       {#if view}
         <span class="totals">
-          {view.n_concepts_total} concept{view.n_concepts_total === 1 ? '' : 's'} ·
+          {view.n_concepts_total} graph concept{view.n_concepts_total === 1 ? '' : 's'} ·
           {view.n_documents_total} document{view.n_documents_total === 1 ? '' : 's'} ·
           {view.fields.length} fields
           {#if view.n_unassigned_concepts > 0}

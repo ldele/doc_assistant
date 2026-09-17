@@ -808,17 +808,22 @@ def load_concepts() -> tuple[list[tuple[str, str]], dict[str, list[str]]]:
     The flag is **opt-in**: NULL (every row predating the migration) reads as excluded. Aliases
     are fetched only for the included ids, so an excluded concept contributes no surface form.
 
+    Reads through the taxonomy's kind guard (ADR-028 D4, ROADMAP 54): a ``kind="domain"`` field
+    node flagged ``graph_include`` — legacy data, or a write that skipped the guard — never enters
+    the graph, where it would read as an ``isolated`` concept with no presence.
+
     Materialised into plain tuples inside the session (no detached-ORM access downstream)
     so the pure core stays DB-free. Empty vocabulary → empty graph (the curation prereq)."""
     from sqlalchemy import select
 
     from doc_assistant.db.models import Concept, ConceptAlias
     from doc_assistant.db.session import session_scope
+    from doc_assistant.knowledge.taxonomy import presence_query
 
     concepts: list[tuple[str, str]] = []
     aliases: dict[str, list[str]] = defaultdict(list)
     with session_scope() as session:
-        rows = session.execute(select(Concept).where(Concept.graph_include.is_(True))).scalars()
+        rows = session.execute(presence_query().where(Concept.graph_include.is_(True))).scalars()
         for row in rows:
             concepts.append((str(row.id), row.label))
         included = {cid for cid, _ in concepts}
@@ -845,16 +850,14 @@ def list_keyword_candidates() -> list[KeywordCandidate]:
     the same label already exists. Free, no LLM (the LLM dedupe/label pass is deferred)."""
     from sqlalchemy import select
 
-    from doc_assistant.db.models import Concept, Keyword
+    from doc_assistant.db.models import Keyword
     from doc_assistant.db.session import session_scope
+    from doc_assistant.knowledge.taxonomy import presence_nodes
 
     with session_scope() as session:
         keywords = [k.name for k in session.execute(select(Keyword)).scalars()]
         # A keyword is "promoted" only when it matches a real concept, not a taxonomy field (D4).
-        concept_labels = {
-            c.label
-            for c in session.execute(select(Concept).where(Concept.kind == "concept")).scalars()
-        }
+        concept_labels = {c.label for c in presence_nodes(session)}
     return [
         KeywordCandidate(name=name, promoted=name in concept_labels)
         for name in sorted(set(keywords))
@@ -876,13 +879,15 @@ def promote_keyword(name: str) -> str | None:
 
     from doc_assistant.db.models import Concept, ConceptAlias, Keyword
     from doc_assistant.db.session import session_scope
+    from doc_assistant.knowledge.taxonomy import presence_query
 
     with session_scope() as session:
         keyword = session.execute(select(Keyword).where(Keyword.name == name)).scalar_one_or_none()
         if keyword is None:
             return None
+        # A taxonomy field sharing the name is not "already promoted" (ADR-028 D4, ROADMAP 54).
         existing = session.execute(
-            select(Concept).where(Concept.label == name)
+            presence_query().where(Concept.label == name)
         ).scalar_one_or_none()
         if existing is not None:
             return str(existing.id)
@@ -931,14 +936,15 @@ def backfill_graph_include(apply: bool = False) -> tuple[int, int]:
 def set_graph_include(concept_id: str, include: bool) -> bool:
     """Opt one ``Concept`` into or out of the graph vocabulary (ADR-018). Idempotent.
 
-    Returns True if a row was updated, False if no concept has that id. The only write
-    surface for the flag; the change takes effect on the next ``build_concept_skeleton``
-    run, since the skeleton is a derived artifact."""
-    from doc_assistant.db.models import Concept
+    Returns True if a row was updated, False if no text-bearing concept has that id — a
+    ``kind="domain"`` field node is refused here, at the write, not filtered later (ROADMAP 54).
+    The change takes effect on the next ``build_concept_skeleton`` run, since the skeleton is a
+    derived artifact."""
     from doc_assistant.db.session import session_scope
+    from doc_assistant.knowledge.taxonomy import presence_node
 
     with session_scope() as session:
-        concept = session.get(Concept, concept_id)
+        concept = presence_node(session, concept_id)
         if concept is None:
             return False
         concept.graph_include = include
@@ -965,14 +971,16 @@ def add_concept(
     (:func:`promote_keyword`, ``library.create_keyword_family``) pass ``False`` instead.
     Only applied on **create** — it never silently re-includes a concept the user excluded.
     """
-    from sqlalchemy import select
 
     from doc_assistant.db.models import Concept, ConceptAlias
     from doc_assistant.db.session import session_scope
+    from doc_assistant.knowledge.taxonomy import presence_query
 
     with session_scope() as session:
+        # Get-or-create among concepts only: a taxonomy field with the same label must not
+        # receive this concept's aliases and definition (ADR-028 D4, ROADMAP 54).
         concept = session.execute(
-            select(Concept).where(Concept.label == label)
+            presence_query().where(Concept.label == label)
         ).scalar_one_or_none()
         if concept is None:
             concept = Concept(
@@ -1019,12 +1027,13 @@ def delete_concept(concept_id: str) -> bool:
     """Delete a ``Concept`` and its aliases. Returns True if it existed.
 
     The FK (``ondelete="CASCADE"``) + ORM cascade both drop ``ConceptAlias`` rows; no manual
-    cleanup needed."""
-    from doc_assistant.db.models import Concept
+    cleanup needed. A ``kind="domain"`` id answers False and is left alone: deleting a taxonomy
+    field would cascade its whole subtree of placements (ROADMAP 54)."""
     from doc_assistant.db.session import session_scope
+    from doc_assistant.knowledge.taxonomy import presence_node
 
     with session_scope() as session:
-        concept = session.get(Concept, concept_id)
+        concept = presence_node(session, concept_id)
         if concept is None:
             return False
         session.delete(concept)
@@ -1036,12 +1045,12 @@ def rename_concept(concept_id: str, new_label: str) -> bool:
 
     No uniqueness check against other labels (matches :func:`add_concept`'s own get-or-create,
     which is also unenforced at the DB level) — callers that need "no two families share a
-    canonical name" enforce it themselves."""
-    from doc_assistant.db.models import Concept
+    canonical name" enforce it themselves. A ``kind="domain"`` id answers False (ROADMAP 54)."""
     from doc_assistant.db.session import session_scope
+    from doc_assistant.knowledge.taxonomy import presence_node
 
     with session_scope() as session:
-        concept = session.get(Concept, concept_id)
+        concept = presence_node(session, concept_id)
         if concept is None:
             return False
         concept.label = new_label
@@ -1060,16 +1069,12 @@ class GlossaryEntry:
 
 def load_glossary() -> list[GlossaryEntry]:
     """All curated concepts as glossary entries (label, definition, aliases), by label."""
-    from sqlalchemy import select
-
-    from doc_assistant.db.models import Concept
     from doc_assistant.db.session import session_scope
+    from doc_assistant.knowledge.taxonomy import presence_nodes
 
     with session_scope() as session:
         # kind="concept" only — taxonomy field nodes are not glossary entries (ADR-028 D4).
-        concepts = list(
-            session.execute(select(Concept).where(Concept.kind == "concept")).scalars()
-        )
+        concepts = presence_nodes(session)
         entries = [
             GlossaryEntry(
                 label=c.label,

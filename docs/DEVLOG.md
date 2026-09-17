@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-09-16 · class: append-only -->
+<!-- status: active · updated: 2026-09-17 · class: append-only -->
 
 # DEVLOG — doc_assistant
 
@@ -14,8 +14,8 @@ Format: What changed | Why | Rejected alternatives | What it opens
 > oldest entries **verbatim** into the highest-numbered archive and verifies the bytes; then update
 > the range below by hand (cpc ticket T-003). A day may be split across two files at the cut.
 > Older entries, newest-first, unedited:
-> **2026-08-12 (1) → 2026-09-01 (1)** in [`docs/archive/DEVLOG-archive-006.md`](archive/DEVLOG-archive-006.md)
-> (rotated 2026-09-04, 2026-09-10 and four times on 2026-09-16) ·
+> **2026-08-12 (1) → 2026-09-01 (4)** in [`docs/archive/DEVLOG-archive-006.md`](archive/DEVLOG-archive-006.md)
+> (rotated 2026-09-04, 2026-09-10, four times on 2026-09-16 and on 2026-09-17) ·
 > **2026-08-08 (1) → 2026-08-11 (4)** in [`docs/archive/DEVLOG-archive-005.md`](archive/DEVLOG-archive-005.md)
 > (rotated 2026-08-30) ·
 > **2026-08-05 → 2026-08-07** in [`docs/archive/DEVLOG-archive-004.md`](archive/DEVLOG-archive-004.md)
@@ -30,6 +30,122 @@ Format: What changed | Why | Rejected alternatives | What it opens
 > see an entry that is itself an ADR in disguise). When either trips, rotate — **do not raise
 > the cap.** The cap exists because this log reached 8,244 lines before anyone noticed: every entry
 > is individually small and correct, so unbounded growth is invisible per commit.
+
+---
+
+## 2026-09-17 (3) — Security S-3: answers are sanitised before they become HTML, and the dev loop gets a CSP — not the way the plan said
+
+**What changed.** `Markdown.svelte` runs `marked` output through DOMPurify (new dependency
+`dompurify` ^3.4) before `{@html}`, forbidding `style`, `form`, `input`, `button`, `textarea` and
+`select`; citation buttons are still added afterwards, on the DOM. The Vite dev server sends a
+Content-Security-Policy built from `tauri.conf.json`'s production string by
+`src/lib/core/devCsp.ts`, which adds only `style-src 'unsafe-inline'` (Vite injects each stylesheet
+as a style element), the HMR socket and Tauri's IPC endpoints — `script-src` is never loosened.
+Tests: `devCsp.test.ts` (3 — every production value kept, script never loosened, only the three
+additions); `test_desktop_security_config.py` +2 (the only `{@html}` sink renders DOMPurify output;
+the dev header is derived from the production policy). Walkthrough §3 gains the hostile-markup row.
+
+**Why.** S2: a passage quoted from the corpus carries its markup into the answer, and `marked` ≥ 14
+passes `javascript:` links. **The plan's second half was wrong.** It said to set `devCsp`. Read in
+the Tauri 2.11.3 source: on desktop `tauri dev` loads `devUrl` directly, and the policy (`devCsp`,
+else `csp`) is injected only into assets Tauri serves itself (`manager/mod.rs` `csp()` →
+`get_asset`; the dev proxy is mobile-only). `devCsp` would have changed nothing.
+
+**Verified live, $0** (browser pane over the Vite dev server and the API): the real `Markdown`
+component mounted with an `<img onerror>`, a `javascript:` link, a script, a form and a style block
+rendered all five removed, kept the ordinary link and the `[1]` citation button, and left the
+probe variable untouched; with DOMPurify bypassed, the dev policy alone blocked an inline `onerror`
+(`script-src-attr`); the app raised no violation of its own across Chat, Graph and the taxonomy
+modal, HMR connected, every `/api` call 200. **Not verified:** the Tauri window under `just app`
+(IPC with the new header) and the installed build — both walkthrough rows.
+
+**Rejected.** `devCsp` (a no-op on desktop, above). A `<meta http-equiv>` policy in `index.html` — it
+would also apply in the built app on top of Tauri's header and block Tauri's nonce'd scripts.
+Sanitising in a plain `.ts` module for `node:test` — DOMPurify needs a DOM, and jsdom for one call
+breaks the frontend's zero-test-dependency rule. An `ALLOWED_TAGS` allow-list — markdown emits a
+wide tag set, and a missed tag silently drops content.
+
+**What it opens.** S-4 (`form-action`, `base-uri`, `object-src`) is next. S-11 can read
+`DOMPurify.removed` for its `security_markup_sanitised` event.
+
+---
+
+## 2026-09-17 (2) — Row 53: a merge keeps what you curated and can be undone; the preview and the merge share one definition — the only harmless one measured
+
+**What changed.** New `knowledge/concept_merge.py` is the merge's write seam (`apply_merges`,
+`undo_merge`, `list_merges`), replacing fold-and-delete. A merge refuses ids that are not both
+concepts, and a plan whose placements would close a taxonomy cycle — decided in memory before the
+first write — then moves to the survivor: surface forms; definition and graph membership when it
+lacks them; every `concept_hierarchy` placement, re-pointed through `add_hierarchy_edge` (an edge
+between the two is dropped, not made a self-edge); gap triage (the survivor's own verdict wins); and
+stochastic gap suggestions. It deletes the row and writes a `ConceptMerge` record (new additive
+table `concept_merges`) holding what `undo_merge` needs. `apply_plan` returns `(n_demoted,
+MergeOutcome)`; `curate_concepts` reports refused merges and the largest merge group, and gains
+`--merges` and `--undo-merge ID [--apply]`. **One definition:** `concept_curation.dedup_pairs`
+(keyed by id; `merge_text` = label + definition) serves both `suggest_concepts --near` and `--dedup`,
+defaulting to new `CONCEPT_MERGE_MODEL` bge-base and `CONCEPT_MERGE_COSINE` 0.85 → **0.90**; the
+preview also stops listing artifact labels. Tests: `test_concept_merges.py` (9, real SQLite with
+foreign keys on; non-vacuous — patching `_repoint` to move nothing fails two of them),
+`test_the_merge_preview_is_the_merge`, the `apply_plan` tests.
+
+**Why.** REVIEW 2026-09-16 C-1/C-2: `concept_hierarchy` cascades on delete, so a merge destroyed the
+dropped concept's placements, orphaned its triage and left no record — the one curation path that
+deletes, against ADR-028 and ADR-018. Row 51 writes curated `is_a` edges next, so this came first.
+
+**Measured before choosing the definition** ($0, read-only;
+`tests/eval/baselines/concept_merge_cosine_2026-09-17.md`). My first cut unified on the preview's
+settings. On the 357 real labels SPECTER2's median pair scores 0.842: at 0.85 the merge would delete
+354 concepts into one group, at 0.90 309. bge-base at the old merge's 0.90 merges none; at 0.85, 34
+pairs — 7 duplicates, 21 narrower terms, 6 related, by my first reading. So the shared definition
+is the old merge's: `--apply` behaves as before, the preview is finally honest, and no threshold is
+claimed.
+
+**Rejected.** A savepoint per merge — pysqlite's SAVEPOINT handling needs a driver workaround the
+session lacks. Demoting the dropped concept behind a `merged_into` column — every reader of
+`concepts` would need a new filter. Keeping SPECTER2 because `config.py` says bge "compresses
+same-domain concepts" — on labels the reverse holds. Settling on 0.85 or 0.87 for bge — the pairs say
+a threshold is the wrong tool.
+
+**What it opens.** Row 53 (3): the user's hand score of the 34 pairs, and the design it points at —
+a surface-form fold for real duplicates, per-pair review for the rest. The 21 narrower pairs are
+`is_a` candidates for row 51. Nothing was merged on the live library.
+
+---
+
+## 2026-09-17 (1) — Row 54: no write can put a field node on the graph, and every coverage number counts what it describes
+
+**What changed.** `taxonomy.py` gains `presence_query()` (the kind guard as a query to narrow) and
+`presence_node(session, id)` (its write side). Routed through them: `concept_skeleton.load_concepts`
+— the graph's own vocabulary read, which filtered on `graph_include` alone — `set_graph_include`,
+`delete_concept`, `rename_concept`, the label get-or-create in `add_concept` and `promote_keyword`,
+`load_glossary`, `list_keyword_candidates`; the family read and all five family writes by id in
+`library/keywords.py`; `concept_curation.load_concepts` and `rank_keyword_candidates`.
+**Denominators:** graph coverage counts cited ∩ shown documents over the non-archived count
+`library.count_documents` reports; the coverage sentence names the skeleton's concept count, not the
+vocabulary's; the taxonomy header counts the graph vocabulary, and its "not yet placed" is exactly
+`unplaced_concepts()` — auto-propose's input — shown as "N graph concepts". Tests: 3 kind-guard tests
+(refused by `set_graph_include` and absent from `load_concepts` even when already flagged; the five
+family writes refuse a field and its placement survives a delete; `add_concept` never adopts a field
+with the same label) and 2 parity tests asserting against the functions that act
+(`count_documents`, `unplaced_concepts`), not a fixture; the staleness test that pinned the numerator
+bug (expected 2) now expects 1.
+
+**Why.** REVIEW 2026-09-16 C-4/C-5/C-6. ADR-028 D4's guard lived on the reads that remembered it; a
+family delete by a field's id would have cascaded every placement under that field. Graph coverage
+counted deleted documents; the taxonomy header said "344 not yet placed" (357 families) while
+auto-propose had nothing left to place.
+
+**Verified live, $0.** `/api/taxonomy`: 13 concepts · 98 documents · 0 unplaced (was 357 · 344); the
+header renders "13 graph concepts · 98 documents · 236 fields"; the graph still reads "Covers 30 of
+your 98 documents" (no document on this library is deleted or archived).
+
+**Rejected.** A database constraint on `graph_include` — a migration for a rule the write seam holds,
+and it would not cover renames or deletes. Keeping `n_concepts_total` at every family and fixing only
+"not yet placed" — "357 concepts · 0 not yet placed" reads as all placed. Raising instead of returning
+None/False — each function keeps its existing contract.
+
+**What it opens.** `taxonomy_view` still filters kinds on networkx attributes (a graph read, not a
+query — left). `unclassified_documents` still includes archived documents (propose input, harmless).
 
 ---
 
@@ -846,167 +962,3 @@ no broken image, no page nav, no size controls.
 **Gates.** pytest source-viewer suites **44/44** (+7) · node:test 257/257 · svelte-check 219/0 ·
 mypy 98/0 · ruff + format clean · bandit 0 · `detect-secrets` clean against the baseline.
 **$0 — no model call.**
-
-## 2026-09-01 (4) — The page fits because the reader decides how: a real zoom, a draggable split, and renders that get sharper instead of bigger
-
-**What changed.** The source pane stops being a fixed picture in a fixed box.
-
-1. **Zoom** — a `− 76% +` stepper beside the fit presets, **Ctrl/Cmd + wheel** (a bare wheel still
-   scrolls), and the reading itself is a button that returns to the chosen fit.
-2. **A draggable split** — a `separator` between the document and the pane, dragged with pointer
-   events (so trackpad, pen and touch all work), moved with ← → (Shift for a coarse step, Home to
-   centre), double-clicked to reset. Persisted, clamped to 25-75% so neither side can be dragged away.
-3. **Sharper renders, not magnification** — `GET …/page/{n}` takes a `dpi`, and the pane climbs a
-   ladder (110 → 150 → 200 → 260 → 330 → 400) as the page is drawn larger.
-
-**Why (3) is the part that matters.** Zoom on a fixed image is just blur. Asking the server to
-draw the page again at the resolution it is being displayed at is what makes zoom mean anything —
-verified live: at 354% the pane requested **260 dpi** and got a **1831px** render in place of the
-775px one, and stepping back out returned to 200 then 110.
-
-**Three decisions worth keeping.**
-
-- **Zoom is a multiple of the pane's width**, not of "actual size" — a page that was never on
-  paper here has no actual size, and a percentage of one would shift under the reader every time
-  they dragged the split. `Width` is therefore always 100%, and `Fit page` is whatever fits.
-- **The dpi ladder is quantised.** Requesting exactly what each zoom level needs would issue a
-  render per frame of a drag. Snapping **up** to a rung keeps it to a handful of fetches and never
-  asks for an image blurrier than the one it replaces. The ceiling is enforced server-side
-  (`clamp_dpi`, 72-400): render cost grows with the square of dpi, so an unbounded query parameter
-  is a work generator. Out-of-range is **clamped, not refused** — a zoom level is not a validation
-  error.
-- **`dpi` is clamped in the library, not the route.** One expression of the bound, called by the
-  route, so no caller can reach the renderer around it.
-
-**Two things the work corrected in itself.**
-
-- **A test disproved a claim in my own comment.** `renderDpi` said a 2x display makes the default
-  soft at rest. It does not: at the pane's real width (433 CSS px, 612pt page) the render needs 51
-  dpi at 1x and 102 at 2x, both under the 110 served. Device pixel ratio starts to bite once
-  *zoomed* (153 dpi at 1.5x on a 2x display) or on a pane dragged wide (212 dpi at 900px). Comment
-  corrected; the number is now pinned by a test, because nothing else would have caught it.
-- **The fit was inferred and raced.** The first version decided "has the reader zoomed?" by
-  comparing `zoom` against the computed fit — which is 1 before the box is measured, and 1 is also
-  a legitimate zoom, so the pane opened at 100% instead of fitted. Replaced by an explicit
-  `userZoomed` flag with the fit *derived*; a flag cannot race.
-
-**Also fixed while verifying.** The fit was measured against the body's **border** box, so a
-"fitted" page still needed 16px of scroll — `ResizeObserver`'s `contentRect` and the image's own
-2px border now give a true fit (measured: `scrollY: 0`). And `setPointerCapture` is wrapped: it
-throws for a pointer the browser no longer considers active, and the exception would abort
-`onSplitDown` *before* its listeners attach — a handle that looks grabbed and does nothing.
-
-**Verified live** on `cajal-lecture.pdf`: fitted at 72% with **0px scroll on both axes**; +/- and
-Ctrl+wheel step through 38% → 188% → 354% with the dpi ladder following; a plain wheel scrolls
-without zooming; a real mouse drag moved the pane 667 → 433px, persisted **0.438**, and the zoom
-re-fitted 49% → 76% on its own. Both themes.
-
-**Rejected.** *A zoom slider* — a stepper plus Ctrl+wheel covers coarse and fine without a control
-that is hard to hit at the pane's size. *Re-rendering at exactly the needed dpi* — see the ladder.
-*Refusing an out-of-range dpi with a 4xx* — the honest answer to "sharper than we draw" is the
-sharpest we draw.
-
-**Gates.** pytest source-viewer suites 37/37 (3 new dpi tests) · node:test **257/257** (+20) ·
-svelte-check **219/0** · mypy 98/0 · ruff + format clean · bandit 0. **$0 — no model call.**
-
-## 2026-09-01 (3) — No page in the corpus actually fit the source pane, including the ordinary ones
-
-**What changed.** The source pane gains a **Fit page / Width** toggle in its header, defaulting to
-**Fit page**, persisted client-side (`libPrefs.sourceFit`, localStorage, the same class as the
-theme toggle and the grid/list switch — never a backend setting).
-
-**Why.** The pane sized a page to the pane's *width* and let height scroll. Measured on the running
-app at 1280x720, that means **no page fits**, at any shape in the corpus:
-
-| Page aspect (h/w) | Example | Visible at fit-width | Width if fitted |
-|---|---|---:|---:|
-| 1.29 (US Letter, **57 of 98 docs**) | most of the corpus | **94%** | 405px of 433 |
-| 1.41 (A4, 19 docs) | European journals | 86% | 371px |
-| 1.57 | `cajal-lecture.pdf` | 77% | 333px |
-| 1.79 | `middleton-2001.pdf` | **67%** | 292px |
-
-Confirmed live rather than computed: the Cajal page rendered 433x679 into a 519px body — 178px of
-scroll to see the bottom of a page. Even the most common size in the library needed a scroll to
-show its last inch.
-
-**The default is the argument, not the toggle.** ADR-050 D1 already settled what this pane is for:
-the image carries *fidelity and provenance* — "this is the page it came from" — while row 19's
-extracted text is the reading and searching surface. A view whose job is **where** should show the
-whole page; a view that cannot show the whole page cannot answer that question. Fitting costs
-little on the common case — 405px against 433px, a 6% loss of width for the last 6% of the page —
-and the reader who does want to read has one click to Width, remembered thereafter.
-
-It also removes a prerequisite from ROADMAP 24: a highlight band low on a page is worth nothing if
-the pane opens showing the top two-thirds. Fit page means the band is on screen the moment it exists.
-
-**Verified live** on `cajal-lecture.pdf` (the 1.57 case): default **100% visible, 0px scroll**;
-toggled to Width **76%, 178px**; toggled back, 100%; the choice persisted. Both themes, and the
-stacked (<900px) layout, where the pane's own `max-height: 60vh` becomes the binding constraint and
-the page still fits inside it.
-
-**Rejected.** *Reclaiming chrome* — the pane spends 51px of 574 on its header and footer; even
-deleting both would not fit the 1.79 page. *Widening the pane* — a wider page is a **taller** one,
-so it makes fitting strictly worse. *Fit page with no escape* — at 41% scale the body text is not
-readable, and pretending otherwise would push people back to the OS viewer.
-
-**What it opens.** In the stacked layout the height cap binds while horizontal room goes unused, so
-the fitted page sits small between wide margins; raising the cap trades that against how far the
-reader must scroll past the pane. Left alone deliberately — it fits, which was the requirement.
-
-**Gates.** node:test 237/237 · svelte-check 219/0 · ruff clean · mypy 98/0. Frontend-only; the
-Python suite is unmoved from 2026-09-01 (1). **$0 — no model call.**
-
-## 2026-09-01 (2) — ADR-050 D5 measured: the on-image highlight is viable, and twice the measurement lied before it told the truth
-
-**What changed.** No code. ADR-050 gains a dated **Addendum** answering the question D5 left open —
-*can a cited passage be located as rectangles on its page image, and how accurately?* — and
-ROADMAP row 24 files the follow-on with what it actually costs. Read-only, $0, on the live corpus.
-
-**Why now.** D5 scoped the highlight out and called its accuracy "unmeasured", naming that the
-follow-on's first question. Answering it before anyone commits to building is cheaper than
-answering it afterwards, and the answer changes what the follow-on is.
-
-**What it found.**
-
-*Recall inverts with anchor length.* A **3-word** anchor places **91%** of single-page prose
-sentences; a **12-word** one places **69%** (730 sentences). Longer anchors cross line breaks,
-where hyphenation and the extractor's reflow stop matching. At 4 words: 90% placed, and only **5%**
-genuinely ambiguous.
-
-*The design the numbers point to is an envelope, not per-sentence rects.* Highlighting sentences
-individually leaves ~10% unlit and scattered through the passage, and a reader cannot read a gap as
-anything but "this part was not the evidence". A parent chunk is contiguous text, so highlighting
-the band between the first and last unambiguous anchor gives **97% median purity** (highlighted
-words that really are the passage; >= 90% on 88% of passages). Coverage measured 45% median, but
-that is a **floor, not a verdict** — the probe grouped anchors into columns by `int(x0 // 60)`,
-which splits an indented paragraph across two bands.
-
-**Two measurement traps, both of which produced a confident wrong answer first, and both worth
-keeping.** (1) The first run scored **68%** — because its needles still carried the cache's list
-markers and table pipes. It was measuring the probe. Cleaned, the same method scores **94%**.
-(2) "More than one rect" was then read as ambiguity, which made *longer* anchors look *less*
-precise — an inversion that should have been the tell. `search_for` returns one rect **per line a
-match spans**, so a wrapped phrase is indistinguishable from a repeated one until you separate them
-geometrically — and the rects of a wrapped phrase are horizontally **disjoint** (tail of one line,
-head of the next), so the natural test, "do they overlap in x?", misclassifies every one of them.
-Only a vertical test works. Ambiguity fell from a fictional 22-32% to a real **5-7%**.
-
-**Why it was not built this session.** The row implies a detail; the measurement says increment.
-Three things have to be solved that nothing had named: real column detection (the probe's proxy is
-not shippable), **43% of parent chunks straddle a page break** so the opening page can only ever
-show part of the passage and the pane must say so, and a stated policy for the 5% ambiguous anchors
-(decline, never guess). Filed as ROADMAP 24 with those three named, rather than started and left
-half-done.
-
-**Rejected.** *Building it on the 94% figure* — that number is single-page prose with tables
-excluded, and quoting it for the feature as a whole would be the same error the first probe made,
-one level up. *Per-sentence highlighting* — higher coverage, but its gaps make a false claim about
-what the evidence was. *Treating the 45% coverage as the answer* — it is an artifact of the probe's
-column proxy, and shipping a "known 45%" would bake in a limit that was never measured.
-
-**What it opens.** ROADMAP 24. Also a question worth asking before that is built: with 43% of
-parents crossing a page break, the highlight's honest unit may be *the passage across two pages*
-rather than one page's band — which is a pane-layout decision, not a locating one.
-
-**Gates.** Docs-only: `docs_check --strict` 0/0 · doc guards 9/9. No code changed, so the code
-gates are unmoved from 2026-09-01 (1). **$0 — no model call.**

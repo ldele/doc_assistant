@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-09-16 (KL1: §6 trust table re-read against the code — thin_bridge structural, unsourced_claim is about answers, rows for coverage/staleness/placement/merges; §6b C2 note) · class: living -->
+<!-- status: active · updated: 2026-09-17 (gaps rebuilt; "Uncited in answers" kept; rows for presence, coverage and merges after ROADMAP 53/54) · class: living -->
 
 # The knowledge layer — what the concept graph is for, and which of its signals you can trust
 
@@ -143,15 +143,15 @@ Signals in this layer are **not** equally sound. Re-read against the code and th
 | signal | status | why |
 |---|---|---|
 | **`single_source`** | ✅ **trustworthy — the product thesis** | a document count; RG-014 graded it a true positive |
-| Concept presence / navigation | ✅ trustworthy | 534 chunk keys across 30 documents for the 13 graph concepts (2026-09-16); it stays sound only because no field node is on the graph — `set_graph_include` does not check kind (ROADMAP 54) |
+| Concept presence / navigation | ✅ trustworthy | 534 chunk keys across 30 documents for the 13 graph concepts (2026-09-16); a taxonomy field node is refused at every write and filtered on the graph's own read (ROADMAP 54, 2026-09-17) |
 | Communities, co-occurrence edges | ✅ deterministic | Node A, seeded Louvain, idempotent |
-| Graph coverage ("covers 30 of your 98 documents") | ✅ an honest count, one known flaw | its numerator can include documents deleted since the build; the stale flag does fire (ROADMAP 54) |
+| Graph coverage ("covers 30 of your 98 documents") | ✅ an honest count | numerator and denominator are both over the documents the library shows — deleted and archived ones excluded since 2026-09-17 (ROADMAP 54) |
 | `thin_bridge` | ✅ **structural since KL1** | a bridge counts only when both sides keep ≥ 2 concepts, flagged on the smaller side. Before KL1 it flagged both ends of every bridge, naming the most-connected concept a thin bridge; all four on the working library were dead-end edges, and today's graph has **none** |
-| `unsourced_claim` — shown as **"Uncited in answers"** | ⚠️ **about your answers, not the corpus** | the "claims" are sentences of the assistant's own answers that cite nothing, so the count moves with the model (`llama3.1:8b` 72% uncited, Haiku 21%) and with what you asked. KL1 stopped counting pieces that assert nothing (list lead-ins, headings, Sources blocks): 153 → 139 claim links over 8 concepts. The main remaining noise is a citation form the parser cannot read ("According to Source 6: file.pdf" — ROADMAP 90) |
+| `unsourced_claim` — shown as **"Uncited in answers"** | ⚠️ **about your answers, not the corpus** | the "claims" are sentences of the assistant's own answers that cite nothing, so the count moves with the model (`llama3.1:8b` 72% uncited, Haiku 21%) and with what you asked. KL1 stopped counting pieces that assert nothing (list lead-ins, headings, Sources blocks): 153 → 139 claim links over 8 concepts. The main remaining noise is a citation form the parser cannot read ("According to Source 6: file.pdf" — ROADMAP 90). Kept as a gap kind (user, 2026-09-17) |
 | `under_connected` | ❌ **noise at small vocabularies** | measures graph degree, dominated by vocabulary sparsity, not corpus coverage. Hidden by default in the gap list |
-| Stored gap rows | ⚠️ **can predate the graph** | a CLI skeleton rebuild does not rebuild gaps; on 2026-09-16 16 of 18 rows came from a build two graph versions old, and nothing in the UI says so (ROADMAP 91). The in-app Rebuild refreshes both |
+| Stored gap rows | ⚠️ **can predate the graph** | a CLI skeleton rebuild does not rebuild gaps; on 2026-09-16 16 of 18 rows came from a build two graph versions old, and nothing in the UI says so (ROADMAP 91). The in-app Rebuild refreshes both; rebuilt 2026-09-17 (17 rows, all current) |
 | Taxonomy placement (TX3 auto-propose) | ❓ **unmeasured** | RG-015 is specced and has never run (KL4) |
-| Concept merges (`curate_concepts --dedup --apply`) | ❌ **destructive** | deletes the dropped concept, and its curated placements with it (ROADMAP 53) |
+| Concept merges (`curate_concepts --dedup --apply`) | ⚠️ **safe, but not a duplicate detector** | since 2026-09-17 a merge moves placements, triage and surface forms to the survivor, is recorded, and `--undo-merge` splits it back. But no cosine threshold separates duplicates from narrower terms on labels: SPECTER2 at 0.85 would merge 354 of 357; bge-base at 0.85 gives 34 pairs, ~7 of them duplicates by a first reading (`tests/eval/baselines/concept_merge_cosine_2026-09-17.md`). Read the dry run; the hand score is ROADMAP 53 (3) |
 | **`contested` / `superseded_trend`** | ❌ **NOT A CORPUS MEASUREMENT (KI-33)** — **withheld from the UI since v0.4.1**, labelled `contested? (experimental)` where opted in | see below |
 
 ### The `contested` failure, in one paragraph

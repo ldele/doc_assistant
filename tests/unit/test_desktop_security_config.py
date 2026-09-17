@@ -1,11 +1,13 @@
-"""Guard the two Tauri config facts the app's security rests on.
+"""Guard the config facts the app's security rests on.
 
-The desktop renders LLM output through ``marked`` with ``{@html}`` and no sanitiser
-(``apps/desktop/src/lib/chat/Markdown.svelte``). What contains that today is the webview's
-Content-Security-Policy in ``tauri.conf.json`` and the fact that the capability file grants the
-page almost nothing (one sidecar spawn, one file-open dialog). Both are JSON edits nobody would
-think of as security changes, and neither ``svelte-check`` nor ``node:test`` reads them — so a
-loosened CSP or a broadened capability would ship silently. These tests make that a red CI run.
+The desktop renders LLM output through ``marked`` into ``{@html}``
+(``apps/desktop/src/lib/chat/Markdown.svelte``). Three walls contain it: DOMPurify on that one
+sink (S-3), the webview's Content-Security-Policy in ``tauri.conf.json`` — sent by the dev server
+too, since Tauri injects it only into the built app — and a capability file that grants the page
+almost nothing (one sidecar spawn, one file-open dialog). Each is an edit nobody would think of as
+a security change, and neither ``svelte-check`` nor ``node:test`` reads the JSON or the Vite
+config — so a loosened policy, an unsanitised sink or a broadened capability would ship silently.
+These tests make that a red CI run.
 
 Threat model and the reasoning: ``docs/security.md``.
 """
@@ -13,11 +15,14 @@ Threat model and the reasoning: ``docs/security.md``.
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 TAURI_CONF = ROOT / "apps" / "desktop" / "src-tauri" / "tauri.conf.json"
 CAPABILITIES = ROOT / "apps" / "desktop" / "src-tauri" / "capabilities" / "default.json"
+DESKTOP_SRC = ROOT / "apps" / "desktop" / "src"
+VITE_CONFIG = ROOT / "apps" / "desktop" / "vite.config.ts"
 
 # The sidecar's fixed loopback origin. If the port ever moves, this changes with it — on purpose:
 # the CSP is the only thing stopping injected markup from talking to anything else.
@@ -70,3 +75,38 @@ def test_no_remote_ipc_and_no_updater() -> None:
     assert "remote" not in conf["app"]["security"]
     # ADR-044: the app tells you a new version exists; it never installs one.
     assert "updater" not in json.dumps(conf.get("plugins", {})).lower()
+
+
+def _code_lines(text: str) -> list[str]:
+    """Lines that are not comments — a comment may name ``{@html}`` without being a sink."""
+    return [
+        line
+        for line in text.splitlines()
+        if not line.strip().startswith(("//", "*", "/*", "<!--"))
+    ]
+
+
+def test_every_html_sink_renders_sanitised_markup() -> None:
+    """S-3. One ``{@html}`` in the app, and it renders DOMPurify output. A second sink, or this one
+    losing its sanitiser, is the S2 finding back."""
+    sinks: dict[str, list[str]] = {}
+    for path in DESKTOP_SRC.rglob("*.svelte"):
+        code = "\n".join(_code_lines(path.read_text(encoding="utf-8")))
+        found = re.findall(r"\{@html\s+([A-Za-z_]\w*)\s*\}", code)
+        if found:
+            sinks[path.relative_to(DESKTOP_SRC).as_posix()] = found
+    assert sinks == {"lib/chat/Markdown.svelte": ["html"]}, sinks
+    source = (DESKTOP_SRC / "lib" / "chat" / "Markdown.svelte").read_text(encoding="utf-8")
+    assert re.search(r"const html = \$derived\(DOMPurify\.sanitize\(", source), (
+        "the {@html} variable must be DOMPurify output"
+    )
+
+
+def test_the_dev_server_sends_the_production_policy() -> None:
+    """S-3. ``tauri dev`` on desktop loads the Vite server directly and Tauri injects the CSP only
+    into assets it serves, so without this header the dev loop runs with no policy at all
+    (``devCsp`` is read on the same injection path and would not help). The header must be built
+    from the production string — see ``src/lib/core/devCsp.ts`` and its tests."""
+    config = VITE_CONFIG.read_text(encoding="utf-8")
+    assert "'Content-Security-Policy': devCsp(tauriConf.app.security.csp" in config
+    assert "src-tauri/tauri.conf.json" in config

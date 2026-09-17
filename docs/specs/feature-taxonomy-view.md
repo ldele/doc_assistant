@@ -113,7 +113,9 @@ attribution UI (T4). No backend change — `src/` and `apps/api/` are untouched.
   **"Attach document…"** over `documents` (→ `onAttachDocument`). When `focusConceptId` is set, the
   header names it ("Placing: <label>") and the attach-concept control arrives preselected — placing
   it is one field click + one confirm.
-- Header: corpus totals + the **"N concepts not yet placed"** zero-state affordance.
+- Header: corpus totals + the **"N concepts not yet placed"** zero-state affordance. *(Amended
+  2026-09-17, ROADMAP 54: the totals count the graph vocabulary — "N graph concepts" — so "not yet
+  placed" is a number the Attach picker and auto-propose can change.)*
 - Reuse the scrim + centred dialog + Esc shell; theme-token styling; light + dark; 375px no overflow.
 
 ### T4 — `App.svelte` wiring + entry points

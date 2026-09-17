@@ -621,14 +621,24 @@ KEYWORD_CONTRASTIVE_MIN_CVALUE = float(os.getenv("KEYWORD_CONTRASTIVE_MIN_CVALUE
 
 # Semantic concept layer (concept_semantics.py, #2) — grounds vocabulary in meaning, not
 # frequency. ABSTRACT_CONCEPTS_TOP_K: candidate concepts pulled from a scientific paper's
-# title+abstract (concept-dense; papers only). CONCEPT_MERGE_COSINE: two curated concepts with
-# embedding cosine >= this are flagged as near-duplicates to merge. General defaults.
+# title+abstract (concept-dense; papers only). General defaults.
 ABSTRACT_CONCEPTS_TOP_K = int(os.getenv("ABSTRACT_CONCEPTS_TOP_K", "12"))
-CONCEPT_MERGE_COSINE = float(os.getenv("CONCEPT_MERGE_COSINE", "0.85"))
-# Embedder for concept↔concept distance (merge suggestions + anchor ranking). Defaults to the
-# academic SPECTER2 rather than the retrieval bge, because bge compresses same-domain concepts
-# into a narrow cosine band (~0.6-0.7) — SPECTER2 (trained on scientific title/abstracts) spreads
-# them. Overridable; falls back to whatever the registry resolves.
+# The one definition of "the same concept" (ROADMAP 53): the merge preview (`suggest_concepts
+# --near`) and the merge (`curate_concepts --dedup`) both compare label (+ definition) embeddings
+# with CONCEPT_MERGE_MODEL at >= CONCEPT_MERGE_COSINE. These are the merge's old effective values
+# (bge-base, 0.9), kept because they were the only non-destructive pair measured: on 357 concept
+# labels (2026-09-17) SPECTER2 scores a median pair 0.842, so the preview's old 0.85 would merge
+# 354 of them into one; bge-base at 0.9 merges none, at 0.85 merges 34 — ~7 true duplicates, the
+# rest narrower terms. No threshold separates duplicates on labels; the hand score is open.
+# Record: tests/eval/baselines/concept_merge_cosine_2026-09-17.md.
+CONCEPT_MERGE_COSINE = float(os.getenv("CONCEPT_MERGE_COSINE", "0.90"))
+CONCEPT_MERGE_MODEL = os.getenv("CONCEPT_MERGE_MODEL", "bge-base")
+# Embedder for title+abstract candidate work (`--from-abstracts` / `--anchor-ranked`). Defaults to
+# the academic SPECTER2 rather than the retrieval bge, on the reading that bge compresses
+# same-domain concepts into a narrow cosine band (~0.6-0.7) and SPECTER2 (trained on scientific
+# title/abstracts) spreads them. **Not** the merge embedder: on bare concept labels the reverse
+# held (2026-09-17 — SPECTER2 median 0.842 / p99 0.924, bge-base 0.493 / 0.661), see
+# CONCEPT_MERGE_MODEL. Overridable; falls back to whatever the registry resolves.
 CONCEPT_EMBED_MODEL = os.getenv("CONCEPT_EMBED_MODEL", "specter2")
 
 

@@ -200,7 +200,7 @@ const cov = (over: Record<string, number> = {}) =>
   graphCoverage({
     n_documents_in_skeleton: 30,
     n_documents_in_library: 98,
-    n_concepts_in_db: 13,
+    n_concepts_in_skeleton: 13,
     ...over,
   })
 
@@ -229,5 +229,5 @@ test('an empty library says nothing', () => {
 })
 
 test('one concept is not "one of the 1 concepts"', () => {
-  assert.match(cov({ n_concepts_in_db: 1 }), /mentions the one concept on your graph\.$/)
+  assert.match(cov({ n_concepts_in_skeleton: 1 }), /mentions the one concept on your graph\.$/)
 })

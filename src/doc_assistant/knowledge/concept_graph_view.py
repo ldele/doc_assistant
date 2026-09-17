@@ -60,6 +60,8 @@ class GraphStaleness:
     #: nothing can resolve, and the view has no honest way to name it. Measured on the reference
     #: library the day this was added: **10 of 10** referenced ids dead, across all 198 nodes.
     missing_document_ids: tuple[str, ...] = ()
+    #: Documents the graph covers **that the library still shows** — the cited ids minus deleted
+    #: and archived ones, so it can never exceed `n_documents_in_library`.
     n_documents_in_skeleton: int = 0
     #: How many documents the library holds, so the view can state its **coverage**.
     #:
@@ -82,15 +84,24 @@ class GraphView:
     staleness: GraphStaleness
 
 
-def _live_document_ids() -> set[str]:
-    """Every document the library still holds. One indexed column read, no join."""
+def _live_document_ids() -> tuple[set[str], set[str]]:
+    """``(every document row, the documents the library shows)`` — one two-column read, no join.
+
+    Two sets because they answer two questions. A cited id is *resolvable* while any row holds it,
+    archived or not, so staleness asks the first. Coverage is a fraction of the library the user
+    sees, so its denominator is the second — the non-archived count ``library.count_documents``
+    reports (ROADMAP 54: a coverage number counts the artifact it describes).
+    """
     from sqlalchemy import select
 
     from doc_assistant.db.models import Document
     from doc_assistant.db.session import session_scope
 
     with session_scope() as session:
-        return {str(i) for i in session.execute(select(Document.id)).scalars()}
+        rows = session.execute(select(Document.id, Document.is_archived)).all()
+    every = {str(doc_id) for doc_id, _ in rows}
+    shown = {str(doc_id) for doc_id, archived in rows if not archived}
+    return every, shown
 
 
 def _staleness(skeleton: ConceptSkeleton) -> GraphStaleness:
@@ -109,7 +120,7 @@ def _staleness(skeleton: ConceptSkeleton) -> GraphStaleness:
     added = db_ids - sk_ids  # curated since the build
     removed = sk_ids - db_ids  # deleted since the build
 
-    live_docs = _live_document_ids()
+    live_docs, shown_docs = _live_document_ids()
     cited_docs = {d for n in skeleton.nodes for d in n.doc_ids}
     missing_docs = cited_docs - live_docs
     return GraphStaleness(
@@ -119,8 +130,11 @@ def _staleness(skeleton: ConceptSkeleton) -> GraphStaleness:
         added_labels=tuple(sorted(db_labels[i] for i in added)),
         removed_ids=tuple(sorted(removed)),
         missing_document_ids=tuple(sorted(missing_docs)),
-        n_documents_in_skeleton=len(cited_docs),
-        n_documents_in_library=len(live_docs),
+        # Numerator and denominator over the same set: a deleted document the skeleton still
+        # cites is staleness (above), not coverage — counted here it could push "covers N of M"
+        # past M and the client hides the line (ROADMAP 54).
+        n_documents_in_skeleton=len(cited_docs & shown_docs),
+        n_documents_in_library=len(shown_docs),
     )
 
 

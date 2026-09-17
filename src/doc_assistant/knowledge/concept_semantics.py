@@ -225,20 +225,25 @@ def anchor_ranked_candidates(
     return out
 
 
+def merge_text(label: str, definition: str | None) -> str:
+    """The text two concepts are compared on for a merge: the label, plus the definition if any."""
+    return f"{label}. {definition}" if definition else label
+
+
 def concept_merge_suggestions(*, threshold: float, model: str | None = None) -> list[ConceptPair]:
-    """Embed curated concepts (label + definition) and return near-duplicate pairs to merge.
+    """The merge preview: the pairs ``curate_concepts --dedup`` would merge, without writing.
 
-    The first concept↔concept distance in the project. Definitions, when present, enrich the
-    embedding beyond the bare label. ``model`` selects the embedder — ``"specter2"`` (academic)
-    separates same-domain concepts better than the general bge, which compresses them into a narrow
-    cosine band. Returns ``[]`` for fewer than two concepts.
+    Same inputs and same comparison as the merge — ``concept_curation.dedup_pairs`` over the
+    concepts that survive the artifact filter — so a pair shown here is a pair the merge acts on
+    at the same ``threshold`` and ``model`` (ROADMAP 53). The one difference is the optional LLM
+    noise stage (``curate_concepts --llm``), which can only remove candidates. ``[]`` for fewer
+    than two concepts.
     """
-    from doc_assistant.knowledge.concept_skeleton import load_glossary
+    from doc_assistant.knowledge.concept_curation import dedup_pairs, is_artifact, load_concepts
 
-    entries = load_glossary()
-    if len(entries) < 2:
-        return []
-    labels = [e.label for e in entries]
-    texts = [f"{e.label}. {e.definition}" if e.definition else e.label for e in entries]
-    vectors = embed_texts(texts, model=model)
-    return nearest_pairs(labels, vectors, threshold=threshold)
+    concepts = [(cid, label) for cid, label in load_concepts() if not is_artifact(label)]
+    label_by_id = dict(concepts)
+    return [
+        ConceptPair(label_by_id[a], label_by_id[b], cosine)
+        for a, b, cosine in dedup_pairs(concepts, threshold=threshold, model=model)
+    ]

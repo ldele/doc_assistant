@@ -40,6 +40,9 @@ payloads in `apps/api/models.py`, router registration, tests. Out: the Svelte vi
     recovered from `source="anzsrc"` nodes via the seed map (or None for a hand-added field).
   - `roots: list[str]` — field ids with no `in_field` parent (the divisions).
   - `n_concepts_total`, `n_documents_total`, `n_unassigned_concepts` (concepts with no `in_field` edge).
+    **Amended 2026-09-17 (ROADMAP 54):** counted over what they describe — `n_concepts_total` is the
+    graph vocabulary, `n_unassigned_concepts` is exactly `taxonomy.unplaced_concepts()` (auto-propose's
+    input), `n_documents_total` counts non-archived documents like the Library.
   - **Rollup** = union over `descendants(field) ∪ {field}` of directly-attached concept/doc id sets, deduped.
 - `load_field_detail(field_id) -> FieldDetail | None` — one field's directly-attached concepts
   (`[(id,label)]`) + documents (`[(id,title)]`) + its rollup counts; `None` if the id is not a domain node.

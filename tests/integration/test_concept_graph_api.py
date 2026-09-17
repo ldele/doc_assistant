@@ -243,7 +243,9 @@ def test_staleness_fires_when_a_cited_document_is_no_longer_in_the_library(env: 
     assert view is not None
     assert view.staleness.stale is True
     assert view.staleness.missing_document_ids == ("d2",)
-    assert view.staleness.n_documents_in_skeleton == 2
+    # Coverage counts only what the library still holds: the dead id is staleness, not coverage
+    # (ROADMAP 54 — this assertion said 2 until 2026-09-17, pinning the numerator bug).
+    assert view.staleness.n_documents_in_skeleton == 1
     # The vocabulary is untouched — the two kinds must not be conflated.
     assert view.staleness.added_labels == () and view.staleness.removed_ids == ()
 
@@ -280,6 +282,28 @@ def test_the_view_reports_library_size_so_coverage_can_be_stated(env: Path) -> N
     # Uncited documents are not staleness — nothing is broken and nothing is pending.
     assert view.staleness.missing_document_ids == ()
     assert view.staleness.stale is False
+
+
+def test_coverage_counts_over_the_library_the_user_sees(env: Path) -> None:
+    """ROADMAP 54 / REVIEW 2026-09-16 C-5. Numerator and denominator are asserted against the
+    library's own count, not against this file's fixture: the graph cites a deleted document and
+    an archived one, and neither may count as coverage — the deleted one could push "covers N of
+    M" to N >= M, which hides the line altogether."""
+    from doc_assistant.library.documents import count_documents
+
+    _write_skeleton_json(env, _skeleton())  # cites d1 and d2
+    _seed_concepts((_A, "Embeddings"), (_B, "BM25"))
+    _seed_documents("d2", "other")
+    with session_scope() as s:
+        s.get(Document, "d2").is_archived = True  # type: ignore[union-attr]
+    # d1 was deleted; d2 is archived — resolvable, so not stale, but not shown either.
+
+    view = load_graph_view()
+    assert view is not None
+    assert view.staleness.missing_document_ids == ("d1",)
+    assert view.staleness.n_documents_in_library == count_documents() == 1
+    assert view.staleness.n_documents_in_skeleton == 0
+    assert view.staleness.n_documents_in_skeleton <= view.staleness.n_documents_in_library
 
 
 def test_staleness_fires_when_a_concept_was_deleted_since_the_build(env: Path) -> None:

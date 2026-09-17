@@ -702,6 +702,33 @@ class GapTriage(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, onupdate=_utcnow)
 
 
+class ConceptMerge(Base):
+    """One applied concept merge — the record that makes a merge inspectable and reversible
+    (ROADMAP 53, ``knowledge.concept_curation.apply_merges`` / ``undo_merge``).
+
+    A merge folds one curated concept into another and deletes the folded row, which cascades
+    into everything keyed on it. Before 2026-09-17 that took the concept's taxonomy placements
+    with it and left its gap triage orphaned, with nothing written down. The merge now moves both
+    to the survivor first, and this row keeps what it needs to put them back: the dropped
+    concept, the surface forms the survivor gained, each placement before and after, and the
+    triage and suggestion rows re-keyed. ``record_json`` holds that as JSON.
+
+    ``keep_id``/``drop_id`` are not foreign keys: the dropped concept is gone by design, and the
+    record must outlive a later deletion of the survivor. Additive via ``create_all``.
+    """
+
+    __tablename__ = "concept_merges"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid4()))
+    keep_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    keep_label: Mapped[str] = mapped_column(String, nullable=False)
+    drop_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    drop_label: Mapped[str] = mapped_column(String, nullable=False)
+    record_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    merged_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
+    undone_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
 # ============================================================
 # AnswerRecord — Phase 5 / Integrity Chunk 1 (provenance card).
 # ============================================================

@@ -19,6 +19,10 @@ The engineering record is finer-grained than this file: per-change entries live 
 - **One add checks at most 50,000 files.** Picking a folder that holds more — a whole drive, say —
   stops the check at the limit and says so, instead of reading every file on it.
   `DOC_MAX_ADD_FILES` raises it.
+- **Chat answers are sanitised before they are shown.** Markup a document carries into an
+  answer — an image with a script handler, a `javascript:` link, a form — is removed before the
+  answer is rendered, and the development build now runs under the same content security policy
+  as the installed app.
 
 ### Changed
 
@@ -32,8 +36,22 @@ The engineering record is finer-grained than this file: per-change entries live 
   flagged only on the smaller of two groups one edge holds together, not on both ends of every
   edge — which had named the best-connected concept a thin bridge. Rebuild the graph's gaps to
   see it.
+- **Merging concepts keeps your curation, and a merge can be undone.** `curate_concepts --dedup
+  --apply` moves a merged concept's taxonomy placements, gap verdicts and keywords to the concept
+  that stays, records the merge, and `--undo-merge` splits it back out. `suggest_concepts --near`
+  now previews exactly those merges, with the merge's own settings — the preview's old ones would
+  have merged nearly the whole vocabulary.
 - **The clean-machine release gate asks three questions, not one**, and reports packaging and
   citation as separate verdicts (release tooling; no change to the app).
+
+### Fixed
+
+- **Coverage numbers count what they describe.** The graph's "Covers N of M documents" no
+  longer counts deleted or archived documents, and the taxonomy header counts the concepts on
+  your graph — what placing and auto-propose act on — so it stops reporting hundreds of concepts
+  "not yet placed" that nothing in the app could place.
+- **A taxonomy field can no longer be edited as a keyword family.** Renaming, deleting or putting
+  a field on the graph by its id is refused; a delete would have removed every placement under it.
 
 ## [0.6.0] — 2026-09-04
 

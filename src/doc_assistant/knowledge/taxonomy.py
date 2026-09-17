@@ -21,7 +21,7 @@ its parent field), so a walk toward roots is a walk along the edges.
 from __future__ import annotations
 
 import networkx as nx
-from sqlalchemy import select
+from sqlalchemy import Select, select
 from sqlalchemy.orm import Session
 
 from doc_assistant.db.models import Concept, ConceptHierarchy, Document, DocumentField
@@ -202,6 +202,15 @@ def detach_document_field(session: Session, document_id: str, field_id: str) -> 
     return len(rows)
 
 
+def presence_query() -> Select[tuple[Concept]]:
+    """``SELECT`` text-bearing concepts (``kind="concept"``) — the guard as a query to narrow.
+
+    For a reader that needs more than the kind (the graph vocabulary adds ``graph_include``, a
+    get-or-create adds the label): it narrows *this* query instead of restating the kind clause.
+    """
+    return select(Concept).where(Concept.kind == "concept")
+
+
 def presence_nodes(session: Session) -> list[Concept]:
     """The single canonical accessor for text-bearing concepts (``kind="concept"``).
 
@@ -209,7 +218,18 @@ def presence_nodes(session: Session) -> list[Concept]:
     concepts *through here*, so abstract ``kind="domain"`` field nodes (which have no text presence
     and would read as a false ``isolated``/``single_source`` gap) are excluded in one place.
     """
-    return list(session.execute(select(Concept).where(Concept.kind == "concept")).scalars().all())
+    return list(session.execute(presence_query()).scalars().all())
+
+
+def presence_node(session: Session, concept_id: str) -> Concept | None:
+    """One text-bearing concept by id, or ``None`` — a missing id and a field node alike.
+
+    The write side of the same guard (ROADMAP 54): every write that takes a concept id — the graph
+    toggle, a family edit, a merge — resolves it here, so a ``kind="domain"`` id is refused before
+    anything lands. A read-side filter alone is too late: the write has already happened.
+    """
+    concept = session.get(Concept, concept_id)
+    return concept if concept is not None and concept.kind == "concept" else None
 
 
 def unplaced_concepts(session: Session, *, graph_only: bool = True) -> list[Concept]:

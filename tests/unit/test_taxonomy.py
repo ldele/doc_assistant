@@ -63,8 +63,15 @@ def temp_db(monkeypatch):
         os.unlink(path)
 
 
-def _concept(session, cid: str, kind: str = "concept", label: str | None = None) -> Concept:
-    c = Concept(id=cid, label=label or cid.upper(), kind=kind)
+def _concept(
+    session,
+    cid: str,
+    kind: str = "concept",
+    label: str | None = None,
+    *,
+    graph_include: bool = False,
+) -> Concept:
+    c = Concept(id=cid, label=label or cid.upper(), kind=kind, graph_include=graph_include)
     session.add(c)
     session.flush()
     return c
@@ -382,6 +389,72 @@ def test_load_glossary_excludes_domains(temp_db):
     assert labels == ["BM25"]
 
 
+def test_a_field_node_cannot_reach_the_graph_by_any_write(temp_db):
+    """ROADMAP 54 / REVIEW 2026-09-16 C-4. ADR-028 D4's guard was on the reads that remembered it:
+    ``set_graph_include`` put a field node on the graph, and ``load_concepts`` — the path the graph
+    is actually built from — filtered on ``graph_include`` alone. Guard at the write, and prove the
+    graph path holds even when the flag is already set (legacy data)."""
+    from doc_assistant.db.session import session_scope
+    from doc_assistant.knowledge.concept_skeleton import load_concepts, set_graph_include
+
+    with session_scope() as s:
+        _concept(s, "c1", label="BM25", graph_include=True)
+        _field(s, "div", "Mathematical sciences")
+        _field(s, "legacy", "Flagged before the guard").graph_include = True
+
+    assert set_graph_include("div", True) is False
+    with session_scope() as s:
+        assert s.get(Concept, "div").graph_include is False  # the refused write did not land
+    concepts, _aliases = load_concepts()
+    assert concepts == [("c1", "BM25")]  # "legacy" is flagged and still never on the graph
+
+
+def test_family_writes_by_id_refuse_a_field_node(temp_db):
+    """The family routes take an id, and the Library's list hides fields — so a field id arrives
+    only by hand, and until 2026-09-17 every write but the graph toggle then landed on it. Delete
+    was the worst: removing a field cascades every placement under it."""
+    from doc_assistant.db.session import session_scope
+    from doc_assistant.library import (
+        add_family_member,
+        delete_keyword_family,
+        remove_family_member,
+        rename_keyword_family,
+        set_family_graph_include,
+    )
+
+    with session_scope() as s:
+        _field(s, "div", "Mathematical sciences")
+        _concept(s, "c1", label="Algebra")
+        add_hierarchy_edge(s, "c1", "div", "in_field")
+
+    assert rename_keyword_family("div", "Maths") is None
+    assert add_family_member("div", "maths") is None
+    assert remove_family_member("div", "maths") is None
+    assert set_family_graph_include("div", True) is None
+    assert delete_keyword_family("div") is False
+    with session_scope() as s:
+        field = s.get(Concept, "div")
+        assert field is not None and field.label == "Mathematical sciences" and not field.aliases
+        assert s.query(ConceptHierarchy).count() == 1  # the placement under it survived
+
+
+def test_add_concept_never_adopts_a_field_with_the_same_label(temp_db):
+    """``add_concept`` is get-or-create by label; a field sharing the label used to be "got", so
+    the concept's aliases and definition landed on the taxonomy node and no concept was made."""
+    from doc_assistant.db.session import session_scope
+    from doc_assistant.knowledge.concept_skeleton import add_concept
+
+    with session_scope() as s:
+        _field(s, "div", "Psychology")
+
+    concept_id = add_concept("Psychology", definition="the study of mind", aliases=["psych"])
+    assert concept_id != "div"
+    with session_scope() as s:
+        field = s.get(Concept, "div")
+        assert field is not None and field.definition is None and not field.aliases
+        assert s.get(Concept, concept_id).kind == "concept"  # type: ignore[union-attr]
+
+
 # ============================================================
 # taxonomy_view read model (increment 2a) — forest + set-semantics rollup coverage
 # ============================================================
@@ -401,8 +474,8 @@ def test_taxonomy_view_zero_state_and_unassigned(temp_db):
         _field(s, "div", "Information and computing sciences")
         _field(s, "grp", "Machine learning")
         add_hierarchy_edge(s, "grp", "div", "in_field")  # group -> division
-        _concept(s, "c1", kind="concept", label="Embeddings")
-        _concept(s, "c2", kind="concept", label="BM25")
+        _concept(s, "c1", kind="concept", label="Embeddings", graph_include=True)
+        _concept(s, "c2", kind="concept", label="BM25", graph_include=True)
 
     view = load_taxonomy_view()
     assert len(view.fields) == 2
@@ -410,6 +483,44 @@ def test_taxonomy_view_zero_state_and_unassigned(temp_db):
     assert view.n_concepts_total == 2
     assert view.n_unassigned_concepts == 2  # neither concept attached yet
     assert all(f.n_concepts_rollup == 0 and f.n_documents_rollup == 0 for f in view.fields)
+
+
+def test_taxonomy_header_counts_what_auto_propose_can_place(temp_db):
+    """ROADMAP 54 / REVIEW 2026-09-16 C-6. The header counted every keyword family (357) as a
+    concept and said "344 not yet placed", while auto-propose — the only thing that places in bulk
+    — reads the graph vocabulary and had nothing left to do. The header's numbers are now asserted
+    against the functions that act on them, not against a fixture of their own."""
+    from doc_assistant.db.models import Document
+    from doc_assistant.db.session import session_scope
+    from doc_assistant.knowledge.taxonomy import add_hierarchy_edge, unplaced_concepts
+    from doc_assistant.knowledge.taxonomy_view import load_taxonomy_view
+    from doc_assistant.library.documents import count_documents
+
+    with session_scope() as s:
+        _field(s, "div")
+        _concept(s, "on-graph-placed", graph_include=True)
+        _concept(s, "on-graph-unplaced", graph_include=True)
+        _concept(s, "family-only-1")  # a keyword family, never on the graph
+        _concept(s, "family-only-2")
+        add_hierarchy_edge(s, "on-graph-placed", "div", "in_field")
+        for doc_id, archived in (("d-live", False), ("d-archived", True)):
+            s.add(
+                Document(
+                    id=doc_id,
+                    filename=f"{doc_id}.pdf",
+                    source_original=f"{doc_id}.pdf",
+                    doc_hash=doc_id,
+                    format="pdf",
+                    is_archived=archived,
+                )
+            )
+
+    view = load_taxonomy_view()
+    with session_scope() as s:
+        propose_input = unplaced_concepts(s)
+    assert view.n_unassigned_concepts == len(propose_input) == 1
+    assert view.n_concepts_total == 2  # the graph vocabulary, not the four families
+    assert view.n_documents_total == count_documents() == 1  # the archived one is not shown
 
 
 def test_taxonomy_view_rollup_crosses_group_to_division(temp_db):
@@ -422,7 +533,7 @@ def test_taxonomy_view_rollup_crosses_group_to_division(temp_db):
         _field(s, "div")
         _field(s, "grp")
         add_hierarchy_edge(s, "grp", "div", "in_field")
-        _concept(s, "c1", kind="concept")
+        _concept(s, "c1", kind="concept", graph_include=True)
         add_hierarchy_edge(s, "c1", "grp", "in_field")  # attach concept to the group
 
     by_id = {f.id: f for f in load_taxonomy_view().fields}

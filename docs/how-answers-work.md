@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-08-30 · class: living -->
+<!-- status: active · updated: 2026-09-17 (KL1: contested?/superseded? chips labelled experimental; unsourced_claim shown as Uncited in answers) · class: living -->
 
 # How answers work — evidence vs. interpretation
 

@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-07-23 · class: living -->
+<!-- status: active · updated: 2026-09-17 (C-007: not a corpus measurement) · class: living -->
 
 # GLOSSARY — doc_assistant
 

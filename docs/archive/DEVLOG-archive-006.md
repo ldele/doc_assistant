@@ -1,6 +1,6 @@
-<!-- status: archived · updated: 2026-09-16 · class: append-only -->
+<!-- status: archived · updated: 2026-09-17 · class: append-only -->
 
-# DEVLOG — archive 006 (2026-08-12 (1) → 2026-09-01 (1))
+# DEVLOG — archive 006 (2026-08-12 (1) → 2026-09-01 (4))
 
 Older entries, moved verbatim from `docs/DEVLOG.md` on 2026-09-04 so the working log stays
 about recent work. Newest-first, same format, unedited. Rotated because the live log had
@@ -9,8 +9,174 @@ before it can grow further. Cut on a date boundary so no day is split across two
 **Extended 2026-09-10** by `cpc-rotate` (56 entries, 2026-08-15 → 2026-08-30 (8), byte-verified) when the
 live log adopted a 20-entry cap, then once more the same day for the session's own entry; 2026-08-30 (1)–(9) are all here. **Extended 2026-09-16** by five entries, 2026-08-31 (1) → 2026-09-01 (1), one per new entry that
 pushed the live log past 20; 2026-09-01 is now split across the two files ((2)–(6) are live).
+**Extended 2026-09-17** by three entries, 2026-09-01 (2) → (4), for the day's three new entries;
+2026-09-01 (5) and (6) are live.
 
 ---
+
+## 2026-09-01 (4) — The page fits because the reader decides how: a real zoom, a draggable split, and renders that get sharper instead of bigger
+
+**What changed.** The source pane stops being a fixed picture in a fixed box.
+
+1. **Zoom** — a `− 76% +` stepper beside the fit presets, **Ctrl/Cmd + wheel** (a bare wheel still
+   scrolls), and the reading itself is a button that returns to the chosen fit.
+2. **A draggable split** — a `separator` between the document and the pane, dragged with pointer
+   events (so trackpad, pen and touch all work), moved with ← → (Shift for a coarse step, Home to
+   centre), double-clicked to reset. Persisted, clamped to 25-75% so neither side can be dragged away.
+3. **Sharper renders, not magnification** — `GET …/page/{n}` takes a `dpi`, and the pane climbs a
+   ladder (110 → 150 → 200 → 260 → 330 → 400) as the page is drawn larger.
+
+**Why (3) is the part that matters.** Zoom on a fixed image is just blur. Asking the server to
+draw the page again at the resolution it is being displayed at is what makes zoom mean anything —
+verified live: at 354% the pane requested **260 dpi** and got a **1831px** render in place of the
+775px one, and stepping back out returned to 200 then 110.
+
+**Three decisions worth keeping.**
+
+- **Zoom is a multiple of the pane's width**, not of "actual size" — a page that was never on
+  paper here has no actual size, and a percentage of one would shift under the reader every time
+  they dragged the split. `Width` is therefore always 100%, and `Fit page` is whatever fits.
+- **The dpi ladder is quantised.** Requesting exactly what each zoom level needs would issue a
+  render per frame of a drag. Snapping **up** to a rung keeps it to a handful of fetches and never
+  asks for an image blurrier than the one it replaces. The ceiling is enforced server-side
+  (`clamp_dpi`, 72-400): render cost grows with the square of dpi, so an unbounded query parameter
+  is a work generator. Out-of-range is **clamped, not refused** — a zoom level is not a validation
+  error.
+- **`dpi` is clamped in the library, not the route.** One expression of the bound, called by the
+  route, so no caller can reach the renderer around it.
+
+**Two things the work corrected in itself.**
+
+- **A test disproved a claim in my own comment.** `renderDpi` said a 2x display makes the default
+  soft at rest. It does not: at the pane's real width (433 CSS px, 612pt page) the render needs 51
+  dpi at 1x and 102 at 2x, both under the 110 served. Device pixel ratio starts to bite once
+  *zoomed* (153 dpi at 1.5x on a 2x display) or on a pane dragged wide (212 dpi at 900px). Comment
+  corrected; the number is now pinned by a test, because nothing else would have caught it.
+- **The fit was inferred and raced.** The first version decided "has the reader zoomed?" by
+  comparing `zoom` against the computed fit — which is 1 before the box is measured, and 1 is also
+  a legitimate zoom, so the pane opened at 100% instead of fitted. Replaced by an explicit
+  `userZoomed` flag with the fit *derived*; a flag cannot race.
+
+**Also fixed while verifying.** The fit was measured against the body's **border** box, so a
+"fitted" page still needed 16px of scroll — `ResizeObserver`'s `contentRect` and the image's own
+2px border now give a true fit (measured: `scrollY: 0`). And `setPointerCapture` is wrapped: it
+throws for a pointer the browser no longer considers active, and the exception would abort
+`onSplitDown` *before* its listeners attach — a handle that looks grabbed and does nothing.
+
+**Verified live** on `cajal-lecture.pdf`: fitted at 72% with **0px scroll on both axes**; +/- and
+Ctrl+wheel step through 38% → 188% → 354% with the dpi ladder following; a plain wheel scrolls
+without zooming; a real mouse drag moved the pane 667 → 433px, persisted **0.438**, and the zoom
+re-fitted 49% → 76% on its own. Both themes.
+
+**Rejected.** *A zoom slider* — a stepper plus Ctrl+wheel covers coarse and fine without a control
+that is hard to hit at the pane's size. *Re-rendering at exactly the needed dpi* — see the ladder.
+*Refusing an out-of-range dpi with a 4xx* — the honest answer to "sharper than we draw" is the
+sharpest we draw.
+
+**Gates.** pytest source-viewer suites 37/37 (3 new dpi tests) · node:test **257/257** (+20) ·
+svelte-check **219/0** · mypy 98/0 · ruff + format clean · bandit 0. **$0 — no model call.**
+
+## 2026-09-01 (3) — No page in the corpus actually fit the source pane, including the ordinary ones
+
+**What changed.** The source pane gains a **Fit page / Width** toggle in its header, defaulting to
+**Fit page**, persisted client-side (`libPrefs.sourceFit`, localStorage, the same class as the
+theme toggle and the grid/list switch — never a backend setting).
+
+**Why.** The pane sized a page to the pane's *width* and let height scroll. Measured on the running
+app at 1280x720, that means **no page fits**, at any shape in the corpus:
+
+| Page aspect (h/w) | Example | Visible at fit-width | Width if fitted |
+|---|---|---:|---:|
+| 1.29 (US Letter, **57 of 98 docs**) | most of the corpus | **94%** | 405px of 433 |
+| 1.41 (A4, 19 docs) | European journals | 86% | 371px |
+| 1.57 | `cajal-lecture.pdf` | 77% | 333px |
+| 1.79 | `middleton-2001.pdf` | **67%** | 292px |
+
+Confirmed live rather than computed: the Cajal page rendered 433x679 into a 519px body — 178px of
+scroll to see the bottom of a page. Even the most common size in the library needed a scroll to
+show its last inch.
+
+**The default is the argument, not the toggle.** ADR-050 D1 already settled what this pane is for:
+the image carries *fidelity and provenance* — "this is the page it came from" — while row 19's
+extracted text is the reading and searching surface. A view whose job is **where** should show the
+whole page; a view that cannot show the whole page cannot answer that question. Fitting costs
+little on the common case — 405px against 433px, a 6% loss of width for the last 6% of the page —
+and the reader who does want to read has one click to Width, remembered thereafter.
+
+It also removes a prerequisite from ROADMAP 24: a highlight band low on a page is worth nothing if
+the pane opens showing the top two-thirds. Fit page means the band is on screen the moment it exists.
+
+**Verified live** on `cajal-lecture.pdf` (the 1.57 case): default **100% visible, 0px scroll**;
+toggled to Width **76%, 178px**; toggled back, 100%; the choice persisted. Both themes, and the
+stacked (<900px) layout, where the pane's own `max-height: 60vh` becomes the binding constraint and
+the page still fits inside it.
+
+**Rejected.** *Reclaiming chrome* — the pane spends 51px of 574 on its header and footer; even
+deleting both would not fit the 1.79 page. *Widening the pane* — a wider page is a **taller** one,
+so it makes fitting strictly worse. *Fit page with no escape* — at 41% scale the body text is not
+readable, and pretending otherwise would push people back to the OS viewer.
+
+**What it opens.** In the stacked layout the height cap binds while horizontal room goes unused, so
+the fitted page sits small between wide margins; raising the cap trades that against how far the
+reader must scroll past the pane. Left alone deliberately — it fits, which was the requirement.
+
+**Gates.** node:test 237/237 · svelte-check 219/0 · ruff clean · mypy 98/0. Frontend-only; the
+Python suite is unmoved from 2026-09-01 (1). **$0 — no model call.**
+
+## 2026-09-01 (2) — ADR-050 D5 measured: the on-image highlight is viable, and twice the measurement lied before it told the truth
+
+**What changed.** No code. ADR-050 gains a dated **Addendum** answering the question D5 left open —
+*can a cited passage be located as rectangles on its page image, and how accurately?* — and
+ROADMAP row 24 files the follow-on with what it actually costs. Read-only, $0, on the live corpus.
+
+**Why now.** D5 scoped the highlight out and called its accuracy "unmeasured", naming that the
+follow-on's first question. Answering it before anyone commits to building is cheaper than
+answering it afterwards, and the answer changes what the follow-on is.
+
+**What it found.**
+
+*Recall inverts with anchor length.* A **3-word** anchor places **91%** of single-page prose
+sentences; a **12-word** one places **69%** (730 sentences). Longer anchors cross line breaks,
+where hyphenation and the extractor's reflow stop matching. At 4 words: 90% placed, and only **5%**
+genuinely ambiguous.
+
+*The design the numbers point to is an envelope, not per-sentence rects.* Highlighting sentences
+individually leaves ~10% unlit and scattered through the passage, and a reader cannot read a gap as
+anything but "this part was not the evidence". A parent chunk is contiguous text, so highlighting
+the band between the first and last unambiguous anchor gives **97% median purity** (highlighted
+words that really are the passage; >= 90% on 88% of passages). Coverage measured 45% median, but
+that is a **floor, not a verdict** — the probe grouped anchors into columns by `int(x0 // 60)`,
+which splits an indented paragraph across two bands.
+
+**Two measurement traps, both of which produced a confident wrong answer first, and both worth
+keeping.** (1) The first run scored **68%** — because its needles still carried the cache's list
+markers and table pipes. It was measuring the probe. Cleaned, the same method scores **94%**.
+(2) "More than one rect" was then read as ambiguity, which made *longer* anchors look *less*
+precise — an inversion that should have been the tell. `search_for` returns one rect **per line a
+match spans**, so a wrapped phrase is indistinguishable from a repeated one until you separate them
+geometrically — and the rects of a wrapped phrase are horizontally **disjoint** (tail of one line,
+head of the next), so the natural test, "do they overlap in x?", misclassifies every one of them.
+Only a vertical test works. Ambiguity fell from a fictional 22-32% to a real **5-7%**.
+
+**Why it was not built this session.** The row implies a detail; the measurement says increment.
+Three things have to be solved that nothing had named: real column detection (the probe's proxy is
+not shippable), **43% of parent chunks straddle a page break** so the opening page can only ever
+show part of the passage and the pane must say so, and a stated policy for the 5% ambiguous anchors
+(decline, never guess). Filed as ROADMAP 24 with those three named, rather than started and left
+half-done.
+
+**Rejected.** *Building it on the 94% figure* — that number is single-page prose with tables
+excluded, and quoting it for the feature as a whole would be the same error the first probe made,
+one level up. *Per-sentence highlighting* — higher coverage, but its gaps make a false claim about
+what the evidence was. *Treating the 45% coverage as the answer* — it is an artifact of the probe's
+column proxy, and shipping a "known 45%" would bake in a limit that was never measured.
+
+**What it opens.** ROADMAP 24. Also a question worth asking before that is built: with 43% of
+parents crossing a page break, the highlight's honest unit may be *the passage across two pages*
+rather than one page's band — which is a pane-layout decision, not a locating one.
+
+**Gates.** Docs-only: `docs_check --strict` 0/0 · doc guards 9/9. No code changed, so the code
+gates are unmoved from 2026-09-01 (1). **$0 — no model call.**
 
 ## 2026-09-01 (1) — ROADMAP 18: the document beside its library entry — and the row's stated reason for it being free was wrong
 

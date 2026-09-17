@@ -34,10 +34,15 @@ import json
 import re
 from collections.abc import Iterable
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 
 import structlog
 
+from doc_assistant import config
 from doc_assistant.llm import LLMClient, Message
+
+if TYPE_CHECKING:
+    from doc_assistant.knowledge.concept_merge import MergeOutcome
 
 log = structlog.get_logger(__name__)
 
@@ -317,8 +322,9 @@ def rank_keyword_candidates() -> list[RankedCandidate]:
     """
     from sqlalchemy import func, select
 
-    from doc_assistant.db.models import Concept, Document, Keyword, document_keywords
+    from doc_assistant.db.models import Document, Keyword, document_keywords
     from doc_assistant.db.session import session_scope
+    from doc_assistant.knowledge.taxonomy import presence_nodes
 
     with session_scope() as session:
         counts = {
@@ -331,9 +337,7 @@ def rank_keyword_candidates() -> list[RankedCandidate]:
         }
         # kind="concept" only — never rank/merge against an abstract taxonomy field (ADR-028 D4):
         # a near-dup merge must not be able to fold a domain node into a concept.
-        concepts = list(
-            session.execute(select(Concept).where(Concept.kind == "concept")).scalars()
-        )
+        concepts = presence_nodes(session)
         promoted = {c.label for c in concepts}
         in_graph = {c.label for c in concepts if c.graph_include}
         authors = [a for (a,) in session.execute(select(Document.authors)) if a]
@@ -359,16 +363,11 @@ def load_concepts() -> list[tuple[str, str]]:
 
     Excludes ``kind="domain"`` taxonomy field nodes (ADR-028 D4): this feeds near-dup merge
     detection, and a domain must never become a merge candidate against a concept."""
-    from sqlalchemy import select
-
-    from doc_assistant.db.models import Concept
     from doc_assistant.db.session import session_scope
+    from doc_assistant.knowledge.taxonomy import presence_nodes
 
     with session_scope() as session:
-        rows = [
-            (str(c.id), c.label)
-            for c in session.execute(select(Concept).where(Concept.kind == "concept")).scalars()
-        ]
+        rows = [(str(c.id), c.label) for c in presence_nodes(session)]
     rows.sort(key=lambda r: r[0])
     return rows
 
@@ -389,23 +388,45 @@ def doc_counts() -> dict[str, int]:
 
 
 def dedup_pairs(
-    concepts: list[tuple[str, str]], threshold: float, model: str | None
+    concepts: list[tuple[str, str]],
+    threshold: float = config.CONCEPT_MERGE_COSINE,
+    model: str | None = config.CONCEPT_MERGE_MODEL,
 ) -> list[tuple[str, str, float]]:
-    """Near-duplicate ``(id_a, id_b, cosine)`` pairs among ``concepts`` via label embeddings.
+    """Near-duplicate ``(id_a, id_b, cosine)`` pairs: the **one** definition of "same concept".
 
-    Runs on the host (loads the embedder), not the sandbox. Pass the *post-prune* survivors so a
-    kept concept is never merged into one that is about to be removed.
+    Both the preview (``suggest_concepts --near``, via
+    ``concept_semantics.concept_merge_suggestions``) and the merge (``curate_concepts --dedup``)
+    call this, so the preview predicts the merge: the same text (label plus definition,
+    ``merge_text``), the same embedder and the same threshold, whose defaults are
+    ``CONCEPT_MERGE_MODEL`` and ``CONCEPT_MERGE_COSINE``. Until 2026-09-17 the merge compared bare
+    labels with bge-base at a hard-coded 0.9 while the preview used specter2 and definitions at
+    0.85 — settings that, measured, would merge 354 of 357 concepts into one (ROADMAP 53; the
+    record is ``tests/eval/baselines/concept_merge_cosine_2026-09-17.md``).
+
+    Keyed by id, not label — labels are not unique. Runs on the host (loads the embedder), not the
+    sandbox. Pass the *post-prune* survivors so a kept concept is never merged into one that is
+    about to be removed.
     """
-    from doc_assistant.knowledge.concept_semantics import embed_texts, nearest_pairs
+    from sqlalchemy import select
+
+    from doc_assistant.db.models import Concept
+    from doc_assistant.db.session import session_scope
+    from doc_assistant.knowledge.concept_semantics import embed_texts, merge_text, nearest_pairs
 
     if len(concepts) < 2:
         return []
-    labels = [label for _, label in concepts]
-    id_by_label: dict[str, str] = {label: cid for cid, label in concepts}
-    vectors = embed_texts(labels, model=model)
+    with session_scope() as session:
+        definitions = {
+            str(cid): definition
+            for cid, definition in session.execute(
+                select(Concept.id, Concept.definition).where(Concept.definition.is_not(None))
+            )
+        }
+    ids = [cid for cid, _ in concepts]
+    texts = [merge_text(label, definitions.get(cid)) for cid, label in concepts]
+    vectors = embed_texts(texts, model=model)
     return [
-        (id_by_label[p.label_a], id_by_label[p.label_b], p.cosine)
-        for p in nearest_pairs(labels, vectors, threshold=threshold)
+        (p.label_a, p.label_b, p.cosine) for p in nearest_pairs(ids, vectors, threshold=threshold)
     ]
 
 
@@ -460,37 +481,16 @@ def remove_concepts(ids: set[str]) -> int:
     return len(ids)
 
 
-def apply_plan(plan: CurationPlan) -> tuple[int, int]:
+def apply_plan(plan: CurationPlan) -> tuple[int, MergeOutcome]:
     """Execute a curation plan: **demote** the flagged non-concepts, then fold the near-dups.
 
     The library seam the ``curate_concepts`` runner drives on ``--apply`` (E0.1) — so the
     demote-not-delete decision lives here, tested, rather than in the CLI shell. Artifact +
     ``classify_noise`` verdicts route through :func:`demote_concepts` (``graph_include=False``,
-    keeping the row + its ADR-015 keyword family); only near-duplicate merges drop a row (its
-    surface forms fold into the survivor first, so no vocabulary is lost). Returns
-    ``(n_demoted, n_merged)``."""
+    keeping the row + its ADR-015 keyword family); only near-duplicate merges drop a row, and
+    ``concept_merge.apply_merges`` moves the row's aliases, placements and triage to the survivor
+    first and records the merge so it can be undone (ROADMAP 53). Returns
+    ``(n_demoted, merge outcome)``."""
+    from doc_assistant.knowledge.concept_merge import apply_merges
+
     return demote_concepts(plan.demote_ids), apply_merges(plan.merges)
-
-
-def apply_merges(plans: list[MergePlan]) -> int:
-    """Fold each ``drop`` into its ``keep`` (move surface forms to aliases), then delete it."""
-    if not plans:
-        return 0
-    from sqlalchemy import delete
-
-    from doc_assistant.db.models import Concept, ConceptAlias
-    from doc_assistant.db.session import session_scope
-
-    with session_scope() as session:
-        for plan in plans:
-            keep = session.get(Concept, plan.keep_id)
-            drop = session.get(Concept, plan.drop_id)
-            if keep is None or drop is None:
-                continue
-            existing = {a.alias for a in keep.aliases} | {keep.label}
-            drop_aliases = {a.alias for a in drop.aliases} | {drop.label}
-            for alias in sorted(drop_aliases - existing):
-                session.add(ConceptAlias(concept_id=keep.id, alias=alias))
-            session.execute(delete(ConceptAlias).where(ConceptAlias.concept_id == drop.id))
-            session.execute(delete(Concept).where(Concept.id == drop.id))
-    return len(plans)

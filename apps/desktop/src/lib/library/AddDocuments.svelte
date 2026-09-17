@@ -34,7 +34,7 @@
   let result = $state<InspectResponse | null>(null)
   let error = $state<string | null>(null)
   let loading = $state(true)
-  /** Rows rendered at once. Bounds the DOM, never the batch — the batch is uncapped by decision. */
+  /** Rows rendered at once. Bounds the DOM, never the batch (a batch is capped server-side only, at MAX_ADD_FILES). */
   let shown = $state(50)
 
   // AD3 state.

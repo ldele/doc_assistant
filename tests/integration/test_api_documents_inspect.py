@@ -106,6 +106,40 @@ def _write(path: Path, data: bytes) -> Path:
     return path
 
 
+def test_a_pick_over_the_file_cap_is_a_400_that_names_the_cap(client, tmp_path, monkeypatch):
+    """Security S-2 over the wire: a string `detail` the review sheet shows as its alert."""
+    from doc_assistant import config
+
+    monkeypatch.setattr(config, "MAX_ADD_FILES", 3)
+    for n in range(4):
+        _write(tmp_path / "drive" / f"{n}.pdf", b"%PDF-1.4")
+    r = client.post("/api/documents/inspect", json={"paths": [str(tmp_path / "drive")]})
+    assert r.status_code == 400
+    assert "more than 3 files" in r.json()["detail"]
+
+
+def test_add_refuses_a_path_list_over_the_cap(client, tmp_path, monkeypatch):
+    from doc_assistant import config
+
+    monkeypatch.setattr(config, "MAX_ADD_FILES", 1)
+    files = [str(_write(tmp_path / f"{n}.pdf", b"%PDF-1.4")) for n in range(2)]
+    r = client.post("/api/documents/add", json={"paths": files, "mode": "copy"})
+    assert r.status_code == 400
+    assert "more than 1 files" in r.json()["detail"]
+
+
+def test_accepts_states_the_limits_the_backend_enforces(client, monkeypatch):
+    """The uploader's "Up to 1 GB per file" must follow the env knob, not a frontend constant."""
+    from doc_assistant import config
+
+    monkeypatch.setattr(config, "MAX_INGEST_FILE_BYTES", 2048)
+    r = client.get("/api/documents/accepts")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["max_file_bytes"] == 2048
+    assert ".txt" in body["extensions"] and ".odt" in body["extensions"]
+
+
 def test_a_supported_file_comes_back_ready_to_add(client, tmp_path):
     f = _write(tmp_path / "paper.pdf", b"%PDF-1.4 body")
     r = client.post("/api/documents/inspect", json={"paths": [str(f)]})

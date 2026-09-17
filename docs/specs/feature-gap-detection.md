@@ -101,7 +101,7 @@ concepts, the doc context, the prompt) so the suggestion is auditable.
   rule (carried from 7d Decision 4):** single-source = *flagged for attention*, never a defect — a sole
   authoritative source is among the library's most valuable. Distinguished from contested by absence of
   contradicting edges.
-- `detect_thin_bridges(graph) -> list[Gap]` — `networkx.bridges` over each connected component (the 7c
+- `detect_thin_bridges(graph) -> list[Gap]` — **amended 2026-09-16 (KL1):** a bridge counts only when both sides keep ≥ 2 concepts, and the gap goes on the smaller side's endpoint (both on a tie); before, both ends of every bridge were flagged. Originally: `networkx.bridges` over each connected component (the 7c
   mechanism, re-homed here).
 - `detect_under_connected(graph, *, min_degree: int) -> list[Gap]` — curated concepts with degree below
   `min_degree`. **`min_degree` is provisional — set on the validation run** (RG-001); it is the routing

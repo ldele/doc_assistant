@@ -28,8 +28,9 @@ export const GAP_META: Record<GapKind, GapMeta> = {
   unsourced_claim: {
     rank: 1,
     tone: 'warn',
-    label: 'Unsourced claims',
-    blurb: 'Carries claims the corpus does not cite (count is approximate).',
+    label: 'Uncited in answers',
+    blurb:
+      'Sentences in your chat answers that mention this concept and cite no source. Depends on the model that answered; the count is approximate.',
   },
   citation_missing: {
     rank: 2,
@@ -41,7 +42,7 @@ export const GAP_META: Record<GapKind, GapMeta> = {
     rank: 3,
     tone: 'warn',
     label: 'Thin bridge',
-    blurb: 'Connects two areas through a single fragile edge.',
+    blurb: 'Holds a group of concepts to the rest of the graph by a single edge.',
   },
   isolated: {
     rank: 3,

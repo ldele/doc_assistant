@@ -190,6 +190,12 @@ MAX_ARCHIVE_EXPANDED_BYTES = int(os.getenv("DOC_MAX_ARCHIVE_BYTES", str(1 << 30)
 # stream — so an entry claiming 1000:1 or more is the shape of a zip bomb, not of a document.
 # Structural, so not an env knob.
 MAX_ARCHIVE_ENTRY_RATIO = 1000
+# The most files one add may name or expand to (docs/security.md S3 / step S-2). `inspect` walks a
+# dropped folder on a request thread, so a pick of `C:\` would stat and format-check every file on
+# the drive. 50,000 is 5x the 10,000-document contract — real folders also hold files that are not
+# documents — and checks in ~9 s here (~11,000 files/s). No byte cap: `inspect` barely reads file
+# contents, and each file is already capped above.
+MAX_ADD_FILES = int(os.getenv("DOC_MAX_ADD_FILES", "50000"))
 
 
 # ============================================================

@@ -89,6 +89,34 @@ def split_sentences(text: str) -> list[str]:
     return [p.strip() for p in _SENTENCE_RE.split(text.strip()) if p.strip()]
 
 
+# Pieces `split_sentences` produces that assert nothing. Structural shapes only — no word counts or
+# phrase lists, which would be tuned to one model's habits.
+_HEADING_UNIT = re.compile(r"^#{1,6}\s")  # same shape as ingest.chunking.HEADING_MARKER
+_SOURCES_BLOCK_UNIT = re.compile(r"^\W*(?:sources?|references?)\W*:", re.IGNORECASE)
+_TRAILING_ENUMERATOR = re.compile(r"\s*(?:\d+[.)]|[-*•])\s*$")
+
+
+def is_claim_unit(text: str) -> bool:
+    """Whether a segmented piece of an answer can be a claim at all (KL1, 2026-09-16).
+
+    ``split_sentences`` cuts after every ``.``, so a list lead-in becomes its own piece — "The main
+    approaches are:\\n 1." — and so do markdown headings and the model's own "Sources:" block. None
+    of these assert anything, yet an uncited one was counted as an unsourced claim: 298 of the
+    1,239 unsupported pieces on the working library were list lead-ins. Not a claim: a markdown
+    heading; a sources/references block; a piece that, once a trailing list enumerator is removed,
+    is empty or ends in ``:`` (it introduces what follows).
+
+    Used where uncited pieces are **counted** (the ``unsourced_claim`` gap floor), not in
+    ``segment_claims``: filtering there would renumber the claims of every future answer and move
+    the markers the release gate reads.
+    """
+    stripped = text.strip()
+    if not stripped or _HEADING_UNIT.match(stripped) or _SOURCES_BLOCK_UNIT.match(stripped):
+        return False
+    body = _TRAILING_ENUMERATOR.sub("", stripped).rstrip()
+    return bool(body) and not body.endswith(":")
+
+
 def claim_marker(
     citations: list[ClaimCitation],
     sources: list[RetrievedChunk],

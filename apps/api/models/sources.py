@@ -73,6 +73,19 @@ class SourceFilePayload(BaseModel):
         )
 
 
+class AcceptsPayload(BaseModel):
+    """GET /api/documents/accepts — what an add accepts. Mirrors ``library.add.accepted_input``.
+
+    Byte and count limits are the enforced values (env-configurable), so the uploader can state
+    them without restating them.
+    """
+
+    extensions: list[str]
+    max_file_bytes: int
+    max_archive_bytes: int
+    max_files_per_add: int
+
+
 class InspectRequest(BaseModel):
     """POST /api/documents/inspect body (AD2). Absolute paths from the drop or the picker.
 

@@ -12,6 +12,7 @@ export type { DeleteResult } from './library'
 export { getDocConnections } from './connections'
 export {
   addDocuments,
+  getAccepts,
   indexPaths,
   inspectDocuments,
   scanZoteroLibrary,

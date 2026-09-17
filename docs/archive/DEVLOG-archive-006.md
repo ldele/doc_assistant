@@ -1,14 +1,117 @@
 <!-- status: archived · updated: 2026-09-16 · class: append-only -->
 
-# DEVLOG — archive 006 (2026-08-12 (1) → 2026-08-31 (3))
+# DEVLOG — archive 006 (2026-08-12 (1) → 2026-09-01 (1))
 
 Older entries, moved verbatim from `docs/DEVLOG.md` on 2026-09-04 so the working log stays
 about recent work. Newest-first, same format, unedited. Rotated because the live log had
 reached 4,011 lines against the 4,000-line cap in `tests/unit/test_doc_sizes.py`, which fails
 before it can grow further. Cut on a date boundary so no day is split across two files.
 **Extended 2026-09-10** by `cpc-rotate` (56 entries, 2026-08-15 → 2026-08-30 (8), byte-verified) when the
-live log adopted a 20-entry cap, then once more the same day for the session's own entry; 2026-08-30 (1)–(9) are all here. **Extended 2026-09-16** by three entries, 2026-08-31 (1)–(3), one per new entry that
-pushed the live log past 20; 2026-08-31 is split across the two files ((4) is live).
+live log adopted a 20-entry cap, then once more the same day for the session's own entry; 2026-08-30 (1)–(9) are all here. **Extended 2026-09-16** by five entries, 2026-08-31 (1) → 2026-09-01 (1), one per new entry that
+pushed the live log past 20; 2026-09-01 is now split across the two files ((2)–(6) are live).
+
+---
+
+## 2026-09-01 (1) — ROADMAP 18: the document beside its library entry — and the row's stated reason for it being free was wrong
+
+**What changed.** A source pane on the Library document view (`SourceViewer.svelte`, opened from a
+new **Source** button beside Re-run), rendering the file itself one page at a time. Backend:
+`library/source_view.py` + three routes — `GET /api/library/documents/{id}/source` (can this be
+shown, and why not), `.../page/{n}` (PNG, rendered on demand), and `GET /api/library/chunk-page`
+(which page a cited chunk sits on). Behind **ADR-050**, which row 18 did not have.
+
+Each open parent block in **Chunks** now carries *"Show this page in the document"*, which resolves
+that block's chunk key — the same `{document_id}:p{parent_index}` a chat citation carries — and
+opens the pane there. ROADMAP 19 shows a passage in the extracted *text*; this shows the page of the
+original it came off.
+
+**Why.** Row 18 asked for it in 2026-08-25, and row 19 shipped the text half already noting the page
+image was 18's job.
+
+**The measurement that changed the design.** The row asserted *"page-level jump costs no ingest
+change — chunks already carry `page`"*. It does not hold for the path the app retrieves on:
+`USE_PARENT_CHILD` defaults true, and the parent-child store carries `page` on **615 of 39,705
+chunks (1.5%)** — all of them figure chunks, whose page comes from figure detection. The flat
+baseline store is 100%, and it is not the retrieval path. Building on the row as written would have
+produced a feature that worked on figures and nothing else.
+
+The conclusion survives for a different reason: the **cache** is page-annotated (`<!-- page:N -->`,
+`extractors.py:99`) on **98/98** documents, with marker count equal to `Document.page_count`
+exactly and sequential from 1, and chunks carry `parent_char_start` at 100% after row 19's re-chunk.
+So the page is a read-time scan of markers against an offset — the rule `chunking.extract_chunk_metadata`
+already applies at ingest for the flat store. `ChunkContext.page` therefore goes from **2.0% to
+98.0%** populated on the live path (measured over 300 sampled parents), which also fills in a field
+row 19's payload documented as permanently sparse. The remaining 2% are figure chunks, which have no
+text span to place — and `page_for_chunk` still gives them a page from the stored value, so a figure
+citation opens correctly where the *text* view honestly cannot show anything.
+
+**Cost, measured before choosing.** A page render is 19-31 ms and 140-261 KB (median over 18 pages of
+the 6 longest documents; 110 dpi ships). Nothing is pre-rendered or cached: the whole corpus is 2,973
+pages, or ~760 MB and ~90 s to render up front, to save 19 ms.
+
+**What driving it found — KI-57, and it is not this feature's bug.** Block 400 of `hebb_1949`
+resolves to page 202, but its text is visibly on page 201. The cause is upstream: markers 201 and 202
+delimit **byte-identical** segments — the cache holds page 201 twice and page 202 not at all.
+Measured: **13 of 355 pages (3.7%) in `hebb_1949`, all 13 exact duplicates**, against **1 of 657
+(0.2%)** across a 25-document sample. The marker *rule* is sound (342/355 and 656/657 segments match
+their own page); what is occasionally wrong is the text placed under a marker. Filed rather than
+fixed — the fix is an extraction change that re-invalidates every cache, and this is 0.2% of pages.
+The suspicion that `_recover_lost_page` causes it is **wrong**: the other two recovery documents are
+clean, 0 of 61.
+
+**Rejected.** *PDF.js in the frontend* — better on selectable text and in-page find, but puts
+document parsing in the thin shell, adds a worker and a Tauri CSP fight, and ships whole files to
+show one page; the searchable surface already exists as the extracted text. *Tauri asset protocol* —
+bypasses the ADR-002 boundary and dies in browser dev mode. *Backfilling `page` onto the
+parent-child store* — a 39,705-chunk re-chunk to persist something derivable for free and
+invalidated by the next extraction change. *Converting non-PDFs to PDF to give them pages* — invents
+pages a document never had; they degrade to their extracted text instead, which is what they are.
+
+**What it opens.** The passage highlight *on the page image* (ADR-050 D5, scoped out): offsets are
+not coordinates, so it needs `page.search_for`, whose accuracy against normalised extraction is
+**unmeasured** — that measurement is the follow-on's first question. Also: the pane is most of the
+substrate an annotation layer would need, and nothing about it is speculative yet. And KI-57 has a
+cheap exact detector if anyone picks it up — a page segment byte-identical to its predecessor found
+13 of 13 with no false positives.
+
+**Gates.** pytest **2349/0** (2315 + 34) · mypy 98/0 · ruff + format clean · bandit 0 ·
+svelte-check **219/0** · node:test **237/237** (216 + 21) · doc guards 9/9 · `docs_check --strict`
+0/0 · `test_api_check` 0/0 (240 files). Driven live on the real 98-document library in both themes
+and at 820px. **$0 — no model call.**
+
+## 2026-08-31 (4) — The graph now says how much of the library it covers, and why the obvious version of that number would have lied
+
+**What changed.** `GraphStaleness` gains `n_documents_in_library`, and the Graph workspace states
+**"Covers 30 of your 98 documents — a document appears once it mentions one of the 13 concepts on
+your graph."** One field, one pure helper (`graph.graphCoverage`), 5 node:tests, 1 pytest case. No
+extra query: the live document set was already being read for `missing_document_ids`.
+
+**Entry (3) closed with the wrong open item, and checking it is what corrected the design.** It
+said *"nothing watches the inverse — documents the corpus has that the graph has never seen … a
+count of it would tell a user whether a rebuild is worth 10 seconds."* Measured before building it:
+the library holds **98** documents, the graph cites **30**, and the other **68** are not waiting for
+anything — they mention none of the **13** concepts in the graph vocabulary (of **593** curated). A
+rebuild would return the same 30. So "68 documents not yet in the graph" would have been a number
+that reads as a backlog, dressed a no-op button as the fix, and sent the user away from the lever
+that actually moves it: **curating vocabulary** (ADR-018, ROADMAP 23).
+
+**So the number is coverage, and it ships with the rule that produces it.** A fraction plus the
+sentence explaining the fraction, in plain text rather than a warning — partial coverage is how the
+feature works, not a fault. The test that matters asserts the *absence* of the misleading framing:
+the string must not contain "missing", "not yet", "rebuild" or "pending".
+
+**Rejected: a `built_at` timestamp in the skeleton.** The honest form of "documents added since the
+build" needs one, and `_graph_version` is documented as a **timestamp-free** fingerprint precisely
+so identical inputs produce a byte-identical `skeleton.json` (Decision 3). Stamping the artifact
+would trade a verified determinism property for a number that coverage already answers well enough.
+
+**Rejected: folding coverage into the staleness banner.** `stale` means *the graph is wrong* —
+vocabulary drift or a reference it cannot resolve. Coverage is neither, and putting it behind a
+warning icon would teach the user to dismiss the icon.
+
+**What it opens.** The 68 uncited documents are a **vocabulary** signal, not a graph one: 13 of 593
+curated concepts are on the graph, and that ratio — not a rebuild — is what decides coverage. The
+Manage-keywords view is where that would be worth surfacing.
 
 ---
 

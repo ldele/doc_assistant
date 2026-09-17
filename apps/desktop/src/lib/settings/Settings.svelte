@@ -109,7 +109,7 @@
   const effSynthesisMode = $derived(overrides.synthesis_mode ?? settings?.synthesis_mode ?? 'ai')
   const effMultiQuery = $derived(overrides.use_multi_query ?? settings?.use_multi_query ?? false)
   const effMarkersEnabled = $derived(
-    overrides.epistemics_markers_enabled ?? settings?.epistemics_markers_enabled ?? true,
+    overrides.epistemics_markers_enabled ?? settings?.epistemics_markers_enabled ?? false,
   )
   const effReviewerEvidenceChars = $derived(
     overrides.reviewer_evidence_chars ?? settings?.reviewer_evidence_chars ?? 1500,
@@ -685,7 +685,7 @@
                 onchange={(e) =>
                   (overrides.epistemics_markers_enabled = (e.target as HTMLInputElement).checked)}
               />
-              Show contested/superseded chips
+              Show experimental contested/superseded chips — not a corpus measurement
             </label>
 
             <label for="reviewer-chars"

@@ -13,6 +13,8 @@ cp ~/your-papers/*.pdf data/sources/
 
 # Build the index (one-time, then incremental)
 uv run python -m doc_assistant.ingest
+# A file over 1 GB, or an EPUB/DOCX/ODT that would expand past 1 GB, is refused and logged per
+# file (document_error); DOC_MAX_INGEST_BYTES / DOC_MAX_ARCHIVE_BYTES raise the limits.
 
 # Launch the desktop app (Tauri + Svelte over the FastAPI backend), one command:
 just app          # starts backend (8001) + dev UI (1420) in their own windows, opens the browser

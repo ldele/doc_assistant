@@ -30,7 +30,8 @@ from typing import TYPE_CHECKING, Any, Literal
 
 import structlog
 
-from doc_assistant.extractors import get_format_status
+from doc_assistant import config
+from doc_assistant.extractors import SUPPORTED_EXTENSIONS, get_format_status
 
 if TYPE_CHECKING:  # import cost only — the ORM session is a type here, never constructed
     from datetime import datetime
@@ -82,31 +83,76 @@ def sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
-def expand_paths(paths: Iterable[Path]) -> list[Path]:
+class AddBatchTooLargeError(ValueError):
+    """One add named or expanded to more files than ``config.MAX_ADD_FILES`` (security S-2).
+
+    The message is a sentence for the person who picked the files; the API returns it as a 400.
+    """
+
+
+def _too_many(limit: int) -> AddBatchTooLargeError:
+    return AddBatchTooLargeError(
+        f"This selection holds more than {limit:,} files — the most one add can check. "
+        "Add its folders a few at a time."
+    )
+
+
+def accepted_input() -> dict[str, Any]:
+    """What an add accepts, for the UI to state up front: formats and the three limits.
+
+    Served rather than hard-coded in the frontend because the limits are env-configurable, and a
+    UI that states a number the backend does not enforce is worse than one that states none.
+    """
+    order = [".pdf", ".epub", ".html", ".htm", ".docx", ".odt", ".rtf", ".md", ".txt"]
+    extensions = [e for e in order if e in SUPPORTED_EXTENSIONS]
+    extensions += sorted(SUPPORTED_EXTENSIONS - set(order))
+    return {
+        "extensions": extensions,
+        "max_file_bytes": config.MAX_INGEST_FILE_BYTES,
+        "max_archive_bytes": config.MAX_ARCHIVE_EXPANDED_BYTES,
+        "max_files_per_add": config.MAX_ADD_FILES,
+    }
+
+
+def expand_paths(paths: Iterable[Path], *, max_files: int | None = None) -> list[Path]:
     """Resolve a drop or a pick into the concrete files it names.
 
     A dropped **folder recurses fully**, matching `registry.scan_sources`'s `root.rglob("*")` —
     the grill settled this (branch 3): the depth is reported as a file count before anything
     happens, rather than being a setting nobody would find. Order is stable: the order given,
     with each directory's contents sorted so two identical drops inspect identically.
+
+    **Stops at ``max_files``** (default ``config.MAX_ADD_FILES``) and raises
+    ``AddBatchTooLargeError`` — while walking, before sorting, so a pick of a whole drive costs
+    the walk up to the limit and not the drive (security S-2).
     """
+    limit = config.MAX_ADD_FILES if max_files is None else max_files
     out: list[Path] = []
     seen: set[Path] = set()
     for p in paths:
         try:
             if p.is_dir():
-                found = sorted(q for q in p.rglob("*") if q.is_file())
-            elif p.exists():
-                found = [p]
+                found: list[Path] = []
+                for q in p.rglob("*"):
+                    if q.is_file() and q not in seen:
+                        seen.add(q)
+                        found.append(q)
+                        if len(out) + len(found) > limit:
+                            raise _too_many(limit)
+                found.sort()
             else:
-                found = [p]  # keep it: `inspect` reports it as unreadable rather than dropping it
+                # A missing path is kept: `inspect` reports it as unreadable, not dropped.
+                if p in seen:
+                    continue
+                seen.add(p)
+                found = [p]
         except OSError:  # pragma: no cover - permission-denied on a directory walk
             log.warning("expand_failed", path=str(p))
-            found = [p]
-        for q in found:
-            if q not in seen:
-                seen.add(q)
-                out.append(q)
+            found = [] if p in seen else [p]
+            seen.add(p)
+        out.extend(found)
+        if len(out) > limit:
+            raise _too_many(limit)
     return out
 
 
@@ -285,9 +331,10 @@ def _cache_hashes(session: Session, hashes: dict[str, str]) -> None:
 def sort_for_review(verdicts: Sequence[FileVerdict]) -> list[FileVerdict]:
     """Non-`add` verdicts first, stable within each group (grill branch 7).
 
-    The batch is uncapped and the sheet paginates, so the first page must carry everything the
-    user needs to see. Sorting the exceptions up is what makes "and N more" only ever mean clean
-    files — a page that hid a warning would read as approval of something never shown.
+    The sheet paginates (a batch may hold up to `config.MAX_ADD_FILES`), so the first page
+    must carry everything the user needs to see. Sorting the exceptions up is what makes "and N
+    more" only ever mean clean files — a page that hid a warning would read as approval of
+    something never shown.
     """
     order = {"unsupported": 0, "unreadable": 1, "duplicate": 2, "add": 3}
     return sorted(verdicts, key=lambda v: order.get(v.verdict, 99))
@@ -398,8 +445,15 @@ def apply_add(
     size index missed it — raises `IntegrityError`, which is neither `OSError` nor `ValueError`.
     Letting it escape took the whole `AddResult` with it, so the files that *had* landed were
     reported to nobody and could not be undone.
+
+    **One precondition is raised rather than reported:** more than ``config.MAX_ADD_FILES`` paths
+    raises ``AddBatchTooLargeError`` before anything is touched (security S-2) — the same limit
+    ``inspect`` applies, so only a caller that skipped the review sheet can meet it here.
     """
     import shutil
+
+    if len(paths) > config.MAX_ADD_FILES:
+        raise _too_many(config.MAX_ADD_FILES)
 
     from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 

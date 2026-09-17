@@ -36,8 +36,9 @@ integrity layer and the measurement behind it.
   (the LLM only annotates existing edges, it never invents structure) with gap detection that
   surfaces single-source concepts and thin bridges as leads to read next. The graph says how many
   of your documents it covers, and a concept joins it from **Manage keywords**, inside the app.
-- **Knowledge-currency markers, currently opt-in.** Advisory `contested` and `superseded trend`
-  chips derived from cross-document stance and publication years. They never block anything, and
+- **Experimental knowledge-currency markers, off by default.** Advisory `contested` and
+  `superseded trend` chips derived from cross-document stance and publication years — not a
+  corpus measurement. They never block anything, and
   they ship **off** (`EPISTEMICS_MARKERS_ENABLED=true` enables them) because the stance pass behind
   them judges without seeing the document text; see Limitations.
 - **Library workspace.** Browsable grid with filters and folders; each document opens as five
@@ -226,6 +227,13 @@ Re-read for this release; the full ledger lives in `.claude/KNOWN_ISSUES.md`.
   inputs, position varied alone → four different verdicts). Nothing was deleted —
   `EPISTEMICS_MARKERS_ENABLED=true` opts back in — and the rebuild is planned. Document year,
   relevance score and graph freshness are unaffected and still shown.
+- **Size limits on what you add: 1 GB per file, 50,000 files per add.** A larger file, or an
+  EPUB/DOCX/ODT that would expand past 1 GB when opened (or is compressed the way a zip bomb is),
+  is refused before it is opened, with a sentence saying why; the add dialog states the per-file
+  limit up front. These are safety limits sized far above real documents — the largest in the
+  development library is 31 MB — not measured ceilings. If one gets in your way,
+  `DOC_MAX_INGEST_BYTES`, `DOC_MAX_ARCHIVE_BYTES` and `DOC_MAX_ADD_FILES` raise them
+  ([`docs/security.md`](docs/security.md) S-1, S-2).
 - **Single-user, local-first by design.** The FastAPI backend serves one desktop app on localhost;
   multi-client serving would need threadpool offloading (documented, not built).
 - **Tested primarily on Windows** plus CI on Linux; macOS (MPS) paths work but are unbenchmarked.

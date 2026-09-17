@@ -69,7 +69,9 @@ disciplines (the KI-17 orphan class lives in that difference).
 
 **Canonical:** `epistemics markers` (`contested` / `superseded_trend` / `stable` / `unique`)
 **Definition:** Advisory chunk-level chips derived from skeleton node weights; inform-don't-block —
-they never change synthesis, ranking, or the answer (byte-identical when absent).
+they never change synthesis, ranking, or the answer (byte-identical when absent). **Not a corpus
+measurement:** `contested` / `superseded_trend` rest on a Node-B stance pass that never sees the
+document text (KI-33); off by default, labelled experimental wherever shown.
 **Forbidden:** `confidence score`
 **Authoritative in:** `src/doc_assistant/knowledge/epistemics.py`
 

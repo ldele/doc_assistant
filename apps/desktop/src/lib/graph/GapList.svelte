@@ -55,7 +55,11 @@
     return orderGaps(filterGapRows(rows, gapKey, query), gapKey)
   })
 
-  const openCount = $derived(items.filter((it) => it.status === 'surfaced').length)
+  // Counts what the list can show: an "N open" that included hidden under-connected rows named
+  // work the user could not see (KL1).
+  const openCount = $derived(
+    items.filter((it) => it.status === 'surfaced' && gapVisible(it.kind, showUnderConnected)).length,
+  )
   const dismissedCount = $derived(items.filter((it) => it.status === 'dismissed').length)
 
   async function setStatus(it: GapListItem, status: GapStatus): Promise<void> {

@@ -117,7 +117,7 @@ mental model.
 | Relevance score (shown per source) | The reranker score, surfaced | No — it's the reranker output, *displayed* |
 | Per-claim markers (weak / unsupported) | Derived from the cited source's rerank score | No — reader indicator |
 | Confidence signals (weak retrieval, single-source…) | Post-answer heuristics | No — reader indicator |
-| Epistemic markers (contested / superseded) | Corpus-wide claim status, computed offline | No — reader indicator, **off by default** (ADR-005) |
+| Epistemic markers (contested / superseded) | An experimental stance pass over concept pairs, computed offline — **not a corpus measurement** (KI-33) | No — reader indicator, **off by default** (ADR-005) |
 
 **The one-line version:** the reranker orders your results; everything else is either
 an input to the pool it reranks, or an annotation on top of what it chose. BM25 and
@@ -125,7 +125,7 @@ the vector arm feed the reranker a candidate pool but don't get the final say �
 cross-encoder re-scores the whole pool and its sort is what you see.
 
 **Epistemic markers are the case to watch.** Today they're purely advisory (a
-"contested in corpus" chip) and gated off by default. They are computed from the
+"contested? (experimental)" chip) and gated off by default. They are computed from the
 concept graph, *after* retrieval, and never touch ranking. This is a deliberate
 default (ADR-005, superseded by ADR-027), **not** a permanent design: once the corpus is
 large enough and

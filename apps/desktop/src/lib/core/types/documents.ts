@@ -20,6 +20,21 @@ export interface FileVerdict {
   selected_by_default: boolean
 }
 
+/**
+ * What an add accepts — `GET /api/documents/accepts`, mirroring `AcceptsPayload`. The limits are
+ * the values the backend enforces (env-configurable), so the uploader states them, never restates.
+ */
+export interface Accepts {
+  /** Served in display order, dot-prefixed: `.pdf`, `.epub`, … */
+  extensions: string[]
+  /** Security S-1: a larger file is refused before it is opened. */
+  max_file_bytes: number
+  /** Security S-1: what an EPUB/DOCX/ODT may expand to. */
+  max_archive_bytes: number
+  /** Security S-2: the most files one add may name or expand to. */
+  max_files_per_add: number
+}
+
 export interface InspectResponse {
   /** Already sorted server-side: every non-`add` verdict precedes every `add`. */
   files: FileVerdict[]

@@ -2,7 +2,14 @@
 // Pairs with apps/api/routers/sources.py (AD2).
 
 import { API_BASE, errorDetail } from './_base'
-import type { CatalogueScan, InspectResponse } from '../types/documents'
+import type { Accepts, CatalogueScan, InspectResponse } from '../types/documents'
+
+/** What an add accepts — formats and the enforced limits — for the uploader to state up front. */
+export async function getAccepts(): Promise<Accepts> {
+  const r = await fetch(`${API_BASE}/api/documents/accepts`)
+  if (!r.ok) throw new Error(await errorDetail(r, 'read accepted formats'))
+  return (await r.json()) as Accepts
+}
 
 /**
  * Ask what would happen to each candidate path. **Mutates nothing** — inspect and apply are two

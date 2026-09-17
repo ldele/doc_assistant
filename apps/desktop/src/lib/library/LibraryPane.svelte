@@ -14,6 +14,7 @@
   import LibraryFilterStrip from './LibraryFilterStrip.svelte'
   import { LIB_SORTS, libPrefs, setLibrarySort, setLibraryView } from './prefs.svelte'
   import { accept, canAccept, openChooser, unavailableReason } from './accept.svelte'
+  import { formatLine, limitPhrase } from './formats'
   import {
     collectionLabel,
     docLabel,
@@ -288,7 +289,11 @@
               <strong>{accept.dragging ? 'Drop them now' : 'Your library is empty'}</strong>
               {#if canAccept()}
                 <p>Drag files or folders anywhere in this window, or add them from your computer.</p>
-                <p class="formats">PDF · EPUB · HTML · DOCX · MD · ODT · RTF</p>
+                {#if accept.accepts}
+                  <p class="formats">
+                    {formatLine(accept.accepts.extensions)} · {limitPhrase(accept.accepts)}
+                  </p>
+                {/if}
                 <button class="emptyadd" onclick={openChooser} type="button">
                   <Icon name="plus" size={15} />
                   Add documents

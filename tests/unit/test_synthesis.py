@@ -225,3 +225,46 @@ def test_format_banner_none_when_clean() -> None:
 def test_format_banner_fires_with_reasons() -> None:
     banner = format_banner(ConfidenceSignals(weak_retrieval=True, single_source_risk=True))
     assert banner is not None and "weak retrieval" in banner and "single-source" in banner
+
+
+# --- is_claim_unit (KL1): pieces that assert nothing ------------------------------------------
+
+
+def test_list_lead_ins_headings_and_sources_blocks_are_not_claim_units():
+    from doc_assistant.synthesis import is_claim_unit
+
+    for piece in (
+        "4.",
+        "- ",
+        "The key components of RAG are:\n\n1.",
+        "## What Problem Does It Solve?",
+        "Sources: rag_lewis_2020.pdf, dpr_karpukhin_2020.pdf",
+        "**References:** [1] Lewis et al.",
+        "   ",
+    ):
+        assert not is_claim_unit(piece), piece
+
+
+def test_ordinary_sentences_stay_claim_units_even_with_numbers_or_colons_inside():
+    from doc_assistant.synthesis import is_claim_unit
+
+    for piece in (
+        "RAG reduces hallucination [1].",
+        "Res2Net outperforms its counterparts by 1.1% in AP.",
+        "The ratio is 3:1 in favour of dense retrieval.",
+        "Step 2 improves recall.",
+        "The authors report 2.",
+    ):
+        assert is_claim_unit(piece), piece
+
+
+def test_the_filter_does_not_touch_segmentation():
+    """Claim indexes and markers of new answers must not move — the release gate reads them."""
+    from doc_assistant.synthesis import split_sentences
+
+    assert split_sentences("Parts are:\n\n1. Retrieval. 2. Generation.") == [
+        "Parts are:\n\n1.",
+        "Retrieval.",
+        "2.",
+        "Generation.",
+    ]

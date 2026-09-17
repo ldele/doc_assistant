@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-09-10 (plan path moved to docs/plans/, ADR-051) · class: living -->
+<!-- status: active · updated: 2026-09-16 (KL1: §6 trust table re-read against the code — thin_bridge structural, unsourced_claim is about answers, rows for coverage/staleness/placement/merges; §6b C2 note) · class: living -->
 
 # The knowledge layer — what the concept graph is for, and which of its signals you can trust
 
@@ -137,17 +137,22 @@ never depends on it. Deleting `skeleton.json` costs you the graph, not your answ
 
 ## 6. Trust status — read this before believing a number
 
-Signals in this layer are **not** equally sound. As of 2026-08-03:
+Signals in this layer are **not** equally sound. Re-read against the code and the live library on
+**2026-09-16** (KL1; the 2026-08-03 table it replaces is in git history):
 
 | signal | status | why |
 |---|---|---|
 | **`single_source`** | ✅ **trustworthy — the product thesis** | a document count; RG-014 graded it a true positive |
-| Concept presence / navigation | ✅ trustworthy | 1781/1781 chunk keys resolved live |
+| Concept presence / navigation | ✅ trustworthy | 534 chunk keys across 30 documents for the 13 graph concepts (2026-09-16); it stays sound only because no field node is on the graph — `set_graph_include` does not check kind (ROADMAP 54) |
 | Communities, co-occurrence edges | ✅ deterministic | Node A, seeded Louvain, idempotent |
-| `unsourced_claim` | ⚠️ real but **~33% contaminated** | markdown headings counted as claims; never present the count as precise |
-| `thin_bridge` | ⚠️ redundant / half-misleading | flags both endpoints, so the most-connected node gets called a thin bridge |
-| `under_connected` | ❌ **noise at small vocabularies** | measures graph degree, dominated by vocabulary sparsity, not corpus coverage. Do not show by default |
-| **`contested` / `superseded_trend`** | ❌ **NOT A CORPUS MEASUREMENT (KI-33)** — and **withheld from the UI since v0.4.1** | see below |
+| Graph coverage ("covers 30 of your 98 documents") | ✅ an honest count, one known flaw | its numerator can include documents deleted since the build; the stale flag does fire (ROADMAP 54) |
+| `thin_bridge` | ✅ **structural since KL1** | a bridge counts only when both sides keep ≥ 2 concepts, flagged on the smaller side. Before KL1 it flagged both ends of every bridge, naming the most-connected concept a thin bridge; all four on the working library were dead-end edges, and today's graph has **none** |
+| `unsourced_claim` — shown as **"Uncited in answers"** | ⚠️ **about your answers, not the corpus** | the "claims" are sentences of the assistant's own answers that cite nothing, so the count moves with the model (`llama3.1:8b` 72% uncited, Haiku 21%) and with what you asked. KL1 stopped counting pieces that assert nothing (list lead-ins, headings, Sources blocks): 153 → 139 claim links over 8 concepts. The main remaining noise is a citation form the parser cannot read ("According to Source 6: file.pdf" — ROADMAP 90) |
+| `under_connected` | ❌ **noise at small vocabularies** | measures graph degree, dominated by vocabulary sparsity, not corpus coverage. Hidden by default in the gap list |
+| Stored gap rows | ⚠️ **can predate the graph** | a CLI skeleton rebuild does not rebuild gaps; on 2026-09-16 16 of 18 rows came from a build two graph versions old, and nothing in the UI says so (ROADMAP 91). The in-app Rebuild refreshes both |
+| Taxonomy placement (TX3 auto-propose) | ❓ **unmeasured** | RG-015 is specced and has never run (KL4) |
+| Concept merges (`curate_concepts --dedup --apply`) | ❌ **destructive** | deletes the dropped concept, and its curated placements with it (ROADMAP 53) |
+| **`contested` / `superseded_trend`** | ❌ **NOT A CORPUS MEASUREMENT (KI-33)** — **withheld from the UI since v0.4.1**, labelled `contested? (experimental)` where opted in | see below |
 
 ### The `contested` failure, in one paragraph
 
@@ -187,7 +192,7 @@ layer is strong and where it is absent:
 | capability | state |
 |---|---|
 | **C1 — which claims are unsubstantiated** | ⚠️ **working on the answer path, not reused per concept.** `AnswerClaim` + `weakly grounded`/`unsupported` are sound; `unsourced_claim` is real but ~33% contaminated |
-| **C2 — classify knowledge per concept** | ❌ **invalid** — depends on Node-B stance (KI-33). Also a unit mismatch: today's epistemics classifies *edges*, the goal asks for *concepts* |
+| **C2 — classify knowledge per concept** | ❌ **invalid** — depends on Node-B stance (KI-33). Also a unit mismatch: today's epistemics classifies *edges*, the goal asks for *concepts*. ADR-041 option 6 (re-base it on "the claim layer") is **not buildable as written**: the only claims in the tree are the assistant's answer sentences, which measure query history × model, not the corpus — ROADMAP KL1b |
 | **C3 — expose gaps** | ✅ **well covered** — `single_source` is the graded true positive; graph, ego view, gap list + triage all shipped |
 | **C4 — acquisition direction** *("for subject X, go read Y")* | ❌ **no sound implementation anywhere.** Every built detector looks *inward* at the corpus; ADR-004 deferred the outward reach as Tier-2b and ADR-032 is still a stub |
 | **C5 — research navigation** | ✅ mostly — graph, Connections, taxonomy view. ❌ the **per-document map** (MM1–MM3, PR-G2c) is planned, gated on ADR-030, never built |

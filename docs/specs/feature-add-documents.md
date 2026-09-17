@@ -27,7 +27,9 @@ explicit `paths` list, `GET /api/ingest/status`, `registry.scan_sources`, the So
 5. **The frontend is a deliberate 1-dep artifact** (`marked`). Any new npm dependency is a decision,
    not a detail — see W0.
 6. **Robustness contract:** works at 0 documents and at 10k. No corpus-tuned constants; the batch is
-   uncapped (ledger branch 7).
+   uncapped (ledger branch 7). **Amended 2026-09-16 (security S-2):** one add may name or expand to
+   at most `MAX_ADD_FILES` (50,000 — 5× the 10k contract, so the contract still holds); past it the
+   walk stops and the sheet shows one sentence. A structural safety limit, not a corpus constant.
 7. **`structlog` only, no `print()` in `src/`**; exceptions chain; `encoding="utf-8"` on every file
    read/write (CONTEXT.md §9).
 

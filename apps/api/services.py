@@ -28,7 +28,16 @@ from doc_assistant.embeddings import get_active_model_name
 
 log = structlog.get_logger(__name__)
 
-SUPPORTED_NOTE = "pdf · epub · html · docx · md (and similar text formats)"
+
+def _supported_note() -> str:
+    """The formats line Settings shows, from the extractor registry rather than a second list.
+
+    It was a hand-written string that had drifted: it left out ODT and RTF while the uploader's
+    own hard-coded line left out TXT (found 2026-09-16).
+    """
+    from doc_assistant.library.add import accepted_input
+
+    return " · ".join(e.lstrip(".") for e in accepted_input()["extensions"] if e != ".htm")
 
 
 def _settings_view() -> dict[str, Any]:
@@ -99,7 +108,7 @@ def _full_settings(app: FastAPI) -> dict[str, Any]:
         "data_home": str(DATA_PATH),
         "source_dir": str(source),
         "source_dir_exists": source.is_dir(),
-        "supported_formats": SUPPORTED_NOTE,
+        "supported_formats": _supported_note(),
         "chunk_count": chunks,
         # ADR-037: what this corpus costs on this machine. Assembled by the controller (it needs
         # the live pipeline's arm, not the presence of a file); the shell only serializes it.

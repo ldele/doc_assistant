@@ -115,8 +115,10 @@
   import {
     accept,
     clearPending,
+    loadAccepts,
     watchDrops,
   } from './lib/library/accept.svelte'
+  import { formatLine, limitLine } from './lib/library/formats'
   import { previewNames, remainderLabel, summarise } from './lib/library/accept'
   import { ingestRun, watchIngest } from './lib/core/ingest.svelte'
   import { backoffDelayMs, startupPhase } from './lib/shell/startup'
@@ -530,6 +532,7 @@
           shell.status = 'ready'
           shell.startupPhase = 'connecting' // reset, so a later drop-out starts its story afresh
           void refreshSetup() // ADR-034 — what this install still needs, if anything
+          void loadAccepts() // formats + limits the uploader states (security S-1/S-2)
           void refreshConversations()
           // The composer's scope selector needs the folder list even if the user never
           // opens the Library.
@@ -1104,7 +1107,10 @@
       <div class="dropcard">
         <Icon name="plus" size={22} />
         <strong>Drop to add documents</strong>
-        <span>PDF · EPUB · HTML · DOCX · MD · ODT · RTF</span>
+        {#if accept.accepts}
+          <span>{formatLine(accept.accepts.extensions)}</span>
+          <span>{limitLine(accept.accepts)}</span>
+        {/if}
       </div>
     </div>
   {/if}

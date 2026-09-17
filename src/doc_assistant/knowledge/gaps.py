@@ -30,7 +30,7 @@ from doc_assistant.knowledge.concept_skeleton import (
     match_presence,
 )
 from doc_assistant.llm import LLMClient
-from doc_assistant.synthesis import MARKER_UNSUPPORTED
+from doc_assistant.synthesis import MARKER_UNSUPPORTED, is_claim_unit
 
 GapTier = Literal["t1", "t2a", "t2b"]
 Determinism = Literal["deterministic", "stochastic"]
@@ -109,11 +109,26 @@ def detect_single_source(skeleton: ConceptSkeleton) -> list[Gap]:
     ]
 
 
+#: A side of a thin bridge must hold at least this many concepts — a *group*, not one concept.
+#: Structural, not tuned: with 1, a leaf's only edge would count, and a concept hanging on one edge
+#: is the separate `under_connected` signal (which RG-014 graded noise at small vocabularies).
+_MIN_BRIDGE_SIDE = 2
+
+
 def detect_thin_bridges(skeleton: ConceptSkeleton) -> list[Gap]:
-    """Concepts whose only link to part of the graph is a single cut edge (the
-    retired ``concept_graph`` 7c mechanism, re-homed here: ``networkx.bridges``
-    over each connected component). One ``Gap`` per bridge endpoint, so a
-    per-concept view surfaces it directly; ``evidence`` names both endpoints."""
+    """A single edge holding two **groups** of concepts together (the retired
+    ``concept_graph`` 7c mechanism, re-homed: ``networkx.bridges`` per component).
+
+    Remove the bridge and its component splits in two; it counts only when each side keeps at
+    least ``_MIN_BRIDGE_SIDE`` concepts. The gap goes on the endpoint of the **smaller** side —
+    the part hanging on one thread — and on both endpoints only on a tie. Flagging both ends of
+    every bridge (before KL1, 2026-09-16) named the best-connected concept in the graph a "thin
+    bridge" (RG-014), and every bridge on the working library was a dead-end edge.
+
+    Linear in the graph: bridges are cut once, the 2-edge-connected blocks that remain form a
+    tree, and one post-order pass gives every bridge its side sizes. ``evidence`` names both
+    endpoints.
+    """
     import networkx as nx
 
     graph = nx.Graph()
@@ -126,10 +141,42 @@ def detect_thin_bridges(skeleton: ConceptSkeleton) -> list[Gap]:
     gaps: list[Gap] = []
     for comp in nx.connected_components(graph):
         sub = graph.subgraph(comp)
-        if sub.number_of_edges() == 0:
+        bridges = [tuple(sorted(pair)) for pair in nx.bridges(sub)]
+        if not bridges:
             continue
-        for u, v in sorted(tuple(sorted(pair)) for pair in nx.bridges(sub)):
-            for node_id in (u, v):
+        cut = nx.Graph(sub)
+        cut.remove_edges_from(bridges)
+        block_of: dict[str, int] = {}
+        size: dict[int, int] = {}
+        for i, block in enumerate(nx.connected_components(cut)):
+            size[i] = len(block)
+            for node_id in block:
+                block_of[node_id] = i
+        tree = nx.Graph()
+        tree.add_nodes_from(size)
+        for u, v in bridges:
+            tree.add_edge(block_of[u], block_of[v], bridge=(u, v))
+        root = min(size)
+        parent = dict(nx.dfs_predecessors(tree, root))
+        below = dict(size)
+        for block in reversed(list(nx.dfs_preorder_nodes(tree, root))):
+            if block in parent:
+                below[parent[block]] += below[block]
+        total = len(comp)
+        for child in sorted(parent, key=lambda b: tree.edges[b, parent[b]]["bridge"]):
+            u, v = tree.edges[child, parent[child]]["bridge"]
+            child_side, other_side = below[child], total - below[child]
+            if min(child_side, other_side) < _MIN_BRIDGE_SIDE:
+                continue
+            child_end = u if block_of[u] == child else v
+            other_end = v if child_end == u else u
+            if child_side < other_side:
+                ends: tuple[str, ...] = (child_end,)
+            elif other_side < child_side:
+                ends = (other_end,)
+            else:
+                ends = (u, v)
+            for node_id in ends:
                 if node_id in flagged:
                     continue
                 flagged.add(node_id)
@@ -188,8 +235,11 @@ def detect_unsourced_claims(
     that already exists (``synthesis.claim_marker`` → ``AnswerClaim.marker``); no new
     model (ADR-004 Decision 3). Cited (non-``unsupported``) claims produce nothing;
     an unsupported claim matching no curated concept also produces nothing (it isn't
-    attributable to a vocabulary gap without a concept to hang it on)."""
-    unsupported = [c for c in claims if c.marker == MARKER_UNSUPPORTED]
+    attributable to a vocabulary gap without a concept to hang it on). A piece that cannot be a
+    claim — a heading, a list lead-in, a Sources block — produces nothing either (KL1)."""
+    # KL1: only pieces that can assert something — list lead-ins, headings and the model's own
+    # Sources block were ~18-35% of what this counted (synthesis.is_claim_unit).
+    unsupported = [c for c in claims if c.marker == MARKER_UNSUPPORTED and is_claim_unit(c.text)]
     if not unsupported:
         return []
     chunk_texts = [(c.id, c.id, c.text) for c in unsupported]

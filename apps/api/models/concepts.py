@@ -54,8 +54,9 @@ class ConceptGraphNodePayload(BaseModel):
 class ConceptGraphEdgePayload(BaseModel):
     """An undirected concept-concept edge, typed by its provenance set.
 
-    `relation`/`stance` are the deferred Node-B annotation and are empty on every edge until
-    that pass runs — a renderer must not imply agreement/disagreement it does not have.
+    `relation` is the Node-B annotation: set on an edge once that pass has run (it has, on most
+    edges of the working library), `None` otherwise. It is experimental (KI-33) — a renderer
+    must not imply agreement/disagreement from it.
     """
 
     source: str

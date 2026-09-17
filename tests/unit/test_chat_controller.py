@@ -605,7 +605,7 @@ def test_markers_flat_join(monkeypatch, temp_db):
     result = _final(_results(controller, Session(), "q"))
     assert result.sources[0].markers == [MARKER_CONTESTED]
     assert result.sources[1].markers == []  # d2:4 not assessed → quiet
-    assert "⚠ contested in corpus" in result.sources_md  # chip in the shared block
+    assert "⚠ contested? (experimental)" in result.sources_md  # chip in the shared block
 
 
 def test_markers_pc_join_via_chunk_key(monkeypatch, temp_db):
@@ -618,7 +618,7 @@ def test_markers_pc_join_via_chunk_key(monkeypatch, temp_db):
     result = _final(_results(controller, Session(), "q"))
     assert result.sources[0].markers == [MARKER_SUPERSEDED]  # d1:p0 joined directly
     assert result.sources[1].markers == [] and result.sources[2].markers == []  # d2:p1/d3:p0 clean
-    assert "⚠ trend superseded" in result.sources_md
+    assert "⚠ superseded? (experimental)" in result.sources_md
 
 
 def test_markers_absent_is_byte_identical(monkeypatch, temp_db):
@@ -693,7 +693,7 @@ def test_markers_still_available_when_explicitly_enabled(monkeypatch, temp_db):
     controller = ChatController(rag=FakeRAG(_three_clean_sources(), ["Answer [1]."]))
     result = _final(_results(controller, Session(), "q"))
     assert result.sources[0].markers == [MARKER_CONTESTED]
-    assert "⚠ contested in corpus" in result.sources_md
+    assert "⚠ contested? (experimental)" in result.sources_md
 
 
 # ============================================================

@@ -57,18 +57,66 @@ def test_single_source_flagged_not_penalized():
     assert gap.evidence.fact_ids == ("d1",)
 
 
-def test_cut_edge_is_a_thin_bridge():
-    # p-q-r path: both edges are bridges (removing either disconnects the path).
-    nodes = [
-        ConceptNode("p", "P", ("d1",), 0, -1),
-        ConceptNode("q", "Q", ("d1", "d2"), 0, -1),
-        ConceptNode("r", "R", ("d2",), 0, -1),
+def _nodes(*ids: str) -> list[ConceptNode]:
+    return [ConceptNode(i, i.upper(), ("d1",), 0, -1) for i in ids]
+
+
+def test_a_dead_end_edge_is_not_a_thin_bridge():
+    """KL1: p-q-r is two bridges, but each cuts off one lone concept, not a group. A concept on one
+    edge is `under_connected`, not a bridge; before KL1 all three were flagged, and every "thin
+    bridge" on the working library was exactly this shape."""
+    skeleton = analyze_skeleton(_nodes("p", "q", "r"), [_edge("p", "q"), _edge("q", "r")], seed=42)
+    assert detect_thin_bridges(skeleton) == []
+
+
+def test_a_two_concept_island_is_not_a_thin_bridge():
+    skeleton = analyze_skeleton(_nodes("cre", "ntsr1"), [_edge("cre", "ntsr1")], seed=42)
+    assert detect_thin_bridges(skeleton) == []
+
+
+def test_the_smaller_group_is_flagged_never_the_hub_it_hangs_from():
+    """RG-014 found the most-connected concept reported as a thin bridge. A triangle around a hub,
+    and a pair hanging off the hub by one edge: the pair's end of the bridge is the gap."""
+    nodes = _nodes("hub", "a", "b", "s1", "s2")
+    edges = [
+        _edge("hub", "a"),
+        _edge("a", "b"),
+        _edge("hub", "b"),
+        _edge("hub", "s1"),
+        _edge("s1", "s2"),
     ]
-    skeleton = analyze_skeleton(nodes, [_edge("p", "q"), _edge("q", "r")], seed=42)
-    gaps = detect_thin_bridges(skeleton)
-    assert {g.concept_id for g in gaps} == {"p", "q", "r"}
-    assert all(g.tier == "t1" and g.determinism == "deterministic" for g in gaps)
-    assert all(g.kind == "thin_bridge" for g in gaps)
+    gaps = detect_thin_bridges(analyze_skeleton(nodes, edges, seed=42))
+    assert [g.concept_id for g in gaps] == ["s1"]
+    (gap,) = gaps
+    assert set(gap.evidence.fact_ids) == {"hub", "s1"}
+    assert gap.tier == "t1" and gap.determinism == "deterministic" and gap.kind == "thin_bridge"
+
+
+def test_two_equal_groups_flag_both_ends_of_the_bridge():
+    nodes = _nodes("a", "b", "c", "d", "e", "f")
+    edges = [
+        _edge("a", "b"),
+        _edge("b", "c"),
+        _edge("a", "c"),
+        _edge("d", "e"),
+        _edge("e", "f"),
+        _edge("d", "f"),
+        _edge("c", "d"),
+    ]
+    gaps = detect_thin_bridges(analyze_skeleton(nodes, edges, seed=42))
+    assert {g.concept_id for g in gaps} == {"c", "d"}
+
+
+def test_a_chain_of_groups_judges_every_bridge_by_its_own_sides():
+    """Three triangles in a row, joined by two bridges: each bridge splits 3 | 6, so each flags
+    only the end on its three-concept side — the tree pass must size sides per bridge."""
+    nodes = _nodes("a1", "a2", "a3", "b1", "b2", "b3", "c1", "c2", "c3")
+    edges = []
+    for g in ("a", "b", "c"):
+        edges += [_edge(f"{g}1", f"{g}2"), _edge(f"{g}2", f"{g}3"), _edge(f"{g}1", f"{g}3")]
+    edges += [_edge("a3", "b1"), _edge("b3", "c1")]
+    gaps = detect_thin_bridges(analyze_skeleton(nodes, edges, seed=42))
+    assert [g.concept_id for g in gaps] == ["a3", "c1"]
 
 
 def test_thin_bridge_absent_in_a_triangle():

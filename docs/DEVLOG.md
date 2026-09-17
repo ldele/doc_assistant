@@ -14,8 +14,8 @@ Format: What changed | Why | Rejected alternatives | What it opens
 > oldest entries **verbatim** into the highest-numbered archive and verifies the bytes; then update
 > the range below by hand (cpc ticket T-003). A day may be split across two files at the cut.
 > Older entries, newest-first, unedited:
-> **2026-08-12 (1) → 2026-08-31 (3)** in [`docs/archive/DEVLOG-archive-006.md`](archive/DEVLOG-archive-006.md)
-> (rotated 2026-09-04, 2026-09-10 and three times on 2026-09-16) ·
+> **2026-08-12 (1) → 2026-09-01 (1)** in [`docs/archive/DEVLOG-archive-006.md`](archive/DEVLOG-archive-006.md)
+> (rotated 2026-09-04, 2026-09-10 and four times on 2026-09-16) ·
 > **2026-08-08 (1) → 2026-08-11 (4)** in [`docs/archive/DEVLOG-archive-005.md`](archive/DEVLOG-archive-005.md)
 > (rotated 2026-08-30) ·
 > **2026-08-05 → 2026-08-07** in [`docs/archive/DEVLOG-archive-004.md`](archive/DEVLOG-archive-004.md)
@@ -30,6 +30,98 @@ Format: What changed | Why | Rejected alternatives | What it opens
 > see an entry that is itself an ADR in disguise). When either trips, rotate — **do not raise
 > the cap.** The cap exists because this log reached 8,244 lines before anyone noticed: every entry
 > is individually small and correct, so unbounded growth is invisible per commit.
+
+---
+
+## 2026-09-16 (5) — KL1: the knowledge layer says what its signals are — thin bridges get a real definition, and "unsourced claims" turn out to be about your answers
+
+**What changed.** Sequence row 2's main work, from a read of the code and the live library before
+any edit. **A1 (wording):** the opt-in stance chips read `contested? (experimental)` /
+`superseded? (experimental)` in the source card and in the controller's Sources block (was
+"contested in corpus"); the Settings sandbox toggle says "not a corpus measurement" and falls back to
+`false` like the backend; `unsourced_claim` is shown as **"Uncited in answers"**; GLOSSARY C-007,
+`how-answers-work.md`, README and the `ConceptGraphEdgePayload` docstring (which claimed `relation`
+was empty on every edge — 19 of 20 carry it) stop implying a measurement. **A4:** most of RG-014's
+grades were already encoded (single_source leads, under_connected hidden). What remained:
+`detect_thin_bridges` now counts a bridge only when both sides keep ≥ 2 concepts and flags the
+smaller side's endpoint (both on a tie), computed in one linear pass over the tree of 2-edge-
+connected blocks; and the gap list's "N open" counts only rows it can show. **A3:**
+`synthesis.is_claim_unit` rejects pieces that assert nothing — a markdown heading, a sources/references
+block, a piece that is empty or ends in `:` once a trailing list enumerator is removed — applied in
+`detect_unsourced_claims` only. **A5:** `knowledge-layer.md` §6 re-read: thin_bridge structural,
+unsourced_claim about answers, new rows for coverage, stored-gap staleness, placement, merges; §6b
+notes why ADR-041 option 6 is not buildable as written. **A2 → new row KL1b** (decision first).
+**New rows 90** (the unreadable "According to Source 6: file.pdf" citation form) **and 91** (say when
+stored gaps predate the graph). Tests: 5 thin-bridge tests replace the one that pinned both-ends
+flagging; `is_claim_unit` (3) and the gap floor (1); two `test_chat_controller` strings.
+
+**Why.** PLAN 2026-08-03 Phase A: a lying surface is worse than an absent one. **The finding that
+reshaped it:** the "claim layer" A2 and `unsourced_claim` both rest on is the assistant's own answer
+sentences — 1,911 `AnswerClaim` rows, uncited 72% of the time on `llama3.1:8b` against 21% on Haiku —
+not claims the corpus makes. So "Uncited in answers" is the honest label, and option 6 would measure
+query history × model.
+
+**Measured, read-only, $0.** Of 1,239 `unsupported` pieces, `is_claim_unit` rejects 306 (230 bare
+enumerators, 63 colon lead-ins, 9 headings, 4 Sources blocks); on the concept-attributed links the
+gap floor actually counts, 153 → 139 over the same 8 concepts — headings were never the main
+contamination on this box, the unreadable citation form is (row 90). A dry `build_gaps` on today's
+skeleton: isolated 3 · single_source 3 · under_connected 3 · unsourced_claim 8 · **thin_bridge 0**
+(the 4 stored rows were all dead-end edges). The stored rows are stale anyway: 16 of 18 came from
+graph `c97c…`, two versions before the current `027b…` (row 91).
+
+**Rejected.** Filtering inside `segment_claims` — renumbers claims on every new answer and moves the
+RG-012 citation markers. Word-count or phrase-list rules for "not a claim" (the audit's heuristic
+had `< 6 words`, "Here is") — tuned to one model's habits. Flagging the lower-*degree* endpoint of a
+bridge — degree is the vocabulary-sparsity signal RG-014 graded noise; side size is structural.
+Relabelling the chips per ADR-040 option 4 ("mixed stance") — ADR-040 blocks the surfacing choice
+behind the Node-B rebuild; this only removes the false "in corpus". Building A2 — see KL1b. Running
+`build_gaps --apply` — a DB write, the user's call.
+
+**What it opens.** The gap rebuild ($0, `python -m scripts.build_gaps --apply`) to make the stored
+rows match. KL1b's decision. Row 90 before any "Uncited in answers" count is quoted. The colon rule
+drops ~63 lead-ins, a few of which make a weak assertion ("The authors propose two main types:");
+"Liu et al." fragments from abbreviation splits still count.
+
+---
+
+## 2026-09-16 (4) — Security S-2: one add checks at most 50,000 files, and the uploader states the limits it enforces
+
+**What changed.** `library.add.expand_paths` counts while it walks and raises
+`AddBatchTooLargeError` past `config.MAX_ADD_FILES` (50,000, `DOC_MAX_ADD_FILES`) — before sorting, so
+a pick of a whole drive costs the walk up to the limit; `apply_add` refuses a longer explicit path
+list before touching anything; both routes return a 400 whose `detail` is the sentence, which the
+review sheet already shows as its alert. `GET /api/documents/accepts` serves `extensions`,
+`max_file_bytes`, `max_archive_bytes`, `max_files_per_add` from `library.add.accepted_input()`.
+The frontend loads it once when the API is up (`accept.svelte.ts` `loadAccepts`) and the three
+places that listed formats — the Add documents dialog, the empty-library card, the drop overlay —
+now show the served formats line and **"Up to 1 GB per file"** (`lib/library/formats.ts`, 5 tests).
+Settings' formats line derives from the same registry. README Limitations, `docs/usage.md`,
+`.env.example` (three knobs), `security.md` (S-2 done, S-3 next), ROADMAP row 60, the walkthrough
+§1 (stated-limit and walk-cap rows), `feature-add-documents.md` constraint 6 amended, CHANGELOG.
+
+**Why.** `docs/security.md` S3: `inspect` walked a picked folder with no cap on a request thread.
+And the user asked that the 1 GB limit S-1 introduced be stated in the uploader and the docs.
+
+**Choices.** N = 50,000: 5× the 10,000-document contract, since real folders hold files that are not
+documents and Zotero sends one path per attachment through the same route; ~9 s at the measured
+~11,000 files/s. **No byte cap (M)**: `inspect` barely reads contents and S-1 caps each file. The
+numbers come from the API, never from a frontend constant, because all three limits are env knobs.
+No env-var name in the UI — the docs name them.
+
+**Verified.** `test_library_add.py` +6, `test_api_documents_inspect.py` +3 (400 names the cap; `/add`
+refuses; `/accepts` follows a monkeypatched cap). Live preview: `/api/documents/accepts` returns
+1073741824 / 50000 / nine extensions; the app requests it once per load; the state module holds it.
+**The live check caught a bug:** the empty-library line lower-cased the whole limit sentence and read
+"up to 1 gb per file" — fixed with `limitPhrase`, pinned by a test. **Not verified:** the rendered
+lines themselves — all three surfaces exist only in the desktop window (`canAccept()` is false in a
+browser); the walkthrough row covers them.
+
+**Rejected.** Hard-coding "1 GB" in the frontend (wrong the moment the env knob is set). Adding the
+limit to `/api/setup` (a readiness endpoint). An object-shaped 400 (`errorDetail` would
+`JSON.stringify` it). A folder-depth limit (the grill chose full recursion, branch 3).
+
+**What it opens.** `docs/QUICKSTART.md` §3 still describes adding documents through Settings (row
+81). S-3 is next.
 
 ---
 
@@ -918,106 +1010,3 @@ rather than one page's band — which is a pane-layout decision, not a locating 
 
 **Gates.** Docs-only: `docs_check --strict` 0/0 · doc guards 9/9. No code changed, so the code
 gates are unmoved from 2026-09-01 (1). **$0 — no model call.**
-
-## 2026-09-01 (1) — ROADMAP 18: the document beside its library entry — and the row's stated reason for it being free was wrong
-
-**What changed.** A source pane on the Library document view (`SourceViewer.svelte`, opened from a
-new **Source** button beside Re-run), rendering the file itself one page at a time. Backend:
-`library/source_view.py` + three routes — `GET /api/library/documents/{id}/source` (can this be
-shown, and why not), `.../page/{n}` (PNG, rendered on demand), and `GET /api/library/chunk-page`
-(which page a cited chunk sits on). Behind **ADR-050**, which row 18 did not have.
-
-Each open parent block in **Chunks** now carries *"Show this page in the document"*, which resolves
-that block's chunk key — the same `{document_id}:p{parent_index}` a chat citation carries — and
-opens the pane there. ROADMAP 19 shows a passage in the extracted *text*; this shows the page of the
-original it came off.
-
-**Why.** Row 18 asked for it in 2026-08-25, and row 19 shipped the text half already noting the page
-image was 18's job.
-
-**The measurement that changed the design.** The row asserted *"page-level jump costs no ingest
-change — chunks already carry `page`"*. It does not hold for the path the app retrieves on:
-`USE_PARENT_CHILD` defaults true, and the parent-child store carries `page` on **615 of 39,705
-chunks (1.5%)** — all of them figure chunks, whose page comes from figure detection. The flat
-baseline store is 100%, and it is not the retrieval path. Building on the row as written would have
-produced a feature that worked on figures and nothing else.
-
-The conclusion survives for a different reason: the **cache** is page-annotated (`<!-- page:N -->`,
-`extractors.py:99`) on **98/98** documents, with marker count equal to `Document.page_count`
-exactly and sequential from 1, and chunks carry `parent_char_start` at 100% after row 19's re-chunk.
-So the page is a read-time scan of markers against an offset — the rule `chunking.extract_chunk_metadata`
-already applies at ingest for the flat store. `ChunkContext.page` therefore goes from **2.0% to
-98.0%** populated on the live path (measured over 300 sampled parents), which also fills in a field
-row 19's payload documented as permanently sparse. The remaining 2% are figure chunks, which have no
-text span to place — and `page_for_chunk` still gives them a page from the stored value, so a figure
-citation opens correctly where the *text* view honestly cannot show anything.
-
-**Cost, measured before choosing.** A page render is 19-31 ms and 140-261 KB (median over 18 pages of
-the 6 longest documents; 110 dpi ships). Nothing is pre-rendered or cached: the whole corpus is 2,973
-pages, or ~760 MB and ~90 s to render up front, to save 19 ms.
-
-**What driving it found — KI-57, and it is not this feature's bug.** Block 400 of `hebb_1949`
-resolves to page 202, but its text is visibly on page 201. The cause is upstream: markers 201 and 202
-delimit **byte-identical** segments — the cache holds page 201 twice and page 202 not at all.
-Measured: **13 of 355 pages (3.7%) in `hebb_1949`, all 13 exact duplicates**, against **1 of 657
-(0.2%)** across a 25-document sample. The marker *rule* is sound (342/355 and 656/657 segments match
-their own page); what is occasionally wrong is the text placed under a marker. Filed rather than
-fixed — the fix is an extraction change that re-invalidates every cache, and this is 0.2% of pages.
-The suspicion that `_recover_lost_page` causes it is **wrong**: the other two recovery documents are
-clean, 0 of 61.
-
-**Rejected.** *PDF.js in the frontend* — better on selectable text and in-page find, but puts
-document parsing in the thin shell, adds a worker and a Tauri CSP fight, and ships whole files to
-show one page; the searchable surface already exists as the extracted text. *Tauri asset protocol* —
-bypasses the ADR-002 boundary and dies in browser dev mode. *Backfilling `page` onto the
-parent-child store* — a 39,705-chunk re-chunk to persist something derivable for free and
-invalidated by the next extraction change. *Converting non-PDFs to PDF to give them pages* — invents
-pages a document never had; they degrade to their extracted text instead, which is what they are.
-
-**What it opens.** The passage highlight *on the page image* (ADR-050 D5, scoped out): offsets are
-not coordinates, so it needs `page.search_for`, whose accuracy against normalised extraction is
-**unmeasured** — that measurement is the follow-on's first question. Also: the pane is most of the
-substrate an annotation layer would need, and nothing about it is speculative yet. And KI-57 has a
-cheap exact detector if anyone picks it up — a page segment byte-identical to its predecessor found
-13 of 13 with no false positives.
-
-**Gates.** pytest **2349/0** (2315 + 34) · mypy 98/0 · ruff + format clean · bandit 0 ·
-svelte-check **219/0** · node:test **237/237** (216 + 21) · doc guards 9/9 · `docs_check --strict`
-0/0 · `test_api_check` 0/0 (240 files). Driven live on the real 98-document library in both themes
-and at 820px. **$0 — no model call.**
-
-## 2026-08-31 (4) — The graph now says how much of the library it covers, and why the obvious version of that number would have lied
-
-**What changed.** `GraphStaleness` gains `n_documents_in_library`, and the Graph workspace states
-**"Covers 30 of your 98 documents — a document appears once it mentions one of the 13 concepts on
-your graph."** One field, one pure helper (`graph.graphCoverage`), 5 node:tests, 1 pytest case. No
-extra query: the live document set was already being read for `missing_document_ids`.
-
-**Entry (3) closed with the wrong open item, and checking it is what corrected the design.** It
-said *"nothing watches the inverse — documents the corpus has that the graph has never seen … a
-count of it would tell a user whether a rebuild is worth 10 seconds."* Measured before building it:
-the library holds **98** documents, the graph cites **30**, and the other **68** are not waiting for
-anything — they mention none of the **13** concepts in the graph vocabulary (of **593** curated). A
-rebuild would return the same 30. So "68 documents not yet in the graph" would have been a number
-that reads as a backlog, dressed a no-op button as the fix, and sent the user away from the lever
-that actually moves it: **curating vocabulary** (ADR-018, ROADMAP 23).
-
-**So the number is coverage, and it ships with the rule that produces it.** A fraction plus the
-sentence explaining the fraction, in plain text rather than a warning — partial coverage is how the
-feature works, not a fault. The test that matters asserts the *absence* of the misleading framing:
-the string must not contain "missing", "not yet", "rebuild" or "pending".
-
-**Rejected: a `built_at` timestamp in the skeleton.** The honest form of "documents added since the
-build" needs one, and `_graph_version` is documented as a **timestamp-free** fingerprint precisely
-so identical inputs produce a byte-identical `skeleton.json` (Decision 3). Stamping the artifact
-would trade a verified determinism property for a number that coverage already answers well enough.
-
-**Rejected: folding coverage into the staleness banner.** `stale` means *the graph is wrong* —
-vocabulary drift or a reference it cannot resolve. Coverage is neither, and putting it behind a
-warning icon would teach the user to dismiss the icon.
-
-**What it opens.** The 68 uncited documents are a **vocabulary** signal, not a graph one: 13 of 593
-curated concepts are on the graph, and that ratio — not a rebuild — is what decides coverage. The
-Manage-keywords view is where that would be worth surfacing.
-
----

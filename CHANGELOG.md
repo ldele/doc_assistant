@@ -16,9 +16,22 @@ The engineering record is finer-grained than this file: per-change entries live 
   documents allow, now gets a one-sentence explanation in the add review sheet instead of being
   read into memory; a file that reaches ingest another way is refused the same way, per file.
   `DOC_MAX_INGEST_BYTES` / `DOC_MAX_ARCHIVE_BYTES` raise the limits.
+- **One add checks at most 50,000 files.** Picking a folder that holds more — a whole drive, say —
+  stops the check at the limit and says so, instead of reading every file on it.
+  `DOC_MAX_ADD_FILES` raises it.
 
 ### Changed
 
+- **The add dialog, the empty library and the drop overlay state what you can add**: the formats
+  and "Up to 1 GB per file", read from the backend so they match what it enforces. The formats
+  line also stops leaving out TXT, and Settings stops leaving out ODT and RTF.
+- **The concept graph's signals say what they are.** The experimental stance chips read
+  *contested? (experimental)* instead of *contested in corpus*; the gap list's "Unsourced claims"
+  is now **Uncited in answers**, because it counts sentences of your own chat answers, and it no
+  longer counts list lead-ins, headings or a Sources block as claims; a **thin bridge** is now
+  flagged only on the smaller of two groups one edge holds together, not on both ends of every
+  edge — which had named the best-connected concept a thin bridge. Rebuild the graph's gaps to
+  see it.
 - **The clean-machine release gate asks three questions, not one**, and reports packaging and
   citation as separate verdicts (release tooling; no change to the app).
 

@@ -15,8 +15,10 @@
   } = $props()
 
   function markerLabel(m: string): string {
-    if (m === 'contested') return 'contested in corpus'
-    if (m === 'superseded_trend') return 'trend superseded'
+    // KL1: a question, marked experimental — never "in corpus", which asserted a measurement
+    // the stance pass cannot make (KI-33; ADR-040 blocks a redesign until ADR-041 lands).
+    if (m === 'contested') return 'contested? (experimental)'
+    if (m === 'superseded_trend') return 'superseded? (experimental)'
     return m
   }
 

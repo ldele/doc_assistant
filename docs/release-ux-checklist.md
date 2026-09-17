@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-09-16 (§1: the S-1 size-cap row; refresh rule; preflight enforces it) · class: runbook -->
+<!-- status: active · updated: 2026-09-16 (§1: size-cap, stated-limit and walk-cap rows; refresh rule; preflight enforces it) · class: runbook -->
 
 # Release UX/UI walkthrough — what to drive before every release
 
@@ -50,6 +50,8 @@ scanned PDF). Most rows say which.
 - [ ] Picker: one file · several files · a folder. Drag-and-drop the same three (never driven on 2026-08-28 — File Explorer needs full-tier access).
 - [ ] Review sheet: a duplicate reads as a duplicate; an unsupported format says why; a scanned PDF is warned about **before** indexing, not discovered as a 0-chunk document.
 - [ ] Size caps (security S-1): add a file renamed to `.epub` that is not a zip → the sheet says it is damaged, in a sentence; with `DOC_MAX_INGEST_BYTES=1000000` set before launch, a larger PDF is refused with its size and the limit. Nothing crashes and nothing is indexed.
+- [ ] The limit is stated up front: the Add documents dialog, the empty-library card and the drop overlay each show the formats line **and** "Up to 1 GB per file" (it follows `DOC_MAX_INGEST_BYTES` if set). These three render only in the desktop window — never verified in a browser.
+- [ ] Walk cap (security S-2): with `DOC_MAX_ADD_FILES=5` set before launch, drop a folder of 6+ files → the sheet shows the one-sentence refusal naming 5 where the rows would be; Cancel works.
 - [ ] Both placement modes: **copy** lands in the library folder; **reference** registers the root and the file stays where it was.
 - [ ] Batch header with > 50 files: the `shown` cap and "and N more" render; make one file fail (rename it mid-run) → `stopped_early`, "Keep the N", `applyError` all render.
 - [ ] Index now → the ingest chip shows progress; the document is answerable **before** the chip says done (controller reload).

@@ -18,10 +18,10 @@
   import { scanZoteroLibrary } from '../core/api'
   import { pickPaths } from '../core/tauri'
   import { accept, closeChooser, pickDocuments, stagePaths } from './accept.svelte'
+  import { formatLine, limitLine } from './formats'
   import { nothingToAdd } from './catalogue'
 
   /** Mirrors the server-side format list in words; the verdicts themselves come from AD2. */
-  const FORMATS = 'PDF · EPUB · HTML · DOCX · MD · ODT · RTF'
 
   // --- Import from Zotero (ROADMAP 17) --------------------------------------------------------
   //
@@ -107,7 +107,10 @@
     <div class="zone" class:over={accept.dragging}>
       <Icon name="file-text" size={26} />
       <strong>{accept.dragging ? 'Drop them now' : 'Drag files or folders here'}</strong>
-      <span class="formats">{FORMATS}</span>
+      {#if accept.accepts}
+        <span class="formats">{formatLine(accept.accepts.extensions)}</span>
+        <span class="formats">{limitLine(accept.accepts)}</span>
+      {/if}
     </div>
 
     <p class="or"><span>or</span></p>

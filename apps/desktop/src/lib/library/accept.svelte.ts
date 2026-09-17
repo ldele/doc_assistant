@@ -10,6 +10,8 @@
 // keeping the state module incapable of writing is how it stays true by construction.
 
 import { canPickFiles, canReceiveDrops, isTauri, onDragHover, onFilesDropped, pickPaths } from '../core/tauri'
+import { getAccepts } from '../core/api'
+import type { Accepts } from '../core/types'
 import { dedupePaths, type NativePath } from './accept'
 
 export const accept = $state({
@@ -38,7 +40,22 @@ export const accept = $state({
    * unless you happened to already be dragging. The dialog names both routes in one place.
    */
   chooser: false,
+
+  /**
+   * Formats and limits as the backend enforces them (security S-1/S-2), loaded once when the API
+   * is up. `null` until then — the uploader shows no formats or limit line rather than a guess.
+   */
+  accepts: null as Accepts | null,
 })
+
+/** Load what an add accepts. Silent on failure: the lines it feeds are advisory. */
+export async function loadAccepts(): Promise<void> {
+  try {
+    accept.accepts = await getAccepts()
+  } catch {
+    // keep whatever we last knew
+  }
+}
 
 /** Open the entry dialog. No-op where documents cannot be accepted at all (a plain browser). */
 export function openChooser(): void {

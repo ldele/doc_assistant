@@ -267,6 +267,76 @@ def test_expanding_nothing_yields_nothing(temp_database):
     assert expand_paths([]) == []
 
 
+def test_a_walk_past_the_file_cap_stops_and_names_the_cap(temp_database, tmp_path):
+    """Security S-2: a pick of a whole drive must not stat every file on it on a request thread.
+    The walk raises at cap + 1, and the sentence names the cap so the person knows what to do."""
+    from doc_assistant.library.add import AddBatchTooLargeError, expand_paths
+
+    for i in range(4):
+        _write(tmp_path / "d" / f"{i}.pdf", b"x")
+    with pytest.raises(AddBatchTooLargeError, match="more than 3 files"):
+        expand_paths([tmp_path], max_files=3)
+
+
+def test_exactly_the_cap_is_allowed(temp_database, tmp_path):
+    from doc_assistant.library.add import expand_paths
+
+    for i in range(3):
+        _write(tmp_path / f"{i}.pdf", b"x")
+    assert len(expand_paths([tmp_path], max_files=3)) == 3
+
+
+def test_explicit_files_count_toward_the_cap_and_duplicates_do_not(temp_database, tmp_path):
+    """Zotero sends one explicit path per attachment through the same route, so files count too;
+    a folder plus a file inside it is still one file."""
+    from doc_assistant.library.add import AddBatchTooLargeError, expand_paths
+
+    files = [_write(tmp_path / f"{i}.pdf", b"x") for i in range(3)]
+    assert len(expand_paths([tmp_path, *files], max_files=3)) == 3
+    with pytest.raises(AddBatchTooLargeError):
+        expand_paths([*files, tmp_path / "missing.pdf"], max_files=3)
+
+
+def test_the_cap_defaults_to_config(temp_database, tmp_path, monkeypatch):
+    from doc_assistant import config
+    from doc_assistant.library.add import AddBatchTooLargeError, expand_paths
+
+    monkeypatch.setattr(config, "MAX_ADD_FILES", 1)
+    _write(tmp_path / "a.pdf", b"x")
+    _write(tmp_path / "b.pdf", b"x")
+    with pytest.raises(AddBatchTooLargeError):
+        expand_paths([tmp_path])
+
+
+def test_apply_add_refuses_more_paths_than_the_cap_before_touching_anything(
+    temp_database, tmp_path, monkeypatch
+):
+    """Only a caller that skipped the review sheet can reach this — but `/add` is reachable."""
+    from doc_assistant import config
+    from doc_assistant.library.add import AddBatchTooLargeError, apply_add
+
+    monkeypatch.setattr(config, "MAX_ADD_FILES", 1)
+    a = _write(tmp_path / "in" / "a.pdf", b"x")
+    b = _write(tmp_path / "in" / "b.pdf", b"y")
+    library = tmp_path / "library"
+    with pytest.raises(AddBatchTooLargeError):
+        apply_add([a, b], source_dir=library)
+    assert not library.exists()
+
+
+def test_accepted_input_serves_the_enforced_limits_and_every_format(monkeypatch):
+    from doc_assistant import config
+    from doc_assistant.extractors import SUPPORTED_EXTENSIONS
+    from doc_assistant.library.add import accepted_input
+
+    monkeypatch.setattr(config, "MAX_INGEST_FILE_BYTES", 123)
+    got = accepted_input()
+    assert got["max_file_bytes"] == 123
+    assert got["max_files_per_add"] == config.MAX_ADD_FILES
+    assert set(got["extensions"]) == SUPPORTED_EXTENSIONS
+    assert got["extensions"][0] == ".pdf"
+
+
 # ============================================================
 # sort_for_review / summarise
 # ============================================================

@@ -52,10 +52,12 @@ def _is_local(provider: str) -> bool:
     return provider.lower() == "ollama"
 
 
-# PR-M1 — human labels for the 7d evidence-layer markers (advisory chip, not a gate).
+# PR-M1 — human labels for the 7d evidence-layer markers (advisory chip, not a gate). KL1: phrased
+# as a question and marked experimental; "contested in corpus" asserted a corpus measurement the
+# Node-B stance pass cannot make (KI-33). Same words as SourceCard.svelte.
 _MARKER_LABELS = {
-    MARKER_CONTESTED: "contested in corpus",
-    MARKER_SUPERSEDED: "trend superseded",
+    MARKER_CONTESTED: "contested? (experimental)",
+    MARKER_SUPERSEDED: "superseded? (experimental)",
 }
 
 

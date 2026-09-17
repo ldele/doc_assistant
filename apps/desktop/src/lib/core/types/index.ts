@@ -12,7 +12,7 @@ export type { ConversationDetail, ConversationSource, ConversationSummary, Conve
 export type { ProviderOption, Settings } from './settings'
 export type { ApiKeyResult, ProviderReadiness, SetupState, SetupStep } from './setup'
 export type { IngestStatus, SourceFile } from './sources'
-export type { AddVerdict, CatalogueScan, FileVerdict, InspectResponse } from './documents'
+export type { Accepts, AddVerdict, CatalogueScan, FileVerdict, InspectResponse } from './documents'
 export type { ChunkContext, ChunkLocation, LibraryChild, LibraryDocument, LibraryDocumentChunks, LibraryDocumentFigures, LibraryFigure, LibraryParent, ReingestOptions, ReingestOutcome, ReingestPart, ReingestStatus, SourceDocumentView } from './library'
 export type { LibraryFolder } from './folders'
 export type { KeywordFamily, KeywordFamilyProposal } from './keywords'

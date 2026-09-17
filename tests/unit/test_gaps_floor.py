@@ -50,3 +50,20 @@ def test_matches_via_alias():
     gaps = detect_unsourced_claims(claims, _CONCEPTS, aliases)
     assert [g.concept_id for g in gaps] == ["rag"]
     assert gaps[0].evidence.fact_ids == ("c1",)
+
+
+def test_pieces_that_cannot_be_claims_are_not_counted_as_unsourced():
+    """KL1: `split_sentences` cuts after every "." — so "RAG has two parts:\n\n1." becomes a piece,
+    and so do headings and the model's Sources block. On the working library 306 of 1,239
+    "unsupported" pieces were these. Uncited, but asserting nothing, so not an unsourced claim."""
+    claims = [
+        ClaimForGap(
+            id="lead", text="RAG consists of two main components:\n\n1.", marker=MARKER_UNSUPPORTED
+        ),
+        ClaimForGap(id="head", text="## What RAG solves", marker=MARKER_UNSUPPORTED),
+        ClaimForGap(id="src", text="**Sources:** rag_lewis_2020.pdf", marker=MARKER_UNSUPPORTED),
+        ClaimForGap(id="real", text="RAG reduces hallucination.", marker=MARKER_UNSUPPORTED),
+    ]
+    (gap,) = detect_unsourced_claims(claims, _CONCEPTS, _ALIASES)
+    assert gap.concept_id == "rag"
+    assert gap.evidence.fact_ids == ("real",)

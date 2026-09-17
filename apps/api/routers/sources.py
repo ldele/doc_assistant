@@ -9,6 +9,7 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Request
 
 from apps.api.models.sources import (
+    AcceptsPayload,
     AddOutcomePayload,
     AddRequest,
     AddResultPayload,
@@ -192,6 +193,18 @@ def scan_zotero(body: CatalogueScanRequest) -> CatalogueScanResponse:
     )
 
 
+@router.get("/api/documents/accepts")
+def document_accepts() -> AcceptsPayload:
+    """What an add accepts — formats and the limits — so the uploader can state them up front.
+
+    Served, not hard-coded in the frontend: the limits are env-configurable (security S-1/S-2), and
+    a stated number the backend does not enforce would be a lie in the one place users read first.
+    """
+    from doc_assistant.library.add import accepted_input
+
+    return AcceptsPayload(**accepted_input())
+
+
 @router.post("/api/documents/inspect")
 def inspect_documents(body: InspectRequest) -> InspectResponse:
     """AD2 — say what would happen to each candidate path. **Mutates nothing the user can see.**
@@ -204,9 +217,17 @@ def inspect_documents(body: InspectRequest) -> InspectResponse:
     Directories expand recursively server-side, matching `registry.scan_sources`. An empty
     `paths` is a valid request with an empty answer — a drop that yielded nothing is not an error.
     """
-    from doc_assistant.library.add import inspect, sort_for_review, summarise
+    from doc_assistant.library.add import (
+        AddBatchTooLargeError,
+        inspect,
+        sort_for_review,
+        summarise,
+    )
 
-    verdicts = inspect([Path(p) for p in body.paths])
+    try:
+        verdicts = inspect([Path(p) for p in body.paths])
+    except AddBatchTooLargeError as e:  # security S-2: a pick of a whole drive, say so
+        raise HTTPException(status_code=400, detail=str(e)) from e
     return InspectResponse(
         files=[FileVerdictPayload.from_verdict(v) for v in sort_for_review(verdicts)],
         counts=summarise(verdicts),
@@ -231,16 +252,19 @@ def add_documents(request: Request, body: AddRequest) -> AddResultPayload:
     registers the file where it already lives under its own root. 409 while an ingest is running,
     mirroring `/api/ingest` itself.
     """
-    from doc_assistant.library.add import AddOutcome, apply_add
+    from doc_assistant.library.add import AddBatchTooLargeError, AddOutcome, apply_add
 
     if _running(request):
         raise HTTPException(status_code=409, detail="ingest already running")
 
-    result = apply_add(
-        [Path(p) for p in body.paths],
-        mode=body.mode,
-        reference_root=Path(body.reference_root) if body.reference_root else None,
-    )
+    try:
+        result = apply_add(
+            [Path(p) for p in body.paths],
+            mode=body.mode,
+            reference_root=Path(body.reference_root) if body.reference_root else None,
+        )
+    except AddBatchTooLargeError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
 
     def out(o: AddOutcome) -> AddOutcomePayload:
         return AddOutcomePayload(

@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-09-17 (context signals measured; senses; user's pairing direction) · class: baseline -->
+<!-- status: active · updated: 2026-09-18 (document-level sense split measured) · class: baseline -->
 
 # Concept merges — which embedder, which threshold (ROADMAP 53)
 
@@ -112,6 +112,17 @@ viral!" (the web sense, in a title); `specter` — the SPECTER model and "The Sp
 political-philosophy book); `din` — the dIN neuron type and "vitamin Din" (text extraction of
 "vitamin D in"); `beta` — beta oscillations, a `beta k` code variable, "b eta" (a split "beta
 secretase"). Presence counts all of these as one concept today.
+
+**Do a label's documents fall apart? (2026-09-18, read-only, $0.)** Document vectors mean-pooled
+from the stored chunk embeddings (99 documents); a label's documents grouped by average linkage,
+two groups counted as unrelated below the library's own 10th percentile of document-pair
+similarity (0.716; median 0.831). Of 162 concepts present in 2+ documents, **3 split**:
+`specter` (a benchmark paper vs a political-philosophy book — a true homograph), `abstractions`
+(program-synthesis papers vs the same philosophy book — different senses), and `virus` (8
+neuroscience/biology documents vs one political-science agenda — **the same sense in another
+domain**, which must not be split). `viral`, `beta` and `din` stay one group: their senses differ
+*inside* one domain, so a document-level signal cannot see them. **Domain is evidence about sense,
+not the definition of it.**
 
 **Four labels match no passage at a word boundary** (`behavior analysis animals`, `events behavior`,
 `events behavior analysis`, `resources neuroscience`) — keyword shingles, not text.

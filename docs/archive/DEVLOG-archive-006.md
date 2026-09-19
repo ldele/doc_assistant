@@ -1,6 +1,6 @@
-<!-- status: archived · updated: 2026-09-17 · class: append-only -->
+<!-- status: archived · updated: 2026-09-18 · class: append-only -->
 
-# DEVLOG — archive 006 (2026-08-12 (1) → 2026-09-01 (4))
+# DEVLOG — archive 006 (2026-08-12 (1) → 2026-09-01 (5))
 
 Older entries, moved verbatim from `docs/DEVLOG.md` on 2026-09-04 so the working log stays
 about recent work. Newest-first, same format, unedited. Rotated because the live log had
@@ -10,9 +10,62 @@ before it can grow further. Cut on a date boundary so no day is split across two
 live log adopted a 20-entry cap, then once more the same day for the session's own entry; 2026-08-30 (1)–(9) are all here. **Extended 2026-09-16** by five entries, 2026-08-31 (1) → 2026-09-01 (1), one per new entry that
 pushed the live log past 20; 2026-09-01 is now split across the two files ((2)–(6) are live).
 **Extended 2026-09-17** by three entries, 2026-09-01 (2) → (4), for the day's three new entries;
-2026-09-01 (5) and (6) are live.
+2026-09-01 (5) and (6) are live. **Extended 2026-09-18** by 2026-09-01 (5); only (6) is live.
 
 ---
+
+## 2026-09-01 (5) — Row 18 closed out: a citation now opens its page, and the two branches no test could reach were driven for real
+
+**What changed.** Two gaps, both named in the 2026-09-01 (1) baton as unfinished.
+
+1. **A chat citation can open its page.** The source card gains **Show the page**, which navigates
+   to the Library and opens the pane where the passage is. `GET /api/library/chunk-page` now
+   returns `{document_id, page}` rather than a bare page: a chat citation carries a `chunk_key` and
+   **no document id**, and turning one into the other means reading the chunk store — so it happens
+   on the server rather than by parsing the key's shape in the client, where the second copy of
+   that contract would rot. New `library.locate_chunk` + `ChunkLocation`; `page_for_chunk` is now a
+   thin wrapper on it.
+   **It is offered for a figure too**, which the card's own comment had anticipated: a figure has
+   no position in the text, so the page image is the only place it can be shown.
+2. **The unavailable and text-only arms were driven**, against the live library, with a backup taken
+   first — a file moved out from under a document, then a document's `format` flipped to `epub`.
+   Both restored; the library matches `data/library.db.bak-20260901-183252-prearms` row for row.
+
+**And that is where the two real defects were, neither of which a test could have caught** — the
+corpus is 98/98 PDF with every file present, so no test fixture stands in for driving it:
+
+- **The size and zoom controls rendered over a document that has no page.** "Fit page | Width |
+  − 100% +" sat above the sentence *"The file is not where the library expects it"*. A dead
+  control, and this project's own rule is that a dead control is worse than none. Now gated on a
+  renderable page, with the close button taking the right-hand margin when they are absent.
+- **Two pieces of copy that were wrong.** The backend said *"a epub document has no pages"* — an
+  article cannot agree with a value read from the database, so it is now *"a document in EPUB
+  format"*. And the pane said the extracted text was **below** while its own hint said **beside**:
+  Chunks is beside the pane in the split layout and above it when stacked, so any direction is
+  wrong half the time. Both directions dropped.
+
+**A false defect, avoided by the project's own rule.** After the jump, the citation panel appeared
+to stay open over the Library — the DOM still held it 2 s later and a screenshot showed it. It had
+in fact closed; the node was mid-transition, exactly the stranding the baton warns about
+(2026-08-31 (3)). **When the DOM and the state disagree, believe the state**: querying again showed
+the card gone. Nothing was "fixed".
+
+**A test that had to be rewritten, for a reason worth keeping.** The first version of the route
+test monkeypatched `source_view.locate_chunk` and failed — the route resolves the name through the
+**package** re-export (`from doc_assistant.library import locate_chunk`), which is a separate
+binding. That is the trap in `src/doc_assistant/CLAUDE.md`, met from the other side. Rather than
+patch the re-export, the fake chunk store now holds real rows, so the tests exercise the real
+derivation — cache markers on disk, offset in the metadata, page derived.
+
+**Verified live.** A mocked `/api/chat` turn (fabricated sources, a **real** `chunk_key`; no model
+call, no cost — the discipline from the 2026-08 chat-UI note) → click the citation → **Show the
+page** → the Library opens `03-Zuo2014_NBR_fconn.pdf` at **"Page 10 of 19 · cited here"**, the page
+computed independently beforehand. Unavailable and text-only arms both render a sentence, no image,
+no broken image, no page nav, no size controls.
+
+**Gates.** pytest source-viewer suites **44/44** (+7) · node:test 257/257 · svelte-check 219/0 ·
+mypy 98/0 · ruff + format clean · bandit 0 · `detect-secrets` clean against the baseline.
+**$0 — no model call.**
 
 ## 2026-09-01 (4) — The page fits because the reader decides how: a real zoom, a draggable split, and renders that get sharper instead of bigger
 

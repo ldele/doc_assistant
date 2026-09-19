@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-09-17 · class: append-only -->
+<!-- status: active · updated: 2026-09-18 · class: append-only -->
 
 # DEVLOG — doc_assistant
 
@@ -14,8 +14,8 @@ Format: What changed | Why | Rejected alternatives | What it opens
 > oldest entries **verbatim** into the highest-numbered archive and verifies the bytes; then update
 > the range below by hand (cpc ticket T-003). A day may be split across two files at the cut.
 > Older entries, newest-first, unedited:
-> **2026-08-12 (1) → 2026-09-01 (4)** in [`docs/archive/DEVLOG-archive-006.md`](archive/DEVLOG-archive-006.md)
-> (rotated 2026-09-04, 2026-09-10, four times on 2026-09-16 and on 2026-09-17) ·
+> **2026-08-12 (1) → 2026-09-01 (5)** in [`docs/archive/DEVLOG-archive-006.md`](archive/DEVLOG-archive-006.md)
+> (rotated 2026-09-04, 2026-09-10, four times on 2026-09-16, on 2026-09-17 and 2026-09-18) ·
 > **2026-08-08 (1) → 2026-08-11 (4)** in [`docs/archive/DEVLOG-archive-005.md`](archive/DEVLOG-archive-005.md)
 > (rotated 2026-08-30) ·
 > **2026-08-05 → 2026-08-07** in [`docs/archive/DEVLOG-archive-004.md`](archive/DEVLOG-archive-004.md)
@@ -30,6 +30,43 @@ Format: What changed | Why | Rejected alternatives | What it opens
 > see an entry that is itself an ADR in disguise). When either trips, rotate — **do not raise
 > the cap.** The cap exists because this log reached 8,244 lines before anyone noticed: every entry
 > is individually small and correct, so unbounded growth is invisible per commit.
+
+---
+
+## 2026-09-18 (1) — Six papers added to give concepts definitions; the similarity step no longer dies on one stale vector
+
+**What changed.** `doc_vectors.load_chunk_embeddings_by_document` skips, and logs as
+`dropped_chunks_unknown_document`, a chunk whose `document_id` names no library document; test
+`tests/integration/test_doc_vectors_loader.py` (fails without the fix). **Data, by the user's
+request:** six open-access papers — the text-ranking book (Lin, Nogueira & Yates), the RAG survey
+(Gao et al.), the distillation survey (Gou et al.), PDDL2.1 (Fox & Long), SPECTER (Cohan et al.), and
+the Cre driver-line paper (Gerfen et al., saved by the user from a browser) — added through the app's path (inspect → add, copy → ingest) and enriched with the $0 runners; the
+graph and gaps rebuilt. Record: `tests/eval/baselines/new_papers_definitions_2026-09-18.md`.
+
+**Why.** ADR-052 makes definitions curated data, and there was almost nothing to curate from: 2 of
+357 concepts had one, and a strict scan found a defining sentence in the library for 2 of 19
+priority concepts. **The fix** because `compute_doc_vectors --apply --force` rolled back its whole
+edge set on a foreign key — one chunk left in the vector store by a synthetic test document removed
+in an earlier session; any forced run would have failed the same way.
+
+**Measured, $0.** Graph coverage 30 → 36 documents, edges 20 → 30; deterministic gaps 17 → 12
+(`single_source` cross-encoder, pddl and ntsr1, `isolated` cross-encoder and `under_connected`
+knowledge distillation closed, none opened — no graph concept is single-source any more). Strict-pattern definitions 58 → 68, priority concepts with one
+2 → 5 — but **a concept's first sentences in a survey found an introducing passage for every
+priority term the patterns missed** (BM25, cross-encoder, RAG, PDDL): the better source for row 93's
+suggestions. The new text exposes alias meaning problems — `contrastive` as an alias of
+`contrastive learning` matches "contrastive and ablation experiments"; `hard negatives` is defined
+two different ways by two papers.
+
+**Rejected.** Getting the sixth paper past PubMed Central's and the publisher's bot checks — the
+user saved it from a browser instead. Writing the three missing years and the lower-cased PDDL2.1 title — metadata is the user's to correct in the
+library. Deleting the stale vector — reported, not removed; a full-scope ingest's orphan sweep is the
+existing path. Promoting any keyword of the new papers to a concept — candidates only (curated
+vocabulary).
+
+**What it opens.** Row 93's suggestion source: first introduction per document, not fixed patterns.
+The alias findings for ADR-052 curation — and `ntsr1` here names a Cre mouse line, which its
+definition must say.
 
 ---
 
@@ -908,57 +945,4 @@ popup chrome or the scrollbars, and would need repeating in five places. *Hardco
 `color-scheme: dark` on the control* — correct in one theme and wrong in the other.
 
 **Gates.** node:test 257/257 · svelte-check 219/0. CSS-only plus one icon size; no logic touched.
-**$0 — no model call.**
-
-## 2026-09-01 (5) — Row 18 closed out: a citation now opens its page, and the two branches no test could reach were driven for real
-
-**What changed.** Two gaps, both named in the 2026-09-01 (1) baton as unfinished.
-
-1. **A chat citation can open its page.** The source card gains **Show the page**, which navigates
-   to the Library and opens the pane where the passage is. `GET /api/library/chunk-page` now
-   returns `{document_id, page}` rather than a bare page: a chat citation carries a `chunk_key` and
-   **no document id**, and turning one into the other means reading the chunk store — so it happens
-   on the server rather than by parsing the key's shape in the client, where the second copy of
-   that contract would rot. New `library.locate_chunk` + `ChunkLocation`; `page_for_chunk` is now a
-   thin wrapper on it.
-   **It is offered for a figure too**, which the card's own comment had anticipated: a figure has
-   no position in the text, so the page image is the only place it can be shown.
-2. **The unavailable and text-only arms were driven**, against the live library, with a backup taken
-   first — a file moved out from under a document, then a document's `format` flipped to `epub`.
-   Both restored; the library matches `data/library.db.bak-20260901-183252-prearms` row for row.
-
-**And that is where the two real defects were, neither of which a test could have caught** — the
-corpus is 98/98 PDF with every file present, so no test fixture stands in for driving it:
-
-- **The size and zoom controls rendered over a document that has no page.** "Fit page | Width |
-  − 100% +" sat above the sentence *"The file is not where the library expects it"*. A dead
-  control, and this project's own rule is that a dead control is worse than none. Now gated on a
-  renderable page, with the close button taking the right-hand margin when they are absent.
-- **Two pieces of copy that were wrong.** The backend said *"a epub document has no pages"* — an
-  article cannot agree with a value read from the database, so it is now *"a document in EPUB
-  format"*. And the pane said the extracted text was **below** while its own hint said **beside**:
-  Chunks is beside the pane in the split layout and above it when stacked, so any direction is
-  wrong half the time. Both directions dropped.
-
-**A false defect, avoided by the project's own rule.** After the jump, the citation panel appeared
-to stay open over the Library — the DOM still held it 2 s later and a screenshot showed it. It had
-in fact closed; the node was mid-transition, exactly the stranding the baton warns about
-(2026-08-31 (3)). **When the DOM and the state disagree, believe the state**: querying again showed
-the card gone. Nothing was "fixed".
-
-**A test that had to be rewritten, for a reason worth keeping.** The first version of the route
-test monkeypatched `source_view.locate_chunk` and failed — the route resolves the name through the
-**package** re-export (`from doc_assistant.library import locate_chunk`), which is a separate
-binding. That is the trap in `src/doc_assistant/CLAUDE.md`, met from the other side. Rather than
-patch the re-export, the fake chunk store now holds real rows, so the tests exercise the real
-derivation — cache markers on disk, offset in the metadata, page derived.
-
-**Verified live.** A mocked `/api/chat` turn (fabricated sources, a **real** `chunk_key`; no model
-call, no cost — the discipline from the 2026-08 chat-UI note) → click the citation → **Show the
-page** → the Library opens `03-Zuo2014_NBR_fconn.pdf` at **"Page 10 of 19 · cited here"**, the page
-computed independently beforehand. Unavailable and text-only arms both render a sentence, no image,
-no broken image, no page nav, no size controls.
-
-**Gates.** pytest source-viewer suites **44/44** (+7) · node:test 257/257 · svelte-check 219/0 ·
-mypy 98/0 · ruff + format clean · bandit 0 · `detect-secrets` clean against the baseline.
 **$0 — no model call.**

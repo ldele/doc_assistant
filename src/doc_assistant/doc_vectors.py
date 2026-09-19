@@ -162,7 +162,11 @@ def load_chunk_embeddings_by_document() -> dict[str, list[np.ndarray]]:
     Prefers the explicit ``document_id`` chunk metadata when present;
     falls back to resolving ``doc_hash`` through the SQLite store for
     chunks that pre-date the metadata field. Chunks that resolve to
-    neither are dropped with a warning.
+    neither are dropped with a warning — and so are chunks whose
+    ``document_id`` names no library document: a vector left behind by a
+    removed document would otherwise reach ``doc_similarities`` and fail
+    its foreign key, rolling back the whole edge set (2026-09-18, one
+    stale chunk from a deleted test document).
     """
     try:
         import chromadb
@@ -190,8 +194,11 @@ def load_chunk_embeddings_by_document() -> dict[str, list[np.ndarray]]:
         return {}
 
     hash_to_id = _hash_to_doc_id_map()
+    with session_scope() as session:
+        known_ids = {str(i) for i in session.execute(select(Document.id)).scalars()}
     grouped: dict[str, list[np.ndarray]] = {}
     dropped_no_id = 0
+    dropped_unknown: dict[str, int] = {}
 
     # `strict=True` deliberately: these two come from the same paged read and must be the same
     # length. They silently were not (KI-31) — `get_all` truncated `embeddings` to one page while
@@ -213,8 +220,18 @@ def load_chunk_embeddings_by_document() -> dict[str, list[np.ndarray]]:
         if not doc_id:
             dropped_no_id += 1
             continue
+        if doc_id not in known_ids:
+            dropped_unknown[doc_id] = dropped_unknown.get(doc_id, 0) + 1
+            continue
         grouped.setdefault(doc_id, []).append(np.asarray(vec, dtype=np.float32))
 
     if dropped_no_id:
         log.warning("dropped_chunks_no_doc_id", count=dropped_no_id)
+    if dropped_unknown:
+        log.warning(
+            "dropped_chunks_unknown_document",
+            documents=len(dropped_unknown),
+            chunks=sum(dropped_unknown.values()),
+            document_ids=sorted(dropped_unknown),
+        )
     return grouped

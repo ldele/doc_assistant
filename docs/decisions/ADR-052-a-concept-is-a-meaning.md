@@ -2,9 +2,10 @@
 
 # ADR-052 — A concept is one meaning, not one label: meanings are curated, and a shared word needs a scope
 
-- **Status:** proposed — the principle is the user's decision (2026-09-18: "a different meaning is a
-  different concept, which means we need to curate meanings/definitions"); the mechanism below is
-  proposed and not built
+- **Status:** accepted (user, 2026-09-18) — the principle is the user's ("a different meaning is a
+  different concept, which means we need to curate meanings/definitions"), the direction judged
+  most likely to succeed, **on the condition that it stays reversible and comparable** (Decision,
+  last bullet). Not built.
 - **Date:** 2026-09-18
 - **Deciders:** user + Claude Code
 
@@ -91,6 +92,13 @@ What that commits the system to:
   dictionary lists several meanings; the user sees its mentions grouped and answers "one concept",
   "two meanings — named and defined", or "one of these is noise". Nothing splits or merges without
   that answer.
+- **Every step can be compared and taken back** (the user's condition for accepting). Each split,
+  merge, definition and scope assignment is recorded the way a merge already is (`concept_merges`,
+  ROADMAP 53) and can be undone one by one, so going back to a label-only vocabulary (option 1) is
+  a sequence of undos, not a rebuild. The label-only count stays computable beside the
+  meaning-scoped one, and the app can show the difference — which concepts, gaps and
+  `single_source` verdicts a split changes — before and after it is applied. The label-only path
+  is retired only by a later decision, once the comparison has shown what it would lose.
 
 **What would reverse it:** if review finds that meanings mix *within* documents as often as across
 them, the document default is wrong and passage scope becomes the default (a cost change, not a
@@ -109,8 +117,10 @@ Row 51's `is_a` edges connect meanings, which is what a hierarchy relates.
 `create_keyword_family`, the family rename clash check, `list_keyword_candidates`' "promoted" flag,
 and the one-family-per-keyword rule in `add_family_member`. Presence gains an assignment step for
 shared words. The app needs a place to read and edit definitions, which does not exist, and a review
-surface for proposed splits. Curation is real work: 357 concepts, 2 definitions — the graph's 13 and
-the flagged shared words come first.
+surface for proposed splits. Keeping every step reversible and comparable means records and undo
+for splits, definitions and scopes (not only merges), and two presence counts where a word is
+shared. Curation is real work: 357 concepts, 2 definitions — the graph's 13 and the flagged shared
+words come first.
 
 **Must revisit.** Option 3 (a separate term table) if keyword families and meanings keep pulling
 apart. The document-scope default, against the review's findings.

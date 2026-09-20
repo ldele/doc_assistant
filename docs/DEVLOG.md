@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-09-18 · class: append-only -->
+<!-- status: active · updated: 2026-09-20 · class: append-only -->
 
 # DEVLOG — doc_assistant
 
@@ -14,8 +14,8 @@ Format: What changed | Why | Rejected alternatives | What it opens
 > oldest entries **verbatim** into the highest-numbered archive and verifies the bytes; then update
 > the range below by hand (cpc ticket T-003). A day may be split across two files at the cut.
 > Older entries, newest-first, unedited:
-> **2026-08-12 (1) → 2026-09-01 (5)** in [`docs/archive/DEVLOG-archive-006.md`](archive/DEVLOG-archive-006.md)
-> (rotated 2026-09-04, 2026-09-10, four times on 2026-09-16, on 2026-09-17 and 2026-09-18) ·
+> **2026-08-12 (1) → 2026-09-01 (6)** in [`docs/archive/DEVLOG-archive-006.md`](archive/DEVLOG-archive-006.md)
+> (rotated 2026-09-04, 2026-09-10, four times on 2026-09-16, on 2026-09-17, 2026-09-18 and 2026-09-20) ·
 > **2026-08-08 (1) → 2026-08-11 (4)** in [`docs/archive/DEVLOG-archive-005.md`](archive/DEVLOG-archive-005.md)
 > (rotated 2026-08-30) ·
 > **2026-08-05 → 2026-08-07** in [`docs/archive/DEVLOG-archive-004.md`](archive/DEVLOG-archive-004.md)
@@ -30,6 +30,60 @@ Format: What changed | Why | Rejected alternatives | What it opens
 > see an entry that is itself an ADR in disguise). When either trips, rotate — **do not raise
 > the cap.** The cap exists because this log reached 8,244 lines before anyone noticed: every entry
 > is individually small and correct, so unbounded growth is invisible per commit.
+
+---
+
+## 2026-09-20 (1) — The hierarchy can hold `is_a` edges, something proposes them, and the app can accept or reject a proposal (ROADMAP 51 + security S-4)
+
+**What changed.** Three things the concept→concept spine was missing, plus this session's security
+step.
+
+1. **The write seam knows what each edge type joins.** `taxonomy.add_hierarchy_edge` now refuses an
+   edge whose endpoint `kind`s do not match its type (`EdgeKindError`): `is_a` joins two concepts,
+   `in_field` points at a `kind="domain"` field (ADR-028 D2). Before this, `is_a` concept→field was
+   written happily and the two types could only be told apart by whoever wrote the row. The API
+   maps it to 400.
+2. **Something proposes `is_a`.** New `knowledge/isa_propose.py` + `scripts/propose_isa.py`
+   (dry-run default, $0, no model, no network): a label whose tokens *end with* another concept's
+   whole label is proposed as narrower than it, written as `origin="proposed"` rows through the
+   seam. 27 candidates on this vocabulary — `tests/eval/baselines/isa_head_suffix_2026-09-20.md`.
+   **Not run with `--apply` on the live library** — that is the user's call.
+3. **TX3b: the app can review a proposal.** `GET /api/taxonomy/proposals` serves every proposed
+   link — hierarchy edges *and* document classifications — and the taxonomy modal gains a
+   "Proposed placements" pane with Accept / Reject per row, plus the same two actions on every
+   proposed chip and document row in a field's detail. Accept is the existing curated write, which
+   promotes the row in place; `attach_document_field` gained that promotion, so a proposed document
+   classification can now be accepted and not only rejected.
+4. **Security S-4** (`docs/security.md` §4): the CSP adds `form-action 'none'; base-uri 'none';
+   object-src 'none'` — the three directives that do not inherit from `default-src`.
+
+**Why.** ADR-045 measured the taxonomy as machinery without data: 13 of 357 concepts placed, **0
+`is_a` edges**, and nothing but a raw API POST able to write one. A proposal that cannot be accepted
+or rejected in the app is not a proposal (ADR-028 D8), and an `is_a` proposal has no field to sit
+under, so it needed a surface of its own. The merge baseline supplied the input: 21 of its 34
+near-duplicate pairs at ≥ 0.85 were narrower terms, not duplicates.
+
+**Measured, $0.** 357 concepts → 27 `is_a` candidates; first reading 17 ok · 5 check · 5 fragment.
+**One of the 27 touches the 13 graph concepts** — the shared heads live in the keyword-derived
+vocabulary, so this rule does not build a spine *for the graph*. Matching aliases as well as labels
+adds 10 candidates, nearly all wrong (`ai benchmarks` → `benchmarks plateau`), because an alias is a
+different phrase whose head is not the concept's: labels only. Live, the review pane lists 95
+proposals (13 concept placements + 82 document classifications).
+
+**Rejected.** Proposing on a shared *prefix* — `self-sorting memory` is a kind of memory, not a kind
+of `self-sorting`; the merge baseline's "narrower" column contains both shapes and only the
+suffix one is hyponymy. Directing a cosine pair no lexical rule can direct (`apoptosis ~ cell
+death`) — those stay for the hand score. Filtering fragment candidates (`recog`, `unlabeled`)
+automatically — rejecting one is a click, and inventing a cleverer filter would hide row 93's real
+problem. Running `propose_isa --apply` on the live library unasked.
+
+**Found on the way.** `taxonomy_propose.write_proposals` caught only `ValueError`, so one id deleted
+between the pass and the write would have raised `IntegrityError` and cost the whole batch; both
+writers now use a savepoint per proposal (`tests/unit/test_taxonomy_propose.py`).
+
+**What it opens.** The user's decision on running the proposer against the library, and then the
+review. Row 92/93 read the same list: a fragment proposed as a parent is a vocabulary problem, not
+a hierarchy one.
 
 ---
 
@@ -912,37 +966,3 @@ the check means. Not done here — it needs the built commit recorded next to th
 a change to the build, not to the check.
 
 ---
-
-## 2026-09-01 (6) — Two UI corrections from using the app: controls too small to find, and a dropdown painted by the OS
-
-**What changed.** Both reported after driving the merged build in the native Tauri window.
-
-1. **The source pane's header controls were too small to find.** 0.15rem of padding under a 0.7rem
-   label, drawn in the muted `--fg-2`, inside a border that reads as part of the pane frame. Three
-   changes, no redesign: a real hit target (**26px** row, steppers squared to 26x26 from 23px wide,
-   close 29x26), the resting colour moved off `--fg-2` onto **`--fg`**, and hover that fills the
-   button rather than only tinting the glyph. The active fit preset now takes the accent as a
-   *fill* (`--accent` / `--accent-fg`) instead of tinting its text, so which mode is on is legible
-   at a glance. Focus rings added on all three groups.
-2. **The chat folder-scope dropdown did not match the app.** Its options and popup were painted by
-   the user agent in the **OS** scheme — a light menu over a dark app.
-
-**The second one was not a colour bug in that component.** `.scopepick select` sets
-`background: none`, so the closed control was already correct; what was wrong is that **the app
-never declared `color-scheme`**. Without it the UA paints every native widget in the system scheme
-regardless of the page's palette. So the fix is one declaration per theme state in `app.css`
-(`:root`, `[data-theme='dark']`, `[data-theme='light']`, and the `prefers-color-scheme` block) —
-next to the palettes, not on the one control, because the same mismatch was in **all five**
-`<select>`s and every native scrollbar fallback.
-
-**Verified live** in the running app, both themes: `color-scheme` resolves `dark` / `dark` / `light`
-across system-default, forced-dark and forced-light, and the scope `<select>` inherits it in all
-three. Control contrast checked in both — active preset indigo-on-white in light, and the close
-button now `#ece5d6` on dark where it was the muted `#a79e8b`.
-
-**Rejected.** *Styling `option` backgrounds directly* — works in Chromium, does nothing for the
-popup chrome or the scrollbars, and would need repeating in five places. *Hardcoding
-`color-scheme: dark` on the control* — correct in one theme and wrong in the other.
-
-**Gates.** node:test 257/257 · svelte-check 219/0. CSS-only plus one icon size; no logic touched.
-**$0 — no model call.**

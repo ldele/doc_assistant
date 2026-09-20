@@ -47,6 +47,7 @@ from typing import Literal
 import networkx as nx
 import structlog
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from doc_assistant.db.models import Concept, ConceptAlias, ConceptPresenceRow, Document
@@ -510,32 +511,40 @@ def write_proposals(session: Session, proposals: tuple[PlacementProposal, ...]) 
     """Persist proposals as ``origin="proposed"`` links. Returns ``(n_hierarchy, n_document)``.
 
     Concept placements become ``concept --in_field--> field`` edges; document placements become
-    ``document_field`` rows. Both go through the ``taxonomy.py`` seam, so the cycle check and the
-    domain-target check still apply and a curated row is never overwritten. A per-proposal failure
-    (a cycle, a target that turned out not to be a domain) is logged and skipped — one bad
-    proposal does not lose the batch.
+    ``document_field`` rows. Both go through the ``taxonomy.py`` seam, so the cycle check, the
+    endpoint-kind check and the domain-target check still apply and a curated row is never
+    overwritten. A per-proposal failure (a cycle, a wrong endpoint kind, an id that has since been
+    deleted) is logged and skipped — one bad proposal does not lose the batch.
+
+    Each write runs in its own savepoint. A rejected *id* raises ``IntegrityError`` on the seam's
+    flush rather than ``ValueError``, and an unwound failed flush poisons the whole session: before
+    the savepoint, one stale id turned the rest of the batch into a lost transaction.
     """
     n_hierarchy = 0
     n_documents = 0
     for proposal in proposals:
         try:
-            if proposal.item_kind == "concept":
-                add_hierarchy_edge(
-                    session, proposal.item_id, proposal.field_id, "in_field", origin="proposed"
-                )
-                n_hierarchy += 1
-            else:
-                attach_document_field(
-                    session, proposal.item_id, proposal.field_id, origin="proposed"
-                )
-                n_documents += 1
-        except ValueError as exc:  # cycle, non-domain target, bad origin — all ValueError-rooted
+            with session.begin_nested():  # counted only after it commits — the flush is on exit
+                if proposal.item_kind == "concept":
+                    add_hierarchy_edge(
+                        session, proposal.item_id, proposal.field_id, "in_field", origin="proposed"
+                    )
+                else:
+                    attach_document_field(
+                        session, proposal.item_id, proposal.field_id, origin="proposed"
+                    )
+        except (ValueError, IntegrityError) as exc:
             log.warning(
                 "taxonomy_propose_write_rejected",
                 item=proposal.item_id,
                 field=proposal.field_id,
                 error=str(exc),
             )
+            continue
+        if proposal.item_kind == "concept":
+            n_hierarchy += 1
+        else:
+            n_documents += 1
     return n_hierarchy, n_documents
 
 

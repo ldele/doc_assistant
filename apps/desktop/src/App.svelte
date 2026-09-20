@@ -99,6 +99,7 @@
     taxonomy,
     taxonomyAddEdge,
     taxonomyAttachDocument,
+    taxonomyDetachDocument,
     taxonomyRemoveEdge,
   } from './lib/library/taxonomy.svelte'
   import { LIB_SORTS, libPrefs, setLibrarySort, setLibraryView } from './lib/library/prefs.svelte'
@@ -1435,6 +1436,7 @@
   <LibraryTaxonomy
     view={taxonomy.view}
     fieldDetail={taxonomy.fieldDetail}
+    proposals={taxonomy.proposals}
     loading={taxonomy.loading}
     error={taxonomy.error}
     {documents}
@@ -1444,6 +1446,7 @@
     onAddEdge={taxonomyAddEdge}
     onRemoveEdge={taxonomyRemoveEdge}
     onAttachDocument={taxonomyAttachDocument}
+    onDetachDocument={taxonomyDetachDocument}
     onClose={closeTaxonomy}
   />
 {/if}

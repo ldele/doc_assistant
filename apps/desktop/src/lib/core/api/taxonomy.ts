@@ -6,6 +6,8 @@ import { API_BASE, errorDetail } from './_base'
 import type {
   FieldDetail,
   HierarchyEdgeRequest,
+  ProposedEdge,
+  Proposals,
   TaxonomyView,
 } from '../types'
 
@@ -22,6 +24,13 @@ export async function getFieldDetail(fieldId: string): Promise<FieldDetail> {
   const r = await fetch(`${API_BASE}/api/taxonomy/fields/${encodeURIComponent(fieldId)}`)
   if (!r.ok) throw new Error(await errorDetail(r, 'field detail'))
   return (await r.json()) as FieldDetail
+}
+/** Every proposed hierarchy edge awaiting accept-or-delete (ADR-028 D8). An empty list is the
+ *  ordinary state — nothing proposed, or everything already reviewed. */
+export async function getProposals(): Promise<ProposedEdge[]> {
+  const r = await fetch(`${API_BASE}/api/taxonomy/proposals`)
+  if (!r.ok) throw new Error(await errorDetail(r, 'taxonomy proposals'))
+  return ((await r.json()) as Proposals).proposals
 }
 /** Add one curated hierarchy edge (`source --type--> target`). Attaching a concept to a field is
  *  just an `in_field` edge from the concept to the domain node — same endpoint. Surfaces the

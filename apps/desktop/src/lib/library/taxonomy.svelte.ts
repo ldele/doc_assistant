@@ -14,12 +14,20 @@
 import {
   addHierarchyEdge,
   attachDocumentField,
+  detachDocumentField,
   getConceptGraph,
   getFieldDetail,
+  getProposals,
   getTaxonomy,
   removeHierarchyEdge,
 } from '../core/api'
-import type { FieldDetail, HierarchyEdgeRequest, LabelledOption, TaxonomyView } from '../core/types'
+import type {
+  FieldDetail,
+  HierarchyEdgeRequest,
+  LabelledOption,
+  ProposedEdge,
+  TaxonomyView,
+} from '../core/types'
 import { graph } from '../graph/graph.svelte'
 
 export const taxonomy = $state({
@@ -30,6 +38,9 @@ export const taxonomy = $state({
   concepts: [] as LabelledOption[],
   /** Preselected concept when opened from a graph node's "Place" action. */
   focusConceptId: null as string | null,
+  /** Auto-proposed edges awaiting accept-or-delete (ADR-028 D8). `is_a` proposals live only
+   *  here — they hang under no field, so the field detail cannot show them. */
+  proposals: [] as ProposedEdge[],
   loading: false,
   error: null as string | null,
 })
@@ -43,6 +54,7 @@ export async function openTaxonomy(focusConceptId: string | null = null): Promis
   taxonomy.error = null
   taxonomy.fieldDetail = null
   void ensureTaxonomyConcepts()
+  void refreshProposals()
   taxonomy.loading = true
   try {
     taxonomy.view = await getTaxonomy()
@@ -70,6 +82,16 @@ export async function ensureTaxonomyConcepts(): Promise<void> {
   }
 }
 
+/** Re-read the proposal list. Failure leaves the previous list — a stale review list is worth
+ *  more than an empty one, and every accept/reject is re-validated by the server anyway. */
+export async function refreshProposals(): Promise<void> {
+  try {
+    taxonomy.proposals = await getProposals()
+  } catch {
+    // keep the prior list
+  }
+}
+
 export async function selectTaxonomyField(fieldId: string): Promise<void> {
   try {
     taxonomy.fieldDetail = await getFieldDetail(fieldId)
@@ -86,6 +108,7 @@ export async function reloadTaxonomy(): Promise<void> {
   } catch {
     // keep the prior view
   }
+  await refreshProposals()
   const id = taxonomy.fieldDetail?.id
   if (id !== undefined) {
     try {
@@ -115,4 +138,7 @@ export function taxonomyRemoveEdge(body: HierarchyEdgeRequest): Promise<void> {
 }
 export function taxonomyAttachDocument(docId: string, fieldId: string): Promise<void> {
   return mutate(() => attachDocumentField(docId, fieldId))
+}
+export function taxonomyDetachDocument(docId: string, fieldId: string): Promise<void> {
+  return mutate(() => detachDocumentField(docId, fieldId))
 }

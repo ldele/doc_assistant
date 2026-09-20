@@ -141,7 +141,16 @@ increment 1 — 47 docs / 357 concepts / 13 in the graph vocabulary), so the liv
 local Ollama → verify the proposals through `GET /api/taxonomy` + one field detail.
 
 ## Out of scope → 3b and beyond
-- **3b (frontend):** proposal badge + accept/reject in `LibraryTaxonomy.svelte` (accept = the existing
-  curated `POST /hierarchy`; reject = the existing `DELETE`), and an "unplaced" queue to work through.
+
+**3b and `is_a` proposals landed 2026-09-20 (ROADMAP 51)** — DEVLOG 2026-09-20 (1):
+`GET /api/taxonomy/proposals` serves every proposed link (hierarchy edges *and* document
+classifications, so the count cannot contradict the field pane), `LibraryTaxonomy.svelte` gained the
+*Proposed placements* pane plus accept/reject on each proposed chip and document row, and
+`attach_document_field` gained the promote that makes accepting a document classification possible.
+`is_a` proposals come from `knowledge/isa_propose.py` — deterministic, $0, a shared head rather than
+this file's LLM pass (`tests/eval/baselines/isa_head_suffix_2026-09-20.md`).
+
+Still out:
+- an "unplaced" queue to work through.
 - **RG-015:** measure placement precision on a sample before any coverage-based gap detector trusts it.
-- `is_a` proposals; MeSH/ACM grafting; per-document *multi*-field proposals (this pass proposes one).
+- MeSH/ACM grafting; per-document *multi*-field proposals (this pass proposes one).

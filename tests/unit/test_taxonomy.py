@@ -24,6 +24,7 @@ from doc_assistant.db.models import (
     DocumentField,
 )
 from doc_assistant.knowledge.taxonomy import (
+    EdgeKindError,
     NotADomainError,
     TaxonomyCycleError,
     add_hierarchy_edge,
@@ -157,9 +158,34 @@ def test_self_edge_is_a_cycle(temp_db):
     from doc_assistant.db.session import session_scope
 
     with session_scope() as s:
-        _concept(s, "x")
+        _concept(s, "x", kind="domain")  # a field inside itself — kind-legal, still a cycle
         with pytest.raises(TaxonomyCycleError):
             add_hierarchy_edge(s, "x", "x", "in_field")
+
+
+def test_endpoint_kinds_must_match_the_edge_type(temp_db):
+    """ROADMAP 51 / ADR-028 D2. Before this, `is_a` concept -> field was written happily, and the
+    two edge types could only be told apart by whoever wrote the row."""
+    from doc_assistant.db.session import session_scope
+
+    with session_scope() as s:
+        _concept(s, "c1")
+        _concept(s, "c2")
+        _concept(s, "field", kind="domain")
+
+        with pytest.raises(EdgeKindError):
+            add_hierarchy_edge(s, "c1", "field", "is_a")  # a field is not a broader concept
+        with pytest.raises(EdgeKindError):
+            add_hierarchy_edge(s, "field", "c1", "is_a")
+        with pytest.raises(EdgeKindError):
+            add_hierarchy_edge(s, "c1", "c2", "in_field")  # a concept is not a field
+
+        # The two legal shapes still pass, including a field inside a broader field.
+        add_hierarchy_edge(s, "c1", "c2", "is_a")
+        add_hierarchy_edge(s, "c1", "field", "in_field")
+        _concept(s, "parent_field", kind="domain")
+        add_hierarchy_edge(s, "field", "parent_field", "in_field")
+        assert len(s.execute(select(ConceptHierarchy)).scalars().all()) == 3
 
 
 # ============================================================

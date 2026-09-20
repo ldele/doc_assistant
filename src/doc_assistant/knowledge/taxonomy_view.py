@@ -17,8 +17,9 @@ from dataclasses import dataclass
 
 import networkx as nx
 from sqlalchemy import func, select
+from sqlalchemy.orm import aliased
 
-from doc_assistant.db.models import Document, DocumentField
+from doc_assistant.db.models import Concept, ConceptHierarchy, Document, DocumentField
 from doc_assistant.db.session import session_scope
 from doc_assistant.knowledge.taxonomy import load_taxonomy, presence_nodes, unplaced_concepts
 
@@ -243,3 +244,92 @@ def load_field_detail(field_id: str) -> FieldDetail | None:
         n_concepts_rollup=len(concepts_rollup),
         n_documents_rollup=len(docs_rollup),
     )
+
+
+@dataclass(frozen=True)
+class ProposedEdge:
+    """One ``origin="proposed"`` link awaiting accept-or-delete (ADR-028 D8).
+
+    Both proposal tables in one shape, because they are one review unit for the person reading
+    them. ``source_kind`` says which: ``"concept"``/``"domain"`` is a ``concept_hierarchy`` edge
+    (accept with the curated hierarchy write, reject with the hierarchy delete), ``"document"`` is
+    a ``document_field`` link (the document attach/detach pair). An ``is_a`` proposal hangs under
+    no field, so without this list a concept→concept proposal would be invisible to the app; the
+    others also show up under their field in :func:`load_field_detail`, and a count that left them
+    out would contradict what that pane shows.
+    """
+
+    source_id: str
+    source_label: str
+    source_kind: str
+    target_id: str
+    target_label: str
+    type: str
+
+
+def load_proposals() -> tuple[ProposedEdge, ...]:
+    """Every proposed link: ``is_a`` first, then concepts in a field, then documents.
+
+    Empty is the ordinary state — nothing has been proposed, or everything proposed has been
+    accepted or rejected. A row whose endpoint has since been deleted cannot occur (both tables'
+    foreign keys cascade), so no orphan filtering is needed here.
+    """
+    with session_scope() as session:
+        source = aliased(Concept)
+        target = aliased(Concept)
+        edge_rows = session.execute(
+            select(
+                ConceptHierarchy.source_id,
+                source.label,
+                source.kind,
+                ConceptHierarchy.target_id,
+                target.label,
+                ConceptHierarchy.type,
+            )
+            .join(source, source.id == ConceptHierarchy.source_id)
+            .join(target, target.id == ConceptHierarchy.target_id)
+            .where(ConceptHierarchy.origin == "proposed")
+        ).all()
+        doc_rows = session.execute(
+            select(
+                DocumentField.document_id,
+                Document.title,
+                Document.filename,
+                DocumentField.concept_id,
+                Concept.label,
+            )
+            .join(Document, Document.id == DocumentField.document_id)
+            .join(Concept, Concept.id == DocumentField.concept_id)
+            .where(DocumentField.origin == "proposed")
+        ).all()
+
+    proposals = [
+        ProposedEdge(
+            source_id=str(r[0]),
+            source_label=str(r[1]),
+            source_kind=str(r[2]),
+            target_id=str(r[3]),
+            target_label=str(r[4]),
+            type=str(r[5]),
+        )
+        for r in edge_rows
+    ]
+    proposals += [
+        ProposedEdge(
+            source_id=str(r[0]),
+            source_label=str(r[1] or r[2]),
+            source_kind="document",
+            target_id=str(r[3]),
+            target_label=str(r[4]),
+            type="in_field",
+        )
+        for r in doc_rows
+    ]
+    proposals.sort(
+        key=lambda p: (
+            p.type != "is_a",
+            p.source_kind == "document",
+            p.source_label.casefold(),
+        )
+    )
+    return tuple(proposals)

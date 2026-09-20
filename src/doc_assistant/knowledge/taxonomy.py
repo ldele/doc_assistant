@@ -10,6 +10,9 @@ Two invariants live here and nowhere else:
   any edge that would close a cycle (ADR-028 Decision 3). There is *no* maximum depth — a hard
   cap is the corpus-tuned magic number the robustness contract bans, and "depth" is multi-valued
   under polyhierarchy; acyclicity alone guarantees traversal termination and well-defined roots.
+- **Endpoint kinds** — ``is_a`` joins two concepts, ``in_field`` points at a ``kind="domain"``
+  field (ADR-028 Decision 2). :func:`add_hierarchy_edge` refuses anything else, so the two edge
+  types stay distinguishable to every reader of the table.
 - **Presence-kind guard** — :func:`presence_nodes` is the single canonical accessor returning only
   ``kind="concept"`` rows, so the domain-exclusion (ADR-028 Decision 4) is written once, centrally,
   not scattered as N ``WHERE kind`` clauses across every presence/gap detector.
@@ -54,10 +57,48 @@ class NotADomainError(ValueError):
     """Raised when a document is attached to a field node that is not ``kind="domain"``."""
 
 
+class EdgeKindError(ValueError):
+    """Raised when an edge's endpoint ``kind``s do not match its type (ADR-028 D2).
+
+    ``is_a`` joins two concepts; ``in_field`` points at a field. Without this the two types are
+    interchangeable at the write seam — ``is_a`` concept→field was accepted — and the distinction
+    the ADR draws exists only in the writer's head.
+    """
+
+
 def _hierarchy_edges(session: Session) -> list[tuple[str, str]]:
     """All curated hierarchy edges as ``(source_id, target_id)`` pairs (both edge types)."""
     rows = session.execute(select(ConceptHierarchy.source_id, ConceptHierarchy.target_id)).all()
     return [(r[0], r[1]) for r in rows]
+
+
+def _check_endpoint_kinds(
+    session: Session, source_id: str, target_id: str, edge_type: str
+) -> None:
+    """Enforce ADR-028 D2's endpoint kinds: ``is_a`` concept→concept, ``in_field`` →field.
+
+    An id that is not in ``concepts`` at all is left alone — the flush in
+    :func:`add_hierarchy_edge` raises the foreign-key error for it, and a missing row is a
+    different mistake from a wrongly-typed one.
+    """
+    kinds: dict[str, str] = {
+        str(cid): str(kind)
+        for cid, kind in session.execute(
+            select(Concept.id, Concept.kind).where(Concept.id.in_([source_id, target_id]))
+        ).all()
+    }
+    if edge_type == "is_a":
+        for cid in (source_id, target_id):
+            kind = kinds.get(cid)
+            if kind is not None and kind != "concept":
+                raise EdgeKindError(
+                    f"is_a joins two concepts; {cid!r} is kind={kind!r} "
+                    f"(a concept belongs to a field through in_field)"
+                )
+        return
+    kind = kinds.get(target_id)
+    if kind is not None and kind != "domain":
+        raise EdgeKindError(f"in_field points at a field; {target_id!r} is kind={kind!r}")
 
 
 def add_hierarchy_edge(
@@ -80,6 +121,7 @@ def add_hierarchy_edge(
     Raises:
         ValueError: ``edge_type``/``origin`` is not one of :data:`HIERARCHY_EDGE_TYPES` /
             :data:`HIERARCHY_ORIGINS`.
+        EdgeKindError: the endpoints' ``kind``s do not match ``edge_type`` (ADR-028 D2).
         TaxonomyCycleError: the edge would make the hierarchy cyclic (incl. a self-edge).
     """
     if edge_type not in HIERARCHY_EDGE_TYPES:
@@ -88,6 +130,7 @@ def add_hierarchy_edge(
         )
     if origin not in HIERARCHY_ORIGINS:
         raise ValueError(f"origin must be one of {sorted(HIERARCHY_ORIGINS)}, got {origin!r}")
+    _check_endpoint_kinds(session, source_id, target_id, edge_type)
 
     existing = session.execute(
         select(ConceptHierarchy).where(
@@ -149,8 +192,10 @@ def attach_document_field(
 
     Validates that ``field_id`` resolves to a domain node — a document must attach to a *field*,
     not to a text-bearing concept (ADR-028 D6). A re-attach of the same ``(document, field)`` pair
-    returns the existing row untouched (its ``origin`` is not overwritten — a curated row keeps
-    winning over a later proposal).
+    returns the existing row: a **curated** write over a ``proposed`` one promotes it in place
+    (D8's accept primitive, the same shape :func:`add_hierarchy_edge` has — without it a proposed
+    classification could be rejected but never accepted), while a ``proposed`` write leaves a
+    curated row alone, so an auto-pass never demotes the user's own placement.
 
     Raises:
         ValueError: ``origin`` is not one of :data:`DOCUMENT_FIELD_ORIGINS`.
@@ -172,6 +217,9 @@ def attach_document_field(
         )
     ).scalar_one_or_none()
     if existing is not None:
+        if origin == "curated" and existing.origin != "curated":
+            existing.origin = "curated"  # accept: promote the proposal, don't duplicate it
+            session.flush()
         return existing
 
     link = DocumentField(document_id=document_id, concept_id=field_id, origin=origin)

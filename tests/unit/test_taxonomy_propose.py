@@ -18,6 +18,7 @@ from sqlalchemy.orm import sessionmaker
 
 from doc_assistant.db.models import Base, Concept, Document
 from doc_assistant.knowledge.taxonomy_propose import (
+    PlacementProposal,
     ProposalItem,
     build_choice_messages,
     division_candidates,
@@ -300,3 +301,50 @@ def test_run_propose_on_an_empty_corpus_is_honest(temp_db):
     """Robustness contract: 0 documents / 0 concepts is a legitimate state, not an error."""
     run = run_propose(apply=False)
     assert (run.n_unplaced_concepts, run.n_unclassified_documents, run.result.n_items) == (0, 0, 0)
+
+
+# ============================================================
+# write_proposals — one bad proposal must not cost the batch (ROADMAP 51)
+# ============================================================
+
+
+def _proposal(item_id: str, field_id: str, kind: str = "concept") -> PlacementProposal:
+    return PlacementProposal(
+        item_kind=kind,  # type: ignore[arg-type]
+        item_id=item_id,
+        item_label=item_id,
+        field_id=field_id,
+        field_label=field_id,
+        division_id=field_id,
+        division_label=field_id,
+    )
+
+
+def test_write_proposals_skips_bad_rows_and_keeps_the_good_ones(temp_db):
+    """A stale id fails the seam's flush with `IntegrityError`, not `ValueError`, and an unwound
+    failed flush used to poison the session — so everything after the bad row was lost."""
+    from sqlalchemy import select
+
+    from doc_assistant.db.models import ConceptHierarchy
+    from doc_assistant.db.session import session_scope
+    from doc_assistant.knowledge.taxonomy_propose import write_proposals
+
+    with session_scope() as session:
+        session.add(Concept(id="comp", label="Computing", kind="domain"))
+        session.add(Concept(id="c1", label="dense retrieval", kind="concept"))
+        session.add(Concept(id="c2", label="reranking", kind="concept"))
+        session.flush()
+
+        written = write_proposals(
+            session,
+            (
+                _proposal("deleted-since-the-pass", "comp"),  # IntegrityError: no such concept
+                _proposal("c1", "c2"),  # EdgeKindError: a concept is not a field
+                _proposal("c1", "comp"),  # the good one, after both failures
+            ),
+        )
+        assert written == (1, 0)
+        edges = session.execute(select(ConceptHierarchy)).scalars().all()
+        assert [(e.source_id, e.target_id, e.type, e.origin) for e in edges] == [
+            ("c1", "comp", "in_field", "proposed")
+        ]

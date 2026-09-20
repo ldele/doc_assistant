@@ -14,7 +14,14 @@ from typing import TYPE_CHECKING, Literal
 from pydantic import BaseModel
 
 if TYPE_CHECKING:
-    from doc_assistant.knowledge.taxonomy_view import FieldDetail, TaxonomyField, TaxonomyView
+    from collections.abc import Sequence
+
+    from doc_assistant.knowledge.taxonomy_view import (
+        FieldDetail,
+        ProposedEdge,
+        TaxonomyField,
+        TaxonomyView,
+    )
 
 
 class TaxonomyFieldPayload(BaseModel):
@@ -109,6 +116,43 @@ class FieldDetailPayload(BaseModel):
             ],
             n_concepts_rollup=d.n_concepts_rollup,
             n_documents_rollup=d.n_documents_rollup,
+        )
+
+
+class ProposedEdgePayload(BaseModel):
+    """One proposed hierarchy edge awaiting accept-or-delete (ADR-028 D8).
+
+    `source_kind` says what the narrower end is — a concept for both edge types, since only a
+    concept or a field is ever proposed a parent, and the UI labels the row with it.
+    """
+
+    source_id: str
+    source_label: str
+    source_kind: str
+    target_id: str
+    target_label: str
+    type: Literal["is_a", "in_field"]
+
+
+class ProposalsPayload(BaseModel):
+    """Every proposal the taxonomy is holding. An empty list is the ordinary state."""
+
+    proposals: list[ProposedEdgePayload]
+
+    @classmethod
+    def from_edges(cls, edges: Sequence[ProposedEdge]) -> ProposalsPayload:
+        return cls(
+            proposals=[
+                ProposedEdgePayload(
+                    source_id=e.source_id,
+                    source_label=e.source_label,
+                    source_kind=e.source_kind,
+                    target_id=e.target_id,
+                    target_label=e.target_label,
+                    type=e.type,  # type: ignore[arg-type]
+                )
+                for e in edges
+            ]
         )
 
 

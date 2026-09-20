@@ -53,6 +53,20 @@ export interface FieldDetail {
   n_concepts_rollup: number
   n_documents_rollup: number
 }
+// One origin='proposed' hierarchy edge awaiting accept-or-delete (ADR-028 D8, TX3b). Accepting is
+// the ordinary curated POST of the same triple (it promotes the row); rejecting is the DELETE.
+// An `is_a` proposal belongs under no field, so this list is the only place it surfaces.
+export interface ProposedEdge {
+  source_id: string
+  source_label: string
+  source_kind: string
+  target_id: string
+  target_label: string
+  type: 'is_a' | 'in_field'
+}
+export interface Proposals {
+  proposals: ProposedEdge[]
+}
 // source --type--> target (narrower -> broader). `in_field` also attaches a concept to a field.
 export interface HierarchyEdgeRequest {
   source_id: string

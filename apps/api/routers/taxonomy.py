@@ -15,6 +15,7 @@ from fastapi import APIRouter, HTTPException
 from apps.api.models.taxonomy import (
     FieldDetailPayload,
     HierarchyEdgeRequest,
+    ProposalsPayload,
     TaxonomyViewPayload,
 )
 
@@ -45,6 +46,18 @@ def get_field_detail(field_id: str) -> FieldDetailPayload:
     if detail is None:
         raise HTTPException(status_code=404, detail=f"no taxonomy field with id {field_id!r}")
     return FieldDetailPayload.from_detail(detail)
+
+
+@router.get("/api/taxonomy/proposals")
+def get_proposals() -> ProposalsPayload:
+    """Every ``origin="proposed"`` hierarchy edge awaiting accept-or-delete (ADR-028 D8).
+
+    Accepting one is ``POST /api/taxonomy/hierarchy`` with the same triple — a curated write
+    promotes the row in place — and rejecting it is ``DELETE`` on the same triple. An empty list
+    is the ordinary state, not a 404: nothing proposed, or everything already reviewed."""
+    from doc_assistant.knowledge.taxonomy_view import load_proposals
+
+    return ProposalsPayload.from_edges(load_proposals())
 
 
 @router.post("/api/taxonomy/hierarchy", status_code=201)

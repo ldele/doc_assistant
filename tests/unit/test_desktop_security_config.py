@@ -52,6 +52,17 @@ def test_csp_is_set_and_never_unsafe() -> None:
         assert hosts == [SIDECAR_ORIGIN], f"{name} reaches beyond the sidecar: {hosts}"
 
 
+def test_csp_closes_the_directives_that_do_not_inherit() -> None:
+    """S-4. ``default-src`` does not cover form submission, ``<base href>`` or plugin documents, so
+    a sanitiser bypass could still post a quoted passage to a remote form, re-root every relative
+    URL, or embed an object. The app has no ``<form>``, no ``<base>`` and no ``<object>`` or
+    ``<embed>`` — nothing to lose by refusing all three outright."""
+    conf = json.loads(TAURI_CONF.read_text(encoding="utf-8"))
+    directives = _csp_directives(conf["app"]["security"]["csp"])
+    for name in ("form-action", "base-uri", "object-src"):
+        assert directives.get(name) == ["'none'"], f"{name}: {directives.get(name)}"
+
+
 def test_capabilities_are_exactly_the_documented_set() -> None:
     cap = json.loads(CAPABILITIES.read_text(encoding="utf-8"))
     assert cap["windows"] == ["main"]

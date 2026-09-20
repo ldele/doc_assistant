@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-09-18 (ADR-052: a concept is a meaning — accepted) · class: living -->
+<!-- status: active · updated: 2026-09-20 (no row change — ADR-052's row landed in the 2026-09-19 commit; date bumped for rule 12) · class: living -->
 
 # Decisions — index
 

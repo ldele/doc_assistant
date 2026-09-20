@@ -22,7 +22,7 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; img-src 'self' http://127.0.0.1:8001 asset: data:; connect-src 'self' http://127.0.0.1:8001"
+      "csp": "default-src 'self'; img-src 'self' http://127.0.0.1:8001 asset: data:; connect-src 'self' http://127.0.0.1:8001; form-action 'none'; base-uri 'none'; object-src 'none'"
     }
   },
   "bundle": {

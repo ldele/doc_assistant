@@ -193,6 +193,68 @@ def test_proposed_links_are_marked_on_the_wire(client: TestClient) -> None:
     accepted = client.get("/api/taxonomy/fields/grp").json()
     assert [m["origin"] for m in accepted["concepts"]] == ["curated"]
 
+    # a proposed *document* classification accepts the same way — re-attaching promotes it
+    assert client.post("/api/taxonomy/documents/d1/fields/grp").status_code == 201
+    assert [m["origin"] for m in client.get("/api/taxonomy/fields/grp").json()["documents"]] == [
+        "curated"
+    ]
+
+
+def test_proposals_list_carries_both_edge_types_and_empties_as_they_are_reviewed(
+    client: TestClient,
+) -> None:
+    """ROADMAP 51 / TX3b. An `is_a` proposal has no field to sit under, so without this route a
+    concept->concept proposal would exist in the DB and nowhere in the app."""
+    _seed_field("grp", "ML")
+    _seed_field("narrow", "beta oscillations", kind="concept")
+    _seed_field("broad", "oscillations", kind="concept")
+    with session_scope() as s:
+        s.add(Document(id="d1", filename="p.pdf", source_original="p", doc_hash="h", format="pdf"))
+    with session_scope() as s:
+        from doc_assistant.knowledge.taxonomy import add_hierarchy_edge, attach_document_field
+
+        add_hierarchy_edge(s, "narrow", "broad", "is_a", origin="proposed")
+        add_hierarchy_edge(s, "broad", "grp", "in_field", origin="proposed")
+        attach_document_field(s, "d1", "grp", origin="proposed")
+
+    proposals = client.get("/api/taxonomy/proposals").json()["proposals"]
+    # is_a first, then concepts in a field, then documents — the count the app shows is every
+    # proposal, so it cannot contradict what the field pane displays.
+    assert [(p["source_label"], p["target_label"], p["source_kind"]) for p in proposals] == [
+        ("beta oscillations", "oscillations", "concept"),
+        ("oscillations", "ML", "concept"),
+        ("p.pdf", "ML", "document"),
+    ]
+    assert client.delete("/api/taxonomy/documents/d1/fields/grp").json()["removed"] == 1
+
+    # accept the is_a, reject the in_field — both leave the list
+    assert (
+        client.post(
+            "/api/taxonomy/hierarchy",
+            json={"source_id": "narrow", "target_id": "broad", "type": "is_a"},
+        ).status_code
+        == 201
+    )
+    assert (
+        client.request(
+            "DELETE",
+            "/api/taxonomy/hierarchy",
+            json={"source_id": "broad", "target_id": "grp", "type": "in_field"},
+        ).json()["removed"]
+        == 1
+    )
+    assert client.get("/api/taxonomy/proposals").json()["proposals"] == []
+
+
+def test_an_is_a_edge_must_join_two_concepts(client: TestClient) -> None:
+    """ROADMAP 51. The raw POST was the only `is_a` writer and it accepted concept -> field."""
+    _seed_field("grp", "ML")
+    _seed_field("c1", "Embeddings", kind="concept")
+    r = client.post(
+        "/api/taxonomy/hierarchy", json={"source_id": "c1", "target_id": "grp", "type": "is_a"}
+    )
+    assert r.status_code == 400 and "is_a joins two concepts" in r.json()["detail"]
+
 
 def test_field_detail_404_for_non_field(client: TestClient) -> None:
     _seed_field("grp", "ML")

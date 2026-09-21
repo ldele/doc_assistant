@@ -35,6 +35,7 @@ from apps.api.routers import (
     chat,
     concepts,
     conversations,
+    definitions,
     health,
     library,
     settings,
@@ -158,6 +159,7 @@ def create_app(
     app.include_router(conversations.router)
     app.include_router(library.router)
     app.include_router(concepts.router)
+    app.include_router(definitions.router)
     app.include_router(taxonomy.router)
     app.include_router(settings.router)
     app.include_router(setup.router)

@@ -729,6 +729,69 @@ class ConceptMerge(Base):
     undone_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
 
+class ConceptDefinition(Base):
+    """One candidate definition of a concept, with where it came from (ADR-053, ROADMAP 93).
+
+    A concept's definition is **chosen from candidates**, and no source overwrites another: a
+    sentence found in the library, a model's text with the inputs it was handed, and the user's own
+    words each live here side by side. ``status`` is ``suggested`` / ``chosen`` / ``dismissed``; at
+    most one row per concept is ``chosen``, and ``Concept.definition`` mirrors its text so every
+    existing reader keeps working. Only ``knowledge.definitions`` writes either — the choose / undo
+    path is the one place the two can be kept in step.
+
+    ``source`` is ``passage`` / ``user`` / ``model``. ``provenance_key`` makes a re-run idempotent
+    (a passage is keyed on its chunk and text, so extracting twice adds nothing);
+    ``provenance_json`` holds what a reader needs to check it (document and chunk key — or model,
+    prompt version and input ids); ``evidence_json`` holds the reliability reasons and the grade
+    derived from them, recomputable, never a model's rating of itself. Additive via
+    ``create_all``.
+    """
+
+    __tablename__ = "concept_definitions"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid4()))
+    concept_id: Mapped[str] = mapped_column(
+        String, ForeignKey("concepts.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    text: Mapped[str] = mapped_column(Text, nullable=False)
+    source: Mapped[str] = mapped_column(String, nullable=False)
+    provenance_key: Mapped[str] = mapped_column(String, nullable=False)
+    provenance_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    evidence_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    status: Mapped[str] = mapped_column(String, nullable=False, default="suggested", index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+    __table_args__ = (
+        UniqueConstraint(
+            "concept_id", "source", "provenance_key", name="uq_concept_definition_provenance"
+        ),
+    )
+
+
+class ConceptDefinitionEvent(Base):
+    """One choice made about a concept's definition — the record that makes it undoable (ADR-053).
+
+    ``action`` is ``chose`` / ``dismissed`` / ``restored``. ``previous_id`` is the candidate that
+    was chosen before a ``chose`` (``None`` when there was none), which is all an undo needs: put
+    that one back. ``seq`` orders a concept's events — not ``at``: two clicks inside one tick of
+    the Windows clock get the same timestamp, and "the latest" would then be a coin toss. Not
+    foreign keys, like ``ConceptMerge``: the record must outlive the rows it names. Additive via
+    ``create_all``.
+    """
+
+    __tablename__ = "concept_definition_events"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid4()))
+    concept_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    seq: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    definition_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    action: Mapped[str] = mapped_column(String, nullable=False)
+    previous_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
+    undone_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
 # ============================================================
 # AnswerRecord — Phase 5 / Integrity Chunk 1 (provenance card).
 # ============================================================

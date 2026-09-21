@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-09-17 (gaps rebuilt; "Uncited in answers" kept; rows for presence, coverage and merges after ROADMAP 53/54) · class: living -->
+<!-- status: active · updated: 2026-09-21 (a trust row for definition candidates — ADR-053) · class: living -->
 
 # The knowledge layer — what the concept graph is for, and which of its signals you can trust
 
@@ -151,6 +151,7 @@ Signals in this layer are **not** equally sound. Re-read against the code and th
 | `under_connected` | ❌ **noise at small vocabularies** | measures graph degree, dominated by vocabulary sparsity, not corpus coverage. Hidden by default in the gap list |
 | Stored gap rows | ⚠️ **can predate the graph** | a CLI skeleton rebuild does not rebuild gaps; on 2026-09-16 16 of 18 rows came from a build two graph versions old, and nothing in the UI says so (ROADMAP 91). The in-app Rebuild refreshes both; rebuilt 2026-09-17 (17 rows, all current) |
 | Taxonomy placement (TX3 auto-propose) | ❓ **unmeasured** | RG-015 is specced and has never run (KL4) |
+| Definition candidates (ADR-053, ROADMAP 93a) | ⚠️ **evidence, not a verdict** | a passage is quoted verbatim with its page; its grade is a spelled-out rule (the author coins or names the term, or a definition-shaped sentence opens with it = `strong`). On the 19 priority concepts the grade agrees with a by-hand reading 18 of 19 times, but a definition-shaped *claim* ("… is an excellent technique") grades as strong as a definition — read the reasons. Nothing is chosen for you (`tests/eval/baselines/definition_sources_2026-09-21.md`) |
 | Concept merges (`curate_concepts --dedup --apply`) | ⚠️ **safe, but not a duplicate detector** | since 2026-09-17 a merge moves placements, triage and surface forms to the survivor, is recorded, and `--undo-merge` splits it back. But no cosine threshold separates duplicates from narrower terms on labels: SPECTER2 at 0.85 would merge 354 of 357; bge-base at 0.85 gives 34 pairs, ~7 of them duplicates by a first reading (`tests/eval/baselines/concept_merge_cosine_2026-09-17.md`). Read the dry run; the hand score is ROADMAP 53 (3) |
 | **`contested` / `superseded_trend`** | ❌ **NOT A CORPUS MEASUREMENT (KI-33)** — **withheld from the UI since v0.4.1**, labelled `contested? (experimental)` where opted in | see below |
 

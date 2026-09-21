@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-09-20 · class: append-only -->
+<!-- status: active · updated: 2026-09-21 · class: append-only -->
 
 # DEVLOG — doc_assistant
 
@@ -14,8 +14,8 @@ Format: What changed | Why | Rejected alternatives | What it opens
 > oldest entries **verbatim** into the highest-numbered archive and verifies the bytes; then update
 > the range below by hand (cpc ticket T-003). A day may be split across two files at the cut.
 > Older entries, newest-first, unedited:
-> **2026-08-12 (1) → 2026-09-01 (6)** in [`docs/archive/DEVLOG-archive-006.md`](archive/DEVLOG-archive-006.md)
-> (rotated 2026-09-04, 2026-09-10, four times on 2026-09-16, on 2026-09-17, 2026-09-18 and 2026-09-20) ·
+> **2026-08-12 (1) → 2026-09-02 (2)** (the first 2026-09-02 entry is unnumbered) in [`docs/archive/DEVLOG-archive-006.md`](archive/DEVLOG-archive-006.md)
+> (rotated 2026-09-04, 2026-09-10, four times on 2026-09-16, on 2026-09-17, 2026-09-18, 2026-09-20 and twice on 2026-09-21) ·
 > **2026-08-08 (1) → 2026-08-11 (4)** in [`docs/archive/DEVLOG-archive-005.md`](archive/DEVLOG-archive-005.md)
 > (rotated 2026-08-30) ·
 > **2026-08-05 → 2026-08-07** in [`docs/archive/DEVLOG-archive-004.md`](archive/DEVLOG-archive-004.md)
@@ -30,6 +30,98 @@ Format: What changed | Why | Rejected alternatives | What it opens
 > see an entry that is itself an ADR in disguise). When either trips, rotate — **do not raise
 > the cap.** The cap exists because this log reached 8,244 lines before anyone noticed: every entry
 > is individually small and correct, so unbounded growth is invisible per commit.
+
+---
+
+## 2026-09-21 (2) — Expert vocabularies become a source of definitions (ADR-053 amended); a labelling page measures the rating
+
+**What changed.** ADR-053 gains a fourth candidate source, `reference`: an expert vocabulary's
+definition quoted verbatim with its vocabulary, identifier, version and licence — the user's decision
+after asking whether experts had already defined these terms. Local copies chosen by the document's
+field (ANZSRC), matched with the library as judge (abbreviations expanded from the library's own
+text, ties ranked by closeness to the concept's passages), shown as *what the field says* beside *how
+your library uses it*; no source that needs an account (UMLS, SNOMED CT). It becomes slice **93c**;
+papers to add move to 93d and the shared-word split to 93e. The ADR now opens with a one-sentence
+summary, a *To decide* list and a worked example (`hard negatives`; `dbs` for the two layers), after
+the user found it unclear — the general lesson is cpc ticket T-017. The **Definition Candidate
+Review** page (a private artifact) holds the 69 candidates for the 19 priority concepts with the
+text around each, six labels, and the machine's rating hidden until the user asks — the yardstick
+for every later refinement. `passage_evidence` says "once", not "1 times".
+
+**Why.** The user: a found sentence is evidence about a meaning, not the definition; the goal is to
+lean on the library and on expert sources rather than a model's own knowledge.
+
+**Measured, $0** (`tests/eval/baselines/reference_vocabularies_2026-09-21.md`). Four public
+vocabularies probed with the 19 labels: **8** have a curated definition (MeSH for `beta` and `dbs`,
+the Xenopus anatomy ontology's *descending interneuron* for `din` — the library's own sense — the
+mouse-line registry's GN220 record for `ntsr1`, and `cre`, `viral`, `virus`, `contrastive
+learning`), **6** only a one-line gloss, **5** nothing usable — the youngest retrieval terms, a
+model's own name, a generic word. Four labels were expanded by hand first; the matcher has to do
+that itself, and 93c measures how often it can.
+
+**Found on the way.** Bandit (CI and the pre-commit hook) flagged the three SHA-1 content
+fingerprints in the 93a code as "weak hash for security" and blocked the commit; they are
+idempotency keys, now `usedforsecurity=False` — the same digest, so stored keys are unchanged.
+
+**Rejected.** Live lookups for every concept (online dependence, and the user wants the app
+self-reliant). Ranking an expert definition above a library passage (both can be right and differ).
+Sources behind an account or licence agreement.
+
+**What it opens.** 93b, then 93c; the user's labels, read back from the page.
+
+---
+
+## 2026-09-21 (1) — A concept's definition is chosen from candidates that keep their source (ROADMAP 93a, ADR-053)
+
+**What changed.** The user's direction (2026-09-21): definitions can come from the text, from a model,
+from the references or from the user, *"each of these options should not overwrite the other"*, and the
+user chooses case by case. Recorded as **ADR-053** (proposed) and built as its first slice:
+
+- **`concept_definitions` + `concept_definition_events`** (additive). Every candidate is a row with its
+  text, source, provenance and evidence; `knowledge/definitions.py` is the only writer of it and of
+  `Concept.definition`, which now mirrors the chosen candidate. Choose / dismiss / restore / undo, one
+  step at a time; nothing is ever deleted. `add_concept(definition=…)` goes through it; a merge carries
+  the dropped concept's candidates to the survivor (its own choice wins) and the undo brings them back.
+  The two definitions that existed migrate at boot as chosen `user` candidates.
+- **Passages from the library, $0.** Sentences copied verbatim — coined ("we call our model SPECTER"),
+  named ("… is called a 'cross-encoder'"), definition-shaped, or the first mention in the documents that
+  use the term most — with the bibliography cut off and title blocks, address lines and chunk-cut
+  sentences refused. Each carries its reasons and a grade built from them. `scripts/extract_definitions.py`
+  (dry-run default) for the whole vocabulary; "Look in my library" in the panel for one concept.
+- **The app.** `GET/POST /api/concepts/{id}/definitions` + choose / dismiss / restore / undo / extract,
+  and `GET /api/concepts/search`. A definition card in the Graph tab's concept panel (the user's choice of
+  place): the chosen one with its source and "Open passage" (the chat-citation path, to the page), the
+  other options with their evidence, write-your-own or edit-a-passage-into-your-own, undo. The graph
+  index's filter also searches the whole vocabulary, so `viral` or `specter` — not graph nodes — open
+  the same panel.
+
+**Why.** ADR-052 made meanings curated data; 2 of 357 concepts had any, and one slot, last write wins,
+could not hold a passage, a model's text and the user's words side by side.
+
+**Measured, $0** (`tests/eval/baselines/definition_sources_2026-09-21.md`). 327 of 357 concepts get
+candidates, 37 a strong one. On the 19 priority concepts the grade agrees with a by-hand reading 18 of 19
+times; what it cannot see is a definition-shaped *claim* ("knowledge distillation is an excellent
+technique…"). References alone: 5,266 titled entries, 13 of 19 priority concepts named by one — they
+expand abbreviations (`dbs` → deep brain stimulation) and settle meanings (`beta` → oscillations), but
+only 44 of 5,639 entries resolve to a library document. "Look in my library" went from 12.1 s to 272 ms
+by asking the keyword index which documents to read; identical to a full read on 357 of 357 concepts
+after a prefix match (the index keeps `actor-critic` whole) and a deterministic tie-break. Checked live
+against a throwaway copy of the data directory — never the library — in dark, light and at 375 px.
+
+**Rejected.** One slot with a history (ADR-053 option 3): alternatives would still replace each other. A
+model defining every concept at ingest (option 4, KI-19/KI-33). Matching aliases: they are other phrases
+with other meanings. Letting the grade choose: it is evidence, and 1 in 19 shows why. Extracting for all
+357 concepts on the first click: a write the user did not ask for.
+
+**Found on the way.** Undo was flaky — two events inside one tick of the Windows clock share a timestamp;
+events are now ordered by a per-concept sequence. The first extractor ranked tied documents by read
+order, so two paths gave different candidates for 5 concepts.
+
+**What it opens.** The user's go on `extract_definitions --apply` for the library (the panel works per
+concept without it). 93b: model candidates from passages and from reference titles alone, with a
+grounding check, measured on the 19. 93c: what the references say + papers to add. 93d: the shared-word
+split review — `viral`'s candidates already show its two senses side by side. Security S-5 moves to the
+next session.
 
 ---
 
@@ -853,116 +945,5 @@ persistent `OLLAMA_HOST` user variable, this run set it **process-scoped** on a 
 `ollama serve`, so there was nothing persistent to revert — verified afterwards: both env scopes
 empty, listener back to `127.0.0.1` only, gateway address refused, 9 models still served locally.
 Worth preferring next time: the documented procedure leaves a variable that has to be remembered.
-
----
-
-## 2026-09-02 (2) — `artifact_fresh` judges git history, not file mtimes
-
-**What changed.** `check_artifact_fresh` no longer asks "is any tracked source file's mtime newer
-than the artifact?". It asks `_newest_shipped_change()`, which splits the question in two:
-
-- **committed** files are dated by the **committer date of the newest commit touching a shipped
-  path** — never by the file on disk;
-- **uncommitted** files are dated by mtime, which is the one place an mtime means what it looks
-  like it means: a person edited the file, and it is not in history yet to be dated any other way.
-
-`SOURCE_GLOBS` (dead — defined, never referenced) and `_newest_source` are gone. In their place
-`SHIPPED_PATHS` names the fifteen paths the artifact is actually built from, and `_is_shipped`
-matches them exactly: a `/`-terminated entry by prefix, a file entry only against itself.
-
-**Why.** The old comparison demanded a rebuild after a plain `git checkout main`, which
-re-materialises files with today's date and byte-identical content — `src/doc_assistant/__init__.py`
-was blob `a789456…` at both the built commit and HEAD, and the preflight called it a source edit
-(2026-09-02). A gate that cries wolf on a branch switch is a gate that gets overridden by hand,
-which is how it stops working. Content makes an artifact stale; a checkout is not an edit.
-
-The old path list was also short: it covered `src/`, `apps/api/` and `apps/desktop/src/` and
-**not** the Rust shell, `tauri.conf.json`, the PyInstaller spec or `build_sidecar.py` — so an edit
-to the spec, which is exactly where KI-34 lived, could not have marked the artifact stale. Same
-failure as the version check's two missing Cargo files, so it gets the same guard: the list is
-pinned by `test_the_shipped_path_list_is_pinned`, which also asserts every entry exists on disk.
-
-**`Cargo.lock` is deliberately excluded, and it is a judgment call.** Cargo rewrites the lock
-*while building*, so a release build necessarily ends with a lock newer than the artifact it just
-produced; counting it would fail this check on every release, which is what happened at 0.6.0. Its
-one release-relevant field (the crate version) is covered by `versions` instead. **Residual gap,
-stated rather than hidden:** a dependency version changed in the lock without a rebuild is not
-caught here. `uv.lock` stays *in* the list — nothing in the build rewrites it, so the asymmetry has
-a reason.
-
-**A bug found by probing rather than reasoning.** The first implementation read `git status
---porcelain` and sliced `line[3:]` for the path. `_run` ends in `.stdout.strip()`, which eats the
-leading space of an unstaged ` M path`, shifting every offset by one: the path came out as
-`rc/doc_assistant/__init__.py`, failed `is_file()`, and the entire uncommitted branch was a silent
-no-op. One test caught it; two wrong guesses at the cause (a fatal pathspec, then a timestamp tie)
-were both disproved by running the thing in isolation. It now splits on whitespace and never
-depends on a column.
-
-**Six behavioural tests**, in a throwaway git repo with `ROOT` monkeypatched: a docs commit does
-not move the bar; an mtime-only bump does not (the regression test, which asserts its own premise —
-that the bumped file *is* the newest thing on disk — so it cannot quietly stop testing anything);
-an uncommitted shipped edit does; a committed shipped edit does; a `Cargo.lock` commit does not.
-
-**Rejected.** *Recording the built commit in a stamp file at build time* — the correct answer in
-the abstract, and still the better one if this ever needs to be exact. It was rejected here because
-existing artifacts carry no stamp, so the check would have to degrade to "cannot tell" for the very
-release that motivated the fix, and back-filling a stamp by hand is the "a PASS from a previous
-build reads as evidence" hazard this file already warns about. *Keeping mtimes and special-casing
-the checkout* — there is no way to tell a checkout from an edit by mtime, which is the whole point.
-
-**What it opens.** `artifact_fresh` now trusts commit dates, so a rebased or amended history with
-rewritten committer dates could in principle move the bar backwards. Committer dates are set at
-commit time and a rebase rewrites them to "now", so this is monotonic in practice on one machine;
-it would need revisiting if releases were ever cut from a rewritten branch.
-
----
-
-## 2026-09-02 — The version check now reads the two Cargo files, and its file list is a test
-
-**What changed.** `scripts/release_preflight.py`'s `versions` check went from five sources to
-**seven**: `apps/desktop/src-tauri/Cargo.toml` (`[package] version`) and `Cargo.lock` (the
-`doc-assistant-desktop` entry, found by name in the package list) now join the five it already
-read. `collect_versions()` is split out of `check_versions()` so the *list of files* is importable
-and therefore testable, and `docs/RELEASE.md` §1 grew from six rows to eight.
-
-Three tests, in `tests/unit/test_release_preflight.py`:
-
-- **the source list, pinned by equality** — adding a version-carrying file means adding it here;
-- **no source may read as a sentinel** — `(not found)` and `(missing)` compare equal to each
-  other, so seven simultaneously-broken readers would have "agreed";
-- **a drift in any single file must FAIL**, parametrised over the source list rather than
-  spot-checked, so a file added to the list gets its negative case for free.
-
-**Why.** The `versions` check reported green while `Cargo.toml` and `Cargo.lock` held `0.4.1`
-through **v0.4.2, v0.5.0 and v0.5.1** — three tagged releases (verified by reading each tag:
-`git show vX.Y.Z:apps/desktop/src-tauri/Cargo.toml`). It never opened them, and neither did the
-runbook table. This is the *inverse* of the `uv.lock` incident that created the check: not a file
-someone forgot to edit, but a file nothing was looking at. An agreement check is worth exactly as
-much as its file list, and until now that list existed only inside a function body.
-
-Surfaced at 0.6.0 the hard way: the release build regenerated `Cargo.lock` from 0.4.1 to 0.6.0
-*after* the release commit, and `tree_clean` — not `versions` — was what caught it.
-
-**Verified by reverting the fix.** With the two Cargo sources removed from `collect_versions()`,
-exactly three tests fail (the list test and both Cargo drift cases) and the other 14 pass. The
-guard reproduces the historical bug rather than merely describing it.
-
-**The re-lock command is verified too.** `docs/RELEASE.md` §1 now carries
-`cargo update --manifest-path apps/desktop/src-tauri/Cargo.toml -p doc-assistant-desktop --offline`
-— run against a deliberately desynced tree, exit 0, one line changed, no network. `cargo metadata`
-was tried first and rejected on evidence: it wants metadata for every locked package including
-Android-only ones this box has never downloaded, so it exits **101** under `--offline` (after
-writing the lock) and needs the network without it; `--no-deps` exits 0 and updates nothing.
-
-**Rejected.** *Deriving the file list from the runbook table* — a docs parser is a second thing to
-break, and the table is prose. *Hand-editing `Cargo.lock`* — it is a lock; cargo overwrites it at
-build time anyway, which is precisely the failure being fixed. *Extending the existing
-"do they agree?" test* — it structurally cannot catch a missing source, which was the bug.
-
-**What it opens.** `artifact_fresh` has the same shape of weakness one layer over: it compares
-**mtimes**, so `git checkout main` re-materialising a byte-identical file (blob `a789456…` at both
-`ef4a6d8` and `663c290`) fails it. Comparing `git diff <built-commit> HEAD` instead would say what
-the check means. Not done here — it needs the built commit recorded next to the artifact, which is
-a change to the build, not to the check.
 
 ---

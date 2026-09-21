@@ -21,6 +21,7 @@
   import { GAP_META, graphCoverage, visibleConceptGaps } from './gaps'
   import { forceLayout, type Point } from './forceLayout'
   import Icon from '../shell/Icon.svelte'
+  import ConceptDefinition from './ConceptDefinition.svelte'
 
   let {
     graph,
@@ -37,6 +38,8 @@
     onPlaceConcept,
     onSelectConcept,
     loadPresence,
+    offGraphConcept = null,
+    onOpenPassage,
   }: {
     graph: ConceptGraph | null
     loading: boolean
@@ -56,6 +59,11 @@
     onPlaceConcept: (conceptId: string, label: string) => void
     onSelectConcept: (id: string) => void
     loadPresence: (conceptId: string) => Promise<ConceptPresence[]>
+    /** A concept reached by the vocabulary search that is not a graph node (ADR-053): the
+     *  panel shows its definition without a neighbourhood. */
+    offGraphConcept?: { id: string; label: string } | null
+    /** Open a passage where it was written — the path a chat citation takes. */
+    onOpenPassage: (chunkKey: string) => void
   } = $props()
 
   const VIEW_W = 760
@@ -332,7 +340,18 @@
 
     <!-- The ego graph + details for the concept selected in the sidebar's index. -->
     <section class="ego" aria-label="Concept neighbourhood">
-        {#if !selectedNode}
+        {#if !selectedNode && offGraphConcept}
+          <div class="ego-head">
+            <div class="eh-title">
+              <h2>{offGraphConcept.label}</h2>
+            </div>
+          </div>
+          <p class="muted offgraph">
+            Not on the graph — it is in your vocabulary but not one of the concepts the graph maps.
+            Its definition can still be read and chosen here.
+          </p>
+          <ConceptDefinition conceptId={offGraphConcept.id} {onOpenPassage} />
+        {:else if !selectedNode}
           <div class="ego-hint muted">
             <Icon name="waypoints" size={24} />
             <p>Select a concept to explore its neighbourhood and sources.</p>
@@ -375,6 +394,8 @@
               {/each}
             </div>
           {/if}
+
+          <ConceptDefinition conceptId={selectedNode.id} {onOpenPassage} />
 
           <div class="canvas">
             <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -625,6 +646,10 @@
     gap: var(--space-1);
   }
   .ghost.sm {
+    font-size: var(--text-sm);
+  }
+  .offgraph {
+    margin: 0;
     font-size: var(--text-sm);
   }
   .gap-notes {

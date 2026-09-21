@@ -13,7 +13,8 @@ Each merge now, in order:
    plan whose placements could not move without closing a cycle — checked before anything is
    written, so a skipped merge leaves both concepts exactly as they were.
 2. **Moves** what the user curated to the survivor: the surface forms (the keyword family), the
-   definition and the graph membership when the survivor has none, every placement — re-pointed
+   definition candidates (ADR-053 — the survivor's choice wins) and the chosen definition and graph
+   membership when the survivor has none, every placement — re-pointed
    through ``taxonomy.add_hierarchy_edge``, the one sanctioned writer — the gap triage (the
    survivor's own verdict wins a clash) and the stochastic gap suggestions, whose status persists.
 3. **Deletes** the dropped row; derived rows (presence, edges, deterministic gaps) go with it and
@@ -39,6 +40,7 @@ from sqlalchemy.orm import Session
 from doc_assistant.db.models import (
     Concept,
     ConceptAlias,
+    ConceptDefinition,
     ConceptHierarchy,
     ConceptMerge,
     GapRow,
@@ -135,6 +137,74 @@ def _repoint(
     return placements, None
 
 
+_DEFINITION_FIELDS = (
+    "id",
+    "text",
+    "source",
+    "provenance_key",
+    "provenance_json",
+    "evidence_json",
+    "status",
+)
+
+
+def _move_definitions(
+    session: Session, keep_id: str, drop_id: str, *, keep_chosen: bool
+) -> list[dict[str, Any]]:
+    """Move the dropped concept's definition candidates to the survivor (ADR-053).
+
+    Without this the delete would cascade into ``concept_definitions`` and take the user's own
+    words with it. The survivor's choice wins: a moved ``chosen`` candidate stays chosen only when
+    the survivor had no definition (``keep_chosen``), else it becomes a suggestion beside it. A
+    candidate the survivor already holds (the same passage found for both labels) is kept once;
+    the dropped copy is recorded whole so the undo can recreate it. Returns the record the undo
+    reads: each candidate's id and status before the merge.
+    """
+    held = {
+        (r.source, r.provenance_key)
+        for r in session.execute(
+            select(ConceptDefinition).where(ConceptDefinition.concept_id == keep_id)
+        ).scalars()
+    }
+    moved: list[dict[str, Any]] = []
+    for row in list(
+        session.execute(
+            select(ConceptDefinition).where(ConceptDefinition.concept_id == drop_id)
+        ).scalars()
+    ):
+        entry: dict[str, Any] = {"id": row.id, "status": row.status}
+        if (row.source, row.provenance_key) in held:
+            entry["recreate"] = {f: getattr(row, f) for f in _DEFINITION_FIELDS}
+            session.delete(row)
+        else:
+            row.concept_id = keep_id
+            if row.status == "chosen" and not keep_chosen:
+                row.status = "suggested"
+        moved.append(entry)
+    session.flush()
+    return moved
+
+
+def _return_definitions(
+    session: Session, keep_id: str, drop_id: str, moved: list[dict[str, Any]]
+) -> None:
+    """Undo :func:`_move_definitions`: each candidate back to the dropped concept, as it was."""
+    from doc_assistant.knowledge.definitions import sync_mirror
+
+    for entry in moved:
+        if "recreate" in entry:
+            if session.get(ConceptDefinition, entry["id"]) is None:
+                session.add(ConceptDefinition(concept_id=drop_id, **entry["recreate"]))
+            continue
+        row = session.get(ConceptDefinition, entry["id"])
+        if row is not None and row.concept_id == keep_id:
+            row.concept_id = drop_id
+            row.status = entry["status"]
+    session.flush()
+    sync_mirror(session, keep_id)
+    sync_mirror(session, drop_id)
+
+
 def _merge_one(session: Session, plan: MergePlan) -> tuple[ConceptMerge | None, str | None]:
     """Fold ``plan.drop_id`` into ``plan.keep_id``; returns the record, or why it was skipped."""
     if plan.keep_id == plan.drop_id:
@@ -166,6 +236,7 @@ def _merge_one(session: Session, plan: MergePlan) -> tuple[ConceptMerge | None, 
     definition_taken = keep.definition is None and drop.definition is not None
     if definition_taken:
         keep.definition = drop.definition
+    definitions = _move_definitions(session, keep.id, drop.id, keep_chosen=definition_taken)
     graph_include_taken = bool(drop.graph_include) and not keep.graph_include
     if graph_include_taken:
         keep.graph_include = True
@@ -214,6 +285,7 @@ def _merge_one(session: Session, plan: MergePlan) -> tuple[ConceptMerge | None, 
                 "dropped": dropped,
                 "aliases_added": aliases_added,
                 "definition_taken": definition_taken,
+                "definitions": definitions,
                 "graph_include_taken": graph_include_taken,
                 "placements": placements,
                 "triage": triage,
@@ -342,6 +414,8 @@ def undo_merge(merge_id: str) -> MergeSummary:
         if data["graph_include_taken"]:
             keep.graph_include = False
         session.flush()
+        # Records from before ADR-053 have no candidates to return.
+        _return_definitions(session, keep.id, drop.id, data.get("definitions", []))
 
         try:
             for p in data["placements"]:

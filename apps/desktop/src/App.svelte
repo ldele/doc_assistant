@@ -237,7 +237,15 @@
   // first entry to Graph mode (see selectMode). Only the cross-domain bits stay here.
   function selectGraphConcept(id: string): void {
     graph.selectedId = id
+    graph.offGraph = null
     shell.sidebarOpen = false // mobile drawer: selecting navigates, like selectCollection
+  }
+  // A concept the graph does not map, reached by the index's vocabulary search (ADR-053): the
+  // panel shows its definition without a neighbourhood.
+  function selectOffGraphConcept(id: string, label: string): void {
+    graph.selectedId = null
+    graph.offGraph = { id, label }
+    shell.sidebarOpen = false
   }
   useGraphHygiene() // intra-domain: a rebuild can drop the selected concept
   // Chat transcript autoscroll. `viewing` is passed as a getter because it is conversation-view
@@ -1096,6 +1104,8 @@
     built={graph.data !== null}
     graphError={graph.error}
     onSelectConcept={selectGraphConcept}
+    offGraphId={graph.offGraph?.id ?? null}
+    onSelectOffGraph={selectOffGraphConcept}
   />
 {/snippet}
 
@@ -1268,6 +1278,8 @@
           onPlaceConcept={(id) => openTaxonomyView(id)}
           onSelectConcept={selectGraphConcept}
           loadPresence={getConceptPresence}
+          offGraphConcept={graph.offGraph}
+          onOpenPassage={(key) => void openCitationInDocument(key)}
         />
       {:else}
         <ChatPane

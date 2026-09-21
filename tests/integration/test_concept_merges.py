@@ -282,3 +282,57 @@ def test_apply_plan_reports_merges_through_the_outcome(env: Path) -> None:
     )
 
     assert (demoted, outcome.n_merged) == (1, 1)
+
+
+def test_a_merge_carries_definition_candidates_and_the_undo_brings_them_back(env: Path) -> None:
+    """ADR-053. The delete cascades into ``concept_definitions``, so without the move a merge would
+    take the user's own words with it. The survivor's choice wins; the undo restores both sides."""
+    from doc_assistant.db.models import ConceptDefinition
+    from doc_assistant.knowledge.definitions import add_user_definition
+
+    _concept("keep", "text embedding")
+    _concept("drop", "text embeddings")
+    with session_scope() as s:
+        mine_keep = add_user_definition(s, "keep", "A vector for a text.").id
+        mine_drop = add_user_definition(s, "drop", "Vectors that stand for passages.").id
+        spare = add_user_definition(s, "drop", "An older wording.", choose=False).id
+
+    (merge_id,) = apply_merges([_plan("keep", "drop")]).merged
+    with session_scope() as s:
+        rows = {
+            r.id: (r.concept_id, r.status) for r in s.execute(select(ConceptDefinition)).scalars()
+        }
+        assert rows == {
+            mine_keep: ("keep", "chosen"),  # the survivor's choice wins
+            mine_drop: ("keep", "suggested"),  # kept beside it, not lost
+            spare: ("keep", "suggested"),
+        }
+        assert s.get(Concept, "keep").definition == "A vector for a text."
+
+    undo_merge(merge_id)
+    with session_scope() as s:
+        rows = {
+            r.id: (r.concept_id, r.status) for r in s.execute(select(ConceptDefinition)).scalars()
+        }
+        assert rows == {
+            mine_keep: ("keep", "chosen"),
+            mine_drop: ("drop", "chosen"),
+            spare: ("drop", "suggested"),
+        }
+        assert s.get(Concept, "drop").definition == "Vectors that stand for passages."
+        assert s.get(Concept, "keep").definition == "A vector for a text."
+
+
+def test_a_merge_into_an_undefined_concept_keeps_the_dropped_choice(env: Path) -> None:
+    from doc_assistant.db.models import ConceptDefinition
+    from doc_assistant.knowledge.definitions import add_user_definition
+
+    _concept("keep", "a")
+    _concept("drop", "b")
+    with session_scope() as s:
+        mine = add_user_definition(s, "drop", "Its meaning.").id
+    apply_merges([_plan("keep", "drop")])
+    with session_scope() as s:
+        row = s.get(ConceptDefinition, mine)
+        assert (row.concept_id, row.status) == ("keep", "chosen")
+        assert s.get(Concept, "keep").definition == "Its meaning."

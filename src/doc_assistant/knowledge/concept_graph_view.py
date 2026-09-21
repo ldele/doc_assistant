@@ -229,3 +229,58 @@ def load_concept_presence(concept_id: str) -> list[ConceptPresence]:
             )
             for r in rows
         ]
+
+
+@dataclass(frozen=True)
+class VocabularyMatch:
+    """One concept a label search found, with whether it is on the graph and has a definition."""
+
+    id: str
+    label: str
+    on_graph: bool
+    has_definition: bool
+
+
+def search_vocabulary(query: str, *, limit: int = 20) -> list[VocabularyMatch]:
+    """Concepts whose label contains ``query``, across the **whole** vocabulary (ADR-053).
+
+    The Graph tab lists its nodes; the concept panel is where a definition is read and chosen, and
+    the words ADR-052 cares most about (``specter``, ``viral``, ``beta``) are not graph nodes. This
+    is how the panel reaches them. Case-insensitive; an exact label first, then labels that start
+    with the query, then the rest — graph concepts before others within each. Taxonomy fields are
+    not concepts and never match. An empty query matches nothing.
+    """
+    from sqlalchemy import select
+
+    from doc_assistant.db.models import Concept
+    from doc_assistant.db.session import session_scope
+
+    q = query.strip()
+    if not q:
+        return []
+    escaped = q.replace("\\", "\\\\").replace("%", r"\%").replace("_", r"\_")
+    with session_scope() as session:
+        rows = session.execute(
+            select(Concept.id, Concept.label, Concept.graph_include, Concept.definition).where(
+                Concept.kind == "concept", Concept.label.ilike(f"%{escaped}%", escape="\\")
+            )
+        ).all()
+    folded = q.casefold()
+    matches = [
+        VocabularyMatch(
+            id=str(cid),
+            label=str(label),
+            on_graph=bool(graph),
+            has_definition=bool(definition),
+        )
+        for cid, label, graph, definition in rows
+    ]
+    matches.sort(
+        key=lambda m: (
+            m.label.casefold() != folded,
+            not m.label.casefold().startswith(folded),
+            not m.on_graph,
+            m.label.casefold(),
+        )
+    )
+    return matches[:limit]

@@ -5,8 +5,10 @@
   // this index in the sidebar, the ego graph filling the main pane. Rail-only presentation state
   // (tab, filter query, gaps-only lens) is local and ephemeral, like the chat-history filter; the
   // under-connected lens is bindable because the ego panel's gap notes must agree with the badges.
-  import type { ConceptGraphNode, Gap } from '../core/types'
+  import type { ConceptGraphNode, Gap, VocabularyMatch } from '../core/types'
+  import { searchVocabulary } from '../core/api'
   import { GAP_META, conceptIndexRows, visibleConceptGaps } from './gaps'
+  import { offGraphMatches } from './definitions'
   import GapList from './GapList.svelte'
   import Icon from '../shell/Icon.svelte'
 
@@ -19,6 +21,8 @@
     built,
     graphError,
     onSelectConcept,
+    offGraphId = null,
+    onSelectOffGraph,
   }: {
     nodes: ConceptGraphNode[]
     gaps: Gap[]
@@ -28,6 +32,9 @@
     built: boolean
     graphError: string | null
     onSelectConcept: (id: string) => void
+    /** The concept selected from the vocabulary search, when it is not a graph node. */
+    offGraphId?: string | null
+    onSelectOffGraph: (id: string, label: string) => void
   } = $props()
 
   // Rail mode (E5): the concept index, or the first-class triageable gap list. The Gaps tab stays
@@ -51,6 +58,30 @@
     nodes.filter((n) => visibleConceptGaps(gapsByConcept.get(n.id) ?? [], showUnderConnected).length > 0)
       .length,
   )
+
+  // The filter also searches the whole vocabulary (ADR-053): a concept the graph does not map
+  // (`specter`, `viral`) still has a definition to read and choose. Debounced, and a stale answer
+  // for an older query is dropped. Two characters minimum — one matches half the vocabulary.
+  let vocab = $state<VocabularyMatch[]>([])
+  const graphIds = $derived(new Set(nodes.map((n) => n.id)))
+  const offGraph = $derived(offGraphMatches(vocab, graphIds))
+  $effect(() => {
+    const q = query.trim()
+    if (q.length < 2) {
+      vocab = []
+      return
+    }
+    const timer = setTimeout(() => {
+      searchVocabulary(q)
+        .then((m) => {
+          if (query.trim() === q) vocab = m
+        })
+        .catch(() => {
+          vocab = [] // the graph list above still works; the extra matches just do not show
+        })
+    }, 250)
+    return () => clearTimeout(timer)
+  })
 
   function commColor(n: ConceptGraphNode): string {
     return `var(--comm-${((n.community % 12) + 12) % 12})`
@@ -148,8 +179,26 @@
           <span class="dcount" title="{row.node.doc_ids.length} documents">{row.node.doc_ids.length}</span>
         </button>
       {:else}
-        <p class="empty-list muted">No concepts match.</p>
+        {#if offGraph.length === 0}<p class="empty-list muted">No concepts match.</p>{/if}
       {/each}
+      {#if offGraph.length > 0}
+        <p class="offhead muted">Not on the graph</p>
+        {#each offGraph as m (m.id)}
+          <button
+            class="crow off"
+            class:sel={m.id === offGraphId}
+            role="option"
+            aria-selected={m.id === offGraphId}
+            onclick={() => onSelectOffGraph(m.id, m.label)}
+            type="button"
+            title="In your vocabulary, not on the graph — open it to read or choose its definition"
+          >
+            <span class="dot hollow" aria-hidden="true"></span>
+            <span class="clabel">{m.label}</span>
+            {#if m.has_definition}<span class="defmark" title="Has a chosen definition">def</span>{/if}
+          </button>
+        {/each}
+      {/if}
     </div>
   {/if}
 </div>
@@ -165,6 +214,24 @@
   }
   .muted {
     color: var(--fg-2);
+  }
+  .offhead {
+    margin: var(--space-2) 0 0;
+    padding: 0 var(--space-2);
+    font-size: var(--text-sm);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  .dot.hollow {
+    background: none;
+    border: 1.5px solid var(--fg-2);
+  }
+  .defmark {
+    font-size: 0.68rem;
+    color: var(--fg-2);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 0 0.3rem;
   }
   .railstate {
     font-size: var(--text-sm);

@@ -32,5 +32,6 @@ export {
 export { getSetup, saveAnthropicKey, clearAnthropicKey } from './setup'
 export { startIngest, getSources, patchSource, getIngestStatus } from './sources'
 export { getConceptGraph, getGapList, triageGap, getConceptPresence, rebuildConceptGraph, getGraphRebuildStatus } from './concepts'
+export { getDefinitions, addDefinition, extractDefinitions, chooseDefinition, dismissDefinition, restoreDefinition, undoDefinition, searchVocabulary } from './definitions'
 export { getTaxonomy, getFieldDetail, getProposals, addHierarchyEdge, removeHierarchyEdge, attachDocumentField, detachDocumentField } from './taxonomy'
 export { getUpdateStatus, checkForUpdate, setAutoUpdateCheck } from './updates'

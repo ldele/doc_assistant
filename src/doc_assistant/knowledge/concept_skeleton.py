@@ -962,7 +962,8 @@ def add_concept(
 
     The direct-curation counterpart to :func:`promote_keyword` (which requires a mined
     ``Keyword`` row). Get-or-create by ``label`` with ``source="manual"``; on re-add it
-    fills/updates the ``definition`` and adds any new ``aliases`` (never removes one). The
+    records ``definition`` as the user's chosen candidate (ADR-053 — the previous one is kept, not
+    overwritten) and adds any new ``aliases`` (never removes one). The
     label is always an implicit surface form for presence; ``aliases`` are extra synonyms.
     Returns the Concept id. Zero LLM.
 
@@ -983,16 +984,16 @@ def add_concept(
             presence_query().where(Concept.label == label)
         ).scalar_one_or_none()
         if concept is None:
-            concept = Concept(
-                label=label,
-                source="manual",
-                definition=definition,
-                graph_include=graph_include,
-            )
+            concept = Concept(label=label, source="manual", graph_include=graph_include)
             session.add(concept)
             session.flush()
-        elif definition is not None:
-            concept.definition = definition
+        if definition is not None and definition.strip():
+            # Through the candidates, never straight into the column (ADR-053): the text becomes
+            # the user's own candidate and is chosen, and whatever was chosen before stays
+            # beside it, one undo away.
+            from doc_assistant.knowledge.definitions import add_user_definition
+
+            add_user_definition(session, str(concept.id), definition)
         existing = {a.alias for a in concept.aliases}
         for alias in aliases or []:
             if alias and alias not in existing:

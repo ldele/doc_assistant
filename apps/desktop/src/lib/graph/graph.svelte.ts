@@ -26,6 +26,9 @@ export const graph = $state({
   /** Selection + the under-connected lens are shared: the sidebar's GraphIndex rail and
    *  ConceptGraph's ego panel both read them, so they must agree. */
   selectedId: null as string | null,
+  /** A concept reached by the vocabulary search that is not a graph node (ADR-053). Kept apart
+   *  from `selectedId`, which the hygiene effect below clears whenever it names no node. */
+  offGraph: null as { id: string; label: string } | null,
   showUnderConnected: false,
 })
 

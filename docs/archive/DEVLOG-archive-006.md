@@ -1,6 +1,6 @@
-<!-- status: archived · updated: 2026-09-20 · class: append-only -->
+<!-- status: archived · updated: 2026-09-21 · class: append-only -->
 
-# DEVLOG — archive 006 (2026-08-12 (1) → 2026-09-01 (6))
+# DEVLOG — archive 006 (2026-08-12 (1) → 2026-09-02 (2))
 
 Older entries, moved verbatim from `docs/DEVLOG.md` on 2026-09-04 so the working log stays
 about recent work. Newest-first, same format, unedited. Rotated because the live log had
@@ -10,7 +10,118 @@ before it can grow further. Cut on a date boundary so no day is split across two
 live log adopted a 20-entry cap, then once more the same day for the session's own entry; 2026-08-30 (1)–(9) are all here. **Extended 2026-09-16** by five entries, 2026-08-31 (1) → 2026-09-01 (1), one per new entry that
 pushed the live log past 20; 2026-09-01 is now split across the two files ((2)–(6) are live).
 **Extended 2026-09-17** by three entries, 2026-09-01 (2) → (4), for the day's three new entries;
-2026-09-01 (5) and (6) are live. **Extended 2026-09-18** by 2026-09-01 (5) and **2026-09-20** by (6); the whole of 2026-09-01 now lives here.
+2026-09-01 (5) and (6) are live. **Extended 2026-09-18** by 2026-09-01 (5), **2026-09-20** by (6) and **2026-09-21** by 2026-09-02's first entry (the version check) and its (2); the whole of 2026-09-01 lives here, and 2026-09-02 (3) is live.
+
+---
+
+## 2026-09-02 (2) — `artifact_fresh` judges git history, not file mtimes
+
+**What changed.** `check_artifact_fresh` no longer asks "is any tracked source file's mtime newer
+than the artifact?". It asks `_newest_shipped_change()`, which splits the question in two:
+
+- **committed** files are dated by the **committer date of the newest commit touching a shipped
+  path** — never by the file on disk;
+- **uncommitted** files are dated by mtime, which is the one place an mtime means what it looks
+  like it means: a person edited the file, and it is not in history yet to be dated any other way.
+
+`SOURCE_GLOBS` (dead — defined, never referenced) and `_newest_source` are gone. In their place
+`SHIPPED_PATHS` names the fifteen paths the artifact is actually built from, and `_is_shipped`
+matches them exactly: a `/`-terminated entry by prefix, a file entry only against itself.
+
+**Why.** The old comparison demanded a rebuild after a plain `git checkout main`, which
+re-materialises files with today's date and byte-identical content — `src/doc_assistant/__init__.py`
+was blob `a789456…` at both the built commit and HEAD, and the preflight called it a source edit
+(2026-09-02). A gate that cries wolf on a branch switch is a gate that gets overridden by hand,
+which is how it stops working. Content makes an artifact stale; a checkout is not an edit.
+
+The old path list was also short: it covered `src/`, `apps/api/` and `apps/desktop/src/` and
+**not** the Rust shell, `tauri.conf.json`, the PyInstaller spec or `build_sidecar.py` — so an edit
+to the spec, which is exactly where KI-34 lived, could not have marked the artifact stale. Same
+failure as the version check's two missing Cargo files, so it gets the same guard: the list is
+pinned by `test_the_shipped_path_list_is_pinned`, which also asserts every entry exists on disk.
+
+**`Cargo.lock` is deliberately excluded, and it is a judgment call.** Cargo rewrites the lock
+*while building*, so a release build necessarily ends with a lock newer than the artifact it just
+produced; counting it would fail this check on every release, which is what happened at 0.6.0. Its
+one release-relevant field (the crate version) is covered by `versions` instead. **Residual gap,
+stated rather than hidden:** a dependency version changed in the lock without a rebuild is not
+caught here. `uv.lock` stays *in* the list — nothing in the build rewrites it, so the asymmetry has
+a reason.
+
+**A bug found by probing rather than reasoning.** The first implementation read `git status
+--porcelain` and sliced `line[3:]` for the path. `_run` ends in `.stdout.strip()`, which eats the
+leading space of an unstaged ` M path`, shifting every offset by one: the path came out as
+`rc/doc_assistant/__init__.py`, failed `is_file()`, and the entire uncommitted branch was a silent
+no-op. One test caught it; two wrong guesses at the cause (a fatal pathspec, then a timestamp tie)
+were both disproved by running the thing in isolation. It now splits on whitespace and never
+depends on a column.
+
+**Six behavioural tests**, in a throwaway git repo with `ROOT` monkeypatched: a docs commit does
+not move the bar; an mtime-only bump does not (the regression test, which asserts its own premise —
+that the bumped file *is* the newest thing on disk — so it cannot quietly stop testing anything);
+an uncommitted shipped edit does; a committed shipped edit does; a `Cargo.lock` commit does not.
+
+**Rejected.** *Recording the built commit in a stamp file at build time* — the correct answer in
+the abstract, and still the better one if this ever needs to be exact. It was rejected here because
+existing artifacts carry no stamp, so the check would have to degrade to "cannot tell" for the very
+release that motivated the fix, and back-filling a stamp by hand is the "a PASS from a previous
+build reads as evidence" hazard this file already warns about. *Keeping mtimes and special-casing
+the checkout* — there is no way to tell a checkout from an edit by mtime, which is the whole point.
+
+**What it opens.** `artifact_fresh` now trusts commit dates, so a rebased or amended history with
+rewritten committer dates could in principle move the bar backwards. Committer dates are set at
+commit time and a rebase rewrites them to "now", so this is monotonic in practice on one machine;
+it would need revisiting if releases were ever cut from a rewritten branch.
+
+---
+
+## 2026-09-02 — The version check now reads the two Cargo files, and its file list is a test
+
+**What changed.** `scripts/release_preflight.py`'s `versions` check went from five sources to
+**seven**: `apps/desktop/src-tauri/Cargo.toml` (`[package] version`) and `Cargo.lock` (the
+`doc-assistant-desktop` entry, found by name in the package list) now join the five it already
+read. `collect_versions()` is split out of `check_versions()` so the *list of files* is importable
+and therefore testable, and `docs/RELEASE.md` §1 grew from six rows to eight.
+
+Three tests, in `tests/unit/test_release_preflight.py`:
+
+- **the source list, pinned by equality** — adding a version-carrying file means adding it here;
+- **no source may read as a sentinel** — `(not found)` and `(missing)` compare equal to each
+  other, so seven simultaneously-broken readers would have "agreed";
+- **a drift in any single file must FAIL**, parametrised over the source list rather than
+  spot-checked, so a file added to the list gets its negative case for free.
+
+**Why.** The `versions` check reported green while `Cargo.toml` and `Cargo.lock` held `0.4.1`
+through **v0.4.2, v0.5.0 and v0.5.1** — three tagged releases (verified by reading each tag:
+`git show vX.Y.Z:apps/desktop/src-tauri/Cargo.toml`). It never opened them, and neither did the
+runbook table. This is the *inverse* of the `uv.lock` incident that created the check: not a file
+someone forgot to edit, but a file nothing was looking at. An agreement check is worth exactly as
+much as its file list, and until now that list existed only inside a function body.
+
+Surfaced at 0.6.0 the hard way: the release build regenerated `Cargo.lock` from 0.4.1 to 0.6.0
+*after* the release commit, and `tree_clean` — not `versions` — was what caught it.
+
+**Verified by reverting the fix.** With the two Cargo sources removed from `collect_versions()`,
+exactly three tests fail (the list test and both Cargo drift cases) and the other 14 pass. The
+guard reproduces the historical bug rather than merely describing it.
+
+**The re-lock command is verified too.** `docs/RELEASE.md` §1 now carries
+`cargo update --manifest-path apps/desktop/src-tauri/Cargo.toml -p doc-assistant-desktop --offline`
+— run against a deliberately desynced tree, exit 0, one line changed, no network. `cargo metadata`
+was tried first and rejected on evidence: it wants metadata for every locked package including
+Android-only ones this box has never downloaded, so it exits **101** under `--offline` (after
+writing the lock) and needs the network without it; `--no-deps` exits 0 and updates nothing.
+
+**Rejected.** *Deriving the file list from the runbook table* — a docs parser is a second thing to
+break, and the table is prose. *Hand-editing `Cargo.lock`* — it is a lock; cargo overwrites it at
+build time anyway, which is precisely the failure being fixed. *Extending the existing
+"do they agree?" test* — it structurally cannot catch a missing source, which was the bug.
+
+**What it opens.** `artifact_fresh` has the same shape of weakness one layer over: it compares
+**mtimes**, so `git checkout main` re-materialising a byte-identical file (blob `a789456…` at both
+`ef4a6d8` and `663c290`) fails it. Comparing `git diff <built-commit> HEAD` instead would say what
+the check means. Not done here — it needs the built commit recorded next to the artifact, which is
+a change to the build, not to the check.
 
 ---
 

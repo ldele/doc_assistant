@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-09-10 (three stale claims corrected: sparse arm, taxonomy built, legacy eval harness) (the `apps/` domain spine gains `library/source_view` + SourceViewer — ADR-050) · class: living -->
+<!-- status: active · updated: 2026-09-21 (the `definitions` domain — ADR-053; the graph's one write, a concept's chosen definition) · class: living -->
 
 # Architecture
 
@@ -128,6 +128,7 @@ both sides of the wire. To review a feature end to end, read one row.
 | keywords | `models/keywords.py` | `routers/library/keywords.py` | `lib/library/LibraryManageKeywords.svelte` |
 | concepts / graph | `models/concepts.py` | `routers/concepts.py` | `lib/graph/` (ConceptGraph, GraphIndex, GapList) |
 | taxonomy | `models/taxonomy.py` | `routers/taxonomy.py` | `lib/library/LibraryTaxonomy.svelte` |
+| definitions | `models/definitions.py` | `routers/definitions.py` | `lib/graph/ConceptDefinition.svelte` (in the concept panel) |
 | settings | `models/settings.py` | `routers/settings.py` | `lib/settings/Settings.svelte` |
 | setup (first run) | `models/setup.py` | `routers/setup.py` | `lib/settings/ProviderSetup.svelte` |
 | sources (ingestion) | `models/sources.py` | `routers/sources.py` | `lib/settings/Sources.svelte` |
@@ -271,6 +272,10 @@ only annotates existing edges** — it never creates a node or edge, and `build_
 `gap_triage` override table that survives rebuilds; `wiki.py` clusters over communities. All are
 **read-only over the vocabulary** — the graph UI never edits concepts, it deep-links to Manage-keywords
 (ADR-017 A1). The single write surface for the curated hierarchy will be a dedicated taxonomy view (ADR-028).
+**One exception, by the user's choice (ADR-053, 2026-09-21):** a concept's *definition* is read and chosen
+in the graph's concept panel — `knowledge/definitions.py` keeps every candidate (a verbatim passage with
+its page, the user's own words, later a model's text) and choosing is the only write to
+`Concept.definition`, recorded and undoable.
 
 **Current build state (2026-09-10).** Node A skeleton, keyword families, gap layer, epistemics projection,
 and the read-only graph/gap UI are **built and shipped**. The taxonomy layer is **built** (TX1–TX3, 2026-07):

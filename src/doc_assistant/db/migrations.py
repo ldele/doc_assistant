@@ -305,6 +305,58 @@ def _migrate_source_roots(engine: Engine) -> str | None:
     return f"source_files.root_id (+{rows} row(s) backfilled to the library root)"
 
 
+def _migrate_legacy_definitions(engine: Engine) -> str | None:
+    """Give every definition written before ADR-053 a candidate row, chosen (ROADMAP 93).
+
+    ``Concept.definition`` used to be the only place a definition lived, written by
+    ``seed_concepts --define``. It now mirrors the chosen ``concept_definitions`` row, so a
+    concept with text there and no candidates would show a definition nobody could see the source
+    of, undo, or replace without losing it. The existing text becomes a ``user`` candidate — the
+    CLI was always a person curating — marked ``legacy`` in its provenance. Idempotent: a concept
+    that already has any candidate is left alone.
+    """
+    import hashlib
+    import json
+    from uuid import uuid4
+
+    with engine.begin() as conn:
+        rows = conn.execute(
+            text(
+                "SELECT c.id, c.definition FROM concepts c "
+                "WHERE c.definition IS NOT NULL AND TRIM(c.definition) != '' "
+                "AND NOT EXISTS (SELECT 1 FROM concept_definitions d WHERE d.concept_id = c.id)"
+            )
+        ).all()
+        for concept_id, definition in rows:
+            body = str(definition).strip()
+            # The same key knowledge.definitions._user_key makes; a fingerprint, not security.
+            digest = hashlib.sha1(body.encode("utf-8"), usedforsecurity=False).hexdigest()[:16]
+            key = "user:" + digest
+            conn.execute(
+                text(
+                    "INSERT INTO concept_definitions (id, concept_id, text, source,"
+                    " provenance_key, provenance_json, evidence_json, status, created_at,"
+                    " decided_at) VALUES"
+                    " (:id, :cid, :text, 'user', :key, :prov, :ev, 'chosen', :now, :now)"
+                ),
+                {
+                    "id": str(uuid4()),
+                    "cid": concept_id,
+                    "text": body,
+                    "key": key,
+                    "prov": json.dumps({"legacy": True}),
+                    "ev": json.dumps(
+                        {"grade": "user", "reasons": ["Written before definitions had sources"]}
+                    ),
+                    "now": _utcnow(),
+                },
+            )
+    if not rows:
+        return None
+    log.info("legacy_definitions_migrated", rows=len(rows))
+    return f"concept_definitions (+{len(rows)} legacy definition(s) as chosen candidates)"
+
+
 def init_db(reset: bool = False) -> list[str]:
     """Create all tables + apply additive column migrations. Safe to run repeatedly.
 
@@ -338,6 +390,10 @@ def init_db(reset: bool = False) -> list[str]:
     rerooted = _migrate_source_roots(engine)
     if rerooted is not None:
         added.append(rerooted)
+    # ADR-053: after create_all, which is what makes `concept_definitions` exist.
+    legacy = _migrate_legacy_definitions(engine)
+    if legacy is not None:
+        added.append(legacy)
 
     # Verify
     inspector = inspect(engine)

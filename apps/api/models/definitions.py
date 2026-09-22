@@ -18,7 +18,11 @@ from pydantic import BaseModel, Field
 
 if TYPE_CHECKING:
     from doc_assistant.knowledge.concept_graph_view import VocabularyMatch
-    from doc_assistant.knowledge.definitions import ConceptDefinitions, DefinitionCandidate
+    from doc_assistant.knowledge.definitions import (
+        ConceptDefinitions,
+        ConceptUsage,
+        DefinitionCandidate,
+    )
 
 
 class DefinitionCandidatePayload(BaseModel):
@@ -73,6 +77,41 @@ class ConceptDefinitionsPayload(BaseModel):
             can_undo=v.can_undo,
             thin=v.thin,
             extracted=v.extracted,
+        )
+
+
+class UsageLinePayload(BaseModel):
+    text: str
+    document_id: str
+    document_title: str | None = None
+    chunk_key: str
+    doc_mentions: int
+
+
+class ConceptUsagePayload(BaseModel):
+    """How the library uses a concept: one plain sentence from each of the documents that use it
+    most. Not candidates — nothing here can be chosen. ``available`` is false when the keyword
+    index is not built yet, so an empty list is not read as "never used"."""
+
+    concept_id: str
+    available: bool
+    examples: list[UsageLinePayload]
+
+    @classmethod
+    def from_view(cls, v: ConceptUsage) -> ConceptUsagePayload:
+        return cls(
+            concept_id=v.concept_id,
+            available=v.available,
+            examples=[
+                UsageLinePayload(
+                    text=u.text,
+                    document_id=u.document_id,
+                    document_title=u.document_title,
+                    chunk_key=u.chunk_key,
+                    doc_mentions=u.doc_mentions,
+                )
+                for u in v.examples
+            ],
         )
 
 

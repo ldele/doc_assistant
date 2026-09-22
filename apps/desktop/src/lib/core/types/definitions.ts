@@ -34,6 +34,25 @@ export interface ConceptDefinitions {
   extracted: boolean
 }
 
+/** One plain sentence that uses a concept — how the library uses the word, not a candidate. */
+export interface UsageLine {
+  /** Verbatim (collapse whitespace for display only). */
+  text: string
+  document_id: string
+  document_title: string | null
+  chunk_key: string
+  /** Sentences in that document that mention the concept. */
+  doc_mentions: number
+}
+
+/** "How your library uses it" (ADR-053's second layer). Read-only, never stored or chosen. */
+export interface ConceptUsage {
+  concept_id: string
+  /** False when the keyword index is not built yet — an empty list then means "not read". */
+  available: boolean
+  examples: UsageLine[]
+}
+
 /** One concept a label search found — the whole vocabulary, not only the graph. */
 export interface VocabularyMatch {
   id: string

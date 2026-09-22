@@ -3,7 +3,7 @@
 // Every mutation answers with the concept's refreshed candidates, so callers replace their copy.
 
 import { API_BASE, errorDetail } from './_base'
-import type { ConceptDefinitions, VocabularyMatch } from '../types'
+import type { ConceptDefinitions, ConceptUsage, VocabularyMatch } from '../types'
 
 const base = (conceptId: string): string =>
   `${API_BASE}/api/concepts/${encodeURIComponent(conceptId)}/definitions`
@@ -23,6 +23,12 @@ export async function getDefinitions(conceptId: string): Promise<ConceptDefiniti
   const r = await fetch(base(conceptId))
   if (!r.ok) throw new Error(await errorDetail(r, 'definitions'))
   return (await r.json()) as ConceptDefinitions
+}
+/** How the library uses a concept: a plain sentence from each of the documents that use it most. */
+export async function getUsage(conceptId: string): Promise<ConceptUsage> {
+  const r = await fetch(`${API_BASE}/api/concepts/${encodeURIComponent(conceptId)}/usage`)
+  if (!r.ok) throw new Error(await errorDetail(r, 'usage'))
+  return (await r.json()) as ConceptUsage
 }
 /** Save the user's own definition — chosen unless `choose` is false. Replaces nothing. */
 export function addDefinition(

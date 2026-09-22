@@ -1,6 +1,6 @@
 // Pure display logic for a concept's definition candidates (ADR-053). Tested under `npm test`;
 // ConceptDefinition.svelte only renders what this returns.
-import type { ConceptDefinitions, DefinitionCandidate, VocabularyMatch } from '../core/types'
+import type { ConceptDefinitions, DefinitionCandidate, UsageLine, VocabularyMatch } from '../core/types'
 
 export interface CandidateGroups {
   chosen: DefinitionCandidate | null
@@ -40,6 +40,13 @@ export function sourceLabel(c: DefinitionCandidate): string {
   if (c.source === 'user') return 'Written by you'
   if (c.source === 'model') return 'Suggested by a model'
   return c.document_title ? `From “${c.document_title}”` : 'From your library'
+}
+
+/** Where a usage example comes from, and how much that document uses the word. */
+export function usageSource(u: UsageLine): string {
+  const doc = u.document_title ? `“${u.document_title}”` : 'A document in your library'
+  const times = u.doc_mentions === 1 ? 'once' : `${u.doc_mentions} times`
+  return `${doc} · uses it ${times}`
 }
 
 /** Whitespace collapsed for reading. Display only: the stored passage stays verbatim (ADR-043). */

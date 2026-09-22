@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-09-21 (the `definitions` domain — ADR-053; the graph's one write, a concept's chosen definition) · class: living -->
+<!-- status: active · updated: 2026-09-22 (the `definitions` domain gains a read-only usage route — ADR-053 amended) · class: living -->
 
 # Architecture
 
@@ -275,7 +275,9 @@ only annotates existing edges** — it never creates a node or edge, and `build_
 **One exception, by the user's choice (ADR-053, 2026-09-21):** a concept's *definition* is read and chosen
 in the graph's concept panel — `knowledge/definitions.py` keeps every candidate (a verbatim passage with
 its page, the user's own words, later a model's text) and choosing is the only write to
-`Concept.definition`, recorded and undoable.
+`Concept.definition`, recorded and undoable. Beside it, read-only, *how your library uses it*
+(`GET /api/concepts/{id}/usage`, 2026-09-22): a plain sentence from each of the few documents that
+use the word most, found through the keyword index and never stored.
 
 **Current build state (2026-09-10).** Node A skeleton, keyword families, gap layer, epistemics projection,
 and the read-only graph/gap UI are **built and shipped**. The taxonomy layer is **built** (TX1–TX3, 2026-07):

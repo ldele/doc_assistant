@@ -10,6 +10,9 @@ extractor (`knowledge/definitions.py`) grades what it finds.
 Counts are measured. **The "first reading" column is the agent's**, not the user's choices — the
 user's choices, once made in the panel, are the real test of the grade.
 
+> **Superseded 2026-09-22:** the user's labels (`definition_labels_2026-09-22.md`) find the top
+> candidate usable for 6 of the 11 concepts §2 reads as "clean" with a strong grade, not 11.
+
 ## Environment / corpus
 
 - **Data home:** `data/library.db` on this box, 104 documents, 357 text-bearing concepts

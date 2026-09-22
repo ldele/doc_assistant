@@ -131,6 +131,41 @@ def test_extraction_from_the_app_stores_suggestions_only(
     assert len(again["candidates"]) == 1  # idempotent
 
 
+def test_usage_is_read_only_and_says_when_the_index_is_missing(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The panel's "How your library uses it": plain uses, never candidates, nothing stored."""
+    _seed()
+    chunks = [
+        (
+            "s:p0",
+            "s",
+            "Knowledge distillation refers to training a small model on a large one. "
+            "We then apply knowledge distillation to the ranker.",
+        ),
+    ]
+    monkeypatch.setattr(
+        "doc_assistant.knowledge.definitions.chunks_mentioning", lambda _labels, **_kw: chunks
+    )
+    body = client.get("/api/concepts/kd/usage").json()
+    assert body["available"] is True
+    (line,) = body["examples"]
+    assert line["text"] == "We then apply knowledge distillation to the ranker."
+    assert line["chunk_key"] == "s:p0" and line["doc_mentions"] == 2
+    assert client.get("/api/concepts/kd/definitions").json()["candidates"] == []  # nothing stored
+    assert client.get("/api/concepts/nope/usage").status_code == 404
+    assert client.get("/api/concepts/field/usage").status_code == 404
+
+    monkeypatch.setattr(
+        "doc_assistant.knowledge.definitions.chunks_mentioning", lambda _labels, **_kw: None
+    )
+    assert client.get("/api/concepts/kd/usage").json() == {
+        "concept_id": "kd",
+        "available": False,
+        "examples": [],
+    }
+
+
 def test_vocabulary_search_reaches_concepts_off_the_graph(client: TestClient) -> None:
     _seed()
     matches = client.get("/api/concepts/search", params={"q": "vir"}).json()

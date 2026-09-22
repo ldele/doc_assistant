@@ -33,6 +33,7 @@ from doc_assistant.knowledge.definitions import (
     dismiss_definition,
     extract_definitions,
     find_passages,
+    find_usages,
     load_definitions,
     passage_evidence,
     restore_definition,
@@ -84,7 +85,8 @@ SURVEY = (
 )
 PAPER = (
     "We compress the ranker with knowledge distillation, following Hinton et al. (2015) closely. "
-    "Our results hold across both datasets."
+    "Our results hold across both datasets. "
+    "In our set-up, knowledge distillation is a way to shrink the ranker."
 )
 CHUNKS = [
     ("survey:p0", "survey", SURVEY),
@@ -168,7 +170,7 @@ def test_reference_entries_and_title_blocks_are_not_prose():
 def test_nothing_after_the_references_heading_counts_as_a_mention():
     """A bibliography title ("Efficient … re-ranking for large web datasets.") reads as prose one
     sentence at a time; only its place in the document gives it away."""
-    body = "Re-ranking reorders a candidate list with a stronger model. " * 20
+    body = "The model reorders a candidate list with a stronger scorer. " * 20
     bibliography = (
         NL
         + "## References"
@@ -176,16 +178,31 @@ def test_nothing_after_the_references_heading_counts_as_a_mention():
         + "Efficient and effective spam filtering and re-ranking for large web datasets."
     )
     chunks = [("d:p0", "d", body), ("d:p1", "d", bibliography)]
-    hits = find_passages([("r", "re-ranking")], chunks)["r"]
-    assert all("spam filtering" not in h.text for h in hits)
-    assert all(h.chunk_key == "d:p0" for h in hits)
+    assert find_passages([("r", "re-ranking")], chunks) == {}
+    assert find_usages([("r", "re-ranking")], chunks) == {}
+
+
+def test_a_first_mention_is_a_usage_not_a_candidate():
+    """On the user's labels a first mention defined the term 3 times in 45
+    (definition_labels_2026-09-22.md): it shows how the library uses a word, so it is kept apart
+    from the options, and a sentence shaped as a definition is never offered as a usage."""
+    hits = find_passages([("kd", "knowledge distillation")], CHUNKS)["kd"]
+    assert {h.form for h in hits} == {"defining"}
+    assert all("We compress" not in h.text for h in hits)
+    uses = find_usages([("kd", "knowledge distillation")], CHUNKS)["kd"]
+    # two mentions each; the tie goes to the lower document id
+    assert [(u.document_id, u.doc_rank) for u in uses] == [("paper", 1), ("survey", 2)]
+    assert uses[0].text.startswith("We compress the ranker")
+    assert uses[1].text == "Knowledge distillation is often combined with pruning."
+    assert not {u.text for u in uses} & {h.text for h in hits}
+    assert find_usages([("kd", "knowledge distillation")], CHUNKS, per_concept=1)["kd"] == uses[:1]
 
 
 def test_denoted_as_a_notation_is_not_coining():
     chunks = [
         ("d:p0", "d", "Expansion on top of BM25 is popular (usually denoted as BM25 + RM3).")
     ]
-    hits = find_passages([("b", "bm25")], chunks)["b"]
+    hits = find_passages([("b", "bm25")], chunks).get("b", [])
     assert all(h.form != "coined" for h in hits)
 
 
@@ -445,8 +462,8 @@ def test_a_tie_between_documents_does_not_depend_on_read_order():
         ("b:p0", "b", "The pose is held for the whole of the recording session."),
         ("a:p0", "a", "Each pose is scored by the tracker on every frame it sees."),
     ]
-    forward = [h.document_id for h in find_passages([("p", "pose")], one)["p"]]
-    backward = [h.document_id for h in find_passages([("p", "pose")], list(reversed(one)))["p"]]
+    forward = [u.document_id for u in find_usages([("p", "pose")], one)["p"]]
+    backward = [u.document_id for u in find_usages([("p", "pose")], list(reversed(one)))["p"]]
     assert forward == backward == ["a", "b"]  # one mention each: the lower id ranks first
 
 
@@ -482,8 +499,97 @@ def test_a_single_mention_reads_as_once():
         text="t",
         document_id="d",
         chunk_key="d:p0",
-        form="first_mention",
+        form="defining",
         doc_mentions=1,
         doc_rank=2,
     )
     assert "From a document that mentions it once" in passage_evidence(hit)["reasons"]
+
+
+def test_a_first_mention_stored_before_the_split_is_hidden_unless_chosen(temp_db):
+    """Rows written while a first mention was a candidate stay in the table; the options stop
+    showing them, and one the user chose stays theirs."""
+    from doc_assistant.db.session import session_scope
+
+    evidence = json.dumps(
+        {"grade": "some", "reasons": ["The first sentence that uses it"], "form": "first_mention"}
+    )
+    with session_scope() as s:
+        _concept(s)
+        old = ConceptDefinition(
+            concept_id="kd",
+            text="We compress the ranker with knowledge distillation.",
+            source="passage",
+            provenance_key="paper:p0:old",
+            provenance_json=json.dumps({"document_id": "paper", "chunk_key": "paper:p0"}),
+            evidence_json=evidence,
+            status="suggested",
+        )
+        s.add(old)
+        s.flush()
+        view = load_definitions(s, "kd")
+        assert view is not None and view.candidates == () and not view.extracted
+        choose_definition(s, old.id)
+        view = load_definitions(s, "kd")
+        assert view is not None and [c.id for c in view.candidates] == [old.id]
+        assert view.chosen_id == old.id
+
+
+def test_the_index_can_return_only_the_documents_that_use_a_label_most(temp_db, tmp_path):
+    from doc_assistant.db.session import session_scope
+    from doc_assistant.knowledge.definitions import chunks_mentioning
+
+    with session_scope() as s:
+        for doc_id, doc_hash in (("d1", "h1"), ("d2", "h2"), ("d3", "h3")):
+            s.add(
+                Document(
+                    id=doc_id,
+                    filename=f"{doc_id}.pdf",
+                    source_original=doc_id,
+                    doc_hash=doc_hash,
+                    format="pdf",
+                )
+            )
+    index = _mini_index(
+        tmp_path,
+        {
+            "h1": ["The actor moves.", "The actor waits.", "The actor stops."],
+            "h2": ["One actor here."],
+            "h3": ["An actor acts.", "Another actor rests."],
+        },
+    )
+    chunks = chunks_mentioning(["actor"], index_file=index, top_docs=2)
+    assert chunks is not None and sorted({doc for _, doc, _ in chunks}) == ["d1", "d3"]
+
+
+def test_usage_reads_a_few_documents_and_says_when_it_could_not(temp_db, tmp_path):
+    from doc_assistant.db.session import session_scope
+    from doc_assistant.knowledge.definitions import load_usage
+
+    with session_scope() as s:
+        s.add(Concept(id="a", label="actor", kind="concept"))
+        s.add(Concept(id="field", label="Robotics", kind="domain"))
+        s.add(
+            Document(
+                id="d1",
+                filename="d1.pdf",
+                source_original="d1",
+                doc_hash="h1",
+                format="pdf",
+                title="Acting agents",
+            )
+        )
+    index = _mini_index(
+        tmp_path,
+        {"h1": ["The actor moves to the goal.", "An actor is an agent that acts in a world."]},
+    )
+    usage = load_usage("a", index_file=index)
+    assert usage is not None and usage.available
+    (line,) = usage.examples
+    assert line.text == "The actor moves to the goal."  # the definition shape is not a usage
+    assert line.document_title == "Acting agents" and line.chunk_key == "d1:p0"
+    assert line.doc_mentions == 2
+    missing = load_usage("a", index_file=tmp_path / "absent.sqlite3")
+    assert missing is not None and not missing.available and missing.examples == ()
+    assert load_usage("field", index_file=index) is None
+    assert load_usage("nope", index_file=index) is None

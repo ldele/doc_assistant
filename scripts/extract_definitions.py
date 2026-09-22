@@ -1,8 +1,9 @@
 """Find sentences in the library that may define each concept (ROADMAP 93, ADR-053).
 
 Deterministic and free: no model, no network. For every concept (or the ones named), looks for the
-sentence where an author names the term, sentences shaped as a definition, and the first mention in
-the documents that use it most — each copied verbatim with its document and chunk. With `--apply`
+sentence where an author coins the term, sentences that name it, and sentences shaped as a
+definition — each copied verbatim with its document and chunk. (A first mention is a usage example
+since 2026-09-22, shown in the panel and never stored.) With `--apply`
 they are stored as *suggested* candidates; nothing is chosen for you, and nothing you chose,
 dismissed or wrote yourself is touched. Why a candidate is graded the way it is:
 `doc_assistant/knowledge/definitions.py`.
@@ -57,8 +58,8 @@ def main() -> int:
         concept_ids = [i for i, label in labels.items() if label.casefold() in wanted]
 
     run = extract_definitions(concept_ids=concept_ids, apply=args.apply)
-    by_form = {"coined": 0, "defining": 0, "first_mention": 0}
-    by_grade = {"strong": 0, "some": 0, "thin": 0}
+    by_form = {"coined": 0, "named": 0, "defining": 0}
+    by_grade = {"strong": 0, "some": 0}
     for hits in run.hits.values():
         for h in hits:
             by_form[h.form] += 1
@@ -69,13 +70,10 @@ def main() -> int:
     print(f"Concepts with a candidate:      {run.n_with_passages}")
     print(f"Candidates:                     {run.n_hits}")
     print(
-        f"  by form:  coined {by_form['coined']} · defining {by_form['defining']} · "
-        f"first mention {by_form['first_mention']}"
+        f"  by form:  coined {by_form['coined']} · named {by_form['named']} · "
+        f"defining {by_form['defining']}"
     )
-    print(
-        f"  by grade: strong {by_grade['strong']} · some {by_grade['some']} · "
-        f"thin {by_grade['thin']}"
-    )
+    print(f"  by grade: strong {by_grade['strong']} · some {by_grade['some']}")
     if run.applied:
         print(f"Stored (new):                   {run.n_added}")
     else:

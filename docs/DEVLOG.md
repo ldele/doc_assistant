@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-09-21 · class: append-only -->
+<!-- status: active · updated: 2026-09-22 · class: append-only -->
 
 # DEVLOG — doc_assistant
 
@@ -14,8 +14,8 @@ Format: What changed | Why | Rejected alternatives | What it opens
 > oldest entries **verbatim** into the highest-numbered archive and verifies the bytes; then update
 > the range below by hand (cpc ticket T-003). A day may be split across two files at the cut.
 > Older entries, newest-first, unedited:
-> **2026-08-12 (1) → 2026-09-02 (2)** (the first 2026-09-02 entry is unnumbered) in [`docs/archive/DEVLOG-archive-006.md`](archive/DEVLOG-archive-006.md)
-> (rotated 2026-09-04, 2026-09-10, four times on 2026-09-16, on 2026-09-17, 2026-09-18, 2026-09-20 and twice on 2026-09-21) ·
+> **2026-08-12 (1) → 2026-09-04** (the first, unnumbered 2026-09-04 entry; the first 2026-09-02 entry is unnumbered too) in [`docs/archive/DEVLOG-archive-006.md`](archive/DEVLOG-archive-006.md)
+> (rotated 2026-09-04, 2026-09-10, four times on 2026-09-16, on 2026-09-17, 2026-09-18, 2026-09-20, twice on 2026-09-21 and twice on 2026-09-22) ·
 > **2026-08-08 (1) → 2026-08-11 (4)** in [`docs/archive/DEVLOG-archive-005.md`](archive/DEVLOG-archive-005.md)
 > (rotated 2026-08-30) ·
 > **2026-08-05 → 2026-08-07** in [`docs/archive/DEVLOG-archive-004.md`](archive/DEVLOG-archive-004.md)
@@ -32,6 +32,75 @@ Format: What changed | Why | Rejected alternatives | What it opens
 > is individually small and correct, so unbounded growth is invisible per commit.
 
 ---
+
+## 2026-09-22 (2) — A first mention becomes a usage example, not a definition candidate (ADR-053 amended)
+
+**What changed.** `find_passages` now keeps only sentences shaped as a definition (coined, named,
+defining). The first mentions move to `find_usages`: the first plain use in each of the documents
+that use the concept most. Both come from one scan (`_scan`).
+
+The panel gains a read-only **How your library uses it**:
+- `GET /api/concepts/{id}/usage` → `load_usage`;
+- `chunks_mentioning(top_docs=…)` reads only the documents the keyword index ranks highest, so a
+  panel open costs the same at any library size;
+- it says when the index is missing rather than showing nothing.
+
+Rows stored as first-mention candidates are hidden from the options unless chosen; none exist in
+the live library. ADR-053 gains a dated amendment with the user's four decisions. The runner's
+per-form counter now counts `named` (a dry run crashed on the first named sentence).
+
+**Why.** The user's labels: first mentions defined the term 3 times in 45; they show how a word is
+used, which is the context the user said every candidate lacks.
+
+**Measured, $0** (`definition_labels_2026-09-22.md` §6):
+- 24 candidates remain, all already labelled; usable 11/24, from 14/69.
+- The top candidate is usable for 7 of 19, unchanged.
+- The 3 usable first mentions all still show, as usage examples.
+- Usage route: 91–158 ms. One junk example (a pseudo-code block).
+- 34 definitions tests (unit + API), `npm test` 272, `svelte-check` clean; checked live in dark
+  and light, and at 375 px.
+
+**Rejected.**
+- Storing usage examples as a new candidate source: they could then be chosen, and choosing is the
+  mirror's only write.
+- A slow full-library fallback for the usage route: it is asked on every panel open.
+
+**What it opens.** Labels that keep their written case (`dIN`/`Din`, `Cre`/`CRE`), then the
+abbreviation signal (decisions 3 and 4 in the amendment).
+
+## 2026-09-22 — The user's labels measure the definition extractor: one candidate in five is usable; first mentions almost never are
+
+**What changed.** A new baseline, `tests/eval/baselines/definition_labels_2026-09-22.md`: the user's
+69 labels from the *Definition Candidate Review* page (rating hidden), set against the extractor's
+grade and form. The 2026-09-21 baseline gains a note that its agent-made "first reading" is
+superseded. No code change.
+
+**Measured, $0.**
+- **Usable** (defines + needs context) **by grade:** strong 8/13 (95% 36–82%), some 4/27, thin 2/29.
+- **By form:** first mentions 3/45; definition-shaped 11/24.
+- **By concept:** the top candidate is usable for 7 of 19. The agent's first reading had said 11
+  of the strong ones were clean; the labels make it 6.
+- **The user's notes:** defines-vs-claim is hard to call, and some sentences are both. Every case
+  needs context. For four concepts the label, not the sentence, is the problem: `beta` is beta
+  oscillations, `viral` is viral vector, `cre` is Cre recombinase, and `din` is `dIN`, a case
+  distinction the lower-cased labels lose.
+- **Probe (read-only):** how each label is written separates abbreviations and names (91–100%
+  not lower-case) from ordinary words (0–20%). Finding the spelled-out form (Schwartz & Hearst)
+  expands `dbs` and `pddl`, and finds a second meaning of the letters `CRE`.
+
+**Why.** ADR-053 shows a grade with its reasons and never lets it choose. This is the first
+measurement of how far to trust it: it sorts the candidates, but it is not a verdict.
+
+**Rejected.** Declaring a threshold for an "abbreviation likelihood" from 19 labels: it would be
+fitted to its own test set.
+
+**What it opens.** Choices for the user (in chat), before any extractor change:
+- first mentions move out of the definition candidates into the usage layer;
+- *claim* becomes a flag beside the label, not a label of its own;
+- labels keep their written case;
+- an abbreviation / fragment signal shown with its reasons, measured on concepts outside these 19.
+
+**The first labelling pass was lost:** the Claude app's pane never stored it (claude-skills T-004).
 
 ## 2026-09-21 (2) — Expert vocabularies become a source of definitions (ADR-053 amended); a labelling page measures the rating
 
@@ -842,108 +911,5 @@ make it cacheable; not using that would have made the job the slowest thing in C
 `mode=max` export may thrash once other caches compete. If it does, the fix is `mode=min` or
 dropping the cache export and paying the eight minutes. Left as-is because the first failure will
 say so plainly, and guessing at it now would be tuning against an imagined problem.
-
----
-
-## 2026-09-04 — The 0.6.0 known limits, checked line by line: one was inverted, one stale, and one I broke
-
-**What changed.** Three bullets under `## [0.6.0] → Known limits` in `CHANGELOG.md` (`6da294b`).
-The 0.5.1 section was deliberately left alone — a released section records what was true then, so
-the exception belongs in the 0.6.0 entry, which is where somebody deciding whether to install 0.6.0
-reads.
-
-**Why.** `docs/RELEASE.md` §2 makes this a judgment step and names the failure it guards: the 0.4.1
-draft claimed a clean-machine install was unverified for three days after it had been verified — "a
-limit that silently becomes a lie". Checking all eight bullets against the code rather than
-re-reading them found six sound and two not — and produced a third error of my own, recorded below
-because it is the sharpest instance of this session's recurring failure.
-
-- **The OCR limit is TRUE, and I broke it before restoring it — the most useful thing in this
-  entry.** I read it as fiction and rewrote it to say the app has no OCR. Four "confirmations"
-  agreed: no OCR package in `pyproject.toml` or `uv.lock`; `tesseract` never in `src/` in the whole
-  history (`git log -S`); `pymupdf4llm.to_markdown` takes no `ocr` argument and the library's own
-  `check_ocr` import is commented out; ADR-039's Context says a scan "extracts to nothing". Every
-  one of those is about **code this repo can read**, and the mechanism is not in this repo's code:
-  PyMuPDF discovers a `tesseract` binary on PATH by itself. `KI-47` had the measurement all along —
-  the same scan yielding **0 characters on 2026-08-08 and 34,600 on 2026-08-19**, nothing in the
-  repo changed — and `C:\Program Files\Tesseract-OCR\tesseract.EXE` v5.4.0 is on this box's PATH
-  right now. ADR-039's Context is not counter-evidence either: it was written 2026-08-01, eighteen
-  days before the behaviour was found. The corrected bullet now carries the measurement, so it is
-  stronger than what it replaced.
-- **The moved-file limit was inverted.** It led with "is treated as a new document", while its own
-  next sentence said the content is recognised. `_existing_document_id` (`ingest/store.py:67`)
-  matches on `doc_hash` **first** and falls back to path, so a moved file keeps its id, its figures
-  and its corrections. Only path-keyed state is lost — exclusions live on registry rows keyed by
-  `pathkey` — which is what the bullet now says.
-- **The inherited update-check limit was resolved and nobody noticed.** 0.6.0 said "everything
-  under 0.5.1 still applies"; 0.5.1 said the update check cannot compare until releases are cut.
-  `gh release list` shows Provenote 0.5.1 (Latest) and 0.4.2 (Pre-release) published.
-
-**Re-measured rather than assumed**, for the two limits carrying numbers: KI-57 is still open at
-0.2% of pages corpus-wide, and the keyword figure is **97.0%** — 1,358 of 1,400 attached keywords
-on exactly one document, across 98 documents — so 0.5.1's "97%" is still exactly right at a corpus
-one document larger.
-
-**Rejected.** *Editing the 0.5.1 section* — Keep a Changelog treats a released section as a record,
-and rewriting it would falsify history to fix a forward reference. *Deleting the OCR bullet* — the
-underlying limit is real and load-bearing (a scanned PDF is unreadable and marked broken); only the
-mechanism was invented.
-
-**What it opens.** A blanket "everything from the previous release still applies" inherits claims
-without naming them, which is how the update-check line was re-shipped unread; naming each
-carried-over limit would cost a few lines and make each one checkable.
-
-The larger opening is the OCR mistake. **`.claude/KNOWN_ISSUES.md` was never consulted** during a
-review whose entire job was "is this still true", and KI-47 answered the question directly, with a
-measurement. Reading the code proves what the code does; it does not prove what the *running system*
-does, and the gap between those is exactly where an undeclared external dependency lives. The
-verification order should be: what did we already measure, then what does the code say — not the
-reverse. This is the same fail-open shape as the four gates fixed on 2026-09-02, committed in a
-release note by the person who had just spent two days cataloguing it.
-
----
-
-## 2026-09-02 (3) — RG-012 passed on 0.6.0, and the preflight could not see it
-
-**What changed.** One character class in `scripts/release_preflight.py`: `_CHOSEN` now reads
-`([\d,]+(?:\.\d+)?)` where it read `([\d,]+)`. Five parametrised tests pin the parse.
-
-**Why.** RG-012 Tier-2 passed on the 0.6.0 installer at 17:49 — clean Windows Sandbox, `python on
-PATH? False`, 181 s silent install, health at 210 s, 3 PDFs to 322 chunks, a 14 s turn with 10
-sources and 4 resolved citations, 0 unresolvable. `release_preflight` then reported **"no RG-012
-run matches this installer — the gate ran against a DIFFERENT build"**, with the archive count
-correctly up from 9 to 10. It had found the run and rejected it.
-
-The harness logs its size as `[math]::Round($bytes/1MB, 1)`. Every installer before this one
-happened to land on a whole number — 0.5.1 is 1572.0318 MiB, which renders as `1572` — so a pattern
-accepting digits and commas matched for four releases running. 0.6.0 is 1572.3855 MiB, renders
-`1572.4`, and the line stopped matching. The check had never been right; it had been lucky, with
-roughly a one-in-ten chance of exposure per build.
-
-**The failure direction is what makes this worth a log entry.** A parser that drops the record it
-is looking for reports *absence of evidence* — and this check's absence message is an accusation
-("the gate ran against a DIFFERENT build"). The rational response to it is to re-run a 20-minute
-clean-machine gate that has already passed, or to override the check by hand. Both are worse than
-the check not existing. This is the third instance today of one shape: `versions` never opened two
-files, `artifact_fresh` compared the wrong quantity, `rg012` could not parse its own harness. In
-each case the check *ran*, and what it silently failed to see was the thing it was for.
-
-**Rejected.** *Loosening to `([^)]+)`* — it would parse, but the size is the one field that makes
-the log line self-describing, and a pattern that accepts anything stops being a guard. *Making the
-harness print an integer* — the harness is the record; changing what it writes to suit a reader is
-backwards, and the archived logs would still not parse.
-
-**On what the PASS is worth.** The packaging half is strong: it is the half that found KI-34, and
-nothing else exercises the frozen artifact end to end. The citation half is one sample of a
-measurement `.claude/RIGOR_TODO.md` reopened on 2026-08-14 as unreliable — a coin flip on
-`llama3.1:8b`, where 0.5.1 failed once and passed twice on the same installer. Recorded in
-`docs/desktop-packaging.md` §5 so the next reader does not take "4 resolved citations" for a
-stability claim.
-
-**Host state.** The run needs Ollama reachable from the sandbox. Rather than the documented
-persistent `OLLAMA_HOST` user variable, this run set it **process-scoped** on a directly launched
-`ollama serve`, so there was nothing persistent to revert — verified afterwards: both env scopes
-empty, listener back to `127.0.0.1` only, gateway address refused, 9 models still served locally.
-Worth preferring next time: the documented procedure leaves a variable that has to be remembered.
 
 ---

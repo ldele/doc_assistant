@@ -9,20 +9,24 @@ choice back. This module is the only writer of either — keep it that way, or t
 
 **Passages.** A candidate from the library is a sentence copied **verbatim** — a substring of the
 chunk it came from, whitespace and markup included (ADR-043; the UI collapses whitespace when it
-renders). Three forms are looked for, and the form is part of the evidence:
+renders). Three shapes are looked for, and the shape is part of the evidence:
 
 - ``coined`` — the author names the term ("we call our model SPECTER", "we denote as 'hard
   negatives'"): the primary source of the word;
 - ``named`` — the sentence describes something, then gives the term as its name ("… is called a
   'cross-encoder'", "… commonly referred to as passage retrieval");
 - ``defining`` — the sentence is shaped as a definition ("knowledge distillation refers to…",
-  "DBS is a neurosurgical therapy…");
-- ``first_mention`` — the first sentence that uses the term in a document that uses it a lot, which
-  is where a survey introduces it even when no pattern fires.
+  "DBS is a neurosurgical therapy…").
 
-About half of the definition shapes are not definitions (measured on the 19 priority concepts,
-``tests/eval/baselines/definition_sources_2026-09-21.md``), which is why a candidate carries its
-reasons and a coarse grade rather than a verdict, and why nothing here chooses for the user.
+About half of the definition shapes are not definitions — 11 of 24 could carry one on the user's
+labels (``tests/eval/baselines/definition_labels_2026-09-22.md``) — which is why a candidate
+carries its reasons and a coarse grade rather than a verdict, and why nothing here chooses for the
+user.
+
+**Usage examples.** A first mention is how the library *uses* a word, not what it means: on the
+same labels it defined the term 3 times in 45. So it is not a candidate. ``find_usages`` returns
+the first plain use in each of the documents that use the concept most. That is ADR-053's second
+layer, *how your library uses it*, and it is never stored or chosen.
 
 **Reliability is evidence, not a score** — the rule the rest of this layer follows
 (``docs/knowledge-layer.md`` §6). The grade is derived from the form and from where the sentence
@@ -64,9 +68,9 @@ STATUSES: frozenset[str] = frozenset({"suggested", "chosen", "dismissed"})
 #: How many passage candidates one concept keeps from one extraction. A readability bound on a
 #: review list (a person reads these), not a corpus-tuned threshold.
 PASSAGES_PER_CONCEPT = 5
-#: A first mention is looked for only in the documents that use the concept most — where an
-#: introduction is likely — and this many of them. Structural, like the bound above.
-FIRST_MENTION_DOCS = 3
+#: How many usage examples a concept shows — one per document, from the documents that use it
+#: most. A readability bound, like the one above.
+USAGE_EXAMPLES = 3
 #: Sentence length bounds for a candidate: shorter is a heading or a fragment, longer is a
 #: paragraph the splitter failed to cut. Readability bounds, not tuned on this corpus.
 MIN_SENTENCE, MAX_SENTENCE = 25, 500
@@ -127,7 +131,7 @@ class PassageHit:
     text: str  # verbatim: a substring of the chunk's text
     document_id: str
     chunk_key: str
-    form: str  # "coined" | "named" | "defining" | "first_mention"
+    form: str  # "coined" | "named" | "defining"
     doc_mentions: int  # sentences in this document that mention the concept
     doc_rank: int  # 1 = the document that mentions it most
     concept_docs: int = 1  # documents that mention the concept at all
@@ -223,22 +227,38 @@ def _form_patterns(form: str) -> tuple[re.Pattern[str], re.Pattern[str], re.Patt
     return coined, named, defining
 
 
-def find_passages(
-    concepts: Sequence[tuple[str, str]],
-    chunks: Iterable[tuple[str, str, str]],
-    *,
-    per_concept: int = PASSAGES_PER_CONCEPT,
-    first_mention_docs: int = FIRST_MENTION_DOCS,
-) -> dict[str, list[PassageHit]]:
-    """Candidate definition sentences for each ``(id, label)``, from ``(chunk_key, doc_id, text)``.
+@dataclass(frozen=True)
+class UsageExample:
+    """A sentence that uses a concept without defining it — how the library uses the word."""
 
-    Pure. Matches the **label only** — aliases are different phrases and bring their own meanings
-    in (``tests/eval/baselines/isa_head_suffix_2026-09-20.md`` measured that for heads; the
-    passage scan found the same). Order within a concept: coined, then defining, then first
-    mentions from the documents that use the concept most; duplicates of one text are kept once.
-    A concept that appears nowhere is absent from the result.
-    """
-    # Every document's prose sentences, in reading order (the parent index in the chunk key).
+    concept_id: str
+    text: str  # verbatim: a substring of the chunk's text
+    document_id: str
+    chunk_key: str
+    doc_mentions: int  # sentences in this document that mention the concept
+    doc_rank: int  # 1 = the document that mentions it most
+
+
+@dataclass
+class _ConceptScan:
+    """One concept's mentions across the library, from one pass over its sentences."""
+
+    per_doc: Counter[str] = field(default_factory=Counter)
+    # doc -> its first sentence that mentions the concept without being shaped as a definition
+    first_use: dict[str, tuple[str, str]] = field(default_factory=dict)
+    shaped: list[tuple[str, str, str, str]] = field(default_factory=list)  # (form, doc, key, span)
+
+    def doc_order(self) -> list[str]:
+        # Most mentions first; a tie goes to the lower document id, not to whichever document the
+        # chunks happened to arrive from first — so the keyword-index path and the full read (and
+        # two runs of either) pick the same documents.
+        return sorted(self.per_doc, key=lambda d: (-self.per_doc[d], d))
+
+
+def _document_sentences(
+    chunks: Iterable[tuple[str, str, str]],
+) -> dict[str, list[tuple[str, str, str]]]:
+    """Every document's prose sentences in reading order: ``doc -> [(chunk_key, span, low)]``."""
     ordered: dict[str, list[tuple[int, str, str]]] = defaultdict(list)
     for chunk_key, document_id, text in chunks:
         try:
@@ -246,67 +266,126 @@ def find_passages(
         except (IndexError, ValueError):
             index = 0
         ordered[document_id].append((index, chunk_key, text))
-    sentences: dict[str, list[tuple[str, str, str]]] = {}  # doc -> [(chunk_key, span, low)]
+    sentences: dict[str, list[tuple[str, str, str]]] = {}
     for document_id, rows in ordered.items():
         rows.sort()
         spans: list[tuple[str, str, str]] = []
         for chunk_key, text in _body_chunks([(k, t) for _, k, t in rows]):
             spans.extend((chunk_key, span, span.casefold()) for span in sentence_spans(text))
         sentences[document_id] = spans
+    return sentences
 
-    out: dict[str, list[PassageHit]] = {}
+
+def _scan(
+    concepts: Sequence[tuple[str, str]], chunks: Iterable[tuple[str, str, str]]
+) -> dict[str, _ConceptScan]:
+    """Each concept's mentions, sorted into definition shapes and plain uses. A concept that
+    appears nowhere is absent. Matches the **label only** — aliases are different phrases and bring
+    their own meanings in (``tests/eval/baselines/isa_head_suffix_2026-09-20.md``)."""
+    sentences = _document_sentences(chunks)
+    out: dict[str, _ConceptScan] = {}
     for concept_id, label in concepts:
         form = label.casefold().strip()
         if not form:
             continue
         mention = compile_boundary_pattern(form)
         coined_re, named_re, defining_re = _form_patterns(form)
-        per_doc: Counter[str] = Counter()
-        first: dict[str, tuple[str, str]] = {}
-        shaped: list[tuple[str, str, str, str]] = []  # (form, doc, chunk_key, span)
+        scan = _ConceptScan()
         for document_id, spans in sentences.items():
             for chunk_key, span, low in spans:
                 if form not in low or not mention.search(low):
                     continue
-                per_doc[document_id] += 1
-                first.setdefault(document_id, (chunk_key, span))
+                scan.per_doc[document_id] += 1
                 if coined_re.search(low):
-                    shaped.append(("coined", document_id, chunk_key, span))
+                    scan.shaped.append(("coined", document_id, chunk_key, span))
                 elif named_re.search(low):
-                    shaped.append(("named", document_id, chunk_key, span))
+                    scan.shaped.append(("named", document_id, chunk_key, span))
                 elif defining_re.search(low):
-                    shaped.append(("defining", document_id, chunk_key, span))
-        if not per_doc:
+                    scan.shaped.append(("defining", document_id, chunk_key, span))
+                else:
+                    scan.first_use.setdefault(document_id, (chunk_key, span))
+        if scan.per_doc:
+            out[concept_id] = scan
+    return out
+
+
+def find_usages(
+    concepts: Sequence[tuple[str, str]],
+    chunks: Iterable[tuple[str, str, str]],
+    *,
+    per_concept: int = USAGE_EXAMPLES,
+) -> dict[str, list[UsageExample]]:
+    """How the library uses each concept: the first plain use in each of the documents that use it
+    most, one per document.
+
+    ADR-053's second layer — *how your library uses it* — kept apart from the definition
+    candidates: on the user's labels a first mention defined the term 3 times in 45
+    (``tests/eval/baselines/definition_labels_2026-09-22.md``). A sentence shaped as a definition
+    is a candidate, not a use, so it is skipped here. Pure.
+    """
+    out: dict[str, list[UsageExample]] = {}
+    for concept_id, scan in _scan(concepts, chunks).items():
+        examples: list[UsageExample] = []
+        for rank, document_id in enumerate(scan.doc_order(), start=1):
+            if len(examples) >= per_concept:
+                break
+            use = scan.first_use.get(document_id)
+            if use is None:
+                continue  # every mention in this document is shaped as a definition
+            examples.append(
+                UsageExample(
+                    concept_id=concept_id,
+                    text=use[1],
+                    document_id=document_id,
+                    chunk_key=use[0],
+                    doc_mentions=scan.per_doc[document_id],
+                    doc_rank=rank,
+                )
+            )
+        if examples:
+            out[concept_id] = examples
+    return out
+
+
+def find_passages(
+    concepts: Sequence[tuple[str, str]],
+    chunks: Iterable[tuple[str, str, str]],
+    *,
+    per_concept: int = PASSAGES_PER_CONCEPT,
+) -> dict[str, list[PassageHit]]:
+    """Candidate definition sentences for each ``(id, label)``, from ``(chunk_key, doc_id, text)``.
+
+    Pure. Only sentences with a definition's shape — coined, named, defining; duplicates of one
+    text are kept once. A first mention is no longer one of them: it is how the library *uses* a
+    word, and ``find_usages`` returns it (ADR-053, amended 2026-09-22). A concept with no such
+    sentence is absent from the result.
+    """
+    labels = dict(concepts)
+    out: dict[str, list[PassageHit]] = {}
+    for concept_id, scan in _scan(concepts, chunks).items():
+        if not scan.shaped:
             continue
-        # Most mentions first; a tie goes to the lower document id, not to whichever document the
-        # chunks happened to arrive from first — so the keyword-index path and the full read (and
-        # two runs of either) pick the same documents.
-        doc_order = sorted(per_doc, key=lambda d: (-per_doc[d], d))
-        rank = {d: i + 1 for i, d in enumerate(doc_order)}
-        shaped_docs = len({s[1] for s in shaped})
+        form = labels[concept_id].casefold().strip()
+        rank = {d: i + 1 for i, d in enumerate(scan.doc_order())}
+        shaped_docs = len({s[1] for s in scan.shaped})
         opens_re = re.compile(rf"(?:(?:the|an?)\s+)?{_QUOTE_OPEN}{re.escape(form)}(?![a-z0-9])")
-        picked = list(shaped)
-        for document_id in doc_order[:first_mention_docs]:
-            chunk_key, span = first[document_id]
-            picked.append(("first_mention", document_id, chunk_key, span))
         candidates: dict[str, PassageHit] = {}
-        for kind, document_id, chunk_key, span in picked:
+        for kind, document_id, chunk_key, span in scan.shaped:
             if span in candidates:
-                continue  # a first mention that is also a shaped sentence keeps its shape
+                continue
             candidates[span] = PassageHit(
                 concept_id=concept_id,
                 text=span,
                 document_id=document_id,
                 chunk_key=chunk_key,
                 form=kind,
-                doc_mentions=per_doc[document_id],
+                doc_mentions=scan.per_doc[document_id],
                 doc_rank=rank[document_id],
-                concept_docs=len(per_doc),
+                concept_docs=len(scan.per_doc),
                 shaped_docs=shaped_docs,
                 opens=bool(opens_re.match(span.casefold())),
             )
-        # The cap keeps the best: by grade, then by how much the document uses the concept, so a
-        # run of sentences that only look like definitions cannot push out a real introduction.
+        # The cap keeps the best: by grade, then by how much the document uses the concept.
         ranked = sorted(
             candidates.values(),
             key=lambda h: (_GRADE_ORDER[passage_evidence(h)["grade"]], h.doc_rank),
@@ -326,21 +405,21 @@ def passage_evidence(hit: PassageHit) -> dict[str, Any]:
     ``strong`` — the author coins the term, or a definition-shaped sentence that *opens with* the
     term, so the sentence is about it. ``some`` — a definition shape where the term is not what the
     sentence is about ("… within SPECTER is an item of future work" has the shape and says
-    nothing), or the first mention in the document that uses the concept most. ``thin`` — a first
-    mention anywhere else. The rule is the reasons, spelled out, so the grade can be checked by
-    reading them; no count here is tuned on this corpus.
+    nothing). The rule is the reasons, spelled out, so the grade can be checked by reading them; no
+    count here is tuned on this corpus. On the user's labels, 8 of 13 ``strong`` candidates could
+    carry a definition (``tests/eval/baselines/definition_labels_2026-09-22.md``) — a grade sorts,
+    it does not decide. ``thin`` was the grade of a first mention, which is no longer a candidate;
+    rows stored before 2026-09-22 keep it.
     """
     reasons: list[str] = []
     if hit.form == "coined":
         reasons.append("The author names the term here")
     elif hit.form == "named":
         reasons.append("Describes something, then gives the term as its name")
-    elif hit.form == "defining" and hit.opens:
+    elif hit.opens:
         reasons.append("Worded as a definition, and the sentence opens with the term")
-    elif hit.form == "defining":
-        reasons.append("Has a definition's wording, but the sentence is not about the term")
     else:
-        reasons.append("The first sentence that uses it in this document")
+        reasons.append("Has a definition's wording, but the sentence is not about the term")
     times = "once" if hit.doc_mentions == 1 else f"{hit.doc_mentions} times"
     if hit.doc_rank == 1:
         reasons.append(f"From the document that mentions it most ({times})")
@@ -353,12 +432,7 @@ def passage_evidence(hit: PassageHit) -> dict[str, Any]:
     elif hit.concept_docs == 1:
         reasons.append("It appears in only one document")
 
-    if hit.form in ("coined", "named") or (hit.form == "defining" and hit.opens):
-        grade = "strong"
-    elif hit.form == "defining" or hit.doc_rank == 1:
-        grade = "some"
-    else:
-        grade = "thin"
+    grade = "strong" if hit.form in ("coined", "named") or hit.opens else "some"
     return {"grade": grade, "reasons": reasons, "form": hit.form}
 
 
@@ -663,6 +737,11 @@ def load_definitions(session: Session, concept_id: str) -> ConceptDefinitions | 
     for row in rows:
         provenance = json.loads(row.provenance_json or "{}")
         evidence = json.loads(row.evidence_json or "{}")
+        if evidence.get("form") == "first_mention" and row.status != "chosen":
+            # Stored before 2026-09-22, when a first mention was a candidate. It is a usage now
+            # (the panel's "How your library uses it"); kept in the table, hidden from the options
+            # — unless the user chose it, which stays theirs.
+            continue
         if provenance.get("document_id"):
             doc_ids.add(provenance["document_id"])
         parsed.append((row, provenance, evidence))
@@ -720,7 +799,7 @@ def load_definitions(session: Session, concept_id: str) -> ConceptDefinitions | 
 
 
 def chunks_mentioning(
-    labels: Sequence[str], *, index_file: Path | None = None
+    labels: Sequence[str], *, index_file: Path | None = None, top_docs: int | None = None
 ) -> list[tuple[str, str, str]] | None:
     """Every parent chunk of the documents that mention any of ``labels``, via the keyword index.
 
@@ -728,8 +807,12 @@ def chunks_mentioning(
     about ten seconds at 104 documents and grows with the corpus — minutes at the 10,000-document
     contract — while the on-disk keyword index (``sparse_index``, ADR-036) answers "which
     documents say this phrase" in milliseconds and holds every parent block. Only the *documents*
-    are chosen here; ``find_passages`` still reads all of each one, in order, so a first mention
-    and the per-document counts are the same as a full scan would give.
+    are chosen here; ``find_passages`` still reads all of each one, in order, so the per-document
+    counts are the same as a full scan would give.
+
+    ``top_docs`` keeps only the documents with the most matching blocks, most first (ties by
+    hash). The usage examples need a few documents, not all of them, and the panel asks for them
+    on every open, so the cost stays flat as the library grows.
 
     Returns ``None`` when the index is missing or unreadable (a CLI run before the app first
     built it), so the caller falls back to the full read rather than finding nothing.
@@ -758,16 +841,20 @@ def chunks_mentioning(
     try:
         con = sqlite3.connect(str(index_file))
         try:
-            hashes = sorted(
-                {
-                    str(row[0])
-                    for row in con.execute(
-                        "SELECT DISTINCT c.doc_hash FROM chunks_fts "
-                        "JOIN chunks c ON c.rowid = chunks_fts.rowid WHERE chunks_fts MATCH ?",
-                        (" OR ".join(phrases),),
-                    )
-                }
-            )
+            if top_docs is None:
+                rows = con.execute(
+                    "SELECT DISTINCT c.doc_hash FROM chunks_fts "
+                    "JOIN chunks c ON c.rowid = chunks_fts.rowid WHERE chunks_fts MATCH ?",
+                    (" OR ".join(phrases),),
+                )
+            else:
+                rows = con.execute(
+                    "SELECT c.doc_hash FROM chunks_fts "
+                    "JOIN chunks c ON c.rowid = chunks_fts.rowid WHERE chunks_fts MATCH ? "
+                    "GROUP BY c.doc_hash ORDER BY count(*) DESC, c.doc_hash LIMIT ?",
+                    (" OR ".join(phrases), top_docs),
+                )
+            hashes = sorted({str(row[0]) for row in rows})
             placeholders = ",".join("?" * len(hashes))
             parents = (
                 con.execute(
@@ -848,4 +935,73 @@ def extract_definitions(
         hits=hits,
         applied=True,
         n_added=added,
+    )
+
+
+# ============================================================
+# Usage — how the library uses a concept (read-only, never stored)
+# ============================================================
+
+
+@dataclass(frozen=True)
+class UsageLine:
+    text: str
+    document_id: str
+    document_title: str | None
+    chunk_key: str
+    doc_mentions: int
+
+
+@dataclass(frozen=True)
+class ConceptUsage:
+    """The panel's *how your library uses it* for one concept."""
+
+    concept_id: str
+    # False when the keyword index is missing (a first launch before it is built): nothing was
+    # read, which is not the same as "the library never uses it".
+    available: bool
+    examples: tuple[UsageLine, ...] = ()
+
+
+def load_usage(concept_id: str, *, index_file: Path | None = None) -> ConceptUsage | None:
+    """Usage examples for one concept, or ``None`` for an unknown id or a field node.
+
+    Asks the keyword index for the documents that use the label most, reads only those — twice
+    as many as are shown, since the index's prefix match over-selects ("actors" for "actor") and
+    ``find_usages`` re-checks every mention — and takes one plain use from each. The read is
+    bounded by that count, not by the size of the library, so the panel can ask on every open.
+    """
+    from doc_assistant.db.session import session_scope
+
+    with session_scope() as session:
+        concept = session.get(Concept, concept_id)
+        if concept is None or concept.kind != "concept":
+            return None
+        label = str(concept.label)
+    chunks = chunks_mentioning([label], index_file=index_file, top_docs=2 * USAGE_EXAMPLES)
+    if chunks is None:
+        return ConceptUsage(concept_id=concept_id, available=False)
+    found = find_usages([(concept_id, label)], chunks).get(concept_id, [])
+    with session_scope() as session:
+        titles = {
+            str(i): (t or f)
+            for i, t, f in session.execute(
+                select(Document.id, Document.title, Document.filename).where(
+                    Document.id.in_([u.document_id for u in found])
+                )
+            ).all()
+        }
+    return ConceptUsage(
+        concept_id=concept_id,
+        available=True,
+        examples=tuple(
+            UsageLine(
+                text=u.text,
+                document_id=u.document_id,
+                document_title=titles.get(u.document_id),
+                chunk_key=u.chunk_key,
+                doc_mentions=u.doc_mentions,
+            )
+            for u in found
+        ),
     )

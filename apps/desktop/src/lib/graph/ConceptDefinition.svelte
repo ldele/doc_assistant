@@ -11,18 +11,23 @@
   // Self-contained like GapList: it fetches its own data and owns its writes, and every write
   // answers with the refreshed candidates, so the card never patches its own copy.
   // `onOpenPassage` is the one host hook — it opens a passage where it was written.
-  import type { ConceptDefinitions, DefinitionCandidate } from '../core/types'
+  //
+  // Below the options, "How your library uses it" — ADR-053's second layer: a plain sentence from
+  // each of the documents that use the word most. Read-only; nothing there can be chosen. It is
+  // the context a found definition usually lacks (the user's labels, 2026-09-22).
+  import type { ConceptDefinitions, ConceptUsage, DefinitionCandidate } from '../core/types'
   import {
     addDefinition,
     chooseDefinition,
     dismissDefinition,
     extractDefinitions,
     getDefinitions,
+    getUsage,
     restoreDefinition,
     undoDefinition,
   } from '../core/api'
   import Icon from '../shell/Icon.svelte'
-  import { displayText, gradeLabel, groupCandidates, sourceLabel } from './definitions'
+  import { displayText, gradeLabel, groupCandidates, sourceLabel, usageSource } from './definitions'
 
   let {
     conceptId,
@@ -41,6 +46,8 @@
   let draft = $state('')
   let showDismissed = $state(false)
   let openReasons = $state<string | null>(null)
+  let usage = $state<ConceptUsage | null>(null)
+  let usageError = $state<string | null>(null)
 
   const groups = $derived(groupCandidates(view))
 
@@ -62,6 +69,15 @@
       })
       .finally(() => {
         if (id === conceptId) loading = false
+      })
+    usage = null
+    usageError = null
+    getUsage(id)
+      .then((u) => {
+        if (id === conceptId) usage = u
+      })
+      .catch((e) => {
+        if (id === conceptId) usageError = e instanceof Error ? e.message : String(e)
       })
   })
 
@@ -205,6 +221,25 @@
       </p>
     {/if}
 
+    {#if usage && usage.examples.length > 0}
+      <h4>How your library uses it</h4>
+      <ul class="uses">
+        {#each usage.examples as u (u.chunk_key + u.text)}
+          <li>
+            <p class="utext">{displayText(u.text)}</p>
+            <div class="cmeta">
+              <span class="src">{usageSource(u)}</span>
+              <button class="linkish" onclick={() => onOpenPassage(u.chunk_key)} type="button">Open passage →</button>
+            </div>
+          </li>
+        {/each}
+      </ul>
+    {:else if usage && !usage.available}
+      <p class="muted small">The keyword index is not built yet, so how your library uses it can't be shown.</p>
+    {:else if usageError}
+      <p class="muted small">Couldn't load how your library uses it: {usageError}</p>
+    {/if}
+
     {#if groups.dismissed.length > 0}
       <button class="linkish small" onclick={() => (showDismissed = !showDismissed)} aria-expanded={showDismissed} type="button">
         {showDismissed ? 'Hide' : 'Show'} dismissed ({groups.dismissed.length})
@@ -317,6 +352,34 @@
   }
   .dismissed .cand {
     opacity: 0.75;
+  }
+  .uses {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+  }
+  .uses li {
+    border-left: 2px solid var(--border);
+    padding-left: var(--space-3);
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+  }
+  .uses .cmeta {
+    font-size: var(--text-sm);
+  }
+  .utext {
+    margin: 0;
+    line-height: 1.45;
+    font-size: var(--text-sm);
+    color: var(--fg-2);
+  }
+  .small {
+    margin: 0;
+    font-size: var(--text-sm);
   }
   .ctext {
     margin: 0;

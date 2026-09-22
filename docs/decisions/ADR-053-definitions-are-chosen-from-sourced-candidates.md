@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-09-21 · class: append-only -->
+<!-- status: active · updated: 2026-09-22 · class: append-only -->
 
 # ADR-053 — A definition is chosen from candidates, and every candidate keeps its source
 
@@ -10,6 +10,8 @@
   user to accept. Builds [ADR-052](ADR-052-a-concept-is-a-meaning.md)'s "meanings are curated data".
   **Decided by the user, 2026-09-21:** expert vocabularies (MeSH, the OBO ontologies, the mouse-line
   registry, Wikidata…) are a fourth source of candidates — see *Decision* and slice 93c.
+  **Amended by the user, 2026-09-22**, after labelling the 69 candidates: a first mention is a
+  usage, not a candidate — see *Amendment 2026-09-22* at the end.
 - **Date:** 2026-09-21
 - **Deciders:** user + Claude Code
 - **In one sentence:** a concept used to have one definition box that the last writer overwrote;
@@ -251,3 +253,34 @@ online fallback is needed at all.
   `tests/eval/baselines/reference_vocabularies_2026-09-21.md`.
 - ⚠ **That coverage used four hand-expanded labels.** How much a matcher finds on its own, and how
   often it picks the wrong entry, is unmeasured — 93c measures both.
+
+## Amendment 2026-09-22 — what the user's labels changed
+
+The user labelled all 69 candidates for the 19 priority concepts, with the grade hidden
+(`tests/eval/baselines/definition_labels_2026-09-22.md`). One in five could carry a definition;
+first mentions almost never could (3 of 45), and 28 of the 45 only *use* the word. The user decided
+four things (2026-09-22):
+
+1. **A first mention is a usage, not a candidate — built.** The `passage` source now finds only
+   sentences shaped as a definition: coined, named, or defining. A first mention moves to the
+   panel's **How your library uses it**, the second layer this ADR already named: one plain
+   sentence from each of the documents that use the word most, read on demand and never stored or
+   chosen. In the *hard negatives* example above, B and C now appear there, not as options. Rows
+   stored earlier stay in the table and are hidden from the options unless chosen.
+   **Measured:** 24 candidates remain, all already labelled; 11 of them are usable (46%, from 20%).
+   The top candidate is usable for 7 of 19, unchanged. The 3 usable first mentions still show,
+   under *How your library uses it*.
+2. **Claim is a flag, not a category** — for the next labelling round. A sentence can define *and*
+   judge ("… the method of retrieving documents using semantic embedding similarities, has been
+   shown successful"), and the labels forced a choice between the two.
+3. **Labels keep their written case** — next. `dIN` (an interneuron) and `Din` (a text-extraction
+   join), `Cre` and `CRE` (cAMP response element) are different words, and the lower-cased label
+   loses that. Planned as data derived from the text, beside the label, not a rewrite of it
+   (ADR-043).
+4. **Abbreviation and fragment signals with their reasons** — after 3. The written case separates
+   abbreviations and names (91–100% not lower-case) from ordinary words (0–20%). Finding the
+   spelled-out form expands `dbs` and `pddl` from the library itself. Shown only after a check on
+   concepts outside the 19, because these 19 are where the signal was noticed.
+
+What this does not change: the grade still sorts and never chooses. `strong` was right 8 times in
+13 (95% interval 36–82%).

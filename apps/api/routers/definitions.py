@@ -14,6 +14,7 @@ from fastapi import APIRouter, HTTPException, Query
 
 from apps.api.models.definitions import (
     ConceptDefinitionsPayload,
+    ConceptUsagePayload,
     UserDefinitionRequest,
     VocabularyMatchPayload,
 )
@@ -74,6 +75,19 @@ def get_definitions(concept_id: str) -> ConceptDefinitionsPayload:
     """One concept's definition candidates, the chosen one first. 404 for an unknown id or a
     taxonomy field (a field is not a concept and has no definition here)."""
     return _view(concept_id)
+
+
+@router.get("/api/concepts/{concept_id}/usage")
+def get_usage(concept_id: str) -> ConceptUsagePayload:
+    """How the library uses this concept — a plain sentence from each of the documents that use it
+    most. Read-only and never stored; a few documents are read, whatever the library's size.
+    404 for an unknown id or a taxonomy field."""
+    from doc_assistant.knowledge.definitions import load_usage
+
+    usage = load_usage(concept_id)
+    if usage is None:
+        raise HTTPException(status_code=404, detail=f"no concept with id {concept_id!r}")
+    return ConceptUsagePayload.from_view(usage)
 
 
 @router.post("/api/concepts/{concept_id}/definitions", status_code=201)

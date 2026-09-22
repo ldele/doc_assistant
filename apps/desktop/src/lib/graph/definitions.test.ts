@@ -2,7 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 
 import type { ConceptDefinitions, DefinitionCandidate } from '../core/types'
-import { displayText, gradeLabel, groupCandidates, offGraphMatches, sourceLabel } from './definitions.ts'
+import { displayText, gradeLabel, groupCandidates, offGraphMatches, sourceLabel, usageSource } from './definitions.ts'
 
 const cand = (
   id: string,
@@ -55,6 +55,12 @@ test('the source line names the document when there is one', () => {
   assert.equal(sourceLabel(cand('a', 'suggested', { document_title: 'A survey' })), 'From “A survey”')
   assert.equal(sourceLabel(cand('a', 'suggested')), 'From your library')
   assert.equal(sourceLabel(cand('a', 'suggested', { source: 'user' })), 'Written by you')
+})
+
+test('a usage example names its document and how often that document uses the word', () => {
+  const u = { text: 't', document_id: 'd', document_title: 'A survey', chunk_key: 'd:p0', doc_mentions: 12 }
+  assert.equal(usageSource(u), '“A survey” · uses it 12 times')
+  assert.equal(usageSource({ ...u, document_title: null, doc_mentions: 1 }), 'A document in your library · uses it once')
 })
 
 test('display collapses whitespace without touching the words', () => {

@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-09-22 (row 93 labelled by the user; first mentions become usage examples — ADR-053 amended) · class: living -->
+<!-- status: active · updated: 2026-09-30 (row 61 done — the advisory gate blocks CI; the session Sequence table retired) · class: living -->
 
 # ROADMAP — doc_assistant
 
@@ -32,8 +32,8 @@ record: `docs/performance.md`; what the knowledge layer's signals are worth: `do
 **Now → next → later** (user's order, 2026-09-10 second session — supersedes the review's own suggestion from earlier that day):
 
 1. **Now — the gaps, three strands in parallel, one small security step every session.**
-   - *The release loop:* row 46 (the citation gate), then 61 (advisories = security step S-8).
-     Row 62 landed 2026-09-10.
+   - *The release loop:* row 46 (the citation gate). Row 62 landed 2026-09-10, and row 61 (the
+     advisories, security step S-8) on 2026-09-30.
    - *Security, a little each session:* `docs/security.md` §4 is the ordered list; row **60** names
      the current step. A session's security slot is one step — small code, its test, one line in
      the doc. The full check (§6) runs once when the list is done.
@@ -47,25 +47,9 @@ record: `docs/performance.md`; what the knowledge layer's signals are worth: `do
    the vocabulary, hierarchy and gap grades are honest: 52 · 57 · 50 · 43 (43 waits on KL3), plus a
    UX pass on navigation. Then 47 (the Project ADR) and the rest of F4.
 
-## Sequence — the next sessions, in order
-
-Each line is one session; the security column is that session's step from `docs/security.md` §4.
-
-| # | Main work | Security step |
-|---|-----------|---------------|
-| 1 | ✓ 46 — the citation gate asserts over three turns ($0; sandbox run at the next release) | S-1 ingest size caps |
-| 2 | ✓ KL1 — the knowledge layer tells the truth (strip column · markers · `unsourced_claim` headings · RG-014 grades in the list) | S-2 walk cap |
-| 3 | ✓ 53 (1)(2) + 54 — merges keep curation and undo, one merge definition, threshold measured; kind guards + denominators. **53 (3)'s hand score is the user's** | ✓ S-3 sanitise `{@html}` + dev-server CSP |
-| 4 | ✓ 51 — kind validation · a deterministic `is_a` proposer · TX3b accept/reject in the app | ✓ S-4 CSP residual |
-| 5 | ✓ **93a — definitions are chosen from sourced candidates (ADR-053)**: the store, passages with their evidence, write-your-own, choose / undo, the panel card, vocabulary search (user's order, 2026-09-20 — brought forward past KL4). 93b–e follow (93c expert vocabularies, added 2026-09-21) | S-5 host guard (not taken this session — the build filled it) |
-| 6 | KL4 — RG-015 placement quality · RG-018 community flip | S-6 launch token |
-| 7 | 61 — advisories triaged, `pip-audit` blocking | (= S-8, the whole slot) |
-| 8 | KL2 — ADR-032 grill: the acquisition half designed | S-7 source-viewer containment |
-| 9 | 25 — LLM-assisted ingestion: spec + ADR | S-10 the small ones |
-| 10 | 25 — build, part 1 (the sidecar + the review surface) | S-11 security events in the log |
-| 11 | 25 — build, part 2 (+ 56 concept marking at ingest) | — |
-| 12 | 75 — the graph re-pass (52 · 57 · 50; 43 if KL3 is done) | S-9 prompt fence (this session also runs the eval) |
-| 13 | The periodic full security check (§6) → `.claude/REVIEWS.md` row 7 | — |
+*(The session-by-session Sequence table that stood here was retired on 2026-09-30: session
+planning is kept local-only now. The PR table below is the open work, and `docs/security.md` §4 is
+the order of the security steps.)*
 
 ## Goals
 
@@ -92,8 +76,7 @@ mark the older tracks.)*
 | PR | Feature | Scope | Status | Spec |
 |----|---------|-------|--------|------|
 | 46 | F3 Chat | **RG-012's citation half** — the ship gate's citation verdict is a coin flip on `llama3.1:8b`; assert over 3 turns with ≥1 cited (option 2), $0, before the next release. **Built 2026-09-16:** harness tracked at `scripts/rg012/` (three questions, one session and one run directory each); `release_preflight` reports `rg012_packaging` and `rg012_citation` separately and judges citations with the app's `audit_citations` (reproduces all ten archived verdicts). **Left:** one sandbox run to prove the three turns complete on a clean box — **deferred to the next release's RG-012 run** (user, 2026-09-16) | in progress — built; sandbox run at the next release · **blocks-ship** | `.claude/RIGOR_TODO.md` RG-012 (2026-08-14) · KI-35 · KI-36 |
-| 61 | F10 Platform | **Dependency advisories** — 66 across 16 packages with `pip-audit` on `continue-on-error`; `aiohttp` and `starlette` ship in the sidecar and the image. Triage: upgrade what the lock allows, pin an ignore-list with reasons for the rest, then make the step block on HIGH/critical | planned — own session | `.github/workflows/ci.yml` · `docs/security.md` |
-| 60 | F10 Platform | **Security — one step per session.** `docs/security.md` §4 is the ordered plan (S-1 … S-12, then the full check §6); this row names the **current step** and moves each session. Foundations that landed 2026-09-10: gates cover `apps/`, `npm audit` in CI, the Tauri config guard test, loopback compose, the floor + threat model written down | in progress — **current step: S-5 host guard** (S-1 size caps + S-2 walk cap done 2026-09-16; S-3 sanitised `{@html}` + dev-server CSP done 2026-09-17; S-4 CSP residual done 2026-09-20) | `docs/security.md` §4 · `docs/reviews/REVIEW_2026-09-10_project-review.md` §4 |
+| 60 | F10 Platform | **Security — one step per session.** `docs/security.md` §4 is the ordered plan (S-1 … S-12, then the full check §6); this row names the **current step** and moves each session. Foundations that landed 2026-09-10: gates cover `apps/`, `npm audit` in CI, the Tauri config guard test, loopback compose, the floor + threat model written down | in progress — **current step: S-5 host guard** (S-1 size caps + S-2 walk cap done 2026-09-16; S-3 sanitised `{@html}` + dev-server CSP done 2026-09-17; S-4 CSP residual done 2026-09-20; S-8 advisories done 2026-09-30 as row 61; S-13, a secret scan CI can fail, added 2026-09-30) | `docs/security.md` §4 · `docs/reviews/REVIEW_2026-09-10_project-review.md` §4 |
 | 73 | F12 Verification | **Live-turn verification batch** ($0, Ollama): sandbox knobs change retrieval on a real answer · provider switch end-to-end incl. the reviewer following it · epistemics marker chips render (KI-15's fix has never been seen live) · RH1 reranker cap under multi-query · RG-012 Tier-2 on the frozen build. Becomes the standing pre-release walkthrough | planned | `docs/release-ux-checklist.md` · `.claude/ui-checklist-archive-001.md` §2 (the 2026-08-11 verification debt, local) |
 | 25 | F1 Ingestion | **LLM-assisted ingestion mode** — opt-in pass over the programmatic default (Ollama-first, KI-4 guard): figure links, citation links, **reference order** (needs an additive ordinal column at extraction time — it cannot be backfilled), concept marking at ingest. Output is a durable, inspectable, re-derivable sidecar (Enrichment-Layer Pattern; ADR-043's "normalisation is a derived layer") | gate first — spec + ADR (new ingest mode, cost-gated) | `docs/plans/PLAN_2026-08-11_ingestion-quality.md` §2 (local) · `.claude/CONTEXT.md` direction note |
 | 75 | F5 Knowledge | **Graph re-pass** — a deliberate second pass over the Graph tab once the vocabulary, hierarchy and gap grades are honest (after 25): the `flat_field` detector (52) · gap-list / Connections navigation iteration (57) · placement of the gap list and Connections (50) · rich marker UI (43, waits on KL3) · a UX pass on the concept rail, ego view and empty states against `docs/release-ux-checklist.md` §4 (incl. the ego layout clipping a neighbour label at the left edge below ~640 px of pane width, seen 2026-08-30) | later — after 25 | rows 52 · 57 · 50 · 43 · `docs/knowledge-layer.md` |
@@ -259,9 +242,10 @@ match stays the default.
 
 **Shipped:** Tauri + FastAPI/SSE shell (M0–M5), frozen sidecar + installer (KI-9/10/11, KI-34),
 in-app provider setup (ADR-034), update notification (ADR-044), release runbook + preflight
-(`docs/RELEASE.md`), CI for Python · frontend · Docker image (2026-09-04), seven tagged releases.
+(`docs/RELEASE.md`), CI for Python · frontend · Docker image (2026-09-04), seven tagged releases,
+the dependency-advisory gate that blocks CI (row 61, 2026-09-30).
 **Next:** row **60** is standing — one security step per session from `docs/security.md` §4 (row
-62 landed 2026-09-10; 61 is step S-8). Row **76** closes KI-58's open halves (Windows CI job, shared
+62 landed 2026-09-10, row 61 — step S-8 — on 2026-09-30). Row **76** closes KI-58's open halves (Windows CI job, shared
 `empty_library` fixture). Row 63 is a trade the user has to make; 64/65 are parked by user call;
 87/88 are host actions for the user.
 

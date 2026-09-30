@@ -1,0 +1,413 @@
+<!-- status: archived · updated: 2026-09-30 · class: living -->
+
+# DEVLOG archive index
+
+One line per rotated entry, grouped per archive file, newest file first. Laid by
+`cpc-rotate` at the first rollover (ADR-045). Each later rotation writes the lines it
+owes when `[rotate] write_index` is on, and prints them for a human to place when it
+is off; docs_check rule 17 fails while any archived entry is missing here.
+
+## DEVLOG-archive-007.md
+
+- **2026-09-17** (1) — Row 54: no write can put a field node on the graph, and every coverage number counts what it describes
+- **2026-09-16** (5) — KL1: the knowledge layer says what its signals are — thin bridges get a real definition, and "unsourced claims" turn out to be about your answers
+- **2026-09-16** (4) — Security S-2: one add checks at most 50,000 files, and the uploader states the limits it enforces
+- **2026-09-16** (3) — Security S-1: oversized files and zip bombs are refused before they are opened, without re-extracting the corpus
+- **2026-09-16** (2) — Row 46: the ship gate asks three questions, reads its verdict with the app's own parser, and moves into the repo
+- **2026-09-16** — After the break: the plan is made true again, fourteen dropped follow-ups become rows, and the crossover's merge row turns out to aim at the wrong knob
+- **2026-09-10** (2) — Working docs get folders, the DEVLOG keeps twenty, the release checklists are stale by default, and security becomes one step per session
+- **2026-09-10** — Whole-project review: the roadmap goes per feature, the security floor is written down, and a ninth version file turns up at 0.4.2
+- **2026-09-07** (3) — CI on `main` was red for five days and seven pushes, including the release; two test-only fixes
+- **2026-09-07** (2) — v0.6.0 published; a README tell pass; §7b learns what the publish command actually does
+- **2026-09-07** — 0.6.0 release notes and README brought level with the tag; the release object itself is the user's command
+
+## DEVLOG-archive-006.md
+
+- **2026-09-04** (2) — CI builds the container, and checks the two things a green build does not prove
+- **2026-09-04** — The 0.6.0 known limits, checked line by line: one was inverted, one stale, and one I broke
+- **2026-09-02** (3) — RG-012 passed on 0.6.0, and the preflight could not see it
+- **2026-09-02** (2) — `artifact_fresh` judges git history, not file mtimes
+- **2026-09-02** — The version check now reads the two Cargo files, and its file list is a test
+- **2026-09-01** (6) — Two UI corrections from using the app: controls too small to find, and a dropdown painted by the OS
+- **2026-09-01** (5) — Row 18 closed out: a citation now opens its page, and the two branches no test could reach were driven for real
+- **2026-09-01** (4) — The page fits because the reader decides how: a real zoom, a draggable split, and renders that get sharper instead of bigger
+- **2026-09-01** (3) — No page in the corpus actually fit the source pane, including the ordinary ones
+- **2026-09-01** (2) — ADR-050 D5 measured: the on-image highlight is viable, and twice the measurement lied before it told the truth
+- **2026-09-01** (1) — ROADMAP 18: the document beside its library entry — and the row's stated reason for it being free was wrong
+- **2026-08-31** (4) — The graph now says how much of the library it covers, and why the obvious version of that number would have lied
+- **2026-08-31** (3) — Driving the app found four defects; three were real, and the fourth was the harness
+- **2026-08-31** (2) — Row 17: importing from Zotero is a route to the review sheet, and the catalogue's metadata is a slot the extractor cannot overwrite
+- **2026-08-31** (1) — KI-50: the 723 missing figure crops are back, and the button that would have destroyed the descriptions no longer does
+- **2026-08-30** (9) — A citation can now show where it came from: the passage in place, with what surrounds it
+- **2026-08-30** (8) — The corpus is re-chunked: offsets go 63.3% to 100%, in 6m34s and without re-extracting a single file
+- **2026-08-30** (7) — A 70-86% resolve rate was written down as a property of the corpus. It was a cursor parked one chunk too far along
+- **2026-08-30** (6) — The re-run earns its keep on the first real use: 15 titles a library had been missing, and a second extractor bug found by watching it work
+- **2026-08-30** (5) — Per-part re-ingest: the app can finally re-run one pass on one document, and it says what that costs first
+- **2026-08-30** (4) — Graph vocabulary gets the in-app toggle ADR-018 left as a follow-up, and the Graph tab stops being a dead end
+- **2026-08-30** (3) — Settings becomes a rail and five categories, because a flat list stopped scaling before it stopped growing
+- **2026-08-30** (2) — The Graph tab is back, and its empty state now says the thing that is actually true
+- **2026-08-30** (1) — KI-53: the ingest record described every document as a PDF, and called a complete extraction broken
+- **2026-08-28** (10) — CS1/CS2: the last spec item, and the last sentence describing the product Provenote used to be
+- **2026-08-28** (9) — AD4: the empty state stops describing the old product and becomes the drop target
+- **2026-08-28** (8) — Delete stops meaning "delete the file": ADR-046's other half, and KI-52 with it
+- **2026-08-28** (7) — EPUB and HTML finally went through the UI, and the extraction was fine; what the row *says* about them is not
+- **2026-08-28** (6) — Undo now finishes the job: the document, its chunks and the reference go with the row (KI-51 closed)
+- **2026-08-28** (5) — The progress channel pays for itself twice: the grid refreshes when a run ends, and undo stops racing it
+- **2026-08-28** (4) — Two things the add flow never said out loud: where the drop is, and what "Earlier" means
+- **2026-08-28** (3) — The indexer now says where it is, because "I was not even sure it was working" was literally true
+- **2026-08-28** (2) — The add-documents feature was driven for the first time, and undo turns out to stop one table short
+- **2026-08-28** (1) — CI had been red for four commits over two path literals that only mean what they say on Windows
+- **2026-08-27** — The AD3b migration, run against a real pre-AD3b database and then given the test it never had
+- **2026-08-26** (5) — The loose thread from entry (4): a rename could silently re-extract the whole corpus
+- **2026-08-26** (4) — The rest of the branch review: nine findings, and one of them was hiding behind a test that could not fail
+- **2026-08-26** (3) — Review of `feat/eval-comparability` before merge: five findings fixed, and two of them could delete a file
+- **2026-08-26** (2) — KI-45 part 1: a citation link now has to agree on the title, and one word is enough to disagree
+- **2026-08-26** — the ingest politeness budget, and two performance claims of mine that were wrong
+- **2026-08-25** (5) — the corpus is re-ingested, and a full re-extraction is a four-day job at 10k documents
+- **2026-08-25** (4) — a re-extraction destroyed 767 figure rows, because the sweep runs before identity
+- **2026-08-25** (3) — extraction identity, scoped per format and no longer hostage to the extractor
+- **2026-08-25** (2) — a referenced file could be registered but never ingested, and the corpus turned out to be uncached
+- **2026-08-25** — AD3b: the registry grows a root, and the key that was never unique alone
+- **2026-08-24** (3) — the W0 assertions run in a real Tauri window, and the spec's own expectation was wrong
+- **2026-08-24** (2) — the Add-documents button moves to the Library header row
+- **2026-08-24** — AD3a: documents can be added for real, and the live test caught what the type gate could not
+- **2026-08-21** (5) — AD2: the review sheet, and a duplicate check that does not read the library
+- **2026-08-21** (4) — AD1: the app can accept a document, and the CSS trap from 2026-08-19 fired again
+- **2026-08-21** (3) — W0: the accept surface costs zero npm dependencies, and HTML5 drag-drop was never on the table
+- **2026-08-21** (2) — the add-documents SPEC, and the accept surface turns out to need a spike first
+- **2026-08-21** — ADR-046: an added document is copied in or referenced in place, and three contracts move
+- **2026-08-20** (9) — a plan for the one thing the app cannot do: accept a document
+- **2026-08-20** (8) — the three extraction defects are fixed, and the tripwires fired on cue
+- **2026-08-20** (7) — a ledger of when each aspect of the project was last actually reviewed
+- **2026-08-20** (6) — a fake document id read as a secret; fixed at the source rather than in the baseline
+- **2026-08-20** (5) — extraction checked against committed documents, and the third defect that found
+- **2026-08-20** (4) — the CLI's formatters and the eval harness's one adapter
+- **2026-08-20** (3) — the frontend's largest untested module, tested with the runner already in the repo
+- **2026-08-20** (2) — the two other untested user-facing read paths: the chat router and the citation graph
+- **2026-08-20** — five of the seven supported formats had no extraction test at all; now they do
+- **2026-08-19** (3) — a metadata override applied in the Library grid and not on the document's own page
+- **2026-08-19** (2) — chat select mode reviewed: the tick was stacked ON the row by a CSS ordering accident, and the reported "connection issues" were another project's dev server
+- **2026-08-19** — the corpus's one broken document is recovered (96 → 97 retrievable), and the reason it was broken is not what it looked like
+- **2026-08-18** (2) — a committed baseline now carries its own evidence, so it can be checked without the run store
+- **2026-08-18** — the harness now answers "may these two runs be compared?", per scorer, and says UNKNOWN when nobody wrote it down
+- **2026-08-17** — an eval run now records the corpus it measured and the generator it used, and a paid one says so before it spends
+- **2026-08-16** — `just clean` exists because `cargo clean` would delete the one installer with no copy anywhere
+- **2026-08-15** (3) — the DEVLOG had grown to 8,244 lines because nothing made rotation happen; now a test does
+- **2026-08-15** (2) — an eval run now records which LLM wrote its answers (RG-029)
+- **2026-08-15** — the shipped v0.5.1 re-tested on a clean box: RG-012 PASS, and RG-028 closes as contention
+- **2026-08-13** — ADR-045 (taxonomy display rule), and the auto-propose run that says the scope is the bug
+- **2026-08-12** (4) — keyword quality D4 + D5: the bibliography is where surnames come from, and the tokeniser was renaming genes
+- **2026-08-12** (3) — the four release-readiness relabels: a rank instead of a score, keywords that are about the paper, an experimental label, and a hidden tab
+- **2026-08-12** (2) — the graph rail's three small fixes, and two checklist rows that were already done
+- **2026-08-12** (1) — the app can now tell you a new version exists, and that is deliberately all it can do (ADR-044)
+
+## DEVLOG-archive-005.md
+
+- **2026-08-11** (4) — a whitespace hook wanted to edit a CC-BY vocabulary (ADR-043), and chasing it found four docs already corrupted by the encoding hazard this project documents
+- **2026-08-11** (3) — release prep for v0.5.0: the front docs stopped overstating the product, and the demo GIF stopped leaking the author's chat history
+- **2026-08-11** (2) — the UI checklist is prioritised instead of exhaustive (90 KB → 20 KB), and the 2026-08-11 feature set is queued behind keyword quality
+- **2026-08-11** — chat history gets a cleanup: the whole thing exports to one file, then many chats delete at once
+- **2026-08-10** (2) — the index moved out of the scroll, the blocks became a list, and a figure can finally be read
+- **2026-08-10** — the Library document view is five ordered blocks, chunks cost nothing until asked for, and the References block's links had to be verified before they could ship
+- **2026-08-09** (2) — the page-scan discriminator was defeated by OCR: 109 "full-page plates" were 3 scanned PDFs
+- **2026-08-09** (1) — the figure claim is VERIFIED end to end; the 17.5% VLM loss had one cause, and it was never transient
+- **2026-08-08** (7) — figures become retrievable *in context*, and browsable per paper (L1b)
+- **2026-08-08** (6) — ADR-042: a document's identity is its source, not its extraction (KI-43's decision)
+- **2026-08-08** (5) — the figure pipeline was wrong in three independent ways; 45 rows → 962 real ones
+- **2026-08-08** (4) — Marker is pinned and its failures are legible (KI-42 fixed); RG-025 closes on the comparison it unblocked
+- **2026-08-08** (3) — OCR of the one true scan is good enough to retrieve (RG-025, 3 of 4); Marker turns out to be unrunnable (KI-42)
+- **2026-08-08** (2) — the chunk sizes are measured for the first time (RG-026 closed, KI-41 resolved)
+- **2026-08-08** (1) — the chunking sweep now refuses to run a grid that does not reach the code (KI-41's first-run error)
+
+## DEVLOG-archive-004.md
+
+- **2026-08-07** (6) — an eval run now records the settings that produced it (RG-026's precondition)
+- **2026-08-07** (5) — `.env` stops beating the environment (KI-38), and the chunking sweep turns out to have measured nothing (KI-41)
+- **2026-08-07** (4) — the Windows encoding rules are written down as rules, not as one runbook's war story
+- **2026-08-07** (3) — the extraction cache now knows which extractor wrote it (KI-40), so yesterday's fix can actually reach a user
+- **2026-08-07** (2) — EX1: three of the four "scanned" documents never needed OCR. Retrieval recall 28/35 → **34/35**
+- **2026-08-07** (1) — the prompt fix cured the citation FORMAT and moved coverage not at all (KI-36 re-measured on shipped code)
+- **2026-08-06** (4) — release tooling: a preflight that encodes every trap that actually bit, and CI finally runs the frontend
+- **2026-08-06** (3) — RG-012 FAILED on a citation form, and the fix was to stop showing the model a bracket to copy
+- **2026-08-06** (2) — the readiness gate no longer gives up, and stops telling users to run `just api` (KI-39)
+- **2026-08-06** (1) — **rebuilt the installer and RG-012 Tier-2 PASSED on it.** The release gate is closed
+- **2026-08-05** (4) — pre-release UI pass: themed scrollbars, the answer column stops rendering under its own scrollbar, and "what is this 0.94?" answered
+- **2026-08-05** (3) — tell the user the free path cites less, where they choose it (KI-36 follow-through)
+- **2026-08-05** (2) — KI-35 was a **bug in the gate, not the app**: RG-012 Tier-2 had passed. The real defect is citation *coverage* (KI-36/37/38)
+- **2026-08-05** (1) — RG-012 Tier-2 finally ran, and the shipped installer **could not ingest a single PDF** (KI-34)
+
+## DEVLOG-archive-003.md
+
+- **2026-08-03** (3) — v0.4.1: the first installer since June, KI-33 contained before it ships — and **RG-012 Tier-2 still has no evidence**
+- **2026-08-03** (2) — Full review of the knowledge layer against the stated goal: **the acquisition half has no implementation**, and the one suggestion engine runs on the detector graded noise
+- **2026-08-03** (1) — ADR-041 (rebuild-or-retire Node B) + the knowledge layer finally has a map with a trust table
+- **2026-08-02** (3) — ADR-040 option 5 executed: Node-B stance is judged **without the document** and flips with **list position**. `contested` is not measuring the corpus (KI-33)
+- **2026-08-02** (2) — RG-019 measured: the `contested` floor everyone planned to add is **inert**, and the saturation is a surfacing problem (ADR-040)
+- **2026-08-02** (1) — the v0.4.0 release commit left `uv.lock` at 0.3.0; **CI has been red on `main` since**, and the Docker build could never have worked
+
+## DEVLOG-archive-002.md
+
+- **2026-08-01** (6) — v0.4.0 verified from a clean clone on Linux; the Dockerfile's CPU-torch trick was silently defeated by `pip`
+- **2026-08-01** (5) — v0.4.0: walkthrough, version bump, release notes. **Source release; the installer stays stale on purpose**
+- **2026-08-01** (4) — Corrected the "retrieval is deterministic" claim; ADR-039 proposes an OCR sidecar (docs only)
+- **2026-08-01** (3) — ADR-038: the in-RAM sparse arm is deleted. One keyword arm, and a failed build now **says** keyword search is off
+- **2026-08-01** (2) — Sparse-arm A/B repeated on the private 35-case set: shipped recall **identical**, but the arms return different evidence on 9 of 35 — and **retrieval is not deterministic**
+- **2026-08-01** — Public eval re-measured after KI-29 + ADR-036: **no scorer moved beyond its variance**
+- **2026-07-30** (4) — PF2 closed as **no knobs**: ADR-036 dissolved the premise, so the app ships corpus facts instead
+- **2026-07-30** (3) — ADR-036: the sparse arm moves to an on-disk SQLite/FTS5 index. **195 → 21 MB, no corpus in RAM** — and retrieval changes, so it was gated on an A/B
+- **2026-07-30** (2) — KI-32 step 1: `parent_text` deduplicated out of the in-RAM corpus. Predicted 3x, measured **1.36x** — and the shortfall is the finding
+- **2026-07-30** — the cost/scale record gets one home, and the optimisation pass gets an honest ledger (KI-32 found by measuring)
+- **2026-07-29** (5) — ADR-035: the BM25 arm launches from a persisted snapshot (5.36 s -> 1.99 s)
+- **2026-07-29** (4) — KI-31: `get_all` dropped every page of embeddings after the first; document similarity ran on 39% of the corpus
+- **2026-07-29** (3) — KI-29 closed: the parent-child chunker now strips page markers (option 2, + the re-embed)
+- **2026-07-29** (2) — KI-30 closed: one shared `--doc` resolver behind all four sidecar runners
+- **2026-07-29** (1) — the GPU wheel: query 3.1x, re-embed 7.9x, launch unchanged; a wrong setup.md claim corrected
+- **2026-07-28** (5) — per-document cost estimates (mean/best/worst, named) + the reranker goes lazy: 16.1 s -> 11.7 s launch
+- **2026-07-28** (4) — stage profile: where the time actually lives, so "must we re-embed?" stops being a guess
+- **2026-07-28** (3) — verification pass over the graph + library surfaces: one fix, one new known issue (KI-29)
+- **2026-07-28** (2) — detect-secrets blocked the release commit: two false positives + a baseline 18 findings stale
+- **2026-07-28** — first-run setup in the app (ADR-034) + v0.3.0 release prep: BYOK key entry, honest Ollama detection
+- **2026-07-27** — session-close conformance: the cpc gate caught five header errors and four warnings
+- **2026-07-27** — Tracks 1–3 into the ROADMAP + three topbar/rail placement changes
+- **2026-07-27** — `chat_controller.py` 1,423 → a package, and the re-export trap billing 66 tests
+- **2026-07-27** — `library.py` 1,528 → a `library/` package (the `src/` twin of the apps/ pass)
+- **2026-07-26** — step 5 phase 2 complete: `ChatPane` + `chat.svelte.ts`; App.svelte 2,725 → 1,245
+- **2026-07-26** — step 5 phase 2 (second slice): `LibraryPane` out, and why it takes 29 props
+- **2026-07-26** — step 5 phase 2 (first slice): `Topbar` + `StatusBar` out of App.svelte
+- **2026-07-26** — step 5 phase 1: `shell/shell.svelte.ts`, the leaf module the pane split needs
+- **2026-07-26** — step 6: `core/types.ts` + `core/api.ts` split by domain, mirroring `apps/api/models/`
+- **2026-07-26** — App.svelte step 4: the domains that actually decouple → `.svelte.ts` rune modules
+- **2026-07-26** — `GapList.svelte` was a **binary file** to git: raw NUL byte → the `\0` escape
+- **2026-07-26** — `apps/` reviewability pass: one domain axis across both shells (steps 0–3 of 6)
+- **2026-07-26** — KI-26 residual: a leading dash rode into the stored title (`- PASSAGE RE RANKING WITH BERT`)
+- **2026-07-26** — README restructured 338→142 lines (setup/usage split out), demo GIF re-recorded on the current UI, em-dashes removed
+- **2026-07-26** — RG-015 labelled precision run (3 instruments, n=97) + KI-28: thinking models returned an empty completion through `OllamaClient`
+- **2026-07-25** — Slow commits diagnosed: `mypy --strict` was invalidating the incremental cache on every alternation (45s → 6.7s)
+- **2026-07-25** — KI-26 fixed: six metadata-extraction failure shapes, measured on the corpus rather than guessed
+- **2026-07-25** — Corpus transfer: 47 → 97 documents, then the full enrichment chain re-run on the enlarged corpus
+- **2026-07-25** — KI-27: unpaged Chroma reads are a correctness cliff, not a perf risk — the corpus transfer took chat down at 33k chunks
+- **2026-07-25** — ADR-029: the working state goes local — all of `.claude/` + PLAN/REVIEW docs + the UI checklist untracked
+- **2026-07-25** — Taxonomy increment 3 (ADR-028 D8): auto-propose placements, propose-only, $0 on local Ollama
+- **2026-07-24** — UI cleanup pass 3b: corpus/model info → bottom status bar (toolbar keeps a small mark)
+- **2026-07-24** — UI cleanup pass 3: unified top toolbar (browser-chrome shell) + back/forward view history + ☰ app menu
+- **2026-07-24** — UI cleanup pass 2: full-width banner, top-left collapse·search cluster, slim New-chat, folder-picker filters, Library multi-select → add-to-folder
+- **2026-07-24** — UI cleanup: collapse control into the sidebar, graph rail into the shared Sidebar, chat-only Export, filter/search differentiation
+- **2026-07-24** — Replace native `window.confirm()` for conversation delete with an in-app dialog
+- **2026-07-24** — Taxonomy increment 2b (ADR-028): the Svelte taxonomy view (placement modal)
+- **2026-07-24** — Taxonomy 2b spec review: narrowed to placement-only + concept-picker source (docs only)
+- **2026-07-23** — Taxonomy increment 2a (ADR-028): the curation backend (read model + read/write API)
+- **2026-07-23** — Taxonomy increment 1 (ADR-028): schema + write seam + full ANZSRC seed + consumer guard
+- **2026-07-23** — Concept-system docs consolidation (no code change)
+- **2026-07-23** — Retrieval hygiene: scoped-ensemble LRU + reranker-input cap under multi-query
+- **2026-07-22** — APIRouter split of `apps/api/main.py` (pure refactor, behavior-identical)
+- **2026-07-22** — E5: first-class gap list + triage (ADR-004 / ADR-017 C1) — panel in the Graph view
+- **2026-07-22** — E4: document-connections panel (ADR-027 D1) — the exploration surface, per-doc
+- **2026-07-22** — E3: persisted epistemics answer-layer toggle (ADR-027 D2) — full-stack
+- **2026-07-21** — E2: always-on source-evaluation strip (ADR-027 D3) — full-stack
+- **2026-07-21** — E1.2: extract `_handle_rag` into named seams (pure refactor, no behavior change)
+- **2026-07-21** — E1.1: marker-join trustworthiness — KI-8 re-projection (correctness core)
+- **2026-07-21** — E0 correctness batch: five P0 fixes before the always-on epistemics surfaces
+- **2026-07-21** — App-shell polish: global search overlay + collapsible sidebar (chat-first shell, a+b)
+- **2026-07-20** — PR-2.7: the Manage view at scale (F1–F4) + KI-25, the graph emptied by KI-23's fix
+- **2026-07-20** — PR-2.6: family-aware grid tiles (D6 — a family selection highlighted nothing)
+- **2026-07-20** — PR-2.5: hardening the tag-family write paths (D1–D5, all five defect-driven)
+- **2026-07-20** — KNOWN_ISSUES split: open issues in the working file, closed ones archived verbatim
+- **2026-07-20** — `document_meta` gets its missing foreign key; rebuild migrations exist now (ADR-026)
+- **2026-07-20** — KI-24 fixed: `ingest --rebuild` rebuilds the index instead of resetting the library
+- **2026-07-20** — ADR-025 F3: demo corpus auto-assigns into a folder at ingest + a one-time backfill
+- **2026-07-20** — KI-20 resolved (schema migrates on API start) + A/B compare honours the scope
+- **2026-07-20** — F2: query-time folder retrieval scoping + the honesty contract (ADR-025 carve step 2)
+- **2026-07-20** — F1: folders end-to-end (CRUD + membership + Library rail), ADR-025 carve step 1
+- **2026-07-20** — Docs: corpus groups grilled → design-locked as "Folders with retrieval scope" (ADR-025)
+- **2026-07-20** — Demo-corpus removal: `download_corpus --remove-demo` (content-hash matched, ADR-014 safe-delete, dry-run default)
+- **2026-07-20** — Public corpus: 18-paper demo collection (Sutskever→Carmack list) + `download_corpus --demo`; verified-10 regime pinned by a guard test
+- **2026-07-20** — Docs: benchmarks split out of README into a top-level `evals/` folder (ADR-024)
+- **2026-07-19** — Verify-the-app pass: root-caused the "6 pre-existing send2trash failures" → a live 500 bug (KI-22) + a dependency-presence guard test
+- **2026-07-19** — Public docs refresh: README demo GIF + status/limitations truth-up, DEMO.md touch
+- **2026-07-19** — C4 scale-robustness review: knowledge layer vs specs/ADRs at 0 docs and 10k docs (docs-only)
+- **2026-07-19** — ADR-023: knowledge/ subpackage — 11 corpus-derived modules out of the flat package
+- **2026-07-19** — ADR-022: docs-system rationalization — index over monolith, DEVLOG fully inverted, per-artifact verdicts
+- **2026-07-19** — ADR-021: cpc big-project layout — AGENTS.md entry + module CLAUDE.md files + vendored gates (this box)
+- **2026-07-18** — ADR-020: share `RIGOR_TODO.md` via git (the two boxes held disjoint rigor trackers)
+- **2026-07-18** — Stage-0 candidate ranking: triage mined keywords before promotion (read-only)
+- **2026-07-18** — CORRECTION to the ADR-018 entry: the 4 "junk" concepts are real specialist vocabulary
+- **2026-07-18** — ADR-018: scope the graph vocabulary with an opt-in `graph_include` flag (357 → 13 nodes)
+- **2026-07-17** — Concept graph PR-G2a: the view — concept index + gap lens + ego graph + chunk nav (frontend)
+- **2026-07-17** — Concept graph PR-G1: serve the read model (load_skeleton + load_gaps + 4 routes)
+- **2026-07-17** — Wrote ADR-017 (concept-graph UI boundaries) + docs/specs/feature-concept-graph.md (docs-only)
+- **2026-07-17** — RG-014: ran build_gaps --apply on a fresh skeleton; VERDICT ~50% precision. B1 narrows; 3 defects found
+- **2026-07-17** — GRILLED the concept graph (grill-me): 12 branches, 11 resolved / 1 parked; the root question was overturned by the repo (docs-only)
+- **2026-07-17** — Planned the concept graph (PR-G1/G2/G4); RAG blast-radius + chat-mode boundary measured; 2 self-corrections (docs-only)
+- **2026-07-17** — Captured the UI phase's remaining features (7 rows); DIAGNOSED epistemics as blocked on Node B never having been RUN (docs-only)
+- **2026-07-17** — Planned the 3 remaining UI features into 8 PRs; corrected 3 false checklist claims (docs-only)
+- **2026-07-17** — Manage view at scale scoped (PR-2.7) + 2 non-UI rows, from live user feedback (docs-only)
+- **2026-07-17** — Post-commit review of tag families PR-1/PR-2; PR-2.5 + PR-2.6 scoped (docs-only)
+- **2026-07-17** — Tag families PR-2: detection (feature-tag-families.md, ADR-015)
+- **2026-07-17** — Tag families PR-1: families end-to-end, manual (feature-tag-families.md, ADR-015)
+- **2026-07-16** — UI: keyword filtering as a two-pane overlay (folds the inline-bar cut below)
+- **2026-07-16** — UI: faceted keyword filtering in the Library (Phase 8, frontend-only, staged)
+- **2026-07-16** — cpc re-vendored 1.2.1 → 1.2.2; KI-16 RESOLVED
+- **2026-07-16** — Docs-staleness fix batch (applies the same-day review's findings)
+- **2026-07-16** — cpc re-vendored 1.1.0 → 1.2.1 + documentation review (gates + judgment sweep)
+- **2026-07-16** — Fix: `POST /api/ingest` no-body scope resolves to the canonical path (Windows) + Python 3.12 pin
+- **2026-07-16** — Document safe-delete: source file → Recycle Bin + confirmation (ADR-014)
+- **2026-07-16** — Library polish: normalized tiles + sort control + active-keyword highlight (user feedback)
+- **2026-07-16** — Document metadata editing + reveal-in-explorer + author on tiles (ADR-013)
+- **2026-07-16** — Keyword de-noising: venue/publisher/ID denylist + repeated-token filter
+- **2026-07-16** — Metadata enrichment: wire the (unwired) extractor onto Document (real titles on tiles)
+- **2026-07-16** — Library grid: mode-aware width + fixed-footprint tiles (user feedback)
+- **2026-07-15** — Selective ingestion S2: Sources panel (scan · exclude · ingest-selected) in Settings
+- **2026-07-15** — Selective ingestion S1: SourceFile registry + selection-scoped ingest (backend + CLI + API)
+- **2026-07-15** — Library redesign L4 Phase A: nav-tree rail + inventory grid + drill-down
+
+## DEVLOG-archive-001.md
+
+- **2026-07-14** — Sidebar search bar + chat sort control (user request, "next round")
+- **2026-07-14** — Resizable right SourcePanel + lavender "tab" section labels (user request)
+- **2026-07-14** — Chat rename (title_override) + resizable left sidebar (user request)
+- **2026-07-14** — Conversation sidebar UX v2: pinned section + per-row ⋯ menu + hover-fix + mode icons (user feedback)
+- **2026-07-14** — Conversation management: pin / archive / soft-delete (new `conversation_meta` sidecar)
+- **2026-07-14** — Citation robustness, Phase B: answer-prompt fix (stop haiku's malformed citations at the source)
+- **2026-07-14** — Conversation resume (fresh-context) + durable export-on-past + clean MD template
+- **2026-07-14** — Citation robustness: parse the non-canonical citation forms the model emits (no answer rewrite)
+- **2026-07-14** — UI review polish: header app-icon + wordmark accent + favicon + compact collapsed sources
+- **2026-07-14** — Visual identity V3b (SPRINT-019): Provenote app icon + full platform icon-set regeneration
+- **2026-07-14** — Visual identity V3a (SPRINT-018): rename doc_assistant → Provenote (product identity) + shell polish audit
+- **2026-07-14** — Visual identity V2 (SPRINT-017): header/wordmark + spacing/type scale + empty states with sample chips + ~70ch reading measure
+- **2026-07-13** — Visual identity V1 follow-ups: light palette → white/ivory (user feedback) + fonts vendored/committed/loaded
+- **2026-07-13** — Visual identity V1 built: paper & ink tokens + Lucide icons + serif reading surfaces (frontend-only, staged)
+- **2026-07-13** — Idea tray: five new feature candidates parked/queued (docs only)
+- **2026-07-13** — Visual identity pass grilled → design-locked (11 forks; spec + SPRINT-016 next)
+- **2026-07-13** — UI feedback pass: Compare contextualized + renamed; Library prefers Title — First Author
+- **2026-07-13** — Post-commit verification of L1 + U6 on the committed code; paperwork flips; L1 count finding
+- **2026-07-13** — A/B-compare sandbox v1: retrieval diff (SPRINT-015, U6)
+- **2026-07-13** — Library space L1: read-only chunk browser (SPRINT-014)
+- **2026-07-13** — App shell + conversation history (SPRINT-013)
+- **2026-07-13** — UI: "↻ New" conversation-reset button (App.svelte)
+- **2026-07-11** — Review corrections: turn-instrument snapshot, reviewer-evidence clamp, reviewer-pin doc
+- **2026-07-11** — One-command app launcher (`just app`) + cross-review of today's commits
+- **2026-07-11** — Phase-8 review follow-ups + doc cleanup (post-`09afd0c`)
+- **2026-07-11** — U1c built: desktop provider + model switch (SPRINT-012, ADR-011)
+- **2026-07-11** — U1b built: the two ADR-010 "must revisit" niche knobs (SPRINT-011)
+- **2026-07-11** — U1 built: RAG sandbox overrides + full Settings disclosure + manual theme (SPRINT-010)
+- **2026-07-10** — U3 built: citation side panel, sources hidden by default (SPRINT-009)
+- **2026-07-10** — U2 built: right-aligned, width-capped chat bubble (SPRINT-008)
+- **2026-07-10** — U1c v1 build spec written: docs/specs/feature-provider-switch.md (ADR-011 → code contract)
+- **2026-07-10** — ADR-011 grilled → accepted: 8 forks resolved, v1 mechanism corrected + reviewer-coupling decided
+- **2026-07-10** — ADR-011 (proposed): desktop provider / API-key management — phased (provider switch v1, keyring key-entry deferred)
+- **2026-07-10** — Phase 8 UI sprints prepared: SPRINT-008..011 (U2/U3/U1/U1b) written in locked build order
+- **2026-07-10** — Phase 8 UI/UX spec grilled: U1/U1b/U2/U3 design-locked, U1c split out (needs its own ADR)
+- **2026-07-10** — Phase 8 UI/UX upgrade spec: settings disclosure + dark mode, chat bubble layout, citation side panel
+- **2026-07-09** — ADR-010 (proposed): RAG sandbox — non-persistent query-time overrides (Phase 8 planning)
+- **2026-07-09** — Chat UI refinement (Phase 8 UI polish, presentational)
+- **2026-07-09** — SPRINT-004 ki10-frozen-os-trust (G4, KI-10 branch B)
+- **2026-07-08** — SPRINT-007 fix-epistemics-label-attribution (G7, KI-15)
+- **2026-07-08** — SPRINT-006 gate-superseded-confidence (G6)
+- **2026-07-08** — SPRINT-003 year-aware-superseded (G3)
+- **2026-07-08** — SPRINT-005 gap-stochastic-ceiling (G5)
+- **2026-07-07** — Planning: next sprints — G4 (KI-10) + G5 (gap ceiling) active; G3 parked
+- **2026-07-07** — SPRINT-002 gap-layer-deterministic
+- **2026-07-07** — SPRINT-001 retire-concept-graph
+- **2026-07-04** — PR-B / Node B: confined LLM relation/stance enrichment (run on Ollama), Claude Code
+- **2026-07-03** — `--bm25-weight` flag + 0.4/0.6 ensemble-weight sweep (eval-gated), Claude Code
+- **2026-07-02** (cont.) — R6 BM25 preprocessing + pipeline hygiene (eval-gated), Claude Code
+- **2026-07-02** (cont.) — R5 concept-skeleton decision run: PASS (ADR-008), Claude Code
+- **2026-07-02** (cont.) — R4 graded provenance strength (ratio, not boolean), Claude Code
+- **2026-07-02** (cont.) — cpc gates vendored local-only + wired (ADR-007), Claude Code
+- **2026-07-02** (cont.) — cpc conformance: baton rotation + doc hygiene (ADR-018 catch-up), Claude Code
+- **2026-07-02** (cont.) — Selective ingestion designed: spec S1/S2 + roadmap rows (planning session, docs only)
+- **2026-07-02** (cont.) — PR-R3: contrastive keyword termhood (`wordfreq`) + C-value + orphan sweep, Claude Code
+- **2026-07-02** (cont.) — PR-R2: word-boundary concept presence (RG-009 lever), Claude Code
+- **2026-07-02** (cont.) — PR-R7: 7d marker chips default-off until Node B (KI-7 containment), Claude Code
+- **2026-07-02** (cont.) — PR-R1: strip PyMuPDF4LLM image placeholders (KI-14), Claude Code
+- **2026-07-02** — App review (direction + algorithms) → remediation plan R1–R7, Claude Code
+- **2026-07-01** (cont.) — Abstract-anchor ranking + SPECTER2 concept distance, Claude Code
+- **2026-07-01** (cont.) — Curated glossary (#1) + semantic concept layer (#2), Claude Code
+- **2026-07-01** (cont.) — RG-001 (b)+(c): keyword-grounded + corpus-band vocab; corpus is the blocker, Claude Code
+- **2026-07-01** — RG-001/008/009 concept-skeleton validation run + keyword extractor (KI-13), Claude Code
+- **2026-06-30** — Concept-graph redesign PR-A: deterministic skeleton (Node A), Claude Code
+- **2026-06-27** (cont.) — Private sources manifest: re-downloadable library across machines, Claude Code
+- **2026-06-27** — Verify the 2026-06-26 ingest refactor + doc/gate sync, Claude Code
+- **2026-06-26** (cont.) — fold the document-feature extractors into `ingest/` + mirror the test tree, Claude Code
+- **2026-06-26** (cont.) — ingest.py → `ingest/` package (break the monolith) + batch-isolation test, Claude Code
+- **2026-06-26** (cont.) — F1 follow-up: inverse-orphan reconciliation (self-heal the post-commit window), Claude Code (work box)
+- **2026-06-26** (cont.) — Ingestion hardening: dual-store write ordering + atomic cache writes + figure-dir orphan sweep, Claude Code (work box)
+- **2026-06-26** (cont.) — Gap-detection layer design-locked (ADR-004 + spec), Cowork (work box)
+- **2026-06-26** — M4 first-run / data-home UI (frontend settings panel), Claude Code (work box)
+- **2026-06-25** (cont.) — KI-10 on-proxy = FAIL (confirmed) + data-home settings/ingest backend, Claude Code (work box)
+- **2026-06-25** (cont.) — M4 ship gates closed (re-freeze) + PR-M5 (Chainlit decommissioned), Claude Code (work box)
+- **2026-06-25** — Doc cleanup: archive discharged disposables + refresh DEMO (Claude Code, work box)
+- **2026-06-24** (RTX box, cont.) — KI-11 fix: relocate Chroma to an ASCII path under non-ASCII data homes
+- **2026-06-24** (RTX box, cont.) — frozen end-to-end validation + found KI-11 (chromadb non-ASCII path)
+- **2026-06-24** (RTX box, cont.) — installer built; freeze fixes KI-9 (bundle weights) + KI-10 (truststore)
+- **2026-06-24** (RTX box, cont.) — froze the sidecar; RG-010 / RG-011-frozen / RG-013 closed
+- **2026-06-24** (RTX box) — RG-011 first-token measured on the Ollama path (boundary PASS)
+- **2026-06-23** (cont.) — M4 ship gates RG-010/RG-011 run on the host
+- **2026-06-23** — structlog observability substrate (ADR-003; closes KI-1)
+- **2026-06-22** (cont.) — PR-M4: PyInstaller sidecar packaging (scaffold; freeze deferred)
+- **2026-06-22** (cont.) — PR-M3: Tauri/Svelte desktop frontend (Chainlit→Tauri M3)
+- **2026-06-22** (cont.) — PR-M2: FastAPI + SSE boundary (Chainlit→Tauri M2)
+- **2026-06-22** (cont.) — PR-M1: live 7d epistemics-marker surfacing (Chainlit→Tauri M1)
+- **2026-06-22** — PR-M0: extract ChatController + TurnResult (Chainlit→Tauri M0)
+- **2026-06-20** - Adopt the project-conventions (cpc) standard scaffolding - PR-A (Claude Code)
+- **2026-06-17** - Post-hoc citation audit + self_eval --repeat (Claude Code, RTX box)
+- **2026-06-17** - Citation-discipline prompt + verdict recalibration (measured via self-eval) (Claude Code, RTX box)
+- **2026-06-17** - Reviewer transport retry (one flaky judge call != fail) (Claude Code, RTX box)
+- **2026-06-17** - Reviewer evidence window: fix the evidence-starved judge (Claude Code, RTX box)
+- **2026-06-17** - Self-eval harness: run convs locally + verdict + export (Claude Code, RTX box)
+- **2026-06-17** - Conversation + dev export (markdown + figures + per-turn log) (Claude Code, RTX box)
+- **2026-06-17** - Figure access: deferred 4c paid run + figure-image UI (Claude Code, RTX box)
+- **2026-06-17** - Feature 7d: knowledge-currency / claim-corroboration engine (Claude Code, RTX box)
+- **2026-06-17** - Feature 6 re-point: wiki clusters by concept-graph communities (own PR, inert default) (Claude Code, RTX box)
+- **2026-06-15** — Enrichment provider-intent guard: no `--apply` CLI can silently spend (Claude Code)
+- **2026-06-15** — Feature 7: cross-document concept graph (PR 16, 7a–7c) (Claude Code, RTX box)
+- **2026-06-14** — Feature 6: self-organizing wiki / synthesis layer (PR 13, 6a–6d) (Claude Code)
+- **2026-06-14** — Integrity Chunk 2c: reviewer aggregation & self-improvement loop (PR 12) (Claude Code)
+- **2026-06-14** — Feature 4c: VLM figure description + figure-chunk emission + eval scorer (PR 9, full) (Claude Code)
+- **2026-06-14** — Feature 4b: figure region detection + caption pairing (PR 8) (Claude Code)
+- **2026-06-13** — Implemented the per-machine torch backend spec (Claude Code)
+- **2026-06-13** — Per-machine torch backend (cu130 vs cpu) design spec (Claude Code)
+- **2026-06-13** — Verify the orphan-cleanup fix + close the doc follow-up (Claude Code)
+- **2026-06-13** — Content-aware orphan cleanup on incremental ingest (Claude Code)
+- **2026-06-13** — Full-corpus Marker table extraction + re-ingest (step 2) (Claude Code)
+- **2026-06-13** — CANDIDATE_K=20 vs 10 A/B (public corpus, CPU box) (Claude Code)
+- **2026-06-13** — Documentation staleness audit + sync (Claude Code)
+- **2026-06-10** — Cross-machine portability: torch backend + Windows SSL crash (Claude Code)
+- **2026-06-10** — Feature 7d design: knowledge-currency / claim-corroboration layer (Cowork, docs only)
+- **2026-06-07** — Retrieval cleanups (Zotero-comparison spillover) + script audit
+- **2026-06-06** — GPU machine: chunking sweep + Marker GPU path + 4a close-out
+- **2026-06-04** — Lock benchmarks (CPU box) + Feature 4a step 1
+- **2026-06-02** (cont.) — Demo prep: switch to Anthropic generation, `.env` override fix, HTML→markdown provenance card, honest local token display
+- **2026-06-02** (cont.) — First live local-Ollama run on the GPU machine: fresh-install hardening + provenance/model surfacing + `/review` ergonomics
+- **2026-06-02** (cont.) — Removed the dormant Marker extraction path from production
+- **2026-06-02** (cont.) — Feature 4 foundation: unified page content classifier (regions.py), tables routed through it
+- **2026-06-02** (cont.) — Feature 4a, take 2: visual debug exposed figure-as-table false positives → caption-gated extraction
+- **2026-06-02** (cont.) — Feature 4a: pdfplumber table extraction, spliced into the markdown cache (PR 7)
+- **2026-06-02** (cont.) — LLM provider protocol + local-capable reviewer/judge (spec: llm-provider-isolation.md)
+- **2026-06-02** (cont.) — TESTING.md: added scorer provenance + landscape note
+- **2026-06-02** (cont.) — TESTING.md overhaul: cut ~40% length, killed cross-section repetition
+- **2026-06-02** (cont.) — TESTING.md: corrected duplicate + documented judge inputs
+- **2026-06-02** — TESTING.md: wrote the pinned-instrument / local-judge calibration gate section
+- **2026-06-01** (cont.) — Public eval n=5: locked the baseline numbers
+- **2026-06-01** (cont.) — Eval run log: gitignore the binary, commit a readable baseline
+- **2026-06-01** (cont.) — Public demo eval: LLM-judge run + deterministic-vs-judge diff
+- **2026-06-01** (cont.) — Public demo eval: first real run + LLM judge wired into docs
+- **2026-06-01** (cont.) — Public corpus reworked to the project's own literature (RAG/LLM)
+- **2026-06-01** — Shareable evaluation corpus (reproducibility) + integrity-docs backlog
+- **2026-05-31** — Chunking made config-driven (reopens Phase 2.4)
+- **2026-05-28** (cont.) — PR 4.2: aggregator stats fix + flaky-case detection
+- **2026-05-28** (cont.) — PR 6: Reviewer agent (Phase 6 / Integrity Chunk 2b)
+- **2026-05-28** (cont.) — PR 5.1: Heuristic confidence signals
+- **2026-05-28** (cont.) — PR 4.1 audit + PR 5: Integrity Chunk 1 (provenance card)
+- **2026-05-28** (cont.) — PR 4.1: --repeat for variance measurement + SPECTER2 TODO
+- **2026-05-28** (cont.) — PR 3.1 + PR 4: hardened judge, real eval set, BGE vs SPECTER2 result
+- **2026-05-28** (cont.) — PR 3: Eval harness v0 (Phase 5 / Feature 2)
+- **2026-05-28** (cont.) — PR 2: Config-driven embedding layer (Phase 5 / Feature 1)
+- **2026-05-28** (cont.) — PR 1.5: scoped ingest, duplicate detection, BibTeX export
+- **2026-05-28** (cont.) — Phase 4 close-out (PR 1: doc vectors + similarity edges)
+- **2026-05-28** — Roadmap restructure (Phases 5–9)
+- **2026-05-26** — Phase 4 (Citation Graph) core
+- **2026-05-26** — Phase 4 kickoff (Citation Graph)
+- **2026-05-21** (cont.) — chainlit_app.py refactor
+- **2026-05-21** (cont.) — .env.example + Phase 3 gate close
+- **2026-05-21** — Production infrastructure + content-only hashing

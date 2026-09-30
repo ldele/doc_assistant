@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-09-20 (S-4 done: the CSP refuses forms, a rebased URL and plugin documents; S-5 next) · class: living -->
+<!-- status: active · updated: 2026-09-30 (S-8 done: pip-audit blocks on any unreviewed advisory; S-5 next) · class: living -->
 
 # Security — the threat model, the plan, the floor, and the periodic check
 
@@ -80,13 +80,14 @@ and says so).
 | S3 | **`POST /api/documents/inspect` and `/add` accept arbitrary absolute paths** (by design — the picker sends them), and `inspect` walks a directory with no count/size cap | `apps/api/routers/sources.py` · `library/add.py` | with S1 this is the exfil path; alone it is an unbounded walk + hash of `C:\` on a request thread | walk cap **done 2026-09-16** (S-2: 50,000 files, 400 with a sentence, `/add` too); the arbitrary-path half waits on S-6 (auth) |
 | S4 | ~~**No size / page / archive-entry cap on ingest**~~ — EPUB, DOCX, ODT are zip archives opened with no decompressed-size accounting | `extractors.py` | T1: a zip bomb in the corpus is unbounded memory; the cheapest local DoS | **done 2026-09-16** (S-1) — residual: no page cap, and a central directory of millions of entries is bounded only by the 1 GB file cap |
 | S5 | **Document text enters the prompt with no data/instruction boundary** | `prompts.py` · `pipeline.py` | T1: *"ignore prior instructions"* inside a passage reads like evidence. Must not reintroduce a bracket-shaped delimiter; moves `prompt_version` | S-9 (eval-gated) |
-| S6 | **`pip-audit` cannot fail CI** (`continue-on-error`); 66 advisories / 16 packages on 2026-09-07 | `.github/workflows/ci.yml` | T5: a green check that never fails is not a control | S-8 |
+| S6 | ~~**`pip-audit` cannot fail CI** (`continue-on-error`); 66 advisories / 16 packages on 2026-09-07~~ | `.github/workflows/ci.yml` | — | **done 2026-09-30** (S-8): 59 across 18 → 5 across 2, each reviewed in `pip-audit-ignore.toml` |
 | S7 | ~~`apps/` outside every gate~~ | `ci.yml`, `.pre-commit-config.yaml` | — | **done 2026-09-10** |
 | S8 | **No Dependabot, no CodeQL; CI actions float on major tags**; `npm audit` was missing | `.github/` | T5 | `npm audit` **done 2026-09-10**; the rest S-12 (user's call) |
 | S9 | **The source viewer opens whatever `source_original` says**, no root containment | `library/documents.py` · `source_view.py` | composes with S3: any row is a readable file | S-7 |
 | S10 | **Plaintext at rest** — `credentials.json` (best-effort `chmod`, a no-op on Windows), the conversation store, the extraction cache | data home | T3/T4 — a design choice for a local-first app | ADR-011 v2 (ROADMAP 64); README says "use disk encryption" |
 | S11 | Small: history export to a fixed temp name · `explorer` via `PATH` · `withGlobalTauri: true` · absolute paths logged at INFO · model downloads not pinned to a `revision` | various | low | S-10 |
 | S12 | **Nothing in the app log says "a security control fired"** — a refused host, a rejected path, a cap hit are silent, so the periodic check (§6) cannot read them | `logging_config.py` + each control | the check has nothing to look at except the code | S-11 |
+| S13 | **CI's secret scan cannot fail** (found 2026-09-30, with S-8): `detect-secrets scan --baseline .secrets.baseline` rescans and **writes the new finding into the baseline, exiting 0** — reproduced on a scratch repository with a planted AWS key (3 findings absorbed, exit 0), where the pre-commit `detect-secrets-hook` exits 1. Only the local hook gates, so a secret that arrives without it (`--no-verify`, the web editor, a box without hooks) passes CI | `.github/workflows/ci.yml` | T1/T5: the one control that keeps a key out of a public repository, present in CI in name only — S6's shape | S-13 |
 
 ## 4 · The plan — one step per session, in this order
 
@@ -102,11 +103,12 @@ row 60 names the current step; the DEVLOG entry of the session that does it is t
 | S-5 | **Host guard** (S1a): `TrustedHostMiddleware` with `DOC_API_ALLOWED_HOSTS` defaulting to `127.0.0.1,localhost`; Docker sets its own | small | `create_app` returns 400 to a foreign `Host` in a test; the desktop still works | **next** |
 | S-6 | **Launch token** (S1b): the Tauri shell mints a random token, passes it to the sidecar via env, the frontend sends it in a header; mutating routes require it | medium — touches `lib.rs`, `__main__.py`, `core/api`, one dependency | a request without the header gets 401 on `/add`, `/ingest`, `DELETE`; the walkthrough still passes | planned |
 | S-7 | **Source-viewer containment** (S9): refuse to open a `source_original` under no registered `SourceRoot` | small | a test with a row pointing outside every root gets the "unavailable" sentence, not the file | planned |
-| S-8 | **Advisories** (S6) — three sub-steps if needed: (a) upgrade what the lock allows, (b) `--ignore-vuln` with a reason per entry, (c) drop `continue-on-error` | one session (ROADMAP 61) | CI red on a new HIGH; the ignore file has a reason per line | planned |
+| S-8 | **Advisories** (S6) — three sub-steps if needed: (a) upgrade what the lock allows, (b) `--ignore-vuln` with a reason per entry, (c) drop `continue-on-error` | one session (ROADMAP 61) | CI red on a new HIGH; the ignore file has a reason per line | **done 2026-09-30** — (a) 19 packages upgraded to the smallest fixing version the lock allows (no package added or removed, none downgraded); (b) the 5 advisories left, 4 in chromadb's server mode and 1 in setuptools' sdist build, each in `pip-audit-ignore.toml` with why it does not apply and what would reverse that; (c) CI runs `python -m scripts.pip_audit_gate` with no `continue-on-error`. pip-audit has no severity filter, so the gate is stricter than "a new HIGH": it fails on **any** advisory nobody reviewed, and fails closed when it cannot read a report or the ignore file (`tests/unit/test_pip_audit_gate.py`) |
 | S-9 | **Prompt fence** (S5): `<source n="1" file="…">…</source>` per passage + one system line; **eval-gated** — run the public 10 before/after, record the baseline | medium | `prompt_version` moves; the baseline file exists; a test asserts the fence is present | planned — with an eval session |
 | S-10 | **The small ones** (S11): `mkstemp` for the history export; `%WINDIR%\explorer.exe`; `withGlobalTauri: false` + the dialog plugin package; `revision=` in the model registry; a bug-report note about paths in console captures | small | each has a one-line test or a config assertion | planned |
 | S-11 | **Security events in the app log** (S12): structlog events `security_host_refused`, `security_path_refused`, `security_cap_hit`, `security_markup_sanitised`, each with the control's name and never the content — what §6 reads | small | the four events exist and each control emits its own in a test | planned |
 | S-12 | **Dependabot (pip · npm · cargo · actions) + SHA-pinned actions** (S8) | config only | bot PRs arrive; `uses:` lines are SHAs | **user's call** |
+| S-13 | **A secret scan CI can fail** (S13): run `detect-secrets-hook --baseline .secrets.baseline` over the tracked files (or fail on `git diff --exit-code .secrets.baseline` after the scan) | small | a planted fake key in a scratch repository fails the CI command; the real tree still passes | planned |
 | **Full** | **The periodic full check** (§6), first run when S-1 … S-11 are done | one session | a dated entry in `.claude/REVIEWS.md` row 7 | after S-11 |
 
 ## 5 · The floor — deterministic, runs without a person
@@ -116,8 +118,8 @@ row 60 names the current step; the DEVLOG entry of the session that does it is t
 | 1 | Gates cover the boundary, not just the library | `ruff check src/ tests/ apps/ scripts/` · `mypy src/ apps/` · `bandit -r src/ apps/ -c pyproject.toml` (CI + pre-commit) | done 2026-09-10 |
 | 2 | Tauri config guard | `pytest tests/unit/test_desktop_security_config.py` | done 2026-09-10 |
 | 3 | JS tree audited | `npm audit --audit-level=high` (CI, after `npm ci`) | done 2026-09-10 |
-| 4 | Secrets | `detect-secrets scan --baseline .secrets.baseline` (CI + pre-commit) | done (since 2026-07) |
-| 5 | Python tree audited, **blocking** | `pip-audit` with a reviewed `--ignore-vuln` list | S-8 |
+| 4 | Secrets | `detect-secrets-hook` in pre-commit gates; CI's `detect-secrets scan --baseline .secrets.baseline` does **not** (it absorbs a new finding and exits 0 — S13) | pre-commit done (since 2026-07); CI S-13 |
+| 5 | Python tree audited, **blocking** | `python -m scripts.pip_audit_gate` (CI · `just audit` · the sprint-close keypoint); reviewed ignores in `pip-audit-ignore.toml` | done 2026-09-30 |
 | 6 | Host guard test | `create_app` rejects a foreign `Host`; `DOC_API_HOST` defaults to loopback | S-5 |
 | 7 | Path-confinement tests on every route that opens a file | `pytest tests/unit/api/test_path_confinement.py` | S-2, S-7 |
 | 8 | Prompt fence present | a unit test over the rendered answer prompt | S-9 |

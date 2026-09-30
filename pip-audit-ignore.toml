@@ -1,0 +1,57 @@
+# Reviewed pip-audit ignores — security step S-8 (docs/security.md §4), since 2026-09-30.
+#
+# `python -m scripts.pip_audit_gate` (CI, and `just audit`) fails on any advisory that is NOT
+# listed here, and refuses an entry that lacks any of the fields below. An entry whose advisory no
+# longer appears is reported as stale: delete it. An advisory is matched by its id or any of its
+# aliases, and only for the package named.
+#
+# To add one: read the advisory, check it against how THIS code uses the package, and write down
+# why it does not apply and what would make it apply. "Upgrade later" is not a reason.
+
+[[ignore]]
+id = "PYSEC-2026-311"  # CVE-2026-45829 · GHSA-f4j7-r4q5-qw2c
+package = "chromadb"
+reviewed = "2026-09-30"
+why = """Server-side only: pre-authentication code injection through the Chroma HTTP server's \
+collection endpoint. This app embeds Chroma in-process (chromadb.PersistentClient and langchain's \
+Chroma(persist_directory=...)); no Chroma server runs and nothing in src/, apps/ or scripts/ uses \
+chromadb.HttpClient. No fixed release exists."""
+reverse_if = "Anything starts a Chroma server or uses chromadb.HttpClient; or a fixed chromadb is released (then upgrade)."
+
+[[ignore]]
+id = "PYSEC-2026-3813"  # CVE-2026-45830 · GHSA-2wm9-hf6c-p5cr
+package = "chromadb"
+reviewed = "2026-09-30"
+why = """Server-side only: missing tenant checks let an authenticated server user reach another \
+tenant's collections. The embedded client has no tenants, users or network surface. No fixed \
+release exists."""
+reverse_if = "Anything starts a Chroma server, or the library is shared between users through one; or a fixed chromadb is released."
+
+[[ignore]]
+id = "PYSEC-2026-3814"  # CVE-2026-45833 · GHSA-36p7-vc44-83pf
+package = "chromadb"
+reviewed = "2026-09-30"
+why = """Server-side only: code injection through the Chroma HTTP server's collection-update \
+endpoint by an authenticated user. Same exposure as PYSEC-2026-311: no Chroma server runs here. \
+No fixed release exists."""
+reverse_if = "Anything starts a Chroma server or uses chromadb.HttpClient; or a fixed chromadb is released."
+
+[[ignore]]
+id = "PYSEC-2026-3815"  # CVE-2026-45831 · GHSA-xph7-9rjv-w5fr
+package = "chromadb"
+reviewed = "2026-09-30"
+why = """Server-side only: the server's SimpleRBACAuthorizationProvider ignores which tenant a \
+permission applies to. The embedded client configures no authorization provider. No fixed \
+release exists."""
+reverse_if = "A Chroma server with an authorization provider is deployed; or a fixed chromadb is released."
+
+[[ignore]]
+id = "PYSEC-2026-3447"  # CVE-2026-59890 · GHSA-h35f-9h28-mq5c
+package = "setuptools"
+reviewed = "2026-09-30"
+why = """Build-time only, and only on macOS APFS/HFS+: a MANIFEST.in exclusion can miss an \
+NFD-named file when an sdist is built. This project publishes no sdist (it ships an installer, a \
+Docker image and a git tag), builds on Windows, and its build backend resolves setuptools in an \
+isolated build environment, not from this lock. The locked copy is a runtime dependency of torch \
+2.12, which requires setuptools<82; the fix (83.0.0) needs torch 2.14."""
+reverse_if = "The project publishes an sdist, or builds one on macOS; or torch lifts its setuptools<82 cap (then upgrade)."

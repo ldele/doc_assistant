@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-09-16 (§5: launch the tracked scripts/rg012 harness; rg012 is two checks over three turns; §0: the checklists are assumed stale) · class: runbook -->
+<!-- status: active · updated: 2026-09-30 (the security floor runs the blocking advisory gate, S-8) · class: runbook -->
 
 # Release runbook
 
@@ -34,7 +34,7 @@ uv run --no-sync pytest -q
 uv run --no-sync mypy src
 npm --prefix apps/desktop test && npm --prefix apps/desktop run check
 uv run --no-sync python tools/conventions/rungate.py docs_check --root . --strict
-uv run --no-sync pip-audit                                  # security floor (docs/security.md)
+uv run --no-sync python -m scripts.pip_audit_gate           # security floor, blocking (S-8)
 npm --prefix apps/desktop audit --audit-level=high
 uv run --no-sync bandit -r src apps -c pyproject.toml -q
 
@@ -162,7 +162,7 @@ Write for someone deciding whether to install it, not for the commit log:
 | Docs | `rungate.py docs_check --root . --strict` | |
 | Hooks | `uv run --no-sync pre-commit run` | ruff/format/mypy/bandit/secrets |
 | Checklists refreshed | `preflight` (`checklists`) | both files touched since the previous tag — §0 |
-| Security floor | `uv run --no-sync pip-audit` · `npm --prefix apps/desktop audit --audit-level=high` · `uv run --no-sync bandit -r src apps -c pyproject.toml -q` | the deterministic half of `docs/security.md`; `pip-audit` is still advisory in CI (ROADMAP 61) so read its output here |
+| Security floor | `uv run --no-sync python -m scripts.pip_audit_gate` · `npm --prefix apps/desktop audit --audit-level=high` · `uv run --no-sync bandit -r src apps -c pyproject.toml -q` | the deterministic half of `docs/security.md`; the advisory gate blocks in CI since 2026-09-30 (S-8), and a new advisory is reviewed into `pip-audit-ignore.toml` or fixed, never waved through |
 | UX/UI walkthrough | `docs/release-ux-checklist.md` | §5b — a person drives every surface in the **installed** build |
 
 > **`pre-commit` can eat your commit.** `ruff-format` **modifies files**, and a hook that modifies a

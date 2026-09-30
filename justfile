@@ -114,6 +114,12 @@ preflight:
 test:
     uv run --extra {{torch}} --extra dev pytest tests/unit tests/integration
 
+# Blocking since 2026-09-30 (docs/security.md S-8): fails on any advisory not reviewed in
+# pip-audit-ignore.toml. The same command CI runs; a CUDA venv audits a few more packages.
+# Dependency advisories, blocking — the CI gate (reviewed ignores in pip-audit-ignore.toml).
+audit:
+    uv run --no-sync python -m scripts.pip_audit_gate
+
 # ⚠ USE THIS, NOT `mypy --strict src`. Strictness already comes from [tool.mypy] strict=true, so
 # the flag adds nothing — except that it ALSO re-enables warn_unused_ignores (pyproject turns it
 # off), which makes it a DIFFERENT option set. mypy keys its incremental cache on the options, so

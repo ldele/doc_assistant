@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-09-22 (the `definitions` domain gains a read-only usage route — ADR-053 amended) · class: living -->
+<!-- status: active · updated: 2026-09-30 (CI's pip-audit step blocks — security S-8) · class: living -->
 
 # Architecture
 
@@ -305,11 +305,12 @@ Classification is informational, never blocking. Broken documents remain queryab
 ### Security
 - No secrets in code. `.env` is gitignored. `.env.example` committed with placeholders.
 - `bandit` SAST runs in CI and pre-commit. HIGH findings block merge.
-- `pip-audit` runs in CI on every push.
+- `pip-audit` runs in CI on every push and blocks on any advisory not reviewed in
+  `pip-audit-ignore.toml` (`scripts/pip_audit_gate.py`, since 2026-09-30).
 - `detect-secrets` baseline committed; hook runs in pre-commit.
 
 ### CI/CD
-- GitHub Actions on every push and PR: ruff lint + format-check → mypy → pytest with coverage (fail-under 40) → bandit → pip-audit (advisory, non-blocking) → detect-secrets.
+- GitHub Actions on every push and PR: ruff lint + format-check → mypy → pytest with coverage (fail-under 40) → bandit → pip-audit (blocking, reviewed ignores) → detect-secrets.
 - Merging on red pipeline is never allowed.
 - Coverage floor: 40% (CI-enforced; `--cov-fail-under=40` in ci.yml). Raise toward 45%+ as integration tests land. Target: 85% for core pipeline and ingest logic.
 

@@ -55,9 +55,11 @@ jobs:
       - name: bandit SAST
         run: uv run bandit -r src/ apps/ -c pyproject.toml
 
-      - name: pip-audit (advisory)
-        continue-on-error: true
-        run: uv run pip-audit
+      # Blocking since 2026-09-30 (docs/security.md step S-8). Fails on any advisory not reviewed in
+      # pip-audit-ignore.toml, where each ignore says why it does not apply and what would reverse
+      # that. It ran on continue-on-error before, and 59 advisories piled up behind a green check.
+      - name: pip-audit (blocking — reviewed ignores in pip-audit-ignore.toml)
+        run: uv run python -m scripts.pip_audit_gate
 
       - name: detect-secrets
         run: uv run detect-secrets scan --baseline .secrets.baseline

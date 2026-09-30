@@ -76,12 +76,14 @@ run = ["gh run list --branch main --limit 1"]
 checklist = ["Read the `gh run list` line above: if it is not `completed success`, the failed log names the test — fix that before anything else (KI-58)."]
 
 [keypoints.sprint-close]
-# The security floor and the UX walkthrough are judgment items here, not `run` lines, on purpose:
-# `pip-audit` reports 66 known advisories today (ROADMAP 61) and would fail every close until they
-# are triaged, and the walkthrough needs a person and an installed build. Both become deterministic
-# when their rows land (docs/security.md §4, docs/release-ux-checklist.md).
+# The advisory gate is a `run` line since ROADMAP 61 landed (2026-09-30): it passes on a reviewed
+# tree and fails on any advisory nobody reviewed (pip-audit-ignore.toml). Until then pip-audit
+# reported 66 advisories and would have failed every close. `npm audit` and bandit stay judgment
+# items: `run` lines are shlex-split with shell=False, and `npm` is a .cmd shim on Windows. The UX
+# walkthrough needs a person and an installed build (docs/release-ux-checklist.md).
+run = ["uv run --no-sync python -m scripts.pip_audit_gate"]
 checklist = [
-  "Security floor (docs/security.md §4): `uv run --no-sync pip-audit` · `npm --prefix apps/desktop audit --audit-level=high` · `uv run --no-sync bandit -r src apps -c pyproject.toml -q` — read the output; a new HIGH is a row in §3, not a shrug.",
+  "Security floor (docs/security.md §4): the advisory gate ran above · `npm --prefix apps/desktop audit --audit-level=high` · `uv run --no-sync bandit -r src apps -c pyproject.toml -q` — read the output; a new HIGH is a row in §3, not a shrug.",
   "If this close precedes a release: drive docs/release-ux-checklist.md on the installed build and fill its record table into .claude/release-notes-X.Y.Z.md.",
 ]
 

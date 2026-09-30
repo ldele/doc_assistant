@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-09-22 · class: append-only -->
+<!-- status: active · updated: 2026-09-29 · class: append-only -->
 
 # DEVLOG — doc_assistant
 
@@ -14,8 +14,8 @@ Format: What changed | Why | Rejected alternatives | What it opens
 > oldest entries **verbatim** into the highest-numbered archive and verifies the bytes; then update
 > the range below by hand (cpc ticket T-003). A day may be split across two files at the cut.
 > Older entries, newest-first, unedited:
-> **2026-08-12 (1) → 2026-09-04** (the first, unnumbered 2026-09-04 entry; the first 2026-09-02 entry is unnumbered too) in [`docs/archive/DEVLOG-archive-006.md`](archive/DEVLOG-archive-006.md)
-> (rotated 2026-09-04, 2026-09-10, four times on 2026-09-16, on 2026-09-17, 2026-09-18, 2026-09-20, twice on 2026-09-21 and twice on 2026-09-22) ·
+> **2026-08-12 (1) → 2026-09-04 (2)** (the first 2026-09-02 and 2026-09-04 entries are unnumbered) in [`docs/archive/DEVLOG-archive-006.md`](archive/DEVLOG-archive-006.md)
+> (rotated 2026-09-04, 2026-09-10, four times on 2026-09-16, on 2026-09-17, 2026-09-18, 2026-09-20, twice on 2026-09-21, twice on 2026-09-22 and on 2026-09-29) ·
 > **2026-08-08 (1) → 2026-08-11 (4)** in [`docs/archive/DEVLOG-archive-005.md`](archive/DEVLOG-archive-005.md)
 > (rotated 2026-08-30) ·
 > **2026-08-05 → 2026-08-07** in [`docs/archive/DEVLOG-archive-004.md`](archive/DEVLOG-archive-004.md)
@@ -32,6 +32,36 @@ Format: What changed | Why | Rejected alternatives | What it opens
 > is individually small and correct, so unbounded growth is invisible per commit.
 
 ---
+
+## 2026-09-29 — cpc re-vendored 1.8.0 → 1.12.0, from the tags; logs now rotate in batches
+
+**What changed.** `cpc-init` re-vendored the gitignored `tools/conventions/cpc/` from cpc's tags,
+never its HEAD: first `v1.11.0`, then `v1.12.0` the same day. Both runs came from a cpc session at
+the user's request. `_VERSION` now carries a sha256 per module, and `init_check` compares the drop
+against them. The `scripts/conventions.toml` header and the local CONTEXT, which restate the
+version, now say 1.12.0. Then cpc's migration note (`migrations/2026-09-29-rotate-in-batches.md`,
+cpc ADR-053) was applied:
+- `devlog_rotate_to = 10` and `session_rotate_to = 5`. Past its cap, a log is cut to half in one
+  batch, so the archive changes once per 11 DEVLOG entries instead of every time.
+- `archive_max_tokens = 25000`. `DEVLOG-archive-006` is ~72k tokens, so the next DEVLOG batch
+  starts `-007` and lays `docs/archive/DEVLOG-INDEX.md`. That index is tracked, like the archives.
+- `[rotate] write_index = true`.
+- `docs/archive/SESSION-INDEX.md` is gitignored. The baton archives are local-only, and the index
+  their first rollover lays lists every one of their headings. Without the line, that list would
+  have been committed to this public repository.
+
+**Measured.** Every gate `just` wires, run on the same tree with each old drop and the new one:
+`docs_check --strict` and `integrity_check --strict` 0/0 each time, `init_check --strict` and
+`sprint_check` unchanged, `settings_doc --check-config` no findings. cpc ran the same migration on
+a scratch clone of this repository before its tag: one batch of 11 into `-007`, gates 0/0 before
+and after, `tests/unit/test_doc_sizes.py` 6 passed.
+
+**Rejected.** `--profile standard`, which would lay any missing standard file; the default profile
+found all nine present and laid nothing.
+
+**What it opens.** The first batch rotation happens at the 21st DEVLOG entry; update the range line
+in this file's header by hand after it, as today. cpc 1.11.0's release checkpoints (ADR-051): a
+`## Releases` entry in the ROADMAP opts in, and `[release] smoke` then becomes required.
 
 ## 2026-09-22 (2) — A first mention becomes a usage example, not a definition candidate (ADR-053 amended)
 
@@ -858,58 +888,5 @@ storyboard: no source pane, no add-documents) — three slideshow storyboards ar
 the user's ask. `docs/DEMO.md` still calls Connections *scored* (ranked since 0.5.1) and does not
 mention the source pane — not touched. `KNOWN_ISSUES.md` still heads KI-48 as OPEN while DEVLOG
 2026-08-25 (3) fixed it at the cause; the heading wants reconciling.
-
----
-
-## 2026-09-04 (2) — CI builds the container, and checks the two things a green build does not prove
-
-**What changed.** A third job in `.github/workflows/ci.yml`, alongside `ci` and `frontend`: free
-~10 GB on the runner, build the image through buildx with the GitHub Actions cache, then assert
-**(a)** torch is the `+cpu` wheel with zero `nvidia-*` distributions and **(b)** `apps.api` and
-`doc_assistant` import inside the image.
-
-**Why.** Nothing referenced the Dockerfile between `a052703` (2026-08-01) and today, so the
-container was the one of this project's three shipping paths — desktop installer, source checkout,
-headless image — that no gate touched. The pinned `ghcr.io/astral-sh/uv:0.12.1` base had never been
-exercised on any machine (the dev box runs uv 0.11.14), and a `uv.lock` that had drifted would have
-failed `uv sync --locked` in the image and surfaced only when somebody needed the container. Which
-is exactly how it came up: the user asked whether Docker still worked, and the honest answer was
-that nothing had checked since August.
-
-**The two assertions are the job, not the build.** A green build says the layers assembled. It does
-not say the image is the right one: `pip install ".[cpu]"` ignores `[tool.uv.sources]`, resolves
-torch from PyPI, and that Linux wheel bundles CUDA — several GB of `nvidia-*` in an image with no
-GPU, which still builds and still runs. KI-34 is the standing version of this lesson at the desktop
-end: an artifact that started cleanly, served `/api/health`, reported a healthy chunk count, and
-could not read a single PDF.
-
-**Two bugs found in this job while writing it, both by running it rather than reading it.**
-
-1. The nvidia count was `ls /app/.venv/lib/python*/site-packages | grep -c "^nvidia" || true`, which
-   prints `0` — a **pass** — when the glob matches nothing at all. Relocating the venv would have
-   turned the check off silently instead of failing it. It now asks `importlib.metadata` inside the
-   image, and that the scan is not blind is itself checked: pointed at `torch`, it fails with
-   `packages found: ['torch']`.
-2. Rewriting it to a single line made the whole workflow **unparseable YAML** — a plain scalar
-   cannot contain `": "`, and the f-string is `f"nvidia packages in the image: {nv}"`. It parsed
-   before the edit and not after; only re-validating caught it. Both `run:` steps are block scalars
-   now, with the reason recorded inline.
-
-**Verified by extracting the commands from the parsed YAML and executing those exact strings**
-against the built image, rather than retyping them: `torch 2.12.0+cpu | nvidia packages: 0` and
-`apps.api ok; doc_assistant 0.6.0`.
-
-**Rejected.** *Booting to a green `/api/health`* — first run downloads the embedder and reranker,
-which is why the Dockerfile's `HEALTHCHECK` carries a 300 s start period; that belongs in the
-release gate, not on every push. *A path-filtered trigger* — the Dockerfile's inputs are
-`pyproject.toml`, `uv.lock`, `src/`, `apps/api/` and `scripts/`, which is most of the repo, so the
-filter would have saved nothing and hidden the cases it did skip. *Plain `docker build` with no
-buildx cache* — the dependency layer is ~8 minutes and the Dockerfile already orders its `COPY`s to
-make it cacheable; not using that would have made the job the slowest thing in CI for no reason.
-
-**What it opens.** The image is ~6.3 GB and the GHA cache is capped at 10 GB per repository, so the
-`mode=max` export may thrash once other caches compete. If it does, the fix is `mode=min` or
-dropping the cache export and paying the eight minutes. Left as-is because the first failure will
-say so plainly, and guessing at it now would be tuning against an imagined problem.
 
 ---

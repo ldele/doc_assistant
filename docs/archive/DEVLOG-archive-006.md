@@ -1,6 +1,6 @@
-<!-- status: archived · updated: 2026-09-22 · class: append-only -->
+<!-- status: archived · updated: 2026-09-29 · class: append-only -->
 
-# DEVLOG — archive 006 (2026-08-12 (1) → 2026-09-04, first entry)
+# DEVLOG — archive 006 (2026-08-12 (1) → 2026-09-04 (2))
 
 Older entries, moved verbatim from `docs/DEVLOG.md` on 2026-09-04 so the working log stays
 about recent work. Newest-first, same format, unedited. Rotated because the live log had
@@ -11,6 +11,62 @@ live log adopted a 20-entry cap, then once more the same day for the session's o
 pushed the live log past 20; 2026-09-01 is now split across the two files ((2)–(6) are live).
 **Extended 2026-09-17** by three entries, 2026-09-01 (2) → (4), for the day's three new entries;
 2026-09-01 (5) and (6) are live. **Extended 2026-09-18** by 2026-09-01 (5), **2026-09-20** by (6) and **2026-09-21** by 2026-09-02's first entry (the version check) and its (2); the whole of 2026-09-01 lives here. **Extended 2026-09-22** by 2026-09-02 (3), so all of 2026-09-02 is here too, and later that day by 2026-09-04's first (unnumbered) entry; 2026-09-04 (2) onward is live.
+**Extended 2026-09-29** by 2026-09-04 (2), so all of 2026-09-04 is here; 2026-09-07 onward is live.
+This file is closed: at ~72k tokens it is past cpc 1.12.0's `archive_max_tokens`, so the next
+batch starts archive 007 (DEVLOG 2026-09-29).
+
+---
+
+## 2026-09-04 (2) — CI builds the container, and checks the two things a green build does not prove
+
+**What changed.** A third job in `.github/workflows/ci.yml`, alongside `ci` and `frontend`: free
+~10 GB on the runner, build the image through buildx with the GitHub Actions cache, then assert
+**(a)** torch is the `+cpu` wheel with zero `nvidia-*` distributions and **(b)** `apps.api` and
+`doc_assistant` import inside the image.
+
+**Why.** Nothing referenced the Dockerfile between `a052703` (2026-08-01) and today, so the
+container was the one of this project's three shipping paths — desktop installer, source checkout,
+headless image — that no gate touched. The pinned `ghcr.io/astral-sh/uv:0.12.1` base had never been
+exercised on any machine (the dev box runs uv 0.11.14), and a `uv.lock` that had drifted would have
+failed `uv sync --locked` in the image and surfaced only when somebody needed the container. Which
+is exactly how it came up: the user asked whether Docker still worked, and the honest answer was
+that nothing had checked since August.
+
+**The two assertions are the job, not the build.** A green build says the layers assembled. It does
+not say the image is the right one: `pip install ".[cpu]"` ignores `[tool.uv.sources]`, resolves
+torch from PyPI, and that Linux wheel bundles CUDA — several GB of `nvidia-*` in an image with no
+GPU, which still builds and still runs. KI-34 is the standing version of this lesson at the desktop
+end: an artifact that started cleanly, served `/api/health`, reported a healthy chunk count, and
+could not read a single PDF.
+
+**Two bugs found in this job while writing it, both by running it rather than reading it.**
+
+1. The nvidia count was `ls /app/.venv/lib/python*/site-packages | grep -c "^nvidia" || true`, which
+   prints `0` — a **pass** — when the glob matches nothing at all. Relocating the venv would have
+   turned the check off silently instead of failing it. It now asks `importlib.metadata` inside the
+   image, and that the scan is not blind is itself checked: pointed at `torch`, it fails with
+   `packages found: ['torch']`.
+2. Rewriting it to a single line made the whole workflow **unparseable YAML** — a plain scalar
+   cannot contain `": "`, and the f-string is `f"nvidia packages in the image: {nv}"`. It parsed
+   before the edit and not after; only re-validating caught it. Both `run:` steps are block scalars
+   now, with the reason recorded inline.
+
+**Verified by extracting the commands from the parsed YAML and executing those exact strings**
+against the built image, rather than retyping them: `torch 2.12.0+cpu | nvidia packages: 0` and
+`apps.api ok; doc_assistant 0.6.0`.
+
+**Rejected.** *Booting to a green `/api/health`* — first run downloads the embedder and reranker,
+which is why the Dockerfile's `HEALTHCHECK` carries a 300 s start period; that belongs in the
+release gate, not on every push. *A path-filtered trigger* — the Dockerfile's inputs are
+`pyproject.toml`, `uv.lock`, `src/`, `apps/api/` and `scripts/`, which is most of the repo, so the
+filter would have saved nothing and hidden the cases it did skip. *Plain `docker build` with no
+buildx cache* — the dependency layer is ~8 minutes and the Dockerfile already orders its `COPY`s to
+make it cacheable; not using that would have made the job the slowest thing in CI for no reason.
+
+**What it opens.** The image is ~6.3 GB and the GHA cache is capped at 10 GB per repository, so the
+`mode=max` export may thrash once other caches compete. If it does, the fix is `mode=min` or
+dropping the cache export and paying the eight minutes. Left as-is because the first failure will
+say so plainly, and guessing at it now would be tuning against an imagined problem.
 
 ---
 

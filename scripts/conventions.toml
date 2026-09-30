@@ -1,7 +1,7 @@
 # Config for the vendored cpc gates (docs_check, sprint_check, keypoint, …). Tune per project;
 # do not silently raise to pass. Laid by cpc-init (standard profile); key set refreshed by hand on
 # 2026-07-19 (ADR-021, cpc 1.2.3) with this project's tuned values preserved. The vendored gates are
-# whatever tools/conventions/cpc/_VERSION says (1.8.0 since a re-vendor on 2026-08-22) — do not
+# whatever tools/conventions/cpc/_VERSION says (1.12.0 since a re-vendor on 2026-09-29) — do not
 # restate a version here; the 1.2.3 line above stood unnoticed for 25 days. The settings audit
 # (`settings_doc --check-config`) reported no unknown or removed keys on 2026-09-16.
 
@@ -17,6 +17,15 @@ session_max_entries    = 10    # docs_check rule 11b (cpc ADR-018): baton cap; r
 devlog_max_entries     = 20    # docs_check rule 13b (cpc ADR-023): DEVLOG keeps the newest 20 entries;
                                # rotate the rest verbatim with `python tools/conventions/rungate.py rotate --root . --file devlog --write`
                                # (the shim; running cpc/rotate.py directly fails under .venv) (user standard, 2026-09-10)
+# cpc 1.12.0 (ADR-053, migrations/2026-09-29-rotate-in-batches.md): past its cap a log is cut down
+# to half in one batch, so the archive changes once per 11 DEVLOG entries (6 baton entries) instead
+# of every time. The digest is not registered here, so its top-up does not apply.
+devlog_rotate_to       = 10
+session_rotate_to      = 5
+# ADR-045/053: one archive file stops at ~25k tokens. DEVLOG-archive-006 is ~72k, so the next DEVLOG
+# batch starts -007 and lays docs/archive/DEVLOG-INDEX.md. The baton's archives are local-only, and
+# so is the SESSION-INDEX.md its first rollover lays (.gitignore).
+archive_max_tokens     = 25000
 uses_max_files         = 12    # sprint_check: resolved `uses` read-set files (globs expanded)
 uses_max_lines         = 2500  # sprint_check: summed line count of resolved `uses` files
 # Token budgets (0 = off) — calibrate before enabling.
@@ -90,3 +99,9 @@ checklist = [
 # (currently only the intentional eval judge in tests/eval/run_eval.py).
 allow_patterns = ["anthropic", "openai"]
 extra_patterns = ["anthropic.Anthropic(", "openai.OpenAI(", "ChatAnthropic(", "ChatOpenAI("]
+
+[rotate]
+# cpc-rotate --write also writes the index line each moved entry owes (rule 17), in the shape the
+# first rollover lays. Set with the 1.12.0 re-vendor: no index existed before, so there is no
+# hand-made shape to protect.
+write_index = true

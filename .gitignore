@@ -35,6 +35,9 @@ CLAUDE.local.md
 .claude/
 # Rotated-out baton entries (cpc rotation, ADR-018 rule 11) — local-only, like the baton itself.
 docs/archive/SESSION-archive-*.md
+# ...and the index cpc-rotate lays at the first baton rollover (cpc ADR-045/053): it lists every one of
+# those entries' headings, so it is local-only for the same reason.
+docs/archive/SESSION-INDEX.md
 # The retired Lab4Tech box's baton history, rescued from its backup 2026-07-25 (49 rotated archives
 # + its final baton). Same class as the above — per-machine session history, local-only. It is the
 # only record of the 2026-07-23/24 taxonomy + UI sessions, which were never batoned on this box.

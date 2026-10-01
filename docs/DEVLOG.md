@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-09-30 · class: append-only -->
+<!-- status: active · updated: 2026-10-01 · class: append-only -->
 
 # DEVLOG — doc_assistant
 
@@ -35,6 +35,115 @@ Format: What changed | Why | Rejected alternatives | What it opens
 > see an entry that is itself an ADR in disguise). When either trips, rotate — **do not raise
 > the cap.** The cap exists because this log reached 8,244 lines before anyone noticed: every entry
 > is individually small and correct, so unbounded growth is invisible per commit.
+
+---
+
+## 2026-10-01 (2) — The vocabulary is read against the library; concepts and terms, names and forms (ADR-054, proposed)
+
+**What changed.** No code. Three documents:
+- **`tests/eval/baselines/vocabulary_shape_2026-10-01.md`** (new): a read-only snapshot of the 357
+  text-bearing concept rows against the library's text — where they came from, how far each
+  spreads, what the words beside a one-word label are, what each alias of the 13 graph concepts
+  contributes on its own, and what the bibliography cut removes.
+- **`docs/decisions/ADR-054-concepts-and-terms-names-and-forms.md`** (new, proposed) and its index
+  line: a *concept* is a row the user has taken on (`graph_include`, 13 today) and the other 344 are
+  *terms*; a concept's label is its name, and each matched form is *exact* (counts as presence) or
+  *broad* (counted beside it). One additive column, no second table. Not built.
+- **`docs/ROADMAP.md`:** row 94 (ADR-054's build) and row 95 (the bibliography cut, body-text
+  presence); row 93's abbreviation signal moves after 94.
+
+**Why.** The user, before the abbreviation and fragment signals of ADR-053 decision 4 were built:
+"we will need to think more about vocabulary". The open items — a label shorter than its concept, a
+homograph, an alias that means something else, a label that is an author's surname — turned out to
+share one cause: nothing in the data says whether a row is a meaning someone chose or a string an
+extractor produced. The four choices were put to the user one at a time, each with a recommendation
+and rows from the library, and the user took the recommended option each time.
+
+**Measured** (104 documents, 8,861 parent chunks; the shipped matcher; no model):
+- **Provenance.** 13 rows are hand-made and are the only ones on the graph. 344 were created in
+  one promotion on 2026-07-05; 113 of them are a keyword of no document in today's extraction.
+- **Spread.** 197 of the 344 occur in the prose of at most one document, 30 in none; 18 occur
+  nowhere in the text (`comput vis`, `koonce emerson`).
+- **Neighbours.** Of 161 one-word labels with at least 5 prose mentions, 22 are followed by the same
+  word in at least half of them: 16 are the front of a longer term (`pose` → "estimation" 326 of
+  498) and 5 are surnames followed by "et al.". The user's three examples do not resolve this way:
+  "viral vector" is 7 of 103 uses of `viral`.
+- **Forms.** `distillation` alone reaches 7 of the 9 documents counted for
+  `knowledge distillation`. 89 of the 99 `passage ranking` mentions are a benchmark's name. "Cre
+  recombinase" occurs once against 255 for `Cre`.
+- **The cut.** 113 of 1,103 concept–document pairs exist only past the bibliography cut. The cut
+  drops everything after the References heading: in 39 of 76 cut documents that includes content
+  sections (appendices, methods, sections emitted late by the PDF extractor), about 555,000
+  characters or 4.5% of the library — text the keyword extractor, the definition scan and the
+  written-form vote never see.
+
+**Decided by the user.** (1) The 13 are the concepts; the 344 are terms. (2) Name plus exact and
+broad forms. (3) The names-and-forms build comes before decision 4's signals, which then propose
+into it. (4) Reference-list mentions stop counting as presence after the next release, in one
+measured change with the cut's fix; the release notes state the limit.
+
+**Rejected.**
+- Keeping all 357 as concepts and cleaning them with signals: 344 reviews to reach the state the 13
+  already have, with the meaning features running over unread strings meanwhile.
+- A second table for terms: ADR-018 reserved that for vocabularies that differ in shape, and the
+  difference found is membership, which its flag already records.
+- A display name with matching unchanged: `distillation` would keep counting in full.
+- Fixing the cut before the release: it moves keywords, definition candidates and written forms
+  at once.
+- Writing the snapshot's numbers into the ADR alone: a decision file cites its evidence, so the
+  counts went into a baseline a reader can check.
+
+**What it opens.** Row 94 is gated on the user accepting ADR-054. The 31 aliases of the 13 need
+the user's exact-or-broad call, and the effect on presence, edges and gaps is unmeasured until then.
+The snapshot's counts are observations, not graded signals: whether a neighbour share or an "et al."
+share separates a term from a concept needs the user's labels on a sample (decision 4). Found on the
+way: Manage keywords deletes a concept row and its definitions with no confirmation — in row 94.
+
+---
+
+## 2026-10-01 — The pip-audit gate's first catch: three upgrades for eight advisories published overnight
+
+**What changed.** `uv.lock`: sentence-transformers 5.5.1 → 5.6.0 · urllib3 2.7.0 → 2.8.0 ·
+virtualenv 21.3.3 → 21.7.13, and python-discovery 1.3.1 → 1.6.1, which virtualenv 21.7.13
+requires. Each named package is pinned to the smallest version that clears its advisories
+(`uv lock -P <package>==<version>`). Read package by package: 228 packages before and after, none
+added, removed or downgraded, every artifact from `files.pythonhosted.org`, and no new dependency
+edge (python-discovery drops its `platformdirs` edge).
+
+**Why.** CI on `a5bb634` (the written-case commit below) failed in the pip-audit step and nowhere
+else: eight advisories were published after the gate went blocking the day before (2026-09-30 (2)).
+One is in sentence-transformers (CVE-2026-68770: `trust_remote_code=False` is bypassed when the
+model path exists on disk, so Python files inside a model directory run at load). Three are in
+urllib3 (an HTTPS proxy's TLS settings mixed with the target server's; two ways a server can stall
+or bloat a streamed response). Four are in virtualenv, which is here only through pre-commit (a
+downloaded wheel was not verified; a prompt or a path could reach `pyvenv.cfg` and the activation
+scripts unescaped). All eight have a fix release, so none went into `pip-audit-ignore.toml`.
+
+**Measured.** The gate on the tree before the change: 8 unreviewed advisories, exit 1 — the list
+CI printed. On the upgraded tree: 196 packages audited, the 5 reviewed ignores matched, 0
+unreviewed, exit 0. **The embedder and the reranker give identical output on both versions:**
+through the app's own factories (`embeddings.get_embeddings`, the `CrossEncoder` the pipeline
+builds), on the CPU, 8 texts and 1 query embedded with bge-base and 8 query–text pairs scored with
+bge-reranker-base differ by at most 0.0 between sentence-transformers 5.5.1 and 5.6.0. A second run
+on 5.5.1 also differed by 0.0, so the comparison is repeatable. The unit + integration suite on the
+dev venv: **2,561 passed, 0 failed**, coverage 92.7%.
+
+**Not done.** No trial freeze. The sidecar spec collects sentence-transformers whole
+(`collect_all`, `scripts/doc_assistant_api.spec`), the lock adds no package and no edge, and the
+release runbook freezes and smoke-tests the bundle before any release. CI's CPU venv was not
+rebuilt locally; the push's CI run is that check.
+
+**Rejected.**
+- Reviewing the eight into the ignore file: each has a fix the lock takes without moving anything
+  else.
+- An unpinned `uv lock --upgrade-package`: on 2026-09-30 it pulled anthropic 1.9, langsmith 0.14
+  and three new packages for the same kind of fix.
+
+**What it opens.** The gate reads a live advisory database, so `main` can turn red on a push that
+changed no dependency — here one day after the gate became blocking. That is what S-8 asked for,
+and the red run was seen only because the session looked (KI-58's shape). S-12 (Dependabot pull
+requests, and the alerts toggle) is the planned control that would raise a new advisory before a
+push finds it; this run is the first data point for that call.
 
 ---
 

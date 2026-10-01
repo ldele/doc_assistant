@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-09-22 · class: append-only -->
+<!-- status: active · updated: 2026-09-30 · class: append-only -->
 
 # ADR-053 — A definition is chosen from candidates, and every candidate keeps its source
 
@@ -284,3 +284,32 @@ four things (2026-09-22):
 
 What this does not change: the grade still sorts and never chooses. `strong` was right 8 times in
 13 (95% interval 36–82%).
+
+## Amendment 2026-09-30 — decision 3 built: a label keeps its written case
+
+Decision 3 is built (`knowledge/written_forms.py`, DEVLOG 2026-09-30 (3)), as data **beside** the
+label: `Concept.label` is never rewritten, and a test holds it byte-identical through a build.
+
+- **The written form** of each surface form is voted from the text by the full skeleton build and
+  stored in `concept_written_forms` (replaced whole on every build, like the other derived tables):
+  whole-word uses in body prose, not at the start of a sentence; each **document** votes for the
+  spelling it uses most; most documents win. Documents vote rather than occurrences because one
+  paper repeating a dataset's name (`PERSONA`) must not outvote a library that says `persona`.
+- **Matching** — presence, the gap list's claim attribution, definitions and epistemics share one
+  rule (`concept_skeleton.form_matcher`): a form written in lower case matches in any case, as
+  before; a form written with a capital matches spellings that differ from it only in
+  **word-initial** letters. A capital that starts a word is systematic (sentences, titles); one
+  inside a word is identity. So `cre-dependent` is `Cre` and `CRE` is not; `Din` is not `dIN`; the
+  surname Colbert is not `ColBERT`.
+- **Display:** the Graph tab shows the written form (`dIN`, `Cre`) where the node has one.
+  Vocabulary-search hits and the gap list still show the stored label — a follow-up.
+
+**Measured** (`tests/eval/baselines/written_forms_2026-09-30.md`): presence changes for 16 of 357
+concepts, all losing documents — nine lose another word, a surname or OCR noise, seven the same
+name lower-cased, mostly in bibliography titles; on the graph only `cre` moves (7 → 6 documents).
+**The 24 labelled definition candidates are unchanged (11 usable, as before)** — none confused
+case; the one visible change in the definitions layer is that "vitamin Din" is no longer a usage
+example of `dIN`. The stored presence changes only when the user rebuilds the graph.
+
+Decision 4 (abbreviation and fragment signals) now has its input: 141 labels carry a written form
+with a capital.

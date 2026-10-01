@@ -14,6 +14,9 @@ export interface ConceptGraphNode {
   doc_ids: string[]
   degree: number
   community: number
+  // How the library writes the label when it writes it in a case (`dIN`, `Cre`) — show this,
+  // never edit `label` (ADR-053 decision 3). Absent/null for a lower-case written form.
+  written?: string | null
 }
 // `relation` is the deferred Node-B stance annotation — `null` on every edge until that pass runs,
 // so a renderer must not imply agreement/disagreement it does not have. Weights span a narrow

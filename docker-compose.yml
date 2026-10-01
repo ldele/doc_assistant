@@ -25,6 +25,10 @@ services:
       # (the app defaults to 127.0.0.1; this opts in — see Dockerfile).
       - DOC_API_HOST=0.0.0.0
       - DOC_API_PORT=8001
+      # The Host headers the API serves (security S-5). The loopback mapping above and the image's
+      # healthcheck use these two; add the name you reach it by if you publish it any other way —
+      # any other Host gets 400.
+      - DOC_API_ALLOWED_HOSTS=127.0.0.1,localhost
       - LLM_MODE=${LLM_MODE:-api}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
 

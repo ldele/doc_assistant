@@ -20,6 +20,7 @@ Deterministic ``gaps`` rows are dropped + rebuilt on every run; a stochastic row
 from __future__ import annotations
 
 from collections import defaultdict
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal, cast
@@ -228,10 +229,12 @@ def detect_unsourced_claims(
     aliases: dict[str, list[str]],
     *,
     mode: str = PRESENCE_BOUNDARY,
+    written: Mapping[tuple[str, str], str] | None = None,
 ) -> list[Gap]:
     """Aggregate ``unsupported``-marked claims onto the curated concept(s) their text
     matches (presence match, Decision C — reuses ``concept_skeleton.match_presence``
-    so a claim and a chunk are attributed by the identical rule). A query over data
+    so a claim and a chunk are attributed by the identical rule, ``written`` forms included —
+    ADR-053 decision 3). A query over data
     that already exists (``synthesis.claim_marker`` → ``AnswerClaim.marker``); no new
     model (ADR-004 Decision 3). Cited (non-``unsupported``) claims produce nothing;
     an unsupported claim matching no curated concept also produces nothing (it isn't
@@ -243,7 +246,7 @@ def detect_unsourced_claims(
     if not unsupported:
         return []
     chunk_texts = [(c.id, c.id, c.text) for c in unsupported]
-    presences = match_presence(concepts, aliases, chunk_texts, mode=mode)
+    presences = match_presence(concepts, aliases, chunk_texts, mode=mode, written=written)
     by_concept: dict[str, set[str]] = defaultdict(set)
     for p in presences:
         by_concept[p.concept_id].update(p.chunk_keys)  # chunk_key == claim id here
@@ -569,7 +572,12 @@ def build_gaps(
         *detect_under_connected(skeleton, min_degree=min_degree),
     ]
     claims = load_unsupported_claims()
-    t2a = detect_unsourced_claims(claims, concepts, aliases)
+    # The corpus's written forms, from the skeleton build that just ran: an answer is the model's
+    # text, so how it capitalises a word is no evidence of which word it means (ADR-053 D3).
+    from doc_assistant.knowledge.written_forms import load_written_forms
+
+    written = load_written_forms([cid for cid, _ in concepts])
+    t2a = detect_unsourced_claims(claims, concepts, aliases, written=written)
     all_gaps = t1 + t2a
 
     version = str(skeleton.meta.get("graph_version", ""))

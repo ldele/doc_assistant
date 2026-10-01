@@ -10,7 +10,8 @@ controller via ``create_app(controller=...)`` so no real pipeline / LLM / networ
 ``sources``). Cross-router glue — the ``app.state`` status dataclasses, their ``202 + poll``
 serializers, the settings read view, and the lazy default job runners — lives in
 ``apps/api/services``. This module owns only ``create_app``: the lifespan (schema migration +
-controller construction), the ``app.state`` wiring + test seams, CORS, and the router mounts.
+controller construction), the ``app.state`` wiring + test seams, CORS, the host guard (security
+S-5), and the router mounts.
 ``_settings_view`` / ``_default_rebuild_graph`` are re-exported below because tests import them by
 name from here.
 
@@ -23,6 +24,7 @@ noted there, not needed for the desktop target.
 
 from __future__ import annotations
 
+import os
 import threading
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
@@ -30,6 +32,7 @@ from contextlib import asynccontextmanager
 import structlog
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.trustedhost import TrustedHostMiddleware
 
 from apps.api.routers import (
     chat,
@@ -65,7 +68,7 @@ from doc_assistant.logging_config import configure_logging
 # only internals a test reaches for. ``_default_rebuild_graph`` also serves as the rebuild default.
 # ``init_db`` is imported so the startup-migration test's
 # ``monkeypatch.setattr("apps.api.main.init_db", …)`` target is preserved.
-__all__ = ["_default_rebuild_graph", "_settings_view", "app", "create_app"]
+__all__ = ["_default_rebuild_graph", "_settings_view", "allowed_hosts", "app", "create_app"]
 
 log = structlog.get_logger(__name__)
 
@@ -76,6 +79,22 @@ _ALLOWED_ORIGINS = [
     "http://127.0.0.1:1420",
     "tauri://localhost",
 ]
+
+# Security S-5 (docs/security.md S1a): the Host headers the API serves. It listens on loopback,
+# but a web page can still reach it by DNS rebinding — a hostile name that resolves to 127.0.0.1 —
+# and the browser then sends that name as the Host. Serving only loopback names closes that.
+# ``DOC_API_ALLOWED_HOSTS`` (comma-separated) replaces the list when the API is reached by another
+# name, a container behind a proxy for instance; ``*`` switches the check off.
+_DEFAULT_ALLOWED_HOSTS = ("127.0.0.1", "localhost")
+
+
+def allowed_hosts() -> list[str]:
+    """The Host headers this API serves: ``DOC_API_ALLOWED_HOSTS``, else loopback only.
+
+    Read when the app is built. An empty or blank setting means the default, never "any host"."""
+    raw = os.environ.get("DOC_API_ALLOWED_HOSTS", "")
+    hosts = [h.strip() for h in raw.split(",") if h.strip()]
+    return hosts or list(_DEFAULT_ALLOWED_HOSTS)
 
 
 def create_app(
@@ -150,6 +169,8 @@ def create_app(
         allow_methods=["*"],
         allow_headers=["*"],
     )
+    # Added last, so it runs first: a foreign Host gets 400 before CORS or any route sees it (S-5).
+    app.add_middleware(TrustedHostMiddleware, allowed_hosts=allowed_hosts())
 
     # Domain routers (APIRouter split). Include order is preserved from the pre-split file;
     # route-matching order that matters (e.g. `/api/concepts/gaps` before the parameterised

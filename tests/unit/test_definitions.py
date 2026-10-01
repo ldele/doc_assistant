@@ -593,3 +593,23 @@ def test_usage_reads_a_few_documents_and_says_when_it_could_not(temp_db, tmp_pat
     assert missing is not None and not missing.available and missing.examples == ()
     assert load_usage("field", index_file=index) is None
     assert load_usage("nope", index_file=index) is None
+
+
+def test_a_sentence_about_din_is_not_a_candidate_for_din() -> None:
+    # ADR-053 decision 3: once the library writes the label dIN, "Din" (the join in "vitamin Din")
+    # is another word, so neither its definition-shaped sentence nor its plain use is offered.
+    chunks = [
+        (
+            "n1:p0",
+            "n1",
+            "The dIN is a descending interneuron that drives swimming in the tadpole.",
+        ),
+        ("v1:p0", "v1", "Here Din refers to the join made when vitamin D in adults is extracted."),
+        ("v2:p0", "v2", "A diet with vitamin Din adults was not studied in this cohort."),
+    ]
+    folded = _texts(find_passages([("d", "din")], chunks)["d"])
+    assert len(folded) == 2  # case-folded, both read as definitions of "din"
+    cased = _texts(find_passages([("d", "din")], chunks, written={"d": "dIN"})["d"])
+    assert cased == [chunks[0][2]]
+    assert find_usages([("d", "din")], chunks[2:]) != {}
+    assert find_usages([("d", "din")], chunks[2:], written={"d": "dIN"}) == {}

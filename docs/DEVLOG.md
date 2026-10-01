@@ -38,6 +38,67 @@ Format: What changed | Why | Rejected alternatives | What it opens
 
 ---
 
+## 2026-09-30 (3) — A label keeps its written case (ADR-053 decision 3); the API refuses a foreign Host (S-5)
+
+**What changed.**
+- **`knowledge/written_forms.py`** (new) + the derived table **`concept_written_forms`**: the full
+  skeleton build votes, for every surface form of every text-bearing concept, how the library
+  spells it — whole-word uses in body prose (`definitions.document_sentences`, now public), not at
+  a sentence start; each document votes for its most-used spelling, most documents win. Stored
+  beside `Concept.label`, never into it (ADR-043; a build test holds the label byte-identical), and
+  on each `ConceptNode` as `written` (in `skeleton.json` only when set).
+- **One matcher for all four callers** (`concept_skeleton.form_matcher`): presence, the gap list's
+  claim attribution, definitions (passages and usage examples) and epistemics. A form written in
+  lower case matches in any case, exactly as before; a form written with a capital matches only
+  spellings that differ from it in **word-initial** letters (`word_case_key`). `surface_forms` is
+  public now; substring mode, the RG-008 A/B lever, ignores written forms.
+- **Display:** the graph payload carries `written`, and the Graph tab shows it on the nodes, the
+  panel heading and the rail (`lib/graph/labels.ts`, tested).
+- **S-5, the host guard:** `create_app` adds `TrustedHostMiddleware` last, so it runs first; hosts
+  from `DOC_API_ALLOWED_HOSTS`, else `127.0.0.1,localhost`; a blank setting means loopback, never
+  every host. `tests/conftest.py` allows the `TestClient`'s `testserver`; `docker-compose.yml` and
+  `.env.example` name the setting.
+- `GLOSSARY.md` C-013 *written form*; ADR-053 amendment 2026-09-30; `docs/knowledge-layer.md`
+  (presence row); `docs/security.md` (S1, S-5, floor row 6); ROADMAP rows 60 and 93.
+
+**Why.** The user's labels (2026-09-22): "din is not the same as dIN. Important of being
+case-sensitive." Presence feeds `single_source`, the trust table's one trustworthy gap signal, so
+two words sharing a lower-cased label were being counted as one concept. S-5: the API listens on
+loopback, but DNS rebinding lets a web page reach it under a hostile name (S1, T2).
+
+**Measured** (`tests/eval/baselines/written_forms_2026-09-30.md`, read-only, the working library):
+367 written forms, 155 with a capital. Presence moves for **16 of 357 concepts, all losing
+documents**: nine lose another word, a surname or OCR noise (`CRE` from `cre`, "vitamin Din" from
+`din`, the numpy paper's author Colbert from `colbert`, "StS" initials from `sts`), seven lose the
+same name lower-cased, mostly in bibliography titles (`gpt-4`, `deeplabcut`). On the graph only
+`cre` moves, 7 → 6 documents. **The 24 labelled definition candidates are unchanged (11 usable)**;
+the definitions layer's one change is that "vitamin Din" is no longer a usage example of `dIN`.
+Nothing moves in the stored graph until the user rebuilds. S-5 checked live: the running API
+answers a foreign `Host` with 400, both loopback names with 200, and the desktop dev app loads
+through it. The Graph tab showed `Cre`, `DBS`, `Ntsr1` with the graph response rewritten in the
+page, since the stored skeleton predates written forms.
+
+**Rejected.**
+- The most-used spelling matched exactly (R1, 27 concepts move): `assistant` fell from 10 documents
+  to 4 and `plateau` from 12 to 2 — ordinary words capitalised just over half the time.
+- Occurrences voting: one paper repeating `PERSONA` outvoted the three that say `persona`.
+- Exact spellings for anything but a capitalised word (R2, 20 move): Title Case quoted from titles
+  won the vote, and prose such as "a sentence encoder LSTM" stopped counting. The word-initial rule
+  restores those four and keeps every correct split.
+- Rewriting `Concept.label` to the written form: ADR-043 — derived data sits beside curated data.
+- Deriving the written form inside each caller: epistemics sees one text at a time and the usage
+  examples read six documents, so each would vote differently. One stored vote, one rule.
+- Showing the written form everywhere in this change: vocabulary-search hits and the gap list read
+  their label server-side from other payloads; left as a follow-up.
+
+**What it opens.** The seven remaining losses mostly come from reference lists: presence reads the
+whole text, the vote only body prose. Matching body text only would remove them, and would also
+stop reference-only mentions counting — its own measurement. ADR-053 decision 4, the abbreviation
+signal, now has its input (141 labels with a capital). The user's rebuild applies the 16 changes;
+the baseline lists each one with what stopped counting.
+
+---
+
 ## 2026-09-30 (2) — Row 61 / security S-8: nineteen upgrades, five reviewed ignores, and pip-audit blocks CI
 
 **What changed.**

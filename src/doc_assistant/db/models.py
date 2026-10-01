@@ -630,6 +630,33 @@ class ConceptPresenceRow(Base):
     )
 
 
+class ConceptWrittenForm(Base):
+    """How the library writes one of a concept's surface forms, case included (ADR-053 D3).
+
+    DERIVED from the text, never a rewrite of ``Concept.label`` (ADR-043): the label stays as
+    curated, and this row says the prose writes ``din`` as ``dIN`` and ``cre`` as ``Cre``. Replaced
+    whole by every full skeleton build (``knowledge.written_forms``); a concept added since the
+    last build has no row and is matched case-folded until the next. Additive via ``create_all``.
+
+    ``form`` is the casefolded surface form (``concept_skeleton.surface_forms``), ``written`` the
+    spelling most documents use for it mid-sentence in body prose. ``variants_json`` and
+    ``votes_json`` keep the evidence: uses per spelling, and documents voting for each.
+    """
+
+    __tablename__ = "concept_written_forms"
+
+    concept_id: Mapped[str] = mapped_column(
+        String, ForeignKey("concepts.id", ondelete="CASCADE"), primary_key=True
+    )
+    form: Mapped[str] = mapped_column(String, primary_key=True)
+    written: Mapped[str] = mapped_column(String, nullable=False)
+    uses: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    documents: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    variants_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    votes_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    computed_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
+
+
 # ============================================================
 # GapRow — Phase 7, gap-detection layer (deterministic Tier 1 + Tier-2a floor).
 # ============================================================

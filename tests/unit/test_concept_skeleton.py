@@ -20,10 +20,100 @@ from doc_assistant.knowledge.concept_skeleton import (
     compile_boundary_pattern,
     cooccurrence_edges,
     edge_weight,
+    form_matcher,
+    is_cased,
     match_presence,
     skeleton_from_dict,
     skeleton_to_dict,
+    word_case_key,
 )
+
+# ---- written forms: case-aware matching (ADR-053 decision 3) ---------------
+
+
+def test_a_capital_that_starts_a_word_is_not_part_of_the_word() -> None:
+    # A capital that starts a word is systematic (titles, sentences); inside a word it is identity.
+    assert word_case_key("Cre") == word_case_key("cre") != word_case_key("CRE")
+    assert word_case_key("Natural Questions") == word_case_key("natural questions")
+    assert word_case_key("dIN") != word_case_key("Din")  # "vitamin Din" is not dIN
+    assert word_case_key("ColBERT") != word_case_key("Colbert")  # nor is the surname ColBERT
+    assert word_case_key("SPECTER") != word_case_key("Specter")  # nor a book title SPECTER
+    assert word_case_key("3D medical") != word_case_key("3d medical")  # 3D: "D" is inside a word
+
+
+def test_only_a_written_form_with_a_capital_makes_matching_case_aware() -> None:
+    assert not is_cased(None)
+    assert not is_cased("beta")  # lower case: any case, exactly as before written forms
+    assert is_cased("Cre") and is_cased("dIN") and is_cased("BM25")
+
+
+def test_form_matcher_is_case_folded_without_a_written_form_or_with_a_stale_one() -> None:
+    for written in (None, "beta", "Cre"):  # "Cre" is not a spelling of "din": ignored
+        matcher = form_matcher("din", written)
+        assert matcher.search("the Din join", "the din join")
+        assert matcher.count("dIN, Din and DIN", "din, din and din") == 3
+
+
+def test_presence_is_case_aware_where_the_library_writes_a_case() -> None:
+    concepts = [("d", "din"), ("c", "cre"), ("b", "beta")]
+    chunks = [
+        ("n1:p0", "n1", "Recordings from the dIN population."),
+        ("v1:p0", "v1", "A diet with vitamin Din adults."),
+        ("m1:p0", "m1", "Expression of Cre recombinase in mice."),
+        ("m2:p0", "m2", "A cre-dependent virus was injected."),
+        ("x1:p0", "x1", "The CRE element binds the complex."),
+        ("o1:p0", "o1", "Beta oscillations and beta power."),
+    ]
+    written = {("d", "din"): "dIN", ("c", "cre"): "Cre"}
+    presences = match_presence(concepts, {}, chunks, written=written)
+    docs: dict[str, set[str]] = {}
+    for p in presences:
+        docs.setdefault(p.concept_id, set()).add(p.document_id)
+    assert docs["d"] == {"n1"}  # not the "vitamin Din" join
+    assert docs["c"] == {"m1", "m2"}  # Cre and cre-dependent, not CRE
+    assert docs["b"] == {"o1"}  # lower-case written form: any case
+    assert {p.document_id: p.n_mentions for p in presences if p.concept_id == "b"} == {"o1": 2}
+
+    # Without written forms, matching is case-folded exactly as before.
+    folded = {p.document_id for p in match_presence(concepts, {}, chunks) if p.concept_id == "d"}
+    assert folded == {"n1", "v1"}
+
+
+def test_a_title_cased_written_form_still_matches_the_phrase_in_prose() -> None:
+    # "Natural Questions" wins the vote from titles; prose that says "natural questions" is still
+    # a mention. An all-caps rendering is another casing: the price of telling CRE from Cre.
+    chunks = [
+        ("a:p0", "a", "We train on Natural Questions and TriviaQA."),
+        ("b:p0", "b", "Users ask natural questions in plain language."),
+        ("c:p0", "c", "NATURAL QUESTIONS heads the table."),
+    ]
+    written = {("q", "natural questions"): "Natural Questions"}
+    presences = match_presence([("q", "natural questions")], {}, chunks, written=written)
+    assert {p.document_id for p in presences} == {"a", "b"}
+
+
+def test_substring_mode_ignores_written_forms() -> None:
+    chunks = [("v1:p0", "v1", "A diet with vitamin Din adults.")]
+    written = {("d", "din"): "dIN"}
+    presences = match_presence(
+        [("d", "din")], {}, chunks, mode=PRESENCE_SUBSTRING, written=written
+    )
+    assert [p.document_id for p in presences] == ["v1"]
+
+
+def test_a_node_written_form_survives_the_skeleton_round_trip() -> None:
+    nodes = [
+        ConceptNode(id="a", label="din", doc_ids=("d1",), degree=0, community=-1, written="dIN"),
+        ConceptNode(id="b", label="beta", doc_ids=("d1",), degree=0, community=-1),
+    ]
+    skeleton = analyze_skeleton(nodes, [], seed=1)
+    data = skeleton_to_dict(skeleton)
+    by_id = {n["id"]: n for n in data["nodes"]}
+    assert by_id["a"]["written"] == "dIN"
+    assert "written" not in by_id["b"]  # unchanged shape for a node without one
+    back = {n.id: n.written for n in skeleton_from_dict(data).nodes}
+    assert back == {"a": "dIN", "b": None}
+
 
 # ---- presence (Decision 2) -------------------------------------------------
 

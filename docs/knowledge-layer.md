@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-09-22 (the definition-candidate row measured on the user's labels — ADR-053 amended) · class: living -->
+<!-- status: active · updated: 2026-09-30 (presence is case-aware where the library writes a capital — ADR-053 decision 3) · class: living -->
 
 # The knowledge layer — what the concept graph is for, and which of its signals you can trust
 
@@ -143,7 +143,7 @@ Signals in this layer are **not** equally sound. Re-read against the code and th
 | signal | status | why |
 |---|---|---|
 | **`single_source`** | ✅ **trustworthy — the product thesis** | a document count; RG-014 graded it a true positive |
-| Concept presence / navigation | ✅ trustworthy | 534 chunk keys across 30 documents for the 13 graph concepts (2026-09-16); a taxonomy field node is refused at every write and filtered on the graph's own read (ROADMAP 54, 2026-09-17) |
+| Concept presence / navigation | ✅ trustworthy | 534 chunk keys across 30 documents for the 13 graph concepts (2026-09-16); a taxonomy field node is refused at every write and filtered on the graph's own read (ROADMAP 54, 2026-09-17). **Case-aware where the library writes a name with a capital** (ADR-053 decision 3, 2026-09-30): `Cre` no longer counts `CRE`, nor `dIN` "vitamin Din". Measured on 357 concepts: 16 lose documents, 9 of them for the better — another word, a surname, OCR noise — and 7 losing the same name lower-cased in bibliography titles; one graph concept moves (`cre`, 7 → 6). Takes effect at the next rebuild (`tests/eval/baselines/written_forms_2026-09-30.md`) |
 | Communities, co-occurrence edges | ✅ deterministic | Node A, seeded Louvain, idempotent |
 | Graph coverage ("covers 30 of your 98 documents") | ✅ an honest count | numerator and denominator are both over the documents the library shows — deleted and archived ones excluded since 2026-09-17 (ROADMAP 54) |
 | `thin_bridge` | ✅ **structural since KL1** | a bridge counts only when both sides keep ≥ 2 concepts, flagged on the smaller side. Before KL1 it flagged both ends of every bridge, naming the most-connected concept a thin bridge; all four on the working library were dead-end edges, and today's graph has **none** |

@@ -190,3 +190,15 @@ def test_epistemics_reads_tolerate_missing_table(tmp_path, monkeypatch):
         assert load_epistemics_index() == {}
     finally:
         engine.dispose()
+
+
+def test_concepts_in_text_respects_the_written_form() -> None:
+    # ADR-053 decision 3: attribution agrees with presence on dIN versus Din, Cre versus CRE.
+    labels = {"n1": "din", "n2": "cre"}
+    written = {"n1": "dIN", "n2": "Cre"}
+    assert concepts_in_text("Recordings from the dIN population.", labels, written) == ["n1"]
+    assert concepts_in_text("A diet with vitamin Din adults.", labels, written) == []
+    assert concepts_in_text("A cre-dependent virus was injected.", labels, written) == ["n2"]
+    assert concepts_in_text("The CRE site binds the complex.", labels, written) == []
+    # Without written forms the match is case-folded, as before.
+    assert concepts_in_text("A diet with vitamin Din adults.", labels) == ["n1"]

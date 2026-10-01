@@ -32,13 +32,18 @@ if TYPE_CHECKING:
 
 
 class ConceptGraphNodePayload(BaseModel):
-    """One concept node. `degree` and `community` are precomputed layout signal."""
+    """One concept node. `degree` and `community` are precomputed layout signal.
+
+    `written` is how the library writes the label when it writes it in a case (`dIN`, `Cre`) —
+    derived at build time, shown instead of `label`, never a rewrite of it (ADR-053 decision 3).
+    `None` for a lower-case written form, or a skeleton built before written forms existed."""
 
     id: str
     label: str
     doc_ids: list[str]
     degree: int
     community: int
+    written: str | None = None
 
     @classmethod
     def from_node(cls, n: ConceptNode) -> ConceptGraphNodePayload:
@@ -48,6 +53,7 @@ class ConceptGraphNodePayload(BaseModel):
             doc_ids=list(n.doc_ids),
             degree=n.degree,
             community=n.community,
+            written=n.written,
         )
 
 

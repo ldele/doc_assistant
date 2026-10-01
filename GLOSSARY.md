@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-09-17 (C-007: not a corpus measurement) · class: living -->
+<!-- status: active · updated: 2026-09-30 (C-013: written form) · class: living -->
 
 # GLOSSARY — doc_assistant
 
@@ -121,6 +121,16 @@ default, and never mutates the primary chunk store.
 beat the control beyond variance, record a baseline in `tests/eval/baselines/`).
 **Forbidden:** —
 **Authoritative in:** `.claude/CONTEXT.md` → Locked settings table
+
+## C-013 — written form
+
+**Canonical:** `written form`
+**Definition:** How the library's prose spells one of a concept's surface forms, case included
+(`dIN` for the label `din`, `Cre` for `cre`) — voted from body text by the skeleton build, stored
+**beside** the label and never a rewrite of it (ADR-053 decision 3, ADR-043). A form written with a
+capital is matched case-aware; one written in lower case matches in any case.
+**Forbidden:** `normalized label`, `canonical label` (the label is the curated one; this is derived)
+**Authoritative in:** `src/doc_assistant/knowledge/written_forms.py` + `db/models.py::ConceptWrittenForm`
 
 ## D-001 — Provenote vs doc_assistant
 

@@ -9,6 +9,7 @@
   import { searchVocabulary } from '../core/api'
   import { GAP_META, conceptIndexRows, visibleConceptGaps } from './gaps'
   import { offGraphMatches } from './definitions'
+  import { shownLabel } from './labels'
   import GapList from './GapList.svelte'
   import Icon from '../shell/Icon.svelte'
 
@@ -170,7 +171,7 @@
           type="button"
         >
           <span class="dot" style="background:{commColor(row.node)}" aria-hidden="true"></span>
-          <span class="clabel">{row.node.label}</span>
+          <span class="clabel">{shownLabel(row.node)}</span>
           {#if g}
             <span class="badge {GAP_META[g.kind].tone}" title={GAP_META[g.kind].blurb}>
               {GAP_META[g.kind].label}{row.gaps.length > 1 ? ` +${row.gaps.length - 1}` : ''}

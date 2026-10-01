@@ -20,6 +20,7 @@
   import { authorLabel } from '../library/library'
   import { GAP_META, graphCoverage, visibleConceptGaps } from './gaps'
   import { forceLayout, type Point } from './forceLayout'
+  import { shownLabel } from './labels'
   import Icon from '../shell/Icon.svelte'
   import ConceptDefinition from './ConceptDefinition.svelte'
 
@@ -360,7 +361,7 @@
           <div class="ego-head">
             <div class="eh-title">
               <span class="dot lg" style="background:{commColor(selectedNode)}" aria-hidden="true"></span>
-              <h2>{selectedNode.label}</h2>
+              <h2>{shownLabel(selectedNode)}</h2>
             </div>
             <div class="eh-actions">
               <span class="eh-meta">{selectedNode.degree} link{selectedNode.degree === 1 ? '' : 's'} · {docCount(selectedNode)} doc{docCount(selectedNode) === 1 ? '' : 's'}</span>
@@ -405,7 +406,7 @@
               use:wheelZoom
               onpointerdown={startPan}
               role="img"
-              aria-label="Depth-1 neighbourhood of {selectedNode.label}"
+              aria-label="Depth-1 neighbourhood of {shownLabel(selectedNode)}"
             >
               <g transform="translate({panX} {panY}) scale({zoom})">
                 {#each ego?.edges ?? [] as e (e.source + '::' + e.target)}
@@ -427,7 +428,7 @@
                       transform="translate({p.x} {p.y})"
                       role="button"
                       tabindex="0"
-                      aria-label={n.label}
+                      aria-label={shownLabel(n)}
                       onclick={() => onSelectConcept(id)}
                       onkeydown={(ev) => {
                         if (ev.key === 'Enter' || ev.key === ' ') {
@@ -449,7 +450,7 @@
                           cy={-nodeRadius(n) * 0.7}
                         />
                       {/if}
-                      <text class="nlabel" y={nodeRadius(n) + 13} text-anchor="middle">{n.label}</text>
+                      <text class="nlabel" y={nodeRadius(n) + 13} text-anchor="middle">{shownLabel(n)}</text>
                     </g>
                   {/if}
                 {/each}

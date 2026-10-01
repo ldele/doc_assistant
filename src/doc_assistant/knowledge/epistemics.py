@@ -30,6 +30,7 @@ markers at parent boundaries.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -39,7 +40,7 @@ from doc_assistant.chroma_read import get_all
 from doc_assistant.knowledge.concept_skeleton import (
     ConceptSkeleton,
     NodeWeight,
-    compile_boundary_pattern,
+    form_matcher,
     node_weights_for_epistemics,
 )
 
@@ -113,17 +114,22 @@ def derive_markers(n_contested: int, n_superseded_trend: int) -> list[str]:
     return markers
 
 
-def concepts_in_text(text: str, labels_by_id: dict[str, str]) -> list[str]:
+def concepts_in_text(
+    text: str, labels_by_id: dict[str, str], written: Mapping[str, str] | None = None
+) -> list[str]:
     """Which concept node ids are attributed to ``text`` (structural word-boundary match, pure).
 
     Matches on each concept's **label** (not its node id — the curated skeleton's ids are opaque
-    ``Concept.id`` UUIDs that never occur in document text; KI-15), casefolded, via the same
-    alnum-boundary pattern ``concept_skeleton``'s Node-A presence matcher uses (R2,
-    :func:`concept_skeleton.compile_boundary_pattern` — not ``\\b``, which mishandles non-word
-    edge chars like "gpt-4"). Labels shorter than ``_MIN_CONCEPT_LEN`` are skipped (too short to
-    attribute reliably — "ir" would match far too much). Deterministic order (``labels_by_id``
-    iteration order, de-duplicated)."""
+    ``Concept.id`` UUIDs that never occur in document text; KI-15), via the same matcher
+    ``concept_skeleton``'s Node-A presence uses (R2, :func:`concept_skeleton.form_matcher` — alnum
+    lookarounds, not ``\\b``, which mishandles non-word edge chars like "gpt-4"). ``written`` maps
+    a node id to how the library writes its label (``ConceptNode.written``, ADR-053 decision 3), so
+    attribution and presence agree on ``dIN`` versus ``Din``; without it the match is case-folded.
+    Labels shorter than ``_MIN_CONCEPT_LEN`` are skipped (too short to attribute reliably — "ir"
+    would match far too much). Deterministic order (``labels_by_id`` iteration order,
+    de-duplicated)."""
     low = text.casefold()
+    spellings = written or {}
     present: list[str] = []
     seen: set[str] = set()
     for nid, label in labels_by_id.items():
@@ -132,7 +138,7 @@ def concepts_in_text(text: str, labels_by_id: dict[str, str]) -> list[str]:
         form = label.strip().casefold()
         if len(form) < _MIN_CONCEPT_LEN:
             continue
-        if compile_boundary_pattern(form).search(low):
+        if form_matcher(form, spellings.get(nid)).search(text, low):
             seen.add(nid)
             present.append(nid)
     return present
@@ -182,9 +188,10 @@ def project_chunk_weights(
     contain at least one weighted concept get a row — a chunk with no claims carries no
     epistemic signal and is omitted."""
     labels_by_id = {n.id: n.label for n in skeleton.nodes}
+    written = {n.id: n.written for n in skeleton.nodes if n.written}
     rows: list[ChunkEpistemics] = []
     for chunk_key, document_id, chunk_index, text in doc_chunks:
-        present = concepts_in_text(text, labels_by_id)
+        present = concepts_in_text(text, labels_by_id, written)
         if not present:
             continue
         rows.append(project_chunk(chunk_key, document_id, chunk_index, present, weights))

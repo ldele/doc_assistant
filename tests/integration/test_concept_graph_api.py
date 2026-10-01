@@ -9,6 +9,7 @@ is driven through the ``rebuild_graph_fn`` seam (cpc §13) so no real 7s Node-A 
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import threading
 from collections.abc import Iterator
@@ -357,6 +358,19 @@ def test_route_graph_200_shape(env: Path) -> None:
     assert {edge["source"], edge["target"]} <= node_ids
     assert edge["provenance"] == ["cooccurrence", "similarity"]
     assert edge["relation"] is None  # Node B never run — no stance on the wire
+
+
+def test_route_graph_carries_the_written_form_beside_the_label(env: Path) -> None:
+    """ADR-053 decision 3: a node the library writes in a case says how; the label stays stored."""
+    skeleton = _skeleton()
+    din = dataclasses.replace(skeleton.nodes[1], label="din", written="dIN")
+    _write_skeleton_json(env, dataclasses.replace(skeleton, nodes=(skeleton.nodes[0], din)))
+    _seed_concepts((_A, "Embeddings"), (_B, "din"))
+    _seed_documents("d1", "d2")
+    body = _client().get("/api/concepts/graph").json()
+    by_id = {n["id"]: n for n in body["nodes"]}
+    assert (by_id[_B]["label"], by_id[_B]["written"]) == ("din", "dIN")
+    assert by_id[_A]["written"] is None
 
 
 def test_route_graph_404_when_never_built(env: Path) -> None:

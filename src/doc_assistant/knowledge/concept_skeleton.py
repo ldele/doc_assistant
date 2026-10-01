@@ -27,6 +27,7 @@ import json
 import re
 import statistics
 from collections import Counter, defaultdict
+from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
@@ -97,13 +98,18 @@ class SkeletonEdge:
 
 @dataclass(frozen=True)
 class ConceptNode:
-    """A concept node in the analysed skeleton (degree + community filled by analysis)."""
+    """A concept node in the analysed skeleton (degree + community filled by analysis).
+
+    ``written`` is how the library writes the label (``dIN``, ``Cre``) when it writes it in a case
+    — derived at build time (``knowledge.written_forms``, ADR-053 decision 3), never a rewrite of
+    ``label``; ``None`` when the prose writes it in lower case or not at all."""
 
     id: str
     label: str
     doc_ids: tuple[str, ...]
     degree: int
     community: int
+    written: str | None = None
 
 
 @dataclass(frozen=True)
@@ -137,6 +143,8 @@ class SkeletonResult:
     n_isolated: int
     provenance_counts: dict[str, int]  # token -> number of edges carrying it
     applied: bool
+    n_written_forms: int = 0  # surface forms the prose uses mid-sentence (ADR-053 decision 3)
+    n_cased_forms: int = 0  # of those, forms the library writes in a case — matched case-aware
 
 
 # ============================================================
@@ -144,8 +152,11 @@ class SkeletonResult:
 # ============================================================
 
 
-def _surface_forms(label: str, alias_list: list[str]) -> list[str]:
-    """Case-folded, de-duplicated surface forms for a concept (label + aliases)."""
+def surface_forms(label: str, alias_list: list[str]) -> list[str]:
+    """Case-folded, de-duplicated surface forms for a concept (label + aliases).
+
+    The key every written form is stored under (``knowledge.written_forms``): a form's written
+    spelling is found for, and looked up by, exactly this string."""
     seen: set[str] = set()
     forms: list[str] = []
     for raw in (label, *alias_list):
@@ -168,22 +179,78 @@ def compile_boundary_pattern(form: str) -> re.Pattern[str]:
     ``\\b`` on purpose: ``\\b`` mishandles forms whose edge characters are non-word (``gpt-4``,
     ``c++``), where a trailing ``\\b`` would demand a following word char. ``form`` must already
     be casefolded (the class is lowercase ``[a-z0-9]``). The single definition every
-    boundary-matching caller in the codebase shares (``_presence_matchers`` here,
-    ``epistemics.concepts_in_text`` for chunk-level attribution — KI-15) so there is one
-    boundary-matching behavior, not a second hand-rolled (and possibly diverging) one."""
+    boundary-matching caller in the codebase shares (:func:`form_matcher` here, which
+    ``match_presence``, ``definitions`` and ``epistemics.concepts_in_text`` all build on — KI-15)
+    so there is one boundary-matching behavior, not a second hand-rolled (and possibly diverging)
+    one."""
     return re.compile(rf"(?<![a-z0-9]){re.escape(form)}(?![a-z0-9])")
 
 
-def _presence_matchers(forms: list[str], mode: str) -> list[tuple[str, re.Pattern[str] | None]]:
-    """Precompiled per-form matchers for one concept (compiled once, reused per chunk).
+_WORD_INITIAL = re.compile(r"(?<![A-Za-z0-9])[A-Za-z]")
 
-    ``boundary`` mode pairs each form with :func:`compile_boundary_pattern`; ``substring`` mode
-    carries ``None`` (the caller falls back to ``str.count``)."""
-    if mode == PRESENCE_SUBSTRING:
-        return [(form, None) for form in forms]
-    if mode != PRESENCE_BOUNDARY:
-        raise ValueError(f"unknown presence mode {mode!r} (expected one of {PRESENCE_MODES})")
-    return [(form, compile_boundary_pattern(form)) for form in forms]
+
+def word_case_key(spelling: str) -> str:
+    """``spelling`` with every word-initial letter lower-cased: the case that belongs to the word.
+
+    A capital that **starts** a word is the one systematic case change — a sentence start, a title,
+    a heading — so ``Cre``/``cre`` and ``Natural Questions``/``natural questions`` share a key. A
+    capital **inside** a word is identity: ``dIN``, ``BM25`` and ``ColBERT`` keep theirs, so
+    ``Din``, ``bm25`` and the surname ``Colbert`` do not match them (ADR-053 decision 3)."""
+    return _WORD_INITIAL.sub(lambda m: m.group(0).lower(), spelling)
+
+
+def is_cased(written: str | None) -> bool:
+    """Whether matching a form depends on case: the library writes it with a capital somewhere.
+
+    A form written in lower case — or with no mid-sentence use, so no written form at all — matches
+    in any case, exactly as before written forms existed."""
+    return bool(written) and written != (written or "").lower()
+
+
+@dataclass(frozen=True)
+class FormMatcher:
+    """Whole-word matching for one surface form: case-folded unless the library writes it cased.
+
+    ``form`` is casefolded, and doubles as the cheap substring prefilter on casefolded text.
+    ``cased`` is ``None`` for case-folded matching. Otherwise it pairs an any-case whole-word
+    pattern, run on the **original** text, with the written form's :func:`word_case_key`: a match
+    counts only if its own key equals that one — ``CRE`` is not ``Cre``, ``Din`` is not ``dIN``. A
+    structural rule about spellings, not a threshold tuned on a corpus. One optional pair rather
+    than two optional fields, so the pattern and its key cannot be set apart."""
+
+    form: str
+    folded: re.Pattern[str]
+    cased: tuple[re.Pattern[str], str] | None = None
+
+    def count(self, text: str, low: str) -> int:
+        """Whole-word occurrences in ``text`` (``low`` is ``text.casefold()``, precomputed)."""
+        if self.form not in low:
+            return 0
+        if self.cased is None:
+            return len(self.folded.findall(low))
+        anycase, key = self.cased
+        return sum(1 for m in anycase.finditer(text) if word_case_key(m[0]) == key)
+
+    def search(self, text: str, low: str) -> bool:
+        """Whether ``text`` mentions the form at all."""
+        if self.form not in low:
+            return False
+        if self.cased is None:
+            return self.folded.search(low) is not None
+        anycase, key = self.cased
+        return any(word_case_key(m[0]) == key for m in anycase.finditer(text))
+
+
+def form_matcher(form: str, written: str | None = None) -> FormMatcher:
+    """The matcher every caller builds for a casefolded ``form`` and its written spelling.
+
+    A written spelling that is not a spelling of ``form`` (stale data: the label changed since the
+    last build) is ignored, so the fallback is always the case-folded match."""
+    folded = compile_boundary_pattern(form)
+    if written is None or written.casefold() != form or not is_cased(written):
+        return FormMatcher(form=form, folded=folded)
+    anycase = re.compile(rf"(?<![A-Za-z0-9]){re.escape(form)}(?![A-Za-z0-9])", re.IGNORECASE)
+    return FormMatcher(form=form, folded=folded, cased=(anycase, word_case_key(written)))
 
 
 def match_presence(
@@ -192,40 +259,55 @@ def match_presence(
     chunk_texts: list[tuple[str, str, str]],
     *,
     mode: str = PRESENCE_BOUNDARY,
+    written: Mapping[tuple[str, str], str] | None = None,
 ) -> list[ConceptPresence]:
-    """Deterministic presence — case-folded surface-form match of curated concepts.
+    """Deterministic presence — whole-word surface-form match of curated concepts.
 
     ``concepts`` = ``(concept_id, label)``; ``aliases`` maps ``concept_id`` → surface
     forms; ``chunk_texts`` = ``(chunk_key, document_id, text)`` where ``chunk_key`` is the
     ADR-4 composite ``"{document_id}:p{parent_index}"``. A concept is *present* in a chunk
-    iff one of its case-folded surface forms occurs in the chunk text (Decision 2 — the
-    LLM never decides presence). Returns one ``ConceptPresence`` per ``(concept, document)``
-    with ≥ 1 hit, ``chunk_keys`` sorted, ``n_mentions`` = total surface-form occurrences.
+    iff one of its surface forms occurs in the chunk text (Decision 2 — the LLM never decides
+    presence). Returns one ``ConceptPresence`` per ``(concept, document)`` with ≥ 1 hit,
+    ``chunk_keys`` sorted, ``n_mentions`` = total surface-form occurrences.
+
+    ``written`` maps ``(concept_id, casefolded form)`` → how the library writes that form
+    (``knowledge.written_forms``, ADR-053 decision 3). A form written in a case matches only the
+    spellings that differ from it at most in word-initial letters (:func:`word_case_key`) — ``dIN``
+    not ``Din``, ``Cre`` and ``cre`` but not ``CRE`` — and every other form matches case-folded, as
+    before written forms existed. Without
+    ``written`` (a test, or a library whose skeleton predates them) every form is case-folded.
 
     ``mode`` (R2 / RG-009): ``"boundary"`` (default) counts only whole-word (alnum-bounded)
     occurrences, so ``bert`` does **not** fire inside ``sbert`` / ``colbert`` / ``roberta``
     — the substring-inflation that fabricated co-occurrence edges. ``"substring"`` keeps the
-    original raw ``str.count`` behaviour as the A/B lever for the RG-008 comparison run.
-    Recall is bounded by alias coverage (the curation burden, RG-009).
+    original raw case-folded ``str.count`` behaviour as the A/B lever for the RG-008 comparison
+    run, and ignores ``written``. Recall is bounded by alias coverage (the curation burden,
+    RG-009).
 
     Known accepted looseness (reporting-only today): overlapping alias spans double-count
     ``n_mentions`` — e.g. both ``passage retrieval`` and ``dense passage retrieval`` firing on
     one span. Longest-match span consumption is the upgrade if ``n_mentions`` ever gates.
     """
-    # Pre-fold chunk texts once.
-    folded = [(key, doc_id, text.casefold()) for key, doc_id, text in chunk_texts]
+    if mode not in PRESENCE_MODES:
+        raise ValueError(f"unknown presence mode {mode!r} (expected one of {PRESENCE_MODES})")
+    spellings = written or {}
+    # Fold chunk texts once; the original text stays beside it for forms written in a case.
+    prepared = [(key, doc_id, text, text.casefold()) for key, doc_id, text in chunk_texts]
     # (concept_id, document_id) -> {chunk_key: occurrence_count}
     hits: dict[tuple[str, str], dict[str, int]] = defaultdict(lambda: defaultdict(int))
     for concept_id, label in concepts:
-        forms = _surface_forms(label, aliases.get(concept_id, []))
+        forms = surface_forms(label, aliases.get(concept_id, []))
         if not forms:
             continue
-        matchers = _presence_matchers(forms, mode)
-        for chunk_key, doc_id, low in folded:
-            count = sum(
-                len(pattern.findall(low)) if pattern is not None else low.count(form)
-                for form, pattern in matchers
-            )
+        if mode == PRESENCE_SUBSTRING:
+            for chunk_key, doc_id, _text, low in prepared:
+                count = sum(low.count(form) for form in forms)
+                if count:
+                    hits[(concept_id, doc_id)][chunk_key] += count
+            continue
+        matchers = [form_matcher(form, spellings.get((concept_id, form))) for form in forms]
+        for chunk_key, doc_id, text, low in prepared:
+            count = sum(m.count(text, low) for m in matchers)
             if count:
                 hits[(concept_id, doc_id)][chunk_key] += count
     presences: list[ConceptPresence] = []
@@ -533,6 +615,7 @@ def analyze_skeleton(
             doc_ids=n.doc_ids,
             degree=degree.get(n.id, 0),
             community=community_of.get(n.id, -1),
+            written=n.written,
         )
         for n in sorted(nodes, key=lambda n: n.id)
     )
@@ -573,6 +656,8 @@ def skeleton_to_dict(skeleton: ConceptSkeleton) -> dict[str, Any]:
                 "doc_ids": list(n.doc_ids),
                 "degree": n.degree,
                 "community": n.community,
+                # Only when set, so a node without one serialises exactly as it did before.
+                **({"written": n.written} if n.written else {}),
             }
             for n in skeleton.nodes
         ],
@@ -605,6 +690,7 @@ def skeleton_from_dict(data: dict[str, Any]) -> ConceptSkeleton:
             doc_ids=tuple(n.get("doc_ids", [])),
             degree=int(n.get("degree", 0)),
             community=int(n.get("community", -1)),
+            written=n.get("written") or None,
         )
         for n in data.get("nodes", [])
     )
@@ -1384,6 +1470,7 @@ def build_concept_skeleton(
     doc_graph_loader: Any = None,
     doc_years_loader: Any = None,
     stance_loader: Any = None,
+    written_loader: Any = None,
     skeleton_dir: Path | None = None,
 ) -> SkeletonResult:
     """Build the deterministic concept skeleton (Node A) — **zero LLM calls**.
@@ -1413,6 +1500,13 @@ def build_concept_skeleton(
         CONCEPT_SKELETON_PRESENCE_MODE,
         CONCEPT_SKELETON_SEED,
     )
+    from doc_assistant.knowledge.written_forms import (
+        cased_label,
+        derive_written_forms,
+        load_vocabulary,
+        replace_written_forms,
+        spelling_map,
+    )
 
     min_cooc = CONCEPT_SKELETON_MIN_COOCCURRENCE if min_cooccurrence is None else min_cooccurrence
     seed_val = CONCEPT_SKELETON_SEED if seed is None else seed
@@ -1430,7 +1524,19 @@ def build_concept_skeleton(
     citation_pairs, doc_sim_pairs = load_g()
     doc_years = load_y()
 
-    presences = match_presence(concepts, aliases, chunk_texts, mode=mode)
+    # ADR-053 decision 3: how the library writes each surface form, voted from these same chunks —
+    # for the whole vocabulary, since definitions and the vocabulary search reach concepts off the
+    # graph. A test that injects its own vocabulary derives over that, with no database.
+    if written_loader is not None:
+        written_forms = list(written_loader(chunk_texts))
+    elif concept_loader is not None:
+        written_forms = derive_written_forms(concepts, aliases, chunk_texts)
+    else:
+        vocabulary, vocabulary_aliases = load_vocabulary()
+        written_forms = derive_written_forms(vocabulary, vocabulary_aliases, chunk_texts)
+    spellings = spelling_map(written_forms)
+
+    presences = match_presence(concepts, aliases, chunk_texts, mode=mode, written=spellings)
     doc_index = _concept_doc_index(presences)
 
     edges = cooccurrence_edges(presences, min_cooccurrence=min_cooc)
@@ -1449,6 +1555,7 @@ def build_concept_skeleton(
             doc_ids=tuple(sorted(doc_index.get(cid, set()))),
             degree=0,
             community=-1,
+            written=cased_label(label, spellings.get((cid, label.strip().casefold()))),
         )
         for cid, label in concepts
     ]
@@ -1475,6 +1582,10 @@ def build_concept_skeleton(
         version = str(skeleton.meta["graph_version"])
         _write_skeleton_rows(skeleton, presences, version)
         _write_skeleton_json(skeleton, root)
+        # Only a full-corpus build may replace the library-wide written forms: a vote over some
+        # documents would overwrite the vote over all of them.
+        if document_ids is None:
+            replace_written_forms(written_forms)
 
     return SkeletonResult(
         skeleton=skeleton,
@@ -1484,4 +1595,6 @@ def build_concept_skeleton(
         n_isolated=n_isolated,
         provenance_counts=provenance_counts,
         applied=apply,
+        n_written_forms=len(written_forms),
+        n_cased_forms=sum(1 for f in written_forms if f.cased),
     )

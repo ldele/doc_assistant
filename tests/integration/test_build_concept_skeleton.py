@@ -25,6 +25,7 @@ from doc_assistant.db.models import (
     ConceptAlias,
     ConceptEdge,
     ConceptPresenceRow,
+    ConceptWrittenForm,
     DocSimilarity,
     Document,
 )
@@ -244,3 +245,55 @@ def test_build_never_touches_chunk_store(env: Path) -> None:
     assert not (env / "chroma").exists()
     assert not (env / "chroma_pc").exists()
     assert _count(Document) == 2
+
+
+def test_written_forms_are_stored_beside_the_label_never_into_it(env: Path) -> None:
+    """ADR-053 decision 3 / ADR-043: the build votes how the prose writes each label, stores it in
+    its own table, on the node and in skeleton.json, and matches presence with it. The curated
+    label is never rewritten."""
+    with session_scope() as session:
+        doc_ids = []
+        for name in ("n1", "v1"):
+            doc = Document(
+                filename=f"{name}.pdf",
+                source_original=f"{name}.pdf",
+                doc_hash=f"h{name}",
+                format="pdf",
+            )
+            session.add(doc)
+            session.flush()
+            doc_ids.append(str(doc.id))
+        din = Concept(label="din", source="keyword", graph_include=True)
+        session.add(din)
+        session.flush()
+        din_id = str(din.id)
+    n1, v1 = doc_ids
+
+    def loader(document_ids: list[str] | None = None) -> list[tuple[str, str, str]]:
+        return [
+            (
+                f"{n1}:p0",
+                n1,
+                "Recordings from the dIN population show a steady rhythm. "
+                "In every larva the dIN cells fire first.",
+            ),
+            (f"{v1}:p0", v1, "A diet with vitamin Din adults was not studied in this cohort."),
+        ]
+
+    skeleton_dir = env / "skeleton"
+    result = build_concept_skeleton(
+        apply=True, min_cooccurrence=1, presence_loader=loader, skeleton_dir=skeleton_dir
+    )
+
+    (node,) = result.skeleton.nodes
+    assert node.written == "dIN"
+    assert node.doc_ids == (n1,)  # the vitamin-Din document is not a mention of dIN
+    assert (result.n_written_forms, result.n_cased_forms) == (1, 1)
+    with session_scope() as session:
+        concept = session.get(Concept, din_id)
+        assert concept is not None and concept.label == "din"  # never rewritten
+        row = session.execute(select(ConceptWrittenForm)).scalar_one()
+        assert (row.concept_id, row.form, row.written) == (din_id, "din", "dIN")
+        assert json.loads(row.votes_json) == {"dIN": 1, "Din": 1}
+    data = json.loads((skeleton_dir / "skeleton.json").read_text(encoding="utf-8"))
+    assert data["nodes"][0]["written"] == "dIN"

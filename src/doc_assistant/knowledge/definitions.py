@@ -42,7 +42,7 @@ import hashlib
 import json
 import re
 from collections import Counter, defaultdict
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -58,7 +58,7 @@ from doc_assistant.db.models import (
     ConceptDefinitionEvent,
     Document,
 )
-from doc_assistant.knowledge.concept_skeleton import compile_boundary_pattern
+from doc_assistant.knowledge.concept_skeleton import form_matcher
 
 log = structlog.get_logger(__name__)
 
@@ -255,10 +255,13 @@ class _ConceptScan:
         return sorted(self.per_doc, key=lambda d: (-self.per_doc[d], d))
 
 
-def _document_sentences(
+def document_sentences(
     chunks: Iterable[tuple[str, str, str]],
 ) -> dict[str, list[tuple[str, str, str]]]:
-    """Every document's prose sentences in reading order: ``doc -> [(chunk_key, span, low)]``."""
+    """Every document's prose sentences in reading order: ``doc -> [(chunk_key, span, low)]``.
+
+    Body prose only — the bibliography cut, headings, tables and lists dropped — so it is also the
+    text ``written_forms`` votes on (ADR-053 decision 3)."""
     ordered: dict[str, list[tuple[int, str, str]]] = defaultdict(list)
     for chunk_key, document_id, text in chunks:
         try:
@@ -277,23 +280,28 @@ def _document_sentences(
 
 
 def _scan(
-    concepts: Sequence[tuple[str, str]], chunks: Iterable[tuple[str, str, str]]
+    concepts: Sequence[tuple[str, str]],
+    chunks: Iterable[tuple[str, str, str]],
+    written: Mapping[str, str] | None = None,
 ) -> dict[str, _ConceptScan]:
     """Each concept's mentions, sorted into definition shapes and plain uses. A concept that
     appears nowhere is absent. Matches the **label only** — aliases are different phrases and bring
-    their own meanings in (``tests/eval/baselines/isa_head_suffix_2026-09-20.md``)."""
-    sentences = _document_sentences(chunks)
+    their own meanings in (``tests/eval/baselines/isa_head_suffix_2026-09-20.md``). ``written``
+    maps ``concept_id`` → how the library writes the label (``written_forms.label_spellings``), so
+    a sentence about ``Din`` is not a mention of ``dIN`` (ADR-053 decision 3)."""
+    sentences = document_sentences(chunks)
+    spellings = written or {}
     out: dict[str, _ConceptScan] = {}
     for concept_id, label in concepts:
         form = label.casefold().strip()
         if not form:
             continue
-        mention = compile_boundary_pattern(form)
+        mention = form_matcher(form, spellings.get(concept_id))
         coined_re, named_re, defining_re = _form_patterns(form)
         scan = _ConceptScan()
         for document_id, spans in sentences.items():
             for chunk_key, span, low in spans:
-                if form not in low or not mention.search(low):
+                if not mention.search(span, low):
                     continue
                 scan.per_doc[document_id] += 1
                 if coined_re.search(low):
@@ -314,6 +322,7 @@ def find_usages(
     chunks: Iterable[tuple[str, str, str]],
     *,
     per_concept: int = USAGE_EXAMPLES,
+    written: Mapping[str, str] | None = None,
 ) -> dict[str, list[UsageExample]]:
     """How the library uses each concept: the first plain use in each of the documents that use it
     most, one per document.
@@ -321,10 +330,10 @@ def find_usages(
     ADR-053's second layer — *how your library uses it* — kept apart from the definition
     candidates: on the user's labels a first mention defined the term 3 times in 45
     (``tests/eval/baselines/definition_labels_2026-09-22.md``). A sentence shaped as a definition
-    is a candidate, not a use, so it is skipped here. Pure.
+    is a candidate, not a use, so it is skipped here. ``written`` as in :func:`_scan`. Pure.
     """
     out: dict[str, list[UsageExample]] = {}
-    for concept_id, scan in _scan(concepts, chunks).items():
+    for concept_id, scan in _scan(concepts, chunks, written).items():
         examples: list[UsageExample] = []
         for rank, document_id in enumerate(scan.doc_order(), start=1):
             if len(examples) >= per_concept:
@@ -352,17 +361,18 @@ def find_passages(
     chunks: Iterable[tuple[str, str, str]],
     *,
     per_concept: int = PASSAGES_PER_CONCEPT,
+    written: Mapping[str, str] | None = None,
 ) -> dict[str, list[PassageHit]]:
     """Candidate definition sentences for each ``(id, label)``, from ``(chunk_key, doc_id, text)``.
 
     Pure. Only sentences with a definition's shape — coined, named, defining; duplicates of one
     text are kept once. A first mention is no longer one of them: it is how the library *uses* a
     word, and ``find_usages`` returns it (ADR-053, amended 2026-09-22). A concept with no such
-    sentence is absent from the result.
+    sentence is absent from the result. ``written`` as in :func:`_scan`.
     """
     labels = dict(concepts)
     out: dict[str, list[PassageHit]] = {}
-    for concept_id, scan in _scan(concepts, chunks).items():
+    for concept_id, scan in _scan(concepts, chunks, written).items():
         if not scan.shaped:
             continue
         form = labels[concept_id].casefold().strip()
@@ -916,7 +926,9 @@ def extract_definitions(
         from doc_assistant.knowledge.concept_skeleton import load_presence_inputs
 
         chunks = load_presence_inputs(None)
-    hits = find_passages(concepts, chunks)
+    from doc_assistant.knowledge.written_forms import label_spellings
+
+    hits = find_passages(concepts, chunks, written=label_spellings(concepts))
     result = ExtractResult(
         n_concepts=len(concepts),
         n_with_passages=sum(1 for h in hits.values() if h),
@@ -981,7 +993,10 @@ def load_usage(concept_id: str, *, index_file: Path | None = None) -> ConceptUsa
     chunks = chunks_mentioning([label], index_file=index_file, top_docs=2 * USAGE_EXAMPLES)
     if chunks is None:
         return ConceptUsage(concept_id=concept_id, available=False)
-    found = find_usages([(concept_id, label)], chunks).get(concept_id, [])
+    from doc_assistant.knowledge.written_forms import label_spellings
+
+    one = [(concept_id, label)]
+    found = find_usages(one, chunks, written=label_spellings(one)).get(concept_id, [])
     with session_scope() as session:
         titles = {
             str(i): (t or f)

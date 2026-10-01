@@ -38,6 +38,115 @@ Format: What changed | Why | Rejected alternatives | What it opens
 
 ---
 
+## 2026-10-01 (7) — The secret gate's first CI run was red, and right: on Windows the scanner had been skipping 47 files (S-14)
+
+**What changed.**
+- **The scanner reads every file as UTF-8, on both platforms.** `scripts/secret_scan_gate.py`
+  starts the scanner with `python -X utf8`, and `.pre-commit-config.yaml` overrides the hook's
+  `entry` to do the same (same repository, same rev).
+- **`.secrets.baseline` records three more findings**, added by a scan run in UTF-8 mode: a fake
+  id in `tests/unit/test_chat_controller.py` and two fake keys quoted in an archived DEVLOG entry.
+  Its plugins, filters and existing entries are unchanged.
+- The gate prints a finding's path with forward slashes, so a Windows run and CI name it alike.
+
+**Why.** CI on `07f4b50` failed at the new secret-scan step with three unrecorded findings, while
+the same gate passed here. `detect-secrets` opens a file in the platform's default encoding and
+treats a decode error as "binary, skip". On Windows that encoding is cp1252, and a UTF-8 file
+with one byte cp1252 does not define — a curly closing quote is enough — is skipped whole, with
+no message. Linux read every file. So the hook that runs before every commit on this machine had
+never looked inside those files, and the gate's "837 files scanned" was not true here.
+
+**Measured.**
+- 47 of 838 tracked files are UTF-8 text that cp1252 cannot decode: 20 under `apps/`, 16 under
+  `docs/`, 5 tests, 3 under `src/`, 2 data files, 1 at the root; 28 are code or tests.
+- The scanner's plugins match all three lines when handed them directly; its file scan reported
+  none of them in the default encoding and all three with `-X utf8`. Line endings and path
+  separators make no difference.
+- After the change the gate gives the same verdict on Windows and in a Linux run (WSL) of this
+  tree: 838 files, nothing unrecorded. The suite: 2,638 passed.
+- The reconfigured hook fails on a scratch file holding a curly quote and the published example
+  key, names the file and not the key, and passes over every tracked file.
+
+**Rejected.**
+- `# pragma: allowlist secret` on the two DEVLOG lines: the archive is kept verbatim.
+- Setting `PYTHONUTF8=1` for the whole machine: it changes every Python program on it, and the
+  repository's rule is an explicit encoding where the file is opened.
+- Replacing the upstream hook with a local one in the project's environment: the `entry`
+  override keeps the pinned rev and changes one thing.
+- Leaving the local hook as it was because CI now catches it: CI runs after the push, and in a
+  public repository that is after the key is out.
+
+**What it opens.**
+- Until this is pushed, `main` is red.
+- The same default hides in any tool that opens a file without naming an encoding. The
+  repository's own code is covered by its encoding rule; third-party tools are not, and the way
+  this one was found was a second platform disagreeing with the first.
+- A baseline entry is a hash at a line: the three new ones are fake values, read before they were
+  recorded.
+
+---
+
+## 2026-10-01 (6) — The test suite runs on a data directory of its own (KI-60 closed)
+
+**What changed.**
+- **One redirect for everything.** `tests/conftest.py` sets `DOC_DATA_DIR` to a fresh, empty
+  directory before `doc_assistant.config` is first imported: `.pytest-data/run-<pid>-<token>/`
+  in the repository (gitignored), made for the run and removed when it ends. The library
+  database, the vector stores, the extraction cache, the session logs, the settings file and the
+  graph sidecars all resolve inside it, in the test process and in any subprocess a test starts.
+- **It fails closed.** If `config` was imported before the conftest could set the variable, the
+  run stops before any test and names what `config` resolved.
+- **Cleaning up.** At the end the default database engine is disposed and every Chroma system the
+  run opened is stopped, then the directory is removed. A directory left by a killed run is swept
+  by a later run once it is a day old. `DOC_TESTS_KEEP_DATA_HOME=1` keeps the directory and prints
+  its path, to see what the tests wrote.
+- The session fixture of entry (5) is gone: the default engine is bound inside the run's
+  directory by construction.
+- `tests/unit/test_suite_data_home.py` (14) pins the mechanism: no path in `config` points into
+  the repository's `data/`, each default store is inside the run's directory, a subprocess lands
+  in the same one, a run whose `config` was imported first is refused, and only a stale run
+  directory is swept.
+
+**Why.** Entry (5) fixed the database and measured what was left. The same run-by-run debris had
+been landing in the working library for months: 945 of the 946 folders under
+`data/cache/referenced/` are named after test fixtures (`a.md`, `b.md`, `gone.md` …), and the
+4,740 timestamped session logs in `data/exports/` include every test run's (about 37 each). None
+of it failed a test, so nothing would have stopped the next thing a test wrote.
+
+**Measured.**
+- **Before the change, with the data directory pointed at an empty folder:** the suite passes
+  unchanged (2,623 tests) and writes 76 files there — 38 extraction-cache files in 19 folders,
+  37 session logs, and one vector store. `tests/unit/test_wiki.py` is the test that opens the
+  default store, which creates it when it is absent.
+- **After it:** every file under `data/` except `sources/` and the backups, compared by size and
+  modification time before and after a full run — 7,815 files, none added, removed or changed;
+  the working database and both vector stores keep their timestamps. 2,636 tests pass (coverage 92.7%), and `.pytest-data/` is
+  gone when the run ends.
+- **Chroma holds its file.** On chromadb 1.5.9 a directory with an open store cannot be removed
+  on Windows, and dropping the client does not release it; stopping the cached systems does.
+
+**Rejected.**
+- The system temp directory. `config` moves the vector stores to `%PROGRAMDATA%` when the data
+  path is not ASCII (KI-11), and the temp path of a Windows account with an accented name is not:
+  the tests' stores would land in the machine-wide directory the installed app uses, outside
+  anything a run removes. In the repository the path is ASCII whenever the checkout is.
+- `os.environ.setdefault`: a developer who exports `DOC_DATA_DIR` to run the app against a library
+  elsewhere would hand that library to the tests.
+- Keeping the session engine fixture beside the redirect: two mechanisms for one guarantee.
+- Failing the session when `data/` changed during it: it would fail whenever the app is used
+  while the tests run.
+- Changing `test_wiki.py` so it stops opening the default store: it is contained now.
+
+**What it opens.**
+- The debris earlier runs left in the working `data/` is still there; removing it is the user's
+  call.
+- ROADMAP 76's shared-fixture item is done, and with it KI-58's second open half: a test can no
+  longer pass on this machine because the working library exists. The Windows CI job is open.
+- `wiki.sample_chunks` creates an empty vector store when it reads a missing one — a read with a
+  side effect, left as found.
+
+---
+
 ## 2026-10-01 (5) — The test suite no longer reaches the working library's database (KI-60)
 
 **What changed.** `tests/conftest.py` gains a session fixture that binds the database layer's

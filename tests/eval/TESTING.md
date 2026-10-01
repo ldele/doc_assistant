@@ -17,6 +17,13 @@ correct. They cannot tell you whether an answer is *good* — only that one come
 back without crashing. That is the eval tier's job, which is why it is separate:
 judging answer quality needs a real corpus, real retrieval, and a real judge.
 
+**The merge gate runs on a data directory of its own.** `tests/conftest.py` points
+every unit and integration test at an empty directory under `.pytest-data/`, made
+for the run and removed when it ends. A test cannot read or write the working
+library in `data/`, so it passes or fails here as it does on a fresh checkout. A
+test that needs a store builds it under `tmp_path`. The eval tier is the opposite
+on purpose: it runs through `scripts/run_eval`, outside pytest, on the real corpus.
+
 **Opt-in: table retrieval.** [`cases.tables.yaml`](cases.tables.yaml) is a separate,
 opt-in eval (not part of the one-command public run) that guards table-grounded
 answers — it asks for a value that lives only inside a table and checks the answer

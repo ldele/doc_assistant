@@ -111,6 +111,19 @@ def test_a_moved_line_passes_and_the_baseline_is_never_rewritten(
     assert baseline.read_bytes() == recorded
 
 
+def test_a_file_the_windows_default_encoding_cannot_decode_is_still_scanned(repo: Path) -> None:
+    """The scanner opens a file in the platform's default encoding and treats a decode error as
+    "binary, skip". On Windows that is cp1252, so a UTF-8 file with one byte cp1252 does not
+    define was skipped whole — key and all — while Linux read it. That is how the gate's first CI
+    run found three things the local run had never seen. The gate runs the scanner in UTF-8 mode;
+    on Linux this test passes either way, on Windows only with it."""
+    closing_quote = chr(0x201D)  # UTF-8 E2 80 9D, and 0x9D means nothing in cp1252
+    with pytest.raises(UnicodeDecodeError):
+        closing_quote.encode("utf-8").decode("cp1252")
+    _track(repo, "notes.md", f"She wrote {closing_quote}done{closing_quote}.\n\n{LEAK}")
+    assert gate.main(["--root", str(repo)]) == 1
+
+
 def test_named_files_are_scanned_instead_of_the_tracked_list(repo: Path) -> None:
     (repo / "untracked.py").write_text(LEAK, encoding="utf-8")
     assert gate.main(["--root", str(repo)]) == 0  # git does not track it
@@ -167,6 +180,7 @@ def test_the_hook_runs_offline_against_a_copy_of_the_baseline(
     monkeypatch.setattr(gate.subprocess, "run", run)
     assert gate.main(["--root", str(repo), "clean.py", gate.BASELINE_NAME]) == 0
     (command,) = seen
+    assert command[1:3] == ["-X", "utf8"]  # the interpreter's own flags, ahead of `-m`
     assert "--no-verify" in command
     given = Path(command[command.index("--baseline") + 1])
     assert given.name == gate.BASELINE_NAME and given.parent != repo
@@ -235,6 +249,9 @@ def test_findings_are_read_from_the_report_and_carry_no_value() -> None:
     report = json.dumps({"results": {"a.py": [hit]}})
     assert gate.parse_findings(report) == [gate.Finding("AWS Access Key", "a.py", 4)]
     assert "0123abcd" not in gate.render(gate.Verdict(1, gate.parse_findings(report), False))
+    # The scanner reports a path in the local separator: Windows and CI must name it alike.
+    windows = json.dumps({"results": {"docs\\archive\\x.md": [hit]}})
+    assert gate.parse_findings(windows)[0].filename == "docs/archive/x.md"
 
 
 @pytest.mark.parametrize("report", ["", "not json", "{}", '{"results": {}}', '{"results": []}'])

@@ -76,7 +76,9 @@ module, read that module's file and stay inside its boundary:
   Console output is cp1252 (`scripts/*` entrypoints pin
   `sys.stdout.reconfigure(encoding="utf-8")` behind a `hasattr` guard); file I/O defaults to the ANSI
   codepage (pass `encoding="utf-8"` on **every** `open`/`read_text`/`write_text`); PowerShell 5.1
-  reads a BOM-less UTF-8 file as ANSI, so `.ps1`/`.wsb` stay **ASCII-only**. Full text +
+  reads a BOM-less UTF-8 file as ANSI, so `.ps1`/`.wsb` stay **ASCII-only**. A third-party tool
+  that reads the repository has the same default: the secret scanner runs under `python -X utf8`
+  (it skipped 47 files without it). Full text +
   the failures each rule comes from: `.claude/CONTEXT.md` §9, `docs/setup.md` § Windows: text encoding.
 - Engineering preferences (design principles + working protocol) live in cpc **CONVENTIONS**
   §12/§13 — read there, don't restate. The cpc gates run **locally only** from the vendored,

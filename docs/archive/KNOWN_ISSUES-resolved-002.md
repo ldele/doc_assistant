@@ -1,8 +1,8 @@
-<!-- status: archived · updated: 2026-09-16 · class: disposable -->
+<!-- status: archived · updated: 2026-10-01 · class: disposable -->
 
 # KNOWN ISSUES — resolved (archive 002)
 
-Closed entries moved **verbatim** out of `.claude/KNOWN_ISSUES.md` on 2026-09-10, and KI-48 on 2026-09-16 (the file's own shape rule: open issues in full, closed ones as one-line index rows). Same split as archive 001. Numbering is global and never reused.
+Closed entries moved **verbatim** out of `.claude/KNOWN_ISSUES.md` on 2026-09-10, and KI-48 on 2026-09-16 (the file's own shape rule: open issues in full, closed ones as one-line index rows). Same split as archive 001. Numbering is global and never reused. KI-60 (last entry) was filed and closed on 2026-10-01; its account here is the closed one, with the measurements taken after the fix.
 
 ## KI-52 — deleting a document from the Library left its registry row behind, so the app reported a file as *missing* that the user deleted through the app — **FIXED 2026-08-28**
 
@@ -957,3 +957,66 @@ it alters user-facing output and deserves its own call.
   `coll.get(include=[...])` over a whole collection — that is the bug.
 - **Verified live (2026-07-25):** API boot rebuilt the BM25 index over all 33,163 chunks and a real
   `$0` Ollama turn returned a cited answer (10 sources, reranker 0.98→0.86, `is_local: true`).
+
+## KI-60 — the test suite reached the working library: a full run applied a schema migration to `data/library.db`, every run left cache files and session logs under `data/`, and one test opened the working vector store — **FIXED 2026-10-01** (found and fixed the same day)
+
+**What happened.** On 2026-10-01 a full `pytest` run, on a working tree that added the column
+`concept_aliases.breadth`, added that column to the working `data/library.db`. `db.session` binds
+its engine to the configured database at import. `tests/integration/test_reingest_routes.py` and
+`tests/integration/test_ingest_progress.py` enter the app's lifespan (`with TestClient(app)`)
+without swapping the engine, and the lifespan's first act is `init_db()`. While the schema is
+current that is a no-op, which is why it went unseen: the first run after a session adds a column
+or a table applies it to the developer's library before the app has ever been started on that
+code.
+
+**Checked afterwards, read-only.** `PRAGMA integrity_check` ok · no alias carried a breadth mark ·
+593 concept labels and 404 alias rows identical to the backup of 2026-09-01. The column was the
+only change, and it is the one the app's own startup would have made.
+
+**The rest of the data directory, measured.** With `DOC_DATA_DIR` pointed at an empty folder, one
+full run (2,623 tests, all passing) wrote 76 files there:
+- 38 extraction-cache files in 19 `cache/referenced/<hash>/` folders — the ingest tests' own
+  documents. The hash follows the temporary path, so every run added new folders.
+- 37 per-turn session logs under `exports/`, from chat turns driven by route tests.
+- one vector store: `tests/unit/test_wiki.py` reaches `wiki.sample_chunks`, which opens the
+  default store and creates it when it is absent.
+
+On the developer's machine the same writes had been landing in the working library: 945 of the
+946 folders under `data/cache/referenced/` were named after test fixtures (`a.md`, `b.md`,
+`gone.md` …), the 4,740 timestamped session logs in `data/exports/` included every test run's, and
+each run added a row to the working vector store's lock table (its content unchanged: 1
+collection, 18,011 embeddings).
+
+**Fixed 2026-10-01 — the suite runs on a data directory of its own.** `tests/conftest.py` sets
+`DOC_DATA_DIR` to a fresh, empty directory (`.pytest-data/run-<pid>-<token>/`, gitignored) before
+`doc_assistant.config` is first imported, so every default store resolves there, in the test
+process and in any subprocess it starts. It fails closed: if `config` was imported first, the run
+stops before any test and says what `config` resolved. At the end the default engine is disposed,
+every Chroma system the run opened is stopped (chromadb keeps a store's file locked through its
+own cache of systems; dropping the client does not release it), and the directory is removed. A
+directory a killed run left behind is swept once it is a day old. `DOC_TESTS_KEEP_DATA_HOME=1`
+keeps the directory and prints its path. A first fix the same day — a session fixture that
+rebound only the default database engine — was replaced by this.
+
+**Why the directory is in the repository and not in the system temp directory.**
+`config._chroma_base` moves the vector stores to `%PROGRAMDATA%` when the data path is not ASCII
+(KI-11), and the temp path of a Windows account with an accented name is not. A data home there
+would have put the tests' vector stores in the machine-wide directory the installed app uses,
+outside anything a run removes.
+
+**Measured after the fix.** Every file under `data/` except `sources/` and the backups, compared
+by size and modification time before and after a full run: 7,815 files, none added, removed or
+changed, and the working database and both vector stores keep their timestamps. 2,636 tests pass. `.pytest-data/` is gone
+when the run ends.
+
+**Do not undo:**
+- the assignment of `DOC_DATA_DIR` at the top of `tests/conftest.py`, ahead of every
+  `doc_assistant` import, and the check under it. `os.environ.setdefault` is not equivalent: a
+  developer who exports `DOC_DATA_DIR` to run the app against another library would hand that
+  library to the tests;
+- `tests/unit/test_suite_data_home.py` (14 tests): no path in `config` points into the
+  repository's `data/`, a subprocess lands in the same directory, and a run whose `config` was
+  imported first is refused.
+
+**Left as found:** the debris earlier runs left in the working `data/` (the developer's to
+remove), and `wiki.sample_chunks`, which creates an empty store when it reads a missing one.

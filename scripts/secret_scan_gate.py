@@ -10,13 +10,19 @@ finding in the file and exits 0, so a key pushed past the local hook turned the 
 (`docs/security.md` S13) — a check that cannot fail is not a control. The hook is the command that
 compares, and it is the one pre-commit already runs on a commit.
 
-Two differences from the hook as pre-commit runs it, both on purpose:
+Three differences from the hook as pre-commit runs it, all on purpose:
 
 * **It never rewrites the baseline.** When recorded line numbers have moved, the hook rewrites the
   file it was given and exits 3. Here it is given a temporary copy, and a baseline that is only out
   of date is reported and passes: a gate that edits a tracked file is a second source of diffs.
 * **It makes no network call** (`--no-verify`). The hook can ask a provider whether a candidate key
   is live and drop the ones that are not; a gate that fails closed keeps them, and stays offline.
+* **It reads every file as UTF-8** (`python -X utf8`). The scanner opens a file in the platform's
+  default encoding and treats a decode error as "binary, skip". On Windows that default is cp1252,
+  and a UTF-8 file with one byte cp1252 does not define — a curly closing quote is enough — is
+  skipped whole: 47 of this repository's 838 tracked files on 2026-10-01, source files among
+  them. The first CI run of this gate (Linux, UTF-8) reported three findings the Windows run had
+  never seen. UTF-8 mode makes the two platforms scan the same text.
 
 Exit codes: 0 — nothing unrecorded · 1 — an unrecorded secret · 2 — the scan could not run (no
 baseline, no file list, or the hook failed). The last fails closed: a gate that cannot look must
@@ -54,6 +60,11 @@ MAX_BATCH_CHARS = 20_000
 HOOK_CLEAN = 0
 HOOK_FOUND = 1
 HOOK_BASELINE_REWRITTEN = 3
+
+#: Interpreter flags for the scanner's process: UTF-8 mode, so `open()` without an encoding reads
+#: UTF-8 on every platform. Without it the scanner skips, on Windows, each file cp1252 cannot
+#: decode — silently, as if it were binary (see the module docstring).
+UTF8_MODE = ("-X", "utf8")
 
 
 @dataclass(frozen=True)
@@ -104,7 +115,13 @@ def parse_findings(report: str) -> list[Finding]:
     try:
         results = json.loads(report)["results"]
         found = [
-            Finding(type=str(hit["type"]), filename=str(filename), line=int(hit["line_number"]))
+            Finding(
+                type=str(hit["type"]),
+                # The scanner reports in the local separator; one form, so a Windows run and
+                # CI's name the same file the same way.
+                filename=str(filename).replace("\\", "/"),
+                line=int(hit["line_number"]),
+            )
             for filename, hits in results.items()
             for hit in hits
         ]
@@ -148,6 +165,7 @@ def scan(files: Sequence[str], *, root: Path, baseline: Path) -> Verdict:
             proc = subprocess.run(
                 [
                     sys.executable,
+                    *UTF8_MODE,
                     "-m",
                     "detect_secrets.pre_commit_hook",
                     "--no-verify",

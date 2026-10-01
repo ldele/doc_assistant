@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-08-07 (new: Windows text-encoding rules) · class: living -->
+<!-- status: active · updated: 2026-10-01 (Windows text encoding: a third-party tool has the same default — the secret scanner skipped 47 files) · class: living -->
 
 # Setup
 
@@ -139,6 +139,15 @@ fail on any of this** — a green suite is not evidence that a runner works in a
 The file-I/O rule is a convention, not a lint: ruff's `PLW1514` is not enabled. The PowerShell rule
 is what the two "LogonCommand never fires" sandbox failures in
 [`desktop-packaging.md`](desktop-packaging.md) §5 actually were.
+
+**A third-party tool has the same file-I/O default, and can hide the failure.** `detect-secrets`
+opened each file in cp1252 and treated a decode error as "binary, skip", so on Windows it never
+scanned 47 of the repository's 838 tracked files — any UTF-8 file with a byte cp1252 does not
+define, a curly closing quote included — and said nothing. The first Linux run of the same scan
+disagreed, which is how it was found (2026-10-01, [`security.md`](security.md) S14). The scanner
+now runs under `python -X utf8`, in the pre-commit hook and in `scripts/secret_scan_gate.py`.
+When a tool that reads the repository answers differently here and in CI, suspect the encoding
+before the tool's logic.
 
 ## Windows troubleshooting: SSL crash on a `uv`-managed Python
 

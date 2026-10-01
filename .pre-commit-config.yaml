@@ -61,11 +61,18 @@ repos:
         args: [-r, src/, -c, pyproject.toml]
         pass_filenames: false
 
-  # detect-secrets: secret scanning
+  # detect-secrets: secret scanning.
+  # `entry` runs the same hook in Python's UTF-8 mode. The scanner opens a file in the platform's
+  # default encoding and treats a decode error as "binary, skip": on Windows (cp1252) it skipped
+  # every UTF-8 file holding a byte cp1252 does not define — a curly closing quote is enough —
+  # which was 47 of 838 tracked files on 2026-10-01, source files among them, with no message.
+  # CI (Linux) read them all, so the two disagreed (docs/security.md S14). Same rev as before;
+  # scripts/secret_scan_gate.py runs the scanner the same way over every tracked file in CI.
   - repo: https://github.com/Yelp/detect-secrets
     rev: v1.5.0
     hooks:
       - id: detect-secrets
+        entry: python -X utf8 -m detect_secrets.pre_commit_hook
         args: [--baseline, .secrets.baseline]
 
   # Standard file hygiene

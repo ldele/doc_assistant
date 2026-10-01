@@ -7,6 +7,9 @@ dist/
 build/
 .venv*/
 .pytest_cache/
+# The test suite's own data directory, one sub-directory per run, removed when the run ends
+# (tests/conftest.py). It keeps every test off the working library in data/.
+.pytest-data/
 .coverage
 .mypy_cache/
 # `just typecheck-strict` keeps the divergent flag set in its own cache dir, so the two option

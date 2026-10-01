@@ -86,11 +86,14 @@ class FieldMemberPayload(BaseModel):
 
     `origin` is "curated" (a user edit or the ANZSRC seed) or "proposed" (an ADR-028 D8 auto-fill
     awaiting accept-or-delete) — the UI must not render a machine guess as the user's own edit.
+    `written` is a concept's label as the library writes it when it writes it in a case, shown
+    instead of `label` (ADR-054); `None` for a document.
     """
 
     id: str
     label: str
     origin: str = "curated"
+    written: str | None = None
 
 
 class FieldDetailPayload(BaseModel):
@@ -109,7 +112,8 @@ class FieldDetailPayload(BaseModel):
             id=d.id,
             label=d.label,
             concepts=[
-                FieldMemberPayload(id=m.id, label=m.label, origin=m.origin) for m in d.concepts
+                FieldMemberPayload(id=m.id, label=m.label, origin=m.origin, written=m.written)
+                for m in d.concepts
             ],
             documents=[
                 FieldMemberPayload(id=m.id, label=m.label, origin=m.origin) for m in d.documents
@@ -124,6 +128,8 @@ class ProposedEdgePayload(BaseModel):
 
     `source_kind` says what the narrower end is — a concept for both edge types, since only a
     concept or a field is ever proposed a parent, and the UI labels the row with it.
+    `source_written` / `target_written` are a concept end's label as the library writes it when it
+    writes it in a case — shown instead of the label (ADR-054).
     """
 
     source_id: str
@@ -132,6 +138,8 @@ class ProposedEdgePayload(BaseModel):
     target_id: str
     target_label: str
     type: Literal["is_a", "in_field"]
+    source_written: str | None = None
+    target_written: str | None = None
 
 
 class ProposalsPayload(BaseModel):
@@ -150,6 +158,8 @@ class ProposalsPayload(BaseModel):
                     target_id=e.target_id,
                     target_label=e.target_label,
                     type=e.type,  # type: ignore[arg-type]
+                    source_written=e.source_written,
+                    target_written=e.target_written,
                 )
                 for e in edges
             ]

@@ -36,7 +36,11 @@ class ConceptGraphNodePayload(BaseModel):
 
     `written` is how the library writes the label when it writes it in a case (`dIN`, `Cre`) —
     derived at build time, shown instead of `label`, never a rewrite of it (ADR-053 decision 3).
-    `None` for a lower-case written form, or a skeleton built before written forms existed."""
+    `None` for a lower-case written form, or a skeleton built before written forms existed.
+
+    `doc_ids` is presence: the documents an **exact** form occurs in (ADR-054). `broad_doc_ids`
+    are the documents only a form the user marked *broad* reaches, and `broad_forms` names those
+    forms. A client shows them beside the document count and never adds them to it."""
 
     id: str
     label: str
@@ -44,6 +48,8 @@ class ConceptGraphNodePayload(BaseModel):
     degree: int
     community: int
     written: str | None = None
+    broad_doc_ids: list[str] = []
+    broad_forms: list[str] = []
 
     @classmethod
     def from_node(cls, n: ConceptNode) -> ConceptGraphNodePayload:
@@ -54,6 +60,8 @@ class ConceptGraphNodePayload(BaseModel):
             degree=n.degree,
             community=n.community,
             written=n.written,
+            broad_doc_ids=list(n.broad_doc_ids),
+            broad_forms=list(n.broad_forms),
         )
 
 
@@ -130,10 +138,13 @@ class GapPayload(BaseModel):
 class GapListItemPayload(BaseModel):
     """One gap for the first-class gap-list surface (ROADMAP E5) — a gap with its concept `label`
     resolved server-side and the **effective** `status` (a user triage override wins; ADR-017 C1).
-    Distinct from `GapPayload`, which rides in the graph payload and joins labels by node id."""
+    Distinct from `GapPayload`, which rides in the graph payload and joins labels by node id.
+    `written` is the label as the library writes it when it writes it in a case — shown instead of
+    `label` (ADR-054)."""
 
     concept_id: str
     label: str
+    written: str | None = None
     kind: str
     tier: str
     determinism: str
@@ -147,6 +158,7 @@ class GapListItemPayload(BaseModel):
         return cls(
             concept_id=g.concept_id,
             label=item.label,
+            written=item.written,
             kind=g.kind,
             tier=g.tier,
             determinism=g.determinism,
@@ -184,6 +196,11 @@ class GraphStalenessPayload(BaseModel):
     n_documents_in_skeleton: int = 0
     #: The library's size, so the client can state coverage rather than guess at it.
     n_documents_in_library: int = 0
+    #: Concepts whose name or forms changed since the build (ADR-054) — their counts are the old
+    #: forms' counts until a rebuild.
+    forms_changed_ids: list[str] = []
+    #: False for a graph built before forms were recorded: it cannot tell whether they changed.
+    forms_recorded: bool = True
 
     @classmethod
     def from_staleness(cls, s: GraphStaleness) -> GraphStalenessPayload:
@@ -196,6 +213,8 @@ class GraphStalenessPayload(BaseModel):
             missing_document_ids=list(s.missing_document_ids),
             n_documents_in_skeleton=s.n_documents_in_skeleton,
             n_documents_in_library=s.n_documents_in_library,
+            forms_changed_ids=list(s.forms_changed_ids),
+            forms_recorded=s.forms_recorded,
         )
 
 

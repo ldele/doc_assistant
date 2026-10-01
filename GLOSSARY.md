@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-09-30 (C-013: written form) · class: living -->
+<!-- status: active · updated: 2026-10-01 (ADR-054: C-001 narrowed to the rows the user took on; C-014 term, C-015 name, C-016 exact form / broad form) · class: living -->
 
 # GLOSSARY — doc_assistant
 
@@ -12,20 +12,27 @@ vocabulary has produced real confusion (see the 2026-07-17/18 "junk labels" trap
 
 ---
 
-## C-001 — Concept (curated vocabulary row)
+## C-001 — concept (a meaning the user has taken on)
 
-**Canonical:** `Concept`
-**Definition:** A curated vocabulary entry (row in `concepts`) that can appear in document text via
-presence matching; the unit both the concept skeleton and keyword families are built from.
+**Canonical:** `concept`
+**Definition:** A text-bearing vocabulary row the user has taken on: `kind="concept"` with
+`graph_include` set (ADR-054). It is one meaning (ADR-052), has a *name* (C-015) and *forms*
+(C-016), is on the concept graph, and is what definitions, merge and `is_a` proposals, field
+placement and gap detection read. The table and the model are named `Concept` and hold *terms*
+(C-014) too: "a `Concept` row" names the storage, "a concept" names a row the user chose. Before
+ADR-054 every row was called a curated concept, including 344 that one bulk promotion made and
+nobody read.
 **Forbidden:** `topic`, `entity`
-**Authoritative in:** `src/doc_assistant/db/models.py::Concept`
+**Authoritative in:** `docs/decisions/ADR-054-concepts-and-terms-names-and-forms.md` +
+`src/doc_assistant/db/models.py::Concept` + `knowledge/concept_skeleton.load_concepts`
 
 ## C-002 — Keyword (mined candidate)
 
 **Canonical:** `Keyword`
 **Definition:** A per-document mined candidate term (`source="extracted"`); a candidate **only** —
-never auto-promoted; the user promotes one into a `Concept` (`promote_keyword`). The 2026-07-05
-`--promote-all` incident (ADR-018) is why this boundary is load-bearing.
+never auto-promoted; the user promotes one into a `Concept` row (`promote_keyword`), which is a
+*term* (C-014) until it is taken on. The 2026-07-05 `--promote-all` incident (ADR-018) is why this
+boundary is load-bearing.
 **Forbidden:** —
 **Authoritative in:** `src/doc_assistant/knowledge/keywords.py` + `db/models.py::Keyword`
 
@@ -33,7 +40,8 @@ never auto-promoted; the user promotes one into a `Concept` (`promote_keyword`).
 
 **Canonical:** `keyword family`
 **Definition:** A user-facing grouping of `Concept` rows for library filtering (ADR-015); shares
-the `Concept` table with the graph and is **deliberately unfiltered** by `graph_include`.
+the `Concept` table with the graph and is **deliberately unfiltered** by `graph_include`, so a
+concept and a term (ADR-054) are both families.
 ("tag family" is the historical spec name — do not reintroduce it in new code or UI.)
 **Forbidden:** `tag family`, `tag`
 **Authoritative in:** `src/doc_assistant/knowledge/keyword_families.py` + `library.list_keyword_families`
@@ -79,8 +87,10 @@ document text (KI-33); off by default, labelled experimental wherever shown.
 
 **Canonical:** `graph_include`
 **Definition:** The additive **opt-in** flag (ADR-018) scoping which Concept rows the graph loads;
-families ignore it by design. The curation verb is **demote** (`set_graph_include(cid, False)`),
-never delete — unfamiliar short labels are usually real specialist vocabulary.
+families ignore it by design. Since ADR-054 it is also what makes a row a *concept* (C-001) and
+not a *term* (C-014): one flag, so "taken on" and "on the graph" are the same act. The curation
+verb is **demote** (`set_graph_include(cid, False)`), never delete — unfamiliar short labels are
+usually real specialist vocabulary.
 **Forbidden:** —
 **Authoritative in:** `db/models.py::Concept.graph_include` + `knowledge/concept_skeleton.load_concepts`
 
@@ -131,6 +141,44 @@ beat the control beyond variance, record a baseline in `tests/eval/baselines/`).
 capital is matched case-aware; one written in lower case matches in any case.
 **Forbidden:** `normalized label`, `canonical label` (the label is the curated one; this is derived)
 **Authoritative in:** `src/doc_assistant/knowledge/written_forms.py` + `db/models.py::ConceptWrittenForm`
+
+## C-014 — term
+
+**Canonical:** `term`
+**Definition:** A text-bearing vocabulary row nobody has taken on (ADR-054): a string the library
+uses, or a candidate something proposed — the keyword extractor today, a base vocabulary per field
+later (ADR-054, Amendment 2026-10-01). A term keeps its row, stays searchable and works as a keyword
+family (C-003). Nothing is stored about its meaning: no definition candidate, no merge or `is_a`
+proposal, no field placement. Opening one shows how the library uses it, computed when asked.
+Taking it on makes it a concept (C-001), and is the user's act.
+**Forbidden:** —
+**Authoritative in:** `docs/decisions/ADR-054-concepts-and-terms-names-and-forms.md` +
+`knowledge/definitions.require_concept` (the write guard)
+
+## C-015 — name (of a concept)
+
+**Canonical:** `name`
+**Definition:** A concept's label (`Concept.label`): free text, the user's, and what every screen
+shows for the concept — in its written case (C-013) when the library writes one. It need not occur
+in the library, and it always counts as an exact form (C-016). Renaming keeps the previous name
+as a form. One server-side helper supplies the shown name to every payload
+(`written_forms.shown_labels`), so two screens cannot disagree.
+**Forbidden:** —
+**Authoritative in:** `db/models.py::Concept.label` + `knowledge/written_forms.shown_labels`
+
+## C-016 — exact form / broad form
+
+**Canonical:** `exact form` · `broad form`
+**Definition:** How one matched string of a concept counts (ADR-054). An *exact* form always means
+the concept — a spelling, an inflection, an abbreviation, its long form — and its documents are
+the concept's presence. A *broad* form also matches other things: its documents are listed
+**beside** presence and never added to it, so graph edges and gaps do not see them. A form nobody
+has classified reads as exact, so nothing moves until the user marks one. The mark is the user's,
+per form, in Manage keywords. "Alias" is the storage word (`ConceptAlias`); the UI and the docs
+say *form*.
+**Forbidden:** —
+**Authoritative in:** `db/models.py::ConceptAlias.breadth` +
+`knowledge/concept_skeleton.load_concepts` (exact) / `load_broad_forms` (broad)
 
 ## D-001 — Provenote vs doc_assistant
 

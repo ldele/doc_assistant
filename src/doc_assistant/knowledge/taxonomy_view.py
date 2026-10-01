@@ -22,6 +22,7 @@ from sqlalchemy.orm import aliased
 from doc_assistant.db.models import Concept, ConceptHierarchy, Document, DocumentField
 from doc_assistant.db.session import session_scope
 from doc_assistant.knowledge.taxonomy import load_taxonomy, presence_nodes, unplaced_concepts
+from doc_assistant.knowledge.written_forms import shown_labels
 
 
 @dataclass(frozen=True)
@@ -69,12 +70,14 @@ class FieldMember:
 
     ``origin`` is ``"curated"`` (a user edit or the seed) or ``"proposed"`` (ADR-028 D8 auto-fill
     awaiting accept-or-delete). It travels to the UI so a machine guess is never presented as the
-    user's own placement.
+    user's own placement. ``written`` is a concept's label as the library writes it when it writes
+    it in a case — shown instead of ``label`` (ADR-054); always ``None`` for a document.
     """
 
     id: str
     label: str
     origin: str
+    written: str | None = None
 
 
 @dataclass(frozen=True)
@@ -205,11 +208,16 @@ def load_field_detail(field_id: str) -> FieldDetail | None:
         direct_concept_ids = sorted(
             p for p in in_field.predecessors(field_id) if _kind(graph, p) == "concept"
         )
+        concept_labels = {
+            cid: str(graph.nodes[cid].get("label", "")) for cid in direct_concept_ids
+        }
+        shown = shown_labels(list(concept_labels.items()), session=session)
         concepts = tuple(
             FieldMember(
                 id=cid,
-                label=str(graph.nodes[cid].get("label", "")),
+                label=concept_labels[cid],
                 origin=str(graph.edges[cid, field_id].get("origin", "curated")),
+                written=shown.get(cid),
             )
             for cid in direct_concept_ids
         )
@@ -257,6 +265,10 @@ class ProposedEdge:
     no field, so without this list a concept→concept proposal would be invisible to the app; the
     others also show up under their field in :func:`load_field_detail`, and a count that left them
     out would contradict what that pane shows.
+
+    ``source_written`` / ``target_written`` are a concept end's label as the library writes it
+    when it writes it in a case — shown instead of the label (ADR-054); ``None`` for a field or a
+    document.
     """
 
     source_id: str
@@ -265,6 +277,8 @@ class ProposedEdge:
     target_id: str
     target_label: str
     type: str
+    source_written: str | None = None
+    target_written: str | None = None
 
 
 def load_proposals() -> tuple[ProposedEdge, ...]:
@@ -285,11 +299,17 @@ def load_proposals() -> tuple[ProposedEdge, ...]:
                 ConceptHierarchy.target_id,
                 target.label,
                 ConceptHierarchy.type,
+                target.kind,
             )
             .join(source, source.id == ConceptHierarchy.source_id)
             .join(target, target.id == ConceptHierarchy.target_id)
             .where(ConceptHierarchy.origin == "proposed")
         ).all()
+        # Only a concept end has a written form: a field's label is the taxonomy's own text.
+        concept_ends = {(str(r[0]), str(r[1])) for r in edge_rows if str(r[2]) == "concept"} | {
+            (str(r[3]), str(r[4])) for r in edge_rows if str(r[6]) == "concept"
+        }
+        shown = shown_labels(sorted(concept_ends), session=session)
         doc_rows = session.execute(
             select(
                 DocumentField.document_id,
@@ -311,6 +331,8 @@ def load_proposals() -> tuple[ProposedEdge, ...]:
             target_id=str(r[3]),
             target_label=str(r[4]),
             type=str(r[5]),
+            source_written=shown.get(str(r[0])),
+            target_written=shown.get(str(r[3])),
         )
         for r in edge_rows
     ]

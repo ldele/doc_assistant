@@ -27,14 +27,22 @@ import re
 from collections import Counter, defaultdict
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 
 import structlog
 
 from doc_assistant.knowledge.concept_skeleton import is_cased, surface_forms
 
+if TYPE_CHECKING:
+    from sqlalchemy.orm import Session
+
 log = structlog.get_logger(__name__)
 
 _ALNUM = re.compile(r"[A-Za-z0-9]")
+
+#: Concept ids per ``IN`` clause in :func:`load_written_forms`. A structural bound on SQL
+#: parameters per statement, so a vocabulary of any size reads in batches; not tuned on a corpus.
+_ID_BATCH = 500
 
 
 @dataclass(frozen=True)
@@ -181,29 +189,71 @@ def replace_written_forms(forms: Sequence[WrittenForm]) -> int:
     return len(forms)
 
 
-def load_written_forms(concept_ids: Iterable[str] | None = None) -> dict[tuple[str, str], str]:
-    """``(concept_id, form)`` → written spelling, from the last full build (``{}`` before one)."""
+def load_written_forms(
+    concept_ids: Iterable[str] | None = None, *, session: Session | None = None
+) -> dict[tuple[str, str], str]:
+    """``(concept_id, form)`` → written spelling, from the last full build (``{}`` before one).
+
+    ``session`` reads through a session the caller already holds, so a lookup made in the middle
+    of a write does not open a second connection."""
     from sqlalchemy import select
 
     from doc_assistant.db.models import ConceptWrittenForm
     from doc_assistant.db.session import session_scope
 
-    stmt = select(
+    base = select(
         ConceptWrittenForm.concept_id, ConceptWrittenForm.form, ConceptWrittenForm.written
     )
-    if concept_ids is not None:
-        stmt = stmt.where(ConceptWrittenForm.concept_id.in_(list(concept_ids)))
-    with session_scope() as session:
-        return {(str(c), str(f)): str(w) for c, f, w in session.execute(stmt).all()}
+    if concept_ids is None:
+        statements = [base]
+    else:
+        ids = list(concept_ids)
+        statements = [
+            base.where(ConceptWrittenForm.concept_id.in_(ids[start : start + _ID_BATCH]))
+            for start in range(0, len(ids), _ID_BATCH)
+        ]
+
+    def read(reader: Session) -> dict[tuple[str, str], str]:
+        return {
+            (str(c), str(f)): str(w)
+            for stmt in statements
+            for c, f, w in reader.execute(stmt).all()
+        }
+
+    if session is not None:
+        return read(session)
+    with session_scope() as own:
+        return read(own)
 
 
-def label_spellings(concepts: Sequence[tuple[str, str]]) -> dict[str, str]:
+def label_spellings(
+    concepts: Sequence[tuple[str, str]], *, session: Session | None = None
+) -> dict[str, str]:
     """``concept_id`` → the written spelling of its **label** form, for label-only matchers
     (definitions, epistemics). Concepts without one are absent."""
-    stored = load_written_forms([cid for cid, _ in concepts])
+    stored = load_written_forms([cid for cid, _ in concepts], session=session)
     out: dict[str, str] = {}
     for concept_id, label in concepts:
         written = stored.get((concept_id, label.strip().casefold()))
         if written:
             out[concept_id] = written
+    return out
+
+
+def shown_labels(
+    concepts: Sequence[tuple[str, str]], *, session: Session | None = None
+) -> dict[str, str]:
+    """``concept_id`` → how to **show** its label, for the rows the library writes in a case.
+
+    The one place a payload asks how a concept's name is displayed (ADR-054: the name on every
+    screen): the vocabulary search, the gap list, the taxonomy view and Manage keywords read it
+    here, so they agree with the graph's nodes. A concept absent from the result is shown as its
+    stored label — its written form is lower case, it has none, or no graph has been built since
+    written forms existed."""
+    spellings = label_spellings(concepts, session=session)
+    out: dict[str, str] = {}
+    for concept_id, label in concepts:
+        shown = cased_label(label, spellings.get(concept_id))
+        if shown:
+            out[concept_id] = shown
     return out

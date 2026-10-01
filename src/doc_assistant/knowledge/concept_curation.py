@@ -358,16 +358,24 @@ def rank_keyword_candidates() -> list[RankedCandidate]:
     return ranked
 
 
-def load_concepts() -> list[tuple[str, str]]:
-    """Curated text-bearing concepts as ``(id, label)``, sorted by id (stable).
+def load_concepts(*, graph_only: bool = False) -> list[tuple[str, str]]:
+    """Text-bearing vocabulary rows as ``(id, label)``, sorted by id (stable).
 
     Excludes ``kind="domain"`` taxonomy field nodes (ADR-028 D4): this feeds near-dup merge
-    detection, and a domain must never become a merge candidate against a concept."""
+    detection, and a domain must never become a merge candidate against a concept.
+
+    ``graph_only`` keeps the concepts the user has taken on (``graph_include``) and leaves the
+    terms out (ADR-054). The merge stage passes it: a merge folds one meaning into another, and a
+    term nobody has read is not a meaning yet. The artifact and noise stages read every row."""
     from doc_assistant.db.session import session_scope
     from doc_assistant.knowledge.taxonomy import presence_nodes
 
     with session_scope() as session:
-        rows = [(str(c.id), c.label) for c in presence_nodes(session)]
+        rows = [
+            (str(c.id), c.label)
+            for c in presence_nodes(session)
+            if c.graph_include or not graph_only
+        ]
     rows.sort(key=lambda r: r[0])
     return rows
 

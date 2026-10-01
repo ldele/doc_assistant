@@ -314,6 +314,10 @@ So only the last group is hidden (behind "Show glossary-only (4)"), and the head
 split — `12 collapse synonyms · 10 single-label · 4 glossary-only hidden` — which addresses the
 "misleading count" complaint without deleting anything usable.
 
+*(Since 2026-10-01, ROADMAP 94 / ADR-054: the view lists concepts apart from terms. Every concept
+is shown; this split applies to the terms, and its hidden group is labelled "unused" — on the
+reference library 103 of 344 terms, keywords that no document carries any more.)*
+
 **A trap found while building, in this PR's own rule.** A family created with **no members** starts
 at 0 aliases / 0 docs — exactly the shape the glossary-only group hides — so creating one would look
 like it silently failed. `submitCreate` now reveals that group when (and only when) the new family

@@ -13,7 +13,9 @@ from fastapi import APIRouter, HTTPException, Request
 
 from apps.api.models.keywords import (
     KeywordFamilyCreate,
+    KeywordFamilyDeletionPayload,
     KeywordFamilyMember,
+    KeywordFamilyMemberBreadth,
     KeywordFamilyPatch,
     KeywordFamilyPayload,
     KeywordFamilyProposalPayload,
@@ -117,6 +119,36 @@ def remove_keyword_family_member_route(family_id: str, keyword: str) -> KeywordF
     if family is None:
         raise HTTPException(status_code=404, detail="keyword family not found")
     return KeywordFamilyPayload.from_family(family)
+
+
+@router.patch("/api/library/keyword-families/{family_id}/members/{keyword}")
+def set_keyword_family_member_breadth_route(
+    family_id: str, keyword: str, body: KeywordFamilyMemberBreadth
+) -> KeywordFamilyPayload:
+    """Mark one member exact or broad, or clear the mark with ``null`` (ADR-054). 404 if the
+    family is unknown, 400 if the keyword is not one of its members. The graph follows at its
+    next rebuild, like the graph flag."""
+    from doc_assistant.library import set_family_member_breadth
+
+    try:
+        family = set_family_member_breadth(family_id, keyword, body.breadth)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    if family is None:
+        raise HTTPException(status_code=404, detail="keyword family not found")
+    return KeywordFamilyPayload.from_family(family)
+
+
+@router.get("/api/library/keyword-families/{family_id}/deletion")
+def describe_keyword_family_deletion_route(family_id: str) -> KeywordFamilyDeletionPayload:
+    """What deleting this family would remove — its forms, its definition and candidates, its
+    placements and triage verdicts. Read-only; the view asks before it deletes. 404 if unknown."""
+    from doc_assistant.library import describe_family_deletion
+
+    deletion = describe_family_deletion(family_id)
+    if deletion is None:
+        raise HTTPException(status_code=404, detail="keyword family not found")
+    return KeywordFamilyDeletionPayload.from_deletion(deletion)
 
 
 @router.delete("/api/library/keyword-families/{family_id}")

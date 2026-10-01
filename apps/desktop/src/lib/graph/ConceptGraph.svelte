@@ -20,7 +20,7 @@
   import { authorLabel } from '../library/library'
   import { GAP_META, graphCoverage, visibleConceptGaps } from './gaps'
   import { forceLayout, type Point } from './forceLayout'
-  import { shownLabel } from './labels'
+  import { broadSummary, formsChangedNotice, shownLabel } from './labels'
   import Icon from '../shell/Icon.svelte'
   import ConceptDefinition from './ConceptDefinition.svelte'
 
@@ -161,6 +161,12 @@
   function unresolvedDocCount(n: ConceptGraphNode): number {
     return n.doc_ids.length - resolvedDocIds(n).length
   }
+  // ADR-054: the documents only a *broad* form reaches. They sit beside the count above and are
+  // never added to it — a broad form (`distillation`) also matches other things. Listed so the
+  // difference is something to open, not a number to take on trust.
+  function broadDocIds(n: ConceptGraphNode): string[] {
+    return (n.broad_doc_ids ?? []).filter((id) => docById.has(id))
+  }
 
   // Selection arrives as a prop (the rail lives in the sidebar): each change resets the per-concept
   // panel state and fetches presence. The cancellation flag guards rapid re-selection — a stale
@@ -243,6 +249,16 @@
   const staleBehind = $derived(
     graph ? graph.staleness.added_labels.length + graph.staleness.removed_ids.length : 0,
   )
+  // ADR-054: the same concepts, counted through different forms since the build. Named, because
+  // "the graph is behind" with no concept attached gives nothing to check after the rebuild.
+  const formsChanged = $derived.by(() => {
+    if (!graph) return ''
+    const ids = new Set(graph.staleness.forms_changed_ids ?? [])
+    return formsChangedNotice(
+      graph.nodes.filter((n) => ids.has(n.id)).map((n) => shownLabel(n)),
+      graph.staleness.forms_recorded !== false,
+    )
+  })
   // Coverage, stated with the rule that produces it. Not "68 documents are missing from the
   // graph": they are not waiting for a rebuild, they mention none of the concepts on the graph,
   // and a number that sent the user to a button changing nothing would be worse than silence.
@@ -325,10 +341,14 @@
       </button>
     </div>
   {:else}
-    {#if staleBehind > 0}
+    {#if staleBehind > 0 || formsChanged}
       <div class="stale" role="status">
         <Icon name="triangle-alert" size={14} />
-        <span>Graph is {staleBehind} concept{staleBehind === 1 ? '' : 's'} behind your vocabulary.</span>
+        <span>
+          {#if staleBehind > 0}Graph is {staleBehind} concept{staleBehind === 1 ? '' : 's'} behind
+            your vocabulary.{/if}
+          {formsChanged}
+        </span>
         <button class="linkish" onclick={onRebuild} disabled={rebuilding} type="button">
           {rebuilding ? 'Rebuilding…' : 'Rebuild'}
         </button>
@@ -345,11 +365,25 @@
           <div class="ego-head">
             <div class="eh-title">
               <h2>{offGraphConcept.label}</h2>
+              <span class="termtag">term</span>
+            </div>
+            <div class="eh-actions">
+              <button
+                class="ghost sm"
+                onclick={() => onManageConcept(offGraphConcept.id, offGraphConcept.label)}
+                type="button"
+                title="Take this term on as a concept in Manage keywords"
+              >
+                <Icon name="pencil" size={13} /> Manage keywords
+              </button>
             </div>
           </div>
+          <!-- ADR-054: a term is a word the library uses that nobody has taken on. It can be read
+               here; a definition is chosen for a concept, so the write starts in Manage keywords. -->
           <p class="muted offgraph">
-            Not on the graph — it is in your vocabulary but not one of the concepts the graph maps.
-            Its definition can still be read and chosen here.
+            A term: your library uses this word, and you have not taken it on as a concept. Below is
+            what the library says about it. To choose or write its definition, put it on the concept
+            graph in Manage keywords.
           </p>
           <ConceptDefinition conceptId={offGraphConcept.id} {onOpenPassage} />
         {:else if !selectedNode}
@@ -506,6 +540,28 @@
                 </li>
               {/each}
             </ul>
+            {#if broadDocIds(selectedNode).length > 0}
+              <!-- Beside the count, never in it (ADR-054). -->
+              <div class="beside">
+                <p class="muted">
+                  {broadSummary(broadDocIds(selectedNode).length, selectedNode.broad_forms ?? [])}.
+                  A broad form also matches other things, so these are not counted above. Change it
+                  in Manage keywords.
+                </p>
+                <ul class="doclist">
+                  {#each broadDocIds(selectedNode) as docId (docId)}
+                    <li class="docitem">
+                      <button class="docrow" onclick={() => onOpenDocument(docId)} type="button">
+                        <Icon name="file-text" size={14} />
+                        <span class="dtitle">{docTitle(docId)}</span>
+                        {#if docByline(docId)}<span class="dby muted">{docByline(docId)}</span>{/if}
+                        <Icon name="chevron-right" size={13} />
+                      </button>
+                    </li>
+                  {/each}
+                </ul>
+              </div>
+            {/if}
           </div>
         {/if}
       </section>
@@ -651,6 +707,27 @@
   }
   .offgraph {
     margin: 0;
+    font-size: var(--text-sm);
+  }
+  /* ADR-054 — a term is not a concept: say so beside its name, quietly. */
+  .termtag {
+    flex: none;
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--fg-2);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 0 0.45rem;
+  }
+  /* The documents a broad form reaches: beside the concept's own, set apart by a rule. */
+  .beside {
+    margin-top: var(--space-3);
+    padding-top: var(--space-2);
+    border-top: 1px dashed var(--border);
+  }
+  .beside p {
+    margin: 0 0 var(--space-2);
     font-size: var(--text-sm);
   }
   .gap-notes {

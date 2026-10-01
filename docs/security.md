@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-09-30 (S-8 and S-5 done: pip-audit blocks, and the API refuses a foreign Host; S-13 next) · class: living -->
+<!-- status: active · updated: 2026-10-01 (S-13 done: CI's secret scan fails on a secret the baseline does not record; S-6 next) · class: living -->
 
 # Security — the threat model, the plan, the floor, and the periodic check
 
@@ -62,7 +62,9 @@ and says so).
   `apps/desktop/src/lib/core/devCsp.test.ts`.**
 - **Secrets.** `.env` is ignored and was never committed; `credentials.py` is the single disk path
   for an in-app key, masked to four characters in logs and in `/api/setup`; no route echoes a key;
-  `detect-secrets` runs in pre-commit and CI against a committed baseline.
+  `detect-secrets` runs in pre-commit on the staged files, and in CI over every tracked file as a
+  gate that fails on a secret the committed baseline does not record (since 2026-10-01, S-13:
+  `scripts/secret_scan_gate.py` — the CI step before it recorded a new finding and passed).
 - **The LLM proposes, never writes** — verified in code: every site that parses LLM JSON coerces
   into a validated structure; no LLM output becomes a path, a URL, a shell argument or SQL.
 - **Logs go to stderr only**, never to a file; no query, answer or document text is logged.
@@ -87,7 +89,7 @@ and says so).
 | S10 | **Plaintext at rest** — `credentials.json` (best-effort `chmod`, a no-op on Windows), the conversation store, the extraction cache | data home | T3/T4 — a design choice for a local-first app | ADR-011 v2 (ROADMAP 64); README says "use disk encryption" |
 | S11 | Small: history export to a fixed temp name · `explorer` via `PATH` · `withGlobalTauri: true` · absolute paths logged at INFO · model downloads not pinned to a `revision` | various | low | S-10 |
 | S12 | **Nothing in the app log says "a security control fired"** — a refused host, a rejected path, a cap hit are silent, so the periodic check (§6) cannot read them | `logging_config.py` + each control | the check has nothing to look at except the code | S-11 |
-| S13 | **CI's secret scan cannot fail** (found 2026-09-30, with S-8): `detect-secrets scan --baseline .secrets.baseline` rescans and **writes the new finding into the baseline, exiting 0** — reproduced on a scratch repository with a planted AWS key (3 findings absorbed, exit 0), where the pre-commit `detect-secrets-hook` exits 1. Only the local hook gates, so a secret that arrives without it (`--no-verify`, the web editor, a box without hooks) passes CI | `.github/workflows/ci.yml` | T1/T5: the one control that keeps a key out of a public repository, present in CI in name only — S6's shape | S-13 |
+| S13 | ~~**CI's secret scan cannot fail**~~ (found 2026-09-30, with S-8): `detect-secrets scan --baseline .secrets.baseline` rescans and **writes the new finding into the baseline, exiting 0** — reproduced on a scratch repository with a planted AWS key (3 findings absorbed, exit 0), where the pre-commit `detect-secrets-hook` exits 1. Only the local hook gated, so a secret that arrived without it (`--no-verify`, the web editor, a box without hooks) passed CI | `.github/workflows/ci.yml` | T1/T5: the one control that keeps a key out of a public repository, present in CI in name only — S6's shape | **done 2026-10-01** (S-13): `scripts/secret_scan_gate.py` fails on a secret the baseline does not record |
 
 ## 4 · The plan — one step per session, in this order
 
@@ -108,7 +110,7 @@ row 60 names the current step; the DEVLOG entry of the session that does it is t
 | S-10 | **The small ones** (S11): `mkstemp` for the history export; `%WINDIR%\explorer.exe`; `withGlobalTauri: false` + the dialog plugin package; `revision=` in the model registry; a bug-report note about paths in console captures | small | each has a one-line test or a config assertion | planned |
 | S-11 | **Security events in the app log** (S12): structlog events `security_host_refused`, `security_path_refused`, `security_cap_hit`, `security_markup_sanitised`, each with the control's name and never the content — what §6 reads | small | the four events exist and each control emits its own in a test | planned |
 | S-12 | **Dependabot (pip · npm · cargo · actions) + SHA-pinned actions** (S8) | config only | bot PRs arrive; `uses:` lines are SHAs | **user's call** |
-| S-13 | **A secret scan CI can fail** (S13): run `detect-secrets-hook --baseline .secrets.baseline` over the tracked files (or fail on `git diff --exit-code .secrets.baseline` after the scan) | small | a planted fake key in a scratch repository fails the CI command; the real tree still passes | planned |
+| S-13 | **A secret scan CI can fail** (S13): run `detect-secrets-hook --baseline .secrets.baseline` over the tracked files (or fail on `git diff --exit-code .secrets.baseline` after the scan) | small | a planted fake key in a scratch repository fails the CI command; the real tree still passes | **done 2026-10-01** — CI runs `python -m scripts.secret_scan_gate`: the hook over every tracked file, against a temporary copy of the baseline, so it fails on a secret the baseline does not record and never rewrites the tracked file. It runs with `--no-verify` (no network call; a candidate key is kept, not dropped as "not live"), prints a finding's type and location and never its value, and exits 2 when it could not look (no baseline, no file list, a hook that broke). In a scratch repository a planted example key fails it and the command CI ran before passes the same key (`tests/unit/test_secret_scan_gate.py`, 24 — one reads the hook's own parser to pin that `--no-verify` removes the network check even though the baseline lists it); the real tree passes, 834 files in about 19 s. A baseline that is only out of date (a recorded line moved) is reported and passes |
 | **Full** | **The periodic full check** (§6), first run when S-1 … S-11 are done | one session | a dated entry in `.claude/REVIEWS.md` row 7 | after S-11 |
 
 ## 5 · The floor — deterministic, runs without a person
@@ -118,7 +120,7 @@ row 60 names the current step; the DEVLOG entry of the session that does it is t
 | 1 | Gates cover the boundary, not just the library | `ruff check src/ tests/ apps/ scripts/` · `mypy src/ apps/` · `bandit -r src/ apps/ -c pyproject.toml` (CI + pre-commit) | done 2026-09-10 |
 | 2 | Tauri config guard | `pytest tests/unit/test_desktop_security_config.py` | done 2026-09-10 |
 | 3 | JS tree audited | `npm audit --audit-level=high` (CI, after `npm ci`) | done 2026-09-10 |
-| 4 | Secrets | `detect-secrets-hook` in pre-commit gates; CI's `detect-secrets scan --baseline .secrets.baseline` does **not** (it absorbs a new finding and exits 0 — S13) | pre-commit done (since 2026-07); CI S-13 |
+| 4 | Secrets, **blocking** | `detect-secrets-hook` in pre-commit (staged files) · `python -m scripts.secret_scan_gate` (CI · `just secret-scan`) over every tracked file; recorded findings in `.secrets.baseline` | pre-commit since 2026-07; CI done 2026-10-01 (S-13) |
 | 5 | Python tree audited, **blocking** | `python -m scripts.pip_audit_gate` (CI · `just audit` · the sprint-close keypoint); reviewed ignores in `pip-audit-ignore.toml` | done 2026-09-30 |
 | 6 | Host guard test | `pytest tests/integration/test_api_host_guard.py` — a foreign `Host` gets 400; `DOC_API_HOST` defaults to loopback | done 2026-09-30 |
 | 7 | Path-confinement tests on every route that opens a file | `pytest tests/unit/api/test_path_confinement.py` | S-2, S-7 |

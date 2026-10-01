@@ -183,19 +183,21 @@
         {#if offGraph.length === 0}<p class="empty-list muted">No concepts match.</p>{/if}
       {/each}
       {#if offGraph.length > 0}
-        <p class="offhead muted">Not on the graph</p>
+        <!-- ADR-054: a row nobody has taken on is a term, not a concept. Named as what it is, so
+             the panel that opens (usage, no definition to choose) is not a surprise. -->
+        <p class="offhead muted">Terms — not concepts yet</p>
         {#each offGraph as m (m.id)}
           <button
             class="crow off"
             class:sel={m.id === offGraphId}
             role="option"
             aria-selected={m.id === offGraphId}
-            onclick={() => onSelectOffGraph(m.id, m.label)}
+            onclick={() => onSelectOffGraph(m.id, shownLabel(m))}
             type="button"
-            title="In your vocabulary, not on the graph — open it to read or choose its definition"
+            title="A word your library uses that you have not taken on as a concept — open it to see how the library uses it"
           >
             <span class="dot hollow" aria-hidden="true"></span>
-            <span class="clabel">{m.label}</span>
+            <span class="clabel">{shownLabel(m)}</span>
             {#if m.has_definition}<span class="defmark" title="Has a chosen definition">def</span>{/if}
           </button>
         {/each}

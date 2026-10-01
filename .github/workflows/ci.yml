@@ -61,8 +61,12 @@ jobs:
       - name: pip-audit (blocking — reviewed ignores in pip-audit-ignore.toml)
         run: uv run python -m scripts.pip_audit_gate
 
-      - name: detect-secrets
-        run: uv run detect-secrets scan --baseline .secrets.baseline
+      # Able to fail since 2026-10-01 (docs/security.md step S-13). Fails on a secret in a tracked
+      # file that .secrets.baseline does not record. The step it replaces ran `detect-secrets scan
+      # --baseline`, the command that writes a baseline: it recorded a new finding and exited 0, so
+      # a key pushed past the local hook kept the check green.
+      - name: secret scan (blocking — recorded findings in .secrets.baseline)
+        run: uv run python -m scripts.secret_scan_gate
 
   # The desktop app is half the product and CI did not touch it until 2026-08-06: `npm test`
   # (node:test over the pure `lib/**/*.ts` modules) and `svelte-check` ran on a developer's machine

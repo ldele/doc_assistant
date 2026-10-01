@@ -29,6 +29,7 @@ import type {
   TaxonomyView,
 } from '../core/types'
 import { graph } from '../graph/graph.svelte'
+import { shownLabel } from '../graph/labels'
 
 export const taxonomy = $state({
   open: false,
@@ -76,7 +77,9 @@ export async function ensureTaxonomyConcepts(): Promise<void> {
   if (taxonomy.concepts.length > 0) return
   try {
     const g = graph.data ?? (await getConceptGraph())
-    taxonomy.concepts = (g?.nodes ?? []).map((n) => ({ id: n.id, label: n.label }))
+    // The picker lists a concept under the name the library writes it by (ADR-054), as the graph
+    // it came from does; the id is what an attach sends.
+    taxonomy.concepts = (g?.nodes ?? []).map((n) => ({ id: n.id, label: shownLabel(n) }))
   } catch {
     // leave empty — attach-concept just has nothing to offer
   }

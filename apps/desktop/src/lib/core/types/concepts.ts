@@ -17,6 +17,11 @@ export interface ConceptGraphNode {
   // How the library writes the label when it writes it in a case (`dIN`, `Cre`) — show this,
   // never edit `label` (ADR-053 decision 3). Absent/null for a lower-case written form.
   written?: string | null
+  // ADR-054: `doc_ids` is presence, counted through exact forms. These are the documents only a
+  // form the user marked *broad* reaches, and the names of those forms — shown beside the
+  // document count, never added to it. Absent on a payload from an older API.
+  broad_doc_ids?: string[]
+  broad_forms?: string[]
 }
 // `relation` is the deferred Node-B stance annotation — `null` on every edge until that pass runs,
 // so a renderer must not imply agreement/disagreement it does not have. Weights span a narrow
@@ -67,6 +72,8 @@ export type GapStatus = 'surfaced' | 'promoted' | 'dismissed'
 export interface GapListItem {
   concept_id: string
   label: string
+  // The label as the library writes it when it writes it in a case — shown instead (ADR-054).
+  written?: string | null
   kind: GapKind
   tier: string
   determinism: string
@@ -95,6 +102,17 @@ export interface GraphStaleness {
    * nothing: a document appears once it mentions a concept in the graph vocabulary.
    */
   n_documents_in_library: number
+  /**
+   * Concepts whose name or forms changed since the build (ADR-054): a form added, removed, or
+   * marked exact or broad the other way. Their counts are the old forms' counts until a rebuild.
+   * Empty for a graph built before forms were recorded: it has nothing to compare.
+   */
+  forms_changed_ids?: string[]
+  /**
+   * `false` for a graph built before forms were recorded. It cannot tell whether a name or form
+   * changed, so the view says that and offers the rebuild that starts the record.
+   */
+  forms_recorded?: boolean
 }
 export interface ConceptGraph {
   graph_version: string

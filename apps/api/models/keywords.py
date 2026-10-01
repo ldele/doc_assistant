@@ -13,7 +13,7 @@ from pydantic import BaseModel, Field
 
 if TYPE_CHECKING:
     from doc_assistant.knowledge.keyword_families import FamilyProposal
-    from doc_assistant.library import KeywordFamily
+    from doc_assistant.library import FamilyDeletion, KeywordFamily
 
 
 class KeywordFamilyPayload(BaseModel):
@@ -25,8 +25,15 @@ class KeywordFamilyPayload(BaseModel):
     doc_count: int
     #: ADR-018 curation: whether this family's concept is part of the graph vocabulary. Not
     #: nullable on the wire even though the column is — the client renders a two-state control,
-    #: and "unset" is not a third thing a user can mean.
+    #: and "unset" is not a third thing a user can mean. Since ADR-054 it is also what makes the
+    #: row a *concept* (taken on) rather than a *term*.
     graph_include: bool
+    #: ADR-054: the members the user marked broad (counted beside presence) and exact (always
+    #: mean the concept). A member in neither is unclassified, which reads as exact.
+    broad: list[str] = []
+    exact: list[str] = []
+    #: The canonical as the library writes it when it writes it in a case — shown instead of it.
+    written: str | None = None
 
     @classmethod
     def from_family(cls, f: KeywordFamily) -> KeywordFamilyPayload:
@@ -36,6 +43,9 @@ class KeywordFamilyPayload(BaseModel):
             aliases=list(f.aliases),
             doc_count=f.doc_count,
             graph_include=f.graph_include,
+            broad=list(f.broad),
+            exact=list(f.exact),
+            written=f.written,
         )
 
 
@@ -63,6 +73,46 @@ class KeywordFamilyMember(BaseModel):
     """POST body to add a member keyword to a family."""
 
     keyword: str = Field(min_length=1)
+
+
+class KeywordFamilyMemberBreadth(BaseModel):
+    """PATCH body to mark one member exact or broad (ADR-054); ``null`` clears the mark.
+
+    The field is required: a body without it is a caller bug, and reading it as "clear" would
+    turn a typo into a write."""
+
+    breadth: Literal["exact", "broad"] | None
+
+
+class KeywordFamilyDeletionPayload(BaseModel):
+    """What deleting one family would remove (mirrors ``library.FamilyDeletion``). Read-only:
+    the Manage keywords view states it in the confirmation before it deletes."""
+
+    id: str
+    canonical: str
+    written: str | None = None
+    is_concept: bool
+    aliases: int
+    has_definition: bool
+    definition_candidates: int
+    placements: int
+    triage: int
+    presence_documents: int
+
+    @classmethod
+    def from_deletion(cls, d: FamilyDeletion) -> KeywordFamilyDeletionPayload:
+        return cls(
+            id=d.id,
+            canonical=d.canonical,
+            written=d.written,
+            is_concept=d.is_concept,
+            aliases=d.aliases,
+            has_definition=d.has_definition,
+            definition_candidates=d.definition_candidates,
+            placements=d.placements,
+            triage=d.triage,
+            presence_documents=d.presence_documents,
+        )
 
 
 # ============================================================

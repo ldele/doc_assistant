@@ -38,6 +38,124 @@ Format: What changed | Why | Rejected alternatives | What it opens
 
 ---
 
+## 2026-10-01 (5) — The test suite no longer reaches the working library's database (KI-60)
+
+**What changed.** `tests/conftest.py` gains a session fixture that binds the database layer's
+default engine to a throwaway file for the whole run. A test that reaches the database without
+swapping the engine now lands on an empty database, as it does on a fresh checkout.
+
+**Why.** `db.session` binds its engine to the configured `library.db` at import. Two route test
+files (`test_reingest_routes.py`, `test_ingest_progress.py`) enter the app's lifespan without
+redirecting it, and the lifespan's first act is the schema migration. On 2026-10-01 a full run
+therefore added row 94's new column to the working library, before the app had ever been started
+on that code. Read back afterwards: integrity check `ok`, no form marked, and 593 labels and 404
+alias rows identical to the backup of 2026-09-01 — the column is the only change, and it is the
+one the app would have made at its next start. Reproduced against an empty data directory:
+before the fixture those two files create a `library.db` there, after it they do not.
+
+**Rejected.**
+- Stubbing the migration in the two files: it fixes today's two and leaves the next unredirected
+  test free to do the same.
+- Pointing the whole suite at a temporary data directory (`DOC_DATA_DIR`): the right end state,
+  but two tracked files live under `data/` and which tests depend on that directory is unmeasured.
+- A session-end check that the working database's modification time did not move: it would fail
+  whenever the app is used while the tests run.
+
+**Measured after the fix** (one full run, every file under `data/` compared before and after):
+`library.db` untouched. The run still added 58 extraction-cache files for the tests' own documents
+(`cache/referenced/`), two session logs under `exports/` and one row in the vector store's
+write-lock table; the store's content is unchanged (18,011 embeddings).
+
+**What it opens.** This is the database half of ROADMAP 76's shared-fixture item, and of KI-58's
+second open half. The debris above is KI-60's open part: nothing the library holds changes, but it
+accumulates, and a test that can open the working vector store could write to it. A temporary
+data directory for the suite would close it, and belongs to row 76.
+
+---
+
+## 2026-10-01 (4) — A concept has a name and exact or broad forms, and the other rows are terms (ROADMAP 94, ADR-054); CI's secret scan can fail (S-13)
+
+**What changed.**
+- **A form is exact or broad.** One additive column, `concept_aliases.breadth`; unset reads as
+  exact. `concept_skeleton.load_concepts()` — the loader that presence, edges and the gap list's
+  claim attribution count through — leaves a broad form out. `load_broad_forms()` and
+  `match_broad_presence()` match it on its own, and a node carries the documents only a broad form
+  reaches (`broad_doc_ids`, `broad_forms`) beside `doc_ids`, never in them. The name is always
+  exact: a broad mark on an alias that repeats the label is ignored.
+- **Concepts and terms.** Stored definition candidates, merge suggestions, `is_a` proposals and
+  field-placement proposals read concepts (rows with `graph_include`). In all four runners
+  `--include-terms` reads every row and cannot be applied (for placement it replaces
+  `--all-concepts`, kept as an alias). A term refuses a definition write (409) and returns the
+  sentences found for it without storing them.
+- **The name on every screen.** `written_forms.shown_labels` is the one helper. The vocabulary
+  search, the gap list, the taxonomy view and Manage keywords carry `written`, as the graph did.
+- **Manage keywords** lists concepts apart from terms. A concept's row has an exact | broad control
+  per form. Delete asks first, says what goes with the row (forms, the chosen definition and the
+  other options, field placements, gap decisions, the graph's documents) and offers "Take off the
+  graph instead". The graph's Edit button, and a term's Manage keywords button, open the view on
+  that row.
+- **The graph says what it is behind on.** A build records a fingerprint of each concept's name
+  and forms in `skeleton.meta["forms"]`; the view compares it with the live vocabulary and names
+  the concepts that changed. A graph built before the record says it cannot tell, and offers the
+  rebuild.
+- **S-13.** CI's secret step is `python -m scripts.secret_scan_gate` (`just secret-scan`): the
+  `detect-secrets` hook over every tracked file against a temporary copy of the baseline. It fails
+  on a secret the baseline does not record, never rewrites the tracked baseline, makes no network
+  call, prints a finding's type and place and never its value, and exits 2 when it could not look.
+  It is stricter than the local hook in one way: the hook can ask a provider whether a candidate
+  key is live and drop it if not, and the gate keeps it. It adds about 19 seconds to a CI run.
+
+**Why.** ADR-054, accepted 2026-10-01: a count should say what it rests on, and until now it could
+rest on a row nobody read or on an alias that means something wider. S-13: the step CI ran,
+`detect-secrets scan --baseline`, is the command that writes a baseline — it recorded a new finding
+and exited 0 (found 2026-09-30).
+
+**Measured.**
+- **Nothing moved.** `build_concept_skeleton(apply=False)` on the working library with the
+  committed code and with this change: the same graph version (`cb99a7f9f36545da`), 13 concepts,
+  30 edges, 86 concept–document pairs, equal field by field
+  (`tests/eval/baselines/names_and_forms_2026-10-01.md`).
+- **One mark, on a copy of the library.** `distillation` marked broad: `knowledge distillation`
+  11 documents → 4, with 7 listed beside; no edge lost, six of its edges on fewer shared chunks;
+  3 documents leave the graph's coverage. The graph named the concept until it was rebuilt. This
+  is one mark to exercise the path. The user's reading of the forms has not happened.
+- **Terms.** `viral` and `SPECTER` opened in the app on the copy: usage passages for both, two
+  defining sentences for `SPECTER`, no control to choose one, and no row stored for either.
+- **The count to classify is 22, not 31.** The 13 concepts hold 31 alias rows; 9 repeat the name.
+- **S-13.** In a scratch repository the published example key fails the gate (exit 1) and passes
+  the command CI ran before (exit 0, the key written into the baseline). The repository passes:
+  834 files, about 19 seconds.
+- Checked live on the copy in light and dark and at 375 px: no failed request after a clean load.
+- The suite: 2,622 passed, coverage 92.8%. The gate's test file gained one test and had one
+  rewritten after that run, and passes on its own (24). The desktop's 284 tests and its type
+  check pass.
+
+**Rejected.**
+- Adding a broad form's documents to presence behind a flag: edges and gaps would count them.
+- `graph_version` as the "forms changed" signal: it fingerprints the result, and the gap and
+  epistemics sidecars key their own staleness on it.
+- Calling a graph built before the record "changed": there is nothing to compare, so it says that.
+- Deleting a row that has nothing attached without asking: one rule for every delete.
+- For S-13, failing on `git diff --exit-code .secrets.baseline` after the old scan: it turns the
+  scan's side effect into the signal, and a recorded line that only moved would fail it.
+- Running the hook on the tracked baseline in CI: the hook rewrites the file it is given.
+- Naming the `just` recipe `secrets`: the scanner reads that name and the command under it as a
+  keyword with a value, so the commit hook failed on the recipe (and on a sample report line in
+  the gate's own test). The recipe is `secret-scan`.
+
+**What it opens.**
+- The user's part: mark the 22 forms and name the concepts in Manage keywords, then rebuild.
+  RG-032 is measured after that, before ADR-053 decision 4's signals (the next session).
+- The working library's graph predates the record, so it will show the "cannot tell" notice until
+  its next rebuild. That rebuild also applies the case-aware matching of 2026-09-30 (`cre` 7 → 6).
+- The Graph tab offers Rebuild only when it reports itself behind. A standing control is a design
+  choice left open.
+- Found on the way: the test suite migrated the working library (the next entry, KI-60).
+- `docs/specs/feature-tag-families.md` calls the hidden group "glossary-only"; the view says
+  "unused" now, and the spec carries a dated note.
+
+---
+
 ## 2026-10-01 (3) — ADR-054 accepted, with the user's amendment: a base vocabulary per field is a source of terms
 
 **What changed.** No code.

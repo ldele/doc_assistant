@@ -246,6 +246,38 @@ def test_proposals_list_carries_both_edge_types_and_empties_as_they_are_reviewed
     assert client.get("/api/taxonomy/proposals").json()["proposals"] == []
 
 
+def test_a_concepts_name_reaches_the_taxonomy_as_the_library_writes_it(client: TestClient) -> None:
+    """ADR-054: the name on every surface. A concept placed under a field, and a concept on either
+    end of a proposal, shows `Cre` for the stored `cre`; a field or a document has no written form
+    and shows its own label."""
+    from doc_assistant.db.models import ConceptWrittenForm
+    from doc_assistant.knowledge.taxonomy import add_hierarchy_edge, attach_document_field
+
+    _seed_field("grp", "Neurosciences")
+    _seed_field("cre", "cre", kind="concept")
+    _seed_field("rec", "recombinase", kind="concept")
+    with session_scope() as s:
+        s.add(Document(id="d1", filename="p.pdf", source_original="p", doc_hash="h", format="pdf"))
+        s.add(ConceptWrittenForm(concept_id="cre", form="cre", written="Cre"))
+    with session_scope() as s:
+        add_hierarchy_edge(s, "cre", "grp", "in_field", origin="proposed")
+        add_hierarchy_edge(s, "rec", "cre", "is_a", origin="proposed")
+        attach_document_field(s, "d1", "grp", origin="proposed")
+
+    detail = client.get("/api/taxonomy/fields/grp").json()
+    assert [(m["label"], m["written"]) for m in detail["concepts"]] == [("cre", "Cre")]
+    assert [m["written"] for m in detail["documents"]] == [None]
+
+    proposals = client.get("/api/taxonomy/proposals").json()["proposals"]
+    by_pair = {(p["source_label"], p["target_label"]): p for p in proposals}
+    is_a = by_pair[("recombinase", "cre")]
+    assert (is_a["source_written"], is_a["target_written"]) == (None, "Cre")
+    in_field = by_pair[("cre", "Neurosciences")]
+    assert (in_field["source_written"], in_field["target_written"]) == ("Cre", None)
+    document = by_pair[("p.pdf", "Neurosciences")]
+    assert (document["source_written"], document["target_written"]) == (None, None)
+
+
 def test_an_is_a_edge_must_join_two_concepts(client: TestClient) -> None:
     """ROADMAP 51. The raw POST was the only `is_a` writer and it accepted concept -> field."""
     _seed_field("grp", "ML")

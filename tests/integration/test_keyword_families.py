@@ -591,3 +591,180 @@ def test_a_taxonomy_field_is_not_a_family_and_cannot_join_the_graph(env: Path) -
     assert r.status_code == 404
     with session_scope() as session:
         assert not session.get(Concept, field_id).graph_include  # type: ignore[union-attr]
+
+
+# --- exact and broad forms; what a delete removes (ADR-054) ----------------------------------- #
+#
+# A concept's label is its name and each member is exact (counts as presence) or broad (counted
+# beside it). The polarity that matters: a member nobody has classified reads as exact, so the
+# graph does not move until the user says so; and the name itself carries no mark.
+
+
+def test_a_member_is_unclassified_until_the_user_marks_it(env: Path) -> None:
+    from doc_assistant.library import (
+        create_keyword_family,
+        list_keyword_families,
+        set_family_member_breadth,
+    )
+
+    family_id = create_keyword_family("knowledge distillation", ["distillation", "kd"]).id
+    (fresh,) = list_keyword_families()
+    assert (fresh.broad, fresh.exact) == ([], [])
+
+    marked = set_family_member_breadth(family_id, "Distillation", "broad")  # case-insensitive
+    assert marked is not None and (marked.broad, marked.exact) == (["distillation"], [])
+    assert set_family_member_breadth(family_id, "kd", "exact").exact == ["kd"]  # type: ignore[union-attr]
+
+    cleared = set_family_member_breadth(family_id, "distillation", None)
+    assert cleared is not None and (cleared.broad, cleared.exact) == ([], ["kd"])
+    assert sorted(cleared.aliases) == ["distillation", "kd"]  # a mark never removes a member
+
+
+def test_breadth_is_refused_for_a_stranger_the_name_and_an_unknown_value(env: Path) -> None:
+    from doc_assistant.library import create_keyword_family, set_family_member_breadth
+
+    family_id = create_keyword_family("knowledge distillation", ["distillation"]).id
+    with pytest.raises(ValueError, match="not a member"):
+        set_family_member_breadth(family_id, "pruning", "broad")
+    with pytest.raises(ValueError, match="not a member"):  # the name is always exact
+        set_family_member_breadth(family_id, "knowledge distillation", "broad")
+    with pytest.raises(ValueError, match="breadth must be"):
+        set_family_member_breadth(family_id, "distillation", "narrow")
+    assert set_family_member_breadth("nope", "distillation", "broad") is None
+
+
+def test_a_broad_member_leaves_the_loader_presence_counts_through(env: Path) -> None:
+    """The write has a reader: `load_concepts` is what presence, edges and the gap list count
+    through, and a broad member must be out of it and in `load_broad_forms`."""
+    from doc_assistant.knowledge.concept_skeleton import load_broad_forms, load_concepts
+    from doc_assistant.library import (
+        create_keyword_family,
+        set_family_graph_include,
+        set_family_member_breadth,
+    )
+
+    family_id = create_keyword_family("knowledge distillation", ["distillation", "kd"]).id
+    set_family_graph_include(family_id, True)
+    assert sorted(load_concepts()[1][family_id]) == ["distillation", "kd"]
+    assert load_broad_forms() == {}
+
+    set_family_member_breadth(family_id, "distillation", "broad")
+    assert load_concepts()[1][family_id] == ["kd"]
+    assert load_broad_forms() == {family_id: ["distillation"]}
+
+
+def test_route_marks_a_member_and_refuses_what_the_library_refuses(env: Path) -> None:
+    client = _client()
+    family = client.post(
+        "/api/library/keyword-families",
+        json={"canonical": "knowledge distillation", "members": ["distillation"]},
+    ).json()
+    assert (family["broad"], family["exact"], family["written"]) == ([], [], None)
+    base = f"/api/library/keyword-families/{family['id']}/members"
+
+    r = client.patch(f"{base}/distillation", json={"breadth": "broad"})
+    assert r.status_code == 200 and r.json()["broad"] == ["distillation"]
+    listed = client.get("/api/library/keyword-families").json()
+    assert listed[0]["broad"] == ["distillation"]
+
+    r = client.patch(f"{base}/distillation", json={"breadth": None})
+    assert r.status_code == 200 and r.json()["broad"] == []
+
+    assert client.patch(f"{base}/pruning", json={"breadth": "broad"}).status_code == 400
+    assert client.patch(f"{base}/distillation", json={"breadth": "narrow"}).status_code == 422
+    assert client.patch(f"{base}/distillation", json={}).status_code == 422  # required field
+    r = client.patch(
+        "/api/library/keyword-families/nope/members/distillation", json={"breadth": "broad"}
+    )
+    assert r.status_code == 404
+
+
+def test_the_family_payload_carries_the_name_as_the_library_writes_it(env: Path) -> None:
+    """One server-side helper: the family shows `Cre` for the stored `cre` once a graph build has
+    recorded how the library writes it, and nothing for a lower-case written form."""
+    from doc_assistant.db.models import ConceptWrittenForm
+    from doc_assistant.library import create_keyword_family, list_keyword_families
+
+    cre = create_keyword_family("cre", []).id
+    beta = create_keyword_family("beta", []).id
+    with session_scope() as session:
+        session.add(ConceptWrittenForm(concept_id=cre, form="cre", written="Cre"))
+        session.add(ConceptWrittenForm(concept_id=beta, form="beta", written="beta"))
+
+    shown = {f.canonical: f.written for f in list_keyword_families()}
+    assert shown == {"cre": "Cre", "beta": None}
+    with session_scope() as session:
+        assert session.get(Concept, cre).label == "cre"  # type: ignore[union-attr]  # never rewritten
+
+
+def test_a_deletion_says_what_goes_with_the_row(env: Path) -> None:
+    from doc_assistant.db.models import ConceptHierarchy, ConceptPresenceRow, GapTriage
+    from doc_assistant.knowledge.definitions import add_user_definition
+    from doc_assistant.library import (
+        create_keyword_family,
+        delete_keyword_family,
+        describe_family_deletion,
+        set_family_graph_include,
+    )
+
+    doc_id = _seed_doc_with_keywords("a.pdf", "dbs")
+    family_id = create_keyword_family("dbs", ["deep brain stimulation"]).id
+    set_family_graph_include(family_id, True)
+    with session_scope() as session:
+        field = Concept(label="Neurosciences", source="anzsrc", kind="domain")
+        session.add(field)
+        session.flush()
+        session.add(ConceptHierarchy(source_id=family_id, target_id=field.id, type="in_field"))
+        session.add(GapTriage(concept_id=family_id, kind="single_source", status="dismissed"))
+        session.add(
+            ConceptPresenceRow(
+                concept_id=family_id,
+                document_id=doc_id,
+                chunk_keys_json="[]",
+                n_mentions=3,
+                graph_version="v",
+            )
+        )
+        add_user_definition(session, family_id, "Electrical stimulation of deep brain targets.")
+
+    deletion = describe_family_deletion(family_id)
+    assert deletion is not None
+    assert (deletion.canonical, deletion.is_concept, deletion.aliases) == ("dbs", True, 1)
+    assert (deletion.has_definition, deletion.definition_candidates) == (True, 1)
+    assert (deletion.placements, deletion.triage, deletion.presence_documents) == (1, 1, 1)
+
+    # Describing is read-only; the delete is what removes.
+    assert describe_family_deletion(family_id) is not None
+    assert delete_keyword_family(family_id) is True
+    assert describe_family_deletion(family_id) is None
+
+
+def test_a_term_with_nothing_attached_describes_as_zeros(env: Path) -> None:
+    from doc_assistant.library import create_keyword_family, describe_family_deletion
+
+    family_id = create_keyword_family("pose", []).id
+    deletion = describe_family_deletion(family_id)
+    assert deletion is not None and deletion.is_concept is False
+    assert (
+        deletion.aliases,
+        deletion.has_definition,
+        deletion.definition_candidates,
+        deletion.placements,
+        deletion.triage,
+        deletion.presence_documents,
+    ) == (0, False, 0, 0, 0, 0)
+
+
+def test_route_describes_a_deletion_without_deleting(env: Path) -> None:
+    client = _client()
+    family = client.post(
+        "/api/library/keyword-families",
+        json={"canonical": "dbs", "members": ["deep brain stimulation"]},
+    ).json()
+
+    r = client.get(f"/api/library/keyword-families/{family['id']}/deletion")
+    assert r.status_code == 200
+    body = r.json()
+    assert (body["canonical"], body["aliases"], body["is_concept"]) == ("dbs", 1, False)
+    assert len(client.get("/api/library/keyword-families").json()) == 1  # still there
+    assert client.get("/api/library/keyword-families/nope/deletion").status_code == 404

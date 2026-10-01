@@ -10,6 +10,9 @@ the concept's refreshed candidates, so the panel never patches its own copy. $0,
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+from typing import TYPE_CHECKING
+
 from fastapi import APIRouter, HTTPException, Query
 
 from apps.api.models.definitions import (
@@ -19,18 +22,34 @@ from apps.api.models.definitions import (
     VocabularyMatchPayload,
 )
 
+if TYPE_CHECKING:
+    from doc_assistant.knowledge.definitions import PassageHit
+
 router = APIRouter()
 
 
-def _view(concept_id: str) -> ConceptDefinitionsPayload:
+def _view(concept_id: str, unsaved: Sequence[PassageHit] = ()) -> ConceptDefinitionsPayload:
     from doc_assistant.db.session import session_scope
     from doc_assistant.knowledge.definitions import load_definitions
 
     with session_scope() as session:
-        view = load_definitions(session, concept_id)
+        view = load_definitions(session, concept_id, unsaved=unsaved)
         if view is None:
             raise HTTPException(status_code=404, detail=f"no concept with id {concept_id!r}")
         return ConceptDefinitionsPayload.from_view(view)
+
+
+def _require_concept(concept_id: str) -> None:
+    """404 for an unknown id, 409 for a term: a definition is written on a concept (ADR-054)."""
+    from doc_assistant.db.session import session_scope
+    from doc_assistant.knowledge.definitions import NotAConceptError, require_concept
+
+    _view(concept_id)  # 404 before anything else
+    with session_scope() as session:
+        try:
+            require_concept(session, concept_id)
+        except NotAConceptError as e:
+            raise HTTPException(status_code=409, detail=str(e)) from e
 
 
 def _act(concept_id: str, definition_id: str, action: str) -> ConceptDefinitionsPayload:
@@ -39,6 +58,7 @@ def _act(concept_id: str, definition_id: str, action: str) -> ConceptDefinitions
     from doc_assistant.db.session import session_scope
     from doc_assistant.knowledge import definitions as d
 
+    _require_concept(concept_id)
     with session_scope() as session:
         row = session.get(ConceptDefinition, definition_id)
         if row is None or row.concept_id != concept_id:
@@ -93,11 +113,11 @@ def get_usage(concept_id: str) -> ConceptUsagePayload:
 @router.post("/api/concepts/{concept_id}/definitions", status_code=201)
 def add_definition(concept_id: str, body: UserDefinitionRequest) -> ConceptDefinitionsPayload:
     """Store the user's own definition — chosen unless ``choose`` is false. The previous choice
-    stays as a candidate, one undo away."""
+    stays as a candidate, one undo away. 409 for a term: it is taken on first (ADR-054)."""
     from doc_assistant.db.session import session_scope
     from doc_assistant.knowledge.definitions import DefinitionError, add_user_definition
 
-    _view(concept_id)  # 404 before any write
+    _require_concept(concept_id)  # 404 / 409 before any write
     with session_scope() as session:
         try:
             add_user_definition(session, concept_id, body.text, choose=body.choose)
@@ -112,12 +132,19 @@ def extract_definitions_for(concept_id: str) -> ConceptDefinitionsPayload:
 
     Deterministic and free. The keyword index picks the documents that mention it, so this reads
     those documents, not the whole store; without the index it falls back to the full read.
-    Idempotent: running it again adds only what is new and never touches a choice."""
+    Idempotent: running it again adds only what is new and never touches a choice.
+
+    **A term's passages are found and returned, not stored** (ADR-054): the answer carries them
+    as unsaved options the panel can show and open, and nothing is written."""
     from doc_assistant.knowledge.definitions import chunks_mentioning, extract_definitions
 
     label = _view(concept_id).label
-    extract_definitions(concept_ids=[concept_id], apply=True, chunks=chunks_mentioning([label]))
-    return _view(concept_id)
+    run = extract_definitions(
+        concept_ids=[concept_id], apply=True, chunks=chunks_mentioning([label])
+    )
+    # `extract_definitions` stored a concept's passages and left a term's in `hits`. Handing them
+    # back as `unsaved` is a no-op for a concept: every one of its hits is already a stored row.
+    return _view(concept_id, unsaved=run.hits.get(concept_id, []))
 
 
 @router.post("/api/concepts/{concept_id}/definitions/undo")
@@ -127,7 +154,7 @@ def undo_definition(concept_id: str) -> ConceptDefinitionsPayload:
     from doc_assistant.db.session import session_scope
     from doc_assistant.knowledge.definitions import undo_last
 
-    _view(concept_id)
+    _require_concept(concept_id)
     with session_scope() as session:
         if undo_last(session, concept_id) is None:
             raise HTTPException(status_code=409, detail="nothing to undo")

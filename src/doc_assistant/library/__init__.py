@@ -85,6 +85,7 @@ from doc_assistant.library.folders import (
     rename_folder,
 )
 from doc_assistant.library.keywords import (
+    FamilyDeletion,
     KeywordFamily,
     KeywordFamilyExists,
     _all_keyword_names,
@@ -93,12 +94,14 @@ from doc_assistant.library.keywords import (
     add_family_member,
     create_keyword_family,
     delete_keyword_family,
+    describe_family_deletion,
     detect_family_candidates,
     get_keyword_family,
     list_keyword_families,
     remove_family_member,
     rename_keyword_family,
     set_family_graph_include,
+    set_family_member_breadth,
 )
 from doc_assistant.library.models import (
     DocumentDetails,
@@ -151,6 +154,7 @@ __all__ = [
     "DocumentReference",
     "DocumentReferences",
     "DocumentSummary",
+    "FamilyDeletion",
     "FigureView",
     "FolderSummary",
     "GraphEdge",
@@ -188,6 +192,7 @@ __all__ = [
     "delete_document",
     "delete_folder",
     "delete_keyword_family",
+    "describe_family_deletion",
     "detect_family_candidates",
     "document_connections",
     "document_references",
@@ -223,5 +228,6 @@ __all__ = [
     "reveal_document_source",
     "set_document_meta",
     "set_family_graph_include",
+    "set_family_member_breadth",
     "similar_docs",
 ]

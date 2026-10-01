@@ -17,14 +17,22 @@ import {
   keywordFacets,
   orderedUnits,
   remapSelection,
-  applyGraphLens,
+  deletionLosses,
   graphVocabulary,
+  memberBreadth,
+  nextBreadth,
   splitInheritedFamilies,
   referenceLabel,
   splitRareFacets,
+  termFamilies,
   unitDocCounts,
 } from './library.ts'
-import type { DocumentReference, KeywordFamily, LibraryDocument } from '../core/types/index.ts'
+import type {
+  DocumentReference,
+  KeywordFamily,
+  KeywordFamilyDeletion,
+  LibraryDocument,
+} from '../core/types/index.ts'
 
 const family = (
   canonical: string,
@@ -338,21 +346,91 @@ test('an untouched library has an empty graph vocabulary', () => {
   assert.deepEqual(graphVocabulary([family('a', []), family('b', ['x'], 2)]), [])
 })
 
-test('the lens off is the identity, not an inversion', () => {
-  const fams = [family('BM25', [], 3, true), family('llm family', ['llm'], 5)]
-  assert.deepEqual(applyGraphLens(fams, false), fams)
+test('a concept with no members and no documents is still listed as a concept', () => {
+  // Most opted-in concepts have no members and no documents — the shape the unused split hides.
+  // The split is applied to the terms alone, so a chosen concept can never be hidden by it.
+  const bare = family('cre', [], 0, true)
+  assert.deepEqual(splitInheritedFamilies([bare]).inherited, [bare], 'fixture: this row IS bare')
+  assert.deepEqual(graphVocabulary([bare]), [bare])
+  assert.deepEqual(splitInheritedFamilies(termFamilies([bare])), { real: [], inherited: [] })
+})
+
+// ---- concepts and terms; exact and broad forms (ADR-054) -----------------------------------
+
+test('a row is a concept once it is on the graph, and a term otherwise', () => {
+  const fams = [family('BM25', [], 3, true), family('pose', [], 17), family('cohan', [], 2)]
   assert.deepEqual(
-    applyGraphLens(fams, true).map((f) => f.canonical),
+    graphVocabulary(fams).map((f) => f.canonical),
     ['BM25'],
+  )
+  assert.deepEqual(
+    termFamilies(fams).map((f) => f.canonical),
+    ['pose', 'cohan'],
+  )
+  // The two lists partition the vocabulary: nothing is in both, nothing is in neither.
+  assert.equal(graphVocabulary(fams).length + termFamilies(fams).length, fams.length)
+})
+
+test('a member is exact, broad, or not yet classified', () => {
+  const kd: KeywordFamily = {
+    ...family('knowledge distillation', ['distillation', 'kd', 'KD loss'], 2, true),
+    broad: ['distillation'],
+    exact: ['kd'],
+  }
+  assert.equal(memberBreadth(kd, 'distillation'), 'broad')
+  assert.equal(memberBreadth(kd, 'kd'), 'exact')
+  // Unclassified is its own state: the server counts it as exact, but nobody decided that.
+  assert.equal(memberBreadth(kd, 'KD loss'), null)
+})
+
+test('clicking a set mark clears it; clicking the other one sets it', () => {
+  assert.equal(nextBreadth(null, 'broad'), 'broad')
+  assert.equal(nextBreadth('broad', 'broad'), null)
+  assert.equal(nextBreadth('broad', 'exact'), 'exact')
+  assert.equal(nextBreadth('exact', 'exact'), null)
+})
+
+const deletion = (over: Partial<KeywordFamilyDeletion>): KeywordFamilyDeletion => ({
+  id: 'x',
+  canonical: 'dbs',
+  is_concept: true,
+  aliases: 0,
+  has_definition: false,
+  definition_candidates: 0,
+  placements: 0,
+  triage: 0,
+  presence_documents: 0,
+  ...over,
+})
+
+test('a deletion names what goes with the row, and only what is there', () => {
+  assert.deepEqual(
+    deletionLosses(
+      deletion({
+        aliases: 2,
+        has_definition: true,
+        definition_candidates: 4,
+        placements: 1,
+        triage: 1,
+        presence_documents: 5,
+      }),
+    ),
+    [
+      '2 forms',
+      'its chosen definition',
+      '3 other definition options',
+      '1 place in the field tree',
+      '1 gap decision',
+      'its place on the graph (5 documents)',
+    ],
+  )
+  // Candidates with nothing chosen are all "other" options; one form and one document are singular.
+  assert.deepEqual(
+    deletionLosses(deletion({ aliases: 1, definition_candidates: 1, presence_documents: 1 })),
+    ['1 form', '1 other definition option', 'its place on the graph (1 document)'],
   )
 })
 
-test('the lens reaches concepts the glossary-only split would hide', () => {
-  // Most opted-in concepts have no members and no documents, so they land in `inherited` — the
-  // group the Manage view hides by default. A lens applied to the visible set alone would show
-  // an empty list while the count beside it said 1.
-  const hidden = family('cre', [], 0, true)
-  const { inherited } = splitInheritedFamilies([hidden])
-  assert.deepEqual(inherited, [hidden], 'fixture assumption: this row IS glossary-only')
-  assert.deepEqual(applyGraphLens([hidden], true), [hidden])
+test('a term with nothing attached loses nothing', () => {
+  assert.deepEqual(deletionLosses(deletion({ is_concept: false })), [])
 })

@@ -147,10 +147,13 @@ def test_proposals_are_written_as_proposed_and_never_overwrite_curated(temp_db):
     from doc_assistant.knowledge.taxonomy import add_hierarchy_edge
 
     with session_scope() as session:
-        session.add(Concept(id="n1", label="beta oscillations", kind="concept"))
-        session.add(Concept(id="b1", label="oscillations", kind="concept"))
-        session.add(Concept(id="n2", label="human pose", kind="concept"))
-        session.add(Concept(id="b2", label="pose", kind="concept"))
+        for cid, label in (
+            ("n1", "beta oscillations"),
+            ("b1", "oscillations"),
+            ("n2", "human pose"),
+            ("b2", "pose"),
+        ):
+            session.add(Concept(id=cid, label=label, kind="concept", graph_include=True))
         session.flush()
         add_hierarchy_edge(session, "n2", "b2", "is_a")  # the user got there first
 
@@ -170,10 +173,13 @@ def test_a_cycle_is_refused_and_the_rest_of_the_batch_survives(temp_db):
     from doc_assistant.knowledge.taxonomy import add_hierarchy_edge
 
     with session_scope() as session:
-        session.add(Concept(id="pe", label="pose estimation", kind="concept"))
-        session.add(Concept(id="e", label="estimation", kind="concept"))
-        session.add(Concept(id="n", label="nuclear speckles", kind="concept"))
-        session.add(Concept(id="s", label="speckles", kind="concept"))
+        for cid, label in (
+            ("pe", "pose estimation"),
+            ("e", "estimation"),
+            ("n", "nuclear speckles"),
+            ("s", "speckles"),
+        ):
+            session.add(Concept(id=cid, label=label, kind="concept", graph_include=True))
         session.flush()
         add_hierarchy_edge(session, "e", "pe", "is_a")  # broader-than, curated, wrong way round
 
@@ -193,8 +199,10 @@ def test_dry_run_writes_nothing_and_apply_is_idempotent(temp_db):
     from doc_assistant.db.session import session_scope
 
     with session_scope() as session:
-        session.add(Concept(id="n1", label="beta oscillations", kind="concept"))
-        session.add(Concept(id="b1", label="oscillations", kind="concept"))
+        session.add(
+            Concept(id="n1", label="beta oscillations", kind="concept", graph_include=True)
+        )
+        session.add(Concept(id="b1", label="oscillations", kind="concept", graph_include=True))
         session.add(Concept(id="d1", label="Computing", kind="domain"))
 
     dry = run_propose_isa()
@@ -210,7 +218,9 @@ def test_dry_run_writes_nothing_and_apply_is_idempotent(temp_db):
         assert len(rows) == 1 and rows[0].type == "is_a" and rows[0].origin == "proposed"
 
 
-def test_graph_only_narrows_the_vocabulary(temp_db):
+def test_proposals_read_the_concepts_and_leave_the_terms_out(temp_db):
+    """ADR-054: an `is_a` edge relates meanings, so the default reads the rows the user has taken
+    on. A term (not on the graph) is read only when asked for, and never written."""
     from doc_assistant.db.session import session_scope
 
     with session_scope() as session:
@@ -219,5 +229,23 @@ def test_graph_only_narrows_the_vocabulary(temp_db):
         )
         session.add(Concept(id="b1", label="oscillations", kind="concept", graph_include=False))
         session.flush()
-        assert len(load_concept_labels(session)) == 2
-        assert load_concept_labels(session, graph_only=True) == [("n1", "beta oscillations")]
+        assert load_concept_labels(session) == [("n1", "beta oscillations")]
+        assert len(load_concept_labels(session, graph_only=False)) == 2
+
+    # The pair spans a concept and a term: nothing to propose by default, one candidate when the
+    # terms are read for a report.
+    assert run_propose_isa().candidates == ()
+    assert len(run_propose_isa(graph_only=False).candidates) == 1
+
+
+def test_the_whole_vocabulary_read_cannot_be_written(temp_db):
+    from doc_assistant.db.session import session_scope
+
+    with session_scope() as session:
+        session.add(Concept(id="n1", label="beta oscillations", kind="concept"))
+        session.add(Concept(id="b1", label="oscillations", kind="concept"))
+
+    with pytest.raises(ValueError, match="between concepts only"):
+        run_propose_isa(apply=True, graph_only=False)
+    with session_scope() as session:
+        assert session.execute(select(ConceptHierarchy)).scalars().all() == []

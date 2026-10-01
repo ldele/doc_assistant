@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-09-30 (the security floor runs the blocking advisory gate, S-8) · class: runbook -->
+<!-- status: active · updated: 2026-10-01 (the security floor runs the blocking secret scan, S-13) · class: runbook -->
 
 # Release runbook
 
@@ -35,6 +35,7 @@ uv run --no-sync mypy src
 npm --prefix apps/desktop test && npm --prefix apps/desktop run check
 uv run --no-sync python tools/conventions/rungate.py docs_check --root . --strict
 uv run --no-sync python -m scripts.pip_audit_gate           # security floor, blocking (S-8)
+uv run --no-sync python -m scripts.secret_scan_gate         # secret scan, blocking (S-13)
 npm --prefix apps/desktop audit --audit-level=high
 uv run --no-sync bandit -r src apps -c pyproject.toml -q
 
@@ -162,7 +163,7 @@ Write for someone deciding whether to install it, not for the commit log:
 | Docs | `rungate.py docs_check --root . --strict` | |
 | Hooks | `uv run --no-sync pre-commit run` | ruff/format/mypy/bandit/secrets |
 | Checklists refreshed | `preflight` (`checklists`) | both files touched since the previous tag — §0 |
-| Security floor | `uv run --no-sync python -m scripts.pip_audit_gate` · `npm --prefix apps/desktop audit --audit-level=high` · `uv run --no-sync bandit -r src apps -c pyproject.toml -q` | the deterministic half of `docs/security.md`; the advisory gate blocks in CI since 2026-09-30 (S-8), and a new advisory is reviewed into `pip-audit-ignore.toml` or fixed, never waved through |
+| Security floor | `uv run --no-sync python -m scripts.pip_audit_gate` · `uv run --no-sync python -m scripts.secret_scan_gate` · `npm --prefix apps/desktop audit --audit-level=high` · `uv run --no-sync bandit -r src apps -c pyproject.toml -q` | the deterministic half of `docs/security.md`; the advisory gate blocks in CI since 2026-09-30 (S-8), and a new advisory is reviewed into `pip-audit-ignore.toml` or fixed, never waved through; the secret scan fails on a secret `.secrets.baseline` does not record (S-13, 2026-10-01) |
 | UX/UI walkthrough | `docs/release-ux-checklist.md` | §5b — a person drives every surface in the **installed** build |
 
 > **`pre-commit` can eat your commit.** `ruff-format` **modifies files**, and a hook that modifies a

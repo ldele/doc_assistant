@@ -119,12 +119,16 @@ def head_suffix_candidates(concepts: Sequence[tuple[str, str]]) -> list[IsaCandi
     return candidates
 
 
-def load_concept_labels(session: Session, *, graph_only: bool = False) -> list[tuple[str, str]]:
-    """``(id, label)`` for every concept — the domain nodes are not concepts and never match.
+def load_concept_labels(session: Session, *, graph_only: bool = True) -> list[tuple[str, str]]:
+    """``(id, label)`` for the concepts — the domain nodes are not concepts and never match.
 
-    ``graph_only`` narrows to the graph vocabulary (``graph_include``). It is **off** by default,
-    the opposite of ``taxonomy_propose``: 13 of 357 concepts are on the graph here, and the shared
-    heads that make a spine (``pose``, ``oscillations``, ``passages``) sit in the other 344.
+    ``graph_only`` keeps the rows the user has taken on (``graph_include``), and is **on** by
+    default since ADR-054: an ``is_a`` edge relates meanings, and a term nobody has read is not
+    one. It was off until 2026-10-01 because the shared heads that make a spine (``pose``,
+    ``oscillations``, ``passages``) sit among the terms — which is the finding, not a reason to
+    write edges between them: 5 of the 27 candidates over the whole vocabulary had a fragment as
+    their broader side (``tests/eval/baselines/isa_head_suffix_2026-09-20.md``). Pass ``False`` to
+    measure over every row; :func:`run_propose_isa` refuses to write that.
     """
     stmt = select(Concept.id, Concept.label).where(Concept.kind == "concept")
     if graph_only:
@@ -162,13 +166,21 @@ def write_candidates(session: Session, candidates: Sequence[IsaCandidate]) -> tu
     return written, skipped
 
 
-def run_propose_isa(*, apply: bool = False, graph_only: bool = False) -> IsaProposeResult:
+def run_propose_isa(*, apply: bool = False, graph_only: bool = True) -> IsaProposeResult:
     """Find the candidates and, with ``apply``, write them as proposals.
 
     Without ``apply`` this reads the vocabulary and reports — it writes nothing, the same polarity
     every runner here has. Re-running with ``apply`` is idempotent: the seam keys on
     ``(source, target, type)``.
+
+    ``graph_only=False`` widens the read to the terms, for a report. It cannot be written:
+    proposals are stored between concepts only (ADR-054), so combining it with ``apply`` raises.
     """
+    if apply and not graph_only:
+        raise ValueError(
+            "is_a proposals are written between concepts only (ADR-054); "
+            "the whole-vocabulary read is a dry run"
+        )
     with session_scope() as session:
         concepts = load_concept_labels(session, graph_only=graph_only)
         candidates = tuple(head_suffix_candidates(concepts))

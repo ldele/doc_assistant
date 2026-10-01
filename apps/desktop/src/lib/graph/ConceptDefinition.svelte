@@ -41,6 +41,7 @@
   let loading = $state(true)
   let busy = $state(false)
   let looking = $state(false)
+  let looked = $state(false)
   let error = $state<string | null>(null)
   let writing = $state(false)
   let draft = $state('')
@@ -50,6 +51,9 @@
   let usageError = $state<string | null>(null)
 
   const groups = $derived(groupCandidates(view))
+  // ADR-054: a *term* is a row nobody has taken on. Its card shows what the library says and
+  // offers no write — a definition is chosen for a concept, and the server answers 409 otherwise.
+  const isConcept = $derived(view?.is_concept !== false)
 
   // Reload whenever the selected concept changes; a stale answer for the previous concept is
   // dropped rather than painted over the new one.
@@ -60,6 +64,7 @@
     writing = false
     draft = ''
     showDismissed = false
+    looked = false
     getDefinitions(id)
       .then((v) => {
         if (id === conceptId) view = v
@@ -98,6 +103,9 @@
     looking = true
     await run(() => extractDefinitions(conceptId))
     looking = false
+    // A look that finds nothing leaves the card as it was; say that it looked, or the button
+    // reads as if it had done nothing.
+    looked = true
   }
 
   async function save(): Promise<void> {
@@ -120,12 +128,12 @@
   <div class="defhead">
     <h3>Definition</h3>
     <div class="defactions">
-      {#if view?.can_undo}
+      {#if isConcept && view?.can_undo}
         <button class="ghost sm" onclick={() => run(() => undoDefinition(conceptId))} disabled={busy} type="button" title="Take back the last change">
           <Icon name="rotate-ccw" size={13} /> Undo
         </button>
       {/if}
-      {#if !writing}
+      {#if isConcept && !writing}
         <button class="ghost sm" onclick={() => startWriting()} disabled={busy} type="button">
           <Icon name="pencil" size={13} /> Write your own
         </button>
@@ -149,14 +157,18 @@
           {#if c.chunk_key}
             <button class="linkish" onclick={() => c.chunk_key && onOpenPassage(c.chunk_key)} type="button">Open passage →</button>
           {/if}
-          <button class="linkish" onclick={() => run(() => dismissDefinition(conceptId, c.id))} disabled={busy} type="button">Clear</button>
+          {#if isConcept}
+            <button class="linkish" onclick={() => run(() => dismissDefinition(conceptId, c.id))} disabled={busy} type="button">Clear</button>
+          {/if}
         </footer>
       </blockquote>
-    {:else}
+    {:else if isConcept}
       <p class="muted none">No definition chosen yet.</p>
+    {:else}
+      <p class="muted none">A term has no definition to choose. What the library says is below.</p>
     {/if}
 
-    {#if writing}
+    {#if isConcept && writing}
       <div class="writer">
         <textarea bind:value={draft} rows="3" placeholder="What does this concept mean, in your library?" aria-label="Your definition"></textarea>
         <div class="writeractions">
@@ -168,7 +180,10 @@
     {/if}
 
     {#if groups.suggested.length > 0}
-      <h4>{groups.chosen ? 'Other options' : 'Options'} ({groups.suggested.length})</h4>
+      <h4>
+        {#if !isConcept}Sentences that define it{:else if groups.chosen}Other options{:else}Options{/if}
+        ({groups.suggested.length})
+      </h4>
       <ul class="cands">
         {#each groups.suggested as c (c.id)}
           <li class="cand">
@@ -193,15 +208,17 @@
                 {#each c.reasons as r (r)}<li>{r}</li>{/each}
               </ul>
             {/if}
-            <div class="cactions">
-              <button class="ghost sm" onclick={() => run(() => chooseDefinition(conceptId, c.id))} disabled={busy} type="button">
-                <Icon name="check" size={13} /> Use this
-              </button>
-              <button class="ghost sm" onclick={() => startWriting(c)} disabled={busy} type="button" title="Start your own definition from this wording">
-                Edit into my own
-              </button>
-              <button class="linkish" onclick={() => run(() => dismissDefinition(conceptId, c.id))} disabled={busy} type="button">Dismiss</button>
-            </div>
+            {#if isConcept}
+              <div class="cactions">
+                <button class="ghost sm" onclick={() => run(() => chooseDefinition(conceptId, c.id))} disabled={busy} type="button">
+                  <Icon name="check" size={13} /> Use this
+                </button>
+                <button class="ghost sm" onclick={() => startWriting(c)} disabled={busy} type="button" title="Start your own definition from this wording">
+                  Edit into my own
+                </button>
+                <button class="linkish" onclick={() => run(() => dismissDefinition(conceptId, c.id))} disabled={busy} type="button">Dismiss</button>
+              </div>
+            {/if}
           </li>
         {/each}
       </ul>
@@ -212,9 +229,20 @@
         <button class="ghost sm" onclick={look} disabled={busy} type="button">
           <Icon name="search" size={13} /> {looking ? 'Looking…' : 'Look in my library'}
         </button>
-        <span class="muted">Finds sentences that define it, with where each one is. Takes a few seconds.</span>
+        <span class="muted">
+          {#if isConcept}
+            Finds sentences that define it, with where each one is. Takes a few seconds.
+          {:else}
+            Finds sentences that define it, with where each one is. Nothing is stored for a term.
+          {/if}
+        </span>
       </p>
-    {:else if view && view.thin}
+      {#if looked && !looking && !error}
+        <p class="muted thin">
+          Looked: no sentence in your library reads as a definition of it.
+        </p>
+      {/if}
+    {:else if view && view.thin && isConcept}
       <p class="muted thin">
         Your library has little to go on for this concept — no sentence that reads as a definition.
         Writing your own is a good option here.

@@ -136,6 +136,42 @@ def test_apply_writes_tier1_and_tier2a_rows(env: Path) -> None:
     assert unsourced and unsourced[0].concept_id == "shared"
 
 
+def test_a_claim_is_attributed_through_exact_forms_only(env: Path) -> None:
+    """ADR-054: the gap list counts exact forms. An uncited sentence that only says the bare word
+    `distillation` is attributed to `knowledge distillation` while that alias is unclassified,
+    and stops being attributed once the user marks it broad."""
+    _seed_curated_concepts()
+    _write_skeleton(env / "skeleton")
+    with session_scope() as session:
+        session.add(
+            Concept(id="kd", label="knowledge distillation", source="manual", graph_include=True)
+        )
+        session.add(ConceptAlias(concept_id="kd", alias="distillation"))
+        answer = AnswerRecord(id=str(uuid4()), query="q", answer="a", model_name="m")
+        session.add(answer)
+        session.flush()
+        session.add(
+            AnswerClaim(
+                answer_record_id=answer.id,
+                claim_index=0,
+                claim_text="The cost of distillation falls with the batch size.",
+                marker=MARKER_UNSUPPORTED,
+            )
+        )
+
+    def attributed() -> set[str]:
+        result = build_gaps(apply=False, skeleton_dir=env / "skeleton", min_degree=2)
+        return {g.concept_id for g in result.gaps if g.kind == "unsourced_claim"}
+
+    assert attributed() == {"kd"}
+    with session_scope() as session:
+        alias = session.execute(
+            select(ConceptAlias).where(ConceptAlias.alias == "distillation")
+        ).scalar_one()
+        alias.breadth = "broad"
+    assert attributed() == set()
+
+
 def test_cited_claim_produces_no_unsourced_gap(env: Path) -> None:
     _seed_curated_concepts()
     _seed_claims()

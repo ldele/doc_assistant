@@ -18,11 +18,18 @@ from pathlib import Path
 import pytest
 from apps.api.main import create_app
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, update
 from sqlalchemy.orm import sessionmaker
 
 import doc_assistant.db.session as session_mod
-from doc_assistant.db.models import Base, Concept, ConceptPresenceRow, Document, GapRow
+from doc_assistant.db.models import (
+    Base,
+    Concept,
+    ConceptAlias,
+    ConceptPresenceRow,
+    Document,
+    GapRow,
+)
 from doc_assistant.db.session import session_scope
 from doc_assistant.knowledge.concept_graph_view import load_concept_presence, load_graph_view
 from doc_assistant.knowledge.concept_skeleton import (
@@ -30,6 +37,7 @@ from doc_assistant.knowledge.concept_skeleton import (
     ConceptNode,
     ConceptSkeleton,
     SkeletonEdge,
+    forms_fingerprints,
     load_skeleton,
     skeleton_to_dict,
 )
@@ -316,6 +324,76 @@ def test_staleness_fires_when_a_concept_was_deleted_since_the_build(env: Path) -
     assert view.staleness.removed_ids == (_B,)
 
 
+def _skeleton_with_forms(forms: dict[str, list[str]]) -> ConceptSkeleton:
+    """The toy skeleton, as a build would record what each concept was counted through."""
+    skeleton = _skeleton()
+    labels = [(n.id, n.label) for n in skeleton.nodes]
+    return dataclasses.replace(
+        skeleton, meta={**skeleton.meta, "forms": forms_fingerprints(labels, forms, {})}
+    )
+
+
+def test_staleness_fires_when_a_form_was_marked_broad_since_the_build(env: Path) -> None:
+    """ADR-054: the same concepts, counted through different forms. No node or edge shows it until
+    the rebuild, so the view has to say which concepts it is behind on."""
+    _write_skeleton_json(env, _skeleton_with_forms({_A: ["vectors"]}))
+    _seed_concepts((_A, "Embeddings"), (_B, "BM25"))
+    _seed_documents("d1", "d2")
+    with session_scope() as s:
+        s.add(ConceptAlias(concept_id=_A, alias="vectors"))
+    view = load_graph_view()
+    assert view is not None
+    assert (view.staleness.stale, view.staleness.forms_changed_ids) == (False, ())
+
+    with session_scope() as s:
+        s.execute(update(ConceptAlias).values(breadth="broad"))
+    view = load_graph_view()
+    assert view is not None
+    assert (view.staleness.stale, view.staleness.forms_changed_ids) == (True, (_A,))
+    assert view.staleness.added_labels == () and view.staleness.removed_ids == ()
+    body = _client().get("/api/concepts/graph").json()
+    assert body["staleness"]["forms_changed_ids"] == [_A]
+
+    # Marking it exact is the reading an unmarked form already had: nothing changed.
+    with session_scope() as s:
+        s.execute(update(ConceptAlias).values(breadth="exact"))
+    view = load_graph_view()
+    assert view is not None
+    assert (view.staleness.stale, view.staleness.forms_changed_ids) == (False, ())
+
+
+def test_staleness_sees_a_form_added_and_a_rename(env: Path) -> None:
+    _write_skeleton_json(env, _skeleton_with_forms({}))
+    _seed_concepts((_A, "Embeddings"), (_B, "BM25"))
+    _seed_documents("d1", "d2")
+    with session_scope() as s:
+        s.add(ConceptAlias(concept_id=_A, alias="vectors"))
+        s.execute(update(Concept).where(Concept.id == _B).values(label="Okapi BM25"))
+    view = load_graph_view()
+    assert view is not None
+    assert view.staleness.forms_changed_ids == (_A, _B)
+
+
+def test_a_graph_built_before_forms_were_recorded_claims_no_change(env: Path) -> None:
+    """Nothing to compare is not "changed": an older skeleton.json names no concept and is not
+    called stale. It does say it has no record, so the view can offer the rebuild that starts
+    one — otherwise a form marked on such a graph would show nothing and offer nothing."""
+    _write_skeleton_json(env, _skeleton())
+    _seed_concepts((_A, "Embeddings"), (_B, "BM25"))
+    _seed_documents("d1", "d2")
+    with session_scope() as s:
+        s.add(ConceptAlias(concept_id=_A, alias="vectors", breadth="broad"))
+    view = load_graph_view()
+    assert view is not None
+    assert (view.staleness.stale, view.staleness.forms_changed_ids) == (False, ())
+    assert view.staleness.forms_recorded is False
+    assert _client().get("/api/concepts/graph").json()["staleness"]["forms_recorded"] is False
+
+    _write_skeleton_json(env, _skeleton_with_forms({}))
+    view = load_graph_view()
+    assert view is not None and view.staleness.forms_recorded is True
+
+
 # ---------- presence ----------
 
 
@@ -371,6 +449,25 @@ def test_route_graph_carries_the_written_form_beside_the_label(env: Path) -> Non
     by_id = {n["id"]: n for n in body["nodes"]}
     assert (by_id[_B]["label"], by_id[_B]["written"]) == ("din", "dIN")
     assert by_id[_A]["written"] is None
+
+
+def test_route_graph_carries_the_broad_documents_beside_presence(env: Path) -> None:
+    """ADR-054: a node says which documents only a broad form reaches, apart from `doc_ids`. A
+    node with none answers with empty lists, so a client needs no null check."""
+    skeleton = _skeleton()
+    kd = dataclasses.replace(
+        skeleton.nodes[1],
+        label="knowledge distillation",
+        broad_doc_ids=("d2",),
+        broad_forms=("distillation",),
+    )
+    _write_skeleton_json(env, dataclasses.replace(skeleton, nodes=(skeleton.nodes[0], kd)))
+    _seed_concepts((_A, "Embeddings"), (_B, "knowledge distillation"))
+    _seed_documents("d1", "d2")
+    by_id = {n["id"]: n for n in _client().get("/api/concepts/graph").json()["nodes"]}
+    assert by_id[_B]["broad_doc_ids"] == ["d2"] and by_id[_B]["broad_forms"] == ["distillation"]
+    assert by_id[_B]["doc_ids"] == ["d1"]  # presence is untouched by what sits beside it
+    assert (by_id[_A]["broad_doc_ids"], by_id[_A]["broad_forms"]) == ([], [])
 
 
 def test_route_graph_404_when_never_built(env: Path) -> None:
@@ -536,6 +633,23 @@ def test_gap_list_route_resolves_labels_and_status(env: Path) -> None:
     assert body[0]["label"] == "BM25"  # resolved server-side
     assert body[0]["kind"] == "single_source"
     assert body[0]["status"] == "surfaced"  # effective (no override yet)
+
+
+def test_gap_list_route_carries_the_name_as_the_library_writes_it(env: Path) -> None:
+    """ADR-054: the gap list shows `Cre` for the stored `cre`, through the same helper as the
+    vocabulary search and Manage keywords. A concept without a cased written form shows its
+    label."""
+    from doc_assistant.db.models import ConceptWrittenForm
+
+    _seed_concepts((_A, "cre"), (_B, "beta"))
+    with session_scope() as s:
+        s.add(ConceptWrittenForm(concept_id=_A, form="cre", written="Cre"))
+        s.add(ConceptWrittenForm(concept_id=_B, form="beta", written="beta"))
+    _seed_gap(_A, "single_source")
+    _seed_gap(_B, "isolated")
+    by_id = {g["concept_id"]: g for g in _client().get("/api/concepts/gaps").json()}
+    assert (by_id[_A]["label"], by_id[_A]["written"]) == ("cre", "Cre")
+    assert (by_id[_B]["label"], by_id[_B]["written"]) == ("beta", None)
 
 
 def test_gap_list_route_empty_when_no_gaps_built(env: Path) -> None:

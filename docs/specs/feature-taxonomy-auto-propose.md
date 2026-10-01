@@ -58,7 +58,9 @@ attribution UI (T4, already partly landed in `AboutDialog`) · `is_a` proposals 
   Reason: ADR-018 made `graph_include` the boundary between the curated concept map and the (breadth-first)
   keyword families, and the taxonomy augments the *graph* (ADR-019 D1). On a box carrying the 2026-07-05
   promotion flood that is 13 concepts rather than 357 — but the skipped count is **always printed**, never
-  silently dropped.
+  silently dropped. *(Since 2026-10-01, ADR-054: the flag is `--include-terms`, with `--all-concepts`
+  kept as an alias, and it is a dry run only — a placement is proposed for a concept, and the other
+  344 rows are terms. `--apply` with it is refused before any call.)*
 - **Confinement mirrors `gap_suggest` / Node B:** the module takes an already-built `LLMClient` and makes
   no provider decision; it never writes, never creates a `Concept`, and a per-item transport/parse failure
   is logged and skipped instead of sinking the run. **Zero LLM calls without `--apply`** (the `build_gaps`

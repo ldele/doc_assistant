@@ -230,7 +230,9 @@ def merge_text(label: str, definition: str | None) -> str:
     return f"{label}. {definition}" if definition else label
 
 
-def concept_merge_suggestions(*, threshold: float, model: str | None = None) -> list[ConceptPair]:
+def concept_merge_suggestions(
+    *, threshold: float, model: str | None = None, include_terms: bool = False
+) -> list[ConceptPair]:
     """The merge preview: the pairs ``curate_concepts --dedup`` would merge, without writing.
 
     Same inputs and same comparison as the merge — ``concept_curation.dedup_pairs`` over the
@@ -238,10 +240,17 @@ def concept_merge_suggestions(*, threshold: float, model: str | None = None) -> 
     at the same ``threshold`` and ``model`` (ROADMAP 53). The one difference is the optional LLM
     noise stage (``curate_concepts --llm``), which can only remove candidates. ``[]`` for fewer
     than two concepts.
+
+    Reads the concepts the user has taken on, as the merge does (ADR-054). ``include_terms``
+    widens the preview to the whole vocabulary, which the merge itself never acts on.
     """
     from doc_assistant.knowledge.concept_curation import dedup_pairs, is_artifact, load_concepts
 
-    concepts = [(cid, label) for cid, label in load_concepts() if not is_artifact(label)]
+    concepts = [
+        (cid, label)
+        for cid, label in load_concepts(graph_only=not include_terms)
+        if not is_artifact(label)
+    ]
     label_by_id = dict(concepts)
     return [
         ConceptPair(label_by_id[a], label_by_id[b], cosine)

@@ -174,3 +174,65 @@ def test_vocabulary_search_reaches_concepts_off_the_graph(client: TestClient) ->
     assert [m["label"] for m in client.get("/api/concepts/search?q=viral").json()] == ["viral"]
     assert client.get("/api/concepts/search?q=").json() == []
     assert client.get("/api/concepts/search?q=%25").json() == []  # a literal %, not a wildcard
+
+
+def test_vocabulary_search_carries_the_name_as_the_library_writes_it(client: TestClient) -> None:
+    """ADR-054: the name on every surface. A hit shows `Cre` for the stored `cre` once a graph
+    build has recorded how the library writes it; a row without a cased form shows its label."""
+    from doc_assistant.db.models import ConceptWrittenForm
+
+    with session_scope() as s:
+        s.add(Concept(id="cre", label="cre", kind="concept", graph_include=True))
+        s.add(Concept(id="crest", label="crest", kind="concept", graph_include=False))
+        s.add(ConceptWrittenForm(concept_id="cre", form="cre", written="Cre"))
+    matches = client.get("/api/concepts/search", params={"q": "cre"}).json()
+    assert [(m["label"], m["written"], m["on_graph"]) for m in matches] == [
+        ("cre", "Cre", True),
+        ("crest", None, False),
+    ]
+
+
+# --- a term is shown, never written (ADR-054) -------------------------------------------------
+
+
+def test_a_term_shows_what_the_library_says_and_stores_nothing(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`viral` is a term: a row nobody has taken on. "Look in my library" still answers with the
+    passages it finds, marked unsaved, and a second read shows that nothing was stored."""
+    _seed()
+    chunks = [("s:p0", "s", "Viral refers to anything a virus produces, in this review's usage.")]
+    monkeypatch.setattr(
+        "doc_assistant.knowledge.definitions.chunks_mentioning", lambda _labels: chunks
+    )
+    bare = client.get("/api/concepts/viral/definitions").json()
+    assert bare["is_concept"] is False and bare["candidates"] == []
+    assert client.get("/api/concepts/kd/definitions").json()["is_concept"] is True
+
+    body = client.post("/api/concepts/viral/definitions/extract").json()
+    assert body["is_concept"] is False and body["extracted"] is True
+    (candidate,) = body["candidates"]
+    assert candidate["id"].startswith("unsaved:") and candidate["status"] == "suggested"
+    assert candidate["source"] == "passage" and candidate["chunk_key"] == "s:p0"
+
+    after = client.get("/api/concepts/viral/definitions").json()
+    assert after["candidates"] == [] and after["extracted"] is False
+
+
+def test_a_definition_write_on_a_term_is_refused_until_it_is_taken_on(client: TestClient) -> None:
+    _seed()
+    refused = client.post("/api/concepts/viral/definitions", json={"text": "Of a virus."})
+    assert refused.status_code == 409 and "is a term" in refused.json()["detail"]
+    assert client.post("/api/concepts/viral/definitions/undo").status_code == 409
+    for action in ("choose", "dismiss", "restore"):
+        r = client.post(f"/api/concepts/viral/definitions/anything/{action}")
+        assert r.status_code == 409, action
+    assert client.get("/api/concepts/viral/definitions").json()["candidates"] == []
+
+    # An unknown id is still a 404, not a 409: there is nothing to take on.
+    assert client.post("/api/concepts/nope/definitions", json={"text": "x"}).status_code == 404
+
+    with session_scope() as s:
+        s.get(Concept, "viral").graph_include = True  # type: ignore[union-attr]
+    taken_on = client.post("/api/concepts/viral/definitions", json={"text": "Of a virus."})
+    assert taken_on.status_code == 201 and taken_on.json()["is_concept"] is True

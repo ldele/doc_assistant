@@ -297,3 +297,168 @@ def test_written_forms_are_stored_beside_the_label_never_into_it(env: Path) -> N
         assert json.loads(row.votes_json) == {"dIN": 1, "Din": 1}
     data = json.loads((skeleton_dir / "skeleton.json").read_text(encoding="utf-8"))
     assert data["nodes"][0]["written"] == "dIN"
+
+
+# ============================================================
+# ADR-054 — exact and broad forms
+# ============================================================
+
+
+def _seed_distillation() -> dict[str, str]:
+    """Three documents and two concepts. `knowledge distillation` is named in d1 only; its alias
+    `distillation` occurs alone in d2 and d3; `pruning` shares a chunk with it in d1 and d2."""
+    ids: dict[str, str] = {}
+    with session_scope() as session:
+        for name in ("d1", "d2", "d3"):
+            doc = Document(
+                filename=f"{name}.pdf",
+                source_original=f"{name}.pdf",
+                doc_hash=f"h{name}",
+                format="pdf",
+            )
+            session.add(doc)
+            session.flush()
+            ids[name] = str(doc.id)
+        kd = Concept(label="knowledge distillation", source="manual", graph_include=True)
+        pruning = Concept(label="pruning", source="manual", graph_include=True)
+        session.add_all([kd, pruning])
+        session.flush()
+        session.add(ConceptAlias(concept_id=kd.id, alias="distillation"))
+        ids["kd"], ids["pruning"] = str(kd.id), str(pruning.id)
+    return ids
+
+
+def _distillation_chunks(ids: dict[str, str]):
+    def loader(document_ids: list[str] | None = None) -> list[tuple[str, str, str]]:
+        return [
+            (
+                f"{ids['d1']}:p0",
+                ids["d1"],
+                "In this study knowledge distillation is combined with pruning of the ranker.",
+            ),
+            (
+                f"{ids['d2']}:p0",
+                ids["d2"],
+                "We apply distillation to the ranker first, and pruning comes afterwards.",
+            ),
+            (f"{ids['d3']}:p0", ids["d3"], "The cost of distillation falls with the batch size."),
+        ]
+
+    return loader
+
+
+def _set_breadth(concept_id: str, alias: str, breadth: str | None) -> None:
+    with session_scope() as session:
+        row = session.execute(
+            select(ConceptAlias).where(
+                ConceptAlias.concept_id == concept_id, ConceptAlias.alias == alias
+            )
+        ).scalar_one()
+        row.breadth = breadth
+
+
+def _build(env: Path, ids: dict[str, str]):
+    skeleton_dir = env / "skeleton"
+    result = build_concept_skeleton(
+        apply=True,
+        min_cooccurrence=1,
+        presence_loader=_distillation_chunks(ids),
+        skeleton_dir=skeleton_dir,
+    )
+    return result, (skeleton_dir / "skeleton.json").read_text(encoding="utf-8")
+
+
+def test_a_broad_form_is_counted_beside_presence_never_in_it(env: Path) -> None:
+    """ADR-054: once the user marks `distillation` broad, `knowledge distillation` is present only
+    where it is named. The two documents the bare word reaches are listed beside it, and nothing
+    that is counted from presence — the edge, the presence rows — sees them."""
+    from doc_assistant.knowledge.concept_skeleton import load_broad_forms, load_concepts
+
+    ids = _seed_distillation()
+    before, _ = _build(env, ids)
+    kd = next(n for n in before.skeleton.nodes if n.id == ids["kd"])
+    assert kd.doc_ids == tuple(sorted([ids["d1"], ids["d2"], ids["d3"]]))
+    assert (kd.broad_doc_ids, kd.broad_forms) == ((), ())
+    assert before.skeleton.edges[0].n_cooccurrence_chunks == 2  # d1 and d2
+
+    _set_breadth(ids["kd"], "distillation", "broad")
+    _concepts, aliases = load_concepts()
+    assert aliases.get(ids["kd"], []) == []  # the loader everything counts through
+    assert load_broad_forms() == {ids["kd"]: ["distillation"]}
+
+    after, text = _build(env, ids)
+    kd = next(n for n in after.skeleton.nodes if n.id == ids["kd"])
+    assert kd.doc_ids == (ids["d1"],)
+    assert kd.broad_doc_ids == tuple(sorted([ids["d2"], ids["d3"]]))
+    assert kd.broad_forms == ("distillation",)
+    assert after.skeleton.edges[0].n_cooccurrence_chunks == 1  # d2 no longer links the two
+    assert (after.n_broad_concepts, after.n_broad_documents) == (1, 2)
+    with session_scope() as session:
+        rows = session.execute(
+            select(ConceptPresenceRow.document_id).where(
+                ConceptPresenceRow.concept_id == ids["kd"]
+            )
+        ).all()
+    assert [r[0] for r in rows] == [ids["d1"]]
+    node = next(n for n in json.loads(text)["nodes"] if n["id"] == ids["kd"])
+    assert node["broad_doc_ids"] == sorted([ids["d2"], ids["d3"]])
+    assert node["broad_forms"] == ["distillation"]
+
+
+def test_nothing_moves_until_a_form_is_marked_broad(env: Path) -> None:
+    """An unclassified form is exact, and so is one the user marked exact: the build is byte for
+    byte the one a library without breadth produces. Clearing a broad mark puts it back."""
+    ids = _seed_distillation()
+    _, unclassified = _build(env, ids)
+    assert "broad" not in unclassified  # no key is written for a node with nothing beside it
+
+    _set_breadth(ids["kd"], "distillation", "exact")
+    assert _build(env, ids)[1] == unclassified
+
+    _set_breadth(ids["kd"], "distillation", "broad")
+    assert _build(env, ids)[1] != unclassified
+
+    _set_breadth(ids["kd"], "distillation", None)
+    assert _build(env, ids)[1] == unclassified
+
+
+def test_the_view_says_which_concept_it_is_behind_on_until_the_rebuild(
+    env: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """End to end: a build records what each concept was counted through, a mark made afterwards
+    is reported against that concept, and the rebuild that applies it clears the report."""
+    from doc_assistant.knowledge.concept_graph_view import load_graph_view
+
+    monkeypatch.setattr("doc_assistant.config.CONCEPT_SKELETON_DIR", env / "skeleton")
+    ids = _seed_distillation()
+    _, text = _build(env, ids)
+    assert set(json.loads(text)["meta"]["forms"]) == {ids["kd"], ids["pruning"]}
+    view = load_graph_view()
+    assert view is not None
+    assert (view.staleness.stale, view.staleness.forms_changed_ids) == (False, ())
+
+    _set_breadth(ids["kd"], "distillation", "broad")
+    view = load_graph_view()
+    assert view is not None
+    assert (view.staleness.stale, view.staleness.forms_changed_ids) == (True, (ids["kd"],))
+
+    _build(env, ids)
+    view = load_graph_view()
+    assert view is not None
+    assert (view.staleness.stale, view.staleness.forms_changed_ids) == (False, ())
+
+
+def test_a_broad_mark_on_the_name_itself_is_ignored(env: Path) -> None:
+    """The name is always exact: an alias row that repeats the label cannot take the concept's
+    own documents away, whatever it is marked."""
+    from doc_assistant.knowledge.concept_skeleton import load_broad_forms
+
+    ids = _seed_distillation()
+    with session_scope() as session:
+        session.add(
+            ConceptAlias(concept_id=ids["kd"], alias="Knowledge Distillation", breadth="broad")
+        )
+    assert load_broad_forms() == {}
+    result, _ = _build(env, ids)
+    kd = next(n for n in result.skeleton.nodes if n.id == ids["kd"])
+    assert ids["d1"] in kd.doc_ids and kd.broad_doc_ids == ()

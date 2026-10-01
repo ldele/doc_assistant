@@ -83,6 +83,12 @@ _ADDITIVE_COLUMNS: list[tuple[str, str, str, str | None]] = [
     # discovered by scanning the source dir, so it IS a copy - a fact, not an assumption.
     # NOT NULL is legal because the DEFAULT supplies the backfilled value.
     ("source_files", "origin", "VARCHAR NOT NULL DEFAULT 'copied'", None),
+    # ADR-054 — exact / broad on the (pre-existing) concept_aliases table. NULL on every existing
+    # row and deliberately NOT backfilled: NULL reads as exact, which is how every alias counted
+    # before the column existed, so the stored graph does not move until the user classifies a
+    # form (the KI-25 question — would an absent value change behaviour? — answers no).
+    # Unindexed: read with the alias row, never filtered on alone.
+    ("concept_aliases", "breadth", "VARCHAR", None),
 ]
 
 

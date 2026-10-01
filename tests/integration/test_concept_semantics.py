@@ -70,6 +70,27 @@ def test_merge_suggestions_empty_for_single_concept(
     assert concept_merge_suggestions(threshold=0.5) == []
 
 
+def test_a_merge_reads_the_concepts_and_leaves_the_terms_out(
+    env: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """ADR-054: a merge folds one meaning into another, so it compares the rows the user has
+    taken on. A term is compared only when the whole vocabulary is asked for, as a preview."""
+    from doc_assistant.knowledge.concept_curation import load_concepts
+
+    add_concept("dense retrieval")
+    add_concept("dense passage retrieval", graph_include=False)  # a term: nobody took it on
+    monkeypatch.setattr(cs, "embed_texts", _fake_embed)
+
+    assert [label for _cid, label in load_concepts(graph_only=True)] == ["dense retrieval"]
+    assert len(load_concepts()) == 2
+
+    assert concept_merge_suggestions(threshold=0.9) == []  # one concept: nothing to merge
+    widened = concept_merge_suggestions(threshold=0.9, include_terms=True)
+    assert {frozenset((p.label_a, p.label_b)) for p in widened} == {
+        frozenset({"dense retrieval", "dense passage retrieval"})
+    }
+
+
 def test_the_merge_preview_is_the_merge(env: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """ROADMAP 53 (2). The preview (``suggest_concepts --near``) and the merge
     (``curate_concepts --dedup``) differed in threshold (0.85 vs a hard-coded 0.9), embedder

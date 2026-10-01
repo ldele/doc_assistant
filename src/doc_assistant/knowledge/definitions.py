@@ -726,14 +726,45 @@ class ConceptDefinitions:
     thin: bool
     extracted: bool  # any passage candidate on record (else: never looked, or nothing found)
     notes: tuple[str, ...] = field(default_factory=tuple)
+    # ADR-054: a row the user has taken on. A term's candidates are shown, never stored or chosen.
+    is_concept: bool = True
 
+
+class NotAConceptError(DefinitionError):
+    """A definition write on a *term*: a row the user has not taken on as a concept (ADR-054)."""
+
+
+def require_concept(session: Session, concept_id: str) -> None:
+    """Raise :class:`NotAConceptError` unless ``concept_id`` is a concept the user has taken on.
+
+    Definitions are curated meanings, and a meaning belongs to a concept (ADR-052, ADR-054). A
+    term shows how the library uses it; choosing, writing or storing a definition for it starts
+    with taking it on in Manage keywords. An unknown id or a field node raises too."""
+    concept = session.get(Concept, concept_id)
+    if concept is None or concept.kind != "concept":
+        raise NotAConceptError(f"no concept with id {concept_id!r}")
+    if not concept.graph_include:
+        raise NotAConceptError(
+            f"{concept.label!r} is a term, not one of your concepts yet. "
+            "Take it on in Manage keywords to choose or write its definition."
+        )
+
+
+#: Prefix of the id given to a candidate that was found on request and not stored (a term's).
+UNSAVED_PREFIX = "unsaved:"
 
 _GRADE_ORDER = {"user": 0, "strong": 1, "some": 2, "thin": 3}
 _STATUS_ORDER = {"chosen": 0, "suggested": 1, "dismissed": 2}
 
 
-def load_definitions(session: Session, concept_id: str) -> ConceptDefinitions | None:
-    """The panel's read model for one concept, or ``None`` for an unknown id or a field node."""
+def load_definitions(
+    session: Session, concept_id: str, *, unsaved: Sequence[PassageHit] = ()
+) -> ConceptDefinitions | None:
+    """The panel's read model for one concept, or ``None`` for an unknown id or a field node.
+
+    ``unsaved`` are passages found on request and **not stored** — how a term's "Look in my
+    library" answers (ADR-054). They are listed like stored suggestions, under an id that starts
+    with :data:`UNSAVED_PREFIX`, and nothing can be done to them but read them."""
     concept = session.get(Concept, concept_id)
     if concept is None or concept.kind != "concept":
         return None
@@ -755,6 +786,9 @@ def load_definitions(session: Session, concept_id: str) -> ConceptDefinitions | 
         if provenance.get("document_id"):
             doc_ids.add(provenance["document_id"])
         parsed.append((row, provenance, evidence))
+    stored_keys = {row.provenance_key for row in rows if row.source == "passage"}
+    fresh = [hit for hit in unsaved if _passage_key(hit) not in stored_keys]
+    doc_ids.update(hit.document_id for hit in fresh)
     titles = {
         str(i): (t or f)
         for i, t, f in session.execute(
@@ -775,6 +809,21 @@ def load_definitions(session: Session, concept_id: str) -> ConceptDefinitions | 
         )
         for row, provenance, evidence in parsed
     ]
+    for hit in fresh:
+        found = passage_evidence(hit)
+        candidates.append(
+            DefinitionCandidate(
+                id=UNSAVED_PREFIX + _passage_key(hit),
+                text=hit.text,
+                source="passage",
+                status="suggested",
+                grade=str(found.get("grade", "thin")),
+                reasons=tuple(found.get("reasons", [])),
+                document_id=hit.document_id,
+                document_title=titles.get(hit.document_id),
+                chunk_key=hit.chunk_key,
+            )
+        )
     candidates.sort(
         key=lambda c: (_STATUS_ORDER.get(c.status, 3), _GRADE_ORDER.get(c.grade, 4), c.text)
     )
@@ -800,6 +849,7 @@ def load_definitions(session: Session, concept_id: str) -> ConceptDefinitions | 
         can_undo=can_undo,
         thin=chosen is None and not shaped,
         extracted=bool(passages),
+        is_concept=bool(concept.graph_include),
     )
 
 
@@ -902,6 +952,8 @@ class ExtractResult:
     hits: dict[str, list[PassageHit]]
     applied: bool = False
     n_added: int = 0
+    # Rows read that are terms (ADR-054): their passages are found and returned, never stored.
+    n_terms: int = 0
 
 
 def extract_definitions(
@@ -909,8 +961,15 @@ def extract_definitions(
     concept_ids: Sequence[str] | None = None,
     apply: bool = False,
     chunks: Iterable[tuple[str, str, str]] | None = None,
+    include_terms: bool = False,
 ) -> ExtractResult:
-    """Find passage candidates for concepts (all by default); with ``apply``, store them.
+    """Find passage candidates for concepts; with ``apply``, store them.
+
+    **Which rows (ADR-054).** By default the concepts the user has taken on (``graph_include``).
+    ``concept_ids`` names rows explicitly, terms included — that is how the panel looks into the
+    library for one term. ``include_terms`` widens the default to the whole vocabulary, for a
+    measurement. Whatever is read, **only a concept's passages are stored**: a term's are returned
+    in ``hits`` and written nowhere, so ``apply`` over a mixed list stores the concepts' alone.
 
     Reads every parent chunk from the vector store unless ``chunks`` is given (tests, and the
     single-concept path, pass their own). Without ``apply`` nothing is written.
@@ -918,10 +977,16 @@ def extract_definitions(
     from doc_assistant.db.session import session_scope
 
     with session_scope() as session:
-        stmt = select(Concept.id, Concept.label).where(Concept.kind == "concept")
+        stmt = select(Concept.id, Concept.label, Concept.graph_include).where(
+            Concept.kind == "concept"
+        )
         if concept_ids is not None:
             stmt = stmt.where(Concept.id.in_(list(concept_ids)))
-        concepts = [(str(i), str(label)) for i, label in session.execute(stmt).all()]
+        elif not include_terms:
+            stmt = stmt.where(Concept.graph_include.is_(True))
+        rows = session.execute(stmt).all()
+    concepts = [(str(i), str(label)) for i, label, _taken_on in rows]
+    storable = {str(i) for i, _label, taken_on in rows if taken_on}
     if chunks is None:
         from doc_assistant.knowledge.concept_skeleton import load_presence_inputs
 
@@ -934,12 +999,15 @@ def extract_definitions(
         n_with_passages=sum(1 for h in hits.values() if h),
         n_hits=sum(len(h) for h in hits.values()),
         hits=hits,
+        n_terms=len(concepts) - len(storable),
     )
     if not apply:
         return result
     with session_scope() as session:
-        added = write_passages(session, hits)
-    log.info("definitions_extracted", concepts=len(concepts), added=added)
+        added = write_passages(
+            session, {cid: found for cid, found in hits.items() if cid in storable}
+        )
+    log.info("definitions_extracted", concepts=len(storable), terms=result.n_terms, added=added)
     return ExtractResult(
         n_concepts=result.n_concepts,
         n_with_passages=result.n_with_passages,
@@ -947,6 +1015,7 @@ def extract_definitions(
         hits=hits,
         applied=True,
         n_added=added,
+        n_terms=result.n_terms,
     )
 
 

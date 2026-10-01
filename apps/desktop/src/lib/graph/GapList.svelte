@@ -12,6 +12,7 @@
   import { getGapList, triageGap } from '../core/api'
   import Icon from '../shell/Icon.svelte'
   import { GAP_META, filterGapRows, gapVisible, orderGaps } from './gaps'
+  import { shownLabel } from './labels'
 
   let { onSelectConcept }: { onSelectConcept?: (conceptId: string) => void } = $props()
 
@@ -150,7 +151,7 @@
               onclick={() => onSelectConcept?.(it.concept_id)}
               title="Show this concept in the graph"
             >
-              {it.label}
+              {shownLabel(it)}
             </button>
             {#if it.status === 'promoted'}<span class="statustag ok">promoted</span>{/if}
             {#if it.status === 'dismissed'}<span class="statustag muted">dismissed</span>{/if}

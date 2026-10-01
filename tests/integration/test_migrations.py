@@ -59,6 +59,40 @@ def test_r4_strength_json_added_to_preexisting_concept_edges(tmp_path: Path) -> 
         engine.dispose()
 
 
+def test_alias_breadth_is_added_unset_and_leaves_labels_alone(tmp_path: Path) -> None:
+    """ADR-054: a library that predates exact/broad gains `concept_aliases.breadth` in place.
+    Every existing alias reads NULL — unclassified, which counts as exact, as it did before the
+    column existed — and no label or alias text is touched (ADR-043)."""
+    engine = create_engine(f"sqlite:///{tmp_path / 'aliases.db'}", future=True)
+    try:
+        with engine.begin() as conn:
+            conn.execute(text("CREATE TABLE concepts (id VARCHAR PRIMARY KEY, label VARCHAR)"))
+            conn.execute(
+                text(
+                    "CREATE TABLE concept_aliases "
+                    "(id VARCHAR PRIMARY KEY, concept_id VARCHAR, alias VARCHAR)"
+                )
+            )
+            conn.execute(text("INSERT INTO concepts VALUES ('c1', 'knowledge distillation')"))
+            conn.execute(text("INSERT INTO concept_aliases VALUES ('a1', 'c1', 'distillation')"))
+            conn.execute(text("INSERT INTO concept_aliases VALUES ('a2', 'c1', 'dIN')"))
+
+        added = _apply_additive_columns(engine)
+        assert "concept_aliases.breadth" in added
+
+        with engine.connect() as conn:
+            aliases = conn.execute(
+                text("SELECT id, alias, breadth FROM concept_aliases ORDER BY id")
+            ).all()
+            labels = conn.execute(text("SELECT id, label FROM concepts")).all()
+        assert [tuple(r) for r in aliases] == [("a1", "distillation", None), ("a2", "dIN", None)]
+        assert [tuple(r) for r in labels] == [("c1", "knowledge distillation")]
+
+        assert "concept_aliases.breadth" not in _apply_additive_columns(engine)  # idempotent
+    finally:
+        engine.dispose()
+
+
 def test_additive_migration_skips_absent_table(tmp_path: Path) -> None:
     # No answer_reviews table at all → migration is a clean no-op.
     engine = create_engine(f"sqlite:///{tmp_path / 'empty.db'}", future=True)

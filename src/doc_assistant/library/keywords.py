@@ -35,6 +35,13 @@ class KeywordFamily:
     ``graph_include`` is the ADR-018 curation flag: whether the concept behind this family is
     part of the graph vocabulary. A NULL column reads as ``False`` — opt-in is the polarity that
     makes re-flooding the graph structurally impossible, so an unset flag must never read as in.
+    Since ADR-054 it is also what makes the row a *concept* (taken on by the user) rather than a
+    *term*.
+
+    ``broad`` and ``exact`` are the members the user has classified (ADR-054): a *broad* form also
+    matches other things and is counted beside presence, an *exact* one always means the concept.
+    A member in neither list is unclassified, which reads as exact. ``written`` is how the library
+    writes the canonical when it writes it in a case (``Cre`` for ``cre``) — what to show instead.
     """
 
     id: str
@@ -42,6 +49,9 @@ class KeywordFamily:
     aliases: list[str] = field(default_factory=list)
     doc_count: int = 0
     graph_include: bool = False
+    broad: list[str] = field(default_factory=list)
+    exact: list[str] = field(default_factory=list)
+    written: str | None = None
 
 
 def _family_doc_count(session: Any, names: list[str]) -> int:
@@ -60,15 +70,29 @@ def _family_doc_count(session: Any, names: list[str]) -> int:
     return int(session.execute(stmt).scalar() or 0)
 
 
-def _build_family(session: Any, concept: Any) -> KeywordFamily:
-    aliases = sorted(a.alias for a in concept.aliases if a.alias != concept.label)
+def _build_family(
+    session: Any, concept: Any, shown: dict[str, str] | None = None
+) -> KeywordFamily:
+    """One family from its row. ``shown`` is the display lookup a list call computed once for
+    every row; a single-row caller leaves it out and it is looked up here."""
+    from doc_assistant.db.models import BREADTH_BROAD, BREADTH_EXACT
+
+    members = [a for a in concept.aliases if a.alias != concept.label]
+    aliases = sorted(a.alias for a in members)
     doc_count = _family_doc_count(session, [concept.label, *aliases])
+    if shown is None:
+        from doc_assistant.knowledge.written_forms import shown_labels
+
+        shown = shown_labels([(str(concept.id), concept.label)], session=session)
     return KeywordFamily(
         id=str(concept.id),
         canonical=concept.label,
         aliases=aliases,
         doc_count=doc_count,
         graph_include=bool(concept.graph_include),
+        broad=sorted(a.alias for a in members if a.breadth == BREADTH_BROAD),
+        exact=sorted(a.alias for a in members if a.breadth == BREADTH_EXACT),
+        written=shown.get(str(concept.id)),
     )
 
 
@@ -78,9 +102,12 @@ def list_keyword_families() -> list[KeywordFamily]:
     Excludes ``kind="domain"`` taxonomy field nodes (ADR-028 D4) — an abstract ANZSRC field is not
     a keyword family, and the seeded ~236 of them would otherwise flood the Library filter."""
     from doc_assistant.knowledge.taxonomy import presence_nodes
+    from doc_assistant.knowledge.written_forms import shown_labels
 
     with session_scope() as session:
-        families = [_build_family(session, c) for c in presence_nodes(session)]
+        concepts = presence_nodes(session)
+        shown = shown_labels([(str(c.id), c.label) for c in concepts], session=session)
+        families = [_build_family(session, c, shown) for c in concepts]
     families.sort(key=lambda f: f.canonical.casefold())
     return families
 
@@ -292,8 +319,127 @@ def remove_family_member(concept_id: str, keyword_name: str) -> KeywordFamily | 
         return _build_family(session, concept)
 
 
+def set_family_member_breadth(
+    concept_id: str, keyword_name: str, breadth: str | None
+) -> KeywordFamily | None:
+    """Mark one member *exact* or *broad*, or clear the mark. None if the family is unknown.
+
+    The write behind ADR-054's per-form control. An exact form always means the concept and counts
+    as presence; a broad one also matches other things and is counted beside it; ``None`` clears
+    the mark, which reads as exact. Nothing about the built graph changes here: like the graph
+    flag, the mark moves the vocabulary and the graph follows at its next rebuild.
+
+    Raises ``ValueError`` for an unknown breadth, and for a name that is not a member — the
+    canonical label included: a concept's name is always exact, so it carries no mark to set.
+    """
+    from doc_assistant.db.models import BREADTHS
+    from doc_assistant.knowledge.taxonomy import presence_node
+
+    if breadth is not None and breadth not in BREADTHS:
+        raise ValueError(f"breadth must be one of {BREADTHS} or null, not {breadth!r}")
+    lowered = keyword_name.strip().casefold()
+    with session_scope() as session:
+        concept = presence_node(session, concept_id)
+        if concept is None:
+            return None
+        row = next(
+            (
+                a
+                for a in concept.aliases
+                if a.alias.casefold() == lowered and a.alias != concept.label
+            ),
+            None,
+        )
+        if row is None:
+            raise ValueError(f"{keyword_name!r} is not a member of this family")
+        row.breadth = breadth
+        session.flush()
+        return _build_family(session, concept)
+
+
+@dataclass
+class FamilyDeletion:
+    """What deleting one family would remove — the facts its confirmation states (ADR-054).
+
+    Deleting the row cascades to everything keyed on it. ``aliases``, the chosen definition with
+    its ``definition_candidates`` (the user's own text among them), ``placements`` in the field
+    tree and gap ``triage`` verdicts are curated: once gone they are gone. ``presence_documents``
+    is derived and only says how much of the graph rests on the row today.
+    """
+
+    id: str
+    canonical: str
+    written: str | None
+    is_concept: bool
+    aliases: int
+    has_definition: bool
+    definition_candidates: int
+    placements: int
+    triage: int
+    presence_documents: int
+
+
+def describe_family_deletion(concept_id: str) -> FamilyDeletion | None:
+    """What :func:`delete_keyword_family` would remove for this family. None if it is unknown.
+
+    Read-only. The Manage keywords view asks before it deletes and says what would be lost; a
+    term with nothing attached answers with zeros, so the confirmation can say that too."""
+    from doc_assistant.db.models import (
+        ConceptDefinition,
+        ConceptHierarchy,
+        ConceptPresenceRow,
+        GapTriage,
+    )
+    from doc_assistant.knowledge.taxonomy import presence_node
+    from doc_assistant.knowledge.written_forms import shown_labels
+
+    with session_scope() as session:
+        concept = presence_node(session, concept_id)
+        if concept is None:
+            return None
+
+        def count(stmt: Any) -> int:
+            return int(session.execute(stmt).scalar() or 0)
+
+        shown = shown_labels([(str(concept.id), concept.label)], session=session)
+        return FamilyDeletion(
+            id=str(concept.id),
+            canonical=concept.label,
+            written=shown.get(str(concept.id)),
+            is_concept=bool(concept.graph_include),
+            aliases=sum(1 for a in concept.aliases if a.alias != concept.label),
+            has_definition=bool(concept.definition and concept.definition.strip()),
+            definition_candidates=count(
+                select(func.count())
+                .select_from(ConceptDefinition)
+                .where(ConceptDefinition.concept_id == concept_id)
+            ),
+            placements=count(
+                select(func.count())
+                .select_from(ConceptHierarchy)
+                .where(
+                    (ConceptHierarchy.source_id == concept_id)
+                    | (ConceptHierarchy.target_id == concept_id)
+                )
+            ),
+            triage=count(
+                select(func.count())
+                .select_from(GapTriage)
+                .where(GapTriage.concept_id == concept_id)
+            ),
+            presence_documents=count(
+                select(func.count(func.distinct(ConceptPresenceRow.document_id))).where(
+                    ConceptPresenceRow.concept_id == concept_id
+                )
+            ),
+        )
+
+
 def delete_keyword_family(concept_id: str) -> bool:
-    """Delete a family. Returns True if it existed."""
+    """Delete a family. Returns True if it existed.
+
+    Irreversible, and it cascades: :func:`describe_family_deletion` says what goes with the row,
+    and the Manage keywords view shows that before it calls this."""
     from doc_assistant.knowledge.concept_skeleton import delete_concept
 
     return delete_concept(concept_id)

@@ -16,7 +16,10 @@ Usage:
     python -m scripts.propose_taxonomy --apply               # propose (local Ollama, $0)
     python -m scripts.propose_taxonomy --apply --limit 10    # bounded first pass
     python -m scripts.propose_taxonomy --apply --documents-only
-    python -m scripts.propose_taxonomy --apply --all-concepts  # incl. non-graph keyword concepts
+    python -m scripts.propose_taxonomy --include-terms       # dry-run only: count the terms too
+
+A placement is proposed for a concept — a row the user has taken on (ADR-054). `--include-terms`
+(the former `--all-concepts`) widens the scope report to every unplaced row and cannot be applied.
 """
 
 from __future__ import annotations
@@ -42,8 +45,8 @@ def _format_report(run: ProposeRunResult, *, provider: str, model: str) -> str:
     out.append(f"Unplaced concepts (in scope):   {run.n_unplaced_concepts}")
     if run.n_concepts_out_of_scope:
         out.append(
-            f"  + outside graph vocabulary:   {run.n_concepts_out_of_scope}"
-            "  (--all-concepts to include)"
+            f"  + terms, never placed:        {run.n_concepts_out_of_scope}"
+            "  (--include-terms counts them in a dry run)"
         )
     out.append(f"Unclassified documents:         {run.n_unclassified_documents}")
     out.append(f"Items this run:                 {result.n_items}")
@@ -94,10 +97,12 @@ def main() -> int:
         "--documents-only", action="store_true", help="Propose for documents only, not concepts"
     )
     parser.add_argument(
+        "--include-terms",
         "--all-concepts",
+        dest="include_terms",
         action="store_true",
-        help="Include unplaced concepts outside the graph vocabulary (graph_include false) — "
-        "on a keyword-flooded corpus this is a much larger run",
+        help="Dry run only: count every unplaced row, terms included (graph_include false). "
+        "Placements are proposed for concepts only (ADR-054)",
     )
     parser.add_argument(
         "--limit",
@@ -119,6 +124,10 @@ def main() -> int:
 
     if args.concepts_only and args.documents_only:
         parser.error("--concepts-only and --documents-only are mutually exclusive")
+    if args.apply and args.include_terms:
+        parser.error(
+            "--include-terms is a dry run: placements are proposed for concepts only (ADR-054)"
+        )
 
     from doc_assistant.logging_config import configure_logging
 
@@ -142,7 +151,7 @@ def main() -> int:
         client=client,
         include_concepts=not args.documents_only,
         include_documents=not args.concepts_only,
-        all_concepts=args.all_concepts,
+        all_concepts=args.include_terms,
         limit=args.limit,
     )
 

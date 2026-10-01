@@ -431,13 +431,20 @@ class ChunkEpistemics(Base):
 
 
 class Concept(Base):
-    """A user-curated concept node — the vocabulary the skeleton is built over.
+    """A vocabulary row: a concept the user has taken on, or a term (ADR-054).
 
-    CURATED, not derived: the LLM never defines or extends this vocabulary
-    (redesign Decision 1). Seeded as *candidates* from `Keyword` rows and promoted
-    by the user (`scripts/seed_concepts.py`); survives a skeleton rebuild. `folder_id`
-    ships present-but-null for the future projects-as-folders scoping (Decision 9) —
-    the first increment builds global (folder-agnostic) presence.
+    One table holds both. A **concept** is a text-bearing row with ``graph_include`` set — a
+    meaning the user chose. It has a name (``label``) and forms (``ConceptAlias``), sits on the
+    concept graph, and is what definitions, merge and ``is_a`` proposals, field placement and gap
+    detection read. Every other text-bearing row is a **term**: a string the library uses, kept,
+    searchable and usable as a keyword family, with nothing stored about its meaning. A
+    ``kind="domain"`` row is a taxonomy field node and is neither.
+
+    Never derived by a model: the LLM does not define or extend this vocabulary (redesign
+    Decision 1). Rows are seeded as *candidates* from `Keyword` rows (`scripts/seed_concepts.py`),
+    and taking one on is the user's act. Rows survive a skeleton rebuild. `folder_id` ships
+    present-but-null for the future projects-as-folders scoping (Decision 9) — the first
+    increment builds global (folder-agnostic) presence.
     """
 
     __tablename__ = "concepts"
@@ -473,11 +480,25 @@ class Concept(Base):
     )
 
 
+#: ``ConceptAlias.breadth`` values (ADR-054). ``None`` on a row means nobody has classified the
+#: form, and reads as exact everywhere.
+BREADTH_EXACT = "exact"
+BREADTH_BROAD = "broad"
+BREADTHS: tuple[str, ...] = (BREADTH_EXACT, BREADTH_BROAD)
+
+
 class ConceptAlias(Base):
     """A surface form (synonym / abbreviation) for a curated `Concept`.
 
     CURATED (Decision 1/2): alias coverage is what bounds deterministic presence
     recall (RG-009). Unique per `(concept_id, alias)`; survives a rebuild.
+
+    ``breadth`` (ADR-054) says whether the form always means the concept. ``"exact"``: it does —
+    a spelling, an inflection, an abbreviation, its long form — and it counts as presence.
+    ``"broad"``: the string also matches other things (``distillation`` for knowledge
+    distillation), so its documents are counted beside presence and never added in. ``NULL``:
+    nobody has classified it, which reads as exact, so a form changes what the graph counts only
+    when the user says so.
     """
 
     __tablename__ = "concept_aliases"
@@ -487,6 +508,7 @@ class ConceptAlias(Base):
         String, ForeignKey("concepts.id", ondelete="CASCADE"), nullable=False, index=True
     )
     alias: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    breadth: Mapped[str | None] = mapped_column(String, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
 
     concept: Mapped[Concept] = relationship("Concept", back_populates="aliases")

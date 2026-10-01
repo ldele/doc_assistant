@@ -5,7 +5,9 @@
 import { API_BASE, errorDetail } from './_base'
 import type {
   KeywordFamily,
+  KeywordFamilyDeletion,
   KeywordFamilyProposal,
+  MemberBreadth,
 } from '../types'
 
 export async function listKeywordFamilies(): Promise<KeywordFamily[]> {
@@ -78,6 +80,35 @@ export async function removeFamilyMember(
   )
   if (!r.ok) throw new Error(await errorDetail(r, 'remove family member'))
   return (await r.json()) as KeywordFamily
+}
+/** Mark one member exact or broad, or clear the mark with `null` (ADR-054).
+ *
+ * An exact form counts as presence; a broad one is counted beside it. Like the graph flag, this
+ * moves the vocabulary: the graph follows at its next rebuild.
+ */
+export async function setFamilyMemberBreadth(
+  familyId: string,
+  keyword: string,
+  breadth: MemberBreadth,
+): Promise<KeywordFamily> {
+  const r = await fetch(
+    `${API_BASE}/api/library/keyword-families/${encodeURIComponent(familyId)}/members/${encodeURIComponent(keyword)}`,
+    {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ breadth }),
+    },
+  )
+  if (!r.ok) throw new Error(await errorDetail(r, 'mark family member'))
+  return (await r.json()) as KeywordFamily
+}
+/** What deleting this family would remove — asked before the delete, so the confirmation can say. */
+export async function describeFamilyDeletion(familyId: string): Promise<KeywordFamilyDeletion> {
+  const r = await fetch(
+    `${API_BASE}/api/library/keyword-families/${encodeURIComponent(familyId)}/deletion`,
+  )
+  if (!r.ok) throw new Error(await errorDetail(r, 'describe family deletion'))
+  return (await r.json()) as KeywordFamilyDeletion
 }
 export async function deleteKeywordFamily(familyId: string): Promise<void> {
   const r = await fetch(`${API_BASE}/api/library/keyword-families/${encodeURIComponent(familyId)}`, {

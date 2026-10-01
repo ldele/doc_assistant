@@ -27,7 +27,7 @@ import json
 import re
 import statistics
 from collections import Counter, defaultdict
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
@@ -102,7 +102,13 @@ class ConceptNode:
 
     ``written`` is how the library writes the label (``dIN``, ``Cre``) when it writes it in a case
     — derived at build time (``knowledge.written_forms``, ADR-053 decision 3), never a rewrite of
-    ``label``; ``None`` when the prose writes it in lower case or not at all."""
+    ``label``; ``None`` when the prose writes it in lower case or not at all.
+
+    ``doc_ids`` is presence: the documents an **exact** form occurs in (ADR-054).
+    ``broad_doc_ids`` are the documents only a *broad* form reaches — kept beside presence and
+    never added to it, so edges, degree and gaps do not see them — and ``broad_forms`` names the
+    broad forms that matched, as the library writes them. Both are empty until the user marks a
+    form broad."""
 
     id: str
     label: str
@@ -110,6 +116,8 @@ class ConceptNode:
     degree: int
     community: int
     written: str | None = None
+    broad_doc_ids: tuple[str, ...] = ()
+    broad_forms: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -145,6 +153,8 @@ class SkeletonResult:
     applied: bool
     n_written_forms: int = 0  # surface forms the prose uses mid-sentence (ADR-053 decision 3)
     n_cased_forms: int = 0  # of those, forms the library writes in a case — matched case-aware
+    n_broad_concepts: int = 0  # concepts with a document only a broad form reaches (ADR-054)
+    n_broad_documents: int = 0  # concept-document pairs kept beside presence, never in it
 
 
 # ============================================================
@@ -323,6 +333,37 @@ def match_presence(
         )
     presences.sort(key=lambda p: (p.concept_id, p.document_id))
     return presences
+
+
+def match_broad_presence(
+    broad: Mapping[str, list[str]],
+    chunk_texts: list[tuple[str, str, str]],
+    *,
+    written: Mapping[tuple[str, str], str] | None = None,
+) -> dict[str, dict[str, set[str]]]:
+    """Where each concept's **broad** forms occur: ``concept_id`` → ``{form: documents}``.
+
+    ADR-054. ``broad`` maps ``concept_id`` → the forms the user marked broad: strings that also
+    match other things (``distillation`` for knowledge distillation). Each is matched by the same
+    whole-word, case-aware rule as presence (:func:`form_matcher`), but the result is kept apart
+    from it: a caller shows it beside the exact count and never adds it in. Forms are keyed
+    casefolded, as :func:`surface_forms` gives them; a form that occurs nowhere is absent, and a
+    vocabulary nobody has classified returns ``{}``."""
+    spellings = written or {}
+    prepared = [(doc_id, text, text.casefold()) for _key, doc_id, text in chunk_texts]
+    found: dict[str, dict[str, set[str]]] = {}
+    for concept_id, forms in sorted(broad.items()):
+        if not forms:
+            continue
+        per_form: dict[str, set[str]] = {}
+        for form in surface_forms(forms[0], list(forms[1:])):
+            matcher = form_matcher(form, spellings.get((concept_id, form)))
+            documents = {doc_id for doc_id, text, low in prepared if matcher.search(text, low)}
+            if documents:
+                per_form[form] = documents
+        if per_form:
+            found[concept_id] = per_form
+    return found
 
 
 def _pair(a: str, b: str) -> tuple[str, str]:
@@ -570,6 +611,31 @@ def _graph_version(
     return hashlib.sha256(blob.encode("utf-8")).hexdigest()[:16]
 
 
+def forms_fingerprints(
+    concepts: Sequence[tuple[str, str]],
+    aliases: Mapping[str, Sequence[str]],
+    broad: Mapping[str, Sequence[str]],
+) -> dict[str, str]:
+    """``{concept_id: fingerprint}`` of the name and forms each concept is counted through.
+
+    ``graph_version`` fingerprints what a build *produced*. This fingerprints what the user
+    *edits* (ADR-054): a concept's name, its exact forms and its broad forms. A form added,
+    removed or marked the other way shows in no node or edge until the next build, so the graph
+    view compares these with the live vocabulary to say which concepts it is behind on.
+
+    Case and order are left out because matching ignores both (``surface_forms``); the name is
+    kept apart from the other exact forms so a rename is seen even when the old name stays on as a
+    form."""
+    out: dict[str, str] = {}
+    for concept_id, label in concepts:
+        exact = sorted(surface_forms(label, list(aliases.get(concept_id, ()))))
+        marked = list(broad.get(concept_id, ()))
+        wide = sorted(surface_forms(marked[0], marked[1:])) if marked else []
+        blob = json.dumps([label.strip().casefold(), exact, wide], ensure_ascii=False)
+        out[concept_id] = hashlib.sha256(blob.encode("utf-8")).hexdigest()[:12]
+    return out
+
+
 def analyze_skeleton(
     nodes: list[ConceptNode],
     edges: list[SkeletonEdge],
@@ -616,6 +682,8 @@ def analyze_skeleton(
             degree=degree.get(n.id, 0),
             community=community_of.get(n.id, -1),
             written=n.written,
+            broad_doc_ids=n.broad_doc_ids,
+            broad_forms=n.broad_forms,
         )
         for n in sorted(nodes, key=lambda n: n.id)
     )
@@ -658,6 +726,8 @@ def skeleton_to_dict(skeleton: ConceptSkeleton) -> dict[str, Any]:
                 "community": n.community,
                 # Only when set, so a node without one serialises exactly as it did before.
                 **({"written": n.written} if n.written else {}),
+                **({"broad_doc_ids": list(n.broad_doc_ids)} if n.broad_doc_ids else {}),
+                **({"broad_forms": list(n.broad_forms)} if n.broad_forms else {}),
             }
             for n in skeleton.nodes
         ],
@@ -691,6 +761,8 @@ def skeleton_from_dict(data: dict[str, Any]) -> ConceptSkeleton:
             degree=int(n.get("degree", 0)),
             community=int(n.get("community", -1)),
             written=n.get("written") or None,
+            broad_doc_ids=tuple(n.get("broad_doc_ids", [])),
+            broad_forms=tuple(n.get("broad_forms", [])),
         )
         for n in data.get("nodes", [])
     )
@@ -894,6 +966,11 @@ def load_concepts() -> tuple[list[tuple[str, str]], dict[str, list[str]]]:
     The flag is **opt-in**: NULL (every row predating the migration) reads as excluded. Aliases
     are fetched only for the included ids, so an excluded concept contributes no surface form.
 
+    **Exact forms only (ADR-054).** An alias the user marked *broad* is left out, so everything
+    that counts through this loader — presence, edges, the gap list's claim attribution — counts
+    forms that always mean the concept. An unclassified alias is exact. The broad ones come from
+    :func:`load_broad_forms` and are counted beside presence, never in it.
+
     Reads through the taxonomy's kind guard (ADR-028 D4, ROADMAP 54): a ``kind="domain"`` field
     node flagged ``graph_include`` — legacy data, or a write that skipped the guard — never enters
     the graph, where it would read as an ``isolated`` concept with no presence.
@@ -902,7 +979,7 @@ def load_concepts() -> tuple[list[tuple[str, str]], dict[str, list[str]]]:
     so the pure core stays DB-free. Empty vocabulary → empty graph (the curation prereq)."""
     from sqlalchemy import select
 
-    from doc_assistant.db.models import Concept, ConceptAlias
+    from doc_assistant.db.models import BREADTH_BROAD, Concept, ConceptAlias
     from doc_assistant.db.session import session_scope
     from doc_assistant.knowledge.taxonomy import presence_query
 
@@ -914,10 +991,34 @@ def load_concepts() -> tuple[list[tuple[str, str]], dict[str, list[str]]]:
             concepts.append((str(row.id), row.label))
         included = {cid for cid, _ in concepts}
         for arow in session.execute(select(ConceptAlias)).scalars():
-            if str(arow.concept_id) in included:
+            if str(arow.concept_id) in included and arow.breadth != BREADTH_BROAD:
                 aliases[str(arow.concept_id)].append(arow.alias)
     concepts.sort(key=lambda c: c[0])
     return concepts, dict(aliases)
+
+
+def load_broad_forms() -> dict[str, list[str]]:
+    """The graph vocabulary's **broad** forms: ``{concept_id: [alias]}`` (ADR-054).
+
+    The counterpart of :func:`load_concepts`, which leaves these out. A broad form equal to the
+    concept's own label is ignored: the name is always exact, so a stray flag on it cannot take
+    the concept's own documents away. Empty until the user marks a form broad."""
+    from sqlalchemy import select
+
+    from doc_assistant.db.models import BREADTH_BROAD, Concept, ConceptAlias
+    from doc_assistant.db.session import session_scope
+    from doc_assistant.knowledge.taxonomy import presence_query
+
+    broad: dict[str, list[str]] = defaultdict(list)
+    with session_scope() as session:
+        rows = session.execute(presence_query().where(Concept.graph_include.is_(True))).scalars()
+        names = {str(row.id): row.label.strip().casefold() for row in rows}
+        stmt = select(ConceptAlias).where(ConceptAlias.breadth == BREADTH_BROAD)
+        for arow in session.execute(stmt).scalars():
+            concept_id = str(arow.concept_id)
+            if concept_id in names and arow.alias.strip().casefold() != names[concept_id]:
+                broad[concept_id].append(arow.alias)
+    return {concept_id: sorted(forms) for concept_id, forms in broad.items()}
 
 
 @dataclass(frozen=True)
@@ -1471,6 +1572,7 @@ def build_concept_skeleton(
     doc_years_loader: Any = None,
     stance_loader: Any = None,
     written_loader: Any = None,
+    broad_loader: Any = None,
     skeleton_dir: Path | None = None,
 ) -> SkeletonResult:
     """Build the deterministic concept skeleton (Node A) — **zero LLM calls**.
@@ -1493,6 +1595,12 @@ def build_concept_skeleton(
     edges that still exist (``_reattach_stance``) instead of wiping it — so an in-app rebuild
     (ADR-017 B1) does not silently darken corpus-wide epistemics. ``--enrich`` re-derives stance
     from scratch, so preservation is transparent there. ``stance_loader`` is the DI seam for tests.
+
+    ADR-054: presence, and so every edge, degree and gap, counts a concept's **exact** forms
+    (``concept_loader`` returns no others). The forms the user marked broad come from
+    ``broad_loader`` (``{concept_id: [alias]}``) and are matched separately: the documents only a
+    broad form reaches land on the node as ``broad_doc_ids``, beside ``doc_ids`` and never in them.
+    With no form marked broad the result is identical to a build that knows nothing of breadth.
     """
     from doc_assistant.config import (
         CONCEPT_SKELETON_DIR,
@@ -1520,6 +1628,14 @@ def build_concept_skeleton(
     load_y = doc_years_loader or load_doc_years
 
     concepts, aliases = load_c()
+    # A test that injects its own vocabulary gets no broad forms unless it injects those too, so
+    # it never reaches the database for them.
+    if broad_loader is not None:
+        broad = dict(broad_loader())
+    elif concept_loader is None:
+        broad = load_broad_forms()
+    else:
+        broad = {}
     chunk_texts = load_p(document_ids)
     citation_pairs, doc_sim_pairs = load_g()
     doc_years = load_y()
@@ -1538,6 +1654,9 @@ def build_concept_skeleton(
 
     presences = match_presence(concepts, aliases, chunk_texts, mode=mode, written=spellings)
     doc_index = _concept_doc_index(presences)
+    # ADR-054: the broad forms' documents, beside presence. Nothing below this line reads them
+    # except the node fields, so edges, degree, communities and gaps rest on exact forms only.
+    broad_found = match_broad_presence(broad, chunk_texts, written=spellings) if broad else {}
 
     edges = cooccurrence_edges(presences, min_cooccurrence=min_cooc)
     edges = add_citation_provenance(edges, citation_pairs, doc_index)
@@ -1548,17 +1667,27 @@ def build_concept_skeleton(
     load_stance = stance_loader or _load_existing_stance
     edges = _reattach_stance(edges, load_stance(root))
 
-    nodes = [
-        ConceptNode(
-            id=cid,
-            label=label,
-            doc_ids=tuple(sorted(doc_index.get(cid, set()))),
-            degree=0,
-            community=-1,
-            written=cased_label(label, spellings.get((cid, label.strip().casefold()))),
+    nodes = []
+    for cid, label in concepts:
+        exact_docs = doc_index.get(cid, set())
+        per_form = broad_found.get(cid, {})
+        # "Beside" means the documents presence does not already count: a broad form in a document
+        # an exact form also occurs in adds nothing to say.
+        beside = {form: docs - exact_docs for form, docs in per_form.items()}
+        nodes.append(
+            ConceptNode(
+                id=cid,
+                label=label,
+                doc_ids=tuple(sorted(exact_docs)),
+                degree=0,
+                community=-1,
+                written=cased_label(label, spellings.get((cid, label.strip().casefold()))),
+                broad_doc_ids=tuple(sorted(set().union(*beside.values()))) if beside else (),
+                broad_forms=tuple(
+                    spellings.get((cid, form), form) for form in sorted(beside) if beside[form]
+                ),
+            )
         )
-        for cid, label in concepts
-    ]
     n_documents = len({p.document_id for p in presences})
     skeleton = analyze_skeleton(
         nodes,
@@ -1569,6 +1698,10 @@ def build_concept_skeleton(
             "n_documents": n_documents,
             "min_cooccurrence": min_cooc,
             "doc_years": doc_years,
+            # What each concept was counted through, so the view can tell when a form has been
+            # added, removed or marked the other way since (not part of `graph_version`: that
+            # fingerprints the result, and sidecars key their own staleness on it).
+            "forms": forms_fingerprints(concepts, aliases, broad),
         },
     )
 
@@ -1597,4 +1730,6 @@ def build_concept_skeleton(
         applied=apply,
         n_written_forms=len(written_forms),
         n_cased_forms=sum(1 for f in written_forms if f.cased),
+        n_broad_concepts=sum(1 for n in skeleton.nodes if n.broad_doc_ids),
+        n_broad_documents=sum(len(n.broad_doc_ids) for n in skeleton.nodes),
     )

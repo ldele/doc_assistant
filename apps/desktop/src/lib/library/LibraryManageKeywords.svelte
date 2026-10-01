@@ -5,18 +5,34 @@
   // move keywords in/out (a keyword belongs to at most one family — adding it here moves it off
   // any other family), or delete it. Reuses the overlay's modal shell (scrim + centered dialog,
   // Esc-to-close). Dumb by design — App owns the families list + calls the API, then refreshes.
-  import type { KeywordFamily, KeywordFamilyProposal } from '../core/types'
+  //
+  // ADR-054: the list is two lists. A *concept* is a row the user has taken on (it is on the
+  // concept graph); a *term* is a word the library uses that nobody has. A concept is shown under
+  // its name, and each of its forms is marked exact or broad here. Deleting asks first and says
+  // what goes with the row.
+  import { untrack } from 'svelte'
+  import type {
+    KeywordFamily,
+    KeywordFamilyDeletion,
+    KeywordFamilyProposal,
+    MemberBreadth,
+  } from '../core/types'
   import {
     RARE_MAX_DOCS,
-    applyGraphLens,
+    deletionLosses,
     filterByQuery,
     graphVocabulary,
+    memberBreadth,
+    nextBreadth,
     splitInheritedFamilies,
+    termFamilies,
   } from './library'
+  import { shownName } from '../graph/labels'
   import Icon from '../shell/Icon.svelte'
 
   let {
     families,
+    focusId = null,
     allKeywords,
     keywordDocCounts,
     proposals,
@@ -27,6 +43,8 @@
     onSetOnGraph,
     onAddMember,
     onRemoveMember,
+    onSetBreadth,
+    previewDelete,
     onDelete,
     onDetect,
     onAcceptProposal,
@@ -34,6 +52,7 @@
     onClose,
   }: {
     families: KeywordFamily[]
+    focusId?: string | null // the row to open on (a deep-link from the graph); null = the top
     allKeywords: string[] // every raw keyword name across the corpus
     keywordDocCounts: Map<string, number> // documents per raw keyword (PR-2.7 F4)
     proposals: KeywordFamilyProposal[] // zero-LLM detection results (PR-2); [] until Detect runs
@@ -44,6 +63,10 @@
     onSetOnGraph: (familyId: string, include: boolean) => void
     onAddMember: (familyId: string, keyword: string) => void
     onRemoveMember: (familyId: string, keyword: string) => void
+    // ADR-054: mark one form of a concept exact or broad; `null` clears the mark.
+    onSetBreadth: (familyId: string, keyword: string, breadth: MemberBreadth) => void
+    // What a delete would remove, asked before the confirmation is shown. `null` = could not load.
+    previewDelete: (familyId: string) => Promise<KeywordFamilyDeletion | null>
     onDelete: (familyId: string) => void
     onDetect: () => void
     onAcceptProposal: (p: KeywordFamilyProposal) => void
@@ -83,27 +106,25 @@
     showRareMembers ? [...poolSplit.common, ...poolSplit.rare] : poolSplit.common,
   )
 
-  // A `Concept` with no members and no documents is glossary vocabulary inherited from the earlier
-  // concept-graph seeding, not a family (~20 of the 26 rows on this corpus). Hidden by default,
-  // never deleted — they belong to ADR-018's graph vocabulary, a different feature.
+  // ADR-054 — two lists. Concepts are the rows the user has taken on (the graph vocabulary,
+  // ADR-018); every one is listed, whether or not it has member keywords or documents, because
+  // hiding one would hide a meaning the user chose. Terms are the rest.
   let famQuery = $state('')
-  let showInherited = $state(false)
-  const famSplit = $derived(splitInheritedFamilies(families))
-
-  // ADR-018 graph vocabulary. The lens is over ALL families, not just the "real" ones: most of the
-  // opted-in concepts have no member keywords and no documents, so they land in the glossary-only
-  // group that this view hides by default — filtering the visible set would show an empty list
-  // while the count beside it said 13.
-  let graphOnly = $state(false)
+  const familyText = (f: KeywordFamily): string =>
+    `${f.canonical} ${f.written ?? ''} ${f.aliases.join(' ')}`
   const onGraph = $derived(graphVocabulary(families))
-  const famShown = $derived(
+  const conceptsShown = $derived(filterByQuery(onGraph, famQuery, familyText))
+
+  // A term with no member keywords and no documents filters nothing today. Hidden by default,
+  // never deleted — the search and the toggle both reach it.
+  let showInherited = $state(false)
+  const terms = $derived(termFamilies(families))
+  const famSplit = $derived(splitInheritedFamilies(terms))
+  const termsShown = $derived(
     filterByQuery(
-      applyGraphLens(
-        graphOnly || showInherited ? [...famSplit.real, ...famSplit.inherited] : famSplit.real,
-        graphOnly,
-      ),
+      showInherited ? [...famSplit.real, ...famSplit.inherited] : famSplit.real,
       famQuery,
-      (f) => `${f.canonical} ${f.aliases.join(' ')}`,
+      familyText,
     ),
   )
 
@@ -131,6 +152,18 @@
     })
   }
 
+  // A deep-link from the graph opens the view on one row: "take this term on" has to land on the
+  // term, not at the top of a few hundred. Applied once, when the row is in the list — the list
+  // can still be loading when the view opens.
+  let focusApplied = false
+  $effect(() => {
+    if (focusApplied || focusId === null) return
+    const target = families.find((f) => f.id === focusId)
+    if (!target) return
+    focusApplied = true
+    untrack(() => goToFamily(target))
+  })
+
   let newCanonical = $state('')
   let newMembers = $state<string[]>([])
   function toggleNewMember(k: string): void {
@@ -143,9 +176,10 @@
       goToFamily(canonicalMatch)
       return
     }
-    // A family created with no members starts at 0 aliases / 0 docs, which is exactly the shape
-    // the glossary-only group hides — so creating one would look like it silently failed. Reveal
-    // the group in that case (and only that case: with members it lands in the visible list).
+    // A family created with no members starts as a term with 0 aliases / 0 docs, which is exactly
+    // the shape the unused group hides — so creating one would look like it silently failed.
+    // Reveal the group in that case (and only that case: with members it lands in the visible
+    // list).
     if (newMembers.length === 0) showInherited = true
     onCreate(canonical, newMembers)
     newCanonical = ''
@@ -177,10 +211,45 @@
     addSelection = { ...addSelection, [familyId]: '' }
   }
 
-  function onKey(e: KeyboardEvent): void {
-    if (e.key === 'Escape') onClose()
+  // ADR-054 — a delete asks first. Pressing the button reads what goes with the row from the
+  // server and shows it on the row; nothing is removed until the second press. One row at a time:
+  // asking about another row drops the first question.
+  let deleteAsk = $state<{
+    id: string
+    loading: boolean
+    info: KeywordFamilyDeletion | null
+  } | null>(null)
+  async function askDelete(f: KeywordFamily): Promise<void> {
+    deleteAsk = { id: f.id, loading: true, info: null }
+    const info = await previewDelete(f.id)
+    // The answer for a row the user has since left is dropped rather than shown on another row.
+    if (deleteAsk === null || deleteAsk.id !== f.id) return
+    deleteAsk = { id: f.id, loading: false, info }
   }
-  function autofocus(node: HTMLInputElement): void {
+  function confirmDelete(): void {
+    if (deleteAsk === null) return
+    const id = deleteAsk.id
+    deleteAsk = null
+    onDelete(id)
+  }
+  function keepFamily(): void {
+    deleteAsk = null
+  }
+  // The other way out for a concept: it goes back to being a term and keeps everything it has.
+  function takeOffGraphInstead(): void {
+    if (deleteAsk === null) return
+    const id = deleteAsk.id
+    deleteAsk = null
+    onSetOnGraph(id, false)
+  }
+
+  function onKey(e: KeyboardEvent): void {
+    if (e.key !== 'Escape') return
+    // Escape answers the open question before it closes the view.
+    if (deleteAsk !== null) keepFamily()
+    else onClose()
+  }
+  function autofocus(node: HTMLElement): void {
     node.focus()
   }
 </script>
@@ -310,145 +379,250 @@
       {/if}
     </section>
 
+    <!-- One row, rendered by both lists below. A concept's row marks each of its forms exact or
+         broad; a term's row has no such control, because only a concept's forms are counted
+         (ADR-054). -->
+    {#snippet familyRow(f: KeywordFamily)}
+      {@const name = shownName(f.canonical, f.written ?? null)}
+      <div class="famrow" id="fam-{f.id}" class:highlight={highlightId === f.id}>
+        <div class="famhead">
+          {#if editingId === f.id}
+            <input
+              class="renameinput"
+              bind:value={editingValue}
+              aria-label="Rename {name}"
+              onkeydown={(e) => {
+                if (e.key === 'Enter') commitRename()
+                if (e.key === 'Escape') cancelRename()
+              }}
+            />
+            <button class="iconbtn" onclick={commitRename} aria-label="Save name" type="button">
+              <Icon name="check" size={14} />
+            </button>
+            <button class="iconbtn" onclick={cancelRename} aria-label="Cancel rename" type="button">
+              <Icon name="x" size={14} />
+            </button>
+          {:else}
+            <button class="famname" onclick={() => startRename(f)} type="button" title="Rename">
+              {name}
+            </button>
+            <!-- The library filter's count: documents that carry the keyword. The graph counts
+                 mentions in the text, so the two numbers differ for the same concept, and a
+                 bare "1 doc" beside a concept the graph shows in eleven reads as a fault. -->
+            <span
+              class="doccount"
+              title="Documents whose keywords carry this name or one of its forms — the library filter's count. The graph counts mentions in the text instead."
+            >
+              {f.doc_count} doc{f.doc_count === 1 ? '' : 's'}
+            </span>
+            <button
+              class="iconbtn graph"
+              class:on={f.graph_include}
+              aria-pressed={f.graph_include}
+              onclick={() => onSetOnGraph(f.id, !f.graph_include)}
+              aria-label={f.graph_include
+                ? `Take ${name} off the concept graph`
+                : `Take ${name} on as a concept`}
+              title={f.graph_include
+                ? 'A concept, on the graph — click to make it a term again'
+                : 'A term — click to take it on as a concept'}
+              type="button"
+            >
+              <Icon name="waypoints" size={14} />
+            </button>
+            <button
+              class="iconbtn danger"
+              onclick={() => void askDelete(f)}
+              aria-label="Delete {name}"
+              title="Delete…"
+              type="button"
+            >
+              <Icon name="x" size={14} />
+            </button>
+          {/if}
+        </div>
+        {#if deleteAsk !== null && deleteAsk.id === f.id}
+          {@const losses = deleteAsk.info ? deletionLosses(deleteAsk.info) : []}
+          <div class="confirm" role="group" aria-label="Delete {name}?">
+            {#if deleteAsk.loading}
+              <p class="confirmtext">Checking what goes with “{name}”…</p>
+            {:else}
+              <p class="confirmtext">
+                {#if deleteAsk.info === null}
+                  Delete “{name}”? What goes with it could not be read.
+                {:else if losses.length === 0}
+                  Delete “{name}”? Nothing else is attached to it.
+                {:else}
+                  Delete “{name}”? This also removes {losses.join(', ')}.
+                {/if}
+                {#if f.graph_include}
+                  Taking it off the graph keeps all of that and makes it a term again.
+                {/if}
+              </p>
+              <div class="confirmrow">
+                <button class="addbtn" use:autofocus onclick={keepFamily} type="button">Keep</button>
+                {#if f.graph_include}
+                  <button class="addbtn" onclick={takeOffGraphInstead} type="button">
+                    Take off the graph instead
+                  </button>
+                {/if}
+                <button class="dangerbtn" onclick={confirmDelete} type="button">Delete</button>
+              </div>
+            {/if}
+          </div>
+        {/if}
+        <div class="members" role="group" aria-label="Forms of {name}">
+          {#each f.aliases as alias (alias)}
+            {#if f.graph_include}
+              {@const mark = memberBreadth(f, alias)}
+              <span class="form" class:broad={mark === 'broad'}>
+                <span class="formtext">{alias}</span>
+                <span class="seg" role="group" aria-label="How “{alias}” counts for {name}">
+                  <button
+                    class="segbtn"
+                    class:on={mark === 'exact'}
+                    aria-pressed={mark === 'exact'}
+                    onclick={() => onSetBreadth(f.id, alias, nextBreadth(mark, 'exact'))}
+                    title="Exact: “{alias}” always means {name}, so its documents count."
+                    type="button"
+                  >
+                    exact
+                  </button>
+                  <button
+                    class="segbtn"
+                    class:on={mark === 'broad'}
+                    aria-pressed={mark === 'broad'}
+                    onclick={() => onSetBreadth(f.id, alias, nextBreadth(mark, 'broad'))}
+                    title="Broad: “{alias}” also means other things, so its documents are listed beside {name} and not counted in it."
+                    type="button"
+                  >
+                    broad
+                  </button>
+                </span>
+                <button
+                  class="formx"
+                  onclick={() => onRemoveMember(f.id, alias)}
+                  aria-label="Remove “{alias}” from {name}"
+                  title="Remove this form"
+                  type="button"
+                >
+                  <Icon name="x" size={11} />
+                </button>
+              </span>
+            {:else}
+              <button
+                class="chip"
+                onclick={() => onRemoveMember(f.id, alias)}
+                type="button"
+                title="Remove “{alias}” from this family"
+              >
+                <span>{alias}</span>
+                <Icon name="x" size={11} />
+              </button>
+            {/if}
+          {:else}
+            <span class="nomembers">
+              {f.graph_include
+                ? 'No other forms yet — just the name.'
+                : 'No member keywords yet — just the name.'}
+            </span>
+          {/each}
+        </div>
+        {#if unfamilied.length > 0}
+          <div class="addrow">
+            <select bind:value={addSelection[f.id]} aria-label="Add a keyword to {name}">
+              <option value="">{f.graph_include ? 'Add a form…' : 'Add a keyword…'}</option>
+              {#each unfamilied as k (k)}
+                <option value={k}>{k}</option>
+              {/each}
+            </select>
+            <button
+              class="addbtn"
+              onclick={() => submitAdd(f.id)}
+              disabled={!addSelection[f.id]}
+              type="button"
+            >
+              Add
+            </button>
+          </div>
+        {/if}
+      </div>
+    {/snippet}
+
     <section class="block">
-      <h3>Families ({famSplit.real.length})</h3>
+      <h3>Concepts ({onGraph.length})</h3>
+      <!-- ADR-018's curation, in the view that ADR named as its home, under ADR-054's words. Said
+           plainly because the default is *out* and the consequence is a blank Graph page: a user
+           who never finds this control has no way to know why their graph is empty. -->
       <p class="hint">
-        {famSplit.real.filter((f) => f.aliases.length > 0).length} collapse synonyms ·
-        {famSplit.real.filter((f) => f.aliases.length === 0).length} single-label
-        {#if famSplit.inherited.length > 0}· {famSplit.inherited.length} glossary-only hidden (no
-          members, no documents){/if}
+        A concept is a meaning you have taken on: it is on the concept graph and can have a
+        definition. Mark each of its forms <strong>exact</strong> when the form always means the
+        concept, or <strong>broad</strong> when it also means other things — a broad form's
+        documents are listed beside the concept and not counted in it. A form with neither mark
+        counts as exact.
       </p>
-      <!-- ADR-018's curation, in the view that ADR named as its home. Said plainly because the
-           default is *out* and the consequence is a blank Graph page: a user who never finds this
-           control has no way to know why their graph is empty. -->
       <p class="hint">
-        <strong>{onGraph.length} of {families.length}</strong> are on the concept graph. The graph
-        maps a vocabulary you choose rather than every keyword in your library — add one with the
-        <Icon name="waypoints" size={12} /> button on its row. The graph itself updates when you
-        rebuild it, and it tells you when it is behind.
+        The graph applies a change when you rebuild it, and says it is behind until you do.
       </p>
-      {#if famSplit.real.length === 0 && famSplit.inherited.length === 0}
-        <p class="hint">No families yet — create one above.</p>
+      <div class="poolhead">
+        <div class="searchrow small">
+          <Icon name="search" size={13} />
+          <input
+            bind:value={famQuery}
+            placeholder="Search concepts and terms"
+            aria-label="Search concepts and terms"
+          />
+        </div>
+      </div>
+      <div class="famlist">
+        {#each conceptsShown as f (f.id)}
+          {@render familyRow(f)}
+        {:else}
+          {#if famQuery.trim() === ''}
+            <p class="hint">
+              No concepts yet. Take a term on with the <Icon name="waypoints" size={12} /> button on
+              its row, then rebuild the graph.
+            </p>
+          {:else}
+            <p class="hint">No concept matches “{famQuery.trim()}”.</p>
+          {/if}
+        {/each}
+      </div>
+    </section>
+
+    <section class="block">
+      <h3>Terms ({terms.length})</h3>
+      <p class="hint">
+        Words your library uses that you have not taken on. A term stays searchable and still works
+        as a keyword filter; no definition, merge or field is stored for it. Take one on with the
+        <Icon name="waypoints" size={12} /> button on its row.
+      </p>
+      {#if terms.length === 0}
+        <p class="hint">
+          No terms yet — keywords arrive with your documents, or create a family above.
+        </p>
       {:else}
         <div class="poolhead">
-          <div class="searchrow small">
-            <Icon name="search" size={13} />
-            <input bind:value={famQuery} placeholder="Search families" aria-label="Search families" />
-          </div>
-          <button
-            class="linkbtn"
-            class:on={graphOnly}
-            aria-pressed={graphOnly}
-            onclick={() => (graphOnly = !graphOnly)}
-            type="button"
-            title="Show only the concepts that make up the graph vocabulary."
-          >
-            On the graph ({onGraph.length})
-          </button>
-          {#if famSplit.inherited.length > 0 && !graphOnly}
+          <p class="hint tally">
+            {famSplit.real.filter((f) => f.aliases.length > 0).length} collapse synonyms ·
+            {famSplit.real.filter((f) => f.aliases.length === 0).length} single-label
+            {#if famSplit.inherited.length > 0}· {famSplit.inherited.length} unused, hidden (no
+              members, no documents){/if}
+          </p>
+          {#if famSplit.inherited.length > 0}
             <button class="linkbtn" onclick={() => (showInherited = !showInherited)} type="button">
-              {showInherited ? 'Hide' : 'Show'} glossary-only ({famSplit.inherited.length})
+              {showInherited ? 'Hide' : 'Show'} unused ({famSplit.inherited.length})
             </button>
           {/if}
         </div>
         <div class="famlist">
-          {#each famShown as f (f.id)}
-            <div class="famrow" id="fam-{f.id}" class:highlight={highlightId === f.id}>
-              <div class="famhead">
-                {#if editingId === f.id}
-                  <input
-                    class="renameinput"
-                    bind:value={editingValue}
-                    aria-label="Rename family"
-                    onkeydown={(e) => {
-                      if (e.key === 'Enter') commitRename()
-                      if (e.key === 'Escape') cancelRename()
-                    }}
-                  />
-                  <button class="iconbtn" onclick={commitRename} aria-label="Save name" type="button">
-                    <Icon name="check" size={14} />
-                  </button>
-                  <button class="iconbtn" onclick={cancelRename} aria-label="Cancel rename" type="button">
-                    <Icon name="x" size={14} />
-                  </button>
-                {:else}
-                  <button class="famname" onclick={() => startRename(f)} type="button" title="Rename">
-                    {f.canonical}
-                  </button>
-                  <span class="doccount">{f.doc_count} doc{f.doc_count === 1 ? '' : 's'}</span>
-                  <button
-                    class="iconbtn graph"
-                    class:on={f.graph_include}
-                    aria-pressed={f.graph_include}
-                    onclick={() => onSetOnGraph(f.id, !f.graph_include)}
-                    aria-label={f.graph_include
-                      ? `Take ${f.canonical} off the concept graph`
-                      : `Put ${f.canonical} on the concept graph`}
-                    title={f.graph_include
-                      ? 'On the concept graph — click to remove'
-                      : 'Not on the concept graph — click to add'}
-                    type="button"
-                  >
-                    <Icon name="waypoints" size={14} />
-                  </button>
-                  <button
-                    class="iconbtn danger"
-                    onclick={() => onDelete(f.id)}
-                    aria-label="Delete family {f.canonical}"
-                    title="Delete family"
-                    type="button"
-                  >
-                    <Icon name="x" size={14} />
-                  </button>
-                {/if}
-              </div>
-              <div class="members" role="group" aria-label="Members of {f.canonical}">
-                {#each f.aliases as alias (alias)}
-                  <button
-                    class="chip"
-                    onclick={() => onRemoveMember(f.id, alias)}
-                    type="button"
-                    title="Remove “{alias}” from this family"
-                  >
-                    <span>{alias}</span>
-                    <Icon name="x" size={11} />
-                  </button>
-                {:else}
-                  <span class="nomembers">No member keywords yet — just the canonical name.</span>
-                {/each}
-              </div>
-              {#if unfamilied.length > 0}
-                <div class="addrow">
-                  <select
-                    bind:value={addSelection[f.id]}
-                    aria-label="Add a keyword to {f.canonical}"
-                  >
-                    <option value="">Add a keyword…</option>
-                    {#each unfamilied as k (k)}
-                      <option value={k}>{k}</option>
-                    {/each}
-                  </select>
-                  <button
-                    class="addbtn"
-                    onclick={() => submitAdd(f.id)}
-                    disabled={!addSelection[f.id]}
-                    type="button"
-                  >
-                    Add
-                  </button>
-                </div>
-              {/if}
-            </div>
+          {#each termsShown as f (f.id)}
+            {@render familyRow(f)}
           {:else}
-            {#if graphOnly && famQuery.trim() === ''}
-              <p class="hint">
-                Nothing is on the concept graph yet. Add a concept with the <Icon
-                  name="waypoints"
-                  size={12}
-                /> button on its row, then rebuild the graph.
-              </p>
+            {#if famQuery.trim() === ''}
+              <p class="hint">Every term here is unused — show them with the toggle above.</p>
             {:else}
-              <p class="hint">No families match “{famQuery.trim()}”.</p>
+              <p class="hint">No term matches “{famQuery.trim()}”.</p>
             {/if}
           {/each}
         </div>
@@ -592,10 +766,6 @@
   }
   .iconbtn.graph.on:hover {
     color: var(--accent);
-  }
-  .linkbtn.on {
-    color: var(--accent);
-    font-weight: 600;
   }
   .body {
     flex: 1;
@@ -848,6 +1018,104 @@
   .chip:hover {
     border-color: var(--danger, #c0392b);
     color: var(--danger, #c0392b);
+  }
+  /* ADR-054 — a concept's form: its text, how it counts, and a way to remove it. Three controls
+     where a term's chip has one, so it is a container and not a button. */
+  .form {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    font-size: 0.72rem;
+    color: var(--fg);
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 0.1rem 0.25rem 0.1rem 0.5rem;
+  }
+  /* A broad form sits beside the concept, not in it: the dashed edge says so before the mark is
+     read. */
+  .form.broad {
+    border-style: dashed;
+    background: none;
+  }
+  .seg {
+    display: inline-flex;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    overflow: hidden;
+  }
+  .segbtn {
+    font: inherit;
+    font-size: 0.66rem;
+    cursor: pointer;
+    color: var(--fg-2);
+    background: var(--bg);
+    border: none;
+    padding: 0.05rem 0.4rem;
+  }
+  .segbtn + .segbtn {
+    border-left: 1px solid var(--border);
+  }
+  .segbtn:hover {
+    color: var(--fg);
+  }
+  /* A two-state mark, so "on" reads as a state and not as a hover: filled, like the graph toggle. */
+  .segbtn.on {
+    color: var(--accent-fg);
+    background: var(--accent);
+    font-weight: 600;
+  }
+  .formx {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.1rem;
+    border: none;
+    background: none;
+    color: var(--fg-2);
+    border-radius: 999px;
+    cursor: pointer;
+  }
+  .formx:hover {
+    color: var(--danger, #c0392b);
+  }
+  /* The delete question, on the row it is about. */
+  .confirm {
+    border: 1px solid var(--danger, #c0392b);
+    border-radius: 6px;
+    padding: 0.4rem 0.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+  }
+  .confirmtext {
+    margin: 0;
+    font-size: 0.78rem;
+    color: var(--fg);
+  }
+  .confirmrow {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 0.35rem;
+  }
+  .dangerbtn {
+    font: inherit;
+    font-size: 0.75rem;
+    font-weight: 600;
+    cursor: pointer;
+    color: var(--danger, #c0392b);
+    background: none;
+    border: 1px solid var(--danger, #c0392b);
+    border-radius: 6px;
+    padding: 0.25rem 0.55rem;
+    flex: none;
+  }
+  .dangerbtn:hover {
+    color: var(--bg);
+    background: var(--danger, #c0392b);
+  }
+  .hint.tally {
+    margin: 0;
   }
   .addrow {
     display: flex;

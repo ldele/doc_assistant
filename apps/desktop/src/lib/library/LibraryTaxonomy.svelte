@@ -21,6 +21,9 @@
   } from '../core/types'
   import { buildForest } from './taxonomy'
   import { docLabel } from './library'
+  // A concept is shown under the name the library writes it by (ADR-054) — the same helper the
+  // graph uses, so `Cre` here is `Cre` there. Fields and documents carry no written form.
+  import { shownLabel, shownName } from '../graph/labels'
   import Icon from '../shell/Icon.svelte'
 
   let {
@@ -248,9 +251,9 @@
             {#each proposals as p (p.source_id + ':' + p.target_id + ':' + p.type)}
               <div class="prow">
                 <span class="ptext">
-                  <strong>{p.source_label}</strong>
+                  <strong>{shownName(p.source_label, p.source_written ?? null)}</strong>
                   <span class="ptype">{p.type === 'is_a' ? 'is a kind of' : 'belongs to'}</span>
-                  <strong>{p.target_label}</strong>
+                  <strong>{shownName(p.target_label, p.target_written ?? null)}</strong>
                   {#if p.source_kind === 'document'}<span class="ptag">document</span>{/if}
                 </span>
                 <span class="pactions">
@@ -298,12 +301,12 @@
               {#each detail.concepts as c (c.id)}
                 {#if c.origin === 'proposed'}
                   <span class="chip proposed" title="Proposed, not yours yet — accept or reject">
-                    <span>{c.label}</span>
+                    <span>{shownLabel(c)}</span>
                     <button
                       class="chipbtn"
                       onclick={() => acceptConcept(c.id)}
                       type="button"
-                      aria-label="Accept “{c.label}” on this field"
+                      aria-label="Accept “{shownLabel(c)}” on this field"
                     >
                       <Icon name="check" size={11} />
                     </button>
@@ -311,7 +314,7 @@
                       class="chipbtn"
                       onclick={() => removeConcept(c.id)}
                       type="button"
-                      aria-label="Reject “{c.label}” on this field"
+                      aria-label="Reject “{shownLabel(c)}” on this field"
                     >
                       <Icon name="x" size={11} />
                     </button>
@@ -321,9 +324,9 @@
                     class="chip"
                     onclick={() => removeConcept(c.id)}
                     type="button"
-                    title="Remove “{c.label}” from this field"
+                    title="Remove “{shownLabel(c)}” from this field"
                   >
-                    <span>{c.label}</span>
+                    <span>{shownLabel(c)}</span>
                     <Icon name="x" size={11} />
                   </button>
                 {/if}

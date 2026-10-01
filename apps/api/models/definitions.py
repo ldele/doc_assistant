@@ -57,6 +57,10 @@ class ConceptDefinitionsPayload(BaseModel):
     ``thin`` — nothing chosen and no passage shaped like a definition: the panel says the library
     has little to go on. ``extracted`` — whether any passage candidate is on record, so the panel
     can offer to look in the library rather than implying it already did.
+
+    ``is_concept`` — false for a *term*, a row the user has not taken on (ADR-054). The panel then
+    shows what the library says and offers no write: every definition route answers 409 for a
+    term, and a candidate whose ``id`` starts with ``unsaved:`` was found on request, not stored.
     """
 
     concept_id: str
@@ -66,6 +70,7 @@ class ConceptDefinitionsPayload(BaseModel):
     can_undo: bool
     thin: bool
     extracted: bool
+    is_concept: bool = True
 
     @classmethod
     def from_view(cls, v: ConceptDefinitions) -> ConceptDefinitionsPayload:
@@ -77,6 +82,7 @@ class ConceptDefinitionsPayload(BaseModel):
             can_undo=v.can_undo,
             thin=v.thin,
             extracted=v.extracted,
+            is_concept=v.is_concept,
         )
 
 
@@ -123,11 +129,22 @@ class UserDefinitionRequest(BaseModel):
 
 
 class VocabularyMatchPayload(BaseModel):
+    """One vocabulary row a search found. ``on_graph`` is also what makes it a *concept* rather
+    than a *term* (ADR-054); ``written`` is the label as the library writes it when it writes it
+    in a case, shown instead of ``label``."""
+
     id: str
     label: str
     on_graph: bool
     has_definition: bool
+    written: str | None = None
 
     @classmethod
     def from_match(cls, m: VocabularyMatch) -> VocabularyMatchPayload:
-        return cls(id=m.id, label=m.label, on_graph=m.on_graph, has_definition=m.has_definition)
+        return cls(
+            id=m.id,
+            label=m.label,
+            on_graph=m.on_graph,
+            has_definition=m.has_definition,
+            written=m.written,
+        )

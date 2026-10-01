@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-09-30 (presence is case-aware where the library writes a capital — ADR-053 decision 3) · class: living -->
+<!-- status: active · updated: 2026-10-01 (concepts and terms; presence counts exact forms, broad forms beside — ADR-054) · class: living -->
 
 # The knowledge layer — what the concept graph is for, and which of its signals you can trust
 
@@ -67,19 +67,27 @@ Epistemics is wanted; it is the part that has to be built on evidence rather tha
 
 ---
 
-## 2. The vocabulary — one table, two opt-ins
+## 2. The vocabulary — one table, concepts and terms
 
 There is **one** `Concept` table (ADR-015): keyword families and graph nodes are the same rows, so
-there is never a second vocabulary to reconcile.
+there is never a second vocabulary to reconcile. Its text-bearing rows are of two kinds (ADR-054):
+a **concept** is a row you have taken on, and a **term** is a string the library uses that nobody
+has. On the reference library that is 13 concepts and 344 terms (2026-10-01).
 
 | | what it means | who sets it |
 |---|---|---|
-| `kind = concept` / `domain` | a concept, or an ANZSRC field node (ADR-028) | seeding / curation |
-| `graph_include` | **opt-in** — this concept participates in the graph (ADR-018) | CLI only; the graph UI is read-only (ADR-017) |
+| `kind = concept` / `domain` | a text-bearing row, or an ANZSRC field node (ADR-028) | seeding / curation |
+| `graph_include` | **opt-in** — the row is a *concept*: it is on the graph (ADR-018), and definitions, merge and `is_a` proposals, field placement and gaps read it. Without the flag the row is a *term* | Manage keywords, or the CLI; the graph UI is read-only (ADR-017) |
+| a form's `breadth` | *exact* — the form always means the concept, and its documents are the concept's presence; or *broad* — it also means other things, and its documents are listed beside presence, never in it. Unset reads as exact | Manage keywords, per form |
+
+A concept has a **name** (its label, free text, shown as the library writes it) and **forms** (the
+strings matched for it). A term keeps its row, stays searchable and still works as a keyword
+family; nothing is stored about its meaning, and opening one shows how the library uses it.
 
 `graph_include` is load-bearing history: one `seed_concepts --promote-all` in 2026-07 flooded the
-graph to 357 concepts. The flag is what keeps the graph curated while
-`library.list_keyword_families()` deliberately still shows everything.
+graph to 357 rows. The flag is what keeps the graph a chosen vocabulary while
+`library.list_keyword_families()` deliberately still shows everything. The 344 rows that run made
+are the terms: kept, and no longer read by the features that need a meaning.
 
 ---
 
@@ -143,7 +151,7 @@ Signals in this layer are **not** equally sound. Re-read against the code and th
 | signal | status | why |
 |---|---|---|
 | **`single_source`** | ✅ **trustworthy — the product thesis** | a document count; RG-014 graded it a true positive |
-| Concept presence / navigation | ✅ trustworthy | 534 chunk keys across 30 documents for the 13 graph concepts (2026-09-16); a taxonomy field node is refused at every write and filtered on the graph's own read (ROADMAP 54, 2026-09-17). **Case-aware where the library writes a name with a capital** (ADR-053 decision 3, 2026-09-30): `Cre` no longer counts `CRE`, nor `dIN` "vitamin Din". Measured on 357 concepts: 16 lose documents, 9 of them for the better — another word, a surname, OCR noise — and 7 losing the same name lower-cased in bibliography titles; one graph concept moves (`cre`, 7 → 6). Takes effect at the next rebuild (`tests/eval/baselines/written_forms_2026-09-30.md`) |
+| Concept presence / navigation | ✅ trustworthy | 534 chunk keys across 30 documents for the 13 graph concepts (2026-09-16); a taxonomy field node is refused at every write and filtered on the graph's own read (ROADMAP 54, 2026-09-17). **Case-aware where the library writes a name with a capital** (ADR-053 decision 3, 2026-09-30): `Cre` no longer counts `CRE`, nor `dIN` "vitamin Din". Measured on 357 rows (13 concepts, 344 terms): 16 lose documents, 9 of them for the better — another word, a surname, OCR noise — and 7 losing the same name lower-cased in bibliography titles; one graph concept moves (`cre`, 7 → 6). Takes effect at the next rebuild (`tests/eval/baselines/written_forms_2026-09-30.md`). **Counts a concept's exact forms** (ADR-054, 2026-10-01): a form you mark *broad* is matched separately and its documents are listed beside the concept, never counted in it, so edges and gaps do not see them. An unmarked form is exact — with nothing marked, a rebuild gives the same presence, edges and graph version as before the change (`tests/eval/baselines/names_and_forms_2026-10-01.md`). The graph names the concepts whose name or forms changed since it was built |
 | Communities, co-occurrence edges | ✅ deterministic | Node A, seeded Louvain, idempotent |
 | Graph coverage ("covers 30 of your 98 documents") | ✅ an honest count | numerator and denominator are both over the documents the library shows — deleted and archived ones excluded since 2026-09-17 (ROADMAP 54) |
 | `thin_bridge` | ✅ **structural since KL1** | a bridge counts only when both sides keep ≥ 2 concepts, flagged on the smaller side. Before KL1 it flagged both ends of every bridge, naming the most-connected concept a thin bridge; all four on the working library were dead-end edges, and today's graph has **none** |
@@ -151,8 +159,8 @@ Signals in this layer are **not** equally sound. Re-read against the code and th
 | `under_connected` | ❌ **noise at small vocabularies** | measures graph degree, dominated by vocabulary sparsity, not corpus coverage. Hidden by default in the gap list |
 | Stored gap rows | ⚠️ **can predate the graph** | a CLI skeleton rebuild does not rebuild gaps; on 2026-09-16 16 of 18 rows came from a build two graph versions old, and nothing in the UI says so (ROADMAP 91). The in-app Rebuild refreshes both; rebuilt 2026-09-17 (17 rows, all current) |
 | Taxonomy placement (TX3 auto-propose) | ❓ **unmeasured** | RG-015 is specced and has never run (KL4) |
-| Definition candidates (ADR-053, ROADMAP 93a) | ⚠️ **evidence, not a verdict** | a passage is quoted verbatim with its page; its grade is a spelled-out rule (the author coins or names the term, or a definition-shaped sentence opens with it = `strong`). On the user's labels (69 candidates, grade hidden) 8 of 13 `strong` candidates could carry a definition (95% interval 36–82%), and a definition-shaped *claim* ("… is an excellent technique") grades as strong as a definition — read the reasons. A first mention is not a candidate since 2026-09-22 (it defined the term 3 times in 45); it shows as *how your library uses it*. Nothing is chosen for you (`tests/eval/baselines/definition_labels_2026-09-22.md`) |
-| Concept merges (`curate_concepts --dedup --apply`) | ⚠️ **safe, but not a duplicate detector** | since 2026-09-17 a merge moves placements, triage and surface forms to the survivor, is recorded, and `--undo-merge` splits it back. But no cosine threshold separates duplicates from narrower terms on labels: SPECTER2 at 0.85 would merge 354 of 357; bge-base at 0.85 gives 34 pairs, ~7 of them duplicates by a first reading (`tests/eval/baselines/concept_merge_cosine_2026-09-17.md`). Read the dry run; the hand score is ROADMAP 53 (3) |
+| Definition candidates (ADR-053, ROADMAP 93a) | ⚠️ **evidence, not a verdict** | a passage is quoted verbatim with its page; its grade is a spelled-out rule (the author coins or names the term, or a definition-shaped sentence opens with it = `strong`). On the user's labels (69 candidates, grade hidden) 8 of 13 `strong` candidates could carry a definition (95% interval 36–82%), and a definition-shaped *claim* ("… is an excellent technique") grades as strong as a definition — read the reasons. A first mention is not a candidate since 2026-09-22 (it defined the term 3 times in 45); it shows as *how your library uses it*. Nothing is chosen for you (`tests/eval/baselines/definition_labels_2026-09-22.md`). Stored for concepts only since ADR-054: a term shows the sentences when you look, and keeps none |
+| Concept merges (`curate_concepts --dedup --apply`) | ⚠️ **safe, but not a duplicate detector** | since 2026-09-17 a merge moves placements, triage and surface forms to the survivor, is recorded, and `--undo-merge` splits it back. But no cosine threshold separates duplicates from narrower terms on labels: SPECTER2 at 0.85 would merge 354 of 357; bge-base at 0.85 gives 34 pairs, ~7 of them duplicates by a first reading (`tests/eval/baselines/concept_merge_cosine_2026-09-17.md`). Read the dry run; the hand score is ROADMAP 53 (3). Since ADR-054 the pass reads concepts only; `--include-terms` reads every row and cannot be applied |
 | **`contested` / `superseded_trend`** | ❌ **NOT A CORPUS MEASUREMENT (KI-33)** — **withheld from the UI since v0.4.1**, labelled `contested? (experimental)` where opted in | see below |
 
 ### The `contested` failure, in one paragraph

@@ -47,6 +47,11 @@ def _format_report(result: SkeletonResult) -> str:
     )
     out.append(f"Communities:                {len(sk.communities)}")
     out.append(f"Isolated concepts:          {result.n_isolated}")
+    # ADR-054: presence counts exact forms. A form marked broad is counted here, beside it.
+    out.append(
+        f"Beside presence (broad):    {result.n_broad_documents} document(s) over "
+        f"{result.n_broad_concepts} concept(s)"
+    )
     out.append("=" * 76)
     if sk.communities:
         out.append("")

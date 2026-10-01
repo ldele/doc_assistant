@@ -76,6 +76,11 @@ def _build_plan(args: argparse.Namespace) -> CurationPlan:
     remaining = [(cid, label) for cid, label in survivors if cid not in noise_ids]
 
     if args.dedup:
+        # ADR-054: a merge folds one meaning into another, so it reads the concepts the user has
+        # taken on. --include-terms widens it for a dry run; main() refuses to apply that.
+        if not args.include_terms:
+            taken_on = {cid for cid, _ in load_concepts(graph_only=True)}
+            remaining = [(cid, label) for cid, label in remaining if cid in taken_on]
         print(f"Embedding {len(remaining)} concept(s) for near-duplicate merge ...")
         pairs = dedup_pairs(remaining, threshold=args.threshold, model=args.embed_model)
         label_by_id = {cid: label for cid, label in remaining}
@@ -170,7 +175,14 @@ def main() -> int:
         default=config.CONCEPT_MERGE_COSINE,
         help="Cosine threshold (--dedup)",
     )
+    parser.add_argument(
+        "--include-terms",
+        action="store_true",
+        help="--dedup: compare every vocabulary row, not only your concepts (a dry run only)",
+    )
     args = parser.parse_args()
+    if args.apply and args.dedup and args.include_terms:
+        parser.error("--include-terms is a dry run: a merge acts on concepts only (ADR-054)")
 
     from doc_assistant.logging_config import configure_logging
 

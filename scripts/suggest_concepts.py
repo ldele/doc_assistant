@@ -75,6 +75,12 @@ def main() -> int:
         default=None,
         help=f"Embedding model (default {CONCEPT_EMBED_MODEL}; --near: {CONCEPT_MERGE_MODEL})",
     )
+    parser.add_argument(
+        "--include-terms",
+        action="store_true",
+        help="--near: compare every vocabulary row, not only the concepts you have taken on "
+        "(a preview; the merge itself acts on concepts, ADR-054)",
+    )
     args = parser.parse_args()
 
     if not (args.from_abstracts or args.anchor_ranked or args.near):
@@ -102,8 +108,11 @@ def main() -> int:
 
     if args.near:
         near_model = args.model or CONCEPT_MERGE_MODEL
-        pairs = concept_merge_suggestions(threshold=args.threshold, model=near_model)
-        heading = f"near-duplicate concepts (model={near_model}, cosine >= {args.threshold})"
+        pairs = concept_merge_suggestions(
+            threshold=args.threshold, model=near_model, include_terms=args.include_terms
+        )
+        scope = "every vocabulary row" if args.include_terms else "concepts"
+        heading = f"near-duplicate {scope} (model={near_model}, cosine >= {args.threshold})"
         print(f"\n=== {heading} ===")
         if not pairs:
             print("  none above threshold")

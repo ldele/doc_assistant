@@ -564,7 +564,16 @@ def run_propose(
     Without ``apply`` — or without a ``client`` — this is a **scope report**: it counts what would
     be placed and makes **zero** LLM calls (see the module docstring on why a dry run must not
     call). With both, it runs the two-stage pass and writes ``origin="proposed"`` links.
+
+    ``all_concepts`` widens the scope report to every unplaced text-bearing row, terms included.
+    It cannot be applied: a placement is proposed for a concept, a row the user has taken on
+    (ADR-054) — the bulk run over the other rows is the one that failed (ADR-045, Must revisit).
     """
+    if apply and all_concepts:
+        raise ValueError(
+            "field placements are proposed for concepts only (ADR-054); the whole-vocabulary "
+            "read is a dry run"
+        )
     with session_scope() as session:
         graph = load_taxonomy(session)
         items: list[ProposalItem] = []

@@ -21,7 +21,9 @@ from doc_assistant.knowledge.concept_skeleton import (
     cooccurrence_edges,
     edge_weight,
     form_matcher,
+    forms_fingerprints,
     is_cased,
+    match_broad_presence,
     match_presence,
     skeleton_from_dict,
     skeleton_to_dict,
@@ -113,6 +115,116 @@ def test_a_node_written_form_survives_the_skeleton_round_trip() -> None:
     assert "written" not in by_id["b"]  # unchanged shape for a node without one
     back = {n.id: n.written for n in skeleton_from_dict(data).nodes}
     assert back == {"a": "dIN", "b": None}
+
+
+# ---- exact and broad forms (ADR-054) ----------------------------------------
+
+
+def test_broad_forms_are_matched_on_their_own_form_by_form() -> None:
+    chunks = [
+        ("d1:p0", "d1", "Knowledge distillation is combined with pruning."),
+        ("d2:p0", "d2", "We apply distillation to the ranker."),
+        ("d3:p0", "d3", "A contrastive encoder, and distillation of its scores."),
+        ("d4:p0", "d4", "Nothing relevant is said here."),
+    ]
+    found = match_broad_presence({"kd": ["distillation"], "cl": ["Contrastive", "nce"]}, chunks)
+    # Keyed by the casefolded form; a form that occurs nowhere (`nce`) is absent.
+    assert found == {
+        "kd": {"distillation": {"d1", "d2", "d3"}},
+        "cl": {"contrastive": {"d3"}},
+    }
+
+
+def test_broad_forms_match_whole_words_and_respect_the_written_case() -> None:
+    chunks = [
+        ("a:p0", "a", "Expression of Cre in layer 6."),
+        ("b:p0", "b", "The CRE element binds the complex."),
+        ("c:p0", "c", "A concrete example."),  # "cre" inside a word is not a mention
+    ]
+    folded = match_broad_presence({"x": ["cre"]}, chunks)
+    assert folded == {"x": {"cre": {"a", "b"}}}
+    cased = match_broad_presence({"x": ["cre"]}, chunks, written={("x", "cre"): "Cre"})
+    assert cased == {"x": {"cre": {"a"}}}
+
+
+def test_no_broad_forms_means_nothing_beside_presence() -> None:
+    chunks = [("d1:p0", "d1", "Any text at all.")]
+    assert match_broad_presence({}, chunks) == {}
+    assert match_broad_presence({"kd": []}, chunks) == {}
+    assert match_broad_presence({"kd": ["distillation"]}, []) == {}
+
+
+def test_a_nodes_broad_documents_survive_the_round_trip_and_stay_out_when_empty() -> None:
+    nodes = [
+        ConceptNode(
+            id="a",
+            label="knowledge distillation",
+            doc_ids=("d1",),
+            degree=0,
+            community=-1,
+            broad_doc_ids=("d2", "d3"),
+            broad_forms=("distillation",),
+        ),
+        ConceptNode(id="b", label="pruning", doc_ids=("d1",), degree=0, community=-1),
+    ]
+    skeleton = analyze_skeleton(nodes, [], seed=1)
+    data = skeleton_to_dict(skeleton)
+    by_id = {n["id"]: n for n in data["nodes"]}
+    assert by_id["a"]["broad_doc_ids"] == ["d2", "d3"]
+    assert by_id["a"]["broad_forms"] == ["distillation"]
+    # A node with nothing beside its presence serialises exactly as it did before ADR-054.
+    assert "broad_doc_ids" not in by_id["b"] and "broad_forms" not in by_id["b"]
+    back = {n.id: (n.broad_doc_ids, n.broad_forms) for n in skeleton_from_dict(data).nodes}
+    assert back == {"a": (("d2", "d3"), ("distillation",)), "b": ((), ())}
+
+
+def test_broad_documents_do_not_change_the_graph_version() -> None:
+    """The version fingerprints structure: nodes and edges. What sits beside presence is neither,
+    so a library where nothing is marked broad keeps the version it had."""
+    plain = ConceptNode(id="a", label="x", doc_ids=("d1",), degree=0, community=-1)
+    beside = ConceptNode(
+        id="a",
+        label="x",
+        doc_ids=("d1",),
+        degree=0,
+        community=-1,
+        broad_doc_ids=("d2",),
+        broad_forms=("y",),
+    )
+    assert (
+        analyze_skeleton([plain], [], seed=1).meta["graph_version"]
+        == analyze_skeleton([beside], [], seed=1).meta["graph_version"]
+    )
+
+
+def test_forms_fingerprint_moves_with_what_matching_reads_and_nothing_else() -> None:
+    """One fingerprint per concept over its name, exact forms and broad forms (ADR-054). Case and
+    order are not part of it, because matching ignores both."""
+    concepts = [("kd", "knowledge distillation"), ("cre", "cre")]
+    base = forms_fingerprints(concepts, {"kd": ["distillation", "KD"]}, {})
+    assert set(base) == {"kd", "cre"}
+    assert base == forms_fingerprints(concepts, {"kd": ["kd", " Distillation "]}, {})
+
+    # Marked broad: the same strings, counted differently.
+    broad = forms_fingerprints(concepts, {"kd": ["KD"]}, {"kd": ["distillation"]})
+    assert broad["kd"] != base["kd"]
+    assert broad["cre"] == base["cre"]  # one concept's edit is that concept's change
+
+    assert forms_fingerprints(concepts, {"kd": ["KD"]}, {})["kd"] != base["kd"]  # a form removed
+    added = forms_fingerprints(concepts, {"kd": ["distillation", "KD"], "cre": ["cre line"]}, {})
+    assert added["cre"] != base["cre"]
+
+
+def test_forms_fingerprint_sees_a_rename_that_keeps_the_same_forms() -> None:
+    """Swapping the name with one of its forms matches the same text, but the graph still shows
+    the old name — so the name is fingerprinted on its own."""
+    before = forms_fingerprints([("c", "cre")], {"c": ["cre recombinase"]}, {})
+    after = forms_fingerprints([("c", "cre recombinase")], {"c": ["cre"]}, {})
+    assert before["c"] != after["c"]
+
+
+def test_forms_fingerprint_of_no_concepts_is_empty() -> None:
+    assert forms_fingerprints([], {}, {}) == {}
 
 
 # ---- presence (Decision 2) -------------------------------------------------

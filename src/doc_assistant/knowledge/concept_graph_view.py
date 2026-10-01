@@ -31,6 +31,8 @@ import structlog
 from doc_assistant.knowledge.concept_skeleton import (
     ConceptPresence,
     ConceptSkeleton,
+    forms_fingerprints,
+    load_broad_forms,
     load_concepts,
     load_skeleton,
 )
@@ -73,6 +75,17 @@ class GraphStaleness:
     #: nothing. The honest pair is coverage plus the rule that produces it — which points at
     #: curating vocabulary (ADR-018, ROADMAP 23), the lever that actually moves it.
     n_documents_in_library: int = 0
+    #: Concepts on both sides whose name or forms changed since the build (ADR-054): a form added,
+    #: removed, or marked exact or broad the other way. Their counts are the old forms' counts
+    #: until a rebuild, and no node or edge says so. Ids, like everything on this wire — the view
+    #: resolves the name from the node. Empty for a skeleton built before forms were recorded:
+    #: there is nothing to compare, and "changed" would be a guess.
+    forms_changed_ids: tuple[str, ...] = ()
+    #: False for a skeleton built before forms were recorded. Not folded into ``stale``, which
+    #: reports differences that are known: here the graph cannot tell, so the view says exactly
+    #: that and offers the rebuild that starts the record — without it a form marked on such a
+    #: graph would change nothing on screen and offer no way to apply it.
+    forms_recorded: bool = True
 
 
 @dataclass(frozen=True)
@@ -105,7 +118,8 @@ def _live_document_ids() -> tuple[set[str], set[str]]:
 
 
 def _staleness(skeleton: ConceptSkeleton) -> GraphStaleness:
-    """Compare the skeleton against the live vocabulary **and** the live corpus (three id sets).
+    """Compare the skeleton against the live vocabulary **and** the live corpus (three id sets,
+    and the forms each concept is counted through).
 
     The corpus half is not symmetric with the vocabulary half, on purpose. A document *added*
     since the build is not staleness — the graph simply has not seen it yet, which is true of
@@ -113,18 +127,29 @@ def _staleness(skeleton: ConceptSkeleton) -> GraphStaleness:
     the skeleton *cites* that no longer exists is different: it is a reference the view cannot
     render, and without this it reached the user as a bare UUID in the title slot.
     """
-    concepts, _aliases = load_concepts()
+    concepts, aliases = load_concepts()
     db_labels = {cid: label for cid, label in concepts}
     db_ids = set(db_labels)
     sk_ids = {n.id for n in skeleton.nodes}
     added = db_ids - sk_ids  # curated since the build
     removed = sk_ids - db_ids  # deleted since the build
 
+    # The forms half (ADR-054): the same concept, counted through different forms now.
+    built_forms = skeleton.meta.get("forms")
+    forms_changed: list[str] = []
+    if isinstance(built_forms, dict):
+        live_forms = forms_fingerprints(concepts, aliases, load_broad_forms())
+        forms_changed = sorted(
+            cid
+            for cid in db_ids & sk_ids
+            if cid in built_forms and built_forms[cid] != live_forms[cid]
+        )
+
     live_docs, shown_docs = _live_document_ids()
     cited_docs = {d for n in skeleton.nodes for d in n.doc_ids}
     missing_docs = cited_docs - live_docs
     return GraphStaleness(
-        stale=bool(added or removed or missing_docs),
+        stale=bool(added or removed or missing_docs or forms_changed),
         n_concepts_in_db=len(db_ids),
         n_concepts_in_skeleton=len(sk_ids),
         added_labels=tuple(sorted(db_labels[i] for i in added)),
@@ -135,6 +160,8 @@ def _staleness(skeleton: ConceptSkeleton) -> GraphStaleness:
         # past M and the client hides the line (ROADMAP 54).
         n_documents_in_skeleton=len(cited_docs & shown_docs),
         n_documents_in_library=len(shown_docs),
+        forms_changed_ids=tuple(forms_changed),
+        forms_recorded=isinstance(built_forms, dict),
     )
 
 
@@ -178,19 +205,32 @@ class GapListItem:
     curated vocabulary; for a stochastic suggestion whose ``concept_id`` is a candidate not yet a
     ``Concept``, the label falls back to the ``concept_id`` itself (which *is* the candidate
     string). ``status`` is the effective value already resolved by ``load_gaps`` (override wins).
+    ``written`` is how the library writes the label when it writes it in a case — what to show
+    instead of ``label`` (ADR-054), ``None`` otherwise.
     """
 
     gap: Gap
     label: str
+    written: str | None = None
 
 
 def load_gap_list() -> list[GapListItem]:
     """The gap list with concept labels resolved (E5). Empty when no gaps are built (0-doc/
     pre-build) — never an error. Ordering is the detector's (kind, concept_id); the UI applies the
     RG-014 presentation order (strong list-shaped kinds first, ``under_connected`` opt-in)."""
+    from doc_assistant.knowledge.written_forms import shown_labels
+
     concepts, _aliases = load_concepts()
     labels = {cid: label for cid, label in concepts}
-    return [GapListItem(gap=g, label=labels.get(g.concept_id, g.concept_id)) for g in load_gaps()]
+    shown = shown_labels(concepts)
+    return [
+        GapListItem(
+            gap=g,
+            label=labels.get(g.concept_id, g.concept_id),
+            written=shown.get(g.concept_id),
+        )
+        for g in load_gaps()
+    ]
 
 
 def load_concept_presence(concept_id: str) -> list[ConceptPresence]:
@@ -233,12 +273,17 @@ def load_concept_presence(concept_id: str) -> list[ConceptPresence]:
 
 @dataclass(frozen=True)
 class VocabularyMatch:
-    """One concept a label search found, with whether it is on the graph and has a definition."""
+    """One row a label search found, with whether it is on the graph and has a definition.
+
+    ``on_graph`` is also what separates a *concept* from a *term* (ADR-054): a row the user has
+    taken on, or a string the library uses that nobody has. ``written`` is how the library writes
+    the label when it writes it in a case — what to show instead of ``label``."""
 
     id: str
     label: str
     on_graph: bool
     has_definition: bool
+    written: str | None = None
 
 
 def search_vocabulary(query: str, *, limit: int = 20) -> list[VocabularyMatch]:
@@ -265,13 +310,17 @@ def search_vocabulary(query: str, *, limit: int = 20) -> list[VocabularyMatch]:
                 Concept.kind == "concept", Concept.label.ilike(f"%{escaped}%", escape="\\")
             )
         ).all()
+    from doc_assistant.knowledge.written_forms import shown_labels
+
     folded = q.casefold()
+    shown = shown_labels([(str(cid), str(label)) for cid, label, _graph, _definition in rows])
     matches = [
         VocabularyMatch(
             id=str(cid),
             label=str(label),
             on_graph=bool(graph),
             has_definition=bool(definition),
+            written=shown.get(str(cid)),
         )
         for cid, label, graph, definition in rows
     ]

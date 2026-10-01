@@ -32,6 +32,11 @@ export interface ConceptDefinitions {
   thin: boolean
   /** Any passage candidate on record — else the panel offers to look, not implies it looked. */
   extracted: boolean
+  /** False for a *term*: a row nobody has taken on (ADR-054). The panel then shows what the
+   *  library says and offers no write — every definition route answers 409 for a term, and a
+   *  candidate whose `id` starts with `unsaved:` was found on request, not stored. Absent on a
+   *  payload from an older API, which reads as a concept. */
+  is_concept?: boolean
 }
 
 /** One plain sentence that uses a concept — how the library uses the word, not a candidate. */
@@ -53,10 +58,13 @@ export interface ConceptUsage {
   examples: UsageLine[]
 }
 
-/** One concept a label search found — the whole vocabulary, not only the graph. */
+/** One row a label search found — the whole vocabulary, not only the graph. `on_graph` is also
+ *  what makes it a concept rather than a term (ADR-054). */
 export interface VocabularyMatch {
   id: string
   label: string
   on_graph: boolean
   has_definition: boolean
+  /** The label as the library writes it when it writes it in a case — shown instead. */
+  written?: string | null
 }

@@ -20,7 +20,7 @@ export {
 } from './documents'
 export type { AddMode, AddOutcome, AddResult } from './documents'
 export { listFolders, createFolder, renameFolder, deleteFolder, addDocumentsToFolder, removeDocumentFromFolder } from './folders'
-export { listKeywordFamilies, createKeywordFamily, renameKeywordFamily, setFamilyGraphInclude, addFamilyMember, removeFamilyMember, deleteKeywordFamily, detectKeywordFamilies } from './keywords'
+export { listKeywordFamilies, createKeywordFamily, renameKeywordFamily, setFamilyGraphInclude, addFamilyMember, removeFamilyMember, setFamilyMemberBreadth, describeFamilyDeletion, deleteKeywordFamily, detectKeywordFamilies } from './keywords'
 export { compareRetrieval } from './compare'
 export {
   getSettings,

@@ -6,10 +6,14 @@ written with `origin="proposed"` — the taxonomy view accepts or rejects them; 
 curated fact, and a curated edge is never overwritten. Why a shared *prefix* and an alias match
 are both refused: `doc_assistant/knowledge/isa_propose.py`.
 
+Reads the concepts you have taken on (the rows on the concept graph, ADR-054). `--include-terms`
+reads the whole vocabulary as a dry run; it cannot be combined with `--apply`, because proposals
+are stored between concepts only.
+
 Usage:
     python -m scripts.propose_isa                  # dry-run: the candidate list, nothing written
     python -m scripts.propose_isa --apply          # write them as proposals
-    python -m scripts.propose_isa --graph-only     # only the graph vocabulary (small here)
+    python -m scripts.propose_isa --include-terms  # dry-run over every row, terms included
 """
 
 from __future__ import annotations
@@ -27,7 +31,7 @@ if sys.platform == "win32" and hasattr(sys.stdout, "reconfigure"):
 def _format_report(run: IsaProposeResult) -> str:
     out: list[str] = []
     out.append("=" * 76)
-    out.append(f"Concepts read:                  {run.n_concepts}")
+    out.append(f"Rows read:                      {run.n_concepts}")
     out.append(f"Candidates (shared head):       {len(run.candidates)}")
     if run.applied:
         out.append(f"Proposed edges written:         {run.n_written}")
@@ -52,18 +56,20 @@ def main() -> int:
         help="Write the candidates as origin='proposed' is_a edges (default: dry-run)",
     )
     parser.add_argument(
-        "--graph-only",
+        "--include-terms",
         action="store_true",
-        help="Restrict to the graph vocabulary (graph_include) — 13 of 357 concepts here, so the "
-        "shared heads that make a spine are mostly outside it",
+        help="Also read the terms nobody has taken on — a dry run only; the shared heads that "
+        "make a spine sit mostly among them",
     )
     args = parser.parse_args()
+    if args.apply and args.include_terms:
+        parser.error("--include-terms is a dry run: proposals are written between concepts only")
 
     from doc_assistant.logging_config import configure_logging
 
     configure_logging(json=config.LOG_JSON, level=config.LOG_LEVEL)
 
-    run = run_propose_isa(apply=args.apply, graph_only=args.graph_only)
+    run = run_propose_isa(apply=args.apply, graph_only=not args.include_terms)
     print(_format_report(run))
     return 0
 

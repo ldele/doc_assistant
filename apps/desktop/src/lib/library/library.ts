@@ -5,8 +5,10 @@
 import type {
   DocumentReference,
   KeywordFamily,
+  KeywordFamilyDeletion,
   LibraryDocument,
   LibraryFolder,
+  MemberBreadth,
 } from '../core/types'
 
 export type DateBucket = 'today' | 'week' | 'month' | 'earlier'
@@ -366,10 +368,14 @@ export function splitRareFacets(
   return common.length === 0 ? { common: facets, rare: [] } : { common, rare }
 }
 
-// Split the families list into real families and the vocabulary rows inherited from the earlier
-// concept-graph seeding — a `Concept` with no members and no documents is glossary vocabulary, not
-// a family (on this corpus that is ~20 of 26 rows). They are hidden by default, never deleted:
-// they are legitimate rows owned by a different feature (ADR-018's graph vocabulary).
+// Split a list of rows into those that filter something today and those that do not: a row with
+// no member keywords and no documents. The Manage-keywords view applies this to the terms
+// (ADR-054) and shows the second group as "unused", hidden by default and never deleted — the
+// search and a toggle both reach it. On the reference library that is 103 of 344 terms, keywords
+// that no document carries any more.
+//
+// The name dates from when the group was the vocabulary seeded for the concept graph; concepts
+// are now listed on their own and are never hidden (ADR-054).
 export function splitInheritedFamilies(families: KeywordFamily[]): {
   real: KeywordFamily[]
   inherited: KeywordFamily[]
@@ -381,17 +387,53 @@ export function splitInheritedFamilies(families: KeywordFamily[]): {
 }
 
 // Graph vocabulary (ADR-018). A family's concept is on the concept graph only when it opts in,
-// and on a real library the opted-in set is a small minority of the rows — 13 of 357 here. So the
-// Manage-keywords view needs both halves: a count that says how small, and a lens that finds them.
-// Pure and separate from the component for the usual reason — `.ts` is testable under node:test,
+// and on a real library the opted-in set is a small minority of the rows — 13 of 357 here. Pure
+// and separate from the component for the usual reason — `.ts` is testable under node:test,
 // `.svelte` is not.
 export function graphVocabulary(families: KeywordFamily[]): KeywordFamily[] {
   return families.filter((f) => f.graph_include)
 }
 
-/** Apply the "on the graph" lens. `false` is the identity — the lens is off, not inverted. */
-export function applyGraphLens(families: KeywordFamily[], graphOnly: boolean): KeywordFamily[] {
-  return graphOnly ? graphVocabulary(families) : families
+// Concepts and terms (ADR-054). A row is a *concept* once the user has taken it on — the same
+// flag as the graph vocabulary above — and every other row is a *term*: a word the library uses.
+// The Manage-keywords view lists the two apart, because only a concept's forms count as presence.
+// (The two lists replaced an "on the graph" lens over one list: a lens could be off, and then the
+// 13 chosen rows sat among 344 others.)
+export function termFamilies(families: KeywordFamily[]): KeywordFamily[] {
+  return families.filter((f) => !f.graph_include)
+}
+
+/** How one member of a family counts (ADR-054): `exact` always means the concept, `broad` also
+ *  matches other things and is counted beside presence, `null` is unclassified — which the server
+ *  reads as exact, so it is shown as neither rather than as a decision somebody took. */
+export function memberBreadth(family: KeywordFamily, alias: string): MemberBreadth {
+  if (family.broad.includes(alias)) return 'broad'
+  if (family.exact.includes(alias)) return 'exact'
+  return null
+}
+
+/** Clicking a mark that is already set clears it; clicking the other one sets it. */
+export function nextBreadth(current: MemberBreadth, clicked: 'exact' | 'broad'): MemberBreadth {
+  return current === clicked ? null : clicked
+}
+
+/** What deleting a family removes, as the lines its confirmation shows (ADR-054).
+ *
+ * Only what is there is named — a term with nothing attached gets an empty list, and the caller
+ * says so. The last entry is how much of the graph rests on the row, which is derived and comes
+ * back on a rebuild; everything before it is curated and does not. */
+export function deletionLosses(d: KeywordFamilyDeletion): string[] {
+  const plural = (n: number, one: string, many: string): string => `${n} ${n === 1 ? one : many}`
+  const out: string[] = []
+  if (d.aliases > 0) out.push(plural(d.aliases, 'form', 'forms'))
+  if (d.has_definition) out.push('its chosen definition')
+  const others = d.definition_candidates - (d.has_definition ? 1 : 0)
+  if (others > 0) out.push(plural(others, 'other definition option', 'other definition options'))
+  if (d.placements > 0) out.push(plural(d.placements, 'place in the field tree', 'places in the field tree'))
+  if (d.triage > 0) out.push(plural(d.triage, 'gap decision', 'gap decisions'))
+  if (d.presence_documents > 0)
+    out.push(`its place on the graph (${plural(d.presence_documents, 'document', 'documents')})`)
+  return out
 }
 
 // The one line that stands for a collapsed parent block in the Chunks list.

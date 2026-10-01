@@ -3,9 +3,11 @@
   import type {
     ConversationDetail,
     KeywordFamily,
+    KeywordFamilyDeletion,
     KeywordFamilyProposal,
     LibraryDocument,
     LibraryFolder,
+    MemberBreadth,
     TurnResult,
   } from './lib/core/types'
   import {
@@ -16,6 +18,7 @@
     createKeywordFamily,
     deleteFolder,
     deleteKeywordFamily,
+    describeFamilyDeletion,
     detectKeywordFamilies,
     getConceptPresence,
     getConversation,
@@ -34,6 +37,7 @@
     resetDocumentMeta,
     revealDocument,
     setFamilyGraphInclude,
+    setFamilyMemberBreadth,
     streamChat,
     bulkUpdateConversations,
     updateConversationMeta,
@@ -260,8 +264,12 @@
   // global overlay like Settings/Search, so it opens from any mode.
 
   // Deep-link from a graph node to curate its concept (ADR-017 A1 — the graph never writes the
-  // vocabulary; the Manage-keywords view owns every edit). Switches to Library and opens the view.
-  function manageConcept(_conceptId: string, _label: string): void {
+  // vocabulary; the Manage-keywords view owns every edit). Switches to Library and opens the view
+  // on that row: with terms listed too (ADR-054) the view is a few hundred rows long, and "take
+  // this term on" that lands at the top of them leaves the user to find the term again.
+  let manageFocusId = $state<string | null>(null)
+  function manageConcept(conceptId: string, _label: string): void {
+    manageFocusId = conceptId
     curateVocabulary()
   }
 
@@ -1015,10 +1023,14 @@
       // leave the prior list — the create form keeps its typed values for a retry
     }
   }
+  // A concept's name and forms are what the graph counts through (ADR-054), so a rename or a
+  // member change drops the graph's latch like the flag below does: the next open re-reads the
+  // staleness and names the concept the graph is now behind on.
   async function renameFamily(familyId: string, canonical: string): Promise<void> {
     try {
       await renameKeywordFamily(familyId, canonical)
       await refreshFamilies()
+      invalidateGraph()
     } catch {
       // keep the prior name
     }
@@ -1043,6 +1055,7 @@
     try {
       await addFamilyMember(familyId, keyword)
       await refreshFamilies()
+      invalidateGraph()
     } catch {
       // keep the prior membership
     }
@@ -1051,14 +1064,42 @@
     try {
       await removeFamilyMember(familyId, keyword)
       await refreshFamilies()
+      invalidateGraph()
     } catch {
       // keep the prior membership
+    }
+  }
+  // ADR-054: how one form of a concept counts. Like the graph flag above, it changes what the
+  // next build counts and nothing the loaded graph shows, so the latch is dropped and the graph
+  // names the concept it is behind on when it is next opened.
+  async function setFamilyFormBreadth(
+    familyId: string,
+    keyword: string,
+    breadth: MemberBreadth,
+  ): Promise<void> {
+    try {
+      await setFamilyMemberBreadth(familyId, keyword, breadth)
+      await refreshFamilies()
+      invalidateGraph()
+    } catch {
+      // keep the prior mark — the control re-renders from the refreshed list either way
+    }
+  }
+  // What a delete would remove, read before the row asks. `null` on a failure: the row then says
+  // it could not be read, and the choice stays the user's.
+  async function previewFamilyDeletion(familyId: string): Promise<KeywordFamilyDeletion | null> {
+    try {
+      return await describeFamilyDeletion(familyId)
+    } catch {
+      return null
     }
   }
   async function deleteFamily(familyId: string): Promise<void> {
     try {
       await deleteKeywordFamily(familyId)
       await refreshFamilies()
+      // A deleted row may have been a concept: the graph says it is behind on its next open.
+      invalidateGraph()
     } catch {
       // keep the prior list
     }
@@ -1085,6 +1126,7 @@
   }
   function closeManageKeywords(): void {
     manageKeywordsOpen = false
+    manageFocusId = null
     detectProposals = []
     detectError = null
   }
@@ -1416,6 +1458,7 @@
 {#if manageKeywordsOpen}
   <LibraryManageKeywords
     families={keywordFamilies}
+    focusId={manageFocusId}
     {allKeywords}
     keywordDocCounts={rawKeywordDocCounts}
     proposals={detectProposals}
@@ -1426,6 +1469,8 @@
     onSetOnGraph={setFamilyOnGraph}
     onAddMember={addFamilyMemberKeyword}
     onRemoveMember={removeFamilyMemberKeyword}
+    onSetBreadth={setFamilyFormBreadth}
+    previewDelete={previewFamilyDeletion}
     onDelete={deleteFamily}
     onDetect={runDetectFamilies}
     onAcceptProposal={acceptProposal}

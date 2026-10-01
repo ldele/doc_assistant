@@ -120,6 +120,14 @@ test:
 audit:
     uv run --no-sync python -m scripts.pip_audit_gate
 
+# Able to fail since 2026-10-01 (docs/security.md S-13): fails on a secret in a tracked file that
+# .secrets.baseline does not record. The same command CI runs; it never rewrites the baseline.
+# The recipe is not called `secrets` because the scanner reads that name, followed by its command
+# on the next line, as a keyword with a value, and the gate would then flag its own recipe.
+# Secret scan over the tracked files, blocking — the CI gate.
+secret-scan:
+    uv run --no-sync python -m scripts.secret_scan_gate
+
 # ⚠ USE THIS, NOT `mypy --strict src`. Strictness already comes from [tool.mypy] strict=true, so
 # the flag adds nothing — except that it ALSO re-enables warn_unused_ignores (pyproject turns it
 # off), which makes it a DIFFERENT option set. mypy keys its incremental cache on the options, so

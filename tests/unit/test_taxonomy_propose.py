@@ -286,6 +286,29 @@ def test_apply_writes_proposed_rows_for_both_kinds(temp_db):
     assert [(m.label, m.origin) for m in detail.documents] == [("dpr.pdf", "proposed")]
 
 
+def test_the_whole_vocabulary_is_counted_but_never_placed(temp_db):
+    """ADR-054: a placement is proposed for a concept. Widening the read to the terms is a scope
+    report — it makes no call and writes nothing — and asking to apply it is refused before any
+    call, because the bulk run over the other rows is the one that failed (ADR-045)."""
+    from doc_assistant.db.session import session_scope
+    from doc_assistant.knowledge.taxonomy_view import load_field_detail
+
+    with session_scope() as s:
+        _seed_corpus(s)
+
+    client = ScriptedClient('{"choice": 1}')
+    scope = run_propose(apply=False, client=client, all_concepts=True)
+    assert scope.n_unplaced_concepts == 2  # the concept and the term
+    assert scope.n_concepts_out_of_scope == 0
+    assert client.calls == []
+
+    with pytest.raises(ValueError, match="concepts only"):
+        run_propose(apply=True, client=client, all_concepts=True)
+    assert client.calls == []
+    detail = load_field_detail("ml")
+    assert detail is not None and not detail.concepts
+
+
 def test_limit_truncates_and_says_so(temp_db):
     from doc_assistant.db.session import session_scope
 

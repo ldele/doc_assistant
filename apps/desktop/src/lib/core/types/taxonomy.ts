@@ -44,6 +44,9 @@ export interface LabelledOption {
 // accept-or-delete). A proposal must never render as the user's own placement (increment 3b).
 export interface FieldMember extends LabelledOption {
   origin: 'curated' | 'proposed'
+  // A concept's label as the library writes it when it writes it in a case — shown instead of
+  // `label` (ADR-054). Null for a document.
+  written?: string | null
 }
 export interface FieldDetail {
   id: string
@@ -63,6 +66,9 @@ export interface ProposedEdge {
   target_id: string
   target_label: string
   type: 'is_a' | 'in_field'
+  // A concept end's label as the library writes it when it writes it in a case (ADR-054).
+  source_written?: string | null
+  target_written?: string | null
 }
 export interface Proposals {
   proposals: ProposedEdge[]

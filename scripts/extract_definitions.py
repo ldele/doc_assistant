@@ -8,10 +8,15 @@ they are stored as *suggested* candidates; nothing is chosen for you, and nothin
 dismissed or wrote yourself is touched. Why a candidate is graded the way it is:
 `doc_assistant/knowledge/definitions.py`.
 
+Reads the concepts you have taken on (the rows on the concept graph, ADR-054). `--include-terms`
+reads the whole vocabulary for a measurement; a term's candidates are counted and shown, never
+stored, with or without `--apply`.
+
 Usage:
     python -m scripts.extract_definitions                        # dry run: counts + a sample
     python -m scripts.extract_definitions --apply                # store the candidates
     python -m scripts.extract_definitions --label "hard negatives" --show 5
+    python -m scripts.extract_definitions --include-terms        # dry run over every row
 """
 
 from __future__ import annotations
@@ -35,6 +40,11 @@ def main() -> int:
         "--label", action="append", default=[], help="Only this concept label (repeatable)"
     )
     parser.add_argument("--show", type=int, default=0, help="Print up to N candidates per concept")
+    parser.add_argument(
+        "--include-terms",
+        action="store_true",
+        help="Also read the terms nobody has taken on (their candidates are never stored)",
+    )
     args = parser.parse_args()
 
     from doc_assistant.logging_config import configure_logging
@@ -57,7 +67,9 @@ def main() -> int:
         wanted = {w.casefold() for w in args.label}
         concept_ids = [i for i, label in labels.items() if label.casefold() in wanted]
 
-    run = extract_definitions(concept_ids=concept_ids, apply=args.apply)
+    run = extract_definitions(
+        concept_ids=concept_ids, apply=args.apply, include_terms=args.include_terms
+    )
     by_form = {"coined": 0, "named": 0, "defining": 0}
     by_grade = {"strong": 0, "some": 0}
     for hits in run.hits.values():
@@ -66,8 +78,9 @@ def main() -> int:
             by_grade[passage_evidence(h)["grade"]] += 1
 
     print("=" * 76)
-    print(f"Concepts read:                  {run.n_concepts}")
-    print(f"Concepts with a candidate:      {run.n_with_passages}")
+    print(f"Rows read:                      {run.n_concepts}")
+    print(f"  of them terms (never stored): {run.n_terms}")
+    print(f"Rows with a candidate:          {run.n_with_passages}")
     print(f"Candidates:                     {run.n_hits}")
     print(
         f"  by form:  coined {by_form['coined']} · named {by_form['named']} · "

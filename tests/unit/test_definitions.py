@@ -216,8 +216,10 @@ def test_a_concept_that_appears_nowhere_gets_nothing_and_an_empty_library_is_fin
 # ============================================================
 
 
-def _concept(session, cid="kd", label="knowledge distillation"):
-    session.add(Concept(id=cid, label=label, kind="concept"))
+def _concept(session, cid="kd", label="knowledge distillation", taken_on=True):
+    """A vocabulary row and the two documents CHUNKS belongs to. ``taken_on`` makes it a concept
+    (on the graph); ``False`` leaves it a term (ADR-054)."""
+    session.add(Concept(id=cid, label=label, kind="concept", graph_include=taken_on))
     session.add(
         Document(
             id="survey",
@@ -262,6 +264,98 @@ def test_dry_run_writes_nothing(temp_db):
     assert result.n_hits >= 2 and not result.applied
     with session_scope() as s:
         assert s.execute(select(ConceptDefinition)).scalars().all() == []
+
+
+def test_a_terms_passages_are_found_and_never_stored(temp_db):
+    """ADR-054: stored candidates belong to concepts. A term is not read by default; named, or
+    with the whole vocabulary asked for, its passages come back and nothing is written — even
+    with ``apply``."""
+    from doc_assistant.db.session import session_scope
+
+    with session_scope() as s:
+        _concept(s, taken_on=False)
+
+    default = extract_definitions(apply=True, chunks=CHUNKS)
+    assert (default.n_concepts, default.n_hits, default.n_added) == (0, 0, 0)
+
+    named = extract_definitions(concept_ids=["kd"], apply=True, chunks=CHUNKS)
+    assert named.n_terms == 1 and named.n_hits >= 2 and named.n_added == 0
+    assert len(named.hits["kd"]) == named.n_hits
+
+    widened = extract_definitions(include_terms=True, chunks=CHUNKS)
+    assert widened.n_terms == 1 and widened.n_hits == named.n_hits
+
+    with session_scope() as s:
+        assert s.execute(select(ConceptDefinition)).scalars().all() == []
+
+
+def test_a_mixed_list_stores_the_concepts_passages_only(temp_db):
+    from doc_assistant.db.session import session_scope
+
+    with session_scope() as s:
+        _concept(s)
+        # Same label on purpose: the two rows find the same passages, so only being taken on
+        # can explain which of them is stored.
+        s.add(
+            Concept(id="term", label="knowledge distillation", kind="concept", graph_include=False)
+        )
+
+    run = extract_definitions(concept_ids=["kd", "term"], apply=True, chunks=CHUNKS)
+    assert run.n_terms == 1 and run.hits["term"]
+    with session_scope() as s:
+        owners = {r.concept_id for r in s.execute(select(ConceptDefinition)).scalars()}
+    assert owners == {"kd"}
+
+
+def test_a_term_shows_unsaved_passages_and_refuses_a_write(temp_db):
+    """Opening a term still shows what the library says: the passages found on request are listed
+    under an ``unsaved:`` id, and a definition write is refused until the term is taken on."""
+    from doc_assistant.db.session import session_scope
+    from doc_assistant.knowledge.definitions import (
+        UNSAVED_PREFIX,
+        NotAConceptError,
+        require_concept,
+    )
+
+    with session_scope() as s:
+        _concept(s, taken_on=False)
+        s.add(Concept(id="field", label="Physics", kind="domain"))
+    hits = extract_definitions(concept_ids=["kd"], chunks=CHUNKS).hits["kd"]
+
+    with session_scope() as s:
+        bare = load_definitions(s, "kd")
+        assert bare.is_concept is False and bare.candidates == () and bare.extracted is False
+
+        view = load_definitions(s, "kd", unsaved=hits)
+        assert len(view.candidates) == len(hits) and view.extracted is True
+        assert all(c.id.startswith(UNSAVED_PREFIX) for c in view.candidates)
+        assert all(c.status == "suggested" and c.source == "passage" for c in view.candidates)
+        assert {c.document_title for c in view.candidates} <= {"A survey", "p.pdf"}
+
+        with pytest.raises(NotAConceptError, match="is a term"):
+            require_concept(s, "kd")
+        for missing in ("field", "nope"):
+            with pytest.raises(NotAConceptError, match="no concept"):
+                require_concept(s, missing)
+
+    # Taking it on is all it needs: the same row then accepts a definition.
+    with session_scope() as s:
+        s.get(Concept, "kd").graph_include = True
+    with session_scope() as s:
+        require_concept(s, "kd")
+        assert load_definitions(s, "kd").is_concept is True
+
+
+def test_unsaved_passages_do_not_repeat_what_is_stored(temp_db):
+    from doc_assistant.db.session import session_scope
+
+    with session_scope() as s:
+        _concept(s)
+    run = extract_definitions(apply=True, chunks=CHUNKS)
+    with session_scope() as s:
+        view = load_definitions(s, "kd", unsaved=run.hits["kd"])
+        assert len(view.candidates) == run.n_added
+        assert not any(c.id.startswith("unsaved:") for c in view.candidates)
 
 
 def test_writing_your_own_keeps_the_previous_choice_beside_it(temp_db):

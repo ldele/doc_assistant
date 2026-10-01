@@ -38,6 +38,47 @@ Format: What changed | Why | Rejected alternatives | What it opens
 
 ---
 
+## 2026-10-01 (3) — ADR-054 accepted, with the user's amendment: a base vocabulary per field is a source of terms
+
+**What changed.** No code.
+- **ADR-054 is accepted** (user, 2026-10-01). It gains *Amendment 2026-10-01*, and its Status and
+  its "to decide" line now say what was accepted. A curated base
+  vocabulary for a field is a third source of rows beside the user's additions and the keyword
+  extractor; its entries stay terms until the user takes them on. One sentence of the Decision is
+  widened: a term is a candidate row nobody has taken on, whatever proposed it, because a base
+  entry may not occur in the library at all.
+- **ROADMAP KL2** names it as the concept-level half of "the taxonomy as the reference class for
+  expected coverage"; row 94 (ADR-054's build) moves from *gate first* to *planned — next*; the
+  index line in `docs/decisions.md` follows.
+
+**Why.** The user, on reading ADR-054: a curated default vocabulary for a given topic "would go
+hand in hand with the taxonomy"; otherwise "the text is clear". With the amendment in front of
+them the user accepted the ADR: "Okay, let's go with this". The idea continues the user's
+question of 2026-09-21 (experts have already listed and defined a field's terms), which ADR-053
+answered for definitions only. It also supplies what `docs/knowledge-layer.md` §1 says a gap needs:
+an expected structure to deviate from. The taxonomy says which fields exist; a base vocabulary says
+what a field contains.
+
+**Rejected.**
+- Making a base list's entries concepts by default: that is the bulk promotion of 2026-07-05 with
+  a better source, and ADR-054 exists because 344 rows became concepts without being read.
+- Importing a vocabulary whole: ADR-028 decision 7 measured it as "a facet that partitions
+  nothing" (30,000 MeSH descriptors for a small library).
+- Rewriting ADR-054's Decision in place: the file is append-only; the amendment states the one
+  widened sentence.
+- Designing the feature here: which vocabularies, their licences and sizes, and whether a topic's
+  list is taken on entry by entry or as a reviewed whole belong to their own ADR.
+
+**What it opens.** The ADR-032 grill (KL2) decides what the base list is for and how it is taken
+on; 93c's local copies are its data step. Known limit before any build: of the 19 priority
+concepts, expert vocabularies define 8, gloss 6 and have nothing for 5
+(`tests/eval/baselines/reference_vocabularies_2026-09-21.md`), so a base list is solid for the
+established fields and thin for the youngest ones. The acceptance opens row 94: names and forms on
+the 13 concepts. CI on `7357fcc`, the commit that carried the dependency fix and ADR-054 as
+proposed, is green.
+
+---
+
 ## 2026-10-01 (2) — The vocabulary is read against the library; concepts and terms, names and forms (ADR-054, proposed)
 
 **What changed.** No code. Three documents:

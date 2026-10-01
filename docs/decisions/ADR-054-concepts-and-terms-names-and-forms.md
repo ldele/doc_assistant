@@ -2,25 +2,29 @@
 
 # ADR-054 — The vocabulary holds concepts and terms; a concept has a name and exact or broad forms
 
-- **Status:** proposed — the two choices are the user's (2026-10-01, asked one at a time with the
-  library's own rows as examples): the 13 rows on the graph are the concepts and the 344
+- **Status:** accepted (user, 2026-10-01) — the two choices are the user's (asked one at a time
+  with the library's own rows as examples): the 13 rows on the graph are the concepts and the 344
   bulk-promoted rows are candidate terms; a concept's label is its name, and each string matched
   for it is marked *exact* or *broad*. The shape below (which flag marks a concept, what an
-  unclassified form is, which features read which rows) is Claude Code's proposal for the user to
-  accept. Builds [ADR-052](ADR-052-a-concept-is-a-meaning.md) ("a concept is one meaning";
-  "fragments are not concepts") on [ADR-018](ADR-018-graph-vocabulary-scope.md)'s flag, and answers
-  ADR-052's must-revisit about a separate term table. Not built.
+  unclassified form is, which features read which rows) was Claude Code's proposal, and the user
+  accepted it with the text. Builds [ADR-052](ADR-052-a-concept-is-a-meaning.md) ("a concept is
+  one meaning"; "fragments are not concepts") on
+  [ADR-018](ADR-018-graph-vocabulary-scope.md)'s flag, and answers ADR-052's must-revisit about a
+  separate term table. Not built.
+  **Accepted as amended:** the user read the text ("the text is clear") and raised one
+  consideration, a curated base vocabulary for a given topic, hand in hand with the taxonomy. With
+  *Amendment 2026-10-01* (at the end) recording it, the user accepted the ADR the same day ("Okay,
+  let's go with this").
 - **Date:** 2026-10-01
 - **Deciders:** user + Claude Code
 - **In one sentence:** every row of the vocabulary used to be called a concept and every alias
   counted the same; now a row is either a *concept* you have taken on or a *term* the library uses,
   and a concept has a name plus a list of matched forms, each marked as always meaning it (exact)
   or only sometimes (broad).
-- **To decide (the proposed part):** (1) "on the graph" is what marks a concept — one existing
-  flag, no new column — *recommended*; (2) a form nobody has classified counts as exact, so nothing
-  moves until you classify it — *recommended*; (3) definition candidates, merge and `is_a`
-  proposals and field placement run over concepts only, and a term shows its usage when you open
-  it — *recommended*.
+- **Accepted with the text (the part that was proposed):** (1) "on the graph" is what marks a
+  concept — one existing flag, no new column; (2) a form nobody has classified counts as exact, so
+  nothing moves until you classify it; (3) definition candidates, merge and `is_a` proposals and
+  field placement run over concepts only, and a term shows its usage when you open it.
 
 ## In practice — five rows, as the library shows them
 
@@ -190,3 +194,38 @@ the text, and the LLM-assisted ingest pass (ROADMAP row 25) are all candidate so
 - ⚠ **That a term shown on demand is enough.** The user labelled candidates for six rows that are
   terms under this ADR, so opening a term must stay as usable as opening a concept; checked in the
   build's walkthrough, not before. RG-032.
+
+## Amendment 2026-10-01 — a base vocabulary per field is a source of terms, and of what a field expects
+
+The user's note on reading this ADR: a curated default vocabulary for a given topic would go hand
+in hand with the taxonomy. It is recorded here as direction. It is not designed and not built, and
+it leaves the decision above as it stands.
+
+- **A base vocabulary is a third source of rows**, beside the user's own additions and the keyword
+  extractor. Its entries are terms until the user takes them on, like any other candidate.
+- **One sentence of the Decision is widened.** "A term is a string the library uses" holds for a
+  keyword. An entry of a base vocabulary may not occur in the library at all. A *term* is a
+  candidate row nobody has taken on, whatever proposed it.
+- **A base entry brings what a keyword lacks:** a name, its synonyms and abbreviations, and a
+  definition. Those are the three parts of a concept under this ADR, and the three things SKOS
+  gives a concept (a preferred label, alternative labels, a definition), so the shape decided here
+  can receive one. It also brings a field: an expert vocabulary is already consulted by the
+  document's field for definitions (ADR-053, "the taxonomy picks where to look").
+- **An absent entry is information.** A keyword that occurs nowhere is noise. A base concept of a
+  field the library holds, absent from the library or present in one document, is what "have I read
+  the field?" needs: an expected structure to deviate from (`docs/knowledge-layer.md` §1). The
+  taxonomy says which fields exist; a base vocabulary says what a field contains. That is the
+  concept-level half of "the taxonomy as the reference class for expected coverage" (ROADMAP KL2).
+- **Two existing rules bound it.** External vocabularies are candidate sources grafted where the
+  library has documents, never imported whole: 30,000 MeSH descriptors for a small library is "a
+  facet that partitions nothing" (ADR-028 decision 7). And nothing auto-applies (ADR-015). So a
+  topic's list is offered for the fields the library holds, and taking it on — entry by entry, or
+  as a reviewed whole — is the user's act. Which of the two is that feature's decision, not this
+  one's.
+- **Its coverage will be uneven.** Of the 19 priority concepts, expert vocabularies define 8, give
+  a one-line gloss for 6 and have nothing usable for 5, the youngest retrieval terms among them
+  (`tests/eval/baselines/reference_vocabularies_2026-09-21.md`). A base list will be solid for the
+  established fields and thin for the new ones, where the curating falls to the user.
+- **Where it is designed.** Its data step is the one ADR-053's expert vocabularies already need
+  (local copies, licences, sizes: ROADMAP 93c). What it is for is decided in the ADR-032 grill
+  (ROADMAP KL2). It gets its own ADR.

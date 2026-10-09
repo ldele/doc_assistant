@@ -38,6 +38,48 @@ Format: What changed | Why | Rejected alternatives | What it opens
 
 ---
 
+## 2026-10-09 (5) — What the user's marks on the 22 forms did: four concepts lose 14 documents, 30 links become 25, the gap list keeps its 12 rows (RG-032, first claim)
+
+**What changed.** No code. A baseline, `tests/eval/baselines/forms_marked_2026-10-09.md`, and the
+pointers to it: an addendum to ADR-054 (its first ⚠ line now has figures), the ADR index, ROADMAP
+row 94 and the presence row of `docs/knowledge-layer.md`.
+
+**Why.** ADR-054 was accepted with one effect unknown "until the user classifies them". The user
+classified the 22 forms on 2026-10-09 (10 broad, 12 exact, no rename) and rebuilt. Session 4's
+signals propose forms into this classification, so its effect is recorded before they are built.
+
+**What the marks did** (a rebuild with nothing marked against the graph the user rebuilt, one
+reader):
+- Four concepts lose documents, 43 → 29 between them: `knowledge distillation` 11 → 4,
+  `contrastive learning` 13 → 10, `re-ranking` 11 → 9, `hard negatives` 8 → 6. Each of the 14
+  pairs that went is reached through one named broad form and is listed beside its concept. Six
+  documents carry no concept any more.
+- Five of the ten broad marks move no document count.
+- Links 30 → 25, and 17 of the 25 rest on fewer shared chunks. `passage retrieval` keeps its 7
+  documents and loses the most: its one broad form, `passage ranking`, is written in 95 chunks of
+  prose, 90 of them in one survey. Six links now rest on exactly the two shared chunks a link
+  needs, four of them since the marks.
+- The same 12 deterministic gap rows; three `unsourced_claim` rows rest on fewer answer claims.
+
+**Checked.** Every figure in the baseline was recomputed from the two saved graph states before
+the file was staged. That caught two errors in its first draft: "six of the ten broad marks" where
+five are listed, and "four links on exactly two" where there are six.
+
+**Limits.** One library, one reader's marks; nothing here says a mark is right. The marks were
+applied together, so where both ends of a link have a broad form the loss is not split between
+them. Both graphs were taken while figure chunks counted as text (entry (3)); the marked graph on
+the prose reader has the same documents, links and gap rows, and the before/after was not redone
+on it.
+
+**Rejected.**
+- *Editing the ⚠ line of ADR-054 in place.* The ADR is append-only; the addendum cites the
+  baseline and the line stays as it was decided.
+- *Redoing the comparison on the prose reader.* It needs every mark cleared on a copy of the
+  library for three links that differ by one or two chunks.
+
+**Opens.** RG-032's second claim (do exact forms find usable definition candidates the name
+misses) is unmeasured and belongs with session 4's signals.
+
 ## 2026-10-09 (4) — The Graph tab's door to Manage keywords: one name, no change of tab, and a rebuild that does not wait to be offered
 
 **What changed.**

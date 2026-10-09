@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-10-01 · class: append-only -->
+<!-- status: active · updated: 2026-10-09 · class: append-only -->
 
 # ADR-054 — The vocabulary holds concepts and terms; a concept has a name and exact or broad forms
 
@@ -229,3 +229,30 @@ it leaves the decision above as it stands.
 - **Where it is designed.** Its data step is the one ADR-053's expert vocabularies already need
   (local copies, licences, sizes: ROADMAP 93c). What it is for is decided in the ADR-032 grill
   (ROADMAP KL2). It gets its own ADR.
+
+## Addendum 2026-10-09 — the first ⚠ is measured: what the user's marks did
+
+The user read the 22 forms on 2026-10-09, marked 10 broad and 12 exact, renamed no concept and
+rebuilt the graph. The first ⚠ line of Confidence ("what classifying the 31 aliases of the 13 does
+to presence, the graph's edges and the gap list") now has its figures:
+`tests/eval/baselines/forms_marked_2026-10-09.md`. The decision stands as written.
+
+- **Presence.** Four concepts lose documents, 43 → 29 between them. Each of the 14 pairs that went
+  is reached through one named broad form and is listed beside its concept
+  (`knowledge distillation` 11 → 4, the 7 through `distillation`). Five of the ten broad marks
+  move no document count.
+- **Links.** 30 → 25, and 17 of the 25 rest on fewer shared chunks. A broad mark that moves no
+  document count still moves links: `passage retrieval` keeps its 7 documents and loses two of
+  its eight.
+- **Gaps.** The same 12 rows on the same concepts; three `unsourced_claim` rows rest on fewer
+  answer claims.
+- **The reader.** Both graphs were taken while figure chunks counted as text. On the reader that
+  reads prose (ROADMAP 97) the marked graph has the same documents, links and gap rows (§6 of the
+  baseline).
+- **What this does not say.** That the marks are right. One reader classified the forms, and of
+  `contrastive` the user said it "does not seem specific enough" to judge without its context. A
+  form is marked once; whether a mention means the concept is a question per mention (ADR-052's
+  ground).
+
+The second ⚠ line is not measured. The third is the user's to judge
+(`tests/eval/baselines/names_and_forms_2026-10-01.md` §4). Both stay with RG-032.

@@ -18,14 +18,18 @@ import {
   orderedUnits,
   remapSelection,
   deletionLosses,
+  formToAdd,
   graphVocabulary,
+  markKey,
   memberBreadth,
   nextBreadth,
+  shownBreadth,
   splitInheritedFamilies,
   referenceLabel,
   splitRareFacets,
   termFamilies,
   unitDocCounts,
+  withoutKey,
 } from './library.ts'
 import type {
   DocumentReference,
@@ -388,6 +392,38 @@ test('clicking a set mark clears it; clicking the other one sets it', () => {
   assert.equal(nextBreadth('broad', 'broad'), null)
   assert.equal(nextBreadth('broad', 'exact'), 'exact')
   assert.equal(nextBreadth('exact', 'exact'), null)
+})
+
+test('a form shows the mark being saved until the server has answered', () => {
+  const cl: KeywordFamily = {
+    ...family('contrastive learning', ['contrastive'], 1, true),
+    broad: [],
+    exact: [],
+  }
+  assert.equal(shownBreadth({}, cl, 'contrastive'), null)
+  // The click has gone out and the stored mark is still unset: the control shows broad at once.
+  const saving = { [markKey(cl.id, 'contrastive')]: 'broad' as const }
+  assert.equal(shownBreadth(saving, cl, 'contrastive'), 'broad')
+  // Clearing is a save too, and `null` is its value — present in the map, not absent from it.
+  const marked: KeywordFamily = { ...cl, broad: ['contrastive'] }
+  assert.equal(shownBreadth({ [markKey(cl.id, 'contrastive')]: null }, marked, 'contrastive'), null)
+  // Another form's save does not touch this one.
+  assert.equal(shownBreadth({ [markKey(cl.id, 'other')]: 'exact' }, marked, 'contrastive'), 'broad')
+  // When the save ends its key is dropped, and the stored mark shows again.
+  const done = withoutKey({ [markKey(cl.id, 'contrastive')]: null }, markKey(cl.id, 'contrastive'))
+  assert.deepEqual(done, {})
+  assert.equal(shownBreadth(done, marked, 'contrastive'), 'broad')
+})
+
+test('a row adds any typed form, except a blank, its own name, or one it has', () => {
+  const dr: KeywordFamily = family('dense retrieval', ['dense retriever'], 1, true)
+  // Not an extracted keyword of any document, and still a form the library may write.
+  assert.equal(formToAdd(dr, '  DPR '), 'DPR')
+  assert.equal(formToAdd(dr, ''), null)
+  assert.equal(formToAdd(dr, '   '), null)
+  assert.equal(formToAdd(dr, undefined), null)
+  assert.equal(formToAdd(dr, 'Dense Retrieval'), null)
+  assert.equal(formToAdd(dr, 'DENSE RETRIEVER'), null)
 })
 
 const deletion = (over: Partial<KeywordFamilyDeletion>): KeywordFamilyDeletion => ({

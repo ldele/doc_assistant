@@ -417,6 +417,44 @@ export function nextBreadth(current: MemberBreadth, clicked: 'exact' | 'broad'):
   return current === clicked ? null : clicked
 }
 
+/** The mark a form's control shows: the one being saved while a save is in flight, else the stored
+ *  one. A mark is set by toggling, so a control that kept showing the stored mark until the server
+ *  answered invited a second click — and the second click cleared what the first had set. `saving`
+ *  maps `markKey` to the mark on its way; a key that is absent is not being saved. */
+export function shownBreadth(
+  saving: Readonly<Record<string, MemberBreadth>>,
+  family: KeywordFamily,
+  alias: string,
+): MemberBreadth {
+  const key = markKey(family.id, alias)
+  return key in saving ? saving[key] : memberBreadth(family, alias)
+}
+
+/** One form of one family, as a key for per-form state in the view. */
+export function markKey(familyId: string, alias: string): string {
+  return `${familyId}|${alias}`
+}
+
+/** `record` without `key`, as a new object — the view's per-form state is replaced, never mutated. */
+export function withoutKey<T>(record: Readonly<Record<string, T>>, key: string): Record<string, T> {
+  return Object.fromEntries(Object.entries(record).filter(([k]) => k !== key))
+}
+
+/** What typing into a row's "add a form" field would add, or `null` when it would add nothing.
+ *
+ *  The field takes any text, not only an extracted keyword: a form is a string the library may
+ *  write (`DPR`, `contrastive`), and most are not keywords of any document. Blank text adds
+ *  nothing, and neither does the family's own name or a form it already has — compared without
+ *  case, as the server compares them. */
+export function formToAdd(family: KeywordFamily, typed: string | undefined): string | null {
+  const form = (typed ?? '').trim()
+  if (form === '') return null
+  const lowered = form.toLowerCase()
+  if (family.canonical.toLowerCase() === lowered) return null
+  if (family.aliases.some((a) => a.toLowerCase() === lowered)) return null
+  return form
+}
+
 /** What deleting a family removes, as the lines its confirmation shows (ADR-054).
  *
  * Only what is there is named — a term with nothing attached gets an empty list, and the caller

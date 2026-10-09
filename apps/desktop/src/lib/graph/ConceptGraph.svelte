@@ -354,10 +354,24 @@
         </button>
       </div>
     {/if}
-    {#if coverage}
-      <!-- Plain text, not a warning: partial coverage is how this feature works, not a fault. -->
-      <p class="coverage muted">{coverage}</p>
-    {/if}
+    <div class="graphbar">
+      {#if coverage}
+        <!-- Plain text, not a warning: partial coverage is how this feature works, not a fault. -->
+        <p class="coverage muted">{coverage}</p>
+      {/if}
+      <!-- The standing door to the vocabulary. Until now the view was reached from the Library's
+           keyword filter, or from here only once a concept was selected or the graph was empty —
+           while this is the screen where a concept's forms are seen to matter. A door, not an
+           editor: the graph never writes the vocabulary (ADR-017 A1). -->
+      <button
+        class="ghost sm manage"
+        onclick={onCurateVocabulary}
+        type="button"
+        title="Mark forms, rename or add concepts in Manage keywords"
+      >
+        <Icon name="pencil" size={13} /> Manage concepts
+      </button>
+    </div>
 
     <!-- The ego graph + details for the concept selected in the sidebar's index. -->
     <section class="ego" aria-label="Concept neighbourhood">
@@ -614,9 +628,20 @@
     cursor: default;
   }
 
-  .coverage {
+  .graphbar {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
     margin: 0 0 0.5rem;
+  }
+  .coverage {
+    margin: 0;
     font-size: 0.74rem;
+  }
+  /* Pushed to the far side whether or not the coverage sentence is there. */
+  .manage {
+    margin-left: auto;
+    flex: none;
   }
   .stale {
     display: flex;

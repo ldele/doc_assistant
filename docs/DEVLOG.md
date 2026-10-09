@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-10-01 · class: append-only -->
+<!-- status: active · updated: 2026-10-09 · class: append-only -->
 
 # DEVLOG — doc_assistant
 
@@ -37,6 +37,64 @@ Format: What changed | Why | Rejected alternatives | What it opens
 > is individually small and correct, so unbounded growth is invisible per commit.
 
 ---
+
+## 2026-10-09 (1) — Manage keywords built 312,166 dropdown options on opening: a row now has one text field, a mark shows at once, and the Graph tab opens the view (ROADMAP 96)
+
+**What changed.**
+- **One field to add a form.** Each row of `LibraryManageKeywords.svelte` carried an
+  "Add a form…" `<select>` listing every unassigned keyword. It is now a text field over one
+  shared `<datalist>`: type to search the keywords, or type any form and press Enter.
+  `formToAdd` (`library.ts`) refuses a blank, the row's own name and a form the row already has.
+- **A mark shows when it is clicked.** The exact and broad buttons show the mark that is being
+  saved (`shownBreadth`) and take no click until the server has answered. A save that fails
+  leaves "not saved — click again" on the form. `setFamilyFormBreadth` (`App.svelte`) replaces
+  the one row with the route's answer instead of fetching every family again, and resolves to
+  whether the mark was saved.
+- **The Graph tab opens the view.** A *Manage concepts* button beside the coverage sentence
+  opens Manage keywords on its Concepts section (`ConceptGraph.svelte`, `openOnConcepts`).
+- The × that removes a form sits a little apart from the two marks.
+
+**Why.** The user marked the 22 forms of ADR-054 on 2026-10-09 and met three faults in an hour.
+The view froze on opening. "Add a form" listed 1,229 uncurated keywords and could not add a
+string that is not one of them, so a form removed by a slip (`contrastive`) had no way back
+through the screen. And a mark looked unsaved for as long as the view took to redraw: a mark is
+set by toggling, so the second click cleared what the first had set. Two attempts on one form
+left no mark, and nothing said so. They also asked for a way into the view from the graph: "It
+would be more logical to 'manage keywords' too in graph."
+
+**Measured** — the dev app on the working library (104 documents, 254 rows shown), opened from
+the Library's keyword filter with the family list already loaded:
+
+| | Before | After |
+|---|---:|---:|
+| Elements in the page once the view is open | 322,887 | 11,958 |
+| `<option>` elements | 312,166 (254 rows × 1,229) | 1,228 (one list) |
+| Time the page is blocked by the click that opens it | 5.8 s | 0.1 s |
+
+Measured in a browser pane that was not on screen, so the times are what the script cost, not
+what a person waited. Opening makes no request of its own, before or after. 286 frontend tests
+pass (two new), `svelte-check` reports 0 errors; at 375 px in the light theme and at desktop
+width in the dark one, neither the new field nor the new button overflows.
+
+**How the writes were checked.** With `fetch` replaced in the page so that no request other
+than a GET could leave it: a slow save (the mark shows at once, both buttons are disabled, a
+second click sends nothing), a failed save (the mark goes back and the message appears), a
+retry (the message goes), and adding `DPR` to `dense retrieval` (one POST carrying that
+string). The library file's write time did not move during the checks. That the route accepts a
+string that is no keyword was shown the same day by a real call: `contrastive`, put back at the
+user's word.
+
+**Rejected.**
+- *A lazily filled `<select>` per row.* Still a list of uncurated strings to scroll, and still
+  unable to add a form that is not a keyword.
+- *Marking forms inside the graph's concept panel.* A second place that writes the vocabulary,
+  against ADR-017 A1. The graph gets a door to the one place.
+- *A confirmation before a form is removed.* With any string addable again, a slip now costs one
+  field and Enter. The removal itself is still silent.
+
+**What it opens.** The fix for the figure chunks the knowledge layer reads as document text is
+next. From the same hour of use and not done here: a wider left margin, a model picker in
+Settings, and saying on the screen why *Add documents* is unavailable in a browser tab.
 
 ## 2026-10-01 (7) — The secret gate's first CI run was red, and right: on Windows the scanner had been skipping 47 files (S-14)
 

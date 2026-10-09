@@ -276,8 +276,12 @@
   // The graph's empty state sends people here (ADR-018's curation lives in the keywords view, and
   // ADR-017 A1 keeps the graph read-only over the vocabulary). Same destination as the per-concept
   // "Edit" above, which is why that one now delegates — one door, one implementation.
+  // Reached from the Graph tab only, so the view opens on its Concepts section (a row to focus on
+  // wins over that: `manageConcept` above sets one first).
+  let manageOnConcepts = $state(false)
   function curateVocabulary(): void {
     selectMode('library') // loads the family list if this session has not needed it yet
+    manageOnConcepts = true
     manageKeywordsOpen = true
   }
 
@@ -1072,17 +1076,23 @@
   // ADR-054: how one form of a concept counts. Like the graph flag above, it changes what the
   // next build counts and nothing the loaded graph shows, so the latch is dropped and the graph
   // names the concept it is behind on when it is next opened.
+  //
+  // The route answers with the family as it now stands, and a mark moves no membership, so that
+  // one row is replaced in place: refetching every family after each click was a second request
+  // and a re-render of the whole view before the button could show what had been clicked.
+  // Resolves to whether the mark was saved — the row says so when it was not.
   async function setFamilyFormBreadth(
     familyId: string,
     keyword: string,
     breadth: MemberBreadth,
-  ): Promise<void> {
+  ): Promise<boolean> {
     try {
-      await setFamilyMemberBreadth(familyId, keyword, breadth)
-      await refreshFamilies()
+      const updated = await setFamilyMemberBreadth(familyId, keyword, breadth)
+      keywordFamilies = keywordFamilies.map((f) => (f.id === updated.id ? updated : f))
       invalidateGraph()
+      return true
     } catch {
-      // keep the prior mark — the control re-renders from the refreshed list either way
+      return false
     }
   }
   // What a delete would remove, read before the row asks. `null` on a failure: the row then says
@@ -1127,6 +1137,7 @@
   function closeManageKeywords(): void {
     manageKeywordsOpen = false
     manageFocusId = null
+    manageOnConcepts = false
     detectProposals = []
     detectError = null
   }
@@ -1459,6 +1470,7 @@
   <LibraryManageKeywords
     families={keywordFamilies}
     focusId={manageFocusId}
+    openOnConcepts={manageOnConcepts}
     {allKeywords}
     keywordDocCounts={rawKeywordDocCounts}
     proposals={detectProposals}

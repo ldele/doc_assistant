@@ -21,11 +21,15 @@
     RARE_MAX_DOCS,
     deletionLosses,
     filterByQuery,
+    formToAdd,
     graphVocabulary,
+    markKey,
     memberBreadth,
     nextBreadth,
+    shownBreadth,
     splitInheritedFamilies,
     termFamilies,
+    withoutKey,
   } from './library'
   import { shownName } from '../graph/labels'
   import Icon from '../shell/Icon.svelte'
@@ -33,6 +37,7 @@
   let {
     families,
     focusId = null,
+    openOnConcepts = false,
     allKeywords,
     keywordDocCounts,
     proposals,
@@ -53,6 +58,7 @@
   }: {
     families: KeywordFamily[]
     focusId?: string | null // the row to open on (a deep-link from the graph); null = the top
+    openOnConcepts?: boolean // open on the Concepts section (the Graph tab's door), not the top
     allKeywords: string[] // every raw keyword name across the corpus
     keywordDocCounts: Map<string, number> // documents per raw keyword (PR-2.7 F4)
     proposals: KeywordFamilyProposal[] // zero-LLM detection results (PR-2); [] until Detect runs
@@ -63,8 +69,9 @@
     onSetOnGraph: (familyId: string, include: boolean) => void
     onAddMember: (familyId: string, keyword: string) => void
     onRemoveMember: (familyId: string, keyword: string) => void
-    // ADR-054: mark one form of a concept exact or broad; `null` clears the mark.
-    onSetBreadth: (familyId: string, keyword: string, breadth: MemberBreadth) => void
+    // ADR-054: mark one form of a concept exact or broad; `null` clears the mark. Resolves to
+    // whether the mark was saved, so the row can say when it was not.
+    onSetBreadth: (familyId: string, keyword: string, breadth: MemberBreadth) => Promise<boolean>
     // What a delete would remove, asked before the confirmation is shown. `null` = could not load.
     previewDelete: (familyId: string) => Promise<KeywordFamilyDeletion | null>
     onDelete: (familyId: string) => void
@@ -163,6 +170,19 @@
     focusApplied = true
     untrack(() => goToFamily(target))
   })
+  // The Graph tab's door lands on the Concepts section: from there the top of this view (detect
+  // proposals, a new family) is the part that is not about the graph.
+  // Applied once, when the rows are in: while the list is still loading the section has nothing
+  // below it, and a scroll made then stops short.
+  let conceptsShownOnce = false
+  $effect(() => {
+    if (conceptsShownOnce || !openOnConcepts || focusId !== null) return
+    if (families.length === 0) return
+    conceptsShownOnce = true
+    queueMicrotask(() => {
+      document.getElementById('mk-concepts')?.scrollIntoView({ block: 'start' })
+    })
+  })
 
   let newCanonical = $state('')
   let newMembers = $state<string[]>([])
@@ -202,13 +222,34 @@
     editingId = null
   }
 
-  // One pending "add member" pick per family row (family id -> the keyword chosen in its select).
+  // One pending "add a form" text per family row (family id -> what is typed in its field). The
+  // field takes any text and offers the unassigned keywords as you type, from ONE shared list.
+  // Each row used to carry its own <select> of the whole pool: on a 104-document library that was
+  // 254 rows by 1,229 options, 312,166 elements, and the view froze for seconds on opening — while
+  // a form that is not an extracted keyword (`DPR`, a bare `contrastive`) could not be added at all.
   let addSelection = $state<Record<string, string>>({})
-  function submitAdd(familyId: string): void {
-    const kw = addSelection[familyId]
-    if (!kw) return
-    onAddMember(familyId, kw)
-    addSelection = { ...addSelection, [familyId]: '' }
+  function submitAdd(f: KeywordFamily): void {
+    const form = formToAdd(f, addSelection[f.id])
+    if (form === null) return
+    onAddMember(f.id, form)
+    addSelection = { ...addSelection, [f.id]: '' }
+  }
+
+  // A mark is set by toggling, so its control shows the mark the moment it is clicked and takes
+  // no second click until the server has answered: a control that waited looked as if nothing had
+  // happened, and the click that followed cleared what the first had set (seen 2026-10-09). A save
+  // that fails is said on the form, since nothing else on the screen would show it.
+  let savingMarks = $state<Record<string, MemberBreadth>>({})
+  let failedMarks = $state<Record<string, MemberBreadth>>({})
+  async function setMark(f: KeywordFamily, alias: string, clicked: 'exact' | 'broad'): Promise<void> {
+    const key = markKey(f.id, alias)
+    if (key in savingMarks) return
+    const target = nextBreadth(memberBreadth(f, alias), clicked)
+    savingMarks = { ...savingMarks, [key]: target }
+    failedMarks = withoutKey(failedMarks, key)
+    const saved = await onSetBreadth(f.id, alias, target)
+    savingMarks = withoutKey(savingMarks, key)
+    if (!saved) failedMarks = { ...failedMarks, [key]: target }
   }
 
   // ADR-054 — a delete asks first. Pressing the button reads what goes with the row from the
@@ -474,7 +515,9 @@
         <div class="members" role="group" aria-label="Forms of {name}">
           {#each f.aliases as alias (alias)}
             {#if f.graph_include}
-              {@const mark = memberBreadth(f, alias)}
+              {@const key = markKey(f.id, alias)}
+              {@const mark = shownBreadth(savingMarks, f, alias)}
+              {@const saving = key in savingMarks}
               <span class="form" class:broad={mark === 'broad'}>
                 <span class="formtext">{alias}</span>
                 <span class="seg" role="group" aria-label="How “{alias}” counts for {name}">
@@ -482,7 +525,8 @@
                     class="segbtn"
                     class:on={mark === 'exact'}
                     aria-pressed={mark === 'exact'}
-                    onclick={() => onSetBreadth(f.id, alias, nextBreadth(mark, 'exact'))}
+                    disabled={saving}
+                    onclick={() => void setMark(f, alias, 'exact')}
                     title="Exact: “{alias}” always means {name}, so its documents count."
                     type="button"
                   >
@@ -492,13 +536,17 @@
                     class="segbtn"
                     class:on={mark === 'broad'}
                     aria-pressed={mark === 'broad'}
-                    onclick={() => onSetBreadth(f.id, alias, nextBreadth(mark, 'broad'))}
+                    disabled={saving}
+                    onclick={() => void setMark(f, alias, 'broad')}
                     title="Broad: “{alias}” also means other things, so its documents are listed beside {name} and not counted in it."
                     type="button"
                   >
                     broad
                   </button>
                 </span>
+                {#if key in failedMarks}
+                  <span class="formerr" role="status">not saved — click again</span>
+                {/if}
                 <button
                   class="formx"
                   onclick={() => onRemoveMember(f.id, alias)}
@@ -528,28 +576,39 @@
             </span>
           {/each}
         </div>
-        {#if unfamilied.length > 0}
-          <div class="addrow">
-            <select bind:value={addSelection[f.id]} aria-label="Add a keyword to {name}">
-              <option value="">{f.graph_include ? 'Add a form…' : 'Add a keyword…'}</option>
-              {#each unfamilied as k (k)}
-                <option value={k}>{k}</option>
-              {/each}
-            </select>
-            <button
-              class="addbtn"
-              onclick={() => submitAdd(f.id)}
-              disabled={!addSelection[f.id]}
-              type="button"
-            >
-              Add
-            </button>
-          </div>
-        {/if}
+        <div class="addrow">
+          <input
+            class="addinput"
+            list="mk-unassigned"
+            bind:value={addSelection[f.id]}
+            placeholder={f.graph_include
+              ? 'Add a form — type to search the keywords, or type a new one'
+              : 'Add a keyword — type to search'}
+            aria-label={f.graph_include ? `Add a form to ${name}` : `Add a keyword to ${name}`}
+            onkeydown={(e) => {
+              if (e.key === 'Enter') submitAdd(f)
+            }}
+          />
+          <button
+            class="addbtn"
+            onclick={() => submitAdd(f)}
+            disabled={formToAdd(f, addSelection[f.id]) === null}
+            type="button"
+          >
+            Add
+          </button>
+        </div>
       </div>
     {/snippet}
 
-    <section class="block">
+    <!-- The unassigned keywords, once, for every row's add field to offer as you type. -->
+    <datalist id="mk-unassigned">
+      {#each unfamilied as k (k)}
+        <option value={k}></option>
+      {/each}
+    </datalist>
+
+    <section class="block" id="mk-concepts">
       <h3>Concepts ({onGraph.length})</h3>
       <!-- ADR-018's curation, in the view that ADR named as its home, under ADR-054's words. Said
            plainly because the default is *out* and the consequence is a blank Graph page: a user
@@ -1065,7 +1124,18 @@
     background: var(--accent);
     font-weight: 600;
   }
+  /* While a mark is being saved its two buttons take no click: the second click of a toggle
+     would undo the first. */
+  .segbtn:disabled {
+    cursor: progress;
+  }
+  .formerr {
+    font-size: 0.66rem;
+    color: var(--danger, #c0392b);
+  }
+  /* Set apart from the marks: removing a form is not the third choice after exact and broad. */
   .formx {
+    margin-left: 0.3rem;
     display: inline-flex;
     align-items: center;
     padding: 0.1rem;
@@ -1121,7 +1191,7 @@
     display: flex;
     gap: 0.35rem;
   }
-  .addrow select {
+  .addinput {
     flex: 1;
     min-width: 0;
     font: inherit;

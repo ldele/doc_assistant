@@ -1,4 +1,4 @@
-<!-- status: archived · updated: 2026-09-30 · class: living -->
+<!-- status: archived · updated: 2026-10-09 · class: living -->
 
 # DEVLOG archive index
 
@@ -9,6 +9,17 @@ is off; docs_check rule 17 fails while any archived entry is missing here.
 
 ## DEVLOG-archive-007.md
 
+- **2026-09-30** (2) — Row 61 / security S-8: nineteen upgrades, five reviewed ignores, and pip-audit blocks CI
+- **2026-09-30** — The ROADMAP's session Sequence table retires; session planning is local-only now
+- **2026-09-29** — cpc re-vendored 1.8.0 → 1.12.0, from the tags; logs now rotate in batches
+- **2026-09-22** (2) — A first mention becomes a usage example, not a definition candidate (ADR-053 amended)
+- **2026-09-22** — The user's labels measure the definition extractor: one candidate in five is usable; first mentions almost never are
+- **2026-09-21** (2) — Expert vocabularies become a source of definitions (ADR-053 amended); a labelling page measures the rating
+- **2026-09-21** (1) — A concept's definition is chosen from candidates that keep their source (ROADMAP 93a, ADR-053)
+- **2026-09-20** (1) — The hierarchy can hold `is_a` edges, something proposes them, and the app can accept or reject a proposal (ROADMAP 51 + security S-4)
+- **2026-09-18** (1) — Six papers added to give concepts definitions; the similarity step no longer dies on one stale vector
+- **2026-09-17** (3) — Security S-3: answers are sanitised before they become HTML, and the dev loop gets a CSP — not the way the plan said
+- **2026-09-17** (2) — Row 53: a merge keeps what you curated and can be undone; the preview and the merge share one definition — the only harmless one measured
 - **2026-09-17** (1) — Row 54: no write can put a field node on the graph, and every coverage number counts what it describes
 - **2026-09-16** (5) — KL1: the knowledge layer says what its signals are — thin bridges get a real definition, and "unsourced claims" turn out to be about your answers
 - **2026-09-16** (4) — Security S-2: one add checks at most 50,000 files, and the uploader states the limits it enforces

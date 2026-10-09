@@ -38,6 +38,65 @@ Format: What changed | Why | Rejected alternatives | What it opens
 
 ---
 
+## 2026-10-09 (3) — The knowledge layer read figure chunks as the document's own text; it now reads prose (ROADMAP 97)
+
+**What changed.**
+- **`concept_skeleton.prose_parents`** (new, pure): child-row metadata → one entry per prose
+  parent, a `chunk_type == "figure"` parent left out. `load_presence_inputs` returns what it
+  keeps, so presence and co-occurrence, the written-form vote and the library-wide definitions
+  scan all read prose.
+- **`definitions.chunks_mentioning`** (the one-concept path): a figure's block in the keyword
+  index neither picks a document nor comes back as one of its parents.
+- **`epistemics.load_pc_parent_chunks`** is unchanged and now says why: it reads for what
+  retrieval can return, and a retrieved figure needs its markers.
+- Retrieval, both stores and the keyword index are untouched. No locked setting moved.
+- `docs/knowledge-layer.md` (the presence row); ROADMAP 97, and row 95 restated on prose.
+
+**Why.** A described figure is stored as a parent chunk of its own, after the document's prose:
+its caption, the vision model's description, and a whole copy of the passage that cites it. That
+is what retrieval wants. The knowledge layer's reader returned every parent, so it took those
+chunks for text the document wrote, with three effects. A cited passage was counted twice, and a
+link needs only two shared chunks. A model's wording could make a term present in a document that
+never uses the word, where presence is meant to be decided by the text alone. And appended after
+the prose, the figure text moved the References heading before the halfway mark the bibliography
+cut wants, so the cut missed nine documents. Found while listing, for the user, how the library
+uses the forms they were about to mark: one sentence showed twice in three documents, and the
+extraction cache held it once.
+
+**Measured** (`tests/eval/baselines/prose_parents_2026-10-09.md` — the committed code against the
+change, dry runs on the working library with the user's marks in place):
+- 615 figure parents in 83 of 104 documents, 6.6% of the text that was read; 181 prose parents
+  stored more than once, one of them nine times.
+- **The 13 concepts: the same documents, the same 25 links, the same 12 gap rows.** Three links
+  rest on one or two fewer shared chunks, so the graph version changes.
+- The 357 rows: 1,103 concept–document pairs → 1,079. The 24 are all terms, and each is a word
+  found in a model's description and in no caption (`plateau` in 8 documents).
+- Written forms: four move, all on terms.
+- The bibliography cut fires on 85 documents, not 76. Section 5 of the baseline replaces section 7
+  of `vocabulary_shape_2026-10-01.md`: what the cut wrongly removes after a reference list is 3.7%
+  of the text in 32 documents, not 4.5% in 39.
+- Definition candidates: 20 for the concepts and 110 over every row, the same sentences before
+  and after.
+- Five new tests; the two that go through the readers fail on the code before. Suite: 2,643
+  passed.
+
+**Rejected.**
+- *Keep the caption, drop only the description and the copy.* The caption is already in the prose
+  parent it was extracted with: no pair came from a caption alone.
+- *Filter in each caller.* Presence, the vote and two definition paths are four places to forget;
+  there is one reader.
+- *A `chunk_type` column on the index's `parents` table.* It changes retrieval's index file for a
+  rule the reader can apply from the block's own metadata.
+- *Align the marker reader with this one.* A retrieved figure would lose its markers.
+- *Take the copy out of the figure chunk.* It is what lets an answer read a figure inside the
+  passage that argues from it.
+
+**What it opens.** It applies at the next graph rebuild, which is the user's: the graph version
+changes, three links lose one or two shared chunks, and the written forms are voted on prose.
+ROADMAP 95 (a mention in a reference list stops counting) starts from the prose figures. Not
+measured: retrieval returning a figure and the passage it cites together, so that an answer reads
+that passage twice.
+
 ## 2026-10-09 (2) — The audit gates' second catch: four upgrades for advisories published since the last green run
 
 **What changed.** Four versions, in two lock files, and nothing else.

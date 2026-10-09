@@ -276,8 +276,13 @@ def load_pc_parent_chunks() -> list[tuple[str, str, int, str]]:
     (``PC_CHROMA_PATH``), de-duplicates child rows to one entry per parent via ``parent_index``
     (the parent text is denormalised onto every child), and builds the ADR-4 composite key
     ``{doc}:p{parent_index}`` — so the live marker join for a retrieved parent is a direct key
-    lookup, not the coarse text-containment that lost ~40% of markers at parent boundaries. Mirrors
-    ``concept_skeleton.load_presence_inputs``; returns ``[]`` if the PC collection is absent."""
+    lookup, not the coarse text-containment that lost ~40% of markers at parent boundaries. Returns
+    ``[]`` if the PC collection is absent.
+
+    **Every parent, a described figure's included.** ``concept_skeleton.load_presence_inputs``
+    reads the same store and leaves figure parents out, because it reads for what the document
+    says. This reads for what retrieval can return, and a retrieved figure needs its markers —
+    so the two differ on purpose, and this one must not be "aligned" with the other."""
     from doc_assistant.config import PC_CHROMA_PATH
     from doc_assistant.embeddings import get_collection_name
 

@@ -313,3 +313,44 @@ def test_no_document_mutation(env: Path) -> None:
     with session_scope() as session:
         doc_count = session.execute(select(func.count()).select_from(Document)).scalar_one()
     assert doc_count == 2  # the sidecar never touches the documents table
+
+
+def test_the_two_parent_readers_differ_on_figures_on_purpose(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """One store, two readers (ROADMAP 97). The marker reader returns every parent, because a
+    retrieved figure needs its markers; the presence reader returns the document's prose, because
+    a figure's parent is a model's description and a copy of a passage already counted. Aligning
+    either with the other breaks one of the two.
+    """
+    import chromadb
+
+    cited = "As Fig. 1 shows, recall drops."
+    rows = [
+        {"document_id": "d1", "parent_index": 0, "parent_text": cited},
+        {"document_id": "d1", "parent_index": 0, "parent_text": cited},  # a second child row
+        {
+            "document_id": "d1",
+            "parent_index": 1,
+            "parent_text": f"Figure 1: Recall.\n\nA line plot.\n\n---\n\n{cited}",
+            "chunk_type": "figure",
+            "figure_id": "f1",
+        },
+    ]
+
+    class _Collection:
+        def get(self, limit: int, offset: int, **_kwargs: object) -> dict[str, list[object]]:
+            page = rows[offset : offset + limit]
+            ids = [f"row-{offset + i}" for i in range(len(page))]
+            return {"ids": ids, "metadatas": list(page)}
+
+    class _Client:
+        def __init__(self, path: str) -> None:
+            self.path = path
+
+        def get_collection(self, _name: str) -> _Collection:
+            return _Collection()
+
+    monkeypatch.setattr(chromadb, "PersistentClient", _Client)
+    assert [key for key, *_ in epistemics.load_pc_parent_chunks()] == ["d1:p0", "d1:p1"]
+    assert [key for key, *_ in cs.load_presence_inputs(None)] == ["d1:p0"]

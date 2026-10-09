@@ -551,6 +551,57 @@ def test_the_keyword_index_picks_the_documents_including_hyphenated_forms(temp_d
     assert chunks_mentioning(["actor"], index_file=tmp_path / "absent.sqlite3") is None
 
 
+def test_the_keyword_index_reads_prose_and_not_figure_blocks(temp_db, tmp_path):
+    """The index is retrieval's, so it holds a block per described figure: a caption, a model's
+    description and a copy of the citing passage. Such a block neither picks a document nor comes
+    back as one of its parents (ROADMAP 97) — the same rule as the full read."""
+    from doc_assistant.db.session import session_scope
+    from doc_assistant.knowledge.definitions import chunks_mentioning
+    from doc_assistant.sparse_index import SparseIndex
+
+    with session_scope() as s:
+        for doc_id, doc_hash in (("d1", "h1"), ("d2", "h2")):
+            s.add(
+                Document(
+                    id=doc_id,
+                    filename=f"{doc_id}.pdf",
+                    source_original=doc_id,
+                    doc_hash=doc_hash,
+                    format="pdf",
+                )
+            )
+
+    def prose(doc_hash: str, index: int, text: str) -> tuple[str, dict[str, object]]:
+        return text, {"doc_hash": doc_hash, "parent_index": index, "parent_text": text}
+
+    def figure(doc_hash: str, index: int, own: str, cited: str) -> tuple[str, dict[str, object]]:
+        return own, {
+            "doc_hash": doc_hash,
+            "parent_index": index,
+            "parent_text": f"{own}\n\n---\n\n{cited}",
+            "chunk_type": "figure",
+            "figure_id": f"{doc_hash}-f1",
+        }
+
+    pages = [
+        prose("h1", 0, "An actor chooses an action."),
+        prose("h1", 1, "Second block of d1."),
+        figure("h1", 2, "Figure 2. The diagram shows an actor.", "An actor chooses an action."),
+        prose("h2", 0, "Nothing relevant here."),
+        # d2 says "actor" nowhere in its own words: only the description of its figure does.
+        figure("h2", 1, "Figure 1. An actor stands on the left.", "Nothing relevant here."),
+    ]
+    index = tmp_path / "sparse_index.sqlite3"
+    SparseIndex.build(index, "fp", iter(pages)).close()
+
+    for top_docs in (None, 5):
+        chunks = chunks_mentioning(["actor"], index_file=index, top_docs=top_docs)
+        assert chunks == [
+            ("d1:p0", "d1", "An actor chooses an action."),
+            ("d1:p1", "d1", "Second block of d1."),
+        ]
+
+
 def test_a_tie_between_documents_does_not_depend_on_read_order():
     one = [
         ("b:p0", "b", "The pose is held for the whole of the recording session."),

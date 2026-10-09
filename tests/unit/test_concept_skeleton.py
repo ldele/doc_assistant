@@ -25,6 +25,7 @@ from doc_assistant.knowledge.concept_skeleton import (
     is_cased,
     match_broad_presence,
     match_presence,
+    prose_parents,
     skeleton_from_dict,
     skeleton_to_dict,
     word_case_key,
@@ -367,6 +368,82 @@ def test_cooccurrence_threshold() -> None:
         ("a", "c"),
         ("b", "c"),
     }
+
+
+# ---- what the layer reads: prose parents, not figure chunks (ROADMAP 97) ---
+
+_CITING_PASSAGE = "As Fig. 1 shows, BM25 and dense retrieval disagree on long queries."
+
+
+def _child(index: int, text: str, **extra: object) -> dict[str, object]:
+    return {"document_id": "d1", "parent_index": index, "parent_text": text, **extra}
+
+
+def _figure_parent(index: int, description: str, cited: str) -> dict[str, object]:
+    """A described figure as ingest stores it: own text, a rule, a copy of the citing parent."""
+    return _child(
+        index,
+        f"Figure 1: Recall by query length.\n\n{description}\n\n---\n\n{cited}",
+        chunk_type="figure",
+        figure_id="f1",
+        figure_context="cited",
+    )
+
+
+def test_prose_parents_keeps_one_entry_per_parent_in_key_order() -> None:
+    rows = [
+        _child(1, "Second parent."),
+        _child(0, "First parent."),
+        _child(0, "First parent."),  # the parent text is on every child row
+        _child(2, ""),  # nothing to read
+        {"document_id": "d1", "parent_text": "no index"},
+        "not a row",
+    ]
+    assert prose_parents(rows) == [
+        ("d1:p0", "d1", "First parent."),
+        ("d1:p1", "d1", "Second parent."),
+    ]
+    assert prose_parents([]) == []  # an empty library reads as nothing, not as an error
+
+
+def test_a_figure_parent_is_not_the_documents_text() -> None:
+    rows = [
+        _child(0, _CITING_PASSAGE),
+        _child(1, "An unrelated closing paragraph."),
+        _figure_parent(2, "The curve reaches a plateau after ten queries.", _CITING_PASSAGE),
+    ]
+    assert [key for key, _, _ in prose_parents(rows)] == ["d1:p0", "d1:p1"]
+
+
+def test_a_figure_adds_neither_a_presence_nor_a_shared_chunk() -> None:
+    """The two things a figure parent did when it was read as prose (measured 2026-10-09).
+
+    Its description is a model's wording: ``plateau`` is in no sentence the document wrote. Its
+    copy of the citing passage is that passage again: one co-occurrence counted twice, which is
+    all an edge needs.
+    """
+    rows = [
+        _child(0, _CITING_PASSAGE),
+        _figure_parent(1, "The curve reaches a plateau after ten queries.", _CITING_PASSAGE),
+    ]
+    concepts = [("bm25", "BM25"), ("dr", "dense retrieval"), ("plateau", "plateau")]
+
+    def read(chunks: list[tuple[str, str, str]]) -> tuple[set[str], list[SkeletonEdge]]:
+        presences = match_presence(concepts, {}, chunks)
+        return (
+            {p.concept_id for p in presences},
+            cooccurrence_edges(presences, min_cooccurrence=2),
+        )
+
+    present, edges = read(prose_parents(rows))
+    assert present == {"bm25", "dr"}
+    assert edges == []  # one passage is one shared chunk, below the two an edge needs
+
+    # What every parent gave, so the test fails if the fixture stops showing the fault.
+    every_parent = [(f"d1:p{r['parent_index']}", "d1", str(r["parent_text"])) for r in rows]
+    present_before, edges_before = read(every_parent)
+    assert "plateau" in present_before
+    assert [(e.source_concept_id, e.target_concept_id) for e in edges_before] == [("bm25", "dr")]
 
 
 # ---- the no-edge-creation invariant (Decision 5) ---------------------------

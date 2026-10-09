@@ -27,7 +27,7 @@ import json
 import re
 import statistics
 from collections import Counter, defaultdict
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
@@ -1282,13 +1282,67 @@ def load_glossary() -> list[GlossaryEntry]:
 _PRESENCE_ID_BATCH = 50
 
 
-def load_presence_inputs(document_ids: list[str] | None = None) -> list[tuple[str, str, str]]:
-    """Parent-chunk text for presence matching: ``[(chunk_key, document_id, text)]``.
+#: ``chunk_type`` of the parent chunk ``ingest`` stores for a described figure. A literal, as in
+#: the other readers of that field (``chat_controller``, ``eval.scorers``): importing it from
+#: ``ingest`` would pull the whole ingest chain into a module that only reads.
+_FIGURE_CHUNK = "figure"
 
-    Reads the parent-child Chroma store (``PC_CHROMA_PATH``), de-duplicates child rows to
-    one entry per parent via ``parent_index`` (the parent text is denormalised onto every
-    child), and builds the ADR-4 composite key ``"{document_id}:p{parent_index}"``. Runs on
-    the host, not the sandbox (KI-5). Returns ``[]`` if Chroma / the collection is absent."""
+
+def prose_parents(metadatas: Iterable[Any]) -> list[tuple[str, str, str]]:
+    """Child-row metadata → one ``(chunk_key, document_id, text)`` per **prose** parent. Pure.
+
+    The parent text is denormalised onto every child row, so rows are de-duplicated to one entry
+    per ``(document_id, parent_index)``; the key is the ADR-4 composite
+    ``"{document_id}:p{parent_index}"``. Sorted by key.
+
+    **A figure's parent is left out.** A described figure is stored as a parent of its own, after
+    the document's prose: its caption, the vision model's description, and a whole copy of the
+    passage that cites it (``ingest.figures.figure_parent_text``). That is right for retrieval —
+    an answer reads the figure inside its passage — and wrong for everything that reads a parent
+    as the document's own text:
+
+    * the copy is a passage counted twice, and an edge needs only two shared chunks
+      (``CONCEPT_SKELETON_MIN_COOCCURRENCE``), so one passage a figure cites was enough for one;
+    * the description is a model's wording, and presence is decided by the text, never by a model
+      (:func:`match_presence`, Decision 2) — 24 of 1,103 concept-document pairs existed through a
+      description alone;
+    * appended after the prose, the figure text moves a References heading before the halfway
+      mark the bibliography cut wants, so the cut missed 9 documents of 85.
+
+    Measured 2026-10-09 (``tests/eval/baselines/prose_parents_2026-10-09.md``). The caption is not
+    lost: it is in the prose parent it was extracted with. ``epistemics.load_pc_parent_chunks``
+    keeps reading figure parents on purpose — a retrieved figure needs its markers.
+    """
+    seen: set[tuple[str, int]] = set()
+    out: list[tuple[str, str, str]] = []
+    for meta in metadatas:
+        if not isinstance(meta, dict):
+            continue
+        if meta.get("chunk_type") == _FIGURE_CHUNK:
+            continue
+        document_id = meta.get("document_id")
+        parent_index = meta.get("parent_index")
+        parent_text = meta.get("parent_text")
+        if document_id is None or parent_index is None or not parent_text:
+            continue
+        key_tuple = (str(document_id), int(parent_index))
+        if key_tuple in seen:
+            continue
+        seen.add(key_tuple)
+        chunk_key = f"{document_id}:p{int(parent_index)}"
+        out.append((chunk_key, str(document_id), str(parent_text)))
+    out.sort(key=lambda t: t[0])
+    return out
+
+
+def load_presence_inputs(document_ids: list[str] | None = None) -> list[tuple[str, str, str]]:
+    """Prose parent-chunk text for presence matching: ``[(chunk_key, document_id, text)]``.
+
+    Reads the parent-child Chroma store (``PC_CHROMA_PATH``) and keeps what :func:`prose_parents`
+    keeps: one entry per prose parent, figure parents left out. Everything in the knowledge layer
+    that reads the library's text reads it through here — presence and co-occurrence, the
+    written-form vote, the library-wide definitions scan. Runs on the host, not the sandbox
+    (KI-5). Returns ``[]`` if Chroma / the collection is absent."""
     from doc_assistant.config import PC_CHROMA_PATH
     from doc_assistant.embeddings import get_collection_name
 
@@ -1316,24 +1370,7 @@ def load_presence_inputs(document_ids: list[str] | None = None) -> list[tuple[st
             )
     else:
         metadatas = list(get_all(coll, include=["metadatas"]).get("metadatas") or [])
-    seen: set[tuple[str, int]] = set()
-    out: list[tuple[str, str, str]] = []
-    for meta in metadatas:
-        if not isinstance(meta, dict):
-            continue
-        document_id = meta.get("document_id")
-        parent_index = meta.get("parent_index")
-        parent_text = meta.get("parent_text")
-        if document_id is None or parent_index is None or not parent_text:
-            continue
-        key_tuple = (str(document_id), int(parent_index))
-        if key_tuple in seen:
-            continue
-        seen.add(key_tuple)
-        chunk_key = f"{document_id}:p{int(parent_index)}"
-        out.append((chunk_key, str(document_id), str(parent_text)))
-    out.sort(key=lambda t: t[0])
-    return out
+    return prose_parents(metadatas)
 
 
 def load_doc_graphs() -> tuple[list[tuple[str, str]], list[tuple[str, str]]]:

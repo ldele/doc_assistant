@@ -874,6 +874,12 @@ def chunks_mentioning(
     hash). The usage examples need a few documents, not all of them, and the panel asks for them
     on every open, so the cost stays flat as the library grows.
 
+    **Prose only, like the full read.** The index is retrieval's, so it also holds a block per
+    described figure: a caption, a model's description and a copy of the passage that cites the
+    figure. Such a block neither picks a document here nor comes back as one of its parents —
+    the same rule as ``concept_skeleton.prose_parents``, so the two paths cannot disagree about
+    what a document says.
+
     Returns ``None`` when the index is missing or unreadable (a CLI run before the app first
     built it), so the caller falls back to the full read rather than finding nothing.
     """
@@ -904,13 +910,15 @@ def chunks_mentioning(
             if top_docs is None:
                 rows = con.execute(
                     "SELECT DISTINCT c.doc_hash FROM chunks_fts "
-                    "JOIN chunks c ON c.rowid = chunks_fts.rowid WHERE chunks_fts MATCH ?",
+                    "JOIN chunks c ON c.rowid = chunks_fts.rowid WHERE chunks_fts MATCH ? "
+                    "AND json_extract(c.meta, '$.chunk_type') IS NOT 'figure'",
                     (" OR ".join(phrases),),
                 )
             else:
                 rows = con.execute(
                     "SELECT c.doc_hash FROM chunks_fts "
                     "JOIN chunks c ON c.rowid = chunks_fts.rowid WHERE chunks_fts MATCH ? "
+                    "AND json_extract(c.meta, '$.chunk_type') IS NOT 'figure' "
                     "GROUP BY c.doc_hash ORDER BY count(*) DESC, c.doc_hash LIMIT ?",
                     (" OR ".join(phrases), top_docs),
                 )
@@ -925,11 +933,28 @@ def chunks_mentioning(
                 if hashes
                 else []
             )
+            # The `parents` table has no kind of its own; a figure's block says so in its
+            # metadata, and its parent is the one that block numbers.
+            figures = (
+                {
+                    (str(doc_hash), int(parent_index))
+                    for doc_hash, parent_index in con.execute(
+                        "SELECT doc_hash, json_extract(meta, '$.parent_index') "  # nosec B608
+                        f"FROM chunks WHERE doc_hash IN ({placeholders}) "
+                        "AND json_extract(meta, '$.chunk_type') = 'figure'",
+                        hashes,
+                    )
+                    if parent_index is not None
+                }
+                if hashes
+                else set()
+            )
         finally:
             con.close()
     except sqlite3.Error as e:
         log.warning("definitions_keyword_index_unreadable", error=str(e))
         return None
+    parents = [row for row in parents if (str(row[0]), int(row[1])) not in figures]
     if not parents:
         return []
     with session_scope() as session:

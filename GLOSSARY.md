@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-10-01 (ADR-054: C-001 narrowed to the rows the user took on; C-014 term, C-015 name, C-016 exact form / broad form) · class: living -->
+<!-- status: active · updated: 2026-10-09 (U-001: a view has one name — Manage keywords on every door to it; 2026-10-01, ADR-054: C-001 narrowed to the rows the user took on; C-014 term, C-015 name, C-016 exact form / broad form) · class: living -->
 
 # GLOSSARY — doc_assistant
 
@@ -179,6 +179,20 @@ say *form*.
 **Forbidden:** —
 **Authoritative in:** `db/models.py::ConceptAlias.breadth` +
 `knowledge/concept_skeleton.load_concepts` (exact) / `load_broad_forms` (broad)
+
+## U-001 — Manage keywords (the view), and the rule it stands for
+
+**Canonical:** `Manage keywords`
+**Definition:** The one view in which the vocabulary is curated: concepts and their forms, terms
+and their member keywords. **A view has one name.** Its heading, every control that opens it —
+from the Library's keyword filter, from the Graph tab, from the graph's empty state — and every
+sentence that sends the reader to it say *Manage keywords*. A control that acts on one row may
+say what it does (*Edit* on a concept) and names the view in its tooltip. The rule is general: a
+second name for a screen, a tab or a control reads as a second thing.
+**Forbidden:** `Manage concepts`, `Choose the vocabulary` (both were labels on doors to this view
+until 2026-10-09)
+**Authoritative in:** `apps/desktop/src/lib/library/LibraryManageKeywords.svelte` (the view) +
+`apps/desktop/src/lib/graph/ConceptGraph.svelte` (its doors on the Graph tab)
 
 ## D-001 — Provenote vs doc_assistant
 

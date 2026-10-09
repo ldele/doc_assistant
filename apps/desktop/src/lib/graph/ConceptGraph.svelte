@@ -333,9 +333,8 @@
       <p class="muted">
         Choose which concepts belong on it in <strong>Manage keywords</strong>, then rebuild.
       </p>
-      <button class="primary" onclick={onCurateVocabulary} type="button">
-        Choose the vocabulary
-      </button>
+      <!-- The view has one name on every door that opens it (GLOSSARY U-001). -->
+      <button class="primary" onclick={onCurateVocabulary} type="button">Manage keywords</button>
       <button class="ghost" onclick={onRebuild} disabled={rebuilding} type="button">
         {rebuilding ? 'Rebuilding…' : 'Rebuild'}
       </button>
@@ -359,18 +358,37 @@
         <!-- Plain text, not a warning: partial coverage is how this feature works, not a fault. -->
         <p class="coverage muted">{coverage}</p>
       {/if}
-      <!-- The standing door to the vocabulary. Until now the view was reached from the Library's
-           keyword filter, or from here only once a concept was selected or the graph was empty —
-           while this is the screen where a concept's forms are seen to matter. A door, not an
-           editor: the graph never writes the vocabulary (ADR-017 A1). -->
-      <button
-        class="ghost sm manage"
-        onclick={onCurateVocabulary}
-        type="button"
-        title="Mark forms, rename or add concepts in Manage keywords"
-      >
-        <Icon name="pencil" size={13} /> Manage concepts
-      </button>
+      <div class="graphactions">
+        <!-- A rebuild that does not wait to be asked for. The notice above offers one when the
+             vocabulary moved; nothing told the graph when the *reading* of the library changed
+             (a fix to what counts as a document's text), so there was a graph to rebuild and no
+             control to do it with. Left out while the notice is up: that one says why. -->
+        {#if !(staleBehind > 0 || formsChanged)}
+          <button
+            class="ghost sm"
+            onclick={onRebuild}
+            disabled={rebuilding}
+            type="button"
+            title="Build the graph again from your library and your keywords as they are now. A few seconds, no model."
+          >
+            <Icon name="rotate-ccw" size={13} />
+            {rebuilding ? 'Rebuilding…' : 'Rebuild'}
+          </button>
+        {/if}
+        <!-- The standing door to the vocabulary, under the view's own name (GLOSSARY U-001). Until
+             now the view was reached from the Library's keyword filter, or from here only once a
+             concept was selected or the graph was empty — while this is the screen where a
+             concept's forms are seen to matter. A door, not an editor: the graph never writes the
+             vocabulary (ADR-017 A1). -->
+        <button
+          class="ghost sm"
+          onclick={onCurateVocabulary}
+          type="button"
+          title="Mark forms, rename or add concepts"
+        >
+          <Icon name="pencil" size={13} /> Manage keywords
+        </button>
+      </div>
     </div>
 
     <!-- The ego graph + details for the concept selected in the sidebar's index. -->
@@ -639,9 +657,11 @@
     font-size: 0.74rem;
   }
   /* Pushed to the far side whether or not the coverage sentence is there. */
-  .manage {
+  .graphactions {
     margin-left: auto;
     flex: none;
+    display: flex;
+    gap: var(--space-2);
   }
   .stale {
     display: flex;

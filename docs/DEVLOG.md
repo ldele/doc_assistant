@@ -38,6 +38,45 @@ Format: What changed | Why | Rejected alternatives | What it opens
 
 ---
 
+## 2026-10-09 (4) — The Graph tab's door to Manage keywords: one name, no change of tab, and a rebuild that does not wait to be offered
+
+**What changed.**
+- **One name.** The button added to the Graph tab that morning said *Manage concepts*; the
+  empty graph's said *Choose the vocabulary*. Both open the view whose heading is *Manage
+  keywords*, and both now say so. `GLOSSARY.md` U-001 pins it, with the rule behind it: a view
+  has one name on its heading, on every control that opens it and in every sentence that sends
+  the reader to it.
+- **The view opens over the graph.** `curateVocabulary` (`App.svelte`) switched to the Library
+  before opening the overlay, because entering the Library is what loads the two lists the view
+  shows. It loads them itself now and leaves the tab alone; this covers the per-concept *Edit*
+  too. Closing the view re-reads the graph when a write in it had dropped the graph's latch, so
+  the notice naming what changed is there at once.
+- **A standing *Rebuild*** beside it (`ConceptGraph.svelte`), left out while the stale notice is
+  up, since that one says why.
+
+**Why.** The user, on first use: the button should read *Manage keywords* — "I don't think it is
+a good idea to use different names for the same thing, we need to be clear with this and have a
+convention" — and clicking it "go[es] from graph to library". And after the reader fix of entry
+(3) they were asked to rebuild and had nothing to click: the graph offers a rebuild when the
+vocabulary has moved since it was built, and a change to how the library is *read* moves nothing
+it watches. A standing rebuild had been an open question since row 94; this is the case that
+answers it.
+
+**Checked.** `svelte-check` 0 errors, 286 frontend tests pass. In the running dev app: from the
+Graph tab the door opens the view with the tab still on Graph and returns to it on close; the
+button reads *Manage keywords*; *Rebuild* is present with no notice up. The rebuild itself was
+not clicked: it is the user's.
+
+**Rejected.**
+- *Keeping "Manage concepts" for the Graph tab's door because it opens on the Concepts section.*
+  A name per entry point is two names for one view.
+- *Telling the graph that the reader changed* (a reader version in the built graph, compared at
+  read time). More honest than a button that is always there, and a backend change for a case
+  that has occurred once. The standing control covers it.
+
+**What it opens.** Nothing new. The rule in U-001 applies to the rest of the app and has not been
+checked against it.
+
 ## 2026-10-09 (3) — The knowledge layer read figure chunks as the document's own text; it now reads prose (ROADMAP 97)
 
 **What changed.**

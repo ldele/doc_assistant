@@ -278,9 +278,14 @@
   // "Edit" above, which is why that one now delegates — one door, one implementation.
   // Reached from the Graph tab only, so the view opens on its Concepts section (a row to focus on
   // wins over that: `manageConcept` above sets one first).
+  //
+  // The view is an overlay, and it opens over the Graph: it used to switch to the Library first,
+  // only because entering the Library is what loads the two lists it shows — so closing it left
+  // the user on a tab they had not asked for. The lists are loaded here instead.
   let manageOnConcepts = $state(false)
   function curateVocabulary(): void {
-    selectMode('library') // loads the family list if this session has not needed it yet
+    if (!documentsLoaded) void refreshDocuments()
+    if (!familiesLoaded) void refreshFamilies()
     manageOnConcepts = true
     manageKeywordsOpen = true
   }
@@ -1138,6 +1143,10 @@
     manageKeywordsOpen = false
     manageFocusId = null
     manageOnConcepts = false
+    // A write in the view drops the graph's latch (`invalidateGraph`), and the graph is re-read
+    // on entering its tab. Closed over the Graph there is no entering: re-read it now, so the
+    // notice naming what changed is there when the view goes away.
+    if (shell.mode === 'graph' && !graphLoaded()) void loadConceptGraph()
     detectProposals = []
     detectError = null
   }

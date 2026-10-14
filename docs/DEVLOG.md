@@ -38,6 +38,65 @@ Format: What changed | Why | Rejected alternatives | What it opens
 
 ---
 
+## 2026-10-09 (6) — Term signals: what the prose says about a term, read and offered, never applied (ROADMAP 93, ADR-053 decision 4)
+
+**What changed.**
+- **`knowledge/term_signals.py`** (new, pure, no model). Four things read off the body prose
+  about a row of the vocabulary, each with the counts it rests on:
+  - *spelled out / abbreviated* — a long form beside a short one, in either order, by Schwartz &
+    Hearst's rule (2003). The long form is a substring of its sentence (ADR-043);
+  - *the word beside it* — the content word most often joined to the label, before and after;
+  - *a cited author* — mentions followed by "et al.";
+  - *in prose* — mentions, and documents with one.
+- **`scripts/term_signals.py`** — a runner that only reads. There is no `--apply`: a signal has no
+  table and nothing applies one.
+- **A review page**, "Term Signal Review": 109 cards on rows outside the 19 priority concepts,
+  answered yes / no / can't tell. Private, not in the repository.
+
+**Why.** Decision 4 of ADR-053: `dbs` and `pddl` should find their spelled-out forms from the
+library itself, and a fragment or a cited name should say so with its reason. Restated against
+ADR-054: what a signal finds is a form to *offer*; marking a form stays the user's act.
+
+**On the working library** (104 documents, 46,558 prose sentences, 357 rows):
+- The prose gives 1,080 short/long pairs, 80 of them in more than one document.
+- 28 labels are spelled out and 13 are abbreviated: 51 offers, 47 of them forms the row does not
+  have. `dbs` finds *deep brain stimulation* in two documents and `pddl` finds *planning domain
+  definition language* in one; both are forms the user had already added.
+- **Case is identity.** The library spells `CRE` out as *cAMP response element*. The concept is
+  written `Cre`, so that long form is not offered to it; the same rule keeps *Character Error
+  Rate* from `cer`, which the library writes `Cer` and follows with "et al." 13 times in 13.
+- 18 one-word labels have the same word after them in half their mentions or more (`pose` then
+  *estimation*, 313 of 480), 11 the same word before; 5 are followed by "et al." in half or more;
+  31 are never used in body prose.
+
+**Not known, and why nothing is shown in the app yet.** How often each signal is right. Schwartz
+& Hearst accept any in-order spelling, so *deep learning approaches (DNNs)* is a pair. Each pair
+carries `initials` (whether every capital of the short form lands on a word start or a capital of
+the long one) as evidence; 10 of the 51 offers lack it. ADR-053 asks for a check outside the 19
+before anything is shown, because the 19 are where the signal was noticed. That check is the
+review page; the baseline and the panel follow the user's answers.
+
+**Checked.** 23 unit tests, with sentences written in the library's shapes (a citation after the
+short form, curly quotes round the long one): the pair is found in both orders, a cited name and
+a remark in brackets are not pairs, the long form is verbatim, pairs are counted in documents, a
+form the concept already has is marked known, a short form in another case is another word, the
+inputs are untouched, an empty library gives every row its zeros. ruff, mypy, bandit and the full
+suite pass (2,666). The page's store took a probe write and gave it back; the probe is deleted.
+**Not checked:** the page saving one of the user's answers. That is read back after the first one.
+
+**Rejected.**
+- *Filtering pairs on `initials`.* It would drop *OrthoBackfill (OBF)* and *descending
+  interneurons (dINs)*, which are right. Whether it helps is what the labels will say.
+- *Offering `CRE`'s long form to `Cre` with a warning.* Decision 3 already says they are two
+  words.
+- *A table for signals.* Nothing chooses or dismisses one yet; they are recomputed from the prose.
+- *Toggling an answer off on a second click* on the review page. The morning's Manage keywords
+  lesson: a second click cleared a mark unseen. The page has a separate *clear*.
+
+**Opens.** The user answers the cards; then the baseline, RG-032's second claim (do exact forms
+find definition candidates the name misses), and the offers in the concept panel for the signals
+the answers support.
+
 ## 2026-10-09 (5) — What the user's marks on the 22 forms did: four concepts lose 14 documents, 30 links become 25, the gap list keeps its 12 rows (RG-032, first claim)
 
 **What changed.** No code. A baseline, `tests/eval/baselines/forms_marked_2026-10-09.md`, and the

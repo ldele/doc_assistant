@@ -38,6 +38,37 @@ Format: What changed | Why | Rejected alternatives | What it opens
 
 ---
 
+## 2026-10-14 (3) — A form's words joined by a space, a hyphen or a dash are one form (KI-63)
+
+**What changed.** `concept_skeleton.form_source` is the one definition of what a form matches: its
+characters literally, except where a space, hyphen or dash joins two of its words, where any of
+them matches, across a wrapped line but not a paragraph break. `compile_boundary_pattern`,
+`form_matcher` (with `form_probe` as its prefilter and `spelling_key` for the case rule), the
+written-form vote, the definition and naming patterns, the term signals and the keyword-index
+query of "Look in my library" (`definitions._index_phrases`, every mix of spaces and hyphens)
+build on it. A written form is voted on one line (`tidy_spelling`: "SSp- bfd" is `SSp-bfd`), a
+written form that joins the label's words otherwise is a spelling of it, and two forms of one
+concept that are now one (`cross-encoder`, `cross encoder`) count a mention once. Ten tests; with
+the rule reverted, eight of them fail (the other two pin the word split and the index phrases).
+
+**Measured** (`tests/eval/baselines/hyphen_matcher_2026-10-14.md`, the committed code against the
+change on the same library, dry runs). The graph's 13 concepts: the same documents, links, gap
+rows and graph version; four count a few more mentions. The 357 rows: 1,079 → 1,117
+concept–document pairs, none lost (`cosine-similarity` 1 → 16 documents, `state-space` 2 → 11);
+8 written forms change spelling, 4 are new; one definition candidate gained. Term signals: "never
+in body prose" 31 → 28, which corrects the review baseline's §4 (3 of 31, not 2: `query
+document` is written with an en dash).
+
+**Rejected.** Any whitespace as a joiner: the first run joined `resources neuroscience` across
+the blank line of an eLife page header. A dictionary of word pairs, or a join without a joiner
+(`sspbfd`): no rule says when two words are one. Deduplicating forms in `surface_forms`: it keys
+written forms and the user's form marks (ADR-054), so only presence's count dedupes.
+
+**What it opens.** The stored graph and written forms change at the next rebuild (the user's).
+The keyword-index path still misses one document on each of 4 rows, before and after: a term at
+the end of a hyphenated word ("retriever" in "G-retriever") is a mention to the full read and not
+to a prefix query. KI-64 (ligatures) is next of the two the review found.
+
 ## 2026-10-14 (2) — Term signals measured on the user's reading: the abbreviation offers hold, the neighbour signal cannot be judged as asked (RG-034, ROADMAP 93)
 
 **What changed.** No code. The user answered the "Term Signal Review" cards, and the answers are a

@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-10-14 (RG-034: the user's answers on the term-signal cards; ROADMAP 93 refinement 4) · class: baseline -->
+<!-- status: active · updated: 2026-10-14 (§4 corrected: 3 of 31 silent labels are in the prose with a joiner, see hyphen_matcher_2026-10-14.md; RG-034: the user's answers on the term-signal cards; ROADMAP 93 refinement 4) · class: baseline -->
 
 # Term signals: what a reading says about each one (RG-034, ROADMAP 93 refinement 4)
 
@@ -108,6 +108,10 @@ hyphen, underscore or dot:
 | **One paper's own term, in its tables or figures only** | 8 | `ap10k`, `superanimal transfer learning`, `superanimal memory replay`, `superanimal transfer`, `baseline-knn`, `relevance judgement`; from figures: `c-mtp unlabeled`, `query document` |
 | **Noise by origin** | 12 | journal abbreviations in reference lists (`comput vis`, `conf comput`, `vis pattern recog`); page headers (`resources computational`, `resources neuroscience`, `bior`); code (`param1`–`3`, `agent direction`, `behavior analysis animals`); `fne-tune`, which is *fine-tune* with the "fi" lost |
 | **Nowhere, even with hyphens** | 9 | phrases joined across punctuation or lines: `koonce emerson` and `schneider lee` are author pairs from reference lists |
+
+**Corrected the same day** (`hyphen_matcher_2026-10-14.md` §3): the first class is **3**, not 2.
+`query document` is written "query–document" with an en dash, 29 times in 3 documents; this lookup
+did not try an en dash and classed it with the figure terms.
 
 Where a label occurs answers the card better than a reader can without context. Two of the classes
 are issues beyond this signal:

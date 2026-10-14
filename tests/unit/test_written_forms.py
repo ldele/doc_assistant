@@ -90,6 +90,18 @@ def test_aliases_get_their_own_written_forms() -> None:
     assert forms["okapi"].written == "Okapi"
 
 
+def test_a_label_whose_words_the_text_joins_with_a_hyphen_gets_that_spelling() -> None:
+    # KI-63: the keyword extractor writes "SSp-bfd" as `ssp bfd`; the vote reads the text's own.
+    chunks = [
+        ("a:p0", "a", "We recorded six Cre lines in SSp-bfd and in the SSs."),
+        ("a:p1", "a", "Barrels of SSp- bfd were mapped twice."),  # the extraction's line break
+    ]
+    forms = _by_form(derive_written_forms([("s", "ssp bfd")], {}, chunks))
+    assert forms["ssp bfd"].written == "SSp-bfd"
+    assert forms["ssp bfd"].variants == {"SSp-bfd": 2}  # one spelling, on one line
+    assert cased_label("ssp bfd", "SSp-bfd") == "SSp-bfd"  # a spelling of the label, not stale
+
+
 def test_an_empty_library_has_no_written_forms() -> None:
     assert derive_written_forms([("x", "anything")], {}, []) == []
     assert (

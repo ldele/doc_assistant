@@ -43,9 +43,10 @@ from typing import Any
 
 from doc_assistant.knowledge.concept_skeleton import (
     FormMatcher,
+    form_key,
     form_matcher,
+    spelling_key,
     surface_forms,
-    word_case_key,
 )
 
 #: Schwartz & Hearst's bounds on a short form, in characters and in words. Part of the published
@@ -219,7 +220,9 @@ class SpelledOut:
 
 
 def _long_key(long: str) -> str:
-    return " ".join(long.split()).casefold()
+    """One key per long form: :func:`concept_skeleton.form_key`, so "state-space" and
+    "state space" are one long form, as they are one form to the matcher (KI-63)."""
+    return form_key(long.strip())
 
 
 def spelled_out(
@@ -310,7 +313,7 @@ def _mentions(matcher: FormMatcher, text: str, low: str) -> Iterator[tuple[str, 
     """Each mention as ``(string, start, end)``. The string is ``low`` for a case-folded form
     and ``text`` for a cased one: casefolding can change a string's length, so a span is only
     good in the string it was found in."""
-    if matcher.form not in low:
+    if matcher.probe not in low:
         return
     if matcher.cased is None:
         for m in matcher.folded.finditer(low):
@@ -318,7 +321,7 @@ def _mentions(matcher: FormMatcher, text: str, low: str) -> Iterator[tuple[str, 
         return
     anycase, key = matcher.cased
     for m in anycase.finditer(text):
-        if word_case_key(m[0]) == key:
+        if spelling_key(m[0]) == key:
             yield text, m.start(), m.end()
 
 

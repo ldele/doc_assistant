@@ -266,3 +266,14 @@ def test_the_loader_reads_the_vocabulary_and_the_prose_and_writes_nothing(
     signals = load_term_signals()
     assert list(signals) == ["c-cre"]
     assert signals["c-cre"].offers == ()  # the stored written form reached the matcher
+
+
+def test_a_label_and_a_long_form_that_join_their_words_otherwise_are_one_form() -> None:
+    # KI-63: `ssp bfd` is used in prose written "SSp-bfd" (it was "never in the text"), and a
+    # label with a hyphen is offered the short form of the long form written with a space.
+    text = "Six Cre lines in SSp-bfd were imaged, and state space (SS) models fit the traces."
+    concepts = [("c-ssp", "ssp bfd"), ("c-ss", "state-space")]
+    signals = term_signals(concepts, {}, _chunks(("a", text)))
+    assert signals["c-ssp"].mentions == 1
+    (offer,) = signals["c-ss"].offers
+    assert (offer.form, offer.kind) == ("SS", "short")

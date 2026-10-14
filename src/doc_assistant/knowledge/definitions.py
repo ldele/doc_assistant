@@ -39,6 +39,7 @@ reaches the same functions through ``/api/concepts/{id}/definitions``.
 from __future__ import annotations
 
 import hashlib
+import itertools
 import json
 import re
 from collections import Counter, defaultdict
@@ -58,7 +59,7 @@ from doc_assistant.db.models import (
     ConceptDefinitionEvent,
     Document,
 )
-from doc_assistant.knowledge.concept_skeleton import form_matcher
+from doc_assistant.knowledge.concept_skeleton import form_matcher, form_source
 
 log = structlog.get_logger(__name__)
 
@@ -201,8 +202,9 @@ def _body_chunks(rows: list[tuple[str, str]]) -> list[tuple[str, str]]:
 
 
 def _form_patterns(form: str) -> tuple[re.Pattern[str], re.Pattern[str], re.Pattern[str]]:
-    """``(coined, named, defining)`` patterns for one casefolded surface form."""
-    f = re.escape(form)
+    """``(coined, named, defining)`` patterns for one casefolded surface form, its words joined
+    as :func:`concept_skeleton.form_source` allows."""
+    f = form_source(form)
     b, e = r"(?<![a-z0-9])", r"(?![a-z0-9])"
     term = rf"{_QUOTE_OPEN}{b}{f}{e}{_QUOTE_CLOSE}"
     # Coining is first person: "denoted as BM25 + RM3" names a *notation*, not the term.
@@ -378,7 +380,7 @@ def find_passages(
         form = labels[concept_id].casefold().strip()
         rank = {d: i + 1 for i, d in enumerate(scan.doc_order())}
         shaped_docs = len({s[1] for s in scan.shaped})
-        opens_re = re.compile(rf"(?:(?:the|an?)\s+)?{_QUOTE_OPEN}{re.escape(form)}(?![a-z0-9])")
+        opens_re = re.compile(rf"(?:(?:the|an?)\s+)?{_QUOTE_OPEN}{form_source(form)}(?![a-z0-9])")
         candidates: dict[str, PassageHit] = {}
         for kind, document_id, chunk_key, span in scan.shaped:
             if span in candidates:
@@ -858,6 +860,38 @@ def load_definitions(
 # ============================================================
 
 
+#: The most word joints whose spelling the keyword-index query varies one by one: 2^5 = 32 phrases.
+#: A longer label is asked two ways, all spaces and all hyphens. Bounds the size of one query; not
+#: tuned on a library.
+_JOINTS_VARIED_MAX = 5
+
+
+def _index_phrases(label: str) -> list[str]:
+    """The keyword-index queries that find ``label`` in a block: one phrase per way of joining its
+    words, each a prefix query on its last word.
+
+    The index keeps a hyphenated word whole ("ssp-bfd", "actor-critic" are one token) and splits at
+    a space, so the mention matcher's "a space, hyphen or dash joins two words" (KI-63) is asked as
+    every mix of spaces and hyphens. The prefix over-selects ("actors" for `actor`, the bare term
+    inside "actor-critic") and ``find_passages`` re-checks every mention, so reading a few extra
+    documents is the only cost."""
+    from doc_assistant.knowledge.keywords import tokenize
+
+    words = [word for token in tokenize(label) for word in token.split("-") if word]
+    if not words:
+        return []
+    joints = len(words) - 1
+    joinings: list[tuple[str, ...]] = (
+        list(itertools.product(" -", repeat=joints))
+        if joints <= _JOINTS_VARIED_MAX
+        else [(" ",) * joints, ("-",) * joints]
+    )
+    return [
+        '"' + words[0] + "".join(j + w for j, w in zip(joins, words[1:], strict=True)) + '"*'
+        for joins in joinings
+    ]
+
+
 def chunks_mentioning(
     labels: Sequence[str], *, index_file: Path | None = None, top_docs: int | None = None
 ) -> list[tuple[str, str, str]] | None:
@@ -886,7 +920,6 @@ def chunks_mentioning(
     import sqlite3
 
     from doc_assistant.db.session import session_scope
-    from doc_assistant.knowledge.keywords import tokenize
 
     if index_file is None:
         from doc_assistant.config import PC_CHROMA_PATH
@@ -895,13 +928,7 @@ def chunks_mentioning(
         index_file = index_path(PC_CHROMA_PATH)
     if not index_file.exists():
         return None
-    # A prefix query on the last word: the index keeps a hyphenated word whole ("actor-critic",
-    # "Rbp4-Cre", "filter-based"), where the mention matcher sees the bare term inside it. The
-    # prefix over-selects ("actors") and ``find_passages`` re-checks every mention, so reading a
-    # few extra documents is the only cost.
-    phrases = [
-        '"' + " ".join(tokens) + '"*' for tokens in (tokenize(label) for label in labels) if tokens
-    ]
+    phrases = [phrase for label in labels for phrase in _index_phrases(label)]
     if not phrases:
         return []
     try:

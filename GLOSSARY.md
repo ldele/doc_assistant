@@ -138,7 +138,8 @@ beat the control beyond variance, record a baseline in `tests/eval/baselines/`).
 **Definition:** How the library's prose spells one of a concept's surface forms, case included
 (`dIN` for the label `din`, `Cre` for `cre`) — voted from body text by the skeleton build, stored
 **beside** the label and never a rewrite of it (ADR-053 decision 3, ADR-043). A form written with a
-capital is matched case-aware; one written in lower case matches in any case.
+capital is matched case-aware; one written in lower case matches in any case. A space, a hyphen or a
+dash between two words is the same form (KI-63), so `SSp-bfd` is the written form of `ssp bfd`.
 **Forbidden:** `normalized label`, `canonical label` (the label is the curated one; this is derived)
 **Authoritative in:** `src/doc_assistant/knowledge/written_forms.py` + `db/models.py::ConceptWrittenForm`
 

@@ -20,14 +20,18 @@ from doc_assistant.knowledge.concept_skeleton import (
     compile_boundary_pattern,
     cooccurrence_edges,
     edge_weight,
+    form_key,
     form_matcher,
+    form_probe,
     forms_fingerprints,
     is_cased,
     match_broad_presence,
     match_presence,
     prose_parents,
+    same_form,
     skeleton_from_dict,
     skeleton_to_dict,
+    tidy_spelling,
     word_case_key,
 )
 
@@ -324,6 +328,77 @@ def test_presence_boundary_handles_hyphen_and_plus_forms() -> None:
     assert [(p.concept_id, p.document_id) for p in presences] == sorted(
         (p.concept_id, p.document_id) for p in presences
     )
+
+
+# ---- the words of a form: a space, a hyphen or a dash joins them (KI-63) -----
+
+# Built by code point so the test source says which character it is.
+HYPHEN, SOFT_HYPHEN, EN_DASH, NEWLINE = chr(0x2010), chr(0x00AD), chr(0x2013), chr(10)
+
+
+def test_a_space_a_hyphen_or_a_dash_joins_the_words_of_one_form() -> None:
+    pattern = compile_boundary_pattern("ssp bfd")
+    for text in (
+        "ssp bfd",
+        "ssp-bfd",
+        "ssp- bfd",  # a line-break hyphen after extraction
+        f"ssp-{NEWLINE}bfd",
+        f"ssp{HYPHEN}bfd",
+        f"ssp{SOFT_HYPHEN}bfd",
+        f"ssp{EN_DASH}bfd",
+    ):
+        assert pattern.search(f"neurons in {text} fire"), text
+    # Nothing else loosens: no join without a joiner, no underscore or dot, the edges unchanged.
+    for text in ("sspbfd", "ssp_bfd", "ssp.bfd", "xssp-bfd", "ssp-bfdx"):
+        assert not pattern.search(f"neurons in {text} fire"), text
+    # And the other way: a hyphen in the label matches a space in the text.
+    assert compile_boundary_pattern("cosine-similarity").search("by cosine similarity scores")
+
+
+def test_a_wrapped_line_joins_two_words_and_a_paragraph_break_does_not() -> None:
+    # An eLife page header: "Tools and resources", a blank line, "Neuroscience".
+    pattern = compile_boundary_pattern("resources neuroscience")
+    assert pattern.search(f"tools and resources{NEWLINE}neuroscience")
+    assert not pattern.search(f"tools and resources {NEWLINE}{NEWLINE}neuroscience")
+    assert not compile_boundary_pattern("ssp bfd").search(f"ssp-{NEWLINE}{NEWLINE}bfd")
+    assert tidy_spelling("SSp- bfd") == "SSp-bfd"
+    assert tidy_spelling(f"inter-{NEWLINE}species") == "inter-species"
+    assert tidy_spelling(f"query {chr(0x2013)} document") == f"query{chr(0x2013)}document"
+    assert tidy_spelling(f"SSp{SOFT_HYPHEN}bfd") == "SSp-bfd"
+
+
+def test_a_form_with_one_word_or_a_joiner_at_its_edge_is_matched_as_written() -> None:
+    assert form_probe("bert") == "bert"
+    assert form_probe("cosine-similarity") == "similarity"  # the longest word: in every match
+    assert compile_boundary_pattern("-ol").search("an -ol ending")
+    assert not compile_boundary_pattern("bert").search("sbert and colbert")
+
+
+def test_presence_finds_a_label_written_with_a_hyphen_in_the_text() -> None:
+    # The keyword extractor writes "SSp-bfd" as `ssp bfd`; before KI-63 the row never matched.
+    chunks = [
+        ("a:p0", "a", "Cre lines in SSp-bfd and SSs were imaged."),
+        ("b:p0", "b", f"How inter-{NEWLINE}species differences arise."),
+        ("c:p0", "c", "Nothing about either."),
+    ]
+    presences = match_presence([("s", "ssp bfd"), ("i", "inter species")], {}, chunks)
+    assert {(p.concept_id, p.document_id) for p in presences} == {("s", "a"), ("i", "b")}
+
+
+def test_two_forms_joined_differently_count_a_mention_once() -> None:
+    # `cross-encoder` with the alias `cross encoder`: one form now, so one count per mention.
+    chunks = [("a:p0", "a", "A cross-encoder reranks; the cross encoder is slow.")]
+    (presence,) = match_presence([("x", "cross-encoder")], {"x": ["cross encoder"]}, chunks)
+    assert presence.n_mentions == 2
+
+
+def test_a_written_form_joined_otherwise_is_a_spelling_and_keeps_its_case() -> None:
+    assert same_form("SSp-bfd", "ssp bfd") and form_key("SSp - bfd") == "ssp bfd"
+    assert not same_form("SSpbfd", "ssp bfd")
+    matcher = form_matcher("ssp bfd", "SSp-bfd")
+    assert matcher.cased is not None  # not dropped as a stale spelling
+    text = "SSp-bfd, then SSp bfd, then SSP-BFD."
+    assert matcher.count(text, text.casefold()) == 2  # SSP-BFD is another casing
 
 
 def test_presence_substring_mode_reproduces_raw_count() -> None:

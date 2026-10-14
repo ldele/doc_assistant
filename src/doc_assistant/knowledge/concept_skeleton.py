@@ -28,7 +28,7 @@ import re
 import statistics
 from collections import Counter, defaultdict
 from collections.abc import Iterable, Mapping, Sequence
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
@@ -192,8 +192,77 @@ def compile_boundary_pattern(form: str) -> re.Pattern[str]:
     boundary-matching caller in the codebase shares (:func:`form_matcher` here, which
     ``match_presence``, ``definitions`` and ``epistemics.concepts_in_text`` all build on — KI-15)
     so there is one boundary-matching behavior, not a second hand-rolled (and possibly diverging)
-    one."""
-    return re.compile(rf"(?<![a-z0-9]){re.escape(form)}(?![a-z0-9])")
+    one. Inside the edges the form is :func:`form_source`: literal, except where two of its words
+    are joined (KI-63)."""
+    return re.compile(rf"(?<![a-z0-9]){form_source(form)}(?![a-z0-9])")
+
+
+# What joins two words of a term in running text: whitespace, or a hyphen or dash with optional
+# whitespace around it. "state-space" and "state space" are one term, and so are "inter- species"
+# broken across a line and "SSp-bfd" under the label `ssp bfd` (KI-63). By code point, so the
+# source says which characters: U+00AD soft hyphen (a PDF's line-break hyphen), U+2010 hyphen,
+# U+2011 non-breaking hyphen, U+2012 figure dash, U+2013 en dash.
+_DASHES = "-" + "".join(chr(code) for code in (0x00AD, 0x2010, 0x2011, 0x2012, 0x2013))
+_DASH = rf"[{re.escape(_DASHES)}]"
+# Whitespace with at most one line break in it: a wrapped line joins two words, a paragraph break
+# does not ("Tools and resources" over a blank line over "Neuroscience" is a page header, not the
+# term `resources neuroscience`).
+_GAP = r"[^\S\n]*(?:\n[^\S\n]*)?"
+_JOINER = rf"(?:{_GAP}{_DASH}{_GAP}|(?=\s){_GAP})"
+# Any joiner, for splitting a form into its words and for keys, where no text is being matched.
+_ANY_JOINER_RE = re.compile(rf"\s*{_DASH}\s*|\s+")
+_DASH_RUN_RE = re.compile(rf"\s*({_DASH})\s*")
+
+
+def _form_words(form: str) -> list[str]:
+    """The words of ``form`` where a space, hyphen or dash joins them; ``[form]`` when nothing
+    does, or when a joiner sits at an edge (``-ol``) and the form is kept whole."""
+    words = _ANY_JOINER_RE.split(form)
+    return words if len(words) > 1 and all(words) else [form]
+
+
+def form_source(form: str) -> str:
+    """The regex source for the characters of ``form``, without the word edges.
+
+    Literal, except that wherever a space, hyphen or dash joins two of its words, any of them
+    matches, with whitespace around a hyphen allowed (KI-63): the keyword extractor writes
+    "SSp-bfd" as `ssp bfd`, a hand-made row can carry a hyphen the text leaves out, and a line
+    break splits "inter-species" into "inter- species". Nothing else loosens: no join without a
+    joiner, none across a paragraph break, no underscore or dot, the case rule unchanged. Every
+    pattern that matches a form builds on this, so they agree on what one form is."""
+    return _JOINER.join(re.escape(word) for word in _form_words(form))
+
+
+def form_probe(form: str) -> str:
+    """A substring of every match of ``form`` in casefolded text: the form itself, or its longest
+    word when its words may be joined more than one way. The cheap test before a pattern runs."""
+    return max(_form_words(form), key=len)
+
+
+def form_key(spelling: str) -> str:
+    """``spelling`` casefolded, with every joiner read as one space: the key that two spellings of
+    one form share (``SSp-bfd``, ``ssp bfd`` and ``ssp - bfd`` all give `ssp bfd`)."""
+    return _ANY_JOINER_RE.sub(" ", spelling.casefold())
+
+
+def same_form(spelling: str, form: str) -> bool:
+    """Whether ``spelling`` writes ``form``: one :func:`form_key` (``SSp-bfd`` writes
+    `ssp bfd`)."""
+    return form_key(spelling) == form_key(form)
+
+
+def spelling_key(spelling: str) -> str:
+    """:func:`word_case_key` with every joiner read as one space, so ``SSp-bfd`` and ``SSp bfd``
+    carry one case and ``SSP-BFD`` another. What a cased matcher compares."""
+    return word_case_key(_ANY_JOINER_RE.sub(" ", spelling))
+
+
+def tidy_spelling(spelling: str) -> str:
+    """A matched spelling on one line, as a written form records it: the case and which joiner
+    the text uses, not where its lines broke. Whitespace around a dash goes ("SSp- bfd" is
+    ``SSp-bfd``), a soft hyphen shows as a hyphen, and any other whitespace run is one space."""
+    joined = _DASH_RUN_RE.sub(lambda m: m.group(1), spelling.replace(chr(0x00AD), "-"))
+    return " ".join(joined.split())
 
 
 _WORD_INITIAL = re.compile(r"(?<![A-Za-z0-9])[A-Za-z]")
@@ -221,46 +290,52 @@ def is_cased(written: str | None) -> bool:
 class FormMatcher:
     """Whole-word matching for one surface form: case-folded unless the library writes it cased.
 
-    ``form`` is casefolded, and doubles as the cheap substring prefilter on casefolded text.
-    ``cased`` is ``None`` for case-folded matching. Otherwise it pairs an any-case whole-word
-    pattern, run on the **original** text, with the written form's :func:`word_case_key`: a match
-    counts only if its own key equals that one — ``CRE`` is not ``Cre``, ``Din`` is not ``dIN``. A
-    structural rule about spellings, not a threshold tuned on a corpus. One optional pair rather
-    than two optional fields, so the pattern and its key cannot be set apart."""
+    ``form`` is casefolded; ``probe`` (:func:`form_probe`) is the cheap substring prefilter on
+    casefolded text. ``cased`` is ``None`` for case-folded matching. Otherwise it pairs an any-case
+    whole-word pattern, run on the **original** text, with the written form's
+    :func:`spelling_key`: a match counts only if its own key equals that one — ``CRE`` is not
+    ``Cre``, ``Din`` is not ``dIN``. A structural rule about spellings, not a threshold tuned on a
+    corpus. One optional pair rather than two optional fields, so the pattern and its key cannot be
+    set apart."""
 
     form: str
     folded: re.Pattern[str]
     cased: tuple[re.Pattern[str], str] | None = None
+    probe: str = field(init=False)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "probe", form_probe(self.form))
 
     def count(self, text: str, low: str) -> int:
         """Whole-word occurrences in ``text`` (``low`` is ``text.casefold()``, precomputed)."""
-        if self.form not in low:
+        if self.probe not in low:
             return 0
         if self.cased is None:
             return len(self.folded.findall(low))
         anycase, key = self.cased
-        return sum(1 for m in anycase.finditer(text) if word_case_key(m[0]) == key)
+        return sum(1 for m in anycase.finditer(text) if spelling_key(m[0]) == key)
 
     def search(self, text: str, low: str) -> bool:
         """Whether ``text`` mentions the form at all."""
-        if self.form not in low:
+        if self.probe not in low:
             return False
         if self.cased is None:
             return self.folded.search(low) is not None
         anycase, key = self.cased
-        return any(word_case_key(m[0]) == key for m in anycase.finditer(text))
+        return any(spelling_key(m[0]) == key for m in anycase.finditer(text))
 
 
 def form_matcher(form: str, written: str | None = None) -> FormMatcher:
     """The matcher every caller builds for a casefolded ``form`` and its written spelling.
 
     A written spelling that is not a spelling of ``form`` (stale data: the label changed since the
-    last build) is ignored, so the fallback is always the case-folded match."""
+    last build) is ignored, so the fallback is always the case-folded match. One that differs
+    only in how its words are joined (``SSp-bfd`` for `ssp bfd`) is a spelling of it."""
     folded = compile_boundary_pattern(form)
-    if written is None or written.casefold() != form or not is_cased(written):
+    if written is None or not same_form(written, form) or not is_cased(written):
         return FormMatcher(form=form, folded=folded)
-    anycase = re.compile(rf"(?<![A-Za-z0-9]){re.escape(form)}(?![A-Za-z0-9])", re.IGNORECASE)
-    return FormMatcher(form=form, folded=folded, cased=(anycase, word_case_key(written)))
+    anycase = re.compile(rf"(?<![A-Za-z0-9]){form_source(form)}(?![A-Za-z0-9])", re.IGNORECASE)
+    return FormMatcher(form=form, folded=folded, cased=(anycase, spelling_key(written)))
 
 
 def match_presence(
@@ -315,7 +390,15 @@ def match_presence(
                 if count:
                     hits[(concept_id, doc_id)][chunk_key] += count
             continue
-        matchers = [form_matcher(form, spellings.get((concept_id, form))) for form in forms]
+        # Two forms that differ only in how their words are joined (`cross-encoder` and
+        # `cross encoder`) are one form since KI-63, and would count each mention twice: the first,
+        # the label's before an alias's, stands for both.
+        matchers = []
+        keys: set[str] = set()
+        for form in forms:
+            if form_key(form) not in keys:
+                keys.add(form_key(form))
+                matchers.append(form_matcher(form, spellings.get((concept_id, form))))
         for chunk_key, doc_id, text, low in prepared:
             count = sum(m.count(text, low) for m in matchers)
             if count:

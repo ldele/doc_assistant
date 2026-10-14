@@ -31,7 +31,14 @@ from typing import TYPE_CHECKING
 
 import structlog
 
-from doc_assistant.knowledge.concept_skeleton import is_cased, surface_forms
+from doc_assistant.knowledge.concept_skeleton import (
+    form_probe,
+    form_source,
+    is_cased,
+    same_form,
+    surface_forms,
+    tidy_spelling,
+)
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
@@ -77,7 +84,9 @@ def derive_written_forms(
 
     ``concepts`` = ``(concept_id, label)``; ``aliases`` maps ``concept_id`` → aliases; ``chunks``
     = ``(chunk_key, document_id, text)``. A form with no mid-sentence use has no written form, and
-    matches case-folded — an empty library yields ``[]`` (the robustness contract).
+    matches case-folded — an empty library yields ``[]`` (the robustness contract). A spelling is
+    voted on one line (``concept_skeleton.tidy_spelling``): ``SSp-bfd`` broken as "SSp- bfd" by
+    the extraction is still ``SSp-bfd``.
     """
     from doc_assistant.knowledge.definitions import document_sentences
 
@@ -86,16 +95,17 @@ def derive_written_forms(
     for concept_id, label in concepts:
         for form in surface_forms(label, list(aliases.get(concept_id, []))):
             pattern = re.compile(
-                rf"(?<![A-Za-z0-9]){re.escape(form)}(?![A-Za-z0-9])", re.IGNORECASE
+                rf"(?<![A-Za-z0-9]){form_source(form)}(?![A-Za-z0-9])", re.IGNORECASE
             )
+            probe = form_probe(form)
             per_doc: dict[str, Counter[str]] = defaultdict(Counter)
             for document_id, spans in sentences.items():
                 for _chunk_key, span, low in spans:
-                    if form not in low:
+                    if probe not in low:
                         continue
                     for m in pattern.finditer(span):
                         if _ALNUM.search(span, 0, m.start()):  # not the sentence's first word
-                            per_doc[document_id][m.group(0)] += 1
+                            per_doc[document_id][tidy_spelling(m.group(0))] += 1
             if not per_doc:
                 continue
             variants: Counter[str] = Counter()
@@ -126,8 +136,9 @@ def cased_label(label: str, written: str | None) -> str | None:
     """How to show ``label`` when the library writes it in a case, else ``None``.
 
     ``None`` when the written form is lower case, missing, or no longer a spelling of the label
-    (the label was edited since the last build) — the caller shows the label as stored."""
-    if not written or written.casefold() != label.strip().casefold():
+    (the label was edited since the last build) — the caller shows the label as stored. A written
+    form that joins the label's words otherwise (``SSp-bfd`` for `ssp bfd`) is shown as written."""
+    if not written or not same_form(written, label.strip().casefold()):
         return None
     return written if is_cased(written) else None
 

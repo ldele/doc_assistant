@@ -551,6 +551,52 @@ def test_the_keyword_index_picks_the_documents_including_hyphenated_forms(temp_d
     assert chunks_mentioning(["actor"], index_file=tmp_path / "absent.sqlite3") is None
 
 
+def test_the_keyword_index_is_asked_every_way_a_label_can_join_its_words(temp_db, tmp_path):
+    """KI-63: the index keeps "SSp-bfd" whole and splits "cosine similarity" in two, so a label is
+    asked with spaces and with hyphens — the same rule as the mention matcher."""
+    from doc_assistant.db.session import session_scope
+    from doc_assistant.knowledge.definitions import _index_phrases, chunks_mentioning
+
+    assert _index_phrases("ssp bfd") == ['"ssp bfd"*', '"ssp-bfd"*']
+    assert _index_phrases("cosine-similarity") == ['"cosine similarity"*', '"cosine-similarity"*']
+    assert len(_index_phrases("a b c d e f g h")) == 2  # past the bound: all spaces, all hyphens
+    with session_scope() as s:
+        for doc_id, doc_hash in (("d1", "h1"), ("d2", "h2"), ("d3", "h3")):
+            s.add(
+                Document(
+                    id=doc_id,
+                    filename=f"{doc_id}.pdf",
+                    source_original=doc_id,
+                    doc_hash=doc_hash,
+                    format="pdf",
+                )
+            )
+    index = _mini_index(
+        tmp_path,
+        {
+            "h1": ["Six Cre lines in SSp-bfd were imaged."],
+            "h2": ["Scores by cosine similarity between the two."],
+            "h3": ["Nothing relevant here."],
+        },
+    )
+    assert {doc for _, doc, _ in chunks_mentioning(["ssp bfd"], index_file=index) or []} == {"d1"}
+    found = chunks_mentioning(["cosine-similarity"], index_file=index) or []
+    assert {doc for _, doc, _ in found} == {"d2"}
+
+
+def test_a_defining_sentence_is_found_when_the_text_joins_the_words_otherwise():
+    """KI-63: the definition shapes read the form as the matcher does."""
+    chunks = [
+        (
+            "a:p0",
+            "a",
+            "Cosine similarity is a measure of the angle between two vectors in a space.",
+        )
+    ]
+    hits = find_passages([("cs", "cosine-similarity")], chunks)["cs"]
+    assert hits[0].form == "defining" and hits[0].opens
+
+
 def test_the_keyword_index_reads_prose_and_not_figure_blocks(temp_db, tmp_path):
     """The index is retrieval's, so it holds a block per described figure: a caption, a model's
     description and a copy of the citing passage. Such a block neither picks a document nor comes

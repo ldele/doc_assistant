@@ -38,6 +38,38 @@ Format: What changed | Why | Rejected alternatives | What it opens
 
 ---
 
+## 2026-10-14 (2) — Term signals measured on the user's reading: the abbreviation offers hold, the neighbour signal cannot be judged as asked (RG-034, ROADMAP 93)
+
+**What changed.** No code. The user answered the "Term Signal Review" cards, and the answers are a
+baseline, `tests/eval/baselines/term_signals_2026-10-14.md`. Abbreviation offers: 44 of 44 right in
+their sentence (Wilson 0.92–1.00), 10 of them without `initials`, so `initials` stays evidence and
+never becomes a filter. Cited authors: 5 of 5. The neighbour signal ("followed by the same word"):
+7 answers, then stopped; the cards showed a count and no text, and the question held two
+questions. It is not shown. "Never in the text": not answered; each label was looked up instead,
+and 2 of 31 are in the prose with a hyphen. RG-034 is done; ROADMAP row 93 says so. KI-63 and KI-64
+are filed from what the lookups found.
+
+**Why.** RG-034: nothing reaches the app until a reading says which signal holds.
+
+**Rejected.** Asking the user to judge silent labels or neighbours without their text: the user
+declined to answer what they could not check, and where a label occurs answered most of them
+better. Counting the 7 neighbour answers: "no" meant "a term on its own as well", not "not a
+fragment".
+
+**What it opens.**
+- **The panel** shows abbreviation offers and cited authors, each with its sentence and paper,
+  marked as written (the review page marked case-blind and was caught on `CO` and `NA`); silent
+  labels with the place they occur.
+- **KI-63:** the shared matcher misses hyphenated spellings: 23 of 183 multi-word rows,
+  33 concept–document links. **KI-64:** ligatures lost in 20 of 104 documents.
+- **For the signal:** names cited alone (`sporns`, `morecraft`), "Fig." as a short form, a display
+  form for damaged long forms.
+- **The user's direction:** a glossary per paper before the library's, a field level only if two
+  are not enough. A short form is spelled out its own way by its paper in 57% of uses, and `SC`
+  means three things across papers. And for what needs judgement (which meaning, which phrase is a
+  paper's term): an LLM with clear instructions, its prompt developed in the eval harness against
+  these answers, a local model first.
+
 ## 2026-10-14 — cpc re-vendored 1.12.0 → 1.18.1, from the tag (T-002)
 
 **What changed.** `cpc-init`, run with no `--profile` from a worktree of cpc's `v1.18.1` tag,

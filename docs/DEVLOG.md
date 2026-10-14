@@ -38,6 +38,36 @@ Format: What changed | Why | Rejected alternatives | What it opens
 
 ---
 
+## 2026-10-14 (4) — Table cells keep a ligature's second letter: "fne-tuning" is "fine-tuning" again (KI-64)
+
+**What changed.** `extractors.widen_zero_width_chars` gives a character of zero width a box
+0.01 pt wide at its own origin, and `_keep_ligature_letters_in_table_cells` hands both table-cell
+functions (`pymupdf.table.extract_cells`, and `pymupdf4llm.helpers.utils.extract_cells` that this
+app's layout path runs) characters measured that way. Neither library's code is copied or edited.
+`extract_pdf_pymupdf` installs it, so the PDF extraction fingerprint moves and the other formats'
+do not. Three tests: the box, both cell functions on the measured "fine" (each returns "fne" as
+shipped and "fine" wrapped), and the two functions' parameters, which an upgrade must keep.
+
+**Why.** Importing pymupdf4llm turns quad corrections off for the whole process; with them off the
+second letter of a split ligature has a zero-width box, and both cell filters keep a character only
+if more than half its box is inside the cell. 336 of the 339 damaged words in the stored text were
+in table rows, in 19 documents; prose kept its letters.
+
+**Measured** (`tests/eval/baselines/ligatures_2026-10-14.md`, the committed extractor against the
+fix on the 19 PDFs and 3 controls): 416 insertions and no other edit; the damaged words 316 → 0;
+"i ≠ j" in one eLife paper's tables gets its slash back; one control held "fy" and "Optifex", which
+the word list missed. Extraction time unchanged.
+
+**Rejected.** Turning quad corrections back on after the import: it would move every page of every
+PDF, through pymupdf4llm's own layout code. Upgrading to 1.28.2: its changelog names no fix, and it
+changes table detection. Repairing the stored text by dictionary (ADR-043). Wrapping only PyMuPDF's
+function: tried first, it changed nothing, because the layout path has its own copy of the filter.
+
+**What it opens.** The library changes when the user re-extracts: the next "index the folder"
+re-extracts every PDF once, or a per-document re-ingest of the 19 (ADR-048), identity kept
+(ADR-047). An upstream report is drafted (`.claude/probes/2026-10-14-ligatures/upstream_issue_draft.md`);
+posting it is the user's call. The 3 OCR errors in the 1949 Hebb scan are a different matter.
+
 ## 2026-10-14 (3) — A form's words joined by a space, a hyphen or a dash are one form (KI-63)
 
 **What changed.** `concept_skeleton.form_source` is the one definition of what a form matches: its

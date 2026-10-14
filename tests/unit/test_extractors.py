@@ -144,3 +144,79 @@ def test_extract_to_markdown_strips_placeholders(tmp_path):
     assert "intentionally omitted" not in out
     assert "Real content." in out
     assert "More content." in out
+
+
+# ---- KI-64: a ligature's second letter in a table cell -------------------------------------
+#
+# The "fi" of "fine" as PyMuPDF returns it with quad corrections off (measured on the SuperAnimal
+# paper, 2026-10-14): the "i" sits at the "n"'s origin with a box of zero width.
+
+
+def _fine_blocks() -> list[dict]:
+    chars = [
+        {"c": "f", "bbox": (147.92, 56.35, 151.70, 63.35), "origin": (147.92, 61.74)},
+        {"c": "i", "bbox": (151.70, 56.35, 151.70, 63.35), "origin": (151.70, 61.74)},
+        {"c": "n", "bbox": (151.70, 56.35, 155.91, 63.35), "origin": (151.70, 61.74)},
+        {"c": "e", "bbox": (155.91, 56.35, 159.27, 63.35), "origin": (155.91, 61.74)},
+    ]
+    span = {"bbox": (147.92, 56.35, 159.27, 63.35), "chars": chars, "char_flags": 0, "flags": 0}
+    line = {"bbox": span["bbox"], "dir": (1.0, 0.0), "spans": [span]}
+    return [{"type": 0, "bbox": span["bbox"], "lines": [line]}]
+
+
+CELL = (140.0, 50.0, 200.0, 70.0)
+
+
+class _FakeTextPage:
+    def extractRAWDICT(self) -> dict:  # PyMuPDF's name
+        return {"blocks": _fine_blocks()}
+
+
+def test_a_zero_width_character_gets_a_hair_wide_box_at_its_origin() -> None:
+    from doc_assistant.extractors import widen_zero_width_chars
+
+    blocks = _fine_blocks()
+    widen_zero_width_chars(blocks)
+    f, i, _n, _e = blocks[0]["lines"][0]["spans"][0]["chars"]
+    assert i["bbox"][0] == 151.70 and 0 < i["bbox"][2] - i["bbox"][0] < 0.1
+    assert f["bbox"] == (147.92, 56.35, 151.70, 63.35)  # a box with width is left alone
+    widen_zero_width_chars(blocks)  # a second pass changes nothing
+    assert blocks[0]["lines"][0]["spans"][0]["chars"][1]["bbox"] == i["bbox"]
+
+
+def test_both_table_cell_functions_keep_the_ligatures_second_letter(monkeypatch) -> None:
+    import pymupdf.table
+    from pymupdf4llm.helpers import utils
+
+    from doc_assistant.extractors import _keep_ligature_letters_in_table_cells
+
+    # As shipped, each drops the "i": the defect itself, so this test can fail. Unwrapped first, in
+    # case an earlier test ran the PDF extractor; monkeypatch puts back whatever was there.
+    plain_table = getattr(pymupdf.table.extract_cells, "original", pymupdf.table.extract_cells)
+    plain_utils = getattr(utils.extract_cells, "original", utils.extract_cells)
+    monkeypatch.setattr(pymupdf.table, "extract_cells", plain_table)
+    monkeypatch.setattr(utils, "extract_cells", plain_utils)
+    assert plain_table(_FakeTextPage(), CELL) == "fne"
+    assert plain_utils(_fine_blocks(), CELL) == "fne"
+
+    _keep_ligature_letters_in_table_cells()
+    _keep_ligature_letters_in_table_cells()  # idempotent: wrapped once
+    assert pymupdf.table.extract_cells(_FakeTextPage(), CELL) == "fine"
+    assert utils.extract_cells(_fine_blocks(), CELL) == "fine"
+    assert not hasattr(pymupdf.table.extract_cells.original, "original")
+    assert not hasattr(utils.extract_cells.original, "original")
+
+
+def test_the_table_cell_functions_keep_their_shape() -> None:
+    """KI-64's wrappers call both libraries' cell functions by these parameters. An upgrade that
+    moves them fails here before the ligature letters go missing again."""
+    import inspect
+
+    import pymupdf.table
+    from pymupdf4llm.helpers import utils
+
+    def params(fn) -> list[str]:
+        return list(inspect.signature(getattr(fn, "original", fn)).parameters)
+
+    assert params(pymupdf.table.extract_cells) == ["textpage", "cell", "markdown"]
+    assert params(utils.extract_cells) == ["table_blocks", "cell", "markdown", "ocrpage"]

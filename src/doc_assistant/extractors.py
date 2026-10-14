@@ -2,11 +2,14 @@
 
 import re
 import zipfile
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from pathlib import Path
-from typing import Protocol
+from typing import Any, Protocol
 
+import structlog
 from bs4 import BeautifulSoup
+
+log = structlog.get_logger(__name__)
 
 # PyMuPDF4LLM emits a textual placeholder line for every inline image / vector graphic it
 # declines to render, e.g. ``**==> picture [29 x 29] intentionally omitted <==**``. These
@@ -93,6 +96,7 @@ def extract_pdf_pymupdf(pdf_path: Path) -> str:
     import pymupdf
     import pymupdf4llm
 
+    _keep_ligature_letters_in_table_cells()
     doc = pymupdf.open(str(pdf_path))  # type: ignore[no-untyped-call]
     parts: list[str] = []
     for page_num in range(len(doc)):
@@ -102,6 +106,88 @@ def extract_pdf_pymupdf(pdf_path: Path) -> str:
         parts.append(_recover_lost_page(doc, page_num, page_md))
     doc.close()  # type: ignore[no-untyped-call]
     return "\n".join(parts)
+
+
+# KI-64. Importing pymupdf4llm turns PyMuPDF's quad corrections off for the whole process, and with
+# them off the second letter of a ligature PyMuPDF splits back into letters ("fi" -> "f", "i") gets
+# a box of zero width. Both table-cell functions keep a character only if more than half of its
+# box lies inside the cell, and zero is never more than half of zero, so "fine-tuning" became
+# "fne-tuning" in every table cell of 19 of 104 documents. Prose is not filtered by box and kept
+# the letter. Width in points of the box a zero-width character is given at its own origin: enough
+# to exist, far too little to reach a neighbouring cell. Structural, not tuned.
+_HAIR = 0.01
+
+
+def widen_zero_width_chars(blocks: Iterable[dict[str, Any]]) -> None:
+    """Give every character of zero width a box a hair wide at its origin, in place (KI-64).
+
+    ``blocks`` are PyMuPDF ``rawdict`` text blocks. A character whose box already has width is left
+    as it is, so a second pass changes nothing; a block without characters (an OCR page's ``dict``
+    blocks) is passed over."""
+    for block in blocks:
+        for line in block.get("lines", ()):
+            for span in line.get("spans", ()):
+                for char in span.get("chars", ()):
+                    x0, y0, x1, y1 = char["bbox"]
+                    if x1 <= x0:
+                        x = char["origin"][0]
+                        char["bbox"] = (x, y0, x + _HAIR, y1)
+
+
+class _WidenedTextPage:
+    """A PyMuPDF text page whose ``rawdict`` gives zero-width characters a box (KI-64)."""
+
+    def __init__(self, textpage: Any) -> None:
+        self._textpage = textpage
+
+    def extractRAWDICT(self, *args: Any, **kwargs: Any) -> Any:  # PyMuPDF's name
+        raw = self._textpage.extractRAWDICT(*args, **kwargs)
+        widen_zero_width_chars(raw["blocks"])
+        return raw
+
+
+class _CellTextOfTextPage:
+    """``pymupdf.table.extract_cells`` reading a widened text page: the cell text pymupdf4llm takes
+    when its layout module is not installed (KI-64)."""
+
+    def __init__(self, original: Callable[..., str]) -> None:
+        self.original = original
+
+    def __call__(self, textpage: Any, cell: Any, markdown: bool = False) -> str:
+        return self.original(_WidenedTextPage(textpage), cell, markdown=markdown)
+
+
+class _CellTextOfBlocks:
+    """``pymupdf4llm.helpers.utils.extract_cells`` on widened blocks: the cell text of
+    pymupdf4llm's layout path, the one this app runs (KI-64)."""
+
+    def __init__(self, original: Callable[..., str]) -> None:
+        self.original = original
+
+    def __call__(
+        self, table_blocks: Any, cell: Any, markdown: bool = False, ocrpage: bool = False
+    ) -> str:
+        widen_zero_width_chars(table_blocks)
+        return self.original(table_blocks, cell, markdown=markdown, ocrpage=ocrpage)
+
+
+def _keep_ligature_letters_in_table_cells() -> None:
+    """Wrap both table-cell functions so a ligature's second letter is kept (KI-64). Idempotent.
+
+    Neither library's code is copied or edited: each function is handed characters whose boxes it
+    can measure. Called from :func:`extract_pdf_pymupdf`, so it is part of the PDF extraction
+    fingerprint, and changing it re-extracts every cached PDF (KI-40). If an upgrade moves either
+    function, nothing is wrapped and the miss is logged rather than raised;
+    ``test_the_table_cell_functions_keep_their_shape`` fails first."""
+    import pymupdf.table
+    from pymupdf4llm.helpers import utils
+
+    for module, wrapper in ((pymupdf.table, _CellTextOfTextPage), (utils, _CellTextOfBlocks)):
+        original = getattr(module, "extract_cells", None)
+        if original is None:
+            log.warning("ki64_cell_text_not_wrapped", module=module.__name__)
+        elif not isinstance(original, wrapper):
+            setattr(module, "extract_cells", wrapper(original))  # noqa: B010 - an untyped module
 
 
 class _TextPage(Protocol):

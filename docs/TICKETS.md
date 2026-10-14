@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-10-01 · class: living -->
+<!-- status: active · updated: 2026-10-14 · class: living -->
 
 # TICKETS — issues reported against doc_assistant
 
@@ -20,6 +20,13 @@ reason.
      - **Symptom:** one line: what was seen, and where
      - **Reproduce:** the command, or the file and line
      - **Resolution:** — (while open) | a DEVLOG date, a CHANGELOG version, KI-N, or why not -->
+
+## T-002 — Update cpc from 1.12.0 to 1.18.1 at the start of the next session
+- **Status:** fixed · 2026-10-14
+- **From:** cpc session, Code (unknown) · 2026-10-12
+- **Symptom:** This project vendors cpc 1.12.0, and v1.18.1 was tagged on 2026-10-12. Measured from the cpc checkout on this tree, 1.12.0 against 1.18.1 over docs_check, init_check, sprint_check and integrity_check: +0 new findings and one new NOTE, which is not a finding: the entry context holds about 8,290 tokens and no token cap is set. The owner asked on 2026-10-12 that each project update first thing in its next session.
+- **Reproduce:** From this root, where CPC is the cpc checkout and DIR a scratch folder: git -C CPC worktree add --detach DIR v1.18.1, then PYTHONPATH=DIR/src python -m cpc.init --root . with no --profile, then git -C CPC worktree remove DIR. Afterwards regenerate the generated docs, run the gates and write the DEVLOG line cpc-init prints. How it is run, and what is optional afterwards, is in the cpc checkout under migrations: 2026-10-01-revendor-and-ticket-triage, 2026-10-11-known-issues-entry-tokens-and-counts, and 2026-09-30-shared-launcher-and-commands for the launcher this version lays. This tree held 6 uncommitted paths when this ticket was written, so the work in progress comes first.
+- **Resolution:** DEVLOG 2026-10-14
 
 ## T-001 — A cited number and a bibliography line need their record: where a figure was measured, on which version and data, and which source a reference line names
 - **Status:** open · 2026-10-01

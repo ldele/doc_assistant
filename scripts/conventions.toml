@@ -1,7 +1,7 @@
 # Config for the vendored cpc gates (docs_check, sprint_check, keypoint, …). Tune per project;
 # do not silently raise to pass. Laid by cpc-init (standard profile); key set refreshed by hand on
 # 2026-07-19 (ADR-021, cpc 1.2.3) with this project's tuned values preserved. The vendored gates are
-# whatever tools/conventions/cpc/_VERSION says (1.12.0 since a re-vendor on 2026-09-29) — do not
+# whatever tools/conventions/cpc/_VERSION says (1.18.1 since a re-vendor on 2026-10-14) — do not
 # restate a version here; the 1.2.3 line above stood unnoticed for 25 days. The settings audit
 # (`settings_doc --check-config`) reported no unknown or removed keys on 2026-09-16.
 

@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-10-09 · class: append-only -->
+<!-- status: active · updated: 2026-10-14 · class: append-only -->
 
 # DEVLOG — doc_assistant
 
@@ -37,6 +37,36 @@ Format: What changed | Why | Rejected alternatives | What it opens
 > is individually small and correct, so unbounded growth is invisible per commit.
 
 ---
+
+## 2026-10-14 — cpc re-vendored 1.12.0 → 1.18.1, from the tag (T-002)
+
+**What changed.** `cpc-init`, run with no `--profile` from a worktree of cpc's `v1.18.1` tag,
+replaced the gitignored `tools/conventions/cpc/` (54 modules) and laid cpc's own launcher,
+`tools/conventions/run.py` and `cpc.just`, beside this project's `rungate.py`, which stays. The
+only tracked change is the version in the `scripts/conventions.toml` header; the local CONTEXT says
+the same. T-002 is closed against this entry.
+
+**Measured.** `cpc-verdict-diff --base v1.12.0 --head v1.18.1` over `docs_check`, `init_check`,
+`sprint_check` and `integrity_check`: +0 new findings, −0 gone, and one new NOTE that changes no
+exit code: the entry context is ~8,290 tokens and no `entry_max_tokens` cap is set. After the drop,
+`run.py gates` (`docs_check --strict`, `integrity_check --strict`) 0/0, `init_check` 0/0,
+`settings_doc --check-config` no findings. Nothing is listed under `[vendor] patched`, so nothing
+was re-applied.
+
+**Rejected.** `--profile standard`, which would lay every standard file the project left out. The
+optional steps in cpc's migration notes are left for the owner; none changes a verdict.
+
+**What it opens.**
+- A token cap: `[budgets] entry_max_tokens = 8000` fails today at ~8,290, so history moves out of
+  the local CONTEXT first.
+- `[known_issues] archive_on_resolve = true`: no resolved section is live, so it can be switched on
+  with nothing to move.
+- `mod cpc 'tools/conventions/cpc.just'` in the `justfile`, and `run.py` in place of `rungate.py`
+  once nothing calls the shim.
+- Not proposed: `cpc-init --add hooks`, a `pre-push` hook. The push hooks were removed on
+  2026-08-19 by the user's decision.
+- `cpc-keypoint session-close` now fails while a cpc run that crashed or hit a usage error is
+  unanswered (`friction note` or `friction mine`; the log is in `.git/`).
 
 ## 2026-10-09 (6) — Term signals: what the prose says about a term, read and offered, never applied (ROADMAP 93, ADR-053 decision 4)
 

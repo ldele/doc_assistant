@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-10-14 (KI-63: a space, a hyphen or a dash joins the words of one form; restates the "never in body prose" count of term_signals_2026-10-14.md §4) · class: baseline -->
+<!-- status: active · updated: 2026-10-14 (§1 corrected after the rebuild: the graph counts exact forms only; KI-63: a space, a hyphen or a dash joins the words of one form; restates the "never in body prose" count of term_signals_2026-10-14.md §4) · class: baseline -->
 
 # One form, its words joined any way: what moved when the matcher stopped being literal (KI-63)
 
@@ -57,6 +57,14 @@ now counts "Cre-recombinase"), `hard negatives` 51 → 53, `passage retrieval` 1
 `re-ranking` 275 → 277. `cross-encoder` and `retrieval-augmented generation`, which each have a
 form joined the other way, are unchanged: a mention is counted once. No definition candidate of
 the 13 moves (20 → 20).
+
+**Corrected the same evening, after the rebuild.** The mention row above summed **every** form,
+broad ones included, and the graph counts a concept's exact forms only (ADR-054): `cre
+recombinase` is a broad form, so `cre`'s count did not move. The rebuild on the working library
+(2026-10-14, after KI-64's re-extraction, graph `dbf0e870aea6fed1`) moved two mention counts,
+`hard negatives` 6 → 8 and `re-ranking` 15 → 17 in one document each, and one link, `re-ranking` —
+`BM25`, 49 → 50 shared chunks. Documents, the other 24 links and the gap rows did not move; written
+forms 366 → 370.
 
 ## 2 · The whole vocabulary (357 rows)
 

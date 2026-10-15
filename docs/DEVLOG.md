@@ -38,6 +38,30 @@ Format: What changed | Why | Rejected alternatives | What it opens
 
 ---
 
+## 2026-10-14 (5) — The library re-extracted and the graph rebuilt: 38 documents get their ligature letters back
+
+**What changed.** No code. At the user's request, after `87fbf34` (KI-63) and `6697446` (KI-64):
+every store backed up (`data/*.bak-20261014-214357-preki64`), then "index the folder"
+(`python -m doc_assistant.ingest`), the keyword index rebuilt, and the graph and its gaps rebuilt
+with the Rebuild button's two calls. All 104 PDFs re-extracted; **38 changed, 66 identical, no
+errors**. Each of the 38 changed only by restored ligature letters, 519 in all, one of them a "tt"
+("paterns"): the measured 22 undercounted. The graph: version `58136820706f4cab` →
+`dbf0e870aea6fed1`; the same 29 documents, 72 pairs and gap rows; one link, `re-ranking` — `BM25`,
+49 → 50 shared chunks; two mention counts +2; written forms 366 → 370. The stored text holds no
+ligature loss except the 3 OCR errors of the 1949 Hebb scan.
+
+**Corrected.** `hyphen_matcher_2026-10-14.md` §1 summed every form, broad ones included, and
+predicted `cre` 376 → 395; the graph counts exact forms only (ADR-054), `cre recombinase` is broad,
+and `cre` did not move. The baseline says so beside the old figure.
+
+**Not done, on purpose.** `scripts.compute_epistemics --apply`. The `chunk_epistemics` table dates
+from 2026-07-25 (graph `c97cd22221d9cf81`), stale through every rebuild since and off by default
+(`EPISTEMICS_MARKERS_ENABLED=false`, KI-33); refreshing it would take 445 rows to 1,188 marked chunks
+of a signal the app hides. The user's call.
+
+**What it opens.** The vocabulary row `fne-tune` now matches nothing in the text; whether it goes is
+the user's (ADR-054: a term is never removed for the user).
+
 ## 2026-10-14 (4) — Table cells keep a ligature's second letter: "fne-tuning" is "fine-tuning" again (KI-64)
 
 **What changed.** `extractors.widen_zero_width_chars` gives a character of zero width a box

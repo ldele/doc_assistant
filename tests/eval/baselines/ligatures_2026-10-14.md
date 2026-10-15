@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-10-14 (KI-64: table cells keep a ligature's second letter; re-extraction of the 19 affected PDFs and 3 others, the committed extractor against the fix) · class: baseline -->
+<!-- status: active · updated: 2026-10-14 (the library re-extracted: 38 documents changed, 519 letters; KI-64: table cells keep a ligature's second letter; re-extraction of the 19 affected PDFs and 3 others, the committed extractor against the fix) · class: baseline -->
 
 # Table cells keep a ligature's second letter (KI-64)
 
@@ -75,7 +75,13 @@ with strike-through marks of its own. No character was deleted or replaced anywh
 
 ## What reaches the app
 
-Nothing until the user re-extracts: the next "index the folder" re-extracts every PDF once (the
-fingerprint moved), or a per-document re-ingest of the 19 (ADR-048). A document keeps its identity
-through it (ADR-047). Then the table chunks of these documents are re-embedded and the keyword
-index, presence and keywords read the restored words.
+**Re-extracted the same evening, at the user's request.** "Index the folder" re-extracted all 104
+PDFs (the fingerprint had moved): **38 documents changed and 66 came out identical**, no errors.
+Every one of the 38 changed only by restored ligature letters, **519** in all — the 22 measured above
+undercounted, as the control already showed, and one of the 38 had lost a "tt" ligature
+("paterns"). The 38 kept their ids and sidecars (ADR-047); their chunks were re-embedded and the
+superseded ones removed. The keyword index was rebuilt (45,581 chunks) and the graph after it
+(`hard negatives` and `re-ranking` count 2 more mentions in one document each, one link moves
+49 → 50 shared chunks; `hyphen_matcher_2026-10-14.md` §1). The stored text holds no damaged word
+now except the 3 OCR errors of the 1949 Hebb scan. Backups of every store written:
+`data/*.bak-20261014-214357-preki64`. Probe: `cache_diff.py`, `cache_diff_2026-10-14.txt`.

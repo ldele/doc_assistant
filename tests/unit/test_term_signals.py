@@ -15,10 +15,14 @@ from doc_assistant.knowledge.term_signals import (
     is_short_form,
     load_term_signals,
     long_form_before,
+    majority,
+    offer_example,
+    offer_marks,
     signal_payload,
     spelled_out,
     spells_initials,
     term_signals,
+    where_it_occurs,
 )
 
 LQ, RQ = chr(0x201C), chr(0x201D)
@@ -277,3 +281,129 @@ def test_a_label_and_a_long_form_that_join_their_words_otherwise_are_one_form() 
     assert signals["c-ssp"].mentions == 1
     (offer,) = signals["c-ss"].offers
     assert (offer.form, offer.kind) == ("SS", "short")
+
+
+# ---------------------------------------------------------------- what the panel shows
+
+
+def _marked(text: str, marks: tuple[tuple[int, int], ...]) -> list[str]:
+    return [text[a:b] for a, b in marks]
+
+
+def test_an_offer_marks_its_two_forms_on_word_edges_never_inside_a_word() -> None:
+    # The review page lit the "co" of "communication" (baseline section 1); the marks come from
+    # the rule that found the pair, so they land on the short form as written.
+    text = (
+        "Communicability (CO) measures communication between two nodes of a network in every "
+        "one of the graphs we study here."
+    )
+    (offer,) = term_signals([("c-co", "co")], {}, _chunks(("a", text)))["c-co"].offers
+    assert _marked(offer.sentence, offer_marks(offer)) == ["Communicability", "CO"]
+
+
+def test_an_offer_marks_both_orders_and_leaves_quotes_and_citations_out() -> None:
+    dpr = (
+        "DPR (dense passage retriever) encodes the questions and the passages separately, in two "
+        "towers of one model."
+    )
+    found = term_signals(
+        [("c-dpr", "dpr"), ("c-pddl", "pddl")], {}, _chunks(("a", dpr), ("b", PDDL))
+    )
+    (first,) = found["c-dpr"].offers
+    assert _marked(first.sentence, offer_marks(first)) == ["DPR", "dense passage retriever"]
+    (second,) = found["c-pddl"].offers
+    example = offer_example(second)
+    assert (example.document_id, example.chunk_key, example.text) == ("b", "b:p0", PDDL)
+    assert _marked(example.text, example.marks) == ["planning domain definition language", "PDDL"]
+
+
+def test_a_label_that_is_the_long_form_marks_the_short_form_it_is_offered() -> None:
+    signals = term_signals([("c-dbs", "deep brain stimulation")], {}, _chunks(("a", DBS_A)))
+    (offer,) = signals["c-dbs"].offers
+    assert offer.kind == "short"
+    assert _marked(offer.sentence, offer_marks(offer)) == ["deep brain stimulation", "DBS"]
+
+
+def test_a_cited_author_keeps_its_first_et_al_sentence_with_the_name_marked() -> None:
+    text = (
+        "The benchmark of Cohan et al. (2020) covers seven tasks. Cohan et al. also release the "
+        "training data. We follow Cohan and colleagues for the splits used in every run."
+    )
+    signals = term_signals([("c-cohan", "cohan")], {}, _chunks(("b", DBS_A), ("a", text)))
+    cohan = signals["c-cohan"]
+    assert cohan.cited  # 2 of 3 mentions
+    example = cohan.et_al_example
+    assert example is not None and example.chunk_key == "a:p0"
+    assert example.text.startswith("The benchmark of Cohan et al.")
+    assert _marked(example.text, example.marks) == ["Cohan"]
+
+
+def test_a_name_followed_by_et_al_less_than_half_the_time_is_not_shown_as_cited() -> None:
+    # `sporns`: 8 of 73 mentions. The rule is a majority, and below it the name is not "cited".
+    text = (
+        "Following Sporns et al. we built the network from tract tracing in every animal. "
+        "Sporns argues the hubs matter. The hubs of Sporns form a rich club in all of them."
+    )
+    signals = term_signals([("c-s", "sporns")], {}, _chunks(("a", text)))["c-s"]
+    assert (signals.et_al, signals.mentions, signals.cited) == (1, 3, False)
+
+
+def test_majority_is_half_or_more_and_never_of_nothing() -> None:
+    assert majority(1, 2) and majority(2, 2)
+    assert not majority(1, 3)
+    assert not majority(0, 0)
+
+
+# A document that holds one label in every place but a body sentence, and once in a sentence
+# written with a comma between its words. The reference list is the shorter part, so its
+# heading lies past the halfway mark the bibliography cut wants.
+KOONCE_BODY = (
+    "Copyright Koonce, Emerson and colleagues hold the rights to every figure in this article "
+    "today. The table lists them.\n\n| Author | Year |\n|---|---|\n| Koonce, Emerson | 2024 |\n\n"
+    "## Koonce Emerson notes\n\n- Koonce, Emerson et al. list entry\n\n"
+    "The rest of this document describes the methods we used, and why each one was chosen."
+)
+KOONCE_REFERENCES = "References\n\nKoonce, Emerson et al. 2024. Cells. eLife 13.\n"
+KOONCE_FIGURE = (
+    "Figure 3. The Koonce Emerson atlas of cells.\n\n---\n\n"
+    "Copyright Koonce, Emerson and colleagues hold the rights to every figure in this article."
+)
+
+
+def test_a_label_no_sentence_uses_is_placed_where_the_keyword_extractor_found_it() -> None:
+    prose = [("d:p0", "d", KOONCE_BODY), ("d:p1", "d", KOONCE_REFERENCES)]
+    places = where_it_occurs("koonce emerson", prose, [("d:p2", "d", KOONCE_FIGURE)])
+    assert [(p.place, p.mentions, p.documents) for p in places] == [
+        ("sentence", 1, 1),
+        ("table", 1, 1),
+        ("heading", 1, 1),
+        ("figure", 1, 1),  # the figure's own text; the copy of its citing passage is not read
+        ("references", 1, 1),
+        ("elsewhere", 1, 1),
+    ]
+    by_place = {p.place: p.example for p in places}
+    assert _marked(by_place["sentence"].text, by_place["sentence"].marks) == ["Koonce, Emerson"]
+    assert _marked(by_place["heading"].text, by_place["heading"].marks) == ["Koonce Emerson"]
+    assert by_place["references"].chunk_key == "d:p1"
+    assert by_place["figure"].chunk_key == "d:p2"
+
+
+def test_the_mention_matcher_still_decides_that_no_sentence_uses_the_label() -> None:
+    # The places are looked up the extractor's way, the use is counted the product's way: a
+    # comma between the words is not the form, so the label stays one no sentence uses.
+    signals = term_signals([("c-k", "koonce emerson")], {}, _chunks(("d", KOONCE_BODY)))
+    assert signals["c-k"].mentions == 0
+
+
+def test_places_keep_word_edges_and_an_empty_label_or_library_has_none() -> None:
+    text = "Computer vision models were compared on every one of the benchmark sets we hold."
+    assert where_it_occurs("comput vis", [("d:p0", "d", text)]) == ()
+    assert where_it_occurs("  ", [("d:p0", "d", KOONCE_BODY)]) == ()
+    assert where_it_occurs("koonce emerson", []) == ()
+
+
+def test_the_figure_join_is_the_one_ingest_writes() -> None:
+    from doc_assistant.ingest.figures import figure_parent_text
+    from doc_assistant.knowledge.term_signals import _FIGURE_CONTEXT_JOIN
+
+    assert figure_parent_text("Own.", "Cited.") == f"Own.{_FIGURE_CONTEXT_JOIN}Cited."

@@ -68,3 +68,64 @@ export interface VocabularyMatch {
   /** The label as the library writes it when it writes it in a case — shown instead. */
   written?: string | null
 }
+
+/** A piece of the library's text a signal was read from. `text` is verbatim (collapse whitespace
+ *  for display only); `marks` are `[start, end]` spans of it, as written — the server places them
+ *  by the rule that found the signal, so the panel never searches the text itself. */
+export interface SignalExample {
+  text: string
+  marks: [number, number][]
+  document_id: string
+  document_title: string | null
+  chunk_key: string
+}
+
+/** A form the library gives beside one of the row's own — offered, never added. `long`: the row's
+ *  form is the short one and `form` spells it out; `short`: `form` abbreviates the row's form.
+ *  `beside` is the row's form as the sentence writes it; `known`: already one of its forms. */
+export interface FormOffer {
+  form: string
+  beside: string
+  kind: 'long' | 'short'
+  documents: number
+  known: boolean
+  initials: boolean
+  example: SignalExample
+}
+
+/** The label is mostly a cited author's name: `et_al` of its `mentions` are followed by "et al.". */
+export interface CitedAuthor {
+  et_al: number
+  mentions: number
+  example: SignalExample | null
+}
+
+/** Where a label no sentence uses does occur. `sentence`: a body sentence writes it another way
+ *  (another case, other characters between its words), which no count includes; `elsewhere`: a
+ *  line that is not a sentence — a list item, a short line, a page header or footer, code. */
+export type SignalPlaceKind = 'sentence' | 'table' | 'heading' | 'figure' | 'references' | 'elsewhere'
+
+export interface SignalPlace {
+  place: SignalPlaceKind
+  mentions: number
+  documents: number
+  example: SignalExample
+}
+
+/** What the text says about a row's name (ROADMAP 93, measured in
+ *  tests/eval/baselines/term_signals_2026-10-14.md). Read-only, for a concept and a term alike.
+ *  `available` is false when the keyword index is not built, so empty lists mean "not read".
+ *  Every count is over `documents_read`; the read stops short of `documents_matched` above a bound. */
+export interface ConceptSignals {
+  concept_id: string
+  available: boolean
+  documents_read: number
+  documents_matched: number
+  mentions: number
+  documents: number
+  offers: FormOffer[]
+  cited: CitedAuthor | null
+  /** No sentence of the documents read uses the label; `places` says where it occurs instead. */
+  silent: boolean
+  places: SignalPlace[]
+}

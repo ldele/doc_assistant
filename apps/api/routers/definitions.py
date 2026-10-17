@@ -17,6 +17,7 @@ from fastapi import APIRouter, HTTPException, Query
 
 from apps.api.models.definitions import (
     ConceptDefinitionsPayload,
+    ConceptSignalsPayload,
     ConceptUsagePayload,
     UserDefinitionRequest,
     VocabularyMatchPayload,
@@ -108,6 +109,21 @@ def get_usage(concept_id: str) -> ConceptUsagePayload:
     if usage is None:
         raise HTTPException(status_code=404, detail=f"no concept with id {concept_id!r}")
     return ConceptUsagePayload.from_view(usage)
+
+
+@router.get("/api/concepts/{concept_id}/signals")
+def get_signals(concept_id: str) -> ConceptSignalsPayload:
+    """What the library's text says about this row's name: the long or short forms it gives
+    beside one of its forms, whether it is mostly a cited author's name, and — when no sentence
+    uses it — where it does occur. Offered, never applied: nothing here adds or changes a form.
+    Read-only and never stored; a term has signals as much as a concept. 404 for an unknown id
+    or a taxonomy field."""
+    from doc_assistant.knowledge.term_signals import load_concept_signals
+
+    signals = load_concept_signals(concept_id)
+    if signals is None:
+        raise HTTPException(status_code=404, detail=f"no concept with id {concept_id!r}")
+    return ConceptSignalsPayload.from_view(signals)
 
 
 @router.post("/api/concepts/{concept_id}/definitions", status_code=201)

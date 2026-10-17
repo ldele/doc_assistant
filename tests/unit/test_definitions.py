@@ -804,3 +804,66 @@ def test_a_sentence_about_din_is_not_a_candidate_for_din() -> None:
     assert cased == [chunks[0][2]]
     assert find_usages([("d", "din")], chunks[2:]) != {}
     assert find_usages([("d", "din")], chunks[2:], written={"d": "dIN"}) == {}
+
+
+def test_the_figure_aware_read_keeps_figures_and_says_how_many_documents_matched(
+    temp_db, tmp_path
+):
+    """`parents_mentioning`: a document is chosen by a match in a figure's text as well, its
+    figure parents come back beside the prose ones, and the count of matching documents is the
+    index's, whatever `top_docs` keeps."""
+    from doc_assistant.db.session import session_scope
+    from doc_assistant.knowledge.definitions import parents_mentioning
+    from doc_assistant.sparse_index import SparseIndex
+
+    with session_scope() as s:
+        for doc_id, doc_hash in (("d1", "h1"), ("d2", "h2"), ("d3", "h3")):
+            s.add(
+                Document(
+                    id=doc_id,
+                    filename=f"{doc_id}.pdf",
+                    source_original=doc_id,
+                    doc_hash=doc_hash,
+                    format="pdf",
+                )
+            )
+
+    def prose(doc_hash: str, index: int, text: str) -> tuple[str, dict[str, object]]:
+        return text, {"doc_hash": doc_hash, "parent_index": index, "parent_text": text}
+
+    def figure(doc_hash: str, index: int, own: str) -> tuple[str, dict[str, object]]:
+        return own, {
+            "doc_hash": doc_hash,
+            "parent_index": index,
+            "parent_text": f"{own}\n\n---\n\nThe passage that cites it.",
+            "chunk_type": "figure",
+            "figure_id": f"{doc_hash}-f1",
+        }
+
+    pages = [
+        prose("h1", 0, "An actor chooses an action."),
+        prose("h1", 1, "The actor learns."),
+        prose("h2", 0, "Nothing relevant here."),
+        figure("h2", 1, "Figure 1. An actor stands on the left."),
+        prose("h3", 0, "One actor here."),
+    ]
+    index = tmp_path / "sparse_index.sqlite3"
+    SparseIndex.build(index, "fp", iter(pages)).close()
+
+    read = parents_mentioning(["actor"], index_file=index)
+    assert read is not None
+    assert (read.documents_read, read.documents_matched) == (3, 3)
+    assert ("d2:p0", "d2", "Nothing relevant here.") in read.prose  # chosen by its figure
+    assert read.figures == [
+        (
+            "d2:p1",
+            "d2",
+            "Figure 1. An actor stands on the left.\n\n---\n\nThe passage that cites it.",
+        )
+    ]
+
+    capped = parents_mentioning(["actor"], index_file=index, top_docs=1)
+    assert capped is not None
+    assert (capped.documents_read, capped.documents_matched) == (1, 3)
+    assert {doc for _, doc, _ in capped.prose} == {"d1"}  # the most matching blocks
+    assert parents_mentioning(["actor"], index_file=tmp_path / "absent.sqlite3") is None

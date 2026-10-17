@@ -236,3 +236,86 @@ def test_a_definition_write_on_a_term_is_refused_until_it_is_taken_on(client: Te
         s.get(Concept, "viral").graph_include = True  # type: ignore[union-attr]
     taken_on = client.post("/api/concepts/viral/definitions", json={"text": "Of a virus."})
     assert taken_on.status_code == 201 and taken_on.json()["is_concept"] is True
+
+
+def test_signals_read_the_index_and_offer_what_the_text_says(
+    client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """GET /signals over a real on-disk keyword index: an offer with its sentence and its two
+    forms marked, a cited author with an "et al." sentence, and the place a label no sentence
+    uses does occur. Read-only, for a term as much as a concept; nothing is stored."""
+    from doc_assistant.db.models import Document
+    from doc_assistant.sparse_index import SparseIndex
+
+    with session_scope() as s:
+        s.add(Concept(id="dbs", label="dbs", kind="concept", graph_include=True))
+        s.add(Concept(id="cohan", label="cohan", kind="concept", graph_include=False))
+        s.add(Concept(id="ap10k", label="ap10k", kind="concept", graph_include=False))
+        s.add(Concept(id="field", label="Neurology", kind="domain"))
+        s.add(
+            Document(
+                id="d1",
+                filename="d1.pdf",
+                source_original="d1",
+                doc_hash="h1",
+                format="pdf",
+                title="Stimulation in practice",
+            )
+        )
+        s.add(
+            Document(id="d2", filename="d2.pdf", source_original="d2", doc_hash="h2", format="pdf")
+        )
+    dbs = (
+        "For these patients, neuromodulation therapies such as deep brain stimulation (DBS) "
+        "have been investigated in several centres."
+    )
+    texts = [
+        ("h1", 0, f"{dbs} The benchmark of Cohan et al. (2020) covers seven tasks."),
+        ("h2", 0, "Cohan et al. also release the training data used in every one of their runs."),
+        ("h2", 1, "| Model | AP10k |\n|---|---|\n| ours | 0.65 |"),
+    ]
+    pages = [
+        (text, {"doc_hash": h, "parent_index": i, "parent_text": text}) for h, i, text in texts
+    ]
+    index = tmp_path / "sparse_index.sqlite3"
+    SparseIndex.build(index, "fp", iter(pages)).close()
+    monkeypatch.setattr("doc_assistant.sparse_index.index_path", lambda _root: index)
+
+    body = client.get("/api/concepts/dbs/signals").json()
+    assert body["available"] is True and body["silent"] is False
+    assert (body["documents_read"], body["documents_matched"]) == (1, 1)
+    (offer,) = body["offers"]
+    assert (offer["form"], offer["beside"], offer["kind"]) == (
+        "deep brain stimulation",
+        "DBS",
+        "long",
+    )
+    assert offer["known"] is False and offer["documents"] == 1
+    example = offer["example"]
+    assert (
+        example["document_title"] == "Stimulation in practice" and example["chunk_key"] == "d1:p0"
+    )
+    assert [example["text"][a:b] for a, b in example["marks"]] == ["deep brain stimulation", "DBS"]
+    assert body["cited"] is None and body["places"] == []
+
+    cohan = client.get("/api/concepts/cohan/signals").json()  # a term: offered all the same
+    assert cohan["cited"]["et_al"] == 2 and cohan["cited"]["mentions"] == 2
+    cited = cohan["cited"]["example"]
+    assert cited["chunk_key"] == "d1:p0"
+    assert [cited["text"][a:b] for a, b in cited["marks"]] == ["Cohan"]
+
+    silent = client.get("/api/concepts/ap10k/signals").json()
+    assert silent["silent"] is True and silent["mentions"] == 0
+    (place,) = silent["places"]
+    assert (place["place"], place["mentions"], place["documents"]) == ("table", 1, 1)
+    assert place["example"]["document_title"] == "d2.pdf"  # no title: the filename
+
+    assert client.get("/api/concepts/dbs/definitions").json()["candidates"] == []  # nothing stored
+    assert client.get("/api/concepts/nope/signals").status_code == 404
+    assert client.get("/api/concepts/field/signals").status_code == 404
+
+    monkeypatch.setattr(
+        "doc_assistant.sparse_index.index_path", lambda _root: tmp_path / "absent.sqlite3"
+    )
+    missing = client.get("/api/concepts/dbs/signals").json()
+    assert missing["available"] is False and missing["offers"] == [] and missing["silent"] is False

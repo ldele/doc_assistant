@@ -15,19 +15,40 @@
   // Below the options, "How your library uses it" — ADR-053's second layer: a plain sentence from
   // each of the documents that use the word most. Read-only; nothing there can be chosen. It is
   // the context a found definition usually lacks (the user's labels, 2026-09-22).
-  import type { ConceptDefinitions, ConceptUsage, DefinitionCandidate } from '../core/types'
+  //
+  // Last, what the text says about the name itself (ROADMAP 93, ADR-053 decision 4): a short or
+  // long form the library gives beside one of its forms, a name mostly cited as an author, and —
+  // for a label no sentence uses — where it does occur. Only what the user's answers supported
+  // (tests/eval/baselines/term_signals_2026-10-14.md); offered, never applied — a form is added in
+  // Manage keywords. The server marks each example; the card only renders the marks.
+  import type { ConceptDefinitions, ConceptSignals, ConceptUsage, DefinitionCandidate, SignalExample } from '../core/types'
   import {
     addDefinition,
     chooseDefinition,
     dismissDefinition,
     extractDefinitions,
     getDefinitions,
+    getSignals,
     getUsage,
     restoreDefinition,
     undoDefinition,
   } from '../core/api'
   import Icon from '../shell/Icon.svelte'
   import { displayText, gradeLabel, groupCandidates, sourceLabel, usageSource } from './definitions'
+  import {
+    citedLine,
+    exampleSource,
+    hasNewOffer,
+    hasSignals,
+    markedSegments,
+    offerLine,
+    offerMeta,
+    placeHint,
+    placeLabel,
+    placeMeta,
+    readScope,
+    silentLine,
+  } from './signals'
 
   let {
     conceptId,
@@ -49,6 +70,8 @@
   let openReasons = $state<string | null>(null)
   let usage = $state<ConceptUsage | null>(null)
   let usageError = $state<string | null>(null)
+  let signals = $state<ConceptSignals | null>(null)
+  let signalsError = $state<string | null>(null)
 
   const groups = $derived(groupCandidates(view))
   // ADR-054: a *term* is a row nobody has taken on. Its card shows what the library says and
@@ -83,6 +106,15 @@
       })
       .catch((e) => {
         if (id === conceptId) usageError = e instanceof Error ? e.message : String(e)
+      })
+    signals = null
+    signalsError = null
+    getSignals(id)
+      .then((s) => {
+        if (id === conceptId) signals = s
+      })
+      .catch((e) => {
+        if (id === conceptId) signalsError = e instanceof Error ? e.message : String(e)
       })
   })
 
@@ -268,6 +300,55 @@
       <p class="muted small">Couldn't load how your library uses it: {usageError}</p>
     {/if}
 
+    {#if signals && hasSignals(signals)}
+      {@const s = signals}
+      {#if s.offers.length > 0}
+        <h4>Short and long forms in your library</h4>
+        <ul class="uses">
+          {#each s.offers as o (o.kind + o.form + o.beside)}
+            <li>
+              <p class="sline">{offerLine(o)} <span class="muted">· {offerMeta(o)}</span></p>
+              {@render quote(o.example, false)}
+            </li>
+          {/each}
+        </ul>
+        {#if hasNewOffer(s)}
+          <p class="muted small">Offered, not added. To add one as a form, use Manage keywords.</p>
+        {/if}
+      {/if}
+      {#if s.cited}
+        <h4>Cited as an author</h4>
+        <ul class="uses">
+          <li>
+            <p class="sline">{citedLine(s.cited)}</p>
+            {#if s.cited.example}{@render quote(s.cited.example, false)}{/if}
+          </li>
+        </ul>
+      {/if}
+      {#if s.silent}
+        <h4>Not in your library's sentences</h4>
+        <p class="muted small">{silentLine(s)}</p>
+        {#if s.places.length > 0}
+          <ul class="uses">
+            {#each s.places as p (p.place)}
+              <li>
+                <p class="sline">
+                  {placeLabel(p.place)} <span class="muted">· {placeMeta(p)}</span>
+                </p>
+                {#if placeHint(p.place)}<p class="muted hintline">{placeHint(p.place)}</p>{/if}
+                {@render quote(p.example, true)}
+              </li>
+            {/each}
+          </ul>
+        {/if}
+      {/if}
+      {#if readScope(s)}
+        <p class="muted small">{readScope(s)}</p>
+      {/if}
+    {:else if signalsError}
+      <p class="muted small">Couldn't read what the text says about it: {signalsError}</p>
+    {/if}
+
     {#if groups.dismissed.length > 0}
       <button class="linkish small" onclick={() => (showDismissed = !showDismissed)} aria-expanded={showDismissed} type="button">
         {showDismissed ? 'Hide' : 'Show'} dismissed ({groups.dismissed.length})
@@ -288,6 +369,16 @@
     {/if}
   {/if}
 </section>
+
+{#snippet quote(e: SignalExample, cut: boolean)}
+  <p class="utext">
+    {#if cut}<span class="muted">…</span>{/if}{#each markedSegments(e) as seg, i (i)}{#if seg.mark}<mark>{seg.text}</mark>{:else}{seg.text}{/if}{/each}{#if cut}<span class="muted">…</span>{/if}
+  </p>
+  <div class="cmeta">
+    <span class="src">{exampleSource(e)}</span>
+    <button class="linkish" onclick={() => onOpenPassage(e.chunk_key)} type="button">Open passage →</button>
+  </div>
+{/snippet}
 
 <style>
   .defcard {
@@ -404,10 +495,26 @@
     line-height: 1.45;
     font-size: var(--text-sm);
     color: var(--fg-2);
+    overflow-wrap: anywhere;
   }
   .small {
     margin: 0;
     font-size: var(--text-sm);
+  }
+  .sline {
+    margin: 0;
+    font-size: var(--text-sm);
+    overflow-wrap: anywhere;
+  }
+  .hintline {
+    margin: 0;
+    font-size: 0.78rem;
+  }
+  mark {
+    background: var(--warn-bg, color-mix(in srgb, var(--accent) 22%, transparent));
+    color: inherit;
+    border-radius: 3px;
+    padding: 0.05rem 0.1rem;
   }
   .ctext {
     margin: 0;

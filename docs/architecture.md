@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-10-01 (CI's secret scan blocks — security S-13) · class: living -->
+<!-- status: active · updated: 2026-10-17 (the concept panel's term signals route; 2026-10-01: CI's secret scan blocks — security S-13) · class: living -->
 
 # Architecture
 
@@ -277,7 +277,10 @@ in the graph's concept panel — `knowledge/definitions.py` keeps every candidat
 its page, the user's own words, later a model's text) and choosing is the only write to
 `Concept.definition`, recorded and undoable. Beside it, read-only, *how your library uses it*
 (`GET /api/concepts/{id}/usage`, 2026-09-22): a plain sentence from each of the few documents that
-use the word most, found through the keyword index and never stored.
+use the word most, found through the keyword index and never stored. And what the text says about the
+name itself (`GET /api/concepts/{id}/signals`, 2026-10-17; `knowledge/term_signals.py`): a short or long
+form given beside one of its forms, a name mostly cited as an author, and where a label no sentence uses
+occurs — offered, never applied; a form is added in Manage keywords.
 
 **Current build state (2026-09-10).** Node A skeleton, keyword families, gap layer, epistemics projection,
 and the read-only graph/gap UI are **built and shipped**. The taxonomy layer is **built** (TX1–TX3, 2026-07):

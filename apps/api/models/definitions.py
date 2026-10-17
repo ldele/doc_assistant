@@ -17,12 +17,15 @@ from typing import TYPE_CHECKING, Literal
 from pydantic import BaseModel, Field
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
+
     from doc_assistant.knowledge.concept_graph_view import VocabularyMatch
     from doc_assistant.knowledge.definitions import (
         ConceptDefinitions,
         ConceptUsage,
         DefinitionCandidate,
     )
+    from doc_assistant.knowledge.term_signals import ConceptSignals, Example
 
 
 class DefinitionCandidatePayload(BaseModel):
@@ -117,6 +120,136 @@ class ConceptUsagePayload(BaseModel):
                     doc_mentions=u.doc_mentions,
                 )
                 for u in v.examples
+            ],
+        )
+
+
+class SignalExamplePayload(BaseModel):
+    """A piece of the library's text a signal was read from. ``text`` is verbatim (collapse
+    whitespace for display only); ``marks`` are ``[start, end]`` spans of it, as written."""
+
+    text: str
+    marks: list[tuple[int, int]]
+    document_id: str
+    document_title: str | None = None
+    chunk_key: str
+
+    @classmethod
+    def from_example(cls, e: Example, titles: Mapping[str, str]) -> SignalExamplePayload:
+        return cls(
+            text=e.text,
+            marks=list(e.marks),
+            document_id=e.document_id,
+            document_title=titles.get(e.document_id),
+            chunk_key=e.chunk_key,
+        )
+
+
+class FormOfferPayload(BaseModel):
+    """A form the library gives beside one of the row's own, offered and never added.
+
+    ``kind`` ``long``: the row's form is the short one and ``form`` spells it out; ``short``: the
+    row's form is the long one and ``form`` abbreviates it. ``beside`` is the row's form as the
+    sentence writes it. ``known``: already one of the row's forms."""
+
+    form: str
+    beside: str
+    kind: Literal["long", "short"]
+    documents: int
+    known: bool
+    initials: bool
+    example: SignalExamplePayload
+
+
+class CitedPayload(BaseModel):
+    """The label is mostly a cited author's name: ``et_al`` of its ``mentions`` are followed by
+    "et al."."""
+
+    et_al: int
+    mentions: int
+    example: SignalExamplePayload | None = None
+
+
+class PlacePayload(BaseModel):
+    """Where a label no sentence uses does occur, as the keyword extractor read it. ``sentence``
+    is a body sentence that writes it another way (another case, other characters between its
+    words), which no count includes; ``elsewhere`` is a line that is not a sentence (a list item,
+    a short line, a page header or footer, code)."""
+
+    place: Literal["sentence", "table", "heading", "figure", "references", "elsewhere"]
+    mentions: int
+    documents: int
+    example: SignalExamplePayload
+
+
+class ConceptSignalsPayload(BaseModel):
+    """What the concept panel shows about a row's name — the signals measured on the user's
+    answers only (``tests/eval/baselines/term_signals_2026-10-14.md``). Read-only and never
+    stored, for a concept and a term alike.
+
+    ``available`` is false when the keyword index is not built, so empty lists mean "not read".
+    Every count is over ``documents_read``; ``documents_matched`` is the documents the index
+    matched, which the read stops short of above a bound. ``silent``: no sentence of those
+    documents uses the label, and ``places`` says where it occurs instead."""
+
+    concept_id: str
+    available: bool
+    documents_read: int
+    documents_matched: int
+    mentions: int
+    documents: int
+    offers: list[FormOfferPayload]
+    cited: CitedPayload | None = None
+    silent: bool
+    places: list[PlacePayload]
+
+    @classmethod
+    def from_view(cls, v: ConceptSignals) -> ConceptSignalsPayload:
+        from doc_assistant.knowledge.term_signals import offer_example
+
+        s = v.signals
+        offers = []
+        for o in s.offers if s is not None else ():
+            offers.append(
+                FormOfferPayload(
+                    form=o.form,
+                    beside=o.beside_written,
+                    kind=o.kind,  # type: ignore[arg-type]
+                    documents=o.documents,
+                    known=o.known,
+                    initials=o.initials,
+                    example=SignalExamplePayload.from_example(offer_example(o), v.titles),
+                )
+            )
+        cited = None
+        if s is not None and s.cited:
+            cited = CitedPayload(
+                et_al=s.et_al,
+                mentions=s.mentions,
+                example=(
+                    SignalExamplePayload.from_example(s.et_al_example, v.titles)
+                    if s.et_al_example is not None
+                    else None
+                ),
+            )
+        return cls(
+            concept_id=v.concept_id,
+            available=v.available,
+            documents_read=v.documents_read,
+            documents_matched=v.documents_matched,
+            mentions=s.mentions if s is not None else 0,
+            documents=s.documents if s is not None else 0,
+            offers=offers,
+            cited=cited,
+            silent=v.silent,
+            places=[
+                PlacePayload(
+                    place=p.place,  # type: ignore[arg-type]
+                    mentions=p.mentions,
+                    documents=p.documents,
+                    example=SignalExamplePayload.from_example(p.example, v.titles),
+                )
+                for p in v.places
             ],
         )
 

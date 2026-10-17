@@ -3,7 +3,7 @@
 // Every mutation answers with the concept's refreshed candidates, so callers replace their copy.
 
 import { API_BASE, errorDetail } from './_base'
-import type { ConceptDefinitions, ConceptUsage, VocabularyMatch } from '../types'
+import type { ConceptDefinitions, ConceptSignals, ConceptUsage, VocabularyMatch } from '../types'
 
 const base = (conceptId: string): string =>
   `${API_BASE}/api/concepts/${encodeURIComponent(conceptId)}/definitions`
@@ -29,6 +29,13 @@ export async function getUsage(conceptId: string): Promise<ConceptUsage> {
   const r = await fetch(`${API_BASE}/api/concepts/${encodeURIComponent(conceptId)}/usage`)
   if (!r.ok) throw new Error(await errorDetail(r, 'usage'))
   return (await r.json()) as ConceptUsage
+}
+/** What the text says about a row's name: forms it gives beside one of its own, a cited author,
+ *  and where a label no sentence uses does occur. Read-only; a term has them as a concept does. */
+export async function getSignals(conceptId: string): Promise<ConceptSignals> {
+  const r = await fetch(`${API_BASE}/api/concepts/${encodeURIComponent(conceptId)}/signals`)
+  if (!r.ok) throw new Error(await errorDetail(r, 'signals'))
+  return (await r.json()) as ConceptSignals
 }
 /** Save the user's own definition — chosen unless `choose` is false. Replaces nothing. */
 export function addDefinition(

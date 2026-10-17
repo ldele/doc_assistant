@@ -178,7 +178,7 @@ def sentence_spans(text: str) -> list[str]:
     return out
 
 
-def _body_chunks(rows: list[tuple[str, str]]) -> list[tuple[str, str]]:
+def body_chunks(rows: list[tuple[str, str]]) -> list[tuple[str, str]]:
     """One document's ``(chunk_key, text)`` in reading order, with the bibliography cut off.
 
     A reference list is full of titles that mention a concept ("Efficient … re-ranking for large
@@ -275,7 +275,7 @@ def document_sentences(
     for document_id, rows in ordered.items():
         rows.sort()
         spans: list[tuple[str, str, str]] = []
-        for chunk_key, text in _body_chunks([(k, t) for _, k, t in rows]):
+        for chunk_key, text in body_chunks([(k, t) for _, k, t in rows]):
             spans.extend((chunk_key, span, span.casefold()) for span in sentence_spans(text))
         sentences[document_id] = spans
     return sentences
@@ -917,6 +917,38 @@ def chunks_mentioning(
     Returns ``None`` when the index is missing or unreadable (a CLI run before the app first
     built it), so the caller falls back to the full read rather than finding nothing.
     """
+    read = _read_index(labels, index_file=index_file, top_docs=top_docs, with_figures=False)
+    return None if read is None else read.prose
+
+
+@dataclass(frozen=True)
+class MentioningParents:
+    """What :func:`parents_mentioning` read: every parent of the chosen documents, by kind."""
+
+    prose: list[tuple[str, str, str]]  # (chunk_key, document_id, text), as chunks_mentioning
+    figures: list[tuple[str, str, str]]  # the same for figure parents (whole: own text + copy)
+    documents_read: int  # documents whose parents these are
+    documents_matched: int  # documents with a matching block of either kind, before ``top_docs``
+
+
+def parents_mentioning(
+    labels: Sequence[str], *, index_file: Path | None = None, top_docs: int | None = None
+) -> MentioningParents | None:
+    """:func:`chunks_mentioning` with the figures kept: a document is chosen by a match in any
+    block, a figure's included, and its figure parents come back beside its prose ones.
+
+    For the readers that must say *where* a word occurs, not only whether the prose says it: a
+    label only a figure's caption or description holds is found here and nowhere else. The
+    prose list obeys the same rule as ``chunks_mentioning``'s, so a prose reading of it agrees
+    with that path for the documents both choose. ``None`` when the index is missing."""
+    return _read_index(labels, index_file=index_file, top_docs=top_docs, with_figures=True)
+
+
+def _read_index(
+    labels: Sequence[str], *, index_file: Path | None, top_docs: int | None, with_figures: bool
+) -> MentioningParents | None:
+    """The keyword-index read under :func:`chunks_mentioning` and :func:`parents_mentioning`.
+    ``with_figures`` lets a figure block choose a document and keeps the figure parents."""
     import sqlite3
 
     from doc_assistant.db.session import session_scope
@@ -930,26 +962,43 @@ def chunks_mentioning(
         return None
     phrases = [phrase for label in labels for phrase in _index_phrases(label)]
     if not phrases:
-        return []
+        return MentioningParents(prose=[], figures=[], documents_read=0, documents_matched=0)
+    prose_only = (
+        "" if with_figures else "AND json_extract(c.meta, '$.chunk_type') IS NOT 'figure' "
+    )
     try:
         con = sqlite3.connect(str(index_file))
         try:
             if top_docs is None:
                 rows = con.execute(
-                    "SELECT DISTINCT c.doc_hash FROM chunks_fts "
+                    "SELECT DISTINCT c.doc_hash FROM chunks_fts "  # nosec B608
                     "JOIN chunks c ON c.rowid = chunks_fts.rowid WHERE chunks_fts MATCH ? "
-                    "AND json_extract(c.meta, '$.chunk_type') IS NOT 'figure'",
+                    f"{prose_only}",
                     (" OR ".join(phrases),),
                 )
+                hashes = sorted({str(row[0]) for row in rows})
+                matched = len(hashes)
             else:
                 rows = con.execute(
-                    "SELECT c.doc_hash FROM chunks_fts "
+                    "SELECT c.doc_hash FROM chunks_fts "  # nosec B608
                     "JOIN chunks c ON c.rowid = chunks_fts.rowid WHERE chunks_fts MATCH ? "
-                    "AND json_extract(c.meta, '$.chunk_type') IS NOT 'figure' "
+                    f"{prose_only}"
                     "GROUP BY c.doc_hash ORDER BY count(*) DESC, c.doc_hash LIMIT ?",
                     (" OR ".join(phrases), top_docs),
                 )
-            hashes = sorted({str(row[0]) for row in rows})
+                hashes = sorted({str(row[0]) for row in rows})
+                matched = (
+                    int(
+                        con.execute(
+                            "SELECT count(DISTINCT c.doc_hash) FROM chunks_fts "  # nosec B608
+                            "JOIN chunks c ON c.rowid = chunks_fts.rowid "
+                            f"WHERE chunks_fts MATCH ? {prose_only}",
+                            (" OR ".join(phrases),),
+                        ).fetchone()[0]
+                    )
+                    if len(hashes) >= top_docs
+                    else len(hashes)
+                )
             placeholders = ",".join("?" * len(hashes))
             parents = (
                 con.execute(
@@ -981,9 +1030,8 @@ def chunks_mentioning(
     except sqlite3.Error as e:
         log.warning("definitions_keyword_index_unreadable", error=str(e))
         return None
-    parents = [row for row in parents if (str(row[0]), int(row[1])) not in figures]
     if not parents:
-        return []
+        return MentioningParents(prose=[], figures=[], documents_read=0, documents_matched=matched)
     with session_scope() as session:
         ids = {
             str(doc_hash): str(doc_id)
@@ -991,7 +1039,24 @@ def chunks_mentioning(
                 select(Document.id, Document.doc_hash).where(Document.doc_hash.in_(hashes))
             ).all()
         }
-    return [(f"{ids[h]}:p{int(i)}", ids[h], str(text)) for h, i, text in parents if str(h) in ids]
+    prose: list[tuple[str, str, str]] = []
+    figure_parents: list[tuple[str, str, str]] = []
+    for doc_hash, index, text in parents:
+        doc_id = ids.get(str(doc_hash))
+        if doc_id is None:
+            continue
+        row = (f"{doc_id}:p{int(index)}", doc_id, str(text))
+        if (str(doc_hash), int(index)) in figures:
+            if with_figures:
+                figure_parents.append(row)
+        else:
+            prose.append(row)
+    return MentioningParents(
+        prose=prose,
+        figures=figure_parents,
+        documents_read=len({doc for _, doc, _ in prose + figure_parents}),
+        documents_matched=matched,
+    )
 
 
 @dataclass(frozen=True)

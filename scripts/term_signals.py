@@ -24,15 +24,15 @@ import sys
 from pathlib import Path
 
 from doc_assistant import config
-from doc_assistant.knowledge.term_signals import TermSignals, load_term_signals, signal_payload
+from doc_assistant.knowledge.term_signals import (
+    TermSignals,
+    load_term_signals,
+    majority,
+    signal_payload,
+)
 
 if sys.platform == "win32" and hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
-
-
-def _majority(count: int, mentions: int) -> bool:
-    """At least half of the mentions — a majority, not a tuned share."""
-    return mentions > 0 and count * 2 >= mentions
 
 
 def main() -> int:
@@ -57,9 +57,9 @@ def main() -> int:
     abbreviated = [s for s in rows if any(o.kind == "short" for o in s.offers)]
     new_offers = sum(1 for s in rows for o in s.offers if not o.known)
     silent = [s for s in rows if s.mentions == 0]
-    cited = [s for s in rows if _majority(s.et_al, s.mentions)]
-    front = [s for s in rows if s.one_word and s.after and _majority(s.after.count, s.mentions)]
-    tail = [s for s in rows if s.one_word and s.before and _majority(s.before.count, s.mentions)]
+    cited = [s for s in rows if s.cited]
+    front = [s for s in rows if s.one_word and s.after and majority(s.after.count, s.mentions)]
+    tail = [s for s in rows if s.one_word and s.before and majority(s.before.count, s.mentions)]
 
     print("=" * 76)
     print(f"Rows read:                                   {len(rows)}")

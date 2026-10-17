@@ -24,10 +24,17 @@ sentence it was read from, copied verbatim (ADR-043).
 element"; the concept it writes ``Cre`` is another word, so that long form is not offered to it.
 A pair belongs to a label only when the label's own matcher accepts the short form as written.
 
-**Not known.** How often each signal is right. Schwartz & Hearst accept any in-order spelling, so
-"deep learning approaches (DNNs)" is a pair; ``initials`` says whether every capital of the short
-form lands on the start of a word or on a capital of the long one, and is shown as evidence. It
-is not a filter. Measured on a labelled sample before the app shows anything.
+**Measured** on the user's answers (``tests/eval/baselines/term_signals_2026-10-14.md``): the
+long forms offered were right in their sentence 44 of 44 times; "et al." named a cited author
+5 of 5 times; the word beside a label could not be judged as asked. Schwartz & Hearst accept any
+in-order spelling, so "deep learning approaches (DNNs)" is a pair; ``initials`` says whether every
+capital of the short form lands on the start of a word or on a capital of the long one. It is
+evidence, never a filter: 10 of the 44 right pairs were without it.
+
+**What the app shows** (:func:`load_concept_signals`, the concept panel): the offers, each with
+its sentence and the two forms marked as written; a cited author with one "et al." sentence; and,
+for a label the prose never uses, the places it does occur (:func:`where_it_occurs`). Not the
+word beside a label.
 
 Zero LLM, zero network. Reads the sentences ``definitions.document_sentences`` yields — body
 prose, the bibliography cut — so it reads what written forms and definition candidates read.
@@ -38,8 +45,8 @@ from __future__ import annotations
 import re
 from collections import Counter, defaultdict
 from collections.abc import Iterable, Iterator, Mapping, Sequence
-from dataclasses import asdict, dataclass
-from typing import Any
+from dataclasses import asdict, dataclass, field
+from typing import TYPE_CHECKING, Any
 
 from doc_assistant.knowledge.concept_skeleton import (
     FormMatcher,
@@ -48,6 +55,12 @@ from doc_assistant.knowledge.concept_skeleton import (
     spelling_key,
     surface_forms,
 )
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+#: A span of a string, ``(start, end)``: what a reader marks in it.
+Span = tuple[int, int]
 
 #: Schwartz & Hearst's bounds on a short form, in characters and in words. Part of the published
 #: rule, not tuned on this library.
@@ -171,14 +184,14 @@ def _pair(short: str, candidate: str | None) -> AbbreviationPair | None:
     return AbbreviationPair(short=short, long=long, initials=spells_initials(short, long))
 
 
-def abbreviation_pairs(sentence: str) -> list[AbbreviationPair]:
-    """Every short form / long form pair ``sentence`` gives, in reading order.
+def _lead(text: str) -> int:
+    """How many wrapping characters ``text.strip(_WRAPPING)`` takes off its front."""
+    return len(text) - len(text.lstrip(_WRAPPING))
 
-    Two orders. *Long first*: "deep brain stimulation (DBS)" — the bracket opens on the short
-    form, which may be followed by a citation ("(PDDL; Ghallab et al. (1998))"). *Short first*:
-    "DPR (dense passage retriever)" — the bracket holds the long form and the word before it is
-    the short one. Each ``long`` is a substring of ``sentence``."""
-    out: list[AbbreviationPair] = []
+
+def _scan_pairs(sentence: str) -> list[tuple[AbbreviationPair, Span, Span]]:
+    """Every pair in ``sentence`` with where its short and its long form stand in it."""
+    out: list[tuple[AbbreviationPair, Span, Span]] = []
     position = 0
     while True:
         open_ = sentence.find("(", position)
@@ -188,22 +201,48 @@ def abbreviation_pairs(sentence: str) -> list[AbbreviationPair]:
         close = sentence.find(")", position)
         if close < 0:
             return out
-        head = re.split(r"[;,(]", sentence[position:close], maxsplit=1)[0].strip()
+        first = re.split(r"[;,(]", sentence[position:close], maxsplit=1)[0]
+        head = first.strip()
+        head_at = position + len(first) - len(first.lstrip())
         before = sentence[:open_]
-        pair: AbbreviationPair | None = None
+        found: tuple[AbbreviationPair, Span, Span] | None = None
         if is_short_form(head):
-            pair = _pair(head, long_form_before(head, _window(before, head)))
-        if pair is None and len(head.split()) >= 2:
-            last = _TOKEN.findall(before)[-1:]
-            short = last[0].strip(_WRAPPING) if last else ""
+            candidate = long_form_before(head, _window(before, head))
+            pair = _pair(head, candidate)
+            if pair is not None and candidate is not None:
+                # The candidate is a tail of `before`, which ends at the bracket.
+                long_at = open_ - len(candidate) + _lead(candidate)
+                found = (pair, (head_at, head_at + len(head)), (long_at, long_at + len(pair.long)))
+        if found is None and len(head.split()) >= 2:
+            last = list(_TOKEN.finditer(before))[-1:]
+            short = last[0].group().strip(_WRAPPING) if last else ""
             if is_short_form(short):
-                found = long_form_before(short, head)
+                candidate = long_form_before(short, head)
                 # The whole bracket is the long form, or it is a remark that happens to hold the
                 # letters ("BM25 (a strong lexical baseline, much more than ...)").
-                if found is not None and found.strip(_WRAPPING) == head.strip(_WRAPPING):
-                    pair = _pair(short, found)
-        if pair is not None:
-            out.append(pair)
+                if candidate is not None and candidate.strip(_WRAPPING) == head.strip(_WRAPPING):
+                    pair = _pair(short, candidate)
+                    if pair is not None:
+                        short_at = last[0].start() + _lead(last[0].group())
+                        # The candidate is a tail of the bracket's head.
+                        long_at = head_at + len(head) - len(candidate) + _lead(candidate)
+                        found = (
+                            pair,
+                            (short_at, short_at + len(short)),
+                            (long_at, long_at + len(pair.long)),
+                        )
+        if found is not None:
+            out.append(found)
+
+
+def abbreviation_pairs(sentence: str) -> list[AbbreviationPair]:
+    """Every short form / long form pair ``sentence`` gives, in reading order.
+
+    Two orders. *Long first*: "deep brain stimulation (DBS)" — the bracket opens on the short
+    form, which may be followed by a citation ("(PDDL; Ghallab et al. (1998))"). *Short first*:
+    "DPR (dense passage retriever)" — the bracket holds the long form and the word before it is
+    the short one. Each ``long`` is a substring of ``sentence``."""
+    return [pair for pair, _short, _long in _scan_pairs(sentence)]
 
 
 @dataclass(frozen=True)
@@ -292,6 +331,16 @@ class Neighbour:
 
 
 @dataclass(frozen=True)
+class Example:
+    """A piece of the library's text a signal was read from, and what in it to mark."""
+
+    document_id: str
+    chunk_key: str
+    text: str  # verbatim: a substring of the chunk's text
+    marks: tuple[Span, ...] = ()  # spans of ``text``, as written; none when they cannot be placed
+
+
+@dataclass(frozen=True)
 class TermSignals:
     """What the body prose says about one term."""
 
@@ -303,10 +352,47 @@ class TermSignals:
     after: Neighbour | None = None
     before: Neighbour | None = None
     et_al: int = 0  # mentions followed by "et al."
+    et_al_example: Example | None = None  # the first such sentence, in document order
 
     @property
     def one_word(self) -> bool:
         return not re.search(r"[\s\-]", self.label.strip())
+
+    @property
+    def cited(self) -> bool:
+        """Mostly a cited author's name: "et al." follows at least half of its mentions."""
+        return majority(self.et_al, self.mentions)
+
+
+def majority(count: int, mentions: int) -> bool:
+    """At least half of the mentions — a majority, not a tuned share. ``False`` for none."""
+    return mentions > 0 and count * 2 >= mentions
+
+
+def offer_example(offer: FormOffer) -> Example:
+    """The sentence an offer was read from, its two forms marked (:func:`offer_marks`)."""
+    return Example(
+        document_id=offer.document_id,
+        chunk_key=offer.chunk_key,
+        text=offer.sentence,
+        marks=offer_marks(offer),
+    )
+
+
+def offer_marks(offer: FormOffer) -> tuple[Span, ...]:
+    """Where the offer's two forms stand in its sentence, short and long, in reading order.
+
+    Read again from the sentence by the rule that found the pair, so a mark lands on the short
+    form *as written* and on a word edge — never on the ``co`` inside "communication" (the
+    review page's fault, baseline §1). Empty if the sentence no longer gives the pair."""
+    if offer.kind == "long":
+        short, long = offer.beside_written, offer.form
+    else:
+        short, long = offer.form, offer.beside_written
+    for pair, short_at, long_at in _scan_pairs(offer.sentence):
+        if pair.short == short and pair.long == long:
+            return tuple(sorted((short_at, long_at)))
+    return ()
 
 
 def _mentions(matcher: FormMatcher, text: str, low: str) -> Iterator[tuple[str, int, int]]:
@@ -419,13 +505,15 @@ def term_signals(
         }
         low_label = label.strip().casefold()
         mentions = et_al = 0
+        cited: Example | None = None
         with_mention: set[str] = set()
         after: Counter[str] = Counter()
         before: Counter[str] = Counter()
         if low_label:
             matcher = form_matcher(low_label, own.get(low_label))
-            for document_id, spans in sentences.items():
-                for _chunk_key, span, low in spans:
+            # Document order, so the example sentence is the same on every run.
+            for document_id, spans in sorted(sentences.items()):
+                for chunk_key, span, low in spans:
                     for text, start, end in _mentions(matcher, span, low):
                         mentions += 1
                         with_mention.add(document_id)
@@ -434,6 +522,13 @@ def term_signals(
                             word = nxt.group(1).lower()
                             if word == "et" and _AL_AFTER.match(text, nxt.end()):
                                 et_al += 1
+                                if cited is None:
+                                    cited = Example(
+                                        document_id=document_id,
+                                        chunk_key=chunk_key,
+                                        text=span,
+                                        marks=_marks_in(span, text, ((start, end),)),
+                                    )
                             elif _is_content(word, STOPWORDS):
                                 after[word] += 1
                         prv = _WORD_BEFORE.search(text, max(0, start - _BEFORE_WINDOW), start)
@@ -448,8 +543,17 @@ def term_signals(
             after=_top(after),
             before=_top(before),
             et_al=et_al,
+            et_al_example=cited,
         )
     return out
+
+
+def _marks_in(text: str, found_in: str, spans: tuple[Span, ...]) -> tuple[Span, ...]:
+    """``spans`` as marks on ``text``, given the string they were found in (:func:`_mentions`).
+
+    A span found in the casefolded copy is good in ``text`` only when casefolding kept the
+    length ("ß" and a ligature do not); then no mark is given rather than a misplaced one."""
+    return spans if found_in is text or len(found_in) == len(text) else ()
 
 
 def signal_payload(signals: TermSignals) -> dict[str, Any]:
@@ -468,6 +572,155 @@ def signal_payload(signals: TermSignals) -> dict[str, Any]:
 
 
 # ============================================================
+# Where a label occurs, when the prose never uses it — pure
+# ============================================================
+
+
+#: The places a label the sentences never use can occur, as the keyword extractor read it.
+#: ``sentence``: a body sentence that writes it another way — another case, or other characters
+#: between its words ("Comput. Vis.") — which no reader counts as a use. ``elsewhere``: a line of
+#: prose that is not a sentence — a list item, a short line, a page header or footer, code.
+PLACES = ("sentence", "table", "heading", "figure", "references", "elsewhere")
+#: Characters kept on each side of a mention in a place's example. A bound on what is shown.
+_CONTEXT = 80
+#: What joins a figure's own text to the copy of its citing passage in the figure's parent
+#: (``ingest.figures.figure_parent_text``; a unit test holds the two together). Not imported:
+#: the ingest package loads the embedding stack, and this module runs on a panel open.
+_FIGURE_CONTEXT_JOIN = "\n\n---\n\n"
+
+
+@dataclass(frozen=True)
+class Place:
+    """Where a label occurs, how often, and one piece of text that shows it."""
+
+    place: str  # one of PLACES
+    mentions: int
+    documents: int
+    example: Example
+
+
+def _keyword_pattern(label: str) -> re.Pattern[str] | None:
+    """The label as the keyword extractor finds it in casefolded text: its words in order, any run
+    of characters that are not letters or digits between them (``keywords.tokenize`` splits there,
+    and a keyword is adjacent tokens). Looser than the mention matcher on purpose: it answers
+    where a keyword row came from, not whether the library uses the term."""
+    words = re.findall(r"[a-z0-9]+", label.casefold())
+    if not words:
+        return None
+    return re.compile(
+        r"(?<![a-z0-9])" + "[^a-z0-9]+".join(re.escape(w) for w in words) + r"(?![a-z0-9])"
+    )
+
+
+def _line_place(text: str, start: int) -> str:
+    """``table``, ``heading`` or ``elsewhere`` for a mention at ``start``, from how its line
+    begins in the extracted markdown."""
+    line = text[text.rfind("\n", 0, start) + 1 : start + 1].lstrip()
+    if line.startswith("|"):
+        return "table"
+    if line.startswith("#"):
+        return "heading"
+    return "elsewhere"
+
+
+def _sentence_starts(body: str) -> tuple[list[int], list[int]]:
+    """Where each body sentence of a chunk starts and ends (``definitions.sentence_spans``, the
+    sentences every reader reads), as two sorted lists for a bisect."""
+    from doc_assistant.knowledge.definitions import sentence_spans
+
+    starts: list[int] = []
+    ends: list[int] = []
+    cursor = 0
+    for span in sentence_spans(body):
+        at = body.find(span, cursor)
+        if at < 0:
+            continue
+        starts.append(at)
+        ends.append(at + len(span))
+        cursor = at + len(span)
+    return starts, ends
+
+
+def _parent_index(chunk_key: str) -> int:
+    try:
+        return int(chunk_key.rsplit(":p", 1)[1])
+    except (IndexError, ValueError):
+        return 0
+
+
+def where_it_occurs(
+    label: str,
+    prose: Iterable[tuple[str, str, str]],
+    figures: Iterable[tuple[str, str, str]] = (),
+) -> tuple[Place, ...]:
+    """Every place ``label`` occurs as the keyword extractor read it, most mentions first. Pure.
+
+    For a label no body sentence uses, it says where the string comes from. ``prose`` and
+    ``figures`` are ``(chunk_key, document_id, text)`` parents. A prose mention past the
+    bibliography cut (``definitions.body_chunks``, the cut every reader shares) is in the
+    references; before it, a mention inside a body sentence is one written another way, and
+    otherwise its line says whether it is a table row, a heading, or a line that is not a
+    sentence. A figure mention is one in the figure's own text — its caption or the model's
+    description — never in the copy of the citing passage its parent carries.
+    """
+    import bisect
+
+    from doc_assistant.knowledge.definitions import body_chunks
+
+    pattern = _keyword_pattern(label)
+    if pattern is None:
+        return ()
+    counts: Counter[str] = Counter()
+    documents: dict[str, set[str]] = defaultdict(set)
+    examples: dict[str, Example] = {}
+
+    def note(place: str, document_id: str, chunk_key: str, text: str, low: str, hit: Span) -> None:
+        start, end = hit
+        counts[place] += 1
+        documents[place].add(document_id)
+        if place not in examples:
+            # Where casefolding changed the length the window is approximate and goes unmarked.
+            a, b = max(0, start - _CONTEXT), end + _CONTEXT
+            examples[place] = Example(
+                document_id=document_id,
+                chunk_key=chunk_key,
+                text=text[a:b],
+                marks=_marks_in(text, low, ((start - a, end - a),)),
+            )
+
+    by_document: dict[str, list[tuple[int, str, str]]] = defaultdict(list)
+    for chunk_key, document_id, text in prose:
+        by_document[document_id].append((_parent_index(chunk_key), chunk_key, text))
+    for document_id in sorted(by_document):
+        rows = sorted(by_document[document_id])
+        kept = {key: len(body) for key, body in body_chunks([(k, t) for _, k, t in rows])}
+        for _, chunk_key, text in rows:
+            low = text.casefold()
+            body_end = kept.get(chunk_key, 0)
+            sentences: tuple[list[int], list[int]] | None = None
+            for m in pattern.finditer(low):
+                if m.start() >= body_end:
+                    place = "references"
+                else:
+                    if sentences is None:
+                        sentences = _sentence_starts(text[:body_end])
+                    starts, ends = sentences
+                    i = bisect.bisect_right(starts, m.start()) - 1
+                    inside = i >= 0 and m.start() < ends[i]
+                    place = "sentence" if inside else _line_place(low, m.start())
+                note(place, document_id, chunk_key, text, low, (m.start(), m.end()))
+    for chunk_key, document_id, text in sorted(figures):
+        own = text.split(_FIGURE_CONTEXT_JOIN, 1)[0]
+        low = own.casefold()
+        for m in pattern.finditer(low):
+            note("figure", document_id, chunk_key, own, low, (m.start(), m.end()))
+    return tuple(
+        Place(place=p, mentions=counts[p], documents=len(documents[p]), example=examples[p])
+        for p in sorted(counts, key=lambda p: (-counts[p], PLACES.index(p)))
+    )
+
+
+# ============================================================
 # Impure boundary — the vocabulary and the prose in; nothing out
 # ============================================================
 
@@ -482,3 +735,94 @@ def load_term_signals() -> dict[str, TermSignals]:
 
     concepts, aliases = load_vocabulary()
     return term_signals(concepts, aliases, load_presence_inputs(), load_written_forms())
+
+
+#: The most documents one concept's signals read: those with the most matching blocks. A bound on
+#: one panel open — about 15 ms a document on the working library (2026-10-17), so a few seconds
+#: at the bound — not a setting tuned to what is found. Above it, the answer says how many were
+#: read of how many, and every count is a count over the documents read.
+SIGNAL_DOCUMENTS = 200
+
+
+@dataclass(frozen=True)
+class ConceptSignals:
+    """What the concept panel shows about one row's name: the measured signals only."""
+
+    concept_id: str
+    label: str
+    # False when the keyword index is missing: nothing was read, which is not "never used".
+    available: bool
+    documents_read: int = 0
+    # Documents the keyword index matched. Its prefix query over-selects ("combination" for
+    # `comb`), so this bounds the documents that use the label; it is not their number.
+    documents_matched: int = 0
+    signals: TermSignals | None = None
+    places: tuple[Place, ...] = ()  # only for a label no sentence uses
+    titles: Mapping[str, str] = field(default_factory=dict)  # document_id -> title or filename
+
+    @property
+    def silent(self) -> bool:
+        """No sentence of the documents read uses the label."""
+        return self.available and self.signals is not None and self.signals.mentions == 0
+
+
+def load_concept_signals(
+    concept_id: str, *, index_file: Path | None = None
+) -> ConceptSignals | None:
+    """One row's signals for the concept panel, or ``None`` for an unknown id or a field node.
+
+    Concepts and terms alike: a signal is offered, so a term has one as much as a concept. The
+    keyword index picks the documents that mention any of the row's forms, a figure's text
+    included (:func:`definitions.parents_mentioning`), at most :data:`SIGNAL_DOCUMENTS` of them,
+    and each is read whole, so the bibliography cut and the counts are a full read's for those
+    documents. Writes nothing."""
+    from sqlalchemy import select
+
+    from doc_assistant.db.models import Concept, ConceptAlias, Document
+    from doc_assistant.db.session import session_scope
+    from doc_assistant.knowledge.definitions import parents_mentioning
+    from doc_assistant.knowledge.written_forms import load_written_forms
+
+    with session_scope() as session:
+        concept = session.get(Concept, concept_id)
+        if concept is None or concept.kind != "concept":
+            return None
+        label = str(concept.label)
+        aliases = [
+            str(alias)
+            for alias in session.execute(
+                select(ConceptAlias.alias).where(ConceptAlias.concept_id == concept_id)
+            ).scalars()
+        ]
+    read = parents_mentioning(
+        surface_forms(label, aliases), index_file=index_file, top_docs=SIGNAL_DOCUMENTS
+    )
+    if read is None:
+        return ConceptSignals(concept_id=concept_id, label=label, available=False)
+    written = load_written_forms([concept_id])
+    signals = term_signals([(concept_id, label)], {concept_id: aliases}, read.prose, written)[
+        concept_id
+    ]
+    places = where_it_occurs(label, read.prose, read.figures) if signals.mentions == 0 else ()
+    shown = {o.document_id for o in signals.offers} | {p.example.document_id for p in places}
+    if signals.et_al_example is not None:
+        shown.add(signals.et_al_example.document_id)
+    with session_scope() as session:
+        titles = {
+            str(i): str(t or f)
+            for i, t, f in session.execute(
+                select(Document.id, Document.title, Document.filename).where(
+                    Document.id.in_(sorted(shown))
+                )
+            ).all()
+        }
+    return ConceptSignals(
+        concept_id=concept_id,
+        label=label,
+        available=True,
+        documents_read=read.documents_read,
+        documents_matched=read.documents_matched,
+        signals=signals,
+        places=places,
+        titles=titles,
+    )

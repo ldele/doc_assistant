@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-10-14 · class: append-only -->
+<!-- status: active · updated: 2026-10-17 · class: append-only -->
 
 # DEVLOG — doc_assistant
 
@@ -37,6 +37,56 @@ Format: What changed | Why | Rejected alternatives | What it opens
 > is individually small and correct, so unbounded growth is invisible per commit.
 
 ---
+
+## 2026-10-17 — The concept panel shows what the text says about a name: short and long forms, a cited author, and where an unused label occurs (ROADMAP 93)
+
+**What changed.** The three signals the user's answers supported (`term_signals_2026-10-14.md` §5)
+are on the Definition card in the Graph tab's concept panel, for a concept and a term alike:
+- **Short and long forms**: "“DBS” is spelled out as “deep brain stimulation” · in 2 documents ·
+  already one of its forms", with the sentence it came from, both forms marked, its paper and
+  *Open passage*. The marks come from the rule that found the pair (`term_signals.offer_marks`, a
+  re-read with positions), so they land on the short form as written and on word edges, never on
+  the `co` of "communication", the review page's fault.
+- **Cited as an author**: shown when "et al." follows half or more of the mentions
+  (`TermSignals.cited`; the runner's `_majority` moved into the module as `majority`), with the
+  first such sentence and the name marked.
+- **Not in your library's sentences**: for a label no body sentence uses, where it occurs instead:
+  tables, headings, a figure's caption or description, reference lists, lines that are not
+  sentences (a list, a page header or footer, code), or sentences that write it another way
+  (`where_it_occurs`). Each with a count and one marked example. Never the word "noise".
+- Not shown: the word beside a label (not measurable as asked).
+
+`GET /api/concepts/{id}/signals` (definitions router; 404 for an unknown id or a field) answers
+from `term_signals.load_concept_signals`. The keyword index picks the documents through
+`definitions.parents_mentioning`, a sibling of `chunks_mentioning` that lets a match in a figure's
+text choose a document and returns the figure parents beside the prose ones. Nothing is written.
+On the working library every label tried answers in under 0.25 s; `comb` and `cre`, whose index
+prefix matches 86–90 documents, take about 1 s.
+
+**Why the places use a looser match than the counts.** Whether a sentence uses the label is
+decided by the product's matcher (a space, hyphen or dash joins words; case rule). Where a label
+*comes from* is asked the keyword extractor's way, any non-alphanumeric run between its words,
+because that is how the row was made. With the strict matcher, `comput vis` ("Comput. Vis."),
+`resources neuroscience` (a page header across a paragraph break) and `koonce emerson` ("Koonce,
+Emerson et al.", a running header) had no place; with the extractor's they have theirs. A hit
+inside a body sentence is shown as *written another way*: no count includes it.
+
+**Bounded read.** At most `SIGNAL_DOCUMENTS = 200` documents (about 15 ms each here, so a few
+seconds at the bound), those with the most matching blocks; above it the card says "Read in the
+200 documents that mention it most, of N". Every count is over the documents read. No label on
+today's library reaches the bound (most: 90).
+
+**Rejected.** Reading the whole vector store per panel open (minutes at 10,000 documents).
+Importing `ingest.figures.figure_parent_text`'s separator: the `ingest` package loads torch, and
+the first panel open took 30 s; the separator is a constant in `term_signals`, held to ingest's by
+a unit test. An *Add as a form* button on an offer: a form's exact or broad mark is the user's
+act in Manage keywords (ADR-054), so the card says where, and writes nothing.
+
+**What it opens.** The smaller signal fixes stay queued (baton 2026-10-15): names cited alone
+(`sporns`), "Fig." as a short form, a display form for damaged long forms (an offer shows the
+extraction's bold markers as they are). The index's prefix match orders documents by blocks that
+may be other words ("combination" for `comb`), so past the bound the documents read are not
+always the ones that use the label most.
 
 ## 2026-10-14 (5) — The library re-extracted and the graph rebuilt: 38 documents get their ligature letters back
 

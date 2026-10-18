@@ -1,14 +1,18 @@
 # Provenote
 
-A local-first research assistant that answers questions about **your own documents** (PDF, EPUB,
-HTML, DOCX, Markdown) with inline, page-level citations, and measures whether those answers are any
-good. Hybrid retrieval (BM25 + vector + cross-encoder rerank) over Chroma and SQLite on your disk;
-Claude API or fully-local Ollama for generation.
+Ask questions of **your own papers and books** (PDF, EPUB, DOCX, HTML, Markdown and more) and get
+answers you can check: every claim cites the page it came from, one click opens that page as it was
+printed, and each claim is marked by whether your sources actually support it. Your library stays
+on your disk. With a local model through Ollama none of your text leaves the machine; with the
+Claude API, the question and the passages retrieved for it are sent to write the answer.
 
-A fluent answer with a confident citation is not the same as a correct one. So every answer carries a
+A fluent answer with a confident citation is not the same as a correct one. So every answer keeps a
 provenance record, separates what your sources *say* from what the model *infers*, and can be
-re-graded by a separate reviewer. The RAG techniques here are established ones; what this adds is the
-integrity layer and the measurement behind it.
+re-graded by a separate reviewer. Around the answers sits a map of your library that you curate:
+the concepts you choose, which documents hold them, where one rests on a single source, and
+definitions quoted from your own documents with the page each came from. The retrieval techniques
+are established ones; what Provenote adds is the integrity layer and the measurement behind it, and
+every quality number below can be re-run.
 
 ![Provenote demo: ask a question, watch a cited answer stream in, open the passage behind a citation, filter the library, read a document as five ordered blocks, open one of its figures, then explore the concept graph](docs/assets/provenote-demo.gif)
 
@@ -32,10 +36,13 @@ integrity layer and the measurement behind it.
 - **Evidence vs. interpretation.** Each answer separates what your sources say from the model's
   synthesis, with per-claim grounding markers you can accept, reject or edit, so an inference is
   never mistaken for a fact ([how answers work](docs/how-answers-work.md)).
-- **Citation and concept graphs.** Resolved reference edges, plus a deterministic concept skeleton
-  (the LLM only annotates existing edges, it never invents structure) with gap detection that
-  surfaces single-source concepts and thin bridges as leads to read next. The graph says how many
-  of your documents it covers, and a concept joins it from **Manage keywords**, inside the app.
+- **Citation and concept graphs you curate.** Resolved reference edges, plus a deterministic concept
+  skeleton (the LLM only annotates existing edges, it never invents structure) with gap detection
+  that surfaces single-source concepts and thin bridges as leads to read next. A concept is a
+  meaning you take on in **Manage keywords**, with a name and the forms that count for it. Its
+  definition is chosen from sentences quoted from your documents, each opening at its page with the
+  reasons it was offered, or written by you; nothing is chosen for you and no source overwrites
+  another. The graph says how many of your documents it covers.
 - **Experimental knowledge-currency markers, off by default.** Advisory `contested` and
   `superseded trend` chips derived from cross-document stance and publication years — not a
   corpus measurement. They never block anything, and
@@ -79,8 +86,10 @@ flowchart LR
     F --> R
 ```
 
-`bge-base-en-v1.5` embedder and `bge-reranker-base` cross-encoder, both local and swappable; Chroma
-for vectors, SQLite for documents; Tauri + Svelte 5 desktop app over a FastAPI/SSE backend, plus a
+Retrieval is hybrid: BM25 and vector search, then a cross-encoder rerank. The
+[`bge-base-en-v1.5`](https://huggingface.co/BAAI/bge-base-en-v1.5) embedder and
+[`bge-reranker-base`](https://huggingface.co/BAAI/bge-reranker-base) cross-encoder are both local
+and swappable; Chroma for vectors, SQLite for documents; Tauri + Svelte 5 desktop app over a FastAPI/SSE backend, plus a
 CLI. Data flow and module contracts: [`docs/architecture.md`](docs/architecture.md).
 
 ## Benchmarks
@@ -174,43 +183,11 @@ Everyday commands, enrichment passes and tests: [`docs/usage.md`](docs/usage.md)
 
 ## Limitations
 
-Re-read for this release; the full ledger lives in `.claude/KNOWN_ISSUES.md`.
+Each item is a limit you can hit in this release, with what to do about it. Counts come from the
+development library on 2026-10-18 (104 documents, 3,341 pages) unless a date says otherwise.
 
-- **An API key entered in the app is stored in plain text** in your data folder — weaker than an OS
-  keychain, which is the recorded upgrade path
-  ([ADR-034](docs/decisions/ADR-034-in-app-provider-setup.md)). Use `.env`, which takes precedence,
-  if you would rather manage the key yourself.
+### Answers
 
-- **Scanned PDFs are only read if your machine happens to have an OCR engine, and the app ships
-  none.** A PDF that is pure page images extracts to nothing and is marked *broken*. But if a
-  `tesseract` binary is on your PATH, the PDF reader finds it by itself and reads the pages — and
-  nothing in the app asks for this or reports it. The same scan produced 0 characters on one date
-  and 34,600 on another, on the same machine, with nothing in the app changed; two machines on the
-  same version can build different libraries from the same file, and the extraction cache keeps
-  whichever result came first (KI-47). Deliberate, opt-in OCR whose output is marked as such is
-  designed and not built ([ADR-039](docs/decisions/ADR-039-ocr-sidecar-for-scanned-pdfs.md)). One
-  document of 97 in the development library is a pure scan.
-
-- **A reference links to a paper in your library only when the titles agree, and the links are
-  worked out once.** A document's bibliography is shown in full; a reference becomes a link only on
-  an exact DOI or an agreeing title, because surname-plus-year alone was wrong 13 times in 16 on the
-  development library (now 41 links, the 12 false ones gone, the rest checked by hand). Links are
-  computed when a document is first read and not revisited: adding the paper a reference points at
-  does not turn it into a link until the citing document is read again. A command-line pass
-  (`scripts.extract_citations --reresolve`) refreshes them without re-reading anything; it is not
-  yet a button.
-
-- **Validated at ~100 documents, not yet at thousands.** Retrieval quality is benchmarked and holds.
-  Memory used to be the limit and no longer is: both search indexes now live on disk, so backend RAM
-  measures flat at about 2 GB regardless of corpus size
-  ([ADR-036](docs/decisions/ADR-036-sparse-index-on-disk.md)). What binds now is the first ingest,
-  which is dominated by PDF extraction at roughly 15 seconds per document — two documents at a time
-  by default, see above — and disk at about 6 MB per document. Numbers and projections:
-  [`docs/performance.md`](docs/performance.md).
-  The *enrichment* layer still has its own corpus-linear hot paths and corpus-tuned thresholds,
-  catalogued with a prioritized fix plan in the
-  [scale review](docs/archive/local/REVIEW_2026-07-19_scale-robustness.md), so don't bulk-ingest thousands of
-  documents before those land.
 - **Local models cite less, and the gap is measured.** Across 27 questions on a 97-document
   library, with the same prompt and retrieval, `llama3.1:8b` carried inline citations on 36% of its
   sentences and `qwen2.5:7b` on 14%, against 81% for Claude Haiku. Answers stay grounded either
@@ -218,42 +195,120 @@ Re-read for this release; the full ledger lives in `.claude/KNOWN_ISSUES.md`.
   taxonomy at 70-87% precision, and their self-reported confidence carries almost no signal; on one
   model it was *anti*-correlated with correctness, so do not auto-accept on it. The app states this
   where you choose the engine, and blocks nothing.
-- **Document metadata extraction is imperfect.** A handful of documents still yield no title, or
-  publisher furniture instead of one, and downstream layers that key on the title inherit that —
-  the reference-link limitation above is the visible consequence.
+- **A few pages hold the previous page's text.** On about 0.2% of pages (a 25-document sample,
+  2026-09-01) the PDF reader stores the page before's text in place of the page's own, so that page
+  cannot be found by search and a citation to the copy opens one page off; one 1949 book has 13
+  such pages in 355.
 - **Per-source "epistemic assessment" is off by default.** The chips labelling a source *contested*
   / *corroborated* / *single-source* are withheld: they came from a stance pass that judges without
   ever seeing the document text and whose verdict moves with list position (one document, identical
   inputs, position varied alone → four different verdicts). Nothing was deleted —
-  `EPISTEMICS_MARKERS_ENABLED=true` opts back in — and the rebuild is planned. Document year,
+  `EPISTEMICS_MARKERS_ENABLED=true` opts back in — and it is rebuilt only behind a hand-labelled
+  study ([ADR-041](docs/decisions/ADR-041-node-b-stance-rebuild-or-retire.md)). Document year,
   relevance score and graph freshness are unaffected and still shown.
+
+### The knowledge layer
+
+- **Text after a reference list goes unread, while a mention inside one counts.** The keyword,
+  definition and written-form passes stop at a document's References heading, so appendices,
+  methods and sections the PDF reader emitted late go unseen: 3.7% of the library's prose, in 32
+  documents (2026-10-09). Concept presence reads the whole text instead, so a concept named only in
+  a cited title counts as present: 111 of 1,079 concept–document pairs exist only past that
+  heading, 88 of them in reference lists or back matter. Both change together in the next release,
+  with a before/after for every layer they move (ROADMAP 95).
+- **The map covers the concepts you choose; extracted keywords alone do not organise a library.**
+  1,436 of 1,483 extracted keywords (97%) occur in a single document, so the graph is built from
+  concepts you take on in Manage keywords, not from keywords: 13 on the development library, beside
+  344 extracted terms that stay searchable. No concept's name there ends with another's, so the
+  taxonomy view's *Proposed placements* has nothing to offer on that library.
+- **A definition's grade sorts; it does not decide.** On hand-labelled candidates, `strong` was
+  right 8 times in 13 (95% interval 36-82%), and a sentence that praises a term grades as strongly
+  as one that defines it. Read the quoted sentence; nothing is chosen for you.
+- **A large wiki topic is summarised from a sample.** Past what fits the model's window (8,192
+  tokens by default, `WIKI_CONTEXT_TOKENS`), a topic's note is written from a fixed sample of its
+  papers and says so ("written from 36 of 87 papers"); the others are listed as sources, unread.
+
+### Reading documents
+
+- **Scanned PDFs are only read if your machine happens to have an OCR engine, and the app ships
+  none.** A PDF that is pure page images extracts to nothing and is marked *broken*. But if a
+  `tesseract` binary is on your PATH, the PDF reader finds it by itself and reads the pages, and
+  nothing in the app asks for this or reports it: the same scan produced 0 characters on one date
+  and 34,600 on another, on the same machine, and the extraction cache keeps whichever came first.
+  Opt-in OCR whose output is marked as such is designed and not built
+  ([ADR-039](docs/decisions/ADR-039-ocr-sidecar-for-scanned-pdfs.md)).
+- **A reference links to a paper in your library only when the titles agree, and the links are
+  worked out once.** A document's bibliography is shown in full (5,639 references); a reference
+  becomes a link only on an exact DOI or an agreeing title, because surname-plus-year alone was
+  wrong 13 times in 16 (2026-08-26). 44 references link today. Links are computed when a document
+  is first read: adding the paper a reference points at does not make it a link until the citing
+  document is read again, or `scripts.extract_citations --reresolve` runs (not yet a button).
+- **Document metadata extraction is imperfect.** A handful of documents still yield no title, or
+  publisher furniture instead of one, and the layers that key on the title inherit that; the
+  reference links above are the visible consequence.
 - **Size limits on what you add: 1 GB per file, 50,000 files per add.** A larger file, or an
   EPUB/DOCX/ODT that would expand past 1 GB when opened (or is compressed the way a zip bomb is),
-  is refused before it is opened, with a sentence saying why; the add dialog states the per-file
-  limit up front. These are safety limits sized far above real documents — the largest in the
-  development library is 31 MB — not measured ceilings. If one gets in your way,
+  is refused before it is opened, with a sentence saying why. These are safety limits sized far
+  above real documents (the largest in the development library is 31 MB), not measured ceilings;
   `DOC_MAX_INGEST_BYTES`, `DOC_MAX_ARCHIVE_BYTES` and `DOC_MAX_ADD_FILES` raise them
   ([`docs/security.md`](docs/security.md) S-1, S-2).
+
+### Setup and scale
+
+- **Validated at ~100 documents, not yet at thousands.** Retrieval quality is benchmarked and holds,
+  and backend RAM measures flat at about 2 GB because both search indexes live on disk
+  ([ADR-036](docs/decisions/ADR-036-sparse-index-on-disk.md)). What binds is the first ingest,
+  dominated by PDF extraction at roughly 15 seconds per document, and disk at about 6 MB per
+  document. The enrichment passes (keywords, graph, wiki) still have corpus-wide recomputes and
+  thresholds tuned on a library this size, so do not bulk-ingest thousands of documents yet.
+  Numbers and projections: [`docs/performance.md`](docs/performance.md).
+- **Command-line enrichment runs use your default provider.** The `scripts.*` passes that call a
+  model (taxonomy, wiki, graph annotation, eval judge) take the provider configured in `.env`; with
+  an Anthropic key there, a run you meant to be local bills the API. Pass `--provider ollama` on
+  each run, and the judge or reviewer provider flag where a pass has one.
+- **An API key entered in the app is stored in plain text** in your data folder, weaker than an OS
+  keychain, which is the recorded upgrade path
+  ([ADR-034](docs/decisions/ADR-034-in-app-provider-setup.md)). Use `.env`, which takes precedence,
+  if you would rather manage the key yourself.
 - **Single-user, local-first by design.** The FastAPI backend serves one desktop app on localhost;
   multi-client serving would need threadpool offloading (documented, not built).
 - **Tested primarily on Windows** plus CI on Linux; macOS (MPS) paths work but are unbenchmarked.
 
 ## Status
 
-**v0.6.0 (2026-09-01) — a citation now opens its page.** Phase 6 + 7 in progress. Shipped:
-core RAG, the eval harness, the document store and library workspace, a source pane that opens a
-citation at its page, adding documents from inside the app (dropped, picked or imported from
-Zotero; copied in or referenced in place), per-part re-ingest, citation and doc-similarity graphs,
-the research-integrity layer (provenance, evidence/interpretation split, separate-context
-reviewer), a provider-agnostic LLM layer with in-app setup and live switching between Claude API
-and local Ollama, figures and tables, the corpus wiki, and the concept-graph stack with gap
-detection and a stated coverage. **2,389 tests · ruff / mypy / bandit clean.** The Windows
+**v0.7.0, in preparation: the map of your library becomes yours to curate and check.** The latest
+published release is [v0.6.0](https://github.com/ldele/doc_assistant/releases/tag/v0.6.0)
+(2026-09-04). What 0.7.0 adds:
+
+- **Concepts are yours.** A concept is a meaning you take on in Manage keywords, with a name and
+  forms marked *exact* (always this concept, counted) or *broad* (shown beside, never counted); the
+  rows nobody chose stay as searchable terms.
+- **Definitions keep their source.** A concept's definition is chosen from sentences quoted from
+  your documents, each with its page and the reasons it was offered, or written by you. Choosing is
+  undoable and no source overwrites another. The panel also shows what the text says about the
+  name: an abbreviation's long form with the sentence that spells it out, or the author it is cited
+  as.
+- **Curated work survives.** Merging concepts (a command-line pass) keeps their placements, gap
+  verdicts and forms, and a merge can be undone; proposed taxonomy placements are accepted or
+  rejected in the app.
+- **Signals say what they measure.** Graph coverage counts only documents still in the library,
+  *Uncited in answers* says what it counts, and the experimental stance chips are labelled as such.
+- **The knowledge layer reads the prose.** Figure descriptions no longer count as a document's
+  text, a term written with a hyphen or a space is one term, table cells keep their "fi" and "fl"
+  ligatures, and a large wiki topic is summarised from a sample its note names instead of a
+  silently cut prompt.
+- **Harder to misuse.** Oversized files and zip bombs are refused before they are opened; chat
+  answers are sanitised before they are shown; the local API refuses requests addressed to any
+  other host and takes a write only with the token the app started it with; CI fails on an
+  unreviewed advisory or a committed secret, and its actions are pinned to commits.
+
+**2,757 Python tests and 299 desktop tests · ruff / mypy / bandit clean.** The Windows
 installer on the [releases page](https://github.com/ldele/doc_assistant/releases) is built from
 the tag and installed on a clean machine before it is published.
 
-Next: marking the cited passage on the page image itself (measured viable, ROADMAP row 24). Still
-open: the extracted keyword layer is measured and does not partition a corpus (97% of keywords on
-a single document). Release notes: [`CHANGELOG.md`](CHANGELOG.md). Full roadmap:
+Next: the knowledge layer reads past the reference list and counts reference-list mentions on their
+own (ROADMAP 95), then the acquisition half, what to read next for a subject (KL2), and
+LLM-assisted ingestion (ROADMAP 25). Release notes: [`CHANGELOG.md`](CHANGELOG.md). Full roadmap:
 [`docs/ROADMAP.md`](docs/ROADMAP.md).
 
 ## Documentation

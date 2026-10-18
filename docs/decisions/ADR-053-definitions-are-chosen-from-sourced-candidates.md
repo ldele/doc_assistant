@@ -1,8 +1,9 @@
-<!-- status: active · updated: 2026-09-30 · class: append-only -->
+<!-- status: active · updated: 2026-10-18 · class: append-only -->
 
 # ADR-053 — A definition is chosen from candidates, and every candidate keeps its source
 
-- **Status:** proposed — the direction is the user's (2026-09-21): definitions can come from the
+- **Status:** accepted (user, 2026-10-18; proposed 2026-09-21 — see *Accepted 2026-10-18* at the
+  end) — the direction is the user's (2026-09-21): definitions can come from the
   text, from a model, from what the references say, or from the user; *"each of these options
   should not overwrite the other"*, the user chooses case by case, each source is judged for
   reliability "as usual", and thin evidence should lead to suggesting more papers. The shape below
@@ -313,3 +314,15 @@ example of `dIN`. The stored presence changes only when the user rebuilds the gr
 
 Decision 4 (abbreviation and fragment signals) now has its input: 141 labels carry a written form
 with a capital.
+
+## Accepted 2026-10-18
+
+The user accepted the ADR at the release checkpoint (plan Checkpoint A), after a month of use:
+93a, both amendments and decision 4 (the term signals in the concept panel, ROADMAP 93) are built.
+
+1. **All candidates side by side, chosen by the user** — accepted as written.
+2. **Reliability as reasons plus a `strong` / `some` / `thin` grade, never a model's self-rating** —
+   accepted as written. The grade sorts and never chooses.
+3. **The build order changes: 93c before 93b.** Expert vocabularies come first — quoted verbatim,
+   offline, no model. Model candidates (93b) are built with ROADMAP 25, the other model pass whose
+   inputs are recorded, behind the same Ollama-first guard. Then 93d, then 93e.

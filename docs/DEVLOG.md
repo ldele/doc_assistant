@@ -40,6 +40,31 @@ Format: What changed | Why | Rejected alternatives | What it opens
 
 ---
 
+## 2026-10-18 (2) — Release checkpoint: ADR-053 and ADR-041 accepted, 93a's suggestions stored, a docs revamp planned after 0.7.0
+
+**What changed.** The user took the seven calls left before 0.7.0, one at a time. ADR-053 is
+accepted, with expert vocabularies (93c) now built before model candidates (93b), which ride with
+ROADMAP 25. ADR-041 is accepted as amended: option 6's buildable part is the gap list, so KL1b
+closes and no separate per-concept status is built. `extract_definitions --apply` stored 20
+suggestions for 11 of the 13 concepts (12 strong, 8 some), nothing chosen, after a `library.db`
+backup. `docs/security.md` S-12 is decided: SHA-pinned actions and Dependabot for actions only,
+before the release; alerts are the user's toggle. ROADMAP row 98 adds a docs revamp after the
+release (row 84 folded in), and row 95 follows it.
+
+**Why.** Both ADRs had been `proposed` for one and two months while what they decide was built
+and used; the release describes them. Row 51's `--apply` had nothing to write: since ADR-054 the
+proposer reads the 13 concepts, and none shares a head with another (the 27 candidates are between
+terms). Row 53 (3)'s hand score leaves the release path: the merge default pairs 0 concepts, and
+the review page's store was empty.
+
+**Rejected.** Refreshing epistemics: a dry run marks 1,188 chunks (445 today), most `contested` —
+the stance ADR-041 does not trust; markers stay off by default and the table is rebuilt with KL3.
+Update PRs for pip, npm and cargo: weekly noise for one maintainer; upgrades stay in sessions, the
+audit gate catches advisories.
+
+**What it opens.** The README (the next session) must not imply `is_a` proposals exist on this
+library. The docs revamp's evidence and order are in the local plan.
+
 ## 2026-10-18 — A wiki topic's prompt fits the model's context: a large topic is summarised from a fixed sample, and its note says so (KI-65)
 
 **What changed.** `wiki.summarize_cluster` sends a bounded prompt. `material_budget` reserves the

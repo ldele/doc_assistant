@@ -1,10 +1,11 @@
-<!-- status: active · updated: 2026-08-03 · class: append-only -->
+<!-- status: active · updated: 2026-10-18 · class: append-only -->
 
 # ADR-041 — Epistemics stays; Node-B stance must be rebuilt on evidence, and per-concept status re-bases on the claim layer first
 
 *(Filename says "rebuild-or-retire" — that was the question, and retire was explored and withdrawn.)*
 
-- **Status:** proposed — recommendation set by the user's stated product intent (2026-08-03); the
+- **Status:** accepted as amended (user, 2026-10-18 — see *Amendment 2026-10-18* at the end);
+  proposed 2026-08-03 — recommendation set by the user's stated product intent (2026-08-03); the
   build sequence is open
 - **Date:** 2026-08-03
 - **Deciders:** user + Claude Code
@@ -206,3 +207,21 @@ deliberately sequenced first partly so that the product is not blocked on that a
   and was never required, not that the idea is bad.
 - ⚠ **The G3/G6 collateral is not fully scoped.** Whether `superseded_trend` can be re-based on years
   alone without stance has not been checked in code.
+
+## Amendment 2026-10-18 — option 6 is the gap list; accepted
+
+Decided by the user at the release checkpoint (plan Checkpoint A), confirming their lean of
+2026-09-17; ROADMAP KL1b is closed.
+
+- **Option 6 as written cannot be built.** Checked against the code on 2026-09-16: the only claims
+  in the tree are the assistant's answer sentences (`AnswerClaim`). A per-concept status built on
+  them measures query history × model, not the library; it reaches 9 of the 13 graph concepts and
+  none of the 3 `single_source` ones, and joins concepts only at document level (`chunk_key` is not
+  stored on citations).
+- **Its buildable part already exists: the gap list.** It classifies knowledge per concept from
+  the corpus — `single_source`, `isolated`, "Uncited in answers" — so a separate status would
+  repeat it. No per-concept status is built.
+- **The disagreement half is unchanged:** option 1, ROADMAP KL3, gated on a hand-labelled
+  ground-truth set.
+- **Accepted:** epistemics stays; stance-derived output is not presented as an epistemic signal
+  until KL3 rebuilds it; option 2 (retire) stays withdrawn.

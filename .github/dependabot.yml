@@ -1,0 +1,15 @@
+# Keeps the SHA-pinned actions in .github/workflows/ current (docs/security.md S-12, decided
+# 2026-10-18). Actions only: Python, npm and cargo upgrades are made in a session, and CI's audit
+# gates catch a published advisory. Dependabot alerts are a repository setting, not this file.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    # Minor and patch releases arrive as one PR a month; a new major gets a PR of its own.
+    groups:
+      actions-minor-and-patch:
+        update-types: [minor, patch]
+    commit-message:
+      prefix: ci

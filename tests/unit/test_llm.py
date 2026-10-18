@@ -605,6 +605,62 @@ def test_ollama_probe_tolerates_a_shape_it_does_not_know(monkeypatch: pytest.Mon
     assert llm.ollama_probe()[0] is True
 
 
+# ============================================================
+# KI-65 — the context window an Ollama call asks for
+# ============================================================
+
+
+def test_ollama_num_ctx_defaults_to_the_server_and_is_passed_when_set(patched_sdks: None):
+    """``None`` keeps every existing caller on the server's default; a set value reaches it."""
+    llm.OllamaClient("qwen2.5:7b").complete(
+        [{"role": "user", "content": "hi"}], temperature=0.0, max_tokens=8
+    )
+    assert _FakeChatOllama.last_init["num_ctx"] is None  # langchain drops a None option
+
+    sized = llm.OllamaClient("qwen2.5:7b", reasoning=None).with_context(8192)
+    sized.complete([{"role": "user", "content": "hi"}], temperature=0.0, max_tokens=8)
+    assert _FakeChatOllama.last_init["num_ctx"] == 8192
+    assert _FakeChatOllama.last_init["reasoning"] is None  # the copy keeps the rest
+    assert sized.num_ctx == 8192
+
+
+def test_ollama_context_length_reads_the_trained_length(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: dict[str, Any] = {}
+
+    def _post(url: str, **kwargs: Any) -> _FakeResponse:
+        calls["url"], calls["json"] = url, kwargs.get("json")
+        info = {"general.architecture": "qwen2", "qwen2.context_length": 32768}
+        return _FakeResponse({"model_info": info})
+
+    monkeypatch.setattr(httpx, "post", _post)
+    assert llm.ollama_context_length("qwen2.5:7b", "http://localhost:11434/") == 32768
+    assert calls["url"] == "http://localhost:11434/api/show"
+    assert calls["json"] == {"model": "qwen2.5:7b"}
+
+
+@pytest.mark.parametrize(
+    "response",
+    [
+        _FakeResponse({"model_info": {"general.architecture": "x"}}),  # no length field
+        _FakeResponse("not a dict"),
+        _FakeResponse({"error": "model not found"}, status=404),
+    ],
+)
+def test_ollama_context_length_is_none_when_unknown(
+    monkeypatch: pytest.MonkeyPatch, response: _FakeResponse
+) -> None:
+    monkeypatch.setattr(httpx, "post", lambda url, **k: response)
+    assert llm.ollama_context_length("m:1") is None
+
+
+def test_ollama_context_length_never_raises(monkeypatch: pytest.MonkeyPatch) -> None:
+    def _boom(url: str, **kwargs: Any) -> _FakeResponse:
+        raise OSError("connection refused")
+
+    monkeypatch.setattr(httpx, "post", _boom)
+    assert llm.ollama_context_length("m:1") is None
+
+
 def test_verify_anthropic_key_ok_uses_a_free_metadata_call(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

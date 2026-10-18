@@ -12,6 +12,7 @@ from doc_assistant.knowledge.wiki import (
     DocRef,
     SimEdge,
     TopicNote,
+    TopicSummary,
     _assemble_notes,
     build_manifest,
     cluster_documents,
@@ -222,8 +223,10 @@ def test_assemble_notes_uses_summarizer_and_wires_links():
     docs = [_doc("a"), _doc("b"), _doc("c")]
     edges = [SimEdge("a", "b", 0.8), SimEdge("b", "c", 0.52)]  # a-b cluster, c links to it
 
-    def fake_summarize(members, samples):
-        return ("Topic " + "+".join(d.doc_id for d in members), "summary text", ["tag1"])
+    def fake_summarize(members, fetch_chunks):
+        return TopicSummary(
+            "Topic " + "+".join(d.doc_id for d in members), "summary text", ["tag1"]
+        )
 
     notes = _assemble_notes(
         docs,

@@ -26,8 +26,10 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import re
 from collections import Counter, defaultdict
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from functools import partial
 from pathlib import Path
@@ -37,6 +39,7 @@ import structlog
 
 from doc_assistant.config import (
     WIKI_CHUNK_SAMPLE,
+    WIKI_CONTEXT_TOKENS,
     WIKI_DIR,
     WIKI_MIN_CITATIONS,
     WIKI_MIN_SIMILARITY,
@@ -46,6 +49,9 @@ from doc_assistant.config import (
 log = structlog.get_logger(__name__)
 
 MANIFEST_NAME = ".manifest.json"
+
+#: Reads chunk excerpts for some documents: ``doc_ids -> {doc_id: [excerpt, ...]}``.
+ChunkFetcher = Callable[[list[str]], Mapping[str, list[str]]]
 
 
 # ============================================================
@@ -119,10 +125,18 @@ class TopicNote:
     tags: list[str]
     links: list[tuple[str, str]]  # (target_topic_id, target_title)
     gap: WikiGapSignals
+    #: doc_ids of the members whose material reached the summary prompt. Empty when no
+    #: summary was written; shorter than ``docs`` when the topic was summarised from a sample.
+    summarised: list[str] = field(default_factory=list)
 
     @property
     def source_hashes(self) -> list[str]:
         return sorted(d.doc_hash for d in self.docs)
+
+    @property
+    def sampled(self) -> bool:
+        """Whether the summary was written from only some of the topic's papers."""
+        return bool(self.summary.strip()) and 0 < len(self.summarised) < len(self.docs)
 
 
 # ============================================================
@@ -257,22 +271,33 @@ def render_note_markdown(note: TopicNote) -> str:
     ]
     if note.gap.any():
         fm.append(f"gap: {_yaml_list(note.gap.reasons)}")
+    if note.sampled:
+        fm.append(f"summary_from: {len(note.summarised)}")
     fm.append("---")
 
     body = [f"# {note.title}", "", note.summary.strip() or "_No summary generated._"]
+    if note.sampled:
+        body += [
+            "",
+            f"_Summary written from {len(note.summarised)} of {len(note.docs)} papers, "
+            "marked *in summary* under Sources: a fixed sample, as many as fit the "
+            "model's context._",
+        ]
 
     if note.links:
         body += ["", "## Related"]
         body += [f"- [[{tid}|{title}]]" for tid, title in note.links]
 
     body += ["", "## Sources"]
+    in_summary = set(note.summarised) if note.sampled else set()
     for d in note.docs:
         year = f" ({d.year})" if d.year else ""
+        mark = " · *in summary*" if d.doc_id in in_summary else ""
         # Avoid "filename — `filename`" when the doc has no extracted title.
         if d.title and d.title != d.filename:
-            body.append(f"- {d.title}{year} — `{d.filename}`")
+            body.append(f"- {d.title}{year} — `{d.filename}`{mark}")
         else:
-            body.append(f"- `{d.filename}`{year}")
+            body.append(f"- `{d.filename}`{year}{mark}")
 
     if note.gap.any():
         body += ["", f"> **Knowledge-gap signals:** {', '.join(note.gap.reasons)}."]
@@ -434,11 +459,14 @@ def sample_chunks(doc_ids: list[str], *, per_doc: int = WIKI_CHUNK_SAMPLE) -> di
     return out
 
 
+_HEADING = "PAPERS IN THIS TOPIC"
+_SAMPLED_HEADING = "PAPERS IN THIS TOPIC (a sample of {shown} of {total})"
+
 _SUMMARY_PROMPT = """You are writing one topic note for a research wiki, summarising a \
 CLUSTER of related papers. Use ONLY the material provided — titles, keywords, and \
 excerpts. Do not invent findings.
 
-PAPERS IN THIS TOPIC:
+{heading}:
 {material}
 
 Return JSON only, no prose, no markdown fence:
@@ -447,16 +475,142 @@ Return JSON only, no prose, no markdown fence:
 "tags": ["<3-6 lowercase topic tags>"]}}"""
 
 
-def _format_material(docs: list[DocRef], chunk_samples: dict[str, list[str]]) -> str:
-    parts: list[str] = []
-    for d in docs:
-        bits = [f"- {d.label}" + (f" ({d.year})" if d.year else "")]
-        if d.keywords:
-            bits.append(f"  keywords: {', '.join(d.keywords[:8])}")
-        for ex in chunk_samples.get(d.doc_id, [])[:2]:
-            bits.append(f"  excerpt: {ex}")
-        parts.append("\n".join(bits))
-    return "\n".join(parts)
+# ============================================================
+# Prompt budget (KI-65) — one topic's material must fit one context window
+# ============================================================
+# A topic's material grows with the topic (~175 tokens per paper), and a local model
+# whose window is smaller cuts the prompt silently: an 87-paper topic sent 15,245 tokens
+# into a 4,096 window and its note described one of the last dozen papers. So the
+# material is bounded: the answer and the prompt's fixed text are reserved, and the rest
+# is filled from a fixed sample of the topic's papers.
+
+BYTES_PER_TOKEN = 3
+"""Floor on UTF-8 bytes per token, to estimate a prompt's size with no tokenizer.
+
+Structural, not tuned: byte-level BPE tokenizers spend more than 3 bytes per token on
+English text and about 3 on CJK text, where a character is 3 bytes, so counting bytes
+rather than characters keeps the estimate above the true count for every script. Measured
+2026-10-18 on the 87-paper prompt of the working library: 3.50 bytes per token (qwen2.5,
+qwen3.5), 3.63 (llama3.1), so the estimate runs 14-17% high; that is the margin the budget
+keeps."""
+
+CHAT_FRAME_TOKENS = 32
+"""Tokens a chat template wraps around one user message (role markers, BOS): about ten
+on the models in use. Headroom, not a measurement."""
+
+_FETCH_BATCH = 16
+"""Documents whose excerpts are read per round while a sample fills. Sets how many store
+reads a topic costs, never which papers are chosen."""
+
+
+def estimate_tokens(text: str) -> int:
+    """An upper estimate of ``text``'s token count, with no tokenizer (``BYTES_PER_TOKEN``)."""
+    return math.ceil(len(text.encode("utf-8")) / BYTES_PER_TOKEN)
+
+
+def material_budget(n_docs: int, *, context_tokens: int, max_tokens: int) -> int:
+    """UTF-8 bytes of paper material one summary prompt can carry; 0 when none fits.
+
+    What is left of ``context_tokens`` once the answer (``max_tokens``), the chat frame and
+    the prompt's fixed text are reserved. The fixed text is measured with its longest
+    heading, the sampled one at ``n_docs`` digits, so the bound holds whichever is used.
+    """
+    fixed = _SUMMARY_PROMPT.format(
+        heading=_SAMPLED_HEADING.format(shown=n_docs, total=n_docs), material=""
+    )
+    spare = context_tokens - max_tokens - CHAT_FRAME_TOKENS - estimate_tokens(fixed)
+    return max(0, spare * BYTES_PER_TOKEN)
+
+
+def sample_order(docs: list[DocRef]) -> list[DocRef]:
+    """A topic's members in a fixed pseudo-random order: by a hash of each ``doc_hash``.
+
+    Deterministic (the same members give the same order, whatever order they arrive in) and
+    unrelated to filename, year or ingest order, so a sample taken from the front leans
+    toward no end of the library. KI-65's truncation leaned toward the last papers.
+    """
+    return sorted(
+        docs, key=lambda d: (hashlib.sha256(d.doc_hash.encode("utf-8")).hexdigest(), d.doc_id)
+    )
+
+
+def _format_doc(d: DocRef, excerpts: list[str]) -> str:
+    bits = [f"- {d.label}" + (f" ({d.year})" if d.year else "")]
+    if d.keywords:
+        bits.append(f"  keywords: {', '.join(d.keywords[:8])}")
+    for ex in excerpts[:2]:
+        bits.append(f"  excerpt: {ex}")
+    return "\n".join(bits)
+
+
+def _clip_utf8(text: str, max_bytes: int) -> str:
+    return text.encode("utf-8")[:max_bytes].decode("utf-8", errors="ignore")
+
+
+@dataclass
+class TopicMaterial:
+    """The paper material for one summary prompt, and the members it came from."""
+
+    text: str
+    docs: list[DocRef]
+
+
+def select_material(
+    docs: list[DocRef], fetch_chunks: ChunkFetcher, *, budget_bytes: int
+) -> TopicMaterial:
+    """Members' blocks in ``sample_order`` up to ``budget_bytes``, to the first that won't fit.
+
+    Excerpts are read in rounds of ``_FETCH_BATCH``, so a 10,000-paper topic reads the store
+    for the few dozen papers that can be used, not for all of them. A first block larger than
+    the whole budget (a pathological title) is cut to it rather than sending nothing.
+    """
+    order = sample_order(docs)
+    blocks: list[str] = []
+    chosen: list[DocRef] = []
+    used = 0
+    for start in range(0, len(order), _FETCH_BATCH):
+        batch = order[start : start + _FETCH_BATCH]
+        excerpts = fetch_chunks([d.doc_id for d in batch])
+        for d in batch:
+            block = _format_doc(d, list(excerpts.get(d.doc_id, [])))
+            cost = len(block.encode("utf-8")) + (1 if blocks else 0)  # + the joining newline
+            if used + cost > budget_bytes:
+                if not blocks and budget_bytes > 0:
+                    blocks.append(_clip_utf8(block, budget_bytes))
+                    chosen.append(d)
+                return TopicMaterial("\n".join(blocks), chosen)
+            blocks.append(block)
+            chosen.append(d)
+            used += cost
+    return TopicMaterial("\n".join(blocks), chosen)
+
+
+def fit_window(client: Any, context_tokens: int) -> tuple[Any, int]:
+    """The client and context window a build's summaries use, made to agree (KI-65).
+
+    An ``OllamaClient`` is given ``num_ctx``: ``context_tokens``, lowered to the client's own
+    ``num_ctx`` when that is smaller and to the model's trained length when that is shorter
+    (the server would clamp to it, then cut). Without it the server picks a VRAM-based
+    default the prompt was not sized for. Any other client is returned as is, with
+    ``context_tokens``: the API's windows are far larger than the wiki's budget.
+    """
+    from doc_assistant.llm import OllamaClient, ollama_context_length
+
+    if not isinstance(client, OllamaClient):
+        return client, context_tokens
+    window = context_tokens if client.num_ctx is None else min(context_tokens, client.num_ctx)
+    trained = ollama_context_length(client.model, client.host)
+    if trained is None:
+        log.warning(
+            "wiki_model_context_unknown",
+            model=client.model,
+            window=window,
+            hint="the server did not report the model's trained length; a shorter one cuts",
+        )
+    else:
+        window = min(window, trained)
+    log.info("wiki_context_window", model=client.model, window=window, trained=trained)
+    return client.with_context(window), window
 
 
 def _extract_json(text: str) -> str:
@@ -476,33 +630,72 @@ def _extract_json(text: str) -> str:
     return t
 
 
+@dataclass
+class TopicSummary:
+    """One topic's LLM summary, or its fallback."""
+
+    title: str
+    summary: str
+    tags: list[str]
+    #: doc_ids of the members whose material reached the prompt; empty when no summary.
+    summarised: list[str] = field(default_factory=list)
+
+
+#: ``summarize(members, fetch_chunks)``: ``summarize_cluster`` with its client bound.
+Summarizer = Callable[[list[DocRef], ChunkFetcher], TopicSummary]
+
+
 def summarize_cluster(
     docs: list[DocRef],
-    chunk_samples: dict[str, list[str]],
+    fetch_chunks: ChunkFetcher,
     client: Any,
     *,
     max_tokens: int = 400,
-) -> tuple[str, str, list[str]]:
-    """LLM topic summary → ``(title, summary, tags)``. Falls back on any failure.
+    context_tokens: int = WIKI_CONTEXT_TOKENS,
+) -> TopicSummary:
+    """LLM topic summary from as many members as fit ``context_tokens``. Falls back on failure.
 
-    ``client`` is an ``llm.LLMClient`` (provider-configurable, local-capable).
-    A transport/parse failure degrades to a derived title + empty summary rather
-    than aborting the build — a thin note is still a useful gap signal.
+    ``client`` is an ``llm.LLMClient`` (provider-configurable, local-capable). The prompt is
+    bounded whatever the topic's size: ``material_budget`` reserves the answer and the fixed
+    text, ``select_material`` fills the rest from a fixed sample, and the token estimate both
+    use over-counts, so prompt + answer stay inside ``context_tokens``. With Ollama that must
+    also be the server's window, which ``fit_window`` sees to. No call is made for an empty
+    topic or a window too small for the fixed text. A transport/parse failure degrades to a
+    derived title + empty summary rather than aborting the build — a thin note is still a
+    useful gap signal.
     """
-    prompt = _SUMMARY_PROMPT.format(material=_format_material(docs, chunk_samples))
+    fallback = TopicSummary(fallback_title(docs), "", [])
+    if not docs:
+        return fallback
+    budget = material_budget(len(docs), context_tokens=context_tokens, max_tokens=max_tokens)
+    if budget <= 0:
+        log.warning(
+            "wiki_context_too_small",
+            context_tokens=context_tokens,
+            max_tokens=max_tokens,
+            hint="raise WIKI_CONTEXT_TOKENS",
+        )
+        return fallback
+    material = select_material(docs, fetch_chunks, budget_bytes=budget)
+    shown, total = len(material.docs), len(docs)
+    heading = _HEADING if shown == total else _SAMPLED_HEADING.format(shown=shown, total=total)
+    prompt = _SUMMARY_PROMPT.format(heading=heading, material=material.text)
+    if shown < total:
+        log.info("wiki_topic_sampled", shown=shown, total=total, tokens=estimate_tokens(prompt))
     try:
         raw = client.complete(
             [{"role": "user", "content": prompt}], temperature=0.0, max_tokens=max_tokens
         )
         parsed = json.loads(_extract_json(raw))
-        title = str(parsed.get("title") or "").strip() or fallback_title(docs)
+        title = str(parsed.get("title") or "").strip() or fallback.title
         summary = str(parsed.get("summary") or "").strip()
         tags_raw = parsed.get("tags") or []
         tags = [slugify(str(t)) for t in tags_raw if str(t).strip()][:6]
-        return title, summary, tags
+        summarised = [d.doc_id for d in material.docs] if summary else []
+        return TopicSummary(title, summary, tags, summarised)
     except Exception as e:
         log.warning("wiki_summary_failed", error=str(e), hint="using fallback")
-        return fallback_title(docs), "", []
+        return fallback
 
 
 @dataclass
@@ -527,7 +720,7 @@ def _assemble_notes(
     *,
     min_similarity: float,
     min_citations: int,
-    summarize: Any | None,
+    summarize: Summarizer | None,
     per_doc_chunks: int,
     concept_clusters: list[list[str]] | None = None,
 ) -> list[TopicNote]:
@@ -551,18 +744,14 @@ def _assemble_notes(
     members = [[by_id[i] for i in c if i in by_id] for c in clusters]
     topic_ids = [topic_id_for([d.doc_hash for d in m]) for m in members]
 
-    titles: list[str] = []
-    summaries: list[str] = []
-    tagsets: list[list[str]] = []
-    for m in members:
-        if summarize is not None:
-            samples = sample_chunks([d.doc_id for d in m], per_doc=per_doc_chunks)
-            title, summary, tags = summarize(m, samples)
-        else:
-            title, summary, tags = fallback_title(m), "", []
-        titles.append(title)
-        summaries.append(summary)
-        tagsets.append(tags)
+    # Excerpts are read only for the members a summary's sample reaches (select_material).
+    fetch_chunks: ChunkFetcher = partial(sample_chunks, per_doc=per_doc_chunks)
+    summaries = [
+        summarize(m, fetch_chunks)
+        if summarize is not None
+        else TopicSummary(fallback_title(m), "", [])
+        for m in members
+    ]
 
     notes: list[TopicNote] = []
     for i, m in enumerate(members):
@@ -570,12 +759,13 @@ def _assemble_notes(
         notes.append(
             TopicNote(
                 topic_id=topic_ids[i],
-                title=titles[i],
+                title=summaries[i].title,
                 docs=m,
-                summary=summaries[i],
-                tags=tagsets[i],
-                links=[(topic_ids[j], titles[j]) for j in link_refs],
+                summary=summaries[i].summary,
+                tags=summaries[i].tags,
+                links=[(topic_ids[j], summaries[j].title) for j in link_refs],
                 gap=compute_gap_signals(len(m), len(link_refs), min_citations=min_citations),
+                summarised=summaries[i].summarised,
             )
         )
     return notes
@@ -593,6 +783,7 @@ def build_wiki(
     use_concept_communities: bool = WIKI_USE_CONCEPT_COMMUNITIES,
     wiki_dir: Path | None = None,
     graph_dir: Path | None = None,
+    context_tokens: int = WIKI_CONTEXT_TOKENS,
 ) -> WikiBuildResult:
     """Cluster the library into topic notes; write the sidecar on ``apply``.
 
@@ -600,6 +791,10 @@ def build_wiki(
     LLM call. ``apply`` with a ``client`` summarises each topic, writes
     ``WIKI_DIR/{topic_id}.md`` + the manifest, reports drift, and removes orphan
     notes. Never touches the chunk store.
+
+    Each summary prompt fits ``context_tokens`` with its answer (KI-65): a topic too
+    large for it is summarised from a fixed sample, and its note says so. An Ollama
+    client is made to ask the server for that window (``fit_window``).
 
     Clustering primitive: ``use_concept_communities`` (default off) groups documents
     by the concept-skeleton's Louvain communities instead of the absolute-cosine
@@ -614,9 +809,10 @@ def build_wiki(
     )
     clustering = "concept-graph" if concept_clusters is not None else "cosine-threshold"
 
-    summarize = (
-        partial(summarize_cluster, client=client) if (apply and client is not None) else None
-    )
+    summarize: Summarizer | None = None
+    if apply and client is not None:
+        client, window = fit_window(client, context_tokens)
+        summarize = partial(summarize_cluster, client=client, context_tokens=window)
 
     notes = _assemble_notes(
         docs,

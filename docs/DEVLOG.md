@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-10-17 · class: append-only -->
+<!-- status: active · updated: 2026-10-18 · class: append-only -->
 
 # DEVLOG — doc_assistant
 
@@ -39,6 +39,54 @@ Format: What changed | Why | Rejected alternatives | What it opens
 > is individually small and correct, so unbounded growth is invisible per commit.
 
 ---
+
+## 2026-10-18 — A wiki topic's prompt fits the model's context: a large topic is summarised from a fixed sample, and its note says so (KI-65)
+
+**What changed.** `wiki.summarize_cluster` sends a bounded prompt. `material_budget` reserves the
+answer (`max_tokens`), a chat frame and the prompt's fixed text out of `WIKI_CONTEXT_TOKENS` (new,
+8,192); `select_material` fills the rest with members in `sample_order`, a hash of each
+`doc_hash` (the same members give the same sample in any order, and no end of the library is
+favoured), up to the first block that does not fit. Size is estimated without a tokenizer, as
+UTF-8 bytes / 3 (`BYTES_PER_TOKEN`), above the true count for every script. Excerpts are read in
+rounds of 16, so a topic reads the store for its sample, not for every member (48 reads for the
+87-paper topic, not 87). A topic summarised from a sample says so: in the prompt's heading ("a
+sample of 36 of 87"), in the note ("_Summary written from 36 of 87 papers_", `summary_from: 36` in
+the frontmatter, *in summary* beside each sampled source) and in the CLI report. An empty topic,
+or a window too small for the fixed text, makes no call. Tests: `tests/unit/test_wiki_budget.py`
+at 0, 1, 20 and 10,000 documents and five windows (fake client, fake store, no network);
+`tests/unit/test_llm.py` for `num_ctx` and `ollama_context_length`. `docs/knowledge-layer.md`
+§6's wiki row no longer says the note is written from a cut prompt.
+
+**`num_ctx`: passed, from the model.** `OllamaClient` takes `num_ctx`; the default `None` keeps
+every other caller (reviewer, judge, taxonomy) on the server's default, unchanged.
+`wiki.fit_window`, called by `build_wiki`, gives an Ollama client `num_ctx = min(WIKI_CONTEXT_TOKENS,
+the model's trained length)`, read from `/api/show` by `llm.ollama_context_length`, and the budget
+uses the same number. Keeping the budget below the default was rejected: the default depends on
+the GPU (`vram-based default context`, 4,096 on this 12 GB card), and on overflow llama.cpp keeps
+only half the window (the log's `limit=2050`), so "below the default" is a number the app cannot
+read. Asking for the window makes the budget and the server agree on any card.
+
+**Checked live, read-only** (Ollama forced; the library read through `sqlite3` `mode=ro`; notes
+rendered to the session scratchpad, nothing under `data/`). The 87-paper topic, rebuilt from
+`library.db` (cosine 0.90). Before: 15,232 real tokens on `llama3.1:8b` (15,245 in the
+baseline), 15,775 on `qwen2.5:7b`, 15,766 on `qwen3.5:9b`. After, at a 8,192 window: 36 papers,
+6,239 / 6,517 / 6,486 real tokens plus a 400-token answer, no `truncating input prompt` in the
+server log, 5-11 s a topic. The estimate ran 14-17% above the real count (3.50-3.63 bytes per
+token on this library). Two of the three summaries name both the machine-learning and the
+neuroscience papers; `qwen3.5:9b`'s names machine-learning ones only. Their quality is not judged
+here: that is RG-018's re-measure.
+
+**Rejected.** Summarising in stages (map-reduce): a call per ~36 papers plus a merge, so a
+10,000-paper topic costs hundreds of calls, and the merge summarises summaries, not papers. The
+model's whole window (32k-262k tokens here): VRAM and time for one note, and the sample would
+change with whichever model ran. A real tokenizer: an arbitrary Ollama model exposes none, and
+the byte estimate held on all three. The "most central" papers as the sample: that needs a
+centrality measure and its threshold; a hash sample is unbiased and needs neither.
+
+**What it opens.** RG-018's re-measure with KI-65 fixed (baseline §4, condition (c)). KI-65 can
+close in the local `KNOWN_ISSUES.md` once this lands. A large topic still leaves papers out (51 of
+87); if a sample proves too thin, a second pass is the map-reduce above. `WIKI_CONTEXT_TOKENS`
+is set by environment variable only; `build_wiki` has no flag for it.
 
 ## 2026-10-17 (4) — A write to the local API needs the token the app was started with (security S-6)
 

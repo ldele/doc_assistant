@@ -10,6 +10,9 @@ removed since the last build.
 
 Summarisation is the *generator* role and is fully local-capable — point it at a
 local model (`--provider ollama` or `WIKI_LLM_PROVIDER=ollama`) to build for free.
+Each summary prompt fits `WIKI_CONTEXT_TOKENS` (8,192) with its answer; a topic with
+more papers than that holds is summarised from a fixed sample, and its note says so
+(KI-65). With Ollama the window is asked of the server (`num_ctx`).
 
 Clustering primitive: by default, connected components over `DocSimilarity` at/above
 `--min-similarity` (corpus-dependent — saturates on same-domain libraries). Pass
@@ -56,6 +59,8 @@ def _format_report(result: WikiBuildResult) -> str:
     out.append(f"  Singletons:               {len(notes) - len(multi)}")
     out.append(f"  With gap signals:         {len(flagged)}")
     if result.applied:
+        sampled = [n for n in notes if n.sampled]
+        out.append(f"  Summarised from a sample: {len(sampled)}  (too many papers for one prompt)")
         out.append(f"Notes written:             {result.written}")
         out.append(f"Stale notes removed:       {result.removed_files}")
         out.append(f"Drift: +{len(result.drift.added)} topic(s) / -{len(result.drift.removed)}")

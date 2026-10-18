@@ -206,14 +206,35 @@ class OllamaClient:
     the model's own default, or ``True`` to keep the trace (langchain then
     files it under ``additional_kwargs["reasoning_content"]`` and leaves the
     content clean, at the cost of generating it).
+
+    ``num_ctx`` is the context window asked of the server, in tokens. ``None``
+    leaves Ollama's own default, which depends on the GPU's memory (4,096 on a
+    12 GB card), and a prompt longer than the window is cut from the front
+    with only a server-log warning: the call succeeds on what is left (KI-65).
+    A caller whose prompt grows with its input sets it and keeps the prompt
+    plus ``max_tokens`` inside it.
     """
 
     def __init__(
-        self, model: str, *, host: str | None = None, reasoning: bool | None = False
+        self,
+        model: str,
+        *,
+        host: str | None = None,
+        reasoning: bool | None = False,
+        num_ctx: int | None = None,
     ) -> None:
         self.model = model
         self._host = host or config.OLLAMA_HOST
         self.reasoning = reasoning
+        self.num_ctx = num_ctx
+
+    @property
+    def host(self) -> str:
+        return self._host
+
+    def with_context(self, num_ctx: int) -> OllamaClient:
+        """A copy of this client that asks the server for a ``num_ctx``-token window."""
+        return OllamaClient(self.model, host=self._host, reasoning=self.reasoning, num_ctx=num_ctx)
 
     def complete(self, messages: list[Message], *, temperature: float, max_tokens: int) -> str:
         from langchain_ollama import ChatOllama
@@ -223,6 +244,7 @@ class OllamaClient:
             base_url=self._host,
             temperature=temperature,
             num_predict=max_tokens,
+            num_ctx=self.num_ctx,  # None = the server's default (langchain drops it)
             # This adapter serves only the one-shot JSON path (reviewer + eval
             # judge — see module docstring). Local models are far less reliable
             # than the API at returning a bare JSON object; Ollama's native JSON
@@ -379,6 +401,35 @@ def ollama_probe(
         # start the server) — so it must not be reported as "unreachable".
         return True, (), f"Ollama is running at {base} but has no models installed"
     return True, tuple(sorted(models)), None
+
+
+def ollama_context_length(
+    model: str, host: str | None = None, *, timeout: float = PROBE_TIMEOUT_SECONDS
+) -> int | None:
+    """The context length ``model`` was trained for, as the Ollama server reports it.
+
+    Read from ``/api/show``'s ``model_info`` (the key is ``<architecture>.context_length``,
+    e.g. ``qwen2.context_length``). This is the most a ``num_ctx`` request can get: Ollama
+    clamps a larger one to it. Returns ``None`` when the server is unreachable, the model is
+    not installed, or the field is absent. Never raises.
+    """
+    import httpx
+
+    base = (host or config.OLLAMA_HOST).rstrip("/")
+    try:
+        response = httpx.post(f"{base}/api/show", json={"model": model}, timeout=timeout)
+        response.raise_for_status()
+        payload = response.json()
+    except Exception as e:
+        log.info("ollama_show_failed", host=base, model=model, error=str(e))
+        return None
+    info = payload.get("model_info") if isinstance(payload, dict) else None
+    if not isinstance(info, dict):
+        return None
+    for key, value in info.items():
+        if key.endswith(".context_length") and isinstance(value, int) and value > 0:
+            return value
+    return None
 
 
 def verify_anthropic_key(key: str, *, timeout: float = PROBE_TIMEOUT_SECONDS) -> tuple[str, str]:

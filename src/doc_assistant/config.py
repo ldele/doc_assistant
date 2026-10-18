@@ -506,6 +506,17 @@ WIKI_MIN_CITATIONS = int(os.getenv("WIKI_MIN_CITATIONS", "3"))
 # How many chunk excerpts to sample per document as grounding for the summary.
 WIKI_CHUNK_SAMPLE = int(os.getenv("WIKI_CHUNK_SAMPLE", "3"))
 
+# The context window one topic summary must fit, in tokens: prompt + answer (KI-65). A
+# topic's material grows with its size (~175 tokens per paper), so a large topic is
+# summarised from a fixed sample of its papers, as many as fit, and the note says so.
+# With Ollama the wiki asks the server for this window (`num_ctx`), lowered to the
+# model's trained length when that is shorter; without it Ollama uses a VRAM-based
+# default (4,096 on a 12 GB card) and silently keeps only the end of a longer prompt.
+# 8,192 is a resource choice, not a quality one: every local model in use is trained on
+# at least this much, and it holds 36 papers of the working library (2026-10-18). Raising
+# it buys more papers per note at the cost of VRAM and time.
+WIKI_CONTEXT_TOKENS = int(os.getenv("WIKI_CONTEXT_TOKENS", "8192"))
+
 # Clustering primitive: when true, the wiki groups documents by the concept-skeleton's
 # *communities* (threshold-free Louvain — adapts to the corpus's own structure) instead
 # of the absolute-cosine WIKI_MIN_SIMILARITY union-find above. This is the fix for the

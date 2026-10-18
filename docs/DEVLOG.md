@@ -40,6 +40,38 @@ Format: What changed | Why | Rejected alternatives | What it opens
 
 ---
 
+## 2026-10-17 (3) — KL4: neither wiki clustering path partitions the library, so the default stays; the trust table states the placement runs RG-015 already had (RG-018, RG-015)
+
+**What changed.** No code. `tests/eval/baselines/wiki_clustering_2026-10-17.md` measures both wiki
+paths on the working library (104 documents). Cosine union-find at 0.90, the default, makes 12
+topics, one of them 87 documents; the concept-community path makes 80, 75 of them single-document,
+because the 13 graph concepts reach 29 documents. An `--apply` on `llama3.1:8b` (Ollama forced,
+notes written to a probe folder, `data/wiki/` untouched), read by hand: 23 of the community path's
+29 grouped documents sit with their subject, against 8 of the cosine path's 95.
+`docs/knowledge-layer.md` §6: the placement row said "unmeasured, never run"; it now states the
+three runs in RIGOR_TODO RG-015 (the labelled one: `llama3.1:8b` 82% defensible / 70% exact against
+a 60% majority baseline, `qwen3.5:9b` 87%), and a wiki row is added. §4's diagram and §5's table
+said the wiki reads communities; it reads similarity edges, communities opt-in. RG-015 is restated
+as blocked on ADR-019's domain-coverage detectors, which `gaps.py` does not define. ROADMAP KL4
+done.
+
+**Why the default stays.** Flipping trades one blob for 72% single-paper notes and scatters the six
+political-science papers the cosine path groups correctly. A new threshold would be fitted to this
+library: the blob breaks between 0.93 and 0.94. Re-measure when the graph's vocabulary covers most
+of the library, when a relative primitive is designed, or when KI-65 is fixed.
+
+**Found.** KI-65: the 87-document note was written from a prompt Ollama cut from 15,245 tokens to
+2,050 (`OllamaClient` sets no `num_ctx`; the default here is 4,096), so it describes one of the
+last dozen papers. Nothing in the app says so.
+
+**Rejected.** The CLI's `--apply` into `data/wiki/`: it would overwrite the user's notes for a
+measurement, so the probe calls the same `build_wiki` with `wiki_dir` set. Retuning
+`WIKI_MIN_SIMILARITY` from the sweep. Scoring the 75 singletons for coherence: a one-paper topic is
+on one subject by construction; 10 were sampled for faithfulness.
+
+**What it opens.** KI-65's fix (a material budget per call, `num_ctx` from the model). A relative
+clustering primitive is design work with an ADR. RG-015 waits on the coverage detectors.
+
 ## 2026-10-17 (2) — CI hung for three hours: the extraction pool forked a multi-threaded process; it spawns on every OS now
 
 **What happened.** CI on `93edbe6` sat "in progress" for 2 h 59 min in

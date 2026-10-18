@@ -40,6 +40,35 @@ Format: What changed | Why | Rejected alternatives | What it opens
 
 ---
 
+## 2026-10-18 (3) — The README leads with what a reader gets and states 0.7.0's limits; CI's actions are pinned to commits (security S-12)
+
+**What changed.** `README.md`: the opening says what you get (answers you can check, the page one
+click away, what leaves the machine with each engine) before how it is built; the concept bullet
+covers names, forms and definitions; Status names 0.7.0 as in preparation, with v0.6.0's date
+corrected to 2026-09-04 and six things the release makes true; Limitations is grouped under four
+headings and gains the reference-list cut (KI-59), pages holding the previous page's text (KI-57),
+concepts versus extracted keywords, the definition grade, the wiki sample and the CLI provider
+default (KI-4). Every count is from 2026-10-18: 104 documents, 3,341 pages, 44 reference links,
+1,436 of 1,483 keywords in one document, 2,757 Python and 299 desktop tests (the full suite passed,
+2,754, before the 3 guard tests were added). `ci.yml`: the 7 `uses:` lines pinned to commit SHAs,
+each the commit its major tag pointed at that day; `.github/dependabot.yml` for `github-actions`
+only, monthly, minor and patch grouped; `tests/unit/test_ci_actions_pinned.py` fails on a tag (seen
+failing on `@v4`). Committed by the user with the checkpoint as `71b3903`.
+
+**Why.** Plan session 5b: the README is the release's front page, and its Status still described
+0.6.0 with the wrong date and 2,389 tests; two Limitations links pointed at gitignored files a
+public reader cannot open. S-12 was decided at the checkpoint the same day: a tag can be moved to
+other code, a SHA cannot.
+
+**Rejected.** Writing Status as already released: the README is pushed before the release, so it
+says "in preparation" and one line changes on release day. Bumping the actions' majors while
+pinning: that is a behaviour change, and Dependabot proposes each as its own PR.
+
+**What it opens.** Five Dependabot PRs, all new majors (`checkout` 4 → 7, `setup-node` 4 → 7,
+`setup-buildx-action` 3 → 4, `setup-uv` 3 → 10, `build-push-action` 6 → 7): the user's to review.
+Dependabot alerts read off (404). The CHANGELOG's Unreleased section stops before the definitions
+work and the KI-62 to KI-65 fixes; release criterion 5 needs it to match the README.
+
 ## 2026-10-18 (2) — Release checkpoint: ADR-053 and ADR-041 accepted, 93a's suggestions stored, a docs revamp planned after 0.7.0
 
 **What changed.** The user took the seven calls left before 0.7.0, one at a time. ADR-053 is

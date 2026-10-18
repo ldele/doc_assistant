@@ -64,6 +64,22 @@ def test_each_turn_gets_its_own_session() -> None:
     assert re.search(r"session_id = \('rg012-\{0\}-turn\{1\}' -f \$stamp, \$k\)", script)
 
 
+def test_every_request_that_changes_something_carries_the_launch_token() -> None:
+    """Security S-6: the installed app's API answers 401 to a POST, PATCH or DELETE without the
+    token, so a harness request without it would fail the run as if the app were broken."""
+    script = RUN.read_text(encoding="ascii")
+    assert re.search(r"^\$env:DOC_API_TOKEN = ", script, re.MULTILINE)
+    assert script.index("$env:DOC_API_TOKEN = ") < script.index("Start-Process -FilePath $exe")
+    writes = [
+        line
+        for line in script.splitlines()
+        if re.search(r"Invoke-(RestMethod|WebRequest)\b", line)
+        and re.search(r"-Method\s+(Post|Put|Patch|Delete)\b", line, re.IGNORECASE)
+    ]
+    assert len(writes) >= 2  # the ingest and the chat turns
+    assert all("-Headers $auth" in line for line in writes)
+
+
 def test_the_sandbox_runs_the_tracked_script() -> None:
     """The .wsb must map this folder and launch this file — not a host copy that can drift."""
     wsb = WSB.read_text(encoding="ascii")

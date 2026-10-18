@@ -5,7 +5,8 @@ else. Endpoints own no retrieval/provenance/claim logic (non-negotiable #3).
 
 **Key files**
 - `main.py` — `create_app(...)` only: lifespan (schema migration + controller), `app.state` wiring +
-  test seams, CORS, `include_router`. Re-exports `_settings_view`/`_default_rebuild_graph` for tests.
+  test seams, CORS, host guard, `include_router`. Re-exports `_settings_view`/`_default_rebuild_graph`.
+  `launch_token.py` (S-6): with `DOC_API_TOKEN` set, every write needs `X-Doc-Api-Token` (else 401).
 - `routers/*` — one `APIRouter` per domain: `health` · `chat` (SSE `token`/`step`/`result`/`done`,
   compare, claims, export, source/figure) · `conversations` · `library/` · `concepts` ·
   `definitions` (the graph panel's one write, ADR-053) · `taxonomy` · `settings` · `setup` (the

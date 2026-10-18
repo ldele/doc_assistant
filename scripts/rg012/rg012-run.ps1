@@ -95,6 +95,14 @@ if (-not $env:OLLAMA_HOST) {
   L ("WARN: no ollama endpoint answered; falling back to " + $env:OLLAMA_HOST)
 }
 
+# Security S-6: the app's API refuses a POST, PATCH or DELETE without the launch token. The shell
+# mints one per launch unless DOC_API_TOKEN is already in its environment, so this run sets its
+# own (random, never logged) and sends it on every request that changes something.
+$tokenBytes = New-Object byte[] 32
+[System.Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($tokenBytes)
+$env:DOC_API_TOKEN = ($tokenBytes | ForEach-Object { $_.ToString('x2') }) -join ''
+$auth = @{ 'X-Doc-Api-Token' = $env:DOC_API_TOKEN }
+
 Start-Process -FilePath $exe.FullName
 L "app launched; waiting for the sidecar (bundled weights load on first run)..."
 
@@ -128,7 +136,7 @@ L ("seeded {0} PDFs" -f (Get-ChildItem $srcDir -Filter *.pdf).Count)
 
 # --- 4. ingest ---------------------------------------------------------------
 try {
-  Invoke-RestMethod 'http://127.0.0.1:8001/api/ingest' -Method Post -ContentType 'application/json' -Body '{}' -TimeoutSec 30 | Out-Null
+  Invoke-RestMethod 'http://127.0.0.1:8001/api/ingest' -Method Post -Headers $auth -ContentType 'application/json' -Body '{}' -TimeoutSec 30 | Out-Null
   L "ingest accepted (202)"
 } catch { L ("ingest POST failed: " + $_.Exception.Message) }
 
@@ -172,7 +180,7 @@ for ($k = 1; $k -le $questions.Count; $k++) {
   $body = @{ text = $q; session_id = ('rg012-{0}-turn{1}' -f $stamp, $k) } | ConvertTo-Json -Compress
   $t1 = Get-Date
   try {
-    $resp = Invoke-WebRequest 'http://127.0.0.1:8001/api/chat' -Method Post -ContentType 'application/json' -Body $body -TimeoutSec 900 -UseBasicParsing
+    $resp = Invoke-WebRequest 'http://127.0.0.1:8001/api/chat' -Method Post -Headers $auth -ContentType 'application/json' -Body $body -TimeoutSec 900 -UseBasicParsing
     $raw = $resp.Content
   } catch { L ("turn {0}: chat failed: {1}" -f $k, $_.Exception.Message); continue }
   L ("turn {0}: completed in {1:N0}s" -f $k, ((Get-Date) - $t1).TotalSeconds)

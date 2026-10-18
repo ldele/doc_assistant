@@ -2,19 +2,19 @@
 // Pairs with apps/api/routers/settings.py and apps/api/models/settings.py; see
 // docs/architecture.md, section "apps/ — the domain spine".
 
-import { API_BASE, errorDetail } from './_base'
+import { API_BASE, apiFetch, errorDetail } from './_base'
 import type {
   Settings,
 } from '../types'
 
 export async function getSettings(): Promise<Settings> {
-  const r = await fetch(`${API_BASE}/api/settings`)
+  const r = await apiFetch(`${API_BASE}/api/settings`)
   if (!r.ok) throw new Error(`settings failed: ${r.status}`)
   return (await r.json()) as Settings
 }
 /** Persist the source documents folder. 400 carries the backend's reason (e.g. not a directory). */
 export async function setSourceDir(sourceDir: string): Promise<Settings> {
-  const r = await fetch(`${API_BASE}/api/settings`, {
+  const r = await apiFetch(`${API_BASE}/api/settings`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ source_dir: sourceDir }),
@@ -25,7 +25,7 @@ export async function setSourceDir(sourceDir: string): Promise<Settings> {
 /** Switch the live LLM provider/model (ADR-011, U1c) — takes effect on the next turn, no
  *  restart. 400 carries the backend's reason (unknown provider, or one with no key configured). */
 export async function setLlmProvider(provider: string, model: string): Promise<Settings> {
-  const r = await fetch(`${API_BASE}/api/settings`, {
+  const r = await apiFetch(`${API_BASE}/api/settings`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ llm_provider: provider, llm_model: model }),
@@ -37,7 +37,7 @@ export async function setLlmProvider(provider: string, model: string): Promise<S
  *  chips may appear on answer sources. Takes effect on the next turn; the RAG-sandbox session
  *  override still wins per-turn. Never affects the always-on source-evaluation strip (D3). */
 export async function setMarkersEnabled(enabled: boolean): Promise<Settings> {
-  const r = await fetch(`${API_BASE}/api/settings`, {
+  const r = await apiFetch(`${API_BASE}/api/settings`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ epistemics_markers_enabled: enabled }),
@@ -51,7 +51,7 @@ export async function setMarkersEnabled(enabled: boolean): Promise<Settings> {
 // next launch would rebuild anyway, so there is no confirmation step. Returns the refreshed
 // settings, so the caller needs no second GET.
 export async function reindexKeywords(): Promise<Settings> {
-  const r = await fetch(`${API_BASE}/api/settings/reindex-keywords`, { method: 'POST' })
+  const r = await apiFetch(`${API_BASE}/api/settings/reindex-keywords`, { method: 'POST' })
   if (!r.ok) throw new Error(await errorDetail(r, 'rebuild the keyword index'))
   return (await r.json()) as Settings
 }

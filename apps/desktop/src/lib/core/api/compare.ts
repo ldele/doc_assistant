@@ -2,7 +2,7 @@
 // Pairs with apps/api/routers/compare.py and apps/api/models/compare.py; see
 // docs/architecture.md, section "apps/ — the domain spine".
 
-import { API_BASE, errorDetail } from './_base'
+import { API_BASE, apiFetch, errorDetail } from './_base'
 import type {
   CompareResult,
   RagOverrides,
@@ -15,7 +15,7 @@ export async function compareRetrieval(
   overrides?: RagOverrides,
   scopeFolderId?: string | null,
 ): Promise<CompareResult> {
-  const r = await fetch(`${API_BASE}/api/compare`, {
+  const r = await apiFetch(`${API_BASE}/api/compare`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     // ADR-025 F2 — the scope rides both sides, so the diff isolates the knob, not the corpus.

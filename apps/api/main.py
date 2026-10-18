@@ -11,7 +11,7 @@ controller via ``create_app(controller=...)`` so no real pipeline / LLM / networ
 serializers, the settings read view, and the lazy default job runners — lives in
 ``apps/api/services``. This module owns only ``create_app``: the lifespan (schema migration +
 controller construction), the ``app.state`` wiring + test seams, CORS, the host guard (security
-S-5), and the router mounts.
+S-5), the launch token (S-6, ``apps/api/launch_token``), and the router mounts.
 ``_settings_view`` / ``_default_rebuild_graph`` are re-exported below because tests import them by
 name from here.
 
@@ -34,6 +34,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 
+from apps.api.launch_token import LaunchTokenMiddleware, configured_token
 from apps.api.routers import (
     chat,
     concepts,
@@ -162,6 +163,11 @@ def create_app(
     app.state.controller_factory = controller_factory or ChatController
     if controller is not None:
         app.state.controller = controller
+    # S-6: added before CORS, so it runs inside it and a 401 still carries the CORS headers.
+    token = configured_token()
+    if token is not None:
+        app.add_middleware(LaunchTokenMiddleware, token=token)
+    log.info("launch_token", required=token is not None)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=_ALLOWED_ORIGINS,

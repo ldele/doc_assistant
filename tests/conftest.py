@@ -26,7 +26,8 @@ Two smaller jobs follow, both about machine state leaking into a verdict. Each t
 credential file: ADR-034 lets a user save an API key in the app, and a key saved by one test must
 not flip the next test's assertion about a keyless provider. And Starlette's ``TestClient`` is let
 through the API's host guard (security S-5): it sends ``Host: testserver``, which the guard
-refuses by design. ``test_api_host_guard.py`` sets its own list to test the guard itself.
+refuses by design. ``test_api_host_guard.py`` sets its own list to test the guard itself. A
+launch token set in the shell (S-6) is removed for the same reason.
 """
 
 from __future__ import annotations
@@ -153,3 +154,11 @@ def _isolate_credentials(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Non
 def _allow_the_test_client_host(monkeypatch: pytest.MonkeyPatch) -> None:
     """Serve ``Host: testserver`` (the TestClient's) alongside the loopback defaults (S-5)."""
     monkeypatch.setenv("DOC_API_ALLOWED_HOSTS", "127.0.0.1,localhost,testserver")
+
+
+@pytest.fixture(autouse=True)
+def _no_launch_token(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A ``DOC_API_TOKEN`` in the shell would 401 every write in the suite (S-6).
+
+    ``test_api_launch_token.py`` sets its own."""
+    monkeypatch.delenv("DOC_API_TOKEN", raising=False)

@@ -1,12 +1,12 @@
 // Thin `documents` client — fetch + parsing only, no business logic.
 // Pairs with apps/api/routers/sources.py (AD2).
 
-import { API_BASE, errorDetail } from './_base'
+import { API_BASE, apiFetch, errorDetail } from './_base'
 import type { Accepts, CatalogueScan, InspectResponse } from '../types/documents'
 
 /** What an add accepts — formats and the enforced limits — for the uploader to state up front. */
 export async function getAccepts(): Promise<Accepts> {
-  const r = await fetch(`${API_BASE}/api/documents/accepts`)
+  const r = await apiFetch(`${API_BASE}/api/documents/accepts`)
   if (!r.ok) throw new Error(await errorDetail(r, 'read accepted formats'))
   return (await r.json()) as Accepts
 }
@@ -19,7 +19,7 @@ export async function getAccepts(): Promise<Accepts> {
  * `registry.scan_sources` rather than in a second implementation here.
  */
 export async function inspectDocuments(paths: string[]): Promise<InspectResponse> {
-  const r = await fetch(`${API_BASE}/api/documents/inspect`, {
+  const r = await apiFetch(`${API_BASE}/api/documents/inspect`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ paths }),
@@ -69,7 +69,7 @@ export async function addDocuments(
   mode: AddMode = 'copy',
   referenceRoot: string | null = null,
 ): Promise<AddResult> {
-  const r = await fetch(`${API_BASE}/api/documents/add`, {
+  const r = await apiFetch(`${API_BASE}/api/documents/add`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ paths, mode, reference_root: referenceRoot }),
@@ -85,7 +85,7 @@ export async function addDocuments(
  * Takes the `key` of each outcome, not its `rel_path`.
  */
 export async function undoAddDocuments(keys: string[]): Promise<number> {
-  const r = await fetch(`${API_BASE}/api/documents/undo-add`, {
+  const r = await apiFetch(`${API_BASE}/api/documents/undo-add`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ rel_paths: keys }),
@@ -96,7 +96,7 @@ export async function undoAddDocuments(keys: string[]): Promise<number> {
 
 /** Index exactly these paths through the existing ingest endpoint (spec constraint 4). */
 export async function indexPaths(paths: string[]): Promise<void> {
-  const r = await fetch(`${API_BASE}/api/ingest`, {
+  const r = await apiFetch(`${API_BASE}/api/ingest`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ paths }),
@@ -113,7 +113,7 @@ export async function indexPaths(paths: string[]): Promise<void> {
  * "no library there" answer, not a fault — its detail is a sentence written for the user.
  */
 export async function scanZoteroLibrary(dataDir?: string): Promise<CatalogueScan> {
-  const r = await fetch(`${API_BASE}/api/catalogue/zotero/scan`, {
+  const r = await apiFetch(`${API_BASE}/api/catalogue/zotero/scan`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(dataDir ? { data_dir: dataDir } : {}),

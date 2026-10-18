@@ -2,7 +2,7 @@
 // Pairs with apps/api/routers/library.py and apps/api/models/library.py; see
 // docs/architecture.md, section "apps/ — the domain spine".
 
-import { API_BASE, errorDetail } from './_base'
+import { API_BASE, apiFetch, errorDetail } from './_base'
 import type {
   ChunkContext,
   ChunkLocation,
@@ -17,13 +17,13 @@ import type {
 
 /** List ingested documents for the Library browser (feature-library-browser.md, read-only). */
 export async function listLibraryDocuments(): Promise<LibraryDocument[]> {
-  const r = await fetch(`${API_BASE}/api/library/documents`)
+  const r = await apiFetch(`${API_BASE}/api/library/documents`)
   if (!r.ok) throw new Error(`library documents failed: ${r.status}`)
   return (await r.json()) as LibraryDocument[]
 }
 /** One document's chunks grouped into parent blocks (each expandable to its children). 404 unknown. */
 export async function getLibraryDocument(docId: string): Promise<LibraryDocumentChunks> {
-  const r = await fetch(`${API_BASE}/api/library/documents/${encodeURIComponent(docId)}`)
+  const r = await apiFetch(`${API_BASE}/api/library/documents/${encodeURIComponent(docId)}`)
   if (!r.ok) throw new Error(`library document failed: ${r.status}`)
   return (await r.json()) as LibraryDocumentChunks
 }
@@ -33,7 +33,7 @@ export async function updateDocumentMeta(
   docId: string,
   patch: { title?: string; authors?: string; year?: number | null },
 ): Promise<void> {
-  const r = await fetch(`${API_BASE}/api/library/documents/${encodeURIComponent(docId)}`, {
+  const r = await apiFetch(`${API_BASE}/api/library/documents/${encodeURIComponent(docId)}`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(patch),
@@ -42,7 +42,7 @@ export async function updateDocumentMeta(
 }
 /** Reset a document's metadata to the auto-extracted defaults (drop the override). */
 export async function resetDocumentMeta(docId: string): Promise<void> {
-  const r = await fetch(
+  const r = await apiFetch(
     `${API_BASE}/api/library/documents/${encodeURIComponent(docId)}/reset-metadata`,
     { method: 'POST' },
   )
@@ -51,7 +51,7 @@ export async function resetDocumentMeta(docId: string): Promise<void> {
 /** Reveal a document's source file in the OS file manager (local desktop action). 404 if the file
  *  can't be located (moved/deleted since ingest). */
 export async function revealDocument(docId: string): Promise<void> {
-  const r = await fetch(`${API_BASE}/api/library/documents/${encodeURIComponent(docId)}/reveal`, {
+  const r = await apiFetch(`${API_BASE}/api/library/documents/${encodeURIComponent(docId)}/reveal`, {
     method: 'POST',
   })
   if (!r.ok) throw new Error(`reveal document failed: ${r.status}`)
@@ -72,7 +72,7 @@ export interface DeleteResult {
  */
 export async function deleteDocument(docId: string, deleteFile = false): Promise<DeleteResult> {
   const q = deleteFile ? '?delete_file=true' : ''
-  const r = await fetch(`${API_BASE}/api/library/documents/${encodeURIComponent(docId)}${q}`, {
+  const r = await apiFetch(`${API_BASE}/api/library/documents/${encodeURIComponent(docId)}${q}`, {
     method: 'DELETE',
   })
   if (!r.ok) throw new Error(`delete document failed: ${r.status}`)
@@ -86,7 +86,7 @@ export async function deleteDocument(docId: string, deleteFile = false): Promise
 /** One document's figures (Library L1b) — a pure sidecar read, separate from its text chunks.
  *  404 for an unknown document; a document with no figures returns an empty list. */
 export async function getDocumentFigures(docId: string): Promise<LibraryDocumentFigures> {
-  const r = await fetch(
+  const r = await apiFetch(
     `${API_BASE}/api/library/documents/${encodeURIComponent(docId)}/figures`,
   )
   if (!r.ok) throw new Error(`document figures failed: ${r.status}`)
@@ -97,7 +97,7 @@ export async function getDocumentFigures(docId: string): Promise<LibraryDocument
  *  resolved to nothing. 404 for an unknown document; never-extracted references come back as
  *  an empty list. */
 export async function getDocumentReferences(docId: string): Promise<DocReferences> {
-  const r = await fetch(
+  const r = await apiFetch(
     `${API_BASE}/api/library/documents/${encodeURIComponent(docId)}/references`,
   )
   if (!r.ok) throw new Error(`document references failed: ${r.status}`)
@@ -106,7 +106,7 @@ export async function getDocumentReferences(docId: string): Promise<DocReference
 
 /** What a re-run can do, and what it declines to do (ADR-048). */
 export async function getReingestOptions(): Promise<ReingestOptions> {
-  const r = await fetch(`${API_BASE}/api/library/reingest/options`)
+  const r = await apiFetch(`${API_BASE}/api/library/reingest/options`)
   if (!r.ok) throw new Error(await errorDetail(r, 'load re-run options'))
   return (await r.json()) as ReingestOptions
 }
@@ -114,7 +114,7 @@ export async function getReingestOptions(): Promise<ReingestOptions> {
 /** Start a re-run. One document is ROADMAP 20; a selection is 21 — same call either way.
  *  202 + poll, like every other background job here. */
 export async function startReingest(documentIds: string[], parts: string[]): Promise<void> {
-  const r = await fetch(`${API_BASE}/api/library/documents/reingest`, {
+  const r = await apiFetch(`${API_BASE}/api/library/documents/reingest`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ document_ids: documentIds, parts }),
@@ -123,7 +123,7 @@ export async function startReingest(documentIds: string[], parts: string[]): Pro
 }
 
 export async function getReingestStatus(): Promise<ReingestStatus> {
-  const r = await fetch(`${API_BASE}/api/library/reingest/status`)
+  const r = await apiFetch(`${API_BASE}/api/library/reingest/status`)
   if (!r.ok) throw new Error(await errorDetail(r, 'read the re-run status'))
   return (await r.json()) as ReingestStatus
 }
@@ -131,7 +131,7 @@ export async function getReingestStatus(): Promise<ReingestStatus> {
 /** Where a cited chunk sits in its source. `null` when it cannot be placed (a 404) — an
  *  unresolved span or a cache that is gone. Never an approximation. */
 export async function getChunkContext(chunkKey: string, window = 700): Promise<ChunkContext | null> {
-  const r = await fetch(
+  const r = await apiFetch(
     `${API_BASE}/api/library/chunk-context?key=${encodeURIComponent(chunkKey)}&window=${window}`,
   )
   if (r.status === 404) return null
@@ -143,7 +143,7 @@ export async function getChunkContext(chunkKey: string, window = 700): Promise<C
  *  `null` only for an unknown document (a 404). A file that has moved comes back as a normal
  *  answer carrying `available: false` and a reason — see ADR-050 D4. */
 export async function getSourceDocumentView(documentId: string): Promise<SourceDocumentView | null> {
-  const r = await fetch(`${API_BASE}/api/library/documents/${encodeURIComponent(documentId)}/source`)
+  const r = await apiFetch(`${API_BASE}/api/library/documents/${encodeURIComponent(documentId)}/source`)
   if (r.status === 404) return null
   if (!r.ok) throw new Error(await errorDetail(r, 'open this document'))
   return (await r.json()) as SourceDocumentView
@@ -161,7 +161,7 @@ export function sourcePageUrl(documentId: string, page: number, dpi = 0): string
  *  `null` only for a key the chunk store does not know (a 404). A known chunk that cannot be
  *  *placed* comes back with `page: null`, and the viewer opens at page 1 claiming nothing. */
 export async function locateChunk(chunkKey: string): Promise<ChunkLocation | null> {
-  const r = await fetch(`${API_BASE}/api/library/chunk-page?key=${encodeURIComponent(chunkKey)}`)
+  const r = await apiFetch(`${API_BASE}/api/library/chunk-page?key=${encodeURIComponent(chunkKey)}`)
   if (!r.ok) return null
   return (await r.json()) as ChunkLocation
 }

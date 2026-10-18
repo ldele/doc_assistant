@@ -2,19 +2,19 @@
 // Pairs with apps/api/routers/folders.py and apps/api/models/folders.py; see
 // docs/architecture.md, section "apps/ — the domain spine".
 
-import { API_BASE, errorDetail } from './_base'
+import { API_BASE, apiFetch, errorDetail } from './_base'
 import type {
   LibraryFolder,
 } from '../types'
 
 export async function listFolders(): Promise<LibraryFolder[]> {
-  const r = await fetch(`${API_BASE}/api/library/folders`)
+  const r = await apiFetch(`${API_BASE}/api/library/folders`)
   if (!r.ok) throw new Error(await errorDetail(r, 'folders'))
   return (await r.json()) as LibraryFolder[]
 }
 /** Create a folder. Idempotent on the case-folded name — the existing folder comes back. */
 export async function createFolder(name: string): Promise<LibraryFolder> {
-  const r = await fetch(`${API_BASE}/api/library/folders`, {
+  const r = await apiFetch(`${API_BASE}/api/library/folders`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ name }),
@@ -23,7 +23,7 @@ export async function createFolder(name: string): Promise<LibraryFolder> {
   return (await r.json()) as LibraryFolder
 }
 export async function renameFolder(folderId: string, name: string): Promise<LibraryFolder> {
-  const r = await fetch(`${API_BASE}/api/library/folders/${encodeURIComponent(folderId)}`, {
+  const r = await apiFetch(`${API_BASE}/api/library/folders/${encodeURIComponent(folderId)}`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ name }),
@@ -33,7 +33,7 @@ export async function renameFolder(folderId: string, name: string): Promise<Libr
 }
 /** Delete the folder only — the documents in it are never touched (spec D6). */
 export async function deleteFolder(folderId: string): Promise<void> {
-  const r = await fetch(`${API_BASE}/api/library/folders/${encodeURIComponent(folderId)}`, {
+  const r = await apiFetch(`${API_BASE}/api/library/folders/${encodeURIComponent(folderId)}`, {
     method: 'DELETE',
   })
   if (!r.ok) throw new Error(await errorDetail(r, 'delete folder'))
@@ -43,7 +43,7 @@ export async function addDocumentsToFolder(
   folderId: string,
   documentIds: string[],
 ): Promise<LibraryFolder> {
-  const r = await fetch(
+  const r = await apiFetch(
     `${API_BASE}/api/library/folders/${encodeURIComponent(folderId)}/documents`,
     {
       method: 'POST',
@@ -58,7 +58,7 @@ export async function removeDocumentFromFolder(
   folderId: string,
   documentId: string,
 ): Promise<LibraryFolder> {
-  const r = await fetch(
+  const r = await apiFetch(
     `${API_BASE}/api/library/folders/${encodeURIComponent(folderId)}/documents/${encodeURIComponent(documentId)}`,
     { method: 'DELETE' },
   )

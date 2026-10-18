@@ -2,7 +2,7 @@
 // Pairs with apps/api/routers/conversations.py and apps/api/models/conversations.py; see
 // docs/architecture.md, section "apps/ — the domain spine".
 
-import { API_BASE } from './_base'
+import { API_BASE, apiFetch } from './_base'
 import type {
   ConversationDetail,
   ConversationSummary,
@@ -11,13 +11,13 @@ import type {
 
 /** List past conversations for the history sidebar (feature-conversation-history.md). */
 export async function listConversations(): Promise<ConversationSummary[]> {
-  const r = await fetch(`${API_BASE}/api/conversations`)
+  const r = await apiFetch(`${API_BASE}/api/conversations`)
   if (!r.ok) throw new Error(`conversations failed: ${r.status}`)
   return (await r.json()) as ConversationSummary[]
 }
 /** Rehydrate one conversation as a read-only transcript. */
 export async function getConversation(sessionId: string): Promise<ConversationDetail> {
-  const r = await fetch(`${API_BASE}/api/conversations/${encodeURIComponent(sessionId)}`)
+  const r = await apiFetch(`${API_BASE}/api/conversations/${encodeURIComponent(sessionId)}`)
   if (!r.ok) throw new Error(`conversation failed: ${r.status}`)
   return (await r.json()) as ConversationDetail
 }
@@ -27,7 +27,7 @@ export async function updateConversationMeta(
   sessionId: string,
   patch: { pinned?: boolean; archived?: boolean; deleted?: boolean; title?: string },
 ): Promise<void> {
-  const r = await fetch(`${API_BASE}/api/conversations/${encodeURIComponent(sessionId)}`, {
+  const r = await apiFetch(`${API_BASE}/api/conversations/${encodeURIComponent(sessionId)}`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(patch),
@@ -35,7 +35,7 @@ export async function updateConversationMeta(
   if (!r.ok) throw new Error(`update conversation failed: ${r.status}`)
 }
 export async function exportConversation(sessionId: string, dev: boolean): Promise<void> {
-  const r = await fetch(`${API_BASE}/api/export`, {
+  const r = await apiFetch(`${API_BASE}/api/export`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ session_id: sessionId, dev }),
@@ -57,7 +57,7 @@ export async function bulkUpdateConversations(
   sessionIds: string[],
   deleted: boolean = true,
 ): Promise<number> {
-  const r = await fetch(`${API_BASE}/api/conversations/bulk`, {
+  const r = await apiFetch(`${API_BASE}/api/conversations/bulk`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ session_ids: sessionIds, deleted }),
@@ -70,7 +70,7 @@ export async function bulkUpdateConversations(
  *  which stops at ~100. Offered *before* bulk delete: soft-deleted rows stay in the database,
  *  but that is not a restore path a person can act on; a file is. */
 export async function exportAllConversations(): Promise<void> {
-  const r = await fetch(`${API_BASE}/api/conversations/export`, { method: 'POST' })
+  const r = await apiFetch(`${API_BASE}/api/conversations/export`, { method: 'POST' })
   if (!r.ok) throw new Error(`history export failed: ${r.status}`)
   const blob = await r.blob()
   const url = URL.createObjectURL(blob)

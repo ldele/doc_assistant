@@ -19,5 +19,8 @@ tauri-plugin-shell = "2"
 # AD1: the "Add documents" file/folder picker. Rust-side only — with `withGlobalTauri`
 # the plugin injects itself at `window.__TAURI__.dialog`, so it adds no npm dependency.
 tauri-plugin-dialog = "2"
+# Security S-6: the per-launch API token, read from the OS random source. 0.3 is already in
+# Cargo.lock through Tauri's own tree, so this adds no crate to the build.
+getrandom = "0.3"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

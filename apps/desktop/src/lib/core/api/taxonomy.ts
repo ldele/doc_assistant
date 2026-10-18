@@ -2,7 +2,7 @@
 // Pairs with apps/api/routers/taxonomy.py and apps/api/models/taxonomy.py; see
 // docs/architecture.md, section "apps/ — the domain spine".
 
-import { API_BASE, errorDetail } from './_base'
+import { API_BASE, apiFetch, errorDetail } from './_base'
 import type {
   FieldDetail,
   HierarchyEdgeRequest,
@@ -14,21 +14,21 @@ import type {
 /** The field forest + per-field coverage + corpus totals. 200 with zeros on an unseeded/empty
  *  forest (the ANZSRC trunk is bundled data — an empty forest is a legit state, not a 404). */
 export async function getTaxonomy(): Promise<TaxonomyView> {
-  const r = await fetch(`${API_BASE}/api/taxonomy`)
+  const r = await apiFetch(`${API_BASE}/api/taxonomy`)
   if (!r.ok) throw new Error(await errorDetail(r, 'taxonomy'))
   return (await r.json()) as TaxonomyView
 }
 /** One field's directly-attached concepts + documents + rollup counts. 404 when `fieldId` is not a
  *  domain node (a wrong id or a concept id) — as distinct from a real-but-empty field. */
 export async function getFieldDetail(fieldId: string): Promise<FieldDetail> {
-  const r = await fetch(`${API_BASE}/api/taxonomy/fields/${encodeURIComponent(fieldId)}`)
+  const r = await apiFetch(`${API_BASE}/api/taxonomy/fields/${encodeURIComponent(fieldId)}`)
   if (!r.ok) throw new Error(await errorDetail(r, 'field detail'))
   return (await r.json()) as FieldDetail
 }
 /** Every proposed hierarchy edge awaiting accept-or-delete (ADR-028 D8). An empty list is the
  *  ordinary state — nothing proposed, or everything already reviewed. */
 export async function getProposals(): Promise<ProposedEdge[]> {
-  const r = await fetch(`${API_BASE}/api/taxonomy/proposals`)
+  const r = await apiFetch(`${API_BASE}/api/taxonomy/proposals`)
   if (!r.ok) throw new Error(await errorDetail(r, 'taxonomy proposals'))
   return ((await r.json()) as Proposals).proposals
 }
@@ -36,7 +36,7 @@ export async function getProposals(): Promise<ProposedEdge[]> {
  *  just an `in_field` edge from the concept to the domain node — same endpoint. Surfaces the
  *  backend's 409 (cycle) / 404 (missing id) / 400 (bad type) `detail` message. */
 export async function addHierarchyEdge(body: HierarchyEdgeRequest): Promise<void> {
-  const r = await fetch(`${API_BASE}/api/taxonomy/hierarchy`, {
+  const r = await apiFetch(`${API_BASE}/api/taxonomy/hierarchy`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
@@ -46,7 +46,7 @@ export async function addHierarchyEdge(body: HierarchyEdgeRequest): Promise<void
 /** Remove a curated hierarchy edge by its unique key. Idempotent (`removed` 0 if absent). The
  *  client's first DELETE with a JSON body — `fetch` allows it; set the JSON content-type. */
 export async function removeHierarchyEdge(body: HierarchyEdgeRequest): Promise<{ removed: number }> {
-  const r = await fetch(`${API_BASE}/api/taxonomy/hierarchy`, {
+  const r = await apiFetch(`${API_BASE}/api/taxonomy/hierarchy`, {
     method: 'DELETE',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
@@ -57,7 +57,7 @@ export async function removeHierarchyEdge(body: HierarchyEdgeRequest): Promise<{
 /** Attach a document to a taxonomy field (a domain node). Idempotent per pair. 404 for an unknown
  *  document; 400 when the target is not a domain field (`NotADomainError`). */
 export async function attachDocumentField(docId: string, fieldId: string): Promise<void> {
-  const r = await fetch(
+  const r = await apiFetch(
     `${API_BASE}/api/taxonomy/documents/${encodeURIComponent(docId)}/fields/${encodeURIComponent(fieldId)}`,
     { method: 'POST' },
   )
@@ -69,7 +69,7 @@ export async function detachDocumentField(
   docId: string,
   fieldId: string,
 ): Promise<{ removed: number }> {
-  const r = await fetch(
+  const r = await apiFetch(
     `${API_BASE}/api/taxonomy/documents/${encodeURIComponent(docId)}/fields/${encodeURIComponent(fieldId)}`,
     { method: 'DELETE' },
   )

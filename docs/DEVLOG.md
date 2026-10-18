@@ -40,6 +40,41 @@ Format: What changed | Why | Rejected alternatives | What it opens
 
 ---
 
+## 2026-10-17 (4) — A write to the local API needs the token the app was started with (security S-6)
+
+**What changed.** The Tauri shell mints 32 random bytes per launch (`getrandom` 0.3, already in
+`Cargo.lock` through Tauri: one line in the lock, no new crate), passes them to the API sidecar as
+`DOC_API_TOKEN`, and hands them to its window through a new `api_token` command. The API
+(`apps/api/launch_token.py`, mounted inside CORS) answers 401 to any POST, PUT, PATCH or DELETE
+without a matching `X-Doc-Api-Token`, compared in constant time, and logs `security_token_refused`
+with the method and path, never a value. Reads stay open. The domain clients call `apiFetch`
+(`core/api/_base.ts`), which adds the header to writes only (`core/launchToken.ts`, tested), so
+reads cost no extra preflight. With `DOC_API_TOKEN` unset nothing is checked: `just api`, the test
+suite (`conftest` removes a shell's token) and the headless image run as before.
+
+**Why the shell accepts a preset token.** The RG-012 release check launches the installed app and
+drives its API from PowerShell, outside the window; a token only the window knew would fail the
+run as if the app were broken. The harness now sets a random `DOC_API_TOKEN` before launching and
+sends it on its two writes (a test holds that). Whoever can set the shell's environment already
+runs as the user.
+
+**Checked.** 8 API tests (401 on `/add`, `/ingest`, `DELETE`; a wrong, empty or case-changed token
+refused; the token reaches the route; reads and preflights pass; the 401 carries CORS headers;
+unset means unchecked; the refusal log holds no token), 4 frontend tests, the harness test, `cargo
+check`. Live in `tauri dev`: with no token set the app loads and a write succeeds; with one preset
+on both sides, a POST without the header gets 401 from the window and from outside (`/add`,
+`/ingest`, `DELETE`, `PATCH`), the app's own write succeeds, and `/api/health` stays open. **Not
+checked:** the installed build (a walkthrough row) and the RG-012 sandbox run (the next release).
+
+**Rejected.** Guarding reads too: CORS already stops a page reading answers and S-5 stops it
+becoming same-origin, while every figure, health poll and page image would pay a preflight. A
+`BaseHTTPMiddleware`: pure ASGI leaves the chat's event stream untouched. Wrapping `window.fetch`
+globally: an explicit `apiFetch` can be read and tested. Failing closed when unset: the dev loop
+and the suite have no shell to mint one.
+
+**What it opens.** S-7 is the current step. S3's "arbitrary path" half: `/add` and `inspect` still
+take any path, now only from the app's own window.
+
 ## 2026-10-17 (3) — KL4: neither wiki clustering path partitions the library, so the default stays; the trust table states the placement runs RG-015 already had (RG-018, RG-015)
 
 **What changed.** No code. `tests/eval/baselines/wiki_clustering_2026-10-17.md` measures both wiki

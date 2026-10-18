@@ -2,7 +2,9 @@
 entry that PyInstaller bundles for the Tauri desktop app (PR-M4).
 
 Runs the FastAPI app under uvicorn on ``127.0.0.1``. Host/port are env-overridable so the
-Tauri shell can pick a port; defaults match the dev contract (Vite proxies to ``:8001``).
+Tauri shell can pick a port; defaults match the dev contract (Vite proxies to ``:8001``). The shell
+also sets ``DOC_API_TOKEN``, this launch's token, which ``create_app`` requires on every write
+(security S-6, ``apps/api/launch_token``).
 The real ``ChatController`` (model load) is built lazily in the app's ``lifespan`` — so the
 process starts immediately and ``/api/health`` flips to ``200`` once the stack is warm
 (the frontend's readiness gate polls it).

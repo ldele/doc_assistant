@@ -29,7 +29,12 @@ interface TauriDialogApi {
   }) => Promise<string | string[] | null>
 }
 
+interface TauriCoreApi {
+  invoke: <T>(cmd: string, args?: Record<string, unknown>) => Promise<T>
+}
+
 interface TauriGlobal {
+  core?: TauriCoreApi
   event?: TauriEventApi
   dialog?: TauriDialogApi
 }
@@ -115,6 +120,24 @@ export function onDragHover(handler: (over: boolean) => void): () => void {
     for (const s of stops) s()
     stops.length = 0
   }
+}
+
+let tokenOnce: Promise<string | null> | null = null
+
+/**
+ * The launch token the shell minted for this run (security S-6), or `null` in a browser. Asked
+ * once; a refused command also resolves to `null`, and the API's 401 then names the problem.
+ */
+export function launchToken(): Promise<string | null> {
+  if (tokenOnce) return tokenOnce
+  const invoke = api()?.core?.invoke
+  tokenOnce = invoke
+    ? invoke<string>('api_token').then(
+        (t) => (typeof t === 'string' && t ? t : null),
+        () => null,
+      )
+    : Promise.resolve(null)
+  return tokenOnce
 }
 
 /**

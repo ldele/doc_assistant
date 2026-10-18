@@ -2,7 +2,7 @@
 // Pairs with apps/api/routers/keywords.py and apps/api/models/keywords.py; see
 // docs/architecture.md, section "apps/ — the domain spine".
 
-import { API_BASE, errorDetail } from './_base'
+import { API_BASE, apiFetch, errorDetail } from './_base'
 import type {
   KeywordFamily,
   KeywordFamilyDeletion,
@@ -11,7 +11,7 @@ import type {
 } from '../types'
 
 export async function listKeywordFamilies(): Promise<KeywordFamily[]> {
-  const r = await fetch(`${API_BASE}/api/library/keyword-families`)
+  const r = await apiFetch(`${API_BASE}/api/library/keyword-families`)
   if (!r.ok) throw new Error(await errorDetail(r, 'keyword families'))
   return (await r.json()) as KeywordFamily[]
 }
@@ -19,7 +19,7 @@ export async function createKeywordFamily(
   canonical: string,
   members: string[] = [],
 ): Promise<KeywordFamily> {
-  const r = await fetch(`${API_BASE}/api/library/keyword-families`, {
+  const r = await apiFetch(`${API_BASE}/api/library/keyword-families`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ canonical, members }),
@@ -31,7 +31,7 @@ export async function renameKeywordFamily(
   familyId: string,
   canonical: string,
 ): Promise<KeywordFamily> {
-  const r = await fetch(`${API_BASE}/api/library/keyword-families/${encodeURIComponent(familyId)}`, {
+  const r = await apiFetch(`${API_BASE}/api/library/keyword-families/${encodeURIComponent(familyId)}`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ canonical }),
@@ -49,7 +49,7 @@ export async function setFamilyGraphInclude(
   familyId: string,
   include: boolean,
 ): Promise<KeywordFamily> {
-  const r = await fetch(`${API_BASE}/api/library/keyword-families/${encodeURIComponent(familyId)}`, {
+  const r = await apiFetch(`${API_BASE}/api/library/keyword-families/${encodeURIComponent(familyId)}`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ graph_include: include }),
@@ -59,7 +59,7 @@ export async function setFamilyGraphInclude(
 }
 /** Assign a keyword to a family, moving it off any other family it belonged to (ADR-015). */
 export async function addFamilyMember(familyId: string, keyword: string): Promise<KeywordFamily> {
-  const r = await fetch(
+  const r = await apiFetch(
     `${API_BASE}/api/library/keyword-families/${encodeURIComponent(familyId)}/members`,
     {
       method: 'POST',
@@ -74,7 +74,7 @@ export async function removeFamilyMember(
   familyId: string,
   keyword: string,
 ): Promise<KeywordFamily> {
-  const r = await fetch(
+  const r = await apiFetch(
     `${API_BASE}/api/library/keyword-families/${encodeURIComponent(familyId)}/members/${encodeURIComponent(keyword)}`,
     { method: 'DELETE' },
   )
@@ -91,7 +91,7 @@ export async function setFamilyMemberBreadth(
   keyword: string,
   breadth: MemberBreadth,
 ): Promise<KeywordFamily> {
-  const r = await fetch(
+  const r = await apiFetch(
     `${API_BASE}/api/library/keyword-families/${encodeURIComponent(familyId)}/members/${encodeURIComponent(keyword)}`,
     {
       method: 'PATCH',
@@ -104,14 +104,14 @@ export async function setFamilyMemberBreadth(
 }
 /** What deleting this family would remove — asked before the delete, so the confirmation can say. */
 export async function describeFamilyDeletion(familyId: string): Promise<KeywordFamilyDeletion> {
-  const r = await fetch(
+  const r = await apiFetch(
     `${API_BASE}/api/library/keyword-families/${encodeURIComponent(familyId)}/deletion`,
   )
   if (!r.ok) throw new Error(await errorDetail(r, 'describe family deletion'))
   return (await r.json()) as KeywordFamilyDeletion
 }
 export async function deleteKeywordFamily(familyId: string): Promise<void> {
-  const r = await fetch(`${API_BASE}/api/library/keyword-families/${encodeURIComponent(familyId)}`, {
+  const r = await apiFetch(`${API_BASE}/api/library/keyword-families/${encodeURIComponent(familyId)}`, {
     method: 'DELETE',
   })
   if (!r.ok) throw new Error(await errorDetail(r, 'delete keyword family'))
@@ -120,7 +120,7 @@ export async function deleteKeywordFamily(familyId: string): Promise<void> {
  *  morphological + bge-embedding clustering. Nothing is written — accept a proposal via
  *  createKeywordFamily. May take a few seconds (runs the embedder over the candidate pool). */
 export async function detectKeywordFamilies(): Promise<KeywordFamilyProposal[]> {
-  const r = await fetch(`${API_BASE}/api/library/keyword-families/detect`, { method: 'POST' })
+  const r = await apiFetch(`${API_BASE}/api/library/keyword-families/detect`, { method: 'POST' })
   if (!r.ok) throw new Error(await errorDetail(r, 'detect keyword families'))
   return (await r.json()) as KeywordFamilyProposal[]
 }

@@ -2,7 +2,7 @@
 // Pairs with apps/api/routers/chat.py and apps/api/models/chat.py; see
 // docs/architecture.md, section "apps/ — the domain spine".
 
-import { API_BASE } from './_base'
+import { API_BASE, apiFetch } from './_base'
 import type {
   Decision,
   RagOverrides,
@@ -23,7 +23,7 @@ export async function* streamChat(
   signal?: AbortSignal,
   scopeFolderId?: string | null,
 ): AsyncGenerator<SSEvent> {
-  const r = await fetch(`${API_BASE}/api/chat`, {
+  const r = await apiFetch(`${API_BASE}/api/chat`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -70,7 +70,7 @@ export async function adjudicate(
   decision: Decision,
   editedText?: string,
 ): Promise<void> {
-  const r = await fetch(`${API_BASE}/api/claims/${encodeURIComponent(claimId)}/adjudicate`, {
+  const r = await apiFetch(`${API_BASE}/api/claims/${encodeURIComponent(claimId)}/adjudicate`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ decision, edited_text: editedText ?? null }),

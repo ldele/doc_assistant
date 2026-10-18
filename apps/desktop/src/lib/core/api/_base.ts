@@ -4,7 +4,17 @@
 // build the frontend is served from the asset/tauri origin, so it hits the absolute backend URL
 // (the API's CORS allowlist includes `tauri://localhost`).
 
+import { needsToken, withToken } from '../launchToken'
+import { launchToken } from '../tauri'
+
 export const API_BASE: string = import.meta.env.DEV ? '' : 'http://127.0.0.1:8001'
+
+/** `fetch` for this API: a request that can change something carries the launch token
+ *  (security S-6), which the API requires when the shell started it. Every domain client calls the
+ *  API through this, never `fetch` itself. */
+export async function apiFetch(url: string, init: RequestInit = {}): Promise<Response> {
+  return fetch(url, needsToken(init.method) ? withToken(init, await launchToken()) : init)
+}
 
 // Shared error-detail unwrapper. FastAPI puts the message in `detail`, which is a string for
 // a plain HTTPException and an object for the structured 4xx bodies (e.g. a folder selection

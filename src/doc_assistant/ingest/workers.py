@@ -23,6 +23,7 @@ build a single-machine assumption it would then have to unpick.
 
 from __future__ import annotations
 
+import multiprocessing
 import os
 import sys
 from concurrent.futures import ProcessPoolExecutor, as_completed
@@ -31,6 +32,9 @@ from pathlib import Path
 import structlog
 
 log = structlog.get_logger(__name__)
+
+#: The extraction pool's start method — see ``warm_extraction_cache``.
+_SPAWN = multiprocessing.get_context("spawn")
 
 #: Named budgets, as fractions of the machine. Deliberately conservative: the point of the control
 #: is that Provenote does not take the whole box while someone is working on it.
@@ -153,7 +157,13 @@ def warm_extraction_cache(paths: list[Path], workers: int) -> dict[str, int]:
     workers = min(workers, len(paths))
     log.info("extraction_warmup_start", documents=len(paths), workers=workers)
     done = failed = 0
-    with ProcessPoolExecutor(max_workers=workers) as pool:
+    # ⚠ Spawn on every OS, never fork. Linux defaults to fork, and the caller is multi-threaded
+    # (the API runs ingest on a worker thread beside uvicorn's; the test suite has its own): a fork
+    # copies any lock another thread holds at that instant, and the child waits on it forever.
+    # CI hung that way for three hours on 2026-10-17 in `test_ingest_rebuild_preserves_library`,
+    # after logging Python's own "multi-threaded, use of fork() may lead to deadlocks" warning on
+    # every green run before it. Windows always spawned, so this is the behaviour already tested.
+    with ProcessPoolExecutor(max_workers=workers, mp_context=_SPAWN) as pool:
         futures = {pool.submit(_extract_one, str(p)): p for p in paths}
         for fut in as_completed(futures):
             try:

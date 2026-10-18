@@ -1,4 +1,4 @@
-<!-- status: archived · updated: 2026-10-09 · class: living -->
+<!-- status: archived · updated: 2026-10-18 · class: living -->
 
 # DEVLOG archive index
 
@@ -6,6 +6,20 @@ One line per rotated entry, grouped per archive file, newest file first. Laid by
 `cpc-rotate` at the first rollover (ADR-045). Each later rotation writes the lines it
 owes when `[rotate] write_index` is on, and prints them for a human to place when it
 is off; docs_check rule 17 fails while any archived entry is missing here.
+
+## DEVLOG-archive-008.md
+
+- **2026-10-09** (3) — The knowledge layer read figure chunks as the document's own text; it now reads prose (ROADMAP 97)
+- **2026-10-09** (2) — The audit gates' second catch: four upgrades for advisories published since the last green run
+- **2026-10-09** (1) — Manage keywords built 312,166 dropdown options on opening: a row now has one text field, a mark shows at once, and the Graph tab opens the view (ROADMAP 96)
+- **2026-10-01** (7) — The secret gate's first CI run was red, and right: on Windows the scanner had been skipping 47 files (S-14)
+- **2026-10-01** (6) — The test suite runs on a data directory of its own (KI-60 closed)
+- **2026-10-01** (5) — The test suite no longer reaches the working library's database (KI-60)
+- **2026-10-01** (4) — A concept has a name and exact or broad forms, and the other rows are terms (ROADMAP 94, ADR-054); CI's secret scan can fail (S-13)
+- **2026-10-01** (3) — ADR-054 accepted, with the user's amendment: a base vocabulary per field is a source of terms
+- **2026-10-01** (2) — The vocabulary is read against the library; concepts and terms, names and forms (ADR-054, proposed)
+- **2026-10-01** — The pip-audit gate's first catch: three upgrades for eight advisories published overnight
+- **2026-09-30** (3) — A label keeps its written case (ADR-053 decision 3); the API refuses a foreign Host (S-5)
 
 ## DEVLOG-archive-007.md
 

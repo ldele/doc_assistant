@@ -156,6 +156,36 @@ def test_the_frozen_guard_can_be_lifted_deliberately(monkeypatch, tmp_path):
     assert result["workers"] == 2
 
 
+def test_the_pool_spawns_and_never_forks(monkeypatch, tmp_path):
+    """⚠ A fork copies whatever lock another thread holds, and the caller is multi-threaded.
+
+    Linux's default start method is fork; CI hung three hours on it (2026-10-17). Windows always
+    spawned, so pinning spawn makes every OS run the path the desktop already runs."""
+    seen: dict[str, object] = {}
+
+    class _Pool:
+        def __init__(self, *, max_workers, mp_context=None):
+            seen["method"] = mp_context.get_start_method() if mp_context else None
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+        def submit(self, fn, arg):
+            from concurrent.futures import Future
+
+            f: Future = Future()
+            f.set_result((arg, None))
+            return f
+
+    monkeypatch.setattr("doc_assistant.ingest.workers.ProcessPoolExecutor", _Pool)
+    result = warm_extraction_cache([tmp_path / "a.pdf", tmp_path / "b.pdf"], workers=2)
+    assert seen["method"] == "spawn"
+    assert result == {"extracted": 2, "failed": 0, "workers": 2}
+
+
 def test_an_unreadable_file_is_reported_not_raised(tmp_path):
     """One bad PDF must not take down the pool; the serial pass reports it in its own terms."""
     files = [tmp_path / f"{i}.pdf" for i in range(3)]

@@ -40,6 +40,21 @@ Format: What changed | Why | Rejected alternatives | What it opens
 
 ---
 
+## 2026-10-20 (2) — `aiohttp` 3.14.5: three advisories published overnight turned `main` red
+
+**What changed.** `uv.lock` only: `aiohttp` 3.14.3 → 3.14.5 and its dependency `yarl` 1.24.2 →
+1.25.1 (`uv lock --upgrade-package aiohttp`); nothing else moved. **Found by:** CI's blocking audit
+on `c27ff9f` (run 39479200471) — CVE-2026-111063, CVE-2026-111064 and GHSA-2g87-pp6c-29x5, all fixed
+in 3.14.4; the four Dependabot merges after it fail at the same step.
+
+**Why.** An upgrade inside the same minor series, so no review into `pip-audit-ignore.toml` is
+needed. Checked: `scripts.pip_audit_gate` 0 unreviewed; the API integration tests (184) pass on
+the `cu130` venv.
+
+**What it opens.** The sixth time a push that touched no dependency met a red audit (KI-58's
+shape). Dependabot alerts, still off in the repository settings, would have flagged these between
+pushes.
+
 ## 2026-10-20 — The README opens on its reader and stops over-stating how settings were chosen and how often local models cite; a project overview gives every figure its source
 
 **What changed.** `README.md`: the opening says who the app is for and what sets it apart (the

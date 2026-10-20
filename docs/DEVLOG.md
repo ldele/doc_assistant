@@ -40,6 +40,24 @@ Format: What changed | Why | Rejected alternatives | What it opens
 
 ---
 
+## 2026-10-20 (5) — `pillow` 13.0.0: eight advisories, fixed only in a new major
+
+**What changed.** `uv.lock` only: `pillow` 12.3.0 → 13.0.0 (`uv lock --upgrade-package pillow`).
+The lock keeps 12.3.0 for Python 3.10 alone, which `requires-python = ">=3.10"` still declares and
+pillow 13 (`>=3.11`) no longer serves; the project runs 3.12 (KI-2), where 13.0.0 installs.
+**Found by:** the local audit gate while staging entry (4), the same evening as entries (2) and (3)
+— eight advisories, seven of them high: out-of-bounds reads in the TIFF decoder and encoder, a GIF
+decompression-bomb DoS, unbounded recursion in pillow's PDF parser.
+
+**Why.** Hostile documents are in the threat model (`docs/security.md` §1), so reviewing these into
+`pip-audit-ignore.toml` was rejected. The app reaches pillow only through `pdfplumber` (its sole
+dependent, `Pillow>=9.1`); its own code never imports it outside `scripts/debug_tables.py`, and
+figure crops go through PyMuPDF. Checked: the gate 0 unreviewed; 406 PDF, table, figure, extractor
+and image tests pass; a library page renders through `pdfplumber.to_image` on 13.0.0.
+
+**What it opens.** Raising `requires-python` to the version the project actually runs would remove
+the 3.10 fork from the lock — a decision for the KI-2 pin, not this fix.
+
 ## 2026-10-20 (4) — Release refresh for 0.7.0: the walkthrough, the security record and the CHANGELOG brought level with what shipped
 
 **What changed.** `docs/RELEASE.md` §0 and §2, done ahead of the release session while session 5c

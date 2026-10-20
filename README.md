@@ -1,31 +1,62 @@
 # Provenote
 
-Ask questions of **your own papers and books** (PDF, EPUB, DOCX, HTML, Markdown and more) and get
-answers you can check: every claim cites the page it came from, one click opens that page as it was
-printed, and each claim is marked by whether your sources actually support it. Your library stays
-on your disk. With a local model through Ollama none of your text leaves the machine; with the
-Claude API, the question and the passages retrieved for it are sent to write the answer.
-
-A fluent answer with a confident citation is not the same as a correct one. So every answer keeps a
-provenance record, separates what your sources *say* from what the model *infers*, and can be
-re-graded by a separate reviewer. Around the answers sits a map of your library that you curate:
-the concepts you choose, which documents hold them, where one rests on a single source, and
-definitions quoted from your own documents with the page each came from. The retrieval techniques
-are established ones; what Provenote adds is the integrity layer and the measurement behind it, and
-every quality number below can be re-run.
+Ask questions of your own papers and books, and get answers you can check. Provenote is a desktop
+app for one person and their library: a researcher, student or analyst who needs to know where a
+statement came from before reusing it. It reads PDF, EPUB, DOCX, HTML, Markdown and more, and
+your library stays on your disk.
 
 ![Provenote demo: ask a question, watch a cited answer stream in, open the passage behind a citation, filter the library, read a document as five ordered blocks, open one of its figures, then explore the concept graph](docs/assets/provenote-demo.gif)
 
-## Why it's built this way
+## What sets it apart
 
-- **Settings were chosen by experiment.** `TOP_K`, parent-child retrieval, chunk sizes and the
-  BM25/vector mix were each picked by measuring alternatives with the in-repo eval harness. What
-  didn't make the cut is recorded too, in [`docs/decisions.md`](docs/decisions.md).
-- **Benchmarks anyone can re-run.** The headline numbers come from a public corpus pinned by arXiv ID
-  and SHA-256, fetched by a script, reported with variance and caveats ([`evals/`](evals/README.md)).
-- **Growth by addition.** Every derived layer (citations, figures, tables, keywords, wiki, concept
-  graph) is an idempotent sidecar that never mutates the chunk store. A new capability is a new
-  module.
+- **A citation opens the page.** Each cited claim names the page its passage came from, and one
+  click shows that page of the PDF as it was printed, beside the document. *In context* shows the
+  passage highlighted in the text around it instead.
+- **What your sources say is kept apart from what the model infers.** An answer shows the
+  retrieved passages word for word, with their source, page and relevance score, and next to them
+  the model's synthesis, labelled as interpretation. A claim that cites nothing, or cites a weak
+  passage, is flagged for you to accept, reject or edit, and a separate reviewer can re-grade a
+  flagged answer against the passages. The flags come from retrieval scores: they tell you where
+  to look, they do not certify a claim ([how answers work](docs/how-answers-work.md)).
+- **Your documents can stay on your computer.** With a local model through
+  [Ollama](https://ollama.com), none of your text leaves the machine: the embedding and reranking
+  models run locally, and the installer bundles them. With the Claude API, the question and the
+  passages retrieved for it are sent to write the answer.
+
+## One result, and how far it goes
+
+On a benchmark anyone can rebuild (10 hand-checked questions over 10 arXiv papers pinned by
+checksum, 5 trials, Claude Haiku 4.5), answers contained **93% of the facts each one must hold**
+(`contains_all` 0.932 ± 0.014), and retrieval found the right paper in every case. Ten papers are
+too few for that retrieval score to rank anything, so it shows only that nothing regressed. The
+method, the caveats and the other measurements are in [Benchmarks](#benchmarks) and
+[`evals/`](evals/README.md).
+
+## Quick start
+
+**Windows installer:** download `Provenote_<version>_x64-setup.exe` from the
+[latest release](https://github.com/ldele/doc_assistant/releases/latest) and run it. It is not
+code-signed, so SmartScreen will warn. It is a ~1.6 GB download because the embedding and
+re-ranking models are bundled, and it runs fully offline with a local [Ollama](https://ollama.com).
+Settings → Updates can tell you when a newer one is published; it never installs anything for you.
+
+**From source:**
+
+```bash
+uv sync --extra cu130 --extra dev        # or --extra cpu on a GPU-less box
+uv run python -m scripts.download_corpus --demo   # no corpus yet? 28 papers from arXiv
+uv run python -m doc_assistant.ingest
+just app                                 # backend + desktop UI
+```
+
+Then open **Settings → Getting started** and pick an answer engine: paste an Anthropic API key
+(checked before it is saved, stored on your machine only) or point at a local
+[Ollama](https://ollama.com) server for a free, fully offline run. Both paths are configurable
+in-app, so there is no file to edit; `.env` still works and takes precedence if you prefer it.
+
+First run, step by step: [`docs/QUICKSTART.md`](docs/QUICKSTART.md).
+Full install, hardware guidance and Docker: [`docs/setup.md`](docs/setup.md).
+Everyday commands, enrichment passes and tests: [`docs/usage.md`](docs/usage.md).
 
 ## What it does
 
@@ -92,6 +123,21 @@ Retrieval is hybrid: BM25 and vector search, then a cross-encoder rerank. The
 and swappable; Chroma for vectors, SQLite for documents; Tauri + Svelte 5 desktop app over a FastAPI/SSE backend, plus a
 CLI. Data flow and module contracts: [`docs/architecture.md`](docs/architecture.md).
 
+## Why it's built this way
+
+- **Settings are checked on the eval harness, and the record says how far.** The embedder
+  (`bge-base` over `specter2`) was chosen on the harness, 5 trials. Chunk sizes were swept over six
+  configurations on both question sets and the default kept, since nothing beat it beyond its
+  variance. The BM25/vector mix was swept from 0 to 1 and made no difference after reranking, so
+  0.4/0.6 stays. `TOP_K` and parent-child retrieval were measured before the harness existed,
+  without recorded variance, and the reranker was adopted without an experiment. Each result and
+  its caveats: [`evals/`](evals/README.md) and [`docs/decisions.md`](docs/decisions.md).
+- **Benchmarks anyone can re-run.** The headline numbers come from a public corpus pinned by arXiv ID
+  and SHA-256, fetched by a script, reported with variance and caveats ([`evals/`](evals/README.md)).
+- **Growth by addition.** Every derived layer (citations, figures, tables, keywords, wiki, concept
+  graph) is an idempotent sidecar that never mutates the chunk store. A new capability is a new
+  module.
+
 ## Benchmarks
 
 The numbers below come from the eval harness, which runs the full pipeline (retrieve, rerank,
@@ -155,32 +201,6 @@ alone. More workers help little: 14 of them reached only 1.74x, so the default g
 little speed. You can change it (`--workers off | light | balanced | full`), and even `full`
 leaves half your cores free.
 
-## Quick start
-
-**Windows installer:** download `Provenote_<version>_x64-setup.exe` from the
-[latest release](https://github.com/ldele/doc_assistant/releases/latest) and run it. It is not
-code-signed, so SmartScreen will warn. It is a ~1.6 GB download because the embedding and
-re-ranking models are bundled, and it runs fully offline with a local [Ollama](https://ollama.com).
-Settings → Updates can tell you when a newer one is published; it never installs anything for you.
-
-**From source:**
-
-```bash
-uv sync --extra cu130 --extra dev        # or --extra cpu on a GPU-less box
-uv run python -m scripts.download_corpus --demo   # no corpus yet? 28 papers from arXiv
-uv run python -m doc_assistant.ingest
-just app                                 # backend + desktop UI
-```
-
-Then open **Settings → Getting started** and pick an answer engine: paste an Anthropic API key
-(checked before it is saved, stored on your machine only) or point at a local
-[Ollama](https://ollama.com) server for a free, fully offline run. Both paths are configurable
-in-app, so there is no file to edit; `.env` still works and takes precedence if you prefer it.
-
-First run, step by step: [`docs/QUICKSTART.md`](docs/QUICKSTART.md).
-Full install, hardware guidance and Docker: [`docs/setup.md`](docs/setup.md).
-Everyday commands, enrichment passes and tests: [`docs/usage.md`](docs/usage.md).
-
 ## Limitations
 
 Each item is a limit you can hit in this release, with what to do about it. Counts come from the
@@ -189,9 +209,12 @@ development library on 2026-10-18 (104 documents, 3,341 pages) unless a date say
 ### Answers
 
 - **Local models cite less, and the gap is measured.** Across 27 questions on a 97-document
-  library, with the same prompt and retrieval, `llama3.1:8b` carried inline citations on 36% of its
-  sentences and `qwen2.5:7b` on 14%, against 81% for Claude Haiku. Answers stay grounded either
-  way; more claims simply show as *uncited*. Small local models also place documents into a
+  library, with the shipped prompt and the same retrieval, Claude Haiku 4.5 carried inline
+  citations on 83.5% of its sentences, `llama3.1:8b` on 37.6% and `qwen2.5:7b` on 18.0% (one run
+  each, so read them to about ±2 points, ±5 for qwen;
+  [baseline](tests/eval/baselines/citation_coverage_2026-08-07.md)). On a local model more claims
+  carry no citation and show as *uncited*: 12 of the 27 `llama3.1:8b` answers cited nothing. Small
+  local models also place documents into a
   taxonomy at 70-87% precision, and their self-reported confidence carries almost no signal; on one
   model it was *anti*-correlated with correctness, so do not auto-accept on it. The app states this
   where you choose the engine, and blocks nothing.
@@ -317,6 +340,7 @@ LLM-assisted ingestion (ROADMAP 25). Release notes: [`CHANGELOG.md`](CHANGELOG.m
 |---|---|
 | [Quickstart](docs/QUICKSTART.md) | First run in ~10 minutes: API key or Ollama, then your documents |
 | [60-second walkthrough](docs/DEMO.md) | What to look at first |
+| [Project overview](docs/OVERVIEW.md) | What it is, what was measured and where it stands, each figure with its source |
 | [Setup](docs/setup.md) · [Usage](docs/usage.md) | Install, hardware, Docker · commands, enrichment, tests |
 | [Architecture](docs/architecture.md) | Data flow and module contracts |
 | [Decisions](docs/decisions.md) | ADR index, and why each non-obvious choice was made |

@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-10-18 · class: append-only -->
+<!-- status: active · updated: 2026-10-20 · class: append-only -->
 
 # DEVLOG — doc_assistant
 
@@ -39,6 +39,42 @@ Format: What changed | Why | Rejected alternatives | What it opens
 > is individually small and correct, so unbounded growth is invisible per commit.
 
 ---
+
+## 2026-10-20 — The README opens on its reader and stops over-stating how settings were chosen and how often local models cite; a project overview gives every figure its source
+
+**What changed.** `README.md`: the opening says who the app is for and what sets it apart (the
+printed page behind a citation, the sources kept apart from the model's interpretation, a local
+model that keeps documents on the machine), then one result with its size (the public benchmark's
+`contains_all` 0.932 ± 0.014 over 5 trials, and why `citation_overlap` at 1.000 cannot rank), then
+Quick start, moved up. "Why it's built this way" moves below Architecture, and its first bullet no
+longer says `TOP_K`, parent-child, chunk sizes and the BM25 mix "were each picked by measuring
+alternatives": it names what the harness measured, says the chunk-size and weight sweeps kept the
+defaults, that `TOP_K` and parent-child predate the harness, and that the reranker had no
+experiment. Limitations quotes the shipped prompt's citation coverage, 83.5 / 37.6 / 18.0% (one run
+each, `tests/eval/baselines/citation_coverage_2026-08-07.md`), in place of the earlier prompt's
+81 / 36 / 14%, and replaces "Answers stay grounded either way" with the count behind it: 12 of 27
+`llama3.1:8b` answers cited nothing. New `docs/OVERVIEW.md`: what the project is, what sets it
+apart, how it works, each measured result with its size, conditions and source, and its state;
+linked from the Documentation table. The old opening's second paragraph is gone; its map of the
+library is already the concept bullet under What it does.
+
+**Why.** Read against the record on 2026-10-19 and 2026-10-20, two README statements claimed more
+than it holds: settings chosen by experiment, and citation rates from a prompt that no longer
+ships. The overview keeps those facts in one place, each with its source, so a reader who reuses
+them does not re-derive them from the README.
+
+**Rejected.** Rewriting the 0.4.1 and 0.5.0 CHANGELOG entries that quote 81/36/14%: released
+entries stay as they shipped. Leading with the citation-coverage figure: it comes from the private
+library, one run each, where the public benchmark is one anyone can re-run. A new alt text for the
+demo GIF: the GIF dates from 2026-08-11, before the page pane, and its alt text still describes
+what it shows.
+
+**What it opens.** The provider card (`apps/desktop/src/lib/settings/ProviderSetup.svelte`
+l.254-256) still shows 36/14/81% and "Answers stay grounded in your documents"; the 2026-08-07
+baseline planned that refresh for the next release that rebuilds, which 0.7.0 is, with a line under
+the CHANGELOG's Unreleased beside it. `tests/eval/TESTING.md` says five scorers where `scorers.py`
+has six (`figure_retrieval`). The demo GIF predates the page pane (0.6.0). ROADMAP row 98 (the docs
+revamp after 0.7.0) starts from the README's new order. Docs only; no code or test changed.
 
 ## 2026-10-18 (3) — The README leads with what a reader gets and states 0.7.0's limits; CI's actions are pinned to commits (security S-12)
 

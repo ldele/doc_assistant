@@ -40,6 +40,19 @@ Format: What changed | Why | Rejected alternatives | What it opens
 
 ---
 
+## 2026-10-20 (3) — `certifi` 2026.10.19: one more advisory, published the same day
+
+**What changed.** `uv.lock` only: `certifi` 2026.5.20 → 2026.10.19 (`uv lock --upgrade-package
+certifi`). **Found by:** CI's blocking audit on `2ab7895` (run 39487577705), GHSA-6q48-6c7w-9gw2 —
+entry (2)'s three `aiohttp` advisories were gone; the tests passed there (2,754).
+
+**Why.** A newer certificate bundle from the same maintainer; nothing to review into
+`pip-audit-ignore.toml`. Checked: the gate 0 unreviewed; two HTTPS connections verified with the new
+bundle.
+
+**What it opens.** Two red runs in one evening from advisories published between pushes; the
+alerts toggle (entry (2)) still decides whether the next one is seen before a push.
+
 ## 2026-10-20 (2) — `aiohttp` 3.14.5: three advisories published overnight turned `main` red
 
 **What changed.** `uv.lock` only: `aiohttp` 3.14.3 → 3.14.5 and its dependency `yarl` 1.24.2 →

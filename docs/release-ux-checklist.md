@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-09-17 (§3: hostile-markup row, S-3) · class: runbook -->
+<!-- status: active · updated: 2026-10-20 (0.7.0 refresh: rows for the extraction pool, Manage keywords at size, proposed placements, ranked keywords, the KL1 labels, names and written case, the Definition card, term signals, no console window, S-4/S-5/S-6; 2026-09-17: §3 hostile-markup row, S-3) · class: runbook -->
 
 # Release UX/UI walkthrough — what to drive before every release
 
@@ -55,6 +55,7 @@ scanned PDF). Most rows say which.
 - [ ] Both placement modes: **copy** lands in the library folder; **reference** registers the root and the file stays where it was.
 - [ ] Batch header with > 50 files: the `shown` cap and "and N more" render; make one file fail (rename it mid-run) → `stopped_early`, "Keep the N", `applyError` all render.
 - [ ] Index now → the ingest chip shows progress; the document is answerable **before** the chip says done (controller reload).
+- [ ] Add five or more PDFs at once with the default workers → extraction finishes and the chip completes; nothing hangs (the pool spawns instead of forking since 0.7.0, `16d1a4b`; the hang was seen on Linux only, so this row proves the installed Windows build still runs it).
 - [ ] **Undo all** after index-now removes the document row, its chunks *and* the referenced root (KI-51, all three parts).
 
 ## 2 · Library (real library)
@@ -68,6 +69,9 @@ scanned PDF). Most rows say which.
 - [ ] Delete: asks; defaults to library-only; a **referenced** file is never sent to the bin and the dialog names its real path (ADR-046).
 - [ ] Source viewer: opens at the cited page; *Fit page* is the default; zoom and the split are draggable; a non-PDF degrades to extracted text and says why; an unreachable file is one sentence naming the path.
 - [ ] Manage keywords: the graph-include toggle changes the "On the graph (N)" count immediately.
+- [ ] Manage keywords at library size (ROADMAP 96): it opens at once on the real library; a form typed into *Add a form* lands on the row; a concept's form can be marked *exact* or *broad* and a term's cannot; Delete shows what it removes first and, for a concept, offers *Take off the graph instead*; every door to the view says *Manage keywords* (GLOSSARY U-001) — Library filter, Graph tab button, a concept's *Edit*, a term's link.
+- [ ] Taxonomy view → *Proposed placements* (ROADMAP 51): the document and concept proposals are listed; **Accept** turns one into a placement that survives a rebuild, **Reject** removes it; with no `is_a` proposal (the case on the development library) the pane says there is none instead of showing a blank.
+- [ ] A document's keywords (ROADMAP 99): listed main topic first, by score; none of the known junk — table residue (`br`), letter-spaced fragments, dates or bare numbers, venue fragments, cited surnames; the re-ingest dialog says where keywords are redone.
 - [ ] A document with **no keywords**, a **0-chunk** document and a document whose root is **unavailable** each render honestly (badge, not a blank).
 
 ## 3 · Chat (real library, Ollama)
@@ -89,6 +93,10 @@ scanned PDF). Most rows say which.
 - [ ] Concept rail: the three lenses are one control style with tooltips that say what they **do**; the ego graph opens on a node; *Place* deep-links into the taxonomy modal with the concept preselected.
 - [ ] Gap list: promote · dismiss · reset; **rebuild the graph in-app** → the triage survives (`GapTriage` sidecar); the filter box matches label and kind; the coverage sentence ("N of M documents") is present.
 - [ ] `under_connected` is **off by default** (RG-014 grade); `single_source` leads.
+- [ ] The signals say what they are (KL1): the gap list reads **Uncited in answers**, not "Unsourced claims"; a thin bridge is flagged on the smaller side only; the coverage sentence counts only documents still in the library; opted-in stance chips read *contested? (experimental)*.
+- [ ] Names and written case (ROADMAP 94, ADR-054): nodes, the panel heading and the rail show a concept's name in its written case (`dIN`, `Cre`); the staleness notice after a Manage keywords edit names the concepts and forms that changed; **Rebuild** clears it.
+- [ ] The Definition card (ROADMAP 93a): a concept with none says *No definition chosen yet*; **Look in my library** lists quoted options, each opening its page, with a `strong` / `some` / `thin` grade and its reasons; **Use this**, **Write your own**, **Undo** (walks back one choice at a time), **Dismiss** and **Restore** each change only what they say; *How your library uses it* shows plain sentences; a concept with nothing definitional says the evidence is thin. A term reached through the search shows passages but offers no choice — it points to Manage keywords.
+- [ ] Term signals in the card (ROADMAP 93): an abbreviation shows its long form with the sentence that spells it out (`dbs` → *deep brain stimulation*), a cited name shows its "et al." sentence, a label no sentence uses shows where it occurs; each is offered, nothing is added for you.
 
 ## 5 · Settings
 
@@ -106,6 +114,10 @@ scanned PDF). Most rows say which.
 - [ ] Kill the sidecar while the app is open → a **connection** error, not the zero-state (REVIEWS 2026-08-28: it showed "No documents indexed yet").
 - [ ] Occupy port 8001 before launch → the app reports the conflict; cold start to first `/api/health 200` is within RG-010's recorded envelope; closing the window ends the sidecar process.
 - [ ] Offline (network cable out): launch, ingest, answer with Ollama — all work; the update check says `unknown`.
+- [ ] **No console window** (user, 2026-10-09): launching the installed app opens the app window only — no terminal window at launch, when the backend starts, or while it indexes. The app is built for the windows subsystem (`src-tauri/src/main.rs:2`); the backend is frozen as a console program (`scripts/doc_assistant_api.spec:124`, `console=True`) and relies on the launcher to start it without one. If a window shows: a blocker for this release — freeze with `console=False` and send stderr to the app log.
+- [ ] The launch token (S-6): in the installed app, add, index, rename and delete all work; from a terminal, a `POST` to `http://127.0.0.1:8001` without `X-Doc-Api-Token` answers 401 with its sentence while a `GET` still answers.
+- [ ] The host guard (S-5): a request to `127.0.0.1:8001/api/health` with `Host: example.com` answers 400; the app itself is unaffected.
+- [ ] The CSP additions (S-4): the source viewer still renders pages and the figure viewer still shows figures in the installed build.
 
 ## 7 · Packaging gates (pointers, not duplicates)
 

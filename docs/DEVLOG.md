@@ -40,6 +40,27 @@ Format: What changed | Why | Rejected alternatives | What it opens
 
 ---
 
+## 2026-10-20 (4) — Release refresh for 0.7.0: the walkthrough, the security record and the CHANGELOG brought level with what shipped
+
+**What changed.** `docs/RELEASE.md` §0 and §2, done ahead of the release session while session 5c
+waits on the user's labels; no code. `docs/release-ux-checklist.md`: a row per surface shipped
+since `v0.6.0` (20 product commits) — the extraction pool, Manage keywords at library size,
+proposed placements, keywords in score order (5c), the KL1 labels, names and written case, the
+Definition card, term signals — plus the "no console window" row and S-4, S-5 and S-6 checks.
+`docs/security.md` §2 lists S-4, S-5, S-6, S-8 and S-12 as holding; the launch token is a rule by
+method, so the write routes added since are covered without a line each. `CHANGELOG.md`
+`[Unreleased]`: an *Added* block, the security, change and fix lines that were missing, and
+*Known limits*, each of 0.6.0's re-read against the code (row 24 still planned; since the tag, the
+code behind the others changed only for the ligature fix and the size caps).
+
+**Why.** `preflight`'s `checklists` check fails a release whose walkthrough and security record
+have no commit since the previous tag, and the Unreleased section stopped before the definitions
+work: release criterion 5 needs it to say what the README says.
+
+**What it opens.** Session 5c adds its own line (keywords in score order, junk filtered) and the
+measured keyword numbers to the CHANGELOG. The version bump, the 0.7.0 notes, the build and the
+gates stay with the release session.
+
 ## 2026-10-20 (3) — `certifi` 2026.10.19: one more advisory, published the same day
 
 **What changed.** `uv.lock` only: `certifi` 2026.5.20 → 2026.10.19 (`uv lock --upgrade-package

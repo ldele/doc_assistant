@@ -9,6 +9,28 @@ The engineering record is finer-grained than this file: per-change entries live 
 
 ## [Unreleased]
 
+### Added
+
+- **A concept's definition, chosen from your own documents.** In the Graph tab, a concept's panel
+  has a Definition card. *Look in my library* lists sentences quoted from your documents that
+  define the term, each opening at its page, with the reasons it was offered and a *strong* /
+  *some* / *thin* grade; you pick one, or write your own. Nothing is chosen for you, no option
+  overwrites another, and *Undo* walks back one choice at a time. *How your library uses it* shows
+  plain sentences from the documents that use the word most.
+- **Concepts and terms.** A concept is a row you take on in Manage keywords: it has a name and
+  forms marked *exact* (always this concept, and counted) or *broad* (listed beside it, never
+  counted). The rows nobody chose stay as searchable terms. A name shows in its written case
+  (`dIN`, `Cre`), and matching respects it: `CRE` no longer counts as `Cre`.
+- **What the text says about a name.** The concept panel shows an abbreviation's long form with the
+  sentence that spells it out, a name the papers cite with its "et al." sentence, and, for a label
+  no sentence uses, where it does occur — tables, headings, figures, references. Offered only;
+  nothing is added for you.
+- **Proposed placements can be reviewed.** The taxonomy view lists the field placements proposed
+  for documents and concepts and the proposed `is_a` links between concepts; *Accept* makes one
+  yours and *Reject* removes it.
+- **Search reaches the whole vocabulary.** The Graph tab's filter also finds the concepts and terms
+  that are not on the graph, and opens their panel.
+
 ### Security
 
 - **Oversized files and zip bombs are refused before they are opened.** A file over 1 GB, or an
@@ -23,6 +45,13 @@ The engineering record is finer-grained than this file: per-change entries live 
   answer — an image with a script handler, a `javascript:` link, a form — is removed before the
   answer is rendered, and the development build now runs under the same content security policy
   as the installed app.
+- **A change to your library needs the token the app was started with.** A web page that reaches
+  the app's local port can no longer add, index, change or delete anything; reads stay as they
+  were.
+- **The local API answers only its own address**, so a page cannot reach it under another name.
+- **The app's content policy also blocks forms, base URLs and plugins.**
+- Release engineering, no change to the app: CI fails on an unreviewed dependency advisory and on a
+  committed secret, and its actions are pinned to commits.
 
 ### Changed
 
@@ -43,6 +72,8 @@ The engineering record is finer-grained than this file: per-change entries live 
   have merged nearly the whole vocabulary.
 - **The clean-machine release gate asks three questions, not one**, and reports packaging and
   citation as separate verdicts (release tooling; no change to the app).
+- **Manage keywords opens at once on a real library and takes a typed form.** The Graph tab has a
+  door to it and a *Rebuild* button, and every door to the view is called *Manage keywords*.
 
 ### Fixed
 
@@ -52,6 +83,40 @@ The engineering record is finer-grained than this file: per-change entries live 
   "not yet placed" that nothing in the app could place.
 - **A taxonomy field can no longer be edited as a keyword family.** Renaming, deleting or putting
   a field on the graph by its id is refused; a delete would have removed every placement under it.
+- **The concept layer reads a document's prose, not its figure descriptions.** A figure's caption
+  and model-written description no longer count as the document using a word, and a passage a
+  figure quotes is no longer counted twice.
+- **A term written with a hyphen or a space is one term** (`cosine-similarity` and `cosine
+  similarity`), including across a line break.
+- **Table cells keep the second letter of "fi", "fl" and "ff".** "fine-tuning" in a table had read
+  "fne-tuning" in 19 of 104 documents; reading a document again fixes one extracted before.
+- **A large wiki topic is summarised from a sample its note names** ("written from 36 of 87
+  papers"), instead of from a prompt a local model cut silently, which left the note describing its
+  last few papers (command-line wiki).
+- **Indexing several documents at once could hang on Linux**, as in the headless image: the
+  extraction workers now start fresh instead of being forked from a running process.
+- **Document similarity ignores removed documents.**
+
+### Known limits
+
+- **Text after a reference list is not read, and a mention inside one counts as presence.** The
+  keyword, definition and written-form passes stop at a document's References heading, so
+  appendices and late sections go unseen (3.7% of the development library's prose, in 32
+  documents); concept presence reads the whole text, so a concept named only in a cited title
+  counts as present (111 of 1,079 concept–document pairs). Both change together in the next
+  release, each layer with a before/after.
+- **The concept map covers what you take on.** On the development library that is 13 concepts,
+  reaching 29 of 104 documents. No concept's name ends with another's, so the proposer offers no
+  `is_a` link there and that part of *Proposed placements* is empty.
+- **A definition's grade sorts; it does not decide.** On hand-labelled candidates, *strong* was
+  usable 8 times in 13, and a sentence that praises a term grades as strongly as one that defines
+  it.
+- **Keywords describe a document; they don't group your library.** 1,436 of 1,483 extracted
+  keywords sit on one document (2026-10-20).
+- **Everything under *Known limits* for 0.6.0 still applies**, re-read against the code on
+  2026-10-20: a cited passage is not yet marked on its page; a few pages hold the previous page's
+  text; citation links are worked out once; a file moved outside the app loses the exclusions set
+  on its old path; scanned PDFs are read only where an OCR engine happens to be installed.
 
 ## [0.6.0] — 2026-09-04
 

@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-10-18 (S-12 done: the actions pinned to SHAs, Dependabot for actions only, a guard test; alerts the user's toggle, off when read back; S-6 done: a write needs the launch token; S-7 next; 2026-10-01: S-13 done, CI's secret scan fails on a secret the baseline does not record; S-14 found by its first run and done: the scanner reads UTF-8 on Windows too) · class: living -->
+<!-- status: active · updated: 2026-10-20 (release refresh: §2 lists S-4, S-5, S-6, S-8 and S-12 as holding; 2026-10-18: S-12 done: the actions pinned to SHAs, Dependabot for actions only, a guard test; alerts the user's toggle, off when read back; S-6 done: a write needs the launch token; S-7 next; 2026-10-01: S-13 done, CI's secret scan fails on a secret the baseline does not record; S-14 found by its first run and done: the scanner reads UTF-8 on Windows too) · class: living -->
 
 # Security — the threat model, the plan, the floor, and the periodic check
 
@@ -39,7 +39,7 @@ goes to them by design), network attackers on the Anthropic/Ollama link (HTTPS; 
 corporate MITM, KI-10), and multi-user servers (the Docker image is a *headless* single-user API
 and says so).
 
-## 2 · What holds today (verified 2026-09-10 — keep it that way)
+## 2 · What holds today (verified 2026-09-10, re-checked for 0.7.0 on 2026-10-20 — keep it that way)
 
 - **Bind is loopback.** `apps/api/__main__.py` defaults `DOC_API_HOST` to `127.0.0.1` with the reason
   in a comment; the compose file publishes `127.0.0.1:8001:8001`.
@@ -60,6 +60,15 @@ and says so).
   one `{@html}` in `Markdown.svelte`, and the dev server sends the production CSP (plus inline
   styles, the HMR socket and Tauri IPC — never script). **Pinned by the same test file and
   `apps/desktop/src/lib/core/devCsp.test.ts`.**
+- **The CSP also closes forms, base URLs and plugins** (S-4, 2026-09-20): `form-action 'none';
+  base-uri 'none'; object-src 'none'` in `tauri.conf.json`, asserted by the same test file.
+- **The API answers only its own host** (S-5, 2026-09-30): `TrustedHostMiddleware` serves
+  `127.0.0.1` and `localhost` unless `DOC_API_ALLOWED_HOSTS` says otherwise, so a page cannot
+  rebind a name to the loopback port and become same-origin (`apps/api/main.py`).
+- **A write needs the token the app was started with** (S-6, 2026-10-17): every method but GET,
+  HEAD and OPTIONS answers 401 without `X-Doc-Api-Token` when the shell has set `DOC_API_TOKEN`
+  (`apps/api/launch_token.py`). It is a rule by method, not a list of routes, so the write routes
+  added since — definitions, taxonomy proposals, keyword forms — are covered without a line each.
 - **Secrets.** `.env` is ignored and was never committed; `credentials.py` is the single disk path
   for an in-app key, masked to four characters in logs and in `/api/setup`; no route echoes a key;
   `detect-secrets` runs in pre-commit on the staged files, and in CI over every tracked file as a
@@ -74,6 +83,12 @@ and says so).
   tags pinned with a reason; the frozen build runs with `HF_HUB_OFFLINE=1` and bundled weights.
 - **The gates cover the boundary** (since 2026-09-10): ruff, mypy and bandit run on `apps/` and
   `scripts/`, not just `src/`; `npm audit --audit-level=high` runs in CI.
+- **An unreviewed advisory fails CI** (S-8, 2026-09-30): `scripts/pip_audit_gate.py`, every ignore
+  in `pip-audit-ignore.toml` with its reason. It fires on advisories published between pushes —
+  twice on 2026-10-20 alone (`aiohttp`, then `certifi`), each fixed by a lock bump the same day.
+- **CI's actions are pinned to commits** (S-12, 2026-10-18): each `uses:` names a SHA with its
+  release in a comment, Dependabot proposes updates for actions only, and
+  `tests/unit/test_ci_actions_pinned.py` fails on a tag.
 
 ## 3 · Findings — the backlog, ranked by reach under this model
 

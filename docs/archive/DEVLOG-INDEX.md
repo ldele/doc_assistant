@@ -1,4 +1,4 @@
-<!-- status: archived · updated: 2026-10-18 · class: living -->
+<!-- status: archived · updated: 2026-10-21 · class: living -->
 
 # DEVLOG archive index
 
@@ -9,6 +9,17 @@ is off; docs_check rule 17 fails while any archived entry is missing here.
 
 ## DEVLOG-archive-008.md
 
+- **2026-10-17** (3) — KL4: neither wiki clustering path partitions the library, so the default stays; the trust table states the placement runs RG-015 already had (RG-018, RG-015)
+- **2026-10-17** (2) — CI hung for three hours: the extraction pool forked a multi-threaded process; it spawns on every OS now
+- **2026-10-17** — The concept panel shows what the text says about a name: short and long forms, a cited author, and where an unused label occurs (ROADMAP 93)
+- **2026-10-14** (5) — The library re-extracted and the graph rebuilt: 38 documents get their ligature letters back
+- **2026-10-14** (4) — Table cells keep a ligature's second letter: "fne-tuning" is "fine-tuning" again (KI-64)
+- **2026-10-14** (3) — A form's words joined by a space, a hyphen or a dash are one form (KI-63)
+- **2026-10-14** (2) — Term signals measured on the user's reading: the abbreviation offers hold, the neighbour signal cannot be judged as asked (RG-034, ROADMAP 93)
+- **2026-10-14** — cpc re-vendored 1.12.0 → 1.18.1, from the tag (T-002)
+- **2026-10-09** (6) — Term signals: what the prose says about a term, read and offered, never applied (ROADMAP 93, ADR-053 decision 4)
+- **2026-10-09** (5) — What the user's marks on the 22 forms did: four concepts lose 14 documents, 30 links become 25, the gap list keeps its 12 rows (RG-032, first claim)
+- **2026-10-09** (4) — The Graph tab's door to Manage keywords: one name, no change of tab, and a rebuild that does not wait to be offered
 - **2026-10-09** (3) — The knowledge layer read figure chunks as the document's own text; it now reads prose (ROADMAP 97)
 - **2026-10-09** (2) — The audit gates' second catch: four upgrades for advisories published since the last green run
 - **2026-10-09** (1) — Manage keywords built 312,166 dropdown options on opening: a row now has one text field, a mark shows at once, and the Graph tab opens the view (ROADMAP 96)

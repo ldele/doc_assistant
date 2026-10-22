@@ -40,6 +40,21 @@ Format: What changed | Why | Rejected alternatives | What it opens
 
 ---
 
+## 2026-10-22 — `virtualenv` 21.14.12: five advisories in a dev-only tool
+
+**What changed.** `uv.lock` only: `virtualenv` 21.7.13 → 21.14.12 with `packaging` 26.2 → 26.3 and
+`distlib` 0.4.0 → 0.4.4 (`uv lock --upgrade-package virtualenv`). As with `pillow` (2026-10-20
+(5)), the lock keeps older versions for the Python 3.10 that `requires-python` still declares;
+3.12 gets the fixed ones. **Found by:** the audit gate on `4655aae`, reported by session 5c —
+CVE-2026-113722, -113725, -113726, -113732 and -113776, all fixed by 21.14.9.
+
+**Why.** `virtualenv` reaches the tree only through `pre-commit` (the `dev` extra), so the app never
+shipped it; CI's gate audits the whole environment. Checked: the gate 0 unreviewed; the commit
+hooks run on the new version; 29 tooling tests (version, secret-scan gate, action pins) pass.
+
+**What it opens.** The fifth advisory round in three days. The 3.10 fork now holds a `virtualenv`
+below the fixes; raising `requires-python` to the 3.12 the project runs would end these forks.
+
 ## 2026-10-21 — `vite` 6.4.5: a high advisory in the dev server's editor launcher
 
 **What changed.** `apps/desktop/package-lock.json` only: `vite` 6.4.3 → 6.4.5 (`npm audit fix`,

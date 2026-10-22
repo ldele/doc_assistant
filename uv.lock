@@ -461,7 +461,8 @@ source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "colorama", marker = "(os_name == 'nt' and sys_platform != 'darwin') or (os_name == 'nt' and extra != 'extra-13-doc-assistant-cpu') or (os_name != 'nt' and extra == 'extra-13-doc-assistant-cpu' and extra == 'extra-13-doc-assistant-cu130') or (sys_platform == 'darwin' and extra == 'extra-13-doc-assistant-cpu' and extra == 'extra-13-doc-assistant-cu130')" },
     { name = "importlib-metadata", marker = "python_full_version < '3.10.2' or (extra == 'extra-13-doc-assistant-cpu' and extra == 'extra-13-doc-assistant-cu130')" },
-    { name = "packaging" },
+    { name = "packaging", version = "26.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11' or (extra == 'extra-13-doc-assistant-cpu' and extra == 'extra-13-doc-assistant-cu130')" },
+    { name = "packaging", version = "26.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11' or (extra == 'extra-13-doc-assistant-cpu' and extra == 'extra-13-doc-assistant-cu130')" },
     { name = "pyproject-hooks" },
     { name = "tomli", marker = "python_full_version < '3.11' or (extra == 'extra-13-doc-assistant-cpu' and extra == 'extra-13-doc-assistant-cu130')" },
 ]
@@ -1064,9 +1065,42 @@ wheels = [
 name = "distlib"
 version = "0.4.0"
 source = { registry = "https://pypi.org/simple" }
+resolution-markers = [
+    "python_full_version < '3.11' and extra != 'extra-13-doc-assistant-cpu' and extra == 'extra-13-doc-assistant-cu130'",
+    "python_full_version < '3.11' and sys_platform != 'darwin' and extra == 'extra-13-doc-assistant-cpu' and extra != 'extra-13-doc-assistant-cu130'",
+    "python_full_version < '3.11' and sys_platform == 'darwin' and extra == 'extra-13-doc-assistant-cpu' and extra != 'extra-13-doc-assistant-cu130'",
+    "python_full_version < '3.11' and extra != 'extra-13-doc-assistant-cpu' and extra != 'extra-13-doc-assistant-cu130'",
+]
 sdist = { url = "https://files.pythonhosted.org/packages/96/8e/709914eb2b5749865801041647dc7f4e6d00b549cfe88b65ca192995f07c/distlib-0.4.0.tar.gz", hash = "sha256:feec40075be03a04501a973d81f633735b4b69f98b05450592310c0f401a4e0d", size = 614605, upload-time = "2025-07-17T16:52:00.465Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/33/6b/e0547afaf41bf2c42e52430072fa5658766e3d65bd4b03a563d1b6336f57/distlib-0.4.0-py2.py3-none-any.whl", hash = "sha256:9659f7d87e46584a30b5780e43ac7a2143098441670ff0a49d5f9034c54a6c16", size = 469047, upload-time = "2025-07-17T16:51:58.613Z" },
+]
+
+[[package]]
+name = "distlib"
+version = "0.4.4"
+source = { registry = "https://pypi.org/simple" }
+resolution-markers = [
+    "python_full_version >= '3.15' and extra != 'extra-13-doc-assistant-cpu' and extra == 'extra-13-doc-assistant-cu130'",
+    "python_full_version == '3.14.*' and extra != 'extra-13-doc-assistant-cpu' and extra == 'extra-13-doc-assistant-cu130'",
+    "python_full_version == '3.13.*' and extra != 'extra-13-doc-assistant-cpu' and extra == 'extra-13-doc-assistant-cu130'",
+    "python_full_version >= '3.11' and python_full_version < '3.13' and extra != 'extra-13-doc-assistant-cpu' and extra == 'extra-13-doc-assistant-cu130'",
+    "python_full_version >= '3.15' and sys_platform != 'darwin' and extra == 'extra-13-doc-assistant-cpu' and extra != 'extra-13-doc-assistant-cu130'",
+    "python_full_version == '3.14.*' and sys_platform != 'darwin' and extra == 'extra-13-doc-assistant-cpu' and extra != 'extra-13-doc-assistant-cu130'",
+    "python_full_version == '3.13.*' and sys_platform != 'darwin' and extra == 'extra-13-doc-assistant-cpu' and extra != 'extra-13-doc-assistant-cu130'",
+    "python_full_version >= '3.15' and sys_platform == 'darwin' and extra == 'extra-13-doc-assistant-cpu' and extra != 'extra-13-doc-assistant-cu130'",
+    "python_full_version == '3.14.*' and sys_platform == 'darwin' and extra == 'extra-13-doc-assistant-cpu' and extra != 'extra-13-doc-assistant-cu130'",
+    "python_full_version == '3.13.*' and sys_platform == 'darwin' and extra == 'extra-13-doc-assistant-cpu' and extra != 'extra-13-doc-assistant-cu130'",
+    "python_full_version >= '3.11' and python_full_version < '3.13' and sys_platform != 'darwin' and extra == 'extra-13-doc-assistant-cpu' and extra != 'extra-13-doc-assistant-cu130'",
+    "python_full_version >= '3.11' and python_full_version < '3.13' and sys_platform == 'darwin' and extra == 'extra-13-doc-assistant-cpu' and extra != 'extra-13-doc-assistant-cu130'",
+    "python_full_version >= '3.15' and extra != 'extra-13-doc-assistant-cpu' and extra != 'extra-13-doc-assistant-cu130'",
+    "python_full_version == '3.14.*' and extra != 'extra-13-doc-assistant-cpu' and extra != 'extra-13-doc-assistant-cu130'",
+    "python_full_version == '3.13.*' and extra != 'extra-13-doc-assistant-cpu' and extra != 'extra-13-doc-assistant-cu130'",
+    "python_full_version >= '3.11' and python_full_version < '3.13' and extra != 'extra-13-doc-assistant-cpu' and extra != 'extra-13-doc-assistant-cu130'",
+]
+sdist = { url = "https://files.pythonhosted.org/packages/68/bc/d36966de7304047a1001a7559fbf266c464bb5d8cc85464536ef8c9bcc32/distlib-0.4.4.tar.gz", hash = "sha256:ca4175b4ac7f71223cc30ed7248c45d2b38c2439d8ee6e498ab67ed63cf3508d", size = 621304, upload-time = "2026-10-16T13:56:34.203Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/c1/2b/238f02a4927fa2e27aa995371d240a468b52e42eae44a678434aff736b38/distlib-0.4.4-py2.py3-none-any.whl", hash = "sha256:cf09d55b1e85a89576b036aeb71550bfd68320f3f21761ca329eadadad918638", size = 472099, upload-time = "2026-10-16T13:56:32.053Z" },
 ]
 
 [[package]]
@@ -1739,7 +1773,8 @@ dependencies = [
     { name = "fsspec" },
     { name = "hf-xet", marker = "platform_machine == 'AMD64' or platform_machine == 'aarch64' or platform_machine == 'amd64' or platform_machine == 'arm64' or platform_machine == 'x86_64' or (extra == 'extra-13-doc-assistant-cpu' and extra == 'extra-13-doc-assistant-cu130')" },
     { name = "httpx" },
-    { name = "packaging" },
+    { name = "packaging", version = "26.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11' or (extra == 'extra-13-doc-assistant-cpu' and extra == 'extra-13-doc-assistant-cu130')" },
+    { name = "packaging", version = "26.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11' or (extra == 'extra-13-doc-assistant-cpu' and extra == 'extra-13-doc-assistant-cu130')" },
     { name = "pyyaml" },
     { name = "tqdm" },
     { name = "typer" },
@@ -2085,7 +2120,8 @@ dependencies = [
     { name = "jsonpatch" },
     { name = "langchain-protocol" },
     { name = "langsmith" },
-    { name = "packaging" },
+    { name = "packaging", version = "26.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11' or (extra == 'extra-13-doc-assistant-cpu' and extra == 'extra-13-doc-assistant-cu130')" },
+    { name = "packaging", version = "26.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11' or (extra == 'extra-13-doc-assistant-cpu' and extra == 'extra-13-doc-assistant-cu130')" },
     { name = "pydantic" },
     { name = "pyyaml" },
     { name = "tenacity" },
@@ -2223,7 +2259,8 @@ source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "httpx" },
     { name = "orjson", marker = "platform_python_implementation != 'PyPy' or (extra == 'extra-13-doc-assistant-cpu' and extra == 'extra-13-doc-assistant-cu130')" },
-    { name = "packaging" },
+    { name = "packaging", version = "26.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11' or (extra == 'extra-13-doc-assistant-cpu' and extra == 'extra-13-doc-assistant-cu130')" },
+    { name = "packaging", version = "26.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11' or (extra == 'extra-13-doc-assistant-cpu' and extra == 'extra-13-doc-assistant-cu130')" },
     { name = "pydantic" },
     { name = "requests" },
     { name = "requests-toolbelt" },
@@ -2575,7 +2612,8 @@ name = "marshmallow"
 version = "3.26.2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "packaging" },
+    { name = "packaging", version = "26.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11' or (extra == 'extra-13-doc-assistant-cpu' and extra == 'extra-13-doc-assistant-cu130')" },
+    { name = "packaging", version = "26.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11' or (extra == 'extra-13-doc-assistant-cpu' and extra == 'extra-13-doc-assistant-cu130')" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/55/79/de6c16cc902f4fc372236926b0ce2ab7845268dcc30fb2fbb7f71b418631/marshmallow-3.26.2.tar.gz", hash = "sha256:bbe2adb5a03e6e3571b573f42527c6fe926e17467833660bebd11593ab8dfd57", size = 222095, upload-time = "2025-12-22T06:53:53.309Z" }
 wheels = [
@@ -3460,7 +3498,7 @@ resolution-markers = [
 dependencies = [
     { name = "flatbuffers", marker = "python_full_version < '3.11' or (extra == 'extra-13-doc-assistant-cpu' and extra == 'extra-13-doc-assistant-cu130')" },
     { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11' or (extra == 'extra-13-doc-assistant-cpu' and extra == 'extra-13-doc-assistant-cu130')" },
-    { name = "packaging", marker = "python_full_version < '3.11' or (extra == 'extra-13-doc-assistant-cpu' and extra == 'extra-13-doc-assistant-cu130')" },
+    { name = "packaging", version = "26.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11' or (extra == 'extra-13-doc-assistant-cpu' and extra == 'extra-13-doc-assistant-cu130')" },
     { name = "protobuf", marker = "python_full_version < '3.11' or (extra == 'extra-13-doc-assistant-cpu' and extra == 'extra-13-doc-assistant-cu130')" },
     { name = "sympy", marker = "python_full_version < '3.11' or (extra == 'extra-13-doc-assistant-cpu' and extra == 'extra-13-doc-assistant-cu130')" },
 ]
@@ -3516,7 +3554,7 @@ resolution-markers = [
 dependencies = [
     { name = "flatbuffers", marker = "python_full_version >= '3.11' or (extra == 'extra-13-doc-assistant-cpu' and extra == 'extra-13-doc-assistant-cu130')" },
     { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11' or (extra == 'extra-13-doc-assistant-cpu' and extra == 'extra-13-doc-assistant-cu130')" },
-    { name = "packaging", marker = "python_full_version >= '3.11' or (extra == 'extra-13-doc-assistant-cpu' and extra == 'extra-13-doc-assistant-cu130')" },
+    { name = "packaging", version = "26.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11' or (extra == 'extra-13-doc-assistant-cpu' and extra == 'extra-13-doc-assistant-cu130')" },
     { name = "protobuf", marker = "python_full_version >= '3.11' or (extra == 'extra-13-doc-assistant-cpu' and extra == 'extra-13-doc-assistant-cu130')" },
 ]
 wheels = [
@@ -3786,9 +3824,42 @@ wheels = [
 name = "packaging"
 version = "26.2"
 source = { registry = "https://pypi.org/simple" }
+resolution-markers = [
+    "python_full_version < '3.11' and extra != 'extra-13-doc-assistant-cpu' and extra == 'extra-13-doc-assistant-cu130'",
+    "python_full_version < '3.11' and sys_platform != 'darwin' and extra == 'extra-13-doc-assistant-cpu' and extra != 'extra-13-doc-assistant-cu130'",
+    "python_full_version < '3.11' and sys_platform == 'darwin' and extra == 'extra-13-doc-assistant-cpu' and extra != 'extra-13-doc-assistant-cu130'",
+    "python_full_version < '3.11' and extra != 'extra-13-doc-assistant-cpu' and extra != 'extra-13-doc-assistant-cu130'",
+]
 sdist = { url = "https://files.pythonhosted.org/packages/d7/f1/e7a6dd94a8d4a5626c03e4e99c87f241ba9e350cd9e6d75123f992427270/packaging-26.2.tar.gz", hash = "sha256:ff452ff5a3e828ce110190feff1178bb1f2ea2281fa2075aadb987c2fb221661", size = 228134, upload-time = "2026-04-24T20:15:23.917Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/df/b2/87e62e8c3e2f4b32e5fe99e0b86d576da1312593b39f47d8ceef365e95ed/packaging-26.2-py3-none-any.whl", hash = "sha256:5fc45236b9446107ff2415ce77c807cee2862cb6fac22b8a73826d0693b0980e", size = 100195, upload-time = "2026-04-24T20:15:22.081Z" },
+]
+
+[[package]]
+name = "packaging"
+version = "26.3"
+source = { registry = "https://pypi.org/simple" }
+resolution-markers = [
+    "python_full_version >= '3.15' and extra != 'extra-13-doc-assistant-cpu' and extra == 'extra-13-doc-assistant-cu130'",
+    "python_full_version == '3.14.*' and extra != 'extra-13-doc-assistant-cpu' and extra == 'extra-13-doc-assistant-cu130'",
+    "python_full_version == '3.13.*' and extra != 'extra-13-doc-assistant-cpu' and extra == 'extra-13-doc-assistant-cu130'",
+    "python_full_version >= '3.11' and python_full_version < '3.13' and extra != 'extra-13-doc-assistant-cpu' and extra == 'extra-13-doc-assistant-cu130'",
+    "python_full_version >= '3.15' and sys_platform != 'darwin' and extra == 'extra-13-doc-assistant-cpu' and extra != 'extra-13-doc-assistant-cu130'",
+    "python_full_version == '3.14.*' and sys_platform != 'darwin' and extra == 'extra-13-doc-assistant-cpu' and extra != 'extra-13-doc-assistant-cu130'",
+    "python_full_version == '3.13.*' and sys_platform != 'darwin' and extra == 'extra-13-doc-assistant-cpu' and extra != 'extra-13-doc-assistant-cu130'",
+    "python_full_version >= '3.15' and sys_platform == 'darwin' and extra == 'extra-13-doc-assistant-cpu' and extra != 'extra-13-doc-assistant-cu130'",
+    "python_full_version == '3.14.*' and sys_platform == 'darwin' and extra == 'extra-13-doc-assistant-cpu' and extra != 'extra-13-doc-assistant-cu130'",
+    "python_full_version == '3.13.*' and sys_platform == 'darwin' and extra == 'extra-13-doc-assistant-cpu' and extra != 'extra-13-doc-assistant-cu130'",
+    "python_full_version >= '3.11' and python_full_version < '3.13' and sys_platform != 'darwin' and extra == 'extra-13-doc-assistant-cpu' and extra != 'extra-13-doc-assistant-cu130'",
+    "python_full_version >= '3.11' and python_full_version < '3.13' and sys_platform == 'darwin' and extra == 'extra-13-doc-assistant-cpu' and extra != 'extra-13-doc-assistant-cu130'",
+    "python_full_version >= '3.15' and extra != 'extra-13-doc-assistant-cpu' and extra != 'extra-13-doc-assistant-cu130'",
+    "python_full_version == '3.14.*' and extra != 'extra-13-doc-assistant-cpu' and extra != 'extra-13-doc-assistant-cu130'",
+    "python_full_version == '3.13.*' and extra != 'extra-13-doc-assistant-cpu' and extra != 'extra-13-doc-assistant-cu130'",
+    "python_full_version >= '3.11' and python_full_version < '3.13' and extra != 'extra-13-doc-assistant-cpu' and extra != 'extra-13-doc-assistant-cu130'",
+]
+sdist = { url = "https://files.pythonhosted.org/packages/7d/fa/3944b40b07da9ce895c0e6303a5ab7d53da063554f534556b134a54d6093/packaging-26.3.tar.gz", hash = "sha256:94edc256424af38762eb31306eed28beb9f0efc50a8837492c9d6fd6004aed79", size = 313412, upload-time = "2026-08-04T18:15:28.737Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/63/34/ba1c580383c9eada3711951fef0795c80b829a078d72188184bcab9dd527/packaging-26.3-py3-none-any.whl", hash = "sha256:d7193f7c8e4e93f444fde0262bf90af30e16fa0ad0ad44cb553c87339b23cd1c", size = 129956, upload-time = "2026-08-04T18:15:27.159Z" },
 ]
 
 [[package]]
@@ -4073,7 +4144,8 @@ source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "cachecontrol", extra = ["filecache"] },
     { name = "cyclonedx-python-lib" },
-    { name = "packaging" },
+    { name = "packaging", version = "26.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11' or (extra == 'extra-13-doc-assistant-cpu' and extra == 'extra-13-doc-assistant-cu130')" },
+    { name = "packaging", version = "26.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11' or (extra == 'extra-13-doc-assistant-cpu' and extra == 'extra-13-doc-assistant-cu130')" },
     { name = "pip-api" },
     { name = "pip-requirements-parser" },
     { name = "platformdirs" },
@@ -4092,7 +4164,8 @@ name = "pip-requirements-parser"
 version = "32.0.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "packaging" },
+    { name = "packaging", version = "26.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11' or (extra == 'extra-13-doc-assistant-cpu' and extra == 'extra-13-doc-assistant-cu130')" },
+    { name = "packaging", version = "26.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11' or (extra == 'extra-13-doc-assistant-cpu' and extra == 'extra-13-doc-assistant-cu130')" },
     { name = "pyparsing" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/5e/2a/63b574101850e7f7b306ddbdb02cb294380d37948140eecd468fae392b54/pip-requirements-parser-32.0.1.tar.gz", hash = "sha256:b4fa3a7a0be38243123cf9d1f3518da10c51bdb165a2b2985566247f9155a7d3", size = 209359, upload-time = "2022-12-21T15:25:22.732Z" }
@@ -4127,7 +4200,8 @@ dependencies = [
     { name = "identify" },
     { name = "nodeenv" },
     { name = "pyyaml" },
-    { name = "virtualenv" },
+    { name = "virtualenv", version = "21.14.5", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11' or (extra == 'extra-13-doc-assistant-cpu' and extra == 'extra-13-doc-assistant-cu130')" },
+    { name = "virtualenv", version = "21.14.12", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11' or (extra == 'extra-13-doc-assistant-cpu' and extra == 'extra-13-doc-assistant-cu130')" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/8e/22/2de9408ac81acbb8a7d05d4cc064a152ccf33b3d480ebe0cd292153db239/pre_commit-4.6.0.tar.gz", hash = "sha256:718d2208cef53fdc38206e40524a6d4d9576d103eb16f0fec11c875e7716e9d9", size = 198525, upload-time = "2026-04-21T20:31:41.613Z" }
 wheels = [
@@ -4632,7 +4706,8 @@ source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "altgraph" },
     { name = "macholib", marker = "sys_platform == 'darwin' or (extra == 'extra-13-doc-assistant-cpu' and extra == 'extra-13-doc-assistant-cu130')" },
-    { name = "packaging" },
+    { name = "packaging", version = "26.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11' or (extra == 'extra-13-doc-assistant-cpu' and extra == 'extra-13-doc-assistant-cu130')" },
+    { name = "packaging", version = "26.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11' or (extra == 'extra-13-doc-assistant-cpu' and extra == 'extra-13-doc-assistant-cu130')" },
     { name = "pefile", marker = "sys_platform == 'win32' or (extra == 'extra-13-doc-assistant-cpu' and extra == 'extra-13-doc-assistant-cu130')" },
     { name = "pyinstaller-hooks-contrib" },
     { name = "pywin32-ctypes", marker = "sys_platform == 'win32' or (extra == 'extra-13-doc-assistant-cpu' and extra == 'extra-13-doc-assistant-cu130')" },
@@ -4658,7 +4733,8 @@ name = "pyinstaller-hooks-contrib"
 version = "2026.6"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "packaging" },
+    { name = "packaging", version = "26.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11' or (extra == 'extra-13-doc-assistant-cpu' and extra == 'extra-13-doc-assistant-cu130')" },
+    { name = "packaging", version = "26.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11' or (extra == 'extra-13-doc-assistant-cpu' and extra == 'extra-13-doc-assistant-cu130')" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/94/5b/c9fe0db5e83ee1c39b2258fa21d23b15e1a60786b6c5990ee5074ead8bb6/pyinstaller_hooks_contrib-2026.6.tar.gz", hash = "sha256:bef5002c32f4f50bd55b005da12cff64eca8783e7eaf86a06a62410164bab725", size = 173354, upload-time = "2026-06-08T22:37:16.152Z" }
 wheels = [
@@ -4784,7 +4860,8 @@ dependencies = [
     { name = "colorama", marker = "sys_platform == 'win32' or (extra == 'extra-13-doc-assistant-cpu' and extra == 'extra-13-doc-assistant-cu130')" },
     { name = "exceptiongroup", marker = "python_full_version < '3.11' or (extra == 'extra-13-doc-assistant-cpu' and extra == 'extra-13-doc-assistant-cu130')" },
     { name = "iniconfig" },
-    { name = "packaging" },
+    { name = "packaging", version = "26.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11' or (extra == 'extra-13-doc-assistant-cpu' and extra == 'extra-13-doc-assistant-cu130')" },
+    { name = "packaging", version = "26.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11' or (extra == 'extra-13-doc-assistant-cpu' and extra == 'extra-13-doc-assistant-cu130')" },
     { name = "pluggy" },
     { name = "pygments" },
     { name = "tomli", marker = "python_full_version < '3.11' or (extra == 'extra-13-doc-assistant-cpu' and extra == 'extra-13-doc-assistant-cu130')" },
@@ -6125,7 +6202,8 @@ dependencies = [
     { name = "huggingface-hub" },
     { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11' or (extra == 'extra-13-doc-assistant-cpu' and extra == 'extra-13-doc-assistant-cu130')" },
     { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11' or (extra == 'extra-13-doc-assistant-cpu' and extra == 'extra-13-doc-assistant-cu130')" },
-    { name = "packaging" },
+    { name = "packaging", version = "26.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11' or (extra == 'extra-13-doc-assistant-cpu' and extra == 'extra-13-doc-assistant-cu130')" },
+    { name = "packaging", version = "26.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11' or (extra == 'extra-13-doc-assistant-cpu' and extra == 'extra-13-doc-assistant-cu130')" },
     { name = "pyyaml" },
     { name = "regex" },
     { name = "safetensors" },
@@ -6410,18 +6488,59 @@ wheels = [
 
 [[package]]
 name = "virtualenv"
-version = "21.7.13"
+version = "21.14.5"
 source = { registry = "https://pypi.org/simple" }
+resolution-markers = [
+    "python_full_version < '3.11' and extra != 'extra-13-doc-assistant-cpu' and extra == 'extra-13-doc-assistant-cu130'",
+    "python_full_version < '3.11' and sys_platform != 'darwin' and extra == 'extra-13-doc-assistant-cpu' and extra != 'extra-13-doc-assistant-cu130'",
+    "python_full_version < '3.11' and sys_platform == 'darwin' and extra == 'extra-13-doc-assistant-cpu' and extra != 'extra-13-doc-assistant-cu130'",
+    "python_full_version < '3.11' and extra != 'extra-13-doc-assistant-cpu' and extra != 'extra-13-doc-assistant-cu130'",
+]
 dependencies = [
-    { name = "distlib" },
-    { name = "filelock" },
-    { name = "platformdirs" },
-    { name = "python-discovery" },
+    { name = "distlib", version = "0.4.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11' or (extra == 'extra-13-doc-assistant-cpu' and extra == 'extra-13-doc-assistant-cu130')" },
+    { name = "filelock", marker = "python_full_version < '3.11' or (extra == 'extra-13-doc-assistant-cpu' and extra == 'extra-13-doc-assistant-cu130')" },
+    { name = "packaging", version = "26.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11' or (extra == 'extra-13-doc-assistant-cpu' and extra == 'extra-13-doc-assistant-cu130')" },
+    { name = "platformdirs", marker = "python_full_version < '3.11' or (extra == 'extra-13-doc-assistant-cpu' and extra == 'extra-13-doc-assistant-cu130')" },
+    { name = "python-discovery", marker = "python_full_version < '3.11' or (extra == 'extra-13-doc-assistant-cpu' and extra == 'extra-13-doc-assistant-cu130')" },
     { name = "typing-extensions", marker = "python_full_version < '3.11' or (extra == 'extra-13-doc-assistant-cpu' and extra == 'extra-13-doc-assistant-cu130')" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/13/50/c9b84eb106d0db420b9878dac0a386c5791726f127ce20b06897f6e3a1e9/virtualenv-21.7.13.tar.gz", hash = "sha256:0355558b6f33619aab31347e43643b0ebc97f61ea3acf617b2b69e1f8a843d11", size = 5360306, upload-time = "2026-09-18T04:35:49.354Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/c4/f9/f323b3b6058cff3853b31cf6a49c0425ed797bf9611572ec10d065e08bac/virtualenv-21.14.5.tar.gz", hash = "sha256:c4cb6c13e46b57225a999c7e22a09b163393878facc7ac4c059a57f46faa1647", size = 5467127, upload-time = "2026-10-02T17:42:25.613Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/9a/ce/e74453531b0c49a58d0e8a4f9bab4495705859fee4a4f7de27d58f4a791a/virtualenv-21.7.13-py3-none-any.whl", hash = "sha256:1bea5af7463f59c4719db48fe739579a2a4f569c96f26c086edda85c96da9f59", size = 5328680, upload-time = "2026-09-18T04:35:47.194Z" },
+    { url = "https://files.pythonhosted.org/packages/df/93/084f10ebbecdedf7902ed68fbecc903f0e9c5742155bfffb05eccbc071da/virtualenv-21.14.5-py3-none-any.whl", hash = "sha256:b0651e0174982bba17cc6f0aaa2ef496730cb85a3f35eb5d1119d1c904f7d1da", size = 5487482, upload-time = "2026-10-02T17:42:23.38Z" },
+]
+
+[[package]]
+name = "virtualenv"
+version = "21.14.12"
+source = { registry = "https://pypi.org/simple" }
+resolution-markers = [
+    "python_full_version >= '3.15' and extra != 'extra-13-doc-assistant-cpu' and extra == 'extra-13-doc-assistant-cu130'",
+    "python_full_version == '3.14.*' and extra != 'extra-13-doc-assistant-cpu' and extra == 'extra-13-doc-assistant-cu130'",
+    "python_full_version == '3.13.*' and extra != 'extra-13-doc-assistant-cpu' and extra == 'extra-13-doc-assistant-cu130'",
+    "python_full_version >= '3.11' and python_full_version < '3.13' and extra != 'extra-13-doc-assistant-cpu' and extra == 'extra-13-doc-assistant-cu130'",
+    "python_full_version >= '3.15' and sys_platform != 'darwin' and extra == 'extra-13-doc-assistant-cpu' and extra != 'extra-13-doc-assistant-cu130'",
+    "python_full_version == '3.14.*' and sys_platform != 'darwin' and extra == 'extra-13-doc-assistant-cpu' and extra != 'extra-13-doc-assistant-cu130'",
+    "python_full_version == '3.13.*' and sys_platform != 'darwin' and extra == 'extra-13-doc-assistant-cpu' and extra != 'extra-13-doc-assistant-cu130'",
+    "python_full_version >= '3.15' and sys_platform == 'darwin' and extra == 'extra-13-doc-assistant-cpu' and extra != 'extra-13-doc-assistant-cu130'",
+    "python_full_version == '3.14.*' and sys_platform == 'darwin' and extra == 'extra-13-doc-assistant-cpu' and extra != 'extra-13-doc-assistant-cu130'",
+    "python_full_version == '3.13.*' and sys_platform == 'darwin' and extra == 'extra-13-doc-assistant-cpu' and extra != 'extra-13-doc-assistant-cu130'",
+    "python_full_version >= '3.11' and python_full_version < '3.13' and sys_platform != 'darwin' and extra == 'extra-13-doc-assistant-cpu' and extra != 'extra-13-doc-assistant-cu130'",
+    "python_full_version >= '3.11' and python_full_version < '3.13' and sys_platform == 'darwin' and extra == 'extra-13-doc-assistant-cpu' and extra != 'extra-13-doc-assistant-cu130'",
+    "python_full_version >= '3.15' and extra != 'extra-13-doc-assistant-cpu' and extra != 'extra-13-doc-assistant-cu130'",
+    "python_full_version == '3.14.*' and extra != 'extra-13-doc-assistant-cpu' and extra != 'extra-13-doc-assistant-cu130'",
+    "python_full_version == '3.13.*' and extra != 'extra-13-doc-assistant-cpu' and extra != 'extra-13-doc-assistant-cu130'",
+    "python_full_version >= '3.11' and python_full_version < '3.13' and extra != 'extra-13-doc-assistant-cpu' and extra != 'extra-13-doc-assistant-cu130'",
+]
+dependencies = [
+    { name = "distlib", version = "0.4.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11' or (extra == 'extra-13-doc-assistant-cpu' and extra == 'extra-13-doc-assistant-cu130')" },
+    { name = "filelock", marker = "python_full_version >= '3.11' or (extra == 'extra-13-doc-assistant-cpu' and extra == 'extra-13-doc-assistant-cu130')" },
+    { name = "packaging", version = "26.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11' or (extra == 'extra-13-doc-assistant-cpu' and extra == 'extra-13-doc-assistant-cu130')" },
+    { name = "platformdirs", marker = "python_full_version >= '3.11' or (extra == 'extra-13-doc-assistant-cpu' and extra == 'extra-13-doc-assistant-cu130')" },
+    { name = "python-discovery", marker = "python_full_version >= '3.11' or (extra == 'extra-13-doc-assistant-cpu' and extra == 'extra-13-doc-assistant-cu130')" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/c9/2c/1a69b3346931e9a7db9cc00cc0fa847c843a85fa7cf52a598f57261c68df/virtualenv-21.14.12.tar.gz", hash = "sha256:bbcfb78e36c22ad70c6917c4aecb5e63477d3c138e9f88c946f320e31859c76a", size = 5562800, upload-time = "2026-10-21T01:58:51.724Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/a0/92/f3b8af2d36ddec4dc61dc25655dc010e419ff456cb4ca0e720c8112f1047/virtualenv-21.14.12-py3-none-any.whl", hash = "sha256:7820aeaef23f1f59a96458edfc7f9d3deac937155718de15f1c9a64471e15551", size = 5556824, upload-time = "2026-10-21T01:58:48.505Z" },
 ]
 
 [[package]]

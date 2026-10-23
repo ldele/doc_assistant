@@ -63,6 +63,11 @@ document_keywords = Table(
         "document_id", String, ForeignKey("documents.id", ondelete="CASCADE"), primary_key=True
     ),
     Column("keyword_id", String, ForeignKey("keywords.id", ondelete="CASCADE"), primary_key=True),
+    # Session 5c — what the extractor scored this keyword in this document, and its place among
+    # them (1 = best). NULL on a link the extractor did not rank (a manual or author keyword, or a
+    # link written before 5c), which lists after the ranked ones, by name.
+    Column("score", Float, nullable=True),
+    Column("rank", Integer, nullable=True),
 )
 
 
@@ -175,8 +180,13 @@ class Document(Base):
     tags: Mapped[list[Tag]] = relationship(
         "Tag", secondary=document_tags, back_populates="documents"
     )
+    # In the extractor's rank order (5c): every read of a document's keywords lists its main
+    # topics before its details. Unranked links follow, by name.
     keywords: Mapped[list[Keyword]] = relationship(
-        "Keyword", secondary=document_keywords, back_populates="documents"
+        "Keyword",
+        secondary=document_keywords,
+        back_populates="documents",
+        order_by=[document_keywords.c.rank.asc().nulls_last(), Keyword.name],
     )
     parts: Mapped[list["DocumentPart"]] = relationship(
         "DocumentPart",

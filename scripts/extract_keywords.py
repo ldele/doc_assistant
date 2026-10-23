@@ -93,6 +93,13 @@ def main() -> int:
     )
     args = parser.parse_args()
 
+    if args.apply:
+        # A write needs the 5c link columns (score, rank); the app adds them at startup, and a
+        # library this runs on may not have been opened by the app since. Additive, idempotent.
+        from doc_assistant.db.migrations import init_db
+
+        init_db()
+
     document_id: str | None = None
     if args.doc:
         try:

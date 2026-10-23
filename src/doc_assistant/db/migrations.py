@@ -89,6 +89,13 @@ _ADDITIVE_COLUMNS: list[tuple[str, str, str, str | None]] = [
     # form (the KI-25 question — would an absent value change behaviour? — answers no).
     # Unindexed: read with the alias row, never filtered on alone.
     ("concept_aliases", "breadth", "VARCHAR", None),
+    # Session 5c (ROADMAP 99) — the extractor's score and rank on the (pre-existing)
+    # document_keywords link. NULL on every existing link and not backfilled: the scores were never
+    # stored, so there is nothing true to backfill. NULL lists after ranked links, by name, so an
+    # unranked document reads alphabetically until `extract_keywords --apply --force` ranks it.
+    # Unindexed: read with the links of one document, never filtered on.
+    ("document_keywords", "score", "FLOAT", None),
+    ("document_keywords", "rank", "INTEGER", None),
 ]
 
 

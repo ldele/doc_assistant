@@ -100,3 +100,32 @@ def test_additive_migration_skips_absent_table(tmp_path: Path) -> None:
         _apply_additive_columns(engine)  # must not raise
     finally:
         engine.dispose()
+
+
+def test_keyword_link_gains_score_and_rank_unset_and_keeps_its_links(tmp_path: Path) -> None:
+    """Session 5c: a library that predates stored scores gains `document_keywords.score` and
+    `.rank` in place. Every existing link survives and reads NULL — unranked, listed after ranked
+    links by name — because the scores were never stored and there is nothing true to backfill."""
+    engine = create_engine(f"sqlite:///{tmp_path / 'links.db'}", future=True)
+    try:
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    "CREATE TABLE document_keywords "
+                    "(document_id VARCHAR, keyword_id VARCHAR, "
+                    "PRIMARY KEY (document_id, keyword_id))"
+                )
+            )
+            conn.execute(text("INSERT INTO document_keywords VALUES ('d1', 'k1'), ('d1', 'k2')"))
+
+        added = _apply_additive_columns(engine)
+        assert {"document_keywords.score", "document_keywords.rank"} <= set(added)
+        with engine.connect() as conn:
+            rows = conn.execute(
+                text("SELECT keyword_id, score, rank FROM document_keywords ORDER BY keyword_id")
+            ).all()
+        assert [tuple(r) for r in rows] == [("k1", None, None), ("k2", None, None)]
+
+        assert _apply_additive_columns(engine) == []  # idempotent second pass
+    finally:
+        engine.dispose()

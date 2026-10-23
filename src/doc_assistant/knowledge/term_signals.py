@@ -56,6 +56,10 @@ from doc_assistant.knowledge.concept_skeleton import (
     surface_forms,
 )
 
+# `majority` lives with the keyword extractor, which reads cited authors by the same rule (5c);
+# it stays importable from here, where the term signals and their CLI have always found it.
+from doc_assistant.knowledge.keywords import majority
+
 if TYPE_CHECKING:
     from pathlib import Path
 
@@ -362,11 +366,6 @@ class TermSignals:
     def cited(self) -> bool:
         """Mostly a cited author's name: "et al." follows at least half of its mentions."""
         return majority(self.et_al, self.mentions)
-
-
-def majority(count: int, mentions: int) -> bool:
-    """At least half of the mentions — a majority, not a tuned share. ``False`` for none."""
-    return mentions > 0 and count * 2 >= mentions
 
 
 def offer_example(offer: FormOffer) -> Example:

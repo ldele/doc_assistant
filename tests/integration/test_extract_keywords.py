@@ -176,3 +176,65 @@ def test_corpus_band_mode_links_shared_terms_across_docs(env: Path) -> None:
         assert len(rows["bm25"].documents) == 2  # linked to BOTH docs → cross-document edge
         assert "retrieval" not in rows  # df=3 hub excluded (> max_df)
         assert "colbert" not in rows  # df=1 singleton excluded (< min_df)
+
+
+# --------------------------------------------------------------------------- #
+# Session 5c — score and rank stored on the link; every read lists by rank
+# --------------------------------------------------------------------------- #
+
+
+def _link_rows(doc_id: str) -> list[tuple[str, float | None, int | None]]:
+    with session_scope() as session:
+        rows = session.execute(
+            select(Keyword.name, document_keywords.c.score, document_keywords.c.rank)
+            .join(Keyword, Keyword.id == document_keywords.c.keyword_id)
+            .where(document_keywords.c.document_id == doc_id)
+        ).all()
+    return [(name, score, rank) for name, score, rank in rows]
+
+
+def test_apply_stores_each_links_score_and_rank(env: Path) -> None:
+    result = extract_keywords(apply=True, top_k=5, ngram_max=2, min_chars=3)
+    for doc in result.docs:
+        rows = sorted(_link_rows(doc.document_id), key=lambda r: r[2] or 0)
+        assert [rank for _, _, rank in rows] == list(range(1, len(doc.keywords) + 1))
+        assert [name for name, _, _ in rows] == [k.term for k in doc.keywords]
+        assert [score for _, score, _ in rows] == pytest.approx([k.score for k in doc.keywords])
+
+
+def test_a_documents_keywords_read_in_rank_order(env: Path) -> None:
+    from doc_assistant.library.documents import get_document_details, list_documents
+
+    result = extract_keywords(apply=True, top_k=5, ngram_max=2, min_chars=3)
+    expected = {doc.document_id: [k.term for k in doc.keywords] for doc in result.docs}
+    for summary in list_documents():
+        assert summary.keywords == expected[summary.id]
+    details = get_document_details("d1")
+    assert details is not None
+    assert details.keywords == expected["d1"]
+
+
+def test_unranked_links_list_after_ranked_ones_by_name(env: Path) -> None:
+    from doc_assistant.library.documents import get_document_details
+
+    with session_scope() as session:
+        doc = session.get(Document, "d1")
+        assert doc is not None
+        for name in ("zeta manual", "alpha manual"):
+            doc.keywords.append(Keyword(name=name, source="manual"))
+    result = extract_keywords(apply=True, top_k=5, ngram_max=2, min_chars=3)
+    ranked = [k.term for k in next(d for d in result.docs if d.document_id == "d1").keywords]
+
+    details = get_document_details("d1")
+    assert details is not None
+    assert details.keywords == [*ranked, "alpha manual", "zeta manual"]
+    assert {name: rank for name, _, rank in _link_rows("d1")}["zeta manual"] is None
+
+
+def test_force_reranks_and_clears_a_rank_no_longer_earned(env: Path) -> None:
+    extract_keywords(apply=True, top_k=5, ngram_max=2, min_chars=3)
+    forced = extract_keywords(apply=True, force=True, top_k=2, ngram_max=2, min_chars=3)
+    for doc in forced.docs:
+        rows = _link_rows(doc.document_id)
+        assert sorted(rank for _, _, rank in rows if rank is not None) == [1, 2]
+        assert all(rank is not None for _, _, rank in rows)  # extracted links only: all ranked

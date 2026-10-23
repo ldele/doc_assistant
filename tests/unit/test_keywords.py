@@ -6,12 +6,15 @@ from doc_assistant.knowledge.keywords import (
     ScoredKeyword,
     c_value_scores,
     candidate_terms,
+    cited_authors,
     contrastive_keywords,
     corpus_band_keywords,
     is_citation_artifact,
+    majority,
     split_pages,
     strip_page_furniture,
     strip_reference_section,
+    strip_urls,
     suppress_nested,
     tf_idf_keywords,
     tokenize,
@@ -471,3 +474,147 @@ def test_strip_reference_section_is_a_noop_without_a_bibliography() -> None:
 
 def test_strip_reference_section_survives_an_empty_document() -> None:
     assert strip_reference_section("") == ""
+
+
+# --------------------------------------------------------------------------- #
+# Session 5c — the junk filters: each with what it drops and what it keeps
+# --------------------------------------------------------------------------- #
+
+
+def test_candidate_terms_drops_the_br_token_a_table_cell_leaves() -> None:
+    tokens = tokenize("seen<br>unseen<br>accuracy")
+    terms = set(candidate_terms(tokens, ngram_max=2, min_chars=3))
+    assert not any("br" in t.split() for t in terms)  # `seen br`, `br unseen`
+    assert {"seen", "unseen", "accuracy"} <= terms  # the cells' own words stay
+    # `br` only as a whole token: words that merely start with it are untouched.
+    assert "brain" in candidate_terms(["brain"], ngram_max=1, min_chars=3)
+
+
+def test_candidate_terms_drops_a_token_with_no_letter() -> None:
+    tokens = tokenize("Genetics 111, November 7. p 0.01 conv 256")
+    terms = set(candidate_terms(tokens, ngram_max=2, min_chars=3))
+    for junk in ("genetics 111", "november 7", "conv 256", "0.01"):
+        assert junk not in terms
+    assert {"genetics", "november", "conv"} <= terms  # the words beside the numbers stay
+
+
+def test_candidate_terms_keeps_a_name_written_with_its_number_joined() -> None:
+    tokens = tokenize("SAM2 and GPT-4 on 16p11.2 in C57BL/6 mice; layer 2/3")
+    terms = set(candidate_terms(tokens, ngram_max=1, min_chars=3))
+    assert {"sam2", "gpt-4", "16p11.2", "c57bl/6"} <= terms
+    # The cost, stated: the same names written with a space lose the number-only token.
+    spaced = set(candidate_terms(tokenize("SAM 2 and layer 5"), ngram_max=2, min_chars=3))
+    assert "sam 2" not in spaced and "layer 5" not in spaced
+    assert "layer" in spaced
+
+
+def test_candidate_terms_drops_letter_spaced_text_and_initials() -> None:
+    tokens = tokenize("N E U R O N S were drawn by T. N. Wiesel")
+    terms = set(candidate_terms(tokens, ngram_max=3, min_chars=3))
+    assert not any(sum(len(tok) == 1 for tok in t.split()) >= 2 for t in terms)
+    assert "wiesel" in terms
+
+
+def test_candidate_terms_keeps_a_phrase_with_one_single_letter() -> None:
+    tokens = tokenize("T cell receptors bind vitamin D")
+    terms = set(candidate_terms(tokens, ngram_max=2, min_chars=3))
+    assert "t cell" in terms
+    assert "vitamin d" in terms
+
+
+def test_strip_urls_removes_addresses_dois_and_email_by_shape() -> None:
+    text = (
+        "See https://aclanthology.org/2024.acl-long.12 and www.example.com/a, "
+        "aclanthology.org/2024.findings-acl.5 or doi:10.1038/nn.4502 and 10.7554/eLife.84566, "
+        "write to barbaraf@icb.usp.br about cortex."
+    )
+    tokens = tokenize(strip_urls(text))
+    for fragment in ("aclanthology", "org/2024", "example", "usp", "barbaraf", "nn.4502"):
+        assert fragment not in tokens
+    assert "cortex" in tokens and "write" in tokens
+
+
+def test_strip_urls_leaves_prose_abbreviations_and_designators() -> None:
+    text = "e.g. the 16p11.2 deletion, i.e. a CNV; Fig. 2 shows c57bl/6 mice."
+    assert strip_urls(text) == text
+
+
+def test_cited_authors_reads_et_al_on_a_majority_of_uses() -> None:
+    tokens = tokenize(
+        "Elias et al. (2020) mapped it. Later work (Elias et al., 2021) agrees; "
+        "as Elias showed, the target holds. Gouveia et al. replicated it."
+    )
+    cited = cited_authors(tokens)
+    assert "elias" in cited  # 2 of 3 uses are followed by "et al"
+    assert "gouveia" in cited  # 1 of 1
+
+
+def test_cited_authors_spares_a_name_the_document_is_about() -> None:
+    # The subject of the text: named often, cited "et al." rarely. Below a majority, not cited.
+    tokens = tokenize(
+        "Cajal drew neurons. Cajal argued for the neuron doctrine. Cajal et al. is rare. "
+        "Cajal stained with silver."
+    )
+    assert "cajal" not in cited_authors(tokens)
+    assert cited_authors([]) == frozenset()
+
+
+def test_candidate_terms_drops_the_documents_cited_authors() -> None:
+    tokens = tokenize("Zouhar et al. measured retrieval. Zouhar et al. again. dense retrieval")
+    terms = set(candidate_terms(tokens, ngram_max=2, min_chars=3, cited=cited_authors(tokens)))
+    assert not any("zouhar" in t.split() for t in terms)
+    assert {"dense retrieval", "retrieval"} <= terms
+    # Without the document's evidence the same name stays: there is no list of names.
+    assert "zouhar" in candidate_terms(tokens, ngram_max=1, min_chars=3)
+
+
+def test_majority_is_shared_with_the_term_signals() -> None:
+    from doc_assistant.knowledge import term_signals
+
+    assert term_signals.majority is majority
+    assert majority(1, 2) and not majority(1, 3) and not majority(0, 0)
+
+
+# --------------------------------------------------------------------------- #
+# Robustness contract: 0 documents, 1 document, a synthetic 10,000-document corpus
+# --------------------------------------------------------------------------- #
+
+
+def _terms_of(text: str) -> list[str]:
+    tokens = tokenize(strip_urls(text))
+    return candidate_terms(tokens, ngram_max=3, min_chars=3, cited=cited_authors(tokens))
+
+
+def test_extractor_core_at_zero_documents() -> None:
+    assert tf_idf_keywords({}, top_k=15) == {}
+    assert _terms_of("") == []
+
+
+def test_extractor_core_at_one_document() -> None:
+    text = "grid cells encode space; grid cells fire"
+    ranked = tf_idf_keywords({"d1": _terms_of(text)}, top_k=15)
+    terms = [k.term for k in ranked["d1"]]
+    assert terms and len(terms) <= 15
+    assert all(k.score > 0 for k in ranked["d1"])
+
+
+def test_extractor_core_at_ten_thousand_documents() -> None:
+    # Synthetic vocabulary: each document has its own word, a word shared by a tenth of the
+    # corpus, and the junk shapes 5c removes. Every bound below holds at any corpus size.
+    n = 10_000
+    doc_terms = {
+        f"d{i}": _terms_of(
+            f"topic{i} topic{i} shared{i % 10} table<br>cell {i} n e u Smith et al. Smith et al."
+        )
+        for i in range(n)
+    }
+    ranked = tf_idf_keywords(doc_terms, top_k=15)
+    assert len(ranked) == n
+    for doc_id, keywords in ranked.items():
+        assert 0 < len(keywords) <= 15
+        assert keywords[0].term == f"topic{doc_id[1:]}"  # its own word ranks first
+        for k in keywords:
+            tokens = k.term.split()
+            assert "br" not in tokens and "smith" not in tokens
+            assert all(any(ch.isalpha() for ch in tok) for tok in tokens)
+            assert sum(len(tok) == 1 for tok in tokens) < 2

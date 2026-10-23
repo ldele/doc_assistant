@@ -18,6 +18,8 @@ the distinctive per-paper terms a curator actually wants to promote).
 Pure core (``tokenize`` → ``candidate_terms`` → ``tf_idf_keywords``) has no DB/LLM imports
 and is fully unit-testable on toy inputs; the impure boundary (``load_document_texts`` →
 ``extract_keywords``) reads cached markdown and writes ``Keyword`` rows on the host (KI-5).
+Each document link stores the keyword's score and its rank in that document, and the library
+lists a document's keywords in rank order (session 5c).
 """
 
 from __future__ import annotations
@@ -53,7 +55,9 @@ _TOKEN_HEAD = re.compile(r"^[^./]+")
 # twice. So there is no name list here and there must never be one — author names are removed by
 # deleting the *place* they pile up (the reference section, below), not by deciding which words
 # look like people. A surname that survives that appears in the document's own prose, which is
-# exactly when it is a real term for that document ("Shadmehr's model").
+# exactly when it is a real term for that document ("Shadmehr's model"). One reading joins it in
+# session 5c, and it is still not a list: a word the document itself writes before "et al." on at
+# least half of its uses is an author that document cites (:func:`cited_authors`).
 #
 # These two patterns are pure shape and match nothing in the protected list above:
 #   `2014a` / `2015b` — a citation year with a disambiguating letter.
@@ -63,6 +67,33 @@ _TOKEN_HEAD = re.compile(r"^[^./]+")
 _CITATION_YEAR_SUFFIX = re.compile(r"^\d{4}[a-z]$")
 _ARTICLE_ID = re.compile(r"^[a-z]\d{4,}$")
 _DOI_PREFIX = re.compile(r"^10\.\d{4,5}$")
+
+# Session 5c (ROADMAP 99) — four more shapes of junk, each counted on the working library before it
+# was written (2026-10-20: 1,545 keyword links over 103 documents). Still shapes, never names:
+#   `br`          — what a table cell's ``<br>`` leaves: 30 links (`unseen br`, `br 768`). Of the
+#                   cache's `br` tokens, 17,863 are that tag and 21 are not (initials, `Br J
+#                   Anaesth`, a name split at its diacritic) — none of them a term.
+#   letter-spaced — two or more one-letter tokens in one phrase: 31 links, every one junk (`n e u`
+#                   from a letter-spaced title, the initials of `t n wiesel`, `sci u s`).
+#   no letter     — a token with no letter is a page, volume, count, p-value or year: 52 distinct
+#                   (`genetics 111`, `conv 256`, `november 7`). It also drops a name written with a
+#                   spaced number — `sam 2`, `wmt 2014`, `mrr 10`, `layer 5`: 9 of the 52. Written
+#                   joined (`sam2`, `gpt-4`, `16p11.2`, `c57bl/6`) a name is one token and stays.
+#   a web address — removed from the text before tokenising (:func:`strip_urls`), so no fragment of
+#                   one reaches a phrase (`aclanthology`, `org/2024`).
+#: Tokens left by markup rather than written by anyone. See the `br` note above.
+MARKUP_TOKENS: frozenset[str] = frozenset({"br"})
+
+#: A web address, a DOI or an e-mail address, by shape. The bare-domain arm needs a generic
+#: top-level domain after a dot, so prose never matches it (`e.g.`, `i.e.` have none).
+_WEB_ADDRESS = re.compile(
+    r"(?:https?://|www\.)\S+"
+    r"|\bdoi:\s*\S+"
+    r"|\b10\.\d{4,9}/\S+"
+    r"|[\w.+-]+@[\w-]+(?:\.[\w-]+)+"
+    r"|\b(?:[a-z0-9-]+\.)+(?:org|com|net|edu|gov|int|io|ai|info)\b(?:/\S*)?",
+    re.IGNORECASE,
+)
 
 #: Headings that begin a bibliography. Matched as a *whole line* only, so the word appearing
 #: mid-sentence never triggers a cut.
@@ -554,6 +585,40 @@ def is_citation_artifact(token: str) -> bool:
     )
 
 
+def strip_urls(text: str) -> str:
+    """Remove web addresses, DOIs and e-mail addresses from ``text``, by shape.
+
+    Runs before tokenising, so no fragment of an address becomes a token: the stoplists catch
+    ``doi`` and ``www`` but not ``aclanthology`` or the ``org/2024`` that
+    ``aclanthology.org/2024`` tokenises into. An address carries no topic of the document it sits
+    in, whichever site it names.
+    """
+    return _WEB_ADDRESS.sub(" ", text)
+
+
+def majority(count: int, mentions: int) -> bool:
+    """At least half of the mentions — a majority, not a tuned share. ``False`` for none."""
+    return mentions > 0 and count * 2 >= mentions
+
+
+def cited_authors(tokens: list[str]) -> frozenset[str]:
+    """The tokens this text cites as an author: "et al" follows at least half of their uses.
+
+    The reading the term signals make (``term_signals.TermSignals.cited``, right 5 of 5 times on
+    the user's answers, ``term_signals_2026-10-14.md``), with the same :func:`majority`, over one
+    document's own token stream. Evidence from that document, never a list of names: ``elias`` in
+    a paper that writes "Elias et al." is a citation there; ``cajal`` in the Cajal lecture, which
+    never writes it that way, is its subject. A name cited alone, "(Sporns, 2010)", is not
+    caught.
+    """
+    uses = Counter(tokens)
+    followed: Counter[str] = Counter()
+    for i in range(len(tokens) - 2):
+        if tokens[i + 1] == "et" and tokens[i + 2] == "al":
+            followed[tokens[i]] += 1
+    return frozenset(tok for tok, n in followed.items() if majority(n, uses[tok]))
+
+
 def candidate_terms(
     tokens: list[str],
     *,
@@ -561,20 +626,25 @@ def candidate_terms(
     min_chars: int,
     stopwords: frozenset[str] = STOPWORDS,
     venue_stopwords: frozenset[str] = VENUE_STOPWORDS,
+    cited: frozenset[str] = frozenset(),
 ) -> list[str]:
     """Candidate uni/bi/tri-grams from a token stream (one entry per occurrence → TF).
 
     A candidate is rejected if any of its tokens is a stopword (so no ``model of the``
     junk and no phrase padded by function words) or a ``venue_stopwords`` scholarly-metadata
     artifact (publisher / journal / repository / ID token — so ``elife`` and ``7554 elife``
-    both go), if it is shorter than ``min_chars`` (letters + digits, spaces excluded), or if
-    it contains no alphabetic character (pure numbers / IDs are not keywords). Order/repetition
-    is preserved so the caller can count term frequency directly.
+    both go), or if it is shorter than ``min_chars`` (letters + digits, spaces excluded).
+    Order/repetition is preserved so the caller can count term frequency directly.
 
     Two D4/D5 rules join those. A token is also rejected when its **head** — the part before its
     first ``.``/``/`` — is a stopword, which is what keeps ``fig.2`` and ``arxiv.org`` out now
     that :data:`_TOKEN_RE` can hold a separator; and when it is a citation *shape*
     (:func:`is_citation_artifact`). Neither rule consults a vocabulary of names.
+
+    Session 5c's shapes (see :data:`MARKUP_TOKENS`): a candidate goes when a token is markup
+    residue (``br``), has no letter (``genetics 111``, and a bare ``2024`` as before), or is in
+    ``cited`` — the document's cited authors (:func:`cited_authors`) — and when two or more of its
+    tokens are a single letter (``n e u``). ``cited`` is per document, so the default is empty.
     """
     terms: list[str] = []
     n = len(tokens)
@@ -583,7 +653,13 @@ def candidate_terms(
             gram = tokens[i : i + size]
             if any(tok in stopwords or tok in venue_stopwords for tok in gram):
                 continue
-            if any(is_citation_artifact(tok) for tok in gram):
+            if any(tok in MARKUP_TOKENS or tok in cited for tok in gram):
+                continue
+            if any(is_citation_artifact(tok) or not _has_letter(tok) for tok in gram):
+                continue
+            # Letter-spaced text, initials, variables: one single letter can be a term ("t cell",
+            # "vitamin d"); two in one phrase never were, in the 31 the library held.
+            if sum(len(tok) == 1 for tok in gram) >= 2:
                 continue
             # `fig.2` / `arxiv.org` survive tokenisation as one token, so the stopword check
             # above misses them — the head is what carries the meaning, so test that too.
@@ -600,10 +676,12 @@ def candidate_terms(
             term = " ".join(gram)
             if len(term.replace(" ", "")) < min_chars:
                 continue
-            if not any(ch.isalpha() for ch in term):
-                continue
             terms.append(term)
     return terms
+
+
+def _has_letter(token: str) -> bool:
+    return any(ch.isalpha() for ch in token)
 
 
 def tf_idf_keywords(
@@ -865,17 +943,23 @@ def load_document_texts(
     return out
 
 
-def _persist_keywords(document_id: str, terms: list[str], *, force: bool) -> int:
+def _persist_keywords(document_id: str, keywords: list[ScoredKeyword], *, force: bool) -> int:
     """Write ``Keyword(source="extracted")`` rows for one doc + link them. Idempotent.
 
     Skips a doc that already has extracted keywords unless ``force`` (then its existing
     *extracted* links are cleared first; author/manual keywords are left untouched). A
     Keyword is get-or-create by unique name, so a term shared across docs is one row with
     multiple document links. Returns the number of (keyword ← document) links added.
-    """
-    from sqlalchemy import select
 
-    from doc_assistant.db.models import Document, Keyword
+    Each link carries the extractor's ``score`` and its ``rank`` in this document (1 = best, the
+    order ``keywords`` arrives in), which is the order every read lists them in (5c). The
+    document's links are unranked first, so a manual keyword ranked by an earlier run that this
+    run did not choose does not keep a stale place; one this run did choose is ranked like the
+    rest.
+    """
+    from sqlalchemy import select, update
+
+    from doc_assistant.db.models import Document, Keyword, document_keywords
     from doc_assistant.db.session import session_scope
 
     with session_scope() as session:
@@ -890,18 +974,33 @@ def _persist_keywords(document_id: str, terms: list[str], *, force: bool) -> int
 
         linked = {k.name for k in doc.keywords}
         added = 0
-        for term in terms:
-            if term in linked:
+        for scored in keywords:
+            if scored.term in linked:
                 continue
             keyword = session.execute(
-                select(Keyword).where(Keyword.name == term)
+                select(Keyword).where(Keyword.name == scored.term)
             ).scalar_one_or_none()
             if keyword is None:
-                keyword = Keyword(name=term, source="extracted")
+                keyword = Keyword(name=scored.term, source="extracted")
                 session.add(keyword)
             doc.keywords.append(keyword)
-            linked.add(term)
+            linked.add(scored.term)
             added += 1
+
+        session.flush()  # the links exist (and new keywords have ids) before they are ranked
+        link = document_keywords.c
+        session.execute(
+            update(document_keywords)
+            .where(link.document_id == document_id)
+            .values(score=None, rank=None)
+        )
+        ids = {k.name: k.id for k in doc.keywords}
+        for rank, scored in enumerate(keywords, start=1):
+            session.execute(
+                update(document_keywords)
+                .where(link.document_id == document_id, link.keyword_id == ids[scored.term])
+                .values(score=scored.score, rank=rank)
+            )
         return added
 
 
@@ -974,15 +1073,14 @@ def extract_keywords(
     # the answer path still sees the document exactly as extracted.
     # D1 then D4: furniture first (it is judged per *page*, so it must see the whole document),
     # then the bibliography. Order matters only in that direction — cutting the references first
-    # would remove pages that the furniture pass needs in order to count repetition.
-    doc_terms = {
-        doc_id: candidate_terms(
-            tokenize(strip_reference_section(strip_page_furniture(text))),
-            ngram_max=ngram_max,
-            min_chars=min_chars,
+    # would remove pages that the furniture pass needs in order to count repetition. Web addresses
+    # go last, on the text the bibliography cut has already measured (5c).
+    doc_terms: dict[str, list[str]] = {}
+    for doc_id, _, text in corpus:
+        tokens = tokenize(strip_urls(strip_reference_section(strip_page_furniture(text))))
+        doc_terms[doc_id] = candidate_terms(
+            tokens, ngram_max=ngram_max, min_chars=min_chars, cited=cited_authors(tokens)
         )
-        for doc_id, _, text in corpus
-    }
 
     ranked: dict[str, list[ScoredKeyword]]
     if mode in ("corpus_band", "contrastive"):
@@ -1014,7 +1112,7 @@ def extract_keywords(
         distinct.update(k.term for k in keywords)
         written = 0
         if apply:
-            written = _persist_keywords(doc_id, [k.term for k in keywords], force=force)
+            written = _persist_keywords(doc_id, keywords, force=force)
             total_written += written
         docs.append(
             DocKeywords(

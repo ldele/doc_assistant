@@ -169,10 +169,13 @@
     <p class="summary">{summary}</p>
 
     <!-- Named, not hidden (ADR-048): a user who cannot find a button deserves to know there is no
-         button, rather than concluding the feature is broken. -->
+         button, rather than concluding the feature is broken. And say where each one IS redone:
+         this used to send the user to Settings, whose re-index rebuilds the search index and
+         none of these (5c). -->
     <p class="hint">
       {options.corpus_wide.join(', ')} are computed across your whole library, so they can’t be
-      re-run for one document. Re-index from Settings for those.
+      re-run for one document. Rebuild on the Graph tab redoes gaps. The others are redone from
+      the command line; keywords with <code>python -m scripts.extract_keywords --apply --force</code>.
     </p>
 
     {#if needsConfirm}

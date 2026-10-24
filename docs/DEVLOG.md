@@ -40,6 +40,26 @@ Format: What changed | Why | Rejected alternatives | What it opens
 
 ---
 
+## 2026-10-24 — `dompurify` 3.4.17: a critical advisory in the app's answer sanitiser
+
+**What changed.** `apps/desktop/package-lock.json` only: `dompurify` 3.4.16 → 3.4.17
+(`npm audit fix`, inside `package.json`'s `^3.4.15`). **Found by:** CI's frontend audit on
+`344b3d6` (run 40041172523) — three bypasses rated critical together (a template-expression
+bypass in shadow-root output, armed handlers left on a detached subtree, an SMIL `href` guard
+skipped under an XHTML parser type).
+
+**Why.** Unlike the `vite` advisory, this one ships: DOMPurify cleans every chat answer before the
+one `{@html}` in `Markdown.svelte` (security S-3). Checked: `npm audit` 0; `svelte-check` 0 errors
+over 229 files; 299 unit tests; a production build; `tests/unit/test_desktop_security_config.py`
+(6). **Not checked here:** the sanitiser against hostile input in a DOM — no DOM library is
+installed and the browser pane does not run local scripts; the release walkthrough's S-3 row
+drives exactly that in the installed build.
+
+**What it opens.** The same run failed one worker test on Linux
+(`test_the_frozen_guard_can_be_lifted_deliberately`, `BrokenProcessPool`), which `344b3d6` cannot
+reach (no module it changed is on the worker's import path) and which passes 3 of 3 here; the run
+on this commit shows whether it is intermittent.
+
 ## 2026-10-22 — `virtualenv` 21.14.12: five advisories in a dev-only tool
 
 **What changed.** `uv.lock` only: `virtualenv` 21.7.13 → 21.14.12 with `packaging` 26.2 → 26.3 and

@@ -486,7 +486,8 @@ wheels = [
 
 [package.optional-dependencies]
 filecache = [
-    { name = "filelock" },
+    { name = "filelock", version = "4.1.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11' or (extra == 'extra-13-doc-assistant-cpu' and extra == 'extra-13-doc-assistant-cu130')" },
+    { name = "filelock", version = "4.2.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11' or (extra == 'extra-13-doc-assistant-cpu' and extra == 'extra-13-doc-assistant-cu130')" },
 ]
 
 [[package]]
@@ -1327,11 +1328,44 @@ wheels = [
 
 [[package]]
 name = "filelock"
-version = "3.29.0"
+version = "4.1.0"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/b5/fe/997687a931ab51049acce6fa1f23e8f01216374ea81374ddee763c493db5/filelock-3.29.0.tar.gz", hash = "sha256:69974355e960702e789734cb4871f884ea6fe50bd8404051a3530bc07809cf90", size = 57571, upload-time = "2026-04-19T15:39:10.068Z" }
+resolution-markers = [
+    "python_full_version < '3.11' and extra != 'extra-13-doc-assistant-cpu' and extra == 'extra-13-doc-assistant-cu130'",
+    "python_full_version < '3.11' and sys_platform != 'darwin' and extra == 'extra-13-doc-assistant-cpu' and extra != 'extra-13-doc-assistant-cu130'",
+    "python_full_version < '3.11' and sys_platform == 'darwin' and extra == 'extra-13-doc-assistant-cpu' and extra != 'extra-13-doc-assistant-cu130'",
+    "python_full_version < '3.11' and extra != 'extra-13-doc-assistant-cpu' and extra != 'extra-13-doc-assistant-cu130'",
+]
+sdist = { url = "https://files.pythonhosted.org/packages/4c/58/6fd434bec86eff7c38a3168454cb132b762b2bea9b3ac094101a2f7bc32a/filelock-4.1.0.tar.gz", hash = "sha256:ad7f724afef953e731b1cc39bcd3a09166d72ed7fcdf29e6e88b1c3235c6715d", size = 561277, upload-time = "2026-10-09T19:57:20.34Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/81/47/dd9a212ef6e343a6857485ffe25bba537304f1913bdbed446a23f7f592e1/filelock-3.29.0-py3-none-any.whl", hash = "sha256:96f5f6344709aa1572bbf631c640e4ebeeb519e08da902c39a001882f30ac258", size = 39812, upload-time = "2026-04-19T15:39:08.752Z" },
+    { url = "https://files.pythonhosted.org/packages/ee/86/032133892a5de43b5a98200b01aadcad68cc255e274a762f08b8a76d2912/filelock-4.1.0-py3-none-any.whl", hash = "sha256:2ce9818e3e2d8f284c1a964414447ef148d42a5fd5e2a477a7118e574b293ec1", size = 133003, upload-time = "2026-10-09T19:57:18.716Z" },
+]
+
+[[package]]
+name = "filelock"
+version = "4.2.4"
+source = { registry = "https://pypi.org/simple" }
+resolution-markers = [
+    "python_full_version >= '3.15' and extra != 'extra-13-doc-assistant-cpu' and extra == 'extra-13-doc-assistant-cu130'",
+    "python_full_version == '3.14.*' and extra != 'extra-13-doc-assistant-cpu' and extra == 'extra-13-doc-assistant-cu130'",
+    "python_full_version == '3.13.*' and extra != 'extra-13-doc-assistant-cpu' and extra == 'extra-13-doc-assistant-cu130'",
+    "python_full_version >= '3.11' and python_full_version < '3.13' and extra != 'extra-13-doc-assistant-cpu' and extra == 'extra-13-doc-assistant-cu130'",
+    "python_full_version >= '3.15' and sys_platform != 'darwin' and extra == 'extra-13-doc-assistant-cpu' and extra != 'extra-13-doc-assistant-cu130'",
+    "python_full_version == '3.14.*' and sys_platform != 'darwin' and extra == 'extra-13-doc-assistant-cpu' and extra != 'extra-13-doc-assistant-cu130'",
+    "python_full_version == '3.13.*' and sys_platform != 'darwin' and extra == 'extra-13-doc-assistant-cpu' and extra != 'extra-13-doc-assistant-cu130'",
+    "python_full_version >= '3.15' and sys_platform == 'darwin' and extra == 'extra-13-doc-assistant-cpu' and extra != 'extra-13-doc-assistant-cu130'",
+    "python_full_version == '3.14.*' and sys_platform == 'darwin' and extra == 'extra-13-doc-assistant-cpu' and extra != 'extra-13-doc-assistant-cu130'",
+    "python_full_version == '3.13.*' and sys_platform == 'darwin' and extra == 'extra-13-doc-assistant-cpu' and extra != 'extra-13-doc-assistant-cu130'",
+    "python_full_version >= '3.11' and python_full_version < '3.13' and sys_platform != 'darwin' and extra == 'extra-13-doc-assistant-cpu' and extra != 'extra-13-doc-assistant-cu130'",
+    "python_full_version >= '3.11' and python_full_version < '3.13' and sys_platform == 'darwin' and extra == 'extra-13-doc-assistant-cpu' and extra != 'extra-13-doc-assistant-cu130'",
+    "python_full_version >= '3.15' and extra != 'extra-13-doc-assistant-cpu' and extra != 'extra-13-doc-assistant-cu130'",
+    "python_full_version == '3.14.*' and extra != 'extra-13-doc-assistant-cpu' and extra != 'extra-13-doc-assistant-cu130'",
+    "python_full_version == '3.13.*' and extra != 'extra-13-doc-assistant-cpu' and extra != 'extra-13-doc-assistant-cu130'",
+    "python_full_version >= '3.11' and python_full_version < '3.13' and extra != 'extra-13-doc-assistant-cpu' and extra != 'extra-13-doc-assistant-cu130'",
+]
+sdist = { url = "https://files.pythonhosted.org/packages/d8/28/3893324bcadf8f89b1616637468d766af3f625008c0735bf704fdfa86617/filelock-4.2.4.tar.gz", hash = "sha256:c6d8663535e1650ee430507b4ffbac7b464dd64b7647ea0112a9f406499d163d", size = 652444, upload-time = "2026-10-19T01:57:51.001Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/e0/1b/5e74289a1878e666bb4b65fe5805a04cafcac2aa5f519ef1ead67ef91c56/filelock-4.2.4-py3-none-any.whl", hash = "sha256:301241438c57936ef93f4243a94f2559022268bfcf9b375a9a72eb0f8db8358e", size = 162475, upload-time = "2026-10-19T01:57:49.419Z" },
 ]
 
 [[package]]
@@ -1769,7 +1803,8 @@ name = "huggingface-hub"
 version = "1.15.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "filelock" },
+    { name = "filelock", version = "4.1.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11' or (extra == 'extra-13-doc-assistant-cpu' and extra == 'extra-13-doc-assistant-cu130')" },
+    { name = "filelock", version = "4.2.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11' or (extra == 'extra-13-doc-assistant-cpu' and extra == 'extra-13-doc-assistant-cu130')" },
     { name = "fsspec" },
     { name = "hf-xet", marker = "platform_machine == 'AMD64' or platform_machine == 'aarch64' or platform_machine == 'amd64' or platform_machine == 'arm64' or platform_machine == 'x86_64' or (extra == 'extra-13-doc-assistant-cpu' and extra == 'extra-13-doc-assistant-cu130')" },
     { name = "httpx" },
@@ -3586,83 +3621,96 @@ wheels = [
 
 [[package]]
 name = "opentelemetry-api"
-version = "1.42.0"
+version = "1.45.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "typing-extensions" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/86/ca/25288069c399be6769159d9fb7b1190b603537d82aad2fa2746a0cc2c8c6/opentelemetry_api-1.42.0.tar.gz", hash = "sha256:ea84c893ad177791d138e0349d6ceebd8d3bf006440900400ce220008dafc372", size = 72300, upload-time = "2026-05-19T09:46:29.885Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/2e/02/6e0ae9cc61bd3169d401077b507b3ebc344745171e1051ab430be012dcd9/opentelemetry_api-1.45.1.tar.gz", hash = "sha256:aa38ed19bcc084ba42782a73255b3582283eced7ad6dddbd6695189e69adfb75", size = 72804, upload-time = "2026-10-06T17:32:58.133Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/1b/0b/be5daf659b82b525338fde371dfcfab09b606a19bb5620c37076964710ec/opentelemetry_api-1.42.0-py3-none-any.whl", hash = "sha256:558d88f88192a973579910ef6f2c13db47a268d5ec2e53e83e50e74a39a02922", size = 61310, upload-time = "2026-05-19T09:46:06.561Z" },
+    { url = "https://files.pythonhosted.org/packages/1e/41/f7dcf80b81ee8e71c1a2b59f14208bc723edbd89ed027a73b175abf6348e/opentelemetry_api-1.45.1-py3-none-any.whl", hash = "sha256:b31553efa588ae44bc306f863c785c5333a9ecc091248c6ee68b4b6c87fdedfb", size = 60256, upload-time = "2026-10-06T17:32:33.506Z" },
+]
+
+[[package]]
+name = "opentelemetry-exporter-otlp-common"
+version = "0.66b1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "opentelemetry-sdk" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/cb/19/41de712173f43057e4532d42ece7d0c6d4210d353e5752433cb14987643f/opentelemetry_exporter_otlp_common-0.66b1.tar.gz", hash = "sha256:6b1403487a2185ac1feb45fd5546fdf8630ce71c36bcefaadf51e2130e9e23f9", size = 14325, upload-time = "2026-10-06T17:33:01.725Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/fc/39/8c23d67665c762aa51840fa06f86e902e8f6f1693bc8d7e3d98cd6e2f753/opentelemetry_exporter_otlp_common-0.66b1-py3-none-any.whl", hash = "sha256:00ff8592c3a7cb729ff3fdc7ffa12372c243bdf2163e80c180994d0c7bd83ee9", size = 12385, upload-time = "2026-10-06T17:32:38.177Z" },
 ]
 
 [[package]]
 name = "opentelemetry-exporter-otlp-proto-common"
-version = "1.42.0"
+version = "1.45.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "opentelemetry-proto" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/76/a9/1496f27ecdfc7d504eac80f5e16474ee9d47cd08cda1f2917b58cf1c299c/opentelemetry_exporter_otlp_proto_common-1.42.0.tar.gz", hash = "sha256:c7a1a61f3a4c4dfa83127353edb1c75b873289d9ee42379db46eb835963b72e3", size = 21430, upload-time = "2026-05-19T09:46:32.838Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/c1/8e/65e85e5137991a3c493b11682151d198638a5bc1dd4b4c5f67e013c57d7c/opentelemetry_exporter_otlp_proto_common-1.45.1.tar.gz", hash = "sha256:2e4adcc3a67bcf57804fc49514f0ef64974ca7590aa3491da389852b4a0628f6", size = 18873, upload-time = "2026-10-06T17:33:04.471Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/8b/7b/1542eb6e3d941a7dd93648d485b7c8495bc2841a2bb7dd5f394f370cf607/opentelemetry_exporter_otlp_proto_common-1.42.0-py3-none-any.whl", hash = "sha256:92de67f096c9200770f16fbdb63b96fb6061d604b4bc266726d8355caeb864e8", size = 17328, upload-time = "2026-05-19T09:46:11.291Z" },
+    { url = "https://files.pythonhosted.org/packages/84/aa/92f225d353904e7f70b8b3e3c1b02db0cf56f744c2e83c581dc372e78873/opentelemetry_exporter_otlp_proto_common-1.45.1-py3-none-any.whl", hash = "sha256:2f446183ae7047b036226f1d846c41a834b0e8755ad13b51a51dd38952eb466c", size = 15393, upload-time = "2026-10-06T17:32:41.911Z" },
 ]
 
 [[package]]
 name = "opentelemetry-exporter-otlp-proto-grpc"
-version = "1.42.0"
+version = "1.45.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "googleapis-common-protos" },
     { name = "grpcio" },
     { name = "opentelemetry-api" },
+    { name = "opentelemetry-exporter-otlp-common" },
     { name = "opentelemetry-exporter-otlp-proto-common" },
     { name = "opentelemetry-proto" },
     { name = "opentelemetry-sdk" },
     { name = "typing-extensions" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/01/6a/63812e4f67d3658b21e94bc890b67296951f3aa8f6950fdf735f763500e5/opentelemetry_exporter_otlp_proto_grpc-1.42.0.tar.gz", hash = "sha256:75eac4e9d0bd69bea8199d75dfeb585cce05a9baa8215d1f7aad9e3583bf5ef9", size = 27136, upload-time = "2026-05-19T09:46:33.594Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/d6/00/a82af0be959dc58495740b169c6669a86e0811f6cd353a01eda34d255db3/opentelemetry_exporter_otlp_proto_grpc-1.45.1.tar.gz", hash = "sha256:3b3dcfbfdcb4e35149fcf309972282054b45228f5c10547d0095d6578510a9a0", size = 25997, upload-time = "2026-10-06T17:33:05.114Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/4d/e9/308c4c03b536005a1443bee0d9f06de38aad8b94f59f58ac688ead7a8cf9/opentelemetry_exporter_otlp_proto_grpc-1.42.0-py3-none-any.whl", hash = "sha256:5d6d1691586f2e656fd14187f2f2f5fa06e94834e1acdce71edcbbe35730b31d", size = 19614, upload-time = "2026-05-19T09:46:12.331Z" },
+    { url = "https://files.pythonhosted.org/packages/4d/46/2d1da202f1e17c81aae7efcf702898d524b46709e4d3e2bf1f7f8ca8fbc6/opentelemetry_exporter_otlp_proto_grpc-1.45.1-py3-none-any.whl", hash = "sha256:e42ecb789d2fc5d8145e3dadc3e2991c9f18cd166d7c7514e234702540274b76", size = 19492, upload-time = "2026-10-06T17:32:42.838Z" },
 ]
 
 [[package]]
 name = "opentelemetry-proto"
-version = "1.42.0"
+version = "1.45.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "protobuf" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/71/2c/7c56a19498b46da4c54dc4e765c95d17f8fec2ba86bec1817b41ae635360/opentelemetry_proto-1.42.0.tar.gz", hash = "sha256:5d56a9067b631ea931a135d7b86428ae99649f591d4db69b9fc8c8e0465fce65", size = 45841, upload-time = "2026-05-19T09:46:42.058Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/4b/7f/15f014fb195da6c2dbb6c71399b8e76824878718e94de6454038488eed28/opentelemetry_proto-1.45.1.tar.gz", hash = "sha256:79e0fb95e4616691a469439238aa9224d75779b3e108e895d1aa125ab29ca77c", size = 46488, upload-time = "2026-10-06T17:33:11.49Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/2d/ad/ff5f619a04cddb4936ead0dd8f590c5b373c5b4b9f2eef555e9d3d951ccb/opentelemetry_proto-1.42.0-py3-none-any.whl", hash = "sha256:2c0716a37e5c12efef37cbd01906d649b7fb85c85ac687518d0bd28527c6498e", size = 71779, upload-time = "2026-05-19T09:46:24.536Z" },
+    { url = "https://files.pythonhosted.org/packages/ab/9a/42ec8180a769516ae757e893b69736826efceac7332553915b4528a91c6d/opentelemetry_proto-1.45.1-py3-none-any.whl", hash = "sha256:f38e2a8413053c180cd3d2637fbb279673ec2f6a6e09c995aafa2f452c52b46e", size = 72488, upload-time = "2026-10-06T17:32:53.057Z" },
 ]
 
 [[package]]
 name = "opentelemetry-sdk"
-version = "1.42.0"
+version = "1.45.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "opentelemetry-api" },
     { name = "opentelemetry-semantic-conventions" },
     { name = "typing-extensions" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/b7/c9/dabaaf1c754a57b82b5a36aeca3806d92c1877ccfb12a697b65f88bf027c/opentelemetry_sdk-1.42.0.tar.gz", hash = "sha256:2479e462cc69357825c2c847ce4a601bc1b17e1279aa7f80d3490f0ae614d0e5", size = 239072, upload-time = "2026-05-19T09:46:42.992Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/a1/79/7392e21a1c8f0c61d90b223e31c7e48cb9d452e91a6b820ad24cca5f23c4/opentelemetry_sdk-1.45.1.tar.gz", hash = "sha256:63d24a6ca645019a631e6a51999c73e93adcac1196ca640b8ae78a7cc4762bf3", size = 218324, upload-time = "2026-10-06T17:33:13.26Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/7b/7d/16bf9a9d42ebbd1679e0cda018d57a0712f3b6f6f1e7ae5ef3c7ee5927c0/opentelemetry_sdk-1.42.0-py3-none-any.whl", hash = "sha256:ec4a4f69e15220b3d7bccd93217aac745682bb6435b9381f7bb44cb7e07b4f2b", size = 170879, upload-time = "2026-05-19T09:46:25.871Z" },
+    { url = "https://files.pythonhosted.org/packages/95/3c/87c42b4bd6dd297536f04cd9383d212ac557ecd49f2cbdcd46da1c9ef5c8/opentelemetry_sdk-1.45.1-py3-none-any.whl", hash = "sha256:c604c11dc429810812348989115fa44bd558772a3d7442afc43d024f2c250ca4", size = 140063, upload-time = "2026-10-06T17:32:55.04Z" },
 ]
 
 [[package]]
 name = "opentelemetry-semantic-conventions"
-version = "0.63b0"
+version = "0.66b1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "opentelemetry-api" },
     { name = "typing-extensions" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/20/f8/be4625838aae098c2f9fbdc062a1b3128ebb9e799b891b654ee8cad94897/opentelemetry_semantic_conventions-0.63b0.tar.gz", hash = "sha256:cfea295264654fa324fcef24aa56fb1836fdc0da27db128645dc6aa76115cc6c", size = 148333, upload-time = "2026-05-19T09:46:44.01Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/46/e4/dbbfb2a010c4db2224a5114638acede6fe563d33cc20fb1752cebcbe6298/opentelemetry_semantic_conventions-0.66b1.tar.gz", hash = "sha256:497ca63bf383723411e8eaf60c8779e9877633c936bb641080adab59d0eb6ec8", size = 150250, upload-time = "2026-10-06T17:33:14.073Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/8f/6f/8d0ce225b8fdbb72c97cf4130107d861eafcb3d8e5c3f5891e8556177316/opentelemetry_semantic_conventions-0.63b0-py3-none-any.whl", hash = "sha256:1f3962732b04f43e4fef28173c9a3615b8847b4b2d6386fdc085361b29875ab9", size = 203712, upload-time = "2026-05-19T09:46:27.569Z" },
+    { url = "https://files.pythonhosted.org/packages/bc/14/67f8aa798857f8cf686f515bf93d9bb877ce952ddc8efae0fa25b45ce0d6/opentelemetry_semantic_conventions-0.66b1-py3-none-any.whl", hash = "sha256:d4cddeb4315490b35213f55e2bdc9ac54bb1e4d318927475bed62b35545e581b", size = 206279, upload-time = "2026-10-06T17:32:56.103Z" },
 ]
 
 [[package]]
@@ -4902,7 +4950,8 @@ name = "python-discovery"
 version = "1.6.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "filelock" },
+    { name = "filelock", version = "4.1.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11' or (extra == 'extra-13-doc-assistant-cpu' and extra == 'extra-13-doc-assistant-cu130')" },
+    { name = "filelock", version = "4.2.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11' or (extra == 'extra-13-doc-assistant-cpu' and extra == 'extra-13-doc-assistant-cu130')" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/0c/57/250bd238b966cece44328235eb85290045d059265fdaf7527a3a958123db/python_discovery-1.6.1.tar.gz", hash = "sha256:cf87d3627dfb4412437fdd5b13eae402607722998d21567993aedbc59b23c15e", size = 84338, upload-time = "2026-09-18T01:31:53.971Z" }
 wheels = [
@@ -5994,7 +6043,8 @@ resolution-markers = [
     "python_full_version < '3.11' and sys_platform == 'darwin'",
 ]
 dependencies = [
-    { name = "filelock", marker = "(python_full_version < '3.15' and sys_platform == 'darwin' and extra == 'extra-13-doc-assistant-cpu') or (python_full_version >= '3.15' and extra == 'extra-13-doc-assistant-cpu' and extra == 'extra-13-doc-assistant-cu130') or (sys_platform != 'darwin' and extra == 'extra-13-doc-assistant-cpu' and extra == 'extra-13-doc-assistant-cu130')" },
+    { name = "filelock", version = "4.1.0", source = { registry = "https://pypi.org/simple" }, marker = "(python_full_version < '3.11' and sys_platform == 'darwin' and extra == 'extra-13-doc-assistant-cpu') or (python_full_version >= '3.11' and extra == 'extra-13-doc-assistant-cpu' and extra == 'extra-13-doc-assistant-cu130') or (sys_platform != 'darwin' and extra == 'extra-13-doc-assistant-cpu' and extra == 'extra-13-doc-assistant-cu130')" },
+    { name = "filelock", version = "4.2.4", source = { registry = "https://pypi.org/simple" }, marker = "(python_full_version >= '3.11' and python_full_version < '3.15' and sys_platform == 'darwin' and extra == 'extra-13-doc-assistant-cpu') or (python_full_version < '3.11' and extra == 'extra-13-doc-assistant-cpu' and extra == 'extra-13-doc-assistant-cu130') or (python_full_version >= '3.15' and extra == 'extra-13-doc-assistant-cpu' and extra == 'extra-13-doc-assistant-cu130') or (sys_platform != 'darwin' and extra == 'extra-13-doc-assistant-cpu' and extra == 'extra-13-doc-assistant-cu130')" },
     { name = "fsspec", marker = "(python_full_version < '3.15' and sys_platform == 'darwin' and extra == 'extra-13-doc-assistant-cpu') or (python_full_version >= '3.15' and extra == 'extra-13-doc-assistant-cpu' and extra == 'extra-13-doc-assistant-cu130') or (sys_platform != 'darwin' and extra == 'extra-13-doc-assistant-cpu' and extra == 'extra-13-doc-assistant-cu130')" },
     { name = "jinja2", marker = "(python_full_version < '3.15' and sys_platform == 'darwin' and extra == 'extra-13-doc-assistant-cpu') or (python_full_version >= '3.15' and extra == 'extra-13-doc-assistant-cpu' and extra == 'extra-13-doc-assistant-cu130') or (sys_platform != 'darwin' and extra == 'extra-13-doc-assistant-cpu' and extra == 'extra-13-doc-assistant-cu130')" },
     { name = "networkx", version = "3.4.2", source = { registry = "https://pypi.org/simple" }, marker = "(python_full_version < '3.11' and sys_platform == 'darwin' and extra == 'extra-13-doc-assistant-cpu') or (python_full_version >= '3.11' and extra == 'extra-13-doc-assistant-cpu' and extra == 'extra-13-doc-assistant-cu130') or (sys_platform != 'darwin' and extra == 'extra-13-doc-assistant-cpu' and extra == 'extra-13-doc-assistant-cu130')" },
@@ -6027,7 +6077,8 @@ resolution-markers = [
 dependencies = [
     { name = "cuda-bindings", marker = "(sys_platform == 'linux' and extra != 'extra-13-doc-assistant-cpu' and extra != 'extra-13-doc-assistant-cu130') or (extra == 'extra-13-doc-assistant-cpu' and extra == 'extra-13-doc-assistant-cu130')" },
     { name = "cuda-toolkit", extra = ["cudart", "cufft", "cufile", "cupti", "curand", "cusolver", "cusparse", "nvjitlink", "nvrtc", "nvtx"], marker = "(sys_platform == 'linux' and extra != 'extra-13-doc-assistant-cpu' and extra != 'extra-13-doc-assistant-cu130') or (extra == 'extra-13-doc-assistant-cpu' and extra == 'extra-13-doc-assistant-cu130')" },
-    { name = "filelock", marker = "(extra == 'extra-13-doc-assistant-cpu' and extra == 'extra-13-doc-assistant-cu130') or (extra != 'extra-13-doc-assistant-cpu' and extra != 'extra-13-doc-assistant-cu130')" },
+    { name = "filelock", version = "4.1.0", source = { registry = "https://pypi.org/simple" }, marker = "(python_full_version < '3.11' and extra != 'extra-13-doc-assistant-cpu' and extra != 'extra-13-doc-assistant-cu130') or (extra == 'extra-13-doc-assistant-cpu' and extra == 'extra-13-doc-assistant-cu130')" },
+    { name = "filelock", version = "4.2.4", source = { registry = "https://pypi.org/simple" }, marker = "(python_full_version >= '3.11' and extra != 'extra-13-doc-assistant-cpu' and extra != 'extra-13-doc-assistant-cu130') or (extra == 'extra-13-doc-assistant-cpu' and extra == 'extra-13-doc-assistant-cu130')" },
     { name = "fsspec", marker = "(extra == 'extra-13-doc-assistant-cpu' and extra == 'extra-13-doc-assistant-cu130') or (extra != 'extra-13-doc-assistant-cpu' and extra != 'extra-13-doc-assistant-cu130')" },
     { name = "jinja2", marker = "(extra == 'extra-13-doc-assistant-cpu' and extra == 'extra-13-doc-assistant-cu130') or (extra != 'extra-13-doc-assistant-cpu' and extra != 'extra-13-doc-assistant-cu130')" },
     { name = "networkx", version = "3.4.2", source = { registry = "https://pypi.org/simple" }, marker = "(python_full_version < '3.11' and extra != 'extra-13-doc-assistant-cpu' and extra != 'extra-13-doc-assistant-cu130') or (extra == 'extra-13-doc-assistant-cpu' and extra == 'extra-13-doc-assistant-cu130')" },
@@ -6086,7 +6137,8 @@ resolution-markers = [
     "python_full_version < '3.11' and sys_platform != 'darwin'",
 ]
 dependencies = [
-    { name = "filelock", marker = "(python_full_version >= '3.15' and extra == 'extra-13-doc-assistant-cpu') or (python_full_version < '3.15' and extra == 'extra-13-doc-assistant-cpu' and extra == 'extra-13-doc-assistant-cu130') or (sys_platform != 'darwin' and extra == 'extra-13-doc-assistant-cpu')" },
+    { name = "filelock", version = "4.1.0", source = { registry = "https://pypi.org/simple" }, marker = "(python_full_version < '3.11' and sys_platform != 'darwin' and extra == 'extra-13-doc-assistant-cpu') or (python_full_version >= '3.11' and extra == 'extra-13-doc-assistant-cpu' and extra == 'extra-13-doc-assistant-cu130') or (sys_platform == 'darwin' and extra == 'extra-13-doc-assistant-cpu' and extra == 'extra-13-doc-assistant-cu130')" },
+    { name = "filelock", version = "4.2.4", source = { registry = "https://pypi.org/simple" }, marker = "(python_full_version >= '3.11' and sys_platform != 'darwin' and extra == 'extra-13-doc-assistant-cpu') or (python_full_version >= '3.15' and sys_platform == 'darwin' and extra == 'extra-13-doc-assistant-cpu') or (python_full_version < '3.15' and extra == 'extra-13-doc-assistant-cpu' and extra == 'extra-13-doc-assistant-cu130') or (sys_platform != 'darwin' and extra == 'extra-13-doc-assistant-cpu' and extra == 'extra-13-doc-assistant-cu130')" },
     { name = "fsspec", marker = "(python_full_version >= '3.15' and extra == 'extra-13-doc-assistant-cpu') or (python_full_version < '3.15' and extra == 'extra-13-doc-assistant-cpu' and extra == 'extra-13-doc-assistant-cu130') or (sys_platform != 'darwin' and extra == 'extra-13-doc-assistant-cpu')" },
     { name = "jinja2", marker = "(python_full_version >= '3.15' and extra == 'extra-13-doc-assistant-cpu') or (python_full_version < '3.15' and extra == 'extra-13-doc-assistant-cpu' and extra == 'extra-13-doc-assistant-cu130') or (sys_platform != 'darwin' and extra == 'extra-13-doc-assistant-cpu')" },
     { name = "networkx", version = "3.4.2", source = { registry = "https://pypi.org/simple" }, marker = "(python_full_version < '3.11' and sys_platform != 'darwin' and extra == 'extra-13-doc-assistant-cpu') or (python_full_version >= '3.11' and extra == 'extra-13-doc-assistant-cpu' and extra == 'extra-13-doc-assistant-cu130') or (sys_platform == 'darwin' and extra == 'extra-13-doc-assistant-cpu' and extra == 'extra-13-doc-assistant-cu130')" },
@@ -6143,7 +6195,8 @@ resolution-markers = [
 dependencies = [
     { name = "cuda-bindings", marker = "(sys_platform == 'linux' and extra == 'extra-13-doc-assistant-cu130') or (extra == 'extra-13-doc-assistant-cpu' and extra == 'extra-13-doc-assistant-cu130')" },
     { name = "cuda-toolkit", extra = ["cudart", "cufft", "cufile", "cupti", "curand", "cusolver", "cusparse", "nvjitlink", "nvrtc", "nvtx"], marker = "(sys_platform == 'linux' and extra == 'extra-13-doc-assistant-cu130') or (extra == 'extra-13-doc-assistant-cpu' and extra == 'extra-13-doc-assistant-cu130')" },
-    { name = "filelock", marker = "extra == 'extra-13-doc-assistant-cu130'" },
+    { name = "filelock", version = "4.1.0", source = { registry = "https://pypi.org/simple" }, marker = "(python_full_version < '3.11' and extra == 'extra-13-doc-assistant-cu130') or (extra == 'extra-13-doc-assistant-cpu' and extra == 'extra-13-doc-assistant-cu130')" },
+    { name = "filelock", version = "4.2.4", source = { registry = "https://pypi.org/simple" }, marker = "(python_full_version >= '3.11' and extra == 'extra-13-doc-assistant-cu130') or (extra == 'extra-13-doc-assistant-cpu' and extra == 'extra-13-doc-assistant-cu130')" },
     { name = "fsspec", marker = "extra == 'extra-13-doc-assistant-cu130'" },
     { name = "jinja2", marker = "extra == 'extra-13-doc-assistant-cu130'" },
     { name = "networkx", version = "3.4.2", source = { registry = "https://pypi.org/simple" }, marker = "(python_full_version < '3.11' and extra == 'extra-13-doc-assistant-cu130') or (extra == 'extra-13-doc-assistant-cpu' and extra == 'extra-13-doc-assistant-cu130')" },
@@ -6498,7 +6551,7 @@ resolution-markers = [
 ]
 dependencies = [
     { name = "distlib", version = "0.4.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11' or (extra == 'extra-13-doc-assistant-cpu' and extra == 'extra-13-doc-assistant-cu130')" },
-    { name = "filelock", marker = "python_full_version < '3.11' or (extra == 'extra-13-doc-assistant-cpu' and extra == 'extra-13-doc-assistant-cu130')" },
+    { name = "filelock", version = "4.1.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11' or (extra == 'extra-13-doc-assistant-cpu' and extra == 'extra-13-doc-assistant-cu130')" },
     { name = "packaging", version = "26.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11' or (extra == 'extra-13-doc-assistant-cpu' and extra == 'extra-13-doc-assistant-cu130')" },
     { name = "platformdirs", marker = "python_full_version < '3.11' or (extra == 'extra-13-doc-assistant-cpu' and extra == 'extra-13-doc-assistant-cu130')" },
     { name = "python-discovery", marker = "python_full_version < '3.11' or (extra == 'extra-13-doc-assistant-cpu' and extra == 'extra-13-doc-assistant-cu130')" },
@@ -6533,7 +6586,7 @@ resolution-markers = [
 ]
 dependencies = [
     { name = "distlib", version = "0.4.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11' or (extra == 'extra-13-doc-assistant-cpu' and extra == 'extra-13-doc-assistant-cu130')" },
-    { name = "filelock", marker = "python_full_version >= '3.11' or (extra == 'extra-13-doc-assistant-cpu' and extra == 'extra-13-doc-assistant-cu130')" },
+    { name = "filelock", version = "4.2.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11' or (extra == 'extra-13-doc-assistant-cpu' and extra == 'extra-13-doc-assistant-cu130')" },
     { name = "packaging", version = "26.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11' or (extra == 'extra-13-doc-assistant-cpu' and extra == 'extra-13-doc-assistant-cu130')" },
     { name = "platformdirs", marker = "python_full_version >= '3.11' or (extra == 'extra-13-doc-assistant-cpu' and extra == 'extra-13-doc-assistant-cu130')" },
     { name = "python-discovery", marker = "python_full_version >= '3.11' or (extra == 'extra-13-doc-assistant-cpu' and extra == 'extra-13-doc-assistant-cu130')" },

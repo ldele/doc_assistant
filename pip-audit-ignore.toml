@@ -55,3 +55,15 @@ Docker image and a git tag), builds on Windows, and its build backend resolves s
 isolated build environment, not from this lock. The locked copy is a runtime dependency of torch \
 2.12, which requires setuptools<82; the fix (83.0.0) needs torch 2.14."""
 reverse_if = "The project publishes an sdist, or builds one on macOS; or torch lifts its setuptools<82 cap (then upgrade)."
+
+[[ignore]]
+id = "GHSA-xmj3-9gf7-h52w"  # no CVE assigned · severity low
+package = "setuptools"
+reviewed = "2026-10-24"
+why = """Windows-only path escape in setuptools' legacy wheel-to-egg installer \
+(setuptools.wheel.Wheel.install_as_egg): a wheel's namespace_packages.txt can place an empty \
+__init__.py outside the target egg directory. Nothing here installs a wheel through setuptools: \
+uv installs every package, and no code in src/, apps/ or scripts/ imports setuptools at all. The \
+locked copy is a runtime dependency of torch 2.12, which requires setuptools<82; the fix (84.1.0) \
+cannot be taken until torch lifts that cap."""
+reverse_if = "Anything installs wheels through setuptools (easy_install, setup_requires, fetch_build_eggs) or imports setuptools at runtime; or torch lifts its setuptools<82 cap (then upgrade)."

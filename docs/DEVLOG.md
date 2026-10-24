@@ -40,6 +40,26 @@ Format: What changed | Why | Rejected alternatives | What it opens
 
 ---
 
+## 2026-10-24 (2) — `filelock` 4 and OpenTelemetry 1.45.1 upgraded; a `setuptools` advisory reviewed
+
+**What changed.** `uv.lock`: `filelock` 3.29.0 → 4.2.4 (a new major; 4.1.0 for the Python 3.10 fork)
+and the OpenTelemetry stack 1.42.0 → 1.45.1, which `chromadb` pulls in (`uv lock
+--upgrade-package filelock --upgrade-package opentelemetry-api`; one exporter package added).
+`pip-audit-ignore.toml`: GHSA-xmj3-9gf7-h52w on `setuptools`, reviewed. **Found by:** the local
+audit while staging the entry below — `filelock` CVE-2026-112907, -112913 and -112940;
+`opentelemetry-api` CVE-2026-114603; the `setuptools` advisory (low).
+
+**Why.** `filelock` guards the Hugging Face model cache and torch's caches, so its major was tested
+where it is used: the embedder and the reranker load offline from the local cache (768
+dimensions; 0.999 against 0.0 on a matching and an unrelated pair); both Chroma stores open on the
+new OpenTelemetry with their full counts (18,012 and 45,581); the whole suite passes, 2,216 unit and
+560 integration tests. The `setuptools` fix (84.1.0) is blocked by torch 2.12's `setuptools<82`,
+and the advisory concerns the legacy wheel-to-egg installer, which nothing here calls — the
+reason and what would reverse it are in the ignore entry.
+
+**What it opens.** The sixth advisory round since 2026-10-20 and the second `setuptools` entry held
+by torch's cap; both ignore entries reverse when torch lifts it.
+
 ## 2026-10-24 — `dompurify` 3.4.17: a critical advisory in the app's answer sanitiser
 
 **What changed.** `apps/desktop/package-lock.json` only: `dompurify` 3.4.16 → 3.4.17

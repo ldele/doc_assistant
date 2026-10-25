@@ -250,7 +250,8 @@ development library on 2026-10-18 (104 documents, 3,341 pages) unless a date say
   50–77%), and the filters did not change that measurably (+1 point, −4 to +6): what replaced the
   junk was mostly junk too. A single word is often too vague to name the paper's notion. Use them to
   skim a document, not to judge what it is about
-  ([baseline](tests/eval/baselines/keyword_cleanup_2026-10-23.md)).
+  ([baseline](tests/eval/baselines/keyword_cleanup_2026-10-23.md)). Keywords are extracted from a
+  source checkout ([usage](docs/usage.md)); the installed app does not extract them yet.
 - **A definition's grade sorts; it does not decide.** On hand-labelled candidates, `strong` was
   right 8 times in 13 (95% interval 36-82%), and a sentence that praises a term grades as strongly
   as one that defines it. Read the quoted sentence; nothing is chosen for you.
@@ -306,9 +307,7 @@ development library on 2026-10-18 (104 documents, 3,341 pages) unless a date say
 
 ## Status
 
-**v0.7.0, in preparation: the map of your library becomes yours to curate and check.** The latest
-published release is [v0.6.0](https://github.com/ldele/doc_assistant/releases/tag/v0.6.0)
-(2026-09-04). What 0.7.0 adds:
+**v0.7.0 (2026-10-25): the map of your library becomes yours to curate and check.** What it adds:
 
 - **Concepts are yours.** A concept is a meaning you take on in Manage keywords, with a name and
   forms marked *exact* (always this concept, counted) or *broad* (shown beside, never counted); the
@@ -332,7 +331,7 @@ published release is [v0.6.0](https://github.com/ldele/doc_assistant/releases/ta
   other host and takes a write only with the token the app started it with; CI fails on an
   unreviewed advisory or a committed secret, and its actions are pinned to commits.
 
-**2,757 Python tests and 299 desktop tests · ruff / mypy / bandit clean.** The Windows
+**2,776 Python tests and 299 desktop tests · ruff / mypy / bandit clean.** The Windows
 installer on the [releases page](https://github.com/ldele/doc_assistant/releases) is built from
 the tag and installed on a clean machine before it is published.
 

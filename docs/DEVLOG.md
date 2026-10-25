@@ -40,6 +40,29 @@ Format: What changed | Why | Rejected alternatives | What it opens
 
 ---
 
+## 2026-10-25 — 0.7.0 release commit: the version in nine places, a dated CHANGELOG, and no developer command in the re-ingest dialog
+
+**What changed.** `docs/RELEASE.md` §1–§2. The version reads 0.7.0 in all nine places
+(`pyproject.toml`, `src/doc_assistant/__init__.py`, `package.json`, `tauri.conf.json`,
+`Cargo.toml`, and the three locks re-locked by their own tools, `uv lock`, `npm install
+--package-lock-only`, `cargo update -p doc-assistant-desktop --offline`). `CHANGELOG.md`: the
+Unreleased section becomes `[0.7.0] — 2026-10-25`, with a line for the libraries upgraded over
+advisories during the release. `README.md` Status names 0.7.0 with its date and today's test count
+(2,776 Python, 299 desktop). The 0.7.0 notes are drafted locally; their install size, hash and
+verification are filled in the release's second session.
+
+**Found on the way, and fixed here.** The re-ingest dialog, changed in session 5c, told the user to
+run `python -m scripts.extract_keywords --apply --force` — a command an installed app has no Python
+or checkout to run. It now says the app does not run those passes yet and that they are redone from
+a source checkout. Behind it: nothing in `apps/` or `src/` calls `extract_keywords`, so keyword
+extraction exists only on the command line — a library the installed app builds has none, and one
+carried over from 0.6.0 keeps its old keywords, listed alphabetically. The CHANGELOG line and the
+README limitation for keywords now say so. `release_preflight`'s `dev_commands` check reads `just`
+recipes only, which is why it passed this.
+
+**What it opens.** Keyword extraction inside the app (an action, or a step of ingest) — after the
+release, with the LLM scan design (ADR-058) that would replace its candidates.
+
 ## 2026-10-24 (3) — Keyword cleanup (ROADMAP 99): junk filtered, keywords listed by rank, and the first precision baseline shows no gain
 
 **What changed.** The code is `344b3d6`. `knowledge/keywords.py` has five filters, each with a

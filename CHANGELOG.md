@@ -7,7 +7,7 @@ versioning is [SemVer](https://semver.org/) on the `doc_assistant` package, and 
 The engineering record is finer-grained than this file: per-change entries live in
 [`docs/DEVLOG.md`](docs/DEVLOG.md), design decisions in [`docs/decisions.md`](docs/decisions.md).
 
-## [Unreleased]
+## [0.7.0] — 2026-10-25
 
 ### Added
 
@@ -50,6 +50,11 @@ The engineering record is finer-grained than this file: per-change entries live 
   were.
 - **The local API answers only its own address**, so a page cannot reach it under another name.
 - **The app's content policy also blocks forms, base URLs and plugins.**
+- **Libraries with advisories published during this release were upgraded**, among them the
+  sanitiser that cleans chat answers (DOMPurify 3.4.17, rated critical), the Pillow image library
+  (13.0), and `aiohttp`, `certifi`, `filelock` and OpenTelemetry. One advisory in
+  `setuptools` stays, reviewed: its fix needs a newer torch, and the code it concerns never runs
+  here.
 - Release engineering, no change to the app: CI fails on an unreviewed dependency advisory and on a
   committed secret, and its actions are pinned to commits.
 
@@ -76,9 +81,11 @@ The engineering record is finer-grained than this file: per-change entries live 
   door to it and a *Rebuild* button, and every door to the view is called *Manage keywords*.
 - **A document's keywords are listed best first, and known junk is gone.** Table residue,
   letter-spaced text, numbers, web addresses and the authors a paper cites no longer become
-  keywords; each keyword keeps the score it was chosen by. Run `python -m scripts.extract_keywords
-  --apply --force` once to apply it to a library. The re-ingest dialog now says where keywords
-  and gaps are redone.
+  keywords; each keyword keeps the score it was chosen by. Keywords are extracted from a source
+  checkout (`python -m scripts.extract_keywords --apply --force`, once per library); the installed
+  app does not extract them, so a library it built has none, and one carried over from 0.6.0 keeps
+  its old keywords, listed alphabetically. The re-ingest dialog now says where keywords and gaps
+  are redone.
 
 ### Fixed
 

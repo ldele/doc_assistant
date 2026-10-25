@@ -74,6 +74,11 @@ The engineering record is finer-grained than this file: per-change entries live 
   citation as separate verdicts (release tooling; no change to the app).
 - **Manage keywords opens at once on a real library and takes a typed form.** The Graph tab has a
   door to it and a *Rebuild* button, and every door to the view is called *Manage keywords*.
+- **A document's keywords are listed best first, and known junk is gone.** Table residue,
+  letter-spaced text, numbers, web addresses and the authors a paper cites no longer become
+  keywords; each keyword keeps the score it was chosen by. Run `python -m scripts.extract_keywords
+  --apply --force` once to apply it to a library. The re-ingest dialog now says where keywords
+  and gaps are redone.
 
 ### Fixed
 
@@ -111,8 +116,10 @@ The engineering record is finer-grained than this file: per-change entries live 
 - **A definition's grade sorts; it does not decide.** On hand-labelled candidates, *strong* was
   usable 8 times in 13, and a sentence that praises a term grades as strongly as one that defines
   it.
-- **Keywords describe a document; they don't group your library.** 1,436 of 1,483 extracted
-  keywords sit on one document (2026-10-20).
+- **Keywords describe a document; they don't group your library, and they are rough.** 1,445 of
+  1,496 extracted keywords sit on one document. On 15 hand-labelled documents about two in three
+  are real terms of the paper (64%, 95% interval 50–77%), and filtering the junk did not change
+  that measurably: what replaced it was mostly junk too (2026-10-23).
 - **Everything under *Known limits* for 0.6.0 still applies**, re-read against the code on
   2026-10-20: a cited passage is not yet marked on its page; a few pages hold the previous page's
   text; citation links are worked out once; a file moved outside the app loses the exclusions set

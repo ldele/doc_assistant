@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-10-20 · class: append-only -->
+<!-- status: active · updated: 2026-10-24 · class: append-only -->
 
 # DEVLOG — doc_assistant
 
@@ -39,6 +39,46 @@ Format: What changed | Why | Rejected alternatives | What it opens
 > is individually small and correct, so unbounded growth is invisible per commit.
 
 ---
+
+## 2026-10-24 (3) — Keyword cleanup (ROADMAP 99): junk filtered, keywords listed by rank, and the first precision baseline shows no gain
+
+**What changed.** The code is `344b3d6`. `knowledge/keywords.py` has five filters, each with a
+unit test of what it drops and keeps. They drop a `br` token (table residue), a phrase with two or
+more one-letter tokens (letter-spaced text, initials), a token with no letter (pages, volumes,
+counts, years), and a surname the document itself cites with "et al." on at least half of its uses
+(`cited_authors`, the term signals' reading; `majority` moved here and is re-imported by
+`term_signals.py`). Web addresses and DOIs are removed before tokenising (`strip_urls`).
+`document_keywords` gained `score` and `rank` (additive, through `init_db`; old links read NULL).
+`Document.keywords` is ordered by rank, so the Library lists a document's keywords best first.
+`scripts/extract_keywords.py` runs `init_db()` before `--apply`. The re-ingest dialog no longer
+sends keywords to Settings: Rebuild on the Graph tab redoes gaps, and keywords are redone from the
+command line. The working library was re-extracted 2026-10-22 (backup
+`data/library.db.bak-20261022-pre5c`). This entry adds the baseline,
+`tests/eval/baselines/keyword_cleanup_2026-10-23.md`. **Found by:** the 2026-10-20 assessment:
+keyword scores computed and thrown away, about a quarter of keywords noise in a 12-document probe,
+precision never measured.
+
+**Measured.** The five patterns went from 123 links to 0 across 104 documents. Every document has 15
+keywords and none has fewer than before. Nothing the graph reads moved (row hashes, graph version,
+the 22 marked forms). On 15 seeded documents labelled by the user, precision was 62% [46, 78]
+before and 64% [50, 77] after, +1 point [−4, +6]; with the user's own labels only, +0 [−4, +4]. The
+filters took out 44 keywords, 37 of them noise, but 34 of the 44 that replaced them were noise too.
+
+**Why.** The probe found mechanical junk worth removing, and an unordered list hides which
+keyword is the document's main subject. The baseline is what any later keyword change is
+measured against.
+
+**Rejected.** A list of names (`cajal`, `dbs`, `cre` are real vocabulary here); dropping
+abbreviations outright (ADR-055 shows the long form instead); keeping numbers inside a phrase
+(`type 2 diabetes`): none was seen, so the rule stays simple, and the cost is recorded (`sam 2`,
+`mrr 10`); replacing `<br>` before tokenising, which would join words across table cells; a
+percentile bootstrap at 15 documents.
+
+**What it opens.** Filtering cannot raise precision while the candidates stay TF-IDF windows, so
+better candidates come next (ADR-058, an LLM scan measured on these 15 documents). The label rule
+gains a *Too vague* class: the user's point is that `connexion` is a term but not a precise one.
+Also open: ADR-055, ADR-056 point 8, and two gaps in the baseline, alternating recto/verso running
+heads under the furniture floor and accent-split names (the tokeniser is eval-gated).
 
 ## 2026-10-24 (2) — `filelock` 4 and OpenTelemetry 1.45.1 upgraded; a `setuptools` advisory reviewed
 

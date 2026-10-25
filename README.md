@@ -240,10 +240,17 @@ development library on 2026-10-18 (104 documents, 3,341 pages) unless a date say
   heading, 88 of them in reference lists or back matter. Both change together in the next release,
   with a before/after for every layer they move (ROADMAP 95).
 - **The map covers the concepts you choose; extracted keywords alone do not organise a library.**
-  1,436 of 1,483 extracted keywords (97%) occur in a single document, so the graph is built from
+  1,445 of 1,496 extracted keywords (97%) occur in a single document, so the graph is built from
   concepts you take on in Manage keywords, not from keywords: 13 on the development library, beside
   344 extracted terms that stay searchable. No concept's name there ends with another's, so the
   taxonomy view's *Proposed placements* has nothing to offer on that library.
+- **A document's keywords are a rough sketch of it.** They are listed best first, and known junk
+  (table residue, letter-spaced text, numbers, web addresses, cited authors) is filtered out. On 15
+  documents labelled by hand, about two in three are real terms of the paper (64%, 95% interval
+  50–77%), and the filters did not change that measurably (+1 point, −4 to +6): what replaced the
+  junk was mostly junk too. A single word is often too vague to name the paper's notion. Use them to
+  skim a document, not to judge what it is about
+  ([baseline](tests/eval/baselines/keyword_cleanup_2026-10-23.md)).
 - **A definition's grade sorts; it does not decide.** On hand-labelled candidates, `strong` was
   right 8 times in 13 (95% interval 36-82%), and a sentence that praises a term grades as strongly
   as one that defines it. Read the quoted sentence; nothing is chosen for you.

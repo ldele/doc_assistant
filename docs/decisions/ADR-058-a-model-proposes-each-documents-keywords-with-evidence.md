@@ -1,8 +1,10 @@
-<!-- status: active · updated: 2026-10-23 · class: append-only -->
+<!-- status: active · updated: 2026-10-24 (amended: the scan follows a five-step procedure, after ADR-059) · class: append-only -->
 
 # ADR-058 — A model proposes each document's keywords, with a sentence from the document for each
 
-- **Status:** proposed (Claude Code, 2026-10-23). Not accepted, not built. The user asked for the
+- **Status:** proposed (Claude Code, 2026-10-23); **amended 2026-10-24**: the scan becomes the
+  user's five-step procedure and waits for ADR-059 (see *Amendment 2026-10-24* at the end; it
+  replaces decisions 2 and 5). Not accepted, not built. The user asked for the
   scan on reading session 5c's result: *"We need LLM scan definitely."* The shape below is
   Claude's proposal. The build spec is
   [`docs/specs/feature-llm-keyword-scan.md`](../specs/feature-llm-keyword-scan.md). ADR-055, 056
@@ -205,3 +207,100 @@ then stays in the review section, and option 2 is measured next.
   game held the GPU at 99%. It depends on what else is using the card.
 - ⚠ The model's own sentence passed for 25 of 43 keywords. The look-up makes every kept keyword
   carry a sentence; it does not make the model's sentences trustworthy.
+
+## Amendment 2026-10-24 — understand, map to the library, check, cover, then propose
+
+The user, on reading this ADR: *"We need to make a procedure for the model to follow: First it has
+to understand the paper. Second it has to find the keywords already in our library related to the
+paper based on its understanding. Then it proceeds with checking the information in the library."*
+The user then asked to measure coverage ("what are the essential concepts presented, do we cover
+them"), to propose new keywords only when needed ("the question is to know what is relevant"), and
+named finding every form of a concept as more important than choosing keywords. That last point is
+ADR-059, which this procedure now depends on.
+
+**What changes.** Decisions 2 and 5 are replaced by the five steps below. Decisions 1 (what the
+model reads), 3 (the checks), 4 (the sidecar), 6 (local first, a runner then an ingest option) and
+7 (5c's yardstick) stand.
+
+| Step | Done by | Reads | Gives |
+|---|---|---|---|
+| 1 · Understand | model | decision 1's read, and no library vocabulary, so the reading is not steered by the library's words | up to 8 essential concepts. Each has a short name, its role (the subject, the method, the contribution, or a concept a section rests on) and one sentence copied from the paper, checked as in decision 3 |
+| 2 · Map to the library | finder, then model | each essential concept with its candidates: the library entries (concepts, terms, keywords, with their forms) that ADR-059's finder finds in this paper, and those whose names are near (the family detector's two tiers). A handful per concept at most, each with one passage of this paper, so the prompt does not grow with the library | for each pair: the same thing, broader, narrower, or different |
+| 3 · Check in the library | finder, no model | every entry answered *same* or *narrower* | its mentions in this paper (count, forms found, parents), its other documents, and whether it is a concept, a term or a keyword. An entry the paper does not use is dropped |
+| 4 · Cover | no model | the entries kept | **concept coverage**: the share of the essential concepts that have an entry. **Zone coverage**: the share of the paper's prose parents in which a kept entry is found, in any form. The uncovered sections are listed |
+| 5 · Propose what is missing | model, then decision 3's checks | the essential concepts with no entry, and the subjects of uncovered sections | new keywords, and only these |
+
+**What is relevant enough to propose** (the user's question): a new keyword names an essential
+concept (step 1) or the subject of an uncovered section. The paper uses it in more than one parent,
+because one parent is one passage, not a subject. And no library entry means the same thing: step
+2 answered *different* for every candidate. Otherwise the library's entry is linked to the paper
+instead.
+
+**Why map before proposing**, measured 2026-10-24 (read-only, `zone_coverage.py` in the probe
+folder):
+
+- 1,445 of the library's 1,496 keyword names are on a single document, and a TF-IDF list shares a
+  median of 1 of its 15 keywords with another document. Keywords do not group documents.
+- The scan's free proposals (prompt v1, the three development documents) were already a keyword of
+  another document for 3 of 15, 2 of 14 and 0 of 14. Proposing freely would keep it that way.
+
+**Coverage locates; it does not score.** Measured the same day with today's one-form matching:
+TF-IDF's lists reach a median 89% of a paper's prose parents (10th percentile 72%, 90th 98%), while
+their precision on your labels is 64%. Frequent words reach many parents whether or not they are
+terms. On the three development documents the scan's lists reached 66%, 92% and 81%, against
+TF-IDF's 84%, 89% and 96%. Part of that gap is the one-form matching itself: `keypoint` does not
+find `keypoints`, which is ADR-059's layer (a). So zone coverage is reported per document and its
+uncovered sections feed step 5. It is never maximised, and it is computed with ADR-059's finder.
+*A zone is a parent*, the 2,000-character window presence is counted in; the 400-character child
+inside it locates the mention. That is Claude's reading of "a zone defined by the parent-child
+window", to confirm.
+
+**A keyword is as long as the paper's term** (the user, the same day, through session 5c:
+*"certains concepts (keyword) doivent avoir plus d'un mot. Sinon c'est pas assez précis. Par
+exemple: neuronal connexion is not the same as connexion which is too vague."*).
+
+- **The rule for steps 1 and 5:** name each concept by the paper's precise term, in several words
+  where the paper uses several (*neuronal connexion*, not *connexion*). Use one word only when that
+  word is a term by itself: `mamba`, `DBS`, `DeepLabCut`.
+- **A flag, not a refusal:** a one-word keyword that is a common English word is flagged *may be
+  vague*, and step 3 shows the longer phrases the paper builds on it (*neuronal connexions*). This
+  uses ADR-006's reference frequencies (`wordfreq`), which are already installed and not fitted to
+  this library. Rare words such as `cre` and `dbs` are not flagged, so the multi-domain lesson
+  holds.
+- **Why the yardstick must change too.** On 5c's labels, single words were labelled real more often
+  than longer keywords. Before 5c: 74% of 121 one-word keywords, 55% of 87 two-word, 12% of 17
+  three-word. After: 66% of 136 against 59% of 87 (recomputed 2026-10-24 from the label store). The
+  rule counts a vague real word as *Detail*: `cache`, `relay`, `podcast`, `fish`, `cream` and
+  `politics` all passed, and `coffee` is a *Topic*. Meanwhile TF-IDF's multi-word picks are mostly
+  adjacent-word windows (`chunk inference`). So the current rule rewards the vagueness you want
+  removed, and the comparison could not show the change you are asking for.
+- **Inflections take places today.** One paper in the sample spends six of its 15 places on
+  `keypoint`/`keypoints`, `marmoset`/`marmosets` and `tracklet`/`tracklets`. ADR-059's layer (a)
+  folds them.
+- **Decided (the user, 2026-10-24: "Add Too vague, re-applied to the control's one-word keywords
+  and any longer one I choose"):** a fourth label, *Too vague*: a real word, but not precise
+  enough to say what this paper means by it. It counts against precision. It is re-applied to the
+  control's one-word keywords (136 after 5c) and to any longer one you mark, so both arms are
+  judged by one rule. 5c's published 62% → 64% stays as it was, measured by the old rule, and the
+  measurement reports both rules side by side.
+- **Relations between terms** (*neuronal connexion* to *axon* and *dendrite*): the concept graph's
+  job (ADR-028's typed relations). Step 1 could record them as hints, each with its sentence, kept
+  in the sidecar and shown in the review, never written to the graph. *Recommended:* not in the
+  first build.
+
+**The measurement** keeps decision 7 and adds two numbers when the spec is revised: how many of a
+document's keywords it shares with other documents (TF-IDF: a median of 1 of 15), and concept
+coverage on your labels (are the essential concepts the right ones). With *Too vague* accepted, it
+also reports the share of each arm's keywords labelled so. Their predictions are registered with
+the revised spec, before any sample document is read.
+
+**Cost, estimated and not measured:** two calls per document instead of one. The second, the
+mapping, is short. About 1.5 to 2 times decision 6's time: 35 to 45 s per document here, 1 to
+1.3 hours for the library, 100 to 125 hours of GPU at 10,000 documents. Step 2's lookup runs the
+other way from ADR-059's view. It asks which library entries occur in this paper, so it tokenises
+the paper once and looks its word sequences up in a table of every form (with inflections folded).
+Its cost grows with the paper's length, not with the vocabulary.
+
+**Order:** ADR-059 first. Then this procedure. The spec's §4 to §9 are revised once this amendment
+is accepted: the prompts of steps 1, 2 and 5 are new, and each goes through the same offline gates
+before any paid call.

@@ -1,4 +1,4 @@
-<!-- status: draft · updated: 2026-10-23 · class: living -->
+<!-- status: draft · updated: 2026-10-24 (waits on ADR-058's amendment and ADR-059) · class: living -->
 
 # Spec — LLM keyword scan (ROADMAP 25, the keyword part)
 
@@ -6,6 +6,15 @@
 > [ADR-058](../decisions/ADR-058-a-model-proposes-each-documents-keywords-with-evidence.md)
 > (proposed): read it first. This spec is the *how*, and its open forks are ADR-058's To-decide
 > list. It is marked ready only after the user has answered that list.
+
+> **2026-10-24: superseded in part, pending revision.** ADR-058's *Amendment 2026-10-24* turns
+> the single call below into five steps (understand, map to the library, check, cover, propose what
+> is missing). It also puts ADR-059 (finding every mention of a concept, in all its forms) first.
+> §3 (the read), §5 (the checks), §6 (the sidecar) and §10's local measurements stand. §4 (one
+> prompt), §8 (free proposals replacing TF-IDF) and §9 (the predictions) are rewritten once you
+> accept the amendment. That includes its precise-term rule (*neuronal connexion*, not
+> *connexion*) and, if you accept it, a *Too vague* label re-applied to the control. Until then
+> they record the first probe and are not to be built.
 
 **Status: draft, 2026-10-23. Nothing built, nothing in `data/` written.** Written after session 5c
 (ROADMAP 99) measured TF-IDF keywords on the user's labels: precision 62% → 64%, +1 point [−4, +6],

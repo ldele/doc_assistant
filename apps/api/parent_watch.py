@@ -25,25 +25,29 @@ def parent_pid_from_env() -> int | None:
     return pid if pid > 0 else None
 
 
-def _wait_windows(pid: int) -> None:
-    """Block on the process handle itself: no polling, and no mistaking a reused pid later."""
-    import ctypes
-    from ctypes import wintypes
+# Defined only on Windows, so a type check on another platform (CI runs on Linux) does not read
+# `ctypes.WinDLL`, which exists only there.
+if sys.platform == "win32":
 
-    synchronize = 0x00100000
-    infinite = 0xFFFFFFFF
-    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
-    kernel32.OpenProcess.restype = wintypes.HANDLE
-    kernel32.OpenProcess.argtypes = (wintypes.DWORD, wintypes.BOOL, wintypes.DWORD)
-    kernel32.WaitForSingleObject.argtypes = (wintypes.HANDLE, wintypes.DWORD)
-    kernel32.CloseHandle.argtypes = (wintypes.HANDLE,)
-    handle = kernel32.OpenProcess(synchronize, False, pid)
-    if not handle:  # the process is already gone
-        return
-    try:
-        kernel32.WaitForSingleObject(handle, infinite)
-    finally:
-        kernel32.CloseHandle(handle)
+    def _wait_windows(pid: int) -> None:
+        """Block on the process handle itself: no polling, and no mistaking a reused pid later."""
+        import ctypes
+        from ctypes import wintypes
+
+        synchronize = 0x00100000
+        infinite = 0xFFFFFFFF
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        kernel32.OpenProcess.restype = wintypes.HANDLE
+        kernel32.OpenProcess.argtypes = (wintypes.DWORD, wintypes.BOOL, wintypes.DWORD)
+        kernel32.WaitForSingleObject.argtypes = (wintypes.HANDLE, wintypes.DWORD)
+        kernel32.CloseHandle.argtypes = (wintypes.HANDLE,)
+        handle = kernel32.OpenProcess(synchronize, False, pid)
+        if not handle:  # the process is already gone
+            return
+        try:
+            kernel32.WaitForSingleObject(handle, infinite)
+        finally:
+            kernel32.CloseHandle(handle)
 
 
 def _wait_posix(pid: int, poll: float) -> None:

@@ -213,7 +213,10 @@ development library on 2026-10-18 (104 documents, 3,341 pages) unless a date say
   citations on 83.5% of its sentences, `llama3.1:8b` on 37.6% and `qwen2.5:7b` on 18.0% (one run
   each, so read them to about ±2 points, ±5 for qwen;
   [baseline](tests/eval/baselines/citation_coverage_2026-08-07.md)). On a local model more claims
-  carry no citation and show as *uncited*: 12 of the 27 `llama3.1:8b` answers cited nothing. Small
+  carry no citation and show as *uncited*: 12 of the 27 `llama3.1:8b` answers cited nothing.
+  **These local figures predate a fix in 0.7.0** that stopped Ollama from silently cutting the
+  start of long prompts, where the instructions to cite sit; on the release's three test questions
+  `llama3.1:8b` went from 0 cited answers to 3. They will be re-measured. Small
   local models also place documents into a
   taxonomy at 70-87% precision, and their self-reported confidence carries almost no signal; on one
   model it was *anti*-correlated with correctness, so do not auto-accept on it. The app states this
@@ -307,7 +310,7 @@ development library on 2026-10-18 (104 documents, 3,341 pages) unless a date say
 
 ## Status
 
-**v0.7.0 (2026-10-25): the map of your library becomes yours to curate and check.** What it adds:
+**v0.7.0 (2026-10-26): the map of your library becomes yours to curate and check.** What it adds:
 
 - **Concepts are yours.** A concept is a meaning you take on in Manage keywords, with a name and
   forms marked *exact* (always this concept, counted) or *broad* (shown beside, never counted); the

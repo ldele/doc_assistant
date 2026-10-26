@@ -12,6 +12,16 @@ def test_build_chat_model_local_is_ollama_no_network():
     assert llm.model == "llama3.1:8b"
 
 
+def test_build_chat_model_local_asks_ollama_for_an_explicit_window():
+    """The answer prompt must not ride Ollama's VRAM-based default: on a 12 GB card it is 4,096
+    tokens, and a longer prompt loses its start, the instructions to cite (RG-012, 0.7.0)."""
+    from doc_assistant import config
+
+    llm = build_chat_model("ollama", "llama3.1:8b")
+    assert llm.num_ctx == config.OLLAMA_CONTEXT_TOKENS
+    assert llm.num_ctx >= 8192
+
+
 def test_build_chat_model_anthropic_is_chatanthropic_no_network():
     llm = build_chat_model("anthropic", "claude-haiku-4-5")
     assert type(llm).__name__ == "ChatAnthropic"

@@ -517,6 +517,16 @@ WIKI_CHUNK_SAMPLE = int(os.getenv("WIKI_CHUNK_SAMPLE", "3"))
 # it buys more papers per note at the cost of VRAM and time.
 WIKI_CONTEXT_TOKENS = int(os.getenv("WIKI_CONTEXT_TOKENS", "8192"))
 
+# The context window every other Ollama call asks for (`num_ctx`), in tokens: the streamed answer
+# (`pipeline.build_chat_model`) and the one-shot client (`llm.make_client` — reviewer, judge,
+# taxonomy, gap suggestions). Without it Ollama falls back to a VRAM-based default (4,096 on a
+# 12 GB card) and, on overflow, keeps only the last half of the window, so the start of the
+# prompt — where the instructions to cite sit — never reaches the model, and the call still
+# succeeds. Measured 2026-10-26 (RG-012 for 0.7.0): answer prompts of 4,032-5,176 tokens on 10
+# sources were cut to 2,050, and 0 of 3 answers cited. 8,192 holds the largest of those plus the
+# answer. A resource choice, not a tuned one: Ollama clamps it to the model's trained length.
+OLLAMA_CONTEXT_TOKENS = int(os.getenv("OLLAMA_CONTEXT_TOKENS", "8192"))
+
 # Clustering primitive: when true, the wiki groups documents by the concept-skeleton's
 # *communities* (threshold-free Louvain — adapts to the corpus's own structure) instead
 # of the absolute-cosine WIKI_MIN_SIMILARITY union-find above. This is the fix for the

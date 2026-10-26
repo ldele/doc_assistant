@@ -40,6 +40,38 @@ Format: What changed | Why | Rejected alternatives | What it opens
 
 ---
 
+## 2026-10-26 — Every Ollama call asks for an 8,192-token window: answers no longer lose the instructions to cite
+
+**What changed.** `config.OLLAMA_CONTEXT_TOKENS` (8,192) is passed as `num_ctx` to the streamed
+answer (`pipeline.build_chat_model`'s `OllamaLLM`) and to every one-shot client
+(`llm.make_client`: reviewer, eval judge, taxonomy, gap suggestions). The wiki narrows it through
+`fit_window` as before. Two tests pin it, one per path. `CHANGELOG` [0.7.0] gains the fix and
+moves to 2026-10-26, the date the release commit will carry; README's local-model figures are
+marked as predating it.
+
+**Found by:** RG-012 Tier-2 for 0.7.0 (run `run-20261026-090139`). Packaging passed on a clean
+sandbox, and 0 of 3 answers cited anything; preflight read all three as *uncited*. Ollama's own log
+gave the cause: `vram-based default context … default_num_ctx=4096`, then `truncating input prompt
+limit=2050` on the answer prompts of 4,032–5,176 tokens (10 sources). On overflow llama.cpp keeps
+only the end, so the system prompt, which carries the instructions to cite, never reached the
+model, and the call still succeeded. It is KI-65's cause, on the answer path: `828fddc` gave only
+the wiki a window.
+
+**Checked.** The same three questions on the host, over a scratch library of the same three PDFs
+(322 chunks), with the dev API on Ollama `llama3.1:8b`. Before: 0 of 20 sentences cited, and four
+truncation warnings. After: all three answers cite, 11 of 13 sentences ([1]–[5]; [5]; [3], [4],
+[6], [9]); Ollama starts its runner with `-c 8192`, and every prompt runs whole (`truncated = 0`);
+0.6 GB more VRAM (5,675 against 5,035 MiB).
+
+**Rejected.** Sizing the window per prompt from an estimate (the wiki's `material_budget`): the
+answer prompt is bounded by the locked `TOP_K`, and one fixed window keeps Ollama from reloading the
+model between the answer and the reviewer. Leaving it to `OLLAMA_CONTEXT_LENGTH` on the server: an
+installed app's user would have to know to set it.
+
+**What it opens.** KI-36's local citation rates (`llama3.1:8b` 37.6%, `qwen2.5:7b` 18.0%,
+2026-08-07) were measured with prompts that were probably being cut, so they likely overstate the
+gap to Haiku: re-measure. Nothing yet warns when an answer prompt exceeds 8,192 tokens.
+
 ## 2026-10-25 — 0.7.0 release commit: the version in nine places, a dated CHANGELOG, and no developer command in the re-ingest dialog
 
 **What changed.** `docs/RELEASE.md` §1–§2. The version reads 0.7.0 in all nine places

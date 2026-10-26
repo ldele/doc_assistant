@@ -22,6 +22,7 @@ from doc_assistant.config import (
     CHROMA_PATH,
     LLM_MODEL,
     LLM_PROVIDER,
+    OLLAMA_CONTEXT_TOKENS,
     OLLAMA_HOST,
     PC_CHROMA_PATH,
     RERANK_CANDIDATE_CAP,
@@ -118,7 +119,9 @@ def build_chat_model(provider: str, model: str) -> Any:
         )
     from langchain_ollama import OllamaLLM
 
-    return OllamaLLM(model=model, base_url=OLLAMA_HOST)
+    # An explicit window: Ollama's own default keeps only the end of a long answer prompt, which
+    # drops the instructions to cite (config.OLLAMA_CONTEXT_TOKENS, RG-012 for 0.7.0).
+    return OllamaLLM(model=model, base_url=OLLAMA_HOST, num_ctx=OLLAMA_CONTEXT_TOKENS)
 
 
 class SparseRetriever(BaseRetriever):

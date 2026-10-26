@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-10-20 (0.7.0 refresh: rows for the extraction pool, Manage keywords at size, proposed placements, ranked keywords, the KL1 labels, names and written case, the Definition card, term signals, no console window, S-4/S-5/S-6; 2026-09-17: §3 hostile-markup row, S-3) · class: runbook -->
+<!-- status: active · updated: 2026-10-26 (§6: the answer-engine-unreachable row, the user's feedback; 2026-10-20: 0.7.0 refresh: rows for the extraction pool, Manage keywords at size, proposed placements, ranked keywords, the KL1 labels, names and written case, the Definition card, term signals, no console window, S-4/S-5/S-6; 2026-09-17: §3 hostile-markup row, S-3) · class: runbook -->
 
 # Release UX/UI walkthrough — what to drive before every release
 
@@ -112,6 +112,7 @@ scanned PDF). Most rows say which.
 - [ ] Window at 640×480 minimum: no horizontal overflow; wide content scrolls in its own container; reduced-motion honoured.
 - [ ] 0 console errors across the walkthrough (open devtools once in the dev build for the same route set — the release build has none).
 - [ ] Kill the sidecar while the app is open → a **connection** error, not the zero-state (REVIEWS 2026-08-28: it showed "No documents indexed yet").
+- [ ] **Answer engine unreachable** (the user, 2026-10-26): with the app open on Ollama, stop Ollama → the window stays responsive; the Library, the Graph tab and **Settings** open; Settings lets you point at another Ollama address or paste an API key; a question gets a sentence naming the unreachable engine, not a spinner that never ends. After the 0.7.0 clean-machine run, the app in the sandbox was unresponsive, Settings included, once the host's Ollama stopped (ROADMAP 100). If the installed app locks up here, that is a blocker for this release.
 - [ ] Occupy port 8001 before launch → the app reports the conflict; cold start to first `/api/health 200` is within RG-010's recorded envelope; closing the window ends the sidecar process.
 - [ ] Offline (network cable out): launch, ingest, answer with Ollama — all work; the update check says `unknown`.
 - [ ] **No console window** (user, 2026-10-09): launching the installed app opens the app window only — no terminal window at launch, when the backend starts, or while it indexes. The app is built for the windows subsystem (`src-tauri/src/main.rs:2`); the backend is frozen as a console program (`scripts/doc_assistant_api.spec:124`, `console=True`) and relies on the launcher to start it without one. If a window shows: a blocker for this release — freeze with `console=False` and send stderr to the app log.

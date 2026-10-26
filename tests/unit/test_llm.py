@@ -87,6 +87,16 @@ def test_make_client_ollama(patched_sdks: None):
     assert client.model == "llama3"
 
 
+def test_make_client_ollama_asks_for_the_configured_window(patched_sdks: None):
+    """The reviewer and judge prompts carry the answer and its sources, so they overflow the
+    server's default window the same way the answer does; the window must reach ChatOllama."""
+    client = llm.make_client("ollama", "llama3")
+    assert isinstance(client, llm.OllamaClient)
+    assert client.num_ctx == llm.config.OLLAMA_CONTEXT_TOKENS
+    client.complete([{"role": "user", "content": "hi"}], temperature=0.0, max_tokens=8)
+    assert _FakeChatOllama.last_init["num_ctx"] == llm.config.OLLAMA_CONTEXT_TOKENS
+
+
 def test_make_client_case_insensitive(patched_sdks: None):
     assert isinstance(llm.make_client("Anthropic", "m"), llm.AnthropicClient)
     assert isinstance(llm.make_client("OLLAMA", "m"), llm.OllamaClient)

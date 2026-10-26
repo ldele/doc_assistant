@@ -7,7 +7,7 @@ versioning is [SemVer](https://semver.org/) on the `doc_assistant` package, and 
 The engineering record is finer-grained than this file: per-change entries live in
 [`docs/DEVLOG.md`](docs/DEVLOG.md), design decisions in [`docs/decisions.md`](docs/decisions.md).
 
-## [0.7.0] — 2026-10-25
+## [0.7.0] — 2026-10-26
 
 ### Added
 
@@ -108,6 +108,12 @@ The engineering record is finer-grained than this file: per-change entries live 
 - **Indexing several documents at once could hang on Linux**, as in the headless image: the
   extraction workers now start fresh instead of being forked from a running process.
 - **Document similarity ignores removed documents.**
+- **Answers from a local model see their whole prompt.** The app asked Ollama for no context
+  size, so Ollama used its default (4,096 tokens on a 12 GB card) and, when a prompt was longer,
+  silently kept only its end: an answer over 10 sources lost the instructions to cite, and so did
+  the reviewer's check. On the release's clean-machine test, 0 of 3 answers cited anything. Every
+  Ollama call now asks for 8,192 tokens (`OLLAMA_CONTEXT_TOKENS`); the same three questions then
+  cite in all three answers, 11 of 13 sentences. It costs about 0.6 GB more video memory.
 
 ### Known limits
 

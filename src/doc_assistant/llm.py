@@ -283,6 +283,11 @@ class OllamaClient:
 def make_client(provider: str, model: str) -> LLMClient:
     """Construct an ``LLMClient`` for ``provider`` (``anthropic`` | ``ollama``).
 
+    An Ollama client asks for ``config.OLLAMA_CONTEXT_TOKENS``: the server's own default window
+    cuts a long reviewer or judge prompt from the front without an error (KI-65's cause, on
+    every one-shot caller). A caller that budgets its own prompt narrows it with
+    ``with_context`` (the wiki's ``fit_window``).
+
     Raises ``ValueError`` on an unknown provider — mirrors
     ``embeddings.get_model_config``.
     """
@@ -290,7 +295,7 @@ def make_client(provider: str, model: str) -> LLMClient:
     if key == "anthropic":
         return AnthropicClient(model)
     if key == "ollama":
-        return OllamaClient(model)
+        return OllamaClient(model, num_ctx=config.OLLAMA_CONTEXT_TOKENS)
     raise ValueError(f"Unknown LLM provider '{provider}'. Valid options: anthropic, ollama")
 
 

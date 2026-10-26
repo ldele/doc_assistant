@@ -4,7 +4,8 @@ entry that PyInstaller bundles for the Tauri desktop app (PR-M4).
 Runs the FastAPI app under uvicorn on ``127.0.0.1``. Host/port are env-overridable so the
 Tauri shell can pick a port; defaults match the dev contract (Vite proxies to ``:8001``). The shell
 also sets ``DOC_API_TOKEN``, this launch's token, which ``create_app`` requires on every write
-(security S-6, ``apps/api/launch_token``).
+(security S-6, ``apps/api/launch_token``), and ``DOC_PARENT_PID``, its own process id: the server
+stops when that process ends (KI-71, ``apps/api/parent_watch``).
 The real ``ChatController`` (model load) is built lazily in the app's ``lifespan`` — so the
 process starts immediately and ``/api/health`` flips to ``200`` once the stack is warm
 (the frontend's readiness gate polls it).
@@ -52,16 +53,38 @@ def _configure_frozen_runtime() -> None:
 
 _configure_frozen_runtime()
 
+import threading  # noqa: E402
+
+import structlog  # noqa: E402
 import uvicorn  # noqa: E402
 
 from apps.api.main import app  # noqa: E402
+from apps.api.parent_watch import parent_pid_from_env, watch_parent  # noqa: E402
+
+log = structlog.get_logger(__name__)
+
+# How long a graceful stop may take once the shell is gone before the process ends regardless —
+# an extraction pool or a stream can hold uvicorn's shutdown open, and nobody is left to wait.
+_FORCED_EXIT_AFTER_S = 15.0
 
 
 def main() -> None:
     host = os.environ.get("DOC_API_HOST", "127.0.0.1")
     port = int(os.environ.get("DOC_API_PORT", "8001"))
     # 127.0.0.1 only — the desktop app talks to its own sidecar; never bind 0.0.0.0.
-    uvicorn.run(app, host=host, port=port, log_level="info")
+    server = uvicorn.Server(uvicorn.Config(app, host=host, port=port, log_level="info"))
+    parent = parent_pid_from_env()
+    if parent is not None:
+
+        def _shell_gone() -> None:
+            log.warning("desktop_shell_gone", pid=parent)
+            server.should_exit = True
+            timer = threading.Timer(_FORCED_EXIT_AFTER_S, os._exit, args=(0,))
+            timer.daemon = True
+            timer.start()
+
+        watch_parent(parent, _shell_gone)
+    server.run()
 
 
 if __name__ == "__main__":

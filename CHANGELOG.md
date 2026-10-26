@@ -94,6 +94,10 @@ The engineering record is finer-grained than this file: per-change entries live 
   could read nothing: it stayed at "still starting" with its engine running, and Settings never
   filled in. 0.6.0's installer had the same fault. The API now answers both. The clean-machine test
   had called the API from a script, which never checks this; it now asks as the window does.
+- **Closing the app ends its engine.** The backend kept running after the window closed, so the
+  next launch read through it and every change was refused ("needs the token the app was started
+  with") until Windows restarted. The app now ends the backend and what it started when it
+  closes, without a console window, and the backend stops by itself once the app is gone.
 - **Coverage numbers count what they describe.** The graph's "Covers N of M documents" no
   longer counts deleted or archived documents, and the taxonomy header counts the concepts on
   your graph — what placing and auto-propose act on — so it stops reporting hundreds of concepts

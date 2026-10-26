@@ -40,6 +40,41 @@ Format: What changed | Why | Rejected alternatives | What it opens
 
 ---
 
+## 2026-10-26 (4) — Closing the app ends its backend; the backend stops when the app is gone (KI-71)
+
+**What changed.** `apps/desktop/src-tauri/src/lib.rs`: the shell keeps the sidecar's
+`CommandChild` (`Sidecar`, managed state) and on `RunEvent::Exit` ends its process tree:
+`taskkill /PID <pid> /T /F`, by full path under `%SystemRoot%\System32`, with `CREATE_NO_WINDOW`;
+`kill()` when that fails or off Windows. `run()` now builds the app and passes an event handler.
+It also sets `DOC_PARENT_PID` to its own process id. `apps/api/parent_watch.py` (new): a daemon
+thread waits for that process (on Windows on its handle, `WaitForSingleObject`; elsewhere by
+polling) and `__main__` then sets uvicorn's `should_exit`, with a forced exit 15 s later if a
+pool or a stream holds the shutdown open. `__main__` now runs `uvicorn.Server` directly to reach
+`should_exit`. `rustfmt` also wrapped one existing line in `launch_token`.
+`tests/unit/test_api_parent_watch.py`: the pid parsing, a real process watched before and after
+it ends, `main` watching only when a pid is named, and the Rust contract pinned in its source.
+
+**Found by:** the 0.7.0 walkthrough in the RG-012 sandbox. After the window closed, both
+`doc-assistant-api` processes — the one-file launcher and the server it starts — still ran and
+held 8001. A reopened window's own backend could not bind, so the window read through the old one
+with its new launch token, and *new folder* was refused ("needs the token the app was started
+with"). A plain launch from the desktop icon did the same: on any machine, the second launch could
+change nothing until a reboot. The cause: the shell plugin ends on exit only the children the
+window spawns (`tauri-plugin-shell` 2.3.5 `lib.rs`), and `lib.rs` dropped the handle at spawn.
+
+**Checked.** The new tests (10). `cargo check` and `cargo fmt --check`. The server half end to
+end: `python -m apps.api` with `DOC_PARENT_PID` naming a stand-in process — healthy after 16 s,
+then `desktop_shell_gone` and a clean shutdown 1.0 s after the stand-in was killed. The shell half
+needs the installed build: the sandbox after the rebuild.
+
+**Rejected.** Killing only the launcher (`CommandChild::kill`): a one-file launcher's server may
+survive it, which is the state we were in. A single-instance lock instead: it would stop a second
+window but not free a backend whose window had closed. Accepting any token from a backend that
+outlived its window: it would re-open the hole S-6 closed.
+
+**What it opens.** A second Provenote window opened while one runs still gets a backend it cannot
+write to (its own cannot bind 8001); a single-instance guard is the follow-up.
+
 ## 2026-10-26 (3) — A failed turn says why; quotes drop the extractor's emphasis markers; two claims corrected
 
 **What changed.** From a pre-launch check of the 0.7.0 rows of `docs/release-ux-checklist.md`, run

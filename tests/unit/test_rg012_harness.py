@@ -38,6 +38,8 @@ def test_the_harness_writes_every_line_and_file_the_preflight_reads() -> None:
         '"turns planned: "',
         "'turn-{0}-result.json'",
         "installer chosen: {0} ({1} MB, built {2})",
+        '"window origin {0}: allowed"',
+        '"window origin {0}: REFUSED - ',
     ):
         assert literal in script, f"the harness no longer writes {literal!r}"
 
@@ -45,6 +47,24 @@ def test_the_harness_writes_every_line_and_file_the_preflight_reads() -> None:
     assert preflight._PYTHON_ON_PATH.search("python on PATH? False   (must be False)")
     assert preflight._CHUNKS_AFTER_INGEST.search("chunk_count after ingest: 322")
     assert preflight._TURNS_PLANNED.search("turns planned: 3")
+    line = "window origin http://tauri.localhost: REFUSED - Access-Control-Allow-Origin was none"
+    refused = preflight._WINDOW_ORIGIN.search(line)
+    assert refused is not None
+    assert refused.groups() == ("http://tauri.localhost", "REFUSED")
+
+
+def test_the_harness_asks_as_the_windows_window_does() -> None:
+    """KI-67: PowerShell ignores CORS, so only a request carrying the window's origin can tell
+    whether the installed app reaches its engine. The origin must be the one the API allows for
+    the Windows build — a typo here would fail every run, or pass one that should not."""
+    from apps.api.main import _ALLOWED_ORIGINS
+
+    script = RUN.read_text(encoding="ascii")
+    m = re.search(r"^\$windowOrigin = '([^']+)'", script, re.MULTILINE)
+    assert m is not None, "the harness no longer names the window's origin"
+    assert m.group(1) == "http://tauri.localhost"
+    assert m.group(1) in _ALLOWED_ORIGINS
+    assert "-Headers @{ Origin = $windowOrigin }" in script
 
 
 def test_the_harness_asks_enough_questions_for_a_citation_verdict() -> None:

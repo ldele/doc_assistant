@@ -52,6 +52,49 @@ def _is_local(provider: str) -> bool:
     return provider.lower() == "ollama"
 
 
+# The exception names that mean "nothing answered at that address", from the HTTP stacks the
+# providers use (httpx/httpcore for Ollama, the Anthropic SDK's own wrapper). Matched by name so
+# this module imports none of them.
+_UNREACHABLE_ERRORS = frozenset({"ConnectError", "ConnectTimeout", "APIConnectionError"})
+
+
+def _is_unreachable(exc: BaseException) -> bool:
+    """Whether ``exc``, or anything it was raised from, says the engine could not be reached."""
+    seen: set[int] = set()
+    cur: BaseException | None = exc
+    while cur is not None and id(cur) not in seen:
+        seen.add(id(cur))
+        if isinstance(cur, ConnectionError) or type(cur).__name__ in _UNREACHABLE_ERRORS:
+            return True
+        cur = cur.__cause__ or cur.__context__
+    return False
+
+
+def _turn_failure_sentence(
+    exc: BaseException, *, provider: str, model: str, ollama_host: str
+) -> str:
+    """The sentence a turn ends with when its answer could not be produced.
+
+    Names the engine and what to do about it — the window used to show nothing under the
+    question (release-ux-checklist §6, the user, 2026-10-26). Never the exception's message,
+    which can carry request details; its type name is enough for a report.
+    """
+    if _is_unreachable(exc):
+        if _is_local(provider):
+            return (
+                f"No answer: Ollama is not answering at {ollama_host}. Start it, or choose "
+                "another answer engine in Settings."
+            )
+        return (
+            f"No answer: the answer engine ({provider}) could not be reached. Check the "
+            "connection, or choose another answer engine in Settings."
+        )
+    return (
+        f"No answer: {provider} ({model}) failed while answering ({type(exc).__name__}). "
+        "Try again, or choose another answer engine in Settings."
+    )
+
+
 # PR-M1 — human labels for the 7d evidence-layer markers (advisory chip, not a gate). KL1: phrased
 # as a question and marked experimental; "contested in corpus" asserted a corpus measurement the
 # Node-B stance pass cannot make (KI-33). Same words as SourceCard.svelte.

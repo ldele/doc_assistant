@@ -350,7 +350,12 @@ _BUILT_AT = datetime(2026, 9, 1, 22, 53, 16)
 
 
 def _run_log(
-    *, python: str = "False", chunks: int | None = 322, turns: int | None = 3, built: str = _BUILT
+    *,
+    python: str = "False",
+    origin: str | None = "allowed",
+    chunks: int | None = 322,
+    turns: int | None = 3,
+    built: str = _BUILT,
 ) -> str:
     """A harness log in the shape `scripts/rg012/rg012-run.ps1` writes (pinned there too)."""
     lines = [
@@ -358,6 +363,8 @@ def _run_log(
         f"[17:40:00] python on PATH? {python}   (must be False)",
         f"[17:40:44] installer chosen: Provenote_0.6.0_x64-setup.exe (1572.4 MB, built {built})",
     ]
+    if origin is not None:
+        lines.append(f"[17:47:00] window origin http://tauri.localhost: {origin}")
     if chunks is not None:
         lines.append(f"[17:48:00] chunk_count after ingest: {chunks}")
     if turns is not None:
@@ -490,6 +497,27 @@ def test_python_on_path_fails_packaging(tmp_path: Path) -> None:
     run_dir, text = _run(tmp_path, ["Cited [1].", "Cited [1].", "Cited [1]."], python="True")
     turns = preflight.read_run_turns(run_dir, text)
     assert preflight.rg012_packaging(text, turns).status == preflight.FAIL
+
+
+def test_a_refused_window_origin_fails_packaging_though_every_turn_answered(
+    tmp_path: Path,
+) -> None:
+    """KI-67, the 0.7.0 candidate: installed, indexed, answered and cited from PowerShell, while
+    the app's own window could read nothing. A pass on that run would ship a dead window."""
+    run_dir, text = _run(tmp_path, ["Cited [1].", "Cited [2].", "Cited [3]."], origin="REFUSED")
+    turns = preflight.read_run_turns(run_dir, text)
+    check = preflight.rg012_packaging(text, turns)
+    assert check.status == preflight.FAIL
+    assert "window's origin" in check.detail
+    assert preflight.rg012_citation(turns).status == preflight.OK  # two verdicts, never one
+
+
+def test_a_run_that_never_asked_as_the_window_fails_packaging(tmp_path: Path) -> None:
+    """Every run before KI-67 lacks the line: it cannot say whether the window could connect."""
+    run_dir, text = _run(tmp_path, ["Cited [1].", "Cited [2].", "Cited [3]."], origin=None)
+    check = preflight.rg012_packaging(text, preflight.read_run_turns(run_dir, text))
+    assert check.status == preflight.FAIL
+    assert "never asked" in check.detail
 
 
 def test_a_run_that_stopped_before_ingest_says_where_it_stopped(tmp_path: Path) -> None:

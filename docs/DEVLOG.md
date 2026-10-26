@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-10-24 · class: append-only -->
+<!-- status: active · updated: 2026-10-26 · class: append-only -->
 
 # DEVLOG — doc_assistant
 
@@ -39,6 +39,89 @@ Format: What changed | Why | Rejected alternatives | What it opens
 > is individually small and correct, so unbounded growth is invisible per commit.
 
 ---
+
+## 2026-10-26 (3) — A failed turn says why; quotes drop the extractor's emphasis markers; two claims corrected
+
+**What changed.** From a pre-launch check of the 0.7.0 rows of `docs/release-ux-checklist.md`, run
+in the dev app over a scratch copy of the working library (`DOC_DATA_DIR`, nothing written to
+`data/`):
+- **A failed turn ends with a sentence.** `chat_controller.events.Failure` is a terminal event:
+  `handle_message` wraps the answer path and yields one when it raises, its text from
+  `helpers._turn_failure_sentence` (engine unreachable, by exception name through the cause chain:
+  "No answer: Ollama is not answering at <host>…"; another failure: the provider, model and
+  exception type, never its message). The router maps it to an SSE `error` event, and its worker
+  thread catches anything that escapes the controller (`_WORKER_FAILED`); the window shows the
+  sentence on the turn, and a stream that ends with no answer, result or error says so
+  (`EMPTY_TURN`). The CLI prints it; `measure_latency` exits with it. Tests: the controller turn
+  with `httpx.ConnectError`, the sentence rules, and two SSE tests that fail without the router
+  change.
+- **Quotes read as text.** `graph/emphasis.ts` marks the characters that are emphasis delimiters
+  (`**` runs, an `_` outside a word); `ConceptDefinition.svelte` leaves them out of every quote and
+  passes them to `markedSegments`, which now takes a drop set so the server's highlight offsets
+  still land on their words. Display only (ADR-043). Five frontend tests.
+- **Settings' Ollama card** says its 36% / 14% citation figures predate KI-66's fix.
+- **`CHANGELOG`**: "known junk is gone" becomes "most"; the keyword limit lists what remains.
+
+**Found by the check.** With Ollama stopped, a question got nothing under it: the worker thread
+died on `httpx.ConnectError` and the stream ended with only `done` (release checklist §6, the
+user's row). The Definition card and term panels showed `_**Jakobs et al., 2019**_` verbatim.
+On the library's 1,560 keywords, about 50 are not terms in classes the filters do not cover:
+own author names from title pages and headers (23 in 14 documents, a few false hits), "Cell Press"
+split by letter-spacing (`ce ress`, `ll primer`), accents (`g ttingen`, `ram n`), possessives
+(`cajal s`), notation (`t cat`) — which the CHANGELOG's "letter-spaced text … no longer" denied.
+The Ollama card stated the pre-KI-66 rates unqualified. Also filed, not fixed: KI-68 (the
+staleness notice names the concept, not the form), KI-69 (no sentence for zero `is_a`
+proposals), KI-70 (rail names cut at 800 px). Passed: re-ingest hint; Manage keywords at size
+(95 ms), forms, exact/broad, the delete preview; staleness → Rebuild (7 s); the Definition card's
+every action; term signals (5 cited names, 31 offers, 26 places over 333 rows); proposals accept
+and reject, an accepted placement surviving a rebuild; KL1 labels; S-5; Settings with the
+engine down.
+
+**Rejected.** Rendering emphasis as `<em>`/`<strong>`: italics would survive, but a quote is
+plain text everywhere else and the markers sit mostly on citations. A fallback to another
+provider when the engine is unreachable: it would spend money the user did not choose to.
+
+**What it opens.** Row 115 still wants Settings to take another Ollama address (ROADMAP 100).
+Keyword classes above: ADR-056 (letter-spacing) and ADR-057 (accents) are parked work.
+
+## 2026-10-26 (2) — The API answers the Windows window's origin, and RG-012 asks as the window does (KI-67)
+
+**What changed.** `apps/api/main.py` `_ALLOWED_ORIGINS` gains `http://tauri.localhost`, the origin
+Tauri 2 serves the window from on Windows; `tauri://localhost` (macOS, Linux) and the two dev-server
+origins stay. `tests/integration/test_api_window_origins.py` pins a read and a token-carrying write
+from both packaged origins, and that any other origin gets no `Access-Control-Allow-Origin`; its two
+Windows cases fail on the old list. The RG-012 harness (`scripts/rg012/rg012-run.ps1`) asks
+`/api/health` with `Origin: http://tauri.localhost` and logs `window origin …: allowed|REFUSED`;
+REFUSED fails its packaging verdict. `release_preflight.rg012_packaging` fails a run whose line says
+REFUSED and a run with no line at all (every run before this one); `test_rg012_harness` pins the
+line against the reader and the harness's origin against the API's list. `CHANGELOG` [0.7.0] Fixed
+leads with it.
+
+**Found by:** the walkthrough's first look at the installed 0.7.0 build, in the RG-012 sandbox after
+a passing run (`run-20261026-104551`: 3 of 3 answered, 3 of 3 cited). The window "did not respond,
+Settings included". A read-only diagnostic run inside the sandbox (`wsb exec`, at the user's go)
+showed otherwise: Windows called the window responsive, the webview was idle, and the screenshot
+showed "Loading…" and the status bar's *still starting — retrying*, while `/api/health` answered
+200 in 0.5 s from the same box. `/api/health` with `Origin: http://tauri.localhost` came back without
+`Access-Control-Allow-Origin` (with `tauri://localhost`, with it), and the window's storage was
+written under `http://tauri.localhost`. So the readiness loop in `App.svelte` never saw a health
+answer it could read. 0.6.0 had the same list on the same Tauri (2.11.3): its installed window
+cannot have worked on Windows either, and KI-39's report was probably this. RG-012 missed it on
+every release because PowerShell ignores CORS.
+
+**Also seen, not fixed here.** The window process running at the diagnostic had started at 10:56,
+while the backend still running had started with the run at 10:49, so a backend outlived its first
+window (`lib.rs` never stops the sidecar). A window opened next would talk to that old backend with
+a different launch token, so its writes would get 401. The walkthrough's §6 row "closing the window
+ends the sidecar process" checks it on the fixed build.
+
+**Rejected.** `allow_origin_regex` for any `*.localhost`: wider than the two origins Tauri uses. Routing
+the window's calls through a Rust-side HTTP client to skip CORS: a new plugin and permission surface
+for what one list entry fixes. Checking every packaged origin in RG-012: the sandbox is Windows, so it
+can only see the Windows window's.
+
+**What it opens.** The release's walkthrough can now be driven at all. Nothing yet checks the
+macOS/Linux origin on a real window; no installer is built for either.
 
 ## 2026-10-26 — Every Ollama call asks for an 8,192-token window: answers no longer lose the instructions to cite
 

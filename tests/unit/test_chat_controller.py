@@ -12,12 +12,14 @@ import types
 from collections.abc import Iterator
 from pathlib import Path
 
+import httpx
 import pytest
 from langchain_core.documents import Document
 
 from doc_assistant import chat_controller, config
 from doc_assistant.chat_controller import (
     ChatController,
+    Failure,
     RagOverrides,
     Result,
     Session,
@@ -25,6 +27,7 @@ from doc_assistant.chat_controller import (
     TurnResult,
     _build_retrieved_chunks,
 )
+from doc_assistant.chat_controller.helpers import _turn_failure_sentence
 from doc_assistant.knowledge.epistemics import MARKER_CONTESTED, MARKER_SUPERSEDED
 from doc_assistant.reviewer import ReviewResult
 
@@ -368,6 +371,55 @@ def test_dispatch_rag_path_taken(monkeypatch, temp_db):
     assert [type(e).__name__ for e in events if isinstance(e, Token)] == ["Token", "Token"]
     result = _final(events)
     assert result.answer == "Cells meet [1]." and len(result.sources) == 3
+
+
+class _UnreachableRAG(FakeRAG):
+    """The answer engine refuses the connection, as Ollama does when it is not running."""
+
+    def stream_answer(
+        self, question: str, docs: list[Document], counter: object = None, llm: object = None
+    ) -> Iterator[str]:
+        raise httpx.ConnectError("[WinError 10061] No connection could be made")
+        yield ""  # unreachable: makes this a generator, like the real stream
+
+
+def test_an_unreachable_engine_ends_the_turn_with_a_sentence(monkeypatch, temp_db):
+    """Release walkthrough §6 (the user, 2026-10-26): Ollama down, the window showed nothing
+    under the question, because the exception killed the stream."""
+    monkeypatch.setattr(chat_controller.controller, "is_library_query", lambda t: False)
+    monkeypatch.setattr(chat_controller.controller, "OLLAMA_HOST", "http://localhost:11434")
+    rag = _UnreachableRAG(_three_clean_sources(), [])
+    rag.provider, rag.model = "ollama", "llama3.1:8b"
+    events = list(ChatController(rag=rag).handle_message(Session(), "How do neurons connect?"))
+    assert not any(isinstance(e, Result) for e in events)
+    assert isinstance(events[-1], Failure)
+    assert events[-1].message == (
+        "No answer: Ollama is not answering at http://localhost:11434. Start it, or choose "
+        "another answer engine in Settings."
+    )
+
+
+def test_the_failure_sentence_names_the_engine_never_the_error_text():
+    class APIConnectionError(Exception):  # the Anthropic SDK's name, matched by name
+        pass
+
+    paid = _turn_failure_sentence(
+        APIConnectionError("request req_123"), provider="anthropic", model="m", ollama_host="h"
+    )
+    assert "(anthropic) could not be reached" in paid and "req_123" not in paid
+    other = _turn_failure_sentence(
+        RuntimeError("internal detail"), provider="ollama", model="llama3.1:8b", ollama_host="h"
+    )
+    assert "RuntimeError" in other and "internal detail" not in other
+    # A refused connection wrapped in a library's own exception still reads as unreachable.
+    try:
+        try:
+            raise ConnectionRefusedError
+        except ConnectionRefusedError as e:
+            raise RuntimeError("wrapped") from e
+    except RuntimeError as wrapped:
+        sentence = _turn_failure_sentence(wrapped, provider="ollama", model="x", ollama_host="h")
+    assert sentence.startswith("No answer: Ollama is not answering at h.")
 
 
 # ============================================================

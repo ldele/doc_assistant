@@ -79,8 +79,8 @@ The engineering record is finer-grained than this file: per-change entries live 
   citation as separate verdicts (release tooling; no change to the app).
 - **Manage keywords opens at once on a real library and takes a typed form.** The Graph tab has a
   door to it and a *Rebuild* button, and every door to the view is called *Manage keywords*.
-- **A document's keywords are listed best first, and known junk is gone.** Table residue,
-  letter-spaced text, numbers, web addresses and the authors a paper cites no longer become
+- **A document's keywords are listed best first, and most known junk is gone.** Table residue,
+  most letter-spaced text, numbers, web addresses and the authors a paper cites no longer become
   keywords; each keyword keeps the score it was chosen by. Keywords are extracted from a source
   checkout (`python -m scripts.extract_keywords --apply --force`, once per library); the installed
   app does not extract them, so a library it built has none, and one carried over from 0.6.0 keeps
@@ -89,6 +89,11 @@ The engineering record is finer-grained than this file: per-change entries live 
 
 ### Fixed
 
+- **The installed app works on Windows.** Its window runs from `http://tauri.localhost`, and the
+  local API answered only the origin the macOS and Linux window uses, so on Windows the window
+  could read nothing: it stayed at "still starting" with its engine running, and Settings never
+  filled in. 0.6.0's installer had the same fault. The API now answers both. The clean-machine test
+  had called the API from a script, which never checks this; it now asks as the window does.
 - **Coverage numbers count what they describe.** The graph's "Covers N of M documents" no
   longer counts deleted or archived documents, and the taxonomy header counts the concepts on
   your graph — what placing and auto-propose act on — so it stops reporting hundreds of concepts
@@ -114,6 +119,14 @@ The engineering record is finer-grained than this file: per-change entries live 
   the reviewer's check. On the release's clean-machine test, 0 of 3 answers cited anything. Every
   Ollama call now asks for 8,192 tokens (`OLLAMA_CONTEXT_TOKENS`); the same three questions then
   cite in all three answers, 11 of 13 sentences. It costs about 0.6 GB more video memory.
+  Settings' Ollama card now says its citation figures predate this fix.
+- **A question says why it got no answer.** With the answer engine stopped or unreachable, the
+  question stayed alone on screen with nothing under it. The turn now ends with a sentence that
+  names the engine and where the app looked for it, and the window says so too when an answer
+  ends with nothing at all.
+- **Quoted sentences read as text.** Definition options, usage passages and a term's examples
+  showed the extractor's bold and italic markers around citations (`_**Fox, 2018**_`). They are
+  left out for display; the stored text is unchanged.
 
 ### Known limits
 
@@ -132,7 +145,10 @@ The engineering record is finer-grained than this file: per-change entries live 
 - **Keywords describe a document; they don't group your library, and they are rough.** 1,445 of
   1,496 extracted keywords sit on one document. On 15 hand-labelled documents about two in three
   are real terms of the paper (64%, 95% interval 50–77%), and filtering the junk did not change
-  that measurably: what replaced it was mostly junk too (2026-10-23).
+  that measurably: what replaced it was mostly junk too (2026-10-23). Among what remains, on the
+  development library (about 50 of 1,560): a paper's own author names, letter-spaced journal
+  headers (`ce ress` from "Cell Press"), names split at an accent (`g ttingen`) or a possessive
+  (`cajal s`), and fragments of notation.
 - **Everything under *Known limits* for 0.6.0 still applies**, re-read against the code on
   2026-10-20: a cited passage is not yet marked on its page; a few pages hold the previous page's
   text; citation links are worked out once; a file moved outside the app loses the exclusions set

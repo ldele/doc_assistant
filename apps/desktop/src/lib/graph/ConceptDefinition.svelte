@@ -35,6 +35,7 @@
   } from '../core/api'
   import Icon from '../shell/Icon.svelte'
   import { displayText, gradeLabel, groupCandidates, sourceLabel, usageSource } from './definitions'
+  import { emphasisMarks, withoutEmphasis } from './emphasis'
   import {
     citedLine,
     exampleSource,
@@ -62,6 +63,9 @@
   let loading = $state(true)
   let busy = $state(false)
   let looking = $state(false)
+  // A quote as plain text: whitespace collapsed and the extractor's emphasis markers dropped
+  // (`_**Fox, 2018**_`). Display only — the passage stays verbatim (ADR-043).
+  const readable = (text: string): string => displayText(withoutEmphasis(text))
   let looked = $state(false)
   let error = $state<string | null>(null)
   let writing = $state(false)
@@ -151,7 +155,7 @@
   }
 
   function startWriting(from: DefinitionCandidate | null = null): void {
-    draft = from ? displayText(from.text) : ''
+    draft = from ? readable(from.text) : ''
     writing = true
   }
 </script>
@@ -183,7 +187,7 @@
     {#if groups.chosen}
       {@const c = groups.chosen}
       <blockquote class="chosen">
-        <p>{displayText(c.text)}</p>
+        <p>{readable(c.text)}</p>
         <footer>
           <span class="src">{sourceLabel(c)}</span>
           {#if c.chunk_key}
@@ -219,7 +223,7 @@
       <ul class="cands">
         {#each groups.suggested as c (c.id)}
           <li class="cand">
-            <p class="ctext">{displayText(c.text)}</p>
+            <p class="ctext">{readable(c.text)}</p>
             <div class="cmeta">
               <button
                 class="grade {c.grade}"
@@ -286,7 +290,7 @@
       <ul class="uses">
         {#each usage.examples as u (u.chunk_key + u.text)}
           <li>
-            <p class="utext">{displayText(u.text)}</p>
+            <p class="utext">{readable(u.text)}</p>
             <div class="cmeta">
               <span class="src">{usageSource(u)}</span>
               <button class="linkish" onclick={() => onOpenPassage(u.chunk_key)} type="button">Open passage →</button>
@@ -357,7 +361,7 @@
         <ul class="cands dismissed">
           {#each groups.dismissed as c (c.id)}
             <li class="cand">
-              <p class="ctext">{displayText(c.text)}</p>
+              <p class="ctext">{readable(c.text)}</p>
               <div class="cactions">
                 <span class="src">{sourceLabel(c)}</span>
                 <button class="linkish" onclick={() => run(() => restoreDefinition(conceptId, c.id))} disabled={busy} type="button">Restore</button>
@@ -372,7 +376,7 @@
 
 {#snippet quote(e: SignalExample, cut: boolean)}
   <p class="utext">
-    {#if cut}<span class="muted">…</span>{/if}{#each markedSegments(e) as seg, i (i)}{#if seg.mark}<mark>{seg.text}</mark>{:else}{seg.text}{/if}{/each}{#if cut}<span class="muted">…</span>{/if}
+    {#if cut}<span class="muted">…</span>{/if}{#each markedSegments(e, emphasisMarks(e.text)) as seg, i (i)}{#if seg.mark}<mark>{seg.text}</mark>{:else}{seg.text}{/if}{/each}{#if cut}<span class="muted">…</span>{/if}
   </p>
   <div class="cmeta">
     <span class="src">{exampleSource(e)}</span>

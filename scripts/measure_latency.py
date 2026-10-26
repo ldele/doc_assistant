@@ -75,13 +75,15 @@ def in_process_first_token(controller: object, question: str) -> float:
 
     A fresh ``Session`` per call → no history-aware rewrite, matching the HTTP path's
     fresh-session-per-sample timing."""
-    from doc_assistant.chat_controller import Session, Token
+    from doc_assistant.chat_controller import Failure, Session, Token
 
     session = Session()
     t0 = time.monotonic()
     for event in controller.handle_message(session, question):  # type: ignore[attr-defined]
         if isinstance(event, Token):
             return time.monotonic() - t0
+        if isinstance(event, Failure):
+            raise SystemExit(event.message)
     raise SystemExit("in-process turn produced no token")
 
 

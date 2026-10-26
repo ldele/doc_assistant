@@ -14,19 +14,26 @@ export interface Segment {
 
 /** The example cut at its marks, whitespace collapsed for reading. Display only: the text stays
  *  verbatim on the wire (ADR-043). The server places the marks; one that overlaps another or
- *  falls outside the text is dropped rather than guessed at. */
-export function markedSegments(example: SignalExample): Segment[] {
+ *  falls outside the text is dropped rather than guessed at. `drop` names characters to leave
+ *  out, by their position in the original text (the emphasis markers, `emphasis.ts`), so the
+ *  marks stay where the server put them. */
+export function markedSegments(example: SignalExample, drop: ReadonlySet<number> = new Set()): Segment[] {
   const text = example.text
   const marks = [...example.marks].sort((a, b) => a[0] - b[0])
   const raw: Segment[] = []
+  const piece = (from: number, to: number): string => {
+    let s = ''
+    for (let i = from; i < to; i++) if (!drop.has(i)) s += text[i]
+    return s
+  }
   let at = 0
   for (const [start, end] of marks) {
     if (start < at || end <= start || end > text.length) continue
-    if (start > at) raw.push({ text: text.slice(at, start), mark: false })
-    raw.push({ text: text.slice(start, end), mark: true })
+    if (start > at) raw.push({ text: piece(at, start), mark: false })
+    raw.push({ text: piece(start, end), mark: true })
     at = end
   }
-  if (at < text.length) raw.push({ text: text.slice(at), mark: false })
+  if (at < text.length) raw.push({ text: piece(at, text.length), mark: false })
   const out = raw.map((s) => ({ ...s, text: s.text.replace(/\s+/g, ' ') }))
   if (out.length > 0) {
     out[0].text = out[0].text.trimStart()

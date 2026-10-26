@@ -1,7 +1,7 @@
 """``TurnEvent`` — the tagged union ``handle_message`` streams.
 
 Streamed ``Token``s and ``Step`` status updates, terminating in a ``Result`` that wraps the
-finished ``TurnResult``."""
+finished ``TurnResult`` — or in a ``Failure`` when the answer could not be produced."""
 
 from __future__ import annotations
 
@@ -36,4 +36,12 @@ class Result:
     result: TurnResult
 
 
-TurnEvent = Token | Step | Result
+@dataclass
+class Failure:
+    """The terminal event of a turn that stopped before it finished: one sentence the reader can
+    act on, naming the engine that failed. Never a traceback; the log has that."""
+
+    message: str
+
+
+TurnEvent = Token | Step | Result | Failure

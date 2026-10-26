@@ -7,7 +7,14 @@ order (slash command → library query → RAG) now lives in the controller, so 
 gains the same commands the web UI has (including ``/export``).
 """
 
-from doc_assistant.chat_controller import ChatController, Result, Session, Token, TurnResult
+from doc_assistant.chat_controller import (
+    ChatController,
+    Failure,
+    Result,
+    Session,
+    Token,
+    TurnResult,
+)
 from doc_assistant.config import LOG_JSON, LOG_LEVEL
 from doc_assistant.logging_config import configure_logging
 
@@ -53,6 +60,10 @@ def main() -> None:
                 if streamed:
                     print()
                 _render_result(event.result, streamed=streamed)
+            elif isinstance(event, Failure):
+                print()
+                print(event.message)
+                print()
         # Step events are advisory; the CLI ignores them.
 
 

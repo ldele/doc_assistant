@@ -15,6 +15,7 @@ from fastapi.testclient import TestClient
 
 from doc_assistant.chat_controller import (
     ClaimView,
+    Failure,
     Result,
     SourceView,
     Step,
@@ -164,6 +165,52 @@ def test_chat_streams_sse_events_in_order():
     payload = json.loads(result["data"])
     assert payload["answer"] == "Hello world [1]." and payload["mode"] == "ai"
     assert payload["sources"][0]["markers"] == ["contested"]
+
+
+class _FailingController(FakeController):
+    """A turn that stops after one token: by a ``Failure`` the controller yields, or by an
+    exception that escapes it."""
+
+    def __init__(self, *, escapes: bool) -> None:
+        super().__init__()
+        self.escapes = escapes
+
+    def handle_message(
+        self,
+        session: object,
+        text: str,
+        *,
+        overrides: object = None,
+        scope_folder_id: str | None = None,
+    ) -> Iterator[object]:
+        yield Token("Partial ")
+        if self.escapes:
+            raise RuntimeError("internal detail")
+        yield Failure("No answer: Ollama is not answering at http://localhost:11434.")
+
+
+def _stream_events(controller: FakeController) -> list[dict[str, str]]:
+    body = {"text": "q", "session_id": "s1"}
+    with _client(controller).stream("POST", "/api/chat", json=body) as resp:
+        assert resp.status_code == 200
+        return _parse_sse(resp.iter_lines())
+
+
+def test_a_failed_turn_streams_its_sentence_as_an_error_event():
+    """The window showed nothing under the question when the engine was down (2026-10-26)."""
+    events = _stream_events(_FailingController(escapes=False))
+    assert [e["event"] for e in events] == ["token", "error", "done"]
+    assert events[1]["data"] == "No answer: Ollama is not answering at http://localhost:11434."
+
+
+def test_an_exception_that_escapes_the_controller_still_ends_with_a_sentence():
+    """A crashed worker thread used to end the stream with nothing said."""
+    from apps.api.routers.chat import _WORKER_FAILED
+
+    events = _stream_events(_FailingController(escapes=True))
+    assert [e["event"] for e in events] == ["token", "error", "done"]
+    assert events[1]["data"] == _WORKER_FAILED
+    assert "internal detail" not in events[1]["data"]
 
 
 def test_chat_creates_session_for_unknown_id():

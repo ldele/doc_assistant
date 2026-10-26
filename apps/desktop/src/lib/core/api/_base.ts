@@ -2,7 +2,8 @@
 //
 // In dev, Vite proxies `/api` → 127.0.0.1:8001 (same-origin, no CORS). In the packaged Tauri
 // build the frontend is served from the asset/tauri origin, so it hits the absolute backend URL
-// (the API's CORS allowlist includes `tauri://localhost`).
+// (the API's CORS allowlist names the window's origin: `http://tauri.localhost` on Windows,
+// `tauri://localhost` on macOS and Linux — KI-67).
 
 import { needsToken, withToken } from '../launchToken'
 import { launchToken } from '../tauri'

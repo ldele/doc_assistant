@@ -40,6 +40,7 @@ from doc_assistant.chat_controller.controller import (
     ChatController,
 )
 from doc_assistant.chat_controller.events import (
+    Failure,
     Result,
     Step,
     Token,
@@ -85,6 +86,7 @@ from doc_assistant.chat_controller.views import (
 __all__ = [
     "ChatController",
     "ClaimView",
+    "Failure",
     "RagOverrides",
     "Result",
     "ScopeView",

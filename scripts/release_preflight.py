@@ -365,6 +365,10 @@ _RUN_START = "=== RG-012 Tier-2 start ==="
 _PYTHON_ON_PATH = re.compile(r"python on PATH\? (True|False)")
 _CHUNKS_AFTER_INGEST = re.compile(r"chunk_count after ingest: (\d+)")
 _TURNS_PLANNED = re.compile(r"turns planned: (\d+)")
+# KI-67: the harness asks /api/health as the installed window does and logs whether the API named
+# that origin back. Every other call it makes comes from PowerShell, which ignores CORS, so a run
+# without this line cannot say whether the app's own window could reach its engine.
+_WINDOW_ORIGIN = re.compile(r"window origin (\S+): (allowed|REFUSED)")
 
 # The fewest turns a citation verdict may rest on. One turn is a coin flip on `llama3.1:8b`: the
 # byte-identical 0.5.1 installer failed 1 run in 4 on the same question (RIGOR_TODO RG-012,
@@ -447,7 +451,8 @@ def read_run_turns(run_dir: Path, run: str) -> list[Rg012Turn]:
 
 
 def rg012_packaging(run: str, turns: list[Rg012Turn]) -> Check:
-    """The half that found KI-34: a clean box, a real ingest, and an answer to every turn."""
+    """The half that found KI-34: a clean box, a real ingest, and an answer to every turn — plus,
+    since KI-67, an API that answers the installed window's origin."""
     name = "rg012_packaging"
     python = _PYTHON_ON_PATH.search(run)
     if python is None:
@@ -462,6 +467,21 @@ def rg012_packaging(run: str, turns: list[Rg012Turn]) -> Check:
         return Check(name, FAIL, "the run stopped before ingest finished", stops[-1:])
     if int(chunks.group(1)) <= 0:
         return Check(name, FAIL, "ingest produced 0 chunks")
+    origin = _WINDOW_ORIGIN.search(run)
+    if origin is None:
+        return Check(
+            name,
+            FAIL,
+            "the run never asked as the installed window does — a harness from before KI-67; "
+            "re-run with scripts/rg012/rg012-run.ps1",
+        )
+    if origin.group(2) != "allowed":
+        return Check(
+            name,
+            FAIL,
+            f"the API refuses the installed window's origin ({origin.group(1)}): the app "
+            "cannot reach its engine (KI-67)",
+        )
     missing = [t for t in turns if t.kind == MISSING]
     if missing:
         return Check(
@@ -473,7 +493,8 @@ def rg012_packaging(run: str, turns: list[Rg012Turn]) -> Check:
     return Check(
         name,
         OK,
-        f"clean box, {chunks.group(1)} chunks, {len(turns)} of {len(turns)} turn(s) answered",
+        f"clean box, window origin allowed, {chunks.group(1)} chunks, "
+        f"{len(turns)} of {len(turns)} turn(s) answered",
     )
 
 

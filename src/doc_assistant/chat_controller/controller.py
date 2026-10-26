@@ -17,7 +17,7 @@ import structlog
 from langchain_core.documents import Document
 
 from doc_assistant import app_settings, compare, conversations, corpus_stats, export, library
-from doc_assistant.chat_controller.events import Result, Step, Token, TurnEvent
+from doc_assistant.chat_controller.events import Failure, Result, Step, Token, TurnEvent
 from doc_assistant.chat_controller.helpers import (
     _build_claims_block,
     _build_retrieved_chunks,
@@ -33,6 +33,7 @@ from doc_assistant.chat_controller.helpers import (
     _scope_label,
     _scope_note,
     _sources_block,
+    _turn_failure_sentence,
 )
 from doc_assistant.chat_controller.session import RagOverrides, Session
 from doc_assistant.chat_controller.views import (
@@ -47,6 +48,7 @@ from doc_assistant.chat_controller.views import (
 from doc_assistant.commands import execute_command, parse_command
 from doc_assistant.config import (
     EPISTEMICS_MARKERS_ENABLED,
+    OLLAMA_HOST,
     TOP_K,
     USE_MULTI_QUERY,
     USE_PARENT_CHILD,
@@ -310,7 +312,22 @@ class ChatController:
             return
 
         # --- RAG pipeline ---
-        yield from self._handle_rag(session, text, overrides, scope_folder_id)
+        # A failure past this point (the answer engine unreachable, a provider error) ends the
+        # turn with a sentence: the stream used to stop with nothing under the question.
+        try:
+            yield from self._handle_rag(session, text, overrides, scope_folder_id)
+        except Exception as e:
+            provider, model = self.rag.provider, self.rag.model
+            log.warning(
+                "turn_failed",
+                provider=provider,
+                model=model,
+                error=type(e).__name__,
+                exc_info=True,
+            )
+            yield Failure(
+                _turn_failure_sentence(e, provider=provider, model=model, ollama_host=OLLAMA_HOST)
+            )
 
     # -- internal ---------------------------------------------------------
 

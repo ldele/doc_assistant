@@ -117,6 +117,26 @@ for ($i = 0; $i -lt 120; $i++) {
 if (-not $health) { L "FAIL: no /api/health after ~600s"; return }
 L ("health OK after ~{0}s: {1}" -f $waited, ($health | ConvertTo-Json -Compress))
 
+# KI-67: ask as the installed window does. The window calls this API from its own origin and reads
+# a response only when the API names that origin in Access-Control-Allow-Origin. PowerShell
+# ignores CORS, so every other call here passes whether or not the window could make it: 0.6.0 and
+# the first 0.7.0 builds passed this gate while their window waited at "still starting" forever.
+# Tauri 2 serves the window from http://tauri.localhost on Windows.
+$windowOrigin = 'http://tauri.localhost'
+$originOk = $false
+$acao = $null
+try {
+  $probe = Invoke-WebRequest -UseBasicParsing 'http://127.0.0.1:8001/api/health' -Headers @{ Origin = $windowOrigin } -TimeoutSec 15
+  $acao = $probe.Headers['Access-Control-Allow-Origin']
+  $originOk = ($acao -eq $windowOrigin)
+} catch { $acao = 'request failed: ' + $_.Exception.Message }
+if (-not $acao) { $acao = 'none' }
+if ($originOk) {
+  L ("window origin {0}: allowed" -f $windowOrigin)
+} else {
+  L ("window origin {0}: REFUSED - Access-Control-Allow-Origin was {1}; the installed window cannot read any answer" -f $windowOrigin, $acao)
+}
+
 try { L ("setup readiness: " + ((Invoke-RestMethod 'http://127.0.0.1:8001/api/setup' -TimeoutSec 15) | ConvertTo-Json -Compress)) } catch { L ("setup probe failed: " + $_.Exception.Message) }
 
 # --- 3. find where this install keeps documents, then seed it ---------------
@@ -208,8 +228,10 @@ for ($k = 1; $k -le $questions.Count; $k++) {
 
 # --- 6. two verdicts, never one ----------------------------------------------
 # A citation failure is not a broken build, and must not read as one (RIGOR_TODO RG-012).
-if ($answered -eq $questions.Count) {
-  L ("*** RG-012 PACKAGING: PASS - installed on a clean box, {0} chunks, {1} of {1} turns answered ***" -f $h2.chunk_count, $questions.Count)
+if (-not $originOk) {
+  L ("*** RG-012 PACKAGING: FAIL - the API refuses the window's origin {0}: the installed app cannot reach its engine ***" -f $windowOrigin)
+} elseif ($answered -eq $questions.Count) {
+  L ("*** RG-012 PACKAGING: PASS - installed on a clean box, window origin allowed, {0} chunks, {1} of {1} turns answered ***" -f $h2.chunk_count, $questions.Count)
 } else {
   L ("*** RG-012 PACKAGING: FAIL - {0} of {1} turns returned an answer ***" -f $answered, $questions.Count)
 }

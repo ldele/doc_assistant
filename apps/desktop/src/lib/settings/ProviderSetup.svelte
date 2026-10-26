@@ -248,12 +248,16 @@
            less than a hosted one on the SAME prompt and retrieval, so a local user meets a wall of
            "uncited" claims with no explanation unless we give one here. Indicative, not a verdict:
            the run size and corpus are named so it can be reproduced. Re-measure before editing the
-           numbers — method and per-case rows are in the 2026-08-05 (2) DEVLOG entry. -->
+           numbers — method and per-case rows are in the 2026-08-05 (2) DEVLOG entry. They predate
+           KI-66 (Ollama cut long prompts to their end, instructions to cite included), so the
+           sentence says so until the re-measure KI-36 asks for replaces them. -->
       <p class="detail">
         <strong>Expect fewer citations.</strong> Over 27 questions on a 97-document corpus — same
         prompt, same retrieval — <code>llama3.1:8b</code> carried inline citations on 36% of its
-        sentences and <code>qwen2.5:7b</code> on 14%, against 81% for Claude Haiku 4.5. Answers stay
-        grounded in your documents; more claims will simply show as <em>uncited</em>.
+        sentences and <code>qwen2.5:7b</code> on 14%, against 81% for Claude Haiku 4.5. Those runs
+        predate 0.7.0, which stopped long prompts losing their instructions to cite, so the gap is
+        likely smaller now. Answers stay grounded in your documents; more claims will simply show
+        as <em>uncited</em>.
       </p>
       <p class="detail muted">Looking for a server at <code>{setup.ollama_host}</code>.</p>
 

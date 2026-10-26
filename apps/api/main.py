@@ -74,10 +74,15 @@ __all__ = ["_default_rebuild_graph", "_settings_view", "allowed_hosts", "app", "
 log = structlog.get_logger(__name__)
 
 # Local app only: the frontend speaks to the sidecar over 127.0.0.1. Explicit origins,
-# never "*". The Tauri dev server (default :1420) + the packaged webview origin.
+# never "*". The Tauri dev server (default :1420) + the packaged window's origin, which Tauri 2
+# names per platform: `http://tauri.localhost` on Windows (WebView2), `tauri://localhost` on macOS
+# and Linux. Until 0.7.0 only the second was listed, so the installed Windows window could read no
+# answer and waited at "still starting" forever (KI-67). Only a page served from port 80 on this
+# machine can claim the Windows origin, and a write still needs the launch token (S-6).
 _ALLOWED_ORIGINS = [
     "http://localhost:1420",
     "http://127.0.0.1:1420",
+    "http://tauri.localhost",
     "tauri://localhost",
 ]
 

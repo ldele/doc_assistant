@@ -15,6 +15,7 @@ from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Any
 
+import structlog
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import FileResponse
 from sse_starlette import EventSourceResponse, ServerSentEvent
@@ -29,6 +30,7 @@ from apps.api.models.compare import CompareRequest, CompareResultPayload
 from apps.api.sessions import SessionStore
 from doc_assistant.chat_controller import (
     ChatController,
+    Failure,
     RagOverrides,
     Result,
     Session,
@@ -39,6 +41,9 @@ from doc_assistant.ingest.figures import load_figure_image_paths
 from doc_assistant.provenance import get_record
 
 router = APIRouter()
+log = structlog.get_logger(__name__)
+
+_WORKER_FAILED = "No answer: the app hit an error while answering. Its log has the details."
 
 
 def _sse(event: object) -> ServerSentEvent | None:
@@ -54,6 +59,8 @@ def _sse(event: object) -> ServerSentEvent | None:
             event="result",
             data=TurnResultPayload.from_turn_result(event.result).model_dump_json(),
         )
+    if isinstance(event, Failure):
+        return ServerSentEvent(event="error", data=event.message)
     return None
 
 
@@ -82,6 +89,11 @@ async def _event_stream(
                 session, text, overrides=overrides, scope_folder_id=scope_folder_id
             ):
                 loop.call_soon_threadsafe(queue.put_nowait, event)
+        except Exception as e:
+            # The controller turns an engine failure into a Failure itself; this catches what
+            # escapes it, so a crashed thread can never end the stream with nothing said.
+            log.error("chat_worker_failed", error=type(e).__name__, exc_info=True)
+            loop.call_soon_threadsafe(queue.put_nowait, Failure(_WORKER_FAILED))
         finally:
             loop.call_soon_threadsafe(queue.put_nowait, done)
 

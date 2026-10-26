@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-09-16 (RG-012 harness tracked at scripts/rg012/, three turns, two preflight checks; trap 1 now cites the general encoding rule) · class: runbook -->
+<!-- status: active · updated: 2026-10-26 (trap 5: the gate asks as the installed window does, KI-67; 2026-09-16: RG-012 harness tracked at scripts/rg012/, three turns, two preflight checks; trap 1 now cites the general encoding rule) · class: runbook -->
 
 # Desktop packaging runbook (PR-M4)
 
@@ -177,7 +177,7 @@ on the host: `python -m scripts.release_preflight` re-reads each `turn-N-result.
 watches the sandbox. `tests/unit/test_rg012_harness.py` pins the text contract between the two —
 the log lines and file names the script writes and the preflight reads — and the ASCII rule below.
 
-**Four traps this harness exists to avoid — every one of them cost a run:**
+**Five traps this harness exists to avoid — every one of them cost a run:**
 1. **ASCII only, in both the `.ps1` and the `.wsb`.** Windows PowerShell 5.1 reads a UTF-8-no-BOM
    file as ANSI, so one em-dash breaks parsing *before anything logs* — which is what the two
    historical "LogonCommand never fires" reports actually were. The test suite now byte-checks
@@ -194,6 +194,12 @@ the log lines and file names the script writes and the preflight reads — and t
    all: the preflight reads the saved answers with the app's `audit_citations` and names each turn
    *cited / unresolved / uncited / missing* — `unresolved` (tried, nothing resolves) is a prompt or
    parser defect, `uncited` is the model declining, `missing` means the check could not look.
+5. **The gate's calls are not the window's.** Every request the script makes comes from
+   PowerShell, which ignores CORS, so the gate passed 0.6.0 and two 0.7.0 builds whose installed
+   window could read nothing: the API did not name the Windows window's origin,
+   `http://tauri.localhost` (KI-67). Since 2026-10-26 the script asks `/api/health` with that
+   `Origin` and logs `window origin …: allowed|REFUSED`; REFUSED, or no line at all, fails
+   preflight's packaging half.
 
 **Tier 2 needs an answer engine the sandbox can reach.** It uses the host's Ollama over the Default
 Switch address (`http://172.29.224.1:11434`), which requires Ollama bound beyond loopback

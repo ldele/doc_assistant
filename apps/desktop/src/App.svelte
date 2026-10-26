@@ -592,6 +592,8 @@
   // Sample questions for the empty state — corpus-agnostic openers that run one-click on any
   // library. Picking one only prefills the existing composer (no turn sent, no new behavior); the
   // reader still presses Send. Kept generic because the corpus topics aren't known at this layer.
+  const EMPTY_TURN =
+    'No answer came back, and no reason with it. Settings → Getting started shows what the app still needs.'
   const sampleQuestions = [
     'What are the main themes across my documents?',
     'Where do my sources agree and disagree?',
@@ -622,8 +624,13 @@
       for await (const ev of streamChat(text, chat.sessionId, chat.overrides, undefined, chatScopeFolderId)) {
         if (ev.event === 'token') chat.turns[idx].answer += ev.data
         else if (ev.event === 'result') chat.turns[idx].result = JSON.parse(ev.data) as TurnResult
+        // The turn stopped: the API's sentence names the engine that failed.
+        else if (ev.event === 'error') chat.turns[idx].error = ev.data
         // `step` events are advisory; ignored for now.
       }
+      const t = chat.turns[idx]
+      // A stream that ends with nothing said used to leave the question alone on screen.
+      if (!t.answer && !t.result && !t.error) t.error = EMPTY_TURN
     } catch (e) {
       chat.turns[idx].error = String(e)
     } finally {

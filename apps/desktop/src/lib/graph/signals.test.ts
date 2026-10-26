@@ -81,6 +81,17 @@ test('a mark that overlaps another or runs past the text is dropped, not guessed
   assert.deepEqual(markedSegments(example('plain text', [])), [{ text: 'plain text', mark: false }])
 })
 
+test('dropped characters leave the text and the marks stay on their words', () => {
+  // `_**Moyle et al., 2021**_` with the name marked: the drop set is emphasis.ts's markers.
+  const text = '( _**Moyle et al., 2021**_ ).'
+  const drop = new Set([2, 3, 4, 23, 24, 25])
+  assert.deepEqual(markedSegments(example(text, [[5, 10]]), drop), [
+    { text: '( ', mark: false },
+    { text: 'Moyle', mark: true },
+    { text: ' et al., 2021 ).', mark: false },
+  ])
+})
+
 test('an offer says which of the row’s forms it stands beside, and whether it is new', () => {
   assert.equal(offerLine(offer()), '“DBS” is spelled out as “deep brain stimulation”')
   assert.equal(offerLine(offer({ kind: 'short', form: 'DBS', beside: 'deep brain stimulation' })), '“deep brain stimulation” is abbreviated as “DBS”')

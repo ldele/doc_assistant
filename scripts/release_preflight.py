@@ -21,9 +21,10 @@ looking redundant:
   history**, not file mtimes: mtimes made it demand a rebuild after a plain ``git checkout``, which
   re-materialises files with today's date and identical content (2026-09-02). A check that cries
   wolf on a branch switch is a check that gets overridden by hand, which is how it stops working.
-* ``sidecar_size`` — KI-34 is detectable as a size cliff: 1545.5 MB broken vs 1562.1 MB fixed,
-  because ``collect_all("fitz")`` silently dropped ~17 MB of PyMuPDF data files. The cheapest
-  possible regression check on a packaging bug that is invisible from source.
+* ``backend_contents`` — KI-34 shipped a build that could not read a PDF because
+  ``collect_all("fitz")`` silently dropped PyMuPDF's data files. The backend is a folder since
+  KI-73, so what must be in it is checked by path, and a size floor still catches a dropped
+  bundle of any other kind. A packaging bug that is invisible from source.
 * ``rg012_packaging`` / ``rg012_citation`` — tie "the clean-machine gate passed" to **this exact
   artifact**, by matching the installer build timestamp the harness logged against the installer
   on disk. A PASS from a previous build is worse than no PASS, because it reads as evidence. **Two
@@ -58,7 +59,8 @@ from doc_assistant.synthesis import audit_citations
 
 ROOT = Path(__file__).resolve().parent.parent
 
-SIDECAR = ROOT / "apps/desktop/src-tauri/binaries/doc-assistant-api-x86_64-pc-windows-msvc.exe"
+BACKEND = ROOT / "apps/desktop/src-tauri/backend"
+BACKEND_EXE = BACKEND / "doc-assistant-api.exe"
 BUNDLE = ROOT / "apps/desktop/src-tauri/target/release/bundle/nsis"
 RG012_ARCHIVES = Path("C:/rg012-host")
 
@@ -69,16 +71,17 @@ CARGO_LOCK = "apps/desktop/src-tauri/Cargo.lock"
 PACKAGE_LOCK = "apps/desktop/package-lock.json"
 CARGO_CRATE = "doc-assistant-desktop"
 
-# The sidecar carries bundled model weights + PyMuPDF data. A build that comes out materially
-# smaller has dropped something (KI-34).
-#
-# **MiB, not decimal MB** — deliberately, because the recorded KI-34 reference numbers are what
-# Windows reports: 1545.5 MiB broken vs 1562.1 MiB fixed. The floor sits BETWEEN them, so the exact
-# regression that shipped would fail this check. Getting the unit wrong makes the floor ~1478 MiB
-# and the check useless while still looking green (caught writing this file).
-# Re-baseline deliberately when dependencies change size — and record the new numbers here.
-SIDECAR_MIN_MIB = 1555.0
-KI34_BROKEN_MIB, KI34_FIXED_MIB = 1545.5, 1562.1
+# The backend carries bundled model weights + PyMuPDF data (KI-34). It is a folder since KI-73,
+# so two guards: what must be inside, by path — the files KI-34 lost were PyMuPDF's layout
+# models, `pymupdf/layout/resources/onnx/*.yaml`, read at extraction time — and a size floor for
+# a dropped bundle of any other kind. The floor is the first one-dir build's size less ~1%:
+# BACKEND_BUILT_MIB on 2026-10-27. **MiB**, what Windows reports; re-baseline deliberately when
+# dependencies change size, and record the new numbers here. (The one-file sidecar's KI-34
+# reference sizes were 1545.5 MiB broken vs 1562.1 MiB fixed.)
+BACKEND_REQUIRED = ("_internal/pymupdf/layout/resources/onnx", "_internal/hf_cache/hub")
+# 17,855 files. The 1% floor alone would miss KI-34's 17 MB; the required paths do not.
+BACKEND_BUILT_MIB = 2515.9
+BACKEND_MIN_MIB = 2490.0
 
 # Everything the artifact is built FROM. A change to any of these can change the shipped bytes; a
 # change to anything else — docs, tests, dev tooling, this file — cannot, and must not read as a
@@ -291,15 +294,15 @@ def check_changelog(version: str) -> Check:
 
 
 def check_artifacts() -> tuple[Check, Path | None]:
-    if not SIDECAR.is_file():
-        return Check("artifacts", FAIL, f"no frozen sidecar at {SIDECAR}"), None
+    if not BACKEND_EXE.is_file():
+        return Check("artifacts", FAIL, f"no frozen backend at {BACKEND_EXE}"), None
     installers = sorted(
         BUNDLE.glob("Provenote*setup.exe"), key=lambda p: p.stat().st_mtime, reverse=True
     )
     if not installers:
         return Check("artifacts", FAIL, f"no Provenote*setup.exe under {BUNDLE}"), None
     inst = installers[0]
-    notes = [f"sidecar   {_describe(SIDECAR)}", f"installer {_describe(inst)}"]
+    notes = [f"backend   {_describe(BACKEND_EXE)}", f"installer {_describe(inst)}"]
     if len(installers) > 1:
         notes.append(f"NOTE {len(installers)} installers here — never pick one incidentally")
     return Check("artifacts", OK, f"{inst.name}", notes), inst
@@ -317,38 +320,51 @@ def check_artifact_fresh(installer: Path | None) -> Check:
     if newest is None:
         return Check("artifact_fresh", WARN, "git would not say when shipped code last changed")
     what, when = newest
-    sidecar_t = _mtime_aware(SIDECAR)
+    backend_t = _mtime_aware(BACKEND_EXE)
     inst_t = _mtime_aware(installer)
-    stale = [n for n, t in (("sidecar", sidecar_t), ("installer", inst_t)) if t < when]
+    stale = [n for n, t in (("backend", backend_t), ("installer", inst_t)) if t < when]
     detail = f"newest shipped change: {what} @ {when:%Y-%m-%d %H:%M}"
     if stale:
         return Check(
             "artifact_fresh",
             FAIL,
             f"{' and '.join(stale)} predate(s) the newest shipped change — REBUILD",
-            [detail, f"sidecar {sidecar_t:%Y-%m-%d %H:%M}", f"installer {inst_t:%Y-%m-%d %H:%M}"],
+            [detail, f"backend {backend_t:%Y-%m-%d %H:%M}", f"installer {inst_t:%Y-%m-%d %H:%M}"],
         )
     return Check("artifact_fresh", OK, "newer than every shipped change", [detail])
 
 
-def check_sidecar_size() -> Check:
-    if not SIDECAR.is_file():
-        return Check("sidecar_size", SKIP, "no sidecar")
-    mib = SIDECAR.stat().st_size / 1024 / 1024
-    if mib < SIDECAR_MIN_MIB:
+def _tree_mib(folder: Path) -> float:
+    return sum(f.stat().st_size for f in folder.rglob("*") if f.is_file()) / 1024 / 1024
+
+
+def check_backend_contents() -> Check:
+    """The frozen backend folder holds what extraction and retrieval read at run time (KI-34):
+    every ``BACKEND_REQUIRED`` path, YAML files in PyMuPDF's layout folder, and enough bytes."""
+    if not BACKEND_EXE.is_file():
+        return Check("backend_contents", SKIP, "no backend")
+    missing = [rel for rel in BACKEND_REQUIRED if not (BACKEND / rel).is_dir()]
+    onnx = BACKEND / BACKEND_REQUIRED[0]
+    if not missing and not any(onnx.glob("*.yaml")):
+        missing.append(f"{BACKEND_REQUIRED[0]}/*.yaml")
+    if missing:
         return Check(
-            "sidecar_size",
+            "backend_contents",
             FAIL,
-            f"{mib:,.1f} MiB is below the {SIDECAR_MIN_MIB:,.1f} MiB floor — a bundle was dropped",
-            [
-                f"KI-34 reference: {KI34_BROKEN_MIB} MiB broken vs {KI34_FIXED_MIB} MiB fixed",
-                "collect_all('fitz') without 'pymupdf' lost the data files and broke every PDF",
-            ],
+            f"missing from the backend: {', '.join(missing)} — a bundle was dropped",
+            ["KI-34: collect_all('fitz') without 'pymupdf' lost these files and broke every PDF"],
+        )
+    mib = _tree_mib(BACKEND)
+    if mib < BACKEND_MIN_MIB:
+        return Check(
+            "backend_contents",
+            FAIL,
+            f"{mib:,.1f} MiB is below the {BACKEND_MIN_MIB:,.1f} MiB floor — a bundle was dropped",
         )
     return Check(
-        "sidecar_size",
+        "backend_contents",
         OK,
-        f"{mib:,.1f} MiB (floor {SIDECAR_MIN_MIB:,.1f}, KI-34 fixed = {KI34_FIXED_MIB})",
+        f"{mib:,.1f} MiB, PyMuPDF layout data and models present (floor {BACKEND_MIN_MIB:,.1f})",
     )
 
 
@@ -707,7 +723,7 @@ def main() -> int:
         check_tree_clean(),
         artifacts,
         check_artifact_fresh(installer),
-        check_sidecar_size(),
+        check_backend_contents(),
         *check_rg012(installer),
         check_dev_commands(),
         check_checklists_refreshed(),

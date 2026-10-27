@@ -75,8 +75,30 @@ def test_capabilities_are_exactly_the_documented_set() -> None:
             names.add(str(perm["identifier"]))
             sidecars.extend(perm.get("allow", []))
     # Add a permission here only together with the docs/security.md row that justifies it.
-    assert names == {"core:default", "shell:allow-execute", "dialog:allow-open"}, names
-    assert sidecars == [{"name": "binaries/doc-assistant-api", "sidecar": True}], sidecars
+    # No shell permission since KI-73: the backend is started from Rust by path, which
+    # capabilities do not govern, so the window never needed to run anything.
+    assert names == {"core:default", "dialog:allow-open"}, names
+    assert sidecars == [], sidecars
+
+
+def test_the_backend_ships_as_a_folder_not_a_one_file_sidecar() -> None:
+    """KI-73: a one-file backend unpacked 1.6 GB on every launch. The folder is a bundle
+    resource, unpacked once by the installer, and the shell starts it by path (`lib.rs`)."""
+    conf = json.loads(TAURI_CONF.read_text(encoding="utf-8"))
+    assert "externalBin" not in conf["bundle"]
+    assert conf["bundle"]["resources"] == {"backend/": "backend/"}
+
+
+def test_the_installer_compresses_file_by_file() -> None:
+    """A ~2.5 GB folder cannot go through NSIS SOLID: the 32-bit makensis gathers it uncompressed
+    in one block and fails past ~2 GB. The project's template is Tauri's with that one line
+    changed; re-taking Tauri's template on an upgrade must not bring `/SOLID` back."""
+    conf = json.loads(TAURI_CONF.read_text(encoding="utf-8"))
+    nsis = conf["bundle"]["windows"]["nsis"]
+    assert nsis == {"compression": "zlib", "template": "nsis/installer.nsi"}
+    template = (TAURI_CONF.parent / nsis["template"]).read_text(encoding="utf-8")
+    assert 'SetCompressor "{{compression}}"' in template
+    assert "/SOLID" not in template.replace("not /SOLID", "")
 
 
 def test_no_remote_ipc_and_no_updater() -> None:

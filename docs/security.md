@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-10-20 (release refresh: §2 lists S-4, S-5, S-6, S-8 and S-12 as holding; 2026-10-18: S-12 done: the actions pinned to SHAs, Dependabot for actions only, a guard test; alerts the user's toggle, off when read back; S-6 done: a write needs the launch token; S-7 next; 2026-10-01: S-13 done, CI's secret scan fails on a secret the baseline does not record; S-14 found by its first run and done: the scanner reads UTF-8 on Windows too) · class: living -->
+<!-- status: active · updated: 2026-10-27 (§2: the window's capability loses the shell permission, KI-73; 2026-10-20: release refresh: §2 lists S-4, S-5, S-6, S-8 and S-12 as holding; 2026-10-18: S-12 done: the actions pinned to SHAs, Dependabot for actions only, a guard test; alerts the user's toggle, off when read back; S-6 done: a write needs the launch token; S-7 next; 2026-10-01: S-13 done, CI's secret scan fails on a secret the baseline does not record; S-14 found by its first run and done: the scanner reads UTF-8 on Windows too) · class: living -->
 
 # Security — the threat model, the plan, the floor, and the periodic check
 
@@ -52,7 +52,8 @@ and says so).
 - **Path validation on the selective-ingest route is the model for the others** —
   `ingest/registry.py` rejects absolute paths, `..`, unknown suffixes and unknown keys by name,
   normalises backslashes first, and splits the composite key *before* validating. It has tests.
-- **The Tauri capability set is minimal:** `core:default`, one sidecar spawn, `dialog:allow-open`.
+- **The Tauri capability set is minimal:** `core:default` and `dialog:allow-open`; since KI-73
+  the window cannot run anything (the shell starts the backend from Rust, by path).
   No `fs`, no `http`, no `shell:allow-open`, no remote IPC, no updater (ADR-044). CSP is set:
   `default-src 'self'`, network only to the sidecar. **Pinned by
   `tests/unit/test_desktop_security_config.py`.**

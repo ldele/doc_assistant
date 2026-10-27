@@ -50,6 +50,8 @@ The engineering record is finer-grained than this file: per-change entries live 
   were.
 - **The local API answers only its own address**, so a page cannot reach it under another name.
 - **The app's content policy also blocks forms, base URLs and plugins.**
+- **The window has no permission to start a program.** It could start the backend before; the app
+  now starts it itself, so nothing in the window can launch a process, the backend included.
 - **Libraries with advisories published during this release were upgraded**, among them the
   sanitiser that cleans chat answers (DOMPurify 3.4.17, rated critical), the Pillow image library
   (13.0), and `aiohttp`, `certifi`, `filelock` and OpenTelemetry. One advisory in
@@ -63,8 +65,12 @@ The engineering record is finer-grained than this file: per-change entries live 
 - **The window shows your library at once.** A start screen is drawn before any script runs, and
   until the engine answers the library, folders, past chats and concept graph appear as they
   were at the end of the last session, under a notice saying so; they are replaced as soon as
-  the engine is ready. The packaged engine takes tens of seconds to start, and the window used
-  to sit empty meanwhile.
+  the engine is ready. The window used to sit empty until then.
+- **The app is ready in about 10 seconds instead of 40 to 70.** The engine is installed as a
+  folder, unpacked once by the installer, instead of one 1.6 GB file that was unpacked to a
+  temporary folder at every launch. On the development PC a launch took 72 s before the window
+  could answer, and 9–10 s now; the first launch after installing takes about 30 s, while Windows
+  checks the new files. The download stays about 1.6 GB; installed, the app takes about 2.5 GB.
 - **The add dialog, the empty library and the drop overlay state what you can add**: the formats
   and "Up to 1 GB per file", read from the backend so they match what it enforces. The formats
   line also stops leaving out TXT, and Settings stops leaving out ODT and RTF.

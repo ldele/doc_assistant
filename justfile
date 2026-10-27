@@ -152,8 +152,8 @@ torch-check:
 # ⚠ NOT `cargo clean` — that wipes all of target/, which here also holds the current installers
 # (target/release/bundle, ~3.1 GB at 0.5.1; only the NSIS .exe is on the GitHub release, so the MSI
 # has no copy anywhere) and a ~1.5 GB build-time copy of the frozen sidecar. This drops only the
-# recompilable half: target/debug in full, target/release except bundle/. The frozen sidecar in
-# src-tauri/binaries is outside target/ and so is never at risk — no run of this forces a re-freeze.
+# recompilable half: target/debug in full, target/release except bundle/. The frozen backend in
+# src-tauri/backend is outside target/ and so is never at risk — no run of this forces a re-freeze.
 # Installer pruning stays manual and stays in docs/RELEASE.md §8. The active-build guard is scoped to
 # what each scope can actually break: a build in THIS repo blocks the target clean, while any build
 # on the machine blocks `-Registry` (that cache is shared). Other projects compile here constantly,

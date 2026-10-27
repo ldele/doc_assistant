@@ -18,8 +18,8 @@
     under target/release except bundle/.
 
     Never touched, by design:
-      * apps/desktop/src-tauri/binaries/ - the frozen PyInstaller sidecar. It lives
-        outside target/, so no run of this script can force a re-freeze.
+      * apps/desktop/src-tauri/backend/ - the frozen PyInstaller backend (a folder since
+        KI-73). It lives outside target/, so no run of this script can force a re-freeze.
       * target/release/bundle/ - docs/RELEASE.md section 8 owns installer pruning, and
         deliberately does it by hand: the PREVIOUS release's files, after the tag is
         pushed, never before.
@@ -77,7 +77,7 @@ function Format-GB {
 $root   = Split-Path -Parent $PSScriptRoot
 $target = Join-Path $root 'apps\desktop\src-tauri\target'
 $bundle = Join-Path $target 'release\bundle'
-$frozen = Join-Path $root 'apps\desktop\src-tauri\binaries'
+$frozen = Join-Path $root 'apps\desktop\src-tauri\backend'
 
 if (-not (Test-Path $target)) {
     Write-Host "Nothing to do: no target/ dir at $target"
@@ -180,7 +180,7 @@ if ($stuck -gt 0) {
 Write-Host ''
 Write-Host 'Kept:'
 Write-Host ('  {0}  release installers (docs/RELEASE.md section 8 prunes these by hand)' -f (Format-GB (Get-PathSize $bundle)))
-Write-Host ('  {0}  frozen sidecar in src-tauri/binaries (no PyInstaller re-freeze needed)' -f (Format-GB (Get-PathSize $frozen)))
+Write-Host ('  {0}  frozen backend in src-tauri/backend (no PyInstaller re-freeze needed)' -f (Format-GB (Get-PathSize $frozen)))
 if (-not $Registry) {
     $regSrc = Join-Path $env:USERPROFILE '.cargo\registry\src'
     $regSz  = Get-PathSize $regSrc

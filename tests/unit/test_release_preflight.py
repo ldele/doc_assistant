@@ -19,10 +19,9 @@ from pathlib import Path
 import pytest
 from scripts import release_preflight as preflight
 from scripts.release_preflight import (
-    KI34_BROKEN_MIB,
-    KI34_FIXED_MIB,
-    SIDECAR_MIN_MIB,
+    BACKEND_REQUIRED,
     _just_recipes,
+    check_backend_contents,
     check_dev_commands,
     check_versions,
     collect_versions,
@@ -84,16 +83,49 @@ def test_no_developer_commands_in_shipped_ui() -> None:
 # --- the preflight's own logic (both of these were wrong on the first run) ---------
 
 
-def test_sidecar_floor_sits_between_the_recorded_KI34_sizes() -> None:
-    """The floor only works if it separates the broken build from the fixed one.
+def _backend(root: Path, *, onnx_yaml: bool = True, models: bool = True) -> Path:
+    """A frozen backend folder in the one-dir shape, with or without what KI-34 lost."""
+    root.mkdir(parents=True, exist_ok=True)
+    (root / "doc-assistant-api.exe").write_bytes(b"MZ" + b"\0" * 1024)
+    onnx = root / BACKEND_REQUIRED[0]
+    onnx.mkdir(parents=True)
+    if onnx_yaml:
+        (onnx / "layout_rf.yaml").write_text("model: rf\n", encoding="utf-8")
+    if models:
+        (root / BACKEND_REQUIRED[1] / "models--BAAI--bge-base-en-v1.5").mkdir(parents=True)
+    return root
 
-    Written first in decimal MB while the recorded numbers are MiB, which put the floor at
-    ~1478 MiB — below *both* — so the check passed on a build it was written to reject, while
-    looking green. A units bug in a safety check is worse than no check."""
-    assert KI34_BROKEN_MIB < SIDECAR_MIN_MIB < KI34_FIXED_MIB, (
-        f"floor {SIDECAR_MIN_MIB} must reject the broken build ({KI34_BROKEN_MIB} MiB) "
-        f"and accept the fixed one ({KI34_FIXED_MIB} MiB)"
-    )
+
+def _point_at(monkeypatch: pytest.MonkeyPatch, root: Path, floor_mib: float = 0.0) -> None:
+    monkeypatch.setattr(preflight, "BACKEND", root)
+    monkeypatch.setattr(preflight, "BACKEND_EXE", root / "doc-assistant-api.exe")
+    monkeypatch.setattr(preflight, "BACKEND_MIN_MIB", floor_mib)
+
+
+def test_a_complete_backend_folder_passes(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    _point_at(monkeypatch, _backend(tmp_path))
+    assert check_backend_contents().status == preflight.OK
+
+
+def test_the_KI34_build_fails_by_path_not_by_luck(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """KI-34 shipped without PyMuPDF's layout YAML and could not read a PDF. The one-file build
+    could only see that as a size cliff; the folder is checked for the files themselves."""
+    _point_at(monkeypatch, _backend(tmp_path, onnx_yaml=False))
+    check = check_backend_contents()
+    assert check.status == preflight.FAIL
+    assert "onnx/*.yaml" in check.detail
+
+
+def test_a_missing_model_cache_or_a_short_folder_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _point_at(monkeypatch, _backend(tmp_path / "a", models=False))
+    assert check_backend_contents().status == preflight.FAIL
+    _point_at(monkeypatch, _backend(tmp_path / "b"), floor_mib=1.0)  # a few KB, floor 1 MiB
+    check = check_backend_contents()
+    assert check.status == preflight.FAIL and "below" in check.detail
 
 
 def test_just_recipes_are_read_from_the_justfile() -> None:

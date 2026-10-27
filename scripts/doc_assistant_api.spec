@@ -6,9 +6,9 @@
 # things by string at runtime). Expect to iterate: run the produced binary, read the
 # ModuleNotFoundError / missing-data traceback, add to `hiddenimports` / `datas`, repeat.
 #
-# onefile: one self-contained binary (Tauri's externalBin sidecar model). Trade-off: slower
-# cold start (it unpacks to a temp dir on launch) — measured against the latency rigor gate
-# (RG: SSE first-token latency on the frozen build).
+# one-dir: a folder the installer unpacks once (KI-73), shipped as a Tauri resource and started
+# by path from the shell (`lib.rs`). It was one-file until 0.7.0, which unpacked 1.6 GB to a
+# temp dir on every launch.
 
 import os
 
@@ -110,17 +110,27 @@ a = Analysis(
 )
 pyz = PYZ(a.pure)  # noqa: F821
 
+# One-dir, not one-file (KI-73): a one-file build unpacked its 1.6 GB to a temp folder on every
+# launch — 29–52 s of a 38–72 s start. A folder is unpacked once, by the installer; the program
+# starts where it lies. The exe holds only the bootloader and scripts; COLLECT lays out the rest
+# beside it (`_internal/`), which `build_sidecar.py` ships to `src-tauri/backend/`.
 exe = EXE(  # noqa: F821
     pyz,
     a.scripts,
-    a.binaries,
-    a.datas,
     [],
+    exclude_binaries=True,
     name="doc-assistant-api",
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
     upx=False,
     console=True,
-    onefile=True,
+)
+coll = COLLECT(  # noqa: F821
+    exe,
+    a.binaries,
+    a.datas,
+    strip=False,
+    upx=False,
+    name="doc-assistant-api",
 )

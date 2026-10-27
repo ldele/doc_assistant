@@ -40,6 +40,63 @@ Format: What changed | Why | Rejected alternatives | What it opens
 
 ---
 
+## 2026-10-27 (3) — The backend ships as a folder: 9–10 s to a working window instead of 72 (KI-73, part 2)
+
+**What changed.**
+- **Build.** `scripts/doc_assistant_api.spec` builds one-dir (`EXE(exclude_binaries=True)` +
+  `COLLECT`); `scripts/build_sidecar.py` copies `dist/doc-assistant-api/` to
+  `apps/desktop/src-tauri/backend/` (gitignored), which `tauri.conf.json` ships as
+  `bundle.resources` instead of `bundle.externalBin`.
+- **Shell.** `lib.rs` `bundled_backend` finds `backend/doc-assistant-api.exe` under the resource
+  folder and starts it with the shell plugin's `command(path)`: the same launch token, parent PID
+  and KI-71 tree-kill as the sidecar had, and no console window. Without the folder (dev) it says
+  so and starts nothing, as before.
+- **Capability.** The window's `shell:allow-execute` for the sidecar is gone — Rust starts the
+  backend, and capabilities do not govern Rust. The window holds `core:default` and
+  `dialog:allow-open` only (`test_desktop_security_config.py`, `docs/security.md`).
+- **Installer.** `src-tauri/nsis/installer.nsi` is Tauri CLI 2.11.4's own NSIS template with one
+  line changed, `SetCompressor` without `/SOLID`; `bundle.windows.nsis` sets it and `zlib`.
+- **Preflight.** `backend_contents` replaces the one-file size floor: the folder must hold
+  `_internal/pymupdf/layout/resources/onnx` with its `.yaml` files (what KI-34 lost) and
+  `_internal/hf_cache/hub`, and weigh at least 2,490 MiB (built: 2,515.9 MiB, 17,855 files).
+  KI-34's 17 MB is under the 1% margin, so the paths, not the floor, catch it. 3 tests replace 1.
+- **Local gates.** The built folder puts third-party `.py` files under `apps/desktop/src-tauri/`
+  (`backend/`, and its copy in `target/`), so CI's own `mypy src/ apps/` and `bandit -r src/ apps/`
+  failed on this PC after a build; `pyproject.toml` excludes `src-tauri` from both (CI never has
+  the folder). `.secrets.baseline` records the template's one detect-secrets hit, a registry path
+  (`SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate`, line 621) read as high-entropy text.
+- Paths in `clean_build.ps1`, the justfile and `docs/desktop-packaging.md`.
+
+**Why.** KI-73: the one-file backend unpacked 1.6 GB to a temp folder at every launch — 29.4 s
+of its 38.5 s to health alone, 52 s of 72 with the window. Part 1 (entry (2)) filled the wait;
+this removes most of it.
+
+**Measured** (dev PC, scratch data folder, `/api/health` polled every 200 ms). The backend alone:
+38.3 and 38.8 s one-file, 6.1 and 7.3 s one-dir. The built app, window start to health: 72.2 s
+one-file; one-dir 28.9 s on the first launch after the build (Windows scanning the new files),
+then 9.3 and 9.9 s. One backend process each time, and nothing left after the window closed.
+Two runs per arm: indicative, not a benchmark. Installer: 1,642,519,979 bytes in ~7 min (one-file:
+1,574 MiB); installed, 2.5 GB instead of 1.6.
+
+**The installer detour.** The first build failed in makensis: "Internal compiler error #12345:
+error mmapping datablock". Tauri's template sets `SetCompressor /SOLID`, which gathers every
+file uncompressed in one block, and the 32-bit makensis cannot map one past ~2 GB — with LZMA
+and with zlib. An `installerHooks` file cannot change it ("can't change compressor after data
+already got compressed or header already changed!"), and Tauri has no non-solid setting. So the
+template: extracted from `cli.win32-x64-msvc.node` (978 lines, CRLF, 86 handlebars tags) and
+checked against the script Tauri generated for this app — a sorted-line diff differs only in the
+compressor line, its configured value, comments and the include of the hook file tried first.
+
+**Rejected.** fp16 models to shrink the folder: changes the retrieval numbers, so it needs an eval
+run first. An MSI (WiX): a per-machine, admin install, and RG-012 installs the NSIS build
+silently per user. One-file kept, with an archive unpacked on first launch: the same files on
+disk plus a first-launch path to build and test. A hook overriding the compressor: makensis
+refuses it.
+
+**What it opens.** The template is a copy: on a Tauri CLI upgrade, re-take it and re-apply the
+one line (its header says so; `test_the_installer_compresses_file_by_file` fails if `/SOLID`
+returns). 2.5 GB installed. The release build and RG-012 rerun come from this commit.
+
 ## 2026-10-27 (2) — The window shows the last session at once: a start screen, then the library, chats and graph until the engine answers (KI-73, part 1)
 
 **What changed.** Committed with the Settings fixes in `a5d3231`; this entry and its CHANGELOG

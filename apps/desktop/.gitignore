@@ -8,3 +8,5 @@ src-tauri/gen/
 
 # Frozen FastAPI sidecar binary — large, per-platform; produced by scripts/build_sidecar.py
 src-tauri/binaries/
+# The frozen backend as a folder (scripts/build_sidecar.py, KI-73): built, never committed.
+src-tauri/backend/

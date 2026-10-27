@@ -334,7 +334,7 @@ development library on 2026-10-18 (104 documents, 3,341 pages) unless a date say
   other host and takes a write only with the token the app started it with; CI fails on an
   unreviewed advisory or a committed secret, and its actions are pinned to commits.
 
-**2,812 Python tests and 311 desktop tests · ruff / mypy / bandit clean.** The Windows
+**2,816 Python tests and 311 desktop tests · ruff / mypy / bandit clean.** The Windows
 installer on the [releases page](https://github.com/ldele/doc_assistant/releases) is built from
 the tag and installed on a clean machine before it is published.
 

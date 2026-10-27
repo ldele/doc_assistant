@@ -167,6 +167,9 @@ warn_return_any = true
 warn_unused_configs = true
 warn_unused_ignores = false
 plugins = []
+# The frozen backend (src-tauri/backend/, and its copy under target/) holds third-party .py files
+# since KI-73's one-dir build, so `mypy src/ apps/` would type-check them after a local build.
+exclude = ["/src-tauri/"]
 
 [[tool.mypy.overrides]]
 module = [
@@ -231,7 +234,8 @@ torch = [
 # CI and pre-commit both pass `-c pyproject.toml`; until 2026-09-10 no section existed, so bandit
 # ran on defaults and the flag was decorative. Scope and skips are stated here so a change to
 # either is a reviewable diff, not a silent default. `tests/` is excluded because assert-heavy
-# test code trips B101 on every line and nothing in it ships.
+# test code trips B101 on every line and nothing in it ships. `src-tauri` holds the frozen
+# backend's third-party .py files after a local build (KI-73's one-dir), never code of ours.
 [tool.bandit]
-exclude_dirs = ["tests", ".venv", "build", "dist", "node_modules"]
+exclude_dirs = ["tests", ".venv", "build", "dist", "node_modules", "src-tauri"]
 skips = []

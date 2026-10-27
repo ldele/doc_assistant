@@ -1,8 +1,10 @@
-"""PR-M4 — build the frozen FastAPI **sidecar** binary for the Tauri desktop app.
+"""PR-M4 — build the frozen FastAPI backend for the Tauri desktop app.
 
-PyInstaller-freezes ``apps/api/__main__.py`` into one binary, names it with the Rust
-target triple (Tauri's sidecar convention: ``<name>-<triple>[.exe]``), and copies it to
-``apps/desktop/src-tauri/binaries/``. ``--check`` verifies prerequisites without freezing.
+PyInstaller-freezes ``apps/api/__main__.py`` into a **folder** (one-dir: the exe and its
+``_internal/`` beside it) and copies it to ``apps/desktop/src-tauri/backend/``, which
+``tauri.conf.json`` ships as a resource and the shell starts by path (``lib.rs``). It was one
+file until 0.7.0, which unpacked 1.6 GB to a temp folder on every launch (KI-73).
+``--check`` verifies prerequisites without freezing.
 
 **CPU torch only** in the frozen build — the ``cu130`` wheel SEGFAULTS on a GPU-less box
 (KI-3), and the installer must run anywhere. This script refuses to freeze a CUDA torch.
@@ -23,7 +25,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 SPEC = Path(__file__).resolve().parent / "doc_assistant_api.spec"
-BINARIES_DIR = ROOT / "apps" / "desktop" / "src-tauri" / "binaries"
+BACKEND_DIR = ROOT / "apps" / "desktop" / "src-tauri" / "backend"
 SIDECAR_NAME = "doc-assistant-api"
 
 
@@ -32,7 +34,7 @@ def _exe_suffix() -> str:
 
 
 def target_triple() -> str:
-    """The Rust host target triple (Tauri names sidecars ``<name>-<triple>``)."""
+    """The Rust host target triple: ``tauri build`` needs ``rustc``, so ``--check`` asks it."""
     out = subprocess.run(["rustc", "-Vv"], capture_output=True, text=True, check=True).stdout
     for line in out.splitlines():
         if line.startswith("host:"):
@@ -60,8 +62,9 @@ def check_entry() -> None:
     importlib.import_module("apps.api.__main__")
 
 
-def _target_path(triple: str) -> Path:
-    return BINARIES_DIR / f"{SIDECAR_NAME}-{triple}{_exe_suffix()}"
+def backend_exe() -> Path:
+    """Where the shell finds the backend once shipped (``lib.rs`` resolves the same name)."""
+    return BACKEND_DIR / f"{SIDECAR_NAME}{_exe_suffix()}"
 
 
 def do_check() -> None:
@@ -71,24 +74,25 @@ def do_check() -> None:
     print(f"[OK] target triple        : {triple}")
     print(f"[OK] torch (cpu)          : {torch_version}")
     print("[OK] entrypoint imports   : apps.api.__main__")
-    print(f"  -> sidecar will land at : {_target_path(triple)}")
+    print(f"  -> backend will land at : {backend_exe()}")
     print("Run without --check to freeze (slow; needs PyInstaller + a CPU-synced venv).")
 
 
 def do_build() -> None:
-    triple = target_triple()
+    target_triple()  # rustc must be present: tauri build needs it next
     check_cpu_torch()
     check_entry()
-    print("Running PyInstaller (slow; produces a large single-file binary)...")
+    print("Running PyInstaller (slow; produces a large folder)...")
     subprocess.run(["pyinstaller", "--noconfirm", str(SPEC)], cwd=ROOT, check=True)
-    produced = ROOT / "dist" / f"{SIDECAR_NAME}{_exe_suffix()}"  # onefile output
-    if not produced.exists():
+    produced = ROOT / "dist" / SIDECAR_NAME  # one-dir output: the exe + _internal/
+    if not (produced / f"{SIDECAR_NAME}{_exe_suffix()}").is_file():
         raise SystemExit(f"PyInstaller did not produce {produced}")
-    BINARIES_DIR.mkdir(parents=True, exist_ok=True)
-    target = _target_path(triple)
-    shutil.copy2(produced, target)
-    print(f"[OK] sidecar copied to {target}")
-    print("Next: `npx tauri build` (in apps/desktop) bundles it via tauri.conf.json externalBin.")
+    # Replace, never merge: a file the new build dropped must not survive from the last one.
+    if BACKEND_DIR.exists():
+        shutil.rmtree(BACKEND_DIR)
+    shutil.copytree(produced, BACKEND_DIR)
+    print(f"[OK] backend copied to {BACKEND_DIR}")
+    print("Next: `npx tauri build` (in apps/desktop) ships it as a bundle resource.")
 
 
 def main() -> None:

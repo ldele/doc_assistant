@@ -1,8 +1,10 @@
 //! doc_assistant desktop shell. Hosts the Svelte webview; all logic stays in the Python
-//! core behind the FastAPI/SSE boundary (PR-M2). PR-M4 freezes that backend (PyInstaller)
-//! and ships it as a Tauri **sidecar** (`bundle.externalBin` in tauri.conf.json), spawned
-//! here on startup. The frontend's readiness gate polls `/api/health` until it is warm.
+//! core behind the FastAPI/SSE boundary (PR-M2). PR-M4 freezes that backend (PyInstaller);
+//! since KI-73 it ships as a **folder** (`bundle.resources` in tauri.conf.json, unpacked once
+//! by the installer) and is spawned here on startup by path. The frontend's readiness gate
+//! polls `/api/health` until it is warm.
 
+use std::path::PathBuf;
 use std::sync::Mutex;
 
 use tauri::{Manager, RunEvent};
@@ -70,6 +72,19 @@ fn launch_token() -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
 
+/// The frozen backend's executable inside the bundle: `<resources>/backend/doc-assistant-api`
+/// (`scripts/build_sidecar.py` puts the one-dir build there). `None` in dev, where there is no
+/// frozen build and the backend runs separately (`just api`).
+fn bundled_backend(app: &tauri::App) -> Option<PathBuf> {
+    let name = if cfg!(windows) {
+        "doc-assistant-api.exe"
+    } else {
+        "doc-assistant-api"
+    };
+    let exe = app.path().resource_dir().ok()?.join("backend").join(name);
+    exe.is_file().then_some(exe)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -80,12 +95,14 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![api_token])
         .setup(|app| {
             let token = launch_token();
-            // Spawn the bundled FastAPI sidecar. In dev there is no frozen binary (run the
+            // Spawn the bundled FastAPI backend. In dev there is no frozen build (run the
             // backend separately with `just api`, which checks no token unless one is set), so a
-            // missing sidecar is non-fatal.
-            match app.shell().sidecar("doc-assistant-api") {
-                Ok(command) => {
-                    let (mut rx, child) = command
+            // missing one is non-fatal. The shell plugin starts it without a console window.
+            match bundled_backend(app) {
+                Some(exe) => {
+                    let (mut rx, child) = app
+                        .shell()
+                        .command(exe)
                         .env("DOC_API_TOKEN", &token)
                         // The backend exits when this process does (KI-71).
                         .env("DOC_PARENT_PID", std::process::id().to_string())
@@ -101,7 +118,7 @@ pub fn run() {
                         }
                     });
                 }
-                Err(e) => eprintln!("[sidecar] not bundled (dev mode — use `just api`): {e}"),
+                None => eprintln!("[sidecar] not bundled (dev mode — use `just api`)"),
             }
             app.manage(LaunchToken(token));
             Ok(())

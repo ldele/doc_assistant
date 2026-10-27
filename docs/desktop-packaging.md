@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-10-26 (trap 5: the gate asks as the installed window does, KI-67; 2026-09-16: RG-012 harness tracked at scripts/rg012/, three turns, two preflight checks; trap 1 now cites the general encoding rule) · class: runbook -->
+<!-- status: active · updated: 2026-10-27 (the backend ships as a folder, KI-73: 6–7 s to health against 38–72 s; 2026-10-26: trap 5: the gate asks as the installed window does, KI-67; 2026-09-16: RG-012 harness tracked at scripts/rg012/, three turns, two preflight checks; trap 1 now cites the general encoding rule) · class: runbook -->
 
 # Desktop packaging runbook (PR-M4)
 
@@ -40,7 +40,7 @@ silent install **177 s**, `/api/health` **~30 s**, 3 PDFs → 322 chunks in **~3
 
 **2. Freeze the sidecar with today's fixes** *(§1–§2)*
 - [ ] `uv sync --extra cpu --extra dev --extra packaging`
-- [ ] `just sidecar`  — **done when** `apps\desktop\src-tauri\binaries\doc-assistant-api-<triple>.exe` exists.
+- [ ] `just sidecar`  — **done when** `apps\desktop\src-tauri\backend\doc-assistant-api.exe` exists (a folder since KI-73).
 - [ ] Smoke standalone: `set DOC_DATA_DIR=<repo>\data` → run the binary → `curl …/api/health`
       — **done when** `chunk_count` > 0. Iterate the spec on any runtime `ModuleNotFoundError`
       (add to `hiddenimports`/`datas`, re-run). ⚠ resolve the **data-home decision** below.
@@ -98,8 +98,9 @@ just sidecar-check      # asserts triple + CPU torch + entrypoint import
 just sidecar            # = python -m scripts.build_sidecar  → PyInstaller (slow, large)
 ```
 
-Produces a single binary and copies it to `apps/desktop/src-tauri/binaries/doc-assistant-api-<target-triple>[.exe]`
-(Tauri's sidecar naming). The spec (`scripts/doc_assistant_api.spec`) is a **starting point** —
+Produces a **folder** (PyInstaller one-dir: the exe and its `_internal/`) and copies it to
+`apps/desktop/src-tauri/backend/`, which `tauri.conf.json` ships as a resource. It was a single
+binary until 0.7.0, which unpacked 1.6 GB to a temp folder on every launch (KI-73). The spec (`scripts/doc_assistant_api.spec`) is a **starting point** —
 freezing ML libs always needs a few rounds of fixes: run the produced binary, read the
 `ModuleNotFoundError` / missing-data-file traceback, add to `hiddenimports` / `datas` in the spec,
 repeat. Known suspects: `torch` dynamic ops, `chromadb` + its `onnxruntime`/`hnswlib` data,
@@ -108,7 +109,7 @@ repeat. Known suspects: `torch` dynamic ops, `chromadb` + its `onnxruntime`/`hns
 Smoke the frozen binary standalone before bundling:
 
 ```bash
-./apps/desktop/src-tauri/binaries/doc-assistant-api-<triple>     # starts uvicorn on :8001
+./apps/desktop/src-tauri/backend/doc-assistant-api.exe           # starts uvicorn on :8001
 curl http://127.0.0.1:8001/api/health                            # → {"status":"ok",...} once warm
 ```
 
@@ -127,7 +128,7 @@ cd apps/desktop && npx tauri build
 ```
 
 This runs `beforeBuildCommand` (`npm run build` → `dist/`), compiles the Rust shell, bundles the
-sidecar (`bundle.externalBin`) + `dist/`, and emits the per-OS installer under
+backend folder (`bundle.resources`, 17,855 files) + `dist/`, and emits the per-OS installer under
 `src-tauri/target/release/bundle/`. The shell spawns the sidecar on startup (`src/lib.rs`); the
 frontend's readiness gate polls `/api/health` until the models warm.
 
@@ -145,7 +146,9 @@ uv run --no-sync python -m scripts.measure_latency --launch dist\doc-assistant-a
 ```
 
 - **RG-010 cold-start** (launch → first `/api/health 200`, models warm) — *record the number*
-  (degrades, no hard threshold; if >~30s, switch the spec onefile→onedir).
+  (degrades, no hard threshold). **Measured 2026-10-27 (KI-73):** one-file, 38.5 s to health on
+  the dev PC alone (29.4 s of it unpacking) and 72 s with the window; one-dir, 6.1–7.3 s. The
+  switch this line once prescribed at >~30 s is made.
 - **RG-011 first-token latency** — POST → first streamed token (⚠ a real, paid LLM call).
   ***Blocks ship.*** Compare to Chainlit (`just chat`, same question, stopwatch): both run the
   **same `ChatController`**, so only the freeze + the localhost HTTP/SSE hop differ — pass = not
@@ -252,7 +255,7 @@ bundled), or **(B)** inject runs but the anthropic SDK's httpx client ignores th
   `CERTIFICATE_VERIFY_FAILED` ⇒ **branch B**. **Don't write the fix before this read** — A and B differ;
   guessing wastes a re-freeze cycle.
 - **Step A — inject fails in the freeze (fix bundling).** `collect_submodules("truststore")`
-  (`scripts/doc_assistant_api.spec`) collects the modules but the onefile may not reproduce truststore's
+  (`scripts/doc_assistant_api.spec`) collects the modules but the frozen build may not reproduce truststore's
   SSL patch. Add a **PyInstaller runtime hook** calling `inject_into_ssl()` (runs before any collected
   import) + any submodule the WARN names to `hiddenimports`. Re-freeze, re-read. If truststore stays
   fragile even with the hook, **fall through to Step B**.
@@ -280,7 +283,8 @@ Full issue history + root-cause lead: `.claude/KNOWN_ISSUES.md` KI-10.
 
 ## Data directory (frozen builds)
 
-A frozen onefile binary unpacks to a temp dir, so the in-repo `./data` path is meaningless
+A frozen build runs from its install folder (one-dir; the one-file build until 0.7.0 ran from a
+temp dir), so the in-repo `./data` path is meaningless
 at runtime — `config._resolve_data_path()` (PR-M4) handles it:
 
 - `DOC_DATA_DIR` env override wins (point it at an existing corpus to reuse it);
@@ -302,7 +306,18 @@ the symptom is a healthy server with `chunk_count: 0` / "empty (vector-only) ind
 ## Notes
 
 - Bind `127.0.0.1` only (the entrypoint enforces it); the sidecar is the app's private backend.
-- onefile sidecar = one binary (Tauri's model) at the cost of slower cold-start (unpacks to temp).
-  If cold-start fails the latency gate, switch the spec to onedir + ship `_internal/` as a Tauri
-  resource. Trade-off noted in `scripts/doc_assistant_api.spec`.
+- **One-dir since KI-73** (2026-10-27): the backend is a folder shipped as a Tauri resource
+  (`backend/`, 2,515.9 MiB in 17,855 files) and started by path from `lib.rs`; the window has no
+  shell permission. It was one-file (Tauri's `externalBin` model) until then, which unpacked
+  1.6 GB to a temp folder on every launch. Measured on the dev PC: the backend alone 38.5 s to
+  health one-file against 6.1–7.3 s one-dir; the built app, window included, 72 s against 9.3–9.9 s
+  (28.9 s on the first launch after a build, while Windows scans the new files). Preflight's
+  `backend_contents` checks the folder by path for what KI-34 lost, plus a size floor.
+- **The installer uses the project's NSIS template** (`src-tauri/nsis/installer.nsi`): Tauri
+  CLI 2.11.4's own, taken verbatim from the CLI binary, with one line changed — `SetCompressor`
+  without `/SOLID`. SOLID makes the 32-bit makensis gather all 2.5 GB uncompressed in one block
+  and fail ("error mmapping datablock") with LZMA and zlib alike; an installer hook cannot
+  override it (the compressor is fixed once the header changes). File-by-file zlib gives a
+  1,642,519,979-byte installer in ~7 min. **On a Tauri CLI upgrade, re-take its template and
+  re-apply that one line**; `test_the_installer_compresses_file_by_file` fails if `/SOLID` returns.
 - Deleting Chainlit + lifting the Python-3.12 pin (KI-2) is **PR-M5**, after this ships.

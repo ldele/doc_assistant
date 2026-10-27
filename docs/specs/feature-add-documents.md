@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-08-28 (EPUB + HTML round trip; ADR-046 delete half; AD4; CS1/CS2 — all work items built) · class: living -->
+<!-- status: active · updated: 2026-10-27 (AD2: the per-file ticks built; 2026-08-28: EPUB + HTML round trip; ADR-046 delete half; AD4; CS1/CS2 — all work items built) · class: living -->
 
 # Spec — Add documents: the accept surface (AD1–AD4) + the Settings changes it forces (CS1–CS2)
 
@@ -125,6 +125,13 @@ Per-file verdicts, computed server-side, shown before any mutation.
 Above a threshold the sheet paginates; the batch is never capped. **Every non-Add verdict sorts to
 the top**, so the visible rows always contain all warnings, duplicates and unsupported files and
 "and N more" is only ever clean ones.
+
+**The ticks are the user's** (built 2026-10-27, from the 0.7.0 walkthrough; the sheet had shipped
+with the verdicts but no checkboxes). An *Add* row carries a checkbox, ticked; unticking it leaves
+the file out of the add and the index. Only an *Add* row can be ticked, so the choice is
+subtractive and never reaches a file the server ruled out. *Select all* / *Select none* sit on the
+headline row, and "and N more" says how many of the hidden rows are still ticked
+(`apps/desktop/src/lib/library/addselection.ts`).
 
 ### AD3 — apply
 Copy **or** register per the user's choice, write `SourceFile`, refresh the panel. Indexing is

@@ -75,6 +75,9 @@ The engineering record is finer-grained than this file: per-change entries live 
   larger, and the panels that open over the app — search, *Manage folders*, *Manage keywords*,
   *Add documents*, Settings and the rest — are wider to match. The section pills no longer sit on
   the line above them.
+- **You choose which files an add takes.** In the *Add documents* review sheet, each file that can
+  be added has a checkbox, ticked: untick the ones you do not want, or use *Select none* /
+  *Select all*. Duplicates and files that cannot be read stay listed, without one.
 - **The add dialog, the empty library and the drop overlay state what you can add**: the formats
   and "Up to 1 GB per file", read from the backend so they match what it enforces. The formats
   line also stops leaving out TXT, and Settings stops leaving out ODT and RTF.

@@ -15,6 +15,7 @@
   import type { AddMode, AddResult } from '../core/api/documents'
   import type { FileVerdict, InspectResponse } from '../core/types/documents'
   import { sourceKeyName } from './accept'
+  import { hiddenLine, selectedRows, tickAll, tickable } from './addselection'
   import { ingestRun, noteIngestStarted } from '../core/ingest.svelte'
 
   interface Props {
@@ -36,6 +37,12 @@
   let loading = $state(true)
   /** Rows rendered at once. Bounds the DOM, never the batch (a batch is capped server-side only, at MAX_ADD_FILES). */
   let shown = $state(50)
+  /**
+   * Paths the user unticked. Subtractive on purpose (`addselection.ts`): only a clean `add` can be
+   * ticked, and it starts ticked. A `Set` is not deep-reactive in a rune, so it is replaced, never
+   * mutated.
+   */
+  let unticked = $state<Set<string>>(new Set())
 
   // AD3 state.
   // ADR-046 placement. Defaults to `copy`: it is the mode that cannot surprise anyone, since
@@ -65,6 +72,7 @@
       .then((r) => {
         result = r
         shown = 50
+        unticked = new Set()
       })
       .catch((e: unknown) => (error = e instanceof Error ? e.message : String(e)))
       .finally(() => (loading = false))
@@ -74,15 +82,27 @@
   const counts = $derived(result?.counts ?? {})
   const visible = $derived(files.slice(0, shown))
   const hidden = $derived(Math.max(0, files.length - shown))
+  const addable = $derived(selectedRows(files, unticked))
+  const tickableCount = $derived(files.filter(tickable).length)
+  const allTicked = $derived(addable.length === tickableCount)
 
-  /** The header line. Never invents a number: every part comes from the server's counts. */
+  /**
+   * The header line. Never invents a number: the total is the server's count, the other is what
+   * the user left ticked among the files the server would add.
+   */
   const headline = $derived.by(() => {
     const total = counts.total ?? 0
     if (total === 0) return 'Nothing to add'
-    const addable = counts.add ?? 0
     const noun = total === 1 ? 'file' : 'files'
-    return `${total} ${noun} · ${addable} would be added`
+    return `${total} ${noun} · ${addable.length} would be added`
   })
+
+  function setTick(path: string, on: boolean): void {
+    const next = new Set(unticked)
+    if (on) next.delete(path)
+    else next.add(path)
+    unticked = next
+  }
 
   // Literal union rather than Icon's own `IconName`: that type is declared in the component's
   // instance script and is not importable. Narrower anyway — these are the only three used.
@@ -106,8 +126,6 @@
     if (f.advisory) return f.advisory
     return ''
   }
-
-  const addable = $derived(files.filter((f) => f.selected_by_default))
 
   /** Rough, and labelled as such. A wrong-looking precise number is worse than an honest range. */
   const estimate = $derived.by(() => {
@@ -189,13 +207,37 @@
   {:else if error}
     <p class="err" role="alert"><Icon name="triangle-alert" size={14} /> {error}</p>
   {:else}
-    <p class="headline">{headline}</p>
+    <div class="headrow">
+      <p class="headline">{headline}</p>
+      {#if tickableCount > 1 && !applied}
+        <button
+          class="linkish"
+          onclick={() => (unticked = tickAll(files, !allTicked))}
+          disabled={applying}
+          type="button"
+        >
+          {allTicked ? 'Select none' : 'Select all'}
+        </button>
+      {/if}
+    </div>
 
     <ul class="rows">
-      {#each visible as f (f.path)}
-        <li class="row {f.verdict}">
-          <span class="ricon"><Icon name={icon(f.verdict)} size={14} /></span>
-          <span class="rname" title={f.path}>{f.name}</span>
+      {#each visible as f, i (f.path)}
+        <li class="row {f.verdict}" class:off={tickable(f) && unticked.has(f.path)}>
+          {#if tickable(f)}
+            <input
+              id="addtick-{i}"
+              class="rtick"
+              type="checkbox"
+              checked={!unticked.has(f.path)}
+              onchange={(e) => setTick(f.path, e.currentTarget.checked)}
+              disabled={applying || applied !== null}
+            />
+            <label class="rname" for="addtick-{i}" title={f.path}>{f.name}</label>
+          {:else}
+            <span class="ricon"><Icon name={icon(f.verdict)} size={14} /></span>
+            <span class="rname" title={f.path}>{f.name}</span>
+          {/if}
           <span class="rsize">{kb(f.size)}</span>
           {#if reason(f)}<span class="rwhy">{reason(f)}</span>{/if}
         </li>
@@ -204,9 +246,9 @@
 
     {#if hidden > 0}
       <!-- The server sorted every exception above every clean file, so what is hidden here is
-           only ever ordinary additions — the count says so rather than leaving it implied. -->
+           only ever ordinary additions — the line says how many are still ticked. -->
       <p class="more">
-        and {hidden} more, all ready to add
+        {hiddenLine(files.slice(shown), unticked)}
         <button class="linkish" onclick={() => (shown += 200)} type="button">Show more</button>
       </p>
     {/if}
@@ -345,6 +387,15 @@
     cursor: pointer;
     padding: 0.2rem;
   }
+  .headrow {
+    display: flex;
+    align-items: baseline;
+    gap: 0.6rem;
+  }
+  .headrow .linkish {
+    margin-left: auto;
+    font-size: var(--text-sm);
+  }
   .headline {
     margin: 0;
     font-size: var(--text-sm);
@@ -403,6 +454,22 @@
   }
   .ricon {
     display: inline-flex;
+  }
+  .rtick {
+    margin: 0;
+    width: 1rem;
+    height: 1rem;
+    accent-color: var(--accent);
+    cursor: pointer;
+  }
+  label.rname {
+    cursor: pointer;
+  }
+  /* Unticked: still listed, so the user can change their mind, but plainly not going in. */
+  .row.off .rname,
+  .row.off .rsize {
+    color: var(--fg-2);
+    opacity: 0.6;
   }
   .more {
     margin: 0;

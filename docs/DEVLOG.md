@@ -40,6 +40,35 @@ Format: What changed | Why | Rejected alternatives | What it opens
 
 ---
 
+## 2026-10-27 (6) — The add review sheet: a checkbox per file, as the spec and the wireframe had it
+
+**What changed.** `AddDocuments.svelte`: an *Add* row carries a checkbox in place of its check icon,
+ticked, with the file name as its label, so the whole name is the click target; an unticked row
+stays listed, dimmed. *Select all* / *Select none* sit on the headline row once two files can be
+added. The headline, the time estimate and *Add N documents* count what is ticked, and "and N more"
+says how many of the hidden rows still are. The logic is pure, in `lib/library/addselection.ts`
+(6 tests): only a row the server starts ticked (`selected_by_default`, a clean `add`) can be ticked,
+so the choice is subtractive and never reaches a duplicate, an unsupported or an unreadable file.
+The spec's AD2 section records it as built.
+
+**Why.** The walkthrough: picking a folder or several files gave no way to leave some out. The
+spec's verdict table (AD2) and the 2026-08-20 plan's wireframe (§6.2) both had a tick per row; the
+sheet shipped with the verdicts only. `/api/documents/add` already takes the list of paths, so the
+server does not change.
+
+**Checked.** The dev app, ten files from the walkthrough folder: 8 addable rows ticked, the damaged
+EPUB and the `.xyz` listed without a box. Unticking one by its name and one by its box gave
+"6 would be added" and *Add 6 documents*; *Select none* gave 0 and a disabled button. *Add* with one
+unticked sent exactly the 7 ticked paths (the add and index calls were answered by a stand-in in
+the page, so nothing was written), and the boxes locked once added. `svelte-check` 0 errors;
+317 tests.
+
+**Rejected.** Ticking a duplicate to add it again: `apply_add` would refuse it on the registry's
+uniqueness and report a failure the user asked for. A tri-state checkbox in a header: the sheet is
+a list, not a table, and a word says what the click does.
+
+**What it opens.** Options per format on a row, which the user mentioned and has not specified yet.
+
 ## 2026-10-27 (5) — Larger text, controls and panels; the document page's section strip centred
 
 **What changed.** `app.css`: the base size 15 px → 17 px. Sizes in the app are in `rem`, so text,

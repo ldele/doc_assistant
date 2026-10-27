@@ -219,7 +219,7 @@
     top: 50%;
     left: 50%;
     transform: translate(-50%, -50%);
-    width: min(92vw, 520px);
+    width: min(92vw, 36rem);
     max-height: 86vh;
     overflow-y: auto;
     background: var(--surface);

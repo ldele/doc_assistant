@@ -285,7 +285,7 @@
     top: 50%;
     left: 50%;
     transform: translate(-50%, -50%);
-    width: min(94vw, 640px);
+    width: min(94vw, 48rem);
     max-height: min(86vh, 700px);
     background: var(--surface);
     border: 1px solid var(--border);

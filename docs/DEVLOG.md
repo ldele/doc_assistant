@@ -40,6 +40,35 @@ Format: What changed | Why | Rejected alternatives | What it opens
 
 ---
 
+## 2026-10-27 (5) — Larger text, controls and panels; the document page's section strip centred
+
+**What changed.** `app.css`: the base size 15 px → 17 px. Sizes in the app are in `rem`, so text,
+buttons, pills and padding grow by 13% together. Panel widths move from px to `rem` so they grow
+with their text, and the ones the walkthrough named get more room: *Add documents* 680 px → 52rem
+(884 px at the new base); *Manage folders*, *Manage keywords* and search 640 px → 48rem (816 px);
+the keyword filter and Settings 760 px → 52rem; the taxonomy 880 px → 60rem; *Re-run* 520 px →
+36rem. The small confirm, about and edit dialogs only follow the base. The sidebar's *Manage…*
+(0.7rem, 11.9 px at the new base, the one visible control still under 12.5 px) takes `--text-sm`.
+The document page's section strip (`.blocknav`, `LibraryBrowser.svelte`): its pills sat on the
+library header's rule above (0 px) with 7.5 px below; now centred, 7.6 px on each side.
+
+**Why.** The walkthrough, twice (2026-10-26 and today): buttons such as *Manage…* too small for
+weak eyesight, the panels a menu opens too small, and the section pills touching a line. At the
+15 px base the commonest small size, 0.72rem, was 10.8 px, and the smallest 9.3 px.
+
+**Checked.** The dev app over the 104-document scratch copy, at 1024×768 (the window's default) and
+1440×900 in light and at 375 px in dark: no horizontal scroll at 375 px, where the strip wraps to
+two rows; *Manage folders*, search and Settings open wider and nothing clips. The fixed-pixel
+heights in the app are icons and marks, not text boxes. `svelte-check` 0 errors; 311 tests.
+
+**Rejected.** Raising each small size by hand (about 300 declarations between 0.62 and 0.78rem):
+the same result with 300 chances to miss one and no single value to tune. A floor on every small
+size: the base already lifts the smallest to 10.5 px and the pills to 12.6 px; what stays small are
+counts and labels, not targets. A text-size choice in Settings: the next step, since the base is
+one value, but a new control; the default had to change first.
+
+**What it opens.** A *Text size* choice in Settings. Less fits in the default 1024×768 window.
+
 ## 2026-10-27 (4) — `msgpack` 1.2.3: an advisory published during the release
 
 **What changed.** `uv.lock`: `msgpack` 1.2.1 → 1.2.3 (`uv lock --upgrade-package 'msgpack==1.2.3'`);

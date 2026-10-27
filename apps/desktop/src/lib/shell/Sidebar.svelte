@@ -779,12 +779,13 @@
   }
   .managelink {
     font: inherit;
-    font-size: 0.7rem;
+    /* A control, not a label: the walkthrough named it as too small to read and hit. */
+    font-size: var(--text-sm);
     cursor: pointer;
     color: var(--fg-2);
     background: none;
     border: none;
-    padding: 0.16rem 0.3rem;
+    padding: 0.2rem 0.4rem;
     border-radius: 6px;
     flex: none;
   }

@@ -317,7 +317,7 @@
     left: 50%;
     transform: translate(-50%, -50%);
     z-index: 71;
-    width: min(680px, calc(100vw - 2rem));
+    width: min(52rem, calc(100vw - 2rem));
     max-height: min(78vh, 900px);
     display: flex;
     flex-direction: column;

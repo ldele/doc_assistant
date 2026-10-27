@@ -57,7 +57,7 @@
     top: 50%;
     left: 50%;
     transform: translate(-50%, -50%);
-    width: min(92vw, 420px);
+    width: min(92vw, 28rem);
     background: var(--surface);
     border: 1px solid var(--border);
     border-radius: 12px;

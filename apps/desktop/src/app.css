@@ -84,7 +84,9 @@
   --scrollbar-thumb-hover: color-mix(in srgb, var(--fg) 38%, transparent);
 
   font-family: var(--font-sans);
-  font-size: 15px;
+  /* 17px since 0.7.0 (15px before): the walkthrough found buttons, pills and panels too small
+     to read and hit for weak eyesight. Sizes are in rem, so this one value scales them all. */
+  font-size: 17px;
   line-height: 1.5;
   color: var(--fg);
   background: var(--bg);

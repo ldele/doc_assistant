@@ -906,7 +906,7 @@
     /* Wider than the 420px it was: the rail costs a column, and the controls it navigates to were
        already cramped in one. Still a drawer, not a page — `96vw` keeps the scrim reachable, which
        is how most people close this. */
-    width: min(760px, 96vw);
+    width: min(52rem, 96vw);
     z-index: 11;
     background: var(--bg);
     border-left: 1px solid var(--border);

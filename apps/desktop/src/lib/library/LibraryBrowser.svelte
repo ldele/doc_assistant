@@ -540,8 +540,10 @@
     flex: none;
     display: flex;
     flex-wrap: wrap;
+    align-items: center;
     gap: 0.3rem;
-    padding: 0 0 0.5rem;
+    /* Equal room above and below: with none above, the pills sat on the header's rule. */
+    padding: 0.45rem 0;
     border-bottom: 1px solid var(--border);
   }
   .blocknav .rerun {

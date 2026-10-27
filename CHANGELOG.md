@@ -71,6 +71,10 @@ The engineering record is finer-grained than this file: per-change entries live 
   temporary folder at every launch. On the development PC a launch took 72 s before the window
   could answer, and 9–10 s now; the first launch after installing takes about 30 s, while Windows
   checks the new files. The download stays about 1.6 GB; installed, the app takes about 2.5 GB.
+- **Larger text and controls.** Text, buttons and the document page's section pills are about 13%
+  larger, and the panels that open over the app — search, *Manage folders*, *Manage keywords*,
+  *Add documents*, Settings and the rest — are wider to match. The section pills no longer sit on
+  the line above them.
 - **The add dialog, the empty library and the drop overlay state what you can add**: the formats
   and "Up to 1 GB per file", read from the backend so they match what it enforces. The formats
   line also stops leaving out TXT, and Settings stops leaving out ODT and RTF.

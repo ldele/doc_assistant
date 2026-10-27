@@ -415,7 +415,7 @@
     top: 50%;
     left: 50%;
     transform: translate(-50%, -50%);
-    width: min(94vw, 880px);
+    width: min(94vw, 60rem);
     max-height: min(88vh, 760px);
     background: var(--surface);
     border: 1px solid var(--border);

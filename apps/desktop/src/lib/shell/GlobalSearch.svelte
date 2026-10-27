@@ -200,7 +200,7 @@
     top: 12vh;
     left: 50%;
     transform: translateX(-50%);
-    width: min(94vw, 640px);
+    width: min(94vw, 48rem);
     max-height: min(76vh, 560px);
     background: var(--surface);
     border: 1px solid var(--border);

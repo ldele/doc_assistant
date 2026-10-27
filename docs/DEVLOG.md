@@ -17,8 +17,8 @@ Format: What changed | Why | Rejected alternatives | What it opens
 > T-003), and check a new archive's title (cpc 1.12.0 titles every new one "archive 001"). A day may
 > be split across two files at the cut. Every archived heading is listed in
 > [`docs/archive/DEVLOG-INDEX.md`](archive/DEVLOG-INDEX.md). Older entries, newest-first, unedited:
-> **2026-09-30 (3) → 2026-10-17 (3)** in [`docs/archive/DEVLOG-archive-008.md`](archive/DEVLOG-archive-008.md)
-> (rotated 2026-10-17: 11 entries, and 2026-10-21: 11 more) ·
+> **2026-09-30 (3) → 2026-10-22** in [`docs/archive/DEVLOG-archive-008.md`](archive/DEVLOG-archive-008.md)
+> (rotated 2026-10-17: 11 entries, 2026-10-21: 11 more, and 2026-10-27: 11 more) ·
 > **2026-09-07 → 2026-09-30 (2)** in [`docs/archive/DEVLOG-archive-007.md`](archive/DEVLOG-archive-007.md)
 > (rotated 2026-09-30, the first batch: 11 entries, and 2026-10-09: 11 more) ·
 > **2026-08-12 (1) → 2026-09-04 (2)** (the first 2026-09-02 and 2026-09-04 entries are unnumbered) in [`docs/archive/DEVLOG-archive-006.md`](archive/DEVLOG-archive-006.md)
@@ -39,6 +39,42 @@ Format: What changed | Why | Rejected alternatives | What it opens
 > is individually small and correct, so unbounded growth is invisible per commit.
 
 ---
+
+## 2026-10-27 (2) — The window shows the last session at once: a start screen, then the library, chats and graph until the engine answers (KI-73, part 1)
+
+**What changed.** Committed with the Settings fixes in `a5d3231`; this entry and its CHANGELOG
+line follow. `index.html` draws a start screen inside `#app` ("Starting Provenote…", the icon)
+styled by `public/boot.css` — a file, since the window's CSP admits only its own; it colours
+`html` in the system's light or dark `--bg`, which the app's `:root` rule outranks at mount, and
+`main.ts` clears `#app` before `mount()`. `lib/core/lastSession.ts` (pure, 4 tests) keeps a
+versioned copy of a list in the window's `localStorage` and reads it back; a copy over 2,000,000
+characters is not kept and an older one is removed. The library documents, folders, chat list and
+concept graph save a copy whenever they load for real; at launch `App.svelte` shows them
+(`restoreConversations`, `restoreGraph`) with the notice "Showing your library as it was last time
+while the engine starts. Changes work once it is ready.", and the readiness gate refreshes them
+all once `/api/health` answers. A never-built graph is not kept. Before the engine answers, the
+Graph tab no longer fetches (it would show an error) and reads as loading rather than "No
+concept graph yet".
+
+**Why.** The installed app takes 38–72 s before its backend answers (KI-73: 29–52 s of one-file
+unpack, ~7.5 s of imports), and the window drew an empty shell meanwhile. The user, in the
+walkthrough: load the library, past chats and graphs before the rest.
+
+**Checked.** Live in the dev app over the 104-document scratch copy: the copies came to 75 KB
+(documents), 20 KB (chats), 19 KB (graph). With the API stopped and the page reloaded, the Library
+grid, the chat list and the Graph ("Covers 29 of your 104 documents") came from the copies under
+the notice, with "starting the engine…" in the status bar; started again, the window went ready by
+itself 16 s later, the notice went, and every failed request was from the down period. The start
+screen is served, and nothing of it is left after mount.
+
+**Rejected.** IndexedDB: a larger store for lists that fit in a few hundred KB, and a second async
+path at startup. Disabling every write while the copy is on screen: many controls for a wait the
+packaging change cuts to seconds; the notice says changes work once ready. A window colour in
+`tauri.conf.json`: one fixed colour cannot follow the system theme, and in light mode it is the
+same white.
+
+**What it opens.** At 75 KB per 104 documents the cap is reached near 2,800 documents; a library
+past it starts as before. Part 2 of KI-73: package the backend as a folder.
 
 ## 2026-10-27 — Setting up an answer engine from Settings: an instant panel, verdicts in place, no impossible model (KI-72)
 
@@ -337,273 +373,3 @@ drives exactly that in the installed build.
 (`test_the_frozen_guard_can_be_lifted_deliberately`, `BrokenProcessPool`), which `344b3d6` cannot
 reach (no module it changed is on the worker's import path) and which passes 3 of 3 here; the run
 on this commit shows whether it is intermittent.
-
-## 2026-10-22 — `virtualenv` 21.14.12: five advisories in a dev-only tool
-
-**What changed.** `uv.lock` only: `virtualenv` 21.7.13 → 21.14.12 with `packaging` 26.2 → 26.3 and
-`distlib` 0.4.0 → 0.4.4 (`uv lock --upgrade-package virtualenv`). As with `pillow` (2026-10-20
-(5)), the lock keeps older versions for the Python 3.10 that `requires-python` still declares;
-3.12 gets the fixed ones. **Found by:** the audit gate on `4655aae`, reported by session 5c —
-CVE-2026-113722, -113725, -113726, -113732 and -113776, all fixed by 21.14.9.
-
-**Why.** `virtualenv` reaches the tree only through `pre-commit` (the `dev` extra), so the app never
-shipped it; CI's gate audits the whole environment. Checked: the gate 0 unreviewed; the commit
-hooks run on the new version; 29 tooling tests (version, secret-scan gate, action pins) pass.
-
-**What it opens.** The fifth advisory round in three days. The 3.10 fork now holds a `virtualenv`
-below the fixes; raising `requires-python` to the 3.12 the project runs would end these forks.
-
-## 2026-10-21 — `vite` 6.4.5: a high advisory in the dev server's editor launcher
-
-**What changed.** `apps/desktop/package-lock.json` only: `vite` 6.4.3 → 6.4.5 (`npm audit fix`,
-inside `package.json`'s `^6.0.0`). **Found by:** `npm audit` the morning after `96685c4`, before
-any push — three `launch-editor` advisories (GHSA-698v-4r3x-3vcv, GHSA-r825-w8mm-5pxw,
-GHSA-587h-7wmj-h5pm): Windows argument escaping, editor flags read as commands, an existence check
-bypassed on Windows.
-
-**Why.** The editor launcher runs only in the dev server, so the installed app never carried it;
-but the dev loop runs on Windows here, and CI's frontend job fails on a high advisory. Checked:
-`npm audit` 0; `svelte-check` 0 errors over 229 files; 299 unit tests; a production build.
-
-**What it opens.** Nothing new — the fourth advisory round in two days, all fixed inside their
-version ranges except `pillow`'s.
-
-## 2026-10-20 (5) — `pillow` 13.0.0: eight advisories, fixed only in a new major
-
-**What changed.** `uv.lock` only: `pillow` 12.3.0 → 13.0.0 (`uv lock --upgrade-package pillow`).
-The lock keeps 12.3.0 for Python 3.10 alone, which `requires-python = ">=3.10"` still declares and
-pillow 13 (`>=3.11`) no longer serves; the project runs 3.12 (KI-2), where 13.0.0 installs.
-**Found by:** the local audit gate while staging entry (4), the same evening as entries (2) and (3)
-— eight advisories, seven of them high: out-of-bounds reads in the TIFF decoder and encoder, a GIF
-decompression-bomb DoS, unbounded recursion in pillow's PDF parser.
-
-**Why.** Hostile documents are in the threat model (`docs/security.md` §1), so reviewing these into
-`pip-audit-ignore.toml` was rejected. The app reaches pillow only through `pdfplumber` (its sole
-dependent, `Pillow>=9.1`); its own code never imports it outside `scripts/debug_tables.py`, and
-figure crops go through PyMuPDF. Checked: the gate 0 unreviewed; 406 PDF, table, figure, extractor
-and image tests pass; a library page renders through `pdfplumber.to_image` on 13.0.0.
-
-**What it opens.** Raising `requires-python` to the version the project actually runs would remove
-the 3.10 fork from the lock — a decision for the KI-2 pin, not this fix.
-
-## 2026-10-20 (4) — Release refresh for 0.7.0: the walkthrough, the security record and the CHANGELOG brought level with what shipped
-
-**What changed.** `docs/RELEASE.md` §0 and §2, done ahead of the release session while session 5c
-waits on the user's labels; no code. `docs/release-ux-checklist.md`: a row per surface shipped
-since `v0.6.0` (20 product commits) — the extraction pool, Manage keywords at library size,
-proposed placements, keywords in score order (5c), the KL1 labels, names and written case, the
-Definition card, term signals — plus the "no console window" row and S-4, S-5 and S-6 checks.
-`docs/security.md` §2 lists S-4, S-5, S-6, S-8 and S-12 as holding; the launch token is a rule by
-method, so the write routes added since are covered without a line each. `CHANGELOG.md`
-`[Unreleased]`: an *Added* block, the security, change and fix lines that were missing, and
-*Known limits*, each of 0.6.0's re-read against the code (row 24 still planned; since the tag, the
-code behind the others changed only for the ligature fix and the size caps).
-
-**Why.** `preflight`'s `checklists` check fails a release whose walkthrough and security record
-have no commit since the previous tag, and the Unreleased section stopped before the definitions
-work: release criterion 5 needs it to say what the README says.
-
-**What it opens.** Session 5c adds its own line (keywords in score order, junk filtered) and the
-measured keyword numbers to the CHANGELOG. The version bump, the 0.7.0 notes, the build and the
-gates stay with the release session.
-
-## 2026-10-20 (3) — `certifi` 2026.10.19: one more advisory, published the same day
-
-**What changed.** `uv.lock` only: `certifi` 2026.5.20 → 2026.10.19 (`uv lock --upgrade-package
-certifi`). **Found by:** CI's blocking audit on `2ab7895` (run 39487577705), GHSA-6q48-6c7w-9gw2 —
-entry (2)'s three `aiohttp` advisories were gone; the tests passed there (2,754).
-
-**Why.** A newer certificate bundle from the same maintainer; nothing to review into
-`pip-audit-ignore.toml`. Checked: the gate 0 unreviewed; two HTTPS connections verified with the new
-bundle.
-
-**What it opens.** Two red runs in one evening from advisories published between pushes; the
-alerts toggle (entry (2)) still decides whether the next one is seen before a push.
-
-## 2026-10-20 (2) — `aiohttp` 3.14.5: three advisories published overnight turned `main` red
-
-**What changed.** `uv.lock` only: `aiohttp` 3.14.3 → 3.14.5 and its dependency `yarl` 1.24.2 →
-1.25.1 (`uv lock --upgrade-package aiohttp`); nothing else moved. **Found by:** CI's blocking audit
-on `c27ff9f` (run 39479200471) — CVE-2026-111063, CVE-2026-111064 and GHSA-2g87-pp6c-29x5, all fixed
-in 3.14.4; the four Dependabot merges after it fail at the same step.
-
-**Why.** An upgrade inside the same minor series, so no review into `pip-audit-ignore.toml` is
-needed. Checked: `scripts.pip_audit_gate` 0 unreviewed; the API integration tests (184) pass on
-the `cu130` venv.
-
-**What it opens.** The sixth time a push that touched no dependency met a red audit (KI-58's
-shape). Dependabot alerts, still off in the repository settings, would have flagged these between
-pushes.
-
-## 2026-10-20 — The README opens on its reader and stops over-stating how settings were chosen and how often local models cite; a project overview gives every figure its source
-
-**What changed.** `README.md`: the opening says who the app is for and what sets it apart (the
-printed page behind a citation, the sources kept apart from the model's interpretation, a local
-model that keeps documents on the machine), then one result with its size (the public benchmark's
-`contains_all` 0.932 ± 0.014 over 5 trials, and why `citation_overlap` at 1.000 cannot rank), then
-Quick start, moved up. "Why it's built this way" moves below Architecture, and its first bullet no
-longer says `TOP_K`, parent-child, chunk sizes and the BM25 mix "were each picked by measuring
-alternatives": it names what the harness measured, says the chunk-size and weight sweeps kept the
-defaults, that `TOP_K` and parent-child predate the harness, and that the reranker had no
-experiment. Limitations quotes the shipped prompt's citation coverage, 83.5 / 37.6 / 18.0% (one run
-each, `tests/eval/baselines/citation_coverage_2026-08-07.md`), in place of the earlier prompt's
-81 / 36 / 14%, and replaces "Answers stay grounded either way" with the count behind it: 12 of 27
-`llama3.1:8b` answers cited nothing. New `docs/OVERVIEW.md`: what the project is, what sets it
-apart, how it works, each measured result with its size, conditions and source, and its state;
-linked from the Documentation table. The old opening's second paragraph is gone; its map of the
-library is already the concept bullet under What it does.
-
-**Why.** Read against the record on 2026-10-19 and 2026-10-20, two README statements claimed more
-than it holds: settings chosen by experiment, and citation rates from a prompt that no longer
-ships. The overview keeps those facts in one place, each with its source, so a reader who reuses
-them does not re-derive them from the README.
-
-**Rejected.** Rewriting the 0.4.1 and 0.5.0 CHANGELOG entries that quote 81/36/14%: released
-entries stay as they shipped. Leading with the citation-coverage figure: it comes from the private
-library, one run each, where the public benchmark is one anyone can re-run. A new alt text for the
-demo GIF: the GIF dates from 2026-08-11, before the page pane, and its alt text still describes
-what it shows.
-
-**What it opens.** The provider card (`apps/desktop/src/lib/settings/ProviderSetup.svelte`
-l.254-256) still shows 36/14/81% and "Answers stay grounded in your documents"; the 2026-08-07
-baseline planned that refresh for the next release that rebuilds, which 0.7.0 is, with a line under
-the CHANGELOG's Unreleased beside it. `tests/eval/TESTING.md` says five scorers where `scorers.py`
-has six (`figure_retrieval`). The demo GIF predates the page pane (0.6.0). ROADMAP row 98 (the docs
-revamp after 0.7.0) starts from the README's new order. Docs only; no code or test changed.
-
-## 2026-10-18 (3) — The README leads with what a reader gets and states 0.7.0's limits; CI's actions are pinned to commits (security S-12)
-
-**What changed.** `README.md`: the opening says what you get (answers you can check, the page one
-click away, what leaves the machine with each engine) before how it is built; the concept bullet
-covers names, forms and definitions; Status names 0.7.0 as in preparation, with v0.6.0's date
-corrected to 2026-09-04 and six things the release makes true; Limitations is grouped under four
-headings and gains the reference-list cut (KI-59), pages holding the previous page's text (KI-57),
-concepts versus extracted keywords, the definition grade, the wiki sample and the CLI provider
-default (KI-4). Every count is from 2026-10-18: 104 documents, 3,341 pages, 44 reference links,
-1,436 of 1,483 keywords in one document, 2,757 Python and 299 desktop tests (the full suite passed,
-2,754, before the 3 guard tests were added). `ci.yml`: the 7 `uses:` lines pinned to commit SHAs,
-each the commit its major tag pointed at that day; `.github/dependabot.yml` for `github-actions`
-only, monthly, minor and patch grouped; `tests/unit/test_ci_actions_pinned.py` fails on a tag (seen
-failing on `@v4`). Committed by the user with the checkpoint as `71b3903`.
-
-**Why.** Plan session 5b: the README is the release's front page, and its Status still described
-0.6.0 with the wrong date and 2,389 tests; two Limitations links pointed at gitignored files a
-public reader cannot open. S-12 was decided at the checkpoint the same day: a tag can be moved to
-other code, a SHA cannot.
-
-**Rejected.** Writing Status as already released: the README is pushed before the release, so it
-says "in preparation" and one line changes on release day. Bumping the actions' majors while
-pinning: that is a behaviour change, and Dependabot proposes each as its own PR.
-
-**What it opens.** Five Dependabot PRs, all new majors (`checkout` 4 → 7, `setup-node` 4 → 7,
-`setup-buildx-action` 3 → 4, `setup-uv` 3 → 10, `build-push-action` 6 → 7): the user's to review.
-Dependabot alerts read off (404). The CHANGELOG's Unreleased section stops before the definitions
-work and the KI-62 to KI-65 fixes; release criterion 5 needs it to match the README.
-
-## 2026-10-18 (2) — Release checkpoint: ADR-053 and ADR-041 accepted, 93a's suggestions stored, a docs revamp planned after 0.7.0
-
-**What changed.** The user took the seven calls left before 0.7.0, one at a time. ADR-053 is
-accepted, with expert vocabularies (93c) now built before model candidates (93b), which ride with
-ROADMAP 25. ADR-041 is accepted as amended: option 6's buildable part is the gap list, so KL1b
-closes and no separate per-concept status is built. `extract_definitions --apply` stored 20
-suggestions for 11 of the 13 concepts (12 strong, 8 some), nothing chosen, after a `library.db`
-backup. `docs/security.md` S-12 is decided: SHA-pinned actions and Dependabot for actions only,
-before the release; alerts are the user's toggle. ROADMAP row 98 adds a docs revamp after the
-release (row 84 folded in), and row 95 follows it.
-
-**Why.** Both ADRs had been `proposed` for one and two months while what they decide was built
-and used; the release describes them. Row 51's `--apply` had nothing to write: since ADR-054 the
-proposer reads the 13 concepts, and none shares a head with another (the 27 candidates are between
-terms). Row 53 (3)'s hand score leaves the release path: the merge default pairs 0 concepts, and
-the review page's store was empty.
-
-**Rejected.** Refreshing epistemics: a dry run marks 1,188 chunks (445 today), most `contested` —
-the stance ADR-041 does not trust; markers stay off by default and the table is rebuilt with KL3.
-Update PRs for pip, npm and cargo: weekly noise for one maintainer; upgrades stay in sessions, the
-audit gate catches advisories.
-
-**What it opens.** The README (the next session) must not imply `is_a` proposals exist on this
-library. The docs revamp's evidence and order are in the local plan.
-
-## 2026-10-18 — A wiki topic's prompt fits the model's context: a large topic is summarised from a fixed sample, and its note says so (KI-65)
-
-**What changed.** `wiki.summarize_cluster` sends a bounded prompt. `material_budget` reserves the
-answer (`max_tokens`), a chat frame and the prompt's fixed text out of `WIKI_CONTEXT_TOKENS` (new,
-8,192); `select_material` fills the rest with members in `sample_order`, a hash of each
-`doc_hash` (the same members give the same sample in any order, and no end of the library is
-favoured), up to the first block that does not fit. Size is estimated without a tokenizer, as
-UTF-8 bytes / 3 (`BYTES_PER_TOKEN`), above the true count for every script. Excerpts are read in
-rounds of 16, so a topic reads the store for its sample, not for every member (48 reads for the
-87-paper topic, not 87). A topic summarised from a sample says so: in the prompt's heading ("a
-sample of 36 of 87"), in the note ("_Summary written from 36 of 87 papers_", `summary_from: 36` in
-the frontmatter, *in summary* beside each sampled source) and in the CLI report. An empty topic,
-or a window too small for the fixed text, makes no call. Tests: `tests/unit/test_wiki_budget.py`
-at 0, 1, 20 and 10,000 documents and five windows (fake client, fake store, no network);
-`tests/unit/test_llm.py` for `num_ctx` and `ollama_context_length`. `docs/knowledge-layer.md`
-§6's wiki row no longer says the note is written from a cut prompt.
-
-**`num_ctx`: passed, from the model.** `OllamaClient` takes `num_ctx`; the default `None` keeps
-every other caller (reviewer, judge, taxonomy) on the server's default, unchanged.
-`wiki.fit_window`, called by `build_wiki`, gives an Ollama client `num_ctx = min(WIKI_CONTEXT_TOKENS,
-the model's trained length)`, read from `/api/show` by `llm.ollama_context_length`, and the budget
-uses the same number. Keeping the budget below the default was rejected: the default depends on
-the GPU (`vram-based default context`, 4,096 on this 12 GB card), and on overflow llama.cpp keeps
-only half the window (the log's `limit=2050`), so "below the default" is a number the app cannot
-read. Asking for the window makes the budget and the server agree on any card.
-
-**Checked live, read-only** (Ollama forced; the library read through `sqlite3` `mode=ro`; notes
-rendered to the session scratchpad, nothing under `data/`). The 87-paper topic, rebuilt from
-`library.db` (cosine 0.90). Before: 15,232 real tokens on `llama3.1:8b` (15,245 in the
-baseline), 15,775 on `qwen2.5:7b`, 15,766 on `qwen3.5:9b`. After, at a 8,192 window: 36 papers,
-6,239 / 6,517 / 6,486 real tokens plus a 400-token answer, no `truncating input prompt` in the
-server log, 5-11 s a topic. The estimate ran 14-17% above the real count (3.50-3.63 bytes per
-token on this library). Two of the three summaries name both the machine-learning and the
-neuroscience papers; `qwen3.5:9b`'s names machine-learning ones only. Their quality is not judged
-here: that is RG-018's re-measure.
-
-**Rejected.** Summarising in stages (map-reduce): a call per ~36 papers plus a merge, so a
-10,000-paper topic costs hundreds of calls, and the merge summarises summaries, not papers. The
-model's whole window (32k-262k tokens here): VRAM and time for one note, and the sample would
-change with whichever model ran. A real tokenizer: an arbitrary Ollama model exposes none, and
-the byte estimate held on all three. The "most central" papers as the sample: that needs a
-centrality measure and its threshold; a hash sample is unbiased and needs neither.
-
-**What it opens.** RG-018's re-measure with KI-65 fixed (baseline §4, condition (c)). KI-65 can
-close in the local `KNOWN_ISSUES.md` once this lands. A large topic still leaves papers out (51 of
-87); if a sample proves too thin, a second pass is the map-reduce above. `WIKI_CONTEXT_TOKENS`
-is set by environment variable only; `build_wiki` has no flag for it.
-
-## 2026-10-17 (4) — A write to the local API needs the token the app was started with (security S-6)
-
-**What changed.** The Tauri shell mints 32 random bytes per launch (`getrandom` 0.3, already in
-`Cargo.lock` through Tauri: one line in the lock, no new crate), passes them to the API sidecar as
-`DOC_API_TOKEN`, and hands them to its window through a new `api_token` command. The API
-(`apps/api/launch_token.py`, mounted inside CORS) answers 401 to any POST, PUT, PATCH or DELETE
-without a matching `X-Doc-Api-Token`, compared in constant time, and logs `security_token_refused`
-with the method and path, never a value. Reads stay open. The domain clients call `apiFetch`
-(`core/api/_base.ts`), which adds the header to writes only (`core/launchToken.ts`, tested), so
-reads cost no extra preflight. With `DOC_API_TOKEN` unset nothing is checked: `just api`, the test
-suite (`conftest` removes a shell's token) and the headless image run as before.
-
-**Why the shell accepts a preset token.** The RG-012 release check launches the installed app and
-drives its API from PowerShell, outside the window; a token only the window knew would fail the
-run as if the app were broken. The harness now sets a random `DOC_API_TOKEN` before launching and
-sends it on its two writes (a test holds that). Whoever can set the shell's environment already
-runs as the user.
-
-**Checked.** 8 API tests (401 on `/add`, `/ingest`, `DELETE`; a wrong, empty or case-changed token
-refused; the token reaches the route; reads and preflights pass; the 401 carries CORS headers;
-unset means unchecked; the refusal log holds no token), 4 frontend tests, the harness test, `cargo
-check`. Live in `tauri dev`: with no token set the app loads and a write succeeds; with one preset
-on both sides, a POST without the header gets 401 from the window and from outside (`/add`,
-`/ingest`, `DELETE`, `PATCH`), the app's own write succeeds, and `/api/health` stays open. **Not
-checked:** the installed build (a walkthrough row) and the RG-012 sandbox run (the next release).
-
-**Rejected.** Guarding reads too: CORS already stops a page reading answers and S-5 stops it
-becoming same-origin, while every figure, health poll and page image would pay a preflight. A
-`BaseHTTPMiddleware`: pure ASGI leaves the chat's event stream untouched. Wrapping `window.fetch`
-globally: an explicit `apiFetch` can be read and tested. Failing closed when unset: the dev loop
-and the suite have no shell to mint one.
-
-**What it opens.** S-7 is the current step. S3's "arbitrary path" half: `/add` and `inspect` still
-take any path, now only from the app's own window.

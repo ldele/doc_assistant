@@ -1,4 +1,4 @@
-<!-- status: archived · updated: 2026-10-21 · class: living -->
+<!-- status: archived · updated: 2026-10-27 · class: living -->
 
 # DEVLOG archive index
 
@@ -9,6 +9,17 @@ is off; docs_check rule 17 fails while any archived entry is missing here.
 
 ## DEVLOG-archive-008.md
 
+- **2026-10-22** — `virtualenv` 21.14.12: five advisories in a dev-only tool
+- **2026-10-21** — `vite` 6.4.5: a high advisory in the dev server's editor launcher
+- **2026-10-20** (5) — `pillow` 13.0.0: eight advisories, fixed only in a new major
+- **2026-10-20** (4) — Release refresh for 0.7.0: the walkthrough, the security record and the CHANGELOG brought level with what shipped
+- **2026-10-20** (3) — `certifi` 2026.10.19: one more advisory, published the same day
+- **2026-10-20** (2) — `aiohttp` 3.14.5: three advisories published overnight turned `main` red
+- **2026-10-20** — The README opens on its reader and stops over-stating how settings were chosen and how often local models cite; a project overview gives every figure its source
+- **2026-10-18** (3) — The README leads with what a reader gets and states 0.7.0's limits; CI's actions are pinned to commits (security S-12)
+- **2026-10-18** (2) — Release checkpoint: ADR-053 and ADR-041 accepted, 93a's suggestions stored, a docs revamp planned after 0.7.0
+- **2026-10-18** — A wiki topic's prompt fits the model's context: a large topic is summarised from a fixed sample, and its note says so (KI-65)
+- **2026-10-17** (4) — A write to the local API needs the token the app was started with (security S-6)
 - **2026-10-17** (3) — KL4: neither wiki clustering path partitions the library, so the default stays; the trust table states the placement runs RG-015 already had (RG-018, RG-015)
 - **2026-10-17** (2) — CI hung for three hours: the extraction pool forked a multi-threaded process; it spawns on every OS now
 - **2026-10-17** — The concept panel shows what the text says about a name: short and long forms, a cited author, and where an unused label occurs (ROADMAP 93)

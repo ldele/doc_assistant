@@ -60,6 +60,11 @@ The engineering record is finer-grained than this file: per-change entries live 
 
 ### Changed
 
+- **The window shows your library at once.** A start screen is drawn before any script runs, and
+  until the engine answers the library, folders, past chats and concept graph appear as they
+  were at the end of the last session, under a notice saying so; they are replaced as soon as
+  the engine is ready. The packaged engine takes tens of seconds to start, and the window used
+  to sit empty meanwhile.
 - **The add dialog, the empty library and the drop overlay state what you can add**: the formats
   and "Up to 1 GB per file", read from the backend so they match what it enforces. The formats
   line also stops leaving out TXT, and Settings stops leaving out ODT and RTF.

@@ -40,6 +40,23 @@ Format: What changed | Why | Rejected alternatives | What it opens
 
 ---
 
+## 2026-10-27 (4) — `msgpack` 1.2.3: an advisory published during the release
+
+**What changed.** `uv.lock`: `msgpack` 1.2.1 → 1.2.3 (`uv lock --upgrade-package 'msgpack==1.2.3'`);
+nothing else moved. **Found by:** CI on `167ef5d`, whose pip-audit gate failed on CVE-2026-114613
+(GHSA-j586-36cw-2gc2, published 2026-10-22); the same gate had passed here less than an hour
+before. Tests, lint, mypy and bandit passed in that run.
+
+**Why.** It ships: `wordfreq`, which the keyword pass reads word frequencies from
+(`knowledge/keywords.py`), depends on it, and the frozen backend bundles it. The leak needs
+msgpack input an attacker supplies, and `wordfreq` unpacks only the frequency files it ships, so
+nothing here reaches it; a patch release was still cheaper than a reviewed ignore. 1.2.3, not the
+newest 1.2.4: 1.2.3 carries the fix and was a month old, 1.2.4 a day. Checked: `wordfreq` reads
+its data (`zipf_frequency("the", "en")` 7.73), the gate is OK, the whole suite passes.
+
+**What it opens.** The seventh advisory round since 2026-10-20. The release backend is frozen
+from this commit; the freeze from `167ef5d` was stopped for it.
+
 ## 2026-10-27 (3) — The backend ships as a folder: 9–10 s to a working window instead of 72 (KI-73, part 2)
 
 **What changed.**

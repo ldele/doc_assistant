@@ -23,7 +23,7 @@
   import Sources from './Sources.svelte'
   import { describeIndex, formatBytes, perDocument } from './corpus'
   import { SETTINGS_SECTIONS, initialSection, sectionBadge, type SettingsSectionId } from './sections'
-  import { outstandingSteps } from './setup'
+  import { modelForProvider, outstandingSteps } from './setup'
   import { shell } from '../shell/shell.svelte'
 
   // Slide the drawer in/out — but collapse to an instant swap when the OS asks for reduced motion.
@@ -121,6 +121,10 @@
   let llmModel = $state('')
   let llmBusy = $state(false)
   let llmError = $state<string | null>(null)
+  // What the last setup probe found installed in Ollama, for filling in a model on a switch.
+  const installedOllama = $derived([
+    ...(shell.setup?.providers.find((p) => p.id === 'ollama')?.models ?? []),
+  ])
 
   // ADR-027 D2 (E3) — the persisted answer-layer epistemics default. Distinct from the RAG
   // sandbox's session-only override below: this one survives a restart and becomes the
@@ -184,8 +188,9 @@
     llmError = null
     try {
       settings = await setLlmProvider(llmProvider, llmModel.trim())
+      onCorpusChanged() // the status bar names the model: re-read it
     } catch (e) {
-      llmError = String(e)
+      llmError = e instanceof Error ? e.message : String(e)
     } finally {
       llmBusy = false
     }
@@ -445,7 +450,14 @@
           <!-- First (ADR-034): on a fresh install this is the only section that matters, and it says
                so — a provider and a folder. `load(true)` keeps a provider switch made in there from
                leaving the "Active:" line below stale. -->
-          <ProviderSetup onProviderChanged={() => void load(true)} />
+          <!-- A switch changes the model the status bar names, so its health is re-read too
+               (onCorpusChanged → App's refreshHealth); it used to keep the old model. -->
+          <ProviderSetup
+            onProviderChanged={() => {
+              void load(true)
+              onCorpusChanged()
+            }}
+          />
         {:else if activeSection === 'documents'}
           <section>
             <h3>Your documents</h3>
@@ -564,18 +576,35 @@
           <section>
             <h3>Provider &amp; model</h3>
             <p class="hint">
-              The advanced form of the switch in <strong>Getting started</strong> above: any provider,
-              any model name. Takes effect on your next question, no restart.
+              The direct form of the switch in <strong>Getting started</strong>, which sets the app up
+              step by step: any provider, any model name. Takes effect on your next question, no
+              restart.
             </p>
 
             <label for="llm-provider">Provider</label>
-            <select id="llm-provider" bind:value={llmProvider} disabled={llmBusy}>
+            <!-- A switch keeps the model only when the new provider serves it: keeping it
+                 left the 0.7.0 walkthrough's sandbox on Ollama with a Claude model. -->
+            <select
+              id="llm-provider"
+              bind:value={llmProvider}
+              disabled={llmBusy}
+              onchange={() => (llmModel = modelForProvider(llmProvider, llmModel, installedOllama))}
+            >
               {#each settings.providers as p (p.id)}
                 <option value={p.id} disabled={!p.available}>
                   {p.id} ({p.paid ? 'metered' : 'local'}){p.available ? '' : ' · needs a key'}
                 </option>
               {/each}
             </select>
+
+            <!-- A provider without its key cannot be chosen here, and there is no key field in
+                 this section: say where the key goes, one click away. -->
+            {#each settings.providers.filter((p) => !p.available) as p (p.id)}
+              <p class="hint">
+                {p.id === 'anthropic' ? 'Claude' : p.id} needs an API key first.
+                <button class="ghost sm" onclick={() => (activeSection = 'setup')}>Add one in Getting started</button>
+              </p>
+            {/each}
 
             <label for="llm-model">Model</label>
             <input id="llm-model" type="text" bind:value={llmModel} disabled={llmBusy} spellcheck="false" />

@@ -135,3 +135,42 @@ def test_an_unknown_active_provider_degrades_instead_of_raising(
     state = readiness.setup_state(chunk_count=10, document_count=1)
     assert state.active_ready is False
     assert state.ready is False
+
+
+def test_a_claude_model_on_ollama_is_not_ready_and_says_why(
+    clean_install: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The 0.7.0 walkthrough's sandbox: the provider switched to Ollama and kept the Claude model,
+    # so every question failed while the step read done.
+    monkeypatch.setattr(app_settings, "effective_llm", lambda: ("ollama", "claude-haiku-4-5"))
+    monkeypatch.setattr(llm, "ollama_probe", _probe(True, ("llama3.1:8b",)))
+    state = readiness.setup_state(chunk_count=10, document_count=1)
+    step = next(s for s in state.steps if s.id == "provider")
+    assert step.done is False and state.active_ready is False
+    assert "Claude model" in step.detail
+    assert step.action is not None and "Use this model" in step.action
+
+
+def test_a_model_the_answering_ollama_lacks_is_named_with_what_it_has(
+    clean_install: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(app_settings, "effective_llm", lambda: ("ollama", "mistral:7b"))
+    monkeypatch.setattr(llm, "ollama_probe", _probe(True, ("llama3.1:8b", "qwen2.5:7b")))
+    step = next(
+        s
+        for s in readiness.setup_state(chunk_count=10, document_count=1).steps
+        if s.id == "provider"
+    )
+    assert step.done is False
+    assert "“mistral:7b”" in step.detail and "llama3.1:8b, qwen2.5:7b" in step.detail
+
+
+def test_an_installed_model_or_an_unprobed_server_is_left_alone(
+    clean_install: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(app_settings, "effective_llm", lambda: ("ollama", "llama3"))
+    monkeypatch.setattr(llm, "ollama_probe", _probe(True, ("llama3:latest",)))
+    assert readiness.setup_state(chunk_count=10, document_count=1).active_ready is True
+    # Without a probe nothing is known about what is installed, so nothing is refused.
+    monkeypatch.setattr(app_settings, "effective_llm", lambda: ("ollama", "mistral:7b"))
+    assert readiness.setup_state(chunk_count=10, document_count=1, probe=False).active_ready

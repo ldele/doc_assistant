@@ -26,7 +26,7 @@ Rules this module keeps:
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 import structlog
 
@@ -157,6 +157,31 @@ def _ollama_readiness(*, probe: bool) -> ProviderReadiness:
     )
 
 
+# What fixes a selection whose model the provider cannot serve, by provider (`_with_selection`).
+_SELECTION_FIX = {
+    "ollama": "Choose an installed model in the Ollama card below and press Use this model.",
+    "anthropic": "Press Use Claude for answers below, or name a claude-… model.",
+}
+
+
+def _with_selection(
+    active: ProviderReadiness, model: str, by_id: dict[str, ProviderReadiness]
+) -> ProviderReadiness:
+    """``active``, marked not ready when its selected ``model`` cannot answer on it.
+
+    A provider can be ready while the selection on it is not: the 0.7.0 walkthrough's sandbox had
+    Ollama selected with a Claude model, and every question failed while setup looked done. Only
+    certain cases count (``llm.model_mismatch``): a name the provider never serves, or a model a
+    probed, answering Ollama does not have.
+    """
+    ollama = by_id.get("ollama")
+    installed = ollama.models if ollama is not None and ollama.reachable else None
+    mismatch = llm.model_mismatch(active.id, model, installed)
+    if mismatch is None:
+        return active
+    return replace(active, ready=False, detail=mismatch, action=_SELECTION_FIX.get(active.id))
+
+
 def provider_readiness(provider: str, *, probe: bool = True) -> ProviderReadiness:
     """Readiness for one provider. Unknown providers raise :class:`ValueError`."""
     key = provider.strip().lower()
@@ -220,6 +245,7 @@ def setup_state(*, chunk_count: int, document_count: int = 0, probe: bool = True
             action=f"Pick one of: {', '.join(PROVIDERS)}.",
         ),
     )
+    active = _with_selection(active, active_model, by_id)
     corpus_done = chunk_count > 0
     steps = (
         _provider_step(active, providers),

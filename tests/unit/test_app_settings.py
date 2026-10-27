@@ -51,9 +51,23 @@ def test_set_llm_selection_rejects_keyless_provider(
     settings_file: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(config, "ANTHROPIC_API_KEY", None)
-    with pytest.raises(ValueError, match="no credential"):
+    # An installed app has no .env to edit: the sentence sends the user to Settings instead.
+    with pytest.raises(ValueError, match="needs an API key first") as refused:
         app_settings.set_llm_selection("anthropic", "claude-haiku-4-5-20251001")
+    assert "Getting started" in str(refused.value) and ".env" not in str(refused.value)
     assert app_settings.get_llm_selection() == (None, None)  # never persisted
+
+
+def test_set_llm_selection_refuses_a_model_its_provider_never_serves(
+    settings_file: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The walkthrough's stuck sandbox: Ollama selected with a Claude model. Never persisted.
+    with pytest.raises(ValueError, match="Claude model"):
+        app_settings.set_llm_selection("ollama", "claude-haiku-4-5-20251001")
+    monkeypatch.setattr(config, "ANTHROPIC_API_KEY", "sk-ant-test")
+    with pytest.raises(ValueError, match="not a Claude model"):
+        app_settings.set_llm_selection("anthropic", "llama3.1:8b")
+    assert app_settings.get_llm_selection() == (None, None)
 
 
 def test_set_llm_selection_rejects_empty_model(settings_file: Path) -> None:

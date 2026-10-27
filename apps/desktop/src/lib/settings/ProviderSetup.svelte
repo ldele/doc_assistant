@@ -8,7 +8,16 @@
   import type { ProviderReadiness, SetupState } from '../core/types/setup'
   import { clearAnthropicKey, getSetup, saveAnthropicKey, setLlmProvider } from '../core/api'
   import Icon from '../shell/Icon.svelte'
-  import { costLabel, keyPrecedenceNote, providerStatusLabel, setupSummary, suggestOllamaModel } from './setup'
+  import {
+    DEFAULT_CLAUDE_MODEL,
+    costLabel,
+    displaySteps,
+    keyPrecedenceNote,
+    keyRefusal,
+    modelForProvider,
+    providerStatusLabel,
+    setupSummary,
+  } from './setup'
 
   // `onProviderChanged` lets the parent re-pull /api/settings so the "Active:" line and the status
   // bar agree with the switch made here (one source of truth per surface, refreshed together).
@@ -20,8 +29,15 @@
   let setup = $state<SetupState | null>(null)
   let loadError = $state<string | null>(null)
   let busy = $state(false)
-  let note = $state<string | null>(null)
-  let noteKind = $state<'ok' | 'warn' | 'err'>('ok')
+  // True while the Ollama probe is out. The panel draws from local state first (`probe=false`)
+  // and fills in Ollama's verdict after: with nothing listening, the probe takes seconds, and the
+  // whole panel used to read "Checking…" until it came back.
+  let probing = $state(false)
+  // One result line per card, drawn under that card's own buttons: a key's verdict used to land
+  // at the foot of the panel, under the Ollama card, where nobody saw it.
+  type Card = 'claude' | 'ollama'
+  type Kind = 'ok' | 'warn' | 'err'
+  let notes = $state<Record<Card, { kind: Kind; text: string } | null>>({ claude: null, ollama: null })
   let keyInput = $state('')
   let ollamaModel = $state('')
   // Set once the user saves a key in this session — the only way to know a .env key is shadowing
@@ -36,49 +52,62 @@
 
   const anthropic = $derived(setup?.providers.find((p) => p.id === 'anthropic') ?? null)
   const ollama = $derived(setup?.providers.find((p) => p.id === 'ollama') ?? null)
+  const steps = $derived(displaySteps(setup, probing))
+  const shown = $derived(setup ? { ...setup, steps } : null)
 
   void refresh()
 
   async function refresh(probe = true): Promise<void> {
     try {
-      const state = await getSetup(probe)
-      setup = state
-      loadError = null
-      const o = state.providers.find((p) => p.id === 'ollama')
-      // Seed the model picker once, and re-seed if the current pick is no longer installed —
-      // offering a model the server does not have would fail on the next question.
-      if (o && (!ollamaModel || (o.models.length > 0 && !o.models.includes(ollamaModel)))) {
-        ollamaModel = suggestOllamaModel(o.models) ?? state.active_model
+      if (probe && setup === null) {
+        // Local state first, in well under a second; the probe's verdict replaces it below.
+        show(await getSetup(false))
       }
+      probing = probe
+      show(await getSetup(probe))
     } catch (e) {
-      loadError = String(e)
+      loadError = message(e)
+    } finally {
+      probing = false
     }
   }
 
-  function say(kind: 'ok' | 'warn' | 'err', message: string): void {
-    noteKind = kind
-    note = message
+  function show(state: SetupState): void {
+    setup = state
+    loadError = null
+    const o = state.providers.find((p) => p.id === 'ollama')
+    // Seed the model picker with a model Ollama can serve, and re-seed when the pick is not
+    // installed (or is a Claude name carried over from a switch) — offering a model the server
+    // does not have would fail on the next question.
+    const current = ollamaModel || (state.active_provider === 'ollama' ? state.active_model : '')
+    if (o) ollamaModel = modelForProvider('ollama', current, [...o.models])
+  }
+
+  const message = (e: unknown): string => (e instanceof Error ? e.message : String(e))
+
+  function say(card: Card, kind: Kind, text: string): void {
+    notes[card] = { kind, text }
   }
 
   async function saveKey(): Promise<void> {
     const key = keyInput.trim()
     if (!key || busy) return
     busy = true
-    note = null
+    notes.claude = null
     try {
       const result = await saveAnthropicKey(key)
-      setup = result.setup
+      show(result.setup)
       savedHere = true
       keyInput = '' // never leave key material sitting in a form field
       if (result.verification === 'ok') {
-        say('ok', 'Key saved and verified. Ask a question whenever you like.')
+        say('claude', 'ok', 'Key saved and verified.')
       } else {
         // Stored but unverifiable (offline / proxy). Saying "saved" alone would over-promise.
-        say('warn', `Key saved, but it could not be checked: ${result.detail}`)
+        say('claude', 'warn', `Key saved, but it could not be checked: ${result.detail}`)
       }
       onProviderChanged()
     } catch (e) {
-      say('err', String(e))
+      say('claude', 'err', keyRefusal(message(e)))
     } finally {
       busy = false
     }
@@ -87,14 +116,14 @@
   async function removeKey(): Promise<void> {
     if (busy) return
     busy = true
-    note = null
+    notes.claude = null
     try {
-      setup = await clearAnthropicKey()
+      show(await clearAnthropicKey())
       savedHere = false
-      say('ok', 'Key removed from this app.')
+      say('claude', 'ok', 'Key removed from this app.')
       onProviderChanged()
     } catch (e) {
-      say('err', String(e))
+      say('claude', 'err', message(e))
     } finally {
       busy = false
     }
@@ -102,15 +131,16 @@
 
   async function use(provider: string, model: string): Promise<void> {
     if (busy || !model.trim()) return
+    const card: Card = provider === 'anthropic' ? 'claude' : 'ollama'
     busy = true
-    note = null
+    notes[card] = null
     try {
       await setLlmProvider(provider, model.trim())
-      say('ok', `Answers now come from ${provider} / ${model.trim()}.`)
+      say(card, 'ok', `Answers now come from ${provider} / ${model.trim()}.`)
       onProviderChanged()
       await refresh()
     } catch (e) {
-      say('err', String(e))
+      say(card, 'err', message(e))
     } finally {
       busy = false
     }
@@ -134,7 +164,7 @@
         sel?.removeAllRanges()
         sel?.addRange(range)
       }
-      say('warn', 'Could not reach the clipboard — the text is selected, press Ctrl+C.')
+      say(label === 'console' ? 'claude' : 'ollama', 'warn', 'Could not reach the clipboard — the text is selected, press Ctrl+C.')
     }
   }
 
@@ -147,7 +177,7 @@
 <section class="setup">
   <h3>
     Getting started
-    <span class="muted">({setupSummary(setup)})</span>
+    <span class="muted">({setupSummary(shown)})</span>
   </h3>
 
   {#if loadError}
@@ -157,7 +187,7 @@
   {:else}
     <!-- The checklist is the honest summary: what is done, what is not, and what fixes it. -->
     <ol class="steps">
-      {#each setup.steps as step (step.id)}
+      {#each steps as step (step.id)}
         <li class:done={step.done}>
           <span class="tick" aria-hidden="true">
             <Icon name={step.done ? 'check' : 'arrow-right'} size={14} />
@@ -224,12 +254,19 @@
       />
       <div class="row">
         <button class="primary" onclick={saveKey} disabled={busy || keyInput.trim() === ''}>
-          {busy ? 'Checking…' : 'Save key'}
+          {busy ? 'Checking with Anthropic…' : 'Save key'}
         </button>
-        {#if anthropic?.ready && setup.active_provider !== 'anthropic'}
-          <button class="ghost" onclick={() => use('anthropic', 'claude-haiku-4-5-20251001')} disabled={busy}>
+        {#if anthropic?.ready && (setup.active_provider !== 'anthropic' || !setup.active_ready)}
+          <button class="ghost" onclick={() => use('anthropic', DEFAULT_CLAUDE_MODEL)} disabled={busy}>
             Use Claude for answers
           </button>
+        {/if}
+      </div>
+      <div aria-live="polite">
+        {#if notes.claude}
+          <p class={notes.claude.kind === 'ok' ? 'ok-line' : notes.claude.kind} role={notes.claude.kind === 'err' ? 'alert' : undefined}>
+            {notes.claude.text}
+          </p>
         {/if}
       </div>
     </div>
@@ -238,7 +275,7 @@
     <div class="card">
       <header>
         <strong>Ollama <span class="muted">(local)</span></strong>
-        <span class="pill {pillClass(ollama)}">{ollama ? providerStatusLabel(ollama) : '—'}</span>
+        <span class="pill {pillClass(ollama)}">{ollama ? providerStatusLabel(ollama, probing) : '—'}</span>
       </header>
       <p class="detail">
         No key, no metering, nothing leaves your machine. Needs about 5 GB of disk for an 8B model,
@@ -312,16 +349,15 @@
           </li>
           <li>Come back and press Re-check.</li>
         </ol>
-        <button class="ghost" onclick={() => refresh()} disabled={busy}>Re-check</button>
+        <button class="ghost" onclick={() => refresh()} disabled={busy || probing}>Re-check</button>
       {/if}
-    </div>
-
-    <div aria-live="polite">
-      {#if note}
-        <p class={noteKind === 'ok' ? 'ok-line' : noteKind === 'warn' ? 'warn' : 'err'} role={noteKind === 'err' ? 'alert' : undefined}>
-          {note}
-        </p>
-      {/if}
+      <div aria-live="polite">
+        {#if notes.ollama}
+          <p class={notes.ollama.kind === 'ok' ? 'ok-line' : notes.ollama.kind} role={notes.ollama.kind === 'err' ? 'alert' : undefined}>
+            {notes.ollama.text}
+          </p>
+        {/if}
+      </div>
     </div>
   {/if}
 </section>

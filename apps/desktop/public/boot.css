@@ -1,0 +1,34 @@
+/* The first thing the window draws, before any script runs (index.html's `.boot`). The app's own
+   stylesheet takes over at mount: it colours `:root`, which outranks `html` here, so a theme chosen
+   in Settings wins over the system one this file follows. Colours are app.css's light and dark
+   `--bg`, `--fg` and `--fg-2`. A file, not inline: the window's CSP admits only its own files. */
+html {
+  background: #ffffff;
+  color: #23201b;
+}
+
+.boot {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  font: 15px/1.5 system-ui, -apple-system, 'Segoe UI', sans-serif;
+}
+
+.boot p {
+  margin: 0;
+  color: #6b6559;
+}
+
+@media (prefers-color-scheme: dark) {
+  html {
+    background: #1b1813;
+    color: #ece5d6;
+  }
+
+  .boot p {
+    color: #a79e8b;
+  }
+}

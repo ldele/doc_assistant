@@ -94,6 +94,7 @@
     invalidateGraph,
     loadConceptGraph,
     rebuildGraph,
+    restoreGraph,
     useGraphHygiene,
   } from './lib/graph/graph.svelte'
   import {
@@ -143,7 +144,9 @@
     pinConversation,
     refreshConversations,
     renameConversation,
+    restoreConversations,
   } from './lib/chat/conversations.svelte'
+  import { loadSnapshot, saveSnapshot, windowStorage } from './lib/core/lastSession'
 
   // The Test-override button only exists while a retrieval-affecting override is set — with none,
   // both sides retrieve identically and the button is dead weight (2026-07-13 UX review). Settings
@@ -198,6 +201,20 @@
   // zero members is still visible and therefore fillable (spec D3). `folderError` surfaces a
   // 400 (blank/collision) in the Manage view without blocking anything else.
   let folders = $state<LibraryFolder[]>([])
+
+  // The last session's library, folders, chat list and graph, shown at launch until the engine
+  // answers (lib/core/lastSession.ts): the packaged backend takes tens of seconds to start, and
+  // the window used to sit empty meanwhile. `documentsLoaded` stays false, so every list is
+  // still fetched for real; the readiness gate refreshes them all once the engine is up.
+  const lastDocuments = loadSnapshot<LibraryDocument[]>(windowStorage(), 'documents')
+  const lastFolders = loadSnapshot<LibraryFolder[]>(windowStorage(), 'folders')
+  if (lastDocuments) documents = lastDocuments.data
+  if (lastFolders) folders = lastFolders.data
+  const restoredChats = restoreConversations()
+  const restoredGraph = restoreGraph()
+  let lastSession = $state(
+    lastDocuments !== null || lastFolders !== null || restoredChats || restoredGraph,
+  )
   // ADR-025 F2 — the chat retrieval scope. Sticky across chat.turns, in memory ONLY: a reload
   // returns to the whole library. Persisting it is the rejected option — a scope you forgot
   // you set silently narrows every future answer, which is the exact lie the integrity layer
@@ -563,6 +580,12 @@
           // The composer's scope selector needs the folder list even if the user never
           // opens the Library.
           void refreshFolders()
+          // Replace whatever the last session left on screen with the live lists.
+          if (lastSession) {
+            lastSession = false
+            if (lastDocuments) void refreshDocuments()
+            if (restoredGraph || shell.mode === 'graph') void loadConceptGraph()
+          }
           return
         } catch {
           if (cancelled) return
@@ -746,6 +769,7 @@
     try {
       documents = await listLibraryDocuments()
       documentsLoaded = true
+      saveSnapshot(windowStorage(), 'documents', $state.snapshot(documents))
     } catch {
       // keep the prior list
     }
@@ -775,6 +799,7 @@
   async function refreshFolders(): Promise<void> {
     try {
       folders = await listFolders()
+      saveSnapshot(windowStorage(), 'folders', $state.snapshot(folders))
     } catch {
       // keep the prior list
     }
@@ -855,7 +880,8 @@
     if (m === 'graph') {
       // The ego panel resolves doc_ids → titles from the library list, so it must be loaded too.
       if (!documentsLoaded) void refreshDocuments()
-      if (!graphLoaded()) void loadConceptGraph()
+      // Before the engine answers, a load would only fail; the readiness gate loads it then.
+      if (!graphLoaded() && shell.status === 'ready') void loadConceptGraph()
     }
   }
 
@@ -1153,7 +1179,7 @@
     // A write in the view drops the graph's latch (`invalidateGraph`), and the graph is re-read
     // on entering its tab. Closed over the Graph there is no entering: re-read it now, so the
     // notice naming what changed is there when the view goes away.
-    if (shell.mode === 'graph' && !graphLoaded()) void loadConceptGraph()
+    if (shell.mode === 'graph' && !graphLoaded() && shell.status === 'ready') void loadConceptGraph()
     detectProposals = []
     detectError = null
   }
@@ -1169,7 +1195,7 @@
     gaps={graph.data?.gaps ?? []}
     selectedId={graph.selectedId}
     bind:showUnderConnected={graph.showUnderConnected}
-    loading={graph.loading}
+    loading={graph.loading || (shell.status !== 'ready' && !graph.data)}
     built={graph.data !== null}
     graphError={graph.error}
     onSelectConcept={selectGraphConcept}
@@ -1280,6 +1306,12 @@
   <div class="content">
     <div class="viewport">
     <main class:wide={shell.mode === 'library' || shell.mode === 'graph'}>
+      {#if lastSession && shell.status !== 'ready'}
+        <p class="last-session" role="status">
+          Showing your library as it was last time while the engine starts. Changes work once it
+          is ready.
+        </p>
+      {/if}
       {#if shell.mode === 'library'}
         <LibraryPane
           {sourceJump}
@@ -1331,7 +1363,7 @@
       {:else if shell.mode === 'graph'}
         <ConceptGraph
           graph={graph.data}
-          loading={graph.loading}
+          loading={graph.loading || (shell.status !== 'ready' && !graph.data)}
           error={graph.error}
           {documents}
           rebuildState={graph.rebuildState}
@@ -1677,6 +1709,15 @@
   /* The 820px cap is the chat reading measure (~68ch). The library is an inventory
      grid, not prose — let it use the width so the grid reflows into more columns
      instead of floating in a centered column with empty margins in fullscreen. */
+  /* The last session's lists on screen before the engine answers (lib/core/lastSession.ts). */
+  .last-session {
+    margin: 0 0 0.75rem;
+    padding: 0.45rem 0.75rem;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--fg-2);
+    font-size: 0.85rem;
+  }
   main.wide {
     max-width: 1500px;
   }

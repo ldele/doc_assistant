@@ -10,5 +10,7 @@ applyTheme(getTheme())
 
 const target = document.getElementById('app')
 if (!target) throw new Error('#app mount point missing')
+// index.html draws a start screen inside #app before any script runs; mount() appends, so clear it.
+target.replaceChildren()
 
 export default mount(App, { target })

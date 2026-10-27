@@ -730,3 +730,26 @@ def test_verify_anthropic_key_reports_no_verdict_when_offline(
 
 def test_verify_anthropic_key_rejects_an_empty_key() -> None:
     assert llm.verify_anthropic_key("   ")[0] == "invalid"
+
+
+@pytest.mark.parametrize(
+    ("provider", "model", "installed", "says"),
+    [
+        ("anthropic", "llama3.1:8b", None, "not a Claude model"),
+        ("ollama", "claude-haiku-4-5-20251001", None, "Ollama does not serve Claude models"),
+        ("ollama", "mistral:7b", ("llama3.1:8b",), "no model “mistral:7b” installed"),
+        ("ollama", "llama3.1:8b", ("llama3.1:8b",), None),
+        ("ollama", "llama3", ("llama3:latest",), None),  # Ollama's own short spelling
+        ("ollama", "mistral:7b", (), None),  # an empty list proves nothing
+        ("ollama", "mistral:7b", None, None),  # nor does no probe
+        ("anthropic", "claude-sonnet-4-5", None, None),
+    ],
+)
+def test_model_mismatch_refuses_only_what_can_never_answer(
+    provider: str, model: str, installed: tuple[str, ...] | None, says: str | None
+) -> None:
+    found = llm.model_mismatch(provider, model, installed)
+    if says is None:
+        assert found is None
+    else:
+        assert found is not None and says in found

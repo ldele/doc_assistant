@@ -5,8 +5,13 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 
 import {
+  DEFAULT_CLAUDE_MODEL,
   costLabel,
+  displaySteps,
   keyPrecedenceNote,
+  keyRefusal,
+  modelForProvider,
+  ollamaPending,
   outstandingSteps,
   providerStatusLabel,
   setupSummary,
@@ -105,4 +110,35 @@ test('providerStatusLabel separates "not running" from "needs a key"', () => {
     providerStatusLabel(provider({ id: 'anthropic', ready: false, configured: false })),
     'needs a key',
   )
+})
+
+test('switching provider keeps a model that provider serves, and replaces one it cannot', () => {
+  // The walkthrough's stuck sandbox: Ollama picked, the Claude model kept.
+  assert.equal(modelForProvider('ollama', 'claude-haiku-4-5-20251001', ['qwen2.5:7b', 'llama3.1:8b']), 'llama3.1:8b')
+  assert.equal(modelForProvider('ollama', 'claude-haiku-4-5-20251001', []), 'llama3.1:8b')
+  assert.equal(modelForProvider('ollama', 'qwen2.5:7b', ['qwen2.5:7b']), 'qwen2.5:7b')
+  assert.equal(modelForProvider('ollama', 'mistral:7b', []), 'mistral:7b') // unknown list: kept
+  assert.equal(modelForProvider('ollama', 'mistral:7b', ['llama3.1:8b']), 'llama3.1:8b')
+  assert.equal(modelForProvider('anthropic', 'llama3.1:8b'), DEFAULT_CLAUDE_MODEL)
+  assert.equal(modelForProvider('anthropic', 'claude-sonnet-4-5'), 'claude-sonnet-4-5')
+})
+
+test('the first draw says Ollama is being checked, not that it is done', () => {
+  const unprobed = state({
+    providers: [provider({ reachable: null, ready: true, detail: 'Local server (not checked).' })],
+  })
+  assert.equal(ollamaPending(unprobed, true), true)
+  assert.equal(ollamaPending(unprobed, false), false)
+  const step = displaySteps(unprobed, true).find((s) => s.id === 'provider')
+  assert.equal(step?.done, false)
+  assert.match(step?.detail ?? '', /Checking whether Ollama is answering/)
+  assert.equal(providerStatusLabel(unprobed.providers[0], true), 'checking…')
+  // Once probed, the backend's verdict is shown as it is.
+  assert.deepEqual(displaySteps(state(), true), state().steps)
+  // Another active engine is not held back by the Ollama probe.
+  assert.deepEqual(displaySteps({ ...unprobed, active_provider: 'anthropic' }, true), unprobed.steps)
+})
+
+test('a refused key says nothing was saved, then why', () => {
+  assert.equal(keyRefusal('invalid x-api-key'), 'Anthropic refused this key, so nothing was saved. invalid x-api-key')
 })

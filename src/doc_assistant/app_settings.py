@@ -101,19 +101,25 @@ def set_llm_selection(provider: str, model: str) -> None:
     Raises :class:`ValueError` (the API maps that to 400) for an unknown provider or one whose
     credential is absent — inform-don't-corrupt: never persist a selection that can't run.
     """
-    from doc_assistant.llm import provider_available
+    from doc_assistant.llm import model_mismatch, provider_available
 
     key = provider.strip().lower()
     if key not in ("anthropic", "ollama"):
         raise ValueError(f"unknown provider '{provider}' — valid options: anthropic, ollama")
     if not provider_available(key):
-        raise ValueError(f"provider '{key}' has no credential configured (add it to .env)")
+        # An installed app has no .env to edit: the key goes in through Settings (ADR-034).
+        raise ValueError(f"{key} needs an API key first: add one in Settings → Getting started.")
     # A blank model must never be persisted: build_chat_model would get an empty name, and
     # get_llm_selection's own truthiness gate would then silently drop the selection on the next
     # boot (reverting to the config default) — inform-don't-corrupt.
     model = model.strip()
     if not model:
         raise ValueError("model must not be empty")
+    # A pair that can never answer is not persisted either (a Claude model on Ollama). Names
+    # only: whether Ollama has the model needs a probe, and Getting started reports that instead.
+    mismatch = model_mismatch(key, model)
+    if mismatch is not None:
+        raise ValueError(mismatch)
     settings = load_user_settings()
     settings["llm_provider"] = key
     settings["llm_model"] = model

@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-10-26 · class: append-only -->
+<!-- status: active · updated: 2026-10-27 · class: append-only -->
 
 # DEVLOG — doc_assistant
 
@@ -39,6 +39,51 @@ Format: What changed | Why | Rejected alternatives | What it opens
 > is individually small and correct, so unbounded growth is invisible per commit.
 
 ---
+
+## 2026-10-27 — Setting up an answer engine from Settings: an instant panel, verdicts in place, no impossible model (KI-72)
+
+**What changed.**
+- **Server.** `llm.model_mismatch(provider, model, installed)`: the one rule for a pair that can
+  never answer — a Claude name on Ollama, any other name on Anthropic, or a model an answering,
+  probed Ollama lacks (`llama3` and `llama3:latest` are the same). `app_settings.set_llm_selection`
+  refuses the first two (names only, no network) and no longer tells an installed-app user to
+  "add it to .env". `readiness._with_selection` marks the active engine not ready when its
+  selection is impossible, so *Getting started* names it and says what fixes it.
+- **Getting started** (`ProviderSetup.svelte`) draws from `GET /api/setup?probe=false` first and
+  replaces it with the probed state; while the probe is out, the Ollama card reads *checking…* and,
+  when Ollama is the active engine, its step reads "Checking whether Ollama is answering…"
+  (`setup.ts` `displaySteps`, `ollamaPending`). Each card has its own result line under its own
+  buttons; a refused key reads "Anthropic refused this key, so nothing was saved. <reason>"
+  (`keyRefusal`). The Ollama model box is seeded with a model Ollama can serve, and *Use Claude
+  for answers* also shows when the active selection is the broken one.
+- **Provider & model** (`Settings.svelte`): a keyless provider gets a line and a button to
+  *Getting started*; changing the provider fills in a model it serves (`modelForProvider`); errors
+  read without "Error:"; the hint no longer says *Getting started* is "above". After a switch from
+  either section the status bar's health is re-read: it kept naming the old model.
+
+**Found by:** the walkthrough's §0 in a clean sandbox (the user). *Getting started* said
+"Checking…" until the Ollama probe gave up (4.1 s there, against 0.5 s without the probe); a key
+seemed not to register — the verdict was drawn at the panel's foot, under the Ollama card; *Provider
+& model* could not reach Anthropic, and the sandbox's own `settings.json` held `ollama` with
+`claude-haiku-4-5-20251001`. Checked then: the installed app reads its key from the environment or
+the data folder's `credentials.json` and its selection from `settings.json`, both hand-editable, and
+the `.env` the dev setup uses is looked for beside the unpacked program, so it never applies —
+Settings is in practice the only door.
+
+**Checked.** Server tests (rule, refusal, readiness; two that matched the old wording updated);
+frontend helpers (3 tests). Live in the dev app over a scratch folder seeded with the stuck
+selection: the panel drew in 69 ms with Ollama *checking…*, the probed verdict named the Claude
+model on Ollama at 2.4 s, *Use this model* offered `llama3.1:8b` and fixed it; switching provider
+filled `claude-haiku-4-5-20251001` and back `llama3.1:8b`; the Claude-on-Ollama pair was refused with
+its sentence; the status bar followed both switches. A refused key's line appeared under the key
+field — the request intercepted in the page, so no key, fake or real, was sent.
+
+**Rejected.** Checking with Ollama at switch time whether the model is installed: it puts the
+network in the save and makes the tests depend on the box; *Getting started* reports it instead.
+A key field in *Provider & model* too: two places to enter a secret; one button to the existing
+one. Clearing a refused key from its box: it is masked, and keeping it lets a typo be fixed.
+
+**What it opens.** The real key flow on the installed build (the user's own key, in the sandbox).
 
 ## 2026-10-26 (4) — Closing the app ends its backend; the backend stops when the app is gone (KI-71)
 

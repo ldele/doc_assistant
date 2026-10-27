@@ -98,6 +98,14 @@ The engineering record is finer-grained than this file: per-change entries live 
   next launch read through it and every change was refused ("needs the token the app was started
   with") until Windows restarted. The app now ends the backend and what it started when it
   closes, without a console window, and the backend stops by itself once the app is gone.
+- **Setting up an answer engine works from Settings.** *Getting started* opened only once the app
+  had looked for Ollama, seconds when none is running; it now opens at once and fills in Ollama's
+  state after. A key's verdict appears under the key field (it was drawn at the foot of the panel,
+  out of sight), and a refused key says nothing was saved. *Provider & model* says where a key
+  goes, fills in a model the chosen provider serves, and refuses a pair that can never answer,
+  such as a Claude model on Ollama; *Getting started* names such a selection and offers the fix.
+  A missing key no longer points to a `.env` file the installed app cannot use, and the status bar
+  follows a switch at once.
 - **Coverage numbers count what they describe.** The graph's "Covers N of M documents" no
   longer counts deleted or archived documents, and the taxonomy header counts the concepts on
   your graph — what placing and auto-propose act on — so it stops reporting hundreds of concepts

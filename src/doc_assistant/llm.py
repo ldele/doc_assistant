@@ -350,6 +350,37 @@ def provider_available(provider: str) -> bool:
     return True
 
 
+def _same_ollama_model(a: str, b: str) -> bool:
+    """Ollama lists ``llama3`` as ``llama3:latest``; either spelling names the same model."""
+    return a == b or f"{a}:latest" == b or a == f"{b}:latest"
+
+
+def model_mismatch(
+    provider: str, model: str, installed: tuple[str, ...] | None = None
+) -> str | None:
+    """Why ``model`` cannot answer on ``provider``, as one sentence; ``None`` when it can, or when
+    that cannot be told.
+
+    The two providers name their models apart — every Anthropic model is ``claude-…`` and Ollama
+    serves none of them — so a Claude name on Ollama, or any other name on Anthropic, can never
+    answer. The 0.7.0 walkthrough's sandbox sat on Ollama with ``claude-haiku-4-5-…`` after a
+    provider switch kept the old model. ``installed`` (an Ollama probe's list) adds the one other
+    certain case, a server that answers without that model; an empty or absent list proves
+    nothing, so it never refuses.
+    """
+    p = provider.strip().lower()
+    name = model.strip()
+    is_claude = name.lower().startswith("claude")
+    if p == "anthropic" and not is_claude:
+        return f"“{name}” is not a Claude model: Anthropic's models are named claude-…."
+    if p == "ollama" and is_claude:
+        return f"“{name}” is a Claude model, and Ollama does not serve Claude models."
+    if p == "ollama" and installed and not any(_same_ollama_model(name, m) for m in installed):
+        shown = ", ".join(installed[:6]) + (", …" if len(installed) > 6 else "")
+        return f"Ollama has no model “{name}” installed; it has {shown}."
+    return None
+
+
 def reviewer_available(provider: str | None = None) -> bool:
     """Whether the reviewer can run.
 

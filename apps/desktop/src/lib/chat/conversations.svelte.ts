@@ -10,6 +10,7 @@
 // management, and live in App.svelte so that coupling stays visible in one place.
 
 import { listConversations, updateConversationMeta } from '../core/api'
+import { loadSnapshot, saveSnapshot, windowStorage } from '../core/lastSession'
 import type { ConversationSummary } from '../core/types'
 
 export const conversations = $state({
@@ -28,11 +29,21 @@ export const conversations = $state({
 export async function refreshConversations(): Promise<void> {
   try {
     conversations.list = await listConversations()
+    saveSnapshot(windowStorage(), 'conversations', $state.snapshot(conversations.list))
   } catch {
     // keep the prior list
   } finally {
     conversations.loaded = true
   }
+}
+
+/** Show the chat list kept from the last session until the engine answers (`lastSession.ts`).
+ *  `loaded` stays false, so the first real fetch still runs and replaces it. */
+export function restoreConversations(): boolean {
+  const last = loadSnapshot<ConversationSummary[]>(windowStorage(), 'conversations')
+  if (!last || conversations.list.length > 0) return false
+  conversations.list = last.data
+  return true
 }
 
 async function setMeta(

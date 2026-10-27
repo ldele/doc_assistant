@@ -14,6 +14,7 @@
 // cross-domain orchestration and live in App.svelte, where the coupling stays visible.
 
 import { getConceptGraph, getGraphRebuildStatus, rebuildConceptGraph } from '../core/api'
+import { loadSnapshot, saveSnapshot, windowStorage } from '../core/lastSession'
 import type { ConceptGraph, GraphRebuildStatus } from '../core/types'
 
 export const graph = $state({
@@ -54,12 +55,23 @@ export async function loadConceptGraph(): Promise<void> {
   graph.error = null
   try {
     graph.data = await getConceptGraph()
+    // A never-built graph (null) is not kept: the next launch must not show a stale one.
+    saveSnapshot(windowStorage(), 'graph', graph.data ? $state.snapshot(graph.data) : null)
   } catch (e) {
     graph.error = e instanceof Error ? e.message : String(e)
   } finally {
     graph.loading = false
     loaded = true
   }
+}
+
+/** Show the concept graph kept from the last session until the engine answers. The lazy-load
+ *  latch stays down, so the first load once the engine is ready replaces it. */
+export function restoreGraph(): boolean {
+  const last = loadSnapshot<ConceptGraph>(windowStorage(), 'graph')
+  if (!last || graph.data) return false
+  graph.data = last.data
+  return true
 }
 
 // Kick a rebuild and poll the status route until it settles, then refetch the graph. Deterministic

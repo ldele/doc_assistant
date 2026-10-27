@@ -1061,7 +1061,7 @@ def test_reconfigure_rejects_keyless_provider_and_does_not_swap(settings_file, m
     monkeypatch.setattr(config, "ANTHROPIC_API_KEY", None)
     rag = FakeRAG([], [])
     controller = ChatController(rag=rag)
-    with pytest.raises(ValueError, match="no credential"):
+    with pytest.raises(ValueError, match="needs an API key first"):
         controller.reconfigure("anthropic", "claude-haiku-4-5-20251001")
     assert rag.set_chat_model_calls == []  # rejected before the pipeline was ever touched
     assert chat_controller.app_settings.get_llm_selection() == (None, None)

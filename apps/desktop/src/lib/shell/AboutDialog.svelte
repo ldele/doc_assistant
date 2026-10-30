@@ -9,11 +9,13 @@
     chunks = null,
     model = null,
     embedding = null,
+    version = null,
     onClose,
   }: {
     chunks?: number | null
     model?: string | null
     embedding?: string | null
+    version?: string | null
     onClose: () => void
   } = $props()
 
@@ -42,6 +44,7 @@
 
   {#if chunks !== null}
     <dl class="stats">
+      {#if version}<div><dt>Version</dt><dd>{version}</dd></div>{/if}
       <div><dt>Corpus</dt><dd>{chunks.toLocaleString()} chunks</dd></div>
       {#if model}<div><dt>Answer model</dt><dd>{model}</dd></div>{/if}
       {#if embedding}<div><dt>Embeddings</dt><dd>{embedding}</dd></div>{/if}

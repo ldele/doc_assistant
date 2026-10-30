@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-10-26 (§6: how to check the sidecar ends with the window, KI-71; §6: the freeze behind the answer-engine row was KI-67; §7: RG-012 asks as the window does; §6: the answer-engine-unreachable row, the user's feedback; 2026-10-20: 0.7.0 refresh: rows for the extraction pool, Manage keywords at size, proposed placements, ranked keywords, the KL1 labels, names and written case, the Definition card, term signals, no console window, S-4/S-5/S-6; 2026-09-17: §3 hostile-markup row, S-3) · class: runbook -->
+<!-- status: active · updated: 2026-10-30 (§0: a question at 0 documents reaches no model, KI-74; 2026-10-26: §6: how to check the sidecar ends with the window, KI-71; §6: the freeze behind the answer-engine row was KI-67; §7: RG-012 asks as the window does; §6: the answer-engine-unreachable row, the user's feedback; 2026-10-20: 0.7.0 refresh: rows for the extraction pool, Manage keywords at size, proposed placements, ranked keywords, the KL1 labels, names and written case, the Definition card, term signals, no console window, S-4/S-5/S-6; 2026-09-17: §3 hostile-markup row, S-3) · class: runbook -->
 
 # Release UX/UI walkthrough — what to drive before every release
 
@@ -42,7 +42,7 @@ scanned PDF). Most rows say which.
 - [ ] Launch → the readiness banner names every outstanding step (corpus **and** provider), not just one.
 - [ ] Provider setup: no key → `not configured`; wrong key → the verification fails with a sentence, the key is not echoed back anywhere (`key_hint` shows 4 characters at most); Ollama down → `unreachable`, with the action named.
 - [ ] Set the data home; the empty-corpus banner offers *Add documents* and the sample-question chips are clickable.
-- [ ] Ask a question with 0 documents: an honest "no documents" answer, no traceback, no spinner that never ends.
+- [ ] Ask a question with 0 documents: an honest "no documents" answer, no traceback, no spinner that never ends. No model is called (KI-74): the *Provenance & usage* card says so, and Ollama's log shows no `/api/generate`. Ask once more in the same chat, and once in an empty folder: the same, naming the folder.
 - [ ] Settings → About shows the version that `preflight` checked; Updates → *Check now* returns one of exactly three states (`newer` / `current` / `unknown`), and `unknown` is what you get offline.
 
 ## 1 · Add documents (both libraries)

@@ -220,6 +220,7 @@ def test_deleted_folder_searches_nothing_rather_than_everything(monkeypatch, tem
     assert result.scope.folder_name is None
     assert result.scope.doc_count == 0
     assert json.loads(_scope_json()[0] or "null")["folder_name"] is None
+    assert result.answer == "That folder no longer exists, so nothing was searched."  # KI-74
 
 
 def test_empty_folder_searches_nothing(monkeypatch, temp_db) -> None:
@@ -234,6 +235,7 @@ def test_empty_folder_searches_nothing(monkeypatch, temp_db) -> None:
     assert rag.scope_calls == [frozenset()]
     assert result.sources == []
     assert result.scope is not None and result.scope.doc_count == 0
+    assert result.answer.startswith("The folder **Empty** has no documents")  # KI-74
 
 
 def test_unknown_folder_id_searches_nothing(monkeypatch, temp_db) -> None:

@@ -107,6 +107,11 @@ The engineering record is finer-grained than this file: per-change entries live 
 
 ### Fixed
 
+- **An empty library gets an honest answer.** With nothing to search, the app still asked the
+  model, and a local model could answer from memory with an invented quotation and source number.
+  A question at 0 documents, in an empty folder, or with nothing matching now gets one plain
+  sentence saying so, and no model is called.
+- **About shows the version.** It showed the corpus and the models but not which release you run.
 - **The installed app works on Windows.** Its window runs from `http://tauri.localhost`, and the
   local API answered only the origin the macOS and Linux window uses, so on Windows the window
   could read nothing: it stayed at "still starting" with its engine running, and Settings never

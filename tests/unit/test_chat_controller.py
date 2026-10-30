@@ -1149,3 +1149,132 @@ def test_mid_turn_switch_does_not_relabel_the_in_flight_turn(monkeypatch, temp_d
     assert result.usage.is_local is False  # not relabeled "local" by the ollama switch
     assert "Local model" not in result.usage_md  # metered block, not the ollama shape
     assert "· local" not in result.provenance_card_md  # token suffix stays metered
+
+
+# ============================================================
+# KI-74 — a turn that retrieved nothing never reaches the model
+# ============================================================
+
+
+class _NoSourcesRAG(FakeRAG):
+    """Retrieves nothing. Any model call fails the turn, so `_final` finds no Result."""
+
+    def __init__(self, *, chunks: int) -> None:
+        super().__init__([], [])
+        self._chunks = chunks
+        self.rewrites = 0
+
+    def chunk_count(self) -> int:
+        return self._chunks
+
+    def rewrite(self, question: str, history: list[dict[str, str]], counter: object = None) -> str:
+        self.rewrites += 1
+        return question
+
+    def stream_answer(
+        self, question: str, docs: list[Document], counter: object = None, llm: object = None
+    ) -> Iterator[str]:
+        raise AssertionError("a zero-source turn reached the model")
+
+
+@pytest.mark.parametrize(
+    ("chunks", "expected"),
+    [
+        (0, "Your library has no documents yet"),
+        (42, "Nothing in your library matched this question"),
+    ],
+)
+def test_a_turn_with_no_sources_answers_without_the_model(
+    monkeypatch: pytest.MonkeyPatch, temp_db: Path, chunks: int, expected: str
+) -> None:
+    # The walkthrough of 2026-10-30: at 0 chunks llama3.1:8b wrote "it does describe a technique
+    # where ... [4]", a quotation and a source that do not exist. An empty Sources block is not
+    # an instruction a model reliably obeys, so the honest sentence cannot be left to one.
+    monkeypatch.setattr(chat_controller.controller, "is_library_query", lambda t: False)
+    controller = ChatController(rag=_NoSourcesRAG(chunks=chunks))
+
+    result = _final(_results(controller, Session(), "What about dropout?"))
+
+    assert expected in result.answer
+    assert "[" not in result.answer  # no citation of any shape
+    assert result.sources == []
+    assert result.flagged_claims == []
+    assert result.citation_note_md == ""
+    assert (result.usage.turn_input, result.usage.turn_output) == (0, 0)
+    # "0 tokens · $0.0000": a measured zero. "local · tokens not reported" would be false here.
+    assert (result.usage.cost_usd, result.usage.is_local) == (0.0, False)
+    assert "no model was asked" in result.provenance_card_md
+
+
+def test_a_turn_with_no_sources_runs_no_reviewer(
+    monkeypatch: pytest.MonkeyPatch, temp_db: Path
+) -> None:
+    monkeypatch.setattr(chat_controller.controller, "is_library_query", lambda t: False)
+
+    def no_review(*_args: object, **_kwargs: object) -> None:
+        raise AssertionError("a zero-source turn reached the reviewer")
+
+    monkeypatch.setattr(ChatController, "_capture_provenance_and_review", no_review)
+    controller = ChatController(rag=_NoSourcesRAG(chunks=0))
+
+    assert _final(_results(controller, Session(), "What about dropout?")).record_id is None
+
+
+def test_a_turn_with_no_sources_still_reaches_the_history_sidebar(
+    monkeypatch: pytest.MonkeyPatch, temp_db: Path
+) -> None:
+    # The sidebar is a read over AnswerRecord: a turn with no record would vanish on reopen.
+    from doc_assistant import conversations
+
+    monkeypatch.setattr(chat_controller.controller, "is_library_query", lambda t: False)
+    session = Session()
+
+    _final(_results(ChatController(rag=_NoSourcesRAG(chunks=0)), session, "What about dropout?"))
+
+    listed = conversations.list_conversations()
+    assert [c.session_id for c in listed] == [session.session_id]
+    assert listed[0].title == "What about dropout?"
+
+
+def test_a_turn_with_no_sources_stays_out_of_the_model_context(
+    monkeypatch: pytest.MonkeyPatch, temp_db: Path
+) -> None:
+    # Nothing was answered, so nothing is left to rewrite a follow-up against: a second question
+    # at 0 documents must not need a model either (no key, or Ollama down, on a first run).
+    monkeypatch.setattr(chat_controller.controller, "is_library_query", lambda t: False)
+    rag = _NoSourcesRAG(chunks=0)
+    controller = ChatController(rag=rag)
+    session = Session()
+
+    _final(_results(controller, session, "What about dropout?"))
+    second = _final(_results(controller, session, "And attention?"))
+
+    assert session.history == []
+    assert rag.rewrites == 0
+    assert "Your library has no documents yet" in second.answer
+
+
+def test_a_turn_with_no_sources_keeps_a_session_override_visible(
+    monkeypatch: pytest.MonkeyPatch, temp_db: Path
+) -> None:
+    monkeypatch.setattr(chat_controller.controller, "is_library_query", lambda t: False)
+    controller = ChatController(rag=_NoSourcesRAG(chunks=42))
+
+    result = _final(_results(controller, Session(), "What about dropout?", RagOverrides(top_k=3)))
+
+    assert "Session override" in result.answer
+
+
+def test_human_mode_with_no_sources_keeps_its_own_answer(
+    monkeypatch: pytest.MonkeyPatch, temp_db: Path
+) -> None:
+    monkeypatch.setattr(chat_controller.controller, "is_library_query", lambda t: False)
+    controller = ChatController(rag=_NoSourcesRAG(chunks=0))
+
+    result = _final(
+        _results(
+            controller, Session(), "What about dropout?", RagOverrides(synthesis_mode="human")
+        )
+    )
+
+    assert result.mode == "human"

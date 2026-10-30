@@ -13,6 +13,7 @@ from collections.abc import Iterator
 from apps.api.main import create_app
 from fastapi.testclient import TestClient
 
+from doc_assistant import __version__
 from doc_assistant.chat_controller import (
     ClaimView,
     Failure,
@@ -145,6 +146,7 @@ def test_health():
     assert body["status"] == "ok"
     assert body["chunk_count"] == 7
     assert "model" in body and "embedding_model" in body
+    assert body["version"] == __version__  # the About dialog's version, the one preflight checks
 
 
 def test_chat_streams_sse_events_in_order():

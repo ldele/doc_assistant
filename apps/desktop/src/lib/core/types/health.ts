@@ -9,4 +9,5 @@ export interface Health {
   chunk_count: number
   model: string
   embedding_model: string
+  version: string
 }

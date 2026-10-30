@@ -25,6 +25,7 @@ from doc_assistant.chat_controller.helpers import (
     _export_sources,
     _format_provenance_card,
     _is_local,
+    _no_sources_answer,
     _ProvenanceInputs,
     _ProvenanceOutcome,
     _resolve_scope,
@@ -601,6 +602,22 @@ class ChatController:
             )
             return
 
+        # KI-74: nothing retrieved, so there is nothing to answer from and no model is asked.
+        if not scored:
+            yield Result(
+                self._no_sources_result(
+                    session,
+                    user_question=user_question,
+                    standalone=standalone,
+                    turn_start=turn_start,
+                    eff_top_k=knobs.top_k,
+                    overrides_note=knobs.overrides_note,
+                    scope=scope_view,
+                    markers_enabled=knobs.markers_enabled,
+                )
+            )
+            return
+
         full_answer = ""
         for tok in rag.stream_answer(standalone, docs, counter=counter, llm=turn_llm):
             full_answer += tok
@@ -785,6 +802,68 @@ class ChatController:
             citation_note_md="",
             scope=scope,
             source_eval=source_eval,
+        )
+
+    def _no_sources_result(
+        self,
+        session: Session,
+        *,
+        user_question: str,
+        standalone: str,
+        turn_start: float,
+        eff_top_k: int,
+        overrides_note: str,
+        scope: ScopeView | None,
+        markers_enabled: bool | None,
+    ) -> TurnResult:
+        """A turn that retrieved nothing: an honest sentence, with no model asked to write it.
+
+        Recorded like any turn, because the history sidebar is a read over those records. Kept out
+        of ``session.history``: nothing was answered, so a follow-up has nothing to be rewritten
+        against, and a second question at 0 documents must not need a model either.
+        """
+        answer = _no_sources_answer(
+            scope, corpus_empty=scope is None and self.rag.chunk_count() == 0
+        )
+        with contextlib.suppress(Exception):  # provenance is a sidecar, never blocks
+            record_answer(
+                query=standalone,
+                original_query=user_question if standalone != user_question else None,
+                answer=answer,
+                retrieved_chunks=[],
+                embedding_model=get_active_model_name(),
+                top_k=eff_top_k,
+                use_parent_child=USE_PARENT_CHILD,
+                latency_ms=(time.monotonic() - turn_start) * 1000.0,
+                session_id=session.session_id,
+                retrieval_scope=_scope_dict(scope),
+                epistemics_markers_enabled=markers_enabled,
+            )
+        self._append_export_turn(
+            session,
+            export.ExportTurn(
+                question=user_question,
+                answer=answer,
+                standalone_query=standalone,
+                sources=[],
+                embedding_model=get_active_model_name(),
+            ),
+        )
+        return TurnResult(
+            answer=answer + overrides_note,
+            mode="ai",
+            sources=[],
+            flagged_claims=[],
+            # A real zero on any provider: this turn called nothing, so it is not "not reported".
+            usage=UsageView(0, 0, session.counter.total(), 0.0, False),
+            standalone_query=standalone,
+            record_id=None,
+            provenance_card_md="🔍 **Provenance** — nothing was retrieved, so no model was asked.",
+            claim_review_md="",
+            sources_md="",
+            usage_md="",
+            citation_note_md="",
+            scope=scope,
         )
 
     def _usage_block(

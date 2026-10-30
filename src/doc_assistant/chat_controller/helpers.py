@@ -275,6 +275,33 @@ def _scope_note(scope: ScopeView | None) -> str:
     )
 
 
+def _no_sources_answer(scope: ScopeView | None, *, corpus_empty: bool) -> str:
+    """The sentence for a turn that retrieved nothing, which no model is asked to write (KI-74).
+
+    An empty ``Sources:`` block is not an instruction a model reliably obeys: at 0 chunks
+    ``llama3.1:8b`` quoted a passage and cited ``[4]``. The citation check caught it, but only
+    beside an answer already on screen, so this state is decided here and not left to a prompt.
+    """
+    if scope is not None:
+        if scope.folder_name is None:
+            return "That folder no longer exists, so nothing was searched."
+        if scope.doc_count == 0:
+            return (
+                f"The folder **{scope.folder_name}** has no documents, so there is nothing to "
+                "answer from. Add documents to it, or ask the whole library."
+            )
+        return (
+            f"Nothing in the folder **{scope.folder_name}** matched this question, so there is "
+            "nothing to answer from."
+        )
+    if corpus_empty:
+        return (
+            "Your library has no documents yet, so there is nothing to answer from. "
+            "Add documents from the Library, then ask again."
+        )
+    return "Nothing in your library matched this question, so there is nothing to answer from."
+
+
 def _format_review_block(review: ReviewResult | None) -> str:
     """Render the reviewer's verdict as a sub-section of the provenance card."""
     if review is None:

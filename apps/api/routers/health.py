@@ -6,7 +6,7 @@ from typing import Any
 
 from fastapi import APIRouter, Request
 
-from doc_assistant import app_settings
+from doc_assistant import __version__, app_settings
 from doc_assistant.chat_controller import ChatController
 from doc_assistant.embeddings import get_active_model_name
 
@@ -23,4 +23,5 @@ def health(request: Request) -> dict[str, Any]:
         "chunk_count": controller.chunk_count(),
         "model": f"{eff_provider}/{eff_model}",
         "embedding_model": get_active_model_name(),
+        "version": __version__,
     }

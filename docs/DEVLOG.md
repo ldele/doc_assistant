@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-10-27 · class: append-only -->
+<!-- status: active · updated: 2026-10-30 · class: append-only -->
 
 # DEVLOG — doc_assistant
 
@@ -37,6 +37,48 @@ Format: What changed | Why | Rejected alternatives | What it opens
 > see an entry that is itself an ADR in disguise). When either trips, rotate — **do not raise
 > the cap.** The cap exists because this log reached 8,244 lines before anyone noticed: every entry
 > is individually small and correct, so unbounded growth is invisible per commit.
+
+---
+
+## 2026-10-30 — A turn that retrieves nothing is answered without a model (KI-74); About shows the version
+
+**What changed.** `_handle_rag` now stops at `if not scored:` and returns `_no_sources_result`: one
+sentence from `_no_sources_answer` (`chat_controller/helpers.py`), for four cases: an empty library,
+nothing matched, an empty folder, a folder that no longer exists. No model and no reviewer run. The
+turn is recorded, because the history sidebar is a read over those records, and it stays out of
+`session.history`, so a second question has nothing to be rewritten against. Its usage is a real
+zero (`0 tokens · $0.0000`, not "tokens not reported") and the *Provenance & usage* card says no
+model was asked. Human-mode turns keep their own path. `/api/health` gains `version`, which About
+shows first.
+
+**Why.** The 0.7.0 walkthrough, driven at the user's word on the installed `d8a6b3c` build: at 0
+chunks, `llama3.1:8b` answered that the library "does describe a technique where "a random subset of
+units is not updated during backpropagation" [4]". Nothing was retrieved: Ollama's log shows a
+348-token prompt, the instructions and the question alone. The user caught it on screen. The
+citation check flagged the answer as 0 valid, but beside a sentence already standing as the answer.
+`feature-corpus-folders-scope.md` S3 had recorded "a zero-source turn already degrades honestly",
+which was true only if the model obeyed an empty `Sources:` block. The checklist's About row expects
+a version and there was none.
+
+**Checked.** Full suite 2,823 passed, 8 of them new or extended for this; ruff, `mypy src`, bandit, `svelte-check`
+0 errors, 317 desktop tests; `docs_check --strict` and `integrity_check` OK. The real API and
+pipeline over an empty data folder, four questions (empty library twice in one chat, empty folder,
+unknown folder): each got its sentence, 0 tokens streamed, all in `/api/conversations`, and Ollama's
+log took no request. The dev app in the browser pane: the answer, the card line, `0 tokens ·
+$0.0000`, *Version 0.7.0* in About; its three console 500s were the dev proxy while I restarted the
+API. **Not checked yet:** the installed build (the fix needs the rebuild), and a first question with
+no engine set up.
+
+**Rejected.** A firmer sentence in `ANSWER_PROMPT`: it would still leave an honest state to a model,
+and it moves `prompt_version` and the eval baselines. Hiding the answer when the citation check
+fails: that check is advisory on every other turn, and "surface, don't rewrite" is its rule. A third
+`mode` value on `TurnResult`: a wire change for a field the window does not read. `/api/updates` for
+About's version: reading it can start a network check when one is due; health already feeds the
+dialog.
+
+**What it opens.** RG-012 and the walkthrough on a new build. Polish left from the same walkthrough:
+the rail's "1 setup steps left" against the panel's count; "Couldn't check for updates" before any
+check has run; "Claude needs an API key first" showing with Ollama active.
 
 ---
 

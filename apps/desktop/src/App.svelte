@@ -1420,6 +1420,7 @@
     chunks={shell.health?.chunk_count ?? null}
     model={shell.health?.model ?? null}
     embedding={shell.health?.embedding_model ?? null}
+    version={shell.health?.version ?? null}
     onClose={() => (shell.showAbout = false)}
   />
 {/if}

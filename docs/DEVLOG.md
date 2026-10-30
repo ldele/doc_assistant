@@ -40,6 +40,24 @@ Format: What changed | Why | Rejected alternatives | What it opens
 
 ---
 
+## 2026-10-30 (6) — The rebuilt installer passes its gate; a stage must keep the build's time
+
+**What changed.** Installer rebuilt from `4a22951` (19:57). RG-012 `run-20261030-200429` passed,
+preflight is all green, and KI-74 to KI-78, the rail, *Re-run* and both status-bar rows were driven
+again on the installed build and held. `docs/RELEASE.md` §5 now says the staged copy keeps the
+build's time. `CHANGELOG.md` carries the release date.
+
+**Why.** Entries (3) to (5) left those fixes unproved on an installed build. The stage rule comes
+from this run: a plain `cp` stamped the copy 19:58, the harness logged that, and preflight rightly
+failed a real PASS as "a DIFFERENT build".
+
+**Rejected.** Editing the run's log to the build's minute, or restamping the artifact to fit it:
+either would make preflight's link say something nobody measured. Setting the copy's time and
+running the gate again cost five minutes.
+
+**Opens.** Three rows stay with the user (a wrong key, the larger text, unticking in the add
+sheet). §2 to §6 rows that passed on `d8a6b3c` were not repeated on this build.
+
 ## 2026-10-30 (5) — Keyword search survives an add and forgets a delete (KI-77, KI-78); rail and Re-run fit
 
 **What changed.** `ingest_start` now calls `release_keyword_index` on the old controller before

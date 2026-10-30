@@ -194,7 +194,11 @@ Two traps:
   `scripts\rg012` folder into the sandbox, so the run uses the reviewed harness; a copy of the
   script anywhere else is stale by definition. Each run writes its own `out\run-<timestamp>\`.
 - Stage the installer as a **copy**; never map `target/release/bundle/nsis` into the sandbox (a
-  running sandbox holds a handle and the next `tauri build` fails with os error 32).
+  running sandbox holds a handle and the next `tauri build` fails with os error 32). **The copy must
+  keep the build's time** (`Copy-Item` or `cp -p`, not a plain `cp`): preflight ties the run to the
+  artifact by that time, to the minute, so a copy stamped later fails a real PASS as "a DIFFERENT
+  build". If that happens, set the copy's time from the artifact and run the gate again; never edit
+  the run's log.
 - **Windows Sandbox runs one instance, and a stale VM silently eats the run.** Killing
   `WindowsSandboxServer` / `WindowsSandboxRemoteSession` does **not** take the VM down. Wait for
   every `vmmemWindowsSandbox` process to disappear before relaunching, or the `LogonCommand` never

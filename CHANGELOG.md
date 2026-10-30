@@ -111,6 +111,9 @@ The engineering record is finer-grained than this file: per-change entries live 
   model, and a local model could answer from memory with an invented quotation and source number.
   A question at 0 documents, in an empty folder, or with nothing matching now gets one plain
   sentence saying so, and no model is called.
+- **Adding documents updates the rest of the app.** After a first add, the chat went on saying
+  "Nothing indexed yet" until a restart, and after *Undo all* the status bar kept the old chunk
+  count. Both now follow the library.
 - **About shows the version.** It showed the corpus and the models but not which release you run.
 - **The installed app works on Windows.** Its window runs from `http://tauri.localhost`, and the
   local API answered only the origin the macOS and Linux window uses, so on Windows the window

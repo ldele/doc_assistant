@@ -40,6 +40,30 @@ Format: What changed | Why | Rejected alternatives | What it opens
 
 ---
 
+## 2026-10-30 (3) — The setup card and the chunk count follow an add (KI-75)
+
+**What changed.** `App.svelte`: the run-finished effect calls `refreshHealth` instead of reading
+`/api/health` itself, and the add sheet's `onAdded` calls it too. `refreshHealth` also re-reads
+setup. `getHealth` stays where the readiness gate needs it.
+
+**Why.** The 0.7.0 walkthrough, section 1, driven on the installed `d8a6b3c` build. With the library
+at 281 chunks and answering with citations, the chat still said "One step to go — Add your
+documents — Nothing indexed yet", with *Finish setup…*, until a relaunch: every new user's first
+add. The status bar stayed a green "565 chunks" 60 s after *Undo all*, while `/api/health` said 0.
+`onAdded` refreshed the documents only.
+
+**Checked.** `svelte-check` 0 errors, 317 desktop tests. The dev app over an empty scratch data
+folder: "One step to go", then `POST /api/ingest` on one note, and the card gave way to the
+sample questions with "1 chunks" in the status bar; its eight console 500s were the dev proxy
+before the API was up (ECONNREFUSED in the Vite log). **Not checked yet:** the status bar after
+*Undo all*, which needs the add sheet and so the desktop window; the rebuilt installer covers it.
+
+**Rejected.** A separate `refreshSetup` call in each place: `refreshHealth` exists for exactly this
+and its comment says so.
+
+**What it opens.** The same walkthrough found two gaps this leaves open: a scanned PDF is not warned
+about before indexing, and the same bytes twice in one batch read as two adds.
+
 ## 2026-10-30 (2) — `langgraph-sdk` 0.4.6: an advisory published during the release
 
 **What changed.** `uv.lock`: `langgraph-sdk` 0.4.5 → 0.4.6 (`uv lock --upgrade-package

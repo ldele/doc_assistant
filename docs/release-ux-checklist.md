@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-10-30 (§0: a question at 0 documents reaches no model, KI-74; 2026-10-26: §6: how to check the sidecar ends with the window, KI-71; §6: the freeze behind the answer-engine row was KI-67; §7: RG-012 asks as the window does; §6: the answer-engine-unreachable row, the user's feedback; 2026-10-20: 0.7.0 refresh: rows for the extraction pool, Manage keywords at size, proposed placements, ranked keywords, the KL1 labels, names and written case, the Definition card, term signals, no console window, S-4/S-5/S-6; 2026-09-17: §3 hostile-markup row, S-3) · class: runbook -->
+<!-- status: active · updated: 2026-10-30 (§1: the setup card and the count follow an add, KI-75; §0: a question at 0 documents reaches no model, KI-74; 2026-10-26: §6: how to check the sidecar ends with the window, KI-71; §6: the freeze behind the answer-engine row was KI-67; §7: RG-012 asks as the window does; §6: the answer-engine-unreachable row, the user's feedback; 2026-10-20: 0.7.0 refresh: rows for the extraction pool, Manage keywords at size, proposed placements, ranked keywords, the KL1 labels, names and written case, the Definition card, term signals, no console window, S-4/S-5/S-6; 2026-09-17: §3 hostile-markup row, S-3) · class: runbook -->
 
 # Release UX/UI walkthrough — what to drive before every release
 
@@ -55,6 +55,7 @@ scanned PDF). Most rows say which.
 - [ ] Both placement modes: **copy** lands in the library folder; **reference** registers the root and the file stays where it was.
 - [ ] Batch header with > 50 files: the `shown` cap and "and N more" render; make one file fail (rename it mid-run) → `stopped_early`, "Keep the N", `applyError` all render.
 - [ ] Index now → the ingest chip shows progress; the document is answerable **before** the chip says done (controller reload).
+- [ ] After the first add the chat's setup card is gone and the status bar shows the new count, with no relaunch; after **Undo all** the count follows (KI-75).
 - [ ] Add five or more PDFs at once with the default workers → extraction finishes and the chip completes; nothing hangs (the pool spawns instead of forking since 0.7.0, `16d1a4b`; the hang was seen on Linux only, so this row proves the installed Windows build still runs it).
 - [ ] **Undo all** after index-now removes the document row, its chunks *and* the referenced root (KI-51, all three parts).
 

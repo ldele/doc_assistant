@@ -456,13 +456,8 @@
     if (n <= lastSeenRun) return
     lastSeenRun = n
     void refreshDocuments()
-    // The corpus size lives on `health`, and the status bar reads it straight from there.
-    void getHealth()
-      .then((h) => (shell.health = h))
-      .catch(() => {
-        /* the readiness gate owns reporting a lost backend; a stale count is not worth a second
-           error surface saying the same thing. */
-      })
+    // The corpus size lives on `health`, and a first run can also finish the setup checklist.
+    void refreshHealth()
   })
 
   $effect(() => {
@@ -1265,7 +1260,10 @@
         reviewingAdd = false
         clearPending()
       }}
-      onAdded={() => void refreshDocuments()}
+      onAdded={() => {
+        void refreshDocuments()
+        void refreshHealth()
+      }}
     />
   {/if}
 

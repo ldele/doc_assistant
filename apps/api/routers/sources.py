@@ -96,6 +96,7 @@ def ingest_start(request: Request, body: IngestRequest | None = None) -> dict[st
         # ingest: the documents are persisted, a restart picks them up, so a successful ingest
         # never flips to "error".
         try:
+            app_.state.controller.release_keyword_index()  # KI-77: Windows keeps an open file
             app_.state.controller = app_.state.controller_factory()
         except Exception:
             log.exception("controller_reload_failed_after_ingest")
@@ -295,4 +296,7 @@ def undo_add_documents(request: Request, body: UndoAddRequest) -> dict[str, int]
     if _running(request):
         raise HTTPException(status_code=409, detail="ingest already running")
     controller = request.app.state.controller
-    return {"undone": undo_add(body.rel_paths, chroma_db=controller.rag.db)}
+    undone = undo_add(
+        body.rel_paths, chroma_db=controller.rag.db, forget=controller.forget_document
+    )
+    return {"undone": undone}

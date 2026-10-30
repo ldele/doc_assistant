@@ -1001,6 +1001,7 @@
       await deleteDocument(deletingDocId, deleteFile)
       if (libraryDocId === deletingDocId) libraryDocId = null
       await refreshDocuments()
+      void refreshHealth()
       deletingDocId = null
     } catch {
       // e.g. the file couldn't be moved to the Recycle Bin — leave the dialog open, doc intact

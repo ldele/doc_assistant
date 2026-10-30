@@ -196,6 +196,16 @@ class SparseIndex:
     def __init__(self, con: sqlite3.Connection, chunks: int) -> None:
         self._con = con
         self.chunks = chunks
+        self._forgotten: set[str] = set()
+
+    def forget(self, doc_hash: str) -> None:
+        """Stop returning a removed document (KI-78).
+
+        The answer path never writes to this file, and a changed corpus rebuilds it at the next
+        launch, so until then a removal is a note held here. The vector arm drops the chunks at
+        once; without this the keyword arm went on citing a document the user had deleted.
+        """
+        self._forgotten.add(doc_hash)
 
     # -- queries ------------------------------------------------------------------------------ #
 
@@ -226,6 +236,11 @@ class SparseIndex:
             placeholders = ",".join("?" * len(scope))
             sql += f" AND c.doc_hash IN ({placeholders})"
             params.extend(sorted(scope))
+        forgotten = sorted(self._forgotten)
+        if forgotten:
+            placeholders = ",".join("?" * len(forgotten))
+            sql += f" AND c.doc_hash NOT IN ({placeholders})"
+            params.extend(forgotten)
         # bm25() is negative, most-relevant first at the bottom of the scale, so ASC is "best".
         sql += " ORDER BY score LIMIT ?"
         params.append(k)
@@ -249,7 +264,8 @@ class SparseIndex:
 
     def doc_hashes(self) -> set[str]:
         """Every ``doc_hash`` present. Used to answer "is this scope empty?" without a scan."""
-        return {str(r[0]) for r in self._con.execute("SELECT DISTINCT doc_hash FROM chunks")}
+        rows = self._con.execute("SELECT DISTINCT doc_hash FROM chunks")
+        return {str(r[0]) for r in rows} - self._forgotten
 
     def close(self) -> None:
         self._con.close()

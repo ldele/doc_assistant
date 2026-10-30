@@ -100,7 +100,8 @@ class FileVerdictPayload(BaseModel):
     """What the review sheet renders for one candidate. Mirrors ``library.add.FileVerdict``.
 
     ``advisory`` is passed through verbatim from ``get_format_status`` for unsupported files, so
-    the UI never rewrites the sentence that names the conversion target.
+    the UI never rewrites the sentence that names the conversion target. On a file that stays
+    ``selected_by_default`` it is a warning: a PDF with no readable text.
     """
 
     path: str

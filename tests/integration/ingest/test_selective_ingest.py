@@ -205,6 +205,9 @@ class _FakeController:
     def chunk_count(self) -> int:
         return 0
 
+    def release_keyword_index(self) -> None:
+        pass
+
 
 def _poll_status(client: TestClient, *, state: str, tries: int = 60) -> dict:
     import time

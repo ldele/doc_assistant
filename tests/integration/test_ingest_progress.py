@@ -31,6 +31,9 @@ class FakeController:
     def chunk_count(self) -> int:
         return self._count
 
+    def release_keyword_index(self) -> None:
+        pass
+
 
 def _client(ingest_fn: Any) -> TestClient:
     app = create_app(

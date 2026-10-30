@@ -215,6 +215,122 @@ def test_a_computed_hash_is_cached_so_the_next_inspect_is_cheaper(temp_database,
         assert row.source_sha256 is not None
 
 
+def test_the_same_bytes_twice_in_one_selection_read_as_a_duplicate(temp_database, tmp_path):
+    """KI-76: both read as added, ingest kept one, and the other never appeared."""
+    from doc_assistant.library.add import inspect
+
+    first = _write(tmp_path / "in" / "a.md", b"same bytes")
+    second = _write(tmp_path / "in" / "b.md", b"same bytes")
+    (a, b) = inspect([first, second], source_dir=tmp_path / "lib")
+    assert (a.verdict, a.advisory) == ("add", None)
+    assert b.verdict == "duplicate"
+    assert b.advisory == "The same file as a.md, earlier in this selection."
+    assert b.duplicate_of is None
+    assert not b.selected_by_default
+
+
+def test_same_size_but_different_bytes_in_one_selection_are_both_added(temp_database, tmp_path):
+    from doc_assistant.library.add import inspect
+
+    first = _write(tmp_path / "in" / "a.md", b"aaaa")
+    second = _write(tmp_path / "in" / "b.md", b"bbbb")
+    assert [v.verdict for v in inspect([first, second], source_dir=tmp_path / "lib")] == [
+        "add",
+        "add",
+    ]
+
+
+def test_a_selection_is_hashed_only_where_two_sizes_match(temp_database, tmp_path, monkeypatch):
+    from doc_assistant.library import add
+
+    first = _write(tmp_path / "in" / "a.md", b"short")
+    second = _write(tmp_path / "in" / "b.md", b"longer than that")
+
+    def _must_not_hash(path):
+        raise AssertionError(f"{path} was hashed with nothing to compare it to")
+
+    monkeypatch.setattr(add, "sha256_file", _must_not_hash)
+    assert [v.verdict for v in add.inspect([first, second], source_dir=tmp_path / "lib")] == [
+        "add",
+        "add",
+    ]
+
+
+def _pdf(path: Path, pages: list[str]) -> Path:
+    """A real PDF with one page per item; an empty string is a page with no text layer."""
+    import pymupdf
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    doc = pymupdf.open()
+    for text in pages:
+        page = doc.new_page()
+        if text:
+            page.insert_text((72, 72), text)
+    doc.save(str(path))
+    doc.close()
+    return path
+
+
+@pytest.fixture
+def no_ocr(monkeypatch):
+    monkeypatch.setattr("doc_assistant.library.add.shutil.which", lambda name: None)
+
+
+def test_a_pdf_with_no_text_layer_is_added_with_a_warning(temp_database, tmp_path, no_ocr):
+    """KI-76: inform, don't block. The file stays ticked and the sentence says what will happen."""
+    from doc_assistant.library.add import inspect
+
+    (v,) = inspect([_pdf(tmp_path / "in" / "scan.pdf", ["", ""])], source_dir=tmp_path / "lib")
+    assert v.verdict == "add"
+    assert v.selected_by_default
+    assert v.advisory is not None
+    assert "scan" in v.advisory
+    assert "nothing in it can be searched" in v.advisory
+
+
+def test_a_pdf_with_text_gets_no_warning(temp_database, tmp_path, no_ocr):
+    from doc_assistant.library.add import inspect
+
+    (v,) = inspect([_pdf(tmp_path / "in" / "p.pdf", ["Hello"])], source_dir=tmp_path / "lib")
+    assert v.advisory is None
+
+
+def test_a_blank_first_page_does_not_make_a_pdf_a_scan(temp_database, tmp_path, no_ocr):
+    from doc_assistant.library.add import inspect
+
+    pdf = _pdf(tmp_path / "in" / "p.pdf", ["", "", "", "Text from here on", "More", "More"])
+    (v,) = inspect([pdf], source_dir=tmp_path / "lib")
+    assert v.advisory is None
+
+
+def test_a_scan_gets_no_warning_where_an_ocr_engine_will_read_it(
+    temp_database, tmp_path, monkeypatch
+):
+    """KI-47: with `tesseract` on PATH the extractor OCRs the page, so a warning would be false."""
+    from doc_assistant.library.add import inspect
+
+    monkeypatch.setattr(
+        "doc_assistant.library.add.shutil.which", lambda name: f"C:/ocr/{name}.exe"
+    )
+    (v,) = inspect([_pdf(tmp_path / "in" / "scan.pdf", [""])], source_dir=tmp_path / "lib")
+    assert v.advisory is None
+
+
+def test_a_pdf_that_will_not_open_is_not_called_a_scan(temp_database, tmp_path, no_ocr):
+    from doc_assistant.library.add import inspect
+
+    f = _write(tmp_path / "in" / "broken.pdf", b"%PDF-1.4 hello")
+    (v,) = inspect([f], source_dir=tmp_path / "lib")
+    assert (v.verdict, v.advisory) == ("add", None)
+
+
+def test_a_file_that_is_not_a_pdf_is_never_opened_as_one(temp_database, tmp_path, no_ocr):
+    from doc_assistant.library.add import inspect
+
+    (v,) = inspect([_write(tmp_path / "in" / "n.md", b"")], source_dir=tmp_path / "lib")
+    assert v.advisory is None
+
+
 def test_inspect_adds_no_registry_rows(temp_database, tmp_path):
     """Constraint 2, asserted rather than trusted: inspecting is not registering."""
     from sqlalchemy import func, select
@@ -340,6 +456,18 @@ def test_accepted_input_serves_the_enforced_limits_and_every_format(monkeypatch)
 # ============================================================
 # sort_for_review / summarise
 # ============================================================
+
+
+def test_a_warned_add_sorts_between_the_exceptions_and_the_clean_adds(temp_database):
+    """KI-76: "and N more" must still mean clean files, so a scan cannot sink past the cap."""
+    from doc_assistant.library.add import FileVerdict, sort_for_review
+
+    verdicts = [
+        FileVerdict(path="1", name="ok.pdf", verdict="add"),
+        FileVerdict(path="2", name="scan.pdf", verdict="add", advisory="no text"),
+        FileVerdict(path="3", name="dup.pdf", verdict="duplicate"),
+    ]
+    assert [v.name for v in sort_for_review(verdicts)] == ["dup.pdf", "scan.pdf", "ok.pdf"]
 
 
 def test_every_exception_sorts_above_every_clean_add(temp_database, tmp_path):

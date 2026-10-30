@@ -40,6 +40,78 @@ Format: What changed | Why | Rejected alternatives | What it opens
 
 ---
 
+## 2026-10-30 (5) — Keyword search survives an add and forgets a delete (KI-77, KI-78); rail and Re-run fit
+
+**What changed.** `ingest_start` now calls `release_keyword_index` on the old controller before
+`controller_factory()`; `RAGPipeline.release_sparse_index` closes the handle and clears `_sparse`.
+`SparseIndex.forget` keeps a set of removed `doc_hash` values that `search` and `doc_hashes` leave
+out, and `purge_document_record` takes a `forget` callback that delete and undo pass from
+`ChatController.forget_document`. In the desktop app: the concept rail's badge takes its own line,
+the re-run dialog's actions are pinned to the sheet's bottom edge, and a delete refreshes the count.
+
+**Why.** The 0.7.0 walkthrough, sections 2 to 6, on the installed `d8a6b3c` build over the 104-document
+copy. KI-77: Settings showed the keyword index "unavailable". *Rebuild* cured it, and one added note
+moved `/api/settings` from `on_disk` back to `unavailable`. The new controller builds its index while
+the old one holds the file open, Windows refuses the `path.unlink` (`PermissionError [WinError 32]`,
+reproduced alone), and the failure is swallowed into `keyword_index_unavailable`, which only Settings
+reports. Every add to a non-empty library lost keyword matching until a relaunch, since `26ff0990`
+(2026-07-30). An add from empty has no old handle, so RG-012 and first-run walks never saw it. KI-78:
+after *Remove from library*, with the library at 104 documents, "What is walkite-001?" still answered
+from the removed note and cited it, because a delete reached Chroma and never the keyword index. The
+rail showed "B…", "c…", "d…" at 1024×768. *Re-run* was cut by the sheet's edge, and a click on its
+lower half reached the backdrop, closed the dialog and ran nothing, twice in a row.
+
+**Checked.** Unit and API tests for each: forgetting (search, scope, `doc_hashes`), releasing then
+replacing the file, the order of release and factory, the delete and undo wiring. The full suite
+2,842 passed, 9 of them new. The dev app at 1024×768 over the library copy: rail names whole, *Re-run* inside the
+sheet by its measured box, nothing run. **Not checked yet:** both index fixes in the installed app,
+which needs the rebuild, and that is the check that matters: add, read `keyword_index`; delete, ask.
+
+**Rejected.** Writing the delete into the index file: the answer path opens it read-only and a moved
+corpus rebuilds it at the next launch anyway. Rebuilding it on every delete: tens of seconds on the
+request, or a background job for bulk deletes to race. Filtering hits against the `documents` table at
+query time: a database read on every turn, and a dependency this module has never had. A unique file
+name per build: disk and cleanup, to work around one ordering mistake. A chat notice when the arm is
+down: right, and separate; with this the state should be rare.
+
+**What it opens.** A `text` re-run that changes a document's hash leaves its old chunks in the keyword
+index until a relaunch: not fixed, not driven. The walkthrough's other findings are in KI-79 and the
+CHANGELOG's *Known limits*.
+
+## 2026-10-30 (4) — The add review warns about a scan and catches the same file twice (KI-76)
+
+**What changed.** `library/add.py`, in `inspect`. A new PDF with no text on five pages spread through
+it stays an `add`, stays ticked, and carries an advisory saying it looks like a scan and nothing in
+it can be searched. No warning where `tesseract` is on `PATH`, because the extractor then OCRs the
+page (KI-47). A file with the same bytes as an earlier one of the selection is a `duplicate` naming
+it. `sort_for_review` puts a warned add above the clean ones, so "and N more" still means clean
+files. `AddDocuments.svelte` colours the warned row. No wire change: `advisory` already existed.
+
+**Why.** The 0.7.0 walkthrough, section 1, on the installed `d8a6b3c` build. Both scans of the test
+folder read as clean rows, then "Added", "0 errors", 0 chunks; the card said "0 chunks" and the
+document page "· broken", with no reason. The spec had drawn this row since 2026-08 ("ticked,
+warned"), gated on a cost measurement (RG-030) nobody ran, and the checklist went on asking for it.
+The same bytes twice read "Added 8", ingest skipped the second as unchanged, and seven documents
+appeared. The user chose both before the tag.
+
+**Checked.** Measured for RG-030 on the 104 PDFs of the real library: 1.9 s, 18 ms each (median 15,
+max 78), one PDF flagged, `middleton-2001.pdf`, the known scan, so no false alarm. A review opens
+each new PDF, so a 10,000-PDF add would spend about three minutes on this before the sheet shows,
+and only with no OCR engine. The real `inspect` over the 11-file test folder with `tesseract` hidden:
+both scans warned and ticked, the twin refused by name. `test_library_add.py` and the inspect API
+tests, 76 passed; the full suite 2,833 passed, 10 of them new. **Not checked yet:** the warned row on screen, which needs the desktop
+window and so the rebuilt installer.
+
+**Rejected.** A fifth verdict: a scan can still be added, and every `add` rule already applies. A
+page-one probe as the spec drew it: a blank or image-only first page would call a whole paper a
+scan, and a sample through the file costs little more. Refusing the file: inform, don't block. Reading OCR availability
+from anything but `PATH`: it would disagree with what the extractor does. Hashing every file of a
+selection: only same sizes can match, the rule the library already follows.
+
+**What it opens.** A scan already in the library still says only "· broken" on its page. One page
+of text in the sample clears a file, so a scan with a typed cover gets no warning. Two different scans with the same page count extract to the same
+page markers, so by `doc_hash` the second may read as unchanged: not tried.
+
 ## 2026-10-30 (3) — The setup card and the chunk count follow an add (KI-75)
 
 **What changed.** `App.svelte`: the run-finished effect calls `refreshHealth` instead of reading

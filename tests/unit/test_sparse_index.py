@@ -137,6 +137,21 @@ class TestSemantics:
     def test_doc_hashes_lists_what_the_index_holds(self, index):
         assert index.doc_hashes() == {"aaa", "bbb"}
 
+    def test_a_forgotten_document_is_no_longer_returned(self, index):
+        """KI-78: the keyword arm went on citing a document the user had deleted."""
+        assert index.search("late interaction", 10)
+
+        index.forget("bbb")
+
+        hits = index.search("late interaction colbert bm25", 10)
+        assert hits, "the other document still answers"
+        assert {d.metadata["doc_hash"] for d in hits} == {"aaa"}
+        assert index.doc_hashes() == {"aaa"}
+
+    def test_forgetting_holds_inside_a_scope(self, index):
+        index.forget("bbb")
+        assert index.search("late interaction", 10, scope=frozenset({"bbb"})) == []
+
 
 # ============================================================
 # Refusal — a stale or damaged index is rebuilt, never served

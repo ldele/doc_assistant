@@ -132,6 +132,14 @@ class ChatController:
         """Rebuild the on-disk keyword index and swap it in; returns the chunk count (ADR-037)."""
         return self.rag.rebuild_sparse_index()
 
+    def release_keyword_index(self) -> None:
+        """Let go of the index file before a new controller replaces this one (KI-77)."""
+        self.rag.release_sparse_index()
+
+    def forget_document(self, doc_hash: str) -> None:
+        """Keep a removed document out of keyword results from now on (KI-78)."""
+        self.rag.forget_document(doc_hash)
+
     def reconfigure(self, provider: str, model: str) -> None:
         """Switch the live generation provider/model (ADR-011, U1c desktop provider switch).
 

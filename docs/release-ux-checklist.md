@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-10-30 (§1: the setup card and the count follow an add, KI-75; §0: a question at 0 documents reaches no model, KI-74; 2026-10-26: §6: how to check the sidecar ends with the window, KI-71; §6: the freeze behind the answer-engine row was KI-67; §7: RG-012 asks as the window does; §6: the answer-engine-unreachable row, the user's feedback; 2026-10-20: 0.7.0 refresh: rows for the extraction pool, Manage keywords at size, proposed placements, ranked keywords, the KL1 labels, names and written case, the Definition card, term signals, no console window, S-4/S-5/S-6; 2026-09-17: §3 hostile-markup row, S-3) · class: runbook -->
+<!-- status: active · updated: 2026-10-30 (§1: keyword search survives an add, KI-77; §2: a deleted document is not cited, KI-78; §3: the override's real lifetime; §1: the setup card and the count follow an add, KI-75; §0: a question at 0 documents reaches no model, KI-74; 2026-10-26: §6: how to check the sidecar ends with the window, KI-71; §6: the freeze behind the answer-engine row was KI-67; §7: RG-012 asks as the window does; §6: the answer-engine-unreachable row, the user's feedback; 2026-10-20: 0.7.0 refresh: rows for the extraction pool, Manage keywords at size, proposed placements, ranked keywords, the KL1 labels, names and written case, the Definition card, term signals, no console window, S-4/S-5/S-6; 2026-09-17: §3 hostile-markup row, S-3) · class: runbook -->
 
 # Release UX/UI walkthrough — what to drive before every release
 
@@ -48,7 +48,7 @@ scanned PDF). Most rows say which.
 ## 1 · Add documents (both libraries)
 
 - [ ] Picker: one file · several files · a folder. Drag-and-drop the same three (never driven on 2026-08-28 — File Explorer needs full-tier access).
-- [ ] Review sheet: a duplicate reads as a duplicate; an unsupported format says why; a scanned PDF is warned about **before** indexing, not discovered as a 0-chunk document.
+- [ ] Review sheet: a duplicate reads as a duplicate, of the library or of another file in the same selection (KI-76); an unsupported format says why; a scanned PDF is warned about **before** indexing and stays ticked, not discovered as a 0-chunk document. The warning needs a box with no `tesseract` on `PATH`: where one is, the scan is read and there is nothing to warn about.
 - [ ] Size caps (security S-1): add a file renamed to `.epub` that is not a zip → the sheet says it is damaged, in a sentence; with `DOC_MAX_INGEST_BYTES=1000000` set before launch, a larger PDF is refused with its size and the limit. Nothing crashes and nothing is indexed.
 - [ ] The limit is stated up front: the Add documents dialog, the empty-library card and the drop overlay each show the formats line **and** "Up to 1 GB per file" (it follows `DOC_MAX_INGEST_BYTES` if set). These three render only in the desktop window — never verified in a browser.
 - [ ] Walk cap (security S-2): with `DOC_MAX_ADD_FILES=5` set before launch, drop a folder of 6+ files → the sheet shows the one-sentence refusal naming 5 where the rows would be; Cancel works.
@@ -56,6 +56,7 @@ scanned PDF). Most rows say which.
 - [ ] Batch header with > 50 files: the `shown` cap and "and N more" render; make one file fail (rename it mid-run) → `stopped_early`, "Keep the N", `applyError` all render.
 - [ ] Index now → the ingest chip shows progress; the document is answerable **before** the chip says done (controller reload).
 - [ ] After the first add the chat's setup card is gone and the status bar shows the new count, with no relaunch; after **Undo all** the count follows (KI-75).
+- [ ] With documents already in the library, add one more: Settings still shows the keyword index on disk, not *unavailable* (KI-77: on Windows each such add used to turn it off until a relaunch, which an add from empty never shows).
 - [ ] Add five or more PDFs at once with the default workers → extraction finishes and the chip completes; nothing hangs (the pool spawns instead of forking since 0.7.0, `16d1a4b`; the hang was seen on Linux only, so this row proves the installed Windows build still runs it).
 - [ ] **Undo all** after index-now removes the document row, its chunks *and* the referenced root (KI-51, all three parts).
 
@@ -67,7 +68,7 @@ scanned PDF). Most rows say which.
 - [ ] Metadata editor: an edit survives a per-part **metadata** re-ingest (ADR-013 wins over ADR-049 wins over the extractor).
 - [ ] Figures panel + full-size viewer with zoom; references block; Connections panel (`1st/2nd/3rd`, no raw score); taxonomy placement modal (attach ticks the rollup; a cycle is refused with a sentence).
 - [ ] Re-ingest dialog: each part states its cost before it runs; `text` re-chunks without a duplicate document; a batch from *Select* mode continues past one failing document.
-- [ ] Delete: asks; defaults to library-only; a **referenced** file is never sent to the bin and the dialog names its real path (ADR-046).
+- [ ] Delete: asks; defaults to library-only; a **referenced** file is never sent to the bin and the dialog names its real path (ADR-046). Then ask about what you deleted: it is not cited (KI-78), and the status bar's count has moved.
 - [ ] Source viewer: opens at the cited page; *Fit page* is the default; zoom and the split are draggable; a non-PDF degrades to extracted text and says why; an unreachable file is one sentence naming the path.
 - [ ] Manage keywords: the graph-include toggle changes the "On the graph (N)" count immediately.
 - [ ] Manage keywords at library size (ROADMAP 96): it opens at once on the real library; a form typed into *Add a form* lands on the row; a concept's form can be marked *exact* or *broad* and a term's cannot; Delete shows what it removes first and, for a concept, offers *Take off the graph instead*; every door to the view says *Manage keywords* (GLOSSARY U-001) — Library filter, Graph tab button, a concept's *Edit*, a term's link.
@@ -82,7 +83,7 @@ scanned PDF). Most rows say which.
 - [ ] Source-evaluation strip shows year · relevance · graph freshness — and **not** coverage/`contested` chips (withheld since v0.4.1, KI-33) unless `EPISTEMICS_MARKERS_ENABLED=true` was set on purpose.
 - [ ] Claim review: an `unsupported` verdict on a correct refusal is not the accusing one (KI-37); low-confidence card appears on a thin retrieval.
 - [ ] **Compare** (A/B): two source sets side by side, $0, no LLM call in the log.
-- [ ] Session override: change a sandbox knob → the `Session override` note renders **and** the retrieved set changes; out-of-range → 422 surfaced as a sentence, never a silent clamp; the override does not persist across a new chat.
+- [ ] Session override: change a sandbox knob → the `Session override` note renders **and** the retrieved set changes; out-of-range → 422 surfaced as a sentence, never a silent clamp; the override lasts the session, across new chats, and ends at a restart.
 - [ ] Human synthesis mode: evidence only, no interpretation call in the log.
 - [ ] Ask something the corpus cannot answer → a refusal that cites nothing, not a fabricated citation.
 - [ ] **Hostile markup is inert** (S-3): ingest a `.md` holding `<img src=x onerror=alert(1)>` and `[x](javascript:alert(1))`, ask about it until the answer quotes them → no dialog, the link does nothing, no broken-image icon from the handler; the devtools console shows no CSP violation raised by the app itself.

@@ -51,6 +51,10 @@ class FakeController:
     def __init__(self) -> None:
         self.chunk_count = 0
         self.rag = _FakeRag(FakeChroma())
+        self.forgotten: list[str] = []
+
+    def forget_document(self, doc_hash: str) -> None:
+        self.forgotten.append(doc_hash)
 
     def corpus_stats(self) -> dict[str, int]:
         return {"chunk_count": 0}
@@ -321,6 +325,7 @@ def test_undo_reaches_the_index_over_the_wire(temp_database, tmp_path, monkeypat
     with session_scope() as session:
         assert session.get(Document, "doc-wire") is None, "the document must go with the row"
     assert chroma.deleted == ["c1", "c2"], "and its chunks, or it stays retrievable"
+    assert controller.forgotten == ["h-wire"], "and the keyword index, the same way (KI-78)"
 
 
 def test_reference_mode_registers_over_the_wire_without_copying(client, tmp_path):

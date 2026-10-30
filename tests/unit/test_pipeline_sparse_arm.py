@@ -352,6 +352,46 @@ class TestRebuild:
 
         assert rag._scoped == {}
 
+    def test_a_released_index_can_be_replaced_while_the_old_pipeline_lives(
+        self, tmp_path, monkeypatch
+    ):
+        """KI-77: Windows will not delete an open file, so a new controller's build failed and
+        keyword matching stayed off until a relaunch. Not vacuous there; on Linux it only pins the
+        state the old pipeline is left in."""
+        rag = _constructed(tmp_path, monkeypatch)
+        path = sparse_index.index_path(str(tmp_path / "chroma_pc"))
+        old_arm = rag.ensemble.retrievers[0]
+
+        rag.release_sparse_index()
+
+        replacement = sparse_index.SparseIndex.build(path, "new", iter([("frogs", {})]))
+        replacement.close()
+        assert rag.sparse_index_active is False
+        assert rag.keyword_index_unavailable is True, "the state is reported, not hidden"
+        assert old_arm.invoke("anything") == [], "a turn in flight loses its hits, not its answer"
+
+    def test_releasing_twice_is_harmless(self, tmp_path, monkeypatch):
+        rag = _constructed(tmp_path, monkeypatch)
+        rag.release_sparse_index()
+        rag.release_sparse_index()
+        assert rag.sparse_index_active is False
+
+    def test_a_forgotten_document_leaves_the_live_arm(self, tmp_path, monkeypatch):
+        """KI-78, through the pipeline: the ensemble binds this same handle."""
+        rag = _constructed(tmp_path, monkeypatch)
+        assert rag._sparse is not None
+        doc_hash = next(iter(rag._sparse.doc_hashes()))
+
+        rag.forget_document(doc_hash)
+
+        assert doc_hash not in rag._sparse.doc_hashes()
+
+    def test_forgetting_with_no_index_is_harmless(self, tmp_path, monkeypatch):
+        rag = _constructed(tmp_path, monkeypatch)
+        rag.release_sparse_index()
+        rag.forget_document("anything")
+        assert rag.sparse_index_active is False
+
     def test_it_recovers_a_pipeline_that_has_no_index(self, tmp_path, monkeypatch):
         """ADR-038 inverted this. While the legacy arm existed, a pipeline with no live index was
         still serving keyword results and a rebuild was meaningless, so this raised. Now that state

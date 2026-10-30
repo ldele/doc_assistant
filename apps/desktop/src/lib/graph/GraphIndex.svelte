@@ -342,9 +342,12 @@
     padding-right: 2px;
   }
   .crow {
-    display: flex;
+    display: grid;
+    /* The badge takes its own line: beside the name it left a narrow rail one letter of it. */
+    grid-template-columns: auto minmax(0, 1fr) auto;
     align-items: center;
-    gap: var(--space-2);
+    column-gap: var(--space-2);
+    row-gap: 2px;
     width: 100%;
     text-align: left;
     border: 1px solid transparent;
@@ -369,12 +372,14 @@
     flex: none;
   }
   .clabel {
-    flex: 1;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
   .badge {
+    grid-column: 2 / -1;
+    grid-row: 2;
+    justify-self: start;
     font-size: var(--text-meta);
     padding: 1px 7px;
     border-radius: 999px;
@@ -390,6 +395,8 @@
     background: var(--warn-bg);
   }
   .dcount {
+    grid-column: 3;
+    grid-row: 1;
     font-size: var(--text-meta);
     color: var(--fg-2);
     font-variant-numeric: tabular-nums;

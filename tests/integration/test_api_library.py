@@ -45,6 +45,9 @@ class FakeController:
     def chunk_count(self) -> int:
         return 0
 
+    def forget_document(self, doc_hash: str) -> None:
+        pass
+
 
 @pytest.fixture
 def temp_db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):

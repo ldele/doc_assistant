@@ -223,7 +223,11 @@
 
     <ul class="rows">
       {#each visible as f, i (f.path)}
-        <li class="row {f.verdict}" class:off={tickable(f) && unticked.has(f.path)}>
+        <li
+          class="row {f.verdict}"
+          class:warned={f.verdict === 'add' && f.advisory}
+          class:off={tickable(f) && unticked.has(f.path)}
+        >
           {#if tickable(f)}
             <input
               id="addtick-{i}"
@@ -433,7 +437,8 @@
   }
   .row.duplicate,
   .row.unsupported,
-  .row.unreadable {
+  .row.unreadable,
+  .row.warned {
     background: var(--warn-bg);
     border-color: var(--warn-border);
     color: var(--warn-fg);

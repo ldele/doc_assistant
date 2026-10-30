@@ -41,6 +41,7 @@ class _FakeRag:
 class FakeController:
     def __init__(self, count: int = 0) -> None:
         self._count = count
+        self.released = False
         # ADR-011 (U1c): every reconfigure() call, in order.
         self.reconfigure_calls: list[tuple[str, str]] = []
         self.rag = _FakeRag()
@@ -57,6 +58,9 @@ class FakeController:
 
     def rebuild_keyword_index(self) -> int:
         return self.rag.rebuild_sparse_index()
+
+    def release_keyword_index(self) -> None:
+        self.released = True
 
     def reconfigure(self, provider: str, model: str) -> None:
         # Exercises the SAME validation/persistence a real ChatController.reconfigure runs
@@ -249,6 +253,36 @@ def test_ingest_runs_on_the_folder_and_reloads_controller(
     assert seen["scope"] == str(docs.resolve())  # ingested the chosen folder
     # the controller was reloaded → the live chunk_count reflects the new corpus
     assert client.get("/api/settings").json()["chunk_count"] == 99
+
+
+def test_ingest_releases_the_keyword_index_before_the_new_controller_is_built(
+    settings_file: Path, tmp_path: Path
+) -> None:
+    """KI-77: the order is the fix. The new controller rebuilds the index file, and on Windows
+    that fails while the old controller still holds it open."""
+    docs = tmp_path / "papers"
+    docs.mkdir()
+    old = FakeController(count=1)
+    seen: dict[str, bool] = {}
+
+    def factory() -> FakeController:
+        seen["released_first"] = old.released
+        return FakeController(count=2)
+
+    def fake_ingest(
+        *, scope: str, on_progress: Callable[[int, int, str | None], None] | None = None
+    ) -> dict[str, int]:
+        return {"added": 1, "skipped": 0, "error": 0}
+
+    client = TestClient(
+        create_app(controller=old, ingest_fn=fake_ingest, controller_factory=factory)
+    )
+    client.post("/api/settings", json={"source_dir": str(docs)})
+
+    assert client.post("/api/ingest").status_code == 202
+    assert _poll_until(client, state="done")["state"] == "done"
+
+    assert seen == {"released_first": True}
 
 
 def test_ingest_surfaces_failure_in_status(settings_file: Path) -> None:

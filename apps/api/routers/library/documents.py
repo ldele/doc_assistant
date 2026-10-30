@@ -177,7 +177,9 @@ def delete_library_document(
 
     controller: ChatController = request.app.state.controller
     try:
-        result = delete_document(doc_id, controller.rag.db, delete_file=delete_file)
+        result = delete_document(
+            doc_id, controller.rag.db, delete_file=delete_file, forget=controller.forget_document
+        )
     except RuntimeError as e:
         raise HTTPException(status_code=409, detail=str(e)) from e
     if result is None:

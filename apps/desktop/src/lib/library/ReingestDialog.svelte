@@ -365,10 +365,16 @@
     font-variant: small-caps;
   }
   .actions {
+    /* Pinned to the sheet's bottom edge: a tall sheet cut the primary button in half, and a click
+       on the part below the edge landed on the backdrop and closed the dialog. */
+    position: sticky;
+    bottom: calc(-1 * var(--space-4));
+    margin: 0.3rem 0 calc(-1 * var(--space-4));
+    padding: var(--space-2) 0 var(--space-4);
+    background: var(--surface);
     display: flex;
     justify-content: flex-end;
     gap: 0.5rem;
-    margin-top: 0.3rem;
   }
   .primary,
   .ghost {

@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import subprocess  # nosec B404
 import sys
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -389,6 +390,7 @@ def purge_document_record(
     *,
     doc_hash: str,
     source_cache: str | None,
+    forget: Callable[[str], None] | None = None,
 ) -> int:
     """Remove a document *everywhere except the file on disk*. Returns the chunk count removed.
 
@@ -401,7 +403,8 @@ def purge_document_record(
     Removes: the ``Document`` row (FK-cascades citations / parts / similarities, and the
     ``DocumentMeta`` override since ADR-026), the doc's chunks from the live Chroma store, its
     figure directory and its cached markdown. Each on-disk step is guarded — a locked file leaves a
-    warning, not a half-removed document.
+    warning, not a half-removed document. ``forget`` is told the ``doc_hash``, because the running
+    keyword index is not a store this function can reach (KI-78).
     """
     from doc_assistant.ingest.cleanup import cleanup_orphan_figures
 
@@ -422,6 +425,8 @@ def purge_document_record(
             chroma_db.delete(ids=ids)
     except Exception as e:
         log.warning("delete_chunks_failed", document_id=document_id, error=str(e))
+    if forget is not None:
+        forget(doc_hash)
 
     cleanup_orphan_figures([doc_hash])
     if source_cache:
@@ -464,7 +469,11 @@ def _forget_source_row(source_original: str | None) -> bool:
 
 
 def delete_document(
-    document_id: str, chroma_db: Any, *, delete_file: bool = False
+    document_id: str,
+    chroma_db: Any,
+    *,
+    delete_file: bool = False,
+    forget: Callable[[str], None] | None = None,
 ) -> DeleteResult | None:
     """Remove a document from the library, and — only if asked — its source file too.
 
@@ -519,7 +528,7 @@ def delete_document(
 
     # 2-4. Everything except the file: the row (+ cascades), the chunks, the on-disk sidecars.
     chunks_removed = purge_document_record(
-        document_id, chroma_db, doc_hash=doc_hash_val, source_cache=source_cache
+        document_id, chroma_db, doc_hash=doc_hash_val, source_cache=source_cache, forget=forget
     )
 
     # The registry row is only false once the file is gone; while the file is on disk the row

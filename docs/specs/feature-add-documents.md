@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-10-27 (AD2: the per-file ticks built; 2026-08-28: EPUB + HTML round trip; ADR-046 delete half; AD4; CS1/CS2 — all work items built) · class: living -->
+<!-- status: active · updated: 2026-10-30 (AD2: the no-text-layer warning and the same-selection duplicate built, KI-76; 2026-10-27: the per-file ticks built; 2026-08-28: EPUB + HTML round trip; ADR-046 delete half; AD4; CS1/CS2 — all work items built) · class: living -->
 
 # Spec — Add documents: the accept surface (AD1–AD4) + the Settings changes it forces (CS1–CS2)
 
@@ -120,7 +120,8 @@ Per-file verdicts, computed server-side, shown before any mutation.
 | **Add** | `extractors.is_supported` | ticked |
 | **Unsupported** | `extractors.get_format_status` | greyed, unticked, advisory **verbatim** |
 | **Already in your library** | `sha256(source bytes)` vs registry | unticked, links the existing document |
-| **No text layer** | page-1 probe — **cost unmeasured, RG-030 gates this row** | ticked, warned |
+| **Same file twice in the selection** | `sha256(source bytes)`, same sizes only | unticked, names the first (built 2026-10-30, KI-76) |
+| **No text layer** | five pages spread through the PDF; none where `tesseract` is on `PATH` (KI-47). Measured for RG-030 on 2026-10-30: 18 ms a PDF, 1.9 s for 104, the library's one scan and no false alarm | ticked, warned (built 2026-10-30, KI-76) |
 
 Above a threshold the sheet paginates; the batch is never capped. **Every non-Add verdict sorts to
 the top**, so the visible rows always contain all warnings, duplicates and unsupported files and
@@ -293,7 +294,7 @@ sorting + pagination — **testable under `node --test`, and it must be**) ·
 | # | Question | Status |
 |---|---|---|
 | 1 | Which accept route, and does it add an npm dep? | **resolved 2026-08-21** — `withGlobalTauri` + injected API; **no npm dep**; see W0 |
-| 2 | Cost of the page-1 text-layer probe across a 500-file batch | **parked — RG-030** |
+| 2 | Cost of the page-1 text-layer probe across a 500-file batch | **measured once, 2026-10-30 (RG-030)** — about 9 s for 500 PDFs by the 18 ms a file seen on 104, warm; the sheet waits on it behind "Checking N items…" |
 | 3 | Does a referenced root need a "re-scan on app start" pass, or is missing-detection on demand enough? | **resolved 2026-08-25** — **on demand is enough; no startup pass.** `scan_sources` already runs whenever the Library loads, so a vanished file derives `missing` the moment anyone looks, and one behaviour covers both root kinds. A startup pass would `rglob` every referenced root at launch — on a network share or an unplugged drive that is slow or blocking, at the worst possible moment (RG-012 tracks cold start). **Consequence, decided with it:** an unreachable *root* is not the same fact as deleted *files*, so `RootView.available` is derived per scan and `SourceView.root_available` carries it, letting the UI say "the drive is not connected" instead of showing 400 identical `missing` badges. Availability is never persisted — a drive that is unplugged now may be back in a second |
 
 *(cpc `docs_check` rule 15 fails a started sprint with an `open` row — resolve 1 and 3 at

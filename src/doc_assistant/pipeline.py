@@ -321,6 +321,23 @@ class RAGPipeline:
             return self._sparse.doc_hashes()
         return None if self.keyword_index_unavailable else set()
 
+    def release_sparse_index(self) -> None:
+        """Close the keyword index so a new pipeline can replace its file (KI-77).
+
+        Windows refuses to delete a file that is open, and the controller built after an ingest
+        builds its index while this one is alive. Left open, that build failed and keyword
+        matching stayed off until a relaunch. A turn still running here loses only its keyword
+        hits: `SparseIndex.search` answers a closed handle with no results.
+        """
+        if self._sparse is not None:
+            self._sparse.close()
+            self._sparse = None
+
+    def forget_document(self, doc_hash: str) -> None:
+        """Keep a removed document out of the keyword arm until the index is rebuilt (KI-78)."""
+        if self._sparse is not None:
+            self._sparse.forget(doc_hash)
+
     def rebuild_sparse_index(self) -> int:
         """Rebuild the on-disk keyword index from the store and swap it into the live pipeline.
 

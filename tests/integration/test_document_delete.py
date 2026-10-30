@@ -42,9 +42,13 @@ class _FakeRag:
 class _FakeController:
     def __init__(self, db: FakeChroma) -> None:
         self.rag = _FakeRag(db)
+        self.forgotten: list[str] = []
 
     def chunk_count(self) -> int:
         return 0
+
+    def forget_document(self, doc_hash: str) -> None:
+        self.forgotten.append(doc_hash)
 
 
 @pytest.fixture
@@ -164,6 +168,32 @@ def test_delete_route(temp_db: None, tmp_path: Path, monkeypatch: pytest.MonkeyP
     assert not _exists(doc_id)
 
     assert client.delete("/api/library/documents/nope").status_code == 404
+
+
+def test_delete_tells_the_running_keyword_index(temp_db: None, tmp_path: Path) -> None:
+    """KI-78: the chunks left the store, and the index went on citing them until a relaunch."""
+    from doc_assistant.library import delete_document
+
+    src = tmp_path / "paper.pdf"
+    src.write_text("x")
+    doc_id = _seed_doc("paper.pdf", source_original=str(src))
+    forgotten: list[str] = []
+
+    delete_document(doc_id, FakeChroma({"hash-paper.pdf": ["c1"]}), forget=forgotten.append)
+
+    assert forgotten == ["hash-paper.pdf"]
+
+
+def test_delete_route_wires_the_keyword_index(temp_db: None, tmp_path: Path) -> None:
+    src = tmp_path / "paper.pdf"
+    src.write_text("x")
+    doc_id = _seed_doc("paper.pdf", source_original=str(src))
+    controller = _FakeController(FakeChroma({"hash-paper.pdf": ["c1"]}))
+    client = TestClient(create_app(controller=controller))
+
+    assert client.delete(f"/api/library/documents/{doc_id}").status_code == 200
+
+    assert controller.forgotten == ["hash-paper.pdf"]
 
 
 def test_delete_route_409_on_trash_failure(

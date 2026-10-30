@@ -111,6 +111,20 @@ The engineering record is finer-grained than this file: per-change entries live 
   model, and a local model could answer from memory with an invented quotation and source number.
   A question at 0 documents, in an empty folder, or with nothing matching now gets one plain
   sentence saying so, and no model is called.
+- **Keyword search stays on after you add documents.** On Windows, adding to a library that already
+  held documents turned keyword search off until the app restarted: answers matched on meaning
+  alone, exact names and terms could be missed, and only Settings said so.
+- **A deleted document stops being cited at once.** Its text stayed reachable through keyword search
+  until the next restart, so an answer could cite a document you had removed.
+- **The concept list is readable at the default window size, and *Re-run* fits its dialog.** A badge
+  left concept names one letter wide. With *Text & chunks* ticked the *Re-run* button was cut by the
+  dialog's edge, and a click on its lower half closed the dialog with nothing run.
+- **The status bar's chunk count follows a delete.**
+- **A scanned PDF is flagged before it is added.** The add review now says when a PDF has no
+  readable text and nothing in it will be searchable; the file stays ticked, and it is your call.
+  It used to read as added and stay at 0 chunks with no explanation.
+- **The same file twice in one add reads as a duplicate.** Both used to read as added, and only
+  one document appeared.
 - **Adding documents updates the rest of the app.** After a first add, the chat went on saying
   "Nothing indexed yet" until a restart, and after *Undo all* the status bar kept the old chunk
   count. Both now follow the library.
@@ -187,6 +201,15 @@ The engineering record is finer-grained than this file: per-change entries live 
   development library (about 50 of 1,560): a paper's own author names, letter-spaced journal
   headers (`ce ress` from "Cell Press"), names split at an accent (`g ttingen`) or a possessive
   (`cajal s`), and fragments of notation.
+- **If the backend stops while the window is open, the app is slow to say so.** The status bar stays
+  green with the old count, and panels and chat answer "TypeError: Failed to fetch" until you restart.
+- **If port 8001 is taken at launch, the window stays on "starting the engine…".** It does not name
+  the conflict. Free the port and start the app again.
+- **A file removed from the library reads as "Already in your library" if you add it again**, because
+  it stays in your Provenote folder. Index it from Settings → Documents → *Manage files*.
+- **Moving your data folder loses the figure images.** The app says so on each document, and re-running
+  *Figure images* restores them.
+- **A scan already in the library says only "broken"** on its page and "0 chunks" on its card.
 - **Everything under *Known limits* for 0.6.0 still applies**, re-read against the code on
   2026-10-20: a cited passage is not yet marked on its page; a few pages hold the previous page's
   text; citation links are worked out once; a file moved outside the app loses the exclusions set

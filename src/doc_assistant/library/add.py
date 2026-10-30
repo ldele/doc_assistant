@@ -1,10 +1,10 @@
 """Add-documents: inspect a set of candidate paths and say what would happen to each (AD2).
 
 `inspect` is the review sheet's whole data source, and it is **read-only by construction** — it
-stats, hashes and classifies, and writes nothing except an opportunistic hash cache on rows it
-already had to read. That is spec constraint 2 ("nothing is copied, registered or indexed before
-the review sheet is shown and confirmed") made structural rather than remembered: there is no code
-path from here to the chunk store.
+stats, hashes, classifies and reads a few pages of each new PDF, and writes nothing except an
+opportunistic hash cache on rows it already had to read. That is spec constraint 2 ("nothing is
+copied, registered or indexed before the review sheet is shown and confirmed") made structural
+rather than remembered: there is no code path from here to the chunk store.
 
 **Identity is the sha256 of the source bytes** (ADR-046). That deliberately leads ADR-042 — the
 project's current `doc_hash` is over the *extracted* text and answers a different question
@@ -23,7 +23,8 @@ from __future__ import annotations
 
 import contextlib
 import hashlib
-from collections.abc import Iterable, Sequence
+import shutil
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
@@ -46,6 +47,16 @@ log = structlog.get_logger(__name__)
 #: enough that a pathological file cannot balloon resident memory.
 _HASH_CHUNK = 1 << 20
 
+#: Pages read per PDF, spread through the file, to ask whether it has a text layer. A bound on what
+#: a review costs, since it opens every new PDF (18 ms each across a 104-PDF library), not a
+#: threshold: one page with text anywhere in the sample clears the file.
+_TEXT_LAYER_SAMPLE_PAGES = 5
+
+_SCAN_ADVISORY = (
+    "This PDF has no readable text, so it looks like a scan: it will be added, but nothing in it "
+    "can be searched."
+)
+
 Verdict = Literal["add", "unsupported", "duplicate", "unreadable"]
 
 
@@ -55,7 +66,8 @@ class FileVerdict:
 
     `advisory` is the sentence shown to the user. For `unsupported` it is
     `get_format_status`'s own text, verbatim — that string already names the conversion target
-    ("Convert to DOCX or PDF first"), and rewording it here would fork the message.
+    ("Convert to DOCX or PDF first"), and rewording it here would fork the message. On an `add` it
+    is a warning that leaves the file ticked: a scan the user may still want listed.
     """
 
     path: str
@@ -64,8 +76,8 @@ class FileVerdict:
     size: int | None = None
     sha256: str | None = None
     advisory: str | None = None
-    #: Set on `duplicate`: the `registry.source_key` of the registered file this one matches —
-    #: a key, not a bare rel_path, since AD3b made the library span roots.
+    #: Set on a `duplicate` of a registered file: that file's `registry.source_key` — a key, not a
+    #: bare rel_path, since AD3b made the library span roots.
     duplicate_of: str | None = None
 
     @property
@@ -81,6 +93,46 @@ def sha256_file(path: Path) -> str:
         while chunk := fh.read(_HASH_CHUNK):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def _scan_advisory(path: Path) -> str | None:
+    """The warning for a PDF that will index to nothing, or ``None``.
+
+    PyMuPDF4LLM OCRs a page with no text layer when a ``tesseract`` binary is on ``PATH`` (KI-47),
+    so there the scan will be read and there is nothing to warn about. A PDF MuPDF cannot read is
+    not judged here: it is ingest's to report.
+    """
+    if path.suffix.lower() != ".pdf" or shutil.which("tesseract"):
+        return None
+
+    import pymupdf
+
+    try:
+        with pymupdf.open(str(path)) as doc:  # type: ignore[no-untyped-call]
+            n = len(doc)
+            sample = {n * i // _TEXT_LAYER_SAMPLE_PAGES for i in range(_TEXT_LAYER_SAMPLE_PAGES)}
+            has_text = any(doc[i].get_text().strip() for i in sample)
+    except Exception as e:
+        log.debug("text_layer_check_failed", file=path.name, error=str(e))
+        return None
+    return None if has_text else _SCAN_ADVISORY
+
+
+def _twin_in_batch(path: Path, earlier: list[Path], digests: dict[Path, str]) -> Path | None:
+    """The file already accepted from this selection with the same bytes as ``path``, or ``None``.
+
+    ``earlier`` holds only files of ``path``'s size, so a selection is hashed only where two
+    files could match, as the library is.
+    """
+    if not earlier:
+        return None
+    try:
+        for p in (path, *earlier):
+            if p not in digests:
+                digests[p] = sha256_file(p)
+    except OSError:
+        return None
+    return next((p for p in earlier if digests[p] == digests[path]), None)
 
 
 class AddBatchTooLargeError(ValueError):
@@ -227,6 +279,8 @@ def inspect(paths: Sequence[Path], *, source_dir: Path | None = None) -> list[Fi
         ensure_library_root(session, library)
         index = _size_index(session)
         newly_hashed: dict[str, str] = {}
+        batch_by_size: dict[int, list[Path]] = {}
+        batch_digests: dict[Path, str] = {}
 
         for path in candidates:
             name = path.name
@@ -291,8 +345,35 @@ def inspect(paths: Sequence[Path], *, source_dir: Path | None = None) -> list[Fi
                 )
                 continue
 
+            # KI-76: ingest keeps the first of two identical files, so the second would read as
+            # added and never appear.
+            if digest is not None:
+                batch_digests[path] = digest
+            same_size = batch_by_size.setdefault(size, [])
+            twin = _twin_in_batch(path, same_size, batch_digests)
+            if twin is not None:
+                verdicts.append(
+                    FileVerdict(
+                        path=str(path),
+                        name=name,
+                        verdict="duplicate",
+                        size=size,
+                        sha256=batch_digests[path],
+                        advisory=f"The same file as {twin.name}, earlier in this selection.",
+                    )
+                )
+                continue
+            same_size.append(path)
+
             verdicts.append(
-                FileVerdict(path=str(path), name=name, verdict="add", size=size, sha256=digest)
+                FileVerdict(
+                    path=str(path),
+                    name=name,
+                    verdict="add",
+                    size=size,
+                    sha256=batch_digests.get(path),
+                    advisory=_scan_advisory(path),
+                )
             )
 
         if newly_hashed:
@@ -329,7 +410,7 @@ def _cache_hashes(session: Session, hashes: dict[str, str]) -> None:
 
 
 def sort_for_review(verdicts: Sequence[FileVerdict]) -> list[FileVerdict]:
-    """Non-`add` verdicts first, stable within each group (grill branch 7).
+    """Non-`add` verdicts first, then warned adds, stable within each group (grill branch 7).
 
     The sheet paginates (a batch may hold up to `config.MAX_ADD_FILES`), so the first page
     must carry everything the user needs to see. Sorting the exceptions up is what makes "and N
@@ -337,7 +418,7 @@ def sort_for_review(verdicts: Sequence[FileVerdict]) -> list[FileVerdict]:
     something never shown.
     """
     order = {"unsupported": 0, "unreadable": 1, "duplicate": 2, "add": 3}
-    return sorted(verdicts, key=lambda v: order.get(v.verdict, 99))
+    return sorted(verdicts, key=lambda v: (order.get(v.verdict, 99), v.advisory is None))
 
 
 def summarise(verdicts: Sequence[FileVerdict]) -> dict[str, int]:
@@ -592,6 +673,7 @@ def undo_add(
     *,
     source_dir: Path | None = None,
     chroma_db: Any | None = None,
+    forget: Callable[[str], None] | None = None,
 ) -> int:
     """Reverse an apply: drop the registry rows, the documents they produced, and only the files
     the app itself made.
@@ -667,7 +749,7 @@ def undo_add(
             # Resolve before the row goes: afterwards the root lookup it needs may be gone too.
             absolute = _row_path(session, row, library=library)
             if chroma_db is not None:
-                _purge_document_for(absolute, chroma_db=chroma_db, cutoff=cutoff)
+                _purge_document_for(absolute, chroma_db=chroma_db, cutoff=cutoff, forget=forget)
             if row.origin == "copied":
                 _delete_copied_file(session, row, library=library, cutoff=cutoff)
             touched_roots.add(row.root_id)
@@ -696,7 +778,13 @@ def _row_path(session: Session, row: SourceFile, *, library: Path) -> Path:
     return base / row.rel_path
 
 
-def _purge_document_for(absolute: Path, *, chroma_db: Any, cutoff: datetime) -> bool:
+def _purge_document_for(
+    absolute: Path,
+    *,
+    chroma_db: Any,
+    cutoff: datetime,
+    forget: Callable[[str], None] | None = None,
+) -> bool:
     """Remove the `Document` this add produced for `absolute`, if it is provably this add's.
 
     **The guard is the whole function.** A path can carry a document the user already had — they
@@ -751,7 +839,11 @@ def _purge_document_for(absolute: Path, *, chroma_db: Any, cutoff: datetime) -> 
         return False
 
     chunks = purge_document_record(
-        str(match.id), chroma_db, doc_hash=str(match.doc_hash), source_cache=match.source_cache
+        str(match.id),
+        chroma_db,
+        doc_hash=str(match.doc_hash),
+        source_cache=match.source_cache,
+        forget=forget,
     )
     log.info(
         "undo_document_purged",

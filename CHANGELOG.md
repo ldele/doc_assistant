@@ -54,9 +54,9 @@ The engineering record is finer-grained than this file: per-change entries live 
   now starts it itself, so nothing in the window can launch a process, the backend included.
 - **Libraries with advisories published during this release were upgraded**, among them the
   sanitiser that cleans chat answers (DOMPurify 3.4.17, rated critical), the Pillow image library
-  (13.0), and `aiohttp`, `certifi`, `filelock`, `msgpack` and OpenTelemetry. One advisory in
-  `setuptools` stays, reviewed: its fix needs a newer torch, and the code it concerns never runs
-  here.
+  (13.0), and `aiohttp`, `certifi`, `filelock`, `langgraph-sdk`, `msgpack` and OpenTelemetry. One
+  advisory in `setuptools` stays, reviewed: its fix needs a newer torch, and the code it concerns
+  never runs here.
 - Release engineering, no change to the app: CI fails on an unreviewed dependency advisory and on a
   committed secret, and its actions are pinned to commits.
 

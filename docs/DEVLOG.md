@@ -40,6 +40,27 @@ Format: What changed | Why | Rejected alternatives | What it opens
 
 ---
 
+## 2026-10-30 (2) — `langgraph-sdk` 0.4.6: an advisory published during the release
+
+**What changed.** `uv.lock`: `langgraph-sdk` 0.4.5 → 0.4.6 (`uv lock --upgrade-package
+'langgraph-sdk==0.4.6'`); nothing else moved. **Found by:** the pip-audit gate, run here before
+`841fc75`: CVE-2026-118667 (GHSA-3fx2-cqw9-xr3c). It had passed on 2026-10-27.
+
+**Why.** It ships: `collect_all("langchain")` in `scripts/doc_assistant_api.spec` takes `langgraph`
+and this SDK into the frozen backend (84 entries in the last build's `PYZ-00.toc`). The flaw is in
+the SDK's v3 streaming client, which talks to a remote LangGraph server. This app has none: `src/`
+never imports `langgraph`, and neither package is loaded when the API starts. A patch release was
+still cheaper than a reviewed ignore. 0.4.6 is the first fixed version, 24 days old.
+
+**Checked.** The gate is OK (197 packages, 0 unreviewed), the whole suite passes (2,823), and the
+venv moved one package. The app never loads the SDK, so no run here exercises the new version.
+
+**Correction to the entry below** (this file is append-only): its *Checked* line says 8 tests "new
+or extended"; the true count is 7 new cases and 3 extended tests.
+
+**What it opens.** The eighth advisory round since 2026-10-20. The release backend must be frozen
+from this commit or later.
+
 ## 2026-10-30 — A turn that retrieves nothing is answered without a model (KI-74); About shows the version
 
 **What changed.** `_handle_rag` now stops at `if not scored:` and returns `_no_sources_result`: one

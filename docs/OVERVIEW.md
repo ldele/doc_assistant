@@ -96,8 +96,8 @@ of the chunk-size grid on the private set.
 - **Released:** v0.6.0, tagged 2026-09-04, published 2026-09-07 with a Windows installer that was
   installed and driven on a clean machine before publishing. Earlier: 0.4.1 (first working
   installer, 2026-08-06), 0.5.0, 0.5.1.
-- **In preparation: v0.7.0**, no date set. In the [CHANGELOG](../CHANGELOG.md)'s *Unreleased*
-  and the README's Status: concepts the user takes on, with forms marked exact or broad;
+- **In preparation: v0.7.1**, the first published build of the 0.7 line. In the
+  [CHANGELOG](../CHANGELOG.md)'s 0.7.0 and 0.7.1 sections and the README's Status: concepts the user takes on, with forms marked exact or broad;
   definitions chosen from sentences quoted from the user's documents, with page; concept merges
   that keep the curation and can be undone; signals relabelled to say what they count; the
   knowledge layer reads prose, not figure captions; security hardening (size and zip-bomb limits,

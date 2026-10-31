@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-10-27 (§2: the window's capability loses the shell permission, KI-73; 2026-10-20: release refresh: §2 lists S-4, S-5, S-6, S-8 and S-12 as holding; 2026-10-18: S-12 done: the actions pinned to SHAs, Dependabot for actions only, a guard test; alerts the user's toggle, off when read back; S-6 done: a write needs the launch token; S-7 next; 2026-10-01: S-13 done, CI's secret scan fails on a secret the baseline does not record; S-14 found by its first run and done: the scanner reads UTF-8 on Windows too) · class: living -->
+<!-- status: active · updated: 2026-10-31 (§2: what the installer ends and deletes, KI-80; 2026-10-27: §2: the window's capability loses the shell permission, KI-73; 2026-10-20: release refresh: §2 lists S-4, S-5, S-6, S-8 and S-12 as holding; 2026-10-18: S-12 done: the actions pinned to SHAs, Dependabot for actions only, a guard test; alerts the user's toggle, off when read back; S-6 done: a write needs the launch token; S-7 next; 2026-10-01: S-13 done, CI's secret scan fails on a secret the baseline does not record; S-14 found by its first run and done: the scanner reads UTF-8 on Windows too) · class: living -->
 
 # Security — the threat model, the plan, the floor, and the periodic check
 
@@ -70,6 +70,11 @@ and says so).
   HEAD and OPTIONS answers 401 without `X-Doc-Api-Token` when the shell has set `DOC_API_TOKEN`
   (`apps/api/launch_token.py`). It is a rule by method, not a list of routes, so the write routes
   added since — definitions, taxonomy proposals, keyword forms — are covered without a line each.
+- **The installer's reach outside its own folder is one process name and one folder test** (KI-80,
+  2026-10-31): `src-tauri/nsis/hooks.nsh` ends `doc-assistant-api.exe` and, in `%TEMP%`, deletes a
+  `_MEI*` folder only if it holds our reranker model, since every PyInstaller program uses that
+  name. It takes no input and runs after the app check.
+  `test_the_installer_clears_what_an_older_engine_left` pins the guard.
 - **Secrets.** `.env` is ignored and was never committed; `credentials.py` is the single disk path
   for an in-app key, masked to four characters in logs and in `/api/setup`; no route echoes a key;
   `detect-secrets` runs in pre-commit on the staged files, and in CI over every tracked file as a

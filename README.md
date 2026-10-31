@@ -310,7 +310,7 @@ development library on 2026-10-18 (104 documents, 3,341 pages) unless a date say
 
 ## Status
 
-**v0.7.0 (2026-10-26): the map of your library becomes yours to curate and check.** What it adds:
+**v0.7.1 (2026-10-31): the map of your library becomes yours to curate and check.** What it adds:
 
 - **Concepts are yours.** A concept is a meaning you take on in Manage keywords, with a name and
   forms marked *exact* (always this concept, counted) or *broad* (shown beside, never counted); the

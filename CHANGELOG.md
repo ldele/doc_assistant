@@ -7,6 +7,28 @@ versioning is [SemVer](https://semver.org/) on the `doc_assistant` package, and 
 The engineering record is finer-grained than this file: per-change entries live in
 [`docs/DEVLOG.md`](docs/DEVLOG.md), design decisions in [`docs/decisions.md`](docs/decisions.md).
 
+## [0.7.1] — 2026-10-31
+
+The first published build of this line. 0.7.0 was tagged and never released: a last check before
+publishing found it could not be installed over 0.6.0 as its notes said. Everything under [0.7.0]
+ships here.
+
+### Fixed
+
+- **Installing over 0.6.0 works with no restart.** 0.6.0 leaves its engine running after its window
+  closes, and that engine kept port 8001, so the new app stayed on "still starting" however often
+  it was reopened. The installer now ends it and removes what it left behind: a 1.5 GB file in the
+  install folder and a 2.4 GB unpacked copy in the temp folder. It deletes a temp folder only if
+  that folder holds Provenote's own model, so another program's files there stay.
+
+### Known limits
+
+- **A document's ⋯ menu, which holds *Delete*, and a chat's rename and pin appear only under a
+  mouse pointer.** They cannot be reached from the keyboard.
+- **After you delete a concept, the gap list shows its internal ID** in place of its name until the
+  next *Rebuild*.
+- **Everything under *Known limits* for 0.7.0 still applies.**
+
 ## [0.7.0] — 2026-10-30
 
 ### Added

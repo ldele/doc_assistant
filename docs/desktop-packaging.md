@@ -320,4 +320,12 @@ the symptom is a healthy server with `chunk_count: 0` / "empty (vector-only) ind
   override it (the compressor is fixed once the header changes). File-by-file zlib gives a
   1,642,519,979-byte installer in ~7 min. **On a Tauri CLI upgrade, re-take its template and
   re-apply that one line**; `test_the_installer_compresses_file_by_file` fails if `/SOLID` returns.
+- **The installer clears what an older engine left** (`src-tauri/nsis/hooks.nsh`, KI-80): after the
+  app check it ends `doc-assistant-api.exe`, deletes the file of that name from the install root
+  (0.6.0's one-file engine, which no later installer lists), and removes `%TEMP%\_MEI*` folders
+  holding our reranker model, which a force-ended one-file engine cannot remove itself. A hook,
+  not a template change, so re-taking Tauri's template keeps it.
+  `test_the_installer_clears_what_an_older_engine_left` pins the order and the guard. To try a
+  change without a 16-minute build, `makensis` a one-section script that inserts the macro and run
+  that in the sandbox.
 - Deleting Chainlit + lifting the Python-3.12 pin (KI-2) is **PR-M5**, after this ships.

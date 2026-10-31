@@ -1,4 +1,4 @@
-<!-- status: archived · updated: 2026-10-27 · class: living -->
+<!-- status: archived · updated: 2026-10-31 · class: living -->
 
 # DEVLOG archive index
 
@@ -6,6 +6,20 @@ One line per rotated entry, grouped per archive file, newest file first. Laid by
 `cpc-rotate` at the first rollover (ADR-045). Each later rotation writes the lines it
 owes when `[rotate] write_index` is on, and prints them for a human to place when it
 is off; docs_check rule 17 fails while any archived entry is missing here.
+
+## DEVLOG-archive-009.md
+
+- **2026-10-27** (3) — The backend ships as a folder: 9–10 s to a working window instead of 72 (KI-73, part 2)
+- **2026-10-27** (2) — The window shows the last session at once: a start screen, then the library, chats and graph until the engine answers (KI-73, part 1)
+- **2026-10-27** — Setting up an answer engine from Settings: an instant panel, verdicts in place, no impossible model (KI-72)
+- **2026-10-26** (4) — Closing the app ends its backend; the backend stops when the app is gone (KI-71)
+- **2026-10-26** (3) — A failed turn says why; quotes drop the extractor's emphasis markers; two claims corrected
+- **2026-10-26** (2) — The API answers the Windows window's origin, and RG-012 asks as the window does (KI-67)
+- **2026-10-26** — Every Ollama call asks for an 8,192-token window: answers no longer lose the instructions to cite
+- **2026-10-25** — 0.7.0 release commit: the version in nine places, a dated CHANGELOG, and no developer command in the re-ingest dialog
+- **2026-10-24** (3) — Keyword cleanup (ROADMAP 99): junk filtered, keywords listed by rank, and the first precision baseline shows no gain
+- **2026-10-24** (2) — `filelock` 4 and OpenTelemetry 1.45.1 upgraded; a `setuptools` advisory reviewed
+- **2026-10-24** — `dompurify` 3.4.17: a critical advisory in the app's answer sanitiser
 
 ## DEVLOG-archive-008.md
 

@@ -95,10 +95,29 @@ def test_the_installer_compresses_file_by_file() -> None:
     changed; re-taking Tauri's template on an upgrade must not bring `/SOLID` back."""
     conf = json.loads(TAURI_CONF.read_text(encoding="utf-8"))
     nsis = conf["bundle"]["windows"]["nsis"]
-    assert nsis == {"compression": "zlib", "template": "nsis/installer.nsi"}
+    assert nsis["compression"] == "zlib"
+    assert nsis["template"] == "nsis/installer.nsi"
     template = (TAURI_CONF.parent / nsis["template"]).read_text(encoding="utf-8")
     assert 'SetCompressor "{{compression}}"' in template
     assert "/SOLID" not in template.replace("not /SOLID", "")
+
+
+def test_the_installer_clears_what_an_older_engine_left() -> None:
+    """KI-80: 0.6.0's engine outlives its window and holds port 8001, and no later installer lists
+    its 1.5 GB file. The hook has to run after the app check, so it ends no engine a window still
+    uses, and touch only a TEMP folder it can prove is ours: PyInstaller programs all use `_MEI*`.
+    """
+    conf = json.loads(TAURI_CONF.read_text(encoding="utf-8"))
+    nsis = conf["bundle"]["windows"]["nsis"]
+    assert nsis["installerHooks"] == "nsis/hooks.nsh"
+    hooks = (TAURI_CONF.parent / nsis["installerHooks"]).read_text(encoding="utf-8")
+    assert "!macro NSIS_HOOK_POSTINSTALL" in hooks
+    assert "NSIS_HOOK_PREINSTALL" not in hooks.replace("not PREINSTALL", "")
+    assert "taskkill.exe" in hooks and "/IM doc-assistant-api.exe" in hooks
+    assert 'Delete "$INSTDIR\\doc-assistant-api.exe"' in hooks
+    guard = 'hf_cache\\hub\\models--BAAI--bge-reranker-base\\*.*"'
+    assert hooks.index(guard) < hooks.index('RMDir /r "$TEMP\\$1"')
+    assert hooks.isascii()
 
 
 def test_no_remote_ipc_and_no_updater() -> None:

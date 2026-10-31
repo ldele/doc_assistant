@@ -41,8 +41,8 @@ ships here.
   plain sentences from the documents that use the word most.
 - **Concepts and terms.** A concept is a row you take on in Manage keywords: it has a name and
   forms marked *exact* (always this concept, and counted) or *broad* (listed beside it, never
-  counted). The rows nobody chose stay as searchable terms. A name shows in its written case
-  (`dIN`, `Cre`), and matching respects it: `CRE` no longer counts as `Cre`.
+  counted). The rows nobody chose stay as searchable terms. A name shows in its written case, and
+  matching respects it.
 - **What the text says about a name.** The concept panel shows an abbreviation's long form with the
   sentence that spells it out, a name the papers cite with its "et al." sentence, and, for a label
   no sentence uses, where it does occur — tables, headings, figures, references. Offered only;
@@ -117,7 +117,7 @@ ships here.
   have merged nearly the whole vocabulary.
 - **The clean-machine release gate asks three questions, not one**, and reports packaging and
   citation as separate verdicts (release tooling; no change to the app).
-- **Manage keywords opens at once on a real library and takes a typed form.** The Graph tab has a
+- **Manage keywords opens at once on a large library and takes a typed form.** The Graph tab has a
   door to it and a *Rebuild* button, and every door to the view is called *Manage keywords*.
 - **A document's keywords are listed best first, and most known junk is gone.** Table residue,
   most letter-spaced text, numbers, web addresses and the authors a paper cites no longer become
@@ -180,10 +180,9 @@ ships here.
 - **A term written with a hyphen or a space is one term** (`cosine-similarity` and `cosine
   similarity`), including across a line break.
 - **Table cells keep the second letter of "fi", "fl" and "ff".** "fine-tuning" in a table had read
-  "fne-tuning" in 19 of 104 documents; reading a document again fixes one extracted before.
-- **A large wiki topic is summarised from a sample its note names** ("written from 36 of 87
-  papers"), instead of from a prompt a local model cut silently, which left the note describing its
-  last few papers (command-line wiki).
+  "fne-tuning"; reading a document again fixes one extracted before.
+- **A large wiki topic is summarised from a sample its note names**, instead of from a prompt a
+  local model cut silently, which left the note describing its last few papers (command-line wiki).
 - **Indexing several documents at once could hang on Linux**, as in the headless image: the
   extraction workers now start fresh instead of being forked from a running process.
 - **Document similarity ignores removed documents.**
@@ -199,30 +198,24 @@ ships here.
   names the engine and where the app looked for it, and the window says so too when an answer
   ends with nothing at all.
 - **Quoted sentences read as text.** Definition options, usage passages and a term's examples
-  showed the extractor's bold and italic markers around citations (`_**Fox, 2018**_`). They are
-  left out for display; the stored text is unchanged.
+  showed the extractor's bold and italic markers around citations. They are left out for display;
+  the stored text is unchanged.
 
 ### Known limits
 
 - **Text after a reference list is not read, and a mention inside one counts as presence.** The
   keyword, definition and written-form passes stop at a document's References heading, so
-  appendices and late sections go unseen (3.7% of the development library's prose, in 32
-  documents); concept presence reads the whole text, so a concept named only in a cited title
-  counts as present (111 of 1,079 concept–document pairs). Both change together in the next
-  release, each layer with a before/after.
-- **The concept map covers what you take on.** On the development library that is 13 concepts,
-  reaching 29 of 104 documents. No concept's name ends with another's, so the proposer offers no
-  `is_a` link there and that part of *Proposed placements* is empty.
-- **A definition's grade sorts; it does not decide.** On hand-labelled candidates, *strong* was
-  usable 8 times in 13, and a sentence that praises a term grades as strongly as one that defines
-  it.
-- **Keywords describe a document; they don't group your library, and they are rough.** 1,445 of
-  1,496 extracted keywords sit on one document. On 15 hand-labelled documents about two in three
-  are real terms of the paper (64%, 95% interval 50–77%), and filtering the junk did not change
-  that measurably: what replaced it was mostly junk too (2026-10-23). Among what remains, on the
-  development library (about 50 of 1,560): a paper's own author names, letter-spaced journal
-  headers (`ce ress` from "Cell Press"), names split at an accent (`g ttingen`) or a possessive
-  (`cajal s`), and fragments of notation.
+  appendices and late sections go unseen; concept presence reads the whole text, so a concept named
+  only in a cited title counts as present. Both change together in the next release, each layer
+  with a before/after.
+- **The concept map covers what you take on.** A document appears on it once it mentions one of
+  your concepts.
+- **A definition's grade sorts; it does not decide.** A sentence that praises a term grades as
+  strongly as one that defines it.
+- **Keywords describe a document; they don't group your library, and they are rough.** Most sit on
+  a single document, and some are not real terms of the paper: a paper's own author names,
+  letter-spaced journal headers, names split at an accent or a possessive, and fragments of
+  notation.
 - **If the backend stops while the window is open, the app is slow to say so.** The status bar stays
   green with the old count, and panels and chat answer "TypeError: Failed to fetch" until you restart.
 - **If port 8001 is taken at launch, the window stays on "starting the engine…".** It does not name

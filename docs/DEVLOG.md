@@ -42,6 +42,23 @@ Format: What changed | Why | Rejected alternatives | What it opens
 
 ---
 
+## 2026-10-31 (3) — 0.7.1 published; its notes say nothing about the private library
+
+**What changed.** 0.7.1 is published, with the installer from `83c9af1`. The release notes and the
+CHANGELOG's 0.7.0 section lost every figure, name and example taken from the private library. Each
+limit stays, in words, and the notes' CHANGELOG link now reads `main`.
+
+**Why.** The library is private, so a release says nothing about it. The clean-machine gate's three
+arXiv papers are public and its numbers stay.
+
+**Rejected.** Moving `v0.7.1` so its own CHANGELOG matches: a pushed tag is not moved
+(`docs/RELEASE.md` §6), so that copy keeps the old text.
+
+**Opens.** Settings' Ollama card still names the size of that library and its citation rates, in
+the published installer too. Older CHANGELOG sections, the README and `docs/OVERVIEW.md` were left.
+
+---
+
 ## 2026-10-31 (2) — 0.7.1's installer passes every upgrade route and its gate
 
 **What changed.** No code. Installer built from `83c9af1` (15:35). RG-012 `run-20261031-160140`

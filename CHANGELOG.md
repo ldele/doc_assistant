@@ -7,6 +7,13 @@ versioning is [SemVer](https://semver.org/) on the `doc_assistant` package, and 
 The engineering record is finer-grained than this file: per-change entries live in
 [`docs/DEVLOG.md`](docs/DEVLOG.md), design decisions in [`docs/decisions.md`](docs/decisions.md).
 
+## [Unreleased]
+
+### Changed
+
+- **Settings' Ollama card states its trade-off in words.** *Expect fewer citations* no longer quotes
+  run sizes or rates.
+
 ## [0.7.1] — 2026-10-31
 
 The first published build of this line. 0.7.0 was tagged and never released: a last check before

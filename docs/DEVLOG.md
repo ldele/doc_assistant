@@ -42,6 +42,22 @@ Format: What changed | Why | Rejected alternatives | What it opens
 
 ---
 
+## 2026-10-31 (4) — Settings' Ollama card states its trade-off in words
+
+**What changed.** *Expect fewer citations* in `ProviderSetup.svelte` no longer quotes the run's size
+or its rates. It says local models carry fewer inline citations than Claude Haiku 4.5, and that this
+predates 0.7.0's fix. The comment above it says why there are no figures.
+
+**Why.** It was the one sentence the app shows that came from the private library. It stays in the
+0.7.1 installer, and this change ships with the next build, by the user's choice over a 0.7.2.
+
+**Rejected.** Deleting the warning: a local user still meets many *uncited* claims and needs the
+reason where the engine is chosen.
+
+**Opens.** A re-measure for KI-36 can no longer go on the card as figures from that library.
+
+---
+
 ## 2026-10-31 (3) — 0.7.1 published; its notes say nothing about the private library
 
 **What changed.** 0.7.1 is published, with the installer from `83c9af1`. The release notes and the

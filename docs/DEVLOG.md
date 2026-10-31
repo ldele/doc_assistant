@@ -42,6 +42,25 @@ Format: What changed | Why | Rejected alternatives | What it opens
 
 ---
 
+## 2026-10-31 (2) — 0.7.1's installer passes every upgrade route and its gate
+
+**What changed.** No code. Installer built from `83c9af1` (15:35). RG-012 `run-20261031-160140`
+passed and preflight is all green. Over the real 0.6.0 with its engine left running, silently and by
+double-click, nothing of the old build stayed, the app was up in 13 s and every record matched. It
+also held silently with 0.6.0's window open and over a running 0.7.1. `docs/RELEASE.md` §6 now says
+preflight is a pre-tag check and a pushed tag is not moved.
+
+**Why.** A double-click runs a different path from `/S`: the reinstall page calls 0.6.0's own
+uninstaller first, which reports success and leaves the locked file. The hook had to clear that too,
+and only driving the wizard could show it. The two runbook lines come from this release: preflight
+failed falsely after `v0.7.0` was pushed, and that tag stayed.
+
+**Rejected.** Repeating the walkthrough on this build: against `4a22951` the code changes only the
+version and the hook, and the notes say which build each row stands on.
+
+**Opens.** `release_preflight.py:691` could compare with the tag before HEAD's, which would end that
+false failure; left for after the release, so the tag's code stays the tested code.
+
 ## 2026-10-31 — 0.7.1: the installer clears what 0.6.0 left (KI-80)
 
 **What changed.** New `apps/desktop/src-tauri/nsis/hooks.nsh`, wired as `installerHooks`: after

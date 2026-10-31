@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-10-20 (first version, read off the repository at dc8a60e) · class: living -->
+<!-- status: active · updated: 2026-10-31 (§5: 0.7.1 in preparation; 2026-10-20: first version, read off the repository at dc8a60e) · class: living -->
 
 # Provenote — project overview
 

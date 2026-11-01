@@ -35,6 +35,7 @@ from doc_assistant.embeddings import (
     get_collection_name,
     get_embeddings,
 )
+from doc_assistant.llm import content_text, max_tokens_for
 from doc_assistant.prompts import ANSWER_PROMPT, MULTI_QUERY_PROMPT, REWRITE_PROMPT
 from doc_assistant.sparse_index import SparseIndex
 
@@ -114,7 +115,7 @@ def build_chat_model(provider: str, model: str) -> Any:
         return ChatAnthropic(  # type: ignore[call-arg]
             model=model,
             api_key=SecretStr(credentials.resolve_key("anthropic") or ""),
-            max_tokens=1024,
+            max_tokens=max_tokens_for(model, 1024),
             streaming=True,
         )
     from langchain_ollama import OllamaLLM
@@ -675,7 +676,7 @@ class RAGPipeline:
             {"history": format_history(history), "question": question},
             config={"callbacks": callbacks},
         )
-        return result.content if hasattr(result, "content") else str(result)
+        return content_text(result.content) if hasattr(result, "content") else str(result)
 
     def stream_answer(
         self,
@@ -696,7 +697,7 @@ class RAGPipeline:
             {"context": context, "question": question},
             config={"callbacks": callbacks},
         ):
-            yield chunk.content if hasattr(chunk, "content") else str(chunk)
+            yield content_text(chunk.content) if hasattr(chunk, "content") else str(chunk)
 
     def chunk_count(self) -> int:
         return len(get_all(self.db, include=[])["ids"])
@@ -707,7 +708,7 @@ class RAGPipeline:
         """
         chain = MULTI_QUERY_PROMPT | self.llm
         response = chain.invoke({"question": query})
-        text = response.content if hasattr(response, "content") else str(response)
+        text = content_text(response.content) if hasattr(response, "content") else str(response)
 
         # Parse the JSON array. Be defensive -- LLMs sometimes wrap in markdown.
         text = text.strip()

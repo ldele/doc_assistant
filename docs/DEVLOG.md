@@ -42,6 +42,41 @@ Format: What changed | Why | Rejected alternatives | What it opens
 
 ---
 
+## 2026-11-01 (4) — Claude models from Opus 4.7 on answer and review
+
+**What changed.** `llm.is_older_claude` tells the models before Opus 4.7 from the rest. On the rest,
+`AnthropicClient.complete` sends no `temperature`, asks for `output_config.effort: "low"` and adds
+`THINKING_ROOM` (4,096) to `max_tokens`; `build_chat_model` adds the same room to the chat's 1,024.
+`llm.content_text` reads the text out of a string or a list of blocks of any shape, and the three
+chat reads in `pipeline.py` (`rewrite`, `stream_answer`, `expand_query`) and
+`_extract_anthropic_text` all use it. Haiku 4.5 is untouched: same request, temperature 0, 1,024.
+Tests: `tests/unit/test_newer_claude_models.py`, the real `ChatAnthropic` over a fake stream of the
+SDK's own event types; the three chat reads failed there before the fix. 2,983 tests pass.
+
+**Why.** Asked whether the parked `temperature` patch could wait, the check found a gap it does not
+cover. The patch keys on the API version; this keys on the model, and the API reference lists
+`temperature` as a 400 under `2023-06-01` on Opus 4.7 and later, Sonnet 5 and later, Haiku 5.5 and
+Fable. The model field is free text, and the reviewer follows it unless `REVIEWER_PROVIDER` is set
+in the environment, which an installed copy has no `.env` to do. Tracing the fix found two more
+faults behind the first. From Claude Opus 5 a reply opens with a thinking block: LangChain emits it
+as list-shaped chunks and `controller.py:631` does `full_answer += tok`, a `TypeError`, so the chat
+fails before the reviewer runs. `_extract_anthropic_text` read `content[0]` and returned the
+response's repr. And thinking spends `max_tokens`, so a 400-token review could end with no text.
+
+**Rejected.** The reverse list, naming the models that refuse: a new model would be a 400 until
+someone added it, and sending no `temperature` is valid on every model, so an unknown name takes that
+side. Trying with `temperature` and retrying on a 400: it depends on an error's wording and spends a
+round trip on every call. Dropping `temperature` everywhere: it moves the reviewer and judge on Haiku
+4.5 from 0 to 1.0, and their numbers stop being comparable. Turning thinking off: Opus 5.5 and Fable
+refuse that, and Sonnet 5.5 needs a different value, so it would be a table per model.
+
+**What it opens.** **Not checked against the API:** no paid call was made. The model list comes from
+the API reference, and `THINKING_ROOM` is a judgement: if a model thinks past it, the answer is cut
+at `max_tokens` and a review reports it could not parse. Chat runs at the model's default effort.
+`figures.py` forces a tool, which the reference lists as a 400 on Opus 5.5, Sonnet 5.5 and Fable 5.1;
+only `FIGURE_VLM_MODEL` reaches it, so it stays. The parked SDK 2.0 patch no longer applies to
+`llm.py`; when that bump comes, its version test has to combine with `is_older_claude`.
+
 ## 2026-11-01 (3) — Wireframes approved: indexing, Getting started, Provider & model
 
 **What changed.** `docs/wireframes/indexing.excalidraw` and

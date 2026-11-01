@@ -48,6 +48,7 @@ Locked design choices
 from __future__ import annotations
 
 import os
+import re
 import sys
 import time
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
@@ -80,8 +81,54 @@ class LLMClient(Protocol):
 
 
 # ============================================================
+# Claude model lines (the API differs across them, so it lives here)
+# ============================================================
+
+# The Claude models before Opus 4.7: the ones that take ``temperature``, and that do not think
+# unless asked. Listed this way round because a model it does not know is newer, and a request with
+# no ``temperature`` is valid on every model, while one that carries it is a 400 on all of these:
+# Opus 4.7 and later, Sonnet 5 and later, Haiku 5.5 and Fable.
+_OLDER_CLAUDE = re.compile(r"claude-3-.+|claude-(opus|sonnet|haiku)-4(-[0-6])?(-\d{8}|-latest)?")
+
+# Added to ``max_tokens`` on a newer model. From Claude Opus 5 thinking is on by default and spends
+# the same budget as the reply, which took a 400-token review to no text at all. A ceiling, not a
+# spend: only the tokens used are billed.
+THINKING_ROOM = 4096
+
+
+def is_older_claude(model: str) -> bool:
+    """Whether ``model`` is from before Opus 4.7 (see :data:`_OLDER_CLAUDE`)."""
+    return _OLDER_CLAUDE.fullmatch(model) is not None
+
+
+def max_tokens_for(model: str, reply_tokens: int) -> int:
+    """The ``max_tokens`` that leaves ``model`` room for a reply of ``reply_tokens``."""
+    return reply_tokens if is_older_claude(model) else reply_tokens + THINKING_ROOM
+
+
+# ============================================================
 # Anthropic-response text extraction (vendor-specific, so it lives here)
 # ============================================================
+
+
+def content_text(content: Any) -> str:
+    """The text in a model's content: a string, or a list of blocks of any shape.
+
+    A block with no text counts for nothing. A model that thinks puts its thinking block first, so
+    the text can be anywhere in the list, and a list is what the chat path gets from such a model
+    where it expects a string: a one-element chunk for each thinking event.
+    """
+    if not isinstance(content, list):
+        return str(content)
+    parts: list[str] = []
+    for block in content:
+        if isinstance(block, str):
+            parts.append(block)
+        elif isinstance(block, dict):
+            parts.append(str(block.get("text", "")))
+        elif hasattr(block, "text"):
+            parts.append(str(block.text))
+    return "".join(parts)
 
 
 def _extract_anthropic_text(response: Any) -> str:
@@ -89,14 +136,8 @@ def _extract_anthropic_text(response: Any) -> str:
     content = getattr(response, "content", None)
     if content is None and isinstance(response, dict):
         content = response.get("content")
-    if isinstance(content, list) and content:
-        first = content[0]
-        if hasattr(first, "text"):
-            return str(first.text)
-        if isinstance(first, dict):
-            return str(first.get("text", ""))
-    if isinstance(content, str):
-        return content
+    if isinstance(content, (list, str)):
+        return content_text(content)
     return str(response)
 
 
@@ -156,12 +197,19 @@ class AnthropicClient:
     System messages in ``messages`` are hoisted into the API's top-level
     ``system`` kwarg; only user/assistant turns go in the ``messages``
     array, as the SDK requires.
+
+    On a model from Opus 4.7 on (:func:`is_older_claude`) ``temperature`` is not sent, because the
+    API refuses it, so that call samples at the default. It asks for low effort and gets
+    :data:`THINKING_ROOM` instead: this is a short JSON reply, and the thinking must not spend it.
+    The reviewer and judge pinned to Haiku 4.5 keep their temperature 0.
     """
 
     def __init__(self, model: str, *, api_key: str | None = None) -> None:
         from anthropic import Anthropic
 
         self.model = model
+        if not is_older_claude(model):
+            log.info("anthropic_temperature_not_sent", model=model)
         # Resolved at construction, not import: an in-app key (ADR-034) can be saved while the
         # process is running, and every client built after that must see it.
         kwargs: dict[str, Any] = {"api_key": api_key or credentials.resolve_key("anthropic")}
@@ -175,10 +223,13 @@ class AnthropicClient:
         convo = [m for m in messages if m["role"] != "system"]
         kwargs: dict[str, Any] = {
             "model": self.model,
-            "max_tokens": max_tokens,
-            "temperature": temperature,
+            "max_tokens": max_tokens_for(self.model, max_tokens),
             "messages": convo,
         }
+        if is_older_claude(self.model):
+            kwargs["temperature"] = temperature
+        else:
+            kwargs["output_config"] = {"effort": "low"}
         if system_parts:
             kwargs["system"] = "\n\n".join(system_parts)
         response = self._client.messages.create(**kwargs)

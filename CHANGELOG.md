@@ -39,6 +39,10 @@ The engineering record is finer-grained than this file: per-change entries live 
   it ended, which can take hours. Escape, a click outside and the close button now work during a
   run. The run carries on, the status bar keeps counting, the library updates when it ends, and
   reopening Settings shows the run instead of an idle form.
+- **Newer Claude models answer and review.** With a model from Claude Opus 4.7 on in Provider &
+  model, every review failed, and from Claude Opus 5 the answer failed too: those models refuse the
+  `temperature` setting, and they open a reply with a thinking block that the app could not read.
+  Claude Haiku 4.5, the default, behaves as before.
 
 ## [0.7.1] — 2026-10-31
 

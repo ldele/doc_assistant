@@ -124,12 +124,12 @@ def test_anthropic_complete_returns_stripped_text(patched_sdks: None):
 
 
 def test_anthropic_complete_passes_signature(patched_sdks: None):
-    client = llm.make_client("anthropic", "m")
+    client = llm.make_client("anthropic", "claude-haiku-4-5")
     client.complete([{"role": "user", "content": "hi"}], temperature=0.3, max_tokens=77)
     kwargs = client._client.sink["kwargs"]  # type: ignore[attr-defined]
     assert kwargs["temperature"] == 0.3
     assert kwargs["max_tokens"] == 77
-    assert kwargs["model"] == "m"
+    assert kwargs["model"] == "claude-haiku-4-5"
     assert "system" not in kwargs  # no system message → no system kwarg
     assert len(kwargs["messages"]) == 1
 

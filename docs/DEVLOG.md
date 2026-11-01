@@ -42,6 +42,32 @@ Format: What changed | Why | Rejected alternatives | What it opens
 
 ---
 
+## 2026-11-01 (3) — Wireframes approved: indexing, Getting started, Provider & model
+
+**What changed.** `docs/wireframes/indexing.excalidraw` and
+`docs/wireframes/getting-started-and-providers.excalidraw`, each with its reading in an `.md` beside
+it. No code.
+
+**Why.** The drawing comes before the code. The indexing screen lists every file with its status and
+adds pause and stop. Getting started and Provider & model overlapped: both held provider setup, so a
+first run had two places to look.
+
+**Decided in the drawings.** Getting started is two rows, Model and Documents, each linking to its
+tab; ready means both green, with the model, *Engine online* and the documents indexed. Provider &
+model holds everything about answer models and says where the text goes. *Stop* has no confirmation,
+because the next run skips what finished.
+
+**Rejected.** Warning rows and extra buttons in Getting started: the user wants other options only if
+they are needed. A confirmation on *Stop*: it loses nothing. One adapter per vendor: most providers now
+document the same OpenAI-compatible interface, so presets are data over one adapter.
+
+**Checked.** Indexing at rev 858 and Getting started and Provider & model at rev 176, each
+`fallbacks 0 · inferred 0 · unnamedScreens 0 · orphans 0`, both approved by the user with no markup on
+the canvas.
+
+**What it opens.** An ADR for the adapter, extending ADR-011 and ADR-034. Per-file status, pause and
+stop in the backend. Nothing here is built.
+
 ## 2026-11-01 (2) — Settings closes during a run (0.7.2, piece 1)
 
 **What changed.** `Settings.svelte` and `Sources.svelte` drop their private `pollUntilDone` and read

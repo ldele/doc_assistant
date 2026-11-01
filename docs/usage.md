@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-09-17 (ingest limits: 1 GB per file, 50,000 files per add) · class: living -->
+<!-- status: active · updated: 2026-11-01 (the letter-spacing listing, ADR-056; 2026-09-17: ingest limits: 1 GB per file, 50,000 files per add) · class: living -->
 
 # Usage
 
@@ -90,6 +90,7 @@ Also available as CLI utilities:
 
 ```bash
 uv run python -m scripts.find_duplicates    # byte + content dedup report; never deletes
+uv run python -m scripts.list_letter_spacing  # every letter-spaced run extraction closes; read-only
 uv run python -m scripts.export_bibtex      # write docs/library.bib
 ```
 

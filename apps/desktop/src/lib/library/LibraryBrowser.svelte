@@ -24,6 +24,8 @@
   import DocConnections from './DocConnections.svelte'
   import DocFigures from './DocFigures.svelte'
   import DocReferences from './DocReferences.svelte'
+  import DocSpacing from './DocSpacing.svelte'
+  import { shell } from '../shell/shell.svelte'
   import SourceViewer from './SourceViewer.svelte'
   import { clampSplit } from './sourceviewer'
   import { libPrefs, setSourceSplit } from './prefs.svelte'
@@ -43,8 +45,9 @@
      *  page. `nonce` is what lets the same document+page be asked for twice in a row. */
     sourceJump?: { docId: string; page: number | null; nonce: number } | null
     /** Open the re-run picker for this document (ADR-048). App owns the dialog, as it owns every
-     *  other overlay — so the grid's Select mode reuses the same one rather than a second copy. */
-    onReingest: () => void
+     *  other overlay — so the grid's Select mode reuses the same one rather than a second copy.
+     *  `parts` are ticked on open. */
+    onReingest: (parts: string[]) => void
   } = $props()
 
   // The chunk payload: null until the reader opens the Chunks block.
@@ -250,7 +253,7 @@
       >
         <Icon name="book-open" size={13} /> Source
       </button>
-      <button class="rerun" type="button" onclick={onReingest} title="Re-run part of ingestion for this document">
+      <button class="rerun" type="button" onclick={() => onReingest([])} title="Re-run part of ingestion for this document">
         <Icon name="rotate-ccw" size={13} /> Re-run…
       </button>
     </nav>
@@ -279,6 +282,22 @@
         <p class="metaline">This document isn’t in the loaded library list.</p>
       {/if}
     </header>
+    <!-- ADR-056: what extraction did to this document's letter-spaced runs. Renders nothing for
+         a document that has none, which is nearly every document. -->
+    <DocSpacing
+      {docId}
+      listed={doc}
+      onShowPage={(page) => {
+        viewerOpen = true
+        viewerPage = page
+      }}
+      onReingest={() => onReingest(['text'])}
+      onOpenSettings={() => {
+        shell.settingsSection = 'documents'
+        shell.settingsFocus = 'spacing'
+        shell.showSettings = true
+      }}
+    />
 
     <!-- E4 (ADR-027 D1): what this document is *near* + who cites it. What it cites is the
          References block at the foot. Advisory; degrades to one quiet line on failure. -->

@@ -1036,11 +1036,13 @@
   // one picker instead of two copies of the same cost statement.
   let reingestTargets = $state<string[] | null>(null)
   let reingestLabel = $state('')
+  let reingestParts = $state<string[]>([])
 
-  function openReingest(ids: string[], label: string): void {
+  function openReingest(ids: string[], label: string, parts: string[] = []): void {
     if (ids.length === 0) return
     reingestTargets = ids
     reingestLabel = label
+    reingestParts = parts
   }
 
   // A finished re-run can have changed the metadata, the chunk count, the figures or the
@@ -1328,10 +1330,11 @@
           {folders}
           {libSelectMode}
           {libSelected}
-          onReingestDoc={() =>
+          onReingestDoc={(parts) =>
             openReingest(
               libraryDocId ? [libraryDocId] : [],
               openDoc?.title ?? openDoc?.filename ?? 'This document',
+              parts,
             )}
           onReingestSelection={() =>
             openReingest(
@@ -1407,7 +1410,16 @@
 </div>
 
 {#if shell.showSettings}
-  <Settings onClose={() => (shell.showSettings = false)} onCorpusChanged={refreshHealth} bind:overrides={chat.overrides} />
+  <Settings
+    onClose={() => (shell.showSettings = false)}
+    onCorpusChanged={refreshHealth}
+    bind:overrides={chat.overrides}
+    onReingest={(ids, label) => {
+      // Settings re-runs only from the letter-spacing list, which takes effect through the text.
+      shell.showSettings = false
+      openReingest(ids, label, ['text'])
+    }}
+  />
 {/if}
 
 {#if shell.showShortcuts}
@@ -1509,6 +1521,7 @@
   <ReingestDialog
     documentIds={reingestTargets}
     label={reingestLabel}
+    preselected={reingestParts}
     onClose={() => (reingestTargets = null)}
     onFinished={() => void afterReingest()}
   />

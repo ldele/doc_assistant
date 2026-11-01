@@ -9,8 +9,27 @@ The engineering record is finer-grained than this file: per-change entries live 
 
 ## [Unreleased]
 
+### Added
+
+- **Letter-spaced text in a PDF reads as words.** A title or running head set in wide letter-spacing
+  used to reach search, quotes and the model's evidence as `T I T L E`. It now reads `TITLE`, as the
+  page shows it, in bold and italic too. Extraction decides from the PDF's own glyphs and only ever
+  removes spaces the page does not show, never a letter. Scanned pages, figures, tables and formulas
+  stay as they were.
+- **You can see what was closed, and overrule it.** A document with such text has a *Letter-spacing
+  on this document* block: each run beside a crop of its page, with *Show on page*, *Edit spacing*
+  (choose where the words break) and *Keep spaced*, or *Keep every run spaced* for the whole
+  document. Settings > Documents lists every entry and removes one or all of them, with *Undo*. A
+  change applies when that document's text is re-run, and the block says so until then.
+
 ### Changed
 
+- **Every document is read again once after this update, when you choose.** Each one shows as
+  *changed* in Settings > Documents and stays searchable as it is until you run it: *Select new +
+  changed*, then *Ingest selected*. That reads every format, not only PDFs, so expect it to take
+  about as long as your first ingest. A document whose text comes out the same is not embedded
+  again; one whose text changes keeps its metadata, figures and place in your folders. Keywords and
+  the graph are not rebuilt by this run.
 - **Settings' Ollama card states its trade-off in words.** *Expect fewer citations* no longer quotes
   run sizes or rates.
 

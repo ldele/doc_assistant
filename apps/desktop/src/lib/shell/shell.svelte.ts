@@ -34,6 +34,12 @@ export const shell = $state({
 
   /** Settings drawer. Reachable from the app menu and from its own gear (a fast path). */
   showSettings: false,
+  /** Which Settings category to open on, when something opens Settings for a reason (the
+   *  letter-spacing block's "All entries in Settings"). Read once by Settings, then cleared. */
+  settingsSection: null as string | null,
+  /** The part of that category to scroll to (`'spacing'`: the letter-spacing ignore list), read
+   *  and cleared with it. */
+  settingsFocus: null as string | null,
 
   // Global-search overlay (Cmd/Ctrl-K). App owns the query and derives the results via the pure,
   // tested `search.ts`; GlobalSearch just renders.

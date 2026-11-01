@@ -103,6 +103,10 @@ def _chroma_base() -> Path:
 _CHROMA_BASE = _chroma_base()
 DOCS_PATH = DATA_PATH / "sources"
 CACHE_PATH = DATA_PATH / "cache"
+# The letter-spacing ignore list (ADR-056): runs a PDF keeps spaced, keyed by the PDF's sha256 and
+# size. The user's own file, filled from a review of the joins; absent means the rule applies
+# everywhere. Read by `ingest.cache`, which puts a document's entries into its cache fingerprint.
+REJOIN_IGNORE_PATH = DATA_PATH / "rejoin_ignore.json"
 # Chroma wants a string, not Path. Base is ASCII-safe (KI-11) — see `_chroma_base`.
 CHROMA_PATH = str(_CHROMA_BASE / "chroma")
 PC_CHROMA_PATH = str(_CHROMA_BASE / "chroma_pc")  # Parent - Child

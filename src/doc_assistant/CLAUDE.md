@@ -11,7 +11,7 @@
 - `chat_controller/` — turn orchestration: `session` · `views` · `events` · `helpers` · `controller`.
 - `library/` — document-store API, sub-domains matching `apps/api/routers/library/`: `models` ·
   `documents` · `pins` · `folders` · `keywords` · `chunks` · `citations` · `similarity` ·
-  `source_view` (ADR-050). Both re-export flat from `__init__`. `reingest.py` — per part (ADR-048).
+  `source_view` (ADR-050) · `spacing` (ADR-056). Both re-export flat from `__init__`. `reingest.py` — per part (ADR-048).
 - `db/` — SQLAlchemy models + session + **additive** migrations. `ingest/` — extract → markdown →
   chunk → embed → store (locked) + registry/cache/figures/tables. `eval/` — the eval harness.
   `adapters/` — optional registry producers, never a dependency (ADR-049): `catalogue` neutral,

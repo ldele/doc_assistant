@@ -10,6 +10,7 @@ export { listConversations, getConversation, updateConversationMeta, exportConve
 export { deleteDocument, getChunkContext, getDocumentFigures, getDocumentReferences, getLibraryDocument, getReingestOptions, getReingestStatus, getSourceDocumentView, listLibraryDocuments, locateChunk, resetDocumentMeta, revealDocument, sourcePageUrl, startReingest, updateDocumentMeta } from './library'
 export type { DeleteResult } from './library'
 export { getDocConnections } from './connections'
+export { getDocumentSpacing, getIgnoreList, keepRunSpaced, removeIgnoreEntries, removeRunEntry, restoreIgnoreList, setKeepAllSpaced, setRunSpacing } from './spacing'
 export {
   addDocuments,
   getAccepts,

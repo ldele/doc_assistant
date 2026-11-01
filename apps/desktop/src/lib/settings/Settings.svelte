@@ -21,6 +21,7 @@
   import { canPickFiles, pickPaths } from '../core/tauri'
   import ProviderSetup from './ProviderSetup.svelte'
   import Sources from './Sources.svelte'
+  import SpacingIgnoreList from './SpacingIgnoreList.svelte'
   import { describeIndex, formatBytes, perDocument } from './corpus'
   import { SETTINGS_SECTIONS, initialSection, sectionBadge, type SettingsSectionId } from './sections'
   import { modelForProvider, outstandingSteps } from './setup'
@@ -41,7 +42,14 @@
     onClose,
     onCorpusChanged,
     overrides = $bindable(),
-  }: { onClose: () => void; onCorpusChanged: () => void; overrides: RagOverrides } = $props()
+    onReingest = () => {},
+  }: {
+    onClose: () => void
+    onCorpusChanged: () => void
+    overrides: RagOverrides
+    /** Open the re-run picker for these documents (App owns the dialog). */
+    onReingest?: (documentIds: string[], label: string) => void
+  } = $props()
 
   // Chat-history export. A failure is shown, not swallowed: the whole point of the button is to
   // be trusted before a delete, so a silent no-op would be the worst outcome it could have.
@@ -66,7 +74,14 @@
   // so a fresh install opens on the checklist instead of opening on Documents and jumping there a
   // moment later when a fetch of our own lands. Reading it also costs no second request.
   const setupStepsLeft = $derived(outstandingSteps(shell.setup).length)
-  let activeSection = $state<SettingsSectionId>(initialSection(outstandingSteps(shell.setup).length))
+  let activeSection = $state<SettingsSectionId>(
+    SETTINGS_SECTIONS.some((s) => s.id === shell.settingsSection)
+      ? (shell.settingsSection as SettingsSectionId)
+      : initialSection(outstandingSteps(shell.setup).length),
+  )
+  shell.settingsSection = null
+  const focusSpacing = shell.settingsFocus === 'spacing'
+  shell.settingsFocus = null
   const activeBlurb = $derived(
     SETTINGS_SECTIONS.find((s) => s.id === activeSection)?.blurb ?? '',
   )
@@ -571,6 +586,9 @@
             {#if reindexError}
               <p class="banner err">{reindexError}</p>
             {/if}
+          </section>
+          <section>
+            <SpacingIgnoreList {onReingest} focus={focusSpacing} />
           </section>
         {:else if activeSection === 'models'}
           <section>

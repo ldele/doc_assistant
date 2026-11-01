@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-09-10 (scale-review path moved to docs/archive/local/, ADR-051) · class: living -->
+<!-- status: active · updated: 2026-11-01 (ADR-056 moves every format's fingerprint once; 2026-09-10: scale-review path moved to docs/archive/local/, ADR-051) · class: living -->
 
 # Performance, cost and scale — the measured record
 
@@ -127,7 +127,11 @@ altogether.
 
 **A re-ingest is the worst case and should be rare.** An unchanged document re-scans in ~0.4 ms
 because the extraction cache answers first; the per-format fingerprint (KI-48) exists so that an
-unrelated change cannot invalidate that cache for every format at once.
+unrelated change cannot invalidate that cache for every format at once. **ADR-056 is the one
+exception so far:** its ignore list reaches extraction through `extract_to_markdown`, which every
+format's fingerprint walks, so it re-reads every document once, not only the PDFs. The pass itself
+costs about 1 s per PDF (106 s over 104 PDFs). Upgrading a cache in place is that ADR's *Must
+revisit*.
 
 #### Parallel extraction — measured, and more modest than it looks
 

@@ -235,7 +235,13 @@ class PageUnavailable(RuntimeError):
     """The page cannot be rendered, with a reason meant for a person to read."""
 
 
-def render_page(document_id: str, page: int, *, dpi: int = PAGE_RENDER_DPI) -> bytes:
+def render_page(
+    document_id: str,
+    page: int,
+    *,
+    dpi: int = PAGE_RENDER_DPI,
+    clip: tuple[float, float, float, float] | None = None,
+) -> bytes:
     """One page of a document as PNG bytes — rendered on demand, cached nowhere (ADR-050 D1).
 
     Raises `PageUnavailable` for every honest failure: an unknown document, a format without
@@ -245,6 +251,10 @@ def render_page(document_id: str, page: int, *, dpi: int = PAGE_RENDER_DPI) -> b
     ``page`` is 1-based, matching both the ``<!-- page:N -->`` markers and what a reader sees
     printed on the page. ``dpi`` is clamped rather than validated (`clamp_dpi`): it is a zoom
     level, and the honest response to "sharper than we draw" is the sharpest we draw.
+
+    ``clip`` (x0, y0, x1, y1, in points) renders only that part of the page, cut to the page: a
+    letter-spaced run's crop beside its closed text (ADR-056 point 9). The same renderer, so a
+    crop and the page it comes from never disagree.
     """
     dpi = clamp_dpi(dpi)
     view = get_source_view(document_id)
@@ -268,7 +278,14 @@ def render_page(document_id: str, page: int, *, dpi: int = PAGE_RENDER_DPI) -> b
     try:
         if page < 1 or page > doc.page_count:
             raise PageUnavailable(f"page {page} is outside this document (1-{doc.page_count})")
-        pix = doc[page - 1].get_pixmap(dpi=dpi)
+        target = doc[page - 1]
+        if clip is None:
+            pix = target.get_pixmap(dpi=dpi)
+        else:
+            area = pymupdf.Rect(clip) & target.rect  # type: ignore[no-untyped-call]
+            if area.is_empty:
+                raise PageUnavailable("the requested part of the page is outside it")
+            pix = target.get_pixmap(dpi=dpi, clip=area)
         data: bytes = pix.tobytes("png")  # type: ignore[no-untyped-call]
     finally:
         doc.close()  # type: ignore[no-untyped-call]

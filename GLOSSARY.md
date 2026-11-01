@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-10-14 (C-013: a written form may join its words otherwise than the label, KI-63; 2026-10-09, U-001: a view has one name — Manage keywords on every door to it; 2026-10-01, ADR-054: C-001 narrowed to the rows the user took on; C-014 term, C-015 name, C-016 exact form / broad form) · class: living -->
+<!-- status: active · updated: 2026-11-01 (U-002: the letter-spacing ignore list and its views, ADR-056; 2026-10-14, C-013: a written form may join its words otherwise than the label, KI-63; 2026-10-09, U-001: a view has one name — Manage keywords on every door to it; 2026-10-01, ADR-054: C-001 narrowed to the rows the user took on; C-014 term, C-015 name, C-016 exact form / broad form) · class: living -->
 
 # GLOSSARY — doc_assistant
 
@@ -194,6 +194,22 @@ second name for a screen, a tab or a control reads as a second thing.
 until 2026-10-09)
 **Authoritative in:** `apps/desktop/src/lib/library/LibraryManageKeywords.svelte` (the view) +
 `apps/desktop/src/lib/graph/ConceptGraph.svelte` (its doors on the Graph tab)
+
+## U-002 — letter-spacing ignore list, and the views on it
+
+**Canonical:** `letter-spacing ignore list` (*the ignore list* where ADR-056 is the context) ·
+`Letter-spacing on this document` (the document page's block) · `Edit spacing` (the dialog) ·
+*close* (what extraction does to a letter-spaced run: remove the spaces the page does not show)
+**Definition:** The list of letter-spaced runs that extraction leaves as extracted (*Keep spaced*,
+or every run of a document) or writes with the spacing the user chose (*Edit spacing*), per PDF by
+content hash, in `rejoin_ignore.json` in the data home (ADR-056). The document page's block shows
+one document's closed and kept runs; Settings > Documents shows every entry and empties the list.
+A change takes effect when that document's text is re-run, and every view says so until then.
+**Forbidden:** `rejoin list`, `allow list` (for the list); `rejoin` (for *close* in the UI: it
+survives only in code names, `rejoin_ignore.json`)
+**Authoritative in:** `docs/decisions/ADR-056-a-space-the-page-does-not-show-is-not-text.md` +
+`src/doc_assistant/library/spacing.py` + `apps/desktop/src/lib/library/DocSpacing.svelte` +
+`apps/desktop/src/lib/settings/SpacingIgnoreList.svelte`
 
 ## D-001 — Provenote vs doc_assistant
 

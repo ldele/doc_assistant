@@ -402,9 +402,10 @@ def purge_document_record(
 
     Removes: the ``Document`` row (FK-cascades citations / parts / similarities, and the
     ``DocumentMeta`` override since ADR-026), the doc's chunks from the live Chroma store, its
-    figure directory and its cached markdown. Each on-disk step is guarded — a locked file leaves a
-    warning, not a half-removed document. ``forget`` is told the ``doc_hash``, because the running
-    keyword index is not a store this function can reach (KI-78).
+    figure directory, its cached markdown and the letter-spacing record beside it. Each on-disk
+    step is guarded — a locked file leaves a warning, not a half-removed document. ``forget`` is
+    told the ``doc_hash``, because the running keyword index is not a store this function can
+    reach (KI-78).
     """
     from doc_assistant.ingest.cleanup import cleanup_orphan_figures
 
@@ -430,12 +431,15 @@ def purge_document_record(
 
     cleanup_orphan_figures([doc_hash])
     if source_cache:
+        from doc_assistant.ingest.cache import spacing_record_path
+
         cache_path = Path(source_cache)
-        if cache_path.exists():
-            try:
-                cache_path.unlink()
-            except OSError as e:
-                log.warning("delete_cache_failed", file=cache_path.name, error=str(e))
+        for path in (cache_path, spacing_record_path(cache_path)):
+            if path.exists():
+                try:
+                    path.unlink()
+                except OSError as e:
+                    log.warning("delete_cache_failed", file=path.name, error=str(e))
     return chunks_removed
 
 

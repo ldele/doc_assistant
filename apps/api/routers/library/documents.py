@@ -233,7 +233,9 @@ def document_source(doc_id: str) -> SourceDocumentPayload:
 
 
 @router.get("/api/library/documents/{doc_id}/page/{page}")
-def document_page(doc_id: str, page: int, dpi: int = PAGE_RENDER_DPI) -> Response:
+def document_page(
+    doc_id: str, page: int, dpi: int = PAGE_RENDER_DPI, clip: str | None = None
+) -> Response:
     """One rendered page of the source document as a PNG (ADR-050 D1).
 
     Rendered on demand and cached nowhere — 19-31 ms and 140-261 KB a page measured, against
@@ -251,8 +253,16 @@ def document_page(doc_id: str, page: int, dpi: int = PAGE_RENDER_DPI) -> Respons
     """
     from doc_assistant.library import PageUnavailable, render_page
 
+    # ``clip`` is ``x0,y0,x1,y1`` in points: a letter-spaced run's crop (ADR-056 point 9).
+    box: tuple[float, float, float, float] | None = None
+    if clip is not None:
+        try:
+            x0, y0, x1, y1 = (float(v) for v in clip.split(","))
+        except ValueError as e:
+            raise HTTPException(status_code=422, detail="clip is x0,y0,x1,y1 in points") from e
+        box = (x0, y0, x1, y1)
     try:
-        data = render_page(doc_id, page, dpi=dpi)
+        data = render_page(doc_id, page, dpi=dpi, clip=box)
     except PageUnavailable as e:
         raise HTTPException(status_code=404, detail=str(e)) from e
     # Immutable for the client's session: the same page of the same document renders identically

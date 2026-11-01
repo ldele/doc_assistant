@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-10-31 (cleaned up after 0.7.1: finished rows archived, long rows cut to what is left, the order set for the next moves) · class: living -->
+<!-- status: active · updated: 2026-11-01 (row 108: what ADR-056 leaves; 2026-10-31: cleaned up after 0.7.1: finished rows archived, long rows cut to what is left, the order set for the next moves) · class: living -->
 
 # ROADMAP — doc_assistant
 
@@ -78,6 +78,7 @@ mark the older tracks.)*
 | PR | Feature | Scope | Status | Spec |
 |----|---------|-------|--------|------|
 | 104 | F1 Ingestion | **Extraction polish** — read real documents first, then fix what a reader meets, in that order. Known input: tables (row 27), the page marker that carries the previous page (KI-57), the title picker (KI-54), EPUB parsing (row 85), scans (EX1) | gate first — diagnose | KI-54 · KI-57 · `extractors.py` · `docs/plans/PLAN_2026-10-31_next-two-releases.md` (local) |
+| 108 | F1 Ingestion | **Letter-spacing across the library** — the rule and its control are built (ADR-056). Left: the user's re-extraction of the library, with backups, rebuilds and the private eval against its control (gates 3 and 6); more letter-spaced PDFs than one library holds (gate 4, each download the user's call); and point 8, keyword selection skips recorded runs, agreed with session 5c on four conditions | planned — point 8 after ADR-055 lands | ADR-056 · `docs/wireframes/letter-spacing-ignore-list.md` · `tests/eval/baselines/letter_spacing_2026-10-21.md` |
 | 25 | F1 Ingestion | **LLM-assisted ingestion mode** — opt-in pass over the programmatic default (Ollama-first, KI-4 guard): figure links, citation links, **reference order** (needs an additive ordinal column at extraction time — it cannot be backfilled), concept marking at ingest. Output is a durable, inspectable, re-derivable sidecar (Enrichment-Layer Pattern; ADR-043's "normalisation is a derived layer") | gate first — spec + ADR (new ingest mode, cost-gated) | `docs/plans/PLAN_2026-08-11_ingestion-quality.md` §2 (local) · `.claude/CONTEXT.md` direction note |
 | 27 | F1 Ingestion | **Tables** — extraction code exists but **no table has ever landed** (Marker unrunnable here, KI-42 fixed the pin); diagnose on the live corpus before designing; styled table rendering after | gate first — diagnose | `docs/figures-and-tables.md` · KI-42 |
 | 26 | F1 Ingestion | **Keyword auto re-trigger on corpus growth** (P1 D3) — the same question as KI-44: a sidecar can only reach retrieval through a global `--rebuild` (~4 min at 97 docs, ~3.6 h at 10k) | planned | KI-44 · `docs/plans/PLAN_2026-08-11_ingestion-quality.md` (local) |
@@ -174,7 +175,9 @@ One block per feature: what is shipped (one line, pointers only), what is next, 
 figures (4b/4c); metadata extraction + manual override (ADR-013) + external catalogue slot (ADR-049);
 selective ingestion (S1/S2); add-documents copy-or-reference (ADR-046, AD1–AD3b); Zotero import
 (row 17); per-part re-ingest (ADR-048, rows 20/21); keyword de-noising D1/D2/D4/D5 (2026-08-12);
-document identity survives re-extraction (ADR-047); extractor-lost text recovered (EX1a).
+document identity survives re-extraction (ADR-047); extractor-lost text recovered (EX1a);
+letter-spaced text closed at extraction, with its record and control (ADR-056; what it leaves is row
+**108**).
 **Open defects that shape this feature:** KI-44 (sidecar → retrieval needs a global rebuild),
 KI-46 (zero-chunk duplicates), KI-47 (Tesseract), KI-54 (title picker),
 KI-57 (page marker carries the previous page). **Next:** row **104**, the extraction polish, with

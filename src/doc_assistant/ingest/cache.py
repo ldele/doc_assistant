@@ -12,6 +12,7 @@ import dis
 import hashlib
 import importlib
 import inspect
+import json
 import os
 import re
 from collections.abc import Mapping
@@ -332,7 +333,171 @@ def is_cache_fresh(original: Path, cached: Path) -> bool:
         recorded = fp.read_text(encoding="utf-8").strip()
     except OSError:
         return False  # never fingerprinted, or unreadable → re-extract
-    return recorded == extraction_fingerprint(original.suffix.lower())
+    return recorded == document_fingerprint(original)
+
+
+#: The parsed ignore list, by (path, mtime_ns, size) of the file it was read from: a registry scan
+#: asks once per document, and reparsing the same file thousands of times buys nothing.
+_ignore_list_memo: dict[tuple[str, int, int], list[dict[str, Any]]] = {}
+
+
+def ignore_entry_is_valid(entry: object) -> bool:
+    """Whether an ignore-list entry has the shape every reader of the list relies on."""
+    return (
+        isinstance(entry, dict)
+        and isinstance(entry.get("size", 0), int)
+        and isinstance(entry.get("keep", []), list)
+        and isinstance(entry.get("spacing", {}), dict)
+    )
+
+
+def _ignore_list() -> list[dict[str, Any]]:
+    """The entries of ``config.REJOIN_IGNORE_PATH`` (ADR-056), or none.
+
+    The file is ``{"version": 1, "documents": [{"sha256", "size", "file", "keep": [...]}]}``.
+    An unreadable or malformed file is logged and read as empty rather than failing an ingest
+    (inform, don't block) — which means its entries stop applying, so the warning says so. An
+    entry of the wrong shape is skipped the same way, and the others still apply.
+    """
+    path = Path(config.REJOIN_IGNORE_PATH)
+    try:
+        st = path.stat()
+    except OSError:
+        return []
+    key = (str(path), st.st_mtime_ns, st.st_size)
+    if key not in _ignore_list_memo:
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+            documents = list(data.get("documents", []))
+        except (OSError, ValueError, AttributeError, TypeError) as e:
+            log.warning(
+                "rejoin_ignore_unreadable",
+                path=str(path),
+                error=str(e),
+                hint="its entries do not apply until it is fixed; spacing closes everywhere",
+            )
+            documents = []
+        entries = [e for e in documents if ignore_entry_is_valid(e)]
+        if len(entries) < len(documents):
+            log.warning(
+                "rejoin_ignore_entries_skipped",
+                path=str(path),
+                skipped=len(documents) - len(entries),
+                hint="those entries do not apply until they are fixed",
+            )
+        _ignore_list_memo.clear()
+        _ignore_list_memo[key] = entries
+    return _ignore_list_memo[key]
+
+
+def rejoin_overrides(original: Path) -> tuple[frozenset[str], dict[str, str]]:
+    """The ignore list's entries for ``original`` (ADR-056): the runs kept as extracted (``"*"``
+    keeps them all), and the runs spaced the user's way, as ``{spaced form: chosen form}``.
+
+    Keyed by the PDF's sha256, so an entry follows the file through a move or a rename. The size
+    recorded beside each hash is checked first, so a PDF is hashed only when an entry could be
+    its own: an empty or absent list costs one ``stat`` and nothing else."""
+    if original.suffix.lower() != ".pdf":
+        return frozenset(), {}
+    entries = _ignore_list()
+    if not entries:
+        return frozenset(), {}
+    try:
+        size = original.stat().st_size
+    except OSError:
+        return frozenset(), {}
+    candidates = [e for e in entries if e.get("size") == size]
+    if not candidates:
+        return frozenset(), {}
+    from doc_assistant.sources_manifest import sha256_file
+
+    digest = sha256_file(original)
+    keep: set[str] = set()
+    spacing: dict[str, str] = {}
+    for e in candidates:
+        if e.get("sha256") == digest:
+            keep.update(str(k) for k in e.get("keep", []))
+            spacing.update({str(k): str(v) for k, v in e.get("spacing", {}).items()})
+    return frozenset(keep), spacing
+
+
+def rejoin_ignore_entries(original: Path) -> frozenset[str]:
+    """The spaced forms the ignore list keeps for ``original`` (ADR-056); ``"*"`` keeps all."""
+    return rejoin_overrides(original)[0]
+
+
+def document_fingerprint(original: Path) -> str:
+    """The fingerprint one document's cache must carry: its format's, plus its ignore-list entries.
+
+    A document with no entries carries exactly ``extraction_fingerprint(suffix)``, so the list
+    changes nothing for anyone who has not written one. A document with entries carries a digest
+    of them too, so adding, changing or removing an entry re-extracts that document alone."""
+    base = extraction_fingerprint(original.suffix.lower())
+    keep, spacing = rejoin_overrides(original)
+    if not keep and not spacing:
+        return base
+    lines = sorted(keep) + [f"{k}\t{v}" for k, v in sorted(spacing.items())]
+    digest = hashlib.sha256("\n".join(lines).encode("utf-8")).hexdigest()[:8]
+    return f"{base}+keep:{digest}"
+
+
+def spacing_record_path(cached: Path) -> Path:
+    """Sibling of the cached ``.md`` holding the letter-spacing runs its extraction found (ADR-056
+    point 7). A separate file for the same reason as the fingerprint: the ``.md``'s bytes are the
+    document's identity."""
+    return cached.with_name(cached.name + ".spacing.json")
+
+
+def read_spacing_record(cached: Path) -> list[dict[str, Any]]:
+    """The runs recorded beside ``cached``, or none (no record: nothing was found, or the cache
+    predates the record). An unreadable record is logged and read as empty."""
+    path = spacing_record_path(cached)
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return []
+    except (OSError, ValueError) as e:
+        log.warning("spacing_record_unreadable", path=str(path), error=str(e))
+        return []
+    runs = data.get("runs", []) if isinstance(data, dict) else []
+    return [r for r in runs if isinstance(r, dict)]
+
+
+_PAGE_MARKER = re.compile(r"<!--\s*page:(\d+)\s*-->")
+
+
+def locate_spacing_runs(text: str, runs: list[dict[str, Any]]) -> None:
+    """Give each recorded run its character span in ``text``, in place (ADR-056 point 8).
+
+    ``start`` and ``end`` are where the run's ``written`` form sits in the cached markdown, so a
+    reader can check ``text[start:end] == written`` before acting on a run; both are None for a
+    run that is not there (``in_text`` False, or its page holds no such text). A run is looked for
+    in its own page's part of the text, and an occurrence another run of that page already claimed
+    is passed over, so a running head on every page, or a closed word the body also uses, keeps
+    one span per run.
+
+    Here, not in ``extractors``: a span describes the text written, not how it was extracted, so
+    changing how spans are found must not re-extract anything (KI-48). A later pass that rewrites
+    the cache (the table splices) can move them; the reader's check is what catches that."""
+    marks = list(_PAGE_MARKER.finditer(text))
+    pages: dict[int, tuple[int, int]] = {}
+    for i, mark in enumerate(marks):
+        end = marks[i + 1].start() if i + 1 < len(marks) else len(text)
+        pages.setdefault(int(mark.group(1)), (mark.end(), end))
+    claimed: set[int] = set()
+    for run in runs:
+        run["start"] = run["end"] = None
+        written = run.get("written")
+        section = pages.get(run.get("page", -1))
+        if section is None or not run.get("in_text") or not written:
+            continue
+        lo, hi = section
+        at = text.find(written, lo, hi)
+        while at >= 0 and at in claimed:
+            at = text.find(written, at + 1, hi)
+        if at >= 0:
+            claimed.add(at)
+            run["start"], run["end"] = at, at + len(written)
 
 
 def _stale_reason(original: Path, cached: Path) -> str:
@@ -349,7 +514,13 @@ def _stale_reason(original: Path, cached: Path) -> str:
     return "extractor_changed"
 
 
-def write_cache(cached: Path, text: str, *, source: Path) -> None:
+def write_cache(
+    cached: Path,
+    text: str,
+    *,
+    source: Path,
+    spacing_record: list[dict[str, Any]] | None = None,
+) -> None:
     """Write a cache entry: the markdown **and** the fingerprint of the extractor that made it.
 
     ``source`` is the file the text was extracted *from*, and it is required rather than optional
@@ -369,9 +540,22 @@ def write_cache(cached: Path, text: str, *, source: Path) -> None:
 
     Fingerprint **last**: if that write fails, the entry reads as stale and is re-extracted next
     run — wasteful but correct. The reverse order could vouch for a truncated ``.md``.
+
+    ``spacing_record`` is the letter-spacing runs this text's extraction found (ADR-056 point 7),
+    each given its span in ``text`` (:func:`locate_spacing_runs`) and written between the two, so
+    a fingerprint never vouches for a record of other text. An empty list removes a previous
+    record; ``None`` leaves it alone, for a caller that rewrites the text without extracting it
+    again.
     """
     atomic_write_text(cached, text)
-    atomic_write_text(_fingerprint_path(cached), extraction_fingerprint(source.suffix.lower()))
+    if spacing_record is not None:
+        record = spacing_record_path(cached)
+        if spacing_record:
+            locate_spacing_runs(text, spacing_record)
+            atomic_write_text(record, json.dumps({"version": 1, "runs": spacing_record}))
+        else:
+            record.unlink(missing_ok=True)
+    atomic_write_text(_fingerprint_path(cached), document_fingerprint(source))
 
 
 def load_or_extract(original: Path) -> str:
@@ -391,8 +575,16 @@ def load_or_extract(original: Path) -> str:
     if refusal is not None:
         raise IngestRefusedError(refusal)
     log.info("extracting", file=original.name, reason=_stale_reason(original, cached))
-    text = extract_to_markdown(original, pdf_extractor=config.PDF_EXTRACTOR)
-    write_cache(cached, text, source=original)
+    keep, spacing = rejoin_overrides(original)
+    record: list[dict[str, Any]] = []
+    text = extract_to_markdown(
+        original,
+        pdf_extractor=config.PDF_EXTRACTOR,
+        keep_spaced=keep,
+        spacing=spacing,
+        record=record,
+    )
+    write_cache(cached, text, source=original, spacing_record=record)
     return text
 
 

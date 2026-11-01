@@ -13,6 +13,7 @@
   // It stays open through the run rather than handing off to the status bar: the useful output is
   // the per-part report ("no reference list found", "the source file is not reachable"), and that
   // has nowhere else to be read.
+  import { untrack } from 'svelte'
   import type { ReingestOptions, ReingestStatus } from '../core/types'
   import { getReingestOptions, getReingestStatus, startReingest } from '../core/api'
   import Icon from '../shell/Icon.svelte'
@@ -21,12 +22,16 @@
   let {
     documentIds,
     label,
+    preselected = [],
     onClose,
     onFinished,
   }: {
     documentIds: string[]
     /** What is being re-run, in the user's terms: a filename, or "12 documents". */
     label: string
+    /** Parts ticked on open, when the caller knows which one applies (the letter-spacing list
+     *  takes effect through Text & chunks). Still the user's to start. */
+    preselected?: string[]
     onClose: () => void
     /** Fired once, after a run finishes, so the caller can refetch what changed. */
     onFinished: () => void
@@ -34,7 +39,8 @@
 
   let options = $state<ReingestOptions | null>(null)
   let loadError = $state<string | null>(null)
-  let selected = $state(new Set<string>())
+  // Read once: the dialog is mounted per opening.
+  let selected = $state(new Set<string>(untrack(() => preselected)))
   let confirmed = $state(false)
   let status = $state<ReingestStatus | null>(null)
   let startError = $state<string | null>(null)

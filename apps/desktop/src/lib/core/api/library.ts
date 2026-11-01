@@ -151,10 +151,19 @@ export async function getSourceDocumentView(documentId: string): Promise<SourceD
 
 /** The URL of one rendered page. Set as an `<img src>` — the browser does the fetching, so a
  *  page that fails renders the img's own error state and the pane reads `available` for the why. */
-export function sourcePageUrl(documentId: string, page: number, dpi = 0): string {
+export function sourcePageUrl(
+  documentId: string,
+  page: number,
+  dpi = 0,
+  clip: number[] | null = null,
+): string {
   const base = `${API_BASE}/api/library/documents/${encodeURIComponent(documentId)}/page/${page}`
   // Omitted rather than sent as the default, so the common URL stays stable and cacheable.
-  return dpi > 0 ? `${base}?dpi=${Math.round(dpi)}` : base
+  const params: string[] = []
+  if (dpi > 0) params.push(`dpi=${Math.round(dpi)}`)
+  // A part of the page only: a letter-spaced run's crop (ADR-056 point 9), x0,y0,x1,y1 in points.
+  if (clip && clip.length === 4) params.push(`clip=${clip.map((v) => v.toFixed(1)).join(',')}`)
+  return params.length ? `${base}?${params.join('&')}` : base
 }
 
 /** Where a cited chunk is — its document, and its page when one can be said.

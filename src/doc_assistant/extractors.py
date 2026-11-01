@@ -1,8 +1,10 @@
 """Format-specific extractors. Each returns markdown text."""
 
+import itertools
 import re
+import statistics
 import zipfile
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Mapping
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -73,8 +75,20 @@ def _substantive_len(text: str) -> int:
     return len(_NON_CONTENT.sub("", _PAGE_MARKER.sub("", text)))
 
 
-def extract_pdf_pymupdf(pdf_path: Path) -> str:
+def extract_pdf_pymupdf(
+    pdf_path: Path,
+    keep_spaced: frozenset[str] = frozenset(),
+    spacing: Mapping[str, str] | None = None,
+    record: list[dict[str, Any]] | None = None,
+) -> str:
     """PDF extraction with page markers preserved as HTML comments.
+
+    **Closes letter-spacing the page does not show** (ADR-056): each page's markdown goes through
+    :func:`apply_letter_spacing` with the runs :func:`letter_spacing_page_runs` reads from that
+    page's glyphs. ``keep_spaced`` and ``spacing`` are the document's ignore-list entries: runs
+    left as extracted, and runs spaced the user's way. Every run found is appended to ``record``
+    (ADR-056 point 7) with its page and what was written, so the app can show what was done to
+    this document's text; the counts are logged per document.
 
     **Falls back to the page's text layer when the markdown conversion loses it.** A scanned page
     that carries an invisible OCR text layer behind a full-page image is rendered by PyMuPDF4LLM as
@@ -99,12 +113,40 @@ def extract_pdf_pymupdf(pdf_path: Path) -> str:
     _keep_ligature_letters_in_table_cells()
     doc = pymupdf.open(str(pdf_path))  # type: ignore[no-untyped-call]
     parts: list[str] = []
+    found: list[dict[str, Any]] = []
     for page_num in range(len(doc)):
         # Mark the start of each page so chunks can be tagged
         parts.append(f"\n<!-- page:{page_num + 1} -->\n")
         page_md = pymupdf4llm.to_markdown(str(pdf_path), pages=[page_num])
-        parts.append(_recover_lost_page(doc, page_num, page_md))
+        page_md = _recover_lost_page(doc, page_num, page_md)
+        try:
+            runs = letter_spacing_page_runs(doc[page_num])
+        except Exception as e:
+            # A repair that fails the document would be worse than the spacing it repairs.
+            log.warning(
+                "letter_spacing_page_skipped",
+                file=pdf_path.name,
+                page=page_num + 1,
+                error=str(e),
+            )
+            runs = []
+        page_md, outcomes = apply_letter_spacing(page_md, runs, keep_spaced, spacing or {})
+        found.extend({**run, "page": page_num + 1} for run in outcomes)
+        parts.append(page_md)
     doc.close()  # type: ignore[no-untyped-call]
+    if record is not None:
+        record.extend(found)
+    if found or keep_spaced or spacing:
+        states = [run["state"] for run in found if run["in_text"]]
+        log.info(
+            "letter_spacing_closed",
+            file=pdf_path.name,
+            closed=states.count("closed"),
+            kept=states.count("kept"),
+            yours=states.count("yours"),
+            maths_left=states.count("maths"),
+            ignore_entries=len(keep_spaced) + len(spacing or {}),
+        )
     return "\n".join(parts)
 
 
@@ -221,6 +263,324 @@ def _recover_lost_page(doc: _PagedDoc, page_num: int, page_md: str) -> str:
     if _substantive_len(page_md) >= _TEXT_LAYER_KEPT_MIN * raw_len:
         return page_md
     return raw
+
+
+# ADR-056. PyMuPDF writes a space wherever two glyphs are drawn apart and marks each one it
+# writes (`char["synthetic"]`), so a title set with letter-spacing comes out as "N E U R O N S".
+# These close the spaces the page does not show, from evidence in the PDF only. Each constant is
+# a property of type, not of this library (all measured in em of the smaller glyph):
+#   _HALF_SPACE_EM — half a quarter-em word space: a word break in tracked text is the tracking
+#                    plus a space, a letter gap the tracking alone, and this sits between them;
+#   _TOUCH_EM      — glyphs closer than this touch; no face sets a word space that narrow;
+#   _BASELINE_EM   — a sub- or superscript sits well off its line; one line of letters does not.
+_HALF_SPACE_EM = 0.125
+_TOUCH_EM = 0.05
+_BASELINE_EM = 0.1
+#: Marks that may close a letter-spaced word ("NEURONS:"). A string, not a set: the extraction
+#: fingerprint hashes this value's repr, and a set's repr order changes between processes.
+_CLOSING_MARKS = ":;,.!?\u2019"
+#: An ignore-list entry that keeps every run of a document spaced (ADR-056).
+KEEP_ALL_SPACED = "*"
+#: A page one image covers at least this much of is a scan, and its text an OCR layer whose glyph
+#: positions are estimates, so the rule leaves it alone. Structural: measured 2026-10-24 on 3,341
+#: pages, scans sit at 0.9 and above, every other page at 0.7 or below, and no page between; this
+#: is the middle of that gap, as `_TEXT_LAYER_KEPT_MIN` sits in its own.
+_SCANNED_PAGE_MIN = 0.8
+#: Layout boxes (pymupdf4llm's own analysis) whose content is not running text: the rule leaves
+#: them alone, however their glyphs are spaced.
+_NOT_TEXT_BOXES = ("formula", "picture", "table")
+#: Glyphs that make a run of touching glyphs maths rather than a word: it stays as extracted.
+#: Not "/", "-", "." or ":", which URLs are made of.
+_MATH_GLYPHS = "=+\u2212\u00d7\u00b7\u2219<>\u2264\u2265\u00b1\u2211\u222b\u221a\u2217^"
+#: A URL or a piece of one cut at a line end: a scheme, ``www.``, or a domain before a path.
+_URL_SHAPE = re.compile(r"://|\bwww\.|[a-z0-9]\.[a-z]{2,}/", re.IGNORECASE)
+#: What may sit directly before a run in the markdown: a space, or the emphasis pymupdf4llm wraps
+#: around bold, italic, monospaced or struck-out text. Anything else is another word's tail.
+_RUN_START = r"(?<![^\s*_`~])"
+
+#: A join, as ``(spaced, joined, kind)``: the run as PyMuPDF reads it with one space between
+#: glyphs, the run as the page shows it, and its kind: ``"tracked"`` (letters drawn apart),
+#: ``"invisible"`` (space glyphs between touching glyphs), ``"url"`` (an invisible run in a URL),
+#: or ``"maths"`` (an invisible run of maths, whose joined form is its spaced form: left alone).
+SpacingJoin = tuple[str, str, str]
+#: One token of a line: its glyphs, and the spaces that follow them (``rawdict`` characters).
+_GlyphToken = tuple[list[dict[str, Any]], list[dict[str, Any]]]
+
+
+def _glyph_tokens(chars: list[dict[str, Any]]) -> list[_GlyphToken]:
+    """A line's glyphs split at spaces: ``[(glyphs, the spaces that follow them)]``."""
+    tokens: list[_GlyphToken] = []
+    for ch in chars:
+        if ch["c"].isspace():
+            if tokens:
+                tokens[-1][1].append(ch)
+        elif not tokens or tokens[-1][1]:
+            tokens.append(([ch], []))
+        else:
+            tokens[-1][0].append(ch)
+    return tokens
+
+
+def letter_spacing_joins(line: Mapping[str, Any]) -> list[SpacingJoin]:
+    """The letter-spaced runs in one PyMuPDF ``rawdict`` text line, and how each closes (ADR-056).
+
+    A run is three or more one-glyph tokens in a row with at least three letters. It closes as
+    **tracked** text when its letter gaps are spaces PyMuPDF added, it is all letters (a closing
+    mark may follow a letter), its glyphs share a baseline, its spacing is narrower than its
+    letters, and its neighbours on the line sit at a word break: further than its spacing plus
+    half a word space, or behind a space the PDF itself holds. Gaps up to its spacing plus half a
+    word space close; wider ones stay one space. Failing that, any gap in the run under
+    ``_TOUCH_EM`` closes as **invisible**: a space glyph between glyphs that touch.
+
+    An invisible run in a URL (one that holds a URL shape, or follows one on its line) is a
+    **url**; one holding a maths glyph and no URL is **maths**, and stays as extracted.
+
+    What stays, on purpose: a space glyph the reader can see (``a r t i c l e``), an OCR layer's
+    word fragments (their neighbours sit as close as their letters), maths, sub- and superscripts.
+    A spaced word in a PDF that holds no space glyphs at all also stays: geometry cannot tell it
+    from one-letter words."""
+    return [join for join, _ in _line_runs(line)]
+
+
+def _line_runs(line: Mapping[str, Any]) -> list[tuple[SpacingJoin, tuple[float, ...]]]:
+    """:func:`letter_spacing_joins`, each with the box around its glyphs."""
+    chars = [{**c, "size": s["size"]} for s in line.get("spans", ()) for c in s.get("chars", ())]
+    dx, dy = line.get("dir", (1.0, 0.0))
+
+    def extent(c: Mapping[str, Any]) -> tuple[float, float]:
+        x0, y0, x1, y1 = c["bbox"]
+        a, b = x0 * dx + y0 * dy, x1 * dx + y1 * dy
+        return min(a, b), max(a, b)
+
+    def gap(a: Mapping[str, Any], b: Mapping[str, Any]) -> float:
+        return (extent(b)[0] - extent(a)[1]) / (min(a["size"], b["size"]) or 1.0)
+
+    tokens = _glyph_tokens(chars)
+    runs: list[tuple[SpacingJoin, tuple[float, ...]]] = []
+    i = 0
+    while i < len(tokens):
+        j = i
+        while j < len(tokens) and len(tokens[j][0]) == 1:
+            j += 1
+        if j - i >= 3:
+            join = _close_run(tokens, i, j, gap, extent, (dx, dy))
+            if join is not None:
+                boxes = [tok[0][0]["bbox"] for tok in tokens[i:j]]
+                box = (
+                    min(b[0] for b in boxes),
+                    min(b[1] for b in boxes),
+                    max(b[2] for b in boxes),
+                    max(b[3] for b in boxes),
+                )
+                runs.append((join, box))
+        i = max(j, i + 1)
+    return runs
+
+
+def _close_run(
+    tokens: list[_GlyphToken],
+    i: int,
+    j: int,
+    gap: Callable[[Mapping[str, Any], Mapping[str, Any]], float],
+    extent: Callable[[Mapping[str, Any]], tuple[float, float]],
+    direction: tuple[float, float],
+) -> SpacingJoin | None:
+    """How the run ``tokens[i:j]`` of one-glyph tokens closes, or ``None`` (rules: the caller)."""
+    run = tokens[i:j]
+    glyphs = [t[0][0] for t in run]
+    if sum(c["c"].isalpha() for c in glyphs) < 3:
+        return None
+    gaps = [gap(a, b) for a, b in itertools.pairwise(glyphs)]
+    letter_gaps = [
+        gaps[k]
+        for k in range(len(gaps))
+        if run[k][1]
+        and all(s["synthetic"] for s in run[k][1])
+        and glyphs[k]["c"].isalpha()
+        and glyphs[k + 1]["c"].isalpha()
+    ]
+    wordlike = all(
+        c["c"].isalpha() or (k > 0 and c["c"] in _CLOSING_MARKS and glyphs[k - 1]["c"].isalpha())
+        for k, c in enumerate(glyphs)
+    )
+    dx, dy = direction
+    across = [c["origin"][0] * -dy + c["origin"][1] * dx for c in glyphs]
+    one_baseline = max(across) - min(across) <= _BASELINE_EM * min(c["size"] for c in glyphs)
+
+    close: list[bool] = []
+    kind = "tracked"
+    if len(letter_gaps) >= 2 and wordlike and one_baseline:
+        t = statistics.median(letter_gaps)
+        widths = sorted(
+            (extent(c)[1] - extent(c)[0]) / (c["size"] or 1.0) for c in glyphs if c["c"].isalpha()
+        )
+
+        def word_break(spaces: list[dict[str, Any]], g: float) -> bool:
+            return g > t + _HALF_SPACE_EM or any(not s["synthetic"] for s in spaces)
+
+        edges = t < widths[len(widths) // 2]
+        if i > 0:
+            edges = edges and word_break(tokens[i - 1][1], gap(tokens[i - 1][0][-1], glyphs[0]))
+        if j < len(tokens):
+            edges = edges and word_break(run[-1][1], gap(glyphs[-1], tokens[j][0][0]))
+        if edges:
+            close = [g <= t + _HALF_SPACE_EM for g in gaps]
+    if not any(close):
+        kind = "invisible"
+        close = [g < _TOUCH_EM for g in gaps]
+    if not any(close):
+        return None
+    spaced = " ".join(c["c"] for c in glyphs)
+    joined = glyphs[0]["c"] + "".join(
+        ("" if shut else " ") + c["c"] for shut, c in zip(close, glyphs[1:], strict=True)
+    )
+    if kind == "invisible":
+        before = "".join(c["c"] for c in tokens[i - 1][0]) if i > 0 else ""
+        if _URL_SHAPE.search(joined) or _URL_SHAPE.search(before):
+            kind = "url"
+        elif any(c["c"] in _MATH_GLYPHS for c in glyphs):
+            return spaced, spaced, "maths"
+    return spaced, joined, kind
+
+
+def letter_spacing_page_joins(page: Any) -> list[SpacingJoin]:
+    """Every join on one PyMuPDF page, as ``(spaced, joined, kind)``: the runs of
+    :func:`letter_spacing_page_runs` without their boxes."""
+    return [(r["spaced"], r["joined"], r["kind"]) for r in letter_spacing_page_runs(page)]
+
+
+def letter_spacing_page_runs(page: Any) -> list[dict[str, Any]]:
+    """Every letter-spaced run on one PyMuPDF page, read with pymupdf4llm's layout-path flags.
+
+    Each run is ``spaced``, ``joined`` and ``kind`` (see ``SpacingJoin``), its ``box`` on the page
+    (x0, y0, x1, y1 in points), and the ``label`` of the layout box it sits in ("page-header",
+    "text", ...; "" when it sits in none). None on a scanned page (``_SCANNED_PAGE_MIN``), and none
+    inside a formula, picture or table box. The layout is only analysed on a page that has a run
+    to check: it is the costly part of extraction, and few pages need it."""
+    import pymupdf
+    import pymupdf4llm  # noqa: F401  # activates the layout analysis extraction itself runs
+
+    if _scanned_page(page):
+        return []
+    flags = (
+        pymupdf.TEXT_COLLECT_STYLES
+        | pymupdf.TEXT_COLLECT_VECTORS
+        | pymupdf.TEXT_PRESERVE_IMAGES
+        | pymupdf.TEXT_ACCURATE_BBOXES
+        | pymupdf.TEXT_MEDIABOX_CLIP
+        | pymupdf.TEXT_IGNORE_ACTUALTEXT
+    )
+    blocks = page.get_textpage(flags=flags).extractRAWDICT()["blocks"]
+    runs = [run for b in blocks for line in b.get("lines", ()) for run in _line_runs(line)]
+    if not runs:
+        return []
+    page.get_layout()
+    rect = type(page.rect)  # PyMuPDF's Rect, reached through the page: it is untyped
+    layout = [(rect(b[:4]), str(b[4])) for b in (page.layout_information or ())]
+    skip = [box for box, label in layout if label in _NOT_TEXT_BOXES]
+    found: list[dict[str, Any]] = []
+    for (spaced, joined, kind), box in runs:
+        where = rect(box)
+        if _mostly_inside(where, skip):
+            continue
+        label = next((lab for b, lab in layout if _mostly_inside(where, [b])), "")
+        found.append(
+            {"spaced": spaced, "joined": joined, "kind": kind, "box": list(box), "label": label}
+        )
+    return found
+
+
+def _scanned_page(page: Any) -> bool:
+    """Whether one image covers at least ``_SCANNED_PAGE_MIN`` of the page."""
+    area = page.rect.get_area() or 1.0
+    return any(
+        (type(page.rect)(info["bbox"]) & page.rect).get_area() / area >= _SCANNED_PAGE_MIN
+        for info in page.get_image_info()
+    )
+
+
+def _mostly_inside(box: Any, boxes: Iterable[Any]) -> bool:
+    """Whether more than half of ``box`` lies inside one of ``boxes`` (PyMuPDF rects)."""
+    area = box.get_area()
+    return area > 0 and any((box & other).get_area() > area / 2 for other in boxes)
+
+
+def close_letter_spacing(
+    page_md: str, joins: Iterable[SpacingJoin], keep_spaced: frozenset[str] = frozenset()
+) -> tuple[str, list[SpacingJoin]]:
+    """``page_md`` with each join's spaced form replaced by its joined form, and the joins applied.
+
+    :func:`apply_letter_spacing` for bare joins, reporting only those it closed. A join whose
+    spaced form is in ``keep_spaced`` (the ignore list, ADR-056) is left as it is, and so is every
+    join when ``keep_spaced`` holds ``KEEP_ALL_SPACED``, and every ``"maths"`` run."""
+    runs = [{"spaced": s, "joined": j, "kind": k} for s, j, k in joins]
+    page_md, outcomes = apply_letter_spacing(page_md, runs, keep_spaced, {})
+    return page_md, [
+        (r["spaced"], r["joined"], r["kind"])
+        for r in outcomes
+        if r["state"] == "closed" and r["in_text"]
+    ]
+
+
+def user_spacing_is_valid(spaced: str, chosen: str) -> bool:
+    """Whether ``chosen`` respaces ``spaced`` and changes nothing else (ADR-056 point 10).
+
+    The same glyphs in the same order, single spaces only, none at either end: an entry that
+    would change a letter is not a spacing, and the extractor never applies it."""
+    return (
+        bool(chosen)
+        and chosen == chosen.strip(" ")
+        and "  " not in chosen
+        and chosen.replace(" ", "") == spaced.replace(" ", "")
+    )
+
+
+def apply_letter_spacing(
+    page_md: str,
+    runs: Iterable[Mapping[str, Any]],
+    keep_spaced: frozenset[str] = frozenset(),
+    spacing: Mapping[str, str] | None = None,
+) -> tuple[str, list[dict[str, Any]]]:
+    """``page_md`` with each run written as decided, and every run with what became of it.
+
+    Text only, so it can be tested without a PDF. A run's spaced form is matched with one to
+    three spaces between glyphs, as markdown writes it, once per run, inside any emphasis the
+    markdown wraps around it (``**N E U**``; the emphasis stays). Each run comes back with a
+    ``state`` (``closed`` by the rule, ``kept`` by the ignore list or ``KEEP_ALL_SPACED``,
+    ``yours`` when the user's spacing was applied, ``maths`` left alone by the rule), the text
+    now ``written`` there, and ``in_text``: False when the run never reached this markdown (a
+    margin label the layout path drops). User spacing that fails :func:`user_spacing_is_valid`
+    is logged and the rule decides instead. Only spaces are ever added or removed."""
+    spacing = spacing or {}
+    outcomes: list[dict[str, Any]] = []
+    for run in runs:
+        spaced, joined, kind = run["spaced"], run["joined"], run["kind"]
+        chosen = spacing.get(spaced)
+        if chosen is not None and not user_spacing_is_valid(spaced, chosen):
+            log.warning("letter_spacing_entry_rejected", run=spaced, spacing=chosen)
+            chosen = None
+        if KEEP_ALL_SPACED in keep_spaced or spaced in keep_spaced:
+            state, write = "kept", spaced
+        elif chosen is not None:
+            state, write = "yours", chosen
+        elif kind == "maths":
+            state, write = "maths", spaced
+        else:
+            state, write = "closed", joined
+        pattern = re.compile(
+            _RUN_START
+            + r"[ \t]{1,3}".join(re.escape(g) for g in spaced.split(" "))
+            + r"(?![^\W_])"
+        )
+        match = pattern.search(page_md)
+        if match is not None and state in ("closed", "yours"):
+            # Sliced in rather than `sub`bed: a replacement string reads a backslash as an escape,
+            # and OCR noise can hold one.
+            page_md = page_md[: match.start()] + write + page_md[match.end() :]
+        elif match is not None:
+            write = match.group(0)  # a word break in a spaced run can be wider than one space
+        outcomes.append({**run, "state": state, "written": write, "in_text": match is not None})
+    return page_md, outcomes
 
 
 # Page furniture rather than content. `head` matters as much as the rest: `get_text()` reaches it,
@@ -392,12 +752,22 @@ def extractor_name(path: Path, pdf_extractor: str = "pymupdf") -> str:
     return _EXTRACTOR_NAMES.get(suffix, "unknown")
 
 
-def extract_to_markdown(path: Path, pdf_extractor: str = "pymupdf") -> str:
+def extract_to_markdown(
+    path: Path,
+    pdf_extractor: str = "pymupdf",
+    keep_spaced: frozenset[str] = frozenset(),
+    spacing: Mapping[str, str] | None = None,
+    record: list[dict[str, Any]] | None = None,
+) -> str:
     """Main entry point: extract any supported file to markdown.
 
     The extracted markdown is passed through ``strip_image_placeholders`` at the single
     exit so PyMuPDF4LLM image placeholders never reach the cache / chunk store (KI-14);
     the strip is a no-op for formats and documents without placeholders.
+
+    ``keep_spaced`` and ``spacing`` are a PDF's letter-spacing ignore-list entries, and
+    ``record`` collects the runs it found (ADR-056); other formats have none, because their text
+    carries no spacing to misread.
     """
     suffix = path.suffix.lower()
 
@@ -410,7 +780,7 @@ def extract_to_markdown(path: Path, pdf_extractor: str = "pymupdf") -> str:
                 f"Unsupported PDF extractor '{pdf_extractor}'. Only 'pymupdf' is "
                 "available; Marker support was removed (see scripts/eval_marker_tables.py)."
             )
-        md = extract_pdf_pymupdf(path)
+        md = extract_pdf_pymupdf(path, keep_spaced, spacing, record)
     else:
         extractor = _EXTRACTORS.get(suffix)
         if extractor is None:

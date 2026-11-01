@@ -69,8 +69,8 @@
     // --- per-document actions
     onEditDoc: (id: string) => void
     onDeleteDoc: (id: string) => void
-    /** Open the re-run picker for the open document (ROADMAP 20). */
-    onReingestDoc: () => void
+    /** Open the re-run picker for the open document (ROADMAP 20), with these parts ticked. */
+    onReingestDoc: (parts: string[]) => void
     /** Open the same picker for the grid selection (ROADMAP 21). */
     onReingestSelection: () => void
     onRevealDoc: (id: string) => void

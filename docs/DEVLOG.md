@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-10-31 · class: append-only -->
+<!-- status: active · updated: 2026-11-01 · class: append-only -->
 
 # DEVLOG — doc_assistant
 
@@ -41,6 +41,75 @@ Format: What changed | Why | Rejected alternatives | What it opens
 > is individually small and correct, so unbounded growth is invisible per commit.
 
 ---
+
+## 2026-11-01 — Letter-spaced text closes at extraction, with a record and a control (ADR-056, ROADMAP 108)
+
+**What changed.** Built 2026-10-23 and 2026-10-24 in a side session and parked through the 0.7
+release; this entry is the account of all of it, and of what landing changed.
+
+*The rule.* `extractors.py`: `letter_spacing_joins` reads one PyMuPDF `rawdict` line for runs of
+one-glyph tokens whose spaces the page does not show (the spaces PyMuPDF added inside letter-spaced
+text, or space glyphs between letters that touch); `apply_letter_spacing` writes each run into the
+page's markdown; `extract_pdf_pymupdf` runs both per page and skips a page whose glyphs cannot be
+read. It leaves alone a page one image covers (`_SCANNED_PAGE_MIN`), any run in a formula, picture or
+table box, and maths; a URL closes as kind `url`. *The ignore list.* `config.REJOIN_IGNORE_PATH`
+(`rejoin_ignore.json` in the data home): per PDF, by sha256 with its size, the runs to keep, `*`, and
+the user's `spacing`, applied only when it moves spaces alone. `document_fingerprint` adds a
+document's entries to its cache fingerprint, so an edit re-extracts that document alone. *The
+record.* `write_cache` writes `<cache>.md.spacing.json` between the markdown and the fingerprint,
+each run with its state and its span in the text; a document without runs has no file. *The control.*
+`library/spacing.py`, `/api/library/documents/{id}/spacing` (+ `keep`, `edit`, `remove`, `keep-all`),
+`/api/library/spacing` (+ `remove`, `restore`), `?clip=` on the page route; `DocSpacing.svelte`,
+`SpacingEditor.svelte`, `SpacingIgnoreList.svelte` and the pure `spacing.ts`; the re-run picker takes
+parts to tick on open. *The CLI.* `scripts/list_letter_spacing.py`, read-only.
+
+*Found by reading it again as new, and fixed, each with a test* (ADR-056, amendment 2026-11-01): a
+bold or italic run never closed, because the pattern wanted whitespace where markdown writes `**` or
+`_`; a kept or maths run recorded a form the text does not hold, so it had no span; the block did
+not follow a finished re-run; `{"documents": null}` raised in the reader every freshness check
+calls, and an entry of the wrong shape was a 500; a removed document left its record; `list_entries`
+read every document's row and, like the CLI, missed a moved file; Settings could say "the 0
+documents' text".
+
+**Why.** ADR-056: a space the PDF does not hold, or holds with no visible width, is this project's
+reading error, not the document's content, so it is fixed where it is made (as KI-64 was). The user
+asked for points 7, 9 and 10 with the control from the sketch. Point 8 (keywords) waits for ADR-055,
+and its span is in the record now because the record must be right before the library is
+re-extracted.
+
+**Checked.** The full suite, 2,937 passed; ruff, `mypy src` and CI's `mypy src/ apps/ --platform linux` clean; svelte-check 0 errors and 0 warnings, the 327 frontend tests pass. Gate 2 on the final rule, all 104 documents, against a copy of the live cache:
+102 byte-identical, 2 changed by deleted spaces only (`cajal-lecture` 479, `s41598-025-33686-0` 306), no errors, as at every earlier run (those two compared with the live cache itself, the drive having re-extracted their copies). 36 runs recorded in 4 documents, 33 of them in the text, each at a distinct span that holds its text. The bold and italic fix moves nothing here: the same 3 runs still never reach the text.
+Driven in the app on a scratch copy with every stored path pointed at it (`GET /api/settings` read
+first, and a before/after listing of the real `data/`: unchanged): a document from before this
+change shows no block; a real *Text & chunks* re-run wrote the text and the record, and the block
+appeared without reopening the document; *Keep spaced*, *Edit spacing* and Save, *Show on page*,
+*Keep every run spaced*, *All entries in Settings*, *Show runs*, *Remove all* and *Undo*; a second
+re-run from *Re-run text now…*, which opens with *Text & chunks* ticked, wrote the user's spacing into
+the text and kept the running head spaced, only spaces differing from the live cache. Dark, light and
+375 px; no failed request. Earlier, in the side session: 48 joins reviewed by the user (33 places: 6
+close, 27 not text, 0 keep spaced), which the four context rules reproduce on 31 of 33 decisions.
+
+**Rejected.** The rule in a module of its own: the fingerprint walks `extractors` only, so a change
+to it would re-extract nothing (KI-40). A set for the closing marks: its repr order follows the hash
+seed, and the fingerprint hashes the repr. Skipping page headers: both letter-spaced runs of the
+document that asked for this sit in header boxes. A threshold under that document's tracking for the
+label-row gray zone: fitted to one library. `scrollIntoView` for *All entries in Settings*: it moves
+every scrolling ancestor. An empty record file per document: files that say nothing.
+
+**Not done, on purpose.** The count per document in `ingestion_events.notes` (ADR-056, point 3): the
+store writes the event from the text alone, so the ingest log carries it. `data/rejoin_ignore.json`
+is not written: this library's list starts empty. The library is not re-extracted: that is the
+user's, with its backups, rebuilds and the private eval.
+
+**Costs once.** The ignore entries go through `extract_to_markdown`, so every format's fingerprint
+moves (checked on all six), and the first full ingest after this reads every document, about 24
+minutes here. A document whose text comes out the same is not embedded again.
+
+**What it opens.** ROADMAP 108: the re-extraction (gates 3 and 6), more letter-spaced PDFs (gate 4,
+each download the user's call), and point 8 after ADR-055. Re-extracting before point 8 brings the
+running head's keyword on the next keyword rebuild. The other document blocks (figures, references)
+read their document once too, so they may also lag a finished re-run until it is reopened; not
+checked here.
 
 ## 2026-10-31 (6) — The roadmap cleaned up; the order set for the next moves
 

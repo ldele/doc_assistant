@@ -22,7 +22,7 @@ from doc_assistant.db.models import Document as DBDocument
 from doc_assistant.db.models import Figure
 from doc_assistant.db.session import session_scope
 
-from .cache import doc_hash, load_or_extract
+from .cache import doc_hash, load_or_extract, spacing_record_path
 from .figures import figure_dir
 
 log = structlog.get_logger(__name__)
@@ -144,11 +144,11 @@ def cleanup_orphans_chroma(
 ) -> None:
     """Delete chunks for orphan documents from a Chroma store.
 
-    When ``also_clean_cache`` is set the cached ``.md`` sidecar is removed too — but
-    ONLY for orphans whose source file is gone. A content-changed document is also
-    an orphan (its pre-change hash no longer matches), yet its cache holds the *new*
-    content the fresh hash re-ingests from; deleting it would destroy the live
-    extraction. Gate cache removal on source existence, not on orphan-ness.
+    When ``also_clean_cache`` is set the cached ``.md`` sidecar and its letter-spacing
+    record are removed too — but ONLY for orphans whose source file is gone. A
+    content-changed document is also an orphan (its pre-change hash no longer matches), yet
+    its cache holds the *new* content the fresh hash re-ingests from; deleting it would
+    destroy the live extraction. Gate cache removal on source existence, not on orphan-ness.
     """
     if not orphan_hashes:
         return
@@ -173,6 +173,7 @@ def cleanup_orphans_chroma(
         for cache_path in set(orphan_caches):
             try:
                 cache_path.unlink()
+                spacing_record_path(cache_path).unlink(missing_ok=True)
             except Exception as e:
                 log.warning("cache_delete_failed", file=cache_path.name, error=str(e))
         log.info("removed_orphan_caches", count=len(set(orphan_caches)))

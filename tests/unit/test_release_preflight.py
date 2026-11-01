@@ -635,7 +635,7 @@ def test_untouched_checklists_fail_after_a_tag(repo: Path) -> None:
     _write(repo, "src/doc_assistant/__init__.py", '__version__ = "1.1.0"' + chr(10))
     _git(repo, "add", "-A")
     _git(repo, "commit", "-q", "-m", "feat: something shipped")
-    check = preflight.check_checklists_refreshed()
+    check = preflight.check_checklists_refreshed("1.1.0")
     assert check.status == preflight.FAIL, check
     assert len(check.notes) == len(preflight.CHECKLISTS)
 
@@ -646,7 +646,7 @@ def test_a_committed_refresh_passes(repo: Path) -> None:
         _write(repo, rel, "# refreshed for 1.1.0" + chr(10))
     _git(repo, "add", "-A")
     _git(repo, "commit", "-q", "-m", "docs: refresh the release checklists")
-    assert preflight.check_checklists_refreshed().status == preflight.OK
+    assert preflight.check_checklists_refreshed("1.1.0").status == preflight.OK
 
 
 def test_an_uncommitted_refresh_also_passes(repo: Path) -> None:
@@ -654,13 +654,13 @@ def test_an_uncommitted_refresh_also_passes(repo: Path) -> None:
     _tagged_repo_with_checklists(repo)
     for rel in preflight.CHECKLISTS:
         _write(repo, rel, "# refreshed, not yet committed" + chr(10))
-    assert preflight.check_checklists_refreshed().status == preflight.OK
+    assert preflight.check_checklists_refreshed("1.1.0").status == preflight.OK
 
 
 def test_one_stale_checklist_is_enough_to_fail(repo: Path) -> None:
     _tagged_repo_with_checklists(repo)
     _write(repo, preflight.CHECKLISTS[0], "# only this one refreshed" + chr(10))
-    check = preflight.check_checklists_refreshed()
+    check = preflight.check_checklists_refreshed("1.1.0")
     assert check.status == preflight.FAIL
     assert check.notes == [
         f"{preflight.CHECKLISTS[1]}: no change since v1.0.0 — refresh it (docs/RELEASE.md §0)"
@@ -669,4 +669,39 @@ def test_one_stale_checklist_is_enough_to_fail(repo: Path) -> None:
 
 def test_no_tag_means_skip_not_fail(repo: Path) -> None:
     """A first release has nothing to be stale against."""
-    assert preflight.check_checklists_refreshed().status == preflight.SKIP
+    assert preflight.check_checklists_refreshed("1.1.0").status == preflight.SKIP
+
+
+def test_the_release_s_own_tag_is_not_the_previous_one(repo: Path) -> None:
+    """Seen at v0.7.0: run after the tag, the check compared the release with itself and failed."""
+    _tagged_repo_with_checklists(repo)
+    for rel in preflight.CHECKLISTS:
+        _write(repo, rel, "# refreshed for 1.1.0" + chr(10))
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", "docs: refresh the release checklists")
+    _git(repo, "tag", "-a", "v1.1.0", "-m", "1.1.0")
+    check = preflight.check_checklists_refreshed("1.1.0")
+    assert check.status == preflight.OK, check
+    assert "v1.0.0" in check.detail
+
+
+def test_commits_after_the_release_s_own_tag_still_compare_with_the_previous_one(
+    repo: Path,
+) -> None:
+    """A docs commit on top of the tag must not bring the false failure back."""
+    _tagged_repo_with_checklists(repo)
+    for rel in preflight.CHECKLISTS:
+        _write(repo, rel, "# refreshed for 1.1.0" + chr(10))
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", "docs: refresh the release checklists")
+    _git(repo, "tag", "-a", "v1.1.0", "-m", "1.1.0")
+    _write(repo, "README.md", "after the tag" + chr(10))
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", "docs: after the tag")
+    assert preflight.check_checklists_refreshed("1.1.0").status == preflight.OK
+
+
+def test_a_release_with_only_its_own_tag_means_skip(repo: Path) -> None:
+    """The first release, run after tagging: there is still nothing to be stale against."""
+    _tagged_repo_with_checklists(repo)
+    assert preflight.check_checklists_refreshed("1.0.0").status == preflight.SKIP

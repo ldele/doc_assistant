@@ -682,13 +682,14 @@ CHECKLISTS = (
 )
 
 
-def check_checklists_refreshed() -> Check:
+def check_checklists_refreshed(version: str) -> Check:
     """Each release checklist must carry a commit (or an uncommitted edit) since the previous tag.
 
     An untouched checklist is not evidence that nothing changed — it is evidence that nobody
-    looked. The refresh procedure is docs/RELEASE.md §0; this only verifies it happened.
+    looked. The refresh procedure is docs/RELEASE.md §0; this only verifies it happened. The
+    release's own tag is left out, so a run after tagging still compares against the one before.
     """
-    tag = _run("git", "describe", "--tags", "--abbrev=0")
+    tag = _run("git", "describe", "--tags", "--abbrev=0", f"--exclude=v{version}")
     if not tag:
         return Check("checklists", SKIP, "no previous tag to compare against")
     stale: list[str] = []
@@ -726,7 +727,7 @@ def main() -> int:
         check_backend_contents(),
         *check_rg012(installer),
         check_dev_commands(),
-        check_checklists_refreshed(),
+        check_checklists_refreshed(version),
     ]
 
     if args.json:

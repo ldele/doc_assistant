@@ -240,8 +240,8 @@ git diff --stat <tested-commit>..vX.Y.Z -- src apps scripts tests   # must be em
 Doc-only commits between the tested build and the tag are fine — that diff being empty is what
 makes it fine. If it is not empty, you are tagging something you did not test.
 
-**Preflight is a pre-tag check.** Run after the tag, its `checklists` check compares against the
-release's own tag and fails falsely (seen at v0.7.0); the diff above is the check to run then.
+**Preflight still reads true after the tag.** Its `checklists` check leaves out the release's own
+tag and compares against the one before it. The diff above is what proves the tag's source.
 
 **A pushed tag is not moved.** If something is found after the push, fix it, bump the patch version
 and tag again: v0.7.0 stayed as a tag with no release, and v0.7.1 shipped.

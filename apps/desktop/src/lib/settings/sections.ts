@@ -62,8 +62,15 @@ export const SETTINGS_SECTIONS = [
  * Setup wins whenever it has something outstanding: on a fresh install it is the only category
  * that matters (ADR-034), and landing anywhere else would bury the one thing standing between the
  * user and a working app. It is decided from state the shell has *already* loaded, so the panel
- * opens on the right category rather than opening on one and jumping to another. */
-export function initialSection(outstandingSetupSteps: number): SettingsSectionId {
+ * opens on the right category rather than opening on one and jumping to another.
+ *
+ * A run in flight outranks it. Documents is where a run shows, and a first run is exactly when setup
+ * still has steps left, so reopening mid-run would otherwise land on a page that does not show it. */
+export function initialSection(
+  outstandingSetupSteps: number,
+  indexing: boolean = false,
+): SettingsSectionId {
+  if (indexing) return 'documents'
   return outstandingSetupSteps > 0 ? 'setup' : 'documents'
 }
 

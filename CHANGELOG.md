@@ -33,6 +33,13 @@ The engineering record is finer-grained than this file: per-change entries live 
 - **Settings' Ollama card states its trade-off in words.** *Expect fewer citations* no longer quotes
   run sizes or rates.
 
+### Fixed
+
+- **Settings closes while indexing.** A run started from Settings used to hold the panel open until
+  it ended, which can take hours. Escape, a click outside and the close button now work during a
+  run. The run carries on, the status bar keeps counting, the library updates when it ends, and
+  reopening Settings shows the run instead of an idle form.
+
 ## [0.7.1] — 2026-10-31
 
 The first published build of this line. 0.7.0 was tagged and never released: a last check before

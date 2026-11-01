@@ -42,6 +42,53 @@ Format: What changed | Why | Rejected alternatives | What it opens
 
 ---
 
+## 2026-11-01 (2) — Settings closes during a run (0.7.2, piece 1)
+
+**What changed.** `Settings.svelte` and `Sources.svelte` drop their private `pollUntilDone` and read
+the shared `ingestRun`. `busy` is derived in both: `indexLocked(requesting, status)` in
+`core/ingest.ts`, true while a panel's own request is out or any run is in flight, so the folder
+input, Browse and a second run stay guarded. Escape, the backdrop and the close button no longer
+read it. `useRunEnd` in `core/ingest.svelte.ts` tells a mounted panel a run ended. Both panels call
+`noteIngestStarted`, which now takes the run's folder. `initialSection` opens Documents during a
+run. Opened mid-run, focus goes to the panel, because the input is disabled. The sentence now says
+Settings can be closed. Settings reports `lostContact`, which used to come from its own poll. Tests:
+`indexLocked` and the landing section, 331 in all.
+
+**Why.** The user's report: once a run starts, Settings cannot be closed. `busy` covered all of
+`indexFolder`, which awaited the poll. Freeing the three routes alone would have left three faults,
+all gone by reading one run. A reopened panel held no run, so it showed an idle form that offered a
+second run the API refuses with a 409. A run shorter than the 4 s idle poll ended unseen, because
+Settings never told the watcher, and with the panel closed nothing refreshed the library. A first
+run reopened on Getting started, which does not show it. `onCorpusChanged` no longer carries ingest
+completion: App's `completedRuns` effect refreshes the library and chunk count with or without
+Settings.
+
+**Rejected.** Keeping both polls and adopting the run on mount: a second poller per panel, the
+disagreement `core/ingest.svelte.ts` exists to prevent, and a run from the other panel would stay
+unseen. A "started here" flag so Sources keeps its own lines: it forgets on reopen, and its result
+would sit beside Settings' identical one. Sources sits directly under Settings' line, and its own
+line was below the file list, often off screen, so it goes.
+
+**Checked.** `npm run check` 0 errors; `npm test` 331 passed. Driven in the app in a browser preview
+over a new data home and generated documents, four runs: 60 documents started with Enter, 240 with
+a click on *Re-index*, one selected file closed at once, one started by a direct `POST /api/ingest`
+with Settings left open. Escape, the backdrop and the close button each closed Settings mid-run at
+1280 px in dark; Escape again in light, the close button again at 375 px. Escape works with focus on
+the control that has just been disabled. The chip kept counting, and reopening showed the run on
+Documents with focus on the panel. With Settings closed, the chunk count, the library and the setup
+card refreshed. The outside run locked the open panel within one idle poll and ended in its result
+line with fresh corpus numbers. No console error came from the app, and the real `data/` kept its
+10,080 files at the same size and mtime. A new data home rather than a copy of the library because a
+Re-index is a full ingest: `cleanup_orphans_chroma(also_clean_cache=True)` unlinks the cache paths
+stored in Chroma, which on a copy name the real files. **Not driven:** the lost-contact line, Browse
+(a browser does not render it), and the packaged build.
+
+**What it opens.** Piece 3 replaces this line with the indexing screen, and `useRunEnd` is what it
+needs for a result. A status poll already in flight when the POST lands can read the previous
+`done` after `noteIngestStarted`, which fires a harmless extra refresh: the window is milliseconds,
+the next poll corrects it, and the add sheet has the same gap. While Settings is open it covers the
+chip on a wide window, so the count is only visible once it closes.
+
 ## 2026-11-01 — Letter-spaced text closes at extraction, with a record and a control (ADR-056, ROADMAP 108)
 
 **What changed.** Built 2026-10-23 and 2026-10-24 in a side session and parked through the 0.7

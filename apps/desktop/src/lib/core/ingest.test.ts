@@ -4,6 +4,7 @@ import { test } from 'node:test'
 import {
   currentLabel,
   fraction,
+  indexLocked,
   ingestLabel,
   isCompletion,
   pendingStatus,
@@ -114,4 +115,23 @@ test('a failed run counts as a completion too', () => {
 
 test('a run that goes straight to idle still completes', () => {
   assert.equal(isCompletion(status({ state: 'running' }), status({ state: 'idle' })), true)
+})
+
+test('a panel that started nothing still locks on a run in flight', () => {
+  // Settings reopened mid-run has no request of its own out. Reading only its own flag would show
+  // an idle form, and pressing it would ask for a second run the API refuses with a 409.
+  assert.equal(indexLocked(false, status({ state: 'running' })), true)
+})
+
+test('a request not yet answered locks before any status says so', () => {
+  assert.equal(indexLocked(true, null), true)
+  assert.equal(indexLocked(true, status({ state: 'done' })), true)
+})
+
+test('a resting status leaves the controls free', () => {
+  // Includes a failed run: the form is how the user tries again.
+  assert.equal(indexLocked(false, null), false)
+  assert.equal(indexLocked(false, status({ state: 'idle' })), false)
+  assert.equal(indexLocked(false, status({ state: 'done' })), false)
+  assert.equal(indexLocked(false, status({ state: 'error' })), false)
 })

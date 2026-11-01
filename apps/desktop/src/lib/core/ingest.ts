@@ -84,6 +84,17 @@ export function isCompletion(
   return previous?.state === 'running' && next.state !== 'running'
 }
 
+/**
+ * Whether a panel's indexing controls are locked: while its own request is out, or while any run is
+ * in flight.
+ *
+ * The second half reads the shared status rather than a flag set by the click. A panel reopened
+ * mid-run started nothing, so a flag would offer it a second run the API can only refuse (409).
+ */
+export function indexLocked(requesting: boolean, s: IngestStatus | null): boolean {
+  return requesting || s?.state === 'running'
+}
+
 /** An optimistic "running" status, so the bar can appear on the gesture that started the run. */
 export function pendingStatus(sourceDir: string | null = null): IngestStatus {
   return {

@@ -6,7 +6,6 @@
     setLlmProvider,
     setMarkersEnabled,
     startIngest,
-    getIngestStatus,
     reindexKeywords,
     exportAllConversations,
     getUpdateStatus,
@@ -19,6 +18,7 @@
   import { getTheme, setTheme, applyTheme, type Theme } from '../core/theme'
   import Icon from '../shell/Icon.svelte'
   import { canPickFiles, pickPaths } from '../core/tauri'
+  import { indexLocked, ingestRun, noteIngestStarted, useRunEnd } from '../core/ingest.svelte'
   import ProviderSetup from './ProviderSetup.svelte'
   import Sources from './Sources.svelte'
   import SpacingIgnoreList from './SpacingIgnoreList.svelte'
@@ -34,8 +34,8 @@
       : true
   const DUR = animate ? 180 : 0
 
-  // The parent refreshes /api/health after a successful ingest so the chunk count in the
-  // header goes live (the backend rebuilds the controller on the new corpus before "done").
+  // `onCorpusChanged` re-reads /api/health after a provider switch. The end of an ingest reaches App
+  // through `ingestRun.completedRuns`, which also holds when this panel has been closed.
   // `overrides` is bindable — the RAG-sandbox section mutates it directly; the session-scoped
   // state itself lives in App.svelte (ADR-010: in-memory only, cleared on restart).
   let {
@@ -77,7 +77,7 @@
   let activeSection = $state<SettingsSectionId>(
     SETTINGS_SECTIONS.some((s) => s.id === shell.settingsSection)
       ? (shell.settingsSection as SettingsSectionId)
-      : initialSection(outstandingSteps(shell.setup).length),
+      : initialSection(outstandingSteps(shell.setup).length, ingestRun.status?.state === 'running'),
   )
   shell.settingsSection = null
   const focusSpacing = shell.settingsFocus === 'spacing'
@@ -241,10 +241,14 @@
 
   let loadError = $state<string | null>(null)
   let dir = $state('')
-  let busy = $state(false) // a save+ingest cycle is in flight
+  let requesting = $state(false) // the folder is being saved and the run asked for
+  // The run lives on the server and `ingestRun` follows it, so this panel holds none of it: closing
+  // loses nothing, and reopening mid-run shows the same run. A run can take hours; nothing here may
+  // keep the panel open for it.
+  const busy = $derived(indexLocked(requesting, ingestRun.status))
   let picking = $state(false) // the OS folder picker is open, so Browse can't be double-fired
   let actionError = $state<string | null>(null)
-  let ingest = $state<IngestStatus | null>(null)
+  let ingest = $state<IngestStatus | null>(null) // how the last run this panel watched ended
   let inputEl = $state<HTMLInputElement | null>(null)
   let panelEl = $state<HTMLDivElement | null>(null)
 
@@ -255,10 +259,17 @@
 
   void load()
 
+  useRunEnd((s) => {
+    ingest = s
+    void load(true) // refresh this panel's chunk_count; a blip here stays non-fatal
+  })
+
   // Move focus into the dialog when it opens (the input mounts once settings load) so a
   // keyboard / screen-reader user lands in the panel, not on the gear button behind the scrim.
+  // Opened mid-run the input is disabled and refuses focus, so the panel takes it.
   $effect(() => {
-    inputEl?.focus()
+    if (inputEl?.disabled) panelEl?.focus()
+    else inputEl?.focus()
   })
 
   // `silent` post-ingest refreshes don't raise the fatal panel-level loadError: a transient blip
@@ -295,42 +306,19 @@
   async function indexFolder(): Promise<void> {
     const target = dir.trim()
     if (!target || busy) return
-    busy = true
+    requesting = true
     actionError = null
     ingest = null
     try {
       settings = await setSourceDir(target)
-      ingest = await startIngest()
-      await pollUntilDone()
+      const started = await startIngest()
+      // Without this a short run can end between two idle polls: the watcher never sees it running
+      // and no completion fires, which nothing else covers once this panel has closed.
+      noteIngestStarted(started.source_dir)
     } catch (e) {
       actionError = String(e)
     } finally {
-      busy = false
-    }
-  }
-
-  // Poll the background ingest. A large folder indexes for minutes, so a single transient status
-  // blip on the local sidecar must not tear the cycle down and falsely report failure (same
-  // posture as App.svelte's readiness gate + refreshHealth) — tolerate a few in a row, give up
-  // only if contact is genuinely lost.
-  async function pollUntilDone(): Promise<void> {
-    let misses = 0
-    for (;;) {
-      if (cancelled) return
-      await new Promise((r) => setTimeout(r, 1500))
-      if (cancelled) return
-      try {
-        const st = await getIngestStatus()
-        ingest = st
-        misses = 0
-        if (st.state === 'done' || st.state === 'error') break
-      } catch {
-        if (++misses >= 5) throw new Error('lost contact with the indexer (it may still be running)')
-      }
-    }
-    if (ingest?.state === 'done') {
-      onCorpusChanged() // header chunk count is now stale
-      await load(true) // refresh this panel's chunk_count; a blip here stays non-fatal
+      requesting = false
     }
   }
 
@@ -375,7 +363,7 @@
   }
 
   function onWindowKey(e: KeyboardEvent): void {
-    if (e.key === 'Escape' && !busy) onClose()
+    if (e.key === 'Escape') onClose()
   }
 
   // Honour aria-modal: keep Tab inside the dialog instead of walking out into the UI the modal
@@ -404,7 +392,7 @@
 
 <div
   class="scrim"
-  onclick={() => !busy && onClose()}
+  onclick={onClose}
   role="presentation"
   transition:fade={{ duration: DUR }}
 ></div>
@@ -421,7 +409,7 @@
 >
   <header>
     <strong>Settings</strong>
-    <button class="x" onclick={onClose} disabled={busy} aria-label="Close">
+    <button class="x" onclick={onClose} aria-label="Close">
       <Icon name="x" />
     </button>
   </header>
@@ -527,15 +515,16 @@
             <!-- aria-live so a screen-reader user hears the index progress / completion / failure
                  without re-navigating; the failure cases also assert role="alert". -->
             <div aria-live="polite">
-              {#if busy && ingest?.state === 'running'}
-                <p class="muted">Indexing <code>{ingest.source_dir}</code>. This can take a while for
-                  large folders. You can keep this open.</p>
-              {/if}
-              {#if ingest?.state === 'done'}
+              {#if ingestRun.status?.state === 'running'}
+                <p class="muted">Indexing <code>{ingestRun.status.source_dir}</code>. This can take a
+                  while for large folders. You can close Settings: indexing keeps running.</p>
+              {:else if ingest?.state === 'done'}
                 <p class="ok"><Icon name="check" size={14} /> {ingest.message}</p>
-              {/if}
-              {#if ingest?.state === 'error'}
+              {:else if ingest?.state === 'error'}
                 <p class="err" role="alert">Indexing failed: {ingest.message}</p>
+              {/if}
+              {#if ingestRun.lostContact}
+                <p class="err" role="alert">Lost contact with the indexer. It may still be running.</p>
               {/if}
               {#if actionError}
                 <p class="err" role="alert">{actionError}</p>
@@ -550,7 +539,7 @@
               files are skipped by <strong>Index folder</strong> above; an explicit selection here still
               indexes them.
             </p>
-            <Sources {onCorpusChanged} />
+            <Sources />
           </section>
 
           <section>
@@ -1037,10 +1026,6 @@
     padding: 0.2rem 0.4rem;
     display: inline-flex;
     align-items: center;
-  }
-  .x:disabled {
-    opacity: 0.4;
-    cursor: default;
   }
   section {
     padding: 0.8rem 0;

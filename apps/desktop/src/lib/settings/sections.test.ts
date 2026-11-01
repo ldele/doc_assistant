@@ -19,6 +19,13 @@ test('a finished install lands on Documents, not on a checklist with nothing lef
   assert.equal(initialSection(0), 'documents')
 })
 
+test('a run in flight lands on Documents, even with setup steps left', () => {
+  // A first run is the case that matters: setup is still incomplete while it runs, so reopening
+  // Settings mid-run would land on a page that does not show the run.
+  assert.equal(initialSection(2, true), 'documents')
+  assert.equal(initialSection(0, true), 'documents')
+})
+
 test('the setup badge counts outstanding steps and disappears when there are none', () => {
   assert.equal(sectionBadge('setup', 3), '3')
   assert.equal(sectionBadge('setup', 0), null)

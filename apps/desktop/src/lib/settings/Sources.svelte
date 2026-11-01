@@ -3,19 +3,19 @@
   // drawer, under "Your documents". Scans the source folder (stat-only, $0), shows each file with
   // a derived status, lets the user exclude files and ingest a chosen subset. All rules are
   // server-side — this is a thin renderer over GET/PATCH /api/sources + POST /api/ingest {paths}.
-  import type { IngestStatus, SourceFile } from '../core/types'
-  import { getSources, patchSource, startIngest, getIngestStatus } from '../core/api'
+  import type { SourceFile } from '../core/types'
+  import { getSources, patchSource, startIngest } from '../core/api'
+  import { indexLocked, ingestRun, noteIngestStarted, useRunEnd } from '../core/ingest.svelte'
   import { onDestroy } from 'svelte'
   import Icon from '../shell/Icon.svelte'
-
-  let { onCorpusChanged }: { onCorpusChanged: () => void } = $props()
 
   let rows = $state<SourceFile[]>([])
   let loading = $state(false)
   let scanError = $state<string | null>(null)
   let selected = $state<Set<string>>(new Set())
-  let busy = $state(false) // a selective-ingest cycle is in flight
-  let ingest = $state<IngestStatus | null>(null)
+  let requesting = $state(false) // the selection is being sent
+  // Settings, just above this panel, reports the run: its position and its result. One run, one line.
+  const busy = $derived(indexLocked(requesting, ingestRun.status))
   let ingestError = $state<string | null>(null)
 
   let cancelled = false
@@ -36,6 +36,11 @@
   )
 
   void scan()
+
+  useRunEnd((s) => {
+    if (s.state === 'done') clearSelection()
+    void scan() // re-derive statuses (ingested files flip new/changed → ingested)
+  })
 
   async function scan(): Promise<void> {
     loading = true
@@ -91,40 +96,15 @@
 
   async function ingestSelected(): Promise<void> {
     if (busy || selected.size === 0) return
-    busy = true
+    requesting = true
     ingestError = null
-    ingest = null
     try {
-      ingest = await startIngest([...selected])
-      await pollUntilDone()
+      const started = await startIngest([...selected])
+      noteIngestStarted(started.source_dir)
     } catch (e) {
       ingestError = String(e)
     } finally {
-      busy = false
-    }
-  }
-
-  // Same tolerant poll as the whole-folder index in Settings: a transient blip on the local
-  // sidecar shouldn't tear the cycle down; give up only if contact is genuinely lost.
-  async function pollUntilDone(): Promise<void> {
-    let misses = 0
-    for (;;) {
-      if (cancelled) return
-      await new Promise((r) => setTimeout(r, 1500))
-      if (cancelled) return
-      try {
-        const st = await getIngestStatus()
-        ingest = st
-        misses = 0
-        if (st.state === 'done' || st.state === 'error') break
-      } catch {
-        if (++misses >= 5) throw new Error('lost contact with the indexer (it may still be running)')
-      }
-    }
-    if (ingest?.state === 'done') {
-      onCorpusChanged() // the header chunk count is now stale
-      clearSelection()
-      await scan() // re-derive statuses (ingested files flip new/changed → ingested)
+      requesting = false
     }
   }
 
@@ -196,15 +176,6 @@
     </ul>
 
     <div aria-live="polite">
-      {#if busy && ingest?.state === 'running'}
-        <p class="muted">Indexing your selection. This can take a moment. You can keep this open.</p>
-      {/if}
-      {#if ingest?.state === 'done'}
-        <p class="ok"><Icon name="check" size={14} /> {ingest.message}</p>
-      {/if}
-      {#if ingest?.state === 'error'}
-        <p class="err" role="alert">Indexing failed: {ingest.message}</p>
-      {/if}
       {#if ingestError}
         <p class="err" role="alert">{ingestError}</p>
       {/if}
@@ -379,19 +350,6 @@
     font-size: 0.76rem;
     color: var(--fg-2);
     margin: 0.4rem 0 0;
-  }
-  .muted {
-    color: var(--fg-2);
-    font-size: 0.8rem;
-    margin: 0.5rem 0 0;
-  }
-  .ok {
-    color: var(--ok-fg);
-    font-size: 0.8rem;
-    margin: 0.5rem 0 0;
-    display: flex;
-    align-items: center;
-    gap: 0.3rem;
   }
   .err {
     color: var(--warn-fg);

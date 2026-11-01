@@ -12,6 +12,8 @@
 // The pure parts (`fraction`, `ingestLabel`, the cadences) live in `./ingest` so `node --test` can
 // reach them — a `.svelte.ts` module needs the compiler and cannot be unit-tested here.
 
+import { untrack } from 'svelte'
+
 import { getIngestStatus } from './api/sources'
 import {
   IDLE_MS,
@@ -23,7 +25,7 @@ import {
 } from './ingest'
 import type { IngestStatus } from './types/sources'
 
-export { currentLabel, fraction, ingestLabel, isCompletion } from './ingest'
+export { currentLabel, fraction, indexLocked, ingestLabel, isCompletion } from './ingest'
 
 export const ingestRun = $state({
   /** The last status actually read, or null when nothing has been read yet. */
@@ -149,12 +151,29 @@ export function watchIngest(): () => void {
  * Tell the watcher a run was just requested, so the bar appears on the same gesture that started
  * it rather than up to `IDLE_MS` later. Safe to call when no watcher is running.
  */
-export function noteIngestStarted(): void {
+export function noteIngestStarted(sourceDir: string | null = null): void {
   ingestRun.visible = true
   ingestRun.lostContact = false
   clearLinger()
-  ingestRun.status = pendingStatus(ingestRun.status?.source_dir ?? null)
+  ingestRun.status = pendingStatus(sourceDir ?? ingestRun.status?.source_dir ?? null)
   schedule(0)
+}
+
+/**
+ * Call `onEnd` when a run this component saw in flight ends, whichever surface started it.
+ *
+ * For a panel that reports a result. A panel can close and reopen mid-run, so it follows the shared
+ * status rather than a poll of its own, and `isCompletion` keeps the `done` an earlier run left
+ * behind from reading as this run's result. Call it from a component's script: `$effect` needs one.
+ */
+export function useRunEnd(onEnd: (status: IngestStatus) => void): void {
+  let seen: IngestStatus | null = null
+  $effect(() => {
+    const next = ingestRun.status
+    const ended = next !== null && isCompletion(seen, next)
+    seen = next
+    if (ended) untrack(() => onEnd(next))
+  })
 }
 
 /** Dismiss a finished/failed run from the bar. Never interrupts a run — it only stops showing it. */

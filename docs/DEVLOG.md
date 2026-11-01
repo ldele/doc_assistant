@@ -42,6 +42,43 @@ Format: What changed | Why | Rejected alternatives | What it opens
 
 ---
 
+## 2026-10-31 (6) — The roadmap cleaned up; the order set for the next moves
+
+**What changed.** `docs/ROADMAP.md` went from 90 rows to 86. Ten finished rows moved verbatim to
+`docs/archive/ROADMAP-done-002.md`, 12 long rows were cut to what is left with their old text kept
+there, and rows 101–106 were added. Row 65, the MCP server, is unparked and sits in F3. The table is
+sorted by feature. Statuses were checked against the code: rows 34 and 86 closed, EX1's gate has been
+closed since 2026-08-08, row 43 waits on KL3 only. `AGENTS.md` and `docs/OVERVIEW.md` §5 say 0.7.1 is
+published.
+
+**Why.** The user's order: the short-term work, then MCP and the chat, then extraction, the Library
+and every instance of what the user chose. The file had also outgrown its own rule that a row's why
+lives in its spec: one row ran to 6,145 characters.
+
+**Rejected.** Release entries in the ROADMAP: sessions and release criteria stay in a local plan.
+Scrubbing the archived rows of the private library's figures: an archive is verbatim (ADR-043).
+
+**Opens.** ADR-055's parked patch takes row 107. KL2 and row 25 move behind both releases, unless
+row 106's spec needs row 25.
+
+---
+
+## 2026-10-31 (5) — Preflight reads true after the tag
+
+**What changed.** `check_checklists_refreshed` takes the version and leaves the release's own tag
+out of `git describe`, with three tests. On this repository at `v0.7.1` it now compares against
+`v0.7.0` and passes. `docs/RELEASE.md` §6 says so.
+
+**Why.** Once the tag existed, the check compared the release with itself and failed, which is the
+false alarm of v0.7.0.
+
+**Rejected.** Keeping the runbook's "pre-tag only" rule: a check that lies after the tag is a trap
+for whoever reads it there.
+
+**Opens.** Nothing.
+
+---
+
 ## 2026-10-31 (4) — Settings' Ollama card states its trade-off in words
 
 **What changed.** *Expect fewer citations* in `ProviderSetup.svelte` no longer quotes the run's size

@@ -1,10 +1,10 @@
-<!-- status: active · updated: 2026-10-31 (§5: 0.7.1 in preparation; 2026-10-20: first version, read off the repository at dc8a60e) · class: living -->
+<!-- status: active · updated: 2026-10-31 (§5: 0.7.1 published, the next moves; 2026-10-20: first version, read off the repository at dc8a60e) · class: living -->
 
 # Provenote — project overview
 
 What the project is, what it has measured and where it stands, on one page. Every figure links to
 the file it comes from; when a release ships or a baseline changes a figure, update it here too.
-As of 2026-10-20.
+Figures as of 2026-10-20, state as of 2026-10-31.
 
 ## 1. What it is, and for whom
 
@@ -93,19 +93,21 @@ of the chunk-size grid on the private set.
 
 ## 5. State
 
-- **Released:** v0.6.0, tagged 2026-09-04, published 2026-09-07 with a Windows installer that was
-  installed and driven on a clean machine before publishing. Earlier: 0.4.1 (first working
-  installer, 2026-08-06), 0.5.0, 0.5.1.
-- **In preparation: v0.7.1**, the first published build of the 0.7 line. In the
-  [CHANGELOG](../CHANGELOG.md)'s 0.7.0 and 0.7.1 sections and the README's Status: concepts the user takes on, with forms marked exact or broad;
+- **Released:** v0.7.1, published 2026-10-31 with a Windows installer that was installed and driven
+  on a clean machine before publishing. It is the first published build of the 0.7 line: 0.7.0 was
+  tagged and never released. Earlier: 0.4.1 (first working installer, 2026-08-06), 0.5.0, 0.5.1,
+  0.6.0 (published 2026-09-07).
+- **New in the 0.7 line**, in the [CHANGELOG](../CHANGELOG.md)'s 0.7.0 and 0.7.1 sections and the
+  README's Status: concepts the user takes on, with forms marked exact or broad;
   definitions chosen from sentences quoted from the user's documents, with page; concept merges
   that keep the curation and can be undone; signals relabelled to say what they count; the
   knowledge layer reads prose, not figure captions; security hardening (size and zip-bomb limits,
   sanitised answers, the local API refuses other hosts and needs the app's launch token for
   writes, CI fails on unreviewed advisories or committed secrets).
-- **Next, per the [ROADMAP](ROADMAP.md):** the knowledge layer reads past the reference list
-  (row 95), then suggestions of what to read next for a subject (KL2), then LLM-assisted ingestion
-  (row 25).
+- **Next, per the [ROADMAP](ROADMAP.md):** short-term fixes and a docs revamp; then an MCP server
+  and a chat that does more with the library; then extraction polish, a pass over the Library, and
+  finding every instance of a word or concept the user picks. Later: suggestions of what to read
+  next for a subject (KL2) and LLM-assisted ingestion (row 25).
 - **Not done:** OCR for scanned PDFs (designed in
   [ADR-039](decisions/ADR-039-ocr-sidecar-for-scanned-pdfs.md), not built; a scan without a text
   layer yields nothing unless `tesseract` happens to be installed); the per-source *contested* /

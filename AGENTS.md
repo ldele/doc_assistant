@@ -16,9 +16,9 @@ dual interpretation, reviewer). Not a general-purpose chatbot — reliable answe
 documents, with measurable quality. **Robustness contract:** every feature must degrade honestly at
 **0 documents** and scale to **~10,000 documents** — no corpus-tuned magic numbers (`.claude/CONTEXT.md`).
 
-**State (2026-09-10):** **v0.6.0 published** (2026-09-04). Core RAG, eval harness, integrity layer,
-provider-agnostic LLM, figures, concept graph + gaps + taxonomy substrate, add-documents, Zotero import,
-per-part re-ingest and the source viewer are shipped; the plan is **per feature** in `docs/ROADMAP.md`
+**State (2026-10-31):** **v0.7.1 published** (2026-10-31). Core RAG, eval harness, integrity layer,
+provider-agnostic LLM, figures, concept graph + gaps + taxonomy substrate, curated concepts and
+definitions, add-documents, Zotero import, per-part re-ingest and the source viewer are shipped; the plan is **per feature** in `docs/ROADMAP.md`
 (next three moves at its top). Detail: `.claude/CONTEXT.md`.
 **Stack:** Python 3.12 + uv; Chroma + SQLite; Svelte 5/Tauri + FastAPI; Claude API or local Ollama.
 Full stack + locked settings: `.claude/CONTEXT.md`.

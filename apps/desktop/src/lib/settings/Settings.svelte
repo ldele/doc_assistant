@@ -3,7 +3,6 @@
   import {
     getSettings,
     setSourceDir,
-    setLlmProvider,
     setMarkersEnabled,
     startIngest,
     reindexKeywords,
@@ -13,18 +12,19 @@
     setAutoUpdateCheck,
   } from '../core/api'
   import { describeUpdate } from './updates'
-  import { onDestroy } from 'svelte'
+  import { onDestroy, tick } from 'svelte'
   import { fade, fly } from 'svelte/transition'
   import { getTheme, setTheme, applyTheme, type Theme } from '../core/theme'
   import Icon from '../shell/Icon.svelte'
   import { canPickFiles, pickPaths } from '../core/tauri'
   import { indexLocked, ingestRun, noteIngestStarted, useRunEnd } from '../core/ingest.svelte'
+  import GettingStarted from './GettingStarted.svelte'
   import ProviderSetup from './ProviderSetup.svelte'
   import Sources from './Sources.svelte'
   import SpacingIgnoreList from './SpacingIgnoreList.svelte'
   import { describeIndex, formatBytes, perDocument } from './corpus'
   import { SETTINGS_SECTIONS, initialSection, sectionBadge, type SettingsSectionId } from './sections'
-  import { modelForProvider, outstandingSteps } from './setup'
+  import { outstandingSteps } from './setup'
   import { shell } from '../shell/shell.svelte'
 
   // Slide the drawer in/out — but collapse to an instant swap when the OS asks for reduced motion.
@@ -105,6 +105,14 @@
     if (paneEl) paneEl.scrollTop = 0
   })
 
+  // A Getting started row's link goes away with the page it sits on, and focus would leave the
+  // dialog with it.
+  async function openSection(id: SettingsSectionId): Promise<void> {
+    activeSection = id
+    await tick()
+    if (!panelEl?.contains(document.activeElement)) panelEl?.focus()
+  }
+
   let theme = $state<Theme>(getTheme())
 
   function onThemeChange(t: Theme): void {
@@ -129,17 +137,6 @@
   const effReviewerEvidenceChars = $derived(
     overrides.reviewer_evidence_chars ?? settings?.reviewer_evidence_chars ?? 1500,
   )
-  // ADR-011 (U1c) — the provider/model switch. Local inputs are seeded once from the loaded
-  // settings (in load(), mirroring `dir`'s own seed-once pattern below) so an in-progress edit
-  // survives a background settings refresh.
-  let llmProvider = $state('')
-  let llmModel = $state('')
-  let llmBusy = $state(false)
-  let llmError = $state<string | null>(null)
-  // What the last setup probe found installed in Ollama, for filling in a model on a switch.
-  const installedOllama = $derived([
-    ...(shell.setup?.providers.find((p) => p.id === 'ollama')?.models ?? []),
-  ])
 
   // ADR-027 D2 (E3) — the persisted answer-layer epistemics default. Distinct from the RAG
   // sandbox's session-only override below: this one survives a restart and becomes the
@@ -194,20 +191,6 @@
       updateError = `Couldn't save that: ${e instanceof Error ? e.message : String(e)}`
     } finally {
       updateBusy = false
-    }
-  }
-
-  async function applyProvider(): Promise<void> {
-    if (llmBusy || !llmProvider || !llmModel.trim()) return
-    llmBusy = true
-    llmError = null
-    try {
-      settings = await setLlmProvider(llmProvider, llmModel.trim())
-      onCorpusChanged() // the status bar names the model: re-read it
-    } catch (e) {
-      llmError = e instanceof Error ? e.message : String(e)
-    } finally {
-      llmBusy = false
     }
   }
 
@@ -282,10 +265,6 @@
       if (cancelled) return
       settings = s
       if (!dir) dir = s.source_dir
-      if (!llmProvider) {
-        llmProvider = s.provider
-        llmModel = s.model
-      }
     } catch (e) {
       if (!silent) loadError = String(e)
     }
@@ -451,16 +430,8 @@
 
         {#if activeSection === 'setup'}
           <!-- First (ADR-034): on a fresh install this is the only section that matters, and it says
-               so — a provider and a folder. `load(true)` keeps a provider switch made in there from
-               leaving the "Active:" line below stale. -->
-          <!-- A switch changes the model the status bar names, so its health is re-read too
-               (onCorpusChanged → App's refreshHealth); it used to keep the old model. -->
-          <ProviderSetup
-            onProviderChanged={() => {
-              void load(true)
-              onCorpusChanged()
-            }}
-          />
+               so — a model and documents, each one link from the tab that sets it up. -->
+          <GettingStarted onOpen={openSection} />
         {:else if activeSection === 'documents'}
           <section>
             <h3>Your documents</h3>
@@ -580,59 +551,15 @@
             <SpacingIgnoreList {onReingest} focus={focusSpacing} />
           </section>
         {:else if activeSection === 'models'}
-          <section>
-            <h3>Provider &amp; model</h3>
-            <p class="hint">
-              The direct form of the switch in <strong>Getting started</strong>, which sets the app up
-              step by step: any provider, any model name. Takes effect on your next question, no
-              restart.
-            </p>
-
-            <label for="llm-provider">Provider</label>
-            <!-- A switch keeps the model only when the new provider serves it: keeping it
-                 left the 0.7.0 walkthrough's sandbox on Ollama with a Claude model. -->
-            <select
-              id="llm-provider"
-              bind:value={llmProvider}
-              disabled={llmBusy}
-              onchange={() => (llmModel = modelForProvider(llmProvider, llmModel, installedOllama))}
-            >
-              {#each settings.providers as p (p.id)}
-                <option value={p.id} disabled={!p.available}>
-                  {p.id} ({p.paid ? 'metered' : 'local'}){p.available ? '' : ' · needs a key'}
-                </option>
-              {/each}
-            </select>
-
-            <!-- A provider without its key cannot be chosen here, and there is no key field in
-                 this section: say where the key goes, one click away. -->
-            {#each settings.providers.filter((p) => !p.available) as p (p.id)}
-              <p class="hint">
-                {p.id === 'anthropic' ? 'Claude' : p.id} needs an API key first.
-                <button class="ghost sm" onclick={() => (activeSection = 'setup')}>Add one in Getting started</button>
-              </p>
-            {/each}
-
-            <label for="llm-model">Model</label>
-            <input id="llm-model" type="text" bind:value={llmModel} disabled={llmBusy} spellcheck="false" />
-
-            <button
-              class="primary"
-              onclick={applyProvider}
-              disabled={llmBusy || !llmProvider || !llmModel.trim()}
-            >
-              {llmBusy ? 'Applying…' : 'Apply'}
-            </button>
-
-            <p class="hint">
-              Active: <code>{settings.provider}/{settings.model}</code>
-            </p>
-            <div aria-live="polite">
-              {#if llmError}
-                <p class="err" role="alert">{llmError}</p>
-              {/if}
-            </div>
-          </section>
+          <!-- `load(true)` keeps a switch made in there from leaving the Retrieval tab's Engine
+               list stale. A switch changes the model the status bar names, so its health is re-read
+               too (onCorpusChanged → App's refreshHealth); it used to keep the old model. -->
+          <ProviderSetup
+            onProviderChanged={() => {
+              void load(true)
+              onCorpusChanged()
+            }}
+          />
 
           <section>
             <h3>Answer epistemics <span class="muted">(experimental)</span></h3>
@@ -1044,8 +971,7 @@
     color: var(--fg-2);
     margin-bottom: 0.3rem;
   }
-  input,
-  select {
+  input {
     width: 100%;
     font: inherit;
     font-size: 0.85rem;
@@ -1055,8 +981,7 @@
     background: var(--surface);
     color: var(--fg);
   }
-  input:disabled,
-  select:disabled {
+  input:disabled {
     opacity: 0.6;
   }
   .srcrow {

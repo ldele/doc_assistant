@@ -8,7 +8,13 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 
-import { SETTINGS_SECTIONS, initialSection, sectionBadge } from './sections.ts'
+import { SETTINGS_SECTIONS, initialSection, sectionBadge, stepLink } from './sections.ts'
+
+test('each Getting started row links to its tab, under the tab\'s own name', () => {
+  assert.deepEqual(stepLink('provider'), { section: 'models', label: 'Provider & model →' })
+  assert.deepEqual(stepLink('documents'), { section: 'documents', label: 'Documents →' })
+  assert.equal(stepLink('something-new'), null)
+})
 
 test('a fresh install lands on the setup checklist', () => {
   assert.equal(initialSection(2), 'setup')

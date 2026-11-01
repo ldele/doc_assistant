@@ -42,6 +42,47 @@ Format: What changed | Why | Rejected alternatives | What it opens
 
 ---
 
+## 2026-11-01 (5) — Getting started is two rows; models live in Provider & model (0.7.2, piece 2)
+
+**What changed.** New `GettingStarted.svelte`: Model and Documents, each a step from `/api/setup` with
+a status and a link to its tab, and no form. `ProviderSetup.svelte` moved under Provider & model and
+gained the *Answering with* card and a provider list grouped by where the text goes, with one form
+open at a time. Save, verify and remove, the `.env` note, the Ollama probe and *Expect fewer
+citations* all came across. The select and Apply are gone: each form has a free-text model box behind
+*Use for answers*. `readiness.py` words the rows: `SetupStep` gains `status` and `offline`, and
+`ProviderReadiness` gains `name`, `group` and `destination`, mirrored in `models/setup.py` and
+`types/setup.ts`. `set_llm_selection`'s refusal now names Provider & model. ADR-034 amended; README,
+QUICKSTART, setup, DEMO and `.env.example` send a reader to the right tab.
+
+**Why.** The user: "Gettings Started vs Provider/Model is still confusing on initial setup". Both tabs
+held provider setup and each pointed at the other.
+
+**Decided while building.** *Engine online* for Claude means a key is in place, since ADR-034 does not
+probe it; the amendment says so. Where the text goes comes from the address, so an Ollama on another
+machine reads "go to" that host and is listed under *Your own server*, and `ANTHROPIC_BASE_URL` is
+honoured. Only a chosen engine that does not answer is red: an Ollama with no models and a mismatched
+model read *Not set* with the reason. The row shows the model id, as the status bar does: the drawing's
+"Claude Haiku 4.5" is marked as an example, and a table of display names would go stale. The drawing's
+line about every cloud provider having one form waits for those providers. `costLabel` and
+`displaySteps` went with their only callers. The Model row's detail joined an alternative straight on
+to a sentence with no full stop; fixed.
+
+**Rejected.** A display-name mapper; a probe for Claude; warning rows or extra buttons on Getting
+started; keeping the provider select as a second way in.
+
+**Checked.** On new empty data homes, the repository's `.env` hidden and a local verifier, so no request
+left the machine. `data_home` read through the page before each write. Driven: a fresh install from
+*Finish setup…* with no key field on Getting started, a refused key, a saved key, removal, Ollama
+chosen, a folder indexed, and a question answered with citations on `llama3.1:8b`; green; Ollama at a
+dead port, red, the link opening its form. Light, dark and 375 px, no sideways scroll, 0 console errors
+in the two clean final tabs. Real `data/` unchanged. **Mocked:** the `.env` note, by one in-page
+response, because the check hid `.env`. **Not driven:** the packaged build; Ollama coming back under
+Re-check; *Answering with* for an Ollama off this computer, which has tests.
+
+**What it opens.** Piece 3 adds providers: `PROVIDERS` and `group` place a row with no change to the
+list, and the ADR decides the form. `step.action` for Documents has no reader left in the app; it stays
+on the wire because the API's contract and tests rest on it.
+
 ## 2026-11-01 (4) — Claude models from Opus 4.7 on answer and review
 
 **What changed.** `llm.is_older_claude` tells the models before Opus 4.7 from the rest. On the rest,

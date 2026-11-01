@@ -26,15 +26,25 @@ export interface ProviderReadiness {
   key_hint: string | null
   /** Models the probe found installed (Ollama). */
   models: string[]
+  /** What the screens call the provider (`id` is the code's word). */
+  name: string
+  /** Where the text goes, as a list to sit in. */
+  group: 'local' | 'cloud' | 'server'
+  /** One user-facing sentence: where the questions and passages go. */
+  destination: string
 }
 
-/** One outstanding (or completed) first-run task. Mirrors SetupStepModel. */
+/** One outstanding (or completed) first-run task: one row of Getting started. Mirrors SetupStepModel. */
 export interface SetupStep {
   id: string
   title: string
   detail: string
   done: boolean
+  /** The row's status, in the row's own words (*Engine online*, *Indexed*, *Not set*). */
+  status: string
   action: string | null
+  /** The chosen engine does not answer, which reads apart from a step nobody has done yet. */
+  offline: boolean
 }
 
 /** GET /api/setup — the whole first-run picture. Mirrors SetupStateModel. */

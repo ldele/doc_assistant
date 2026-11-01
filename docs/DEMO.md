@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-08-11 · class: living -->
+<!-- status: active · updated: 2026-11-01 · class: living -->
 
 # Demo — 60-second walkthrough
 
@@ -20,7 +20,7 @@ uv run python -m doc_assistant.ingest      # extract -> chunk -> embed -> store 
 
 First run downloads the embedder + reranker (a few hundred MB) and builds the index; subsequent runs are incremental.
 
-The answer engine is chosen **in the app** — **Settings → Getting started** takes an Anthropic API
+The answer engine is chosen **in the app** — **Settings → Provider & model** takes an Anthropic API
 key (verified before it is saved) or points at a local Ollama server for a free, fully offline run.
 `.env` still works and takes precedence if you prefer to pin it per checkout.
 

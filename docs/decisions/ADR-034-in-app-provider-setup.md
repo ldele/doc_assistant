@@ -1,8 +1,9 @@
-<!-- status: active · updated: 2026-07-28 · class: append-only -->
+<!-- status: active · updated: 2026-11-01 · class: append-only -->
 
 # ADR-034 — First-run setup in the app: in-app API key (file store, not a keychain) + provider readiness
 
-- **Status:** accepted (built 2026-07-28)
+- **Status:** accepted (built 2026-07-28), as amended (see *Amendment 2026-11-01* at the end: the keys
+  moved to Provider & model, and Getting started holds no form)
 - **Date:** 2026-07-28
 - **Deciders:** user + Claude Code
 - **Extends [ADR-011](ADR-011-desktop-provider-apikey-management.md)** — this is the v2 that ADR-011
@@ -128,3 +129,42 @@ routinely need a second keyed provider would generalize `_KEYED_PROVIDERS` (alre
   every test — the first autouse fixture in this repo, and it exists for that reason.
 - **Unchanged:** KI-4's discipline. The setup path never makes a paid call (verification is free), the
   CLI cost guard still fires for a key that came from the app, and enrichment defaults stay local.
+
+## Amendment 2026-11-01 — Getting started holds no form; the keys live in Provider & model
+
+The user, 2026-11-01: "Gettings Started vs Provider/Model is still confusing on initial setup", with
+the checklist as the fix. Both tabs held provider setup, and each sent the reader to the other. The
+screens are `docs/wireframes/getting-started-and-providers.md`, approved by the user at rev 176.
+
+**What changes in decision 5.**
+
+- **Getting started is two rows, Model and Documents.** Each is a step from `readiness`, with a
+  status and a link to the tab that does the job, and neither holds a form. Ready means both are
+  green.
+- **Provider & model holds everything about answer models:** the Claude key (saved, verified,
+  removed, and the note when `.env` shadows it), the Ollama probe, the stated trade-off on citations
+  and each provider's model box. An *Answering with* card at the top says which model answers and
+  where the text goes. The old direct form, a provider list with Apply, is gone: its free-text model
+  box now sits in each provider's form, behind *Use for answers*.
+- **The words stay in `readiness`.** `SetupStep` gains `status` and `offline`, `ProviderReadiness`
+  gains `name`, `group` and `destination`, so the app still renders a verdict and the three stories
+  of decision 5 cannot drift.
+- **Only a chosen engine that does not answer is red.** Ollama with `reachable=False` reads *Engine
+  offline*. An Ollama with no models, a model the provider cannot serve and a missing key read *Not
+  set*: nobody has finished those yet, and the row says what is wrong.
+- **Where the text goes comes from the address, not the provider's name.** An Ollama on another
+  machine reads "go to" that host and is listed under *Your own server*; `ANTHROPIC_BASE_URL` is
+  honoured, because the SDK honours it.
+
+**What stands.** Decisions 1 to 4 and options A to C. Anthropic is still not probed, and that has one
+consequence to state: **for Claude, *Engine online* means a key is in place.** A key revoked after it
+was saved reads online until a question fails. A probe on every open is what the original decision
+declined, and the wireframe's wording was approved knowing the two providers differ here.
+
+**Rejected.** Warning rows or extra buttons in Getting started: the user wants other options only if
+they are needed, so the row's link is the fix. A form kept in both tabs: that is the fault itself.
+Wording a step in the app: `apps/desktop/CLAUDE.md`, and three stories again.
+
+**Consequences.** `set_llm_selection`'s refusal now names Provider & model. `readiness.PROVIDERS` and
+`group` are what place a provider in the list, so the providers still to come add a row without
+changing it; their forms and adapter are a new ADR, extending this one and ADR-011.

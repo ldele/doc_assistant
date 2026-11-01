@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-10-01 (Windows text encoding: a third-party tool has the same default — the secret scanner skipped 47 files) · class: living -->
+<!-- status: active · updated: 2026-11-01 (keys and models live in Provider & model; 2026-10-01: Windows text encoding: a third-party tool has the same default — the secret scanner skipped 47 files) · class: living -->
 
 # Setup
 
@@ -26,9 +26,10 @@ cp .env.example .env   # optional — the answer engine is also configurable in 
 ```
 
 **The `.env` step is optional.** Since ADR-034 the app configures its own answer engine:
-**Settings → Getting started** takes an Anthropic API key (verified before it is saved, stored in
-the data home on this machine) or points at a local Ollama server, and shows which of the two
-first-run steps are still outstanding. `.env` remains the path for CLI/enrichment runs and for
+**Settings → Provider & model** takes an Anthropic API key (verified before it is saved, stored in
+the data home on this machine) or points at a local Ollama server, and **Settings → Getting
+started** shows which of the two first-run steps are still outstanding.
+`.env` remains the path for CLI/enrichment runs and for
 anything you want pinned per checkout — and **a key in `.env` wins** over one saved in the app, with
 the app naming the live source so the two cannot disagree silently. Details:
 [`QUICKSTART.md`](QUICKSTART.md) §2.
@@ -76,7 +77,7 @@ Two workloads can run on your machine: the **retrieval models** always do; the *
 only the retrieval models run on your hardware.
 
 Ollama needs no key and no configuration file: install it, `ollama pull llama3.1:8b`, then pick the
-model in **Settings → Getting started → Ollama**. The panel probes the server
+model in **Settings → Provider & model → Ollama**. The panel probes the server
 (`OLLAMA_HOST`, default `http://localhost:11434`) and lists what is installed, so "not running" and
 "no models installed" are told apart — they have different fixes.
 

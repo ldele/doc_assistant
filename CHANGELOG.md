@@ -32,6 +32,12 @@ The engineering record is finer-grained than this file: per-change entries live 
   the graph are not rebuilt by this run.
 - **Settings' Ollama card states its trade-off in words.** *Expect fewer citations* no longer quotes
   run sizes or rates.
+- **Getting started is a checklist, and models live in one place.** Getting started and Provider &
+  model both held provider setup, so a first run had two places to look. Getting started is now two
+  rows, Model and Documents, each with its status and a link to the tab that sets it up; an engine
+  that stops answering turns the Model row red. Keys, the Ollama check and the choice of model are
+  all in Provider & model, under a new *Answering with* card that says which model answers and where
+  your questions and passages go.
 
 ### Fixed
 

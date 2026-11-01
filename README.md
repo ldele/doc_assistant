@@ -49,7 +49,7 @@ uv run python -m doc_assistant.ingest
 just app                                 # backend + desktop UI
 ```
 
-Then open **Settings → Getting started** and pick an answer engine: paste an Anthropic API key
+Then open **Settings → Provider & model** and pick an answer engine: paste an Anthropic API key
 (checked before it is saved, stored on your machine only) or point at a local
 [Ollama](https://ollama.com) server for a free, fully offline run. Both paths are configurable
 in-app, so there is no file to edit; `.env` still works and takes precedence if you prefer it.

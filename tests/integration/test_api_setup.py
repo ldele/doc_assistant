@@ -12,6 +12,7 @@ from pathlib import Path
 
 import pytest
 from apps.api.main import create_app
+from apps.api.models.setup import SetupStateModel
 from fastapi.testclient import TestClient
 
 from doc_assistant import app_settings, config, credentials, llm
@@ -51,6 +52,15 @@ def test_setup_reports_both_steps_outstanding_on_a_fresh_install(clean_install: 
     assert steps["documents"]["done"] is False
     # Every unfinished step carries the action that finishes it — that is the point of the payload.
     assert steps["provider"]["action"] and steps["documents"]["action"]
+
+
+def test_setup_matches_its_wire_model(clean_install: None) -> None:
+    # The route returns a plain dict, so nothing else holds the model to what is served.
+    client = TestClient(create_app(controller=FakeController(count=3)))
+    state = SetupStateModel.model_validate(client.get("/api/setup").json())
+    assert [s.id for s in state.steps] == ["provider", "documents"]
+    assert all(s.status for s in state.steps)
+    assert all(p.name and p.destination for p in state.providers)
 
 
 def test_setup_never_leaks_key_material(clean_install: None) -> None:

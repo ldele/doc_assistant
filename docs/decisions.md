@@ -43,7 +43,7 @@ the locked retrieval/chunking settings that predate per-file ADRs.
 | [ADR-031](decisions/ADR-031-source-trust-indicators.md) | Source-trust indicators: named signals, no composite score | proposed (stub) |
 | [ADR-032](decisions/ADR-032-outbound-source-verification.md) | Outbound source verification: the first network feature | proposed (stub) |
 | [ADR-033](decisions/ADR-033-generation-presets.md) | Generation presets: frozen citation contract, swappable brief | proposed (stub) |
-| [ADR-034](decisions/ADR-034-in-app-provider-setup.md) | First-run setup in the app: in-app API key in a data-home file (not a keychain) + provider readiness; extends ADR-011's v1 | accepted (built) |
+| [ADR-034](decisions/ADR-034-in-app-provider-setup.md) | First-run setup in the app: in-app API key in a data-home file (not a keychain) + provider readiness; extends ADR-011's v1 | accepted (built) — amended 2026-11-01: Getting started holds no form, the keys live in Provider & model |
 | [ADR-035](decisions/ADR-035-bm25-index-persistence.md) | Persist the BM25 arm as a pure-data snapshot (no third-party classes on disk), fingerprinted on chunk ids + tokeniser source | accepted (built) |
 | [ADR-036](decisions/ADR-036-sparse-index-on-disk.md) | Move the sparse arm off the Python heap into an SQLite/FTS5 index (memory stops scaling with the corpus; ranking changes, gated on an A/B) | accepted (built) |
 | [ADR-037](decisions/ADR-037-corpus-facts-not-performance-knobs.md) | Answer the scale question with corpus facts in Settings, not performance knobs; one bounded action (rebuild the keyword index) | accepted (built) |

@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-07-28 · class: living -->
+<!-- status: active · updated: 2026-11-01 · class: living -->
 
 # Quickstart — first run in about 10 minutes
 
@@ -11,9 +11,9 @@ Everything else is already decided for you. Retrieval (the search that finds the
 runs on your machine either way, and nothing is uploaded anywhere except the question and the
 retrieved passages, and only if you choose the API path.
 
-If you get stuck, the app tells you what is missing: **Settings → Getting started** shows a
-checklist with the exact next action, and the chat screen shows the same list until both steps are
-done.
+If you get stuck, the app tells you what is missing: **Settings → Getting started** shows the
+two things it needs, each with a link to the tab that sets it up, and the chat screen shows the same
+list until both are done.
 
 ---
 
@@ -50,12 +50,12 @@ cd apps/desktop && npm install && npm run dev
 ```
 
 Open the URL it prints (usually <http://localhost:1420>), then click the gear icon.
-**Getting started** is the first section.
+**Getting started** is the first section, and its Model row links to **Provider & model**.
 
 ### Option A — Claude API (best answers, metered)
 
 1. Create a key at <https://console.anthropic.com/settings/keys>.
-2. Paste it into **Getting started → Claude API → API key** and press **Save key**.
+2. Paste it into **Provider & model → Claude → API key** and press **Save key**.
 
 The app checks the key immediately with a free metadata call — no tokens, no charge — and refuses
 to save one the API rejects, so a typo cannot leave you with a broken install that looks fine. The
@@ -75,7 +75,7 @@ model retrieves ~10 passages and writes one answer.
    ```
    About 5 GB. It runs on CPU, but expect tens of seconds per answer; with a GPU of 8 GB or more it
    is comfortable.
-3. In **Getting started → Ollama**, press **Re-check**, pick the model, then **Use this model**.
+3. In **Provider & model → Ollama**, press **Re-check**, pick the model, then **Use for answers**.
 
 The panel distinguishes the two things that can be wrong, because the fixes differ: *not running*
 (install/start Ollama) versus *no models installed* (pull one).

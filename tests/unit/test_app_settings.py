@@ -54,7 +54,7 @@ def test_set_llm_selection_rejects_keyless_provider(
     # An installed app has no .env to edit: the sentence sends the user to Settings instead.
     with pytest.raises(ValueError, match="needs an API key first") as refused:
         app_settings.set_llm_selection("anthropic", "claude-haiku-4-5-20251001")
-    assert "Getting started" in str(refused.value) and ".env" not in str(refused.value)
+    assert "Provider & model" in str(refused.value) and ".env" not in str(refused.value)
     assert app_settings.get_llm_selection() == (None, None)  # never persisted
 
 

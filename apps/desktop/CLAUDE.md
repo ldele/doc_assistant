@@ -7,8 +7,8 @@ from `src/` (non-negotiable #3, `.claude/CONTEXT.md`).
 - `src/App.svelte` — the shell: cross-domain orchestration only (nav history, readiness gate,
   `selectMode`, chat-scope guard, conversation/chat lifecycle) + overlay wiring.
 - `src/lib/<domain>/` — one folder per domain, mirroring `apps/api/routers/`: `chat` · `library` ·
-  `graph` · `settings` (incl. `ProviderSetup.svelte` — ADR-034 first run; it renders `/api/setup`'s
-  verdicts, never recomputes them), plus `shell/` and `core/` (wire boundary + theme/fonts), neither
+  `graph` · `settings` (incl. `GettingStarted.svelte` + `ProviderSetup.svelte` — ADR-034 first run;
+  they render `/api/setup`'s verdicts, never recompute them), plus `shell/` and `core/` (wire boundary + theme/fonts), neither
   with an API counterpart. Table + naming traps: `docs/architecture.md` § `apps/` — the domain spine.
 - `<domain>/*.svelte.ts` — **rune modules** holding that domain's `$state` (7). Export ONE `$state`
   *object*: an imported binding can't be reassigned across a module boundary.

@@ -29,7 +29,7 @@ export const SETTINGS_SECTIONS = [
     id: 'setup',
     label: 'Getting started',
     icon: 'square-check-big',
-    blurb: 'The two things Provenote needs before it can answer: somewhere to get answers from, and documents to ground them in.',
+    blurb: 'The two things Provenote needs, and the tab that sets up each one.',
   },
   {
     id: 'documents',
@@ -41,7 +41,7 @@ export const SETTINGS_SECTIONS = [
     id: 'models',
     label: 'Provider & model',
     icon: 'message-square',
-    blurb: 'Which model answers your questions, and what it is allowed to say about your sources.',
+    blurb: 'Which model answers your questions, where the text goes, and what it may say about your sources.',
   },
   {
     id: 'answers',
@@ -57,12 +57,27 @@ export const SETTINGS_SECTIONS = [
   },
 ] as const satisfies readonly SettingsSection[]
 
+// Which tab does the job a Getting started row reports, by the step's id in `/api/setup`.
+const STEP_SECTIONS: Record<string, SettingsSectionId> = {
+  provider: 'models',
+  documents: 'documents',
+}
+
+/** The link on a Getting started row: the tab that does that step's job, under the tab's own
+ *  name (a view has one name, GLOSSARY U-001). `null` for a step with no tab. */
+export function stepLink(stepId: string): { section: SettingsSectionId; label: string } | null {
+  const section = STEP_SECTIONS[stepId]
+  const target = SETTINGS_SECTIONS.find((s) => s.id === section)
+  return target ? { section: target.id, label: `${target.label} →` } : null
+}
+
 /** Which category the drawer opens on.
  *
  * Setup wins whenever it has something outstanding: on a fresh install it is the only category
  * that matters (ADR-034), and landing anywhere else would bury the one thing standing between the
- * user and a working app. It is decided from state the shell has *already* loaded, so the panel
- * opens on the right category rather than opening on one and jumping to another.
+ * user and a working app. Its two rows hold no form, so each is one click from the tab that does
+ * the job. It is decided from state the shell has *already* loaded, so the panel opens on the
+ * right category rather than opening on one and jumping to another.
  *
  * A run in flight outranks it. Documents is where a run shows, and a first run is exactly when setup
  * still has steps left, so reopening mid-run would otherwise land on a page that does not show it. */

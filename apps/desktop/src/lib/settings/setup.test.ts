@@ -6,18 +6,19 @@ import assert from 'node:assert/strict'
 
 import {
   DEFAULT_CLAUDE_MODEL,
-  costLabel,
-  displaySteps,
+  answeringWith,
   keyPrecedenceNote,
   keyRefusal,
   modelForProvider,
   ollamaPending,
   outstandingSteps,
+  providerGroups,
   providerStatusLabel,
   setupSummary,
+  stepTone,
   suggestOllamaModel,
 } from './setup.ts'
-import type { ProviderReadiness, SetupState } from '../core/types/setup.ts'
+import type { ProviderReadiness, SetupState, SetupStep } from '../core/types/setup.ts'
 
 const provider = (over: Partial<ProviderReadiness> = {}): ProviderReadiness => ({
   id: 'ollama',
@@ -30,6 +31,20 @@ const provider = (over: Partial<ProviderReadiness> = {}): ProviderReadiness => (
   key_source: null,
   key_hint: null,
   models: [],
+  name: 'Ollama',
+  group: 'local',
+  destination: 'Your questions and the passages found for them stay on this computer.',
+  ...over,
+})
+
+const step = (over: Partial<SetupStep> = {}): SetupStep => ({
+  id: 'provider',
+  title: 'Model',
+  detail: 'ok',
+  done: true,
+  status: 'Engine online',
+  action: null,
+  offline: false,
   ...over,
 })
 
@@ -41,10 +56,7 @@ const state = (over: Partial<SetupState> = {}): SetupState => ({
   chunk_count: 10,
   document_count: 2,
   ollama_host: 'http://localhost:11434',
-  steps: [
-    { id: 'provider', title: 'Answer engine', detail: 'ok', done: true, action: null },
-    { id: 'documents', title: 'Your documents', detail: 'ok', done: true, action: null },
-  ],
+  steps: [step(), step({ id: 'documents', title: 'Documents', status: 'Indexed' })],
   ready: true,
   ...over,
 })
@@ -65,10 +77,7 @@ test('suggestOllamaModel returns null only when nothing is installed', () => {
 
 test('outstandingSteps keeps only unfinished steps, in the backend order', () => {
   const s = state({
-    steps: [
-      { id: 'provider', title: 'p', detail: 'd', done: false, action: 'do it' },
-      { id: 'documents', title: 'd', detail: 'd', done: true, action: null },
-    ],
+    steps: [step({ done: false, action: 'do it' }), step({ id: 'documents' })],
   })
   assert.deepEqual(
     outstandingSteps(s).map((x) => x.id),
@@ -78,20 +87,81 @@ test('outstandingSteps keeps only unfinished steps, in the backend order', () =>
 
 test('setupSummary counts what is left and never guesses while loading', () => {
   assert.equal(setupSummary(null), 'Checking…')
-  assert.equal(setupSummary(state()), 'Ready to answer questions')
+  assert.equal(setupSummary(state()), 'Provenote is ready')
   assert.equal(
-    setupSummary(
-      state({
-        steps: [{ id: 'provider', title: 'p', detail: 'd', done: false, action: null }],
-      }),
-    ),
-    '1 step left',
+    setupSummary(state({ steps: [step({ done: false })] })),
+    '1 thing left before Provenote can answer',
+  )
+  assert.equal(
+    setupSummary(state({ steps: [step({ done: false }), step({ id: 'documents', done: false })] })),
+    '2 things left before Provenote can answer',
   )
 })
 
-test('costLabel names the metered path without blocking it', () => {
-  assert.match(costLabel(provider({ paid: true })), /metered/)
-  assert.match(costLabel(provider({ paid: false })), /free/)
+test('a row is green when done, red when the engine is offline, plain until then', () => {
+  assert.equal(stepTone(step()), 'ok')
+  assert.equal(stepTone(step({ done: false })), 'todo')
+  assert.equal(stepTone(step({ done: false, offline: true })), 'down')
+})
+
+test('the card names the model and where the text goes when it can answer', () => {
+  const card = answeringWith(state(), false)
+  assert.equal(card.model, 'llama3.1:8b')
+  assert.equal(card.status, 'Ready')
+  assert.equal(card.tone, 'ok')
+  assert.match(card.line, /stay on this computer/)
+  assert.equal(card.action, null)
+})
+
+test('the card says what stands in the way, in the backend\'s words, when it cannot', () => {
+  const offline = answeringWith(
+    state({
+      active_ready: false,
+      steps: [
+        step({
+          done: false,
+          offline: true,
+          status: 'Engine offline',
+          detail: 'No Ollama server answering at x.',
+          action: 'Run `ollama serve`.',
+        }),
+      ],
+    }),
+    false,
+  )
+  assert.equal(offline.model, 'llama3.1:8b') // still the chosen model, and it is the one down
+  assert.equal(offline.status, 'Engine offline')
+  assert.equal(offline.tone, 'down')
+  assert.equal(offline.line, 'No Ollama server answering at x.')
+  assert.equal(offline.action, 'Run `ollama serve`.')
+
+  const notSet = answeringWith(
+    state({
+      active_provider: 'anthropic',
+      active_ready: false,
+      steps: [step({ done: false, status: 'Not set', detail: 'No model chosen yet.' })],
+    }),
+    false,
+  )
+  assert.equal(notSet.model, null) // a default nobody can use is not a model answering
+  assert.equal(notSet.tone, 'todo')
+  assert.equal(notSet.line, 'No model chosen yet.')
+})
+
+test('providers sit in the list of where their text goes, and an empty list is not drawn', () => {
+  const claude = provider({ id: 'anthropic', name: 'Claude', group: 'cloud' })
+  assert.deepEqual(
+    providerGroups([claude, provider()]).map((g) => [g.label, g.providers.map((p) => p.name)]),
+    [
+      ['On this computer', ['Ollama']],
+      ['Cloud, with your own key', ['Claude']],
+    ],
+  )
+  // An Ollama on another machine is not on this computer, whatever its name suggests.
+  assert.deepEqual(
+    providerGroups([provider({ group: 'server' })]).map((g) => g.label),
+    ['Your own server'],
+  )
 })
 
 test('keyPrecedenceNote warns only when .env shadows the key saved in the app', () => {
@@ -104,11 +174,11 @@ test('keyPrecedenceNote warns only when .env shadows the key saved in the app', 
 test('providerStatusLabel separates "not running" from "needs a key"', () => {
   // The two states have different fixes, so one label for both would send the user down the
   // wrong path.
-  assert.equal(providerStatusLabel(provider()), 'ready')
-  assert.equal(providerStatusLabel(provider({ ready: false, reachable: false })), 'not running')
+  assert.equal(providerStatusLabel(provider()), 'Ready')
+  assert.equal(providerStatusLabel(provider({ ready: false, reachable: false })), 'Not running')
   assert.equal(
     providerStatusLabel(provider({ id: 'anthropic', ready: false, configured: false })),
-    'needs a key',
+    'Needs a key',
   )
 })
 
@@ -129,14 +199,12 @@ test('the first draw says Ollama is being checked, not that it is done', () => {
   })
   assert.equal(ollamaPending(unprobed, true), true)
   assert.equal(ollamaPending(unprobed, false), false)
-  const step = displaySteps(unprobed, true).find((s) => s.id === 'provider')
-  assert.equal(step?.done, false)
-  assert.match(step?.detail ?? '', /Checking whether Ollama is answering/)
-  assert.equal(providerStatusLabel(unprobed.providers[0], true), 'checking…')
+  assert.equal(answeringWith(unprobed, true).status, 'Checking…')
+  assert.equal(providerStatusLabel(unprobed.providers[0], true), 'Checking…')
   // Once probed, the backend's verdict is shown as it is.
-  assert.deepEqual(displaySteps(state(), true), state().steps)
+  assert.equal(answeringWith(state(), true).status, 'Ready')
   // Another active engine is not held back by the Ollama probe.
-  assert.deepEqual(displaySteps({ ...unprobed, active_provider: 'anthropic' }, true), unprobed.steps)
+  assert.equal(answeringWith({ ...unprobed, active_provider: 'anthropic' }, true).status, 'Ready')
 })
 
 test('a refused key says nothing was saved, then why', () => {

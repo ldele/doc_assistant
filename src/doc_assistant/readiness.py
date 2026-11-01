@@ -12,7 +12,8 @@ Shape of the answer (deliberately not a boolean):
   comes from — because "not ready" has different fixes (paste a key / start Ollama / pull a model)
   and a single flag cannot carry the fix.
 * :class:`SetupStep` for each thing left to do, in the order a user should do them, each with the
-  action that resolves it.
+  action that resolves it. Getting started draws one row per step (ADR-034, amended 2026-11-01), so
+  a step's words live here and the app never words one itself.
 
 Rules this module keeps:
 
@@ -26,7 +27,10 @@ Rules this module keeps:
 
 from __future__ import annotations
 
+import ipaddress
+import os
 from dataclasses import dataclass, field, replace
+from urllib.parse import urlsplit
 
 import structlog
 
@@ -36,6 +40,9 @@ log = structlog.get_logger(__name__)
 
 PROVIDERS: tuple[str, ...] = ("anthropic", "ollama")
 """The providers the desktop app can switch between (mirrors ``llm.make_client``)."""
+
+_ANTHROPIC_ADDRESS = "https://api.anthropic.com"
+"""Where the SDK sends a request unless ``ANTHROPIC_BASE_URL`` says otherwise."""
 
 
 @dataclass(frozen=True)
@@ -60,17 +67,27 @@ class ProviderReadiness:
     """Last 4 characters of the live key, for display. Never the key."""
     models: tuple[str, ...] = ()
     """Models the probe found installed (Ollama). Empty when unknown or none."""
+    name: str = ""
+    """What the screens call the provider (``id`` is the code's word)."""
+    group: str = ""
+    """Where the text goes, as a list to sit in: ``"local"``, ``"cloud"`` or ``"server"``."""
+    destination: str = ""
+    """One user-facing sentence: where the questions and passages go."""
 
 
 @dataclass(frozen=True)
 class SetupStep:
-    """One outstanding (or completed) first-run task."""
+    """One outstanding (or completed) first-run task: one row of Getting started."""
 
     id: str
     title: str
     detail: str
     done: bool
+    status: str
+    """The row's status, in the row's own words (*Engine online*, *Indexed*, *Not set*)."""
     action: str | None = None
+    offline: bool = False
+    """The chosen engine does not answer, which reads apart from a step nobody has done yet."""
 
 
 @dataclass(frozen=True)
@@ -89,6 +106,36 @@ class SetupState:
     """Every step done: a provider that can answer, and at least one indexed document."""
 
 
+def _host_of(address: str) -> str:
+    """The host in ``address``; a bare ``host:port`` counts, since ``OLLAMA_HOST`` may be one."""
+    try:
+        return urlsplit(address if "://" in address else f"//{address}").hostname or address
+    except ValueError:  # a hand-set address with an unclosed IPv6 bracket
+        return address
+
+
+def _on_this_computer(host: str) -> bool:
+    """Whether ``host`` is this machine. A name on the local network is not: the sentence built on
+    this is a promise about where the user's text goes."""
+    name = host.lower()
+    if name == "localhost" or name.endswith(".localhost"):
+        return True
+    try:
+        address = ipaddress.ip_address(name)
+    except ValueError:
+        return False
+    return address.is_loopback or address.is_unspecified
+
+
+def _destination(address: str) -> str:
+    """Where a provider at ``address`` sends the text, worked out from the address and not from
+    the provider's name: an Ollama on another machine is not local."""
+    host = _host_of(address)
+    if _on_this_computer(host):
+        return "Your questions and the passages found for them stay on this computer."
+    return f"Your questions and the passages found for them go to {host}."
+
+
 def _anthropic_readiness() -> ProviderReadiness:
     """Anthropic: a key is the whole question. No probe — a GET per settings read is not free
     of consequence (rate limits, an offline box waiting on a timeout), and key *presence* is the
@@ -97,6 +144,9 @@ def _anthropic_readiness() -> ProviderReadiness:
     configured = source is not None
     return ProviderReadiness(
         id="anthropic",
+        name="Claude",
+        group="cloud",
+        destination=_destination(os.getenv("ANTHROPIC_BASE_URL") or _ANTHROPIC_ADDRESS),
         paid=True,
         configured=configured,
         reachable=None,
@@ -106,7 +156,7 @@ def _anthropic_readiness() -> ProviderReadiness:
             if configured
             else "No API key yet. Answers are metered by Anthropic."
         ),
-        action=None if configured else "Paste an Anthropic API key below.",
+        action=None if configured else "Paste an Anthropic API key under Claude.",
         key_source=source,
         key_hint=credentials.key_hint("anthropic"),
     )
@@ -115,52 +165,48 @@ def _anthropic_readiness() -> ProviderReadiness:
 def _ollama_readiness(*, probe: bool) -> ProviderReadiness:
     """Ollama: no credential, so readiness *is* reachability plus one installed model."""
     host = config.OLLAMA_HOST
+    unprobed = ProviderReadiness(
+        id="ollama",
+        name="Ollama",
+        group="local" if _on_this_computer(_host_of(host)) else "server",
+        destination=_destination(host),
+        paid=False,
+        configured=True,
+        reachable=None,
+        ready=True,
+        detail=f"Local server at {host} (not checked).",
+    )
     if not probe:
-        return ProviderReadiness(
-            id="ollama",
-            paid=False,
-            configured=True,
-            reachable=None,
-            ready=True,
-            detail=f"Local server at {host} (not checked).",
-        )
+        return unprobed
     reachable, models, detail = llm.ollama_probe()
     if not reachable:
-        return ProviderReadiness(
-            id="ollama",
-            paid=False,
-            configured=True,
+        return replace(
+            unprobed,
             reachable=False,
             ready=False,
             detail=detail or f"No Ollama server answering at {host}.",
             action="Install Ollama, then run `ollama serve` (it usually starts on its own).",
         )
     if not models:
-        return ProviderReadiness(
-            id="ollama",
-            paid=False,
-            configured=True,
+        return replace(
+            unprobed,
             reachable=True,
             ready=False,
             detail=detail or f"Ollama is running at {host} but has no models installed.",
             action="Pull a model, e.g. `ollama pull llama3.1:8b` (about 5 GB).",
         )
-    return ProviderReadiness(
-        id="ollama",
-        paid=False,
-        configured=True,
+    return replace(
+        unprobed,
         reachable=True,
-        ready=True,
-        detail=f"{len(models)} model{'s' if len(models) != 1 else ''} installed, running locally "
-        f"at no cost.",
+        detail=f"{len(models)} model{'s' if len(models) != 1 else ''} installed, at no cost.",
         models=models,
     )
 
 
 # What fixes a selection whose model the provider cannot serve, by provider (`_with_selection`).
 _SELECTION_FIX = {
-    "ollama": "Choose an installed model in the Ollama card below and press Use this model.",
-    "anthropic": "Press Use Claude for answers below, or name a claude-… model.",
+    "ollama": "Choose an installed model under Ollama and press Use for answers.",
+    "anthropic": "Name a claude-… model under Claude and press Use for answers.",
 }
 
 
@@ -193,33 +239,67 @@ def provider_readiness(provider: str, *, probe: bool = True) -> ProviderReadines
 
 
 def _provider_step(
-    active: ProviderReadiness, all_providers: tuple[ProviderReadiness, ...]
+    active: ProviderReadiness, model: str, all_providers: tuple[ProviderReadiness, ...]
 ) -> SetupStep:
     """The provider step, phrased against the *active* selection.
 
     A provider the user is not using being unready is not a blocker, so the step tracks the active
     one — but when the active provider is unready and another one *is* ready, the detail says so,
     because switching is usually the faster fix than fixing the active one.
+
+    *Engine online* means different things by provider: Ollama answered the probe; Claude is never
+    probed (:func:`_anthropic_readiness`), so for it the words mean a key is in place. An Ollama
+    nobody has asked yet does not get them.
     """
     if active.ready:
+        unasked = active.id == "ollama" and active.reachable is None
         return SetupStep(
             id="provider",
-            title="Answer engine",
-            detail=f"{active.id} / {active.detail[0].lower()}{active.detail[1:]}"
-            if active.detail
-            else active.id,
+            title="Model",
+            detail=model,
             done=True,
+            status="Not checked" if unasked else "Engine online",
         )
-    alternative = next((p for p in all_providers if p.ready and p.id != active.id), None)
     detail = active.detail
+    if active.id in PROVIDERS and not active.configured:
+        detail = "No model chosen yet."
+    alternative = next((p for p in all_providers if p.ready and p.id != active.id), None)
     if alternative is not None:
-        detail = f"{detail} {alternative.id.capitalize()} is ready, if you'd rather use that."
+        detail = f"{detail.rstrip('.')}. {alternative.name} is ready, if you'd rather use that."
+    offline = active.reachable is False
     return SetupStep(
         id="provider",
-        title="Choose an answer engine",
+        title="Model",
         detail=detail,
         done=False,
+        status="Engine offline" if offline else "Not set",
         action=active.action,
+        offline=offline,
+    )
+
+
+def _documents_step(chunk_count: int, document_count: int) -> SetupStep:
+    """The documents step. A count that could not be read arrives as 0 while chunks are there
+    (``services.setup_state_dict``), and "0 documents indexed" beside *Indexed* would be false."""
+    if chunk_count <= 0:
+        return SetupStep(
+            id="documents",
+            title="Documents",
+            detail="Nothing indexed yet.",
+            done=False,
+            status="Not set",
+            action="Add documents from the Library.",
+        )
+    return SetupStep(
+        id="documents",
+        title="Documents",
+        detail=(
+            f"{document_count:,} document{'s' if document_count != 1 else ''} indexed"
+            if document_count > 0
+            else f"{chunk_count:,} chunks indexed"
+        ),
+        done=True,
+        status="Indexed",
     )
 
 
@@ -237,6 +317,7 @@ def setup_state(*, chunk_count: int, document_count: int = 0, probe: bool = True
         active_provider.lower(),
         ProviderReadiness(
             id=active_provider,
+            name=active_provider,
             paid=active_provider.lower() in config.PAID_PROVIDERS,
             configured=False,
             reachable=None,
@@ -246,26 +327,9 @@ def setup_state(*, chunk_count: int, document_count: int = 0, probe: bool = True
         ),
     )
     active = _with_selection(active, active_model, by_id)
-    corpus_done = chunk_count > 0
     steps = (
-        _provider_step(active, providers),
-        SetupStep(
-            id="documents",
-            title="Your documents" if corpus_done else "Add your documents",
-            detail=(
-                f"{document_count} document{'s' if document_count != 1 else ''} indexed "
-                f"({chunk_count:,} chunks)."
-                if corpus_done
-                # CS2: "point the app at a folder" described the pre-AD3b model, where the library
-                # WAS a folder you aimed at. Documents are added to the library now — copied into
-                # it, or referenced where they live — so the sentence a first-run user reads has to
-                # name that, not the model it replaced.
-                else "Nothing indexed yet. Add documents from the Library, or index a "
-                "folder of PDFs, EPUBs, HTML, DOCX or Markdown."
-            ),
-            done=corpus_done,
-            action=None if corpus_done else "Add documents from the Library.",
-        ),
+        _provider_step(active, active_model, providers),
+        _documents_step(chunk_count, document_count),
     )
     state = SetupState(
         providers=providers,

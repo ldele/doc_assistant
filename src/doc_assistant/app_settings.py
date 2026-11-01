@@ -108,7 +108,7 @@ def set_llm_selection(provider: str, model: str) -> None:
         raise ValueError(f"unknown provider '{provider}' — valid options: anthropic, ollama")
     if not provider_available(key):
         # An installed app has no .env to edit: the key goes in through Settings (ADR-034).
-        raise ValueError(f"{key} needs an API key first: add one in Settings → Getting started.")
+        raise ValueError(f"{key} needs an API key first: add one in Settings → Provider & model.")
     # A blank model must never be persisted: build_chat_model would get an empty name, and
     # get_llm_selection's own truthiness gate would then silently drop the selection on the next
     # boot (reverting to the config default) — inform-don't-corrupt.

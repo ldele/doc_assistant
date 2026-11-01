@@ -6,7 +6,9 @@ The scene is `getting-started-and-providers.excalidraw` beside this file; open i
 `excalidraw-canvas import docs/wireframes/getting-started-and-providers.excalidraw`, edit, and export
 it back over the same file. Four screens, approved by the user on 2026-11-01 at rev 176, after one
 round of review in chat and no markup on the canvas: Getting started on a fresh install, Getting
-started when ready, Provider & model, and a server of your own. Not built yet.
+started when ready, Provider & model, and a server of your own. Screens 1 and 2 are built, and so is
+screen 3's layout for Claude and Ollama. The other providers and screen 4 wait for the ADR on the
+adapter.
 
 **What the drawing decides.**
 

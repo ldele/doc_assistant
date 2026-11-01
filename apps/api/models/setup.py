@@ -28,16 +28,21 @@ class ProviderReadinessModel(BaseModel):
     key_source: Literal["env", "app"] | None = None
     key_hint: str | None = None
     models: list[str] = Field(default_factory=list)
+    name: str
+    group: Literal["local", "cloud", "server"]
+    destination: str
 
 
 class SetupStepModel(BaseModel):
-    """One outstanding (or completed) first-run task."""
+    """One outstanding (or completed) first-run task: one row of Getting started."""
 
     id: str
     title: str
     detail: str
     done: bool
+    status: str
     action: str | None = None
+    offline: bool = False
 
 
 class SetupStateModel(BaseModel):

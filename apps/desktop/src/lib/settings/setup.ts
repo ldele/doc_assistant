@@ -4,7 +4,7 @@
 // Everything here is presentation logic over the `/api/setup` payload. The *judgements* (ready,
 // what to do next) come from the backend so the docs, the API and the UI cannot drift apart.
 
-import type { ProviderReadiness, SetupState } from '../core/types/setup'
+import type { ProviderReadiness, SetupState, SetupStep } from '../core/types/setup'
 
 /** The chat model to offer first when Ollama has models installed.
  *
@@ -47,15 +47,58 @@ export function ollamaPending(state: SetupState | null, probing: boolean): boole
   return probing && !!o && o.reachable === null
 }
 
-/** The steps as shown: while the Ollama probe is out and Ollama is the active engine, its step
- *  says it is being checked rather than the unprobed "done" the first draw carries. */
-export function displaySteps(state: SetupState | null, probing: boolean): SetupState['steps'] {
-  const steps = state?.steps ?? []
-  if (!state || state.active_provider !== 'ollama' || !ollamaPending(state, probing)) return steps
-  return steps.map((s) =>
-    s.id === 'provider'
-      ? { ...s, title: 'Answer engine', detail: 'Checking whether Ollama is answering…', done: false, action: null }
-      : s,
+/** How a step's row is coloured: green when done, red when the chosen engine does not answer, and
+ *  plain when it has not been done yet. The backend decides which; this names the colour. */
+export type Tone = 'ok' | 'down' | 'todo'
+
+export function stepTone(step: SetupStep): Tone {
+  if (step.done) return 'ok'
+  return step.offline ? 'down' : 'todo'
+}
+
+/** What the *Answering with* card shows. `model` is `null` when no model can answer yet, and
+ *  `line` says where the text goes once one can, or what stands in the way until then. */
+export interface AnsweringWith {
+  model: string | null
+  status: string
+  tone: Tone
+  line: string
+  action: string | null
+}
+
+export function answeringWith(state: SetupState, probing: boolean): AnsweringWith {
+  const step = state.steps.find((s) => s.id === 'provider')
+  const active = state.providers.find((p) => p.id === state.active_provider)
+  const line = active?.destination ?? ''
+  // The first draw comes before the probe, so its "done" means nobody has asked Ollama yet.
+  if (state.active_provider === 'ollama' && ollamaPending(state, probing)) {
+    return { model: state.active_model, status: 'Checking…', tone: 'todo', line, action: null }
+  }
+  if (!step || step.done) {
+    return { model: state.active_model, status: 'Ready', tone: 'ok', line, action: null }
+  }
+  return {
+    model: step.offline ? state.active_model : null,
+    status: step.status,
+    tone: stepTone(step),
+    line: step.detail,
+    action: step.action,
+  }
+}
+
+// Providers are listed by where the text goes, nearest first. A provider joins a list by its
+// `group` from the backend, and a list with nobody in it is not drawn.
+const PROVIDER_GROUPS: readonly { id: ProviderReadiness['group']; label: string }[] = [
+  { id: 'local', label: 'On this computer' },
+  { id: 'cloud', label: 'Cloud, with your own key' },
+  { id: 'server', label: 'Your own server' },
+]
+
+export function providerGroups(
+  providers: ProviderReadiness[],
+): { id: string; label: string; providers: ProviderReadiness[] }[] {
+  return PROVIDER_GROUPS.map((g) => ({ ...g, providers: providers.filter((p) => p.group === g.id) })).filter(
+    (g) => g.providers.length > 0,
   )
 }
 
@@ -69,17 +112,12 @@ export function outstandingSteps(state: SetupState | null): SetupState['steps'] 
   return (state?.steps ?? []).filter((s) => !s.done)
 }
 
-/** One-line status for the header: how much is left. */
+/** Getting started's heading: how much is left. */
 export function setupSummary(state: SetupState | null): string {
   if (!state) return 'Checking…'
   const left = outstandingSteps(state).length
-  if (left === 0) return 'Ready to answer questions'
-  return left === 1 ? '1 step left' : `${left} steps left`
-}
-
-/** Cost wording for a provider — informational, never a gate. */
-export function costLabel(p: ProviderReadiness): string {
-  return p.paid ? 'metered by the provider' : 'runs locally, free'
+  if (left === 0) return 'Provenote is ready'
+  return `${left} thing${left === 1 ? '' : 's'} left before Provenote can answer`
 }
 
 /** Why a key the user just saved may not be the one in use.
@@ -98,9 +136,9 @@ export function keyPrecedenceNote(p: ProviderReadiness, savedInApp: boolean): st
  * Unready providers stay selectable (inform-don't-block: Ollama may just not be started yet), so
  * this only drives the label, never a `disabled` attribute. */
 export function providerStatusLabel(p: ProviderReadiness, probing = false): string {
-  if (probing && p.id === 'ollama' && p.reachable === null) return 'checking…'
-  if (p.ready) return 'ready'
-  if (p.reachable === false) return 'not running'
-  if (!p.configured) return 'needs a key'
-  return 'not ready'
+  if (probing && p.id === 'ollama' && p.reachable === null) return 'Checking…'
+  if (p.ready) return 'Ready'
+  if (p.reachable === false) return 'Not running'
+  if (!p.configured) return 'Needs a key'
+  return 'Not ready'
 }

@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-11-01 (the letter-spacing domain, ADR-056; 2026-10-17: the concept panel's term signals route; 2026-10-01: CI's secret scan blocks — security S-13) · class: living -->
+<!-- status: active · updated: 2026-11-01 (Getting started and Provider & model; the letter-spacing domain, ADR-056; 2026-10-17: the concept panel's term signals route; 2026-10-01: CI's secret scan blocks — security S-13) · class: living -->
 
 # Architecture
 
@@ -131,7 +131,7 @@ both sides of the wire. To review a feature end to end, read one row.
 | taxonomy | `models/taxonomy.py` | `routers/taxonomy.py` | `lib/library/LibraryTaxonomy.svelte` |
 | definitions | `models/definitions.py` | `routers/definitions.py` | `lib/graph/ConceptDefinition.svelte` (in the concept panel) |
 | settings | `models/settings.py` | `routers/settings.py` | `lib/settings/Settings.svelte` |
-| setup (first run) | `models/setup.py` | `routers/setup.py` | `lib/settings/ProviderSetup.svelte` |
+| setup (first run) | `models/setup.py` | `routers/setup.py` | `lib/settings/GettingStarted.svelte` · `ProviderSetup.svelte` |
 | sources (ingestion) | `models/sources.py` | `routers/sources.py` | `lib/settings/Sources.svelte` |
 | health | — | `routers/health.py` | `lib/shell/` (status bar) |
 

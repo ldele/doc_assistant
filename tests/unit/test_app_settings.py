@@ -43,7 +43,7 @@ def test_llm_selection_persists_across_a_fresh_read(
 
 def test_set_llm_selection_rejects_unknown_provider(settings_file: Path) -> None:
     with pytest.raises(ValueError, match="unknown provider"):
-        app_settings.set_llm_selection("openai", "gpt-4")
+        app_settings.set_llm_selection("nonesuch", "gpt-4")
     assert app_settings.get_llm_selection() == (None, None)  # never persisted
 
 

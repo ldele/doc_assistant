@@ -41,6 +41,9 @@ export interface UsageView {
   session_total: number
   cost_usd: number | null
   is_local: boolean
+  /** The cost line for a provider Provenote has no price for (ADR-060), e.g. "Billed by Groq;
+   *  Provenote does not know its price." `null` on Claude (priced) and on a local model. */
+  billing: string | null
 }
 export interface TurnResult {
   answer: string

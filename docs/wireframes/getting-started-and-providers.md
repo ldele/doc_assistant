@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-11-01 · class: living -->
+<!-- status: active · updated: 2026-11-02 · class: living -->
 
 # Wireframe: Getting started and Provider & model
 
@@ -6,9 +6,8 @@ The scene is `getting-started-and-providers.excalidraw` beside this file; open i
 `excalidraw-canvas import docs/wireframes/getting-started-and-providers.excalidraw`, edit, and export
 it back over the same file. Four screens, approved by the user on 2026-11-01 at rev 176, after one
 round of review in chat and no markup on the canvas: Getting started on a fresh install, Getting
-started when ready, Provider & model, and a server of your own. Screens 1 and 2 are built, and so is
-screen 3's layout for Claude and Ollama. The other providers and screen 4 wait for the ADR on the
-adapter.
+started when ready, Provider & model, and a server of your own. All four are built: screens 3 and 4's
+other providers and server form with ADR-060, 2026-11-02.
 
 **What the drawing decides.**
 

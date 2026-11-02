@@ -163,15 +163,11 @@ JUDGE_MODEL = os.getenv("JUDGE_MODEL", _REFERENCE_MODEL)
 # reviewer should follow the switch (fork C) or stay put.
 REVIEWER_PROVIDER_PINNED = os.getenv("REVIEWER_PROVIDER") is not None
 
-# Providers that bill real money per call. The single source of truth for the
-# enrichment-CLI cost guard (`doc_assistant.llm.assert_provider_intent`): a
-# `--apply` enrichment run resolving to one of these prints a loud cost warning
-# + abort window (key present) or fails loudly (key missing), so a run the user
-# believes is "local" can never *silently* spend — the 2026-06-15 credit-burn
-# footgun. Ollama is local/free and absent here by design. Extend if a new paid
-# provider is added. (Declarative policy data lives here; the behaviour that
-# reads it lives in llm.py, next to make_client/reviewer_available.)
-PAID_PROVIDERS = frozenset({"anthropic"})
+# Which providers bill is no longer a list of names here (ADR-060's amendment): it is one test,
+# billed or not known, per provider and model — `providers.describe(...).billing.guard_trips` —
+# because an Ollama on this computer can serve a cloud model that ollama.com bills, and a server
+# of your own bills whoever it forwards to. The CLI cost guard (`llm.assert_provider_intent`)
+# reads it.
 
 
 # ============================================================

@@ -46,3 +46,16 @@ test('a priced turn with no price says so rather than implying free', () => {
 test('no usage at all renders nothing', () => {
   assert.equal(usageLabel(null), '')
 })
+
+test('a provider without a price says who bills, never a cost', () => {
+  // ADR-060: every provider but Claude bills at rates Provenote does not know.
+  const billing = 'Billed by Groq; Provenote does not know its price.'
+  assert.equal(
+    usageLabel(u({ cost_usd: null, billing })),
+    `${N} tokens · Billed by Groq; Provenote does not know its price`,
+  )
+  assert.equal(
+    usageLabel(u({ turn_input: 0, turn_output: 0, cost_usd: null, billing: 'Billing not known.' })),
+    'tokens not reported · Billing not known',
+  )
+})

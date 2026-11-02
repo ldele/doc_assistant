@@ -11,7 +11,7 @@ from typing import Any
 import structlog
 from langchain_core.documents import Document
 
-from doc_assistant import app_settings, export
+from doc_assistant import app_settings, export, providers
 from doc_assistant.chat_controller.session import RagOverrides, _TurnKnobs
 from doc_assistant.chat_controller.views import ClaimView, ScopeView, SourceView
 from doc_assistant.config import (
@@ -41,15 +41,25 @@ log = structlog.get_logger(__name__)
 # ============================================================
 
 
-def _is_local(provider: str) -> bool:
-    """Whether ``provider`` is the local/free Ollama backend.
+def _is_local(provider: str, model: str | None = None) -> bool:
+    """Whether ``provider``'s ``model`` runs on this computer and nobody bills it.
 
     ADR-011 (U1c, desktop provider switch): takes the caller's **effective** provider
     (``self.rag.provider``) rather than reading the import-time ``LLM_PROVIDER`` constant, so this
     stays truthful after a live switch. No default — every call site must say which provider it
-    means.
+    means. Since ADR-060 it asks the two facts instead of the name: an Ollama cloud model is not
+    local, and LM Studio is.
     """
-    return provider.lower() == "ollama"
+    facts = providers.describe(provider, model)
+    return facts.billing.kind == "nobody" and facts.route.reach == "this_computer"
+
+
+def _billing_chip(provider: str, model: str) -> str | None:
+    """The cost line for a turn Provenote cannot price: every provider but Claude, unless it runs
+    here and nobody bills it (ADR-060's amendment). ``None`` keeps the priced or local line."""
+    if provider.strip().lower() == "anthropic" or _is_local(provider, model):
+        return None
+    return providers.describe(provider, model).billing.chip
 
 
 # The exception names that mean "nothing answered at that address", from the HTTP stacks the
@@ -79,15 +89,30 @@ def _turn_failure_sentence(
     question (release-ux-checklist §6, the user, 2026-10-26). Never the exception's message,
     which can carry request details; its type name is enough for a report.
     """
+    from doc_assistant.compatible import CompatibleError
+
     if _is_unreachable(exc):
-        if _is_local(provider):
+        if provider.strip().lower() == "ollama":
             return (
                 f"No answer: Ollama is not answering at {ollama_host}. Start it, or choose "
                 "another answer engine in Settings."
             )
+        if providers.is_compatible(provider):
+            host = providers.host_of(providers.address_of(provider)) or "its address"
+            return (
+                f"No answer: {providers.display_name(provider)} is not answering at {host}. "
+                "Start it, or choose another answer engine in Settings."
+            )
         return (
             f"No answer: the answer engine ({provider}) could not be reached. Check the "
             "connection, or choose another answer engine in Settings."
+        )
+    if isinstance(exc, CompatibleError):
+        # The reason is ours (`compatible._error_reason`): a status and the server's own message,
+        # never the request or the key.
+        return (
+            f"No answer from {providers.display_name(provider)} ({model}): {exc.reason}. "
+            "Try again, or choose another answer engine in Settings."
         )
     return (
         f"No answer: {provider} ({model}) failed while answering ({type(exc).__name__}). "

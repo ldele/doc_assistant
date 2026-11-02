@@ -6,6 +6,7 @@ export interface UsageLike {
   turn_output: number
   is_local: boolean
   cost_usd: number | null
+  billing?: string | null
 }
 
 /**
@@ -24,6 +25,12 @@ export function usageLabel(usage: UsageLike | null): string {
   if (!usage) return ''
   const total = usage.turn_input + usage.turn_output
   if (usage.is_local && total === 0) return 'local · tokens not reported'
+  // ADR-060: a provider Provenote has no price for says who bills, never a guessed cost. Its
+  // token counts are whatever the server reported, and none reads as not reported, not as zero.
+  if (usage.billing) {
+    const counted = total === 0 ? 'tokens not reported' : `${total.toLocaleString()} tokens`
+    return `${counted} · ${usage.billing.replace(/\.$/, '')}`
+  }
   const spend = usage.is_local ? 'local' : usage.cost_usd != null ? `$${usage.cost_usd.toFixed(4)}` : 'n/a'
   return `${total.toLocaleString()} tokens · ${spend}`
 }

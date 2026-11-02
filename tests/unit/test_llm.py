@@ -8,6 +8,7 @@ system-message hoisting, and the config-driven reviewer/judge selection.
 from __future__ import annotations
 
 import os
+from pathlib import Path
 from typing import Any, ClassVar
 
 import httpx
@@ -104,7 +105,7 @@ def test_make_client_case_insensitive(patched_sdks: None):
 
 def test_make_client_unknown_provider_raises():
     with pytest.raises(ValueError, match="Unknown LLM provider"):
-        llm.make_client("openai", "gpt-4")
+        llm.make_client("nonesuch", "gpt-4")
 
 
 def test_adapters_satisfy_protocol(patched_sdks: None):
@@ -428,10 +429,15 @@ def no_sleep(monkeypatch: pytest.MonkeyPatch) -> list[float]:
     return calls
 
 
-def test_paid_providers_policy() -> None:
-    # Declarative policy: anthropic bills, ollama is local/free.
-    assert "anthropic" in config.PAID_PROVIDERS
-    assert "ollama" not in config.PAID_PROVIDERS
+def test_billing_policy_claude_bills_and_a_local_ollama_does_not(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # ADR-060's amendment: one test, billed or not known, in place of a list of names.
+    from doc_assistant import providers
+
+    monkeypatch.setattr(config, "OLLAMA_HOST", "http://localhost:11434")
+    assert providers.describe("anthropic").billing.guard_trips
+    assert not providers.describe("ollama").billing.guard_trips
 
 
 @pytest.mark.skipif(
@@ -753,3 +759,109 @@ def test_model_mismatch_refuses_only_what_can_never_answer(
         assert found is None
     else:
         assert found is not None and says in found
+
+
+# ============================================================
+# ADR-060 — the guard trips on billed, or not known
+# ============================================================
+
+
+@pytest.fixture
+def own_settings(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from doc_assistant import app_settings
+
+    monkeypatch.setattr(app_settings, "SETTINGS_PATH", tmp_path / "settings.json")
+    monkeypatch.setattr(config, "OLLAMA_HOST", "http://localhost:11434")
+
+
+def test_guard_trips_on_a_cloud_preset_and_names_host_and_vendor(
+    own_settings: None, no_sleep: list[float], capsys: pytest.CaptureFixture[str]
+) -> None:
+    llm.assert_provider_intent("groq", operation="op", model="llama-3.3", abort_seconds=0)
+    err = capsys.readouterr().err
+    assert "PAID API RUN" in err
+    assert "Sends to : api.groq.com" in err
+    assert "Billed by: Groq" in err
+
+
+def test_guard_trips_on_a_server_whose_billing_is_not_known(
+    own_settings: None, no_sleep: list[float], capsys: pytest.CaptureFixture[str]
+) -> None:
+    from doc_assistant import app_settings, providers
+
+    sid = providers.save_server("Lab", "http://localhost:1234/v1").id
+    llm.assert_provider_intent(sid, operation="op", abort_seconds=0)
+    err = capsys.readouterr().err
+    assert "BILLING NOT KNOWN" in err and "Billed by: not known" in err
+    # The user's word that it bills nobody is what stops it.
+    app_settings.set_not_billed(sid, True)
+    llm.assert_provider_intent(sid, operation="op", abort_seconds=0)
+    assert capsys.readouterr().err == ""
+
+
+def test_guard_stays_quiet_on_lm_studio(
+    own_settings: None, no_sleep: list[float], capsys: pytest.CaptureFixture[str]
+) -> None:
+    llm.assert_provider_intent("lmstudio", operation="op")
+    assert capsys.readouterr().err == ""
+    assert no_sleep == []
+
+
+def test_guard_trips_on_an_ollama_cloud_model_served_from_localhost(
+    own_settings: None,
+    monkeypatch: pytest.MonkeyPatch,
+    no_sleep: list[float],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    tags = {
+        "models": [
+            {"name": "llama3.1:8b"},
+            {"name": "gemma4:cloud", "remote_host": "https://ollama.com:443"},
+        ]
+    }
+    monkeypatch.setattr(httpx, "get", lambda url, **k: _FakeResponse(tags))
+    llm.assert_provider_intent("ollama", operation="op", model="llama3.1:8b", abort_seconds=0)
+    assert capsys.readouterr().err == ""
+    llm.assert_provider_intent("ollama", operation="op", model="gemma4:cloud", abort_seconds=0)
+    err = capsys.readouterr().err
+    assert "Sends to : ollama.com" in err and "Billed by: Ollama" in err
+
+
+def test_guard_trips_on_an_ollama_on_another_machine(
+    own_settings: None,
+    monkeypatch: pytest.MonkeyPatch,
+    no_sleep: list[float],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setattr(config, "OLLAMA_HOST", "http://192.168.1.40:11434")
+    llm.assert_provider_intent("ollama", operation="op", abort_seconds=0)
+    assert "BILLING NOT KNOWN" in capsys.readouterr().err
+
+
+def test_ollama_probe_keeps_each_models_remote_host(monkeypatch: pytest.MonkeyPatch) -> None:
+    tags = {"models": [{"name": "gemma4:cloud", "remote_host": "https://ollama.com:443"}]}
+    monkeypatch.setattr(httpx, "get", lambda url, **k: _FakeResponse(tags))
+    assert llm.ollama_probe("http://localhost:11434") == (True, ("gemma4:cloud",), None)
+    assert llm.ollama_remote_host("gemma4:cloud", "http://localhost:11434") == (
+        "https://ollama.com:443"
+    )
+    assert llm.ollama_remote_host("llama3.1:8b", "http://localhost:11434") is None
+
+
+def test_make_client_builds_a_compatible_client_with_the_bound_key() -> None:
+    from doc_assistant import credentials
+    from doc_assistant.compatible import CompatibleClient
+
+    credentials.set_bound_key("groq", "gsk-1", "https://api.groq.com/openai/v1")
+    client = llm.make_client("groq", "llama-3.3")
+    assert isinstance(client, CompatibleClient)
+    assert (client.endpoint.address, client.endpoint.key) == (
+        "https://api.groq.com/openai/v1",
+        "gsk-1",
+    )
+
+
+def test_a_preset_without_a_key_is_not_available_and_lm_studio_is() -> None:
+    assert llm.provider_available("groq") is False
+    assert llm.provider_available("lmstudio") is True
+    assert llm.provider_available("nonesuch") is False

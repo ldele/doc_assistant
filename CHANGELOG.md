@@ -22,6 +22,14 @@ The engineering record is finer-grained than this file: per-change entries live 
   document. Settings > Documents lists every entry and removes one or all of them, with *Undo*. A
   change applies when that document's text is re-run, and the block says so until then.
 
+- **More answer providers.** Provider & model now offers OpenAI, Google Gemini, Mistral, Groq and
+  OpenRouter with your own key, LM Studio on this computer, and any OpenAI-compatible server you add
+  (*Test connection*). Each form lists the models its server reports, says where your questions and
+  passages go, and says who bills, apart: a vendor, nobody, or *Billing not known* until you tick
+  *This server does not bill me*. A key is sent only to the address it was saved with. Answers on
+  these providers say who bills instead of an estimated price, and citation quality is measured on
+  Claude Haiku and two local models only.
+
 ### Changed
 
 - **Every document is read again once after this update, when you choose.** Each one shows as
@@ -30,6 +38,9 @@ The engineering record is finer-grained than this file: per-change entries live 
   about as long as your first ingest. A document whose text comes out the same is not embedded
   again; one whose text changes keeps its metadata, figures and place in your folders. Keywords and
   the graph are not rebuilt by this run.
+- **The command-line cost guard asks who bills, not which provider it is.** An enrichment run now
+  stops for its warning on an Ollama model that runs on ollama.com and on an Ollama on another
+  machine, as it does for Claude, and the warning names where the text goes and who bills.
 - **Settings' Ollama card states its trade-off in words.** *Expect fewer citations* no longer quotes
   run sizes or rates.
 - **Getting started is a checklist, and models live in one place.** Getting started and Provider &

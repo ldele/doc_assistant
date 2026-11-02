@@ -16,9 +16,18 @@ from pathlib import Path
 import structlog
 from langchain_core.documents import Document
 
-from doc_assistant import app_settings, compare, conversations, corpus_stats, export, library
+from doc_assistant import (
+    app_settings,
+    compare,
+    conversations,
+    corpus_stats,
+    export,
+    library,
+    providers,
+)
 from doc_assistant.chat_controller.events import Failure, Result, Step, Token, TurnEvent
 from doc_assistant.chat_controller.helpers import (
+    _billing_chip,
     _build_claims_block,
     _build_retrieved_chunks,
     _build_source_views,
@@ -63,7 +72,7 @@ from doc_assistant.knowledge.epistemics import (
     load_source_evaluations,
 )
 from doc_assistant.library import document_years
-from doc_assistant.pipeline import RAGPipeline, format_citation
+from doc_assistant.pipeline import RAGPipeline, format_citation, format_docs_for_prompt
 from doc_assistant.prompts import ANSWER_PROMPT
 from doc_assistant.provenance import (
     AnswerProvenance,
@@ -106,7 +115,13 @@ class ChatController:
                 and model is not None
                 and (provider, model) != (self.rag.provider, self.rag.model)
             ):
-                self.rag.set_chat_model(provider, model)
+                try:
+                    self.rag.set_chat_model(provider, model)
+                except ValueError as e:
+                    # A selection this build cannot build (a server removed by hand from
+                    # settings.json) must not stop the app from starting: the default answers,
+                    # and Getting started names the selection as unknown.
+                    log.warning("persisted_selection_unusable", provider=provider, error=str(e))
         # Cached once — the prompt template doesn't change between turns.
         self._answer_template_hash = template_hash(str(ANSWER_PROMPT))
 
@@ -447,6 +462,9 @@ class ChatController:
                 session_id=pin.session_id,
                 retrieval_scope=_scope_dict(pin.scope_view),
                 epistemics_markers_enabled=pin.markers_enabled,
+                answer_route=providers.describe(pin.turn_provider, pin.turn_model).as_record(
+                    pin.turn_provider
+                ),
             )
             prov = AnswerProvenance(
                 id=record_id,
@@ -507,7 +525,7 @@ class ChatController:
                 prov,
                 signals,
                 review=review,
-                is_local=_is_local(pin.turn_provider),
+                is_local=_is_local(pin.turn_provider, pin.turn_model),
                 source_strip_rendered=pin.source_strip_rendered,
             )
         except Exception as e:
@@ -627,9 +645,20 @@ class ChatController:
             return
 
         full_answer = ""
+        pre_answer_in = counter.input_tokens
         for tok in rag.stream_answer(standalone, docs, counter=counter, llm=turn_llm):
             full_answer += tok
             yield Token(tok)
+        prompt_cut = (
+            providers.prompt_cut_note(
+                counter.input_tokens - pre_answer_in,
+                len(
+                    ANSWER_PROMPT.format(context=format_docs_for_prompt(docs), question=standalone)
+                ),
+            )
+            if providers.is_compatible(turn_provider)
+            else None
+        )
 
         turn_in = counter.input_tokens - pre_in
         turn_out = counter.output_tokens - pre_out
@@ -686,6 +715,8 @@ class ChatController:
         citation_block = (
             "" if citation.clean else f"\n\n---\n⚠ **Citation check:** {citation.note()}"
         )
+        if prompt_cut is not None:  # ADR-060 choice 7: a server that read under half the prompt
+            citation_block += f"\n\n---\n⚠ **Prompt cut?** {prompt_cut}"
 
         # --- Export: stash this turn + append the per-turn debug log event ---
         reviewer_summary = None
@@ -726,8 +757,11 @@ class ChatController:
                     turn_input=turn_in,
                     turn_output=turn_out,
                     session_total=counter.total(),
-                    cost_usd=None if _is_local(turn_provider) else counter.cost_usd(),
-                    is_local=_is_local(turn_provider),
+                    # Priced only on Claude: every other provider bills at rates Provenote does
+                    # not know (ADR-060), so its line says who bills instead of a guess.
+                    cost_usd=counter.cost_usd() if turn_provider == "anthropic" else None,
+                    is_local=_is_local(turn_provider, turn_model),
+                    billing=_billing_chip(turn_provider, turn_model),
                 ),
                 standalone_query=standalone,
                 record_id=record_id,
@@ -884,17 +918,35 @@ class ChatController:
         provider: str,
         model: str,
     ) -> str:
-        if _is_local(provider):
+        reported = turn_in + turn_out
+        if _is_local(provider, model):
             # Local models report no token usage to the LangChain callback, so the real
             # counts are zero — showing "0 tokens / $0.0000" reads as broken. Be honest:
             # no metered cost, with a rough output estimate from text. ``provider``/``model``
             # are the caller's turn snapshot (ADR-011) — never read live off ``self.rag``,
             # which a mid-turn switch may already have moved.
             est_out = max(0, len(full_answer) // 4)
+            counts = (
+                f"{turn_in:,} in + {turn_out:,} out tokens, as the server reported."
+                if reported
+                else f"provider reports no usage. (~{est_out:,} output tokens, estimated.)"
+            )
             return (
                 f"\n\n---\n"
-                f"🖥 **Local model** (`{provider}/{model}`) — no metered token "
-                f"cost; provider reports no usage. (~{est_out:,} output tokens, estimated.)"
+                f"🖥 **Local model** (`{provider}/{model}`) — no metered token cost; {counts}"
+            )
+        if provider != "anthropic":
+            # ADR-060: where the text went and who bills, never a price Provenote does not know.
+            facts = providers.describe(provider, model)
+            counts = (
+                f"{turn_in:,} in + {turn_out:,} out tokens, as the server reported"
+                if reported
+                else "the server reported no token counts"
+            )
+            return (
+                f"\n\n---\n"
+                f"📡 **{facts.route.short}.** {facts.billing.chip} (`{provider}/{model}`; "
+                f"{counts}.)"
             )
         turn_total = turn_in + turn_out
         return (

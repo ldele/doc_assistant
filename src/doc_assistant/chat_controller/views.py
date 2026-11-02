@@ -90,6 +90,9 @@ class UsageView:
     session_total: int
     cost_usd: float | None  # None under local provider (no metered cost)
     is_local: bool
+    # ADR-060: the cost line for a provider Provenote has no price for (every provider but Claude
+    # that is not local), e.g. "Billed by Groq; Provenote does not know its price." None otherwise.
+    billing: str | None = None
 
 
 @dataclass

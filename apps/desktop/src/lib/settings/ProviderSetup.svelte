@@ -1,66 +1,77 @@
 <script lang="ts">
-  // Settings > Provider & model: which model answers and where the text goes, then the providers
-  // grouped by that, and one provider's form at a time. ADR-034, amended 2026-11-01: Getting started
-  // holds no form, so the keys and the Ollama probe live here.
+  // Settings > Provider & model: which model answers, where its text goes and who bills, then the
+  // providers grouped by where the text goes, and one provider's form at a time. ADR-034, amended
+  // 2026-11-01: Getting started holds no form, so the keys and the Ollama probe live here. ADR-060:
+  // every provider but Claude and Ollama is a preset or a server of your own, on one form.
   //
   // Everything shown here is computed by the backend (`GET /api/setup` -> doc_assistant.readiness),
   // so this component renders a verdict rather than forming one — the same wording the docs use.
   // The only local logic is presentation (`./setup.ts`, unit-tested under `npm test`).
   import type { ProviderReadiness, SetupState } from '../core/types/setup'
-  import { clearAnthropicKey, getSetup, saveAnthropicKey, setLlmProvider } from '../core/api'
+  import {
+    clearProviderKey,
+    fetchProviderModels,
+    getSetup,
+    removeServer,
+    saveProviderKey,
+    setLlmProvider,
+    setNotBilled,
+    testServer,
+  } from '../core/api'
   import Icon from '../shell/Icon.svelte'
   import { shell } from '../shell/shell.svelte'
   import {
     DEFAULT_CLAUDE_MODEL,
+    addressChangeNote,
     answeringWith,
+    clockTime,
     keyPrecedenceNote,
     keyRefusal,
     modelForProvider,
     providerGroups,
     providerStatusLabel,
+    unlistedModel,
   } from './setup'
 
   // `onProviderChanged` lets the parent re-pull /api/settings so the status bar and the Retrieval
   // tab agree with the switch made here (one source of truth per surface, refreshed together).
   let { onProviderChanged }: { onProviderChanged: () => void } = $props()
 
-  const CONSOLE_URL = 'https://console.anthropic.com/settings/keys'
   const OLLAMA_URL = 'https://ollama.com/download'
+  const NEW_SERVER = 'new-server'
 
   let setup = $state<SetupState | null>(null)
   let loadError = $state<string | null>(null)
   let busy = $state(false)
-  // True while the Ollama probe is out. The panel draws from local state first (`probe=false`)
-  // and fills in Ollama's verdict after: with nothing listening, the probe takes seconds, and the
-  // whole panel used to read "Checking…" until it came back.
+  // True while the probe is out. The panel draws from local state first (`probe=false`) and fills
+  // in the probe's verdict after: with nothing listening, it takes seconds.
   let probing = $state(false)
+  // True while the open form's model list is being fetched from its server.
+  let listing = $state(false)
+  // Which button's request is out, so only that button says it is working (`busy` disables all).
+  let working = $state<'key' | 'connect' | null>(null)
   // The provider whose form is open: the one in use, until the user picks another from the list.
   let picked = $state<string | null>(null)
-  // One result line per card, drawn under that card's own buttons: a key's verdict used to land
-  // at the foot of the panel, under the Ollama card, where nobody saw it.
-  type Card = 'claude' | 'ollama'
+  // One result line per form, drawn under that form's own buttons.
   type Kind = 'ok' | 'warn' | 'err'
-  let notes = $state<Record<Card, { kind: Kind; text: string } | null>>({ claude: null, ollama: null })
+  let notes = $state<Record<string, { kind: Kind; text: string } | null>>({})
   let keyInput = $state('')
-  let claudeModel = $state('')
-  let ollamaModel = $state('')
-  // Set once the user saves a key in this session — the only way to know a .env key is shadowing
-  // what they just typed (the backend reports which source wins, not that both exist).
+  // The model box of each form, by provider id. Free text over the server's list.
+  let models = $state<Record<string, string>>({})
+  // Set once the user saves a Claude key in this session — the only way to know a .env key is
+  // shadowing what they just typed (the backend reports which source wins, not that both exist).
   let savedHere = $state(false)
   let copied = $state<string | null>(null)
+  // The server form: the one being added, or the open server's saved name and address.
+  let server = $state({ name: '', address: '', key: '' })
   // Targets for the copy fallback: if the clipboard API is unavailable, the text gets selected
   // instead so Ctrl+C still works.
-  let consoleEl = $state<HTMLElement | null>(null)
-  let ollamaEl = $state<HTMLElement | null>(null)
-  let pullEl = $state<HTMLElement | null>(null)
+  let copyEls = $state<Record<string, HTMLElement | null>>({})
 
-  const anthropic = $derived(setup?.providers.find((p) => p.id === 'anthropic') ?? null)
-  const ollama = $derived(setup?.providers.find((p) => p.id === 'ollama') ?? null)
   const open = $derived(picked ?? setup?.active_provider ?? null)
+  const current = $derived(setup?.providers.find((p) => p.id === open) ?? null)
   const now = $derived(setup ? answeringWith(setup, probing) : null)
-  const claudeInUse = $derived(
-    setup?.active_provider === 'anthropic' && setup.active_ready && setup.active_model === claudeModel.trim(),
-  )
+  const groups = $derived(setup ? providerGroups(setup.providers) : [])
 
   void refresh()
 
@@ -73,7 +84,7 @@
       probing = probe
       const state = await getSetup(probe)
       show(state)
-      // A Re-check that finds Ollama back has to reach the rail badge and the chat banner too.
+      // A Re-check that finds a server back has to reach the rail badge and the chat banner too.
       if (probe) shell.setup = state
     } catch (e) {
       loadError = message(e)
@@ -85,110 +96,303 @@
   function show(state: SetupState): void {
     setup = state
     loadError = null
-    const o = state.providers.find((p) => p.id === 'ollama')
-    // Seed the model picker with a model Ollama can serve, and re-seed when the pick is not
-    // installed (or is a Claude name carried over from a switch) — offering a model the server
-    // does not have would fail on the next question.
-    const current = ollamaModel || (state.active_provider === 'ollama' ? state.active_model : '')
-    if (o) ollamaModel = modelForProvider('ollama', current, [...o.models])
-    // Only an empty box is filled: this field is free text, so a refresh must not undo typing.
-    if (!claudeModel) {
-      claudeModel = modelForProvider('anthropic', state.active_provider === 'anthropic' ? state.active_model : '')
+    // Seed each model box with a model its provider can serve; only an empty box is filled, so a
+    // refresh never undoes typing. Ollama's is re-seeded when its pick is not installed: offering
+    // a model the server does not have would fail on the next question.
+    for (const p of state.providers) {
+      const mine = state.active_provider === p.id ? state.active_model : ''
+      if (p.id === 'ollama') {
+        models[p.id] = modelForProvider('ollama', models[p.id] || mine, [...p.models])
+      } else if (!models[p.id]) {
+        models[p.id] = modelForProvider(p.id, mine, [...p.models])
+      }
     }
   }
 
   const message = (e: unknown): string => (e instanceof Error ? e.message : String(e))
 
-  function say(card: Card, kind: Kind, text: string): void {
-    notes[card] = { kind, text }
+  function say(id: string, kind: Kind, text: string): void {
+    notes[id] = { kind, text }
   }
 
-  async function saveKey(): Promise<void> {
+  // Opening a form asks its server for its models (ADR-060, choice 8): never per settings read,
+  // never in the background. Ollama's list comes with the probe, and a provider with no key yet
+  // has nothing to ask with.
+  let lastOpened: string | null = null
+  $effect(() => {
+    const id = open
+    if (!id || id === lastOpened || !setup) return
+    lastOpened = id
+    keyInput = ''
+    const p = setup.providers.find((x) => x.id === id)
+    if (p?.kind === 'server') server = { name: p.name, address: p.address, key: '' }
+    if (id === NEW_SERVER) server = { name: '', address: '', key: '' }
+    if (p && p.kind !== 'ollama' && p.configured) void listModels(id)
+  })
+
+  async function listModels(id: string): Promise<void> {
+    listing = true
+    try {
+      const result = await fetchProviderModels(id)
+      show(await getSetup(false))
+      if (result.status !== 'ok' && result.detail) say(id, 'warn', result.detail)
+    } catch (e) {
+      say(id, 'err', message(e))
+    } finally {
+      listing = false
+    }
+  }
+
+  async function saveKey(p: ProviderReadiness): Promise<void> {
     const key = keyInput.trim()
     if (!key || busy) return
     busy = true
-    notes.claude = null
+    working = 'key'
+    notes[p.id] = null
     try {
-      const result = await saveAnthropicKey(key)
+      const result = await saveProviderKey(p.id, key)
       show(result.setup)
-      savedHere = true
+      if (p.kind === 'claude') savedHere = true
       keyInput = '' // never leave key material sitting in a form field
       if (result.verification === 'ok') {
-        say('claude', 'ok', 'Key saved and verified.')
+        say(p.id, 'ok', 'Key saved and accepted.')
       } else {
         // Stored but unverifiable (offline / proxy). Saying "saved" alone would over-promise.
-        say('claude', 'warn', `Key saved, but it could not be checked: ${result.detail}`)
+        say(p.id, 'warn', `Key saved, but it could not be checked: ${result.detail}`)
       }
       onProviderChanged()
+      if (p.kind === 'claude') await listModels(p.id)
     } catch (e) {
-      say('claude', 'err', keyRefusal(message(e)))
+      say(p.id, 'err', keyRefusal(p.name, message(e)))
     } finally {
       busy = false
+      working = null
     }
   }
 
-  async function removeKey(): Promise<void> {
+  async function removeKey(p: ProviderReadiness): Promise<void> {
     if (busy) return
     busy = true
-    notes.claude = null
+    notes[p.id] = null
     try {
-      show(await clearAnthropicKey())
+      show(await clearProviderKey(p.id))
       savedHere = false
-      say('claude', 'ok', 'Key removed from this app.')
+      say(p.id, 'ok', 'Key removed from this app.')
       onProviderChanged()
     } catch (e) {
-      say('claude', 'err', message(e))
+      say(p.id, 'err', message(e))
     } finally {
       busy = false
     }
   }
 
-  async function use(provider: string, model: string): Promise<void> {
-    if (busy || !model.trim()) return
-    const card: Card = provider === 'anthropic' ? 'claude' : 'ollama'
+  async function connect(): Promise<void> {
+    if (busy || !server.name.trim() || !server.address.trim()) return
+    const id = current?.kind === 'server' ? current.id : null
+    const card = id ?? NEW_SERVER
     busy = true
+    working = 'connect'
     notes[card] = null
     try {
-      await setLlmProvider(provider, model.trim())
-      say(card, 'ok', `Answers now come from ${provider} / ${model.trim()}.`)
+      const result = await testServer({
+        id,
+        name: server.name.trim(),
+        address: server.address.trim(),
+        key: server.key.trim() || null,
+      })
+      server.key = '' // never leave key material sitting in a form field
+      show(result.setup)
+      picked = result.id
+      lastOpened = result.id
+      const found = result.listing
+      const count = `${found.models.length} model${found.models.length === 1 ? '' : 's'} found`
+      if (found.status === 'ok') say(result.id, 'ok', `Reached it. ${count}.`)
+      else say(result.id, 'warn', `Saved. ${found.detail}`)
+      models[result.id] = modelForProvider(result.id, models[result.id] ?? '', found.models)
+      onProviderChanged()
+    } catch (e) {
+      say(card, 'err', message(e))
+    } finally {
+      busy = false
+      working = null
+    }
+  }
+
+  async function forget(p: ProviderReadiness): Promise<void> {
+    if (busy) return
+    busy = true
+    try {
+      show(await removeServer(p.id))
+      picked = null
+      onProviderChanged()
+    } catch (e) {
+      say(p.id, 'err', message(e))
+    } finally {
+      busy = false
+    }
+  }
+
+  async function tick(p: ProviderReadiness, notBilled: boolean): Promise<void> {
+    if (busy) return
+    busy = true
+    try {
+      show(await setNotBilled(p.id, notBilled))
+      onProviderChanged()
+    } catch (e) {
+      say(p.id, 'err', message(e))
+    } finally {
+      busy = false
+    }
+  }
+
+  async function use(p: ProviderReadiness): Promise<void> {
+    const model = (models[p.id] ?? '').trim()
+    if (busy || !model) return
+    busy = true
+    notes[p.id] = null
+    try {
+      await setLlmProvider(p.id, model)
+      say(p.id, 'ok', `Answers now come from ${p.name} / ${model}.`)
       onProviderChanged()
       // The card follows at once; with the probe alone it read the old model for seconds.
       probing = true
       show(await getSetup(false))
       await refresh()
     } catch (e) {
-      say(card, 'err', message(e))
+      say(p.id, 'err', message(e))
     } finally {
       busy = false
     }
   }
 
+  const inUse = (p: ProviderReadiness): boolean =>
+    setup?.active_provider === p.id && !!setup.active_ready && setup.active_model === (models[p.id] ?? '').trim()
+
   // Copy without needing a Tauri clipboard capability: try the async API, and if it is
   // unavailable (or refused), select the text so Ctrl+C still works. Inform, don't block.
-  // `el: … = null`, never `el?:` — the Svelte TS-strip keeps the `?` and emits `function f(x?)`,
-  // a SyntaxError that blanks the whole app mount while svelte-check passes it
-  // (apps/desktop/CLAUDE.md).
-  async function copy(text: string, label: string, el: HTMLElement | null = null): Promise<void> {
+  // `card: … = null`-style defaults only, never `x?:` — the Svelte TS-strip keeps the `?` and
+  // emits `function f(x?)`, a SyntaxError that blanks the whole app mount (apps/desktop/CLAUDE.md).
+  async function copy(text: string, label: string, card: string): Promise<void> {
     try {
       await navigator.clipboard.writeText(text)
       copied = label
       setTimeout(() => (copied = copied === label ? null : copied), 1600)
     } catch {
-      const range = document.createRange()
+      const el = copyEls[label]
       if (el) {
+        const range = document.createRange()
         range.selectNodeContents(el)
         const sel = window.getSelection()
         sel?.removeAllRanges()
         sel?.addRange(range)
       }
-      say(label === 'console' ? 'claude' : 'ollama', 'warn', 'Could not reach the clipboard — the text is selected, press Ctrl+C.')
+      say(card, 'warn', 'Could not reach the clipboard — the text is selected, press Ctrl+C.')
     }
   }
 
   function pillClass(p: ProviderReadiness): string {
+    if (p.key_status === 'refused') return 'down'
     return p.ready ? 'ok' : 'todo'
   }
 </script>
+
+{#snippet copyRow(text: string, label: string, card: string)}
+  <span class="copyrow">
+    <code bind:this={copyEls[label]}>{text}</code>
+    <button class="ghost sm" onclick={() => copy(text, label, card)}>{copied === label ? 'Copied' : 'Copy'}</button>
+  </span>
+{/snippet}
+
+{#snippet note(id: string)}
+  <div aria-live="polite">
+    {#if notes[id]}
+      <p class={notes[id]?.kind === 'ok' ? 'ok-line' : notes[id]?.kind} role={notes[id]?.kind === 'err' ? 'alert' : undefined}>
+        {notes[id]?.text}
+      </p>
+    {/if}
+  </div>
+{/snippet}
+
+{#snippet facts(p: ProviderReadiness)}
+  <!-- The two facts, kept apart (ADR-060's amendment): where the text goes, then who bills. -->
+  <p class="detail">{p.destination}</p>
+  <p class="detail bill">{p.billing}.</p>
+  {#if p.can_tick}
+    <label class="tick">
+      <input
+        type="checkbox"
+        checked={p.billing_kind === 'your_word'}
+        disabled={busy}
+        onchange={(e) => tick(p, e.currentTarget.checked)}
+      />
+      This server does not bill me
+    </label>
+  {/if}
+{/snippet}
+
+{#snippet modelRow(p: ProviderReadiness, placeholder: string, canUse: boolean)}
+  <div class="model-head">
+    <label for="model-{p.id}">Model</label>
+    {#if p.kind !== 'ollama'}
+      <button class="link" onclick={() => listModels(p.id)} disabled={busy || listing || !p.configured}>
+        {listing ? 'Asking the server…' : 'Refresh'}
+      </button>
+    {/if}
+  </div>
+  <div class="row">
+    <!-- A datalist, not a <select>: the server's list is a suggestion that filters as you type,
+         and a model it does not list must still be typeable (inform-don't-block). -->
+    <input
+      id="model-{p.id}"
+      list="models-{p.id}"
+      bind:value={models[p.id]}
+      {placeholder}
+      spellcheck="false"
+      disabled={busy}
+    />
+    <datalist id="models-{p.id}">
+      {#each p.models as m (m)}
+        <option value={m}></option>
+      {/each}
+    </datalist>
+    {#if inUse(p)}
+      <span class="ok-line"><Icon name="check" size={13} /> In use for answers.</span>
+    {:else}
+      <button class="primary" onclick={() => use(p)} disabled={busy || !canUse || !(models[p.id] ?? '').trim()}>
+        Use for answers
+      </button>
+    {/if}
+  </div>
+  {#if p.models_fetched_at && p.models.length}
+    <p class="fine">
+      {p.models.length} model{p.models.length === 1 ? '' : 's'} listed by the server at {clockTime(p.models_fetched_at)}.
+    </p>
+  {/if}
+  {#if unlistedModel(models[p.id] ?? '', p.models)}
+    <p class="fine">{unlistedModel(models[p.id] ?? '', p.models)}</p>
+  {/if}
+  {#if p.remote[(models[p.id] ?? '').trim()]}
+    <p class="warn">
+      This model runs on {p.remote[(models[p.id] ?? '').trim()]}, not on this computer, and Ollama bills it.
+    </p>
+  {/if}
+{/snippet}
+
+{#snippet sent(p: ProviderReadiness)}
+  <details class="sends">
+    <summary>What an answer sends</summary>
+    <ul>
+      {#each p.sends as item (item)}<li>{item}</li>{/each}
+    </ul>
+  </details>
+{/snippet}
+
+{#snippet measured()}
+  <p class="fine">
+    This app's citation checks ran on Claude Haiku and two local models. Other models work; their
+    citations are not measured.
+  </p>
+{/snippet}
 
 <section class="setup">
   {#if loadError}
@@ -200,11 +404,12 @@
       <div class="now-head">
         <div class="now-what">
           <span class="eyebrow">Answering with</span>
-          {#if now.model}<strong class="model">{now.model}</strong>{/if}
+          {#if now.model}<strong class="model">{now.model} <span class="on">on {now.provider}</span></strong>{/if}
         </div>
         <span class="pill {now.tone}">{now.status}</span>
       </div>
       <p class="detail">{now.line}</p>
+      {#if now.billing}<p class="detail">{now.billing}.</p>{/if}
       {#if now.action}<p class="detail fix">{now.action}</p>{/if}
     </div>
 
@@ -212,7 +417,7 @@
       <!-- Grouped by where the text goes. A new provider takes its row from the payload, its group
            included, so this list does not change when one is added. -->
       <div class="plist" role="group" aria-label="Providers">
-        {#each providerGroups(setup.providers) as group (group.id)}
+        {#each groups as group (group.id)}
           <h4>{group.label}</h4>
           {#each group.providers as p (p.id)}
             <button
@@ -227,16 +432,95 @@
             </button>
           {/each}
         {/each}
+        {#if !groups.some((g) => g.id === 'server')}<h4>Your own server</h4>{/if}
+        <button
+          type="button"
+          class="prow add"
+          class:on={open === NEW_SERVER}
+          aria-current={open === NEW_SERVER ? 'true' : undefined}
+          onclick={() => (picked = NEW_SERVER)}
+        >
+          <span class="pname">Add an OpenAI-compatible server</span>
+        </button>
       </div>
 
-      {#if open === 'ollama'}
-        <!-- ---------------------------------------------------------------- Ollama (local) -->
+      {#if open === NEW_SERVER || current?.kind === 'server'}
+        <!-- ------------------------------------------------------- A server of your own -->
+        {@const p = current?.kind === 'server' ? current : null}
+        {@const card = p?.id ?? NEW_SERVER}
         <div class="card form">
-          <h4 class="form-title">{ollama?.name}</h4>
+          <h4 class="form-title">{p ? p.name : 'OpenAI-compatible server'}</h4>
           <p class="detail">
-            No key and no metering. Needs about 5 GB of disk for an 8B model, and is happiest with a GPU.
+            Any server that speaks the chat-completions format: LM Studio, llama.cpp, vLLM, or a
+            lab machine. Its address, the questions and the passages found for them go to it.
           </p>
-          <p class="detail">{ollama?.destination}</p>
+          <div class="pair">
+            <div class="name">
+              <label for="server-name">Name</label>
+              <input id="server-name" bind:value={server.name} placeholder="Lab server" disabled={busy} />
+            </div>
+            <div class="addr">
+              <label for="server-address">Server address</label>
+              <input
+                id="server-address"
+                bind:value={server.address}
+                placeholder="http://localhost:1234/v1"
+                spellcheck="false"
+                disabled={busy}
+              />
+            </div>
+          </div>
+          {#if p && addressChangeNote(p.address, server.address, p.key_source !== null)}
+            <p class="warn">{addressChangeNote(p.address, server.address, p.key_source !== null)}</p>
+          {/if}
+          <label for="server-key">{p?.key_hint ? `API key (saved: ${p.key_hint})` : 'API key'}</label>
+          <div class="row">
+            <input
+              id="server-key"
+              type="password"
+              bind:value={server.key}
+              placeholder="Optional for most local servers"
+              spellcheck="false"
+              autocomplete="off"
+              disabled={busy}
+            />
+            <button class="ghost" onclick={connect} disabled={busy || !server.name.trim() || !server.address.trim()}>
+              {working === 'connect' ? 'Reaching it…' : 'Test connection'}
+            </button>
+          </div>
+          {@render note(card)}
+          {#if p}
+            <div class="result" class:bad={!p.ready}>
+              <p>{p.detail}</p>
+              {@render facts(p)}
+            </div>
+            {#if p.action}<p class="detail fix">{p.action}</p>{/if}
+            {@render modelRow(p, 'Choose from the list, or type a name', p.ready)}
+            {#each p.notes as line (line)}<p class="fine">{line}</p>{/each}
+            {@render sent(p)}
+            <hr />
+            {@render measured()}
+            {#if p.key_source}
+              <button class="ghost again" onclick={() => removeKey(p)} disabled={busy}>Remove key</button>
+            {/if}
+            <button class="ghost again" onclick={() => forget(p)} disabled={busy}>Remove server</button>
+          {:else}
+            <p class="fine">
+              An address outside this computer receives your key, your questions and the passages
+              found for them. Provenote sees only the address you give; a server that forwards
+              requests sends your text on too.
+            </p>
+          {/if}
+        </div>
+      {:else if current?.kind === 'ollama'}
+        <!-- ---------------------------------------------------------------- Ollama (local) -->
+        {@const p = current}
+        <div class="card form">
+          <h4 class="form-title">{p.name}</h4>
+          <p class="detail">
+            No key. Needs about 5 GB of disk for an 8B model, and is happiest with a GPU.
+          </p>
+          {@render facts(p)}
           <!-- The trade-off, stated where the choice is made (KI-36). Local models cite far less than a
                hosted one on the SAME prompt and retrieval, so a local user meets a wall of "uncited"
                claims with no explanation unless we give one here. No figures: the measurement ran on
@@ -251,153 +535,102 @@
           </p>
           <p class="detail muted">Looking for a server at <code>{setup.ollama_host}</code>.</p>
 
-          {#if ollama?.ready}
-            <p class="ok-line"><Icon name="check" size={13} /> {ollama.detail}</p>
-            <label for="ollama-model">Model</label>
-            <div class="row">
-              <input
-                id="ollama-model"
-                list="ollama-models"
-                bind:value={ollamaModel}
-                spellcheck="false"
-                disabled={busy}
-              />
-              <!-- A datalist, not a <select>: the installed list is a suggestion, and a model the
-                   probe missed must still be typeable (inform-don't-block). -->
-              <datalist id="ollama-models">
-                {#each ollama.models as m (m)}
-                  <option value={m}></option>
-                {/each}
-              </datalist>
-              {#if setup.active_provider !== 'ollama' || setup.active_model !== ollamaModel}
-                <button class="primary" onclick={() => use('ollama', ollamaModel)} disabled={busy || !ollamaModel}>
-                  Use for answers
-                </button>
-              {:else}
-                <span class="ok-line"><Icon name="check" size={13} /> In use for answers.</span>
-              {/if}
-            </div>
+          {#if p.ready}
+            <p class="ok-line"><Icon name="check" size={13} /> {p.detail}</p>
+            {@render modelRow(p, 'llama3.1:8b', true)}
             <button class="ghost again" onclick={() => refresh()} disabled={busy}>Re-check</button>
           {:else}
             <ol class="howto">
-              {#if ollama?.reachable === false}
+              {#if p.reachable === false}
                 <li>
                   Install Ollama, then start it (it usually starts on its own after installing):
-                  <span class="copyrow">
-                    <code bind:this={ollamaEl}>{OLLAMA_URL}</code>
-                    <button class="ghost sm" onclick={() => copy(OLLAMA_URL, 'ollama', ollamaEl)}>
-                      {copied === 'ollama' ? 'Copied' : 'Copy'}
-                    </button>
-                  </span>
+                  {@render copyRow(OLLAMA_URL, 'ollama', p.id)}
                 </li>
               {/if}
               <li>
                 Download a model:
-                <span class="copyrow">
-                  <code bind:this={pullEl}>ollama pull llama3.1:8b</code>
-                  <button class="ghost sm" onclick={() => copy('ollama pull llama3.1:8b', 'pull', pullEl)}>
-                    {copied === 'pull' ? 'Copied' : 'Copy'}
-                  </button>
-                </span>
+                {@render copyRow('ollama pull llama3.1:8b', 'pull', p.id)}
               </li>
               <li>Come back and press Re-check.</li>
             </ol>
             <button class="ghost" onclick={() => refresh()} disabled={busy || probing}>Re-check</button>
           {/if}
-          <div aria-live="polite">
-            {#if notes.ollama}
-              <p class={notes.ollama.kind === 'ok' ? 'ok-line' : notes.ollama.kind} role={notes.ollama.kind === 'err' ? 'alert' : undefined}>
-                {notes.ollama.text}
-              </p>
-            {/if}
-          </div>
+          {#each p.notes as line (line)}<p class="fine">{line}</p>{/each}
+          {@render note(p.id)}
+          {@render sent(p)}
         </div>
-      {:else}
-        <!-- ---------------------------------------------------------------- Claude API (BYOK) -->
+      {:else if current}
+        <!-- ------------------------------------------ Claude, or a preset (cloud or local) -->
+        {@const p = current}
+        {@const vendor = p.billing_kind === 'vendor' ? p.billing.replace(/^Billed by /, '') : ''}
         <div class="card form">
-          <h4 class="form-title">{anthropic?.name}</h4>
-          <p class="detail">Your own key, billed by Anthropic.</p>
-          <p class="detail">{anthropic?.destination} Your documents stay here.</p>
+          <h4 class="form-title">{p.name}</h4>
+          <p class="detail">
+            {#if p.takes_key}Your own key, billed by {vendor}.{:else}No key and no metering.{/if}
+          </p>
+          <p class="detail">{p.destination}{p.reach !== 'this_computer' ? ' Your documents stay here.' : ''}</p>
+          {#if p.kind === 'preset'}
+            <p class="detail muted">Address <code>{p.address}</code> (the preset's; not editable)</p>
+          {/if}
 
-          {#if anthropic?.configured}
+          {#if p.key_status === 'refused'}
+            <p class="err" role="alert">{p.detail}</p>
+          {:else if p.configured && p.takes_key}
             <p class="ok-line">
-              <Icon name="check" size={13} /> Key <code>{anthropic.key_hint}</code>
-              {anthropic.key_source === 'env' ? 'from your .env file' : 'saved in this app'}.
+              <Icon name="check" size={13} /> Key <code>{p.key_hint}</code>
+              {p.key_source === 'env' ? 'from your .env file' : 'saved in this app'}.
             </p>
-            {#if keyPrecedenceNote(anthropic, savedHere)}
-              <p class="warn">{keyPrecedenceNote(anthropic, savedHere)}</p>
+            {#if p.key_status === 'accepted'}<p class="fine">{p.detail}</p>{/if}
+            {#if keyPrecedenceNote(p, savedHere)}
+              <p class="warn">{keyPrecedenceNote(p, savedHere)}</p>
             {/if}
-            {#if anthropic.key_source === 'app'}
-              <button class="ghost again" onclick={removeKey} disabled={busy}>Remove key</button>
+            {#if p.key_source === 'app'}
+              <button class="ghost again" onclick={() => removeKey(p)} disabled={busy}>Remove key</button>
             {/if}
-          {:else}
+          {:else if p.takes_key && p.key_page}
             <ol class="howto">
               <li>
-                Create a key in the Anthropic Console:
-                <span class="copyrow">
-                  <code bind:this={consoleEl}>{CONSOLE_URL}</code>
-                  <button class="ghost sm" onclick={() => copy(CONSOLE_URL, 'console', consoleEl)}>
-                    {copied === 'console' ? 'Copied' : 'Copy'}
-                  </button>
-                </span>
+                Create a key with {vendor}:
+                {@render copyRow(p.key_page, `page-${p.id}`, p.id)}
               </li>
               <li>Paste it here.</li>
             </ol>
+          {:else if !p.ready}
+            <p class="detail fix">{p.detail}{#if p.action} {p.action}{/if}</p>
+          {:else}
+            <p class="ok-line"><Icon name="check" size={13} /> {p.detail}</p>
           {/if}
 
-          <label for="anthropic-key">{anthropic?.configured ? 'Replace the key' : 'API key'}</label>
-          <div class="row">
-            <input
-              id="anthropic-key"
-              type="password"
-              bind:value={keyInput}
-              placeholder="sk-ant-..."
-              spellcheck="false"
-              autocomplete="off"
-              disabled={busy}
-            />
-            <button class="ghost" onclick={saveKey} disabled={busy || keyInput.trim() === ''}>
-              {busy ? 'Checking with Anthropic…' : 'Save key'}
-            </button>
-          </div>
-
-          <!-- Free text on purpose: any model name, no list to keep current. A name Claude cannot
-               serve is refused with its reason on Use for answers. -->
-          <label for="claude-model">Model</label>
-          <div class="row">
-            <input
-              id="claude-model"
-              bind:value={claudeModel}
-              placeholder={DEFAULT_CLAUDE_MODEL}
-              spellcheck="false"
-              disabled={busy}
-            />
-            {#if claudeInUse}
-              <span class="ok-line"><Icon name="check" size={13} /> In use for answers.</span>
-            {:else}
-              <button
-                class="primary"
-                onclick={() => use('anthropic', claudeModel)}
-                disabled={busy || !anthropic?.configured || !claudeModel.trim()}
-              >
-                Use for answers
+          {#if p.takes_key}
+            <label for="key-{p.id}">{p.configured ? 'Replace the key' : 'API key'}</label>
+            <div class="row">
+              <input
+                id="key-{p.id}"
+                type="password"
+                bind:value={keyInput}
+                placeholder={p.kind === 'claude' ? 'sk-ant-...' : 'Paste the key'}
+                spellcheck="false"
+                autocomplete="off"
+                disabled={busy}
+              />
+              <button class="ghost" onclick={() => saveKey(p)} disabled={busy || keyInput.trim() === ''}>
+                {working === 'key' ? `Checking with ${vendor}…` : 'Save key'}
               </button>
-            {/if}
-          </div>
-          <div aria-live="polite">
-            {#if notes.claude}
-              <p class={notes.claude.kind === 'ok' ? 'ok-line' : notes.claude.kind} role={notes.claude.kind === 'err' ? 'alert' : undefined}>
-                {notes.claude.text}
-              </p>
-            {/if}
-          </div>
+            </div>
+          {/if}
+
+          {@render modelRow(p, p.kind === 'claude' ? DEFAULT_CLAUDE_MODEL : 'Choose from the list, or type a name', p.configured && p.key_status !== 'refused')}
+          {@render note(p.id)}
+          {#if p.kind === 'preset' && p.reach === 'this_computer'}
+            <button class="ghost again" onclick={() => refresh()} disabled={busy || probing}>Re-check</button>
+          {/if}
+          <p class="detail">{p.billing}{#if p.kind !== 'claude' && p.billing_kind === 'vendor'}; Provenote does not know its price{/if}.</p>
+          {#each p.notes as line (line)}<p class="fine">{line}</p>{/each}
+          {@render sent(p)}
 
           <hr />
-          <p class="fine">
-            This app's citation checks ran on Claude Haiku and two local models. Other models work;
-            their citations are not measured.
-          </p>
-          <p class="fine">The key is stored on this machine only, in your data folder.</p>
+          {@render measured()}
+          {#if p.takes_key}<p class="fine">The key is stored on this machine only, in your data folder, and sent only to this address.</p>{/if}
         </div>
       {/if}
     </div>
@@ -483,9 +716,11 @@
     font-size: 0.84rem;
     cursor: pointer;
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     justify-content: space-between;
-    gap: 0.5rem;
+    gap: 0.25rem 0.5rem;
+    text-align: left;
     padding: 0.4rem 0.55rem;
     margin-bottom: 0.3rem;
     border-radius: 8px;
@@ -506,6 +741,7 @@
   }
   .pill {
     flex: none;
+    margin-left: auto;
     font-size: 0.72rem;
     font-weight: 400;
     white-space: nowrap;
@@ -651,5 +887,92 @@
     margin: 0.25rem 0 0;
     font-size: 0.74rem;
     color: var(--fg-2);
+  }
+  .on {
+    font-weight: 400;
+    font-size: 0.8rem;
+    color: var(--fg-2);
+  }
+  .prow.add {
+    justify-content: flex-start;
+    color: var(--fg-2);
+    border-style: dashed;
+  }
+  .model-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.5rem;
+  }
+  .link {
+    font: inherit;
+    font-size: 0.76rem;
+    color: var(--accent);
+    background: none;
+    border: none;
+    padding: 0;
+    cursor: pointer;
+  }
+  .link:disabled {
+    color: var(--fg-2);
+    cursor: default;
+  }
+  .pair {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0 0.5rem;
+  }
+  .pair .name {
+    flex: 1 1 8rem;
+    min-width: 0;
+  }
+  .pair .addr {
+    flex: 3 1 12rem;
+    min-width: 0;
+  }
+  .result {
+    margin: 0.6rem 0 0;
+    padding: 0.5rem 0.6rem;
+    border-radius: 8px;
+    border: 1px solid var(--ok-fg);
+    background: color-mix(in srgb, var(--ok-fg) 8%, var(--bg));
+    font-size: 0.78rem;
+  }
+  .result.bad {
+    border-color: var(--warn-border);
+    background: var(--warn-bg);
+  }
+  .result p {
+    margin: 0 0 0.3rem;
+    overflow-wrap: anywhere;
+  }
+  .result p:last-child {
+    margin-bottom: 0;
+  }
+  .tick {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    margin: 0.3rem 0 0;
+    color: var(--fg);
+  }
+  .tick input {
+    width: auto;
+    flex: none;
+  }
+  .sends {
+    margin: 0.5rem 0 0;
+    font-size: 0.76rem;
+    color: var(--fg-2);
+  }
+  .sends summary {
+    cursor: pointer;
+  }
+  .sends ul {
+    margin: 0.3rem 0 0;
+    padding-left: 1.1rem;
+  }
+  .detail.bill {
+    color: var(--fg);
   }
 </style>

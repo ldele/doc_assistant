@@ -156,6 +156,7 @@ class UsageViewPayload(BaseModel):
     session_total: int
     cost_usd: float | None
     is_local: bool
+    billing: str | None = None
 
     @classmethod
     def from_view(cls, u: UsageView) -> UsageViewPayload:
@@ -165,6 +166,7 @@ class UsageViewPayload(BaseModel):
             session_total=u.session_total,
             cost_usd=u.cost_usd,
             is_local=u.is_local,
+            billing=u.billing,
         )
 
 

@@ -37,7 +37,33 @@ export function modelForProvider(provider: string, current: string, installed: s
     const fits = model !== '' && !isClaude(model) && (installed.length === 0 || installed.includes(model))
     return fits ? model : (suggestOllamaModel(installed) ?? 'llama3.1:8b')
   }
-  return model
+  // A compatible server names its models its own way (a router serves `anthropic/claude-…`), so
+  // a typed name is kept; an empty box takes the first one the server listed.
+  return model || installed[0] || ''
+}
+
+/** What the form says under the model box when the typed model is not in the server's list
+ *  (ADR-060, choice 8): named, and still saved. `null` when it is listed or there is no list. */
+export function unlistedModel(model: string, listed: string[]): string | null {
+  const name = model.trim()
+  if (!name || listed.length === 0 || listed.includes(name)) return null
+  return `“${name}” is not in the list this server gave. It will be saved as typed.`
+}
+
+/** The warning before a server's address changes while it holds a key (choice 3): the key is
+ *  sent only to the address it was saved with. */
+export function addressChangeNote(saved: string, typed: string, hasKey: boolean): string | null {
+  const same = (a: string): string => a.trim().replace(/\/+$/, '').toLowerCase()
+  if (!hasKey || !saved || !typed.trim() || same(saved) === same(typed)) return null
+  return 'Changing the address removes the saved key. Enter it again for the new address.'
+}
+
+/** `14:02`, in this computer's time, from an ISO timestamp; `''` when there is none. */
+export function clockTime(iso: string | null): string {
+  if (!iso) return ''
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return ''
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
 }
 
 /** Whether the Ollama verdict is still to come: a first draw from local state (`probe=false`)
@@ -57,31 +83,40 @@ export function stepTone(step: SetupStep): Tone {
 }
 
 /** What the *Answering with* card shows. `model` is `null` when no model can answer yet, and
- *  `line` says where the text goes once one can, or what stands in the way until then. */
+ *  `line` says where the text goes once one can, or what stands in the way until then. `billing`
+ *  is who bills, a fact of its own (ADR-060's amendment), and empty when nothing can answer. */
 export interface AnsweringWith {
   model: string | null
+  provider: string
   status: string
   tone: Tone
   line: string
+  billing: string
   action: string | null
 }
 
 export function answeringWith(state: SetupState, probing: boolean): AnsweringWith {
   const step = state.steps.find((s) => s.id === 'provider')
   const active = state.providers.find((p) => p.id === state.active_provider)
-  const line = active?.destination ?? ''
+  // Worked out per model: an Ollama cloud model sends the text to ollama.com from localhost.
+  const line = state.active_destination || active?.destination || ''
+  const billing = state.active_billing || active?.billing || ''
+  const provider = state.active_name || active?.name || state.active_provider
+  const answering = { model: state.active_model, provider, line, billing, action: null }
   // The first draw comes before the probe, so its "done" means nobody has asked Ollama yet.
   if (state.active_provider === 'ollama' && ollamaPending(state, probing)) {
-    return { model: state.active_model, status: 'Checking…', tone: 'todo', line, action: null }
+    return { ...answering, status: 'Checking…', tone: 'todo' }
   }
   if (!step || step.done) {
-    return { model: state.active_model, status: 'Ready', tone: 'ok', line, action: null }
+    return { ...answering, status: 'Ready', tone: 'ok' }
   }
   return {
     model: step.offline ? state.active_model : null,
+    provider,
     status: step.status,
     tone: stepTone(step),
     line: step.detail,
+    billing: step.offline ? billing : '',
     action: step.action,
   }
 }
@@ -102,9 +137,12 @@ export function providerGroups(
   )
 }
 
-/** What a refused key reads as, next to the key field: what happened, then Anthropic's reason. */
-export function keyRefusal(reason: string): string {
-  return `Anthropic refused this key, so nothing was saved. ${reason}`.trim()
+/** What a refused key reads as, next to the key field: what happened, then the server's reason
+ *  when it adds one. */
+export function keyRefusal(name: string, reason: string): string {
+  const said = reason.trim()
+  const lead = `${name} refused this key, so nothing was saved.`
+  return said && !said.startsWith(`${name} refused this key`) ? `${lead} ${said}` : lead
 }
 
 /** Steps the user still has to do, in the backend's order. */
@@ -136,9 +174,12 @@ export function keyPrecedenceNote(p: ProviderReadiness, savedInApp: boolean): st
  * Unready providers stay selectable (inform-don't-block: Ollama may just not be started yet), so
  * this only drives the label, never a `disabled` attribute. */
 export function providerStatusLabel(p: ProviderReadiness, probing = false): string {
-  if (probing && p.id === 'ollama' && p.reachable === null) return 'Checking…'
+  // A probe asks every server on this computer at once, so each of them is pending until it ends.
+  const probed = p.id === 'ollama' || (p.kind !== 'claude' && p.reach === 'this_computer')
+  if (probing && probed && p.reachable === null) return 'Checking…'
+  if (p.key_status === 'refused') return 'Key refused'
   if (p.ready) return 'Ready'
-  if (p.reachable === false) return 'Not running'
+  if (p.reachable === false) return p.reach === 'this_computer' ? 'Not running' : 'Not reached'
   if (!p.configured) return 'Needs a key'
   return 'Not ready'
 }

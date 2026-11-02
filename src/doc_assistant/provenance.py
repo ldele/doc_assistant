@@ -157,8 +157,12 @@ def record_answer(
     error: str | None = None,
     retrieval_scope: dict[str, Any] | None = None,
     epistemics_markers_enabled: bool | None = None,
+    answer_route: dict[str, str] | None = None,
 ) -> str:
-    """Persist one answer record. Returns the new ``id``."""
+    """Persist one answer record. Returns the new ``id``.
+
+    ``answer_route`` (ADR-060) is the answering provider, the host the text went to, whether that
+    is this computer, and who bills (``providers.Facts.as_record``)."""
     # Exclude the transient fields — the wide reviewer-only `full_text` and the 7d join key
     # `chunk_key` (ADR-2). The persisted card keeps the compact display excerpt only.
     chunks_json = json.dumps(
@@ -187,6 +191,7 @@ def record_answer(
                 json.dumps(retrieval_scope) if retrieval_scope is not None else None
             ),
             epistemics_markers_enabled=epistemics_markers_enabled,
+            answer_route_json=json.dumps(answer_route) if answer_route is not None else None,
         )
         session.add(record)
         session.flush()

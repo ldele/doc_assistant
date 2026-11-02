@@ -913,6 +913,11 @@ class AnswerRecord(Base):
     # into `prompt_version` for the same reason as the scope: it never reaches the prompt.
     epistemics_markers_enabled: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
 
+    # ADR-060: who answered and where the text went, as JSON {provider, host, reach, billing,
+    # billed_by}. NULL on every row from before it, which reads as "not recorded", never as
+    # "this computer". Not folded into `prompt_version`: it names the instrument, not the prompt.
+    answer_route_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+
     # Cost + latency telemetry.
     token_input: Mapped[int | None] = mapped_column(Integer, nullable=True)
     token_output: Mapped[int | None] = mapped_column(Integer, nullable=True)

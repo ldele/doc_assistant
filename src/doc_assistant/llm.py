@@ -332,22 +332,33 @@ class OllamaClient:
 
 
 def make_client(provider: str, model: str) -> LLMClient:
-    """Construct an ``LLMClient`` for ``provider`` (``anthropic`` | ``ollama``).
+    """Construct an ``LLMClient`` for ``provider``: ``anthropic``, ``ollama``, or an
+    OpenAI-compatible preset or server of your own (ADR-060).
 
     An Ollama client asks for ``config.OLLAMA_CONTEXT_TOKENS``: the server's own default window
     cuts a long reviewer or judge prompt from the front without an error (KI-65's cause, on
     every one-shot caller). A caller that budgets its own prompt narrows it with
-    ``with_context`` (the wiki's ``fit_window``).
+    ``with_context`` (the wiki's ``fit_window``). A compatible client is built with the key bound
+    to its address, read at construction.
 
     Raises ``ValueError`` on an unknown provider — mirrors
     ``embeddings.get_model_config``.
     """
-    key = provider.lower()
+    from doc_assistant import providers
+
+    key = provider.strip().lower()
     if key == "anthropic":
         return AnthropicClient(model)
     if key == "ollama":
         return OllamaClient(model, num_ctx=config.OLLAMA_CONTEXT_TOKENS)
-    raise ValueError(f"Unknown LLM provider '{provider}'. Valid options: anthropic, ollama")
+    if providers.is_compatible(key):
+        from doc_assistant.compatible import CompatibleClient
+
+        return CompatibleClient(providers.endpoint(key), model)
+    raise ValueError(
+        f"Unknown LLM provider '{provider}'. "
+        f"Valid options: {', '.join(providers.answer_provider_ids())}"
+    )
 
 
 def resolve_reviewer(
@@ -388,7 +399,9 @@ def provider_available(provider: str) -> bool:
     """Whether ``provider`` is *configured* — i.e. its credential is present.
 
     Anthropic needs a key — ``.env`` or the in-app store (:func:`credentials.resolve_key`,
-    ADR-034); Ollama (local) needs none, so it is always "configured". Generalizes the check
+    ADR-034); Ollama (local) needs none, so it is always "configured". A compatible preset that
+    takes a key needs one bound to its address (ADR-060); a server of your own does not. A
+    provider this build does not know is never available. Generalizes the check
     ``reviewer_available`` already did (ADR-011 U1c) — reused by the settings-view provider list
     (fork E) and ``app_settings.set_llm_selection`` (never persist a choice that can't run).
 
@@ -396,9 +409,17 @@ def provider_available(provider: str) -> bool:
     yet must not make the selection invalid (inform-don't-block). Reachability is a separate,
     network-touching question — :func:`ollama_probe`, aggregated by :mod:`doc_assistant.readiness`.
     """
-    if provider.lower() == "anthropic":
+    from doc_assistant import providers
+
+    key = provider.strip().lower()
+    if key == "anthropic":
         return bool(credentials.resolve_key("anthropic"))
-    return True
+    if key == "ollama":
+        return True
+    if providers.is_compatible(key):
+        # A preset that takes a key needs one bound to its address; a server's key is optional.
+        return not providers.takes_key(key) or providers.endpoint(key).key is not None
+    return False
 
 
 def _same_ollama_model(a: str, b: str) -> bool:
@@ -465,6 +486,11 @@ def ollama_probe(
     ``("llama3.1:8b", "qwen3.5:9b")``) and ``detail`` is a user-facing reason when
     ``reachable`` is False. Never raises — an unreachable local server is the *normal* state
     before the user installs Ollama, not an error condition.
+
+    It also keeps each model's ``remote_host`` (ADR-060's amendment): a signed-in Ollama serves
+    cloud models, which its ``/api/tags`` marks with the *"URL of the upstream Ollama host, if the
+    model is remote"*, and the text for such a model goes there. Read back with
+    :func:`ollama_remote_host`; in memory only, replaced by every probe of the same host.
     """
     import httpx
 
@@ -478,16 +504,33 @@ def ollama_probe(
         return False, (), f"No Ollama server answering at {base}"
     raw = payload.get("models") if isinstance(payload, dict) else None
     models: list[str] = []
+    remote: dict[str, str] = {}
     if isinstance(raw, list):
         for entry in raw:
             name = entry.get("name") or entry.get("model") if isinstance(entry, dict) else None
             if isinstance(name, str) and name:
                 models.append(name)
+                upstream = entry.get("remote_host")
+                if isinstance(upstream, str) and upstream.strip():
+                    remote[name] = upstream.strip()
+    _OLLAMA_REMOTE[base] = remote
     if not models:
         # Reachable but empty is its own state, and the fix is different (pull a model, not
         # start the server) — so it must not be reported as "unreachable".
         return True, (), f"Ollama is running at {base} but has no models installed"
     return True, tuple(sorted(models)), None
+
+
+_OLLAMA_REMOTE: dict[str, dict[str, str]] = {}
+"""host -> {model: remote_host}, from the last :func:`ollama_probe` of that host."""
+
+
+def ollama_remote_host(model: str, host: str | None = None) -> str | None:
+    """The upstream host the last probe reported for ``model``, or ``None`` (not remote, or not
+    probed yet). No network."""
+    base = (host or config.OLLAMA_HOST).rstrip("/")
+    remote = _OLLAMA_REMOTE.get(base, {})
+    return next((r for name, r in remote.items() if _same_ollama_model(model, name)), None)
 
 
 def ollama_context_length(
@@ -557,13 +600,44 @@ def verify_anthropic_key(key: str, *, timeout: float = PROBE_TIMEOUT_SECONDS) ->
     return "ok", "Key verified."
 
 
+def list_claude_models(key: str, *, timeout: float = 10.0) -> Any:
+    """The Claude models this key can use, from the Models API, as a ``providers.ModelList``.
+
+    ``GET /v1/models`` through the SDK: free, no tokens (KI-4's discipline, as
+    :func:`verify_anthropic_key`). A list proves the key and the model, never the balance: on
+    2026-11-01 this machine's key listed 14 models and a message on it was refused for lack of
+    credit. Never raises.
+    """
+    from doc_assistant.providers import ModelList, now_iso
+
+    try:
+        from anthropic import Anthropic
+    except Exception as e:  # pragma: no cover - the SDK is a declared dependency
+        return ModelList("unreachable", detail=f"The Anthropic SDK is unavailable ({e}).")
+    kwargs: dict[str, Any] = {"api_key": key.strip(), "timeout": timeout, "max_retries": 0}
+    http_client = os_trust_http_client()
+    if http_client is not None:  # OS-trust TLS for corporate MITM proxies (KI-10)
+        kwargs["http_client"] = http_client
+    try:
+        models = tuple(sorted(m.id for m in Anthropic(**kwargs).models.list(limit=100)))
+    except Exception as e:
+        status_code = getattr(e, "status_code", None)
+        if status_code in (401, 403):
+            return ModelList("refused", detail="Anthropic refused this key.", fetched_at=now_iso())
+        log.info("claude_models_unlisted", error=type(e).__name__)
+        return ModelList(
+            "unreachable", detail="Could not reach the Anthropic API.", fetched_at=now_iso()
+        )
+    return ModelList("ok", models, fetched_at=now_iso())
+
+
 # ============================================================
 # Enrichment-CLI cost guard (the 2026-06-15 credit-burn footgun)
 # ============================================================
-# Provider *behaviour* lives here next to make_client/reviewer_available; the
-# *policy* (which providers bill money) is config.PAID_PROVIDERS. Every
-# enrichment CLI that does a ``--apply`` run routes through this one helper so a
-# run the user believes is "local" can never silently spend on the API.
+# Provider *behaviour* lives here next to make_client/reviewer_available; the *policy* is one test,
+# ADR-060's amendment: a run is guarded when its provider bills, or when who bills is not known
+# (`providers.Billing.guard_trips`). Every enrichment CLI that does an ``--apply`` run routes
+# through this one helper so a run the user believes is "local" can never silently spend.
 
 
 class ProviderCostError(RuntimeError):
@@ -590,18 +664,21 @@ def assert_provider_intent(
 ) -> None:
     """Guard a CLI enrichment run from *silently* spending API credits.
 
-    No-op when ``apply`` is False (dry runs never bill) or when ``provider`` is
-    local/free (not in :data:`config.PAID_PROVIDERS` — e.g. ``ollama``). For a
-    **paid** provider it makes the spend impossible-to-miss:
+    No-op when ``apply`` is False (dry runs never bill) or when nobody bills ``provider``'s
+    ``model``: an Ollama on this computer serving the model itself, or a provider the user ticked
+    as not billing. Anything billed **or not known** trips it (ADR-060's amendment):
 
     * raises :class:`ProviderCostError` if the provider's credential is missing
       (currently: ``anthropic`` without ``ANTHROPIC_API_KEY``), so ``--apply``
       fails loudly up front instead of erroring mid-batch in the SDK;
-    * otherwise prints a bordered cost banner to **stderr** — naming the
-      operation, provider, model and scope — then sleeps ``abort_seconds`` so a
-      ``Ctrl-C`` cleanly aborts *before* any call. Set ``DOC_ASSUME_YES=1`` (or
-      pass ``abort_seconds=0``) to skip only the pause in automation; the banner
-      still prints.
+    * otherwise prints a bordered banner to **stderr** — naming the operation, provider, model,
+      the host the text goes to and who bills — then sleeps ``abort_seconds`` so a ``Ctrl-C``
+      cleanly aborts *before* any call. Set ``DOC_ASSUME_YES=1`` (or pass ``abort_seconds=0``) to
+      skip only the pause in automation; the banner still prints.
+
+    With ``model`` on Ollama, the server is asked once which models are remote: a signed-in Ollama
+    on this computer serves cloud models that ollama.com bills. An Ollama that does not answer
+    cannot forward anything, so it reads by its address.
 
     Generalises the inline guard first shipped in ``build_concept_graph``
     (Feature 7) so every enrichment CLI shares one code path. ASCII-only output
@@ -609,9 +686,14 @@ def assert_provider_intent(
     """
     if not apply:
         return
+    from doc_assistant import providers
+
     key = provider.strip().lower()
-    if key not in config.PAID_PROVIDERS:
-        return  # local / free — nothing to spend
+    if key == "ollama" and model:
+        ollama_probe()  # records each model's remote_host
+    facts = providers.describe(key, model)
+    if not facts.billing.guard_trips:
+        return  # nobody bills this run
 
     if key == "anthropic" and not credentials.resolve_key("anthropic"):
         raise ProviderCostError(
@@ -620,16 +702,23 @@ def assert_provider_intent(
             "(or run a local provider, e.g. --provider ollama)."
         )
 
+    billed = facts.billing.kind == "vendor"
     border = "=" * 72
     lines = [
         "",
         border,
-        f"  WARNING: PAID API RUN -- {operation}",
+        f"  WARNING: {'PAID API RUN' if billed else 'BILLING NOT KNOWN'} -- {operation}",
         f"  Provider : {key}" + (f"   Model: {model}" if model else ""),
+        f"  Sends to : {facts.route.host or 'an address that could not be read'}",
+        f"  Billed by: {facts.billing.vendor if billed else 'not known'}",
     ]
     if scope:
         lines.append(f"  Scope    : {scope}")
-    lines.append("  This spends real Anthropic credits. A local provider (ollama) is free.")
+    if billed:
+        lines.append(f"  This spends real {facts.billing.vendor} credits.")
+    else:
+        lines.append("  Provenote cannot see whether this server bills. It counts as billed.")
+    lines.append("  An Ollama model on this computer is free.")
     if abort_seconds > 0 and not _assume_yes():
         lines.append(f"  Ctrl-C now to abort -- continuing in {abort_seconds:.0f}s...")
     lines.append(border)

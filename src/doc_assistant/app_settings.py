@@ -102,10 +102,12 @@ def set_llm_selection(provider: str, model: str) -> None:
     credential is absent — inform-don't-corrupt: never persist a selection that can't run.
     """
     from doc_assistant.llm import model_mismatch, provider_available
+    from doc_assistant.providers import answer_provider_ids
 
     key = provider.strip().lower()
-    if key not in ("anthropic", "ollama"):
-        raise ValueError(f"unknown provider '{provider}' — valid options: anthropic, ollama")
+    known = answer_provider_ids()
+    if key not in known:
+        raise ValueError(f"unknown provider '{provider}' — valid options: {', '.join(known)}")
     if not provider_available(key):
         # An installed app has no .env to edit: the key goes in through Settings (ADR-034).
         raise ValueError(f"{key} needs an API key first: add one in Settings → Provider & model.")
@@ -136,6 +138,57 @@ def effective_llm() -> tuple[str, str]:
     if provider is not None and model is not None:
         return provider, model
     return config.LLM_PROVIDER, config.LLM_MODEL
+
+
+# ============================================================
+# Servers of your own and the "does not bill me" tick (ADR-060)
+# ============================================================
+# A server of your own is a name and an address, never a secret: its key lives in
+# `credentials.json`, bound to the address. The tick is the user's word that a server bills nobody,
+# kept per provider id (a server, or Ollama on another machine). `doc_assistant.providers` reads
+# both; this module only stores them.
+
+
+def get_servers() -> list[dict[str, str]]:
+    """The servers of your own, as stored: ``[{"id", "name", "address"}]``. Malformed rows drop."""
+    stored = load_user_settings().get("servers")
+    if not isinstance(stored, list):
+        return []
+    rows: list[dict[str, str]] = []
+    for row in stored:
+        fields = ("id", "name", "address")
+        if isinstance(row, dict) and all(isinstance(row.get(k), str) for k in fields):
+            rows.append({"id": row["id"], "name": row["name"], "address": row["address"]})
+    return rows
+
+
+def set_servers(servers: list[dict[str, str]]) -> None:
+    """Persist the servers of your own (the whole list)."""
+    settings = load_user_settings()
+    settings["servers"] = servers
+    save_user_settings(settings)
+    log.info("servers_set", count=len(servers))
+
+
+def get_not_billed() -> frozenset[str]:
+    """The provider ids the user ticked *This server does not bill me* for."""
+    stored = load_user_settings().get("not_billed")
+    if not isinstance(stored, list):
+        return frozenset()
+    return frozenset(s for s in stored if isinstance(s, str))
+
+
+def set_not_billed(provider: str, not_billed: bool) -> None:
+    """Record or clear the user's word that ``provider`` bills nobody."""
+    ticks = set(get_not_billed())
+    if not_billed:
+        ticks.add(provider)
+    else:
+        ticks.discard(provider)
+    settings = load_user_settings()
+    settings["not_billed"] = sorted(ticks)
+    save_user_settings(settings)
+    log.info("not_billed_set", provider=provider, not_billed=not_billed)
 
 
 # ============================================================

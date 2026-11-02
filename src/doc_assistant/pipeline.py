@@ -107,8 +107,34 @@ def build_chat_model(provider: str, model: str) -> Any:
     from an import-time constant: ADR-034 lets a user save a key while the app is running, and a
     module-level ``from config import ANTHROPIC_API_KEY`` binding could never see it — the same
     separate-binding trap the module notes in ``src/doc_assistant/CLAUDE.md``. The controller
-    rebuilds its chat model after a key change, so the next turn picks the new key up."""
-    if provider.lower() == "anthropic":
+    rebuilds its chat model after a key change, so the next turn picks the new key up.
+
+    Every other provider is an OpenAI-compatible preset or server of your own (ADR-060), built
+    with the key bound to its address. A provider this build does not know raises ``ValueError``:
+    it used to fall through to Ollama, so a third provider wired halfway answered on Ollama
+    without a word."""
+    from doc_assistant import providers
+
+    key = provider.strip().lower()
+    if providers.is_compatible(key):
+        from pydantic import SecretStr
+
+        from doc_assistant.compatible import CompatibleChatModel
+
+        point = providers.endpoint(key)
+        return CompatibleChatModel(
+            provider_id=point.id,
+            name_shown=point.name,
+            address=point.address,
+            model=model,
+            api_key=SecretStr(point.key) if point.key else None,
+        )
+    if key not in providers.NATIVE_PROVIDERS:
+        raise ValueError(
+            f"Unknown LLM provider '{provider}'. "
+            f"Valid options: {', '.join(providers.answer_provider_ids())}"
+        )
+    if key == "anthropic":
         from langchain_anthropic import ChatAnthropic
         from pydantic import SecretStr
 

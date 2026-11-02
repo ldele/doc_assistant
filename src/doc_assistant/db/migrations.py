@@ -96,6 +96,10 @@ _ADDITIVE_COLUMNS: list[tuple[str, str, str, str | None]] = [
     # Unindexed: read with the links of one document, never filtered on.
     ("document_keywords", "score", "FLOAT", None),
     ("document_keywords", "rank", "INTEGER", None),
+    # ADR-060 — the answering provider, the host the text went to and who bills, on the
+    # (pre-existing) answer_records table. NULL on every existing row and not backfilled: those
+    # turns never recorded it, and NULL reads as "not recorded". Unindexed: read per record.
+    ("answer_records", "answer_route_json", "TEXT", None),
 ]
 
 

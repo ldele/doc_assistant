@@ -30,7 +30,7 @@ export {
   setMarkersEnabled,
   reindexKeywords,
 } from './settings'
-export { getSetup, saveAnthropicKey, clearAnthropicKey } from './setup'
+export { getSetup, saveProviderKey, clearProviderKey, fetchProviderModels, testServer, removeServer, setNotBilled } from './setup'
 export { startIngest, getSources, patchSource, getIngestStatus } from './sources'
 export { getConceptGraph, getGapList, triageGap, getConceptPresence, rebuildConceptGraph, getGraphRebuildStatus } from './concepts'
 export { getDefinitions, getUsage, getSignals, addDefinition, extractDefinitions, chooseDefinition, dismissDefinition, restoreDefinition, undoDefinition, searchVocabulary } from './definitions'

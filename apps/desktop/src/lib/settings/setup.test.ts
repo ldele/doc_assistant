@@ -6,7 +6,9 @@ import assert from 'node:assert/strict'
 
 import {
   DEFAULT_CLAUDE_MODEL,
+  addressChangeNote,
   answeringWith,
+  clockTime,
   keyPrecedenceNote,
   keyRefusal,
   modelForProvider,
@@ -17,6 +19,7 @@ import {
   setupSummary,
   stepTone,
   suggestOllamaModel,
+  unlistedModel,
 } from './setup.ts'
 import type { ProviderReadiness, SetupState, SetupStep } from '../core/types/setup.ts'
 
@@ -34,6 +37,20 @@ const provider = (over: Partial<ProviderReadiness> = {}): ProviderReadiness => (
   name: 'Ollama',
   group: 'local',
   destination: 'Your questions and the passages found for them stay on this computer.',
+  kind: 'ollama',
+  address: 'http://localhost:11434',
+  reach: 'this_computer',
+  billing: 'Not billed',
+  billing_kind: 'nobody',
+  can_tick: false,
+  takes_key: false,
+  key_page: null,
+  key_status: null,
+  models_fetched_at: null,
+  windows: {},
+  remote: {},
+  notes: [],
+  sends: [],
   ...over,
 })
 
@@ -58,6 +75,9 @@ const state = (over: Partial<SetupState> = {}): SetupState => ({
   ollama_host: 'http://localhost:11434',
   steps: [step(), step({ id: 'documents', title: 'Documents', status: 'Indexed' })],
   ready: true,
+  active_name: 'Ollama',
+  active_destination: 'Your questions and the passages found for them stay on this computer.',
+  active_billing: 'Not billed',
   ...over,
 })
 
@@ -111,6 +131,22 @@ test('the card names the model and where the text goes when it can answer', () =
   assert.equal(card.tone, 'ok')
   assert.match(card.line, /stay on this computer/)
   assert.equal(card.action, null)
+  assert.equal(card.provider, 'Ollama')
+  assert.equal(card.billing, 'Not billed')
+})
+
+test('the card says where an Ollama cloud model sends the text, and who bills it', () => {
+  // The amendment's fourth step: Ollama at localhost, a model with a remote_host.
+  const card = answeringWith(
+    state({
+      active_model: 'gemma4:cloud',
+      active_destination: 'Your questions and the passages found for them go to ollama.com.',
+      active_billing: 'Billed by Ollama',
+    }),
+    false,
+  )
+  assert.match(card.line, /go to ollama\.com/)
+  assert.equal(card.billing, 'Billed by Ollama')
 })
 
 test('the card says what stands in the way, in the backend\'s words, when it cannot', () => {
@@ -208,5 +244,49 @@ test('the first draw says Ollama is being checked, not that it is done', () => {
 })
 
 test('a refused key says nothing was saved, then why', () => {
-  assert.equal(keyRefusal('invalid x-api-key'), 'Anthropic refused this key, so nothing was saved. invalid x-api-key')
+  assert.equal(
+    keyRefusal('Claude', 'invalid x-api-key'),
+    'Claude refused this key, so nothing was saved. invalid x-api-key',
+  )
+  // A reason that already says it is not said twice.
+  assert.equal(keyRefusal('Groq', 'Groq refused this key.'), 'Groq refused this key, so nothing was saved.')
+})
+
+test('a refused key reads so on its row, apart from one that is missing', () => {
+  const groq = provider({ id: 'groq', kind: 'preset', reach: 'elsewhere', reachable: null })
+  assert.equal(providerStatusLabel({ ...groq, ready: false, configured: false }), 'Needs a key')
+  assert.equal(providerStatusLabel({ ...groq, ready: false, key_status: 'refused' }), 'Key refused')
+  // A cloud server is never probed, so a probe does not make it read as being checked.
+  assert.equal(providerStatusLabel({ ...groq, ready: true }, true), 'Ready')
+  // A server off this computer that did not answer is not "not running": nobody can see that.
+  const lab = provider({ id: 'server-lab', kind: 'server', reach: 'local_network' })
+  assert.equal(providerStatusLabel({ ...lab, ready: false, reachable: false }), 'Not reached')
+  const lmstudio = provider({ id: 'lmstudio', kind: 'preset', reachable: null })
+  assert.equal(providerStatusLabel(lmstudio, true), 'Checking…')
+})
+
+test('a compatible server keeps a typed model, or takes the first it listed', () => {
+  assert.equal(modelForProvider('groq', 'llama-3.3-70b', ['a']), 'llama-3.3-70b')
+  assert.equal(modelForProvider('openrouter', 'anthropic/claude-haiku', []), 'anthropic/claude-haiku')
+  assert.equal(modelForProvider('server-lab', '', ['qwen3', 'llama']), 'qwen3')
+  assert.equal(modelForProvider('server-lab', '', []), '')
+})
+
+test('a model the server did not list is named, and still saved', () => {
+  assert.match(unlistedModel('gpt-x', ['gpt-4o']) ?? '', /“gpt-x” is not in the list/)
+  assert.equal(unlistedModel('gpt-4o', ['gpt-4o']), null)
+  assert.equal(unlistedModel('gpt-x', []), null) // no list: nothing to compare with
+})
+
+test('changing a server address warns that the key goes with it', () => {
+  const at = 'http://localhost:1234/v1'
+  assert.match(addressChangeNote(at, 'http://192.168.1.40:1234/v1', true) ?? '', /removes the saved key/)
+  assert.equal(addressChangeNote(at, 'http://localhost:1234/v1/', true), null) // the same address
+  assert.equal(addressChangeNote(at, 'http://192.168.1.40:1234/v1', false), null) // no key to lose
+})
+
+test('a fetch time reads as the clock, and nothing when there is none', () => {
+  assert.match(clockTime('2026-11-02T13:02:00+00:00'), /^\d\d:\d\d$/)
+  assert.equal(clockTime(null), '')
+  assert.equal(clockTime('not a date'), '')
 })

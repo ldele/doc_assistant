@@ -10,7 +10,8 @@ from pathlib import Path
 
 import pytest
 
-from doc_assistant import app_settings, config, credentials, llm, readiness
+from doc_assistant import app_settings, compatible, config, credentials, llm, readiness
+from doc_assistant.providers import ModelList
 
 
 @pytest.fixture
@@ -19,6 +20,10 @@ def clean_install(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(credentials, "CREDENTIALS_PATH", tmp_path / "credentials.json")
     monkeypatch.setattr(app_settings, "SETTINGS_PATH", tmp_path / "settings.json")
     monkeypatch.setattr(config, "ANTHROPIC_API_KEY", None)
+    # LM Studio is a preset on this computer, so a probe asks it too: nothing answers here.
+    monkeypatch.setattr(
+        compatible, "list_models", lambda *a, **k: ModelList("unreachable", detail="nothing")
+    )
 
 
 def _probe(reachable: bool, models: tuple[str, ...], detail: str | None = None):
@@ -84,7 +89,7 @@ def test_probe_false_touches_no_network(
 
 def test_unknown_provider_raises(clean_install: None) -> None:
     with pytest.raises(ValueError, match="unknown provider"):
-        readiness.provider_readiness("openai")
+        readiness.provider_readiness("nonesuch")
 
 
 def test_zero_documents_reports_honestly(
@@ -130,7 +135,7 @@ def test_an_unknown_active_provider_degrades_instead_of_raising(
 ) -> None:
     # A hand-edited settings.json (or a build that dropped a provider) must not 500 the setup view
     # the user needs in order to fix it.
-    monkeypatch.setattr(app_settings, "effective_llm", lambda: ("openai", "gpt-4"))
+    monkeypatch.setattr(app_settings, "effective_llm", lambda: ("nonesuch", "gpt-4"))
     monkeypatch.setattr(llm, "ollama_probe", _probe(True, ("llama3.1:8b",)))
     state = readiness.setup_state(chunk_count=10, document_count=1)
     assert state.active_ready is False
@@ -289,7 +294,7 @@ def test_an_ollama_nobody_has_asked_is_not_called_online(
         ("http://192.168.1.20:11434", "server", "go to 192.168.1.20"),
         ("https://lab.example.org", "server", "go to lab.example.org"),
         ("lab-box:11434", "server", "go to lab-box"),
-        ("http://[::1", "server", "go to http://[::1"),
+        ("http://[::1", "server", "the address could not be read"),
     ],
 )
 def test_where_the_text_goes_comes_from_the_address(
@@ -311,3 +316,113 @@ def test_claude_names_where_its_text_goes(
     # The SDK honours this variable, so a sentence that ignored it would be false.
     monkeypatch.setenv("ANTHROPIC_BASE_URL", "https://gateway.example.org/anthropic")
     assert "gateway.example.org" in readiness.provider_readiness("anthropic").destination
+
+
+# ============================================================
+# ADR-060 — the other providers, and the two facts on every row
+# ============================================================
+
+
+def _row(state: readiness.SetupState, pid: str) -> readiness.ProviderReadiness:
+    return next(p for p in state.providers if p.id == pid)
+
+
+def test_every_preset_has_a_row_in_its_group(
+    clean_install: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(llm, "ollama_probe", _probe(False, ()))
+    state = readiness.setup_state(chunk_count=0, document_count=0)
+    groups = {p.id: p.group for p in state.providers}
+    assert groups["lmstudio"] == "local" and groups["ollama"] == "local"
+    assert {groups[p] for p in ("openai", "gemini", "mistral", "groq", "openrouter")} == {"cloud"}
+    groq = _row(state, "groq")
+    assert (groq.configured, groq.ready, groq.billing, groq.paid) == (
+        False,
+        False,
+        "Billed by Groq",
+        True,
+    )
+    assert groq.key_page == "https://console.groq.com/keys"
+    assert groq.destination.endswith("go to api.groq.com.")
+
+
+def test_lm_studio_not_running_reads_so_after_a_probe(clean_install: None) -> None:
+    p = readiness.provider_readiness("lmstudio")
+    assert (p.reachable, p.ready, p.billing) == (False, False, "Not billed")
+    assert "localhost" in p.detail and p.action
+    assert any("context window" in n for n in p.notes)
+
+
+def test_a_key_the_list_accepted_says_when_and_that_the_balance_is_not_checked(
+    clean_install: None,
+) -> None:
+    from doc_assistant import providers
+
+    credentials.set_bound_key("groq", "gsk-1", "https://api.groq.com/openai/v1")
+    providers.remember_list(
+        "groq", "gsk-1", ModelList("ok", ("a", "b"), fetched_at="2026-11-02T13:02:00+00:00")
+    )
+    p = readiness.provider_readiness("groq")
+    assert (p.ready, p.key_status, p.models) == (True, "accepted", ("a", "b"))
+    assert "2 models. Groq's balance is not checked." in p.detail
+
+
+def test_a_refused_key_reads_refused_until_it_is_changed(clean_install: None) -> None:
+    from doc_assistant import providers
+
+    credentials.set_bound_key("groq", "gsk-bad", "https://api.groq.com/openai/v1")
+    providers.remember_list("groq", "gsk-bad", ModelList("refused"))
+    assert readiness.provider_readiness("groq").key_status == "refused"
+    assert readiness.provider_readiness("groq").ready is False
+    credentials.set_bound_key("groq", "gsk-new", "https://api.groq.com/openai/v1")
+    assert readiness.provider_readiness("groq").key_status is None
+
+
+def test_a_claude_key_its_list_refused_stops_reading_ready(clean_install: None) -> None:
+    from doc_assistant import providers
+
+    credentials.set_stored_key("anthropic", "sk-ant-dead")
+    providers.remember_list("anthropic", "sk-ant-dead", ModelList("refused"))
+    p = readiness.provider_readiness("anthropic")
+    assert (p.ready, p.key_status) == (False, "refused")
+
+
+def test_a_server_of_your_own_carries_its_notes_and_billing(clean_install: None) -> None:
+    from doc_assistant import providers
+
+    sid = providers.save_server("Lab server", "http://192.168.1.40:1234/v1").id
+    p = readiness.provider_readiness(sid, probe=False)
+    assert (p.group, p.kind, p.billing, p.can_tick) == (
+        "server",
+        "server",
+        "Billing not known",
+        True,
+    )
+    assert "on your local network" in p.destination
+    assert any("not encrypted" in n for n in p.notes)
+    assert any("forwards" in n for n in p.notes)
+
+
+def test_the_card_names_where_an_ollama_cloud_model_sends_the_text(
+    clean_install: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(config, "OLLAMA_HOST", "http://localhost:11434")
+    llm._OLLAMA_REMOTE["http://localhost:11434"] = {"gemma4:cloud": "https://ollama.com:443"}
+    monkeypatch.setattr(llm, "ollama_probe", _probe(True, ("gemma4:cloud", "llama3.1:8b")))
+    monkeypatch.setattr(app_settings, "effective_llm", lambda: ("ollama", "gemma4:cloud"))
+    state = readiness.setup_state(chunk_count=10, document_count=1)
+    assert state.active_destination.endswith("go to ollama.com.")
+    assert state.active_billing == "Billed by Ollama"
+    assert _row(state, "ollama").remote == {"gemma4:cloud": "ollama.com"}
+
+
+def test_a_preset_selection_answers_with_its_key(
+    clean_install: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(llm, "ollama_probe", _probe(False, ()))
+    credentials.set_bound_key("mistral", "m-1", "https://api.mistral.ai/v1")
+    app_settings.set_llm_selection("mistral", "mistral-small-latest")
+    state = readiness.setup_state(chunk_count=10, document_count=1)
+    model, _ = _rows(state)
+    assert (model.done, model.status, state.active_name) == (True, "Engine online", "Mistral")
+    assert state.active_billing == "Billed by Mistral"

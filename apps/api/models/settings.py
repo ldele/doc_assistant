@@ -7,8 +7,6 @@ locked knobs are read-only by design (they move via an eval-harness experiment, 
 
 from __future__ import annotations
 
-from typing import Literal
-
 from pydantic import BaseModel, Field, model_validator
 
 
@@ -21,7 +19,9 @@ class SettingsUpdate(BaseModel):
     source-evaluation strip is always-on and has no setting by design."""
 
     source_dir: str | None = None
-    llm_provider: Literal["anthropic", "ollama"] | None = None
+    # Any provider this build knows (ADR-060): validated against the live list in
+    # `app_settings.set_llm_selection`, since a server of your own is not a fixed name.
+    llm_provider: str | None = Field(default=None, min_length=1, max_length=80)
     llm_model: str | None = Field(default=None, min_length=1)
     epistemics_markers_enabled: bool | None = None
 

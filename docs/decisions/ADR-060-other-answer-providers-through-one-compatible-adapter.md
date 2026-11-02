@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-11-02 (accepted in a grill; amendment appended) · class: append-only -->
+<!-- status: active · updated: 2026-11-02 (built; build note appended) · class: append-only -->
 
 # ADR-060 — Other answer providers come through one OpenAI-compatible adapter, and the address says where the text goes
 
@@ -412,3 +412,22 @@ real cloud model, which needs an Ollama sign-in; until then a test pins the docu
 **Reopens if:** fork 1, when row 102's tools need a full client. Fork 4, if a vendor or server bills
 where its row or tick says it does not, or if Ollama changes how it marks remote models. Fork 6, if
 reviews on a preset turn out unusable without a fixed `temperature`.
+
+## Build note 2026-11-02 — built, with three departures
+
+Built in 0.7.2's piece 3 (DEVLOG 2026-11-02 (3)). The six presets ship: OpenAI's address
+(`https://api.openai.com/v1`) and Mistral's model-list path (`GET /v1/models`) were confirmed against
+the vendors' docs on 2026-11-02. Three places differ from the text above, each in the safer direction:
+
+- **Choice 4: `*.localhost` is not *this computer*.** The request resolves it through the OS, and
+  Windows does not map it to loopback: `lab.localhost` did not resolve on this machine. Only
+  `localhost` and loopback literals are promised as staying here.
+- **Choice 8: the model-list route is a POST** (`/api/setup/providers/{id}/models`). It calls out with
+  the stored key and changes what is remembered, and the launch token (S-6) covers every method but
+  GET. Raised by the whole-project review, 2026-11-02.
+- **Choice 3: OpenRouter checks a key on `GET /key`**, a row field (`key_check`), because its model
+  list answers without one (checked 2026-11-02). No code branches on its id.
+
+Also measured: a probe of a server on this computer connects within 0.5 s inside the 2 s budget,
+because Windows retries a port nobody listens on (LM Studio's probe took 4 s). Not yet run: the
+RG-012 turn in the frozen build (test 9) and a paid message on any preset.

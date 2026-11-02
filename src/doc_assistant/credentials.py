@@ -40,7 +40,8 @@ CREDENTIALS_PATH = config.DATA_PATH / "credentials.json"
 KeySource = Literal["env", "app"]
 
 # provider -> (field name in credentials.json, config constant holding the env value).
-# One row per provider that needs a secret; Ollama is local and needs none, so it has no row.
+# Claude only: Ollama needs no secret, and every other provider's key is bound to its address in
+# `keys` (below), never read from the environment (ADR-060).
 _KEYED_PROVIDERS: dict[str, tuple[str, str]] = {
     "anthropic": ("anthropic_api_key", "ANTHROPIC_API_KEY"),
 }
@@ -169,3 +170,74 @@ def key_hint(provider: str) -> str | None:
     """Last-4 hint for the live key, for display. ``None`` when no key is configured."""
     key = resolve_key(provider)
     return _mask(key) if key else None
+
+
+# ============================================================
+# Keys bound to an address (ADR-060 — every provider but Claude)
+# ============================================================
+# `keys: {id: {key, address}}` in the same file. A key is sent to the address it was saved with and
+# nowhere else, so a lookup names the address it is for and gets nothing when that differs. These
+# providers read this store only: no environment variable is consulted, so a key exported for
+# another tool is never used without the user typing it here.
+
+
+def same_address(a: str, b: str) -> bool:
+    """Whether two addresses are the same, ignoring case and a trailing slash."""
+    return a.strip().rstrip("/").lower() == b.strip().rstrip("/").lower()
+
+
+def _bound(provider: str) -> dict[str, str] | None:
+    keys = _load().get("keys")
+    entry = keys.get(provider) if isinstance(keys, dict) else None
+    if not isinstance(entry, dict):
+        return None
+    key, address = entry.get("key"), entry.get("address")
+    if isinstance(key, str) and key.strip() and isinstance(address, str):
+        return {"key": key.strip(), "address": address}
+    return None
+
+
+def get_bound_key(provider: str, address: str) -> str | None:
+    """The key saved for ``provider`` if it was saved for ``address``; else ``None``."""
+    entry = _bound(provider)
+    if entry is None or not same_address(entry["address"], address):
+        return None
+    return entry["key"]
+
+
+def bound_address(provider: str) -> str | None:
+    """The address ``provider``'s key was saved with, or ``None`` when it has no key."""
+    entry = _bound(provider)
+    return entry["address"] if entry else None
+
+
+def bound_key_hint(provider: str, address: str) -> str | None:
+    """Last-4 hint for the key bound to ``address``. ``None`` when there is none."""
+    key = get_bound_key(provider, address)
+    return _mask(key) if key else None
+
+
+def set_bound_key(provider: str, key: str, address: str) -> None:
+    """Store ``key`` for ``provider``, bound to ``address``. A blank key raises ``ValueError``."""
+    cleaned = key.strip()
+    if not cleaned:
+        raise ValueError("API key must not be empty")
+    data = _load()
+    stored = data.get("keys")
+    keys: dict[str, Any] = stored if isinstance(stored, dict) else {}
+    keys[provider] = {"key": cleaned, "address": address.strip()}
+    data["keys"] = keys
+    _save(data)
+    log.info("api_key_stored", provider=provider, hint=_mask(cleaned))
+
+
+def clear_bound_key(provider: str) -> bool:
+    """Remove ``provider``'s bound key. Returns whether one was removed."""
+    data = _load()
+    keys = data.get("keys")
+    if not isinstance(keys, dict) or provider not in keys:
+        return False
+    keys.pop(provider)
+    _save(data)
+    log.info("api_key_cleared", provider=provider)
+    return True

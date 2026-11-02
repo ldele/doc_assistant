@@ -42,6 +42,53 @@ Format: What changed | Why | Rejected alternatives | What it opens
 
 ---
 
+## 2026-11-02 (3) — ADR-060 built: other answer providers through one compatible client (0.7.2, piece 3)
+
+**What changed.** New `providers.py`: the six presets of the wireframe as rows (LM Studio, OpenAI,
+Google Gemini, Mistral, Groq, OpenRouter), servers of your own in `settings.json`, where the text
+goes per model (`route_of`, with Ollama's `remote_host`), who bills (`Billing`: a vendor, nobody, not
+known, or the user's word), model lists kept in memory, and the prompt-cut note. New
+`compatible.py`: our own client over `httpx`, sending `model`, `messages` and `stream` and nothing
+else, reading only `delta.content`, with a LangChain chat model for answers and an `LLMClient` for
+reviews. Keys for these providers are bound to their address in `credentials.json` (`keys`) and never
+read from the environment. `config.PAID_PROVIDERS` is gone: the CLI guard trips on billed or not known
+and names the host and who bills. `build_chat_model` and `make_client` raise on an unknown id instead
+of answering on Ollama. Routes keyed by provider (`/api/setup/providers/{id}/key|models|billing`,
+`/api/setup/servers`) replace `/api/setup/anthropic-key`. The answer record gains
+`answer_route_json` (additive), and the cost line says who bills instead of pricing every turn at
+Haiku's rates. Provider & model draws one form for presets and servers: *Test connection*, the
+*This server does not bill me* tick, the address-change warning, a model box over the server's list.
+
+**Why.** The user, 2026-11-01: more options than Claude and Ollama, by the norm. ADR-060 and its
+amendment are the contract. OpenAI's address and Mistral's model-list path were confirmed against
+the vendors' docs before their rows went in; OpenRouter's model list answers without a key (checked),
+so its row checks a key on `GET /key`.
+
+**Proved at $0.** Fake-server tests (`tests/fixtures/compatible_server.py`): the body, the stream
+reader on recorded streams, model lists on every status, the address and billing tables, every preset
+row through a key-guarded route, and a whole turn through the real `ChatController` with provenance
+and the cost line. Live, on a new data home holding two public RAG papers: a server of your own at
+Ollama's `http://localhost:11434/v1` answered the ADR's question on `llama3.1:8b` with a valid
+citation; the card read *stay on this computer* and *Billing not known*, then *Not billed (your
+word)* once ticked. `qwen3.5:9b` through `/v1` keeps its reasoning in a separate field (nothing
+inline, so no known issue), and its first visible token came after 32 s warm. No paid call was made.
+
+**Departures from the ADR.** `*.localhost` is not *this computer*: the OS resolves it, and
+`lab.localhost` did not resolve on this machine, so the sentence could not promise it. The models
+route is a POST, so the launch token covers a call that sends a key (the whole-project review's
+point). Local probes connect within 0.5 s: Windows retries a port nobody listens on, and LM Studio's
+probe took 4 s.
+
+**Rejected.** `langchain-openai` (ADR-060's Options). Returning an unprobed setup state from the
+billing tick to make it faster: an unprobed Ollama row reads *Ready*.
+
+**What it opens.** The RG-012 turn in the frozen build (test 9) belongs to the release. A paid message
+per preset waits for the user's word. `remote_host` is pinned by a test on the documented shape only;
+a real Ollama cloud model needs a sign-in. On Windows, `localhost` tries `::1` first, so a server
+listening on IPv4 only costs about 2.2 s per connection: Ollama's own probe takes 2.38 s at
+`localhost` and 0.22 s at `127.0.0.1` (older than this change). The status bar shows a server's id,
+not its name.
+
 ## 2026-11-02 (2) — ADR-060 accepted in a grill: who bills is a fact of its own
 
 **What changed.** ADR-060's status: accepted by the user. An amendment holds the grill's ledger of 11

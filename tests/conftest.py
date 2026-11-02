@@ -151,6 +151,16 @@ def _isolate_credentials(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Non
 
 
 @pytest.fixture(autouse=True)
+def _forget_server_answers() -> None:
+    """Model lists and Ollama's remote hosts live in memory (ADR-060): one test's must not be
+    another's. Imported here, not at the top, so the data-home guard above still runs first."""
+    from doc_assistant import llm, providers
+
+    providers._LISTS.clear()
+    llm._OLLAMA_REMOTE.clear()
+
+
+@pytest.fixture(autouse=True)
 def _allow_the_test_client_host(monkeypatch: pytest.MonkeyPatch) -> None:
     """Serve ``Host: testserver`` (the TestClient's) alongside the loopback defaults (S-5)."""
     monkeypatch.setenv("DOC_API_ALLOWED_HOSTS", "127.0.0.1,localhost,testserver")

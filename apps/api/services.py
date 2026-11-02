@@ -47,7 +47,6 @@ def _settings_view() -> dict[str, Any]:
         CANDIDATE_K,
         CHILD_CHUNK_OVERLAP,
         CHILD_CHUNK_SIZE,
-        PAID_PROVIDERS,
         PARENT_CHUNK_OVERLAP,
         PARENT_CHUNK_SIZE,
         REVIEWER_EVIDENCE_CHARS,
@@ -57,6 +56,7 @@ def _settings_view() -> dict[str, Any]:
         USE_PARENT_CHILD,
     )
     from doc_assistant.llm import provider_available
+    from doc_assistant.providers import answer_provider_ids, describe
 
     # ADR-011 (U1c): the *effective* provider/model — the persisted selection if the user has
     # switched, else the config default — never the import-time LLM_PROVIDER/LLM_MODEL constants
@@ -86,14 +86,15 @@ def _settings_view() -> dict[str, Any]:
         # read-only display can no longer silently drift from the real BM25_WEIGHT.
         "retrieval_weights": {"bm25": BM25_WEIGHT, "vector": round(1 - BM25_WEIGHT, 3)},
         # ADR-011 (U1c) — the provider picker's option list: availability (fork E) + paid/local
-        # labeling (fork D/KI-4), so a keyless provider renders disabled with its reason.
+        # labeling (fork D/KI-4), so a keyless provider renders disabled with its reason. Since
+        # ADR-060 `paid` is the guard's test, billed or not known, from local state only.
         "providers": [
             {
                 "id": p,
                 "available": provider_available(p),
-                "paid": p in PAID_PROVIDERS,
+                "paid": describe(p).billing.guard_trips,
             }
-            for p in ("anthropic", "ollama")
+            for p in answer_provider_ids()
         ],
     }
 

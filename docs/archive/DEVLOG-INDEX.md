@@ -1,4 +1,4 @@
-<!-- status: archived · updated: 2026-10-31 · class: living -->
+<!-- status: archived · updated: 2026-11-02 · class: living -->
 
 # DEVLOG archive index
 
@@ -9,6 +9,17 @@ is off; docs_check rule 17 fails while any archived entry is missing here.
 
 ## DEVLOG-archive-009.md
 
+- **2026-10-31** (2) — 0.7.1's installer passes every upgrade route and its gate
+- **2026-10-31** — 0.7.1: the installer clears what 0.6.0 left (KI-80)
+- **2026-10-30** (6) — The rebuilt installer passes its gate; a stage must keep the build's time
+- **2026-10-30** (5) — Keyword search survives an add and forgets a delete (KI-77, KI-78); rail and Re-run fit
+- **2026-10-30** (4) — The add review warns about a scan and catches the same file twice (KI-76)
+- **2026-10-30** (3) — The setup card and the chunk count follow an add (KI-75)
+- **2026-10-30** (2) — `langgraph-sdk` 0.4.6: an advisory published during the release
+- **2026-10-30** — A turn that retrieves nothing is answered without a model (KI-74); About shows the version
+- **2026-10-27** (6) — The add review sheet: a checkbox per file, as the spec and the wireframe had it
+- **2026-10-27** (5) — Larger text, controls and panels; the document page's section strip centred
+- **2026-10-27** (4) — `msgpack` 1.2.3: an advisory published during the release
 - **2026-10-27** (3) — The backend ships as a folder: 9–10 s to a working window instead of 72 (KI-73, part 2)
 - **2026-10-27** (2) — The window shows the last session at once: a start screen, then the library, chats and graph until the engine answers (KI-73, part 1)
 - **2026-10-27** — Setting up an answer engine from Settings: an instant panel, verdicts in place, no impossible model (KI-72)

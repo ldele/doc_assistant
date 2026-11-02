@@ -92,3 +92,5 @@ Provisional:
 - **Boundary:** presets shape *style and structure*. They never touch citation grammar, retrieval
   quality knobs (ADR-010), or the evidence/interpretation split. A preset that wants to change any
   of those reopens the relevant ADR.
+
+*Note, 2026-11-02:* the plan this ADR cites as `docs/plans/PLAN_2026-07-27_maps-trust-reports.md` is archived at `docs/archive/local/PLAN_2026-07-27_maps-trust-reports.md` (local-only, ADR-029).

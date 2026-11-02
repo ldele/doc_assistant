@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-09-16 (four gitignored paths the docs cite were missing from the table) · class: living -->
+<!-- status: active · updated: 2026-11-02 (the crossover review's archived path; 2026-09-16: four gitignored paths the docs cite were missing from the table) · class: living -->
 
 # Local-only working docs
 
@@ -21,7 +21,7 @@ trade-offs (including this one — dangling links) are recorded in
 | `docs/reviews/REVIEW_<date>_*.md` | Internal review reports (folder since ADR-051; the folder's README is tracked). |
 | `docs/ui-checklist.md` | The per-feature UI review gate (its queue moved into `docs/ROADMAP.md` on 2026-09-10). |
 | `docs/archive/local/` | Closed PLAN_/REVIEW_ docs and rotated narrative from `.claude/CONTEXT.md` / `RIGOR_TODO.md` — archived, still local-only. |
-| `docs/reviews/REVIEW_2026-09-07_crossover-daily-learn.md` | A cross-project review (Daily Learn ↔ doc_assistant) whose §3 feeds ROADMAP rows 52–54. |
+| `docs/archive/local/REVIEW_2026-09-07_crossover-daily-learn.md` | Archived 2026-11-02. A cross-project review (Daily Learn ↔ doc_assistant) whose §3 feeds ROADMAP rows 52–54. |
 | `docs/archive/lab4tech/` | The retired second machine's baton history (49 rotated archives + its final baton), rescued from its backup 2026-07-25. Per-machine session history — and the only record of the 2026-07-23/24 taxonomy + UI sessions. |
 
 **What *is* the public record:** [`README.md`](../README.md) ·

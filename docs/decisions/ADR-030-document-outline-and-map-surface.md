@@ -93,3 +93,5 @@ Provisional:
   a bounded outline-diff verification over the live 76-doc corpus before the runner is trusted.
 - **Boundary:** the map is read-only over the vocabulary (ADR-017 A1); all tree edits stay with the
   taxonomy view (ADR-028 D11). The map surfaces derived structure; it is not a second curation UI.
+
+*Note, 2026-11-02:* the plan this ADR cites as `docs/plans/PLAN_2026-07-27_maps-trust-reports.md` is archived at `docs/archive/local/PLAN_2026-07-27_maps-trust-reports.md` (local-only, ADR-029).

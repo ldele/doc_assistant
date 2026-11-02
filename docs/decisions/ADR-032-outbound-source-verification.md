@@ -84,3 +84,5 @@ Provisional:
   code path.
 - **Boundary:** verification of existing documents only. Discovery, acquisition, and any automatic
   ingestion of found documents are out of scope and need their own decision.
+
+*Note, 2026-11-02:* the plan this ADR cites as `docs/plans/PLAN_2026-07-27_maps-trust-reports.md` is archived at `docs/archive/local/PLAN_2026-07-27_maps-trust-reports.md` (local-only, ADR-029).

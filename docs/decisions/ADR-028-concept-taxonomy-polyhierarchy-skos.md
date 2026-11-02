@@ -203,3 +203,5 @@ KI-4).
   (RG-015).
 - ⚠ **A single unified typed graph will be curatable in practice** (vs two structures) — untested at any
   vocabulary size; the "reverses if" on Decision 1 is the fallback.
+
+*Note, 2026-11-02:* the plan this ADR cites as `docs/plans/PLAN_2026-07-23_concept-graph-taxonomy-epistemics.md` is archived at `docs/archive/local/PLAN_2026-07-23_concept-graph-taxonomy-epistemics.md` (local-only, ADR-029).

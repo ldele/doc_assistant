@@ -1,8 +1,8 @@
-<!-- status: active · updated: 2026-10-30 (AD2: the no-text-layer warning and the same-selection duplicate built, KI-76; 2026-10-27: the per-file ticks built; 2026-08-28: EPUB + HTML round trip; ADR-046 delete half; AD4; CS1/CS2 — all work items built) · class: living -->
+<!-- status: active · updated: 2026-11-02 (the plan's archived path; 2026-10-30: AD2: the no-text-layer warning and the same-selection duplicate built, KI-76; 2026-10-27: the per-file ticks built; 2026-08-28: EPUB + HTML round trip; ADR-046 delete half; AD4; CS1/CS2 — all work items built) · class: living -->
 
 # Spec — Add documents: the accept surface (AD1–AD4) + the Settings changes it forces (CS1–CS2)
 
-Implements Track A and Track C of `docs/plans/PLAN_2026-08-20_user-friendly-ingestion.md` under
+Implements Track A and Track C of `docs/archive/local/PLAN_2026-08-20_user-friendly-ingestion.md` under
 **ADR-046**. Track B (ingest honesty) is specced separately and needs none of this.
 
 ## Goal
@@ -303,7 +303,7 @@ sprint-start, not mid-build.)*
 ## Decision ledger — scoped grill, 2026-08-21
 
 Full ledger with deciding reasons and "reopens if" in
-`docs/plans/PLAN_2026-08-20_user-friendly-ingestion.md` §8. Task-level resolutions owned here:
+`docs/archive/local/PLAN_2026-08-20_user-friendly-ingestion.md` §8. Task-level resolutions owned here:
 
 | Branch | Resolution |
 |---|---|

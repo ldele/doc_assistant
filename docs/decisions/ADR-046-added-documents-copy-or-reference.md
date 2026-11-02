@@ -138,3 +138,5 @@ gates the review sheet's *no text layer* row, not this decision.
 **Not decided here**, and deliberately: whether adding implies indexing (ticked by default), batch
 pagination, and partial-copy failure handling. Those are task-level resolutions and live in the
 SPEC's ledger — they change no existing contract.
+
+*Note, 2026-11-02:* the plan this ADR cites as `docs/plans/PLAN_2026-08-20_user-friendly-ingestion.md` is archived at `docs/archive/local/PLAN_2026-08-20_user-friendly-ingestion.md` (local-only, ADR-029).

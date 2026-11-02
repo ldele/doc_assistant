@@ -91,3 +91,5 @@ Provisional:
   suppress a document. Inherited directly from ADR-004 (surface, never auto-remediate) and ADR-027
   (assessment always on, influence opt-in). Any future proposal to *weight retrieval* by a trust
   indicator reopens this ADR and needs the eval harness.
+
+*Note, 2026-11-02:* the plan this ADR cites as `docs/plans/PLAN_2026-07-27_maps-trust-reports.md` is archived at `docs/archive/local/PLAN_2026-07-27_maps-trust-reports.md` (local-only, ADR-029).

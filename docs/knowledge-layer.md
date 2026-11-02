@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-10-18 (C2: KL1b closed, the gap list is the per-concept classification; wiki row: KI-65 fixed, a large topic is summarised from a sample its note names; trust table: taxonomy placement states its three measured runs (RG-015) and the wiki row is added (RG-018); the wiki reads similarity edges, communities opt-in; the term signals the concept panel shows; 2026-10-14, presence: a form's words joined any way are one form, KI-63; 2026-10-09: what the user's marks on the 22 forms did to presence — ADR-054 addendum; presence reads the document's prose, not figure chunks — ROADMAP 97; 2026-10-01: concepts and terms; presence counts exact forms, broad forms beside — ADR-054) · class: living -->
+<!-- status: active · updated: 2026-11-02 (the plan's archived path; 2026-10-18: C2: KL1b closed, the gap list is the per-concept classification; wiki row: KI-65 fixed, a large topic is summarised from a sample its note names; trust table: taxonomy placement states its three measured runs (RG-015) and the wiki row is added (RG-018); the wiki reads similarity edges, communities opt-in; the term signals the concept panel shows; 2026-10-14, presence: a form's words joined any way are one form, KI-63; 2026-10-09: what the user's marks on the 22 forms did to presence — ADR-054 addendum; presence reads the document's prose, not figure chunks — ROADMAP 97; 2026-10-01: concepts and terms; presence counts exact forms, broad forms beside — ADR-054) · class: living -->
 
 # The knowledge layer — what the concept graph is for, and which of its signals you can trust
 
@@ -219,7 +219,7 @@ layer is strong and where it is absent:
    suggestion pass at all. Re-pointing it is the cheapest real progress toward the goal.
 
 **The plan** — phased so nothing is built on top of something that lies — is in
-`docs/plans/PLAN_2026-08-03_knowledge-layer-to-goal.md` (local-only, ADR-029), and its work items are
+`docs/archive/local/PLAN_2026-08-03_knowledge-layer-to-goal.md` (local-only, ADR-029; archived 2026-11-02, its open parts carried into the live plan), and its work items are
 mirrored as ROADMAP rows **KL1–KL4**.
 
 ---

@@ -42,6 +42,39 @@ Format: What changed | Why | Rejected alternatives | What it opens
 
 ---
 
+## 2026-11-02 (4) — The project review's routing applied to the tracked docs; archived paths re-pointed
+
+**What changed.** The tracked half of the 2026-11-02 project review (its §8), checked against the code
+first. `docs/decisions.md` indexes ADR-058 and ADR-059, which no index, row or plan cited.
+`docs/ROADMAP.md`: row 109 (the installed app makes its own derived layers, `gate first`), row 106's
+spec names ADR-059 and ADR-058, and five rows' paths point at `docs/archive/local/`.
+`docs/security.md`: §2 says what the gates really cover (`scripts/` is not type-checked or scanned;
+pre-commit's mypy and bandit see `src/` only), that the f-string SQL includes one `INSERT…SELECT`,
+and that S-6's rule by method holds only while no GET has a side effect; S9 is widened to *reveal*,
+*delete*, `purge_document_record` and `/api/figures/{id}`; new findings S15 (three GETs with side
+effects), S16 (`Cargo.lock` and the packaging extra unaudited) and S17 (CI's uv floats, no
+`permissions:`), with steps S-15 and S-16; S-7 moves into 0.7.2's piece 5; §5 no longer names a test
+file as if it existed. `knowledge-layer.md`, `local-only.md` and `specs/feature-add-documents.md`
+cite the archived plans at their new path, and six ADRs carry an appended note instead (append-only).
+
+**Why.** A review the docs do not carry is lost at the next session. And the archived plans were
+still cited at paths that no longer exist.
+
+**Checked.** Six of the review's claims re-read in the code before any text was written: the delete
+path that unlinks a stored cache path, the dead keyword index at 0 documents, the developer commands
+in chat replies, the unindexed ADRs, the release check's file list, and the model-list route now a
+POST. Each security line checked against `ci.yml`, `.pre-commit-config.yaml`, `migrations.py`,
+`launch_token.py`, `routers/chat.py` and `library/add.py`; 445 packages in `Cargo.lock`. No moved path
+is cited unannotated in a tracked doc (a grep: the docs gate reads backticked paths in `docs/**` by
+markdown links only, the review's N12).
+
+**Rejected.** Editing the ADRs' own lines: they are append-only, so each gains a note. Putting the
+review's other additions to 0.7.2 into the tracked docs: they are plan decisions, and they live in the
+local plan.
+
+**What it opens.** S-7 in piece 5, with the review's must-hold that no write over an opened library
+touches a path outside its data home. Row 109 for release B. Steps S-15 and S-16.
+
 ## 2026-11-02 (3) — ADR-060 built: other answer providers through one compatible client (0.7.2, piece 3)
 
 **What changed.** New `providers.py`: the six presets of the wireframe as rows (LM Studio, OpenAI,

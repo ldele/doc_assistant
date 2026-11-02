@@ -1,10 +1,13 @@
-<!-- status: active · updated: 2026-11-02 · class: append-only -->
+<!-- status: active · updated: 2026-11-02 (accepted in a grill; amendment appended) · class: append-only -->
 
 # ADR-060 — Other answer providers come through one OpenAI-compatible adapter, and the address says where the text goes
 
-- **Status:** proposed (Claude Code, 2026-11-02). Not accepted, not built. The direction is the
-  user's, 2026-11-01: *"make sure we give more options than claude and ollama in Provider Model. I
-  am sure there are norms now to do this."* The shape below is Claude's proposal, for 0.7.2's
+- **Status:** proposed (Claude Code, 2026-11-02); **accepted by the user the same day, in a
+  grill.** See *Amendment 2026-11-02* at the end: it replaces choices 4 and 5 (where the text goes
+  is worked out per model, and who bills is a fact of its own), settles the other seven as
+  recommended, and holds the ledger. Not built. The direction is the user's, 2026-11-01: *"make
+  sure we give more options than claude and ollama in Provider Model. I am sure there are norms
+  now to do this."* The shape below is Claude's proposal, for 0.7.2's
   piece 3 (`docs/plans/PLAN_2026-10-31_next-two-releases.md`, local).
 - **Date:** 2026-11-02
 - **Deciders:** user + Claude Code
@@ -316,3 +319,96 @@ of its own, measured on its own.
   unmeasured. Its *below half* is a guess set against a rough estimate (characters / 4, as the cost
   chip uses). It would have caught KI-66's cut, about 5,000 tokens down to 2,050, and it is not
   tuned beyond that.
+
+## Amendment 2026-11-02 — the grill: who bills is a fact of its own
+
+The user grilled the nine choices the day this ADR was written. Seven stand as recommended, with the
+details below. The user's question on choice 5, *"would it not be worth to make some extra effort on
+this ?"*, led to a check, and the check found a hole in choice 4.
+
+**What the check found.** A local Ollama, signed in, serves cloud models (`gemma4:cloud`), and Ollama
+*"processes cloud prompts and responses"* (`docs/cloud.mdx`). Its `/api/tags` marks such a model with
+`remote_host`, the *"URL of the upstream Ollama host, if the model is remote"*, and cloud models
+*"need a paid plan or purchased usage credits"* (`docs/openapi.yaml`; both fetched 2026-11-02).
+`OLLAMA_NO_CLOUD=1` turns cloud models off (`docs/faq.mdx`). So the address alone says *stays on this
+computer* while the text goes to ollama.com. Piece 2's sentence (`readiness._destination`) is already
+wrong for such a model today.
+
+**Choice 4, replaced: where the text goes is worked out per model.** It reads the address, and also
+the model's upstream host when the server reports one (Ollama's `remote_host`). The three outcomes
+stand: this computer, your local network, or *goes to \<host\>*, with names never looked up. A
+server of your own carries one more line: *Provenote sees only this address; a server that forwards
+requests sends your text on too.* The card and the rows keep the approved short sentence about
+questions and passages. Each provider's form lists everything that is sent: the question; up to six
+earlier messages, answers included, when a follow-up is rewritten; the passages with their file name
+and page; and a flagged answer, for its review.
+
+**Choice 5, replaced: two facts, kept apart.** *Where the text goes* is computed (choice 4). *Who
+bills* is stated:
+
+| Provider | Who bills |
+|---|---|
+| A cloud preset | its vendor, from its row |
+| LM Studio (preset, on this computer) | nobody |
+| An Ollama model with a `remote_host` | Ollama |
+| An Ollama model on this computer with no `remote_host` | nobody |
+| A server of your own, on or off this computer; an Ollama on another machine | *Billing not known*, until you tick *This server does not bill me* |
+
+A server of your own on this computer starts unticked too, because Provenote cannot see what a server
+forwards to. `config.PAID_PROVIDERS` gives way to one test, **billed, or not known**, and the CLI
+guard trips on it, with a banner that names the host and who bills. The screens show the two lines
+separately: a lab server you tick reads *Leaves this computer · Not billed (your word)*. The cost
+chip reads *Billed by \<vendor\>; Provenote does not know its price*, *Billing not known*, or *Not
+billed (your word)*. Real prices per turn stay out: they need a price catalogue and usage reports.
+
+**The other seven, settled as recommended, with these details.**
+
+- **1:** our own client over `httpx`.
+- **2:** 0.7.2 ships the wireframe's six presets. OpenAI's address and Mistral's model-list path are
+  confirmed against the vendors' docs in the build, and a row that fails waits for a later release.
+  A preset's address is fixed; any other address is a server of your own.
+- **3:** the new providers read the app's store only, with no exported vendor key. The old
+  `/api/setup/anthropic-key` routes are replaced.
+- **6:** the minimal body. The new providers never receive `temperature`.
+- **7:** the prompt-cut check is kept.
+- **8:** fetched model lists live in memory only.
+- **9:** a preset ships once its address is confirmed against the vendor's docs and it passes the
+  fake-server test. Where the user has a key, its free model list is driven live; a paid message
+  runs only at the user's word. The release checklist records which presets were driven live.
+
+**The worked example, as amended.** In step 2, *Test connection* adds *Billing not known. Tick This
+server does not bill me if it does not.* The user ticks it, and the answer reads *Stays on this
+computer. Not billed (your word).* In step 3 the moved server reads *Billing not known* until
+ticked, and the guard counts it as billed until then. A fourth step: back on Ollama at `localhost`,
+the user picks `gemma4:cloud`, the probe lists it with a `remote_host`, and *Answering with* reads
+*… go to ollama.com · Billed by Ollama*.
+
+**What changes beyond the Consequences above.** `llm.ollama_probe` keeps each model's `remote_host`.
+`settings.json` gains the *does not bill me* tick per server, and for Ollama when its host is off this
+computer. Provenance gains who bills. Test 3 gains a billing table: a preset row, LM Studio, an
+Ollama model with and without `remote_host`, and a server of your own ticked and unticked, on and off
+this computer, each with its billing line and whether the guard trips.
+
+**Confidence.** ✓ A local Ollama can serve cloud models, marked by `remote_host`: Ollama's docs,
+fetched 2026-11-02. ⚠ The field has not been seen on this machine's Ollama. The build checks it on a
+real cloud model, which needs an Ollama sign-in; until then a test pins the documented shape.
+
+### Grill ledger (2026-11-02)
+
+| # | Fork | Resolution | Deciding reason |
+|---|---|---|---|
+| 1 | The client library | **Our own client over `httpx`** | No new package in the frozen build, and the body sent is one tested literal. `langchain-openai` would first move `langchain-core` under the whole stack. |
+| 2 | Which presets ship in 0.7.2 | **All six of the wireframe**; two are confirmed in the build, and a row that fails waits | The approved wireframe stands; no row ships a guessed address. |
+| 3 | A preset's address | **Fixed**; any other address is a server of your own | *Billed by X* and the key's destination stay true, and a typo cannot send a vendor's key elsewhere. |
+| 4 | What counts as paid | **Widened:** the destination per model, and *who bills* kept apart, with a tick on a server of your own. The guard trips on *billed, or not known*. No prices. | The address missed Ollama cloud models at `localhost`. Two facts let a lab server bill nobody without calling it local. Prices need a catalogue and usage reports. |
+| 5 | Where the full list of what is sent appears | **The approved short sentence on the card and rows; the full list on each form** | The card stays readable, and nothing sent is left unsaid. |
+| 6 | `temperature` on the new providers | **Never: the minimal body** | One fact per vendor to verify and keep current, against reviews that are unmeasured on these providers anyway (KI-36). |
+| 7 | An exported vendor key | **Not used: app store only** | No CLI uses these providers, and a key exported for another tool must not be used silently. |
+| 8 | The old `/api/setup/anthropic-key` routes | **Replaced** | The API and the app ship in one installer. |
+| 9 | Where a model list is kept | **Memory only** | Nothing stale on disk is shown as the server's word. |
+| 10 | The prompt-cut check | **Kept** | It catches KI-66's case where a server reports usage, at the cost of a few lines. |
+| 11 | What a preset needs to ship | **Docs and the fake server; a live model list where the user has a key; a paid message only at the user's word; the checklist says which were live** | Measured, or says so, without requiring six vendors' keys. |
+
+**Reopens if:** fork 1, when row 102's tools need a full client. Fork 4, if a vendor or server bills
+where its row or tick says it does not, or if Ollama changes how it marks remote models. Fork 6, if
+reviews on a preset turn out unusable without a fixed `temperature`.

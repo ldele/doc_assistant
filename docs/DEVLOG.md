@@ -42,6 +42,26 @@ Format: What changed | Why | Rejected alternatives | What it opens
 
 ---
 
+## 2026-11-02 (2) — ADR-060 accepted in a grill: who bills is a fact of its own
+
+**What changed.** ADR-060's status: accepted by the user. An amendment holds the grill's ledger of 11
+forks. `docs/decisions.md`'s line follows. No code.
+
+**Why.** Seven choices stand as recommended. The user asked whether more effort on *paid* was worth
+it, and checking found that a local Ollama serves cloud models from ollama.com, marked by
+`remote_host` in `/api/tags` (Ollama's docs, fetched 2026-11-02). So where the text goes is now
+worked out per model, and *who bills* is a separate fact: a preset's vendor, nobody, Ollama for a
+remote model, or a *does not bill me* tick on a server of your own. The guard trips on billed or not
+known.
+
+**Rejected.** Real prices per turn: they need a price catalogue and usage reports. `temperature` per
+preset: one fact per vendor to keep current, for reviews that are unmeasured anyway. Editable preset
+addresses. Exported vendor keys. A model list kept on disk.
+
+**What it opens.** Piece 2's *stays on this computer* is wrong today for an Ollama cloud model; the
+build fixes it. The build confirms OpenAI's address and Mistral's model-list path first, and checks
+`remote_host` on a real cloud model, which needs an Ollama sign-in.
+
 ## 2026-11-02 — ADR-060 proposed: other answer providers through one OpenAI-compatible adapter (0.7.2, piece 3)
 
 **What changed.** `docs/decisions/ADR-060-other-answer-providers-through-one-compatible-adapter.md`,

@@ -85,7 +85,8 @@ when you choose.
 - **A failed text re-run says it failed.** Re-running *Text & chunks* on a document whose
   extraction failed used to report success.
 - **The status bar says it is indexing.** It reads *Indexing… 14/30 done* (and *Indexing paused*,
-  *Indexing stopped*, *Indexing done*) beside a wider bar, instead of a bare count.
+  *Indexing stopped*, *Indexing done*) beside a wider bar, instead of a bare count. A run whose
+  files failed says how many (*Indexing done · 2 failed*), turns red, and stays until you dismiss it.
 - **Settings closes while indexing.** A run started from Settings used to hold the panel open until
   it ended, which can take hours. Escape, a click outside and the close button now work during a
   run. The run carries on, the status bar keeps counting, the library updates when it ends, and
@@ -100,8 +101,8 @@ when you choose.
 - **A library copied or moved to another folder shows no figure images, and re-running *Figure
   images* does not bring them back yet.** Its stored image paths name the old folder, and the app no
   longer writes outside the open library. Re-running a document's text is refused there for the
-  same reason, with a sentence, and Settings → Documents lists its files as *new* although they
-  are indexed. Opening a library where it was made is unaffected.
+  same reason, with a sentence, and Settings → Documents lists its files as *new* or *changed*
+  although they are indexed. Opening a library where it was made is unaffected.
 - **The indexing screen forgets the last run when the app restarts.** What finished stays in your
   library; only the list of that run's files is gone.
 - **Pause and Stop wait for the document being read**, which can take a minute for a long PDF.

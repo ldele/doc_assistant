@@ -42,6 +42,33 @@ Format: What changed | Why | Rejected alternatives | What it opens
 
 ---
 
+## 2026-11-04 (6) — The status bar says when files failed, and stays until dismissed (0.7.2)
+
+**What changed.** A run that ends with failed files reads *Indexing done · 2 failed* (or *· 3 new ·
+1 failed*, *Indexing stopped · 16/22 done · 2 failed*) instead of *Indexing done · nothing new*,
+its bar turns red, and it stays on the status bar until dismissed, like an error or a stopped run
+already did. `failedCount` and `staysUntilDismissed` live in `core/ingest.ts` with the label, so
+`node:test` covers them; `IngestChip` and the rune module only read them.
+
+**Why.** Driving the installed 0.7.2 build in Windows Sandbox: two unreadable files failed, the
+indexing screen listed them with *Retry the 2 that failed*, and the status bar said *nothing new*;
+in the dev build the chip then went quiet after the 8 s linger. Once the screen is closed the bar is
+the only trace of the run, so it hid the failures twice over. The user asked for the fix before the
+tag. The count is the per-file one (`counts.failed`), the same the screen shows: the run's own
+tally (`errors`) counts an empty file as skipped, so it can read 2 where the screen lists 3.
+
+**Checked.** Three new `node:test` cases (361 pass), svelte-check clean; the dev build over a
+scratch data home with three failing files: *Indexing done · 3 failed*, red, still there 15 s
+later with its dismiss button. Gate 6 of ADR-056, re-run on the copy cleaned of the stale chunks
+(entry (5)): every case cites the same sources as the control; the local record holds the numbers.
+
+**Rejected.** Folding the failures into the screen only: the screen is closed most of the time.
+An amber bar for partial failure: red is the one failure colour the bar already has.
+
+**What it opens.** Settings' one-line run result still reads the run's tally (*2 errors* beside
+*3 failed*); KI-84 (an ingest run builds its own embedding model, ~1.8 GB committed) was filed
+from the same walkthrough.
+
 ## 2026-11-04 (5) — A changed document is indexed once: `process_document` drops its superseded chunks (0.7.2 blocker)
 
 **What changed.** When a document keeps its identity (ADR-047, by path) but its text, and so its

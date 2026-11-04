@@ -39,20 +39,49 @@ export function fraction(s: IngestStatus | null): number | null {
  * once the run is `done` — mid-run it is 0 by design, and reporting it as progress would claim an
  * outcome for documents that may still fail.
  */
+/**
+ * How many files of the run failed: the per-file count once the run has one, else the run's own
+ * tally. Read it only once the run has ended — while it runs the label shows position, not outcome.
+ */
+export function failedCount(s: IngestStatus | null): number {
+  if (!s) return 0
+  return s.counts?.failed ?? s.errors ?? 0
+}
+
+/**
+ * Whether an ended run's chip stays on the status bar until dismissed, instead of going quiet
+ * after `RESULT_LINGER_MS`. An error and a run with failed files stay: a failure that vanishes on a
+ * timer is a failure nobody reads. A stopped run stays too: it still offers *Index the remaining*.
+ */
+export function staysUntilDismissed(s: IngestStatus): boolean {
+  if (s.state === 'error' || s.state === 'stopped') return true
+  return s.state === 'done' && failedCount(s) > 0
+}
+
 export function ingestLabel(s: IngestStatus | null): string {
   if (!s) return 'Indexing…'
   const doneOf = `${s.done}/${s.total} done`
+  // A file that failed is never folded into "done" or "nothing new": the status bar is what stays
+  // on screen after the run, so it has to say the run left something behind (the user, 2026-11-04).
+  const failed = failedCount(s)
+  const failedTail = failed > 0 ? ` · ${failed} failed` : ''
   switch (s.state) {
     case 'running':
       if (s.total <= 0) return 'Indexing… preparing'
       return s.control === 'paused' ? `Indexing paused · ${doneOf}` : `Indexing… ${doneOf}`
     case 'stopped':
-      return `Indexing stopped · ${doneOf}`
+      return `Indexing stopped · ${doneOf}${failedTail}`
     case 'error':
       return 'Indexing failed'
     case 'done':
       // A run that walked a whole corpus and found everything already indexed added nothing —
-      // saying "0 new" is true but reads as a failure, so name the outcome instead.
+      // saying "0 new" is true but reads as a failure, so name the outcome instead. When files did
+      // fail, the failures are the outcome, and "nothing new" would hide them.
+      if (failed > 0) {
+        return s.added === 0
+          ? `Indexing done · ${failed} failed`
+          : `Indexing done · ${s.added} new${failedTail}`
+      }
       return s.added === 0 ? 'Indexing done · nothing new' : `Indexing done · ${s.added} new`
     default:
       return 'Idle'

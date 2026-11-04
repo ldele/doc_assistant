@@ -22,11 +22,13 @@ import {
   RUNNING_MS,
   isCompletion,
   pendingStatus,
+  staysUntilDismissed,
 } from './ingest'
 import type { IngestStatus } from './types/sources'
 
 export {
   currentLabel,
+  failedCount,
   fraction,
   groupChips,
   indexLocked,
@@ -90,11 +92,11 @@ function schedule(ms: number): void {
 }
 
 /** A run we were watching has just ended. */
-function onFinished(state: IngestStatus['state']): void {
+function onFinished(status: IngestStatus): void {
   clearLinger()
-  // An error, and a run the person stopped, stay until dismissed: a failure that vanishes on a
-  // timer is a failure nobody reads, and a stopped run still offers *Index the remaining*.
-  if (state === 'error' || state === 'stopped') return
+  // An error, a run with failed files, and a run the person stopped stay until dismissed
+  // (`staysUntilDismissed`): a failure that vanishes on a timer is a failure nobody reads.
+  if (staysUntilDismissed(status)) return
   // The chip goes quiet; an open screen stays open. Someone reading which files failed must not
   // have the list taken away on a timer.
   linger = setTimeout(() => {
@@ -123,7 +125,7 @@ async function tick(): Promise<void> {
     } else if (finished) {
       ingestRun.visible = true
       ingestRun.completedRuns += 1
-      onFinished(next.state)
+      onFinished(next)
     }
     schedule(next.state === 'running' ? RUNNING_MS : IDLE_MS)
   } catch {

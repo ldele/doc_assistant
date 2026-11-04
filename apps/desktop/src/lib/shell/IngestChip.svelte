@@ -10,13 +10,23 @@
   // the whole duration by design, so showing them mid-run would report a result that has not
   // happened. They appear only once the run reaches `done`.
   import Icon from './Icon.svelte'
-  import { dismissIngest, fraction, ingestLabel, ingestRun } from '../core/ingest.svelte'
+  import {
+    dismissIngest,
+    failedCount,
+    fraction,
+    ingestLabel,
+    ingestRun,
+  } from '../core/ingest.svelte'
 
   const status = $derived(ingestRun.status)
   const pct = $derived(fraction(status))
   const label = $derived(ingestLabel(status))
   const running = $derived(status?.state === 'running')
-  const failed = $derived(status?.state === 'error')
+  // Red when the run failed, and when it ended with files that failed: a finished bar in the
+  // accent colour beside "2 failed" would still read as all well.
+  const failed = $derived(
+    status?.state === 'error' || (!running && status !== null && failedCount(status) > 0),
+  )
   const paused = $derived(running && status?.control === 'paused')
 </script>
 

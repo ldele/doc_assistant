@@ -3,6 +3,7 @@ import { test } from 'node:test'
 
 import {
   currentLabel,
+  failedCount,
   fraction,
   groupChips,
   indexLocked,
@@ -13,6 +14,7 @@ import {
   runBanner,
   runFooter,
   runTitle,
+  staysUntilDismissed,
 } from './ingest.ts'
 import type { IngestCounts, IngestStatus } from './types/sources.ts'
 
@@ -84,6 +86,56 @@ test('a finished run that added nothing does not read as a failure', () => {
   assert.equal(
     ingestLabel(status({ state: 'done', added: 3, total: 3, done: 3 })),
     'Indexing done · 3 new',
+  )
+})
+
+test('a finished run with failed files says so instead of "nothing new"', () => {
+  // The sandbox walkthrough, 2026-11-04: two unreadable files failed and the bar read
+  // "Indexing done · nothing new", which hid them once the screen was closed.
+  const twoFailed = counts({ unchanged: 20, failed: 2, total: 22 })
+  assert.equal(
+    ingestLabel(status({ state: 'done', added: 0, total: 22, done: 22, counts: twoFailed })),
+    'Indexing done · 2 failed',
+  )
+  assert.equal(
+    ingestLabel(
+      status({
+        state: 'done',
+        added: 3,
+        total: 4,
+        done: 4,
+        counts: counts({ added: 3, failed: 1, total: 4 }),
+      }),
+    ),
+    'Indexing done · 3 new · 1 failed',
+  )
+  assert.equal(
+    ingestLabel(
+      status({ state: 'stopped', total: 22, done: 16, counts: counts({ failed: 2, total: 22 }) }),
+    ),
+    'Indexing stopped · 16/22 done · 2 failed',
+  )
+})
+
+test('the failure count falls back to the run tally, and a run in flight shows position only', () => {
+  assert.equal(failedCount(status({ state: 'done', errors: 2, counts: null })), 2)
+  assert.equal(failedCount(null), 0)
+  assert.equal(
+    ingestLabel(status({ total: 10, done: 5, counts: counts({ failed: 1, total: 10 }) })),
+    'Indexing… 5/10 done',
+  )
+})
+
+test('a run that left failures stays on the status bar until dismissed', () => {
+  // In the dev build the "3 failed" chip went quiet after the 8 s linger like any finished run,
+  // which hid the failures again a few seconds later.
+  const failedTwo = counts({ unchanged: 20, failed: 2, total: 22 })
+  assert.equal(staysUntilDismissed(status({ state: 'done', counts: failedTwo })), true)
+  assert.equal(staysUntilDismissed(status({ state: 'error' })), true)
+  assert.equal(staysUntilDismissed(status({ state: 'stopped' })), true)
+  assert.equal(
+    staysUntilDismissed(status({ state: 'done', added: 3, counts: counts({ added: 3 }) })),
+    false,
   )
 })
 

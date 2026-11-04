@@ -19,6 +19,7 @@ keeps working unchanged after the split. Path/model config is read dynamically v
 from __future__ import annotations
 
 import shutil
+import time
 from collections.abc import Callable, Mapping
 from pathlib import Path
 from uuid import uuid4
@@ -39,7 +40,7 @@ from doc_assistant.embeddings import (
     get_collection_name,
     get_embeddings,
 )
-from doc_assistant.extractors import extractor_name, is_supported
+from doc_assistant.extractors import IngestRefusedError, extractor_name, is_supported
 
 from .cache import doc_hash, get_cache_path, is_cache_fresh, load_or_extract
 from .chunking import (
@@ -59,7 +60,9 @@ from .cleanup import (
     cleanup_orphans_sqlite,
     hashes_with_no_figure_rows,
 )
+from .estimate import record_speed
 from .figures import figure_parent_text, find_figure_context
+from .run import NO_TEXT, DocumentResult, IngestRun, short_reason
 from .store import (
     _existing_document_id,
     build_path_index,
@@ -74,15 +77,18 @@ from .workers import resolve_workers, warm_extraction_cache
 
 log = structlog.get_logger(__name__)
 
-#: Called once per document as ``(done, total, current)``: ``done`` documents are finished, out of
-#: ``total``, and ``current`` is the file about to be processed — ``None`` on the final call, when
-#: nothing is in flight. Optional and purely observational: `main` never reads it back, and a
+#: Called as ``(done, total, current)`` before each document and again after it: ``done``
+#: documents are finished, out of ``total``, and ``current`` is the file about to be processed, or
+#: ``None`` when nothing is in flight (between two documents, where a paused run waits, and on the
+#: final call). Optional and purely observational: `main` never reads it back, and a
 #: caller that raises is logged and ignored (see `_report`), because a progress sink must not be
 #: able to kill a run that takes tens of minutes.
 ProgressFn = Callable[[int, int, str | None], None]
 
 __all__ = [
     "PAGE_MARKER",
+    "DocumentResult",
+    "IngestRun",
     "_existing_document_id",
     "_find_orphan_hashes",
     "_make_baseline_splitter",
@@ -110,6 +116,7 @@ __all__ = [
     "load_documents",
     "load_or_extract",
     "main",
+    "process_document",
     "process_one_document",
     "repoint_figures",
     "resolve_workers",
@@ -178,19 +185,35 @@ def process_one_document(
     indexed: set[str],
     path_index: Mapping[str, str] | None = None,
 ) -> str:
+    """:func:`process_document`'s tally alone: ``"added"``, ``"skipped"`` or ``"error"``."""
+    return process_document(path, db, pc_db, splitter, indexed, path_index).result
+
+
+def process_document(
+    path: Path,
+    db: Chroma,
+    pc_db: Chroma,
+    splitter: RecursiveCharacterTextSplitter,
+    indexed: set[str],
+    path_index: Mapping[str, str] | None = None,
+) -> DocumentResult:
+    """Index one file into both vector stores and SQLite, and say what happened to it.
+
+    Never raises: a failure is a result with its reason, so one unreadable file cannot end a run.
+    """
     try:
         text = load_or_extract(path)
         if not text.strip():
-            return "skipped"
+            return DocumentResult("skipped", reason=NO_TEXT)
 
         h = doc_hash(text)
         if h in indexed:
-            return "skipped"
+            return DocumentResult("skipped")
 
         # Split with positions tracked
         raw_chunks: list[str] = splitter.split_text(text)
         if not raw_chunks:
-            return "skipped"
+            return DocumentResult("skipped", reason=NO_TEXT)
 
         documents: list[Document] = []
         cursor = 0
@@ -386,10 +409,14 @@ def process_one_document(
             )
 
         indexed.add(h)
-        return "added"
+        return DocumentResult("added", passages=baseline_chunk_count)
     except Exception as e:
         log.warning("document_error", file=path.name, error=str(e))
-        return "error"
+        # A refusal is already a sentence for the person who added the file (security S-1).
+        reason = short_reason(e)
+        if not isinstance(e, IngestRefusedError):
+            reason = f"Could not read it: {reason}"
+        return DocumentResult("error", reason=reason)
 
 
 def _resolve_walk_root(scope: str | None) -> Path:
@@ -505,7 +532,10 @@ def main(
     files: list[Path] | None = None,
     dry_run: bool = False,
     on_progress: ProgressFn | None = None,
+    run: IngestRun | None = None,
 ) -> dict[str, int]:
+    # `run` (ROADMAP 31): each file's outcome is recorded on it, and between two documents the
+    # loop asks it whether to wait (paused) or to end (stopped). See `ingest.run`.
     # Selective ingestion (feature-selective-ingestion.md, S1). `files` is an explicit,
     # already-validated absolute path list (from `registry.resolve_selection` for the API, or CLI
     # `--files`) — mutually exclusive with the walk-scoping flags. `dry_run` reports the plan
@@ -645,11 +675,24 @@ def main(
     # loop itself stays serial: embedding is GPU-bound and already batched, and concurrent writers
     # on one Chroma collection is a corruption risk rather than a speed-up. A budget of 1 skips
     # this entirely and the run is byte-identical to the pre-2026-08-25 behaviour.
+    if run is not None:
+        run.begin(to_process)
+    # The total is known now, before the extraction warm-up, so the app can say "0 of 26" (and
+    # "Paused at 0 of 26") instead of "Preparing" for as long as the warm-up takes.
+    _report(on_progress, 0, len(to_process), None)
+    # Work time for the next Re-index estimate (`ingest.estimate`): the warm-up plus each document
+    # indexed, never the time spent paused at a checkpoint.
+    started = time.perf_counter()
     if to_process:
         from doc_assistant import app_settings
 
         budget = workers if workers is not None else app_settings.get_ingest_budget()
-        warm_extraction_cache(to_process, resolve_workers(budget))
+        warm_extraction_cache(
+            to_process,
+            resolve_workers(budget),
+            should_stop=run.stop_requested if run is not None else None,
+        )
+    work_seconds = time.perf_counter() - started
 
     # ADR-047's identity fallback resolves a document by its *normalised* source path, and during
     # a corpus-wide re-extraction every hash has moved, so that fallback is the path taken for
@@ -666,11 +709,31 @@ def main(
     # *before* each document so `current` names the file actually in flight, and once more after
     # the loop with `current=None` so a watcher sees the run reach its own total.
     total = len(to_process)
+    finished = 0
     for done, path in enumerate(tqdm(to_process, desc="Processing")):
+        # Between two documents, never inside one: a document half-written to the stores is the
+        # partial write the dedup gate exists to repair. A stop leaves the loop, so everything
+        # after it still runs and every finished document goes live.
+        if run is not None and run.checkpoint():
+            log.info("ingest_stopped", done=done, total=total)
+            break
         _report(on_progress, done, total, path.name)
-        result = process_one_document(path, db, pc_db, splitter, indexed, path_index)
-        stats[result] += 1
-    _report(on_progress, total, total, None)
+        if run is not None:
+            run.reading(done)
+        started = time.perf_counter()
+        outcome = process_document(path, db, pc_db, splitter, indexed, path_index)
+        if outcome.result == "added":
+            work_seconds += time.perf_counter() - started
+        stats[outcome.result] += 1
+        if run is not None:
+            run.record(done, outcome)
+        finished = done + 1
+        # Nothing in flight now: a run paused here must not still name this file as current.
+        _report(on_progress, finished, total, None)
+    _report(on_progress, finished, total, None)
+    if run is not None:
+        run.end()
+    record_speed(work_seconds, stats["added"])
 
     _assign_demo_folder(get_document_row_hashes() - rows_before)
     _apply_imported_metadata()

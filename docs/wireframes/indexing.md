@@ -1,11 +1,14 @@
-<!-- status: active · updated: 2026-11-01 · class: living -->
+<!-- status: active · updated: 2026-11-04 · class: living -->
 
 # Wireframe: the indexing screen
 
 The scene is `indexing.excalidraw` beside this file; open it on the canvas with
 `excalidraw-canvas import docs/wireframes/indexing.excalidraw`, edit, and export it back over the
 same file. Four screens, approved by the user on 2026-11-01 with no markup, at rev 858: Settings >
-Documents during a run, the run in progress, paused, and stopped. Not built yet.
+Documents during a run, the run in progress, paused, and stopped. Built 2026-11-04 (DEVLOG
+2026-11-04 (2)), with three changes the user asked for while it was driven: *Stop* is red and asks
+first, *Pause* is amber, and the status bar reads *Indexing… 14/30 done*. The drawing is left as
+approved.
 
 **What the drawing decides.**
 
@@ -16,6 +19,7 @@ Documents during a run, the run in progress, paused, and stopped. Not built yet.
 - *Pause* and *Stop* sit in the header and wait for the document in progress to finish, because
   documents run one at a time.
 - *Stop* has no confirmation. It loses nothing: finished documents stay and the next run skips them.
+  **Superseded by the user, 2026-11-04:** Stop is red and asks first.
 - A stopped run offers *Index the remaining 15* and *Retry the 2 that failed*. A run that reaches
   the end looks the same, without the first.
 - The title counts failed files as done, as the app's label does: 12 finished and 2 failed read

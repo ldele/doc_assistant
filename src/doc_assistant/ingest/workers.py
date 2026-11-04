@@ -26,6 +26,7 @@ from __future__ import annotations
 import multiprocessing
 import os
 import sys
+from collections.abc import Callable
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 
@@ -126,7 +127,9 @@ def _extract_one(path_str: str) -> tuple[str, str | None]:
     return path_str, None
 
 
-def warm_extraction_cache(paths: list[Path], workers: int) -> dict[str, int]:
+def warm_extraction_cache(
+    paths: list[Path], workers: int, should_stop: Callable[[], bool] | None = None
+) -> dict[str, int]:
     """Extract ``paths`` into the markdown cache using ``workers`` processes.
 
     A pure warm-up: it touches the cache and nothing else — no database, no Chroma, no figures. The
@@ -136,6 +139,10 @@ def warm_extraction_cache(paths: list[Path], workers: int) -> dict[str, int]:
 
     Returns ``{"extracted", "failed", "workers"}``. Processes, not threads: PyMuPDF's work is in C
     and the GIL would serialise most of it back.
+
+    ``should_stop`` is asked after each document: once it says yes, documents not yet started are
+    cancelled and the ones in flight finish, so a stopped run does not first extract the rest of
+    the batch (ROADMAP 31). Nothing is lost: a cancelled document simply has no cache yet.
     """
     if workers <= 1 or len(paths) <= 1:
         return {"extracted": 0, "failed": 0, "workers": 1}
@@ -166,6 +173,10 @@ def warm_extraction_cache(paths: list[Path], workers: int) -> dict[str, int]:
     with ProcessPoolExecutor(max_workers=workers, mp_context=_SPAWN) as pool:
         futures = {pool.submit(_extract_one, str(p)): p for p in paths}
         for fut in as_completed(futures):
+            if should_stop is not None and should_stop():
+                cancelled = sum(1 for f in futures if f.cancel())
+                log.info("extraction_warmup_stopped", cancelled=cancelled)
+                break
             try:
                 _path, error = fut.result()
             except Exception as e:

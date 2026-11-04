@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import threading
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any, Literal
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Query, Request
 
 from apps.api.models.sources import (
     AcceptsPayload,
@@ -16,6 +16,9 @@ from apps.api.models.sources import (
     CatalogueScanRequest,
     CatalogueScanResponse,
     FileVerdictPayload,
+    IngestFilePayload,
+    IngestFilesPayload,
+    IngestPlanPayload,
     IngestRequest,
     InspectRequest,
     InspectResponse,
@@ -26,6 +29,14 @@ from apps.api.models.sources import (
 from apps.api.services import _ingest_status_dict, _IngestStatus, log
 from doc_assistant import app_settings
 from doc_assistant.db.session import session_scope
+
+if TYPE_CHECKING:  # the ingest package pulls the torch chain; imported where a run starts
+    from doc_assistant.ingest.run import IngestRun
+
+#: The indexing screen's filters and the follow-up runs, spelled as `doc_assistant.ingest.run`
+#: spells them, so the route signatures need no import of the ingest package at module load.
+FileGroup = Literal["all", "in_progress", "waiting", "not_started", "finished", "failed"]
+RerunScope = Literal["failed", "remaining"]
 
 router = APIRouter()
 
@@ -44,7 +55,11 @@ def ingest_start(request: Request, body: IngestRequest | None = None) -> dict[st
     # so a bad path is a 400 *before* anything starts running (nothing partial). No body (or
     # null paths) keeps today's behavior — the whole source dir, now minus standing exclusions.
     selection: list[Path] | None = None
-    if body is not None and body.paths is not None:
+    if body is not None and body.only_new:
+        selection = _new_files_selection(source, body)
+    elif body is not None and body.rerun is not None:
+        selection = _rerun_selection(app_, body.rerun, body.paths)
+    elif body is not None and body.paths is not None:
         from doc_assistant.ingest import registry
 
         with session_scope() as session:
@@ -56,10 +71,14 @@ def ingest_start(request: Request, body: IngestRequest | None = None) -> dict[st
                     detail={"error": "invalid selection", "offenders": e.offenders},
                 ) from e
 
+    from doc_assistant.ingest.run import IngestRun
+
+    run = IngestRun()
     status: _IngestStatus = app_.state.ingest_status
     with app_.state.ingest_lock:
         if status.state == "running":
             raise HTTPException(status_code=409, detail="ingest already running")
+        app_.state.ingest_run = run
         status.state = "running"
         status.source_dir = str(source)
         status.added = status.skipped = status.errors = 0
@@ -80,9 +99,9 @@ def ingest_start(request: Request, body: IngestRequest | None = None) -> dict[st
     def _worker() -> None:
         try:
             if selection is not None:
-                stats = app_.state.ingest_fn(files=selection, on_progress=_on_progress)
+                stats = app_.state.ingest_fn(files=selection, on_progress=_on_progress, run=run)
             else:
-                stats = app_.state.ingest_fn(scope=str(source), on_progress=_on_progress)
+                stats = app_.state.ingest_fn(scope=str(source), on_progress=_on_progress, run=run)
         except Exception as e:  # surface any ingest failure to the status view
             log.exception("ingest_failed", source=str(source))
             with app_.state.ingest_lock:
@@ -108,7 +127,8 @@ def ingest_start(request: Request, body: IngestRequest | None = None) -> dict[st
                 f"indexed {status.added} new, {status.skipped} unchanged, {status.errors} errors"
             )
             status.current = None
-            status.state = "done"
+            # A stopped run ends like a finished one (its documents are live), and says so.
+            status.state = "stopped" if run.stopped else "done"
 
     threading.Thread(target=_worker, name="ingest", daemon=True).start()
     return _ingest_status_dict(app_)
@@ -117,6 +137,112 @@ def ingest_start(request: Request, body: IngestRequest | None = None) -> dict[st
 @router.get("/api/ingest/status")
 def ingest_status(request: Request) -> dict[str, Any]:
     return _ingest_status_dict(request.app)
+
+
+def _new_files_selection(source: Path, body: IngestRequest) -> list[Path]:
+    """*Only index new files*: the library folder's never-indexed files, or a 400 saying why."""
+    from doc_assistant.ingest import registry
+    from doc_assistant.ingest.estimate import new_file_keys
+
+    if body.paths is not None or body.rerun is not None:
+        raise HTTPException(status_code=400, detail="only_new takes no paths and no rerun")
+    with session_scope() as session:
+        keys = new_file_keys(session, source)
+        if not keys:
+            raise HTTPException(status_code=400, detail="the library folder has no new files")
+        return registry.resolve_selection(session, source, keys)
+
+
+@router.get("/api/ingest/plan")
+def ingest_plan() -> IngestPlanPayload:
+    """What a Re-index of the library folder would read, and roughly how long it would take.
+
+    Stat-only: no extraction, no model, safe to call each time the confirmation opens.
+    """
+    from doc_assistant.ingest.estimate import plan_library
+
+    with session_scope() as session:
+        plan = plan_library(session, app_settings.get_source_dir().resolve())
+    return IngestPlanPayload(
+        new=plan.new,
+        new_bytes=plan.new_bytes,
+        changed=plan.changed,
+        changed_bytes=plan.changed_bytes,
+        unchanged=plan.unchanged,
+        excluded=plan.excluded,
+        seconds_all=plan.seconds(only_new=False),
+        seconds_new=plan.seconds(only_new=True),
+        seconds_per_document=plan.seconds_per_document,
+        measured_documents=plan.measured_documents,
+    )
+
+
+def _rerun_selection(app_: Any, rerun: RerunScope, paths: list[str] | None) -> list[Path]:
+    """The files ``rerun`` names from the last run, or a 400 saying why there are none."""
+    if paths is not None:
+        raise HTTPException(status_code=400, detail="send paths or rerun, not both")
+    last: IngestRun | None = app_.state.ingest_run
+    if last is None:
+        raise HTTPException(status_code=400, detail="there is no earlier run to take files from")
+    selection = last.paths(rerun)
+    if not selection:
+        raise HTTPException(status_code=400, detail=f"the last run has no {rerun} files")
+    return selection
+
+
+def _live_run(request: Request) -> IngestRun:
+    """The run in flight, or a 409: pause and stop act on a running run only."""
+    status: _IngestStatus = request.app.state.ingest_status
+    with request.app.state.ingest_lock:
+        run: IngestRun | None = request.app.state.ingest_run
+        if status.state != "running" or run is None:
+            raise HTTPException(status_code=409, detail="no indexing run is in progress")
+        return run
+
+
+@router.post("/api/ingest/pause")
+def ingest_pause(request: Request) -> dict[str, Any]:
+    """Pause after the document in flight (ROADMAP 31). Searching and chatting go on as usual."""
+    _live_run(request).pause()
+    return _ingest_status_dict(request.app)
+
+
+@router.post("/api/ingest/resume")
+def ingest_resume(request: Request) -> dict[str, Any]:
+    _live_run(request).resume()
+    return _ingest_status_dict(request.app)
+
+
+@router.post("/api/ingest/stop")
+def ingest_stop(request: Request) -> dict[str, Any]:
+    """End the run after the document in flight. What finished stays; the next run skips it."""
+    _live_run(request).stop()
+    return _ingest_status_dict(request.app)
+
+
+@router.get("/api/ingest/files")
+def ingest_files(
+    request: Request,
+    offset: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=500),
+    group: FileGroup = "all",
+) -> IngestFilesPayload:
+    """One page of the current or last run's files, in the screen's order (ROADMAP 31).
+
+    Empty, not 404, before any run: a screen opened on a fresh app has nothing to list.
+    """
+    run: IngestRun | None = request.app.state.ingest_run
+    if run is None:
+        return IngestFilesPayload(total=0, offset=offset, files=[])
+    rows, total = run.page(offset, limit, group)
+    return IngestFilesPayload(
+        total=total,
+        offset=offset,
+        files=[
+            IngestFilePayload(path=f.path, name=f.name, state=f.state, detail=f.detail)
+            for f in rows
+        ],
+    )
 
 
 @router.get("/api/sources")

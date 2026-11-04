@@ -154,6 +154,8 @@ def create_app(
     app.state.sessions = SessionStore()
     app.state.ingest_status = _IngestStatus()
     app.state.ingest_lock = threading.Lock()
+    #: The current or last run's files and controls (ROADMAP 31); replaced when a run starts.
+    app.state.ingest_run = None
     app.state.graph_rebuild_status = _GraphRebuildStatus()
     app.state.graph_rebuild_lock = threading.Lock()
     app.state.reingest_status = _ReingestStatus()

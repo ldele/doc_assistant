@@ -11,6 +11,7 @@
     confirmLabel = 'Delete',
     cancelLabel = 'Cancel',
     tone = 'danger',
+    confirmIcon = 'trash-2',
     busy = false,
     onConfirm,
     onClose,
@@ -20,6 +21,8 @@
     confirmLabel?: string
     cancelLabel?: string
     tone?: 'danger' | 'default'
+    /** The danger button's icon: a bin for a delete, a square for a stop; null for none. */
+    confirmIcon?: 'trash-2' | 'square' | null
     busy?: boolean
     onConfirm: () => void
     onClose: () => void
@@ -38,7 +41,7 @@
   <div class="mactions">
     <button class="ghost" onclick={onClose} type="button" disabled={busy}>{cancelLabel}</button>
     <button class={tone} onclick={onConfirm} type="button" disabled={busy}>
-      {#if tone === 'danger'}<Icon name="trash-2" size={14} />{/if}
+      {#if tone === 'danger' && confirmIcon}<Icon name={confirmIcon} size={14} />{/if}
       {busy ? 'Working…' : confirmLabel}
     </button>
   </div>

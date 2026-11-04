@@ -127,6 +127,7 @@
   import { formatLine, limitLine } from './lib/library/formats'
   import { previewNames, remainderLabel, summarise } from './lib/library/accept'
   import { ingestRun, watchIngest } from './lib/core/ingest.svelte'
+  import IndexingScreen from './lib/shell/IndexingScreen.svelte'
   import { backoffDelayMs, startupPhase } from './lib/shell/startup'
   import {
     chat,
@@ -1408,6 +1409,10 @@
 
   <StatusBar />
 </div>
+
+{#if ingestRun.panelOpen}
+  <IndexingScreen />
+{/if}
 
 {#if shell.showSettings}
   <Settings

@@ -18,9 +18,55 @@ if TYPE_CHECKING:
 
 class IngestRequest(BaseModel):
     """Optional POST /api/ingest body. Absent / null ``paths`` = ingest the whole source dir
-    (minus standing exclusions); a list = ingest exactly that selection (overriding exclusions)."""
+    (minus standing exclusions); a list = ingest exactly that selection (overriding exclusions).
+
+    ``rerun`` (ROADMAP 31) takes the files from the last run instead: ``failed`` retries the ones
+    that failed, ``remaining`` indexes the ones a stop left. The server reads them from its own
+    record of that run, so the client sends no paths. Exclusive with ``paths``."""
 
     paths: list[str] | None = None
+    rerun: Literal["failed", "remaining"] | None = None
+    #: The Re-index confirmation's *Only index new files*: the library folder's files never
+    #: indexed, leaving changed ones at their current version. Exclusive with the two above.
+    only_new: bool = False
+
+
+class IngestPlanPayload(BaseModel):
+    """GET /api/ingest/plan: what a Re-index of the library folder would read, before it runs.
+
+    Mirrors ``doc_assistant.ingest.estimate.IngestPlan``. The seconds are ``None`` until this
+    computer has indexed at least one document: the estimate is measured, never assumed.
+    """
+
+    new: int
+    new_bytes: int
+    changed: int
+    changed_bytes: int
+    unchanged: int
+    excluded: int
+    seconds_all: float | None
+    seconds_new: float | None
+    seconds_per_document: float | None
+    measured_documents: int
+
+
+class IngestFilePayload(BaseModel):
+    """One file of a run, as the indexing screen lists it (``doc_assistant.ingest.run``)."""
+
+    path: str
+    name: str
+    state: Literal["waiting", "reading", "added", "unchanged", "failed", "not_started"]
+    #: What happened, in a sentence: a failure's reason, "412 passages", "Already in your library".
+    detail: str | None = None
+
+
+class IngestFilesPayload(BaseModel):
+    """GET /api/ingest/files: one page of the current or last run's files, in screen order."""
+
+    #: How many files the asked-for group holds, so the screen can offer the next page.
+    total: int
+    offset: int
+    files: list[IngestFilePayload]
 
 
 class SourcePatch(BaseModel):

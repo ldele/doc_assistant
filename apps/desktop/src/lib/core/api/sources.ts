@@ -4,6 +4,9 @@
 
 import { API_BASE, apiFetch, errorDetail } from './_base'
 import type {
+  IngestFilesPage,
+  IngestGroup,
+  IngestPlan,
   IngestStatus,
   SourceFile,
 } from '../types'
@@ -46,4 +49,49 @@ export async function getIngestStatus(): Promise<IngestStatus> {
   const r = await apiFetch(`${API_BASE}/api/ingest/status`)
   if (!r.ok) throw new Error(`ingest status failed: ${r.status}`)
   return (await r.json()) as IngestStatus
+}
+/** What a Re-index of the library folder would read, and a rough duration. Stat-only, $0. */
+export async function getIngestPlan(): Promise<IngestPlan> {
+  const r = await apiFetch(`${API_BASE}/api/ingest/plan`)
+  if (!r.ok) throw new Error(await errorDetail(r, 'plan the re-index'))
+  return (await r.json()) as IngestPlan
+}
+/** Index only the library folder's files never indexed (the Re-index confirmation's checkbox). */
+export async function startIngestNewOnly(): Promise<IngestStatus> {
+  const r = await apiFetch(`${API_BASE}/api/ingest`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ only_new: true }),
+  })
+  if (!r.ok) throw new Error(await errorDetail(r, 'start indexing'))
+  return (await r.json()) as IngestStatus
+}
+/** Start a run over files taken from the last one, which the server reads from its own record of
+ *  it: `failed` retries the failures, `remaining` indexes what a stop left (ROADMAP 31). */
+export async function rerunIngest(rerun: 'failed' | 'remaining'): Promise<IngestStatus> {
+  const r = await apiFetch(`${API_BASE}/api/ingest`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ rerun }),
+  })
+  if (!r.ok) throw new Error(await errorDetail(r, 'start indexing'))
+  return (await r.json()) as IngestStatus
+}
+/** Pause, resume or stop the run in flight. Pause and stop take effect once the document being
+ *  indexed finishes. 409 when no run is in progress. Returns the status after the request. */
+export async function controlIngest(action: 'pause' | 'resume' | 'stop'): Promise<IngestStatus> {
+  const r = await apiFetch(`${API_BASE}/api/ingest/${action}`, { method: 'POST' })
+  if (!r.ok) throw new Error(await errorDetail(r, `${action} indexing`))
+  return (await r.json()) as IngestStatus
+}
+/** One page of the current or last run's files, in the screen's order. Empty before any run. */
+export async function getIngestFiles(
+  group: IngestGroup = 'all',
+  offset = 0,
+  limit = 200,
+): Promise<IngestFilesPage> {
+  const q = new URLSearchParams({ group, offset: String(offset), limit: String(limit) })
+  const r = await apiFetch(`${API_BASE}/api/ingest/files?${q}`)
+  if (!r.ok) throw new Error(`ingest files failed: ${r.status}`)
+  return (await r.json()) as IngestFilesPage
 }

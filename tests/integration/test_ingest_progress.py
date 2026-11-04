@@ -53,7 +53,9 @@ def test_status_carries_position_while_a_run_is_in_flight() -> None:
     reported = threading.Event()
     release = threading.Event()
 
-    def fake_ingest(*, scope: str | None = None, on_progress: Sink = None) -> dict[str, int]:
+    def fake_ingest(
+        *, scope: str | None = None, on_progress: Sink = None, run: object = None
+    ) -> dict[str, int]:
         assert on_progress is not None, "the route must install a progress sink"
         on_progress(3, 12, "hodgkin_huxley_1952.pdf")
         reported.set()
@@ -78,7 +80,9 @@ def test_status_carries_position_while_a_run_is_in_flight() -> None:
 def test_nothing_is_in_flight_once_the_run_is_done() -> None:
     """`current` must clear, or the bar keeps naming a file that finished long ago."""
 
-    def fake_ingest(*, scope: str | None = None, on_progress: Sink = None) -> dict[str, int]:
+    def fake_ingest(
+        *, scope: str | None = None, on_progress: Sink = None, run: object = None
+    ) -> dict[str, int]:
         assert on_progress is not None
         on_progress(0, 2, "a.pdf")
         on_progress(2, 2, None)
@@ -96,7 +100,9 @@ def test_nothing_is_in_flight_once_the_run_is_done() -> None:
 def test_a_failed_run_does_not_leave_a_file_in_flight() -> None:
     """A crash mid-document must clear `current` too — the error state is still a resting state."""
 
-    def boom(*, scope: str | None = None, on_progress: Sink = None) -> dict[str, int]:
+    def boom(
+        *, scope: str | None = None, on_progress: Sink = None, run: object = None
+    ) -> dict[str, int]:
         assert on_progress is not None
         on_progress(1, 4, "halfway.pdf")
         raise RuntimeError("disk full")
@@ -113,7 +119,9 @@ def test_a_new_run_does_not_open_on_the_previous_run_s_position() -> None:
     """Stale position is worse than none: the bar would start part-full and jump backwards."""
     calls: list[int] = []
 
-    def fake_ingest(*, scope: str | None = None, on_progress: Sink = None) -> dict[str, int]:
+    def fake_ingest(
+        *, scope: str | None = None, on_progress: Sink = None, run: object = None
+    ) -> dict[str, int]:
         assert on_progress is not None
         calls.append(1)
         if len(calls) == 1:

@@ -14,7 +14,7 @@
 
 import { untrack } from 'svelte'
 
-import { getIngestStatus } from './api/sources'
+import { controlIngest, getIngestStatus, rerunIngest } from './api/sources'
 import {
   IDLE_MS,
   MISS_TOLERANCE,
@@ -25,13 +25,27 @@ import {
 } from './ingest'
 import type { IngestStatus } from './types/sources'
 
-export { currentLabel, fraction, indexLocked, ingestLabel, isCompletion } from './ingest'
+export {
+  currentLabel,
+  fraction,
+  groupChips,
+  indexLocked,
+  ingestLabel,
+  isCompletion,
+  rerunLabel,
+  runBanner,
+  runFooter,
+  runTitle,
+} from './ingest'
 
 export const ingestRun = $state({
   /** The last status actually read, or null when nothing has been read yet. */
   status: null as IngestStatus | null,
 
-  /** True while the detail panel is open. Owned here so any surface can close it. */
+  /**
+   * True while the indexing screen is open (ROADMAP 31). Owned here so the status bar, Settings and
+   * the screen itself all open and close the same one.
+   */
   panelOpen: false,
 
   /**
@@ -78,10 +92,13 @@ function schedule(ms: number): void {
 /** A run we were watching has just ended. */
 function onFinished(state: IngestStatus['state']): void {
   clearLinger()
-  if (state === 'error') return // stays until dismissed
+  // An error, and a run the person stopped, stay until dismissed: a failure that vanishes on a
+  // timer is a failure nobody reads, and a stopped run still offers *Index the remaining*.
+  if (state === 'error' || state === 'stopped') return
+  // The chip goes quiet; an open screen stays open. Someone reading which files failed must not
+  // have the list taken away on a timer.
   linger = setTimeout(() => {
     ingestRun.visible = false
-    ingestRun.panelOpen = false
   }, RESULT_LINGER_MS)
 }
 
@@ -174,6 +191,27 @@ export function useRunEnd(onEnd: (status: IngestStatus) => void): void {
     seen = next
     if (ended) untrack(() => onEnd(next))
   })
+}
+
+/** Open the indexing screen: from the status bar, or from Settings with *View indexing*. */
+export function openIndexing(): void {
+  ingestRun.panelOpen = true
+  schedule(0)
+}
+
+/**
+ * Pause, resume or stop the run in flight. The answer is shown at once, so *Pausing…* appears on
+ * the click rather than on the next poll; the poll then follows the run as usual.
+ */
+export async function controlRun(action: 'pause' | 'resume' | 'stop'): Promise<void> {
+  ingestRun.status = await controlIngest(action)
+  schedule(0)
+}
+
+/** Index what a stop left, or retry what failed, from the server's own record of the last run. */
+export async function rerunLast(scope: 'failed' | 'remaining'): Promise<void> {
+  const started = await rerunIngest(scope)
+  noteIngestStarted(started.source_dir)
 }
 
 /** Dismiss a finished/failed run from the bar. Never interrupts a run — it only stops showing it. */

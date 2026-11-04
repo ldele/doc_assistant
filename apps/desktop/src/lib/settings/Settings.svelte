@@ -5,6 +5,7 @@
     setSourceDir,
     setMarkersEnabled,
     startIngest,
+    startIngestNewOnly,
     reindexKeywords,
     exportAllConversations,
     getUpdateStatus,
@@ -17,8 +18,15 @@
   import { getTheme, setTheme, applyTheme, type Theme } from '../core/theme'
   import Icon from '../shell/Icon.svelte'
   import { canPickFiles, pickPaths } from '../core/tauri'
-  import { indexLocked, ingestRun, noteIngestStarted, useRunEnd } from '../core/ingest.svelte'
+  import {
+    indexLocked,
+    ingestRun,
+    noteIngestStarted,
+    openIndexing,
+    useRunEnd,
+  } from '../core/ingest.svelte'
   import GettingStarted from './GettingStarted.svelte'
+  import ReindexConfirm from './ReindexConfirm.svelte'
   import ProviderSetup from './ProviderSetup.svelte'
   import Sources from './Sources.svelte'
   import SpacingIgnoreList from './SpacingIgnoreList.svelte'
@@ -280,9 +288,43 @@
     }
   }
 
+  function viewIndexing(): void {
+    onClose()
+    openIndexing()
+  }
+
+  // Re-index asks first (the user, 2026-11-04): how many files it reads, roughly how long, and
+  // whether to take only the new ones. A first index has nothing indexed to skip and no measured
+  // speed, so it starts at once, as before.
+  let reindexOpen = $state(false)
+
+  async function onIndexClick(): Promise<void> {
+    const target = dir.trim()
+    if (!target || busy || !settings) return
+    if (settings.chunk_count === 0) {
+      void indexFolder()
+      return
+    }
+    // The plan counts the saved folder, so a folder typed but not saved is saved first.
+    if (target !== settings.source_dir) {
+      try {
+        settings = await setSourceDir(target)
+      } catch (e) {
+        actionError = String(e)
+        return
+      }
+    }
+    reindexOpen = true
+  }
+
+  function confirmReindex(onlyNew: boolean): void {
+    reindexOpen = false
+    void indexFolder(onlyNew)
+  }
+
   // One low-friction action: validate+persist the folder, then re-index it. Saving first
   // means a bad path surfaces the backend's 400 before any ingest starts (inform-don't-corrupt).
-  async function indexFolder(): Promise<void> {
+  async function indexFolder(onlyNew = false): Promise<void> {
     const target = dir.trim()
     if (!target || busy) return
     requesting = true
@@ -290,7 +332,7 @@
     ingest = null
     try {
       settings = await setSourceDir(target)
-      const started = await startIngest()
+      const started = onlyNew ? await startIngestNewOnly() : await startIngest()
       // Without this a short run can end between two idle polls: the watcher never sees it running
       // and no completion fires, which nothing else covers once this panel has closed.
       noteIngestStarted(started.source_dir)
@@ -337,12 +379,13 @@
   function onInputKey(e: KeyboardEvent): void {
     if (e.key === 'Enter') {
       e.preventDefault()
-      void indexFolder() // self-guards on empty / busy
+      void onIndexClick() // self-guards on empty / busy; a Re-index asks first
     }
   }
 
   function onWindowKey(e: KeyboardEvent): void {
-    if (e.key === 'Escape') onClose()
+    // The Re-index confirmation handles its own Escape: it closes the question, not Settings.
+    if (e.key === 'Escape' && !reindexOpen) onClose()
   }
 
   // Honour aria-modal: keep Tab inside the dialog instead of walking out into the UI the modal
@@ -473,7 +516,7 @@
               <p class="warn"><Icon name="triangle-alert" size={14} /> The saved folder doesn't exist yet: <code>{settings.source_dir}</code></p>
             {/if}
 
-            <button class="primary" onclick={indexFolder} disabled={busy || dir.trim() === ''}>
+            <button class="primary" onclick={onIndexClick} disabled={busy || dir.trim() === ''}>
               {#if busy}
                 Indexing…
               {:else if settings.chunk_count > 0}
@@ -491,6 +534,8 @@
                   while for large folders. You can close Settings: indexing keeps running.</p>
               {:else if ingest?.state === 'done'}
                 <p class="ok"><Icon name="check" size={14} /> {ingest.message}</p>
+              {:else if ingest?.state === 'stopped'}
+                <p class="muted">Stopped: {ingest.message}. What finished is in your library.</p>
               {:else if ingest?.state === 'error'}
                 <p class="err" role="alert">Indexing failed: {ingest.message}</p>
               {/if}
@@ -499,6 +544,13 @@
               {/if}
               {#if actionError}
                 <p class="err" role="alert">{actionError}</p>
+              {/if}
+              <!-- ROADMAP 31: every file's status, Pause and Stop. Closes Settings first, so one
+                   overlay is open at a time and Escape closes the one in front. -->
+              {#if ingestRun.status?.counts}
+                <button class="ghost view-run" type="button" onclick={viewIndexing}>
+                  View indexing
+                </button>
               {/if}
             </div>
           </section>
@@ -824,6 +876,14 @@
     </div>
   {/if}
 </div>
+
+{#if reindexOpen && settings}
+  <ReindexConfirm
+    folder={settings.source_dir}
+    onConfirm={confirmReindex}
+    onClose={() => (reindexOpen = false)}
+  />
+{/if}
 
 <style>
   .scrim {
@@ -1160,6 +1220,9 @@
     padding: 0.2rem 0.55rem;
     font-size: 0.76rem;
     flex: none;
+  }
+  .view-run {
+    margin-top: 0.5rem;
   }
   .ghost {
     margin-top: 0.8rem;

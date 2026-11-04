@@ -16,7 +16,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import structlog
 from fastapi import FastAPI
@@ -25,6 +25,9 @@ from doc_assistant import app_settings
 from doc_assistant.chat_controller import ChatController
 from doc_assistant.config import DATA_PATH
 from doc_assistant.embeddings import get_active_model_name
+
+if TYPE_CHECKING:  # the ingest package pulls the torch chain; the run is only typed here
+    from doc_assistant.ingest.run import IngestRun
 
 log = structlog.get_logger(__name__)
 
@@ -213,6 +216,7 @@ class _GraphRebuildStatus:
 
 def _ingest_status_dict(app: FastAPI) -> dict[str, Any]:
     st: _IngestStatus = app.state.ingest_status
+    run: IngestRun | None = app.state.ingest_run
     with app.state.ingest_lock:
         return {
             "state": st.state,
@@ -224,6 +228,11 @@ def _ingest_status_dict(app: FastAPI) -> dict[str, Any]:
             "total": st.total,
             "done": st.done,
             "current": st.current,
+            # ROADMAP 31: what pause or stop has been asked, and each state's count of files.
+            # Counts only, never the files: at 10,000 documents a poll cannot carry the list, so
+            # the screen reads it a page at a time from GET /api/ingest/files.
+            "control": run.control() if run is not None and st.state == "running" else "none",
+            "counts": run.counts() if run is not None else None,
         }
 
 
@@ -267,17 +276,19 @@ def _default_ingest(
     scope: str | None = None,
     files: list[Path] | None = None,
     on_progress: Callable[[int, int, str | None], None] | None = None,
+    run: IngestRun | None = None,
 ) -> dict[str, int]:
     """Lazy wrapper so importing this module doesn't pull the heavy ingest -> torch chain.
 
     ``scope`` = the whole source dir (honoring exclusions); ``files`` = an explicit, pre-resolved
     selection (selective ingestion, S1). The two are mutually exclusive at the ``main()`` layer.
     ``on_progress`` is forwarded verbatim; the type is spelled out here rather than imported so
-    this module keeps its lazy-import property.
+    this module keeps its lazy-import property. ``run`` carries each file's outcome and the
+    pause and stop controls (ROADMAP 31).
     """
     from doc_assistant.ingest import main as ingest_main
 
-    return ingest_main(scope=scope, files=files, on_progress=on_progress)
+    return ingest_main(scope=scope, files=files, on_progress=on_progress, run=run)
 
 
 def _default_rebuild_graph() -> str:

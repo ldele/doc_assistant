@@ -1,6 +1,6 @@
 <script lang="ts">
   // The ingest indicator that lives on the right of the status bar: a thin determinate bar, a
-  // count, and a click target that opens the detail.
+  // count, and a click target that opens the indexing screen (ROADMAP 31, `IndexingScreen`).
   //
   // Split out of StatusBar so the bar keeps its "zero props, ambient" shape — this component owns
   // one concern (a run in flight) and reads it from the shared `ingestRun` rune, exactly as
@@ -10,28 +10,24 @@
   // the whole duration by design, so showing them mid-run would report a result that has not
   // happened. They appear only once the run reaches `done`.
   import Icon from './Icon.svelte'
-  import {
-    currentLabel,
-    dismissIngest,
-    fraction,
-    ingestLabel,
-    ingestRun,
-  } from '../core/ingest.svelte'
+  import { dismissIngest, fraction, ingestLabel, ingestRun } from '../core/ingest.svelte'
 
   const status = $derived(ingestRun.status)
   const pct = $derived(fraction(status))
   const label = $derived(ingestLabel(status))
   const running = $derived(status?.state === 'running')
   const failed = $derived(status?.state === 'error')
+  const paused = $derived(running && status?.control === 'paused')
 </script>
 
 {#if ingestRun.visible && status}
-  <div class="ingest" class:failed>
+  <div class="ingest" class:failed class:paused>
     <button
       class="ingest-btn"
       onclick={() => (ingestRun.panelOpen = !ingestRun.panelOpen)}
+      aria-haspopup="dialog"
       aria-expanded={ingestRun.panelOpen}
-      title={ingestRun.panelOpen ? 'Hide indexing detail' : 'Show indexing detail'}
+      title={ingestRun.panelOpen ? 'Close the indexing screen' : 'Open the indexing screen'}
       type="button"
     >
       <!-- Determinate whenever the backend has counted the batch; indeterminate only in the brief
@@ -41,7 +37,6 @@
         ></span>
       </span>
       <span class="ingest-label">{label}</span>
-      <Icon name={ingestRun.panelOpen ? 'chevron-down' : 'chevron-up'} size={12} />
     </button>
 
     {#if !running}
@@ -50,44 +45,6 @@
       </button>
     {/if}
   </div>
-
-  {#if ingestRun.panelOpen}
-    <!-- Anchored above the bar; the bar is the last row of the app, so the panel opens upward. -->
-    <div class="panel" role="dialog" aria-label="Indexing detail">
-      <p class="panel-title">{label}</p>
-
-      {#if running}
-        <!-- No "Progress" row: the title above already says "Indexing 4 of 12", and repeating the
-             same pair two lines apart is noise. This row answers the question the title cannot. -->
-        <p class="panel-line">
-          <span class="k">Now</span>
-          <span class="v mono">{currentLabel(status)}</span>
-        </p>
-      {:else if failed}
-        <p class="panel-line err">{status.message ?? 'The indexer stopped with an error.'}</p>
-      {:else}
-        <p class="panel-line">
-          <span class="k">Added</span><span class="v">{status.added}</span>
-        </p>
-        <p class="panel-line">
-          <span class="k">Unchanged</span><span class="v">{status.skipped}</span>
-        </p>
-        <p class="panel-line" class:err={status.errors > 0}>
-          <span class="k">Errors</span><span class="v">{status.errors}</span>
-        </p>
-      {/if}
-
-      {#if ingestRun.lostContact}
-        <p class="panel-line err">
-          Lost contact with the indexer. It may still be running — reopen the app to check.
-        </p>
-      {/if}
-
-      {#if status.source_dir}
-        <p class="panel-foot mono" title={status.source_dir}>{status.source_dir}</p>
-      {/if}
-    </div>
-  {/if}
 {/if}
 
 <style>
@@ -120,8 +77,8 @@
   .track {
     position: relative;
     display: inline-block;
-    width: 68px;
-    height: 4px;
+    width: 96px;
+    height: 5px;
     border-radius: 2px;
     background: var(--border);
     overflow: hidden;
@@ -136,6 +93,9 @@
   }
   .failed .fill {
     background: var(--danger);
+  }
+  .paused .fill {
+    background: var(--warn-border);
   }
   /* Only used before the batch has been counted — a real fraction replaces it as soon as one
      exists, so this never stands in for progress the app actually knows. */
@@ -172,56 +132,5 @@
   .ingest-x:hover {
     background: var(--bg-2);
     color: var(--fg);
-  }
-
-  .panel {
-    position: absolute;
-    right: 0.6rem;
-    bottom: 1.9rem;
-    z-index: 40;
-    min-width: 15rem;
-    max-width: min(26rem, 90vw);
-    padding: 0.6rem 0.7rem;
-    border: 1px solid var(--border);
-    border-radius: var(--radius, 8px);
-    background: var(--bg);
-    box-shadow: var(--shadow-md, 0 6px 24px rgb(0 0 0 / 0.28));
-  }
-  .panel-title {
-    margin: 0 0 0.4rem;
-    font-size: var(--text-meta);
-    font-weight: 600;
-    color: var(--fg);
-  }
-  .panel-line {
-    display: flex;
-    justify-content: space-between;
-    gap: 0.75rem;
-    margin: 0.15rem 0;
-    font-size: var(--text-meta);
-    color: var(--fg-2);
-  }
-  .panel-line .v {
-    color: var(--fg);
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-  .panel-line.err {
-    color: var(--danger);
-  }
-  .panel-foot {
-    margin: 0.45rem 0 0;
-    padding-top: 0.35rem;
-    border-top: 1px solid var(--border);
-    font-size: var(--text-meta);
-    color: var(--fg-2);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-  .mono {
-    font-family: var(--font-mono, ui-monospace, monospace);
   }
 </style>

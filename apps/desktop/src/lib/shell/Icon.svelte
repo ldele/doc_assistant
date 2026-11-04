@@ -41,6 +41,9 @@
     | 'arrow-right'
     | 'keyboard'
     | 'info'
+    | 'play'
+    | 'pause'
+    | 'square'
 
   let { name, size = 18 }: { name: IconName; size?: number } = $props()
 </script>
@@ -174,6 +177,12 @@
     />
   {:else if name === 'info'}
     <circle cx="12" cy="12" r="10" /><path d="M12 16v-4" /><path d="M12 8h.01" />
+  {:else if name === 'play'}
+    <polygon points="6 3 20 12 6 21 6 3" />
+  {:else if name === 'pause'}
+    <rect x="14" y="4" width="4" height="16" rx="1" /><rect x="6" y="4" width="4" height="16" rx="1" />
+  {:else if name === 'square'}
+    <rect width="18" height="18" x="3" y="3" rx="2" />
   {/if}
 </svg>
 

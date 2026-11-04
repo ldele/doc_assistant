@@ -230,7 +230,10 @@ def test_ingest_runs_on_the_folder_and_reloads_controller(
     seen: dict[str, str] = {}
 
     def fake_ingest(
-        *, scope: str, on_progress: Callable[[int, int, str | None], None] | None = None
+        *,
+        scope: str,
+        on_progress: Callable[[int, int, str | None], None] | None = None,
+        run: object = None,
     ) -> dict[str, int]:
         seen["scope"] = scope
         return {"added": 3, "skipped": 1, "error": 0}
@@ -270,7 +273,10 @@ def test_ingest_releases_the_keyword_index_before_the_new_controller_is_built(
         return FakeController(count=2)
 
     def fake_ingest(
-        *, scope: str, on_progress: Callable[[int, int, str | None], None] | None = None
+        *,
+        scope: str,
+        on_progress: Callable[[int, int, str | None], None] | None = None,
+        run: object = None,
     ) -> dict[str, int]:
         return {"added": 1, "skipped": 0, "error": 0}
 
@@ -287,7 +293,10 @@ def test_ingest_releases_the_keyword_index_before_the_new_controller_is_built(
 
 def test_ingest_surfaces_failure_in_status(settings_file: Path) -> None:
     def boom(
-        *, scope: str, on_progress: Callable[[int, int, str | None], None] | None = None
+        *,
+        scope: str,
+        on_progress: Callable[[int, int, str | None], None] | None = None,
+        run: object = None,
     ) -> dict[str, int]:
         raise RuntimeError("disk full")
 
@@ -307,7 +316,10 @@ def test_ingest_rejects_concurrent_run(settings_file: Path) -> None:
     release = threading.Event()
 
     def slow_ingest(
-        *, scope: str, on_progress: Callable[[int, int, str | None], None] | None = None
+        *,
+        scope: str,
+        on_progress: Callable[[int, int, str | None], None] | None = None,
+        run: object = None,
     ) -> dict[str, int]:
         release.wait(timeout=5)
         return {"added": 0, "skipped": 0, "error": 0}

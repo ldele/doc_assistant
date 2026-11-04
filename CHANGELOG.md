@@ -29,6 +29,15 @@ The engineering record is finer-grained than this file: per-change entries live 
   *This server does not bill me*. A key is sent only to the address it was saved with. Answers on
   these providers say who bills instead of an estimated price, and citation quality is measured on
   Claude Haiku and two local models only.
+- **An indexing screen, with Pause and Stop.** The status bar's indexing count and Settings' *View
+  indexing* open a screen that lists every file of the run with its status and what happened:
+  passages stored, already in your library, or why it failed. *Pause* and *Stop* take effect once
+  the document being read finishes, and both name it while they wait. Stop asks first, and loses
+  nothing: what finished stays in your library and the next run skips it. A stopped run offers
+  *Index the remaining*, and any run with failures offers *Retry*.
+- **Re-index says what it will do first.** It counts the new, changed and already indexed files,
+  estimates how long the run takes from the speed measured on this computer's last run (or says
+  there is no estimate yet), and offers *Only index new files*.
 
 ### Changed
 
@@ -52,6 +61,8 @@ The engineering record is finer-grained than this file: per-change entries live 
 
 ### Fixed
 
+- **The status bar says it is indexing.** It reads *Indexing… 14/30 done* (and *Indexing paused*,
+  *Indexing stopped*, *Indexing done*) beside a wider bar, instead of a bare count.
 - **Settings closes while indexing.** A run started from Settings used to hold the panel open until
   it ended, which can take hours. Escape, a click outside and the close button now work during a
   run. The run carries on, the status bar keeps counting, the library updates when it ends, and

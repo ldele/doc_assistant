@@ -231,6 +231,7 @@ def test_api_sources_scan_patch_and_selective_ingest(sources_env: Path) -> None:
         scope: str | None = None,
         files: list[Path] | None = None,
         on_progress: Callable[[int, int, str | None], None] | None = None,
+        run: object = None,
     ) -> dict[str, int]:
         seen["scope"] = scope
         seen["files"] = files
@@ -280,6 +281,7 @@ def test_api_ingest_no_body_still_works(sources_env: Path) -> None:
         scope: str | None = None,
         files: list[Path] | None = None,
         on_progress: Callable[[int, int, str | None], None] | None = None,
+        run: object = None,
     ) -> dict[str, int]:
         seen["scope"] = scope
         seen["files"] = files
@@ -294,3 +296,93 @@ def test_api_ingest_no_body_still_works(sources_env: Path) -> None:
     assert client.post("/api/ingest").status_code == 202
     _poll_status(client, state="done")
     assert seen["files"] is None and seen["scope"] == str(src.resolve())
+
+
+# --- The Re-index confirmation: counts, a measured estimate, only new files --------------------
+
+
+@pytest.fixture
+def speed_settings(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A settings file of the test's own, so a recorded speed never leaks between tests."""
+    from doc_assistant import app_settings
+
+    monkeypatch.setattr(app_settings, "SETTINGS_PATH", tmp_path / "settings.json")
+
+
+def test_the_plan_counts_what_a_reindex_reads_and_estimates_only_once_measured(
+    sources_env: Path, speed_settings: None
+) -> None:
+    from doc_assistant.ingest import estimate
+
+    src = sources_env
+    for name in ("new1.pdf", "new2.pdf", "same.pdf", "edited.pdf", "skip.pdf"):
+        (src / name).write_text(name)
+    _mark_ingested(src / "same.pdf")
+    _mark_ingested(src / "edited.pdf")
+    _touch_newer_than_cache(src / "edited.pdf")
+    with session_scope() as s:
+        estimate.plan_library(s, src)  # registers the rows, so one can be excluded
+    from doc_assistant.ingest import registry
+
+    with session_scope() as s:
+        registry.set_source_meta(s, "skip.pdf", excluded=True)
+        plan = estimate.plan_library(s, src)
+
+    assert (plan.new, plan.changed, plan.unchanged, plan.excluded) == (2, 1, 1, 1)
+    assert plan.new_bytes == len("new1.pdf") + len("new2.pdf")
+    # Nothing measured on this computer yet: no number, rather than someone else's.
+    assert plan.seconds(only_new=False) is None and plan.measured_documents == 0
+
+    estimate.record_speed(30.0, 3)  # a run indexed 3 documents in 30 s of work
+    with session_scope() as s:
+        plan = estimate.plan_library(s, src)
+    assert plan.seconds_per_document == 10.0 and plan.measured_documents == 3
+    assert plan.seconds(only_new=False) == 30.0  # 2 new + 1 changed
+    assert plan.seconds(only_new=True) == 20.0
+
+
+def test_a_run_that_indexed_nothing_keeps_the_last_measurement(speed_settings: None) -> None:
+    from doc_assistant.ingest import estimate
+
+    estimate.record_speed(12.0, 4)
+    estimate.record_speed(0.5, 0)  # everything was unchanged: nothing to learn from
+    assert estimate.measured_speed() == (3.0, 4)
+
+
+def test_the_plan_route_and_only_new_files(sources_env: Path, speed_settings: None) -> None:
+    src = sources_env
+    for name in ("fresh.pdf", "same.pdf", "edited.pdf"):
+        (src / name).write_text(name)
+    _mark_ingested(src / "same.pdf")
+    _mark_ingested(src / "edited.pdf")
+    _touch_newer_than_cache(src / "edited.pdf")
+    seen: dict[str, object] = {}
+
+    def fake_ingest(
+        *,
+        scope: str | None = None,
+        files: list[Path] | None = None,
+        on_progress: Callable[[int, int, str | None], None] | None = None,
+        run: object = None,
+    ) -> dict[str, int]:
+        seen["scope"], seen["files"] = scope, files
+        return {"added": 1, "skipped": 0, "error": 0}
+
+    client = TestClient(
+        create_app(
+            controller=_FakeController(),  # type: ignore[arg-type]
+            ingest_fn=fake_ingest,
+            controller_factory=_FakeController,
+        )
+    )
+    plan = client.get("/api/ingest/plan").json()
+    assert (plan["new"], plan["changed"], plan["unchanged"]) == (1, 1, 1)
+    assert plan["seconds_all"] is None and plan["measured_documents"] == 0
+
+    # Only new files: the never-indexed one alone; the edited one keeps its current version.
+    assert client.post("/api/ingest", json={"only_new": True}).status_code == 202
+    _poll_status(client, state="done")
+    assert [p.name for p in seen["files"]] == ["fresh.pdf"]  # type: ignore[attr-defined]
+    assert seen["scope"] is None
+
+    assert client.post("/api/ingest", json={"only_new": True, "paths": ["a"]}).status_code == 400

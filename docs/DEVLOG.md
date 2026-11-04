@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-11-02 · class: append-only -->
+<!-- status: active · updated: 2026-11-04 · class: append-only -->
 
 # DEVLOG — doc_assistant
 
@@ -41,6 +41,90 @@ Format: What changed | Why | Rejected alternatives | What it opens
 > is individually small and correct, so unbounded growth is invisible per commit.
 
 ---
+
+## 2026-11-04 (3) — The release check sees every build input and every chat reply (review N1, KI-83)
+
+**What changed.** `scripts/release_preflight.py`: `SHIPPED_PATHS` gains `package-lock.json`,
+`public/`, `svelte.config.js`, `tsconfig.json`, Tauri's `capabilities/` and `nsis/`, and
+`apps/__init__.py` and `apps/cli.py` (the spec freezes every submodule of `apps`). A new
+`NOT_SHIPPED` names each other tracked file under `apps/` with its reason (`Cargo.lock`, the icon
+sources, the notes), and `unclassified_app_files` lists any file in neither. `check_dev_commands`
+reads `.ts` files and the string literals of `commands.py` (docstrings aside), with `python -m` and
+`scripts/….py`. Six chat replies in `commands.py` that named a script or `.env` now name the app's
+control, or say the pass is not in the app yet.
+
+**Why.** Both checks are release criteria for 0.7.2 (plan piece 6). The DOMPurify fix touched only
+the npm lock, which was in no list, so an older installer read as fresh; and the replies sent an
+installed-app user to a `scripts/` folder they do not have, past a check that read `.svelte` only.
+
+**Checked.** A test that every tracked file under `apps/` is in one list or the other (it is today);
+fake trees that plant a `python -m` reply, a `scripts/….py` reply and a `.ts` string and fail,
+while docstrings, comments and test files pass; the replies' own tests, rewritten to pin that no
+command is named.
+
+**Rejected.** Reading `.ts` comments as well: explaining a command to a maintainer is fine.
+Shipping `Cargo.lock`: cargo rewrites it during every build (the constant's own comment).
+
+**What it opens.** Similarity (`compute_doc_vectors`) has no in-app control; the reply now says so.
+
+## 2026-11-04 (2) — The indexing screen: each file's outcome, Pause and Stop, a Re-index estimate (0.7.2, piece 4)
+
+**What changed.** ROADMAP 31 (Track B's per-file outcome and retry), from the wireframe approved at
+rev 858 (`docs/wireframes/indexing.md`). A new `ingest/run.py` holds one run as the app sees it:
+each file's state (*waiting*, *reading*, *added*, *unchanged*, *failed*, *not started*) with what
+happened, and the controls. `ingest.main` takes an optional `run`, records each document on it, and
+asks it between two documents whether to wait or to end; `process_document` returns a
+`DocumentResult` (the old tally, the passage count, a failure's reason) and `process_one_document`
+keeps its string for its callers. A stop leaves the loop, so the post-run steps and the controller
+reload still run; the extraction warm-up cancels what it has not started. Routes: pause, resume,
+stop, a paged `GET /api/ingest/files`, `POST /api/ingest {rerun: failed|remaining}` from the
+server's own record of the last run, `GET /api/ingest/plan`, and `{only_new: true}`. The status
+gains `control` and `counts`, and a `stopped` state. The screen (`shell/IndexingScreen.svelte`)
+opens from the status bar and from Settings' *View indexing*. Three changes by the user's word
+during the build: the status bar reads *Indexing… 14/30 done*; Stop is red and asks first (the
+wireframe had no confirmation), Pause amber; and Re-index opens a confirmation with the counts, an
+estimate and *Only index new files* (`ingest/estimate.py`, `settings/ReindexConfirm.svelte`).
+
+**Why.** A run showed only its position, and a failure's reason reached the log alone. The user
+asked for the list, pause and stop on 2026-11-01, and for the rest while it was driven.
+
+**Checked.** Unit tests for the run object (two real threads for pause and stop); a real
+`ingest.main` over temp files: stop, pause and resume, a failed file's reason, a second run reading
+*unchanged*, a follow-up run over the rest; route tests for every control, the page, re-runs, the
+plan and `only_new`. Driven in the app on a new data home (`C:/Projects/pv-idx`, generated files, a
+dummy key): paused before and during a run, stopped while paused, *Index the remaining*, *Retry*,
+the Stop question and its Escape, the Re-index question before and after a run measured its speed;
+light, dark, 375 px, no failed request since the page load. Pause was asked at 14 done and took
+effect after the 15th, read in the server log.
+
+**Rejected.** Discarding the file in flight on Pause (the user asked to check): extraction, 14.7 s
+mean cold (`docs/performance.md`), is one library call that cannot be interrupted in-process, so
+dropping the file would save only its embedding, about 11 s on the shipped CPU build; the wait is
+named instead. A per-document constant for the estimate: the speed is measured per machine, and
+none is shown before a run measures it. Sending the follow-up runs' paths from the client: the
+server already holds them, and a paused run would otherwise ship 10,000 paths per click.
+
+**What it opens.** The run's record is in memory: a restart forgets the last run's list. A document
+recorded with no passages shows as failed but counts as added in the tally. Row 77 (parallel
+extraction in the frozen build) is still to observe on the installed build at the release.
+
+## 2026-11-04 — The test suite sees CI's provider environment; `main` was red since ADR-060
+
+**What changed.** `tests/conftest.py` gains an autouse fixture that clears `config.ANTHROPIC_API_KEY`
+and unpins `REVIEWER_PROVIDER`, as CI has them. `test_compatible_turn.py` reads the answer's request
+and then the review's: both passages come from one paper, so the answer is flagged and the reviewer
+follows the chat provider to the same server (ADR-011).
+
+**Why.** CI failed six tests on `afb3313` and `20d52db` (`too many values to unpack`) that passed
+here. Here `.env` pins the reviewer to Anthropic, so the fake server saw one request; and with the
+key in `.env`, that whole-turn test built a real Anthropic client and called it on each flagged
+answer, a billed call from the suite (KI-4's shape).
+
+**Rejected.** Pinning the reviewer in the test alone: the next whole-turn test would meet the same
+`.env`. Asserting one request: the review is the behaviour ADR-011 decided.
+
+**What it opens.** Nothing pins that a test cannot reach a paid API in general; this closes the one
+door found.
 
 ## 2026-11-02 (4) — The project review's routing applied to the tracked docs; archived paths re-pointed
 

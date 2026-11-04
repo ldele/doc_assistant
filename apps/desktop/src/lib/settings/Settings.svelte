@@ -17,7 +17,15 @@
   import { fade, fly } from 'svelte/transition'
   import { getTheme, setTheme, applyTheme, type Theme } from '../core/theme'
   import Icon from '../shell/Icon.svelte'
-  import { canPickFiles, pickPaths } from '../core/tauri'
+  import {
+    canPickFiles,
+    libraryState,
+    markLibrarySwitch,
+    openLibrary,
+    pickPaths,
+    type LibraryState,
+  } from '../core/tauri'
+  import ConfirmDialog from '../shell/ConfirmDialog.svelte'
   import {
     indexLocked,
     ingestRun,
@@ -27,6 +35,7 @@
   } from '../core/ingest.svelte'
   import GettingStarted from './GettingStarted.svelte'
   import ReindexConfirm from './ReindexConfirm.svelte'
+  import OpenLibraryDialog from './OpenLibraryDialog.svelte'
   import ProviderSetup from './ProviderSetup.svelte'
   import Sources from './Sources.svelte'
   import SpacingIgnoreList from './SpacingIgnoreList.svelte'
@@ -383,9 +392,38 @@
     }
   }
 
+  // ADR-061: another library folder opens where it is. The shell restarts the backend on it, so
+  // the control exists only where there is a shell with a backend to restart (choice 9).
+  let libState = $state<LibraryState | null>(null)
+  void libraryState().then((s) => (libState = s))
+  let libraryToOpen = $state<string | null>(null)
+  let confirmOwnLibrary = $state(false)
+  let libraryError = $state<string | null>(null)
+
+  async function chooseLibrary(): Promise<void> {
+    libraryError = null
+    const picked = await pickPaths({
+      directory: true,
+      multiple: false,
+      title: 'Choose a library folder (the one holding library.db)',
+    })
+    if (picked && picked[0]) libraryToOpen = picked[0]
+  }
+
+  async function useOwnLibrary(): Promise<void> {
+    confirmOwnLibrary = false
+    try {
+      markLibrarySwitch(null)
+      await openLibrary(null)
+      window.location.reload()
+    } catch (e) {
+      libraryError = String(e)
+    }
+  }
+
   function onWindowKey(e: KeyboardEvent): void {
     // The Re-index confirmation handles its own Escape: it closes the question, not Settings.
-    if (e.key === 'Escape' && !reindexOpen) onClose()
+    if (e.key === 'Escape' && !reindexOpen && !libraryToOpen && !confirmOwnLibrary) onClose()
   }
 
   // Honour aria-modal: keep Tab inside the dialog instead of walking out into the UI the modal
@@ -594,6 +632,24 @@
               <dt>Data home</dt>
               <dd class="path">{settings.data_home}</dd>
             </dl>
+            {#if libState?.bundled}
+              <div class="library-row">
+                <button class="ghost" type="button" onclick={() => void chooseLibrary()} disabled={busy}>
+                  <Icon name="folder" size={14} /> Open another library…
+                </button>
+                {#if libState.data_home}
+                  <button class="ghost" type="button" onclick={() => (confirmOwnLibrary = true)} disabled={busy}>
+                    Use the app's own library
+                  </button>
+                {/if}
+              </div>
+              <p class="hint">
+                A library indexed elsewhere on this computer opens where it is; nothing is copied.
+              </p>
+              {#if libraryError}
+                <p class="err" role="alert">{libraryError}</p>
+              {/if}
+            {/if}
             <p class="banner" class:warn={indexInfo.degraded}>{indexInfo.memory}</p>
             {#if reindexError}
               <p class="banner err">{reindexError}</p>
@@ -876,6 +932,21 @@
     </div>
   {/if}
 </div>
+
+{#if libraryToOpen}
+  <OpenLibraryDialog folder={libraryToOpen} onClose={() => (libraryToOpen = null)} />
+{/if}
+
+{#if confirmOwnLibrary}
+  <ConfirmDialog
+    title="Switch to the app's own library?"
+    body="The app restarts its engine on its own library. This library stays as it is, and Open another library… brings it back."
+    confirmLabel="Switch"
+    tone="default"
+    onConfirm={() => void useOwnLibrary()}
+    onClose={() => (confirmOwnLibrary = false)}
+  />
+{/if}
 
 {#if reindexOpen && settings}
   <ReindexConfirm
@@ -1220,6 +1291,12 @@
     padding: 0.2rem 0.55rem;
     font-size: 0.76rem;
     flex: none;
+  }
+  .library-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-top: 0.6rem;
   }
   .view-run {
     margin-top: 0.5rem;

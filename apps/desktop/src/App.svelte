@@ -128,6 +128,8 @@
   import { previewNames, remainderLabel, summarise } from './lib/library/accept'
   import { ingestRun, watchIngest } from './lib/core/ingest.svelte'
   import IndexingScreen from './lib/shell/IndexingScreen.svelte'
+  import LibrarySwitchFailed from './lib/shell/LibrarySwitchFailed.svelte'
+  import { clearLibrarySwitch, pendingLibrarySwitch } from './lib/core/tauri'
   import { backoffDelayMs, startupPhase } from './lib/shell/startup'
   import {
     chat,
@@ -158,6 +160,9 @@
 
   // Conversation history (feature-conversation-history.md). `viewing` is the session_id shown as a
   // read-only transcript; `null` means the live chat (composer + claims bound to `chat.sessionId`).
+  // ADR-061 choice 7: the library a switch just asked for ('' = the app's own), read once across the
+  // reload the switch needs; cleared when the new backend answers.
+  let switchAsked = $state<string | null>(pendingLibrarySwitch())
   let viewing = $state<string | null>(null)
   let viewedConvo = $state<ConversationDetail | null>(null)
   // Resume (fresh-context): a reopened past chat the user chose to *continue*. Its chat.turns render
@@ -570,6 +575,9 @@
           shell.health = h
           shell.status = 'ready'
           shell.startupPhase = 'connecting' // reset, so a later drop-out starts its story afresh
+          // A library switch that answered is done (ADR-061): no *Go back* for it any more.
+          clearLibrarySwitch()
+          switchAsked = null
           void refreshSetup() // ADR-034 — what this install still needs, if anything
           void loadAccepts() // formats + limits the uploader states (security S-1/S-2)
           void refreshConversations()
@@ -1412,6 +1420,10 @@
 
 {#if ingestRun.panelOpen}
   <IndexingScreen />
+{/if}
+
+{#if switchAsked !== null && shell.status !== 'ready' && shell.startupPhase === 'stalled'}
+  <LibrarySwitchFailed asked={switchAsked} onDismiss={() => (switchAsked = null)} />
 {/if}
 
 {#if shell.showSettings}

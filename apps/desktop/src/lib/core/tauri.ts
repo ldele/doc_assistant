@@ -167,3 +167,67 @@ export async function pickPaths(
     return null
   }
 }
+
+/** The library the backend opens (ADR-061), as the shell remembers it. */
+export interface LibraryState {
+  /** A backend the shell can restart. False in development, where the control is not offered. */
+  bundled: boolean
+  /** The open library folder, or null for the app's own. */
+  data_home: string | null
+  /** The library open before the last switch, or null; where *Go back* returns. */
+  previous: string | null
+}
+
+/** The shell's library state, or null in a browser (no shell, nothing to switch). */
+export async function libraryState(): Promise<LibraryState | null> {
+  const invoke = api()?.core?.invoke
+  if (!invoke) return null
+  try {
+    return await invoke<LibraryState>('library_state')
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Open a library folder, or the app's own with null: the shell remembers it and restarts the
+ * backend on it. Resolves once the new backend has been started, not once it answers; the caller
+ * reloads the window and the start-up gate waits for it. Rejects with the shell's sentence.
+ */
+export async function openLibrary(dataHome: string | null): Promise<void> {
+  const invoke = api()?.core?.invoke
+  if (!invoke) throw new Error('Libraries can be switched in the installed app only.')
+  await invoke<void>('open_library', { dataHome })
+}
+
+const SWITCH_KEY = 'provenote-library-switch'
+
+/**
+ * Remember, across the reload a switch needs, which library was just asked for, so the start-up
+ * gate can offer *Go back* if it never answers (ADR-061 choice 7). Session storage: the marker
+ * belongs to this window's switch and dies with it. Storage that refuses is not an error.
+ */
+export function markLibrarySwitch(dataHome: string | null): void {
+  try {
+    sessionStorage.setItem(SWITCH_KEY, dataHome ?? '')
+  } catch {
+    // No storage: a stalled switch then shows the ordinary start-up message.
+  }
+}
+
+/** The library a switch just asked for ('' for the app's own), or null when none is pending. */
+export function pendingLibrarySwitch(): string | null {
+  try {
+    return sessionStorage.getItem(SWITCH_KEY)
+  } catch {
+    return null
+  }
+}
+
+export function clearLibrarySwitch(): void {
+  try {
+    sessionStorage.removeItem(SWITCH_KEY)
+  } catch {
+    // Nothing to clear.
+  }
+}

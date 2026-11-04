@@ -46,3 +46,4 @@ export { getConceptGraph, getGapList, triageGap, getConceptPresence, rebuildConc
 export { getDefinitions, getUsage, getSignals, addDefinition, extractDefinitions, chooseDefinition, dismissDefinition, restoreDefinition, undoDefinition, searchVocabulary } from './definitions'
 export { getTaxonomy, getFieldDetail, getProposals, addHierarchyEdge, removeHierarchyEdge, attachDocumentField, detachDocumentField } from './taxonomy'
 export { getUpdateStatus, checkForUpdate, setAutoUpdateCheck } from './updates'
+export { inspectLibrary } from './libraries'

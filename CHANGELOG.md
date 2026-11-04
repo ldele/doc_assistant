@@ -35,6 +35,12 @@ The engineering record is finer-grained than this file: per-change entries live 
   the document being read finishes, and both name it while they wait. Stop asks first, and loses
   nothing: what finished stays in your library and the next run skips it. A stopped run offers
   *Index the remaining*, and any run with failures offers *Retry*.
+- **Open a library indexed elsewhere on this computer.** Settings > Documents > *Open another
+  library…* reads the folder first, without changing it: how many documents and chunks it holds,
+  whether this app can search it, whether its source files are where it says, and whether it was
+  copied from another folder. *Open this library* restarts the app's engine on that folder, where
+  it is; nothing is copied. *Use the app's own library* switches back, and if a library does not
+  answer, the app offers to go back to the one you had open. The installed app only.
 - **Re-index says what it will do first.** It counts the new, changed and already indexed files,
   estimates how long the run takes from the speed measured on this computer's last run (or says
   there is no estimate yet), and offers *Only index new files*.
@@ -61,6 +67,13 @@ The engineering record is finer-grained than this file: per-change entries live 
 
 ### Fixed
 
+- **Nothing outside your library is deleted or served through a path it stored.** A library
+  copied with a file manager still names the original's files, and deleting a document, re-running
+  its text or figures, or the full command-line ingest could delete or overwrite those files. Each
+  now acts only inside the open library's folders and the folders it registered, and says when it
+  left a file alone; the document viewer says when a file is outside them.
+- **A failed text re-run says it failed.** Re-running *Text & chunks* on a document whose
+  extraction failed used to report success.
 - **The status bar says it is indexing.** It reads *Indexing… 14/30 done* (and *Indexing paused*,
   *Indexing stopped*, *Indexing done*) beside a wider bar, instead of a bare count.
 - **Settings closes while indexing.** A run started from Settings used to hold the panel open until

@@ -882,9 +882,15 @@ def load_figure_image_paths(figure_ids: list[str]) -> dict[str, str]:
 
     from doc_assistant.db.models import Figure
     from doc_assistant.db.session import session_scope
+    from doc_assistant.stored_paths import is_confined
 
     with session_scope() as session:
         rows = session.execute(
             select(Figure.id, Figure.image_path).where(Figure.id.in_(figure_ids))
         ).all()
-    return {str(fid): str(path) for fid, path in rows if path and Path(path).exists()}
+    # ADR-061 choice 4: an image is served only from this library's figures folder.
+    return {
+        str(fid): str(path)
+        for fid, path in rows
+        if path and Path(path).exists() and is_confined(path, "figure")
+    }

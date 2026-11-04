@@ -223,14 +223,11 @@ def _cached_text(doc: _DocRow) -> str | None:
 
 
 def _source_path(doc: _DocRow) -> Path | None:
-    """The document's source file, if it is reachable right now."""
-    from doc_assistant import config
+    """The document's source file, if it is reachable right now and inside the library's folders
+    (ADR-061 choice 4: one rule, `library.documents.resolve_source_path`)."""
+    from doc_assistant.library.documents import resolve_source_path
 
-    p = Path(doc.source_original)
-    if p.exists():
-        return p
-    fallback = config.DOCS_PATH / doc.filename
-    return fallback if fallback.exists() else None
+    return resolve_source_path(doc.source_original, doc.filename)
 
 
 # --- the parts ------------------------------------------------------------------------------- #
@@ -458,19 +455,23 @@ def _rerun_crops(doc: _DocRow) -> tuple[str, str]:
     with session_scope() as session:
         rows = list(session.execute(select(Figure).where(Figure.document_id == doc.id)).scalars())
         requests: list[CropRequest] = []
+        from doc_assistant.stored_paths import confine
+
+        outside = 0
         for r in rows:
             bbox = _row_bbox(r)
             if not r.image_path or bbox is None:
                 continue
+            out_path = confine(str(r.image_path), "figure")
+            if out_path is None:  # ADR-061 choice 4: never render over another library's file
+                outside += 1
+                continue
             requests.append(
-                CropRequest(
-                    figure_id=str(r.id),
-                    page=int(r.page),
-                    bbox=bbox,
-                    out_path=Path(str(r.image_path)),
-                )
+                CropRequest(figure_id=str(r.id), page=int(r.page), bbox=bbox, out_path=out_path)
             )
 
+    if not requests and outside:
+        return "skipped", "the figure images are outside this library, so they were left alone"
     if not requests:
         return "skipped", "this document has no figure regions with an image"
 
@@ -558,7 +559,17 @@ def _rerun_text(doc: _DocRow) -> tuple[str, str]:
     before = doc.doc_hash
     # Invalidate this ONE document's cache. Deleting the fingerprint too, so a cache written by the
     # current extractor is not judged fresh on the next pass and quietly skipped.
-    cached = Path(doc.source_cache) if doc.source_cache else get_cache_path(source)
+    if doc.source_cache:
+        from doc_assistant.stored_paths import confine
+
+        kept = confine(doc.source_cache, "cache")
+        if kept is None:
+            # ADR-061 choice 4: the stored cache names another library's file (a copy, or a
+            # moved library). Deleting it would reach outside this one.
+            return "error", "the cached text is outside this library, so it was left alone"
+        cached = kept
+    else:
+        cached = get_cache_path(source)
     for path in (cached, _fingerprint_path(cached)):
         try:
             if path.exists():
@@ -567,7 +578,8 @@ def _rerun_text(doc: _DocRow) -> tuple[str, str]:
             return "error", f"could not clear the cached text ({type(e).__name__}: {e})"
 
     stats = ingest.main(files=[source])
-    if stats.get("errors"):
+    # `ingest.main` counts failures under "error"; this read "errors" and so never fired.
+    if stats.get("error"):
         return "error", "extraction failed — the document is unchanged"
 
     after = _current_hash(doc.id)

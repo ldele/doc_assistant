@@ -92,11 +92,17 @@ def _chroma_base() -> Path:
     ``DATA_PATH`` (SQLite handles non-ASCII paths fine). ASCII data paths (the dev/repo case)
     and non-Windows platforms are unchanged.
     """
-    if sys.platform != "win32" or str(DATA_PATH).isascii():
-        return DATA_PATH
+    return chroma_base_for(DATA_PATH)
+
+
+def chroma_base_for(data_path: Path) -> Path:
+    """Where the vector stores of the library at ``data_path`` live: the rule above, for any
+    library. ``library_home`` asks it of a folder before the app opens it (ADR-061 choice 5)."""
+    if sys.platform != "win32" or str(data_path).isascii():
+        return data_path
     import hashlib
 
-    digest = hashlib.sha1(str(DATA_PATH).encode("utf-8"), usedforsecurity=False).hexdigest()[:12]
+    digest = hashlib.sha1(str(data_path).encode("utf-8"), usedforsecurity=False).hexdigest()[:12]
     return Path(os.getenv("PROGRAMDATA", "C:\\ProgramData")) / "doc_assistant" / "chroma" / digest
 
 

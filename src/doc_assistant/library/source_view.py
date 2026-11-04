@@ -182,6 +182,14 @@ def _unavailable_reason(source_original: str) -> str:
     from doc_assistant.ingest.registry import _root_available, root_containing
 
     path = Path(source_original)
+    from doc_assistant.stored_paths import is_confined
+
+    if source_original and path.exists() and not is_confined(path, "source"):
+        # ADR-061 choice 4 (S-7): the file is there, but outside this library's folders and roots.
+        return (
+            "The file is outside this library's folders, so the app does not open it "
+            f"({source_original})."
+        )
     try:
         with session_scope() as session:
             root = root_containing(session, path)

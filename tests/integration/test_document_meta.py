@@ -23,6 +23,15 @@ class _FakeController:
         return 0
 
 
+@pytest.fixture(autouse=True)
+def library_sources(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The tests keep their source files in `tmp_path`, so it is the library's sources folder:
+    the library resolves, reveals and deletes only files inside it (ADR-061 choice 4)."""
+    from doc_assistant import config
+
+    monkeypatch.setattr(config, "DOCS_PATH", tmp_path)
+
+
 @pytest.fixture
 def temp_db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     from sqlalchemy import create_engine

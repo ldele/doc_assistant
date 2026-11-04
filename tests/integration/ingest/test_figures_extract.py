@@ -208,10 +208,15 @@ def test_no_document_or_chunk_store_mutation(env: SimpleNamespace) -> None:
 
 
 def test_load_figure_image_paths_returns_only_existing_files(env: SimpleNamespace) -> None:
-    """The UI lookup yields a path only for figures whose PNG is actually on disk."""
+    """The UI lookup yields a path only for figures whose PNG is on disk in the figures folder."""
     doc_id = _seed_document(env.pdf)
-    real_png = env.tmp / "real.png"
+    env.fig_root.mkdir(parents=True, exist_ok=True)
+    real_png = env.fig_root / "real.png"
     real_png.write_bytes(b"\x89PNG\r\n")  # bytes are irrelevant — only existence is checked
+    # On disk, but outside this library's figures folder, as a copied library's stored path is:
+    # never served (ADR-061 choice 4).
+    elsewhere = env.tmp / "elsewhere.png"
+    elsewhere.write_bytes(b"\x89PNG\r\n")
     with session_scope() as session:
         present = Figure(
             document_id=doc_id, doc_hash=DOC_HASH, page=1, kind="figure", image_path=str(real_png)
@@ -226,12 +231,16 @@ def test_load_figure_image_paths_returns_only_existing_files(env: SimpleNamespac
         caption_only = Figure(
             document_id=doc_id, doc_hash=DOC_HASH, page=3, kind="figure", image_path=None
         )
-        session.add_all([present, gone, caption_only])
+        outside = Figure(
+            document_id=doc_id, doc_hash=DOC_HASH, page=4, kind="figure", image_path=str(elsewhere)
+        )
+        session.add_all([present, gone, caption_only, outside])
         session.flush()
         pid, gid, cid = str(present.id), str(gone.id), str(caption_only.id)
+        oid = str(outside.id)
 
-    paths = figures.load_figure_image_paths([pid, gid, cid])
-    assert paths == {pid: str(real_png)}  # missing-file and caption-only excluded
+    paths = figures.load_figure_image_paths([pid, gid, cid, oid])
+    assert paths == {pid: str(real_png)}  # missing, caption-only and outside are all excluded
     assert figures.load_figure_image_paths([]) == {}  # empty input → no DB hit
 
 

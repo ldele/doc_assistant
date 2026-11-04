@@ -162,8 +162,11 @@ def cleanup_orphans_chroma(
                 continue
             if Path(str(meta.get("source_original", ""))).exists():
                 continue  # source still here — its cache is the live copy, keep it
-            cache_path = Path(str(meta.get("source_cache", "")))
-            if cache_path.exists():
+            # ADR-061 choice 4: only a cache file inside this library's cache folder goes.
+            from doc_assistant.stored_paths import confine
+
+            cache_path = confine(str(meta.get("source_cache", "")), "cache")
+            if cache_path is not None and cache_path.exists():
                 orphan_caches.append(cache_path)
 
     for h in orphan_hashes:

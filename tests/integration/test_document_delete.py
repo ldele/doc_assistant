@@ -64,6 +64,11 @@ def temp_db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     factory = sessionmaker(bind=engine, autoflush=False, autocommit=False, future=True)
     monkeypatch.setattr(session_mod, "_engine", engine)
     monkeypatch.setattr(session_mod, "_SessionLocal", factory)
+    # The tests' source files sit in `tmp_path`, so it is the library's sources folder: a delete
+    # acts only on files inside the library (ADR-061 choice 4).
+    from doc_assistant import config
+
+    monkeypatch.setattr(config, "DOCS_PATH", tmp_path)
     yield
     engine.dispose()
 

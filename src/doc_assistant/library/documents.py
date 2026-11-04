@@ -332,18 +332,26 @@ def clear_document_meta(document_id: str) -> None:
 
 
 def resolve_source_path(source_original: str, filename: str) -> Path | None:
-    """The on-disk source file, or None if it can't be located.
+    """The on-disk source file, or None if it can't be located or may not be opened.
 
     ``source_original`` may be stored resolved or not; fall back to ``DOCS_PATH / filename``
     (mirrors the extract-* scripts' resolver). Returns None when the file has moved/been deleted.
+
+    **Confined (ADR-061 choice 4, S-7):** a stored path outside the library's folders and roots is
+    never returned, so the viewer, *reveal* and *delete* cannot act on it. The fallback still runs,
+    which is what a copied library needs: its stored paths name the original, its files sit in its
+    own ``sources/``.
     """
+    from doc_assistant.config import DOCS_PATH
+    from doc_assistant.stored_paths import confine
+
     p = Path(source_original)
     if p.exists():
-        return p
-    from doc_assistant.config import DOCS_PATH
-
+        kept = confine(p, "source")
+        if kept is not None:
+            return kept
     alt = Path(DOCS_PATH) / filename
-    return alt if alt.exists() else None
+    return confine(alt, "source") if alt.exists() else None
 
 
 def reveal_document_source(document_id: str) -> bool:
@@ -430,10 +438,14 @@ def purge_document_record(
         forget(doc_hash)
 
     cleanup_orphan_figures([doc_hash])
-    if source_cache:
+    from doc_assistant.stored_paths import confine
+
+    # Only a cache file inside this library's cache folder is deleted (ADR-061 choice 4): a copied
+    # library's stored path names the original's file.
+    cache_path = confine(source_cache, "cache")
+    if cache_path is not None:
         from doc_assistant.ingest.cache import spacing_record_path
 
-        cache_path = Path(source_cache)
         for path in (cache_path, spacing_record_path(cache_path)):
             if path.exists():
                 try:

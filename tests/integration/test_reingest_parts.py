@@ -263,6 +263,20 @@ def test_re_extraction_of_an_unchanged_document_says_so(env: Path) -> None:
     assert sum(_chunks_for(before).values()) > 0
 
 
+def test_a_failed_re_extraction_is_reported_as_an_error(
+    env: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`ingest.main` counts failures under "error"; the check read "errors" and so never fired,
+    and a re-run whose extraction failed reported success (2026-11-04)."""
+    doc_id, _ = _ingest_one(env)
+    monkeypatch.setattr(ingest, "main", lambda **_: {"added": 0, "skipped": 0, "error": 1})
+
+    result = reingest.rerun([doc_id], ["text"])
+
+    assert result.outcomes[0].status == "error"
+    assert "extraction failed" in result.outcomes[0].detail
+
+
 def test_a_failing_part_does_not_abandon_the_rest_of_the_batch(
     env: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

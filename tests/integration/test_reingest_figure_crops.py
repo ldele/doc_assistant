@@ -67,7 +67,9 @@ def env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[SimpleNames
 
     fig_root = tmp_path / "figures"
     monkeypatch.setattr(figures_mod, "FIGURE_DIR", fig_root)
-    monkeypatch.setattr(config, "DOCS_PATH", tmp_path / "sources")
+    # The PDFs sit in `tmp_path`, so it is the library's sources folder: a re-run reads and writes
+    # only inside the library (ADR-061 choice 4).
+    monkeypatch.setattr(config, "DOCS_PATH", tmp_path)
 
     pdf = tmp_path / "paper.pdf"
     _build_pdf(pdf)
@@ -161,6 +163,29 @@ def test_a_missing_crop_is_restored_from_the_region_already_recorded(
     assert result.outcomes[0].status == "ok", result.outcomes[0].detail
     assert f"{len(paths)} image(s) restored" in result.outcomes[0].detail
     assert all(p.exists() and p.stat().st_size > 0 for p in paths)
+
+
+def test_a_crop_stored_outside_the_library_is_never_written(
+    env: SimpleNamespace, tmp_path_factory: pytest.TempPathFactory
+) -> None:
+    """ADR-061 choice 4 (review G1): a copied library's figure rows name the original's images.
+    Restoring them must not render over files in another folder."""
+    doc_id = _seed(env)
+    original = tmp_path_factory.mktemp("original-library")
+    with session_scope() as session:
+        for i, row in enumerate(
+            session.execute(select(Figure).where(Figure.document_id == doc_id)).scalars()
+        ):
+            target = original / f"p{i}.png"
+            target.write_text("the original's image", encoding="utf-8")
+            row.image_path = str(target)
+
+    result = reingest.rerun([doc_id], ["crops"])
+
+    assert result.outcomes[0].status == "skipped"
+    assert "outside this library" in result.outcomes[0].detail
+    for png in original.glob("*.png"):
+        assert png.read_text(encoding="utf-8") == "the original's image"
 
 
 def test_restoring_a_crop_changes_no_row_at_all(env: SimpleNamespace) -> None:

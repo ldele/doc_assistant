@@ -151,6 +151,18 @@ def _isolate_credentials(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Non
 
 
 @pytest.fixture(autouse=True)
+def _ci_provider_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Every test sees the provider settings CI sees, whatever the developer's ``.env`` holds.
+
+    CI has no ``.env``: no Anthropic key, and a reviewer that follows the chat provider. A local
+    ``.env`` with a key and ``REVIEWER_PROVIDER`` set made a whole-turn test build a real Anthropic
+    client and call it on a flagged answer (a billed call from the suite), and made the same test
+    pass here and fail on CI (2026-11-04). A test that needs either sets its own."""
+    monkeypatch.setattr(app_config, "ANTHROPIC_API_KEY", None)
+    monkeypatch.setattr(app_config, "REVIEWER_PROVIDER_PINNED", False)
+
+
+@pytest.fixture(autouse=True)
 def _forget_server_answers() -> None:
     """Model lists and Ollama's remote hosts live in memory (ADR-060): one test's must not be
     another's. Imported here, not at the top, so the data-home guard above still runs first."""

@@ -109,12 +109,15 @@ def test_a_cited_answer_through_a_server_of_your_own(temp_db) -> None:
     assert result.answer == tokens
     # The citation audit found nothing to say: both numbers point at a retrieved passage.
     assert "Citation check" not in result.citation_note_md
+    # The answer's request, then the review's: both passages come from one paper, so the answer
+    # is flagged, and the reviewer follows the chat provider to the same server (ADR-011).
+    request, review_request = server.chat_requests()
     # What was sent: the minimal body, the real answer prompt with the passages, no key.
-    (request,) = server.chat_requests()
     assert set(request["body"]) == {"model", "messages", "stream"}
     prompt = request["body"]["messages"][0]["content"]
     assert "rag.pdf" in prompt and "What does retrieval add" in prompt
     assert "authorization" not in request["headers"]
+    assert "authorization" not in review_request["headers"]
     # Where the text went and who bills, in the provenance and under the answer.
     route = _route_of_record(temp_db, result.record_id)
     assert route["host"] == "127.0.0.1" and route["reach"] == "this_computer"
@@ -148,8 +151,10 @@ def test_every_cloud_preset_through_the_fake_server(
         credentials.set_bound_key(row.id, "vendor-key", server.url("cloud"))
         tokens, result = _turn(row.id)
     assert "[1]" in tokens
-    (request,) = server.chat_requests()
+    # The answer, then the flagged answer's review, both to the preset's address with its key.
+    request, review_request = server.chat_requests()
     assert request["headers"]["authorization"] == "Bearer vendor-key"
+    assert review_request["headers"]["authorization"] == "Bearer vendor-key"
     assert set(request["body"]) == {"model", "messages", "stream"}
     # A vendor bills it, and Provenote names the vendor rather than guessing a price.
     assert result.usage.billing == f"Billed by {row.billed_by}; Provenote does not know its price."

@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-11-04 (S-7 done with ADR-061: stored paths confined; 2026-11-02: the review of 2026-11-02: §2 gates and SQL corrected, S9 widened, S15–S17 and steps S-15, S-16 added; 2026-10-31: §2: what the installer ends and deletes, KI-80; 2026-10-27: §2: the window's capability loses the shell permission, KI-73; 2026-10-20: release refresh: §2 lists S-4, S-5, S-6, S-8 and S-12 as holding; 2026-10-18: S-12 done: the actions pinned to SHAs, Dependabot for actions only, a guard test; alerts the user's toggle, off when read back; S-6 done: a write needs the launch token; S-7 next; 2026-10-01: S-13 done, CI's secret scan fails on a secret the baseline does not record; S-14 found by its first run and done: the scanner reads UTF-8 on Windows too) · class: living -->
+<!-- status: active · updated: 2026-11-04 (0.7.2 refresh: §2 re-checked, the new routes and shell commands; S-7 done with ADR-061: stored paths confined; 2026-11-02: the review of 2026-11-02: §2 gates and SQL corrected, S9 widened, S15–S17 and steps S-15, S-16 added; 2026-10-31: §2: what the installer ends and deletes, KI-80; 2026-10-27: §2: the window's capability loses the shell permission, KI-73; 2026-10-20: release refresh: §2 lists S-4, S-5, S-6, S-8 and S-12 as holding; 2026-10-18: S-12 done: the actions pinned to SHAs, Dependabot for actions only, a guard test; alerts the user's toggle, off when read back; S-6 done: a write needs the launch token; S-7 next; 2026-10-01: S-13 done, CI's secret scan fails on a secret the baseline does not record; S-14 found by its first run and done: the scanner reads UTF-8 on Windows too) · class: living -->
 
 # Security — the threat model, the plan, the floor, and the periodic check
 
@@ -39,7 +39,7 @@ goes to them by design), network attackers on the Anthropic/Ollama link (HTTPS; 
 corporate MITM, KI-10), and multi-user servers (the Docker image is a *headless* single-user API
 and says so).
 
-## 2 · What holds today (verified 2026-09-10, re-checked for 0.7.0 on 2026-10-20 — keep it that way)
+## 2 · What holds today (verified 2026-09-10, re-checked for 0.7.0 on 2026-10-20 and for 0.7.2 on 2026-11-04 — keep it that way)
 
 - **Bind is loopback.** `apps/api/__main__.py` defaults `DOC_API_HOST` to `127.0.0.1` with the reason
   in a comment; the compose file publishes `127.0.0.1:8001:8001`.
@@ -71,6 +71,18 @@ and says so).
   (`apps/api/launch_token.py`). It is a rule by method, not a list of routes, so the write routes
   added since — definitions, taxonomy proposals, keyword forms — are covered without a line each.
   It holds only while no GET has a side effect, and three have one (S15).
+- **0.7.2's new routes and shell commands, checked 2026-11-04.** The writes (`/api/ingest/pause`,
+  `/resume`, `/stop`; `POST /api/ingest` with `rerun` or `only_new`) are POSTs under S-6, and the
+  re-runs take their files from the server's own record, never from the request. The new GETs
+  (`/api/ingest/files`, `/api/ingest/plan`) read state and stat files; they write nothing and call
+  nothing out (S15 stays at three). `POST /api/libraries/inspect` reads any folder it is given,
+  read-only through SQLite's URI mode, and answers counts and sentences, not file contents. The
+  shell's `library_state` reads its own setting; `open_library` accepts only a folder holding
+  `library.db` and restarts the backend there, which is the point of ADR-061: what the window may
+  ask, the user can click. Every write or served file through a stored path is now confined to the
+  open library (S-7, below). The provider routes (ADR-060, `routers/setup.py`) add no GET: keys,
+  servers, the billing tick and the model list are POSTs or DELETEs under S-6; the model list is a
+  POST because it sends a stored key out, and a key goes only to the address it was saved with.
 - **The installer's reach outside its own folder is one process name and one folder test** (KI-80,
   2026-10-31): `src-tauri/nsis/hooks.nsh` ends `doc-assistant-api.exe` and, in `%TEMP%`, deletes a
   `_MEI*` folder only if it holds our reranker model, since every PyInstaller program uses that

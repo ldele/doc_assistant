@@ -617,7 +617,7 @@ dependencies = [
 
 [[package]]
 name = "doc-assistant-desktop"
-version = "0.7.1"
+version = "0.7.2"
 dependencies = [
  "getrandom 0.3.4",
  "serde",

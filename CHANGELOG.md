@@ -9,6 +9,12 @@ The engineering record is finer-grained than this file: per-change entries live 
 
 ## [Unreleased]
 
+## [0.7.2] — 2026-11-04
+
+You can open a library indexed elsewhere on this computer, watch and steer each indexing run, and
+answer with providers beyond Claude and Ollama. Every document is read once more after this update,
+when you choose.
+
 ### Added
 
 - **Letter-spaced text in a PDF reads as words.** A title or running head set in wide letter-spacing
@@ -84,6 +90,23 @@ The engineering record is finer-grained than this file: per-change entries live 
   model, every review failed, and from Claude Opus 5 the answer failed too: those models refuse the
   `temperature` setting, and they open a reply with a thinking block that the app could not read.
   Claude Haiku 4.5, the default, behaves as before.
+
+### Known limits
+
+- **A library copied or moved to another folder shows no figure images, and re-running *Figure
+  images* does not bring them back yet.** Its stored image paths name the old folder, and the app no
+  longer writes outside the open library. Re-running a document's text is refused there for the
+  same reason, with a sentence. Opening a library where it was made is unaffected.
+- **The indexing screen forgets the last run when the app restarts.** What finished stays in your
+  library; only the list of that run's files is gone.
+- **Pause and Stop wait for the document being read**, which can take a minute for a long PDF.
+  The screen names the document it is waiting for.
+- **The Re-index estimate is an average** over this computer's last run, so a batch of long PDFs
+  takes longer than it says. There is none until a run has measured one.
+- **Opening another library is in the installed app only**, and one copy of the app should use a
+  library at a time.
+- **Everything under *Known limits* for 0.7.1 and 0.7.0 still applies**, except that the 0.7.0
+  line on moving your data folder now reads as the first line above.
 
 ## [0.7.1] — 2026-10-31
 

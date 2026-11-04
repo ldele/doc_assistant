@@ -42,6 +42,41 @@ Format: What changed | Why | Rejected alternatives | What it opens
 
 ---
 
+## 2026-11-04 (4) — ADR-061 built: an indexed library opens where it is, nothing written outside it (0.7.2, piece 5)
+
+**What changed.** The user accepted ADR-061 as proposed, and it is built in its order. **Choice 4
+first:** `stored_paths.py` decides whether a stored path may be acted on (cache under the cache
+folder, figure images under the figures folder, sources under the library's folders or a
+registered root), and `resolve_source_path`, `purge_document_record`, the text and crops re-runs,
+the orphan sweep and `load_figure_image_paths` ask it; the viewer says when a file is outside.
+**Choice 3:** `library_home.inspect_library` reads a candidate folder read-only (SQLite URI mode),
+served at `POST /api/libraries/inspect`. **Choices 2, 7, 9:** the shell keeps `library.json`, sets
+`DOC_DATA_DIR` at spawn, and restarts the backend on `open_library`; Settings > Documents > Corpus
+offers *Open another library…* and *Use the app's own library* in an installed build only; a
+stalled switch offers *Go back*. `config.chroma_base_for` lifts KI-11's rule out of `_chroma_base`
+so the check counts chunks where the app would read them. S-7 is done (`docs/security.md`).
+
+**Why.** The user's request of 2026-11-01, and the review's must-hold G1: a copied library's rows
+name the original's files, and four writes acted on them unchecked.
+
+**Checked.** `tests/integration/test_stored_paths_confined.py` drives delete, reveal, the viewer,
+a text re-run and the orphan sweep over a library whose rows name another folder, and the crops
+and figure-route cases sit beside their own tests; each leaves the other folder's files untouched.
+`tests/unit/test_library_home.py` covers the check, including that it changes no file. Three
+fixtures that kept "library" files outside the library's folders now say where those are. Driven
+in the browser over the real API with a stand-in shell: the copied scratch library read as the
+ADR's step 4 says, *Open* asked the shell for it, a stalled switch offered *Go back*, and the
+pending marker cleared when a backend answered. Rust: `cargo check`, `clippy`, `fmt`.
+
+**Rejected.** Gating the reads that only take text for keywords: on a copy they read the same text.
+Refusing every accented library path: one the installed app made opens fine (its stores are
+already relocated). Building the installer now to drive the restart: the release builds from the
+committed tree anyway.
+
+**What it opens.** The shell's restart is driven in the installed build at the release (piece 6).
+`_rerun_text` read `stats["errors"]`, never set, so a failed re-extraction reported success; fixed
+here with a test. Bringing a copy in and libraries from another computer stay open (ADR-061).
+
 ## 2026-11-04 (3) — The release check sees every build input and every chat reply (review N1, KI-83)
 
 **What changed.** `scripts/release_preflight.py`: `SHIPPED_PATHS` gains `package-lock.json`,

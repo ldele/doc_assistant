@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-11-02 (row 109 and the review of 2026-11-02 routed; 2026-11-01: row 108: what ADR-056 leaves; 2026-10-31: cleaned up after 0.7.1: finished rows archived, long rows cut to what is left, the order set for the next moves) · class: living -->
+<!-- status: active · updated: 2026-11-04 (row 31 built: the indexing screen); 2026-11-02 (row 109 and the review of 2026-11-02 routed; 2026-11-01: row 108: what ADR-056 leaves; 2026-10-31: cleaned up after 0.7.1: finished rows archived, long rows cut to what is left, the order set for the next moves) · class: living -->
 
 # ROADMAP — doc_assistant
 

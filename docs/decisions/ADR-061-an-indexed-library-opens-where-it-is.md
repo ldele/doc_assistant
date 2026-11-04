@@ -1,8 +1,9 @@
-<!-- status: active · updated: 2026-11-04 (proposed) · class: append-only -->
+<!-- status: active · updated: 2026-11-04 (accepted as proposed) · class: append-only -->
 
 # ADR-061 — An indexed library opens where it is, and nothing is written outside it
 
-- **Status:** proposed (Claude Code, 2026-11-04), for the user to decide. Not built. The request is
+- **Status:** proposed (Claude Code, 2026-11-04); **accepted as proposed by the user the same
+  day** (*"Accept as proposed"*): option A with choices 2 to 9 as recommended. Not built yet. The request is
   the user's, 2026-11-01: *"Add already indexed library to app."* On 2026-11-04 the user put it in
   0.7.2 and left its meaning to this ADR. It is 0.7.2's piece 5
   (`docs/plans/PLAN_2026-10-31_next-two-releases.md`, local).
@@ -177,3 +178,33 @@ High on the facts (each read in the code, 2026-11-04) and on choice 4. Medium on
 the shell's start and end of the backend exist, a restart between them is new, and port 8001 must
 be free again before the new backend binds it. Choice 6 rests on a check that may not always be able
 to tell; the screen's sentence does not depend on it.
+
+## Build note 2026-11-04 — built for 0.7.2; the restart is still to be driven in the installed build
+
+- **Choice 4 first, as decided.** `doc_assistant/stored_paths.py` holds the rule; the six sites in
+  *Context* ask it (`resolve_source_path`, so the viewer, *reveal*, *delete* and the re-runs share
+  it; `purge_document_record`; the *Text & chunks* re-run; the figure crops; the orphan sweep;
+  `load_figure_image_paths`). The figures folder is asked of `ingest.figures`, which writes the
+  images, not of `config`. `tests/integration/test_stored_paths_confined.py` is the must-hold test.
+- **Choice 3.** The route is `POST /api/libraries/inspect` (`routers/libraries.py`), beside the
+  document-store routes rather than under `/api/library/`. It reads `library.db` and the searched
+  vector store's SQLite read-only, never through the store library, which can migrate what it
+  opens; a test pins that no file changes. **The count it reports is the searched store's**, the
+  number Settings shows as *chunks*: 5,700 for the scratch library, not the 1,080 baseline passages
+  *In practice* step 2 quotes.
+- **Choice 5, refined.** The check counts chunks where the app would read them once the folder is
+  open (`config.chroma_base_for`, the KI-11 rule lifted out of `config._chroma_base` so the two
+  cannot drift). So a library the installed app made at an accented path, whose stores already sit
+  under `%PROGRAMDATA%`, opens; only stores left inside an accented folder are refused.
+- **Choices 2, 7, 9.** The shell keeps `library.json` in its config folder and sets `DOC_DATA_DIR`
+  when it starts the backend; `open_library` ends the backend, waits for port 8001 and starts it
+  again. A switch is marked in session storage across the reload; at the start-up gate's *stalled*
+  phase (90 s) a card offers *Go back*. The control shows only where the shell has a bundled
+  backend.
+- **Checked:** the tests above and `tests/unit/test_library_home.py`; the Settings flow driven in
+  the browser over the real API with a stand-in shell (the copied scratch library read as in step
+  4; *Open* asked the shell for that folder; a stalled switch offered *Go back*, which asked for
+  the app's own library). **Not yet:** the shell's restart in an installed build. That is driven in
+  0.7.2's release walkthrough, on the build from the committed tree.
+- **Found on the way:** `_rerun_text` read `stats["errors"]`, a key `ingest.main` never returns, so
+  a failed re-extraction reported success; fixed, with a test.

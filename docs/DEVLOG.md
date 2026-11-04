@@ -42,6 +42,30 @@ Format: What changed | Why | Rejected alternatives | What it opens
 
 ---
 
+## 2026-11-04 (7) — RG-012's sixth trap: the host must not hold the run's log open (0.7.2 gate)
+
+**What changed.** `docs/desktop-packaging.md` §5 gains trap 6, and `docs/RELEASE.md` §5 a line:
+never open `out\run-*\rg012.log` from the host while the sandbox writes it; list the folder until
+`turn-3-result.json` appears, then read the log. Both now bind Ollama to the Default Switch
+address instead of `0.0.0.0`, with the recipe. The 0.7.2 known limits gain one line (KI-85): an
+answer from a server that reports no token counts, such as Ollama on another computer, says
+*0 tokens* in its header.
+
+**Why.** The first RG-012 run on the 18:30 installer was watched with `tail -f` on its log; every
+later `Add-Content` in the sandbox failed, so the log stopped at *installer chosen* while the three
+turns ran and saved their answers. A run's log is never edited, so the gate ran again in a fresh
+sandbox and passed (preflight: packaging and citation ok, the cut run listed beside it as a
+failure). Ollama's firewall rule allows public networks, so `0.0.0.0` would have opened it to the
+Wi-Fi for the length of the run. The `0 tokens` header came from the chat rows driven in the same
+sandbox: since ADR-060 an Ollama on another computer is not local, and the header prints the sum
+of no counts.
+
+**Rejected.** Reading the log with a polling `grep`: it opens the file too, and a collision loses
+a line silently. Fixing the `0 tokens` header before the tag: the line under the answer is right,
+and a rebuild re-runs every installed-build gate.
+
+**What it opens.** KI-85's fix (print no count rather than a zero).
+
 ## 2026-11-04 (6) — The status bar says when files failed, and stays until dismissed (0.7.2)
 
 **What changed.** A run that ends with failed files reads *Indexing done · 2 failed* (or *· 3 new ·

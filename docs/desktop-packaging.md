@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-10-27 (the backend ships as a folder, KI-73: 6–7 s to health against 38–72 s; 2026-10-26: trap 5: the gate asks as the installed window does, KI-67; 2026-09-16: RG-012 harness tracked at scripts/rg012/, three turns, two preflight checks; trap 1 now cites the general encoding rule) · class: runbook -->
+<!-- status: active · updated: 2026-11-04 (trap 6: never open the run's log from the host while it runs; bind Ollama to the switch address, not 0.0.0.0; 2026-10-27: the backend ships as a folder, KI-73: 6–7 s to health against 38–72 s; 2026-10-26: trap 5: the gate asks as the installed window does, KI-67; 2026-09-16: RG-012 harness tracked at scripts/rg012/, three turns, two preflight checks; trap 1 now cites the general encoding rule) · class: runbook -->
 
 # Desktop packaging runbook (PR-M4)
 
@@ -180,7 +180,7 @@ on the host: `python -m scripts.release_preflight` re-reads each `turn-N-result.
 watches the sandbox. `tests/unit/test_rg012_harness.py` pins the text contract between the two —
 the log lines and file names the script writes and the preflight reads — and the ASCII rule below.
 
-**Five traps this harness exists to avoid — every one of them cost a run:**
+**Six traps this harness exists to avoid — every one of them cost a run:**
 1. **ASCII only, in both the `.ps1` and the `.wsb`.** Windows PowerShell 5.1 reads a UTF-8-no-BOM
    file as ANSI, so one em-dash breaks parsing *before anything logs* — which is what the two
    historical "LogonCommand never fires" reports actually were. The test suite now byte-checks
@@ -203,10 +203,20 @@ the log lines and file names the script writes and the preflight reads — and t
    `http://tauri.localhost` (KI-67). Since 2026-10-26 the script asks `/api/health` with that
    `Origin` and logs `window origin …: allowed|REFUSED`; REFUSED, or no line at all, fails
    preflight's packaging half.
+6. **Never open the run's log from the host while the sandbox writes it.** A `tail -f` on
+   `out\run-*\rg012.log` held a handle through the mapped folder, and every later `Add-Content`
+   in the sandbox failed: the 0.7.2 log stopped at *installer chosen* while the three turns still
+   ran and saved their answers (2026-11-04). A run's log is never edited, so the run was repeated.
+   Watch by listing the folder (`turn-3-result.json` appears last), then read the log.
 
 **Tier 2 needs an answer engine the sandbox can reach.** It uses the host's Ollama over the Default
-Switch address (`http://172.29.224.1:11434`), which requires Ollama bound beyond loopback
-(`OLLAMA_HOST=0.0.0.0:11434`, then restart it) for the duration of the run — **revert afterwards**.
+Switch address (`172.29.224.1` once, `172.27.48.1` on 2026-11-04: read it from
+`Get-NetIPAddress -InterfaceAlias 'vEthernet (Default Switch)'`), which requires Ollama bound
+beyond loopback for the duration of the run — **revert afterwards**. Bind it to that address, not
+`0.0.0.0`: Ollama's firewall rule allows public networks, so `0.0.0.0` also opens it to the Wi-Fi.
+Quit Ollama from the tray, then in one PowerShell window set `$env:OLLAMA_HOST = '<address>:11434'`
+and start `ollama app.exe` from that window; quitting it and starting it from the Start menu
+reverts. A variable set anywhere else does not reach the running server.
 The data-home gap this section used to describe is closed: the app has a first-run ingest flow, so
 the sandbox seeds its own corpus and reaches `chunk_count > 0` unaided.
 

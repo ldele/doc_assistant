@@ -111,6 +111,8 @@ when you choose.
   takes longer than it says. There is none until a run has measured one.
 - **Opening another library is in the installed app only**, and one copy of the app should use a
   library at a time.
+- **An answer from a server that reports no token counts**, such as Ollama on another computer,
+  says *0 tokens* in its header; the line under the answer says the server reported none.
 - **Everything under *Known limits* for 0.7.1 and 0.7.0 still applies**, except that the 0.7.0
   line on moving your data folder now reads as the first line above.
 

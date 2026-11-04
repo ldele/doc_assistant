@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-10-31 (§6: preflight is a pre-tag check; a pushed tag is not moved; 2026-10-01: the security floor runs the blocking secret scan, S-13) · class: runbook -->
+<!-- status: active · updated: 2026-11-04 (§5: bind Ollama to the switch address; never open the run's log while it runs; 2026-10-31: §6: preflight is a pre-tag check; a pushed tag is not moved; 2026-10-01: the security floor runs the blocking secret scan, S-13) · class: runbook -->
 
 # Release runbook
 
@@ -203,8 +203,12 @@ Two traps:
   `WindowsSandboxServer` / `WindowsSandboxRemoteSession` does **not** take the VM down. Wait for
   every `vmmemWindowsSandbox` process to disappear before relaunching, or the `LogonCommand` never
   fires and the gate reports nothing while looking busy. A flat VM working-set is the tell.
-- Tier 2 needs an answer engine the sandbox can reach: `OLLAMA_HOST=0.0.0.0:11434` on the host,
-  restart Ollama — **and revert it afterwards.**
+- Tier 2 needs an answer engine the sandbox can reach: Ollama restarted with `OLLAMA_HOST` set to
+  the Default Switch address (not `0.0.0.0`, which opens it to the Wi-Fi; recipe in
+  `desktop-packaging.md` §5) — **and reverted afterwards.**
+- **Never open the run's log from the host while it runs** (a `tail -f` blocked the sandbox's
+  writes and cut the log, so the run had to be repeated): list the folder until
+  `turn-3-result.json` appears, then read it.
 - **Archive the run before clearing `out\`: copy, *verify the copy*, then delete — as three
   separate commands.** A batched archive-then-delete was rejected as a whole by a path guard on this
   machine, so the copy never ran and the delete did. That destroyed the evidence for a headline

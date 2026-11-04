@@ -78,6 +78,10 @@ when you choose.
   its text or figures, or the full command-line ingest could delete or overwrite those files. Each
   now acts only inside the open library's folders and the folders it registered, and says when it
   left a file alone; the document viewer says when a file is outside them.
+- **A changed document is indexed once.** Indexing a file whose text had changed, from *Ingest
+  selected* or *Re-index*, left its previous text searchable beside the new one until a full
+  command-line ingest. The previous text's passages are now removed as the new ones are stored,
+  which this update's one-time re-read depends on.
 - **A failed text re-run says it failed.** Re-running *Text & chunks* on a document whose
   extraction failed used to report success.
 - **The status bar says it is indexing.** It reads *Indexing… 14/30 done* (and *Indexing paused*,
@@ -96,7 +100,8 @@ when you choose.
 - **A library copied or moved to another folder shows no figure images, and re-running *Figure
   images* does not bring them back yet.** Its stored image paths name the old folder, and the app no
   longer writes outside the open library. Re-running a document's text is refused there for the
-  same reason, with a sentence. Opening a library where it was made is unaffected.
+  same reason, with a sentence, and Settings → Documents lists its files as *new* although they
+  are indexed. Opening a library where it was made is unaffected.
 - **The indexing screen forgets the last run when the app restarts.** What finished stays in your
   library; only the list of that run's files is gone.
 - **Pause and Stop wait for the document being read**, which can take a minute for a long PDF.

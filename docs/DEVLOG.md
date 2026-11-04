@@ -42,6 +42,34 @@ Format: What changed | Why | Rejected alternatives | What it opens
 
 ---
 
+## 2026-11-04 (5) — A changed document is indexed once: `process_document` drops its superseded chunks (0.7.2 blocker)
+
+**What changed.** When a document keeps its identity (ADR-047, by path) but its text, and so its
+hash, moves, `process_document` now removes the previous hash's chunks from both stores once the
+new chunks and the row are written, unless another row still holds that hash. Before, only the CLI's
+full sweep (`cleanup_orphans_*`, run when neither a scope nor a file list is given) or the
+per-document re-run's own purge (`reingest._purge_superseded_chunks`) ever did. ADR-056 gate 3's
+local test (`tests/integration/test_letter_spacing_library.py`) lands in the same change.
+
+**Why.** Found by ADR-056's gate 6 on a copy of the development library: after the re-extraction
+the eval's comparability check reported the index's document count up by two. The two documents
+whose text changed kept their old chunks, letter-spaced, with no document row behind them. The app
+reaches the same state through *Ingest selected* and *Re-index* (both pass `files=` or `scope=`),
+which is how this release's one-time re-read happens, so every user's changed documents would have
+been searchable twice. A lie in the release's headline promise: a blocker by the runbook.
+
+**Checked.** `test_a_changed_file_ingested_by_selection_is_indexed_once`; the re-run and ingest
+suites (89). Gate 3 passed on the copy against a reference that applies ADR-056 points 1 and 6 (the
+two scanned-book places the accepted rule leaves spaced). Gate 6: keywords changed on one document
+exactly as predicted, the graph identical; the eval within noise of its control (numbers in the
+local record); to be run once more on the copy cleaned of the stale chunks.
+
+**Rejected.** Running the full sweep from the app's routes: it walks every source and re-hashes,
+which is what scoping exists to avoid.
+
+**What it opens.** Libraries indexed before this keep any stale chunks until a CLI full ingest; the
+copy shows how many a re-read leaves (two documents there).
+
 ## 2026-11-04 (4) — ADR-061 built: an indexed library opens where it is, nothing written outside it (0.7.2, piece 5)
 
 **What changed.** The user accepted ADR-061 as proposed, and it is built in its order. **Choice 4

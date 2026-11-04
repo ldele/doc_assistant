@@ -286,6 +286,7 @@ def process_document(
         # metadata and is the key figure_units() queries on.
         # Coupling: ingest <-> db Document (this id) <-> both Chroma collections.
         document_id = _existing_document_id(h, path, path_index=path_index) or str(uuid4())
+        superseded = _previous_hash(document_id, h)
         # The identity survived but the content moved (ADR-047): carry the figures across before
         # anything reads them by hash. No-op when the hash is unchanged or there are no figures.
         repoint_figures(document_id, h)
@@ -408,6 +409,13 @@ def process_document(
                 "extraction_health", status=health.status, file=path.name, reasons=health.reasons
             )
 
+        # The identity survived but the text moved (ADR-047): the previous text's chunks are
+        # superseded. Dropped here, after both stores and the row hold the new text, so every
+        # path that re-reads a document leaves it indexed once (2026-11-04: an upgrade's re-read
+        # through *Ingest selected* left the old letter-spaced text searchable beside the new).
+        if superseded is not None:
+            _drop_superseded_chunks((db, pc_db), superseded, document_id)
+
         indexed.add(h)
         return DocumentResult("added", passages=baseline_chunk_count)
     except Exception as e:
@@ -417,6 +425,43 @@ def process_document(
         if not isinstance(e, IngestRefusedError):
             reason = f"Could not read it: {reason}"
         return DocumentResult("error", reason=reason)
+
+
+def _previous_hash(document_id: str, new_hash: str) -> str | None:
+    """The hash this document's row held before this re-read, when it differs from ``new_hash``."""
+    with session_scope() as session:
+        old = session.execute(
+            select(DBDocument.doc_hash).where(DBDocument.id == document_id)
+        ).scalar_one_or_none()
+    return str(old) if old and old != new_hash else None
+
+
+def _drop_superseded_chunks(
+    stores: tuple[Chroma, Chroma], old_hash: str, document_id: str
+) -> None:
+    """Remove a superseded hash's chunks from both stores, unless another row still holds it.
+
+    Another document with the same text (the same file under two paths) keeps its chunks. Never
+    fails the document: a store that will not answer leaves a warning, and the CLI's full sweep
+    (`cleanup_orphans_*`) still finds what is left.
+    """
+    with session_scope() as session:
+        shared = session.execute(
+            select(DBDocument.id).where(DBDocument.doc_hash == old_hash)
+        ).first()
+    if shared is not None:
+        return
+    removed = 0
+    for store in stores:
+        try:
+            ids = list(store.get(where={"doc_hash": old_hash}, include=[]).get("ids", []))
+            if ids:
+                store.delete(ids=ids)
+                removed += len(ids)
+        except Exception as e:  # the new text is in; a leftover is a warning, not a failure
+            log.warning("superseded_chunks_not_removed", document_id=document_id, error=str(e))
+    if removed:
+        log.info("superseded_chunks_removed", document_id=document_id, chunks=removed)
 
 
 def _resolve_walk_root(scope: str | None) -> Path:

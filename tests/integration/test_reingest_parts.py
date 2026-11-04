@@ -220,6 +220,30 @@ def test_figures_are_skipped_for_a_non_pdf_with_the_reason(env: Path) -> None:
 # --- the one that pays for the module ---------------------------------------------------------- #
 
 
+def test_a_changed_file_ingested_by_selection_is_indexed_once(env: Path) -> None:
+    """The app's *Ingest selected* path (`files=`) leaves no chunk of the superseded text.
+
+    0.7.2's upgrade re-reads every document through it, and before 2026-11-04 a document whose
+    text changed kept its old chunks beside the new ones: searchable twice, once as the old text.
+    The full sweep never runs on this path, so `process_document` drops them itself."""
+    doc_id, before = _ingest_one(env)
+    path = env / "paper.md"
+    path.write_text(_BODY.replace("Background prose", "Rewritten prose"), encoding="utf-8")
+
+    stats = ingest.main(files=[path])
+
+    assert stats["added"] == 1, stats
+    from doc_assistant.db.session import session_scope
+
+    with session_scope() as session:
+        rows = session.execute(select(DBDocument.id, DBDocument.doc_hash)).all()
+    assert [r[0] for r in rows] == [doc_id], "the document kept its identity (ADR-047)"
+    after = str(rows[0][1])
+    assert after != before, "the fixture did not move the hash"
+    assert _chunks_for(before) == {"baseline": 0, "pc": 0}, "the old text is still indexed"
+    assert sum(_chunks_for(after).values()) > 0
+
+
 def test_re_extraction_purges_the_superseded_chunks(env: Path) -> None:
     """The whole reason `_rerun_text` exists rather than just calling `ingest.main(files=[...])`.
 

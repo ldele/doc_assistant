@@ -45,6 +45,7 @@ are any good. Those need judgment and measurement, not a script.
 from __future__ import annotations
 
 import argparse
+import ast
 import json
 import re
 import subprocess
@@ -97,20 +98,42 @@ BACKEND_MIN_MIB = 2490.0
 SHIPPED_PATHS = (
     "src/",  # the Python library, frozen into the sidecar
     "apps/api/",  # the FastAPI app it serves
+    "apps/__init__.py",  # the spec freezes every submodule of `apps` ...
+    "apps/cli.py",  # ... this one included
     "pyproject.toml",  # the dependency set the freeze resolves
     "uv.lock",  # ...and the versions it resolves to (cargo rewrites its lock; uv does not)
     "scripts/build_sidecar.py",  # how the sidecar is frozen
     "scripts/doc_assistant_api.spec",  # what goes into it — KI-34 lived in this file
     "apps/desktop/src/",  # the Svelte UI
+    "apps/desktop/public/",  # copied into the bundle as it is (boot.css, the favicon)
     "apps/desktop/index.html",
     "apps/desktop/package.json",
+    # The frontend's resolved versions. A lock-only change ships different code: the DOMPurify fix
+    # (1ce40c6) touched nothing else, so an installer built before it read as fresh (review N1).
+    "apps/desktop/package-lock.json",
     "apps/desktop/vite.config.ts",
+    "apps/desktop/svelte.config.js",
+    "apps/desktop/tsconfig.json",
     "apps/desktop/src-tauri/src/",  # the Rust shell
     "apps/desktop/src-tauri/build.rs",
     "apps/desktop/src-tauri/Cargo.toml",
     "apps/desktop/src-tauri/tauri.conf.json",  # bundle config, externalBin, version
+    "apps/desktop/src-tauri/capabilities/",  # what the webview may call
+    "apps/desktop/src-tauri/nsis/",  # the installer script and its hooks
     "apps/desktop/src-tauri/icons/",
 )
+
+# Every other tracked file under `apps/`, each with why it is not a build input. A tracked file
+# in neither list fails `unclassified_app_files` (and its test): a new build input cannot be added
+# without someone deciding which list it belongs to, which is how the lock above was missed.
+NOT_SHIPPED: dict[str, str] = {
+    "apps/desktop/.gitignore": "git's, not the build's",
+    "apps/desktop/CLAUDE.md": "notes for agents",
+    "apps/desktop/README.md": "notes for people",
+    "apps/desktop/app-icon.png": "the source `tauri icon` renders `src-tauri/icons/` from",
+    "apps/desktop/src-tauri/app-icon.png": "the same source; the rendered icons are what ship",
+    "apps/desktop/src-tauri/Cargo.lock": "rewritten by cargo during the build (see above)",
+}
 
 OK, FAIL, WARN, SKIP = "PASS", "FAIL", "WARN", "SKIP"
 
@@ -154,6 +177,12 @@ def _is_shipped(rel: str) -> bool:
     as ``uv.lock`` and any ``src-tauri/icons.old/`` as the icons.
     """
     return any(rel == p or (p.endswith("/") and rel.startswith(p)) for p in SHIPPED_PATHS)
+
+
+def unclassified_app_files() -> list[str]:
+    """Tracked files under `apps/` that are neither shipped nor named in `NOT_SHIPPED`."""
+    tracked = _run("git", "ls-files", "apps").splitlines()
+    return [rel for rel in tracked if rel and not _is_shipped(rel) and rel not in NOT_SHIPPED]
 
 
 def _newest_shipped_change() -> tuple[str, datetime] | None:
@@ -625,12 +654,38 @@ def _just_recipes() -> set[str]:
     return {m.group(1) for m in re.finditer(r"^([a-z][\w-]*)(?: [^:\n]*)?:(?!=)", text, re.M)}
 
 
+#: Backend modules whose strings are shown to the person in a chat reply (KI-83).
+CHAT_REPLY_MODULES = ("src/doc_assistant/commands.py",)
+
+
+def _python_strings(path: Path) -> list[tuple[int, str]]:
+    """``(line, text)`` for each string literal in a Python file, docstrings left out."""
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    docstrings: set[int] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Module | ast.ClassDef | ast.FunctionDef | ast.AsyncFunctionDef):
+            body = node.body
+            if body and isinstance(body[0], ast.Expr) and isinstance(body[0].value, ast.Constant):
+                docstrings.add(id(body[0].value))
+    return [
+        (node.lineno, node.value)
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Constant)
+        and isinstance(node.value, str)
+        and id(node) not in docstrings
+    ]
+
+
 def check_dev_commands() -> Check:
-    """No developer command may appear in a user-facing frontend string (KI-39).
+    """No developer command may appear in a user-facing string (KI-39, KI-83).
 
     The app's only failure message used to read "backend unreachable. Run ``just api``" — a task
     runner and a repo recipe that someone who installed an .exe does not have. Comments are
     skipped: explaining a dev command to the next maintainer is fine, printing it at a user is not.
+
+    Read: the frontend's ``.svelte`` and ``.ts`` files (tests aside), and the string literals of
+    the backend modules whose text reaches a chat reply (`CHAT_REPLY_MODULES`), docstrings aside.
+    KI-83 was four replies there telling an installed-app user to run ``python -m scripts.…``.
     """
     recipes = _just_recipes()
     patterns = [
@@ -638,13 +693,22 @@ def check_dev_commands() -> Check:
         r"\buv run\b",
         r"\bpip install\b",
         r"\bcargo (build|run|test)\b",
+        r"\bpython -m\b",
+        r"\bscripts/\w+\.py\b",
     ]
     if recipes:
         patterns.append(r"\bjust (" + "|".join(sorted(map(re.escape, recipes))) + r")\b")
     dev_cmd = re.compile("(" + "|".join(patterns) + ")")
 
     offenders: list[str] = []
-    for p in sorted((ROOT / "apps/desktop/src").rglob("*.svelte")):
+    for rel in CHAT_REPLY_MODULES:
+        for line_no, text in _python_strings(ROOT / rel):
+            m = dev_cmd.search(text)
+            if m:
+                offenders.append(f"{rel}:{line_no}  {m.group(0)!r}")
+    frontend = ROOT / "apps/desktop/src"
+    sources = [*frontend.rglob("*.svelte"), *frontend.rglob("*.ts")]
+    for p in sorted(s for s in sources if not s.name.endswith(".test.ts")):
         in_block_comment = False
         for i, line in enumerate(p.read_text(encoding="utf-8").splitlines(), 1):
             stripped = line.strip()
@@ -659,7 +723,7 @@ def check_dev_commands() -> Check:
                 continue
             m = dev_cmd.search(line)
             if m:
-                offenders.append(f"{p.relative_to(ROOT)}:{i}  {m.group(0)!r}")
+                offenders.append(f"{p.relative_to(ROOT).as_posix()}:{i}  {m.group(0)!r}")
     if offenders:
         return Check(
             "dev_commands", FAIL, "developer command in shipped UI text (KI-39)", offenders[:8]

@@ -285,10 +285,12 @@ def test_details_caps_ingestion_history_at_ten_events() -> None:
 # ============================================================
 
 
-def test_cites_out_with_nothing_extracted_names_the_command_that_would_fix_it() -> None:
+def test_cites_out_with_nothing_extracted_names_what_in_the_app_fixes_it() -> None:
+    # KI-83: an installed app has no `scripts/`, so the reply names the app's own control.
     out = format_cites_out("paper.pdf", [])
     assert "no citations extracted" in out
-    assert "extract_citations" in out
+    assert "*Re-run…*" in out and "*References*" in out
+    assert "python -m" not in out
 
 
 def test_cites_out_splits_resolved_from_external_and_counts_both() -> None:
@@ -357,7 +359,7 @@ def test_cited_by_with_no_rows_explains_both_reasons_it_could_be_empty() -> None
     """Nothing cites it, or extraction never ran — the user cannot tell those apart alone."""
     out = format_cited_by("paper.pdf", [])
     assert "no library documents cite this one" in out
-    assert "extract_citations" in out
+    assert "*References*" in out and "python -m" not in out
 
 
 def test_cited_by_lists_each_citing_document_by_short_id() -> None:
@@ -384,10 +386,11 @@ def test_cited_by_handles_a_row_with_no_raw_text() -> None:
 # ============================================================
 
 
-def test_similar_with_no_edges_names_the_command_that_would_build_them() -> None:
+def test_similar_with_no_edges_says_the_app_does_not_compute_them_yet() -> None:
+    # KI-83: the pass is a source-checkout script, so the reply says so rather than naming it.
     out = format_similar("paper.pdf", [])
-    assert "no similarity edges" in out
-    assert "compute_doc_vectors" in out
+    assert "no similar documents computed yet" in out
+    assert "python -m" not in out
 
 
 def test_similar_shows_the_cosine_score_to_three_decimals() -> None:

@@ -198,8 +198,8 @@ def format_cites_out(filename: str, edges: list[CitationEdge]) -> str:
     """Build markdown for `/cites <id>`."""
     if not edges:
         return (
-            f"**{filename}** — no citations extracted yet. "
-            "Run `python -m scripts.extract_citations --apply`."
+            f"**{filename}** — no citations extracted yet. In the Library, open this "
+            "document and choose *Re-run…* → *References*."
         )
 
     internal = [e for e in edges if e.target_document_id]
@@ -233,8 +233,8 @@ def format_cited_by(filename: str, rows: list[tuple[str, str, str | None]]) -> s
     if not rows:
         return (
             f"**{filename}** — no library documents cite this one yet. "
-            "Either no internal citations have been resolved, or extraction "
-            "hasn't been run. Try `python -m scripts.extract_citations --apply`."
+            "Either none of its citing papers is in your library, or their reference lists "
+            "have not been read. In the Library, *Re-run…* → *References* reads them again."
         )
     lines = [f"## {len(rows)} library document(s) cite {filename}"]
     lines.append("")
@@ -248,8 +248,8 @@ def format_similar(filename: str, neighbours: list[SimilarDoc]) -> str:
     """Build markdown for `/similar <id>`."""
     if not neighbours:
         return (
-            f"**{filename}** — no similarity edges yet. "
-            "Run `python -m scripts.compute_doc_vectors --apply`."
+            f"**{filename}** — no similar documents computed yet. Similarity is a separate "
+            "pass over the whole library, which the app does not run yet."
         )
     lines = [f"## {len(neighbours)} document(s) most similar to {filename}"]
     lines.append("")
@@ -266,9 +266,9 @@ def format_graph(filename: str, graph: CitationGraph) -> str:
     """Build markdown for `/graph <id>` — Mermaid subgraph for small N."""
     if not graph.nodes or len(graph.nodes) == 1:
         return (
-            f"**{filename}** has no internal citation edges yet. "
-            "Once `scripts/extract_citations.py --apply` is run and resolves "
-            "library-internal citations, this graph will populate."
+            f"**{filename}** has no internal citation edges yet. They appear once the "
+            "reference lists of documents in your library resolve to each other; in the "
+            "Library, *Re-run…* → *References* reads a document's list again."
         )
 
     if len(graph.nodes) > 25:
@@ -324,13 +324,14 @@ def execute_command(cmd: str, arg: str) -> str:
             return (
                 "**Synthesis mode: `human`** — the assistant returns the *evidence* "
                 "(retrieved passages) only; the interpretation is yours. No AI synthesis "
-                "is generated. Set `SYNTHESIS_MODE=ai` in `.env` for dual-layer answers."
+                "is generated. *Synthesis mode* in Settings → Retrieval switches it for your "
+                "session."
             )
         return (
             "**Synthesis mode: `ai`** — dual-layer answers: deterministic *evidence* plus "
             "a labelled AI *interpretation* segmented into claims you can accept / reject / "
-            "edit (flagged claims carry retrieval-derived markers). Set `SYNTHESIS_MODE=human` "
-            "in `.env` for evidence-only."
+            "edit (flagged claims carry retrieval-derived markers). *Synthesis mode* in "
+            "Settings → Retrieval switches to evidence only for your session."
         )
 
     if cmd == "bibtex":
@@ -343,7 +344,7 @@ def execute_command(cmd: str, arg: str) -> str:
             "```bibtex\n"
             f"{text}"
             "```\n"
-            "_Run `python -m scripts.export_bibtex` to write this to `docs/library.bib`._"
+            "_Copy the block above into a `.bib` file to use it elsewhere._"
         )
 
     if cmd in ("export-record", "export_record"):

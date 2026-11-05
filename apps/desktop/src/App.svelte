@@ -85,6 +85,7 @@
     sameCollection,
   } from './lib/library/library'
   import { searchEverything } from './lib/shell/search'
+  import { pick } from './lib/shell/selection'
   // Per-domain reactive state (`.svelte.ts` = a rune module). Cross-domain orchestration —
   // selectMode, the nav-history observer, the readiness gate, the chat-scope guard — stays in
   // this file on purpose: splitting it would only hide the coupling across import graphs.
@@ -235,13 +236,25 @@
   // bulk delete is deliberately NOT here — deferred pending its own ADR (ui-checklist).
   let libSelectMode = $state(false)
   let libSelected = $state<string[]>([])
+  let libAnchor = $state<string | null>(null)
   let libAddMenuOpen = $state(false)
-  function toggleLibSelected(id: string): void {
-    libSelected = libSelected.includes(id) ? libSelected.filter((x) => x !== id) : [...libSelected, id]
+  // A click that selects, in the order the grid shows (ROADMAP 80; the same `pick` as the chat
+  // list). A Shift- or Ctrl/Cmd-click outside select mode starts it with that document.
+  function pickLibDoc(id: string, shift: boolean): void {
+    if (!libSelectMode) enterLibSelect()
+    const r = pick(visibleDocs.map((d) => d.id), libSelected, libAnchor, id, shift)
+    libSelected = r.selected
+    libAnchor = r.anchor
+  }
+  function enterLibSelect(): void {
+    libSelectMode = true
+    libSelected = []
+    libAnchor = null
   }
   function exitLibSelect(): void {
     libSelectMode = false
     libSelected = []
+    libAnchor = null
     libAddMenuOpen = false
   }
   function addSelectionToFolder(folderId: string): void {
@@ -1359,12 +1372,12 @@
           onToggleKeywordFacet={toggleKeywordFacet}
           onClearKeywordFacets={clearKeywordFacets}
           onOpenKeywordFilter={() => (keywordFilterOpen = true)}
-          onEnterSelectMode={() => (libSelectMode = true)}
+          onEnterSelectMode={enterLibSelect}
           onExitSelectMode={exitLibSelect}
-          onToggleSelected={toggleLibSelected}
+          onPickDocument={pickLibDoc}
           onSetAddMenuOpen={(open) => (libAddMenuOpen = open)}
           onAddSelectionToFolder={addSelectionToFolder}
-          onClearSelection={() => (libSelected = [])}
+          onSetSelection={(ids) => (libSelected = ids)}
           onOpenManageFolders={openManageFolders}
           onEditDoc={(id) => (editingDocId = id)}
           onDeleteDoc={(id) => (deletingDocId = id)}

@@ -18,6 +18,7 @@
     typeGroups,
   } from '../library/library'
   import Icon from './Icon.svelte'
+  import { isSelectClick, pick, selectAllLabel, selectAllOrNone } from './selection'
 
   let {
     mode,
@@ -161,34 +162,55 @@
   const otherConvos = $derived(sortedConvos.filter((c) => !c.pinned))
 
   // --- Select mode: tick several chats, delete them in one action (user request 2026-08-10).
+  // Shift-click ranges and Ctrl/Cmd-click toggles (ROADMAP 78; logic in `selection.ts`), and
+  // either one on a chat outside select mode starts it, so the button is not the only way in.
   let selectMode = $state(false)
   let selected = $state<string[]>([])
+  let anchor = $state<string | null>(null)
+  // In the order shown: pinned first, then the rest. A Shift-click ranges over what is on screen,
+  // so the filter and the archived toggle are part of the range, and of Select all.
   const visibleIds = $derived([...pinnedConvos, ...otherConvos].map((c) => c.session_id))
-  const allVisibleSelected = $derived(
-    visibleIds.length > 0 && visibleIds.every((id) => selected.includes(id)),
-  )
 
   function enterSelect(): void {
     selectMode = true
     selected = []
+    anchor = null
   }
   function exitSelect(): void {
     selectMode = false
     selected = []
+    anchor = null
   }
-  function toggleSelected(sid: string): void {
-    selected = selected.includes(sid) ? selected.filter((s) => s !== sid) : [...selected, sid]
+  function pickRow(sid: string, shift: boolean): void {
+    const r = pick(visibleIds, selected, anchor, sid, shift)
+    selected = r.selected
+    anchor = r.anchor
   }
-  function toggleAllVisible(): void {
-    // "All" means what is on screen — the filter and the archived toggle are part of the
-    // selection the user is looking at, so select-all must not reach past them.
-    selected = allVisibleSelected ? [] : [...visibleIds]
+  // A Shift- or Ctrl-click on a chat while none is ticked: select mode starts with that chat, and
+  // a Shift-click ranges from the chat that is open, the row the user was last on.
+  function startSelectFrom(sid: string, shift: boolean): void {
+    const open = visibleIds.find((id) => isActive(id)) ?? null
+    enterSelect()
+    anchor = shift ? open : null
+    pickRow(sid, shift)
   }
+  // Shift-click would otherwise also drag a text selection across the rows it ranges over.
+  function noTextSelect(e: MouseEvent): void {
+    if (e.shiftKey) e.preventDefault()
+  }
+  // Delete asks first, in the parent (ADR-063). The selection stays until the answer: a Cancel
+  // keeps it, and a confirmed delete empties it below, as the deleted chats leave the list.
   function deleteSelected(): void {
     if (selected.length === 0) return
     onDeleteMany([...selected])
-    exitSelect()
   }
+  $effect(() => {
+    const listed = new Set(conversations.map((c) => c.session_id))
+    const kept = selected.filter((id) => listed.has(id))
+    if (kept.length === selected.length) return
+    if (kept.length === 0) exitSelect()
+    else selected = kept
+  })
   // Archive is a toggle, decided by what is ticked: all-archived means the user is looking at the
   // "Show archived" list and wants them back, anything else means archive. One button, no mode.
   const selectedAllArchived = $derived(
@@ -380,7 +402,8 @@
         <button
           class="rowmain pickrow"
           aria-pressed={selected.includes(c.session_id)}
-          onclick={() => toggleSelected(c.session_id)}
+          onmousedown={noTextSelect}
+          onclick={(e) => pickRow(c.session_id, e.shiftKey)}
           type="button"
         >
           <span class="tickbox" aria-hidden="true">
@@ -408,7 +431,9 @@
         <button
           class="rowmain"
           aria-current={isActive(c.session_id) ? 'true' : undefined}
-          onclick={() => onSelect(c.session_id)}
+          onmousedown={noTextSelect}
+          onclick={(e) =>
+            isSelectClick(e) ? startSelectFrom(c.session_id, e.shiftKey) : onSelect(c.session_id)}
           type="button"
         >
           <span class="title">{c.title}</span>
@@ -441,23 +466,35 @@
 
   {#if mode === 'chat'}
     {#if selectMode}
-      <div class="selbar">
-        <button class="selact" onclick={toggleAllVisible} type="button">
-          {allVisibleSelected ? 'Clear' : 'All'}
-        </button>
-        <span class="selcount">{selected.length} selected</span>
-        <button
-          class="selact"
-          disabled={selected.length === 0}
-          onclick={archiveSelected}
-          type="button">{selectedAllArchived ? 'Unarchive' : 'Archive'}</button
-        >
-        <button
-          class="selact danger"
-          disabled={selected.length === 0}
-          onclick={deleteSelected}
-          type="button">Delete</button
-        >
+      <!-- Action roles (ADR-063): the selection helper is quiet, Done ends the mode and so sits
+           at the trailing end in the primary style, and Delete is red and confirms in the parent,
+           naming how many. Two lines because the rail is too narrow for one: the count sits with
+           the actions it counts for. -->
+      <div class="selbar" role="toolbar" aria-label="Selection actions">
+        <div class="selline">
+          <button
+            class="btn btn-quiet"
+            disabled={visibleIds.length === 0}
+            onclick={() => (selected = selectAllOrNone(visibleIds, selected))}
+            type="button">{selectAllLabel(selected)}</button
+          >
+          <button class="btn btn-primary seldone" onclick={exitSelect} type="button">Done</button>
+        </div>
+        <div class="selline">
+          <span class="selcount">{selected.length} selected</span>
+          <button
+            class="btn"
+            disabled={selected.length === 0}
+            onclick={archiveSelected}
+            type="button">{selectedAllArchived ? 'Unarchive' : 'Archive'}</button
+          >
+          <button
+            class="btn btn-danger"
+            disabled={selected.length === 0}
+            onclick={deleteSelected}
+            type="button">Delete…</button
+          >
+        </div>
       </div>
     {/if}
     <nav class="list" aria-label="Conversation history" onscroll={closeMenu}>
@@ -834,6 +871,8 @@
     flex-direction: row;
     align-items: center;
     gap: 0.55rem;
+    /* The rows a Shift-click ranges over must not also catch a text selection. */
+    user-select: none;
   }
   .pickbody {
     display: flex;
@@ -859,38 +898,28 @@
      0.72rem/0.05rem padding it read as a caption rather than a toolbar (reported 2026-08-19). */
   .selbar {
     display: flex;
-    align-items: center;
+    flex-direction: column;
     gap: 0.4rem;
     padding: 0.5rem 0.6rem;
     border-bottom: 1px solid var(--border);
+  }
+  .selline {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
   }
   .selcount {
     margin-right: auto;
     font-size: 0.8rem;
     color: var(--fg-2);
+    font-variant-numeric: tabular-nums;
   }
-  .selact {
-    background: none;
-    border: 1px solid var(--border);
-    border-radius: 999px;
-    padding: 0.3rem 0.7rem;
-    font: inherit;
-    font-size: 0.8rem;
-    line-height: 1.2;
-    color: var(--fg-2);
-    cursor: pointer;
+  .seldone {
+    margin-left: auto;
   }
-  .selact:hover:not(:disabled) {
-    color: var(--fg);
-    border-color: var(--accent);
-  }
-  .selact:disabled {
-    opacity: 0.45;
-    cursor: default;
-  }
-  .selact.danger:not(:disabled) {
-    color: var(--danger-fg, #d9534f);
-    border-color: color-mix(in srgb, var(--danger-fg, #d9534f) 45%, transparent);
+  /* The rail is ~240px inside: a little less padding is what fits three buttons and a count. */
+  .selbar .btn {
+    padding-inline: 0.5rem;
   }
   .rowmain {
     text-align: left;

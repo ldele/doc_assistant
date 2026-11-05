@@ -7,6 +7,7 @@
   import type { LibraryDocument } from '../core/types'
   import { authorLabel, docLabel, orderedUnits } from './library'
   import Icon from '../shell/Icon.svelte'
+  import { isSelectClick } from '../shell/selection'
 
   let {
     documents,
@@ -15,7 +16,7 @@
     keywordsOf = (d) => d.keywords,
     selectMode = false,
     selectedIds = [],
-    onToggleSelect,
+    onPick,
     onOpenDocument,
     onEditMetadata,
     onReveal,
@@ -25,15 +26,17 @@
     documents: LibraryDocument[]
     view: 'grid' | 'list'
     activeKeywords?: string[]
-    // Select mode (batch add-to-folder): tile clicks toggle membership in `selectedIds` instead of
-    // opening the document; the ⋯ menu hides. App owns the selection — this stays a dumb renderer.
+    // Select mode (batch add-to-folder): tile clicks pick instead of opening the document; the ⋯
+    // menu hides. App owns the selection — this stays a dumb renderer. A Shift- or Ctrl/Cmd-click
+    // picks outside select mode too, which is how App knows to start it (ROADMAP 80).
     selectMode?: boolean
     selectedIds?: string[]
     // Tag families (PR-2.6): collapse a document's raw keywords into display **units**, so a
     // family renders as its single canonical chip. Defaults to the raw list, which is what keeps
     // the no-families path byte-identical — App passes `familyUnitsOf(familyCanonicalMap(...))`.
     keywordsOf?: (d: LibraryDocument) => string[]
-    onToggleSelect: (id: string) => void
+    /** A click that selects: `shift` asks for the range from the last pick (`selection.ts`). */
+    onPick: (id: string, shift: boolean) => void
     onOpenDocument: (id: string) => void
     onEditMetadata: (id: string) => void
     onReveal: (id: string) => void
@@ -87,6 +90,16 @@
   function closeMenu(): void {
     openMenuFor = null
   }
+  // One handler for a tile and a row: in select mode every click picks; outside it, a plain click
+  // opens the document and a Shift- or Ctrl/Cmd-click picks (and so starts select mode).
+  function onBodyClick(id: string, e: MouseEvent): void {
+    if (selectMode || isSelectClick(e)) onPick(id, e.shiftKey)
+    else onOpenDocument(id)
+  }
+  // Shift-click would otherwise also drag a text selection across the tiles it ranges over.
+  function noTextSelect(e: MouseEvent): void {
+    if (e.shiftKey) e.preventDefault()
+  }
   function menuEdit(): void {
     if (menuDoc) onEditMetadata(menuDoc.id)
     closeMenu()
@@ -127,7 +140,8 @@
         <button
           class="tilebody"
           class:selected={isSel}
-          onclick={() => (selectMode ? onToggleSelect(d.id) : onOpenDocument(d.id))}
+          onmousedown={noTextSelect}
+          onclick={(e) => onBodyClick(d.id, e)}
           type="button"
           title={d.filename}
           aria-label={docLabel(d)}
@@ -188,7 +202,8 @@
           class="rowbody"
           class:selected={isSel}
           class:selmode={selectMode}
-          onclick={() => (selectMode ? onToggleSelect(d.id) : onOpenDocument(d.id))}
+          onmousedown={noTextSelect}
+          onclick={(e) => onBodyClick(d.id, e)}
           type="button"
           title={d.filename}
           aria-label={docLabel(d)}

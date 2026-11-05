@@ -252,3 +252,67 @@
 body {
   margin: 0;
 }
+
+/* Action roles (ADR-063, GLOSSARY U-003). A button's look says what kind of thing it does, the
+   same on every screen: `btn` alone is an ordinary action, `btn-primary` the one action a screen
+   or a mode is for (Done, which ends a mode, is one), `btn-quiet` a helper that changes only what
+   is shown or selected, and `btn-danger` an action that removes something, which always asks
+   first. The metrics are the Graph tab's buttons, which the user picked as the clearest (a filled
+   box, full-strength text). Global and prefixed, so a component's own scoped `.primary` or
+   `.ghost` cannot collide with them while the components move over (ROADMAP row 110). */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  flex: none;
+  font: inherit;
+  font-size: var(--text-sm);
+  line-height: 1.3;
+  white-space: nowrap;
+  padding: var(--space-1) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--surface);
+  color: var(--fg);
+  cursor: pointer;
+}
+.btn:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+.btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.btn-primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-fg);
+  font-weight: 600;
+}
+.btn-primary:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 85%, var(--fg));
+  border-color: color-mix(in srgb, var(--accent) 85%, var(--fg));
+}
+.btn-quiet {
+  background: none;
+  border-color: transparent;
+  color: var(--fg-2);
+}
+.btn-quiet:hover:not(:disabled) {
+  background: var(--surface-2);
+  border-color: transparent;
+  color: var(--fg);
+}
+.btn-danger {
+  background: none;
+  border-color: color-mix(in srgb, var(--danger) 55%, transparent);
+  color: var(--danger);
+}
+.btn-danger:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+  border-color: var(--danger);
+}

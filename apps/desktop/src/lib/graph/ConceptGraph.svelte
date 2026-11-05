@@ -462,8 +462,8 @@
             </div>
           {/if}
 
-          <ConceptDefinition conceptId={selectedNode.id} {onOpenPassage} />
-
+          <!-- The graph first, where it is seen on opening a concept: below a long definition it was
+               off-screen, and before it kept its height it was squashed to 2 px (ROADMAP 111). -->
           <div class="canvas">
             <!-- svelte-ignore a11y_no_static_element_interactions -->
             <svg
@@ -524,6 +524,9 @@
             </svg>
             <p class="canvas-hint muted">Scroll to zoom · drag to pan · click a neighbour to recentre</p>
           </div>
+
+          <ConceptDefinition conceptId={selectedNode.id} {onOpenPassage} />
+
 
           <!-- concept → document → chunks -->
           <div class="sources">
@@ -697,6 +700,13 @@
     flex-direction: column;
     gap: var(--space-3);
   }
+  /* The column scrolls; nothing in it shrinks. A flex child with `overflow: hidden` has no
+     minimum height, so the canvas took every pixel the definition and the document list needed
+     and was drawn 2 px tall (the user, 2026-11-05: "the text squashes the graph"; ROADMAP 111).
+     `:global` because the definition card is a child component's root. */
+  .ego > :global(*) {
+    flex-shrink: 0;
+  }
   .ego-hint {
     margin: auto;
     text-align: center;
@@ -802,11 +812,12 @@
     background: var(--surface);
     overflow: hidden;
   }
+  /* A height of its own, capped so a wide pane does not push everything else a screen down; the
+     viewBox keeps the layout's proportions and centres it in the box. */
   .graph {
     display: block;
     width: 100%;
-    height: auto;
-    aspect-ratio: 760 / 520;
+    height: clamp(240px, 55vh, 520px);
     touch-action: none;
     cursor: grab;
   }

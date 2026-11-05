@@ -1,4 +1,4 @@
-<!-- status: archived · updated: 2026-11-02 · class: living -->
+<!-- status: archived · updated: 2026-11-05 · class: living -->
 
 # DEVLOG archive index
 
@@ -9,6 +9,17 @@ is off; docs_check rule 17 fails while any archived entry is missing here.
 
 ## DEVLOG-archive-009.md
 
+- **2026-11-02** (2) — ADR-060 accepted in a grill: who bills is a fact of its own
+- **2026-11-02** — ADR-060 proposed: other answer providers through one OpenAI-compatible adapter (0.7.2, piece 3)
+- **2026-11-01** (5) — Getting started is two rows; models live in Provider & model (0.7.2, piece 2)
+- **2026-11-01** (4) — Claude models from Opus 4.7 on answer and review
+- **2026-11-01** (3) — Wireframes approved: indexing, Getting started, Provider & model
+- **2026-11-01** (2) — Settings closes during a run (0.7.2, piece 1)
+- **2026-11-01** — Letter-spaced text closes at extraction, with a record and a control (ADR-056, ROADMAP 108)
+- **2026-10-31** (6) — The roadmap cleaned up; the order set for the next moves
+- **2026-10-31** (5) — Preflight reads true after the tag
+- **2026-10-31** (4) — Settings' Ollama card states its trade-off in words
+- **2026-10-31** (3) — 0.7.1 published; its notes say nothing about the private library
 - **2026-10-31** (2) — 0.7.1's installer passes every upgrade route and its gate
 - **2026-10-31** — 0.7.1: the installer clears what 0.6.0 left (KI-80)
 - **2026-10-30** (6) — The rebuilt installer passes its gate; a stage must keep the build's time

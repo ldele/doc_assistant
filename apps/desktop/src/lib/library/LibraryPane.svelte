@@ -9,6 +9,7 @@
   // selection across three domains (PR-2.5 D5). Rather than break that boundary to shorten this
   // list, the dependency surface is written out here where a reviewer can see all of it.
   import Icon from '../shell/Icon.svelte'
+  import { selectAllLabel, selectAllOrNone } from '../shell/selection'
   import LibraryGrid from './LibraryGrid.svelte'
   import LibraryBrowser from './LibraryBrowser.svelte'
   import LibraryFilterStrip from './LibraryFilterStrip.svelte'
@@ -61,10 +62,12 @@
     // --- select mode
     onEnterSelectMode: () => void
     onExitSelectMode: () => void
-    onToggleSelected: (id: string) => void
+    /** A click that selects; `shift` ranges from the last pick (`shell/selection.ts`). */
+    onPickDocument: (id: string, shift: boolean) => void
     onSetAddMenuOpen: (open: boolean) => void
     onAddSelectionToFolder: (folderId: string) => void
-    onClearSelection: () => void
+    /** Replace the selection: what *Select all* / *Select none* sets. */
+    onSetSelection: (ids: string[]) => void
     onOpenManageFolders: () => void
     // --- per-document actions
     onEditDoc: (id: string) => void
@@ -85,8 +88,8 @@
     onLibraryBack, onOpenDocument, onSearchAll,
     onSelectCollection, onSetDocId,
     onToggleKeywordFacet, onClearKeywordFacets, onOpenKeywordFilter,
-    onEnterSelectMode, onExitSelectMode, onToggleSelected, onSetAddMenuOpen,
-    onAddSelectionToFolder, onClearSelection, onOpenManageFolders,
+    onEnterSelectMode, onExitSelectMode, onPickDocument, onSetAddMenuOpen,
+    onAddSelectionToFolder, onSetSelection, onOpenManageFolders,
     onEditDoc, onDeleteDoc, onReingestDoc, onReingestSelection, onRevealDoc, onManageFoldersForDoc,
   }: Props = $props()
 </script>
@@ -203,11 +206,24 @@
     </div>
 
     {#if libSelectMode && libraryDocId === null}
+      <!-- Action roles (ADR-063): the selection helper is quiet, the actions are plain, and Done
+           ends the mode, so it sits apart at the trailing end in the primary style. "Clear" read
+           as a possible delete (the user, 2026-11-05); it only ever emptied the selection, which
+           is what *Select none* now says. -->
       <div class="selectbar" role="toolbar" aria-label="Selection actions">
         <span class="selcount">{libSelected.length} selected</span>
+        <button
+          class="btn btn-quiet"
+          disabled={visibleDocs.length === 0}
+          onclick={() => onSetSelection(selectAllOrNone(visibleDocs.map((d) => d.id), libSelected))}
+          type="button"
+        >
+          {selectAllLabel(libSelected)}
+        </button>
+        <span class="selsep" aria-hidden="true"></span>
         <div class="addwrap">
           <button
-            class="selact primaryish"
+            class="btn"
             disabled={libSelected.length === 0}
             aria-haspopup="menu"
             aria-expanded={libAddMenuOpen}
@@ -245,17 +261,14 @@
              the SAME dialog with a list instead of one id, so the parts and the cost statement
              cannot drift between the two entry points. -->
         <button
-          class="selact"
+          class="btn"
           disabled={libSelected.length === 0}
           onclick={() => onReingestSelection()}
           type="button"
         >
           <Icon name="rotate-ccw" size={13} /> Re-run…
         </button>
-        <button class="selact" disabled={libSelected.length === 0} onclick={() => onClearSelection()} type="button">
-          Clear
-        </button>
-        <button class="selact" onclick={onExitSelectMode} type="button">Done</button>
+        <button class="btn btn-primary seldone" onclick={onExitSelectMode} type="button">Done</button>
       </div>
     {/if}
 
@@ -346,7 +359,7 @@
               {keywordsOf}
               selectMode={libSelectMode}
               selectedIds={libSelected}
-              onToggleSelect={onToggleSelected}
+              onPick={onPickDocument}
               onOpenDocument={onOpenDocument}
               onEditMetadata={onEditDoc}
               onReveal={onRevealDoc}
@@ -556,6 +569,7 @@
   }
   .selectbar {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     gap: 0.4rem;
     padding: 0.35rem 0;
@@ -575,29 +589,16 @@
     left: 0;
     right: auto;
   }
-  .selact {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.3rem;
-    font: inherit;
-    font-size: 0.78rem;
-    padding: 0.26rem 0.55rem;
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    background: var(--surface);
-    color: var(--fg);
-    cursor: pointer;
+  /* A thin rule between what changes the selection and what acts on it. */
+  .selsep {
+    width: 1px;
+    align-self: stretch;
+    margin: 0.15rem 0.2rem;
+    background: var(--border);
   }
-  .selact:hover:not(:disabled) {
-    border-color: var(--accent);
-  }
-  .selact:disabled {
-    opacity: 0.5;
-    cursor: default;
-  }
-  .selact.primaryish {
-    background: var(--surface-2);
-    font-weight: 600;
+  /* Done ends the mode: the trailing end, apart from the actions (ADR-063). */
+  .seldone {
+    margin-left: auto;
   }
   .libmain {
     flex: 1;

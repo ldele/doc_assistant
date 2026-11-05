@@ -782,6 +782,9 @@ def main(
 
     _assign_demo_folder(get_document_row_hashes() - rows_before)
     _apply_imported_metadata()
+    # After the catalogue's pass, never before it: a catalogue's answer outranks the extractor's
+    # (ADR-049 D3), and this step writes only what is still blank.
+    _fill_missing_metadata(indexed - indexed_before)
 
     if force_rebuild:
         _sweep_rebuild_rows(rebuild_known_hashes, indexed - indexed_before)
@@ -818,6 +821,42 @@ def _apply_imported_metadata() -> None:
         return
     if applied.filled:
         log.info("imported_metadata_applied", documents=applied.filled, fields=applied.fields)
+
+
+def _fill_missing_metadata(produced: set[str]) -> None:
+    """Give the documents this run indexed the title, authors, year and DOI their own text holds.
+
+    Before this step the app's index run and *Add documents* read no metadata at all, so a
+    library indexed only in the app had none on any document (KI-87's library): only a catalogue
+    import or the *Metadata* part of *Re-run…* filled it. The extractor is the lowest of
+    ADR-049's three slots, so this runs after `_apply_imported_metadata` and fills a column only
+    while it is blank. A catalogue's value or an earlier extraction is never replaced, and the
+    user's own edits (`DocumentMeta`, ADR-013) win at read time whatever is stored here. KI-54
+    still applies: about one extracted title in sixteen is a journal's name.
+
+    ``produced`` is the hashes this run indexed: new documents, and documents re-read because
+    their text changed. A document the run skipped is not looked at, so a Re-index does not
+    re-read the whole library. Same rule as the step before it: **it must never fail an ingest.**
+    """
+    if not produced:
+        return
+    try:
+        from doc_assistant.metadata_enrich import fill_missing_metadata
+
+        with session_scope() as session:
+            ids = [
+                str(doc_id)
+                for doc_id, doc_hash in session.execute(
+                    select(DBDocument.id, DBDocument.doc_hash)
+                ).all()
+                if doc_hash in produced
+            ]
+        filled = fill_missing_metadata(ids)
+    except Exception as e:  # a metadata nicety must not lose a completed ingest
+        log.warning("extracted_metadata_failed", error=str(e))
+        return
+    if filled.filled:
+        log.info("extracted_metadata_filled", documents=filled.filled, fields=filled.fields)
 
 
 def _sweep_rebuild_rows(known_before: set[str], reproduced: set[str]) -> None:

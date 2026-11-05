@@ -42,6 +42,58 @@ Format: What changed | Why | Rejected alternatives | What it opens
 
 ---
 
+## 2026-11-05 (4) — The app's own index run fills title, authors, year and DOI (KI-87's library)
+
+**What changed.** `ingest.main` gains a post-loop step, `_fill_missing_metadata`, right after the
+catalogue's pass (`_apply_imported_metadata`). It takes the hashes the run indexed (new documents,
+and documents re-read because their text changed), and `metadata_enrich.fill_missing_metadata`
+runs the deterministic extractor over their cached text. It writes a column only while it is blank.
+It works in batches of 100: one read of the four columns, one read of the texts that still have a
+blank, one write. A document with nothing blank is not read. Like the steps beside it, it logs a
+warning and never fails the ingest. `_persist_metadata` (the `scripts/enrich_metadata.py` runner)
+now shares the column rule and, like the catalogue's fill-the-blanks mode, counts an
+all-whitespace string as blank. Seven tests in `tests/integration/ingest/test_ingest_fills_metadata.py`:
+0 documents, a fill, a re-index that keeps an extracted value and one that keeps a catalogue's, a
+text that yields nothing, and a failing step. The fill and the two re-index tests fail without the
+step, and the re-index ones also fail when it overwrites.
+
+**Why.** The app's index run and *Add documents* never read metadata, so a library indexed only in
+the app had no title, author or year on any document (KI-87's library; found inventorying the
+library summary's signals, ROADMAP 112). No ADR: ADR-049 D3 already orders the slots (extractor <
+catalogue < the user's edit) and already puts a post-loop metadata pass in `ingest.main`; this adds
+the lowest slot under that order. KI-54's own measurement recommends running the extractor on blank
+titles (14 right, 1 journal name, of 16). **Cost, measured** on a copy of the 2026-11-05 backup
+library (104 documents, cached text median 71,704 characters, all four columns blanked, served
+through `DOC_DATA_DIR`): **102 ms for all 104 (98.6 to 110.4 ms over 5 runs), about 1 ms per
+document**, of which the extractor is 0.36 ms. It filled 102 titles, 76 author lists, 93 years and
+26 DOIs. A second pass, with 84 documents still holding a blank, took 73 ms; with nothing blank,
+0.9 ms. Extracting one PDF takes 14.7 s on average (`docs/performance.md`), so the step is under
+0.01% of a first index; a re-read of 10,000 documents would add about 10 s. End to end, two public
+PDFs (64 and 9 pages) indexed into an empty data home took 52.2 s, of which the step took 43.6 ms,
+most of it the first import of its modules. On the copy the step's values match what the library
+already stored from earlier runs on 97 of 104 titles, 97 of 104 author lists, and every year and
+DOI.
+
+**Rejected.** Filling every document on every run: a Re-index would change documents it did not
+index, with nothing on the run's screen saying so. Replacing the extractor's earlier answer on a
+re-read: replacing it is what *Re-run…* › *Metadata* is for. Calling `enrich_metadata` per document:
+it opens a session per document, and with no bound on how many texts it loads, a re-read of the
+whole library would hold every text at once. Extracting inside `process_document`: that puts it in
+the locked ingest core and ahead of the catalogue's pass.
+
+**What it opens.** A library already indexed in the app is not filled by a Re-index (its documents
+are skipped as unchanged): one *Re-run…* › *Metadata* over them fills it. KI-54's journal-name title
+now arrives at index time on about one new document in sixteen, to be corrected as an edit. **A
+second defect, not filed yet:** the author picker takes a sentence of body text on 9 of the 76
+author lists it returned on the copy (for *Pointer Networks*: "Nonetheless, these methods still
+require…"). The stored library held 10 such lists, 8 of them the same, so the step brings the
+defect forward to index time rather than adding it; a structural guard in `_extract_authors` is
+its own fix.
+`reingest._rerun_metadata` on an imported document re-applies the catalogue and leaves the fields it
+lacks blank; the index step fills them. The library summary's *missing metadata* now means the
+extractor found nothing, for documents indexed from here on. The spec's *Opens* line and a ROADMAP
+row are the spec author's to update.
+
 ## 2026-11-05 — Selection in both lists, and a button's look says what it does (ADR-063 proposed)
 
 **What changed.** The chat rail and the Library grid and list share one selection rule

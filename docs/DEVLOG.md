@@ -42,6 +42,27 @@ Format: What changed | Why | Rejected alternatives | What it opens
 
 ---
 
+## 2026-11-05 (9) — `oauthlib` 4.0.1: an advisory in a package that never ships
+
+**What changed.** `uv.lock`: `oauthlib` 4.0.0 → 4.0.1 (`uv lock -P oauthlib==4.0.1`); nothing else
+moved. **Found by:** the pip-audit gate on 2026-11-05: CVE-2026-49272.
+
+**Why.** It comes in through `chromadb` 1.5.9 → `kubernetes` 36.0.0 → `requests-oauthlib` 2.0.0,
+Chroma's cluster client. Nothing here loads it: `src/`, `apps/`, `scripts/` and `tests/` never
+import it, a local `PersistentClient` round-trip loads none of the three, and the 0.7.2 backend's
+`PYZ-00.toc` holds 157 `chromadb` modules and no `oauthlib` or `kubernetes` one. So it reaches the
+dev venv and CI only, and no CHANGELOG line. 4.0.1 is the first fixed version, 5 days old.
+
+**Rejected.** A reviewed ignore in `pip-audit-ignore.toml`: the code never runs, but a patch
+release that moves one package is cheaper than an entry someone has to revisit.
+
+**Checked.** The gate is OK against an export of the new lock with CI's extras (197 packages,
+0 unreviewed, 6 reviewed ignores matched, 0 stale). The 677 tests in the 49 files that use Chroma
+pass with 4.0.1 overlaid on the main venv. The full suite was not run.
+
+**What it opens.** The main venv keeps 4.0.0, and the local gate fails there, until its next
+`uv sync`.
+
 ## 2026-11-05 (8) — A sentence is never a document's authors (KI-89)
 
 **What changed.** `metadata_extractor._looks_like_author_line` gains `_reads_as_prose`: a candidate

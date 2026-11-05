@@ -44,30 +44,30 @@
     updateDocumentMeta,
   } from './lib/core/api'
   import { GRAPH_TAB_ENABLED } from './lib/core/features'
-  import ChatPane from './lib/chat/ChatPane.svelte'
-  import Settings from './lib/settings/Settings.svelte'
-  import SourcePanel from './lib/chat/SourcePanel.svelte'
-  import Sidebar from './lib/shell/Sidebar.svelte'
-  import LibraryPane from './lib/library/LibraryPane.svelte'
-  import Icon from './lib/shell/Icon.svelte'
-  import AddDocuments from './lib/library/AddDocuments.svelte'
-  import AddDocumentsChooser from './lib/library/AddDocumentsChooser.svelte'
-  import LibraryGrid from './lib/library/LibraryGrid.svelte'
-  import LibraryKeywordFilter from './lib/library/LibraryKeywordFilter.svelte'
-  import LibraryManageKeywords from './lib/library/LibraryManageKeywords.svelte'
-  import LibraryManageFolders from './lib/library/LibraryManageFolders.svelte'
-  import LibraryMetaEditor from './lib/library/LibraryMetaEditor.svelte'
-  import LibraryDeleteConfirm from './lib/library/LibraryDeleteConfirm.svelte'
-  import ReingestDialog from './lib/library/ReingestDialog.svelte'
-  import ConfirmDialog from './lib/shell/ConfirmDialog.svelte'
-  import ConceptGraph from './lib/graph/ConceptGraph.svelte'
-  import GraphIndex from './lib/graph/GraphIndex.svelte'
-  import ShortcutsDialog from './lib/shell/ShortcutsDialog.svelte'
-  import AboutDialog from './lib/shell/AboutDialog.svelte'
-  import LibraryTaxonomy from './lib/library/LibraryTaxonomy.svelte'
-  import GlobalSearch from './lib/shell/GlobalSearch.svelte'
-  import Topbar from './lib/shell/Topbar.svelte'
-  import StatusBar from './lib/shell/StatusBar.svelte'
+  import Chat from './screens/chat/Chat.svelte'
+  import Settings from './screens/settings/Settings.svelte'
+  import SourcePanel from './screens/chat/SourcePanel.svelte'
+  import Sidebar from './shell/Sidebar.svelte'
+  import Library from './screens/library/Library.svelte'
+  import Icon from './shell/Icon.svelte'
+  import AddDocumentsReview from './screens/library/AddDocumentsReview.svelte'
+  import AddDocumentsChooser from './screens/library/AddDocumentsChooser.svelte'
+  import DocumentGrid from './screens/library/DocumentGrid.svelte'
+  import FilterByKeyword from './screens/library/FilterByKeyword.svelte'
+  import ManageKeywords from './screens/manage-keywords/ManageKeywords.svelte'
+  import ManageFolders from './screens/library/ManageFolders.svelte'
+  import EditMetadata from './screens/library/EditMetadata.svelte'
+  import DeleteDocument from './screens/library/DeleteDocument.svelte'
+  import RerunIngestion from './screens/document-page/RerunIngestion.svelte'
+  import ConfirmDialog from './shell/ConfirmDialog.svelte'
+  import Graph from './screens/graph/Graph.svelte'
+  import ConceptIndex from './screens/graph/ConceptIndex.svelte'
+  import KeyboardShortcuts from './shell/KeyboardShortcuts.svelte'
+  import About from './shell/About.svelte'
+  import Taxonomy from './screens/taxonomy/Taxonomy.svelte'
+  import GlobalSearch from './shell/GlobalSearch.svelte'
+  import Topbar from './shell/Topbar.svelte'
+  import StatusBar from './shell/StatusBar.svelte'
   import {
     type LibraryCollection,
     type LibrarySort,
@@ -128,8 +128,8 @@
   import { formatLine, limitLine } from './lib/library/formats'
   import { previewNames, remainderLabel, summarise } from './lib/library/accept'
   import { ingestRun, watchIngest } from './lib/core/ingest.svelte'
-  import IndexingScreen from './lib/shell/IndexingScreen.svelte'
-  import LibrarySwitchFailed from './lib/shell/LibrarySwitchFailed.svelte'
+  import Indexing from './shell/Indexing.svelte'
+  import LibrarySwitchFailed from './shell/LibrarySwitchFailed.svelte'
   import { clearLibrarySwitch, pendingLibrarySwitch } from './lib/core/tauri'
   import { backoffDelayMs, startupPhase } from './lib/shell/startup'
   import {
@@ -232,7 +232,7 @@
   let manageFolderId = $state<string | null>(null)
   let manageFolderQuery = $state('')
 
-  // Library select mode (batch add-to-folder). Selection is App-owned (LibraryGrid stays dumb);
+  // Library select mode (batch add-to-folder). Selection is App-owned (DocumentGrid stays dumb);
   // bulk delete is deliberately NOT here — deferred pending its own ADR (ui-checklist).
   let libSelectMode = $state(false)
   let libSelected = $state<string[]>([])
@@ -294,7 +294,7 @@
   useChatAutoscroll(() => viewing)
 
   // Taxonomy view (docs/specs/feature-taxonomy-view.md, ADR-028 2b). A dedicated modal that renders
-  // the curated field forest + *places* concepts/documents onto it. App owns the data; LibraryTaxonomy
+  // the curated field forest + *places* concepts/documents onto it. App owns the data; Taxonomy
   // is a dumb renderer. Opened from the Library rail, or from a graph node's Place action (which
   // preselects that concept via `taxonomy.focusConceptId`). Decoupled from the top-level nav — it's a
   // global overlay like Settings/Search, so it opens from any mode.
@@ -460,7 +460,7 @@
   $effect(() => watchDrops())
 
   // Ambient ingest watch. Runs for the app's whole life rather than being owned by whichever
-  // screen started a run, because an ingest kicked off from the Sources panel — or from the CLI
+  // screen started a run, because an ingest kicked off from the Manage files list — or from the CLI
   // against the same backend — is just as worth showing as one started from the add sheet.
   $effect(() => watchIngest())
 
@@ -1210,7 +1210,7 @@
 <!-- The graph-mode sidebar rail. App composes it (data + selection are App-owned) and hands it to
      Sidebar as a snippet, so Sidebar stays a dumb renderer without ~8 more graph props. -->
 {#snippet graphRail()}
-  <GraphIndex
+  <ConceptIndex
     nodes={graph.data?.nodes ?? []}
     gaps={graph.data?.gaps ?? []}
     selectedId={graph.selectedId}
@@ -1278,7 +1278,7 @@
   {/if}
 
   {#if reviewingAdd && accept.pending.length > 0}
-    <AddDocuments
+    <AddDocumentsReview
       paths={accept.pending}
       referenceRoot={accept.referenceRoot}
       onClose={() => {
@@ -1336,7 +1336,7 @@
         </p>
       {/if}
       {#if shell.mode === 'library'}
-        <LibraryPane
+        <Library
           {sourceJump}
           {documents}
           {documentsLoaded}
@@ -1385,7 +1385,7 @@
           onManageFoldersForDoc={openManageFoldersForDoc}
         />
       {:else if shell.mode === 'graph'}
-        <ConceptGraph
+        <Graph
           graph={graph.data}
           loading={graph.loading || (shell.status !== 'ready' && !graph.data)}
           error={graph.error}
@@ -1407,7 +1407,7 @@
           onOpenPassage={(key) => void openCitationInDocument(key)}
         />
       {:else}
-        <ChatPane
+        <Chat
           {viewing}
           {viewedConvo}
           {resumedHistory}
@@ -1432,7 +1432,7 @@
 </div>
 
 {#if ingestRun.panelOpen}
-  <IndexingScreen />
+  <Indexing />
 {/if}
 
 {#if switchAsked !== null && shell.status !== 'ready' && shell.startupPhase === 'stalled'}
@@ -1453,11 +1453,11 @@
 {/if}
 
 {#if shell.showShortcuts}
-  <ShortcutsDialog onClose={() => (shell.showShortcuts = false)} />
+  <KeyboardShortcuts onClose={() => (shell.showShortcuts = false)} />
 {/if}
 
 {#if shell.showAbout}
-  <AboutDialog
+  <About
     chunks={shell.health?.chunk_count ?? null}
     model={shell.health?.model ?? null}
     embedding={shell.health?.embedding_model ?? null}
@@ -1475,7 +1475,7 @@
 {/if}
 
 {#if editingDoc}
-  <LibraryMetaEditor
+  <EditMetadata
     doc={editingDoc}
     onSave={saveDocMeta}
     onReset={resetDocMeta}
@@ -1484,7 +1484,7 @@
 {/if}
 
 {#if deletingDoc}
-  <LibraryDeleteConfirm
+  <DeleteDocument
     doc={deletingDoc}
     busy={deleteBusy}
     onConfirm={confirmDelete}
@@ -1517,7 +1517,7 @@
 {/if}
 
 {#if keywordFilterOpen}
-  <LibraryKeywordFilter
+  <FilterByKeyword
     facets={facetList}
     docCounts={facetDocCounts}
     previewDocs={visibleDocs}
@@ -1531,7 +1531,7 @@
 {/if}
 
 {#if manageFoldersOpen}
-  <LibraryManageFolders
+  <ManageFolders
     {folders}
     {documents}
     selectedId={manageFolderId}
@@ -1548,7 +1548,7 @@
 {/if}
 
 {#if reingestTargets !== null}
-  <ReingestDialog
+  <RerunIngestion
     documentIds={reingestTargets}
     label={reingestLabel}
     preselected={reingestParts}
@@ -1558,7 +1558,7 @@
 {/if}
 
 {#if manageKeywordsOpen}
-  <LibraryManageKeywords
+  <ManageKeywords
     families={keywordFamilies}
     focusId={manageFocusId}
     openOnConcepts={manageOnConcepts}
@@ -1593,7 +1593,7 @@
 {/if}
 
 {#if taxonomy.open}
-  <LibraryTaxonomy
+  <Taxonomy
     view={taxonomy.view}
     fieldDetail={taxonomy.fieldDetail}
     proposals={taxonomy.proposals}

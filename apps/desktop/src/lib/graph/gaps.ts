@@ -1,6 +1,6 @@
 // Gap taxonomy + presentation ordering (ADR-004 / RG-014). Pure module — no Svelte, no imports of
 // sibling value modules — so it is unit-testable under `npm test` (node:test) and shared by both
-// ConceptGraph.svelte (the node-badge lens) and GapList.svelte (the E5 triage list).
+// Graph.svelte (the node-badge lens) and GapList.svelte (the E5 triage list).
 //
 // Why the ranking/hidden-by-default lives here, not on the server: it is a *presentation* decision
 // (RG-014). The strong signal is `single_source` — the corroboration thesis — so it leads;

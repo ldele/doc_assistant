@@ -5,17 +5,19 @@ from `src/` (non-negotiable #3, `.claude/CONTEXT.md`).
 
 **Key files**
 - `src/App.svelte` — the shell: cross-domain orchestration only (nav history, readiness gate,
-  `selectMode`, chat-scope guard, conversation/chat lifecycle) + overlay wiring.
-- `src/lib/<domain>/` — one folder per domain, mirroring `apps/api/routers/`: `chat` · `library` ·
-  `graph` · `settings` (incl. `GettingStarted.svelte` + `ProviderSetup.svelte` — ADR-034 first run;
-  they render `/api/setup`'s verdicts, never recompute them), plus `shell/` and `core/` (wire boundary + theme/fonts), neither
-  with an API counterpart. Table + naming traps: `docs/architecture.md` § `apps/` — the domain spine.
-- `<domain>/*.svelte.ts` — **rune modules** holding that domain's `$state` (7). Export ONE `$state`
-  *object*: an imported binding can't be reassigned across a module boundary.
-- `core/api|types/<domain>.ts` — one per `apps/api/models/` domain (barrels re-export, so
-  `../core/api` resolves). `app.css`+`core/fonts.css` = tokens; `core/theme.ts` = the theme toggle.
+  `selectMode`, chat-scope guard, conversation/chat lifecycle) + every overlay's mount.
+- `src/screens/<screen>/` — **components, by what the app shows** (ADR-064, GLOSSARY U-004): an
+  entry file named for the folder, its parts, its dialogs (named for their headings). `src/shell/`:
+  the frame, its windows, `Icon` + `ConfirmDialog`. Every door: `docs/architecture.md` § the screens.
+  First run (`GettingStarted`, `ProviderSetup`) renders `/api/setup`'s verdicts, never recomputes.
+- `src/lib/<domain>/` — **logic and state, no components**, mirroring `apps/api/routers/` (`chat` ·
+  `library` · `graph` · `settings` · `shell` · `core`): `docs/architecture.md` § the domain spine.
+- `<domain>/*.svelte.ts` — **rune modules** (9): export ONE `$state` *object* (an import can't be reassigned).
+- `lib/core/api|types/<domain>.ts` — one per `apps/api/models/` domain; tokens: `app.css` + `core/fonts.css`.
 
 **Rules that bite here**
+- **Imports point one way** (`src/layout.test.ts`): no `.ts` in `screens/`/`shell/`, no component in
+  `lib/`, nothing in `lib/`/`shell/` imports `screens/`. History before 2026-11-05 needs `--follow`.
 - Wire-type drift: change `apps/api/models/<domain>.py` ⇒ update `core/types/<domain>.ts` in the
   same change. Same word both sides — that is the point of the split.
 - **`.svelte.ts` can't run under `node:test`** (needs the compiler). Keep pure, tested logic in plain
@@ -26,15 +28,13 @@ from `src/` (non-negotiable #3, `.claude/CONTEXT.md`).
 - **No optional params in `<script lang="ts">` functions.** The TS-strip drops the type but leaves the
   `?`, emitting `function f(x?)` → `SyntaxError: Unexpected token '?'` that blanks the whole app mount —
   and `svelte-check` passes it (it checks the source). Use a defaulted param: `x: T | null = null`.
-- **The type gate is not the run gate:** asset paths and mount failures are invisible to
-  `svelte-check` *and* `node:test`. Verify with `npm run check` + live preview (light/dark/375px,
-  0 console errors, $0). Geometry odd? Check `innerWidth` — a hidden pane collapses it to 0, defers a
-  Svelte flush, and freezes transitions, which **strands an out-transitioning node in the DOM
-  forever** and reads as "the panel never closes". When DOM and state disagree, believe the state:
-  read the rune module from the page (DEVLOG 2026-07-26, 2026-07-28, 2026-08-31 (3)).
+- **The type gate is not the run gate:** asset paths and mount failures are invisible to `svelte-check`
+  *and* `node:test`; verify in the live preview (light/dark/375px, 0 console errors, $0). A hidden pane
+  sets `innerWidth` to 0, defers Svelte's flush and freezes transitions (a panel "never closes"): when
+  DOM and state disagree, read the rune module from the page (DEVLOG 2026-07-26, -07-28, -08-31 (3)).
 - Product name: ADR-012 (wordmark only — never rename the package). Dev: `just app`.
 
-**Tests:** `npm test` (`node:test`, zero deps; pure `lib/**/*.ts` only) + `svelte-check` + live
-preview are the gate. A tested `.ts` module importing a sibling needs the explicit `.ts` extension.
+**Tests:** `npm test` (`node:test`, zero deps; pure `.ts` only) + `svelte-check` + live preview are
+the gate. A tested `.ts` module importing a sibling needs the explicit `.ts` extension.
 
 <!-- Keep <=40 lines. Local only. If you're restating a project-wide rule, delete it and cite the code. -->

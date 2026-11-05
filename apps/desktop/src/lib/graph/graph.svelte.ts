@@ -24,8 +24,8 @@ export const graph = $state({
   loading: false,
   error: null as string | null,
   rebuildState: 'idle' as GraphRebuildStatus['state'],
-  /** Selection + the under-connected lens are shared: the sidebar's GraphIndex rail and
-   *  ConceptGraph's ego panel both read them, so they must agree. */
+  /** Selection + the under-connected lens are shared: the sidebar's ConceptIndex rail and
+   *  Graph's ego panel both read them, so they must agree. */
   selectedId: null as string | null,
   /** A concept reached by the vocabulary search that is not a graph node (ADR-053). Kept apart
    *  from `selectedId`, which the hygiene effect below clears whenever it names no node. */

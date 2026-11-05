@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-11-01 (Getting started and Provider & model; the letter-spacing domain, ADR-056; 2026-10-17: the concept panel's term signals route; 2026-10-01: CI's secret scan blocks — security S-13) · class: living -->
+<!-- status: active · updated: 2026-11-05 (the screens: components move to screen folders, ADR-064; 2026-11-01: Getting started and Provider & model; the letter-spacing domain, ADR-056; 2026-10-17: the concept panel's term signals route; 2026-10-01: CI's secret scan blocks — security S-13) · class: living -->
 
 # Architecture
 
@@ -115,42 +115,96 @@ data/                 # runtime data (sources, caches, vector stores, SQLite) �
 ### `apps/` — the domain spine
 
 Both shells are organised on **one axis: the domain**, and the domain words are the same on
-both sides of the wire. To review a feature end to end, read one row.
+both sides of the wire. To review a feature end to end, read one row. On the desktop the domain
+axis holds the logic: each domain's rune modules and tested `.ts` are `lib/<domain>/`, and its
+wire client and types are `lib/core/api|types/<domain>.ts`. The components are on the other axis,
+the screens (next section, ADR-064), and the last column says where a domain is shown.
 
-| Domain | Wire model | Route | Desktop UI |
+| Domain | Wire model | Route | Shown in (`apps/desktop/src/`) |
 |---|---|---|---|
-| chat | `models/chat.py` | `routers/chat.py` | `lib/chat/` (Turn, SourcePanel, ClaimReview…) |
-| compare | `models/compare.py` | `routers/chat.py` (`/api/compare`) | `lib/chat/CompareCard.svelte` |
-| conversations | `models/conversations.py` | `routers/conversations.py` | `lib/shell/Sidebar.svelte` |
-| library | `models/library.py` | `routers/library/documents.py` | `lib/library/` (Grid, Browser, MetaEditor, SourceViewer…) |
-| connections | `models/connections.py` | `routers/library/documents.py` | `lib/library/DocConnections.svelte` |
-| folders | `models/folders.py` | `routers/library/folders.py` | `lib/library/LibraryManageFolders.svelte` |
-| keywords | `models/keywords.py` | `routers/library/keywords.py` | `lib/library/LibraryManageKeywords.svelte` |
-| spacing | `models/spacing.py` | `routers/library/spacing.py` | `lib/library/DocSpacing.svelte`, `lib/settings/SpacingIgnoreList.svelte` |
-| concepts / graph | `models/concepts.py` | `routers/concepts.py` | `lib/graph/` (ConceptGraph, GraphIndex, GapList) |
-| taxonomy | `models/taxonomy.py` | `routers/taxonomy.py` | `lib/library/LibraryTaxonomy.svelte` |
-| definitions | `models/definitions.py` | `routers/definitions.py` | `lib/graph/ConceptDefinition.svelte` (in the concept panel) |
-| settings | `models/settings.py` | `routers/settings.py` | `lib/settings/Settings.svelte` |
-| setup (first run) | `models/setup.py` | `routers/setup.py` | `lib/settings/GettingStarted.svelte` · `ProviderSetup.svelte` |
-| sources (ingestion) | `models/sources.py` | `routers/sources.py` | `lib/settings/Sources.svelte` |
-| health | — | `routers/health.py` | `lib/shell/` (status bar) |
+| chat | `models/chat.py` | `routers/chat.py` | `screens/chat/` (Turn, SourcePanel, ClaimReview…) |
+| compare | `models/compare.py` | `routers/chat.py` (`/api/compare`) | `screens/chat/CompareCard.svelte` |
+| conversations | `models/conversations.py` | `routers/conversations.py` | `shell/Sidebar.svelte` (Chat history) |
+| library | `models/library.py` | `routers/library/documents.py` | `screens/library/`, `screens/document-page/` |
+| summary | `models/summary.py` | `routers/library/summary.py` | `screens/library/Summary.svelte` |
+| connections | `models/connections.py` | `routers/library/documents.py` | `screens/document-page/Connections.svelte` |
+| folders | `models/folders.py` | `routers/library/folders.py` | `screens/library/ManageFolders.svelte` |
+| keywords | `models/keywords.py` | `routers/library/keywords.py` | `screens/manage-keywords/ManageKeywords.svelte` |
+| spacing | `models/spacing.py` | `routers/library/spacing.py` | `screens/document-page/LetterSpacing.svelte`, `screens/settings/SpacingIgnoreList.svelte` |
+| concepts / graph | `models/concepts.py` | `routers/concepts.py` | `screens/graph/` (Graph, ConceptIndex, GapList) |
+| taxonomy | `models/taxonomy.py` | `routers/taxonomy.py` | `screens/taxonomy/Taxonomy.svelte` |
+| definitions | `models/definitions.py` | `routers/definitions.py` | `screens/graph/Definition.svelte` (in the concept panel) |
+| settings | `models/settings.py` | `routers/settings.py` | `screens/settings/Settings.svelte` |
+| setup (first run) | `models/setup.py` | `routers/setup.py` | `screens/settings/GettingStarted.svelte` · `ProviderSetup.svelte` |
+| sources (ingestion) | `models/sources.py` | `routers/sources.py` | `screens/settings/ManageFiles.svelte` (*Manage files*) |
+| health | — | `routers/health.py` | `shell/StatusBar.svelte` |
 
 Two frontend folders have no API counterpart, by design:
 
-- `lib/shell/` — chrome that belongs to no domain: sidebar, global search, dialogs, `Icon.svelte`
-  (the one component imported across every folder).
+- `src/shell/` — the frame around every screen (top bar, sidebar, status bar), the windows it opens
+  (search, keyboard shortcuts, about, indexing), and the two components every screen uses,
+  `Icon.svelte` and `ConfirmDialog.svelte`. Its state and tested logic are `lib/shell/`.
 - `lib/core/` — the wire boundary itself, split by the same domain names: `api/<domain>.ts`
   (thin fetch clients, shared base + error unwrapper in `_base.ts`) and `types/<domain>.ts`
   (mirrors `apps/api/models/<domain>.py`), plus `theme.ts` and `fonts.css`. Both carry an
   `index.ts` barrel, so `from '../core/api'` still resolves; prefer the domain module.
 
-Two naming traps this table exists to prevent:
+One naming trap this table exists to prevent:
 
-- **`sources` is ingestion, not citations.** `models/sources.py` and `lib/settings/Sources.svelte`
-  are files on disk; the *citation* sources of an answer are `SourceViewPayload` in `models/chat.py`
-  and `lib/chat/Source*.svelte`.
 - **`library` is three sub-domains.** Documents, folders and keyword families all live under
   `/api/library/*` and are split one module per sub-domain on both sides.
+
+### `apps/desktop/src/` — the screens
+
+A person who sees a screen or a dialog finds its code by its name (ADR-064). A **screen** is a
+place you go: a tab, the document page, or a view that covers what is under it and has parts of
+its own. Each has one folder under `screens/`, named as the app names it (GLOSSARY U-004), with one
+entry file named for the folder, the screen's parts, and the dialogs it opens. A **dialog** asks
+one thing and closes, is named for its heading, and lives with the screen whose thing it acts on,
+whichever screen has the door. `App.svelte` is the shell: navigation, the readiness gate, mode
+switching, global keys, and every overlay's mount.
+
+Imports point one way, and `src/layout.test.ts` holds it: `screens/` and `shell/` hold only
+components; `lib/` holds none and imports none; `shell/` and `lib/` never import `screens/`; a
+screen takes only `Icon` and `ConfirmDialog` from `shell/`.
+
+| What the app shows | Its doors | File (`apps/desktop/src/`) |
+|---|---|---|
+| **Frame** | | `shell/` |
+| Top bar · Sidebar (collapse, resize, the tab's rail) · Status bar, its indexing chip | always | `Topbar.svelte` · `Sidebar.svelte` · `StatusBar.svelte`, `IngestChip.svelte` |
+| *Search chats and documents* | top bar, Ctrl/⌘ K | `GlobalSearch.svelte` |
+| *Keyboard shortcuts* · *About Provenote* | app menu | `KeyboardShortcuts.svelte` · `About.svelte` |
+| Indexing (a run's progress) | the status bar's chip, *View indexing* in Settings | `Indexing.svelte` |
+| The library switch failed | start-up | `LibrarySwitchFailed.svelte` |
+| A confirm (delete chats, stop indexing, switch library) · icons | several · every screen | `ConfirmDialog.svelte` · `Icon.svelte` |
+| **Chat tab** | top bar | `screens/chat/` |
+| the tab | *Chat* | `Chat.svelte` |
+| Chat history (the sidebar rail) | sidebar, Chat | inside `shell/Sidebar.svelte` until ADR-064 pass 2 |
+| an answer and its parts | | `Turn`, `ReadonlyTurn`, `Markdown`, `Provenance`, `ClaimReview`, `SourceEvaluation` |
+| the comparison | *Test override* | `CompareCard.svelte` |
+| a citation's source | an answer's [n] | `SourcePanel`, `SourceCard`, `ChunkContextView` |
+| **Library tab** | top bar | `screens/library/` |
+| the tab · the grid or list · the keyword filter strip · the library summary | *Library* · · · the layout toggle's *Summary* | `Library.svelte` · `DocumentGrid.svelte` · `FilterStrip.svelte` · `Summary.svelte` |
+| Library navigation (the sidebar rail) | sidebar, Library | inside `shell/Sidebar.svelte` until ADR-064 pass 2 |
+| *Filter by keyword* | the filter strip | `FilterByKeyword.svelte` |
+| *Manage folders* | the rail's *Manage…*, a tile's *Add to folder*, the select bar's *Add to folder…* | `ManageFolders.svelte` |
+| *Edit metadata* · *Delete this document?* | a tile's ⋯ menu | `EditMetadata.svelte` · `DeleteDocument.svelte` |
+| *Add documents*, first step · its review sheet | app menu, the empty Library, a drop · the staged-files bar's *Review* | `AddDocumentsChooser.svelte` · `AddDocumentsReview.svelte` |
+| **Document page** | a document in the Library, Search, a graph concept | `screens/document-page/` |
+| the page, its header and Chunks block | | `DocumentPage.svelte` |
+| Connections · Figures · References | the page's index | `Connections.svelte` · `Figures.svelte` · `References.svelte` |
+| the figure viewer · the source viewer | a figure · *Source* | `FigureViewer.svelte` · `SourceViewer.svelte` |
+| *Letter-spacing on this document* · *Edit spacing* | the page · a run's *Edit spacing* | `LetterSpacing.svelte` · `EditSpacing.svelte` |
+| *Re-run ingestion* | *Re-run…*, *Re-run text now…* (page and Settings), the Library's select bar | `RerunIngestion.svelte` |
+| **Graph tab** | top bar | `screens/graph/` |
+| the tab, its empty states, the graph bar, the concept panel | *Graph*, a concept | `Graph.svelte` |
+| *Definition* · the concept index (the sidebar rail) · the gap list | the concept panel · sidebar, Graph · the rail's *Gaps* | `Definition.svelte` · `ConceptIndex.svelte` · `GapList.svelte` |
+| ***Manage keywords*** | *Manage keywords…* in *Filter by keyword*; on the Graph tab, *Manage keywords* (the graph bar and the empty state) and a concept's *Edit* | `screens/manage-keywords/ManageKeywords.svelte` |
+| ***Taxonomy*** | the concept index's footer, *Place* on a concept | `screens/taxonomy/Taxonomy.svelte` |
+| ***Settings*** | top bar, app menu, *Finish setup…* on the Chat tab, the letter-spacing block's link | `screens/settings/` |
+| the window, its rail and sections · *Getting started* · *Provider & model* | | `Settings.svelte` · `GettingStarted.svelte` · `ProviderSetup.svelte` |
+| *Manage files* · *Letter-spacing ignore list* | *Documents* | `ManageFiles.svelte` · `SpacingIgnoreList.svelte` |
+| *Re-index this folder?* · *Open this library?* | *Re-index* · *Open another library…*, in *Documents* | `ReindexFolder.svelte` · `OpenLibrary.svelte` |
 
 ## Two-tier caching
 
@@ -287,7 +341,7 @@ occurs — offered, never applied; a form is added in Manage keywords.
 and the read-only graph/gap UI are **built and shipped**. The taxonomy layer is **built** (TX1–TX3, 2026-07):
 `kind` column, curated `concept_hierarchy` + `document_field` tables, `knowledge/taxonomy.py` (write seam,
 acyclic), `taxonomy_view.py` (read model), `taxonomy_propose.py` (quarantined LLM proposals, ADR-028 D8),
-`apps/api/routers/taxonomy.py`, `LibraryTaxonomy.svelte`, `scripts/seed_taxonomy.py` (ANZSRC 2020 FoR) and
+`apps/api/routers/taxonomy.py`, `screens/taxonomy/Taxonomy.svelte`, `scripts/seed_taxonomy.py` (ANZSRC 2020 FoR) and
 `scripts/propose_taxonomy.py` — but the taxonomy is **empty of concept placements** (13 of 357 placed, 0 `is_a`;
 ADR-045). Node-B stance is **withheld from the UI** (KI-33, ADR-040/041); regeneration is a local-LLM cost
 decision (KI-4). The superseded open-vocabulary `concept_graph.py` was deleted 2026-07-07

@@ -137,7 +137,7 @@ test('D6: a family selection matches nothing against raw keywords — the shippe
   const tile = doc('c', ['llm', 'llms'])
   const selection = ['Large language model']
 
-  // What LibraryGrid did: `activeKeywords.includes(rawKeyword)`.
+  // What DocumentGrid did: `activeKeywords.includes(rawKeyword)`.
   assert.equal(
     tile.keywords.some((k) => selection.includes(k)),
     false,

@@ -1,5 +1,5 @@
 // Pure display logic for what the text says about a concept's name (ROADMAP 93, ADR-053
-// decision 4). Tested under `npm test`; ConceptDefinition.svelte only renders what this returns.
+// decision 4). Tested under `npm test`; Definition.svelte only renders what this returns.
 //
 // Only the signals the user's answers supported are on the wire
 // (tests/eval/baselines/term_signals_2026-10-14.md): short and long forms with their sentence, a

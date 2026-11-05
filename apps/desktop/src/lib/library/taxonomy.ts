@@ -1,5 +1,5 @@
 // Taxonomy tree-shaping (docs/specs/feature-taxonomy-view.md, ADR-028 increment 2b, T2). Pure by
-// design so it is exercised by `npm test` (node:test) — LibraryTaxonomy is a dumb renderer, App owns
+// design so it is exercised by `npm test` (node:test) — Taxonomy is a dumb renderer, App owns
 // the data. Turns the flat field list the API serves into ordered display rows.
 //
 // The taxonomy is a DAG, not a tree: a field may have several parents (ADR-028 D1), so it renders

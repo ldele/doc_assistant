@@ -1,0 +1,410 @@
+<script lang="ts">
+  // The concept index rail — the Graph view's navigation, hosted in the shared Sidebar (App
+  // composes this and injects it via Sidebar's `graphRail` snippet prop, so the graph data and
+  // selection stay App-owned). Extracted from Graph.svelte so the view has ONE left rail:
+  // this index in the sidebar, the ego graph filling the main pane. Rail-only presentation state
+  // (tab, filter query, gaps-only lens) is local and ephemeral, like the chat-history filter; the
+  // under-connected lens is bindable because the ego panel's gap notes must agree with the badges.
+  import type { ConceptGraphNode, Gap, VocabularyMatch } from '../../lib/core/types'
+  import { searchVocabulary } from '../../lib/core/api'
+  import { GAP_META, conceptIndexRows, visibleConceptGaps } from '../../lib/graph/gaps'
+  import { offGraphMatches } from '../../lib/graph/definitions'
+  import { shownLabel } from '../../lib/graph/labels'
+  import GapList from './GapList.svelte'
+  import Icon from '../../shell/Icon.svelte'
+
+  let {
+    nodes,
+    gaps,
+    selectedId,
+    showUnderConnected = $bindable(false),
+    loading,
+    built,
+    graphError,
+    onSelectConcept,
+    offGraphId = null,
+    onSelectOffGraph,
+  }: {
+    nodes: ConceptGraphNode[]
+    gaps: Gap[]
+    selectedId: string | null
+    showUnderConnected?: boolean
+    loading: boolean
+    built: boolean
+    graphError: string | null
+    onSelectConcept: (id: string) => void
+    /** The concept selected from the vocabulary search, when it is not a graph node. */
+    offGraphId?: string | null
+    onSelectOffGraph: (id: string, label: string) => void
+  } = $props()
+
+  // Rail mode (E5): the concept index, or the first-class triageable gap list. The Gaps tab stays
+  // reachable even while the graph is loading/unbuilt — GapList fetches its own data.
+  let railMode = $state<'concepts' | 'gaps'>('concepts')
+  let query = $state('')
+  let gapsOnly = $state(false)
+
+  // concept_id → its gaps (a concept can carry more than one kind).
+  const gapsByConcept = $derived.by(() => {
+    const m = new Map<string, Gap[]>()
+    for (const g of gaps) {
+      const list = m.get(g.concept_id) ?? []
+      list.push(g)
+      m.set(g.concept_id, list)
+    }
+    return m
+  })
+  const indexRows = $derived(conceptIndexRows(nodes, gapsByConcept, query, gapsOnly, showUnderConnected))
+  const gapConceptCount = $derived(
+    nodes.filter((n) => visibleConceptGaps(gapsByConcept.get(n.id) ?? [], showUnderConnected).length > 0)
+      .length,
+  )
+
+  // The filter also searches the whole vocabulary (ADR-053): a concept the graph does not map
+  // (`specter`, `viral`) still has a definition to read and choose. Debounced, and a stale answer
+  // for an older query is dropped. Two characters minimum — one matches half the vocabulary.
+  let vocab = $state<VocabularyMatch[]>([])
+  const graphIds = $derived(new Set(nodes.map((n) => n.id)))
+  const offGraph = $derived(offGraphMatches(vocab, graphIds))
+  $effect(() => {
+    const q = query.trim()
+    if (q.length < 2) {
+      vocab = []
+      return
+    }
+    const timer = setTimeout(() => {
+      searchVocabulary(q)
+        .then((m) => {
+          if (query.trim() === q) vocab = m
+        })
+        .catch(() => {
+          vocab = [] // the graph list above still works; the extra matches just do not show
+        })
+    }, 250)
+    return () => clearTimeout(timer)
+  })
+
+  function commColor(n: ConceptGraphNode): string {
+    return `var(--comm-${((n.community % 12) + 12) % 12})`
+  }
+</script>
+
+<div class="graphindex">
+  <div class="railmode segmented" role="tablist" aria-label="Rail mode">
+    <button
+      type="button"
+      role="tab"
+      aria-selected={railMode === 'concepts'}
+      class:active={railMode === 'concepts'}
+      onclick={() => (railMode = 'concepts')}
+    >
+      Concepts
+    </button>
+    <button
+      type="button"
+      role="tab"
+      aria-selected={railMode === 'gaps'}
+      class:active={railMode === 'gaps'}
+      onclick={() => (railMode = 'gaps')}
+    >
+      Gaps
+    </button>
+  </div>
+
+  {#if railMode === 'gaps'}
+    <GapList {onSelectConcept} />
+  {:else if loading}
+    <p class="railstate muted">Loading concept graph…</p>
+  {:else if graphError}
+    <p class="railstate muted">Couldn’t load the concept graph.</p>
+  {:else if !built}
+    <p class="railstate muted">No concept graph yet — build it from the main panel.</p>
+  {:else if nodes.length === 0}
+    <!-- Built and empty. Without this the rail renders its filter box over an empty list and says
+         "No concepts match", blaming a query the user never typed. The main panel carries the
+         explanation (curated vocabulary, ADR-018); the rail just needs to not lie. -->
+    <p class="railstate muted">Nothing in the graph yet.</p>
+  {:else}
+    <div class="searchrow">
+      <Icon name="search" size={13} />
+      <input bind:value={query} placeholder="Filter concepts…" aria-label="Filter concepts" />
+      {#if query}
+        <button class="clearq" onclick={() => (query = '')} aria-label="Clear filter" type="button">
+          <Icon name="x" size={13} />
+        </button>
+      {/if}
+    </div>
+    <div class="lenses">
+      <button
+        class="lens"
+        class:on={gapsOnly}
+        aria-pressed={gapsOnly}
+        onclick={() => (gapsOnly = !gapsOnly)}
+        type="button"
+        title="Hide every concept the gap detector found nothing wrong with, leaving only the worklist."
+      >
+        Gaps only <span class="count">{gapConceptCount}</span>
+      </button>
+      <!-- Same control style as `Gaps only` beside it (ui-checklist §2): both are on/off lenses
+           over the same list, and a checkbox next to a pressed-state button read as two different
+           kinds of thing doing one job. -->
+      <button
+        class="lens"
+        class:on={showUnderConnected}
+        aria-pressed={showUnderConnected}
+        onclick={() => (showUnderConnected = !showUnderConnected)}
+        type="button"
+        title="Under-connected measures graph degree. It is noisy at this vocabulary size (RG-014), so it is hidden until you ask for it."
+      >
+        Include under-connected
+      </button>
+    </div>
+    <div class="clist" role="listbox" aria-label="Concepts">
+      {#each indexRows as row (row.node.id)}
+        {@const g = row.gaps[0]}
+        <button
+          class="crow"
+          class:sel={row.node.id === selectedId}
+          role="option"
+          aria-selected={row.node.id === selectedId}
+          onclick={() => onSelectConcept(row.node.id)}
+          type="button"
+        >
+          <span class="dot" style="background:{commColor(row.node)}" aria-hidden="true"></span>
+          <span class="clabel">{shownLabel(row.node)}</span>
+          {#if g}
+            <span class="badge {GAP_META[g.kind].tone}" title={GAP_META[g.kind].blurb}>
+              {GAP_META[g.kind].label}{row.gaps.length > 1 ? ` +${row.gaps.length - 1}` : ''}
+            </span>
+          {/if}
+          <span class="dcount" title="{row.node.doc_ids.length} documents">{row.node.doc_ids.length}</span>
+        </button>
+      {:else}
+        {#if offGraph.length === 0}<p class="empty-list muted">No concepts match.</p>{/if}
+      {/each}
+      {#if offGraph.length > 0}
+        <!-- ADR-054: a row nobody has taken on is a term, not a concept. Named as what it is, so
+             the panel that opens (usage, no definition to choose) is not a surprise. -->
+        <p class="offhead muted">Terms — not concepts yet</p>
+        {#each offGraph as m (m.id)}
+          <button
+            class="crow off"
+            class:sel={m.id === offGraphId}
+            role="option"
+            aria-selected={m.id === offGraphId}
+            onclick={() => onSelectOffGraph(m.id, shownLabel(m))}
+            type="button"
+            title="A word your library uses that you have not taken on as a concept — open it to see how the library uses it"
+          >
+            <span class="dot hollow" aria-hidden="true"></span>
+            <span class="clabel">{shownLabel(m)}</span>
+            {#if m.has_definition}<span class="defmark" title="Has a chosen definition">def</span>{/if}
+          </button>
+        {/each}
+      {/if}
+    </div>
+  {/if}
+</div>
+
+<style>
+  .graphindex {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    padding-top: var(--space-2);
+  }
+  .muted {
+    color: var(--fg-2);
+  }
+  .offhead {
+    margin: var(--space-2) 0 0;
+    padding: 0 var(--space-2);
+    font-size: var(--text-sm);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  .dot.hollow {
+    background: none;
+    border: 1.5px solid var(--fg-2);
+  }
+  .defmark {
+    font-size: 0.68rem;
+    color: var(--fg-2);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 0 0.3rem;
+  }
+  .railstate {
+    font-size: var(--text-sm);
+    padding: var(--space-2) var(--space-2);
+    line-height: 1.4;
+    margin: 0;
+  }
+  .railmode {
+    display: flex;
+    gap: 2px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 2px;
+    background: var(--surface);
+  }
+  .railmode button {
+    flex: 1;
+    border: none;
+    border-radius: 6px;
+    padding: 3px var(--space-3);
+    background: none;
+    color: var(--fg-2);
+    font: inherit;
+    font-size: var(--text-sm);
+    cursor: pointer;
+  }
+  .railmode button.active {
+    background: var(--bg);
+    color: var(--fg);
+    font-weight: 600;
+  }
+  /* Filter styling matches the sidebar's other list filters (transparent, small) — the header's
+     Ctrl/⌘-K overlay is the one global search. */
+  .searchrow {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 0.3rem 0.5rem;
+    color: var(--fg-2);
+    background: transparent;
+  }
+  .searchrow:focus-within {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 22%, transparent);
+  }
+  .searchrow input {
+    flex: 1;
+    min-width: 0;
+    border: none;
+    background: none;
+    font: inherit;
+    font-size: 0.78rem;
+    color: var(--fg);
+    outline: none;
+  }
+  .clearq {
+    border: none;
+    background: none;
+    color: var(--fg-2);
+    cursor: pointer;
+    display: inline-flex;
+    padding: 0;
+  }
+  .clearq:hover {
+    color: var(--fg);
+  }
+  .lenses {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    flex-wrap: wrap;
+    font-size: var(--text-sm);
+  }
+  .lens {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 2px var(--space-3);
+    background: var(--surface);
+    color: var(--fg);
+    font: inherit;
+    font-size: var(--text-sm);
+    cursor: pointer;
+  }
+  .lens.on {
+    background: var(--accent);
+    color: var(--accent-fg);
+    border-color: var(--accent);
+  }
+  .lens .count {
+    font-variant-numeric: tabular-nums;
+    opacity: 0.8;
+  }
+  .clist {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding-right: 2px;
+  }
+  .crow {
+    display: grid;
+    /* The badge takes its own line: beside the name it left a narrow rail one letter of it. */
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+    column-gap: var(--space-2);
+    row-gap: 2px;
+    width: 100%;
+    text-align: left;
+    border: 1px solid transparent;
+    border-radius: 7px;
+    padding: var(--space-2) var(--space-2);
+    background: none;
+    color: var(--fg);
+    font: inherit;
+    cursor: pointer;
+  }
+  .crow:hover {
+    background: var(--surface);
+  }
+  .crow.sel {
+    background: var(--surface-2);
+    border-color: var(--border);
+  }
+  .dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    flex: none;
+  }
+  .clabel {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .badge {
+    grid-column: 2 / -1;
+    grid-row: 2;
+    justify-self: start;
+    font-size: var(--text-meta);
+    padding: 1px 7px;
+    border-radius: 999px;
+    white-space: nowrap;
+  }
+  .badge.danger {
+    color: var(--danger);
+    border: 1px solid var(--danger);
+  }
+  .badge.warn {
+    color: var(--warn-fg);
+    border: 1px solid var(--warn-border);
+    background: var(--warn-bg);
+  }
+  .dcount {
+    grid-column: 3;
+    grid-row: 1;
+    font-size: var(--text-meta);
+    color: var(--fg-2);
+    font-variant-numeric: tabular-nums;
+    min-width: 1.5em;
+    text-align: right;
+  }
+  .empty-list {
+    padding: var(--space-3);
+    font-size: var(--text-sm);
+  }
+</style>

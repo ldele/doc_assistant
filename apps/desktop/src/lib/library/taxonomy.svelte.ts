@@ -5,7 +5,7 @@
 // this one needs the Svelte compiler and cannot be. The extension is the marker — keep the pure
 // logic in `taxonomy.ts` so it stays testable (apps/desktop/CLAUDE.md).
 //
-// LibraryTaxonomy.svelte is a dumb renderer; this module owns the data. Every mutation is
+// Taxonomy.svelte is a dumb renderer; this module owns the data. Every mutation is
 // write-then-refetch: the server owns counts + acyclicity, so the tree is never patched by hand.
 //
 // Cross-domain bit that stays in App.svelte: opening the modal also lazy-loads the *document*

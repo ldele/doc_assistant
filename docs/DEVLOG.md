@@ -42,6 +42,33 @@ Format: What changed | Why | Rejected alternatives | What it opens
 
 ---
 
+## 2026-11-05 (6) — Every component moves to the screen it shows (ADR-064 accepted, pass 1)
+
+**What changed.** The user accepted ADR-064's seven choices as recommended. Pass 1, moves only: all
+54 components left `apps/desktop/src/lib/` for `src/screens/<screen>/` (chat, library,
+document-page, graph, manage-keywords, taxonomy, settings) or `src/shell/`, 28 of them renamed to
+what the app shows (`LibraryBrowser` → `DocumentPage`, `ReingestDialog` → `RerunIngestion`,
+`Sources` → `ManageFiles`, `LibraryTaxonomy` → `screens/taxonomy/Taxonomy`). Imports, component
+tags and the comments naming a component follow; git records all 54 as renames (93–100%
+similar). `src/layout.test.ts` holds the folder rules (no `.ts` in `screens/`/`shell/`, no
+component in `lib/`, nothing in `lib/` or `shell/` imports a screen, a screen takes only `Icon` and
+`ConfirmDialog` from `shell/`, every relative import resolves); it failed four of five on a copy with
+planted violations. The security test's sink path, `docs/architecture.md` (the spine table's last
+column, and a new section: every screen and dialog with its doors), GLOSSARY U-001/U-002 and the
+new U-004, `docs/security.md` S2, ROADMAP row 111 and `apps/desktop/CLAUDE.md` follow.
+
+**Why.** The user asked for a layout where a person who sees a screen finds its code in one place.
+The rewrite ran first on a copy of `src/` with an import-resolution check, then for real once
+`c2b2fef` left `apps/desktop/` clear.
+
+**Rejected.** Splitting in the same commit: a file renamed and cut in one commit can fall under git's
+50% rename threshold and lose its history, so pass 2 starts after this is committed. Renaming the
+wire types that share a component's old name (`ConceptGraph`, `DocConnections`, `DocReferences`):
+they mirror `apps/api/models/` and stay.
+
+**What it opens.** Pass 2: the nine files of 690 lines or more, and App's one-domain state into rune
+modules. ADRs, dated specs and archives keep the old paths as the record of their time.
+
 ## 2026-11-05 (5) — The library summary follows the user's seven recommendations (ROADMAP 112)
 
 **What changed.** Six of the seven, in the wireframe (revision 2, four screens, rev 1001), the spec

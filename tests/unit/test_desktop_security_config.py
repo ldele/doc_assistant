@@ -1,7 +1,7 @@
 """Guard the config facts the app's security rests on.
 
 The desktop renders LLM output through ``marked`` into ``{@html}``
-(``apps/desktop/src/lib/chat/Markdown.svelte``). Three walls contain it: DOMPurify on that one
+(``apps/desktop/src/screens/chat/Markdown.svelte``). Three walls contain it: DOMPurify on that one
 sink (S-3), the webview's Content-Security-Policy in ``tauri.conf.json`` — sent by the dev server
 too, since Tauri injects it only into the built app — and a capability file that grants the page
 almost nothing (one sidecar spawn, one file-open dialog). Each is an edit nobody would think of as
@@ -147,8 +147,8 @@ def test_every_html_sink_renders_sanitised_markup() -> None:
         found = re.findall(r"\{@html\s+([A-Za-z_]\w*)\s*\}", code)
         if found:
             sinks[path.relative_to(DESKTOP_SRC).as_posix()] = found
-    assert sinks == {"lib/chat/Markdown.svelte": ["html"]}, sinks
-    source = (DESKTOP_SRC / "lib" / "chat" / "Markdown.svelte").read_text(encoding="utf-8")
+    assert sinks == {"screens/chat/Markdown.svelte": ["html"]}, sinks
+    source = (DESKTOP_SRC / "screens" / "chat" / "Markdown.svelte").read_text(encoding="utf-8")
     assert re.search(r"const html = \$derived\(DOMPurify\.sanitize\(", source), (
         "the {@html} variable must be DOMPurify output"
     )

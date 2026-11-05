@@ -2,7 +2,7 @@
 //
 // A leaf rune module, like `library/accept.svelte.ts`: it imports the API client and the pure
 // helpers next door, and nothing else from the app — so the status bar, the add sheet and the
-// Sources panel all read one run rather than each polling their own and disagreeing about it.
+// Manage files list all read one run rather than each polling their own and disagreeing about it.
 //
 // **Why this exists at all.** `POST /api/ingest` is a 202, and the status endpoint used to report
 // `{running, 0, 0, 0}` for the whole run, so a user who added a document saw nothing happen and
@@ -140,7 +140,7 @@ async function tick(): Promise<void> {
  * Start watching. Call once from the app root; the returned function unsubscribes.
  *
  * Polls on an idle heartbeat even when nothing is running, so a run started somewhere else — the
- * Sources panel, the CLI, a second window — still lights the bar. That is the point of the status
+ * Manage files list, the CLI, a second window — still lights the bar. That is the point of the status
  * bar being ambient rather than owned by whichever screen kicked the run off.
  */
 export function watchIngest(): () => void {

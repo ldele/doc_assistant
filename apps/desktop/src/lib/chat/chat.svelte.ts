@@ -6,7 +6,7 @@
 // read and write conversation-view state (`viewing`, `viewedConvo`, `resumedHistory`) — all of
 // which span domains, so they stay where that coupling is visible.
 //
-// The DOM refs are here rather than in the pane because *both* sides need them: `ChatPane` binds
+// The DOM refs are here rather than in the pane because *both* sides need them: `Chat` binds
 // them, and App's own handlers (`newConversation`, `resumeConversation`) still call
 // `chat.taEl?.focus()`. Keeping them module-level is what let the pane be extracted at all.
 
@@ -46,7 +46,7 @@ export const chat = $state({
    *  past turn's record_id) so a click resolves against the right turn in either mode. */
   activeCitation: null as { turnKey: string; n: number } | null,
 
-  // DOM refs, bound by ChatPane.
+  // DOM refs, bound by Chat.
   convoEl: null as HTMLElement | null,
   taEl: null as HTMLTextAreaElement | null,
 })

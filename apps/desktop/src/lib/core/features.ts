@@ -15,7 +15,7 @@
  * (`docs/REVIEW_2026-08-12_release-readiness.md` §2b R4, which asked for either a real empty
  * state or the hide). Both halves are answered now: the skeleton is built (13 concepts, 19 edges,
  * 6 communities, not stale — measured 2026-08-28), and R4's actual remedy shipped with the flip —
- * `ConceptGraph`/`GraphIndex` now separate *never built* from *built and empty*, so neither state
+ * `Graph`/`ConceptIndex` now separate *never built* from *built and empty*, so neither state
  * can be read as a broken page.
  *
  * **The caveat that came with the flip, and how it was closed the same day.** Graph vocabulary is

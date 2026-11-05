@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-11-05 (U-003: the four action roles, ADR-063; 2026-11-01, U-002: the letter-spacing ignore list and its views, ADR-056; 2026-10-14, C-013: a written form may join its words otherwise than the label, KI-63; 2026-10-09, U-001: a view has one name — Manage keywords on every door to it; 2026-10-01, ADR-054: C-001 narrowed to the rows the user took on; C-014 term, C-015 name, C-016 exact form / broad form) · class: living -->
+<!-- status: active · updated: 2026-11-05 (U-004: the screens and their names, ADR-064; U-001/U-002 paths follow the move; U-003: the four action roles, ADR-063; 2026-11-01, U-002: the letter-spacing ignore list and its views, ADR-056; 2026-10-14, C-013: a written form may join its words otherwise than the label, KI-63; 2026-10-09, U-001: a view has one name — Manage keywords on every door to it; 2026-10-01, ADR-054: C-001 narrowed to the rows the user took on; C-014 term, C-015 name, C-016 exact form / broad form) · class: living -->
 
 # GLOSSARY — doc_assistant
 
@@ -192,8 +192,8 @@ say what it does (*Edit* on a concept) and names the view in its tooltip. The ru
 second name for a screen, a tab or a control reads as a second thing.
 **Forbidden:** `Manage concepts`, `Choose the vocabulary` (both were labels on doors to this view
 until 2026-10-09)
-**Authoritative in:** `apps/desktop/src/lib/library/LibraryManageKeywords.svelte` (the view) +
-`apps/desktop/src/lib/graph/ConceptGraph.svelte` (its doors on the Graph tab)
+**Authoritative in:** `apps/desktop/src/screens/manage-keywords/ManageKeywords.svelte` (the view) +
+`apps/desktop/src/screens/graph/Graph.svelte` (its doors on the Graph tab)
 
 ## U-002 — letter-spacing ignore list, and the views on it
 
@@ -208,8 +208,8 @@ A change takes effect when that document's text is re-run, and every view says s
 **Forbidden:** `rejoin list`, `allow list` (for the list); `rejoin` (for *close* in the UI: it
 survives only in code names, `rejoin_ignore.json`)
 **Authoritative in:** `docs/decisions/ADR-056-a-space-the-page-does-not-show-is-not-text.md` +
-`src/doc_assistant/library/spacing.py` + `apps/desktop/src/lib/library/DocSpacing.svelte` +
-`apps/desktop/src/lib/settings/SpacingIgnoreList.svelte`
+`src/doc_assistant/library/spacing.py` + `apps/desktop/src/screens/document-page/LetterSpacing.svelte` +
+`apps/desktop/src/screens/settings/SpacingIgnoreList.svelte`
 
 ## U-003 — action roles: ordinary, primary, quiet, danger
 
@@ -230,6 +230,23 @@ and would file these words under the entry above, so every *Clear* in the repo w
 **Authoritative in:** `docs/decisions/ADR-063-a-buttons-look-says-what-it-does.md` +
 `apps/desktop/src/app.css` (the classes) + `apps/desktop/src/lib/shell/selection.ts` (the selection
 helper)
+
+## U-004 — the screens, and what each is called
+
+**Canonical:** the tabs `Chat` · `Library` · `Graph`; `document page`; on the Graph tab, `concept
+panel` (a concept's side, ADR-053) and `concept index` (its sidebar rail); the views `Manage
+keywords` (U-001) · `Taxonomy` · `Settings`; the frame, `top bar` · `sidebar` · `status bar`
+**Definition:** A *screen* is a place you go: a tab, the document page, or a view that covers what
+is under it and has parts of its own. A *dialog* asks one thing and closes, and is called by its
+heading (*Re-run ingestion*, *Edit metadata*). Each screen has one folder under
+`apps/desktop/src/screens/`, named as the app names it, with one entry file named for the folder;
+the frame is `src/shell/` (ADR-064). A dialog lives with the screen whose thing it acts on,
+whichever screen has the door, so a file is found by the name on the screen.
+**Forbidden:** `concept view` (the concept panel; ROADMAP 111's name for it), `browser` / `Library
+browser` (the document page), `Sources panel` (the Manage files list)
+**Authoritative in:** `docs/decisions/ADR-064-the-frontends-folders-follow-the-screens.md` +
+`docs/architecture.md` § `apps/desktop/src/` — the screens (every screen and dialog, with its doors)
++ `apps/desktop/src/layout.test.ts` (the folder rules)
 
 ## D-001 — Provenote vs doc_assistant
 

@@ -1,5 +1,5 @@
 // Pure display logic for a concept's definition candidates (ADR-053). Tested under `npm test`;
-// ConceptDefinition.svelte only renders what this returns.
+// Definition.svelte only renders what this returns.
 import type { ConceptDefinitions, DefinitionCandidate, UsageLine, VocabularyMatch } from '../core/types'
 
 export interface CandidateGroups {

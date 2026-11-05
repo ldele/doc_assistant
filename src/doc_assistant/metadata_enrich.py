@@ -12,21 +12,35 @@ Deterministic and free (no LLM). Idempotent — a column is written only when it
 currently ``NULL``, unless ``force`` overwrites; a later manual edit is therefore never
 clobbered by a re-run. ``apply=False`` writes nothing (dry run), so extraction quality
 can be reviewed before touching the DB.
+
+``fill_missing_metadata`` is the same write for the app's own index run (``ingest.main``): only the
+documents a run indexed, only their blank columns, and only after a catalogue's answer has been
+applied (ADR-049 D3: the extractor is the lowest of the three slots).
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from collections.abc import Iterable
+from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 
 import structlog
 
 from doc_assistant.knowledge.keywords import load_document_texts
 from doc_assistant.metadata_extractor import DocMetadata, extract_metadata
 
+if TYPE_CHECKING:
+    from doc_assistant.db.models import Document
+
 log = structlog.get_logger(__name__)
 
 # The four columns this runner may fill, in report order.
 _FIELDS: tuple[str, ...] = ("title", "authors", "year", "doi")
+
+#: How many documents' cached texts `fill_missing_metadata` holds at once. Structural, not tuned:
+#: a text is read whole, and a re-read of the whole library hands the step every document in it
+#: (~10,000 under the robustness contract), which must not all sit in memory together.
+_FILL_BATCH = 100
 
 
 @dataclass(frozen=True)
@@ -52,29 +66,40 @@ class MetadataEnrichmentResult:
     total_fields_written: int
 
 
-def _persist_metadata(document_id: str, meta: DocMetadata, *, force: bool) -> tuple[str, ...]:
-    """Write the extracted fields onto one ``Document``. Idempotent per column.
+def _is_blank(value: object) -> bool:
+    """``NULL`` or an all-whitespace string: the catalogue's fill-the-blanks rule
+    (`adapters.catalogue.apply_external_metadata`) and the library summary's *missing*."""
+    return value is None or (isinstance(value, str) and not value.strip())
 
-    A field is written only when the extractor found a value **and** the column is
-    currently ``NULL`` (or ``force``). Returns the columns actually written.
+
+def _fill_fields(doc: Document, meta: DocMetadata, *, force: bool) -> tuple[str, ...]:
+    """Copy the extracted fields onto a loaded ``Document`` row. Returns the columns written.
+
+    A field is written only when the extractor found a value **and** the column is blank
+    (or ``force``).
     """
+    written: list[str] = []
+    for name in _FIELDS:
+        value = getattr(meta, name)
+        if _is_blank(value):
+            continue
+        if not force and not _is_blank(getattr(doc, name)):
+            continue
+        setattr(doc, name, value)
+        written.append(name)
+    return tuple(written)
+
+
+def _persist_metadata(document_id: str, meta: DocMetadata, *, force: bool) -> tuple[str, ...]:
+    """Write the extracted fields onto one ``Document``. Idempotent per column (`_fill_fields`)."""
     from doc_assistant.db.models import Document
     from doc_assistant.db.session import session_scope
 
-    written: list[str] = []
     with session_scope() as session:
         doc = session.get(Document, document_id)
         if doc is None:
             return ()
-        for field in _FIELDS:
-            value = getattr(meta, field)
-            if value is None:
-                continue
-            if getattr(doc, field) is not None and not force:
-                continue
-            setattr(doc, field, value)
-            written.append(field)
-    return tuple(written)
+        return _fill_fields(doc, meta, force=force)
 
 
 def enrich_metadata(
@@ -139,3 +164,63 @@ def enrich_metadata(
         n_doi=n_doi,
         total_fields_written=total_written,
     )
+
+
+@dataclass(frozen=True)
+class MetadataFill:
+    """What `fill_missing_metadata` did. ``filled`` counts documents, not fields, as the
+    catalogue's `MetadataApplication` does; ``fields`` counts per column."""
+
+    considered: int
+    filled: int
+    fields: dict[str, int] = field(default_factory=dict)
+
+
+def fill_missing_metadata(document_ids: Iterable[str]) -> MetadataFill:
+    """Fill these documents' blank title, authors, year and DOI from their own cached text.
+
+    The index run's step (`ingest._fill_missing_metadata`). A column that holds anything (an
+    earlier extraction, a catalogue's answer) is never replaced, and the user's own edits live in
+    ``DocumentMeta``, which this neither reads nor writes and which wins at read time (ADR-013).
+    A document with no blank column is not read at all; one whose text yields nothing keeps its
+    blanks; an archived document or one with no cached text is skipped (`load_document_texts`).
+
+    Works in batches of `_FILL_BATCH` documents: one read of the four columns, one read of the
+    texts that still have a blank, one write. Deterministic, no LLM, and nothing but these four
+    columns on ``Document`` (Enrichment-Layer Pattern).
+    """
+    from sqlalchemy import select
+
+    from doc_assistant.db.models import Document
+    from doc_assistant.db.session import session_scope
+
+    ids = sorted(set(document_ids))
+    considered = filled = 0
+    counts: dict[str, int] = {}
+    for start in range(0, len(ids), _FILL_BATCH):
+        batch = ids[start : start + _FILL_BATCH]
+        with session_scope() as session:
+            rows = session.execute(
+                select(
+                    Document.id, Document.title, Document.authors, Document.year, Document.doi
+                ).where(Document.id.in_(batch))
+            ).all()
+        blank = [str(row[0]) for row in rows if any(_is_blank(v) for v in row[1:])]
+        if not blank:
+            continue
+        extracted = [
+            (doc_id, extract_metadata(text, filename=filename))
+            for doc_id, filename, text in load_document_texts(blank)
+        ]
+        with session_scope() as session:
+            for doc_id, meta in extracted:
+                doc = session.get(Document, doc_id)
+                if doc is None:  # deleted between the two reads
+                    continue
+                considered += 1
+                written = _fill_fields(doc, meta, force=False)
+                if written:
+                    filled += 1
+                    for name in written:
+                        counts[name] = counts.get(name, 0) + 1
+    return MetadataFill(considered=considered, filled=filled, fields=counts)

@@ -63,6 +63,7 @@ def list_documents(
     format: str | None = None,
     tag: str | None = None,
     folder_id: str | None = None,
+    issue: str | None = None,
 ) -> list[DocumentSummary]:
     """Return documents matching the filters.
 
@@ -71,7 +72,17 @@ def list_documents(
 
     ``folder_id`` filters by folder **id**, not name: ``uq_folder_name_parent`` does not bite at
     the root level (SQLite treats NULL parents as distinct), so a name is not a key (ADR-025 F1).
+
+    ``issue`` keeps the documents one of the library summary's counts names (`library.summary`
+    ``ISSUES``: ``missing_year``, ``no_text``, …), through the very predicate that count sums, so
+    *Show the N* opens exactly N. An unknown issue raises ``UnknownIssueError``. Applied after the
+    query rather than as an ``IN`` clause, which at 10,000 ids would meet SQLite's variable limit.
     """
+    wanted: set[str] | None = None
+    if issue is not None:
+        from doc_assistant.library.summary import issue_document_ids
+
+        wanted = issue_document_ids(issue, folder_id)
     with session_scope() as session:
         query = select(Document).where(Document.is_archived.is_(False))
 
@@ -86,6 +97,8 @@ def list_documents(
 
         query = query.order_by(Document.filename)
         docs = session.execute(query).scalars().unique().all()
+        if wanted is not None:
+            docs = [d for d in docs if str(d.id) in wanted]
 
         # Batch-load user overrides once, then merge effective = override ?? auto (ADR-013).
         overrides = {m.document_id: m for m in session.execute(select(DocumentMeta)).scalars()}

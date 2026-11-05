@@ -71,10 +71,14 @@ export const libPrefs = $state({
   sourceSplit: loadSourceSplit(),
   /** The sort dropdown's open flag — transient UI, not persisted. */
   sortOpen: false,
+  /** The *Summary* layout (ROADMAP 112) is showing in place of the grid or list. Transient: the
+   *  Library opens on the documents, and Grid or List, which persist, close it. */
+  summaryOpen: false,
 })
 
 export function setLibraryView(v: 'grid' | 'list'): void {
   libPrefs.view = v
+  libPrefs.summaryOpen = false
   try {
     localStorage.setItem('libraryView', v)
   } catch {

@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-11-01 (ADR-056 moves every format's fingerprint once; 2026-09-10: scale-review path moved to docs/archive/local/, ADR-051) · class: living -->
+<!-- status: active · updated: 2026-11-05 (the library summary and the document list at 10,000 documents, measured on an invented library; 2026-11-01: ADR-056 moves every format's fingerprint once; 2026-09-10: scale-review path moved to docs/archive/local/, ADR-051) · class: living -->
 
 # Performance, cost and scale — the measured record
 
@@ -300,6 +300,27 @@ and resumability before anyone points the app at a big folder. The enrichment la
 and corpus-tuned constants are catalogued separately in
 [`archive/local/REVIEW_2026-07-19_scale-robustness.md`](archive/local/REVIEW_2026-07-19_scale-robustness.md) (KI-18/KI-19).
 
+### The library summary and the document list at 10,000 documents (measured 2026-11-05)
+
+**Measured, on an invented library** of 10,000 documents (9,600 PDFs; ~1.9 references and ~2.9
+figures per document on average; 533 letter-spacing records; 120 registry files not in the library),
+built straight into SQLite at an ASCII scratch path and served by the development API through
+`DOC_DATA_DIR`. Warm, over HTTP, on the development machine, six requests each:
+
+| Route | Time | Response |
+|---|---:|---:|
+| `GET /api/library/summary` (ROADMAP 112) | **0.68–0.69 s** | 1,416 B, the same order at any size |
+| `GET /api/library/documents?issue=missing_year` (*Show the N*, ~700 documents) | 0.76 s | 280 KB |
+| `GET /api/library/documents?issue=letter_spaced` | 0.98 s | 224 KB |
+| `GET /api/library/documents` (the whole list, what the Library pane loads) | **6.5 s** | **4.2 MB** |
+
+In process, the summary's 0.66 s is 0.26 s to load one fact record per document (one grouped query
+per related table) and 0.29 s of letter-spacing records, one open attempt per PDF; the rest is
+arithmetic. That is inside the spec's 1 s budget (`docs/specs/feature-library-summary.md`), so the
+letter-spacing count stays in the one route. **The finding this measurement was not looking for:**
+the unfiltered document list, unchanged here, takes 6.5 s and 4.2 MB at the contract's size, and the
+Library pane waits for it on opening. Paging that list is not built; recorded in §6.
+
 ---
 
 ## 4. The knobs — what can be changed, and what it costs
@@ -364,6 +385,10 @@ settings stay locked.
 
 ## 6. Measurement debt
 
+- **The Library pane loads the whole document list, 6.5 s and 4.2 MB at 10,000 documents**
+  (measured 2026-11-05 on an invented library, §3). Nothing pages it; the grid, the rail's counts
+  and the search all read that one list. Measured over HTTP only; how long the grid then takes to
+  render 10,000 tiles was not measured.
 - **Launch was never re-measured end to end after the BM25 snapshot landed**, nor after the on-disk
   arm replaced it. Construction alone is measured (4.53 → 2.79 s); the whole-launch figure of record
   is still 12.10 s from before both.

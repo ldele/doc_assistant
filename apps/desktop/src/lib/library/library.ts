@@ -10,6 +10,7 @@ import type {
   LibraryFolder,
   MemberBreadth,
 } from '../core/types'
+import type { SummaryIssue } from '../core/types/summary'
 
 export type DateBucket = 'today' | 'week' | 'month' | 'earlier'
 
@@ -24,6 +25,24 @@ export type LibraryCollection =
   | { kind: 'type'; value: string }
   | { kind: 'date'; value: DateBucket }
   | { kind: 'folder'; value: string }
+  // Opened from the Summary layout's *Show the N* (ROADMAP 112): the documents one count names,
+  // in the library or one folder. `ids` is what the server's `issue` filter returned when it was
+  // opened, so the grid shows exactly the N the count said; it is not re-read until reopened.
+  | { kind: 'issue'; value: SummaryIssue; folder: string | null; ids: string[] }
+
+/** The crumb's label for a collection opened from the summary. */
+export const ISSUE_LABELS: Record<SummaryIssue, string> = {
+  no_text: 'Gave no text',
+  flagged: 'Flagged at indexing',
+  missing_title: 'No title',
+  missing_authors: 'No authors',
+  missing_year: 'No year',
+  missing_doi: 'No DOI',
+  no_references: 'No references on record',
+  no_figures: 'No figures on record',
+  no_keywords: 'No keywords',
+  letter_spaced: 'Letter-spaced text',
+}
 
 // The labels have to say what the bucket *is*, because the buckets are relative and adjacent:
 // "Earlier" sat next to "This month" and read as a calendar term — this year? last year? — when it
@@ -66,6 +85,10 @@ export function docsFor(
       return documents.filter((d) => dateBucket(d.added_at, now) === c.value)
     case 'folder':
       return documents.filter((d) => d.folder_ids.includes(c.value))
+    case 'issue': {
+      const ids = new Set(c.ids)
+      return documents.filter((d) => ids.has(d.id))
+    }
   }
 }
 
@@ -81,13 +104,19 @@ export function collectionLabel(c: LibraryCollection, folderNames?: Map<string, 
       return DATE_BUCKET_LABELS[c.value]
     case 'folder':
       return folderNames?.get(c.value) ?? 'Folder'
+    case 'issue': {
+      const label = ISSUE_LABELS[c.value]
+      if (c.folder === null) return label
+      return `${label} in ${folderNames?.get(c.folder) ?? 'a folder'}`
+    }
   }
 }
 
 export function sameCollection(a: LibraryCollection, b: LibraryCollection): boolean {
   return (
     a.kind === b.kind &&
-    (a as { value?: string }).value === (b as { value?: string }).value
+    (a as { value?: string }).value === (b as { value?: string }).value &&
+    (a as { folder?: string | null }).folder === (b as { folder?: string | null }).folder
   )
 }
 

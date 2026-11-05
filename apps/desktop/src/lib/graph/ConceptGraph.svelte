@@ -69,6 +69,10 @@
 
   const VIEW_W = 760
   const VIEW_H = 520
+  // A margin around the layout box, in the same units. The layout places node centres up to its
+  // edge and a label hangs below its node, so a node at the bottom lost its name to the canvas
+  // edge (seen on *hard negatives* at y=496 of 520, 2026-11-05; ROADMAP 111).
+  const VIEW_PAD = 30
   const ZOOM_MIN = 0.4
   const ZOOM_MAX = 3
 
@@ -468,7 +472,7 @@
             <!-- svelte-ignore a11y_no_static_element_interactions -->
             <svg
               class="graph"
-              viewBox="0 0 {VIEW_W} {VIEW_H}"
+              viewBox="{-VIEW_PAD} {-VIEW_PAD} {VIEW_W + 2 * VIEW_PAD} {VIEW_H + 2 * VIEW_PAD}"
               use:wheelZoom
               onpointerdown={startPan}
               role="img"
@@ -526,7 +530,6 @@
           </div>
 
           <ConceptDefinition conceptId={selectedNode.id} {onOpenPassage} />
-
 
           <!-- concept → document → chunks -->
           <div class="sources">
@@ -651,13 +654,16 @@
 
   .graphbar {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
-    gap: var(--space-3);
+    gap: var(--space-2) var(--space-3);
     margin: 0 0 0.5rem;
   }
+  /* On a narrow pane the sentence takes its own line instead of a column one word wide. */
   .coverage {
     margin: 0;
     font-size: 0.74rem;
+    flex: 1 1 16rem;
   }
   /* Pushed to the far side whether or not the coverage sentence is there. */
   .graphactions {
@@ -738,12 +744,14 @@
   }
   .eh-actions {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     gap: var(--space-2);
   }
   .eh-meta {
     font-size: var(--text-sm);
     color: var(--fg-2);
+    white-space: nowrap;
   }
   .ghost {
     border: 1px solid var(--border);
@@ -756,6 +764,7 @@
     display: inline-flex;
     align-items: center;
     gap: var(--space-1);
+    white-space: nowrap;
   }
   .ghost.sm {
     font-size: var(--text-sm);
@@ -812,12 +821,14 @@
     background: var(--surface);
     overflow: hidden;
   }
-  /* A height of its own, capped so a wide pane does not push everything else a screen down; the
-     viewBox keeps the layout's proportions and centres it in the box. */
+  /* The layout's proportions (the padded viewBox, 820 × 580), capped so a wide pane does not
+     push everything else a screen down; when capped, the viewBox centres the layout in the box. */
   .graph {
     display: block;
     width: 100%;
-    height: clamp(240px, 55vh, 520px);
+    height: auto;
+    aspect-ratio: 820 / 580;
+    max-height: min(55vh, 520px);
     touch-action: none;
     cursor: grab;
   }

@@ -42,6 +42,106 @@ Format: What changed | Why | Rejected alternatives | What it opens
 
 ---
 
+## 2026-11-05 (5) — The library summary follows the user's seven recommendations (ROADMAP 112)
+
+**What changed.** Six of the seven, in the wireframe (revision 2, four screens, rev 1001), the spec
+(§ As built) and the screen. A count is navigation: each count row is its own target (hover,
+chevron), a zero row is plain text, and *Show the N* buttons are gone. *Need attention* leads and
+scrolls to *From indexing*; passages and pages are a context line. Meters read "N of M" with a thin
+bar. Each *From indexing* row names its fix: files failed in this session's run open the indexing
+screen, other files Settings › Documents, document issues the grid. "Not read" is said once: the
+wire gains `metadata.with_any_field`, and at 0 the Metadata card is one line; references, figures
+and keywords say *not looked for* while none is on record anywhere. Bars are horizontal, one hue,
+value at the tip, square at the baseline. Driven again on invented libraries (60 documents; 140
+with nothing read), at 1280 px dark and 375 px light, where the fix moves under the reason and a
+meter's bar under its words (container queries).
+
+**Why.** The user approved revision 1 and then sent the seven (*"Send all"*), on the condition that
+the build follows ADR-063.
+
+**Rejected.** *Years* sorted by count (recommendation 6): decades are an ordered scale and the dataviz
+guide keeps an ordinal axis in order; *Types* are ranked. A lone *No year* bar when no document has a
+year: a one-bar chart, so a sentence. Recommendation 7 (keep each count run for a trend): later work.
+
+**What it opens.** The not-read rule is a heuristic on counts until a re-run records that it looked;
+the canvas toolkit read revision 2 after the user's two open tabs had written revision 1 back into
+the restarted canvas (T-023's "gives a restarted server back whatever it lacks"), so it was redrawn
+on a fresh port.
+
+## 2026-11-05 (4) — The library summary, built (ROADMAP 112)
+
+**What changed.** The Library pane has a third layout, *Summary*, for the whole library or the open
+folder, built to the wireframe the user approved with no markup. `library/summary.py` reads one fact
+record per document and defines ten *issues* once (`no_text`, `flagged`, `missing_year`, …); the
+counts sum them and `list_documents(issue=…)` selects by them, so *Show the N* opens exactly N, as a
+new grid collection (`issue`). `GET /api/library/summary[?folder_id=]` is read-only and adds this
+session's run failures; `GET /api/library/documents` takes optional `issue` and `folder_id`. Driven
+in the preview on invented libraries (60 documents, then 0 with 6 files waiting): the three screens,
+*Show the 7* → 7 documents with no year, a folder's summary and its door back, Settings opening at
+Documents, 375 px in the light theme with no sideways scroll; dark at 1280 px.
+
+**Why.** The user, 2026-11-05 (ROADMAP 112). The numbers say *on record* where the app never looks
+(the spec's signal table): its indexing reads no metadata, references or figures.
+
+**Rejected.** SQL predicates per issue: the effective-metadata rule (ADR-013) lives in Python, and a
+second copy in SQL would be the drift this feature's one-definition rule exists to prevent. An `IN`
+clause for the filter: SQLite's variable limit at 10,000 ids. Persisting *Summary* as the layout:
+the Library would open on counts instead of documents. A per-document `EXISTS` on `citations`: no
+index on the column.
+
+**What it opens.** Measured at 10,000 invented documents: the route 0.68 s, but the unfiltered
+document list the pane loads is 6.5 s and 4.2 MB (`docs/performance.md` § 3 and § 6). The
+registry's "last look" cannot tell a folder emptied of every file from an old scan (the spec's known
+limit). Indexing that reads metadata is its own session.
+
+## 2026-11-05 (3) — The library summary, gate first: signals read, wireframe drawn, spec written (ROADMAP 112)
+
+**What changed.** No code. `docs/wireframes/library-summary.md` (+ `.excalidraw`): three screens,
+the library's summary, a folder's, and the same view at 0 documents, as a third layout (*Summary*)
+of the Library pane beside *Grid* and *List*; drawn at rev 1060, gate `fallbacks 0 · inferred 0 ·
+unnamedScreens 0 · orphans 0`, waiting on the user's markup. `docs/specs/feature-library-summary.md`
+(draft): which signals exist and how far each can be trusted, with file:line; one read-only route,
+`GET /api/library/summary[?folder_id=]`, logic in `library/summary.py`; an `issue` filter on the
+document list for *Show the N*; how each number behaves at 0 and ~10,000 documents.
+
+**Why.** The user, 2026-11-05: a summary per library or folder of what went wrong at indexing and
+facts about the documents. Read first, it turned out that the app's own indexing and *Add documents*
+never read metadata, references, figures or keywords (only a catalogue import brings metadata), so
+"missing" there means "not on record", and a document parsed to no references looks exactly like
+one never parsed. The drawing says so in its footnotes instead of presenting either as a fact.
+
+**Rejected.** Counting through `GET /api/sources`: it scans and writes registry rows, so the summary
+reads the rows as of the folder's last look instead. A per-document `EXISTS` over `citations`: the
+column has no index; one grouped pass instead. Ratios on the wire: a count of 0 cannot be divided.
+
+**What it opens.** Two follow-ups the screen exposes: indexing that reads metadata (milliseconds per
+document), and a record that a *Re-run…* part ran, so *found none* splits from *never looked*. The
+canvas reading numbers the pane column by column under a full-height sidebar: the toolkit's T-006,
+a sighting added to its ledger; the wireframe doc states the intended order.
+
+## 2026-11-05 (2) — The concept view keeps its graph in sight (ROADMAP 111)
+
+**What changed.** In the Graph tab's concept view (`ConceptGraph.svelte`) the canvas now sits
+above the definition card, and nothing in the scrolling column shrinks (`flex-shrink: 0` on its
+children). The graph takes the layout's proportions up to `min(55vh, 520px)`. The view box has a
+30-unit margin, so a label below a node on the layout's edge shows. The coverage sentence and the
+concept's buttons wrap on a narrow pane instead of squeezing. Half of this landed in `54f77f9`,
+committed while the fix was being built; this entry covers both halves.
+
+**Why.** The user, 2026-11-05: text and other elements squash the graph until it cannot be seen.
+Measured on *BM25* at 1280×800: the canvas was a flex child with `overflow: hidden`, which gives
+it no minimum height, so the 827 px definition and the document list took its space and it was
+drawn 2 px tall. After the fix: 440 px at 1280×800; at 375 px, 216 px with no sideways scroll.
+*hard negatives* sat at y=496 of 520 and its label was cut until the margin.
+
+**Rejected.** A fixed height from `55vh` alone: at 375 px it left a 500 px box around a 216 px
+graph. Moving the definition into a tab: a layout decision for the graph re-pass (row 75), not
+a fix.
+
+**What it opens.** Pan moves in screen pixels while the graph is drawn in view-box units, so a
+drag and the graph move at different speeds when the canvas is scaled; it did before this change,
+and it is row 75's.
+
 ## 2026-11-05 — Selection in both lists, and a button's look says what it does (ADR-063 proposed)
 
 **What changed.** The chat rail and the Library grid and list share one selection rule

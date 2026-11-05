@@ -10,6 +10,9 @@ import assert from 'node:assert/strict'
 
 import {
   blockPreview,
+  collectionLabel,
+  docsFor,
+  sameCollection,
   facetFilter,
   familyCanonicalMap,
   familyUnitsOf,
@@ -469,4 +472,29 @@ test('a deletion names what goes with the row, and only what is there', () => {
 
 test('a term with nothing attached loses nothing', () => {
   assert.deepEqual(deletionLosses(deletion({ is_concept: false })), [])
+})
+
+// --- a collection opened from the Summary layout (ROADMAP 112) -------------------------------- //
+
+test('an issue collection shows exactly the ids it was opened with, and names itself', () => {
+  const issue = { kind: 'issue', value: 'missing_year', folder: null, ids: ['b', 'd'] } as const
+  const shown = docsFor(DOCS, { ...issue, ids: [...issue.ids] }, new Date())
+  assert.deepEqual(
+    shown.map((d) => d.id),
+    ['b', 'd'],
+  )
+  assert.equal(collectionLabel({ ...issue, ids: [] }), 'No year')
+  const names = new Map([['f1', 'Thesis']])
+  assert.equal(
+    collectionLabel({ kind: 'issue', value: 'no_text', folder: 'f1', ids: [] }, names),
+    'Gave no text in Thesis',
+  )
+})
+
+test('two issue collections are the same only in the same scope', () => {
+  const lib = { kind: 'issue', value: 'missing_year', folder: null, ids: [] } as const
+  const inFolder = { kind: 'issue', value: 'missing_year', folder: 'f1', ids: [] } as const
+  assert.equal(sameCollection({ ...lib, ids: [] }, { ...lib, ids: ['x'] }), true)
+  assert.equal(sameCollection({ ...lib, ids: [] }, { ...inFolder, ids: [] }), false)
+  assert.equal(sameCollection({ kind: 'folder', value: 'f1' }, { kind: 'folder', value: 'f1' }), true)
 })

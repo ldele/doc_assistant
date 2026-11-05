@@ -150,14 +150,23 @@ from doc_assistant.library.spacing import (
     set_keep_all,
     set_run_spacing,
 )
+from doc_assistant.library.summary import (
+    ISSUE_IDS,
+    CollectionSummary,
+    UnknownIssueError,
+    issue_document_ids,
+    summarise_collection,
+)
 
 __all__ = [
+    "ISSUE_IDS",
     "ChunkChild",
     "ChunkContext",
     "ChunkLocation",
     "CitationEdge",
     "CitationGraph",
     "CitedByDoc",
+    "CollectionSummary",
     "DeleteResult",
     "DocConnections",
     "DocumentChunkView",
@@ -187,6 +196,7 @@ __all__ = [
     "SourceRemoval",
     "SpacingListError",
     "SpacingRow",
+    "UnknownIssueError",
     "_all_keyword_names",
     "_build_family",
     "_build_folder",
@@ -227,6 +237,7 @@ __all__ = [
     "get_source_view",
     "graph_subgraph",
     "group_children",
+    "issue_document_ids",
     "keep_run",
     "library_summary",
     "list_document_figures",
@@ -256,4 +267,5 @@ __all__ = [
     "set_keep_all",
     "set_run_spacing",
     "similar_docs",
+    "summarise_collection",
 ]

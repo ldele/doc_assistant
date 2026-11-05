@@ -13,6 +13,8 @@
   import LibraryGrid from './LibraryGrid.svelte'
   import LibraryBrowser from './LibraryBrowser.svelte'
   import LibraryFilterStrip from './LibraryFilterStrip.svelte'
+  import LibrarySummary from './LibrarySummary.svelte'
+  import { shell } from '../shell/shell.svelte'
   import { LIB_SORTS, libPrefs, setLibrarySort, setLibraryView } from './prefs.svelte'
   import { accept, canAccept, openChooser, unavailableReason } from './accept.svelte'
   import { formatLine, limitPhrase } from './formats'
@@ -92,6 +94,24 @@
     onAddSelectionToFolder, onSetSelection, onOpenManageFolders,
     onEditDoc, onDeleteDoc, onReingestDoc, onReingestSelection, onRevealDoc, onManageFoldersForDoc,
   }: Props = $props()
+
+  // The Summary layout (ROADMAP 112) covers the whole library or one folder: the collections the
+  // rail opens as places. A type, a date bucket or a summary's own list is a cut through them, so
+  // there the toggle offers Grid and List only and the documents show.
+  const summaryScope = $derived<{ folder: string | null } | null>(
+    libraryCollection.kind === 'all'
+      ? { folder: null }
+      : libraryCollection.kind === 'folder'
+        ? { folder: libraryCollection.value }
+        : null,
+  )
+  const showSummary = $derived(libPrefs.summaryOpen && summaryScope !== null)
+
+  function openFilesInSettings(): void {
+    // The files that are not in the library are listed, with their state, in Settings > Documents.
+    shell.settingsSection = 'documents'
+    shell.showSettings = true
+  }
 </script>
 
   <div class="library">
@@ -123,6 +143,7 @@
         {/if}
       </nav>
       {#if libraryDocId === null}
+        {#if !showSummary}
         <div class="libsort">
           <button
             class="sortbtn"
@@ -157,25 +178,43 @@
             </div>
           {/if}
         </div>
+        {/if}
         <div class="viewtoggle" role="group" aria-label="Layout">
           <button
-            class:active={libPrefs.view === 'grid'}
+            class:active={!showSummary && libPrefs.view === 'grid'}
             onclick={() => setLibraryView('grid')}
             aria-label="Grid view"
-            aria-pressed={libPrefs.view === 'grid'}
+            aria-pressed={!showSummary && libPrefs.view === 'grid'}
             title="Grid view"
             type="button"><Icon name="layout-grid" size={15} /></button
           >
           <button
-            class:active={libPrefs.view === 'list'}
+            class:active={!showSummary && libPrefs.view === 'list'}
             onclick={() => setLibraryView('list')}
             aria-label="List view"
-            aria-pressed={libPrefs.view === 'list'}
+            aria-pressed={!showSummary && libPrefs.view === 'list'}
             title="List view"
             type="button"><Icon name="list" size={15} /></button
           >
+          <!-- ROADMAP 112: a third layout, for the library or the open folder. Navigation, not an
+               action (ADR-063), so it keeps the toggle's look. -->
+          {#if summaryScope !== null}
+            <button
+              class="summarytoggle"
+              class:active={showSummary}
+              onclick={() => {
+                if (libSelectMode) onExitSelectMode()
+                libPrefs.summaryOpen = true
+              }}
+              aria-pressed={showSummary}
+              title={summaryScope.folder === null
+                ? 'What went wrong at indexing, and what is known about your documents'
+                : 'What went wrong at indexing, and what is known about this folder'}
+              type="button">Summary</button
+            >
+          {/if}
         </div>
-        {#if documents.length > 0}
+        {#if documents.length > 0 && !showSummary}
           <button
             class="selecttoggle"
             class:active={libSelectMode}
@@ -282,7 +321,17 @@
       />
     {:else}
       <section class="libmain">
-        {#if documents.length === 0 && !documentsLoaded}
+        {#if showSummary && summaryScope !== null}
+          <LibrarySummary
+            folderId={summaryScope.folder}
+            onOpenCollection={(c) => {
+              libPrefs.summaryOpen = false
+              onSelectCollection(c)
+            }}
+            onOpenLibrary={() => onSelectCollection({ kind: 'all' })}
+            onShowFiles={openFilesInSettings}
+          />
+        {:else if documents.length === 0 && !documentsLoaded}
           <!-- "Empty" and "not yet known" are different answers, and `documents` starts empty
                either way. Without this the one screen whose job is to say "there is nothing here"
                said it to a user with 98 documents for as long as the fetch took. -->
@@ -542,6 +591,11 @@
   .viewtoggle button.active {
     background: var(--surface-2);
     color: var(--accent);
+  }
+  .viewtoggle .summarytoggle {
+    font: inherit;
+    font-size: 0.78rem;
+    border-left: 1px solid var(--border);
   }
   /* Select mode (batch add-to-folder) — toggle beside the view switch + a slim action bar. */
   .selecttoggle {

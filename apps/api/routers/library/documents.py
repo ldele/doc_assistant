@@ -38,13 +38,21 @@ router = APIRouter()
 
 
 @router.get("/api/library/documents")
-def list_library_documents() -> list[LibraryDocumentPayload]:
+def list_library_documents(
+    issue: str | None = None, folder_id: str | None = None
+) -> list[LibraryDocumentPayload]:
     """Every ingested (non-archived) document for the Library browser (read-only, no model).
 
-    A read over the SQLite ``Document`` store — feature-library-browser.md (L1)."""
-    from doc_assistant.library import list_documents
+    A read over the SQLite ``Document`` store — feature-library-browser.md (L1). ``issue`` (and
+    ``folder_id``) keep the documents one of the library summary's counts names, which is what its
+    *Show the N* opens (ROADMAP 112); an unknown issue is a 400 that lists the known ones."""
+    from doc_assistant.library import UnknownIssueError, list_documents
 
-    return [LibraryDocumentPayload.from_summary(s) for s in list_documents()]
+    try:
+        summaries = list_documents(issue=issue, folder_id=folder_id)
+    except UnknownIssueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    return [LibraryDocumentPayload.from_summary(s) for s in summaries]
 
 
 @router.get("/api/library/documents/{doc_id}")

@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 
-from apps.api.routers.library import documents, folders, keywords, spacing
+from apps.api.routers.library import documents, folders, keywords, spacing, summary
 
 router = APIRouter()
 router.include_router(documents.router)
@@ -25,5 +25,7 @@ router.include_router(keywords.router)
 # ADR-056: the letter-spacing block and the ignore list. Its paths sit under
 # /documents/{id}/spacing and /spacing, which no other module's routes reach.
 router.include_router(spacing.router)
+# ROADMAP 112: the Summary layout's counts, at /summary, which no other module's routes reach.
+router.include_router(summary.router)
 
-__all__ = ["documents", "folders", "keywords", "router", "spacing"]
+__all__ = ["documents", "folders", "keywords", "router", "spacing", "summary"]

@@ -42,6 +42,34 @@ Format: What changed | Why | Rejected alternatives | What it opens
 
 ---
 
+## 2026-11-05 (8) — A sentence is never a document's authors (KI-89)
+
+**What changed.** `metadata_extractor._looks_like_author_line` gains `_reads_as_prose`: a candidate
+with four or more lowercase words in a row, which also has more lowercase words than capitalised ones
+or opens like a sentence (one capitalised word, then the run), is not an author line, so the scan
+goes on to the next line or returns None. The public case: `pointer_networks_vinyals_2015.pdf` stored
+*"Nonetheless, these methods still require the size of the output dictionary…"* as its authors,
+because the head's 3,000-character cut leaves an Introduction fragment short enough to pass every
+existing test. Fifteen new tests; the five prose ones fail without the guard.
+
+**Why.** A sentence has commas and an *and* too, and since the index run fills blank metadata
+(entry (7)) this would reach every new document. Re-measured on a
+copy of the library (KI-89): every prose list gone (one falls through to a venue footnote, still
+wrong), no correct list lost, and three documents whose title had been taken as their authors now
+get the real list by falling through.
+
+**Rejected.** A list of English function words: it is the measuring stick in KI-89, not a rule,
+because it assumes a language. A run limit alone: *"Jane Doe, John Smith, on behalf of the X
+Consortium"* has a run of four and is a correct list. A majority of lowercase words alone: *"Smit and
+van der Berg"* has one. The three-word limit is how names are built (a connective plus *van der* or
+*de la*), not a number fitted to this library. Cutting the author scan at the abstract: a layout
+that prints the abstract before the names would lose its authors, and it was not measured.
+
+**What it opens.** The stored rows stay: neither the re-run nor the enrichment runner writes None
+over a value, so a *Re-run… › Metadata* clears no prose list the extractor now rejects; whether it
+should is KI-89's open question. A self-citation line that begins with the right authors (ACM's
+*"Name and Name. 2020. Title…"*) is not prose and is kept whole.
+
 ## 2026-11-05 (7) — The app's own index run fills title, authors, year and DOI (KI-87's library)
 
 **What changed.** `ingest.main` gains a post-loop step, `_fill_missing_metadata`, right after the

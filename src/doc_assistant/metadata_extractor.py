@@ -153,6 +153,16 @@ _NON_AUTHOR_LEAD = re.compile(
     re.IGNORECASE,
 )
 
+# A word for the prose test below: a run of letters, which may carry an inner apostrophe or hyphen
+# ("O'Dwyer", "Multi-animal") so a name does not split into a capitalised half and a lowercase one.
+# Digits and punctuation are not words; a caseless script (CJK) is neither upper nor lower.
+_WORD = re.compile(r"[^\W\d_]+(?:['\u2019-][^\W\d_]+)*")
+
+# The longest stretch of lowercase words an author list makes: a connective plus a two-word name
+# particle — "Smith and van der Berg", "Ortega and de la Cruz". Structural, not measured on a
+# corpus: it is how names are built. A longer run is running text (KI-89).
+_NAME_LOWERCASE_RUN_MAX = 3
+
 # Publisher boilerplate that a heading scan can mistake for a title, e.g. Springer's
 # "The Author(s), under exclusive licence to Springer Nature…". Never a real title.
 _COPYRIGHT_HEADING = re.compile(
@@ -398,6 +408,38 @@ def _extract_year(head: str, *, doi: str | None = None) -> int | None:
         return None
 
 
+def _reads_as_prose(text: str) -> bool:
+    """Does this line read as running text rather than a list of names (KI-89)?
+
+    In an author list every lowercase word belongs to a name (a particle: *de*, *van der*) or joins
+    two names (*and*), and every name carries a capitalised word — so its lowercase words come in
+    runs of at most :data:`_NAME_LOWERCASE_RUN_MAX`. A line with a longer run is prose when it
+    also either has more lowercase words than capitalised ones, or opens like a sentence: one
+    capitalised word and then the run, where a name list opens with a whole name.
+
+    The second condition is what keeps a name-heavy line with a role phrase in it
+    ("Jane Doe, John Smith, on behalf of the X Consortium"): its run is long, but its names
+    outnumber it and it opens with one. No word list, so no language or corpus is assumed; a
+    journal name ("Proceedings of the National Academy of Sciences") has runs of two and is left
+    to KI-54.
+    """
+    words = _WORD.findall(text)
+    lowercase = [w[0].islower() for w in words]
+    longest = run = 0
+    for is_lower in lowercase:
+        run = run + 1 if is_lower else 0
+        longest = max(longest, run)
+    if longest <= _NAME_LOWERCASE_RUN_MAX:
+        return False
+    n_lower = sum(lowercase)
+    n_upper = sum(1 for w in words if w[0].isupper())
+    opening = _NAME_LOWERCASE_RUN_MAX + 2  # one capitalised word, then a run longer than a name's
+    opens_as_sentence = (
+        len(words) >= opening and words[0][0].isupper() and all(lowercase[1:opening])
+    )
+    return n_lower > n_upper or opens_as_sentence
+
+
 def _looks_like_author_line(line: str) -> tuple[bool, str]:
     """Permissive: is this a list of authors? Returns (verdict, cleaned)."""
     cleaned = re.sub(r"^#{1,6}\s+", "", line)
@@ -416,6 +458,12 @@ def _looks_like_author_line(line: str) -> tuple[bool, str]:
     if _NON_AUTHOR_LEAD.match(cleaned):
         return False, cleaned
     if not re.match(r"^[A-Z]", cleaned):
+        return False, cleaned
+    # A sentence has commas and an "and" too, so the tests below cannot tell it from a name list.
+    # `pointer_networks_vinyals_2015.pdf` stored "Nonetheless, these methods still require the size
+    # of the output dictionary…": the head's 3,000-character cut left an Introduction fragment
+    # short enough to pass the length test (KI-89).
+    if _reads_as_prose(cleaned):
         return False, cleaned
 
     has_commas = cleaned.count(",") >= 1

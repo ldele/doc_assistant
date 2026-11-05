@@ -10,6 +10,7 @@ from doc_assistant.metadata_extractor import (
     _extract_year,
     _is_skippable_heading,
     _looks_like_author_line,
+    _reads_as_prose,
     extract_metadata,
 )
 
@@ -358,6 +359,103 @@ def test_arxiv_id_in_a_filename_is_not_a_year():
     assert _arxiv_year_from_filename("1904.01169v3.pdf") == 2019
     assert _year_from_filename("dpr_karpukhin_2020.pdf") == 2020
     assert _year_from_filename("PIIS0002929724003008.pdf") is None  # digits inside a longer token
+
+
+# ============================================================
+# KI-89 — a sentence of body text stored as the document's authors.
+# ============================================================
+
+#: Reduced from `pointer_networks_vinyals_2015.pdf` (public, arXiv 1506.03134). The head is cut at
+#: 3,000 characters, which leaves the second Introduction paragraph as a fragment short enough to
+#: pass the 400-character test; it starts with a capital and has a comma, so it was the authors.
+_POINTER_NETWORKS_HEAD = (
+    "## **Pointer Networks**\n\n"
+    "**Oriol Vinyals** Google Brain\n\n"
+    "**Meire Fortunato** **Navdeep Jaitly** Department of Mathematics, UC Berkeley "
+    "Google Brain\n\n"
+    "## **Abstract**\n\n"
+    "We introduce a new neural architecture to learn the conditional probability of an output "
+    "sequence with elements that are discrete tokens corresponding to positions in an input.\n\n"
+    "## **1 Introduction**\n\n"
+    "Nonetheless, these methods still require the size of the output dictionary to be fixed "
+    "_a priori_ . Because of this constraint we cannot directly apply this framework to "
+    "combinatorial problems where the size of the output dictionary depends on the le"
+)
+
+
+def test_a_sentence_is_never_stored_as_the_authors():
+    """The real shape: with no author line that passes, the answer is None, not the prose."""
+    meta = extract_metadata(_POINTER_NETWORKS_HEAD, filename="pointer_networks_vinyals_2015.pdf")
+    assert meta.title == "Pointer Networks"
+    assert meta.authors is None
+
+
+def test_a_prose_candidate_falls_through_to_the_real_author_line():
+    """A sentence-case line under the chosen title is passed over, and the scan goes on."""
+    md = (
+        "## Example Methods Journal\n\n"
+        "Joint estimation, identification and tracking of many animals with one network\n\n"
+        "Ada Quinn, Bo Rhee, Cyril Tamm and Dora Ulm\n\n"
+        "## Abstract\n"
+    )
+    assert extract_metadata(md).authors == "Ada Quinn, Bo Rhee, Cyril Tamm and Dora Ulm"
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        "Nonetheless, these methods still require the size of the output dictionary to be fixed.",
+        # Opens like a sentence even though its capitals outnumber its lowercase words.
+        "Prepared under the supervision of Prof. Ada B. Quinn. Prepared under the supervision of "
+        "Prof. Ada B. Quinn.",
+        "Joint estimation, identification and tracking of many animals with one network",
+    ],
+)
+def test_prose_is_not_an_author_line(line: str):
+    assert _reads_as_prose(line)
+    assert not _looks_like_author_line(line)[0]
+
+
+_LONG_AUTHOR_LIST = (
+    "Ada Quinn, Bo Rhee, Cyril Tamm, Dora Ulm, Emil Vass, Fay Wren, Gil Xu, Hana Yoon, "
+    "Ivo Zeller, Jun Abe, Kai Bello, Lena Cruz, Mila Dorn, Nils Egger, Omar Faris, Pia Gruber, "
+    "Quinn Hale, Rosa Ibsen, Sven Jarl, Tara Kahn, Uma Lind, Vito Marr, and Wim Nolte"
+)
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        _LONG_AUTHOR_LIST,
+        "Pieter J. van den Berg, Edward T. Moss, Olaf Lind",
+        "Luc de Vries, Maria O'Dwyer, and Richard B. Kell",
+        # The boundary: a connective plus a two-word particle is three lowercase words in a row,
+        # and here the lowercase words even outnumber the capitalised ones.
+        "Smit and van der Berg",
+        "J. van der Berg and M. de la Cruz",
+        "Jose Ortega y Gasset and Ana de los Rios",
+        # A role phrase is a run of four, but the names outnumber it and the line opens with one.
+        "Jane Doe, John Smith, on behalf of the Example Consortium",
+    ],
+)
+def test_real_author_lines_still_pass_the_prose_guard(line: str):
+    assert not _reads_as_prose(line)
+    ok, cleaned = _looks_like_author_line(line)
+    assert ok
+    assert cleaned == line
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "Proceedings of the National Academy of Sciences of the United States of America",
+        "Journal of the American Statistical Association",
+        "Neuroscience and Biobehavioral Reviews",
+    ],
+)
+def test_a_journal_name_is_not_prose(name: str):
+    """A periodical is KI-54's problem; this guard must not start rejecting them."""
+    assert not _reads_as_prose(name)
 
 
 def test_journal_citation_heading_is_skipped_case_insensitively():

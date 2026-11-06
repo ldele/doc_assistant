@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-11-05 (S2: the sink moved to screens/chat/, ADR-064; 2026-11-04: 0.7.2 refresh: §2 re-checked, the new routes and shell commands; S-7 done with ADR-061: stored paths confined; 2026-11-02: the review of 2026-11-02: §2 gates and SQL corrected, S9 widened, S15–S17 and steps S-15, S-16 added; 2026-10-31: §2: what the installer ends and deletes, KI-80; 2026-10-27: §2: the window's capability loses the shell permission, KI-73; 2026-10-20: release refresh: §2 lists S-4, S-5, S-6, S-8 and S-12 as holding; 2026-10-18: S-12 done: the actions pinned to SHAs, Dependabot for actions only, a guard test; alerts the user's toggle, off when read back; S-6 done: a write needs the launch token; S-7 next; 2026-10-01: S-13 done, CI's secret scan fails on a secret the baseline does not record; S-14 found by its first run and done: the scanner reads UTF-8 on Windows too) · class: living -->
+<!-- status: active · updated: 2026-11-06 (§2: four window permissions for the app's own title bar, ADR-065; 2026-11-05: S2: the sink moved to screens/chat/, ADR-064; 2026-11-04: 0.7.2 refresh: §2 re-checked, the new routes and shell commands; S-7 done with ADR-061: stored paths confined; 2026-11-02: the review of 2026-11-02: §2 gates and SQL corrected, S9 widened, S15–S17 and steps S-15, S-16 added; 2026-10-31: §2: what the installer ends and deletes, KI-80; 2026-10-27: §2: the window's capability loses the shell permission, KI-73; 2026-10-20: release refresh: §2 lists S-4, S-5, S-6, S-8 and S-12 as holding; 2026-10-18: S-12 done: the actions pinned to SHAs, Dependabot for actions only, a guard test; alerts the user's toggle, off when read back; S-6 done: a write needs the launch token; S-7 next; 2026-10-01: S-13 done, CI's secret scan fails on a secret the baseline does not record; S-14 found by its first run and done: the scanner reads UTF-8 on Windows too) · class: living -->
 
 # Security — the threat model, the plan, the floor, and the periodic check
 
@@ -53,7 +53,11 @@ and says so).
   `ingest/registry.py` rejects absolute paths, `..`, unknown suffixes and unknown keys by name,
   normalises backslashes first, and splits the composite key *before* validating. It has tests.
 - **The Tauri capability set is minimal:** `core:default` and `dialog:allow-open`; since KI-73
-  the window cannot run anything (the shell starts the backend from Rust, by path).
+  the window cannot run anything (the shell starts the backend from Rust, by path). Since
+  2026-11-06 also four window commands for the app's own title bar on Windows (ADR-065):
+  `core:window:allow-start-dragging`, `-minimize`, `-toggle-maximize` and `-close`. They move,
+  minimise, maximise or restore, and close the window, and read nothing; injected markup could at
+  worst close or move it, and the CSP and DOMPurify keep injected script from running at all.
   No `fs`, no `http`, no `shell:allow-open`, no remote IPC, no updater (ADR-044). CSP is set:
   `default-src 'self'`, network only to the sidecar. **Pinned by
   `tests/unit/test_desktop_security_config.py`.**

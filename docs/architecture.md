@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-11-06 (the screens table lists each screen's parts, ADR-064 pass 2a; 2026-11-05: the screens: components move to screen folders, ADR-064; 2026-11-01: Getting started and Provider & model; the letter-spacing domain, ADR-056; 2026-10-17: the concept panel's term signals route; 2026-10-01: CI's secret scan blocks — security S-13) · class: living -->
+<!-- status: active · updated: 2026-11-06 (the frame: WindowControls, the top bar as the window's title bar, ADR-065; the screens table lists each screen's parts, ADR-064 pass 2a; 2026-11-05: the screens: components move to screen folders, ADR-064; 2026-11-01: Getting started and Provider & model; the letter-spacing domain, ADR-056; 2026-10-17: the concept panel's term signals route; 2026-10-01: CI's secret scan blocks — security S-13) · class: living -->
 
 # Architecture
 
@@ -172,7 +172,7 @@ screen takes only `Icon`, `Dialog` and `ConfirmDialog` from `shell/`.
 | What the app shows | Its doors | File (`apps/desktop/src/`) |
 |---|---|---|
 | **Frame** | | `shell/` |
-| Top bar · Sidebar (collapse, resize, the tab's rail) · Status bar, its indexing chip | always | `Topbar.svelte` · `Sidebar.svelte` · `StatusBar.svelte`, `IngestChip.svelte` |
+| Top bar, the window's title bar on Windows (ADR-065) · Sidebar (collapse, resize, the tab's rail) · Status bar, its indexing chip | always | `Topbar.svelte`, `WindowControls.svelte` · `Sidebar.svelte` · `StatusBar.svelte`, `IngestChip.svelte` |
 | *Search chats and documents* | top bar, Ctrl/⌘ K | `GlobalSearch.svelte` |
 | *Keyboard shortcuts* · *About Provenote* | app menu | `KeyboardShortcuts.svelte` · `About.svelte` |
 | Indexing (a run's progress) | the status bar's chip, *View indexing* in Settings | `Indexing.svelte` |

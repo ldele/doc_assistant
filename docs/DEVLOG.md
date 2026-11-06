@@ -42,6 +42,32 @@ Format: What changed | Why | Rejected alternatives | What it opens
 
 ---
 
+## 2026-11-06 (9) — The top bar is the window's title bar on Windows (ADR-065)
+
+**What changed.** On Windows the window has no native title bar any more
+(`src-tauri/tauri.windows.conf.json`: the main window restated with `decorations: false`,
+`shadow: true`; other platforms keep their frame). The top bar takes its place: its empty space
+drags the window and a double-click maximises or restores it (`data-tauri-drag-region="deep"`,
+`"false"` on the app menu's wrapper), and `shell/WindowControls.svelte` draws minimise,
+maximise/restore and close at its right end, full height, the platform's look, Close red on hover
+(`--caption-close`). The window calls go through `lib/core/tauri.ts` and degrade to nothing in a
+browser. Four window permissions join the capability set. Built in `f35cabe`; the hover texts came
+with ROADMAP 110's merge (`5ed8bf5`). ADR-065 records it, written after the build at the user's
+request. The user then chose where the settings cog goes, beside the menu; not built yet.
+
+**Why.** The user, 2026-11-06: the native title bar is *"not modern (dead space)"*: a row of its
+own (31 px at 96 DPI) above a top bar that already had empty space.
+
+**Rejected.** Keeping the native frame; frameless on every platform (Windows-style buttons on a
+macOS window); native hit testing to keep the snap layouts on hovering maximise (window-procedure
+code Tauri does not provide; Win+Z still opens them). ADR-065 § Options.
+
+**What it opens.** Driven in a dev window over an invented library: drag, double-click maximise,
+restore, a maximised frame equal to the work area, Close at the corner pixel, Win+Z. Not driven
+yet: minimise and close by click, edge resizing, keyboard focus, the light theme, a 640 px window,
+a dialog over the bar. They are a row in `docs/release-ux-checklist.md` §6, before 0.7.3's tag.
+The cog's move to the left of the top bar (ADR-065 choice 7).
+
 ## 2026-11-06 (8) — The library summary stops saying indexing reads no metadata
 
 **What changed.** The *Metadata* card's two lines (`lib/library/summary.ts`,

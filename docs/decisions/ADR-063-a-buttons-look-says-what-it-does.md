@@ -1,8 +1,10 @@
-<!-- status: active · updated: 2026-11-06 (revised while proposed: choices 6 to 8 and three checks that fail, from the user's words of 2026-11-06; 2026-11-05: proposed, the two select bars built to it) · class: append-only -->
+<!-- status: active · updated: 2026-11-06 (accepted as proposed: all eight choices; revised while proposed: choices 6 to 8 and three checks that fail, from the user's words of 2026-11-06; 2026-11-05: proposed, the two select bars built to it) · class: append-only -->
 
 # ADR-063 — A button's look says what it does: four action roles, and a delete always asks first
 
-- **Status:** proposed (Claude Code, 2026-11-05). The request is the user's, 2026-11-05, in one
+- **Status:** proposed (Claude Code, 2026-11-05); **accepted as proposed by the user on
+  2026-11-06** (*"Accept as proposed"*): option A with all eight choices as recommended. Built for
+  the two select bars only; the rest is ROADMAP 110. The request is the user's, 2026-11-05, in one
   batch of UI fixes: a selection's *Clear* was unclear (*"if it deletes, call it Delete, show it in
   red and ask for confirmation"*), *"make this a design rule for the whole app: destructive actions
   use a danger colour and a confirm step, and the other kinds of action get suitable colours too"*,
@@ -175,12 +177,13 @@ deletes its own.
 
 ## Decision
 
-Option A, with the choices above as recommended, once the user accepts them. Built now: the four
+Option A, with the eight choices above as recommended: accepted as proposed by the user on
+2026-11-06. Built on 2026-11-05: the four
 classes in `apps/desktop/src/app.css` and both select bars. The `--accent-fill` pair (choice 2) is
-not built: it waits on the user's answer, and until then `btn-primary` uses `--accent` and
+not built yet: it is decided, and until ROADMAP 110 adds it `btn-primary` uses `--accent` and
 `--accent-fg` as every primary does today. Choices 6 to 8 and the checks are not built; they are
-ROADMAP 110, which waits for ADR-064's pass 2 to be committed, because both sweep the same
-components.
+ROADMAP 110, which starts once ADR-064's work in the same components is committed (its pass 2
+is, in `b57601b`).
 
 ## Consequences
 

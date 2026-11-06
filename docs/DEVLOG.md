@@ -42,6 +42,23 @@ Format: What changed | Why | Rejected alternatives | What it opens
 
 ---
 
+## 2026-11-06 (3) — ADR-063 accepted as proposed
+
+**What changed.** ADR-063 is accepted with all eight choices as recommended: the four action roles,
+the Graph tab's look for ordinary buttons, a deeper accent fill with white text for the primary in
+the dark theme (`--accent-fill`, `--accent-fill-fg`), *Done* as a mode's trailing primary, a
+confirm on every danger action, *Source* and *Re-run…* as ordinary buttons beside the document
+page's index, hover text on every button through one tooltip, the standards ranked over design
+systems, and styling in one place with three checks that fail. ROADMAP 110 moves from waiting to
+planned now, and its index line in `docs/decisions.md` says accepted.
+
+**Why.** The user, 2026-11-06: *"Accept as proposed"*, after the revision in entry (2).
+
+**Rejected.** Nothing new: the options are in the ADR.
+
+**What it opens.** ROADMAP 110, the sweep over the components, once no other session has edits
+in flight in them.
+
 ## 2026-11-06 (2) — ADR-063 revised: hover text, styles in one place, checks that fail
 
 **What changed.** ADR-063, still proposed, gains three choices and an *Enforced by* that fails.

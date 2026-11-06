@@ -367,6 +367,14 @@ the Add documents review flag into `accept.svelte.ts`, the drop veil and staged 
 component.
 
 Driven in the preview against the real library, read-only: every door above opens its dialog
-with the right label and parts, and cancels. The writes the modules now hold (a folder created,
-metadata saved, a document deleted, a family written, a re-run run to the end) were not driven:
-they are the same API calls moved, and checking them needs a scratch copy of the library.
+with the right label and parts, and cancels. The writes were then driven on a scratch copy of the
+library (stored paths repointed to the copy; `data/` compared file by file before and after: no
+change), each read back through the API: a folder created, renamed, filled from the select bar
+and from its own view, emptied by one, and deleted while open (the Library went back to All
+documents); metadata saved and reset; a document removed from the library (file kept, chunk count
+and status bar refreshed); a family created, renamed, given a form, taken on as a concept, a form
+marked broad, a form removed, deleted after its question; proposals detected, one dismissed, one
+accepted; *Manage keywords* closed over the Graph tab after a write (the graph says it is one
+concept behind); a *Text & chunks* re-run to the end (the list and the engine health re-read).
+Not driven: deleting the file with the document, *Reveal in file explorer*, and the chat scope
+resetting when its folder is deleted.

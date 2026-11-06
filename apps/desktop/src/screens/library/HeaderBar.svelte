@@ -62,7 +62,7 @@
       class="crumb"
       onclick={() => onSelectCollection({ kind: 'all' })}
       disabled={libraryDocId === null && libraryCollection.kind === 'all'}
-      type="button">Library</button
+      type="button" use:tooltip={libraryDocId === null && libraryCollection.kind === 'all' ? 'You are here' : 'Show every document in the library'}>Library</button
     >
     {#if libraryCollection.kind !== 'all'}
       <span class="crumbsep"><Icon name="chevron-right" size={13} /></span>
@@ -70,7 +70,7 @@
         class="crumb"
         onclick={() => onSetDocId(null)}
         disabled={libraryDocId === null}
-        type="button">{collectionLabel(libraryCollection, folderNames)}</button
+        type="button" use:tooltip={libraryDocId === null ? 'You are here' : 'Go back to this list'}>{collectionLabel(libraryCollection, folderNames)}</button
       >
     {/if}
     {#if openDoc}
@@ -105,6 +105,7 @@
               aria-checked={libPrefs.sort === s.key}
               onclick={() => setLibrarySort(s.key)}
               type="button"
+              use:tooltip={'Order the documents this way; the choice is remembered'}
             >
               <span class="tick"
                 >{#if libPrefs.sort === s.key}<Icon name="check" size={13} />{/if}</span
@@ -193,6 +194,7 @@
       onclick={() =>
         (library.selected = selectAllOrNone(visibleDocs.map((d) => d.id), library.selected))}
       type="button"
+      use:tooltip={library.selected.length > 0 ? 'Empty the selection' : 'Select every document shown'}
     >
       {selectAllLabel(library.selected)}
     </button>
@@ -205,6 +207,7 @@
         aria-expanded={library.addMenuOpen}
         onclick={() => (library.addMenuOpen = !library.addMenuOpen)}
         type="button"
+        use:tooltip={library.selected.length === 0 ? 'Select documents first' : 'Put the selected documents in a folder'}
       >
         <Icon name="folder" size={13} /> Add to folder…
       </button>
@@ -212,7 +215,7 @@
         <div class="sort-backdrop" onclick={() => (library.addMenuOpen = false)} role="presentation"></div>
         <div class="sortmenu" role="menu">
           {#each folders as f (f.id)}
-            <button class="sortitem" role="menuitem" onclick={() => addSelectionToFolder(f.id)} type="button">
+            <button class="sortitem" role="menuitem" onclick={() => addSelectionToFolder(f.id)} type="button" use:tooltip={'Put the selected documents in this folder'}>
               <span class="tick"><Icon name="folder" size={13} /></span>
               {f.name}
             </button>
@@ -225,6 +228,7 @@
                 openManageFolders()
               }}
               type="button"
+              use:tooltip={'Open Manage folders to make your first folder'}
             >
               <span class="tick"><Icon name="plus" size={13} /></span>
               No folders yet — create one…
@@ -241,10 +245,11 @@
       disabled={library.selected.length === 0}
       onclick={() => openRerun(library.selected, selectionLabel(library.selected.length))}
       type="button"
+      use:tooltip={library.selected.length === 0 ? 'Select documents first' : 'Re-run part of ingestion for the selected documents'}
     >
       <Icon name="rotate-ccw" size={13} /> Re-run…
     </button>
-    <button class="btn btn-primary seldone" onclick={exitSelectMode} type="button">Done</button>
+    <button class="btn btn-primary seldone" onclick={exitSelectMode} type="button" use:tooltip={'Leave select mode'}>Done</button>
   </div>
 {/if}
 

@@ -4,6 +4,7 @@
   // DeleteDocument's house style: scrim + centered card, Esc / scrim-click / Cancel back out,
   // the confirm action carries the danger (red) styling by default since these gate destructive acts.
   import Icon from './Icon.svelte'
+  import { tooltip } from '../lib/shell/tooltip'
 
   let {
     title,
@@ -55,13 +56,14 @@
   <h2 id="{uid}-title">{title}</h2>
   <p class="body" id="{uid}-body">{body}</p>
   <div class="mactions">
-    <button class="btn" bind:this={cancelEl} onclick={onClose} type="button" disabled={busy}>{cancelLabel}</button>
+    <button class="btn" bind:this={cancelEl} onclick={onClose} type="button" disabled={busy} use:tooltip={'Close and change nothing'}>{cancelLabel}</button>
     <button
       class="btn btn-primary"
       class:btn-danger={tone === 'danger'}
       onclick={onConfirm}
       type="button"
       disabled={busy}
+      use:tooltip={tone === 'danger' ? 'Go ahead with the removal described above' : 'Go ahead as described above'}
     >
       {#if tone === 'danger' && confirmIcon}<Icon name={confirmIcon} size={14} />{/if}
       {busy ? 'Working…' : confirmLabel}

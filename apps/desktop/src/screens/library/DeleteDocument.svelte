@@ -15,6 +15,7 @@
   import type { LibraryDocument } from '../../lib/core/types'
   import Icon from '../../shell/Icon.svelte'
   import { deleteFileDetail, removeOnlyDetail, targetName } from '../../lib/library/deletetarget'
+  import { tooltip } from '../../lib/shell/tooltip'
 
   let {
     doc,
@@ -71,8 +72,8 @@
   </fieldset>
 
   <div class="mactions">
-    <button class="btn" onclick={onClose} type="button" disabled={busy}>Cancel</button>
-    <button class="btn btn-primary btn-danger" onclick={() => onConfirm(deleteFile)} type="button" disabled={busy}>
+    <button class="btn" onclick={onClose} type="button" disabled={busy} use:tooltip={'Keep the document'}>Cancel</button>
+    <button class="btn btn-primary btn-danger" onclick={() => onConfirm(deleteFile)} type="button" disabled={busy} use:tooltip={deleteFile ? 'Take the document out of the library and delete its file from disk' : 'Take the document out of the library; its file stays on disk'}>
       <Icon name="trash-2" size={14} />
       {busy ? 'Deleting…' : deleteFile ? 'Delete both' : 'Remove'}
     </button>

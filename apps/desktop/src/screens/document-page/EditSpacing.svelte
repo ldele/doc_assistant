@@ -108,9 +108,9 @@
   {#if error}<p class="err" role="alert">{error}</p>{/if}
 
   <div class="mactions">
-    <button class="btn btn-primary" type="button" disabled={busy} onclick={save}>Save</button>
-    <button class="btn" type="button" disabled={busy} onclick={backToRule}>Back to the rule's reading</button>
-    <button class="btn" type="button" disabled={busy} onclick={onClose}>Cancel</button>
+    <button class="btn btn-primary" type="button" disabled={busy} onclick={save} use:tooltip={'Keep your spacing for this run; it applies when the text is re-run'}>Save</button>
+    <button class="btn" type="button" disabled={busy} onclick={backToRule} use:tooltip={'Drop your spacing and let the rule decide this run again'}>Back to the rule's reading</button>
+    <button class="btn" type="button" disabled={busy} onclick={onClose} use:tooltip={'Close without changing anything'}>Cancel</button>
   </div>
 </div>
 

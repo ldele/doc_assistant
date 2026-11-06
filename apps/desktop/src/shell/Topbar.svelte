@@ -67,10 +67,10 @@
           >
             <Icon name="plus" size={15} /> Add documents…
           </button>
-          <button class="appmenuitem" role="menuitem" onclick={() => { shell.appMenuOpen = false; shell.showSettings = true }} type="button">
+          <button class="appmenuitem" role="menuitem" onclick={() => { shell.appMenuOpen = false; shell.showSettings = true }} type="button" use:tooltip={'Set up providers, documents and the app'}>
             <Icon name="settings" size={15} /> Settings
           </button>
-          <button class="appmenuitem" role="menuitem" onclick={() => { shell.appMenuOpen = false; shell.showShortcuts = true }} type="button">
+          <button class="appmenuitem" role="menuitem" onclick={() => { shell.appMenuOpen = false; shell.showShortcuts = true }} type="button" use:tooltip={'List the keys that work in the app'}>
             <Icon name="keyboard" size={15} /> Keyboard shortcuts
           </button>
           {#if shell.mode === 'chat'}
@@ -80,12 +80,13 @@
               disabled={exportDisabled}
               onclick={() => { shell.appMenuOpen = false; onExport() }}
               type="button"
+              use:tooltip={exportDisabled ? 'Nothing to export yet' : 'Save this conversation to a file'}
             >
               <Icon name="download" size={15} /> Export transcript
             </button>
           {/if}
           <div class="appmenusep"></div>
-          <button class="appmenuitem" role="menuitem" onclick={() => { shell.appMenuOpen = false; shell.showAbout = true }} type="button">
+          <button class="appmenuitem" role="menuitem" onclick={() => { shell.appMenuOpen = false; shell.showAbout = true }} type="button" use:tooltip={'Show the version and what the app is'}>
             <Icon name="info" size={15} /> About Provenote
           </button>
         </div>
@@ -130,14 +131,17 @@
     >
   </div>
 
-  <!-- Mode tabs (Chat/Library/Graph) — moved out of the sidebar into the toolbar. -->
+  <!-- Mode tabs (Chat/Library/Graph) — moved out of the sidebar into the toolbar. Each tab has an
+       aria-label equal to its label: under 780px the label is hidden and only the icon shows. -->
   <div class="tb-modes" role="tablist" aria-label="Workspace">
     <button
       class="tb-mode"
       class:active={shell.mode === 'chat'}
       role="tab"
       aria-selected={shell.mode === 'chat'}
+      aria-label="Chat"
       onclick={() => onSelectMode('chat')}
+      use:tooltip={'Ask questions of your documents'}
       type="button"><Icon name="message-square" size={15} /><span class="tb-modelabel">Chat</span></button
     >
     <button
@@ -145,7 +149,9 @@
       class:active={shell.mode === 'library'}
       role="tab"
       aria-selected={shell.mode === 'library'}
+      aria-label="Library"
       onclick={() => onSelectMode('library')}
+      use:tooltip={'Browse and manage your documents'}
       type="button"><Icon name="library" size={15} /><span class="tb-modelabel">Library</span></button
     >
     <!-- Hidden for 0.6 — see core/features.ts GRAPH_TAB_ENABLED for why, and to bring it back. -->
@@ -155,7 +161,9 @@
         class:active={shell.mode === 'graph'}
         role="tab"
         aria-selected={shell.mode === 'graph'}
+        aria-label="Graph"
         onclick={() => onSelectMode('graph')}
+        use:tooltip={'See how the concepts in your library connect'}
         type="button"><Icon name="waypoints" size={15} /><span class="tb-modelabel">Graph</span></button
       >
     {/if}

@@ -7,6 +7,7 @@
   import type { ProposedEdge, TaxonomyView } from '../../lib/core/types'
   import { buildForest } from '../../lib/library/taxonomy'
   import Icon from '../../shell/Icon.svelte'
+  import { tooltip } from '../../lib/shell/tooltip'
 
   let {
     view,
@@ -45,6 +46,7 @@
       onclick={() => (pane = 'proposals')}
       type="button"
       aria-pressed={pane === 'proposals'}
+      use:tooltip={'List the placements proposed for you to accept or reject'}
     >
       <Icon name="tag" size={13} />
       <span>Proposed placements</span>
@@ -64,6 +66,7 @@
         onclick={() => onSelectField(row.field.id)}
         type="button"
         aria-pressed={selectedId === row.field.id}
+        use:tooltip={'Show this field’s concepts and documents'}
       >
         <span class="flabel">{row.field.label}</span>
         <span

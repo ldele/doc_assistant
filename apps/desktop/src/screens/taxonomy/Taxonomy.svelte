@@ -27,6 +27,7 @@
   import Icon from '../../shell/Icon.svelte'
   import FieldDetail from './FieldDetail.svelte'
   import FieldForest from './FieldForest.svelte'
+  import { tooltip } from '../../lib/shell/tooltip'
 
   let {
     view,
@@ -98,7 +99,7 @@
         </span>
       {/if}
     </div>
-    <button class="iconbtn" onclick={onClose} aria-label="Close" type="button">
+    <button class="iconbtn" onclick={onClose} aria-label="Close" type="button" use:tooltip={'Close the field taxonomy'}>
       <Icon name="x" size={16} />
     </button>
   </div>

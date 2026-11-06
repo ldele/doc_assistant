@@ -29,7 +29,7 @@
     Zero-LLM, on request — checks keyword spelling (morphology) and meaning (bge embedding)
     for near-duplicates. Nothing is written until you accept a proposal below.
   </p>
-  <button class="secondary" onclick={onDetect} disabled={detecting} type="button">
+  <button class="secondary" onclick={onDetect} disabled={detecting} type="button" use:tooltip={'Look for keywords spelled alike or meaning the same; nothing is written'}>
     {detecting ? 'Detecting…' : 'Detect'}
   </button>
   {#if detectError}
@@ -47,7 +47,7 @@
             <span class="propmembers">+ {p.members.join(', ')}</span>
           </span>
           <span class="propconf">{Math.round(p.confidence * 100)}%</span>
-          <button class="propaccept" onclick={() => onAcceptProposal(p)} type="button">
+          <button class="propaccept" onclick={() => onAcceptProposal(p)} type="button" use:tooltip={'Make these keywords one family under the first name'}>
             Accept
           </button>
           <button

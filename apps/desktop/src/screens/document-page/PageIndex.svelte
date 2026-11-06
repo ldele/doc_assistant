@@ -43,7 +43,7 @@
 <div class="blockbar">
   <nav class="blocknav" aria-label="Jump to a section of this document">
     {#each blocks as b (b.id)}
-      <button class="pill" type="button" onclick={() => jumpTo(b.id)}>{b.label}</button>
+      <button class="pill" type="button" onclick={() => jumpTo(b.id)} use:tooltip={'Scroll the page to this section'}>{b.label}</button>
     {/each}
   </nav>
   <!-- ROADMAP 20 asked for these beside the block list, and that is the right place for a

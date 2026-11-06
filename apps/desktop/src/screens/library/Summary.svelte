@@ -168,7 +168,7 @@
         </p>
       {/if}
     </div>
-    <button class="btn btn-quiet" disabled={loading} onclick={() => load(folderId)} type="button">
+    <button class="btn btn-quiet" disabled={loading} onclick={() => load(folderId)} type="button" use:tooltip={'Count the library again; nothing in it changes'}>
       <Icon name="rotate-ccw" size={13} /> Count again
     </button>
   </div>
@@ -184,7 +184,7 @@
     {@const [need, docs] = tiles(s)}
     <div class="tiles">
       <!-- What needs action leads; it is navigation to its own rows, not an action. -->
-      <button class="tile need" class:alert={need.alert} onclick={toIndexing} type="button">
+      <button class="tile need" class:alert={need.alert} onclick={toIndexing} type="button" use:tooltip={'Jump to what needs doing, below'}>
         <span class="value">
           {#if need.alert}<Icon name="triangle-alert" size={18} />{/if}
           {need.value}
@@ -209,6 +209,7 @@
               disabled={opening !== null}
               onclick={() => go(target)}
               type="button"
+              use:tooltip={target.kind === 'issue' ? 'List these documents in the Library' : target.kind === 'files' ? 'Open Manage files in Settings' : target.kind === 'indexing' ? 'Open the indexing screen' : 'Show every document in the Library'}
             >
               {#if row.tone !== 'none'}
                 <span class="mark" aria-label={row.tone === 'crit' ? 'Problem' : 'Warning'}

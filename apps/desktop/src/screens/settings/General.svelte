@@ -8,6 +8,7 @@
   import { checkForUpdate, exportAllConversations, setAutoUpdateCheck } from '../../lib/core/api'
   import { describeUpdate } from '../../lib/settings/updates'
   import { getTheme, setTheme, applyTheme, type Theme } from '../../lib/core/theme'
+  import { tooltip } from '../../lib/shell/tooltip'
 
   let {
     update = $bindable(),
@@ -87,6 +88,7 @@
       aria-checked={theme === 'system'}
       class:active={theme === 'system'}
       onclick={() => onThemeChange('system')}
+      use:tooltip={'Follow this computer’s light or dark setting'}
     >
       System
     </button>
@@ -96,6 +98,7 @@
       aria-checked={theme === 'light'}
       class:active={theme === 'light'}
       onclick={() => onThemeChange('light')}
+      use:tooltip={'Always use the light theme'}
     >
       Light
     </button>
@@ -105,6 +108,7 @@
       aria-checked={theme === 'dark'}
       class:active={theme === 'dark'}
       onclick={() => onThemeChange('dark')}
+      use:tooltip={'Always use the dark theme'}
     >
       Dark
     </button>
@@ -120,7 +124,7 @@
     Every conversation in one markdown file — uncapped, unlike the sidebar list. Delete chats
     from the sidebar’s select mode (✓).
   </p>
-  <button class="btn below" onclick={exportHistory} disabled={exporting} type="button">
+  <button class="btn below" onclick={exportHistory} disabled={exporting} type="button" use:tooltip={'Save every conversation to one file'}>
     {exporting ? 'Exporting…' : 'Export all conversations'}
   </button>
   {#if exportError}<p class="err">{exportError}</p>{/if}
@@ -171,7 +175,7 @@
     {/if}
   </div>
 
-  <button class="btn below" onclick={runUpdateCheck} disabled={updateBusy} type="button">
+  <button class="btn below" onclick={runUpdateCheck} disabled={updateBusy} type="button" use:tooltip={'Look for a newer version now'}>
     {updateBusy ? 'Checking…' : 'Check now'}
   </button>
 </section>

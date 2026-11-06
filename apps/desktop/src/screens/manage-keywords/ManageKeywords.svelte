@@ -40,6 +40,7 @@
   import FamilyRow from './FamilyRow.svelte'
   import NewFamily from './NewFamily.svelte'
   import Terms from './Terms.svelte'
+  import { tooltip } from '../../lib/shell/tooltip'
 
   let {
     families,
@@ -246,7 +247,7 @@
 <div class="modal" role="dialog" aria-modal="true" aria-label="Manage keyword families">
   <div class="mhead">
     <h2>Manage keywords</h2>
-    <button class="iconbtn" onclick={onClose} aria-label="Close" type="button">
+    <button class="iconbtn" onclick={onClose} aria-label="Close" type="button" use:tooltip={'Close Manage keywords'}>
       <Icon name="x" size={16} />
     </button>
   </div>

@@ -80,6 +80,7 @@
             onclick={() => (libraryQuery = '')}
             aria-label="Clear filter"
             type="button"
+            use:tooltip={'Empty the filter'}
           >
             <Icon name="x" size={13} />
           </button>
@@ -103,6 +104,7 @@
           aria-current={libraryCollection.kind === 'all' ? 'true' : undefined}
           onclick={() => onSelectCollection({ kind: 'all' })}
           type="button"
+          use:tooltip={'Show every document in the library'}
         >
           <span class="treeicon"><Icon name="library" size={14} /></span>
           <span class="treelabel">All documents</span>
@@ -111,7 +113,7 @@
 
         <div class="section-head-row">
           <p class="section-header">Folders</p>
-          <button class="managelink" onclick={openManageFolders} type="button">Manage…</button>
+          <button class="managelink" onclick={openManageFolders} type="button" use:tooltip={'Create, rename or delete folders'}>Manage…</button>
         </div>
         {#if folders.length === 0}
           <p class="tree-empty">No folders yet — create one in Manage…</p>
@@ -125,6 +127,7 @@
                 : undefined}
               onclick={() => onSelectCollection({ kind: 'folder', value: f.id })}
               type="button"
+              use:tooltip={'Show the documents in this folder'}
             >
               <span class="treeicon"><Icon name="folder" size={14} /></span>
               <span class="treelabel">{f.name}</span>
@@ -144,6 +147,7 @@
                 : undefined}
               onclick={() => onSelectCollection({ kind: 'type', value: g.value })}
               type="button"
+              use:tooltip={'Show only the documents of this file type'}
             >
               <span class="treeicon"><Icon name="file-text" size={14} /></span>
               <span class="treelabel">{g.value.toUpperCase()}</span>
@@ -163,6 +167,7 @@
                 : undefined}
               onclick={() => onSelectCollection({ kind: 'date', value: g.value })}
               type="button"
+              use:tooltip={'Show the documents added in this period'}
             >
               <span class="treeicon"><Icon name="calendar" size={14} /></span>
               <span class="treelabel">{DATE_BUCKET_LABELS[g.value]}</span>

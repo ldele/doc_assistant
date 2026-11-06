@@ -98,6 +98,7 @@
       aria-selected={railMode === 'concepts'}
       class:active={railMode === 'concepts'}
       onclick={() => (railMode = 'concepts')}
+      use:tooltip={'List the concepts on the graph'}
     >
       Concepts
     </button>
@@ -107,6 +108,7 @@
       aria-selected={railMode === 'gaps'}
       class:active={railMode === 'gaps'}
       onclick={() => (railMode = 'gaps')}
+      use:tooltip={'List what the gap check found: concepts with one source, claims with none'}
     >
       Gaps
     </button>
@@ -130,7 +132,7 @@
       <Icon name="search" size={13} />
       <input bind:value={query} placeholder="Filter concepts…" aria-label="Filter concepts" />
       {#if query}
-        <button class="clearq" onclick={() => (query = '')} aria-label="Clear filter" type="button">
+        <button class="clearq" onclick={() => (query = '')} aria-label="Clear filter" type="button" use:tooltip={'Empty the filter and show every row'}>
           <Icon name="x" size={13} />
         </button>
       {/if}
@@ -170,6 +172,7 @@
           aria-selected={row.node.id === selectedId}
           onclick={() => onSelectConcept(row.node.id)}
           type="button"
+          use:tooltip={'Open this concept in the panel and on the graph'}
         >
           <span class="dot" style="background:{commColor(row.node)}" aria-hidden="true"></span>
           <span class="clabel">{shownLabel(row.node)}</span>

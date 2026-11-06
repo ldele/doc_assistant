@@ -124,7 +124,7 @@
 <div class="modal" role="dialog" aria-modal="true" aria-label="Manage folders">
   <div class="mhead">
     <h2>Manage folders</h2>
-    <button class="iconbtn" onclick={onClose} aria-label="Close" type="button">
+    <button class="iconbtn" onclick={onClose} aria-label="Close" type="button" use:tooltip={'Close Manage folders'}>
       <Icon name="x" size={16} />
     </button>
   </div>
@@ -139,7 +139,7 @@
           placeholder="Folder name (e.g. Demo corpus)"
           onkeydown={(e) => e.key === 'Enter' && submitCreate()}
         />
-        <button class="btn btn-primary" onclick={submitCreate} disabled={newName.trim() === ''} type="button">
+        <button class="btn btn-primary" onclick={submitCreate} disabled={newName.trim() === ''} type="button" use:tooltip={newName.trim() === '' ? 'Type a name first' : 'Make a folder with this name'}>
           Create
         </button>
       </div>
@@ -167,16 +167,16 @@
                   onblur={commitRename}
                 />
               {:else}
-                <button class="rowname" onclick={() => selectFolder(f.id === selectedId ? null : f.id)} type="button">
+                <button class="rowname" onclick={() => selectFolder(f.id === selectedId ? null : f.id)} type="button" use:tooltip={f.id === selectedId ? 'Close this folder’s documents' : 'Show this folder’s documents and add to it'}>
                   <Icon name="folder" size={14} />
                   <span class="name">{f.name}</span>
                   <span class="count">{f.doc_count}</span>
                 </button>
-                <button class="iconbtn" onclick={() => startRename(f)} aria-label="Rename {f.name}" type="button">
+                <button class="iconbtn" onclick={() => startRename(f)} aria-label="Rename {f.name}" type="button" use:tooltip={'Change this folder’s name'}>
                   <Icon name="pencil" size={14} />
                 </button>
                 {#if confirmingDeleteId === f.id}
-                  <button class="btn btn-danger" onclick={() => { confirmingDeleteId = null; onDelete(f.id) }} type="button">
+                  <button class="btn btn-danger" onclick={() => { confirmingDeleteId = null; onDelete(f.id) }} type="button" use:tooltip={'Delete the folder; its documents stay in the library'}>
                     Delete folder?
                   </button>
                 {:else}
@@ -185,6 +185,7 @@
                     onclick={() => (confirmingDeleteId = f.id)}
                     aria-label="Delete {f.name}"
                     type="button"
+                    use:tooltip={'Delete this folder, after you confirm; its documents stay in the library'}
                   >
                     <Icon name="trash-2" size={14} />
                   </button>
@@ -215,6 +216,7 @@
                 aria-pressed={typeFilter === g.value}
                 onclick={() => (typeFilter = typeFilter === g.value ? null : g.value)}
                 type="button"
+                use:tooltip={typeFilter === g.value ? 'Show every file type again' : `Show only ${g.value.toUpperCase()} files`}
               >
                 {g.value.toUpperCase()} <span class="chipcount">{g.count}</span>
               </button>
@@ -249,6 +251,7 @@
                   onclick={() => onRemoveDocument(selected.id, d.id)}
                   aria-label="Remove {docLabel(d)} from {selected.name}"
                   type="button"
+                  use:tooltip={'Take this document out of the folder; it stays in the library'}
                 >
                   <Icon name="x" size={13} />
                 </button>
@@ -258,7 +261,7 @@
             <p class="hint">No document matches the current search/filters.</p>
           {/each}
         </div>
-        <button class="btn apply" onclick={applyPending} disabled={pending.size === 0} type="button">
+        <button class="btn apply" onclick={applyPending} disabled={pending.size === 0} type="button" use:tooltip={pending.size === 0 ? 'Tick documents first' : 'Put the ticked documents in this folder'}>
           Add {pending.size} document{pending.size === 1 ? '' : 's'}
         </button>
       </section>

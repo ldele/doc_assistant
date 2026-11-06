@@ -74,7 +74,7 @@
 <div class="modal" role="dialog" aria-modal="true" aria-label="Filter documents by keyword">
   <div class="mhead">
     <h2>Filter by keyword</h2>
-    <button class="iconbtn" onclick={onClose} aria-label="Close" type="button">
+    <button class="iconbtn" onclick={onClose} aria-label="Close" type="button" use:tooltip={'Close the keyword filter'}>
       <Icon name="x" size={16} />
     </button>
   </div>
@@ -86,7 +86,7 @@
         <Icon name="search" size={14} />
         <input use:autofocus bind:value={query} placeholder="Search keywords" aria-label="Search keywords" />
         {#if query}
-          <button class="clearq" onclick={() => (query = '')} aria-label="Clear search" type="button">
+          <button class="clearq" onclick={() => (query = '')} aria-label="Clear search" type="button" use:tooltip={'Empty the search'}>
             <Icon name="x" size={13} />
           </button>
         {/if}
@@ -122,7 +122,7 @@
         {/each}
       </div>
       {#if rareHidden > 0 || (query.trim() === '' && split.rare.length > 0)}
-        <button class="raretoggle" onclick={() => (showRare = !showRare)} type="button">
+        <button class="raretoggle" onclick={() => (showRare = !showRare)} type="button" use:tooltip={showRare ? 'Hide the keywords found on only one document' : 'List the keywords found on only one document too'}>
           <!-- The icon set has only `chevron-right`; rotating it is the standard disclosure
                affordance and avoids adding two glyphs for one control. -->
           <span class="chev" class:open={showRare}><Icon name="chevron-right" size={12} /></span>
@@ -132,11 +132,11 @@
       {/if}
       <div class="kwlistfoot">
         {#if selectedCount > 0}
-          <button class="clearall" onclick={onClear} type="button">
+          <button class="clearall" onclick={onClear} type="button" use:tooltip={'Stop filtering by any keyword'}>
             <Icon name="x" size={12} /> Clear {selectedCount} selected
           </button>
         {/if}
-        <button class="managebtn" onclick={openManageKeywords} type="button">Manage keywords…</button>
+        <button class="managebtn" onclick={openManageKeywords} type="button" use:tooltip={'Mark forms, rename or add concepts'}>Manage keywords…</button>
       </div>
     </section>
 

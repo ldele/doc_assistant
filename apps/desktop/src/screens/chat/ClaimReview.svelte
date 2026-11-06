@@ -2,6 +2,7 @@
   import type { ClaimView, Decision } from '../../lib/core/types'
   import { adjudicate } from '../../lib/core/api'
   import Icon from '../../shell/Icon.svelte'
+  import { tooltip } from '../../lib/shell/tooltip'
 
   let { claims }: { claims: ClaimView[] } = $props()
 
@@ -62,15 +63,15 @@
           <div class="edit">
             <textarea bind:value={s.draft} rows="2"></textarea>
             <div class="actions">
-              <button class="ok" onclick={() => decide(c, 'edited', s.draft)}>Save</button>
-              <button onclick={() => cancelEdit(c)}>Cancel</button>
+              <button class="ok" onclick={() => decide(c, 'edited', s.draft)} use:tooltip={'Record your rewording of this claim'}>Save</button>
+              <button onclick={() => cancelEdit(c)} use:tooltip={'Stop editing; nothing is recorded'}>Cancel</button>
             </div>
           </div>
         {:else if s.status === 'pending'}
           <div class="actions">
-            <button class="ok" onclick={() => decide(c, 'accepted')}><Icon name="check" size={14} /> Accept</button>
-            <button class="no" onclick={() => decide(c, 'rejected')}><Icon name="x" size={14} /> Reject</button>
-            <button onclick={() => startEdit(c)}><Icon name="pencil" size={14} /> Edit</button>
+            <button class="ok" onclick={() => decide(c, 'accepted')} use:tooltip={'Record that this claim stands as written'}><Icon name="check" size={14} /> Accept</button>
+            <button class="no" onclick={() => decide(c, 'rejected')} use:tooltip={'Record that the sources do not support this claim'}><Icon name="x" size={14} /> Reject</button>
+            <button onclick={() => startEdit(c)} use:tooltip={'Rewrite this claim, then record your wording'}><Icon name="pencil" size={14} /> Edit</button>
           </div>
         {:else if s.status === 'error'}
           <span class="err"><Icon name="triangle-alert" size={13} /> couldn’t record: {s.error}</span>

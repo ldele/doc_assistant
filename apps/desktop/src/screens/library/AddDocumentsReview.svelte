@@ -202,7 +202,7 @@
 <div class="sheet" role="dialog" aria-modal="true" aria-label="Add documents">
   <header>
     <h2>Add documents</h2>
-    <button class="close" onclick={onClose} aria-label="Close" type="button">
+    <button class="close" onclick={onClose} aria-label="Close" type="button" use:tooltip={'Close the review'}>
       <Icon name="x" size={16} />
     </button>
   </header>
@@ -220,6 +220,7 @@
           onclick={() => (unticked = tickAll(files, !allTicked))}
           disabled={applying}
           type="button"
+          use:tooltip={allTicked ? 'Untick every file' : 'Tick every file'}
         >
           {allTicked ? 'Select none' : 'Select all'}
         </button>
@@ -258,7 +259,7 @@
            only ever ordinary additions — the line says how many are still ticked. -->
       <p class="more">
         {hiddenLine(files.slice(shown), unticked)}
-        <button class="linkish" onclick={() => (shown += 200)} type="button">Show more</button>
+        <button class="linkish" onclick={() => (shown += 200)} type="button" use:tooltip={'List the next 200 files'}>Show more</button>
       </p>
     {/if}
 
@@ -338,16 +339,17 @@
           {undoing ? 'Undoing…' : 'Undo all…'}
         </button>
       {/if}
-      <button class="btn btn-primary" onclick={keepAndClose} type="button">
+      <button class="btn btn-primary" onclick={keepAndClose} type="button" use:tooltip={applied.stopped_early ? 'Keep the documents added so far and close' : 'Close the review'}>
         {applied.stopped_early ? `Keep the ${applied.added.length}` : 'Done'}
       </button>
     {:else}
-      <button class="btn" onclick={onClose} type="button">Cancel</button>
+      <button class="btn" onclick={onClose} type="button" use:tooltip={'Close without adding anything'}>Cancel</button>
       <button
         class="btn btn-primary"
         onclick={apply}
         disabled={applying || loading || addable.length === 0}
         type="button"
+        use:tooltip={addable.length === 0 ? 'Tick at least one file first' : 'Copy the ticked files into your library and index them'}
       >
         {applying ? 'Adding…' : `Add ${addable.length} document${addable.length === 1 ? '' : 's'}`}
       </button>

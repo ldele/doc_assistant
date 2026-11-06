@@ -14,6 +14,7 @@
     measuredLine,
     planLines,
   } from '../../lib/settings/reindex'
+  import { tooltip } from '../../lib/shell/tooltip'
 
   let {
     folder,
@@ -81,12 +82,13 @@
   {/if}
 
   <div class="mactions">
-    <button class="btn" onclick={onClose} type="button">Cancel</button>
+    <button class="btn" onclick={onClose} type="button" use:tooltip={'Close without indexing'}>Cancel</button>
     <button
       class="btn btn-primary"
       type="button"
       disabled={!plan || confirmDisabled(plan, onlyNew)}
       onclick={() => onConfirm(onlyNew)}
+      use:tooltip={!plan ? 'Still reading the folder' : confirmDisabled(plan, onlyNew) ? 'Nothing new to index' : 'Start indexing'}
     >
       {plan ? confirmLabel(plan, onlyNew) : 'Re-index'}
     </button>

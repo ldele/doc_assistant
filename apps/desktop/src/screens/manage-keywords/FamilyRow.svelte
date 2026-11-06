@@ -93,10 +93,10 @@
           if (e.key === 'Escape') cancelRename()
         }}
       />
-      <button class="iconbtn" onclick={commitRename} aria-label="Save name" type="button">
+      <button class="iconbtn" onclick={commitRename} aria-label="Save name" type="button" use:tooltip={'Keep the new name'}>
         <Icon name="check" size={14} />
       </button>
-      <button class="iconbtn" onclick={cancelRename} aria-label="Cancel rename" type="button">
+      <button class="iconbtn" onclick={cancelRename} aria-label="Cancel rename" type="button" use:tooltip={'Keep the old name'}>
         <Icon name="x" size={14} />
       </button>
     {:else}
@@ -157,13 +157,13 @@
           {/if}
         </p>
         <div class="confirmrow">
-          <button class="btn" use:autofocus onclick={onKeep} type="button">Keep</button>
+          <button class="btn" use:autofocus onclick={onKeep} type="button" use:tooltip={'Keep it; nothing is deleted'}>Keep</button>
           {#if f.graph_include}
-            <button class="btn" onclick={onTakeOffGraphInstead} type="button">
+            <button class="btn" onclick={onTakeOffGraphInstead} type="button" use:tooltip={'Keep it and its forms, as a term off the graph'}>
               Take off the graph instead
             </button>
           {/if}
-          <button class="btn btn-primary btn-danger" onclick={onConfirmDelete} type="button">Delete</button>
+          <button class="btn btn-primary btn-danger" onclick={onConfirmDelete} type="button" use:tooltip={'Delete it and what goes with it'}>Delete</button>
         </div>
       {/if}
     </div>
@@ -250,6 +250,7 @@
       onclick={submitAdd}
       disabled={formToAdd(f, addValue) === null}
       type="button"
+      use:tooltip={formToAdd(f, addValue) === null ? 'Type or pick a keyword first' : f.graph_include ? 'Add this as a form of the concept' : 'Add this keyword to the family'}
     >
       Add
     </button>

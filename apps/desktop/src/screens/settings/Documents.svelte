@@ -15,6 +15,7 @@
   import ManageFiles from './ManageFiles.svelte'
   import SpacingIgnoreList from './SpacingIgnoreList.svelte'
   import { describeIndex, formatBytes, perDocument } from '../../lib/settings/corpus'
+  import { tooltip } from '../../lib/shell/tooltip'
 
   let {
     settings = $bindable(),
@@ -152,7 +153,7 @@
       disabled={busy}
     />
     {#if canPickFiles()}
-      <button class="btn browse" onclick={browseForFolder} disabled={busy || picking} type="button">
+      <button class="btn browse" onclick={browseForFolder} disabled={busy || picking} type="button" use:tooltip={'Pick the folder in a file dialog'}>
         <Icon name="folder" size={14} />
         {picking ? 'Choosing…' : 'Browse…'}
       </button>
@@ -166,7 +167,7 @@
     <p class="warn"><Icon name="triangle-alert" size={14} /> The saved folder doesn't exist yet: <code>{settings.source_dir}</code></p>
   {/if}
 
-  <button class="btn btn-primary below" onclick={onIndex} disabled={busy || dir.trim() === ''}>
+  <button class="btn btn-primary below" onclick={onIndex} disabled={busy || dir.trim() === ''} use:tooltip={dir.trim() === '' ? 'Choose a folder first' : settings.chunk_count > 0 ? 'Read the folder again; you see what would be indexed before it starts' : 'Read every supported file in this folder into your library'}>
     {#if busy}
       Indexing…
     {:else if settings.chunk_count > 0}
@@ -198,7 +199,7 @@
     <!-- ROADMAP 31: every file's status, Pause and Stop. Closes Settings first, so one
          overlay is open at a time and Escape closes the one in front. -->
     {#if ingestRun.status?.counts}
-      <button class="btn view-run" type="button" onclick={viewIndexing}>
+      <button class="btn view-run" type="button" onclick={viewIndexing} use:tooltip={'Open the indexing screen: every file’s status, Pause and Stop'}>
         View indexing
       </button>
     {/if}
@@ -236,7 +237,7 @@
     <dd class="index-row">
       <span class:degraded={indexInfo.degraded}>{indexInfo.label}</span>
       {#if indexInfo.rebuildable}
-        <button class="btn" onclick={rebuildIndex} disabled={reindexing || busy}>
+        <button class="btn" onclick={rebuildIndex} disabled={reindexing || busy} use:tooltip={'Build the keyword index again from the indexed text; no file is read again'}>
           {reindexing ? 'Rebuilding…' : 'Rebuild'}
         </button>
       {/if}
@@ -246,11 +247,11 @@
   </dl>
   {#if libState?.bundled}
     <div class="library-row">
-      <button class="btn" type="button" onclick={() => void onOpenAnotherLibrary()} disabled={busy}>
+      <button class="btn" type="button" onclick={() => void onOpenAnotherLibrary()} disabled={busy} use:tooltip={'Switch to a library kept in another folder'}>
         <Icon name="folder" size={14} /> Open another library…
       </button>
       {#if libState.data_home}
-        <button class="btn" type="button" onclick={onUseOwnLibrary} disabled={busy}>
+        <button class="btn" type="button" onclick={onUseOwnLibrary} disabled={busy} use:tooltip={'Switch back to the library this app keeps for itself'}>
           Use the app's own library
         </button>
       {/if}

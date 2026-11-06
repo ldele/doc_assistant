@@ -18,6 +18,7 @@
   import { blockPreview } from '../../lib/library/library'
   import { rememberChunksOpen, wereChunksOpen } from '../../lib/library/chunkmemory'
   import Icon from '../../shell/Icon.svelte'
+  import { tooltip } from '../../lib/shell/tooltip'
 
   let {
     docId,
@@ -126,6 +127,7 @@
     type="button"
     aria-expanded={chunksOpen}
     onclick={toggleChunks}
+    use:tooltip={chunksOpen ? 'Hide the chunks' : 'List the blocks and chunks this document was cut into'}
   >
     <span class="chev" class:open={chunksOpen} aria-hidden="true">›</span>
     Chunks
@@ -151,8 +153,8 @@
     <p class="quiet">No chunks stored for this document.</p>
   {:else if detail}
     <div class="listtools">
-      <button type="button" onclick={() => setAllParents(true)}>Expand all</button>
-      <button type="button" onclick={() => setAllParents(false)}>Collapse all</button>
+      <button type="button" onclick={() => setAllParents(true)} use:tooltip={'Open every block'}>Expand all</button>
+      <button type="button" onclick={() => setAllParents(false)} use:tooltip={'Close every block'}>Collapse all</button>
     </div>
     <!-- A list of blocks, each opening to its own text. Every row carries a preview
          because "Block 0 / Block 1 / Block 2" is not something a reader can scan. -->
@@ -163,6 +165,7 @@
           type="button"
           aria-expanded={!!openParents[p.parent_index]}
           onclick={() => toggleParent(p.parent_index)}
+          use:tooltip={openParents[p.parent_index] ? 'Hide this block’s text' : 'Show this block’s text and its chunks'}
         >
           <span class="chev" class:open={openParents[p.parent_index]} aria-hidden="true">›</span>
           <span class="plabel">Block {p.parent_index}</span>
@@ -173,7 +176,7 @@
           <p class="blocktext">{p.parent_text}</p>
           <!-- ROADMAP 18/19 meet here: 19 shows the passage in the extracted *text*, this
                shows the page of the original it came off. Same chunk key either way. -->
-          <button class="insource" type="button" onclick={() => showBlockInSource(p.parent_index)}>
+          <button class="insource" type="button" onclick={() => showBlockInSource(p.parent_index)} use:tooltip={'Open the original document at this block’s page'}>
             <Icon name="book-open" size={12} /> Show this page in the document
           </button>
           <details class="children">

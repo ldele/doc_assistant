@@ -273,7 +273,7 @@
       <Icon name="search" size={13} />
       <input type="text" bind:value={query} placeholder="Filter chats…" aria-label="Filter chats" />
       {#if query}
-        <button class="clear" onclick={() => (query = '')} aria-label="Clear filter" type="button">
+        <button class="clear" onclick={() => (query = '')} aria-label="Clear filter" type="button" use:tooltip={'Empty the filter and show every chat'}>
           <Icon name="x" size={13} />
         </button>
       {/if}
@@ -306,6 +306,7 @@
               aria-checked={sortKey === k}
               onclick={() => setSort(k)}
               type="button"
+              use:tooltip={'Order the chats this way; the choice is remembered'}
             >
               <span class="tick">{#if sortKey === k}<Icon name="check" size={14} />{/if}</span>
               {SORT_LABELS[k]}
@@ -333,6 +334,7 @@
         onmousedown={noTextSelect}
         onclick={(e) => pickRow(c.session_id, e.shiftKey)}
         type="button"
+        use:tooltip={selected.includes(c.session_id) ? 'Take this chat out of the selection (Shift-click selects a range)' : 'Add this chat to the selection (Shift-click selects a range)'}
       >
         <span class="tickbox" aria-hidden="true">
           {#if selected.includes(c.session_id)}<Icon name="check" size={12} />{/if}
@@ -363,6 +365,7 @@
         onclick={(e) =>
           isSelectClick(e) ? startSelectFrom(c.session_id, e.shiftKey) : onSelect(c.session_id)}
         type="button"
+        use:tooltip={isActive(c.session_id) ? 'The chat you are in' : 'Open this chat (Ctrl-click or Shift-click starts selecting)'}
       >
         <span class="title">{c.title}</span>
         <span class="rowmeta">
@@ -403,9 +406,9 @@
         class="btn btn-quiet"
         disabled={visibleIds.length === 0}
         onclick={() => (selected = selectAllOrNone(visibleIds, selected))}
-        type="button">{selectAllLabel(selected)}</button
+        type="button" use:tooltip={selected.length > 0 ? 'Empty the selection' : 'Select every chat in the list'}>{selectAllLabel(selected)}</button
       >
-      <button class="btn btn-primary seldone" onclick={exitSelect} type="button">Done</button>
+      <button class="btn btn-primary seldone" onclick={exitSelect} type="button" use:tooltip={'Leave select mode'}>Done</button>
     </div>
     <div class="selline">
       <span class="selcount">{selected.length} selected</span>
@@ -413,13 +416,13 @@
         class="btn"
         disabled={selected.length === 0}
         onclick={archiveSelected}
-        type="button">{selectedAllArchived ? 'Unarchive' : 'Archive'}</button
+        type="button" use:tooltip={selected.length === 0 ? 'Select chats first' : selectedAllArchived ? `Bring the ${selected.length} selected back from the archive` : `Move the ${selected.length} selected to the archive; Show archived lists them`}>{selectedAllArchived ? 'Unarchive' : 'Archive'}</button
       >
       <button
         class="btn btn-danger"
         disabled={selected.length === 0}
         onclick={deleteSelected}
-        type="button">Delete…</button
+        type="button" use:tooltip={selected.length === 0 ? 'Select chats first' : `Delete the ${selected.length} selected conversation${selected.length === 1 ? '' : 's'}, after you confirm`}>Delete…</button
       >
     </div>
   </div>
@@ -428,7 +431,7 @@
   <!-- New chat as a tree-style row (like Library's "All documents" and Graph's "Taxonomy") —
        each rail opens with the same slim row idiom instead of a chunky filled button. -->
   {#if !selectMode}
-    <button class="treerow" onclick={onNew} type="button">
+    <button class="treerow" onclick={onNew} type="button" use:tooltip={'Start an empty conversation'}>
       <span class="treeicon"><Icon name="plus" size={14} /></span>
       <span class="treelabel">New chat</span>
     </button>
@@ -450,7 +453,7 @@
       <p class="empty">No chats match “{query.trim()}”.</p>
     {/if}
     {#if archivedCount > 0}
-      <button class="archived-toggle" onclick={() => (showArchived = !showArchived)} type="button">
+      <button class="archived-toggle" onclick={() => (showArchived = !showArchived)} type="button" use:tooltip={showArchived ? 'Take the archived chats out of the list' : 'List the chats you archived'}>
         {showArchived ? 'Hide' : 'Show'} archived ({archivedCount})
       </button>
     {/if}
@@ -460,17 +463,17 @@
 {#if openMenuFor && menuConvo}
   <div class="menu-backdrop" onclick={closeMenu} role="presentation"></div>
   <div class="menu" style="left: {menuPos.x}px; top: {menuPos.y}px" role="menu">
-    <button class="menuitem" role="menuitem" onclick={menuPin} type="button">
+    <button class="menuitem" role="menuitem" onclick={menuPin} type="button" use:tooltip={menuConvo.pinned ? 'Move this chat back among the others' : 'Keep this chat in the pinned section at the top'}>
       <Icon name="pin" size={14} /> {menuConvo.pinned ? 'Unpin' : 'Pin'}
     </button>
-    <button class="menuitem" role="menuitem" onclick={menuRename} type="button">
+    <button class="menuitem" role="menuitem" onclick={menuRename} type="button" use:tooltip={'Give this chat a new title'}>
       <Icon name="pencil" size={14} /> Rename
     </button>
-    <button class="menuitem muted" role="menuitem" onclick={menuArchive} type="button">
+    <button class="menuitem muted" role="menuitem" onclick={menuArchive} type="button" use:tooltip={menuConvo.archived ? 'Bring this chat back into the list' : 'Move this chat out of the list; Show archived finds it'}>
       <Icon name="archive" size={14} /> {menuConvo.archived ? 'Unarchive' : 'Archive'}
     </button>
     <div class="menusep"></div>
-    <button class="menuitem danger" role="menuitem" onclick={menuDelete} type="button">
+    <button class="menuitem danger" role="menuitem" onclick={menuDelete} type="button" use:tooltip={'Delete this chat for good, after you confirm'}>
       <Icon name="trash-2" size={14} /> Delete…
     </button>
   </div>

@@ -4,6 +4,7 @@
   // (in both / only-A / only-B, + rank delta) and the honest note. Retrieval-only, $0. Read-only.
   import type { CompareResult, CompareRow, CompareSource } from '../../lib/core/types'
   import Icon from '../../shell/Icon.svelte'
+  import { tooltip } from '../../lib/shell/tooltip'
 
   let { result, onClose }: { result: CompareResult; onClose: () => void } = $props()
 
@@ -32,7 +33,7 @@
       <strong>Retrieval comparison: defaults vs your override</strong>
       <span class="q">“{result.query}”</span>
     </div>
-    <button class="x" onclick={onClose} aria-label="Close comparison" type="button">
+    <button class="x" onclick={onClose} aria-label="Close comparison" type="button" use:tooltip={'Close the comparison'}>
       <Icon name="x" size={15} />
     </button>
   </div>

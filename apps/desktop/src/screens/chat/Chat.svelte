@@ -53,9 +53,9 @@
   {#if viewing && viewedConvo}
     <p class="readonly-note">
       Viewing a past conversation (read-only).
-      <button class="linkish" onclick={onResume}>Continue this chat</button>
+      <button class="linkish" onclick={onResume} use:tooltip={'Carry on this conversation from where it ended'}>Continue this chat</button>
       ·
-      <button class="linkish" onclick={onBackToCurrent}>Back to current chat</button>
+      <button class="linkish" onclick={onBackToCurrent} use:tooltip={'Leave this past conversation and return to the one you were in'}>Back to current chat</button>
     </p>
     {#each viewedConvo.turns as t (t.record_id)}
       <ReadonlyTurn
@@ -95,7 +95,7 @@
             <li><strong>{step.title}</strong> — {step.detail}</li>
           {/each}
         </ul>
-        <button class="btn btn-primary" onclick={() => (shell.showSettings = true)}>Finish setup…</button>
+        <button class="btn btn-primary" onclick={() => (shell.showSettings = true)} use:tooltip={'Open Settings at the steps that are left'}>Finish setup…</button>
       </div>
     {:else if chat.turns.length === 0 && !resumedHistory}
       <div class="empty">
@@ -107,7 +107,7 @@
         </p>
         <div class="chips">
           {#each sampleQuestions as q}
-            <button class="chip" onclick={() => onUseSample(q)}>{q}</button>
+            <button class="chip" onclick={() => onUseSample(q)} use:tooltip={'Put this question in the box, ready to edit or send'}>{q}</button>
           {/each}
         </div>
       </div>
@@ -133,9 +133,11 @@
   {#if viewing}
     <div class="viewing-bar">
       <button class="btn grow" onclick={onBackToCurrent}
+        use:tooltip={'Leave this past conversation and return to the one you were in'}
         ><Icon name="arrow-left" size={15} /> Back to current chat</button
       >
       <button class="btn btn-primary grow" onclick={onResume}
+        use:tooltip={'Carry on this conversation from where it ended'}
         ><Icon name="rotate-ccw" size={15} /> Continue this chat</button
       >
     </div>
@@ -170,7 +172,7 @@
           bind:value={chatScopeFolderId}
           disabled={chat.sending}
           aria-label="Search scope"
-          title="Which documents this question searches"
+          use:tooltip={'Choose which documents this question searches'}
         >
           <option value={null}>All documents</option>
           {#each folders as f (f.id)}
@@ -179,7 +181,7 @@
         </select>
       </label>
     {/if}
-    <button class="btn btn-primary send" onclick={onSend} disabled={chat.sending || chat.input.trim() === ''} aria-busy={chat.sending}>
+    <button class="btn btn-primary send" onclick={onSend} disabled={chat.sending || chat.input.trim() === ''} aria-busy={chat.sending} use:tooltip={chat.sending ? 'Waiting for the answer' : chat.input.trim() === '' ? 'Type a question first' : 'Ask your documents this question (Enter)'}>
       {#if chat.sending}<span class="spinner" aria-hidden="true"></span>{:else}Send{/if}
     </button>
   {/if}

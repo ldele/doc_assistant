@@ -4,6 +4,7 @@
   // read-only: the locked defaults the sandbox starts from. The overrides are App's (ADR-010: in
   // memory only, cleared on restart); this section writes them through `bind:overrides`.
   import type { RagOverrides, Settings } from '../../lib/core/types'
+  import { tooltip } from '../../lib/shell/tooltip'
 
   let {
     settings,
@@ -53,6 +54,7 @@
       aria-checked={effSynthesisMode === 'ai'}
       class:active={effSynthesisMode === 'ai'}
       onclick={() => (overrides.synthesis_mode = 'ai')}
+      use:tooltip={'Write an answer from the passages found, with citations'}
     >
       AI
     </button>
@@ -62,6 +64,7 @@
       aria-checked={effSynthesisMode === 'human'}
       class:active={effSynthesisMode === 'human'}
       onclick={() => (overrides.synthesis_mode = 'human')}
+      use:tooltip={'Show the passages found, with no written answer'}
     >
       Human
     </button>
@@ -118,7 +121,7 @@
     }}
   />
 
-  <button class="btn below" onclick={resetSandbox}>Reset to locked defaults</button>
+  <button class="btn below" onclick={resetSandbox} use:tooltip={'Drop your sandbox changes and use the locked settings again'}>Reset to locked defaults</button>
 </section>
 
 <section>

@@ -2,6 +2,7 @@
   // Keyboard-shortcuts help, opened from the toolbar app menu (☰). Read-only reference; the scrim +
   // centered card + Esc-to-close shell matches ConfirmDialog / the other hand-rolled modals.
   import Icon from './Icon.svelte'
+  import { tooltip } from '../lib/shell/tooltip'
 
   let { onClose }: { onClose: () => void } = $props()
 
@@ -26,7 +27,7 @@
 <div class="modal" role="dialog" aria-modal="true" aria-label="Keyboard shortcuts">
   <div class="mhead">
     <h2><Icon name="keyboard" size={18} /> Keyboard shortcuts</h2>
-    <button class="iconbtn" onclick={onClose} aria-label="Close" type="button">
+    <button class="iconbtn" onclick={onClose} aria-label="Close" type="button" use:tooltip={'Close the shortcuts list'}>
       <Icon name="x" size={16} />
     </button>
   </div>

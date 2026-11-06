@@ -101,7 +101,7 @@
         aria-label="Filter gaps by concept or kind"
       />
       {#if query}
-        <button class="clearq" onclick={() => (query = '')} aria-label="Clear filter" type="button">
+        <button class="clearq" onclick={() => (query = '')} aria-label="Clear filter" type="button" use:tooltip={'Empty the filter and show every gap'}>
           <Icon name="x" size={13} />
         </button>
       {/if}
@@ -167,17 +167,17 @@
             <!-- Triage writes a status the list keeps (and Show dismissed brings back), so all
                  three are ordinary actions (ADR-063). -->
             {#if it.status !== 'promoted'}
-              <button type="button" class="btn" onclick={() => setStatus(it, 'promoted')} disabled={busy.has(key(it))}>
+              <button type="button" class="btn" onclick={() => setStatus(it, 'promoted')} disabled={busy.has(key(it))} use:tooltip={'Mark this gap as one you are working on; it stays listed'}>
                 Promote
               </button>
             {/if}
             {#if it.status !== 'dismissed'}
-              <button type="button" class="btn" onclick={() => setStatus(it, 'dismissed')} disabled={busy.has(key(it))}>
+              <button type="button" class="btn" onclick={() => setStatus(it, 'dismissed')} disabled={busy.has(key(it))} use:tooltip={'Take this gap off the worklist; Show dismissed lists it again'}>
                 Dismiss
               </button>
             {/if}
             {#if it.status !== 'surfaced'}
-              <button type="button" class="btn" onclick={() => setStatus(it, 'surfaced')} disabled={busy.has(key(it))}>
+              <button type="button" class="btn" onclick={() => setStatus(it, 'surfaced')} disabled={busy.has(key(it))} use:tooltip={'Put this gap back as newly found'}>
                 Reset
               </button>
             {/if}

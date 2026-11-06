@@ -137,7 +137,7 @@
       <span class="state-mark err"><Icon name="triangle-alert" size={26} /></span>
       <strong>Couldn’t load the concept graph</strong>
       <p class="muted">{error}</p>
-      <button class="btn btn-primary" onclick={onRebuild} disabled={rebuilding} type="button">
+      <button class="btn btn-primary" onclick={onRebuild} disabled={rebuilding} type="button" use:tooltip={'Build the graph again from your library and your keywords. A few seconds, no model.'}>
         {rebuilding ? 'Rebuilding…' : 'Rebuild'}
       </button>
     </div>
@@ -150,7 +150,7 @@
         The graph maps how the concepts in your library connect, and surfaces which are backed by
         only one source. Building it is a local, offline pass (~7&nbsp;seconds).
       </p>
-      <button class="btn btn-primary" onclick={onRebuild} disabled={rebuilding} type="button">
+      <button class="btn btn-primary" onclick={onRebuild} disabled={rebuilding} type="button" use:tooltip={'Build the graph from your library and your keywords. A few seconds, no model.'}>
         {rebuilding ? 'Building…' : 'Build the graph'}
       </button>
     </div>
@@ -172,8 +172,8 @@
         Choose which concepts belong on it in <strong>Manage keywords</strong>, then rebuild.
       </p>
       <!-- The view has one name on every door that opens it (GLOSSARY U-001). -->
-      <button class="btn btn-primary" onclick={onCurateVocabulary} type="button">Manage keywords</button>
-      <button class="btn" onclick={onRebuild} disabled={rebuilding} type="button">
+      <button class="btn btn-primary" onclick={onCurateVocabulary} type="button" use:tooltip={'Choose which concepts go on the graph'}>Manage keywords</button>
+      <button class="btn" onclick={onRebuild} disabled={rebuilding} type="button" use:tooltip={'Build the graph again from your keywords as they are now'}>
         {rebuilding ? 'Rebuilding…' : 'Rebuild'}
       </button>
     </div>
@@ -186,7 +186,7 @@
             your vocabulary.{/if}
           {formsChanged}
         </span>
-        <button class="linkish" onclick={onRebuild} disabled={rebuilding} type="button">
+        <button class="linkish" onclick={onRebuild} disabled={rebuilding} type="button" use:tooltip={'Build the graph again so it matches your vocabulary'}>
           {rebuilding ? 'Rebuilding…' : 'Rebuild'}
         </button>
       </div>

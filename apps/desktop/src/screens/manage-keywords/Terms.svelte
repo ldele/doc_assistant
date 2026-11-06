@@ -7,6 +7,7 @@
   import type { Snippet } from 'svelte'
   import type { KeywordFamily } from '../../lib/core/types'
   import Icon from '../../shell/Icon.svelte'
+  import { tooltip } from '../../lib/shell/tooltip'
 
   let {
     terms,
@@ -45,7 +46,7 @@
           members, no documents){/if}
       </p>
       {#if famSplit.inherited.length > 0}
-        <button class="linkbtn" onclick={() => (showInherited = !showInherited)} type="button">
+        <button class="linkbtn" onclick={() => (showInherited = !showInherited)} type="button" use:tooltip={showInherited ? 'Hide the families with no members and no documents' : 'List the families with no members and no documents'}>
           {showInherited ? 'Hide' : 'Show'} unused ({famSplit.inherited.length})
         </button>
       {/if}

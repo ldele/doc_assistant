@@ -5,6 +5,7 @@
   // that failed is changed. *Keep waiting* hides this; the gate goes on polling either way.
   import { libraryState, markLibrarySwitch, openLibrary } from '../lib/core/tauri'
   import { goBackLabel, libraryName } from '../lib/settings/library'
+  import { tooltip } from '../lib/shell/tooltip'
 
   let { asked, onDismiss }: { asked: string; onDismiss: () => void } = $props()
 
@@ -43,9 +44,9 @@
     <p class="err">{error}</p>
   {/if}
   <div class="actions">
-    <button class="btn" type="button" onclick={onDismiss} disabled={going}>Keep waiting</button>
+    <button class="btn" type="button" onclick={onDismiss} disabled={going} use:tooltip={'Hide this note and give the library more time'}>Keep waiting</button>
     {#if known}
-      <button class="btn btn-primary" type="button" onclick={() => void goBack()} disabled={going}>
+      <button class="btn btn-primary" type="button" onclick={() => void goBack()} disabled={going} use:tooltip={'Open the library you had before; the app reloads'}>
         {going ? 'Going back…' : goBackLabel(previous)}
       </button>
     {/if}

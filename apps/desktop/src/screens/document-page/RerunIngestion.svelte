@@ -20,6 +20,7 @@
   import { getReingestOptions, getReingestStatus, startReingest } from '../../lib/core/api'
   import Icon from '../../shell/Icon.svelte'
   import { costSummary, fraction, needsConfirmation, orderedParts, outcomesByDocument } from '../../lib/library/reingest'
+  import { tooltip } from '../../lib/shell/tooltip'
 
   let {
     documentIds,
@@ -143,7 +144,7 @@
       {/each}
     </div>
     <div class="actions">
-      <button class="btn btn-primary" onclick={onClose} type="button">Close</button>
+      <button class="btn btn-primary" onclick={onClose} type="button" use:tooltip={'Close this report'}>Close</button>
     </div>
   {:else if running}
     <p class="summary" role="status">
@@ -201,12 +202,13 @@
     {#if startError}<p class="err" role="alert">{startError}</p>{/if}
 
     <div class="actions">
-      <button class="btn" onclick={onClose} type="button">Cancel</button>
+      <button class="btn" onclick={onClose} type="button" use:tooltip={'Close without re-running anything'}>Cancel</button>
       <button
         class="btn btn-primary"
         disabled={chosen.length === 0 || (needsConfirm && !confirmed)}
         onclick={start}
         type="button"
+        use:tooltip={chosen.length === 0 ? 'Choose at least one part first' : needsConfirm && !confirmed ? 'Tick the box above first: re-extracting replaces the indexed text' : 'Start re-running the chosen parts'}
       >
         <Icon name="rotate-ccw" size={14} /> Re-run
       </button>

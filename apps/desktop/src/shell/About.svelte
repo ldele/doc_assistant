@@ -4,6 +4,7 @@
   // scrim + centered card + Esc-to-close, matching the other hand-rolled modals.
   import appMark from '../assets/brand/app-mark.png'
   import Icon from './Icon.svelte'
+  import { tooltip } from '../lib/shell/tooltip'
 
   let {
     chunks = null,
@@ -32,7 +33,7 @@
       <span class="mark"><img src={appMark} alt="" width="34" height="34" /></span>
       <span class="wordmark">proven<span class="wm-accent">ote</span></span>
     </div>
-    <button class="iconbtn" onclick={onClose} aria-label="Close" type="button">
+    <button class="iconbtn" onclick={onClose} aria-label="Close" type="button" use:tooltip={'Close About'}>
       <Icon name="x" size={16} />
     </button>
   </div>

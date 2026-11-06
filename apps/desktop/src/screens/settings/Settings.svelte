@@ -34,6 +34,7 @@
   import { SETTINGS_SECTIONS, initialSection, sectionBadge, type SettingsSectionId } from '../../lib/settings/sections'
   import { outstandingSteps } from '../../lib/settings/setup'
   import { shell } from '../../lib/shell/shell.svelte'
+  import { tooltip } from '../../lib/shell/tooltip'
 
   // Slide the drawer in/out — but collapse to an instant swap when the OS asks for reduced motion.
   const animate =
@@ -317,7 +318,7 @@
 >
   <header>
     <strong>Settings</strong>
-    <button class="x" onclick={onClose} aria-label="Close">
+    <button class="x" onclick={onClose} aria-label="Close" use:tooltip={'Close Settings'}>
       <Icon name="x" />
     </button>
   </header>
@@ -342,6 +343,7 @@
             aria-current={activeSection === s.id ? 'page' : undefined}
             class:active={activeSection === s.id}
             onclick={() => (activeSection = s.id)}
+            use:tooltip={s.blurb}
           >
             <Icon name={s.icon} size={15} />
             <span class="rl">{s.label}</span>

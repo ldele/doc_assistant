@@ -245,17 +245,17 @@
 {#if openMenuFor && menuDoc}
   <div class="menu-backdrop" onclick={closeMenu} role="presentation"></div>
   <div class="menu" style="left: {menuPos.x}px; top: {menuPos.y}px" role="menu">
-    <button class="menuitem" role="menuitem" onclick={menuEdit} type="button">
+    <button class="menuitem" role="menuitem" onclick={menuEdit} type="button" use:tooltip={'Change the title, authors or year shown for this document'}>
       <Icon name="pencil" size={14} /> Edit metadata
     </button>
-    <button class="menuitem" role="menuitem" onclick={menuReveal} type="button">
+    <button class="menuitem" role="menuitem" onclick={menuReveal} type="button" use:tooltip={'Show the file in its folder on this computer'}>
       <Icon name="folder" size={14} /> Reveal in file explorer
     </button>
-    <button class="menuitem" role="menuitem" onclick={menuAddToFolder} type="button">
+    <button class="menuitem" role="menuitem" onclick={menuAddToFolder} type="button" use:tooltip={'Put this document in one of your folders'}>
       <Icon name="library" size={14} /> Add to folder…
     </button>
     <div class="menusep"></div>
-    <button class="menuitem danger" role="menuitem" onclick={menuDelete} type="button">
+    <button class="menuitem danger" role="menuitem" onclick={menuDelete} type="button" use:tooltip={'Take this document out of the library, after you confirm'}>
       <Icon name="trash-2" size={14} /> Delete…
     </button>
   </div>

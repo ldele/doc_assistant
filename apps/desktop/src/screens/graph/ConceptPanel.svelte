@@ -401,6 +401,7 @@
               onclick={() => (expandedDocId = expandedDocId === docId ? null : docId)}
               aria-expanded={expandedDocId === docId}
               type="button"
+              use:tooltip={expandedDocId === docId ? 'Hide where this document mentions the concept' : 'Show where this document mentions the concept'}
             >
               <Icon name="file-text" size={14} />
               <span class="dtitle">{docTitle(docId)}</span>
@@ -415,7 +416,7 @@
                 {:else if !presenceLoading}
                   <p class="muted">No chunk-level record for this concept in this document.</p>
                 {/if}
-                <button class="linkish" onclick={() => onOpenDocument(docId)} type="button">
+                <button class="linkish" onclick={() => onOpenDocument(docId)} type="button" use:tooltip={'Open this document in the Library'}>
                   Open in Library →
                 </button>
               </div>
@@ -434,7 +435,7 @@
           <ul class="doclist">
             {#each broadDocIds(selectedNode) as docId (docId)}
               <li class="docitem">
-                <button class="docrow" onclick={() => onOpenDocument(docId)} type="button">
+                <button class="docrow" onclick={() => onOpenDocument(docId)} type="button" use:tooltip={'Open this document in the Library'}>
                   <Icon name="file-text" size={14} />
                   <span class="dtitle">{docTitle(docId)}</span>
                   {#if docByline(docId)}<span class="dby muted">{docByline(docId)}</span>{/if}

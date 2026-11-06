@@ -6,6 +6,7 @@
   import type { LibraryDocument } from '../../lib/core/types'
   import ConfirmDialog from '../../shell/ConfirmDialog.svelte'
   import Icon from '../../shell/Icon.svelte'
+  import { tooltip } from '../../lib/shell/tooltip'
 
   let {
     doc,
@@ -51,7 +52,7 @@
 <div class="modal" role="dialog" aria-modal="true" aria-label="Edit document metadata">
   <div class="mhead">
     <h2>Edit metadata</h2>
-    <button class="iconbtn" onclick={onClose} aria-label="Close" type="button">
+    <button class="iconbtn" onclick={onClose} aria-label="Close" type="button" use:tooltip={'Close without saving'}>
       <Icon name="x" size={16} />
     </button>
   </div>
@@ -75,12 +76,12 @@
   </p>
 
   <div class="mactions">
-    <button class="btn btn-danger" onclick={() => (confirmingReset = true)} type="button">
+    <button class="btn btn-danger" onclick={() => (confirmingReset = true)} type="button" use:tooltip={'Drop your title, authors and year and go back to what was read from the file, after you confirm'}>
       <Icon name="rotate-ccw" size={14} /> Reset to default…
     </button>
     <span class="spacer"></span>
-    <button class="btn" onclick={onClose} type="button">Cancel</button>
-    <button class="btn btn-primary" onclick={save} type="button">Save</button>
+    <button class="btn" onclick={onClose} type="button" use:tooltip={'Close without saving'}>Cancel</button>
+    <button class="btn btn-primary" onclick={save} type="button" use:tooltip={'Keep these values for this document'}>Save</button>
   </div>
 </div>
 

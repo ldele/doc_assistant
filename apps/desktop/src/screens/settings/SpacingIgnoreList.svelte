@@ -9,6 +9,7 @@
   import { openRerun } from '../../lib/library/reingest.svelte'
   import { shell } from '../../lib/shell/shell.svelte'
   import ConfirmDialog from '../../shell/ConfirmDialog.svelte'
+  import { tooltip } from '../../lib/shell/tooltip'
 
   let {
     focus = false,
@@ -148,11 +149,11 @@
             <span class="what">{summary(e)}{#if e.document_id === null}{' · not in this library'}{/if}</span>
             <span class="spacer"></span>
             {#if !e.keep_all}
-              <button class="btn btn-quiet" type="button" aria-expanded={open.has(e.sha256)} onclick={() => toggle(e.sha256)}>
+              <button class="btn btn-quiet" type="button" aria-expanded={open.has(e.sha256)} onclick={() => toggle(e.sha256)} use:tooltip={open.has(e.sha256) ? 'Hide this document’s runs' : 'List the runs this document keeps spaced'}>
                 {open.has(e.sha256) ? 'Hide runs' : 'Show runs'}
               </button>
             {/if}
-            <button class="btn btn-danger" type="button" disabled={busy} onclick={() => (confirmRemove = { sha256: e.sha256 })}>Remove…</button>
+            <button class="btn btn-danger" type="button" disabled={busy} onclick={() => (confirmRemove = { sha256: e.sha256 })} use:tooltip={'Take this document off the list, after you confirm; its runs go back to the rule'}>Remove…</button>
           </div>
           {#if open.has(e.sha256)}
             <ul class="runs">
@@ -166,7 +167,7 @@
       {/each}
     </ul>
     {#if entries.length > 0}
-      <button class="btn btn-danger" type="button" disabled={busy} onclick={() => (confirmRemove = { sha256: null })}>Remove all…</button>
+      <button class="btn btn-danger" type="button" disabled={busy} onclick={() => (confirmRemove = { sha256: null })} use:tooltip={'Empty the list, after you confirm; every run goes back to the rule'}>Remove all…</button>
     {/if}
   {/if}
 
@@ -174,7 +175,7 @@
     <div class="undo" role="status">
       <p>{removedNote(removed.result.removed, removed.ids.length)}</p>
       <div class="acts">
-        <button class="btn btn-primary" type="button" disabled={busy} onclick={undo}>Undo</button>
+        <button class="btn btn-primary" type="button" disabled={busy} onclick={undo} use:tooltip={'Put back what was just removed'}>Undo</button>
         {#if removed.ids.length > 0}
           <button
             class="btn"
@@ -184,6 +185,7 @@
                 removed?.ids ?? [],
                 removed && removed.ids.length === 1 ? (removed.result.documents[0] ?? '1 document') : `${removed?.ids.length ?? 0} documents`,
               )}
+            use:tooltip={'Re-run the text of the documents just changed, so the change applies'}
           >
             Re-run text now…
           </button>

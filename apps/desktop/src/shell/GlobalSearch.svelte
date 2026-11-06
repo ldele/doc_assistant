@@ -9,6 +9,7 @@
   import type { SearchResults } from '../lib/shell/search'
   import { authorLabel } from '../lib/library/library'
   import Icon from './Icon.svelte'
+  import { tooltip } from '../lib/shell/tooltip'
 
   let {
     query = $bindable(''),
@@ -114,11 +115,11 @@
       aria-label="Search chats and documents"
     />
     {#if query}
-      <button class="clearq" onclick={() => (query = '')} aria-label="Clear search" type="button">
+      <button class="clearq" onclick={() => (query = '')} aria-label="Clear search" type="button" use:tooltip={'Empty the search'}>
         <Icon name="x" size={14} />
       </button>
     {/if}
-    <button class="closebtn" onclick={onClose} aria-label="Close search" type="button">Esc</button>
+    <button class="closebtn" onclick={onClose} aria-label="Close search" type="button" use:tooltip={'Close the search (Esc)'}>Esc</button>
   </div>
 
   <div class="results" role="listbox" aria-label="Search results">
@@ -143,6 +144,7 @@
             onmouseenter={() => (active = chatBase + i)}
             onclick={() => onSelectChat(c.session_id)}
             type="button"
+            use:tooltip={'Open this chat'}
           >
             <span class="rowicon"><Icon name="message-square" size={15} /></span>
             <span class="rowtext">
@@ -170,6 +172,7 @@
             onmouseenter={() => (active = docBase + i)}
             onclick={() => onSelectDoc(d.id)}
             type="button"
+            use:tooltip={'Open this document in the Library'}
           >
             <span class="rowicon"><Icon name="file-text" size={15} /></span>
             <span class="rowtext">

@@ -25,7 +25,7 @@
 
 {#if hasKeywords}
   <div class="strip">
-    <button class="trigger" class:on={selected.length > 0} onclick={onOpen} type="button">
+    <button class="trigger" class:on={selected.length > 0} onclick={onOpen} type="button" use:tooltip={selected.length === 0 ? 'Show only the documents with keywords you pick' : 'Change which keywords filter the documents'}>
       <Icon name="tag" size={13} />
       {selected.length === 0 ? 'Filter by keyword' : `Keywords · ${selected.length}`}
     </button>
@@ -45,7 +45,7 @@
         {/each}
       </div>
       <span class="count">{resultCount.toLocaleString()} doc{resultCount === 1 ? '' : 's'}</span>
-      <button class="clear" onclick={onClear} type="button">Clear</button>
+      <button class="clear" onclick={onClear} type="button" use:tooltip={'Stop filtering by keyword and show every document'}>Clear</button>
     {/if}
   </div>
 {/if}

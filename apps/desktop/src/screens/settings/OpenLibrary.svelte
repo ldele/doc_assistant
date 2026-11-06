@@ -7,6 +7,7 @@
   import { markLibrarySwitch, openLibrary } from '../../lib/core/tauri'
   import type { LibraryInspection } from '../../lib/core/types'
   import { inspectionSummary, sourcesLine } from '../../lib/settings/library'
+  import { tooltip } from '../../lib/shell/tooltip'
 
   let { folder, onClose }: { folder: string; onClose: () => void } = $props()
 
@@ -88,12 +89,13 @@
   {/if}
 
   <div class="mactions">
-    <button class="btn" onclick={onClose} type="button" disabled={opening}>Cancel</button>
+    <button class="btn" onclick={onClose} type="button" disabled={opening} use:tooltip={'Stay in this library'}>Cancel</button>
     <button
       class="btn btn-primary"
       type="button"
       disabled={!found?.can_open || opening}
       onclick={() => void open()}
+      use:tooltip={!found?.can_open ? 'Choose a folder that holds a library first' : 'Switch to this library; the app reloads'}
     >
       {opening ? 'Opening…' : 'Open this library'}
     </button>

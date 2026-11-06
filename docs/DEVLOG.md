@@ -42,6 +42,34 @@ Format: What changed | Why | Rejected alternatives | What it opens
 
 ---
 
+## 2026-11-06 (6) — ROADMAP 110 (c): every button says what it does
+
+**What changed.** The 236 buttons in 59 files that had no hover text have it, on the shared
+tooltip, so check 2's allow-list is empty. Each text finishes "this will …" without repeating
+the label, says what a quiet act leaves alone and what comes back, and follows the state: a
+disabled button says why (*Send* "Type a question first"). The top bar's *Chat*, *Library* and
+*Graph* tabs carry an `aria-label`, since under 780px their labels are hidden and they had no
+name. `ui-rules.test.ts` gains a fifth check: an icon-only `<button>` needs `aria-label` or
+`aria-labelledby`. Of the 50 `title`s on other elements, the Chat tab's scope `<select>` (the one
+that takes focus) moved onto the tooltip; the rest are sorted in ADR-063's *As built (c)*.
+
+**Why.** ADR-063 choice 6, and the user's go-ahead for piece (c) on 2026-11-06. The texts were
+written from each button's handler, not from its label, after reading what it does: the
+"Promote" on a gap marks it as being acted on, a sample question fills the box and does not send.
+Seen in the running app over an invented library, dark, light and 375 px: hover, Tab focus with
+`aria-describedby`, a disabled reason, a text changing with the selection. `npm test` 402/402,
+`svelte-check` 0.
+
+**Rejected.** Moving all 49 other `title`s onto the tooltip: on an element that cannot take focus
+the tooltip never shows to a keyboard or a screen reader, and it removes the `title`, which a
+screen reader can read today, so 20 marker meanings would get worse, not better. Generic texts
+("Click to open"): they say nothing the label does not. An allow-list entry for the list rows:
+every one had something to say.
+
+**What it opens.** Piece (d): the dialog frame, the shared stylesheet, 36 colours; and, with the
+user, the 20 markers whose meaning lives only in a `title`, three button looks check 1 cannot see
+(the staged-files bar, the claim review, *Detect* in Manage keywords) and the staged bar's *Clear*.
+
 ## 2026-11-06 (5) — ROADMAP 110 (b): every button on a role, and a delete always asks
 
 **What changed.** The 28 components that styled their own `.primary` / `.ghost` / `.danger`, and

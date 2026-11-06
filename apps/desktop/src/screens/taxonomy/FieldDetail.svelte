@@ -171,6 +171,7 @@
                 onclick={() => acceptConcept(c.id)}
                 type="button"
                 aria-label="Accept “{shownLabel(c)}” on this field"
+                use:tooltip={'Keep this as your own placement'}
               >
                 <Icon name="check" size={11} />
               </button>
@@ -179,6 +180,7 @@
                 onclick={() => removeConcept(c.id)}
                 type="button"
                 aria-label="Reject “{shownLabel(c)}” on this field"
+                use:tooltip={'Remove this proposal'}
               >
                 <Icon name="x" size={11} />
               </button>
@@ -209,7 +211,7 @@
           class="addbtn"
           onclick={submitAddConcept}
           disabled={!conceptToAdd}
-          type="button">Attach</button
+          type="button" use:tooltip={!conceptToAdd ? 'Choose a concept first' : 'Place this concept in this field'}>Attach</button
         >
       </div>
     </div>
@@ -226,6 +228,7 @@
                 onclick={() => onAttachDocument(d.id, detail.id)}
                 type="button"
                 aria-label="Accept “{d.label}” on this field"
+                use:tooltip={'Keep this as your own placement'}
               >
                 <Icon name="check" size={11} />
               </button>
@@ -234,6 +237,7 @@
                 onclick={() => onDetachDocument(d.id, detail.id)}
                 type="button"
                 aria-label="Reject “{d.label}” on this field"
+                use:tooltip={'Remove this proposal'}
               >
                 <Icon name="x" size={11} />
               </button>
@@ -256,7 +260,7 @@
           class="addbtn"
           onclick={submitAttachDocument}
           disabled={!docToAdd}
-          type="button">Attach</button
+          type="button" use:tooltip={!docToAdd ? 'Choose a document first' : 'Place this document in this field'}>Attach</button
         >
       </div>
     </div>

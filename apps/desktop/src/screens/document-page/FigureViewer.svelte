@@ -13,6 +13,7 @@
   import type { LibraryFigure } from '../../lib/core/types'
   import { API_BASE } from '../../lib/core/api/_base'
   import Icon from '../../shell/Icon.svelte'
+  import { tooltip } from '../../lib/shell/tooltip'
 
   let {
     figures,
@@ -67,10 +68,11 @@
         type="button"
         onclick={() => (actualSize = !actualSize)}
         aria-pressed={actualSize}
+        use:tooltip={actualSize ? 'Shrink the figure to fit the window' : 'Show the figure at its own pixel size'}
       >
         {actualSize ? 'Fit to window' : 'Actual size'}
       </button>
-      <button class="iconbtn" onclick={onClose} aria-label="Close" type="button">
+      <button class="iconbtn" onclick={onClose} aria-label="Close" type="button" use:tooltip={'Close the figure'}>
         <Icon name="x" size={16} />
       </button>
     </div>
@@ -84,6 +86,7 @@
         aria-label={actualSize ? 'Fit the figure to the window' : 'Zoom the figure to actual size'}
         aria-pressed={actualSize}
         onclick={() => (actualSize = !actualSize)}
+        use:tooltip={actualSize ? 'Click the figure to fit it back in the window' : 'Click the figure to see it at actual size'}
       >
         <img
           src={`${API_BASE}/api/figures/${encodeURIComponent(fig.id)}`}
@@ -97,8 +100,8 @@
 
     {#if figures.length > 1}
       <div class="nav">
-        <button type="button" onclick={() => step(-1)} disabled={index === 0}>‹ Previous</button>
-        <button type="button" onclick={() => step(1)} disabled={index === figures.length - 1}>
+        <button type="button" onclick={() => step(-1)} disabled={index === 0} use:tooltip={index === 0 ? 'This is the first figure' : 'Show the previous figure in this document'}>‹ Previous</button>
+        <button type="button" onclick={() => step(1)} disabled={index === figures.length - 1} use:tooltip={index === figures.length - 1 ? 'This is the last figure' : 'Show the next figure in this document'}>
           Next ›
         </button>
       </div>

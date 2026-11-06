@@ -3,6 +3,7 @@
   import SourceCard from './SourceCard.svelte'
   import Icon from '../../shell/Icon.svelte'
   import { fade, fly } from 'svelte/transition'
+  import { tooltip } from '../../lib/shell/tooltip'
 
   // Same drawer mechanics as Settings.svelte (fly/scrim, reduced-motion collapse, focus trap,
   // Esc-to-close) — one interaction vocabulary for every slide-over in the app, not a second one.
@@ -120,7 +121,7 @@
 >
   <header>
     <strong>Source [{source.n}]</strong>
-    <button class="x" bind:this={closeEl} onclick={onClose} aria-label="Close">
+    <button class="x" bind:this={closeEl} onclick={onClose} aria-label="Close" use:tooltip={'Close the source panel'}>
       <Icon name="x" />
     </button>
   </header>

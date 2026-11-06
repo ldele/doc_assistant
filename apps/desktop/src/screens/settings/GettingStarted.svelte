@@ -11,6 +11,7 @@
   import { shell } from '../../lib/shell/shell.svelte'
   import { stepLink, type SettingsSectionId } from '../../lib/settings/sections'
   import { setupSummary, stepTone } from '../../lib/settings/setup'
+  import { tooltip } from '../../lib/shell/tooltip'
 
   let { onOpen }: { onOpen: (section: SettingsSectionId) => void } = $props()
 
@@ -58,7 +59,7 @@
           <div class="ends">
             <span class="pill {tone}">{step.status}</span>
             {#if link}
-              <button type="button" class="go" onclick={() => onOpen(link.section)}>{link.label}</button>
+              <button type="button" class="go" onclick={() => onOpen(link.section)} use:tooltip={'Open the tab where this step is done'}>{link.label}</button>
             {/if}
           </div>
         </li>

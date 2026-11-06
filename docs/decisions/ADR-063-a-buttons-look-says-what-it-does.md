@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-11-06 (As built: ROADMAP 110 piece (b), the roles across the app, the five confirms and two more; piece (a), the fill pair, the tooltip and the checks, with the counts corrected; accepted as proposed: all eight choices; revised while proposed: choices 6 to 8 and three checks that fail, from the user's words of 2026-11-06; 2026-11-05: proposed, the two select bars built to it) · class: append-only -->
+<!-- status: active · updated: 2026-11-06 (As built: ROADMAP 110 piece (c), hover text on every button and the 50 other titles sorted; piece (b), the roles across the app, the five confirms and two more; piece (a), the fill pair, the tooltip and the checks, with the counts corrected; accepted as proposed: all eight choices; revised while proposed: choices 6 to 8 and three checks that fail, from the user's words of 2026-11-06; 2026-11-05: proposed, the two select bars built to it) · class: append-only -->
 
 # ADR-063 — A button's look says what it does: four action roles, and a delete always asks first
 
@@ -312,3 +312,45 @@ rule; piece (c) or (d) decides each: on the screen, or the tooltip on a focusabl
 - **Not done here.** Removing a document from a folder (the × in *Manage folders*) acts at once.
   The same row's checkbox undoes it, but choice 4 allows no exception, so it waits on the user.
   The Library header did not wrap at 375 px and cut *Add documents* off; it wraps now.
+
+## As built — ROADMAP 110 piece (c), 2026-11-06
+
+- **Every button has hover text** (choice 6): the 236 that had none, in 59 files, so check 2's
+  allow-list is empty. Each text finishes "this will …" and says what the label cannot: what a
+  quiet act leaves alone (*Clear* on the staged files: "nothing was added, and the files
+  themselves are not touched"), what comes back and how (*Dismiss* on a definition option: "Show
+  dismissed brings it back"), and which ones confirm first ("after you confirm"). A text follows
+  the button's state, so a disabled button says why: *Send* "Type a question first", *Add to
+  folder…* "Select documents first", a figure's *Next* "This is the last figure". The Settings
+  sections take their existing one-line blurbs.
+- **Icon-only buttons.** All of them had an `aria-label` already (piece (a) added the last three).
+  The scan cannot see a label that CSS hides: the top bar's *Chat*, *Library* and *Graph* tabs drop
+  their labels under 780px and had no name there, so each carries an `aria-label` equal to its
+  label (WCAG 2.5.3, the name contains the visible label). A fifth check in `ui-rules.test.ts`
+  fails an icon-only `<button>` without `aria-label` or `aria-labelledby`.
+- **The 50 `title`s on other elements, decided one by one.** One is on an element that takes focus,
+  the Chat tab's scope `<select>`; it moved onto the tooltip, so it shows on keyboard focus too. Of
+  the other 49:
+  - 17 give the whole of a name or path the screen cuts short (a file name, a folder, a source
+    path). The start is on screen and assistive technology reads the element's whole text; they
+    stay native `title`s, which WCAG leaves out of SC 1.4.13 as the browser's own tooltip.
+  - 12 add detail nobody needs to act: what a count counts, a token breakdown, a graph build id, a
+    reference's raw text, the chips past the cap. They stay too.
+  - 20 explain what a marker means, and choice 6's last sentence rules those out: the current-chat
+    dot, the disputed-topic chip's caveat, the source evaluation's stale, withheld and relevance
+    notes, a turn's markers, *Excluded from retrieval* on a chunk, a figure's searchable mark and
+    the reason it is not, a gap's blurb on a badge, *Has a chosen definition*, *Edited metadata*
+    on a tile, *Proposed* on a field placement, the status bar's two engine-start notes. Each needs
+    its meaning on the screen or as an accessible name, which is a design call per marker: not
+    built here; proposed for piece (d) or a row of its own.
+- **Seen in the running app** over an invented library (the installed app held port 8001, so the
+  check ran on 8011 behind a throwaway Vite config): hover text in dark and light, a disabled
+  button's reason, a text that changed when a tile was selected, the tooltip on Tab focus with
+  `aria-describedby` set, the top bar's icon-only tabs at 375 px with their names and the tooltip
+  inside the window.
+- **Found, not done.** Three components keep a button look of their own that check 1 does not
+  catch, because the classes have other names: the staged-files bar in `App.svelte`, the claim
+  review's *Accept* and *Reject*, *Detect* and *Accept* in Manage keywords. The staged bar's *Clear*
+  drops a list (nothing is added or deleted), but U-003 retires the word for a removal. A
+  definition option's *Dismiss* acts at once, as the gap list's does; both can be undone from the
+  same screen. Each is piece (d)'s or the user's call.

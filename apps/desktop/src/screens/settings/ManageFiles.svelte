@@ -140,13 +140,13 @@
     <p class="hint">No files in the source folder. Choose a folder above, then rescan.</p>
   {:else if rows.length > 0}
     <div class="actions">
-      <button class="btn btn-quiet" onclick={selectNewChanged} disabled={busy || freshCount === 0}>
+      <button class="btn btn-quiet" onclick={selectNewChanged} disabled={busy || freshCount === 0} use:tooltip={freshCount === 0 ? 'No file is new or changed' : 'Tick every file not indexed yet or changed since'}>
         Select new + changed{freshCount > 0 ? ` (${freshCount})` : ''}
       </button>
       {#if selected.size > 0}
-        <button class="btn btn-quiet" onclick={clearSelection} disabled={busy}>Select none</button>
+        <button class="btn btn-quiet" onclick={clearSelection} disabled={busy} use:tooltip={'Untick every file'}>Select none</button>
       {/if}
-      <button class="btn btn-primary ingest" onclick={ingestSelected} disabled={busy || selected.size === 0}>
+      <button class="btn btn-primary ingest" onclick={ingestSelected} disabled={busy || selected.size === 0} use:tooltip={selected.size === 0 ? 'Tick files first' : 'Index the ticked files now, excluded ones included'}>
         {busy ? 'Indexing…' : `Ingest selected (${selected.size})`}
       </button>
     </div>

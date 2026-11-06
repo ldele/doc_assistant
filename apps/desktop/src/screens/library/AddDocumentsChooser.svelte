@@ -20,6 +20,7 @@
   import { accept, closeChooser, pickDocuments, stagePaths } from '../../lib/library/accept.svelte'
   import { formatLine, limitLine } from '../../lib/library/formats'
   import { nothingToAdd } from '../../lib/library/catalogue'
+  import { tooltip } from '../../lib/shell/tooltip'
 
   /** Mirrors the server-side format list in words; the verdicts themselves come from AD2. */
 
@@ -99,7 +100,7 @@
   >
     <div class="head">
       <h2 id="addchooser-title">Add documents</h2>
-      <button class="x" onclick={closeChooser} aria-label="Close" type="button">
+      <button class="x" onclick={closeChooser} aria-label="Close" type="button" use:tooltip={'Close without adding anything'}>
         <Icon name="x" size={16} />
       </button>
     </div>
@@ -121,6 +122,7 @@
         onclick={() => void pickDocuments()}
         disabled={accept.picking}
         type="button"
+        use:tooltip={accept.picking ? 'A file picker is already open' : 'Pick files to add; you review them before anything is copied'}
       >
         <Icon name="file-text" size={15} />
         Choose files…
@@ -130,6 +132,7 @@
         onclick={() => void pickDocuments({ directory: true })}
         disabled={accept.picking}
         type="button"
+        use:tooltip={accept.picking ? 'A file picker is already open' : 'Pick a folder; its documents are listed for review first'}
       >
         <Icon name="folder" size={15} />
         Choose a folder…
@@ -139,6 +142,7 @@
         onclick={() => void importFromZotero()}
         disabled={zoteroBusy || accept.picking}
         type="button"
+        use:tooltip={'List the files your reference library has attached, for review first'}
       >
         <Icon name="library" size={15} />
         {zoteroBusy ? 'Reading your library…' : 'Import from Zotero…'}
@@ -152,7 +156,7 @@
       <p class="zotero err" role="alert">
         {zoteroError}
         {#if askedForFolder}
-          <button class="inline" onclick={() => void chooseZoteroFolder()} type="button">
+          <button class="inline" onclick={() => void chooseZoteroFolder()} type="button" use:tooltip={'Point to the folder where your reference library keeps its data'}>
             Choose the folder…
           </button>
         {/if}

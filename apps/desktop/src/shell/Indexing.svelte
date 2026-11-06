@@ -27,6 +27,7 @@
   import type { IngestFile, IngestGroup } from '../lib/core/types'
   import ConfirmDialog from './ConfirmDialog.svelte'
   import Icon from './Icon.svelte'
+  import { tooltip } from '../lib/shell/tooltip'
 
   const animate =
     typeof window === 'undefined' || !window.matchMedia('(prefers-reduced-motion: reduce)').matches
@@ -173,7 +174,7 @@
         <!-- Action roles (ADR-063): Resume carries the run on, so it is the primary; Pause holds it
              and removes nothing, so it is ordinary (it was amber before the roles). -->
         {#if control === 'paused'}
-          <button class="btn btn-primary" onclick={() => act(() => controlRun('resume'))} disabled={acting}>
+          <button class="btn btn-primary" onclick={() => act(() => controlRun('resume'))} disabled={acting} use:tooltip={'Carry the run on from where it paused'}>
             <Icon name="play" size={14} /> Resume
           </button>
         {:else}
@@ -181,6 +182,7 @@
             class="btn"
             onclick={() => act(() => controlRun('pause'))}
             disabled={acting || control !== 'none'}
+            use:tooltip={'Hold the run after the file in progress; Resume carries it on'}
           >
             <Icon name="pause" size={14} /> {control === 'pausing' ? 'Pausing…' : 'Pause'}
           </button>
@@ -191,12 +193,13 @@
           class="btn btn-danger"
           onclick={() => (confirmingStop = true)}
           disabled={acting || control === 'stopping' || control === 'finishing'}
+          use:tooltip={'End the run, after you confirm; what finished stays in your library'}
         >
           <Icon name="square" size={14} /> {control === 'stopping' ? 'Stopping…' : 'Stop…'}
         </button>
       {:else}
         {#if remaining}
-          <button class="btn btn-primary" onclick={() => act(() => rerunLast('remaining'))} disabled={acting}>
+          <button class="btn btn-primary" onclick={() => act(() => rerunLast('remaining'))} disabled={acting} use:tooltip={'Index the files this run did not reach'}>
             {remaining}
           </button>
         {/if}
@@ -206,12 +209,13 @@
             class:btn-primary={!remaining}
             onclick={() => act(() => rerunLast('failed'))}
             disabled={acting}
+            use:tooltip={'Try the files that failed again'}
           >
             {retry}
           </button>
         {/if}
       {/if}
-      <button class="btn" onclick={close}>Close</button>
+      <button class="btn" onclick={close} use:tooltip={running ? 'Close this screen; the run carries on' : 'Close this screen'}>Close</button>
     </div>
   </header>
 
@@ -250,6 +254,7 @@
             class:on={group === chip.group}
             aria-pressed={group === chip.group}
             onclick={() => chooseGroup(chip.group)}
+            use:tooltip={'Show only these files in the list'}
           >
             {chip.label} <span class="n">{chip.count.toLocaleString()}</span>
           </button>
@@ -280,7 +285,7 @@
         <p class="empty">{listError ? `Couldn't load the files: ${listError}` : 'No files here.'}</p>
       {/each}
       {#if rows.length < inGroup}
-        <button class="btn more" onclick={() => (limit += PAGE)}>
+        <button class="btn more" onclick={() => (limit += PAGE)} use:tooltip={'List more files'}>
           Show {Math.min(PAGE, inGroup - rows.length).toLocaleString()} more of {inGroup.toLocaleString()}
         </button>
       {/if}

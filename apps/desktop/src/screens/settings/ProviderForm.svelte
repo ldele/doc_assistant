@@ -32,6 +32,7 @@
     unlistedModel,
   } from '../../lib/settings/setup'
   import { NEW_SERVER } from './ProviderList.svelte'
+  import { tooltip } from '../../lib/shell/tooltip'
 
   let {
     setup,
@@ -271,7 +272,7 @@
 {#snippet copyRow(text: string, label: string, card: string)}
   <span class="copyrow">
     <code bind:this={copyEls[label]}>{text}</code>
-    <button class="btn" onclick={() => copy(text, label, card)}>{copied === label ? 'Copied' : 'Copy'}</button>
+    <button class="btn" onclick={() => copy(text, label, card)} use:tooltip={'Copy this to the clipboard'}>{copied === label ? 'Copied' : 'Copy'}</button>
   </span>
 {/snippet}
 
@@ -306,7 +307,7 @@
   <div class="model-head">
     <label for="model-{p.id}">Model</label>
     {#if p.kind !== 'ollama'}
-      <button class="link" onclick={() => listModels(p.id)} disabled={busy || listing || !p.configured}>
+      <button class="link" onclick={() => listModels(p.id)} disabled={busy || listing || !p.configured} use:tooltip={!p.configured ? 'Set this provider up first' : 'Ask the server again which models it has'}>
         {listing ? 'Asking the server…' : 'Refresh'}
       </button>
     {/if}
@@ -330,7 +331,7 @@
     {#if inUse(p)}
       <span class="ok-line"><Icon name="check" size={13} /> In use for answers.</span>
     {:else}
-      <button class="btn btn-primary" onclick={() => use(p)} disabled={busy || !canUse || !(models[p.id] ?? '').trim()}>
+      <button class="btn btn-primary" onclick={() => use(p)} disabled={busy || !canUse || !(models[p.id] ?? '').trim()} use:tooltip={'Answer your questions with this provider and model'}>
         Use for answers
       </button>
     {/if}
@@ -406,7 +407,7 @@
         autocomplete="off"
         disabled={busy}
       />
-      <button class="btn" onclick={connect} disabled={busy || !server.name.trim() || !server.address.trim()}>
+      <button class="btn" onclick={connect} disabled={busy || !server.name.trim() || !server.address.trim()} use:tooltip={'Try reaching the server at this address'}>
         {working === 'connect' ? 'Reaching it…' : 'Test connection'}
       </button>
     </div>
@@ -423,9 +424,9 @@
       <hr />
       {@render measured()}
       {#if p.key_source}
-        <button class="btn btn-danger again" onclick={() => (confirmRemove = { what: 'key', p })} disabled={busy}>Remove key…</button>
+        <button class="btn btn-danger again" onclick={() => (confirmRemove = { what: 'key', p })} disabled={busy} use:tooltip={'Delete the key saved in this app, after you confirm'}>Remove key…</button>
       {/if}
-      <button class="btn btn-danger again" onclick={() => (confirmRemove = { what: 'server', p })} disabled={busy}>Remove server…</button>
+      <button class="btn btn-danger again" onclick={() => (confirmRemove = { what: 'server', p })} disabled={busy} use:tooltip={'Take this server off the list, after you confirm'}>Remove server…</button>
     {:else}
       <p class="fine">
         An address outside this computer receives your key, your questions and the passages
@@ -460,7 +461,7 @@
     {#if p.ready}
       <p class="ok-line"><Icon name="check" size={13} /> {p.detail}</p>
       {@render modelRow(p, 'llama3.1:8b', true)}
-      <button class="btn again" onclick={() => onRecheck()} disabled={busy}>Re-check</button>
+      <button class="btn again" onclick={() => onRecheck()} disabled={busy} use:tooltip={'Look for the local server again'}>Re-check</button>
     {:else}
       <ol class="howto">
         {#if p.reachable === false}
@@ -475,7 +476,7 @@
         </li>
         <li>Come back and press Re-check.</li>
       </ol>
-      <button class="btn" onclick={() => onRecheck()} disabled={busy || probing}>Re-check</button>
+      <button class="btn" onclick={() => onRecheck()} disabled={busy || probing} use:tooltip={'Look for the local server and its models again'}>Re-check</button>
     {/if}
     {#each p.notes as line (line)}<p class="fine">{line}</p>{/each}
     {@render note(p.id)}
@@ -507,7 +508,7 @@
         <p class="warn">{keyPrecedenceNote(p, savedHere)}</p>
       {/if}
       {#if p.key_source === 'app'}
-        <button class="btn btn-danger again" onclick={() => (confirmRemove = { what: 'key', p })} disabled={busy}>Remove key…</button>
+        <button class="btn btn-danger again" onclick={() => (confirmRemove = { what: 'key', p })} disabled={busy} use:tooltip={'Delete the key saved in this app, after you confirm'}>Remove key…</button>
       {/if}
     {:else if p.takes_key && p.key_page}
       <ol class="howto">
@@ -535,7 +536,7 @@
           autocomplete="off"
           disabled={busy}
         />
-        <button class="btn" onclick={() => saveKey(p)} disabled={busy || keyInput.trim() === ''}>
+        <button class="btn" onclick={() => saveKey(p)} disabled={busy || keyInput.trim() === ''} use:tooltip={keyInput.trim() === '' ? 'Paste a key first' : `Check the key with ${vendor}, then keep it in this app`}>
           {working === 'key' ? `Checking with ${vendor}…` : 'Save key'}
         </button>
       </div>
@@ -544,7 +545,7 @@
     {@render modelRow(p, p.kind === 'claude' ? DEFAULT_CLAUDE_MODEL : 'Choose from the list, or type a name', p.configured && p.key_status !== 'refused')}
     {@render note(p.id)}
     {#if p.kind === 'preset' && p.reach === 'this_computer'}
-      <button class="btn again" onclick={() => onRecheck()} disabled={busy || probing}>Re-check</button>
+      <button class="btn again" onclick={() => onRecheck()} disabled={busy || probing} use:tooltip={'Look for the server again'}>Re-check</button>
     {/if}
     <p class="detail">{p.billing}{#if p.kind !== 'claude' && p.billing_kind === 'vendor'}; Provenote does not know its price{/if}.</p>
     {#each p.notes as line (line)}<p class="fine">{line}</p>{/each}

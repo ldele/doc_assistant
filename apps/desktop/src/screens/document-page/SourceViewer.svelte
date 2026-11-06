@@ -291,6 +291,7 @@
         onclick={() => step(-1)}
         disabled={!canStep(page, pageCount, -1)}
         aria-label="Previous page"
+        use:tooltip={!canStep(page, pageCount, -1) ? 'This is the first page' : 'Show the previous page'}
       >
         <Icon name="arrow-left" size={13} />
       </button>
@@ -305,6 +306,7 @@
         onclick={() => step(1)}
         disabled={!canStep(page, pageCount, 1)}
         aria-label="Next page"
+        use:tooltip={!canStep(page, pageCount, 1) ? 'This is the last page' : 'Show the next page'}
       >
         <Icon name="arrow-right" size={13} />
       </button>

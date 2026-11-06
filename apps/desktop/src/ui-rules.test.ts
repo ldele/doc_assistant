@@ -158,6 +158,28 @@ export function buttonsOf(text: string): ButtonTag[] {
   return out
 }
 
+/**
+ * Lines of the `<button>`s whose content is icons alone (`<Icon … />`, whitespace) and that have
+ * no `aria-label` / `aria-labelledby`: such a button has no name (ADR-063 choice 6). A label that
+ * CSS hides at some width (the top bar's tabs under 780px) is not seen here; those carry one too.
+ */
+export function unnamedIconButtons(text: string): number[] {
+  const markup = markupOf(text)
+  const out: number[] = []
+  for (const m of markup.matchAll(/<button(?=[\s>/])/g)) {
+    const end = tagEnd(markup, m.index + 1)
+    if (end < 0) continue
+    const attrs = attributeNames(markup.slice(m.index, end + 1))
+    if (attrs.includes('aria-label') || attrs.includes('aria-labelledby')) continue
+    const close = markup.indexOf('</button', end)
+    const inner = markup.slice(end + 1, close < 0 ? undefined : close)
+    if (inner.replace(/<Icon\b[^>]*\/>/g, '').trim() === '') {
+      out.push(markup.slice(0, m.index).split('\n').length)
+    }
+  }
+  return out
+}
+
 const LOCAL_CLASS = /\.(primary|ghost|danger)(?![\w-])/g
 const LITERAL_COLOUR = /#[0-9a-fA-F]{3,8}(?![\w-])|\b(?:rgba?|hsla?)\(/g
 /** The named colours a component is likely to reach for (CSS has 148; these are the plausible
@@ -234,6 +256,15 @@ test('a <button> never carries the native title (the tooltip replaces it)', () =
       .map((b) => `${f}:${b.line}`),
   )
   assert.deepEqual(bad, [])
+})
+
+test('an icon-only <button> has an aria-label (its hover text explains, the label names)', () => {
+  const bad = [...source].flatMap(([f, text]) => unnamedIconButtons(text).map((line) => `${f}:${line}`))
+  assert.deepEqual(bad, [])
+  assert.deepEqual(
+    unnamedIconButtons('<button onclick={() => x()}><Icon name="x" size={13} /></button>\n<button aria-label="Close"><Icon name="x" /></button>\n<button>Save</button>'),
+    [1],
+  )
 })
 
 test('the scanner reads a tag past an arrow function and a quoted ">"', () => {

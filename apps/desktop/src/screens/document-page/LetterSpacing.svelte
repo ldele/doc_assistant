@@ -111,7 +111,7 @@
     {#if pending > 0}
       <p class="pendingbar" role="status">
         {pending} {pending === 1 ? 'change waits' : 'changes wait'} for a re-run of this document's text.
-        <button class="btn" type="button" onclick={rerunText}>Re-run text now…</button>
+        <button class="btn" type="button" onclick={rerunText} use:tooltip={'Open the re-run dialog with the text chosen, so the waiting changes apply'}>Re-run text now…</button>
       </p>
     {/if}
     {#if actionError}<p class="err" role="alert">{actionError}</p>{/if}
@@ -152,10 +152,11 @@
                     type="button"
                     disabled={row.pages.length === 0}
                     onclick={() => onShowPage(row.pages[0])}
+                    use:tooltip={row.pages.length === 0 ? 'No page is known for this run' : 'Open the document at the first page this run is on'}
                   >
                     <Icon name="book-open" size={13} /> Show on page
                   </button>
-                  <button class="btn" type="button" disabled={busy} onclick={() => (editing = row)}>
+                  <button class="btn" type="button" disabled={busy} onclick={() => (editing = row)} use:tooltip={'Choose where this run’s spaces go yourself'}>
                     Edit spacing
                   </button>
                   {#if group.closed}
@@ -164,6 +165,7 @@
                       type="button"
                       disabled={busy || data.keep_all}
                       onclick={() => act(() => keepRunSpaced(docId, row.spaced))}
+                      use:tooltip={data.keep_all ? 'Every run of this document is kept: turn that off first' : 'Keep this run as extracted, spaces and all, at the next re-run'}
                     >
                       Keep spaced
                     </button>
@@ -193,14 +195,15 @@
         aria-pressed={data.keep_all}
         disabled={busy}
         onclick={() => act(() => setKeepAllSpaced(docId, !(data?.keep_all ?? false)))}
+        use:tooltip={data.keep_all ? 'Let the rule close the spaced runs of this document again' : 'Keep every run of this document as extracted, spaces and all'}
       >
         {data.keep_all ? 'Stop keeping every run spaced' : 'Keep every run spaced'}
       </button>
-      <button class="btn" type="button" onclick={rerunText}>
+      <button class="btn" type="button" onclick={rerunText} use:tooltip={'Open the re-run dialog with the text chosen, so your changes apply'}>
         <Icon name="rotate-ccw" size={13} /> Re-run text now…
       </button>
       <span class="spacer"></span>
-      <button class="btn" type="button" onclick={onOpenSettings}>All entries in Settings</button>
+      <button class="btn" type="button" onclick={onOpenSettings} use:tooltip={'See the letter-spacing entries of every document, in Settings'}>All entries in Settings</button>
     </div>
   </section>
 

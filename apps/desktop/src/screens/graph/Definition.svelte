@@ -174,7 +174,7 @@
         </button>
       {/if}
       {#if isConcept && !writing}
-        <button class="btn" onclick={() => startWriting()} disabled={busy} type="button">
+        <button class="btn" onclick={() => startWriting()} disabled={busy} type="button" use:tooltip={'Write a definition in your own words'}>
           <Icon name="pencil" size={13} /> Write your own
         </button>
       {/if}
@@ -195,7 +195,7 @@
         <footer>
           <span class="src">{sourceLabel(c)}</span>
           {#if c.chunk_key}
-            <button class="linkish" onclick={() => c.chunk_key && onOpenPassage(c.chunk_key)} type="button">Open passage →</button>
+            <button class="linkish" onclick={() => c.chunk_key && onOpenPassage(c.chunk_key)} type="button" use:tooltip={'Open the passage this definition comes from'}>Open passage →</button>
           {/if}
           {#if isConcept}
             <!-- Danger (ADR-063 choices 1 and 4): it takes away the definition you chose, so it
@@ -222,8 +222,8 @@
       <div class="writer">
         <textarea bind:value={draft} rows="3" placeholder="What does this concept mean, in your library?" aria-label="Your definition"></textarea>
         <div class="writeractions">
-          <button class="btn btn-primary" onclick={save} disabled={busy || !draft.trim()} type="button">Save and use</button>
-          <button class="btn" onclick={() => (writing = false)} type="button">Cancel</button>
+          <button class="btn btn-primary" onclick={save} disabled={busy || !draft.trim()} type="button" use:tooltip={!draft.trim() ? 'Write something first' : 'Keep your definition and make it the chosen one'}>Save and use</button>
+          <button class="btn" onclick={() => (writing = false)} type="button" use:tooltip={'Stop writing; nothing is saved'}>Cancel</button>
           <span class="muted hint">Saving keeps every other option — nothing is replaced.</span>
         </div>
       </div>
@@ -250,7 +250,7 @@
               </button>
               <span class="src">{sourceLabel(c)}</span>
               {#if c.chunk_key}
-                <button class="linkish" onclick={() => c.chunk_key && onOpenPassage(c.chunk_key)} type="button">Open passage →</button>
+                <button class="linkish" onclick={() => c.chunk_key && onOpenPassage(c.chunk_key)} type="button" use:tooltip={'Open the passage this wording comes from'}>Open passage →</button>
               {/if}
             </div>
             {#if openReasons === c.id && c.reasons.length > 0}
@@ -260,13 +260,13 @@
             {/if}
             {#if isConcept}
               <div class="cactions">
-                <button class="btn" onclick={() => run(() => chooseDefinition(conceptId, c.id))} disabled={busy} type="button">
+                <button class="btn" onclick={() => run(() => chooseDefinition(conceptId, c.id))} disabled={busy} type="button" use:tooltip={'Make this wording the concept’s definition'}>
                   <Icon name="check" size={13} /> Use this
                 </button>
                 <button class="btn" onclick={() => startWriting(c)} disabled={busy} type="button" use:tooltip={'Start your own definition from this wording'}>
                   Edit into my own
                 </button>
-                <button class="linkish" onclick={() => run(() => dismissDefinition(conceptId, c.id))} disabled={busy} type="button">Dismiss</button>
+                <button class="linkish" onclick={() => run(() => dismissDefinition(conceptId, c.id))} disabled={busy} type="button" use:tooltip={'Hide this option; Show dismissed brings it back'}>Dismiss</button>
               </div>
             {/if}
           </li>
@@ -276,7 +276,7 @@
 
     {#if view && !view.extracted}
       <p class="look">
-        <button class="btn" onclick={look} disabled={busy} type="button">
+        <button class="btn" onclick={look} disabled={busy} type="button" use:tooltip={looking ? 'Reading your library…' : 'Search your library for sentences that define it'}>
           <Icon name="search" size={13} /> {looking ? 'Looking…' : 'Look in my library'}
         </button>
         <span class="muted">
@@ -307,7 +307,7 @@
             <p class="utext">{readable(u.text)}</p>
             <div class="cmeta">
               <span class="src">{usageSource(u)}</span>
-              <button class="linkish" onclick={() => onOpenPassage(u.chunk_key)} type="button">Open passage →</button>
+              <button class="linkish" onclick={() => onOpenPassage(u.chunk_key)} type="button" use:tooltip={'Open the passage this example comes from'}>Open passage →</button>
             </div>
           </li>
         {/each}
@@ -368,7 +368,7 @@
     {/if}
 
     {#if groups.dismissed.length > 0}
-      <button class="linkish small" onclick={() => (showDismissed = !showDismissed)} aria-expanded={showDismissed} type="button">
+      <button class="linkish small" onclick={() => (showDismissed = !showDismissed)} aria-expanded={showDismissed} type="button" use:tooltip={showDismissed ? 'Hide the options you dismissed' : 'List the options you dismissed, to restore one'}>
         {showDismissed ? 'Hide' : 'Show'} dismissed ({groups.dismissed.length})
       </button>
       {#if showDismissed}
@@ -378,7 +378,7 @@
               <p class="ctext">{readable(c.text)}</p>
               <div class="cactions">
                 <span class="src">{sourceLabel(c)}</span>
-                <button class="linkish" onclick={() => run(() => restoreDefinition(conceptId, c.id))} disabled={busy} type="button">Restore</button>
+                <button class="linkish" onclick={() => run(() => restoreDefinition(conceptId, c.id))} disabled={busy} type="button" use:tooltip={'Put this option back among the others'}>Restore</button>
               </div>
             </li>
           {/each}
@@ -410,7 +410,7 @@
   </p>
   <div class="cmeta">
     <span class="src">{exampleSource(e)}</span>
-    <button class="linkish" onclick={() => onOpenPassage(e.chunk_key)} type="button">Open passage →</button>
+    <button class="linkish" onclick={() => onOpenPassage(e.chunk_key)} type="button" use:tooltip={'Open the passage this comes from'}>Open passage →</button>
   </div>
 {/snippet}
 

@@ -62,6 +62,7 @@
   import ConfirmDialog from './shell/ConfirmDialog.svelte'
   import Graph from './screens/graph/Graph.svelte'
   import ConceptIndex from './screens/graph/ConceptIndex.svelte'
+  import ChatHistory from './screens/chat/ChatHistory.svelte'
   import KeyboardShortcuts from './shell/KeyboardShortcuts.svelte'
   import About from './shell/About.svelte'
   import Taxonomy from './screens/taxonomy/Taxonomy.svelte'
@@ -1207,6 +1208,25 @@
 
 <svelte:window onkeydown={onGlobalKey} />
 
+<!-- The chat-mode sidebar rail (Chat history), composed here like the graph rail below: the
+     conversation list and its actions are App-owned, and the sidebar frame stays a dumb renderer. -->
+{#snippet chatRail()}
+  <ChatHistory
+    conversations={conversations.list}
+    conversationsLoaded={conversations.loaded}
+    liveSessionId={chat.sessionId}
+    viewingSessionId={viewing}
+    onNew={newConversation}
+    onSelect={openConversation}
+    onPin={pinConversation}
+    onArchive={archiveConversation}
+    onDelete={deleteConversation}
+    onRename={renameConversation}
+    onDeleteMany={(ids) => (pendingDeleteConvIds = ids)}
+    onArchiveMany={archiveConversations}
+  />
+{/snippet}
+
 <!-- The graph-mode sidebar rail. App composes it (data + selection are App-owned) and hands it to
      Sidebar as a snippet, so Sidebar stays a dumb renderer without ~8 more graph props. -->
 {#snippet graphRail()}
@@ -1295,28 +1315,17 @@
   <div class="below">
   <Sidebar
     mode={shell.mode}
-    conversations={conversations.list}
-    conversationsLoaded={conversations.loaded}
     {documents}
     {folders}
-    liveSessionId={chat.sessionId}
-    viewingSessionId={viewing}
     {libraryCollection}
     bind:libraryQuery
     open={shell.sidebarOpen}
+    {chatRail}
     {graphRail}
-    onNew={newConversation}
-    onSelect={openConversation}
     onSelectCollection={selectCollection}
     onManageFolders={openManageFolders}
     onOpenTaxonomy={() => openTaxonomyView()}
     onClose={() => (shell.sidebarOpen = false)}
-    onPin={pinConversation}
-    onArchive={archiveConversation}
-    onDelete={deleteConversation}
-    onRename={renameConversation}
-    onDeleteMany={(ids) => (pendingDeleteConvIds = ids)}
-    onArchiveMany={archiveConversations}
   />
   <div
     class="resizer"

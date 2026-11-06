@@ -124,7 +124,7 @@ the screens (next section, ADR-064), and the last column says where a domain is 
 |---|---|---|---|
 | chat | `models/chat.py` | `routers/chat.py` | `screens/chat/` (Turn, SourcePanel, ClaimReview…) |
 | compare | `models/compare.py` | `routers/chat.py` (`/api/compare`) | `screens/chat/CompareCard.svelte` |
-| conversations | `models/conversations.py` | `routers/conversations.py` | `shell/Sidebar.svelte` (Chat history) |
+| conversations | `models/conversations.py` | `routers/conversations.py` | `screens/chat/ChatHistory.svelte` |
 | library | `models/library.py` | `routers/library/documents.py` | `screens/library/`, `screens/document-page/` |
 | summary | `models/summary.py` | `routers/library/summary.py` | `screens/library/Summary.svelte` |
 | connections | `models/connections.py` | `routers/library/documents.py` | `screens/document-page/Connections.svelte` |
@@ -179,30 +179,33 @@ screen takes only `Icon` and `ConfirmDialog` from `shell/`.
 | A confirm (delete chats, stop indexing, switch library) · icons | several · every screen | `ConfirmDialog.svelte` · `Icon.svelte` |
 | **Chat tab** | top bar | `screens/chat/` |
 | the tab | *Chat* | `Chat.svelte` |
-| Chat history (the sidebar rail) | sidebar, Chat | inside `shell/Sidebar.svelte` until ADR-064 pass 2 |
+| Chat history (the sidebar rail: filter, select mode, sort, a row's ⋯ menu) | sidebar, Chat | `ChatHistory.svelte` (App hands it to the sidebar frame) |
 | an answer and its parts | | `Turn`, `ReadonlyTurn`, `Markdown`, `Provenance`, `ClaimReview`, `SourceEvaluation` |
 | the comparison | *Test override* | `CompareCard.svelte` |
 | a citation's source | an answer's [n] | `SourcePanel`, `SourceCard`, `ChunkContextView` |
 | **Library tab** | top bar | `screens/library/` |
-| the tab · the grid or list · the keyword filter strip · the library summary | *Library* · · · the layout toggle's *Summary* | `Library.svelte` · `DocumentGrid.svelte` · `FilterStrip.svelte` · `Summary.svelte` |
-| Library navigation (the sidebar rail) | sidebar, Library | inside `shell/Sidebar.svelte` until ADR-064 pass 2 |
+| the tab, the empty Library · the header bar and the select bar · the grid or list · the keyword filter strip · the library summary | *Library* · *Select* · · · the layout toggle's *Summary* | `Library.svelte` · `HeaderBar.svelte` · `DocumentGrid.svelte` · `FilterStrip.svelte` · `Summary.svelte` |
+| Library navigation (the sidebar rail) | sidebar, Library | inside `shell/Sidebar.svelte`: its styles are the frame's tree rows and filter (ADR-064 choice 6) |
 | *Filter by keyword* | the filter strip | `FilterByKeyword.svelte` |
 | *Manage folders* | the rail's *Manage…*, a tile's *Add to folder*, the select bar's *Add to folder…* | `ManageFolders.svelte` |
 | *Edit metadata* · *Delete this document?* | a tile's ⋯ menu | `EditMetadata.svelte` · `DeleteDocument.svelte` |
 | *Add documents*, first step · its review sheet | app menu, the empty Library, a drop · the staged-files bar's *Review* | `AddDocumentsChooser.svelte` · `AddDocumentsReview.svelte` |
 | **Document page** | a document in the Library, Search, a graph concept | `screens/document-page/` |
-| the page, its header and Chunks block | | `DocumentPage.svelte` |
+| the page · its index (*Metadata* … *References*, *Source*, *Re-run…*) · its header · the Chunks block | | `DocumentPage.svelte` · `PageIndex.svelte` · `DocumentHeader.svelte` · `Chunks.svelte` |
 | Connections · Figures · References | the page's index | `Connections.svelte` · `Figures.svelte` · `References.svelte` |
 | the figure viewer · the source viewer | a figure · *Source* | `FigureViewer.svelte` · `SourceViewer.svelte` |
 | *Letter-spacing on this document* · *Edit spacing* | the page · a run's *Edit spacing* | `LetterSpacing.svelte` · `EditSpacing.svelte` |
 | *Re-run ingestion* | *Re-run…*, *Re-run text now…* (page and Settings), the Library's select bar | `RerunIngestion.svelte` |
 | **Graph tab** | top bar | `screens/graph/` |
-| the tab, its empty states, the graph bar, the concept panel | *Graph*, a concept | `Graph.svelte` |
+| the tab, its empty states, the graph bar · the concept panel | *Graph* · a concept | `Graph.svelte` · `ConceptPanel.svelte` |
 | *Definition* · the concept index (the sidebar rail) · the gap list | the concept panel · sidebar, Graph · the rail's *Gaps* | `Definition.svelte` · `ConceptIndex.svelte` · `GapList.svelte` |
 | ***Manage keywords*** | *Manage keywords…* in *Filter by keyword*; on the Graph tab, *Manage keywords* (the graph bar and the empty state) and a concept's *Edit* | `screens/manage-keywords/ManageKeywords.svelte` |
+| *Detect proposals* · *New family* · *Concepts* · *Terms* · one family's row | | `DetectProposals.svelte` · `NewFamily.svelte` · `Concepts.svelte` · `Terms.svelte` · `FamilyRow.svelte` |
 | ***Taxonomy*** | the concept index's footer, *Place* on a concept | `screens/taxonomy/Taxonomy.svelte` |
+| the field forest · a field's detail and *Proposed placements* | | `FieldForest.svelte` · `FieldDetail.svelte` |
 | ***Settings*** | top bar, app menu, *Finish setup…* on the Chat tab, the letter-spacing block's link | `screens/settings/` |
-| the window, its rail and sections · *Getting started* · *Provider & model* | | `Settings.svelte` · `GettingStarted.svelte` · `ProviderSetup.svelte` |
+| the window and its rail · its sections *Getting started*, *Documents*, *Provider & model*, *Retrieval*, *General* | the rail | `Settings.svelte` · `GettingStarted.svelte`, `Documents.svelte`, `ProviderAndModel.svelte`, `Retrieval.svelte`, `General.svelte` |
+| the providers: *Answering with* · the list · the open provider's form | *Provider & model* | `ProviderSetup.svelte` · `AnsweringWith.svelte` · `ProviderList.svelte` · `ProviderForm.svelte` |
 | *Manage files* · *Letter-spacing ignore list* | *Documents* | `ManageFiles.svelte` · `SpacingIgnoreList.svelte` |
 | *Re-index this folder?* · *Open this library?* | *Re-index* · *Open another library…*, in *Documents* | `ReindexFolder.svelte` · `OpenLibrary.svelte` |
 

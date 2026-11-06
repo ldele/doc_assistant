@@ -10,6 +10,11 @@
   // concept graph); a *term* is a word the library uses that nobody has. A concept is shown under
   // its name, and each of its forms is marked exact or broad here. Deleting asks first and says
   // what goes with the row.
+  //
+  // The view's parts sit beside it, one file each (ADR-064): DetectProposals, NewFamily, Concepts,
+  // Terms, and FamilyRow — one row, rendered by both lists. This file keeps the frame (scrim,
+  // header, close, Escape) and what crosses the parts: the one search of both lists, going to a
+  // row, the one rename and the one delete question at a time, and the marks being saved.
   import { untrack } from 'svelte'
   import type {
     KeywordFamily,
@@ -18,21 +23,21 @@
     MemberBreadth,
   } from '../../lib/core/types'
   import {
-    RARE_MAX_DOCS,
-    deletionLosses,
     filterByQuery,
-    formToAdd,
     graphVocabulary,
     markKey,
     memberBreadth,
     nextBreadth,
-    shownBreadth,
     splitInheritedFamilies,
     termFamilies,
     withoutKey,
   } from '../../lib/library/library'
-  import { shownName } from '../../lib/graph/labels'
   import Icon from '../../shell/Icon.svelte'
+  import Concepts from './Concepts.svelte'
+  import DetectProposals from './DetectProposals.svelte'
+  import FamilyRow from './FamilyRow.svelte'
+  import NewFamily from './NewFamily.svelte'
+  import Terms from './Terms.svelte'
 
   let {
     families,
@@ -83,6 +88,7 @@
 
   // A keyword belongs to at most one family (ADR-015) — "un-familied" = not a canonical or
   // an alias of any family, matched case-insensitively (mirrors the backend's own matching).
+  // New family picks its members from it, and every row's add field offers it.
   const familiedLower = $derived.by(() => {
     const s = new Set<string>()
     for (const f of families) {
@@ -93,24 +99,6 @@
   })
   const unfamilied = $derived(
     [...allKeywords].filter((k) => !familiedLower.has(k.toLowerCase())).sort((a, b) => a.localeCompare(b)),
-  )
-
-  // PR-2.7 F3/F4 — the flat pools stopped scanning at ~40 chips, and half of a real corpus's
-  // keywords sit on one document. Both pools get a search box; the 1-doc tail is collapsed behind
-  // a toggle (never deleted — search still reaches it, and so does the toggle).
-  let poolQuery = $state('')
-  let showRareMembers = $state(false)
-  const poolMatches = $derived(filterByQuery(unfamilied, poolQuery, (k) => k))
-  const poolSplit = $derived.by(() => {
-    if (poolQuery.trim() !== '') return { common: poolMatches, rare: [] as string[] }
-    const common: string[] = []
-    const rare: string[] = []
-    for (const k of poolMatches)
-      ((keywordDocCounts.get(k) ?? 0) <= RARE_MAX_DOCS ? rare : common).push(k)
-    return common.length === 0 ? { common: poolMatches, rare: [] as string[] } : { common, rare }
-  })
-  const poolShown = $derived(
-    showRareMembers ? [...poolSplit.common, ...poolSplit.rare] : poolSplit.common,
   )
 
   // ADR-054 — two lists. Concepts are the rows the user has taken on (the graph vocabulary,
@@ -135,19 +123,8 @@
     ),
   )
 
-  // PR-2.7 F2 — the canonical was unchecked free text: no way to reach an existing family at
-  // scale, and the hole D3 closed at the library boundary. Typing an existing canonical now offers
-  // to *go to* that family instead of silently creating a second claim on the same keyword.
-  const canonicalMatch = $derived.by(() => {
-    const v = newCanonical.trim().toLowerCase()
-    if (v === '') return null
-    return families.find((f) => f.canonical.toLowerCase() === v) ?? null
-  })
-  const canonicalSuggestions = $derived.by(() => {
-    const v = newCanonical.trim().toLowerCase()
-    if (v === '' || canonicalMatch) return []
-    return families.filter((f) => f.canonical.toLowerCase().includes(v)).slice(0, 5)
-  })
+  // What is typed in New family's name field. Kept here because going to a row clears it.
+  let newCanonical = $state('')
   let highlightId = $state<string | null>(null)
   function goToFamily(f: KeywordFamily): void {
     newCanonical = ''
@@ -184,56 +161,26 @@
     })
   })
 
-  let newCanonical = $state('')
-  let newMembers = $state<string[]>([])
-  function toggleNewMember(k: string): void {
-    newMembers = newMembers.includes(k) ? newMembers.filter((x) => x !== k) : [...newMembers, k]
-  }
-  function submitCreate(): void {
-    const canonical = newCanonical.trim()
-    if (!canonical) return
-    if (canonicalMatch) {
-      goToFamily(canonicalMatch)
-      return
-    }
-    // A family created with no members starts as a term with 0 aliases / 0 docs, which is exactly
-    // the shape the unused group hides — so creating one would look like it silently failed.
-    // Reveal the group in that case (and only that case: with members it lands in the visible
-    // list).
-    if (newMembers.length === 0) showInherited = true
-    onCreate(canonical, newMembers)
-    newCanonical = ''
-    newMembers = []
+  // A family created with no members starts as a term with 0 aliases / 0 docs, which is exactly
+  // the shape the unused group hides — so creating one would look like it silently failed.
+  // Reveal the group in that case (and only that case: with members it lands in the visible
+  // list).
+  function createFamily(canonical: string, members: string[]): void {
+    if (members.length === 0) showInherited = true
+    onCreate(canonical, members)
   }
 
+  // One rename at a time, across both lists: the row that starts one takes it (bound into the row).
   let editingId = $state<string | null>(null)
   let editingValue = $state('')
-  function startRename(f: KeywordFamily): void {
-    editingId = f.id
-    editingValue = f.canonical
-  }
-  function commitRename(): void {
-    if (editingId === null) return
-    const v = editingValue.trim()
-    if (v) onRename(editingId, v)
-    editingId = null
-  }
-  function cancelRename(): void {
-    editingId = null
-  }
 
   // One pending "add a form" text per family row (family id -> what is typed in its field). The
   // field takes any text and offers the unassigned keywords as you type, from ONE shared list.
   // Each row used to carry its own <select> of the whole pool: on a 104-document library that was
   // 254 rows by 1,229 options, 312,166 elements, and the view froze for seconds on opening — while
   // a form that is not an extracted keyword (`DPR`, a bare `contrastive`) could not be added at all.
+  // Kept here, not in the row, so a search that hides the row keeps what was typed.
   let addSelection = $state<Record<string, string>>({})
-  function submitAdd(f: KeywordFamily): void {
-    const form = formToAdd(f, addSelection[f.id])
-    if (form === null) return
-    onAddMember(f.id, form)
-    addSelection = { ...addSelection, [f.id]: '' }
-  }
 
   // A mark is set by toggling, so its control shows the mark the moment it is clicked and takes
   // no second click until the server has answered: a control that waited looked as if nothing had
@@ -290,9 +237,6 @@
     if (deleteAsk !== null) keepFamily()
     else onClose()
   }
-  function autofocus(node: HTMLElement): void {
-    node.focus()
-  }
 </script>
 
 <svelte:window onkeydown={onKey} />
@@ -306,299 +250,46 @@
   </div>
 
   <div class="body">
-    <section class="block">
-      <h3>Detect proposals</h3>
-      <p class="hint">
-        Zero-LLM, on request — checks keyword spelling (morphology) and meaning (bge embedding)
-        for near-duplicates. Nothing is written until you accept a proposal below.
-      </p>
-      <button class="secondary" onclick={onDetect} disabled={detecting} type="button">
-        {detecting ? 'Detecting…' : 'Detect'}
-      </button>
-      {#if detectError}
-        <p class="error">{detectError}</p>
-      {/if}
-      {#if proposals.length > 0}
-        <div class="proplist" role="group" aria-label="Detected family proposals">
-          {#each proposals as p (p.canonical)}
-            <div class="proprow">
-              <span class="proptier" class:embedding={p.tier === 'embedding'}>
-                {p.tier === 'morphological' ? 'spelling' : 'meaning'}
-              </span>
-              <span class="proptext">
-                <strong>{p.canonical}</strong>
-                <span class="propmembers">+ {p.members.join(', ')}</span>
-              </span>
-              <span class="propconf">{Math.round(p.confidence * 100)}%</span>
-              <button class="propaccept" onclick={() => onAcceptProposal(p)} type="button">
-                Accept
-              </button>
-              <button
-                class="iconbtn"
-                onclick={() => onDismissProposal(p.canonical)}
-                aria-label="Dismiss proposal for {p.canonical}"
-                title="Dismiss"
-                type="button"
-              >
-                <Icon name="x" size={14} />
-              </button>
-            </div>
-          {/each}
-        </div>
-      {:else if !detecting && !detectError}
-        <p class="hint">No proposals yet — run Detect to check for near-duplicate keywords.</p>
-      {/if}
-    </section>
+    <DetectProposals
+      {proposals}
+      {detecting}
+      {detectError}
+      {onDetect}
+      {onAcceptProposal}
+      {onDismissProposal}
+    />
 
-    <section class="block">
-      <h3>New family</h3>
-      <p class="hint">
-        Collapse near-duplicate keywords (e.g. “llm” / “llms”) into one canonical tag.
-      </p>
-      <div class="createrow">
-        <input
-          use:autofocus
-          bind:value={newCanonical}
-          placeholder="Canonical name, e.g. “large language models”"
-          aria-label="New family canonical name"
-          onkeydown={(e) => e.key === 'Enter' && submitCreate()}
-        />
-        <button class="primary" onclick={submitCreate} disabled={!newCanonical.trim()} type="button">
-          {canonicalMatch ? 'Go to family' : 'Create'}
-        </button>
-      </div>
-      {#if canonicalMatch}
-        <p class="hint match">
-          <Icon name="triangle-alert" size={13} />
-          “{canonicalMatch.canonical}” already exists ({canonicalMatch.doc_count} doc{canonicalMatch.doc_count ===
-          1
-            ? ''
-            : 's'}) — creating it again would split the same keyword across two families.
-        </p>
-      {:else if canonicalSuggestions.length > 0}
-        <div class="suggest" role="group" aria-label="Existing families matching what you typed">
-          <span class="hint">Existing:</span>
-          {#each canonicalSuggestions as f (f.id)}
-            <button class="suggestbtn" onclick={() => goToFamily(f)} type="button">
-              {f.canonical}
-            </button>
-          {/each}
-        </div>
-      {/if}
-      {#if unfamilied.length > 0}
-        <div class="poolhead">
-          <div class="searchrow small">
-            <Icon name="search" size={13} />
-            <input
-              bind:value={poolQuery}
-              placeholder="Search keywords"
-              aria-label="Search un-familied keywords"
-            />
-          </div>
-          {#if poolSplit.rare.length > 0}
-            <button class="linkbtn" onclick={() => (showRareMembers = !showRareMembers)} type="button">
-              {showRareMembers ? 'Hide' : 'Show'} rare ({poolSplit.rare.length})
-            </button>
-          {/if}
-        </div>
-        <div class="pickrow" role="group" aria-label="Member keywords for the new family">
-          {#each poolShown as k (k)}
-            <button
-              class="pick"
-              class:on={newMembers.includes(k)}
-              onclick={() => toggleNewMember(k)}
-              type="button"
-              aria-pressed={newMembers.includes(k)}
-            >
-              {#if newMembers.includes(k)}<Icon name="check" size={11} />{/if}
-              {k}
-            </button>
-          {:else}
-            <p class="hint">No keywords match “{poolQuery.trim()}”.</p>
-          {/each}
-        </div>
-      {/if}
-    </section>
+    <NewFamily
+      {families}
+      {unfamilied}
+      {keywordDocCounts}
+      bind:newCanonical
+      onGoToFamily={goToFamily}
+      onCreate={createFamily}
+    />
 
-    <!-- One row, rendered by both lists below. A concept's row marks each of its forms exact or
-         broad; a term's row has no such control, because only a concept's forms are counted
-         (ADR-054). -->
+    <!-- One row, rendered by both lists below. Wired here once, so Concepts and Terms only place
+         it; the row itself is FamilyRow. -->
     {#snippet familyRow(f: KeywordFamily)}
-      {@const name = shownName(f.canonical, f.written ?? null)}
-      <div class="famrow" id="fam-{f.id}" class:highlight={highlightId === f.id}>
-        <div class="famhead">
-          {#if editingId === f.id}
-            <input
-              class="renameinput"
-              bind:value={editingValue}
-              aria-label="Rename {name}"
-              onkeydown={(e) => {
-                if (e.key === 'Enter') commitRename()
-                if (e.key === 'Escape') cancelRename()
-              }}
-            />
-            <button class="iconbtn" onclick={commitRename} aria-label="Save name" type="button">
-              <Icon name="check" size={14} />
-            </button>
-            <button class="iconbtn" onclick={cancelRename} aria-label="Cancel rename" type="button">
-              <Icon name="x" size={14} />
-            </button>
-          {:else}
-            <button class="famname" onclick={() => startRename(f)} type="button" title="Rename">
-              {name}
-            </button>
-            <!-- The library filter's count: documents that carry the keyword. The graph counts
-                 mentions in the text, so the two numbers differ for the same concept, and a
-                 bare "1 doc" beside a concept the graph shows in eleven reads as a fault. -->
-            <span
-              class="doccount"
-              title="Documents whose keywords carry this name or one of its forms — the library filter's count. The graph counts mentions in the text instead."
-            >
-              {f.doc_count} doc{f.doc_count === 1 ? '' : 's'}
-            </span>
-            <button
-              class="iconbtn graph"
-              class:on={f.graph_include}
-              aria-pressed={f.graph_include}
-              onclick={() => onSetOnGraph(f.id, !f.graph_include)}
-              aria-label={f.graph_include
-                ? `Take ${name} off the concept graph`
-                : `Take ${name} on as a concept`}
-              title={f.graph_include
-                ? 'A concept, on the graph — click to make it a term again'
-                : 'A term — click to take it on as a concept'}
-              type="button"
-            >
-              <Icon name="waypoints" size={14} />
-            </button>
-            <button
-              class="iconbtn danger"
-              onclick={() => void askDelete(f)}
-              aria-label="Delete {name}"
-              title="Delete…"
-              type="button"
-            >
-              <Icon name="x" size={14} />
-            </button>
-          {/if}
-        </div>
-        {#if deleteAsk !== null && deleteAsk.id === f.id}
-          {@const losses = deleteAsk.info ? deletionLosses(deleteAsk.info) : []}
-          <div class="confirm" role="group" aria-label="Delete {name}?">
-            {#if deleteAsk.loading}
-              <p class="confirmtext">Checking what goes with “{name}”…</p>
-            {:else}
-              <p class="confirmtext">
-                {#if deleteAsk.info === null}
-                  Delete “{name}”? What goes with it could not be read.
-                {:else if losses.length === 0}
-                  Delete “{name}”? Nothing else is attached to it.
-                {:else}
-                  Delete “{name}”? This also removes {losses.join(', ')}.
-                {/if}
-                {#if f.graph_include}
-                  Taking it off the graph keeps all of that and makes it a term again.
-                {/if}
-              </p>
-              <div class="confirmrow">
-                <button class="addbtn" use:autofocus onclick={keepFamily} type="button">Keep</button>
-                {#if f.graph_include}
-                  <button class="addbtn" onclick={takeOffGraphInstead} type="button">
-                    Take off the graph instead
-                  </button>
-                {/if}
-                <button class="dangerbtn" onclick={confirmDelete} type="button">Delete</button>
-              </div>
-            {/if}
-          </div>
-        {/if}
-        <div class="members" role="group" aria-label="Forms of {name}">
-          {#each f.aliases as alias (alias)}
-            {#if f.graph_include}
-              {@const key = markKey(f.id, alias)}
-              {@const mark = shownBreadth(savingMarks, f, alias)}
-              {@const saving = key in savingMarks}
-              <span class="form" class:broad={mark === 'broad'}>
-                <span class="formtext">{alias}</span>
-                <span class="seg" role="group" aria-label="How “{alias}” counts for {name}">
-                  <button
-                    class="segbtn"
-                    class:on={mark === 'exact'}
-                    aria-pressed={mark === 'exact'}
-                    disabled={saving}
-                    onclick={() => void setMark(f, alias, 'exact')}
-                    title="Exact: “{alias}” always means {name}, so its documents count."
-                    type="button"
-                  >
-                    exact
-                  </button>
-                  <button
-                    class="segbtn"
-                    class:on={mark === 'broad'}
-                    aria-pressed={mark === 'broad'}
-                    disabled={saving}
-                    onclick={() => void setMark(f, alias, 'broad')}
-                    title="Broad: “{alias}” also means other things, so its documents are listed beside {name} and not counted in it."
-                    type="button"
-                  >
-                    broad
-                  </button>
-                </span>
-                {#if key in failedMarks}
-                  <span class="formerr" role="status">not saved — click again</span>
-                {/if}
-                <button
-                  class="formx"
-                  onclick={() => onRemoveMember(f.id, alias)}
-                  aria-label="Remove “{alias}” from {name}"
-                  title="Remove this form"
-                  type="button"
-                >
-                  <Icon name="x" size={11} />
-                </button>
-              </span>
-            {:else}
-              <button
-                class="chip"
-                onclick={() => onRemoveMember(f.id, alias)}
-                type="button"
-                title="Remove “{alias}” from this family"
-              >
-                <span>{alias}</span>
-                <Icon name="x" size={11} />
-              </button>
-            {/if}
-          {:else}
-            <span class="nomembers">
-              {f.graph_include
-                ? 'No other forms yet — just the name.'
-                : 'No member keywords yet — just the name.'}
-            </span>
-          {/each}
-        </div>
-        <div class="addrow">
-          <input
-            class="addinput"
-            list="mk-unassigned"
-            bind:value={addSelection[f.id]}
-            placeholder={f.graph_include
-              ? 'Add a form — type to search the keywords, or type a new one'
-              : 'Add a keyword — type to search'}
-            aria-label={f.graph_include ? `Add a form to ${name}` : `Add a keyword to ${name}`}
-            onkeydown={(e) => {
-              if (e.key === 'Enter') submitAdd(f)
-            }}
-          />
-          <button
-            class="addbtn"
-            onclick={() => submitAdd(f)}
-            disabled={formToAdd(f, addSelection[f.id]) === null}
-            type="button"
-          >
-            Add
-          </button>
-        </div>
-      </div>
+      <FamilyRow
+        family={f}
+        highlighted={highlightId === f.id}
+        bind:editingId
+        bind:editingValue
+        bind:addValue={addSelection[f.id]}
+        {deleteAsk}
+        {savingMarks}
+        {failedMarks}
+        {onRename}
+        {onSetOnGraph}
+        {onAddMember}
+        {onRemoveMember}
+        onSetMark={setMark}
+        onAskDelete={askDelete}
+        onKeep={keepFamily}
+        onTakeOffGraphInstead={takeOffGraphInstead}
+        onConfirmDelete={confirmDelete}
+      />
     {/snippet}
 
     <!-- The unassigned keywords, once, for every row's add field to offer as you type. -->
@@ -608,162 +299,13 @@
       {/each}
     </datalist>
 
-    <section class="block" id="mk-concepts">
-      <h3>Concepts ({onGraph.length})</h3>
-      <!-- ADR-018's curation, in the view that ADR named as its home, under ADR-054's words. Said
-           plainly because the default is *out* and the consequence is a blank Graph page: a user
-           who never finds this control has no way to know why their graph is empty. -->
-      <p class="hint">
-        A concept is a meaning you have taken on: it is on the concept graph and can have a
-        definition. Mark each of its forms <strong>exact</strong> when the form always means the
-        concept, or <strong>broad</strong> when it also means other things — a broad form's
-        documents are listed beside the concept and not counted in it. A form with neither mark
-        counts as exact.
-      </p>
-      <p class="hint">
-        The graph applies a change when you rebuild it, and says it is behind until you do.
-      </p>
-      <div class="poolhead">
-        <div class="searchrow small">
-          <Icon name="search" size={13} />
-          <input
-            bind:value={famQuery}
-            placeholder="Search concepts and terms"
-            aria-label="Search concepts and terms"
-          />
-        </div>
-      </div>
-      <div class="famlist">
-        {#each conceptsShown as f (f.id)}
-          {@render familyRow(f)}
-        {:else}
-          {#if famQuery.trim() === ''}
-            <p class="hint">
-              No concepts yet. Take a term on with the <Icon name="waypoints" size={12} /> button on
-              its row, then rebuild the graph.
-            </p>
-          {:else}
-            <p class="hint">No concept matches “{famQuery.trim()}”.</p>
-          {/if}
-        {/each}
-      </div>
-    </section>
+    <Concepts concepts={onGraph} {conceptsShown} bind:famQuery {familyRow} />
 
-    <section class="block">
-      <h3>Terms ({terms.length})</h3>
-      <p class="hint">
-        Words your library uses that you have not taken on. A term stays searchable and still works
-        as a keyword filter; no definition, merge or field is stored for it. Take one on with the
-        <Icon name="waypoints" size={12} /> button on its row.
-      </p>
-      {#if terms.length === 0}
-        <p class="hint">
-          No terms yet — keywords arrive with your documents, or create a family above.
-        </p>
-      {:else}
-        <div class="poolhead">
-          <p class="hint tally">
-            {famSplit.real.filter((f) => f.aliases.length > 0).length} collapse synonyms ·
-            {famSplit.real.filter((f) => f.aliases.length === 0).length} single-label
-            {#if famSplit.inherited.length > 0}· {famSplit.inherited.length} unused, hidden (no
-              members, no documents){/if}
-          </p>
-          {#if famSplit.inherited.length > 0}
-            <button class="linkbtn" onclick={() => (showInherited = !showInherited)} type="button">
-              {showInherited ? 'Hide' : 'Show'} unused ({famSplit.inherited.length})
-            </button>
-          {/if}
-        </div>
-        <div class="famlist">
-          {#each termsShown as f (f.id)}
-            {@render familyRow(f)}
-          {:else}
-            {#if famQuery.trim() === ''}
-              <p class="hint">Every term here is unused — show them with the toggle above.</p>
-            {:else}
-              <p class="hint">No term matches “{famQuery.trim()}”.</p>
-            {/if}
-          {/each}
-        </div>
-      {/if}
-    </section>
+    <Terms {terms} {famSplit} {termsShown} {famQuery} bind:showInherited {familyRow} />
   </div>
 </div>
 
 <style>
-  /* PR-2.7 F3 — a search row + a demote toggle above each pool that outgrew scanning. */
-  .poolhead {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: var(--space-2);
-    margin-bottom: 0.4rem;
-  }
-  .searchrow.small {
-    display: flex;
-    align-items: center;
-    gap: 0.35rem;
-    flex: 1;
-    min-width: 0;
-    border: 1px solid var(--line);
-    border-radius: var(--radius-sm, 6px);
-    padding: 0.2rem 0.45rem;
-    color: var(--fg-2);
-  }
-  .searchrow.small input {
-    flex: 1;
-    min-width: 0;
-    border: none;
-    background: none;
-    color: var(--fg);
-    font: inherit;
-    font-size: 0.8rem;
-    outline: none;
-  }
-  .linkbtn {
-    flex: none;
-    border: none;
-    background: none;
-    padding: 0;
-    font: inherit;
-    font-size: 0.75rem;
-    color: var(--fg-2);
-    cursor: pointer;
-  }
-  .linkbtn:hover {
-    color: var(--fg);
-  }
-  /* PR-2.7 F2 — typing an existing canonical offers navigation, not a duplicate. */
-  .hint.match {
-    display: flex;
-    align-items: center;
-    gap: 0.35rem;
-    color: var(--warn, var(--fg-2));
-  }
-  .suggest {
-    display: flex;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: 0.3rem;
-    margin-bottom: 0.4rem;
-  }
-  .suggestbtn {
-    border: 1px solid var(--line);
-    border-radius: 999px;
-    background: none;
-    color: var(--fg);
-    font: inherit;
-    font-size: 0.75rem;
-    padding: 0.1rem 0.5rem;
-    cursor: pointer;
-  }
-  .suggestbtn:hover {
-    border-color: var(--accent, var(--fg-2));
-  }
-  .famrow.highlight {
-    outline: 2px solid var(--accent, var(--fg-2));
-    outline-offset: 2px;
-  }
   .scrim {
     position: fixed;
     inset: 0;
@@ -814,18 +356,6 @@
     color: var(--fg);
     background: var(--surface-2);
   }
-  .iconbtn.danger:hover {
-    color: var(--danger, #c0392b);
-  }
-  /* ADR-018 — the graph-vocabulary toggle. It is a two-state control on a row of one-shot
-     actions, so "on" has to read as a state and not as a hover: filled accent, not a tint. */
-  .iconbtn.graph.on {
-    color: var(--accent);
-    background: var(--surface-2);
-  }
-  .iconbtn.graph.on:hover {
-    color: var(--accent);
-  }
   .body {
     flex: 1;
     min-height: 0;
@@ -833,393 +363,6 @@
     display: flex;
     flex-direction: column;
     gap: var(--space-4);
-  }
-  .block h3 {
-    margin: 0 0 0.3rem;
-    font-size: 0.78rem;
-    font-weight: 600;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
-    color: var(--fg-2);
-  }
-  .hint {
-    margin: 0 0 0.5rem;
-    font-size: 0.78rem;
-    color: var(--fg-2);
-  }
-  .createrow {
-    display: flex;
-    gap: 0.4rem;
-  }
-  .createrow input {
-    flex: 1;
-    min-width: 0;
-    font: inherit;
-    font-size: 0.85rem;
-    padding: 0.4rem 0.55rem;
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    background: var(--bg);
-    color: var(--fg);
-  }
-  .createrow input:focus {
-    outline: none;
-    border-color: var(--accent);
-  }
-  .primary {
-    font: inherit;
-    font-size: 0.82rem;
-    font-weight: 600;
-    cursor: pointer;
-    color: var(--accent-fg);
-    background: var(--accent);
-    border: 1px solid var(--accent);
-    border-radius: 8px;
-    padding: 0.4rem 0.75rem;
-    flex: none;
-  }
-  .primary:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-  .secondary {
-    font: inherit;
-    font-size: 0.8rem;
-    font-weight: 600;
-    cursor: pointer;
-    color: var(--fg);
-    background: var(--surface-2);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: 0.35rem 0.7rem;
-    align-self: flex-start;
-  }
-  .secondary:hover:not(:disabled) {
-    border-color: var(--accent);
-  }
-  .secondary:disabled {
-    opacity: 0.6;
-    cursor: wait;
-  }
-  .error {
-    margin: 0.4rem 0 0;
-    font-size: 0.78rem;
-    color: var(--danger, #c0392b);
-  }
-  .proplist {
-    display: flex;
-    flex-direction: column;
-    gap: 0.3rem;
-    margin-top: 0.5rem;
-  }
-  .proprow {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: 0.35rem 0.55rem;
-  }
-  .proptier {
-    flex: none;
-    font-size: 0.65rem;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.03em;
-    color: var(--fg-2);
-    background: var(--surface-2);
-    border-radius: 999px;
-    padding: 0.1rem 0.45rem;
-  }
-  .proptier.embedding {
-    color: var(--accent-fg);
-    background: var(--accent);
-  }
-  .proptext {
-    flex: 1;
-    min-width: 0;
-    display: flex;
-    align-items: baseline;
-    gap: 0.4rem;
-    font-size: 0.82rem;
-    overflow: hidden;
-  }
-  .propmembers {
-    color: var(--fg-2);
-    font-size: 0.75rem;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-  .propconf {
-    flex: none;
-    font-size: 0.7rem;
-    font-variant-numeric: tabular-nums;
-    color: var(--fg-2);
-  }
-  .propaccept {
-    flex: none;
-    font: inherit;
-    font-size: 0.75rem;
-    font-weight: 600;
-    cursor: pointer;
-    color: var(--accent);
-    background: none;
-    border: 1px solid var(--accent);
-    border-radius: 6px;
-    padding: 0.2rem 0.55rem;
-  }
-  .propaccept:hover {
-    color: var(--accent-fg);
-    background: var(--accent);
-  }
-  .pickrow {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.3rem;
-    margin-top: 0.5rem;
-  }
-  .pick {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.25rem;
-    font: inherit;
-    font-size: 0.72rem;
-    cursor: pointer;
-    color: var(--fg-2);
-    background: var(--bg);
-    border: 1px solid var(--border);
-    border-radius: 999px;
-    padding: 0.14rem 0.5rem;
-  }
-  .pick:hover {
-    border-color: var(--accent);
-  }
-  .pick.on {
-    color: var(--accent-fg);
-    background: var(--accent);
-    border-color: var(--accent);
-    font-weight: 600;
-  }
-  .famlist {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-2);
-  }
-  .famrow {
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: 0.5rem 0.6rem;
-    display: flex;
-    flex-direction: column;
-    gap: 0.4rem;
-  }
-  .famhead {
-    display: flex;
-    align-items: center;
-    gap: 0.4rem;
-  }
-  .famname {
-    font: inherit;
-    font-size: 0.88rem;
-    font-weight: 600;
-    color: var(--fg);
-    background: none;
-    border: none;
-    cursor: pointer;
-    padding: 0;
-    text-align: left;
-  }
-  .famname:hover {
-    text-decoration: underline;
-  }
-  .renameinput {
-    flex: 1;
-    min-width: 0;
-    font: inherit;
-    font-size: 0.85rem;
-    padding: 0.2rem 0.4rem;
-    border: 1px solid var(--accent);
-    border-radius: 6px;
-    background: var(--bg);
-    color: var(--fg);
-  }
-  .doccount {
-    font-size: 0.72rem;
-    color: var(--fg-2);
-    font-variant-numeric: tabular-nums;
-    margin-left: auto;
-    flex: none;
-  }
-  .members {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.3rem;
-  }
-  .nomembers {
-    font-size: 0.75rem;
-    color: var(--fg-2);
-    font-style: italic;
-  }
-  .chip {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.3rem;
-    font: inherit;
-    font-size: 0.72rem;
-    cursor: pointer;
-    color: var(--fg);
-    background: var(--surface-2);
-    border: 1px solid var(--border);
-    border-radius: 999px;
-    padding: 0.14rem 0.5rem;
-  }
-  .chip:hover {
-    border-color: var(--danger, #c0392b);
-    color: var(--danger, #c0392b);
-  }
-  /* ADR-054 — a concept's form: its text, how it counts, and a way to remove it. Three controls
-     where a term's chip has one, so it is a container and not a button. */
-  .form {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.3rem;
-    font-size: 0.72rem;
-    color: var(--fg);
-    background: var(--surface-2);
-    border: 1px solid var(--border);
-    border-radius: 999px;
-    padding: 0.1rem 0.25rem 0.1rem 0.5rem;
-  }
-  /* A broad form sits beside the concept, not in it: the dashed edge says so before the mark is
-     read. */
-  .form.broad {
-    border-style: dashed;
-    background: none;
-  }
-  .seg {
-    display: inline-flex;
-    border: 1px solid var(--border);
-    border-radius: 999px;
-    overflow: hidden;
-  }
-  .segbtn {
-    font: inherit;
-    font-size: 0.66rem;
-    cursor: pointer;
-    color: var(--fg-2);
-    background: var(--bg);
-    border: none;
-    padding: 0.05rem 0.4rem;
-  }
-  .segbtn + .segbtn {
-    border-left: 1px solid var(--border);
-  }
-  .segbtn:hover {
-    color: var(--fg);
-  }
-  /* A two-state mark, so "on" reads as a state and not as a hover: filled, like the graph toggle. */
-  .segbtn.on {
-    color: var(--accent-fg);
-    background: var(--accent);
-    font-weight: 600;
-  }
-  /* While a mark is being saved its two buttons take no click: the second click of a toggle
-     would undo the first. */
-  .segbtn:disabled {
-    cursor: progress;
-  }
-  .formerr {
-    font-size: 0.66rem;
-    color: var(--danger, #c0392b);
-  }
-  /* Set apart from the marks: removing a form is not the third choice after exact and broad. */
-  .formx {
-    margin-left: 0.3rem;
-    display: inline-flex;
-    align-items: center;
-    padding: 0.1rem;
-    border: none;
-    background: none;
-    color: var(--fg-2);
-    border-radius: 999px;
-    cursor: pointer;
-  }
-  .formx:hover {
-    color: var(--danger, #c0392b);
-  }
-  /* The delete question, on the row it is about. */
-  .confirm {
-    border: 1px solid var(--danger, #c0392b);
-    border-radius: 6px;
-    padding: 0.4rem 0.5rem;
-    display: flex;
-    flex-direction: column;
-    gap: 0.35rem;
-  }
-  .confirmtext {
-    margin: 0;
-    font-size: 0.78rem;
-    color: var(--fg);
-  }
-  .confirmrow {
-    display: flex;
-    flex-wrap: wrap;
-    justify-content: flex-end;
-    gap: 0.35rem;
-  }
-  .dangerbtn {
-    font: inherit;
-    font-size: 0.75rem;
-    font-weight: 600;
-    cursor: pointer;
-    color: var(--danger, #c0392b);
-    background: none;
-    border: 1px solid var(--danger, #c0392b);
-    border-radius: 6px;
-    padding: 0.25rem 0.55rem;
-    flex: none;
-  }
-  .dangerbtn:hover {
-    color: var(--bg);
-    background: var(--danger, #c0392b);
-  }
-  .hint.tally {
-    margin: 0;
-  }
-  .addrow {
-    display: flex;
-    gap: 0.35rem;
-  }
-  .addinput {
-    flex: 1;
-    min-width: 0;
-    font: inherit;
-    font-size: 0.78rem;
-    padding: 0.3rem 0.4rem;
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    background: var(--bg);
-    color: var(--fg);
-  }
-  .addbtn {
-    font: inherit;
-    font-size: 0.75rem;
-    cursor: pointer;
-    color: var(--fg-2);
-    background: none;
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    padding: 0.25rem 0.55rem;
-    flex: none;
-  }
-  .addbtn:hover:not(:disabled) {
-    color: var(--fg);
-    border-color: var(--accent);
-  }
-  .addbtn:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
   }
   @media (max-width: 640px) {
     .modal {

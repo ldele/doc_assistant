@@ -1,24 +1,21 @@
 <script lang="ts">
+  // Settings: the drawer, its rail and the section it shows. Each of the five sections is a file
+  // beside this one (GettingStarted, Documents, ProviderAndModel, Retrieval, General); this one
+  // keeps what spans them: the window (scrim, Tab trap, Escape), `/api/settings` and the update
+  // status it loads, the run Documents starts and the dialogs it opens (mounted here, outside the
+  // panel), and the state a section shows between visits.
   import type { Settings, IngestStatus, RagOverrides, UpdateStatus } from '../../lib/core/types'
   import {
     getSettings,
     setSourceDir,
-    setMarkersEnabled,
     startIngest,
     startIngestNewOnly,
-    reindexKeywords,
-    exportAllConversations,
     getUpdateStatus,
-    checkForUpdate,
-    setAutoUpdateCheck,
   } from '../../lib/core/api'
-  import { describeUpdate } from '../../lib/settings/updates'
   import { onDestroy, tick } from 'svelte'
   import { fade, fly } from 'svelte/transition'
-  import { getTheme, setTheme, applyTheme, type Theme } from '../../lib/core/theme'
   import Icon from '../../shell/Icon.svelte'
   import {
-    canPickFiles,
     libraryState,
     markLibrarySwitch,
     openLibrary,
@@ -26,20 +23,14 @@
     type LibraryState,
   } from '../../lib/core/tauri'
   import ConfirmDialog from '../../shell/ConfirmDialog.svelte'
-  import {
-    indexLocked,
-    ingestRun,
-    noteIngestStarted,
-    openIndexing,
-    useRunEnd,
-  } from '../../lib/core/ingest.svelte'
+  import { indexLocked, ingestRun, noteIngestStarted, useRunEnd } from '../../lib/core/ingest.svelte'
   import GettingStarted from './GettingStarted.svelte'
+  import Documents from './Documents.svelte'
+  import ProviderAndModel from './ProviderAndModel.svelte'
+  import Retrieval from './Retrieval.svelte'
+  import General from './General.svelte'
   import ReindexFolder from './ReindexFolder.svelte'
   import OpenLibrary from './OpenLibrary.svelte'
-  import ProviderSetup from './ProviderSetup.svelte'
-  import ManageFiles from './ManageFiles.svelte'
-  import SpacingIgnoreList from './SpacingIgnoreList.svelte'
-  import { describeIndex, formatBytes, perDocument } from '../../lib/settings/corpus'
   import { SETTINGS_SECTIONS, initialSection, sectionBadge, type SettingsSectionId } from '../../lib/settings/sections'
   import { outstandingSteps } from '../../lib/settings/setup'
   import { shell } from '../../lib/shell/shell.svelte'
@@ -53,7 +44,7 @@
 
   // `onCorpusChanged` re-reads /api/health after a provider switch. The end of an ingest reaches App
   // through `ingestRun.completedRuns`, which also holds when this panel has been closed.
-  // `overrides` is bindable — the RAG-sandbox section mutates it directly; the session-scoped
+  // `overrides` is bindable — the RAG sandbox (Retrieval) mutates it directly; the session-scoped
   // state itself lives in App.svelte (ADR-010: in-memory only, cleared on restart).
   let {
     onClose,
@@ -67,22 +58,6 @@
     /** Open the re-run picker for these documents (App owns the dialog). */
     onReingest?: (documentIds: string[], label: string) => void
   } = $props()
-
-  // Chat-history export. A failure is shown, not swallowed: the whole point of the button is to
-  // be trusted before a delete, so a silent no-op would be the worst outcome it could have.
-  let exporting = $state(false)
-  let exportError = $state<string | null>(null)
-  async function exportHistory(): Promise<void> {
-    exporting = true
-    exportError = null
-    try {
-      await exportAllConversations()
-    } catch (e) {
-      exportError = `Export failed: ${e instanceof Error ? e.message : String(e)}`
-    } finally {
-      exporting = false
-    }
-  }
 
   // Which category the drawer shows (2026-08-30). The panel is a rail + one pane rather than one
   // flat scroll: see `./sections.ts` for why, and for the list itself.
@@ -130,123 +105,37 @@
     if (!panelEl?.contains(document.activeElement)) panelEl?.focus()
   }
 
-  let theme = $state<Theme>(getTheme())
-
-  function onThemeChange(t: Theme): void {
-    theme = t
-    setTheme(t)
-    applyTheme(t)
-  }
-
-  function resetSandbox(): void {
-    overrides = {}
-  }
-
   let settings = $state<Settings | null>(null)
+  let loadError = $state<string | null>(null)
 
-  // Effective (session-override-or-locked-default) values the sandbox controls display.
-  const effTopK = $derived(overrides.top_k ?? settings?.top_k ?? 1)
-  const effSynthesisMode = $derived(overrides.synthesis_mode ?? settings?.synthesis_mode ?? 'ai')
-  const effMultiQuery = $derived(overrides.use_multi_query ?? settings?.use_multi_query ?? false)
-  const effMarkersEnabled = $derived(
-    overrides.epistemics_markers_enabled ?? settings?.epistemics_markers_enabled ?? false,
-  )
-  const effReviewerEvidenceChars = $derived(
-    overrides.reviewer_evidence_chars ?? settings?.reviewer_evidence_chars ?? 1500,
-  )
-
-  // ADR-027 D2 (E3) — the persisted answer-layer epistemics default. Distinct from the RAG
-  // sandbox's session-only override below: this one survives a restart and becomes the
-  // sandbox's baseline. On failure the checkbox snaps back to the server state (no lying UI).
+  // What a section shows between visits. The rail mounts one section at a time and unmounts the
+  // one it leaves, so anything that must still be there when the person comes back (a request in
+  // flight, its error line) is held here for as long as the window is open, and the section that
+  // shows it writes it back through `bind:`.
+  //
+  // Documents › Corpus: the keyword index's Rebuild (ADR-037).
+  let reindexing = $state(false)
+  let reindexError = $state<string | null>(null)
+  // Provider & model › Answer epistemics, the saved default (ADR-027 D2).
   let markersBusy = $state(false)
   let markersError = $state<string | null>(null)
-
-  async function applyMarkersDefault(enabled: boolean): Promise<void> {
-    if (markersBusy) return
-    markersBusy = true
-    markersError = null
-    try {
-      settings = await setMarkersEnabled(enabled)
-    } catch (e) {
-      markersError = String(e)
-    } finally {
-      markersBusy = false
-    }
-  }
-
-  // ADR-044 — the update check. Notification only; nothing here can install anything.
-  // `update` is null until the first read; the section renders a neutral line rather than
-  // guessing a state, because guessing "up to date" is exactly the failure this feature must
-  // not have. A failed *check* is not an error to show in red — it comes back as state
-  // 'unknown' with a reason, and only a transport failure lands in `updateError`.
+  // General › Chat history.
+  let exporting = $state(false)
+  let exportError = $state<string | null>(null)
+  // General › Updates (ADR-044). `update` is null until the first read; the section renders a
+  // neutral line rather than guessing a state, because guessing "up to date" is exactly the
+  // failure this feature must not have.
   let update = $state<UpdateStatus | null>(null)
   let updateBusy = $state(false)
   let updateError = $state<string | null>(null)
 
-  async function runUpdateCheck(): Promise<void> {
-    if (updateBusy) return
-    updateBusy = true
-    updateError = null
-    try {
-      update = await checkForUpdate()
-    } catch (e) {
-      updateError = `Update check failed: ${e instanceof Error ? e.message : String(e)}`
-    } finally {
-      updateBusy = false
-    }
-  }
-
-  async function applyAutoCheck(enabled: boolean): Promise<void> {
-    if (updateBusy) return
-    updateBusy = true
-    updateError = null
-    try {
-      update = await setAutoUpdateCheck(enabled)
-      // Turning it on should answer the question it implies, not wait a day to do it.
-      if (enabled) update = await checkForUpdate()
-    } catch (e) {
-      updateError = `Couldn't save that: ${e instanceof Error ? e.message : String(e)}`
-    } finally {
-      updateBusy = false
-    }
-  }
-
-  // ADR-037 — the Corpus panel. `indexInfo` derives the label + the honest sentence from the
-  // payload's `keyword_index.mode`; the states say materially different things, and since ADR-038
-  // one of them (`unavailable`) means retrieval is running on one arm.
-  let reindexing = $state(false)
-  let reindexError = $state<string | null>(null)
-  const indexInfo = $derived(
-    settings
-      ? describeIndex(settings.corpus)
-      : { label: '', memory: '', rebuildable: false, degraded: false }
-  )
-
-  // Non-destructive and bounded (the index is derived data the next launch would rebuild anyway),
-  // so no confirmation step — inform, don't block. The response carries refreshed settings, so the
-  // panel updates without a second request.
-  async function rebuildIndex(): Promise<void> {
-    if (reindexing) return
-    reindexing = true
-    reindexError = null
-    try {
-      const fresh = await reindexKeywords()
-      if (!cancelled) settings = fresh
-    } catch (e) {
-      if (!cancelled) reindexError = String(e)
-    } finally {
-      if (!cancelled) reindexing = false
-    }
-  }
-
-  let loadError = $state<string | null>(null)
+  // Documents › Your documents: the folder field and the run it starts.
   let dir = $state('')
   let requesting = $state(false) // the folder is being saved and the run asked for
   // The run lives on the server and `ingestRun` follows it, so this panel holds none of it: closing
   // loses nothing, and reopening mid-run shows the same run. A run can take hours; nothing here may
   // keep the panel open for it.
   const busy = $derived(indexLocked(requesting, ingestRun.status))
-  let picking = $state(false) // the OS folder picker is open, so Browse can't be double-fired
   let actionError = $state<string | null>(null)
   let ingest = $state<IngestStatus | null>(null) // how the last run this panel watched ended
   let inputEl = $state<HTMLInputElement | null>(null)
@@ -264,8 +153,8 @@
     void load(true) // refresh this panel's chunk_count; a blip here stays non-fatal
   })
 
-  // Move focus into the dialog when it opens (the input mounts once settings load) so a
-  // keyboard / screen-reader user lands in the panel, not on the gear button behind the scrim.
+  // Move focus into the dialog when it opens (the input, in Documents, mounts once settings load)
+  // so a keyboard / screen-reader user lands in the panel, not on the gear button behind the scrim.
   // Opened mid-run the input is disabled and refuses focus, so the panel takes it.
   $effect(() => {
     if (inputEl?.disabled) panelEl?.focus()
@@ -295,11 +184,6 @@
       // Leave `update` null — the section says "version unknown until the first check"
       // rather than inventing a state. No red error for a background read nobody asked for.
     }
-  }
-
-  function viewIndexing(): void {
-    onClose()
-    openIndexing()
   }
 
   // Re-index asks first (the user, 2026-11-04): how many files it reads, roughly how long, and
@@ -354,42 +238,9 @@
 
   // Feedback always refers to the path it was produced for — drop a stale ✓ / error once the
   // user edits the folder, so it never sits next to a path it no longer describes.
-  /**
-   * CS1 — choose the library folder with the OS picker instead of pasting a path.
-   *
-   * Fills the field rather than saving directly: the text input stays the override, and the user
-   * still confirms with the same button they would have used after typing. `pickPaths` resolves to
-   * `null` for a cancel *and* for "no picker at all", which is why the button is only rendered when
-   * `canPickFiles()` — the two cases are indistinguishable here by design.
-   */
-  async function browseForFolder(): Promise<void> {
-    if (picking) return
-    picking = true
-    try {
-      const chosen = await pickPaths({
-        directory: true,
-        multiple: false,
-        title: 'Choose the folder Provenote keeps your documents in',
-      })
-      if (chosen && chosen.length > 0) {
-        dir = chosen[0]
-        clearFeedback()
-      }
-    } finally {
-      picking = false
-    }
-  }
-
   function clearFeedback(): void {
     ingest = null
     actionError = null
-  }
-
-  function onInputKey(e: KeyboardEvent): void {
-    if (e.key === 'Enter') {
-      e.preventDefault()
-      void onIndexClick() // self-guards on empty / busy; a Re-index asks first
-    }
   }
 
   // ADR-061: another library folder opens where it is. The shell restarts the backend on it, so
@@ -514,419 +365,42 @@
                so — a model and documents, each one link from the tab that sets it up. -->
           <GettingStarted onOpen={openSection} />
         {:else if activeSection === 'documents'}
-          <section>
-            <h3>Your documents</h3>
-            <!-- CS2 — this folder is *where Provenote keeps the documents you add*, not "the folder
-                 holding your documents". One sentence used to describe both models, which stopped being
-                 true at AD3b: documents are added to the library (copied here, or referenced where they
-                 live), and this folder is the copy destination. Pointing at a folder and indexing it
-                 wholesale still works and is still offered below — it is just no longer what the folder
-                 *is*. -->
-            <label for="src">Library folder</label>
-            <!-- CS1 — the picker is the primary route; the text field stays as an override, because a
-                 path typed or pasted from elsewhere is a real workflow and a picker cannot express one
-                 that does not exist yet (which the warning below is about). In a browser there is no
-                 picker, so the button is not rendered at all rather than rendered dead. -->
-            <div class="srcrow">
-              <input
-                id="src"
-                type="text"
-                bind:value={dir}
-                bind:this={inputEl}
-                oninput={clearFeedback}
-                onkeydown={onInputKey}
-                spellcheck="false"
-                placeholder="C:\path\to\your\documents"
-                disabled={busy}
-              />
-              {#if canPickFiles()}
-                <button class="ghost browse" onclick={browseForFolder} disabled={busy || picking} type="button">
-                  <Icon name="folder" size={14} />
-                  {picking ? 'Choosing…' : 'Browse…'}
-                </button>
-              {/if}
-            </div>
-            <p class="hint">
-              Where Provenote keeps the documents you add — anything already in it can be indexed here
-              too. Supported: {settings.supported_formats}.
-            </p>
-            {#if settings.source_dir && !settings.source_dir_exists}
-              <p class="warn"><Icon name="triangle-alert" size={14} /> The saved folder doesn't exist yet: <code>{settings.source_dir}</code></p>
-            {/if}
-
-            <button class="primary" onclick={onIndexClick} disabled={busy || dir.trim() === ''}>
-              {#if busy}
-                Indexing…
-              {:else if settings.chunk_count > 0}
-                Re-index
-              {:else}
-                Index folder
-              {/if}
-            </button>
-
-            <!-- aria-live so a screen-reader user hears the index progress / completion / failure
-                 without re-navigating; the failure cases also assert role="alert". -->
-            <div aria-live="polite">
-              {#if ingestRun.status?.state === 'running'}
-                <p class="muted">Indexing <code>{ingestRun.status.source_dir}</code>. This can take a
-                  while for large folders. You can close Settings: indexing keeps running.</p>
-              {:else if ingest?.state === 'done'}
-                <p class="ok"><Icon name="check" size={14} /> {ingest.message}</p>
-              {:else if ingest?.state === 'stopped'}
-                <p class="muted">Stopped: {ingest.message}. What finished is in your library.</p>
-              {:else if ingest?.state === 'error'}
-                <p class="err" role="alert">Indexing failed: {ingest.message}</p>
-              {/if}
-              {#if ingestRun.lostContact}
-                <p class="err" role="alert">Lost contact with the indexer. It may still be running.</p>
-              {/if}
-              {#if actionError}
-                <p class="err" role="alert">{actionError}</p>
-              {/if}
-              <!-- ROADMAP 31: every file's status, Pause and Stop. Closes Settings first, so one
-                   overlay is open at a time and Escape closes the one in front. -->
-              {#if ingestRun.status?.counts}
-                <button class="ghost view-run" type="button" onclick={viewIndexing}>
-                  View indexing
-                </button>
-              {/if}
-            </div>
-          </section>
-
-          <section>
-            <h3>Manage files <span class="muted">(selective indexing)</span></h3>
-            <p class="hint">
-              See each file's status, exclude ones you don't want, or index just a selection. Excluded
-              files are skipped by <strong>Index folder</strong> above; an explicit selection here still
-              indexes them.
-            </p>
-            <ManageFiles />
-          </section>
-
-          <section>
-            <h3>Corpus</h3>
-            <dl>
-              <dt>Library</dt>
-              <dd>
-                {settings.corpus.documents.toLocaleString()} documents ·
-                {settings.corpus.chunks.toLocaleString()} chunks
-              </dd>
-              <dt>Disk</dt>
-              <dd>
-                {formatBytes(settings.corpus.disk.total_bytes)}
-                {#if perDocument(settings.corpus.disk.total_bytes, settings.corpus.documents)}
-                  <span class="muted"
-                    >· {perDocument(settings.corpus.disk.total_bytes, settings.corpus.documents)}</span
-                  >
-                {/if}
-              </dd>
-              <dt>Keyword index</dt>
-              <dd class="index-row">
-                <span class:degraded={indexInfo.degraded}>{indexInfo.label}</span>
-                {#if indexInfo.rebuildable}
-                  <button class="ghost" onclick={rebuildIndex} disabled={reindexing || busy}>
-                    {reindexing ? 'Rebuilding…' : 'Rebuild'}
-                  </button>
-                {/if}
-              </dd>
-              <dt>Data home</dt>
-              <dd class="path">{settings.data_home}</dd>
-            </dl>
-            {#if libState?.bundled}
-              <div class="library-row">
-                <button class="ghost" type="button" onclick={() => void chooseLibrary()} disabled={busy}>
-                  <Icon name="folder" size={14} /> Open another library…
-                </button>
-                {#if libState.data_home}
-                  <button class="ghost" type="button" onclick={() => (confirmOwnLibrary = true)} disabled={busy}>
-                    Use the app's own library
-                  </button>
-                {/if}
-              </div>
-              <p class="hint">
-                A library indexed elsewhere on this computer opens where it is; nothing is copied.
-              </p>
-              {#if libraryError}
-                <p class="err" role="alert">{libraryError}</p>
-              {/if}
-            {/if}
-            <p class="banner" class:warn={indexInfo.degraded}>{indexInfo.memory}</p>
-            {#if reindexError}
-              <p class="banner err">{reindexError}</p>
-            {/if}
-          </section>
-          <section>
-            <SpacingIgnoreList {onReingest} focus={focusSpacing} />
-          </section>
+          <Documents
+            bind:settings
+            bind:dir
+            bind:inputEl
+            bind:reindexing
+            bind:reindexError
+            {busy}
+            {ingest}
+            {actionError}
+            {libState}
+            {libraryError}
+            {focusSpacing}
+            onIndex={onIndexClick}
+            onFolderEdit={clearFeedback}
+            onOpenAnotherLibrary={chooseLibrary}
+            onUseOwnLibrary={() => (confirmOwnLibrary = true)}
+            {onReingest}
+            {onClose}
+          />
         {:else if activeSection === 'models'}
           <!-- `load(true)` keeps a switch made in there from leaving the Retrieval tab's Engine
                list stale. A switch changes the model the status bar names, so its health is re-read
                too (onCorpusChanged → App's refreshHealth); it used to keep the old model. -->
-          <ProviderSetup
+          <ProviderAndModel
+            bind:settings
+            bind:markersBusy
+            bind:markersError
             onProviderChanged={() => {
               void load(true)
               onCorpusChanged()
             }}
           />
-
-          <section>
-            <h3>Answer epistemics <span class="muted">(experimental)</span></h3>
-            <p class="hint">
-              Whether corpus epistemics (contested / superseded chips) may appear on an answer's
-              sources. Saved as your default; the per-source evaluation strip below answers is
-              always shown either way.
-            </p>
-            <!-- Off by default, and said plainly rather than left as a silent default
-                 (REVIEW 2026-08-12 §2b R3 · KI-33 · ADR-041). A user turning this on deserves to know
-                 what they are turning on; a user leaving it off deserves to know they are not missing
-                 a measurement. -->
-            <p class="hint">
-              <strong>Known limitation:</strong> these chips come from a stance pass that judges a topic
-              <em>without reading the document</em>, has no “neutral” verdict, and can change its answer
-              when the same pair appears in a different order. They are a prompt to go and look, not a
-              finding. Off by default until that is rebuilt on evidence.
-            </p>
-            <label class="switch-row">
-              <input
-                type="checkbox"
-                checked={settings.epistemics_markers_enabled}
-                disabled={markersBusy}
-                onchange={(e) => void applyMarkersDefault((e.target as HTMLInputElement).checked)}
-              />
-              Epistemics chips in answers <span class="muted">(saved default)</span>
-            </label>
-            <div aria-live="polite">
-              {#if markersError}
-                <p class="err" role="alert">{markersError}</p>
-              {/if}
-            </div>
-          </section>
         {:else if activeSection === 'answers'}
-          <section>
-            <h3>RAG sandbox</h3>
-            <p class="banner">
-              Session only. Resets when you restart. To change a default, run the eval harness.
-            </p>
-
-            <label for="topk">Top-K <span class="muted">({effTopK} of {settings.candidate_k})</span></label>
-            <input
-              id="topk"
-              type="range"
-              min="1"
-              max={settings.candidate_k}
-              value={effTopK}
-              oninput={(e) => (overrides.top_k = Number((e.target as HTMLInputElement).value))}
-            />
-
-            <label for="mode-group">Synthesis mode</label>
-            <div id="mode-group" class="segmented" role="radiogroup" aria-label="Synthesis mode">
-              <button
-                type="button"
-                role="radio"
-                aria-checked={effSynthesisMode === 'ai'}
-                class:active={effSynthesisMode === 'ai'}
-                onclick={() => (overrides.synthesis_mode = 'ai')}
-              >
-                AI
-              </button>
-              <button
-                type="button"
-                role="radio"
-                aria-checked={effSynthesisMode === 'human'}
-                class:active={effSynthesisMode === 'human'}
-                onclick={() => (overrides.synthesis_mode = 'human')}
-              >
-                Human
-              </button>
-            </div>
-
-            <label class="switch-row">
-              <input
-                type="checkbox"
-                checked={effMultiQuery}
-                onchange={(e) => (overrides.use_multi_query = (e.target as HTMLInputElement).checked)}
-              />
-              Multi-query expansion <span class="muted">(costs one extra LLM call)</span>
-            </label>
-
-            <label class="switch-row">
-              <input
-                type="checkbox"
-                checked={effMarkersEnabled}
-                onchange={(e) =>
-                  (overrides.epistemics_markers_enabled = (e.target as HTMLInputElement).checked)}
-              />
-              Show experimental contested/superseded chips — not a corpus measurement
-            </label>
-
-            <label for="reviewer-chars"
-              >Reviewer evidence
-              <span class="muted">({effReviewerEvidenceChars.toLocaleString()} chars)</span></label
-            >
-            <!-- Commit on change (blur/Enter/spinner), not per keystroke: a partial value ("15" en
-                 route to 1500, or a cleared field) must never become the override — the API rejects
-                 out-of-range with a 422 and every later question would fail on it. Out-of-range
-                 clamps to the API bounds [200, 6000]; an emptied field drops the override entirely
-                 (back to the locked default). -->
-            <input
-              id="reviewer-chars"
-              type="number"
-              min="200"
-              max="6000"
-              step="100"
-              value={effReviewerEvidenceChars}
-              onchange={(e) => {
-                const el = e.target as HTMLInputElement
-                if (el.value.trim() === '') {
-                  overrides.reviewer_evidence_chars = null
-                  el.value = String(effReviewerEvidenceChars)
-                  return
-                }
-                const n = Math.round(Number(el.value))
-                const clamped = Number.isFinite(n)
-                  ? Math.min(6000, Math.max(200, n))
-                  : effReviewerEvidenceChars
-                overrides.reviewer_evidence_chars = clamped
-                el.value = String(clamped)
-              }}
-            />
-
-            <button class="ghost" onclick={resetSandbox}>Reset to locked defaults</button>
-          </section>
-
-          <section>
-            <h3>Engine <span class="muted">(read-only)</span></h3>
-            <dl>
-              <dt>LLM</dt>
-              <dd>{settings.provider} / {settings.model}</dd>
-              <dt>Embeddings</dt>
-              <dd>{settings.embedding_model}</dd>
-              <dt>Candidate pool (pre-rerank)</dt>
-              <dd>
-                {settings.candidate_k}
-                <span class="muted">(fixed at construction; Top-K above cuts it after rerank)</span>
-              </dd>
-              <dt>Retrieval weights</dt>
-              <dd>
-                bm25 {settings.retrieval_weights.bm25} / vector {settings.retrieval_weights.vector}
-                <span class="muted">(inert on the shipped top-K by construction, measured)</span>
-              </dd>
-              <dt>Parent-child retrieval</dt>
-              <dd>
-                {settings.use_parent_child ? 'on' : 'off'}
-                <span class="muted">(needs a re-ingest to change)</span>
-              </dd>
-              <dt>Parent chunk size / overlap</dt>
-              <dd>
-                {settings.parent_chunk[0]} / {settings.parent_chunk[1]}
-                <span class="muted">(needs a re-ingest to change)</span>
-              </dd>
-              <dt>Child chunk size / overlap</dt>
-              <dd>
-                {settings.child_chunk[0]} / {settings.child_chunk[1]}
-                <span class="muted">(needs a re-ingest to change)</span>
-              </dd>
-            </dl>
-            <p class="hint">These are locked defaults (changed only via the eval harness).</p>
-          </section>
+          <Retrieval {settings} bind:overrides />
         {:else}
-          <section>
-            <h3>Display</h3>
-            <div class="segmented" role="radiogroup" aria-label="Theme">
-              <button
-                type="button"
-                role="radio"
-                aria-checked={theme === 'system'}
-                class:active={theme === 'system'}
-                onclick={() => onThemeChange('system')}
-              >
-                System
-              </button>
-              <button
-                type="button"
-                role="radio"
-                aria-checked={theme === 'light'}
-                class:active={theme === 'light'}
-                onclick={() => onThemeChange('light')}
-              >
-                Light
-              </button>
-              <button
-                type="button"
-                role="radio"
-                aria-checked={theme === 'dark'}
-                class:active={theme === 'dark'}
-                onclick={() => onThemeChange('dark')}
-              >
-                Dark
-              </button>
-            </div>
-          </section>
-
-          <!-- Chat history (user request 2026-08-10). Export lives here rather than next to the
-               sidebar's delete because it is a whole-history action, and because the order matters:
-               the file is the copy you can act on, the soft delete is not. -->
-          <section>
-            <h3>Chat history</h3>
-            <p class="hint">
-              Every conversation in one markdown file — uncapped, unlike the sidebar list. Delete chats
-              from the sidebar’s select mode (✓).
-            </p>
-            <button class="ghost" onclick={exportHistory} disabled={exporting} type="button">
-              {exporting ? 'Exporting…' : 'Export all conversations'}
-            </button>
-            {#if exportError}<p class="err">{exportError}</p>{/if}
-          </section>
-
-          <!-- Updates (ADR-044). Notification only: this app never downloads or installs anything.
-               The toggle governs the *automatic* daily check; "Check now" always runs, because an
-               explicit press is its own consent and gating it would leave a user who declined
-               background traffic with no way to find out whether they're current. -->
-          <section>
-            <h3>Updates</h3>
-            <p class="hint">
-              Provenote can check whether a newer version has been published, and link you to it.
-              It never downloads or installs anything — you stay in control of what runs on your
-              machine.
-            </p>
-            <label class="switch-row">
-              <input
-                type="checkbox"
-                checked={update?.auto_check_enabled ?? false}
-                disabled={updateBusy}
-                onchange={(e) => void applyAutoCheck((e.target as HTMLInputElement).checked)}
-              />
-              Check for updates automatically <span class="muted">(once a day)</span>
-            </label>
-            <p class="hint">
-              When on, Provenote asks GitHub for the latest release version once a day. Nothing about
-              you or your documents is sent — no queries, no titles, no identifier.
-            </p>
-
-            <div class="update-status" aria-live="polite">
-              {#if update}
-                {@const line = describeUpdate(update)}
-                <p class:ok={line.tone === 'ok'} class:muted={line.tone === 'muted'}>
-                  <strong>{line.headline}</strong>
-                </p>
-                <p class="hint">{line.detail}</p>
-                {#if line.showLink}
-                  <a class="primary link-button" href={update.release_url} target="_blank" rel="noreferrer noopener">
-                    Open the release page
-                  </a>
-                {/if}
-              {:else}
-                <p class="muted">Provenote {'—'} version unknown until the first check.</p>
-              {/if}
-              {#if updateError}
-                <p class="err" role="alert">{updateError}</p>
-              {/if}
-            </div>
-
-            <button class="ghost" onclick={runUpdateCheck} disabled={updateBusy} type="button">
-              {updateBusy ? 'Checking…' : 'Check now'}
-            </button>
-          </section>
+          <General bind:update bind:updateBusy bind:updateError bind:exporting bind:exportError />
         {/if}
       </div>
     </div>
@@ -1085,231 +559,14 @@
     display: inline-flex;
     align-items: center;
   }
-  section {
-    padding: 0.8rem 0;
-    border-bottom: 1px solid var(--border);
-  }
-  section:last-child {
-    border-bottom: none;
-  }
-  h3 {
-    margin: 0 0 0.6rem;
-    font-size: 0.95rem;
-  }
-  label {
-    display: block;
-    font-size: 0.8rem;
-    color: var(--fg-2);
-    margin-bottom: 0.3rem;
-  }
-  input {
-    width: 100%;
-    font: inherit;
-    font-size: 0.85rem;
-    padding: 0.45rem 0.55rem;
-    border-radius: 8px;
-    border: 1px solid var(--border);
-    background: var(--surface);
-    color: var(--fg);
-  }
-  input:disabled {
-    opacity: 0.6;
-  }
-  .srcrow {
-    display: flex;
-    gap: 0.5rem;
-    align-items: center;
-  }
-  .srcrow input {
-    flex: 1;
-    min-width: 0;
-  }
-  .browse {
-    flex: none;
-    display: inline-flex;
-    align-items: center;
-    gap: 0.35rem;
-    white-space: nowrap;
-  }
-  .hint {
-    font-size: 0.76rem;
-    color: var(--fg-2);
-    margin: 0.4rem 0 0;
-  }
-  .primary {
-    margin-top: 0.7rem;
-    font: inherit;
-    font-weight: 600;
-    cursor: pointer;
-    border-radius: 8px;
-    border: 1px solid var(--accent);
-    background: var(--accent);
-    color: var(--accent-fg);
-    padding: 0.4rem 1rem;
-  }
-  .primary:disabled {
-    opacity: 0.5;
-    cursor: default;
-  }
-  dl {
-    display: grid;
-    grid-template-columns: max-content 1fr;
-    gap: 0.25rem 0.8rem;
-    margin: 0;
-    font-size: 0.82rem;
-  }
-  dt {
-    color: var(--fg-2);
-  }
-  dd {
-    margin: 0;
-  }
-  dd.path,
-  .warn code {
-    font-family: ui-monospace, monospace;
-    font-size: 0.76rem;
-    word-break: break-all;
-  }
   .muted {
     color: var(--fg-2);
     font-weight: 400;
     font-size: 0.82rem;
   }
-  .ok {
-    color: var(--ok-fg);
-    font-size: 0.82rem;
-    margin: 0.5rem 0 0;
-  }
   .err {
     color: var(--warn-fg);
     font-size: 0.82rem;
     margin: 0.5rem 0 0;
-  }
-  .warn {
-    color: var(--warn-fg);
-    background: var(--warn-bg);
-    border: 1px solid var(--warn-border);
-    border-radius: 8px;
-    padding: 0.4rem 0.55rem;
-    font-size: 0.8rem;
-    margin: 0.5rem 0 0;
-  }
-  .banner {
-    color: var(--fg-2);
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: 0.45rem 0.6rem;
-    font-size: 0.78rem;
-    margin: 0 0 0.7rem;
-  }
-  /* Two classes on purpose: `.banner` is declared after `.warn`, so at equal specificity it would
-     win and quietly neutralise the warning colours. ADR-038's degraded state must look degraded. */
-  .banner.warn {
-    color: var(--warn-fg);
-    background: var(--warn-bg);
-    border-color: var(--warn-border);
-  }
-  .degraded {
-    color: var(--warn-fg);
-    font-weight: 600;
-  }
-  .segmented {
-    display: inline-flex;
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    overflow: hidden;
-  }
-  .segmented button {
-    font: inherit;
-    font-size: 0.82rem;
-    cursor: pointer;
-    border: none;
-    background: var(--surface);
-    color: var(--fg);
-    padding: 0.35rem 0.8rem;
-  }
-  .segmented button + button {
-    border-left: 1px solid var(--border);
-  }
-  .segmented button.active {
-    background: var(--accent);
-    color: var(--accent-fg);
-  }
-  section label {
-    margin-top: 0.7rem;
-  }
-  section label:first-of-type {
-    margin-top: 0;
-  }
-  input[type='range'] {
-    width: 100%;
-    accent-color: var(--accent);
-  }
-  .switch-row {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    font-size: 0.85rem;
-    color: var(--fg);
-    cursor: pointer;
-  }
-  .switch-row input {
-    width: auto;
-    accent-color: var(--accent);
-  }
-  /* ADR-044 — the update verdict. Boxed so the state reads as a standing fact about this
-     install rather than as transient feedback from the button below it. */
-  .update-status {
-    margin-top: 0.7rem;
-    padding: 0.6rem 0.7rem;
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    background: var(--bg-2, transparent);
-  }
-  .update-status p {
-    margin: 0;
-  }
-  .update-status p + p {
-    margin-top: 0.25rem;
-  }
-  /* An <a> styled as the primary button: this is a link on purpose — it opens the release page
-     in the browser, and must never look like an in-app install action (ADR-044). */
-  .link-button {
-    display: inline-block;
-    text-decoration: none;
-  }
-  /* ADR-037 — the Corpus panel's index row: label left, the bounded rebuild action right. */
-  .index-row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 0.5rem;
-  }
-  .index-row .ghost {
-    margin-top: 0;
-    padding: 0.2rem 0.55rem;
-    font-size: 0.76rem;
-    flex: none;
-  }
-  .library-row {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.5rem;
-    margin-top: 0.6rem;
-  }
-  .view-run {
-    margin-top: 0.5rem;
-  }
-  .ghost {
-    margin-top: 0.8rem;
-    font: inherit;
-    font-size: 0.82rem;
-    cursor: pointer;
-    border-radius: 8px;
-    border: 1px solid var(--border);
-    background: var(--surface);
-    color: var(--fg);
-    padding: 0.35rem 0.8rem;
   }
 </style>

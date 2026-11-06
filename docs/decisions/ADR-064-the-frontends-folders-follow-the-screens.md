@@ -1,11 +1,12 @@
-<!-- status: active · updated: 2026-11-05 (accepted; pass 1 built: every component moved; pass 2 open) · class: append-only -->
+<!-- status: active · updated: 2026-11-05 (accepted; pass 1 built; pass 2a built: eight files split; 2b, App's state, open) · class: append-only -->
 
 # ADR-064 — The frontend's folders follow the screens, and the domain spine stays underneath
 
 - **Status:** accepted (user, 2026-11-05: the seven choices as recommended). **Pass 1 built** the
   same evening, after `c2b2fef` left `apps/desktop/` clear: all 54 components moved, 28 renamed,
-  `src/layout.test.ts` added. Pass 2 (the splits, choice 5 and 6) is open and starts after pass 1 is
-  committed, so no file is renamed and split in one commit. Proposed by Claude Code the same day.
+  `src/layout.test.ts` added; committed as `1fbf246`, so no file is renamed and split in one commit.
+  **Pass 2a built** the same night (the splits, choice 6: "As built" at the end); 2b (App's
+  one-domain state, choice 5) is open. Proposed by Claude Code the same day.
   The request is the
   user's, 2026-11-05, during the UI batch of ROADMAP rows 110–112: could `apps/desktop/` be
   organised to mirror the interface, *"something like one file per screen"*, so that a person who
@@ -297,3 +298,38 @@ High on where things go. The table is the app's own headings, and every door was
 source on 2026-11-05. Medium on pass 2's line counts. App's 600–800 comes from reading its function
 list, not from a split, and a part whose styles do not separate stays whole, so some files may end
 above the cap with that reason written beside them.
+
+## As built — pass 2a, the splits (2026-11-05)
+
+Pass 2 was cut in two. Choice 5 changes the props of the screens whose doors it rewires (the
+Library tab, the document page, Settings), so the splits went first (2a, entry files keep their
+props) and App's state follows (2b). Lines are totals; the new part files sit beside each entry.
+
+| Entry file | Before → after | Parts cut out |
+|---|---|---|
+| `Settings.svelte` | 1,315 → 572 | `Documents`, `ProviderAndModel`, `Retrieval`, `General` |
+| `ProviderSetup.svelte` | 978 → 127 | `AnsweringWith`, `ProviderList`, `ProviderForm` (792) |
+| `ManageKeywords.svelte` | 1,230 → 373 | `DetectProposals`, `NewFamily`, `Concepts`, `Terms`, `FamilyRow` (503) |
+| `Sidebar.svelte` | 1,150 → 413 | `screens/chat/ChatHistory` (874) |
+| `Graph.svelte` | 959 → 376 | `ConceptPanel` (710) |
+| `Taxonomy.svelte` | 840 → 280 | `FieldForest`, `FieldDetail` (484) |
+| `DocumentPage.svelte` | 748 → 286 | `PageIndex`, `DocumentHeader`, `Chunks` |
+| `Library.svelte` | 744 → 349 | `HeaderBar` (the header bar and the select bar) |
+
+Where the table above was not followed, choice 6's rule decided:
+
+- **Library navigation stays in `shell/Sidebar.svelte`.** About 120 of its 150 CSS lines are the
+  frame's tree rows and filter box; cut out, it would carry a copy of nearly all its styles.
+  Chat history did leave: about 280 of its lines of CSS are its own, and it carries a ~110-line
+  copy of the shared ones.
+- **The select bar stays with the header bar**, and the empty Library with the Library tab: each
+  shares most of its CSS with the part it stays in (a 41-line dropdown, a 21-line frame).
+- **The document page's index is its own part, `PageIndex`.** It sits above the scrolling area and
+  the title inside it, so one `DocumentHeader` holding both would change the DOM.
+- **The three provider forms stay one file**, `ProviderForm` (792 lines): they share six snippets
+  and nearly all their CSS. A section of Settings unmounts when the rail leaves it, so the state a
+  section must keep across a switch (a typed folder, a run's result) stays in `Settings.svelte` and
+  reaches the section through `$bindable` props.
+- Files still above 300 lines are named in the table with their size; each is one part whose bulk
+  is its own scoped CSS or its own logic. Small rules repeat across parts (`.hint`, `h3`, the
+  per-component button classes ROADMAP 110 removes); no part uses `:global` to share them.

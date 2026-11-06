@@ -42,6 +42,33 @@ Format: What changed | Why | Rejected alternatives | What it opens
 
 ---
 
+## 2026-11-05 (10) — Eight screens cut into the parts they show (ADR-064, pass 2a)
+
+**What changed.** Eight of the nine large files are cut along their headings and sections, each
+part a component beside its entry file, with the entry's props unchanged: Settings (its four
+sections; the provider list and forms), Manage keywords (five parts), the Sidebar (Chat history
+leaves for `screens/chat/ChatHistory.svelte`, which App hands to the frame as a `chatRail`
+snippet), Graph (the concept panel), Taxonomy (the forest, a field's detail), the document page
+(its index, header, Chunks) and the Library tab (the header bar). ADR-064's "As built" has the
+sizes and every place the plan was not followed. Driven in the preview against the dev API:
+each screen and part opens and acts as before (sorts, select modes, the ⋯ menu, wheel zoom, a
+Chunks block to its page, the delete question answered *Keep*, Settings keeping a typed folder
+across a section switch), at 375 px in light and dark, no script error; npm test 389/389,
+svelte-check 0/0.
+
+**Why.** The user accepted choice 6. Choice 5, App's state, changes the props of the screens whose
+doors it rewires, so it comes after (2b), on smaller files.
+
+**Rejected.** A library rail cut out of the Sidebar: it would copy ~120 of its 150 CSS lines.
+Shared rail components in `shell/` (one tree row, one filter box): the layout test allows a screen
+only `Icon` and `ConfirmDialog` from `shell/`, and widening that is a decision, not a split.
+`:global` styles from the frame: they would outrank a rail's own rules.
+
+**What it opens.** 2b. Five parts stay above 300 lines, each its own CSS or logic (ADR-064 names
+them). The four splits other than the Sidebar ran in parallel subagents, each checked by
+svelte-check, tests and a script comparison of markup and CSS against `HEAD`; the ADR's "one file
+at a time" became one live pass over all of them.
+
 ## 2026-11-05 (9) — `oauthlib` 4.0.1: an advisory in a package that never ships
 
 **What changed.** `uv.lock`: `oauthlib` 4.0.0 → 4.0.1 (`uv lock -P oauthlib==4.0.1`); nothing else

@@ -1,7 +1,8 @@
 <script lang="ts">
   // Unified top toolbar (browser-chrome shell): one bar across the whole window carrying the app
-  // menu, sidebar toggle, back/forward, brand, the mode tabs, and search/settings — the pattern
-  // replaces the old split of mode-pills-in-sidebar + actions-in-header.
+  // menu, settings, sidebar toggle, search, back/forward, the mode tabs, the brand and (Windows)
+  // the window controls — the pattern replaces the old split of mode-pills-in-sidebar +
+  // actions-in-header.
   //
   // Reads shell chrome state (`shell`, `sidebarPrefs`) straight from its leaf rune modules rather
   // than through props — that is the point of step 5 phase 1. Props are only the things App
@@ -96,6 +97,11 @@
         </div>
       {/if}
     </div>
+    <!-- Settings sits beside the menu, with the app's other controls (ADR-065 choice 7): the right
+         end of the bar is the window's frame, the wordmark and the window controls. -->
+    <button class="tb-btn" onclick={() => (shell.showSettings = true)} aria-label="Settings" use:tooltip={'Open Settings: provider and model, documents, retrieval'} type="button">
+      <Icon name="settings" size={17} />
+    </button>
     <!-- Sidebar toggle: desktop collapses inline, mobile opens the off-canvas drawer. -->
     <button
       class="tb-btn hide-mobile"
@@ -113,7 +119,7 @@
       type="button"><Icon name="panel-left" size={16} /></button
     >
     <!-- Search sits with the sidebar toggle, ahead of back/forward: it opens a navigation overlay,
-         so it belongs with the other navigation affordances rather than with Settings. -->
+         so it belongs with the other navigation affordances. -->
     <button class="tb-btn" onclick={onOpenSearch} aria-label="Search chats and documents" use:tooltip={'Find a chat or a document by its words (Ctrl/⌘ K)'} type="button">
       <Icon name="search" size={16} />
     </button>
@@ -176,17 +182,14 @@
   <div class="tb-spacer"></div>
 
   <div class="tb-cluster">
-    <!-- Brand = identity anchor only (small mark + wordmark), parked on the right beside Settings.
-         The corpus/model status lives in the bottom status bar — ambient, not navigation. -->
+    <!-- Brand = identity anchor only (small mark + wordmark), parked on the right before the window
+         controls. The corpus/model status lives in the bottom status bar — ambient, not navigation. -->
     <div class="brand">
       <span class="mark"><img src={appMark} alt="" width="26" height="26" /></span>
       <div class="brandtext">
         <span class="wordmark">proven<span class="wm-accent">ote</span></span>
       </div>
     </div>
-    <button class="tb-btn" onclick={() => (shell.showSettings = true)} aria-label="Settings" use:tooltip={'Open Settings: provider and model, documents, retrieval'} type="button">
-      <Icon name="settings" size={17} />
-    </button>
   </div>
   <WindowControls />
 </div>

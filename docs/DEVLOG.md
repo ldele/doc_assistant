@@ -42,6 +42,27 @@ Format: What changed | Why | Rejected alternatives | What it opens
 
 ---
 
+## 2026-11-06 (10) — The settings cog moves beside the menu (ADR-065 choice 7)
+
+**What changed.** The top bar's *Settings* button moves from the right end, between the wordmark
+and the window controls, to the left, right after the menu (`shell/Topbar.svelte`). Its name and
+hover text are unchanged. The bar's right end now holds only the wordmark and, on Windows, the
+window controls. Two comments that described the old place are updated (`Topbar.svelte`,
+`screens/library/HeaderBar.svelte`), and ADR-065 choice 7 gains its *As built* note.
+
+**Why.** The user, 2026-11-06: *"The settings cog should be moved to a better place now."* Beside
+the window controls it read as part of the window's frame. Of the four places offered, the user
+chose beside the menu.
+
+**Rejected.** The sidebar's footer, before the wordmark, the status bar (ADR-065 choice 7).
+
+**What it opens.** Checked in the Vite preview over the invented library: the button order, the
+hover text, the click opening the Settings drawer, and the light theme at 375, 640 and 1280 px
+with no sideways scroll. Along the bar, with the drag script's rules applied point by point, the
+cog never starts a drag and the empty space still does. Not checked in a Tauri window, nor by a
+screenshot (the browser pane was hidden and did not draw). The app menu still has its own
+*Settings* entry, so Settings now has two doors a few pixels apart.
+
 ## 2026-11-06 (9) — The top bar is the window's title bar on Windows (ADR-065)
 
 **What changed.** On Windows the window has no native title bar any more

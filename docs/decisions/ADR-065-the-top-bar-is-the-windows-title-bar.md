@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-11-06 (written after the build: `f35cabe`, hover text with ROADMAP 110's merge `5ed8bf5`; choice 7, the settings cog, decided by the user and not built yet) · class: append-only -->
+<!-- status: active · updated: 2026-11-06 (choice 7 built: the settings cog beside the menu; written after the build: `f35cabe`, hover text with ROADMAP 110's merge `5ed8bf5`) · class: append-only -->
 
 # ADR-065 — The top bar is the window's title bar on Windows
 
@@ -7,7 +7,8 @@
   1 to 6 are recorded as built and wait for the user's read. Choice 7 is the user's own answer of
   2026-11-06 and is not built yet. The request is the user's, 2026-11-06, on a screenshot of the
   installed app: *"Could we do a better top bar / title bar for provenote window. As you know,
-  having the default is not modern (dead space)."*
+  having the default is not modern (dead space)."* Choice 7 was built later the same day, at the
+  user's *"Yes, move it"* (its *As built* note).
 - **Date:** 2026-11-06
 - **Deciders:** user + Claude Code
 - **Works with** [ADR-063](ADR-063-a-buttons-look-says-what-it-does.md), the button rules. The
@@ -91,6 +92,17 @@
    built yet:** the move waited for ROADMAP 110's merge into `Topbar.svelte`, which has landed
    (`5ed8bf5`).
 
+   **As built** (2026-11-06, after `d65c4d7`): the cog is the second button of the bar, right after
+   the menu, with its name (*Settings*) and hover text unchanged. The bar now reads, left to
+   right: menu, Settings, sidebar, search, back, forward, the mode tabs, then the wordmark and the
+   window controls. Tab reaches it second, after the menu. Checked in the Vite preview over the
+   invented library: the cog opens the Settings drawer and shows its hover text, and at 375 px in
+   the light theme the bar still fits, with no sideways scroll. At 1280 and 640 px, light theme,
+   with no library behind the preview, a point-by-point pass along the bar with the drag script's
+   rules: a press on the cog never drags, and the empty space between the tabs and the wordmark
+   still does (x from 465 to 1147 px at 1280, from 315 to 599 at 640). The app menu keeps its own
+   *Settings* entry.
+
 ## In practice — the screenshot, and the dev window on an invented library
 
 **Before**, from the user's screenshot of the installed 0.7.2: the native title bar (icon,
@@ -148,7 +160,7 @@ window, so no control is drawn and every call is a no-op.
 
 Option A with choices 1 to 6 as recommended, built on 2026-11-06 (`f35cabe`, committed by the
 user). The hover texts came with ROADMAP 110's merge (`5ed8bf5`). Choice 7 is the user's: the
-cog moves beside the menu, in a change of its own.
+cog moves beside the menu, in a change of its own, built the same day (choice 7's *As built*).
 
 ## Consequences
 

@@ -164,8 +164,8 @@
       </button>
     {/if}
     <!-- The primary action for this pane, so it lives with the other document actions rather
-         than in the app toolbar — whose right cluster is identity + config by design ("Brand =
-         identity anchor only, parked on the right beside Settings", Topbar.svelte). Moved here
+         than in the app toolbar — whose right end is identity by design (the brand, then the
+         window controls, Topbar.svelte; Settings sits at the left, ADR-065). Moved here
          2026-08-24 on the user's call. Outside the Tauri window there is no picker and no
          drag-drop, so it stays visible, disabled, and SAYS WHY: hiding it would make a browser
          look like a missing feature. Reachable from Chat via the app menu. -->

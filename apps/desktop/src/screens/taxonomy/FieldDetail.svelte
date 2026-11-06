@@ -16,6 +16,7 @@
   // graph uses, so `Cre` here is `Cre` there. Fields and documents carry no written form.
   import { shownLabel, shownName } from '../../lib/graph/labels'
   import Icon from '../../shell/Icon.svelte'
+  import { tooltip } from '../../lib/shell/tooltip'
 
   let {
     pane,
@@ -124,7 +125,7 @@
               class="okbtn"
               onclick={() => acceptProposal(p)}
               type="button"
-              title="Accept — keep this as your own placement"
+              use:tooltip={'Accept — keep this as your own placement'}
             >
               <Icon name="check" size={13} /> Accept
             </button>
@@ -132,7 +133,7 @@
               class="nobtn"
               onclick={() => rejectProposal(p)}
               type="button"
-              title="Reject — remove this proposal"
+              use:tooltip={'Reject — remove this proposal'}
             >
               <Icon name="x" size={13} /> Reject
             </button>
@@ -170,6 +171,7 @@
                 onclick={() => acceptConcept(c.id)}
                 type="button"
                 aria-label="Accept “{shownLabel(c)}” on this field"
+                use:tooltip={'Keep this as your own placement'}
               >
                 <Icon name="check" size={11} />
               </button>
@@ -178,6 +180,7 @@
                 onclick={() => removeConcept(c.id)}
                 type="button"
                 aria-label="Reject “{shownLabel(c)}” on this field"
+                use:tooltip={'Remove this proposal'}
               >
                 <Icon name="x" size={11} />
               </button>
@@ -187,7 +190,7 @@
               class="chip"
               onclick={() => removeConcept(c.id)}
               type="button"
-              title="Remove “{shownLabel(c)}” from this field"
+              use:tooltip={`Remove “${shownLabel(c)}” from this field`}
             >
               <span>{shownLabel(c)}</span>
               <Icon name="x" size={11} />
@@ -208,7 +211,7 @@
           class="addbtn"
           onclick={submitAddConcept}
           disabled={!conceptToAdd}
-          type="button">Attach</button
+          type="button" use:tooltip={!conceptToAdd ? 'Choose a concept first' : 'Place this concept in this field'}>Attach</button
         >
       </div>
     </div>
@@ -225,6 +228,7 @@
                 onclick={() => onAttachDocument(d.id, detail.id)}
                 type="button"
                 aria-label="Accept “{d.label}” on this field"
+                use:tooltip={'Keep this as your own placement'}
               >
                 <Icon name="check" size={11} />
               </button>
@@ -233,6 +237,7 @@
                 onclick={() => onDetachDocument(d.id, detail.id)}
                 type="button"
                 aria-label="Reject “{d.label}” on this field"
+                use:tooltip={'Remove this proposal'}
               >
                 <Icon name="x" size={11} />
               </button>
@@ -255,7 +260,7 @@
           class="addbtn"
           onclick={submitAttachDocument}
           disabled={!docToAdd}
-          type="button">Attach</button
+          type="button" use:tooltip={!docToAdd ? 'Choose a document first' : 'Place this document in this field'}>Attach</button
         >
       </div>
     </div>
@@ -336,8 +341,8 @@
     padding: 0.14rem 0.5rem;
   }
   .chip:hover {
-    border-color: var(--danger, #c0392b);
-    color: var(--danger, #c0392b);
+    border-color: var(--danger);
+    color: var(--danger);
   }
   /* A proposal is never styled as a placement the user made: dashed edge, its own two actions. */
   .chip.proposed,
@@ -427,8 +432,8 @@
     color: var(--accent);
   }
   .nobtn:hover {
-    border-color: var(--danger, #c0392b);
-    color: var(--danger, #c0392b);
+    border-color: var(--danger);
+    color: var(--danger);
   }
   .nomembers {
     font-size: 0.76rem;

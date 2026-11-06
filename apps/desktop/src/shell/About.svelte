@@ -4,6 +4,8 @@
   // scrim + centered card + Esc-to-close, matching the other hand-rolled modals.
   import appMark from '../assets/brand/app-mark.png'
   import Icon from './Icon.svelte'
+  import Dialog from './Dialog.svelte'
+  import { tooltip } from '../lib/shell/tooltip'
 
   let {
     chunks = null,
@@ -18,21 +20,15 @@
     version?: string | null
     onClose: () => void
   } = $props()
-
-  function onKey(e: KeyboardEvent): void {
-    if (e.key === 'Escape') onClose()
-  }
 </script>
 
-<svelte:window onkeydown={onKey} />
-<div class="scrim" onclick={onClose} role="presentation"></div>
-<div class="modal" role="dialog" aria-modal="true" aria-label="About Provenote">
-  <div class="mhead">
+<Dialog label="About Provenote" width="30rem" gap="var(--space-3)" {onClose}>
+  <div class="dialog-head">
     <div class="brand">
       <span class="mark"><img src={appMark} alt="" width="34" height="34" /></span>
       <span class="wordmark">proven<span class="wm-accent">ote</span></span>
     </div>
-    <button class="iconbtn" onclick={onClose} aria-label="Close" type="button">
+    <button class="iconbtn" onclick={onClose} aria-label="Close" type="button" use:tooltip={'Close About'}>
       <Icon name="x" size={16} />
     </button>
   </div>
@@ -55,36 +51,9 @@
     Field taxonomy seeded from the ANZSRC 2020 classification (Australian and New Zealand Standard
     Research Classification), used under <strong>CC BY 4.0</strong>.
   </p>
-</div>
+</Dialog>
 
 <style>
-  .scrim {
-    position: fixed;
-    inset: 0;
-    background: color-mix(in srgb, var(--fg) 32%, transparent);
-    z-index: 40;
-  }
-  .modal {
-    position: fixed;
-    z-index: 41;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    width: min(92vw, 30rem);
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    box-shadow: var(--shadow-2);
-    padding: var(--space-4);
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-3);
-  }
-  .mhead {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-  }
   .brand {
     display: flex;
     align-items: center;

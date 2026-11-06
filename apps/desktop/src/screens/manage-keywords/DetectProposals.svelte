@@ -4,6 +4,7 @@
   // Owns nothing — the proposals and the run are App's, and every click is handed straight up.
   import type { KeywordFamilyProposal } from '../../lib/core/types'
   import Icon from '../../shell/Icon.svelte'
+  import { tooltip } from '../../lib/shell/tooltip'
 
   let {
     proposals,
@@ -28,7 +29,7 @@
     Zero-LLM, on request — checks keyword spelling (morphology) and meaning (bge embedding)
     for near-duplicates. Nothing is written until you accept a proposal below.
   </p>
-  <button class="secondary" onclick={onDetect} disabled={detecting} type="button">
+  <button class="secondary" onclick={onDetect} disabled={detecting} type="button" use:tooltip={'Look for keywords spelled alike or meaning the same; nothing is written'}>
     {detecting ? 'Detecting…' : 'Detect'}
   </button>
   {#if detectError}
@@ -46,14 +47,14 @@
             <span class="propmembers">+ {p.members.join(', ')}</span>
           </span>
           <span class="propconf">{Math.round(p.confidence * 100)}%</span>
-          <button class="propaccept" onclick={() => onAcceptProposal(p)} type="button">
+          <button class="propaccept" onclick={() => onAcceptProposal(p)} type="button" use:tooltip={'Make these keywords one family under the first name'}>
             Accept
           </button>
           <button
             class="iconbtn"
             onclick={() => onDismissProposal(p.canonical)}
             aria-label="Dismiss proposal for {p.canonical}"
-            title="Dismiss"
+            use:tooltip={'Hide this proposal; nothing is merged'}
             type="button"
           >
             <Icon name="x" size={14} />
@@ -118,7 +119,7 @@
   .error {
     margin: 0.4rem 0 0;
     font-size: 0.78rem;
-    color: var(--danger, #c0392b);
+    color: var(--danger);
   }
   .proplist {
     display: flex;

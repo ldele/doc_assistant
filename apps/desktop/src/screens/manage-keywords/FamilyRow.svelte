@@ -11,6 +11,7 @@
   import { deletionLosses, formToAdd, markKey, shownBreadth } from '../../lib/library/library'
   import { shownName } from '../../lib/graph/labels'
   import Icon from '../../shell/Icon.svelte'
+  import { tooltip } from '../../lib/shell/tooltip'
 
   let {
     family: f,
@@ -89,17 +90,21 @@
         aria-label="Rename {name}"
         onkeydown={(e) => {
           if (e.key === 'Enter') commitRename()
-          if (e.key === 'Escape') cancelRename()
+          if (e.key === 'Escape') {
+            // The rename, not Manage keywords: Dialog leaves an Esc that is already handled.
+            e.preventDefault()
+            cancelRename()
+          }
         }}
       />
-      <button class="iconbtn" onclick={commitRename} aria-label="Save name" type="button">
+      <button class="iconbtn" onclick={commitRename} aria-label="Save name" type="button" use:tooltip={'Keep the new name'}>
         <Icon name="check" size={14} />
       </button>
-      <button class="iconbtn" onclick={cancelRename} aria-label="Cancel rename" type="button">
+      <button class="iconbtn" onclick={cancelRename} aria-label="Cancel rename" type="button" use:tooltip={'Keep the old name'}>
         <Icon name="x" size={14} />
       </button>
     {:else}
-      <button class="famname" onclick={startRename} type="button" title="Rename">
+      <button class="famname" onclick={startRename} type="button" use:tooltip={'Change this name'}>
         {name}
       </button>
       <!-- The library filter's count: documents that carry the keyword. The graph counts
@@ -119,7 +124,7 @@
         aria-label={f.graph_include
           ? `Take ${name} off the concept graph`
           : `Take ${name} on as a concept`}
-        title={f.graph_include
+        use:tooltip={f.graph_include
           ? 'A concept, on the graph — click to make it a term again'
           : 'A term — click to take it on as a concept'}
         type="button"
@@ -130,7 +135,7 @@
         class="iconbtn danger"
         onclick={() => void onAskDelete(f)}
         aria-label="Delete {name}"
-        title="Delete…"
+        use:tooltip={'Delete this and its forms, after you confirm'}
         type="button"
       >
         <Icon name="x" size={14} />
@@ -156,13 +161,13 @@
           {/if}
         </p>
         <div class="confirmrow">
-          <button class="addbtn" use:autofocus onclick={onKeep} type="button">Keep</button>
+          <button class="btn" use:autofocus onclick={onKeep} type="button" use:tooltip={'Keep it; nothing is deleted'}>Keep</button>
           {#if f.graph_include}
-            <button class="addbtn" onclick={onTakeOffGraphInstead} type="button">
+            <button class="btn" onclick={onTakeOffGraphInstead} type="button" use:tooltip={'Keep it and its forms, as a term off the graph'}>
               Take off the graph instead
             </button>
           {/if}
-          <button class="dangerbtn" onclick={onConfirmDelete} type="button">Delete</button>
+          <button class="btn btn-primary btn-danger" onclick={onConfirmDelete} type="button" use:tooltip={'Delete it and what goes with it'}>Delete</button>
         </div>
       {/if}
     </div>
@@ -182,7 +187,7 @@
               aria-pressed={mark === 'exact'}
               disabled={saving}
               onclick={() => void onSetMark(f, alias, 'exact')}
-              title="Exact: “{alias}” always means {name}, so its documents count."
+              use:tooltip={`Exact: “${alias}” always means ${name}, so its documents count.`}
               type="button"
             >
               exact
@@ -193,7 +198,7 @@
               aria-pressed={mark === 'broad'}
               disabled={saving}
               onclick={() => void onSetMark(f, alias, 'broad')}
-              title="Broad: “{alias}” also means other things, so its documents are listed beside {name} and not counted in it."
+              use:tooltip={`Broad: “${alias}” also means other things, so its documents are listed beside ${name} and not counted in it.`}
               type="button"
             >
               broad
@@ -206,7 +211,7 @@
             class="formx"
             onclick={() => onRemoveMember(f.id, alias)}
             aria-label="Remove “{alias}” from {name}"
-            title="Remove this form"
+            use:tooltip={'Remove this form'}
             type="button"
           >
             <Icon name="x" size={11} />
@@ -217,7 +222,7 @@
           class="chip"
           onclick={() => onRemoveMember(f.id, alias)}
           type="button"
-          title="Remove “{alias}” from this family"
+          use:tooltip={`Remove “${alias}” from this family`}
         >
           <span>{alias}</span>
           <Icon name="x" size={11} />
@@ -245,10 +250,11 @@
       }}
     />
     <button
-      class="addbtn"
+      class="btn"
       onclick={submitAdd}
       disabled={formToAdd(f, addValue) === null}
       type="button"
+      use:tooltip={formToAdd(f, addValue) === null ? 'Type or pick a keyword first' : f.graph_include ? 'Add this as a form of the concept' : 'Add this keyword to the family'}
     >
       Add
     </button>
@@ -276,8 +282,11 @@
     color: var(--fg);
     background: var(--surface-2);
   }
+  /* Allow-listed (ui-rules.allow.ts): an icon-only danger button in a dense row. Red at rest, as
+     every danger action is (ADR-063); its name is the aria-label, and the delete asks on the row. */
+  .iconbtn.danger,
   .iconbtn.danger:hover {
-    color: var(--danger, #c0392b);
+    color: var(--danger);
   }
   /* ADR-018 — the graph-vocabulary toggle. It is a two-state control on a row of one-shot
      actions, so "on" has to read as a state and not as a hover: filled accent, not a tint. */
@@ -357,8 +366,8 @@
     padding: 0.14rem 0.5rem;
   }
   .chip:hover {
-    border-color: var(--danger, #c0392b);
-    color: var(--danger, #c0392b);
+    border-color: var(--danger);
+    color: var(--danger);
   }
   /* ADR-054 — a concept's form: its text, how it counts, and a way to remove it. Three controls
      where a term's chip has one, so it is a container and not a button. */
@@ -413,7 +422,7 @@
   }
   .formerr {
     font-size: 0.66rem;
-    color: var(--danger, #c0392b);
+    color: var(--danger);
   }
   /* Set apart from the marks: removing a form is not the third choice after exact and broad. */
   .formx {
@@ -428,11 +437,11 @@
     cursor: pointer;
   }
   .formx:hover {
-    color: var(--danger, #c0392b);
+    color: var(--danger);
   }
   /* The delete question, on the row it is about. */
   .confirm {
-    border: 1px solid var(--danger, #c0392b);
+    border: 1px solid var(--danger);
     border-radius: 6px;
     padding: 0.4rem 0.5rem;
     display: flex;
@@ -450,22 +459,6 @@
     justify-content: flex-end;
     gap: 0.35rem;
   }
-  .dangerbtn {
-    font: inherit;
-    font-size: 0.75rem;
-    font-weight: 600;
-    cursor: pointer;
-    color: var(--danger, #c0392b);
-    background: none;
-    border: 1px solid var(--danger, #c0392b);
-    border-radius: 6px;
-    padding: 0.25rem 0.55rem;
-    flex: none;
-  }
-  .dangerbtn:hover {
-    color: var(--bg);
-    background: var(--danger, #c0392b);
-  }
   .addrow {
     display: flex;
     gap: 0.35rem;
@@ -480,24 +473,5 @@
     border-radius: 6px;
     background: var(--bg);
     color: var(--fg);
-  }
-  .addbtn {
-    font: inherit;
-    font-size: 0.75rem;
-    cursor: pointer;
-    color: var(--fg-2);
-    background: none;
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    padding: 0.25rem 0.55rem;
-    flex: none;
-  }
-  .addbtn:hover:not(:disabled) {
-    color: var(--fg);
-    border-color: var(--accent);
-  }
-  .addbtn:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
   }
 </style>

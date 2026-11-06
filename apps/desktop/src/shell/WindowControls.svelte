@@ -11,9 +11,9 @@
   // themes, which here means "this closes the window", not ADR-063's danger role); and Close asks
   // nothing first, as the native close never did. Focus shows the app's ring, inset, because the
   // buttons touch the window's edge.
-  // Hover text: each button takes the shared tooltip (ADR-063 choice 6) when ROADMAP 110 reaches
-  // main; the texts are in ADR-065. No native `title` meanwhile: ADR-063 retires it.
+  // Hover text: each button takes the shared tooltip (ADR-063 choice 6), never the native `title`.
   import { onMount } from 'svelte'
+  import { tooltip } from '../lib/shell/tooltip'
   import {
     closeWindow,
     drawsOwnWindowControls,
@@ -50,7 +50,7 @@
 
 {#if shown}
   <div class="wc" class:inactive={!active} role="group" aria-label="Window">
-    <button class="wc-btn" type="button" aria-label="Minimise" onclick={minimizeWindow}>
+    <button class="wc-btn" type="button" aria-label="Minimise" onclick={minimizeWindow} use:tooltip={'Hide the window in the taskbar'}>
       <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true" focusable="false">
         <path d="M0 5.5H10" />
       </svg>
@@ -60,6 +60,7 @@
       type="button"
       aria-label={maximized ? 'Restore' : 'Maximise'}
       onclick={toggleMaximizeWindow}
+      use:tooltip={maximized ? 'Return the window to its earlier size' : 'Make the window fill the screen'}
     >
       <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true" focusable="false">
         {#if maximized}
@@ -70,7 +71,7 @@
         {/if}
       </svg>
     </button>
-    <button class="wc-btn wc-close" type="button" aria-label="Close" onclick={closeWindow}>
+    <button class="wc-btn wc-close" type="button" aria-label="Close" onclick={closeWindow} use:tooltip={'Quit Provenote'}>
       <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true" focusable="false">
         <path d="M0.5 0.5L9.5 9.5M9.5 0.5L0.5 9.5" />
       </svg>

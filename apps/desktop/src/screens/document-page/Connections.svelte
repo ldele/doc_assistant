@@ -10,6 +10,7 @@
   import type { DocConnections } from '../../lib/core/types'
   import { getDocConnections } from '../../lib/core/api'
   import { RELATED_CAVEAT, rankLabel } from '../../lib/library/connections'
+  import { tooltip } from '../../lib/shell/tooltip'
 
   let {
     docId,
@@ -65,7 +66,7 @@
           {#each conn.related as r, i (r.document_id)}
             <li>
               <span class="rank" aria-label="{rankLabel(i)} nearest">{rankLabel(i)}</span>
-              <button class="doclink" onclick={() => open(r.document_id)}>
+              <button class="doclink" onclick={() => open(r.document_id)} use:tooltip={'Open this document’s page'}>
                 {r.title ?? r.filename}
               </button>
             </li>
@@ -78,7 +79,7 @@
         <ul>
           {#each conn.cited_by as d (d.document_id)}
             <li>
-              <button class="doclink" onclick={() => open(d.document_id)}>{d.filename}</button>
+              <button class="doclink" onclick={() => open(d.document_id)} use:tooltip={'Open this document’s page'}>{d.filename}</button>
               {#if d.n_citations > 1}<span class="score">×{d.n_citations}</span>{/if}
             </li>
           {/each}

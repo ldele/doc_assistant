@@ -12,6 +12,7 @@
   import { openManageFoldersForDoc } from '../../lib/library/folders.svelte'
   import Icon from '../../shell/Icon.svelte'
   import { isSelectClick } from '../../lib/shell/selection'
+  import { tooltip } from '../../lib/shell/tooltip'
 
   let {
     documents,
@@ -139,7 +140,7 @@
           onmousedown={noTextSelect}
           onclick={(e) => onBodyClick(d.id, e)}
           type="button"
-          title={d.filename}
+          use:tooltip={selectMode ? `${isSel ? 'Deselect' : 'Select'} ${d.filename}` : `Open ${d.filename}`}
           aria-label={docLabel(d)}
           aria-pressed={selectMode ? isSel : undefined}
         >
@@ -179,7 +180,7 @@
         {#if !selectMode}
           <button
             class="tileact"
-            title="More options"
+            use:tooltip={'Edit metadata, show the file, add to a folder or delete'}
             aria-label="Document options"
             aria-haspopup="menu"
             onclick={(e) => openMenu(d.id, e)}
@@ -201,7 +202,7 @@
           onmousedown={noTextSelect}
           onclick={(e) => onBodyClick(d.id, e)}
           type="button"
-          title={d.filename}
+          use:tooltip={selectMode ? `${isSel ? 'Deselect' : 'Select'} ${d.filename}` : `Open ${d.filename}`}
           aria-label={docLabel(d)}
           aria-pressed={selectMode ? isSel : undefined}
         >
@@ -229,7 +230,7 @@
         {#if !selectMode}
           <button
             class="rowact"
-            title="More options"
+            use:tooltip={'Edit metadata, show the file, add to a folder or delete'}
             aria-label="Document options"
             aria-haspopup="menu"
             onclick={(e) => openMenu(d.id, e)}
@@ -244,17 +245,17 @@
 {#if openMenuFor && menuDoc}
   <div class="menu-backdrop" onclick={closeMenu} role="presentation"></div>
   <div class="menu" style="left: {menuPos.x}px; top: {menuPos.y}px" role="menu">
-    <button class="menuitem" role="menuitem" onclick={menuEdit} type="button">
+    <button class="menuitem" role="menuitem" onclick={menuEdit} type="button" use:tooltip={'Change the title, authors or year shown for this document'}>
       <Icon name="pencil" size={14} /> Edit metadata
     </button>
-    <button class="menuitem" role="menuitem" onclick={menuReveal} type="button">
+    <button class="menuitem" role="menuitem" onclick={menuReveal} type="button" use:tooltip={'Show the file in its folder on this computer'}>
       <Icon name="folder" size={14} /> Reveal in file explorer
     </button>
-    <button class="menuitem" role="menuitem" onclick={menuAddToFolder} type="button">
+    <button class="menuitem" role="menuitem" onclick={menuAddToFolder} type="button" use:tooltip={'Put this document in one of your folders'}>
       <Icon name="library" size={14} /> Add to folder…
     </button>
     <div class="menusep"></div>
-    <button class="menuitem danger" role="menuitem" onclick={menuDelete} type="button">
+    <button class="menuitem danger" role="menuitem" onclick={menuDelete} type="button" use:tooltip={'Take this document out of the library, after you confirm'}>
       <Icon name="trash-2" size={14} /> Delete…
     </button>
   </div>
@@ -538,6 +539,8 @@
   .menuitem:hover {
     background: var(--surface-2);
   }
+  /* Allow-listed (ui-rules.allow.ts): a menu row, not a button bar (the WAI-ARIA menu pattern keeps
+     its rows' look). Red names the act; *Delete this document?* follows. */
   .menuitem.danger {
     color: var(--danger);
   }

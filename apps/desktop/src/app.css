@@ -19,6 +19,16 @@
   --fg-2: #6b6559;
   --accent: #4a3fa6;
   --accent-fg: #ffffff;
+  /* The primary button's fill and its text (ADR-063 choice 2): white text in both themes. In the
+     light theme the fill is the accent itself (white on it is 8.2:1); in the dark theme it is a
+     deeper violet (white on #6b5fd6 is 5.0:1, where white on the bright dark accent is 2.8:1, below
+     WCAG's 4.5:1), so --accent keeps its brightness for links, rings and selection. */
+  --accent-fill: #4a3fa6;
+  --accent-fill-fg: #ffffff;
+  /* A confirm's own button when it removes something (ADR-063 choice 1, "filled red"): white on
+     #c0392b is 5.4:1 in both themes, where the tinted fill it replaces read 4.1:1 in the light one. */
+  --danger-fill: #c0392b;
+  --danger-fill-fg: #ffffff;
   --accent-wordmark: #5946d6;
   --danger: #c0392b;
   --lavender: #6f62c9;
@@ -27,6 +37,10 @@
   --warn-border: #e6c987;
   --ok-fg: #2f6b3d;
   --ok-border: #9cc9a6;
+  /* The backdrop behind a dialog (shell/Dialog.svelte, ADR-063 choice 8): it dims the screen in
+     both themes. Until 2026-11-06 the centred dialogs mixed --fg into it, which in the dark theme
+     lightened the screen behind a darker card, and the side panels used black: two looks. */
+  --scrim: rgb(35 32 27 / 0.32);
 
   /* Categorical community palette (concept graph — feature-concept-graph.md PR-G2a). 12 hues
      cycled by `community % 12`: colour is a grouping hint and community ids are positional, so a
@@ -47,6 +61,13 @@
 
   --shadow-1: 0 1px 2px rgba(30, 28, 24, 0.05), 0 1px 3px rgba(30, 28, 24, 0.04);
   --shadow-2: 0 10px 30px rgba(30, 28, 24, 0.12);
+  /* A side panel's shadow (a drawer, the narrow window's sidebar): the same in both themes, as
+     it was when each panel wrote its own. */
+  --shadow-side: 0 0 24px rgb(0 0 0 / 0.18);
+
+  /* The backing of a page image, a crop or a figure: white in both themes, because a scan or a
+     figure with a transparent background was drawn for white paper. */
+  --paper: #ffffff;
 
   /* Font stacks. --font-serif on reading surfaces (answers, chunks, excerpts, content headings);
      --font-sans on chrome. Both degrade gracefully to system faces until the local woff2 load
@@ -112,6 +133,10 @@
   --fg-2: #a79e8b;
   --accent: #9a8ff0;
   --accent-fg: #1b1813;
+  --accent-fill: #6b5fd6;
+  --accent-fill-fg: #ffffff;
+  --danger-fill: #c0392b;
+  --danger-fill-fg: #ffffff;
   --accent-wordmark: #a596ff;
   --danger: #f2857a;
   --lavender: #b0a4ff;
@@ -120,6 +145,7 @@
   --warn-border: #5a4a22;
   --ok-fg: #79c98d;
   --ok-border: #345f3f;
+  --scrim: rgb(0 0 0 / 0.5);
 
   /* Community palette — dark values (brighter, on warm charcoal). See :root for the rationale. */
   --comm-0: hsl(210 62% 67%);
@@ -149,6 +175,10 @@
   --fg-2: #6b6559;
   --accent: #4a3fa6;
   --accent-fg: #ffffff;
+  --accent-fill: #4a3fa6;
+  --accent-fill-fg: #ffffff;
+  --danger-fill: #c0392b;
+  --danger-fill-fg: #ffffff;
   --accent-wordmark: #5946d6;
   --danger: #c0392b;
   --lavender: #6f62c9;
@@ -157,6 +187,7 @@
   --warn-border: #e6c987;
   --ok-fg: #2f6b3d;
   --ok-border: #9cc9a6;
+  --scrim: rgb(35 32 27 / 0.32);
 
   /* Categorical community palette (concept graph — feature-concept-graph.md PR-G2a). 12 hues
      cycled by `community % 12`: colour is a grouping hint and community ids are positional, so a
@@ -190,6 +221,10 @@
     --fg-2: #a79e8b;
     --accent: #9a8ff0;
     --accent-fg: #1b1813;
+    --accent-fill: #6b5fd6;
+    --accent-fill-fg: #ffffff;
+    --danger-fill: #c0392b;
+    --danger-fill-fg: #ffffff;
     --accent-wordmark: #a596ff;
     --danger: #f2857a;
     --lavender: #b0a4ff;
@@ -198,6 +233,7 @@
     --warn-border: #5a4a22;
     --ok-fg: #79c98d;
     --ok-border: #345f3f;
+    --scrim: rgb(0 0 0 / 0.5);
 
     /* Community palette — dark values (OS-dark, no explicit data-theme). See :root. */
     --comm-0: hsl(210 62% 67%);
@@ -280,6 +316,7 @@ body {
   border-radius: 7px;
   background: var(--surface);
   color: var(--fg);
+  text-decoration: none; /* a link that does a button's job (an `<a class="btn">`) */
   cursor: pointer;
 }
 .btn:hover:not(:disabled) {
@@ -293,15 +330,27 @@ body {
   opacity: 0.5;
   cursor: default;
 }
-.btn-primary {
-  background: var(--accent);
+/* A toggle that is on (`aria-pressed="true"`): the same role, pressed in. */
+.btn[aria-pressed='true'] {
+  background: var(--surface-2);
   border-color: var(--accent);
-  color: var(--accent-fg);
+}
+/* An icon-only button: the same role, square. Its name is its `aria-label`, and its hover text
+   says what it will do (ADR-063 choice 6). At 17px this is about 26px a side: WCAG 2.2's 24px. */
+.btn-icon {
+  padding: var(--space-1);
+}
+.btn-primary {
+  background: var(--accent-fill);
+  border-color: var(--accent-fill);
+  color: var(--accent-fill-fg);
   font-weight: 600;
 }
+/* Hover darkens in both themes. Mixing toward --fg (as before the fill pair) lightens it in the
+   dark theme and drops white text to 3.9:1; toward black it is 6.4:1 (dark) and 9.9:1 (light). */
 .btn-primary:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--accent) 85%, var(--fg));
-  border-color: color-mix(in srgb, var(--accent) 85%, var(--fg));
+  background: color-mix(in srgb, var(--accent-fill) 85%, black);
+  border-color: color-mix(in srgb, var(--accent-fill) 85%, black);
 }
 .btn-quiet {
   background: none;
@@ -321,4 +370,41 @@ body {
 .btn-danger:hover:not(:disabled) {
   background: color-mix(in srgb, var(--danger) 12%, transparent);
   border-color: var(--danger);
+}
+/* `btn btn-primary btn-danger`: the one action of a confirm, and it removes something. Filled
+   red with white text (ADR-063 choice 1); used by ConfirmDialog and the document delete. */
+.btn-primary.btn-danger {
+  background: var(--danger-fill);
+  border-color: var(--danger-fill);
+  color: var(--danger-fill-fg);
+}
+.btn-primary.btn-danger:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--danger-fill) 85%, black);
+  border-color: color-mix(in srgb, var(--danger-fill) 85%, black);
+}
+
+/* The shared tooltip: a button's hover text (lib/shell/tooltip.ts, ADR-063 choice 6). Inverse ink,
+   so it reads as a note on top of the screen in both themes (16:1 light, 14:1 dark). It takes the
+   pointer (WCAG 2.2 SC 1.4.13: the pointer can move onto it), and it sits above every dialog. */
+.app-tooltip {
+  position: fixed;
+  z-index: 1000;
+  left: 0;
+  top: 0;
+  max-width: min(36ch, calc(100vw - 16px));
+  padding: var(--space-1) var(--space-2);
+  border-radius: 6px;
+  background: var(--fg);
+  color: var(--bg);
+  box-shadow: var(--shadow-2);
+  font-family: var(--font-sans);
+  font-size: var(--text-sm);
+  font-weight: 400;
+  line-height: 1.35;
+  white-space: normal;
+  overflow-wrap: break-word;
+  text-align: left;
+}
+.app-tooltip[hidden] {
+  display: none;
 }

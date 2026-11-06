@@ -28,6 +28,7 @@
   import { broadSummary, shownLabel } from '../../lib/graph/labels'
   import Icon from '../../shell/Icon.svelte'
   import Definition from './Definition.svelte'
+  import { tooltip } from '../../lib/shell/tooltip'
 
   let {
     graph,
@@ -249,10 +250,10 @@
       </div>
       <div class="eh-actions">
         <button
-          class="ghost sm"
+          class="btn"
           onclick={() => onManageConcept(offGraphConcept.id, offGraphConcept.label)}
           type="button"
-          title="Take this term on as a concept in Manage keywords"
+          use:tooltip={'Take this term on as a concept in Manage keywords'}
         >
           <Icon name="pencil" size={13} /> Manage keywords
         </button>
@@ -279,20 +280,20 @@
       </div>
       <div class="eh-actions">
         <span class="eh-meta">{selectedNode.degree} link{selectedNode.degree === 1 ? '' : 's'} · {docCount(selectedNode)} doc{docCount(selectedNode) === 1 ? '' : 's'}</span>
-        <button class="ghost sm" onclick={resetView} type="button" title="Reset zoom & pan">Reset view</button>
+        <button class="btn btn-quiet" onclick={resetView} type="button" use:tooltip={'Put the graph back to its first zoom and position'}>Reset view</button>
         <button
-          class="ghost sm"
+          class="btn"
           onclick={() => onManageConcept(selectedNode.id, selectedNode.label)}
           type="button"
-          title="Edit this concept in Manage keywords"
+          use:tooltip={'Edit this concept in Manage keywords'}
         >
           <Icon name="pencil" size={13} /> Edit
         </button>
         <button
-          class="ghost sm"
+          class="btn"
           onclick={() => onPlaceConcept(selectedNode.id, selectedNode.label)}
           type="button"
-          title="Place this concept in the field taxonomy"
+          use:tooltip={'Place this concept in the field taxonomy'}
         >
           <Icon name="tag" size={13} /> Place
         </button>
@@ -400,6 +401,7 @@
               onclick={() => (expandedDocId = expandedDocId === docId ? null : docId)}
               aria-expanded={expandedDocId === docId}
               type="button"
+              use:tooltip={expandedDocId === docId ? 'Hide where this document mentions the concept' : 'Show where this document mentions the concept'}
             >
               <Icon name="file-text" size={14} />
               <span class="dtitle">{docTitle(docId)}</span>
@@ -414,7 +416,7 @@
                 {:else if !presenceLoading}
                   <p class="muted">No chunk-level record for this concept in this document.</p>
                 {/if}
-                <button class="linkish" onclick={() => onOpenDocument(docId)} type="button">
+                <button class="linkish" onclick={() => onOpenDocument(docId)} type="button" use:tooltip={'Open this document in the Library'}>
                   Open in Library →
                 </button>
               </div>
@@ -433,7 +435,7 @@
           <ul class="doclist">
             {#each broadDocIds(selectedNode) as docId (docId)}
               <li class="docitem">
-                <button class="docrow" onclick={() => onOpenDocument(docId)} type="button">
+                <button class="docrow" onclick={() => onOpenDocument(docId)} type="button" use:tooltip={'Open this document in the Library'}>
                   <Icon name="file-text" size={14} />
                   <span class="dtitle">{docTitle(docId)}</span>
                   {#if docByline(docId)}<span class="dby muted">{docByline(docId)}</span>{/if}
@@ -453,22 +455,6 @@
      component, and each is a few lines. */
   .muted {
     color: var(--fg-2);
-  }
-  .ghost {
-    border: 1px solid var(--border);
-    background: var(--surface);
-    color: var(--fg);
-    border-radius: 7px;
-    padding: var(--space-1) var(--space-3);
-    font: inherit;
-    cursor: pointer;
-    display: inline-flex;
-    align-items: center;
-    gap: var(--space-1);
-    white-space: nowrap;
-  }
-  .ghost.sm {
-    font-size: var(--text-sm);
   }
   .linkish {
     border: none;
@@ -582,6 +568,8 @@
     padding: var(--space-2) var(--space-3);
     border: 1px solid var(--border);
   }
+  /* Allow-listed (ui-rules.allow.ts), with `.gapdot.danger` below: a gap's severity on a note and
+     on a node's dot, named by GAP_META's `tone`, not a button's role. */
   .gap-note.danger {
     color: var(--danger);
     border-color: var(--danger);

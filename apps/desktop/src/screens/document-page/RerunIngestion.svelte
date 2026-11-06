@@ -19,7 +19,9 @@
   import type { ReingestOptions, ReingestStatus } from '../../lib/core/types'
   import { getReingestOptions, getReingestStatus, startReingest } from '../../lib/core/api'
   import Icon from '../../shell/Icon.svelte'
+  import Dialog from '../../shell/Dialog.svelte'
   import { costSummary, fraction, needsConfirmation, orderedParts, outcomesByDocument } from '../../lib/library/reingest'
+  import { tooltip } from '../../lib/shell/tooltip'
 
   let {
     documentIds,
@@ -105,18 +107,10 @@
     polling = false
     onFinished()
   }
-
-  function onKey(e: KeyboardEvent): void {
-    if (e.key === 'Escape' && !running) onClose()
-  }
 </script>
 
-<svelte:window onkeydown={onKey} />
-
-<div class="scrim" onclick={() => !running && onClose()} role="presentation"></div>
-
-<div class="modal" role="dialog" aria-modal="true" aria-labelledby="reingest-title">
-  <h2 id="reingest-title">Re-run ingestion</h2>
+<Dialog labelledby="reingest-title" width="36rem" height="86vh" locked={running} {onClose}>
+  <h2 class="dialog-title" id="reingest-title">Re-run ingestion</h2>
   <p class="target" title={label}>{label}</p>
 
   {#if loadError}
@@ -143,7 +137,7 @@
       {/each}
     </div>
     <div class="actions">
-      <button class="primary" onclick={onClose} type="button">Close</button>
+      <button class="btn btn-primary" onclick={onClose} type="button" use:tooltip={'Close this report'}>Close</button>
     </div>
   {:else if running}
     <p class="summary" role="status">
@@ -201,49 +195,21 @@
     {#if startError}<p class="err" role="alert">{startError}</p>{/if}
 
     <div class="actions">
-      <button class="ghost" onclick={onClose} type="button">Cancel</button>
+      <button class="btn" onclick={onClose} type="button" use:tooltip={'Close without re-running anything'}>Cancel</button>
       <button
-        class="primary"
+        class="btn btn-primary"
         disabled={chosen.length === 0 || (needsConfirm && !confirmed)}
         onclick={start}
         type="button"
+        use:tooltip={chosen.length === 0 ? 'Choose at least one part first' : needsConfirm && !confirmed ? 'Tick the box above first: re-extracting replaces the indexed text' : 'Start re-running the chosen parts'}
       >
         <Icon name="rotate-ccw" size={14} /> Re-run
       </button>
     </div>
   {/if}
-</div>
+</Dialog>
 
 <style>
-  .scrim {
-    position: fixed;
-    inset: 0;
-    background: color-mix(in srgb, var(--fg) 32%, transparent);
-    z-index: 40;
-  }
-  .modal {
-    position: fixed;
-    z-index: 41;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    width: min(92vw, 36rem);
-    max-height: 86vh;
-    overflow-y: auto;
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    box-shadow: var(--shadow-2);
-    padding: var(--space-4);
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-2);
-  }
-  h2 {
-    margin: 0;
-    font-size: var(--text-title);
-    font-family: var(--font-serif);
-  }
   .target {
     margin: 0;
     font-weight: 600;
@@ -320,7 +286,7 @@
     margin: 0;
   }
   .err {
-    color: var(--danger, #c0392b);
+    color: var(--danger);
     font-size: 0.78rem;
     margin: 0.2rem 0 0;
   }
@@ -365,7 +331,7 @@
     color: var(--warn-fg, var(--fg));
   }
   .repline.err {
-    color: var(--danger, #c0392b);
+    color: var(--danger);
   }
   .reppart {
     flex: none;
@@ -381,33 +347,8 @@
     padding: var(--space-2) 0 var(--space-4);
     background: var(--surface);
     display: flex;
+    flex-wrap: wrap;
     justify-content: flex-end;
-    gap: 0.5rem;
-  }
-  .primary,
-  .ghost {
-    font: inherit;
-    font-size: 0.85rem;
-    cursor: pointer;
-    border-radius: 8px;
-    padding: 0.4rem 0.8rem;
-    display: inline-flex;
-    align-items: center;
-    gap: 0.35rem;
-  }
-  .primary {
-    font-weight: 600;
-    border: 1px solid transparent;
-    background: var(--accent);
-    color: var(--bg);
-  }
-  .primary:disabled {
-    opacity: 0.5;
-    cursor: default;
-  }
-  .ghost {
-    border: 1px solid var(--border);
-    background: var(--surface);
-    color: var(--fg);
+    gap: var(--space-2);
   }
 </style>

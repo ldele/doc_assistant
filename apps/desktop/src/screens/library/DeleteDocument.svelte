@@ -14,7 +14,9 @@
   // name the target is refusing the guarantee the ADR asked for.
   import type { LibraryDocument } from '../../lib/core/types'
   import Icon from '../../shell/Icon.svelte'
+  import Dialog from '../../shell/Dialog.svelte'
   import { deleteFileDetail, removeOnlyDetail, targetName } from '../../lib/library/deletetarget'
+  import { tooltip } from '../../lib/shell/tooltip'
 
   let {
     doc,
@@ -36,16 +38,10 @@
 
   const fileDetail = $derived(deleteFileDetail(doc))
   const safeDetail = $derived(removeOnlyDetail(doc))
-
-  function onKey(e: KeyboardEvent): void {
-    if (e.key === 'Escape') onClose()
-  }
 </script>
 
-<svelte:window onkeydown={onKey} />
-<div class="scrim" onclick={onClose} role="presentation"></div>
-<div class="modal" role="dialog" aria-modal="true" aria-label="Delete document">
-  <h2>Delete this document?</h2>
+<Dialog label="Delete document" {onClose}>
+  <h2 class="dialog-title">Delete this document?</h2>
   <p class="target" title={doc.filename}>{targetName(doc)}</p>
 
   <fieldset class="choice">
@@ -70,43 +66,16 @@
     {/if}
   </fieldset>
 
-  <div class="mactions">
-    <button class="ghost" onclick={onClose} type="button" disabled={busy}>Cancel</button>
-    <button class="danger" onclick={() => onConfirm(deleteFile)} type="button" disabled={busy}>
+  <div class="dialog-actions">
+    <button class="btn" onclick={onClose} type="button" disabled={busy} use:tooltip={'Keep the document'}>Cancel</button>
+    <button class="btn btn-primary btn-danger" onclick={() => onConfirm(deleteFile)} type="button" disabled={busy} use:tooltip={deleteFile ? 'Take the document out of the library and delete its file from disk' : 'Take the document out of the library; its file stays on disk'}>
       <Icon name="trash-2" size={14} />
       {busy ? 'Deleting…' : deleteFile ? 'Delete both' : 'Remove'}
     </button>
   </div>
-</div>
+</Dialog>
 
 <style>
-  .scrim {
-    position: fixed;
-    inset: 0;
-    background: color-mix(in srgb, var(--fg) 32%, transparent);
-    z-index: 40;
-  }
-  .modal {
-    position: fixed;
-    z-index: 41;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    width: min(92vw, 31rem);
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    box-shadow: var(--shadow-2);
-    padding: var(--space-4);
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-2);
-  }
-  h2 {
-    margin: 0;
-    font-size: var(--text-title);
-    font-family: var(--font-serif);
-  }
   .target {
     margin: 0;
     font-weight: 600;
@@ -161,43 +130,5 @@
     color: var(--fg-2);
     line-height: 1.5;
     overflow-wrap: anywhere;
-  }
-
-  .mactions {
-    display: flex;
-    justify-content: flex-end;
-    gap: 0.5rem;
-    margin-top: var(--space-2);
-  }
-  .mactions button {
-    font: inherit;
-    font-size: 0.85rem;
-    cursor: pointer;
-    border-radius: 8px;
-    padding: 0.45rem 0.8rem;
-    border: 1px solid var(--border);
-    display: inline-flex;
-    align-items: center;
-    gap: 0.35rem;
-  }
-  .mactions button:disabled {
-    opacity: 0.6;
-    cursor: default;
-  }
-  .ghost {
-    background: none;
-    color: var(--fg);
-  }
-  .ghost:hover {
-    background: var(--surface-2);
-  }
-  .danger {
-    background: color-mix(in srgb, var(--danger) 14%, transparent);
-    color: var(--danger);
-    border-color: var(--danger);
-    font-weight: 600;
-  }
-  .danger:hover:not(:disabled) {
-    background: color-mix(in srgb, var(--danger) 22%, transparent);
   }
 </style>

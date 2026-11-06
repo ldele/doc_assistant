@@ -33,6 +33,7 @@
     restoreDefinition,
     undoDefinition,
   } from '../../lib/core/api'
+  import ConfirmDialog from '../../shell/ConfirmDialog.svelte'
   import Icon from '../../shell/Icon.svelte'
   import { displayText, gradeLabel, groupCandidates, sourceLabel, usageSource } from '../../lib/graph/definitions'
   import { emphasisMarks, withoutEmphasis } from '../../lib/graph/emphasis'
@@ -50,6 +51,7 @@
     readScope,
     silentLine,
   } from '../../lib/graph/signals'
+  import { tooltip } from '../../lib/shell/tooltip'
 
   let {
     conceptId,
@@ -71,6 +73,8 @@
   let writing = $state(false)
   let draft = $state('')
   let showDismissed = $state(false)
+  /** The chosen definition waiting on the user's confirm to be dismissed, or null. */
+  let confirmDismiss = $state<string | null>(null)
   let openReasons = $state<string | null>(null)
   let usage = $state<ConceptUsage | null>(null)
   let usageError = $state<string | null>(null)
@@ -165,12 +169,12 @@
     <h3>Definition</h3>
     <div class="defactions">
       {#if isConcept && view?.can_undo}
-        <button class="ghost sm" onclick={() => run(() => undoDefinition(conceptId))} disabled={busy} type="button" title="Take back the last change">
+        <button class="btn" onclick={() => run(() => undoDefinition(conceptId))} disabled={busy} type="button" use:tooltip={'Take back the last change'}>
           <Icon name="rotate-ccw" size={13} /> Undo
         </button>
       {/if}
       {#if isConcept && !writing}
-        <button class="ghost sm" onclick={() => startWriting()} disabled={busy} type="button">
+        <button class="btn" onclick={() => startWriting()} disabled={busy} type="button" use:tooltip={'Write a definition in your own words'}>
           <Icon name="pencil" size={13} /> Write your own
         </button>
       {/if}
@@ -191,10 +195,20 @@
         <footer>
           <span class="src">{sourceLabel(c)}</span>
           {#if c.chunk_key}
-            <button class="linkish" onclick={() => c.chunk_key && onOpenPassage(c.chunk_key)} type="button">Open passage →</button>
+            <button class="linkish" onclick={() => c.chunk_key && onOpenPassage(c.chunk_key)} type="button" use:tooltip={'Open the passage this definition comes from'}>Open passage →</button>
           {/if}
           {#if isConcept}
-            <button class="linkish" onclick={() => run(() => dismissDefinition(conceptId, c.id))} disabled={busy} type="button">Clear</button>
+            <!-- Danger (ADR-063 choices 1 and 4): it takes away the definition you chose, so it
+                 is red, names the act, and confirms, though Undo would bring it back. -->
+            <button
+              class="btn btn-danger"
+              onclick={() => (confirmDismiss = c.id)}
+              disabled={busy}
+              type="button"
+              use:tooltip={'Take this definition off the concept, after you confirm; Undo brings it back'}
+            >
+              Dismiss…
+            </button>
           {/if}
         </footer>
       </blockquote>
@@ -208,8 +222,8 @@
       <div class="writer">
         <textarea bind:value={draft} rows="3" placeholder="What does this concept mean, in your library?" aria-label="Your definition"></textarea>
         <div class="writeractions">
-          <button class="primary sm" onclick={save} disabled={busy || !draft.trim()} type="button">Save and use</button>
-          <button class="ghost sm" onclick={() => (writing = false)} type="button">Cancel</button>
+          <button class="btn btn-primary" onclick={save} disabled={busy || !draft.trim()} type="button" use:tooltip={!draft.trim() ? 'Write something first' : 'Keep your definition and make it the chosen one'}>Save and use</button>
+          <button class="btn" onclick={() => (writing = false)} type="button" use:tooltip={'Stop writing; nothing is saved'}>Cancel</button>
           <span class="muted hint">Saving keeps every other option — nothing is replaced.</span>
         </div>
       </div>
@@ -230,13 +244,13 @@
                 onclick={() => (openReasons = openReasons === c.id ? null : c.id)}
                 aria-expanded={openReasons === c.id}
                 type="button"
-                title="Why this grade"
+                use:tooltip={'Show or hide why this wording got this grade'}
               >
                 {gradeLabel(c.grade)}
               </button>
               <span class="src">{sourceLabel(c)}</span>
               {#if c.chunk_key}
-                <button class="linkish" onclick={() => c.chunk_key && onOpenPassage(c.chunk_key)} type="button">Open passage →</button>
+                <button class="linkish" onclick={() => c.chunk_key && onOpenPassage(c.chunk_key)} type="button" use:tooltip={'Open the passage this wording comes from'}>Open passage →</button>
               {/if}
             </div>
             {#if openReasons === c.id && c.reasons.length > 0}
@@ -246,13 +260,13 @@
             {/if}
             {#if isConcept}
               <div class="cactions">
-                <button class="ghost sm" onclick={() => run(() => chooseDefinition(conceptId, c.id))} disabled={busy} type="button">
+                <button class="btn" onclick={() => run(() => chooseDefinition(conceptId, c.id))} disabled={busy} type="button" use:tooltip={'Make this wording the concept’s definition'}>
                   <Icon name="check" size={13} /> Use this
                 </button>
-                <button class="ghost sm" onclick={() => startWriting(c)} disabled={busy} type="button" title="Start your own definition from this wording">
+                <button class="btn" onclick={() => startWriting(c)} disabled={busy} type="button" use:tooltip={'Start your own definition from this wording'}>
                   Edit into my own
                 </button>
-                <button class="linkish" onclick={() => run(() => dismissDefinition(conceptId, c.id))} disabled={busy} type="button">Dismiss</button>
+                <button class="linkish" onclick={() => run(() => dismissDefinition(conceptId, c.id))} disabled={busy} type="button" use:tooltip={'Hide this option; Show dismissed brings it back'}>Dismiss</button>
               </div>
             {/if}
           </li>
@@ -262,7 +276,7 @@
 
     {#if view && !view.extracted}
       <p class="look">
-        <button class="ghost sm" onclick={look} disabled={busy} type="button">
+        <button class="btn" onclick={look} disabled={busy} type="button" use:tooltip={looking ? 'Reading your library…' : 'Search your library for sentences that define it'}>
           <Icon name="search" size={13} /> {looking ? 'Looking…' : 'Look in my library'}
         </button>
         <span class="muted">
@@ -293,7 +307,7 @@
             <p class="utext">{readable(u.text)}</p>
             <div class="cmeta">
               <span class="src">{usageSource(u)}</span>
-              <button class="linkish" onclick={() => onOpenPassage(u.chunk_key)} type="button">Open passage →</button>
+              <button class="linkish" onclick={() => onOpenPassage(u.chunk_key)} type="button" use:tooltip={'Open the passage this example comes from'}>Open passage →</button>
             </div>
           </li>
         {/each}
@@ -354,7 +368,7 @@
     {/if}
 
     {#if groups.dismissed.length > 0}
-      <button class="linkish small" onclick={() => (showDismissed = !showDismissed)} aria-expanded={showDismissed} type="button">
+      <button class="linkish small" onclick={() => (showDismissed = !showDismissed)} aria-expanded={showDismissed} type="button" use:tooltip={showDismissed ? 'Hide the options you dismissed' : 'List the options you dismissed, to restore one'}>
         {showDismissed ? 'Hide' : 'Show'} dismissed ({groups.dismissed.length})
       </button>
       {#if showDismissed}
@@ -364,7 +378,7 @@
               <p class="ctext">{readable(c.text)}</p>
               <div class="cactions">
                 <span class="src">{sourceLabel(c)}</span>
-                <button class="linkish" onclick={() => run(() => restoreDefinition(conceptId, c.id))} disabled={busy} type="button">Restore</button>
+                <button class="linkish" onclick={() => run(() => restoreDefinition(conceptId, c.id))} disabled={busy} type="button" use:tooltip={'Put this option back among the others'}>Restore</button>
               </div>
             </li>
           {/each}
@@ -374,13 +388,29 @@
   {/if}
 </section>
 
+{#if confirmDismiss !== null}
+  {@const id = confirmDismiss}
+  <ConfirmDialog
+    title="Dismiss the chosen definition?"
+    body="It moves to the dismissed list below, and this concept has no chosen definition until you choose one. Undo, or Restore in that list, brings it back."
+    confirmLabel="Dismiss"
+    confirmIcon={null}
+    {busy}
+    onConfirm={async () => {
+      await run(() => dismissDefinition(conceptId, id))
+      confirmDismiss = null
+    }}
+    onClose={() => (confirmDismiss = null)}
+  />
+{/if}
+
 {#snippet quote(e: SignalExample, cut: boolean)}
   <p class="utext">
     {#if cut}<span class="muted">…</span>{/if}{#each markedSegments(e, emphasisMarks(e.text)) as seg, i (i)}{#if seg.mark}<mark>{seg.text}</mark>{:else}{seg.text}{/if}{/each}{#if cut}<span class="muted">…</span>{/if}
   </p>
   <div class="cmeta">
     <span class="src">{exampleSource(e)}</span>
-    <button class="linkish" onclick={() => onOpenPassage(e.chunk_key)} type="button">Open passage →</button>
+    <button class="linkish" onclick={() => onOpenPassage(e.chunk_key)} type="button" use:tooltip={'Open the passage this comes from'}>Open passage →</button>
   </div>
 {/snippet}
 
@@ -575,35 +605,6 @@
     gap: var(--space-2);
     flex-wrap: wrap;
     font-size: var(--text-sm);
-  }
-  .ghost {
-    border: 1px solid var(--border);
-    background: var(--surface);
-    color: var(--fg);
-    border-radius: 7px;
-    padding: var(--space-1) var(--space-3);
-    font: inherit;
-    cursor: pointer;
-    display: inline-flex;
-    align-items: center;
-    gap: var(--space-1);
-  }
-  .primary {
-    border: 1px solid var(--accent);
-    background: var(--accent);
-    color: var(--accent-fg);
-    border-radius: 7px;
-    padding: var(--space-1) var(--space-3);
-    font: inherit;
-    cursor: pointer;
-  }
-  .sm {
-    font-size: var(--text-sm);
-  }
-  .ghost:disabled,
-  .primary:disabled {
-    opacity: 0.55;
-    cursor: default;
   }
   .linkish {
     border: none;

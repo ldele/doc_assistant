@@ -11,6 +11,8 @@
   import { authorLabel, familyByCanonical, splitRareFacets } from '../../lib/library/library'
   import { openManageKeywords } from '../../lib/library/keywords.svelte'
   import Icon from '../../shell/Icon.svelte'
+  import Dialog from '../../shell/Dialog.svelte'
+  import { tooltip } from '../../lib/shell/tooltip'
 
   let {
     facets,
@@ -54,9 +56,6 @@
   })
   const rareHidden = $derived(query.trim() === '' && !showRare ? split.rare.length : 0)
 
-  function onKey(e: KeyboardEvent): void {
-    if (e.key === 'Escape') onClose()
-  }
   function autofocus(node: HTMLInputElement): void {
     node.focus()
   }
@@ -68,12 +67,10 @@
   }
 </script>
 
-<svelte:window onkeydown={onKey} />
-<div class="scrim" onclick={onClose} role="presentation"></div>
-<div class="modal" role="dialog" aria-modal="true" aria-label="Filter documents by keyword">
-  <div class="mhead">
-    <h2>Filter by keyword</h2>
-    <button class="iconbtn" onclick={onClose} aria-label="Close" type="button">
+<Dialog label="Filter documents by keyword" width="52rem" height="min(84vh, 620px)" gap="var(--space-3)" {onClose}>
+  <div class="dialog-head">
+    <h2 class="dialog-title">Filter by keyword</h2>
+    <button class="iconbtn" onclick={onClose} aria-label="Close" type="button" use:tooltip={'Close the keyword filter'}>
       <Icon name="x" size={16} />
     </button>
   </div>
@@ -85,7 +82,7 @@
         <Icon name="search" size={14} />
         <input use:autofocus bind:value={query} placeholder="Search keywords" aria-label="Search keywords" />
         {#if query}
-          <button class="clearq" onclick={() => (query = '')} aria-label="Clear search" type="button">
+          <button class="clearq" onclick={() => (query = '')} aria-label="Clear search" type="button" use:tooltip={'Empty the search'}>
             <Icon name="x" size={13} />
           </button>
         {/if}
@@ -100,7 +97,7 @@
             type="button"
             aria-pressed={f.selected}
             disabled={!f.available && !f.selected}
-            title={fam && fam.aliases.length > 0
+            use:tooltip={fam && fam.aliases.length > 0
               ? `Also matches: ${fam.aliases.join(', ')}`
               : !f.available && !f.selected
                 ? `No documents match “${f.value}” with the current filters`
@@ -121,7 +118,7 @@
         {/each}
       </div>
       {#if rareHidden > 0 || (query.trim() === '' && split.rare.length > 0)}
-        <button class="raretoggle" onclick={() => (showRare = !showRare)} type="button">
+        <button class="raretoggle" onclick={() => (showRare = !showRare)} type="button" use:tooltip={showRare ? 'Hide the keywords found on only one document' : 'List the keywords found on only one document too'}>
           <!-- The icon set has only `chevron-right`; rotating it is the standard disclosure
                affordance and avoids adding two glyphs for one control. -->
           <span class="chev" class:open={showRare}><Icon name="chevron-right" size={12} /></span>
@@ -131,11 +128,11 @@
       {/if}
       <div class="kwlistfoot">
         {#if selectedCount > 0}
-          <button class="clearall" onclick={onClear} type="button">
+          <button class="clearall" onclick={onClear} type="button" use:tooltip={'Stop filtering by any keyword'}>
             <Icon name="x" size={12} /> Clear {selectedCount} selected
           </button>
         {/if}
-        <button class="managebtn" onclick={openManageKeywords} type="button">Manage keywords…</button>
+        <button class="managebtn" onclick={openManageKeywords} type="button" use:tooltip={'Mark forms, rename or add concepts'}>Manage keywords…</button>
       </div>
     </section>
 
@@ -159,42 +156,9 @@
       </div>
     </section>
   </div>
-</div>
+</Dialog>
 
 <style>
-  .scrim {
-    position: fixed;
-    inset: 0;
-    background: color-mix(in srgb, var(--fg) 32%, transparent);
-    z-index: 40;
-  }
-  .modal {
-    position: fixed;
-    z-index: 41;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    width: min(94vw, 52rem);
-    max-height: min(84vh, 620px);
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    box-shadow: var(--shadow-2);
-    padding: var(--space-4);
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-3);
-  }
-  .mhead {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-  }
-  .mhead h2 {
-    margin: 0;
-    font-size: var(--text-title);
-    font-family: var(--font-serif);
-  }
   .iconbtn {
     display: inline-flex;
     align-items: center;

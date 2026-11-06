@@ -142,8 +142,9 @@ the screens (next section, ADR-064), and the last column says where a domain is 
 Two frontend folders have no API counterpart, by design:
 
 - `src/shell/` — the frame around every screen (top bar, sidebar, status bar), the windows it opens
-  (search, keyboard shortcuts, about, indexing), and the two components every screen uses,
-  `Icon.svelte` and `ConfirmDialog.svelte`. Its state and tested logic are `lib/shell/`.
+  (search, keyboard shortcuts, about, indexing), and the three components every screen uses,
+  `Icon.svelte`, `Dialog.svelte` (the one dialog frame: backdrop, Esc, focus; ADR-063 choice 8)
+  and `ConfirmDialog.svelte`. Its state and tested logic are `lib/shell/`.
 - `lib/core/` — the wire boundary itself, split by the same domain names: `api/<domain>.ts`
   (thin fetch clients, shared base + error unwrapper in `_base.ts`) and `types/<domain>.ts`
   (mirrors `apps/api/models/<domain>.py`), plus `theme.ts` and `fonts.css`. Both carry an
@@ -166,7 +167,7 @@ switching, global keys, and every overlay's mount.
 
 Imports point one way, and `src/layout.test.ts` holds it: `screens/` and `shell/` hold only
 components; `lib/` holds none and imports none; `shell/` and `lib/` never import `screens/`; a
-screen takes only `Icon` and `ConfirmDialog` from `shell/`.
+screen takes only `Icon`, `Dialog` and `ConfirmDialog` from `shell/`.
 
 | What the app shows | Its doors | File (`apps/desktop/src/`) |
 |---|---|---|
@@ -177,6 +178,7 @@ screen takes only `Icon` and `ConfirmDialog` from `shell/`.
 | Indexing (a run's progress) | the status bar's chip, *View indexing* in Settings | `Indexing.svelte` |
 | The library switch failed | start-up | `LibrarySwitchFailed.svelte` |
 | A confirm (delete chats, stop indexing, switch library) · icons | several · every screen | `ConfirmDialog.svelte` · `Icon.svelte` |
+| The frame of every dialog (backdrop, Esc, focus, Tab kept inside) | every dialog | `Dialog.svelte` (its list of open dialogs: `lib/shell/dialogs.ts`) |
 | **Chat tab** | top bar | `screens/chat/` |
 | the tab | *Chat* | `Chat.svelte` |
 | Chat history (the sidebar rail: filter, select mode, sort, a row's ⋯ menu) | sidebar, Chat | `ChatHistory.svelte` (App hands it to the sidebar frame) |

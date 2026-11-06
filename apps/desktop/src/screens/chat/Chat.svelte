@@ -17,6 +17,7 @@
   import { shell } from '../../lib/shell/shell.svelte'
   import { outstandingSteps } from '../../lib/settings/setup'
   import type { ConversationDetail, LibraryFolder } from '../../lib/core/types'
+  import { tooltip } from '../../lib/shell/tooltip'
 
   interface Props {
     viewing: string | null
@@ -52,9 +53,9 @@
   {#if viewing && viewedConvo}
     <p class="readonly-note">
       Viewing a past conversation (read-only).
-      <button class="linkish" onclick={onResume}>Continue this chat</button>
+      <button class="linkish" onclick={onResume} use:tooltip={'Carry on this conversation from where it ended'}>Continue this chat</button>
       ·
-      <button class="linkish" onclick={onBackToCurrent}>Back to current chat</button>
+      <button class="linkish" onclick={onBackToCurrent} use:tooltip={'Leave this past conversation and return to the one you were in'}>Back to current chat</button>
     </p>
     {#each viewedConvo.turns as t (t.record_id)}
       <ReadonlyTurn
@@ -94,7 +95,7 @@
             <li><strong>{step.title}</strong> — {step.detail}</li>
           {/each}
         </ul>
-        <button class="primary" onclick={() => (shell.showSettings = true)}>Finish setup…</button>
+        <button class="btn btn-primary" onclick={() => (shell.showSettings = true)} use:tooltip={'Open Settings at the steps that are left'}>Finish setup…</button>
       </div>
     {:else if chat.turns.length === 0 && !resumedHistory}
       <div class="empty">
@@ -106,7 +107,7 @@
         </p>
         <div class="chips">
           {#each sampleQuestions as q}
-            <button class="chip" onclick={() => onUseSample(q)}>{q}</button>
+            <button class="chip" onclick={() => onUseSample(q)} use:tooltip={'Put this question in the box, ready to edit or send'}>{q}</button>
           {/each}
         </div>
       </div>
@@ -131,10 +132,12 @@
 <footer>
   {#if viewing}
     <div class="viewing-bar">
-      <button class="back" onclick={onBackToCurrent}
+      <button class="btn grow" onclick={onBackToCurrent}
+        use:tooltip={'Leave this past conversation and return to the one you were in'}
         ><Icon name="arrow-left" size={15} /> Back to current chat</button
       >
-      <button class="resume" onclick={onResume}
+      <button class="btn btn-primary grow" onclick={onResume}
+        use:tooltip={'Carry on this conversation from where it ended'}
         ><Icon name="rotate-ccw" size={15} /> Continue this chat</button
       >
     </div>
@@ -150,10 +153,10 @@
     ></textarea>
     {#if hasRetrievalOverride}
       <button
-        class="compare"
+        class="btn"
         onclick={onCompare}
         disabled={chat.sending || chat.comparing || chat.input.trim() === ''}
-        title="See how your override changes retrieval for this question: locked defaults vs override, sources only, no answer ($0)"
+        use:tooltip={'See how your override changes retrieval for this question: locked defaults vs override, sources only, no answer ($0)'}
         type="button"
       >
         {chat.comparing ? 'Comparing…' : 'Test override'}
@@ -169,7 +172,7 @@
           bind:value={chatScopeFolderId}
           disabled={chat.sending}
           aria-label="Search scope"
-          title="Which documents this question searches"
+          use:tooltip={'Choose which documents this question searches'}
         >
           <option value={null}>All documents</option>
           {#each folders as f (f.id)}
@@ -178,7 +181,7 @@
         </select>
       </label>
     {/if}
-    <button class="send" onclick={onSend} disabled={chat.sending || chat.input.trim() === ''} aria-busy={chat.sending}>
+    <button class="btn btn-primary send" onclick={onSend} disabled={chat.sending || chat.input.trim() === ''} aria-busy={chat.sending} use:tooltip={chat.sending ? 'Waiting for the answer' : chat.input.trim() === '' ? 'Type a question first' : 'Ask your documents this question (Enter)'}>
       {#if chat.sending}<span class="spinner" aria-hidden="true"></span>{:else}Send{/if}
     </button>
   {/if}
@@ -260,8 +263,11 @@
     gap: var(--space-2);
     justify-content: center;
   }
+  /* A suggested question, not an action: it fills the composer and sends nothing. */
   .chip {
+    font: inherit;
     font-size: var(--text-sm);
+    cursor: pointer;
     color: var(--accent);
     background: var(--surface);
     border: 1px solid var(--border);
@@ -323,13 +329,6 @@
     box-shadow: var(--shadow-1);
     padding: var(--space-6) var(--space-5);
   }
-  .banner .primary {
-    background: var(--accent);
-    color: var(--accent-fg);
-    border-color: var(--accent);
-    font-weight: 600;
-    padding: 0.45rem 1.1rem;
-  }
   footer {
     display: flex;
     gap: var(--space-2);
@@ -349,53 +348,19 @@
     max-height: 160px;
     overflow-y: auto;
   }
-  button {
-    font: inherit;
-    cursor: pointer;
-    border-radius: 8px;
-    border: 1px solid var(--border);
-    background: var(--surface-2);
-    color: var(--fg);
-    padding: 0 1rem;
-  }
-  button:disabled {
-    opacity: 0.5;
-    cursor: default;
-  }
   .viewing-bar {
     display: flex;
-    gap: 0.5rem;
+    gap: var(--space-2);
     width: 100%;
   }
-  .back {
+  /* Layout only: the roles' look is app.css's (ADR-063). */
+  .grow {
     flex: 1;
-    padding: 0.6rem;
-    color: var(--fg-2);
-    display: inline-flex;
-    align-items: center;
     justify-content: center;
-    gap: 0.3rem;
-  }
-  .resume {
-    flex: 1;
-    padding: 0.6rem;
-    background: var(--accent);
-    color: var(--accent-fg);
-    border-color: var(--accent);
-    font-weight: 600;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0.3rem;
+    padding-block: var(--space-2);
   }
   .send {
-    background: var(--accent);
-    color: var(--accent-fg);
-    border-color: var(--accent);
-    font-weight: 600;
     min-width: 4.4rem;
-    display: inline-flex;
-    align-items: center;
     justify-content: center;
   }
   /* ADR-025 F2 scope selector — reads as a quiet control until a scope is set, then it is
@@ -448,10 +413,5 @@
     .spinner {
       animation: none;
     }
-  }
-  .compare {
-    font-size: 0.82rem;
-    white-space: nowrap;
-    color: var(--fg-2);
   }
 </style>

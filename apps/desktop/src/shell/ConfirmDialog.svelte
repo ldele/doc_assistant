@@ -1,9 +1,11 @@
 <script lang="ts">
   // Generic in-app confirmation dialog — the standard replacement for the native window.confirm()
-  // (which renders an OS "localhost:1420 says" chrome that breaks the app's look). Modeled on
-  // DeleteDocument's house style: scrim + centered card, Esc / scrim-click / Cancel back out,
-  // the confirm action carries the danger (red) styling by default since these gate destructive acts.
+  // (which renders an OS "localhost:1420 says" chrome that breaks the app's look). A card on the
+  // shared frame (Dialog: Esc, a click on the backdrop and Cancel back out); the confirm action
+  // carries the danger (red) styling by default since these gate destructive acts.
+  import Dialog from './Dialog.svelte'
   import Icon from './Icon.svelte'
+  import { tooltip } from '../lib/shell/tooltip'
 
   let {
     title,
@@ -28,102 +30,47 @@
     onClose: () => void
   } = $props()
 
-  function onKey(e: KeyboardEvent): void {
-    if (e.key === 'Escape') onClose()
-  }
+  const uid = $props.id()
+  let cancelEl: HTMLButtonElement | undefined = $state()
+  $effect(() => {
+    cancelEl?.focus()
+  })
 </script>
 
-<svelte:window onkeydown={onKey} />
-<div class="scrim" onclick={onClose} role="presentation"></div>
-<div class="modal" role="dialog" aria-modal="true" aria-label={title}>
-  <h2>{title}</h2>
-  <p class="body">{body}</p>
-  <div class="mactions">
-    <button class="ghost" onclick={onClose} type="button" disabled={busy}>{cancelLabel}</button>
-    <button class={tone} onclick={onConfirm} type="button" disabled={busy}>
+<!-- The WAI-ARIA alert dialog pattern (ADR-063 choice 7): it interrupts to confirm an act, its title
+     names it and its body describes it, and focus starts on Cancel, the act that changes nothing.
+     The confirm is the dialog's one action (`btn-primary`); when it removes something it is also
+     `btn-danger`, which app.css fills red. -->
+<Dialog
+  role={tone === 'danger' ? 'alertdialog' : 'dialog'}
+  labelledby="{uid}-title"
+  describedby="{uid}-body"
+  width="28rem"
+  {onClose}
+>
+  <h2 class="dialog-title" id="{uid}-title">{title}</h2>
+  <p class="body" id="{uid}-body">{body}</p>
+  <div class="dialog-actions">
+    <button class="btn" bind:this={cancelEl} onclick={onClose} type="button" disabled={busy} use:tooltip={'Close and change nothing'}>{cancelLabel}</button>
+    <button
+      class="btn btn-primary"
+      class:btn-danger={tone === 'danger'}
+      onclick={onConfirm}
+      type="button"
+      disabled={busy}
+      use:tooltip={tone === 'danger' ? 'Go ahead with the removal described above' : 'Go ahead as described above'}
+    >
       {#if tone === 'danger' && confirmIcon}<Icon name={confirmIcon} size={14} />{/if}
       {busy ? 'Working…' : confirmLabel}
     </button>
   </div>
-</div>
+</Dialog>
 
 <style>
-  .scrim {
-    position: fixed;
-    inset: 0;
-    background: color-mix(in srgb, var(--fg) 32%, transparent);
-    z-index: 40;
-  }
-  .modal {
-    position: fixed;
-    z-index: 41;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    width: min(92vw, 28rem);
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    box-shadow: var(--shadow-2);
-    padding: var(--space-4);
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-2);
-  }
-  h2 {
-    margin: 0;
-    font-size: var(--text-title);
-    font-family: var(--font-serif);
-  }
   .body {
     margin: 0;
     font-size: 0.85rem;
     color: var(--fg-2);
     line-height: 1.6;
-  }
-  .mactions {
-    display: flex;
-    justify-content: flex-end;
-    gap: 0.5rem;
-    margin-top: var(--space-2);
-  }
-  .mactions button {
-    font: inherit;
-    font-size: 0.85rem;
-    cursor: pointer;
-    border-radius: 8px;
-    padding: 0.45rem 0.8rem;
-    border: 1px solid var(--border);
-    display: inline-flex;
-    align-items: center;
-    gap: 0.35rem;
-  }
-  .mactions button:disabled {
-    opacity: 0.6;
-    cursor: default;
-  }
-  .ghost {
-    background: none;
-    color: var(--fg);
-  }
-  .ghost:hover {
-    background: var(--surface-2);
-  }
-  .default {
-    background: var(--surface-2);
-    color: var(--fg);
-    font-weight: 600;
-  }
-  .default:hover:not(:disabled) {
-    background: color-mix(in srgb, var(--fg) 8%, var(--surface-2));
-  }
-  .danger {
-    background: color-mix(in srgb, var(--danger) 14%, transparent);
-    color: var(--danger);
-    border-color: var(--danger);
-    font-weight: 600;
-  }
-  .danger:hover:not(:disabled) {
-    background: color-mix(in srgb, var(--danger) 22%, transparent);
   }
 </style>

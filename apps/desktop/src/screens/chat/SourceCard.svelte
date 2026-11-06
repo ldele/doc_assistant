@@ -3,6 +3,7 @@
   import { figureUrl } from '../../lib/core/api'
   import Icon from '../../shell/Icon.svelte'
   import ChunkContextView from './ChunkContextView.svelte'
+  import { tooltip } from '../../lib/shell/tooltip'
 
   let {
     source,
@@ -58,7 +59,7 @@
        has no position in the text, so the page image is the only place it can be shown. -->
   {#if source.chunk_key && onOpenInDocument}
     {@const key = source.chunk_key}
-    <button class="inpage" type="button" onclick={() => onOpenInDocument(key)}>
+    <button class="inpage" type="button" onclick={() => onOpenInDocument(key)} use:tooltip={'Open the document at the page this passage comes from'}>
       <Icon name="book-open" size={12} />
       Show the page
     </button>

@@ -28,6 +28,7 @@
     type LibraryCollection,
   } from '../../lib/library/library'
   import type { LibraryDocument, LibraryFolder } from '../../lib/core/types'
+  import { tooltip } from '../../lib/shell/tooltip'
 
   interface Props {
     /** A chat citation asking for the source pane at a page (ADR-050 D2). Passed straight
@@ -150,7 +151,7 @@
                     {formatLine(accept.accepts.extensions)} · {limitPhrase(accept.accepts)}
                   </p>
                 {/if}
-                <button class="emptyadd" onclick={openChooser} type="button">
+                <button class="emptyadd" onclick={openChooser} type="button" use:tooltip={'Choose files or a folder to add to your library'}>
                   <Icon name="plus" size={15} />
                   Add documents
                 </button>
@@ -180,12 +181,12 @@
                     “{libraryQuery.trim()}”{/if}.
                 </p>
                 {#if libraryKeywords.length > 0}
-                  <button class="widen" onclick={onClearKeywordFacets} type="button">
+                  <button class="widen" onclick={onClearKeywordFacets} type="button" use:tooltip={'Stop filtering by keyword'}>
                     Clear keyword filters
                   </button>
                 {/if}
                 {#if libraryCollection.kind !== 'all'}
-                  <button class="widen" onclick={onSearchAll} type="button">
+                  <button class="widen" onclick={onSearchAll} type="button" use:tooltip={'Search the whole library instead of this list'}>
                     Search all {documents.length} documents
                   </button>
                 {/if}

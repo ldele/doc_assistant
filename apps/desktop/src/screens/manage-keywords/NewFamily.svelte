@@ -7,6 +7,7 @@
   import type { KeywordFamily } from '../../lib/core/types'
   import { RARE_MAX_DOCS, filterByQuery } from '../../lib/library/library'
   import Icon from '../../shell/Icon.svelte'
+  import { tooltip } from '../../lib/shell/tooltip'
 
   let {
     families,
@@ -90,7 +91,7 @@
       aria-label="New family canonical name"
       onkeydown={(e) => e.key === 'Enter' && submitCreate()}
     />
-    <button class="primary" onclick={submitCreate} disabled={!newCanonical.trim()} type="button">
+    <button class="btn btn-primary" onclick={submitCreate} disabled={!newCanonical.trim()} type="button" use:tooltip={!newCanonical.trim() ? 'Type a name first' : canonicalMatch ? 'Open the family that already has this name' : 'Make a family with this name and the keywords picked below'}>
       {canonicalMatch ? 'Go to family' : 'Create'}
     </button>
   </div>
@@ -106,7 +107,7 @@
     <div class="suggest" role="group" aria-label="Existing families matching what you typed">
       <span class="hint">Existing:</span>
       {#each canonicalSuggestions as f (f.id)}
-        <button class="suggestbtn" onclick={() => onGoToFamily(f)} type="button">
+        <button class="suggestbtn" onclick={() => onGoToFamily(f)} type="button" use:tooltip={'Open this existing family'}>
           {f.canonical}
         </button>
       {/each}
@@ -123,7 +124,7 @@
         />
       </div>
       {#if poolSplit.rare.length > 0}
-        <button class="linkbtn" onclick={() => (showRareMembers = !showRareMembers)} type="button">
+        <button class="linkbtn" onclick={() => (showRareMembers = !showRareMembers)} type="button" use:tooltip={showRareMembers ? 'Hide the keywords found on only one document' : 'List the keywords found on only one document too'}>
           {showRareMembers ? 'Hide' : 'Show'} rare ({poolSplit.rare.length})
         </button>
       {/if}
@@ -136,6 +137,7 @@
           onclick={() => toggleNewMember(k)}
           type="button"
           aria-pressed={newMembers.includes(k)}
+          use:tooltip={newMembers.includes(k) ? 'Leave this keyword out of the new family' : 'Put this keyword in the new family'}
         >
           {#if newMembers.includes(k)}<Icon name="check" size={11} />{/if}
           {k}
@@ -248,22 +250,6 @@
   .createrow input:focus {
     outline: none;
     border-color: var(--accent);
-  }
-  .primary {
-    font: inherit;
-    font-size: 0.82rem;
-    font-weight: 600;
-    cursor: pointer;
-    color: var(--accent-fg);
-    background: var(--accent);
-    border: 1px solid var(--accent);
-    border-radius: 8px;
-    padding: 0.4rem 0.75rem;
-    flex: none;
-  }
-  .primary:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
   }
   .pickrow {
     display: flex;

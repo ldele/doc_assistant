@@ -13,6 +13,7 @@
   import { canAccept, openChooser, unavailableReason } from '../lib/library/accept.svelte'
   import appMark from '../assets/brand/app-mark.png'
   import WindowControls from './WindowControls.svelte'
+  import { tooltip } from '../lib/shell/tooltip'
 
   interface Props {
     canBack: boolean
@@ -51,7 +52,7 @@
         aria-label="Menu"
         aria-haspopup="menu"
         aria-expanded={shell.appMenuOpen}
-        title="Menu"
+        use:tooltip={'Open the app menu'}
         type="button"><Icon name="menu" size={17} /></button
       >
       {#if shell.appMenuOpen}
@@ -65,15 +66,15 @@
             role="menuitem"
             onclick={() => { shell.appMenuOpen = false; openChooser() }}
             disabled={!canAccept()}
-            title={unavailableReason() ?? 'Add documents'}
+            use:tooltip={unavailableReason() ?? 'Choose files or a folder to add to your library'}
             type="button"
           >
             <Icon name="plus" size={15} /> Add documents…
           </button>
-          <button class="appmenuitem" role="menuitem" onclick={() => { shell.appMenuOpen = false; shell.showSettings = true }} type="button">
+          <button class="appmenuitem" role="menuitem" onclick={() => { shell.appMenuOpen = false; shell.showSettings = true }} type="button" use:tooltip={'Set up providers, documents and the app'}>
             <Icon name="settings" size={15} /> Settings
           </button>
-          <button class="appmenuitem" role="menuitem" onclick={() => { shell.appMenuOpen = false; shell.showShortcuts = true }} type="button">
+          <button class="appmenuitem" role="menuitem" onclick={() => { shell.appMenuOpen = false; shell.showShortcuts = true }} type="button" use:tooltip={'List the keys that work in the app'}>
             <Icon name="keyboard" size={15} /> Keyboard shortcuts
           </button>
           {#if shell.mode === 'chat'}
@@ -83,12 +84,13 @@
               disabled={exportDisabled}
               onclick={() => { shell.appMenuOpen = false; onExport() }}
               type="button"
+              use:tooltip={exportDisabled ? 'Nothing to export yet' : 'Save this conversation to a file'}
             >
               <Icon name="download" size={15} /> Export transcript
             </button>
           {/if}
           <div class="appmenusep"></div>
-          <button class="appmenuitem" role="menuitem" onclick={() => { shell.appMenuOpen = false; shell.showAbout = true }} type="button">
+          <button class="appmenuitem" role="menuitem" onclick={() => { shell.appMenuOpen = false; shell.showAbout = true }} type="button" use:tooltip={'Show the version and what the app is'}>
             <Icon name="info" size={15} /> About Provenote
           </button>
         </div>
@@ -100,19 +102,19 @@
       onclick={toggleSidebarCollapsed}
       aria-label={sidebarPrefs.collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
       aria-pressed={sidebarPrefs.collapsed}
-      title={sidebarPrefs.collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+      use:tooltip={sidebarPrefs.collapsed ? 'Show the sidebar again' : 'Hide the sidebar to give this screen more room'}
       type="button"><Icon name="panel-left" size={16} /></button
     >
     <button
       class="tb-btn only-mobile"
       onclick={() => (shell.sidebarOpen = true)}
       aria-label="Open sidebar"
-      title="Open sidebar"
+      use:tooltip={'Show the sidebar over this screen'}
       type="button"><Icon name="panel-left" size={16} /></button
     >
     <!-- Search sits with the sidebar toggle, ahead of back/forward: it opens a navigation overlay,
          so it belongs with the other navigation affordances rather than with Settings. -->
-    <button class="tb-btn" onclick={onOpenSearch} aria-label="Search chats and documents" title="Search  (Ctrl/⌘ K)" type="button">
+    <button class="tb-btn" onclick={onOpenSearch} aria-label="Search chats and documents" use:tooltip={'Find a chat or a document by its words (Ctrl/⌘ K)'} type="button">
       <Icon name="search" size={16} />
     </button>
     <button
@@ -120,7 +122,7 @@
       onclick={onNavBack}
       disabled={!canBack}
       aria-label="Back"
-      title="Back"
+      use:tooltip={'Go back to the screen before this one'}
       type="button"><Icon name="arrow-left" size={16} /></button
     >
     <button
@@ -128,19 +130,22 @@
       onclick={onNavForward}
       disabled={!canForward}
       aria-label="Forward"
-      title="Forward"
+      use:tooltip={'Go forward again'}
       type="button"><Icon name="arrow-right" size={16} /></button
     >
   </div>
 
-  <!-- Mode tabs (Chat/Library/Graph) — moved out of the sidebar into the toolbar. -->
+  <!-- Mode tabs (Chat/Library/Graph) — moved out of the sidebar into the toolbar. Each tab has an
+       aria-label equal to its label: under 780px the label is hidden and only the icon shows. -->
   <div class="tb-modes" role="tablist" aria-label="Workspace">
     <button
       class="tb-mode"
       class:active={shell.mode === 'chat'}
       role="tab"
       aria-selected={shell.mode === 'chat'}
+      aria-label="Chat"
       onclick={() => onSelectMode('chat')}
+      use:tooltip={'Ask questions of your documents'}
       type="button"><Icon name="message-square" size={15} /><span class="tb-modelabel">Chat</span></button
     >
     <button
@@ -148,7 +153,9 @@
       class:active={shell.mode === 'library'}
       role="tab"
       aria-selected={shell.mode === 'library'}
+      aria-label="Library"
       onclick={() => onSelectMode('library')}
+      use:tooltip={'Browse and manage your documents'}
       type="button"><Icon name="library" size={15} /><span class="tb-modelabel">Library</span></button
     >
     <!-- Hidden for 0.6 — see core/features.ts GRAPH_TAB_ENABLED for why, and to bring it back. -->
@@ -158,7 +165,9 @@
         class:active={shell.mode === 'graph'}
         role="tab"
         aria-selected={shell.mode === 'graph'}
+        aria-label="Graph"
         onclick={() => onSelectMode('graph')}
+        use:tooltip={'See how the concepts in your library connect'}
         type="button"><Icon name="waypoints" size={15} /><span class="tb-modelabel">Graph</span></button
       >
     {/if}
@@ -175,7 +184,7 @@
         <span class="wordmark">proven<span class="wm-accent">ote</span></span>
       </div>
     </div>
-    <button class="tb-btn" onclick={() => (shell.showSettings = true)} aria-label="Settings" title="Settings" type="button">
+    <button class="tb-btn" onclick={() => (shell.showSettings = true)} aria-label="Settings" use:tooltip={'Open Settings: provider and model, documents, retrieval'} type="button">
       <Icon name="settings" size={17} />
     </button>
   </div>

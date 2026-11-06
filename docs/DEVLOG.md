@@ -42,6 +42,127 @@ Format: What changed | Why | Rejected alternatives | What it opens
 
 ---
 
+## 2026-11-06 (7) — ROADMAP 110 (d): one dialog frame, and no colour outside the tokens
+
+**What changed.** `shell/Dialog.svelte` is the one dialog frame: backdrop, frame, *Esc*, focus in
+and back, *Tab* kept inside, as a centred card, a side panel or a screen. The 20 components that
+drew a modal of their own render it, and a list of open dialogs (`lib/shell/dialogs.ts`, tested)
+makes *Esc* close the one in front and puts a dialog opened from another above it, which replaced
+three hand-written *Esc* guards and the fixed layers. The 36 literal colours are tokens
+(`--scrim`, `--paper`, `--shadow-side`, the fallbacks dropped). `src/shared.css` holds the dialog's
+title, head and buttons. `ui-rules.test.ts` gains checks 4 (no `aria-modal` outside the frame)
+and 5 (rules copied between components: 211 → 179, a ratchet).
+
+**Why.** ADR-063 choice 8 and the user's go-ahead for piece (d) on 2026-11-06. The frame is markup
+and *Esc* handling as well as style, so it is a component, not a class. Seen live over an invented
+library: the nested confirm's layer, focus and two *Esc*s, the rename field, Settings, Indexing,
+the source panel's handle, light, dark and 375 px. `npm test` 409/409, `svelte-check` 0, build ok.
+
+**Rejected.** The native `<dialog>` with `showModal()`: its top layer would sit above the shared
+tooltip, which must show over every dialog. Centring with `transform`: it makes a fixed element
+inside the frame measure from the frame. A per-file list for the copied rules: 60 files long, and
+a total that may only fall says the same. Moving `.hint`, `.err` and `.iconbtn` now: three
+variants each, so unifying them changes spacing on many screens; left to the change that touches
+each.
+
+**What it opens.** Behaviour that changed and the user has not seen: the dark theme's backdrop
+now darkens the screen behind a centred dialog (it lightened it), the review closes on *Esc*, and
+focus returns to the opener. Still with the user: the 20 marker meanings, three button looks check
+1 cannot see, the staged bar's *Clear*, the × in *Manage folders*.
+
+## 2026-11-06 (6) — ROADMAP 110 (c): every button says what it does
+
+**What changed.** The 236 buttons in 59 files that had no hover text have it, on the shared
+tooltip, so check 2's allow-list is empty. Each text finishes "this will …" without repeating
+the label, says what a quiet act leaves alone and what comes back, and follows the state: a
+disabled button says why (*Send* "Type a question first"). The top bar's *Chat*, *Library* and
+*Graph* tabs carry an `aria-label`, since under 780px their labels are hidden and they had no
+name. `ui-rules.test.ts` gains a fifth check: an icon-only `<button>` needs `aria-label` or
+`aria-labelledby`. Of the 50 `title`s on other elements, the Chat tab's scope `<select>` (the one
+that takes focus) moved onto the tooltip; the rest are sorted in ADR-063's *As built (c)*.
+
+**Why.** ADR-063 choice 6, and the user's go-ahead for piece (c) on 2026-11-06. The texts were
+written from each button's handler, not from its label, after reading what it does: the
+"Promote" on a gap marks it as being acted on, a sample question fills the box and does not send.
+Seen in the running app over an invented library, dark, light and 375 px: hover, Tab focus with
+`aria-describedby`, a disabled reason, a text changing with the selection. `npm test` 402/402,
+`svelte-check` 0.
+
+**Rejected.** Moving all 49 other `title`s onto the tooltip: on an element that cannot take focus
+the tooltip never shows to a keyboard or a screen reader, and it removes the `title`, which a
+screen reader can read today, so 20 marker meanings would get worse, not better. Generic texts
+("Click to open"): they say nothing the label does not. An allow-list entry for the list rows:
+every one had something to say.
+
+**What it opens.** Piece (d): the dialog frame, the shared stylesheet, 36 colours; and, with the
+user, the 20 markers whose meaning lives only in a `title`, three button looks check 1 cannot see
+(the staged-files bar, the claim review, *Detect* in Manage keywords) and the staged bar's *Clear*.
+
+## 2026-11-06 (5) — ROADMAP 110 (b): every button on a role, and a delete always asks
+
+**What changed.** The 28 components that styled their own `.primary` / `.ghost` / `.danger`, and
+the local primaries under other names (`.send`, `.resume`, `.addbtn`, `.secondary`, `.neutral`,
+`.dangerbtn`), are on `btn` / `btn-primary` / `btn-quiet` / `btn-danger`. Their bare `button`
+rules are gone too, since they outranked `.btn`. `app.css` gains `btn-primary btn-danger` (a
+confirm's own button when it removes, filled red, `--danger-fill` in all four palettes),
+`btn-icon`, and a pressed look for any `btn` with `aria-pressed`. `ConfirmDialog` is an alert
+dialog: labelled, described, focus on *Cancel*. The five destructive actions ADR-063 counted
+(*Remove key…*, *Remove server…*, *Remove…*, *Remove all…*, *Dismiss…* on a chosen definition,
+which was *Clear*) are red and confirm, and so are *Reset to default…* in *Edit metadata* and
+*Undo all…* in the add-documents review. The document page's *Source* and *Re-run…* left the
+index's `nav` for its trailing end. The Library header wraps at 375 px. Check 1's allow-list is
+seven exceptions with reasons; hover text 237 → 236 and colours 49 → 36 (two files' dead
+`var(--danger, #c0392b)` fallbacks).
+
+**Why.** ADR-063 choices 1, 4, 5 and 7, and the user's go-ahead for piece (b) on 2026-11-06. Seen
+in the running app over an invented library, dark, light and 375 px; *Remove server…* and both
+ignore-list removals driven end to end, cancel and confirm. `npm test` 401/401, `svelte-check` 0,
+`npm audit --audit-level=high` clean.
+
+**Rejected.** Keeping the confirm's tinted red fill: 4.1:1 in the light theme (3.7:1 hovered),
+below WCAG's 4.5:1. A small-button size: one size meets the 24px target everywhere it was
+used. Keeping *Pause* amber: it removes nothing, so it is ordinary. Renaming the gap badges'
+`.danger` to pass the check: it names a severity from the data, so it is an exception with its
+reason, not a disguise. A confirm on removing a document from a folder: the row's checkbox
+undoes it, and choice 4 says that still confirms, so it is left for the user to decide.
+
+**What it opens.** Piece (c), hover text on the 236 buttons left; piece (d), the dialog frame,
+shared stylesheet and 36 colours. Not seen live for want of data in a new library: the
+definition's *Dismiss…*, *Remove key…*, *Undo all…*, the indexing screen.
+
+## 2026-11-06 (4) — ROADMAP 110 (a): the primary's fill, one tooltip, and checks that fail
+
+**What changed.** The first of ROADMAP 110's four pieces. `app.css` gains `--accent-fill` and
+`--accent-fill-fg` in all four palette blocks (`#6b5fd6` with white in the dark theme, 5.0:1;
+the accent itself in the light, 8.2:1), and `btn-primary` uses them; its hover now darkens toward
+black in both themes. One tooltip, `apps/desktop/src/lib/shell/tooltip.ts`, is a Svelte action
+over one shared `role="tooltip"` element: it shows on hover and on keyboard focus, Esc dismisses
+it, the pointer can move onto it, and the button's `aria-describedby` points at it while it
+shows. All 73 native `title`s on buttons moved onto it (about 30 rewritten to say what the button
+will do rather than repeat its label), and three icon-only buttons whose only name was that
+`title` gained an `aria-label`. `src/ui-rules.test.ts` holds ADR-063's three checks as ratchets
+at today's counts, per file, with reasons in `src/ui-rules.allow.ts`, plus a fourth with no
+allow-list (no `title` on a button). ADR-063 gains *As built*; ROADMAP 110 lists the four pieces.
+
+**Why.** ADR-063 choices 2, 6 and 8 and its *Enforced by*, accepted by the user on 2026-11-06;
+the user picked this piece first from the proposed split. Seen working in the running app over an
+invented library (a new data home, no `.env`, no key): dark, light and 375 px, a disabled button
+included. `npm test` 401/401, `svelte-check` 0 errors, `npm audit --audit-level=high` clean.
+
+**Rejected.** Moving only the 26 `title`s the ADR counted: its regex stopped at an arrow
+function's `=>`, and a real scanner finds 73, so the rest would have kept two kinds of hover text.
+Keeping a native `title` beside the tooltip as a fallback: two texts on one hover. Showing the
+tooltip on every focus: a click focuses a button too, and a dialog focuses one by script on
+opening, so it shows only after a navigation key moved the focus. Letting Esc through to the
+dialog underneath: the tooltip is the top layer (the WAI-ARIA pattern), so the first Esc closes
+it alone. A total count per check: a file could break a rule while another improved, so each
+file has its own entry, and an entry above the measured count also fails.
+
+**What it opens.** Pieces (b) roles and confirms, (c) hover text on the 237 buttons left, (d)
+dialog frame, shared stylesheet and colours, each lowering its list. 50 `title`s on elements that
+are not buttons reach a mouse only (ADR-063 *As built*). The corrected counts replace the ADR's
+26, 286, 312 and 45 with 73, 237, 310 and 49.
+
 ## 2026-11-06 (3) — ADR-063 accepted as proposed
 
 **What changed.** ADR-063 is accepted with all eight choices as recommended: the four action roles,

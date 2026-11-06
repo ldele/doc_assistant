@@ -8,6 +8,7 @@
   import { checkForUpdate, exportAllConversations, setAutoUpdateCheck } from '../../lib/core/api'
   import { describeUpdate } from '../../lib/settings/updates'
   import { getTheme, setTheme, applyTheme, type Theme } from '../../lib/core/theme'
+  import { tooltip } from '../../lib/shell/tooltip'
 
   let {
     update = $bindable(),
@@ -87,6 +88,7 @@
       aria-checked={theme === 'system'}
       class:active={theme === 'system'}
       onclick={() => onThemeChange('system')}
+      use:tooltip={'Follow this computer’s light or dark setting'}
     >
       System
     </button>
@@ -96,6 +98,7 @@
       aria-checked={theme === 'light'}
       class:active={theme === 'light'}
       onclick={() => onThemeChange('light')}
+      use:tooltip={'Always use the light theme'}
     >
       Light
     </button>
@@ -105,6 +108,7 @@
       aria-checked={theme === 'dark'}
       class:active={theme === 'dark'}
       onclick={() => onThemeChange('dark')}
+      use:tooltip={'Always use the dark theme'}
     >
       Dark
     </button>
@@ -120,7 +124,7 @@
     Every conversation in one markdown file — uncapped, unlike the sidebar list. Delete chats
     from the sidebar’s select mode (✓).
   </p>
-  <button class="ghost" onclick={exportHistory} disabled={exporting} type="button">
+  <button class="btn below" onclick={exportHistory} disabled={exporting} type="button" use:tooltip={'Save every conversation to one file'}>
     {exporting ? 'Exporting…' : 'Export all conversations'}
   </button>
   {#if exportError}<p class="err">{exportError}</p>{/if}
@@ -159,7 +163,7 @@
       </p>
       <p class="hint">{line.detail}</p>
       {#if line.showLink}
-        <a class="primary link-button" href={update.release_url} target="_blank" rel="noreferrer noopener">
+        <a class="btn btn-primary below" href={update.release_url} target="_blank" rel="noreferrer noopener">
           Open the release page
         </a>
       {/if}
@@ -171,7 +175,7 @@
     {/if}
   </div>
 
-  <button class="ghost" onclick={runUpdateCheck} disabled={updateBusy} type="button">
+  <button class="btn below" onclick={runUpdateCheck} disabled={updateBusy} type="button" use:tooltip={'Look for a newer version now'}>
     {updateBusy ? 'Checking…' : 'Check now'}
   </button>
 </section>
@@ -212,16 +216,9 @@
     color: var(--fg-2);
     margin: 0.4rem 0 0;
   }
-  .primary {
+  /* Layout only: the roles' look is app.css's (ADR-063). */
+  .below {
     margin-top: 0.7rem;
-    font: inherit;
-    font-weight: 600;
-    cursor: pointer;
-    border-radius: 8px;
-    border: 1px solid var(--accent);
-    background: var(--accent);
-    color: var(--accent-fg);
-    padding: 0.4rem 1rem;
   }
   .muted {
     color: var(--fg-2);
@@ -295,19 +292,4 @@
   }
   /* An <a> styled as the primary button: this is a link on purpose — it opens the release page
      in the browser, and must never look like an in-app install action (ADR-044). */
-  .link-button {
-    display: inline-block;
-    text-decoration: none;
-  }
-  .ghost {
-    margin-top: 0.8rem;
-    font: inherit;
-    font-size: 0.82rem;
-    cursor: pointer;
-    border-radius: 8px;
-    border: 1px solid var(--border);
-    background: var(--surface);
-    color: var(--fg);
-    padding: 0.35rem 0.8rem;
-  }
 </style>

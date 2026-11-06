@@ -4,6 +4,7 @@
   // two-pane overlay, plus the currently-*selected* keywords as removable chips (the "selected on top"
   // idea). Dumb by design — App owns the selection; this renders + emits open/remove/clear.
   import Icon from '../../shell/Icon.svelte'
+  import { tooltip } from '../../lib/shell/tooltip'
 
   let {
     selected,
@@ -24,7 +25,7 @@
 
 {#if hasKeywords}
   <div class="strip">
-    <button class="trigger" class:on={selected.length > 0} onclick={onOpen} type="button">
+    <button class="trigger" class:on={selected.length > 0} onclick={onOpen} type="button" use:tooltip={selected.length === 0 ? 'Show only the documents with keywords you pick' : 'Change which keywords filter the documents'}>
       <Icon name="tag" size={13} />
       {selected.length === 0 ? 'Filter by keyword' : `Keywords · ${selected.length}`}
     </button>
@@ -34,7 +35,7 @@
           <button
             class="chip"
             type="button"
-            title="Remove “{k}” filter"
+            use:tooltip={`Stop filtering by “${k}”`}
             aria-label="Remove {k} filter"
             onclick={() => onRemove(k)}
           >
@@ -44,7 +45,7 @@
         {/each}
       </div>
       <span class="count">{resultCount.toLocaleString()} doc{resultCount === 1 ? '' : 's'}</span>
-      <button class="clear" onclick={onClear} type="button">Clear</button>
+      <button class="clear" onclick={onClear} type="button" use:tooltip={'Stop filtering by keyword and show every document'}>Clear</button>
     {/if}
   </div>
 {/if}

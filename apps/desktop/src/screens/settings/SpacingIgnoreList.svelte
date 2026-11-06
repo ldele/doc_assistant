@@ -8,6 +8,8 @@
   import { removedNote } from '../../lib/library/spacing'
   import { openRerun } from '../../lib/library/reingest.svelte'
   import { shell } from '../../lib/shell/shell.svelte'
+  import ConfirmDialog from '../../shell/ConfirmDialog.svelte'
+  import { tooltip } from '../../lib/shell/tooltip'
 
   let {
     focus = false,
@@ -29,6 +31,12 @@
   let open = $state<Set<string>>(new Set())
   let removed = $state<{ result: IgnoreListRemoved; ids: string[] } | null>(null)
   let sectionEl = $state<HTMLElement | null>(null)
+  // A removal is a danger action: red, named, and confirmed first, though Undo follows it
+  // (ADR-063 choice 4). What waits on the confirm: one document's entry, or `null` for all.
+  let confirmRemove = $state<{ sha256: string | null } | null>(null)
+  const pendingEntry = $derived(
+    confirmRemove?.sha256 ? (entries ?? []).find((e) => e.sha256 === confirmRemove?.sha256) ?? null : null,
+  )
 
   void load().then(() => {
     if (focus && sectionEl) holdInView(sectionEl)
@@ -141,11 +149,11 @@
             <span class="what">{summary(e)}{#if e.document_id === null}{' · not in this library'}{/if}</span>
             <span class="spacer"></span>
             {#if !e.keep_all}
-              <button class="ghost" type="button" aria-expanded={open.has(e.sha256)} onclick={() => toggle(e.sha256)}>
+              <button class="btn btn-quiet" type="button" aria-expanded={open.has(e.sha256)} onclick={() => toggle(e.sha256)} use:tooltip={open.has(e.sha256) ? 'Hide this document’s runs' : 'List the runs this document keeps spaced'}>
                 {open.has(e.sha256) ? 'Hide runs' : 'Show runs'}
               </button>
             {/if}
-            <button class="ghost" type="button" disabled={busy} onclick={() => remove(e.sha256)}>Remove</button>
+            <button class="btn btn-danger" type="button" disabled={busy} onclick={() => (confirmRemove = { sha256: e.sha256 })} use:tooltip={'Take this document off the list, after you confirm; its runs go back to the rule'}>Remove…</button>
           </div>
           {#if open.has(e.sha256)}
             <ul class="runs">
@@ -159,7 +167,7 @@
       {/each}
     </ul>
     {#if entries.length > 0}
-      <button class="ghost" type="button" disabled={busy} onclick={() => remove(null)}>Remove all</button>
+      <button class="btn btn-danger" type="button" disabled={busy} onclick={() => (confirmRemove = { sha256: null })} use:tooltip={'Empty the list, after you confirm; every run goes back to the rule'}>Remove all…</button>
     {/if}
   {/if}
 
@@ -167,16 +175,17 @@
     <div class="undo" role="status">
       <p>{removedNote(removed.result.removed, removed.ids.length)}</p>
       <div class="acts">
-        <button class="primary" type="button" disabled={busy} onclick={undo}>Undo</button>
+        <button class="btn btn-primary" type="button" disabled={busy} onclick={undo} use:tooltip={'Put back what was just removed'}>Undo</button>
         {#if removed.ids.length > 0}
           <button
-            class="ghost"
+            class="btn"
             type="button"
             onclick={() =>
               rerunText(
                 removed?.ids ?? [],
                 removed && removed.ids.length === 1 ? (removed.result.documents[0] ?? '1 document') : `${removed?.ids.length ?? 0} documents`,
               )}
+            use:tooltip={'Re-run the text of the documents just changed, so the change applies'}
           >
             Re-run text now…
           </button>
@@ -185,6 +194,29 @@
     </div>
   {/if}
 </section>
+
+{#if confirmRemove && (confirmRemove.sha256 === null || pendingEntry)}
+  {@const n = (entries ?? []).length}
+  <ConfirmDialog
+    title={pendingEntry
+      ? `Remove ${pendingEntry.file} from the ignore list?`
+      : n === 1
+        ? 'Remove the one document on the ignore list?'
+        : `Remove all ${n} documents from the ignore list?`}
+    body={pendingEntry
+      ? `On this document: ${summary(pendingEntry)}. Those runs follow the letter-spacing rule again the next time its text is re-run. Undo, shown after, puts the entry back.`
+      : 'Every run kept or spaced your way follows the letter-spacing rule again the next time each text is re-run. Undo, shown after, puts the list back.'}
+    confirmLabel={pendingEntry ? 'Remove' : 'Remove all'}
+    confirmIcon={null}
+    {busy}
+    onConfirm={async () => {
+      const sha = confirmRemove?.sha256 ?? null
+      await remove(sha)
+      confirmRemove = null
+    }}
+    onClose={() => (confirmRemove = null)}
+  />
+{/if}
 
 <style>
   h3 {
@@ -259,35 +291,5 @@
     display: flex;
     flex-wrap: wrap;
     gap: 0.5rem;
-  }
-  .ghost,
-  .primary {
-    font: inherit;
-    font-size: 0.82rem;
-    cursor: pointer;
-    border-radius: 8px;
-    border: 1px solid var(--border);
-    background: var(--surface);
-    color: var(--fg);
-    padding: 0.35rem 0.8rem;
-  }
-  .primary {
-    font-weight: 600;
-    border-color: var(--accent);
-    background: var(--accent);
-    color: var(--accent-fg);
-  }
-  .ghost:hover:not(:disabled) {
-    background: var(--surface-2);
-  }
-  .ghost:disabled,
-  .primary:disabled {
-    opacity: 0.5;
-    cursor: default;
-  }
-  .ghost:focus-visible,
-  .primary:focus-visible {
-    outline: 2px solid var(--accent);
-    outline-offset: 1px;
   }
 </style>

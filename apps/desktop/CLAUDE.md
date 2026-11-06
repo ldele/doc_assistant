@@ -8,7 +8,7 @@ from `src/` (non-negotiable #3, `.claude/CONTEXT.md`).
   `selectMode`, chat-scope guard, conversation/chat lifecycle) + every overlay's mount.
 - `src/screens/<screen>/` — **components, by what the app shows** (ADR-064, GLOSSARY U-004): an
   entry file named for the folder, its parts, its dialogs (named for their headings). `src/shell/`:
-  the frame, its windows, `Icon` + `ConfirmDialog`. Every door: `docs/architecture.md` § the screens.
+  the frame, its windows, `Icon` + `Dialog` + `ConfirmDialog`. Every door: `docs/architecture.md` § the screens.
   First run (`GettingStarted`, `ProviderSetup`) renders `/api/setup`'s verdicts, never recomputes.
 - `src/lib/<domain>/` — **logic and state, no components**, mirroring `apps/api/routers/` (`chat` ·
   `library` · `graph` · `settings` · `shell` · `core`): `docs/architecture.md` § the domain spine.
@@ -34,7 +34,7 @@ from `src/` (non-negotiable #3, `.claude/CONTEXT.md`).
   DOM and state disagree, read the rune module from the page (DEVLOG 2026-07-26, -07-28, -08-31 (3)).
 - Product name: ADR-012 (wordmark only — never rename the package). Dev: `just app`.
 
-**Tests:** `npm test` (`node:test`, zero deps; pure `.ts` only) + `svelte-check` + live preview are
-the gate. A tested `.ts` module importing a sibling needs the explicit `.ts` extension.
+**Tests:** `npm test` (`node:test`, zero deps; pure `.ts` only) + `svelte-check` + live preview are the gate. A tested `.ts` module importing a sibling needs the explicit `.ts` extension.
+A button takes `use:tooltip={…}` (`lib/shell/tooltip.ts`), never `title`; a dialog renders `shell/Dialog.svelte`; `src/ui-rules.test.ts` fails a button without hover text, an icon-only one without `aria-label`, a local `.primary`/`.ghost`/`.danger`, a literal colour, an `aria-modal` outside Dialog, a rule copied from another component (it goes in `shared.css`) (ADR-063).
 
 <!-- Keep <=40 lines. Local only. If you're restating a project-wide rule, delete it and cite the code. -->

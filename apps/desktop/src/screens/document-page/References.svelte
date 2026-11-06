@@ -15,6 +15,7 @@
   import type { DocReferences } from '../../lib/core/types'
   import { getDocumentReferences } from '../../lib/core/api'
   import { referenceLabel } from '../../lib/library/library'
+  import { tooltip } from '../../lib/shell/tooltip'
 
   let {
     docId,
@@ -71,7 +72,7 @@
           {#if ref.document_id !== null}
             <button
               class="doclink"
-              title="Open this document in your library"
+              use:tooltip={'Open this document in your library'}
               onclick={() => onOpenDocument?.(ref.document_id ?? '')}
             >
               {referenceLabel(ref) ?? ref.filename}

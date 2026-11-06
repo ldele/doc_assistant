@@ -15,6 +15,7 @@
   import { getChunkContext } from '../../lib/core/api'
   import Icon from '../../shell/Icon.svelte'
   import { elision, tidy, whereLabel } from '../../lib/chat/chunkcontext'
+  import { tooltip } from '../../lib/shell/tooltip'
 
   let { chunkKey }: { chunkKey: string } = $props()
 
@@ -67,7 +68,7 @@
   }
 </script>
 
-<button class="toggle" onclick={toggle} aria-expanded={open} type="button">
+<button class="toggle" onclick={toggle} aria-expanded={open} type="button" use:tooltip={open ? 'Hide the text around this passage' : 'Show the text around this passage'}>
   <Icon name={open ? 'chevron-down' : 'chevron-right'} size={12} />
   In context
 </button>
@@ -163,7 +164,7 @@
     color: var(--fg-2);
   }
   .note.err {
-    color: var(--danger, #c0392b);
+    color: var(--danger);
   }
   .muted {
     color: var(--fg-2);

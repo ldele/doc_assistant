@@ -9,7 +9,6 @@
   // **The list is paged.** At 10,000 documents the status poll carries counts only (the filters'
   // numbers); the rows come from the files route, a page at a time, refreshed on each poll while
   // the screen is open.
-  import { fade } from 'svelte/transition'
 
   import { getIngestFiles } from '../lib/core/api/sources'
   import {
@@ -26,11 +25,10 @@
   import { FILE_STATE_LABEL, READING_DETAIL } from '../lib/core/ingest'
   import type { IngestFile, IngestGroup } from '../lib/core/types'
   import ConfirmDialog from './ConfirmDialog.svelte'
+  import Dialog from './Dialog.svelte'
   import Icon from './Icon.svelte'
+  import { tooltip } from '../lib/shell/tooltip'
 
-  const animate =
-    typeof window === 'undefined' || !window.matchMedia('(prefers-reduced-motion: reduce)').matches
-  const DUR = animate ? 150 : 0
   /** Rows per page. A screen holds a few dozen; this many keeps scrolling smooth without a pager. */
   const PAGE = 200
 
@@ -51,7 +49,6 @@
   let actionError = $state<string | null>(null)
   let acting = $state(false)
   let confirmingStop = $state(false)
-  let dialogEl = $state<HTMLDivElement | null>(null)
 
   /** What a stop keeps and what it leaves, in numbers, for the confirmation (the user, 2026-11-04). */
   const stopBody = $derived.by(() => {
@@ -92,10 +89,6 @@
       })
   })
 
-  $effect(() => {
-    dialogEl?.focus()
-  })
-
   function close(): void {
     ingestRun.panelOpen = false
   }
@@ -118,49 +111,15 @@
     limit = PAGE
   }
 
-  function onWindowKey(e: KeyboardEvent): void {
-    // The stop confirmation handles its own Escape: it closes the question, not this screen.
-    if (e.key === 'Escape' && !confirmingStop) close()
-  }
-
   function confirmStop(): void {
     confirmingStop = false
     void act(() => controlRun('stop'))
   }
-
-  // Honour aria-modal: keep Tab inside the dialog (the same rule Settings keeps).
-  function onDialogKey(e: KeyboardEvent): void {
-    if (e.key !== 'Tab' || !dialogEl) return
-    const focusable = Array.from(
-      dialogEl.querySelectorAll('button:not([disabled]), [tabindex]:not([tabindex="-1"])'),
-    ) as HTMLElement[]
-    if (focusable.length === 0) return
-    const first = focusable[0]
-    const last = focusable[focusable.length - 1]
-    if (e.shiftKey && document.activeElement === first) {
-      e.preventDefault()
-      last.focus()
-    } else if (!e.shiftKey && document.activeElement === last) {
-      e.preventDefault()
-      first.focus()
-    }
-  }
 </script>
 
-<svelte:window onkeydown={onWindowKey} />
-
-<div class="scrim" onclick={close} role="presentation" transition:fade={{ duration: DUR }}></div>
-
-<div
-  class="screen"
-  role="dialog"
-  aria-modal="true"
-  aria-labelledby="indexing-title"
-  tabindex="-1"
-  bind:this={dialogEl}
-  onkeydown={onDialogKey}
-  transition:fade={{ duration: DUR }}
->
+<!-- A screen on the shared frame (shell/Dialog.svelte): it fades in, Esc closes it, Tab stays
+     inside. The stop question below is a dialog of its own, so Esc answers it first. -->
+<Dialog shape="screen" labelledby="indexing-title" width="72rem" height="52rem" onClose={close}>
   <header>
     <div class="titles">
       <h2 id="indexing-title" aria-live="polite">{runTitle(status)}</h2>
@@ -170,45 +129,51 @@
     </div>
     <div class="actions">
       {#if running}
+        <!-- Action roles (ADR-063): Resume carries the run on, so it is the primary; Pause holds it
+             and removes nothing, so it is ordinary (it was amber before the roles). -->
         {#if control === 'paused'}
-          <button class="primary" onclick={() => act(() => controlRun('resume'))} disabled={acting}>
+          <button class="btn btn-primary" onclick={() => act(() => controlRun('resume'))} disabled={acting} use:tooltip={'Carry the run on from where it paused'}>
             <Icon name="play" size={14} /> Resume
           </button>
         {:else}
           <button
-            class="warn"
+            class="btn"
             onclick={() => act(() => controlRun('pause'))}
             disabled={acting || control !== 'none'}
+            use:tooltip={'Hold the run after the file in progress; Resume carries it on'}
           >
             <Icon name="pause" size={14} /> {control === 'pausing' ? 'Pausing…' : 'Pause'}
           </button>
         {/if}
         <!-- Red, and confirmed (the user, 2026-11-04, over the wireframe's "no confirmation"): a
-             stop loses nothing finished, but it does end the run. -->
+             stop loses nothing finished, but it does end the run. The "…" says a confirm follows. -->
         <button
-          class="danger"
+          class="btn btn-danger"
           onclick={() => (confirmingStop = true)}
           disabled={acting || control === 'stopping' || control === 'finishing'}
+          use:tooltip={'End the run, after you confirm; what finished stays in your library'}
         >
-          <Icon name="square" size={14} /> {control === 'stopping' ? 'Stopping…' : 'Stop'}
+          <Icon name="square" size={14} /> {control === 'stopping' ? 'Stopping…' : 'Stop…'}
         </button>
       {:else}
         {#if remaining}
-          <button class="primary" onclick={() => act(() => rerunLast('remaining'))} disabled={acting}>
+          <button class="btn btn-primary" onclick={() => act(() => rerunLast('remaining'))} disabled={acting} use:tooltip={'Index the files this run did not reach'}>
             {remaining}
           </button>
         {/if}
         {#if retry}
           <button
-            class={remaining ? 'neutral' : 'primary'}
+            class="btn"
+            class:btn-primary={!remaining}
             onclick={() => act(() => rerunLast('failed'))}
             disabled={acting}
+            use:tooltip={'Try the files that failed again'}
           >
             {retry}
           </button>
         {/if}
       {/if}
-      <button class="ghost" onclick={close}>Close</button>
+      <button class="btn" onclick={close} use:tooltip={running ? 'Close this screen; the run carries on' : 'Close this screen'}>Close</button>
     </div>
   </header>
 
@@ -247,6 +212,7 @@
             class:on={group === chip.group}
             aria-pressed={group === chip.group}
             onclick={() => chooseGroup(chip.group)}
+            use:tooltip={'Show only these files in the list'}
           >
             {chip.label} <span class="n">{chip.count.toLocaleString()}</span>
           </button>
@@ -277,7 +243,7 @@
         <p class="empty">{listError ? `Couldn't load the files: ${listError}` : 'No files here.'}</p>
       {/each}
       {#if rows.length < inGroup}
-        <button class="ghost more" onclick={() => (limit += PAGE)}>
+        <button class="btn more" onclick={() => (limit += PAGE)} use:tooltip={'List more files'}>
           Show {Math.min(PAGE, inGroup - rows.length).toLocaleString()} more of {inGroup.toLocaleString()}
         </button>
       {/if}
@@ -292,7 +258,7 @@
   {/if}
 
   <footer>{runFooter(status)}</footer>
-</div>
+</Dialog>
 
 {#if confirmingStop}
   <ConfirmDialog
@@ -307,29 +273,6 @@
 {/if}
 
 <style>
-  .scrim {
-    position: fixed;
-    inset: 0;
-    background: rgba(0, 0, 0, 0.35);
-    z-index: 30;
-  }
-  .screen {
-    position: fixed;
-    z-index: 31;
-    inset: 0;
-    margin: auto;
-    width: min(72rem, calc(100vw - 2rem));
-    height: min(52rem, calc(100vh - 2rem));
-    display: flex;
-    flex-direction: column;
-    background: var(--bg);
-    color: var(--fg);
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    box-shadow: var(--shadow-2);
-    overflow: hidden;
-    outline: none;
-  }
   header {
     flex: none;
     display: flex;
@@ -360,60 +303,7 @@
   .actions {
     display: flex;
     flex-wrap: wrap;
-    gap: 0.5rem;
-  }
-  button {
-    font: inherit;
-    font-size: var(--text-sm);
-    cursor: pointer;
-    border-radius: 8px;
-    padding: 0.45rem 0.85rem;
-    display: inline-flex;
-    align-items: center;
-    gap: 0.35rem;
-  }
-  button:disabled {
-    opacity: 0.55;
-    cursor: default;
-  }
-  .primary {
-    background: var(--accent);
-    color: var(--accent-fg);
-    border: 1px solid var(--accent);
-  }
-  .ghost {
-    background: var(--bg);
-    color: var(--fg);
-    border: 1px solid var(--border);
-  }
-  .ghost:hover:not(:disabled) {
-    background: var(--surface-2);
-  }
-  .neutral {
-    background: var(--surface-2);
-    color: var(--fg);
-    border: 1px solid var(--border);
-    font-weight: 600;
-  }
-  /* Colour says what a button does: amber holds the run, red ends it (the same red as every
-     confirmation of a destructive act), the accent carries it on. */
-  .warn {
-    background: var(--warn-bg);
-    color: var(--warn-fg);
-    border: 1px solid var(--warn-border);
-    font-weight: 600;
-  }
-  .danger {
-    background: color-mix(in srgb, var(--danger) 14%, transparent);
-    color: var(--danger);
-    border: 1px solid var(--danger);
-    font-weight: 600;
-  }
-  .danger:hover:not(:disabled) {
-    background: color-mix(in srgb, var(--danger) 22%, transparent);
-  }
-  .primary {
-    font-weight: 600;
+    gap: var(--space-2);
   }
   .bar {
     flex: none;
@@ -463,7 +353,14 @@
     flex-wrap: wrap;
     gap: 0.4rem;
   }
+  /* A filter, not an action (ADR-063: view toggles keep their own look). */
   .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    font: inherit;
+    font-size: var(--text-sm);
+    cursor: pointer;
     background: var(--bg);
     color: var(--fg-2);
     border: 1px solid var(--border);

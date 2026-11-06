@@ -13,6 +13,7 @@
   import Icon from '../../shell/Icon.svelte'
   import { GAP_META, filterGapRows, gapVisible, orderGaps } from '../../lib/graph/gaps'
   import { shownLabel } from '../../lib/graph/labels'
+  import { tooltip } from '../../lib/shell/tooltip'
 
   let { onSelectConcept }: { onSelectConcept?: (conceptId: string) => void } = $props()
 
@@ -100,7 +101,7 @@
         aria-label="Filter gaps by concept or kind"
       />
       {#if query}
-        <button class="clearq" onclick={() => (query = '')} aria-label="Clear filter" type="button">
+        <button class="clearq" onclick={() => (query = '')} aria-label="Clear filter" type="button" use:tooltip={'Empty the filter and show every gap'}>
           <Icon name="x" size={13} />
         </button>
       {/if}
@@ -117,7 +118,7 @@
         aria-pressed={showUnderConnected}
         onclick={() => (showUnderConnected = !showUnderConnected)}
         type="button"
-        title="Under-connected measures graph degree. It is noisy at this vocabulary size (RG-014), so it is hidden until you ask for it."
+        use:tooltip={'Under-connected measures graph degree. It is noisy at this vocabulary size (RG-014), so it is hidden until you ask for it.'}
       >
         Include under-connected
       </button>
@@ -128,7 +129,7 @@
           aria-pressed={showDismissed}
           onclick={() => (showDismissed = !showDismissed)}
           type="button"
-          title="Dismissed gaps stay recoverable — this shows them again without un-dismissing them."
+          use:tooltip={'Dismissed gaps stay recoverable — this shows them again without un-dismissing them.'}
         >
           Show dismissed <span class="count">{dismissedCount}</span>
         </button>
@@ -149,7 +150,7 @@
               class="conceptlink"
               type="button"
               onclick={() => onSelectConcept?.(it.concept_id)}
-              title="Show this concept in the graph"
+              use:tooltip={'Show this concept in the graph'}
             >
               {shownLabel(it)}
             </button>
@@ -163,18 +164,20 @@
             </p>
           {/if}
           <div class="actions">
+            <!-- Triage writes a status the list keeps (and Show dismissed brings back), so all
+                 three are ordinary actions (ADR-063). -->
             {#if it.status !== 'promoted'}
-              <button type="button" onclick={() => setStatus(it, 'promoted')} disabled={busy.has(key(it))}>
+              <button type="button" class="btn" onclick={() => setStatus(it, 'promoted')} disabled={busy.has(key(it))} use:tooltip={'Mark this gap as one you are working on; it stays listed'}>
                 Promote
               </button>
             {/if}
             {#if it.status !== 'dismissed'}
-              <button type="button" onclick={() => setStatus(it, 'dismissed')} disabled={busy.has(key(it))}>
+              <button type="button" class="btn" onclick={() => setStatus(it, 'dismissed')} disabled={busy.has(key(it))} use:tooltip={'Take this gap off the worklist; Show dismissed lists it again'}>
                 Dismiss
               </button>
             {/if}
             {#if it.status !== 'surfaced'}
-              <button type="button" class="ghost" onclick={() => setStatus(it, 'surfaced')} disabled={busy.has(key(it))}>
+              <button type="button" class="btn" onclick={() => setStatus(it, 'surfaced')} disabled={busy.has(key(it))} use:tooltip={'Put this gap back as newly found'}>
                 Reset
               </button>
             {/if}
@@ -302,6 +305,8 @@
     font-weight: 600;
     white-space: nowrap;
   }
+  /* Allow-listed (ui-rules.allow.ts): a gap's severity on a badge, named by GAP_META's `tone`, not
+     a button's role. */
   .badge.danger {
     color: var(--danger);
     border: 1px solid var(--danger);
@@ -352,26 +357,5 @@
     flex-wrap: wrap;
     gap: var(--space-2);
     margin-top: var(--space-2);
-  }
-  .actions button {
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    padding: 2px var(--space-3);
-    background: var(--bg);
-    color: var(--fg);
-    font: inherit;
-    font-size: var(--text-sm);
-    cursor: pointer;
-  }
-  .actions button:hover:not(:disabled) {
-    border-color: var(--accent);
-  }
-  .actions button:disabled {
-    opacity: 0.5;
-    cursor: default;
-  }
-  .actions button.ghost {
-    background: none;
-    color: var(--fg-2);
   }
 </style>

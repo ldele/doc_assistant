@@ -13,6 +13,8 @@
   import type { LibraryFigure } from '../../lib/core/types'
   import { API_BASE } from '../../lib/core/api/_base'
   import Icon from '../../shell/Icon.svelte'
+  import Dialog from '../../shell/Dialog.svelte'
+  import { tooltip } from '../../lib/shell/tooltip'
 
   let {
     figures,
@@ -41,15 +43,14 @@
   }
 
   function onKey(e: KeyboardEvent): void {
-    if (e.key === 'Escape') onClose()
-    else if (e.key === 'ArrowLeft') step(-1)
+    // Esc is the dialog's (shell/Dialog.svelte); the arrows step through the figures.
+    if (e.key === 'ArrowLeft') step(-1)
     else if (e.key === 'ArrowRight') step(1)
   }
 </script>
 
 <svelte:window onkeydown={onKey} />
-<div class="scrim" onclick={onClose} role="presentation"></div>
-<div class="viewer" role="dialog" aria-modal="true" aria-label="Figure viewer">
+<Dialog label="Figure viewer" width="1100px" height="92vh" padding="var(--space-3)" gap="0.5rem" {onClose}>
   {#if fig}
     <div class="vhead">
       <span class="pos">{index + 1} of {figures.length}</span>
@@ -67,10 +68,11 @@
         type="button"
         onclick={() => (actualSize = !actualSize)}
         aria-pressed={actualSize}
+        use:tooltip={actualSize ? 'Shrink the figure to fit the window' : 'Show the figure at its own pixel size'}
       >
         {actualSize ? 'Fit to window' : 'Actual size'}
       </button>
-      <button class="iconbtn" onclick={onClose} aria-label="Close" type="button">
+      <button class="iconbtn" onclick={onClose} aria-label="Close" type="button" use:tooltip={'Close the figure'}>
         <Icon name="x" size={16} />
       </button>
     </div>
@@ -84,6 +86,7 @@
         aria-label={actualSize ? 'Fit the figure to the window' : 'Zoom the figure to actual size'}
         aria-pressed={actualSize}
         onclick={() => (actualSize = !actualSize)}
+        use:tooltip={actualSize ? 'Click the figure to fit it back in the window' : 'Click the figure to see it at actual size'}
       >
         <img
           src={`${API_BASE}/api/figures/${encodeURIComponent(fig.id)}`}
@@ -97,40 +100,16 @@
 
     {#if figures.length > 1}
       <div class="nav">
-        <button type="button" onclick={() => step(-1)} disabled={index === 0}>‹ Previous</button>
-        <button type="button" onclick={() => step(1)} disabled={index === figures.length - 1}>
+        <button type="button" onclick={() => step(-1)} disabled={index === 0} use:tooltip={index === 0 ? 'This is the first figure' : 'Show the previous figure in this document'}>‹ Previous</button>
+        <button type="button" onclick={() => step(1)} disabled={index === figures.length - 1} use:tooltip={index === figures.length - 1 ? 'This is the last figure' : 'Show the next figure in this document'}>
           Next ›
         </button>
       </div>
     {/if}
   {/if}
-</div>
+</Dialog>
 
 <style>
-  .scrim {
-    position: fixed;
-    inset: 0;
-    background: color-mix(in srgb, var(--fg) 55%, transparent);
-    z-index: 40;
-  }
-  .viewer {
-    position: fixed;
-    z-index: 41;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    width: min(94vw, 1100px);
-    max-height: 92vh;
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    box-shadow: var(--shadow-2);
-    padding: var(--space-3);
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
-    min-height: 0;
-  }
   .vhead {
     display: flex;
     align-items: center;
@@ -154,10 +133,10 @@
     white-space: nowrap;
   }
   .badge.ok {
-    background: color-mix(in srgb, green 25%, transparent);
+    background: color-mix(in srgb, var(--ok-fg) 25%, transparent);
   }
   .badge.off {
-    background: color-mix(in srgb, gray 25%, transparent);
+    background: color-mix(in srgb, var(--fg-2) 25%, transparent);
   }
   .zoombtn {
     background: none;
@@ -192,7 +171,7 @@
     min-height: 0;
     display: grid;
     place-items: center;
-    background: #fff;
+    background: var(--paper);
     border-radius: 6px;
     overflow: hidden;
   }

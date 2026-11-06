@@ -12,6 +12,8 @@
   import type { LibraryDocument, LibraryFolder } from '../../lib/core/types'
   import { docLabel, filterDocs, typeGroups } from '../../lib/library/library'
   import Icon from '../../shell/Icon.svelte'
+  import Dialog from '../../shell/Dialog.svelte'
+  import { tooltip } from '../../lib/shell/tooltip'
 
   let {
     folders,
@@ -110,20 +112,15 @@
     onSelect(id)
   }
 
-  function onKey(e: KeyboardEvent): void {
-    if (e.key === 'Escape') onClose()
-  }
   function autofocus(node: HTMLInputElement): void {
     node.focus()
   }
 </script>
 
-<svelte:window onkeydown={onKey} />
-<div class="scrim" onclick={onClose} role="presentation"></div>
-<div class="modal" role="dialog" aria-modal="true" aria-label="Manage folders">
+<Dialog label="Manage folders" width="48rem" height="min(86vh, 700px)" gap="var(--space-3)" {onClose}>
   <div class="mhead">
-    <h2>Manage folders</h2>
-    <button class="iconbtn" onclick={onClose} aria-label="Close" type="button">
+    <h2 class="dialog-title">Manage folders</h2>
+    <button class="iconbtn" onclick={onClose} aria-label="Close" type="button" use:tooltip={'Close Manage folders'}>
       <Icon name="x" size={16} />
     </button>
   </div>
@@ -138,7 +135,7 @@
           placeholder="Folder name (e.g. Demo corpus)"
           onkeydown={(e) => e.key === 'Enter' && submitCreate()}
         />
-        <button class="primary" onclick={submitCreate} disabled={newName.trim() === ''} type="button">
+        <button class="btn btn-primary" onclick={submitCreate} disabled={newName.trim() === ''} type="button" use:tooltip={newName.trim() === '' ? 'Type a name first' : 'Make a folder with this name'}>
           Create
         </button>
       </div>
@@ -161,21 +158,25 @@
                   use:autofocus
                   onkeydown={(e) => {
                     if (e.key === 'Enter') commitRename()
-                    if (e.key === 'Escape') editingId = null
+                    if (e.key === 'Escape') {
+                      // The rename, not the dialog: Dialog leaves an Esc that is already handled.
+                      e.preventDefault()
+                      editingId = null
+                    }
                   }}
                   onblur={commitRename}
                 />
               {:else}
-                <button class="rowname" onclick={() => selectFolder(f.id === selectedId ? null : f.id)} type="button">
+                <button class="rowname" onclick={() => selectFolder(f.id === selectedId ? null : f.id)} type="button" use:tooltip={f.id === selectedId ? 'Close this folder’s documents' : 'Show this folder’s documents and add to it'}>
                   <Icon name="folder" size={14} />
                   <span class="name">{f.name}</span>
                   <span class="count">{f.doc_count}</span>
                 </button>
-                <button class="iconbtn" onclick={() => startRename(f)} aria-label="Rename {f.name}" type="button">
+                <button class="iconbtn" onclick={() => startRename(f)} aria-label="Rename {f.name}" type="button" use:tooltip={'Change this folder’s name'}>
                   <Icon name="pencil" size={14} />
                 </button>
                 {#if confirmingDeleteId === f.id}
-                  <button class="confirmdel" onclick={() => { confirmingDeleteId = null; onDelete(f.id) }} type="button">
+                  <button class="btn btn-danger" onclick={() => { confirmingDeleteId = null; onDelete(f.id) }} type="button" use:tooltip={'Delete the folder; its documents stay in the library'}>
                     Delete folder?
                   </button>
                 {:else}
@@ -184,6 +185,7 @@
                     onclick={() => (confirmingDeleteId = f.id)}
                     aria-label="Delete {f.name}"
                     type="button"
+                    use:tooltip={'Delete this folder, after you confirm; its documents stay in the library'}
                   >
                     <Icon name="trash-2" size={14} />
                   </button>
@@ -214,6 +216,7 @@
                 aria-pressed={typeFilter === g.value}
                 onclick={() => (typeFilter = typeFilter === g.value ? null : g.value)}
                 type="button"
+                use:tooltip={typeFilter === g.value ? 'Show every file type again' : `Show only ${g.value.toUpperCase()} files`}
               >
                 {g.value.toUpperCase()} <span class="chipcount">{g.count}</span>
               </button>
@@ -224,7 +227,7 @@
             class:on={unfiledOnly}
             aria-pressed={unfiledOnly}
             onclick={() => (unfiledOnly = !unfiledOnly)}
-            title="Only documents not yet in any folder (plus this folder's members)"
+            use:tooltip={'Only documents not yet in any folder (plus this folder\'s members)'}
             type="button"
           >
             Unfiled
@@ -248,6 +251,7 @@
                   onclick={() => onRemoveDocument(selected.id, d.id)}
                   aria-label="Remove {docLabel(d)} from {selected.name}"
                   type="button"
+                  use:tooltip={'Take this document out of the folder; it stays in the library'}
                 >
                   <Icon name="x" size={13} />
                 </button>
@@ -257,7 +261,7 @@
             <p class="hint">No document matches the current search/filters.</p>
           {/each}
         </div>
-        <button class="secondary" onclick={applyPending} disabled={pending.size === 0} type="button">
+        <button class="btn apply" onclick={applyPending} disabled={pending.size === 0} type="button" use:tooltip={pending.size === 0 ? 'Tick documents first' : 'Put the ticked documents in this folder'}>
           Add {pending.size} document{pending.size === 1 ? '' : 's'}
         </button>
       </section>
@@ -271,42 +275,14 @@
       </span>
     </p>
   </div>
-</div>
+</Dialog>
 
 <style>
-  .scrim {
-    position: fixed;
-    inset: 0;
-    background: color-mix(in srgb, var(--fg) 32%, transparent);
-    z-index: 42;
-  }
-  .modal {
-    position: fixed;
-    z-index: 43;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    width: min(94vw, 48rem);
-    max-height: min(86vh, 700px);
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    box-shadow: var(--shadow-2);
-    padding: var(--space-4);
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-3);
-  }
   .mhead {
     display: flex;
     align-items: center;
     justify-content: space-between;
     flex: none;
-  }
-  .mhead h2 {
-    margin: 0;
-    font-size: var(--text-title);
-    font-family: var(--font-serif);
   }
   .iconbtn {
     display: inline-flex;
@@ -324,8 +300,11 @@
     color: var(--fg);
     background: var(--surface-2);
   }
+  /* Allow-listed (ui-rules.allow.ts): an icon-only danger button in a dense row. Red at rest, as
+     every danger action is (ADR-063); its name is the aria-label. */
+  .iconbtn.danger,
   .iconbtn.danger:hover {
-    color: var(--danger, #c0392b);
+    color: var(--danger);
   }
   .body {
     flex: 1;
@@ -419,46 +398,14 @@
     color: var(--fg-2);
     font-variant-numeric: tabular-nums;
   }
-  .primary {
-    font: inherit;
-    font-size: 0.82rem;
-    font-weight: 600;
-    cursor: pointer;
-    color: var(--accent-fg);
-    background: var(--accent);
-    border: 1px solid var(--accent);
-    border-radius: 8px;
-    padding: 0.4rem 0.75rem;
-    flex: none;
-  }
-  .primary:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-  .secondary {
-    font: inherit;
-    font-size: 0.8rem;
-    font-weight: 600;
-    cursor: pointer;
-    color: var(--fg);
-    background: var(--surface-2);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: 0.35rem 0.7rem;
+  .apply {
     align-self: flex-start;
     margin-top: 0.5rem;
-  }
-  .secondary:hover:not(:disabled) {
-    border-color: var(--accent);
-  }
-  .secondary:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
   }
   .error {
     margin: 0.4rem 0 0;
     font-size: 0.78rem;
-    color: var(--danger, #c0392b);
+    color: var(--danger);
   }
   .list {
     display: flex;
@@ -501,18 +448,6 @@
     font-size: 0.72rem;
     color: var(--fg-2);
   }
-  .confirmdel {
-    font: inherit;
-    font-size: 0.72rem;
-    font-weight: 600;
-    cursor: pointer;
-    color: var(--danger, #c0392b);
-    background: none;
-    border: 1px solid var(--danger, #c0392b);
-    border-radius: 6px;
-    padding: 0.2rem 0.45rem;
-    flex: none;
-  }
   .picker {
     display: flex;
     flex-direction: column;
@@ -554,11 +489,5 @@
     border-top: 1px solid var(--border);
     font-size: 0.75rem;
     color: var(--fg-2);
-  }
-  @media (max-width: 640px) {
-    .modal {
-      width: 94vw;
-      max-height: 90vh;
-    }
   }
 </style>

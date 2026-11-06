@@ -153,6 +153,7 @@
     renameConversation,
     restoreConversations,
   } from './lib/chat/conversations.svelte'
+  import { tooltip } from './lib/shell/tooltip'
 
   // The Test-override button only exists while a retrieval-affecting override is set — with none,
   // both sides retrieve identically and the button is dead weight (2026-07-13 UX review). Settings
@@ -1018,8 +1019,8 @@
         {previewNames(accept.pending).join(' · ')}
         {#if remainderLabel(accept.pending)}<em>{remainderLabel(accept.pending)}</em>{/if}
       </span>
-      <button class="stagedreview" onclick={() => (reviewingAdd = true)} type="button">Review</button>
-      <button class="stagedclear" onclick={clearPending} type="button">Clear</button>
+      <button class="stagedreview" onclick={() => (reviewingAdd = true)} type="button" use:tooltip={'Go through these files one by one before anything is added'}>Review</button>
+      <button class="stagedclear" onclick={clearPending} type="button" use:tooltip={'Forget these files: nothing was added, and the files themselves are not touched'}>Clear</button>
     </div>
   {/if}
 

@@ -25,8 +25,10 @@
     TaxonomyView,
   } from '../../lib/core/types'
   import Icon from '../../shell/Icon.svelte'
+  import Dialog from '../../shell/Dialog.svelte'
   import FieldDetail from './FieldDetail.svelte'
   import FieldForest from './FieldForest.svelte'
+  import { tooltip } from '../../lib/shell/tooltip'
 
   let {
     view,
@@ -75,18 +77,12 @@
   const focusLabel = $derived(
     focusConceptId ? (concepts.find((c) => c.id === focusConceptId)?.label ?? null) : null,
   )
-
-  function onKey(e: KeyboardEvent): void {
-    if (e.key === 'Escape') onClose()
-  }
 </script>
 
-<svelte:window onkeydown={onKey} />
-<div class="scrim" onclick={onClose} role="presentation"></div>
-<div class="modal" role="dialog" aria-modal="true" aria-label="Taxonomy">
+<Dialog label="Taxonomy" width="60rem" height="min(88vh, 760px)" gap="var(--space-3)" {onClose}>
   <div class="mhead">
     <div class="titlewrap">
-      <h2>Taxonomy</h2>
+      <h2 class="dialog-title">Taxonomy</h2>
       {#if view}
         <span class="totals">
           {view.n_concepts_total} graph concept{view.n_concepts_total === 1 ? '' : 's'} ·
@@ -98,7 +94,7 @@
         </span>
       {/if}
     </div>
-    <button class="iconbtn" onclick={onClose} aria-label="Close" type="button">
+    <button class="iconbtn" onclick={onClose} aria-label="Close" type="button" use:tooltip={'Close the field taxonomy'}>
       <Icon name="x" size={16} />
     </button>
   </div>
@@ -143,32 +139,9 @@
       />
     </div>
   {/if}
-</div>
+</Dialog>
 
 <style>
-  .scrim {
-    position: fixed;
-    inset: 0;
-    background: color-mix(in srgb, var(--fg) 32%, transparent);
-    z-index: 42;
-  }
-  .modal {
-    position: fixed;
-    z-index: 43;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    width: min(94vw, 60rem);
-    max-height: min(88vh, 760px);
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    box-shadow: var(--shadow-2);
-    padding: var(--space-4);
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-3);
-  }
   .mhead {
     display: flex;
     align-items: flex-start;
@@ -181,11 +154,6 @@
     flex-direction: column;
     gap: 0.15rem;
     min-width: 0;
-  }
-  .mhead h2 {
-    margin: 0;
-    font-size: var(--text-title);
-    font-family: var(--font-serif);
   }
   .totals {
     font-size: 0.76rem;
@@ -228,7 +196,7 @@
   .error {
     margin: 0;
     font-size: 0.78rem;
-    color: var(--danger, #c0392b);
+    color: var(--danger);
     flex: none;
   }
   .hint {
@@ -269,10 +237,6 @@
     gap: var(--space-3);
   }
   @media (max-width: 640px) {
-    .modal {
-      width: 94vw;
-      max-height: 90vh;
-    }
     .cols {
       grid-template-columns: minmax(0, 1fr);
     }

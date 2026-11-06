@@ -21,6 +21,7 @@
   import { enterSelectMode, exitSelectMode, library } from '../../lib/library/documents.svelte'
   import { addSelectionToFolder, openManageFolders } from '../../lib/library/folders.svelte'
   import type { LibraryDocument, LibraryFolder } from '../../lib/core/types'
+  import { tooltip } from '../../lib/shell/tooltip'
 
   interface Props {
     /** The whole list: *Select* shows only when it has documents. */
@@ -52,7 +53,7 @@
 
 <div class="libnav">
   {#if libraryDocId !== null || libraryCollection.kind !== 'all'}
-    <button class="libback" onclick={onLibraryBack} aria-label="Back" title="Back">
+    <button class="libback" onclick={onLibraryBack} aria-label="Back" use:tooltip={'Go back to where you were in the library'}>
       <Icon name="arrow-left" size={15} />
     </button>
   {/if}
@@ -61,7 +62,7 @@
       class="crumb"
       onclick={() => onSelectCollection({ kind: 'all' })}
       disabled={libraryDocId === null && libraryCollection.kind === 'all'}
-      type="button">Library</button
+      type="button" use:tooltip={libraryDocId === null && libraryCollection.kind === 'all' ? 'You are here' : 'Show every document in the library'}>Library</button
     >
     {#if libraryCollection.kind !== 'all'}
       <span class="crumbsep"><Icon name="chevron-right" size={13} /></span>
@@ -69,7 +70,7 @@
         class="crumb"
         onclick={() => onSetDocId(null)}
         disabled={libraryDocId === null}
-        type="button">{collectionLabel(libraryCollection, folderNames)}</button
+        type="button" use:tooltip={libraryDocId === null ? 'You are here' : 'Go back to this list'}>{collectionLabel(libraryCollection, folderNames)}</button
       >
     {/if}
     {#if openDoc}
@@ -81,11 +82,12 @@
     {#if !showSummary}
     <div class="libsort">
       <button
-        class="sortbtn"
+        class="btn btn-icon"
         onclick={() => (libPrefs.sortOpen = !libPrefs.sortOpen)}
         aria-haspopup="menu"
         aria-expanded={libPrefs.sortOpen}
-        title="Sort documents"
+        aria-label="Sort documents"
+        use:tooltip={'Change the order of the documents'}
         type="button"><Icon name="arrow-up-down" size={15} /></button
       >
       {#if libPrefs.sortOpen}
@@ -103,6 +105,7 @@
               aria-checked={libPrefs.sort === s.key}
               onclick={() => setLibrarySort(s.key)}
               type="button"
+              use:tooltip={'Order the documents this way; the choice is remembered'}
             >
               <span class="tick"
                 >{#if libPrefs.sort === s.key}<Icon name="check" size={13} />{/if}</span
@@ -120,7 +123,7 @@
         onclick={() => setLibraryView('grid')}
         aria-label="Grid view"
         aria-pressed={!showSummary && libPrefs.view === 'grid'}
-        title="Grid view"
+        use:tooltip={'Show the documents as tiles'}
         type="button"><Icon name="layout-grid" size={15} /></button
       >
       <button
@@ -128,7 +131,7 @@
         onclick={() => setLibraryView('list')}
         aria-label="List view"
         aria-pressed={!showSummary && libPrefs.view === 'list'}
-        title="List view"
+        use:tooltip={'Show the documents as a list'}
         type="button"><Icon name="list" size={15} /></button
       >
       <!-- ROADMAP 112: a third layout, for the library or the open folder. Navigation, not an
@@ -142,7 +145,7 @@
             libPrefs.summaryOpen = true
           }}
           aria-pressed={showSummary}
-          title={summaryScope.folder === null
+          use:tooltip={summaryScope.folder === null
             ? 'What went wrong at indexing, and what is known about your documents'
             : 'What went wrong at indexing, and what is known about this folder'}
           type="button">Summary</button
@@ -151,11 +154,10 @@
     </div>
     {#if documents.length > 0 && !showSummary}
       <button
-        class="selecttoggle"
-        class:active={library.selectMode}
+        class="btn"
         aria-pressed={library.selectMode}
         onclick={() => (library.selectMode ? exitSelectMode() : enterSelectMode())}
-        title="Select documents to add to a folder"
+        use:tooltip={'Select documents, then add them to a folder or re-run them'}
         type="button"
       >
         <Icon name="square-check-big" size={14} /> Select
@@ -168,10 +170,10 @@
          drag-drop, so it stays visible, disabled, and SAYS WHY: hiding it would make a browser
          look like a missing feature. Reachable from Chat via the app menu. -->
     <button
-      class="addbtn"
+      class="btn btn-primary"
       onclick={openChooser}
       disabled={!canAccept() || accept.picking}
-      title={unavailableReason() ?? 'Add documents'}
+      use:tooltip={unavailableReason() ?? 'Choose files or a folder to add to your library'}
       type="button"
     >
       <Icon name="plus" size={14} /> Add documents
@@ -192,6 +194,7 @@
       onclick={() =>
         (library.selected = selectAllOrNone(visibleDocs.map((d) => d.id), library.selected))}
       type="button"
+      use:tooltip={library.selected.length > 0 ? 'Empty the selection' : 'Select every document shown'}
     >
       {selectAllLabel(library.selected)}
     </button>
@@ -204,6 +207,7 @@
         aria-expanded={library.addMenuOpen}
         onclick={() => (library.addMenuOpen = !library.addMenuOpen)}
         type="button"
+        use:tooltip={library.selected.length === 0 ? 'Select documents first' : 'Put the selected documents in a folder'}
       >
         <Icon name="folder" size={13} /> Add to folder…
       </button>
@@ -211,7 +215,7 @@
         <div class="sort-backdrop" onclick={() => (library.addMenuOpen = false)} role="presentation"></div>
         <div class="sortmenu" role="menu">
           {#each folders as f (f.id)}
-            <button class="sortitem" role="menuitem" onclick={() => addSelectionToFolder(f.id)} type="button">
+            <button class="sortitem" role="menuitem" onclick={() => addSelectionToFolder(f.id)} type="button" use:tooltip={'Put the selected documents in this folder'}>
               <span class="tick"><Icon name="folder" size={13} /></span>
               {f.name}
             </button>
@@ -224,6 +228,7 @@
                 openManageFolders()
               }}
               type="button"
+              use:tooltip={'Open Manage folders to make your first folder'}
             >
               <span class="tick"><Icon name="plus" size={13} /></span>
               No folders yet — create one…
@@ -240,17 +245,21 @@
       disabled={library.selected.length === 0}
       onclick={() => openRerun(library.selected, selectionLabel(library.selected.length))}
       type="button"
+      use:tooltip={library.selected.length === 0 ? 'Select documents first' : 'Re-run part of ingestion for the selected documents'}
     >
       <Icon name="rotate-ccw" size={13} /> Re-run…
     </button>
-    <button class="btn btn-primary seldone" onclick={exitSelectMode} type="button">Done</button>
+    <button class="btn btn-primary seldone" onclick={exitSelectMode} type="button" use:tooltip={'Leave select mode'}>Done</button>
   </div>
 {/if}
 
 <style>
   /* The header bar: Back, the location, then sort / layout / Select / Add documents. */
+  /* Wraps on a narrow pane: at 375 px the row was 106 px too wide, and *Add documents* was cut
+     off at the edge while the location shrank to nothing. */
   .libnav {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     gap: var(--space-2);
     padding: var(--space-2) 0;
@@ -305,48 +314,9 @@
     display: inline-flex;
     flex: none;
   }
-  /* The pane's primary action: filled accent, unlike the neutral view/sort toggles beside it.
-     A single class, and nothing else in this file targets `.addbtn` — but if a sibling rule is
-     ever added, give this one two classes rather than relying on source order (the 2026-08-19
-     tick-row accident, repeated in the toolbar on 2026-08-21). */
-  .addbtn {
-    flex: none;
-    display: inline-flex;
-    align-items: center;
-    gap: 0.3rem;
-    padding: 0.28rem 0.7rem;
-    border: 1px solid var(--accent);
-    border-radius: 8px;
-    background: var(--accent);
-    color: var(--accent-fg);
-    font: inherit;
-    font-size: var(--text-sm);
-    cursor: pointer;
-  }
-  .addbtn:disabled {
-    background: var(--surface);
-    border-color: var(--border);
-    color: var(--fg-2);
-    opacity: 0.7;
-    cursor: default;
-  }
   .libsort {
     position: relative;
     flex: none;
-  }
-  .sortbtn {
-    display: inline-flex;
-    align-items: center;
-    padding: 0.28rem 0.5rem;
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    background: var(--surface);
-    color: var(--fg-2);
-    cursor: pointer;
-  }
-  .sortbtn:hover {
-    color: var(--fg);
-    border-color: var(--accent);
   }
   /* The dropdown menu both bars open: the sort menu here, *Add to folder…* on the select bar. */
   .sort-backdrop {
@@ -400,11 +370,14 @@
     border-radius: 8px;
     overflow: hidden;
   }
+  /* A view toggle keeps its own segmented look (ADR-063 choice 1), in full-strength text like
+     the ordinary buttons beside it (choice 2). */
   .viewtoggle button {
     border: none;
     border-radius: 0;
     background: var(--surface);
-    color: var(--fg-2);
+    color: var(--fg);
+    cursor: pointer;
     padding: 0.28rem 0.55rem;
     display: inline-flex;
     align-items: center;
@@ -418,30 +391,7 @@
     font-size: 0.78rem;
     border-left: 1px solid var(--border);
   }
-  /* Select mode (batch add-to-folder) — toggle beside the view switch + a slim action bar. */
-  .selecttoggle {
-    flex: none;
-    display: inline-flex;
-    align-items: center;
-    gap: 0.3rem;
-    font: inherit;
-    font-size: 0.78rem;
-    padding: 0.28rem 0.55rem;
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    background: var(--surface);
-    color: var(--fg-2);
-    cursor: pointer;
-  }
-  .selecttoggle:hover {
-    color: var(--fg);
-    border-color: var(--accent);
-  }
-  .selecttoggle.active {
-    background: var(--surface-2);
-    color: var(--accent);
-    border-color: var(--accent);
-  }
+  /* Select mode (batch add-to-folder): the toggle is an ordinary `btn`, pressed while on. */
   .selectbar {
     display: flex;
     flex-wrap: wrap;

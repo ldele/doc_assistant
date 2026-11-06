@@ -66,7 +66,7 @@
     background: var(--fg-2);
   }
   .status-dot.ok {
-    background: var(--ok, #2e9e5b);
+    background: var(--ok-fg);
   }
   .status-dot.wait {
     background: var(--warn-fg);

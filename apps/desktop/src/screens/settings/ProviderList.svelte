@@ -10,6 +10,7 @@
   // which it writes back to ProviderSetup; the form it opens is `ProviderForm.svelte`.
   import type { ProviderReadiness } from '../../lib/core/types/setup'
   import { providerStatusLabel } from '../../lib/settings/setup'
+  import { tooltip } from '../../lib/shell/tooltip'
 
   let {
     groups,
@@ -43,6 +44,7 @@
         class:on={open === p.id}
         aria-current={open === p.id ? 'true' : undefined}
         onclick={() => (picked = p.id)}
+        use:tooltip={'Show this provider’s settings'}
       >
         <span class="pname">{p.name}</span>
         <span class="pill {pillClass(p)}">{providerStatusLabel(p, probing)}</span>
@@ -56,6 +58,7 @@
     class:on={open === NEW_SERVER}
     aria-current={open === NEW_SERVER ? 'true' : undefined}
     onclick={() => (picked = NEW_SERVER)}
+    use:tooltip={'Set up a server of your own: a local model runner or a lab machine'}
   >
     <span class="pname">Add an OpenAI-compatible server</span>
   </button>

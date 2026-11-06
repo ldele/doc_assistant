@@ -29,6 +29,7 @@
   } from '../../lib/library/sourceviewer'
   import { libPrefs, setSourceFit } from '../../lib/library/prefs.svelte'
   import Icon from '../../shell/Icon.svelte'
+  import { tooltip } from '../../lib/shell/tooltip'
 
   let {
     docId,
@@ -217,31 +218,31 @@
         class:active={libPrefs.sourceFit === 'page'}
         onclick={() => applyFit('page')}
         aria-pressed={libPrefs.sourceFit === 'page'}
-        title="Fit the whole page"
+        use:tooltip={'Show each page whole'}
         type="button">Fit page</button
       >
       <button
         class:active={libPrefs.sourceFit === 'width'}
         onclick={() => applyFit('width')}
         aria-pressed={libPrefs.sourceFit === 'width'}
-        title="Fill the width and scroll"
+        use:tooltip={'Fill the width and scroll'}
         type="button">Width</button
       >
     </div>
     <div class="szoom" role="group" aria-label="Zoom">
-      <button onclick={() => nudgeZoom(-1)} type="button" aria-label="Zoom out" title="Zoom out">&minus;</button>
+      <button onclick={() => nudgeZoom(-1)} type="button" aria-label="Zoom out" use:tooltip={'Make the pages smaller'}>&minus;</button>
       <!-- The reading is the button: pressing it returns to the preferred fit, which is the
            only exit from a deep zoom that does not involve hunting for the right level. -->
       <button
         class="szoomlabel"
         onclick={() => applyFit(libPrefs.sourceFit)}
         type="button"
-        title="Back to {libPrefs.sourceFit === 'page' ? 'fit page' : 'width'}"
+        use:tooltip={`Back to ${libPrefs.sourceFit === 'page' ? 'fit page' : 'width'}`}
       >{zoomLabel(zoom)}</button>
-      <button onclick={() => nudgeZoom(1)} type="button" aria-label="Zoom in" title="Zoom in">+</button>
+      <button onclick={() => nudgeZoom(1)} type="button" aria-label="Zoom in" use:tooltip={'Make the pages larger'}>+</button>
     </div>
     {/if}
-    <button class="sclose" onclick={onClose} type="button" aria-label="Close the source view" title="Close">
+    <button class="sclose" onclick={onClose} type="button" aria-label="Close the source view" use:tooltip={'Hide the document beside this page'}>
       <Icon name="x" size={15} />
     </button>
   </header>
@@ -290,6 +291,7 @@
         onclick={() => step(-1)}
         disabled={!canStep(page, pageCount, -1)}
         aria-label="Previous page"
+        use:tooltip={!canStep(page, pageCount, -1) ? 'This is the first page' : 'Show the previous page'}
       >
         <Icon name="arrow-left" size={13} />
       </button>
@@ -304,6 +306,7 @@
         onclick={() => step(1)}
         disabled={!canStep(page, pageCount, 1)}
         aria-label="Next page"
+        use:tooltip={!canStep(page, pageCount, 1) ? 'This is the last page' : 'Show the next page'}
       >
         <Icon name="arrow-right" size={13} />
       </button>
@@ -463,7 +466,7 @@
     flex: none;
     height: auto;
     border: 1px solid var(--border);
-    background: #fff;
+    background: var(--paper);
   }
   .sfoot {
     flex: none;

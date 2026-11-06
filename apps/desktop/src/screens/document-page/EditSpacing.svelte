@@ -4,9 +4,11 @@
   // space). Saving writes the run's entry in the ignore list, which applies when the document's
   // text is re-run; "Back to the rule's reading" removes the entry instead.
   import { untrack } from 'svelte'
+  import Dialog from '../../shell/Dialog.svelte'
   import type { DocumentSpacing, SpacingRow } from '../../lib/core/types'
   import { removeRunEntry, setRunSpacing, sourcePageUrl } from '../../lib/core/api'
   import { gapsOf, glyphsOf, shownText, writeWithGaps } from '../../lib/library/spacing'
+  import { tooltip } from '../../lib/shell/tooltip'
 
   let {
     docId,
@@ -60,16 +62,10 @@
       busy = false
     }
   }
-
-  function onKey(e: KeyboardEvent): void {
-    if (e.key === 'Escape' && !busy) onClose()
-  }
 </script>
 
-<svelte:window onkeydown={onKey} />
-<div class="scrim" onclick={() => !busy && onClose()} role="presentation"></div>
-<div class="modal" role="dialog" aria-modal="true" aria-label="Edit spacing">
-  <h2>Edit spacing</h2>
+<Dialog label="Edit spacing" width="640px" locked={busy} {onClose}>
+  <h2 class="dialog-title">Edit spacing</h2>
   <p class="lead">
     Choose where the words break. The letters stay as the page has them; only the spaces change.
   </p>
@@ -92,7 +88,7 @@
           class:open={gaps[i]}
           aria-pressed={gaps[i]}
           aria-label={gaps[i] ? `Join ${g} and ${glyphs[i + 1]}` : `Break between ${g} and ${glyphs[i + 1]}`}
-          title={gaps[i] ? 'A space: click to join' : 'Joined: click to break here'}
+          use:tooltip={gaps[i] ? 'A space: click to join' : 'Joined: click to break here'}
           disabled={busy}
           onclick={() => toggle(i)}
         ></button>{/if}{/each}
@@ -107,42 +103,13 @@
   {#if error}<p class="err" role="alert">{error}</p>{/if}
 
   <div class="mactions">
-    <button class="primary" type="button" disabled={busy} onclick={save}>Save</button>
-    <button class="ghost" type="button" disabled={busy} onclick={backToRule}>Back to the rule's reading</button>
-    <button class="ghost" type="button" disabled={busy} onclick={onClose}>Cancel</button>
+    <button class="btn btn-primary" type="button" disabled={busy} onclick={save} use:tooltip={'Keep your spacing for this run; it applies when the text is re-run'}>Save</button>
+    <button class="btn" type="button" disabled={busy} onclick={backToRule} use:tooltip={'Drop your spacing and let the rule decide this run again'}>Back to the rule's reading</button>
+    <button class="btn" type="button" disabled={busy} onclick={onClose} use:tooltip={'Close without changing anything'}>Cancel</button>
   </div>
-</div>
+</Dialog>
 
 <style>
-  .scrim {
-    position: fixed;
-    inset: 0;
-    background: color-mix(in srgb, var(--fg) 32%, transparent);
-    z-index: 40;
-  }
-  .modal {
-    position: fixed;
-    z-index: 41;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    width: min(92vw, 640px);
-    max-height: 90vh;
-    overflow: auto;
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    box-shadow: var(--shadow-2);
-    padding: var(--space-4);
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-2);
-  }
-  h2 {
-    margin: 0;
-    font-size: var(--text-title);
-    font-family: var(--font-serif);
-  }
   .lead,
   .src,
   .note {
@@ -157,7 +124,7 @@
     max-height: 96px;
     object-fit: contain;
     object-position: left center;
-    background: #ffffff;
+    background: var(--paper);
     border: 1px solid var(--border);
     border-radius: 6px;
   }
@@ -231,40 +198,7 @@
   .mactions {
     display: flex;
     flex-wrap: wrap;
-    gap: 0.5rem;
+    gap: var(--space-2);
     margin-top: var(--space-2);
-  }
-  .ghost,
-  .primary {
-    font: inherit;
-    font-size: 0.82rem;
-    cursor: pointer;
-    border-radius: 8px;
-    border: 1px solid var(--border);
-    background: var(--surface);
-    color: var(--fg);
-    padding: 0.35rem 0.8rem;
-    display: inline-flex;
-    align-items: center;
-    gap: 0.3rem;
-  }
-  .primary {
-    font-weight: 600;
-    border-color: var(--accent);
-    background: var(--accent);
-    color: var(--accent-fg);
-  }
-  .ghost:hover:not(:disabled) {
-    background: var(--surface-2);
-  }
-  .ghost:disabled,
-  .primary:disabled {
-    opacity: 0.5;
-    cursor: default;
-  }
-  .ghost:focus-visible,
-  .primary:focus-visible {
-    outline: 2px solid var(--accent);
-    outline-offset: 1px;
   }
 </style>

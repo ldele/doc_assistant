@@ -8,6 +8,7 @@
   import { indexLocked, ingestRun, noteIngestStarted, useRunEnd } from '../../lib/core/ingest.svelte'
   import { onDestroy } from 'svelte'
   import Icon from '../../shell/Icon.svelte'
+  import { tooltip } from '../../lib/shell/tooltip'
 
   let rows = $state<SourceFile[]>([])
   let loading = $state(false)
@@ -128,7 +129,7 @@
         {#if counts.excluded > 0}· {counts.excluded} excluded{/if}
       {/if}
     </p>
-    <button class="rescan" onclick={scan} disabled={loading || busy} title="Rescan the folder">
+    <button class="rescan" onclick={scan} disabled={loading || busy} use:tooltip={'Read the folder again and list what is in it now'}>
       <Icon name="rotate-ccw" size={14} /> Rescan
     </button>
   </div>
@@ -139,13 +140,13 @@
     <p class="hint">No files in the source folder. Choose a folder above, then rescan.</p>
   {:else if rows.length > 0}
     <div class="actions">
-      <button class="ghost" onclick={selectNewChanged} disabled={busy || freshCount === 0}>
+      <button class="btn btn-quiet" onclick={selectNewChanged} disabled={busy || freshCount === 0} use:tooltip={freshCount === 0 ? 'No file is new or changed' : 'Tick every file not indexed yet or changed since'}>
         Select new + changed{freshCount > 0 ? ` (${freshCount})` : ''}
       </button>
       {#if selected.size > 0}
-        <button class="ghost" onclick={clearSelection} disabled={busy}>Clear</button>
+        <button class="btn btn-quiet" onclick={clearSelection} disabled={busy} use:tooltip={'Untick every file'}>Select none</button>
       {/if}
-      <button class="primary" onclick={ingestSelected} disabled={busy || selected.size === 0}>
+      <button class="btn btn-primary ingest" onclick={ingestSelected} disabled={busy || selected.size === 0} use:tooltip={selected.size === 0 ? 'Tick files first' : 'Index the ticked files now, excluded ones included'}>
         {busy ? 'Indexing…' : `Ingest selected (${selected.size})`}
       </button>
     </div>
@@ -167,7 +168,7 @@
             class="excl"
             onclick={() => toggleExclude(r)}
             disabled={busy}
-            title={r.excluded ? 'Include in whole-folder indexing' : 'Exclude from whole-folder indexing'}
+            use:tooltip={r.excluded ? 'Include in whole-folder indexing' : 'Exclude from whole-folder indexing'}
           >
             {r.excluded ? 'Excluded' : 'Exclude'}
           </button>
@@ -316,35 +317,9 @@
     opacity: 0.5;
     cursor: default;
   }
-  .primary {
-    font: inherit;
-    font-size: 0.82rem;
-    font-weight: 600;
-    cursor: pointer;
-    border-radius: 8px;
-    border: 1px solid var(--accent);
-    background: var(--accent);
-    color: var(--accent-fg);
-    padding: 0.32rem 0.8rem;
+  /* Layout only: the primary sits at the bar's trailing end (ADR-063). */
+  .ingest {
     margin-left: auto;
-  }
-  .primary:disabled {
-    opacity: 0.5;
-    cursor: default;
-  }
-  .ghost {
-    font: inherit;
-    font-size: 0.8rem;
-    cursor: pointer;
-    border-radius: 8px;
-    border: 1px solid var(--border);
-    background: var(--surface);
-    color: var(--fg);
-    padding: 0.3rem 0.7rem;
-  }
-  .ghost:disabled {
-    opacity: 0.5;
-    cursor: default;
   }
   .hint {
     font-size: 0.76rem;

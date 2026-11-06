@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url'
 
 const SRC = dirname(fileURLToPath(import.meta.url))
 const SPEC = /(?:\bfrom\s*|\bimport\s*\(?\s*)(['"])(\.{1,2}\/[^'"]+)\1/g
-const SHARED_FROM_SHELL = new Set(['shell/Icon.svelte', 'shell/ConfirmDialog.svelte'])
+const SHARED_FROM_SHELL = new Set(['shell/Icon.svelte', 'shell/Dialog.svelte', 'shell/ConfirmDialog.svelte'])
 
 const posix = (p: string): string => p.split(sep).join('/')
 
@@ -55,7 +55,7 @@ test('lib/ never imports a component', () => {
   assert.deepEqual(bad, [])
 })
 
-test('a screen takes only Icon and ConfirmDialog from shell/', () => {
+test('a screen takes only Icon, Dialog and ConfirmDialog from shell/', () => {
   const bad = files
     .filter(under('screens'))
     .flatMap((f) =>

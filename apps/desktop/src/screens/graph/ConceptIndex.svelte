@@ -386,6 +386,8 @@
     border-radius: 999px;
     white-space: nowrap;
   }
+  /* Allow-listed (ui-rules.allow.ts): a gap's severity on a badge, named by GAP_META's `tone`, not
+     a button's role. */
   .badge.danger {
     color: var(--danger);
     border: 1px solid var(--danger);

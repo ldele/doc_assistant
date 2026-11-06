@@ -143,7 +143,7 @@
       {/each}
     </div>
     <div class="actions">
-      <button class="primary" onclick={onClose} type="button">Close</button>
+      <button class="btn btn-primary" onclick={onClose} type="button">Close</button>
     </div>
   {:else if running}
     <p class="summary" role="status">
@@ -201,9 +201,9 @@
     {#if startError}<p class="err" role="alert">{startError}</p>{/if}
 
     <div class="actions">
-      <button class="ghost" onclick={onClose} type="button">Cancel</button>
+      <button class="btn" onclick={onClose} type="button">Cancel</button>
       <button
-        class="primary"
+        class="btn btn-primary"
         disabled={chosen.length === 0 || (needsConfirm && !confirmed)}
         onclick={start}
         type="button"
@@ -381,33 +381,8 @@
     padding: var(--space-2) 0 var(--space-4);
     background: var(--surface);
     display: flex;
+    flex-wrap: wrap;
     justify-content: flex-end;
-    gap: 0.5rem;
-  }
-  .primary,
-  .ghost {
-    font: inherit;
-    font-size: 0.85rem;
-    cursor: pointer;
-    border-radius: 8px;
-    padding: 0.4rem 0.8rem;
-    display: inline-flex;
-    align-items: center;
-    gap: 0.35rem;
-  }
-  .primary {
-    font-weight: 600;
-    border: 1px solid transparent;
-    background: var(--accent);
-    color: var(--bg);
-  }
-  .primary:disabled {
-    opacity: 0.5;
-    cursor: default;
-  }
-  .ghost {
-    border: 1px solid var(--border);
-    background: var(--surface);
-    color: var(--fg);
+    gap: var(--space-2);
   }
 </style>

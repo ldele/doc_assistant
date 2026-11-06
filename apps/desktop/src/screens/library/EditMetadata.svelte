@@ -4,6 +4,7 @@
   // (revert to auto). The backend dedups each field against its auto default, so saving an
   // untouched field creates no override.
   import type { LibraryDocument } from '../../lib/core/types'
+  import ConfirmDialog from '../../shell/ConfirmDialog.svelte'
   import Icon from '../../shell/Icon.svelte'
 
   let {
@@ -26,6 +27,9 @@
   let authors = $state(doc.authors ?? '')
   // svelte-ignore state_referenced_locally
   let yearStr = $state(doc.year != null ? String(doc.year) : '')
+  // Reset drops the user's overrides at once and nothing undoes it, so it is a danger action
+  // and asks first (ADR-063 choice 4).
+  let confirmingReset = $state(false)
 
   function save(): void {
     const t = yearStr.trim()
@@ -33,7 +37,8 @@
     onSave({ title, authors, year: Number.isNaN(year as number) ? null : year })
   }
   function onKey(e: KeyboardEvent): void {
-    if (e.key === 'Escape') onClose()
+    // While the confirm is up, its own Esc closes it; this editor stays.
+    if (e.key === 'Escape' && !confirmingReset) onClose()
   }
   function autofocus(node: HTMLInputElement): void {
     node.focus()
@@ -70,14 +75,28 @@
   </p>
 
   <div class="mactions">
-    <button class="reset" onclick={onReset} type="button">
-      <Icon name="rotate-ccw" size={14} /> Reset to default
+    <button class="btn btn-danger" onclick={() => (confirmingReset = true)} type="button">
+      <Icon name="rotate-ccw" size={14} /> Reset to default…
     </button>
     <span class="spacer"></span>
-    <button class="ghost" onclick={onClose} type="button">Cancel</button>
-    <button class="primary" onclick={save} type="button">Save</button>
+    <button class="btn" onclick={onClose} type="button">Cancel</button>
+    <button class="btn btn-primary" onclick={save} type="button">Save</button>
   </div>
 </div>
+
+{#if confirmingReset}
+  <ConfirmDialog
+    title="Reset this document's metadata?"
+    body="Your title, authors and year for {doc.filename} are removed, and the values found when it was indexed come back. Nothing undoes this."
+    confirmLabel="Reset"
+    confirmIcon={null}
+    onConfirm={() => {
+      confirmingReset = false
+      onReset()
+    }}
+    onClose={() => (confirmingReset = false)}
+  />
+{/if}
 
 <style>
   .scrim {
@@ -166,45 +185,12 @@
   }
   .mactions {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
     margin-top: var(--space-2);
   }
   .spacer {
     flex: 1;
-  }
-  .mactions button {
-    font: inherit;
-    font-size: 0.85rem;
-    cursor: pointer;
-    border-radius: 8px;
-    padding: 0.45rem 0.8rem;
-    border: 1px solid var(--border);
-  }
-  .reset {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.35rem;
-    background: none;
-    color: var(--fg-2);
-  }
-  .reset:hover {
-    color: var(--fg);
-    border-color: var(--accent);
-  }
-  .ghost {
-    background: none;
-    color: var(--fg);
-  }
-  .ghost:hover {
-    background: var(--surface-2);
-  }
-  .primary {
-    background: var(--accent);
-    color: var(--accent-fg);
-    border-color: var(--accent);
-  }
-  .primary:hover {
-    filter: brightness(1.05);
   }
 </style>

@@ -81,9 +81,9 @@
   {/if}
 
   <div class="mactions">
-    <button class="ghost" onclick={onClose} type="button">Cancel</button>
+    <button class="btn" onclick={onClose} type="button">Cancel</button>
     <button
-      class="primary"
+      class="btn btn-primary"
       type="button"
       disabled={!plan || confirmDisabled(plan, onlyNew)}
       onclick={() => onConfirm(onlyNew)}
@@ -171,33 +171,9 @@
   }
   .mactions {
     display: flex;
+    flex-wrap: wrap;
     justify-content: flex-end;
-    gap: 0.5rem;
+    gap: var(--space-2);
     margin-top: var(--space-2);
-  }
-  .mactions button {
-    font: inherit;
-    font-size: 0.85rem;
-    cursor: pointer;
-    border-radius: 8px;
-    padding: 0.45rem 0.8rem;
-    border: 1px solid var(--border);
-  }
-  .mactions button:disabled {
-    opacity: 0.55;
-    cursor: default;
-  }
-  .ghost {
-    background: none;
-    color: var(--fg);
-  }
-  .ghost:hover {
-    background: var(--surface-2);
-  }
-  .primary {
-    background: var(--accent);
-    border-color: var(--accent);
-    color: var(--accent-fg);
-    font-weight: 600;
   }
 </style>

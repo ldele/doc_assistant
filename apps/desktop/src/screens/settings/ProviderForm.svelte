@@ -20,6 +20,7 @@
     setNotBilled,
     testServer,
   } from '../../lib/core/api'
+  import ConfirmDialog from '../../shell/ConfirmDialog.svelte'
   import Icon from '../../shell/Icon.svelte'
   import {
     DEFAULT_CLAUDE_MODEL,
@@ -79,6 +80,9 @@
   // Targets for the copy fallback: if the clipboard API is unavailable, the text gets selected
   // instead so Ctrl+C still works.
   let copyEls = $state<Record<string, HTMLElement | null>>({})
+  // Removing a key or a server is a danger action: red, named, and confirmed first (ADR-063
+  // choices 1 and 4). What waits on the confirm, or null.
+  let confirmRemove = $state<{ what: 'key' | 'server'; p: ProviderReadiness } | null>(null)
 
   const current = $derived(setup.providers.find((p) => p.id === open) ?? null)
 
@@ -267,7 +271,7 @@
 {#snippet copyRow(text: string, label: string, card: string)}
   <span class="copyrow">
     <code bind:this={copyEls[label]}>{text}</code>
-    <button class="ghost sm" onclick={() => copy(text, label, card)}>{copied === label ? 'Copied' : 'Copy'}</button>
+    <button class="btn" onclick={() => copy(text, label, card)}>{copied === label ? 'Copied' : 'Copy'}</button>
   </span>
 {/snippet}
 
@@ -326,7 +330,7 @@
     {#if inUse(p)}
       <span class="ok-line"><Icon name="check" size={13} /> In use for answers.</span>
     {:else}
-      <button class="primary" onclick={() => use(p)} disabled={busy || !canUse || !(models[p.id] ?? '').trim()}>
+      <button class="btn btn-primary" onclick={() => use(p)} disabled={busy || !canUse || !(models[p.id] ?? '').trim()}>
         Use for answers
       </button>
     {/if}
@@ -402,7 +406,7 @@
         autocomplete="off"
         disabled={busy}
       />
-      <button class="ghost" onclick={connect} disabled={busy || !server.name.trim() || !server.address.trim()}>
+      <button class="btn" onclick={connect} disabled={busy || !server.name.trim() || !server.address.trim()}>
         {working === 'connect' ? 'Reaching it…' : 'Test connection'}
       </button>
     </div>
@@ -419,9 +423,9 @@
       <hr />
       {@render measured()}
       {#if p.key_source}
-        <button class="ghost again" onclick={() => removeKey(p)} disabled={busy}>Remove key</button>
+        <button class="btn btn-danger again" onclick={() => (confirmRemove = { what: 'key', p })} disabled={busy}>Remove key…</button>
       {/if}
-      <button class="ghost again" onclick={() => forget(p)} disabled={busy}>Remove server</button>
+      <button class="btn btn-danger again" onclick={() => (confirmRemove = { what: 'server', p })} disabled={busy}>Remove server…</button>
     {:else}
       <p class="fine">
         An address outside this computer receives your key, your questions and the passages
@@ -456,7 +460,7 @@
     {#if p.ready}
       <p class="ok-line"><Icon name="check" size={13} /> {p.detail}</p>
       {@render modelRow(p, 'llama3.1:8b', true)}
-      <button class="ghost again" onclick={() => onRecheck()} disabled={busy}>Re-check</button>
+      <button class="btn again" onclick={() => onRecheck()} disabled={busy}>Re-check</button>
     {:else}
       <ol class="howto">
         {#if p.reachable === false}
@@ -471,7 +475,7 @@
         </li>
         <li>Come back and press Re-check.</li>
       </ol>
-      <button class="ghost" onclick={() => onRecheck()} disabled={busy || probing}>Re-check</button>
+      <button class="btn" onclick={() => onRecheck()} disabled={busy || probing}>Re-check</button>
     {/if}
     {#each p.notes as line (line)}<p class="fine">{line}</p>{/each}
     {@render note(p.id)}
@@ -503,7 +507,7 @@
         <p class="warn">{keyPrecedenceNote(p, savedHere)}</p>
       {/if}
       {#if p.key_source === 'app'}
-        <button class="ghost again" onclick={() => removeKey(p)} disabled={busy}>Remove key</button>
+        <button class="btn btn-danger again" onclick={() => (confirmRemove = { what: 'key', p })} disabled={busy}>Remove key…</button>
       {/if}
     {:else if p.takes_key && p.key_page}
       <ol class="howto">
@@ -531,7 +535,7 @@
           autocomplete="off"
           disabled={busy}
         />
-        <button class="ghost" onclick={() => saveKey(p)} disabled={busy || keyInput.trim() === ''}>
+        <button class="btn" onclick={() => saveKey(p)} disabled={busy || keyInput.trim() === ''}>
           {working === 'key' ? `Checking with ${vendor}…` : 'Save key'}
         </button>
       </div>
@@ -540,7 +544,7 @@
     {@render modelRow(p, p.kind === 'claude' ? DEFAULT_CLAUDE_MODEL : 'Choose from the list, or type a name', p.configured && p.key_status !== 'refused')}
     {@render note(p.id)}
     {#if p.kind === 'preset' && p.reach === 'this_computer'}
-      <button class="ghost again" onclick={() => onRecheck()} disabled={busy || probing}>Re-check</button>
+      <button class="btn again" onclick={() => onRecheck()} disabled={busy || probing}>Re-check</button>
     {/if}
     <p class="detail">{p.billing}{#if p.kind !== 'claude' && p.billing_kind === 'vendor'}; Provenote does not know its price{/if}.</p>
     {#each p.notes as line (line)}<p class="fine">{line}</p>{/each}
@@ -550,6 +554,24 @@
     {@render measured()}
     {#if p.takes_key}<p class="fine">The key is stored on this machine only, in your data folder, and sent only to this address.</p>{/if}
   </div>
+{/if}
+
+{#if confirmRemove}
+  {@const { what, p } = confirmRemove}
+  <ConfirmDialog
+    title={what === 'key' ? `Remove the key for ${p.name}?` : `Remove the server ${p.name}?`}
+    body={what === 'key'
+      ? `Provenote forgets the key it saved for ${p.name}. A key in your .env file is not touched, and you can paste a key again at any time.`
+      : `Provenote forgets ${p.name} and its address. The server itself is not touched, and you can add it again at any time.`}
+    confirmLabel={what === 'key' ? 'Remove key' : 'Remove server'}
+    confirmIcon={null}
+    {busy}
+    onConfirm={async () => {
+      await (what === 'key' ? removeKey(p) : forget(p))
+      confirmRemove = null
+    }}
+    onClose={() => (confirmRemove = null)}
+  />
 {/if}
 
 <style>
@@ -638,43 +660,9 @@
     gap: 0.5rem;
     flex-wrap: wrap;
   }
-  .primary {
-    flex: none;
-    font: inherit;
-    font-size: 0.82rem;
-    font-weight: 600;
-    cursor: pointer;
-    border-radius: 8px;
-    border: 1px solid var(--accent);
-    background: var(--accent);
-    color: var(--accent-fg);
-    padding: 0.35rem 0.9rem;
-  }
-  .primary:disabled {
-    opacity: 0.5;
-    cursor: default;
-  }
-  .ghost {
-    flex: none;
-    font: inherit;
-    font-size: 0.8rem;
-    cursor: pointer;
-    border-radius: 8px;
-    border: 1px solid var(--border);
-    background: var(--bg);
-    color: var(--fg);
-    padding: 0.3rem 0.7rem;
-  }
-  .ghost.sm {
-    font-size: 0.72rem;
-    padding: 0.15rem 0.45rem;
-  }
-  .ghost.again {
+  /* Layout only: the roles' look is app.css's (ADR-063). */
+  .again {
     margin-top: 0.5rem;
-  }
-  .ghost:disabled {
-    opacity: 0.5;
-    cursor: default;
   }
   .ok-line {
     color: var(--ok-fg);

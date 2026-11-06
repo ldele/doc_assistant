@@ -42,6 +42,38 @@ Format: What changed | Why | Rejected alternatives | What it opens
 
 ---
 
+## 2026-11-06 (5) — ROADMAP 110 (b): every button on a role, and a delete always asks
+
+**What changed.** The 28 components that styled their own `.primary` / `.ghost` / `.danger`, and
+the local primaries under other names (`.send`, `.resume`, `.addbtn`, `.secondary`, `.neutral`,
+`.dangerbtn`), are on `btn` / `btn-primary` / `btn-quiet` / `btn-danger`. Their bare `button`
+rules are gone too, since they outranked `.btn`. `app.css` gains `btn-primary btn-danger` (a
+confirm's own button when it removes, filled red, `--danger-fill` in all four palettes),
+`btn-icon`, and a pressed look for any `btn` with `aria-pressed`. `ConfirmDialog` is an alert
+dialog: labelled, described, focus on *Cancel*. The five destructive actions ADR-063 counted
+(*Remove key…*, *Remove server…*, *Remove…*, *Remove all…*, *Dismiss…* on a chosen definition,
+which was *Clear*) are red and confirm, and so are *Reset to default…* in *Edit metadata* and
+*Undo all…* in the add-documents review. The document page's *Source* and *Re-run…* left the
+index's `nav` for its trailing end. The Library header wraps at 375 px. Check 1's allow-list is
+seven exceptions with reasons; hover text 237 → 236 and colours 49 → 36 (two files' dead
+`var(--danger, #c0392b)` fallbacks).
+
+**Why.** ADR-063 choices 1, 4, 5 and 7, and the user's go-ahead for piece (b) on 2026-11-06. Seen
+in the running app over an invented library, dark, light and 375 px; *Remove server…* and both
+ignore-list removals driven end to end, cancel and confirm. `npm test` 401/401, `svelte-check` 0,
+`npm audit --audit-level=high` clean.
+
+**Rejected.** Keeping the confirm's tinted red fill: 4.1:1 in the light theme (3.7:1 hovered),
+below WCAG's 4.5:1. A small-button size: one size meets the 24px target everywhere it was
+used. Keeping *Pause* amber: it removes nothing, so it is ordinary. Renaming the gap badges'
+`.danger` to pass the check: it names a severity from the data, so it is an exception with its
+reason, not a disguise. A confirm on removing a document from a folder: the row's checkbox
+undoes it, and choice 4 says that still confirms, so it is left for the user to decide.
+
+**What it opens.** Piece (c), hover text on the 236 buttons left; piece (d), the dialog frame,
+shared stylesheet and 36 colours. Not seen live for want of data in a new library: the
+definition's *Dismiss…*, *Remove key…*, *Undo all…*, the indexing screen.
+
 ## 2026-11-06 (4) — ROADMAP 110 (a): the primary's fill, one tooltip, and checks that fail
 
 **What changed.** The first of ROADMAP 110's four pieces. `app.css` gains `--accent-fill` and

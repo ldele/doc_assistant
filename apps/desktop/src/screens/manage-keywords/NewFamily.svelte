@@ -90,7 +90,7 @@
       aria-label="New family canonical name"
       onkeydown={(e) => e.key === 'Enter' && submitCreate()}
     />
-    <button class="primary" onclick={submitCreate} disabled={!newCanonical.trim()} type="button">
+    <button class="btn btn-primary" onclick={submitCreate} disabled={!newCanonical.trim()} type="button">
       {canonicalMatch ? 'Go to family' : 'Create'}
     </button>
   </div>
@@ -248,22 +248,6 @@
   .createrow input:focus {
     outline: none;
     border-color: var(--accent);
-  }
-  .primary {
-    font: inherit;
-    font-size: 0.82rem;
-    font-weight: 600;
-    cursor: pointer;
-    color: var(--accent-fg);
-    background: var(--accent);
-    border: 1px solid var(--accent);
-    border-radius: 8px;
-    padding: 0.4rem 0.75rem;
-    flex: none;
-  }
-  .primary:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
   }
   .pickrow {
     display: flex;

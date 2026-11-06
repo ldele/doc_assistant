@@ -164,18 +164,20 @@
             </p>
           {/if}
           <div class="actions">
+            <!-- Triage writes a status the list keeps (and Show dismissed brings back), so all
+                 three are ordinary actions (ADR-063). -->
             {#if it.status !== 'promoted'}
-              <button type="button" onclick={() => setStatus(it, 'promoted')} disabled={busy.has(key(it))}>
+              <button type="button" class="btn" onclick={() => setStatus(it, 'promoted')} disabled={busy.has(key(it))}>
                 Promote
               </button>
             {/if}
             {#if it.status !== 'dismissed'}
-              <button type="button" onclick={() => setStatus(it, 'dismissed')} disabled={busy.has(key(it))}>
+              <button type="button" class="btn" onclick={() => setStatus(it, 'dismissed')} disabled={busy.has(key(it))}>
                 Dismiss
               </button>
             {/if}
             {#if it.status !== 'surfaced'}
-              <button type="button" class="ghost" onclick={() => setStatus(it, 'surfaced')} disabled={busy.has(key(it))}>
+              <button type="button" class="btn" onclick={() => setStatus(it, 'surfaced')} disabled={busy.has(key(it))}>
                 Reset
               </button>
             {/if}
@@ -303,6 +305,8 @@
     font-weight: 600;
     white-space: nowrap;
   }
+  /* Allow-listed (ui-rules.allow.ts): a gap's severity on a badge, named by GAP_META's `tone`, not
+     a button's role. */
   .badge.danger {
     color: var(--danger);
     border: 1px solid var(--danger);
@@ -353,26 +357,5 @@
     flex-wrap: wrap;
     gap: var(--space-2);
     margin-top: var(--space-2);
-  }
-  .actions button {
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    padding: 2px var(--space-3);
-    background: var(--bg);
-    color: var(--fg);
-    font: inherit;
-    font-size: var(--text-sm);
-    cursor: pointer;
-  }
-  .actions button:hover:not(:disabled) {
-    border-color: var(--accent);
-  }
-  .actions button:disabled {
-    opacity: 0.5;
-    cursor: default;
-  }
-  .actions button.ghost {
-    background: none;
-    color: var(--fg-2);
   }
 </style>

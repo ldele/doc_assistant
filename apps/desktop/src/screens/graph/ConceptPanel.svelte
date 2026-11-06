@@ -250,7 +250,7 @@
       </div>
       <div class="eh-actions">
         <button
-          class="ghost sm"
+          class="btn"
           onclick={() => onManageConcept(offGraphConcept.id, offGraphConcept.label)}
           type="button"
           use:tooltip={'Take this term on as a concept in Manage keywords'}
@@ -280,9 +280,9 @@
       </div>
       <div class="eh-actions">
         <span class="eh-meta">{selectedNode.degree} link{selectedNode.degree === 1 ? '' : 's'} · {docCount(selectedNode)} doc{docCount(selectedNode) === 1 ? '' : 's'}</span>
-        <button class="ghost sm" onclick={resetView} type="button" use:tooltip={'Put the graph back to its first zoom and position'}>Reset view</button>
+        <button class="btn btn-quiet" onclick={resetView} type="button" use:tooltip={'Put the graph back to its first zoom and position'}>Reset view</button>
         <button
-          class="ghost sm"
+          class="btn"
           onclick={() => onManageConcept(selectedNode.id, selectedNode.label)}
           type="button"
           use:tooltip={'Edit this concept in Manage keywords'}
@@ -290,7 +290,7 @@
           <Icon name="pencil" size={13} /> Edit
         </button>
         <button
-          class="ghost sm"
+          class="btn"
           onclick={() => onPlaceConcept(selectedNode.id, selectedNode.label)}
           type="button"
           use:tooltip={'Place this concept in the field taxonomy'}
@@ -455,22 +455,6 @@
   .muted {
     color: var(--fg-2);
   }
-  .ghost {
-    border: 1px solid var(--border);
-    background: var(--surface);
-    color: var(--fg);
-    border-radius: 7px;
-    padding: var(--space-1) var(--space-3);
-    font: inherit;
-    cursor: pointer;
-    display: inline-flex;
-    align-items: center;
-    gap: var(--space-1);
-    white-space: nowrap;
-  }
-  .ghost.sm {
-    font-size: var(--text-sm);
-  }
   .linkish {
     border: none;
     background: none;
@@ -583,6 +567,8 @@
     padding: var(--space-2) var(--space-3);
     border: 1px solid var(--border);
   }
+  /* Allow-listed (ui-rules.allow.ts), with `.gapdot.danger` below: a gap's severity on a note and
+     on a node's dot, named by GAP_META's `tone`, not a button's role. */
   .gap-note.danger {
     color: var(--danger);
     border-color: var(--danger);

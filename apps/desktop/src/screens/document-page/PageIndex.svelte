@@ -37,63 +37,62 @@
 <!-- The index sits above the document and *outside* the scrolling area: as a sticky strip
      inside it, it passed over the text as the reader scrolled. Here it stays put under the
      breadcrumb band and never covers anything. -->
-<nav class="blocknav" aria-label="Jump to a section of this document">
-  {#each blocks as b (b.id)}
-    <button type="button" onclick={() => jumpTo(b.id)}>{b.label}</button>
-  {/each}
-  <!-- ROADMAP 20 asked for this beside the block list, and that is the right place for a
+<!-- ADR-063 choice 5: the index is navigation and keeps its pills; *Source* (opens the source
+     pane) and *Re-run…* (opens a dialog) are actions, so they are ordinary buttons, outside the
+     index's nav and at the strip's trailing end. -->
+<div class="blockbar">
+  <nav class="blocknav" aria-label="Jump to a section of this document">
+    {#each blocks as b (b.id)}
+      <button class="pill" type="button" onclick={() => jumpTo(b.id)}>{b.label}</button>
+    {/each}
+  </nav>
+  <!-- ROADMAP 20 asked for these beside the block list, and that is the right place for a
        different reason than symmetry: the blocks are what a re-run re-derives, so the action
        belongs where the reader is already looking at the thing that came out wrong. -->
-  <button
-    class="rerun srcbtn"
-    class:on={viewerOpen}
-    type="button"
-    aria-pressed={viewerOpen}
-    onclick={() => {
-      viewerOpen = !viewerOpen
-      if (!viewerOpen) viewerPage = null
-    }}
-    use:tooltip={'Show the document itself beside this page'}
-  >
-    <Icon name="book-open" size={13} /> Source
-  </button>
-  <button class="rerun" type="button" onclick={() => openRerun([docId], rerunLabel(doc))} use:tooltip={'Re-run part of ingestion for this document'}>
-    <Icon name="rotate-ccw" size={13} /> Re-run…
-  </button>
-</nav>
+  <div class="docacts">
+    <button
+      class="btn"
+      type="button"
+      aria-pressed={viewerOpen}
+      onclick={() => {
+        viewerOpen = !viewerOpen
+        if (!viewerOpen) viewerPage = null
+      }}
+      use:tooltip={viewerOpen ? 'Hide the document beside this page' : 'Show the document itself beside this page'}
+    >
+      <Icon name="book-open" size={13} /> Source
+    </button>
+    <button class="btn" type="button" onclick={() => openRerun([docId], rerunLabel(doc))} use:tooltip={'Re-run part of ingestion for this document'}>
+      <Icon name="rotate-ccw" size={13} /> Re-run…
+    </button>
+  </div>
+</div>
 
 <style>
-  .blocknav .srcbtn {
-    margin-left: auto;
-  }
-  /* With the source button taking `margin-left: auto`, Re-run must not also claim it — the two
-     would then split the gap and neither would sit at the edge. */
-  .blocknav .srcbtn ~ .rerun {
-    margin-left: 0;
-  }
-  .blocknav .srcbtn.on {
-    color: var(--fg);
-    border-color: var(--accent);
-  }
   /* The strip is what makes the fixed block order navigable rather than merely present. It sits
      outside `.scroller`, so it is always there and never passes over the text. */
-  .blocknav {
+  .blockbar {
     flex: none;
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 0.3rem;
+    gap: var(--space-2);
     /* Equal room above and below: with none above, the pills sat on the header's rule. */
     padding: 0.45rem 0;
     border-bottom: 1px solid var(--border);
   }
-  .blocknav .rerun {
-    margin-left: auto;
-    display: inline-flex;
+  .blocknav {
+    display: flex;
+    flex-wrap: wrap;
     align-items: center;
     gap: 0.3rem;
   }
-  .blocknav button {
+  .docacts {
+    display: flex;
+    gap: var(--space-2);
+    margin-left: auto;
+  }
+  .pill {
     background: none;
     border: 1px solid var(--border);
     border-radius: 999px;
@@ -103,7 +102,7 @@
     color: var(--fg-2);
     cursor: pointer;
   }
-  .blocknav button:hover {
+  .pill:hover {
     color: var(--fg);
     border-color: var(--accent);
   }

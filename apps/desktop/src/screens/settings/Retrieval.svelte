@@ -118,7 +118,7 @@
     }}
   />
 
-  <button class="ghost" onclick={resetSandbox}>Reset to locked defaults</button>
+  <button class="btn below" onclick={resetSandbox}>Reset to locked defaults</button>
 </section>
 
 <section>
@@ -261,15 +261,8 @@
     width: auto;
     accent-color: var(--accent);
   }
-  .ghost {
+  /* Layout only: the roles' look is app.css's (ADR-063). */
+  .below {
     margin-top: 0.8rem;
-    font: inherit;
-    font-size: 0.82rem;
-    cursor: pointer;
-    border-radius: 8px;
-    border: 1px solid var(--border);
-    background: var(--surface);
-    color: var(--fg);
-    padding: 0.35rem 0.8rem;
   }
 </style>

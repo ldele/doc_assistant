@@ -82,7 +82,7 @@
     {#if !showSummary}
     <div class="libsort">
       <button
-        class="sortbtn"
+        class="btn btn-icon"
         onclick={() => (libPrefs.sortOpen = !libPrefs.sortOpen)}
         aria-haspopup="menu"
         aria-expanded={libPrefs.sortOpen}
@@ -153,8 +153,7 @@
     </div>
     {#if documents.length > 0 && !showSummary}
       <button
-        class="selecttoggle"
-        class:active={library.selectMode}
+        class="btn"
         aria-pressed={library.selectMode}
         onclick={() => (library.selectMode ? exitSelectMode() : enterSelectMode())}
         use:tooltip={'Select documents, then add them to a folder or re-run them'}
@@ -170,7 +169,7 @@
          drag-drop, so it stays visible, disabled, and SAYS WHY: hiding it would make a browser
          look like a missing feature. Reachable from Chat via the app menu. -->
     <button
-      class="addbtn"
+      class="btn btn-primary"
       onclick={openChooser}
       disabled={!canAccept() || accept.picking}
       use:tooltip={unavailableReason() ?? 'Choose files or a folder to add to your library'}
@@ -251,8 +250,11 @@
 
 <style>
   /* The header bar: Back, the location, then sort / layout / Select / Add documents. */
+  /* Wraps on a narrow pane: at 375 px the row was 106 px too wide, and *Add documents* was cut
+     off at the edge while the location shrank to nothing. */
   .libnav {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     gap: var(--space-2);
     padding: var(--space-2) 0;
@@ -307,48 +309,9 @@
     display: inline-flex;
     flex: none;
   }
-  /* The pane's primary action: filled accent, unlike the neutral view/sort toggles beside it.
-     A single class, and nothing else in this file targets `.addbtn` — but if a sibling rule is
-     ever added, give this one two classes rather than relying on source order (the 2026-08-19
-     tick-row accident, repeated in the toolbar on 2026-08-21). */
-  .addbtn {
-    flex: none;
-    display: inline-flex;
-    align-items: center;
-    gap: 0.3rem;
-    padding: 0.28rem 0.7rem;
-    border: 1px solid var(--accent);
-    border-radius: 8px;
-    background: var(--accent);
-    color: var(--accent-fg);
-    font: inherit;
-    font-size: var(--text-sm);
-    cursor: pointer;
-  }
-  .addbtn:disabled {
-    background: var(--surface);
-    border-color: var(--border);
-    color: var(--fg-2);
-    opacity: 0.7;
-    cursor: default;
-  }
   .libsort {
     position: relative;
     flex: none;
-  }
-  .sortbtn {
-    display: inline-flex;
-    align-items: center;
-    padding: 0.28rem 0.5rem;
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    background: var(--surface);
-    color: var(--fg-2);
-    cursor: pointer;
-  }
-  .sortbtn:hover {
-    color: var(--fg);
-    border-color: var(--accent);
   }
   /* The dropdown menu both bars open: the sort menu here, *Add to folder…* on the select bar. */
   .sort-backdrop {
@@ -402,11 +365,14 @@
     border-radius: 8px;
     overflow: hidden;
   }
+  /* A view toggle keeps its own segmented look (ADR-063 choice 1), in full-strength text like
+     the ordinary buttons beside it (choice 2). */
   .viewtoggle button {
     border: none;
     border-radius: 0;
     background: var(--surface);
-    color: var(--fg-2);
+    color: var(--fg);
+    cursor: pointer;
     padding: 0.28rem 0.55rem;
     display: inline-flex;
     align-items: center;
@@ -420,30 +386,7 @@
     font-size: 0.78rem;
     border-left: 1px solid var(--border);
   }
-  /* Select mode (batch add-to-folder) — toggle beside the view switch + a slim action bar. */
-  .selecttoggle {
-    flex: none;
-    display: inline-flex;
-    align-items: center;
-    gap: 0.3rem;
-    font: inherit;
-    font-size: 0.78rem;
-    padding: 0.28rem 0.55rem;
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    background: var(--surface);
-    color: var(--fg-2);
-    cursor: pointer;
-  }
-  .selecttoggle:hover {
-    color: var(--fg);
-    border-color: var(--accent);
-  }
-  .selecttoggle.active {
-    background: var(--surface-2);
-    color: var(--accent);
-    border-color: var(--accent);
-  }
+  /* Select mode (batch add-to-folder): the toggle is an ordinary `btn`, pressed while on. */
   .selectbar {
     display: flex;
     flex-wrap: wrap;

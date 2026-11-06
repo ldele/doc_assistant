@@ -108,9 +108,9 @@
   {#if error}<p class="err" role="alert">{error}</p>{/if}
 
   <div class="mactions">
-    <button class="primary" type="button" disabled={busy} onclick={save}>Save</button>
-    <button class="ghost" type="button" disabled={busy} onclick={backToRule}>Back to the rule's reading</button>
-    <button class="ghost" type="button" disabled={busy} onclick={onClose}>Cancel</button>
+    <button class="btn btn-primary" type="button" disabled={busy} onclick={save}>Save</button>
+    <button class="btn" type="button" disabled={busy} onclick={backToRule}>Back to the rule's reading</button>
+    <button class="btn" type="button" disabled={busy} onclick={onClose}>Cancel</button>
   </div>
 </div>
 
@@ -232,40 +232,7 @@
   .mactions {
     display: flex;
     flex-wrap: wrap;
-    gap: 0.5rem;
+    gap: var(--space-2);
     margin-top: var(--space-2);
-  }
-  .ghost,
-  .primary {
-    font: inherit;
-    font-size: 0.82rem;
-    cursor: pointer;
-    border-radius: 8px;
-    border: 1px solid var(--border);
-    background: var(--surface);
-    color: var(--fg);
-    padding: 0.35rem 0.8rem;
-    display: inline-flex;
-    align-items: center;
-    gap: 0.3rem;
-  }
-  .primary {
-    font-weight: 600;
-    border-color: var(--accent);
-    background: var(--accent);
-    color: var(--accent-fg);
-  }
-  .ghost:hover:not(:disabled) {
-    background: var(--surface-2);
-  }
-  .ghost:disabled,
-  .primary:disabled {
-    opacity: 0.5;
-    cursor: default;
-  }
-  .ghost:focus-visible,
-  .primary:focus-visible {
-    outline: 2px solid var(--accent);
-    outline-offset: 1px;
   }
 </style>

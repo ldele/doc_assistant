@@ -139,7 +139,7 @@
           placeholder="Folder name (e.g. Demo corpus)"
           onkeydown={(e) => e.key === 'Enter' && submitCreate()}
         />
-        <button class="primary" onclick={submitCreate} disabled={newName.trim() === ''} type="button">
+        <button class="btn btn-primary" onclick={submitCreate} disabled={newName.trim() === ''} type="button">
           Create
         </button>
       </div>
@@ -176,7 +176,7 @@
                   <Icon name="pencil" size={14} />
                 </button>
                 {#if confirmingDeleteId === f.id}
-                  <button class="confirmdel" onclick={() => { confirmingDeleteId = null; onDelete(f.id) }} type="button">
+                  <button class="btn btn-danger" onclick={() => { confirmingDeleteId = null; onDelete(f.id) }} type="button">
                     Delete folder?
                   </button>
                 {:else}
@@ -258,7 +258,7 @@
             <p class="hint">No document matches the current search/filters.</p>
           {/each}
         </div>
-        <button class="secondary" onclick={applyPending} disabled={pending.size === 0} type="button">
+        <button class="btn apply" onclick={applyPending} disabled={pending.size === 0} type="button">
           Add {pending.size} document{pending.size === 1 ? '' : 's'}
         </button>
       </section>
@@ -325,8 +325,11 @@
     color: var(--fg);
     background: var(--surface-2);
   }
+  /* Allow-listed (ui-rules.allow.ts): an icon-only danger button in a dense row. Red at rest, as
+     every danger action is (ADR-063); its name is the aria-label. */
+  .iconbtn.danger,
   .iconbtn.danger:hover {
-    color: var(--danger, #c0392b);
+    color: var(--danger);
   }
   .body {
     flex: 1;
@@ -420,46 +423,14 @@
     color: var(--fg-2);
     font-variant-numeric: tabular-nums;
   }
-  .primary {
-    font: inherit;
-    font-size: 0.82rem;
-    font-weight: 600;
-    cursor: pointer;
-    color: var(--accent-fg);
-    background: var(--accent);
-    border: 1px solid var(--accent);
-    border-radius: 8px;
-    padding: 0.4rem 0.75rem;
-    flex: none;
-  }
-  .primary:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-  .secondary {
-    font: inherit;
-    font-size: 0.8rem;
-    font-weight: 600;
-    cursor: pointer;
-    color: var(--fg);
-    background: var(--surface-2);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: 0.35rem 0.7rem;
+  .apply {
     align-self: flex-start;
     margin-top: 0.5rem;
-  }
-  .secondary:hover:not(:disabled) {
-    border-color: var(--accent);
-  }
-  .secondary:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
   }
   .error {
     margin: 0.4rem 0 0;
     font-size: 0.78rem;
-    color: var(--danger, #c0392b);
+    color: var(--danger);
   }
   .list {
     display: flex;
@@ -501,18 +472,6 @@
     flex: none;
     font-size: 0.72rem;
     color: var(--fg-2);
-  }
-  .confirmdel {
-    font: inherit;
-    font-size: 0.72rem;
-    font-weight: 600;
-    cursor: pointer;
-    color: var(--danger, #c0392b);
-    background: none;
-    border: 1px solid var(--danger, #c0392b);
-    border-radius: 6px;
-    padding: 0.2rem 0.45rem;
-    flex: none;
   }
   .picker {
     display: flex;

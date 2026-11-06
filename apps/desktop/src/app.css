@@ -25,6 +25,10 @@
      WCAG's 4.5:1), so --accent keeps its brightness for links, rings and selection. */
   --accent-fill: #4a3fa6;
   --accent-fill-fg: #ffffff;
+  /* A confirm's own button when it removes something (ADR-063 choice 1, "filled red"): white on
+     #c0392b is 5.4:1 in both themes, where the tinted fill it replaces read 4.1:1 in the light one. */
+  --danger-fill: #c0392b;
+  --danger-fill-fg: #ffffff;
   --accent-wordmark: #5946d6;
   --danger: #c0392b;
   --lavender: #6f62c9;
@@ -114,6 +118,8 @@
   --accent-fg: #1b1813;
   --accent-fill: #6b5fd6;
   --accent-fill-fg: #ffffff;
+  --danger-fill: #c0392b;
+  --danger-fill-fg: #ffffff;
   --accent-wordmark: #a596ff;
   --danger: #f2857a;
   --lavender: #b0a4ff;
@@ -153,6 +159,8 @@
   --accent-fg: #ffffff;
   --accent-fill: #4a3fa6;
   --accent-fill-fg: #ffffff;
+  --danger-fill: #c0392b;
+  --danger-fill-fg: #ffffff;
   --accent-wordmark: #5946d6;
   --danger: #c0392b;
   --lavender: #6f62c9;
@@ -196,6 +204,8 @@
     --accent-fg: #1b1813;
     --accent-fill: #6b5fd6;
     --accent-fill-fg: #ffffff;
+    --danger-fill: #c0392b;
+    --danger-fill-fg: #ffffff;
     --accent-wordmark: #a596ff;
     --danger: #f2857a;
     --lavender: #b0a4ff;
@@ -286,6 +296,7 @@ body {
   border-radius: 7px;
   background: var(--surface);
   color: var(--fg);
+  text-decoration: none; /* a link that does a button's job (an `<a class="btn">`) */
   cursor: pointer;
 }
 .btn:hover:not(:disabled) {
@@ -298,6 +309,16 @@ body {
 .btn:disabled {
   opacity: 0.5;
   cursor: default;
+}
+/* A toggle that is on (`aria-pressed="true"`): the same role, pressed in. */
+.btn[aria-pressed='true'] {
+  background: var(--surface-2);
+  border-color: var(--accent);
+}
+/* An icon-only button: the same role, square. Its name is its `aria-label`, and its hover text
+   says what it will do (ADR-063 choice 6). At 17px this is about 26px a side: WCAG 2.2's 24px. */
+.btn-icon {
+  padding: var(--space-1);
 }
 .btn-primary {
   background: var(--accent-fill);
@@ -329,6 +350,17 @@ body {
 .btn-danger:hover:not(:disabled) {
   background: color-mix(in srgb, var(--danger) 12%, transparent);
   border-color: var(--danger);
+}
+/* `btn btn-primary btn-danger`: the one action of a confirm, and it removes something. Filled
+   red with white text (ADR-063 choice 1); used by ConfirmDialog and the document delete. */
+.btn-primary.btn-danger {
+  background: var(--danger-fill);
+  border-color: var(--danger-fill);
+  color: var(--danger-fill-fg);
+}
+.btn-primary.btn-danger:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--danger-fill) 85%, black);
+  border-color: color-mix(in srgb, var(--danger-fill) 85%, black);
 }
 
 /* The shared tooltip: a button's hover text (lib/shell/tooltip.ts, ADR-063 choice 6). Inverse ink,

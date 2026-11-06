@@ -28,19 +28,41 @@
     onClose: () => void
   } = $props()
 
+  const uid = $props.id()
+  let cancelEl: HTMLButtonElement | undefined = $state()
+  $effect(() => {
+    cancelEl?.focus()
+  })
+
   function onKey(e: KeyboardEvent): void {
     if (e.key === 'Escape') onClose()
   }
 </script>
 
+<!-- The WAI-ARIA alert dialog pattern (ADR-063 choice 7): it interrupts to confirm an act, its title
+     names it and its body describes it, and focus starts on Cancel, the act that changes nothing.
+     The confirm is the dialog's one action (`btn-primary`); when it removes something it is also
+     `btn-danger`, which app.css fills red. -->
 <svelte:window onkeydown={onKey} />
 <div class="scrim" onclick={onClose} role="presentation"></div>
-<div class="modal" role="dialog" aria-modal="true" aria-label={title}>
-  <h2>{title}</h2>
-  <p class="body">{body}</p>
+<div
+  class="modal"
+  role={tone === 'danger' ? 'alertdialog' : 'dialog'}
+  aria-modal="true"
+  aria-labelledby="{uid}-title"
+  aria-describedby="{uid}-body"
+>
+  <h2 id="{uid}-title">{title}</h2>
+  <p class="body" id="{uid}-body">{body}</p>
   <div class="mactions">
-    <button class="ghost" onclick={onClose} type="button" disabled={busy}>{cancelLabel}</button>
-    <button class={tone} onclick={onConfirm} type="button" disabled={busy}>
+    <button class="btn" bind:this={cancelEl} onclick={onClose} type="button" disabled={busy}>{cancelLabel}</button>
+    <button
+      class="btn btn-primary"
+      class:btn-danger={tone === 'danger'}
+      onclick={onConfirm}
+      type="button"
+      disabled={busy}
+    >
       {#if tone === 'danger' && confirmIcon}<Icon name={confirmIcon} size={14} />{/if}
       {busy ? 'Working…' : confirmLabel}
     </button>
@@ -83,47 +105,9 @@
   }
   .mactions {
     display: flex;
+    flex-wrap: wrap;
     justify-content: flex-end;
-    gap: 0.5rem;
+    gap: var(--space-2);
     margin-top: var(--space-2);
-  }
-  .mactions button {
-    font: inherit;
-    font-size: 0.85rem;
-    cursor: pointer;
-    border-radius: 8px;
-    padding: 0.45rem 0.8rem;
-    border: 1px solid var(--border);
-    display: inline-flex;
-    align-items: center;
-    gap: 0.35rem;
-  }
-  .mactions button:disabled {
-    opacity: 0.6;
-    cursor: default;
-  }
-  .ghost {
-    background: none;
-    color: var(--fg);
-  }
-  .ghost:hover {
-    background: var(--surface-2);
-  }
-  .default {
-    background: var(--surface-2);
-    color: var(--fg);
-    font-weight: 600;
-  }
-  .default:hover:not(:disabled) {
-    background: color-mix(in srgb, var(--fg) 8%, var(--surface-2));
-  }
-  .danger {
-    background: color-mix(in srgb, var(--danger) 14%, transparent);
-    color: var(--danger);
-    border-color: var(--danger);
-    font-weight: 600;
-  }
-  .danger:hover:not(:disabled) {
-    background: color-mix(in srgb, var(--danger) 22%, transparent);
   }
 </style>

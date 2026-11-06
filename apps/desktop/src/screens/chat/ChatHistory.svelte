@@ -279,8 +279,7 @@
       {/if}
     </div>
     <button
-      class="sortbtn"
-      class:on={selectMode}
+      class="btn btn-icon"
       onclick={() => (selectMode ? exitSelect() : enterSelect())}
       aria-label="Select chats"
       use:tooltip={selectMode ? 'Leave select mode' : 'Select chats to archive or delete them together'}
@@ -289,8 +288,7 @@
     >
     <div class="sortwrap" bind:this={sortwrapEl}>
       <button
-        class="sortbtn"
-        class:on={sortOpen}
+        class="btn btn-icon"
         onclick={() => (sortOpen = !sortOpen)}
         aria-haspopup="menu"
         aria-expanded={sortOpen}
@@ -473,7 +471,7 @@
     </button>
     <div class="menusep"></div>
     <button class="menuitem danger" role="menuitem" onclick={menuDelete} type="button">
-      <Icon name="trash-2" size={14} /> Delete
+      <Icon name="trash-2" size={14} /> Delete…
     </button>
   </div>
 {/if}
@@ -537,22 +535,6 @@
   .sortwrap {
     position: relative;
     flex: none;
-  }
-  .sortbtn {
-    font: inherit;
-    cursor: pointer;
-    border: 1px solid var(--border);
-    background: var(--surface);
-    color: var(--fg-2);
-    padding: 0.36rem;
-    border-radius: 8px;
-    display: inline-flex;
-    align-items: center;
-  }
-  .sortbtn:hover,
-  .sortbtn.on {
-    background: var(--surface-2);
-    color: var(--fg);
   }
   .sortmenu {
     position: absolute;
@@ -862,6 +844,8 @@
   .menuitem.muted {
     color: var(--fg-2);
   }
+  /* Allow-listed (ui-rules.allow.ts): a menu row, not a button bar (the WAI-ARIA menu pattern keeps
+     its rows' look). Red names the act; the confirm follows in App. */
   .menuitem.danger {
     color: var(--danger);
   }

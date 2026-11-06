@@ -71,8 +71,8 @@
   </fieldset>
 
   <div class="mactions">
-    <button class="ghost" onclick={onClose} type="button" disabled={busy}>Cancel</button>
-    <button class="danger" onclick={() => onConfirm(deleteFile)} type="button" disabled={busy}>
+    <button class="btn" onclick={onClose} type="button" disabled={busy}>Cancel</button>
+    <button class="btn btn-primary btn-danger" onclick={() => onConfirm(deleteFile)} type="button" disabled={busy}>
       <Icon name="trash-2" size={14} />
       {busy ? 'Deleting…' : deleteFile ? 'Delete both' : 'Remove'}
     </button>
@@ -165,39 +165,9 @@
 
   .mactions {
     display: flex;
+    flex-wrap: wrap;
     justify-content: flex-end;
-    gap: 0.5rem;
+    gap: var(--space-2);
     margin-top: var(--space-2);
-  }
-  .mactions button {
-    font: inherit;
-    font-size: 0.85rem;
-    cursor: pointer;
-    border-radius: 8px;
-    padding: 0.45rem 0.8rem;
-    border: 1px solid var(--border);
-    display: inline-flex;
-    align-items: center;
-    gap: 0.35rem;
-  }
-  .mactions button:disabled {
-    opacity: 0.6;
-    cursor: default;
-  }
-  .ghost {
-    background: none;
-    color: var(--fg);
-  }
-  .ghost:hover {
-    background: var(--surface-2);
-  }
-  .danger {
-    background: color-mix(in srgb, var(--danger) 14%, transparent);
-    color: var(--danger);
-    border-color: var(--danger);
-    font-weight: 600;
-  }
-  .danger:hover:not(:disabled) {
-    background: color-mix(in srgb, var(--danger) 22%, transparent);
   }
 </style>

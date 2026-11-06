@@ -10,6 +10,7 @@
   // sorted, exceptions first. Nothing is re-sorted or re-classified here: the format list lives
   // in `extractors.get_format_status`, and a second copy in TypeScript would drift from it.
 
+  import ConfirmDialog from '../../shell/ConfirmDialog.svelte'
   import Icon from '../../shell/Icon.svelte'
   import { addDocuments, indexPaths, inspectDocuments, undoAddDocuments } from '../../lib/core/api/documents'
   import type { AddMode, AddResult } from '../../lib/core/api/documents'
@@ -54,6 +55,9 @@
   let applied = $state<AddResult | null>(null)
   let applyError = $state<string | null>(null)
   let undoing = $state(false)
+  // Undo all removes what this review added, deleting the copies the app made, and nothing brings
+  // them back but adding them again: a danger action, so it asks first (ADR-063 choice 4).
+  let confirmingUndo = $state(false)
   /**
    * True once this sheet has handed a batch to the indexer (KI-51 part 3).
    *
@@ -323,24 +327,24 @@
     {#if applied}
       {#if applied.added.length > 0}
         <button
-          class="secondary"
-          onclick={undoAll}
+          class="btn btn-danger"
+          onclick={() => (confirmingUndo = true)}
           disabled={undoing || indexing}
           use:tooltip={indexing
             ? 'Available when indexing finishes — undoing now would delete a file the indexer is reading.'
-            : 'Take every file this review added back out of the library'}
+            : 'Take every file this review added back out of the library, after you confirm'}
           type="button"
         >
-          {undoing ? 'Undoing…' : 'Undo all'}
+          {undoing ? 'Undoing…' : 'Undo all…'}
         </button>
       {/if}
-      <button class="primary" onclick={keepAndClose} type="button">
+      <button class="btn btn-primary" onclick={keepAndClose} type="button">
         {applied.stopped_early ? `Keep the ${applied.added.length}` : 'Done'}
       </button>
     {:else}
-      <button class="secondary" onclick={onClose} type="button">Cancel</button>
+      <button class="btn" onclick={onClose} type="button">Cancel</button>
       <button
-        class="primary"
+        class="btn btn-primary"
         onclick={apply}
         disabled={applying || loading || addable.length === 0}
         type="button"
@@ -350,6 +354,22 @@
     {/if}
   </footer>
 </div>
+
+{#if confirmingUndo && applied}
+  {@const n = applied.added.length}
+  <ConfirmDialog
+    title={n === 1 ? 'Take the added document back out?' : `Take the ${n} added documents back out?`}
+    body="They leave the library, and the copies this review made are deleted. A file the library only referenced stays where it is."
+    confirmLabel="Undo all"
+    confirmIcon={null}
+    busy={undoing}
+    onConfirm={async () => {
+      await undoAll()
+      confirmingUndo = false
+    }}
+    onClose={() => (confirmingUndo = false)}
+  />
+{/if}
 
 <style>
   .backdrop {
@@ -494,8 +514,9 @@
   }
   footer {
     display: flex;
+    flex-wrap: wrap;
     justify-content: flex-end;
-    gap: 0.5rem;
+    gap: var(--space-2);
     padding-top: 0.2rem;
   }
   .where {
@@ -533,29 +554,5 @@
   }
   .outcome .ok {
     color: var(--ok-fg);
-  }
-  .primary {
-    background: var(--accent);
-    border: 1px solid var(--accent);
-    border-radius: 999px;
-    padding: 0.35rem 0.9rem;
-    font: inherit;
-    font-size: var(--text-sm);
-    color: var(--accent-fg);
-    cursor: pointer;
-  }
-  .primary:disabled {
-    opacity: 0.5;
-    cursor: default;
-  }
-  .secondary {
-    background: none;
-    border: 1px solid var(--border);
-    border-radius: 999px;
-    padding: 0.35rem 0.9rem;
-    font: inherit;
-    font-size: var(--text-sm);
-    cursor: pointer;
-    color: var(--fg);
   }
 </style>

@@ -539,6 +539,8 @@
   .menuitem:hover {
     background: var(--surface-2);
   }
+  /* Allow-listed (ui-rules.allow.ts): a menu row, not a button bar (the WAI-ARIA menu pattern keeps
+     its rows' look). Red names the act; *Delete this document?* follows. */
   .menuitem.danger {
     color: var(--danger);
   }

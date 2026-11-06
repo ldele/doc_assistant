@@ -1,4 +1,4 @@
-<!-- status: active · updated: 2026-11-06 (As built: ROADMAP 110 piece (a), the fill pair, the tooltip and the checks, with the counts corrected; accepted as proposed: all eight choices; revised while proposed: choices 6 to 8 and three checks that fail, from the user's words of 2026-11-06; 2026-11-05: proposed, the two select bars built to it) · class: append-only -->
+<!-- status: active · updated: 2026-11-06 (As built: ROADMAP 110 piece (b), the roles across the app, the five confirms and two more; piece (a), the fill pair, the tooltip and the checks, with the counts corrected; accepted as proposed: all eight choices; revised while proposed: choices 6 to 8 and three checks that fail, from the user's words of 2026-11-06; 2026-11-05: proposed, the two select bars built to it) · class: append-only -->
 
 # ADR-063 — A button's look says what it does: four action roles, and a delete always asks first
 
@@ -270,3 +270,45 @@ some of the 16). Literal colours: **49 in 20 files**, the 45 plus four named col
 `<select>`) are on elements that cannot take focus, so what they say reaches a mouse only, which
 choice 6's last sentence rules out for anything the user must know. They are outside the button
 rule; piece (c) or (d) decides each: on the screen, or the tooltip on a focusable element.
+
+## As built — ROADMAP 110 piece (b), 2026-11-06
+
+- **The roles across the app.** The 28 components with their own `.primary` / `.ghost` / `.danger`
+  are on `btn` / `btn-primary` / `btn-quiet` / `btn-danger`, and so are the local primaries under
+  other names (`.send`, `.resume`, `.addbtn`, `.secondary`, `.neutral`, `.dangerbtn`). Each
+  component's bare `button { … }` rule went too: it outranked `.btn` on specificity. *Send*, *Add
+  documents*, *Finish setup…*, a dialog's *Save* and every empty state's call to action now use the
+  dark theme's violet fill with white text. The ordinary look has one size, so the four sizes
+  and three radii are gone. What stays in a component is layout (`.below`, `.again`, `.grow`).
+- **Two additions to `app.css`, each defined once.** `btn-primary btn-danger` is a confirm's own
+  button when it removes something, filled red: white on `#c0392b` is 5.4:1 in both themes
+  (`--danger-fill` / `--danger-fill-fg`), where the tinted fill it replaces read 4.1:1 in the
+  light theme. `btn-icon` is the same role for an icon-only button (about 26px a side), and any
+  `btn` with `aria-pressed="true"` shows as pressed.
+- **`ConfirmDialog` follows the alert dialog pattern** (choice 7): `role="alertdialog"` when the
+  act removes something, labelled by its title and described by its body, focus on *Cancel*.
+- **The five confirms** (choice 4): *Remove key…* (two places) and *Remove server…*, *Remove…* and
+  *Remove all…* on the letter-spacing ignore list, *Dismiss…* on a chosen definition (it was
+  *Clear*). Each is red and asks through `ConfirmDialog`, saying what goes and how it comes back.
+- **Two more found and confirmed the same way**, both acting at once with no way back: *Reset to
+  default…* in *Edit metadata* (it deletes your title, authors and year overrides) and *Undo all…*
+  in the add-documents review (it deletes the copies the review made).
+- **Choice 5.** The document page's *Source* and *Re-run…* are ordinary buttons outside the
+  index's `nav`, at the strip's trailing end; the index keeps its pills.
+- **Calls made while building.** *Pause* on the indexing screen was amber; it holds the run and
+  removes nothing, so it is ordinary. *Reset* in the gap list writes a status, so it is ordinary,
+  not quiet. *Select new + changed* and *Clear* in *Manage files* are selection helpers, so they
+  are quiet, and *Clear* is now *Select none* (U-003). A second primary in *Manage folders* (*Add N
+  documents*) became ordinary, leaving *Create* the dialog's one primary. Chat history's ⋯ *Delete*
+  gained its "…".
+- **Check 1 is exceptions only:** seven files, each with its reason in the allow-list and a comment
+  in the file: two menu rows (`.menuitem.danger`), three gap severities on badges, notes and
+  dots, and two dense icon-only danger buttons, now red at rest.
+- **Seen in the running app** over an invented library, in dark, light and 375 px: *Remove server…*
+  end to end (*Cancel* kept the server, the confirm removed it), both ignore-list removals (each
+  with its *Undo*), *Reset to default…*'s confirm (Esc closed it and left the editor), the
+  document delete, a folder's inline delete. Not seen live, for want of data in a new library: the
+  definition's *Dismiss…*, *Remove key…*, *Undo all…*, the indexing screen.
+- **Not done here.** Removing a document from a folder (the × in *Manage folders*) acts at once.
+  The same row's checkbox undoes it, but choice 4 allows no exception, so it waits on the user.
+  The Library header did not wrap at 375 px and cut *Add documents* off; it wraps now.

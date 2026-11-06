@@ -157,13 +157,13 @@
           {/if}
         </p>
         <div class="confirmrow">
-          <button class="addbtn" use:autofocus onclick={onKeep} type="button">Keep</button>
+          <button class="btn" use:autofocus onclick={onKeep} type="button">Keep</button>
           {#if f.graph_include}
-            <button class="addbtn" onclick={onTakeOffGraphInstead} type="button">
+            <button class="btn" onclick={onTakeOffGraphInstead} type="button">
               Take off the graph instead
             </button>
           {/if}
-          <button class="dangerbtn" onclick={onConfirmDelete} type="button">Delete</button>
+          <button class="btn btn-primary btn-danger" onclick={onConfirmDelete} type="button">Delete</button>
         </div>
       {/if}
     </div>
@@ -246,7 +246,7 @@
       }}
     />
     <button
-      class="addbtn"
+      class="btn"
       onclick={submitAdd}
       disabled={formToAdd(f, addValue) === null}
       type="button"
@@ -277,8 +277,11 @@
     color: var(--fg);
     background: var(--surface-2);
   }
+  /* Allow-listed (ui-rules.allow.ts): an icon-only danger button in a dense row. Red at rest, as
+     every danger action is (ADR-063); its name is the aria-label, and the delete asks on the row. */
+  .iconbtn.danger,
   .iconbtn.danger:hover {
-    color: var(--danger, #c0392b);
+    color: var(--danger);
   }
   /* ADR-018 — the graph-vocabulary toggle. It is a two-state control on a row of one-shot
      actions, so "on" has to read as a state and not as a hover: filled accent, not a tint. */
@@ -358,8 +361,8 @@
     padding: 0.14rem 0.5rem;
   }
   .chip:hover {
-    border-color: var(--danger, #c0392b);
-    color: var(--danger, #c0392b);
+    border-color: var(--danger);
+    color: var(--danger);
   }
   /* ADR-054 — a concept's form: its text, how it counts, and a way to remove it. Three controls
      where a term's chip has one, so it is a container and not a button. */
@@ -414,7 +417,7 @@
   }
   .formerr {
     font-size: 0.66rem;
-    color: var(--danger, #c0392b);
+    color: var(--danger);
   }
   /* Set apart from the marks: removing a form is not the third choice after exact and broad. */
   .formx {
@@ -429,11 +432,11 @@
     cursor: pointer;
   }
   .formx:hover {
-    color: var(--danger, #c0392b);
+    color: var(--danger);
   }
   /* The delete question, on the row it is about. */
   .confirm {
-    border: 1px solid var(--danger, #c0392b);
+    border: 1px solid var(--danger);
     border-radius: 6px;
     padding: 0.4rem 0.5rem;
     display: flex;
@@ -451,22 +454,6 @@
     justify-content: flex-end;
     gap: 0.35rem;
   }
-  .dangerbtn {
-    font: inherit;
-    font-size: 0.75rem;
-    font-weight: 600;
-    cursor: pointer;
-    color: var(--danger, #c0392b);
-    background: none;
-    border: 1px solid var(--danger, #c0392b);
-    border-radius: 6px;
-    padding: 0.25rem 0.55rem;
-    flex: none;
-  }
-  .dangerbtn:hover {
-    color: var(--bg);
-    background: var(--danger, #c0392b);
-  }
   .addrow {
     display: flex;
     gap: 0.35rem;
@@ -481,24 +468,5 @@
     border-radius: 6px;
     background: var(--bg);
     color: var(--fg);
-  }
-  .addbtn {
-    font: inherit;
-    font-size: 0.75rem;
-    cursor: pointer;
-    color: var(--fg-2);
-    background: none;
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    padding: 0.25rem 0.55rem;
-    flex: none;
-  }
-  .addbtn:hover:not(:disabled) {
-    color: var(--fg);
-    border-color: var(--accent);
-  }
-  .addbtn:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
   }
 </style>

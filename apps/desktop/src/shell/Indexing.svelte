@@ -170,13 +170,15 @@
     </div>
     <div class="actions">
       {#if running}
+        <!-- Action roles (ADR-063): Resume carries the run on, so it is the primary; Pause holds it
+             and removes nothing, so it is ordinary (it was amber before the roles). -->
         {#if control === 'paused'}
-          <button class="primary" onclick={() => act(() => controlRun('resume'))} disabled={acting}>
+          <button class="btn btn-primary" onclick={() => act(() => controlRun('resume'))} disabled={acting}>
             <Icon name="play" size={14} /> Resume
           </button>
         {:else}
           <button
-            class="warn"
+            class="btn"
             onclick={() => act(() => controlRun('pause'))}
             disabled={acting || control !== 'none'}
           >
@@ -184,23 +186,24 @@
           </button>
         {/if}
         <!-- Red, and confirmed (the user, 2026-11-04, over the wireframe's "no confirmation"): a
-             stop loses nothing finished, but it does end the run. -->
+             stop loses nothing finished, but it does end the run. The "…" says a confirm follows. -->
         <button
-          class="danger"
+          class="btn btn-danger"
           onclick={() => (confirmingStop = true)}
           disabled={acting || control === 'stopping' || control === 'finishing'}
         >
-          <Icon name="square" size={14} /> {control === 'stopping' ? 'Stopping…' : 'Stop'}
+          <Icon name="square" size={14} /> {control === 'stopping' ? 'Stopping…' : 'Stop…'}
         </button>
       {:else}
         {#if remaining}
-          <button class="primary" onclick={() => act(() => rerunLast('remaining'))} disabled={acting}>
+          <button class="btn btn-primary" onclick={() => act(() => rerunLast('remaining'))} disabled={acting}>
             {remaining}
           </button>
         {/if}
         {#if retry}
           <button
-            class={remaining ? 'neutral' : 'primary'}
+            class="btn"
+            class:btn-primary={!remaining}
             onclick={() => act(() => rerunLast('failed'))}
             disabled={acting}
           >
@@ -208,7 +211,7 @@
           </button>
         {/if}
       {/if}
-      <button class="ghost" onclick={close}>Close</button>
+      <button class="btn" onclick={close}>Close</button>
     </div>
   </header>
 
@@ -277,7 +280,7 @@
         <p class="empty">{listError ? `Couldn't load the files: ${listError}` : 'No files here.'}</p>
       {/each}
       {#if rows.length < inGroup}
-        <button class="ghost more" onclick={() => (limit += PAGE)}>
+        <button class="btn more" onclick={() => (limit += PAGE)}>
           Show {Math.min(PAGE, inGroup - rows.length).toLocaleString()} more of {inGroup.toLocaleString()}
         </button>
       {/if}
@@ -360,60 +363,7 @@
   .actions {
     display: flex;
     flex-wrap: wrap;
-    gap: 0.5rem;
-  }
-  button {
-    font: inherit;
-    font-size: var(--text-sm);
-    cursor: pointer;
-    border-radius: 8px;
-    padding: 0.45rem 0.85rem;
-    display: inline-flex;
-    align-items: center;
-    gap: 0.35rem;
-  }
-  button:disabled {
-    opacity: 0.55;
-    cursor: default;
-  }
-  .primary {
-    background: var(--accent);
-    color: var(--accent-fg);
-    border: 1px solid var(--accent);
-  }
-  .ghost {
-    background: var(--bg);
-    color: var(--fg);
-    border: 1px solid var(--border);
-  }
-  .ghost:hover:not(:disabled) {
-    background: var(--surface-2);
-  }
-  .neutral {
-    background: var(--surface-2);
-    color: var(--fg);
-    border: 1px solid var(--border);
-    font-weight: 600;
-  }
-  /* Colour says what a button does: amber holds the run, red ends it (the same red as every
-     confirmation of a destructive act), the accent carries it on. */
-  .warn {
-    background: var(--warn-bg);
-    color: var(--warn-fg);
-    border: 1px solid var(--warn-border);
-    font-weight: 600;
-  }
-  .danger {
-    background: color-mix(in srgb, var(--danger) 14%, transparent);
-    color: var(--danger);
-    border: 1px solid var(--danger);
-    font-weight: 600;
-  }
-  .danger:hover:not(:disabled) {
-    background: color-mix(in srgb, var(--danger) 22%, transparent);
-  }
-  .primary {
-    font-weight: 600;
+    gap: var(--space-2);
   }
   .bar {
     flex: none;
@@ -463,7 +413,14 @@
     flex-wrap: wrap;
     gap: 0.4rem;
   }
+  /* A filter, not an action (ADR-063: view toggles keep their own look). */
   .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    font: inherit;
+    font-size: var(--text-sm);
+    cursor: pointer;
     background: var(--bg);
     color: var(--fg-2);
     border: 1px solid var(--border);
